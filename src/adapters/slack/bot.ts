@@ -1179,6 +1179,12 @@ export class SlackBot implements Bot {
       const enqueueTriggered = () => {
         const activeSessionKey =
           slackEvent.sessionKey ?? resolveSlackSessionKey(e.channel, e.thread_ts);
+        // Auto-reply top-level channel messages start with no sessionKey because
+        // they are only candidates until the policy allows them. Once triggered,
+        // persist the resolved key on the event; otherwise the runtime fallback
+        // treats the message ts as a branch session (`channel:ts`) instead of the
+        // persistent top-level channel session.
+        slackEvent.sessionKey = activeSessionKey;
         this.getQueue(this.resolveQueueKey(e.channel, activeSessionKey)).enqueue(async () => {
           slackEvent.attachments = await attachmentsPromise;
           const adapters = createSlackAdapters(slackEvent, this, false);
