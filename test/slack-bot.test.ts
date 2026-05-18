@@ -60,7 +60,7 @@ describe("SlackBot slash commands", () => {
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
 
-  test("/pi-login in a shared channel opens a DM and routes login there", async () => {
+  test("/pi-login in a shared channel responds ephemerally without opening a DM", async () => {
     const handler = makeHandler();
     const bot = new SlackBot(handler, {
       appToken: "xapp-test",
@@ -94,27 +94,26 @@ describe("SlackBot slash commands", () => {
       user_name: "alice",
     });
 
-    expect(open).toHaveBeenCalledWith({ users: "U123" });
-    expect(postEphemeral).toHaveBeenCalledWith({
-      channel: "C123",
-      user: "U123",
-      text: "我已私訊你 mama 的登入連結，請到私訊完成設定。",
-    });
+    expect(open).not.toHaveBeenCalled();
 
     const [event, calledBot, adapters] = vi.mocked(handler.handleEvent).mock.calls[0];
     expect(event).toMatchObject({
-      type: "dm",
-      conversationId: "D123",
-      vaultConversationId: "C123",
-      conversationKind: "direct",
+      type: "private_command",
+      conversationId: "C123",
+      conversationKind: "shared",
       user: "U123",
       text: "/pi-login github",
-      sessionKey: "D123",
+      sessionKey: "C123",
     });
     expect(calledBot).toBe(bot);
 
     await adapters.responseCtx.respond("login link");
-    expect(postMessage).toHaveBeenLastCalledWith({ channel: "D123", text: "login link" });
+    expect(postEphemeral).toHaveBeenLastCalledWith({
+      channel: "C123",
+      user: "U123",
+      text: "login link",
+    });
+    expect(postMessage).not.toHaveBeenCalled();
   });
 
   test("/pi-new in a DM resets the DM session", async () => {

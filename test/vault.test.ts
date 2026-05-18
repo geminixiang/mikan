@@ -162,6 +162,20 @@ describe("FileVaultManager", () => {
     ]);
   });
 
+  test("upsertFile preserves the inode for existing mounted credential files", () => {
+    const mgr = new FileVaultManager(tmpDir);
+    mgr.upsertFile("U123", "gws.json", "old", "/root/.config/gws/credentials.json");
+    const credentialPath = join(vaultsDir, "U123", "gws.json");
+    const before = statSync(credentialPath);
+
+    mgr.upsertFile("U123", "gws.json", "new", "/root/.config/gws/credentials.json");
+
+    const after = statSync(credentialPath);
+    expect(readFileSync(credentialPath, "utf-8")).toBe("new");
+    expect(after.ino).toBe(before.ino);
+    expect(mode(credentialPath) & 0o077).toBe(0);
+  });
+
   test("derives per-vault cloudflare sandbox ids", () => {
     const mgr = new FileVaultManager(tmpDir);
     expect(mgr.getSandboxConfig("alice", { type: "cloudflare", sandboxId: "mama-remote" })).toEqual(

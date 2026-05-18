@@ -1,4 +1,6 @@
 import { execFile } from "child_process";
+import { createHash } from "crypto";
+import { readFileSync, statSync } from "fs";
 import { promisify } from "util";
 import * as log from "./log.js";
 
@@ -64,6 +66,7 @@ export class DockerContainerManager {
   private static readonly IMAGE_MODE_LABEL = "mama.sandbox=image";
   private static readonly VAULT_ID_LABEL_KEY = "mama.vault-id";
   private static readonly CONVERSATION_ID_LABEL_KEY = "mama.conversation-id";
+  private static readonly MOUNT_SIGNATURE_LABEL_KEY = "mama.mount-signature";
 
   private readonly limits?: ResourceLimits;
   private readonly boostLimits?: ResourceLimits;
@@ -305,6 +308,12 @@ export class DockerContainerManager {
         `${DockerContainerManager.CONVERSATION_ID_LABEL_KEY}=${options.conversationId}`,
       );
     }
+    if (mounts.length > 0) {
+      labels.push(
+        "--label",
+        `${DockerContainerManager.MOUNT_SIGNATURE_LABEL_KEY}=${this.mountSignature(mounts)}`,
+      );
+    }
     await this.execFileImpl("docker", [
       "run",
       "-d",
@@ -355,6 +364,9 @@ export class DockerContainerManager {
     if (await this.hasBindMountDrift(containerName, mounts)) {
       return true;
     }
+    if (await this.hasMountSignatureDrift(containerName, mounts)) {
+      return true;
+    }
     return this.hasNetworkModeDrift(containerKey, containerName);
   }
 
@@ -380,6 +392,47 @@ export class DockerContainerManager {
     }
 
     return expected.every((bind, index) => bind === actual[index]);
+  }
+
+  private async hasMountSignatureDrift(
+    containerName: string,
+    mounts: ContainerMount[],
+  ): Promise<boolean> {
+    if (mounts.length === 0) return false;
+    const expected = this.mountSignature(mounts);
+    const { stdout } = await this.execFileImpl("docker", [
+      "inspect",
+      "-f",
+      `{{index .Config.Labels "${DockerContainerManager.MOUNT_SIGNATURE_LABEL_KEY}"}}`,
+      containerName,
+    ]);
+    const actual = this.normalizeDockerValue(stdout.trim());
+    return actual !== expected;
+  }
+
+  private mountSignature(mounts: ContainerMount[]): string {
+    const payload = mounts
+      .map((mount) => ({
+        source: mount.source,
+        target: mount.target,
+        fingerprint: this.mountSourceFingerprint(mount.source),
+      }))
+      .toSorted((left, right) =>
+        `${left.target}\0${left.source}`.localeCompare(`${right.target}\0${right.source}`),
+      );
+    return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+  }
+
+  private mountSourceFingerprint(source: string): string {
+    try {
+      const stat = statSync(source);
+      if (stat.isFile()) {
+        return createHash("sha256").update(readFileSync(source)).digest("hex");
+      }
+      return `${stat.isDirectory() ? "dir" : "other"}:${stat.size}:${stat.mtimeMs}`;
+    } catch {
+      return "missing";
+    }
   }
 
   private async inspectBindMounts(containerName: string): Promise<string[]> {

@@ -788,12 +788,9 @@ export class SlackBot implements Bot {
     const eventTs = (createdAt.getTime() / 1000).toFixed(6);
     const sourceChannelId = payload.channel_id;
     const isDirectMessage = sourceChannelId.startsWith("D");
-    const targetChannelId = isDirectMessage
-      ? sourceChannelId
-      : await this.openDirectMessage(payload.user_id);
     const userName = payload.user_name ?? this.getUser(payload.user_id)?.userName;
 
-    this.logToFile(targetChannelId, {
+    this.logToFile(sourceChannelId, {
       date: createdAt.toISOString(),
       ts: eventTs,
       user: payload.user_id,
@@ -803,32 +800,24 @@ export class SlackBot implements Bot {
       isBot: false,
     });
 
-    if (!isDirectMessage) {
-      await this.postEphemeral(
-        sourceChannelId,
-        payload.user_id,
-        `我已私訊你 ${PRODUCT_NAME} 的登入連結，請到私訊完成設定。`,
-      );
-    }
-
     const event: BotEvent = {
-      type: "dm",
-      conversationId: targetChannelId,
-      ...(isDirectMessage ? {} : { vaultConversationId: sourceChannelId }),
-      conversationKind: "direct",
+      type: isDirectMessage ? "dm" : "private_command",
+      conversationId: sourceChannelId,
+      conversationKind: isDirectMessage ? "direct" : "shared",
       ts: eventTs,
       user: payload.user_id,
       text: commandText,
       attachments: [],
-      sessionKey: targetChannelId,
+      sessionKey: sourceChannelId,
     };
 
     const adapters = this.createCommandAdapters(
-      targetChannelId,
+      sourceChannelId,
       payload.user_id,
       userName,
       commandText,
       eventTs,
+      isDirectMessage ? {} : { ephemeralChannelId: sourceChannelId },
     );
 
     await this.handler.handleEvent(event, this, adapters, false);
