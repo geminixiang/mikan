@@ -35,6 +35,7 @@ jobs:
 
           tags=(
             "${image}:sha-${short_sha}"
+            "${image}:latest"
           )
 
           if [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
@@ -45,8 +46,6 @@ jobs:
 
             if [[ "${version}" == *-* ]]; then
               tags+=("${image}:beta")
-            else
-              tags+=("${image}:latest")
             fi
           else
             tags+=("${image}:edge")
