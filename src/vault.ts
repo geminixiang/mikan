@@ -354,6 +354,9 @@ function inferredVaultTargetPath(relativePath: string): string | undefined {
   if (normalized === "gws.json") {
     return "/root/.config/gws/credentials.json";
   }
+  if (normalized === "gcloud-adc.json") {
+    return "/root/.config/gcloud/application_default_credentials.json";
+  }
   if (normalized === ".ssh" || normalized.startsWith(".ssh/")) {
     return "/root/.ssh";
   }

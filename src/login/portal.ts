@@ -1647,6 +1647,9 @@ async function handleOAuthCallback(
     if (fileOutput.envKey) {
       updates[fileOutput.envKey] = mountedPath;
     }
+    for (const key of fileOutput.additionalEnvKeys ?? []) {
+      updates[key] = mountedPath;
+    }
   }
 
   const storedTargets: string[] = [];

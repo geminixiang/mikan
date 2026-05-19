@@ -112,7 +112,7 @@ export MAMA_LINK_PORT=8181                         # optional, defaults to 8181
 
 For local testing you can set just `MAMA_LINK_PORT`; mama will use `http://localhost:<port>`.
 
-- `/login` (DM only) returns a 15-minute link to store API keys or run built-in OAuth flows ([GitHub](docs/oauth/github.md), [Google Workspace](docs/oauth/google-workspace.md)).
+- `/login` / `/pi-login` (DM only) returns a 15-minute link to store API keys or run built-in OAuth flows ([GitHub](docs/oauth/github.md), [Google Workspace](docs/oauth/google-workspace.md), [Google Cloud SDK / gcloud](docs/oauth/google-cloud-sdk.md)).
 - `session` / `/session` (DM only) returns a read-only link showing the current session timeline.
 - `new` / `/new` (DM only) resets the current session and starts fresh.
 - `model` / `/model` / `/pi-model provider/model[:thinking]` switches the LLM for the current conversation, e.g. `/pi-model anthropic/claude-sonnet-4-6:off`.

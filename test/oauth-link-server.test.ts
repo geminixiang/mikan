@@ -13,6 +13,8 @@ const originalEnv = {
   GITHUB_OAUTH_CLIENT_SECRET: process.env.GITHUB_OAUTH_CLIENT_SECRET,
   GOOGLE_WORKSPACE_CLI_CLIENT_ID: process.env.GOOGLE_WORKSPACE_CLI_CLIENT_ID,
   GOOGLE_WORKSPACE_CLI_CLIENT_SECRET: process.env.GOOGLE_WORKSPACE_CLI_CLIENT_SECRET,
+  GOOGLE_CLOUD_SDK_CLIENT_ID: process.env.GOOGLE_CLOUD_SDK_CLIENT_ID,
+  GOOGLE_CLOUD_SDK_CLIENT_SECRET: process.env.GOOGLE_CLOUD_SDK_CLIENT_SECRET,
   MAMA_LINK_URL: process.env.MAMA_LINK_URL,
 };
 
@@ -43,6 +45,11 @@ function configureGitHubOAuth(): void {
 function configureGoogleOAuth(): void {
   process.env.GOOGLE_WORKSPACE_CLI_CLIENT_ID = "google-client-id";
   process.env.GOOGLE_WORKSPACE_CLI_CLIENT_SECRET = "google-client-secret";
+}
+
+function configureGcloudOAuth(): void {
+  process.env.GOOGLE_CLOUD_SDK_CLIENT_ID = "gcloud-client-id";
+  process.env.GOOGLE_CLOUD_SDK_CLIENT_SECRET = "gcloud-client-secret";
 }
 
 async function createFlow(
@@ -353,6 +360,51 @@ describe("OAuth link server flows", () => {
       "telegram",
       "300",
       expect.stringContaining("Google Workspace CLI OAuth stored"),
+    );
+  });
+
+  test("Google Cloud SDK OAuth stores an ADC file and gcloud env overrides", async () => {
+    const stateDir = createStateDir(dirs);
+    configureGcloudOAuth();
+
+    const { url, token, vaultManager } = await createFlow(servers, stateDir, "U350");
+    const redirectUrl = await startOAuth(url, token, "gcloud");
+    const state = redirectUrl.searchParams.get("state");
+
+    expect(state).toBeTruthy();
+    expect(redirectUrl.searchParams.get("scope")).toContain(
+      "https://www.googleapis.com/auth/cloud-platform",
+    );
+
+    mockTokenExchange({
+      body: JSON.stringify({
+        access_token: "ya29.gcloud-access-token",
+        refresh_token: "1//gcloud-refresh-token",
+      }),
+    });
+
+    const response = await originalFetch(`${url}/oauth/callback?state=${state}&code=gcloud-code`);
+    const html = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(html).toContain("Google Cloud SDK (gcloud) OAuth connected successfully.");
+
+    const target = "/root/.config/gcloud/application_default_credentials.json";
+    const vault = vaultManager.resolve("vault-u350");
+    expect(vault?.env).toMatchObject({
+      GOOGLE_APPLICATION_CREDENTIALS: target,
+      CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: target,
+    });
+    expect(vault?.mounts).toEqual([
+      {
+        source: join(stateDir, "vaults", "vault-u350", "gcloud-adc.json"),
+        target,
+      },
+    ]);
+
+    const credentialFile = join(stateDir, "vaults", "vault-u350", "gcloud-adc.json");
+    expect(readFileSync(credentialFile, "utf-8")).toContain(
+      '"refresh_token": "1//gcloud-refresh-token"',
     );
   });
 

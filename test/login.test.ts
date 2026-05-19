@@ -44,13 +44,23 @@ describe("login command parsing", () => {
     expect(resolveOAuthService("github")?.id).toBe("github");
     expect(resolveOAuthService("github_oauth")?.id).toBe("github");
     expect(resolveOAuthService("gws")?.id).toBe("google_workspace_cli");
+    expect(resolveOAuthService("gcloud")?.id).toBe("google_cloud_sdk");
+    expect(resolveOAuthService("gcp")?.id).toBe("google_cloud_sdk");
     expect(getOAuthServices().some((s) => s.id === "github")).toBe(true);
     expect(getOAuthServices().some((s) => s.id === "google_workspace_cli")).toBe(true);
+    expect(getOAuthServices().some((s) => s.id === "google_cloud_sdk")).toBe(true);
     expect(resolveOAuthService("github")?.additionalAccessTokenEnvKeys).toContain("GH_TOKEN");
     expect(resolveOAuthService("google_workspace_cli")?.fileOutput).toEqual({
       type: "authorized_user",
       relativePath: "gws.json",
       targetPath: "/root/.config/gws/credentials.json",
+    });
+    expect(resolveOAuthService("google_cloud_sdk")?.fileOutput).toEqual({
+      type: "authorized_user",
+      relativePath: "gcloud-adc.json",
+      targetPath: "/root/.config/gcloud/application_default_credentials.json",
+      envKey: "GOOGLE_APPLICATION_CREDENTIALS",
+      additionalEnvKeys: ["CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE"],
     });
   });
 });

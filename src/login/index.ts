@@ -8,6 +8,7 @@ export interface OAuthAuthorizedUserFileOutput {
   relativePath: string;
   targetPath?: string;
   envKey?: string;
+  additionalEnvKeys?: string[];
 }
 
 export interface OAuthService {
@@ -45,6 +46,12 @@ const DEFAULT_GOOGLE_WORKSPACE_CLI_SCOPES = [
   "https://www.googleapis.com/auth/chat.messages.create",
 ];
 
+const DEFAULT_GOOGLE_CLOUD_SDK_SCOPES = [
+  "openid",
+  "https://www.googleapis.com/auth/userinfo.email",
+  "https://www.googleapis.com/auth/cloud-platform",
+];
+
 // Conservative default: enough for `gh` CLI repo/user/org operations, but
 // without `workflow` (can dispatch CI), `write:packages` (can publish
 // packages), or `project`. Operators who need those can opt in via
@@ -68,6 +75,13 @@ function resolveGoogleWorkspaceCliScopes(): string[] {
   return resolveScopesFromEnv(
     "MAMA_GOOGLE_WORKSPACE_CLI_OAUTH_SCOPES",
     DEFAULT_GOOGLE_WORKSPACE_CLI_SCOPES,
+  );
+}
+
+function resolveGoogleCloudSdkScopes(): string[] {
+  return resolveScopesFromEnv(
+    "MAMA_GOOGLE_CLOUD_SDK_OAUTH_SCOPES",
+    DEFAULT_GOOGLE_CLOUD_SDK_SCOPES,
   );
 }
 
@@ -108,6 +122,28 @@ function getBuiltinOAuthServices(): OAuthService[] {
         type: "authorized_user",
         relativePath: "gws.json",
         targetPath: "/root/.config/gws/credentials.json",
+      },
+    },
+    {
+      id: "google_cloud_sdk",
+      label: "Google Cloud SDK (gcloud)",
+      aliases: ["google_cloud_sdk", "gcloud", "google-cloud-sdk", "google_cloud", "gcp"],
+      authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+      tokenUrl: "https://oauth2.googleapis.com/token",
+      scopes: resolveGoogleCloudSdkScopes(),
+      clientIdEnvKey: "GOOGLE_CLOUD_SDK_CLIENT_ID",
+      clientSecretEnvKey: "GOOGLE_CLOUD_SDK_CLIENT_SECRET",
+      authorizationParams: {
+        access_type: "offline",
+        include_granted_scopes: "true",
+        prompt: "consent",
+      },
+      fileOutput: {
+        type: "authorized_user",
+        relativePath: "gcloud-adc.json",
+        targetPath: "/root/.config/gcloud/application_default_credentials.json",
+        envKey: "GOOGLE_APPLICATION_CREDENTIALS",
+        additionalEnvKeys: ["CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE"],
       },
     },
   ];
@@ -174,8 +210,17 @@ export function getOAuthServices(): OAuthService[] {
               : undefined;
           const envKey =
             typeof fileOutputObj.envKey === "string" ? fileOutputObj.envKey.trim() : undefined;
+          const additionalEnvKeys = Array.isArray(fileOutputObj.additionalEnvKeys)
+            ? fileOutputObj.additionalEnvKeys.filter((v): v is string => typeof v === "string")
+            : undefined;
           if (type === "authorized_user" && relativePath) {
-            fileOutput = { type: "authorized_user", relativePath, targetPath, envKey };
+            fileOutput = {
+              type: "authorized_user",
+              relativePath,
+              targetPath,
+              envKey,
+              additionalEnvKeys,
+            };
           }
         }
 
