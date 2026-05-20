@@ -1,4 +1,4 @@
-import { resolveExistingSessionFile } from "../session-view/service.js";
+import { createSessionViewLink, resolveExistingSessionFile } from "../session-view/service.js";
 import { parseSessionViewCommand } from "../session-view/command.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { replyDiagnosticWithContext } from "./utils.js";
@@ -45,14 +45,6 @@ export class SessionViewCommandHandler implements CommandHandler {
       return true;
     }
 
-    if (!context.services.portalBaseUrl) {
-      await sendSessionViewReply([
-        "Session viewer is not configured.",
-        "Set `MAMA_LINK_URL` or `MAMA_LINK_PORT` on the server.",
-      ]);
-      return true;
-    }
-
     const sessionFile = resolveExistingSessionFile(
       context.services.workingDir,
       context.conversationId,
@@ -71,18 +63,28 @@ export class SessionViewCommandHandler implements CommandHandler {
       .users.find((user) => user.id === context.platformUserId);
     const platformUserName = platformUser?.userName || platformUser?.displayName;
 
-    const token = context.services.sessionViewTokenStore.create(
-      context.platform,
-      context.platformUserId,
-      context.conversationId,
-      context.sessionKey,
+    const sessionViewLink = createSessionViewLink({
+      sessionViewTokenStore: context.services.sessionViewTokenStore,
       sessionFile,
-      platformUserName,
-    );
+      viewer: { id: context.platformUserId, name: platformUserName },
+      routing: {
+        platform: context.platform,
+        conversationId: context.conversationId,
+        sessionKey: context.sessionKey,
+      },
+    });
+
+    if (!sessionViewLink) {
+      await sendSessionViewReply([
+        "Session viewer is not configured.",
+        "Set `MAMA_LINK_URL` or `MAMA_LINK_PORT` on the server.",
+      ]);
+      return true;
+    }
 
     await sendSessionViewReply([
       "Open this read-only session link (expires in 24 hours):",
-      `${context.services.portalBaseUrl}/session?token=${token.token}`,
+      sessionViewLink,
     ]);
     return true;
   }

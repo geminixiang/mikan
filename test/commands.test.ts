@@ -564,6 +564,7 @@ describe("SandboxCommandHandler", () => {
 describe("SessionViewCommandHandler", () => {
   const handler = new SessionViewCommandHandler();
   let workingDir: string;
+  let originalMamaLinkUrl: string | undefined;
 
   beforeEach(() => {
     workingDir = join(
@@ -571,9 +572,13 @@ describe("SessionViewCommandHandler", () => {
       `cmd-session-view-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     );
     mkdirSync(workingDir, { recursive: true });
+    originalMamaLinkUrl = process.env.MAMA_LINK_URL;
+    process.env.MAMA_LINK_URL = "https://portal.example";
   });
 
   afterEach(() => {
+    if (originalMamaLinkUrl === undefined) delete process.env.MAMA_LINK_URL;
+    else process.env.MAMA_LINK_URL = originalMamaLinkUrl;
     rmSync(workingDir, { recursive: true, force: true });
   });
 

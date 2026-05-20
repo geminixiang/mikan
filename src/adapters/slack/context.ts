@@ -8,6 +8,7 @@ import * as log from "../../log.js";
 import { formatToolArgs, splitText } from "../shared.js";
 import type { SlackBot, SlackEvent } from "./bot.js";
 import { resolveSlackRootTs, resolveSlackSessionKey } from "./session.js";
+import { ErrorCode, type WebAPIPlatformError } from "@slack/web-api";
 
 export const SLACK_FORMATTING_GUIDE = `## Slack Formatting (mrkdwn, NOT Markdown)
 Bold: *text*, Italic: _text_, Code: \`code\`, Block: \`\`\`code\`\`\`, Links: <url|text>
@@ -36,10 +37,46 @@ function formatSlackToolResult(result: ChatToolResult): string {
   return text;
 }
 
+export interface SlackAdapterOptions {
+  getSessionViewUrl?: () => string | undefined;
+}
+
+function isSlackPlatformError(err: unknown): err is WebAPIPlatformError {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as { code?: unknown }).code === ErrorCode.PlatformError &&
+    typeof (err as { data?: { error?: unknown } }).data?.error === "string"
+  );
+}
+
+function isSlackMessageTooLongError(err: unknown): boolean {
+  return isSlackPlatformError(err) && err.data.error === "msg_too_long";
+}
+
+function sessionViewLinkLine(sessionViewUrl: string | undefined, prefix: string): string {
+  return sessionViewUrl
+    ? `${prefix}看這裡：${sessionViewUrl}`
+    : `${prefix}請用 \`/session\` 開啟 session view。`;
+}
+
+function summarizeTooLongSlackReply(text: string, sessionViewUrl?: string): string {
+  const normalized = text.trim();
+  const firstParagraph = normalized.split(/\n\s*\n/).find((part) => part.trim()) ?? normalized;
+  const excerpt =
+    firstParagraph.length > 900 ? `${firstParagraph.substring(0, 900).trimEnd()}…` : firstParagraph;
+  return `Slack 說完整回覆太長，所以我先濃縮成短版：\n\n${excerpt}\n\n${sessionViewLinkLine(sessionViewUrl, "完整內容")}`;
+}
+
+function minimalTooLongSlackReply(sessionViewUrl?: string): string {
+  return `回覆太長，${sessionViewLinkLine(sessionViewUrl, "完整內容")}`;
+}
+
 export function createSlackAdapters(
   event: SlackEvent,
   slack: SlackBot,
   isSyntheticEvent?: boolean,
+  adapterOptions: SlackAdapterOptions = {},
 ): {
   message: ChatMessage;
   responseCtx: ChatResponseContext;
@@ -60,6 +97,11 @@ export function createSlackAdapters(
   let isWorking = true;
   const workingIndicator = " ...";
   let updatePromise = Promise.resolve();
+  let sessionViewUrl: string | undefined;
+  const getSessionViewUrl = (): string | undefined => {
+    sessionViewUrl ??= adapterOptions.getSessionViewUrl?.();
+    return sessionViewUrl;
+  };
 
   const channelId = event.channel;
   const conversationId = event.conversationId;
@@ -80,7 +122,7 @@ export function createSlackAdapters(
    * If the triggering message is already inside a thread, stay in that thread.
    * Synthetic event messages have no real Slack root ts, so they must post top-level.
    */
-  const postFirstMessage = async (text: string): Promise<string> => {
+  const postFirstMessageRaw = async (text: string): Promise<string> => {
     if (isSyntheticEvent) {
       if (event.thread_ts) {
         return slack.postInThread(channelId, event.thread_ts, text);
@@ -92,6 +134,29 @@ export function createSlackAdapters(
     }
     return slack.postMessage(channelId, text);
   };
+
+  const withTooLongFallback = async <T>(
+    send: (text: string) => Promise<T>,
+    text: string,
+  ): Promise<T> => {
+    try {
+      return await send(text);
+    } catch (err) {
+      if (!isSlackMessageTooLongError(err)) throw err;
+      try {
+        return await send(summarizeTooLongSlackReply(text, getSessionViewUrl()));
+      } catch (fallbackErr) {
+        if (!isSlackMessageTooLongError(fallbackErr)) throw fallbackErr;
+        return await send(minimalTooLongSlackReply(getSessionViewUrl()));
+      }
+    }
+  };
+
+  const postFirstMessage = (text: string): Promise<string> =>
+    withTooLongFallback(postFirstMessageRaw, text);
+
+  const updateMessage = (ts: string, text: string): Promise<void> =>
+    withTooLongFallback((t) => slack.updateMessage(channelId, ts, t), text);
 
   const postDiagnosticDirect = async (
     text: string,
@@ -162,10 +227,7 @@ export function createSlackAdapters(
           const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
 
           if (messageTs) {
-            await slack.updateMessage(channelId, messageTs, displayText);
-          } else if (isThreaded && rootTs) {
-            // Reply within the user's thread
-            messageTs = await slack.postInThread(channelId, rootTs, displayText);
+            await updateMessage(messageTs, displayText);
           } else {
             messageTs = await postFirstMessage(displayText);
             if (isSyntheticEvent && !event.thread_ts && messageTs) {
@@ -195,9 +257,7 @@ export function createSlackAdapters(
           const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
 
           if (messageTs) {
-            await slack.updateMessage(channelId, messageTs, displayText);
-          } else if (isThreaded && rootTs) {
-            messageTs = await slack.postInThread(channelId, rootTs, displayText);
+            await updateMessage(messageTs, displayText);
           } else {
             messageTs = await postFirstMessage(displayText);
             if (isSyntheticEvent && !event.thread_ts && messageTs) {
@@ -258,9 +318,7 @@ export function createSlackAdapters(
           isWorking = working;
           if (messageTs) {
             const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
-            const updates: Promise<void>[] = [
-              slack.updateMessage(channelId, messageTs, displayText),
-            ];
+            const updates: Promise<void>[] = [updateMessage(messageTs, displayText)];
             if (!working) {
               if (rootTs) {
                 updates.push(

@@ -17,6 +17,7 @@ import * as log from "./log.js";
 import { startLinkServer } from "./login/portal.js";
 import { InMemoryLinkTokenStore } from "./login/session.js";
 import { InMemorySessionViewTokenStore } from "./session-view/store.js";
+import { createSessionViewLink } from "./session-view/service.js";
 import { DockerContainerManager } from "./provisioner.js";
 import { createGlobalSettingsFile, loadAgentConfig, MissingGlobalSettingsError } from "./config.js";
 import { ensureDirExists, isRecord, readJsonFileIfExists } from "./file-guards.js";
@@ -351,6 +352,17 @@ if (hasSlack) {
     botToken: slackBotToken,
     workingDir,
     store: sharedStore,
+    createSessionViewUrl: ({ event, sessionFile, platformUserName }) =>
+      createSessionViewLink({
+        sessionViewTokenStore,
+        sessionFile,
+        viewer: { id: event.user, name: platformUserName },
+        routing: {
+          platform: "slack",
+          conversationId: event.conversationId,
+          sessionKey: event.sessionKey ?? event.conversationId,
+        },
+      }),
   });
   bots.push(slackBot);
   botsByPlatform.slack = slackBot;

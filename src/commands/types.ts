@@ -2,6 +2,7 @@ import type { Bot, BotAdapters, PlatformName } from "../adapter.js";
 import type { DockerContainerManager } from "../provisioner.js";
 import type { SessionRuntime } from "../runtime/session-runtime.js";
 import type { SandboxConfig } from "../sandbox/index.js";
+import type { SessionViewTokenStoreLike } from "../session-view/service.js";
 import type { VaultManager } from "../vault.js";
 
 export interface LinkTokenStoreLike {
@@ -11,17 +12,6 @@ export interface LinkTokenStoreLike {
     conversationId: string,
     vaultId: string,
     providerId: string,
-  ): { token: string };
-}
-
-export interface SessionViewTokenStoreLike {
-  create(
-    platform: PlatformName,
-    platformUserId: string,
-    conversationId: string,
-    sessionKey: string,
-    sessionFile: string,
-    platformUserName?: string,
   ): { token: string };
 }
 

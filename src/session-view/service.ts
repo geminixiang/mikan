@@ -13,6 +13,7 @@ import {
   tryResolveThreadSession,
 } from "../session-store.js";
 import * as log from "../log.js";
+import type { PlatformName } from "../adapter.js";
 
 export interface SessionViewItem {
   kind: "user" | "assistant" | "tool" | "system";
@@ -45,6 +46,61 @@ export interface SessionViewModel {
   items: SessionViewItem[];
   parent?: SessionViewRelation;
   forks: SessionViewRelation[];
+}
+
+export interface SessionViewTokenStoreLike {
+  create(
+    platform: PlatformName,
+    platformUserId: string,
+    conversationId: string,
+    sessionKey: string,
+    sessionFile: string,
+    platformUserName?: string,
+  ): { token: string };
+}
+
+export interface SessionViewRoutingInfo {
+  platform: PlatformName;
+  conversationId: string;
+  sessionKey: string;
+}
+
+export interface SessionViewUserInfo {
+  id: string;
+  name?: string;
+}
+
+export interface CreateSessionViewLinkOptions {
+  sessionViewTokenStore?: SessionViewTokenStoreLike;
+  sessionFile: string;
+  viewer: SessionViewUserInfo;
+  routing: SessionViewRoutingInfo;
+}
+
+function resolveSessionViewBaseUrl(): string | undefined {
+  const explicitUrl = process.env.MAMA_LINK_URL?.trim();
+  if (explicitUrl) return explicitUrl.replace(/\/+$/, "");
+
+  const rawPort = process.env.MAMA_LINK_PORT?.trim();
+  if (!rawPort) return undefined;
+  const port = Number.parseInt(rawPort, 10);
+  return Number.isFinite(port) ? `http://localhost:${port}` : undefined;
+}
+
+export function createSessionViewLink(options: CreateSessionViewLinkOptions): string | undefined {
+  const { sessionViewTokenStore } = options;
+  const baseUrl = resolveSessionViewBaseUrl();
+  if (!sessionViewTokenStore || !baseUrl) return undefined;
+
+  const token = sessionViewTokenStore.create(
+    options.routing.platform,
+    options.viewer.id,
+    options.routing.conversationId,
+    options.routing.sessionKey,
+    options.sessionFile,
+    options.viewer.name,
+  );
+  return `${baseUrl}/session?token=${token.token}`;
 }
 
 export function resolveExistingSessionFile(

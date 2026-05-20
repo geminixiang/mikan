@@ -27,6 +27,7 @@ import {
   withRetry,
 } from "../shared.js";
 import { getThreadSessionFile } from "../../session-store.js";
+import { resolveExistingSessionFile } from "../../session-view/service.js";
 import { evaluateAutoReplyPolicy } from "../../trigger.js";
 import { createSlackAdapters } from "./context.js";
 import { hasMaterializedSlackBranchSession } from "./branch-manager.js";
@@ -121,6 +122,12 @@ export interface UserInfo {
   displayName: string;
 }
 
+export type SlackSessionViewUrlProvider = (input: {
+  event: SlackEvent;
+  sessionFile: string;
+  platformUserName?: string;
+}) => string | undefined;
+
 export interface SlackContext {
   message: {
     text: string;
@@ -162,14 +169,22 @@ export class SlackBot implements Bot {
   private channels = new Map<string, SlackChannel>();
   private queues = new Map<string, ChannelQueue>();
   private eventsWatcher: EventsWatcher | null = null;
+  private sessionViewUrlProvider?: SlackSessionViewUrlProvider;
 
   constructor(
     handler: BotHandler,
-    config: { appToken: string; botToken: string; workingDir: string; store: ChannelStore },
+    config: {
+      appToken: string;
+      botToken: string;
+      workingDir: string;
+      store: ChannelStore;
+      createSessionViewUrl?: SlackSessionViewUrlProvider;
+    },
   ) {
     this.handler = handler;
     this.workingDir = config.workingDir;
     this.store = config.store;
+    this.sessionViewUrlProvider = config.createSessionViewUrl;
     this.socketClient = new SocketModeClient({
       appToken: config.appToken,
       // Default 5s is too tight: brief event-loop stalls (e.g. backfill, sync fs)
@@ -181,6 +196,24 @@ export class SlackBot implements Bot {
 
   setEventsWatcher(watcher: EventsWatcher): void {
     this.eventsWatcher = watcher;
+  }
+
+  private createSessionViewUrl(event: SlackEvent): string | undefined {
+    if (!this.sessionViewUrlProvider) return undefined;
+    const sessionKey =
+      event.sessionKey ?? resolveSlackSessionKey(event.conversationId, event.thread_ts);
+    const sessionFile = resolveExistingSessionFile(
+      this.workingDir,
+      event.conversationId,
+      sessionKey,
+    );
+    if (!sessionFile) return undefined;
+    const user = this.getUser(event.user);
+    return this.sessionViewUrlProvider({
+      event: { ...event, sessionKey },
+      sessionFile,
+      platformUserName: user?.userName || user?.displayName,
+    });
   }
 
   // ==========================================================================
@@ -476,7 +509,9 @@ export class SlackBot implements Bot {
         })),
         sessionKey: event.sessionKey,
       };
-      const adapters = createSlackAdapters(slackEvent, this, true);
+      const adapters = createSlackAdapters(slackEvent, this, true, {
+        getSessionViewUrl: () => this.createSessionViewUrl(slackEvent),
+      });
       return this.handler.handleEvent(event, this, adapters, true);
     });
     return true;
@@ -1053,7 +1088,9 @@ export class SlackBot implements Bot {
 
       this.getQueue(this.resolveQueueKey(e.channel, sessionKey)).enqueue(async () => {
         slackEvent.attachments = await attachmentsPromise;
-        const adapters = createSlackAdapters(slackEvent, this, false);
+        const adapters = createSlackAdapters(slackEvent, this, false, {
+          getSessionViewUrl: () => this.createSessionViewUrl(slackEvent),
+        });
         return this.handler.handleEvent(
           slackEvent as unknown as import("../../adapter.js").BotEvent,
           this,
@@ -1191,7 +1228,9 @@ export class SlackBot implements Bot {
         slackEvent.sessionKey = activeSessionKey;
         this.getQueue(this.resolveQueueKey(e.channel, activeSessionKey)).enqueue(async () => {
           slackEvent.attachments = await attachmentsPromise;
-          const adapters = createSlackAdapters(slackEvent, this, false);
+          const adapters = createSlackAdapters(slackEvent, this, false, {
+            getSessionViewUrl: () => this.createSessionViewUrl(slackEvent),
+          });
           return this.handler.handleEvent(
             slackEvent as unknown as import("../../adapter.js").BotEvent,
             this,

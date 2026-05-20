@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import { ErrorCode } from "@slack/web-api";
 import type { SlackBot, SlackEvent } from "../src/adapters/slack/bot.js";
 import { createSlackAdapters } from "../src/adapters/slack/context.js";
 
@@ -89,6 +90,30 @@ describe("respond() — non-threaded", () => {
     await responseCtx.respond("hello");
     expect(bot.postMessage).toHaveBeenCalledWith("C001", expect.stringContaining("hello"));
     expect(bot.postInThread).not.toHaveBeenCalled();
+  });
+
+  test("falls back to a short session-link reply when Slack rejects a too-long message", async () => {
+    const tooLongError = Object.assign(new Error("msg_too_long"), {
+      code: ErrorCode.PlatformError,
+      data: { ok: false, error: "msg_too_long" },
+    });
+    const bot = makeSlackBot({
+      postMessage: vi.fn().mockRejectedValueOnce(tooLongError).mockResolvedValueOnce("T001"),
+    });
+    const event = makeEvent({ thread_ts: undefined });
+    const { responseCtx } = createSlackAdapters(event, bot, false, {
+      getSessionViewUrl: () => "https://portal.example/session?token=tok-session",
+    });
+
+    await responseCtx.respond(`hello\n\n${"detail ".repeat(1000)}`);
+
+    expect(bot.postMessage).toHaveBeenCalledTimes(2);
+    expect(bot.postMessage).toHaveBeenNthCalledWith(1, "C001", expect.stringContaining("detail"));
+    expect(bot.postMessage).toHaveBeenNthCalledWith(
+      2,
+      "C001",
+      expect.stringContaining("https://portal.example/session?token=tok-session"),
+    );
   });
 
   test("synthetic event posts top-level instead of using an invalid thread root", async () => {
