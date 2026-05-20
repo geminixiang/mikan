@@ -1,3 +1,5 @@
+import type { Static, TSchema } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 import { existsSync, mkdirSync, readFileSync } from "fs";
 
 export function ensureDirExists(dir: string): void {
@@ -20,23 +22,25 @@ export function readJsonFileIfExists<T>(
   malformedMessage: (detail: string) => string,
 ): T | undefined {
   const raw = readTextFileIfExists(path);
-  if (raw === undefined) {
-    return undefined;
-  }
+  return raw === undefined ? undefined : parseJsonValue(raw, validate, malformedMessage);
+}
 
-  let parsed: unknown;
+export function readJsonSchemaFileIfExists<T extends TSchema>(
+  path: string,
+  schema: T,
+  malformedMessage: (detail: string) => string,
+): Static<T> | undefined {
+  const raw = readTextFileIfExists(path);
+  return raw === undefined ? undefined : parseJsonSchemaValue(raw, schema, malformedMessage);
+}
+
+function parseJson(raw: string, malformedMessage: (detail: string) => string): unknown {
   try {
-    parsed = JSON.parse(raw);
+    return JSON.parse(raw);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     throw new Error(malformedMessage(detail), { cause: err });
   }
-
-  if (!validate(parsed)) {
-    throw new Error(malformedMessage("unexpected JSON shape"));
-  }
-
-  return parsed;
 }
 
 export function parseJsonValue<T>(
@@ -44,18 +48,31 @@ export function parseJsonValue<T>(
   validate: (value: unknown) => value is T,
   malformedMessage: (detail: string) => string,
 ): T {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    throw new Error(malformedMessage(detail), { cause: err });
-  }
-
+  const parsed = parseJson(raw, malformedMessage);
   if (!validate(parsed)) {
     throw new Error(malformedMessage("unexpected JSON shape"));
   }
+  return parsed;
+}
 
+export function parseJsonSchemaValue<T extends TSchema>(
+  raw: string,
+  schema: T,
+  malformedMessage: (detail: string) => string,
+): Static<T> {
+  const parsed = parseJson(raw, malformedMessage);
+  if (!Value.Check(schema, parsed)) {
+    let firstError: { path: string; message: string } | undefined;
+    for (const err of Value.Errors(schema, parsed)) {
+      firstError = err;
+      break;
+    }
+    const detail =
+      !firstError || firstError.path === "" || firstError.path === "/"
+        ? "unexpected JSON shape"
+        : `${firstError.path}: ${firstError.message}`;
+    throw new Error(malformedMessage(detail));
+  }
   return parsed;
 }
 

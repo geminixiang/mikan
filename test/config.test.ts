@@ -131,6 +131,52 @@ describe("loadAgentConfig", () => {
     expect(() => loadAgentConfig()).toThrow(/expected a JSON object/);
   });
 
+  test("throws on settings.json with invalid nested field types", () => {
+    writeFileSync(
+      join(stateDir, "settings.json"),
+      JSON.stringify({
+        llm: { provider: "anthropic", model: "claude-sonnet-4-6", thinkingLevel: "off" },
+        log: { format: "console", level: "info" },
+        sandbox: { cpus: 2 },
+      }),
+      "utf-8",
+    );
+
+    expect(() => loadAgentConfig()).toThrow(
+      /Malformed settings file.*sandbox.*cpus.*Expected string/,
+    );
+  });
+
+  test("throws on settings.json with invalid thinkingLevel", () => {
+    writeFileSync(
+      join(stateDir, "settings.json"),
+      JSON.stringify({
+        llm: { provider: "anthropic", model: "claude-sonnet-4-6", thinkingLevel: "on" },
+        log: { format: "console", level: "info" },
+      }),
+      "utf-8",
+    );
+
+    expect(() => loadAgentConfig()).toThrow(
+      /Malformed settings file.*thinkingLevel.*Expected union value/,
+    );
+  });
+
+  test("throws on conversation settings.json with invalid nested field types", () => {
+    createGlobalSettingsFile(stateDir);
+    const conversationDir = join(stateDir, "workspace", "C123");
+    mkdirSync(conversationDir, { recursive: true });
+    writeFileSync(
+      join(conversationDir, "settings.json"),
+      JSON.stringify({ sandbox: { image: { workspaceMount: "everything" } } }),
+      "utf-8",
+    );
+
+    expect(() => loadAgentConfigForConversation(conversationDir)).toThrow(
+      /Malformed settings file.*workspaceMount/,
+    );
+  });
+
   test("conversation model config overrides global provider and model only", () => {
     saveAgentConfig({ provider: "anthropic", model: "claude-sonnet-4-6" });
     const conversationDir = join(stateDir, "workspace", "C123");

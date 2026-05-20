@@ -1,8 +1,9 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { Type, type Static } from "@sinclair/typebox";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { dirname, join, resolve } from "path";
-import { ensureDirExists, isRecord, readJsonFileIfExists } from "./file-guards.js";
+import { ensureDirExists, readJsonSchemaFileIfExists } from "./file-guards.js";
 import { atomicWritePrivateFile } from "./fs-atomic.js";
 
 export class MissingGlobalSettingsError extends Error {
@@ -63,32 +64,82 @@ const ONBOARD_SETTINGS: SettingsFileConfig = {
   },
 };
 
-interface SettingsFileConfig {
-  llm?: Partial<Pick<AgentConfig, "provider" | "model" | "thinkingLevel">> & {
-    autoReply?: { provider?: string; model?: string };
-  };
-  log?: { format?: AgentConfig["logFormat"]; level?: AgentConfig["logLevel"] };
-  sentry?: { dsn?: string };
-  sandbox?: {
-    cpus?: string;
-    memory?: string;
-    boost?: { cpus?: string; memory?: string };
-    image?: { workspaceMount?: AgentConfig["sandboxImageWorkspaceMount"] };
-  };
-  autoReply?: {
-    enabled?: boolean;
-    rules?: string[];
-  };
-}
+const SettingsFileSchema = Type.Object({
+  llm: Type.Optional(
+    Type.Object({
+      provider: Type.Optional(Type.String()),
+      model: Type.Optional(Type.String()),
+      thinkingLevel: Type.Optional(
+        Type.Union([
+          Type.Literal("off"),
+          Type.Literal("minimal"),
+          Type.Literal("low"),
+          Type.Literal("medium"),
+          Type.Literal("high"),
+          Type.Literal("xhigh"),
+        ]),
+      ),
+      autoReply: Type.Optional(
+        Type.Object({
+          provider: Type.Optional(Type.String()),
+          model: Type.Optional(Type.String()),
+        }),
+      ),
+    }),
+  ),
+  log: Type.Optional(
+    Type.Object({
+      format: Type.Optional(Type.Union([Type.Literal("console"), Type.Literal("json")])),
+      level: Type.Optional(
+        Type.Union([
+          Type.Literal("trace"),
+          Type.Literal("debug"),
+          Type.Literal("info"),
+          Type.Literal("warn"),
+          Type.Literal("error"),
+        ]),
+      ),
+    }),
+  ),
+  sentry: Type.Optional(
+    Type.Object({
+      dsn: Type.Optional(Type.String()),
+    }),
+  ),
+  sandbox: Type.Optional(
+    Type.Object({
+      cpus: Type.Optional(Type.String()),
+      memory: Type.Optional(Type.String()),
+      boost: Type.Optional(
+        Type.Object({
+          cpus: Type.Optional(Type.String()),
+          memory: Type.Optional(Type.String()),
+        }),
+      ),
+      image: Type.Optional(
+        Type.Object({
+          workspaceMount: Type.Optional(
+            Type.Union([Type.Literal("private"), Type.Literal("full")]),
+          ),
+        }),
+      ),
+    }),
+  ),
+  autoReply: Type.Optional(
+    Type.Object({
+      enabled: Type.Optional(Type.Boolean()),
+      rules: Type.Optional(Type.Array(Type.String())),
+    }),
+  ),
+});
+
+type SettingsFileConfig = Static<typeof SettingsFileSchema>;
 
 function loadSettingsFile(settingsPath: string): SettingsFileConfig | undefined {
-  return readJsonFileIfExists(
-    settingsPath,
-    (value): value is SettingsFileConfig => isRecord(value),
-    (detail) =>
-      detail === "unexpected JSON shape"
-        ? `Malformed settings file at ${settingsPath}: expected a JSON object at the top level`
-        : `Malformed settings file at ${settingsPath}: ${detail}`,
+  return readJsonSchemaFileIfExists(settingsPath, SettingsFileSchema, (detail) =>
+    detail === "unexpected JSON shape"
+      ? `Malformed settings file at ${settingsPath}: expected a JSON object at the top level`
+      : `Malformed settings file at ${settingsPath}: ${detail}`,
   );
 }
 

@@ -53,7 +53,7 @@ describe("log config from settings.json", () => {
     writeFileSync(
       join(tmpDir, "settings.json"),
       JSON.stringify({
-        llm: { provider: "openai", model: "gpt-4o", thinkingLevel: "on" },
+        llm: { provider: "openai", model: "gpt-4o", thinkingLevel: "off" },
         log: { format: "json", level: "debug" },
       }),
       "utf-8",
@@ -61,7 +61,7 @@ describe("log config from settings.json", () => {
     const config = loadAgentConfig();
     expect(config.provider).toBe("openai");
     expect(config.model).toBe("gpt-4o");
-    expect(config.thinkingLevel).toBe("on");
+    expect(config.thinkingLevel).toBe("off");
     expect(config.logFormat).toBe("json");
     expect(config.logLevel).toBe("debug");
   });

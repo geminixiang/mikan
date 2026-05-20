@@ -1,3 +1,4 @@
+import { Type, type Static } from "@sinclair/typebox";
 import { Cron } from "croner";
 import {
   existsSync,
@@ -11,7 +12,7 @@ import {
 import { readFile } from "fs/promises";
 import { join } from "path";
 import type { Bot, BotEvent, ConversationKind } from "./adapter.js";
-import { ensureDirExists, isRecord, parseJsonValue } from "./file-guards.js";
+import { ensureDirExists, parseJsonSchemaValue } from "./file-guards.js";
 import * as log from "./log.js";
 import { inferConversationKind } from "./session-policy.js";
 
@@ -48,6 +49,23 @@ export interface PeriodicEvent {
 }
 
 export type MamaEvent = ImmediateEvent | OneShotEvent | PeriodicEvent;
+
+const EventFileSchema = Type.Object({
+  type: Type.Optional(
+    Type.Union([Type.Literal("immediate"), Type.Literal("one-shot"), Type.Literal("periodic")]),
+  ),
+  platform: Type.Optional(Type.String()),
+  conversationId: Type.Optional(Type.String()),
+  channelId: Type.Optional(Type.String()),
+  conversationKind: Type.Optional(Type.Union([Type.Literal("direct"), Type.Literal("shared")])),
+  userId: Type.Optional(Type.String()),
+  text: Type.Optional(Type.String()),
+  at: Type.Optional(Type.String()),
+  schedule: Type.Optional(Type.String()),
+  timezone: Type.Optional(Type.String()),
+});
+
+type EventFileData = Static<typeof EventFileSchema>;
 
 export interface PeriodicEventInfo {
   filename: string;
@@ -310,8 +328,10 @@ export class EventsWatcher {
   }
 
   private parseEvent(content: string, filename: string): MamaEvent | null {
-    const data = parseJsonValue(content, isRecord, (detail) =>
-      detail === "unexpected JSON shape" ? `Expected top-level JSON object in ${filename}` : detail,
+    const data: EventFileData = parseJsonSchemaValue(content, EventFileSchema, (detail) =>
+      detail === "unexpected JSON shape"
+        ? `Expected top-level JSON object in ${filename}`
+        : `Malformed event file ${filename}: ${detail}`,
     );
     const conversationId =
       typeof data.conversationId === "string"

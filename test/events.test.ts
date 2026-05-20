@@ -127,6 +127,31 @@ describe("EventsWatcher platform routing", () => {
     ).toThrow(/Missing required field 'platform'/);
   });
 
+  test("rejects event files with invalid field types", () => {
+    const { bot } = makeBot("slack");
+    const watcher = new EventsWatcher(eventsDir, { slack: bot }) as any;
+
+    expect(() =>
+      watcher.parseEvent(
+        JSON.stringify({
+          type: "immediate",
+          conversationId: "C123",
+          text: ["not", "a", "string"],
+        }),
+        "invalid-field.json",
+      ),
+    ).toThrow(/Malformed event file invalid-field\.json.*text.*Expected string/);
+  });
+
+  test("rejects event files whose top-level JSON is not an object", () => {
+    const { bot } = makeBot("slack");
+    const watcher = new EventsWatcher(eventsDir, { slack: bot }) as any;
+
+    expect(() => watcher.parseEvent("[]", "array.json")).toThrow(
+      /Expected top-level JSON object in array\.json/,
+    );
+  });
+
   test("ignores transient missing-file signals so scheduled events stay active", async () => {
     const { bot } = makeBot("slack");
     const watcher = new EventsWatcher(eventsDir, { slack: bot }) as any;
