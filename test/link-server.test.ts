@@ -1,4 +1,4 @@
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -219,6 +219,58 @@ describe("link server", () => {
     expect(html).toContain("VERCEL_PROJECT_ID");
     expect(html).toContain("SENTRY_AUTH_TOKEN");
     expect(html).toContain("Do not use the Global API Key.");
+  });
+
+  test("/api/link/complete stores Sentry env values and writes sentry-cli config", async () => {
+    const stateDir = join(tmpdir(), `mama-link-server-${Date.now()}-${Math.random()}`);
+    dirs.push(stateDir);
+
+    const vaultManager = new FileVaultManager(stateDir);
+
+    const tokenStore = new InMemoryLinkTokenStore();
+    const token = tokenStore.create("telegram", "U889", "889", "vault-u889", "");
+    const notify = vi.fn().mockResolvedValue(undefined);
+    const server = startLinkServer(0, tokenStore, vaultManager, notify);
+    servers.push(server);
+    await waitForListening(server);
+
+    const response = await originalFetch(`${baseUrl(server)}/api/link/complete`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: baseUrl(server),
+      },
+      body: JSON.stringify({
+        token: token.token,
+        mode: "api_key",
+        env: {
+          SENTRY_AUTH_TOKEN: "sntrys_test-token",
+          SENTRY_ORG: "gliacloud-z3",
+          SENTRY_PROJECT: "mama",
+        },
+      }),
+    });
+    const body = (await response.json()) as { message: string };
+
+    expect(response.status).toBe(200);
+    expect(body.message).toContain("/root/.sentryclirc");
+    expect(vaultManager.resolve("vault-u889")?.env).toMatchObject({
+      SENTRY_AUTH_TOKEN: "sntrys_test-token",
+      SENTRY_ORG: "gliacloud-z3",
+      SENTRY_PROJECT: "mama",
+    });
+    expect(vaultManager.resolve("vault-u889")?.mounts).toContainEqual({
+      source: join(stateDir, "vaults", "vault-u889", ".sentryclirc"),
+      target: "/root/.sentryclirc",
+    });
+    expect(readFileSync(join(stateDir, "vaults", "vault-u889", ".sentryclirc"), "utf-8")).toBe(
+      `[auth]\ntoken=sntrys_test-token\n\n[defaults]\norg = gliacloud-z3\nproject = mama\n`,
+    );
+    expect(notify).toHaveBeenCalledWith(
+      "telegram",
+      "889",
+      expect.stringContaining("/root/.sentryclirc"),
+    );
   });
 
   test("/api/link/complete stores multiple environment values from a preset payload", async () => {

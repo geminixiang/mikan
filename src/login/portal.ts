@@ -203,15 +203,17 @@ const SECRET_PRESETS: SecretPreset[] = [
   {
     id: "sentry",
     label: "Sentry",
-    description: "Store a Sentry auth token plus optional org and project identifiers.",
-    note: "Create an auth token from Sentry Settings → Account → API → Auth Tokens. Org and project are optional helpers.",
+    description:
+      "Store a Sentry auth token plus optional org/project, and mount ~/.sentryclirc for sentry-cli.",
+    note: "Create an auth token from Sentry Settings → Account → API → Auth Tokens. Saving this preset also writes /root/.sentryclirc for sentry-cli.",
     fields: [
       {
         envKey: "SENTRY_AUTH_TOKEN",
         label: "Sentry Auth Token",
         type: "password",
         placeholder: "sntrys_...",
-        helpText: "Required for Sentry CLI, releases, and sourcemap uploads.",
+        helpText:
+          "Required for Sentry CLI, releases, and sourcemap uploads. Also written to /root/.sentryclirc.",
       },
       {
         envKey: "SENTRY_ORG",
@@ -1367,12 +1369,29 @@ function extractEnvUpdates(data: Partial<LinkCompleteBody>): {
   return { updates: { [envKey]: credential } };
 }
 
-function renderStoredEnvMessage(envKeys: string[]): string {
+function renderStoredEnvMessage(envKeys: string[], fileTargets: string[] = []): string {
+  const fileSuffix = fileTargets.length > 0 ? ` Mounted file(s): ${fileTargets.join(", ")}.` : "";
   if (envKeys.length === 1) {
-    return `${envKeys[0]} stored successfully in vault.`;
+    return `${envKeys[0]} stored successfully in vault.${fileSuffix}`;
   }
 
-  return `${envKeys.length} secrets stored successfully in vault: ${envKeys.join(", ")}.`;
+  return `${envKeys.length} secrets stored successfully in vault: ${envKeys.join(", ")}.${fileSuffix}`;
+}
+
+function renderSentryCliConfig(updates: Record<string, string>): string | undefined {
+  const token = updates.SENTRY_AUTH_TOKEN?.trim();
+  if (!token) return undefined;
+
+  const lines = ["[auth]", `token=${token}`, ""];
+  const defaults: string[] = [];
+  const org = updates.SENTRY_ORG?.trim();
+  const project = updates.SENTRY_PROJECT?.trim();
+  if (org) defaults.push(`org = ${org}`);
+  if (project) defaults.push(`project = ${project}`);
+  if (defaults.length > 0) {
+    lines.push("[defaults]", ...defaults, "");
+  }
+  return lines.join("\n");
 }
 
 // ── API-key completion ────────────────────────────────────────────────────────
@@ -1417,8 +1436,20 @@ async function handleLinkComplete(
     return;
   }
 
+  const fileTargets: string[] = [];
+  const sentryCliConfig = renderSentryCliConfig(updates);
+
   try {
     vaultManager.upsertEnv(linkToken.vaultId, updates);
+    if (sentryCliConfig) {
+      vaultManager.upsertFile(
+        linkToken.vaultId,
+        ".sentryclirc",
+        sentryCliConfig,
+        "/root/.sentryclirc",
+      );
+      fileTargets.push("/root/.sentryclirc");
+    }
   } catch (persistError) {
     log.logWarning(
       `Failed to persist [${envKeys.join(", ")}] for ${linkToken.platform}/${linkToken.platformUserId}`,
@@ -1438,7 +1469,7 @@ async function handleLinkComplete(
     `Stored [${envKeys.join(", ")}] for ${linkToken.platform}/${linkToken.platformUserId} in vault:${linkToken.vaultId}`,
   );
 
-  const message = renderStoredEnvMessage(envKeys);
+  const message = renderStoredEnvMessage(envKeys, fileTargets);
   res.writeHead(200, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ ok: true, message }));
 
