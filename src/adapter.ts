@@ -49,10 +49,6 @@ export interface ChatAdapter {
   getPlatformInfo(): PlatformInfo;
 }
 
-// ============================================================================
-// Generic cross-platform event and bot interfaces
-// ============================================================================
-
 /**
  * A platform-agnostic event (message/mention) that triggers the agent.
  */

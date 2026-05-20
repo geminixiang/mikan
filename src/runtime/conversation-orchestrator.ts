@@ -4,8 +4,8 @@ import {
   waitForSlackBranchBootstrap,
 } from "../adapters/slack/branch-manager.js";
 import type { AgentRunner } from "../agent.js";
-import type { CommandRegistry } from "../commands/index.js";
-import type { CommandServices } from "../commands/index.js";
+import { dispatchCommand } from "../commands/index.js";
+import type { CommandHandler, CommandServices } from "../commands/index.js";
 import { isPrivateConversation } from "../commands/utils.js";
 import * as log from "../log.js";
 import { addLifecycleBreadcrumb, applyRunScope } from "../sentry.js";
@@ -32,7 +32,7 @@ export interface RunConversationOptions {
 
 interface ConversationOrchestratorOptions {
   workingDir: string;
-  commandRegistry: CommandRegistry;
+  commandHandlers: readonly CommandHandler[];
   commandServices: CommandServices;
   isShuttingDown: () => boolean;
   getState: (sessionKey: string) => ConversationRuntimeState | undefined;
@@ -65,7 +65,7 @@ export class ConversationOrchestrator {
 
     const sessionKey = event.sessionKey ?? `${conversationId}:${event.thread_ts ?? event.ts}`;
     const privateConversation = isPrivateConversation(event);
-    const handledCommand = await this.options.commandRegistry.handle({
+    const handledCommand = await dispatchCommand(this.options.commandHandlers, {
       bot,
       responseCtx: adapters.responseCtx,
       platform: adapters.platform.name as PlatformName,

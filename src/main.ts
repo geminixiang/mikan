@@ -20,17 +20,17 @@ import { InMemorySessionViewTokenStore } from "./session-view/store.js";
 import { DockerContainerManager } from "./provisioner.js";
 import { createGlobalSettingsFile, loadAgentConfig, MissingGlobalSettingsError } from "./config.js";
 import { ensureDirExists, isRecord, readJsonFileIfExists } from "./file-guards.js";
-import { SandboxError, parseSandboxArg, type SandboxConfig, validateSandbox } from "./sandbox.js";
+import {
+  SandboxError,
+  parseSandboxArg,
+  type SandboxConfig,
+  validateSandbox,
+} from "./sandbox/index.js";
 import { FileVaultManager } from "./vault.js";
 import { createSessionRuntime } from "./runtime/index.js";
 import { ChannelStore } from "./store.js";
 import * as Sentry from "@sentry/node";
 
-// ============================================================================
-// Config
-// ============================================================================
-
-// Get version from package.json
 function getVersion(): string {
   // Try to find package.json in the dist directory or parent
   const possiblePaths = [
@@ -324,10 +324,6 @@ const handler = createSessionRuntime({
   portalBaseUrl: portalBaseUrl(),
 });
 
-// ============================================================================
-// Start
-// ============================================================================
-
 const sandboxDesc =
   sandbox.type === "host"
     ? "host"
@@ -340,7 +336,6 @@ const sandboxDesc =
           : `cloudflare:${sandbox.sandboxId}`;
 log.logStartup(workingDir, sandboxDesc);
 
-// Create platform bots
 const bots: Bot[] = [];
 const botsByPlatform: Record<string, Bot> = {};
 

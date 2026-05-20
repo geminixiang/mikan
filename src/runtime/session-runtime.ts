@@ -1,8 +1,8 @@
 import type { Bot, BotAdapters, BotEvent, BotHandler, RunningSession } from "../adapter.js";
 import { resolveSlackSessionScope } from "../adapters/slack/branch-manager.js";
 import { type AgentRunner, createRunner } from "../agent.js";
-import { CommandRegistry, createDefaultCommandRegistry } from "../commands/index.js";
-import type { CommandServices } from "../commands/index.js";
+import { defaultCommandHandlers } from "../commands/index.js";
+import type { CommandHandler, CommandServices } from "../commands/index.js";
 import * as log from "../log.js";
 import {
   createManagedSessionFile,
@@ -36,9 +36,9 @@ export interface CreateSessionSandboxOptions {
   sessionKey: string;
 }
 
-export interface SessionRuntimeOptions extends CommandServices {
-  /** Override the default command registry (e.g., to add /help, /status). */
-  commandRegistry?: CommandRegistry;
+export interface SessionRuntimeOptions extends Omit<CommandServices, "runtime"> {
+  /** Override the default command handlers (e.g., to add /help, /status). */
+  commandHandlers?: readonly CommandHandler[];
 }
 
 export interface SessionRuntime extends BotHandler {
@@ -71,17 +71,16 @@ class MamaSessionRuntime implements SessionRuntime {
   private readonly conversationStates = new Map<string, ConversationState>();
   private readonly sessionQueues = new Map<string, Promise<void>>();
   private readonly inFlightRuns = new Set<Promise<void>>();
-  private readonly commandRegistry: CommandRegistry;
   private readonly orchestrator: ConversationOrchestrator;
   private isShuttingDown = false;
 
   constructor(private readonly options: SessionRuntimeOptions) {
-    this.options.runtime = this;
-    this.commandRegistry = options.commandRegistry ?? createDefaultCommandRegistry();
+    const commandServices: CommandServices = { ...options, runtime: this };
+    const commandHandlers = options.commandHandlers ?? defaultCommandHandlers();
     this.orchestrator = new ConversationOrchestrator({
       workingDir: options.workingDir,
-      commandRegistry: this.commandRegistry,
-      commandServices: this.options,
+      commandHandlers,
+      commandServices,
       isShuttingDown: () => this.isShuttingDown,
       getState: (sessionKey) => this.conversationStates.get(sessionKey),
       getOrCreateState: (createOptions) => this.getOrCreateState(createOptions),

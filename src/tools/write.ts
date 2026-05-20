@@ -1,6 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
-import type { Executor } from "../sandbox.js";
+import type { Executor } from "../sandbox/index.js";
 
 const writeSchema = Type.Object({
   label: Type.String({ description: "Brief description of what you're writing (shown to user)" }),

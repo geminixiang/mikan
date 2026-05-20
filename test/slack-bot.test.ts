@@ -4,11 +4,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { BotHandler } from "../src/adapter.js";
 import { SlackBot } from "../src/adapters/slack/bot.js";
-import { createDefaultCommandRegistry } from "../src/commands/index.js";
+import { defaultCommandHandlers } from "../src/commands/index.js";
 import type { CommandServices } from "../src/commands/types.js";
 import { ConversationOrchestrator } from "../src/runtime/conversation-orchestrator.js";
 import { createManagedSessionFileAtPath, getThreadSessionFile } from "../src/session-store.js";
-import type { SandboxConfig } from "../src/sandbox.js";
+import type { SandboxConfig } from "../src/sandbox/index.js";
 import type { VaultManager } from "../src/vault.js";
 
 function makeHandler(): BotHandler {
@@ -298,7 +298,7 @@ describe("SlackBot slash commands", () => {
 
     const orchestrator = new ConversationOrchestrator({
       workingDir,
-      commandRegistry: createDefaultCommandRegistry(),
+      commandHandlers: defaultCommandHandlers(),
       commandServices: makeCommandServices(workingDir),
       isShuttingDown: () => false,
       getState: () => undefined,

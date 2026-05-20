@@ -1,14 +1,12 @@
 import type { CommandContext, CommandHandler } from "./types.js";
 
-export class CommandRegistry {
-  constructor(private readonly handlers: readonly CommandHandler[]) {}
-
-  async handle(context: CommandContext): Promise<boolean> {
-    for (const handler of this.handlers) {
-      if (await handler.tryHandle(context)) {
-        return true;
-      }
-    }
-    return false;
+/** Run handlers in order, returning true as soon as one accepts the command. */
+export async function dispatchCommand(
+  handlers: readonly CommandHandler[],
+  context: CommandContext,
+): Promise<boolean> {
+  for (const handler of handlers) {
+    if (await handler.tryHandle(context)) return true;
   }
+  return false;
 }

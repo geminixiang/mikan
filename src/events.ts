@@ -15,10 +15,6 @@ import { ensureDirExists, isRecord, parseJsonValue } from "./file-guards.js";
 import * as log from "./log.js";
 import { inferConversationKind } from "./session-policy.js";
 
-// ============================================================================
-// Event Types
-// ============================================================================
-
 export interface ImmediateEvent {
   type: "immediate";
   platform: string;
@@ -63,10 +59,6 @@ export interface PeriodicEventInfo {
   timezone: string;
   nextRun: string | null; // ISO 8601
 }
-
-// ============================================================================
-// EventsWatcher
-// ============================================================================
 
 const DEBOUNCE_MS = 100;
 const MAX_RETRIES = 3;

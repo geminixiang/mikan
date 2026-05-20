@@ -9,7 +9,7 @@ import {
 } from "fs";
 import { dirname, isAbsolute, join, normalize, sep } from "path";
 import { readTextFileIfExists } from "./file-guards.js";
-import type { SandboxConfig } from "./sandbox.js";
+import type { SandboxConfig } from "./sandbox/index.js";
 import { atomicWritePrivateFile } from "./fs-atomic.js";
 
 const PRIVATE_DIR_MODE = 0o700;
