@@ -143,6 +143,7 @@ function buildContext(args: BuildContextArgs): CommandContext & {
       handleNewCommand: vi.fn(),
       handleStop: vi.fn(),
       isRunning: vi.fn().mockReturnValue(false),
+      refreshConversationEnvironment: vi.fn().mockReturnValue(true),
       runSession: vi.fn(),
       shutdown: vi.fn(),
     } as any,
@@ -376,18 +377,56 @@ describe("LoginCommandHandler", () => {
   test("copies shared login profile into the conversation vault", async () => {
     const vaultManager = fakeVaultManager();
     vaultManager.copySharedVaultTo = vi.fn(() => ({ envKeysCopied: 2, filesCopied: 1 }));
+    const remove = vi.fn(async () => {});
     const ctx = buildContext({
       commandText: "/pi-login copy gliaclaw",
       privateConversation: true,
       services: {
         vaultManager,
+        provisioner: { remove } as any,
         sandbox: { type: "image", image: "ubuntu:24.04" },
       },
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
     expect(vaultManager.copySharedVaultTo).toHaveBeenCalledWith("gliaclaw", "c123");
+    expect(ctx.services.runtime?.refreshConversationEnvironment).toHaveBeenCalledWith("C123");
+    expect(remove).toHaveBeenCalledWith("c123");
     expect(ctx.responseCtx.responses[0]).toContain("Copied shared login profile `gliaclaw`");
+    expect(ctx.responseCtx.responses[0]).toContain("will be recreated with the copied env");
+  });
+
+  test("does not restart an image sandbox while the target conversation is running", async () => {
+    const vaultManager = fakeVaultManager();
+    vaultManager.copySharedVaultTo = vi.fn(() => ({ envKeysCopied: 2, filesCopied: 1 }));
+    const remove = vi.fn(async () => {});
+    const ctx = buildContext({
+      commandText: "/pi-login copy gliaclaw",
+      privateConversation: true,
+      services: {
+        vaultManager,
+        provisioner: { remove } as any,
+        runtime: {
+          createSessionSandbox: vi.fn(),
+          forceStop: vi.fn(),
+          getRunningSessions: vi.fn().mockReturnValue([{ sessionKey: "C123:thread-1" }]),
+          handleEvent: vi.fn(),
+          handleNewCommand: vi.fn(),
+          handleStop: vi.fn(),
+          isRunning: vi.fn().mockReturnValue(true),
+          refreshConversationEnvironment: vi.fn().mockReturnValue(false),
+          runSession: vi.fn(),
+          shutdown: vi.fn(),
+          switchConversationModel: vi.fn(),
+        } as any,
+        sandbox: { type: "image", image: "ubuntu:24.04" },
+      },
+    });
+
+    expect(await handler.tryHandle(ctx)).toBe(true);
+    expect(remove).not.toHaveBeenCalled();
+    expect(ctx.services.runtime?.refreshConversationEnvironment).toHaveBeenCalledWith("C123");
+    expect(ctx.responseCtx.responses[0]).toContain("currently running");
   });
 
   test("uses vaultConversationId for vault routing when reply channel differs", async () => {

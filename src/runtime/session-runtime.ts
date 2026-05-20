@@ -45,6 +45,7 @@ export interface SessionRuntime extends BotHandler {
   runSession(options: RunSessionOptions): Promise<void>;
   createSessionSandbox(options: CreateSessionSandboxOptions): Promise<AgentRunner>;
   switchConversationModel(conversationId: string, provider: string, model: string): boolean;
+  refreshConversationEnvironment(conversationId: string): boolean;
   shutdown(timeoutMs?: number): Promise<void>;
 }
 
@@ -197,6 +198,24 @@ class MamaSessionRuntime implements SessionRuntime {
   }
 
   switchConversationModel(conversationId: string, _provider: string, _model: string): boolean {
+    return this.clearConversationStates(
+      conversationId,
+      `[${conversationId}] Model switched; cleared cached session runners`,
+    );
+  }
+
+  refreshConversationEnvironment(conversationId: string): boolean {
+    return this.clearConversationStates(
+      conversationId,
+      `[${conversationId}] Environment refreshed; cleared cached session runners`,
+    );
+  }
+
+  private isConversationSession(sessionKey: string, conversationId: string): boolean {
+    return sessionKey === conversationId || sessionKey.startsWith(`${conversationId}:`);
+  }
+
+  private clearConversationStates(conversationId: string, message: string): boolean {
     for (const [sessionKey, state] of this.conversationStates) {
       if (this.isConversationSession(sessionKey, conversationId) && state.running) {
         return false;
@@ -208,12 +227,8 @@ class MamaSessionRuntime implements SessionRuntime {
         this.conversationStates.delete(sessionKey);
       }
     }
-    log.logInfo(`[${conversationId}] Model switched; cleared cached session runners`);
+    log.logInfo(message);
     return true;
-  }
-
-  private isConversationSession(sessionKey: string, conversationId: string): boolean {
-    return sessionKey === conversationId || sessionKey.startsWith(`${conversationId}:`);
   }
 
   private async getOrCreateState({

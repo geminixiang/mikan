@@ -14,6 +14,26 @@ function ensureLoginVault(context: CommandContext): string {
   );
 }
 
+async function refreshCopiedVaultRuntime(
+  context: CommandContext,
+  vaultId: string,
+): Promise<string | undefined> {
+  if (context.services.sandbox.type !== "image") return undefined;
+
+  const targetConversationId = context.vaultConversationId ?? context.conversationId;
+  const cleared = context.services.runtime?.refreshConversationEnvironment(targetConversationId);
+  if (cleared === false) {
+    return "A session is currently running, so the sandbox was not restarted. The copied credentials will be applied after the run finishes and the sandbox is recreated.";
+  }
+
+  if (!context.services.provisioner) {
+    return "The cached session was refreshed. The sandbox will pick up copied credentials on the next provision.";
+  }
+
+  await context.services.provisioner.remove(vaultId);
+  return "The sandbox container was removed and will be recreated with the copied env and file mounts on the next message.";
+}
+
 export class LoginCommandHandler implements CommandHandler {
   async tryHandle(context: CommandContext): Promise<boolean> {
     const parsed = parseLoginCommand(context.commandText);
@@ -60,9 +80,10 @@ export class LoginCommandHandler implements CommandHandler {
       try {
         const vaultId = ensureLoginVault(context);
         const result = context.services.vaultManager.copySharedVaultTo(parsed.name, vaultId);
+        const refreshNote = await refreshCopiedVaultRuntime(context, vaultId);
         await replyWithContext(
           context.responseCtx,
-          `Copied shared login profile \`${parsed.name}\` into this conversation. Shared values overwrite matching conversation values; conversation-only values are kept. (${result.envKeysCopied} env key(s), ${result.filesCopied} file(s))`,
+          `Copied shared login profile \`${parsed.name}\` into this conversation. Shared values overwrite matching conversation values; conversation-only values are kept. (${result.envKeysCopied} env key(s), ${result.filesCopied} file(s))${refreshNote ? ` ${refreshNote}` : ""}`,
         );
       } catch (error) {
         await replyWithContext(
