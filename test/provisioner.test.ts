@@ -371,7 +371,7 @@ describe("DockerContainerManager", () => {
     expect(execMock.mock.calls[4][1][0]).toBe("inspect");
   });
 
-  test("passes --cpus and --memory to docker run when limits are configured", async () => {
+  test("passes --cpus, --memory, and --memory-swap to docker run when limits are configured", async () => {
     const execMock = vi
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
       .mockRejectedValueOnce(new Error("No such object"))
@@ -402,6 +402,8 @@ describe("DockerContainerManager", () => {
       "0.5",
       "--memory",
       "512m",
+      "--memory-swap",
+      "512m",
       "ubuntu:24.04",
       "sleep",
       "infinity",
@@ -411,6 +413,8 @@ describe("DockerContainerManager", () => {
       "--cpus",
       "0.5",
       "--memory",
+      "512m",
+      "--memory-swap",
       "512m",
       "mama-sandbox-slack-u123",
     ]);
@@ -435,6 +439,8 @@ describe("DockerContainerManager", () => {
       "--cpus",
       "1",
       "--memory",
+      "1g",
+      "--memory-swap",
       "1g",
       "mama-sandbox-slack-u123",
     ]);
@@ -473,7 +479,7 @@ describe("DockerContainerManager", () => {
     expect(status).toEqual({ limits: { cpus: "2", memory: "4g" }, boosted: true });
     expect(execMock.mock.calls.at(-1)).toEqual([
       "docker",
-      ["update", "--cpus", "2", "--memory", "4g", "mama-sandbox-slack-u123"],
+      ["update", "--cpus", "2", "--memory", "4g", "--memory-swap", "4g", "mama-sandbox-slack-u123"],
     ]);
   });
 

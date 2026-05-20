@@ -338,7 +338,13 @@ export class DockerContainerManager {
   private resourceLimitArgs(limits: ResourceLimits | undefined): string[] {
     const args: string[] = [];
     if (limits?.cpus) args.push("--cpus", limits.cpus);
-    if (limits?.memory) args.push("--memory", limits.memory);
+    if (limits?.memory) {
+      args.push("--memory", limits.memory);
+      // Keep Docker's no-extra-swap semantics explicit. Docker requires
+      // memory-swap to be updated together when raising an existing memory
+      // limit above the current swap limit.
+      args.push("--memory-swap", limits.memory);
+    }
     return args;
   }
 
