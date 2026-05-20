@@ -1,6 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { createAttachTool } from "../adapters/slack/tools/attach.js";
-import type { Executor } from "../sandbox.js";
+import type { Executor } from "../sandbox/index.js";
 import { createBashTool } from "./bash.js";
 import { createEditTool } from "./edit.js";
 import { createEventTool, HostEventStore } from "./event.js";

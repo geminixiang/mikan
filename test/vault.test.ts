@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ActorExecutionResolver } from "../src/execution-resolver.js";
 import { DockerContainerManager } from "../src/provisioner.js";
-import { HostExecutor } from "../src/sandbox.js";
+import { HostExecutor } from "../src/sandbox/index.js";
 import { resolveActorVaultKey } from "../src/vault-routing.js";
 import { FileVaultManager, parseEnvFile, sharedVaultKey } from "../src/vault.js";
 

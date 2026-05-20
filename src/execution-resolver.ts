@@ -3,7 +3,7 @@ import { join } from "path";
 import { loadAgentConfig, loadAgentConfigForConversation } from "./config.js";
 import { ensureDirExists, isRecord, readJsonFileIfExists } from "./file-guards.js";
 import { DockerContainerManager, type ContainerMount } from "./provisioner.js";
-import { createExecutor, type Executor, type SandboxConfig } from "./sandbox.js";
+import { createExecutor, type Executor, type SandboxConfig } from "./sandbox/index.js";
 import type { ResolvedVault, VaultManager } from "./vault.js";
 import { resolveActorVaultKey } from "./vault-routing.js";
 

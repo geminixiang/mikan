@@ -33,7 +33,7 @@ import {
   type Executor,
   type RuntimePathContext,
   type SandboxConfig,
-} from "./sandbox.js";
+} from "./sandbox/index.js";
 import { createMountedRuntimePathContext } from "./sandbox/path-context.js";
 import { addLifecycleBreadcrumb, metricAttributes } from "./sentry.js";
 import type { VaultManager } from "./vault.js";
@@ -1293,10 +1293,6 @@ function extractToolResultText(result: unknown): string {
 
   return JSON.stringify(result);
 }
-
-// ============================================================================
-// Agent runner
-// ============================================================================
 
 /**
  * Create a new AgentRunner for a channel.

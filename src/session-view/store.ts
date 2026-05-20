@@ -41,10 +41,7 @@ export class InMemorySessionViewTokenStore {
 
   peek(rawToken: string): SessionViewToken | undefined {
     const entry = this.tokens.get(rawToken);
-    if (!entry || Date.now() > entry.expiresAt) {
-      if (entry) this.tokens.delete(rawToken);
-      return undefined;
-    }
+    if (!entry || Date.now() > entry.expiresAt) return undefined;
     return entry;
   }
 

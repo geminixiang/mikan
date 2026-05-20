@@ -1,4 +1,4 @@
-export { createDefaultCommandRegistry, CommandRegistry } from "./commands/index.js";
+export { defaultCommandHandlers, dispatchCommand } from "./commands/index.js";
 export type { CommandContext, CommandHandler, CommandServices } from "./commands/index.js";
 export {
   createSessionRuntime,

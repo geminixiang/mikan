@@ -7,7 +7,7 @@ import {
   SandboxError,
   createExecutor,
   parseSandboxArg,
-} from "../src/sandbox.js";
+} from "../src/sandbox/index.js";
 
 describe("parseSandboxArg", () => {
   afterEach(() => {

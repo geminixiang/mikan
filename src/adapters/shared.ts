@@ -12,10 +12,6 @@ import { join } from "path";
 import type { BotHandler } from "../adapter.js";
 import * as log from "../log.js";
 
-// ============================================================================
-// Per-channel queue for sequential processing
-// ============================================================================
-
 export class ChannelQueue {
   private queue: Array<() => Promise<void>> = [];
   private processing = false;
@@ -47,10 +43,6 @@ export class ChannelQueue {
     this.processNext();
   }
 }
-
-// ============================================================================
-// Exponential backoff retry utility
-// ============================================================================
 
 export interface RetryOptions {
   /** Predicate that returns true when an error indicates a platform-side rate limit. */
@@ -118,10 +110,6 @@ export function splitText(
   return parts;
 }
 
-// ============================================================================
-// Per-conversation log.jsonl appender
-// ============================================================================
-
 /**
  * Append a JSON-serializable entry to `${workingDir}/${channel}/log.jsonl`,
  * creating the directory on first use. This is the single write path every
@@ -151,10 +139,6 @@ export function appendBotResponseLog(
     isBot: true,
   });
 }
-
-// ============================================================================
-// Stop-target resolution
-// ============================================================================
 
 export interface ResolveStopTargetInput {
   handler: BotHandler;

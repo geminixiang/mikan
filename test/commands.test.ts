@@ -4,14 +4,14 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Bot, ChatResponseContext } from "../src/adapter.js";
 import { AutoReplyCommandHandler } from "../src/commands/auto-reply.js";
-import { CommandRegistry } from "../src/commands/registry.js";
+import { dispatchCommand } from "../src/commands/registry.js";
 import { LoginCommandHandler } from "../src/commands/login.js";
 import { NewCommandHandler } from "../src/commands/new.js";
 import { SandboxCommandHandler } from "../src/commands/sandbox.js";
 import { SessionViewCommandHandler } from "../src/commands/session-view.js";
 import type { CommandContext, CommandHandler, CommandServices } from "../src/commands/types.js";
 import { createManagedSessionFile, getChannelSessionDir } from "../src/session-store.js";
-import type { SandboxConfig } from "../src/sandbox.js";
+import type { SandboxConfig } from "../src/sandbox/index.js";
 import type { VaultManager } from "../src/vault.js";
 
 // ── Fakes ────────────────────────────────────────────────────────────────────
@@ -167,16 +167,13 @@ function buildContext(args: BuildContextArgs): CommandContext & {
   };
 }
 
-// ── CommandRegistry ──────────────────────────────────────────────────────────
-
-describe("CommandRegistry", () => {
+describe("dispatchCommand", () => {
   test("returns false when no handler accepts the command", async () => {
     const a: CommandHandler = { tryHandle: vi.fn(async () => false) };
     const b: CommandHandler = { tryHandle: vi.fn(async () => false) };
-    const registry = new CommandRegistry([a, b]);
     const ctx = buildContext({ commandText: "hello" });
 
-    const handled = await registry.handle(ctx);
+    const handled = await dispatchCommand([a, b], ctx);
 
     expect(handled).toBe(false);
     expect(a.tryHandle).toHaveBeenCalledOnce();
@@ -186,10 +183,9 @@ describe("CommandRegistry", () => {
   test("short-circuits on the first handler that accepts", async () => {
     const a: CommandHandler = { tryHandle: vi.fn(async () => true) };
     const b: CommandHandler = { tryHandle: vi.fn(async () => true) };
-    const registry = new CommandRegistry([a, b]);
     const ctx = buildContext({ commandText: "/login" });
 
-    const handled = await registry.handle(ctx);
+    const handled = await dispatchCommand([a, b], ctx);
 
     expect(handled).toBe(true);
     expect(a.tryHandle).toHaveBeenCalledOnce();
@@ -199,10 +195,9 @@ describe("CommandRegistry", () => {
   test("falls through to the next handler when the first declines", async () => {
     const a: CommandHandler = { tryHandle: vi.fn(async () => false) };
     const b: CommandHandler = { tryHandle: vi.fn(async () => true) };
-    const registry = new CommandRegistry([a, b]);
     const ctx = buildContext({ commandText: "/session" });
 
-    const handled = await registry.handle(ctx);
+    const handled = await dispatchCommand([a, b], ctx);
 
     expect(handled).toBe(true);
     expect(a.tryHandle).toHaveBeenCalledOnce();

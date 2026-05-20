@@ -2,7 +2,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { extname } from "path";
-import type { Executor } from "../sandbox.js";
+import type { Executor } from "../sandbox/index.js";
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
