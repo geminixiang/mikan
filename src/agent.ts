@@ -223,6 +223,17 @@ Use the \`event\` tool to create events. It writes to the correct host-side even
 Do not create event files with bash in \`${workspaceRoot}/events/\` from this sandbox unless you have explicitly verified that path is mounted back to the host-side mama events directory.`;
 }
 
+export function resolveTriggerAttribution(
+  message: Pick<ChatMessage, "id" | "text" | "userName">,
+): string | undefined {
+  const eventTextMatch = message.text.match(/^\[EVENT:([^:]+):/);
+  if (eventTextMatch) return `[event: ${eventTextMatch[1]}]`;
+  const eventIdMatch = message.id.match(/^event:([^:]+)/);
+  if (eventIdMatch) return `[event: ${eventIdMatch[1]}]`;
+  if (message.userName) return `@${message.userName}`;
+  return undefined;
+}
+
 function buildSystemPrompt(
   workspacePath: string,
   conversationId: string,
@@ -233,6 +244,7 @@ function buildSystemPrompt(
   platform: PlatformInfo,
   skills: Skill[],
   isSyntheticEvent = false,
+  triggerAttribution?: string,
 ): string {
   const { workspaceRoot, conversationPath, scratchPath } = buildRuntimePaths(
     workspacePath,
@@ -264,6 +276,15 @@ function buildSystemPrompt(
 - Complete the task directly. Avoid generic greetings, self-introductions, or boilerplate offers to help.
 - For reminders/follow-ups, prefer a short direct response that sounds like a continuation of prior intent.
 - If the event text includes tone, brevity, or language instructions, follow them literally.
+`
+    : "";
+  const attributionInstructions = triggerAttribution
+    ? `
+## Attribution
+Always end your final ${platform.name} response and any GitHub issue/PR comments or descriptions you write via tools with:
+_Triggered by ${triggerAttribution}_
+
+Do not add this to \`[SILENT]\` responses.
 `
     : "";
 
@@ -408,7 +429,7 @@ Format: \`{"date":"...","ts":"...","user":"...","userName":"...","text":"...","i
 The log contains user messages and your final responses (not tool calls/results).
 Use \`log.jsonl\` for quick grep-style history. Use \`${conversationPath}/sessions/\` when you need structured turns, tool outputs, or branch lineage.
 ${isContainerLike || isFirecracker ? "Install jq: apt-get install jq" : ""}
-
+${attributionInstructions}
 \`\`\`bash
 # Recent messages
 tail -30 log.jsonl | jq -c '{date: .date[0:19], user: (.userName // .user), text}'
@@ -491,6 +512,7 @@ interface PreparedRunContext {
   runQueue: ReturnType<typeof createRunQueue>;
   userMessage: string;
   imageAttachments: ImageContent[];
+  triggerAttribution?: string;
 }
 
 interface ConfiguredAgentSession {
@@ -797,10 +819,21 @@ function getFinalAssistantText(session: AgentSession): string {
   );
 }
 
+export function appendTriggerAttribution(
+  text: string,
+  triggerAttribution: string | undefined,
+): string {
+  if (!triggerAttribution) return text;
+  const suffix = `_Triggered by ${triggerAttribution}_`;
+  if (text.trimEnd().endsWith(suffix)) return text;
+  return `${text.trimEnd()}\n\n${suffix}`;
+}
+
 async function finalizeRunResponse(
   responseCtx: ChatResponseContext,
   session: AgentSession,
   runState: RunnerSessionState,
+  triggerAttribution?: string,
 ): Promise<void> {
   if (runState.stopReason === "error" && runState.errorMessage) {
     try {
@@ -830,7 +863,7 @@ async function finalizeRunResponse(
   if (!finalText.trim()) return;
 
   try {
-    await responseCtx.replaceResponse(finalText);
+    await responseCtx.replaceResponse(appendTriggerAttribution(finalText, triggerAttribution));
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     log.logWarning("Failed to replace message with final text", errMsg);
@@ -995,6 +1028,7 @@ async function prepareRunContext(params: {
 
   const memory = await getMemory(conversationDir);
   const skills = loadMamaSkills(conversationDir, pathContext.runtimeWorkspaceRoot);
+  const triggerAttribution = resolveTriggerAttribution(message);
   const systemPrompt = buildSystemPrompt(
     pathContext.runtimeWorkspaceRoot,
     conversationId,
@@ -1005,6 +1039,7 @@ async function prepareRunContext(params: {
     platform,
     skills,
     message.id.startsWith("event:"),
+    triggerAttribution,
   );
   session.agent.state.systemPrompt = systemPrompt;
 
@@ -1046,6 +1081,7 @@ async function prepareRunContext(params: {
     runQueue,
     userMessage,
     imageAttachments,
+    triggerAttribution,
     pathContext,
   };
 }
@@ -1436,7 +1472,7 @@ export async function createRunner(
       // Wait for queued messages
       await prepared.runQueue.wait();
 
-      await finalizeRunResponse(responseCtx, session, runState);
+      await finalizeRunResponse(responseCtx, session, runState, prepared.triggerAttribution);
 
       await reportUsageSummary({
         session,

@@ -1,7 +1,9 @@
 import { describe, expect, test } from "vitest";
 import {
+  appendTriggerAttribution,
   buildEventFilesystemInstructions,
   buildInitialPathContextForTest,
+  resolveTriggerAttribution,
   translateRuntimePathToHost,
 } from "../src/agent.js";
 
@@ -20,6 +22,57 @@ describe("agent prompt event filesystem instructions", () => {
     expect(instructions).toContain("Use the `event` tool");
     expect(instructions).toContain("Do not create event files with bash");
     expect(instructions).not.toContain("cat > /workspace/events");
+  });
+});
+
+describe("trigger attribution", () => {
+  test("uses event filename from event prompt marker", () => {
+    expect(
+      resolveTriggerAttribution({
+        id: "123.456",
+        text: "[EVENT:daily-summary.json:periodic:2026-05-19T00:00:00Z] summarize",
+      }),
+    ).toBe("[event: daily-summary.json]");
+  });
+
+  test("uses synthetic event id when prompt has no event marker", () => {
+    expect(
+      resolveTriggerAttribution({
+        id: "event:daily-summary",
+        text: "Handle the following recurring task.",
+      }),
+    ).toBe("[event: daily-summary]");
+  });
+
+  test("uses user name for normal user-triggered messages", () => {
+    expect(resolveTriggerAttribution({ id: "123.456", text: "hello", userName: "david" })).toBe(
+      "@david",
+    );
+  });
+
+  test("omits attribution when no trigger identity is available", () => {
+    expect(resolveTriggerAttribution({ id: "123.456", text: "hello" })).toBeUndefined();
+  });
+});
+
+describe("append trigger attribution", () => {
+  test("appends attribution to final chat response", () => {
+    expect(appendTriggerAttribution("Done.", "@david")).toBe("Done.\n\n_Triggered by @david_");
+  });
+
+  test("does not duplicate existing attribution", () => {
+    expect(appendTriggerAttribution("Done.\n\n_Triggered by @david_", "@david")).toBe(
+      "Done.\n\n_Triggered by @david_",
+    );
+  });
+
+  test("leaves text unchanged without attribution", () => {
+    expect(appendTriggerAttribution("Done.", undefined)).toBe("Done.");
+  });
+
+  test("does not duplicate when attribution contains underscores", () => {
+    const already = "Done.\n\n_Triggered by [event: foo_bar.json]_";
+    expect(appendTriggerAttribution(already, "[event: foo_bar.json]")).toBe(already);
   });
 });
 
