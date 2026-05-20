@@ -195,15 +195,19 @@ export class SlackBot implements Bot {
     await Promise.all([this.fetchUsers(), this.fetchChannels()]);
     log.logInfo(`Loaded ${this.channels.size} channels, ${this.users.size} users`);
 
-    await this.backfillAllChannels();
+    // Record startup time before opening the socket. Slack may replay older events;
+    // those should be logged but not processed. Backfill runs in the background up
+    // to this timestamp so startup is not blocked by one history call per channel.
+    this.startupTs = (Date.now() / 1000).toFixed(6);
 
     this.setupEventHandlers();
     await this.socketClient.start();
 
-    // Record startup time - messages older than this are just logged, not processed
-    this.startupTs = (Date.now() / 1000).toFixed(6);
-
     log.logConnected("Slack");
+
+    void this.backfillAllChannels(this.startupTs).catch((error) => {
+      log.logWarning("Slack backfill failed", String(error));
+    });
   }
 
   getUser(userId: string): SlackUser | undefined {
@@ -1443,13 +1447,13 @@ export class SlackBot implements Bot {
     return timestamps;
   }
 
-  private async backfillChannel(channelId: string): Promise<number> {
+  private async backfillChannel(channelId: string, upperBoundTs?: string): Promise<number> {
     const existingTs = await this.getExistingTimestamps(channelId);
 
     // Find the biggest ts in log.jsonl
-    let latestTs: string | undefined;
+    let lastLoggedTs: string | undefined;
     for (const ts of existingTs) {
-      if (!latestTs || parseFloat(ts) > parseFloat(latestTs)) latestTs = ts;
+      if (!lastLoggedTs || parseFloat(ts) > parseFloat(lastLoggedTs)) lastLoggedTs = ts;
     }
 
     type Message = {
@@ -1475,7 +1479,8 @@ export class SlackBot implements Bot {
     do {
       const result = await this.webClient.conversations.history({
         channel: channelId,
-        oldest: latestTs, // Only fetch messages newer than what we have
+        oldest: lastLoggedTs, // Only fetch messages newer than what we have
+        latest: upperBoundTs, // Do not race live socket events after startup
         inclusive: false,
         limit: 1000,
         cursor,
@@ -1549,7 +1554,7 @@ export class SlackBot implements Bot {
     return relevantMessages.length;
   }
 
-  private async backfillAllChannels(): Promise<void> {
+  private async backfillAllChannels(upperBoundTs?: string): Promise<void> {
     const startTime = Date.now();
 
     // Only backfill channels that already have a log.jsonl (mama has interacted with them before)
@@ -1566,7 +1571,7 @@ export class SlackBot implements Bot {
     let totalMessages = 0;
     for (const [channelId, channel] of channelsToBackfill) {
       try {
-        const count = await this.backfillChannel(channelId);
+        const count = await this.backfillChannel(channelId, upperBoundTs);
         if (count > 0) log.logBackfillChannel(channel.name, count);
         totalMessages += count;
       } catch (error) {
