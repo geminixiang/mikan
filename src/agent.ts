@@ -23,7 +23,9 @@ import type {
   ChatToolResult,
   ConversationKind,
   PlatformInfo,
+  PlatformName,
 } from "./adapter.js";
+import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import { loadAgentConfigForConversation } from "./config.js";
 import { ActorExecutionResolver } from "./execution-resolver.js";
 import * as log from "./log.js";
@@ -833,7 +835,10 @@ async function finalizeRunResponse(
   responseCtx: ChatResponseContext,
   session: AgentSession,
   runState: RunnerSessionState,
-  triggerAttribution?: string,
+  options?: {
+    triggerAttribution?: string;
+    createOverflowLink?: () => string;
+  },
 ): Promise<void> {
   if (runState.stopReason === "error" && runState.errorMessage) {
     try {
@@ -863,7 +868,10 @@ async function finalizeRunResponse(
   if (!finalText.trim()) return;
 
   try {
-    await responseCtx.replaceResponse(appendTriggerAttribution(finalText, triggerAttribution));
+    await responseCtx.replaceResponse(
+      appendTriggerAttribution(finalText, options?.triggerAttribution),
+      { createOverflowLink: options?.createOverflowLink },
+    );
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     log.logWarning("Failed to replace message with final text", errMsg);
@@ -1346,6 +1354,10 @@ export async function createRunner(
   sessionScope: ResolvedSessionScope,
   vaultManager?: VaultManager,
   provisioner?: DockerContainerManager,
+  sessionView?: {
+    tokenStore: SessionViewTokenStoreLike;
+    portalBaseUrl?: string;
+  },
 ): Promise<AgentRunner> {
   const agentConfig = loadAgentConfigForConversation(conversationDir);
 
@@ -1472,7 +1484,27 @@ export async function createRunner(
       // Wait for queued messages
       await prepared.runQueue.wait();
 
-      await finalizeRunResponse(responseCtx, session, runState, prepared.triggerAttribution);
+      const sessionViewTokenStore = sessionView?.tokenStore;
+      const sessionViewPortalBaseUrl = sessionView?.portalBaseUrl;
+      const createOverflowLink =
+        sessionViewTokenStore && sessionViewPortalBaseUrl
+          ? () => {
+              const token = sessionViewTokenStore.create(
+                platform.name as PlatformName,
+                message.userId,
+                conversationId,
+                message.sessionKey,
+                contextFile,
+                message.userName,
+              );
+              return `${sessionViewPortalBaseUrl}/session?token=${token.token}`;
+            }
+          : undefined;
+
+      await finalizeRunResponse(responseCtx, session, runState, {
+        triggerAttribution: prepared.triggerAttribution,
+        createOverflowLink,
+      });
 
       await reportUsageSummary({
         session,

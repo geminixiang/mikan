@@ -24,7 +24,7 @@ export interface ChatToolResult {
 
 export interface ChatResponseContext {
   respond(text: string): Promise<void>;
-  replaceResponse(text: string): Promise<void>;
+  replaceResponse(text: string, options?: { createOverflowLink?: () => string }): Promise<void>;
   respondDiagnostic(text: string, options?: { style?: "muted" | "error" }): Promise<void>;
   respondToolResult(result: ChatToolResult): Promise<void>;
   setTyping(isTyping: boolean): Promise<void>;

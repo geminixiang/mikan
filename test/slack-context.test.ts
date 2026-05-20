@@ -378,27 +378,37 @@ describe("text accumulation", () => {
     expect(postedText).toContain("message truncated");
   });
 
-  test("replaceResponse posts long final text to diagnostics under the bot message", async () => {
+  test("replaceResponse posts full text without minting an overflow link when Slack accepts it", async () => {
+    const bot = makeSlackBot({ postMessage: vi.fn().mockResolvedValue("BOT_MSG") });
+    const event = makeEvent({ thread_ts: undefined });
+    const { responseCtx } = createSlackAdapters(event, bot);
+    const createOverflowLink = vi.fn(() => "https://portal.example/session?token=abc");
+    await responseCtx.replaceResponse("x".repeat(6000), { createOverflowLink });
+    const mainText = vi.mocked(bot.postMessage).mock.calls[0][1] as string;
+    expect(mainText).toContain("x".repeat(6000));
+    expect(mainText).not.toContain("portal.example");
+    expect(createOverflowLink).not.toHaveBeenCalled();
+  });
+
+  test("replaceResponse falls back to short text with session link when Slack says msg_too_long", async () => {
+    const tooLongError = new Error("An API error occurred: msg_too_long") as Error & {
+      data?: { error: string };
+    };
+    tooLongError.data = { error: "msg_too_long" };
     const bot = makeSlackBot({
-      postMessage: vi.fn().mockResolvedValue("BOT_MSG"),
-      postInThread: vi.fn().mockResolvedValue("THREAD_MSG"),
+      postMessage: vi.fn().mockRejectedValueOnce(tooLongError).mockResolvedValueOnce("BOT_MSG"),
     });
     const event = makeEvent({ thread_ts: undefined });
     const { responseCtx } = createSlackAdapters(event, bot);
-    const longText = `${"x".repeat(35900)}END`;
-    await responseCtx.replaceResponse(longText);
-    expect(bot.postMessage).toHaveBeenNthCalledWith(
-      1,
-      "C001",
-      expect.stringContaining("see thread for full response"),
-    );
-    expect(bot.postInThread).toHaveBeenCalledTimes(2);
-    expect(bot.postInThread).toHaveBeenNthCalledWith(
-      2,
-      "C001",
-      "BOT_MSG",
-      expect.stringContaining("END"),
-    );
+    const longText = `${"x".repeat(6000)}END`;
+    const createOverflowLink = vi.fn(() => "https://portal.example/session?token=abc");
+    await responseCtx.replaceResponse(longText, { createOverflowLink });
+    expect(bot.postMessage).toHaveBeenCalledTimes(2);
+    expect(createOverflowLink).toHaveBeenCalledTimes(1);
+    const fallbackText = vi.mocked(bot.postMessage).mock.calls[1][1] as string;
+    expect(fallbackText).toContain("message too long for Slack");
+    expect(fallbackText).toContain("<https://portal.example/session?token=abc|open>");
+    expect(fallbackText).not.toContain("END");
   });
 });
 

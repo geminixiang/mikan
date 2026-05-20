@@ -265,6 +265,10 @@ class MamaSessionRuntime implements SessionRuntime {
         sessionScope,
         this.options.vaultManager,
         this.options.provisioner,
+        {
+          tokenStore: this.options.sessionViewTokenStore,
+          portalBaseUrl: this.options.portalBaseUrl,
+        },
       ),
       stopRequested: false,
       lastAccessedAt: Date.now(),
