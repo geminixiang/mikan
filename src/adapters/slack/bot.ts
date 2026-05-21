@@ -242,9 +242,19 @@ export class SlackBot implements Bot {
     });
   }
 
-  async postEphemeral(channel: string, user: string, text: string): Promise<void> {
+  async postEphemeral(
+    channel: string,
+    user: string,
+    text: string,
+    threadTs?: string,
+  ): Promise<void> {
     return slackRetry(async () => {
-      await this.webClient.chat.postEphemeral({ channel, user, text });
+      await this.webClient.chat.postEphemeral({
+        channel,
+        user,
+        text,
+        ...(threadTs ? { thread_ts: threadTs } : {}),
+      });
     });
   }
 
@@ -253,9 +263,16 @@ export class SlackBot implements Bot {
     user: string,
     text: string,
     blocks: object[],
+    threadTs?: string,
   ): Promise<void> {
     return slackRetry(async () => {
-      await this.webClient.chat.postEphemeral({ channel, user, text, blocks: blocks as any });
+      await this.webClient.chat.postEphemeral({
+        channel,
+        user,
+        text,
+        blocks: blocks as any,
+        ...(threadTs ? { thread_ts: threadTs } : {}),
+      });
     });
   }
 
@@ -692,7 +709,7 @@ export class SlackBot implements Bot {
     userName: string | undefined,
     text: string,
     ts: string,
-    options: { ephemeralChannelId?: string } = {},
+    options: { ephemeralChannelId?: string; threadTs?: string } = {},
   ): BotAdapters {
     const message: ChatMessage = {
       id: ts,
@@ -706,7 +723,12 @@ export class SlackBot implements Bot {
 
     const respond = async (responseText: string) => {
       if (options.ephemeralChannelId) {
-        await this.postEphemeral(options.ephemeralChannelId, userId, responseText);
+        await this.postEphemeral(
+          options.ephemeralChannelId,
+          userId,
+          responseText,
+          options.threadTs,
+        );
         return;
       }
       const messageTs = await this.postMessage(conversationId, responseText);
@@ -721,7 +743,13 @@ export class SlackBot implements Bot {
           : responseText;
       const blocks = [{ type: "context", elements: [{ type: "mrkdwn", text: blockText }] }];
       if (options.ephemeralChannelId) {
-        await this.postEphemeralBlocks(options.ephemeralChannelId, userId, responseText, blocks);
+        await this.postEphemeralBlocks(
+          options.ephemeralChannelId,
+          userId,
+          responseText,
+          blocks,
+          options.threadTs,
+        );
         return;
       }
       const messageTs = await this.postMessageBlocks(conversationId, responseText, blocks);
@@ -935,6 +963,7 @@ export class SlackBot implements Bot {
     channel_id: string;
     user_id: string;
     user_name?: string;
+    thread_ts?: string;
   }): Promise<void> {
     const conversationId = payload.channel_id;
     const isDirectMessage = conversationId.startsWith("D");
@@ -951,9 +980,10 @@ export class SlackBot implements Bot {
       text: commandText,
       attachments: [],
       isBot: false,
+      threadTs: payload.thread_ts,
     });
 
-    const sessionKey = conversationId;
+    const sessionKey = resolveSlackSessionKey(conversationId, payload.thread_ts);
     const event: BotEvent = {
       type: isDirectMessage ? "dm" : "mention",
       conversationId,
@@ -962,6 +992,7 @@ export class SlackBot implements Bot {
       user: payload.user_id,
       text: commandText,
       attachments: [],
+      thread_ts: payload.thread_ts,
       sessionKey,
     };
 
@@ -971,7 +1002,9 @@ export class SlackBot implements Bot {
       userName,
       commandText,
       eventTs,
-      isDirectMessage ? {} : { ephemeralChannelId: conversationId },
+      isDirectMessage
+        ? { threadTs: payload.thread_ts }
+        : { ephemeralChannelId: conversationId, threadTs: payload.thread_ts },
     );
 
     await this.handler.handleEvent(event, this, adapters, false);
@@ -1235,6 +1268,7 @@ export class SlackBot implements Bot {
         channel_id?: string;
         user_id?: string;
         user_name?: string;
+        thread_ts?: string;
       };
 
       await ack();
@@ -1265,6 +1299,7 @@ export class SlackBot implements Bot {
                   channel_id: payload.channel_id,
                   user_id: payload.user_id,
                   user_name: payload.user_name,
+                  thread_ts: payload.thread_ts,
                 })
               : payload.command === "/pi-model"
                 ? this.routeSlashModelCommand({
