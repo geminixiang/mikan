@@ -148,12 +148,25 @@ export interface WaitForThreadBotReplyOptions {
   excludeTs: Set<string>;
   timeoutMs: number;
   pollMs: number;
+  textIncludes?: string;
+  textMatches?: RegExp;
 }
 
 export async function waitForThreadBotReply(
   opts: WaitForThreadBotReplyOptions,
 ): Promise<SlackMessage | null> {
-  const { client, channel, botUserId, rootTs, startedAt, excludeTs, timeoutMs, pollMs } = opts;
+  const {
+    client,
+    channel,
+    botUserId,
+    rootTs,
+    startedAt,
+    excludeTs,
+    timeoutMs,
+    pollMs,
+    textIncludes,
+    textMatches,
+  } = opts;
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const threadMessages = await fetchThreadMessages(client, channel, rootTs).catch(
@@ -163,7 +176,13 @@ export async function waitForThreadBotReply(
       .filter((message) => String(message.ts) !== rootTs)
       .filter((message) => !excludeTs.has(String(message.ts)))
       .filter((message) => Number(message.ts) >= startedAt)
-      .find((message) => isTargetBotMessage(message, botUserId));
+      .filter((message) => isTargetBotMessage(message, botUserId))
+      .find((message) => {
+        const text = messageText(message);
+        if (textIncludes && !text.includes(textIncludes)) return false;
+        if (textMatches && !textMatches.test(text)) return false;
+        return true;
+      });
 
     if (reply) return reply;
     await sleep(pollMs);

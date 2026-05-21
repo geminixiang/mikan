@@ -522,7 +522,7 @@ export class EventsWatcher {
           conversationId: event.conversationId,
           conversationKind: event.conversationKind,
           deleteAfter,
-          isSyntheticEvent: true,
+          triggeredByEventFile: true,
           textLength: event.text.length,
         },
       });
@@ -533,7 +533,7 @@ export class EventsWatcher {
     }
 
     const eventId = filename.replace(/\.json$/i, "");
-    const syntheticEvent: BotEvent = {
+    const botEvent: BotEvent = {
       type: "mention",
       conversationId: event.conversationId,
       conversationKind: event.conversationKind,
@@ -543,7 +543,7 @@ export class EventsWatcher {
     };
 
     // Enqueue for processing
-    const enqueued = bot.enqueueEvent(syntheticEvent);
+    const enqueued = bot.enqueueEvent(botEvent);
 
     if (enqueued && deleteAfter) {
       // Delete file after successful enqueue (immediate and one-shot)
@@ -563,7 +563,7 @@ export class EventsWatcher {
           conversationId: event.conversationId,
           conversationKind: event.conversationKind,
           deleteAfter,
-          isSyntheticEvent: true,
+          triggeredByEventFile: true,
           textLength: event.text.length,
         },
       });

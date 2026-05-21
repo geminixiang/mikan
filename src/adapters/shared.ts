@@ -32,7 +32,6 @@ export interface ChatResponseErrorContext {
   threadTs?: string;
   replyTargetId?: string;
   replyToId?: number | null;
-  isSyntheticEvent?: boolean;
   isThreaded?: boolean;
   extra?: Record<string, unknown>;
 }
@@ -69,7 +68,6 @@ export function reportChatResponseError(err: unknown, context: ChatResponseError
       replyTargetId: context.replyTargetId,
       replyToId: context.replyToId,
       conversationKind: context.conversationKind,
-      isSyntheticEvent: context.isSyntheticEvent,
       isThreaded: context.isThreaded,
       ...context.extra,
     },

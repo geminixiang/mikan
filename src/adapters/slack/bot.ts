@@ -1,6 +1,6 @@
 import { SocketModeClient } from "@slack/socket-mode";
 import { WebClient } from "@slack/web-api";
-import { existsSync, linkSync, readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { readFile } from "fs/promises";
 import { basename, join } from "path";
 import type {
@@ -26,11 +26,18 @@ import {
   resolveStopTarget,
   withRetry,
 } from "../shared.js";
-import { getThreadSessionFile } from "../../session-store.js";
 import { evaluateAutoReplyPolicy } from "../../trigger.js";
 import { createSlackAdapters } from "./context.js";
-import { hasMaterializedSlackBranchSession } from "./branch-manager.js";
-import { resolveSlackSessionKey } from "./session.js";
+import { hasMaterializedSlackBranchSession, registerSlackForkSession } from "./branch-manager.js";
+import {
+  isSlackForkSessionKey,
+  planSlackAdapterSession,
+  planSlackEventForkRun,
+  resolveSlackSessionKey,
+} from "./session.js";
+import { reportUserFacingError } from "../../sentry.js";
+
+const SLACK_EVENT_ANCHOR_TEXT = "Working on it...";
 
 // Slack WebClient errors carry either `code: "rate_limited"` (retry-after) or
 // the legacy `data.error === "rate_limited"` / 429 status shape.
@@ -419,29 +426,6 @@ export class SlackBot implements Bot {
     appendBotResponseLog(this.workingDir, channel, text, ts, threadTs);
   }
 
-  aliasSyntheticEventThread(channel: string, threadTs: string, eventTs: string): void {
-    const conversationDir = join(this.workingDir, channel);
-    const source = getThreadSessionFile(conversationDir, `${channel}:${eventTs}`);
-    const target = getThreadSessionFile(conversationDir, `${channel}:${threadTs}`);
-    if (source === target) return;
-
-    try {
-      linkSync(source, target);
-      log.logInfo(`Aliased synthetic event session ${source} -> ${target}`);
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === "EEXIST") return;
-      if (code === "ENOENT") {
-        log.logWarning(`Cannot alias synthetic event session; source missing: ${source}`);
-        return;
-      }
-      log.logWarning(
-        `Failed to alias synthetic event session ${source} -> ${target}`,
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-  }
-
   getPlatformInfo(): PlatformInfo {
     return {
       name: "slack",
@@ -477,24 +461,65 @@ export class SlackBot implements Bot {
       return false;
     }
     log.logInfo(`Enqueueing event for ${conversationId}: ${event.text.substring(0, 50)}`);
-    queue.enqueue(() => {
-      const slackEvent: SlackEvent = {
-        type: event.type as SlackEvent["type"],
-        conversationId,
-        conversationKind: event.conversationKind,
-        channel: conversationId,
-        ts: event.ts,
-        thread_ts: event.thread_ts,
-        user: event.user,
-        text: event.text,
-        attachments: event.attachments?.map((attachment) => ({
-          original: attachment.name,
-          localPath: attachment.localPath,
-        })),
-        sessionKey: event.sessionKey,
-      };
-      const adapters = createSlackAdapters(slackEvent, this, true);
-      return this.handler.handleEvent(event, this, adapters, true);
+    queue.enqueue(async () => {
+      let anchorTs: string | undefined;
+      if (!event.thread_ts) {
+        try {
+          anchorTs = await this.postMessage(conversationId, SLACK_EVENT_ANCHOR_TEXT);
+        } catch (err) {
+          log.logWarning(
+            `Failed to post Slack event anchor for ${conversationId}`,
+            err instanceof Error ? err.message : String(err),
+          );
+          reportUserFacingError(err, {
+            domain: "events",
+            surface: "event_delivery",
+            operation: "slack_anchor_post",
+            severity: "error",
+            platform: "slack",
+            context: {
+              conversationId,
+              conversationKind: event.conversationKind,
+              eventTs: event.ts,
+              textLength: event.text.length,
+            },
+          });
+          throw err;
+        }
+      }
+      const eventPlan = planSlackEventForkRun(event, anchorTs);
+      const eventForRun = eventPlan.event;
+      if (eventPlan.initialMessageTs && eventForRun.sessionKey) {
+        registerSlackForkSession({
+          conversationDir: join(this.workingDir, conversationId),
+          sessionKey: eventForRun.sessionKey,
+        });
+      }
+
+      const runQueueKey = planSlackAdapterSession(eventForRun, {
+        initialMessageTs: eventPlan.initialMessageTs,
+      }).sessionKey;
+      this.getQueue(runQueueKey).enqueue(async () => {
+        const slackEvent: SlackEvent = {
+          type: eventForRun.type as SlackEvent["type"],
+          conversationId,
+          conversationKind: eventForRun.conversationKind,
+          channel: conversationId,
+          ts: eventForRun.ts,
+          thread_ts: eventForRun.thread_ts,
+          user: eventForRun.user,
+          text: eventForRun.text,
+          attachments: eventForRun.attachments?.map((attachment) => ({
+            original: attachment.name,
+            localPath: attachment.localPath,
+          })),
+          sessionKey: eventForRun.sessionKey,
+        };
+        const adapters = createSlackAdapters(slackEvent, this, {
+          initialMessageTs: eventPlan.initialMessageTs,
+        });
+        return this.handler.handleEvent(eventForRun, this, adapters);
+      });
     });
     return true;
   }
@@ -513,11 +538,13 @@ export class SlackBot implements Bot {
   }
 
   private resolveQueueKey(conversationId: string, sessionKey: string): string {
-    if (!sessionKey.includes(":")) return sessionKey;
-    if (sessionKey.includes(":event:")) return sessionKey;
-    return hasMaterializedSlackBranchSession(join(this.workingDir, conversationId), sessionKey)
-      ? sessionKey
-      : conversationId;
+    if (!isSlackForkSessionKey(sessionKey)) return sessionKey;
+    if (this.handler.isRunning(sessionKey)) return sessionKey;
+    return this.hasKnownForkSession(conversationId, sessionKey) ? sessionKey : conversationId;
+  }
+
+  private hasKnownForkSession(conversationId: string, sessionKey: string): boolean {
+    return hasMaterializedSlackBranchSession(join(this.workingDir, conversationId), sessionKey);
   }
 
   private shouldTriggerSharedThreadReply(channelId: string, threadTs?: string): boolean {
@@ -526,7 +553,7 @@ export class SlackBot implements Bot {
     const sessionKey = resolveSlackSessionKey(channelId, threadTs);
     if (this.handler.isRunning(sessionKey)) return true;
 
-    return hasMaterializedSlackBranchSession(join(this.workingDir, channelId), sessionKey);
+    return this.hasKnownForkSession(channelId, sessionKey);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -852,7 +879,7 @@ export class SlackBot implements Bot {
       isDirectMessage ? {} : { ephemeralChannelId: sourceChannelId },
     );
 
-    await this.handler.handleEvent(event, this, adapters, false);
+    await this.handler.handleEvent(event, this, adapters);
   }
 
   private async routeSlashNewCommand(payload: {
@@ -935,7 +962,7 @@ export class SlackBot implements Bot {
       isDirectMessage ? {} : { ephemeralChannelId: conversationId },
     );
 
-    await this.handler.handleEvent(event, this, adapters, false);
+    await this.handler.handleEvent(event, this, adapters);
   }
 
   private async routeSlashSandboxCommand(payload: {
@@ -1007,7 +1034,7 @@ export class SlackBot implements Bot {
         : { ephemeralChannelId: conversationId, threadTs: payload.thread_ts },
     );
 
-    await this.handler.handleEvent(event, this, adapters, false);
+    await this.handler.handleEvent(event, this, adapters);
   }
 
   private setupEventHandlers(): void {
@@ -1086,12 +1113,11 @@ export class SlackBot implements Bot {
 
       this.getQueue(this.resolveQueueKey(e.channel, sessionKey)).enqueue(async () => {
         slackEvent.attachments = await attachmentsPromise;
-        const adapters = createSlackAdapters(slackEvent, this, false);
+        const adapters = createSlackAdapters(slackEvent, this);
         return this.handler.handleEvent(
           slackEvent as unknown as import("../../adapter.js").BotEvent,
           this,
           adapters,
-          false,
         );
       });
 
@@ -1224,12 +1250,11 @@ export class SlackBot implements Bot {
         slackEvent.sessionKey = activeSessionKey;
         this.getQueue(this.resolveQueueKey(e.channel, activeSessionKey)).enqueue(async () => {
           slackEvent.attachments = await attachmentsPromise;
-          const adapters = createSlackAdapters(slackEvent, this, false);
+          const adapters = createSlackAdapters(slackEvent, this);
           return this.handler.handleEvent(
             slackEvent as unknown as import("../../adapter.js").BotEvent,
             this,
             adapters,
-            false,
           );
         });
       };

@@ -149,8 +149,8 @@ export class TelegramBot implements Bot {
     }
     log.logInfo(`Enqueueing event for ${conversationId}: ${event.text.substring(0, 50)}`);
     queue.enqueue(() => {
-      const adapters = createTelegramAdapters(event as TelegramEvent, this, true);
-      return this.handler.handleEvent(event, this, adapters, true);
+      const adapters = createTelegramAdapters(event as TelegramEvent, this);
+      return this.handler.handleEvent(event, this, adapters);
     });
     return true;
   }
@@ -443,8 +443,8 @@ export class TelegramBot implements Bot {
         attachments: [],
         isBot: false,
       });
-      const adapters = createTelegramAdapters(event, this, false);
-      await this.handler.handleEvent(event, this, adapters, false);
+      const adapters = createTelegramAdapters(event, this);
+      await this.handler.handleEvent(event, this, adapters);
     });
 
     // --- Catch-all for regular (non-command) messages ---
@@ -518,8 +518,8 @@ export class TelegramBot implements Bot {
         await this.postMessage(mc.chatId, formatAlreadyWorking("telegram", "/stop"));
       } else {
         this.getQueue(mc.sessionKey).enqueue(() => {
-          const adapters = createTelegramAdapters(event, this, false);
-          return this.handler.handleEvent(event, this, adapters, false);
+          const adapters = createTelegramAdapters(event, this);
+          return this.handler.handleEvent(event, this, adapters);
         });
       }
     });

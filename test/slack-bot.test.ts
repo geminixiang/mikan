@@ -308,7 +308,7 @@ describe("SlackBot slash commands", () => {
       onRunFinished: vi.fn(),
     });
     (handler.handleEvent as any).mockImplementation((event: any, eventBot: any, adapters: any) =>
-      orchestrator.runSession({ event, bot: eventBot, adapters, isSyntheticEvent: false }),
+      orchestrator.runSession({ event, bot: eventBot, adapters }),
     );
 
     const postEphemeral = vi.fn().mockResolvedValue(undefined);
@@ -712,6 +712,217 @@ describe("SlackBot queues follow-up messages", () => {
     });
   });
 
+  test("Slack events create a top-level anchor and run under that fork session", async () => {
+    const handler = makeHandler();
+    const handled = new Promise<void>((resolve, reject) => {
+      handler.handleEvent = vi.fn(async (event, _calledBot, adapters) => {
+        try {
+          expect(event).toMatchObject({
+            conversationId: "C123",
+            sessionKey: "C123:2000.0001",
+            ts: "event:deploy-reminder",
+          });
+          expect(adapters.message.sessionKey).toBe("C123:2000.0001");
+          await adapters.responseCtx.respond("event done");
+          resolve();
+        } catch (err) {
+          reject(err);
+        }
+      });
+    });
+
+    const bot = new SlackBot(handler, {
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      workingDir,
+      store: {} as any,
+    });
+
+    (bot as any).postMessage = vi.fn().mockResolvedValue("2000.0001");
+    (bot as any).updateMessage = vi.fn().mockResolvedValue(undefined);
+
+    expect(
+      bot.enqueueEvent({
+        type: "mention",
+        conversationId: "C123",
+        conversationKind: "shared",
+        ts: "event:deploy-reminder",
+        user: "EVENT",
+        text: "Deploy in 10 minutes",
+      }),
+    ).toBe(true);
+
+    await Promise.race([
+      handled,
+      new Promise((_resolve, reject) => {
+        setTimeout(() => reject(new Error("Slack event was not handled")), 1000);
+      }),
+    ]);
+
+    expect((bot as any).postMessage).toHaveBeenCalledTimes(1);
+    expect((bot as any).postMessage).toHaveBeenCalledWith("C123", "Working on it...");
+    expect((bot as any).updateMessage).toHaveBeenCalledWith(
+      "C123",
+      "2000.0001",
+      expect.stringContaining("event done"),
+    );
+    expect(existsSync(getThreadSessionFile(join(workingDir, "C123"), "C123:2000.0001"))).toBe(true);
+  });
+
+  test("Slack events report anchor failures instead of creating legacy event sessions", async () => {
+    const handler = makeHandler();
+    const bot = new SlackBot(handler, {
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      workingDir,
+      store: {} as any,
+    });
+
+    const postMessage = vi.fn().mockRejectedValueOnce(new Error("anchor failed"));
+    (bot as any).postMessage = postMessage;
+    (bot as any).updateMessage = vi.fn().mockResolvedValue(undefined);
+
+    expect(
+      bot.enqueueEvent({
+        type: "mention",
+        conversationId: "C123",
+        conversationKind: "shared",
+        ts: "event:deploy-reminder",
+        user: "EVENT",
+        text: "Deploy in 10 minutes",
+      }),
+    ).toBe(true);
+
+    for (let i = 0; i < 10 && postMessage.mock.calls.length === 0; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    expect(postMessage).toHaveBeenNthCalledWith(1, "C123", "Working on it...");
+    expect(handler.handleEvent).not.toHaveBeenCalled();
+    expect((bot as any).updateMessage).not.toHaveBeenCalled();
+    expect(existsSync(join(workingDir, "C123", "sessions"))).toBe(false);
+  });
+
+  test("Slack event anchor thread replies queue behind the event fork run", async () => {
+    const handler = makeHandler();
+    let releaseEventRun!: () => void;
+    const eventRunCanFinish = new Promise<void>((resolve) => {
+      releaseEventRun = resolve;
+    });
+    let resolveEventHandled!: () => void;
+    let rejectEventHandled!: (err: unknown) => void;
+    const eventHandled = new Promise<void>((resolve, reject) => {
+      resolveEventHandled = resolve;
+      rejectEventHandled = reject;
+    });
+    const replyHandled = new Promise<void>((resolve, reject) => {
+      handler.handleEvent = vi.fn(async (event, _calledBot, adapters) => {
+        try {
+          if (event.ts === "event:deploy-reminder") {
+            expect(event).toMatchObject({
+              conversationId: "C123",
+              sessionKey: "C123:2000.0001",
+            });
+            expect(adapters.message.sessionKey).toBe("C123:2000.0001");
+            resolveEventHandled();
+            await eventRunCanFinish;
+            return;
+          }
+          expect(event).toMatchObject({
+            conversationId: "C123",
+            sessionKey: "C123:2000.0001",
+            text: "thread follow-up",
+            thread_ts: "2000.0001",
+          });
+          resolve();
+        } catch (err) {
+          if (event.ts === "event:deploy-reminder") rejectEventHandled(err);
+          else reject(err);
+        }
+      });
+    });
+
+    const bot = new SlackBot(handler, {
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      workingDir,
+      store: {} as any,
+    });
+
+    (bot as any).postMessage = vi.fn().mockResolvedValue("2000.0001");
+    (bot as any).updateMessage = vi.fn().mockResolvedValue(undefined);
+
+    expect(
+      bot.enqueueEvent({
+        type: "mention",
+        conversationId: "C123",
+        conversationKind: "shared",
+        ts: "event:deploy-reminder",
+        user: "EVENT",
+        text: "Deploy in 10 minutes",
+      }),
+    ).toBe(true);
+
+    await Promise.race([
+      eventHandled,
+      new Promise((_resolve, reject) => {
+        setTimeout(() => reject(new Error("Slack event was not handled")), 1000);
+      }),
+    ]);
+
+    expect((bot as any).shouldTriggerSharedThreadReply("C123", "2000.0001")).toBe(true);
+    expect((bot as any).resolveQueueKey("C123", "C123:2000.0001")).toBe("C123:2000.0001");
+
+    let messageHandler:
+      | ((payload: {
+          event: {
+            text?: string;
+            channel: string;
+            user?: string;
+            ts: string;
+            thread_ts?: string;
+            channel_type?: string;
+          };
+          ack: () => void;
+        }) => void)
+      | undefined;
+
+    (bot as any).startupTs = "0";
+    (bot as any).botUserId = "B123";
+    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
+    (bot as any).socketClient = {
+      on: vi.fn((event: string, fn: unknown) => {
+        if (event === "message") messageHandler = fn as typeof messageHandler;
+      }),
+    };
+    (bot as any).setupEventHandlers();
+
+    const queue = (bot as any).getQueue("C123:2000.0001");
+    expect(queue.processing).toBe(true);
+    const ack = vi.fn();
+
+    messageHandler?.({
+      event: {
+        text: "thread follow-up",
+        channel: "C123",
+        user: "U123",
+        ts: "2001.0001",
+        thread_ts: "2000.0001",
+        channel_type: "channel",
+      },
+      ack,
+    });
+
+    expect(ack).toHaveBeenCalled();
+    expect(queue.size()).toBe(1);
+    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+
+    releaseEventRun();
+    await replyHandled;
+
+    expect(handler.handleEvent).toHaveBeenCalledTimes(2);
+  });
+
   test("external Slack app bot messages are logged but do not trigger mama", async () => {
     const handler = makeHandler();
 
@@ -865,7 +1076,7 @@ describe("SlackBot queues follow-up messages", () => {
 
     (bot as any).setupEventHandlers();
 
-    const queue = (bot as any).getQueue("C123");
+    const queue = (bot as any).getQueue("C123:1000.0001");
     queue.processing = true;
     const ack = vi.fn();
 

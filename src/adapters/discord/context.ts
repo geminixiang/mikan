@@ -37,7 +37,6 @@ function formatToolResult(result: ChatToolResult): string {
 export function createDiscordAdapters(
   event: DiscordEvent,
   bot: DiscordBot,
-  _isSyntheticEvent?: boolean,
 ): {
   message: ChatMessage;
   responseCtx: ChatResponseContext;

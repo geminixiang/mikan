@@ -28,7 +28,6 @@ export interface RunSessionOptions {
   event: BotEvent;
   bot: Bot;
   adapters: BotAdapters;
-  isSyntheticEvent?: boolean;
 }
 
 export interface CreateSessionSandboxOptions {
@@ -168,17 +167,10 @@ class MamaSessionRuntime implements SessionRuntime {
     await bot.postMessage(conversationId, "Conversation reset. Send a new message to start fresh.");
   }
 
-  async handleEvent(
-    event: BotEvent,
-    bot: Bot,
-    adapters: BotAdapters,
-    isSyntheticEvent?: boolean,
-  ): Promise<void> {
+  async handleEvent(event: BotEvent, bot: Bot, adapters: BotAdapters): Promise<void> {
     const sessionKey = event.sessionKey ?? `${event.conversationId}:${event.thread_ts ?? event.ts}`;
     const previous = this.sessionQueues.get(sessionKey) ?? Promise.resolve();
-    const next = previous
-      .catch(() => {})
-      .then(() => this.runSession({ event, bot, adapters, isSyntheticEvent }));
+    const next = previous.catch(() => {}).then(() => this.runSession({ event, bot, adapters }));
     this.sessionQueues.set(sessionKey, next);
     try {
       await next;
@@ -189,8 +181,8 @@ class MamaSessionRuntime implements SessionRuntime {
     }
   }
 
-  async runSession({ event, bot, adapters, isSyntheticEvent }: RunSessionOptions): Promise<void> {
-    await this.orchestrator.runSession({ event, bot, adapters, isSyntheticEvent });
+  async runSession({ event, bot, adapters }: RunSessionOptions): Promise<void> {
+    await this.orchestrator.runSession({ event, bot, adapters });
   }
 
   async createSessionSandbox(options: CreateSessionSandboxOptions): Promise<AgentRunner> {
@@ -306,15 +298,6 @@ class MamaSessionRuntime implements SessionRuntime {
     sessionKey: string,
     cwd: string,
   ): Promise<ResolvedSessionScope> {
-    if (sessionKey.includes(":event:")) {
-      const sessionDir = getChannelSessionDir(conversationDir);
-      const contextFile = createManagedSessionFileAtPath(
-        getThreadSessionFile(conversationDir, sessionKey),
-        cwd,
-      );
-      return { sessionDir, contextFile, threadRootMessage: null };
-    }
-
     if (platformName === "slack") {
       return resolveSlackSessionScope({ conversationDir, sessionKey, cwd });
     }

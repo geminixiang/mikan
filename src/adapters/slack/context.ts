@@ -7,11 +7,15 @@ import type {
 import * as log from "../../log.js";
 import { createChatResponseErrorReporter, formatToolArgs, splitText } from "../shared.js";
 import type { SlackBot, SlackEvent } from "./bot.js";
-import { resolveSlackRootTs, resolveSlackSessionKey } from "./session.js";
+import { planSlackAdapterSession } from "./session.js";
 
 export const SLACK_FORMATTING_GUIDE = `## Slack Formatting (mrkdwn, NOT Markdown)
 Bold: *text*, Italic: _text_, Code: \`code\`, Block: \`\`\`code\`\`\`, Links: <url|text>
 Do NOT use **double asterisks** or [markdown](links).`;
+
+export interface SlackAdapterOptions {
+  initialMessageTs?: string;
+}
 
 const MAX_MAIN_LENGTH = 35000; // Best-effort streaming cap; final responses use Slack error-driven fallback.
 const MAX_THREAD_LENGTH = 20000;
@@ -21,10 +25,6 @@ const TRUNCATION_NOTE_INCREMENTAL =
   "\n\n_(message truncated, ask me to elaborate on specific parts)_";
 
 const formatSlackContinuation = (partNum: number): string => `_(continued ${partNum})_`;
-
-function isSlackMessageTs(ts: string | undefined): ts is string {
-  return typeof ts === "string" && /^\d+\.\d+$/.test(ts);
-}
 
 function isSlackMsgTooLong(err: unknown): boolean {
   const data = (err as { data?: { error?: string } } | undefined)?.data;
@@ -81,13 +81,16 @@ function formatSlackToolResult(result: ChatToolResult): string {
 export function createSlackAdapters(
   event: SlackEvent,
   slack: SlackBot,
-  isSyntheticEvent?: boolean,
+  adapterOptions: SlackAdapterOptions = {},
 ): {
   message: ChatMessage;
   responseCtx: ChatResponseContext;
   platform: PlatformInfo;
 } {
-  let messageTs: string | null = null;
+  const sessionPlan = planSlackAdapterSession(event, {
+    initialMessageTs: adapterOptions.initialMessageTs,
+  });
+  let messageTs: string | null = sessionPlan.initialMessageTs ?? null;
   let assistantStatusFailureWarned = false;
   const onAssistantStatusError = (label: string, err: unknown): void => {
     if (assistantStatusFailureWarned) return;
@@ -106,28 +109,17 @@ export function createSlackAdapters(
   const conversationId = event.conversationId;
   const user = slack.getUser(event.user);
 
-  // Synthetic event ts format: `event:<filename>`.
-  const eventFilename = isSyntheticEvent
-    ? event.ts.match(/^event:([^:]+(?:\.json)?)/)?.[1]
-    : undefined;
+  // Slack message timestamps are numeric; event-file triggers use `event:<filename>`.
+  const eventFilename = event.ts.match(/^event:([^:]+(?:\.json)?)/)?.[1];
 
-  const rootTs =
-    event.thread_ts ?? (isSlackMessageTs(event.ts) ? resolveSlackRootTs(event.ts) : undefined);
-  const isThreaded = !!event.thread_ts;
+  const { rootTs, isThreaded } = sessionPlan;
 
   /**
    * Post the first visible reply.
    * Default Slack behavior is now top-level channel replies.
    * If the triggering message is already inside a thread, stay in that thread.
-   * Synthetic event messages have no real Slack root ts, so they must post top-level.
    */
   const postFirstMessage = async (text: string): Promise<string> => {
-    if (isSyntheticEvent) {
-      if (event.thread_ts) {
-        return slack.postInThread(channelId, event.thread_ts, text);
-      }
-      return slack.postMessage(channelId, text);
-    }
     if (isThreaded && rootTs) {
       return slack.postInThread(channelId, rootTs, text);
     }
@@ -162,9 +154,7 @@ export function createSlackAdapters(
 
   const message: ChatMessage = {
     id: event.ts,
-    sessionKey: isSyntheticEvent
-      ? `${conversationId}:${event.ts}`
-      : (event.sessionKey ?? resolveSlackSessionKey(conversationId, event.thread_ts)),
+    sessionKey: sessionPlan.sessionKey,
     conversationKind: event.conversationKind,
     userId: event.user,
     userName: user?.userName,
@@ -197,7 +187,6 @@ export function createSlackAdapters(
     responseMessageId: messageTs,
     threadTs: rootTs,
     conversationKind: message.conversationKind,
-    isSyntheticEvent: Boolean(isSyntheticEvent),
     isThreaded,
   }));
 
@@ -225,9 +214,6 @@ export function createSlackAdapters(
             messageTs = await slack.postInThread(channelId, rootTs, displayText);
           } else {
             messageTs = await postFirstMessage(displayText);
-            if (isSyntheticEvent && !event.thread_ts && messageTs) {
-              slack.aliasSyntheticEventThread(channelId, messageTs, event.ts);
-            }
           }
 
           if (messageTs) {
@@ -267,9 +253,6 @@ export function createSlackAdapters(
               return;
             }
             messageTs = await postFirstMessage(body);
-            if (isSyntheticEvent && !event.thread_ts && messageTs) {
-              slack.aliasSyntheticEventThread(channelId, messageTs, event.ts);
-            }
           };
 
           accumulatedText = text;

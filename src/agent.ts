@@ -246,7 +246,7 @@ function buildSystemPrompt(
   sandboxConfig: SandboxConfig,
   platform: PlatformInfo,
   skills: Skill[],
-  isSyntheticEvent = false,
+  isEventTrigger = false,
   triggerAttribution?: string,
 ): string {
   const { workspaceRoot, conversationPath, scratchPath } = buildRuntimePaths(
@@ -271,9 +271,9 @@ function buildSystemPrompt(
 
   const envDescription = buildEnvDescription(sandboxType, workspaceRoot);
   const eventFilesystemInstructions = buildEventFilesystemInstructions(sandboxType, workspaceRoot);
-  const syntheticEventInstructions = isSyntheticEvent
+  const eventTriggerInstructions = isEventTrigger
     ? `
-## Synthetic Event Mode
+## Event Trigger Mode
 - You are handling a scheduled/background event, not opening a brand new chat with a stranger.
 - Treat the incoming user message as a self-contained task prepared by an earlier run.
 - Complete the task directly. Avoid generic greetings, self-introductions, or boilerplate offers to help.
@@ -302,7 +302,7 @@ Do not add this to \`[SILENT]\` responses.
 - Scoped/thread sessions use fixed files at \`${conversationPath}/sessions/<scope_id>.jsonl\` (for example \`${conversationPath}/sessions/1777386320.800769.jsonl\`).
 - If a user asks about something that should exist in conversation history but is not found in the current context window, do not answer "I don't know" or "I don't have that". Instead, search the thread session, top-level session, and \`log.jsonl\` before responding.
 - User messages include a \`[in-thread:TS]\` marker when sent from within a platform thread/reply (TS is the thread or parent message identifier). Without this marker, the message is a top-level conversation message.
-${syntheticEventInstructions}
+${eventTriggerInstructions}
 ${platform.formattingGuide}
 
 ## Platform IDs

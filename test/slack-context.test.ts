@@ -16,7 +16,6 @@ function makeSlackBot(overrides: Partial<SlackBot> = {}): SlackBot {
     updateMessage: vi.fn().mockResolvedValue(undefined),
     deleteMessage: vi.fn().mockResolvedValue(undefined),
     logBotResponse: vi.fn(),
-    aliasSyntheticEventThread: vi.fn(),
     uploadFile: vi.fn().mockResolvedValue(undefined),
     start: vi.fn(),
     getChannel: vi.fn().mockReturnValue(undefined),
@@ -91,32 +90,35 @@ describe("respond() — non-threaded", () => {
     expect(bot.postInThread).not.toHaveBeenCalled();
   });
 
-  test("synthetic event posts top-level instead of using an invalid thread root", async () => {
-    const bot = makeSlackBot();
+  test("event anchor session updates that top-level message", async () => {
+    const bot = makeSlackBot({ updateMessage: vi.fn().mockResolvedValue(undefined) });
     const event = makeEvent({
       ts: "event:deploy-reminder.json",
       text: "Deploy now",
       thread_ts: undefined,
+      sessionKey: "C001:T001",
     });
-    const { responseCtx } = createSlackAdapters(event, bot, true);
+    const { message, responseCtx } = createSlackAdapters(event, bot, {
+      initialMessageTs: "T001",
+    });
+
+    expect(message.sessionKey).toBe("C001:T001");
+
     await responseCtx.respond("done");
-    expect(bot.postMessage).toHaveBeenCalledWith("C001", expect.stringContaining("done"));
+
+    expect(bot.updateMessage).toHaveBeenCalledWith("C001", "T001", expect.stringContaining("done"));
+    expect(bot.postMessage).not.toHaveBeenCalled();
     expect(bot.postInThread).not.toHaveBeenCalled();
-    expect((bot as any).aliasSyntheticEventThread).toHaveBeenCalledWith(
-      "C001",
-      "T001",
-      "event:deploy-reminder.json",
-    );
   });
 
-  test("synthetic event in a Slack thread replies inside the original thread", async () => {
+  test("event-file-shaped ts in a Slack thread replies inside the original thread", async () => {
     const bot = makeSlackBot();
     const event = makeEvent({
       ts: "event:deploy-reminder.json",
       text: "Deploy now",
       thread_ts: "1000.0001",
     });
-    const { responseCtx } = createSlackAdapters(event, bot, true);
+    const { responseCtx } = createSlackAdapters(event, bot);
     await responseCtx.respond("done");
     expect(bot.postInThread).toHaveBeenCalledWith(
       "C001",
@@ -139,10 +141,10 @@ describe("respond() — non-threaded", () => {
     );
   });
 
-  test("synthetic events without a Slack ts post a normal channel message first", async () => {
+  test("event-file-shaped ts without a Slack ts posts a normal channel message first", async () => {
     const bot = makeSlackBot({ postMessage: vi.fn().mockResolvedValue("BOT_MSG") });
     const event = makeEvent({ ts: "event:reminder.json" });
-    const { responseCtx } = createSlackAdapters(event, bot, true);
+    const { responseCtx } = createSlackAdapters(event, bot);
     await responseCtx.respond("hello");
     expect(bot.postMessage).toHaveBeenCalledWith("C001", expect.stringContaining("hello"));
     expect(bot.postInThread).not.toHaveBeenCalled();
@@ -245,23 +247,23 @@ describe("respondDiagnostic()", () => {
     );
   });
 
-  test("synthetic event diagnostics anchor to the bot message after respond", async () => {
+  test("event-file-shaped ts diagnostics anchor to the bot message after respond", async () => {
     const postInThread = vi.fn().mockResolvedValue("THREAD_MSG");
     const bot = makeSlackBot({
       postMessage: vi.fn().mockResolvedValue("BOT_MSG"),
       postInThread,
     });
     const event = makeEvent({ ts: "event:reminder.json" });
-    const { responseCtx } = createSlackAdapters(event, bot, true);
+    const { responseCtx } = createSlackAdapters(event, bot);
     await responseCtx.respond("main");
     await responseCtx.respondDiagnostic("detail");
     expect(postInThread).toHaveBeenCalledWith("C001", "BOT_MSG", expect.stringContaining("detail"));
   });
 
-  test("synthetic event diagnostics before a main response are dropped instead of using invalid thread_ts", async () => {
+  test("event-file-shaped ts diagnostics before a main response are dropped instead of using invalid thread_ts", async () => {
     const bot = makeSlackBot();
     const event = makeEvent({ ts: "event:reminder.json" });
-    const { responseCtx } = createSlackAdapters(event, bot, true);
+    const { responseCtx } = createSlackAdapters(event, bot);
     await responseCtx.respondDiagnostic("detail");
     expect(bot.postInThread).not.toHaveBeenCalled();
     expect(bot.postMessage).not.toHaveBeenCalled();
@@ -283,10 +285,10 @@ describe("setTyping()", () => {
     expect(bot.postInThread).not.toHaveBeenCalled();
   });
 
-  test("synthetic events do not call assistant status with invalid ts", async () => {
+  test("event-file-shaped ts does not call assistant status with invalid ts", async () => {
     const bot = makeSlackBot({ setAssistantStatus: vi.fn().mockResolvedValue(undefined) });
     const event = makeEvent({ ts: "event:reminder.json" });
-    const { responseCtx } = createSlackAdapters(event, bot, true);
+    const { responseCtx } = createSlackAdapters(event, bot);
     await responseCtx.setTyping(true);
     expect(bot.setAssistantStatus).not.toHaveBeenCalled();
   });

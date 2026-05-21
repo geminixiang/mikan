@@ -682,7 +682,7 @@ async function handleSessionMessageRequest(
   });
 
   void interactive.handler
-    .handleEvent(event, bot, adapters, false)
+    .handleEvent(event, bot, adapters)
     .then(() => {
       if (!targetSessionFile) {
         sessionViewStreamHub.publish(streamKey, { type: "status", running: false });

@@ -1,7 +1,6 @@
 import {
   createManagedSessionFileAtPath,
   createThreadSessionFileFromRootMessage,
-  extractSessionSuffix,
   forkThreadSessionFile,
   forkThreadSessionFileFromRootMessage,
   getChannelSessionDir,
@@ -14,6 +13,7 @@ import {
   type ThreadRootMessage,
 } from "../../session-store.js";
 import { findLogMessageById, type ConversationLogMessage } from "../../context.js";
+import { parseSlackSessionKey } from "./session.js";
 
 export interface SlackBranchBootstrapWaitOptions {
   parentSessionKey: string;
@@ -33,6 +33,12 @@ export interface ResolveSlackSessionScopeOptions {
   sleep?: (ms: number) => Promise<void>;
   retryCount?: number;
   retryDelayMs?: number;
+}
+
+export interface RegisterSlackForkSessionOptions {
+  conversationDir: string;
+  sessionKey: string;
+  cwd?: string;
 }
 
 function defaultSleep(ms: number): Promise<void> {
@@ -93,8 +99,19 @@ export function hasMaterializedSlackBranchSession(
   conversationDir: string,
   sessionKey: string,
 ): boolean {
-  if (!sessionKey.includes(":")) return false;
+  if (parseSlackSessionKey(sessionKey).kind !== "fork") return false;
   return tryResolveThreadSession(getThreadSessionFile(conversationDir, sessionKey)) !== null;
+}
+
+export function registerSlackForkSession(options: RegisterSlackForkSessionOptions): string | null {
+  const { conversationDir, sessionKey } = options;
+  if (parseSlackSessionKey(sessionKey).kind !== "fork") return null;
+
+  const threadFile = getThreadSessionFile(conversationDir, sessionKey);
+  return (
+    tryResolveThreadSession(threadFile) ??
+    createManagedSessionFileAtPath(threadFile, options.cwd ?? conversationDir)
+  );
 }
 
 export async function waitForSlackBranchBootstrap(
@@ -109,7 +126,7 @@ export async function waitForSlackBranchBootstrap(
     pollMs = 100,
   } = options;
 
-  if (!sessionKey.includes(":")) return false;
+  if (parseSlackSessionKey(sessionKey).kind !== "fork") return false;
   if (sessionKey === parentSessionKey) return false;
   if (hasThreadSession()) return false;
 
@@ -135,7 +152,8 @@ export async function resolveSlackSessionScope(
   const cwd = options.cwd ?? conversationDir;
 
   const sessionDir = getChannelSessionDir(conversationDir);
-  if (!sessionKey.includes(":")) {
+  const sessionRef = parseSlackSessionKey(sessionKey);
+  if (sessionRef.kind === "channel") {
     return {
       sessionDir,
       contextFile: resolveManagedSessionFile(sessionDir, cwd),
@@ -143,7 +161,7 @@ export async function resolveSlackSessionScope(
     };
   }
 
-  const rootTs = extractSessionSuffix(sessionKey);
+  const rootTs = sessionRef.anchorTs;
   const threadRootLogMessage = await findLogMessageById(conversationDir, rootTs);
   const threadRootMessage = threadRootLogMessage ? buildThreadRootSeed(threadRootLogMessage) : null;
   const threadFile = getThreadSessionFile(conversationDir, sessionKey);

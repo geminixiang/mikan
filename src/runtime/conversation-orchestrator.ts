@@ -27,7 +27,6 @@ export interface RunConversationOptions {
   event: BotEvent;
   bot: Bot;
   adapters: BotAdapters;
-  isSyntheticEvent?: boolean;
 }
 
 interface ConversationOrchestratorOptions {
@@ -49,12 +48,7 @@ interface ConversationOrchestratorOptions {
 export class ConversationOrchestrator {
   constructor(private readonly options: ConversationOrchestratorOptions) {}
 
-  async runSession({
-    event,
-    bot,
-    adapters,
-    isSyntheticEvent,
-  }: RunConversationOptions): Promise<void> {
+  async runSession({ event, bot, adapters }: RunConversationOptions): Promise<void> {
     const conversationId = event.conversationId;
     if (this.options.isShuttingDown()) {
       log.logInfo(
@@ -81,7 +75,7 @@ export class ConversationOrchestrator {
 
     const conversationDir = join(this.options.workingDir, conversationId);
     const waitedForParent =
-      adapters.platform.name === "slack" && !isSyntheticEvent
+      adapters.platform.name === "slack"
         ? await waitForSlackBranchBootstrap({
             parentSessionKey: conversationId,
             sessionKey,
@@ -114,7 +108,6 @@ export class ConversationOrchestrator {
           sessionKey,
           messageId: adapters.message.id,
           threadTs: adapters.message.threadTs,
-          isSyntheticEvent: Boolean(isSyntheticEvent),
           attachmentCount: adapters.message.attachments?.length ?? 0,
         },
       });
@@ -132,7 +125,7 @@ export class ConversationOrchestrator {
       try {
         const result = await this.runWithInstrumentation(
           adapters,
-          { conversationId, sessionKey, isSyntheticEvent, startedAt: state.startedAt! },
+          { conversationId, sessionKey, startedAt: state.startedAt! },
           async () => {
             await adapters.responseCtx.setTyping(true);
             await adapters.responseCtx.setWorking(true);
@@ -174,12 +167,11 @@ export class ConversationOrchestrator {
     meta: {
       conversationId: string;
       sessionKey: string;
-      isSyntheticEvent?: boolean;
       startedAt: number;
     },
     body: () => Promise<{ stopReason: string; errorMessage?: string }>,
   ): Promise<{ stopReason: string; errorMessage?: string } | undefined> {
-    const { conversationId, sessionKey, isSyntheticEvent, startedAt } = meta;
+    const { conversationId, sessionKey, startedAt } = meta;
     const { message, platform } = adapters;
 
     Sentry.metrics.count("agent.run.started", 1, {
@@ -198,7 +190,6 @@ export class ConversationOrchestrator {
             userId: message.userId,
             userName: message.userName,
             threadTs: message.threadTs,
-            isSyntheticEvent,
           });
           addLifecycleBreadcrumb("agent.run.started", {
             channel_id: conversationId,
@@ -245,7 +236,6 @@ export class ConversationOrchestrator {
                 sessionKey,
                 messageId: message.id,
                 threadTs: message.threadTs,
-                isSyntheticEvent: Boolean(isSyntheticEvent),
                 attachmentCount: message.attachments?.length ?? 0,
               },
             });
