@@ -1221,7 +1221,7 @@ function attachSessionEventHandlers(params: {
         queue.enqueue(() => responseCtx.respondToolResult(toolResult), "tool result diagnostic");
       }
 
-      if (event.isError) {
+      if (event.isError && shouldSurfaceToolDiagnostic(event.toolName)) {
         queue.enqueue(
           () => responseCtx.respond(`_Error: ${truncate(resultStr, 200)}_`),
           "tool error",
