@@ -17,8 +17,6 @@ export interface AgentConfig {
   provider: string;
   model: string;
   thinkingLevel: ThinkingLevel;
-  logFormat: "console" | "json";
-  logLevel: "trace" | "debug" | "info" | "warn" | "error";
   sentryDsn?: string;
   sandboxCpus?: string;
   sandboxMemory?: string;
@@ -46,10 +44,6 @@ const ONBOARD_SETTINGS: SettingsFileConfig = {
       provider: "anthropic",
       model: "claude-haiku-4-5",
     },
-  },
-  log: {
-    format: "console",
-    level: "info",
   },
   sandbox: {
     cpus: "0.5",
@@ -84,20 +78,6 @@ const SettingsFileSchema = Type.Object({
           provider: Type.Optional(Type.String()),
           model: Type.Optional(Type.String()),
         }),
-      ),
-    }),
-  ),
-  log: Type.Optional(
-    Type.Object({
-      format: Type.Optional(Type.Union([Type.Literal("console"), Type.Literal("json")])),
-      level: Type.Optional(
-        Type.Union([
-          Type.Literal("trace"),
-          Type.Literal("debug"),
-          Type.Literal("info"),
-          Type.Literal("warn"),
-          Type.Literal("error"),
-        ]),
       ),
     }),
   ),
@@ -153,8 +133,6 @@ function normalizeSettingsConfig(config: SettingsFileConfig): Partial<AgentConfi
     ...(config.llm?.provider !== undefined ? { provider: config.llm.provider } : {}),
     ...(config.llm?.model !== undefined ? { model: config.llm.model } : {}),
     ...(config.llm?.thinkingLevel !== undefined ? { thinkingLevel: config.llm.thinkingLevel } : {}),
-    ...(config.log?.format !== undefined ? { logFormat: config.log.format } : {}),
-    ...(config.log?.level !== undefined ? { logLevel: config.log.level } : {}),
     ...(config.sentry?.dsn !== undefined ? { sentryDsn: config.sentry.dsn } : {}),
     ...(config.sandbox?.cpus !== undefined ? { sandboxCpus: config.sandbox.cpus } : {}),
     ...(config.sandbox?.memory !== undefined ? { sandboxMemory: config.sandbox.memory } : {}),
@@ -196,27 +174,10 @@ function requireThinkingLevel(value: ThinkingLevel | undefined): ThinkingLevel {
   return requireString(value, "llm.thinkingLevel") as ThinkingLevel;
 }
 
-function requireLogFormat(value: AgentConfig["logFormat"] | undefined): AgentConfig["logFormat"] {
-  if (value !== "console" && value !== "json") {
-    throw new Error("Missing or invalid required global setting: log.format");
-  }
-  return value;
-}
-
-function requireLogLevel(value: AgentConfig["logLevel"] | undefined): AgentConfig["logLevel"] {
-  const allowed = ["trace", "debug", "info", "warn", "error"];
-  if (!value || !allowed.includes(value)) {
-    throw new Error("Missing or invalid required global setting: log.level");
-  }
-  return value;
-}
-
 function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
   const provider = requireString(fromFile.provider, "llm.provider");
   const model = requireString(fromFile.model, "llm.model");
   const thinkingLevel = requireThinkingLevel(fromFile.thinkingLevel);
-  const logFormat = requireLogFormat(fromFile.logFormat);
-  const logLevel = requireLogLevel(fromFile.logLevel);
   const sentryDsn = fromFile.sentryDsn ?? process.env.SENTRY_DSN;
   const sandboxCpus = fromFile.sandboxCpus;
   const sandboxMemory = fromFile.sandboxMemory;
@@ -228,8 +189,6 @@ function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
     provider,
     model,
     thinkingLevel,
-    logFormat,
-    logLevel,
     sentryDsn,
     sandboxCpus,
     sandboxMemory,
@@ -442,7 +401,6 @@ function hasDefinedValue(values: Record<string, unknown> | undefined): boolean {
 function compactSettingsConfig(config: SettingsFileConfig): SettingsFileConfig {
   return {
     ...(hasDefinedValue(config.llm) ? { llm: config.llm } : {}),
-    ...(hasDefinedValue(config.log) ? { log: config.log } : {}),
     ...(hasDefinedValue(config.sentry) ? { sentry: config.sentry } : {}),
     ...(hasDefinedValue(config.sandbox) ? { sandbox: config.sandbox } : {}),
     ...(hasDefinedValue(config.autoReply) ? { autoReply: config.autoReply } : {}),
@@ -460,11 +418,6 @@ function patchSettingsConfig(
       ...(config.provider !== undefined ? { provider: config.provider } : {}),
       ...(config.model !== undefined ? { model: config.model } : {}),
       ...(config.thinkingLevel !== undefined ? { thinkingLevel: config.thinkingLevel } : {}),
-    },
-    log: {
-      ...existing.log,
-      ...(config.logFormat !== undefined ? { format: config.logFormat } : {}),
-      ...(config.logLevel !== undefined ? { level: config.logLevel } : {}),
     },
     sentry: {
       ...existing.sentry,

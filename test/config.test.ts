@@ -41,8 +41,6 @@ describe("loadAgentConfig", () => {
     expect(config.provider).toBe("anthropic");
     expect(config.model).toBe("claude-sonnet-4-6");
     expect(config.thinkingLevel).toBe("off");
-    expect(config.logFormat).toBe("console");
-    expect(config.logLevel).toBe("info");
     expect(config.sandboxCpus).toBe("0.5");
     expect(config.sandboxMemory).toBe("1g");
     expect(config.sandboxBoostCpus).toBe("2");
@@ -82,7 +80,6 @@ describe("loadAgentConfig", () => {
       join(stateDir, "settings.json"),
       JSON.stringify({
         llm: { provider: "anthropic", model: "claude-sonnet-4-6", thinkingLevel: "off" },
-        log: { format: "console", level: "info" },
       }),
       "utf-8",
     );
@@ -136,7 +133,6 @@ describe("loadAgentConfig", () => {
       join(stateDir, "settings.json"),
       JSON.stringify({
         llm: { provider: "anthropic", model: "claude-sonnet-4-6", thinkingLevel: "off" },
-        log: { format: "console", level: "info" },
         sandbox: { cpus: 2 },
       }),
       "utf-8",
@@ -152,7 +148,6 @@ describe("loadAgentConfig", () => {
       join(stateDir, "settings.json"),
       JSON.stringify({
         llm: { provider: "anthropic", model: "claude-sonnet-4-6", thinkingLevel: "on" },
-        log: { format: "console", level: "info" },
       }),
       "utf-8",
     );
@@ -280,7 +275,6 @@ describe("saveAgentConfig", () => {
         thinkingLevel: "off",
         autoReply: { provider: "anthropic", model: "claude-haiku-4-5" },
       },
-      log: { format: "console", level: "info" },
       sandbox: {
         cpus: "0.5",
         memory: "1g",
@@ -291,12 +285,11 @@ describe("saveAgentConfig", () => {
   });
 
   test("merges with existing settings — preserves unrelated fields", () => {
-    saveAgentConfig({ provider: "openai", model: "gpt-4o", logLevel: "debug" });
+    saveAgentConfig({ provider: "openai", model: "gpt-4o" });
     saveAgentConfig({ model: "gpt-4o-mini" });
     const config = loadAgentConfig();
     expect(config.provider).toBe("openai");
     expect(config.model).toBe("gpt-4o-mini");
-    expect(config.logLevel).toBe("debug");
     expect(JSON.parse(readFileSync(join(stateDir, "settings.json"), "utf-8"))).toEqual({
       llm: {
         provider: "openai",
@@ -304,7 +297,6 @@ describe("saveAgentConfig", () => {
         thinkingLevel: "off",
         autoReply: { provider: "anthropic", model: "claude-haiku-4-5" },
       },
-      log: { format: "console", level: "debug" },
       sandbox: {
         cpus: "0.5",
         memory: "1g",

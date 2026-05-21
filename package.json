@@ -44,7 +44,6 @@
     "@earendil-works/pi-agent-core": "^0.75.3",
     "@earendil-works/pi-ai": "^0.75.3",
     "@earendil-works/pi-coding-agent": "^0.75.3",
-    "@google-cloud/logging": "^11.2.1",
     "@sentry/node": "^10.51.0",
     "@sinclair/typebox": "^0.34.49",
     "@slack/socket-mode": "^2.0.6",
@@ -54,8 +53,7 @@
     "diff": "^8.0.4",
     "discord.js": "^14.26.2",
     "grammy": "^1.42.0",
-    "markdown-it": "^14.1.1",
-    "pino": "^10.3.1"
+    "markdown-it": "^14.1.1"
   },
   "devDependencies": {
     "@types/diff": "^8.0.0",

@@ -1361,12 +1361,6 @@ export async function createRunner(
 ): Promise<AgentRunner> {
   const agentConfig = loadAgentConfigForConversation(conversationDir);
 
-  // Initialize logger with settings from config
-  log.initLogger({
-    logFormat: agentConfig.logFormat,
-    logLevel: agentConfig.logLevel,
-  });
-
   const workspaceBase = join(conversationDir, "..");
   const { executionResolver, executor, getPathContext, resolveExecutorForRun } =
     createRunnerExecutionContext(

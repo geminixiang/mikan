@@ -133,10 +133,6 @@ mama reads global settings from `<state-dir>/settings.json` (default `~/.mama/se
     "model": "claude-sonnet-4-6",
     "thinkingLevel": "off"
   },
-  "log": {
-    "format": "console",
-    "level": "info"
-  },
   "sentry": {
     "dsn": "https://examplePublicKey@o0.ingest.sentry.io/0"
   },
@@ -151,18 +147,16 @@ mama reads global settings from `<state-dir>/settings.json` (default `~/.mama/se
 }
 ```
 
-| Field                  | Default             | Description                                              |
-| ---------------------- | ------------------- | -------------------------------------------------------- |
-| `llm.provider`         | `anthropic`         | AI provider                                              |
-| `llm.model`            | `claude-sonnet-4-6` | Model name                                               |
-| `llm.thinkingLevel`    | `off`               | `off` / `low` / `medium` / `high`                        |
-| `log.format`           | `console`           | `console` (colored stdout) or `json` (GCP Cloud Logging) |
-| `log.level`            | `info`              | `trace` / `debug` / `info` / `warn` / `error`            |
-| `sentry.dsn`           | unset               | Sentry DSN; sensitive prompt/tool content is redacted    |
-| `sandbox.cpus`         | unset               | CPU limit for managed containers                         |
-| `sandbox.memory`       | unset               | Memory limit for managed containers                      |
-| `sandbox.boost.cpus`   | unset               | Temporary CPU limit used by `/pi-sandbox boost`          |
-| `sandbox.boost.memory` | unset               | Temporary memory limit used by `/pi-sandbox boost`       |
+| Field                  | Default             | Description                                           |
+| ---------------------- | ------------------- | ----------------------------------------------------- |
+| `llm.provider`         | `anthropic`         | AI provider                                           |
+| `llm.model`            | `claude-sonnet-4-6` | Model name                                            |
+| `llm.thinkingLevel`    | `off`               | `off` / `low` / `medium` / `high`                     |
+| `sentry.dsn`           | unset               | Sentry DSN; sensitive prompt/tool content is redacted |
+| `sandbox.cpus`         | unset               | CPU limit for managed containers                      |
+| `sandbox.memory`       | unset               | Memory limit for managed containers                   |
+| `sandbox.boost.cpus`   | unset               | Temporary CPU limit used by `/pi-sandbox boost`       |
+| `sandbox.boost.memory` | unset               | Temporary memory limit used by `/pi-sandbox boost`    |
 
 `/pi-sandbox` shows the current managed-container CPU/memory limits. `/pi-sandbox boost` temporarily applies `sandbox.boost` to the current conversation; the boost ends when that sandbox container is stopped.
 
@@ -178,7 +172,7 @@ Conversation-local settings written by `/pi-model` use the same shape and usuall
 }
 ```
 
-For GCP Cloud Logging, set `log.format: "json"`, give the VM service account `roles/logging.logWriter`, and export `GOOGLE_CLOUD_PROJECT`. Logs land under log name `mama`.
+mama writes logs to stdout/stderr. Use your process manager or host platform (for example PM2, systemd, Docker, or a cloud logging agent) to route logs to your preferred backend.
 
 ## Layout
 
