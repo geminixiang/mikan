@@ -66,7 +66,6 @@ export interface SentryRunScopeContext {
   threadTs?: string;
   provider?: string;
   model?: string;
-  isSyntheticEvent?: boolean;
 }
 
 export type UserFacingErrorDomain =
@@ -162,7 +161,6 @@ export function applyRunScope(scope: Scope, context: SentryRunScopeContext): voi
   scope.setTag("channel_id", context.conversationId);
   scope.setTag("session_key", context.sessionKey);
   scope.setTag("platform", context.platform);
-  scope.setTag("is_synthetic_event", String(Boolean(context.isSyntheticEvent)));
   if (context.threadTs) scope.setTag("thread_ts", context.threadTs);
   if (context.provider) scope.setTag("provider", context.provider);
   if (context.model) scope.setTag("model", context.model);
@@ -180,7 +178,6 @@ export function applyRunScope(scope: Scope, context: SentryRunScopeContext): voi
     platform: context.platform,
     provider: context.provider,
     model: context.model,
-    isSyntheticEvent: Boolean(context.isSyntheticEvent),
   });
 }
 

@@ -64,40 +64,32 @@ Common schedules:
 
 ## Routing Fields
 
-| Field              | Description                                                                                                                                                                                                                            |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `platform`         | Target bot platform (e.g. `slack`)                                                                                                                                                                                                     |
-| `conversationId`   | Channel or DM ID to post into                                                                                                                                                                                                          |
-| `conversationKind` | `"shared"` (channel) or `"direct"` (DM)                                                                                                                                                                                                |
-| `userId`           | Platform user ID of whoever requested the event; used for vault/credential routing in per-user modes                                                                                                                                   |
-| `sessionKey`       | Determines which AgentRunner (and its LLM context) handles the event                                                                                                                                                                   |
-| `threadTs`         | Sub-conversation target; when present, the response is posted inside that thread rather than as a top-level message. Semantics are platform-specific: Slack thread timestamp, Discord thread channel ID, Telegram reply-to message ID. |
+| Field              | Description                                                                                          |
+| ------------------ | ---------------------------------------------------------------------------------------------------- |
+| `platform`         | Target bot platform (e.g. `slack`)                                                                   |
+| `conversationId`   | Channel or DM ID to post into                                                                        |
+| `conversationKind` | `"shared"` (channel) or `"direct"` (DM)                                                              |
+| `userId`           | Platform user ID of whoever requested the event; used for vault/credential routing in per-user modes |
 
 ## Session Binding
 
-`sessionKey` determines which AgentRunner (and its LLM context) handles an event when it fires. Whether it is included depends on the event type:
+Event files do not carry `sessionKey` or thread targeting. The event text must be self-contained because a scheduled/background event is not a continuation of the live chat turn that created it.
 
-- **Immediate** — included. The event is an extension of the current turn, so the same session context applies.
-- **One-shot** — omitted. A reminder firing hours or days later has no meaningful connection to the session it was created in; it simply delivers a message to the conversation.
-- **Periodic** — included. Recurring tasks often need the context from the session where they were configured.
+| Platform/event source   | Visible delivery          | Session key                            | Thread targeting |
+| ----------------------- | ------------------------- | -------------------------------------- | ---------------- |
+| Slack event file/tool   | New top-level anchor      | `<conversationId>:<anchor message ts>` | None             |
+| Slack direct `BotEvent` | Provided `thread_ts` wins | `<conversationId>:<thread_ts>` if set  | Optional         |
+| Other platform event    | Platform adapter default  | Platform adapter default event session | Adapter-specific |
+
+For Slack event files, firing an event actively creates a top-level Slack message first. That message timestamp becomes the fork point and the run uses the fixed session key `<conversationId>:<anchor message ts>`.
+
+This keeps event runs visible in the channel and isolates them from the persistent top-level session. The top-level channel history remains available in `log.jsonl` for explicit lookup, but it is not implicitly copied into the event session.
 
 ## Thread Targeting
 
-`threadTs` controls whether a response is posted as a top-level message or as a reply inside a sub-conversation (Slack thread, Discord thread, Telegram reply chain). The same per-type reasoning applies:
+Events are delivered as top-level messages. They should not be buried in a historical thread or reply chain.
 
-- **Immediate** — preserved. The reply belongs in the same sub-conversation as the current exchange.
-- **One-shot** — omitted. A reminder should be a prominent top-level message, not buried in a sub-conversation that may be days old.
-- **Periodic** — omitted. Recurring replies into an old sub-conversation create noise and reduce visibility.
-
-Summary:
-
-| Type        | `sessionKey` |    `threadTs`    |
-| ----------- | :----------: | :--------------: |
-| `immediate` |      ✓       | ✓ (if in thread) |
-| `one-shot`  |      —       |        —         |
-| `periodic`  |      ✓       |        —         |
-
-The `event` tool (available to the agent) fills all routing fields automatically and applies these rules. Use it instead of writing JSON by hand.
+The `event` tool (available to the agent) fills the routing fields automatically. Use it instead of writing JSON by hand.
 
 ## Lifecycle
 

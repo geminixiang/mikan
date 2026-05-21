@@ -47,7 +47,6 @@ function formatToolResult(result: ChatToolResult): string {
 export function createTelegramAdapters(
   event: TelegramEvent,
   bot: TelegramBot,
-  _isEvent?: boolean,
 ): {
   message: ChatMessage;
   responseCtx: ChatResponseContext;

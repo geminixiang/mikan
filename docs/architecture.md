@@ -95,7 +95,7 @@ flowchart LR
   Executor -. host / container / image / firecracker .-> ConversationDir
   Provisioner -. managed conversation sandbox .-> Executor
   VaultManager -. env + mount routing .-> Executor
-  EventsWatcher -. enqueue synthetic BotEvent .-> Main
+  EventsWatcher -. enqueue BotEvent .-> Main
 ```
 
 ## 2. 主要分層
@@ -241,6 +241,8 @@ sequenceDiagram
 - `sessions/*.jsonl` 給 `SessionManager` 保留完整結構化上下文與 tool 結果
 - top-level session 用 `current` 指標
 - thread / reply session 用固定檔名，讓分支可被單獨追蹤
+- Slack top-level messages share the channel session; Slack thread replies fork to `conversationId:threadTs`
+- Slack events first materialize a top-level anchor message, then run in `conversationId:anchorTs`
 
 ## 5. Login / Vault / Sandbox 關係
 
@@ -269,7 +271,7 @@ flowchart TD
 
 ## 6. Events 與一般對話的差異
 
-`events/*.json` 會被 `EventsWatcher` 監看，之後轉成 synthetic `BotEvent` 再走一次正常流程。  
+`events/*.json` 會被 `EventsWatcher` 監看，之後轉成 `BotEvent` 再走一次正常流程。
 也就是說 events 不是獨立執行器，而是「另一個訊息入口」。
 
 這讓下列能力共用同一套機制:

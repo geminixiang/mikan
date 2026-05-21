@@ -183,8 +183,8 @@ export class DiscordBot implements Bot {
     }
     log.logInfo(`Enqueueing event for ${conversationId}: ${event.text.substring(0, 50)}`);
     queue.enqueue(() => {
-      const adapters = createDiscordAdapters(event as DiscordEvent, this, true);
-      return this.handler.handleEvent(event, this, adapters, true);
+      const adapters = createDiscordAdapters(event as DiscordEvent, this);
+      return this.handler.handleEvent(event, this, adapters);
     });
     return true;
   }
@@ -583,7 +583,7 @@ export class DiscordBot implements Bot {
           attachments: [],
         };
 
-        await this.handler.handleEvent(event, this, adapters, false);
+        await this.handler.handleEvent(event, this, adapters);
       } catch (err) {
         log.logWarning(
           "Discord slash command error",
@@ -697,8 +697,8 @@ export class DiscordBot implements Bot {
       this.logToFile(conversationId, { ...logEntryBase, attachments: processedAttachments });
 
       this.getQueue(sessionKey).enqueue(() => {
-        const adapters = createDiscordAdapters(event, this, false);
-        return this.handler.handleEvent(event, this, adapters, false);
+        const adapters = createDiscordAdapters(event, this);
+        return this.handler.handleEvent(event, this, adapters);
       });
     });
   }
