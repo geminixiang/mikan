@@ -257,10 +257,34 @@ describe("AutoReplyCommandHandler", () => {
     });
     expect(await handler.tryHandle(disableCtx)).toBe(true);
     expect(disableCtx.responseCtx.responses[0]).toContain("Auto-reply is disabled");
+    expect(disableCtx.responseCtx.responses[0]).toContain("Current rules:");
+    expect(disableCtx.responseCtx.responses[0]).toContain(
+      "Reply when someone asks about deployments.",
+    );
     expect(existsSync(enabledPath)).toBe(false);
     expect(readFileSync(join(workingDir, "C123", "auto-reply.disabled"), "utf-8")).toBe(
       "Reply when someone asks about deployments.",
     );
+  });
+
+  test("shows auto-reply file contents in status", async () => {
+    const conversationDir = join(workingDir, "C123");
+    mkdirSync(conversationDir, { recursive: true });
+    writeFileSync(
+      join(conversationDir, "auto-reply"),
+      "Reply when someone asks about deploys.",
+      "utf-8",
+    );
+
+    const ctx = buildContext({
+      commandText: "/pi-auto-reply status",
+      services: { workingDir },
+    });
+
+    expect(await handler.tryHandle(ctx)).toBe(true);
+    expect(ctx.responseCtx.responses[0]).toContain("Auto-reply is enabled");
+    expect(ctx.responseCtx.responses[0]).toContain("Current rules:");
+    expect(ctx.responseCtx.responses[0]).toContain("Reply when someone asks about deploys.");
   });
 
   test("rejects rule management to match mom-compatible slash command surface", async () => {

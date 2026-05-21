@@ -26,7 +26,10 @@ export function parseAutoReplyCommand(text: string): AutoReplyAction | null {
 }
 
 function formatAutoReplyStatus(config: AutoReplyConfig): string {
-  return `_Auto-reply is ${config.enabled ? "enabled" : "disabled"} for this channel._`;
+  const status = `_Auto-reply is ${config.enabled ? "enabled" : "disabled"} for this channel._`;
+  if (config.rules.length === 0) return status;
+
+  return `${status}\nCurrent rules:\n\`\`\`\n${config.rules.join("\n")}\n\`\`\``;
 }
 
 function formatAutoReplyUsage(): string {
