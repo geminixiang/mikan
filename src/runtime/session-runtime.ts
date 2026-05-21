@@ -4,6 +4,7 @@ import { type AgentRunner, createRunner } from "../agent.js";
 import { defaultCommandHandlers } from "../commands/index.js";
 import type { CommandHandler, CommandServices } from "../commands/index.js";
 import * as log from "../log.js";
+import { reportUserFacingError } from "../sentry.js";
 import {
   createManagedSessionFile,
   createManagedSessionFileAtPath,
@@ -289,6 +290,13 @@ class MamaSessionRuntime implements SessionRuntime {
 
     if (this.inFlightRuns.size > 0) {
       log.logWarning(`Forcing exit with ${this.inFlightRuns.size} runs still in progress`);
+      reportUserFacingError(new Error("Shutdown forced with in-flight agent runs"), {
+        domain: "mama",
+        surface: "shutdown",
+        operation: "force_exit_with_inflight_runs",
+        severity: "warning",
+        context: { inFlightRuns: this.inFlightRuns.size, timeoutMs },
+      });
     }
   }
 

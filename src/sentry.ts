@@ -6,32 +6,45 @@ const REDACTED_PATH = "[REDACTED_PATH]";
 const MAX_STRING_LENGTH = 256;
 const MAX_DEPTH = 4;
 
+type SentryPrimitive = string | number | boolean;
+
 const SENSITIVE_KEYS = new Set([
+  "accesstoken",
+  "apikey",
   "args",
   "attachment",
   "attachments",
   "authorization",
   "body",
+  "code",
   "content",
   "contents",
   "cookie",
   "cookies",
-  "filePath",
+  "credential",
+  "filepath",
   "headers",
   "image",
-  "imageAttachments",
+  "imageattachments",
   "images",
-  "localPath",
+  "localpath",
   "messages",
-  "newUserMessage",
+  "newusermessage",
+  "password",
   "path",
   "paths",
   "prompt",
+  "refreshtoken",
   "response",
   "result",
-  "systemPrompt",
+  "secret",
+  "systemprompt",
   "text",
   "thinking",
+  "token",
+  "url",
+  "uri",
+  "workspacepath",
 ]);
 
 const ABSOLUTE_PATH_PATTERN =
@@ -56,6 +69,33 @@ export interface SentryRunScopeContext {
   isSyntheticEvent?: boolean;
 }
 
+export type UserFacingErrorDomain =
+  | "llm"
+  | "chat_platform"
+  | "mama"
+  | "sandbox"
+  | "login"
+  | "events"
+  | "session_view";
+
+export type UserFacingErrorSeverity = "warning" | "error" | "fatal";
+
+export interface ReportUserFacingErrorOptions {
+  domain: UserFacingErrorDomain;
+  surface: string;
+  operation: string;
+  severity?: UserFacingErrorSeverity;
+  platform?: string;
+  provider?: string;
+  model?: string;
+  toolName?: string;
+  stopReason?: string;
+  expected?: boolean;
+  fingerprint?: string[];
+  tags?: Record<string, SentryPrimitive | undefined>;
+  context?: Record<string, unknown>;
+}
+
 export function createSentryInitOptions(dsn?: string) {
   return {
     dsn,
@@ -72,6 +112,49 @@ export function createSentryInitOptions(dsn?: string) {
       return sanitizeBreadcrumb(breadcrumb);
     },
   };
+}
+
+export function reportUserFacingError(
+  error: unknown,
+  options: ReportUserFacingErrorOptions,
+): string | undefined {
+  if (options.expected) return undefined;
+
+  const exception = error instanceof Error ? error : new Error(String(error));
+  return Sentry.withScope((scope) => {
+    scope.setLevel(options.severity ?? "error");
+    scope.setTag("user_facing", "true");
+    scope.setTag("expected", "false");
+    scope.setTag("error_domain", options.domain);
+    scope.setTag("error_surface", options.surface);
+    scope.setTag("operation", options.operation);
+    setOptionalTag(scope, "platform", options.platform);
+    setOptionalTag(scope, "provider", options.provider);
+    setOptionalTag(scope, "model", options.model);
+    setOptionalTag(scope, "tool", options.toolName);
+    setOptionalTag(scope, "stop_reason", options.stopReason);
+    for (const [key, value] of Object.entries(options.tags ?? {})) {
+      if (value !== undefined) scope.setTag(key, String(value));
+    }
+    if (options.fingerprint) scope.setFingerprint(options.fingerprint);
+    scope.setContext("user_facing_error", {
+      domain: options.domain,
+      surface: options.surface,
+      operation: options.operation,
+      severity: options.severity ?? "error",
+      platform: options.platform,
+      provider: options.provider,
+      model: options.model,
+      toolName: options.toolName,
+      stopReason: options.stopReason,
+      ...(sanitizeValue(options.context ?? {}) as Record<string, unknown>),
+    });
+    return Sentry.captureException(exception);
+  });
+}
+
+function setOptionalTag(scope: Scope, key: string, value: string | undefined): void {
+  if (value !== undefined) scope.setTag(key, value);
 }
 
 export function applyRunScope(scope: Scope, context: SentryRunScopeContext): void {
@@ -220,7 +303,7 @@ function sanitizeRequest(request: Event["request"]): Event["request"] {
 
 function isSensitiveKey(key?: string): boolean {
   if (!key) return false;
-  return SENSITIVE_KEYS.has(key);
+  return SENSITIVE_KEYS.has(key.toLowerCase());
 }
 
 function summarizeValue(value: unknown, key?: string): string {

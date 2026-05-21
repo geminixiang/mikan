@@ -3,6 +3,7 @@ import { createHash } from "crypto";
 import { readFileSync, statSync } from "fs";
 import { promisify } from "util";
 import * as log from "./log.js";
+import { reportUserFacingError } from "./sentry.js";
 
 const execFileAsync = promisify(execFile);
 type ExecFileAsync = typeof execFileAsync;
@@ -359,6 +360,19 @@ export class DockerContainerManager {
         `Failed to apply resource limits to container ${containerName}`,
         err instanceof Error ? err.message : String(err),
       );
+      reportUserFacingError(err, {
+        domain: "sandbox",
+        surface: "sandbox_provision",
+        operation: "apply_resource_limits",
+        severity: "warning",
+        context: {
+          sandboxType: "image",
+          containerKey,
+          containerName,
+          limitArgCount: limitArgs.length,
+          fatal: false,
+        },
+      });
     }
   }
 

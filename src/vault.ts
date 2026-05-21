@@ -11,6 +11,7 @@ import { dirname, isAbsolute, join, normalize, sep } from "path";
 import { readTextFileIfExists } from "./file-guards.js";
 import type { SandboxConfig } from "./sandbox/index.js";
 import { atomicWritePrivateFile } from "./fs-atomic.js";
+import { reportUserFacingError } from "./sentry.js";
 
 const PRIVATE_DIR_MODE = 0o700;
 const SHARED_VAULT_DIR = "shared";
@@ -244,6 +245,13 @@ export class FileVaultManager implements VaultManager {
         env = parseEnvFile(envContent);
       } catch (err) {
         console.error(`vault: failed to parse env file for "${key}":`, err);
+        reportUserFacingError(err, {
+          domain: "sandbox",
+          surface: "vault_injection",
+          operation: "parse_env",
+          severity: "warning",
+          context: { vaultKey: key, fatal: false },
+        });
       }
     }
 

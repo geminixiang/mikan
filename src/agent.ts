@@ -29,6 +29,7 @@ import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import { loadAgentConfigForConversation } from "./config.js";
 import { ActorExecutionResolver } from "./execution-resolver.js";
 import * as log from "./log.js";
+import { reportUserFacingError } from "./sentry.js";
 import type { DockerContainerManager } from "./provisioner.js";
 import {
   createExecutor,
@@ -507,6 +508,7 @@ interface RunnerSessionState {
   llmCallCount: number;
   stopReason: string;
   errorMessage: string | undefined;
+  reportedLlmError: boolean;
 }
 
 interface PreparedRunContext {
@@ -677,6 +679,7 @@ function createRunState(): RunnerSessionState {
     llmCallCount: 0,
     stopReason: "stop",
     errorMessage: undefined,
+    reportedLlmError: false,
   };
 }
 
@@ -699,6 +702,7 @@ function resetRunState(
   runState.llmCallCount = 0;
   runState.stopReason = "stop";
   runState.errorMessage = undefined;
+  runState.reportedLlmError = false;
 }
 
 function createRunQueue(responseCtx: ChatResponseContext): {
@@ -838,9 +842,32 @@ async function finalizeRunResponse(
   options?: {
     triggerAttribution?: string;
     createOverflowLink?: () => string;
+    platform?: string;
+    model?: ReturnType<typeof getModel>;
+    sessionConversation?: string;
+    sessionUuid?: string;
   },
 ): Promise<void> {
   if (runState.stopReason === "error" && runState.errorMessage) {
+    if (!runState.reportedLlmError) {
+      runState.reportedLlmError = true;
+      reportUserFacingError(new Error("LLM run completed with error stop reason"), {
+        domain: "llm",
+        surface: "assistant_response",
+        operation: "llm_turn",
+        severity: "error",
+        platform: options?.platform,
+        provider: options?.model?.provider,
+        model: options?.model?.name,
+        stopReason: runState.stopReason,
+        context: {
+          sessionConversation: options?.sessionConversation,
+          sessionUuid: options?.sessionUuid,
+          hasErrorMessage: true,
+          llmCallCount: runState.llmCallCount,
+        },
+      });
+    }
     try {
       await responseCtx.replaceResponse("_Sorry, something went wrong_");
       await responseCtx.respondDiagnostic(`Error: ${runState.errorMessage}`, {
@@ -849,6 +876,18 @@ async function finalizeRunResponse(
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       log.logWarning("Failed to post error message", errMsg);
+      reportUserFacingError(err, {
+        domain: "chat_platform",
+        surface: "final_response",
+        operation: "finalize_error_response",
+        severity: "error",
+        platform: options?.platform,
+        context: {
+          sessionConversation: options?.sessionConversation,
+          sessionUuid: options?.sessionUuid,
+          stopReason: runState.stopReason,
+        },
+      });
     }
     return;
   }
@@ -875,6 +914,18 @@ async function finalizeRunResponse(
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     log.logWarning("Failed to replace message with final text", errMsg);
+    reportUserFacingError(err, {
+      domain: "chat_platform",
+      surface: "final_response",
+      operation: "replace_final_response",
+      severity: "error",
+      platform: options?.platform,
+      context: {
+        sessionConversation: options?.sessionConversation,
+        sessionUuid: options?.sessionUuid,
+        finalTextLength: finalText.length,
+      },
+    });
   }
 }
 
@@ -1498,6 +1549,10 @@ export async function createRunner(
       await finalizeRunResponse(responseCtx, session, runState, {
         triggerAttribution: prepared.triggerAttribution,
         createOverflowLink,
+        platform: platform.name,
+        model,
+        sessionConversation: prepared.sessionConversation,
+        sessionUuid,
       });
 
       await reportUsageSummary({

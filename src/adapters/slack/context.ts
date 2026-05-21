@@ -5,7 +5,7 @@ import type {
   PlatformInfo,
 } from "../../adapter.js";
 import * as log from "../../log.js";
-import { formatToolArgs, splitText } from "../shared.js";
+import { createChatResponseErrorReporter, formatToolArgs, splitText } from "../shared.js";
 import type { SlackBot, SlackEvent } from "./bot.js";
 import { resolveSlackRootTs, resolveSlackSessionKey } from "./session.js";
 
@@ -188,6 +188,19 @@ export function createSlackAdapters(
     },
   };
 
+  const reportResponseError = createChatResponseErrorReporter(() => ({
+    platform: "slack",
+    conversationId,
+    channelId,
+    messageId: message.id,
+    sessionKey: message.sessionKey,
+    responseMessageId: messageTs,
+    threadTs: rootTs,
+    conversationKind: message.conversationKind,
+    isSyntheticEvent: Boolean(isSyntheticEvent),
+    isThreaded,
+  }));
+
   const responseCtx = {
     respond: async (text: string) => {
       updatePromise = updatePromise.then(async () => {
@@ -222,6 +235,11 @@ export function createSlackAdapters(
           }
         } catch (err) {
           log.logWarning("Slack respond error", err instanceof Error ? err.message : String(err));
+          reportResponseError(err, "respond", {
+            phase: messageTs ? "update" : "initial_post",
+            textLength: text.length,
+            accumulatedLength: accumulatedText.length,
+          });
         }
       });
       await updatePromise;
@@ -280,6 +298,10 @@ export function createSlackAdapters(
             "Slack replaceResponse error",
             err instanceof Error ? err.message : String(err),
           );
+          reportResponseError(err, "replace_response", {
+            textLength: text.length,
+            hadExistingResponse: Boolean(messageTs),
+          });
         }
       });
       await updatePromise;
@@ -294,6 +316,10 @@ export function createSlackAdapters(
             "Slack respondDiagnostic error",
             err instanceof Error ? err.message : String(err),
           );
+          reportResponseError(err, "respond_diagnostic", {
+            textLength: text.length,
+            style: options?.style,
+          });
         }
       });
       await updatePromise;
@@ -344,6 +370,7 @@ export function createSlackAdapters(
             "Slack setWorking error",
             err instanceof Error ? err.message : String(err),
           );
+          reportResponseError(err, "set_working", { working });
         }
       });
       await updatePromise;

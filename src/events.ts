@@ -14,6 +14,7 @@ import { join } from "path";
 import type { Bot, BotEvent, ConversationKind } from "./adapter.js";
 import { ensureDirExists, parseJsonSchemaValue } from "./file-guards.js";
 import * as log from "./log.js";
+import { reportUserFacingError } from "./sentry.js";
 import { inferConversationKind } from "./session-policy.js";
 
 export interface ImmediateEvent {
@@ -508,6 +509,23 @@ export class EventsWatcher {
 
     if (!bot) {
       log.logWarning(`No bot configured for event platform '${event.platform}'`, filename);
+      reportUserFacingError(new Error("Scheduled event delivery failed: missing bot"), {
+        domain: "events",
+        surface: "event_delivery",
+        operation: "event_execute",
+        severity: "error",
+        platform: event.platform,
+        context: {
+          failure: "missing_bot",
+          filename,
+          eventType: event.type,
+          conversationId: event.conversationId,
+          conversationKind: event.conversationKind,
+          deleteAfter,
+          isSyntheticEvent: true,
+          textLength: event.text.length,
+        },
+      });
       if (deleteAfter) {
         this.deleteFile(filename, "missing-bot");
       }
@@ -532,6 +550,23 @@ export class EventsWatcher {
       this.deleteFile(filename, "executed-and-enqueued");
     } else if (!enqueued) {
       log.logWarning(`Event queue full, discarded: ${filename}`);
+      reportUserFacingError(new Error("Scheduled event delivery failed: queue full"), {
+        domain: "events",
+        surface: "event_delivery",
+        operation: "event_execute",
+        severity: "error",
+        platform: event.platform,
+        context: {
+          failure: "queue_full",
+          filename,
+          eventType: event.type,
+          conversationId: event.conversationId,
+          conversationKind: event.conversationKind,
+          deleteAfter,
+          isSyntheticEvent: true,
+          textLength: event.text.length,
+        },
+      });
       // Still delete immediate/one-shot even if discarded
       if (deleteAfter) {
         this.deleteFile(filename, "queue-full-discarded");

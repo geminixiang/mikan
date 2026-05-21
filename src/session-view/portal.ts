@@ -3,6 +3,7 @@ import { basename } from "path";
 import MarkdownIt from "markdown-it";
 import type { Bot, BotAdapters, BotEvent, BotHandler, ChatResponseContext } from "../adapter.js";
 import * as log from "../log.js";
+import { reportUserFacingError } from "../sentry.js";
 import { inferConversationKind } from "../session-policy.js";
 import {
   loadSessionViewModel,
@@ -123,6 +124,19 @@ export async function handleSessionViewRequest(
       `[${entry.conversationId}] Corrupted session file referenced for ${entry.sessionFile}`,
       error instanceof Error ? error.message : String(error),
     );
+    reportUserFacingError(error, {
+      domain: "session_view",
+      surface: "session_view",
+      operation: "resolve_requested_session",
+      severity: "error",
+      platform: entry.platform,
+      context: {
+        conversationId: entry.conversationId,
+        sessionKey: entry.sessionKey,
+        sessionFile: basename(entry.sessionFile),
+        requestedSession,
+      },
+    });
     res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
     res.end(
       renderStatusPage("Session unavailable", "The selected session file appears to be corrupted."),
@@ -158,6 +172,18 @@ export async function handleSessionViewRequest(
       `[${entry.conversationId}] Failed to render session ${entry.sessionFile}`,
       error instanceof Error ? error.message : String(error),
     );
+    reportUserFacingError(error, {
+      domain: "session_view",
+      surface: "session_view",
+      operation: "render_session",
+      severity: "error",
+      platform: entry.platform,
+      context: {
+        conversationId: entry.conversationId,
+        sessionKey: entry.sessionKey,
+        sessionFile: basename(targetSessionFile),
+      },
+    });
     res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
     res.end(renderStatusPage("Session unavailable", "The session could not be loaded right now."));
   }
@@ -484,7 +510,27 @@ async function handleSessionStreamRequest(
   }
 
   const requestedSession = url.searchParams.get("session");
-  const targetSessionFile = resolveRequestedSessionFile(entry.sessionFile, requestedSession);
+  let targetSessionFile: string | null;
+  try {
+    targetSessionFile = resolveRequestedSessionFile(entry.sessionFile, requestedSession);
+  } catch (error) {
+    reportUserFacingError(error, {
+      domain: "session_view",
+      surface: "session_view",
+      operation: "session_stream",
+      severity: "error",
+      platform: entry.platform,
+      context: {
+        conversationId: entry.conversationId,
+        sessionKey: entry.sessionKey,
+        sessionFile: basename(entry.sessionFile),
+        requestedSession,
+      },
+    });
+    res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Session stream unavailable");
+    return;
+  }
   if (!targetSessionFile) {
     res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
     res.end("Invalid session file");
@@ -553,7 +599,26 @@ async function handleSessionMessageRequest(
     return;
   }
 
-  const targetSessionFile = resolveRequestedSessionFile(entry.sessionFile, requestedSession);
+  let targetSessionFile: string | null;
+  try {
+    targetSessionFile = resolveRequestedSessionFile(entry.sessionFile, requestedSession);
+  } catch (error) {
+    reportUserFacingError(error, {
+      domain: "session_view",
+      surface: "session_view",
+      operation: "session_message",
+      severity: "error",
+      platform: entry.platform,
+      context: {
+        conversationId: entry.conversationId,
+        sessionKey: entry.sessionKey,
+        sessionFile: basename(entry.sessionFile),
+        requestedSession,
+      },
+    });
+    json(res, 500, { ok: false, error: "Session file could not be loaded." });
+    return;
+  }
   if (!targetSessionFile) {
     json(res, 400, { ok: false, error: "Invalid session file." });
     return;
@@ -637,6 +702,19 @@ async function handleSessionMessageRequest(
         `[${entry.conversationId}] Session view message failed`,
         error instanceof Error ? error.message : String(error),
       );
+      reportUserFacingError(error, {
+        domain: "session_view",
+        surface: "session_view",
+        operation: "interactive_message",
+        severity: "error",
+        platform: entry.platform,
+        context: {
+          conversationId: entry.conversationId,
+          sessionKey: activeSessionKey,
+          messageId: ts,
+          textLength: text.length,
+        },
+      });
       sessionViewStreamHub.publish(streamKey, {
         type: "error",
         message: error instanceof Error ? error.message : String(error),

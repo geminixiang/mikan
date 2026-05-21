@@ -8,7 +8,7 @@ import { dispatchCommand } from "../commands/index.js";
 import type { CommandHandler, CommandServices } from "../commands/index.js";
 import { isPrivateConversation } from "../commands/utils.js";
 import * as log from "../log.js";
-import { addLifecycleBreadcrumb, applyRunScope } from "../sentry.js";
+import { addLifecycleBreadcrumb, applyRunScope, reportUserFacingError } from "../sentry.js";
 import { formatStopped } from "../ui-copy.js";
 import * as Sentry from "@sentry/node";
 import { join } from "path";
@@ -95,11 +95,31 @@ export class ConversationOrchestrator {
       );
     }
 
-    const state = await this.options.getOrCreateState({
-      conversationId,
-      platformName: adapters.platform.name,
-      sessionKey,
-    });
+    let state: ConversationRuntimeState;
+    try {
+      state = await this.options.getOrCreateState({
+        conversationId,
+        platformName: adapters.platform.name,
+        sessionKey,
+      });
+    } catch (err) {
+      reportUserFacingError(err, {
+        domain: "mama",
+        surface: "session_setup",
+        operation: "get_or_create_state",
+        severity: "error",
+        platform: adapters.platform.name,
+        context: {
+          conversationId,
+          sessionKey,
+          messageId: adapters.message.id,
+          threadTs: adapters.message.threadTs,
+          isSyntheticEvent: Boolean(isSyntheticEvent),
+          attachmentCount: adapters.message.attachments?.length ?? 0,
+        },
+      });
+      throw err;
+    }
 
     state.running = true;
     state.stopRequested = false;
@@ -214,7 +234,21 @@ export class ConversationOrchestrator {
               messageId: message.id,
               threadTs: message.threadTs,
             });
-            Sentry.captureException(err);
+            reportUserFacingError(err, {
+              domain: "mama",
+              surface: "agent_run",
+              operation: "run",
+              severity: "error",
+              platform: platform.name,
+              context: {
+                conversationId,
+                sessionKey,
+                messageId: message.id,
+                threadTs: message.threadTs,
+                isSyntheticEvent: Boolean(isSyntheticEvent),
+                attachmentCount: message.attachments?.length ?? 0,
+              },
+            });
             Sentry.metrics.count("agent.run.errors", 1, {
               attributes: { channel: conversationId, platform: platform.name },
             });

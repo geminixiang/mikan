@@ -14,6 +14,7 @@ import {
   type OAuthService,
 } from "./index.js";
 import * as log from "../log.js";
+import { reportUserFacingError } from "../sentry.js";
 import { PRODUCT_NAME } from "../ui-copy.js";
 import { defaultVaultTargetPath, type VaultManager } from "../vault.js";
 
@@ -347,6 +348,13 @@ export function startLinkServer(
           res,
         ).catch((err: Error) => {
           log.logWarning("OAuth callback failed", err.message);
+          reportUserFacingError(err, {
+            domain: "login",
+            surface: "oauth",
+            operation: "oauth_callback",
+            severity: "error",
+            context: { route: "/oauth/callback" },
+          });
           res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
           res.end(renderErrorPage("OAuth callback failed. Please retry /login."));
         });
@@ -1455,6 +1463,20 @@ async function handleLinkComplete(
       `Failed to persist [${envKeys.join(", ")}] for ${linkToken.platform}/${linkToken.platformUserId}`,
       persistError instanceof Error ? persistError.message : String(persistError),
     );
+    reportUserFacingError(persistError, {
+      domain: "login",
+      surface: "credential_login",
+      operation: "vault_persist",
+      severity: "error",
+      platform: linkToken.platform,
+      context: {
+        conversationId: linkToken.conversationId,
+        vaultId: linkToken.vaultId,
+        credentialMode: data.mode ?? "manual",
+        envKeyCount: envKeys.length,
+        fileTargetCount: fileTargets.length,
+      },
+    });
     res.writeHead(500, { "Content-Type": "application/json" });
     res.end(
       JSON.stringify({
@@ -1479,6 +1501,20 @@ async function handleLinkComplete(
     `${message} Vault: \`${linkToken.vaultId}\`.`,
   ).catch((err: Error) => {
     log.logWarning("Failed to notify user after credential login", err.message);
+    reportUserFacingError(err, {
+      domain: "login",
+      surface: "credential_login",
+      operation: "notify_user",
+      severity: "warning",
+      platform: linkToken.platform,
+      context: {
+        conversationId: linkToken.conversationId,
+        vaultId: linkToken.vaultId,
+        credentialMode: data.mode ?? "manual",
+        envKeyCount: envKeys.length,
+        fileTargetCount: fileTargets.length,
+      },
+    });
   });
 }
 
@@ -1703,6 +1739,20 @@ async function handleOAuthCallback(
       `Failed to persist OAuth credentials for ${linkToken.platform}/${linkToken.platformUserId}`,
       persistError instanceof Error ? persistError.message : String(persistError),
     );
+    reportUserFacingError(persistError, {
+      domain: "login",
+      surface: "oauth",
+      operation: "vault_persist",
+      severity: "error",
+      platform: linkToken.platform,
+      context: {
+        conversationId: linkToken.conversationId,
+        vaultId: linkToken.vaultId,
+        serviceId: service.id,
+        credentialMode: "oauth",
+        storedTargetCount: storedTargets.length,
+      },
+    });
     res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
     res.end(
       renderErrorPage(
@@ -1722,6 +1772,20 @@ async function handleOAuthCallback(
     `${service.label} OAuth stored (${storedTargets.join(", ")}) in vault \`${linkToken.vaultId}\`.`,
   ).catch((err: Error) => {
     log.logWarning("Failed to notify user after OAuth login", err.message);
+    reportUserFacingError(err, {
+      domain: "login",
+      surface: "oauth",
+      operation: "notify_user",
+      severity: "warning",
+      platform: linkToken.platform,
+      context: {
+        conversationId: linkToken.conversationId,
+        vaultId: linkToken.vaultId,
+        serviceId: service.id,
+        credentialMode: "oauth",
+        storedTargetCount: storedTargets.length,
+      },
+    });
   });
 
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });

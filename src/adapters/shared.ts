@@ -11,6 +11,70 @@ import { appendFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import type { BotHandler } from "../adapter.js";
 import * as log from "../log.js";
+import { reportUserFacingError } from "../sentry.js";
+
+export type ChatResponseErrorOperation =
+  | "respond"
+  | "replace_response"
+  | "respond_diagnostic"
+  | "set_working";
+
+export interface ChatResponseErrorContext {
+  platform: string;
+  conversationId: string;
+  messageId: string;
+  sessionKey: string;
+  conversationKind: string;
+  operation: ChatResponseErrorOperation;
+  channelId?: string;
+  chatId?: number;
+  responseMessageId?: string | number | null;
+  threadTs?: string;
+  replyTargetId?: string;
+  replyToId?: number | null;
+  isSyntheticEvent?: boolean;
+  isThreaded?: boolean;
+  extra?: Record<string, unknown>;
+}
+
+export type ChatResponseErrorReporter = (
+  err: unknown,
+  operation: ChatResponseErrorOperation,
+  extra?: Record<string, unknown>,
+) => void;
+
+export function createChatResponseErrorReporter(
+  resolve: () => Omit<ChatResponseErrorContext, "operation" | "extra">,
+): ChatResponseErrorReporter {
+  return (err, operation, extra) => {
+    reportChatResponseError(err, { ...resolve(), operation, extra });
+  };
+}
+
+export function reportChatResponseError(err: unknown, context: ChatResponseErrorContext): void {
+  reportUserFacingError(err, {
+    domain: "chat_platform",
+    surface: "chat_response",
+    operation: context.operation,
+    severity: context.operation === "set_working" ? "warning" : "error",
+    platform: context.platform,
+    context: {
+      conversationId: context.conversationId,
+      channelId: context.channelId,
+      chatId: context.chatId,
+      messageId: context.messageId,
+      sessionKey: context.sessionKey,
+      responseMessageId: context.responseMessageId,
+      threadTs: context.threadTs,
+      replyTargetId: context.replyTargetId,
+      replyToId: context.replyToId,
+      conversationKind: context.conversationKind,
+      isSyntheticEvent: context.isSyntheticEvent,
+      isThreaded: context.isThreaded,
+      ...context.extra,
+    },
+  });
+}
 
 export class ChannelQueue {
   private queue: Array<() => Promise<void>> = [];

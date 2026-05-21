@@ -5,7 +5,7 @@ import type {
   PlatformInfo,
 } from "../../adapter.js";
 import * as log from "../../log.js";
-import { formatToolArgs, splitText } from "../shared.js";
+import { createChatResponseErrorReporter, formatToolArgs, splitText } from "../shared.js";
 import { sanitizeTelegramHtml } from "./html.js";
 import type { TelegramBot, TelegramEvent } from "./bot.js";
 
@@ -25,9 +25,11 @@ async function notifyError(
   chatId: number,
   label: string,
   err: unknown,
+  report?: () => void,
 ): Promise<void> {
   const errMsg = err instanceof Error ? err.message : String(err);
   log.logWarning(`Telegram ${label} error`, errMsg);
+  report?.();
   try {
     await bot.postPlainMessage(chatId, `⚠️ 發送失敗：${errMsg}`);
   } catch {
@@ -100,6 +102,17 @@ export function createTelegramAdapters(
     }
   }
 
+  const reportResponseError = createChatResponseErrorReporter(() => ({
+    platform: "telegram",
+    conversationId,
+    chatId,
+    messageId: message.id,
+    sessionKey: message.sessionKey,
+    responseMessageId: messageId,
+    replyToId,
+    conversationKind: message.conversationKind,
+  }));
+
   const responseCtx: ChatResponseContext = {
     respond: async (text: string) => {
       updatePromise = updatePromise.then(async () => {
@@ -119,7 +132,13 @@ export function createTelegramAdapters(
             bot.logBotResponse(conversationId, text, String(messageId));
           }
         } catch (err) {
-          await notifyError(bot, chatId, "respond", err);
+          await notifyError(bot, chatId, "respond", err, () =>
+            reportResponseError(err, "respond", {
+              phase: messageId ? "update" : "initial_post",
+              textLength: text.length,
+              accumulatedLength: accumulatedText.length,
+            }),
+          );
         }
       });
       await updatePromise;
@@ -139,7 +158,12 @@ export function createTelegramAdapters(
             await sendContinuation(part);
           }
         } catch (err) {
-          await notifyError(bot, chatId, "replaceResponse", err);
+          await notifyError(bot, chatId, "replaceResponse", err, () =>
+            reportResponseError(err, "replace_response", {
+              textLength: text.length,
+              hadExistingResponse: Boolean(messageId),
+            }),
+          );
         }
       });
       await updatePromise;
@@ -157,7 +181,12 @@ export function createTelegramAdapters(
             await sendContinuation(part);
           }
         } catch (err) {
-          await notifyError(bot, chatId, "respondDiagnostic", err);
+          await notifyError(bot, chatId, "respondDiagnostic", err, () =>
+            reportResponseError(err, "respond_diagnostic", {
+              textLength: text.length,
+              style: options?.style,
+            }),
+          );
         }
       });
       await updatePromise;
