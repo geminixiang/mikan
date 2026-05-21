@@ -117,6 +117,31 @@ describe("createExecutor", () => {
   });
 });
 
+describe("ContainerExecutor", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("bootstraps git credential helper when GitHub token env is injected", async () => {
+    const exec = vi
+      .spyOn(HostExecutor.prototype, "exec")
+      .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
+    const executor = new ContainerExecutor(
+      "mama-sandbox",
+      { GH_TOKEN: "gho_test" },
+      async () => {},
+    );
+
+    await executor.exec("git clone https://github.com/livingbio/skills.git");
+
+    const [[dockerCommand]] = exec.mock.calls;
+    expect(dockerCommand).toContain("docker exec --env-file ");
+    expect(dockerCommand).toContain("mama-sandbox sh -c");
+    expect(dockerCommand).toContain("gh auth setup-git");
+    expect(dockerCommand).toContain("git clone https://github.com/livingbio/skills.git");
+  });
+});
+
 describe("FirecrackerExecutor", () => {
   afterEach(() => {
     vi.restoreAllMocks();

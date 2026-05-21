@@ -71,6 +71,21 @@ export function buildContainerExecCommand(
   return `docker exec ${envPart}-w /workspace ${container} sh -c ${shellEscape(command)}`;
 }
 
+function withRuntimeBootstrap(command: string, env?: Record<string, string>): string {
+  if (!hasGitHubToken(env)) {
+    return command;
+  }
+
+  return [
+    "if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then gh auth setup-git >/dev/null 2>&1 || true; fi",
+    command,
+  ].join("\n");
+}
+
+function hasGitHubToken(env?: Record<string, string>): boolean {
+  return Boolean(env?.GH_TOKEN || env?.GITHUB_TOKEN || env?.GITHUB_OAUTH_ACCESS_TOKEN);
+}
+
 export class ContainerExecutor implements Executor {
   constructor(
     private container: string,
@@ -88,7 +103,11 @@ export class ContainerExecutor implements Executor {
     const hostExecutor = new HostExecutor();
     const temp = this.env ? createSecureEnvFile(this.env) : undefined;
     try {
-      const dockerCmd = buildContainerExecCommand(this.container, command, temp?.envFilePath);
+      const dockerCmd = buildContainerExecCommand(
+        this.container,
+        withRuntimeBootstrap(command, this.env),
+        temp?.envFilePath,
+      );
       return await hostExecutor.exec(dockerCmd, options);
     } finally {
       temp?.cleanup();
