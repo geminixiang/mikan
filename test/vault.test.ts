@@ -214,6 +214,14 @@ describe("ActorExecutionResolver image mode", () => {
     tmpDir = join(tmpdir(), `mama-image-vault-test-${Date.now()}-${Math.random()}`);
     vaultsDir = join(tmpDir, "vaults");
     mkdirSync(vaultsDir, { recursive: true });
+    process.env.MAMA_STATE_DIR = tmpDir;
+    writeFileSync(
+      join(tmpDir, "settings.json"),
+      JSON.stringify({
+        llm: { provider: "anthropic", model: "claude-sonnet-4-6", thinkingLevel: "off" },
+        sandbox: { defaultSharedVault: "" },
+      }),
+    );
   });
 
   afterEach(() => {
@@ -247,7 +255,6 @@ describe("ActorExecutionResolver image mode", () => {
   test("copies the default shared vault for a new image sandbox vault", async () => {
     mkdirSync(join(vaultsDir, "shared", "claw"), { recursive: true });
     writeFileSync(join(vaultsDir, "shared", "claw", "env"), "ANTHROPIC_API_KEY=sk-test\n");
-    process.env.MAMA_STATE_DIR = tmpDir;
     writeFileSync(
       join(tmpDir, "settings.json"),
       JSON.stringify({
@@ -282,7 +289,6 @@ describe("ActorExecutionResolver image mode", () => {
     mkdirSync(join(vaultsDir, "d123"), { recursive: true });
     writeFileSync(join(vaultsDir, "shared", "claw", "env"), "A=shared\n");
     writeFileSync(join(vaultsDir, "d123", "env"), "A=existing\n");
-    process.env.MAMA_STATE_DIR = tmpDir;
     writeFileSync(
       join(tmpDir, "settings.json"),
       JSON.stringify({

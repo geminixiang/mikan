@@ -97,17 +97,7 @@ export class ActorExecutionResolver {
     }
     if (!profile || normalizeSharedVaultName(profile) !== profile) return;
 
-    try {
-      this.vaultManager.copySharedVaultTo(profile, vaultKey);
-    } catch (err) {
-      reportUserFacingError(err, {
-        domain: "sandbox",
-        surface: "vault_injection",
-        operation: "copy_default_shared_vault",
-        severity: "warning",
-        context: { vaultKey, profile, fatal: false },
-      });
-    }
+    this.vaultManager.copySharedVaultTo(profile, vaultKey);
   }
 
   private resolveSandboxConfig(vaultKey: string): SandboxConfig {
