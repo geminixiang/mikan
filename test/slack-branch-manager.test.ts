@@ -218,6 +218,39 @@ describe("resolveSlackSessionScope", () => {
     expect(content).not.toContain("second reply");
   });
 
+  test("replaces a stale current session with top-level history from log", async () => {
+    const sessionDir = getChannelSessionDir(conversationDir);
+    const staleFile = createManagedSessionFile(sessionDir, conversationDir);
+    const staleSession = openManagedSession(staleFile, sessionDir, conversationDir);
+    staleSession.appendMessage(makeUserMessage("[2026-03-17 10:00:00+08:00] [alice]: stale"));
+
+    writeLog([
+      {
+        date: new Date().toISOString(),
+        ts: "1000.0001",
+        user: "U123",
+        userName: "alice",
+        text: "fresh top-level message",
+        isBot: false,
+      },
+    ]);
+
+    const { contextFile } = await resolveSlackSessionScope({
+      conversationDir,
+      sessionKey: "C123:1000.0001",
+      sleep: async () => {},
+      retryCount: 1,
+      retryDelayMs: 0,
+    });
+
+    const currentPointer = join(sessionDir, "current");
+    const parentFile = join(sessionDir, readFileSync(currentPointer, "utf-8").trim());
+    expect(parentFile).not.toBe(staleFile);
+    expect(readFileSync(parentFile, "utf-8")).toContain("fresh top-level message");
+    expect(readFileSync(parentFile, "utf-8")).not.toContain("stale");
+    expect(readFileSync(contextFile, "utf-8")).toContain(`"parentSession":"${parentFile}"`);
+  });
+
   test("materializes top-level history from log when a first thread has no current session", async () => {
     writeLog([
       {

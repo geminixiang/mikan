@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { mkdirSync } from "fs";
+import { mkdirSync, statSync } from "fs";
 import { join } from "path";
 import { isRecord, parseJsonValue, readTextFileIfExists } from "./file-guards.js";
 import { atomicWritePrivateFile } from "./fs-atomic.js";
@@ -17,6 +17,15 @@ export interface MaterializeTopLevelHistoryOptions {
 
 const DEFAULT_RECENT_DAYS = 14;
 const DEFAULT_MAX_MESSAGES = 200;
+
+export function resolveUsableTopLevelHistorySession(
+  options: MaterializeTopLevelHistoryOptions & { existingSessionFile: string | null },
+): string | null {
+  if (options.existingSessionFile && isSessionFreshForTopLevelHistory(options)) {
+    return options.existingSessionFile;
+  }
+  return materializeTopLevelHistorySession(options);
+}
 
 export function materializeTopLevelHistorySession(
   options: MaterializeTopLevelHistoryOptions,
@@ -59,6 +68,16 @@ export function materializeTopLevelHistorySession(
   return sessionFile;
 }
 
+export function latestTopLevelHistoryTime(
+  options: Omit<MaterializeTopLevelHistoryOptions, "sessionDir" | "cwd">,
+): number | null {
+  const messages = readTopLevelHistoryMessages({ ...options, maxMessages: 1 });
+  const latest = messages.at(-1);
+  if (!latest?.date) return null;
+  const ms = new Date(latest.date).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
 export function readTopLevelHistoryMessages(
   options: Omit<MaterializeTopLevelHistoryOptions, "sessionDir" | "cwd">,
 ): ConversationLogMessage[] {
@@ -94,6 +113,20 @@ export function readTopLevelHistoryMessages(
   }
 
   return messages.slice(-(options.maxMessages ?? DEFAULT_MAX_MESSAGES));
+}
+
+function isSessionFreshForTopLevelHistory(
+  options: MaterializeTopLevelHistoryOptions & { existingSessionFile: string | null },
+): boolean {
+  if (!options.existingSessionFile) return false;
+  const latestHistoryMs = latestTopLevelHistoryTime(options);
+  if (latestHistoryMs === null) return true;
+
+  try {
+    return statSync(options.existingSessionFile).mtimeMs >= latestHistoryMs;
+  } catch {
+    return false;
+  }
 }
 
 function formatHistoryMessage(message: ConversationLogMessage): string {
