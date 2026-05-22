@@ -122,6 +122,8 @@ For local testing you can set just `MAMA_LINK_PORT`; mama will use `http://local
 
 Credentials are stored under `<state-dir>/vaults` (default `~/.mama/vaults`). Vault env is only injected in `container`, `image`, `firecracker`, and `cloudflare` modes.
 
+Shared login profiles live under `<state-dir>/vaults/shared/<name>`. `/pi-login copy <name>` merge-copies that shared profile into the current conversation vault: shared env keys overwrite matching conversation env keys, conversation-only env keys are kept, and files from the shared profile overwrite files at the same relative path. To seed every new managed sandbox vault from a shared profile, fill in `sandbox.defaultSharedVault` in `<state-dir>/settings.json` (onboard creates it as an empty string), for example `{ "sandbox": { "defaultSharedVault": "claw" } }`. Empty string disables the default. The default profile is copied only when the target vault does not exist yet.
+
 ## Configuration
 
 mama reads global settings from `<state-dir>/settings.json` (default `~/.mama/settings.json`, override via `--state-dir` or `MAMA_STATE_DIR`). This file is required and is created explicitly with `mama --onboard`. Per-conversation settings live at `<workingDir>/<conversationId>/settings.json` and override global settings for that conversation.

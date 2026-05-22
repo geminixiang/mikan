@@ -5,7 +5,7 @@ import { ensureDirExists, isRecord, readJsonFileIfExists } from "./file-guards.j
 import { DockerContainerManager, type ContainerMount } from "./provisioner.js";
 import { createExecutor, type Executor, type SandboxConfig } from "./sandbox/index.js";
 import { reportUserFacingError } from "./sentry.js";
-import type { ResolvedVault, VaultManager } from "./vault.js";
+import { normalizeSharedVaultName, type ResolvedVault, type VaultManager } from "./vault.js";
 import { resolveActorVaultKey } from "./vault-routing.js";
 
 export interface ActorContext {
@@ -72,6 +72,7 @@ export class ActorExecutionResolver {
 
   async resolve(context: ActorContext): Promise<Executor> {
     const vaultKey = resolveActorVaultKey(this.baseConfig, context.userId, context.conversationId);
+    this.ensureDefaultSharedVault(vaultKey);
 
     const vault = this.vaultManager.resolve(vaultKey);
     const config = this.resolveSandboxConfig(vaultKey);
@@ -82,6 +83,21 @@ export class ActorExecutionResolver {
       env,
       this.buildEnsureReadyCallback(vaultKey, context.conversationId, config, vault),
     );
+  }
+
+  private ensureDefaultSharedVault(vaultKey: string): void {
+    if (this.baseConfig.type !== "image" && this.baseConfig.type !== "cloudflare") return;
+    if (this.vaultManager.hasEntry(vaultKey)) return;
+
+    let profile: string | undefined;
+    try {
+      profile = loadAgentConfig().defaultSharedVault;
+    } catch {
+      return;
+    }
+    if (!profile || normalizeSharedVaultName(profile) !== profile) return;
+
+    this.vaultManager.copySharedVaultTo(profile, vaultKey);
   }
 
   private resolveSandboxConfig(vaultKey: string): SandboxConfig {

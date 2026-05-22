@@ -218,6 +218,7 @@ describe("ActorExecutionResolver image mode", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    delete process.env.MAMA_STATE_DIR;
     if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -241,6 +242,70 @@ describe("ActorExecutionResolver image mode", () => {
       container: "mama-sandbox-d123",
     });
     expect(mgr.resolve(DockerContainerManager.sanitizeSegment("D123"))).toBeUndefined();
+  });
+
+  test("copies the default shared vault for a new image sandbox vault", async () => {
+    mkdirSync(join(vaultsDir, "shared", "claw"), { recursive: true });
+    writeFileSync(join(vaultsDir, "shared", "claw", "env"), "ANTHROPIC_API_KEY=sk-test\n");
+    process.env.MAMA_STATE_DIR = tmpDir;
+    writeFileSync(
+      join(tmpDir, "settings.json"),
+      JSON.stringify({
+        llm: { provider: "anthropic", model: "claude-sonnet-4-6", thinkingLevel: "off" },
+        sandbox: { defaultSharedVault: "claw" },
+      }),
+    );
+
+    const resolver = new ActorExecutionResolver(
+      { type: "image", image: "ubuntu:24.04" },
+      new FileVaultManager(tmpDir),
+      undefined,
+      tmpDir,
+    );
+    const executor = await resolver.resolve({
+      platform: "slack",
+      userId: "U123",
+      conversationId: "D123",
+    });
+
+    expect(executor.getSandboxConfig()).toEqual({
+      type: "container",
+      container: "mama-sandbox-d123",
+    });
+    expect(readFileSync(join(vaultsDir, "d123", "env"), "utf-8")).toContain(
+      "ANTHROPIC_API_KEY=sk-test",
+    );
+  });
+
+  test("does not copy the default shared vault over an existing image sandbox vault", async () => {
+    mkdirSync(join(vaultsDir, "shared", "claw"), { recursive: true });
+    mkdirSync(join(vaultsDir, "d123"), { recursive: true });
+    writeFileSync(join(vaultsDir, "shared", "claw", "env"), "A=shared\n");
+    writeFileSync(join(vaultsDir, "d123", "env"), "A=existing\n");
+    process.env.MAMA_STATE_DIR = tmpDir;
+    writeFileSync(
+      join(tmpDir, "settings.json"),
+      JSON.stringify({
+        llm: { provider: "anthropic", model: "claude-sonnet-4-6", thinkingLevel: "off" },
+        sandbox: { defaultSharedVault: "claw" },
+      }),
+    );
+
+    const resolver = new ActorExecutionResolver(
+      { type: "image", image: "ubuntu:24.04" },
+      new FileVaultManager(tmpDir),
+      undefined,
+      tmpDir,
+    );
+    await resolver.resolve({
+      platform: "slack",
+      userId: "U123",
+      conversationId: "D123",
+    });
+
+    expect(parseEnvFile(readFileSync(join(vaultsDir, "d123", "env"), "utf-8"))).toEqual({
+      A: "existing",
+    });
   });
 
   test("login and execution use the same generated vault key in image mode", async () => {

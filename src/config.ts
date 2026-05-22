@@ -23,6 +23,7 @@ export interface AgentConfig {
   sandboxBoostCpus?: string;
   sandboxBoostMemory?: string;
   sandboxImageWorkspaceMount?: "private" | "full";
+  defaultSharedVault?: string;
 }
 
 export interface AutoReplyConfig {
@@ -55,6 +56,7 @@ const ONBOARD_SETTINGS: SettingsFileConfig = {
     image: {
       workspaceMount: "private",
     },
+    defaultSharedVault: "",
   },
 };
 
@@ -103,6 +105,7 @@ const SettingsFileSchema = Type.Object({
           ),
         }),
       ),
+      defaultSharedVault: Type.Optional(Type.String()),
     }),
   ),
   autoReply: Type.Optional(
@@ -145,6 +148,9 @@ function normalizeSettingsConfig(config: SettingsFileConfig): Partial<AgentConfi
     ...(config.sandbox?.image?.workspaceMount !== undefined
       ? { sandboxImageWorkspaceMount: config.sandbox.image.workspaceMount }
       : {}),
+    ...(config.sandbox?.defaultSharedVault?.trim()
+      ? { defaultSharedVault: config.sandbox.defaultSharedVault.trim() }
+      : {}),
   };
 }
 
@@ -184,6 +190,7 @@ function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
   const sandboxBoostCpus = fromFile.sandboxBoostCpus;
   const sandboxBoostMemory = fromFile.sandboxBoostMemory;
   const sandboxImageWorkspaceMount = fromFile.sandboxImageWorkspaceMount;
+  const defaultSharedVault = fromFile.defaultSharedVault;
 
   return {
     provider,
@@ -195,6 +202,7 @@ function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
     sandboxBoostCpus,
     sandboxBoostMemory,
     sandboxImageWorkspaceMount,
+    defaultSharedVault,
   };
 }
 

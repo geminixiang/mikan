@@ -46,6 +46,8 @@ describe("loadAgentConfig", () => {
     expect(config.sandboxBoostCpus).toBe("2");
     expect(config.sandboxBoostMemory).toBe("4g");
     expect(config.sandboxImageWorkspaceMount).toBe("private");
+    expect(config.defaultSharedVault).toBeUndefined();
+    expect(JSON.parse(readFileSync(settingsPath, "utf-8")).sandbox.defaultSharedVault).toBe("");
   });
 
   test("reads provider and model from settings.json", () => {
@@ -280,6 +282,7 @@ describe("saveAgentConfig", () => {
         memory: "1g",
         boost: { cpus: "2", memory: "4g" },
         image: { workspaceMount: "private" },
+        defaultSharedVault: "",
       },
     });
   });
@@ -302,6 +305,7 @@ describe("saveAgentConfig", () => {
         memory: "1g",
         boost: { cpus: "2", memory: "4g" },
         image: { workspaceMount: "private" },
+        defaultSharedVault: "",
       },
     });
   });
