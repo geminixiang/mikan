@@ -45,7 +45,8 @@ function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function buildThreadRootSeed(message: ConversationLogMessage): ThreadRootMessage {
+function buildThreadRootSeed(message: ConversationLogMessage): ThreadRootMessage | null {
+  if (message.isBot) return null;
   return {
     text: message.text,
     userName: message.userName,
@@ -64,6 +65,7 @@ async function forkThreadSessionFromRootWithRetry(
   retryDelayMs: number,
 ): Promise<string> {
   const seed = buildThreadRootSeed(rootMessage);
+  if (!seed) throw new ThreadRootNotFoundError(sourceSessionFile);
 
   for (let attempt = 0; attempt < retryCount; attempt++) {
     try {

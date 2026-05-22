@@ -132,6 +132,59 @@ describe("resolveSlackSessionScope", () => {
     expect(threadRootMessage).toBeNull();
   });
 
+  test("forks from the top-level session when the thread root is not in the log", async () => {
+    const sessionDir = getChannelSessionDir(conversationDir);
+    const channelFile = createManagedSessionFile(sessionDir, conversationDir);
+    const channelSM = openManagedSession(channelFile, sessionDir, conversationDir);
+    channelSM.appendMessage(
+      makeUserMessage("[2026-04-28 18:19:03+08:00] [alice]: channel context"),
+    );
+    channelSM.appendMessage(makeAssistantMessage("channel reply"));
+
+    const { contextFile, threadRootMessage } = await resolveSlackSessionScope({
+      conversationDir,
+      sessionKey: "C123:1000.0001",
+    });
+
+    expect(threadRootMessage).toBeNull();
+    const content = readFileSync(contextFile, "utf-8");
+    expect(content).toContain(`"parentSession":"${channelFile}"`);
+    expect(content).toContain("channel context");
+    expect(content).toContain("channel reply");
+  });
+
+  test("forks from top-level session when the thread root is mama's top-level response", async () => {
+    const sessionDir = getChannelSessionDir(conversationDir);
+    const channelFile = createManagedSessionFile(sessionDir, conversationDir);
+    const channelSM = openManagedSession(channelFile, sessionDir, conversationDir);
+    channelSM.appendMessage(makeUserMessage("[2026-04-28 18:19:03+08:00] [alice]: question"));
+    channelSM.appendMessage(makeAssistantMessage("mama top-level answer"));
+
+    writeLog([
+      {
+        date: "2026-04-28T10:19:00.000Z",
+        ts: "2000.0001",
+        user: "bot",
+        text: "mama top-level answer",
+        isBot: true,
+      },
+    ]);
+
+    const { contextFile, threadRootMessage } = await resolveSlackSessionScope({
+      conversationDir,
+      sessionKey: "C123:2000.0001",
+      sleep: async () => {},
+      retryCount: 1,
+      retryDelayMs: 0,
+    });
+
+    expect(threadRootMessage).toBeNull();
+    const content = readFileSync(contextFile, "utf-8");
+    expect(content).toContain(`"parentSession":"${channelFile}"`);
+    expect(content).toContain("question");
+    expect(content).toContain("mama top-level answer");
+  });
+
   test("creates a root-only branch session when the parent root turn is not materialized yet", async () => {
     const sessionDir = getChannelSessionDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
