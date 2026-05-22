@@ -237,9 +237,9 @@ sequenceDiagram
 
 設計重點:
 
-- `log.jsonl` 給人查詢與補 context
-- `sessions/*.jsonl` 給 `SessionManager` 保留完整結構化上下文與 tool 結果
-- top-level session 用 `current` 指標
+- `log.jsonl` 是平台對話紀錄：Slack/Discord/Telegram 實際發生過什麼
+- `sessions/*.jsonl` 是 LLM 工作上下文/工作紀錄：mama 拿什麼給 LLM 看，以及 LLM/tool 做了什麼
+- top-level session 用 `current` 指標，但 `current` 不是 channel history；缺失時可從 `log.jsonl` 重建最近 top-level 工作上下文
 - thread / reply session 用固定檔名，讓分支可被單獨追蹤
 - Slack top-level messages share the channel session; Slack thread replies fork to `conversationId:threadTs`
 - Slack events first materialize a top-level anchor message, then run in `conversationId:anchorTs`
