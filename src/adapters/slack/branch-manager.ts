@@ -13,6 +13,7 @@ import {
   type ThreadRootMessage,
 } from "../../session-store.js";
 import { findLogMessageById, type ConversationLogMessage } from "../../context.js";
+import { materializeTopLevelHistorySession } from "../../conversation-history.js";
 import { parseSlackSessionKey } from "./session.js";
 
 export interface SlackBranchBootstrapWaitOptions {
@@ -172,7 +173,9 @@ export async function resolveSlackSessionScope(
     return { sessionDir, contextFile: existing, threadRootMessage };
   }
 
-  const conversationSource = resolveChannelSessionFile(conversationDir);
+  const conversationSource =
+    resolveChannelSessionFile(conversationDir) ??
+    materializeTopLevelHistorySession({ conversationDir, sessionDir, cwd });
   if (!conversationSource) {
     return {
       sessionDir,

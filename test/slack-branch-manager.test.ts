@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -216,5 +216,51 @@ describe("resolveSlackSessionScope", () => {
     expect(content).toContain(`"parentSession":"${channelFile}"`);
     expect(content).toContain("[alice]: first");
     expect(content).not.toContain("second reply");
+  });
+
+  test("materializes top-level history from log when a first thread has no current session", async () => {
+    writeLog([
+      {
+        date: new Date().toISOString(),
+        ts: "1000.0001",
+        user: "U123",
+        userName: "alice",
+        text: "Instagram Reel link",
+        isBot: false,
+      },
+      {
+        date: new Date().toISOString(),
+        ts: "1000.0002",
+        threadTs: "1000.0001",
+        user: "U456",
+        userName: "bob",
+        text: "thread reply should not be in top-level history",
+        isBot: false,
+      },
+    ]);
+
+    const { contextFile, threadRootMessage } = await resolveSlackSessionScope({
+      conversationDir,
+      sessionKey: "C123:1000.0001",
+      sleep: async () => {},
+      retryCount: 1,
+      retryDelayMs: 0,
+    });
+
+    expect(threadRootMessage?.text).toBe("Instagram Reel link");
+    const currentPointer = join(getChannelSessionDir(conversationDir), "current");
+    expect(existsSync(currentPointer)).toBe(true);
+    const parentFile = join(
+      getChannelSessionDir(conversationDir),
+      readFileSync(currentPointer, "utf-8").trim(),
+    );
+    const parentContent = readFileSync(parentFile, "utf-8");
+    expect(parentContent).toContain("platform-history");
+    expect(parentContent).toContain("Instagram Reel link");
+    expect(parentContent).not.toContain("thread reply should not be in top-level history");
+
+    const threadContent = readFileSync(contextFile, "utf-8");
+    expect(threadContent).toContain(`"parentSession":"${parentFile}"`);
+    expect(threadContent).toContain("Instagram Reel link");
   });
 });
