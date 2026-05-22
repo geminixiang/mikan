@@ -55,11 +55,7 @@ export function materializeTopLevelHistorySession(
     id: randomUUID().slice(0, 8),
     parentId: null,
     timestamp: new Date(message.date ?? now.toISOString()).toISOString(),
-    message: {
-      role: message.isBot ? "assistant" : "user",
-      content: [{ type: "text", text: formatHistoryMessage(message) }],
-      ...(message.date ? { timestamp: new Date(message.date).getTime() } : {}),
-    },
+    message: buildHistorySessionMessage(message),
   }));
 
   const content = [header, ...entries].map((entry) => JSON.stringify(entry)).join("\n");
@@ -127,6 +123,35 @@ function isSessionFreshForTopLevelHistory(
   } catch {
     return false;
   }
+}
+
+function buildHistorySessionMessage(message: ConversationLogMessage): object {
+  const base = {
+    role: message.isBot ? "assistant" : "user",
+    content: [{ type: "text", text: formatHistoryMessage(message) }],
+    ...(message.date ? { timestamp: new Date(message.date).getTime() } : {}),
+  };
+  if (!message.isBot) return base;
+
+  return {
+    ...base,
+    api: "platform-history",
+    provider: "platform-history",
+    model: "platform-history",
+    usage: zeroUsage(),
+    stopReason: "stop",
+  };
+}
+
+function zeroUsage(): object {
+  return {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
 }
 
 function formatHistoryMessage(message: ConversationLogMessage): string {

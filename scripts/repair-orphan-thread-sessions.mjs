@@ -142,11 +142,7 @@ function toSessionMessage(message) {
     id: randomUUID().slice(0, 8),
     parentId: null,
     timestamp: validIso(message.date) ?? runAt.toISOString(),
-    message: {
-      role: message.isBot ? "assistant" : "user",
-      content: [{ type: "text", text: formatHistoryMessage(message) }],
-      ...(message.date ? { timestamp: new Date(message.date).getTime() } : {}),
-    },
+    message: buildHistorySessionMessage(message),
   };
 }
 
@@ -228,6 +224,34 @@ function buildSessionContent({ conversationDir, messages, runAt, historyDays }) 
     [header, ...messages.map(toSessionMessage)].map((entry) => JSON.stringify(entry)).join("\n") +
     "\n"
   );
+}
+
+function buildHistorySessionMessage(message) {
+  const base = {
+    role: message.isBot ? "assistant" : "user",
+    content: [{ type: "text", text: formatHistoryMessage(message) }],
+    ...(message.date ? { timestamp: new Date(message.date).getTime() } : {}),
+  };
+  if (!message.isBot) return base;
+  return {
+    ...base,
+    api: "platform-history",
+    provider: "platform-history",
+    model: "platform-history",
+    usage: zeroUsage(),
+    stopReason: "stop",
+  };
+}
+
+function zeroUsage() {
+  return {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
 }
 
 function messageText(entry) {

@@ -144,11 +144,7 @@ function buildSessionContent({ conversationDir, messages, now, recentDays }) {
     id: randomUUID().slice(0, 8),
     parentId: null,
     timestamp: validIso(message.date) ?? now.toISOString(),
-    message: {
-      role: message.isBot ? "assistant" : "user",
-      content: [{ type: "text", text: formatHistoryMessage(message) }],
-      ...(message.date ? { timestamp: new Date(message.date).getTime() } : {}),
-    },
+    message: buildHistorySessionMessage(message),
   }));
   return [header, ...entries].map((entry) => JSON.stringify(entry)).join("\n") + "\n";
 }
@@ -157,6 +153,34 @@ function validIso(value) {
   if (!value) return null;
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
+function buildHistorySessionMessage(message) {
+  const base = {
+    role: message.isBot ? "assistant" : "user",
+    content: [{ type: "text", text: formatHistoryMessage(message) }],
+    ...(message.date ? { timestamp: new Date(message.date).getTime() } : {}),
+  };
+  if (!message.isBot) return base;
+  return {
+    ...base,
+    api: "platform-history",
+    provider: "platform-history",
+    model: "platform-history",
+    usage: zeroUsage(),
+    stopReason: "stop",
+  };
+}
+
+function zeroUsage() {
+  return {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
 }
 
 function formatHistoryMessage(message) {
