@@ -211,14 +211,19 @@ function readRecentTopLevelMessages(logFile, days, limit, baseTime) {
     .slice(-limit);
 }
 
-function buildSessionContent({ conversationDir, messages, runAt, historyDays }) {
+function buildSessionContent({
+  conversationDir,
+  messages,
+  runAt: sessionTime,
+  historyDays: windowDays,
+}) {
   const header = {
     type: "session",
     version: 3,
     id: randomUUID(),
-    timestamp: runAt.toISOString(),
+    timestamp: sessionTime.toISOString(),
     cwd: conversationDir,
-    source: { kind: "platform-history", file: "log.jsonl", recentDays: historyDays },
+    source: { kind: "platform-history", file: "log.jsonl", recentDays: windowDays },
   };
   return (
     [header, ...messages.map(toSessionMessage)].map((entry) => JSON.stringify(entry)).join("\n") +

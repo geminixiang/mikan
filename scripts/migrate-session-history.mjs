@@ -16,8 +16,8 @@ const dryRun = args.dryRun !== false;
 const conversationIds = args.conversation
   ? [String(args.conversation)]
   : listConversations(dataDir);
-const now = new Date();
-const backupDir = join(dataDir, `.migration-backup-${stamp(now)}-session-history`);
+const migrationTime = new Date();
+const backupDir = join(dataDir, `.migration-backup-${stamp(migrationTime)}-session-history`);
 const report = [];
 
 for (const conversationId of conversationIds) {
@@ -26,7 +26,7 @@ for (const conversationId of conversationIds) {
   if (!existsSync(logFile)) continue;
 
   const sessionDir = join(conversationDir, "sessions");
-  const messages = readRecentTopLevelMessages(logFile, recentDays, maxMessages, now);
+  const messages = readRecentTopLevelMessages(logFile, recentDays, maxMessages, migrationTime);
   if (messages.length === 0) {
     report.push({ conversationId, action: "skip", reason: "no recent top-level log messages" });
     continue;
@@ -39,9 +39,14 @@ for (const conversationId of conversationIds) {
     continue;
   }
 
-  const filename = `${now.toISOString().replace(/[:.]/g, "-")}_${randomUUID().slice(0, 8)}_history.jsonl`;
+  const filename = `${migrationTime.toISOString().replace(/[:.]/g, "-")}_${randomUUID().slice(0, 8)}_history.jsonl`;
   const sessionFile = join(sessionDir, filename);
-  const content = buildSessionContent({ conversationDir, messages, now, recentDays });
+  const content = buildSessionContent({
+    conversationDir,
+    messages,
+    sessionTime: migrationTime,
+    historyWindowDays: recentDays,
+  });
 
   if (!dryRun) {
     mkdirSync(sessionDir, { recursive: true });
@@ -108,8 +113,8 @@ function resolveCurrentSession(sessionDir) {
   return existsSync(file) ? file : null;
 }
 
-function readRecentTopLevelMessages(logFile, days, maxMessages, now) {
-  const sinceMs = now.getTime() - days * 24 * 60 * 60 * 1000;
+function readRecentTopLevelMessages(logFile, days, limit, baseTime) {
+  const sinceMs = baseTime.getTime() - days * 24 * 60 * 60 * 1000;
   const rows = readFileSync(logFile, "utf-8")
     .trim()
     .split("\n")
@@ -127,23 +132,23 @@ function readRecentTopLevelMessages(logFile, days, maxMessages, now) {
       const ms = new Date(entry.date).getTime();
       return !Number.isFinite(ms) || ms >= sinceMs;
     });
-  return rows.slice(-maxMessages);
+  return rows.slice(-limit);
 }
 
-function buildSessionContent({ conversationDir, messages, now, recentDays }) {
+function buildSessionContent({ conversationDir, messages, sessionTime, historyWindowDays }) {
   const header = {
     type: "session",
     version: 3,
     id: randomUUID(),
-    timestamp: now.toISOString(),
+    timestamp: sessionTime.toISOString(),
     cwd: conversationDir,
-    source: { kind: "platform-history", file: "log.jsonl", recentDays },
+    source: { kind: "platform-history", file: "log.jsonl", recentDays: historyWindowDays },
   };
   const entries = messages.map((message) => ({
     type: "message",
     id: randomUUID().slice(0, 8),
     parentId: null,
-    timestamp: validIso(message.date) ?? now.toISOString(),
+    timestamp: validIso(message.date) ?? sessionTime.toISOString(),
     message: buildHistorySessionMessage(message),
   }));
   return [header, ...entries].map((entry) => JSON.stringify(entry)).join("\n") + "\n";
@@ -202,10 +207,10 @@ function pad(n) {
   return String(n).padStart(2, "0");
 }
 
-function backupPath(path, dataDir, backupDir) {
+function backupPath(path, rootDir, backupRoot) {
   if (!existsSync(path)) return;
-  const relative = path.slice(dataDir.length).replace(/^\/+/, "");
-  const target = join(backupDir, relative);
+  const relative = path.slice(rootDir.length).replace(/^\/+/, "");
+  const target = join(backupRoot, relative);
   mkdirSync(target.slice(0, target.lastIndexOf("/")), { recursive: true });
   rmSync(target, { recursive: true, force: true });
   cpRecursive(path, target);
