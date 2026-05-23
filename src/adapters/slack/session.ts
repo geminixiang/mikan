@@ -1,5 +1,5 @@
 import type { ConversationKind } from "../../adapter.js";
-import { resolveChatSessionKey } from "../../session-policy.js";
+import { resolveChatSessionKey } from "../../sessions/policy.js";
 
 interface SlackSessionEventLike {
   conversationId: string;

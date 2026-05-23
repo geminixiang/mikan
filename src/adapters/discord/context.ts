@@ -5,7 +5,7 @@ import type {
   PlatformInfo,
 } from "../../adapter.js";
 import * as log from "../../log.js";
-import { resolveChatSessionKey } from "../../session-policy.js";
+import { resolveChatSessionKey } from "../../sessions/policy.js";
 import { createChatResponseErrorReporter, formatToolArgs, splitText } from "../shared.js";
 import type { DiscordBot, DiscordEvent } from "./bot.js";
 

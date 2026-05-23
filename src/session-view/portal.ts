@@ -4,7 +4,7 @@ import MarkdownIt from "markdown-it";
 import type { Bot, BotAdapters, BotEvent, BotHandler, ChatResponseContext } from "../adapter.js";
 import * as log from "../log.js";
 import { reportUserFacingError } from "../sentry.js";
-import { inferConversationKind } from "../session-policy.js";
+import { inferConversationKind } from "../sessions/policy.js";
 import {
   loadSessionViewModel,
   resolveRequestedSessionFile,

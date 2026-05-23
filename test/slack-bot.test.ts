@@ -7,7 +7,7 @@ import { SlackBot } from "../src/adapters/slack/bot.js";
 import { defaultCommandHandlers } from "../src/commands/index.js";
 import type { CommandServices } from "../src/commands/types.js";
 import { ConversationOrchestrator } from "../src/runtime/conversation-orchestrator.js";
-import { createManagedSessionFileAtPath, getThreadSessionFile } from "../src/session-store.js";
+import { createManagedSessionFileAtPath, getThreadSessionFile } from "../src/sessions/store.js";
 import type { SandboxConfig } from "../src/sandbox/index.js";
 import type { VaultManager } from "../src/vault.js";
 

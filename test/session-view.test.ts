@@ -12,7 +12,7 @@ import {
   getChannelSessionDir,
   getThreadSessionFile,
   openManagedSession,
-} from "../src/session-store.js";
+} from "../src/sessions/store.js";
 import { parseUserBody } from "../src/session-view/portal.js";
 import { parseSessionViewCommand } from "../src/session-view/command.js";
 import { loadSessionViewModel, resolveExistingSessionFile } from "../src/session-view/service.js";

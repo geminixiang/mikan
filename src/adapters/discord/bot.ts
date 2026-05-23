@@ -27,7 +27,7 @@ import type {
   PlatformInfo,
 } from "../../adapter.js";
 import * as log from "../../log.js";
-import { resolveChatSessionKey } from "../../session-policy.js";
+import { resolveChatSessionKey } from "../../sessions/policy.js";
 import { evaluateAutoReplyPolicy } from "../../trigger.js";
 import { formatNothingRunning } from "../../ui-copy.js";
 import {

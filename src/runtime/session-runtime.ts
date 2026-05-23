@@ -12,7 +12,7 @@ import {
   getThreadSessionFile,
   resolveGenericSessionScope,
   type ResolvedSessionScope,
-} from "../session-store.js";
+} from "../sessions/store.js";
 import { formatNothingRunning, formatStopping } from "../ui-copy.js";
 import {
   ConversationOrchestrator,

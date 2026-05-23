@@ -11,7 +11,7 @@ import {
   ThreadRootNotFoundError,
   tryResolveThreadSession,
   type ThreadRootMessage,
-} from "../../session-store.js";
+} from "../../sessions/store.js";
 import { findLogMessageById, type ConversationLogMessage } from "../../context.js";
 import { resolveUsableTopLevelHistorySession } from "../../conversation-history.js";
 import { parseSlackSessionKey } from "./session.js";

@@ -6,7 +6,7 @@ import {
   createManagedSessionFile,
   getChannelSessionDir,
   openManagedSession,
-} from "../src/session-store.js";
+} from "../src/sessions/store.js";
 import {
   resolveSlackSessionScope,
   waitForSlackBranchBootstrap,

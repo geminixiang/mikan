@@ -20,7 +20,7 @@ import {
   ThreadRootNotFoundError,
   tryResolveCurrentSession,
   tryResolveThreadSession,
-} from "../src/session-store.js";
+} from "../src/sessions/store.js";
 
 let channelDir: string;
 let nextTimestamp = 1;

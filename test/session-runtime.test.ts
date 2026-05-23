@@ -9,7 +9,7 @@ import {
   getChannelSessionDir,
   getThreadSessionFile,
   openManagedSession,
-} from "../src/session-store.js";
+} from "../src/sessions/store.js";
 import type { SandboxConfig } from "../src/sandbox/index.js";
 import type { VaultManager } from "../src/vault.js";
 

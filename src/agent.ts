@@ -45,7 +45,7 @@ import {
   openManagedSession,
   type ResolvedSessionScope,
   type ThreadRootMessage,
-} from "./session-store.js";
+} from "./sessions/store.js";
 import { shouldSurfaceToolDiagnostic } from "./tool-diagnostics.js";
 import { createMamaTools } from "./tools/index.js";
 import * as Sentry from "@sentry/node";

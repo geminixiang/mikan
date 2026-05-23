@@ -15,7 +15,7 @@ import type { Bot, BotEvent, ConversationKind } from "./adapter.js";
 import { ensureDirExists, parseJsonSchemaValue } from "./file-guards.js";
 import * as log from "./log.js";
 import { reportUserFacingError } from "./sentry.js";
-import { inferConversationKind } from "./session-policy.js";
+import { inferConversationKind } from "./sessions/policy.js";
 
 export interface ImmediateEvent {
   type: "immediate";
