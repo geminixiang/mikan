@@ -9,6 +9,69 @@
 
 A multi-platform AI coding agent for Slack, Telegram, and Discord.
 
+## Architecture
+
+mikan keeps the chat record, agent session, and execution runtime separate:
+
+```mermaid
+flowchart LR
+  Adapter["Slack / Discord / Telegram<br/>adapter"]
+
+  subgraph Chat["1. Chat / Conversation data"]
+    Log["log.jsonl<br/>platform chat history"]
+    Attachments["attachments/"]
+  end
+
+  subgraph Session["2. Session orchestration"]
+    Runtime["SessionRuntime"]
+    Orchestrator["ConversationOrchestrator"]
+    Scope["session scope<br/>top-level / thread / fork"]
+    Sessions["sessions/*.jsonl<br/>pi structured context"]
+  end
+
+  subgraph Harness["pi-coding-agent harness"]
+    Runner["AgentRunner"]
+    AgentSession["AgentSession"]
+    Tools["tools<br/>bash / read / write / edit / event / attach"]
+  end
+
+  subgraph Sandbox["3. Sandbox runtime"]
+    Executor["Executor"]
+    RuntimeTarget["host / container / image<br/>firecracker / cloudflare"]
+    Workspace["workspace<br/>host path or /workspace"]
+  end
+
+  subgraph Vault["3-1. Vault"]
+    VaultManager["VaultManager"]
+    Env["env"]
+    Secrets["secret files / mounts"]
+  end
+
+  Adapter --> Log
+  Adapter --> Attachments
+  Adapter --> Runtime
+  Runtime --> Orchestrator
+  Orchestrator --> Scope
+  Scope --> Sessions
+  Runtime --> Runner
+  Runner --> AgentSession
+  AgentSession <--> Sessions
+  AgentSession --> Tools
+  Tools --> Executor
+  Executor --> RuntimeTarget
+  RuntimeTarget --> Workspace
+  VaultManager --> Env
+  VaultManager --> Secrets
+  Env --> Executor
+  Secrets --> RuntimeTarget
+```
+
+- **Chat / conversation data** is the platform-facing record: `log.jsonl`, attachments, and conversation files.
+- **Session orchestration** turns platform events into agent runs, handles top-level/thread/fork scopes, and persists pi-coding-agent structured context under `sessions/*.jsonl`.
+- **pi-coding-agent harness** runs the model loop and calls mikan tools.
+- **Sandbox runtime** is where tool commands execute: host, Docker container/image, Firecracker, or Cloudflare bridge.
+- **Vault** provides runtime credentials as env vars and mounted secret files.
+
 ## Features
 
 - **Multi-platform** — Slack, Telegram, Discord adapters
@@ -20,14 +83,6 @@ A multi-platform AI coding agent for Slack, Telegram, and Discord.
 - **Skills** — drop CLI tools into `skills/`
 - **Events** — schedule one-shot or recurring tasks via JSON files
 - **Multi-provider** — any provider/model supported by `pi-ai`
-
-## Platform Session Model
-
-| Platform | `sessionKey` Rule                                                                 | Notes                                                                                |
-| -------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Slack    | top-level / DM: `conversationId`; thread: `conversationId:threadTs`               | thread inherits parent context at fork time only; branch changes do not merge back   |
-| Discord  | DM: `channelId`; shared top-level: `channelId:messageId`; reply/thread: rooted id | replies in shared channels continue the root message session; DM replies do not fork |
-| Telegram | private: `chatId`; shared top-level: `chatId:messageId`; reply chain: root reply  | no native thread model; shared sessions are inferred from reply chains               |
 
 ## Requirements
 
@@ -53,7 +108,7 @@ All platforms share the same CLI:
 mikan [--state-dir=~/.mikan] [--sandbox=<mode>] <working-directory>
 ```
 
-Set the platform tokens you need (you can run multiple platforms at once):
+Set the platform tokens you need; you can run multiple platforms at once:
 
 ```bash
 export SLACK_APP_TOKEN=xapp-...
@@ -62,19 +117,15 @@ export TELEGRAM_BOT_TOKEN=123456:ABC-...
 export DISCORD_BOT_TOKEN=MTI...
 ```
 
-### Slack
+## Platforms
 
-Create a Socket Mode app with the scopes and event subscriptions listed in [docs/slack-bot-minimal-guide.md](docs/slack-bot-minimal-guide.md). The bot responds when `@mentioned` in channels and to all DMs.
+- **Slack** — create a Socket Mode app using [docs/slack-bot-minimal-guide.md](docs/slack-bot-minimal-guide.md). The bot responds when `@mentioned` in channels and to all DMs.
+- **Telegram** — create a bot via [@BotFather](https://t.me/BotFather). The bot responds to private messages, `@mention`, and reply chains in groups.
+- **Discord** — create an application in the [Discord Developer Portal](https://discord.com/developers/applications), enable **Message Content Intent**, and invite it with message/file permissions.
 
-### Telegram
+Slack threads, Discord replies/threads, and Telegram reply chains are mapped to independent session scopes. See [docs/sessions.md](docs/sessions.md).
 
-Create a bot via [@BotFather](https://t.me/BotFather) and copy the token. The bot responds to all private messages, and to `@mention` or reply chains in groups. Use `/login`, `/session`, `/new`, and `/stop` for controls.
-
-### Discord
-
-Create an application in the [Discord Developer Portal](https://discord.com/developers/applications), enable **Message Content Intent**, and invite the bot with `Send Messages`, `Read Message History`, `Attach Files`. The bot responds to `@mentions` in servers and to all DMs.
-
-## Sandbox Modes
+## Sandbox
 
 | Mode                         | Description                                                            |
 | ---------------------------- | ---------------------------------------------------------------------- |
@@ -84,89 +135,24 @@ Create an application in the [Discord Developer Portal](https://discord.com/deve
 | `firecracker:<vm-id>:<path>` | Firecracker microVM (alpha; not recommended)                           |
 | `cloudflare:<sandbox-id>`    | Cloudflare Worker bridge (experimental; no auto workspace sync)        |
 
-Vault routing: `image`, `firecracker`, and `cloudflare` resolve a vault per platform userId. See [docs/sandbox.md](docs/sandbox.md) for the full matrix.
+For routing, mounts, vault behavior, managed container details, and Firecracker/Cloudflare notes, see [docs/sandbox.md](docs/sandbox.md).
 
-### Managed per-user containers (`image:*`)
+## Chat commands
 
-```bash
-docker pull ghcr.io/geminixiang/mikan-sandbox:latest
-mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest /path/to/workspace
-```
+| Command                                                    | Purpose                                          |
+| ---------------------------------------------------------- | ------------------------------------------------ |
+| `/login` / `/pi-login`                                     | Store API keys or run built-in OAuth flows       |
+| `session` / `/session`                                     | Open a read-only web view of the current session |
+| `new` / `/new`                                             | Reset the current session                        |
+| `model` / `/model` / `/pi-model provider/model[:thinking]` | Switch the LLM for the current conversation      |
+| `auto-reply` / `/pi-auto-reply on\|off\|status`            | Control group/channel auto-reply                 |
+| `stop` / `/stop`                                           | Stop the current run                             |
 
-Or build locally:
-
-```bash
-docker build -f docker/mikan-sandbox.Dockerfile -t mikan-sandbox:tools .
-```
-
-mikan creates one container per vault, attaches each to its own bridge network, mounts the workspace at `/workspace`, injects vault env, mounts declared credential files, and stops idle containers.
-
-### Firecracker / Cloudflare
-
-See [docs/firecracker-setup.md](docs/firecracker-setup.md) and [examples/cloudflare-sandbox-bridge/README.md](examples/cloudflare-sandbox-bridge/README.md).
-
-## `/login` and Web Session Viewer
-
-```bash
-export LINK_URL="https://mikan.example.com"   # public base URL
-export LINK_PORT=8181                         # optional, defaults to 8181
-```
-
-For local testing you can set just `LINK_PORT`; mikan will use `http://localhost:<port>`.
-
-Every environment variable also supports a `MIKAN_` prefix for deployment-specific namespacing. For example, `MIKAN_SLACK_APP_TOKEN` and `MIKAN_LINK_URL` are accepted fallbacks. Unprefixed variables take precedence.
-
-- `/login` / `/pi-login` (DM only) returns a 15-minute link to store API keys or run built-in OAuth flows ([GitHub](docs/oauth/github.md), [Google Workspace](docs/oauth/google-workspace.md), [Google Cloud SDK / gcloud](docs/oauth/google-cloud-sdk.md)).
-- `session` / `/session` (DM only) returns a read-only link showing the current session timeline.
-- `new` / `/new` (DM only) resets the current session and starts fresh.
-- `model` / `/model` / `/pi-model provider/model[:thinking]` switches the LLM for the current conversation, e.g. `/pi-model anthropic/claude-sonnet-4-6:off`.
-- `auto-reply` / `/pi-auto-reply on|off|status` controls group/channel auto-reply for the current conversation. Rules live in the conversation's `auto-reply` marker file.
-- `stop` / `/stop` stops the current run. On Slack, use text commands so thread-local stop routing remains accurate.
-- On Slack you can also register native commands like `/pi-login`, `/pi-session`, `/pi-model`, `/pi-auto-reply`, and `/pi-new`.
-
-Credentials are stored under `<state-dir>/vaults` (default `~/.mikan/vaults`). Vault env is only injected in `container`, `image`, `firecracker`, and `cloudflare` modes.
-
-Shared login profiles live under `<state-dir>/vaults/shared/<name>`. `/pi-login copy <name>` merge-copies that shared profile into the current conversation vault: shared env keys overwrite matching conversation env keys, conversation-only env keys are kept, and files from the shared profile overwrite files at the same relative path. To seed every new managed sandbox vault from a shared profile, fill in `sandbox.defaultSharedVault` in `<state-dir>/settings.json` (onboard creates it as an empty string), for example `{ "sandbox": { "defaultSharedVault": "claw" } }`. Empty string disables the default. The default profile is copied only when the target vault does not exist yet.
+See [docs/commands.md](docs/commands.md) for command details and web session viewer setup.
 
 ## Configuration
 
-mikan reads global settings from `<state-dir>/settings.json` (default `~/.mikan/settings.json`, override via `--state-dir` or `STATE_DIR`). This file is required and is created explicitly with `mikan --onboard`. Per-conversation settings live at `<workingDir>/<conversationId>/settings.json` and override global settings for that conversation.
-
-```json
-{
-  "llm": {
-    "provider": "anthropic",
-    "model": "claude-sonnet-4-6",
-    "thinkingLevel": "off"
-  },
-  "sentry": {
-    "dsn": "https://examplePublicKey@o0.ingest.sentry.io/0"
-  },
-  "sandbox": {
-    "cpus": "0.5",
-    "memory": "512m",
-    "boost": {
-      "cpus": "2",
-      "memory": "4g"
-    }
-  }
-}
-```
-
-| Field                  | Default             | Description                                           |
-| ---------------------- | ------------------- | ----------------------------------------------------- |
-| `llm.provider`         | `anthropic`         | AI provider                                           |
-| `llm.model`            | `claude-sonnet-4-6` | Model name                                            |
-| `llm.thinkingLevel`    | `off`               | `off` / `low` / `medium` / `high`                     |
-| `sentry.dsn`           | unset               | Sentry DSN; sensitive prompt/tool content is redacted |
-| `sandbox.cpus`         | unset               | CPU limit for managed containers                      |
-| `sandbox.memory`       | unset               | Memory limit for managed containers                   |
-| `sandbox.boost.cpus`   | unset               | Temporary CPU limit used by `/pi-sandbox boost`       |
-| `sandbox.boost.memory` | unset               | Temporary memory limit used by `/pi-sandbox boost`    |
-
-`/pi-sandbox` shows the current managed-container CPU/memory limits. `/pi-sandbox boost` temporarily applies `sandbox.boost` to the current conversation; the boost ends when that sandbox container is stopped.
-
-Conversation-local settings written by `/pi-model` use the same shape and usually only include the override:
+mikan reads global settings from `<state-dir>/settings.json`; per-conversation overrides live at `<working-directory>/<conversationId>/settings.json`.
 
 ```json
 {
@@ -178,26 +164,21 @@ Conversation-local settings written by `/pi-model` use the same shape and usuall
 }
 ```
 
-mikan writes logs to stdout/stderr. Use your process manager or host platform (for example PM2, systemd, Docker, or a cloud logging agent) to route logs to your preferred backend.
+See [docs/configuration.md](docs/configuration.md) for all fields.
 
-## Layout
+## Data layout
 
-```
+```text
 <state-dir>/
 ├── settings.json
 └── vaults/
-    └── <vault-id>/
-        ├── env
-        └── ...                # credential files
 
 <working-directory>/
-├── MEMORY.md                  # global memory
-├── SYSTEM.md                  # installed packages / env log
-├── skills/                    # global skills
-├── events/                    # scheduled events
+├── MEMORY.md
+├── SYSTEM.md
+├── skills/
+├── events/
 └── <conversation-id>/
-    ├── MEMORY.md
-    ├── auto-reply[.disabled]    # optional channel auto-reply rules
     ├── log.jsonl
     ├── attachments/
     ├── scratch/
@@ -205,37 +186,13 @@ mikan writes logs to stdout/stderr. Use your process manager or host platform (f
     └── sessions/
 ```
 
-## Events
+## More docs
 
-Drop JSON files into `<working-directory>/events/`:
-
-```json
-// Immediate
-{"type": "immediate", "platform": "slack", "conversationId": "C0123456789", "conversationKind": "shared", "text": "Deploy finished"}
-
-// One-shot
-{"type": "one-shot", "platform": "telegram", "conversationId": "574247312", "conversationKind": "direct", "text": "Standup", "at": "2025-12-15T09:00:00+08:00"}
-
-// Periodic (cron)
-{"type": "periodic", "platform": "discord", "conversationId": "1498975469343739948", "conversationKind": "shared", "text": "Check inbox", "schedule": "0 9 * * 1-5", "timezone": "Asia/Taipei"}
-```
-
-## Skills
-
-```
-skills/my-tool/
-├── SKILL.md      # name + description frontmatter, usage docs
-└── run.sh
-```
-
-```yaml
----
-name: my-tool
-description: Does something useful
----
-
-Usage: {baseDir}/run.sh <args>
-```
+- [Events](docs/events.md)
+- [Skills](docs/skills.md)
+- [Deployment](docs/deployment.md)
+- [Development](docs/development.md)
+- [Sandbox](docs/sandbox.md)
 
 ## Slack: Download channel history
 
@@ -243,54 +200,17 @@ Usage: {baseDir}/run.sh <args>
 mikan --download C0123456789
 ```
 
-## Production deployment (PM2)
-
-For long-running deployments, use [PM2](https://pm2.keymetrics.io/) as a process supervisor. It daemonizes mikan, restarts on crash, and survives reboots.
-
-```bash
-# 1. Install mikan and pm2
-npm i -g @geminixiang/mikan pm2
-
-# 2. Start the sandbox container (long-lived; mikan execs into it)
-docker pull ghcr.io/geminixiang/mikan-sandbox:latest
-
-# 3. Grab the ecosystem file, edit args + env tokens, then start
-curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
-pm2 start ecosystem.config.cjs
-pm2 save
-pm2 startup        # run the printed command to enable boot autostart
-```
-
-Upgrade flow:
-
-```bash
-npm i -g @geminixiang/mikan && pm2 reload mikan
-```
-
-`pm2 reload` sends SIGTERM and waits up to `kill_timeout` (60s in the shipped config) before SIGKILL. mikan's internal graceful shutdown drains in-flight LLM turns within that window, so reloads do not interrupt active conversations.
-
-See [`deploy/pm2/ecosystem.config.cjs`](deploy/pm2/ecosystem.config.cjs) for all tunables.
-
 ## Development
 
 ```bash
-npm run dev         # build in watch mode
-npm test            # unit tests (vitest)
-npm run lint        # oxlint
-npm run fmt:check   # oxfmt (use `npm run fmt` to auto-fix)
-npm run build       # type check + emit dist/
+npm run dev
+npm test
+npm run lint
+npm run fmt:check
+npm run build
 ```
 
-### End-to-end tests
-
-E2E suites under `e2e/` exercise real platform APIs and are kept off the default `npm test` run.
-
-```bash
-npm run test:e2e          # all platforms
-npm run test:e2e:slack    # Slack only
-```
-
-Slack E2E requires `SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, and `SLACK_QA_BOT_USER_ID` against a dedicated test workspace. See [`docs/slack-qa-test-plan.md`](docs/slack-qa-test-plan.md) for setup.
+See [docs/development.md](docs/development.md) for E2E tests.
 
 ## Contributing
 
