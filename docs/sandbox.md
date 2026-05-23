@@ -255,8 +255,8 @@ mikan --sandbox=firecracker:192.168.1.100:/home/mikan/workspace:root:22 /home/mi
 警告：Cloudflare 支援目前是 experimental。mikan 會透過你自行部署的 Cloudflare Worker bridge 呼叫 `@cloudflare/sandbox`，但不會自動把宿主機 workspace 同步到遠端 container。
 
 ```bash
-export MIKAN_CLOUDFLARE_SANDBOX_URL="https://your-bridge.workers.dev"
-export MIKAN_CLOUDFLARE_SANDBOX_TOKEN="replace-me" # optional
+export CLOUDFLARE_SANDBOX_URL="https://your-bridge.workers.dev"
+export CLOUDFLARE_SANDBOX_TOKEN="replace-me" # optional
 
 mikan --sandbox=cloudflare:mikan-remote /path/to/workspace
 ```
@@ -301,21 +301,21 @@ mikan 會產生一個 15 分鐘有效的 onboarding link。使用者可在網頁
 正式部署時，設定公開 URL：
 
 ```bash
-export MIKAN_LINK_URL="https://mikan.example.com"
+export LINK_URL="https://mikan.example.com"
 ```
 
-若沒有設定 `MIKAN_LINK_PORT`，mikan 會在 `MIKAN_LINK_URL` 存在時預設使用 port `8181`。
+若沒有設定 `LINK_PORT`，mikan 會在 `LINK_URL` 存在時預設使用 port `8181`。
 
 也可以明確指定：
 
 ```bash
-export MIKAN_LINK_PORT=8181
+export LINK_PORT=8181
 ```
 
 若只是本機測試，也可以只設：
 
 ```bash
-export MIKAN_LINK_PORT=8181
+export LINK_PORT=8181
 ```
 
 此時 `/login` link 會使用：
@@ -327,5 +327,5 @@ http://localhost:8181
 OAuth callback URL 是：
 
 ```text
-<MIKAN_LINK_URL>/oauth/callback
+<LINK_URL>/oauth/callback
 ```

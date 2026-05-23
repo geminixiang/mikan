@@ -16,7 +16,7 @@ You can also create the app from the example manifest at `examples/slack-app-man
 1. Go to **Settings → Socket Mode**.
 2. Turn **Enable Socket Mode** on.
 3. Create an app-level token with the `connections:write` scope.
-4. Save the token as `MIKAN_SLACK_APP_TOKEN`.
+4. Save the token as `SLACK_APP_TOKEN`.
 
 The token starts with `xapp-`.
 
@@ -38,7 +38,7 @@ Go to **OAuth & Permissions → Scopes → Bot Token Scopes** and add:
 - `im:write`
 - `users:read`
 
-Then install or reinstall the app to your workspace and save the bot token as `MIKAN_SLACK_BOT_TOKEN`.
+Then install or reinstall the app to your workspace and save the bot token as `SLACK_BOT_TOKEN`.
 
 The token starts with `xoxb-`.
 
@@ -85,8 +85,8 @@ Slash commands are optional because text commands also work in supported context
 ## 8. Run mikan
 
 ```bash
-export MIKAN_SLACK_APP_TOKEN=xapp-...
-export MIKAN_SLACK_BOT_TOKEN=xoxb-...
+export SLACK_APP_TOKEN=xapp-...
+export SLACK_BOT_TOKEN=xoxb-...
 
 mikan --state-dir ~/.mikan /path/to/workspace
 ```

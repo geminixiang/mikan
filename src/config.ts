@@ -3,6 +3,7 @@ import { Type, type Static } from "@sinclair/typebox";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { dirname, join, resolve } from "path";
+import { readEnv } from "./env.js";
 import { ensureDirExists, readJsonSchemaFileIfExists } from "./file-guards.js";
 import { atomicWritePrivateFile } from "./fs-atomic.js";
 
@@ -127,7 +128,7 @@ function loadSettingsFile(settingsPath: string): SettingsFileConfig | undefined 
 }
 
 function getStateDir(): string {
-  const raw = process.env.MIKAN_STATE_DIR?.trim();
+  const raw = readEnv("STATE_DIR");
   return raw ? resolve(raw) : join(homedir(), ".mikan");
 }
 
@@ -393,11 +394,11 @@ export function createGlobalSettingsFile(stateDir: string): string {
 
 /**
  * Externally-visible base URL of the link/OAuth server, e.g.
- * `https://mikan.example.com` (no trailing slash). Read from `MIKAN_LINK_URL`,
- * the same env var the bot uses to build credential onboarding links.
+ * `https://mikan.example.com` (no trailing slash). Read from `LINK_URL` or
+ * `MIKAN_LINK_URL`, the same env var the bot uses to build credential onboarding links.
  */
 export function resolveLinkBaseUrl(): string | undefined {
-  const raw = process.env.MIKAN_LINK_URL?.trim();
+  const raw = readEnv("LINK_URL");
   if (!raw) return undefined;
   return raw.replace(/\/+$/, "");
 }

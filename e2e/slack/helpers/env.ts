@@ -20,13 +20,13 @@ export function readSlackE2eEnv(): SlackE2eEnv {
   return {
     token,
     channel,
-    mikanBotUserId: env.SLACK_QA_MIKAN_BOT_USER_ID || undefined,
+    mikanBotUserId: env.SLACK_QA_BOT_USER_ID || undefined,
     questionBotUserId: env.SLACK_QA_QUESTION_BOT_USER_ID || undefined,
     timeoutMs: Number(env.SLACK_QA_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS),
     pollMs: Number(env.SLACK_QA_POLL_MS ?? DEFAULT_POLL_MS),
     eventsDir: env.SLACK_QA_EVENTS_DIR ?? `${process.cwd()}/events`,
     questionText: env.SLACK_QA_QUESTION_TEXT ?? "你是誰？請簡短回答。",
-    mikanText: env.SLACK_QA_MIKAN_TEXT ?? "hello，請簡短回答。",
+    mikanText: env.SLACK_QA_BOT_TEXT ?? "hello，請簡短回答。",
   };
 }
 

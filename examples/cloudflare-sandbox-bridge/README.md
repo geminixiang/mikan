@@ -25,8 +25,8 @@ npm run deploy
 部署後，設定 mikan：
 
 ```bash
-export MIKAN_CLOUDFLARE_SANDBOX_URL="https://<your-worker>.workers.dev"
-export MIKAN_CLOUDFLARE_SANDBOX_TOKEN="<same-secret>"
+export CLOUDFLARE_SANDBOX_URL="https://<your-worker>.workers.dev"
+export CLOUDFLARE_SANDBOX_TOKEN="<same-secret>"
 
 mikan --sandbox=cloudflare:mikan-remote /path/to/workspace
 ```

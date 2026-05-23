@@ -52,10 +52,10 @@ mikan [--state-dir=~/.mikan] [--sandbox=<mode>] <working-directory>
 Set the platform tokens you need (you can run multiple platforms at once):
 
 ```bash
-export MIKAN_SLACK_APP_TOKEN=xapp-...
-export MIKAN_SLACK_BOT_TOKEN=xoxb-...
-export MIKAN_TELEGRAM_BOT_TOKEN=123456:ABC-...
-export MIKAN_DISCORD_BOT_TOKEN=MTI...
+export SLACK_APP_TOKEN=xapp-...
+export SLACK_BOT_TOKEN=xoxb-...
+export TELEGRAM_BOT_TOKEN=123456:ABC-...
+export DISCORD_BOT_TOKEN=MTI...
 ```
 
 ### Slack
@@ -104,11 +104,13 @@ See [docs/firecracker-setup.md](docs/firecracker-setup.md) and [examples/cloudfl
 ## `/login` and Web Session Viewer
 
 ```bash
-export MIKAN_LINK_URL="https://mikan.example.com"   # public base URL
-export MIKAN_LINK_PORT=8181                         # optional, defaults to 8181
+export LINK_URL="https://mikan.example.com"   # public base URL
+export LINK_PORT=8181                         # optional, defaults to 8181
 ```
 
-For local testing you can set just `MIKAN_LINK_PORT`; mikan will use `http://localhost:<port>`.
+For local testing you can set just `LINK_PORT`; mikan will use `http://localhost:<port>`.
+
+Every environment variable also supports a `MIKAN_` prefix for deployment-specific namespacing. For example, `MIKAN_SLACK_APP_TOKEN` and `MIKAN_LINK_URL` are accepted fallbacks. Unprefixed variables take precedence.
 
 - `/login` / `/pi-login` (DM only) returns a 15-minute link to store API keys or run built-in OAuth flows ([GitHub](docs/oauth/github.md), [Google Workspace](docs/oauth/google-workspace.md), [Google Cloud SDK / gcloud](docs/oauth/google-cloud-sdk.md)).
 - `session` / `/session` (DM only) returns a read-only link showing the current session timeline.
@@ -124,7 +126,7 @@ Shared login profiles live under `<state-dir>/vaults/shared/<name>`. `/pi-login 
 
 ## Configuration
 
-mikan reads global settings from `<state-dir>/settings.json` (default `~/.mikan/settings.json`, override via `--state-dir` or `MIKAN_STATE_DIR`). This file is required and is created explicitly with `mikan --onboard`. Per-conversation settings live at `<workingDir>/<conversationId>/settings.json` and override global settings for that conversation.
+mikan reads global settings from `<state-dir>/settings.json` (default `~/.mikan/settings.json`, override via `--state-dir` or `STATE_DIR`). This file is required and is created explicitly with `mikan --onboard`. Per-conversation settings live at `<workingDir>/<conversationId>/settings.json` and override global settings for that conversation.
 
 ```json
 {
@@ -284,7 +286,7 @@ npm run test:e2e          # all platforms
 npm run test:e2e:slack    # Slack only
 ```
 
-Slack E2E requires `SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, and `SLACK_QA_MIKAN_BOT_USER_ID` against a dedicated test workspace. See [`docs/slack-qa-test-plan.md`](docs/slack-qa-test-plan.md) for setup.
+Slack E2E requires `SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, and `SLACK_QA_BOT_USER_ID` against a dedicated test workspace. See [`docs/slack-qa-test-plan.md`](docs/slack-qa-test-plan.md) for setup.
 
 ## Contributing
 

@@ -1,4 +1,5 @@
 import { matchCommand } from "../commands/parse.js";
+import { readEnv } from "../env.js";
 import { isRecord, parseJsonValue } from "../file-guards.js";
 import * as log from "../log.js";
 
@@ -56,12 +57,12 @@ const DEFAULT_GOOGLE_CLOUD_SDK_SCOPES = [
 // Conservative default: enough for `gh` CLI repo/user/org operations, but
 // without `workflow` (can dispatch CI), `write:packages` (can publish
 // packages), or `project`. Operators who need those can opt in via
-// MIKAN_GITHUB_OAUTH_SCOPES to keep the blast radius of a compromised agent
-// host explicit and configurable.
+// GITHUB_OAUTH_SCOPES (or MIKAN_GITHUB_OAUTH_SCOPES) to keep the blast radius
+// of a compromised agent host explicit and configurable.
 const DEFAULT_GITHUB_OAUTH_SCOPES = ["repo", "read:user", "user:email", "read:org", "gist"];
 
 function resolveScopesFromEnv(envKey: string, fallback: string[]): string[] {
-  const raw = process.env[envKey]?.trim();
+  const raw = readEnv(envKey);
   if (!raw) return fallback;
 
   const scopes = raw
@@ -74,20 +75,17 @@ function resolveScopesFromEnv(envKey: string, fallback: string[]): string[] {
 
 function resolveGoogleWorkspaceCliScopes(): string[] {
   return resolveScopesFromEnv(
-    "MIKAN_GOOGLE_WORKSPACE_CLI_OAUTH_SCOPES",
+    "GOOGLE_WORKSPACE_CLI_OAUTH_SCOPES",
     DEFAULT_GOOGLE_WORKSPACE_CLI_SCOPES,
   );
 }
 
 function resolveGoogleCloudSdkScopes(): string[] {
-  return resolveScopesFromEnv(
-    "MIKAN_GOOGLE_CLOUD_SDK_OAUTH_SCOPES",
-    DEFAULT_GOOGLE_CLOUD_SDK_SCOPES,
-  );
+  return resolveScopesFromEnv("GOOGLE_CLOUD_SDK_OAUTH_SCOPES", DEFAULT_GOOGLE_CLOUD_SDK_SCOPES);
 }
 
 function resolveGitHubOAuthScopes(): string[] {
-  return resolveScopesFromEnv("MIKAN_GITHUB_OAUTH_SCOPES", DEFAULT_GITHUB_OAUTH_SCOPES);
+  return resolveScopesFromEnv("GITHUB_OAUTH_SCOPES", DEFAULT_GITHUB_OAUTH_SCOPES);
 }
 
 function getBuiltinOAuthServices(): OAuthService[] {
@@ -151,7 +149,7 @@ function getBuiltinOAuthServices(): OAuthService[] {
 }
 
 export function getOAuthServices(): OAuthService[] {
-  const raw = process.env.MIKAN_OAUTH_SERVICES_JSON?.trim();
+  const raw = readEnv("OAUTH_SERVICES_JSON");
   const builtins = getBuiltinOAuthServices();
   if (!raw) return builtins;
 
@@ -166,8 +164,8 @@ export function getOAuthServices(): OAuthService[] {
     const detail = err instanceof Error ? err.message : String(err);
     log.logWarning(
       detail === "expected a JSON array of OAuth service definitions"
-        ? "Ignoring MIKAN_OAUTH_SERVICES_JSON: expected a JSON array of OAuth service definitions"
-        : "Ignoring MIKAN_OAUTH_SERVICES_JSON: invalid JSON",
+        ? "Ignoring OAUTH_SERVICES_JSON: expected a JSON array of OAuth service definitions"
+        : "Ignoring OAUTH_SERVICES_JSON: invalid JSON",
       detail,
     );
     return builtins;
@@ -265,7 +263,7 @@ export function getOAuthServices(): OAuthService[] {
     return [...byId.values()];
   } catch (err) {
     log.logWarning(
-      "Failed to apply MIKAN_OAUTH_SERVICES_JSON overrides; using builtin OAuth services",
+      "Failed to apply OAUTH_SERVICES_JSON overrides; using builtin OAuth services",
       err instanceof Error ? err.message : String(err),
     );
     return builtins;

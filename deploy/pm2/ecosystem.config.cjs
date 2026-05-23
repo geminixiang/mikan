@@ -54,10 +54,10 @@ module.exports = {
       // a sourced env file or pm2's --env-file rather than committing
       // them here.
       env: {
-        MIKAN_SLACK_APP_TOKEN: "",
-        MIKAN_SLACK_BOT_TOKEN: "",
-        MIKAN_TELEGRAM_BOT_TOKEN: "",
-        MIKAN_DISCORD_BOT_TOKEN: "",
+        SLACK_APP_TOKEN: "",
+        SLACK_BOT_TOKEN: "",
+        TELEGRAM_BOT_TOKEN: "",
+        DISCORD_BOT_TOKEN: "",
         ANTHROPIC_API_KEY: "",
         OPENAI_API_KEY: "",
         MIKAN_LINK_URL: "",

@@ -6,6 +6,7 @@ import type {
   RuntimePathContext,
   SandboxAdapter,
 } from "./types.js";
+import { readEnv } from "../env.js";
 import { SandboxError } from "./errors.js";
 
 const DEFAULT_CLOUDFLARE_CWD = "/workspace";
@@ -72,7 +73,7 @@ export class CloudflareSandboxExecutor implements Executor {
     private readonly env?: Record<string, string>,
     _ensureReady?: () => Promise<void>,
   ) {
-    this.cwd = process.env.MIKAN_CLOUDFLARE_SANDBOX_CWD?.trim() || DEFAULT_CLOUDFLARE_CWD;
+    this.cwd = readEnv("CLOUDFLARE_SANDBOX_CWD") || DEFAULT_CLOUDFLARE_CWD;
   }
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
@@ -167,10 +168,10 @@ export const cloudflareSandboxAdapter: SandboxAdapter<CloudflareSandboxConfig> =
 };
 
 function resolveCloudflareSandboxUrl(): URL {
-  const raw = process.env.MIKAN_CLOUDFLARE_SANDBOX_URL?.trim();
+  const raw = readEnv("CLOUDFLARE_SANDBOX_URL");
   if (!raw) {
     throw new SandboxError(
-      "Error: MIKAN_CLOUDFLARE_SANDBOX_URL is required for cloudflare sandbox mode",
+      "Error: CLOUDFLARE_SANDBOX_URL or MIKAN_CLOUDFLARE_SANDBOX_URL is required for cloudflare sandbox mode",
     );
   }
 
@@ -178,11 +179,11 @@ function resolveCloudflareSandboxUrl(): URL {
     return new URL(raw);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    throw new SandboxError(`Error: invalid MIKAN_CLOUDFLARE_SANDBOX_URL: ${detail}`);
+    throw new SandboxError(`Error: invalid CLOUDFLARE_SANDBOX_URL: ${detail}`);
   }
 }
 
 function buildCloudflareHeaders(): Record<string, string> {
-  const token = process.env.MIKAN_CLOUDFLARE_SANDBOX_TOKEN?.trim();
+  const token = readEnv("CLOUDFLARE_SANDBOX_TOKEN");
   return token ? { authorization: `Bearer ${token}` } : {};
 }

@@ -15,12 +15,12 @@ APIs & Services → Credentials → Create Credentials → OAuth client ID
 設定：
 
 - Application type：`Web application`
-- Authorized redirect URI：`<MIKAN_LINK_URL>/oauth/callback`
+- Authorized redirect URI：`<LINK_URL>/oauth/callback`
 
 範例：
 
 ```text
-MIKAN_LINK_URL=https://mikan.example.com
+LINK_URL=https://mikan.example.com
 Redirect URI=https://mikan.example.com/oauth/callback
 ```
 
@@ -33,17 +33,17 @@ OAuth consent screen → Test users
 ## 2. 設定環境變數
 
 ```bash
-export MIKAN_LINK_URL="https://mikan.example.com"
+export LINK_URL="https://mikan.example.com"
 export GOOGLE_WORKSPACE_CLI_CLIENT_ID="<client-id>"
 export GOOGLE_WORKSPACE_CLI_CLIENT_SECRET="<client-secret>"
 ```
 
-如果沒有設定 `MIKAN_LINK_PORT`，mikan 會在 `MIKAN_LINK_URL` 存在時預設監聽 `8181`。
+如果沒有設定 `LINK_PORT`，mikan 會在 `LINK_URL` 存在時預設監聽 `8181`。
 
 可選：覆蓋預設 scopes：
 
 ```bash
-export MIKAN_GOOGLE_WORKSPACE_CLI_OAUTH_SCOPES="https://www.googleapis.com/auth/drive https://mail.google.com/ https://www.googleapis.com/auth/calendar"
+export GOOGLE_WORKSPACE_CLI_OAUTH_SCOPES="https://www.googleapis.com/auth/drive https://mail.google.com/ https://www.googleapis.com/auth/calendar"
 ```
 
 ## 3. 使用 `/login`

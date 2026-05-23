@@ -39,8 +39,8 @@ For mikan, follow `docs/slack-bot-minimal-guide.md`.
 Minimum checks:
 
 - Socket Mode enabled.
-- `MIKAN_SLACK_APP_TOKEN` starts with `xapp-`.
-- `MIKAN_SLACK_BOT_TOKEN` starts with `xoxb-`.
+- `SLACK_APP_TOKEN` starts with `xapp-`.
+- `SLACK_BOT_TOKEN` starts with `xoxb-`.
 - Required bot scopes are installed.
 - Event subscriptions are enabled.
 - App is invited to QA channels.
@@ -54,7 +54,7 @@ The Slack smoke suite lives under `e2e/slack/` and runs on Vitest (`vitest.e2e.c
 SLACK_QA_USER_TOKEN=xoxp-... \
 SLACK_QA_CHANNEL_ID=C0123456789 \
 SLACK_QA_QUESTION_BOT_USER_ID=UQUESTION \
-SLACK_QA_MIKAN_BOT_USER_ID=UMIKAN \
+SLACK_QA_BOT_USER_ID=UMIKAN \
 npm run test:e2e:slack
 ```
 
@@ -70,7 +70,7 @@ Each scenario is its own `*.e2e.ts` file and is skipped at runtime when the requ
 - one-shot event delivery.
 - No-mention false-reply check.
 
-Only three variables are required for local E2E: `SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, and `SLACK_QA_MIKAN_BOT_USER_ID`. The event directory is derived from the current workspace.
+Only three variables are required for local E2E: `SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, and `SLACK_QA_BOT_USER_ID`. The event directory is derived from the current workspace.
 
 The QA user token must be able to post in the test channel, read channel history/replies, and upload files for S-009. The E2E manifest at `examples/slack-app-manifest.e2e.json` includes the required user scopes for this; the general `examples/slack-app-manifest.json` does not.
 
@@ -81,14 +81,14 @@ The workflow `.github/workflows/slack-e2e.yml` runs the same smoke test manually
 Required repository secrets:
 
 - `ANTHROPIC_API_KEY`
-- `MIKAN_SLACK_APP_TOKEN`
-- `MIKAN_SLACK_BOT_TOKEN`
+- `SLACK_APP_TOKEN`
+- `SLACK_BOT_TOKEN`
 - `SLACK_QA_USER_TOKEN`
 
 Required repository secrets or variables:
 
 - `SLACK_QA_CHANNEL_ID`
-- `SLACK_QA_MIKAN_BOT_USER_ID`
+- `SLACK_QA_BOT_USER_ID`
 
 ## Smoke Test Checklist
 

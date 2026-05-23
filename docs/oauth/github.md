@@ -13,25 +13,25 @@ Settings → Developer settings → OAuth Apps → New OAuth App
 填入：
 
 - Application name：例如 `mikan`
-- Homepage URL：你的 `MIKAN_LINK_URL`
-- Authorization callback URL：`<MIKAN_LINK_URL>/oauth/callback`
+- Homepage URL：你的 `LINK_URL`
+- Authorization callback URL：`<LINK_URL>/oauth/callback`
 
 範例：
 
 ```text
-MIKAN_LINK_URL=https://mikan.example.com
+LINK_URL=https://mikan.example.com
 Callback URL=https://mikan.example.com/oauth/callback
 ```
 
 ## 2. 設定環境變數
 
 ```bash
-export MIKAN_LINK_URL="https://mikan.example.com"
+export LINK_URL="https://mikan.example.com"
 export GITHUB_OAUTH_CLIENT_ID="<client-id>"
 export GITHUB_OAUTH_CLIENT_SECRET="<client-secret>"
 ```
 
-如果沒有設定 `MIKAN_LINK_PORT`，mikan 會在 `MIKAN_LINK_URL` 存在時預設監聽 `8181`。
+如果沒有設定 `LINK_PORT`，mikan 會在 `LINK_URL` 存在時預設監聽 `8181`。
 
 ## 3. 啟動 mikan
 
@@ -81,7 +81,7 @@ repo read:user user:email read:org gist
 可用環境變數覆蓋：
 
 ```bash
-export MIKAN_GITHUB_OAUTH_SCOPES="repo read:user user:email read:org gist workflow"
+export GITHUB_OAUTH_SCOPES="repo read:user user:email read:org gist workflow"
 ```
 
 請只加入你真的需要的 scopes。較高權限 scopes 會增加 credential 外洩時的風險。
