@@ -1,15 +1,12 @@
+import { matchCommand } from "../commands/parse.js";
+
 export interface ParsedSessionViewCommand {
   command: "session" | "/session" | "/pi-session";
 }
 
+const SESSION_VIEW_COMMANDS = ["session", "/session", "/pi-session"] as const;
+
 export function parseSessionViewCommand(text: string): ParsedSessionViewCommand | null {
-  const tokens = text.trim().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return null;
-
-  const command = tokens[0].toLowerCase();
-  if (command !== "session" && command !== "/session" && command !== "/pi-session") {
-    return null;
-  }
-
-  return { command: command as ParsedSessionViewCommand["command"] };
+  const matched = matchCommand(text, SESSION_VIEW_COMMANDS);
+  return matched ? { command: matched.command } : null;
 }

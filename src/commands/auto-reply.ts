@@ -4,20 +4,27 @@ import {
   loadConversationAutoReplyConfig,
   saveConversationAutoReplyConfig,
 } from "../config.js";
+import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { replyDiagnosticWithContext } from "./utils.js";
 
 type AutoReplyAction = { type: "status" } | { type: "on" } | { type: "off" } | { type: "invalid" };
 
-export function parseAutoReplyCommand(text: string): AutoReplyAction | null {
-  const trimmed = text.trim().replace(/@\w+$/i, "");
-  const match = /^(?:(?:\/)?auto-?reply|\/pi-auto-?reply)(?:\s+(.*))?$/i.exec(trimmed);
-  if (!match) return null;
+const AUTO_REPLY_COMMANDS = [
+  "auto-reply",
+  "autoreply",
+  "/auto-reply",
+  "/autoreply",
+  "/pi-auto-reply",
+  "/pi-autoreply",
+] as const;
 
-  const rest = match[1]?.trim();
-  if (!rest) return { type: "status" };
+function parseAutoReplyCommand(text: string): AutoReplyAction | null {
+  const matched = matchCommand(text, AUTO_REPLY_COMMANDS, { stripMention: true });
+  if (!matched) return null;
+  if (matched.args.length === 0) return { type: "status" };
 
-  const lower = rest.toLowerCase();
+  const lower = matched.args.join(" ").toLowerCase();
   if (lower === "status") return { type: "status" };
   if (lower === "on" || lower === "enable" || lower === "enabled") return { type: "on" };
   if (lower === "off" || lower === "disable" || lower === "disabled") return { type: "off" };

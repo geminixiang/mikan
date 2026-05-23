@@ -1,5 +1,6 @@
-import * as log from "../log.js";
+import { matchCommand } from "../commands/parse.js";
 import { isRecord, parseJsonValue } from "../file-guards.js";
+import * as log from "../log.js";
 
 export type LoginCredentialKind = "api_key" | "oauth";
 
@@ -279,27 +280,24 @@ export function resolveOAuthService(input: string): OAuthService | undefined {
   );
 }
 
+const LOGIN_COMMANDS = ["login", "/login", "/pi-login"] as const;
+
 export function parseLoginCommand(text: string): ParsedLoginCommand | null {
-  const tokens = text.trim().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return null;
+  const matched = matchCommand(text, LOGIN_COMMANDS);
+  if (!matched) return null;
 
-  const command = tokens[0].toLowerCase();
-  if (command !== "login" && command !== "/login" && command !== "/pi-login") {
-    return null;
-  }
-  const typedCommand = command as "login" | "/login" | "/pi-login";
-  const [subcommand, operation, name, ...extra] = tokens.slice(1);
+  const [subcommand, operation, name, ...extra] = matched.args;
 
-  if (!subcommand) return { command: typedCommand, action: "setup" };
+  if (!subcommand) return { command: matched.command, action: "setup" };
 
   if (subcommand.toLowerCase() === "shared") {
     const op = operation?.toLowerCase();
     if (op === "list" && !name && extra.length === 0) {
-      return { command: typedCommand, action: "shared_list" };
+      return { command: matched.command, action: "shared_list" };
     }
     if ((op === "create" || op === "update" || op === "delete") && !!name && extra.length === 0) {
       return {
-        command: typedCommand,
+        command: matched.command,
         action: `shared_${op}` as "shared_create" | "shared_update" | "shared_delete",
         name,
       };
@@ -308,12 +306,12 @@ export function parseLoginCommand(text: string): ParsedLoginCommand | null {
   }
 
   if (subcommand.toLowerCase() === "copy" && operation && !name && extra.length === 0) {
-    return { command: typedCommand, action: "copy_shared", name: operation };
+    return { command: matched.command, action: "copy_shared", name: operation };
   }
 
   // Backward-compatible: older `/pi-login gh` / `/pi-login gws` forms opened the
   // generic login page and let the portal handle provider choice.
-  if (!operation && extra.length === 0) return { command: typedCommand, action: "setup" };
+  if (!operation && extra.length === 0) return { command: matched.command, action: "setup" };
 
   return null;
 }
