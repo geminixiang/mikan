@@ -13,58 +13,7 @@ A multi-platform AI coding agent for Slack, Telegram, and Discord.
 
 mikan keeps the chat record, agent session, and execution runtime separate:
 
-```mermaid
-flowchart LR
-  Adapter["Slack / Discord / Telegram<br/>adapter"]
-
-  subgraph Chat["1. Chat / Conversation data"]
-    Log["log.jsonl<br/>platform chat history"]
-    Attachments["attachments/"]
-  end
-
-  subgraph Session["2. Session orchestration"]
-    Runtime["SessionRuntime"]
-    Orchestrator["ConversationOrchestrator"]
-    Scope["session scope<br/>top-level / thread / fork"]
-    Sessions["sessions/*.jsonl<br/>pi structured context"]
-  end
-
-  subgraph Harness["pi-coding-agent harness"]
-    Runner["AgentRunner"]
-    AgentSession["AgentSession"]
-    Tools["tools<br/>bash / read / write / edit / event / attach"]
-  end
-
-  subgraph Sandbox["3. Sandbox runtime"]
-    Executor["Executor"]
-    RuntimeTarget["host / container / image<br/>firecracker / cloudflare"]
-    Workspace["workspace<br/>host path or /workspace"]
-  end
-
-  subgraph Vault["3-1. Vault"]
-    VaultManager["VaultManager"]
-    Env["env"]
-    Secrets["secret files / mounts"]
-  end
-
-  Adapter --> Log
-  Adapter --> Attachments
-  Adapter --> Runtime
-  Runtime --> Orchestrator
-  Orchestrator --> Scope
-  Scope --> Sessions
-  Runtime --> Runner
-  Runner --> AgentSession
-  AgentSession <--> Sessions
-  AgentSession --> Tools
-  Tools --> Executor
-  Executor --> RuntimeTarget
-  RuntimeTarget --> Workspace
-  VaultManager --> Env
-  VaultManager --> Secrets
-  Env --> Executor
-  Secrets --> RuntimeTarget
-```
+![mikan architecture](docs/assets/architecture.png)
 
 - **Chat / conversation data** is the platform-facing record: `log.jsonl`, attachments, and conversation files.
 - **Session orchestration** turns platform events into agent runs, handles top-level/thread/fork scopes, and persists pi-coding-agent structured context under `sessions/*.jsonl`.

@@ -24,9 +24,9 @@ flowchart LR
   end
 
   subgraph Runtime["Core Runtime"]
-    Main["src/main.ts\nCLI bootstrap + BotHandler"]
-    SessionPolicy["src/session-policy.ts\nsessionKey policy"]
-    RunnerCache["conversationStates\nrunner cache / stop state"]
+    Main["src/main.ts\nCLI bootstrap"]
+    SessionRuntime["src/runtime/session-runtime.ts\nSessionRuntime + runner cache"]
+    Orchestrator["src/runtime/conversation-orchestrator.ts\nrun lifecycle + commands"]
     AgentRunner["src/agent.ts\ncreateRunner()"]
   end
 
@@ -67,9 +67,9 @@ flowchart LR
   TelegramAdapter --> Main
   DiscordAdapter --> Main
 
-  Main --> SessionPolicy
-  Main --> RunnerCache
-  RunnerCache --> AgentRunner
+  Main --> SessionRuntime
+  SessionRuntime --> Orchestrator
+  SessionRuntime --> AgentRunner
 
   AgentRunner --> PiAgent
   AgentRunner --> PiCoding
@@ -85,12 +85,12 @@ flowchart LR
 
   AgentRunner --> ConversationDir
   AgentRunner --> Sessions
-  Main --> Settings
+  Main --> GlobalSettings
   EventsWatcher --> EventsDir
   VaultManager --> Vaults
   LinkServer --> LinkTokens
 
-  Executor -. host / container / image / firecracker .-> ConversationDir
+  Executor -. host / container / image / firecracker / cloudflare .-> ConversationDir
   Provisioner -. managed conversation sandbox .-> Executor
   VaultManager -. env + mount routing .-> Executor
   EventsWatcher -. enqueue BotEvent .-> Main
@@ -115,16 +115,18 @@ flowchart LR
 ### B. 核心協調層
 
 - `src/main.ts`
-- `src/session-policy.ts`
-- `src/store.ts`
+- `src/runtime/session-runtime.ts`
+- `src/runtime/conversation-orchestrator.ts`
+- `src/sessions/store.ts`
+- `src/adapters/slack/branch-manager.ts`
 
 職責:
 
 - 啟動 CLI、讀取 env / args / `settings.json`
-- 啟動各平台 bot
-- 處理 `/login`、`/session`、`stop`、`new` 等控制命令
-- 管理 `conversationStates`，避免同一 session 重複執行
-- 決定每個 session 對應哪個 `AgentRunner`
+- 建立 `SessionRuntime` 作為各平台 bot 的 `BotHandler`
+- 透過 `ConversationOrchestrator` dispatch `/login`、`/session`、`stop`、`new` 等控制命令
+- 管理 `conversationStates` 與 per-session queue，避免同一 session 重複執行
+- 決定每個 session scope 對應哪個 `AgentRunner`
 
 ### C. Agent 執行層
 
@@ -149,13 +151,14 @@ flowchart LR
 職責:
 
 - 統一抽象 `Executor`
-- 支援 `host`、共享 `container`、conversation-scoped `image`、`firecracker`
-- 依 conversation vault 決定隔離型 sandbox 的實際執行位置
-- 在 `image` 模式下自動建立與回收 Docker container
+- 支援 `host`、共享 `container`、managed `image`、`firecracker`、`cloudflare`
+- 透過 `ActorExecutionResolver` 依 user/conversation/vault 決定實際 executor
+- 在 `image` 模式下自動建立與回收 Docker container，並把 `image:<image>` 解析成 concrete `container:<name>` executor
 
 ### E. 狀態與持久化層
 
-- `src/session-store.ts`
+- `src/sessions/store.ts`
+- `src/conversation-history.ts`
 - `src/context.ts`
 - `src/vault.ts`
 
@@ -185,8 +188,8 @@ sequenceDiagram
   participant U as User
   participant P as Slack / Telegram / Discord
   participant A as Adapter
-  participant M as main.ts
-  participant S as session-store.ts
+  participant M as SessionRuntime / Orchestrator
+  participant S as sessions/store.ts
   participant R as agent.ts / AgentRunner
   participant T as tools/*
   participant X as sandbox Executor
@@ -195,17 +198,17 @@ sequenceDiagram
   U->>P: 發送訊息 / mention / reply
   P->>A: 平台事件
   A->>M: BotEvent + ChatMessage + ResponseContext
-  M->>M: 判斷 stop / new / login / session 等命令
+  M->>M: queue event + dispatch commands
   M->>S: resolve session scope
   S-->>M: contextFile + sessionDir
   M->>R: getState() / run()
-  R->>W: 讀取 MEMORY.md / log.jsonl / sessions/*.jsonl
+  R->>W: 讀取 MEMORY.md / sessions/*.jsonl；必要時查 log.jsonl
   R->>R: 建立 system prompt / skills / model / session context
   R->>T: 執行工具
   T->>X: read / bash / edit / write / event / attach
   X-->>T: tool result
   T-->>R: 結果回傳
-  R->>W: 寫入 structured session / log
+  R->>W: 寫入 structured session；adapter 記錄平台 log
   R-->>M: final response
   M-->>A: 回覆內容 / 診斷 / 檔案
   A-->>P: 平台訊息更新
@@ -257,7 +260,7 @@ flowchart TD
   LinkServer --> VaultManager["vault.ts\nwrite env/file into vault"]
   VaultManager --> VaultDir["state-dir/vaults/<vaultId>/"]
   VaultManager --> Resolver["execution-resolver.ts"]
-  Resolver --> Sandbox["host / container / image / firecracker"]
+  Resolver --> Sandbox["host / container / image / firecracker / cloudflare"]
 ```
 
 重點:
@@ -265,7 +268,7 @@ flowchart TD
 - 憑證不直接進 workspace
 - vault 存在 `--state-dir`
 - 執行時才由 conversation vault 路由到對應 sandbox
-- `image` / `firecracker` 模式下，憑證隔離比 host / shared container 更完整
+- `image` / `firecracker` / `cloudflare` 模式使用 per-actor/per-conversation vault routing；`container:<name>` 使用 shared container vault；`host` 不注入 vault env
 
 ## 6. Events 與一般對話的差異
 
