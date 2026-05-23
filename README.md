@@ -270,10 +270,27 @@ See [`deploy/pm2/ecosystem.config.cjs`](deploy/pm2/ecosystem.config.cjs) for all
 ## Development
 
 ```bash
-npm run dev     # watch mode
-npm test
-npm run build
+npm run dev         # build in watch mode
+npm test            # unit tests (vitest)
+npm run lint        # oxlint
+npm run fmt:check   # oxfmt (use `npm run fmt` to auto-fix)
+npm run build       # type check + emit dist/
 ```
+
+### End-to-end tests
+
+E2E suites under `e2e/` exercise real platform APIs and are kept off the default `npm test` run.
+
+```bash
+npm run test:e2e          # all platforms
+npm run test:e2e:slack    # Slack only
+```
+
+Slack E2E requires `SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, and `SLACK_QA_MAMA_BOT_USER_ID` against a dedicated test workspace. See [`docs/slack-qa-test-plan.md`](docs/slack-qa-test-plan.md) for setup.
+
+## Contributing
+
+PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, commit style, and the testing checklist. Bug reports and feature requests go through the GitHub issue templates.
 
 ## License
 
