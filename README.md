@@ -27,7 +27,7 @@ A multi-platform AI coding agent for Slack, Telegram, and Discord.
 
 ## Requirements
 
-- Node.js >= 20
+- Node.js >= 22.19.0
 
 ## Installation
 

@@ -4,7 +4,7 @@ Thanks for your interest! mikan is a small project, so the process is lightweigh
 
 ## Development setup
 
-Requires Node.js >= 20.
+Requires Node.js >= 22.19.0.
 
 ```bash
 git clone https://github.com/geminixiang/mikan.git
