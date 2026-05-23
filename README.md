@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/mikan.png" alt="mikan — multi-platform AI coding agent" width="100%">
+</p>
+
 # mikan
 
 [![npm version](https://img.shields.io/npm/v/@geminixiang/mikan.svg)](https://www.npmjs.com/package/@geminixiang/mikan)
