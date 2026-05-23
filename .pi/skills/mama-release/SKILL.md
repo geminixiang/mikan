@@ -51,16 +51,36 @@ npm version <version> --no-git-tag-version
 
 Use this to sync `package.json` and `package-lock.json` without creating an automatic commit or tag. If the user already edited `package.json`, just verify `package-lock.json` matches.
 
-### 3. Commit and push
+### 3. Update CHANGELOG
 
-Stage only version files unless the user asked for more.
+`CHANGELOG.md` follows Keep a Changelog with `### Added / Changed / Fixed / Removed / Security / Performance / Tests` subsections. The newest release sits at the top under an `## [Unreleased]` placeholder.
+
+Gather user-visible changes since the previous tag:
 
 ```bash
+git log --pretty=format:'%h %s' <previous-tag>..HEAD | grep -v "^[a-f0-9]* chore: bump version"
+```
+
+Then in `CHANGELOG.md`:
+
+- Keep `## [Unreleased]` at the top as an empty placeholder.
+- Insert a new section `## [<version>] - <YYYY-MM-DD>` (use today's date for stable, omit the date for prereleases to match the existing style).
+- Group entries by subsection; one bullet per user-visible change, imperative voice, no commit hashes.
+- Skip pure internal refactors that don't change behavior unless they affect contributors (then list under `### Changed`).
+
+If you generated draft release notes in step 5 first, copy the same wording into CHANGELOG — they should match.
+
+### 4. Commit and push
+
+Stage version files and CHANGELOG together — the bump and the changelog entry belong in the same commit.
+
+```bash
+git add package.json package-lock.json CHANGELOG.md
 git commit -m "chore: bump version to <version>"
 git push origin main
 ```
 
-### 4. Draft release notes
+### 5. Draft release notes
 
 Use the previous GitHub release as the style reference.
 
@@ -79,9 +99,9 @@ Write concise notes focused on user-visible changes, usually with:
 - `### Docs and maintenance`
 - `### Verification`
 
-Write notes to `/tmp/mama-release-<version>.md`.
+Write notes to `/tmp/mama-release-<version>.md`. Keep them consistent with the CHANGELOG entry from step 3.
 
-### 5. Create or update release
+### 6. Create or update release
 
 Prerelease:
 
@@ -122,3 +142,4 @@ Return:
 - Infer stable vs prerelease from the version, or ask.
 - Do not include raw commit hashes in release notes unless requested.
 - If hooks fail during commit, fix or report before retrying.
+- Never publish a release without a corresponding CHANGELOG entry — the version bump commit must include the new CHANGELOG section.
