@@ -13,9 +13,12 @@ any release.
 
 ### Changed
 
-- Renamed the project, CLI, package, documentation, and repository references to mikan.
-- Changed all product environment variables from `MIKAN_*` to `MIKAN_*`.
+- Renamed the project, CLI, npm package, GitHub repository, documentation, release skill, and sandbox image references to mikan.
+- Changed platform credentials to unprefixed env vars (`SLACK_APP_TOKEN`, `SLACK_BOT_TOKEN`, `TELEGRAM_BOT_TOKEN`, `DISCORD_BOT_TOKEN`) while keeping `MIKAN_*` aliases as fallbacks.
+- Changed runtime env vars such as `LINK_URL`, `LINK_PORT`, `STATE_DIR`, OAuth scope overrides, and Cloudflare sandbox settings to prefer unprefixed names with `MIKAN_*` fallbacks.
+- Raised the minimum supported Node.js version to `>=22.19.0`.
 - Updated internal variable, function, type, Docker label, sandbox image, and generated resource names to use mikan naming.
+- Added manual dispatch support to the CI workflow.
 
 ## [0.2.0-beta.25] - 2026-05-23
 
