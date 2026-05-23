@@ -46,7 +46,7 @@ describe("TelegramBot extractMessageContext", () => {
   let workingDir: string;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mama-telegram-ctx-${Date.now()}`);
+    workingDir = join(tmpdir(), `mikan-telegram-ctx-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
   });
 
@@ -128,7 +128,7 @@ describe("TelegramBot stop handling", () => {
   let workingDir: string;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mama-telegram-stop-${Date.now()}`);
+    workingDir = join(tmpdir(), `mikan-telegram-stop-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
   });
 
@@ -156,7 +156,7 @@ describe("TelegramBot stop handling", () => {
     const processAttachments = vi.fn().mockResolvedValue([]);
 
     (bot as any).startupTime = 0;
-    (bot as any).botUsername = "mama_bot";
+    (bot as any).botUsername = "mikan_bot";
     (bot as any).processAttachments = processAttachments;
     (bot as any).client = {
       command: vi.fn(),
@@ -174,7 +174,7 @@ describe("TelegramBot stop handling", () => {
         text: "stop",
         reply_to_message: {
           message_id: 60,
-          from: { id: 99, is_bot: true, username: "mama_bot" },
+          from: { id: 99, is_bot: true, username: "mikan_bot" },
         },
       }),
     });
@@ -188,7 +188,7 @@ describe("TelegramBot message logging", () => {
   let workingDir: string;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mama-telegram-log-${Date.now()}`);
+    workingDir = join(tmpdir(), `mikan-telegram-log-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
   });
 
@@ -199,7 +199,7 @@ describe("TelegramBot message logging", () => {
   function installMessageHandler(bot: TelegramBot): (ctx: { message: any }) => Promise<void> {
     let messageHandler: ((ctx: { message: any }) => Promise<void>) | undefined;
     (bot as any).startupTime = 0;
-    (bot as any).botUsername = "mama_bot";
+    (bot as any).botUsername = "mikan_bot";
     (bot as any).processAttachments = vi.fn().mockResolvedValue([]);
     (bot as any).client = {
       command: vi.fn(),
@@ -220,7 +220,7 @@ describe("TelegramBot message logging", () => {
       message: makeMessage({
         chat: { id: 999, type: "group" },
         message_id: 60,
-        text: "@mama_bot hello",
+        text: "@mikan_bot hello",
         reply_to_message: { message_id: 50 },
       }),
     });
@@ -257,7 +257,7 @@ describe("TelegramBot startup", () => {
   let workingDir: string;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mama-telegram-start-${Date.now()}`);
+    workingDir = join(tmpdir(), `mikan-telegram-start-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
   });
 
@@ -267,7 +267,7 @@ describe("TelegramBot startup", () => {
 
   test("start registers required Telegram slash commands only", async () => {
     const bot = new TelegramBot(makeHandler(), { token: "TEST_TOKEN", workingDir });
-    const getMe = vi.fn().mockResolvedValue({ id: 99, username: "mama_bot" });
+    const getMe = vi.fn().mockResolvedValue({ id: 99, username: "mikan_bot" });
     const setMyCommands = vi.fn().mockResolvedValue(undefined);
     const command = vi.fn();
     const on = vi.fn();
@@ -297,7 +297,7 @@ describe("TelegramBot HTML fallback", () => {
   let workingDir: string;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mama-telegram-html-${Date.now()}`);
+    workingDir = join(tmpdir(), `mikan-telegram-html-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
   });
 
@@ -338,7 +338,7 @@ describe("TelegramBot attachments", () => {
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mama-telegram-bot-${Date.now()}`);
+    workingDir = join(tmpdir(), `mikan-telegram-bot-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
   });
 

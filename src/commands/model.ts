@@ -157,7 +157,7 @@ export class ModelCommandHandler implements CommandHandler {
   }
 
   private isKnownModel(provider: string, model: string): boolean {
-    const authStorage = AuthStorage.create(join(homedir(), ".pi", "mama", "auth.json"));
+    const authStorage = AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json"));
     const registry = ModelRegistry.create(authStorage);
     return registry.find(provider, model) !== undefined;
   }

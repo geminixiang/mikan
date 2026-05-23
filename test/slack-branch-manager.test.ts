@@ -153,19 +153,19 @@ describe("resolveSlackSessionScope", () => {
     expect(content).toContain("channel reply");
   });
 
-  test("forks from top-level session when the thread root is mama's top-level response", async () => {
+  test("forks from top-level session when the thread root is mikan's top-level response", async () => {
     const sessionDir = getChannelSessionDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
     const channelSM = openManagedSession(channelFile, sessionDir, conversationDir);
     channelSM.appendMessage(makeUserMessage("[2026-04-28 18:19:03+08:00] [alice]: question"));
-    channelSM.appendMessage(makeAssistantMessage("mama top-level answer"));
+    channelSM.appendMessage(makeAssistantMessage("mikan top-level answer"));
 
     writeLog([
       {
         date: "2026-04-28T10:19:00.000Z",
         ts: "2000.0001",
         user: "bot",
-        text: "mama top-level answer",
+        text: "mikan top-level answer",
         isBot: true,
       },
     ]);
@@ -182,7 +182,7 @@ describe("resolveSlackSessionScope", () => {
     const content = readFileSync(contextFile, "utf-8");
     expect(content).toContain(`"parentSession":"${channelFile}"`);
     expect(content).toContain("question");
-    expect(content).toContain("mama top-level answer");
+    expect(content).toContain("mikan top-level answer");
   });
 
   test("creates a root-only branch session when the parent root turn is not materialized yet", async () => {

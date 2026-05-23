@@ -18,7 +18,7 @@ describe("createEventTool", () => {
   });
 
   function makeWorkspace(): string {
-    const dir = mkdtempSync(join(tmpdir(), "mama-event-tool-test-"));
+    const dir = mkdtempSync(join(tmpdir(), "mikan-event-tool-test-"));
     tempDirs.push(dir);
     return dir;
   }

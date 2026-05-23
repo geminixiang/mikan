@@ -1,15 +1,15 @@
 ---
-name: mama-release
-description: Prepare and publish a new mama release. Use when bumping the version, committing and pushing it, and creating a GitHub release in the style of earlier mama releases.
+name: mikan-release
+description: Prepare and publish a new mikan release. Use when bumping the version, committing and pushing it, and creating a GitHub release in the style of earlier mikan releases.
 ---
 
-# Mama Release
+# Mikan Release
 
 Repo defaults:
 
 - branch: `main`
 - remote: `origin`
-- repo: `geminixiang/mama`
+- repo: `geminixiang/mikan`
 - use `package.json` version as the git tag and GitHub release title
 - versions with `-alpha.`, `-beta.`, or `-rc.` are prereleases by default
 
@@ -85,8 +85,8 @@ git push origin main
 Use the previous GitHub release as the style reference.
 
 ```bash
-gh release list --repo geminixiang/mama --limit 10
-gh release view <previous-tag> --repo geminixiang/mama --json tagName,name,body,url,publishedAt
+gh release list --repo geminixiang/mikan --limit 10
+gh release view <previous-tag> --repo geminixiang/mikan --json tagName,name,body,url,publishedAt
 git log --pretty=format:'%h %s' <previous-tag>..HEAD
 git diff --stat <previous-tag>..HEAD
 ```
@@ -99,7 +99,7 @@ Write concise notes focused on user-visible changes, usually with:
 - `### Docs and maintenance`
 - `### Verification`
 
-Write notes to `/tmp/mama-release-<version>.md`. Keep them consistent with the CHANGELOG entry from step 3.
+Write notes to `/tmp/mikan-release-<version>.md`. Keep them consistent with the CHANGELOG entry from step 3.
 
 ### 6. Create or update release
 
@@ -107,10 +107,10 @@ Prerelease:
 
 ```bash
 gh release create <version> \
-  --repo geminixiang/mama \
+  --repo geminixiang/mikan \
   --target main \
   --title <version> \
-  --notes-file /tmp/mama-release-<version>.md \
+  --notes-file /tmp/mikan-release-<version>.md \
   --prerelease
 ```
 
@@ -118,10 +118,10 @@ Stable:
 
 ```bash
 gh release create <version> \
-  --repo geminixiang/mama \
+  --repo geminixiang/mikan \
   --target main \
   --title <version> \
-  --notes-file /tmp/mama-release-<version>.md
+  --notes-file /tmp/mikan-release-<version>.md
 ```
 
 If it already exists, use `gh release edit <version> ...` and keep prerelease/stable intent consistent.
@@ -138,7 +138,7 @@ Return:
 
 ## Guardrails
 
-- Always use `geminixiang/mama`.
+- Always use `geminixiang/mikan`.
 - Infer stable vs prerelease from the version, or ask.
 - Do not include raw commit hashes in release notes unless requested.
 - If hooks fail during commit, fix or report before retrying.

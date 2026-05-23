@@ -1,6 +1,6 @@
-# mama (Multi-Agent Mischief Assistant)
+# mikan (Multi-Agent Mischief Assistant)
 
-[![npm version](https://img.shields.io/npm/v/@geminixiang/mama.svg)](https://www.npmjs.com/package/@geminixiang/mama)
+[![npm version](https://img.shields.io/npm/v/@geminixiang/mikan.svg)](https://www.npmjs.com/package/@geminixiang/mikan)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A multi-platform AI assistant for Slack, Telegram, and Discord.
@@ -34,7 +34,7 @@ Forked from [`badlogic/pi-mono`](https://github.com/badlogic/pi-mono)'s `mom` pa
 ## Installation
 
 ```bash
-npm install -g @geminixiang/mama
+npm install -g @geminixiang/mikan
 ```
 
 Or from source:
@@ -48,16 +48,16 @@ npm install && npm run build
 All platforms share the same CLI:
 
 ```bash
-mama [--state-dir=~/.mama] [--sandbox=<mode>] <working-directory>
+mikan [--state-dir=~/.mikan] [--sandbox=<mode>] <working-directory>
 ```
 
 Set the platform tokens you need (you can run multiple platforms at once):
 
 ```bash
-export MAMA_SLACK_APP_TOKEN=xapp-...
-export MAMA_SLACK_BOT_TOKEN=xoxb-...
-export MAMA_TELEGRAM_BOT_TOKEN=123456:ABC-...
-export MAMA_DISCORD_BOT_TOKEN=MTI...
+export MIKAN_SLACK_APP_TOKEN=xapp-...
+export MIKAN_SLACK_BOT_TOKEN=xoxb-...
+export MIKAN_TELEGRAM_BOT_TOKEN=123456:ABC-...
+export MIKAN_DISCORD_BOT_TOKEN=MTI...
 ```
 
 ### Slack
@@ -87,17 +87,17 @@ Vault routing: `image`, `firecracker`, and `cloudflare` resolve a vault per plat
 ### Managed per-user containers (`image:*`)
 
 ```bash
-docker pull ghcr.io/geminixiang/mama-sandbox:latest
-mama --sandbox=image:ghcr.io/geminixiang/mama-sandbox:latest /path/to/workspace
+docker pull ghcr.io/geminixiang/mikan-sandbox:latest
+mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest /path/to/workspace
 ```
 
 Or build locally:
 
 ```bash
-docker build -f docker/mama-sandbox.Dockerfile -t mama-sandbox:tools .
+docker build -f docker/mikan-sandbox.Dockerfile -t mikan-sandbox:tools .
 ```
 
-mama creates one container per vault, attaches each to its own bridge network, mounts the workspace at `/workspace`, injects vault env, mounts declared credential files, and stops idle containers.
+mikan creates one container per vault, attaches each to its own bridge network, mounts the workspace at `/workspace`, injects vault env, mounts declared credential files, and stops idle containers.
 
 ### Firecracker / Cloudflare
 
@@ -106,11 +106,11 @@ See [docs/firecracker-setup.md](docs/firecracker-setup.md) and [examples/cloudfl
 ## `/login` and Web Session Viewer
 
 ```bash
-export MAMA_LINK_URL="https://mama.example.com"   # public base URL
-export MAMA_LINK_PORT=8181                         # optional, defaults to 8181
+export MIKAN_LINK_URL="https://mikan.example.com"   # public base URL
+export MIKAN_LINK_PORT=8181                         # optional, defaults to 8181
 ```
 
-For local testing you can set just `MAMA_LINK_PORT`; mama will use `http://localhost:<port>`.
+For local testing you can set just `MIKAN_LINK_PORT`; mikan will use `http://localhost:<port>`.
 
 - `/login` / `/pi-login` (DM only) returns a 15-minute link to store API keys or run built-in OAuth flows ([GitHub](docs/oauth/github.md), [Google Workspace](docs/oauth/google-workspace.md), [Google Cloud SDK / gcloud](docs/oauth/google-cloud-sdk.md)).
 - `session` / `/session` (DM only) returns a read-only link showing the current session timeline.
@@ -120,13 +120,13 @@ For local testing you can set just `MAMA_LINK_PORT`; mama will use `http://local
 - `stop` / `/stop` stops the current run. On Slack, use text commands so thread-local stop routing remains accurate.
 - On Slack you can also register native commands like `/pi-login`, `/pi-session`, `/pi-model`, `/pi-auto-reply`, and `/pi-new`.
 
-Credentials are stored under `<state-dir>/vaults` (default `~/.mama/vaults`). Vault env is only injected in `container`, `image`, `firecracker`, and `cloudflare` modes.
+Credentials are stored under `<state-dir>/vaults` (default `~/.mikan/vaults`). Vault env is only injected in `container`, `image`, `firecracker`, and `cloudflare` modes.
 
 Shared login profiles live under `<state-dir>/vaults/shared/<name>`. `/pi-login copy <name>` merge-copies that shared profile into the current conversation vault: shared env keys overwrite matching conversation env keys, conversation-only env keys are kept, and files from the shared profile overwrite files at the same relative path. To seed every new managed sandbox vault from a shared profile, fill in `sandbox.defaultSharedVault` in `<state-dir>/settings.json` (onboard creates it as an empty string), for example `{ "sandbox": { "defaultSharedVault": "claw" } }`. Empty string disables the default. The default profile is copied only when the target vault does not exist yet.
 
 ## Configuration
 
-mama reads global settings from `<state-dir>/settings.json` (default `~/.mama/settings.json`, override via `--state-dir` or `MAMA_STATE_DIR`). This file is required and is created explicitly with `mama --onboard`. Per-conversation settings live at `<workingDir>/<conversationId>/settings.json` and override global settings for that conversation.
+mikan reads global settings from `<state-dir>/settings.json` (default `~/.mikan/settings.json`, override via `--state-dir` or `MIKAN_STATE_DIR`). This file is required and is created explicitly with `mikan --onboard`. Per-conversation settings live at `<workingDir>/<conversationId>/settings.json` and override global settings for that conversation.
 
 ```json
 {
@@ -174,7 +174,7 @@ Conversation-local settings written by `/pi-model` use the same shape and usuall
 }
 ```
 
-mama writes logs to stdout/stderr. Use your process manager or host platform (for example PM2, systemd, Docker, or a cloud logging agent) to route logs to your preferred backend.
+mikan writes logs to stdout/stderr. Use your process manager or host platform (for example PM2, systemd, Docker, or a cloud logging agent) to route logs to your preferred backend.
 
 ## Layout
 
@@ -236,22 +236,22 @@ Usage: {baseDir}/run.sh <args>
 ## Slack: Download channel history
 
 ```bash
-mama --download C0123456789
+mikan --download C0123456789
 ```
 
 ## Production deployment (PM2)
 
-For long-running deployments, use [PM2](https://pm2.keymetrics.io/) as a process supervisor. It daemonizes mama, restarts on crash, and survives reboots.
+For long-running deployments, use [PM2](https://pm2.keymetrics.io/) as a process supervisor. It daemonizes mikan, restarts on crash, and survives reboots.
 
 ```bash
-# 1. Install mama and pm2
-npm i -g @geminixiang/mama pm2
+# 1. Install mikan and pm2
+npm i -g @geminixiang/mikan pm2
 
-# 2. Start the sandbox container (long-lived; mama execs into it)
-docker pull ghcr.io/geminixiang/mama-sandbox:latest
+# 2. Start the sandbox container (long-lived; mikan execs into it)
+docker pull ghcr.io/geminixiang/mikan-sandbox:latest
 
 # 3. Grab the ecosystem file, edit args + env tokens, then start
-curl -O https://raw.githubusercontent.com/geminixiang/mama/main/deploy/pm2/ecosystem.config.cjs
+curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
 pm2 start ecosystem.config.cjs
 pm2 save
 pm2 startup        # run the printed command to enable boot autostart
@@ -260,10 +260,10 @@ pm2 startup        # run the printed command to enable boot autostart
 Upgrade flow:
 
 ```bash
-npm i -g @geminixiang/mama && pm2 reload mama
+npm i -g @geminixiang/mikan && pm2 reload mikan
 ```
 
-`pm2 reload` sends SIGTERM and waits up to `kill_timeout` (60s in the shipped config) before SIGKILL. mama's internal graceful shutdown drains in-flight LLM turns within that window, so reloads do not interrupt active conversations.
+`pm2 reload` sends SIGTERM and waits up to `kill_timeout` (60s in the shipped config) before SIGKILL. mikan's internal graceful shutdown drains in-flight LLM turns within that window, so reloads do not interrupt active conversations.
 
 See [`deploy/pm2/ecosystem.config.cjs`](deploy/pm2/ecosystem.config.cjs) for all tunables.
 
@@ -286,7 +286,7 @@ npm run test:e2e          # all platforms
 npm run test:e2e:slack    # Slack only
 ```
 
-Slack E2E requires `SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, and `SLACK_QA_MAMA_BOT_USER_ID` against a dedicated test workspace. See [`docs/slack-qa-test-plan.md`](docs/slack-qa-test-plan.md) for setup.
+Slack E2E requires `SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, and `SLACK_QA_MIKAN_BOT_USER_ID` against a dedicated test workspace. See [`docs/slack-qa-test-plan.md`](docs/slack-qa-test-plan.md) for setup.
 
 ## Contributing
 

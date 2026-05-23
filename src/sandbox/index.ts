@@ -65,7 +65,7 @@ export function parseSandboxArg(value: string): SandboxConfig {
 
   if (value.startsWith("docker:")) {
     throw new SandboxError(
-      `Error: '${value}' is not supported. Use 'container:<container-name>' for the shared-container mode or 'image:<image-name>' for mama-managed per-user containers.`,
+      `Error: '${value}' is not supported. Use 'container:<container-name>' for the shared-container mode or 'image:<image-name>' for mikan-managed per-user containers.`,
     );
   }
 

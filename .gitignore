@@ -7,8 +7,8 @@ bin/
 *.env
 .env*
 
-# Local mama state / credential vaults
-.mama/
+# Local mikan state / credential vaults
+.mikan/
 vaults/*/
 
 ecosystem.config.cjs

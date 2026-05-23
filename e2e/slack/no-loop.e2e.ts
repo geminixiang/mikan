@@ -10,11 +10,11 @@ import {
 
 const ctx = loadContextOrSkip();
 
-describe.skipIf(!ctx || !ctx.env.mamaBotUserId)("Slack no bot-to-bot loop", () => {
-  if (!ctx || !ctx.env.mamaBotUserId) return;
+describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack no bot-to-bot loop", () => {
+  if (!ctx || !ctx.env.mikanBotUserId) return;
   const { client, env } = ctx;
-  const primary = ctx.env.mamaBotUserId;
-  const botUserIds = [env.questionBotUserId, env.mamaBotUserId].filter((id): id is string =>
+  const primary = ctx.env.mikanBotUserId;
+  const botUserIds = [env.questionBotUserId, env.mikanBotUserId].filter((id): id is string =>
     Boolean(id),
   );
 

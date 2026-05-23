@@ -19,9 +19,9 @@ describe("parseSandboxArg", () => {
   });
 
   test("parses container sandbox", () => {
-    expect(parseSandboxArg("container:mama-sandbox")).toEqual({
+    expect(parseSandboxArg("container:mikan-sandbox")).toEqual({
       type: "container",
-      container: "mama-sandbox",
+      container: "mikan-sandbox",
     });
   });
 
@@ -69,15 +69,15 @@ describe("parseSandboxArg", () => {
   });
 
   test("rejects unsupported sandbox type", () => {
-    expect(() => parseSandboxArg("podman:mama")).toThrowError(SandboxError);
-    expect(() => parseSandboxArg("podman:mama")).toThrow(
-      "Error: Invalid sandbox type 'podman:mama'",
+    expect(() => parseSandboxArg("podman:mikan")).toThrowError(SandboxError);
+    expect(() => parseSandboxArg("podman:mikan")).toThrow(
+      "Error: Invalid sandbox type 'podman:mikan'",
     );
   });
 
   test("rejects docker mode with migration hint", () => {
-    expect(() => parseSandboxArg("docker:mama-sandbox")).toThrowError(SandboxError);
-    expect(() => parseSandboxArg("docker:mama-sandbox")).toThrow(
+    expect(() => parseSandboxArg("docker:mikan-sandbox")).toThrowError(SandboxError);
+    expect(() => parseSandboxArg("docker:mikan-sandbox")).toThrow(
       "Use 'container:<container-name>' for the shared-container mode",
     );
   });
@@ -89,7 +89,7 @@ describe("createExecutor", () => {
   });
 
   test("creates container executor", () => {
-    expect(createExecutor({ type: "container", container: "mama-sandbox" })).toBeInstanceOf(
+    expect(createExecutor({ type: "container", container: "mikan-sandbox" })).toBeInstanceOf(
       ContainerExecutor,
     );
   });
@@ -127,7 +127,7 @@ describe("ContainerExecutor", () => {
       .spyOn(HostExecutor.prototype, "exec")
       .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
     const executor = new ContainerExecutor(
-      "mama-sandbox",
+      "mikan-sandbox",
       { GH_TOKEN: "gho_test" },
       async () => {},
     );
@@ -136,7 +136,7 @@ describe("ContainerExecutor", () => {
 
     const [[dockerCommand]] = exec.mock.calls;
     expect(dockerCommand).toContain("docker exec --env-file ");
-    expect(dockerCommand).toContain("mama-sandbox sh -c");
+    expect(dockerCommand).toContain("mikan-sandbox sh -c");
     expect(dockerCommand).toContain("gh auth setup-git");
     expect(dockerCommand).toContain("git clone https://github.com/livingbio/skills.git");
   });
@@ -194,7 +194,7 @@ describe("CloudflareSandboxExecutor", () => {
   });
 
   test("posts exec requests to the bridge", async () => {
-    process.env.MAMA_CLOUDFLARE_SANDBOX_URL = "https://sandbox.example";
+    process.env.MIKAN_CLOUDFLARE_SANDBOX_URL = "https://sandbox.example";
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       text: async () => JSON.stringify({ stdout: "ok\n", stderr: "", code: 0 }),
@@ -225,7 +225,7 @@ describe("CloudflareSandboxExecutor", () => {
   });
 
   test("reports the configured Cloudflare runtime cwd as workspace path", () => {
-    process.env.MAMA_CLOUDFLARE_SANDBOX_CWD = "/remote/workspace";
+    process.env.MIKAN_CLOUDFLARE_SANDBOX_CWD = "/remote/workspace";
     const executor = new CloudflareSandboxExecutor("slack-u123");
 
     expect(executor.getWorkspacePath("/host/workspace")).toBe("/remote/workspace");

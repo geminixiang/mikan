@@ -52,7 +52,7 @@ describe("SlackBot slash commands", () => {
   let workingDir: string;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mama-slack-bot-${Date.now()}`);
+    workingDir = join(tmpdir(), `mikan-slack-bot-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
   });
 
@@ -185,7 +185,7 @@ describe("SlackBot slash commands", () => {
     expect(postEphemeral).toHaveBeenCalledWith({
       channel: "C123",
       user: "U123",
-      text: "為了避免誤清除共享上下文，/pi-new 目前只能在與 mama 的私訊中使用。",
+      text: "為了避免誤清除共享上下文，/pi-new 目前只能在與 mikan 的私訊中使用。",
     });
   });
 
@@ -453,7 +453,7 @@ describe("SlackBot queues follow-up messages", () => {
   let workingDir: string;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mama-slack-queue-${Date.now()}`);
+    workingDir = join(tmpdir(), `mikan-slack-queue-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
   });
 
@@ -923,7 +923,7 @@ describe("SlackBot queues follow-up messages", () => {
     expect(handler.handleEvent).toHaveBeenCalledTimes(2);
   });
 
-  test("external Slack app bot messages are logged but do not trigger mama", async () => {
+  test("external Slack app bot messages are logged but do not trigger mikan", async () => {
     const handler = makeHandler();
 
     const bot = new SlackBot(handler, {
@@ -951,8 +951,8 @@ describe("SlackBot queues follow-up messages", () => {
       | undefined;
 
     (bot as any).startupTs = "0";
-    (bot as any).botUserId = "U_MAMA";
-    (bot as any).botId = "B_MAMA";
+    (bot as any).botUserId = "U_MIKAN";
+    (bot as any).botId = "B_MIKAN";
     (bot as any).logExternalBotMessage = vi.fn().mockResolvedValue([]);
     (bot as any).socketClient = {
       on: vi.fn((event: string, fn: unknown) => {
@@ -1302,7 +1302,7 @@ describe("SlackBot backfill", () => {
   let workingDir: string;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mama-slack-backfill-${Date.now()}`);
+    workingDir = join(tmpdir(), `mikan-slack-backfill-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
   });
 
@@ -1359,8 +1359,8 @@ describe("SlackBot backfill", () => {
       } as any,
     });
 
-    (bot as any).botUserId = "U_MAMA";
-    (bot as any).botId = "B_MAMA";
+    (bot as any).botUserId = "U_MIKAN";
+    (bot as any).botId = "B_MIKAN";
     (bot as any).webClient = {
       conversations: {
         history: vi.fn().mockResolvedValue({
@@ -1403,7 +1403,7 @@ describe("SlackBot backfill", () => {
     expect(logContent).toContain('"botId":"B_SENTRY"');
   });
 
-  test("backfill preserves mentions of other users while stripping mama", async () => {
+  test("backfill preserves mentions of other users while stripping mikan", async () => {
     const handler = makeHandler();
     const bot = new SlackBot(handler, {
       appToken: "xapp-test",
@@ -1445,7 +1445,7 @@ describe("SlackBot attachments", () => {
   let workingDir: string;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mama-slack-attachments-${Date.now()}`);
+    workingDir = join(tmpdir(), `mikan-slack-attachments-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
   });
 

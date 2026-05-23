@@ -243,18 +243,18 @@ export function logUsageSummary(
 
 // Startup (no context needed)
 export function logStartup(workingDir: string, sandbox: string): void {
-  console.log("Starting mama...");
+  console.log("Starting mikan...");
   console.log(`  Working directory: ${workingDir}`);
   console.log(`  Sandbox: ${sandbox}`);
 }
 
 export function logConnected(platform: string): void {
-  console.log(`⚡️ Mama connected to ${platform} and listening!`);
+  console.log(`⚡️ Mikan connected to ${platform} and listening!`);
   console.log("");
 }
 
 export function logDisconnected(): void {
-  console.log("Mama disconnected.");
+  console.log("Mikan disconnected.");
 }
 
 // Backfill

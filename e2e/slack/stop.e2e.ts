@@ -10,12 +10,12 @@ import {
 
 const ctx = loadContextOrSkip();
 
-describe.skipIf(!ctx || !ctx.env.mamaBotUserId)("Slack stop", () => {
-  if (!ctx || !ctx.env.mamaBotUserId) return;
+describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack stop", () => {
+  if (!ctx || !ctx.env.mikanBotUserId) return;
   const { client, env } = ctx;
-  const botUserId = ctx.env.mamaBotUserId;
+  const botUserId = ctx.env.mikanBotUserId;
 
-  it("S-008 mama acknowledges stop", async () => {
+  it("S-008 mikan acknowledges stop", async () => {
     const startedAt = nowSeconds();
     await postMessage(
       client,
@@ -33,7 +33,7 @@ describe.skipIf(!ctx || !ctx.env.mamaBotUserId)("Slack stop", () => {
       pollMs: env.pollMs,
       textMatches: /Stopped|Nothing running|Force stopped|Stopping/i,
     });
-    expect(reply, "no stop acknowledgement from mama").not.toBeNull();
+    expect(reply, "no stop acknowledgement from mikan").not.toBeNull();
     console.log(`stop reply ts=${reply!.ts}: ${summarizeMessage(reply!)}`);
   });
 });

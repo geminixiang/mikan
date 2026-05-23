@@ -76,7 +76,7 @@ export class SandboxCommandHandler implements CommandHandler {
         await replyDiagnosticWithContext(
           context.responseCtx,
           formatSandboxCommandSummary("Sandbox Boost", [
-            "此 mama instance 尚未設定 sandbox boost 規格。",
+            "此 mikan instance 尚未設定 sandbox boost 規格。",
             "請先在全域 settings.json 設定 `sandbox.boost`。",
           ]),
           { style: "muted" },

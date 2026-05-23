@@ -65,10 +65,10 @@ function runtimeCwdForSandbox(
 }
 
 export function createSessionRuntime(options: SessionRuntimeOptions): SessionRuntime {
-  return new MamaSessionRuntime(options);
+  return new MikanSessionRuntime(options);
 }
 
-class MamaSessionRuntime implements SessionRuntime {
+class MikanSessionRuntime implements SessionRuntime {
   private readonly conversationStates = new Map<string, ConversationState>();
   private readonly sessionQueues = new Map<string, Promise<void>>();
   private readonly inFlightRuns = new Set<Promise<void>>();
@@ -283,7 +283,7 @@ class MamaSessionRuntime implements SessionRuntime {
     if (this.inFlightRuns.size > 0) {
       log.logWarning(`Forcing exit with ${this.inFlightRuns.size} runs still in progress`);
       reportUserFacingError(new Error("Shutdown forced with in-flight agent runs"), {
-        domain: "mama",
+        domain: "mikan",
         surface: "shutdown",
         operation: "force_exit_with_inflight_runs",
         severity: "warning",

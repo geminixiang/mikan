@@ -4,13 +4,13 @@ export const DEFAULT_POLL_MS = 2_000;
 export interface SlackE2eEnv {
   token: string;
   channel: string;
-  mamaBotUserId: string | undefined;
+  mikanBotUserId: string | undefined;
   questionBotUserId: string | undefined;
   timeoutMs: number;
   pollMs: number;
   eventsDir: string;
   questionText: string;
-  mamaText: string;
+  mikanText: string;
 }
 
 export function readSlackE2eEnv(): SlackE2eEnv {
@@ -20,13 +20,13 @@ export function readSlackE2eEnv(): SlackE2eEnv {
   return {
     token,
     channel,
-    mamaBotUserId: env.SLACK_QA_MAMA_BOT_USER_ID || undefined,
+    mikanBotUserId: env.SLACK_QA_MIKAN_BOT_USER_ID || undefined,
     questionBotUserId: env.SLACK_QA_QUESTION_BOT_USER_ID || undefined,
     timeoutMs: Number(env.SLACK_QA_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS),
     pollMs: Number(env.SLACK_QA_POLL_MS ?? DEFAULT_POLL_MS),
     eventsDir: env.SLACK_QA_EVENTS_DIR ?? `${process.cwd()}/events`,
     questionText: env.SLACK_QA_QUESTION_TEXT ?? "你是誰？請簡短回答。",
-    mamaText: env.SLACK_QA_MAMA_TEXT ?? "hello，請簡短回答。",
+    mikanText: env.SLACK_QA_MIKAN_TEXT ?? "hello，請簡短回答。",
   };
 }
 

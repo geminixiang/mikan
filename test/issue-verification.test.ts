@@ -7,7 +7,7 @@ import { join } from "path";
 // ============================================================================
 
 describe("ISSUE VERIFICATION: Grep can search historical records", () => {
-  const testDir = "/tmp/mama-grep-test";
+  const testDir = "/tmp/mikan-grep-test";
 
   beforeEach(() => {
     // Create test directory and log file
@@ -40,7 +40,7 @@ describe("ISSUE VERIFICATION: Grep can search historical records", () => {
         date: "2025-01-03T10:00:00.000Z",
         ts: "1000000000.000003",
         user: "bot",
-        userName: "mama",
+        userName: "mikan",
         text: "Hello! How can I help?",
         attachments: [],
         isBot: true,

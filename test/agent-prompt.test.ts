@@ -18,7 +18,7 @@ describe("agent prompt event filesystem instructions", () => {
   test("remote sandboxes do not encourage writing event files in runtime filesystem", () => {
     const instructions = buildEventFilesystemInstructions("cloudflare", "/workspace");
 
-    expect(instructions).toContain("host-side mama control plane");
+    expect(instructions).toContain("host-side mikan control plane");
     expect(instructions).toContain("Use the `event` tool");
     expect(instructions).toContain("Do not create event files with bash");
     expect(instructions).not.toContain("cat > /workspace/events");
@@ -79,7 +79,7 @@ describe("append trigger attribution", () => {
 describe("runtime path context", () => {
   test("container runtime paths translate back to host paths", () => {
     const pathContext = buildInitialPathContextForTest(
-      { type: "container", container: "mama-sandbox" },
+      { type: "container", container: "mikan-sandbox" },
       "/host/workspace",
     );
 

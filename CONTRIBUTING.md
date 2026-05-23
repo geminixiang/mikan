@@ -1,22 +1,22 @@
-# Contributing to mama
+# Contributing to mikan
 
-Thanks for your interest! mama is a small project, so the process is lightweight.
+Thanks for your interest! mikan is a small project, so the process is lightweight.
 
 ## Development setup
 
 Requires Node.js >= 20.
 
 ```bash
-git clone https://github.com/geminixiang/mama.git
-cd mama
+git clone https://github.com/geminixiang/mikan.git
+cd mikan
 npm install
 npm run build
 ```
 
-To run mama locally against your own working directory:
+To run mikan locally against your own working directory:
 
 ```bash
-./dist/main.js --state-dir=~/.mama-dev /path/to/workspace
+./dist/main.js --state-dir=~/.mikan-dev /path/to/workspace
 ```
 
 Set the platform tokens you need before launching — see the [README](README.md#quick-start) for the env-var list.
@@ -34,7 +34,7 @@ Husky runs `lint` + `fmt` on staged `*.ts` files via pre-commit; `*.test.ts` cha
 
 ### End-to-end tests
 
-E2E tests (`npm run test:e2e`, `npm run test:e2e:slack`) hit real Slack/Discord/Telegram APIs. They require a dedicated test workspace and tokens (`SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, `SLACK_QA_MAMA_BOT_USER_ID` for Slack). Skip them locally unless you have a sandbox set up — CI runs them on tagged branches.
+E2E tests (`npm run test:e2e`, `npm run test:e2e:slack`) hit real Slack/Discord/Telegram APIs. They require a dedicated test workspace and tokens (`SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, `SLACK_QA_MIKAN_BOT_USER_ID` for Slack). Skip them locally unless you have a sandbox set up — CI runs them on tagged branches.
 
 See [`docs/slack-qa-test-plan.md`](docs/slack-qa-test-plan.md) for the Slack E2E setup.
 
@@ -51,7 +51,7 @@ Commits follow [Conventional Commits](https://www.conventionalcommits.org/) loos
 
 ## Reporting bugs
 
-Open an issue using the bug-report template. Include the mama version (`mama --version` or `package.json`), Node version, sandbox mode, and the smallest reproduction you can manage. Redact tokens before pasting logs.
+Open an issue using the bug-report template. Include the mikan version (`mikan --version` or `package.json`), Node version, sandbox mode, and the smallest reproduction you can manage. Redact tokens before pasting logs.
 
 ## Code of conduct
 

@@ -1,7 +1,7 @@
 {
   "display_information": {
-    "name": "mama",
-    "description": "mama",
+    "name": "mikan",
+    "description": "mikan",
     "background_color": "#4d5673"
   },
   "features": {
@@ -11,14 +11,14 @@
       "messages_tab_read_only_enabled": false
     },
     "bot_user": {
-      "display_name": "mama",
+      "display_name": "mikan",
       "always_online": true
     },
     "assistant_view": {
-      "assistant_description": "mama Slack assistant",
+      "assistant_description": "mikan Slack assistant",
       "suggested_prompts": [
         {
-          "title": "Ask mama",
+          "title": "Ask mikan",
           "message": "hello"
         }
       ]

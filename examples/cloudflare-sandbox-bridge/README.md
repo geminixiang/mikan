@@ -1,9 +1,9 @@
-# mama Cloudflare Sandbox Bridge
+# mikan Cloudflare Sandbox Bridge
 
-這個範例把 `@cloudflare/sandbox` 包成一個簡單的 HTTP bridge，讓 mama 可用：
+這個範例把 `@cloudflare/sandbox` 包成一個簡單的 HTTP bridge，讓 mikan 可用：
 
 ```bash
-mama --sandbox=cloudflare:mama-remote /path/to/workspace
+mikan --sandbox=cloudflare:mikan-remote /path/to/workspace
 ```
 
 ## 內容
@@ -22,13 +22,13 @@ npx wrangler secret put BRIDGE_TOKEN
 npm run deploy
 ```
 
-部署後，設定 mama：
+部署後，設定 mikan：
 
 ```bash
-export MAMA_CLOUDFLARE_SANDBOX_URL="https://<your-worker>.workers.dev"
-export MAMA_CLOUDFLARE_SANDBOX_TOKEN="<same-secret>"
+export MIKAN_CLOUDFLARE_SANDBOX_URL="https://<your-worker>.workers.dev"
+export MIKAN_CLOUDFLARE_SANDBOX_TOKEN="<same-secret>"
 
-mama --sandbox=cloudflare:mama-remote /path/to/workspace
+mikan --sandbox=cloudflare:mikan-remote /path/to/workspace
 ```
 
 注意：遠端 sandbox 內的工作目錄會是 `/workspace`，但這個目錄不會自動同步本機 repo。所以 `pwd` 會回 `/workspace`，而 `ls` 可能是空的，這是目前預期行為。
@@ -45,7 +45,7 @@ Request body:
 
 ```json
 {
-  "sandboxId": "mama-remote-slack-u123",
+  "sandboxId": "mikan-remote-slack-u123",
   "command": "pwd",
   "timeoutSeconds": 30,
   "cwd": "/workspace",
@@ -69,5 +69,5 @@ Response body:
 
 - 目前 bridge 只提供 command execution；沒有自動同步宿主機 workspace
 - 遠端 `/workspace` 只是 container 內目錄，不是本機 `/path/to/workspace` 的 mount
-- mama vault file mounts 不會自動投影到 Cloudflare sandbox
+- mikan vault file mounts 不會自動投影到 Cloudflare sandbox
 - 如果你要讓 remote sandbox 看見 repo 檔案，需自行設計 upload/sync 流程

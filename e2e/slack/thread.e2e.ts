@@ -10,12 +10,12 @@ import {
 
 const ctx = loadContextOrSkip();
 
-describe.skipIf(!ctx || !ctx.env.mamaBotUserId)("Slack thread routing", () => {
-  if (!ctx || !ctx.env.mamaBotUserId) return;
+describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack thread routing", () => {
+  if (!ctx || !ctx.env.mikanBotUserId) return;
   const { client, env } = ctx;
-  const botUserId = ctx.env.mamaBotUserId;
+  const botUserId = ctx.env.mikanBotUserId;
 
-  it("S-006 mama reply stays in thread", async () => {
+  it("S-006 mikan reply stays in thread", async () => {
     const rootStartedAt = nowSeconds();
     const rootTs = await postMessage(
       client,
@@ -31,7 +31,7 @@ describe.skipIf(!ctx || !ctx.env.mamaBotUserId)("Slack thread routing", () => {
       timeoutMs: env.timeoutMs,
       pollMs: env.pollMs,
     });
-    expect(firstReply, "no initial mama reply").not.toBeNull();
+    expect(firstReply, "no initial mikan reply").not.toBeNull();
 
     const threadStartedAt = nowSeconds();
     const userThreadTs = await postMessage(
@@ -50,7 +50,7 @@ describe.skipIf(!ctx || !ctx.env.mamaBotUserId)("Slack thread routing", () => {
       timeoutMs: env.timeoutMs,
       pollMs: env.pollMs,
     });
-    expect(threadReply, "no mama reply in thread").not.toBeNull();
+    expect(threadReply, "no mikan reply in thread").not.toBeNull();
     expect(String(threadReply!.thread_ts ?? rootTs), "reply not anchored to root thread").toBe(
       rootTs,
     );

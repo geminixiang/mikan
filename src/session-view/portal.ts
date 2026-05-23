@@ -251,7 +251,7 @@ function renderSessionPage(
     `<header class="hero-card">
       <div class="hero-top">
         <div class="hero-title-group">
-          <span class="hero-wordmark">mama</span>
+          <span class="hero-wordmark">mikan</span>
           <h1 class="hero-title">${esc(model.title)}</h1>
           <div class="hero-meta-line">
             <span>Created ${esc(formatDate(model.createdAt))}</span>
@@ -284,7 +284,7 @@ function renderSessionPage(
     <section class="composer-card">
       <div class="composer-copy">
         <p class="eyebrow">Interactive preview</p>
-        <p>Ask mama in this same session. Replies stay in Session View and do not post back to Slack.</p>
+        <p>Ask mikan in this same session. Replies stay in Session View and do not post back to Slack.</p>
       </div>
       <form class="composer-form" data-session-composer>
         <input type="hidden" name="token" value="${esc(token)}">
@@ -789,7 +789,7 @@ function renderStatusPage(title: string, message: string): string {
   return renderHtmlDocument(
     title,
     `<section class="card stack">
-      <p class="eyebrow">mama</p>
+      <p class="eyebrow">mikan</p>
       <h1>${esc(title)}</h1>
       <div class="status err">${esc(message)}</div>
     </section>`,

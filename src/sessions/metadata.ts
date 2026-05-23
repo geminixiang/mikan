@@ -1,6 +1,6 @@
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 
-export interface MamaSessionHeader {
+export interface MikanSessionHeader {
   type?: string;
   version?: number;
   id?: string;
@@ -16,7 +16,7 @@ export interface MamaSessionHeader {
 
 export function isPlatformHistorySession(sessionFile: string): boolean {
   try {
-    const header = SessionManager.open(sessionFile).getHeader() as MamaSessionHeader | null;
+    const header = SessionManager.open(sessionFile).getHeader() as MikanSessionHeader | null;
     return header?.source?.kind === "platform-history";
   } catch {
     return false;

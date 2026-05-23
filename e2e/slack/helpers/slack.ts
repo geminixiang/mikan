@@ -50,7 +50,7 @@ export async function uploadTextFile(
   content: string,
   initialComment: string,
 ): Promise<void> {
-  const tempDir = await mkdtemp(join(tmpdir(), "mama-slack-e2e-"));
+  const tempDir = await mkdtemp(join(tmpdir(), "mikan-slack-e2e-"));
   const filePath = join(tempDir, filename);
   try {
     await writeFile(filePath, content);

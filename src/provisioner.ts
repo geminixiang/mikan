@@ -63,11 +63,11 @@ export interface DockerContainerManagerOptions {
 export class DockerContainerManager {
   private state = new Map<string, ContainerState>();
   private inflight = new Map<string, Promise<string>>();
-  private static readonly MANAGED_LABEL = "mama.managed=true";
-  private static readonly IMAGE_MODE_LABEL = "mama.sandbox=image";
-  private static readonly VAULT_ID_LABEL_KEY = "mama.vault-id";
-  private static readonly CONVERSATION_ID_LABEL_KEY = "mama.conversation-id";
-  private static readonly MOUNT_SIGNATURE_LABEL_KEY = "mama.mount-signature";
+  private static readonly MANAGED_LABEL = "mikan.managed=true";
+  private static readonly IMAGE_MODE_LABEL = "mikan.sandbox=image";
+  private static readonly VAULT_ID_LABEL_KEY = "mikan.vault-id";
+  private static readonly CONVERSATION_ID_LABEL_KEY = "mikan.conversation-id";
+  private static readonly MOUNT_SIGNATURE_LABEL_KEY = "mikan.mount-signature";
 
   private readonly limits?: ResourceLimits;
   private readonly boostLimits?: ResourceLimits;
@@ -96,11 +96,11 @@ export class DockerContainerManager {
   }
 
   static containerName(containerKey: string): string {
-    return `mama-sandbox-${containerKey}`;
+    return `mikan-sandbox-${containerKey}`;
   }
 
   static networkName(containerKey: string): string {
-    return `mama-sandbox-net-${containerKey}`;
+    return `mikan-sandbox-net-${containerKey}`;
   }
 
   async provision(containerKey: string, options: ProvisionOptions = {}): Promise<string> {
@@ -639,8 +639,8 @@ export class DockerContainerManager {
   private async removeLegacyContainer(containerName: string): Promise<void> {
     await this.forceRemoveContainer(
       containerName,
-      `Removed legacy mama container ${containerName} (pre-channel-isolation scheme)`,
-      `Failed to remove legacy mama container ${containerName}`,
+      `Removed legacy mikan container ${containerName} (pre-channel-isolation scheme)`,
+      `Failed to remove legacy mikan container ${containerName}`,
     );
   }
 }

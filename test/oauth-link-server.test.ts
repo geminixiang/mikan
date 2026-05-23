@@ -15,7 +15,7 @@ const originalEnv = {
   GOOGLE_WORKSPACE_CLI_CLIENT_SECRET: process.env.GOOGLE_WORKSPACE_CLI_CLIENT_SECRET,
   GOOGLE_CLOUD_SDK_CLIENT_ID: process.env.GOOGLE_CLOUD_SDK_CLIENT_ID,
   GOOGLE_CLOUD_SDK_CLIENT_SECRET: process.env.GOOGLE_CLOUD_SDK_CLIENT_SECRET,
-  MAMA_LINK_URL: process.env.MAMA_LINK_URL,
+  MIKAN_LINK_URL: process.env.MIKAN_LINK_URL,
 };
 
 async function waitForListening(server: Server): Promise<void> {
@@ -32,7 +32,7 @@ function baseUrl(server: Server): string {
 }
 
 function createStateDir(dirs: string[]): string {
-  const stateDir = join(tmpdir(), `mama-oauth-test-${Date.now()}-${Math.random()}`);
+  const stateDir = join(tmpdir(), `mikan-oauth-test-${Date.now()}-${Math.random()}`);
   dirs.push(stateDir);
   return stateDir;
 }
@@ -129,9 +129,9 @@ describe("OAuth link server flows", () => {
     }
   });
 
-  test("rejects cross-origin OAuth start requests when MAMA_LINK_URL is configured", async () => {
+  test("rejects cross-origin OAuth start requests when MIKAN_LINK_URL is configured", async () => {
     const stateDir = createStateDir(dirs);
-    process.env.MAMA_LINK_URL = "https://mama.example.com";
+    process.env.MIKAN_LINK_URL = "https://mikan.example.com";
     configureGitHubOAuth();
 
     const { url, token } = await createFlow(servers, stateDir, "U100");

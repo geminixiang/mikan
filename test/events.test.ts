@@ -29,7 +29,7 @@ describe("EventsWatcher platform routing", () => {
   let eventsDir: string;
 
   beforeEach(() => {
-    tmpDir = join(tmpdir(), `mama-events-test-${Date.now()}`);
+    tmpDir = join(tmpdir(), `mikan-events-test-${Date.now()}`);
     eventsDir = join(tmpDir, "events");
     mkdirSync(eventsDir, { recursive: true });
   });

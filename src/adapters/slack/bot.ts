@@ -1223,7 +1223,7 @@ export class SlackBot implements Bot {
         return;
       }
 
-      // Stop command for DM or shared-channel thread reply (app_mention handles "@mama stop").
+      // Stop command for DM or shared-channel thread reply (app_mention handles "@mikan stop").
       if ((isDM || (!isDM && e.thread_ts)) && this.isStopText(slackEvent.text)) {
         const stopTarget = this.resolveStopTarget(e.channel, e.thread_ts);
         if (stopTarget) {
@@ -1551,7 +1551,7 @@ export class SlackBot implements Bot {
       pageCount++;
     } while (cursor && pageCount < maxPages);
 
-    // Filter: include mama's messages, external app/bot messages, and user messages.
+    // Filter: include mikan's messages, external app/bot messages, and user messages.
     const relevantMessages = allMessages.filter((msg) => {
       if (!msg.ts || existingTs.has(msg.ts)) return false; // Skip duplicates
       if (msg.user === this.botUserId) return true;
@@ -1583,9 +1583,9 @@ export class SlackBot implements Bot {
 
     // Log each message to log.jsonl
     for (const msg of relevantMessages) {
-      const isMamaMessage = msg.user === this.botUserId;
+      const isMikanMessage = msg.user === this.botUserId;
       const isExternalBotMessage =
-        !isMamaMessage && (!!msg.bot_id || msg.subtype === "bot_message");
+        !isMikanMessage && (!!msg.bot_id || msg.subtype === "bot_message");
       if (isExternalBotMessage) {
         await this.logExternalBotMessage({ ...msg, channel: channelId, ts: msg.ts! });
         continue;
@@ -1601,12 +1601,12 @@ export class SlackBot implements Bot {
         date: new Date(parseFloat(msg.ts!) * 1000).toISOString(),
         ts: msg.ts!,
         threadTs: msg.thread_ts,
-        user: isMamaMessage ? "bot" : msg.user!,
-        userName: isMamaMessage ? undefined : user?.userName,
-        displayName: isMamaMessage ? undefined : user?.displayName,
+        user: isMikanMessage ? "bot" : msg.user!,
+        userName: isMikanMessage ? undefined : user?.userName,
+        displayName: isMikanMessage ? undefined : user?.displayName,
         text,
         attachments,
-        isBot: isMamaMessage,
+        isBot: isMikanMessage,
       });
     }
 
@@ -1616,7 +1616,7 @@ export class SlackBot implements Bot {
   private async backfillAllChannels(upperBoundTs?: string): Promise<void> {
     const startTime = Date.now();
 
-    // Only backfill channels that already have a log.jsonl (mama has interacted with them before)
+    // Only backfill channels that already have a log.jsonl (mikan has interacted with them before)
     const channelsToBackfill: Array<[string, SlackChannel]> = [];
     for (const [channelId, channel] of this.channels) {
       const logPath = join(this.workingDir, channelId, "log.jsonl");

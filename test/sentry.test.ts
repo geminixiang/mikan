@@ -101,7 +101,7 @@ describe("reportUserFacingError", () => {
 
   test("does not capture expected errors", () => {
     const id = reportUserFacingError(new Error("expected"), {
-      domain: "mama",
+      domain: "mikan",
       surface: "cli",
       operation: "validation",
       expected: true,

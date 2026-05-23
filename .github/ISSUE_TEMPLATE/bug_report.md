@@ -23,7 +23,7 @@ labels: bug
 
 ## Environment
 
-- mama version: <!-- `mama --version` or version from package.json -->
+- mikan version: <!-- `mikan --version` or version from package.json -->
 - Node version: <!-- `node --version` -->
 - Platform(s): <!-- Slack / Telegram / Discord -->
 - Sandbox mode: <!-- host / container:<name> / image:<image> / firecracker / cloudflare -->

@@ -7,7 +7,7 @@ const ctx = loadContextOrSkip();
 describe.skipIf(!ctx)("Slack no mention", () => {
   if (!ctx) return;
   const { client, env } = ctx;
-  const botUserIds = [env.questionBotUserId, env.mamaBotUserId].filter((id): id is string =>
+  const botUserIds = [env.questionBotUserId, env.mikanBotUserId].filter((id): id is string =>
     Boolean(id),
   );
 

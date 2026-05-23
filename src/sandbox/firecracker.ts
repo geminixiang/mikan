@@ -76,7 +76,7 @@ export async function validateFirecrackerSandbox(config: FirecrackerSandboxConfi
       await execSimple("firecracker-ctl", ["status", config.vmId]);
     } catch {
       console.error(`Warning: Could not verify if VM '${config.vmId}' is running.`);
-      console.error("Make sure the VM is started before running mama.");
+      console.error("Make sure the VM is started before running mikan.");
     }
   }
 

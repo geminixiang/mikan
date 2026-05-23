@@ -372,18 +372,18 @@ export function startLinkServer(
     }
   });
 
-  // Bind to loopback when MAMA_LINK_URL is unset so the credential UI and OAuth
+  // Bind to loopback when MIKAN_LINK_URL is unset so the credential UI and OAuth
   // callbacks are not exposed on public interfaces by default. Production
-  // deployments set MAMA_LINK_URL and are expected to front this server with a
+  // deployments set MIKAN_LINK_URL and are expected to front this server with a
   // reverse proxy, which can still reach it via 0.0.0.0.
   const bindHost = resolveLinkBaseUrl() ? undefined : "127.0.0.1";
   server.listen(port, bindHost, () => {
     log.logInfo(`Link callback server listening on ${bindHost ?? "0.0.0.0"}:${port}`);
     if (!resolveLinkBaseUrl()) {
       log.logWarning(
-        "MAMA_LINK_URL is not set — bound to 127.0.0.1 and OAuth redirect_uri will be " +
+        "MIKAN_LINK_URL is not set — bound to 127.0.0.1 and OAuth redirect_uri will be " +
           "derived from request headers (Host / X-Forwarded-*). Set " +
-          "MAMA_LINK_URL=https://your-host.example.com for production.",
+          "MIKAN_LINK_URL=https://your-host.example.com for production.",
       );
     }
   });
@@ -398,7 +398,7 @@ export function startLinkServer(
 /**
  * Resolve the externally-visible base URL of this server.
  *
- * Prefers MAMA_LINK_URL (see config.ts) so the OAuth `redirect_uri` is
+ * Prefers MIKAN_LINK_URL (see config.ts) so the OAuth `redirect_uri` is
  * deterministic and not influenced by attacker-controlled request headers.
  * Falls back to Host / X-Forwarded-* only when no base URL is configured
  * — intended for local development.
@@ -422,7 +422,7 @@ function requestBaseUrl(req: IncomingMessage): string {
  *   1. Require Content-Type: application/json, which forces a CORS preflight
  *      for any cross-origin fetch and rules out `<form enctype="text/plain">`
  *      tricks that could otherwise smuggle a JSON body.
- *   2. When MAMA_LINK_URL is configured, require that the Origin (or Referer,
+ *   2. When MIKAN_LINK_URL is configured, require that the Origin (or Referer,
  *      as a fallback for browsers that strip Origin) matches that base URL.
  *      This stops an attacker-controlled page — even one that somehow stole a
  *      victim's link token — from completing the flow.
@@ -449,7 +449,7 @@ function enforceCsrf(req: IncomingMessage, res: ServerResponse): boolean {
   try {
     configuredOrigin = new URL(configured).origin;
   } catch {
-    // Misconfigured MAMA_LINK_URL — fail closed.
+    // Misconfigured MIKAN_LINK_URL — fail closed.
     res.writeHead(500, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Server misconfiguration" }));
     return false;

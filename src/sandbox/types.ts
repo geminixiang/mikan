@@ -57,7 +57,7 @@ export interface Executor {
 }
 
 export interface RuntimePathContext {
-  /** Host-side workspace root used by mama's control plane. */
+  /** Host-side workspace root used by mikan's control plane. */
   hostWorkspaceRoot: string;
   /** Workspace root as seen by bash/read/write/edit inside the runtime. */
   runtimeWorkspaceRoot: string;

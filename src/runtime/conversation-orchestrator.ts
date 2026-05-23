@@ -98,7 +98,7 @@ export class ConversationOrchestrator {
       });
     } catch (err) {
       reportUserFacingError(err, {
-        domain: "mama",
+        domain: "mikan",
         surface: "session_setup",
         operation: "get_or_create_state",
         severity: "error",
@@ -226,7 +226,7 @@ export class ConversationOrchestrator {
               threadTs: message.threadTs,
             });
             reportUserFacingError(err, {
-              domain: "mama",
+              domain: "mikan",
               surface: "agent_run",
               operation: "run",
               severity: "error",

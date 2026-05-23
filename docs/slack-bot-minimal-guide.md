@@ -1,6 +1,6 @@
 # Slack Bot Minimal Setup Guide
 
-This guide lists the minimum Slack app settings needed to run `mama` over Socket Mode.
+This guide lists the minimum Slack app settings needed to run `mikan` over Socket Mode.
 
 You can also create the app from the example manifest at `examples/slack-app-manifest.json`.
 
@@ -9,14 +9,14 @@ You can also create the app from the example manifest at `examples/slack-app-man
 1. Open <https://api.slack.com/apps>.
 2. Click **Create New App**.
 3. Choose **From scratch**.
-4. Pick an app name, for example `mama`, and select your workspace.
+4. Pick an app name, for example `mikan`, and select your workspace.
 
 ## 2. Enable Socket Mode
 
 1. Go to **Settings → Socket Mode**.
 2. Turn **Enable Socket Mode** on.
 3. Create an app-level token with the `connections:write` scope.
-4. Save the token as `MAMA_SLACK_APP_TOKEN`.
+4. Save the token as `MIKAN_SLACK_APP_TOKEN`.
 
 The token starts with `xapp-`.
 
@@ -38,7 +38,7 @@ Go to **OAuth & Permissions → Scopes → Bot Token Scopes** and add:
 - `im:write`
 - `users:read`
 
-Then install or reinstall the app to your workspace and save the bot token as `MAMA_SLACK_BOT_TOKEN`.
+Then install or reinstall the app to your workspace and save the bot token as `MIKAN_SLACK_BOT_TOKEN`.
 
 The token starts with `xoxb-`.
 
@@ -82,13 +82,13 @@ The example manifest includes slash commands for common controls:
 
 Slash commands are optional because text commands also work in supported contexts. Keep `stop` as a text command (`stop` or `/stop`) so thread-local stop routing can target the correct session.
 
-## 8. Run mama
+## 8. Run mikan
 
 ```bash
-export MAMA_SLACK_APP_TOKEN=xapp-...
-export MAMA_SLACK_BOT_TOKEN=xoxb-...
+export MIKAN_SLACK_APP_TOKEN=xapp-...
+export MIKAN_SLACK_BOT_TOKEN=xoxb-...
 
-mama --state-dir ~/.mama /path/to/workspace
+mikan --state-dir ~/.mikan /path/to/workspace
 ```
 
 The bot responds in DMs and when mentioned in channels. Slack thread replies fork into isolated sessions using the thread timestamp as part of the session key.

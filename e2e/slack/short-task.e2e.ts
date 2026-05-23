@@ -4,12 +4,12 @@ import { nowSeconds, postMessage, waitForBotReply } from "./helpers/slack.js";
 
 const ctx = loadContextOrSkip();
 
-describe.skipIf(!ctx || !ctx.env.mamaBotUserId)("Slack short task", () => {
-  if (!ctx || !ctx.env.mamaBotUserId) return;
+describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack short task", () => {
+  if (!ctx || !ctx.env.mikanBotUserId) return;
   const { client, env } = ctx;
-  const botUserId = ctx.env.mamaBotUserId;
+  const botUserId = ctx.env.mikanBotUserId;
 
-  it("S-007 mama completes a short task and echoes the token", async () => {
+  it("S-007 mikan completes a short task and echoes the token", async () => {
     const token = `QA_TASK_${Date.now()}`;
     const startedAt = nowSeconds();
     const rootTs = await postMessage(
@@ -27,6 +27,6 @@ describe.skipIf(!ctx || !ctx.env.mamaBotUserId)("Slack short task", () => {
       pollMs: env.pollMs,
       textIncludes: token,
     });
-    expect(reply, `no mama task reply containing ${token}`).not.toBeNull();
+    expect(reply, `no mikan task reply containing ${token}`).not.toBeNull();
   });
 });

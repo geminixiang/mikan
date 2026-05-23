@@ -25,7 +25,7 @@ export function parseContainerSandboxArg(value: string): ContainerSandboxConfig 
   const container = value.slice("container:".length);
   if (!container) {
     throw new SandboxError(
-      "Error: container sandbox requires container name (e.g., container:mama-sandbox)",
+      "Error: container sandbox requires container name (e.g., container:mikan-sandbox)",
     );
   }
   return { type: "container", container };
@@ -156,7 +156,7 @@ function createSecureEnvFile(env: Record<string, string>): {
   envFilePath: string;
   cleanup: () => void;
 } {
-  const tempDir = mkdtempSync(join(tmpdir(), "mama-docker-env-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "mikan-docker-env-"));
   chmodSync(tempDir, PRIVATE_DIR_MODE);
   const envFilePath = join(tempDir, "env.list");
   const content =

@@ -1,6 +1,6 @@
 {
-  "name": "@geminixiang/mama",
-  "version": "0.2.0-beta.25",
+  "name": "@geminixiang/mikan",
+  "version": "0.2.0",
   "description": "Multi-Agent Mischief Assistant for Slack, Telegram, and Discord",
   "keywords": [
     "agent",
@@ -14,10 +14,10 @@
   "author": "geminixiang",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/geminixiang/mama.git"
+    "url": "git+https://github.com/geminixiang/mikan.git"
   },
   "bin": {
-    "mama": "dist/main.js"
+    "mikan": "dist/main.js"
   },
   "files": [
     "dist",

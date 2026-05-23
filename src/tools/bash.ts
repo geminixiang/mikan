@@ -18,7 +18,7 @@ import {
  */
 function getTempFilePath(): string {
   const id = randomBytes(8).toString("hex");
-  return join(tmpdir(), `mama-bash-${id}.log`);
+  return join(tmpdir(), `mikan-bash-${id}.log`);
 }
 
 const bashSchema = Type.Object({

@@ -6,12 +6,12 @@ import { nowSeconds, summarizeMessage, waitForRecentBotReply } from "./helpers/s
 
 const ctx = loadContextOrSkip();
 
-describe.skipIf(!ctx || !ctx.env.mamaBotUserId)("Slack one-shot event", () => {
-  if (!ctx || !ctx.env.mamaBotUserId) return;
+describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack one-shot event", () => {
+  if (!ctx || !ctx.env.mikanBotUserId) return;
   const { client, env } = ctx;
-  const botUserId = ctx.env.mamaBotUserId;
+  const botUserId = ctx.env.mikanBotUserId;
 
-  it("S-011 one-shot event triggers mama reply with token", async () => {
+  it("S-011 one-shot event triggers mikan reply with token", async () => {
     const token = `QA_EVENT_${Date.now()}`;
     const filename = `slack-e2e-one-shot-${token}.json`;
     const at = new Date(Date.now() + 5_000).toISOString();

@@ -25,24 +25,24 @@ jobs:
       - name: Run Slack E2E
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          MAMA_SLACK_APP_TOKEN: ${{ secrets.MAMA_SLACK_APP_TOKEN }}
-          MAMA_SLACK_BOT_TOKEN: ${{ secrets.MAMA_SLACK_BOT_TOKEN }}
+          MIKAN_SLACK_APP_TOKEN: ${{ secrets.MIKAN_SLACK_APP_TOKEN }}
+          MIKAN_SLACK_BOT_TOKEN: ${{ secrets.MIKAN_SLACK_BOT_TOKEN }}
           SLACK_QA_USER_TOKEN: ${{ secrets.SLACK_QA_USER_TOKEN }}
           SLACK_QA_CHANNEL_ID: ${{ secrets.SLACK_QA_CHANNEL_ID || vars.SLACK_QA_CHANNEL_ID }}
-          SLACK_QA_MAMA_BOT_USER_ID: ${{ secrets.SLACK_QA_MAMA_BOT_USER_ID || vars.SLACK_QA_MAMA_BOT_USER_ID }}
+          SLACK_QA_MIKAN_BOT_USER_ID: ${{ secrets.SLACK_QA_MIKAN_BOT_USER_ID || vars.SLACK_QA_MIKAN_BOT_USER_ID }}
         run: |
           set -euo pipefail
 
-          LOG_FILE="$RUNNER_TEMP/mama-slack-e2e.log"
-          STATE_DIR="$RUNNER_TEMP/mama-state"
+          LOG_FILE="$RUNNER_TEMP/mikan-slack-e2e.log"
+          STATE_DIR="$RUNNER_TEMP/mikan-state"
 
           node dist/main.js --onboard --state-dir "$STATE_DIR"
           node dist/main.js --state-dir "$STATE_DIR" "$GITHUB_WORKSPACE" >"$LOG_FILE" 2>&1 &
-          MAMA_PID=$!
+          MIKAN_PID=$!
 
           cleanup() {
-            kill "$MAMA_PID" 2>/dev/null || true
-            echo "----- mama log -----"
+            kill "$MIKAN_PID" 2>/dev/null || true
+            echo "----- mikan log -----"
             cat "$LOG_FILE" || true
           }
           trap cleanup EXIT
@@ -53,15 +53,15 @@ jobs:
               connected=1
               break
             fi
-            if ! kill -0 "$MAMA_PID" 2>/dev/null; then
-              echo "mama exited before connecting"
+            if ! kill -0 "$MIKAN_PID" 2>/dev/null; then
+              echo "mikan exited before connecting"
               exit 1
             fi
             sleep 1
           done
 
           if [ "$connected" != "1" ]; then
-            echo "Timed out waiting for mama to connect to Slack"
+            echo "Timed out waiting for mikan to connect to Slack"
             exit 1
           fi
 

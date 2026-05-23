@@ -8,7 +8,7 @@ import { createEventTool, HostEventStore } from "./event.js";
 import { createReadTool } from "./read.js";
 import { createWriteTool } from "./write.js";
 
-export function createMamaTools(
+export function createMikanTools(
   executor: Executor,
   workspaceDir: string,
 ): {

@@ -13,10 +13,10 @@ import {
 
 const ctx = loadContextOrSkip();
 
-describe.skipIf(!ctx || !ctx.env.mamaBotUserId)("Slack event thread fork", () => {
-  if (!ctx || !ctx.env.mamaBotUserId) return;
+describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack event thread fork", () => {
+  if (!ctx || !ctx.env.mikanBotUserId) return;
   const { client, env } = ctx;
-  const botUserId = ctx.env.mamaBotUserId;
+  const botUserId = ctx.env.mikanBotUserId;
 
   it("event creates a top-level anchor whose thread continues the fork session", async () => {
     const eventToken = `QA_EVENT_FORK_${Date.now()}`;
@@ -64,7 +64,7 @@ describe.skipIf(!ctx || !ctx.env.mamaBotUserId)("Slack event thread fork", () =>
 
     const threadStartedAt = nowSeconds();
     // CI may post QA messages from a bot token. Use an explicit mention so this
-    // exercises the "mama needs to reply" thread-fork path without weakening
+    // exercises the "mikan needs to reply" thread-fork path without weakening
     // bot-to-bot loop protection for bare bot messages.
     const userThreadTs = await postMessage(
       client,

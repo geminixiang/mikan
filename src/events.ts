@@ -49,7 +49,7 @@ export interface PeriodicEvent {
   timezone: string; // IANA timezone
 }
 
-export type MamaEvent = ImmediateEvent | OneShotEvent | PeriodicEvent;
+export type MikanEvent = ImmediateEvent | OneShotEvent | PeriodicEvent;
 
 const EventFileSchema = Type.Object({
   type: Type.Optional(
@@ -284,7 +284,7 @@ export class EventsWatcher {
     log.logInfo(`Loading event file: ${filename} from ${filePath}`);
 
     // Parse with retries
-    let event: MamaEvent | null = null;
+    let event: MikanEvent | null = null;
     let lastError: Error | null = null;
 
     for (let i = 0; i < MAX_RETRIES; i++) {
@@ -328,7 +328,7 @@ export class EventsWatcher {
     }
   }
 
-  private parseEvent(content: string, filename: string): MamaEvent | null {
+  private parseEvent(content: string, filename: string): MikanEvent | null {
     const data: EventFileData = parseJsonSchemaValue(content, EventFileSchema, (detail) =>
       detail === "unexpected JSON shape"
         ? `Expected top-level JSON object in ${filename}`
@@ -503,7 +503,7 @@ export class EventsWatcher {
     }
   }
 
-  private execute(filename: string, event: MamaEvent, deleteAfter: boolean = true): void {
+  private execute(filename: string, event: MikanEvent, deleteAfter: boolean = true): void {
     const message = this.buildEventPrompt(event);
     const bot = this.botsByPlatform[event.platform];
 
@@ -574,7 +574,7 @@ export class EventsWatcher {
     }
   }
 
-  private buildEventPrompt(event: MamaEvent): string {
+  private buildEventPrompt(event: MikanEvent): string {
     switch (event.type) {
       case "one-shot":
         return [

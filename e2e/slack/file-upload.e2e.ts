@@ -4,18 +4,18 @@ import { nowSeconds, uploadTextFile, waitForRecentBotReply } from "./helpers/sla
 
 const ctx = loadContextOrSkip();
 
-describe.skipIf(!ctx || !ctx.env.mamaBotUserId)("Slack file upload", () => {
-  if (!ctx || !ctx.env.mamaBotUserId) return;
+describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack file upload", () => {
+  if (!ctx || !ctx.env.mikanBotUserId) return;
   const { client, env } = ctx;
-  const botUserId = ctx.env.mamaBotUserId;
+  const botUserId = ctx.env.mikanBotUserId;
 
-  it("S-009 mama summarizes uploaded file and echoes token", async () => {
+  it("S-009 mikan summarizes uploaded file and echoes token", async () => {
     const token = `QA_FILE_${Date.now()}`;
     const startedAt = nowSeconds();
     await uploadTextFile(
       client,
       env.channel,
-      `mama-slack-e2e-${token}.txt`,
+      `mikan-slack-e2e-${token}.txt`,
       `Slack E2E file content. Token: ${token}\n請摘要這個檔案並原樣包含 token。\n`,
       `<@${botUserId}> 請摘要這個小文字檔，並在回覆中原樣包含 token ${token}`,
     );

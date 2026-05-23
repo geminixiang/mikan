@@ -9,6 +9,14 @@ any release.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-23
+
+### Changed
+
+- Renamed the project, CLI, package, documentation, and repository references to mikan.
+- Changed all product environment variables from `MIKAN_*` to `MIKAN_*`.
+- Updated internal variable, function, type, Docker label, sandbox image, and generated resource names to use mikan naming.
+
 ## [0.2.0-beta.25] - 2026-05-23
 
 ### Changed
@@ -209,7 +217,7 @@ any release.
 ### Added
 
 - Commands: conversation model switch (`/pi-model …`) with `:thinking` shorthand.
-- Config: onboarding flow for global settings (`mama --onboard`).
+- Config: onboarding flow for global settings (`mikan --onboard`).
 - Docs: PM2 ecosystem config and production deploy guide.
 
 ### Changed
@@ -229,7 +237,7 @@ any release.
 
 ### Changed
 
-- Env: renamed `MOM_*` env vars to `MAMA_*` (breaking).
+- Env: renamed `MOM_*` env vars to `MIKAN_*` (breaking).
 - Vault: conversation vault directories are now the source of truth; dropped platform prefix from the conversation vault key.
 - Config: `--state-dir` is the single source for settings.
 - Tightened command/runtime types and added a `postPrivate` capability.
@@ -310,4 +318,4 @@ any release.
 
 ## Earlier releases
 
-For releases prior to `0.2.0-beta.0` (i.e. the `0.1.x` line), see the [git tag history](https://github.com/geminixiang/mama/tags).
+For releases prior to `0.2.0-beta.0` (i.e. the `0.1.x` line), see the [git tag history](https://github.com/geminixiang/mikan/tags).

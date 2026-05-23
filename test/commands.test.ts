@@ -213,7 +213,7 @@ describe("AutoReplyCommandHandler", () => {
   let workingDir: string;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mama-auto-reply-test-${Date.now()}`);
+    workingDir = join(tmpdir(), `mikan-auto-reply-test-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
   });
 
@@ -331,7 +331,7 @@ describe("LoginCommandHandler", () => {
 
     expect(await handler.tryHandle(ctx)).toBe(true);
     expect(linkTokenStore.created).toHaveLength(0);
-    expect(ctx.responseCtx.responses[0]).toContain("MAMA_LINK_URL");
+    expect(ctx.responseCtx.responses[0]).toContain("MIKAN_LINK_URL");
   });
 
   test("creates a link token and replies with the portal URL", async () => {

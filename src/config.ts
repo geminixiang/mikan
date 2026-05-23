@@ -127,8 +127,8 @@ function loadSettingsFile(settingsPath: string): SettingsFileConfig | undefined 
 }
 
 function getStateDir(): string {
-  const raw = process.env.MAMA_STATE_DIR?.trim();
-  return raw ? resolve(raw) : join(homedir(), ".mama");
+  const raw = process.env.MIKAN_STATE_DIR?.trim();
+  return raw ? resolve(raw) : join(homedir(), ".mikan");
 }
 
 function normalizeSettingsConfig(config: SettingsFileConfig): Partial<AgentConfig> {
@@ -170,7 +170,7 @@ function requireGlobalSettings(): SettingsFileConfig {
 function requireString(value: string | undefined, path: string): string {
   if (!value) {
     throw new Error(
-      `Missing required global setting: ${path}. Run \`mama --onboard\` to create settings.json.`,
+      `Missing required global setting: ${path}. Run \`mikan --onboard\` to create settings.json.`,
     );
   }
   return value;
@@ -367,7 +367,7 @@ export function resolveStateDirFromArgv(args = process.argv.slice(2)): string {
     }
   }
 
-  return join(homedir(), ".mama");
+  return join(homedir(), ".mikan");
 }
 
 export function resolveSentryDsn(): string | undefined {
@@ -393,11 +393,11 @@ export function createGlobalSettingsFile(stateDir: string): string {
 
 /**
  * Externally-visible base URL of the link/OAuth server, e.g.
- * `https://mama.example.com` (no trailing slash). Read from `MAMA_LINK_URL`,
+ * `https://mikan.example.com` (no trailing slash). Read from `MIKAN_LINK_URL`,
  * the same env var the bot uses to build credential onboarding links.
  */
 export function resolveLinkBaseUrl(): string | undefined {
-  const raw = process.env.MAMA_LINK_URL?.trim();
+  const raw = process.env.MIKAN_LINK_URL?.trim();
   if (!raw) return undefined;
   return raw.replace(/\/+$/, "");
 }

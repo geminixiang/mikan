@@ -18,15 +18,15 @@ describe("loadAgentConfig", () => {
   let stateDir: string;
 
   beforeEach(() => {
-    stateDir = join(tmpdir(), `mama-test-${Date.now()}`);
+    stateDir = join(tmpdir(), `mikan-test-${Date.now()}`);
     mkdirSync(stateDir, { recursive: true });
-    process.env.MAMA_STATE_DIR = stateDir;
+    process.env.MIKAN_STATE_DIR = stateDir;
   });
 
   afterEach(() => {
-    delete process.env.MAMA_STATE_DIR;
-    delete process.env.MAMA_AI_PROVIDER;
-    delete process.env.MAMA_AI_MODEL;
+    delete process.env.MIKAN_STATE_DIR;
+    delete process.env.MIKAN_AI_PROVIDER;
+    delete process.env.MIKAN_AI_MODEL;
     if (existsSync(stateDir)) rmSync(stateDir, { recursive: true });
   });
 
@@ -94,8 +94,8 @@ describe("loadAgentConfig", () => {
 
   test("provider and model come from settings.json, not env vars", () => {
     saveAgentConfig({ provider: "openai", model: "gpt-4o" });
-    process.env.MAMA_AI_PROVIDER = "google";
-    process.env.MAMA_AI_MODEL = "gemini-2.0-flash";
+    process.env.MIKAN_AI_PROVIDER = "google";
+    process.env.MIKAN_AI_MODEL = "gemini-2.0-flash";
 
     const config = loadAgentConfig();
     expect(config.provider).toBe("openai");
@@ -103,7 +103,7 @@ describe("loadAgentConfig", () => {
   });
 
   test("ignores settings.json in non-state directories", () => {
-    const otherDir = join(tmpdir(), `mama-other-${Date.now()}`);
+    const otherDir = join(tmpdir(), `mikan-other-${Date.now()}`);
     mkdirSync(otherDir, { recursive: true });
     try {
       writeFileSync(
@@ -207,11 +207,11 @@ describe("loadAgentConfig", () => {
 
 describe("argv config resolution", () => {
   test("returns the positional workspace dir", () => {
-    expect(resolveWorkspaceDirFromArgv(["--sandbox=host", "/tmp/mama"])).toBe("/tmp/mama");
+    expect(resolveWorkspaceDirFromArgv(["--sandbox=host", "/tmp/mikan"])).toBe("/tmp/mikan");
   });
 
   test("skips flag values before resolving workspace dir", () => {
-    expect(resolveWorkspaceDirFromArgv(["--sandbox", "host", "/tmp/mama"])).toBe("/tmp/mama");
+    expect(resolveWorkspaceDirFromArgv(["--sandbox", "host", "/tmp/mikan"])).toBe("/tmp/mikan");
   });
 
   test("ignores download mode channel ids", () => {
@@ -219,8 +219,8 @@ describe("argv config resolution", () => {
   });
 
   test("resolves explicit state-dir from argv", () => {
-    expect(resolveStateDirFromArgv(["--state-dir", "/tmp/state", "/tmp/mama"])).toBe("/tmp/state");
-    expect(resolveStateDirFromArgv(["--state-dir=/tmp/state", "/tmp/mama"])).toBe("/tmp/state");
+    expect(resolveStateDirFromArgv(["--state-dir", "/tmp/state", "/tmp/mikan"])).toBe("/tmp/state");
+    expect(resolveStateDirFromArgv(["--state-dir=/tmp/state", "/tmp/mikan"])).toBe("/tmp/state");
   });
 });
 
@@ -228,13 +228,13 @@ describe("resolveSentryDsn", () => {
   let stateDir: string;
 
   beforeEach(() => {
-    stateDir = join(tmpdir(), `mama-test-sentry-${Date.now()}`);
+    stateDir = join(tmpdir(), `mikan-test-sentry-${Date.now()}`);
     mkdirSync(stateDir, { recursive: true });
-    process.env.MAMA_STATE_DIR = stateDir;
+    process.env.MIKAN_STATE_DIR = stateDir;
   });
 
   afterEach(() => {
-    delete process.env.MAMA_STATE_DIR;
+    delete process.env.MIKAN_STATE_DIR;
     delete process.env.SENTRY_DSN;
     if (existsSync(stateDir)) rmSync(stateDir, { recursive: true });
   });
@@ -255,13 +255,13 @@ describe("saveAgentConfig", () => {
   let stateDir: string;
 
   beforeEach(() => {
-    stateDir = join(tmpdir(), `mama-test-${Date.now()}`);
+    stateDir = join(tmpdir(), `mikan-test-${Date.now()}`);
     mkdirSync(stateDir, { recursive: true });
-    process.env.MAMA_STATE_DIR = stateDir;
+    process.env.MIKAN_STATE_DIR = stateDir;
   });
 
   afterEach(() => {
-    delete process.env.MAMA_STATE_DIR;
+    delete process.env.MIKAN_STATE_DIR;
     if (existsSync(stateDir)) rmSync(stateDir, { recursive: true });
   });
 
@@ -312,7 +312,7 @@ describe("saveAgentConfig", () => {
 
   test("creates parent directories if they don't exist", () => {
     const nested = join(stateDir, "a", "b", "c");
-    process.env.MAMA_STATE_DIR = nested;
+    process.env.MIKAN_STATE_DIR = nested;
     saveAgentConfig({ provider: "anthropic" });
     expect(existsSync(join(nested, "settings.json"))).toBe(true);
   });

@@ -21,7 +21,7 @@ describe("evaluateAutoReplyPolicy", () => {
   let workingDir: string;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mama-trigger-test-${Date.now()}`);
+    workingDir = join(tmpdir(), `mikan-trigger-test-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
   });
 

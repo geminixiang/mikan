@@ -19,7 +19,7 @@ let conversationDir: string;
 beforeEach(() => {
   workingDir = join(
     tmpdir(),
-    `mama-session-runtime-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    `mikan-session-runtime-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   );
   conversationDir = join(workingDir, "C123");
   mkdirSync(conversationDir, { recursive: true });

@@ -1,8 +1,8 @@
-# mama Architecture
+# mikan Architecture
 
-**mama** stands for **Multi-Agent Mischief Assistant**.
+**mikan** stands for **Multi-Agent Mischief Assistant**.
 
-這份文件整理 `mama` 專案的核心架構，重點放在:
+這份文件整理 `mikan` 專案的核心架構，重點放在:
 
 - 多平台訊息如何進入系統
 - session / context 如何持久化
@@ -36,7 +36,7 @@ flowchart LR
     PiAgent["@earendil-works/pi-agent-core\nAgent"]
     PiCoding["@earendil-works/pi-coding-agent\nAgentSession / SessionManager / Skills"]
     PiAI["@earendil-works/pi-ai\nprovider + model"]
-    MamaTools["src/tools/*\nread / bash / edit / write / event / attach"]
+    MikanTools["src/tools/*\nread / bash / edit / write / event / attach"]
     Executor["src/sandbox/*\nExecutor"]
   end
 
@@ -47,7 +47,7 @@ flowchart LR
     LocalSettings["<conversation>/settings.json"]
   end
 
-  subgraph StateDir["State Dir (~/.mama or --state-dir)"]
+  subgraph StateDir["State Dir (~/.mikan or --state-dir)"]
     GlobalSettings["settings.json\nglobal defaults"]
     Vaults["vaults/\nconversation-scoped secret directories"]
     LinkTokens["login/session tokens\nin-memory stores"]
@@ -76,8 +76,8 @@ flowchart LR
   AgentRunner --> PiAgent
   AgentRunner --> PiCoding
   AgentRunner --> PiAI
-  AgentRunner --> MamaTools
-  MamaTools --> Executor
+  AgentRunner --> MikanTools
+  MikanTools --> Executor
 
   Main --> VaultManager
   Main --> Provisioner
@@ -216,7 +216,7 @@ sequenceDiagram
 
 ## 4. Session 與檔案佈局
 
-`mama` 的上下文不是只靠記憶體，而是主要落在 workspace 目錄:
+`mikan` 的上下文不是只靠記憶體，而是主要落在 workspace 目錄:
 
 ```text
 <workspace>/
@@ -238,7 +238,7 @@ sequenceDiagram
 設計重點:
 
 - `log.jsonl` 是平台對話紀錄：Slack/Discord/Telegram 實際發生過什麼
-- `sessions/*.jsonl` 是 LLM 工作上下文/工作紀錄：mama 拿什麼給 LLM 看，以及 LLM/tool 做了什麼
+- `sessions/*.jsonl` 是 LLM 工作上下文/工作紀錄：mikan 拿什麼給 LLM 看，以及 LLM/tool 做了什麼
 - top-level session 用 `current` 指標，但 `current` 不是 channel history；缺失時可從 `log.jsonl` 重建最近 top-level 工作上下文
 - thread / reply session 用固定檔名，讓分支可被單獨追蹤
 - Slack top-level messages share the channel session; Slack thread replies fork to `conversationId:threadTs`
@@ -284,7 +284,7 @@ flowchart TD
 
 ## 7. 架構結論
 
-如果用一句話總結，`mama` 的核心其實是:
+如果用一句話總結，`mikan` 的核心其實是:
 
 > 一個以 `main.ts` 為協調中心、以 `agent.ts` 為執行核心、以 `session/vault/sandbox` 為基礎設施的多平台 AI agent bot。
 

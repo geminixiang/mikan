@@ -47,7 +47,7 @@ import {
   type ThreadRootMessage,
 } from "./sessions/store.js";
 import { shouldSurfaceToolDiagnostic } from "./tool-diagnostics.js";
-import { createMamaTools } from "./tools/index.js";
+import { createMikanTools } from "./tools/index.js";
 import * as Sentry from "@sentry/node";
 
 export interface AgentRunner {
@@ -116,7 +116,7 @@ async function getMemory(conversationDir: string): Promise<string> {
   return parts.join("\n\n");
 }
 
-function loadMamaSkills(conversationDir: string, workspacePath: string): Skill[] {
+function loadMikanSkills(conversationDir: string, workspacePath: string): Skill[] {
   const skillMap = new Map<string, Skill>();
 
   // conversationDir is the host path (e.g., /Users/.../data/C0A34FL8PMH)
@@ -201,7 +201,7 @@ export function buildEventFilesystemInstructions(
   workspaceRoot: string,
 ): string {
   if (sandboxType === "host" || sandboxType === "container" || sandboxType === "image") {
-    return `Events live in the host-side mama control plane and are mounted at \`${workspaceRoot}/events/\` in this runtime.
+    return `Events live in the host-side mikan control plane and are mounted at \`${workspaceRoot}/events/\` in this runtime.
 
 Prefer the \`event\` tool over manually writing JSON files; it fills \`platform\`, \`conversationId\`, \`conversationKind\`, and \`userId\` for the current conversation automatically.
 
@@ -219,11 +219,11 @@ EOF
 - Delete/cancel: \`rm ${workspaceRoot}/events/foo.json\``;
   }
 
-  return `Events live in the host-side mama control plane, not necessarily in this runtime filesystem.
+  return `Events live in the host-side mikan control plane, not necessarily in this runtime filesystem.
 
 Use the \`event\` tool to create events. It writes to the correct host-side events directory and fills \`platform\`, \`conversationId\`, \`conversationKind\`, and \`userId\` for the current conversation automatically.
 
-Do not create event files with bash in \`${workspaceRoot}/events/\` from this sandbox unless you have explicitly verified that path is mounted back to the host-side mama events directory.`;
+Do not create event files with bash in \`${workspaceRoot}/events/\` from this sandbox unless you have explicitly verified that path is mounted back to the host-side mikan events directory.`;
 }
 
 export function resolveTriggerAttribution(
@@ -291,7 +291,7 @@ Do not add this to \`[SILENT]\` responses.
 `
     : "";
 
-  return `You are mama, a ${platform.name} bot assistant. Be concise. No emojis.
+  return `You are mikan, a ${platform.name} bot assistant. Be concise. No emojis.
 
 ## Context
 - For current date/time, use: date
@@ -582,7 +582,7 @@ async function createConfiguredAgentSession(params: {
   systemPrompt: string;
   model: Model<Api>;
   thinkingLevel: ThinkingLevel;
-  tools: Awaited<ReturnType<typeof createMamaTools>>["tools"];
+  tools: Awaited<ReturnType<typeof createMikanTools>>["tools"];
   sessionManager: SessionManager;
   settingsManager: SettingsManager;
 }): Promise<ConfiguredAgentSession> {
@@ -598,7 +598,7 @@ async function createConfiguredAgentSession(params: {
     settingsManager,
   } = params;
 
-  const authStorage = AuthStorage.create(join(homedir(), ".pi", "mama", "auth.json"));
+  const authStorage = AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json"));
   const modelRegistry = ModelRegistry.create(authStorage);
   const agent = new Agent({
     initialState: {
@@ -1087,7 +1087,7 @@ async function prepareRunContext(params: {
   reloadSessionMessages(sessionManager, conversationId, agent);
 
   const memory = await getMemory(conversationDir);
-  const skills = loadMamaSkills(conversationDir, pathContext.runtimeWorkspaceRoot);
+  const skills = loadMikanSkills(conversationDir, pathContext.runtimeWorkspaceRoot);
   const triggerAttribution = resolveTriggerAttribution(message);
   const systemPrompt = buildSystemPrompt(
     pathContext.runtimeWorkspaceRoot,
@@ -1425,7 +1425,7 @@ export async function createRunner(
   let pathContext = getUnresolvedSandboxPathContext(sandboxConfig, workspaceBase);
 
   // Create tools (per-runner, with per-runner upload function setter)
-  const { tools, setUploadFunction, setEventContext } = createMamaTools(executor, workspaceDir);
+  const { tools, setUploadFunction, setEventContext } = createMikanTools(executor, workspaceDir);
 
   // Resolve model from config. Config stores provider/model as user-provided strings,
   // while getModel's public overload is narrowed to generated known providers.
@@ -1433,7 +1433,7 @@ export async function createRunner(
 
   // Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
   const memory = await getMemory(conversationDir);
-  const skills = loadMamaSkills(conversationDir, pathContext.runtimeWorkspaceRoot);
+  const skills = loadMikanSkills(conversationDir, pathContext.runtimeWorkspaceRoot);
   const emptyPlatform: PlatformInfo = {
     name: "chat",
     formattingGuide: "",

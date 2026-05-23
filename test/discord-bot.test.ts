@@ -21,7 +21,7 @@ describe("DiscordBot attachments", () => {
   let workingDir: string;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mama-discord-bot-${Date.now()}`);
+    workingDir = join(tmpdir(), `mikan-discord-bot-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
   });
 
@@ -70,7 +70,7 @@ describe("DiscordBot message routing", () => {
   let workingDir: string;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mama-discord-route-${Date.now()}`);
+    workingDir = join(tmpdir(), `mikan-discord-route-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
   });
 

@@ -71,7 +71,7 @@ export interface SentryRunScopeContext {
 export type UserFacingErrorDomain =
   | "llm"
   | "chat_platform"
-  | "mama"
+  | "mikan"
   | "sandbox"
   | "login"
   | "events"

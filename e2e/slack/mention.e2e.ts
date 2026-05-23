@@ -26,11 +26,11 @@ describe.skipIf(!ctx)("Slack mention", () => {
     console.log(`question bot reply ts=${reply!.ts}: ${summarizeMessage(reply!)}`);
   });
 
-  it.skipIf(!env.mamaBotUserId)("S-004 mama replies to mention", async () => {
-    const botUserId = env.mamaBotUserId;
+  it.skipIf(!env.mikanBotUserId)("S-004 mikan replies to mention", async () => {
+    const botUserId = env.mikanBotUserId;
     if (!botUserId) return;
     const startedAt = nowSeconds();
-    const rootTs = await postMessage(client, env.channel, `<@${botUserId}> ${env.mamaText}`);
+    const rootTs = await postMessage(client, env.channel, `<@${botUserId}> ${env.mikanText}`);
     const reply = await waitForBotReply({
       client,
       channel: env.channel,
@@ -40,7 +40,7 @@ describe.skipIf(!ctx)("Slack mention", () => {
       timeoutMs: env.timeoutMs,
       pollMs: env.pollMs,
     });
-    expect(reply, "no reply from mama").not.toBeNull();
-    console.log(`mama reply ts=${reply!.ts}: ${summarizeMessage(reply!)}`);
+    expect(reply, "no reply from mikan").not.toBeNull();
+    console.log(`mikan reply ts=${reply!.ts}: ${summarizeMessage(reply!)}`);
   });
 });
