@@ -1,8 +1,8 @@
-export function commandTokens(text: string): string[] {
+function commandTokens(text: string): string[] {
   return text.trim().split(/\s+/).filter(Boolean);
 }
 
-export function normalizeCommandToken(token: string, options?: { stripMention?: boolean }): string {
+function normalizeCommandToken(token: string, options?: { stripMention?: boolean }): string {
   const command = options?.stripMention ? token.replace(/@\w+$/i, "") : token;
   return command.toLowerCase();
 }
