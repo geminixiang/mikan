@@ -25,6 +25,10 @@ function formatContext(ctx: LogContext): string {
   return `[${conversation.startsWith("#") ? conversation : `#${conversation}`}:${user}${session}]`;
 }
 
+// Keep stdout/stderr lines manageable when echoing tool/agent output. Long bodies
+// flow through Sentry and session storage; the console stream just needs a preview.
+const LOG_PREVIEW_MAX = 1000;
+
 function truncate(text: string, maxLen: number): string {
   if (text.length <= maxLen) return text;
   return `${text.substring(0, maxLen)}\n(truncated at ${maxLen} chars)`;
@@ -101,7 +105,7 @@ export function logToolSuccess(
   const duration = (durationMs / 1000).toFixed(1);
   console.log(chalk.yellow(`${timestamp()} ${formatContext(ctx)} ✓ ${toolName} (${duration}s)`));
 
-  const truncated = truncate(result, 1000);
+  const truncated = truncate(result, LOG_PREVIEW_MAX);
   if (truncated) {
     const indented = truncated
       .split("\n")
@@ -120,7 +124,7 @@ export function logToolError(
   const duration = (durationMs / 1000).toFixed(1);
   console.log(chalk.yellow(`${timestamp()} ${formatContext(ctx)} ✗ ${toolName} (${duration}s)`));
 
-  const truncated = truncate(error, 1000);
+  const truncated = truncate(error, LOG_PREVIEW_MAX);
   const indented = truncated
     .split("\n")
     .map((line) => `           ${line}`)
@@ -135,7 +139,7 @@ export function logResponseStart(ctx: LogContext): void {
 
 export function logThinking(ctx: LogContext, thinking: string): void {
   console.log(chalk.yellow(`${timestamp()} ${formatContext(ctx)} 💭 Thinking`));
-  const truncated = truncate(thinking, 1000);
+  const truncated = truncate(thinking, LOG_PREVIEW_MAX);
   const indented = truncated
     .split("\n")
     .map((line) => `           ${line}`)
@@ -145,7 +149,7 @@ export function logThinking(ctx: LogContext, thinking: string): void {
 
 export function logResponse(ctx: LogContext, text: string): void {
   console.log(chalk.yellow(`${timestamp()} ${formatContext(ctx)} 💬 Response`));
-  const truncated = truncate(text, 1000);
+  const truncated = truncate(text, LOG_PREVIEW_MAX);
   const indented = truncated
     .split("\n")
     .map((line) => `           ${line}`)
