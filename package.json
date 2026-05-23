@@ -60,6 +60,7 @@
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^25.5.0",
     "@typescript/native-preview": "7.0.0-dev.20260328.1",
+    "@vitest/coverage-v8": "^4.1.7",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
     "oxfmt": "^0.44.0",
