@@ -1,11 +1,9 @@
-# mikan (Multi-Agent Mischief Assistant)
+# mikan
 
 [![npm version](https://img.shields.io/npm/v/@geminixiang/mikan.svg)](https://www.npmjs.com/package/@geminixiang/mikan)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A multi-platform AI assistant for Slack, Telegram, and Discord.
-
-Forked from [`badlogic/pi-mono`](https://github.com/badlogic/pi-mono)'s `mom` package (MIT, by Mario Zechner) at v0.57.1. This fork adds Telegram and Discord adapters and exists to ship internally while we prepare changes to upstream.
+A multi-platform AI coding agent for Slack, Telegram, and Discord.
 
 ## Features
 
@@ -294,4 +292,4 @@ PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, commit sty
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Inherits from pi-mom.
+MIT — see [LICENSE](LICENSE).

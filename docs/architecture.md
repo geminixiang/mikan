@@ -1,7 +1,5 @@
 # mikan Architecture
 
-**mikan** stands for **Multi-Agent Mischief Assistant**.
-
 這份文件整理 `mikan` 專案的核心架構，重點放在:
 
 - 多平台訊息如何進入系統
