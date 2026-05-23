@@ -1,4 +1,5 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { TSchema } from "@sinclair/typebox";
 import { createAttachTool } from "../adapters/slack/tools/attach.js";
 import type { Executor } from "../sandbox/index.js";
 import { createBashTool } from "./bash.js";
@@ -11,7 +12,7 @@ export function createMamaTools(
   executor: Executor,
   workspaceDir: string,
 ): {
-  tools: AgentTool<any>[];
+  tools: AgentTool<TSchema>[];
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
   setEventContext: (context: {
     platform: string;

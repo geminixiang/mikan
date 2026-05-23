@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 import { Bot as GrammyBot, InputFile } from "grammy";
+import type { Message } from "grammy/types";
 import type { Bot, BotEvent, BotHandler, PlatformInfo } from "../../adapter.js";
 import * as log from "../../log.js";
 import { resolveChatSessionKey } from "../../session-policy.js";
@@ -37,7 +38,7 @@ export interface TelegramEvent extends BotEvent {
 }
 
 interface MessageContext {
-  msg: any;
+  msg: Message;
   text: string;
   chatId: string;
   chatType: string;
@@ -246,7 +247,7 @@ export class TelegramBot implements Bot {
    */
   async processAttachments(
     chatId: string,
-    message: any,
+    message: Message,
   ): Promise<{ name: string; localPath: string }[]> {
     const downloads: Array<Promise<{ name: string; localPath: string } | null>> = [];
 
@@ -334,7 +335,7 @@ export class TelegramBot implements Bot {
     return queue;
   }
 
-  private extractMessageContext(msg: any): MessageContext | null {
+  private extractMessageContext(msg: Message): MessageContext | null {
     if (!msg) return null;
     if (msg.date * 1000 < this.startupTime) return null;
     if (msg.from?.is_bot) return null;
@@ -401,7 +402,7 @@ export class TelegramBot implements Bot {
     // --- Slash commands (registered before catch-all so grammY intercepts them) ---
 
     this.client.command("stop", async (ctx) => {
-      const mc = this.extractMessageContext(ctx.message);
+      const mc = ctx.message ? this.extractMessageContext(ctx.message) : null;
       if (!mc) return;
       const stopTarget = this.resolveStopTarget(mc);
       if (stopTarget) {
@@ -412,13 +413,13 @@ export class TelegramBot implements Bot {
     });
 
     this.client.command("new", async (ctx) => {
-      const mc = this.extractMessageContext(ctx.message);
+      const mc = ctx.message ? this.extractMessageContext(ctx.message) : null;
       if (!mc) return;
       await this.handler.handleNewCommand(mc.sessionKey, mc.chatId, this);
     });
 
     this.client.command("sandbox", async (ctx) => {
-      const mc = this.extractMessageContext(ctx.message);
+      const mc = ctx.message ? this.extractMessageContext(ctx.message) : null;
       if (!mc) return;
       const cleanedText = this.cleanText(mc.text).replace(/^\/sandbox(?:@\w+)?/i, "/pi-sandbox");
       const event: TelegramEvent = {
@@ -450,7 +451,7 @@ export class TelegramBot implements Bot {
     // --- Catch-all for regular (non-command) messages ---
 
     this.client.on("message", async (ctx) => {
-      const mc = this.extractMessageContext(ctx.message);
+      const mc = ctx.message ? this.extractMessageContext(ctx.message) : null;
       if (!mc) return;
 
       const cleanedText = this.cleanText(mc.text);

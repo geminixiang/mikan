@@ -1,4 +1,5 @@
 import { SocketModeClient } from "@slack/socket-mode";
+import type { KnownBlock } from "@slack/types";
 import { WebClient } from "@slack/web-api";
 import { existsSync, readFileSync } from "fs";
 import { readFile } from "fs/promises";
@@ -277,7 +278,7 @@ export class SlackBot implements Bot {
         channel,
         user,
         text,
-        blocks: blocks as any,
+        blocks: blocks as KnownBlock[],
         ...(threadTs ? { thread_ts: threadTs } : {}),
       });
     });
@@ -288,7 +289,7 @@ export class SlackBot implements Bot {
       const result = await this.webClient.chat.postMessage({
         channel,
         text,
-        blocks: blocks as any,
+        blocks: blocks as KnownBlock[],
       });
       return result.ts as string;
     });
@@ -393,7 +394,7 @@ export class SlackBot implements Bot {
         channel,
         thread_ts: threadTs,
         text, // fallback for notifications
-        blocks: blocks as any,
+        blocks: blocks as KnownBlock[],
       });
       return result.ts as string;
     });
@@ -556,10 +557,8 @@ export class SlackBot implements Bot {
     return this.hasKnownForkSession(channelId, sessionKey);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private buildHomeView(): { type: "home"; blocks: any[] } {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const blocks: any[] = [
+  private buildHomeView(): { type: "home"; blocks: KnownBlock[] } {
+    const blocks: object[] = [
       {
         type: "section",
         text: {
@@ -711,7 +710,7 @@ export class SlackBot implements Bot {
       },
     );
 
-    return { type: "home", blocks };
+    return { type: "home", blocks: blocks as KnownBlock[] };
   }
 
   private resolveStopTarget(channelId: string, threadTs?: string): string | null {

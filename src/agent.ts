@@ -1,5 +1,5 @@
 import { Agent, type ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { getModel, type ImageContent } from "@earendil-works/pi-ai";
+import { getModel, type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
 import {
   AgentSession,
   AuthStorage,
@@ -580,7 +580,7 @@ async function createConfiguredAgentSession(params: {
   workspaceDir: string;
   runtimeWorkspaceRoot: string;
   systemPrompt: string;
-  model: ReturnType<typeof getModel>;
+  model: Model<Api>;
   thinkingLevel: ThinkingLevel;
   tools: Awaited<ReturnType<typeof createMamaTools>>["tools"];
   sessionManager: SessionManager;
@@ -844,7 +844,7 @@ async function finalizeRunResponse(
     triggerAttribution?: string;
     createOverflowLink?: () => string;
     platform?: string;
-    model?: ReturnType<typeof getModel>;
+    model?: Model<Api>;
     sessionConversation?: string;
     sessionUuid?: string;
   },
@@ -935,7 +935,7 @@ interface UsageReportContext {
   runState: RunnerSessionState;
   responseCtx: ChatResponseContext;
   platform: PlatformInfo;
-  model: ReturnType<typeof getModel>;
+  model: Model<Api>;
   agentConfig: ReturnType<typeof loadAgentConfigForConversation>;
   sessionConversation: string;
   sessionUuid: string;
@@ -1149,7 +1149,7 @@ async function prepareRunContext(params: {
 function attachSessionEventHandlers(params: {
   session: AgentSession;
   runState: RunnerSessionState;
-  model: ReturnType<typeof getModel>;
+  model: Model<Api>;
   agentConfig: ReturnType<typeof loadAgentConfigForConversation>;
 }): void {
   const { session, runState, model, agentConfig } = params;
@@ -1427,11 +1427,9 @@ export async function createRunner(
   // Create tools (per-runner, with per-runner upload function setter)
   const { tools, setUploadFunction, setEventContext } = createMamaTools(executor, workspaceDir);
 
-  // Resolve model from config
-  // Use 'as any' cast because agentConfig.provider/model are plain strings,
-  // while getModel() has constrained generic types for known providers.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const model = (getModel as any)(agentConfig.provider, agentConfig.model);
+  // Resolve model from config. Config stores provider/model as user-provided strings,
+  // while getModel's public overload is narrowed to generated known providers.
+  const model = getModel(agentConfig.provider as never, agentConfig.model as never) as Model<Api>;
 
   // Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
   const memory = await getMemory(conversationDir);

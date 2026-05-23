@@ -1,4 +1,4 @@
-import { completeSimple, getModel } from "@earendil-works/pi-ai";
+import { completeSimple, getModel, type Api, type Model } from "@earendil-works/pi-ai";
 import type { BotEvent } from "./adapter.js";
 import { loadAutoReplyJudgeModel, loadConversationAutoReplyConfig } from "./config.js";
 import * as log from "./log.js";
@@ -95,9 +95,9 @@ async function judgeAutoReplyWithLlm(input: {
   conversationDir: string;
 }): Promise<boolean> {
   const judgeConfig = loadAutoReplyJudgeModel(input.conversationDir);
-  // getModel has constrained generics for known providers; judgeConfig holds plain strings.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const model = (getModel as any)(judgeConfig.provider, judgeConfig.model);
+  // Config stores provider/model as user-provided strings, while getModel's public
+  // overload is narrowed to generated known providers.
+  const model = getModel(judgeConfig.provider as never, judgeConfig.model as never) as Model<Api>;
   const answer = await completeSimple(
     model,
     {
