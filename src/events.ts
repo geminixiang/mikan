@@ -241,7 +241,7 @@ export class EventsWatcher {
     const filePath = join(this.eventsDir, filename);
     for (let i = 0; i < MAX_RETRIES; i++) {
       const delay = RETRY_BASE_MS * 2 ** i;
-      await this.sleep(delay);
+      await new Promise((resolve) => setTimeout(resolve, delay));
       const exists = existsSync(filePath);
       log.logInfo(`Confirming event deletion: ${filename} after ${delay}ms (exists=${exists})`);
       if (exists) {
@@ -295,7 +295,7 @@ export class EventsWatcher {
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
         if (i < MAX_RETRIES - 1) {
-          await this.sleep(RETRY_BASE_MS * 2 ** i);
+          await new Promise((resolve) => setTimeout(resolve, RETRY_BASE_MS * 2 ** i));
         }
       }
     }
@@ -612,10 +612,6 @@ export class EventsWatcher {
       }
     }
     this.knownFiles.delete(filename);
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 

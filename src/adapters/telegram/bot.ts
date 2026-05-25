@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 import { Bot as GrammyBot, InputFile } from "grammy";
 import type { Message } from "grammy/types";
@@ -298,7 +298,7 @@ export class TelegramBot implements Bot {
       const localPath = `${chatId}/attachments/${filename}`;
       const fullDir = join(this.workingDir, chatId, "attachments");
 
-      if (!existsSync(fullDir)) mkdirSync(fullDir, { recursive: true });
+      mkdirSync(fullDir, { recursive: true });
 
       // Construct download URL
       const downloadUrl = `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`;

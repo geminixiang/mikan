@@ -1,6 +1,7 @@
 import { appendFile, writeFile } from "fs/promises";
 import { join } from "path";
 import { ensureDirExists, isRecord, parseJsonValue, readTextFileIfExists } from "./file-guards.js";
+import { withRetry } from "./adapters/shared.js";
 
 export interface Attachment {
   original: string; // original filename from uploader
@@ -36,14 +37,6 @@ class AttachmentDownloadHttpError extends Error {
 function isRetryableAttachmentDownloadError(error: unknown): boolean {
   if (!(error instanceof AttachmentDownloadHttpError)) return true;
   return error.status === 408 || error.status === 429 || error.status >= 500;
-}
-
-function attachmentDownloadDelayMs(attempt: number): number {
-  return 250 * 2 ** attempt;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export class ChannelStore {
@@ -203,23 +196,11 @@ export class ChannelStore {
    * Download a single attachment
    */
   private async downloadAttachmentWithRetry(localPath: string, url: string): Promise<void> {
-    const maxAttempts = 3;
-    let lastError: unknown;
-
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      try {
-        await this.downloadAttachment(localPath, url);
-        return;
-      } catch (error) {
-        lastError = error;
-        if (attempt === maxAttempts - 1 || !isRetryableAttachmentDownloadError(error)) {
-          throw error;
-        }
-        await sleep(attachmentDownloadDelayMs(attempt));
-      }
-    }
-
-    throw lastError;
+    await withRetry(() => this.downloadAttachment(localPath, url), {
+      maxRetries: 3,
+      baseDelayMs: 250,
+      isRateLimited: isRetryableAttachmentDownloadError,
+    });
   }
 
   private async downloadAttachment(localPath: string, url: string): Promise<void> {

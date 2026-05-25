@@ -7,7 +7,7 @@
  * markup wrappers — so it lives here once.
  */
 
-import { appendFileSync, existsSync, mkdirSync } from "fs";
+import { appendFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import type { BotHandler } from "../adapter.js";
 import * as log from "../log.js";
@@ -179,7 +179,7 @@ export function splitText(
  */
 export function appendChannelLog(workingDir: string, channel: string, entry: object): void {
   const dir = join(workingDir, channel);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, { recursive: true });
   appendFileSync(join(dir, "log.jsonl"), `${JSON.stringify(entry)}\n`);
 }
 

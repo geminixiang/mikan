@@ -1,19 +1,20 @@
 import type { Static, TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
-import { existsSync, mkdirSync, readFileSync } from "fs";
+import { mkdirSync, readFileSync } from "fs";
 
 export function ensureDirExists(dir: string): void {
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
+  mkdirSync(dir, { recursive: true });
 }
 
 export function readTextFileIfExists(path: string): string | undefined {
-  if (!existsSync(path)) {
-    return undefined;
+  try {
+    return readFileSync(path, "utf-8");
+  } catch (err) {
+    if (err instanceof Error && "code" in err && err.code === "ENOENT") {
+      return undefined;
+    }
+    throw err;
   }
-
-  return readFileSync(path, "utf-8");
 }
 
 export function readJsonFileIfExists<T>(
