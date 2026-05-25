@@ -1,4 +1,7 @@
-# Deployment
+---
+title: Deployment
+description: Deploy mikan with PM2, Docker, and other process managers.
+---
 
 ## PM2
 

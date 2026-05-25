@@ -1,4 +1,7 @@
-# Google Cloud SDK (gcloud) OAuth Setup
+---
+title: Google Cloud SDK OAuth
+description: Configure /login so the sandbox's gcloud uses the user's credentials.
+---
 
 這份文件說明如何設定 mikan `/login` / `/pi-login` 內建的 Google Cloud SDK OAuth，讓 sandbox 內的 `gcloud` 使用登入後的 user credential。
 

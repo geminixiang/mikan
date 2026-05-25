@@ -1,4 +1,7 @@
-# GitHub OAuth Setup
+---
+title: GitHub OAuth
+description: Set up the built-in GitHub OAuth flow used by mikan's /login.
+---
 
 這份文件說明如何設定 mikan `/login` 內建的 GitHub OAuth。
 

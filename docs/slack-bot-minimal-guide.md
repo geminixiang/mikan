@@ -1,4 +1,7 @@
-# Slack Bot Minimal Setup Guide
+---
+title: Slack Bot Setup
+description: Minimum Slack app configuration to run mikan over Socket Mode.
+---
 
 This guide lists the minimum Slack app settings needed to run `mikan` over Socket Mode.
 

@@ -1,4 +1,7 @@
-# mikan Architecture
+---
+title: Architecture
+description: mikan core architecture — how multi-platform messages flow through the system.
+---
 
 這份文件整理 `mikan` 專案的核心架構，重點放在:
 

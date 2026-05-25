@@ -1,4 +1,7 @@
-# Google Workspace CLI OAuth Setup
+---
+title: Google Workspace OAuth
+description: Set up Google Workspace CLI OAuth used by mikan's /login.
+---
 
 這份文件說明如何設定 mikan `/login` 內建的 Google Workspace CLI OAuth。
 

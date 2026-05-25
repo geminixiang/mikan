@@ -1,0 +1,77 @@
+---
+title: Installation & Quick Start
+description: Install mikan from npm, set platform tokens, and launch the bot in under a minute.
+---
+
+import { Tabs, TabItem, Aside, Steps } from "@astrojs/starlight/components";
+
+## Requirements
+
+- **Node.js ≥ 22.19.0**
+- 至少一個平台的 bot token (Slack / Telegram / Discord)
+- 一個 LLM provider 的 API key (Anthropic / OpenAI / Google / …)
+
+## Install
+
+<Tabs>
+  <TabItem label="npm (global)">```bash npm install -g @geminixiang/mikan ```</TabItem>
+  <TabItem label="From source">
+    ```bash git clone https://github.com/geminixiang/mikan.git cd mikan npm install npm run build
+    npm link ```
+  </TabItem>
+</Tabs>
+
+## Configure platform tokens
+
+可以同時跑多個平台 — 設了哪個 token，哪個就上線。
+
+<Tabs>
+  <TabItem label="Slack">
+    ```bash export SLACK_APP_TOKEN=xapp-... export SLACK_BOT_TOKEN=xoxb-... ``` 詳細的 Slack app
+    設定請看 [Slack Bot Setup](/slack-bot-minimal-guide/)。
+  </TabItem>
+  <TabItem label="Telegram">
+    ```bash export TELEGRAM_BOT_TOKEN=123456:ABC-... ``` 到 [@BotFather](https://t.me/BotFather)
+    申請 token，bot 會回應私訊、`@mention` 與 reply chain。
+  </TabItem>
+  <TabItem label="Discord">
+    ```bash export DISCORD_BOT_TOKEN=MTI... ``` 在 [Discord Developer
+    Portal](https://discord.com/developers/applications) 建 application，啟用 **Message Content
+    Intent**，並用 message + file 權限邀請。
+  </TabItem>
+</Tabs>
+
+## First run
+
+<Steps>
+
+1. **登入 LLM provider** — 啟動後在聊天視窗輸入 `/login`，依提示輸入 API key。
+
+   ```bash
+   mikan --state-dir=~/.mikan ~/work/my-project
+   ```
+
+2. **挑選 sandbox 模式** — 不指定預設 `host`；要隔離就用 `--sandbox`。
+
+   ```bash
+   mikan --sandbox=image:node:22 ~/work/my-project
+   ```
+
+   完整模式表請看 [Sandbox & Vault](/sandbox/)。
+
+3. **打招呼** — 在 Slack `@mikan hi`、Telegram 私訊、或 Discord channel 試一句。agent 會在 `~/work/my-project` 裡跑工具。
+
+4. **看 session 內部** — 輸入 `session` / `/session`，會回一個唯讀網頁網址，把 agent 的思考、工具呼叫、輸出全部攤開來。
+
+</Steps>
+
+<Aside type="tip" title="想長期跑？">
+  Production 部署請看 [Deployment](/deployment/) — 有 PM2 設定範例與 Docker 指引。
+</Aside>
+
+## What's next
+
+- 把專案知識寫進 `MEMORY.md`，每次 agent 都會帶著上下文出門
+- 把 CLI 工具丟進 `skills/`，agent 自動學會新動作 — 看 [Skills](/skills/)
+- 用 `events/` 排程一次性或週期性任務 — 看 [Events](/events/)
+- 想懂內部運作？看 [Architecture](/architecture/) 與 [Sessions](/sessions/)

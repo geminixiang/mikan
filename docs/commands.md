@@ -1,4 +1,7 @@
-# Chat commands
+---
+title: Chat Commands
+description: Text commands and slash-command aliases mikan supports across platforms.
+---
 
 mikan supports text commands across platforms. Slash-command aliases are available where the platform supports them.
 

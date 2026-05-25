@@ -1,4 +1,7 @@
-# Firecracker Setup Guide
+---
+title: Firecracker Setup
+description: Set up Firecracker microVM as a mikan sandbox runtime (alpha).
+---
 
 This guide explains how to set up Firecracker microVM for use with mikan sandbox mode.
 

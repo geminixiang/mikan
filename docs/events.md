@@ -1,4 +1,7 @@
-# Events
+---
+title: Events
+description: Schedule one-shot or recurring tasks by dropping JSON files into the events/ directory.
+---
 
 Events are JSON files written to the `events/` directory inside the workspace. The harness watches this directory and triggers the agent when a file appears.
 

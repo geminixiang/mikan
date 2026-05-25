@@ -1,0 +1,185 @@
+---
+import '../styles/mikan.css';
+import mikanHero from '../assets/mikan-hero.svg';
+import mikanLogo from '../assets/mikan-logo.svg';
+---
+
+<!doctype html>
+<html lang="zh-Hant" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>mikan — a citrus-flavored AI coding agent</title>
+    <meta
+      name="description"
+      content="mikan (蜜柑) — a multi-platform AI coding agent for Slack, Telegram, and Discord. Juicy, sandboxed, and ready to ship."
+    />
+    <link rel="icon" type="image/svg+xml" href={mikanLogo.src} />
+    <script is:inline>
+      // Theme bootstrap — match Starlight's storage key so /docs and / share state.
+      const saved = localStorage.getItem('starlight-theme');
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const theme = saved ?? (prefersDark ? 'dark' : 'light');
+      document.documentElement.dataset.theme = theme;
+    </script>
+  </head>
+
+  <body class="atelier">
+    <!-- ── NAV ─────────────────────────────────────────── -->
+    <nav class="atelier-nav" data-reveal="1">
+      <a href="/" class="brand" aria-label="mikan home">
+        <img src={mikanLogo.src} alt="" width="24" height="24" />
+        <span>mikan</span>
+      </a>
+
+      <div class="meta">
+        <a href="/architecture/">Architecture</a>
+        <a href="/sandbox/">Sandbox</a>
+        <a href="/commands/">Commands</a>
+        <a href="/install/">Install</a>
+        <a href="https://github.com/geminixiang/mikan" rel="noopener">GitHub ↗</a>
+      </div>
+
+      <span class="stamp">v0.2 · MIT</span>
+    </nav>
+
+    <!-- ── HERO ────────────────────────────────────────── -->
+    <header class="atelier-hero">
+      <div>
+        <div class="eyebrow" data-reveal="2">
+          <span>Issue&nbsp;001</span>
+          <span>·</span>
+          <span>An agent that runs anywhere chat happens</span>
+        </div>
+
+        <h1 data-reveal="3">
+          mi<span class="italic">k</span>an<span class="hanzi">多平台 AI コーディングエージェント</span>
+        </h1>
+
+        <p class="lede" data-reveal="4">
+          A multi-platform AI coding agent that lives inside <strong>Slack</strong>,
+          <strong>Telegram</strong>, and <strong>Discord</strong> — and ships its tools
+          to a sandbox you trust. Like a fresh mikan: bright on the outside,
+          surprisingly structured inside.
+        </p>
+
+        <div class="atelier-cta" data-reveal="5">
+          <a class="btn-mikan primary" href="/install/">
+            Start peeling
+            <svg viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </a>
+          <a class="btn-mikan ghost" href="/architecture/">Read the architecture</a>
+        </div>
+      </div>
+
+      <div class="visual" data-reveal="3">
+        <figure class="fruit" aria-hidden="true">
+          <img src={mikanHero.src} alt="" width="460" height="460" />
+        </figure>
+      </div>
+    </header>
+
+    <!-- ── EDITORIAL INDEX ─────────────────────────────── -->
+    <section class="atelier-index">
+      <div class="ix-head">
+        <span>The Index</span>
+        <h2>Six segments, one peel.</h2>
+        <span>Features</span>
+      </div>
+
+      <ol>
+        <li>
+          <h3>Multi-platform, one agent</h3>
+          <p>Slack threads, Discord replies, Telegram reply-chains — all map to
+          independent session scopes. Run one platform, run all three.</p>
+        </li>
+        <li>
+          <h3>Sandboxed execution</h3>
+          <p>Host, shared container, per-user managed image, Firecracker microVM,
+          or Cloudflare bridge. Pick the isolation that fits the room.</p>
+        </li>
+        <li>
+          <h3>Credential vaults</h3>
+          <p><code>/login</code> stores keys under <code>--state-dir</code> and
+          injects them into the sandbox at runtime — never the host shell.</p>
+        </li>
+        <li>
+          <h3>Persistent memory</h3>
+          <p>Workspace and channel-level <code>MEMORY.md</code>. The agent
+          remembers your project the way a regular barista remembers your order.</p>
+        </li>
+        <li>
+          <h3>Skills &amp; Events</h3>
+          <p>Drop CLI tools into <code>skills/</code>. Schedule one-shot or
+          recurring tasks via JSON in <code>events/</code>. No code changes
+          required.</p>
+        </li>
+        <li>
+          <h3>Read-only session viewer</h3>
+          <p>Type <code>session</code>. mikan returns a private web URL with the
+          agent's thoughts, tool calls, and outputs laid open.</p>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ── TERMINAL DEMO ───────────────────────────────── -->
+    <section class="atelier-demo">
+      <div class="text">
+        <div class="kicker">No. 02 — Specimen</div>
+        <h2>Three exports. <em>One bot online.</em></h2>
+        <p>
+          Install from npm, set the tokens for the platforms you want, point
+          mikan at a working directory, and start a thread. That's the whole
+          ceremony.
+        </p>
+      </div>
+
+      <div class="terminal-wrap">
+        <div class="terminal" role="img" aria-label="A shell session showing mikan being installed and used in Slack">
+          <div class="bar">
+            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          </div>
+          <div class="line"><span class="prompt">$</span> npm install -g @geminixiang/mikan</div>
+          <div class="line"><span class="cmt"># … installed 247 packages in 6.2s</span></div>
+          <div class="line"><span class="prompt">$</span> export SLACK_APP_TOKEN=xapp-…</div>
+          <div class="line"><span class="prompt">$</span> export SLACK_BOT_TOKEN=xoxb-…</div>
+          <div class="line"><span class="prompt">$</span> mikan --sandbox=image:node:22 ~/work/my-project</div>
+          <div class="line"><span class="ok">✓</span> vault loaded · <span class="ok">✓</span> slack connected · <span class="warn">listening on threads…</span></div>
+          <div class="line">&nbsp;</div>
+          <div class="line"><span class="you">@you</span>   #release-prep · 14:02
+          </div>
+          <div class="line">       <span class="you">@mikan can you check why CI is red on PR #1248?</span></div>
+          <div class="line">&nbsp;</div>
+          <div class="line"><span class="bot">@mikan</span> 看了一下，是 <code>tsgo</code> 在 docs/ 找不到 frontmatter。</div>
+          <div class="line">       三個 .md 缺 <span class="warn">title</span> 欄位 → 我先補上。<span class="cursor"></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── PLATFORMS ──────────────────────────────────── -->
+    <section class="atelier-platforms">
+      <h3>Where it lives</h3>
+      <div class="row">
+        <a href="/slack-bot-minimal-guide/"><span class="glyph"></span>Slack</a>
+        <a href="/install/"><span class="glyph"></span>Telegram</a>
+        <a href="/install/"><span class="glyph"></span>Discord</a>
+        <a href="/sandbox/"><span class="glyph"></span>Sandbox</a>
+        <a href="/events/"><span class="glyph"></span>Events</a>
+        <a href="/skills/"><span class="glyph"></span>Skills</a>
+      </div>
+    </section>
+
+    <!-- ── COLOPHON ───────────────────────────────────── -->
+    <footer class="atelier-foot">
+      <p class="wordmark">mikan&nbsp;·&nbsp;蜜柑</p>
+      <div class="colophon">
+        Set in Fraunces &amp; IBM Plex<br />
+        Pressed in TypeScript ·<br />
+        Distributed under the MIT license<br />
+        <a href="https://github.com/geminixiang/mikan" rel="noopener" style="color: inherit; text-decoration: underline;">github.com/geminixiang/mikan</a>
+      </div>
+    </footer>
+  </body>
+</html>

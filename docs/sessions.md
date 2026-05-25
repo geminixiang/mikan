@@ -1,4 +1,7 @@
-# Sessions
+---
+title: Sessions
+description: How mikan maps platform chat scopes (threads, replies) to independent agent sessions.
+---
 
 mikan separates platform chat history from pi-coding-agent structured session history.
 

@@ -1,4 +1,7 @@
-# Sandbox 與 Vault
+---
+title: Sandbox & Vault
+description: Sandbox runtimes (host, Docker, Firecracker, Cloudflare) and credential vault behavior.
+---
 
 這份文件說明 mikan 目前支援的 sandbox 模式，以及 credential vault 在各模式下的行為。
 

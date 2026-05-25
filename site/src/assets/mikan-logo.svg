@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <radialGradient id="lp" cx="38%" cy="32%" r="78%">
+      <stop offset="0%" stop-color="#FFD58A"/>
+      <stop offset="55%" stop-color="#FF6B1A"/>
+      <stop offset="100%" stop-color="#B53D04"/>
+    </radialGradient>
+    <radialGradient id="lg" cx="32%" cy="26%" r="30%">
+      <stop offset="0%" stop-color="#FFFCEC" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#FFFCEC" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <!-- leaf -->
+  <path d="M32 12 C24 4, 14 6, 12 14 C18 20, 28 20, 34 14 Z" fill="#3F7A2E"/>
+  <path d="M32 12 Q24 12 14 14" stroke="#1F4218" stroke-width="0.8" fill="none" opacity="0.6"/>
+  <!-- stem -->
+  <path d="M32 12 Q33 16, 34 19" stroke="#3F2412" stroke-width="1.6" stroke-linecap="round"/>
+  <!-- fruit -->
+  <circle cx="34" cy="38" r="22" fill="url(#lp)"/>
+  <circle cx="34" cy="38" r="22" fill="url(#lg)"/>
+  <ellipse cx="26" cy="28" rx="3.5" ry="2.2" fill="#FFFFFF" opacity="0.55" transform="rotate(-25 26 28)"/>
+  <ellipse cx="34" cy="59" rx="1.4" ry="0.8" fill="#7A2E04" opacity="0.55"/>
+</svg>

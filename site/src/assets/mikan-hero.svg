@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" fill="none">
+  <defs>
+    <radialGradient id="peel" cx="38%" cy="34%" r="78%">
+      <stop offset="0%" stop-color="#FFD58A"/>
+      <stop offset="35%" stop-color="#FFA13D"/>
+      <stop offset="75%" stop-color="#FF6B1A"/>
+      <stop offset="100%" stop-color="#B53D04"/>
+    </radialGradient>
+    <radialGradient id="gloss" cx="32%" cy="26%" r="28%">
+      <stop offset="0%" stop-color="#FFF6E0" stop-opacity="0.85"/>
+      <stop offset="60%" stop-color="#FFE0A8" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#FFE0A8" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="leafGrad" cx="40%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#8FCB6F"/>
+      <stop offset="60%" stop-color="#3F7A2E"/>
+      <stop offset="100%" stop-color="#1F4218"/>
+    </radialGradient>
+    <radialGradient id="shadow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1A0F08" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#1A0F08" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="2.6" numOctaves="2" seed="3"/>
+      <feColorMatrix values="0 0 0 0 0.35
+                             0 0 0 0 0.18
+                             0 0 0 0 0.05
+                             0 0 0 0.18 0"/>
+      <feComposite in2="SourceGraphic" operator="in"/>
+    </filter>
+  </defs>
+
+  <!-- ground shadow -->
+  <ellipse cx="210" cy="370" rx="140" ry="14" fill="url(#shadow)"/>
+
+  <!-- stem -->
+  <path d="M196 82 Q200 92 204 102" stroke="#3F2412" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- leaf back (darker) -->
+  <path d="M198 82
+           C 168 56, 122 58, 100 78
+           C 118 96, 156 102, 196 90 Z"
+        fill="#2E5A22"/>
+  <!-- leaf front -->
+  <path d="M202 80
+           C 178 50, 130 50, 108 72
+           C 132 92, 174 96, 204 86 Z"
+        fill="url(#leafGrad)"/>
+  <!-- leaf vein -->
+  <path d="M198 82 Q160 78 116 74" stroke="#1F4218" stroke-width="1.5" fill="none" opacity="0.6"/>
+  <path d="M180 76 Q170 70 162 64" stroke="#1F4218" stroke-width="1" fill="none" opacity="0.5"/>
+  <path d="M170 78 Q158 74 148 70" stroke="#1F4218" stroke-width="1" fill="none" opacity="0.4"/>
+
+  <!-- fruit body -->
+  <circle cx="210" cy="220" r="138" fill="url(#peel)"/>
+
+  <!-- subtle pore texture -->
+  <g opacity="0.25" fill="#7A2E04">
+    <circle cx="160" cy="180" r="1.4"/>
+    <circle cx="175" cy="210" r="1.1"/>
+    <circle cx="195" cy="195" r="1.3"/>
+    <circle cx="220" cy="175" r="1"/>
+    <circle cx="245" cy="200" r="1.5"/>
+    <circle cx="260" cy="235" r="1.2"/>
+    <circle cx="180" cy="250" r="1.1"/>
+    <circle cx="210" cy="275" r="1.3"/>
+    <circle cx="240" cy="290" r="1.2"/>
+    <circle cx="155" cy="240" r="1"/>
+    <circle cx="270" cy="180" r="1.1"/>
+    <circle cx="285" cy="220" r="1.3"/>
+    <circle cx="195" cy="320" r="1"/>
+    <circle cx="225" cy="335" r="1.2"/>
+    <circle cx="170" cy="305" r="1.1"/>
+    <circle cx="295" cy="270" r="1.2"/>
+    <circle cx="135" cy="270" r="1"/>
+  </g>
+
+  <!-- bottom navel dimple -->
+  <ellipse cx="210" cy="350" rx="9" ry="5" fill="#7A2E04" opacity="0.55"/>
+  <ellipse cx="210" cy="349" rx="4" ry="2" fill="#3F1A04" opacity="0.6"/>
+
+  <!-- gloss highlight -->
+  <circle cx="210" cy="220" r="138" fill="url(#gloss)"/>
+
+  <!-- specular kiss -->
+  <ellipse cx="158" cy="160" rx="22" ry="14" fill="#FFFDF6" opacity="0.5" transform="rotate(-25 158 160)"/>
+  <ellipse cx="148" cy="152" rx="10" ry="6" fill="#FFFFFF" opacity="0.7" transform="rotate(-25 148 152)"/>
+
+  <!-- film grain over fruit -->
+  <circle cx="210" cy="220" r="138" filter="url(#grain)" opacity="0.5"/>
+</svg>

@@ -1,4 +1,7 @@
-# Development
+---
+title: Development
+description: Local dev workflow, tests, lint, and E2E for mikan contributors.
+---
 
 ```bash
 npm run dev         # build in watch mode

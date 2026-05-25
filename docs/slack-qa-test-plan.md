@@ -1,4 +1,7 @@
-# Slack QA Test Plan
+---
+title: Slack QA Test Plan
+description: QA coverage for running both a question bot and the mikan bot in Slack.
+---
 
 This document defines QA test coverage for running both a **question bot** and the **mikan bot** in Slack.
 

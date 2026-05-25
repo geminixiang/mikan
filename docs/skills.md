@@ -1,4 +1,7 @@
-# Skills
+---
+title: Skills
+description: Drop CLI tools into a skills/ directory and mikan will load them for the agent.
+---
 
 mikan loads custom CLI tools from workspace-level or conversation-level `skills/` directories.
 

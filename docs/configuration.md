@@ -1,4 +1,7 @@
-# Configuration
+---
+title: Configuration
+description: All mikan settings — global, per-conversation, LLM provider, sandbox, and vault behavior.
+---
 
 mikan reads global settings from `<state-dir>/settings.json` (default `~/.mikan/settings.json`, override with `--state-dir` or `STATE_DIR`). This file is created explicitly with `mikan --onboard`.
 
