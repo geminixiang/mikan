@@ -13,7 +13,7 @@ import {
   type NewsChannel,
   type ThreadChannel,
 } from "discord.js";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 
 import type {
@@ -343,7 +343,7 @@ export class DiscordBot implements Bot {
    * Download an attachment from URL to local file
    */
   private async downloadAttachment(dir: string, filename: string, url: string): Promise<void> {
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    mkdirSync(dir, { recursive: true });
 
     try {
       const response = await fetch(url);

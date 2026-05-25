@@ -1,6 +1,6 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "@sinclair/typebox";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { dirname, join, resolve } from "path";
 import { readEnv } from "./env.js";
@@ -227,9 +227,7 @@ export function saveConversationModelConfig(
   conversationDir: string,
   config: Pick<AgentConfig, "provider" | "model"> & Partial<Pick<AgentConfig, "thinkingLevel">>,
 ): void {
-  if (!existsSync(conversationDir)) {
-    ensureDirExists(conversationDir);
-  }
+  ensureDirExists(conversationDir);
   const settingsPath = join(conversationDir, "settings.json");
   const existing = loadSettingsFile(settingsPath) ?? {};
   const scopedConfig: SettingsFileConfig = {
@@ -243,9 +241,7 @@ export function saveConversationSandboxConfig(
   conversationDir: string,
   config: { imageWorkspaceMount: AgentConfig["sandboxImageWorkspaceMount"] },
 ): void {
-  if (!existsSync(conversationDir)) {
-    ensureDirExists(conversationDir);
-  }
+  ensureDirExists(conversationDir);
   const settingsPath = join(conversationDir, "settings.json");
   const existing = loadSettingsFile(settingsPath) ?? {};
   const scopedConfig: SettingsFileConfig = {
@@ -312,9 +308,7 @@ export function saveConversationAutoReplyConfig(
   conversationDir: string,
   config: AutoReplyConfig,
 ): void {
-  if (!existsSync(conversationDir)) {
-    mkdirSync(conversationDir, { recursive: true });
-  }
+  ensureDirExists(conversationDir);
 
   const enabledPath = join(conversationDir, AUTO_REPLY_FILE);
   const disabledPath = join(conversationDir, AUTO_REPLY_DISABLED_FILE);
@@ -385,9 +379,7 @@ export function createGlobalSettingsFile(stateDir: string): string {
   if (existsSync(settingsPath)) {
     throw new Error(`Global settings already exists at ${settingsPath}`);
   }
-  if (!existsSync(stateDir)) {
-    ensureDirExists(stateDir);
-  }
+  ensureDirExists(stateDir);
   atomicWritePrivateFile(settingsPath, JSON.stringify(ONBOARD_SETTINGS, null, 2));
   return settingsPath;
 }
