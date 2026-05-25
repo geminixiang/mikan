@@ -35,7 +35,7 @@ flowchart LR
     PiCoding["@earendil-works/pi-coding-agent\nAgentSession / SessionManager / Skills"]
     PiAI["@earendil-works/pi-ai\nprovider + model"]
     MikanTools["src/tools/*\nread / bash / edit / write / event / attach"]
-    Executor["src/sandbox/*\nExecutor"]
+    Executor["src/sandbox/*\nExecutor\nshared: host / container\nisolated: image / firecracker / cloudflare"]
   end
 
   subgraph Persistence["Project Workspace"]
@@ -90,8 +90,8 @@ flowchart LR
   VaultManager --> Vaults
   LinkServer --> LinkTokens
 
-  Executor -. host / container / image / firecracker / cloudflare .-> ConversationDir
-  Provisioner -. managed conversation sandbox .-> Executor
+  Executor -. shared: host / container; isolated: image / firecracker / cloudflare .-> ConversationDir
+  Provisioner -. isolated image sandbox lifecycle .-> Executor
   VaultManager -. env + mount routing .-> Executor
   EventsWatcher -. enqueue BotEvent .-> Main
 ```
@@ -151,7 +151,9 @@ flowchart LR
 職責:
 
 - 統一抽象 `Executor`
-- 支援 `host`、共享 `container`、managed `image`、`firecracker`、`cloudflare`
+- sandbox runtime 分成兩類:
+  - shared: `host` / `container:<name>`，同一個 host 或指定 container 共用
+  - isolated: `image:<image>` / `firecracker:*` / `cloudflare:*`，依 actor/conversation/vault 路由到隔離的執行環境
 - 透過 `ActorExecutionResolver` 依 user/conversation/vault 決定實際 executor
 - 在 `image` 模式下自動建立與回收 Docker container，並把 `image:<image>` 解析成 concrete `container:<name>` executor
 

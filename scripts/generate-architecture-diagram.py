@@ -157,7 +157,7 @@ def main():
         470,
         280,
         "3. Sandbox runtime",
-        ["Executor abstraction", "host / container / image", "firecracker / cloudflare", "runtime workspace mapping"],
+        ["Executor abstraction", "shared: host / container", "isolated: image / firecracker / cloudflare", "runtime workspace mapping"],
         ORANGE,
         ORANGE_BORDER,
     )
@@ -204,7 +204,7 @@ def main():
     )
     draw.text(
         (80, 1080),
-        "Current sandbox modes: host, container, image, firecracker, cloudflare. Future providers can plug in behind Executor.",
+        "Sandbox runtime classes: shared = host/container; isolated = image/firecracker/cloudflare. Future providers can plug in behind Executor.",
         font=SMALL,
         fill=MUTED,
     )
