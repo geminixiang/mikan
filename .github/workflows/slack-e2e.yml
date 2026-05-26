@@ -1,0 +1,68 @@
+name: Slack E2E
+
+on:
+  workflow_dispatch:
+
+jobs:
+  slack-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run Slack E2E
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SLACK_APP_TOKEN: ${{ secrets.SLACK_APP_TOKEN }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_QA_USER_TOKEN: ${{ secrets.SLACK_QA_USER_TOKEN }}
+          SLACK_QA_CHANNEL_ID: ${{ secrets.SLACK_QA_CHANNEL_ID || vars.SLACK_QA_CHANNEL_ID }}
+          SLACK_QA_BOT_USER_ID: ${{ secrets.SLACK_QA_BOT_USER_ID || vars.SLACK_QA_BOT_USER_ID }}
+        run: |
+          set -euo pipefail
+
+          LOG_FILE="$RUNNER_TEMP/mikan-slack-e2e.log"
+          STATE_DIR="$RUNNER_TEMP/mikan-state"
+
+          node dist/main.js --onboard --state-dir "$STATE_DIR"
+          node dist/main.js --state-dir "$STATE_DIR" "$GITHUB_WORKSPACE" >"$LOG_FILE" 2>&1 &
+          MIKAN_PID=$!
+
+          cleanup() {
+            kill "$MIKAN_PID" 2>/dev/null || true
+            echo "----- mikan log -----"
+            cat "$LOG_FILE" || true
+          }
+          trap cleanup EXIT
+
+          connected=0
+          for _ in $(seq 1 60); do
+            if grep -q "connected to Slack" "$LOG_FILE"; then
+              connected=1
+              break
+            fi
+            if ! kill -0 "$MIKAN_PID" 2>/dev/null; then
+              echo "mikan exited before connecting"
+              exit 1
+            fi
+            sleep 1
+          done
+
+          if [ "$connected" != "1" ]; then
+            echo "Timed out waiting for mikan to connect to Slack"
+            exit 1
+          fi
+
+          npm run test:e2e:slack

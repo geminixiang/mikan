@@ -13,7 +13,7 @@ import {
   type NewsChannel,
   type ThreadChannel,
 } from "discord.js";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 
 import type {
@@ -27,7 +27,8 @@ import type {
   PlatformInfo,
 } from "../../adapter.js";
 import * as log from "../../log.js";
-import { resolveChatSessionKey } from "../../session-policy.js";
+import { resolveChatSessionKey } from "../../sessions/policy.js";
+import { evaluateAutoReplyPolicy } from "../../trigger.js";
 import { formatNothingRunning } from "../../ui-copy.js";
 import {
   appendBotResponseLog,
@@ -182,8 +183,8 @@ export class DiscordBot implements Bot {
     }
     log.logInfo(`Enqueueing event for ${conversationId}: ${event.text.substring(0, 50)}`);
     queue.enqueue(() => {
-      const adapters = createDiscordAdapters(event as DiscordEvent, this, true);
-      return this.handler.handleEvent(event, this, adapters, true);
+      const adapters = createDiscordAdapters(event as DiscordEvent, this);
+      return this.handler.handleEvent(event, this, adapters);
     });
     return true;
   }
@@ -342,7 +343,7 @@ export class DiscordBot implements Bot {
    * Download an attachment from URL to local file
    */
   private async downloadAttachment(dir: string, filename: string, url: string): Promise<void> {
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    mkdirSync(dir, { recursive: true });
 
     try {
       const response = await fetch(url);
@@ -582,7 +583,7 @@ export class DiscordBot implements Bot {
           attachments: [],
         };
 
-        await this.handler.handleEvent(event, this, adapters, false);
+        await this.handler.handleEvent(event, this, adapters);
       } catch (err) {
         log.logWarning(
           "Discord slash command error",
@@ -607,8 +608,7 @@ export class DiscordBot implements Bot {
       const referencedMsgId = msg.reference?.messageId;
       const isThreadReply = isInThread || !!referencedMsgId;
       const isMentioned = msg.mentions.users.has(this.botUserId ?? "");
-      // Shared-channel top-level messages require a mention. Thread/reply follow-ups do not.
-      if (!isDM && !isMentioned && !isThreadReply) return;
+      const isAutoReplyCandidate = !isDM && !isMentioned && !isThreadReply;
 
       const { conversationId, threadTs } = this.resolveConversationContext({
         channelId: msg.channelId,
@@ -645,13 +645,7 @@ export class DiscordBot implements Bot {
 
       const cleanedText = this.stripBotMention(msg.content);
 
-      const processedAttachments = await this.processAttachments(
-        conversationId,
-        msg.attachments,
-        msgId,
-      );
-
-      const event: DiscordEvent = {
+      const eventBase: DiscordEvent = {
         type: isDM ? "dm" : "mention",
         conversationId,
         conversationKind,
@@ -661,35 +655,50 @@ export class DiscordBot implements Bot {
         user: userId,
         userName,
         text: cleanedText,
-        attachments: processedAttachments,
       };
 
-      // Log message
-      this.logToFile(conversationId, {
+      // Handle stop before trigger gate — "stop" should never be auto-reply judged.
+      if (cleanedText.toLowerCase() === "stop" || cleanedText.toLowerCase() === "/stop") {
+        const stopTarget = this.resolveStopTarget(conversationId, sessionKey);
+        if (stopTarget) {
+          this.handler.handleStop(stopTarget, conversationId, this);
+        } else if (!isAutoReplyCandidate) {
+          await this.postMessage(conversationId, formatNothingRunning("discord"));
+        }
+        return;
+      }
+
+      const triggerResult = isAutoReplyCandidate
+        ? await evaluateAutoReplyPolicy({ event: eventBase, workingDir: this.workingDir })
+        : ({ trigger: true, reason: "addressed" } as const);
+
+      const logEntryBase = {
         date: msg.createdAt.toISOString(),
         ts: msgId,
         ...(!isDM && threadTs ? { threadTs } : {}),
         user: userId,
         userName,
         text: cleanedText,
-        attachments: processedAttachments,
         isBot: false,
-      });
+      };
 
-      // Handle stop command
-      if (cleanedText.toLowerCase() === "stop" || cleanedText.toLowerCase() === "/stop") {
-        const stopTarget = this.resolveStopTarget(conversationId, sessionKey);
-        if (stopTarget) {
-          this.handler.handleStop(stopTarget, conversationId, this);
-        } else {
-          await this.postMessage(conversationId, formatNothingRunning("discord"));
-        }
+      if (!triggerResult.trigger) {
+        this.logToFile(conversationId, { ...logEntryBase, attachments: [] });
         return;
       }
 
+      const processedAttachments = await this.processAttachments(
+        conversationId,
+        msg.attachments,
+        msgId,
+      );
+      const event: DiscordEvent = { ...eventBase, attachments: processedAttachments };
+
+      this.logToFile(conversationId, { ...logEntryBase, attachments: processedAttachments });
+
       this.getQueue(sessionKey).enqueue(() => {
-        const adapters = createDiscordAdapters(event, this, false);
-        return this.handler.handleEvent(event, this, adapters, false);
+        const adapters = createDiscordAdapters(event, this);
+        return this.handler.handleEvent(event, this, adapters);
       });
     });
   }

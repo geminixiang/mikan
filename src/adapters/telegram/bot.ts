@@ -1,9 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 import { Bot as GrammyBot, InputFile } from "grammy";
+import type { Message } from "grammy/types";
 import type { Bot, BotEvent, BotHandler, PlatformInfo } from "../../adapter.js";
 import * as log from "../../log.js";
-import { resolveChatSessionKey } from "../../session-policy.js";
+import { resolveChatSessionKey } from "../../sessions/policy.js";
+import { evaluateAutoReplyPolicy } from "../../trigger.js";
 import { formatAlreadyWorking, formatNothingRunning } from "../../ui-copy.js";
 import {
   appendBotResponseLog,
@@ -36,7 +38,7 @@ export interface TelegramEvent extends BotEvent {
 }
 
 interface MessageContext {
-  msg: any;
+  msg: Message;
   text: string;
   chatId: string;
   chatType: string;
@@ -148,8 +150,8 @@ export class TelegramBot implements Bot {
     }
     log.logInfo(`Enqueueing event for ${conversationId}: ${event.text.substring(0, 50)}`);
     queue.enqueue(() => {
-      const adapters = createTelegramAdapters(event as TelegramEvent, this, true);
-      return this.handler.handleEvent(event, this, adapters, true);
+      const adapters = createTelegramAdapters(event as TelegramEvent, this);
+      return this.handler.handleEvent(event, this, adapters);
     });
     return true;
   }
@@ -245,7 +247,7 @@ export class TelegramBot implements Bot {
    */
   async processAttachments(
     chatId: string,
-    message: any,
+    message: Message,
   ): Promise<{ name: string; localPath: string }[]> {
     const downloads: Array<Promise<{ name: string; localPath: string } | null>> = [];
 
@@ -296,7 +298,7 @@ export class TelegramBot implements Bot {
       const localPath = `${chatId}/attachments/${filename}`;
       const fullDir = join(this.workingDir, chatId, "attachments");
 
-      if (!existsSync(fullDir)) mkdirSync(fullDir, { recursive: true });
+      mkdirSync(fullDir, { recursive: true });
 
       // Construct download URL
       const downloadUrl = `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`;
@@ -333,7 +335,7 @@ export class TelegramBot implements Bot {
     return queue;
   }
 
-  private extractMessageContext(msg: any): MessageContext | null {
+  private extractMessageContext(msg: Message): MessageContext | null {
     if (!msg) return null;
     if (msg.date * 1000 < this.startupTime) return null;
     if (msg.from?.is_bot) return null;
@@ -400,7 +402,7 @@ export class TelegramBot implements Bot {
     // --- Slash commands (registered before catch-all so grammY intercepts them) ---
 
     this.client.command("stop", async (ctx) => {
-      const mc = this.extractMessageContext(ctx.message);
+      const mc = ctx.message ? this.extractMessageContext(ctx.message) : null;
       if (!mc) return;
       const stopTarget = this.resolveStopTarget(mc);
       if (stopTarget) {
@@ -411,13 +413,13 @@ export class TelegramBot implements Bot {
     });
 
     this.client.command("new", async (ctx) => {
-      const mc = this.extractMessageContext(ctx.message);
+      const mc = ctx.message ? this.extractMessageContext(ctx.message) : null;
       if (!mc) return;
       await this.handler.handleNewCommand(mc.sessionKey, mc.chatId, this);
     });
 
     this.client.command("sandbox", async (ctx) => {
-      const mc = this.extractMessageContext(ctx.message);
+      const mc = ctx.message ? this.extractMessageContext(ctx.message) : null;
       if (!mc) return;
       const cleanedText = this.cleanText(mc.text).replace(/^\/sandbox(?:@\w+)?/i, "/pi-sandbox");
       const event: TelegramEvent = {
@@ -442,14 +444,14 @@ export class TelegramBot implements Bot {
         attachments: [],
         isBot: false,
       });
-      const adapters = createTelegramAdapters(event, this, false);
-      await this.handler.handleEvent(event, this, adapters, false);
+      const adapters = createTelegramAdapters(event, this);
+      await this.handler.handleEvent(event, this, adapters);
     });
 
     // --- Catch-all for regular (non-command) messages ---
 
     this.client.on("message", async (ctx) => {
-      const mc = this.extractMessageContext(ctx.message);
+      const mc = ctx.message ? this.extractMessageContext(ctx.message) : null;
       if (!mc) return;
 
       const cleanedText = this.cleanText(mc.text);
@@ -475,13 +477,9 @@ export class TelegramBot implements Bot {
         return;
       }
 
-      // In groups, only respond when addressed to bot
-      if (!addressedToBot) return;
+      const isAutoReplyCandidate = mc.chatType !== "private" && !addressedToBot;
 
-      // Process attachments
-      const processedAttachments = await this.processAttachments(mc.chatId, mc.msg);
-
-      const event: TelegramEvent = {
+      const eventBase: TelegramEvent = {
         type: "message",
         conversationId: mc.chatId,
         conversationKind: mc.conversationKind,
@@ -491,27 +489,38 @@ export class TelegramBot implements Bot {
         user: mc.userId,
         userName: mc.userName,
         text: cleanedText,
-        attachments: processedAttachments,
       };
 
-      // Log the message
-      this.logToFile(mc.chatId, {
+      const triggerResult = isAutoReplyCandidate
+        ? await evaluateAutoReplyPolicy({ event: eventBase, workingDir: this.workingDir })
+        : ({ trigger: true, reason: "addressed" } as const);
+
+      const logEntryBase = {
         date: new Date(mc.msg.date * 1000).toISOString(),
         ts: mc.msgId,
         ...(mc.conversationKind === "shared" && mc.threadTs ? { threadTs: mc.threadTs } : {}),
         user: mc.userId,
         userName: mc.userName,
         text: cleanedText,
-        attachments: processedAttachments,
         isBot: false,
-      });
+      };
+
+      if (!triggerResult.trigger) {
+        this.logToFile(mc.chatId, { ...logEntryBase, attachments: [] });
+        return;
+      }
+
+      const processedAttachments = await this.processAttachments(mc.chatId, mc.msg);
+      const event: TelegramEvent = { ...eventBase, attachments: processedAttachments };
+
+      this.logToFile(mc.chatId, { ...logEntryBase, attachments: processedAttachments });
 
       if (this.handler.isRunning(mc.sessionKey)) {
         await this.postMessage(mc.chatId, formatAlreadyWorking("telegram", "/stop"));
       } else {
         this.getQueue(mc.sessionKey).enqueue(() => {
-          const adapters = createTelegramAdapters(event, this, false);
-          return this.handler.handleEvent(event, this, adapters, false);
+          const adapters = createTelegramAdapters(event, this);
+          return this.handler.handleEvent(event, this, adapters);
         });
       }
     });

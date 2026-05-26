@@ -46,9 +46,23 @@ export interface Executor {
   getWorkspacePath(hostPath: string): string;
 
   /**
+   * Return explicit host/control-plane/runtime path semantics for this executor.
+   */
+  getPathContext(hostWorkspaceRoot: string): RuntimePathContext;
+
+  /**
    * Get the current sandbox config used by this executor.
    */
   getSandboxConfig(): SandboxConfig;
+}
+
+export interface RuntimePathContext {
+  /** Host-side workspace root used by mikan's control plane. */
+  hostWorkspaceRoot: string;
+  /** Workspace root as seen by bash/read/write/edit inside the runtime. */
+  runtimeWorkspaceRoot: string;
+  /** Translate a runtime path back to a host path when the runtime is host-backed. */
+  runtimeToHostPath?: (runtimePath: string) => string;
 }
 
 export interface ExecOptions {

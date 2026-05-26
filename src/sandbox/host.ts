@@ -4,9 +4,11 @@ import type {
   ExecResult,
   Executor,
   HostSandboxConfig,
+  RuntimePathContext,
   SandboxAdapter,
 } from "./types.js";
 import { killProcessTree } from "./utils.js";
+import { createMountedRuntimePathContext } from "./path-context.js";
 
 export function parseHostSandboxArg(value: string): HostSandboxConfig | undefined {
   if (value === "host") {
@@ -95,6 +97,10 @@ export class HostExecutor implements Executor {
 
   getWorkspacePath(hostPath: string): string {
     return hostPath;
+  }
+
+  getPathContext(hostWorkspaceRoot: string): RuntimePathContext {
+    return createMountedRuntimePathContext(hostWorkspaceRoot, hostWorkspaceRoot);
   }
 
   getSandboxConfig(): HostSandboxConfig {

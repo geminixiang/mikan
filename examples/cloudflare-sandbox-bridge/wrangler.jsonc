@@ -1,5 +1,5 @@
 {
-  "name": "mama-cloudflare-sandbox-bridge",
+  "name": "mikan-cloudflare-sandbox-bridge",
   "main": "src/index.ts",
   "compatibility_date": "2026-05-05",
   "compatibility_flags": ["nodejs_compat"],

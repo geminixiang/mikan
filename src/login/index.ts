@@ -1,5 +1,7 @@
-import * as log from "../log.js";
+import { matchCommand } from "../commands/parse.js";
+import { readEnv } from "../env.js";
 import { isRecord, parseJsonValue } from "../file-guards.js";
+import * as log from "../log.js";
 
 export type LoginCredentialKind = "api_key" | "oauth";
 
@@ -8,6 +10,7 @@ export interface OAuthAuthorizedUserFileOutput {
   relativePath: string;
   targetPath?: string;
   envKey?: string;
+  additionalEnvKeys?: string[];
 }
 
 export interface OAuthService {
@@ -45,15 +48,21 @@ const DEFAULT_GOOGLE_WORKSPACE_CLI_SCOPES = [
   "https://www.googleapis.com/auth/chat.messages.create",
 ];
 
+const DEFAULT_GOOGLE_CLOUD_SDK_SCOPES = [
+  "openid",
+  "https://www.googleapis.com/auth/userinfo.email",
+  "https://www.googleapis.com/auth/cloud-platform",
+];
+
 // Conservative default: enough for `gh` CLI repo/user/org operations, but
 // without `workflow` (can dispatch CI), `write:packages` (can publish
 // packages), or `project`. Operators who need those can opt in via
-// MAMA_GITHUB_OAUTH_SCOPES to keep the blast radius of a compromised agent
-// host explicit and configurable.
+// GITHUB_OAUTH_SCOPES (or MIKAN_GITHUB_OAUTH_SCOPES) to keep the blast radius
+// of a compromised agent host explicit and configurable.
 const DEFAULT_GITHUB_OAUTH_SCOPES = ["repo", "read:user", "user:email", "read:org", "gist"];
 
 function resolveScopesFromEnv(envKey: string, fallback: string[]): string[] {
-  const raw = process.env[envKey]?.trim();
+  const raw = readEnv(envKey);
   if (!raw) return fallback;
 
   const scopes = raw
@@ -66,13 +75,17 @@ function resolveScopesFromEnv(envKey: string, fallback: string[]): string[] {
 
 function resolveGoogleWorkspaceCliScopes(): string[] {
   return resolveScopesFromEnv(
-    "MAMA_GOOGLE_WORKSPACE_CLI_OAUTH_SCOPES",
+    "GOOGLE_WORKSPACE_CLI_OAUTH_SCOPES",
     DEFAULT_GOOGLE_WORKSPACE_CLI_SCOPES,
   );
 }
 
+function resolveGoogleCloudSdkScopes(): string[] {
+  return resolveScopesFromEnv("GOOGLE_CLOUD_SDK_OAUTH_SCOPES", DEFAULT_GOOGLE_CLOUD_SDK_SCOPES);
+}
+
 function resolveGitHubOAuthScopes(): string[] {
-  return resolveScopesFromEnv("MAMA_GITHUB_OAUTH_SCOPES", DEFAULT_GITHUB_OAUTH_SCOPES);
+  return resolveScopesFromEnv("GITHUB_OAUTH_SCOPES", DEFAULT_GITHUB_OAUTH_SCOPES);
 }
 
 function getBuiltinOAuthServices(): OAuthService[] {
@@ -110,11 +123,33 @@ function getBuiltinOAuthServices(): OAuthService[] {
         targetPath: "/root/.config/gws/credentials.json",
       },
     },
+    {
+      id: "google_cloud_sdk",
+      label: "Google Cloud SDK (gcloud)",
+      aliases: ["google_cloud_sdk", "gcloud", "google-cloud-sdk", "google_cloud", "gcp"],
+      authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+      tokenUrl: "https://oauth2.googleapis.com/token",
+      scopes: resolveGoogleCloudSdkScopes(),
+      clientIdEnvKey: "GOOGLE_CLOUD_SDK_CLIENT_ID",
+      clientSecretEnvKey: "GOOGLE_CLOUD_SDK_CLIENT_SECRET",
+      authorizationParams: {
+        access_type: "offline",
+        include_granted_scopes: "true",
+        prompt: "consent",
+      },
+      fileOutput: {
+        type: "authorized_user",
+        relativePath: "gcloud-adc.json",
+        targetPath: "/root/.config/gcloud/application_default_credentials.json",
+        envKey: "GOOGLE_APPLICATION_CREDENTIALS",
+        additionalEnvKeys: ["CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE"],
+      },
+    },
   ];
 }
 
 export function getOAuthServices(): OAuthService[] {
-  const raw = process.env.MAMA_OAUTH_SERVICES_JSON?.trim();
+  const raw = readEnv("OAUTH_SERVICES_JSON");
   const builtins = getBuiltinOAuthServices();
   if (!raw) return builtins;
 
@@ -129,8 +164,8 @@ export function getOAuthServices(): OAuthService[] {
     const detail = err instanceof Error ? err.message : String(err);
     log.logWarning(
       detail === "expected a JSON array of OAuth service definitions"
-        ? "Ignoring MAMA_OAUTH_SERVICES_JSON: expected a JSON array of OAuth service definitions"
-        : "Ignoring MAMA_OAUTH_SERVICES_JSON: invalid JSON",
+        ? "Ignoring OAUTH_SERVICES_JSON: expected a JSON array of OAuth service definitions"
+        : "Ignoring OAUTH_SERVICES_JSON: invalid JSON",
       detail,
     );
     return builtins;
@@ -174,8 +209,17 @@ export function getOAuthServices(): OAuthService[] {
               : undefined;
           const envKey =
             typeof fileOutputObj.envKey === "string" ? fileOutputObj.envKey.trim() : undefined;
+          const additionalEnvKeys = Array.isArray(fileOutputObj.additionalEnvKeys)
+            ? fileOutputObj.additionalEnvKeys.filter((v): v is string => typeof v === "string")
+            : undefined;
           if (type === "authorized_user" && relativePath) {
-            fileOutput = { type: "authorized_user", relativePath, targetPath, envKey };
+            fileOutput = {
+              type: "authorized_user",
+              relativePath,
+              targetPath,
+              envKey,
+              additionalEnvKeys,
+            };
           }
         }
 
@@ -219,7 +263,7 @@ export function getOAuthServices(): OAuthService[] {
     return [...byId.values()];
   } catch (err) {
     log.logWarning(
-      "Failed to apply MAMA_OAUTH_SERVICES_JSON overrides; using builtin OAuth services",
+      "Failed to apply OAUTH_SERVICES_JSON overrides; using builtin OAuth services",
       err instanceof Error ? err.message : String(err),
     );
     return builtins;
@@ -234,27 +278,24 @@ export function resolveOAuthService(input: string): OAuthService | undefined {
   );
 }
 
+const LOGIN_COMMANDS = ["login", "/login", "/pi-login"] as const;
+
 export function parseLoginCommand(text: string): ParsedLoginCommand | null {
-  const tokens = text.trim().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return null;
+  const matched = matchCommand(text, LOGIN_COMMANDS);
+  if (!matched) return null;
 
-  const command = tokens[0].toLowerCase();
-  if (command !== "login" && command !== "/login" && command !== "/pi-login") {
-    return null;
-  }
-  const typedCommand = command as "login" | "/login" | "/pi-login";
-  const [subcommand, operation, name, ...extra] = tokens.slice(1);
+  const [subcommand, operation, name, ...extra] = matched.args;
 
-  if (!subcommand) return { command: typedCommand, action: "setup" };
+  if (!subcommand) return { command: matched.command, action: "setup" };
 
   if (subcommand.toLowerCase() === "shared") {
     const op = operation?.toLowerCase();
     if (op === "list" && !name && extra.length === 0) {
-      return { command: typedCommand, action: "shared_list" };
+      return { command: matched.command, action: "shared_list" };
     }
     if ((op === "create" || op === "update" || op === "delete") && !!name && extra.length === 0) {
       return {
-        command: typedCommand,
+        command: matched.command,
         action: `shared_${op}` as "shared_create" | "shared_update" | "shared_delete",
         name,
       };
@@ -263,12 +304,12 @@ export function parseLoginCommand(text: string): ParsedLoginCommand | null {
   }
 
   if (subcommand.toLowerCase() === "copy" && operation && !name && extra.length === 0) {
-    return { command: typedCommand, action: "copy_shared", name: operation };
+    return { command: matched.command, action: "copy_shared", name: operation };
   }
 
   // Backward-compatible: older `/pi-login gh` / `/pi-login gws` forms opened the
   // generic login page and let the portal handle provider choice.
-  if (!operation && extra.length === 0) return { command: typedCommand, action: "setup" };
+  if (!operation && extra.length === 0) return { command: matched.command, action: "setup" };
 
   return null;
 }

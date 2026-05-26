@@ -1,4 +1,4 @@
-import type { ConversationKind } from "./adapter.js";
+import type { ConversationKind } from "../adapter.js";
 
 export type ChatPlatform = "slack" | "telegram" | "discord" | string;
 

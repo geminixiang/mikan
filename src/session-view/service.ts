@@ -11,7 +11,8 @@ import {
   getThreadSessionFile,
   resolveChannelSessionFile,
   tryResolveThreadSession,
-} from "../session-store.js";
+} from "../sessions/store.js";
+import { isPlatformHistorySession } from "../sessions/metadata.js";
 import * as log from "../log.js";
 
 export interface SessionViewItem {
@@ -175,8 +176,18 @@ function buildSessionRelation(
     );
     return null;
   }
-  if (kind === "fork" && resolve(header.parentSession ?? "") !== expectedParent) {
-    return null;
+  if (kind === "fork") {
+    const parentSession = resolve(header.parentSession ?? "");
+    if (
+      parentSession !== expectedParent &&
+      !(
+        expectedParent &&
+        isPlatformHistorySession(expectedParent) &&
+        isPlatformHistorySession(parentSession)
+      )
+    ) {
+      return null;
+    }
   }
 
   const entries = sm.getEntries();

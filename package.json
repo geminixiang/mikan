@@ -1,7 +1,7 @@
 {
-  "name": "@geminixiang/mama",
-  "version": "0.2.0-beta.9",
-  "description": "Multi-Agent Mischief Assistant for Slack, Telegram, and Discord",
+  "name": "@geminixiang/mikan",
+  "version": "0.2.0",
+  "description": "Multi-platform AI coding agent for Slack, Telegram, and Discord",
   "keywords": [
     "agent",
     "ai",
@@ -14,10 +14,10 @@
   "author": "geminixiang",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/geminixiang/mama.git"
+    "url": "git+https://github.com/geminixiang/mikan.git"
   },
   "bin": {
-    "mama": "dist/main.js"
+    "mikan": "dist/main.js"
   },
   "files": [
     "dist",
@@ -36,13 +36,14 @@
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "prepublishOnly": "npm run clean && npm run build",
-    "prepare": "husky"
+    "prepare": "husky",
+    "test:e2e": "vitest --run --config vitest.e2e.config.ts",
+    "test:e2e:slack": "vitest --run --config vitest.e2e.config.ts e2e/slack"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.74.0",
-    "@earendil-works/pi-ai": "^0.74.0",
-    "@earendil-works/pi-coding-agent": "^0.74.0",
-    "@google-cloud/logging": "^11.2.1",
+    "@earendil-works/pi-agent-core": "^0.75.3",
+    "@earendil-works/pi-ai": "^0.75.3",
+    "@earendil-works/pi-coding-agent": "^0.75.3",
     "@sentry/node": "^10.51.0",
     "@sinclair/typebox": "^0.34.49",
     "@slack/socket-mode": "^2.0.6",
@@ -52,16 +53,15 @@
     "diff": "^8.0.4",
     "discord.js": "^14.26.2",
     "grammy": "^1.42.0",
-    "markdown-it": "^14.1.1",
-    "pino": "^10.3.1"
+    "markdown-it": "^14.1.1"
   },
   "devDependencies": {
-    "@types/diff": "^8.0.0",
+    "@slack/types": "^2.21.1",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^25.5.0",
     "@typescript/native-preview": "7.0.0-dev.20260328.1",
+    "@vitest/coverage-v8": "^4.1.7",
     "husky": "^9.1.7",
-    "lint-staged": "^16.4.0",
     "oxfmt": "^0.44.0",
     "oxlint": "^1.59.0",
     "shx": "^0.4.0",
@@ -78,6 +78,6 @@
     ]
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.19.0"
   }
 }

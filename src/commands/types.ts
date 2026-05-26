@@ -2,7 +2,7 @@ import type { Bot, BotAdapters, PlatformName } from "../adapter.js";
 import type { BrowserExtensionManager } from "../browser-extension.js";
 import type { DockerContainerManager } from "../provisioner.js";
 import type { SessionRuntime } from "../runtime/session-runtime.js";
-import type { SandboxConfig } from "../sandbox.js";
+import type { SandboxConfig } from "../sandbox/index.js";
 import type { VaultManager } from "../vault.js";
 
 export interface LinkTokenStoreLike {

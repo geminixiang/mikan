@@ -1,8 +1,17 @@
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "fs";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { dirname, isAbsolute, join, normalize, sep } from "path";
 import { readTextFileIfExists } from "./file-guards.js";
-import type { SandboxConfig } from "./sandbox.js";
+import type { SandboxConfig } from "./sandbox/index.js";
 import { atomicWritePrivateFile } from "./fs-atomic.js";
+import { reportUserFacingError } from "./sentry.js";
 
 const PRIVATE_DIR_MODE = 0o700;
 const SHARED_VAULT_DIR = "shared";
@@ -215,7 +224,12 @@ export class FileVaultManager implements VaultManager {
     ensurePrivateDir(dir);
     const parentDir = dirname(filePath);
     if (parentDir !== dir) ensurePrivateDir(parentDir);
-    atomicWritePrivateFile(filePath, content);
+    if (existsSync(filePath)) {
+      writeFileSync(filePath, content, { mode: 0o600 });
+      chmodSync(filePath, 0o600);
+    } else {
+      atomicWritePrivateFile(filePath, content);
+    }
   }
 
   // ── private ────────────────────────────────────────────────────────────────
@@ -231,6 +245,13 @@ export class FileVaultManager implements VaultManager {
         env = parseEnvFile(envContent);
       } catch (err) {
         console.error(`vault: failed to parse env file for "${key}":`, err);
+        reportUserFacingError(err, {
+          domain: "sandbox",
+          surface: "vault_injection",
+          operation: "parse_env",
+          severity: "warning",
+          context: { vaultKey: key, fatal: false },
+        });
       }
     }
 
@@ -340,6 +361,9 @@ function inferredVaultTargetPath(relativePath: string): string | undefined {
 
   if (normalized === "gws.json") {
     return "/root/.config/gws/credentials.json";
+  }
+  if (normalized === "gcloud-adc.json") {
+    return "/root/.config/gcloud/application_default_credentials.json";
   }
   if (normalized === ".ssh" || normalized.startsWith(".ssh/")) {
     return "/root/.ssh";

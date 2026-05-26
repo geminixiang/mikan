@@ -1,16 +1,17 @@
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Bot, ChatResponseContext } from "../src/adapter.js";
-import { CommandRegistry } from "../src/commands/registry.js";
+import { AutoReplyCommandHandler } from "../src/commands/auto-reply.js";
+import { dispatchCommand } from "../src/commands/registry.js";
 import { LoginCommandHandler } from "../src/commands/login.js";
 import { NewCommandHandler } from "../src/commands/new.js";
 import { SandboxCommandHandler } from "../src/commands/sandbox.js";
 import { SessionViewCommandHandler } from "../src/commands/session-view.js";
 import type { CommandContext, CommandHandler, CommandServices } from "../src/commands/types.js";
-import { createManagedSessionFile, getChannelSessionDir } from "../src/session-store.js";
-import type { SandboxConfig } from "../src/sandbox.js";
+import { createManagedSessionFile, getChannelSessionDir } from "../src/sessions/store.js";
+import type { SandboxConfig } from "../src/sandbox/index.js";
 import type { VaultManager } from "../src/vault.js";
 
 // ── Fakes ────────────────────────────────────────────────────────────────────
@@ -142,6 +143,7 @@ function buildContext(args: BuildContextArgs): CommandContext & {
       handleNewCommand: vi.fn(),
       handleStop: vi.fn(),
       isRunning: vi.fn().mockReturnValue(false),
+      refreshConversationEnvironment: vi.fn().mockReturnValue(true),
       runSession: vi.fn(),
       shutdown: vi.fn(),
     } as any,
@@ -166,16 +168,13 @@ function buildContext(args: BuildContextArgs): CommandContext & {
   };
 }
 
-// ── CommandRegistry ──────────────────────────────────────────────────────────
-
-describe("CommandRegistry", () => {
+describe("dispatchCommand", () => {
   test("returns false when no handler accepts the command", async () => {
     const a: CommandHandler = { tryHandle: vi.fn(async () => false) };
     const b: CommandHandler = { tryHandle: vi.fn(async () => false) };
-    const registry = new CommandRegistry([a, b]);
     const ctx = buildContext({ commandText: "hello" });
 
-    const handled = await registry.handle(ctx);
+    const handled = await dispatchCommand([a, b], ctx);
 
     expect(handled).toBe(false);
     expect(a.tryHandle).toHaveBeenCalledOnce();
@@ -185,10 +184,9 @@ describe("CommandRegistry", () => {
   test("short-circuits on the first handler that accepts", async () => {
     const a: CommandHandler = { tryHandle: vi.fn(async () => true) };
     const b: CommandHandler = { tryHandle: vi.fn(async () => true) };
-    const registry = new CommandRegistry([a, b]);
     const ctx = buildContext({ commandText: "/login" });
 
-    const handled = await registry.handle(ctx);
+    const handled = await dispatchCommand([a, b], ctx);
 
     expect(handled).toBe(true);
     expect(a.tryHandle).toHaveBeenCalledOnce();
@@ -198,14 +196,105 @@ describe("CommandRegistry", () => {
   test("falls through to the next handler when the first declines", async () => {
     const a: CommandHandler = { tryHandle: vi.fn(async () => false) };
     const b: CommandHandler = { tryHandle: vi.fn(async () => true) };
-    const registry = new CommandRegistry([a, b]);
     const ctx = buildContext({ commandText: "/session" });
 
-    const handled = await registry.handle(ctx);
+    const handled = await dispatchCommand([a, b], ctx);
 
     expect(handled).toBe(true);
     expect(a.tryHandle).toHaveBeenCalledOnce();
     expect(b.tryHandle).toHaveBeenCalledOnce();
+  });
+});
+
+// ── AutoReplyCommandHandler ─────────────────────────────────────────────────
+
+describe("AutoReplyCommandHandler", () => {
+  const handler = new AutoReplyCommandHandler();
+  let workingDir: string;
+
+  beforeEach(() => {
+    workingDir = join(tmpdir(), `mikan-auto-reply-test-${Date.now()}`);
+    mkdirSync(workingDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(workingDir, { recursive: true, force: true });
+  });
+
+  test("declines unrelated commands", async () => {
+    const ctx = buildContext({ commandText: "hello", services: { workingDir } });
+    expect(await handler.tryHandle(ctx)).toBe(false);
+  });
+
+  test("rejects private conversations", async () => {
+    const ctx = buildContext({
+      commandText: "/pi-auto-reply on",
+      privateConversation: true,
+      services: { workingDir },
+    });
+
+    expect(await handler.tryHandle(ctx)).toBe(true);
+    expect(ctx.responseCtx.responses[0]).toContain("只能在 group/channel");
+  });
+
+  test("enables and disables auto-reply using mom-compatible marker files", async () => {
+    const enableCtx = buildContext({
+      commandText: "/pi-auto-reply on",
+      services: { workingDir },
+    });
+    expect(await handler.tryHandle(enableCtx)).toBe(true);
+    expect(enableCtx.responseCtx.responses[0]).toContain("Auto-reply is enabled");
+    expect(enableCtx.responseCtx.responses[0]).toContain("Edit rules at:");
+
+    const enabledPath = join(workingDir, "C123", "auto-reply");
+    expect(readFileSync(enabledPath, "utf-8")).toBe("");
+
+    writeFileSync(enabledPath, "Reply when someone asks about deployments.", "utf-8");
+
+    const disableCtx = buildContext({
+      commandText: "/pi-auto-reply off",
+      services: { workingDir },
+    });
+    expect(await handler.tryHandle(disableCtx)).toBe(true);
+    expect(disableCtx.responseCtx.responses[0]).toContain("Auto-reply is disabled");
+    expect(disableCtx.responseCtx.responses[0]).toContain("Current rules:");
+    expect(disableCtx.responseCtx.responses[0]).toContain(
+      "Reply when someone asks about deployments.",
+    );
+    expect(existsSync(enabledPath)).toBe(false);
+    expect(readFileSync(join(workingDir, "C123", "auto-reply.disabled"), "utf-8")).toBe(
+      "Reply when someone asks about deployments.",
+    );
+  });
+
+  test("shows auto-reply file contents in status", async () => {
+    const conversationDir = join(workingDir, "C123");
+    mkdirSync(conversationDir, { recursive: true });
+    writeFileSync(
+      join(conversationDir, "auto-reply"),
+      "Reply when someone asks about deploys.",
+      "utf-8",
+    );
+
+    const ctx = buildContext({
+      commandText: "/pi-auto-reply status",
+      services: { workingDir },
+    });
+
+    expect(await handler.tryHandle(ctx)).toBe(true);
+    expect(ctx.responseCtx.responses[0]).toContain("Auto-reply is enabled");
+    expect(ctx.responseCtx.responses[0]).toContain("Current rules:");
+    expect(ctx.responseCtx.responses[0]).toContain("Reply when someone asks about deploys.");
+  });
+
+  test("rejects rule management to match mom-compatible slash command surface", async () => {
+    const ctx = buildContext({
+      commandText: "/pi-auto-reply rule Reply when someone asks about deployments.",
+      services: { workingDir },
+    });
+    expect(await handler.tryHandle(ctx)).toBe(true);
+    expect(ctx.responseCtx.responses[0]).toContain("/pi-auto-reply on|off|status");
+    expect(existsSync(join(workingDir, "C123", "settings.json"))).toBe(false);
   });
 });
 
@@ -242,7 +331,7 @@ describe("LoginCommandHandler", () => {
 
     expect(await handler.tryHandle(ctx)).toBe(true);
     expect(linkTokenStore.created).toHaveLength(0);
-    expect(ctx.responseCtx.responses[0]).toContain("MAMA_LINK_URL");
+    expect(ctx.responseCtx.responses[0]).toContain("MIKAN_LINK_URL");
   });
 
   test("creates a link token and replies with the portal URL", async () => {
@@ -312,18 +401,56 @@ describe("LoginCommandHandler", () => {
   test("copies shared login profile into the conversation vault", async () => {
     const vaultManager = fakeVaultManager();
     vaultManager.copySharedVaultTo = vi.fn(() => ({ envKeysCopied: 2, filesCopied: 1 }));
+    const remove = vi.fn(async () => {});
     const ctx = buildContext({
       commandText: "/pi-login copy gliaclaw",
       privateConversation: true,
       services: {
         vaultManager,
+        provisioner: { remove } as any,
         sandbox: { type: "image", image: "ubuntu:24.04" },
       },
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
     expect(vaultManager.copySharedVaultTo).toHaveBeenCalledWith("gliaclaw", "c123");
+    expect(ctx.services.runtime?.refreshConversationEnvironment).toHaveBeenCalledWith("C123");
+    expect(remove).toHaveBeenCalledWith("c123");
     expect(ctx.responseCtx.responses[0]).toContain("Copied shared login profile `gliaclaw`");
+    expect(ctx.responseCtx.responses[0]).toContain("will be recreated with the copied env");
+  });
+
+  test("does not restart an image sandbox while the target conversation is running", async () => {
+    const vaultManager = fakeVaultManager();
+    vaultManager.copySharedVaultTo = vi.fn(() => ({ envKeysCopied: 2, filesCopied: 1 }));
+    const remove = vi.fn(async () => {});
+    const ctx = buildContext({
+      commandText: "/pi-login copy gliaclaw",
+      privateConversation: true,
+      services: {
+        vaultManager,
+        provisioner: { remove } as any,
+        runtime: {
+          createSessionSandbox: vi.fn(),
+          forceStop: vi.fn(),
+          getRunningSessions: vi.fn().mockReturnValue([{ sessionKey: "C123:thread-1" }]),
+          handleEvent: vi.fn(),
+          handleNewCommand: vi.fn(),
+          handleStop: vi.fn(),
+          isRunning: vi.fn().mockReturnValue(true),
+          refreshConversationEnvironment: vi.fn().mockReturnValue(false),
+          runSession: vi.fn(),
+          shutdown: vi.fn(),
+          switchConversationModel: vi.fn(),
+        } as any,
+        sandbox: { type: "image", image: "ubuntu:24.04" },
+      },
+    });
+
+    expect(await handler.tryHandle(ctx)).toBe(true);
+    expect(remove).not.toHaveBeenCalled();
+    expect(ctx.services.runtime?.refreshConversationEnvironment).toHaveBeenCalledWith("C123");
+    expect(ctx.responseCtx.responses[0]).toContain("currently running");
   });
 
   test("uses vaultConversationId for vault routing when reply channel differs", async () => {

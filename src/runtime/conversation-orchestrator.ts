@@ -4,11 +4,11 @@ import {
   waitForSlackBranchBootstrap,
 } from "../adapters/slack/branch-manager.js";
 import type { AgentRunner } from "../agent.js";
-import type { CommandRegistry } from "../commands/index.js";
-import type { CommandServices } from "../commands/index.js";
+import { dispatchCommand } from "../commands/index.js";
+import type { CommandHandler, CommandServices } from "../commands/index.js";
 import { isPrivateConversation } from "../commands/utils.js";
 import * as log from "../log.js";
-import { addLifecycleBreadcrumb, applyRunScope } from "../sentry.js";
+import { addLifecycleBreadcrumb, applyRunScope, reportUserFacingError } from "../sentry.js";
 import { formatStopped } from "../ui-copy.js";
 import * as Sentry from "@sentry/node";
 import { join } from "path";
@@ -27,12 +27,11 @@ export interface RunConversationOptions {
   event: BotEvent;
   bot: Bot;
   adapters: BotAdapters;
-  isSyntheticEvent?: boolean;
 }
 
 interface ConversationOrchestratorOptions {
   workingDir: string;
-  commandRegistry: CommandRegistry;
+  commandHandlers: readonly CommandHandler[];
   commandServices: CommandServices;
   isShuttingDown: () => boolean;
   getState: (sessionKey: string) => ConversationRuntimeState | undefined;
@@ -49,12 +48,7 @@ interface ConversationOrchestratorOptions {
 export class ConversationOrchestrator {
   constructor(private readonly options: ConversationOrchestratorOptions) {}
 
-  async runSession({
-    event,
-    bot,
-    adapters,
-    isSyntheticEvent,
-  }: RunConversationOptions): Promise<void> {
+  async runSession({ event, bot, adapters }: RunConversationOptions): Promise<void> {
     const conversationId = event.conversationId;
     if (this.options.isShuttingDown()) {
       log.logInfo(
@@ -65,7 +59,7 @@ export class ConversationOrchestrator {
 
     const sessionKey = event.sessionKey ?? `${conversationId}:${event.thread_ts ?? event.ts}`;
     const privateConversation = isPrivateConversation(event);
-    const handledCommand = await this.options.commandRegistry.handle({
+    const handledCommand = await dispatchCommand(this.options.commandHandlers, {
       bot,
       responseCtx: adapters.responseCtx,
       platform: adapters.platform.name as PlatformName,
@@ -95,11 +89,30 @@ export class ConversationOrchestrator {
       );
     }
 
-    const state = await this.options.getOrCreateState({
-      conversationId,
-      platformName: adapters.platform.name,
-      sessionKey,
-    });
+    let state: ConversationRuntimeState;
+    try {
+      state = await this.options.getOrCreateState({
+        conversationId,
+        platformName: adapters.platform.name,
+        sessionKey,
+      });
+    } catch (err) {
+      reportUserFacingError(err, {
+        domain: "mikan",
+        surface: "session_setup",
+        operation: "get_or_create_state",
+        severity: "error",
+        platform: adapters.platform.name,
+        context: {
+          conversationId,
+          sessionKey,
+          messageId: adapters.message.id,
+          threadTs: adapters.message.threadTs,
+          attachmentCount: adapters.message.attachments?.length ?? 0,
+        },
+      });
+      throw err;
+    }
 
     state.running = true;
     state.stopRequested = false;
@@ -112,7 +125,7 @@ export class ConversationOrchestrator {
       try {
         const result = await this.runWithInstrumentation(
           adapters,
-          { conversationId, sessionKey, isSyntheticEvent, startedAt: state.startedAt! },
+          { conversationId, sessionKey, startedAt: state.startedAt! },
           async () => {
             await adapters.responseCtx.setTyping(true);
             await adapters.responseCtx.setWorking(true);
@@ -154,12 +167,11 @@ export class ConversationOrchestrator {
     meta: {
       conversationId: string;
       sessionKey: string;
-      isSyntheticEvent?: boolean;
       startedAt: number;
     },
     body: () => Promise<{ stopReason: string; errorMessage?: string }>,
   ): Promise<{ stopReason: string; errorMessage?: string } | undefined> {
-    const { conversationId, sessionKey, isSyntheticEvent, startedAt } = meta;
+    const { conversationId, sessionKey, startedAt } = meta;
     const { message, platform } = adapters;
 
     Sentry.metrics.count("agent.run.started", 1, {
@@ -178,7 +190,6 @@ export class ConversationOrchestrator {
             userId: message.userId,
             userName: message.userName,
             threadTs: message.threadTs,
-            isSyntheticEvent,
           });
           addLifecycleBreadcrumb("agent.run.started", {
             channel_id: conversationId,
@@ -214,7 +225,20 @@ export class ConversationOrchestrator {
               messageId: message.id,
               threadTs: message.threadTs,
             });
-            Sentry.captureException(err);
+            reportUserFacingError(err, {
+              domain: "mikan",
+              surface: "agent_run",
+              operation: "run",
+              severity: "error",
+              platform: platform.name,
+              context: {
+                conversationId,
+                sessionKey,
+                messageId: message.id,
+                threadTs: message.threadTs,
+                attachmentCount: message.attachments?.length ?? 0,
+              },
+            });
             Sentry.metrics.count("agent.run.errors", 1, {
               attributes: { channel: conversationId, platform: platform.name },
             });

@@ -1,6 +1,6 @@
 # Sandbox 與 Vault
 
-這份文件說明 mama 目前支援的 sandbox 模式，以及 credential vault 在各模式下的行為。
+這份文件說明 mikan 目前支援的 sandbox 模式，以及 credential vault 在各模式下的行為。
 
 ## 支援模式
 
@@ -8,7 +8,7 @@
 | ----------------------------------------------------------- | --------------------- | ------------------- | ---------------------------- | ---------------------------------------------------------------------------------- |
 | `host`                                                      | 宿主機                | 不注入              | 可存，但執行時不用           | 最適合本機開發；不把 vault env 放進 host process                                   |
 | `container:<name>`                                          | 既有 Docker container | 注入                | `container-<name>`           | one container one vault；多人共用同一 container 就共用該 vault                     |
-| `image:<image>`                                             | mama 管理的 Docker    | 注入                | generated conversation vault | 目前最推薦的隔離模式；`1 conversation = 1 vault = 1 container`                     |
+| `image:<image>`                                             | mikan 管理的 Docker   | 注入                | generated conversation vault | 目前最推薦的隔離模式；`1 conversation = 1 vault = 1 container`                     |
 | `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM        | 注入                | generated conversation vault | Alpha 超早期；VM 需自行啟動，workspace 需在 VM 內掛到 `/workspace`，目前不建議使用 |
 | `cloudflare:<sandbox-id>`                                   | Cloudflare Worker     | 注入                | generated conversation vault | Experimental；需自行部署 `@cloudflare/sandbox` bridge，host workspace 不會自動同步 |
 
@@ -21,13 +21,13 @@
 state directory 預設是：
 
 ```text
-~/.mama/
+~/.mikan/
 ```
 
 其中重要內容包含：
 
 ```text
-~/.mama/
+~/.mikan/
 ├── settings.json
 └── vaults/
     └── <vault-id>/
@@ -36,18 +36,18 @@ state directory 預設是：
 也可以用 `--state-dir` 指定：
 
 ```bash
-mama --state-dir=/secure/mama-state --sandbox=container:mama-tools /path/to/workspace
+mikan --state-dir=/secure/mikan-state --sandbox=container:mikan-tools /path/to/workspace
 ```
 
 此時 credential 會在：
 
 ```text
-/secure/mama-state/vaults/
+/secure/mikan-state/vaults/
 ```
 
 全域設定檔位於 `<state-dir>/settings.json`。Conversation-local 設定位於 `<working-directory>/<conversationId>/settings.json`，用來覆蓋該 conversation 的全域預設。
 
-啟動時 mama 會拒絕使用 world-writable 或非目前使用者擁有的 `--state-dir`，避免本機其他使用者竄改 settings 或 vault。
+啟動時 mikan 會拒絕使用 world-writable 或非目前使用者擁有的 `--state-dir`，避免本機其他使用者竄改 settings 或 vault。
 
 ---
 
@@ -63,8 +63,8 @@ mount target 從檔名/路徑自動推斷（例如 `gws.json` → `/root/.config
 範例：
 
 ```text
-~/.mama/vaults/
-└── container-mama-tools/
+~/.mikan/vaults/
+└── container-mikan-tools/
     ├── env
     └── gws.json
 ```
@@ -81,7 +81,7 @@ GITHUB_OAUTH_ACCESS_TOKEN=gho_xxx
 ## `host`
 
 ```bash
-mama --sandbox=host /path/to/workspace
+mikan --sandbox=host /path/to/workspace
 ```
 
 特性：
@@ -93,23 +93,23 @@ mama --sandbox=host /path/to/workspace
 適合：
 
 - 本機開發
-- 不希望 mama 把 vault credential 放進 host command process
+- 不希望 mikan 把 vault credential 放進 host command process
 
 ---
 
 ## `container:<name>`
 
 ```bash
-docker run -d --name mama-tools \
+docker run -d --name mikan-tools \
   -v /path/to/workspace:/workspace \
   alpine:latest sleep infinity
 
-mama --sandbox=container:mama-tools /path/to/workspace
+mikan --sandbox=container:mikan-tools /path/to/workspace
 ```
 
 特性：
 
-- mama 使用 `docker exec` 在既有 container 中執行 command
+- mikan 使用 `docker exec` 在既有 container 中執行 command
 - container 內 workspace 預期是 `/workspace`
 - vault key 是：
 
@@ -120,13 +120,13 @@ container-<name>
 例如：
 
 ```bash
---sandbox=container:mama-tools
+--sandbox=container:mikan-tools
 ```
 
 會使用：
 
 ```text
-~/.mama/vaults/container-mama-tools/
+~/.mikan/vaults/container-mikan-tools/
 ```
 
 這是 **one container one vault**：
@@ -136,7 +136,7 @@ container-<name>
 
 限制：
 
-- mama 只在 `docker exec` 時注入 env
+- mikan 只在 `docker exec` 時注入 env
 - `docker exec` 不能新增 bind mount
 - vault file credential 會被保存，但目前不會自動投影到 container 內的 target path
 
@@ -148,22 +148,22 @@ container-<name>
 # Pull the prebuilt image from GHCR
 # Release builds publish :tools, :<version>, and :latest / :beta
 # Pushes to main also publish :edge
-docker pull ghcr.io/geminixiang/mama-sandbox:tools
+docker pull ghcr.io/geminixiang/mikan-sandbox:tools
 
-# Run mama with managed per-conversation containers
-mama --sandbox=image:ghcr.io/geminixiang/mama-sandbox:tools /path/to/workspace
+# Run mikan with managed per-conversation containers
+mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:tools /path/to/workspace
 ```
 
 如果你想自行客製 image，也可以本地 build：
 
 ```bash
-docker build -f docker/mama-sandbox.Dockerfile -t mama-sandbox:tools .
-mama --sandbox=image:mama-sandbox:tools /path/to/workspace
+docker build -f docker/mikan-sandbox.Dockerfile -t mikan-sandbox:tools .
+mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 ```
 
 特性：
 
-- mama 會為每個 conversation 建立一個獨立 vault 與 container
+- mikan 會為每個 conversation 建立一個獨立 vault 與 container
 - 每個 container 會綁定自己的 Docker bridge network，彼此預設互相隔離
 - container 內只會看到 `/workspace/MEMORY.md`、`/workspace/skills`、`/workspace/events` 與當前 conversation 目錄
 - vault env 會在執行時注入
@@ -174,11 +174,11 @@ vault key 選擇邏輯：
 
 1. 直接使用 conversation ID 作為 vault key，例如 `d123`
 2. 該 conversation 的 credentials / mounts / env 都寫入這個 vault
-3. 對應的 managed container 會使用同一個 key，例如 `mama-sandbox-d123`
+3. 對應的 managed container 會使用同一個 key，例如 `mikan-sandbox-d123`
 
 適合：
 
-- 多使用者共用一個 mama instance
+- 多使用者共用一個 mikan instance
 - 需要 per-conversation env/file credential isolation
 - 想比 shared container 更安全，但又不想直接上 Firecracker
 
@@ -218,7 +218,7 @@ vault key 選擇邏輯：
 警告：Firecracker 支援仍在 alpha 超早期階段。目前僅適合實驗與驗證，不建議作為一般開發或正式環境的主要 sandbox 模式。大多數情況下請優先使用 `image:<image>`。
 
 ```bash
-mama --sandbox=firecracker:192.168.1.100:/home/mama/workspace /home/mama/workspace
+mikan --sandbox=firecracker:192.168.1.100:/home/mikan/workspace /home/mikan/workspace
 ```
 
 完整格式：
@@ -230,12 +230,12 @@ firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]
 範例：
 
 ```bash
-mama --sandbox=firecracker:192.168.1.100:/home/mama/workspace:root:22 /home/mama/workspace
+mikan --sandbox=firecracker:192.168.1.100:/home/mikan/workspace:root:22 /home/mikan/workspace
 ```
 
 特性：
 
-- mama 透過 SSH 進 VM 執行 command
+- mikan 透過 SSH 進 VM 執行 command
 - VM 內 workspace 預期是 `/workspace`
 - vault env 會透過 SSH stdin 注入，避免 secret 出現在宿主機 command line
 - vault 選擇邏輯：
@@ -252,18 +252,18 @@ mama --sandbox=firecracker:192.168.1.100:/home/mama/workspace:root:22 /home/mama
 
 ## `cloudflare:<sandbox-id>`
 
-警告：Cloudflare 支援目前是 experimental。mama 會透過你自行部署的 Cloudflare Worker bridge 呼叫 `@cloudflare/sandbox`，但不會自動把宿主機 workspace 同步到遠端 container。
+警告：Cloudflare 支援目前是 experimental。mikan 會透過你自行部署的 Cloudflare Worker bridge 呼叫 `@cloudflare/sandbox`，但不會自動把宿主機 workspace 同步到遠端 container。
 
 ```bash
-export MAMA_CLOUDFLARE_SANDBOX_URL="https://your-bridge.workers.dev"
-export MAMA_CLOUDFLARE_SANDBOX_TOKEN="replace-me" # optional
+export CLOUDFLARE_SANDBOX_URL="https://your-bridge.workers.dev"
+export CLOUDFLARE_SANDBOX_TOKEN="replace-me" # optional
 
-mama --sandbox=cloudflare:mama-remote /path/to/workspace
+mikan --sandbox=cloudflare:mikan-remote /path/to/workspace
 ```
 
 特性：
 
-- mama 會把 remote sandbox id 衍生為 `<base-sandbox-id>-<vault-key>`
+- mikan 會把 remote sandbox id 衍生為 `<base-sandbox-id>-<vault-key>`
 - vault env 會在每次 `exec()` 時透過 bridge 注入
 - vault 選擇邏輯和 `image` 類似：使用 conversation ID 產生 platform-scoped vault key
 
@@ -288,7 +288,7 @@ mama --sandbox=cloudflare:mama-remote /path/to/workspace
 /login
 ```
 
-mama 會產生一個 15 分鐘有效的 onboarding link。使用者可在網頁中：
+mikan 會產生一個 15 分鐘有效的 onboarding link。使用者可在網頁中：
 
 - 儲存任意 API key / env var
 - 走 GitHub OAuth
@@ -301,21 +301,21 @@ mama 會產生一個 15 分鐘有效的 onboarding link。使用者可在網頁�
 正式部署時，設定公開 URL：
 
 ```bash
-export MAMA_LINK_URL="https://mama.example.com"
+export LINK_URL="https://mikan.example.com"
 ```
 
-若沒有設定 `MAMA_LINK_PORT`，mama 會在 `MAMA_LINK_URL` 存在時預設使用 port `8181`。
+若沒有設定 `LINK_PORT`，mikan 會在 `LINK_URL` 存在時預設使用 port `8181`。
 
 也可以明確指定：
 
 ```bash
-export MAMA_LINK_PORT=8181
+export LINK_PORT=8181
 ```
 
 若只是本機測試，也可以只設：
 
 ```bash
-export MAMA_LINK_PORT=8181
+export LINK_PORT=8181
 ```
 
 此時 `/login` link 會使用：
@@ -327,5 +327,5 @@ http://localhost:8181
 OAuth callback URL 是：
 
 ```text
-<MAMA_LINK_URL>/oauth/callback
+<LINK_URL>/oauth/callback
 ```

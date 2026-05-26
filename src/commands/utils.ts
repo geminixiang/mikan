@@ -21,5 +21,7 @@ export async function replyDiagnosticWithContext(
 }
 
 export function isPrivateConversation(event: BotEvent): boolean {
-  return event.conversationKind === "direct" || event.type === "dm";
+  return (
+    event.conversationKind === "direct" || event.type === "dm" || event.type === "private_command"
+  );
 }

@@ -18,15 +18,15 @@ describe("loadAgentConfig", () => {
   let stateDir: string;
 
   beforeEach(() => {
-    stateDir = join(tmpdir(), `mama-test-${Date.now()}`);
+    stateDir = join(tmpdir(), `mikan-test-${Date.now()}`);
     mkdirSync(stateDir, { recursive: true });
-    process.env.MAMA_STATE_DIR = stateDir;
+    process.env.MIKAN_STATE_DIR = stateDir;
   });
 
   afterEach(() => {
-    delete process.env.MAMA_STATE_DIR;
-    delete process.env.MAMA_AI_PROVIDER;
-    delete process.env.MAMA_AI_MODEL;
+    delete process.env.MIKAN_STATE_DIR;
+    delete process.env.MIKAN_AI_PROVIDER;
+    delete process.env.MIKAN_AI_MODEL;
     if (existsSync(stateDir)) rmSync(stateDir, { recursive: true });
   });
 
@@ -41,13 +41,13 @@ describe("loadAgentConfig", () => {
     expect(config.provider).toBe("anthropic");
     expect(config.model).toBe("claude-sonnet-4-6");
     expect(config.thinkingLevel).toBe("off");
-    expect(config.logFormat).toBe("console");
-    expect(config.logLevel).toBe("info");
     expect(config.sandboxCpus).toBe("0.5");
     expect(config.sandboxMemory).toBe("1g");
     expect(config.sandboxBoostCpus).toBe("2");
     expect(config.sandboxBoostMemory).toBe("4g");
     expect(config.sandboxImageWorkspaceMount).toBe("private");
+    expect(config.defaultSharedVault).toBeUndefined();
+    expect(JSON.parse(readFileSync(settingsPath, "utf-8")).sandbox.defaultSharedVault).toBe("");
   });
 
   test("reads provider and model from settings.json", () => {
@@ -82,7 +82,6 @@ describe("loadAgentConfig", () => {
       join(stateDir, "settings.json"),
       JSON.stringify({
         llm: { provider: "anthropic", model: "claude-sonnet-4-6", thinkingLevel: "off" },
-        log: { format: "console", level: "info" },
       }),
       "utf-8",
     );
@@ -95,8 +94,8 @@ describe("loadAgentConfig", () => {
 
   test("provider and model come from settings.json, not env vars", () => {
     saveAgentConfig({ provider: "openai", model: "gpt-4o" });
-    process.env.MAMA_AI_PROVIDER = "google";
-    process.env.MAMA_AI_MODEL = "gemini-2.0-flash";
+    process.env.MIKAN_AI_PROVIDER = "google";
+    process.env.MIKAN_AI_MODEL = "gemini-2.0-flash";
 
     const config = loadAgentConfig();
     expect(config.provider).toBe("openai");
@@ -104,7 +103,7 @@ describe("loadAgentConfig", () => {
   });
 
   test("ignores settings.json in non-state directories", () => {
-    const otherDir = join(tmpdir(), `mama-other-${Date.now()}`);
+    const otherDir = join(tmpdir(), `mikan-other-${Date.now()}`);
     mkdirSync(otherDir, { recursive: true });
     try {
       writeFileSync(
@@ -129,6 +128,50 @@ describe("loadAgentConfig", () => {
   test("throws on settings.json whose top-level value is not an object", () => {
     writeFileSync(join(stateDir, "settings.json"), "[]", "utf-8");
     expect(() => loadAgentConfig()).toThrow(/expected a JSON object/);
+  });
+
+  test("throws on settings.json with invalid nested field types", () => {
+    writeFileSync(
+      join(stateDir, "settings.json"),
+      JSON.stringify({
+        llm: { provider: "anthropic", model: "claude-sonnet-4-6", thinkingLevel: "off" },
+        sandbox: { cpus: 2 },
+      }),
+      "utf-8",
+    );
+
+    expect(() => loadAgentConfig()).toThrow(
+      /Malformed settings file.*sandbox.*cpus.*Expected string/,
+    );
+  });
+
+  test("throws on settings.json with invalid thinkingLevel", () => {
+    writeFileSync(
+      join(stateDir, "settings.json"),
+      JSON.stringify({
+        llm: { provider: "anthropic", model: "claude-sonnet-4-6", thinkingLevel: "on" },
+      }),
+      "utf-8",
+    );
+
+    expect(() => loadAgentConfig()).toThrow(
+      /Malformed settings file.*thinkingLevel.*Expected union value/,
+    );
+  });
+
+  test("throws on conversation settings.json with invalid nested field types", () => {
+    createGlobalSettingsFile(stateDir);
+    const conversationDir = join(stateDir, "workspace", "C123");
+    mkdirSync(conversationDir, { recursive: true });
+    writeFileSync(
+      join(conversationDir, "settings.json"),
+      JSON.stringify({ sandbox: { image: { workspaceMount: "everything" } } }),
+      "utf-8",
+    );
+
+    expect(() => loadAgentConfigForConversation(conversationDir)).toThrow(
+      /Malformed settings file.*workspaceMount/,
+    );
   });
 
   test("conversation model config overrides global provider and model only", () => {
@@ -164,11 +207,11 @@ describe("loadAgentConfig", () => {
 
 describe("argv config resolution", () => {
   test("returns the positional workspace dir", () => {
-    expect(resolveWorkspaceDirFromArgv(["--sandbox=host", "/tmp/mama"])).toBe("/tmp/mama");
+    expect(resolveWorkspaceDirFromArgv(["--sandbox=host", "/tmp/mikan"])).toBe("/tmp/mikan");
   });
 
   test("skips flag values before resolving workspace dir", () => {
-    expect(resolveWorkspaceDirFromArgv(["--sandbox", "host", "/tmp/mama"])).toBe("/tmp/mama");
+    expect(resolveWorkspaceDirFromArgv(["--sandbox", "host", "/tmp/mikan"])).toBe("/tmp/mikan");
   });
 
   test("ignores download mode channel ids", () => {
@@ -176,8 +219,8 @@ describe("argv config resolution", () => {
   });
 
   test("resolves explicit state-dir from argv", () => {
-    expect(resolveStateDirFromArgv(["--state-dir", "/tmp/state", "/tmp/mama"])).toBe("/tmp/state");
-    expect(resolveStateDirFromArgv(["--state-dir=/tmp/state", "/tmp/mama"])).toBe("/tmp/state");
+    expect(resolveStateDirFromArgv(["--state-dir", "/tmp/state", "/tmp/mikan"])).toBe("/tmp/state");
+    expect(resolveStateDirFromArgv(["--state-dir=/tmp/state", "/tmp/mikan"])).toBe("/tmp/state");
   });
 });
 
@@ -185,13 +228,13 @@ describe("resolveSentryDsn", () => {
   let stateDir: string;
 
   beforeEach(() => {
-    stateDir = join(tmpdir(), `mama-test-sentry-${Date.now()}`);
+    stateDir = join(tmpdir(), `mikan-test-sentry-${Date.now()}`);
     mkdirSync(stateDir, { recursive: true });
-    process.env.MAMA_STATE_DIR = stateDir;
+    process.env.MIKAN_STATE_DIR = stateDir;
   });
 
   afterEach(() => {
-    delete process.env.MAMA_STATE_DIR;
+    delete process.env.MIKAN_STATE_DIR;
     delete process.env.SENTRY_DSN;
     if (existsSync(stateDir)) rmSync(stateDir, { recursive: true });
   });
@@ -212,13 +255,13 @@ describe("saveAgentConfig", () => {
   let stateDir: string;
 
   beforeEach(() => {
-    stateDir = join(tmpdir(), `mama-test-${Date.now()}`);
+    stateDir = join(tmpdir(), `mikan-test-${Date.now()}`);
     mkdirSync(stateDir, { recursive: true });
-    process.env.MAMA_STATE_DIR = stateDir;
+    process.env.MIKAN_STATE_DIR = stateDir;
   });
 
   afterEach(() => {
-    delete process.env.MAMA_STATE_DIR;
+    delete process.env.MIKAN_STATE_DIR;
     if (existsSync(stateDir)) rmSync(stateDir, { recursive: true });
   });
 
@@ -228,39 +271,48 @@ describe("saveAgentConfig", () => {
     expect(config.provider).toBe("google");
     expect(config.model).toBe("gemini-2.0-flash");
     expect(JSON.parse(readFileSync(join(stateDir, "settings.json"), "utf-8"))).toEqual({
-      llm: { provider: "google", model: "gemini-2.0-flash", thinkingLevel: "off" },
-      log: { format: "console", level: "info" },
+      llm: {
+        provider: "google",
+        model: "gemini-2.0-flash",
+        thinkingLevel: "off",
+        autoReply: { provider: "anthropic", model: "claude-haiku-4-5" },
+      },
       sandbox: {
         cpus: "0.5",
         memory: "1g",
         boost: { cpus: "2", memory: "4g" },
         image: { workspaceMount: "private" },
+        defaultSharedVault: "",
       },
     });
   });
 
   test("merges with existing settings — preserves unrelated fields", () => {
-    saveAgentConfig({ provider: "openai", model: "gpt-4o", logLevel: "debug" });
+    saveAgentConfig({ provider: "openai", model: "gpt-4o" });
     saveAgentConfig({ model: "gpt-4o-mini" });
     const config = loadAgentConfig();
     expect(config.provider).toBe("openai");
     expect(config.model).toBe("gpt-4o-mini");
-    expect(config.logLevel).toBe("debug");
     expect(JSON.parse(readFileSync(join(stateDir, "settings.json"), "utf-8"))).toEqual({
-      llm: { provider: "openai", model: "gpt-4o-mini", thinkingLevel: "off" },
-      log: { format: "console", level: "debug" },
+      llm: {
+        provider: "openai",
+        model: "gpt-4o-mini",
+        thinkingLevel: "off",
+        autoReply: { provider: "anthropic", model: "claude-haiku-4-5" },
+      },
       sandbox: {
         cpus: "0.5",
         memory: "1g",
         boost: { cpus: "2", memory: "4g" },
         image: { workspaceMount: "private" },
+        defaultSharedVault: "",
       },
     });
   });
 
   test("creates parent directories if they don't exist", () => {
     const nested = join(stateDir, "a", "b", "c");
-    process.env.MAMA_STATE_DIR = nested;
+    process.env.MIKAN_STATE_DIR = nested;
     saveAgentConfig({ provider: "anthropic" });
     expect(existsSync(join(nested, "settings.json"))).toBe(true);
   });

@@ -18,10 +18,10 @@ describe("DockerContainerManager", () => {
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
       .mockResolvedValueOnce({ stdout: "true\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
-      .mockResolvedValueOnce({ stdout: "mama-sandbox-net-slack-u123\n" })
+      .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u123\n" })
       .mockResolvedValueOnce({ stdout: "false\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
-      .mockResolvedValueOnce({ stdout: "mama-sandbox-net-slack-u123\n" })
+      .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u123\n" })
       .mockResolvedValueOnce({ stdout: "started\n" });
     const manager = new DockerContainerManager("ubuntu:24.04", execMock as any);
 
@@ -32,39 +32,39 @@ describe("DockerContainerManager", () => {
       "inspect",
       "-f",
       "{{.State.Running}}",
-      "mama-sandbox-slack-u123",
+      "mikan-sandbox-slack-u123",
     ]);
     expect(execMock).toHaveBeenNthCalledWith(2, "docker", [
       "inspect",
       "-f",
       "{{json .HostConfig.Binds}}",
-      "mama-sandbox-slack-u123",
+      "mikan-sandbox-slack-u123",
     ]);
     expect(execMock).toHaveBeenNthCalledWith(3, "docker", [
       "inspect",
       "-f",
       "{{.HostConfig.NetworkMode}}",
-      "mama-sandbox-slack-u123",
+      "mikan-sandbox-slack-u123",
     ]);
     expect(execMock).toHaveBeenNthCalledWith(4, "docker", [
       "inspect",
       "-f",
       "{{.State.Running}}",
-      "mama-sandbox-slack-u123",
+      "mikan-sandbox-slack-u123",
     ]);
     expect(execMock).toHaveBeenNthCalledWith(5, "docker", [
       "inspect",
       "-f",
       "{{json .HostConfig.Binds}}",
-      "mama-sandbox-slack-u123",
+      "mikan-sandbox-slack-u123",
     ]);
     expect(execMock).toHaveBeenNthCalledWith(6, "docker", [
       "inspect",
       "-f",
       "{{.HostConfig.NetworkMode}}",
-      "mama-sandbox-slack-u123",
+      "mikan-sandbox-slack-u123",
     ]);
-    expect(execMock).toHaveBeenNthCalledWith(7, "docker", ["start", "mama-sandbox-slack-u123"]);
+    expect(execMock).toHaveBeenNthCalledWith(7, "docker", ["start", "mikan-sandbox-slack-u123"]);
   });
 
   test("re-checks a cached container and recreates it when it was deleted", async () => {
@@ -72,7 +72,7 @@ describe("DockerContainerManager", () => {
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
       .mockResolvedValueOnce({ stdout: "true\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
-      .mockResolvedValueOnce({ stdout: "mama-sandbox-net-slack-u123\n" })
+      .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u123\n" })
       .mockRejectedValueOnce(new Error("No such object"))
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "new-container-id\n" });
@@ -85,15 +85,15 @@ describe("DockerContainerManager", () => {
       "run",
       "-d",
       "--name",
-      "mama-sandbox-slack-u123",
+      "mikan-sandbox-slack-u123",
       "--network",
-      "mama-sandbox-net-slack-u123",
+      "mikan-sandbox-net-slack-u123",
       "--label",
-      "mama.managed=true",
+      "mikan.managed=true",
       "--label",
-      "mama.sandbox=image",
+      "mikan.sandbox=image",
       "--label",
-      "mama.vault-id=slack-u123",
+      "mikan.vault-id=slack-u123",
       "ubuntu:24.04",
       "sleep",
       "infinity",
@@ -123,12 +123,12 @@ describe("DockerContainerManager", () => {
       "--driver",
       "bridge",
       "--label",
-      "mama.managed=true",
+      "mikan.managed=true",
       "--label",
-      "mama.sandbox=image",
+      "mikan.sandbox=image",
       "--label",
-      "mama.vault-id=alice",
-      "mama-sandbox-net-alice",
+      "mikan.vault-id=alice",
+      "mikan-sandbox-net-alice",
     ]);
     expect(execMock).toHaveBeenNthCalledWith(4, "docker", [
       "run",
@@ -136,15 +136,17 @@ describe("DockerContainerManager", () => {
       "--name",
       "alice-box",
       "--network",
-      "mama-sandbox-net-alice",
+      "mikan-sandbox-net-alice",
       "--label",
-      "mama.managed=true",
+      "mikan.managed=true",
       "--label",
-      "mama.sandbox=image",
+      "mikan.sandbox=image",
       "--label",
-      "mama.vault-id=alice",
+      "mikan.vault-id=alice",
       "--label",
-      "mama.conversation-id=D123",
+      "mikan.conversation-id=D123",
+      "--label",
+      expect.stringMatching(/^mikan\.mount-signature=[a-f0-9]{64}$/),
       "-v",
       "/tmp/vaults/alice/.ssh:/root/.ssh",
       "ubuntu:24.04",
@@ -159,7 +161,9 @@ describe("DockerContainerManager", () => {
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
       .mockRejectedValueOnce(new Error("No such object"))
       .mockRejectedValueOnce(
-        new Error("Error response from daemon: network mama-sandbox-net-slack-u123-d123 not found"),
+        new Error(
+          "Error response from daemon: network mikan-sandbox-net-slack-u123-d123 not found",
+        ),
       )
       .mockResolvedValueOnce({ stdout: "network-id\n" })
       .mockResolvedValueOnce({ stdout: "new-container-id\n" });
@@ -172,7 +176,7 @@ describe("DockerContainerManager", () => {
     expect(execMock).toHaveBeenNthCalledWith(2, "docker", [
       "network",
       "inspect",
-      "mama-sandbox-net-slack-u123-d123",
+      "mikan-sandbox-net-slack-u123-d123",
     ]);
     expect(execMock).toHaveBeenNthCalledWith(3, "docker", [
       "network",
@@ -180,12 +184,12 @@ describe("DockerContainerManager", () => {
       "--driver",
       "bridge",
       "--label",
-      "mama.managed=true",
+      "mikan.managed=true",
       "--label",
-      "mama.sandbox=image",
+      "mikan.sandbox=image",
       "--label",
-      "mama.vault-id=slack-u123-d123",
-      "mama-sandbox-net-slack-u123-d123",
+      "mikan.vault-id=slack-u123-d123",
+      "mikan-sandbox-net-slack-u123-d123",
     ]);
   });
 
@@ -214,15 +218,17 @@ describe("DockerContainerManager", () => {
       "--name",
       "alice-box",
       "--network",
-      "mama-sandbox-net-alice",
+      "mikan-sandbox-net-alice",
       "--label",
-      "mama.managed=true",
+      "mikan.managed=true",
       "--label",
-      "mama.sandbox=image",
+      "mikan.sandbox=image",
       "--label",
-      "mama.vault-id=alice",
+      "mikan.vault-id=alice",
       "--label",
-      "mama.conversation-id=D123",
+      "mikan.conversation-id=D123",
+      "--label",
+      expect.stringMatching(/^mikan\.mount-signature=[a-f0-9]{64}$/),
       "-v",
       "/tmp/vaults/alice/.kube:/root/.kube",
       "ubuntu:24.04",
@@ -244,20 +250,20 @@ describe("DockerContainerManager", () => {
 
     await manager.provision("slack-u123");
 
-    expect(execMock).toHaveBeenNthCalledWith(4, "docker", ["rm", "-f", "mama-sandbox-slack-u123"]);
+    expect(execMock).toHaveBeenNthCalledWith(4, "docker", ["rm", "-f", "mikan-sandbox-slack-u123"]);
     expect(execMock).toHaveBeenNthCalledWith(6, "docker", [
       "run",
       "-d",
       "--name",
-      "mama-sandbox-slack-u123",
+      "mikan-sandbox-slack-u123",
       "--network",
-      "mama-sandbox-net-slack-u123",
+      "mikan-sandbox-net-slack-u123",
       "--label",
-      "mama.managed=true",
+      "mikan.managed=true",
       "--label",
-      "mama.sandbox=image",
+      "mikan.sandbox=image",
       "--label",
-      "mama.vault-id=slack-u123",
+      "mikan.vault-id=slack-u123",
       "ubuntu:24.04",
       "sleep",
       "infinity",
@@ -269,10 +275,10 @@ describe("DockerContainerManager", () => {
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
       .mockResolvedValueOnce({ stdout: "true\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
-      .mockResolvedValueOnce({ stdout: "mama-sandbox-net-slack-u111\n" })
+      .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u111\n" })
       .mockResolvedValueOnce({ stdout: "true\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
-      .mockResolvedValueOnce({ stdout: "mama-sandbox-net-slack-u222\n" });
+      .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u222\n" });
     const manager = new DockerContainerManager("ubuntu:24.04", execMock as any);
 
     await manager.provision("slack-u111");
@@ -286,13 +292,13 @@ describe("DockerContainerManager", () => {
 
     const stopCalls = execMock.mock.calls.filter((c) => c[0] === "docker" && c[1][0] === "stop");
     expect(stopCalls).toHaveLength(1);
-    expect(stopCalls[0][1]).toEqual(["stop", "mama-sandbox-slack-u111"]);
+    expect(stopCalls[0][1]).toEqual(["stop", "mikan-sandbox-slack-u111"]);
   });
 
   test("reconcile discovers labeled containers and restores state", async () => {
     const execMock = vi
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
-      .mockResolvedValueOnce({ stdout: "mama-sandbox-slack-u123-d123\n" })
+      .mockResolvedValueOnce({ stdout: "mikan-sandbox-slack-u123-d123\n" })
       .mockResolvedValueOnce({ stdout: "" })
       .mockResolvedValueOnce({
         stdout: "true\t2026-04-22T00:00:00.000000000Z\tslack-u123\tD123\n",
@@ -311,7 +317,7 @@ describe("DockerContainerManager", () => {
   test("reconcile removes legacy containers without conversation labels", async () => {
     const execMock = vi
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
-      .mockResolvedValueOnce({ stdout: "mama-sandbox-slack-u123\n" })
+      .mockResolvedValueOnce({ stdout: "mikan-sandbox-slack-u123\n" })
       .mockResolvedValueOnce({ stdout: "" })
       .mockResolvedValueOnce({ stdout: "true\t2026-04-22T00:00:00.000000000Z\tslack-u123\t\n" })
       .mockResolvedValueOnce({ stdout: "removed\n" });
@@ -319,7 +325,7 @@ describe("DockerContainerManager", () => {
 
     await manager.reconcile();
 
-    expect(execMock).toHaveBeenNthCalledWith(4, "docker", ["rm", "-f", "mama-sandbox-slack-u123"]);
+    expect(execMock).toHaveBeenNthCalledWith(4, "docker", ["rm", "-f", "mikan-sandbox-slack-u123"]);
     const stateField = (manager as any).state as Map<string, { status: string; lastUsed: number }>;
     expect(stateField.size).toBe(0);
   });
@@ -350,7 +356,7 @@ describe("DockerContainerManager", () => {
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
       .mockResolvedValueOnce({ stdout: "false\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
-      .mockResolvedValueOnce({ stdout: "mama-sandbox-net-slack-u123\n" })
+      .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u123\n" })
       .mockRejectedValueOnce(new Error("docker start failed"))
       .mockRejectedValueOnce(new Error("No such object"))
       .mockResolvedValueOnce({ stdout: "[]\n" })
@@ -363,11 +369,11 @@ describe("DockerContainerManager", () => {
     const stateField = (manager as any).state as Map<string, unknown>;
     expect(stateField.has("slack-u123")).toBe(false);
 
-    await expect(manager.provision("slack-u123")).resolves.toBe("mama-sandbox-slack-u123");
+    await expect(manager.provision("slack-u123")).resolves.toBe("mikan-sandbox-slack-u123");
     expect(execMock.mock.calls[4][1][0]).toBe("inspect");
   });
 
-  test("passes --cpus and --memory to docker run when limits are configured", async () => {
+  test("passes --cpus, --memory, and --memory-swap to docker run when limits are configured", async () => {
     const execMock = vi
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
       .mockRejectedValueOnce(new Error("No such object"))
@@ -385,18 +391,20 @@ describe("DockerContainerManager", () => {
       "run",
       "-d",
       "--name",
-      "mama-sandbox-slack-u123",
+      "mikan-sandbox-slack-u123",
       "--network",
-      "mama-sandbox-net-slack-u123",
+      "mikan-sandbox-net-slack-u123",
       "--label",
-      "mama.managed=true",
+      "mikan.managed=true",
       "--label",
-      "mama.sandbox=image",
+      "mikan.sandbox=image",
       "--label",
-      "mama.vault-id=slack-u123",
+      "mikan.vault-id=slack-u123",
       "--cpus",
       "0.5",
       "--memory",
+      "512m",
+      "--memory-swap",
       "512m",
       "ubuntu:24.04",
       "sleep",
@@ -408,7 +416,9 @@ describe("DockerContainerManager", () => {
       "0.5",
       "--memory",
       "512m",
-      "mama-sandbox-slack-u123",
+      "--memory-swap",
+      "512m",
+      "mikan-sandbox-slack-u123",
     ]);
   });
 
@@ -417,7 +427,7 @@ describe("DockerContainerManager", () => {
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
       .mockResolvedValueOnce({ stdout: "true\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
-      .mockResolvedValueOnce({ stdout: "mama-sandbox-net-slack-u123\n" })
+      .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u123\n" })
       .mockResolvedValueOnce({ stdout: "" });
     const manager = new DockerContainerManager("ubuntu:24.04", {
       limits: { cpus: "1", memory: "1g" },
@@ -432,7 +442,9 @@ describe("DockerContainerManager", () => {
       "1",
       "--memory",
       "1g",
-      "mama-sandbox-slack-u123",
+      "--memory-swap",
+      "1g",
+      "mikan-sandbox-slack-u123",
     ]);
   });
 
@@ -441,7 +453,7 @@ describe("DockerContainerManager", () => {
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
       .mockResolvedValueOnce({ stdout: "true\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
-      .mockResolvedValueOnce({ stdout: "mama-sandbox-net-slack-u123\n" });
+      .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u123\n" });
     const manager = new DockerContainerManager("ubuntu:24.04", execMock as any);
 
     await manager.provision("slack-u123");
@@ -455,7 +467,7 @@ describe("DockerContainerManager", () => {
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
       .mockResolvedValueOnce({ stdout: "true\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
-      .mockResolvedValueOnce({ stdout: "mama-sandbox-net-slack-u123\n" })
+      .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u123\n" })
       .mockResolvedValue({ stdout: "" });
     const manager = new DockerContainerManager("ubuntu:24.04", {
       limits: { cpus: "0.5", memory: "1g" },
@@ -469,7 +481,16 @@ describe("DockerContainerManager", () => {
     expect(status).toEqual({ limits: { cpus: "2", memory: "4g" }, boosted: true });
     expect(execMock.mock.calls.at(-1)).toEqual([
       "docker",
-      ["update", "--cpus", "2", "--memory", "4g", "mama-sandbox-slack-u123"],
+      [
+        "update",
+        "--cpus",
+        "2",
+        "--memory",
+        "4g",
+        "--memory-swap",
+        "4g",
+        "mikan-sandbox-slack-u123",
+      ],
     ]);
   });
 
@@ -478,7 +499,7 @@ describe("DockerContainerManager", () => {
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
       .mockResolvedValueOnce({ stdout: "true\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
-      .mockResolvedValueOnce({ stdout: "mama-sandbox-net-slack-u123\n" })
+      .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u123\n" })
       .mockResolvedValue({ stdout: "" });
     const manager = new DockerContainerManager("ubuntu:24.04", {
       limits: { cpus: "0.5", memory: "1g" },
@@ -508,7 +529,7 @@ describe("DockerContainerManager", () => {
       execFileImpl: execMock as any,
     });
 
-    await expect(manager.provision("slack-u123")).resolves.toBe("mama-sandbox-slack-u123");
+    await expect(manager.provision("slack-u123")).resolves.toBe("mikan-sandbox-slack-u123");
   });
 
   test("remove also deletes the per-vault network", async () => {
@@ -524,11 +545,11 @@ describe("DockerContainerManager", () => {
     await manager.provision("slack-u123");
     await manager.remove("slack-u123");
 
-    expect(execMock).toHaveBeenNthCalledWith(4, "docker", ["rm", "-f", "mama-sandbox-slack-u123"]);
+    expect(execMock).toHaveBeenNthCalledWith(4, "docker", ["rm", "-f", "mikan-sandbox-slack-u123"]);
     expect(execMock).toHaveBeenNthCalledWith(5, "docker", [
       "network",
       "rm",
-      "mama-sandbox-net-slack-u123",
+      "mikan-sandbox-net-slack-u123",
     ]);
   });
 });

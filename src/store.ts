@@ -1,7 +1,7 @@
 import { appendFile, writeFile } from "fs/promises";
 import { join } from "path";
 import { ensureDirExists, isRecord, parseJsonValue, readTextFileIfExists } from "./file-guards.js";
-import * as log from "./log.js";
+import { withRetry } from "./adapters/shared.js";
 
 export interface Attachment {
   original: string; // original filename from uploader
@@ -23,6 +23,20 @@ export interface LoggedMessage {
 export interface ChannelStoreConfig {
   workingDir: string;
   botToken: string; // needed for authenticated file downloads
+}
+
+class AttachmentDownloadHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+function isRetryableAttachmentDownloadError(error: unknown): boolean {
+  if (!(error instanceof AttachmentDownloadHttpError)) return true;
+  return error.status === 408 || error.status === 429 || error.status >= 500;
 }
 
 export class ChannelStore {
@@ -69,14 +83,13 @@ export class ChannelStore {
     files: Array<{ name?: string; url_private_download?: string; url_private?: string }>,
     timestamp: string,
   ): Promise<Attachment[]> {
-    const downloads: Array<Promise<Attachment | null>> = [];
+    const downloads: Array<Promise<Attachment>> = [];
 
     for (const file of files) {
       const url = file.url_private_download || file.url_private;
       if (!url) continue;
       if (!file.name) {
-        log.logWarning("Attachment missing name, skipping", url);
-        continue;
+        throw new Error(`Attachment missing name for URL: ${url}`);
       }
 
       const filename = this.generateLocalFilename(file.name, timestamp);
@@ -87,18 +100,18 @@ export class ChannelStore {
       };
 
       downloads.push(
-        this.downloadAttachment(localPath, url)
+        this.downloadAttachmentWithRetry(localPath, url)
           .then(() => attachment)
           .catch((error) => {
             const errorMsg = error instanceof Error ? error.message : String(error);
-            log.logWarning(`Failed to download attachment`, `${localPath}: ${errorMsg}`);
-            return null;
+            throw new Error(`Failed to download attachment ${localPath}: ${errorMsg}`, {
+              cause: error,
+            });
           }),
       );
     }
 
-    const attachments = await Promise.all(downloads);
-    return attachments.filter((attachment): attachment is Attachment => attachment !== null);
+    return Promise.all(downloads);
   }
 
   /**
@@ -182,6 +195,14 @@ export class ChannelStore {
   /**
    * Download a single attachment
    */
+  private async downloadAttachmentWithRetry(localPath: string, url: string): Promise<void> {
+    await withRetry(() => this.downloadAttachment(localPath, url), {
+      maxRetries: 3,
+      baseDelayMs: 250,
+      isRateLimited: isRetryableAttachmentDownloadError,
+    });
+  }
+
   private async downloadAttachment(localPath: string, url: string): Promise<void> {
     const filePath = join(this.workingDir, localPath);
 
@@ -196,7 +217,10 @@ export class ChannelStore {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      throw new AttachmentDownloadHttpError(
+        `HTTP ${response.status}: ${response.statusText}`,
+        response.status,
+      );
     }
 
     const buffer = await response.arrayBuffer();

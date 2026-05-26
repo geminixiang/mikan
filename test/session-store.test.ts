@@ -20,7 +20,7 @@ import {
   ThreadRootNotFoundError,
   tryResolveCurrentSession,
   tryResolveThreadSession,
-} from "../src/session-store.js";
+} from "../src/sessions/store.js";
 
 let channelDir: string;
 let nextTimestamp = 1;
@@ -216,6 +216,32 @@ describe("managed session initialization", () => {
 
     expect(header?.cwd).toBe(channelDir);
     expect(countSessionHeaders(sessionFile)).toBe(1);
+  });
+
+  test("top-level agent runs replace platform-history current with a live session", () => {
+    const sessionDir = getChannelSessionDir(channelDir);
+    mkdirSync(sessionDir, { recursive: true });
+    const historyFile = join(sessionDir, "history.jsonl");
+    writeFileSync(
+      historyFile,
+      `${JSON.stringify({
+        type: "session",
+        version: 3,
+        id: "history",
+        timestamp: new Date().toISOString(),
+        cwd: channelDir,
+        source: { kind: "platform-history", file: "log.jsonl" },
+      })}\n`,
+    );
+    writeFileSync(join(sessionDir, "current"), "history.jsonl");
+
+    const liveFile = resolveManagedSessionFile(sessionDir, channelDir);
+
+    expect(liveFile).not.toBe(historyFile);
+    expect(readFileSync(join(sessionDir, "current"), "utf-8").trim()).toBe(
+      liveFile.split("/").pop(),
+    );
+    expect(readFileSync(liveFile, "utf-8")).not.toContain("platform-history");
   });
 
   test("creates a fixed-path thread session with the provided cwd", () => {

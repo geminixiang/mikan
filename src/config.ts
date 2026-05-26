@@ -1,8 +1,10 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { existsSync } from "fs";
+import { Type, type Static } from "@sinclair/typebox";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { dirname, join, resolve } from "path";
-import { ensureDirExists, isRecord, readJsonFileIfExists } from "./file-guards.js";
+import { readEnv } from "./env.js";
+import { ensureDirExists, readJsonSchemaFileIfExists } from "./file-guards.js";
 import { atomicWritePrivateFile } from "./fs-atomic.js";
 
 export class MissingGlobalSettingsError extends Error {
@@ -16,14 +18,23 @@ export interface AgentConfig {
   provider: string;
   model: string;
   thinkingLevel: ThinkingLevel;
-  logFormat: "console" | "json";
-  logLevel: "trace" | "debug" | "info" | "warn" | "error";
   sentryDsn?: string;
   sandboxCpus?: string;
   sandboxMemory?: string;
   sandboxBoostCpus?: string;
   sandboxBoostMemory?: string;
   sandboxImageWorkspaceMount?: "private" | "full";
+  defaultSharedVault?: string;
+}
+
+export interface AutoReplyConfig {
+  enabled: boolean;
+  rules: string[];
+}
+
+export interface JudgeModelConfig {
+  provider: string;
+  model: string;
 }
 
 const ONBOARD_SETTINGS: SettingsFileConfig = {
@@ -31,10 +42,10 @@ const ONBOARD_SETTINGS: SettingsFileConfig = {
     provider: "anthropic",
     model: "claude-sonnet-4-6",
     thinkingLevel: "off",
-  },
-  log: {
-    format: "console",
-    level: "info",
+    autoReply: {
+      provider: "anthropic",
+      model: "claude-haiku-4-5",
+    },
   },
   sandbox: {
     cpus: "0.5",
@@ -46,35 +57,79 @@ const ONBOARD_SETTINGS: SettingsFileConfig = {
     image: {
       workspaceMount: "private",
     },
+    defaultSharedVault: "",
   },
 };
 
-interface SettingsFileConfig {
-  llm?: Partial<Pick<AgentConfig, "provider" | "model" | "thinkingLevel">>;
-  log?: { format?: AgentConfig["logFormat"]; level?: AgentConfig["logLevel"] };
-  sentry?: { dsn?: string };
-  sandbox?: {
-    cpus?: string;
-    memory?: string;
-    boost?: { cpus?: string; memory?: string };
-    image?: { workspaceMount?: AgentConfig["sandboxImageWorkspaceMount"] };
-  };
-}
+const SettingsFileSchema = Type.Object({
+  llm: Type.Optional(
+    Type.Object({
+      provider: Type.Optional(Type.String()),
+      model: Type.Optional(Type.String()),
+      thinkingLevel: Type.Optional(
+        Type.Union([
+          Type.Literal("off"),
+          Type.Literal("minimal"),
+          Type.Literal("low"),
+          Type.Literal("medium"),
+          Type.Literal("high"),
+          Type.Literal("xhigh"),
+        ]),
+      ),
+      autoReply: Type.Optional(
+        Type.Object({
+          provider: Type.Optional(Type.String()),
+          model: Type.Optional(Type.String()),
+        }),
+      ),
+    }),
+  ),
+  sentry: Type.Optional(
+    Type.Object({
+      dsn: Type.Optional(Type.String()),
+    }),
+  ),
+  sandbox: Type.Optional(
+    Type.Object({
+      cpus: Type.Optional(Type.String()),
+      memory: Type.Optional(Type.String()),
+      boost: Type.Optional(
+        Type.Object({
+          cpus: Type.Optional(Type.String()),
+          memory: Type.Optional(Type.String()),
+        }),
+      ),
+      image: Type.Optional(
+        Type.Object({
+          workspaceMount: Type.Optional(
+            Type.Union([Type.Literal("private"), Type.Literal("full")]),
+          ),
+        }),
+      ),
+      defaultSharedVault: Type.Optional(Type.String()),
+    }),
+  ),
+  autoReply: Type.Optional(
+    Type.Object({
+      enabled: Type.Optional(Type.Boolean()),
+      rules: Type.Optional(Type.Array(Type.String())),
+    }),
+  ),
+});
+
+type SettingsFileConfig = Static<typeof SettingsFileSchema>;
 
 function loadSettingsFile(settingsPath: string): SettingsFileConfig | undefined {
-  return readJsonFileIfExists(
-    settingsPath,
-    (value): value is SettingsFileConfig => isRecord(value),
-    (detail) =>
-      detail === "unexpected JSON shape"
-        ? `Malformed settings file at ${settingsPath}: expected a JSON object at the top level`
-        : `Malformed settings file at ${settingsPath}: ${detail}`,
+  return readJsonSchemaFileIfExists(settingsPath, SettingsFileSchema, (detail) =>
+    detail === "unexpected JSON shape"
+      ? `Malformed settings file at ${settingsPath}: expected a JSON object at the top level`
+      : `Malformed settings file at ${settingsPath}: ${detail}`,
   );
 }
 
 function getStateDir(): string {
-  const raw = process.env.MAMA_STATE_DIR?.trim();
-  return raw ? resolve(raw) : join(homedir(), ".mama");
+  const raw = readEnv("STATE_DIR");
+  return raw ? resolve(raw) : join(homedir(), ".mikan");
 }
 
 function normalizeSettingsConfig(config: SettingsFileConfig): Partial<AgentConfig> {
@@ -82,8 +137,6 @@ function normalizeSettingsConfig(config: SettingsFileConfig): Partial<AgentConfi
     ...(config.llm?.provider !== undefined ? { provider: config.llm.provider } : {}),
     ...(config.llm?.model !== undefined ? { model: config.llm.model } : {}),
     ...(config.llm?.thinkingLevel !== undefined ? { thinkingLevel: config.llm.thinkingLevel } : {}),
-    ...(config.log?.format !== undefined ? { logFormat: config.log.format } : {}),
-    ...(config.log?.level !== undefined ? { logLevel: config.log.level } : {}),
     ...(config.sentry?.dsn !== undefined ? { sentryDsn: config.sentry.dsn } : {}),
     ...(config.sandbox?.cpus !== undefined ? { sandboxCpus: config.sandbox.cpus } : {}),
     ...(config.sandbox?.memory !== undefined ? { sandboxMemory: config.sandbox.memory } : {}),
@@ -95,6 +148,9 @@ function normalizeSettingsConfig(config: SettingsFileConfig): Partial<AgentConfi
       : {}),
     ...(config.sandbox?.image?.workspaceMount !== undefined
       ? { sandboxImageWorkspaceMount: config.sandbox.image.workspaceMount }
+      : {}),
+    ...(config.sandbox?.defaultSharedVault?.trim()
+      ? { defaultSharedVault: config.sandbox.defaultSharedVault.trim() }
       : {}),
   };
 }
@@ -115,7 +171,7 @@ function requireGlobalSettings(): SettingsFileConfig {
 function requireString(value: string | undefined, path: string): string {
   if (!value) {
     throw new Error(
-      `Missing required global setting: ${path}. Run \`mama --onboard\` to create settings.json.`,
+      `Missing required global setting: ${path}. Run \`mikan --onboard\` to create settings.json.`,
     );
   }
   return value;
@@ -125,46 +181,29 @@ function requireThinkingLevel(value: ThinkingLevel | undefined): ThinkingLevel {
   return requireString(value, "llm.thinkingLevel") as ThinkingLevel;
 }
 
-function requireLogFormat(value: AgentConfig["logFormat"] | undefined): AgentConfig["logFormat"] {
-  if (value !== "console" && value !== "json") {
-    throw new Error("Missing or invalid required global setting: log.format");
-  }
-  return value;
-}
-
-function requireLogLevel(value: AgentConfig["logLevel"] | undefined): AgentConfig["logLevel"] {
-  const allowed = ["trace", "debug", "info", "warn", "error"];
-  if (!value || !allowed.includes(value)) {
-    throw new Error("Missing or invalid required global setting: log.level");
-  }
-  return value;
-}
-
 function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
   const provider = requireString(fromFile.provider, "llm.provider");
   const model = requireString(fromFile.model, "llm.model");
   const thinkingLevel = requireThinkingLevel(fromFile.thinkingLevel);
-  const logFormat = requireLogFormat(fromFile.logFormat);
-  const logLevel = requireLogLevel(fromFile.logLevel);
   const sentryDsn = fromFile.sentryDsn ?? process.env.SENTRY_DSN;
   const sandboxCpus = fromFile.sandboxCpus;
   const sandboxMemory = fromFile.sandboxMemory;
   const sandboxBoostCpus = fromFile.sandboxBoostCpus;
   const sandboxBoostMemory = fromFile.sandboxBoostMemory;
   const sandboxImageWorkspaceMount = fromFile.sandboxImageWorkspaceMount;
+  const defaultSharedVault = fromFile.defaultSharedVault;
 
   return {
     provider,
     model,
     thinkingLevel,
-    logFormat,
-    logLevel,
     sentryDsn,
     sandboxCpus,
     sandboxMemory,
     sandboxBoostCpus,
     sandboxBoostMemory,
     sandboxImageWorkspaceMount,
+    defaultSharedVault,
   };
 }
 
@@ -188,9 +227,7 @@ export function saveConversationModelConfig(
   conversationDir: string,
   config: Pick<AgentConfig, "provider" | "model"> & Partial<Pick<AgentConfig, "thinkingLevel">>,
 ): void {
-  if (!existsSync(conversationDir)) {
-    ensureDirExists(conversationDir);
-  }
+  ensureDirExists(conversationDir);
   const settingsPath = join(conversationDir, "settings.json");
   const existing = loadSettingsFile(settingsPath) ?? {};
   const scopedConfig: SettingsFileConfig = {
@@ -204,9 +241,7 @@ export function saveConversationSandboxConfig(
   conversationDir: string,
   config: { imageWorkspaceMount: AgentConfig["sandboxImageWorkspaceMount"] },
 ): void {
-  if (!existsSync(conversationDir)) {
-    ensureDirExists(conversationDir);
-  }
+  ensureDirExists(conversationDir);
   const settingsPath = join(conversationDir, "settings.json");
   const existing = loadSettingsFile(settingsPath) ?? {};
   const scopedConfig: SettingsFileConfig = {
@@ -220,6 +255,71 @@ export function saveConversationSandboxConfig(
     },
   };
   atomicWritePrivateFile(settingsPath, JSON.stringify(scopedConfig, null, 2));
+}
+
+/**
+ * Resolve the model used to judge auto-reply rules. Falls back to the main
+ * llm.{provider,model} when llm.autoReply is not set, so a missing override
+ * keeps current behavior.
+ */
+export function loadAutoReplyJudgeModel(conversationDir?: string): JudgeModelConfig {
+  const global = requireGlobalSettings();
+  const local = conversationDir
+    ? (loadSettingsFile(join(conversationDir, "settings.json")) ?? {})
+    : {};
+  const merged: SettingsFileConfig["llm"] = { ...global.llm, ...local.llm };
+  const judge = { ...global.llm?.autoReply, ...local.llm?.autoReply };
+  const provider = requireString(judge.provider ?? merged?.provider, "llm.autoReply.provider");
+  const model = requireString(judge.model ?? merged?.model, "llm.autoReply.model");
+  return { provider, model };
+}
+
+const AUTO_REPLY_FILE = "auto-reply";
+const AUTO_REPLY_DISABLED_FILE = "auto-reply.disabled";
+
+function readAutoReplyRulesFile(path: string): string[] {
+  const text = readFileSync(path, "utf-8").trim();
+  return text ? [text] : [];
+}
+
+/**
+ * Load the mom-compatible auto-reply marker file state for a conversation.
+ *
+ * - `auto-reply` exists: enabled; empty file means reply to any top-level message.
+ * - `auto-reply.disabled` exists: disabled, preserving any rules text for re-enable.
+ * - neither exists: disabled.
+ */
+export function loadConversationAutoReplyConfig(conversationDir: string): AutoReplyConfig {
+  const enabledPath = join(conversationDir, AUTO_REPLY_FILE);
+  if (existsSync(enabledPath)) {
+    return { enabled: true, rules: readAutoReplyRulesFile(enabledPath) };
+  }
+
+  const disabledPath = join(conversationDir, AUTO_REPLY_DISABLED_FILE);
+  if (existsSync(disabledPath)) {
+    return { enabled: false, rules: readAutoReplyRulesFile(disabledPath) };
+  }
+
+  return { enabled: false, rules: [] };
+}
+
+/** Save auto-reply state using mom-compatible marker files. */
+export function saveConversationAutoReplyConfig(
+  conversationDir: string,
+  config: AutoReplyConfig,
+): void {
+  ensureDirExists(conversationDir);
+
+  const enabledPath = join(conversationDir, AUTO_REPLY_FILE);
+  const disabledPath = join(conversationDir, AUTO_REPLY_DISABLED_FILE);
+  const targetPath = config.enabled ? enabledPath : disabledPath;
+  const otherPath = config.enabled ? disabledPath : enabledPath;
+
+  if (existsSync(otherPath)) {
+    renameSync(otherPath, targetPath);
+  }
+
+  writeFileSync(targetPath, config.rules.join("\n"), "utf-8");
 }
 
 export function resolveWorkspaceDirFromArgv(args = process.argv.slice(2)): string | undefined {
@@ -262,7 +362,7 @@ export function resolveStateDirFromArgv(args = process.argv.slice(2)): string {
     }
   }
 
-  return join(homedir(), ".mama");
+  return join(homedir(), ".mikan");
 }
 
 export function resolveSentryDsn(): string | undefined {
@@ -279,20 +379,18 @@ export function createGlobalSettingsFile(stateDir: string): string {
   if (existsSync(settingsPath)) {
     throw new Error(`Global settings already exists at ${settingsPath}`);
   }
-  if (!existsSync(stateDir)) {
-    ensureDirExists(stateDir);
-  }
+  ensureDirExists(stateDir);
   atomicWritePrivateFile(settingsPath, JSON.stringify(ONBOARD_SETTINGS, null, 2));
   return settingsPath;
 }
 
 /**
  * Externally-visible base URL of the link/OAuth server, e.g.
- * `https://mama.example.com` (no trailing slash). Read from `MAMA_LINK_URL`,
- * the same env var the bot uses to build credential onboarding links.
+ * `https://mikan.example.com` (no trailing slash). Read from `LINK_URL` or
+ * `MIKAN_LINK_URL`, the same env var the bot uses to build credential onboarding links.
  */
 export function resolveLinkBaseUrl(): string | undefined {
-  const raw = process.env.MAMA_LINK_URL?.trim();
+  const raw = readEnv("LINK_URL");
   if (!raw) return undefined;
   return raw.replace(/\/+$/, "");
 }
@@ -304,9 +402,9 @@ function hasDefinedValue(values: Record<string, unknown> | undefined): boolean {
 function compactSettingsConfig(config: SettingsFileConfig): SettingsFileConfig {
   return {
     ...(hasDefinedValue(config.llm) ? { llm: config.llm } : {}),
-    ...(hasDefinedValue(config.log) ? { log: config.log } : {}),
     ...(hasDefinedValue(config.sentry) ? { sentry: config.sentry } : {}),
     ...(hasDefinedValue(config.sandbox) ? { sandbox: config.sandbox } : {}),
+    ...(hasDefinedValue(config.autoReply) ? { autoReply: config.autoReply } : {}),
   };
 }
 
@@ -321,11 +419,6 @@ function patchSettingsConfig(
       ...(config.provider !== undefined ? { provider: config.provider } : {}),
       ...(config.model !== undefined ? { model: config.model } : {}),
       ...(config.thinkingLevel !== undefined ? { thinkingLevel: config.thinkingLevel } : {}),
-    },
-    log: {
-      ...existing.log,
-      ...(config.logFormat !== undefined ? { format: config.logFormat } : {}),
-      ...(config.logLevel !== undefined ? { level: config.logLevel } : {}),
     },
     sentry: {
       ...existing.sentry,

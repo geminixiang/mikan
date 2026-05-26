@@ -6,7 +6,7 @@ on:
   push:
     branches: [main]
     paths:
-      - docker/mama-sandbox.Dockerfile
+      - docker/mikan-sandbox.Dockerfile
       - package.json
       - .github/workflows/sandbox-image.yml
   workflow_dispatch:
@@ -29,12 +29,13 @@ jobs:
           set -euo pipefail
 
           owner=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
-          image="ghcr.io/${owner}/mama-sandbox"
+          image="ghcr.io/${owner}/mikan-sandbox"
           version=$(node -p "require('./package.json').version")
           short_sha="${GITHUB_SHA::7}"
 
           tags=(
             "${image}:sha-${short_sha}"
+            "${image}:latest"
           )
 
           if [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
@@ -45,8 +46,6 @@ jobs:
 
             if [[ "${version}" == *-* ]]; then
               tags+=("${image}:beta")
-            else
-              tags+=("${image}:latest")
             fi
           else
             tags+=("${image}:edge")
@@ -77,13 +76,13 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/mama-sandbox.Dockerfile
+          file: docker/mikan-sandbox.Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: |
-            org.opencontainers.image.title=mama sandbox
-            org.opencontainers.image.description=Prebuilt sandbox image for mama managed per-user containers
+            org.opencontainers.image.title=mikan sandbox
+            org.opencontainers.image.description=Prebuilt sandbox image for mikan managed per-user containers
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}

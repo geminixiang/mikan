@@ -90,28 +90,35 @@ describe("respond() — non-threaded", () => {
     expect(bot.postInThread).not.toHaveBeenCalled();
   });
 
-  test("synthetic event posts top-level instead of using an invalid thread root", async () => {
-    const bot = makeSlackBot();
+  test("event anchor session updates that top-level message", async () => {
+    const bot = makeSlackBot({ updateMessage: vi.fn().mockResolvedValue(undefined) });
     const event = makeEvent({
       ts: "event:deploy-reminder.json",
-      text: "[EVENT:deploy-reminder.json:immediate:immediate] Deploy now",
+      text: "Deploy now",
       thread_ts: undefined,
+      sessionKey: "C001:T001",
     });
-    const { responseCtx } = createSlackAdapters(event, bot, true);
+    const { message, responseCtx } = createSlackAdapters(event, bot, {
+      initialMessageTs: "T001",
+    });
+
+    expect(message.sessionKey).toBe("C001:T001");
+
     await responseCtx.respond("done");
-    expect(bot.postMessage).toHaveBeenCalledWith("C001", expect.stringContaining("done"));
+
+    expect(bot.updateMessage).toHaveBeenCalledWith("C001", "T001", expect.stringContaining("done"));
+    expect(bot.postMessage).not.toHaveBeenCalled();
     expect(bot.postInThread).not.toHaveBeenCalled();
   });
 
-  test("synthetic event in a Slack thread replies inside the original thread", async () => {
+  test("event-file-shaped ts in a Slack thread replies inside the original thread", async () => {
     const bot = makeSlackBot();
     const event = makeEvent({
       ts: "event:deploy-reminder.json",
-      text: "[EVENT:deploy-reminder.json:immediate:immediate] Deploy now",
+      text: "Deploy now",
       thread_ts: "1000.0001",
-      sessionKey: "C001:1000.0001",
     });
-    const { responseCtx } = createSlackAdapters(event, bot, true);
+    const { responseCtx } = createSlackAdapters(event, bot);
     await responseCtx.respond("done");
     expect(bot.postInThread).toHaveBeenCalledWith(
       "C001",
@@ -134,10 +141,10 @@ describe("respond() — non-threaded", () => {
     );
   });
 
-  test("synthetic events without a Slack ts post a normal channel message first", async () => {
+  test("event-file-shaped ts without a Slack ts posts a normal channel message first", async () => {
     const bot = makeSlackBot({ postMessage: vi.fn().mockResolvedValue("BOT_MSG") });
     const event = makeEvent({ ts: "event:reminder.json" });
-    const { responseCtx } = createSlackAdapters(event, bot, true);
+    const { responseCtx } = createSlackAdapters(event, bot);
     await responseCtx.respond("hello");
     expect(bot.postMessage).toHaveBeenCalledWith("C001", expect.stringContaining("hello"));
     expect(bot.postInThread).not.toHaveBeenCalled();
@@ -240,23 +247,23 @@ describe("respondDiagnostic()", () => {
     );
   });
 
-  test("synthetic event diagnostics anchor to the bot message after respond", async () => {
+  test("event-file-shaped ts diagnostics anchor to the bot message after respond", async () => {
     const postInThread = vi.fn().mockResolvedValue("THREAD_MSG");
     const bot = makeSlackBot({
       postMessage: vi.fn().mockResolvedValue("BOT_MSG"),
       postInThread,
     });
     const event = makeEvent({ ts: "event:reminder.json" });
-    const { responseCtx } = createSlackAdapters(event, bot, true);
+    const { responseCtx } = createSlackAdapters(event, bot);
     await responseCtx.respond("main");
     await responseCtx.respondDiagnostic("detail");
     expect(postInThread).toHaveBeenCalledWith("C001", "BOT_MSG", expect.stringContaining("detail"));
   });
 
-  test("synthetic event diagnostics before a main response are dropped instead of using invalid thread_ts", async () => {
+  test("event-file-shaped ts diagnostics before a main response are dropped instead of using invalid thread_ts", async () => {
     const bot = makeSlackBot();
     const event = makeEvent({ ts: "event:reminder.json" });
-    const { responseCtx } = createSlackAdapters(event, bot, true);
+    const { responseCtx } = createSlackAdapters(event, bot);
     await responseCtx.respondDiagnostic("detail");
     expect(bot.postInThread).not.toHaveBeenCalled();
     expect(bot.postMessage).not.toHaveBeenCalled();
@@ -278,10 +285,10 @@ describe("setTyping()", () => {
     expect(bot.postInThread).not.toHaveBeenCalled();
   });
 
-  test("synthetic events do not call assistant status with invalid ts", async () => {
+  test("event-file-shaped ts does not call assistant status with invalid ts", async () => {
     const bot = makeSlackBot({ setAssistantStatus: vi.fn().mockResolvedValue(undefined) });
     const event = makeEvent({ ts: "event:reminder.json" });
-    const { responseCtx } = createSlackAdapters(event, bot, true);
+    const { responseCtx } = createSlackAdapters(event, bot);
     await responseCtx.setTyping(true);
     expect(bot.setAssistantStatus).not.toHaveBeenCalled();
   });
@@ -373,27 +380,37 @@ describe("text accumulation", () => {
     expect(postedText).toContain("message truncated");
   });
 
-  test("replaceResponse posts long final text to diagnostics under the bot message", async () => {
+  test("replaceResponse posts full text without minting an overflow link when Slack accepts it", async () => {
+    const bot = makeSlackBot({ postMessage: vi.fn().mockResolvedValue("BOT_MSG") });
+    const event = makeEvent({ thread_ts: undefined });
+    const { responseCtx } = createSlackAdapters(event, bot);
+    const createOverflowLink = vi.fn(() => "https://portal.example/session?token=abc");
+    await responseCtx.replaceResponse("x".repeat(6000), { createOverflowLink });
+    const mainText = vi.mocked(bot.postMessage).mock.calls[0][1] as string;
+    expect(mainText).toContain("x".repeat(6000));
+    expect(mainText).not.toContain("portal.example");
+    expect(createOverflowLink).not.toHaveBeenCalled();
+  });
+
+  test("replaceResponse falls back to short text with session link when Slack says msg_too_long", async () => {
+    const tooLongError = new Error("An API error occurred: msg_too_long") as Error & {
+      data?: { error: string };
+    };
+    tooLongError.data = { error: "msg_too_long" };
     const bot = makeSlackBot({
-      postMessage: vi.fn().mockResolvedValue("BOT_MSG"),
-      postInThread: vi.fn().mockResolvedValue("THREAD_MSG"),
+      postMessage: vi.fn().mockRejectedValueOnce(tooLongError).mockResolvedValueOnce("BOT_MSG"),
     });
     const event = makeEvent({ thread_ts: undefined });
     const { responseCtx } = createSlackAdapters(event, bot);
-    const longText = `${"x".repeat(35900)}END`;
-    await responseCtx.replaceResponse(longText);
-    expect(bot.postMessage).toHaveBeenNthCalledWith(
-      1,
-      "C001",
-      expect.stringContaining("see thread for full response"),
-    );
-    expect(bot.postInThread).toHaveBeenCalledTimes(2);
-    expect(bot.postInThread).toHaveBeenNthCalledWith(
-      2,
-      "C001",
-      "BOT_MSG",
-      expect.stringContaining("END"),
-    );
+    const longText = `${"x".repeat(6000)}END`;
+    const createOverflowLink = vi.fn(() => "https://portal.example/session?token=abc");
+    await responseCtx.replaceResponse(longText, { createOverflowLink });
+    expect(bot.postMessage).toHaveBeenCalledTimes(2);
+    expect(createOverflowLink).toHaveBeenCalledTimes(1);
+    const fallbackText = vi.mocked(bot.postMessage).mock.calls[1][1] as string;
+    expect(fallbackText).toContain("message too long for Slack");
+    expect(fallbackText).toContain("<https://portal.example/session?token=abc|open>");
+    expect(fallbackText).not.toContain("END");
   });
 });
 

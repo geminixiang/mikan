@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { saveConversationSandboxConfig } from "../config.js";
 import { readConversationWorkspaceMountMode } from "../execution-resolver.js";
 import { resolveActorVaultKey } from "../vault-routing.js";
+import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { replyDiagnosticWithContext } from "./utils.js";
 
@@ -10,20 +11,17 @@ export interface ParsedSandboxCommand {
   action?: "boost" | "private" | "full";
 }
 
-export function parseSandboxCommand(text: string): ParsedSandboxCommand | null {
-  const tokens = text.trim().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return null;
+const SANDBOX_COMMANDS = ["/pi-sandbox", "/sandbox"] as const;
 
-  const command = tokens[0].replace(/@\w+$/i, "").toLowerCase();
-  if (command !== "/pi-sandbox" && command !== "/sandbox") return null;
-  if (tokens.length === 1) return { command };
-  if (tokens.length === 2) {
-    const action = tokens[1].toLowerCase();
-    if (action === "boost" || action === "private" || action === "full") {
-      return { command, action };
-    }
+export function parseSandboxCommand(text: string): ParsedSandboxCommand | null {
+  const matched = matchCommand(text, SANDBOX_COMMANDS, { stripMention: true });
+  if (!matched) return null;
+
+  const action = matched.args.length === 1 ? matched.args[0].toLowerCase() : undefined;
+  if (action === "boost" || action === "private" || action === "full") {
+    return { command: matched.command, action };
   }
-  return { command };
+  return { command: matched.command };
 }
 
 function formatSandboxCommandSummary(title: string, lines: string[]): string {
@@ -78,7 +76,7 @@ export class SandboxCommandHandler implements CommandHandler {
         await replyDiagnosticWithContext(
           context.responseCtx,
           formatSandboxCommandSummary("Sandbox Boost", [
-            "此 mama instance 尚未設定 sandbox boost 規格。",
+            "此 mikan instance 尚未設定 sandbox boost 規格。",
             "請先在全域 settings.json 設定 `sandbox.boost`。",
           ]),
           { style: "muted" },

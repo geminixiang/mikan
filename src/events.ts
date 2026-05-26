@@ -1,3 +1,4 @@
+import { Type, type Static } from "@sinclair/typebox";
 import { Cron } from "croner";
 import {
   existsSync,
@@ -11,13 +12,10 @@ import {
 import { readFile } from "fs/promises";
 import { join } from "path";
 import type { Bot, BotEvent, ConversationKind } from "./adapter.js";
-import { ensureDirExists, isRecord, parseJsonValue } from "./file-guards.js";
+import { ensureDirExists, parseJsonSchemaValue } from "./file-guards.js";
 import * as log from "./log.js";
-import { inferConversationKind } from "./session-policy.js";
-
-// ============================================================================
-// Event Types
-// ============================================================================
+import { reportUserFacingError } from "./sentry.js";
+import { inferConversationKind } from "./sessions/policy.js";
 
 export interface ImmediateEvent {
   type: "immediate";
@@ -27,10 +25,6 @@ export interface ImmediateEvent {
   /** Creator userId — routes tool execution to that user's vault selection when fired. */
   userId?: string;
   text: string;
-  /** Determines which AgentRunner handles the event. */
-  sessionKey?: string;
-  /** Sub-conversation target (Slack thread ts, Discord thread id, Telegram reply-to id). */
-  threadTs?: string;
 }
 
 export interface OneShotEvent {
@@ -53,12 +47,26 @@ export interface PeriodicEvent {
   text: string;
   schedule: string; // cron syntax
   timezone: string; // IANA timezone
-  /** Determines which AgentRunner handles the event. */
-  sessionKey?: string;
-  // No threadTs: recurring events always fire as top-level messages.
 }
 
-export type MamaEvent = ImmediateEvent | OneShotEvent | PeriodicEvent;
+export type MikanEvent = ImmediateEvent | OneShotEvent | PeriodicEvent;
+
+const EventFileSchema = Type.Object({
+  type: Type.Optional(
+    Type.Union([Type.Literal("immediate"), Type.Literal("one-shot"), Type.Literal("periodic")]),
+  ),
+  platform: Type.Optional(Type.String()),
+  conversationId: Type.Optional(Type.String()),
+  channelId: Type.Optional(Type.String()),
+  conversationKind: Type.Optional(Type.Union([Type.Literal("direct"), Type.Literal("shared")])),
+  userId: Type.Optional(Type.String()),
+  text: Type.Optional(Type.String()),
+  at: Type.Optional(Type.String()),
+  schedule: Type.Optional(Type.String()),
+  timezone: Type.Optional(Type.String()),
+});
+
+type EventFileData = Static<typeof EventFileSchema>;
 
 export interface PeriodicEventInfo {
   filename: string;
@@ -70,10 +78,6 @@ export interface PeriodicEventInfo {
   timezone: string;
   nextRun: string | null; // ISO 8601
 }
-
-// ============================================================================
-// EventsWatcher
-// ============================================================================
 
 const DEBOUNCE_MS = 100;
 const MAX_RETRIES = 3;
@@ -237,7 +241,7 @@ export class EventsWatcher {
     const filePath = join(this.eventsDir, filename);
     for (let i = 0; i < MAX_RETRIES; i++) {
       const delay = RETRY_BASE_MS * 2 ** i;
-      await this.sleep(delay);
+      await new Promise((resolve) => setTimeout(resolve, delay));
       const exists = existsSync(filePath);
       log.logInfo(`Confirming event deletion: ${filename} after ${delay}ms (exists=${exists})`);
       if (exists) {
@@ -280,7 +284,7 @@ export class EventsWatcher {
     log.logInfo(`Loading event file: ${filename} from ${filePath}`);
 
     // Parse with retries
-    let event: MamaEvent | null = null;
+    let event: MikanEvent | null = null;
     let lastError: Error | null = null;
 
     for (let i = 0; i < MAX_RETRIES; i++) {
@@ -291,7 +295,7 @@ export class EventsWatcher {
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
         if (i < MAX_RETRIES - 1) {
-          await this.sleep(RETRY_BASE_MS * 2 ** i);
+          await new Promise((resolve) => setTimeout(resolve, RETRY_BASE_MS * 2 ** i));
         }
       }
     }
@@ -324,9 +328,11 @@ export class EventsWatcher {
     }
   }
 
-  private parseEvent(content: string, filename: string): MamaEvent | null {
-    const data = parseJsonValue(content, isRecord, (detail) =>
-      detail === "unexpected JSON shape" ? `Expected top-level JSON object in ${filename}` : detail,
+  private parseEvent(content: string, filename: string): MikanEvent | null {
+    const data: EventFileData = parseJsonSchemaValue(content, EventFileSchema, (detail) =>
+      detail === "unexpected JSON shape"
+        ? `Expected top-level JSON object in ${filename}`
+        : `Malformed event file ${filename}: ${detail}`,
     );
     const conversationId =
       typeof data.conversationId === "string"
@@ -348,9 +354,6 @@ export class EventsWatcher {
       data.conversationKind,
     );
     const userId = typeof data.userId === "string" ? data.userId : undefined;
-    const sessionKey = typeof data.sessionKey === "string" ? data.sessionKey : undefined;
-    const threadTs = typeof data.threadTs === "string" ? data.threadTs : undefined;
-
     switch (type) {
       case "immediate":
         return {
@@ -360,8 +363,6 @@ export class EventsWatcher {
           conversationKind,
           userId,
           text,
-          sessionKey,
-          threadTs,
         };
 
       case "one-shot":
@@ -394,7 +395,6 @@ export class EventsWatcher {
           text,
           schedule: data.schedule,
           timezone: data.timezone,
-          sessionKey,
         };
 
       default:
@@ -503,59 +503,100 @@ export class EventsWatcher {
     }
   }
 
-  private execute(filename: string, event: MamaEvent, deleteAfter: boolean = true): void {
-    // Format the message
-    let scheduleInfo: string;
-    switch (event.type) {
-      case "immediate":
-        scheduleInfo = "immediate";
-        break;
-      case "one-shot":
-        scheduleInfo = event.at;
-        break;
-      case "periodic":
-        scheduleInfo = event.schedule;
-        break;
-    }
-
-    const message = `[EVENT:${filename}:${event.type}:${scheduleInfo}] ${event.text}`;
+  private execute(filename: string, event: MikanEvent, deleteAfter: boolean = true): void {
+    const message = this.buildEventPrompt(event);
     const bot = this.botsByPlatform[event.platform];
 
     if (!bot) {
       log.logWarning(`No bot configured for event platform '${event.platform}'`, filename);
+      reportUserFacingError(new Error("Scheduled event delivery failed: missing bot"), {
+        domain: "events",
+        surface: "event_delivery",
+        operation: "event_execute",
+        severity: "error",
+        platform: event.platform,
+        context: {
+          failure: "missing_bot",
+          filename,
+          eventType: event.type,
+          conversationId: event.conversationId,
+          conversationKind: event.conversationKind,
+          deleteAfter,
+          triggeredByEventFile: true,
+          textLength: event.text.length,
+        },
+      });
       if (deleteAfter) {
         this.deleteFile(filename, "missing-bot");
       }
       return;
     }
 
-    // Create synthetic BotEvent. Keep a stable conversation session key so recurring
-    // reminders share context, but use a unique synthetic message id because
-    // some adapters treat ts/message id as a reply target.
-    const scopedEvent = event as { sessionKey?: string; threadTs?: string };
-    const syntheticEvent: BotEvent = {
+    const eventId = filename.replace(/\.json$/i, "");
+    const botEvent: BotEvent = {
       type: "mention",
       conversationId: event.conversationId,
       conversationKind: event.conversationKind,
       user: event.userId ?? "EVENT",
       text: message,
-      ts: `event:${filename}`,
-      thread_ts: scopedEvent.threadTs,
-      sessionKey: scopedEvent.sessionKey ?? event.conversationId,
+      ts: `event:${eventId}`,
     };
 
     // Enqueue for processing
-    const enqueued = bot.enqueueEvent(syntheticEvent);
+    const enqueued = bot.enqueueEvent(botEvent);
 
     if (enqueued && deleteAfter) {
       // Delete file after successful enqueue (immediate and one-shot)
       this.deleteFile(filename, "executed-and-enqueued");
     } else if (!enqueued) {
       log.logWarning(`Event queue full, discarded: ${filename}`);
+      reportUserFacingError(new Error("Scheduled event delivery failed: queue full"), {
+        domain: "events",
+        surface: "event_delivery",
+        operation: "event_execute",
+        severity: "error",
+        platform: event.platform,
+        context: {
+          failure: "queue_full",
+          filename,
+          eventType: event.type,
+          conversationId: event.conversationId,
+          conversationKind: event.conversationKind,
+          deleteAfter,
+          triggeredByEventFile: true,
+          textLength: event.text.length,
+        },
+      });
       // Still delete immediate/one-shot even if discarded
       if (deleteAfter) {
         this.deleteFile(filename, "queue-full-discarded");
       }
+    }
+  }
+
+  private buildEventPrompt(event: MikanEvent): string {
+    switch (event.type) {
+      case "one-shot":
+        return [
+          "Please deliver the following reminder to the user in a short, natural way.",
+          "Do not greet, do not introduce yourself, and do not ask generic follow-up questions.",
+          "",
+          `Reminder: ${event.text}`,
+        ].join("\n");
+      case "periodic":
+        return [
+          "Handle the following recurring task.",
+          "Respond concisely. If there is nothing actionable to report, reply with [SILENT].",
+          "",
+          `Task: ${event.text}`,
+        ].join("\n");
+      case "immediate":
+        return [
+          "Handle the following event/update in a concise, context-appropriate way.",
+          "If it reads like a reminder or follow-up, deliver it directly without greeting or generic offers to help.",
+          "",
+          `Event: ${event.text}`,
+        ].join("\n");
     }
   }
 
@@ -571,10 +612,6 @@ export class EventsWatcher {
       }
     }
     this.knownFiles.delete(filename);
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 

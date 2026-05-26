@@ -1,11 +1,25 @@
-# mama (Multi-Agent Mischief Assistant)
+<p align="center">
+  <img src="docs/assets/mikan.png" alt="mikan — multi-platform AI coding agent" width="100%">
+</p>
 
-[![npm version](https://img.shields.io/npm/v/@geminixiang/mama.svg)](https://www.npmjs.com/package/@geminixiang/mama)
+# mikan
+
+[![npm version](https://img.shields.io/npm/v/@geminixiang/mikan.svg)](https://www.npmjs.com/package/@geminixiang/mikan)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A multi-platform AI assistant for Slack, Telegram, and Discord.
+A multi-platform AI coding agent for Slack, Telegram, and Discord.
 
-Forked from [`badlogic/pi-mono`](https://github.com/badlogic/pi-mono)'s `mom` package (MIT, by Mario Zechner) at v0.57.1. This fork adds Telegram and Discord adapters and exists to ship internally while we prepare changes to upstream.
+## Architecture
+
+mikan keeps the chat record, agent session, and execution runtime separate:
+
+![mikan architecture](docs/assets/architecture.png)
+
+- **Chat / conversation data** is the platform-facing record: `log.jsonl`, attachments, and conversation files.
+- **Session orchestration** turns platform events into agent runs, handles top-level/thread/fork scopes, and persists pi-coding-agent structured context under `sessions/*.jsonl`.
+- **pi-coding-agent harness** runs the model loop and calls mikan tools.
+- **Sandbox runtime** is where tool commands execute: host, Docker container/image, Firecracker, or Cloudflare bridge.
+- **Vault** provides runtime credentials as env vars and mounted secret files.
 
 ## Features
 
@@ -19,22 +33,14 @@ Forked from [`badlogic/pi-mono`](https://github.com/badlogic/pi-mono)'s `mom` pa
 - **Events** — schedule one-shot or recurring tasks via JSON files
 - **Multi-provider** — any provider/model supported by `pi-ai`
 
-## Platform Session Model
-
-| Platform | `sessionKey` Rule                                                                 | Notes                                                                                |
-| -------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Slack    | top-level / DM: `conversationId`; thread: `conversationId:threadTs`               | thread inherits parent context at fork time only; branch changes do not merge back   |
-| Discord  | DM: `channelId`; shared top-level: `channelId:messageId`; reply/thread: rooted id | replies in shared channels continue the root message session; DM replies do not fork |
-| Telegram | private: `chatId`; shared top-level: `chatId:messageId`; reply chain: root reply  | no native thread model; shared sessions are inferred from reply chains               |
-
 ## Requirements
 
-- Node.js >= 20
+- Node.js >= 22.19.0
 
 ## Installation
 
 ```bash
-npm install -g @geminixiang/mama
+npm install -g @geminixiang/mikan
 ```
 
 Or from source:
@@ -48,31 +54,27 @@ npm install && npm run build
 All platforms share the same CLI:
 
 ```bash
-mama [--state-dir=~/.mama] [--sandbox=<mode>] <working-directory>
+mikan [--state-dir=~/.mikan] [--sandbox=<mode>] <working-directory>
 ```
 
-Set the platform tokens you need (you can run multiple platforms at once):
+Set the platform tokens you need; you can run multiple platforms at once:
 
 ```bash
-export MAMA_SLACK_APP_TOKEN=xapp-...
-export MAMA_SLACK_BOT_TOKEN=xoxb-...
-export MAMA_TELEGRAM_BOT_TOKEN=123456:ABC-...
-export MAMA_DISCORD_BOT_TOKEN=MTI...
+export SLACK_APP_TOKEN=xapp-...
+export SLACK_BOT_TOKEN=xoxb-...
+export TELEGRAM_BOT_TOKEN=123456:ABC-...
+export DISCORD_BOT_TOKEN=MTI...
 ```
 
-### Slack
+## Platforms
 
-Create a Socket Mode app with the scopes and event subscriptions listed in [docs/slack-bot-minimal-guide.md](docs/slack-bot-minimal-guide.md). The bot responds when `@mentioned` in channels and to all DMs.
+- **Slack** — create a Socket Mode app using [docs/slack-bot-minimal-guide.md](docs/slack-bot-minimal-guide.md). The bot responds when `@mentioned` in channels and to all DMs.
+- **Telegram** — create a bot via [@BotFather](https://t.me/BotFather). The bot responds to private messages, `@mention`, and reply chains in groups.
+- **Discord** — create an application in the [Discord Developer Portal](https://discord.com/developers/applications), enable **Message Content Intent**, and invite it with message/file permissions.
 
-### Telegram
+Slack threads, Discord replies/threads, and Telegram reply chains are mapped to independent session scopes. See [docs/sessions.md](docs/sessions.md).
 
-Create a bot via [@BotFather](https://t.me/BotFather) and copy the token. The bot responds to all private messages, and to `@mention` or reply chains in groups. Use `/login`, `/session`, `/new`, and `/stop` for controls.
-
-### Discord
-
-Create an application in the [Discord Developer Portal](https://discord.com/developers/applications), enable **Message Content Intent**, and invite the bot with `Send Messages`, `Read Message History`, `Attach Files`. The bot responds to `@mentions` in servers and to all DMs.
-
-## Sandbox Modes
+## Sandbox
 
 | Mode                         | Description                                                            |
 | ---------------------------- | ---------------------------------------------------------------------- |
@@ -82,90 +84,24 @@ Create an application in the [Discord Developer Portal](https://discord.com/deve
 | `firecracker:<vm-id>:<path>` | Firecracker microVM (alpha; not recommended)                           |
 | `cloudflare:<sandbox-id>`    | Cloudflare Worker bridge (experimental; no auto workspace sync)        |
 
-Vault routing: `image`, `firecracker`, and `cloudflare` resolve a vault per platform userId. See [docs/sandbox.md](docs/sandbox.md) for the full matrix.
+For routing, mounts, vault behavior, managed container details, and Firecracker/Cloudflare notes, see [docs/sandbox.md](docs/sandbox.md).
 
-### Managed per-user containers (`image:*`)
+## Chat commands
 
-```bash
-docker pull ghcr.io/geminixiang/mama-sandbox:latest
-mama --sandbox=image:ghcr.io/geminixiang/mama-sandbox:latest /path/to/workspace
-```
+| Command                                                    | Purpose                                          |
+| ---------------------------------------------------------- | ------------------------------------------------ |
+| `/login` / `/pi-login`                                     | Store API keys or run built-in OAuth flows       |
+| `session` / `/session`                                     | Open a read-only web view of the current session |
+| `new` / `/new`                                             | Reset the current session                        |
+| `model` / `/model` / `/pi-model provider/model[:thinking]` | Switch the LLM for the current conversation      |
+| `auto-reply` / `/pi-auto-reply on\|off\|status`            | Control group/channel auto-reply                 |
+| `stop` / `/stop`                                           | Stop the current run                             |
 
-Or build locally:
-
-```bash
-docker build -f docker/mama-sandbox.Dockerfile -t mama-sandbox:tools .
-```
-
-mama creates one container per vault, attaches each to its own bridge network, mounts the workspace at `/workspace`, injects vault env, mounts declared credential files, and stops idle containers.
-
-### Firecracker / Cloudflare
-
-See [docs/firecracker-setup.md](docs/firecracker-setup.md) and [examples/cloudflare-sandbox-bridge/README.md](examples/cloudflare-sandbox-bridge/README.md).
-
-## `/login` and Web Session Viewer
-
-```bash
-export MAMA_LINK_URL="https://mama.example.com"   # public base URL
-export MAMA_LINK_PORT=8181                         # optional, defaults to 8181
-```
-
-For local testing you can set just `MAMA_LINK_PORT`; mama will use `http://localhost:<port>`.
-
-- `/login` (DM only) returns a 15-minute link to store API keys or run built-in OAuth flows ([GitHub](docs/oauth/github.md), [Google Workspace](docs/oauth/google-workspace.md)).
-- `session` / `/session` (DM only) returns a read-only link showing the current session timeline.
-- `new` / `/new` (DM only) resets the current session and starts fresh.
-- `model` / `/model` / `/pi-model provider/model[:thinking]` switches the LLM for the current conversation, e.g. `/pi-model anthropic/claude-sonnet-4-6:off`.
-- `stop` / `/stop` stops the current run. On Slack, use text commands so thread-local stop routing remains accurate.
-- On Slack you can also register native commands like `/pi-login`, `/pi-session`, `/pi-model`, and `/pi-new`.
-
-Credentials are stored under `<state-dir>/vaults` (default `~/.mama/vaults`). Vault env is only injected in `container`, `image`, `firecracker`, and `cloudflare` modes.
+See [docs/commands.md](docs/commands.md) for command details and web session viewer setup.
 
 ## Configuration
 
-mama reads global settings from `<state-dir>/settings.json` (default `~/.mama/settings.json`, override via `--state-dir` or `MAMA_STATE_DIR`). This file is required and is created explicitly with `mama --onboard`. Per-conversation settings live at `<workingDir>/<conversationId>/settings.json` and override global settings for that conversation.
-
-```json
-{
-  "llm": {
-    "provider": "anthropic",
-    "model": "claude-sonnet-4-6",
-    "thinkingLevel": "off"
-  },
-  "log": {
-    "format": "console",
-    "level": "info"
-  },
-  "sentry": {
-    "dsn": "https://examplePublicKey@o0.ingest.sentry.io/0"
-  },
-  "sandbox": {
-    "cpus": "0.5",
-    "memory": "512m",
-    "boost": {
-      "cpus": "2",
-      "memory": "4g"
-    }
-  }
-}
-```
-
-| Field                  | Default             | Description                                              |
-| ---------------------- | ------------------- | -------------------------------------------------------- |
-| `llm.provider`         | `anthropic`         | AI provider                                              |
-| `llm.model`            | `claude-sonnet-4-6` | Model name                                               |
-| `llm.thinkingLevel`    | `off`               | `off` / `low` / `medium` / `high`                        |
-| `log.format`           | `console`           | `console` (colored stdout) or `json` (GCP Cloud Logging) |
-| `log.level`            | `info`              | `trace` / `debug` / `info` / `warn` / `error`            |
-| `sentry.dsn`           | unset               | Sentry DSN; sensitive prompt/tool content is redacted    |
-| `sandbox.cpus`         | unset               | CPU limit for managed containers                         |
-| `sandbox.memory`       | unset               | Memory limit for managed containers                      |
-| `sandbox.boost.cpus`   | unset               | Temporary CPU limit used by `/pi-sandbox boost`          |
-| `sandbox.boost.memory` | unset               | Temporary memory limit used by `/pi-sandbox boost`       |
-
-`/pi-sandbox` shows the current managed-container CPU/memory limits. `/pi-sandbox boost` temporarily applies `sandbox.boost` to the current conversation; the boost ends when that sandbox container is stopped.
-
-Conversation-local settings written by `/pi-model` use the same shape and usually only include the override:
+mikan reads global settings from `<state-dir>/settings.json`; per-conversation overrides live at `<working-directory>/<conversationId>/settings.json`.
 
 ```json
 {
@@ -177,25 +113,21 @@ Conversation-local settings written by `/pi-model` use the same shape and usuall
 }
 ```
 
-For GCP Cloud Logging, set `log.format: "json"`, give the VM service account `roles/logging.logWriter`, and export `GOOGLE_CLOUD_PROJECT`. Logs land under log name `mama`.
+See [docs/configuration.md](docs/configuration.md) for all fields.
 
-## Layout
+## Data layout
 
-```
+```text
 <state-dir>/
 ├── settings.json
 └── vaults/
-    └── <vault-id>/
-        ├── env
-        └── ...                # credential files
 
 <working-directory>/
-├── MEMORY.md                  # global memory
-├── SYSTEM.md                  # installed packages / env log
-├── skills/                    # global skills
-├── events/                    # scheduled events
+├── MEMORY.md
+├── SYSTEM.md
+├── skills/
+├── events/
 └── <conversation-id>/
-    ├── MEMORY.md
     ├── log.jsonl
     ├── attachments/
     ├── scratch/
@@ -203,80 +135,36 @@ For GCP Cloud Logging, set `log.format: "json"`, give the VM service account `ro
     └── sessions/
 ```
 
-## Events
+## More docs
 
-Drop JSON files into `<working-directory>/events/`:
-
-```json
-// Immediate
-{"type": "immediate", "platform": "slack", "conversationId": "C0123456789", "conversationKind": "shared", "text": "Deploy finished"}
-
-// One-shot
-{"type": "one-shot", "platform": "telegram", "conversationId": "574247312", "conversationKind": "direct", "text": "Standup", "at": "2025-12-15T09:00:00+08:00"}
-
-// Periodic (cron)
-{"type": "periodic", "platform": "discord", "conversationId": "1498975469343739948", "conversationKind": "shared", "text": "Check inbox", "schedule": "0 9 * * 1-5", "timezone": "Asia/Taipei"}
-```
-
-## Skills
-
-```
-skills/my-tool/
-├── SKILL.md      # name + description frontmatter, usage docs
-└── run.sh
-```
-
-```yaml
----
-name: my-tool
-description: Does something useful
----
-
-Usage: {baseDir}/run.sh <args>
-```
+- [Events](docs/events.md)
+- [Skills](docs/skills.md)
+- [Deployment](docs/deployment.md)
+- [Development](docs/development.md)
+- [Sandbox](docs/sandbox.md)
 
 ## Slack: Download channel history
 
 ```bash
-mama --download C0123456789
+mikan --download C0123456789
 ```
-
-## Production deployment (PM2)
-
-For long-running deployments, use [PM2](https://pm2.keymetrics.io/) as a process supervisor. It daemonizes mama, restarts on crash, and survives reboots.
-
-```bash
-# 1. Install mama and pm2
-npm i -g @geminixiang/mama pm2
-
-# 2. Start the sandbox container (long-lived; mama execs into it)
-docker pull ghcr.io/geminixiang/mama-sandbox:latest
-
-# 3. Grab the ecosystem file, edit args + env tokens, then start
-curl -O https://raw.githubusercontent.com/geminixiang/mama/main/deploy/pm2/ecosystem.config.cjs
-pm2 start ecosystem.config.cjs
-pm2 save
-pm2 startup        # run the printed command to enable boot autostart
-```
-
-Upgrade flow:
-
-```bash
-npm i -g @geminixiang/mama && pm2 reload mama
-```
-
-`pm2 reload` sends SIGTERM and waits up to `kill_timeout` (60s in the shipped config) before SIGKILL. mama's internal graceful shutdown drains in-flight LLM turns within that window, so reloads do not interrupt active conversations.
-
-See [`deploy/pm2/ecosystem.config.cjs`](deploy/pm2/ecosystem.config.cjs) for all tunables.
 
 ## Development
 
 ```bash
-npm run dev     # watch mode
+npm run dev
 npm test
+npm run lint
+npm run fmt:check
 npm run build
 ```
 
+See [docs/development.md](docs/development.md) for E2E tests.
+
+## Contributing
+
+PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, commit style, and the testing checklist. Bug reports and feature requests go through the GitHub issue templates.
+
 ## License
 
-MIT — see [LICENSE](LICENSE). Inherits from pi-mom.
+MIT — see [LICENSE](LICENSE).

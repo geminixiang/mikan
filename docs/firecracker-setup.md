@@ -1,8 +1,8 @@
 # Firecracker Setup Guide
 
-This guide explains how to set up Firecracker microVM for use with mama sandbox mode.
+This guide explains how to set up Firecracker microVM for use with mikan sandbox mode.
 
-Warning: Firecracker support in mama is still in very early alpha. This guide is kept for experimentation and validation work; it is not the recommended sandbox path for normal development or production use yet. Prefer `image:<image>` unless you are explicitly testing Firecracker.
+Warning: Firecracker support in mikan is still in very early alpha. This guide is kept for experimentation and validation work; it is not the recommended sandbox path for normal development or production use yet. Prefer `image:<image>` unless you are explicitly testing Firecracker.
 
 ## Prerequisites
 
@@ -138,19 +138,19 @@ ssh -i ./id_rsa root@172.16.0.2 "echo 'Connected!' && uname -a"
 # Linux localhost 6.1.0... x86_64 GNU/Linux
 ```
 
-## Usage with Mama
+## Usage with Mikan
 
 Once the VM is running:
 
 ```bash
-# Run mama with Firecracker sandbox
-mama --sandbox=firecracker:172.16.0.2:/home/gemini/workspace /home/gemini/workspace
+# Run mikan with Firecracker sandbox
+mikan --sandbox=firecracker:172.16.0.2:/home/gemini/workspace /home/gemini/workspace
 
 # With custom SSH user
-mama --sandbox=firecracker:172.16.0.2:/home/gemini/workspace:ubuntu /home/gemini/workspace
+mikan --sandbox=firecracker:172.16.0.2:/home/gemini/workspace:ubuntu /home/gemini/workspace
 
 # With custom SSH port
-mama --sandbox=firecracker:172.16.0.2:/home/gemini/workspace:root:22 /home/gemini/workspace
+mikan --sandbox=firecracker:172.16.0.2:/home/gemini/workspace:root:22 /home/gemini/workspace
 ```
 
 ## Shutdown

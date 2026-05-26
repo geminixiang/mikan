@@ -4,6 +4,7 @@ import type {
   ExecResult,
   Executor,
   FirecrackerSandboxConfig,
+  RuntimePathContext,
   SandboxAdapter,
 } from "./types.js";
 import { SandboxError } from "./errors.js";
@@ -75,7 +76,7 @@ export async function validateFirecrackerSandbox(config: FirecrackerSandboxConfi
       await execSimple("firecracker-ctl", ["status", config.vmId]);
     } catch {
       console.error(`Warning: Could not verify if VM '${config.vmId}' is running.`);
-      console.error("Make sure the VM is started before running mama.");
+      console.error("Make sure the VM is started before running mikan.");
     }
   }
 
@@ -203,6 +204,13 @@ export class FirecrackerExecutor implements Executor {
 
   getWorkspacePath(_hostPath: string): string {
     return "/workspace";
+  }
+
+  getPathContext(hostWorkspaceRoot: string): RuntimePathContext {
+    return {
+      hostWorkspaceRoot,
+      runtimeWorkspaceRoot: "/workspace",
+    };
   }
 
   getSandboxConfig(): FirecrackerSandboxConfig {

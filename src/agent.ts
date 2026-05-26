@@ -1,5 +1,5 @@
 import { Agent, type ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { getModel, type ImageContent } from "@earendil-works/pi-ai";
+import { getModel, type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
 import {
   AgentSession,
   AuthStorage,
@@ -23,13 +23,22 @@ import type {
   ChatToolResult,
   ConversationKind,
   PlatformInfo,
+  PlatformName,
 } from "./adapter.js";
+import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import { loadAgentConfigForConversation } from "./config.js";
 import { ActorExecutionResolver } from "./execution-resolver.js";
 import * as log from "./log.js";
 import type { BrowserExtensionManager } from "./browser-extension.js";
+import { reportUserFacingError } from "./sentry.js";
 import type { DockerContainerManager } from "./provisioner.js";
-import { createExecutor, type Executor, type SandboxConfig } from "./sandbox.js";
+import {
+  createExecutor,
+  type Executor,
+  type RuntimePathContext,
+  type SandboxConfig,
+} from "./sandbox/index.js";
+import { createMountedRuntimePathContext } from "./sandbox/path-context.js";
 import { addLifecycleBreadcrumb, metricAttributes } from "./sentry.js";
 import type { VaultManager } from "./vault.js";
 import {
@@ -37,9 +46,9 @@ import {
   openManagedSession,
   type ResolvedSessionScope,
   type ThreadRootMessage,
-} from "./session-store.js";
+} from "./sessions/store.js";
 import { shouldSurfaceToolDiagnostic } from "./tool-diagnostics.js";
-import { createMamaTools } from "./tools/index.js";
+import { createMikanTools } from "./tools/index.js";
 import * as Sentry from "@sentry/node";
 
 export interface AgentRunner {
@@ -108,7 +117,7 @@ async function getMemory(conversationDir: string): Promise<string> {
   return parts.join("\n\n");
 }
 
-function loadMamaSkills(conversationDir: string, workspacePath: string): Skill[] {
+function loadMikanSkills(conversationDir: string, workspacePath: string): Skill[] {
   const skillMap = new Map<string, Skill>();
 
   // conversationDir is the host path (e.g., /Users/.../data/C0A34FL8PMH)
@@ -144,8 +153,8 @@ function loadMamaSkills(conversationDir: string, workspacePath: string): Skill[]
   return Array.from(skillMap.values());
 }
 
-function buildRuntimePaths(workspacePath: string, conversationId: string) {
-  const workspaceRoot = workspacePath.replace(/\/+$/, "") || "/";
+function buildRuntimePaths(runtimeWorkspaceRoot: string, conversationId: string) {
+  const workspaceRoot = runtimeWorkspaceRoot.replace(/\/+$/, "") || "/";
   const conversationPath = posix.join(workspaceRoot, conversationId);
   return {
     workspaceRoot,
@@ -188,6 +197,47 @@ function buildEnvDescription(sandboxType: SandboxConfig["type"], workspaceRoot: 
   }
 }
 
+export function buildEventFilesystemInstructions(
+  sandboxType: SandboxConfig["type"],
+  workspaceRoot: string,
+): string {
+  if (sandboxType === "host" || sandboxType === "container" || sandboxType === "image") {
+    return `Events live in the host-side mikan control plane and are mounted at \`${workspaceRoot}/events/\` in this runtime.
+
+Prefer the \`event\` tool over manually writing JSON files; it fills \`platform\`, \`conversationId\`, \`conversationKind\`, and \`userId\` for the current conversation automatically.
+
+### Creating Events Manually
+Only do this when you need to create events from a script. Use unique filenames to avoid overwriting existing events. Include a timestamp or random suffix:
+\`\`\`bash
+cat > ${workspaceRoot}/events/dentist-reminder-$(date +%s).json << 'EOF'
+{"type": "one-shot", "platform": "<platform>", "conversationId": "<conversationId>", "conversationKind": "<direct|shared>", "userId": "<requester userId>", "text": "Dentist tomorrow", "at": "2025-12-14T09:00:00+01:00"}
+EOF
+\`\`\`
+
+### Managing Events
+- List: \`ls ${workspaceRoot}/events/\`
+- View: \`cat ${workspaceRoot}/events/foo.json\`
+- Delete/cancel: \`rm ${workspaceRoot}/events/foo.json\``;
+  }
+
+  return `Events live in the host-side mikan control plane, not necessarily in this runtime filesystem.
+
+Use the \`event\` tool to create events. It writes to the correct host-side events directory and fills \`platform\`, \`conversationId\`, \`conversationKind\`, and \`userId\` for the current conversation automatically.
+
+Do not create event files with bash in \`${workspaceRoot}/events/\` from this sandbox unless you have explicitly verified that path is mounted back to the host-side mikan events directory.`;
+}
+
+export function resolveTriggerAttribution(
+  message: Pick<ChatMessage, "id" | "text" | "userName">,
+): string | undefined {
+  const eventTextMatch = message.text.match(/^\[EVENT:([^:]+):/);
+  if (eventTextMatch) return `[event: ${eventTextMatch[1]}]`;
+  const eventIdMatch = message.id.match(/^event:([^:]+)/);
+  if (eventIdMatch) return `[event: ${eventIdMatch[1]}]`;
+  if (message.userName) return `@${message.userName}`;
+  return undefined;
+}
+
 function buildSystemPrompt(
   workspacePath: string,
   conversationId: string,
@@ -197,6 +247,8 @@ function buildSystemPrompt(
   sandboxConfig: SandboxConfig,
   platform: PlatformInfo,
   skills: Skill[],
+  isEventTrigger = false,
+  triggerAttribution?: string,
 ): string {
   const { workspaceRoot, conversationPath, scratchPath } = buildRuntimePaths(
     workspacePath,
@@ -219,8 +271,28 @@ function buildSystemPrompt(
       : "(no users loaded)";
 
   const envDescription = buildEnvDescription(sandboxType, workspaceRoot);
+  const eventFilesystemInstructions = buildEventFilesystemInstructions(sandboxType, workspaceRoot);
+  const eventTriggerInstructions = isEventTrigger
+    ? `
+## Event Trigger Mode
+- You are handling a scheduled/background event, not opening a brand new chat with a stranger.
+- Treat the incoming user message as a self-contained task prepared by an earlier run.
+- Complete the task directly. Avoid generic greetings, self-introductions, or boilerplate offers to help.
+- For reminders/follow-ups, prefer a short direct response that sounds like a continuation of prior intent.
+- If the event text includes tone, brevity, or language instructions, follow them literally.
+`
+    : "";
+  const attributionInstructions = triggerAttribution
+    ? `
+## Attribution
+Always end your final ${platform.name} response and any GitHub issue/PR comments or descriptions you write via tools with:
+_Triggered by ${triggerAttribution}_
 
-  return `You are mama, a ${platform.name} bot assistant. Be concise. No emojis.
+Do not add this to \`[SILENT]\` responses.
+`
+    : "";
+
+  return `You are mikan, a ${platform.name} bot assistant. Be concise. No emojis.
 
 ## Context
 - For current date/time, use: date
@@ -229,8 +301,9 @@ function buildSystemPrompt(
 - Structured session history with tool results lives in \`${conversationPath}/sessions/\`.
 - The active top-level session is selected by \`${conversationPath}/sessions/current\`, which points to a timestamped \`.jsonl\` file in the same directory.
 - Scoped/thread sessions use fixed files at \`${conversationPath}/sessions/<scope_id>.jsonl\` (for example \`${conversationPath}/sessions/1777386320.800769.jsonl\`).
+- If a user asks about something that should exist in conversation history but is not found in the current context window, do not answer "I don't know" or "I don't have that". Instead, search the thread session, top-level session, and \`log.jsonl\` before responding.
 - User messages include a \`[in-thread:TS]\` marker when sent from within a platform thread/reply (TS is the thread or parent message identifier). Without this marker, the message is a top-level conversation message.
-
+${eventTriggerInstructions}
 ${platform.formattingGuide}
 
 ## Platform IDs
@@ -285,7 +358,8 @@ Scripts are in: {baseDir}/
 ${skills.length > 0 ? formatSkillsForPrompt(skills) : "(no skills installed yet)"}
 
 ## Events
-You can schedule events that wake you up at specific times or when external things happen. Events are JSON files in \`${workspaceRoot}/events/\`.
+You can schedule events that wake you up at specific times or when external things happen.
+${eventFilesystemInstructions}
 
 ### Event Types
 
@@ -319,21 +393,7 @@ Set \`platform\` to the target bot platform (\`${platform.name}\` for this conve
 
 Set \`userId\` to the platform userId of whoever asked for the event. When the event fires, tool execution routes using that user's vault selection in per-user modes. In \`container:<name>\`, events use the container's single shared vault.
 
-Prefer the \`event\` tool over manually writing JSON files; it fills \`platform\`, \`conversationId\`, \`conversationKind\`, and \`userId\` for the current conversation automatically.
-
-### Creating Events
-Use unique filenames to avoid overwriting existing events. Include a timestamp or random suffix:
-\`\`\`bash
-cat > ${workspaceRoot}/events/dentist-reminder-$(date +%s).json << 'EOF'
-{"type": "one-shot", "platform": "${platform.name}", "conversationId": "${conversationId}", "conversationKind": "${conversationKind}", "userId": "${currentUserId ?? "<requester userId>"}", "text": "Dentist tomorrow", "at": "2025-12-14T09:00:00+01:00"}
-EOF
-\`\`\`
-Or check if file exists first before creating.
-
-### Managing Events
-- List: \`ls ${workspaceRoot}/events/\`
-- View: \`cat ${workspaceRoot}/events/foo.json\`
-- Delete/cancel: \`rm ${workspaceRoot}/events/foo.json\`
+When scheduling an event, write \`text\` as a self-contained task for your future self. Include the minimum necessary context, tone, and constraints in the text itself because events do not inherit normal conversation history. Good: \`Please remind the user that break time is over and it is time to return to class. Keep it brief, in Traditional Chinese, and do not ask follow-up questions.\` Bad: \`back to class\`.
 
 ### When Events Trigger
 You receive a message like:
@@ -374,7 +434,7 @@ Format: \`{"date":"...","ts":"...","user":"...","userName":"...","text":"...","i
 The log contains user messages and your final responses (not tool calls/results).
 Use \`log.jsonl\` for quick grep-style history. Use \`${conversationPath}/sessions/\` when you need structured turns, tool outputs, or branch lineage.
 ${isContainerLike || isFirecracker ? "Install jq: apt-get install jq" : ""}
-
+${attributionInstructions}
 \`\`\`bash
 # Recent messages
 tail -30 log.jsonl | jq -c '{date: .date[0:19], user: (.userName // .user), text}'
@@ -407,14 +467,21 @@ function truncate(text: string, maxLen: number): string {
   return `${text.substring(0, maxLen - 3)}...`;
 }
 
-function initialWorkspacePath(sandboxConfig: SandboxConfig, hostWorkspacePath: string): string {
-  return sandboxConfig.type === "host" ? hostWorkspacePath : "/workspace";
+export function getUnresolvedSandboxPathContext(
+  sandboxConfig: SandboxConfig,
+  hostWorkspaceRoot: string,
+): RuntimePathContext {
+  if (sandboxConfig.type === "image") {
+    return createMountedRuntimePathContext(hostWorkspaceRoot, "/workspace");
+  }
+
+  return createExecutor(sandboxConfig).getPathContext(hostWorkspaceRoot);
 }
 
 interface RunnerExecutionContext {
   executionResolver?: ActorExecutionResolver;
   executor: Executor;
-  getWorkspacePath: () => string;
+  getPathContext: () => RuntimePathContext;
   resolveExecutorForRun(context: {
     platform: string;
     userId: string;
@@ -444,6 +511,7 @@ interface RunnerSessionState {
   llmCallCount: number;
   stopReason: string;
   errorMessage: string | undefined;
+  reportedLlmError: boolean;
 }
 
 interface PreparedRunContext {
@@ -451,6 +519,7 @@ interface PreparedRunContext {
   runQueue: ReturnType<typeof createRunQueue>;
   userMessage: string;
   imageAttachments: ImageContent[];
+  triggerAttribution?: string;
 }
 
 interface ConfiguredAgentSession {
@@ -492,12 +561,15 @@ function createRunnerExecutionContext(
     getSandboxConfig() {
       return activeExecutor.getSandboxConfig();
     },
+    getPathContext(hostWorkspaceRoot) {
+      return activeExecutor.getPathContext(hostWorkspaceRoot);
+    },
   };
 
   return {
     executionResolver,
     executor,
-    getWorkspacePath: () => executor.getWorkspacePath(hostWorkspacePath),
+    getPathContext: () => executor.getPathContext(hostWorkspacePath),
     async resolveExecutorForRun(context): Promise<void> {
       if (!executionResolver) return;
       activeExecutor = await executionResolver.resolve(context);
@@ -508,18 +580,18 @@ function createRunnerExecutionContext(
 async function createConfiguredAgentSession(params: {
   conversationId: string;
   workspaceDir: string;
-  workspacePath: string;
+  runtimeWorkspaceRoot: string;
   systemPrompt: string;
-  model: ReturnType<typeof getModel>;
+  model: Model<Api>;
   thinkingLevel: ThinkingLevel;
-  tools: Awaited<ReturnType<typeof createMamaTools>>["tools"];
+  tools: Awaited<ReturnType<typeof createMikanTools>>["tools"];
   sessionManager: SessionManager;
   settingsManager: SettingsManager;
 }): Promise<ConfiguredAgentSession> {
   const {
     conversationId,
     workspaceDir,
-    workspacePath,
+    runtimeWorkspaceRoot,
     systemPrompt,
     model,
     thinkingLevel,
@@ -528,7 +600,7 @@ async function createConfiguredAgentSession(params: {
     settingsManager,
   } = params;
 
-  const authStorage = AuthStorage.create(join(homedir(), ".pi", "mama", "auth.json"));
+  const authStorage = AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json"));
   const modelRegistry = ModelRegistry.create(authStorage);
   const agent = new Agent({
     initialState: {
@@ -582,7 +654,7 @@ async function createConfiguredAgentSession(params: {
     agent,
     sessionManager,
     settingsManager,
-    cwd: workspacePath,
+    cwd: runtimeWorkspaceRoot,
     modelRegistry,
     resourceLoader,
     baseToolsOverride,
@@ -610,6 +682,7 @@ function createRunState(): RunnerSessionState {
     llmCallCount: 0,
     stopReason: "stop",
     errorMessage: undefined,
+    reportedLlmError: false,
   };
 }
 
@@ -632,6 +705,7 @@ function resetRunState(
   runState.llmCallCount = 0;
   runState.stopReason = "stop";
   runState.errorMessage = undefined;
+  runState.reportedLlmError = false;
 }
 
 function createRunQueue(responseCtx: ChatResponseContext): {
@@ -754,12 +828,49 @@ function getFinalAssistantText(session: AgentSession): string {
   );
 }
 
+export function appendTriggerAttribution(
+  text: string,
+  triggerAttribution: string | undefined,
+): string {
+  if (!triggerAttribution) return text;
+  const suffix = `_Triggered by ${triggerAttribution}_`;
+  if (text.trimEnd().endsWith(suffix)) return text;
+  return `${text.trimEnd()}\n\n${suffix}`;
+}
+
 async function finalizeRunResponse(
   responseCtx: ChatResponseContext,
   session: AgentSession,
   runState: RunnerSessionState,
+  options?: {
+    triggerAttribution?: string;
+    createOverflowLink?: () => string;
+    platform?: string;
+    model?: Model<Api>;
+    sessionConversation?: string;
+    sessionUuid?: string;
+  },
 ): Promise<void> {
   if (runState.stopReason === "error" && runState.errorMessage) {
+    if (!runState.reportedLlmError) {
+      runState.reportedLlmError = true;
+      reportUserFacingError(new Error("LLM run completed with error stop reason"), {
+        domain: "llm",
+        surface: "assistant_response",
+        operation: "llm_turn",
+        severity: "error",
+        platform: options?.platform,
+        provider: options?.model?.provider,
+        model: options?.model?.name,
+        stopReason: runState.stopReason,
+        context: {
+          sessionConversation: options?.sessionConversation,
+          sessionUuid: options?.sessionUuid,
+          hasErrorMessage: true,
+          llmCallCount: runState.llmCallCount,
+        },
+      });
+    }
     try {
       await responseCtx.replaceResponse("_Sorry, something went wrong_");
       await responseCtx.respondDiagnostic(`Error: ${runState.errorMessage}`, {
@@ -768,6 +879,18 @@ async function finalizeRunResponse(
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       log.logWarning("Failed to post error message", errMsg);
+      reportUserFacingError(err, {
+        domain: "chat_platform",
+        surface: "final_response",
+        operation: "finalize_error_response",
+        severity: "error",
+        platform: options?.platform,
+        context: {
+          sessionConversation: options?.sessionConversation,
+          sessionUuid: options?.sessionUuid,
+          stopReason: runState.stopReason,
+        },
+      });
     }
     return;
   }
@@ -787,10 +910,25 @@ async function finalizeRunResponse(
   if (!finalText.trim()) return;
 
   try {
-    await responseCtx.replaceResponse(finalText);
+    await responseCtx.replaceResponse(
+      appendTriggerAttribution(finalText, options?.triggerAttribution),
+      { createOverflowLink: options?.createOverflowLink },
+    );
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     log.logWarning("Failed to replace message with final text", errMsg);
+    reportUserFacingError(err, {
+      domain: "chat_platform",
+      surface: "final_response",
+      operation: "replace_final_response",
+      severity: "error",
+      platform: options?.platform,
+      context: {
+        sessionConversation: options?.sessionConversation,
+        sessionUuid: options?.sessionUuid,
+        finalTextLength: finalText.length,
+      },
+    });
   }
 }
 
@@ -799,7 +937,7 @@ interface UsageReportContext {
   runState: RunnerSessionState;
   responseCtx: ChatResponseContext;
   platform: PlatformInfo;
-  model: ReturnType<typeof getModel>;
+  model: Model<Api>;
   agentConfig: ReturnType<typeof loadAgentConfigForConversation>;
   sessionConversation: string;
   sessionUuid: string;
@@ -903,7 +1041,7 @@ async function prepareRunContext(params: {
   executor: Executor;
   executionResolver?: ActorExecutionResolver;
   resolveExecutorForRun: RunnerExecutionContext["resolveExecutorForRun"];
-  getWorkspacePath: () => string;
+  getPathContext: () => RuntimePathContext;
   sessionManager: SessionManager;
   session: AgentSession;
   agent: Agent;
@@ -912,12 +1050,10 @@ async function prepareRunContext(params: {
     conversationId: string;
     conversationKind: ConversationKind;
     userId: string;
-    sessionKey: string;
-    threadTs?: string;
   }) => void;
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
-  workspacePath: string;
-}): Promise<PreparedRunContext & { workspacePath: string }> {
+  pathContext: RuntimePathContext;
+}): Promise<PreparedRunContext & { pathContext: RuntimePathContext }> {
   const {
     message,
     responseCtx,
@@ -929,14 +1065,14 @@ async function prepareRunContext(params: {
     executor,
     executionResolver,
     resolveExecutorForRun,
-    getWorkspacePath,
+    getPathContext,
     sessionManager,
     session,
     agent,
     setEventContext,
     setUploadFunction,
   } = params;
-  let workspacePath = params.workspacePath;
+  let pathContext = params.pathContext;
   const sessionConversation = message.sessionKey.split(":")[0];
 
   await mkdir(join(conversationDir, "scratch"), { recursive: true });
@@ -947,15 +1083,16 @@ async function prepareRunContext(params: {
       userId: message.userId,
       conversationId,
     });
-    workspacePath = getWorkspacePath();
+    pathContext = getPathContext();
   }
 
   reloadSessionMessages(sessionManager, conversationId, agent);
 
   const memory = await getMemory(conversationDir);
-  const skills = loadMamaSkills(conversationDir, workspacePath);
+  const skills = loadMikanSkills(conversationDir, pathContext.runtimeWorkspaceRoot);
+  const triggerAttribution = resolveTriggerAttribution(message);
   const systemPrompt = buildSystemPrompt(
-    workspacePath,
+    pathContext.runtimeWorkspaceRoot,
     conversationId,
     message.conversationKind,
     message.userId,
@@ -963,6 +1100,8 @@ async function prepareRunContext(params: {
     executor.getSandboxConfig(),
     platform,
     skills,
+    message.id.startsWith("event:"),
+    triggerAttribution,
   );
   session.agent.state.systemPrompt = systemPrompt;
 
@@ -971,12 +1110,10 @@ async function prepareRunContext(params: {
     conversationId,
     conversationKind: message.conversationKind,
     userId: message.userId,
-    sessionKey: message.sessionKey,
-    threadTs: message.threadTs,
   });
 
   setUploadFunction(async (filePath: string, title?: string) => {
-    const hostPath = translateToHostPath(filePath, conversationDir, workspacePath, conversationId);
+    const hostPath = translateRuntimePathToHost(filePath, pathContext);
     await responseCtx.uploadFile(hostPath, title);
   });
 
@@ -989,7 +1126,10 @@ async function prepareRunContext(params: {
   );
   log.logInfo(`Channels: ${platform.channels.length}, Users: ${platform.users.length}`);
 
-  const { userMessage, imageAttachments } = buildPromptPayload(message, workspacePath);
+  const { userMessage, imageAttachments } = buildPromptPayload(
+    message,
+    pathContext.runtimeWorkspaceRoot,
+  );
   await writePromptDebugContext(
     conversationDir,
     systemPrompt,
@@ -1003,14 +1143,15 @@ async function prepareRunContext(params: {
     runQueue,
     userMessage,
     imageAttachments,
-    workspacePath,
+    triggerAttribution,
+    pathContext,
   };
 }
 
 function attachSessionEventHandlers(params: {
   session: AgentSession;
   runState: RunnerSessionState;
-  model: ReturnType<typeof getModel>;
+  model: Model<Api>;
   agentConfig: ReturnType<typeof loadAgentConfigForConversation>;
 }): void {
   const { session, runState, model, agentConfig } = params;
@@ -1083,7 +1224,7 @@ function attachSessionEventHandlers(params: {
         queue.enqueue(() => responseCtx.respondToolResult(toolResult), "tool result diagnostic");
       }
 
-      if (event.isError) {
+      if (event.isError && shouldSurfaceToolDiagnostic(event.toolName)) {
         queue.enqueue(
           () => responseCtx.respond(`_Error: ${truncate(resultStr, 200)}_`),
           "tool error",
@@ -1251,10 +1392,6 @@ function extractToolResultText(result: unknown): string {
   return JSON.stringify(result);
 }
 
-// ============================================================================
-// Agent runner
-// ============================================================================
-
 /**
  * Create a new AgentRunner for a channel.
  * Sets up the session and subscribes to events once.
@@ -1272,17 +1409,15 @@ export async function createRunner(
   vaultManager?: VaultManager,
   provisioner?: DockerContainerManager,
   browserExtensionManager?: BrowserExtensionManager,
+  sessionView?: {
+    tokenStore: SessionViewTokenStoreLike;
+    portalBaseUrl?: string;
+  },
 ): Promise<AgentRunner> {
   const agentConfig = loadAgentConfigForConversation(conversationDir);
 
-  // Initialize logger with settings from config
-  log.initLogger({
-    logFormat: agentConfig.logFormat,
-    logLevel: agentConfig.logLevel,
-  });
-
   const workspaceBase = join(conversationDir, "..");
-  const { executionResolver, executor, getWorkspacePath, resolveExecutorForRun } =
+  const { executionResolver, executor, getPathContext, resolveExecutorForRun } =
     createRunnerExecutionContext(
       sandboxConfig,
       vaultManager,
@@ -1290,24 +1425,22 @@ export async function createRunner(
       workspaceDir,
       workspaceBase,
     );
-  let workspacePath = initialWorkspacePath(sandboxConfig, workspaceBase);
+  let pathContext = getUnresolvedSandboxPathContext(sandboxConfig, workspaceBase);
 
   // Create tools (per-runner, with per-runner upload function setter)
-  const { tools, setUploadFunction, setEventContext, setBrowserContext } = createMamaTools(
+  const { tools, setUploadFunction, setEventContext, setBrowserContext } = createMikanTools(
     executor,
     workspaceDir,
     browserExtensionManager,
   );
 
-  // Resolve model from config
-  // Use 'as any' cast because agentConfig.provider/model are plain strings,
-  // while getModel() has constrained generic types for known providers.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const model = (getModel as any)(agentConfig.provider, agentConfig.model);
+  // Resolve model from config. Config stores provider/model as user-provided strings,
+  // while getModel's public overload is narrowed to generated known providers.
+  const model = getModel(agentConfig.provider as never, agentConfig.model as never) as Model<Api>;
 
   // Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
   const memory = await getMemory(conversationDir);
-  const skills = loadMamaSkills(conversationDir, workspacePath);
+  const skills = loadMikanSkills(conversationDir, pathContext.runtimeWorkspaceRoot);
   const emptyPlatform: PlatformInfo = {
     name: "chat",
     formattingGuide: "",
@@ -1315,7 +1448,7 @@ export async function createRunner(
     users: [],
   };
   const systemPrompt = buildSystemPrompt(
-    workspacePath,
+    pathContext.runtimeWorkspaceRoot,
     conversationId,
     "shared",
     undefined,
@@ -1330,7 +1463,11 @@ export async function createRunner(
   // Platform-specific branch/fork behavior is resolved before runner creation.
   const isThread = sessionKey.includes(":");
   const { sessionDir, contextFile, threadRootMessage } = sessionScope;
-  const sessionManager = openManagedSession(contextFile, sessionDir, workspacePath);
+  const sessionManager = openManagedSession(
+    contextFile,
+    sessionDir,
+    pathContext.runtimeWorkspaceRoot,
+  );
   const threadSessionName = buildThreadSessionName(threadRootMessage);
   if (isThread && threadSessionName && sessionManager.getSessionName() !== threadSessionName) {
     sessionManager.appendSessionInfo(threadSessionName);
@@ -1341,7 +1478,7 @@ export async function createRunner(
   const { agent, session } = await createConfiguredAgentSession({
     conversationId,
     workspaceDir,
-    workspacePath,
+    runtimeWorkspaceRoot: pathContext.runtimeWorkspaceRoot,
     systemPrompt,
     model,
     thinkingLevel: agentConfig.thinkingLevel,
@@ -1371,15 +1508,15 @@ export async function createRunner(
         executor,
         executionResolver,
         resolveExecutorForRun,
-        getWorkspacePath,
+        getPathContext,
         sessionManager,
         session,
         agent,
         setEventContext,
         setUploadFunction,
-        workspacePath,
+        pathContext,
       });
-      workspacePath = prepared.workspacePath;
+      pathContext = prepared.pathContext;
 
       const browserOutputDir = join(conversationDir, "scratch", "browser");
       mkdirSync(browserOutputDir, { recursive: true });
@@ -1387,12 +1524,7 @@ export async function createRunner(
         conversationId,
         hostOutputDir: browserOutputDir,
         uploadFile: async (filePath: string, title?: string) => {
-          const hostPath = translateToHostPath(
-            filePath,
-            conversationDir,
-            workspacePath,
-            conversationId,
-          );
+          const hostPath = translateRuntimePathToHost(filePath, pathContext);
           await responseCtx.uploadFile(hostPath, title);
         },
       });
@@ -1414,7 +1546,31 @@ export async function createRunner(
       // Wait for queued messages
       await prepared.runQueue.wait();
 
-      await finalizeRunResponse(responseCtx, session, runState);
+      const sessionViewTokenStore = sessionView?.tokenStore;
+      const sessionViewPortalBaseUrl = sessionView?.portalBaseUrl;
+      const createOverflowLink =
+        sessionViewTokenStore && sessionViewPortalBaseUrl
+          ? () => {
+              const token = sessionViewTokenStore.create(
+                platform.name as PlatformName,
+                message.userId,
+                conversationId,
+                message.sessionKey,
+                contextFile,
+                message.userName,
+              );
+              return `${sessionViewPortalBaseUrl}/session?token=${token.token}`;
+            }
+          : undefined;
+
+      await finalizeRunResponse(responseCtx, session, runState, {
+        triggerAttribution: prepared.triggerAttribution,
+        createOverflowLink,
+        platform: platform.name,
+        model,
+        sessionConversation: prepared.sessionConversation,
+        sessionUuid,
+      });
 
       await reportUsageSummary({
         session,
@@ -1454,23 +1610,16 @@ export async function createRunner(
   };
 }
 
-/**
- * Translate container path back to host path for file operations
- */
-function translateToHostPath(
-  containerPath: string,
-  conversationDir: string,
-  workspacePath: string,
-  conversationId: string,
+export function translateRuntimePathToHost(
+  runtimePath: string,
+  pathContext: RuntimePathContext,
 ): string {
-  if (workspacePath === "/workspace") {
-    const prefix = `/workspace/${conversationId}/`;
-    if (containerPath.startsWith(prefix)) {
-      return join(conversationDir, containerPath.slice(prefix.length));
-    }
-    if (containerPath.startsWith("/workspace/")) {
-      return join(conversationDir, "..", containerPath.slice("/workspace/".length));
-    }
-  }
-  return containerPath;
+  return pathContext.runtimeToHostPath?.(runtimePath) ?? runtimePath;
+}
+
+export function buildInitialPathContextForTest(
+  sandboxConfig: SandboxConfig,
+  hostWorkspaceRoot: string,
+): RuntimePathContext {
+  return getUnresolvedSandboxPathContext(sandboxConfig, hostWorkspaceRoot);
 }

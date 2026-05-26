@@ -19,19 +19,20 @@ import { InMemoryLinkTokenStore } from "./login/session.js";
 import { InMemorySessionViewTokenStore } from "./session-view/store.js";
 import { DockerContainerManager } from "./provisioner.js";
 import { createGlobalSettingsFile, loadAgentConfig, MissingGlobalSettingsError } from "./config.js";
+import { readEnv, setEnvAliases } from "./env.js";
 import { ensureDirExists, isRecord, readJsonFileIfExists } from "./file-guards.js";
-import { SandboxError, parseSandboxArg, type SandboxConfig, validateSandbox } from "./sandbox.js";
+import {
+  SandboxError,
+  parseSandboxArg,
+  type SandboxConfig,
+  validateSandbox,
+} from "./sandbox/index.js";
 import { FileVaultManager } from "./vault.js";
 import { createSessionRuntime } from "./runtime/index.js";
 import { BrowserExtensionManager } from "./browser-extension.js";
 import { ChannelStore } from "./store.js";
 import * as Sentry from "@sentry/node";
 
-// ============================================================================
-// Config
-// ============================================================================
-
-// Get version from package.json
 function getVersion(): string {
   // Try to find package.json in the dist directory or parent
   const possiblePaths = [
@@ -51,14 +52,14 @@ function getVersion(): string {
   return "unknown";
 }
 
-const MAMA_SLACK_APP_TOKEN = process.env.MAMA_SLACK_APP_TOKEN;
-const MAMA_SLACK_BOT_TOKEN = process.env.MAMA_SLACK_BOT_TOKEN;
-const MAMA_TELEGRAM_BOT_TOKEN = process.env.MAMA_TELEGRAM_BOT_TOKEN;
-const MAMA_DISCORD_BOT_TOKEN = process.env.MAMA_DISCORD_BOT_TOKEN;
-const MAMA_LINK_URL = process.env.MAMA_LINK_URL;
-const MAMA_LINK_PORT = process.env.MAMA_LINK_PORT
-  ? parseInt(process.env.MAMA_LINK_PORT, 10)
-  : MAMA_LINK_URL
+const SLACK_APP_TOKEN = readEnv("SLACK_APP_TOKEN");
+const SLACK_BOT_TOKEN = readEnv("SLACK_BOT_TOKEN");
+const TELEGRAM_BOT_TOKEN = readEnv("TELEGRAM_BOT_TOKEN");
+const DISCORD_BOT_TOKEN = readEnv("DISCORD_BOT_TOKEN");
+const LINK_URL = readEnv("LINK_URL");
+const LINK_PORT = readEnv("LINK_PORT")
+  ? parseInt(readEnv("LINK_PORT") ?? "", 10)
+  : LINK_URL
     ? 8181
     : undefined;
 
@@ -146,8 +147,8 @@ function ensureSecureStateDir(path: string): void {
   const euid = typeof process.geteuid === "function" ? process.geteuid() : undefined;
   if (euid !== undefined && stat.uid !== euid) {
     console.error(
-      `Error: --state-dir ${path} is owned by uid ${stat.uid} but mama is running as uid ${euid}. ` +
-        `Run mama as the directory owner or point --state-dir at a directory you own.`,
+      `Error: --state-dir ${path} is owned by uid ${stat.uid} but mikan is running as uid ${euid}. ` +
+        `Run mikan as the directory owner or point --state-dir at a directory you own.`,
     );
     process.exit(1);
   }
@@ -164,9 +165,9 @@ function handleStartupError(error: unknown): never {
     console.error(`Missing global settings: ${error.settingsPath}`);
     console.error("");
     console.error("Run onboarding to create it:");
-    console.error(`  mama --onboard --state-dir ${stateDir}`);
+    console.error(`  mikan --onboard --state-dir ${stateDir}`);
     console.error("");
-    console.error("Then review the generated settings.json and start mama again.");
+    console.error("Then review the generated settings.json and start mikan again.");
     process.exit(1);
   }
   if (error instanceof Error) {
@@ -192,13 +193,13 @@ if (parsedArgs.showVersion) {
 
 // Handle --onboard mode
 if (parsedArgs.showOnboard) {
-  const stateDir = parsedArgs.stateDir ?? join(homedir(), ".mama");
-  process.env.MAMA_STATE_DIR = stateDir;
+  const stateDir = parsedArgs.stateDir ?? join(homedir(), ".mikan");
+  setEnvAliases("STATE_DIR", stateDir);
   ensureSecureStateDir(stateDir);
   try {
     const settingsPath = createGlobalSettingsFile(stateDir);
     console.log(`Created global settings at ${settingsPath}`);
-    console.log("Review the file, then start mama with your working directory.");
+    console.log("Review the file, then start mikan with your working directory.");
     process.exit(0);
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));
@@ -208,40 +209,40 @@ if (parsedArgs.showOnboard) {
 
 // Handle --download mode (Slack only)
 if (parsedArgs.downloadChannel) {
-  if (!MAMA_SLACK_BOT_TOKEN) {
-    console.error("Missing env: MAMA_SLACK_BOT_TOKEN");
+  if (!SLACK_BOT_TOKEN) {
+    console.error("Missing env: SLACK_BOT_TOKEN");
     process.exit(1);
   }
-  await downloadChannel(parsedArgs.downloadChannel, MAMA_SLACK_BOT_TOKEN);
+  await downloadChannel(parsedArgs.downloadChannel, SLACK_BOT_TOKEN);
   process.exit(0);
 }
 
 // Normal bot mode - require working dir
 if (!parsedArgs.workingDir) {
   console.error(
-    "Usage: mama [--state-dir=<dir>] [--sandbox=host|container:<name>|image:<image>|firecracker:<vm-id>:<host-path>|cloudflare:<sandbox-id>] <working-directory>",
+    "Usage: mikan [--state-dir=<dir>] [--sandbox=host|container:<name>|image:<image>|firecracker:<vm-id>:<host-path>|cloudflare:<sandbox-id>] <working-directory>",
   );
-  console.error("       mama --onboard [--state-dir=<dir>]");
-  console.error("       mama --download <channel-id>");
+  console.error("       mikan --onboard [--state-dir=<dir>]");
+  console.error("       mikan --download <channel-id>");
   process.exit(1);
 }
 
 const { workingDir, sandbox } = { workingDir: parsedArgs.workingDir, sandbox: parsedArgs.sandbox };
-const stateDir = parsedArgs.stateDir ?? join(homedir(), ".mama");
-process.env.MAMA_STATE_DIR = stateDir;
+const stateDir = parsedArgs.stateDir ?? join(homedir(), ".mikan");
+setEnvAliases("STATE_DIR", stateDir);
 ensureSecureStateDir(stateDir);
 
 // Validate platform tokens
-const hasSlack = !!(MAMA_SLACK_APP_TOKEN && MAMA_SLACK_BOT_TOKEN);
-const hasTelegram = !!MAMA_TELEGRAM_BOT_TOKEN;
-const hasDiscord = !!MAMA_DISCORD_BOT_TOKEN;
+const hasSlack = !!(SLACK_APP_TOKEN && SLACK_BOT_TOKEN);
+const hasTelegram = !!TELEGRAM_BOT_TOKEN;
+const hasDiscord = !!DISCORD_BOT_TOKEN;
 
 if (!hasSlack && !hasTelegram && !hasDiscord) {
   console.error(
     "No platform tokens found. Set one of:\n" +
-      "  Slack:    MAMA_SLACK_APP_TOKEN + MAMA_SLACK_BOT_TOKEN\n" +
-      "  Telegram: MAMA_TELEGRAM_BOT_TOKEN\n" +
-      "  Discord:  MAMA_DISCORD_BOT_TOKEN",
+      "  Slack:    SLACK_APP_TOKEN + SLACK_BOT_TOKEN\n" +
+      "  Telegram: TELEGRAM_BOT_TOKEN\n" +
+      "  Discord:  DISCORD_BOT_TOKEN",
   );
   process.exit(1);
 }
@@ -304,8 +305,8 @@ setInterval(() => linkTokenStore.purge(), 5 * 60 * 1000).unref();
 setInterval(() => sessionViewTokenStore.purge(), 5 * 60 * 1000).unref();
 
 function portalBaseUrl(): string | undefined {
-  if (MAMA_LINK_URL) return MAMA_LINK_URL.replace(/\/+$/, "");
-  if (MAMA_LINK_PORT) return `http://localhost:${MAMA_LINK_PORT}`;
+  if (LINK_URL) return LINK_URL.replace(/\/+$/, "");
+  if (LINK_PORT) return `http://localhost:${LINK_PORT}`;
   return undefined;
 }
 /** Idle timeout for managed image containers (10 minutes) */
@@ -327,10 +328,6 @@ const handler = createSessionRuntime({
   browserExtensionManager,
 });
 
-// ============================================================================
-// Start
-// ============================================================================
-
 const sandboxDesc =
   sandbox.type === "host"
     ? "host"
@@ -343,15 +340,14 @@ const sandboxDesc =
           : `cloudflare:${sandbox.sandboxId}`;
 log.logStartup(workingDir, sandboxDesc);
 
-// Create platform bots
 const bots: Bot[] = [];
 const botsByPlatform: Record<string, Bot> = {};
 
 if (hasSlack) {
-  const slackBotToken = MAMA_SLACK_BOT_TOKEN;
-  const slackAppToken = MAMA_SLACK_APP_TOKEN;
+  const slackBotToken = SLACK_BOT_TOKEN;
+  const slackAppToken = SLACK_APP_TOKEN;
   if (!slackBotToken || !slackAppToken) {
-    throw new Error("Slack startup requires both MAMA_SLACK_APP_TOKEN and MAMA_SLACK_BOT_TOKEN");
+    throw new Error("Slack startup requires both SLACK_APP_TOKEN and SLACK_BOT_TOKEN");
   }
   const sharedStore = new ChannelStore({ workingDir, botToken: slackBotToken });
   const slackBot = new SlackBotClass(handler, {
@@ -365,9 +361,9 @@ if (hasSlack) {
   log.logInfo("Platform: Slack");
 }
 if (hasTelegram) {
-  const telegramToken = MAMA_TELEGRAM_BOT_TOKEN;
+  const telegramToken = TELEGRAM_BOT_TOKEN;
   if (!telegramToken) {
-    throw new Error("Telegram startup requires MAMA_TELEGRAM_BOT_TOKEN");
+    throw new Error("Telegram startup requires TELEGRAM_BOT_TOKEN");
   }
   const telegramBot = new TelegramBot(handler, {
     token: telegramToken,
@@ -378,9 +374,9 @@ if (hasTelegram) {
   log.logInfo("Platform: Telegram");
 }
 if (hasDiscord) {
-  const discordToken = MAMA_DISCORD_BOT_TOKEN;
+  const discordToken = DISCORD_BOT_TOKEN;
   if (!discordToken) {
-    throw new Error("Discord startup requires MAMA_DISCORD_BOT_TOKEN");
+    throw new Error("Discord startup requires DISCORD_BOT_TOKEN");
   }
   const discordBot = new DiscordBot(handler, {
     token: discordToken,
@@ -391,9 +387,9 @@ if (hasDiscord) {
   log.logInfo("Platform: Discord");
 }
 
-if (MAMA_LINK_PORT) {
+if (LINK_PORT) {
   startLinkServer(
-    MAMA_LINK_PORT,
+    LINK_PORT,
     linkTokenStore,
     vaultManager,
     async (platform, conversationId, message) => {

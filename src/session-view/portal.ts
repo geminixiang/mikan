@@ -3,7 +3,8 @@ import { basename } from "path";
 import MarkdownIt from "markdown-it";
 import type { Bot, BotAdapters, BotEvent, BotHandler, ChatResponseContext } from "../adapter.js";
 import * as log from "../log.js";
-import { inferConversationKind } from "../session-policy.js";
+import { reportUserFacingError } from "../sentry.js";
+import { inferConversationKind } from "../sessions/policy.js";
 import {
   loadSessionViewModel,
   resolveRequestedSessionFile,
@@ -123,6 +124,19 @@ export async function handleSessionViewRequest(
       `[${entry.conversationId}] Corrupted session file referenced for ${entry.sessionFile}`,
       error instanceof Error ? error.message : String(error),
     );
+    reportUserFacingError(error, {
+      domain: "session_view",
+      surface: "session_view",
+      operation: "resolve_requested_session",
+      severity: "error",
+      platform: entry.platform,
+      context: {
+        conversationId: entry.conversationId,
+        sessionKey: entry.sessionKey,
+        sessionFile: basename(entry.sessionFile),
+        requestedSession,
+      },
+    });
     res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
     res.end(
       renderStatusPage("Session unavailable", "The selected session file appears to be corrupted."),
@@ -158,6 +172,18 @@ export async function handleSessionViewRequest(
       `[${entry.conversationId}] Failed to render session ${entry.sessionFile}`,
       error instanceof Error ? error.message : String(error),
     );
+    reportUserFacingError(error, {
+      domain: "session_view",
+      surface: "session_view",
+      operation: "render_session",
+      severity: "error",
+      platform: entry.platform,
+      context: {
+        conversationId: entry.conversationId,
+        sessionKey: entry.sessionKey,
+        sessionFile: basename(targetSessionFile),
+      },
+    });
     res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
     res.end(renderStatusPage("Session unavailable", "The session could not be loaded right now."));
   }
@@ -225,7 +251,7 @@ function renderSessionPage(
     `<header class="hero-card">
       <div class="hero-top">
         <div class="hero-title-group">
-          <span class="hero-wordmark">mama</span>
+          <span class="hero-wordmark">mikan</span>
           <h1 class="hero-title">${esc(model.title)}</h1>
           <div class="hero-meta-line">
             <span>Created ${esc(formatDate(model.createdAt))}</span>
@@ -258,7 +284,7 @@ function renderSessionPage(
     <section class="composer-card">
       <div class="composer-copy">
         <p class="eyebrow">Interactive preview</p>
-        <p>Ask mama in this same session. Replies stay in Session View and do not post back to Slack.</p>
+        <p>Ask mikan in this same session. Replies stay in Session View and do not post back to Slack.</p>
       </div>
       <form class="composer-form" data-session-composer>
         <input type="hidden" name="token" value="${esc(token)}">
@@ -484,7 +510,27 @@ async function handleSessionStreamRequest(
   }
 
   const requestedSession = url.searchParams.get("session");
-  const targetSessionFile = resolveRequestedSessionFile(entry.sessionFile, requestedSession);
+  let targetSessionFile: string | null;
+  try {
+    targetSessionFile = resolveRequestedSessionFile(entry.sessionFile, requestedSession);
+  } catch (error) {
+    reportUserFacingError(error, {
+      domain: "session_view",
+      surface: "session_view",
+      operation: "session_stream",
+      severity: "error",
+      platform: entry.platform,
+      context: {
+        conversationId: entry.conversationId,
+        sessionKey: entry.sessionKey,
+        sessionFile: basename(entry.sessionFile),
+        requestedSession,
+      },
+    });
+    res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Session stream unavailable");
+    return;
+  }
   if (!targetSessionFile) {
     res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
     res.end("Invalid session file");
@@ -553,7 +599,26 @@ async function handleSessionMessageRequest(
     return;
   }
 
-  const targetSessionFile = resolveRequestedSessionFile(entry.sessionFile, requestedSession);
+  let targetSessionFile: string | null;
+  try {
+    targetSessionFile = resolveRequestedSessionFile(entry.sessionFile, requestedSession);
+  } catch (error) {
+    reportUserFacingError(error, {
+      domain: "session_view",
+      surface: "session_view",
+      operation: "session_message",
+      severity: "error",
+      platform: entry.platform,
+      context: {
+        conversationId: entry.conversationId,
+        sessionKey: entry.sessionKey,
+        sessionFile: basename(entry.sessionFile),
+        requestedSession,
+      },
+    });
+    json(res, 500, { ok: false, error: "Session file could not be loaded." });
+    return;
+  }
   if (!targetSessionFile) {
     json(res, 400, { ok: false, error: "Invalid session file." });
     return;
@@ -617,7 +682,7 @@ async function handleSessionMessageRequest(
   });
 
   void interactive.handler
-    .handleEvent(event, bot, adapters, false)
+    .handleEvent(event, bot, adapters)
     .then(() => {
       if (!targetSessionFile) {
         sessionViewStreamHub.publish(streamKey, { type: "status", running: false });
@@ -637,6 +702,19 @@ async function handleSessionMessageRequest(
         `[${entry.conversationId}] Session view message failed`,
         error instanceof Error ? error.message : String(error),
       );
+      reportUserFacingError(error, {
+        domain: "session_view",
+        surface: "session_view",
+        operation: "interactive_message",
+        severity: "error",
+        platform: entry.platform,
+        context: {
+          conversationId: entry.conversationId,
+          sessionKey: activeSessionKey,
+          messageId: ts,
+          textLength: text.length,
+        },
+      });
       sessionViewStreamHub.publish(streamKey, {
         type: "error",
         message: error instanceof Error ? error.message : String(error),
@@ -711,7 +789,7 @@ function renderStatusPage(title: string, message: string): string {
   return renderHtmlDocument(
     title,
     `<section class="card stack">
-      <p class="eyebrow">mama</p>
+      <p class="eyebrow">mikan</p>
       <h1>${esc(title)}</h1>
       <div class="status err">${esc(message)}</div>
     </section>`,

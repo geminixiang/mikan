@@ -3,8 +3,9 @@ import { join } from "path";
 import { loadAgentConfig, loadAgentConfigForConversation } from "./config.js";
 import { ensureDirExists, isRecord, readJsonFileIfExists } from "./file-guards.js";
 import { DockerContainerManager, type ContainerMount } from "./provisioner.js";
-import { createExecutor, type Executor, type SandboxConfig } from "./sandbox.js";
-import type { ResolvedVault, VaultManager } from "./vault.js";
+import { createExecutor, type Executor, type SandboxConfig } from "./sandbox/index.js";
+import { reportUserFacingError } from "./sentry.js";
+import { normalizeSharedVaultName, type ResolvedVault, type VaultManager } from "./vault.js";
 import { resolveActorVaultKey } from "./vault-routing.js";
 
 export interface ActorContext {
@@ -71,6 +72,7 @@ export class ActorExecutionResolver {
 
   async resolve(context: ActorContext): Promise<Executor> {
     const vaultKey = resolveActorVaultKey(this.baseConfig, context.userId, context.conversationId);
+    this.ensureDefaultSharedVault(vaultKey);
 
     const vault = this.vaultManager.resolve(vaultKey);
     const config = this.resolveSandboxConfig(vaultKey);
@@ -81,6 +83,21 @@ export class ActorExecutionResolver {
       env,
       this.buildEnsureReadyCallback(vaultKey, context.conversationId, config, vault),
     );
+  }
+
+  private ensureDefaultSharedVault(vaultKey: string): void {
+    if (this.baseConfig.type !== "image" && this.baseConfig.type !== "cloudflare") return;
+    if (this.vaultManager.hasEntry(vaultKey)) return;
+
+    let profile: string | undefined;
+    try {
+      profile = loadAgentConfig().defaultSharedVault;
+    } catch {
+      return;
+    }
+    if (!profile || normalizeSharedVaultName(profile) !== profile) return;
+
+    this.vaultManager.copySharedVaultTo(profile, vaultKey);
   }
 
   private resolveSandboxConfig(vaultKey: string): SandboxConfig {
@@ -111,11 +128,30 @@ export class ActorExecutionResolver {
 
     return async () => {
       const expected = config.container || DockerContainerManager.containerName(vaultKey);
-      const actual = await this.provisioner?.provision(vaultKey, {
-        containerName: expected,
-        mounts: this.resolveMounts(conversationId, vault),
-        conversationId,
-      });
+      let actual: string | undefined;
+      try {
+        actual = await this.provisioner?.provision(vaultKey, {
+          containerName: expected,
+          mounts: this.resolveMounts(conversationId, vault),
+          conversationId,
+        });
+      } catch (err) {
+        reportUserFacingError(err, {
+          domain: "sandbox",
+          surface: "sandbox_provision",
+          operation: "ensure_image_container_ready",
+          severity: "error",
+          context: {
+            sandboxType: "image",
+            resolvedSandboxType: config.type,
+            conversationId,
+            vaultKey,
+            expectedContainer: expected,
+            hasVault: Boolean(vault),
+          },
+        });
+        throw err;
+      }
       if (actual && actual !== expected) {
         throw new Error(
           `Provisioner returned container "${actual}" for container key "${vaultKey}", expected "${expected}"`,
@@ -130,7 +166,21 @@ export class ActorExecutionResolver {
       mountsByTarget.set(mount.target, mount);
     }
     for (const mount of vault?.mounts ?? []) {
-      if (!existsSync(mount.source)) continue;
+      if (!existsSync(mount.source)) {
+        reportUserFacingError(new Error("Vault mount source is missing"), {
+          domain: "sandbox",
+          surface: "vault_injection",
+          operation: "resolve_mounts",
+          severity: "warning",
+          context: {
+            sandboxType: "image",
+            conversationId,
+            target: mount.target,
+            hasVault: Boolean(vault),
+          },
+        });
+        continue;
+      }
       mountsByTarget.set(mount.target, { source: mount.source, target: mount.target });
     }
     return [...mountsByTarget.values()];

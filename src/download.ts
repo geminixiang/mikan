@@ -36,7 +36,7 @@ export async function downloadChannel(channelId: string, botToken: string): Prom
   let channelName = channelId;
   try {
     const info = await client.conversations.info({ channel: channelId });
-    channelName = (info.channel as any)?.name || channelId;
+    channelName = typeof info.channel?.name === "string" ? info.channel.name : channelId;
   } catch {
     // DM channels don't have names, that's fine
   }

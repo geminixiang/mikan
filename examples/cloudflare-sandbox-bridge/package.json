@@ -1,5 +1,5 @@
 {
-  "name": "mama-cloudflare-sandbox-bridge",
+  "name": "mikan-cloudflare-sandbox-bridge",
   "private": true,
   "type": "module",
   "scripts": {

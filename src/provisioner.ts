@@ -1,6 +1,9 @@
 import { execFile } from "child_process";
+import { createHash } from "crypto";
+import { readFileSync, statSync } from "fs";
 import { promisify } from "util";
 import * as log from "./log.js";
+import { reportUserFacingError } from "./sentry.js";
 
 const execFileAsync = promisify(execFile);
 type ExecFileAsync = typeof execFileAsync;
@@ -60,10 +63,11 @@ export interface DockerContainerManagerOptions {
 export class DockerContainerManager {
   private state = new Map<string, ContainerState>();
   private inflight = new Map<string, Promise<string>>();
-  private static readonly MANAGED_LABEL = "mama.managed=true";
-  private static readonly IMAGE_MODE_LABEL = "mama.sandbox=image";
-  private static readonly VAULT_ID_LABEL_KEY = "mama.vault-id";
-  private static readonly CONVERSATION_ID_LABEL_KEY = "mama.conversation-id";
+  private static readonly MANAGED_LABEL = "mikan.managed=true";
+  private static readonly IMAGE_MODE_LABEL = "mikan.sandbox=image";
+  private static readonly VAULT_ID_LABEL_KEY = "mikan.vault-id";
+  private static readonly CONVERSATION_ID_LABEL_KEY = "mikan.conversation-id";
+  private static readonly MOUNT_SIGNATURE_LABEL_KEY = "mikan.mount-signature";
 
   private readonly limits?: ResourceLimits;
   private readonly boostLimits?: ResourceLimits;
@@ -92,11 +96,11 @@ export class DockerContainerManager {
   }
 
   static containerName(containerKey: string): string {
-    return `mama-sandbox-${containerKey}`;
+    return `mikan-sandbox-${containerKey}`;
   }
 
   static networkName(containerKey: string): string {
-    return `mama-sandbox-net-${containerKey}`;
+    return `mikan-sandbox-net-${containerKey}`;
   }
 
   async provision(containerKey: string, options: ProvisionOptions = {}): Promise<string> {
@@ -305,6 +309,12 @@ export class DockerContainerManager {
         `${DockerContainerManager.CONVERSATION_ID_LABEL_KEY}=${options.conversationId}`,
       );
     }
+    if (mounts.length > 0) {
+      labels.push(
+        "--label",
+        `${DockerContainerManager.MOUNT_SIGNATURE_LABEL_KEY}=${this.mountSignature(mounts)}`,
+      );
+    }
     await this.execFileImpl("docker", [
       "run",
       "-d",
@@ -329,7 +339,13 @@ export class DockerContainerManager {
   private resourceLimitArgs(limits: ResourceLimits | undefined): string[] {
     const args: string[] = [];
     if (limits?.cpus) args.push("--cpus", limits.cpus);
-    if (limits?.memory) args.push("--memory", limits.memory);
+    if (limits?.memory) {
+      args.push("--memory", limits.memory);
+      // Keep Docker's no-extra-swap semantics explicit. Docker requires
+      // memory-swap to be updated together when raising an existing memory
+      // limit above the current swap limit.
+      args.push("--memory-swap", limits.memory);
+    }
     return args;
   }
 
@@ -344,6 +360,19 @@ export class DockerContainerManager {
         `Failed to apply resource limits to container ${containerName}`,
         err instanceof Error ? err.message : String(err),
       );
+      reportUserFacingError(err, {
+        domain: "sandbox",
+        surface: "sandbox_provision",
+        operation: "apply_resource_limits",
+        severity: "warning",
+        context: {
+          sandboxType: "image",
+          containerKey,
+          containerName,
+          limitArgCount: limitArgs.length,
+          fatal: false,
+        },
+      });
     }
   }
 
@@ -353,6 +382,9 @@ export class DockerContainerManager {
     mounts: ContainerMount[],
   ): Promise<boolean> {
     if (await this.hasBindMountDrift(containerName, mounts)) {
+      return true;
+    }
+    if (await this.hasMountSignatureDrift(containerName, mounts)) {
       return true;
     }
     return this.hasNetworkModeDrift(containerKey, containerName);
@@ -380,6 +412,47 @@ export class DockerContainerManager {
     }
 
     return expected.every((bind, index) => bind === actual[index]);
+  }
+
+  private async hasMountSignatureDrift(
+    containerName: string,
+    mounts: ContainerMount[],
+  ): Promise<boolean> {
+    if (mounts.length === 0) return false;
+    const expected = this.mountSignature(mounts);
+    const { stdout } = await this.execFileImpl("docker", [
+      "inspect",
+      "-f",
+      `{{index .Config.Labels "${DockerContainerManager.MOUNT_SIGNATURE_LABEL_KEY}"}}`,
+      containerName,
+    ]);
+    const actual = this.normalizeDockerValue(stdout.trim());
+    return actual !== expected;
+  }
+
+  private mountSignature(mounts: ContainerMount[]): string {
+    const payload = mounts
+      .map((mount) => ({
+        source: mount.source,
+        target: mount.target,
+        fingerprint: this.mountSourceFingerprint(mount.source),
+      }))
+      .toSorted((left, right) =>
+        `${left.target}\0${left.source}`.localeCompare(`${right.target}\0${right.source}`),
+      );
+    return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+  }
+
+  private mountSourceFingerprint(source: string): string {
+    try {
+      const stat = statSync(source);
+      if (stat.isFile()) {
+        return createHash("sha256").update(readFileSync(source)).digest("hex");
+      }
+      return `${stat.isDirectory() ? "dir" : "other"}:${stat.size}:${stat.mtimeMs}`;
+    } catch {
+      return "missing";
+    }
   }
 
   private async inspectBindMounts(containerName: string): Promise<string[]> {
@@ -566,8 +639,8 @@ export class DockerContainerManager {
   private async removeLegacyContainer(containerName: string): Promise<void> {
     await this.forceRemoveContainer(
       containerName,
-      `Removed legacy mama container ${containerName} (pre-channel-isolation scheme)`,
-      `Failed to remove legacy mama container ${containerName}`,
+      `Removed legacy mikan container ${containerName} (pre-channel-isolation scheme)`,
+      `Failed to remove legacy mikan container ${containerName}`,
     );
   }
 }

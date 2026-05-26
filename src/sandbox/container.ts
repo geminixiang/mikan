@@ -6,11 +6,13 @@ import type {
   ExecOptions,
   ExecResult,
   Executor,
+  RuntimePathContext,
   SandboxAdapter,
 } from "./types.js";
 import { SandboxError } from "./errors.js";
 import { execSimple, shellEscape } from "./utils.js";
 import { HostExecutor } from "./host.js";
+import { createMountedRuntimePathContext } from "./path-context.js";
 
 const PRIVATE_DIR_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
@@ -23,7 +25,7 @@ export function parseContainerSandboxArg(value: string): ContainerSandboxConfig 
   const container = value.slice("container:".length);
   if (!container) {
     throw new SandboxError(
-      "Error: container sandbox requires container name (e.g., container:mama-sandbox)",
+      "Error: container sandbox requires container name (e.g., container:mikan-sandbox)",
     );
   }
   return { type: "container", container };
@@ -69,6 +71,21 @@ export function buildContainerExecCommand(
   return `docker exec ${envPart}-w /workspace ${container} sh -c ${shellEscape(command)}`;
 }
 
+function withRuntimeBootstrap(command: string, env?: Record<string, string>): string {
+  if (!hasGitHubToken(env)) {
+    return command;
+  }
+
+  return [
+    "if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then gh auth setup-git >/dev/null 2>&1 || true; fi",
+    command,
+  ].join("\n");
+}
+
+function hasGitHubToken(env?: Record<string, string>): boolean {
+  return Boolean(env?.GH_TOKEN || env?.GITHUB_TOKEN || env?.GITHUB_OAUTH_ACCESS_TOKEN);
+}
+
 export class ContainerExecutor implements Executor {
   constructor(
     private container: string,
@@ -86,7 +103,11 @@ export class ContainerExecutor implements Executor {
     const hostExecutor = new HostExecutor();
     const temp = this.env ? createSecureEnvFile(this.env) : undefined;
     try {
-      const dockerCmd = buildContainerExecCommand(this.container, command, temp?.envFilePath);
+      const dockerCmd = buildContainerExecCommand(
+        this.container,
+        withRuntimeBootstrap(command, this.env),
+        temp?.envFilePath,
+      );
       return await hostExecutor.exec(dockerCmd, options);
     } finally {
       temp?.cleanup();
@@ -95,6 +116,10 @@ export class ContainerExecutor implements Executor {
 
   getWorkspacePath(_hostPath: string): string {
     return "/workspace";
+  }
+
+  getPathContext(hostWorkspaceRoot: string): RuntimePathContext {
+    return createMountedRuntimePathContext(hostWorkspaceRoot, "/workspace");
   }
 
   getSandboxConfig(): ContainerSandboxConfig {
@@ -131,7 +156,7 @@ function createSecureEnvFile(env: Record<string, string>): {
   envFilePath: string;
   cleanup: () => void;
 } {
-  const tempDir = mkdtempSync(join(tmpdir(), "mama-docker-env-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "mikan-docker-env-"));
   chmodSync(tempDir, PRIVATE_DIR_MODE);
   const envFilePath = join(tempDir, "env.list");
   const content =

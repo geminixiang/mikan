@@ -1,8 +1,6 @@
-# mama Architecture
+# mikan Architecture
 
-**mama** stands for **Multi-Agent Mischief Assistant**.
-
-這份文件整理 `mama` 專案的核心架構，重點放在:
+這份文件整理 `mikan` 專案的核心架構，重點放在:
 
 - 多平台訊息如何進入系統
 - session / context 如何持久化
@@ -26,9 +24,9 @@ flowchart LR
   end
 
   subgraph Runtime["Core Runtime"]
-    Main["src/main.ts\nCLI bootstrap + BotHandler"]
-    SessionPolicy["src/session-policy.ts\nsessionKey policy"]
-    RunnerCache["conversationStates\nrunner cache / stop state"]
+    Main["src/main.ts\nCLI bootstrap"]
+    SessionRuntime["src/runtime/session-runtime.ts\nSessionRuntime + runner cache"]
+    Orchestrator["src/runtime/conversation-orchestrator.ts\nrun lifecycle + commands"]
     AgentRunner["src/agent.ts\ncreateRunner()"]
   end
 
@@ -36,8 +34,8 @@ flowchart LR
     PiAgent["@earendil-works/pi-agent-core\nAgent"]
     PiCoding["@earendil-works/pi-coding-agent\nAgentSession / SessionManager / Skills"]
     PiAI["@earendil-works/pi-ai\nprovider + model"]
-    MamaTools["src/tools/*\nread / bash / edit / write / event / attach"]
-    Executor["src/sandbox/*\nExecutor"]
+    MikanTools["src/tools/*\nread / bash / edit / write / event / attach"]
+    Executor["src/sandbox/*\nExecutor\nshared: host / container\nisolated: image / firecracker / cloudflare"]
   end
 
   subgraph Persistence["Project Workspace"]
@@ -47,7 +45,7 @@ flowchart LR
     LocalSettings["<conversation>/settings.json"]
   end
 
-  subgraph StateDir["State Dir (~/.mama or --state-dir)"]
+  subgraph StateDir["State Dir (~/.mikan or --state-dir)"]
     GlobalSettings["settings.json\nglobal defaults"]
     Vaults["vaults/\nconversation-scoped secret directories"]
     LinkTokens["login/session tokens\nin-memory stores"]
@@ -69,15 +67,15 @@ flowchart LR
   TelegramAdapter --> Main
   DiscordAdapter --> Main
 
-  Main --> SessionPolicy
-  Main --> RunnerCache
-  RunnerCache --> AgentRunner
+  Main --> SessionRuntime
+  SessionRuntime --> Orchestrator
+  SessionRuntime --> AgentRunner
 
   AgentRunner --> PiAgent
   AgentRunner --> PiCoding
   AgentRunner --> PiAI
-  AgentRunner --> MamaTools
-  MamaTools --> Executor
+  AgentRunner --> MikanTools
+  MikanTools --> Executor
 
   Main --> VaultManager
   Main --> Provisioner
@@ -87,15 +85,15 @@ flowchart LR
 
   AgentRunner --> ConversationDir
   AgentRunner --> Sessions
-  Main --> Settings
+  Main --> GlobalSettings
   EventsWatcher --> EventsDir
   VaultManager --> Vaults
   LinkServer --> LinkTokens
 
-  Executor -. host / container / image / firecracker .-> ConversationDir
-  Provisioner -. managed conversation sandbox .-> Executor
+  Executor -. shared: host / container; isolated: image / firecracker / cloudflare .-> ConversationDir
+  Provisioner -. isolated image sandbox lifecycle .-> Executor
   VaultManager -. env + mount routing .-> Executor
-  EventsWatcher -. enqueue synthetic BotEvent .-> Main
+  EventsWatcher -. enqueue BotEvent .-> Main
 ```
 
 ## 2. 主要分層
@@ -117,16 +115,18 @@ flowchart LR
 ### B. 核心協調層
 
 - `src/main.ts`
-- `src/session-policy.ts`
-- `src/store.ts`
+- `src/runtime/session-runtime.ts`
+- `src/runtime/conversation-orchestrator.ts`
+- `src/sessions/store.ts`
+- `src/adapters/slack/branch-manager.ts`
 
 職責:
 
 - 啟動 CLI、讀取 env / args / `settings.json`
-- 啟動各平台 bot
-- 處理 `/login`、`/session`、`stop`、`new` 等控制命令
-- 管理 `conversationStates`，避免同一 session 重複執行
-- 決定每個 session 對應哪個 `AgentRunner`
+- 建立 `SessionRuntime` 作為各平台 bot 的 `BotHandler`
+- 透過 `ConversationOrchestrator` dispatch `/login`、`/session`、`stop`、`new` 等控制命令
+- 管理 `conversationStates` 與 per-session queue，避免同一 session 重複執行
+- 決定每個 session scope 對應哪個 `AgentRunner`
 
 ### C. Agent 執行層
 
@@ -151,13 +151,16 @@ flowchart LR
 職責:
 
 - 統一抽象 `Executor`
-- 支援 `host`、共享 `container`、conversation-scoped `image`、`firecracker`
-- 依 conversation vault 決定隔離型 sandbox 的實際執行位置
-- 在 `image` 模式下自動建立與回收 Docker container
+- sandbox runtime 分成兩類:
+  - shared: `host` / `container:<name>`，同一個 host 或指定 container 共用
+  - isolated: `image:<image>` / `firecracker:*` / `cloudflare:*`，依 actor/conversation/vault 路由到隔離的執行環境
+- 透過 `ActorExecutionResolver` 依 user/conversation/vault 決定實際 executor
+- 在 `image` 模式下自動建立與回收 Docker container，並把 `image:<image>` 解析成 concrete `container:<name>` executor
 
 ### E. 狀態與持久化層
 
-- `src/session-store.ts`
+- `src/sessions/store.ts`
+- `src/conversation-history.ts`
 - `src/context.ts`
 - `src/vault.ts`
 
@@ -187,8 +190,8 @@ sequenceDiagram
   participant U as User
   participant P as Slack / Telegram / Discord
   participant A as Adapter
-  participant M as main.ts
-  participant S as session-store.ts
+  participant M as SessionRuntime / Orchestrator
+  participant S as sessions/store.ts
   participant R as agent.ts / AgentRunner
   participant T as tools/*
   participant X as sandbox Executor
@@ -197,17 +200,17 @@ sequenceDiagram
   U->>P: 發送訊息 / mention / reply
   P->>A: 平台事件
   A->>M: BotEvent + ChatMessage + ResponseContext
-  M->>M: 判斷 stop / new / login / session 等命令
+  M->>M: queue event + dispatch commands
   M->>S: resolve session scope
   S-->>M: contextFile + sessionDir
   M->>R: getState() / run()
-  R->>W: 讀取 MEMORY.md / log.jsonl / sessions/*.jsonl
+  R->>W: 讀取 MEMORY.md / sessions/*.jsonl；必要時查 log.jsonl
   R->>R: 建立 system prompt / skills / model / session context
   R->>T: 執行工具
   T->>X: read / bash / edit / write / event / attach
   X-->>T: tool result
   T-->>R: 結果回傳
-  R->>W: 寫入 structured session / log
+  R->>W: 寫入 structured session；adapter 記錄平台 log
   R-->>M: final response
   M-->>A: 回覆內容 / 診斷 / 檔案
   A-->>P: 平台訊息更新
@@ -216,7 +219,7 @@ sequenceDiagram
 
 ## 4. Session 與檔案佈局
 
-`mama` 的上下文不是只靠記憶體，而是主要落在 workspace 目錄:
+`mikan` 的上下文不是只靠記憶體，而是主要落在 workspace 目錄:
 
 ```text
 <workspace>/
@@ -237,10 +240,12 @@ sequenceDiagram
 
 設計重點:
 
-- `log.jsonl` 給人查詢與補 context
-- `sessions/*.jsonl` 給 `SessionManager` 保留完整結構化上下文與 tool 結果
-- top-level session 用 `current` 指標
+- `log.jsonl` 是平台對話紀錄：Slack/Discord/Telegram 實際發生過什麼
+- `sessions/*.jsonl` 是 LLM 工作上下文/工作紀錄：mikan 拿什麼給 LLM 看，以及 LLM/tool 做了什麼
+- top-level session 用 `current` 指標，但 `current` 不是 channel history；缺失時可從 `log.jsonl` 重建最近 top-level 工作上下文
 - thread / reply session 用固定檔名，讓分支可被單獨追蹤
+- Slack top-level messages share the channel session; Slack thread replies fork to `conversationId:threadTs`
+- Slack events first materialize a top-level anchor message, then run in `conversationId:anchorTs`
 
 ## 5. Login / Vault / Sandbox 關係
 
@@ -257,7 +262,7 @@ flowchart TD
   LinkServer --> VaultManager["vault.ts\nwrite env/file into vault"]
   VaultManager --> VaultDir["state-dir/vaults/<vaultId>/"]
   VaultManager --> Resolver["execution-resolver.ts"]
-  Resolver --> Sandbox["host / container / image / firecracker"]
+  Resolver --> Sandbox["host / container / image / firecracker / cloudflare"]
 ```
 
 重點:
@@ -265,11 +270,11 @@ flowchart TD
 - 憑證不直接進 workspace
 - vault 存在 `--state-dir`
 - 執行時才由 conversation vault 路由到對應 sandbox
-- `image` / `firecracker` 模式下，憑證隔離比 host / shared container 更完整
+- `image` / `firecracker` / `cloudflare` 模式使用 per-actor/per-conversation vault routing；`container:<name>` 使用 shared container vault；`host` 不注入 vault env
 
 ## 6. Events 與一般對話的差異
 
-`events/*.json` 會被 `EventsWatcher` 監看，之後轉成 synthetic `BotEvent` 再走一次正常流程。  
+`events/*.json` 會被 `EventsWatcher` 監看，之後轉成 `BotEvent` 再走一次正常流程。
 也就是說 events 不是獨立執行器，而是「另一個訊息入口」。
 
 這讓下列能力共用同一套機制:
@@ -282,7 +287,7 @@ flowchart TD
 
 ## 7. 架構結論
 
-如果用一句話總結，`mama` 的核心其實是:
+如果用一句話總結，`mikan` 的核心其實是:
 
 > 一個以 `main.ts` 為協調中心、以 `agent.ts` 為執行核心、以 `session/vault/sandbox` 為基礎設施的多平台 AI agent bot。
 

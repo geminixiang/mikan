@@ -14,6 +14,7 @@ import {
   type OAuthService,
 } from "./index.js";
 import * as log from "../log.js";
+import { reportUserFacingError } from "../sentry.js";
 import { PRODUCT_NAME } from "../ui-copy.js";
 import { defaultVaultTargetPath, type VaultManager } from "../vault.js";
 import type { BrowserExtensionManager } from "../browser-extension.js";
@@ -204,15 +205,17 @@ const SECRET_PRESETS: SecretPreset[] = [
   {
     id: "sentry",
     label: "Sentry",
-    description: "Store a Sentry auth token plus optional org and project identifiers.",
-    note: "Create an auth token from Sentry Settings → Account → API → Auth Tokens. Org and project are optional helpers.",
+    description:
+      "Store a Sentry auth token plus optional org/project, and mount ~/.sentryclirc for sentry-cli.",
+    note: "Create an auth token from Sentry Settings → Account → API → Auth Tokens. Saving this preset also writes /root/.sentryclirc for sentry-cli.",
     fields: [
       {
         envKey: "SENTRY_AUTH_TOKEN",
         label: "Sentry Auth Token",
         type: "password",
         placeholder: "sntrys_...",
-        helpText: "Required for Sentry CLI, releases, and sourcemap uploads.",
+        helpText:
+          "Required for Sentry CLI, releases, and sourcemap uploads. Also written to /root/.sentryclirc.",
       },
       {
         envKey: "SENTRY_ORG",
@@ -351,6 +354,13 @@ export function startLinkServer(
           res,
         ).catch((err: Error) => {
           log.logWarning("OAuth callback failed", err.message);
+          reportUserFacingError(err, {
+            domain: "login",
+            surface: "oauth",
+            operation: "oauth_callback",
+            severity: "error",
+            context: { route: "/oauth/callback" },
+          });
           res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
           res.end(renderErrorPage("OAuth callback failed. Please retry /login."));
         });
@@ -368,18 +378,18 @@ export function startLinkServer(
     }
   });
 
-  // Bind to loopback when MAMA_LINK_URL is unset so the credential UI and OAuth
+  // Bind to loopback when MIKAN_LINK_URL is unset so the credential UI and OAuth
   // callbacks are not exposed on public interfaces by default. Production
-  // deployments set MAMA_LINK_URL and are expected to front this server with a
+  // deployments set MIKAN_LINK_URL and are expected to front this server with a
   // reverse proxy, which can still reach it via 0.0.0.0.
   const bindHost = resolveLinkBaseUrl() ? undefined : "127.0.0.1";
   server.listen(port, bindHost, () => {
     log.logInfo(`Link callback server listening on ${bindHost ?? "0.0.0.0"}:${port}`);
     if (!resolveLinkBaseUrl()) {
       log.logWarning(
-        "MAMA_LINK_URL is not set — bound to 127.0.0.1 and OAuth redirect_uri will be " +
+        "MIKAN_LINK_URL is not set — bound to 127.0.0.1 and OAuth redirect_uri will be " +
           "derived from request headers (Host / X-Forwarded-*). Set " +
-          "MAMA_LINK_URL=https://your-host.example.com for production.",
+          "MIKAN_LINK_URL=https://your-host.example.com for production.",
       );
     }
   });
@@ -394,7 +404,7 @@ export function startLinkServer(
 /**
  * Resolve the externally-visible base URL of this server.
  *
- * Prefers MAMA_LINK_URL (see config.ts) so the OAuth `redirect_uri` is
+ * Prefers MIKAN_LINK_URL (see config.ts) so the OAuth `redirect_uri` is
  * deterministic and not influenced by attacker-controlled request headers.
  * Falls back to Host / X-Forwarded-* only when no base URL is configured
  * — intended for local development.
@@ -418,7 +428,7 @@ function requestBaseUrl(req: IncomingMessage): string {
  *   1. Require Content-Type: application/json, which forces a CORS preflight
  *      for any cross-origin fetch and rules out `<form enctype="text/plain">`
  *      tricks that could otherwise smuggle a JSON body.
- *   2. When MAMA_LINK_URL is configured, require that the Origin (or Referer,
+ *   2. When MIKAN_LINK_URL is configured, require that the Origin (or Referer,
  *      as a fallback for browsers that strip Origin) matches that base URL.
  *      This stops an attacker-controlled page — even one that somehow stole a
  *      victim's link token — from completing the flow.
@@ -445,7 +455,7 @@ function enforceCsrf(req: IncomingMessage, res: ServerResponse): boolean {
   try {
     configuredOrigin = new URL(configured).origin;
   } catch {
-    // Misconfigured MAMA_LINK_URL — fail closed.
+    // Misconfigured MIKAN_LINK_URL — fail closed.
     res.writeHead(500, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Server misconfiguration" }));
     return false;
@@ -1471,12 +1481,29 @@ function extractEnvUpdates(data: Partial<LinkCompleteBody>): {
   return { updates: { [envKey]: credential } };
 }
 
-function renderStoredEnvMessage(envKeys: string[]): string {
+function renderStoredEnvMessage(envKeys: string[], fileTargets: string[] = []): string {
+  const fileSuffix = fileTargets.length > 0 ? ` Mounted file(s): ${fileTargets.join(", ")}.` : "";
   if (envKeys.length === 1) {
-    return `${envKeys[0]} stored successfully in vault.`;
+    return `${envKeys[0]} stored successfully in vault.${fileSuffix}`;
   }
 
-  return `${envKeys.length} secrets stored successfully in vault: ${envKeys.join(", ")}.`;
+  return `${envKeys.length} secrets stored successfully in vault: ${envKeys.join(", ")}.${fileSuffix}`;
+}
+
+function renderSentryCliConfig(updates: Record<string, string>): string | undefined {
+  const token = updates.SENTRY_AUTH_TOKEN?.trim();
+  if (!token) return undefined;
+
+  const lines = ["[auth]", `token=${token}`, ""];
+  const defaults: string[] = [];
+  const org = updates.SENTRY_ORG?.trim();
+  const project = updates.SENTRY_PROJECT?.trim();
+  if (org) defaults.push(`org = ${org}`);
+  if (project) defaults.push(`project = ${project}`);
+  if (defaults.length > 0) {
+    lines.push("[defaults]", ...defaults, "");
+  }
+  return lines.join("\n");
 }
 
 // ── API-key completion ────────────────────────────────────────────────────────
@@ -1521,13 +1548,39 @@ async function handleLinkComplete(
     return;
   }
 
+  const fileTargets: string[] = [];
+  const sentryCliConfig = renderSentryCliConfig(updates);
+
   try {
     vaultManager.upsertEnv(linkToken.vaultId, updates);
+    if (sentryCliConfig) {
+      vaultManager.upsertFile(
+        linkToken.vaultId,
+        ".sentryclirc",
+        sentryCliConfig,
+        "/root/.sentryclirc",
+      );
+      fileTargets.push("/root/.sentryclirc");
+    }
   } catch (persistError) {
     log.logWarning(
       `Failed to persist [${envKeys.join(", ")}] for ${linkToken.platform}/${linkToken.platformUserId}`,
       persistError instanceof Error ? persistError.message : String(persistError),
     );
+    reportUserFacingError(persistError, {
+      domain: "login",
+      surface: "credential_login",
+      operation: "vault_persist",
+      severity: "error",
+      platform: linkToken.platform,
+      context: {
+        conversationId: linkToken.conversationId,
+        vaultId: linkToken.vaultId,
+        credentialMode: data.mode ?? "manual",
+        envKeyCount: envKeys.length,
+        fileTargetCount: fileTargets.length,
+      },
+    });
     res.writeHead(500, { "Content-Type": "application/json" });
     res.end(
       JSON.stringify({
@@ -1542,7 +1595,7 @@ async function handleLinkComplete(
     `Stored [${envKeys.join(", ")}] for ${linkToken.platform}/${linkToken.platformUserId} in vault:${linkToken.vaultId}`,
   );
 
-  const message = renderStoredEnvMessage(envKeys);
+  const message = renderStoredEnvMessage(envKeys, fileTargets);
   res.writeHead(200, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ ok: true, message }));
 
@@ -1552,6 +1605,20 @@ async function handleLinkComplete(
     `${message} Vault: \`${linkToken.vaultId}\`.`,
   ).catch((err: Error) => {
     log.logWarning("Failed to notify user after credential login", err.message);
+    reportUserFacingError(err, {
+      domain: "login",
+      surface: "credential_login",
+      operation: "notify_user",
+      severity: "warning",
+      platform: linkToken.platform,
+      context: {
+        conversationId: linkToken.conversationId,
+        vaultId: linkToken.vaultId,
+        credentialMode: data.mode ?? "manual",
+        envKeyCount: envKeys.length,
+        fileTargetCount: fileTargets.length,
+      },
+    });
   });
 }
 
@@ -1751,6 +1818,9 @@ async function handleOAuthCallback(
     if (fileOutput.envKey) {
       updates[fileOutput.envKey] = mountedPath;
     }
+    for (const key of fileOutput.additionalEnvKeys ?? []) {
+      updates[key] = mountedPath;
+    }
   }
 
   const storedTargets: string[] = [];
@@ -1773,6 +1843,20 @@ async function handleOAuthCallback(
       `Failed to persist OAuth credentials for ${linkToken.platform}/${linkToken.platformUserId}`,
       persistError instanceof Error ? persistError.message : String(persistError),
     );
+    reportUserFacingError(persistError, {
+      domain: "login",
+      surface: "oauth",
+      operation: "vault_persist",
+      severity: "error",
+      platform: linkToken.platform,
+      context: {
+        conversationId: linkToken.conversationId,
+        vaultId: linkToken.vaultId,
+        serviceId: service.id,
+        credentialMode: "oauth",
+        storedTargetCount: storedTargets.length,
+      },
+    });
     res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
     res.end(
       renderErrorPage(
@@ -1792,6 +1876,20 @@ async function handleOAuthCallback(
     `${service.label} OAuth stored (${storedTargets.join(", ")}) in vault \`${linkToken.vaultId}\`.`,
   ).catch((err: Error) => {
     log.logWarning("Failed to notify user after OAuth login", err.message);
+    reportUserFacingError(err, {
+      domain: "login",
+      surface: "oauth",
+      operation: "notify_user",
+      severity: "warning",
+      platform: linkToken.platform,
+      context: {
+        conversationId: linkToken.conversationId,
+        vaultId: linkToken.vaultId,
+        serviceId: service.id,
+        credentialMode: "oauth",
+        storedTargetCount: storedTargets.length,
+      },
+    });
   });
 
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });

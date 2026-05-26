@@ -1,0 +1,113 @@
+{
+  "display_information": {
+    "name": "mikan",
+    "description": "mikan",
+    "background_color": "#4d5673"
+  },
+  "features": {
+    "app_home": {
+      "home_tab_enabled": true,
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": false
+    },
+    "bot_user": {
+      "display_name": "mikan",
+      "always_online": true
+    },
+    "assistant_view": {
+      "assistant_description": "mikan Slack assistant",
+      "suggested_prompts": [
+        {
+          "title": "Ask mikan",
+          "message": "hello"
+        }
+      ]
+    },
+    "slash_commands": [
+      {
+        "command": "/pi-login",
+        "description": "login",
+        "should_escape": false
+      },
+      {
+        "command": "/pi-new",
+        "description": "new",
+        "should_escape": false
+      },
+      {
+        "command": "/pi-model",
+        "description": "model",
+        "should_escape": false
+      },
+      {
+        "command": "/pi-session",
+        "description": "session",
+        "should_escape": false
+      },
+      {
+        "command": "/pi-sandbox",
+        "description": "sandbox",
+        "should_escape": false
+      },
+      {
+        "command": "/pi-auto-reply",
+        "description": "on | off | status",
+        "should_escape": false
+      }
+    ]
+  },
+  "oauth_config": {
+    "redirect_urls": ["https://localhost"],
+    "scopes": {
+      "bot": [
+        "app_mentions:read",
+        "assistant:write",
+        "channels:history",
+        "channels:read",
+        "chat:write",
+        "files:read",
+        "files:write",
+        "groups:history",
+        "groups:read",
+        "im:history",
+        "im:write",
+        "im:read",
+        "users:read",
+        "commands"
+      ],
+      "user": [
+        "channels:history",
+        "channels:read",
+        "chat:write",
+        "files:write",
+        "groups:history",
+        "groups:read",
+        "im:history",
+        "im:read",
+        "im:write",
+        "users:read"
+      ]
+    },
+    "pkce_enabled": false
+  },
+  "settings": {
+    "event_subscriptions": {
+      "bot_events": [
+        "app_home_opened",
+        "app_mention",
+        "assistant_thread_context_changed",
+        "assistant_thread_started",
+        "message.channels",
+        "message.groups",
+        "message.im"
+      ]
+    },
+    "interactivity": {
+      "is_enabled": true
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false,
+    "is_mcp_enabled": false
+  }
+}

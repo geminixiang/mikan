@@ -10,14 +10,14 @@ describe("readConversationWorkspaceMountMode", () => {
   let workspaceDir: string;
 
   beforeEach(() => {
-    stateDir = join(tmpdir(), `mama-execution-resolver-${Date.now()}`);
+    stateDir = join(tmpdir(), `mikan-execution-resolver-${Date.now()}`);
     workspaceDir = join(stateDir, "workspace");
     mkdirSync(workspaceDir, { recursive: true });
-    process.env.MAMA_STATE_DIR = stateDir;
+    process.env.MIKAN_STATE_DIR = stateDir;
   });
 
   afterEach(() => {
-    delete process.env.MAMA_STATE_DIR;
+    delete process.env.MIKAN_STATE_DIR;
     if (existsSync(stateDir)) {
       rmSync(stateDir, { recursive: true, force: true });
     }

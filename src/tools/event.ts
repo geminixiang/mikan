@@ -9,7 +9,10 @@ const eventSchema = Type.Object({
     description: "Brief description of the event you're scheduling (shown to user)",
   }),
   type: Type.Union([Type.Literal("immediate"), Type.Literal("one-shot"), Type.Literal("periodic")]),
-  text: Type.String({ description: "The reminder or event text to send when it fires" }),
+  text: Type.String({
+    description:
+      "A self-contained task for the future run. Include the necessary context, tone, and constraints in the text itself because events do not inherit normal conversation history.",
+  }),
   at: Type.Optional(
     Type.String({
       description: "ISO 8601 timestamp with offset, required for one-shot events",
@@ -37,8 +40,6 @@ interface EventToolContext {
   conversationId: string;
   conversationKind: "direct" | "shared";
   userId: string;
-  sessionKey: string;
-  threadTs?: string;
 }
 
 type EventToolParams = {
@@ -51,7 +52,7 @@ type EventToolParams = {
   filenamePrefix?: string;
 };
 
-type EventPayload =
+export type EventPayload =
   | {
       type: "immediate";
       platform: string;
@@ -59,8 +60,6 @@ type EventPayload =
       conversationKind: "direct" | "shared";
       userId: string;
       text: string;
-      sessionKey?: string;
-      threadTs?: string;
     }
   | {
       type: "one-shot";
@@ -80,10 +79,29 @@ type EventPayload =
       text: string;
       schedule: string;
       timezone: string;
-      sessionKey?: string;
     };
 
-export function createEventTool(workspaceDir: string): {
+export interface EventStore {
+  write(filename: string, payload: EventPayload): Promise<{ path: string; size: number }>;
+}
+
+export class HostEventStore implements EventStore {
+  constructor(private readonly eventsDir: string) {}
+
+  static fromWorkspaceDir(workspaceDir: string): HostEventStore {
+    return new HostEventStore(join(workspaceDir, "events"));
+  }
+
+  async write(filename: string, payload: EventPayload): Promise<{ path: string; size: number }> {
+    await mkdir(this.eventsDir, { recursive: true });
+    const filePath = join(this.eventsDir, filename);
+    await writeFile(filePath, JSON.stringify(payload) + "\n", "utf-8");
+    const fileStat = await stat(filePath);
+    return { path: filePath, size: fileStat.size };
+  }
+}
+
+export function createEventTool(eventStore: EventStore): {
   tool: AgentTool<typeof eventSchema>;
   setEventContext: (context: EventToolContext) => void;
 } {
@@ -93,7 +111,7 @@ export function createEventTool(workspaceDir: string): {
     name: "event",
     label: "event",
     description:
-      "Schedule an immediate, one-shot, or periodic event for the current conversation. This automatically writes to the correct events directory and fills the current platform, conversation, conversation kind, and requester userId.",
+      "Schedule an immediate, one-shot, or periodic event for the current conversation. Write text as a self-contained task with any needed context, tone, or constraints because events do not inherit normal conversation history. This automatically writes to the correct events directory and fills the current platform, conversation, conversation kind, and requester userId.",
     parameters: eventSchema,
     execute: async (_toolCallId: string, params: EventToolParams, signal?: AbortSignal) => {
       if (signal?.aborted) {
@@ -105,26 +123,24 @@ export function createEventTool(workspaceDir: string): {
       }
 
       const payload = buildEventPayload(params, eventContext);
-      const eventsDir = join(workspaceDir, "events");
-      await mkdir(eventsDir, { recursive: true });
-
       const prefix = sanitizeFileSegment(params.filenamePrefix || payload.type || "event");
       const filename = `${prefix}-${Date.now()}.json`;
-      const filePath = join(eventsDir, filename);
-      const content = JSON.stringify(payload) + "\n";
 
       log.logInfo(
-        `Writing event file: ${filePath} (type=${payload.type}, platform=${payload.platform}, conversation=${payload.conversationId})`,
+        `Writing event file via control plane store: ${filename} (type=${payload.type}, platform=${payload.platform}, conversation=${payload.conversationId})`,
       );
-      await writeFile(filePath, content, "utf-8");
 
       try {
-        const fileStat = await stat(filePath);
+        const result = await eventStore.write(filename, payload);
         log.logInfo(
-          `Wrote event file: ${filePath} (${fileStat.size} bytes, mtime=${fileStat.mtime.toISOString()})`,
+          `Wrote event file via control plane store: ${result.path} (${result.size} bytes)`,
         );
       } catch (err) {
-        log.logWarning(`Event file missing immediately after write: ${filePath}`, String(err));
+        log.logWarning(
+          `Failed to write event file via control plane store: ${filename}`,
+          String(err),
+        );
+        throw err;
       }
 
       return {
@@ -165,8 +181,6 @@ function buildEventPayload(params: EventToolParams, context: EventToolContext): 
     return {
       ...base,
       type: "immediate",
-      sessionKey: context.sessionKey,
-      ...(context.threadTs ? { threadTs: context.threadTs } : {}),
     };
   }
 
@@ -195,13 +209,11 @@ function buildEventPayload(params: EventToolParams, context: EventToolContext): 
   if (!params.timezone) {
     throw new Error("`timezone` is required for periodic events");
   }
-  // No threadTs: periodic events should always be top-level; keep sessionKey for task context
   return {
     ...base,
     type: "periodic",
     schedule: params.schedule,
     timezone: params.timezone,
-    sessionKey: context.sessionKey,
   };
 }
 

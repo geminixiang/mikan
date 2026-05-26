@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ActorExecutionResolver } from "../src/execution-resolver.js";
 import { DockerContainerManager } from "../src/provisioner.js";
-import { HostExecutor } from "../src/sandbox.js";
+import { HostExecutor } from "../src/sandbox/index.js";
 import { resolveActorVaultKey } from "../src/vault-routing.js";
 import { FileVaultManager, parseEnvFile, sharedVaultKey } from "../src/vault.js";
 
@@ -39,7 +39,7 @@ describe("FileVaultManager", () => {
   let vaultsDir: string;
 
   beforeEach(() => {
-    tmpDir = join(tmpdir(), `mama-vault-test-${Date.now()}-${Math.random()}`);
+    tmpDir = join(tmpdir(), `mikan-vault-test-${Date.now()}-${Math.random()}`);
     vaultsDir = join(tmpDir, "vaults");
     mkdirSync(vaultsDir, { recursive: true });
   });
@@ -162,14 +162,28 @@ describe("FileVaultManager", () => {
     ]);
   });
 
+  test("upsertFile preserves the inode for existing mounted credential files", () => {
+    const mgr = new FileVaultManager(tmpDir);
+    mgr.upsertFile("U123", "gws.json", "old", "/root/.config/gws/credentials.json");
+    const credentialPath = join(vaultsDir, "U123", "gws.json");
+    const before = statSync(credentialPath);
+
+    mgr.upsertFile("U123", "gws.json", "new", "/root/.config/gws/credentials.json");
+
+    const after = statSync(credentialPath);
+    expect(readFileSync(credentialPath, "utf-8")).toBe("new");
+    expect(after.ino).toBe(before.ino);
+    expect(mode(credentialPath) & 0o077).toBe(0);
+  });
+
   test("derives per-vault cloudflare sandbox ids", () => {
     const mgr = new FileVaultManager(tmpDir);
-    expect(mgr.getSandboxConfig("alice", { type: "cloudflare", sandboxId: "mama-remote" })).toEqual(
-      {
-        type: "cloudflare",
-        sandboxId: "mama-remote-alice",
-      },
-    );
+    expect(
+      mgr.getSandboxConfig("alice", { type: "cloudflare", sandboxId: "mikan-remote" }),
+    ).toEqual({
+      type: "cloudflare",
+      sandboxId: "mikan-remote-alice",
+    });
   });
 
   test("does not alter non-cloudflare base sandbox configs", () => {
@@ -197,13 +211,22 @@ describe("ActorExecutionResolver image mode", () => {
   let vaultsDir: string;
 
   beforeEach(() => {
-    tmpDir = join(tmpdir(), `mama-image-vault-test-${Date.now()}-${Math.random()}`);
+    tmpDir = join(tmpdir(), `mikan-image-vault-test-${Date.now()}-${Math.random()}`);
     vaultsDir = join(tmpDir, "vaults");
     mkdirSync(vaultsDir, { recursive: true });
+    process.env.MIKAN_STATE_DIR = tmpDir;
+    writeFileSync(
+      join(tmpDir, "settings.json"),
+      JSON.stringify({
+        llm: { provider: "anthropic", model: "claude-sonnet-4-6", thinkingLevel: "off" },
+        sandbox: { defaultSharedVault: "" },
+      }),
+    );
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    delete process.env.MIKAN_STATE_DIR;
     if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -224,9 +247,71 @@ describe("ActorExecutionResolver image mode", () => {
 
     expect(executor.getSandboxConfig()).toEqual({
       type: "container",
-      container: "mama-sandbox-d123",
+      container: "mikan-sandbox-d123",
     });
     expect(mgr.resolve(DockerContainerManager.sanitizeSegment("D123"))).toBeUndefined();
+  });
+
+  test("copies the default shared vault for a new image sandbox vault", async () => {
+    mkdirSync(join(vaultsDir, "shared", "claw"), { recursive: true });
+    writeFileSync(join(vaultsDir, "shared", "claw", "env"), "ANTHROPIC_API_KEY=sk-test\n");
+    writeFileSync(
+      join(tmpDir, "settings.json"),
+      JSON.stringify({
+        llm: { provider: "anthropic", model: "claude-sonnet-4-6", thinkingLevel: "off" },
+        sandbox: { defaultSharedVault: "claw" },
+      }),
+    );
+
+    const resolver = new ActorExecutionResolver(
+      { type: "image", image: "ubuntu:24.04" },
+      new FileVaultManager(tmpDir),
+      undefined,
+      tmpDir,
+    );
+    const executor = await resolver.resolve({
+      platform: "slack",
+      userId: "U123",
+      conversationId: "D123",
+    });
+
+    expect(executor.getSandboxConfig()).toEqual({
+      type: "container",
+      container: "mikan-sandbox-d123",
+    });
+    expect(readFileSync(join(vaultsDir, "d123", "env"), "utf-8")).toContain(
+      "ANTHROPIC_API_KEY=sk-test",
+    );
+  });
+
+  test("does not copy the default shared vault over an existing image sandbox vault", async () => {
+    mkdirSync(join(vaultsDir, "shared", "claw"), { recursive: true });
+    mkdirSync(join(vaultsDir, "d123"), { recursive: true });
+    writeFileSync(join(vaultsDir, "shared", "claw", "env"), "A=shared\n");
+    writeFileSync(join(vaultsDir, "d123", "env"), "A=existing\n");
+    writeFileSync(
+      join(tmpDir, "settings.json"),
+      JSON.stringify({
+        llm: { provider: "anthropic", model: "claude-sonnet-4-6", thinkingLevel: "off" },
+        sandbox: { defaultSharedVault: "claw" },
+      }),
+    );
+
+    const resolver = new ActorExecutionResolver(
+      { type: "image", image: "ubuntu:24.04" },
+      new FileVaultManager(tmpDir),
+      undefined,
+      tmpDir,
+    );
+    await resolver.resolve({
+      platform: "slack",
+      userId: "U123",
+      conversationId: "D123",
+    });
+
+    expect(parseEnvFile(readFileSync(join(vaultsDir, "d123", "env"), "utf-8"))).toEqual({
+      A: "existing",
+    });
   });
 
   test("login and execution use the same generated vault key in image mode", async () => {
@@ -244,14 +329,14 @@ describe("ActorExecutionResolver image mode", () => {
     expect(vaultKey).toBe("d123");
     expect(executor.getSandboxConfig()).toEqual({
       type: "container",
-      container: "mama-sandbox-d123",
+      container: "mikan-sandbox-d123",
     });
   });
 
   test("uses platform-namespaced vault ids for new users in cloudflare mode", async () => {
     const mgr = new FileVaultManager(tmpDir);
     const resolver = new ActorExecutionResolver(
-      { type: "cloudflare", sandboxId: "mama-remote" },
+      { type: "cloudflare", sandboxId: "mikan-remote" },
       mgr,
     );
 
@@ -263,7 +348,7 @@ describe("ActorExecutionResolver image mode", () => {
 
     expect(executor.getSandboxConfig()).toEqual({
       type: "cloudflare",
-      sandboxId: "mama-remote-d123",
+      sandboxId: "mikan-remote-d123",
     });
     expect(mgr.resolve(DockerContainerManager.sanitizeSegment("D123"))).toBeUndefined();
   });
@@ -273,7 +358,7 @@ describe("ActorExecutionResolver image mode", () => {
     mkdirSync(join(userDir, ".ssh"), { recursive: true });
 
     const mgr = new FileVaultManager(tmpDir);
-    const provision = vi.fn().mockResolvedValue("mama-sandbox-d123");
+    const provision = vi.fn().mockResolvedValue("mikan-sandbox-d123");
     const exec = vi
       .spyOn(HostExecutor.prototype, "exec")
       .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
@@ -292,7 +377,7 @@ describe("ActorExecutionResolver image mode", () => {
     await executor.exec("pwd");
 
     expect(provision).toHaveBeenCalledWith("d123", {
-      containerName: "mama-sandbox-d123",
+      containerName: "mikan-sandbox-d123",
       conversationId: "D123",
       mounts: [
         { source: join(tmpDir, "MEMORY.md"), target: "/workspace/MEMORY.md" },
@@ -303,7 +388,7 @@ describe("ActorExecutionResolver image mode", () => {
       ],
     });
     expect(exec).toHaveBeenCalledWith(
-      "docker exec -w /workspace mama-sandbox-d123 sh -c 'pwd'",
+      "docker exec -w /workspace mikan-sandbox-d123 sh -c 'pwd'",
       undefined,
     );
   });
@@ -316,7 +401,7 @@ describe("ActorExecutionResolver image mode", () => {
     );
 
     const mgr = new FileVaultManager(tmpDir);
-    const provision = vi.fn().mockResolvedValue("mama-sandbox-d123");
+    const provision = vi.fn().mockResolvedValue("mikan-sandbox-d123");
     const exec = vi
       .spyOn(HostExecutor.prototype, "exec")
       .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
@@ -335,12 +420,12 @@ describe("ActorExecutionResolver image mode", () => {
     await executor.exec("pwd");
 
     expect(provision).toHaveBeenCalledWith("d123", {
-      containerName: "mama-sandbox-d123",
+      containerName: "mikan-sandbox-d123",
       conversationId: "D123",
       mounts: [{ source: tmpDir, target: "/workspace" }],
     });
     expect(exec).toHaveBeenCalledWith(
-      "docker exec -w /workspace mama-sandbox-d123 sh -c 'pwd'",
+      "docker exec -w /workspace mikan-sandbox-d123 sh -c 'pwd'",
       undefined,
     );
   });

@@ -4,6 +4,7 @@ import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { homedir } from "os";
 import { join } from "path";
 import { loadAgentConfigForConversation, saveConversationModelConfig } from "../config.js";
+import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { replyDiagnosticWithContext } from "./utils.js";
 
@@ -23,30 +24,27 @@ export interface ParsedModelCommand {
   thinkingLevel?: ThinkingLevel;
 }
 
+const MODEL_COMMANDS = ["model", "/model", "/pi-model"] as const;
+
 export function parseModelCommand(text: string): ParsedModelCommand | null {
-  const tokens = text.trim().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return null;
+  const matched = matchCommand(text, MODEL_COMMANDS);
+  if (!matched) return null;
 
-  const command = tokens[0].toLowerCase();
-  if (command !== "model" && command !== "/model" && command !== "/pi-model") {
-    return null;
+  if (matched.args.length === 0) {
+    return { command: matched.command };
   }
 
-  if (tokens.length === 1) {
-    return { command: command as ParsedModelCommand["command"] };
-  }
-
-  const spec = tokens[1];
+  const spec = matched.args[0];
   const slash = spec.indexOf("/");
   if (slash <= 0 || slash === spec.length - 1) {
-    return { command: command as ParsedModelCommand["command"] };
+    return { command: matched.command };
   }
 
   const modelSpec = spec.slice(slash + 1);
   const parsedModel = parseModelThinkingLevel(modelSpec);
 
   return {
-    command: command as ParsedModelCommand["command"],
+    command: matched.command,
     provider: spec.slice(0, slash),
     model: parsedModel.model,
     thinkingLevel: parsedModel.thinkingLevel,
@@ -159,7 +157,7 @@ export class ModelCommandHandler implements CommandHandler {
   }
 
   private isKnownModel(provider: string, model: string): boolean {
-    const authStorage = AuthStorage.create(join(homedir(), ".pi", "mama", "auth.json"));
+    const authStorage = AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json"));
     const registry = ModelRegistry.create(authStorage);
     return registry.find(provider, model) !== undefined;
   }

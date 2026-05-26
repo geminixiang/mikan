@@ -1,6 +1,6 @@
 import type { Bot, PlatformInfo } from "./adapter.js";
 
-export const PRODUCT_NAME = "mama";
+export const PRODUCT_NAME = "mikan";
 
 type PlatformSource = Bot | PlatformInfo | string;
 

@@ -2,8 +2,9 @@ import { randomUUID } from "crypto";
 import { existsSync, mkdirSync, renameSync, rmSync } from "fs";
 import { join } from "path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { isRecord, parseJsonValue, readTextFileIfExists } from "./file-guards.js";
-import { atomicWritePrivateFile } from "./fs-atomic.js";
+import { isRecord, parseJsonValue, readTextFileIfExists } from "../file-guards.js";
+import { atomicWritePrivateFile } from "../fs-atomic.js";
+import { isPlatformHistorySession } from "./metadata.js";
 
 export class ThreadRootNotFoundError extends Error {
   constructor(sessionFile: string) {
@@ -69,7 +70,7 @@ export function resolveSessionFile(sessionDir: string): string {
  */
 export function resolveManagedSessionFile(sessionDir: string, cwd: string): string {
   const existingPath = getCurrentSessionPath(sessionDir);
-  if (existingPath) return existingPath;
+  if (existingPath && !isPlatformHistorySession(existingPath)) return existingPath;
   return createManagedSessionFile(sessionDir, cwd);
 }
 

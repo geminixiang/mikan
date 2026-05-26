@@ -3,9 +3,10 @@ import { isRecord, parseJsonValue, readTextFileIfExists } from "./file-guards.js
 import * as log from "./log.js";
 
 /**
- * Human-readable log.jsonl entry used for grep/debugging and a few metadata lookups.
+ * Platform conversation history entry from log.jsonl.
  *
- * Runtime conversation context comes from sessions/*.jsonl, not from this file.
+ * log.jsonl records what happened on the chat platform. sessions/*.jsonl are
+ * LLM working contexts/records derived from platform messages and agent runs.
  */
 export interface ConversationLogMessage {
   date?: string;

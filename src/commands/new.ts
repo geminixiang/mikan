@@ -1,20 +1,16 @@
+import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { replyWithContext } from "./utils.js";
 
-export interface ParsedNewCommand {
+type ParsedNewCommand = {
   command: "new" | "/new" | "/pi-new";
-}
+};
 
-export function parseNewCommand(text: string): ParsedNewCommand | null {
-  const tokens = text.trim().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return null;
+const NEW_COMMANDS = ["new", "/new", "/pi-new"] as const;
 
-  const command = tokens[0].toLowerCase();
-  if (command !== "new" && command !== "/new" && command !== "/pi-new") {
-    return null;
-  }
-
-  return { command: command as ParsedNewCommand["command"] };
+function parseNewCommand(text: string): ParsedNewCommand | null {
+  const matched = matchCommand(text, NEW_COMMANDS);
+  return matched ? { command: matched.command } : null;
 }
 
 export class NewCommandHandler implements CommandHandler {

@@ -1,9 +1,10 @@
 import type { Bot, BotAdapters, BotEvent, BotHandler, RunningSession } from "../adapter.js";
 import { resolveSlackSessionScope } from "../adapters/slack/branch-manager.js";
 import { type AgentRunner, createRunner } from "../agent.js";
-import { CommandRegistry, createDefaultCommandRegistry } from "../commands/index.js";
-import type { CommandServices } from "../commands/index.js";
+import { defaultCommandHandlers } from "../commands/index.js";
+import type { CommandHandler, CommandServices } from "../commands/index.js";
 import * as log from "../log.js";
+import { reportUserFacingError } from "../sentry.js";
 import {
   createManagedSessionFile,
   createManagedSessionFileAtPath,
@@ -11,7 +12,7 @@ import {
   getThreadSessionFile,
   resolveGenericSessionScope,
   type ResolvedSessionScope,
-} from "../session-store.js";
+} from "../sessions/store.js";
 import { formatNothingRunning, formatStopping } from "../ui-copy.js";
 import {
   ConversationOrchestrator,
@@ -19,6 +20,7 @@ import {
 } from "./conversation-orchestrator.js";
 import * as Sentry from "@sentry/node";
 import { join } from "path";
+import { getUnresolvedSandboxPathContext } from "../agent.js";
 
 type ConversationState = ConversationRuntimeState;
 
@@ -26,7 +28,6 @@ export interface RunSessionOptions {
   event: BotEvent;
   bot: Bot;
   adapters: BotAdapters;
-  isSyntheticEvent?: boolean;
 }
 
 export interface CreateSessionSandboxOptions {
@@ -35,15 +36,16 @@ export interface CreateSessionSandboxOptions {
   sessionKey: string;
 }
 
-export interface SessionRuntimeOptions extends CommandServices {
-  /** Override the default command registry (e.g., to add /help, /status). */
-  commandRegistry?: CommandRegistry;
+export interface SessionRuntimeOptions extends Omit<CommandServices, "runtime"> {
+  /** Override the default command handlers (e.g., to add /help, /status). */
+  commandHandlers?: readonly CommandHandler[];
 }
 
 export interface SessionRuntime extends BotHandler {
   runSession(options: RunSessionOptions): Promise<void>;
   createSessionSandbox(options: CreateSessionSandboxOptions): Promise<AgentRunner>;
   switchConversationModel(conversationId: string, provider: string, model: string): boolean;
+  refreshConversationEnvironment(conversationId: string): boolean;
   shutdown(timeoutMs?: number): Promise<void>;
 }
 
@@ -51,31 +53,35 @@ const MAX_SESSIONS = 500;
 const IDLE_TIMEOUT_MS = 3_600_000;
 
 function runtimeCwdForSandbox(
-  type: SessionRuntimeOptions["sandbox"]["type"],
-  hostCwd: string,
+  sandbox: SessionRuntimeOptions["sandbox"],
+  hostWorkspaceRoot: string,
+  conversationId: string,
 ): string {
-  return type === "host" ? hostCwd : "/workspace";
+  const runtimeWorkspaceRoot = getUnresolvedSandboxPathContext(
+    sandbox,
+    hostWorkspaceRoot,
+  ).runtimeWorkspaceRoot;
+  return `${runtimeWorkspaceRoot.replace(/\/+$/, "")}/${conversationId}`;
 }
 
 export function createSessionRuntime(options: SessionRuntimeOptions): SessionRuntime {
-  return new MamaSessionRuntime(options);
+  return new MikanSessionRuntime(options);
 }
 
-class MamaSessionRuntime implements SessionRuntime {
+class MikanSessionRuntime implements SessionRuntime {
   private readonly conversationStates = new Map<string, ConversationState>();
   private readonly sessionQueues = new Map<string, Promise<void>>();
   private readonly inFlightRuns = new Set<Promise<void>>();
-  private readonly commandRegistry: CommandRegistry;
   private readonly orchestrator: ConversationOrchestrator;
   private isShuttingDown = false;
 
   constructor(private readonly options: SessionRuntimeOptions) {
-    this.options.runtime = this;
-    this.commandRegistry = options.commandRegistry ?? createDefaultCommandRegistry();
+    const commandServices: CommandServices = { ...options, runtime: this };
+    const commandHandlers = options.commandHandlers ?? defaultCommandHandlers();
     this.orchestrator = new ConversationOrchestrator({
       workingDir: options.workingDir,
-      commandRegistry: this.commandRegistry,
-      commandServices: this.options,
+      commandHandlers,
+      commandServices,
       isShuttingDown: () => this.isShuttingDown,
       getState: (sessionKey) => this.conversationStates.get(sessionKey),
       getOrCreateState: (createOptions) => this.getOrCreateState(createOptions),
@@ -144,7 +150,11 @@ class MamaSessionRuntime implements SessionRuntime {
     }
 
     const conversationDir = join(this.options.workingDir, conversationId);
-    const runtimeCwd = runtimeCwdForSandbox(this.options.sandbox.type, conversationDir);
+    const runtimeCwd = runtimeCwdForSandbox(
+      this.options.sandbox,
+      this.options.workingDir,
+      conversationId,
+    );
     if (sessionKey.includes(":")) {
       createManagedSessionFileAtPath(getThreadSessionFile(conversationDir, sessionKey), runtimeCwd);
     } else {
@@ -157,17 +167,10 @@ class MamaSessionRuntime implements SessionRuntime {
     await bot.postMessage(conversationId, "Conversation reset. Send a new message to start fresh.");
   }
 
-  async handleEvent(
-    event: BotEvent,
-    bot: Bot,
-    adapters: BotAdapters,
-    isSyntheticEvent?: boolean,
-  ): Promise<void> {
+  async handleEvent(event: BotEvent, bot: Bot, adapters: BotAdapters): Promise<void> {
     const sessionKey = event.sessionKey ?? `${event.conversationId}:${event.thread_ts ?? event.ts}`;
     const previous = this.sessionQueues.get(sessionKey) ?? Promise.resolve();
-    const next = previous
-      .catch(() => {})
-      .then(() => this.runSession({ event, bot, adapters, isSyntheticEvent }));
+    const next = previous.catch(() => {}).then(() => this.runSession({ event, bot, adapters }));
     this.sessionQueues.set(sessionKey, next);
     try {
       await next;
@@ -178,8 +181,8 @@ class MamaSessionRuntime implements SessionRuntime {
     }
   }
 
-  async runSession({ event, bot, adapters, isSyntheticEvent }: RunSessionOptions): Promise<void> {
-    await this.orchestrator.runSession({ event, bot, adapters, isSyntheticEvent });
+  async runSession({ event, bot, adapters }: RunSessionOptions): Promise<void> {
+    await this.orchestrator.runSession({ event, bot, adapters });
   }
 
   async createSessionSandbox(options: CreateSessionSandboxOptions): Promise<AgentRunner> {
@@ -188,6 +191,24 @@ class MamaSessionRuntime implements SessionRuntime {
   }
 
   switchConversationModel(conversationId: string, _provider: string, _model: string): boolean {
+    return this.clearConversationStates(
+      conversationId,
+      `[${conversationId}] Model switched; cleared cached session runners`,
+    );
+  }
+
+  refreshConversationEnvironment(conversationId: string): boolean {
+    return this.clearConversationStates(
+      conversationId,
+      `[${conversationId}] Environment refreshed; cleared cached session runners`,
+    );
+  }
+
+  private isConversationSession(sessionKey: string, conversationId: string): boolean {
+    return sessionKey === conversationId || sessionKey.startsWith(`${conversationId}:`);
+  }
+
+  private clearConversationStates(conversationId: string, message: string): boolean {
     for (const [sessionKey, state] of this.conversationStates) {
       if (this.isConversationSession(sessionKey, conversationId) && state.running) {
         return false;
@@ -199,12 +220,8 @@ class MamaSessionRuntime implements SessionRuntime {
         this.conversationStates.delete(sessionKey);
       }
     }
-    log.logInfo(`[${conversationId}] Model switched; cleared cached session runners`);
+    log.logInfo(message);
     return true;
-  }
-
-  private isConversationSession(sessionKey: string, conversationId: string): boolean {
-    return sessionKey === conversationId || sessionKey.startsWith(`${conversationId}:`);
   }
 
   private async getOrCreateState({
@@ -219,7 +236,11 @@ class MamaSessionRuntime implements SessionRuntime {
     }
 
     const conversationDir = join(this.options.workingDir, conversationId);
-    const runtimeCwd = runtimeCwdForSandbox(this.options.sandbox.type, conversationDir);
+    const runtimeCwd = runtimeCwdForSandbox(
+      this.options.sandbox,
+      this.options.workingDir,
+      conversationId,
+    );
     const sessionScope = await this.resolveSessionScope(
       platformName,
       conversationDir,
@@ -238,6 +259,10 @@ class MamaSessionRuntime implements SessionRuntime {
         this.options.vaultManager,
         this.options.provisioner,
         this.options.browserExtensionManager,
+        {
+          tokenStore: this.options.sessionViewTokenStore,
+          portalBaseUrl: this.options.portalBaseUrl,
+        },
       ),
       stopRequested: false,
       lastAccessedAt: Date.now(),
@@ -258,6 +283,13 @@ class MamaSessionRuntime implements SessionRuntime {
 
     if (this.inFlightRuns.size > 0) {
       log.logWarning(`Forcing exit with ${this.inFlightRuns.size} runs still in progress`);
+      reportUserFacingError(new Error("Shutdown forced with in-flight agent runs"), {
+        domain: "mikan",
+        surface: "shutdown",
+        operation: "force_exit_with_inflight_runs",
+        severity: "warning",
+        context: { inFlightRuns: this.inFlightRuns.size, timeoutMs },
+      });
     }
   }
 

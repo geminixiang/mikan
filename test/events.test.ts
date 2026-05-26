@@ -29,7 +29,7 @@ describe("EventsWatcher platform routing", () => {
   let eventsDir: string;
 
   beforeEach(() => {
-    tmpDir = join(tmpdir(), `mama-events-test-${Date.now()}`);
+    tmpDir = join(tmpdir(), `mikan-events-test-${Date.now()}`);
     eventsDir = join(tmpDir, "events");
     mkdirSync(eventsDir, { recursive: true });
   });
@@ -127,6 +127,31 @@ describe("EventsWatcher platform routing", () => {
     ).toThrow(/Missing required field 'platform'/);
   });
 
+  test("rejects event files with invalid field types", () => {
+    const { bot } = makeBot("slack");
+    const watcher = new EventsWatcher(eventsDir, { slack: bot }) as any;
+
+    expect(() =>
+      watcher.parseEvent(
+        JSON.stringify({
+          type: "immediate",
+          conversationId: "C123",
+          text: ["not", "a", "string"],
+        }),
+        "invalid-field.json",
+      ),
+    ).toThrow(/Malformed event file invalid-field\.json.*text.*Expected string/);
+  });
+
+  test("rejects event files whose top-level JSON is not an object", () => {
+    const { bot } = makeBot("slack");
+    const watcher = new EventsWatcher(eventsDir, { slack: bot }) as any;
+
+    expect(() => watcher.parseEvent("[]", "array.json")).toThrow(
+      /Expected top-level JSON object in array\.json/,
+    );
+  });
+
   test("ignores transient missing-file signals so scheduled events stay active", async () => {
     const { bot } = makeBot("slack");
     const watcher = new EventsWatcher(eventsDir, { slack: bot }) as any;
@@ -214,8 +239,6 @@ describe("EventsWatcher platform routing", () => {
       conversationKind: "shared",
       text: "Deploy in 10 minutes",
       userId: "U123",
-      sessionKey: "CH-42:THREAD-1",
-      threadTs: "THREAD-1",
     });
 
     expect(enqueueSlack).not.toHaveBeenCalled();
@@ -225,10 +248,13 @@ describe("EventsWatcher platform routing", () => {
       conversationId: "CH-42",
       conversationKind: "shared",
       user: "U123",
-      text: "[EVENT:deploy-reminder.json:immediate:immediate] Deploy in 10 minutes",
-      ts: "event:deploy-reminder.json",
-      thread_ts: "THREAD-1",
-      sessionKey: "CH-42:THREAD-1",
+      text: [
+        "Handle the following event/update in a concise, context-appropriate way.",
+        "If it reads like a reminder or follow-up, deliver it directly without greeting or generic offers to help.",
+        "",
+        "Event: Deploy in 10 minutes",
+      ].join("\n"),
+      ts: "event:deploy-reminder",
     });
   });
 });

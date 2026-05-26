@@ -5,8 +5,8 @@ import type {
   PlatformInfo,
 } from "../../adapter.js";
 import * as log from "../../log.js";
-import { resolveChatSessionKey } from "../../session-policy.js";
-import { formatToolArgs, splitText } from "../shared.js";
+import { resolveChatSessionKey } from "../../sessions/policy.js";
+import { createChatResponseErrorReporter, formatToolArgs, splitText } from "../shared.js";
 import type { DiscordBot, DiscordEvent } from "./bot.js";
 
 export const DISCORD_FORMATTING_GUIDE = `## Discord Formatting (Markdown)
@@ -37,7 +37,6 @@ function formatToolResult(result: ChatToolResult): string {
 export function createDiscordAdapters(
   event: DiscordEvent,
   bot: DiscordBot,
-  _isSyntheticEvent?: boolean,
 ): {
   message: ChatMessage;
   responseCtx: ChatResponseContext;
@@ -106,6 +105,18 @@ export function createDiscordAdapters(
     return bot.postMessage(channelId, text);
   }
 
+  const reportResponseError = createChatResponseErrorReporter(() => ({
+    platform: "discord",
+    conversationId,
+    channelId,
+    messageId: message.id,
+    sessionKey: message.sessionKey,
+    responseMessageId: messageId,
+    threadTs: threadTargetId,
+    replyTargetId,
+    conversationKind: message.conversationKind,
+  }));
+
   const responseCtx: ChatResponseContext = {
     respond: async (text: string) => {
       updatePromise = updatePromise.then(async () => {
@@ -138,6 +149,11 @@ export function createDiscordAdapters(
           }
         } catch (err) {
           log.logWarning("Discord respond error", err instanceof Error ? err.message : String(err));
+          reportResponseError(err, "respond", {
+            phase: messageId ? "update" : "initial_post",
+            textLength: text.length,
+            accumulatedLength: accumulatedText.length,
+          });
         }
       });
       await updatePromise;
@@ -173,6 +189,10 @@ export function createDiscordAdapters(
             "Discord replaceResponse error",
             err instanceof Error ? err.message : String(err),
           );
+          reportResponseError(err, "replace_response", {
+            textLength: text.length,
+            hadExistingResponse: Boolean(messageId),
+          });
         }
       });
       await updatePromise;
@@ -190,6 +210,10 @@ export function createDiscordAdapters(
             "Discord respondDiagnostic error",
             err instanceof Error ? err.message : String(err),
           );
+          reportResponseError(err, "respond_diagnostic", {
+            textLength: text.length,
+            style: options?.style,
+          });
         }
       });
       await updatePromise;
@@ -237,6 +261,7 @@ export function createDiscordAdapters(
             "Discord setWorking error",
             err instanceof Error ? err.message : String(err),
           );
+          reportResponseError(err, "set_working", { working });
         }
       });
       await updatePromise;

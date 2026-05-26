@@ -128,7 +128,7 @@ describe("respond() — non-threaded (replies to trigger message)", () => {
     const event = makeEvent({
       ts: "event:one-shot-1777454334068.json",
       thread_ts: undefined,
-      text: "[EVENT:one-shot-1777454334068.json:one-shot:2026-04-29T17:19:15+08:00] run",
+      text: "run",
     });
     const { responseCtx } = createDiscordAdapters(event, bot, /* isEvent= */ true);
     await responseCtx.respond("hello");
@@ -226,7 +226,7 @@ describe("respondDiagnostic()", () => {
     const event = makeEvent({
       ts: "event:one-shot-1777454334068.json",
       thread_ts: undefined,
-      text: "[EVENT:one-shot-1777454334068.json:one-shot:2026-04-29T17:19:15+08:00] run",
+      text: "run",
     });
     const { responseCtx } = createDiscordAdapters(event, bot, /* isEvent= */ true);
     await responseCtx.respond("main");
@@ -241,7 +241,7 @@ describe("respondDiagnostic()", () => {
     const event = makeEvent({
       ts: "event:one-shot-1777454334068.json",
       thread_ts: undefined,
-      text: "[EVENT:one-shot-1777454334068.json:one-shot:2026-04-29T17:19:15+08:00] run",
+      text: "run",
     });
     const { responseCtx } = createDiscordAdapters(event, bot, /* isEvent= */ true);
     await responseCtx.respondDiagnostic("detail");
@@ -313,7 +313,7 @@ describe("setTyping()", () => {
 
   test("event: sends typing indicator", async () => {
     const bot = makeDiscordBot();
-    const event = makeEvent({ text: "[EVENT:deploy.json:immediate:immediate] run deploy" });
+    const event = makeEvent({ text: "run deploy" });
     const { responseCtx } = createDiscordAdapters(event, bot, /* isEvent= */ true);
     await responseCtx.setTyping(true);
     expect(bot.sendTyping).toHaveBeenCalledWith("CH001");

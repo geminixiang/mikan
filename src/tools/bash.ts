@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
-import type { Executor } from "../sandbox.js";
+import type { Executor } from "../sandbox/index.js";
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
@@ -18,7 +18,7 @@ import {
  */
 function getTempFilePath(): string {
   const id = randomBytes(8).toString("hex");
-  return join(tmpdir(), `mama-bash-${id}.log`);
+  return join(tmpdir(), `mikan-bash-${id}.log`);
 }
 
 const bashSchema = Type.Object({
