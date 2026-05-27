@@ -197,7 +197,7 @@ export class ChannelStore {
    */
   private async downloadAttachmentWithRetry(localPath: string, url: string): Promise<void> {
     await withRetry(() => this.downloadAttachment(localPath, url), {
-      maxRetries: 3,
+      maxAttempts: 3,
       baseDelayMs: 250,
       isRateLimited: isRetryableAttachmentDownloadError,
     });

@@ -7,9 +7,10 @@
  * markup wrappers — so it lives here once.
  */
 
-import { appendFileSync, mkdirSync } from "fs";
+import { appendFileSync } from "fs";
 import { join } from "path";
 import type { BotHandler } from "../adapter.js";
+import { ensureDirExists } from "../file-guards.js";
 import * as log from "../log.js";
 import { reportUserFacingError } from "../sentry.js";
 
@@ -107,9 +108,10 @@ export class ChannelQueue {
 }
 
 export interface RetryOptions {
-  /** Predicate that returns true when an error indicates a platform-side rate limit. */
+  /** Predicate that returns true when an error is worth retrying (rate limit, transient 5xx, etc.). */
   isRateLimited: (err: Error) => boolean;
-  maxRetries?: number;
+  /** Total attempts including the first call. */
+  maxAttempts?: number;
   baseDelayMs?: number;
 }
 
@@ -119,26 +121,26 @@ export interface RetryOptions {
  * its own predicate so we don't have to know every SDK's error shape here.
  */
 export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOptions): Promise<T> {
-  const maxRetries = opts.maxRetries ?? 3;
+  const maxAttempts = opts.maxAttempts ?? 3;
   const baseDelayMs = opts.baseDelayMs ?? 1000;
   let lastError: Error | undefined;
 
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       return await fn();
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
 
-      if (opts.isRateLimited(lastError)) {
-        const delay = baseDelayMs * Math.pow(2, attempt);
-        log.logWarning(
-          `Rate limited, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        continue;
+      const isLastAttempt = attempt === maxAttempts - 1;
+      if (isLastAttempt || !opts.isRateLimited(lastError)) {
+        throw lastError;
       }
 
-      throw lastError;
+      const delay = baseDelayMs * Math.pow(2, attempt);
+      log.logWarning(
+        `Retrying after error in ${delay}ms (attempt ${attempt + 1}/${maxAttempts}): ${lastError.message}`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
   throw lastError;
@@ -179,7 +181,7 @@ export function splitText(
  */
 export function appendChannelLog(workingDir: string, channel: string, entry: object): void {
   const dir = join(workingDir, channel);
-  mkdirSync(dir, { recursive: true });
+  ensureDirExists(dir);
   appendFileSync(join(dir, "log.jsonl"), `${JSON.stringify(entry)}\n`);
 }
 
