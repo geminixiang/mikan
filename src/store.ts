@@ -125,10 +125,6 @@ export class ChannelStore {
       return false; // Already logged
     }
 
-    // Mark as logged and schedule cleanup after 60 seconds
-    this.recentlyLogged.set(dedupeKey, Date.now());
-    setTimeout(() => this.recentlyLogged.delete(dedupeKey), 60000);
-
     const logPath = join(this.getChannelDir(channelId), "log.jsonl");
 
     // Ensure message has a date field
@@ -147,6 +143,11 @@ export class ChannelStore {
 
     const line = `${JSON.stringify(message)}\n`;
     await appendFile(logPath, line, "utf-8");
+
+    // Mark as logged only after the append succeeds. Otherwise a transient
+    // write failure can make retries look like duplicates and drop messages.
+    this.recentlyLogged.set(dedupeKey, Date.now());
+    setTimeout(() => this.recentlyLogged.delete(dedupeKey), 60000);
     return true;
   }
 

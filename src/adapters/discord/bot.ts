@@ -661,7 +661,7 @@ export class DiscordBot implements Bot {
       if (cleanedText.toLowerCase() === "stop" || cleanedText.toLowerCase() === "/stop") {
         const stopTarget = this.resolveStopTarget(conversationId, sessionKey);
         if (stopTarget) {
-          this.handler.handleStop(stopTarget, conversationId, this);
+          await this.handler.handleStop(stopTarget, conversationId, this);
         } else if (!isAutoReplyCandidate) {
           await this.postMessage(conversationId, formatNothingRunning("discord"));
         }

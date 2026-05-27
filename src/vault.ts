@@ -1,12 +1,4 @@
-import {
-  chmodSync,
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from "fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "fs";
 import { dirname, isAbsolute, join, normalize, sep } from "path";
 import { readTextFileIfExists } from "./file-guards.js";
 import type { SandboxConfig } from "./sandbox/index.js";
@@ -224,12 +216,7 @@ export class FileVaultManager implements VaultManager {
     ensurePrivateDir(dir);
     const parentDir = dirname(filePath);
     if (parentDir !== dir) ensurePrivateDir(parentDir);
-    if (existsSync(filePath)) {
-      writeFileSync(filePath, content, { mode: 0o600 });
-      chmodSync(filePath, 0o600);
-    } else {
-      atomicWritePrivateFile(filePath, content);
-    }
+    atomicWritePrivateFile(filePath, content);
   }
 
   // ── private ────────────────────────────────────────────────────────────────
