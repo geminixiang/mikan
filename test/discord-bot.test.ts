@@ -410,10 +410,11 @@ describe("DiscordBot message routing", () => {
     });
   });
 
-  test("/new slash command resets the resolved session", async () => {
+  test("/new slash command resets the resolved session and acknowledges", async () => {
     const handler = makeHandler();
     const bot = new DiscordBot(handler, { token: "TEST_TOKEN", workingDir });
     const interactionHandler = installInteractionHandler(bot);
+    const reply = vi.fn().mockResolvedValue(undefined);
 
     await interactionHandler({
       isChatInputCommand: () => true,
@@ -426,21 +427,26 @@ describe("DiscordBot message routing", () => {
       user: { id: "U1", username: "alice" },
       replied: false,
       deferred: false,
-      reply: vi.fn().mockResolvedValue(undefined),
+      reply,
       followUp: vi.fn(),
       editReply: vi.fn(),
     });
 
     expect(handler.handleNewCommand).toHaveBeenCalledWith("DM1", "DM1", bot);
+    expect(reply).toHaveBeenCalledWith({
+      content: "Started a new conversation.",
+      ephemeral: false,
+    });
   });
 
-  test("/stop slash command targets the thread session in Discord threads", async () => {
+  test("/stop slash command targets the thread session and acknowledges", async () => {
     const handler = makeHandler();
     vi.mocked(handler.isRunning).mockImplementation(
       (sessionKey: string) => sessionKey === "C1:THREAD1",
     );
     const bot = new DiscordBot(handler, { token: "TEST_TOKEN", workingDir });
     const interactionHandler = installInteractionHandler(bot);
+    const reply = vi.fn().mockResolvedValue(undefined);
 
     await interactionHandler({
       isChatInputCommand: () => true,
@@ -453,11 +459,15 @@ describe("DiscordBot message routing", () => {
       user: { id: "U1", username: "alice" },
       replied: false,
       deferred: false,
-      reply: vi.fn().mockResolvedValue(undefined),
+      reply,
       followUp: vi.fn(),
       editReply: vi.fn(),
     });
 
     expect(handler.handleStop).toHaveBeenCalledWith("C1:THREAD1", "C1", bot);
+    expect(reply).toHaveBeenCalledWith({
+      content: "Stopped the current conversation.",
+      ephemeral: true,
+    });
   });
 });

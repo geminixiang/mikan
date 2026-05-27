@@ -558,6 +558,7 @@ export class DiscordBot implements Bot {
       try {
         if (interaction.commandName === "new") {
           await this.handler.handleNewCommand(sessionKey, conversationId, this);
+          await adapters.responseCtx.respond("Started a new conversation.");
           return;
         }
 
@@ -565,6 +566,7 @@ export class DiscordBot implements Bot {
           const stopTarget = this.resolveStopTarget(conversationId, sessionKey);
           if (stopTarget) {
             await this.handler.handleStop(stopTarget, conversationId, this);
+            await adapters.responseCtx.respond("Stopped the current conversation.");
           } else {
             await adapters.responseCtx.respond(formatNothingRunning("discord"));
           }
