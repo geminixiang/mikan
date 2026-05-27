@@ -754,41 +754,48 @@ function formatTimestampedUserMessage(message: ChatMessage): string {
 function collectMessageAttachments(
   message: ChatMessage,
   workspacePath: string,
+  pathContext?: RuntimePathContext,
 ): { imageAttachments: ImageContent[]; nonImagePaths: string[] } {
   const imageAttachments: ImageContent[] = [];
   const nonImagePaths: string[] = [];
 
   for (const attachment of message.attachments || []) {
-    const fullPath = `${workspacePath}/${attachment.localPath}`;
+    const runtimePath = `${workspacePath}/${attachment.localPath}`;
+    const hostPath = pathContext?.runtimeToHostPath?.(runtimePath) ?? runtimePath;
     const mimeType = getImageMimeType(attachment.localPath);
 
-    if (mimeType && existsSync(fullPath)) {
+    if (mimeType && existsSync(hostPath)) {
       try {
         imageAttachments.push({
           type: "image",
           mimeType,
-          data: readFileSync(fullPath).toString("base64"),
+          data: readFileSync(hostPath).toString("base64"),
         });
       } catch {
-        nonImagePaths.push(fullPath);
+        nonImagePaths.push(runtimePath);
       }
     } else {
-      nonImagePaths.push(fullPath);
+      nonImagePaths.push(runtimePath);
     }
   }
 
   return { imageAttachments, nonImagePaths };
 }
 
-function buildPromptPayload(
+export function buildPromptPayload(
   message: ChatMessage,
   workspacePath: string,
+  pathContext?: RuntimePathContext,
 ): {
   userMessage: string;
   imageAttachments: ImageContent[];
 } {
   let userMessage = formatTimestampedUserMessage(message);
-  const { imageAttachments, nonImagePaths } = collectMessageAttachments(message, workspacePath);
+  const { imageAttachments, nonImagePaths } = collectMessageAttachments(
+    message,
+    workspacePath,
+    pathContext,
+  );
 
   if (nonImagePaths.length > 0) {
     userMessage += `\n\n<slack_attachments>\n${nonImagePaths.join("\n")}\n</slack_attachments>`;
@@ -1127,6 +1134,7 @@ async function prepareRunContext(params: {
   const { userMessage, imageAttachments } = buildPromptPayload(
     message,
     pathContext.runtimeWorkspaceRoot,
+    pathContext,
   );
   await writePromptDebugContext(
     conversationDir,
