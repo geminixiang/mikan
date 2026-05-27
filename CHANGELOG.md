@@ -9,6 +9,24 @@ any release.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-05-27
+
+### Added
+
+- Add expanded command, configuration, deployment, development, session, and skill documentation.
+- Add README hero and architecture diagrams.
+- Add project agent development rules and Karpathy coding guidelines.
+
+### Changed
+
+- Simplify the README overview and clarify sandbox runtime architecture documentation.
+- Simplify file guards and retry helpers.
+
+### Fixed
+
+- Retry attachment downloads.
+- Skip retry sleep on the final attempt and clarify retry naming.
+
 ## [0.2.0] - 2026-05-23
 
 ### Changed
