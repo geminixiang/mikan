@@ -1,6 +1,8 @@
 import { createHash, randomBytes } from "crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "http";
+import { handleAdminRequest } from "../admin/portal.js";
 import { resolveLinkBaseUrl } from "../config.js";
+import { readEnv } from "../env.js";
 import {
   handleSessionViewRequest,
   type SessionViewInteractiveOptions,
@@ -265,6 +267,10 @@ export function startLinkServer(
       if (req.method === "GET" && url.pathname === "/health") {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      if (handleAdminRequest(req, res, url, readEnv("ADMIN_TOKEN"))) {
         return;
       }
 
