@@ -1,5 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "http";
+import type { PlatformName } from "../adapter.js";
+import { readEnv } from "../env.js";
 import { PRODUCT_NAME } from "../ui-copy.js";
+import { sharedVaultKey, type VaultManager } from "../vault.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -19,6 +22,20 @@ interface CommandDef {
   constraints?: string[];
 }
 
+export interface AdminServices {
+  vaultManager: VaultManager;
+  linkTokenStore: {
+    create(
+      platform: PlatformName,
+      platformUserId: string,
+      conversationId: string,
+      vaultId: string,
+      providerId: string,
+    ): { token: string };
+  };
+  portalBaseUrl?: string;
+}
+
 // ── Handler ────────────────────────────────────────────────────────────────────
 
 export function handleAdminRequest(
@@ -26,31 +43,239 @@ export function handleAdminRequest(
   res: ServerResponse,
   url: URL,
   adminToken: string | undefined,
+  services?: AdminServices,
 ): boolean {
-  if (req.method !== "GET" || url.pathname !== "/admin") return false;
+  if (!url.pathname.startsWith("/admin")) return false;
 
   if (!adminToken) {
-    res.writeHead(404);
-    res.end();
+    if (req.method === "GET" && url.pathname === "/admin") {
+      res.writeHead(404);
+      res.end();
+      return true;
+    }
+    return false;
+  }
+
+  // Main dashboard page
+  if (req.method === "GET" && url.pathname === "/admin") {
+    const provided = url.searchParams.get("token");
+    if (provided !== adminToken) {
+      res.writeHead(403, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(renderAdminErrorPage("Access denied. Provide a valid ?token= parameter."));
+      return true;
+    }
+    res.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+    });
+    res.end(renderAdminPage());
     return true;
   }
 
-  const provided = url.searchParams.get("token");
-  if (provided !== adminToken) {
-    res.writeHead(403, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(renderAdminErrorPage("Access denied. Provide a valid ?token= parameter."));
+  // API routes
+  if (url.pathname.startsWith("/admin/api/")) {
+    routeApiRequest(req, res, url, adminToken, services);
     return true;
   }
 
-  res.writeHead(200, {
-    "Content-Type": "text/html; charset=utf-8",
-    "Cache-Control": "no-store",
-  });
-  res.end(renderAdminPage());
-  return true;
+  return false;
 }
 
-// ── HTML ───────────────────────────────────────────────────────────────────────
+// ── API routing ────────────────────────────────────────────────────────────────
+
+function routeApiRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  adminToken: string,
+  services?: AdminServices,
+): void {
+  if (req.method === "GET") {
+    if (url.searchParams.get("token") !== adminToken) {
+      jsonRes(res, 403, { error: "Unauthorized" });
+      return;
+    }
+    if (url.pathname === "/admin/api/vaults") {
+      serveVaultsList(res, services);
+      return;
+    }
+    if (url.pathname === "/admin/api/status") {
+      serveStatus(res, services);
+      return;
+    }
+    jsonRes(res, 404, { error: "Not found" });
+    return;
+  }
+
+  if (req.method === "POST") {
+    void readJsonBody(req, res, (body) => {
+      const bodyToken = typeof body.token === "string" ? body.token : "";
+      if (bodyToken !== adminToken) {
+        jsonRes(res, 403, { error: "Unauthorized" });
+        return;
+      }
+      if (url.pathname === "/admin/api/vaults/delete") {
+        serveVaultDelete(res, body, services);
+        return;
+      }
+      if (url.pathname === "/admin/api/vaults/link") {
+        serveVaultLink(res, body, services);
+        return;
+      }
+      jsonRes(res, 404, { error: "Not found" });
+    });
+    return;
+  }
+
+  jsonRes(res, 405, { error: "Method not allowed" });
+}
+
+// ── API handlers ───────────────────────────────────────────────────────────────
+
+function serveVaultsList(res: ServerResponse, services?: AdminServices): void {
+  if (!services) {
+    jsonRes(res, 503, { error: "Vault service not available" });
+    return;
+  }
+
+  const names = services.vaultManager.listSharedVaults();
+  const vaults = names.map((name) => {
+    const vaultId = sharedVaultKey(name);
+    const vault = vaultId ? services.vaultManager.resolve(vaultId) : undefined;
+    return {
+      name,
+      envKeys: vault ? Object.keys(vault.env).toSorted() : [],
+      mountTargets: vault ? [...new Set(vault.mounts.map((m) => m.target))].toSorted() : [],
+    };
+  });
+
+  jsonRes(res, 200, { vaults });
+}
+
+function serveVaultDelete(
+  res: ServerResponse,
+  body: Record<string, unknown>,
+  services?: AdminServices,
+): void {
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  if (!name) {
+    jsonRes(res, 400, { error: "Missing name" });
+    return;
+  }
+  if (!services) {
+    jsonRes(res, 503, { error: "Vault service not available" });
+    return;
+  }
+
+  try {
+    const deleted = services.vaultManager.deleteSharedVault(name);
+    jsonRes(res, 200, { ok: true, deleted });
+  } catch (err) {
+    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+function serveVaultLink(
+  res: ServerResponse,
+  body: Record<string, unknown>,
+  services?: AdminServices,
+): void {
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  if (!name) {
+    jsonRes(res, 400, { error: "Missing name" });
+    return;
+  }
+  if (!services) {
+    jsonRes(res, 503, { error: "Services not available" });
+    return;
+  }
+  if (!services.portalBaseUrl) {
+    jsonRes(res, 503, {
+      error: "Portal URL not configured. Set MIKAN_LINK_URL to enable link generation.",
+    });
+    return;
+  }
+
+  const vaultId = sharedVaultKey(name);
+  if (!vaultId) {
+    jsonRes(res, 400, { error: "Invalid vault name" });
+    return;
+  }
+
+  try {
+    const { token } = services.linkTokenStore.create(
+      "slack" as PlatformName,
+      "admin",
+      "admin-shared-vault",
+      vaultId,
+      "",
+    );
+    const linkUrl = `${services.portalBaseUrl}/link?token=${encodeURIComponent(token)}`;
+    jsonRes(res, 200, { ok: true, url: linkUrl });
+  } catch (err) {
+    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+function serveStatus(res: ServerResponse, services?: AdminServices): void {
+  const linkUrl = readEnv("LINK_URL");
+  const adminTokenConfigured = !!readEnv("ADMIN_TOKEN");
+  const sharedVaultCount = services ? services.vaultManager.listSharedVaults().length : null;
+
+  jsonRes(res, 200, {
+    linkUrl: linkUrl ?? null,
+    adminTokenConfigured,
+    vaultServiceAvailable: !!services?.vaultManager,
+    sharedVaultCount,
+    portalBaseUrl: services?.portalBaseUrl ?? null,
+  });
+}
+
+// ── Utilities ──────────────────────────────────────────────────────────────────
+
+function jsonRes(res: ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+  });
+  res.end(JSON.stringify(body));
+}
+
+async function readJsonBody(
+  req: IncomingMessage,
+  res: ServerResponse,
+  callback: (body: Record<string, unknown>) => void,
+): Promise<void> {
+  let data = "";
+  let tooLarge = false;
+
+  await new Promise<void>((resolve) => {
+    req.on("data", (chunk: Buffer) => {
+      if (tooLarge) return;
+      data += chunk.toString();
+      if (data.length > 32 * 1024) {
+        tooLarge = true;
+        res.writeHead(413);
+        res.end();
+        req.destroy();
+      }
+    });
+    req.on("end", resolve);
+    req.on("error", resolve);
+  });
+
+  if (tooLarge) return;
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(data) as Record<string, unknown>;
+  } catch {
+    jsonRes(res, 400, { error: "Invalid JSON" });
+    return;
+  }
+
+  callback(parsed);
+}
 
 function esc(s: string): string {
   return s.replace(
@@ -58,6 +283,8 @@ function esc(s: string): string {
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
   );
 }
+
+// ── Data ───────────────────────────────────────────────────────────────────────
 
 const COMMANDS: CommandDef[] = [
   {
@@ -105,7 +332,7 @@ const COMMANDS: CommandDef[] = [
       },
       {
         cmd: "/model <provider>/<model>:<thinking>",
-        desc: "切換模型並設定 thinking level（off / minimal / low / medium / high / xhigh），例如 /model anthropic/claude-opus-4-7:medium",
+        desc: "切換模型並設定 thinking level（off / minimal / low / medium / high / xhigh）",
       },
     ],
   },
@@ -258,6 +485,8 @@ const OAUTH_SERVICES = [
   },
 ];
 
+// ── HTML renderers ─────────────────────────────────────────────────────────────
+
 function renderServiceLogo(id: string, cls: string, abbr: string): string {
   if (id === "cloudflare_wrangler") {
     return `<span class="service-logo ${cls}" aria-hidden="true">
@@ -317,7 +546,7 @@ function renderOverviewSection(): string {
       <div class="card overview-card">
         <p class="eyebrow">Product</p>
         <h2 class="card-title">${PRODUCT_NAME}</h2>
-        <p class="card-desc">多平台 AI coding agent，整合 Slack、Telegram、Discord。透過 slash commands 管理 session、憑證與沙盒環境。</p>
+        <p class="card-desc">多平台 AI coding agent，整合 Slack、Telegram、Discord。</p>
       </div>
 
       <div class="card overview-card">
@@ -325,9 +554,8 @@ function renderOverviewSection(): string {
         <h2 class="card-title stat-number">${COMMANDS.length}</h2>
         <div class="overview-cmd-list">
           ${COMMANDS.map(
-            (
-              c,
-            ) => `<a class="overview-cmd-chip" href="#cmd-${esc(c.id)}" data-switch-tab="commands">
+            (c) =>
+              `<a class="overview-cmd-chip" href="#cmd-${esc(c.id)}" data-switch-tab="commands">
             <span aria-hidden="true">${c.icon}</span> <code>${esc(c.name)}</code>
           </a>`,
           ).join("")}
@@ -351,10 +579,21 @@ function renderOverviewSection(): string {
       </div>
     </div>
 
+    <div class="card" id="status-card">
+      <p class="eyebrow">Server Status</p>
+      <h2 class="card-title">運行狀態</h2>
+      <div id="status-content"><div class="loading-msg">Loading…</div></div>
+    </div>
+
     <div class="card quick-links-card">
       <p class="eyebrow">Quick Links</p>
       <h2 class="card-title">快速導覽</h2>
       <div class="quicklink-grid">
+        <button class="quicklink-btn" data-switch-tab="vaults">
+          <span class="quicklink-icon">🗄️</span>
+          <span class="quicklink-label">Shared Vaults</span>
+          <span class="quicklink-sub">共享憑證管理</span>
+        </button>
         <button class="quicklink-btn" data-switch-tab="commands">
           <span class="quicklink-icon">⚡</span>
           <span class="quicklink-label">Commands</span>
@@ -371,6 +610,36 @@ function renderOverviewSection(): string {
           <span class="quicklink-sub">Session 查看器說明</span>
         </button>
       </div>
+    </div>
+  </div>`;
+}
+
+function renderVaultsSection(): string {
+  return `<div class="tab-panel" id="panel-vaults">
+    <div class="card section-intro">
+      <div class="section-intro-header">
+        <div>
+          <p class="eyebrow">Shared Vaults</p>
+          <h2 class="card-title">共享 Vault 管理</h2>
+          <p class="card-desc">管理所有共享登入 profile：查看儲存的 env key 名稱、產生 15 分鐘登入連結、或刪除整個 vault。</p>
+        </div>
+        <button class="refresh-btn" id="vaults-refresh-btn" onclick="loadVaults()" title="Refresh">↻ Refresh</button>
+      </div>
+    </div>
+
+    <div class="card" id="vaults-card">
+      <div id="vaults-content"><div class="loading-msg">Loading vaults…</div></div>
+    </div>
+
+    <div class="card">
+      <p class="eyebrow">如何新增 Shared Vault</p>
+      <h3 class="card-subtitle">透過 Bot 指令建立</h3>
+      <p class="card-desc-sm" style="margin-bottom:10px">Shared Vault 需透過機器人私訊指令建立，管理員取得登入連結後分享給需要的用戶：</p>
+      <div class="code-block-list">
+        <div class="code-example"><code>/login shared create &lt;name&gt;</code><span>在 bot 私訊中建立共享 profile，取得登入連結</span></div>
+        <div class="code-example"><code>/login copy &lt;name&gt;</code><span>用戶在私訊中把共享 profile 複製到自己的 vault</span></div>
+      </div>
+      <p class="card-desc-sm" style="margin-top:10px">建立後，可在上方列表點擊 <strong>Generate Link</strong> 直接從後台產生新的登入連結。</p>
     </div>
   </div>`;
 }
@@ -448,9 +717,7 @@ function renderLoginSection(): string {
         <p class="eyebrow">OAuth Services</p>
         <h3 class="card-subtitle">OAuth 整合服務</h3>
         <p class="card-desc-sm">點選 OAuth 模式，選擇以下服務並授權，token 自動存入 vault：</p>
-        <div class="preset-list">
-          ${oauthCards}
-        </div>
+        <div class="preset-list">${oauthCards}</div>
         <p class="card-desc-sm" style="margin-top:14px">自訂 OAuth service 可透過環境變數 <code>OAUTH_SERVICES_JSON</code> 注入。</p>
       </div>
     </div>
@@ -458,8 +725,8 @@ function renderLoginSection(): string {
     <div class="card">
       <p class="eyebrow">Shared Profiles</p>
       <h3 class="card-subtitle">共享 Vault Profile</h3>
-      <p class="card-desc">可建立共享 profile 讓多個 conversation 共用同一套憑證，適合 team 共享服務帳號：</p>
-      <div class="code-block-list">
+      <p class="card-desc">建立共享 profile 讓多個 conversation 共用同一套憑證。管理員可在 <button class="inline-tab-btn" data-switch-tab="vaults">Vaults 頁面</button> 直接產生登入連結。</p>
+      <div class="code-block-list" style="margin-top:12px">
         <div class="code-example"><code>/login shared create &lt;name&gt;</code><span>建立共享 profile</span></div>
         <div class="code-example"><code>/login shared list</code><span>列出所有共享 profile</span></div>
         <div class="code-example"><code>/login copy &lt;name&gt;</code><span>複製共享 profile 到本 conversation</span></div>
@@ -497,34 +764,20 @@ function renderSessionSection(): string {
           <li><span class="feature-dot" aria-hidden="true"></span>Assistant 回覆（含 Markdown 渲染）</li>
           <li><span class="feature-dot" aria-hidden="true"></span>Tool 呼叫與結果（含 code output）</li>
           <li><span class="feature-dot" aria-hidden="true"></span>System 事件（session 開始、結束等）</li>
-          <li><span class="feature-dot" aria-hidden="true"></span>Session metadata（ID、建立時間、entry 數）</li>
           <li><span class="feature-dot" aria-hidden="true"></span>執行狀態（Running / Idle）即時更新</li>
           <li><span class="feature-dot" aria-hidden="true"></span>Fork / Thread 導航連結</li>
         </ul>
       </div>
 
       <div class="card">
-        <p class="eyebrow">技術細節</p>
-        <h3 class="card-subtitle">串流與互動</h3>
-        <ul class="feature-list">
-          <li><span class="feature-dot" aria-hidden="true"></span>使用 <strong>Server-Sent Events</strong> 即時串流</li>
-          <li><span class="feature-dot" aria-hidden="true"></span>支援 Markdown（markdown-it 14）</li>
-          <li><span class="feature-dot" aria-hidden="true"></span>訊息一鍵複製（copy-to-clipboard）</li>
-          <li><span class="feature-dot" aria-hidden="true"></span>自動滾動到最新訊息</li>
-          <li><span class="feature-dot" aria-hidden="true"></span>RWD 響應式設計，手機也能用</li>
-          <li><span class="feature-dot" aria-hidden="true"></span>Token 24 小時後過期，需重新 /session</li>
-        </ul>
+        <p class="eyebrow">Config</p>
+        <h3 class="card-subtitle">必要環境變數</h3>
+        <div class="code-block-list">
+          <div class="code-example"><code>MIKAN_LINK_URL=https://your-host.example.com</code><span>設定外部 base URL（production）</span></div>
+          <div class="code-example"><code>MIKAN_LINK_PORT=8080</code><span>或指定 port，URL 從 request headers 推導</span></div>
+        </div>
+        <p class="card-desc-sm" style="margin-top:12px">若兩者都未設定，server 只綁 127.0.0.1，Session View 連結無法對外使用。</p>
       </div>
-    </div>
-
-    <div class="card">
-      <p class="eyebrow">Config</p>
-      <h3 class="card-subtitle">必要環境變數</h3>
-      <div class="code-block-list">
-        <div class="code-example"><code>MIKAN_LINK_URL=https://your-host.example.com</code><span>設定外部可存取的 base URL（production）</span></div>
-        <div class="code-example"><code>MIKAN_LINK_PORT=8080</code><span>或指定 port，URL 從 request headers 推導</span></div>
-      </div>
-      <p class="card-desc-sm" style="margin-top:12px">若兩者都未設定，server 只綁 127.0.0.1，Session View 連結無法對外使用。</p>
     </div>
   </div>`;
 }
@@ -548,30 +801,36 @@ function renderAdminPage(): string {
             <h1 class="hero-title">Admin Dashboard</h1>
             <span class="admin-badge">admin</span>
           </div>
-          <p class="hero-subtitle">統一後台管理頁面 — Slash Commands / Login / Session View</p>
+          <p class="hero-subtitle">統一後台管理頁面 — Shared Vaults / Slash Commands / Login / Session View</p>
         </div>
       </div>
     </header>
 
     <nav class="tab-nav" role="tablist" aria-label="Admin sections">
       <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="panel-overview" data-tab="overview">Overview</button>
+      <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-vaults" data-tab="vaults">Vaults</button>
       <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-commands" data-tab="commands">Commands</button>
       <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-login" data-tab="login">Login</button>
       <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-session" data-tab="session">Session View</button>
     </nav>
 
     ${renderOverviewSection()}
+    ${renderVaultsSection()}
     ${renderCommandsSection()}
     ${renderLoginSection()}
     ${renderSessionSection()}
   </main>
 
   <script>
-    // Tab switching
+    const adminToken = new URLSearchParams(window.location.search).get('token') || '';
+
+    // ── Tab switching ────────────────────────────────────────────────────────────
+
     const tabBtns = document.querySelectorAll('.tab-btn');
     const tabPanels = document.querySelectorAll('.tab-panel');
+    const loadedTabs = new Set(['overview']);
 
-    function switchTab(tabId) {
+    function switchTab(tabId, opts) {
       tabBtns.forEach((btn) => {
         const isActive = btn.dataset.tab === tabId;
         btn.classList.toggle('active', isActive);
@@ -580,30 +839,259 @@ function renderAdminPage(): string {
       tabPanels.forEach((panel) => {
         panel.classList.toggle('active', panel.id === 'panel-' + tabId);
       });
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (!opts || !opts.noScroll) window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      // Lazy-load tab data on first visit
+      if (!loadedTabs.has(tabId)) {
+        loadedTabs.add(tabId);
+        if (tabId === 'vaults') loadVaults();
+      }
     }
 
     tabBtns.forEach((btn) => {
       btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
 
-    // Quick link buttons and overview chips that switch tabs
     document.addEventListener('click', (event) => {
       const target = event.target instanceof Element ? event.target.closest('[data-switch-tab]') : null;
       if (!(target instanceof HTMLElement)) return;
       const tabId = target.dataset.switchTab;
-      if (tabId) {
-        switchTab(tabId);
-        const anchor = target.getAttribute('href');
-        if (anchor && anchor.startsWith('#')) {
-          event.preventDefault();
-          setTimeout(() => {
-            const el = document.querySelector(anchor);
-            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }, 60);
-        }
+      if (!tabId) return;
+      switchTab(tabId);
+      const anchor = target instanceof HTMLAnchorElement ? target.getAttribute('href') : null;
+      if (anchor && anchor.startsWith('#')) {
+        event.preventDefault();
+        setTimeout(() => {
+          const el = document.querySelector(anchor);
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 60);
       }
     });
+
+    // ── Helpers ──────────────────────────────────────────────────────────────────
+
+    function escHtml(str) {
+      return String(str).replace(/[&<>"']/g, (c) => (
+        {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
+      ));
+    }
+
+    function escAttr(str) {
+      return String(str).replace(/["'&<>]/g, (c) => (
+        {'"':'&quot;',"'":'&#39;','&':'&amp;','<':'&lt;','>':'&gt;'}[c]
+      ));
+    }
+
+    async function copyToClipboard(text) {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        prompt('Copy this link:', text);
+      }
+    }
+
+    // ── Server status ────────────────────────────────────────────────────────────
+
+    async function loadStatus() {
+      const container = document.getElementById('status-content');
+      if (!container) return;
+      try {
+        const r = await fetch('/admin/api/status?token=' + encodeURIComponent(adminToken));
+        const data = await r.json();
+        if (!r.ok) {
+          container.innerHTML = '<p class="err-msg">' + escHtml(data.error || 'Failed') + '</p>';
+          return;
+        }
+        container.innerHTML = renderStatusCards(data);
+      } catch (err) {
+        container.innerHTML = '<p class="err-msg">Network error: ' + escHtml(err.message) + '</p>';
+      }
+    }
+
+    function renderStatusCards(data) {
+      const items = [
+        {
+          label: 'Portal URL',
+          value: data.linkUrl || 'Not configured',
+          ok: !!data.linkUrl,
+          note: data.linkUrl ? null : 'Set MIKAN_LINK_URL to enable external links.',
+        },
+        {
+          label: 'Admin Token',
+          value: data.adminTokenConfigured ? 'Configured ✓' : 'Not set',
+          ok: data.adminTokenConfigured,
+        },
+        {
+          label: 'Vault Service',
+          value: data.vaultServiceAvailable ? 'Available ✓' : 'Not available',
+          ok: data.vaultServiceAvailable,
+        },
+        {
+          label: 'Shared Vaults',
+          value: data.sharedVaultCount !== null ? String(data.sharedVaultCount) : 'N/A',
+          ok: true,
+          action: data.sharedVaultCount > 0
+            ? '<button class="status-action-btn" onclick="switchTab(\'vaults\')">Manage →</button>'
+            : null,
+        },
+      ];
+
+      return '<div class="status-grid">' + items.map((item) => \`
+        <div class="status-item \${item.ok ? 'status-ok' : 'status-warn'}">
+          <span class="status-label">\${escHtml(item.label)}</span>
+          <span class="status-value">\${escHtml(item.value)}</span>
+          \${item.note ? '<span class="status-note">' + escHtml(item.note) + '</span>' : ''}
+          \${item.action || ''}
+        </div>
+      \`).join('') + '</div>';
+    }
+
+    // ── Vault management ─────────────────────────────────────────────────────────
+
+    async function loadVaults() {
+      const container = document.getElementById('vaults-content');
+      const btn = document.getElementById('vaults-refresh-btn');
+      if (!container) return;
+      container.innerHTML = '<div class="loading-msg">Loading vaults…</div>';
+      if (btn) { btn.disabled = true; btn.textContent = '↻ Loading…'; }
+
+      try {
+        const r = await fetch('/admin/api/vaults?token=' + encodeURIComponent(adminToken));
+        const data = await r.json();
+
+        if (!r.ok) {
+          container.innerHTML = '<div class="err-msg">' + escHtml(data.error || 'Failed to load vaults') + '</div>';
+          return;
+        }
+
+        if (data.vaults.length === 0) {
+          container.innerHTML = \`<div class="empty-state">
+            <p>目前沒有共享 Vault。</p>
+            <p>透過機器人私訊 <code>/login shared create &lt;name&gt;</code> 建立第一個。</p>
+          </div>\`;
+          return;
+        }
+
+        container.innerHTML = data.vaults.map(renderVaultRow).join('');
+      } catch (err) {
+        container.innerHTML = '<div class="err-msg">Network error: ' + escHtml(err.message) + '</div>';
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh'; }
+      }
+    }
+
+    function renderVaultRow(vault) {
+      const keysHtml = vault.envKeys.length > 0
+        ? vault.envKeys.map((k) => '<code class="env-key-chip">' + escHtml(k) + '</code>').join('')
+        : '<span class="no-keys-msg">尚無 env key</span>';
+
+      const mountHtml = vault.mountTargets.length > 0
+        ? '<div class="vault-mounts">' +
+          vault.mountTargets.map((t) => '<code class="mount-chip">' + escHtml(t) + '</code>').join('') +
+          '</div>'
+        : '';
+
+      const id = escAttr(vault.name);
+
+      return \`<div class="vault-row" data-vault-name="\${id}">
+        <div class="vault-row-top">
+          <div class="vault-row-info">
+            <span class="vault-name">\${escHtml(vault.name)}</span>
+            <span class="vault-counts">
+              \${vault.envKeys.length} key\${vault.envKeys.length !== 1 ? 's' : ''}
+              \${vault.mountTargets.length ? ' · ' + vault.mountTargets.length + ' file' + (vault.mountTargets.length !== 1 ? 's' : '') : ''}
+            </span>
+          </div>
+          <div class="vault-row-actions">
+            <button class="vault-btn vault-btn-link" onclick="generateVaultLink('\${id}', this)">Generate Link</button>
+            <button class="vault-btn vault-btn-delete" onclick="deleteVault('\${id}', this)">Delete</button>
+          </div>
+        </div>
+        <div class="vault-env-keys">\${keysHtml}</div>
+        \${mountHtml}
+        <div class="vault-link-result" id="vault-link-\${id}" style="display:none"></div>
+        <div class="vault-action-feedback" id="vault-feedback-\${id}" style="display:none"></div>
+      </div>\`;
+    }
+
+    async function generateVaultLink(name, btn) {
+      const resultEl = document.getElementById('vault-link-' + name);
+      if (!resultEl) return;
+      btn.disabled = true;
+      btn.textContent = 'Generating…';
+
+      try {
+        const r = await fetch('/admin/api/vaults/link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: adminToken, name }),
+        });
+        const data = await r.json();
+
+        resultEl.style.display = 'block';
+        if (!r.ok || !data.ok) {
+          resultEl.className = 'vault-link-result err';
+          resultEl.textContent = data.error || 'Failed to generate link';
+          return;
+        }
+
+        const url = data.url;
+        resultEl.className = 'vault-link-result ok';
+        resultEl.innerHTML =
+          '<span class="link-label">Login link (15 min):</span>' +
+          '<a class="link-url" href="' + escHtml(url) + '" target="_blank" rel="noopener">' + escHtml(url) + '</a>' +
+          '<button class="copy-link-btn" onclick="copyToClipboard(' + JSON.stringify(url) + ')">Copy</button>';
+      } catch (err) {
+        resultEl.style.display = 'block';
+        resultEl.className = 'vault-link-result err';
+        resultEl.textContent = 'Network error: ' + err.message;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Generate Link';
+      }
+    }
+
+    async function deleteVault(name, btn) {
+      if (!confirm('Delete shared vault "' + name + '"?\\nThis will permanently remove all stored credentials. This cannot be undone.')) return;
+
+      btn.disabled = true;
+      btn.textContent = 'Deleting…';
+
+      try {
+        const r = await fetch('/admin/api/vaults/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: adminToken, name }),
+        });
+        const data = await r.json();
+
+        if (!r.ok || !data.ok) {
+          btn.disabled = false;
+          btn.textContent = 'Delete';
+          alert(data.error || 'Failed to delete vault');
+          return;
+        }
+
+        // Animate out and reload
+        const row = btn.closest('.vault-row');
+        if (row) {
+          row.style.opacity = '0';
+          row.style.transform = 'translateX(8px)';
+          row.style.transition = 'opacity 200ms, transform 200ms';
+          setTimeout(() => loadVaults(), 250);
+        } else {
+          await loadVaults();
+        }
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = 'Delete';
+        alert('Network error: ' + err.message);
+      }
+    }
+
+    // ── Init ─────────────────────────────────────────────────────────────────────
+
+    loadStatus();
   </script>
 </body>
 </html>`;
@@ -623,7 +1111,7 @@ function renderAdminErrorPage(message: string): string {
     <div class="card" style="text-align:center;padding:40px 32px">
       <p class="eyebrow">${PRODUCT_NAME} admin</p>
       <h1 class="hero-title" style="margin:12px 0 16px">Access Denied</h1>
-      <div class="status-err">${esc(message)}</div>
+      <div class="status-err-block">${esc(message)}</div>
     </div>
   </main>
 </body>
@@ -644,13 +1132,15 @@ const adminStyles = `
     --subtle: #a1a1aa;
     --accent: #d97706;
 
-    --user-bg: #18181b;
-    --user-text: #fafafa;
-
     --ok-bg: #f0fdf4;
     --ok-text: #15803d;
+    --ok-border: rgba(21, 128, 61, 0.16);
+    --warn-bg: #fffbeb;
+    --warn-text: #92400e;
+    --warn-border: rgba(217, 119, 6, 0.18);
     --err-bg: #fef2f2;
     --err-text: #b91c1c;
+    --err-border: rgba(185, 28, 28, 0.14);
 
     --service-cloudflare: linear-gradient(180deg, #ffb66d 0%, #f48120 100%);
     --service-openai: linear-gradient(180deg, #3e4045 0%, #111315 100%);
@@ -700,16 +1190,7 @@ const adminStyles = `
     box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06);
   }
 
-  .hero-top {
-    display: flex;
-    align-items: flex-start;
-    gap: 20px;
-  }
-
-  .hero-title-group {
-    flex: 1;
-    min-width: 0;
-  }
+  .hero-title-group { min-width: 0; }
 
   .hero-wordmark {
     display: block;
@@ -735,7 +1216,6 @@ const adminStyles = `
     font-weight: 600;
     line-height: 1.2;
     letter-spacing: -0.01em;
-    color: var(--text);
   }
 
   .admin-badge {
@@ -752,10 +1232,7 @@ const adminStyles = `
     flex-shrink: 0;
   }
 
-  .hero-subtitle {
-    color: var(--muted);
-    font-size: 0.9rem;
-  }
+  .hero-subtitle { color: var(--muted); font-size: 0.9rem; }
 
   /* ── Tab nav ──────────────────────────────────────────────────────────── */
 
@@ -787,28 +1264,16 @@ const adminStyles = `
     transition: background 140ms, color 140ms;
   }
 
-  .tab-btn:hover {
-    background: rgba(0,0,0,0.04);
-    color: var(--text);
-  }
-
-  .tab-btn.active {
-    background: var(--text);
-    color: #fafafa;
-    font-weight: 600;
-  }
-
-  .tab-btn:focus-visible {
-    outline: 2px solid var(--text);
-    outline-offset: 2px;
-  }
+  .tab-btn:hover { background: rgba(0,0,0,0.04); color: var(--text); }
+  .tab-btn.active { background: var(--text); color: #fafafa; font-weight: 600; }
+  .tab-btn:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 
   /* ── Tab panels ───────────────────────────────────────────────────────── */
 
   .tab-panel { display: none; flex-direction: column; gap: 14px; }
   .tab-panel.active { display: flex; }
 
-  /* ── Shared card ──────────────────────────────────────────────────────── */
+  /* ── Cards ────────────────────────────────────────────────────────────── */
 
   .card {
     padding: 24px 28px;
@@ -836,24 +1301,9 @@ const adminStyles = `
     margin-bottom: 10px;
   }
 
-  .card-subtitle {
-    font-size: 1rem;
-    font-weight: 650;
-    margin-bottom: 10px;
-    line-height: 1.3;
-  }
-
-  .card-desc {
-    color: var(--muted);
-    font-size: 0.9rem;
-    line-height: 1.55;
-  }
-
-  .card-desc-sm {
-    color: var(--muted);
-    font-size: 0.84rem;
-    line-height: 1.5;
-  }
+  .card-subtitle { font-size: 1rem; font-weight: 650; margin-bottom: 10px; line-height: 1.3; }
+  .card-desc { color: var(--muted); font-size: 0.9rem; line-height: 1.55; }
+  .card-desc-sm { color: var(--muted); font-size: 0.84rem; line-height: 1.5; }
 
   code {
     font-family: 'JetBrains Mono', ui-monospace, monospace;
@@ -863,6 +1313,8 @@ const adminStyles = `
     background: rgba(0,0,0,0.05);
     color: var(--text);
   }
+
+  button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 
   /* ── Overview ─────────────────────────────────────────────────────────── */
 
@@ -880,15 +1332,9 @@ const adminStyles = `
     font-weight: 600;
     line-height: 1;
     margin-bottom: 10px;
-    color: var(--text);
   }
 
-  .overview-cmd-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 4px;
-  }
+  .overview-cmd-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 
   .overview-cmd-chip {
     display: inline-flex;
@@ -902,34 +1348,16 @@ const adminStyles = `
     text-decoration: none;
     font-size: 0.78rem;
     font-weight: 500;
-    transition: background 120ms, border-color 120ms;
+    transition: background 120ms;
     cursor: pointer;
   }
 
-  .overview-cmd-chip:hover {
-    background: rgba(0,0,0,0.06);
-    border-color: rgba(0,0,0,0.14);
-  }
+  .overview-cmd-chip:hover { background: rgba(0,0,0,0.06); }
+  .overview-cmd-chip code { background: transparent; padding: 0; font-size: 0.78em; }
 
-  .overview-cmd-chip code {
-    background: transparent;
-    padding: 0;
-    font-size: 0.78em;
-  }
+  .preset-logo-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 
-  .preset-logo-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 8px;
-  }
-
-  .overview-oauth-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-top: 4px;
-  }
+  .overview-oauth-list { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
 
   .oauth-chip {
     display: inline-block;
@@ -941,7 +1369,63 @@ const adminStyles = `
     color: var(--muted);
   }
 
-  .quick-links-card {}
+  /* ── Server status ────────────────────────────────────────────────────── */
+
+  .status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .status-item {
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .status-ok { background: var(--ok-bg); border-color: var(--ok-border); }
+  .status-warn { background: var(--warn-bg); border-color: var(--warn-border); }
+
+  .status-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--subtle);
+  }
+
+  .status-value {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text);
+    word-break: break-all;
+  }
+
+  .status-ok .status-value { color: var(--ok-text); }
+  .status-warn .status-value { color: var(--warn-text); }
+
+  .status-note { font-size: 0.76rem; color: var(--warn-text); line-height: 1.4; }
+
+  .status-action-btn {
+    margin-top: 4px;
+    padding: 4px 10px;
+    border: none;
+    border-radius: 999px;
+    background: var(--text);
+    color: #fff;
+    font: 500 0.76rem/1.2 'DM Sans', sans-serif;
+    cursor: pointer;
+    width: fit-content;
+    transition: opacity 140ms;
+  }
+
+  .status-action-btn:hover { opacity: 0.8; }
+
+  /* ── Quick links ──────────────────────────────────────────────────────── */
 
   .quicklink-grid {
     display: grid;
@@ -974,17 +1458,221 @@ const adminStyles = `
   .quicklink-label { font-weight: 650; font-size: 0.9rem; color: var(--text); }
   .quicklink-sub { font-size: 0.78rem; color: var(--muted); }
 
-  /* ── Section intro ────────────────────────────────────────────────────── */
+  /* ── Vaults section ───────────────────────────────────────────────────── */
 
   .section-intro { margin-bottom: 2px; }
 
+  .section-intro-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .refresh-btn {
+    flex-shrink: 0;
+    margin-top: 4px;
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: rgba(0,0,0,0.025);
+    color: var(--muted);
+    font: 500 0.84rem/1.2 'DM Sans', sans-serif;
+    cursor: pointer;
+    transition: background 120ms, color 120ms;
+    white-space: nowrap;
+  }
+
+  .refresh-btn:hover { background: rgba(0,0,0,0.06); color: var(--text); }
+  .refresh-btn:disabled { opacity: 0.5; cursor: wait; }
+
+  .vault-row {
+    padding: 16px 0;
+    border-bottom: 1px solid rgba(0,0,0,0.06);
+    transition: opacity 200ms, transform 200ms;
+  }
+
+  .vault-row:last-child { border-bottom: none; padding-bottom: 0; }
+  .vault-row:first-child { padding-top: 0; }
+
+  .vault-row-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+
+  .vault-row-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .vault-name {
+    font-weight: 650;
+    font-size: 0.98rem;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    color: var(--text);
+    word-break: break-all;
+  }
+
+  .vault-counts { font-size: 0.78rem; color: var(--subtle); flex-shrink: 0; }
+
+  .vault-row-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+  .vault-btn {
+    padding: 7px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    font: 500 0.82rem/1.2 'DM Sans', sans-serif;
+    cursor: pointer;
+    transition: background 120ms, border-color 120ms, opacity 120ms;
+    white-space: nowrap;
+  }
+
+  .vault-btn:disabled { opacity: 0.5; cursor: wait; }
+
+  .vault-btn-link {
+    background: var(--text);
+    color: #fff;
+    border-color: transparent;
+  }
+
+  .vault-btn-link:hover:not(:disabled) { background: #2d2d30; }
+
+  .vault-btn-delete {
+    background: rgba(0,0,0,0.03);
+    color: var(--err-text);
+    border-color: rgba(185, 28, 28, 0.18);
+  }
+
+  .vault-btn-delete:hover:not(:disabled) {
+    background: var(--err-bg);
+    border-color: rgba(185, 28, 28, 0.28);
+  }
+
+  .vault-env-keys {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    min-height: 22px;
+  }
+
+  .env-key-chip {
+    font-size: 0.74rem;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: rgba(0,0,0,0.04);
+    border: 1px solid rgba(0,0,0,0.07);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    color: var(--text);
+  }
+
+  .no-keys-msg { font-size: 0.8rem; color: var(--subtle); font-style: italic; }
+
+  .vault-mounts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 6px;
+  }
+
+  .mount-chip {
+    font-size: 0.72rem;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: rgba(59, 130, 246, 0.06);
+    border: 1px solid rgba(59, 130, 246, 0.14);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    color: #1d4ed8;
+  }
+
+  .vault-link-result {
+    margin-top: 10px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 0.84rem;
+  }
+
+  .vault-link-result.ok {
+    background: var(--ok-bg);
+    border: 1px solid var(--ok-border);
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .vault-link-result.err {
+    background: var(--err-bg);
+    border: 1px solid var(--err-border);
+    color: var(--err-text);
+  }
+
+  .link-label { color: var(--ok-text); font-weight: 600; flex-shrink: 0; }
+
+  .link-url {
+    color: var(--ok-text);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.78rem;
+    word-break: break-all;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .copy-link-btn {
+    padding: 5px 12px;
+    border: 1px solid var(--ok-border);
+    border-radius: 7px;
+    background: rgba(255,255,255,0.7);
+    color: var(--ok-text);
+    font: 500 0.78rem/1.2 'DM Sans', sans-serif;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 120ms;
+  }
+
+  .copy-link-btn:hover { background: #fff; }
+
+  /* ── States ───────────────────────────────────────────────────────────── */
+
+  .loading-msg { color: var(--muted); font-size: 0.9rem; padding: 8px 0; }
+
+  .empty-state {
+    padding: 24px 0;
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.9rem;
+    line-height: 1.7;
+  }
+
+  .empty-state code { background: rgba(0,0,0,0.05); }
+
+  .err-msg {
+    padding: 12px 16px;
+    border-radius: 10px;
+    background: var(--err-bg);
+    color: var(--err-text);
+    border: 1px solid var(--err-border);
+    font-size: 0.88rem;
+  }
+
+  .status-err-block {
+    padding: 12px 16px;
+    border-radius: 10px;
+    background: var(--err-bg);
+    color: var(--err-text);
+    border: 1px solid var(--err-border);
+    font-size: 0.9rem;
+  }
+
   /* ── Command cards ────────────────────────────────────────────────────── */
 
-  .cmd-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
+  .cmd-list { display: flex; flex-direction: column; gap: 12px; }
 
   .cmd-card {
     padding: 22px 26px;
@@ -997,25 +1685,9 @@ const adminStyles = `
     gap: 12px;
   }
 
-  .cmd-header {
-    display: flex;
-    align-items: flex-start;
-    gap: 14px;
-  }
-
-  .cmd-icon {
-    font-size: 1.4rem;
-    flex-shrink: 0;
-    margin-top: 2px;
-  }
-
-  .cmd-title-group {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
+  .cmd-header { display: flex; align-items: flex-start; gap: 14px; }
+  .cmd-icon { font-size: 1.4rem; flex-shrink: 0; margin-top: 2px; }
+  .cmd-title-group { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 
   .cmd-name {
     font-family: 'JetBrains Mono', ui-monospace, monospace;
@@ -1026,11 +1698,7 @@ const adminStyles = `
     color: var(--text);
   }
 
-  .cmd-aliases {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-  }
+  .cmd-aliases { display: flex; flex-wrap: wrap; gap: 5px; }
 
   .alias-pill {
     font-size: 0.74rem;
@@ -1042,11 +1710,7 @@ const adminStyles = `
     color: var(--muted);
   }
 
-  .cmd-desc {
-    color: var(--muted);
-    font-size: 0.9rem;
-    line-height: 1.55;
-  }
+  .cmd-desc { color: var(--muted); font-size: 0.9rem; line-height: 1.55; }
 
   .cmd-note {
     display: flex;
@@ -1061,13 +1725,8 @@ const adminStyles = `
     line-height: 1.5;
   }
 
-  .note-icon { flex-shrink: 0; font-style: normal; }
-
-  .cmd-usages {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
+  .note-icon { flex-shrink: 0; }
+  .cmd-usages { display: flex; flex-direction: column; gap: 2px; }
 
   .usage-heading {
     font-size: 0.72rem;
@@ -1101,11 +1760,7 @@ const adminStyles = `
     white-space: nowrap;
   }
 
-  .usage-desc {
-    color: var(--muted);
-    font-size: 0.84rem;
-    line-height: 1.45;
-  }
+  .usage-desc { color: var(--muted); font-size: 0.84rem; line-height: 1.45; }
 
   .cmd-constraints {
     padding: 10px 14px;
@@ -1131,22 +1786,11 @@ const adminStyles = `
     line-height: 1.6;
   }
 
-  /* ── Two-col grid ─────────────────────────────────────────────────────── */
+  /* ── Shared layout ────────────────────────────────────────────────────── */
 
-  .two-col-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 14px;
-  }
+  .two-col-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 
-  /* ── Preset list ──────────────────────────────────────────────────────── */
-
-  .preset-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    margin-top: 12px;
-  }
+  .preset-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 
   .preset-row {
     display: flex;
@@ -1158,17 +1802,8 @@ const adminStyles = `
     border: 1px solid rgba(0,0,0,0.06);
   }
 
-  .preset-info {
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .preset-label {
-    font-size: 0.88rem;
-    font-weight: 600;
-  }
+  .preset-info { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .preset-label { font-size: 0.88rem; font-weight: 600; }
 
   .preset-envkeys {
     font-family: 'JetBrains Mono', ui-monospace, monospace;
@@ -1209,21 +1844,9 @@ const adminStyles = `
 
   /* ── Flow steps ───────────────────────────────────────────────────────── */
 
-  .flow-steps {
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    margin-top: 12px;
-  }
+  .flow-steps { list-style: none; display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 
-  .flow-steps li {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    font-size: 0.9rem;
-    line-height: 1.5;
-  }
+  .flow-steps li { display: flex; align-items: flex-start; gap: 12px; font-size: 0.9rem; line-height: 1.5; }
 
   .step-num {
     display: inline-flex;
@@ -1242,22 +1865,9 @@ const adminStyles = `
 
   /* ── Feature list ─────────────────────────────────────────────────────── */
 
-  .feature-list {
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-top: 10px;
-  }
+  .feature-list { list-style: none; display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 
-  .feature-list li {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    font-size: 0.88rem;
-    color: var(--muted);
-    line-height: 1.5;
-  }
+  .feature-list li { display: flex; align-items: flex-start; gap: 10px; font-size: 0.88rem; color: var(--muted); line-height: 1.5; }
 
   .feature-dot {
     width: 6px;
@@ -1270,12 +1880,7 @@ const adminStyles = `
 
   /* ── Code block list ──────────────────────────────────────────────────── */
 
-  .code-block-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-top: 12px;
-  }
+  .code-block-list { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
 
   .code-example {
     display: grid;
@@ -1291,15 +1896,19 @@ const adminStyles = `
 
   .code-example span { color: var(--muted); }
 
-  /* ── Status ───────────────────────────────────────────────────────────── */
+  /* ── Inline tab button ────────────────────────────────────────────────── */
 
-  .status-err {
-    padding: 12px 16px;
-    border-radius: 10px;
-    background: var(--err-bg);
-    color: var(--err-text);
-    border: 1px solid rgba(185, 28, 28, 0.12);
-    font-size: 0.9rem;
+  .inline-tab-btn {
+    display: inline;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-weight: 650;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
   }
 
   /* ── Responsive ───────────────────────────────────────────────────────── */
@@ -1307,17 +1916,24 @@ const adminStyles = `
   @media (max-width: 640px) {
     body { padding: 16px 12px 48px; }
     .shell { gap: 12px; }
-    .hero-card, .card { padding: 18px 18px; border-radius: 16px; }
-    .cmd-card { padding: 18px 18px; border-radius: 16px; }
+    .hero-card, .card { padding: 18px; border-radius: 16px; }
+    .cmd-card { padding: 18px; border-radius: 16px; }
     .two-col-grid { grid-template-columns: 1fr; }
     .overview-grid { grid-template-columns: 1fr 1fr; }
-    .tab-btn { padding: 9px 12px; font-size: 0.82rem; }
+    .tab-btn { padding: 9px 12px; font-size: 0.82rem; min-width: 60px; }
     .usage-row { grid-template-columns: 1fr; gap: 4px; }
     .code-example { grid-template-columns: 1fr; gap: 4px; }
-    .quicklink-grid { grid-template-columns: 1fr; }
+    .quicklink-grid { grid-template-columns: 1fr 1fr; }
+    .status-grid { grid-template-columns: 1fr 1fr; }
+    .section-intro-header { flex-direction: column; gap: 10px; }
+    .vault-row-top { flex-direction: column; align-items: flex-start; }
+    .vault-row-actions { width: 100%; }
+    .vault-btn { flex: 1; }
   }
 
   @media (max-width: 400px) {
     .overview-grid { grid-template-columns: 1fr; }
+    .quicklink-grid { grid-template-columns: 1fr; }
+    .status-grid { grid-template-columns: 1fr; }
   }
 `;
