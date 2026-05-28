@@ -270,7 +270,13 @@ export function startLinkServer(
         return;
       }
 
-      if (handleAdminRequest(req, res, url, readEnv("ADMIN_TOKEN"))) {
+      if (
+        handleAdminRequest(req, res, url, readEnv("ADMIN_TOKEN"), {
+          vaultManager,
+          linkTokenStore,
+          portalBaseUrl: resolveLinkBaseUrl() ?? undefined,
+        })
+      ) {
         return;
       }
 
