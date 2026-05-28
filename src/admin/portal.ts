@@ -931,7 +931,7 @@ function renderAdminPage(): string {
           value: data.sharedVaultCount !== null ? String(data.sharedVaultCount) : 'N/A',
           ok: true,
           action: data.sharedVaultCount > 0
-            ? '<button class="status-action-btn" onclick="switchTab(\'vaults\')">Manage →</button>'
+            ? \`<button class="status-action-btn" onclick="switchTab('vaults')">Manage →</button>\`
             : null,
         },
       ];
