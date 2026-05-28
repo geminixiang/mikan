@@ -17,6 +17,7 @@ import * as log from "../log.js";
 import { reportUserFacingError } from "../sentry.js";
 import { PRODUCT_NAME } from "../ui-copy.js";
 import { defaultVaultTargetPath, type VaultManager } from "../vault.js";
+import type { BrowserExtensionManager } from "../browser-extension.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -255,6 +256,7 @@ export function startLinkServer(
   notify: NotifyFn,
   sessionViewTokenStore?: InMemorySessionViewTokenStore,
   sessionViewInteractive?: SessionViewInteractiveOptions,
+  browserExtensionManager?: BrowserExtensionManager,
 ): Server {
   const oauthStates = new Map<string, PendingOAuthState>();
 
@@ -271,6 +273,10 @@ export function startLinkServer(
       if (
         await handleSessionViewRequest(req, res, url, sessionViewTokenStore, sessionViewInteractive)
       ) {
+        return;
+      }
+
+      if (await handleBrowserExtensionRequest(req, res, url, browserExtensionManager)) {
         return;
       }
 
@@ -478,6 +484,104 @@ function requestOrigin(req: IncomingMessage): string | undefined {
   }
 }
 
+async function handleBrowserExtensionRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  manager?: BrowserExtensionManager,
+): Promise<boolean> {
+  if (!url.pathname.startsWith("/api/browser/")) return false;
+  if (!manager) {
+    res.writeHead(503, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Browser extension support is not enabled" }));
+    return true;
+  }
+
+  const sendJson = (status: number, payload: unknown) => {
+    res.writeHead(status, {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "content-type, authorization",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    });
+    res.end(JSON.stringify(payload));
+  };
+
+  if (req.method === "OPTIONS") {
+    sendJson(204, {});
+    return true;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/browser/pair/complete") {
+    void readJsonBody(req, res, async (raw) => {
+      try {
+        const body = JSON.parse(raw || "{}") as { code?: unknown; name?: unknown };
+        const code = typeof body.code === "string" ? body.code : "";
+        const name = typeof body.name === "string" ? body.name : undefined;
+        const result = manager.completePairing(code, name);
+        if (!result) {
+          sendJson(400, { error: "Invalid or expired pairing code" });
+          return;
+        }
+        sendJson(200, result);
+      } catch {
+        sendJson(400, { error: "Invalid JSON" });
+      }
+    });
+    return true;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/browser/commands") {
+    const browserId = url.searchParams.get("browserId") ?? "";
+    const token = bearerToken(req);
+    const commands = token ? manager.takeCommands(browserId, token) : undefined;
+    if (!commands) {
+      sendJson(401, { error: "Unauthorized" });
+      return true;
+    }
+    sendJson(200, { commands });
+    return true;
+  }
+
+  const resultMatch = url.pathname.match(/^\/api\/browser\/commands\/([^/]+)\/result$/);
+  if (req.method === "POST" && resultMatch) {
+    void readJsonBody(req, res, async (raw) => {
+      try {
+        const body = JSON.parse(raw || "{}") as {
+          browserId?: unknown;
+          ok?: unknown;
+          error?: unknown;
+          data?: unknown;
+        };
+        const browserId = typeof body.browserId === "string" ? body.browserId : "";
+        const token = bearerToken(req);
+        const ok = manager.completeCommand(browserId, token ?? "", resultMatch[1], {
+          ok: body.ok !== false,
+          error: typeof body.error === "string" ? body.error : undefined,
+          data: body.data,
+        });
+        if (!ok) {
+          sendJson(404, { error: "Command not found or unauthorized" });
+          return;
+        }
+        sendJson(200, { ok: true });
+      } catch {
+        sendJson(400, { error: "Invalid JSON" });
+      }
+    });
+    return true;
+  }
+
+  sendJson(404, { error: "Not found" });
+  return true;
+}
+
+function bearerToken(req: IncomingMessage): string | undefined {
+  const value = req.headers.authorization;
+  if (!value?.startsWith("Bearer ")) return undefined;
+  return value.slice("Bearer ".length).trim();
+}
+
 async function readJsonBody(
   req: IncomingMessage,
   res: ServerResponse,
@@ -489,7 +593,7 @@ async function readJsonBody(
   req.on("data", (chunk: Buffer) => {
     if (bodyTooLarge) return;
     body += chunk.toString();
-    if (body.length > 16 * 1024) {
+    if (body.length > 10 * 1024 * 1024) {
       bodyTooLarge = true;
       res.writeHead(413);
       res.end();

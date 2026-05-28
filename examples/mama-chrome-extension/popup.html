@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        min-width: 320px;
+        padding: 12px;
+      }
+      label {
+        display: block;
+        margin: 8px 0 4px;
+        font-weight: 600;
+      }
+      input {
+        box-sizing: border-box;
+        width: 100%;
+        padding: 8px;
+      }
+      button {
+        margin-top: 10px;
+        padding: 8px 10px;
+      }
+      #status {
+        margin-top: 10px;
+        white-space: pre-wrap;
+        color: #444;
+      }
+    </style>
+  </head>
+  <body>
+    <h3>Mama Browser Control</h3>
+    <label>Server URL</label>
+    <input id="serverUrl" placeholder="https://mama.example.com" />
+    <label>Pairing code</label>
+    <input id="code" placeholder="ABCD-1234" />
+    <label>Browser name</label>
+    <input id="name" placeholder="Xiang's Chrome" />
+    <button id="pair">Pair</button>
+    <button id="forget">Forget</button>
+    <div id="status">Loading...</div>
+    <script src="popup.js"></script>
+  </body>
+</html>

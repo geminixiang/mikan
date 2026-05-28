@@ -13,7 +13,7 @@ import {
   SettingsManager,
   type Skill,
 } from "@earendil-works/pi-coding-agent";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync } from "fs";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import { homedir } from "os";
 import { join, posix } from "path";
@@ -29,6 +29,7 @@ import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import { loadAgentConfigForConversation } from "./config.js";
 import { ActorExecutionResolver } from "./execution-resolver.js";
 import * as log from "./log.js";
+import type { BrowserExtensionManager } from "./browser-extension.js";
 import { reportUserFacingError } from "./sentry.js";
 import type { DockerContainerManager } from "./provisioner.js";
 import {
@@ -455,6 +456,7 @@ ls -1 sessions/
 - write: Create/overwrite files
 - edit: Surgical file edits
 - attach: Share files to the platform
+- browser: Operate the user's paired Chrome browser extension for browser/tabs/page/screenshot tasks when available. If a user asks to inspect or operate their browser, use this tool instead of saying you lack browser access.
 
 Each tool requires a "label" parameter (shown to user).
 `;
@@ -1414,6 +1416,7 @@ export async function createRunner(
   sessionScope: ResolvedSessionScope,
   vaultManager?: VaultManager,
   provisioner?: DockerContainerManager,
+  browserExtensionManager?: BrowserExtensionManager,
   sessionView?: {
     tokenStore: SessionViewTokenStoreLike;
     portalBaseUrl?: string;
@@ -1433,7 +1436,11 @@ export async function createRunner(
   let pathContext = getUnresolvedSandboxPathContext(sandboxConfig, workspaceBase);
 
   // Create tools (per-runner, with per-runner upload function setter)
-  const { tools, setUploadFunction, setEventContext } = createMikanTools(executor, workspaceDir);
+  const { tools, setUploadFunction, setEventContext, setBrowserContext } = createMikanTools(
+    executor,
+    workspaceDir,
+    browserExtensionManager,
+  );
 
   // Resolve model from config. Config stores provider/model as user-provided strings,
   // while getModel's public overload is narrowed to generated known providers.
@@ -1518,6 +1525,17 @@ export async function createRunner(
         pathContext,
       });
       pathContext = prepared.pathContext;
+
+      const browserOutputDir = join(conversationDir, "scratch", "browser");
+      mkdirSync(browserOutputDir, { recursive: true });
+      setBrowserContext({
+        conversationId,
+        hostOutputDir: browserOutputDir,
+        uploadFile: async (filePath: string, title?: string) => {
+          const hostPath = translateRuntimePathToHost(filePath, pathContext);
+          await responseCtx.uploadFile(hostPath, title);
+        },
+      });
 
       addLifecycleBreadcrumb("agent.prompt.sent", {
         provider: model.provider,

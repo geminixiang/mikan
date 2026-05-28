@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Mama Browser Control",
+  "version": "0.0.1",
+  "description": "Pair Chrome with mama so a conversation can operate browser tabs.",
+  "permissions": ["tabs", "storage", "scripting", "activeTab", "alarms"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_title": "Mama Browser Control",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  }
+}

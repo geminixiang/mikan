@@ -258,6 +258,7 @@ class MikanSessionRuntime implements SessionRuntime {
         sessionScope,
         this.options.vaultManager,
         this.options.provisioner,
+        this.options.browserExtensionManager,
         {
           tokenStore: this.options.sessionViewTokenStore,
           portalBaseUrl: this.options.portalBaseUrl,
