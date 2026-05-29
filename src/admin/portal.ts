@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "fs";
 import type { IncomingMessage, ServerResponse } from "http";
 import { join, resolve as pathResolve, sep as pathSep } from "path";
-import type { PlatformName, RunningSession } from "../adapter.js";
+import type { Bot, PlatformName, RunningSession } from "../adapter.js";
 import {
   loadAgentConfig,
   loadAgentConfigForConversation,
@@ -44,6 +44,7 @@ export interface AdminServices {
   workingDir?: string;
   sandbox?: SandboxConfig;
   runtime?: AdminRuntimeBridge;
+  botsByPlatform?: Partial<Record<PlatformName, Bot>>;
 }
 
 // ── Handler ────────────────────────────────────────────────────────────────────
@@ -124,6 +125,10 @@ function routeApiRequest(
     }
     if (url.pathname === "/admin/api/skills") {
       serveSkillsList(res, url, services, token);
+      return;
+    }
+    if (url.pathname === "/admin/api/skills/file") {
+      serveSkillFile(res, url, services, token);
       return;
     }
     if (url.pathname === "/admin/api/events") {
@@ -275,6 +280,14 @@ function conversationLastActivity(workingDir: string, conversationId: string): n
   return latest > 0 ? latest : null;
 }
 
+function conversationDisplayLabel(services: AdminServices, conversationId: string): string {
+  for (const [platform, bot] of Object.entries(services.botsByPlatform ?? {})) {
+    const channel = bot?.getPlatformInfo().channels.find((c) => c.id === conversationId);
+    if (channel) return `${platform}:#${channel.name}:${conversationId}`;
+  }
+  return conversationId;
+}
+
 function serveConversationsList(res: ServerResponse, services: AdminServices): void {
   const workingDir = requireAdminWorkingDir(res, services);
   if (!workingDir) return;
@@ -292,6 +305,7 @@ function serveConversationsList(res: ServerResponse, services: AdminServices): v
     );
     return {
       conversationId,
+      label: conversationDisplayLabel(services, conversationId),
       running,
       lastActivityAt: lastActivity,
     };
@@ -618,7 +632,7 @@ function serveGlobalSandboxUpdate(res: ServerResponse, body: Record<string, unkn
 
 const WORKSPACE_TREE_MAX_DEPTH = 4;
 const WORKSPACE_TREE_MAX_ENTRIES = 800;
-const WORKSPACE_FILE_MAX_BYTES = 256 * 1024;
+const PREVIEW_FILE_MAX_BYTES = 256 * 1024;
 
 const WORKSPACE_TOP_FILES = new Set(["auto-reply", "auto-reply.disabled"]);
 const WORKSPACE_TOP_DIRS = new Set(["scratch"]);
@@ -789,6 +803,57 @@ function looksTextual(buf: Buffer): boolean {
   return true;
 }
 
+function servePreviewFile(
+  res: ServerResponse,
+  absolutePath: string,
+  metadata: Record<string, unknown>,
+  notFoundMessage: string,
+): void {
+  let stats;
+  try {
+    stats = statSync(absolutePath);
+  } catch {
+    jsonRes(res, 404, { error: notFoundMessage });
+    return;
+  }
+  if (!stats.isFile()) {
+    jsonRes(res, 400, { error: "Not a file" });
+    return;
+  }
+  if (stats.size > PREVIEW_FILE_MAX_BYTES) {
+    jsonRes(res, 413, {
+      error: "File too large to preview",
+      size: stats.size,
+      limit: PREVIEW_FILE_MAX_BYTES,
+    });
+    return;
+  }
+  let buf: Buffer;
+  try {
+    buf = readFileSync(absolutePath);
+  } catch (err) {
+    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    return;
+  }
+  if (!looksTextual(buf)) {
+    jsonRes(res, 200, {
+      ...metadata,
+      size: stats.size,
+      mtimeMs: stats.mtimeMs,
+      binary: true,
+      content: null,
+    });
+    return;
+  }
+  jsonRes(res, 200, {
+    ...metadata,
+    size: stats.size,
+    mtimeMs: stats.mtimeMs,
+    binary: false,
+    content: buf.toString("utf-8"),
+  });
+}
+
 function serveWorkspaceFile(
   res: ServerResponse,
   url: URL,
@@ -817,49 +882,7 @@ function serveWorkspaceFile(
     jsonRes(res, 400, { error: safe.error });
     return;
   }
-  let stats;
-  try {
-    stats = statSync(safe.absolute);
-  } catch {
-    jsonRes(res, 404, { error: "File not found" });
-    return;
-  }
-  if (!stats.isFile()) {
-    jsonRes(res, 400, { error: "Not a file" });
-    return;
-  }
-  if (stats.size > WORKSPACE_FILE_MAX_BYTES) {
-    jsonRes(res, 413, {
-      error: "File too large to preview",
-      size: stats.size,
-      limit: WORKSPACE_FILE_MAX_BYTES,
-    });
-    return;
-  }
-  let buf: Buffer;
-  try {
-    buf = readFileSync(safe.absolute);
-  } catch (err) {
-    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
-    return;
-  }
-  if (!looksTextual(buf)) {
-    jsonRes(res, 200, {
-      path: requestedPath,
-      size: stats.size,
-      mtimeMs: stats.mtimeMs,
-      binary: true,
-      content: null,
-    });
-    return;
-  }
-  jsonRes(res, 200, {
-    path: requestedPath,
-    size: stats.size,
-    mtimeMs: stats.mtimeMs,
-    binary: false,
-    content: buf.toString("utf-8"),
-  });
+  servePreviewFile(res, safe.absolute, { path: requestedPath }, "File not found");
 }
 
 // ── Skills ─────────────────────────────────────────────────────────────────────
@@ -869,6 +892,7 @@ interface SkillEntry {
   description: string;
   source: "global" | "conversation";
   path: string;
+  directory: string;
 }
 
 function parseSkillFrontmatter(filePath: string): { name?: string; description?: string } {
@@ -919,6 +943,7 @@ function readSkillsFromDir(skillsDir: string, source: SkillEntry["source"]): Ski
       description: meta.description ?? "",
       source,
       path: skillMd,
+      directory: entry.name,
     });
   }
   return out.toSorted((a, b) => a.name.localeCompare(b.name));
@@ -946,6 +971,49 @@ function serveSkillsList(
     conversationId: scope.conversationId,
     skills: [...global, ...conversation],
   });
+}
+
+function serveSkillFile(
+  res: ServerResponse,
+  url: URL,
+  services: AdminServices,
+  token: AdminToken,
+): void {
+  const scope = resolveConversationFromQuery(url, token);
+  if (scope.error) {
+    jsonRes(res, 403, { error: scope.error });
+    return;
+  }
+  const workingDir = requireAdminWorkingDir(res, services);
+  if (!workingDir) return;
+
+  const source = (url.searchParams.get("source") ?? "").trim();
+  const directory = (url.searchParams.get("directory") ?? "").trim();
+  if (source !== "global" && source !== "conversation") {
+    jsonRes(res, 400, { error: "Invalid skill source" });
+    return;
+  }
+  if (
+    !directory ||
+    directory.includes("/") ||
+    directory.includes("\\") ||
+    directory.includes("..")
+  ) {
+    jsonRes(res, 400, { error: "Invalid skill directory" });
+    return;
+  }
+
+  const skillsRoot =
+    source === "global"
+      ? join(workingDir, "skills")
+      : join(workingDir, scope.conversationId, "skills");
+  const safe = safeJoinUnderRoot(skillsRoot, join(directory, "SKILL.md"));
+  if (safe.error) {
+    jsonRes(res, 400, { error: safe.error });
+    return;
+  }
+
+  servePreviewFile(res, safe.absolute, { source, directory }, "Skill file not found");
 }
 
 // ── Events ─────────────────────────────────────────────────────────────────────
@@ -1202,14 +1270,9 @@ function renderAdminPage(token: AdminToken): string {
           <p class="hero-subtitle">
             <span class="hero-user">${esc(token.platform)} · ${esc(userLabel)}</span>
             <span class="hero-sep">•</span>
-            <span class="hero-conv">conversation: <code id="active-conv-label">${esc(token.conversationId)}</code></span>
+            <span class="hero-conv">conversation: <select id="conv-switcher" class="conv-inline-select"><option>${esc(token.conversationId)}</option></select></span>
           </p>
         </div>
-      </div>
-      <div id="conv-switcher-bar" class="conv-switcher-bar" style="display:none">
-        <label for="conv-switcher">Target conversation</label>
-        <select id="conv-switcher"></select>
-        <span class="conv-switcher-hint">switch to operate on a different conversation</span>
       </div>
     </header>
 
@@ -1252,7 +1315,10 @@ function renderAdminPage(token: AdminToken): string {
           </div>
           <button class="refresh-btn" onclick="loadSkills()">↻</button>
         </header>
-        <div id="skills-content"><div class="loading-msg">Loading…</div></div>
+        <div class="workspace-split">
+          <div id="skills-content" class="workspace-tree"><div class="loading-msg">Loading…</div></div>
+          <div id="skills-preview" class="workspace-preview"><div class="placeholder-msg">Click a skill to preview SKILL.md</div></div>
+        </div>
       </section>
 
       <section class="card sect" id="sect-vault" data-section="vault">
@@ -1395,16 +1461,14 @@ function renderAdminPage(token: AdminToken): string {
     // ── Conversation switcher ───────────────────────────────────────────────────
 
     async function initConvSwitcher() {
-      const bar = document.getElementById('conv-switcher-bar');
       const sel = document.getElementById('conv-switcher');
       try {
         const data = await apiGet('/admin/api/conversations');
         sel.innerHTML = data.conversations.map((c) => {
-          const label = c.conversationId + (c.running ? ' (running)' : '');
+          const label = (c.label || c.conversationId) + (c.running ? ' (running)' : '');
           const selected = c.conversationId === defaultConversationId ? ' selected' : '';
           return '<option value="' + escAttr(c.conversationId) + '"' + selected + '>' + escHtml(label) + '</option>';
         }).join('');
-        bar.style.display = 'flex';
         sel.addEventListener('change', () => setActiveConversation(sel.value));
       } catch (err) {
         console.error('Failed to load conversations', err);
@@ -1413,8 +1477,6 @@ function renderAdminPage(token: AdminToken): string {
 
     function setActiveConversation(id) {
       activeConversationId = id;
-      const label = document.getElementById('active-conv-label');
-      if (label) label.textContent = id;
       const sel = document.getElementById('conv-switcher');
       if (sel && sel.value !== id) sel.value = id;
       // Reset all conversation sections.
@@ -1570,18 +1632,22 @@ function renderAdminPage(token: AdminToken): string {
       return inner;
     }
 
+    function renderPreviewFileResult(previewEl, label, data) {
+      if (data.binary) {
+        previewEl.innerHTML = '<div class="preview-meta">' + escHtml(label) + ' · ' + data.size + ' bytes · binary</div><div class="placeholder-msg">Binary file — preview not available</div>';
+        return;
+      }
+      previewEl.innerHTML =
+        '<div class="preview-meta">' + escHtml(label) + ' · ' + data.size + ' bytes</div>' +
+        '<pre class="preview-body">' + escHtml(data.content || '') + '</pre>';
+    }
+
     async function previewFile(path) {
       const previewEl = document.getElementById('workspace-preview');
       previewEl.innerHTML = '<div class="loading-msg">Loading ' + escHtml(path) + '…</div>';
       try {
         const data = await apiGet('/admin/api/workspace/file?conversationId=' + encodeURIComponent(activeConversationId) + '&path=' + encodeURIComponent(path));
-        if (data.binary) {
-          previewEl.innerHTML = '<div class="preview-meta">' + escHtml(path) + ' · ' + data.size + ' bytes · binary</div><div class="placeholder-msg">Binary file — preview not available</div>';
-          return;
-        }
-        previewEl.innerHTML =
-          '<div class="preview-meta">' + escHtml(path) + ' · ' + data.size + ' bytes</div>' +
-          '<pre class="preview-body">' + escHtml(data.content || '') + '</pre>';
+        renderPreviewFileResult(previewEl, path, data);
       } catch (err) {
         previewEl.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
       }
@@ -1591,7 +1657,9 @@ function renderAdminPage(token: AdminToken): string {
 
     async function loadSkills() {
       const container = document.getElementById('skills-content');
+      const previewEl = document.getElementById('skills-preview');
       container.innerHTML = '<div class="loading-msg">Loading…</div>';
+      if (previewEl) previewEl.innerHTML = '<div class="placeholder-msg">Click a skill to preview SKILL.md</div>';
       try {
         const data = await apiGet('/admin/api/skills?conversationId=' + encodeURIComponent(activeConversationId));
         if (data.skills.length === 0) {
@@ -1600,15 +1668,37 @@ function renderAdminPage(token: AdminToken): string {
         }
         container.innerHTML = '<div class="skills-list">' +
           data.skills.map((s) =>
-            '<div class="skill-row">' +
+            '<button class="skill-row skill-row-btn" data-skill-source="' + escAttr(s.source) + '" data-skill-directory="' + escAttr(s.directory) + '" data-skill-name="' + escAttr(s.name) + '">' +
               '<div class="skill-name">' + escHtml(s.name) + '<span class="skill-source skill-source-' + s.source + '">' + s.source + '</span></div>' +
               (s.description ? '<div class="skill-desc">' + escHtml(s.description) + '</div>' : '') +
-            '</div>'
+            '</button>'
           ).join('') + '</div>';
+
       } catch (err) {
         container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
       }
     }
+
+    async function previewSkill(source, directory, name) {
+      const previewEl = document.getElementById('skills-preview');
+      if (!source || !directory) {
+        previewEl.innerHTML = '<div class="err-msg">Missing skill source or directory</div>';
+        return;
+      }
+      previewEl.innerHTML = '<div class="loading-msg">Loading ' + escHtml(name || directory) + '…</div>';
+      try {
+        const data = await apiGet('/admin/api/skills/file?conversationId=' + encodeURIComponent(activeConversationId) + '&source=' + encodeURIComponent(source) + '&directory=' + encodeURIComponent(directory));
+        renderPreviewFileResult(previewEl, source + '/' + directory + '/SKILL.md', data);
+      } catch (err) {
+        previewEl.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
+      }
+    }
+
+    document.getElementById('skills-content').addEventListener('click', (event) => {
+      const btn = event.target.closest('[data-skill-source]');
+      if (!btn) return;
+      previewSkill(btn.dataset.skillSource, btn.dataset.skillDirectory, btn.dataset.skillName);
+    });
 
     // ── Vault (Login link) ───────────────────────────────────────────────────────
 
@@ -1742,7 +1832,7 @@ function renderAdminPage(token: AdminToken): string {
         container.innerHTML = '<div class="conv-list">' + data.conversations.map((c) => {
           const last = c.lastActivityAt ? new Date(c.lastActivityAt).toLocaleString() : '—';
           return '<button class="conv-row-btn" onclick="setActiveConversation(\\'' + escAttr(c.conversationId) + '\\'); switchTab(\\'conversation\\');">' +
-            '<span class="conv-id">' + escHtml(c.conversationId) + '</span>' +
+            '<span class="conv-id">' + escHtml(c.label || c.conversationId) + '</span>' +
             (c.running ? '<span class="status-pill running">running</span>' : '') +
             '<span class="conv-last">' + escHtml(last) + '</span>' +
           '</button>';
@@ -1972,18 +2062,11 @@ const adminStyles = `
   .hero-subtitle { color: var(--muted); font-size: 0.88rem; display: flex; flex-wrap: wrap; gap: 6px; }
   .hero-sep { color: var(--subtle); }
   .hero-conv code { font-size: 0.78em; }
-
-  .conv-switcher-bar {
-    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-    padding-top: 12px; border-top: 1px solid var(--border);
+  .conv-inline-select {
+    max-width: min(620px, 100%);
+    padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px;
+    background: #fff; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 0.78rem;
   }
-  .conv-switcher-bar label { font-size: 0.78rem; color: var(--muted); font-weight: 600; }
-  .conv-switcher-bar select {
-    flex: 1; min-width: 200px;
-    padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px;
-    background: #fff; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 0.82rem;
-  }
-  .conv-switcher-hint { font-size: 0.74rem; color: var(--subtle); }
 
   .tab-nav {
     display: flex; gap: 6px; padding: 6px;
@@ -2182,6 +2265,10 @@ const adminStyles = `
     padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
     background: rgba(0,0,0,0.02);
   }
+  .skill-row-btn {
+    width: 100%; text-align: left; cursor: pointer; font-family: inherit;
+  }
+  .skill-row-btn:hover { background: rgba(0,0,0,0.05); }
   .skill-name {
     font-weight: 650; font-size: 0.9rem; color: var(--text);
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;

@@ -399,7 +399,7 @@ if (LINK_PORT) {
     },
     sessionViewTokenStore,
     { handler, botsByPlatform },
-    { adminTokenStore, workingDir, runtime: handler, sandbox },
+    { adminTokenStore, workingDir, runtime: handler, sandbox, botsByPlatform },
   );
 }
 
