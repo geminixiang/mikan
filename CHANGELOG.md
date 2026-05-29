@@ -9,6 +9,21 @@ any release.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-05-30
+
+### Added
+
+- Add `/admin` portal with token-protected access via `/admin` and `/pi-admin` commands.
+- Add admin APIs and UI for conversation settings, global settings, workspace preview, skills, events, session links, and login/vault links.
+- Add model selection in the admin portal using `ModelRegistry.getAvailable()` instead of free-text fields.
+- Share portal shell chrome across admin, session-view, and login/vault pages.
+- Document admin, login, and session token boundaries in `docs/portal-auth-model.md`.
+
+### Changed
+
+- Normalize slash-command feedback into muted compact summaries.
+- Align desktop layout widths across all portal surfaces.
+
 ## [0.2.1] - 2026-05-27
 
 ### Added
