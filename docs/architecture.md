@@ -48,14 +48,14 @@ flowchart LR
   subgraph StateDir["State Dir (~/.mikan or --state-dir)"]
     GlobalSettings["settings.json\nglobal defaults"]
     Vaults["vaults/\nconversation-scoped secret directories"]
-    LinkTokens["login/session tokens\nin-memory stores"]
+    LinkTokens["admin/login/session tokens\nin-memory stores"]
   end
 
   subgraph Services["Auxiliary Services"]
     VaultManager["src/vault.ts\nFileVaultManager"]
     Provisioner["src/provisioner.ts\nDockerContainerManager"]
-    LinkServer["src/login/portal.ts\n/login OAuth/API-key portal"]
-    SessionViewer["src/session-view/*\nread-only web session viewer"]
+    LinkServer["src/login/portal.ts\nlink/admin/session portal host"]
+    SessionViewer["src/session-view/*\nweb session viewer"]
     EventsWatcher["src/events.ts\nwatch + schedule events"]
   end
 
@@ -174,13 +174,16 @@ flowchart LR
 ### F. 輔助服務層
 
 - `src/login/*`
+- `src/admin/*`
 - `src/session-view/*`
 - `src/events.ts`
 
 職責:
 
+- `src/login/portal.ts` 目前是 link server host，會掛接 login/vault、admin、session-view routes
 - 提供 Web login portal，支援 API key 與 OAuth 寫入 vault
-- 提供 read-only session viewer
+- 提供 admin portal，支援 conversation/settings/workspace/events/skills 管理與 link generation
+- 提供 session viewer；目前可顯示 session timeline，且在 interactive wiring 啟用時可透過 `/session/message` 送訊息
 - 監看 `events/*.json`，把排程事件重新注入 bot 流程
 
 ## 3. 訊息處理流程
