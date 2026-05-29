@@ -1,6 +1,8 @@
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "fs";
 import type { IncomingMessage, ServerResponse } from "http";
+import { homedir } from "os";
 import { join, resolve as pathResolve, sep as pathSep } from "path";
+import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { Bot, PlatformName, RunningSession } from "../adapter.js";
 import {
   loadAgentConfig,
@@ -114,6 +116,10 @@ function routeApiRequest(
     }
     if (url.pathname === "/admin/api/settings/global") {
       serveGlobalSettings(res);
+      return;
+    }
+    if (url.pathname === "/admin/api/models") {
+      void serveModelsList(res);
       return;
     }
     if (url.pathname === "/admin/api/workspace/tree") {
@@ -365,6 +371,25 @@ function serveGlobalSettings(res: ServerResponse): void {
       sandboxImageWorkspaceMount: config.sandboxImageWorkspaceMount ?? null,
       defaultSharedVault: config.defaultSharedVault ?? null,
     });
+  } catch (err) {
+    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+async function serveModelsList(res: ServerResponse): Promise<void> {
+  try {
+    const authStorage = AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json"));
+    const registry = ModelRegistry.create(authStorage);
+    const models = (await registry.getAvailable()).map((model) => ({
+      provider: model.provider,
+      id: model.id,
+      name: model.name ?? model.id,
+      reasoning: model.reasoning,
+      input: model.input,
+      contextWindow: model.contextWindow,
+      maxTokens: model.maxTokens,
+    }));
+    jsonRes(res, 200, { models });
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
   }
@@ -1382,6 +1407,8 @@ function renderAdminPage(token: AdminToken): string {
     const adminToken = ${JSON.stringify(token.token)};
     const defaultConversationId = ${JSON.stringify(token.conversationId)};
     let activeConversationId = defaultConversationId;
+    let availableModels = [];
+    let modelsLoaded = false;
 
     // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1414,6 +1441,47 @@ function renderAdminPage(token: AdminToken): string {
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
       return data;
+    }
+    async function loadModels() {
+      try {
+        const data = await apiGet('/admin/api/models');
+        availableModels = Array.isArray(data.models) ? data.models : [];
+      } catch (err) {
+        console.error('Failed to load models', err);
+        availableModels = [];
+      } finally {
+        modelsLoaded = true;
+      }
+    }
+    function modelRef(provider, model) {
+      return provider && model ? provider + '/' + model : '';
+    }
+    function parseModelRef(value) {
+      const slash = value.indexOf('/');
+      if (slash <= 0 || slash === value.length - 1) return { provider: '', model: '' };
+      return { provider: value.slice(0, slash), model: value.slice(slash + 1) };
+    }
+    function renderModelOptions(currentProvider, currentModel) {
+      const current = modelRef(currentProvider, currentModel);
+      const seen = new Set();
+      const options = [];
+      if (current) {
+        seen.add(current);
+        options.push('<option value="' + escAttr(current) + '">' + escHtml(current + ' (current)') + '</option>');
+      }
+      for (const model of availableModels) {
+        const ref = modelRef(model.provider, model.id);
+        if (!ref || seen.has(ref)) continue;
+        seen.add(ref);
+        const details = [model.name && model.name !== model.id ? model.name : '', model.reasoning ? 'thinking' : '', Array.isArray(model.input) && model.input.includes('image') ? 'image' : '']
+          .filter(Boolean)
+          .join(' · ');
+        options.push('<option value="' + escAttr(ref) + '">' + escHtml(details ? ref + ' — ' + details : ref) + '</option>');
+      }
+      if (options.length === 0) {
+        return '<option value="">No available models</option>';
+      }
+      return options.join('');
     }
 
     // ── Tab switching ────────────────────────────────────────────────────────────
@@ -1467,6 +1535,7 @@ function renderAdminPage(token: AdminToken): string {
     async function loadSettings() {
       const container = document.getElementById('settings-content');
       container.innerHTML = '<div class="loading-msg">Loading…</div>';
+      if (!modelsLoaded) await loadModels();
       try {
         const data = await apiGet('/admin/api/conversation-state?conversationId=' + encodeURIComponent(activeConversationId));
         container.innerHTML = renderSettings(data);
@@ -1489,8 +1558,7 @@ function renderAdminPage(token: AdminToken): string {
         '<div class="config-grid">',
           '<div class="config-block">',
             '<h3 class="card-subtitle">Model</h3>',
-            '<div class="config-row"><label>Provider</label><input id="m-provider" value="' + escAttr(data.provider || '') + '"></div>',
-            '<div class="config-row"><label>Model</label><input id="m-model" value="' + escAttr(data.model || '') + '"></div>',
+            '<div class="config-row config-row-stack"><label>Model</label><select id="m-model-ref">' + renderModelOptions(data.provider, data.model) + '</select></div>',
             '<div class="config-row"><label>Thinking</label><select id="m-thinking">' + thinkingOpts + '</select></div>',
             '<button class="primary-action-btn" onclick="saveModel(this)">Save model</button>',
             '<div id="model-save-result" class="inline-result" style="display:none"></div>',
@@ -1513,8 +1581,9 @@ function renderAdminPage(token: AdminToken): string {
     }
 
     async function saveModel(btn) {
-      const provider = document.getElementById('m-provider').value.trim();
-      const model = document.getElementById('m-model').value.trim();
+      const selectedModel = parseModelRef(document.getElementById('m-model-ref').value.trim());
+      const provider = selectedModel.provider;
+      const model = selectedModel.model;
       const thinkingLevel = document.getElementById('m-thinking').value;
       const result = document.getElementById('model-save-result');
       if (!provider || !model) {
@@ -1819,6 +1888,7 @@ function renderAdminPage(token: AdminToken): string {
     async function loadGlobalSettings() {
       const container = document.getElementById('global-settings-content');
       container.innerHTML = '<div class="loading-msg">Loading…</div>';
+      if (!modelsLoaded) await loadModels();
       try {
         const data = await apiGet('/admin/api/settings/global');
         container.innerHTML = renderGlobalSettings(data);
@@ -1840,8 +1910,7 @@ function renderAdminPage(token: AdminToken): string {
         '<div class="config-grid">',
           '<div class="config-block">',
             '<h3 class="card-subtitle">Default model</h3>',
-            '<div class="config-row"><label>Provider</label><input id="g-provider" value="' + escAttr(data.provider || '') + '"></div>',
-            '<div class="config-row"><label>Model</label><input id="g-model" value="' + escAttr(data.model || '') + '"></div>',
+            '<div class="config-row config-row-stack"><label>Model</label><select id="g-model-ref">' + renderModelOptions(data.provider, data.model) + '</select></div>',
             '<div class="config-row"><label>Thinking</label><select id="g-thinking">' + thinkingOpts + '</select></div>',
             '<button class="primary-action-btn" onclick="saveGlobalModel(this)">Save model</button>',
             '<div id="g-model-result" class="inline-result" style="display:none"></div>',
@@ -1861,8 +1930,9 @@ function renderAdminPage(token: AdminToken): string {
     }
 
     async function saveGlobalModel(btn) {
-      const provider = document.getElementById('g-provider').value.trim();
-      const model = document.getElementById('g-model').value.trim();
+      const selectedModel = parseModelRef(document.getElementById('g-model-ref').value.trim());
+      const provider = selectedModel.provider;
+      const model = selectedModel.model;
       const thinkingLevel = document.getElementById('g-thinking').value;
       const result = document.getElementById('g-model-result');
       if (!provider || !model) {
@@ -1921,10 +1991,12 @@ function renderAdminPage(token: AdminToken): string {
     // ── Init ─────────────────────────────────────────────────────────────────────
 
     initConvSwitcher();
-    loadSettings();
-    loadWorkspace();
-    loadSkills();
-    loadConversationEvents();
+    loadModels().finally(() => {
+      loadSettings();
+      loadWorkspace();
+      loadSkills();
+      loadConversationEvents();
+    });
   `;
 
   return renderPortalShell({
