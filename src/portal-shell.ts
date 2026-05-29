@@ -202,7 +202,7 @@ export const portalShellStyles = `
 
   .shell {
     width: 100%;
-    max-width: 1040px;
+    max-width: 960px;
     margin-left: 72px;
     display: flex;
     flex-direction: column;
