@@ -1036,6 +1036,58 @@ export class SlackBot implements Bot {
     await this.handler.handleEvent(event, this, adapters);
   }
 
+  private async routeSlashAdminCommand(payload: {
+    command: string;
+    channel_id: string;
+    user_id: string;
+    user_name?: string;
+    thread_ts?: string;
+  }): Promise<void> {
+    const conversationId = payload.channel_id;
+    const isDirectMessage = conversationId.startsWith("D");
+    const createdAt = new Date();
+    const eventTs = (createdAt.getTime() / 1000).toFixed(6);
+    const userName = payload.user_name ?? this.getUser(payload.user_id)?.userName;
+    const commandText = payload.command;
+
+    this.logToFile(conversationId, {
+      date: createdAt.toISOString(),
+      ts: eventTs,
+      user: payload.user_id,
+      userName,
+      text: commandText,
+      attachments: [],
+      isBot: false,
+      threadTs: payload.thread_ts,
+    });
+
+    const sessionKey = resolveSlackSessionKey(conversationId, payload.thread_ts);
+    const event: BotEvent = {
+      type: isDirectMessage ? "dm" : "mention",
+      conversationId,
+      conversationKind: isDirectMessage ? "direct" : "shared",
+      ts: eventTs,
+      user: payload.user_id,
+      text: commandText,
+      attachments: [],
+      thread_ts: payload.thread_ts,
+      sessionKey,
+    };
+
+    const adapters = this.createCommandAdapters(
+      conversationId,
+      payload.user_id,
+      userName,
+      commandText,
+      eventTs,
+      isDirectMessage
+        ? { threadTs: payload.thread_ts }
+        : { ephemeralChannelId: conversationId, threadTs: payload.thread_ts },
+    );
+
+    await this.handler.handleEvent(event, this, adapters);
+  }
+
   private setupEventHandlers(): void {
     this.socketClient.on("disconnect", (err: unknown) => {
       log.logWarning("Slack socket disconnect", err ? String(err) : "");
@@ -1349,7 +1401,15 @@ export class SlackBot implements Bot {
                         user_id: payload.user_id,
                         user_name: payload.user_name,
                       })
-                    : null;
+                    : payload.command === "/pi-admin"
+                      ? this.routeSlashAdminCommand({
+                          command: payload.command,
+                          channel_id: payload.channel_id,
+                          user_id: payload.user_id,
+                          user_name: payload.user_name,
+                          thread_ts: payload.thread_ts,
+                        })
+                      : null;
 
       if (!handlerPromise) {
         return;

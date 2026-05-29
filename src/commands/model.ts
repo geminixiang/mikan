@@ -6,7 +6,7 @@ import { join } from "path";
 import { loadAgentConfigForConversation, saveConversationModelConfig } from "../config.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler } from "./types.js";
-import { replyDiagnosticWithContext } from "./utils.js";
+import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 
 const PI_AI_THINKING_LEVELS = [
   "minimal",
@@ -76,7 +76,7 @@ function formatModelSpec(provider: string, model: string, thinkingLevel?: Thinki
 }
 
 function formatModelCommandSummary(lines: string[]): string {
-  return ["_Model_", ...lines].join("\n");
+  return formatCommandSummary("Model", lines);
 }
 
 export class ModelCommandHandler implements CommandHandler {

@@ -3,6 +3,7 @@ import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { InMemoryAdminTokenStore } from "../src/admin/store.js";
 import { startLinkServer } from "../src/login/portal.js";
 import { InMemoryLinkTokenStore } from "../src/login/session.js";
 import { FileVaultManager } from "../src/vault.js";
@@ -26,6 +27,7 @@ describe("link server", () => {
   const originalFetch = globalThis.fetch;
   const originalGitHubClientId = process.env.GITHUB_OAUTH_CLIENT_ID;
   const originalGitHubClientSecret = process.env.GITHUB_OAUTH_CLIENT_SECRET;
+  const originalAnthropicApiKey = process.env.ANTHROPIC_API_KEY;
 
   afterEach(async () => {
     globalThis.fetch = originalFetch;
@@ -38,6 +40,11 @@ describe("link server", () => {
       delete process.env.GITHUB_OAUTH_CLIENT_SECRET;
     } else {
       process.env.GITHUB_OAUTH_CLIENT_SECRET = originalGitHubClientSecret;
+    }
+    if (originalAnthropicApiKey === undefined) {
+      delete process.env.ANTHROPIC_API_KEY;
+    } else {
+      process.env.ANTHROPIC_API_KEY = originalAnthropicApiKey;
     }
 
     await Promise.all(
@@ -86,6 +93,46 @@ describe("link server", () => {
     expect(html).toContain("/root/.config/gws/credentials.json");
     expect(html).not.toContain("sk-secret-value");
     expect(html).not.toContain("ghp-secret-value");
+  });
+
+  test("/admin/api/models lists configured models", async () => {
+    process.env.ANTHROPIC_API_KEY = "test-anthropic-key";
+
+    const stateDir = join(tmpdir(), `mikan-link-server-${Date.now()}-${Math.random()}`);
+    dirs.push(stateDir);
+
+    const vaultManager = new FileVaultManager(stateDir);
+    const tokenStore = new InMemoryLinkTokenStore();
+    const adminTokenStore = new InMemoryAdminTokenStore();
+    const adminToken = adminTokenStore.create({
+      platform: "telegram",
+      platformUserId: "U-admin",
+      conversationId: "123",
+    });
+    const server = startLinkServer(
+      0,
+      tokenStore,
+      vaultManager,
+      async () => {},
+      undefined,
+      undefined,
+      {
+        adminTokenStore,
+        workingDir: stateDir,
+      },
+    );
+    servers.push(server);
+    await waitForListening(server);
+
+    const response = await originalFetch(
+      `${baseUrl(server)}/admin/api/models?token=${adminToken.token}`,
+    );
+    const body = (await response.json()) as {
+      models: Array<{ provider: string; id: string; name: string }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.models.some((model) => model.provider === "anthropic")).toBe(true);
   });
 
   test("/api/oauth/start returns an OAuth redirect URL for GitHub", async () => {

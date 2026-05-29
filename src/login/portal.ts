@@ -1,5 +1,10 @@
 import { createHash, randomBytes } from "crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "http";
+import type { Bot, PlatformName } from "../adapter.js";
+import { handleAdminRequest, type AdminRuntimeBridge } from "../admin/portal.js";
+import type { InMemoryAdminTokenStore } from "../admin/store.js";
+import { renderPortalShell } from "../portal-shell.js";
+import type { SandboxConfig } from "../sandbox/index.js";
 import { resolveLinkBaseUrl } from "../config.js";
 import {
   handleSessionViewRequest,
@@ -255,6 +260,13 @@ export function startLinkServer(
   notify: NotifyFn,
   sessionViewTokenStore?: InMemorySessionViewTokenStore,
   sessionViewInteractive?: SessionViewInteractiveOptions,
+  adminOptions?: {
+    adminTokenStore: InMemoryAdminTokenStore;
+    workingDir?: string;
+    runtime?: AdminRuntimeBridge;
+    sandbox?: SandboxConfig;
+    botsByPlatform?: Partial<Record<PlatformName, Bot>>;
+  },
 ): Server {
   const oauthStates = new Map<string, PendingOAuthState>();
 
@@ -265,6 +277,23 @@ export function startLinkServer(
       if (req.method === "GET" && url.pathname === "/health") {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      if (
+        adminOptions?.adminTokenStore &&
+        handleAdminRequest(req, res, url, {
+          vaultManager,
+          linkTokenStore,
+          sessionViewTokenStore,
+          adminTokenStore: adminOptions.adminTokenStore,
+          portalBaseUrl: resolveLinkBaseUrl() ?? undefined,
+          workingDir: adminOptions.workingDir,
+          runtime: adminOptions.runtime,
+          sandbox: adminOptions.sandbox,
+          botsByPlatform: adminOptions.botsByPlatform,
+        })
+      ) {
         return;
       }
 
@@ -512,145 +541,53 @@ function esc(s: string): string {
   );
 }
 
-const sharedPageStyles = `
-  :root {
-    color-scheme: light;
-    --bg: #f5f1e8;
-    --panel: rgba(255, 255, 255, 0.9);
-    --panel-border: rgba(28, 30, 33, 0.08);
-    --text: #1c1e21;
-    --muted: #5d5f64;
-    --button: #1c1e21;
-    --button-hover: #2c3035;
-    --button-disabled: #8f949b;
-    --field-border: #c9cfd6;
-    --field-focus: #1c1e21;
-    --ok-bg: #dff4e4;
-    --ok-text: #1f5b34;
-    --err-bg: #fde2e2;
-    --err-text: #8a2f2f;
-  }
+const loginViewStyles = `
+  /* Login portal inherits all base chrome from the shared shell.
+     This module only adds preset cards, service logos, help popovers,
+     and the mode toggle. */
 
-  * { box-sizing: border-box; }
+  p { margin: 0; color: var(--muted); font-size: 0.92rem; line-height: 1.55; }
 
-  body {
-    margin: 0;
-    min-height: 100vh;
-    padding: 32px 20px;
-    display: grid;
-    grid-template-columns: minmax(0, 560px);
-    justify-content: center;
-    align-content: start;
-    background:
-      radial-gradient(circle at top, rgba(255, 255, 255, 0.7), transparent 45%),
-      linear-gradient(180deg, #faf7f0 0%, var(--bg) 100%);
-    color: var(--text);
-    font-family:
-      "SF Pro Text",
-      "Segoe UI",
-      system-ui,
-      sans-serif;
-  }
-
-  .shell {
-    width: 100%;
-    min-width: 0;
-    display: grid;
-    gap: 16px;
-    align-content: start;
-  }
-
-  .card {
-    padding: 28px;
-    border: 1px solid var(--panel-border);
-    border-radius: 20px;
-    background: var(--panel);
-    box-shadow: 0 18px 48px rgba(28, 30, 33, 0.08);
-    backdrop-filter: blur(8px);
-  }
-
-  .eyebrow {
-    margin: 0 0 10px;
-    color: var(--muted);
-    font-size: 0.82rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  h1 {
-    margin: 0 0 10px;
-    font-size: clamp(1.5rem, 2vw, 1.8rem);
-    line-height: 1.15;
-    text-wrap: balance;
-  }
-
-  p {
-    margin: 0;
-    color: var(--muted);
-    font-size: 0.98rem;
-    line-height: 1.5;
-  }
-
-  .stack > * + * {
-    margin-top: 14px;
-  }
+  .stack > * + * { margin-top: 14px; }
 
   label {
     display: block;
     margin-bottom: 6px;
-    font-size: 0.92rem;
-    font-weight: 650;
-  }
-
-  input,
-  select,
-  button {
-    font: inherit;
-  }
-
-  input,
-  select {
-    width: 100%;
-    padding: 12px 14px;
-    border: 1px solid var(--field-border);
-    border-radius: 12px;
-    background: #fff;
+    font-size: 0.86rem;
+    font-weight: 600;
     color: var(--text);
   }
 
-  input:focus-visible,
-  select:focus-visible,
-  button:focus-visible {
-    outline: 2px solid var(--field-focus);
-    outline-offset: 2px;
+  input, select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--text);
+    font: inherit;
   }
 
-  code {
-    font-family: "SFMono-Regular", ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.92em;
-    overflow-wrap: anywhere;
+  input:focus-visible,
+  select:focus-visible {
+    outline: 2px solid var(--text);
+    outline-offset: 1px;
   }
 
   .primary-button {
     width: 100%;
-    padding: 13px 18px;
+    padding: 12px 18px;
     border: none;
     border-radius: 12px;
-    background: var(--button);
+    background: var(--text);
     color: #fff;
     cursor: pointer;
-    transition: background-color 160ms ease;
+    font: 500 0.95rem/1.2 'DM Sans', sans-serif;
+    transition: opacity 120ms;
   }
 
-  .primary-button:hover {
-    background: var(--button-hover);
-  }
-
-  .primary-button:disabled {
-    background: var(--button-disabled);
-    cursor: default;
-  }
+  .primary-button:hover:not(:disabled) { opacity: 0.85; }
+  .primary-button:disabled { opacity: 0.5; cursor: default; }
 
   .service-logo {
     display: inline-flex;
@@ -747,7 +684,7 @@ const sharedPageStyles = `
     width: 18px;
     height: 18px;
     padding: 0;
-    border: 1px solid var(--field-border);
+    border: 1px solid var(--border);
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.9);
     color: var(--muted);
@@ -771,7 +708,7 @@ const sharedPageStyles = `
     width: max-content;
     max-width: 280px;
     padding: 10px 12px;
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--border);
     border-radius: 10px;
     background: #fff;
     color: var(--text);
@@ -804,7 +741,7 @@ const sharedPageStyles = `
     gap: 8px;
     margin: 0;
     padding: 10px 12px;
-    border: 1px solid var(--field-border);
+    border: 1px solid var(--border);
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.85);
     font-weight: 500;
@@ -860,7 +797,7 @@ const sharedPageStyles = `
   .secrets-summary {
     margin-top: 18px;
     padding: 14px 16px;
-    border: 1px solid var(--panel-border);
+    border: 1px solid var(--border);
     border-radius: 14px;
     background: rgba(255, 255, 255, 0.72);
   }
@@ -890,63 +827,21 @@ const sharedPageStyles = `
   }
 
   @media (max-width: 640px) {
-    body {
-      padding: 16px 12px;
-    }
-
-    .shell {
-      gap: 12px;
-    }
-
-    .card {
-      padding: 20px;
-      border-radius: 16px;
-    }
-
-    /* Mode toggle pills fill the row evenly */
-    .mode label {
-      flex: 1;
-      justify-content: center;
-    }
-
-    /* Larger touch targets */
-    input,
-    select {
-      padding: 14px;
-    }
-
-    .primary-button {
-      padding: 15px 18px;
-    }
-
-    /* Prevent help popover from overflowing the viewport */
-    .help-content {
-      max-width: min(260px, calc(100vw - 40px));
-    }
-
-    /* Right-align popovers that sit near the right edge */
-    .provider-header .help-content {
-      left: auto;
-      right: 0;
-    }
+    .mode label { flex: 1; justify-content: center; }
+    input, select { padding: 12px; }
+    .primary-button { padding: 14px 18px; }
+    .help-content { max-width: min(260px, calc(100vw - 40px)); }
+    .provider-header .help-content { left: auto; right: 0; }
   }
 `;
 
 function renderHtmlDocument(title: string, shellContent: string): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${esc(title)} — ${PRODUCT_NAME}</title>
-  <style>${sharedPageStyles}</style>
-</head>
-<body>
-  <main class="shell">
-    ${shellContent}
-  </main>
-</body>
-</html>`;
+  return renderPortalShell({
+    activeView: "vault",
+    pageTitle: "Vault",
+    body: shellContent,
+    extraStyles: loginViewStyles,
+  });
 }
 
 function renderPageDocument(title: string, body: string): string {
@@ -964,7 +859,7 @@ function renderStatusPage(
     title,
     `<div class="stack">
       <p class="eyebrow">${PRODUCT_NAME}</p>
-      <h1>${esc(title)}</h1>
+      <h1 class="page-title">${esc(title)}</h1>
       <div class="status ${tone}">${esc(message)}</div>
       ${closeNote}
     </div>`,
@@ -1142,7 +1037,7 @@ function renderCredentialPage(
     "Login",
     `<section class="card stack">
   <p class="eyebrow">${PRODUCT_NAME}</p>
-  <h1>${esc(title)}</h1>
+  <h1 class="page-title">${esc(title)}</h1>
   <p>Your personal sandbox is already provisioned automatically.</p>
   <p>${esc(helpText)}</p>
   ${renderSecretsSummary(existingSecrets)}

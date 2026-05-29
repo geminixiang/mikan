@@ -48,6 +48,7 @@ function makeRuntime() {
     } as VaultManager,
     linkTokenStore: { create: () => ({ token: "link" }) },
     sessionViewTokenStore: { create: () => ({ token: "session" }) },
+    adminTokenStore: { create: () => ({ token: "admin" }) },
   } as any);
 }
 
