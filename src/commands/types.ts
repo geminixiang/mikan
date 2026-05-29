@@ -25,6 +25,15 @@ export interface SessionViewTokenStoreLike {
   ): { token: string };
 }
 
+export interface AdminTokenStoreLike {
+  create(args: {
+    platform: PlatformName;
+    platformUserId: string;
+    conversationId: string;
+    platformUserName?: string;
+  }): { token: string };
+}
+
 export interface CommandServices {
   workingDir: string;
   runtime?: SessionRuntime;
@@ -33,6 +42,7 @@ export interface CommandServices {
   provisioner?: DockerContainerManager;
   linkTokenStore: LinkTokenStoreLike;
   sessionViewTokenStore: SessionViewTokenStoreLike;
+  adminTokenStore: AdminTokenStoreLike;
   portalBaseUrl?: string;
 }
 

@@ -1,3 +1,4 @@
+import { AdminCommandHandler } from "./admin.js";
 import { AutoReplyCommandHandler } from "./auto-reply.js";
 import { LoginCommandHandler } from "./login.js";
 import { ModelCommandHandler } from "./model.js";
@@ -11,6 +12,7 @@ export type { CommandContext, CommandHandler, CommandServices } from "./types.js
 
 export function defaultCommandHandlers(): CommandHandler[] {
   return [
+    new AdminCommandHandler(),
     new LoginCommandHandler(),
     new SessionViewCommandHandler(),
     new AutoReplyCommandHandler(),

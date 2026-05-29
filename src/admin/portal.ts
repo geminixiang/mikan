@@ -1,25 +1,30 @@
+import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "fs";
 import type { IncomingMessage, ServerResponse } from "http";
-import type { PlatformName } from "../adapter.js";
-import { readEnv } from "../env.js";
+import { join, resolve as pathResolve, sep as pathSep } from "path";
+import type { PlatformName, RunningSession } from "../adapter.js";
+import {
+  loadAgentConfig,
+  loadAgentConfigForConversation,
+  loadConversationAutoReplyConfig,
+  saveAgentConfig,
+  saveConversationAutoReplyConfig,
+  saveConversationModelConfig,
+  saveConversationSandboxConfig,
+  type AgentConfig,
+} from "../config.js";
+import type { SandboxConfig } from "../sandbox/index.js";
+import { resolveExistingSessionFile } from "../session-view/service.js";
+import type { InMemorySessionViewTokenStore } from "../session-view/store.js";
 import { PRODUCT_NAME } from "../ui-copy.js";
+import { resolveActorVaultKey } from "../vault-routing.js";
 import { sharedVaultKey, type VaultManager } from "../vault.js";
+import type { AdminToken, InMemoryAdminTokenStore } from "./store.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-interface CommandUsage {
-  cmd: string;
-  desc: string;
-}
-
-interface CommandDef {
-  id: string;
-  name: string;
-  aliases: string[];
-  icon: string;
-  description: string;
-  note?: string;
-  usages: CommandUsage[];
-  constraints?: string[];
+export interface AdminRuntimeBridge {
+  getRunningSessions(): RunningSession[];
+  switchConversationModel(conversationId: string, provider: string, model: string): boolean;
 }
 
 export interface AdminServices {
@@ -33,7 +38,12 @@ export interface AdminServices {
       providerId: string,
     ): { token: string };
   };
+  sessionViewTokenStore?: InMemorySessionViewTokenStore;
+  adminTokenStore: InMemoryAdminTokenStore;
   portalBaseUrl?: string;
+  workingDir?: string;
+  sandbox?: SandboxConfig;
+  runtime?: AdminRuntimeBridge;
 }
 
 // ── Handler ────────────────────────────────────────────────────────────────────
@@ -42,39 +52,32 @@ export function handleAdminRequest(
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  adminToken: string | undefined,
-  services?: AdminServices,
+  services: AdminServices,
 ): boolean {
   if (!url.pathname.startsWith("/admin")) return false;
 
-  if (!adminToken) {
-    if (req.method === "GET" && url.pathname === "/admin") {
-      res.writeHead(404);
-      res.end();
-      return true;
-    }
-    return false;
-  }
-
-  // Main dashboard page
   if (req.method === "GET" && url.pathname === "/admin") {
-    const provided = url.searchParams.get("token");
-    if (provided !== adminToken) {
+    const provided = url.searchParams.get("token") ?? "";
+    const token = services.adminTokenStore.peek(provided);
+    if (!token) {
       res.writeHead(403, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(renderAdminErrorPage("Access denied. Provide a valid ?token= parameter."));
+      res.end(
+        renderAdminErrorPage(
+          "Admin link is missing, invalid, or expired. Send `/admin` to the bot to get a fresh link.",
+        ),
+      );
       return true;
     }
     res.writeHead(200, {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
     });
-    res.end(renderAdminPage());
+    res.end(renderAdminPage(token));
     return true;
   }
 
-  // API routes
   if (url.pathname.startsWith("/admin/api/")) {
-    routeApiRequest(req, res, url, adminToken, services);
+    routeApiRequest(req, res, url, services);
     return true;
   }
 
@@ -87,20 +90,52 @@ function routeApiRequest(
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
-  adminToken: string,
-  services?: AdminServices,
+  services: AdminServices,
 ): void {
   if (req.method === "GET") {
-    if (url.searchParams.get("token") !== adminToken) {
+    const token = services.adminTokenStore.peek(url.searchParams.get("token") ?? "");
+    if (!token) {
       jsonRes(res, 403, { error: "Unauthorized" });
       return;
     }
-    if (url.pathname === "/admin/api/vaults") {
-      serveVaultsList(res, services);
+    if (url.pathname === "/admin/api/me") {
+      serveMe(res, token);
       return;
     }
-    if (url.pathname === "/admin/api/status") {
-      serveStatus(res, services);
+    if (url.pathname === "/admin/api/conversations") {
+      serveConversationsList(res, services);
+      return;
+    }
+    if (url.pathname === "/admin/api/conversation-state") {
+      serveConversationState(res, url, services, token);
+      return;
+    }
+    if (url.pathname === "/admin/api/settings/global") {
+      serveGlobalSettings(res);
+      return;
+    }
+    if (url.pathname === "/admin/api/workspace/tree") {
+      serveWorkspaceTree(res, url, services, token);
+      return;
+    }
+    if (url.pathname === "/admin/api/workspace/file") {
+      serveWorkspaceFile(res, url, services, token);
+      return;
+    }
+    if (url.pathname === "/admin/api/skills") {
+      serveSkillsList(res, url, services, token);
+      return;
+    }
+    if (url.pathname === "/admin/api/events") {
+      serveEventsList(res, services);
+      return;
+    }
+    if (url.pathname === "/admin/api/events/file") {
+      serveEventsFile(res, url, services);
+      return;
+    }
+    if (url.pathname === "/admin/api/conversations/events") {
+      serveConversationEventsList(res, url, services, token);
       return;
     }
     jsonRes(res, 404, { error: "Not found" });
@@ -109,17 +144,42 @@ function routeApiRequest(
 
   if (req.method === "POST") {
     void readJsonBody(req, res, (body) => {
-      const bodyToken = typeof body.token === "string" ? body.token : "";
-      if (bodyToken !== adminToken) {
+      const rawToken = typeof body.token === "string" ? body.token : "";
+      const token = services.adminTokenStore.peek(rawToken);
+      if (!token) {
         jsonRes(res, 403, { error: "Unauthorized" });
         return;
       }
-      if (url.pathname === "/admin/api/vaults/delete") {
-        serveVaultDelete(res, body, services);
+      if (url.pathname === "/admin/api/conversations/model") {
+        serveConversationModelUpdate(res, body, services, token);
         return;
       }
-      if (url.pathname === "/admin/api/vaults/link") {
-        serveVaultLink(res, body, services);
+      if (url.pathname === "/admin/api/conversations/sandbox") {
+        serveConversationSandboxUpdate(res, body, services, token);
+        return;
+      }
+      if (url.pathname === "/admin/api/conversations/auto-reply") {
+        serveConversationAutoReplyUpdate(res, body, services, token);
+        return;
+      }
+      if (url.pathname === "/admin/api/conversations/session-link") {
+        serveConversationSessionLink(res, body, services, token);
+        return;
+      }
+      if (url.pathname === "/admin/api/conversations/login-link") {
+        serveConversationLoginLink(res, body, services, token);
+        return;
+      }
+      if (url.pathname === "/admin/api/conversations/events/delete") {
+        serveConversationEventDelete(res, body, services, token);
+        return;
+      }
+      if (url.pathname === "/admin/api/settings/model") {
+        serveGlobalModelUpdate(res, body);
+        return;
+      }
+      if (url.pathname === "/admin/api/settings/sandbox") {
+        serveGlobalSandboxUpdate(res, body);
         return;
       }
       jsonRes(res, 404, { error: "Not found" });
@@ -130,63 +190,291 @@ function routeApiRequest(
   jsonRes(res, 405, { error: "Method not allowed" });
 }
 
+// ── Scope helpers ──────────────────────────────────────────────────────────────
+
+function resolveTargetConversation(
+  body: Record<string, unknown>,
+  token: AdminToken,
+): { conversationId: string; error?: string } {
+  const requested = typeof body.conversationId === "string" ? body.conversationId.trim() : "";
+  if (!requested) return { conversationId: token.conversationId };
+  if (requested === token.conversationId) return { conversationId: requested };
+  if (requested.includes("/") || requested.includes("..")) {
+    return { conversationId: requested, error: "Invalid conversationId." };
+  }
+  return { conversationId: requested };
+}
+
+function requireAdminWorkingDir(res: ServerResponse, services: AdminServices): string | null {
+  if (!services.workingDir) {
+    jsonRes(res, 503, { error: "Working directory not available" });
+    return null;
+  }
+  return services.workingDir;
+}
+
 // ── API handlers ───────────────────────────────────────────────────────────────
 
-function serveVaultsList(res: ServerResponse, services?: AdminServices): void {
-  if (!services) {
-    jsonRes(res, 503, { error: "Vault service not available" });
-    return;
-  }
+function serveMe(res: ServerResponse, token: AdminToken): void {
+  jsonRes(res, 200, {
+    platform: token.platform,
+    platformUserId: token.platformUserId,
+    platformUserName: token.platformUserName ?? null,
+    conversationId: token.conversationId,
+    expiresAt: token.expiresAt,
+  });
+}
 
-  const names = services.vaultManager.listSharedVaults();
-  const vaults = names.map((name) => {
-    const vaultId = sharedVaultKey(name);
-    const vault = vaultId ? services.vaultManager.resolve(vaultId) : undefined;
+const SETTINGS_FILES = new Set(["settings.json", "auto-reply", "auto-reply.disabled"]);
+
+function listConversationDirs(workingDir: string): string[] {
+  if (!existsSync(workingDir)) return [];
+  const skip = new Set(["vaults", "skills", "events", "node_modules", ".git"]);
+  return readdirSync(workingDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith(".") && !skip.has(entry.name))
+    .map((entry) => entry.name)
+    .filter((name) => {
+      const dir = join(workingDir, name);
+      try {
+        const items = readdirSync(dir);
+        return items.some((item) => SETTINGS_FILES.has(item) || item.endsWith(".jsonl"));
+      } catch {
+        return false;
+      }
+    })
+    .toSorted((a, b) => a.localeCompare(b));
+}
+
+function conversationLastActivity(workingDir: string, conversationId: string): number | null {
+  const dir = join(workingDir, conversationId);
+  if (!existsSync(dir)) return null;
+  let latest = 0;
+  const visit = (path: string, depth: number): void => {
+    if (depth > 3) return;
+    let entries;
+    try {
+      entries = readdirSync(path, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = join(path, entry.name);
+      if (entry.isDirectory()) {
+        visit(full, depth + 1);
+        continue;
+      }
+      try {
+        const stats = statSync(full);
+        if (stats.mtimeMs > latest) latest = stats.mtimeMs;
+      } catch {
+        // ignore
+      }
+    }
+  };
+  visit(dir, 0);
+  return latest > 0 ? latest : null;
+}
+
+function serveConversationsList(res: ServerResponse, services: AdminServices): void {
+  const workingDir = requireAdminWorkingDir(res, services);
+  if (!workingDir) return;
+
+  const ids = listConversationDirs(workingDir);
+
+  const runningKeys = new Set<string>(
+    services.runtime?.getRunningSessions().map((s) => s.sessionKey) ?? [],
+  );
+
+  const conversations = ids.map((conversationId) => {
+    const lastActivity = conversationLastActivity(workingDir, conversationId);
+    const running = Array.from(runningKeys).some(
+      (key) => key === conversationId || key.startsWith(`${conversationId}:`),
+    );
     return {
-      name,
-      envKeys: vault ? Object.keys(vault.env).toSorted() : [],
-      mountTargets: vault ? [...new Set(vault.mounts.map((m) => m.target))].toSorted() : [],
+      conversationId,
+      running,
+      lastActivityAt: lastActivity,
     };
   });
 
-  jsonRes(res, 200, { vaults });
+  jsonRes(res, 200, { conversations });
 }
 
-function serveVaultDelete(
+function serveConversationState(
   res: ServerResponse,
-  body: Record<string, unknown>,
-  services?: AdminServices,
+  url: URL,
+  services: AdminServices,
+  token: AdminToken,
 ): void {
-  const name = typeof body.name === "string" ? body.name.trim() : "";
-  if (!name) {
-    jsonRes(res, 400, { error: "Missing name" });
-    return;
-  }
-  if (!services) {
-    jsonRes(res, 503, { error: "Vault service not available" });
+  const workingDir = requireAdminWorkingDir(res, services);
+  if (!workingDir) return;
+
+  const requested = url.searchParams.get("conversationId")?.trim() ?? "";
+  const conversationId = requested || token.conversationId;
+  if (conversationId.includes("/") || conversationId.includes("..")) {
+    jsonRes(res, 400, { error: "Invalid conversationId" });
     return;
   }
 
+  const dir = join(workingDir, conversationId);
+  let modelConfig: AgentConfig | null = null;
   try {
-    const deleted = services.vaultManager.deleteSharedVault(name);
-    jsonRes(res, 200, { ok: true, deleted });
+    modelConfig = loadAgentConfigForConversation(dir);
+  } catch {
+    modelConfig = null;
+  }
+  const autoReply = loadConversationAutoReplyConfig(dir);
+
+  jsonRes(res, 200, {
+    conversationId,
+    provider: modelConfig?.provider ?? null,
+    model: modelConfig?.model ?? null,
+    thinkingLevel: modelConfig?.thinkingLevel ?? null,
+    sandboxImageWorkspaceMount: modelConfig?.sandboxImageWorkspaceMount ?? null,
+    autoReplyEnabled: autoReply.enabled,
+    autoReplyRules: autoReply.rules,
+  });
+}
+
+function serveGlobalSettings(res: ServerResponse): void {
+  try {
+    const config = loadAgentConfig();
+    jsonRes(res, 200, {
+      provider: config.provider,
+      model: config.model,
+      thinkingLevel: config.thinkingLevel,
+      sandboxCpus: config.sandboxCpus ?? null,
+      sandboxMemory: config.sandboxMemory ?? null,
+      sandboxBoostCpus: config.sandboxBoostCpus ?? null,
+      sandboxBoostMemory: config.sandboxBoostMemory ?? null,
+      sandboxImageWorkspaceMount: config.sandboxImageWorkspaceMount ?? null,
+      defaultSharedVault: config.defaultSharedVault ?? null,
+    });
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
   }
 }
 
-function serveVaultLink(
+const VALID_THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
+
+function serveConversationModelUpdate(
   res: ServerResponse,
   body: Record<string, unknown>,
-  services?: AdminServices,
+  services: AdminServices,
+  token: AdminToken,
 ): void {
-  const name = typeof body.name === "string" ? body.name.trim() : "";
-  if (!name) {
-    jsonRes(res, 400, { error: "Missing name" });
+  const provider = typeof body.provider === "string" ? body.provider.trim() : "";
+  const model = typeof body.model === "string" ? body.model.trim() : "";
+  const thinkingLevel =
+    typeof body.thinkingLevel === "string" && VALID_THINKING_LEVELS.has(body.thinkingLevel)
+      ? (body.thinkingLevel as AgentConfig["thinkingLevel"])
+      : undefined;
+
+  if (!provider || !model) {
+    jsonRes(res, 400, { error: "Missing provider or model" });
     return;
   }
-  if (!services) {
-    jsonRes(res, 503, { error: "Services not available" });
+  const scope = resolveTargetConversation(body, token);
+  if (scope.error) {
+    jsonRes(res, 403, { error: scope.error });
+    return;
+  }
+  const workingDir = requireAdminWorkingDir(res, services);
+  if (!workingDir) return;
+  const dir = join(workingDir, scope.conversationId);
+
+  try {
+    saveConversationModelConfig(dir, {
+      provider,
+      model,
+      ...(thinkingLevel ? { thinkingLevel } : {}),
+    });
+    let runtimeSwitched: boolean | null = null;
+    if (services.runtime) {
+      runtimeSwitched = services.runtime.switchConversationModel(
+        scope.conversationId,
+        provider,
+        model,
+      );
+    }
+    jsonRes(res, 200, { ok: true, runtimeSwitched });
+  } catch (err) {
+    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+function serveConversationSandboxUpdate(
+  res: ServerResponse,
+  body: Record<string, unknown>,
+  services: AdminServices,
+  token: AdminToken,
+): void {
+  const workspaceMount = body.workspaceMount;
+  if (workspaceMount !== "private" && workspaceMount !== "full") {
+    jsonRes(res, 400, { error: "workspaceMount must be 'private' or 'full'" });
+    return;
+  }
+  const scope = resolveTargetConversation(body, token);
+  if (scope.error) {
+    jsonRes(res, 403, { error: scope.error });
+    return;
+  }
+  const workingDir = requireAdminWorkingDir(res, services);
+  if (!workingDir) return;
+  const dir = join(workingDir, scope.conversationId);
+  try {
+    saveConversationSandboxConfig(dir, { imageWorkspaceMount: workspaceMount });
+    jsonRes(res, 200, { ok: true });
+  } catch (err) {
+    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+function serveConversationAutoReplyUpdate(
+  res: ServerResponse,
+  body: Record<string, unknown>,
+  services: AdminServices,
+  token: AdminToken,
+): void {
+  const enabled = body.enabled === true;
+  const rules = Array.isArray(body.rules)
+    ? body.rules.filter((r): r is string => typeof r === "string")
+    : undefined;
+  const scope = resolveTargetConversation(body, token);
+  if (scope.error) {
+    jsonRes(res, 403, { error: scope.error });
+    return;
+  }
+  const workingDir = requireAdminWorkingDir(res, services);
+  if (!workingDir) return;
+  const dir = join(workingDir, scope.conversationId);
+  try {
+    const existing = loadConversationAutoReplyConfig(dir);
+    saveConversationAutoReplyConfig(dir, {
+      enabled,
+      rules: rules ?? existing.rules,
+    });
+    jsonRes(res, 200, { ok: true });
+  } catch (err) {
+    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+function serveConversationSessionLink(
+  res: ServerResponse,
+  body: Record<string, unknown>,
+  services: AdminServices,
+  token: AdminToken,
+): void {
+  const scope = resolveTargetConversation(body, token);
+  if (scope.error) {
+    jsonRes(res, 403, { error: scope.error });
+    return;
+  }
+  const workingDir = requireAdminWorkingDir(res, services);
+  if (!workingDir) return;
+  if (!services.sessionViewTokenStore) {
+    jsonRes(res, 503, { error: "Session view token store not available" });
     return;
   }
   if (!services.portalBaseUrl) {
@@ -196,39 +484,645 @@ function serveVaultLink(
     return;
   }
 
-  const vaultId = sharedVaultKey(name);
-  if (!vaultId) {
-    jsonRes(res, 400, { error: "Invalid vault name" });
+  const sessionFile = resolveExistingSessionFile(
+    workingDir,
+    scope.conversationId,
+    scope.conversationId,
+  );
+  if (!sessionFile) {
+    jsonRes(res, 404, { error: "No session file found for this conversation" });
     return;
   }
 
   try {
-    const { token } = services.linkTokenStore.create(
-      "slack" as PlatformName,
-      "admin",
-      "admin-shared-vault",
-      vaultId,
-      "",
+    const { token: viewToken } = services.sessionViewTokenStore.create(
+      token.platform,
+      token.platformUserId,
+      scope.conversationId,
+      scope.conversationId,
+      sessionFile,
+      token.platformUserName,
     );
-    const linkUrl = `${services.portalBaseUrl}/link?token=${encodeURIComponent(token)}`;
-    jsonRes(res, 200, { ok: true, url: linkUrl });
+    const url = `${services.portalBaseUrl}/session?token=${encodeURIComponent(viewToken)}`;
+    jsonRes(res, 200, { ok: true, url });
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
   }
 }
 
-function serveStatus(res: ServerResponse, services?: AdminServices): void {
-  const linkUrl = readEnv("LINK_URL");
-  const adminTokenConfigured = !!readEnv("ADMIN_TOKEN");
-  const sharedVaultCount = services ? services.vaultManager.listSharedVaults().length : null;
+function serveConversationLoginLink(
+  res: ServerResponse,
+  body: Record<string, unknown>,
+  services: AdminServices,
+  token: AdminToken,
+): void {
+  const scope = resolveTargetConversation(body, token);
+  if (scope.error) {
+    jsonRes(res, 403, { error: scope.error });
+    return;
+  }
+  if (!services.portalBaseUrl) {
+    jsonRes(res, 503, { error: "Portal URL not configured." });
+    return;
+  }
+  if (!services.sandbox) {
+    jsonRes(res, 503, { error: "Sandbox config not available." });
+    return;
+  }
+  const sharedName = typeof body.sharedVault === "string" ? body.sharedVault.trim() : "";
+  let vaultId: string;
+  if (sharedName) {
+    const key = sharedVaultKey(sharedName);
+    if (!key) {
+      jsonRes(res, 400, { error: "Invalid shared vault name" });
+      return;
+    }
+    vaultId = key;
+  } else {
+    try {
+      vaultId = resolveActorVaultKey(services.sandbox, token.platformUserId, scope.conversationId);
+    } catch (err) {
+      jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+  }
+  try {
+    const { token: linkToken } = services.linkTokenStore.create(
+      token.platform,
+      token.platformUserId,
+      scope.conversationId,
+      vaultId,
+      "",
+    );
+    const url = `${services.portalBaseUrl}/link?token=${encodeURIComponent(linkToken)}`;
+    jsonRes(res, 200, { ok: true, url, vaultId });
+  } catch (err) {
+    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
+}
 
+function serveGlobalModelUpdate(res: ServerResponse, body: Record<string, unknown>): void {
+  const provider = typeof body.provider === "string" ? body.provider.trim() : "";
+  const model = typeof body.model === "string" ? body.model.trim() : "";
+  const thinkingLevel =
+    typeof body.thinkingLevel === "string" && VALID_THINKING_LEVELS.has(body.thinkingLevel)
+      ? (body.thinkingLevel as AgentConfig["thinkingLevel"])
+      : undefined;
+
+  if (!provider || !model) {
+    jsonRes(res, 400, { error: "Missing provider or model" });
+    return;
+  }
+
+  try {
+    saveAgentConfig({
+      provider,
+      model,
+      ...(thinkingLevel ? { thinkingLevel } : {}),
+    });
+    jsonRes(res, 200, { ok: true });
+  } catch (err) {
+    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+function serveGlobalSandboxUpdate(res: ServerResponse, body: Record<string, unknown>): void {
+  const cpus = typeof body.cpus === "string" ? body.cpus.trim() : "";
+  const memory = typeof body.memory === "string" ? body.memory.trim() : "";
+  const boostCpus = typeof body.boostCpus === "string" ? body.boostCpus.trim() : "";
+  const boostMemory = typeof body.boostMemory === "string" ? body.boostMemory.trim() : "";
+  const workspaceMount = body.workspaceMount;
+  const validMount = workspaceMount === "private" || workspaceMount === "full";
+
+  const update: Partial<AgentConfig> = {};
+  if (cpus) update.sandboxCpus = cpus;
+  if (memory) update.sandboxMemory = memory;
+  if (boostCpus) update.sandboxBoostCpus = boostCpus;
+  if (boostMemory) update.sandboxBoostMemory = boostMemory;
+  if (validMount) update.sandboxImageWorkspaceMount = workspaceMount as "private" | "full";
+
+  if (Object.keys(update).length === 0) {
+    jsonRes(res, 400, { error: "No valid sandbox fields provided" });
+    return;
+  }
+
+  try {
+    saveAgentConfig(update);
+    jsonRes(res, 200, { ok: true });
+  } catch (err) {
+    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+// ── Workspace ──────────────────────────────────────────────────────────────────
+
+const WORKSPACE_TREE_MAX_DEPTH = 4;
+const WORKSPACE_TREE_MAX_ENTRIES = 800;
+const WORKSPACE_FILE_MAX_BYTES = 256 * 1024;
+
+const WORKSPACE_TOP_FILES = new Set(["auto-reply", "auto-reply.disabled"]);
+const WORKSPACE_TOP_DIRS = new Set(["scratch"]);
+
+/**
+ * Limit what the admin UI can browse under a conversation directory.
+ * Allowed: top-level "scratch/" subtree, and the two auto-reply marker files.
+ */
+function isWorkspacePathAllowed(rel: string): boolean {
+  if (rel === "") return true;
+  const segments = rel.split("/").filter(Boolean);
+  if (segments.length === 0) return true;
+  const first = segments[0];
+  if (segments.length === 1) {
+    return WORKSPACE_TOP_DIRS.has(first) || WORKSPACE_TOP_FILES.has(first);
+  }
+  return WORKSPACE_TOP_DIRS.has(first);
+}
+
+function resolveConversationFromQuery(
+  url: URL,
+  token: AdminToken,
+): { conversationId: string; error?: string } {
+  const requested = (url.searchParams.get("conversationId") ?? "").trim();
+  if (!requested) return { conversationId: token.conversationId };
+  if (requested === token.conversationId) return { conversationId: requested };
+  if (requested.includes("/") || requested.includes("..")) {
+    return { conversationId: requested, error: "Invalid conversationId." };
+  }
+  return { conversationId: requested };
+}
+
+interface SafePathResult {
+  absolute: string;
+  error?: string;
+}
+
+function safeJoinUnderRoot(rootDir: string, relative: string): SafePathResult {
+  if (relative.startsWith("/") || relative.includes("\0")) {
+    return { absolute: "", error: "Invalid path" };
+  }
+  if (relative.split(/[\\/]+/).some((part) => part === ".." || part === "")) {
+    if (relative !== "") return { absolute: "", error: "Invalid path" };
+  }
+  const target = pathResolve(rootDir, relative);
+  const rootAbs = pathResolve(rootDir);
+  if (target !== rootAbs && !target.startsWith(rootAbs + pathSep)) {
+    return { absolute: "", error: "Path escapes conversation directory" };
+  }
+  return { absolute: target };
+}
+
+interface TreeNode {
+  name: string;
+  path: string;
+  type: "dir" | "file";
+  size?: number;
+  mtimeMs?: number;
+  children?: TreeNode[];
+  truncated?: boolean;
+}
+
+function buildTree(startDir: string, relPrefix: string): TreeNode | null {
+  let counter = { value: 0 };
+  const walk = (dir: string, rel: string, depth: number): TreeNode | null => {
+    if (counter.value >= WORKSPACE_TREE_MAX_ENTRIES) return null;
+    let stats;
+    try {
+      stats = statSync(dir);
+    } catch {
+      return null;
+    }
+    const name = rel === "" ? "." : (rel.split(/[\\/]/).pop() ?? rel);
+    if (!stats.isDirectory()) {
+      counter.value += 1;
+      return {
+        name,
+        path: rel,
+        type: "file",
+        size: stats.size,
+        mtimeMs: stats.mtimeMs,
+      };
+    }
+    counter.value += 1;
+    if (depth >= WORKSPACE_TREE_MAX_DEPTH) {
+      return { name, path: rel, type: "dir", truncated: true };
+    }
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return { name, path: rel, type: "dir" };
+    }
+    const children: TreeNode[] = [];
+    let truncated = false;
+    for (const entry of entries.toSorted((a, b) => {
+      if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    })) {
+      const childRel = rel === "" ? entry.name : `${rel}/${entry.name}`;
+      if (!isWorkspacePathAllowed(childRel)) continue;
+      if (counter.value >= WORKSPACE_TREE_MAX_ENTRIES) {
+        truncated = true;
+        break;
+      }
+      const node = walk(join(dir, entry.name), childRel, depth + 1);
+      if (node) children.push(node);
+    }
+    return {
+      name,
+      path: rel,
+      type: "dir",
+      children,
+      ...(truncated ? { truncated: true } : {}),
+    };
+  };
+  const node = walk(startDir, relPrefix, 0);
+  return node;
+}
+
+function serveWorkspaceTree(
+  res: ServerResponse,
+  url: URL,
+  services: AdminServices,
+  token: AdminToken,
+): void {
+  const scope = resolveConversationFromQuery(url, token);
+  if (scope.error) {
+    jsonRes(res, 403, { error: scope.error });
+    return;
+  }
+  const workingDir = requireAdminWorkingDir(res, services);
+  if (!workingDir) return;
+  const convDir = join(workingDir, scope.conversationId);
+  if (!existsSync(convDir)) {
+    jsonRes(res, 200, { conversationId: scope.conversationId, tree: null });
+    return;
+  }
+  const requestedSub = (url.searchParams.get("path") ?? "").trim();
+  if (!isWorkspacePathAllowed(requestedSub)) {
+    jsonRes(res, 403, { error: "Workspace path is not exposed" });
+    return;
+  }
+  const startSafe = safeJoinUnderRoot(convDir, requestedSub);
+  if (startSafe.error) {
+    jsonRes(res, 400, { error: startSafe.error });
+    return;
+  }
+  const tree = buildTree(startSafe.absolute, requestedSub);
   jsonRes(res, 200, {
-    linkUrl: linkUrl ?? null,
-    adminTokenConfigured,
-    vaultServiceAvailable: !!services?.vaultManager,
-    sharedVaultCount,
-    portalBaseUrl: services?.portalBaseUrl ?? null,
+    conversationId: scope.conversationId,
+    root: requestedSub || ".",
+    tree,
   });
+}
+
+const BINARY_PROBE_BYTES = 4096;
+
+function looksTextual(buf: Buffer): boolean {
+  const limit = Math.min(buf.length, BINARY_PROBE_BYTES);
+  for (let i = 0; i < limit; i++) {
+    const byte = buf[i];
+    if (byte === 0) return false;
+    if (byte < 9) return false;
+    if (byte === 11 || byte === 12) return false;
+    if (byte > 13 && byte < 32) return false;
+  }
+  return true;
+}
+
+function serveWorkspaceFile(
+  res: ServerResponse,
+  url: URL,
+  services: AdminServices,
+  token: AdminToken,
+): void {
+  const scope = resolveConversationFromQuery(url, token);
+  if (scope.error) {
+    jsonRes(res, 403, { error: scope.error });
+    return;
+  }
+  const workingDir = requireAdminWorkingDir(res, services);
+  if (!workingDir) return;
+  const requestedPath = (url.searchParams.get("path") ?? "").trim();
+  if (!requestedPath) {
+    jsonRes(res, 400, { error: "Missing path" });
+    return;
+  }
+  if (!isWorkspacePathAllowed(requestedPath)) {
+    jsonRes(res, 403, { error: "Workspace path is not exposed" });
+    return;
+  }
+  const convDir = join(workingDir, scope.conversationId);
+  const safe = safeJoinUnderRoot(convDir, requestedPath);
+  if (safe.error) {
+    jsonRes(res, 400, { error: safe.error });
+    return;
+  }
+  let stats;
+  try {
+    stats = statSync(safe.absolute);
+  } catch {
+    jsonRes(res, 404, { error: "File not found" });
+    return;
+  }
+  if (!stats.isFile()) {
+    jsonRes(res, 400, { error: "Not a file" });
+    return;
+  }
+  if (stats.size > WORKSPACE_FILE_MAX_BYTES) {
+    jsonRes(res, 413, {
+      error: "File too large to preview",
+      size: stats.size,
+      limit: WORKSPACE_FILE_MAX_BYTES,
+    });
+    return;
+  }
+  let buf: Buffer;
+  try {
+    buf = readFileSync(safe.absolute);
+  } catch (err) {
+    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    return;
+  }
+  if (!looksTextual(buf)) {
+    jsonRes(res, 200, {
+      path: requestedPath,
+      size: stats.size,
+      mtimeMs: stats.mtimeMs,
+      binary: true,
+      content: null,
+    });
+    return;
+  }
+  jsonRes(res, 200, {
+    path: requestedPath,
+    size: stats.size,
+    mtimeMs: stats.mtimeMs,
+    binary: false,
+    content: buf.toString("utf-8"),
+  });
+}
+
+// ── Skills ─────────────────────────────────────────────────────────────────────
+
+interface SkillEntry {
+  name: string;
+  description: string;
+  source: "global" | "conversation";
+  path: string;
+}
+
+function parseSkillFrontmatter(filePath: string): { name?: string; description?: string } {
+  let text: string;
+  try {
+    text = readFileSync(filePath, "utf-8");
+  } catch {
+    return {};
+  }
+  if (!text.startsWith("---")) return {};
+  const end = text.indexOf("\n---", 3);
+  if (end < 0) return {};
+  const block = text.slice(3, end);
+  const out: { name?: string; description?: string } = {};
+  for (const line of block.split("\n")) {
+    const colon = line.indexOf(":");
+    if (colon < 0) continue;
+    const key = line.slice(0, colon).trim().toLowerCase();
+    let value = line.slice(colon + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (key === "name") out.name = value;
+    if (key === "description") out.description = value;
+  }
+  return out;
+}
+
+function readSkillsFromDir(skillsDir: string, source: SkillEntry["source"]): SkillEntry[] {
+  if (!existsSync(skillsDir)) return [];
+  const out: SkillEntry[] = [];
+  let entries;
+  try {
+    entries = readdirSync(skillsDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+    const skillMd = join(skillsDir, entry.name, "SKILL.md");
+    if (!existsSync(skillMd)) continue;
+    const meta = parseSkillFrontmatter(skillMd);
+    out.push({
+      name: meta.name ?? entry.name,
+      description: meta.description ?? "",
+      source,
+      path: skillMd,
+    });
+  }
+  return out.toSorted((a, b) => a.name.localeCompare(b.name));
+}
+
+function serveSkillsList(
+  res: ServerResponse,
+  url: URL,
+  services: AdminServices,
+  token: AdminToken,
+): void {
+  const scope = resolveConversationFromQuery(url, token);
+  if (scope.error) {
+    jsonRes(res, 403, { error: scope.error });
+    return;
+  }
+  const workingDir = requireAdminWorkingDir(res, services);
+  if (!workingDir) return;
+  const global = readSkillsFromDir(join(workingDir, "skills"), "global");
+  const conversation = readSkillsFromDir(
+    join(workingDir, scope.conversationId, "skills"),
+    "conversation",
+  );
+  jsonRes(res, 200, {
+    conversationId: scope.conversationId,
+    skills: [...global, ...conversation],
+  });
+}
+
+// ── Events ─────────────────────────────────────────────────────────────────────
+
+const EVENTS_FILE_MAX_BYTES = 64 * 1024;
+
+interface EventSummary {
+  name: string;
+  size: number;
+  mtimeMs: number;
+  type: string | null;
+  platform: string | null;
+  conversationId: string | null;
+  text: string | null;
+  at: string | null;
+  schedule: string | null;
+  timezone: string | null;
+}
+
+function listAllEvents(workingDir: string): EventSummary[] {
+  const dir = join(workingDir, "events");
+  if (!existsSync(dir)) return [];
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((e) => e.isFile() && e.name.endsWith(".json"))
+    .map((e): EventSummary | null => {
+      const filePath = join(dir, e.name);
+      let stats;
+      try {
+        stats = statSync(filePath);
+      } catch {
+        return null;
+      }
+      let parsed: unknown = null;
+      try {
+        parsed = JSON.parse(readFileSync(filePath, "utf-8"));
+      } catch {
+        // Keep entry; just omit parsed fields.
+      }
+      const meta = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+      // events.ts accepts `channelId` as a legacy alias for `conversationId`.
+      const conversationId =
+        typeof meta.conversationId === "string"
+          ? meta.conversationId
+          : typeof meta.channelId === "string"
+            ? meta.channelId
+            : null;
+      return {
+        name: e.name,
+        size: stats.size,
+        mtimeMs: stats.mtimeMs,
+        type: typeof meta.type === "string" ? meta.type : null,
+        platform: typeof meta.platform === "string" ? meta.platform : null,
+        conversationId,
+        text: typeof meta.text === "string" ? meta.text : null,
+        at: typeof meta.at === "string" ? meta.at : null,
+        schedule: typeof meta.schedule === "string" ? meta.schedule : null,
+        timezone: typeof meta.timezone === "string" ? meta.timezone : null,
+      };
+    })
+    .filter((e): e is EventSummary => e !== null)
+    .toSorted((a, b) => a.name.localeCompare(b.name));
+}
+
+function serveEventsList(res: ServerResponse, services: AdminServices): void {
+  const workingDir = requireAdminWorkingDir(res, services);
+  if (!workingDir) return;
+  jsonRes(res, 200, { events: listAllEvents(workingDir) });
+}
+
+/** Per-conversation listing — filter all events by conversationId match. */
+function serveConversationEventsList(
+  res: ServerResponse,
+  url: URL,
+  services: AdminServices,
+  token: AdminToken,
+): void {
+  const scope = resolveConversationFromQuery(url, token);
+  if (scope.error) {
+    jsonRes(res, 403, { error: scope.error });
+    return;
+  }
+  const workingDir = requireAdminWorkingDir(res, services);
+  if (!workingDir) return;
+  const events = listAllEvents(workingDir).filter((e) => e.conversationId === scope.conversationId);
+  jsonRes(res, 200, { conversationId: scope.conversationId, events });
+}
+
+function serveEventsFile(res: ServerResponse, url: URL, services: AdminServices): void {
+  const workingDir = requireAdminWorkingDir(res, services);
+  if (!workingDir) return;
+  const name = (url.searchParams.get("name") ?? "").trim();
+  if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
+    jsonRes(res, 400, { error: "Invalid name" });
+    return;
+  }
+  const filePath = join(workingDir, "events", name);
+  let stats;
+  try {
+    stats = statSync(filePath);
+  } catch {
+    jsonRes(res, 404, { error: "Not found" });
+    return;
+  }
+  if (!stats.isFile()) {
+    jsonRes(res, 400, { error: "Not a file" });
+    return;
+  }
+  if (stats.size > EVENTS_FILE_MAX_BYTES) {
+    jsonRes(res, 413, { error: "File too large" });
+    return;
+  }
+  let raw: string;
+  try {
+    raw = readFileSync(filePath, "utf-8");
+  } catch (err) {
+    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    return;
+  }
+  jsonRes(res, 200, { name, content: raw });
+}
+
+/** Delete a single event file scoped to the caller's conversation. */
+function serveConversationEventDelete(
+  res: ServerResponse,
+  body: Record<string, unknown>,
+  services: AdminServices,
+  token: AdminToken,
+): void {
+  const scope = resolveTargetConversation(body, token);
+  if (scope.error) {
+    jsonRes(res, 403, { error: scope.error });
+    return;
+  }
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
+    jsonRes(res, 400, { error: "Invalid name" });
+    return;
+  }
+  const workingDir = requireAdminWorkingDir(res, services);
+  if (!workingDir) return;
+  const filePath = join(workingDir, "events", name);
+  let raw: string;
+  try {
+    raw = readFileSync(filePath, "utf-8");
+  } catch {
+    jsonRes(res, 404, { error: "Event not found" });
+    return;
+  }
+  let parsed: Record<string, unknown> = {};
+  try {
+    const j = JSON.parse(raw);
+    if (j && typeof j === "object") parsed = j as Record<string, unknown>;
+  } catch {
+    // Malformed events cannot be associated with a conversation below.
+  }
+  const eventConvId =
+    typeof parsed.conversationId === "string"
+      ? parsed.conversationId
+      : typeof parsed.channelId === "string"
+        ? parsed.channelId
+        : null;
+  if (eventConvId !== scope.conversationId) {
+    jsonRes(res, 403, { error: "Event does not belong to this conversation." });
+    return;
+  }
+  try {
+    rmSync(filePath, { force: true });
+    jsonRes(res, 200, { ok: true });
+  } catch (err) {
+    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
@@ -284,505 +1178,10 @@ function esc(s: string): string {
   );
 }
 
-// ── Data ───────────────────────────────────────────────────────────────────────
+// ── HTML ───────────────────────────────────────────────────────────────────────
 
-const COMMANDS: CommandDef[] = [
-  {
-    id: "login",
-    name: "/login",
-    aliases: ["login", "/login", "/pi-login"],
-    icon: "🔑",
-    description: "管理個人或共享憑證，把 API key 與 OAuth token 安全地存進 vault。",
-    note: "只能在與機器人的私訊 / DM 中使用，以保護你的憑證安全。Token 連結 15 分鐘後過期。",
-    usages: [
-      { cmd: "/login", desc: "開啟憑證設定頁面（API key 或 OAuth 模式）" },
-      { cmd: "/login shared list", desc: "列出所有共享登入 profile" },
-      { cmd: "/login shared create <name>", desc: "新建一個共享 profile" },
-      { cmd: "/login shared update <name>", desc: "更新既有的共享 profile" },
-      { cmd: "/login shared delete <name>", desc: "刪除共享 profile" },
-      { cmd: "/login copy <name>", desc: "把共享 profile 複製進這個 conversation 的 vault" },
-    ],
-    constraints: ["僅限私訊 / DM"],
-  },
-  {
-    id: "session",
-    name: "/session",
-    aliases: ["session", "/session", "/pi-session"],
-    icon: "📺",
-    description: "在瀏覽器裡查看目前對話的完整歷史紀錄，支援即時串流與互動回覆。",
-    note: "連結 24 小時後過期。頁面只顯示對話內容，回覆不會送回 Slack / Telegram。",
-    usages: [{ cmd: "/session", desc: "取得本 conversation 的 Session View 連結" }],
-    constraints: [
-      "僅限私訊 / DM（或 bot 支援私訊傳送的平台）",
-      "需設定 MIKAN_LINK_URL 或 MIKAN_LINK_PORT",
-    ],
-  },
-  {
-    id: "model",
-    name: "/model",
-    aliases: ["model", "/model", "/pi-model"],
-    icon: "🤖",
-    description: "查看或即時切換這個 conversation 使用的 AI 模型與 thinking level。",
-    note: "模型切換即時生效，不需重啟 sandbox。若有工作執行中，必須等完成或 /stop 後才能切換。",
-    usages: [
-      { cmd: "/model", desc: "顯示目前 conversation 使用的 provider/model 與 thinking level" },
-      {
-        cmd: "/model <provider>/<model>",
-        desc: "切換到指定模型，例如 /model anthropic/claude-sonnet-4-6",
-      },
-      {
-        cmd: "/model <provider>/<model>:<thinking>",
-        desc: "切換模型並設定 thinking level（off / minimal / low / medium / high / xhigh）",
-      },
-    ],
-  },
-  {
-    id: "new",
-    name: "/new",
-    aliases: ["new", "/new", "/pi-new"],
-    icon: "🆕",
-    description: "清除目前 conversation 的上下文，開始一個全新的對話。",
-    note: "此操作不可逆，清除後無法恢復舊的上下文。若需保留歷史，請先用 /session 備份。",
-    usages: [{ cmd: "/new", desc: "清空 context，讓下一則訊息從乾淨狀態開始" }],
-    constraints: ["僅限私訊 / DM"],
-  },
-  {
-    id: "sandbox",
-    name: "/sandbox",
-    aliases: ["/sandbox", "/pi-sandbox"],
-    icon: "📦",
-    description: "查看或設定 sandbox container 的資源限制與 workspace mount 模式。",
-    note: "boost 效果持續到 container 被關閉為止。workspace mode 在下次 provision 時生效。",
-    usages: [
-      { cmd: "/sandbox", desc: "顯示目前 sandbox 的 CPU/Memory 限制與 workspace mount 模式" },
-      { cmd: "/sandbox boost", desc: "暫時把這個 conversation 的 sandbox 提升到 boost 規格" },
-      {
-        cmd: "/sandbox private",
-        desc: "設為 private workspace mode：只掛載 private workspace 與 conversation 目錄",
-      },
-      {
-        cmd: "/sandbox full",
-        desc: "設為 full workspace mode：把整個 host workspace 掛到 /workspace",
-      },
-    ],
-    constraints: [
-      "僅支援 image:* managed sandbox",
-      "需在全域 settings.json 設定 sandbox.boost 才能 boost",
-    ],
-  },
-  {
-    id: "auto-reply",
-    name: "/auto-reply",
-    aliases: [
-      "auto-reply",
-      "autoreply",
-      "/auto-reply",
-      "/autoreply",
-      "/pi-auto-reply",
-      "/pi-autoreply",
-    ],
-    icon: "🔄",
-    description: "在 group / channel 裡啟用或停用機器人的自動回覆模式。",
-    note: "auto-reply 只能在 group/channel 設定，不能在私訊中使用。",
-    usages: [
-      { cmd: "/auto-reply", desc: "顯示目前 channel 的 auto-reply 狀態" },
-      { cmd: "/auto-reply status", desc: "同上，明確查詢狀態" },
-      { cmd: "/auto-reply on", desc: "啟用 auto-reply" },
-      { cmd: "/auto-reply off", desc: "停用 auto-reply" },
-    ],
-    constraints: ["僅限 group / channel（不能在私訊中使用）"],
-  },
-];
-
-const CREDENTIAL_PRESETS = [
-  {
-    id: "cloudflare_wrangler",
-    label: "Cloudflare / Wrangler",
-    cls: "cloudflare",
-    abbr: "" as const,
-    svgPath: true,
-    desc: "CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID",
-  },
-  {
-    id: "openai",
-    label: "OpenAI",
-    cls: "openai",
-    abbr: "OA" as const,
-    svgPath: false,
-    desc: "OPENAI_API_KEY",
-  },
-  {
-    id: "anthropic",
-    label: "Anthropic",
-    cls: "anthropic",
-    abbr: "AI" as const,
-    svgPath: false,
-    desc: "ANTHROPIC_API_KEY",
-  },
-  {
-    id: "gemini",
-    label: "Gemini",
-    cls: "gemini",
-    abbr: "G" as const,
-    svgPath: false,
-    desc: "GEMINI_API_KEY + GOOGLE_API_KEY",
-  },
-  {
-    id: "openrouter",
-    label: "OpenRouter",
-    cls: "openrouter",
-    abbr: "OR" as const,
-    svgPath: false,
-    desc: "OPENROUTER_API_KEY",
-  },
-  {
-    id: "github_pat",
-    label: "GitHub PAT",
-    cls: "github",
-    abbr: "GH" as const,
-    svgPath: false,
-    desc: "GH_TOKEN + GITHUB_TOKEN",
-  },
-  {
-    id: "vercel",
-    label: "Vercel",
-    cls: "vercel",
-    abbr: "V" as const,
-    svgPath: false,
-    desc: "VERCEL_TOKEN",
-  },
-  {
-    id: "sentry",
-    label: "Sentry",
-    cls: "sentry",
-    abbr: "S" as const,
-    svgPath: false,
-    desc: "SENTRY_AUTH_TOKEN",
-  },
-];
-
-const OAUTH_SERVICES = [
-  {
-    id: "github",
-    label: "GitHub OAuth",
-    desc: "GH_TOKEN + GITHUB_OAUTH_*",
-    cls: "github",
-    abbr: "GH" as const,
-  },
-  {
-    id: "google_workspace_cli",
-    label: "Google Workspace CLI",
-    desc: "Mounted → /root/.config/gws/credentials.json",
-    cls: "gws",
-    abbr: "GW" as const,
-  },
-  {
-    id: "google_cloud_sdk",
-    label: "Google Cloud SDK (gcloud)",
-    desc: "GOOGLE_APPLICATION_CREDENTIALS",
-    cls: "gcs",
-    abbr: "GC" as const,
-  },
-];
-
-// ── HTML renderers ─────────────────────────────────────────────────────────────
-
-function renderServiceLogo(id: string, cls: string, abbr: string): string {
-  if (id === "cloudflare_wrangler") {
-    return `<span class="service-logo ${cls}" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none">
-        <path d="M8.5 17.5h8.2a2.9 2.9 0 0 0 .4-5.78A4.45 4.45 0 0 0 8.9 10.4a3.7 3.7 0 0 0-.4 7.1Z" fill="white" fill-opacity="0.98"/>
-        <path d="M6.6 17.5h5.1a2.3 2.3 0 0 0 0-4.6 3.1 3.1 0 0 0-3-2.2 3.23 3.23 0 0 0-3.18 3.64A2.67 2.67 0 0 0 6.6 17.5Z" fill="white"/>
-      </svg>
-    </span>`;
-  }
-  return `<span class="service-logo ${cls}" aria-hidden="true"><span class="service-logo-text">${esc(abbr)}</span></span>`;
-}
-
-function renderCommandCard(cmd: CommandDef): string {
-  const aliasPills = cmd.aliases.map((a) => `<code class="alias-pill">${esc(a)}</code>`).join("");
-
-  const usageRows = cmd.usages
-    .map(
-      (u) => `<div class="usage-row">
-        <code class="usage-cmd">${esc(u.cmd)}</code>
-        <span class="usage-desc">${esc(u.desc)}</span>
-      </div>`,
-    )
-    .join("");
-
-  const noteHtml = cmd.note
-    ? `<div class="cmd-note"><span class="note-icon" aria-hidden="true">ⓘ</span>${esc(cmd.note)}</div>`
-    : "";
-
-  const constraintList = cmd.constraints
-    ? `<div class="cmd-constraints">
-        <span class="constraint-heading">制約條件</span>
-        <ul>${cmd.constraints.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>
-      </div>`
-    : "";
-
-  return `<div class="cmd-card" id="cmd-${esc(cmd.id)}">
-    <div class="cmd-header">
-      <span class="cmd-icon" aria-hidden="true">${cmd.icon}</span>
-      <div class="cmd-title-group">
-        <code class="cmd-name">${esc(cmd.name)}</code>
-        <div class="cmd-aliases">${aliasPills}</div>
-      </div>
-    </div>
-    <p class="cmd-desc">${esc(cmd.description)}</p>
-    ${noteHtml}
-    <div class="cmd-usages">
-      <div class="usage-heading">Usage</div>
-      ${usageRows}
-    </div>
-    ${constraintList}
-  </div>`;
-}
-
-function renderOverviewSection(): string {
-  return `<div class="tab-panel active" id="panel-overview">
-    <div class="overview-grid">
-      <div class="card overview-card">
-        <p class="eyebrow">Product</p>
-        <h2 class="card-title">${PRODUCT_NAME}</h2>
-        <p class="card-desc">多平台 AI coding agent，整合 Slack、Telegram、Discord。</p>
-      </div>
-
-      <div class="card overview-card">
-        <p class="eyebrow">Slash Commands</p>
-        <h2 class="card-title stat-number">${COMMANDS.length}</h2>
-        <div class="overview-cmd-list">
-          ${COMMANDS.map(
-            (c) =>
-              `<a class="overview-cmd-chip" href="#cmd-${esc(c.id)}" data-switch-tab="commands">
-            <span aria-hidden="true">${c.icon}</span> <code>${esc(c.name)}</code>
-          </a>`,
-          ).join("")}
-        </div>
-      </div>
-
-      <div class="card overview-card">
-        <p class="eyebrow">Credential Presets</p>
-        <h2 class="card-title stat-number">${CREDENTIAL_PRESETS.length}</h2>
-        <div class="preset-logo-row">
-          ${CREDENTIAL_PRESETS.map((p) => renderServiceLogo(p.id, p.cls, p.abbr)).join("")}
-        </div>
-      </div>
-
-      <div class="card overview-card">
-        <p class="eyebrow">OAuth Services</p>
-        <h2 class="card-title stat-number">${OAUTH_SERVICES.length}</h2>
-        <div class="overview-oauth-list">
-          ${OAUTH_SERVICES.map((s) => `<span class="oauth-chip">${esc(s.label)}</span>`).join("")}
-        </div>
-      </div>
-    </div>
-
-    <div class="card" id="status-card">
-      <p class="eyebrow">Server Status</p>
-      <h2 class="card-title">運行狀態</h2>
-      <div id="status-content"><div class="loading-msg">Loading…</div></div>
-    </div>
-
-    <div class="card quick-links-card">
-      <p class="eyebrow">Quick Links</p>
-      <h2 class="card-title">快速導覽</h2>
-      <div class="quicklink-grid">
-        <button class="quicklink-btn" data-switch-tab="vaults">
-          <span class="quicklink-icon">🗄️</span>
-          <span class="quicklink-label">Shared Vaults</span>
-          <span class="quicklink-sub">共享憑證管理</span>
-        </button>
-        <button class="quicklink-btn" data-switch-tab="commands">
-          <span class="quicklink-icon">⚡</span>
-          <span class="quicklink-label">Commands</span>
-          <span class="quicklink-sub">所有 slash commands</span>
-        </button>
-        <button class="quicklink-btn" data-switch-tab="login">
-          <span class="quicklink-icon">🔑</span>
-          <span class="quicklink-label">Login / Credentials</span>
-          <span class="quicklink-sub">憑證 presets 與 OAuth</span>
-        </button>
-        <button class="quicklink-btn" data-switch-tab="session">
-          <span class="quicklink-icon">📺</span>
-          <span class="quicklink-label">Session View</span>
-          <span class="quicklink-sub">Session 查看器說明</span>
-        </button>
-      </div>
-    </div>
-  </div>`;
-}
-
-function renderVaultsSection(): string {
-  return `<div class="tab-panel" id="panel-vaults">
-    <div class="card section-intro">
-      <div class="section-intro-header">
-        <div>
-          <p class="eyebrow">Shared Vaults</p>
-          <h2 class="card-title">共享 Vault 管理</h2>
-          <p class="card-desc">管理所有共享登入 profile：查看儲存的 env key 名稱、產生 15 分鐘登入連結、或刪除整個 vault。</p>
-        </div>
-        <button class="refresh-btn" id="vaults-refresh-btn" onclick="loadVaults()" title="Refresh">↻ Refresh</button>
-      </div>
-    </div>
-
-    <div class="card" id="vaults-card">
-      <div id="vaults-content"><div class="loading-msg">Loading vaults…</div></div>
-    </div>
-
-    <div class="card">
-      <p class="eyebrow">如何新增 Shared Vault</p>
-      <h3 class="card-subtitle">透過 Bot 指令建立</h3>
-      <p class="card-desc-sm" style="margin-bottom:10px">Shared Vault 需透過機器人私訊指令建立，管理員取得登入連結後分享給需要的用戶：</p>
-      <div class="code-block-list">
-        <div class="code-example"><code>/login shared create &lt;name&gt;</code><span>在 bot 私訊中建立共享 profile，取得登入連結</span></div>
-        <div class="code-example"><code>/login copy &lt;name&gt;</code><span>用戶在私訊中把共享 profile 複製到自己的 vault</span></div>
-      </div>
-      <p class="card-desc-sm" style="margin-top:10px">建立後，可在上方列表點擊 <strong>Generate Link</strong> 直接從後台產生新的登入連結。</p>
-    </div>
-  </div>`;
-}
-
-function renderCommandsSection(): string {
-  return `<div class="tab-panel" id="panel-commands">
-    <div class="card section-intro">
-      <p class="eyebrow">Commands</p>
-      <h2 class="card-title">Slash Commands 完整參考</h2>
-      <p class="card-desc">以下列出所有支援的 slash commands，包含別名、用法與限制條件。</p>
-    </div>
-    <div class="cmd-list">
-      ${COMMANDS.map(renderCommandCard).join("")}
-    </div>
-  </div>`;
-}
-
-function renderLoginSection(): string {
-  const presetCards = CREDENTIAL_PRESETS.map(
-    (p) => `<div class="preset-row">
-      ${renderServiceLogo(p.id, p.cls, p.abbr)}
-      <div class="preset-info">
-        <strong class="preset-label">${esc(p.label)}</strong>
-        <code class="preset-envkeys">${esc(p.desc)}</code>
-      </div>
-    </div>`,
-  ).join("");
-
-  const oauthCards = OAUTH_SERVICES.map(
-    (s) => `<div class="preset-row">
-      <div class="service-logo ${s.cls}" aria-hidden="true"><span class="service-logo-text">${esc(s.abbr)}</span></div>
-      <div class="preset-info">
-        <strong class="preset-label">${esc(s.label)}</strong>
-        <code class="preset-envkeys">${esc(s.desc)}</code>
-      </div>
-    </div>`,
-  ).join("");
-
-  return `<div class="tab-panel" id="panel-login">
-    <div class="card section-intro">
-      <p class="eyebrow">Login / Credentials</p>
-      <h2 class="card-title">憑證管理系統</h2>
-      <p class="card-desc">透過 <code>/login</code> 指令取得一次性連結，在安全的 Web UI 裡把 API keys 與 OAuth token 存入每個 conversation 的私有 vault。</p>
-    </div>
-
-    <div class="card">
-      <p class="eyebrow">使用流程</p>
-      <h3 class="card-subtitle">如何設定憑證</h3>
-      <ol class="flow-steps">
-        <li><span class="step-num">1</span><div><strong>私訊機器人</strong>，傳送 <code>/login</code></div></li>
-        <li><span class="step-num">2</span><div>機器人回傳一個 <strong>15 分鐘有效</strong>的連結</div></li>
-        <li><span class="step-num">3</span><div>點開連結，選擇 <strong>API key 模式</strong>或 <strong>OAuth 模式</strong></div></li>
-        <li><span class="step-num">4</span><div>填入憑證並送出，機器人會通知你儲存成功</div></li>
-      </ol>
-    </div>
-
-    <div class="two-col-grid">
-      <div class="card">
-        <p class="eyebrow">API Key Presets</p>
-        <h3 class="card-subtitle">內建憑證 Presets</h3>
-        <p class="card-desc-sm">下列 presets 有預設欄位，填入後自動寫入對應的環境變數：</p>
-        <div class="preset-list">
-          ${presetCards}
-          <div class="preset-row preset-manual">
-            <div class="service-logo manual" aria-hidden="true"><span class="service-logo-text">&gt;_</span></div>
-            <div class="preset-info">
-              <strong class="preset-label">Manual Entry</strong>
-              <code class="preset-envkeys">任意 KEY=VALUE</code>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <p class="eyebrow">OAuth Services</p>
-        <h3 class="card-subtitle">OAuth 整合服務</h3>
-        <p class="card-desc-sm">點選 OAuth 模式，選擇以下服務並授權，token 自動存入 vault：</p>
-        <div class="preset-list">${oauthCards}</div>
-        <p class="card-desc-sm" style="margin-top:14px">自訂 OAuth service 可透過環境變數 <code>OAUTH_SERVICES_JSON</code> 注入。</p>
-      </div>
-    </div>
-
-    <div class="card">
-      <p class="eyebrow">Shared Profiles</p>
-      <h3 class="card-subtitle">共享 Vault Profile</h3>
-      <p class="card-desc">建立共享 profile 讓多個 conversation 共用同一套憑證。管理員可在 <button class="inline-tab-btn" data-switch-tab="vaults">Vaults 頁面</button> 直接產生登入連結。</p>
-      <div class="code-block-list" style="margin-top:12px">
-        <div class="code-example"><code>/login shared create &lt;name&gt;</code><span>建立共享 profile</span></div>
-        <div class="code-example"><code>/login shared list</code><span>列出所有共享 profile</span></div>
-        <div class="code-example"><code>/login copy &lt;name&gt;</code><span>複製共享 profile 到本 conversation</span></div>
-        <div class="code-example"><code>/login shared delete &lt;name&gt;</code><span>刪除共享 profile</span></div>
-      </div>
-    </div>
-  </div>`;
-}
-
-function renderSessionSection(): string {
-  return `<div class="tab-panel" id="panel-session">
-    <div class="card section-intro">
-      <p class="eyebrow">Session View</p>
-      <h2 class="card-title">Session 查看器</h2>
-      <p class="card-desc">在瀏覽器中以時間軸方式瀏覽完整對話紀錄，支援即時串流與互動回覆。</p>
-    </div>
-
-    <div class="card">
-      <p class="eyebrow">使用流程</p>
-      <h3 class="card-subtitle">如何開啟 Session View</h3>
-      <ol class="flow-steps">
-        <li><span class="step-num">1</span><div>在私訊中傳送 <code>/session</code></div></li>
-        <li><span class="step-num">2</span><div>機器人回傳一個 <strong>24 小時有效</strong>的 Session View 連結</div></li>
-        <li><span class="step-num">3</span><div>點開連結即可在瀏覽器查看此 conversation 的完整歷史</div></li>
-        <li><span class="step-num">4</span><div>可在頁面底部的 composer 傳訊息，<strong>不會</strong>送回 Slack/Telegram</div></li>
-      </ol>
-    </div>
-
-    <div class="two-col-grid">
-      <div class="card">
-        <p class="eyebrow">頁面內容</p>
-        <h3 class="card-subtitle">Session View 顯示資訊</h3>
-        <ul class="feature-list">
-          <li><span class="feature-dot" aria-hidden="true"></span>User 訊息（含時間戳與使用者名稱）</li>
-          <li><span class="feature-dot" aria-hidden="true"></span>Assistant 回覆（含 Markdown 渲染）</li>
-          <li><span class="feature-dot" aria-hidden="true"></span>Tool 呼叫與結果（含 code output）</li>
-          <li><span class="feature-dot" aria-hidden="true"></span>System 事件（session 開始、結束等）</li>
-          <li><span class="feature-dot" aria-hidden="true"></span>執行狀態（Running / Idle）即時更新</li>
-          <li><span class="feature-dot" aria-hidden="true"></span>Fork / Thread 導航連結</li>
-        </ul>
-      </div>
-
-      <div class="card">
-        <p class="eyebrow">Config</p>
-        <h3 class="card-subtitle">必要環境變數</h3>
-        <div class="code-block-list">
-          <div class="code-example"><code>MIKAN_LINK_URL=https://your-host.example.com</code><span>設定外部 base URL（production）</span></div>
-          <div class="code-example"><code>MIKAN_LINK_PORT=8080</code><span>或指定 port，URL 從 request headers 推導</span></div>
-        </div>
-        <p class="card-desc-sm" style="margin-top:12px">若兩者都未設定，server 只綁 127.0.0.1，Session View 連結無法對外使用。</p>
-      </div>
-    </div>
-  </div>`;
-}
-
-function renderAdminPage(): string {
+function renderAdminPage(token: AdminToken): string {
+  const userLabel = token.platformUserName ?? token.platformUserId;
   return `<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -798,75 +1197,151 @@ function renderAdminPage(): string {
         <div class="hero-title-group">
           <span class="hero-wordmark">${PRODUCT_NAME}</span>
           <div class="hero-heading-row">
-            <h1 class="hero-title">Admin Dashboard</h1>
-            <span class="admin-badge">admin</span>
+            <h1 class="hero-title">Admin Portal</h1>
           </div>
-          <p class="hero-subtitle">統一後台管理頁面 — Shared Vaults / Slash Commands / Login / Session View</p>
+          <p class="hero-subtitle">
+            <span class="hero-user">${esc(token.platform)} · ${esc(userLabel)}</span>
+            <span class="hero-sep">•</span>
+            <span class="hero-conv">conversation: <code id="active-conv-label">${esc(token.conversationId)}</code></span>
+          </p>
         </div>
+      </div>
+      <div id="conv-switcher-bar" class="conv-switcher-bar" style="display:none">
+        <label for="conv-switcher">Target conversation</label>
+        <select id="conv-switcher"></select>
+        <span class="conv-switcher-hint">switch to operate on a different conversation</span>
       </div>
     </header>
 
     <nav class="tab-nav" role="tablist" aria-label="Admin sections">
-      <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="panel-overview" data-tab="overview">Overview</button>
-      <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-vaults" data-tab="vaults">Vaults</button>
-      <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-commands" data-tab="commands">Commands</button>
-      <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-login" data-tab="login">Login</button>
-      <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-session" data-tab="session">Session View</button>
+      <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="panel-conversation" data-tab="conversation">Conversation</button>
+      <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-global" data-tab="global">Global</button>
     </nav>
 
-    ${renderOverviewSection()}
-    ${renderVaultsSection()}
-    ${renderCommandsSection()}
-    ${renderLoginSection()}
-    ${renderSessionSection()}
+    <div class="tab-panel active" id="panel-conversation">
+      <section class="card sect" id="sect-settings" data-section="settings">
+        <header class="sect-head">
+          <div>
+            <p class="eyebrow">Settings</p>
+            <h2 class="card-title">模型 / Thinking / Auto-reply / Workspace mount</h2>
+          </div>
+          <button class="refresh-btn" onclick="loadSettings()">↻</button>
+        </header>
+        <div id="settings-content"><div class="loading-msg">Loading…</div></div>
+      </section>
+
+      <section class="card sect" id="sect-workspace" data-section="workspace">
+        <header class="sect-head">
+          <div>
+            <p class="eyebrow">Workspace</p>
+            <h2 class="card-title">檔案瀏覽 (只讀)</h2>
+          </div>
+          <button class="refresh-btn" onclick="loadWorkspace()">↻</button>
+        </header>
+        <div class="workspace-split">
+          <div id="workspace-tree" class="workspace-tree"><div class="loading-msg">Loading…</div></div>
+          <div id="workspace-preview" class="workspace-preview"><div class="placeholder-msg">Click a file to preview</div></div>
+        </div>
+      </section>
+
+      <section class="card sect" id="sect-skills" data-section="skills">
+        <header class="sect-head">
+          <div>
+            <p class="eyebrow">Skills</p>
+            <h2 class="card-title">可用的 skills</h2>
+          </div>
+          <button class="refresh-btn" onclick="loadSkills()">↻</button>
+        </header>
+        <div id="skills-content"><div class="loading-msg">Loading…</div></div>
+      </section>
+
+      <section class="card sect" id="sect-vault" data-section="vault">
+        <header class="sect-head">
+          <div>
+            <p class="eyebrow">Vault</p>
+            <h2 class="card-title">該對話的憑證</h2>
+          </div>
+          <button class="primary-action-btn" onclick="openLogin()">Open login form</button>
+        </header>
+        <div id="vault-link-result" class="link-result" style="display:none"></div>
+        <iframe id="login-frame" class="portal-frame" title="Login" style="display:none"></iframe>
+      </section>
+
+      <section class="card sect" id="sect-events" data-section="events">
+        <header class="sect-head">
+          <div>
+            <p class="eyebrow">Events</p>
+            <h2 class="card-title">關聯此對話的 events</h2>
+          </div>
+          <button class="refresh-btn" onclick="loadConversationEvents()">↻</button>
+        </header>
+        <div id="events-content"><div class="loading-msg">Loading…</div></div>
+      </section>
+
+      <section class="card sect" id="sect-session" data-section="session">
+        <header class="sect-head">
+          <div>
+            <p class="eyebrow">Session View</p>
+            <h2 class="card-title">對話歷史檢視</h2>
+          </div>
+          <button class="primary-action-btn" onclick="openSessionView()">Open session view</button>
+        </header>
+        <div id="session-link-result" class="link-result" style="display:none"></div>
+        <iframe id="session-frame" class="portal-frame" title="Session View" style="display:none"></iframe>
+      </section>
+    </div>
+
+    <div class="tab-panel" id="panel-global">
+      <section class="card sect">
+        <header class="sect-head">
+          <div>
+            <p class="eyebrow">All Conversations</p>
+            <h2 class="card-title">所有對話</h2>
+          </div>
+          <button class="refresh-btn" onclick="loadAllConversations()">↻</button>
+        </header>
+        <div id="all-conv-content"><div class="loading-msg">Loading…</div></div>
+      </section>
+
+      <section class="card sect">
+        <header class="sect-head">
+          <div>
+            <p class="eyebrow">Global Settings</p>
+            <h2 class="card-title">全域預設</h2>
+          </div>
+          <button class="refresh-btn" onclick="loadGlobalSettings()">↻</button>
+        </header>
+        <div id="global-settings-content"><div class="loading-msg">Loading…</div></div>
+      </section>
+
+      <section class="card sect">
+        <header class="sect-head">
+          <div>
+            <p class="eyebrow">Global Skills</p>
+            <h2 class="card-title">全域 skills</h2>
+          </div>
+          <button class="refresh-btn" onclick="loadGlobalSkills()">↻</button>
+        </header>
+        <div id="global-skills-content"><div class="loading-msg">Loading…</div></div>
+      </section>
+
+      <section class="card sect">
+        <header class="sect-head">
+          <div>
+            <p class="eyebrow">Global Events</p>
+            <h2 class="card-title">全域 events.json</h2>
+          </div>
+          <button class="refresh-btn" onclick="loadEvents()">↻</button>
+        </header>
+        <div id="global-events-content"><div class="loading-msg">Loading…</div></div>
+      </section>
+    </div>
   </main>
 
   <script>
-    const adminToken = new URLSearchParams(window.location.search).get('token') || '';
-
-    // ── Tab switching ────────────────────────────────────────────────────────────
-
-    const tabBtns = document.querySelectorAll('.tab-btn');
-    const tabPanels = document.querySelectorAll('.tab-panel');
-    const loadedTabs = new Set(['overview']);
-
-    function switchTab(tabId, opts) {
-      tabBtns.forEach((btn) => {
-        const isActive = btn.dataset.tab === tabId;
-        btn.classList.toggle('active', isActive);
-        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
-      });
-      tabPanels.forEach((panel) => {
-        panel.classList.toggle('active', panel.id === 'panel-' + tabId);
-      });
-      if (!opts || !opts.noScroll) window.scrollTo({ top: 0, behavior: 'smooth' });
-
-      // Lazy-load tab data on first visit
-      if (!loadedTabs.has(tabId)) {
-        loadedTabs.add(tabId);
-        if (tabId === 'vaults') loadVaults();
-      }
-    }
-
-    tabBtns.forEach((btn) => {
-      btn.addEventListener('click', () => switchTab(btn.dataset.tab));
-    });
-
-    document.addEventListener('click', (event) => {
-      const target = event.target instanceof Element ? event.target.closest('[data-switch-tab]') : null;
-      if (!(target instanceof HTMLElement)) return;
-      const tabId = target.dataset.switchTab;
-      if (!tabId) return;
-      switchTab(tabId);
-      const anchor = target instanceof HTMLAnchorElement ? target.getAttribute('href') : null;
-      if (anchor && anchor.startsWith('#')) {
-        event.preventDefault();
-        setTimeout(() => {
-          const el = document.querySelector(anchor);
-          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 60);
-      }
-    });
+    const adminToken = ${JSON.stringify(token.token)};
+    const defaultConversationId = ${JSON.stringify(token.conversationId)};
+    let activeConversationId = defaultConversationId;
 
     // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -875,223 +1350,517 @@ function renderAdminPage(): string {
         {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
       ));
     }
-
     function escAttr(str) {
       return String(str).replace(/["'&<>]/g, (c) => (
         {'"':'&quot;',"'":'&#39;','&':'&amp;','<':'&lt;','>':'&gt;'}[c]
       ));
     }
-
     async function copyToClipboard(text) {
+      try { await navigator.clipboard.writeText(text); } catch { prompt('Copy this link:', text); }
+    }
+    async function apiGet(path) {
+      const url = path + (path.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(adminToken);
+      const r = await fetch(url);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+      return data;
+    }
+    async function apiPost(path, body) {
+      const r = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: adminToken, ...body }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+      return data;
+    }
+
+    // ── Tab switching ────────────────────────────────────────────────────────────
+
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabPanels = document.querySelectorAll('.tab-panel');
+
+    function switchTab(tabId) {
+      tabBtns.forEach((btn) => {
+        const active = btn.dataset.tab === tabId;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      tabPanels.forEach((panel) => panel.classList.toggle('active', panel.id === 'panel-' + tabId));
+      if (tabId === 'global') initGlobal();
+    }
+    tabBtns.forEach((btn) => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+
+    // ── Conversation switcher ───────────────────────────────────────────────────
+
+    async function initConvSwitcher() {
+      const bar = document.getElementById('conv-switcher-bar');
+      const sel = document.getElementById('conv-switcher');
       try {
-        await navigator.clipboard.writeText(text);
-      } catch {
-        prompt('Copy this link:', text);
+        const data = await apiGet('/admin/api/conversations');
+        sel.innerHTML = data.conversations.map((c) => {
+          const label = c.conversationId + (c.running ? ' (running)' : '');
+          const selected = c.conversationId === defaultConversationId ? ' selected' : '';
+          return '<option value="' + escAttr(c.conversationId) + '"' + selected + '>' + escHtml(label) + '</option>';
+        }).join('');
+        bar.style.display = 'flex';
+        sel.addEventListener('change', () => setActiveConversation(sel.value));
+      } catch (err) {
+        console.error('Failed to load conversations', err);
       }
     }
 
-    // ── Server status ────────────────────────────────────────────────────────────
+    function setActiveConversation(id) {
+      activeConversationId = id;
+      const label = document.getElementById('active-conv-label');
+      if (label) label.textContent = id;
+      const sel = document.getElementById('conv-switcher');
+      if (sel && sel.value !== id) sel.value = id;
+      // Reset all conversation sections.
+      loadSettings();
+      loadWorkspace();
+      loadSkills();
+      loadConversationEvents();
+      openLogin(true);
+      openSessionView(true);
+    }
 
-    async function loadStatus() {
-      const container = document.getElementById('status-content');
-      if (!container) return;
+    // ── Settings ─────────────────────────────────────────────────────────────────
+
+    async function loadSettings() {
+      const container = document.getElementById('settings-content');
+      container.innerHTML = '<div class="loading-msg">Loading…</div>';
       try {
-        const r = await fetch('/admin/api/status?token=' + encodeURIComponent(adminToken));
-        const data = await r.json();
-        if (!r.ok) {
-          container.innerHTML = '<p class="err-msg">' + escHtml(data.error || 'Failed') + '</p>';
-          return;
-        }
-        container.innerHTML = renderStatusCards(data);
+        const data = await apiGet('/admin/api/conversation-state?conversationId=' + encodeURIComponent(activeConversationId));
+        container.innerHTML = renderSettings(data);
       } catch (err) {
-        container.innerHTML = '<p class="err-msg">Network error: ' + escHtml(err.message) + '</p>';
+        container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
       }
     }
 
-    function renderStatusCards(data) {
-      const items = [
-        {
-          label: 'Portal URL',
-          value: data.linkUrl || 'Not configured',
-          ok: !!data.linkUrl,
-          note: data.linkUrl ? null : 'Set MIKAN_LINK_URL to enable external links.',
-        },
-        {
-          label: 'Admin Token',
-          value: data.adminTokenConfigured ? 'Configured ✓' : 'Not set',
-          ok: data.adminTokenConfigured,
-        },
-        {
-          label: 'Vault Service',
-          value: data.vaultServiceAvailable ? 'Available ✓' : 'Not available',
-          ok: data.vaultServiceAvailable,
-        },
-        {
-          label: 'Shared Vaults',
-          value: data.sharedVaultCount !== null ? String(data.sharedVaultCount) : 'N/A',
-          ok: true,
-          action: data.sharedVaultCount > 0
-            ? \`<button class="status-action-btn" onclick="switchTab('vaults')">Manage →</button>\`
-            : null,
-        },
-      ];
-
-      return '<div class="status-grid">' + items.map((item) => \`
-        <div class="status-item \${item.ok ? 'status-ok' : 'status-warn'}">
-          <span class="status-label">\${escHtml(item.label)}</span>
-          <span class="status-value">\${escHtml(item.value)}</span>
-          \${item.note ? '<span class="status-note">' + escHtml(item.note) + '</span>' : ''}
-          \${item.action || ''}
-        </div>
-      \`).join('') + '</div>';
+    function renderSettings(data) {
+      const thinking = ['off','minimal','low','medium','high','xhigh'];
+      const thinkingOpts = thinking.map((t) =>
+        '<option value="' + t + '"' + (data.thinkingLevel === t ? ' selected' : '') + '>' + t + '</option>'
+      ).join('');
+      const mounts = ['private','full'];
+      const mountOpts = mounts.map((m) =>
+        '<option value="' + m + '"' + (data.sandboxImageWorkspaceMount === m ? ' selected' : '') + '>' + m + '</option>'
+      ).join('');
+      const rulesText = (data.autoReplyRules || []).join('\\n');
+      return [
+        '<div class="config-grid">',
+          '<div class="config-block">',
+            '<h3 class="card-subtitle">Model</h3>',
+            '<div class="config-row"><label>Provider</label><input id="m-provider" value="' + escAttr(data.provider || '') + '"></div>',
+            '<div class="config-row"><label>Model</label><input id="m-model" value="' + escAttr(data.model || '') + '"></div>',
+            '<div class="config-row"><label>Thinking</label><select id="m-thinking">' + thinkingOpts + '</select></div>',
+            '<button class="primary-action-btn" onclick="saveModel(this)">Save model</button>',
+            '<div id="model-save-result" class="inline-result" style="display:none"></div>',
+          '</div>',
+          '<div class="config-block">',
+            '<h3 class="card-subtitle">Auto-reply</h3>',
+            '<div class="config-row"><label>Enabled</label><label class="toggle"><input type="checkbox" id="a-enabled"' + (data.autoReplyEnabled ? ' checked' : '') + '> on</label></div>',
+            '<div class="config-row config-row-stack"><label>Rules</label><textarea id="a-rules" rows="5" placeholder="一行一條規則">' + escHtml(rulesText) + '</textarea></div>',
+            '<button class="primary-action-btn" onclick="saveAutoReply(this)">Save auto-reply</button>',
+            '<div id="auto-save-result" class="inline-result" style="display:none"></div>',
+          '</div>',
+          '<div class="config-block">',
+            '<h3 class="card-subtitle">Workspace mount</h3>',
+            '<div class="config-row"><label>Mode</label><select id="m-mount">' + mountOpts + '</select></div>',
+            '<button class="primary-action-btn" onclick="saveMount(this)">Save mount</button>',
+            '<div id="mount-save-result" class="inline-result" style="display:none"></div>',
+          '</div>',
+        '</div>',
+      ].join('');
     }
 
-    // ── Vault management ─────────────────────────────────────────────────────────
-
-    async function loadVaults() {
-      const container = document.getElementById('vaults-content');
-      const btn = document.getElementById('vaults-refresh-btn');
-      if (!container) return;
-      container.innerHTML = '<div class="loading-msg">Loading vaults…</div>';
-      if (btn) { btn.disabled = true; btn.textContent = '↻ Loading…'; }
-
+    async function saveModel(btn) {
+      const provider = document.getElementById('m-provider').value.trim();
+      const model = document.getElementById('m-model').value.trim();
+      const thinkingLevel = document.getElementById('m-thinking').value;
+      const result = document.getElementById('model-save-result');
+      if (!provider || !model) {
+        result.style.display = 'block'; result.className = 'inline-result err';
+        result.textContent = 'Provider and model are required';
+        return;
+      }
+      btn.disabled = true; btn.textContent = 'Saving…'; result.style.display = 'none';
       try {
-        const r = await fetch('/admin/api/vaults?token=' + encodeURIComponent(adminToken));
-        const data = await r.json();
-
-        if (!r.ok) {
-          container.innerHTML = '<div class="err-msg">' + escHtml(data.error || 'Failed to load vaults') + '</div>';
-          return;
-        }
-
-        if (data.vaults.length === 0) {
-          container.innerHTML = \`<div class="empty-state">
-            <p>目前沒有共享 Vault。</p>
-            <p>透過機器人私訊 <code>/login shared create &lt;name&gt;</code> 建立第一個。</p>
-          </div>\`;
-          return;
-        }
-
-        container.innerHTML = data.vaults.map(renderVaultRow).join('');
+        const data = await apiPost('/admin/api/conversations/model', {
+          conversationId: activeConversationId, provider, model, thinkingLevel,
+        });
+        result.style.display = 'block'; result.className = 'inline-result ok';
+        result.textContent = data.runtimeSwitched === false
+          ? 'Saved — running session pinned; new model applies on next start.'
+          : 'Saved ✓';
       } catch (err) {
-        container.innerHTML = '<div class="err-msg">Network error: ' + escHtml(err.message) + '</div>';
+        result.style.display = 'block'; result.className = 'inline-result err';
+        result.textContent = err.message;
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh'; }
+        btn.disabled = false; btn.textContent = 'Save model';
       }
     }
 
-    function renderVaultRow(vault) {
-      const keysHtml = vault.envKeys.length > 0
-        ? vault.envKeys.map((k) => '<code class="env-key-chip">' + escHtml(k) + '</code>').join('')
-        : '<span class="no-keys-msg">尚無 env key</span>';
+    async function saveAutoReply(btn) {
+      const enabled = document.getElementById('a-enabled').checked;
+      const rules = document.getElementById('a-rules').value.split('\\n').map((s) => s.trim()).filter(Boolean);
+      const result = document.getElementById('auto-save-result');
+      btn.disabled = true; btn.textContent = 'Saving…'; result.style.display = 'none';
+      try {
+        await apiPost('/admin/api/conversations/auto-reply', {
+          conversationId: activeConversationId, enabled, rules,
+        });
+        result.style.display = 'block'; result.className = 'inline-result ok'; result.textContent = 'Saved ✓';
+      } catch (err) {
+        result.style.display = 'block'; result.className = 'inline-result err'; result.textContent = err.message;
+      } finally {
+        btn.disabled = false; btn.textContent = 'Save auto-reply';
+      }
+    }
 
-      const mountHtml = vault.mountTargets.length > 0
-        ? '<div class="vault-mounts">' +
-          vault.mountTargets.map((t) => '<code class="mount-chip">' + escHtml(t) + '</code>').join('') +
-          '</div>'
+    async function saveMount(btn) {
+      const workspaceMount = document.getElementById('m-mount').value;
+      const result = document.getElementById('mount-save-result');
+      btn.disabled = true; btn.textContent = 'Saving…'; result.style.display = 'none';
+      try {
+        await apiPost('/admin/api/conversations/sandbox', {
+          conversationId: activeConversationId, workspaceMount,
+        });
+        result.style.display = 'block'; result.className = 'inline-result ok'; result.textContent = 'Saved ✓';
+      } catch (err) {
+        result.style.display = 'block'; result.className = 'inline-result err'; result.textContent = err.message;
+      } finally {
+        btn.disabled = false; btn.textContent = 'Save mount';
+      }
+    }
+
+    // ── Workspace ────────────────────────────────────────────────────────────────
+
+    async function loadWorkspace() {
+      const treeEl = document.getElementById('workspace-tree');
+      const previewEl = document.getElementById('workspace-preview');
+      treeEl.innerHTML = '<div class="loading-msg">Loading…</div>';
+      previewEl.innerHTML = '<div class="placeholder-msg">Click a file to preview</div>';
+      try {
+        const data = await apiGet('/admin/api/workspace/tree?conversationId=' + encodeURIComponent(activeConversationId));
+        if (!data.tree) {
+          treeEl.innerHTML = '<div class="empty-state">No files</div>';
+          return;
+        }
+        treeEl.innerHTML = '<ul class="tree-root">' + renderTreeChildren(data.tree) + '</ul>';
+      } catch (err) {
+        treeEl.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
+      }
+    }
+
+    function renderTreeChildren(node) {
+      if (node.type === 'file') {
+        return '<li><button class="tree-file" onclick="previewFile(\\'' + escAttr(node.path) + '\\')">' + escHtml(node.name) + '</button></li>';
+      }
+      if (!node.children || node.children.length === 0) {
+        return '<li><span class="tree-dir empty">' + escHtml(node.name || '.') + '/</span></li>';
+      }
+      const inner = node.children.map((c) =>
+        c.type === 'file'
+          ? '<li><button class="tree-file" onclick="previewFile(\\'' + escAttr(c.path) + '\\')">' + escHtml(c.name) + '</button></li>'
+          : '<li><details open><summary class="tree-dir">' + escHtml(c.name) + '/</summary><ul>' + renderTreeChildren(c) + '</ul></details></li>'
+      ).join('');
+      return inner;
+    }
+
+    async function previewFile(path) {
+      const previewEl = document.getElementById('workspace-preview');
+      previewEl.innerHTML = '<div class="loading-msg">Loading ' + escHtml(path) + '…</div>';
+      try {
+        const data = await apiGet('/admin/api/workspace/file?conversationId=' + encodeURIComponent(activeConversationId) + '&path=' + encodeURIComponent(path));
+        if (data.binary) {
+          previewEl.innerHTML = '<div class="preview-meta">' + escHtml(path) + ' · ' + data.size + ' bytes · binary</div><div class="placeholder-msg">Binary file — preview not available</div>';
+          return;
+        }
+        previewEl.innerHTML =
+          '<div class="preview-meta">' + escHtml(path) + ' · ' + data.size + ' bytes</div>' +
+          '<pre class="preview-body">' + escHtml(data.content || '') + '</pre>';
+      } catch (err) {
+        previewEl.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
+      }
+    }
+
+    // ── Skills ───────────────────────────────────────────────────────────────────
+
+    async function loadSkills() {
+      const container = document.getElementById('skills-content');
+      container.innerHTML = '<div class="loading-msg">Loading…</div>';
+      try {
+        const data = await apiGet('/admin/api/skills?conversationId=' + encodeURIComponent(activeConversationId));
+        if (data.skills.length === 0) {
+          container.innerHTML = '<div class="empty-state">No skills available</div>';
+          return;
+        }
+        container.innerHTML = '<div class="skills-list">' +
+          data.skills.map((s) =>
+            '<div class="skill-row">' +
+              '<div class="skill-name">' + escHtml(s.name) + '<span class="skill-source skill-source-' + s.source + '">' + s.source + '</span></div>' +
+              (s.description ? '<div class="skill-desc">' + escHtml(s.description) + '</div>' : '') +
+            '</div>'
+          ).join('') + '</div>';
+      } catch (err) {
+        container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
+      }
+    }
+
+    // ── Vault (Login link) ───────────────────────────────────────────────────────
+
+    async function openLogin(silent) {
+      const result = document.getElementById('vault-link-result');
+      const frame = document.getElementById('login-frame');
+      if (silent) { frame.removeAttribute('src'); frame.style.display = 'none'; result.style.display = 'none'; return; }
+      result.style.display = 'block'; result.className = 'link-result loading'; result.textContent = 'Generating link…';
+      try {
+        const data = await apiPost('/admin/api/conversations/login-link', { conversationId: activeConversationId });
+        result.className = 'link-result ok';
+        result.innerHTML =
+          '<span class="link-vault">vault: <code>' + escHtml(data.vaultId) + '</code></span>' +
+          '<a href="' + escAttr(data.url) + '" target="_blank" rel="noopener">' + escHtml(data.url) + '</a>' +
+          '<button class="copy-link-btn" onclick="copyToClipboard(' + JSON.stringify(data.url) + ')">Copy</button>';
+        frame.src = data.url; frame.style.display = 'block';
+      } catch (err) {
+        result.className = 'link-result err'; result.textContent = err.message;
+        frame.removeAttribute('src'); frame.style.display = 'none';
+      }
+    }
+
+    // ── Session View ─────────────────────────────────────────────────────────────
+
+    async function openSessionView(silent) {
+      const result = document.getElementById('session-link-result');
+      const frame = document.getElementById('session-frame');
+      if (silent) { frame.removeAttribute('src'); frame.style.display = 'none'; result.style.display = 'none'; return; }
+      result.style.display = 'block'; result.className = 'link-result loading'; result.textContent = 'Generating link…';
+      try {
+        const data = await apiPost('/admin/api/conversations/session-link', { conversationId: activeConversationId });
+        result.className = 'link-result ok';
+        result.innerHTML =
+          '<a href="' + escAttr(data.url) + '" target="_blank" rel="noopener">' + escHtml(data.url) + '</a>' +
+          '<button class="copy-link-btn" onclick="copyToClipboard(' + JSON.stringify(data.url) + ')">Copy</button>';
+        frame.src = data.url; frame.style.display = 'block';
+      } catch (err) {
+        result.className = 'link-result err'; result.textContent = err.message;
+        frame.removeAttribute('src'); frame.style.display = 'none';
+      }
+    }
+
+    // ── Events ───────────────────────────────────────────────────────────────────
+
+    async function loadConversationEvents() {
+      const container = document.getElementById('events-content');
+      if (!container) return;
+      container.innerHTML = '<div class="loading-msg">Loading…</div>';
+      try {
+        const data = await apiGet('/admin/api/conversations/events?conversationId=' + encodeURIComponent(activeConversationId));
+        if (data.events.length === 0) {
+          container.innerHTML = '<div class="empty-state">沒有關聯此對話的 event</div>';
+          return;
+        }
+        container.innerHTML = '<div class="events-list">' +
+          data.events.map((e) => renderEventRow(e, true)).join('') + '</div>';
+      } catch (err) {
+        container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
+      }
+    }
+
+    async function loadEvents() {
+      const container = document.getElementById('global-events-content');
+      if (!container) return;
+      container.innerHTML = '<div class="loading-msg">Loading…</div>';
+      try {
+        const data = await apiGet('/admin/api/events');
+        if (data.events.length === 0) {
+          container.innerHTML = '<div class="empty-state">No events scheduled</div>';
+          return;
+        }
+        container.innerHTML = '<div class="events-list">' +
+          data.events.map((e) => renderEventRow(e, false)).join('') + '</div>';
+      } catch (err) {
+        container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
+      }
+    }
+
+    function renderEventRow(e, allowDelete) {
+      const meta = [e.type, e.platform, e.conversationId, e.schedule || e.at]
+        .filter(Boolean).map(escHtml).join(' · ');
+      const preview = e.text ? '<div class="event-text">' + escHtml(e.text.length > 240 ? e.text.slice(0, 237) + '…' : e.text) + '</div>' : '';
+      const deleteBtn = allowDelete
+        ? '<button class="event-delete-btn" onclick="deleteEvent(\\'' + escAttr(e.name) + '\\', this)">Delete</button>'
         : '';
-
-      const id = escAttr(vault.name);
-
-      return \`<div class="vault-row" data-vault-name="\${id}">
-        <div class="vault-row-top">
-          <div class="vault-row-info">
-            <span class="vault-name">\${escHtml(vault.name)}</span>
-            <span class="vault-counts">
-              \${vault.envKeys.length} key\${vault.envKeys.length !== 1 ? 's' : ''}
-              \${vault.mountTargets.length ? ' · ' + vault.mountTargets.length + ' file' + (vault.mountTargets.length !== 1 ? 's' : '') : ''}
-            </span>
-          </div>
-          <div class="vault-row-actions">
-            <button class="vault-btn vault-btn-link" onclick="generateVaultLink('\${id}', this)">Generate Link</button>
-            <button class="vault-btn vault-btn-delete" onclick="deleteVault('\${id}', this)">Delete</button>
-          </div>
-        </div>
-        <div class="vault-env-keys">\${keysHtml}</div>
-        \${mountHtml}
-        <div class="vault-link-result" id="vault-link-\${id}" style="display:none"></div>
-        <div class="vault-action-feedback" id="vault-feedback-\${id}" style="display:none"></div>
-      </div>\`;
+      return '<div class="event-row">' +
+        '<div class="event-row-top">' +
+          '<div class="event-name"><code>' + escHtml(e.name) + '</code></div>' +
+          deleteBtn +
+        '</div>' +
+        '<div class="event-meta">' + meta + '</div>' +
+        preview +
+      '</div>';
     }
 
-    async function generateVaultLink(name, btn) {
-      const resultEl = document.getElementById('vault-link-' + name);
-      if (!resultEl) return;
-      btn.disabled = true;
-      btn.textContent = 'Generating…';
-
+    async function deleteEvent(name, btn) {
+      if (!confirm('Delete event "' + name + '"?')) return;
+      btn.disabled = true; btn.textContent = 'Deleting…';
       try {
-        const r = await fetch('/admin/api/vaults/link', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: adminToken, name }),
+        await apiPost('/admin/api/conversations/events/delete', {
+          conversationId: activeConversationId, name,
         });
-        const data = await r.json();
-
-        resultEl.style.display = 'block';
-        if (!r.ok || !data.ok) {
-          resultEl.className = 'vault-link-result err';
-          resultEl.textContent = data.error || 'Failed to generate link';
-          return;
-        }
-
-        const url = data.url;
-        resultEl.className = 'vault-link-result ok';
-        resultEl.innerHTML =
-          '<span class="link-label">Login link (15 min):</span>' +
-          '<a class="link-url" href="' + escHtml(url) + '" target="_blank" rel="noopener">' + escHtml(url) + '</a>' +
-          '<button class="copy-link-btn" onclick="copyToClipboard(' + JSON.stringify(url) + ')">Copy</button>';
+        await loadConversationEvents();
       } catch (err) {
-        resultEl.style.display = 'block';
-        resultEl.className = 'vault-link-result err';
-        resultEl.textContent = 'Network error: ' + err.message;
-      } finally {
-        btn.disabled = false;
-        btn.textContent = 'Generate Link';
+        btn.disabled = false; btn.textContent = 'Delete';
+        alert(err.message);
       }
     }
 
-    async function deleteVault(name, btn) {
-      if (!confirm('Delete shared vault "' + name + '"?\\nThis will permanently remove all stored credentials. This cannot be undone.')) return;
+    // ── Global section ──────────────────────────────────────────────────────────
 
-      btn.disabled = true;
-      btn.textContent = 'Deleting…';
+    let globalLoaded = false;
+    function initGlobal() {
+      if (globalLoaded) return;
+      globalLoaded = true;
+      loadAllConversations();
+      loadGlobalSettings();
+      loadGlobalSkills();
+      loadEvents();
+    }
 
+    async function loadAllConversations() {
+      const container = document.getElementById('all-conv-content');
+      container.innerHTML = '<div class="loading-msg">Loading…</div>';
       try {
-        const r = await fetch('/admin/api/vaults/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: adminToken, name }),
-        });
-        const data = await r.json();
-
-        if (!r.ok || !data.ok) {
-          btn.disabled = false;
-          btn.textContent = 'Delete';
-          alert(data.error || 'Failed to delete vault');
+        const data = await apiGet('/admin/api/conversations');
+        if (data.conversations.length === 0) {
+          container.innerHTML = '<div class="empty-state">No conversations found</div>';
           return;
         }
-
-        // Animate out and reload
-        const row = btn.closest('.vault-row');
-        if (row) {
-          row.style.opacity = '0';
-          row.style.transform = 'translateX(8px)';
-          row.style.transition = 'opacity 200ms, transform 200ms';
-          setTimeout(() => loadVaults(), 250);
-        } else {
-          await loadVaults();
-        }
+        container.innerHTML = '<div class="conv-list">' + data.conversations.map((c) => {
+          const last = c.lastActivityAt ? new Date(c.lastActivityAt).toLocaleString() : '—';
+          return '<button class="conv-row-btn" onclick="setActiveConversation(\\'' + escAttr(c.conversationId) + '\\'); switchTab(\\'conversation\\');">' +
+            '<span class="conv-id">' + escHtml(c.conversationId) + '</span>' +
+            (c.running ? '<span class="status-pill running">running</span>' : '') +
+            '<span class="conv-last">' + escHtml(last) + '</span>' +
+          '</button>';
+        }).join('') + '</div>';
       } catch (err) {
-        btn.disabled = false;
-        btn.textContent = 'Delete';
-        alert('Network error: ' + err.message);
+        container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
+      }
+    }
+
+    async function loadGlobalSettings() {
+      const container = document.getElementById('global-settings-content');
+      container.innerHTML = '<div class="loading-msg">Loading…</div>';
+      try {
+        const data = await apiGet('/admin/api/settings/global');
+        container.innerHTML = renderGlobalSettings(data);
+      } catch (err) {
+        container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
+      }
+    }
+
+    function renderGlobalSettings(data) {
+      const thinking = ['off','minimal','low','medium','high','xhigh'];
+      const thinkingOpts = thinking.map((t) =>
+        '<option value="' + t + '"' + (data.thinkingLevel === t ? ' selected' : '') + '>' + t + '</option>'
+      ).join('');
+      const mounts = ['private','full'];
+      const mountOpts = mounts.map((m) =>
+        '<option value="' + m + '"' + (data.sandboxImageWorkspaceMount === m ? ' selected' : '') + '>' + m + '</option>'
+      ).join('');
+      return [
+        '<div class="config-grid">',
+          '<div class="config-block">',
+            '<h3 class="card-subtitle">Default model</h3>',
+            '<div class="config-row"><label>Provider</label><input id="g-provider" value="' + escAttr(data.provider || '') + '"></div>',
+            '<div class="config-row"><label>Model</label><input id="g-model" value="' + escAttr(data.model || '') + '"></div>',
+            '<div class="config-row"><label>Thinking</label><select id="g-thinking">' + thinkingOpts + '</select></div>',
+            '<button class="primary-action-btn" onclick="saveGlobalModel(this)">Save model</button>',
+            '<div id="g-model-result" class="inline-result" style="display:none"></div>',
+          '</div>',
+          '<div class="config-block">',
+            '<h3 class="card-subtitle">Sandbox limits</h3>',
+            '<div class="config-row"><label>CPUs</label><input id="g-cpus" placeholder="0.5" value="' + escAttr(data.sandboxCpus || '') + '"></div>',
+            '<div class="config-row"><label>Memory</label><input id="g-mem" placeholder="1g" value="' + escAttr(data.sandboxMemory || '') + '"></div>',
+            '<div class="config-row"><label>Boost CPUs</label><input id="g-bcpus" placeholder="2" value="' + escAttr(data.sandboxBoostCpus || '') + '"></div>',
+            '<div class="config-row"><label>Boost Mem</label><input id="g-bmem" placeholder="4g" value="' + escAttr(data.sandboxBoostMemory || '') + '"></div>',
+            '<div class="config-row"><label>Mount</label><select id="g-mount">' + mountOpts + '</select></div>',
+            '<button class="primary-action-btn" onclick="saveGlobalSandbox(this)">Save sandbox</button>',
+            '<div id="g-sandbox-result" class="inline-result" style="display:none"></div>',
+          '</div>',
+        '</div>',
+      ].join('');
+    }
+
+    async function saveGlobalModel(btn) {
+      const provider = document.getElementById('g-provider').value.trim();
+      const model = document.getElementById('g-model').value.trim();
+      const thinkingLevel = document.getElementById('g-thinking').value;
+      const result = document.getElementById('g-model-result');
+      if (!provider || !model) {
+        result.style.display = 'block'; result.className = 'inline-result err';
+        result.textContent = 'Provider and model are required'; return;
+      }
+      btn.disabled = true; btn.textContent = 'Saving…'; result.style.display = 'none';
+      try {
+        await apiPost('/admin/api/settings/model', { provider, model, thinkingLevel });
+        result.style.display = 'block'; result.className = 'inline-result ok'; result.textContent = 'Saved ✓';
+      } catch (err) {
+        result.style.display = 'block'; result.className = 'inline-result err'; result.textContent = err.message;
+      } finally {
+        btn.disabled = false; btn.textContent = 'Save model';
+      }
+    }
+
+    async function saveGlobalSandbox(btn) {
+      const cpus = document.getElementById('g-cpus').value.trim();
+      const memory = document.getElementById('g-mem').value.trim();
+      const boostCpus = document.getElementById('g-bcpus').value.trim();
+      const boostMemory = document.getElementById('g-bmem').value.trim();
+      const workspaceMount = document.getElementById('g-mount').value;
+      const result = document.getElementById('g-sandbox-result');
+      btn.disabled = true; btn.textContent = 'Saving…'; result.style.display = 'none';
+      try {
+        await apiPost('/admin/api/settings/sandbox', { cpus, memory, boostCpus, boostMemory, workspaceMount });
+        result.style.display = 'block'; result.className = 'inline-result ok'; result.textContent = 'Saved ✓';
+      } catch (err) {
+        result.style.display = 'block'; result.className = 'inline-result err'; result.textContent = err.message;
+      } finally {
+        btn.disabled = false; btn.textContent = 'Save sandbox';
+      }
+    }
+
+    async function loadGlobalSkills() {
+      const container = document.getElementById('global-skills-content');
+      container.innerHTML = '<div class="loading-msg">Loading…</div>';
+      try {
+        // Reuse skills endpoint scoped to a conversation that doesn't have any of its own; the global half is what we want.
+        const data = await apiGet('/admin/api/skills?conversationId=' + encodeURIComponent(activeConversationId));
+        const globals = data.skills.filter((s) => s.source === 'global');
+        if (globals.length === 0) {
+          container.innerHTML = '<div class="empty-state">No global skills</div>';
+          return;
+        }
+        container.innerHTML = '<div class="skills-list">' + globals.map((s) =>
+          '<div class="skill-row"><div class="skill-name">' + escHtml(s.name) + '</div>' +
+          (s.description ? '<div class="skill-desc">' + escHtml(s.description) + '</div>' : '') + '</div>'
+        ).join('') + '</div>';
+      } catch (err) {
+        container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
       }
     }
 
     // ── Init ─────────────────────────────────────────────────────────────────────
 
-    loadStatus();
+    initConvSwitcher();
+    loadSettings();
+    loadWorkspace();
+    loadSkills();
+    loadConversationEvents();
   </script>
 </body>
 </html>`;
@@ -1137,22 +1906,9 @@ const adminStyles = `
     --ok-border: rgba(21, 128, 61, 0.16);
     --warn-bg: #fffbeb;
     --warn-text: #92400e;
-    --warn-border: rgba(217, 119, 6, 0.18);
     --err-bg: #fef2f2;
     --err-text: #b91c1c;
     --err-border: rgba(185, 28, 28, 0.14);
-
-    --service-cloudflare: linear-gradient(180deg, #ffb66d 0%, #f48120 100%);
-    --service-openai: linear-gradient(180deg, #3e4045 0%, #111315 100%);
-    --service-anthropic: linear-gradient(180deg, #d6b48c 0%, #9a6d3a 100%);
-    --service-gemini: linear-gradient(180deg, #8ab4ff 0%, #5b6cff 100%);
-    --service-openrouter: linear-gradient(180deg, #8c8cff 0%, #4f46e5 100%);
-    --service-github: linear-gradient(180deg, #4a4f57 0%, #1b1f23 100%);
-    --service-vercel: linear-gradient(180deg, #4a4f57 0%, #000 100%);
-    --service-sentry: linear-gradient(180deg, #7c5cff 0%, #3f2e8c 100%);
-    --service-manual: linear-gradient(180deg, #43474d 0%, #1c1e21 100%);
-    --service-gws: linear-gradient(180deg, #4285f4 0%, #1a56c4 100%);
-    --service-gcs: linear-gradient(180deg, #34a853 0%, #1a8334 100%);
   }
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1180,21 +1936,20 @@ const adminStyles = `
     gap: 14px;
   }
 
-  /* ── Hero ─────────────────────────────────────────────────────────────── */
-
   .hero-card {
-    padding: 28px 32px 24px;
+    padding: 24px 28px;
     border: 1px solid var(--border);
     border-radius: 20px;
     background: var(--surface);
     box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
   }
-
-  .hero-title-group { min-width: 0; }
 
   .hero-wordmark {
     display: block;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
     color: var(--subtle);
     font-size: 0.72rem;
     font-weight: 600;
@@ -1203,77 +1958,54 @@ const adminStyles = `
   }
 
   .hero-heading-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 6px;
-    flex-wrap: wrap;
+    display: flex; align-items: center; gap: 12px; margin-bottom: 6px; flex-wrap: wrap;
   }
 
   .hero-title {
     font-family: 'Lora', Georgia, serif;
-    font-size: clamp(1.4rem, 2.5vw, 1.75rem);
+    font-size: clamp(1.4rem, 2.5vw, 1.7rem);
     font-weight: 600;
     line-height: 1.2;
     letter-spacing: -0.01em;
   }
 
-  .admin-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 4px 10px;
-    border-radius: 999px;
-    background: #18181b;
-    color: #fafafa;
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    flex-shrink: 0;
+  .hero-subtitle { color: var(--muted); font-size: 0.88rem; display: flex; flex-wrap: wrap; gap: 6px; }
+  .hero-sep { color: var(--subtle); }
+  .hero-conv code { font-size: 0.78em; }
+
+  .conv-switcher-bar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding-top: 12px; border-top: 1px solid var(--border);
   }
-
-  .hero-subtitle { color: var(--muted); font-size: 0.9rem; }
-
-  /* ── Tab nav ──────────────────────────────────────────────────────────── */
+  .conv-switcher-bar label { font-size: 0.78rem; color: var(--muted); font-weight: 600; }
+  .conv-switcher-bar select {
+    flex: 1; min-width: 200px;
+    padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px;
+    background: #fff; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 0.82rem;
+  }
+  .conv-switcher-hint { font-size: 0.74rem; color: var(--subtle); }
 
   .tab-nav {
-    display: flex;
-    gap: 6px;
-    padding: 6px;
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    background: rgba(255,255,255,0.72);
-    backdrop-filter: blur(8px);
-    overflow-x: auto;
-    scrollbar-width: none;
+    display: flex; gap: 6px; padding: 6px;
+    border: 1px solid var(--border); border-radius: 16px;
+    background: rgba(255,255,255,0.72); backdrop-filter: blur(8px);
+    overflow-x: auto; scrollbar-width: none;
   }
-
   .tab-nav::-webkit-scrollbar { display: none; }
-
   .tab-btn {
-    flex: 1;
-    min-width: 80px;
-    padding: 10px 16px;
-    border: none;
-    border-radius: 10px;
-    background: transparent;
+    flex: 1; min-width: 80px; padding: 10px 16px;
+    border: none; border-radius: 10px; background: transparent;
     color: var(--muted);
     font: 500 0.88rem/1.2 'DM Sans', sans-serif;
-    cursor: pointer;
-    white-space: nowrap;
+    cursor: pointer; white-space: nowrap;
     transition: background 140ms, color 140ms;
   }
-
   .tab-btn:hover { background: rgba(0,0,0,0.04); color: var(--text); }
   .tab-btn.active { background: var(--text); color: #fafafa; font-weight: 600; }
   .tab-btn:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 
-  /* ── Tab panels ───────────────────────────────────────────────────────── */
-
   .tab-panel { display: none; flex-direction: column; gap: 14px; }
   .tab-panel.active { display: flex; }
-
-  /* ── Cards ────────────────────────────────────────────────────────────── */
 
   .card {
     padding: 24px 28px;
@@ -1284,656 +2016,242 @@ const adminStyles = `
   }
 
   .eyebrow {
-    color: var(--subtle);
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    margin-bottom: 6px;
+    color: var(--subtle); font-size: 0.72rem; font-weight: 600;
+    letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 6px;
   }
 
   .card-title {
     font-family: 'Lora', Georgia, serif;
     font-size: clamp(1.1rem, 2vw, 1.3rem);
-    font-weight: 600;
-    line-height: 1.25;
-    letter-spacing: -0.01em;
+    font-weight: 600; line-height: 1.25; letter-spacing: -0.01em;
     margin-bottom: 10px;
   }
 
   .card-subtitle { font-size: 1rem; font-weight: 650; margin-bottom: 10px; line-height: 1.3; }
-  .card-desc { color: var(--muted); font-size: 0.9rem; line-height: 1.55; }
-  .card-desc-sm { color: var(--muted); font-size: 0.84rem; line-height: 1.5; }
+  .card-desc { color: var(--muted); font-size: 0.9rem; line-height: 1.55; margin-bottom: 12px; }
 
   code {
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 0.82em;
-    padding: 0.14em 0.36em;
-    border-radius: 6px;
-    background: rgba(0,0,0,0.05);
-    color: var(--text);
+    font-size: 0.82em; padding: 0.14em 0.36em;
+    border-radius: 6px; background: rgba(0,0,0,0.05); color: var(--text);
   }
 
   button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 
-  /* ── Overview ─────────────────────────────────────────────────────────── */
-
-  .overview-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 14px;
-  }
-
-  .overview-card { padding: 20px 22px; }
-
-  .stat-number {
-    font-family: 'Lora', Georgia, serif;
-    font-size: 2.4rem;
-    font-weight: 600;
-    line-height: 1;
-    margin-bottom: 10px;
-  }
-
-  .overview-cmd-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
-
-  .overview-cmd-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 5px 10px;
-    border-radius: 999px;
-    border: 1px solid var(--border);
-    background: rgba(0,0,0,0.025);
-    color: var(--text);
-    text-decoration: none;
-    font-size: 0.78rem;
-    font-weight: 500;
-    transition: background 120ms;
+  .primary-action-btn {
+    padding: 9px 16px;
+    border: none; border-radius: 10px;
+    background: var(--text); color: #fff;
+    font: 500 0.86rem/1.2 'DM Sans', sans-serif;
     cursor: pointer;
+    transition: opacity 120ms;
   }
+  .primary-action-btn:hover:not(:disabled) { opacity: 0.85; }
+  .primary-action-btn:disabled { opacity: 0.5; cursor: wait; }
 
-  .overview-cmd-chip:hover { background: rgba(0,0,0,0.06); }
-  .overview-cmd-chip code { background: transparent; padding: 0; font-size: 0.78em; }
-
-  .preset-logo-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-
-  .overview-oauth-list { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
-
-  .oauth-chip {
-    display: inline-block;
-    padding: 4px 10px;
-    border-radius: 999px;
-    border: 1px solid var(--border);
-    background: rgba(0,0,0,0.025);
-    font-size: 0.8rem;
-    color: var(--muted);
-  }
-
-  /* ── Server status ────────────────────────────────────────────────────── */
-
-  .status-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 10px;
-    margin-top: 12px;
-  }
-
-  .status-item {
-    padding: 14px 16px;
-    border-radius: 14px;
-    border: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .status-ok { background: var(--ok-bg); border-color: var(--ok-border); }
-  .status-warn { background: var(--warn-bg); border-color: var(--warn-border); }
-
-  .status-label {
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--subtle);
-  }
-
-  .status-value {
-    font-size: 0.88rem;
-    font-weight: 600;
-    color: var(--text);
-    word-break: break-all;
-  }
-
-  .status-ok .status-value { color: var(--ok-text); }
-  .status-warn .status-value { color: var(--warn-text); }
-
-  .status-note { font-size: 0.76rem; color: var(--warn-text); line-height: 1.4; }
-
-  .status-action-btn {
-    margin-top: 4px;
-    padding: 4px 10px;
-    border: none;
-    border-radius: 999px;
-    background: var(--text);
-    color: #fff;
-    font: 500 0.76rem/1.2 'DM Sans', sans-serif;
-    cursor: pointer;
-    width: fit-content;
-    transition: opacity 140ms;
-  }
-
-  .status-action-btn:hover { opacity: 0.8; }
-
-  /* ── Quick links ──────────────────────────────────────────────────────── */
-
-  .quicklink-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 10px;
-    margin-top: 12px;
-  }
-
-  .quicklink-btn {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
-    padding: 16px 18px;
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    background: rgba(0,0,0,0.02);
-    cursor: pointer;
-    text-align: left;
-    transition: background 120ms, border-color 120ms, transform 120ms;
-  }
-
-  .quicklink-btn:hover {
-    background: rgba(0,0,0,0.045);
-    border-color: rgba(0,0,0,0.14);
-    transform: translateY(-1px);
-  }
-
-  .quicklink-icon { font-size: 1.4rem; }
-  .quicklink-label { font-weight: 650; font-size: 0.9rem; color: var(--text); }
-  .quicklink-sub { font-size: 0.78rem; color: var(--muted); }
-
-  /* ── Vaults section ───────────────────────────────────────────────────── */
-
-  .section-intro { margin-bottom: 2px; }
-
-  .section-intro-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 16px;
-  }
-
-  .refresh-btn {
-    flex-shrink: 0;
-    margin-top: 4px;
-    padding: 8px 14px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: rgba(0,0,0,0.025);
-    color: var(--muted);
-    font: 500 0.84rem/1.2 'DM Sans', sans-serif;
-    cursor: pointer;
-    transition: background 120ms, color 120ms;
-    white-space: nowrap;
-  }
-
-  .refresh-btn:hover { background: rgba(0,0,0,0.06); color: var(--text); }
-  .refresh-btn:disabled { opacity: 0.5; cursor: wait; }
-
-  .vault-row {
-    padding: 16px 0;
-    border-bottom: 1px solid rgba(0,0,0,0.06);
-    transition: opacity 200ms, transform 200ms;
-  }
-
-  .vault-row:last-child { border-bottom: none; padding-bottom: 0; }
-  .vault-row:first-child { padding-top: 0; }
-
-  .vault-row-top {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 8px;
-    flex-wrap: wrap;
-  }
-
-  .vault-row-info {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    align-items: baseline;
-    gap: 10px;
-    flex-wrap: wrap;
-  }
-
-  .vault-name {
-    font-weight: 650;
-    font-size: 0.98rem;
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    color: var(--text);
-    word-break: break-all;
-  }
-
-  .vault-counts { font-size: 0.78rem; color: var(--subtle); flex-shrink: 0; }
-
-  .vault-row-actions { display: flex; gap: 8px; flex-shrink: 0; }
-
-  .vault-btn {
-    padding: 7px 14px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    font: 500 0.82rem/1.2 'DM Sans', sans-serif;
-    cursor: pointer;
-    transition: background 120ms, border-color 120ms, opacity 120ms;
-    white-space: nowrap;
-  }
-
-  .vault-btn:disabled { opacity: 0.5; cursor: wait; }
-
-  .vault-btn-link {
-    background: var(--text);
-    color: #fff;
-    border-color: transparent;
-  }
-
-  .vault-btn-link:hover:not(:disabled) { background: #2d2d30; }
-
-  .vault-btn-delete {
-    background: rgba(0,0,0,0.03);
-    color: var(--err-text);
-    border-color: rgba(185, 28, 28, 0.18);
-  }
-
-  .vault-btn-delete:hover:not(:disabled) {
-    background: var(--err-bg);
-    border-color: rgba(185, 28, 28, 0.28);
-  }
-
-  .vault-env-keys {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-    min-height: 22px;
-  }
-
-  .env-key-chip {
-    font-size: 0.74rem;
-    padding: 3px 8px;
-    border-radius: 6px;
-    background: rgba(0,0,0,0.04);
-    border: 1px solid rgba(0,0,0,0.07);
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    color: var(--text);
-  }
-
-  .no-keys-msg { font-size: 0.8rem; color: var(--subtle); font-style: italic; }
-
-  .vault-mounts {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-    margin-top: 6px;
-  }
-
-  .mount-chip {
-    font-size: 0.72rem;
-    padding: 2px 8px;
-    border-radius: 6px;
-    background: rgba(59, 130, 246, 0.06);
-    border: 1px solid rgba(59, 130, 246, 0.14);
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    color: #1d4ed8;
-  }
-
-  .vault-link-result {
-    margin-top: 10px;
-    padding: 10px 14px;
-    border-radius: 10px;
+  .link-result {
+    margin-top: 12px; padding: 10px 14px; border-radius: 10px;
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
     font-size: 0.84rem;
   }
-
-  .vault-link-result.ok {
-    background: var(--ok-bg);
-    border: 1px solid var(--ok-border);
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .vault-link-result.err {
-    background: var(--err-bg);
-    border: 1px solid var(--err-border);
-    color: var(--err-text);
-  }
-
-  .link-label { color: var(--ok-text); font-weight: 600; flex-shrink: 0; }
-
-  .link-url {
+  .link-result.ok { background: var(--ok-bg); border: 1px solid var(--ok-border); }
+  .link-result.err { background: var(--err-bg); border: 1px solid var(--err-border); color: var(--err-text); }
+  .link-result.loading { background: rgba(0,0,0,0.025); border: 1px solid var(--border); color: var(--muted); }
+  .link-result a {
     color: var(--ok-text);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 0.78rem;
-    word-break: break-all;
-    flex: 1;
-    min-width: 0;
+    font-size: 0.78rem; word-break: break-all; flex: 1; min-width: 0;
   }
-
+  .link-vault { color: var(--muted); font-size: 0.78rem; flex-shrink: 0; }
   .copy-link-btn {
-    padding: 5px 12px;
-    border: 1px solid var(--ok-border);
-    border-radius: 7px;
-    background: rgba(255,255,255,0.7);
-    color: var(--ok-text);
+    padding: 5px 12px; border: 1px solid var(--ok-border); border-radius: 7px;
+    background: rgba(255,255,255,0.7); color: var(--ok-text);
     font: 500 0.78rem/1.2 'DM Sans', sans-serif;
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: background 120ms;
+    cursor: pointer; flex-shrink: 0;
   }
 
-  .copy-link-btn:hover { background: #fff; }
-
-  /* ── States ───────────────────────────────────────────────────────────── */
+  .portal-frame {
+    width: 100%; min-height: 720px;
+    border: 1px solid var(--border); border-radius: 14px; background: #fff;
+  }
 
   .loading-msg { color: var(--muted); font-size: 0.9rem; padding: 8px 0; }
-
-  .empty-state {
-    padding: 24px 0;
-    text-align: center;
-    color: var(--muted);
-    font-size: 0.9rem;
-    line-height: 1.7;
+  .err-msg {
+    padding: 12px 16px; border-radius: 10px;
+    background: var(--err-bg); color: var(--err-text);
+    border: 1px solid var(--err-border); font-size: 0.88rem;
+  }
+  .status-err-block {
+    padding: 12px 16px; border-radius: 10px;
+    background: var(--err-bg); color: var(--err-text);
+    border: 1px solid var(--err-border); font-size: 0.9rem;
   }
 
-  .empty-state code { background: rgba(0,0,0,0.05); }
+  .config-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+  }
+  .config-block { display: flex; flex-direction: column; gap: 10px; }
+  .config-row { display: grid; grid-template-columns: 110px 1fr; gap: 10px; align-items: center; }
+  .config-row.config-row-stack { grid-template-columns: 1fr; }
+  .config-row label { font-size: 0.82rem; color: var(--muted); }
+  .config-row input, .config-row select, .config-row textarea {
+    padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px;
+    font-family: inherit; font-size: 0.84rem; width: 100%;
+  }
+  .config-row textarea {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    resize: vertical;
+  }
+  .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 0.84rem; }
 
-  .err-msg {
-    padding: 12px 16px;
-    border-radius: 10px;
-    background: var(--err-bg);
-    color: var(--err-text);
-    border: 1px solid var(--err-border);
+  .inline-result {
+    padding: 8px 12px; border-radius: 8px; font-size: 0.82rem; margin-top: 4px;
+  }
+  .inline-result.ok { background: var(--ok-bg); color: var(--ok-text); border: 1px solid var(--ok-border); }
+  .inline-result.err { background: var(--err-bg); color: var(--err-text); border: 1px solid var(--err-border); }
+
+  /* ── Sections (Conversation page stack) ─────────────────────────────── */
+
+  .sect-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 12px; margin-bottom: 14px; flex-wrap: wrap;
+  }
+  .sect-head .card-title { margin-bottom: 0; }
+  .sect-disabled { opacity: 0.7; }
+
+  .refresh-btn {
+    flex-shrink: 0; padding: 6px 12px;
+    border: 1px solid var(--border); border-radius: 10px;
+    background: rgba(0,0,0,0.025); color: var(--muted);
+    font: 500 0.84rem/1.2 'DM Sans', sans-serif; cursor: pointer;
+  }
+  .refresh-btn:hover { background: rgba(0,0,0,0.06); color: var(--text); }
+
+  /* ── Workspace ──────────────────────────────────────────────────────── */
+
+  .workspace-split {
+    display: grid; grid-template-columns: 260px 1fr; gap: 14px;
+    min-height: 360px;
+  }
+  .workspace-tree {
+    border: 1px solid var(--border); border-radius: 12px; padding: 10px;
+    background: rgba(0,0,0,0.02); overflow: auto; max-height: 480px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.78rem;
+  }
+  .workspace-tree ul { list-style: none; padding-left: 12px; margin: 0; }
+  .workspace-tree .tree-root { padding-left: 0; }
+  .workspace-tree details { margin: 1px 0; }
+  .workspace-tree summary { cursor: pointer; padding: 2px 4px; border-radius: 4px; }
+  .workspace-tree summary:hover { background: rgba(0,0,0,0.05); }
+  .tree-dir { color: var(--text); font-weight: 600; }
+  .tree-dir.empty { color: var(--subtle); font-weight: 400; }
+  .tree-file {
+    display: block; width: 100%; text-align: left;
+    background: transparent; border: none; cursor: pointer;
+    padding: 2px 4px; border-radius: 4px;
+    font-family: inherit; font-size: inherit; color: var(--muted);
+  }
+  .tree-file:hover { background: rgba(0,0,0,0.05); color: var(--text); }
+
+  .workspace-preview {
+    border: 1px solid var(--border); border-radius: 12px;
+    background: #fff; padding: 12px; overflow: auto; max-height: 480px;
+  }
+  .preview-meta {
+    font-size: 0.74rem; color: var(--subtle);
+    margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .preview-body {
+    margin: 0; white-space: pre-wrap; word-break: break-word;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.78rem; color: var(--text);
+  }
+  .placeholder-msg { color: var(--subtle); font-size: 0.86rem; padding: 24px 8px; text-align: center; }
+
+  .empty-state {
+    padding: 18px 8px; text-align: center; color: var(--muted);
     font-size: 0.88rem;
   }
 
-  .status-err-block {
-    padding: 12px 16px;
-    border-radius: 10px;
-    background: var(--err-bg);
-    color: var(--err-text);
-    border: 1px solid var(--err-border);
-    font-size: 0.9rem;
+  /* ── Skills ─────────────────────────────────────────────────────────── */
+
+  .skills-list { display: flex; flex-direction: column; gap: 8px; }
+  .skill-row {
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+    background: rgba(0,0,0,0.02);
   }
-
-  /* ── Command cards ────────────────────────────────────────────────────── */
-
-  .cmd-list { display: flex; flex-direction: column; gap: 12px; }
-
-  .cmd-card {
-    padding: 22px 26px;
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    background: var(--surface);
-    box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06);
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+  .skill-name {
+    font-weight: 650; font-size: 0.9rem; color: var(--text);
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   }
+  .skill-source {
+    padding: 1px 8px; border-radius: 999px; font-size: 0.7rem;
+    font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  .skill-source-global { background: rgba(59,130,246,0.1); color: #1d4ed8; }
+  .skill-source-conversation { background: rgba(217,119,6,0.1); color: var(--accent); }
+  .skill-desc { color: var(--muted); font-size: 0.82rem; margin-top: 4px; line-height: 1.5; }
 
-  .cmd-header { display: flex; align-items: flex-start; gap: 14px; }
-  .cmd-icon { font-size: 1.4rem; flex-shrink: 0; margin-top: 2px; }
-  .cmd-title-group { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  /* ── Events ─────────────────────────────────────────────────────────── */
 
-  .cmd-name {
+  .events-list { display: flex; flex-direction: column; gap: 8px; }
+  .event-row {
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+    background: rgba(0,0,0,0.02);
+  }
+  .event-row-top {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px;
+  }
+  .event-name { min-width: 0; flex: 1; word-break: break-all; }
+  .event-name code { font-size: 0.82rem; background: transparent; padding: 0; }
+  .event-meta { font-size: 0.74rem; color: var(--muted); margin-top: 3px; }
+  .event-text {
+    font-size: 0.82rem; color: var(--text); margin-top: 6px;
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 1.1rem;
-    font-weight: 600;
-    background: transparent;
-    padding: 0;
-    color: var(--text);
+    white-space: pre-wrap; word-break: break-word;
   }
-
-  .cmd-aliases { display: flex; flex-wrap: wrap; gap: 5px; }
-
-  .alias-pill {
-    font-size: 0.74rem;
-    padding: 2px 8px;
-    border-radius: 999px;
-    background: rgba(0,0,0,0.04);
-    border: 1px solid rgba(0,0,0,0.06);
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    color: var(--muted);
+  .event-delete-btn {
+    flex-shrink: 0; padding: 4px 10px;
+    border-radius: 7px; border: 1px solid rgba(185, 28, 28, 0.18);
+    background: rgba(0,0,0,0.03); color: var(--err-text);
+    font: 500 0.76rem/1.2 'DM Sans', sans-serif; cursor: pointer;
   }
-
-  .cmd-desc { color: var(--muted); font-size: 0.9rem; line-height: 1.55; }
-
-  .cmd-note {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 10px 14px;
-    border-radius: 10px;
-    background: rgba(217, 119, 6, 0.07);
-    border: 1px solid rgba(217, 119, 6, 0.16);
-    color: #92400e;
-    font-size: 0.84rem;
-    line-height: 1.5;
+  .event-delete-btn:hover:not(:disabled) {
+    background: var(--err-bg); border-color: rgba(185, 28, 28, 0.28);
   }
+  .event-delete-btn:disabled { opacity: 0.5; cursor: wait; }
 
-  .note-icon { flex-shrink: 0; }
-  .cmd-usages { display: flex; flex-direction: column; gap: 2px; }
+  /* ── All Conversations list ─────────────────────────────────────────── */
 
-  .usage-heading {
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--subtle);
-    margin-bottom: 6px;
+  .conv-list { display: flex; flex-direction: column; gap: 6px; }
+  .conv-row-btn {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px;
+    background: rgba(0,0,0,0.02); cursor: pointer; text-align: left;
+    transition: background 120ms, border-color 120ms;
   }
+  .conv-row-btn:hover { background: rgba(0,0,0,0.05); border-color: rgba(0,0,0,0.14); }
+  .conv-id { flex: 1; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 0.84rem; }
+  .conv-last { color: var(--subtle); font-size: 0.78rem; }
 
-  .usage-row {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 12px 16px;
-    align-items: baseline;
-    padding: 8px 12px;
-    border-radius: 10px;
-    background: rgba(0,0,0,0.025);
-    border: 1px solid rgba(0,0,0,0.04);
+  .status-pill {
+    display: inline-flex; padding: 2px 9px; border-radius: 999px;
+    font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
   }
-
-  .usage-row + .usage-row { margin-top: 6px; }
-
-  .usage-cmd {
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 0.82rem;
-    font-weight: 500;
-    background: transparent;
-    padding: 0;
-    color: var(--text);
-    white-space: nowrap;
-  }
-
-  .usage-desc { color: var(--muted); font-size: 0.84rem; line-height: 1.45; }
-
-  .cmd-constraints {
-    padding: 10px 14px;
-    border-radius: 10px;
-    background: rgba(0,0,0,0.025);
-    border: 1px solid rgba(0,0,0,0.06);
-  }
-
-  .constraint-heading {
-    display: block;
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--subtle);
-    margin-bottom: 6px;
-  }
-
-  .cmd-constraints ul {
-    padding-left: 16px;
-    color: var(--muted);
-    font-size: 0.84rem;
-    line-height: 1.6;
-  }
-
-  /* ── Shared layout ────────────────────────────────────────────────────── */
-
-  .two-col-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-
-  .preset-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
-
-  .preset-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
-    border-radius: 12px;
-    background: rgba(0,0,0,0.025);
-    border: 1px solid rgba(0,0,0,0.06);
-  }
-
-  .preset-info { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .preset-label { font-size: 0.88rem; font-weight: 600; }
-
-  .preset-envkeys {
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 0.72rem;
-    background: transparent;
-    padding: 0;
-    color: var(--muted);
-  }
-
-  /* ── Service logos ────────────────────────────────────────────────────── */
-
-  .service-logo {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 34px;
-    height: 34px;
-    border-radius: 9px;
-    flex: 0 0 34px;
-    background: #1c1e21;
-    color: #fff;
-  }
-
-  .service-logo svg { display: block; width: 18px; height: 18px; }
-  .service-logo-text { font-size: 10px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
-
-  .service-logo.cloudflare { background: var(--service-cloudflare); }
-  .service-logo.openai { background: var(--service-openai); }
-  .service-logo.anthropic { background: var(--service-anthropic); }
-  .service-logo.gemini { background: var(--service-gemini); }
-  .service-logo.openrouter { background: var(--service-openrouter); }
-  .service-logo.github { background: var(--service-github); }
-  .service-logo.vercel { background: var(--service-vercel); }
-  .service-logo.sentry { background: var(--service-sentry); }
-  .service-logo.manual { background: var(--service-manual); }
-  .service-logo.gws { background: var(--service-gws); }
-  .service-logo.gcs { background: var(--service-gcs); }
-
-  /* ── Flow steps ───────────────────────────────────────────────────────── */
-
-  .flow-steps { list-style: none; display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
-
-  .flow-steps li { display: flex; align-items: flex-start; gap: 12px; font-size: 0.9rem; line-height: 1.5; }
-
-  .step-num {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    background: var(--text);
-    color: #fff;
-    font-size: 0.74rem;
-    font-weight: 700;
-    flex-shrink: 0;
-    margin-top: 1px;
-  }
-
-  /* ── Feature list ─────────────────────────────────────────────────────── */
-
-  .feature-list { list-style: none; display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-
-  .feature-list li { display: flex; align-items: flex-start; gap: 10px; font-size: 0.88rem; color: var(--muted); line-height: 1.5; }
-
-  .feature-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #22c55e;
-    flex-shrink: 0;
-    margin-top: 6px;
-  }
-
-  /* ── Code block list ──────────────────────────────────────────────────── */
-
-  .code-block-list { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
-
-  .code-example {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 12px 16px;
-    align-items: baseline;
-    padding: 9px 12px;
-    border-radius: 10px;
-    background: rgba(0,0,0,0.025);
-    border: 1px solid rgba(0,0,0,0.05);
-    font-size: 0.84rem;
-  }
-
-  .code-example span { color: var(--muted); }
-
-  /* ── Inline tab button ────────────────────────────────────────────────── */
-
-  .inline-tab-btn {
-    display: inline;
-    padding: 0;
-    border: none;
-    background: transparent;
-    color: var(--text);
-    font: inherit;
-    font-weight: 650;
-    text-decoration: underline;
-    text-underline-offset: 2px;
-    cursor: pointer;
-  }
-
-  /* ── Responsive ───────────────────────────────────────────────────────── */
+  .status-pill.running { background: var(--ok-bg); color: var(--ok-text); border: 1px solid var(--ok-border); }
 
   @media (max-width: 640px) {
     body { padding: 16px 12px 48px; }
     .shell { gap: 12px; }
     .hero-card, .card { padding: 18px; border-radius: 16px; }
-    .cmd-card { padding: 18px; border-radius: 16px; }
-    .two-col-grid { grid-template-columns: 1fr; }
-    .overview-grid { grid-template-columns: 1fr 1fr; }
     .tab-btn { padding: 9px 12px; font-size: 0.82rem; min-width: 60px; }
-    .usage-row { grid-template-columns: 1fr; gap: 4px; }
-    .code-example { grid-template-columns: 1fr; gap: 4px; }
-    .quicklink-grid { grid-template-columns: 1fr 1fr; }
-    .status-grid { grid-template-columns: 1fr 1fr; }
-    .section-intro-header { flex-direction: column; gap: 10px; }
-    .vault-row-top { flex-direction: column; align-items: flex-start; }
-    .vault-row-actions { width: 100%; }
-    .vault-btn { flex: 1; }
-  }
-
-  @media (max-width: 400px) {
-    .overview-grid { grid-template-columns: 1fr; }
-    .quicklink-grid { grid-template-columns: 1fr; }
-    .status-grid { grid-template-columns: 1fr; }
+    .config-grid { grid-template-columns: 1fr; }
+    .config-row { grid-template-columns: 1fr; gap: 4px; }
+    .portal-frame { min-height: 520px; }
+    .workspace-split { grid-template-columns: 1fr; }
+    .workspace-tree, .workspace-preview { max-height: 260px; }
   }
 `;

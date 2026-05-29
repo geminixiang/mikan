@@ -15,6 +15,7 @@ import { downloadChannel } from "./download.js";
 import { createEventsWatcher } from "./events.js";
 import * as log from "./log.js";
 import { startLinkServer } from "./login/portal.js";
+import { InMemoryAdminTokenStore } from "./admin/store.js";
 import { InMemoryLinkTokenStore } from "./login/session.js";
 import { InMemorySessionViewTokenStore } from "./session-view/store.js";
 import { DockerContainerManager } from "./provisioner.js";
@@ -299,8 +300,10 @@ if (sandbox.type === "image") {
 
 const linkTokenStore = new InMemoryLinkTokenStore();
 const sessionViewTokenStore = new InMemorySessionViewTokenStore();
+const adminTokenStore = new InMemoryAdminTokenStore();
 setInterval(() => linkTokenStore.purge(), 5 * 60 * 1000).unref();
 setInterval(() => sessionViewTokenStore.purge(), 5 * 60 * 1000).unref();
+setInterval(() => adminTokenStore.purge(), 5 * 60 * 1000).unref();
 
 function portalBaseUrl(): string | undefined {
   if (LINK_URL) return LINK_URL.replace(/\/+$/, "");
@@ -322,6 +325,7 @@ const handler = createSessionRuntime({
   provisioner,
   linkTokenStore,
   sessionViewTokenStore,
+  adminTokenStore,
   portalBaseUrl: portalBaseUrl(),
 });
 
@@ -395,6 +399,7 @@ if (LINK_PORT) {
     },
     sessionViewTokenStore,
     { handler, botsByPlatform },
+    { adminTokenStore, workingDir, runtime: handler, sandbox },
   );
 }
 

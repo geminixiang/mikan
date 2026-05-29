@@ -53,6 +53,11 @@
         "command": "/pi-auto-reply",
         "description": "on | off | status",
         "should_escape": false
+      },
+      {
+        "command": "/pi-admin",
+        "description": "open admin portal",
+        "should_escape": false
       }
     ]
   },

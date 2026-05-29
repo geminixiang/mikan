@@ -45,6 +45,9 @@ function makeCommandServices(workingDir: string): CommandServices {
     sessionViewTokenStore: {
       create: () => ({ token: "tok-session" }),
     },
+    adminTokenStore: {
+      create: () => ({ token: "tok-admin" }),
+    },
   };
 }
 

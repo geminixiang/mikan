@@ -1,8 +1,9 @@
 import { createHash, randomBytes } from "crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "http";
-import { handleAdminRequest } from "../admin/portal.js";
+import { handleAdminRequest, type AdminRuntimeBridge } from "../admin/portal.js";
+import type { InMemoryAdminTokenStore } from "../admin/store.js";
+import type { SandboxConfig } from "../sandbox/index.js";
 import { resolveLinkBaseUrl } from "../config.js";
-import { readEnv } from "../env.js";
 import {
   handleSessionViewRequest,
   type SessionViewInteractiveOptions,
@@ -257,6 +258,12 @@ export function startLinkServer(
   notify: NotifyFn,
   sessionViewTokenStore?: InMemorySessionViewTokenStore,
   sessionViewInteractive?: SessionViewInteractiveOptions,
+  adminOptions?: {
+    adminTokenStore: InMemoryAdminTokenStore;
+    workingDir?: string;
+    runtime?: AdminRuntimeBridge;
+    sandbox?: SandboxConfig;
+  },
 ): Server {
   const oauthStates = new Map<string, PendingOAuthState>();
 
@@ -271,10 +278,16 @@ export function startLinkServer(
       }
 
       if (
-        handleAdminRequest(req, res, url, readEnv("ADMIN_TOKEN"), {
+        adminOptions?.adminTokenStore &&
+        handleAdminRequest(req, res, url, {
           vaultManager,
           linkTokenStore,
+          sessionViewTokenStore,
+          adminTokenStore: adminOptions.adminTokenStore,
           portalBaseUrl: resolveLinkBaseUrl() ?? undefined,
+          workingDir: adminOptions.workingDir,
+          runtime: adminOptions.runtime,
+          sandbox: adminOptions.sandbox,
         })
       ) {
         return;

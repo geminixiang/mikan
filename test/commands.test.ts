@@ -151,6 +151,7 @@ function buildContext(args: BuildContextArgs): CommandContext & {
     vaultManager: fakeVaultManager(),
     linkTokenStore: fakeLinkTokenStore(),
     sessionViewTokenStore: fakeSessionViewTokenStore(),
+    adminTokenStore: { create: () => ({ token: "tok-admin" }) },
     portalBaseUrl: "https://portal.example",
     ...args.services,
   };
