@@ -20,6 +20,13 @@ export async function replyDiagnosticWithContext(
   await responseCtx.respondDiagnostic(text, options);
 }
 
+export function formatCommandSummary(title: string, lines: string[]): string {
+  const nonEmpty = lines.filter((line) => line.trim().length > 0);
+  const compactLines =
+    nonEmpty.length <= 2 ? nonEmpty : [nonEmpty[0], nonEmpty.slice(1).join(" · ")];
+  return [`_${title}_`, ...compactLines].join("\n");
+}
+
 export function isPrivateConversation(event: BotEvent): boolean {
   return (
     event.conversationKind === "direct" || event.type === "dm" || event.type === "private_command"

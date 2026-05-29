@@ -3,7 +3,7 @@ import { parseLoginCommand } from "../login/index.js";
 import { resolveActorVaultKey } from "../vault-routing.js";
 import { sharedVaultKey } from "../vault.js";
 import type { CommandContext, CommandHandler } from "./types.js";
-import { replyWithContext } from "./utils.js";
+import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 
 function ensureLoginVault(context: CommandContext): string {
   const { services, platformUserId, conversationId, vaultConversationId } = context;
@@ -12,6 +12,12 @@ function ensureLoginVault(context: CommandContext): string {
     platformUserId,
     vaultConversationId ?? conversationId,
   );
+}
+
+async function replyVault(context: CommandContext, lines: string[]): Promise<void> {
+  await replyDiagnosticWithContext(context.responseCtx, formatCommandSummary("Vault", lines), {
+    style: "muted",
+  });
 }
 
 async function refreshCopiedVaultRuntime(
@@ -40,20 +46,20 @@ export class LoginCommandHandler implements CommandHandler {
     if (!parsed) return false;
 
     if (!context.privateConversation) {
-      await replyWithContext(
-        context.responseCtx,
-        "為了保護你的憑證，`/login` 只能在與機器人的私訊中使用。請先私訊機器人，再重新執行 `/login`。",
-      );
+      await replyVault(context, [
+        "為了保護你的憑證，`/login` 只能在與機器人的私訊中使用。",
+        "請先私訊機器人，再重新執行 `/login`。",
+      ]);
       return true;
     }
 
     if (parsed.action === "shared_list") {
       const profiles = context.services.vaultManager.listSharedVaults();
-      await replyWithContext(
-        context.responseCtx,
+      await replyVault(
+        context,
         profiles.length > 0
-          ? `Shared login profiles:\n${profiles.map((name) => `- ${name}`).join("\n")}`
-          : "No shared login profiles found.",
+          ? ["Shared login profiles:", ...profiles.map((name) => `- ${name}`)]
+          : ["No shared login profiles found."],
       );
       return true;
     }
@@ -61,17 +67,13 @@ export class LoginCommandHandler implements CommandHandler {
     if (parsed.action === "shared_delete") {
       try {
         const deleted = context.services.vaultManager.deleteSharedVault(parsed.name);
-        await replyWithContext(
-          context.responseCtx,
+        await replyVault(context, [
           deleted
             ? `Deleted shared login profile \`${parsed.name}\`.`
             : `Shared login profile \`${parsed.name}\` does not exist.`,
-        );
+        ]);
       } catch (error) {
-        await replyWithContext(
-          context.responseCtx,
-          error instanceof Error ? error.message : String(error),
-        );
+        await replyVault(context, [error instanceof Error ? error.message : String(error)]);
       }
       return true;
     }
@@ -81,24 +83,23 @@ export class LoginCommandHandler implements CommandHandler {
         const vaultId = ensureLoginVault(context);
         const result = context.services.vaultManager.copySharedVaultTo(parsed.name, vaultId);
         const refreshNote = await refreshCopiedVaultRuntime(context, vaultId);
-        await replyWithContext(
-          context.responseCtx,
-          `Copied shared login profile \`${parsed.name}\` into this conversation. Shared values overwrite matching conversation values; conversation-only values are kept. (${result.envKeysCopied} env key(s), ${result.filesCopied} file(s))${refreshNote ? ` ${refreshNote}` : ""}`,
-        );
+        await replyVault(context, [
+          `Copied shared login profile \`${parsed.name}\` into this conversation.`,
+          "Shared values overwrite matching conversation values; conversation-only values are kept.",
+          `Copied: ${result.envKeysCopied} env key(s), ${result.filesCopied} file(s).`,
+          ...(refreshNote ? [refreshNote] : []),
+        ]);
       } catch (error) {
-        await replyWithContext(
-          context.responseCtx,
-          error instanceof Error ? error.message : String(error),
-        );
+        await replyVault(context, [error instanceof Error ? error.message : String(error)]);
       }
       return true;
     }
 
     if (!context.services.portalBaseUrl) {
-      await replyWithContext(
-        context.responseCtx,
-        "Login is not configured. Set `MIKAN_LINK_URL` or `MIKAN_LINK_PORT` on the server.",
-      );
+      await replyVault(context, [
+        "Login is not configured.",
+        "Set `MIKAN_LINK_URL` or `MIKAN_LINK_PORT` on the server.",
+      ]);
       return true;
     }
 
@@ -116,10 +117,10 @@ export class LoginCommandHandler implements CommandHandler {
         `[${context.conversationId}] Failed to prepare login vault for ${context.platform}/${context.platformUserId}`,
         error instanceof Error ? error.message : String(error),
       );
-      await replyWithContext(
-        context.responseCtx,
-        "Login setup failed on the server. 請稍後重試，或聯絡管理員檢查 vault 儲存權限。",
-      );
+      await replyVault(context, [
+        "Login setup failed on the server.",
+        "請稍後重試，或聯絡管理員檢查 vault 儲存權限。",
+      ]);
       return true;
     }
 
@@ -135,10 +136,10 @@ export class LoginCommandHandler implements CommandHandler {
       : context.services.sandbox.type === "container"
         ? `container vault (${vaultId})`
         : "your vault";
-    await replyWithContext(
-      context.responseCtx,
-      `Open this link to store credentials in ${vaultLabel} (expires in 15 minutes):\n${context.services.portalBaseUrl}/link?token=${token.token}`,
-    );
+    await replyVault(context, [
+      `${context.services.portalBaseUrl}/link?token=${token.token}`,
+      `Target: ${vaultLabel} · Expires: 15 minutes`,
+    ]);
     return true;
   }
 }

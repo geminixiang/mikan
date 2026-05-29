@@ -4,7 +4,7 @@ import { readConversationWorkspaceMountMode } from "../execution-resolver.js";
 import { resolveActorVaultKey } from "../vault-routing.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler } from "./types.js";
-import { replyDiagnosticWithContext } from "./utils.js";
+import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 
 export interface ParsedSandboxCommand {
   command: "/pi-sandbox" | "/sandbox";
@@ -25,7 +25,7 @@ export function parseSandboxCommand(text: string): ParsedSandboxCommand | null {
 }
 
 function formatSandboxCommandSummary(title: string, lines: string[]): string {
-  return [`_${title}_`, ...lines].join("\n");
+  return formatCommandSummary(title, lines);
 }
 
 export class SandboxCommandHandler implements CommandHandler {

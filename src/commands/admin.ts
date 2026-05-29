@@ -1,6 +1,6 @@
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler } from "./types.js";
-import { replyDiagnosticWithContext } from "./utils.js";
+import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 
 const ADMIN_COMMANDS = ["admin", "/admin", "/pi-admin"] as const;
 
@@ -42,7 +42,10 @@ export class AdminCommandHandler implements CommandHandler {
     if (!context.services.portalBaseUrl) {
       await sendAdminReply(
         context,
-        "Admin portal is not configured. Set `MIKAN_LINK_URL` or `MIKAN_LINK_PORT` on the server.",
+        formatCommandSummary("Admin", [
+          "Admin portal is not configured.",
+          "Set `MIKAN_LINK_URL` or `MIKAN_LINK_PORT` on the server.",
+        ]),
       );
       return true;
     }
@@ -60,7 +63,7 @@ export class AdminCommandHandler implements CommandHandler {
     });
 
     const url = `${context.services.portalBaseUrl}/admin?token=${token.token}`;
-    await sendAdminReply(context, `Open the admin portal (expires in 30 minutes):\n${url}`);
+    await sendAdminReply(context, formatCommandSummary("Admin", [url, "Expires: 30 minutes"]));
     return true;
   }
 }

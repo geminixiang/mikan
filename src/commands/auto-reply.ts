@@ -6,7 +6,7 @@ import {
 } from "../config.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler } from "./types.js";
-import { replyDiagnosticWithContext } from "./utils.js";
+import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 
 type AutoReplyAction = { type: "status" } | { type: "on" } | { type: "off" } | { type: "invalid" };
 
@@ -33,14 +33,15 @@ function parseAutoReplyCommand(text: string): AutoReplyAction | null {
 }
 
 function formatAutoReplyStatus(config: AutoReplyConfig): string {
-  const status = `_Auto-reply is ${config.enabled ? "enabled" : "disabled"} for this channel._`;
-  if (config.rules.length === 0) return status;
-
-  return `${status}\nCurrent rules:\n\`\`\`\n${config.rules.join("\n")}\n\`\`\``;
+  const lines = [`Auto-reply is ${config.enabled ? "enabled" : "disabled"} for this channel.`];
+  if (config.rules.length > 0) {
+    lines.push(`Current rules: ${config.rules.join("; ")}`);
+  }
+  return formatCommandSummary("Auto Reply", lines);
 }
 
 function formatAutoReplyUsage(): string {
-  return "_Usage: `/pi-auto-reply on|off|status`_";
+  return formatCommandSummary("Auto Reply", ["Usage: `/pi-auto-reply on|off|status`"]);
 }
 
 function applyAction(current: AutoReplyConfig, action: AutoReplyAction): AutoReplyConfig {
@@ -63,7 +64,7 @@ export class AutoReplyCommandHandler implements CommandHandler {
     if (context.privateConversation) {
       await replyDiagnosticWithContext(
         context.responseCtx,
-        "_Auto Reply_\n只能在 group/channel 裡設定。",
+        formatCommandSummary("Auto Reply", ["只能在 group/channel 裡設定。"]),
         { style: "muted" },
       );
       return true;

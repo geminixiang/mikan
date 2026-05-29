@@ -1,18 +1,14 @@
 import { resolveExistingSessionFile } from "../session-view/service.js";
 import { parseSessionViewCommand } from "../session-view/command.js";
 import type { CommandContext, CommandHandler } from "./types.js";
-import { replyDiagnosticWithContext } from "./utils.js";
-
-function formatSessionCommandSummary(lines: string[]): string {
-  return ["_Session_", ...lines].join("\n");
-}
+import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 
 export class SessionViewCommandHandler implements CommandHandler {
   async tryHandle(context: CommandContext): Promise<boolean> {
     if (!parseSessionViewCommand(context.commandText)) return false;
 
     const sendSessionViewReply = async (lines: string[]): Promise<void> => {
-      const text = formatSessionCommandSummary(lines);
+      const text = formatCommandSummary("Session", lines);
       if (context.privateConversation) {
         await replyDiagnosticWithContext(context.responseCtx, text, { style: "muted" });
         return;
@@ -81,8 +77,8 @@ export class SessionViewCommandHandler implements CommandHandler {
     );
 
     await sendSessionViewReply([
-      "Open this read-only session link (expires in 24 hours):",
       `${context.services.portalBaseUrl}/session?token=${token.token}`,
+      "Expires: 24 hours",
     ]);
     return true;
   }
