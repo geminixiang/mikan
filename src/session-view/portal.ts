@@ -3,6 +3,7 @@ import { basename } from "path";
 import MarkdownIt from "markdown-it";
 import type { Bot, BotAdapters, BotEvent, BotHandler, ChatResponseContext } from "../adapter.js";
 import * as log from "../log.js";
+import { renderPortalShell } from "../portal-shell.js";
 import { reportUserFacingError } from "../sentry.js";
 import { inferConversationKind } from "../sessions/policy.js";
 import {
@@ -246,59 +247,52 @@ function renderSessionPage(
       </section>`
     : "";
 
-  return renderHtmlDocument(
-    `${model.title} · Session Viewer`,
-    `<header class="hero-card">
-      <div class="hero-top">
-        <div class="hero-title-group">
-          <span class="hero-wordmark">mikan</span>
-          <h1 class="hero-title">${esc(model.title)}</h1>
-          <div class="hero-meta-line">
-            <span>Created ${esc(formatDate(model.createdAt))}</span>
-            <span>Updated <strong data-session-updated>${esc(formatDate(model.updatedAt))}</strong></span>
-            <span><strong data-session-entries>${esc(String(model.entryCount))}</strong> entries</span>
-          </div>
-        </div>
-        <div class="hero-side">
-          <span class="hero-badge hero-badge-status${isRunning ? " is-running" : ""}"><span class="hero-badge-dot"></span><strong data-session-status>${esc(isRunning ? "Running" : "Idle")}</strong></span>
-          <span class="hero-badge">${esc(displayedSessionKey === conversationId ? "Channel" : "Thread")}</span>
-        </div>
+  const body = `<header class="page-head">
+      <div>
+        <p class="eyebrow">Session</p>
+        <h2 class="page-title">${esc(model.title)}</h2>
+        <p class="page-desc">
+          <span>Created ${esc(formatDate(model.createdAt))}</span> ·
+          <span>Updated <strong data-session-updated>${esc(formatDate(model.updatedAt))}</strong></span> ·
+          <span><strong data-session-entries>${esc(String(model.entryCount))}</strong> entries</span>
+        </p>
       </div>
-      <div class="hero-detail-row">
-        <span class="hero-detail"><span class="hero-detail-label">Session</span><code>${esc(model.sessionId.slice(0, 8))}</code></span>
-        <span class="hero-detail"><span class="hero-detail-label">File</span><code>${esc(model.fileName)}</code></span>
-        <span class="hero-detail"><span class="hero-detail-label">Expires</span><span>${esc(formatDate(new Date(expiresAt).toISOString()))}</span></span>
+      <div class="session-side">
+        <span class="session-badge session-badge-status${isRunning ? " is-running" : ""}"><span class="session-badge-dot"></span><strong data-session-status>${esc(isRunning ? "Running" : "Idle")}</strong></span>
+        <span class="session-badge">${esc(displayedSessionKey === conversationId ? "Channel" : "Thread")}</span>
       </div>
     </header>
 
+    <div class="session-detail-row">
+      <span class="session-detail"><span class="session-detail-label">Session</span><code>${esc(model.sessionId.slice(0, 8))}</code></span>
+      <span class="session-detail"><span class="session-detail-label">File</span><code>${esc(model.fileName)}</code></span>
+      <span class="session-detail"><span class="session-detail-label">Expires</span><span>${esc(formatDate(new Date(expiresAt).toISOString()))}</span></span>
+    </div>
+
     ${relatedSections}
 
-    <main class="timeline-shell">
+    <div class="timeline-shell">
       <div class="timeline-list" data-timeline-list>
         ${items}
       </div>
-    </main>
+    </div>
 
     <button class="jump-latest-btn" type="button" hidden data-jump-latest aria-label="Jump to latest" title="Jump to latest">↓</button>
 
     <section class="composer-card">
-      <div class="composer-copy">
-        <p class="eyebrow">Interactive preview</p>
-        <p>Ask mikan in this same session. Replies stay in Session View and do not post back to Slack.</p>
-      </div>
       <form class="composer-form" data-session-composer>
         <input type="hidden" name="token" value="${esc(token)}">
         <input type="hidden" name="session" value="${esc(model.fileName)}">
         <input type="hidden" name="sessionKey" value="${esc(displayedSessionKey)}">
-        <textarea name="text" rows="1" placeholder="Write a message…" required></textarea>
+        <textarea name="text" rows="1" placeholder="Ask mikan in this session… (replies stay in Session View)" required></textarea>
         <div class="composer-actions">
           <span class="composer-status" data-composer-status></span>
           <button class="composer-send-btn" type="submit" aria-label="Send" title="Send">↑</button>
         </div>
       </form>
-    </section>`,
-    isRunning,
-  );
+    </section>`;
+
+  return renderHtmlDocument(`${model.title} · Session Viewer`, body, isRunning);
 }
 
 function renderRelationCard(relation: SessionViewRelation, token: string): string {
@@ -790,7 +784,7 @@ function renderStatusPage(title: string, message: string): string {
     title,
     `<section class="card stack">
       <p class="eyebrow">mikan</p>
-      <h1>${esc(title)}</h1>
+      <h1 class="page-title">${esc(title)}</h1>
       <div class="status err">${esc(message)}</div>
     </section>`,
     false,
@@ -798,19 +792,17 @@ function renderStatusPage(title: string, message: string): string {
 }
 
 function renderHtmlDocument(title: string, shellContent: string, isRunning: boolean): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${esc(title)}</title>
-  <style>${styles}</style>
-</head>
-<body data-session-running="${isRunning ? "true" : "false"}">
-  <main class="shell">
-    ${shellContent}
-  </main>
-  <script>
+  return renderPortalShell({
+    activeView: "session",
+    pageTitle: "Session",
+    body: shellContent,
+    extraStyles: sessionViewStyles,
+    bodyAttributes: { "data-session-running": isRunning ? "true" : "false" },
+    inlineScript: sessionViewScript,
+  });
+}
+
+const sessionViewScript = `
     const form = document.querySelector('[data-session-composer]');
     const timelineList = document.querySelector('[data-timeline-list]');
     const jumpLatestBtn = document.querySelector('[data-jump-latest]');
@@ -978,10 +970,7 @@ function renderHtmlDocument(title: string, shellContent: string, isRunning: bool
     });
 
     toggleJumpButton();
-  </script>
-</body>
-</html>`;
-}
+`;
 
 function formatDate(value: string): string {
   const date = new Date(value);
@@ -998,17 +987,8 @@ function esc(value: string): string {
     .replaceAll("'", "&#39;");
 }
 
-const styles = `
-  @import url('https://fonts.googleapis.com/css2?family=Lora:wght@400;600&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
-
+const sessionViewStyles = `
   :root {
-    --bg: #f0ece3;
-    --surface: #ffffff;
-    --border: rgba(0, 0, 0, 0.08);
-    --text: #18181b;
-    --muted: #71717a;
-    --subtle: #a1a1aa;
-
     --user-bg: #18181b;
     --user-text: #fafafa;
     --user-time: rgba(250, 250, 250, 0.5);
@@ -1024,174 +1004,58 @@ const styles = `
     --tool-ok: #3fb950;
     --tool-err: #f85149;
     --tool-time: #484f58;
-
-    --ok-bg: #f0fdf4;
-    --ok-text: #15803d;
-    --err-bg: #fef2f2;
-    --err-text: #b91c1c;
   }
-
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   body {
-    min-height: 100vh;
-    padding: 40px 20px calc(140px + env(safe-area-inset-bottom, 0px));
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+    /* Extra bottom padding for the fixed composer */
+    padding-bottom: calc(140px + env(safe-area-inset-bottom, 0px));
     overflow-x: hidden;
-    background-color: var(--bg);
-    background-image:
-      radial-gradient(ellipse 80% 40% at 50% -10%, rgba(255,255,255,0.6) 0%, transparent 70%);
-    color: var(--text);
-    font-family: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
-    font-size: 15px;
-    line-height: 1.5;
-    -webkit-font-smoothing: antialiased;
   }
 
-  .shell {
-    width: 100%;
-    max-width: 780px;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
+  .shell { max-width: 880px; }
 
-  /* ── Hero ─────────────────────────────────────────────────────────────── */
+  /* ── Session-specific page-head extras ─────────────────────────────── */
 
-  .hero-card {
-    padding: 28px 32px 24px;
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    background: var(--surface);
-    box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06);
-  }
-
-  .hero-top {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 20px;
-    margin-bottom: 18px;
-  }
-
-  .hero-wordmark {
-    display: block;
-    margin-bottom: 6px;
-    color: var(--subtle);
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-  }
-
-  .hero-title {
-    font-family: 'Lora', Georgia, serif;
-    font-size: clamp(1.4rem, 2.5vw, 1.75rem);
-    font-weight: 600;
-    line-height: 1.2;
-    letter-spacing: -0.01em;
-    color: var(--text);
-    text-wrap: balance;
-    margin-bottom: 8px;
-  }
-
-  .hero-meta-line {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 14px;
-    color: var(--muted);
-    font-size: 0.82rem;
-    line-height: 1.4;
-  }
-
-  .hero-meta-line strong {
-    color: var(--text);
-    font-weight: 600;
-  }
-
-  .hero-side {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 8px;
+  .session-side {
+    display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
     flex-shrink: 0;
   }
-
-  .hero-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 11px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: rgba(255,255,255,0.7);
-    font-size: 0.78rem;
-    color: var(--muted);
+  .session-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 11px; border: 1px solid var(--border); border-radius: 999px;
+    background: rgba(255,255,255,0.7); font-size: 0.78rem; color: var(--muted);
     line-height: 1;
   }
-
-  .hero-badge strong {
-    color: var(--text);
-    font-weight: 600;
+  .session-badge strong { color: var(--text); font-weight: 600; }
+  .session-badge-status.is-running {
+    background: #fff7ed; border-color: rgba(217, 119, 6, 0.18); color: #9a3412;
+  }
+  .session-badge-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #a1a1aa; flex-shrink: 0;
+  }
+  .session-badge-status.is-running .session-badge-dot {
+    background: #d97706; box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.14);
   }
 
-  .hero-badge-status.is-running {
-    background: #fff7ed;
-    border-color: rgba(217, 119, 6, 0.18);
-    color: #9a3412;
+  .session-detail-row {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    padding: 12px 14px; border: 1px solid var(--border); border-radius: 14px;
+    background: rgba(255,255,255,0.6);
   }
-
-  .hero-badge-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: #a1a1aa;
-    flex-shrink: 0;
+  .session-detail {
+    display: inline-flex; align-items: center; gap: 8px; min-width: 0;
+    padding: 4px 10px; border-radius: 10px; background: rgba(0, 0, 0, 0.025);
+    color: var(--muted); font-size: 0.78rem;
   }
-
-  .hero-badge-status.is-running .hero-badge-dot {
-    background: #d97706;
-    box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.14);
+  .session-detail-label {
+    text-transform: uppercase; letter-spacing: 0.08em;
+    font-size: 0.68rem; color: var(--subtle);
   }
-
-  .hero-detail-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    padding-top: 14px;
-    border-top: 1px solid rgba(0, 0, 0, 0.06);
-  }
-
-  .hero-detail {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-    padding: 6px 10px;
-    border-radius: 12px;
-    background: rgba(0, 0, 0, 0.025);
-    color: var(--muted);
-    font-size: 0.78rem;
-  }
-
-  .hero-detail-label {
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-size: 0.68rem;
-    color: var(--subtle);
-  }
-
-  .hero-detail code {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 0.74rem;
-    color: var(--text);
+  .session-detail code {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 0.74rem;
+    color: var(--text); padding: 0;
   }
 
   /* ── Timeline shell ───────────────────────────────────────────────────── */
@@ -1794,31 +1658,7 @@ const styles = `
 
   /* ── Status page ──────────────────────────────────────────────────────── */
 
-  .card {
-    padding: 28px 32px;
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    background: var(--surface);
-    box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06);
-  }
-
   .stack > * + * { margin-top: 14px; }
-
-  .eyebrow {
-    color: var(--subtle);
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-  }
-
-  h1 {
-    font-family: 'Lora', Georgia, serif;
-    font-size: clamp(1.4rem, 2.5vw, 1.75rem);
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    line-height: 1.2;
-  }
 
   p { color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
 
@@ -1838,11 +1678,10 @@ const styles = `
 
   .composer-card {
     position: fixed;
-    left: 50%;
+    left: calc(72px + (100vw - 72px) / 2);
     bottom: calc(16px + env(safe-area-inset-bottom, 0px));
     transform: translateX(-50%);
-    width: calc(100% - 32px);
-    max-width: 780px;
+    width: min(880px, calc(100vw - 96px));
     padding: 10px 12px 10px 14px;
     border: 1px solid var(--border);
     border-radius: 22px;
@@ -1853,8 +1692,6 @@ const styles = `
     z-index: 20;
   }
 
-  .composer-card .composer-copy { display: none; }
-
   .composer-form {
     display: flex;
     flex-direction: column;
@@ -1863,7 +1700,7 @@ const styles = `
 
   .jump-latest-btn {
     position: fixed;
-    left: 50%;
+    left: calc(72px + (100vw - 72px) / 2);
     bottom: calc(env(safe-area-inset-bottom, 0px) + 120px);
     z-index: 25;
     width: 42px;
@@ -1971,16 +1808,25 @@ const styles = `
 
   /* ── Responsive ───────────────────────────────────────────────────────── */
 
+  @media (max-width: 900px) {
+    .composer-card {
+      left: 50%;
+      width: min(880px, calc(100vw - 24px));
+    }
+    .jump-latest-btn { left: 50%; }
+  }
+
   @media (max-width: 600px) {
-    body { padding: 20px 12px calc(130px + env(safe-area-inset-bottom, 0px)); }
+    body { padding-bottom: calc(130px + env(safe-area-inset-bottom, 0px)); }
 
-    .composer-card { width: calc(100% - 16px); bottom: calc(8px + env(safe-area-inset-bottom, 0px)); padding: 8px 10px; border-radius: 18px; }
+    .composer-card {
+      width: calc(100vw - 16px);
+      bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+      padding: 8px 10px;
+      border-radius: 18px;
+    }
 
-    .hero-card, .card { padding: 20px; border-radius: 16px; }
-
-    .hero-top { flex-direction: column; gap: 12px; }
-    .hero-side { align-items: flex-start; }
-    .hero-detail-row { gap: 8px; }
+    .session-side { align-items: flex-start; flex-direction: row; }
 
     .user-bubble,
     .msg-assistant,

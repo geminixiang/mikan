@@ -12,6 +12,7 @@ import {
   saveConversationSandboxConfig,
   type AgentConfig,
 } from "../config.js";
+import { renderPortalShell } from "../portal-shell.js";
 import type { SandboxConfig } from "../sandbox/index.js";
 import { resolveExistingSessionFile } from "../session-view/service.js";
 import type { InMemorySessionViewTokenStore } from "../session-view/store.js";
@@ -1250,33 +1251,7 @@ function esc(s: string): string {
 
 function renderAdminPage(token: AdminToken): string {
   const userLabel = token.platformUserName ?? token.platformUserId;
-  return `<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Admin — ${PRODUCT_NAME}</title>
-  <style>${adminStyles}</style>
-</head>
-<body>
-  <main class="shell">
-    <header class="hero-card">
-      <div class="hero-top">
-        <div class="hero-title-group">
-          <span class="hero-wordmark">${PRODUCT_NAME}</span>
-          <div class="hero-heading-row">
-            <h1 class="hero-title">Admin Portal</h1>
-          </div>
-          <p class="hero-subtitle">
-            <span class="hero-user">${esc(token.platform)} · ${esc(userLabel)}</span>
-            <span class="hero-sep">•</span>
-            <span class="hero-conv">conversation: <select id="conv-switcher" class="conv-inline-select"><option>${esc(token.conversationId)}</option></select></span>
-          </p>
-        </div>
-      </div>
-    </header>
-
-    <nav class="tab-nav" role="tablist" aria-label="Admin sections">
+  const body = `<nav class="tab-nav" role="tablist" aria-label="Admin sections">
       <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="panel-conversation" data-tab="conversation">Conversation</button>
       <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-global" data-tab="global">Global</button>
     </nav>
@@ -1401,10 +1376,9 @@ function renderAdminPage(token: AdminToken): string {
         </header>
         <div id="global-events-content"><div class="loading-msg">Loading…</div></div>
       </section>
-    </div>
-  </main>
+    </div>`;
 
-  <script>
+  const script = `
     const adminToken = ${JSON.stringify(token.token)};
     const defaultConversationId = ${JSON.stringify(token.conversationId)};
     let activeConversationId = defaultConversationId;
@@ -1951,123 +1925,34 @@ function renderAdminPage(token: AdminToken): string {
     loadWorkspace();
     loadSkills();
     loadConversationEvents();
-  </script>
-</body>
-</html>`;
+  `;
+
+  return renderPortalShell({
+    activeView: "admin",
+    pageTitle: "Admin",
+    identity: { primary: token.platform, secondary: userLabel },
+    conversationSwitcher: { currentId: token.conversationId },
+    body,
+    extraStyles: adminViewStyles,
+    inlineScript: script,
+  });
 }
 
 function renderAdminErrorPage(message: string): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Access Denied — ${PRODUCT_NAME}</title>
-  <style>${adminStyles}</style>
-</head>
-<body>
-  <main class="shell" style="max-width:480px">
-    <div class="card" style="text-align:center;padding:40px 32px">
+  return renderPortalShell({
+    activeView: "admin",
+    pageTitle: "Admin",
+    body: `<section class="card" style="text-align:center;padding:40px 32px">
       <p class="eyebrow">${PRODUCT_NAME} admin</p>
-      <h1 class="hero-title" style="margin:12px 0 16px">Access Denied</h1>
-      <div class="status-err-block">${esc(message)}</div>
-    </div>
-  </main>
-</body>
-</html>`;
+      <h1 class="page-title" style="margin:12px 0 16px">Access Denied</h1>
+      <div class="err-msg">${esc(message)}</div>
+    </section>`,
+  });
 }
 
 // ── Styles ─────────────────────────────────────────────────────────────────────
 
-const adminStyles = `
-  @import url('https://fonts.googleapis.com/css2?family=Lora:wght@400;600&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
-
-  :root {
-    --bg: #f0ece3;
-    --surface: #ffffff;
-    --border: rgba(0, 0, 0, 0.08);
-    --text: #18181b;
-    --muted: #71717a;
-    --subtle: #a1a1aa;
-    --accent: #d97706;
-
-    --ok-bg: #f0fdf4;
-    --ok-text: #15803d;
-    --ok-border: rgba(21, 128, 61, 0.16);
-    --warn-bg: #fffbeb;
-    --warn-text: #92400e;
-    --err-bg: #fef2f2;
-    --err-text: #b91c1c;
-    --err-border: rgba(185, 28, 28, 0.14);
-  }
-
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-  body {
-    min-height: 100vh;
-    padding: 32px 20px 60px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    background-color: var(--bg);
-    background-image: radial-gradient(ellipse 80% 40% at 50% -10%, rgba(255,255,255,0.65) 0%, transparent 70%);
-    color: var(--text);
-    font-family: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
-    font-size: 15px;
-    line-height: 1.5;
-    -webkit-font-smoothing: antialiased;
-  }
-
-  .shell {
-    width: 100%;
-    max-width: 900px;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-  }
-
-  .hero-card {
-    padding: 24px 28px;
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    background: var(--surface);
-    box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06);
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-  }
-
-  .hero-wordmark {
-    display: block;
-    margin-bottom: 6px;
-    color: var(--subtle);
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-  }
-
-  .hero-heading-row {
-    display: flex; align-items: center; gap: 12px; margin-bottom: 6px; flex-wrap: wrap;
-  }
-
-  .hero-title {
-    font-family: 'Lora', Georgia, serif;
-    font-size: clamp(1.4rem, 2.5vw, 1.7rem);
-    font-weight: 600;
-    line-height: 1.2;
-    letter-spacing: -0.01em;
-  }
-
-  .hero-subtitle { color: var(--muted); font-size: 0.88rem; display: flex; flex-wrap: wrap; gap: 6px; }
-  .hero-sep { color: var(--subtle); }
-  .hero-conv code { font-size: 0.78em; }
-  .conv-inline-select {
-    max-width: min(620px, 100%);
-    padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px;
-    background: #fff; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 0.78rem;
-  }
-
+const adminViewStyles = `
   .tab-nav {
     display: flex; gap: 6px; padding: 6px;
     border: 1px solid var(--border); border-radius: 16px;
@@ -2090,47 +1975,7 @@ const adminStyles = `
   .tab-panel { display: none; flex-direction: column; gap: 14px; }
   .tab-panel.active { display: flex; }
 
-  .card {
-    padding: 24px 28px;
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    background: var(--surface);
-    box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06);
-  }
-
-  .eyebrow {
-    color: var(--subtle); font-size: 0.72rem; font-weight: 600;
-    letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 6px;
-  }
-
-  .card-title {
-    font-family: 'Lora', Georgia, serif;
-    font-size: clamp(1.1rem, 2vw, 1.3rem);
-    font-weight: 600; line-height: 1.25; letter-spacing: -0.01em;
-    margin-bottom: 10px;
-  }
-
-  .card-subtitle { font-size: 1rem; font-weight: 650; margin-bottom: 10px; line-height: 1.3; }
   .card-desc { color: var(--muted); font-size: 0.9rem; line-height: 1.55; margin-bottom: 12px; }
-
-  code {
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 0.82em; padding: 0.14em 0.36em;
-    border-radius: 6px; background: rgba(0,0,0,0.05); color: var(--text);
-  }
-
-  button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
-
-  .primary-action-btn {
-    padding: 9px 16px;
-    border: none; border-radius: 10px;
-    background: var(--text); color: #fff;
-    font: 500 0.86rem/1.2 'DM Sans', sans-serif;
-    cursor: pointer;
-    transition: opacity 120ms;
-  }
-  .primary-action-btn:hover:not(:disabled) { opacity: 0.85; }
-  .primary-action-btn:disabled { opacity: 0.5; cursor: wait; }
 
   .link-result {
     margin-top: 12px; padding: 10px 14px; border-radius: 10px;
@@ -2156,18 +2001,6 @@ const adminStyles = `
   .portal-frame {
     width: 100%; min-height: 720px;
     border: 1px solid var(--border); border-radius: 14px; background: #fff;
-  }
-
-  .loading-msg { color: var(--muted); font-size: 0.9rem; padding: 8px 0; }
-  .err-msg {
-    padding: 12px 16px; border-radius: 10px;
-    background: var(--err-bg); color: var(--err-text);
-    border: 1px solid var(--err-border); font-size: 0.88rem;
-  }
-  .status-err-block {
-    padding: 12px 16px; border-radius: 10px;
-    background: var(--err-bg); color: var(--err-text);
-    border: 1px solid var(--err-border); font-size: 0.9rem;
   }
 
   .config-grid {
@@ -2253,11 +2086,6 @@ const adminStyles = `
   }
   .placeholder-msg { color: var(--subtle); font-size: 0.86rem; padding: 24px 8px; text-align: center; }
 
-  .empty-state {
-    padding: 18px 8px; text-align: center; color: var(--muted);
-    font-size: 0.88rem;
-  }
-
   /* ── Skills ─────────────────────────────────────────────────────────── */
 
   .skills-list { display: flex; flex-direction: column; gap: 8px; }
@@ -2331,9 +2159,6 @@ const adminStyles = `
   .status-pill.running { background: var(--ok-bg); color: var(--ok-text); border: 1px solid var(--ok-border); }
 
   @media (max-width: 640px) {
-    body { padding: 16px 12px 48px; }
-    .shell { gap: 12px; }
-    .hero-card, .card { padding: 18px; border-radius: 16px; }
     .tab-btn { padding: 9px 12px; font-size: 0.82rem; min-width: 60px; }
     .config-grid { grid-template-columns: 1fr; }
     .config-row { grid-template-columns: 1fr; gap: 4px; }
