@@ -1012,8 +1012,6 @@ const sessionViewStyles = `
     overflow-x: hidden;
   }
 
-  .shell { max-width: 880px; }
-
   /* ── Session-specific page-head extras ─────────────────────────────── */
 
   .session-side {
@@ -1681,7 +1679,7 @@ const sessionViewStyles = `
     left: calc(72px + (100vw - 72px) / 2);
     bottom: calc(16px + env(safe-area-inset-bottom, 0px));
     transform: translateX(-50%);
-    width: min(880px, calc(100vw - 96px));
+    width: min(1040px, calc(100vw - 96px));
     padding: 10px 12px 10px 14px;
     border: 1px solid var(--border);
     border-radius: 22px;
@@ -1811,7 +1809,7 @@ const sessionViewStyles = `
   @media (max-width: 900px) {
     .composer-card {
       left: 50%;
-      width: min(880px, calc(100vw - 24px));
+      width: min(1040px, calc(100vw - 24px));
     }
     .jump-latest-btn { left: 50%; }
   }
