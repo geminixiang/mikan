@@ -1056,6 +1056,7 @@ async function prepareRunContext(params: {
     conversationKind: ConversationKind;
     userId: string;
   }) => void;
+  setSandboxContext: (context: { conversationId: string; userId: string }) => void;
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
   pathContext: RuntimePathContext;
 }): Promise<PreparedRunContext & { pathContext: RuntimePathContext }> {
@@ -1075,6 +1076,7 @@ async function prepareRunContext(params: {
     session,
     agent,
     setEventContext,
+    setSandboxContext,
     setUploadFunction,
   } = params;
   let pathContext = params.pathContext;
@@ -1116,6 +1118,7 @@ async function prepareRunContext(params: {
     conversationKind: message.conversationKind,
     userId: message.userId,
   });
+  setSandboxContext({ conversationId, userId: message.userId });
 
   setUploadFunction(async (filePath: string, title?: string) => {
     const hostPath = translateRuntimePathToHost(filePath, pathContext);
@@ -1433,7 +1436,11 @@ export async function createRunner(
   let pathContext = getUnresolvedSandboxPathContext(sandboxConfig, workspaceBase);
 
   // Create tools (per-runner, with per-runner upload function setter)
-  const { tools, setUploadFunction, setEventContext } = createMikanTools(executor, workspaceDir);
+  const { tools, setUploadFunction, setEventContext, setSandboxContext } = createMikanTools(
+    executor,
+    workspaceDir,
+    { sandbox: sandboxConfig, provisioner },
+  );
 
   // Resolve model from config. Config stores provider/model as user-provided strings,
   // while getModel's public overload is narrowed to generated known providers.
@@ -1514,6 +1521,7 @@ export async function createRunner(
         session,
         agent,
         setEventContext,
+        setSandboxContext,
         setUploadFunction,
         pathContext,
       });

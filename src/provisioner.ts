@@ -72,6 +72,7 @@ export class DockerContainerManager {
   private readonly limits?: ResourceLimits;
   private readonly boostLimits?: ResourceLimits;
   private readonly boostedKeys = new Set<string>();
+  private readonly overrideLimits = new Map<string, ResourceLimits>();
   private readonly execFileImpl: ExecFileAsync;
 
   constructor(
@@ -153,7 +154,18 @@ export class DockerContainerManager {
       return this.getLimitStatus(containerKey);
     }
 
+    this.overrideLimits.delete(containerKey);
     this.boostedKeys.add(containerKey);
+    const state = this.state.get(containerKey);
+    if (state?.status === "running") {
+      await this.applyResourceLimits(containerKey, state.containerName);
+    }
+    return this.getLimitStatus(containerKey);
+  }
+
+  async setLimits(containerKey: string, limits: ResourceLimits): Promise<SandboxLimitStatus> {
+    this.boostedKeys.delete(containerKey);
+    this.overrideLimits.set(containerKey, { ...this.limits, ...limits });
     const state = this.state.get(containerKey);
     if (state?.status === "running") {
       await this.applyResourceLimits(containerKey, state.containerName);
@@ -180,6 +192,7 @@ export class DockerContainerManager {
       await this.execFileImpl("docker", ["stop", containerName]);
       this.setState(containerKey, "stopped", containerName);
       this.boostedKeys.delete(containerKey);
+      this.overrideLimits.delete(containerKey);
       log.logInfo(`Container ${containerName} stopped (idle)`);
     } catch (err) {
       log.logWarning(
@@ -211,6 +224,7 @@ export class DockerContainerManager {
 
     this.state.delete(containerKey);
     this.boostedKeys.delete(containerKey);
+    this.overrideLimits.delete(containerKey);
   }
 
   async stopIdle(maxIdleMs: number): Promise<void> {
@@ -332,6 +346,8 @@ export class DockerContainerManager {
   }
 
   private effectiveLimits(containerKey: string): ResourceLimits | undefined {
+    const override = this.overrideLimits.get(containerKey);
+    if (override) return override;
     if (!this.boostedKeys.has(containerKey)) return this.limits;
     return { ...this.limits, ...this.boostLimits };
   }

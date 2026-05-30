@@ -462,6 +462,77 @@ describe("DockerContainerManager", () => {
     expect(updateCalls).toHaveLength(0);
   });
 
+  test("setLimits applies temporary limits to a running container", async () => {
+    const execMock = vi
+      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .mockResolvedValueOnce({ stdout: "true\n" })
+      .mockResolvedValueOnce({ stdout: "[]\n" })
+      .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u123\n" })
+      .mockResolvedValue({ stdout: "" });
+    const manager = new DockerContainerManager("ubuntu:24.04", {
+      limits: { cpus: "0.5", memory: "1g" },
+      execFileImpl: execMock as any,
+    });
+
+    await manager.provision("slack-u123");
+    const status = await manager.setLimits("slack-u123", { cpus: "2", memory: "4g" });
+
+    expect(status).toEqual({ limits: { cpus: "2", memory: "4g" }, boosted: false });
+    expect(execMock.mock.calls.at(-1)).toEqual([
+      "docker",
+      [
+        "update",
+        "--cpus",
+        "2",
+        "--memory",
+        "4g",
+        "--memory-swap",
+        "4g",
+        "mikan-sandbox-slack-u123",
+      ],
+    ]);
+  });
+
+  test("setLimits affects the next docker run before a container exists", async () => {
+    const execMock = vi
+      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .mockRejectedValueOnce(new Error("No such object"))
+      .mockResolvedValueOnce({ stdout: "[]\n" })
+      .mockResolvedValueOnce({ stdout: "new-container-id\n" })
+      .mockResolvedValueOnce({ stdout: "" });
+    const manager = new DockerContainerManager("ubuntu:24.04", {
+      limits: { memory: "1g" },
+      execFileImpl: execMock as any,
+    });
+
+    await manager.setLimits("slack-u123", { cpus: "2" });
+    await manager.provision("slack-u123");
+
+    expect(execMock).toHaveBeenNthCalledWith(3, "docker", [
+      "run",
+      "-d",
+      "--name",
+      "mikan-sandbox-slack-u123",
+      "--network",
+      "mikan-sandbox-net-slack-u123",
+      "--label",
+      "mikan.managed=true",
+      "--label",
+      "mikan.sandbox=image",
+      "--label",
+      "mikan.vault-id=slack-u123",
+      "--cpus",
+      "2",
+      "--memory",
+      "1g",
+      "--memory-swap",
+      "1g",
+      "ubuntu:24.04",
+      "sleep",
+      "infinity",
+    ]);
+  });
+
   test("boost applies boost limits to a running container", async () => {
     const execMock = vi
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()

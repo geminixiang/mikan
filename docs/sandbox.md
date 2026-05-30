@@ -14,6 +14,25 @@
 
 `docker:*` 不是可用模式；請改用 `container:*` 或 `image:*`。
 
+## 能力差異
+
+`image:<image>` 是目前主要開發與推薦的 sandbox 模式；其他模式保留為本機開發、相容、或實驗用途，部分能力不會補齊。
+
+| 能力                                 | `host`   | `container:<name>` | `image:<image>` | `firecracker:*` | `cloudflare:*` |
+| ------------------------------------ | -------- | ------------------ | --------------- | --------------- | -------------- |
+| command 執行                         | ✅       | ✅                 | ✅              | ✅              | ✅             |
+| mikan 管理 runtime lifecycle         | 不適用   | ❌                 | ✅              | ❌              | ❌             |
+| per-conversation container / runtime | ❌       | ❌                 | ✅              | 需自行管理      | bridge 衍生 id |
+| per-conversation vault env           | ❌       | ❌                 | ✅              | ✅              | ✅             |
+| vault file 自動投影 / bind mount     | ❌       | ❌                 | ✅              | ❌              | ❌             |
+| workspace 自動掛載                   | host     | 需自行掛載         | ✅              | 需自行掛載      | ❌             |
+| private workspace mount mode         | 不適用   | ❌                 | ✅              | ❌              | ❌             |
+| idle auto-stop / recreate            | 不適用   | ❌                 | ✅              | ❌              | ❌             |
+| CPU / memory default limits          | ❌       | ❌                 | ✅              | ❌              | ❌             |
+| `/pi-sandbox boost`                  | ❌       | ❌                 | ✅              | ❌              | ❌             |
+| agent `sandbox` tool 設定 limits     | ❌       | ❌                 | ✅              | ❌              | ❌             |
+| 推薦程度                             | 本機開發 | legacy / 相容      | 主線            | alpha           | experimental   |
+
 ---
 
 ## State directory 與 vault 位置
@@ -210,6 +229,7 @@ vault key 選擇邏輯：
 - 已在執行的 container 會在下次 provision 時透過 `docker update` 立即套用新限制，不需重新建立
 - `/pi-sandbox` 會顯示目前 conversation 的有效限制
 - `/pi-sandbox boost` 會把目前 conversation 暫時升級到 `sandbox.boost` 規格；boost 狀態跟著 container，container stop 後就結束
+- agent 可用內建 `sandbox` tool 查詢或暫時設定目前 conversation 的 CPU / memory limit；這類 override 也會在 container stop 後清除
 
 ---
 
