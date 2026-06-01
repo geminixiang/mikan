@@ -4,10 +4,10 @@ import { join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
-  registerSlackForkSession,
+  registerSlackThreadSession,
   resolveSlackSessionScope,
-  waitForSlackBranchBootstrap,
-} from "../src/adapters/slack/branch-manager.js";
+  waitForSlackThreadBootstrap,
+} from "../src/adapters/slack/thread-manager.js";
 import { getChannelSessionDir, getThreadSessionFile } from "../src/sessions/store.js";
 
 let conversationDir: string;
@@ -15,7 +15,7 @@ let conversationDir: string;
 beforeEach(() => {
   conversationDir = join(
     tmpdir(),
-    `slack-branch-manager-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    `slack-thread-manager-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   );
   mkdirSync(conversationDir, { recursive: true });
 });
@@ -48,14 +48,14 @@ function readContextText(sessionFile: string): string {
     .join("\n---\n");
 }
 
-describe("waitForSlackBranchBootstrap", () => {
+describe("waitForSlackThreadBootstrap", () => {
   test("waits for the parent session to finish before first thread bootstrap", async () => {
     let checks = 0;
     const sleep = vi.fn(async () => {
       checks += 1;
     });
 
-    const waited = await waitForSlackBranchBootstrap({
+    const waited = await waitForSlackThreadBootstrap({
       parentSessionKey: "C123",
       sessionKey: "C123:1000.0001",
       hasThreadSession: () => false,
@@ -72,7 +72,7 @@ describe("waitForSlackBranchBootstrap", () => {
     const sleep = vi.fn(async () => {});
 
     expect(
-      await waitForSlackBranchBootstrap({
+      await waitForSlackThreadBootstrap({
         parentSessionKey: "C123",
         sessionKey: "C123",
         hasThreadSession: () => false,
@@ -121,7 +121,7 @@ describe("resolveSlackSessionScope", () => {
     expect(text).not.toContain("current top-level");
   });
 
-  test("uses generic log-based thread bootstrap instead of forking top-level sessions", async () => {
+  test("uses generic log-based thread bootstrap instead of copying top-level sessions", async () => {
     const recentDate = new Date().toISOString();
     writeLog([
       {
@@ -187,7 +187,7 @@ describe("resolveSlackSessionScope", () => {
       },
     ]);
 
-    registerSlackForkSession({
+    registerSlackThreadSession({
       conversationDir,
       sessionKey: "C123:2000.0001",
       cwd: conversationDir,

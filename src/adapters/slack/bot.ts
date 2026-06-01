@@ -34,9 +34,9 @@ import {
   registerThreadSession,
 } from "../../sessions/chat-session-manager.js";
 import {
-  isSlackForkSessionKey,
+  isSlackThreadSessionKey,
   planSlackAdapterSession,
-  planSlackEventForkRun,
+  planSlackEventAnchorRun,
   resolveSlackSessionKey,
 } from "./session.js";
 import { reportUserFacingError } from "../../sentry.js";
@@ -491,7 +491,7 @@ export class SlackBot implements Bot {
           throw err;
         }
       }
-      const eventPlan = planSlackEventForkRun(event, anchorTs);
+      const eventPlan = planSlackEventAnchorRun(event, anchorTs);
       const eventForRun = eventPlan.event;
       if (eventPlan.initialMessageTs && eventForRun.sessionKey) {
         registerThreadSession({
@@ -542,12 +542,12 @@ export class SlackBot implements Bot {
   }
 
   private resolveQueueKey(conversationId: string, sessionKey: string): string {
-    if (!isSlackForkSessionKey(sessionKey)) return sessionKey;
+    if (!isSlackThreadSessionKey(sessionKey)) return sessionKey;
     if (this.handler.isRunning(sessionKey)) return sessionKey;
-    return this.hasKnownForkSession(conversationId, sessionKey) ? sessionKey : conversationId;
+    return this.hasKnownThreadSession(conversationId, sessionKey) ? sessionKey : conversationId;
   }
 
-  private hasKnownForkSession(conversationId: string, sessionKey: string): boolean {
+  private hasKnownThreadSession(conversationId: string, sessionKey: string): boolean {
     return hasMaterializedChatSession({
       conversationDir: join(this.workingDir, conversationId),
       sessionKey,
@@ -560,7 +560,7 @@ export class SlackBot implements Bot {
     const sessionKey = resolveSlackSessionKey(channelId, threadTs);
     if (this.handler.isRunning(sessionKey)) return true;
 
-    return this.hasKnownForkSession(channelId, sessionKey);
+    return this.hasKnownThreadSession(channelId, sessionKey);
   }
 
   private buildHomeView(): { type: "home"; blocks: KnownBlock[] } {
@@ -1302,7 +1302,7 @@ export class SlackBot implements Bot {
         // Auto-reply top-level channel messages start with no sessionKey because
         // they are only candidates until the policy allows them. Once triggered,
         // persist the resolved key on the event; otherwise the runtime fallback
-        // treats the message ts as a branch session (`channel:ts`) instead of the
+        // treats the message ts as a thread session (`channel:ts`) instead of the
         // persistent top-level channel session.
         slackEvent.sessionKey = activeSessionKey;
         this.getQueue(this.resolveQueueKey(e.channel, activeSessionKey)).enqueue(async () => {

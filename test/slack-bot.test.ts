@@ -715,7 +715,7 @@ describe("SlackBot queues follow-up messages", () => {
     });
   });
 
-  test("Slack events create a top-level anchor and run under that fork session", async () => {
+  test("Slack events create a top-level anchor and run under that thread session", async () => {
     const handler = makeHandler();
     const handled = new Promise<void>((resolve, reject) => {
       handler.handleEvent = vi.fn(async (event, _calledBot, adapters) => {
@@ -806,7 +806,7 @@ describe("SlackBot queues follow-up messages", () => {
     expect(existsSync(join(workingDir, "C123", "sessions"))).toBe(false);
   });
 
-  test("Slack event anchor thread replies queue behind the event fork run", async () => {
+  test("Slack event anchor thread replies queue behind the event anchor run", async () => {
     const handler = makeHandler();
     let releaseEventRun!: () => void;
     const eventRunCanFinish = new Promise<void>((resolve) => {

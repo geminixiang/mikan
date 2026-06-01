@@ -3,7 +3,7 @@ import {
   formatSlackSessionKey,
   parseSlackSessionKey,
   planSlackAdapterSession,
-  planSlackEventForkRun,
+  planSlackEventAnchorRun,
   resolveSlackResponseRootTs,
 } from "../src/adapters/slack/session.js";
 
@@ -21,7 +21,7 @@ describe("Slack session planning", () => {
     });
   });
 
-  test("thread turns use the thread root as the fork session key", () => {
+  test("thread turns use the thread root as the thread session key", () => {
     expect(
       planSlackAdapterSession({
         conversationId: "C123",
@@ -52,20 +52,20 @@ describe("Slack session planning", () => {
     });
   });
 
-  test("session refs make channel and fork keys explicit", () => {
+  test("session refs make channel and thread keys explicit", () => {
     expect(parseSlackSessionKey("C123")).toEqual({ kind: "channel", channelId: "C123" });
     expect(parseSlackSessionKey("C123:2000.0001")).toEqual({
-      kind: "fork",
+      kind: "thread",
       channelId: "C123",
-      anchorTs: "2000.0001",
+      threadTs: "2000.0001",
     });
-    expect(formatSlackSessionKey({ kind: "fork", channelId: "C123", anchorTs: "2000.0001" })).toBe(
-      "C123:2000.0001",
-    );
+    expect(
+      formatSlackSessionKey({ kind: "thread", channelId: "C123", threadTs: "2000.0001" }),
+    ).toBe("C123:2000.0001");
   });
 
-  test("event fork planning binds top-level events to the Slack anchor", () => {
-    const planned = planSlackEventForkRun(
+  test("event anchor planning binds top-level events to the Slack anchor", () => {
+    const planned = planSlackEventAnchorRun(
       {
         conversationId: "C123",
         ts: "event:deploy-reminder",
@@ -77,14 +77,14 @@ describe("Slack session planning", () => {
     expect(planned.event.sessionKey).toBe("C123:2000.0001");
   });
 
-  test("event fork planning leaves explicit thread events alone", () => {
+  test("event anchor planning leaves explicit thread events alone", () => {
     const event = {
       conversationId: "C123",
       ts: "event:deploy-reminder",
       thread_ts: "1000.0001",
     };
 
-    expect(planSlackEventForkRun(event, "2000.0001")).toEqual({ event });
+    expect(planSlackEventAnchorRun(event, "2000.0001")).toEqual({ event });
   });
 
   test("non-Slack timestamps do not produce response roots", () => {

@@ -16,27 +16,29 @@ export interface ResolveSlackSessionScopeOptions {
   currentMessageId?: string;
 }
 
-export interface RegisterSlackForkSessionOptions {
+export interface RegisterSlackThreadSessionOptions {
   conversationDir: string;
   sessionKey: string;
   cwd?: string;
 }
 
-export type SlackBranchBootstrapWaitOptions = ThreadBootstrapWaitOptions;
+export type SlackThreadBootstrapWaitOptions = ThreadBootstrapWaitOptions;
 
-export function hasMaterializedSlackBranchSession(
+export function hasMaterializedSlackThreadSession(
   conversationDir: string,
   sessionKey: string,
 ): boolean {
   return hasMaterializedChatSession({ conversationDir, sessionKey });
 }
 
-export function registerSlackForkSession(options: RegisterSlackForkSessionOptions): string | null {
+export function registerSlackThreadSession(
+  options: RegisterSlackThreadSessionOptions,
+): string | null {
   return registerThreadSession(options);
 }
 
-export async function waitForSlackBranchBootstrap(
-  options: SlackBranchBootstrapWaitOptions,
+export async function waitForSlackThreadBootstrap(
+  options: SlackThreadBootstrapWaitOptions,
 ): Promise<boolean> {
   return waitForThreadSessionBootstrap(options);
 }

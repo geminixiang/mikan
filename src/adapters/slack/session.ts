@@ -10,7 +10,7 @@ interface SlackSessionEventLike {
 
 export type SlackSessionRef =
   | { kind: "channel"; channelId: string }
-  | { kind: "fork"; channelId: string; anchorTs: string };
+  | { kind: "thread"; channelId: string; threadTs: string };
 
 export interface SlackAdapterSessionPlan {
   sessionKey: string;
@@ -19,13 +19,13 @@ export interface SlackAdapterSessionPlan {
   isThreaded: boolean;
 }
 
-export interface SlackEventForkRunPlan<T extends SlackSessionEventLike> {
+export interface SlackEventAnchorRunPlan<T extends SlackSessionEventLike> {
   event: T;
   initialMessageTs?: string;
 }
 
 export function formatSlackSessionKey(ref: SlackSessionRef): string {
-  return ref.kind === "channel" ? ref.channelId : `${ref.channelId}:${ref.anchorTs}`;
+  return ref.kind === "channel" ? ref.channelId : `${ref.channelId}:${ref.threadTs}`;
 }
 
 export function parseSlackSessionKey(sessionKey: string): SlackSessionRef {
@@ -34,20 +34,18 @@ export function parseSlackSessionKey(sessionKey: string): SlackSessionRef {
     return { kind: "channel", channelId: sessionKey };
   }
   return {
-    kind: "fork",
+    kind: "thread",
     channelId: sessionKey.slice(0, separator),
-    anchorTs: sessionKey.slice(separator + 1),
+    threadTs: sessionKey.slice(separator + 1),
   };
 }
 
-export function isSlackForkSessionKey(sessionKey: string): boolean {
-  return parseSlackSessionKey(sessionKey).kind === "fork";
+export function isSlackThreadSessionKey(sessionKey: string): boolean {
+  return parseSlackSessionKey(sessionKey).kind === "thread";
 }
 
 export function resolveSlackSessionRef(channelId: string, threadTs?: string): SlackSessionRef {
-  return threadTs
-    ? { kind: "fork", channelId, anchorTs: threadTs }
-    : { kind: "channel", channelId };
+  return threadTs ? { kind: "thread", channelId, threadTs } : { kind: "channel", channelId };
 }
 
 export function resolveSlackSessionKey(channelId: string, threadTs?: string): string {
@@ -92,10 +90,10 @@ export function planSlackAdapterSession(
   };
 }
 
-export function planSlackEventForkRun<T extends SlackSessionEventLike>(
+export function planSlackEventAnchorRun<T extends SlackSessionEventLike>(
   event: T,
   anchorTs?: string,
-): SlackEventForkRunPlan<T> {
+): SlackEventAnchorRunPlan<T> {
   if (!anchorTs || event.thread_ts) {
     return { event };
   }
