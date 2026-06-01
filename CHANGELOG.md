@@ -9,6 +9,23 @@ any release.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-01
+
+### Added
+
+- Add source directory README guides for contributors navigating adapters, commands, runtime, sessions, sandbox, tools, login, admin, and session-view code.
+
+### Changed
+
+- Centralize chat session bootstrapping through `ChatSessionManager` so Slack top-level and thread sessions share the same log-based history sync path.
+- Rename Slack branch/fork terminology to thread/anchor terminology across the adapter, session viewer, and documentation.
+- Model session-view related sessions as parent/thread relationships, including fixed-path thread sessions without legacy parent metadata.
+- Remove legacy thread fork and snapshot helpers from session storage.
+
+### Fixed
+
+- Anchor session-view thread links on the root turn instead of earlier bootstrapped context messages.
+
 ## [0.3.0-beta.0]
 
 ### Changed
