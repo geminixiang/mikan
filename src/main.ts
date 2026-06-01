@@ -16,7 +16,7 @@ import { createEventsWatcher } from "./events.js";
 import * as log from "./log.js";
 import { startLinkServer } from "./login/portal.js";
 import { InMemoryAdminTokenStore } from "./admin/store.js";
-import { InMemoryLinkTokenStore } from "./login/session.js";
+import { InMemoryLinkTokenStore } from "./login/store.js";
 import { InMemorySessionViewTokenStore } from "./session-view/store.js";
 import { DockerContainerManager } from "./provisioner.js";
 import { createGlobalSettingsFile, loadAgentConfig, MissingGlobalSettingsError } from "./config.js";

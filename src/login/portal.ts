@@ -11,7 +11,7 @@ import {
   type SessionViewInteractiveOptions,
 } from "../session-view/portal.js";
 import type { InMemorySessionViewTokenStore } from "../session-view/store.js";
-import type { InMemoryLinkTokenStore } from "./session.js";
+import type { InMemoryLinkTokenStore } from "./store.js";
 import {
   getOAuthServices,
   resolveOAuthService,

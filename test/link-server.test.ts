@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { InMemoryAdminTokenStore } from "../src/admin/store.js";
 import { startLinkServer } from "../src/login/portal.js";
-import { InMemoryLinkTokenStore } from "../src/login/session.js";
+import { InMemoryLinkTokenStore } from "../src/login/store.js";
 import { FileVaultManager } from "../src/vault.js";
 
 async function waitForListening(server: Server): Promise<void> {

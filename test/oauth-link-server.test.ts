@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { startLinkServer } from "../src/login/portal.js";
-import { InMemoryLinkTokenStore } from "../src/login/session.js";
+import { InMemoryLinkTokenStore } from "../src/login/store.js";
 import { FileVaultManager } from "../src/vault.js";
 
 const originalFetch = globalThis.fetch;
