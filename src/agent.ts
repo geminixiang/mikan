@@ -198,36 +198,6 @@ function buildEnvDescription(sandboxType: SandboxConfig["type"], workspaceRoot: 
   }
 }
 
-export function buildEventFilesystemInstructions(
-  sandboxType: SandboxConfig["type"],
-  workspaceRoot: string,
-): string {
-  if (sandboxType === "host" || sandboxType === "container" || sandboxType === "image") {
-    return `Events live in the host-side mikan control plane and are mounted at \`${workspaceRoot}/events/\` in this runtime.
-
-Prefer the \`event\` tool over manually writing JSON files; it fills \`platform\`, \`conversationId\`, \`conversationKind\`, and \`userId\` for the current conversation automatically.
-
-### Creating Events Manually
-Only do this when you need to create events from a script. Use unique filenames to avoid overwriting existing events. Include a timestamp or random suffix:
-\`\`\`bash
-cat > ${workspaceRoot}/events/dentist-reminder-$(date +%s).json << 'EOF'
-{"type": "one-shot", "platform": "<platform>", "conversationId": "<conversationId>", "conversationKind": "<direct|shared>", "userId": "<requester userId>", "text": "Dentist tomorrow", "at": "2025-12-14T09:00:00+01:00"}
-EOF
-\`\`\`
-
-### Managing Events
-- List: \`ls ${workspaceRoot}/events/\`
-- View: \`cat ${workspaceRoot}/events/foo.json\`
-- Delete/cancel: \`rm ${workspaceRoot}/events/foo.json\``;
-  }
-
-  return `Events live in the host-side mikan control plane, not necessarily in this runtime filesystem.
-
-Use the \`event\` tool to create events. It writes to the correct host-side events directory and fills \`platform\`, \`conversationId\`, \`conversationKind\`, and \`userId\` for the current conversation automatically.
-
-Do not create event files with bash in \`${workspaceRoot}/events/\` from this sandbox unless you have explicitly verified that path is mounted back to the host-side mikan events directory.`;
-}
-
 export function resolveTriggerAttribution(
   message: Pick<ChatMessage, "id" | "text" | "userName">,
 ): string | undefined {
@@ -272,7 +242,6 @@ function buildSystemPrompt(
       : "(no users loaded)";
 
   const envDescription = buildEnvDescription(sandboxType, workspaceRoot);
-  const eventFilesystemInstructions = buildEventFilesystemInstructions(sandboxType, workspaceRoot);
   const eventTriggerInstructions = isEventTrigger
     ? `
 ## Event Trigger Mode
@@ -359,58 +328,15 @@ Scripts are in: {baseDir}/
 ${skills.length > 0 ? formatSkillsForPrompt(skills) : "(no skills installed yet)"}
 
 ## Events
-You can schedule events that wake you up at specific times or when external things happen.
-${eventFilesystemInstructions}
+Use the \`event\` tool to schedule immediate, one-shot, or periodic follow-ups. It writes to the host-side mikan control plane and fills routing fields for the current conversation automatically.
 
-### Event Types
+Write event \`text\` as a self-contained future task with needed context, tone, and constraints because events do not inherit normal conversation history.
 
-**Immediate** - Triggers as soon as harness sees the file. Use in scripts/webhooks to signal external events.
-\`\`\`json
-{"type": "immediate", "platform": "${platform.name}", "conversationId": "${conversationId}", "conversationKind": "${conversationKind}", "userId": "${currentUserId ?? "<requester userId>"}", "text": "New GitHub issue opened"}
-\`\`\`
+For one-shot reminders, include a timezone offset in \`at\`. For periodic events, use a cron schedule plus IANA timezone; assume ${Intl.DateTimeFormat().resolvedOptions().timeZone} when users omit timezone.
 
-**One-shot** - Triggers once at a specific time. Use for reminders.
-\`\`\`json
-{"type": "one-shot", "platform": "${platform.name}", "conversationId": "${conversationId}", "conversationKind": "${conversationKind}", "userId": "${currentUserId ?? "<requester userId>"}", "text": "Remind Mario about dentist", "at": "2025-12-15T09:00:00+01:00"}
-\`\`\`
+When events trigger, messages are prefixed like \`[EVENT:filename:type:time]\`. Immediate and one-shot events auto-delete after triggering; periodic events persist until deleted.
 
-**Periodic** - Triggers on a cron schedule. Use for recurring tasks.
-\`\`\`json
-{"type": "periodic", "platform": "${platform.name}", "conversationId": "${conversationId}", "conversationKind": "${conversationKind}", "userId": "${currentUserId ?? "<requester userId>"}", "text": "Check inbox and summarize", "schedule": "0 9 * * 1-5", "timezone": "${Intl.DateTimeFormat().resolvedOptions().timeZone}"}
-\`\`\`
-
-### Cron Format
-\`minute hour day-of-month month day-of-week\`
-- \`0 9 * * *\` = daily at 9:00
-- \`0 9 * * 1-5\` = weekdays at 9:00
-- \`30 14 * * 1\` = Mondays at 14:30
-- \`0 0 1 * *\` = first of each month at midnight
-
-### Timezones
-All \`at\` timestamps must include offset (e.g., \`+01:00\`). Periodic events use IANA timezone names. The harness runs in ${Intl.DateTimeFormat().resolvedOptions().timeZone}. When users mention times without timezone, assume ${Intl.DateTimeFormat().resolvedOptions().timeZone}.
-
-### Platform and Credential Routing
-Set \`platform\` to the target bot platform (\`${platform.name}\` for this conversation). Include it explicitly to avoid ambiguity.
-
-Set \`userId\` to the platform userId of whoever asked for the event. When the event fires, tool execution routes using that user's vault selection in per-user modes. In \`container:<name>\`, events use the container's single shared vault.
-
-When scheduling an event, write \`text\` as a self-contained task for your future self. Include the minimum necessary context, tone, and constraints in the text itself because events do not inherit normal conversation history. Good: \`Please remind the user that break time is over and it is time to return to class. Keep it brief, in Traditional Chinese, and do not ask follow-up questions.\` Bad: \`back to class\`.
-
-### When Events Trigger
-You receive a message like:
-\`\`\`
-[EVENT:dentist-reminder.json:one-shot:2025-12-14T09:00:00+01:00] Dentist tomorrow
-\`\`\`
-Immediate and one-shot events auto-delete after triggering. Periodic events persist until you delete them.
-
-### Silent Completion
-For periodic events where there's nothing to report, respond with just \`[SILENT]\` (no other text). This deletes the status message and posts nothing to the platform. Use this to avoid spamming the channel when periodic checks find nothing actionable.
-
-### Debouncing
-When writing programs that create immediate events (email watchers, webhook handlers, etc.), always debounce. If 50 emails arrive in a minute, don't create 50 immediate events. Instead collect events over a window and create ONE immediate event summarizing what happened, or just signal "new activity, check inbox" rather than per-item events. Or simpler: use a periodic event to check for new items every N minutes instead of immediate events.
-
-### Limits
-Maximum 5 events can be queued. Don't create excessive immediate or periodic events.
+For periodic events where there's nothing to report, respond with exactly \`[SILENT]\`. Debounce external triggers; prefer one summarized event over many.
 
 ## Memory
 Write to MEMORY.md files to persist context across conversations.
@@ -456,6 +382,8 @@ ls -1 sessions/
 - read: Read files
 - write: Create/overwrite files
 - edit: Surgical file edits
+- event: Schedule immediate, one-shot, or periodic follow-ups
+- sandbox: Inspect or temporarily adjust sandbox limits
 - attach: Share files to the platform
 
 Each tool requires a "label" parameter (shown to user).

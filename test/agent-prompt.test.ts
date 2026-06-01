@@ -1,29 +1,10 @@
 import { describe, expect, test } from "vitest";
 import {
   appendTriggerAttribution,
-  buildEventFilesystemInstructions,
   buildInitialPathContextForTest,
   resolveTriggerAttribution,
   translateRuntimePathToHost,
 } from "../src/agent.js";
-
-describe("agent prompt event filesystem instructions", () => {
-  test("host-mounted sandboxes may show manual event file paths", () => {
-    const instructions = buildEventFilesystemInstructions("image", "/workspace");
-
-    expect(instructions).toContain("cat > /workspace/events/dentist-reminder-$(date +%s).json");
-    expect(instructions).toContain("Prefer the `event` tool");
-  });
-
-  test("remote sandboxes do not encourage writing event files in runtime filesystem", () => {
-    const instructions = buildEventFilesystemInstructions("cloudflare", "/workspace");
-
-    expect(instructions).toContain("host-side mikan control plane");
-    expect(instructions).toContain("Use the `event` tool");
-    expect(instructions).toContain("Do not create event files with bash");
-    expect(instructions).not.toContain("cat > /workspace/events");
-  });
-});
 
 describe("trigger attribution", () => {
   test("uses event filename from event prompt marker", () => {
