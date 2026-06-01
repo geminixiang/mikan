@@ -153,12 +153,14 @@ describe("resolveSlackSessionScope", () => {
     expect(content).toContain("channel reply");
   });
 
-  test("forks from top-level session when the thread root is mikan's top-level response", async () => {
+  test("creates a root-only branch session when the thread root is a bot message", async () => {
     const sessionDir = getChannelSessionDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
     const channelSM = openManagedSession(channelFile, sessionDir, conversationDir);
     channelSM.appendMessage(makeUserMessage("[2026-04-28 18:19:03+08:00] [alice]: question"));
     channelSM.appendMessage(makeAssistantMessage("mikan top-level answer"));
+    channelSM.appendMessage(makeUserMessage("[2026-04-28 18:20:03+08:00] [alice]: unrelated"));
+    channelSM.appendMessage(makeAssistantMessage("unrelated answer"));
 
     writeLog([
       {
@@ -178,11 +180,13 @@ describe("resolveSlackSessionScope", () => {
       retryDelayMs: 0,
     });
 
-    expect(threadRootMessage).toBeNull();
+    expect(threadRootMessage?.isBot).toBe(true);
     const content = readFileSync(contextFile, "utf-8");
     expect(content).toContain(`"parentSession":"${channelFile}"`);
-    expect(content).toContain("question");
+    expect(content).toContain('"role":"assistant"');
     expect(content).toContain("mikan top-level answer");
+    expect(content).not.toContain("question");
+    expect(content).not.toContain("unrelated answer");
   });
 
   test("creates a root-only branch session when the parent root turn is not materialized yet", async () => {
@@ -249,6 +253,48 @@ describe("resolveSlackSessionScope", () => {
     expect(readFileSync(parentFile, "utf-8")).toContain("fresh top-level message");
     expect(readFileSync(parentFile, "utf-8")).not.toContain("stale");
     expect(readFileSync(contextFile, "utf-8")).toContain(`"parentSession":"${parentFile}"`);
+  });
+
+  test("does not copy top-level history around a bot-rooted thread from log", async () => {
+    writeLog([
+      {
+        date: new Date().toISOString(),
+        ts: "1000.0001",
+        user: "U123",
+        userName: "alice",
+        text: "old channel context",
+        isBot: false,
+      },
+      {
+        date: new Date().toISOString(),
+        ts: "2000.0001",
+        user: "bot",
+        text: "follow-up request root",
+        isBot: true,
+      },
+      {
+        date: new Date().toISOString(),
+        ts: "3000.0001",
+        user: "bot",
+        text: "later standup summary",
+        isBot: true,
+      },
+    ]);
+
+    const { contextFile, threadRootMessage } = await resolveSlackSessionScope({
+      conversationDir,
+      sessionKey: "C123:2000.0001",
+      sleep: async () => {},
+      retryCount: 1,
+      retryDelayMs: 0,
+    });
+
+    expect(threadRootMessage?.isBot).toBe(true);
+    const threadContent = readFileSync(contextFile, "utf-8");
+    expect(threadContent).toContain("follow-up request root");
+    expect(threadContent).toContain('"role":"assistant"');
+    expect(threadContent).not.toContain("old channel context");
+    expect(threadContent).not.toContain("later standup summary");
   });
 
   test("materializes top-level history from log when a first thread has no current session", async () => {

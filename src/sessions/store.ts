@@ -18,6 +18,7 @@ export interface ThreadRootMessage {
   userName?: string;
   user?: string;
   loggedAt?: number;
+  isBot?: boolean;
 }
 
 export interface ResolvedSessionScope {
@@ -315,9 +316,11 @@ function getMessageText(entry: SessionMessageEntryLike): string {
 }
 
 function buildComparableRootMessageText(rootMessage: ThreadRootMessage): string | null {
-  const userLabel = rootMessage.userName || rootMessage.user || "unknown";
   const text = rootMessage.text?.trim();
   if (!text) return null;
+  if (rootMessage.isBot) return text;
+
+  const userLabel = rootMessage.userName || rootMessage.user || "unknown";
   return normalizeComparableUserText(`[${userLabel}]: ${text}`);
 }
 
@@ -417,7 +420,7 @@ export function createThreadSessionFileFromRootMessage(
     parentId: null,
     timestamp: new Date().toISOString(),
     message: {
-      role: "user",
+      role: rootMessage.isBot ? "assistant" : "user",
       content: [{ type: "text", text: rootText }],
       ...(rootMessage.loggedAt !== undefined ? { timestamp: rootMessage.loggedAt } : {}),
     },

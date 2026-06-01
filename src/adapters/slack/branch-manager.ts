@@ -47,12 +47,12 @@ function defaultSleep(ms: number): Promise<void> {
 }
 
 function buildThreadRootSeed(message: ConversationLogMessage): ThreadRootMessage | null {
-  if (message.isBot) return null;
   return {
     text: message.text,
     userName: message.userName,
     user: message.user,
     loggedAt: message.date ? new Date(message.date).getTime() : undefined,
+    isBot: message.isBot,
   };
 }
 
@@ -179,10 +179,15 @@ export async function resolveSlackSessionScope(
     cwd,
     existingSessionFile: resolveChannelSessionFile(conversationDir),
   });
-  if (!conversationSource) {
+  if (!conversationSource || threadRootMessage?.isBot) {
     return {
       sessionDir,
-      contextFile: createThreadSessionFromRootOrEmpty(threadFile, cwd, threadRootMessage),
+      contextFile: createThreadSessionFromRootOrEmpty(
+        threadFile,
+        cwd,
+        threadRootMessage,
+        conversationSource ?? undefined,
+      ),
       threadRootMessage,
     };
   }
