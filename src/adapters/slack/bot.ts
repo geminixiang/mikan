@@ -29,7 +29,10 @@ import {
 } from "../shared.js";
 import { evaluateAutoReplyPolicy } from "../../trigger.js";
 import { createSlackAdapters } from "./context.js";
-import { hasMaterializedSlackBranchSession, registerSlackForkSession } from "./branch-manager.js";
+import {
+  hasMaterializedChatSession,
+  registerThreadSession,
+} from "../../sessions/chat-session-manager.js";
 import {
   isSlackForkSessionKey,
   planSlackAdapterSession,
@@ -491,7 +494,7 @@ export class SlackBot implements Bot {
       const eventPlan = planSlackEventForkRun(event, anchorTs);
       const eventForRun = eventPlan.event;
       if (eventPlan.initialMessageTs && eventForRun.sessionKey) {
-        registerSlackForkSession({
+        registerThreadSession({
           conversationDir: join(this.workingDir, conversationId),
           sessionKey: eventForRun.sessionKey,
         });
@@ -545,7 +548,10 @@ export class SlackBot implements Bot {
   }
 
   private hasKnownForkSession(conversationId: string, sessionKey: string): boolean {
-    return hasMaterializedSlackBranchSession(join(this.workingDir, conversationId), sessionKey);
+    return hasMaterializedChatSession({
+      conversationDir: join(this.workingDir, conversationId),
+      sessionKey,
+    });
   }
 
   private shouldTriggerSharedThreadReply(channelId: string, threadTs?: string): boolean {

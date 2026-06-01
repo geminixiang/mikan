@@ -1,8 +1,5 @@
 import type { Bot, BotAdapters, BotEvent, PlatformName } from "../adapter.js";
-import {
-  hasMaterializedSlackBranchSession,
-  waitForSlackBranchBootstrap,
-} from "../adapters/slack/branch-manager.js";
+import { waitForThreadSessionBootstrap } from "../sessions/chat-session-manager.js";
 import type { AgentRunner } from "../agent.js";
 import { dispatchCommand } from "../commands/index.js";
 import type { CommandHandler, CommandServices } from "../commands/index.js";
@@ -39,7 +36,9 @@ interface ConversationOrchestratorOptions {
     conversationId: string;
     platformName: string;
     sessionKey: string;
+    currentMessageId?: string;
   }) => Promise<ConversationRuntimeState>;
+  hasMaterializedSession: (options: { conversationDir: string; sessionKey: string }) => boolean;
   beforeRunTracked: (runPromise: Promise<void>) => void;
   afterRunTracked: (runPromise: Promise<void>) => void;
   onRunFinished: () => void;
@@ -74,15 +73,12 @@ export class ConversationOrchestrator {
     if (handledCommand) return;
 
     const conversationDir = join(this.options.workingDir, conversationId);
-    const waitedForParent =
-      adapters.platform.name === "slack"
-        ? await waitForSlackBranchBootstrap({
-            parentSessionKey: conversationId,
-            sessionKey,
-            hasThreadSession: () => hasMaterializedSlackBranchSession(conversationDir, sessionKey),
-            isParentRunning: () => this.options.getState(conversationId)?.running === true,
-          })
-        : false;
+    const waitedForParent = await waitForThreadSessionBootstrap({
+      parentSessionKey: conversationId,
+      sessionKey,
+      hasThreadSession: () => this.options.hasMaterializedSession({ conversationDir, sessionKey }),
+      isParentRunning: () => this.options.getState(conversationId)?.running === true,
+    });
     if (waitedForParent) {
       log.logInfo(
         `[${conversationId}] Delayed thread bootstrap until parent session sealed: ${sessionKey}`,
@@ -95,7 +91,9 @@ export class ConversationOrchestrator {
         conversationId,
         platformName: adapters.platform.name,
         sessionKey,
+        currentMessageId: event.ts,
       });
+      state.runner.syncChatHistory(event.ts);
     } catch (err) {
       reportUserFacingError(err, {
         domain: "mikan",

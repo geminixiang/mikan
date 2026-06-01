@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { registerSlackForkSession } from "../src/adapters/slack/branch-manager.js";
+import { registerThreadSession } from "../src/sessions/chat-session-manager.js";
 import { createSessionRuntime } from "../src/runtime/session-runtime.js";
 import {
   createManagedSessionFile,
@@ -60,15 +60,15 @@ function makeUserMessage(text: string) {
   } as const;
 }
 
-describe("SessionRuntime Slack fork scope", () => {
-  test("uses a pre-registered empty fork session for Slack event anchors", async () => {
+describe("SessionRuntime chat session scope", () => {
+  test("uses a pre-registered empty thread session for Slack event anchors", async () => {
     const sessionDir = getChannelSessionDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
     const channelSession = openManagedSession(channelFile, sessionDir, conversationDir);
     channelSession.appendMessage(makeUserMessage("channel history should not leak"));
 
     const runtime = makeRuntime();
-    registerSlackForkSession({
+    registerThreadSession({
       conversationDir,
       sessionKey: "C123:2000.0001",
       cwd: conversationDir,
@@ -76,12 +76,11 @@ describe("SessionRuntime Slack fork scope", () => {
 
     // This intentionally reaches the private scope resolver: the bug was in
     // pre-run session materialization, before a public run can observe it.
-    const sessionScope = await (runtime as any).resolveSessionScope(
-      "slack",
+    const sessionScope = await (runtime as any).resolveSessionScope({
       conversationDir,
-      "C123:2000.0001",
-      conversationDir,
-    );
+      sessionKey: "C123:2000.0001",
+      cwd: conversationDir,
+    });
 
     expect(sessionScope.contextFile).toBe(getThreadSessionFile(conversationDir, "C123:2000.0001"));
     expect(sessionScope.threadRootMessage).toBeNull();

@@ -1,18 +1,14 @@
 import type { Bot, BotAdapters, BotEvent, BotHandler, RunningSession } from "../adapter.js";
-import { resolveSlackSessionScope } from "../adapters/slack/branch-manager.js";
 import { type AgentRunner, createRunner } from "../agent.js";
 import { defaultCommandHandlers } from "../commands/index.js";
 import type { CommandHandler, CommandServices } from "../commands/index.js";
 import * as log from "../log.js";
 import { reportUserFacingError } from "../sentry.js";
 import {
-  createManagedSessionFile,
-  createManagedSessionFileAtPath,
-  getChannelSessionDir,
-  getThreadSessionFile,
-  resolveGenericSessionScope,
-  type ResolvedSessionScope,
-} from "../sessions/store.js";
+  ChatSessionManager,
+  type ResolveChatSessionScopeOptions,
+} from "../sessions/chat-session-manager.js";
+import type { ResolvedSessionScope } from "../sessions/store.js";
 import { formatNothingRunning, formatStopping } from "../ui-copy.js";
 import {
   ConversationOrchestrator,
@@ -73,6 +69,7 @@ class MikanSessionRuntime implements SessionRuntime {
   private readonly sessionQueues = new Map<string, Promise<void>>();
   private readonly inFlightRuns = new Set<Promise<void>>();
   private readonly orchestrator: ConversationOrchestrator;
+  private readonly chatSessionManager = new ChatSessionManager();
   private isShuttingDown = false;
 
   constructor(private readonly options: SessionRuntimeOptions) {
@@ -85,6 +82,8 @@ class MikanSessionRuntime implements SessionRuntime {
       isShuttingDown: () => this.isShuttingDown,
       getState: (sessionKey) => this.conversationStates.get(sessionKey),
       getOrCreateState: (createOptions) => this.getOrCreateState(createOptions),
+      hasMaterializedSession: ({ conversationDir, sessionKey }) =>
+        this.chatSessionManager.hasMaterializedSession({ conversationDir, sessionKey }),
       beforeRunTracked: (runPromise) => {
         this.inFlightRuns.add(runPromise);
         Sentry.metrics.gauge("agent.sessions.active", this.inFlightRuns.size);
@@ -155,11 +154,7 @@ class MikanSessionRuntime implements SessionRuntime {
       this.options.workingDir,
       conversationId,
     );
-    if (sessionKey.includes(":")) {
-      createManagedSessionFileAtPath(getThreadSessionFile(conversationDir, sessionKey), runtimeCwd);
-    } else {
-      createManagedSessionFile(getChannelSessionDir(conversationDir), runtimeCwd);
-    }
+    this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
 
     this.conversationStates.delete(sessionKey);
 
@@ -224,11 +219,10 @@ class MikanSessionRuntime implements SessionRuntime {
     return true;
   }
 
-  private async getOrCreateState({
-    conversationId,
-    platformName,
-    sessionKey,
-  }: CreateSessionSandboxOptions): Promise<ConversationState> {
+  private async getOrCreateState(
+    options: CreateSessionSandboxOptions & { currentMessageId?: string },
+  ): Promise<ConversationState> {
+    const { conversationId, sessionKey, currentMessageId } = options;
     const existing = this.conversationStates.get(sessionKey);
     if (existing) {
       existing.lastAccessedAt = Date.now();
@@ -241,12 +235,12 @@ class MikanSessionRuntime implements SessionRuntime {
       this.options.workingDir,
       conversationId,
     );
-    const sessionScope = await this.resolveSessionScope(
-      platformName,
+    const sessionScope = await this.resolveSessionScope({
       conversationDir,
       sessionKey,
-      runtimeCwd,
-    );
+      cwd: runtimeCwd,
+      currentMessageId,
+    });
     const state: ConversationState = {
       running: false,
       runner: await createRunner(
@@ -293,15 +287,9 @@ class MikanSessionRuntime implements SessionRuntime {
   }
 
   private async resolveSessionScope(
-    platformName: string,
-    conversationDir: string,
-    sessionKey: string,
-    cwd: string,
+    options: ResolveChatSessionScopeOptions,
   ): Promise<ResolvedSessionScope> {
-    if (platformName === "slack") {
-      return resolveSlackSessionScope({ conversationDir, sessionKey, cwd });
-    }
-    return resolveGenericSessionScope({ conversationDir, sessionKey, cwd });
+    return this.chatSessionManager.resolveSessionScope(options);
   }
 
   private evictIdleSessions(): void {

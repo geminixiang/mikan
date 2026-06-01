@@ -1,22 +1,18 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
-  createManagedSessionFile,
-  getChannelSessionDir,
-  openManagedSession,
-} from "../src/sessions/store.js";
-import {
+  registerSlackForkSession,
   resolveSlackSessionScope,
   waitForSlackBranchBootstrap,
 } from "../src/adapters/slack/branch-manager.js";
+import { getChannelSessionDir, getThreadSessionFile } from "../src/sessions/store.js";
 
 let conversationDir: string;
-let nextTimestamp = 1;
 
 beforeEach(() => {
-  nextTimestamp = 1;
   conversationDir = join(
     tmpdir(),
     `slack-branch-manager-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -36,36 +32,24 @@ function writeLog(entries: object[]): void {
   );
 }
 
-function makeUserMessage(text: string) {
-  return {
-    role: "user",
-    content: [{ type: "text", text }],
-    timestamp: nextTimestamp++,
-  } as const;
-}
-
-function makeAssistantMessage(text: string) {
-  return {
-    role: "assistant",
-    content: [{ type: "text", text }],
-    api: "openai-responses",
-    provider: "openai",
-    model: "gpt-test",
-    usage: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 0,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-    },
-    stopReason: "stop",
-    timestamp: nextTimestamp++,
-  } as const;
+function readContextText(sessionFile: string): string {
+  const session = SessionManager.open(
+    sessionFile,
+    getChannelSessionDir(conversationDir),
+    conversationDir,
+  );
+  return session
+    .buildSessionContext()
+    .messages.map((message) =>
+      typeof message.content === "string"
+        ? message.content
+        : message.content.map((part) => (part.type === "text" ? part.text : "")).join("\n"),
+    )
+    .join("\n---\n");
 }
 
 describe("waitForSlackBranchBootstrap", () => {
-  test("waits for the parent Slack session to finish before first thread bootstrap", async () => {
+  test("waits for the parent session to finish before first thread bootstrap", async () => {
     let checks = 0;
     const sleep = vi.fn(async () => {
       checks += 1;
@@ -82,25 +66,6 @@ describe("waitForSlackBranchBootstrap", () => {
 
     expect(waited).toBe(true);
     expect(sleep).toHaveBeenCalledTimes(3);
-  });
-
-  test("stops waiting once the thread session already exists", async () => {
-    let checks = 0;
-    const sleep = vi.fn(async () => {
-      checks += 1;
-    });
-
-    const waited = await waitForSlackBranchBootstrap({
-      parentSessionKey: "C123",
-      sessionKey: "C123:1000.0001",
-      hasThreadSession: () => checks >= 1,
-      isParentRunning: () => true,
-      sleep,
-      pollMs: 1,
-    });
-
-    expect(waited).toBe(true);
-    expect(sleep).toHaveBeenCalledTimes(1);
   });
 
   test("does nothing for top-level sessions", async () => {
@@ -121,225 +86,120 @@ describe("waitForSlackBranchBootstrap", () => {
 });
 
 describe("resolveSlackSessionScope", () => {
-  test("resolves the persistent top-level session", async () => {
+  test("uses generic log-based top-level session bootstrap", async () => {
+    const recentDate = new Date().toISOString();
+    writeLog([
+      {
+        date: recentDate,
+        ts: "1000.0001",
+        user: "U123",
+        userName: "alice",
+        text: "prior top-level",
+        isBot: false,
+      },
+      {
+        date: recentDate,
+        ts: "1000.0002",
+        user: "U123",
+        userName: "alice",
+        text: "current top-level",
+        isBot: false,
+      },
+    ]);
+
     const { sessionDir, contextFile, threadRootMessage } = await resolveSlackSessionScope({
       conversationDir,
       sessionKey: "C123",
+      cwd: conversationDir,
+      currentMessageId: "1000.0002",
     });
 
     expect(sessionDir).toBe(getChannelSessionDir(conversationDir));
-    expect(contextFile).toContain("/sessions/");
     expect(threadRootMessage).toBeNull();
+    const text = readContextText(contextFile);
+    expect(text).toContain("prior top-level");
+    expect(text).not.toContain("current top-level");
   });
 
-  test("forks from the top-level session when the thread root is not in the log", async () => {
-    const sessionDir = getChannelSessionDir(conversationDir);
-    const channelFile = createManagedSessionFile(sessionDir, conversationDir);
-    const channelSM = openManagedSession(channelFile, sessionDir, conversationDir);
-    channelSM.appendMessage(
-      makeUserMessage("[2026-04-28 18:19:03+08:00] [alice]: channel context"),
-    );
-    channelSM.appendMessage(makeAssistantMessage("channel reply"));
-
-    const { contextFile, threadRootMessage } = await resolveSlackSessionScope({
-      conversationDir,
-      sessionKey: "C123:1000.0001",
-    });
-
-    expect(threadRootMessage).toBeNull();
-    const content = readFileSync(contextFile, "utf-8");
-    expect(content).toContain(`"parentSession":"${channelFile}"`);
-    expect(content).toContain("channel context");
-    expect(content).toContain("channel reply");
-  });
-
-  test("creates a root-only branch session when the thread root is a bot message", async () => {
-    const sessionDir = getChannelSessionDir(conversationDir);
-    const channelFile = createManagedSessionFile(sessionDir, conversationDir);
-    const channelSM = openManagedSession(channelFile, sessionDir, conversationDir);
-    channelSM.appendMessage(makeUserMessage("[2026-04-28 18:19:03+08:00] [alice]: question"));
-    channelSM.appendMessage(makeAssistantMessage("mikan top-level answer"));
-    channelSM.appendMessage(makeUserMessage("[2026-04-28 18:20:03+08:00] [alice]: unrelated"));
-    channelSM.appendMessage(makeAssistantMessage("unrelated answer"));
-
+  test("uses generic log-based thread bootstrap instead of forking top-level sessions", async () => {
+    const recentDate = new Date().toISOString();
     writeLog([
       {
-        date: "2026-04-28T10:19:00.000Z",
+        date: recentDate,
+        ts: "1000.0001",
+        user: "U123",
+        userName: "alice",
+        text: "recent top-level context",
+        isBot: false,
+      },
+      {
+        date: recentDate,
         ts: "2000.0001",
+        user: "U456",
+        userName: "bob",
+        text: "thread root",
+        isBot: false,
+      },
+      {
+        date: recentDate,
+        ts: "2000.0002",
+        threadTs: "2000.0001",
         user: "bot",
-        text: "mikan top-level answer",
+        text: "thread reply",
         isBot: true,
+      },
+      {
+        date: recentDate,
+        ts: "2000.0003",
+        threadTs: "2000.0001",
+        user: "U456",
+        userName: "bob",
+        text: "current thread message",
+        isBot: false,
       },
     ]);
 
     const { contextFile, threadRootMessage } = await resolveSlackSessionScope({
       conversationDir,
       sessionKey: "C123:2000.0001",
-      sleep: async () => {},
-      retryCount: 1,
-      retryDelayMs: 0,
+      cwd: conversationDir,
+      currentMessageId: "2000.0003",
     });
 
-    expect(threadRootMessage?.isBot).toBe(true);
-    const content = readFileSync(contextFile, "utf-8");
-    expect(content).toContain(`"parentSession":"${channelFile}"`);
-    expect(content).toContain('"role":"assistant"');
-    expect(content).toContain("mikan top-level answer");
-    expect(content).not.toContain("question");
-    expect(content).not.toContain("unrelated answer");
+    expect(contextFile).toBe(getThreadSessionFile(conversationDir, "C123:2000.0001"));
+    expect(threadRootMessage?.text).toBe("thread root");
+    const text = readContextText(contextFile);
+    expect(text).toContain("recent top-level context");
+    expect(text).toContain("thread root");
+    expect(text).toContain("thread reply");
+    expect(text).not.toContain("current thread message");
   });
 
-  test("creates a root-only branch session when the parent root turn is not materialized yet", async () => {
-    const sessionDir = getChannelSessionDir(conversationDir);
-    const channelFile = createManagedSessionFile(sessionDir, conversationDir);
-    const channelSM = openManagedSession(channelFile, sessionDir, conversationDir);
-    channelSM.appendMessage(makeUserMessage("[2026-04-28 18:19:03+08:00] [alice]: second"));
-    channelSM.appendMessage(makeAssistantMessage("second reply"));
-
-    writeLog([
-      {
-        date: "2026-04-28T10:18:59.000Z",
-        ts: "1000.0001",
-        user: "U123",
-        userName: "alice",
-        text: "first",
-        isBot: false,
-      },
-    ]);
-
-    const { contextFile, threadRootMessage } = await resolveSlackSessionScope({
-      conversationDir,
-      sessionKey: "C123:1000.0001",
-      sleep: async () => {},
-      retryCount: 1,
-      retryDelayMs: 0,
-    });
-
-    expect(threadRootMessage?.text).toBe("first");
-    const content = readFileSync(contextFile, "utf-8");
-    expect(content).toContain(`"parentSession":"${channelFile}"`);
-    expect(content).toContain("[alice]: first");
-    expect(content).not.toContain("second reply");
-  });
-
-  test("replaces a stale current session with top-level history from log", async () => {
-    const sessionDir = getChannelSessionDir(conversationDir);
-    const staleFile = createManagedSessionFile(sessionDir, conversationDir);
-    const staleSession = openManagedSession(staleFile, sessionDir, conversationDir);
-    staleSession.appendMessage(makeUserMessage("[2026-03-17 10:00:00+08:00] [alice]: stale"));
-
+  test("pre-registered Slack event anchor sessions do not bootstrap channel history", async () => {
     writeLog([
       {
         date: new Date().toISOString(),
         ts: "1000.0001",
         user: "U123",
         userName: "alice",
-        text: "fresh top-level message",
+        text: "channel history should not leak",
         isBot: false,
       },
     ]);
+
+    registerSlackForkSession({
+      conversationDir,
+      sessionKey: "C123:2000.0001",
+      cwd: conversationDir,
+    });
 
     const { contextFile } = await resolveSlackSessionScope({
       conversationDir,
-      sessionKey: "C123:1000.0001",
-      sleep: async () => {},
-      retryCount: 1,
-      retryDelayMs: 0,
-    });
-
-    const currentPointer = join(sessionDir, "current");
-    const parentFile = join(sessionDir, readFileSync(currentPointer, "utf-8").trim());
-    expect(parentFile).not.toBe(staleFile);
-    expect(readFileSync(parentFile, "utf-8")).toContain("fresh top-level message");
-    expect(readFileSync(parentFile, "utf-8")).not.toContain("stale");
-    expect(readFileSync(contextFile, "utf-8")).toContain(`"parentSession":"${parentFile}"`);
-  });
-
-  test("does not copy top-level history around a bot-rooted thread from log", async () => {
-    writeLog([
-      {
-        date: new Date().toISOString(),
-        ts: "1000.0001",
-        user: "U123",
-        userName: "alice",
-        text: "old channel context",
-        isBot: false,
-      },
-      {
-        date: new Date().toISOString(),
-        ts: "2000.0001",
-        user: "bot",
-        text: "follow-up request root",
-        isBot: true,
-      },
-      {
-        date: new Date().toISOString(),
-        ts: "3000.0001",
-        user: "bot",
-        text: "later standup summary",
-        isBot: true,
-      },
-    ]);
-
-    const { contextFile, threadRootMessage } = await resolveSlackSessionScope({
-      conversationDir,
       sessionKey: "C123:2000.0001",
-      sleep: async () => {},
-      retryCount: 1,
-      retryDelayMs: 0,
+      cwd: conversationDir,
     });
 
-    expect(threadRootMessage?.isBot).toBe(true);
-    const threadContent = readFileSync(contextFile, "utf-8");
-    expect(threadContent).toContain("follow-up request root");
-    expect(threadContent).toContain('"role":"assistant"');
-    expect(threadContent).not.toContain("old channel context");
-    expect(threadContent).not.toContain("later standup summary");
-  });
-
-  test("materializes top-level history from log when a first thread has no current session", async () => {
-    writeLog([
-      {
-        date: new Date().toISOString(),
-        ts: "1000.0001",
-        user: "U123",
-        userName: "alice",
-        text: "Instagram Reel link",
-        isBot: false,
-      },
-      {
-        date: new Date().toISOString(),
-        ts: "1000.0002",
-        threadTs: "1000.0001",
-        user: "U456",
-        userName: "bob",
-        text: "thread reply should not be in top-level history",
-        isBot: false,
-      },
-    ]);
-
-    const { contextFile, threadRootMessage } = await resolveSlackSessionScope({
-      conversationDir,
-      sessionKey: "C123:1000.0001",
-      sleep: async () => {},
-      retryCount: 1,
-      retryDelayMs: 0,
-    });
-
-    expect(threadRootMessage?.text).toBe("Instagram Reel link");
-    const currentPointer = join(getChannelSessionDir(conversationDir), "current");
-    expect(existsSync(currentPointer)).toBe(true);
-    const parentFile = join(
-      getChannelSessionDir(conversationDir),
-      readFileSync(currentPointer, "utf-8").trim(),
-    );
-    const parentContent = readFileSync(parentFile, "utf-8");
-    expect(parentContent).toContain("platform-history");
-    expect(parentContent).toContain("Instagram Reel link");
-    expect(parentContent).not.toContain("thread reply should not be in top-level history");
-
-    const threadContent = readFileSync(contextFile, "utf-8");
-    expect(threadContent).toContain(`"parentSession":"${parentFile}"`);
-    expect(threadContent).toContain("Instagram Reel link");
+    const text = readContextText(contextFile);
+    expect(text).not.toContain("channel history should not leak");
   });
 });

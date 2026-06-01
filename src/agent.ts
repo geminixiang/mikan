@@ -40,6 +40,7 @@ import {
 import { createMountedRuntimePathContext } from "./sandbox/path-context.js";
 import { addLifecycleBreadcrumb, metricAttributes } from "./sentry.js";
 import type { VaultManager } from "./vault.js";
+import { ChatSessionManager } from "./sessions/chat-session-manager.js";
 import {
   extractSessionUuid,
   openManagedSession,
@@ -51,6 +52,7 @@ import { createMikanTools } from "./tools/index.js";
 import * as Sentry from "@sentry/node";
 
 export interface AgentRunner {
+  syncChatHistory(currentMessageId?: string): void;
   run(
     message: ChatMessage,
     responseCtx: ChatResponseContext,
@@ -1482,6 +1484,7 @@ export async function createRunner(
   }
 
   const sessionUuid = extractSessionUuid(contextFile);
+  const chatSessionManager = new ChatSessionManager();
   const settingsManager = SettingsManager.inMemory();
   const { agent, session } = await createConfiguredAgentSession({
     conversationId,
@@ -1500,6 +1503,15 @@ export async function createRunner(
   attachSessionEventHandlers({ session, runState, model, agentConfig });
 
   return {
+    syncChatHistory(currentMessageId?: string): void {
+      chatSessionManager.syncSessionManager({
+        conversationDir,
+        sessionKey,
+        sessionManager,
+        currentMessageId,
+      });
+    },
+
     async run(
       message: ChatMessage,
       responseCtx: ChatResponseContext,
