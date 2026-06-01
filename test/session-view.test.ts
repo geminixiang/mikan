@@ -119,7 +119,7 @@ describe("loadSessionViewModel", () => {
     expect(model.items[1].body).toContain("好的，我正在查看");
     expect(model.items[2].body).toContain("npm test");
     expect(model.items[2].body).toContain("1 passed");
-    expect(model.forks).toEqual([]);
+    expect(model.threads).toEqual([]);
   });
 
   test("preserves assistant content block order and bash execution status details", () => {
@@ -181,17 +181,46 @@ describe("loadSessionViewModel", () => {
 
     const channelModel = loadSessionViewModel(channelFile);
     expect(channelModel.items.some((item) => item.body?.includes("thread only"))).toBe(false);
-    expect(channelModel.forks).toHaveLength(1);
-    expect(channelModel.forks[0]?.fileName).toBe(basename(threadFile));
+    expect(channelModel.threads).toHaveLength(1);
+    expect(channelModel.threads[0]?.fileName).toBe(basename(threadFile));
     const anchoredItem = channelModel.items.find((item) => item.body?.includes("channel reply"));
-    expect(anchoredItem?.forks?.[0]?.fileName).toBe(basename(threadFile));
+    expect(anchoredItem?.threads?.[0]?.fileName).toBe(basename(threadFile));
 
     const threadModel = loadSessionViewModel(threadFile);
     expect(threadModel.parent?.fileName).toBe(basename(channelFile));
     expect(threadModel.items.some((item) => item.body?.includes("thread only"))).toBe(true);
   });
 
-  test("anchors root-snapshot forks to the last shared entry", () => {
+  test("links fixed-path thread sessions without legacy parent metadata", () => {
+    const sessionDir = getChannelSessionDir(conversationDir);
+    const channelFile = createManagedSessionFile(sessionDir, conversationDir);
+    const channelSession = openManagedSession(channelFile, sessionDir, conversationDir);
+    channelSession.appendMessage({
+      ...makeUserMessage("thread root"),
+      timestamp: Number("1000.0001") * 1000,
+    });
+    channelSession.appendMessage(makeAssistantMessage("channel reply"));
+
+    const threadFile = getThreadSessionFile(conversationDir, "D123:1000.0001");
+    createManagedSessionFileAtPath(threadFile, conversationDir);
+    const threadSession = openManagedSession(threadFile, sessionDir, conversationDir);
+    threadSession.appendMessage({
+      ...makeUserMessage("thread root"),
+      timestamp: Number("1000.0001") * 1000,
+    });
+    threadSession.appendMessage(makeAssistantMessage("thread reply"));
+
+    const channelModel = loadSessionViewModel(channelFile);
+    expect(channelModel.threads).toHaveLength(1);
+    expect(channelModel.threads[0]?.fileName).toBe(basename(threadFile));
+    const rootItem = channelModel.items.find((item) => item.body?.includes("thread root"));
+    expect(rootItem?.threads?.[0]?.fileName).toBe(basename(threadFile));
+
+    const threadModel = loadSessionViewModel(threadFile);
+    expect(threadModel.parent?.fileName).toBe(basename(channelFile));
+  });
+
+  test("anchors legacy root-snapshot threads to the last shared entry", () => {
     const sessionDir = getChannelSessionDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
     const channelSession = openManagedSession(channelFile, sessionDir, conversationDir);
@@ -211,11 +240,11 @@ describe("loadSessionViewModel", () => {
     const assistantAnchor = channelModel.items.find((item) => item.body?.includes("first reply"));
     const userAnchor = channelModel.items.find((item) => item.body?.includes("first"));
 
-    expect(assistantAnchor?.forks?.[0]?.fileName).toBe(basename(threadFile));
-    expect(userAnchor?.forks).toBeUndefined();
+    expect(assistantAnchor?.threads?.[0]?.fileName).toBe(basename(threadFile));
+    expect(userAnchor?.threads).toBeUndefined();
   });
 
-  test("anchors root-only fallback forks by matching the root message in parent", () => {
+  test("anchors root-only fallback threads by matching the root message in parent", () => {
     const sessionDir = getChannelSessionDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
     const channelSession = openManagedSession(channelFile, sessionDir, conversationDir);
@@ -241,7 +270,7 @@ describe("loadSessionViewModel", () => {
     const channelModel = loadSessionViewModel(channelFile);
     const userAnchor = channelModel.items.find((item) => item.body?.includes("first"));
 
-    expect(userAnchor?.forks?.[0]?.fileName).toBe(basename(threadFile));
+    expect(userAnchor?.threads?.[0]?.fileName).toBe(basename(threadFile));
   });
 });
 

@@ -230,7 +230,7 @@ function renderSessionPage(
     entryCount: number;
     items: SessionViewItem[];
     parent?: SessionViewRelation;
-    forks: SessionViewRelation[];
+    threads: SessionViewRelation[];
   },
   token: string,
   expiresAt: number,
@@ -242,7 +242,7 @@ function renderSessionPage(
 
   const relatedSections = model.parent
     ? `<section class="related-card stack">
-        <p class="eyebrow">Forked from</p>
+        <p class="eyebrow">Parent session</p>
         ${renderRelationCard(model.parent, token)}
       </section>`
     : "";
@@ -308,14 +308,14 @@ function renderRelationCard(relation: SessionViewRelation, token: string): strin
   </a>`;
 }
 
-function renderForkLinks(relations: SessionViewRelation[] | undefined, token: string): string {
+function renderThreadLinks(relations: SessionViewRelation[] | undefined, token: string): string {
   if (!relations || relations.length === 0) return "";
-  return `<div class="fork-links">${relations
+  return `<div class="thread-links">${relations
     .map((relation) => {
       const href = `/session?token=${encodeURIComponent(token)}&session=${encodeURIComponent(relation.fileName)}`;
-      return `<a class="fork-link" href="${href}" title="Open ${esc(relation.title)}">
-        <span class="fork-dot" aria-hidden="true"></span>
-        <span class="fork-text">Thread</span>
+      return `<a class="thread-link" href="${href}" title="Open ${esc(relation.title)}">
+        <span class="thread-dot" aria-hidden="true"></span>
+        <span class="thread-text">Thread</span>
       </a>`;
     })
     .join("")}</div>`;
@@ -401,14 +401,14 @@ function renderItem(item: SessionViewItem, token?: string): string {
     const threadBadge = threadTs
       ? `<div class="thread-badge" title="Thread ${esc(threadTs)}">Thread · <code>${esc(threadTs)}</code></div>`
       : "";
-    const forks = renderForkLinks(item.forks, token ?? "");
+    const threads = renderThreadLinks(item.threads, token ?? "");
     return `<div class="msg-row msg-user copy-host">
   <div class="msg-main user-main">
     <div class="user-bubble">
       ${rawHeader}
       ${threadBadge}
       ${body}
-      ${forks}
+      ${threads}
       ${time}
     </div>
     ${renderCopyButton()}
@@ -419,13 +419,13 @@ function renderItem(item: SessionViewItem, token?: string): string {
 
   // assistant
   const body = item.body ? renderMarkdownBlock(item.body, "assistant") : "";
-  const forks = renderForkLinks(item.forks, token ?? "");
+  const threads = renderThreadLinks(item.threads, token ?? "");
   return `<div class="msg-row msg-assistant copy-host">
   <div class="msg-avatar asst-avatar" aria-hidden="true">A</div>
   <div class="msg-main asst-main">
     <div class="asst-card">
       ${body}
-      ${forks}
+      ${threads}
       ${time}
     </div>
     ${renderCopyButton()}
@@ -1058,14 +1058,14 @@ const sessionViewStyles = `
 
   /* ── Timeline shell ───────────────────────────────────────────────────── */
 
-  .fork-links {
+  .thread-links {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
     margin-top: 10px;
   }
 
-  .fork-link {
+  .thread-link {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -1081,13 +1081,13 @@ const sessionViewStyles = `
     transition: transform 120ms, background 120ms, border-color 120ms;
   }
 
-  .fork-link:hover {
+  .thread-link:hover {
     transform: translateY(-1px);
     background: #fff1f2;
     border-color: rgba(239, 68, 68, 0.28);
   }
 
-  .fork-dot {
+  .thread-dot {
     width: 7px;
     height: 7px;
     border-radius: 50%;
@@ -1096,7 +1096,7 @@ const sessionViewStyles = `
     flex-shrink: 0;
   }
 
-  .fork-text {
+  .thread-text {
     white-space: nowrap;
   }
 

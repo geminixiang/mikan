@@ -22,11 +22,11 @@ export interface SessionViewItem {
   meta?: string;
   tone?: "default" | "ok" | "err" | "muted";
   entryId?: string;
-  forks?: SessionViewRelation[];
+  threads?: SessionViewRelation[];
 }
 
 export interface SessionViewRelation {
-  kind: "parent" | "fork";
+  kind: "parent" | "thread";
   fileName: string;
   sessionId: string;
   title: string;
@@ -45,7 +45,7 @@ export interface SessionViewModel {
   entryCount: number;
   items: SessionViewItem[];
   parent?: SessionViewRelation;
-  forks: SessionViewRelation[];
+  threads: SessionViewRelation[];
 }
 
 export function resolveExistingSessionFile(
@@ -72,28 +72,28 @@ export function loadSessionViewModel(sessionFile: string): SessionViewModel {
 
   const parent = header.parentSession
     ? buildSessionRelation(resolve(header.parentSession), "parent")
-    : undefined;
-  const forks = listRelatedSessionFiles(resolvedFile)
+    : buildInferredThreadParentRelation(resolvedFile);
+  const threads = listRelatedSessionFiles(resolvedFile)
     .filter((candidate) => candidate !== resolvedFile)
-    .map((candidate) => buildSessionRelation(candidate, "fork", resolvedFile))
+    .map((candidate) => buildSessionRelation(candidate, "thread", resolvedFile))
     .filter((relation): relation is SessionViewRelation => relation !== null)
     .toSorted((a, b) => (a.updatedAt < b.updatedAt ? -1 : a.updatedAt > b.updatedAt ? 1 : 0));
 
-  const forksByEntryId = new Map<string, SessionViewRelation[]>();
-  for (const fork of forks) {
-    if (!fork.anchorEntryId) continue;
-    const bucket = forksByEntryId.get(fork.anchorEntryId) ?? [];
-    bucket.push(fork);
-    forksByEntryId.set(fork.anchorEntryId, bucket);
+  const threadsByEntryId = new Map<string, SessionViewRelation[]>();
+  for (const thread of threads) {
+    if (!thread.anchorEntryId) continue;
+    const bucket = threadsByEntryId.get(thread.anchorEntryId) ?? [];
+    bucket.push(thread);
+    threadsByEntryId.set(thread.anchorEntryId, bucket);
   }
 
   const items = entries.flatMap((entry) => {
     const item = mapEntryToItem(entry);
     if (!item) return [];
     if (item.entryId) {
-      const anchoredForks = forksByEntryId.get(item.entryId);
-      if (anchoredForks) {
-        item.forks = anchoredForks;
+      const anchoredThreads = threadsByEntryId.get(item.entryId);
+      if (anchoredThreads) {
+        item.threads = anchoredThreads;
       }
     }
     return [item];
@@ -108,7 +108,7 @@ export function loadSessionViewModel(sessionFile: string): SessionViewModel {
     entryCount: entries.length,
     items,
     parent: parent ?? undefined,
-    forks,
+    threads,
   };
 }
 
@@ -156,7 +156,7 @@ function listRelatedSessionFiles(sessionFile: string): string[] {
 
 function buildSessionRelation(
   sessionFile: string,
-  kind: "parent" | "fork",
+  kind: "parent" | "thread",
   expectedParent?: string,
 ): SessionViewRelation | null {
   let sm: SessionManager;
@@ -176,25 +176,19 @@ function buildSessionRelation(
     );
     return null;
   }
-  if (kind === "fork") {
-    const parentSession = resolve(header.parentSession ?? "");
-    if (
-      parentSession !== expectedParent &&
-      !(
-        expectedParent &&
-        isPlatformHistorySession(expectedParent) &&
-        isPlatformHistorySession(parentSession)
-      )
-    ) {
-      return null;
-    }
+  if (
+    kind === "thread" &&
+    !isChildThreadSession(sessionFile, header.parentSession, expectedParent)
+  ) {
+    return null;
   }
 
   const entries = sm.getEntries();
   const updatedAt = entries.at(-1)?.timestamp ?? header.timestamp;
+  const threadId = kind === "thread" ? getFixedThreadSessionId(sessionFile) : null;
   const anchorEntryId =
-    kind === "fork" && expectedParent
-      ? findForkAnchorEntryId(SessionManager.open(expectedParent).getEntries(), entries)
+    kind === "thread" && expectedParent
+      ? findThreadAnchorEntryId(SessionManager.open(expectedParent).getEntries(), entries, threadId)
       : undefined;
   return {
     kind,
@@ -208,10 +202,55 @@ function buildSessionRelation(
   };
 }
 
-function findForkAnchorEntryId(
+function buildInferredThreadParentRelation(sessionFile: string): SessionViewRelation | undefined {
+  if (!getFixedThreadSessionId(sessionFile)) return undefined;
+
+  const parentSession = resolveCurrentChannelSessionForSessionFile(sessionFile);
+  if (!parentSession || parentSession === sessionFile) return undefined;
+
+  return buildSessionRelation(parentSession, "parent") ?? undefined;
+}
+
+function isChildThreadSession(
+  sessionFile: string,
+  parentSession: string | undefined,
+  expectedParent: string | undefined,
+): boolean {
+  if (!expectedParent) return false;
+
+  if (parentSession) {
+    const resolvedParent = resolve(parentSession);
+    return (
+      resolvedParent === expectedParent ||
+      (isPlatformHistorySession(expectedParent) && isPlatformHistorySession(resolvedParent))
+    );
+  }
+
+  if (!getFixedThreadSessionId(sessionFile)) return false;
+  return resolveCurrentChannelSessionForSessionFile(sessionFile) === expectedParent;
+}
+
+function resolveCurrentChannelSessionForSessionFile(sessionFile: string): string | null {
+  return resolveChannelSessionFile(dirname(dirname(sessionFile)));
+}
+
+function getFixedThreadSessionId(sessionFile: string): string | null {
+  const fileName = basename(sessionFile);
+  if (!fileName.endsWith(".jsonl")) return null;
+  if (/^\d{4}-\d{2}-\d{2}T.+_[0-9a-f]{8}\.jsonl$/i.test(fileName)) return null;
+  return fileName.slice(0, -".jsonl".length);
+}
+
+function findThreadAnchorEntryId(
   parentEntries: SessionEntry[],
   childEntries: SessionEntry[],
+  threadId: string | null,
 ): string | undefined {
+  const threadTimestamp = parseThreadTimestamp(threadId);
+  if (threadTimestamp !== undefined) {
+    const timestampAnchor = findEntryIdByMessageTimestamp(parentEntries, threadTimestamp);
+    if (timestampAnchor) return timestampAnchor;
+  }
   let sharedCount = 0;
   while (
     sharedCount < parentEntries.length &&
@@ -229,6 +268,24 @@ function findForkAnchorEntryId(
   if (!childRoot) return undefined;
 
   return findParentAnchorByRootMessage(parentEntries, childRoot);
+}
+
+function parseThreadTimestamp(threadId: string | null): number | undefined {
+  if (!threadId) return undefined;
+  const timestamp = Number(threadId) * 1000;
+  return Number.isFinite(timestamp) ? timestamp : undefined;
+}
+
+function findEntryIdByMessageTimestamp(
+  entries: SessionEntry[],
+  timestamp: number,
+): string | undefined {
+  for (const entry of entries) {
+    if (entry.type !== "message") continue;
+    const messageTimestamp = (entry.message as { timestamp?: unknown }).timestamp;
+    if (messageTimestamp === timestamp) return entry.id;
+  }
+  return undefined;
 }
 
 function findParentAnchorByRootMessage(
