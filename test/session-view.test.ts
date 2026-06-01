@@ -4,11 +4,8 @@ import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import {
-  createThreadSessionFileFromRootMessage,
   createManagedSessionFile,
   createManagedSessionFileAtPath,
-  forkThreadSessionFile,
-  forkThreadSessionFileFromRootMessage,
   getChannelSessionDir,
   getThreadSessionFile,
   openManagedSession,
@@ -170,33 +167,8 @@ describe("loadSessionViewModel", () => {
     const sessionDir = getChannelSessionDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
     const channelSession = openManagedSession(channelFile, sessionDir, conversationDir);
-    channelSession.appendMessage(makeUserMessage("channel root"));
-    channelSession.appendMessage(makeAssistantMessage("channel reply"));
-
-    const threadFile = getThreadSessionFile(conversationDir, "D123:1000.0001");
-    forkThreadSessionFile(channelFile, threadFile, conversationDir);
-    const threadSession = openManagedSession(threadFile, sessionDir, conversationDir);
-    threadSession.appendMessage(makeUserMessage("thread only"));
-    threadSession.appendMessage(makeAssistantMessage("thread reply"));
-
-    const channelModel = loadSessionViewModel(channelFile);
-    expect(channelModel.items.some((item) => item.body?.includes("thread only"))).toBe(false);
-    expect(channelModel.threads).toHaveLength(1);
-    expect(channelModel.threads[0]?.fileName).toBe(basename(threadFile));
-    const anchoredItem = channelModel.items.find((item) => item.body?.includes("channel reply"));
-    expect(anchoredItem?.threads?.[0]?.fileName).toBe(basename(threadFile));
-
-    const threadModel = loadSessionViewModel(threadFile);
-    expect(threadModel.parent?.fileName).toBe(basename(channelFile));
-    expect(threadModel.items.some((item) => item.body?.includes("thread only"))).toBe(true);
-  });
-
-  test("links fixed-path thread sessions without legacy parent metadata", () => {
-    const sessionDir = getChannelSessionDir(conversationDir);
-    const channelFile = createManagedSessionFile(sessionDir, conversationDir);
-    const channelSession = openManagedSession(channelFile, sessionDir, conversationDir);
     channelSession.appendMessage({
-      ...makeUserMessage("thread root"),
+      ...makeUserMessage("channel root"),
       timestamp: Number("1000.0001") * 1000,
     });
     channelSession.appendMessage(makeAssistantMessage("channel reply"));
@@ -205,46 +177,25 @@ describe("loadSessionViewModel", () => {
     createManagedSessionFileAtPath(threadFile, conversationDir);
     const threadSession = openManagedSession(threadFile, sessionDir, conversationDir);
     threadSession.appendMessage({
-      ...makeUserMessage("thread root"),
+      ...makeUserMessage("channel root"),
       timestamp: Number("1000.0001") * 1000,
     });
+    threadSession.appendMessage(makeUserMessage("thread only"));
     threadSession.appendMessage(makeAssistantMessage("thread reply"));
 
     const channelModel = loadSessionViewModel(channelFile);
+    expect(channelModel.items.some((item) => item.body?.includes("thread only"))).toBe(false);
     expect(channelModel.threads).toHaveLength(1);
     expect(channelModel.threads[0]?.fileName).toBe(basename(threadFile));
-    const rootItem = channelModel.items.find((item) => item.body?.includes("thread root"));
+    const rootItem = channelModel.items.find((item) => item.body?.includes("channel root"));
     expect(rootItem?.threads?.[0]?.fileName).toBe(basename(threadFile));
 
     const threadModel = loadSessionViewModel(threadFile);
     expect(threadModel.parent?.fileName).toBe(basename(channelFile));
+    expect(threadModel.items.some((item) => item.body?.includes("thread only"))).toBe(true);
   });
 
-  test("anchors legacy root-snapshot threads to the last shared entry", () => {
-    const sessionDir = getChannelSessionDir(conversationDir);
-    const channelFile = createManagedSessionFile(sessionDir, conversationDir);
-    const channelSession = openManagedSession(channelFile, sessionDir, conversationDir);
-    channelSession.appendMessage(makeUserMessage("[2026-04-28 18:18:59+08:00] [alice]: first"));
-    channelSession.appendMessage(makeAssistantMessage("first reply"));
-    channelSession.appendMessage(makeUserMessage("[2026-04-28 18:19:03+08:00] [alice]: second"));
-    channelSession.appendMessage(makeAssistantMessage("second reply"));
-
-    const threadFile = getThreadSessionFile(conversationDir, "D123:1000.0002");
-    forkThreadSessionFileFromRootMessage(channelFile, threadFile, conversationDir, {
-      userName: "alice",
-      text: "first",
-      loggedAt: 1,
-    });
-
-    const channelModel = loadSessionViewModel(channelFile);
-    const assistantAnchor = channelModel.items.find((item) => item.body?.includes("first reply"));
-    const userAnchor = channelModel.items.find((item) => item.body?.includes("first"));
-
-    expect(assistantAnchor?.threads?.[0]?.fileName).toBe(basename(threadFile));
-    expect(userAnchor?.threads).toBeUndefined();
-  });
-
-  test("anchors root-only fallback threads by matching the root message in parent", () => {
+  test("anchors non-timestamp thread files by matching the root message", () => {
     const sessionDir = getChannelSessionDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
     const channelSession = openManagedSession(channelFile, sessionDir, conversationDir);
@@ -255,21 +206,16 @@ describe("loadSessionViewModel", () => {
     );
     channelSession.appendMessage(makeAssistantMessage("first reply"));
 
-    const threadFile = getThreadSessionFile(conversationDir, "D123:1000.0003");
-    createThreadSessionFileFromRootMessage(
-      threadFile,
-      conversationDir,
-      {
-        userName: "alice",
-        text: "first",
-        loggedAt: 1,
-      },
-      channelFile,
-    );
+    const threadFile = getThreadSessionFile(conversationDir, "D123:M1");
+    createManagedSessionFileAtPath(threadFile, conversationDir);
+    const threadSession = openManagedSession(threadFile, sessionDir, conversationDir);
+    threadSession.appendMessage(makeUserMessage("[alice]: first"));
+    threadSession.appendMessage(makeAssistantMessage("thread reply"));
 
     const channelModel = loadSessionViewModel(channelFile);
     const userAnchor = channelModel.items.find((item) => item.body?.includes("first"));
 
+    expect(channelModel.threads).toHaveLength(1);
     expect(userAnchor?.threads?.[0]?.fileName).toBe(basename(threadFile));
   });
 });

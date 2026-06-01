@@ -7,17 +7,12 @@ import {
   createManagedSessionFile,
   createManagedSessionFileAtPath,
   createNewSessionFile,
-  createThreadSessionFileFromRootMessage,
-  forkThreadSessionFile,
-  forkThreadSessionFileFromRootMessage,
   getChannelSessionDir,
   getThreadSessionFile,
   openManagedSession,
   resolveChannelSessionFile,
-  resolveGenericSessionScope,
   resolveManagedSessionFile,
   resolveSessionFile,
-  ThreadRootNotFoundError,
   tryResolveCurrentSession,
   tryResolveThreadSession,
 } from "../src/sessions/store.js";
@@ -157,39 +152,6 @@ describe("resolveChannelSessionFile", () => {
   });
 });
 
-describe("resolveGenericSessionScope", () => {
-  test("top-level sessions use the current session pointer", () => {
-    const first = resolveGenericSessionScope({ conversationDir: channelDir, sessionKey: "D123" });
-    const second = resolveGenericSessionScope({ conversationDir: channelDir, sessionKey: "D123" });
-
-    expect(first.sessionDir).toBe(getChannelSessionDir(channelDir));
-    expect(first.contextFile).toBe(second.contextFile);
-    expect(first.threadRootMessage).toBeNull();
-    expect(readFileSync(first.contextFile, "utf-8")).toContain(`"cwd":"${channelDir}"`);
-  });
-
-  test("scoped sessions use a fixed file without forking channel history", () => {
-    const sessionDir = getChannelSessionDir(channelDir);
-    const channelFile = createManagedSessionFile(sessionDir, channelDir);
-    const channelSM = openManagedSession(channelFile, sessionDir, channelDir);
-    channelSM.appendMessage(makeUserMessage("channel history"));
-
-    const first = resolveGenericSessionScope({
-      conversationDir: channelDir,
-      sessionKey: "C123:message-1",
-    });
-    const second = resolveGenericSessionScope({
-      conversationDir: channelDir,
-      sessionKey: "C123:message-1",
-    });
-
-    expect(first.contextFile).toBe(getThreadSessionFile(channelDir, "C123:message-1"));
-    expect(second.contextFile).toBe(first.contextFile);
-    expect(first.threadRootMessage).toBeNull();
-    expect(readFileSync(first.contextFile, "utf-8")).not.toContain("channel history");
-  });
-});
-
 describe("managed session initialization", () => {
   test("channel session filename uses a short UUID suffix", () => {
     const sessionDir = getChannelSessionDir(channelDir);
@@ -264,8 +226,8 @@ describe("managed session initialization", () => {
   });
 });
 
-describe("thread fork", () => {
-  test("forked thread session has a different session ID than channel session", () => {
+describe("fixed thread sessions", () => {
+  test("thread session has a different session ID than channel session", () => {
     const sessionDir = getChannelSessionDir(channelDir);
     const channelFile = resolveManagedSessionFile(sessionDir, channelDir);
     const channelSM = openManagedSession(channelFile, sessionDir, channelDir);
@@ -274,27 +236,24 @@ describe("thread fork", () => {
     const channelSessionId = channelSM.getSessionId();
 
     const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
-    const forkedThreadFile = forkThreadSessionFile(channelFile, threadFile, channelDir);
-    const threadSM = openManagedSession(forkedThreadFile, sessionDir, channelDir);
+    createManagedSessionFileAtPath(threadFile, channelDir);
+    const threadSM = openManagedSession(threadFile, sessionDir, channelDir);
+    threadSM.appendMessage(makeUserMessage("hello thread"));
+    threadSM.appendMessage(makeAssistantMessage("thread reply"));
 
     expect(threadSM.getSessionId()).not.toBe(channelSessionId);
-    expect(forkedThreadFile).toBe(threadFile);
-    expect(readFileSync(forkedThreadFile, "utf-8")).toContain("hello channel");
+    expect(readFileSync(threadFile, "utf-8")).not.toContain("hello channel");
   });
 
   test("second thread access reuses the same fixed thread file", () => {
     const sessionDir = getChannelSessionDir(channelDir);
-    const channelFile = resolveManagedSessionFile(sessionDir, channelDir);
-    const channelSM = openManagedSession(channelFile, sessionDir, channelDir);
-    channelSM.appendMessage(makeUserMessage("channel msg"));
-    channelSM.appendMessage(makeAssistantMessage("reply"));
-
     const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
-    const forkedThreadFile = forkThreadSessionFile(channelFile, threadFile, channelDir);
-    const threadSM = openManagedSession(forkedThreadFile, sessionDir, channelDir);
+    createManagedSessionFileAtPath(threadFile, channelDir);
+    const threadSM = openManagedSession(threadFile, sessionDir, channelDir);
     const threadSessionId = threadSM.getSessionId();
 
     threadSM.appendMessage(makeUserMessage("thread msg"));
+    threadSM.appendMessage(makeAssistantMessage("thread reply"));
 
     const existing = tryResolveThreadSession(threadFile);
     expect(existing).toBe(threadFile);
@@ -304,135 +263,18 @@ describe("thread fork", () => {
     expect(readFileSync(existing!, "utf-8")).toContain("thread msg");
   });
 
-  test("forks thread history from the root message turn instead of the latest channel state", () => {
-    const sessionDir = getChannelSessionDir(channelDir);
-    const channelFile = resolveManagedSessionFile(sessionDir, channelDir);
-    const channelSM = openManagedSession(channelFile, sessionDir, channelDir);
-    channelSM.appendMessage(makeUserMessage("[2026-04-28 18:18:59+08:00] [alice]: first"));
-    channelSM.appendMessage(makeAssistantMessage("first reply"));
-    channelSM.appendMessage(makeUserMessage("[2026-04-28 18:19:03+08:00] [alice]: second"));
-    channelSM.appendMessage(makeAssistantMessage("second reply"));
-    channelSM.appendMessage(makeUserMessage("[2026-04-28 18:19:08+08:00] [alice]: third"));
-    channelSM.appendMessage(makeAssistantMessage("third reply"));
-
-    const threadFile = getThreadSessionFile(channelDir, "C123:1777371539.041289");
-    forkThreadSessionFileFromRootMessage(channelFile, threadFile, channelDir, {
-      userName: "alice",
-      text: "second",
-      loggedAt: 3,
-    });
-
-    const threadContent = readFileSync(threadFile, "utf-8");
-    expect(threadContent).toContain("first reply");
-    expect(threadContent).toContain("second reply");
-    expect(threadContent).not.toContain("third");
-  });
-
-  test("matches root messages even when the parent turn includes attachment markup", () => {
-    const sessionDir = getChannelSessionDir(channelDir);
-    const channelFile = resolveManagedSessionFile(sessionDir, channelDir);
-    const channelSM = openManagedSession(channelFile, sessionDir, channelDir);
-    channelSM.appendMessage(
-      makeUserMessage(
-        "[2026-04-28 18:18:59+08:00] [alice]: first\n\n<slack_attachments>\n/workspace/C123/attachments/a.txt\n</slack_attachments>",
-      ),
-    );
-    channelSM.appendMessage(makeAssistantMessage("first reply"));
-    channelSM.appendMessage(makeUserMessage("[2026-04-28 18:19:03+08:00] [alice]: second"));
-    channelSM.appendMessage(makeAssistantMessage("second reply"));
-
-    const threadFile = getThreadSessionFile(channelDir, "C123:1777371539.041289");
-    forkThreadSessionFileFromRootMessage(channelFile, threadFile, channelDir, {
-      userName: "alice",
-      text: "first",
-      loggedAt: 1,
-    });
-
-    const threadContent = readFileSync(threadFile, "utf-8");
-    expect(threadContent).toContain("first reply");
-    expect(threadContent).not.toContain("second");
-  });
-
-  test("falls back to a root-only thread session instead of copying the latest channel state", () => {
-    const sessionDir = getChannelSessionDir(channelDir);
-    const channelFile = resolveManagedSessionFile(sessionDir, channelDir);
-    const channelSM = openManagedSession(channelFile, sessionDir, channelDir);
-    channelSM.appendMessage(makeUserMessage("[2026-04-28 18:18:59+08:00] [alice]: second"));
-    channelSM.appendMessage(makeAssistantMessage("second reply"));
-
-    const threadFile = getThreadSessionFile(channelDir, "C123:1777371539.041289");
-    expect(() =>
-      forkThreadSessionFileFromRootMessage(channelFile, threadFile, channelDir, {
-        userName: "alice",
-        text: "first",
-      }),
-    ).toThrow(ThreadRootNotFoundError);
-
-    createThreadSessionFileFromRootMessage(
-      threadFile,
-      channelDir,
-      {
-        userName: "alice",
-        text: "first",
-        loggedAt: 123,
-      },
-      channelFile,
-    );
-
-    const threadContent = readFileSync(threadFile, "utf-8");
-    expect(threadContent).toContain(`"parentSession":"${channelFile}"`);
-    expect(threadContent).toContain("[alice]: first");
-    expect(threadContent).not.toContain("second reply");
-  });
-
-  test("creates loadable root-only sessions for bot-rooted threads", () => {
-    const sessionDir = getChannelSessionDir(channelDir);
-    const channelFile = resolveManagedSessionFile(sessionDir, channelDir);
-    const threadFile = getThreadSessionFile(channelDir, "C123:1777371539.041289");
-
-    createThreadSessionFileFromRootMessage(
-      threadFile,
-      channelDir,
-      {
-        userName: "Slack API Tester",
-        text: "follow-up request",
-        loggedAt: 123,
-        isBot: true,
-      },
-      channelFile,
-    );
-
-    const threadContent = readFileSync(threadFile, "utf-8");
-    expect(threadContent).toContain(`"parentSession":"${channelFile}"`);
-    expect(threadContent).toContain('"role":"assistant"');
-    expect(threadContent).toContain('"provider":"platform-history"');
-    expect(threadContent).toContain('"totalTokens":0');
-
-    const session = openManagedSession(threadFile, sessionDir, channelDir);
-    expect(() => session.buildSessionContext()).not.toThrow();
-    expect(session.buildSessionContext().messages).toHaveLength(1);
-  });
-
   test("different threads get independent session IDs", () => {
     const sessionDir = getChannelSessionDir(channelDir);
     const channelFile = resolveManagedSessionFile(sessionDir, channelDir);
     const channelSM = openManagedSession(channelFile, sessionDir, channelDir);
-    channelSM.appendMessage(makeUserMessage("shared"));
-    channelSM.appendMessage(makeAssistantMessage("reply"));
 
     const thread1File = getThreadSessionFile(channelDir, "C123:1000.0001");
     const thread2File = getThreadSessionFile(channelDir, "C123:1000.0002");
+    createManagedSessionFileAtPath(thread1File, channelDir);
+    createManagedSessionFileAtPath(thread2File, channelDir);
 
-    const thread1SM = openManagedSession(
-      forkThreadSessionFile(channelFile, thread1File, channelDir),
-      sessionDir,
-      channelDir,
-    );
-    const thread2SM = openManagedSession(
-      forkThreadSessionFile(channelFile, thread2File, channelDir),
-      sessionDir,
-      channelDir,
-    );
+    const thread1SM = openManagedSession(thread1File, sessionDir, channelDir);
+    const thread2SM = openManagedSession(thread2File, sessionDir, channelDir);
 
     const ids = new Set([
       channelSM.getSessionId(),
