@@ -2,7 +2,7 @@ import { basename, dirname, join, resolve } from "path";
 import { existsSync, readdirSync } from "fs";
 import {
   SessionManager,
-  type BranchSummaryEntry,
+  type BranchSummaryEntry as SessionBranchSummaryEntry,
   type CompactionEntry,
   type SessionEntry,
   type SessionMessageEntry,
@@ -386,7 +386,7 @@ function mapEntryToItem(entry: SessionEntry): SessionViewItem | null {
     case "compaction":
       return mapCompactionEntry(entry);
     case "branch_summary":
-      return mapBranchSummaryEntry(entry);
+      return mapSessionSummaryEntry(entry);
     case "custom_message":
       return {
         kind: "system",
@@ -506,7 +506,7 @@ function mapMessageEntry(entry: SessionMessageEntry): SessionViewItem {
     case "branchSummary":
       return {
         kind: "system",
-        title: "Branch summary",
+        title: "Session summary",
         body: String(message.summary ?? ""),
         meta: entry.timestamp,
         tone: "muted",
@@ -543,10 +543,10 @@ function mapCompactionEntry(entry: CompactionEntry): SessionViewItem {
   };
 }
 
-function mapBranchSummaryEntry(entry: BranchSummaryEntry): SessionViewItem {
+function mapSessionSummaryEntry(entry: SessionBranchSummaryEntry): SessionViewItem {
   return {
     kind: "system",
-    title: "Branch summary",
+    title: "Session summary",
     body: entry.summary,
     meta: entry.timestamp,
     tone: "muted",

@@ -81,7 +81,7 @@ Event files do not carry `sessionKey` or thread targeting. The event text must b
 | Slack direct `BotEvent` | Provided `thread_ts` wins | `<conversationId>:<thread_ts>` if set  | Optional         |
 | Other platform event    | Platform adapter default  | Platform adapter default event session | Adapter-specific |
 
-For Slack event files, firing an event actively creates a top-level Slack message first. That message timestamp becomes the fork point and the run uses the fixed session key `<conversationId>:<anchor message ts>`.
+For Slack event files, firing an event actively creates a top-level Slack message first. That message timestamp becomes the anchor and the run uses the fixed session key `<conversationId>:<anchor message ts>`.
 
 This keeps event runs visible in the channel and isolates them from the persistent top-level session. The top-level channel history remains available in `log.jsonl` for explicit lookup, but it is not implicitly copied into the event session.
 

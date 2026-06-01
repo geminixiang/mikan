@@ -4,11 +4,11 @@ mikan separates platform chat history from pi-coding-agent structured session hi
 
 ## Platform session model
 
-| Platform | `sessionKey` Rule                                                                 | Notes                                                                                |
-| -------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Slack    | top-level / DM: `conversationId`; thread: `conversationId:threadTs`               | thread inherits parent context at fork time only; branch changes do not merge back   |
-| Discord  | DM: `channelId`; shared top-level: `channelId:messageId`; reply/thread: rooted id | replies in shared channels continue the root message session; DM replies do not fork |
-| Telegram | private: `chatId`; shared top-level: `chatId:messageId`; reply chain: root reply  | no native thread model; shared sessions are inferred from reply chains               |
+| Platform | `sessionKey` Rule                                                                 | Notes                                                                  |
+| -------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Slack    | top-level / DM: `conversationId`; thread: `conversationId:threadTs`               | thread sessions are fixed files bootstrapped from recent chat history  |
+| Discord  | DM: `channelId`; shared top-level: `channelId:messageId`; reply/thread: rooted id | replies in shared channels continue the root message session           |
+| Telegram | private: `chatId`; shared top-level: `chatId:messageId`; reply chain: root reply  | no native thread model; shared sessions are inferred from reply chains |
 
 ## Files
 

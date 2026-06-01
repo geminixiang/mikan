@@ -91,4 +91,4 @@ export SLACK_BOT_TOKEN=xoxb-...
 mikan --state-dir ~/.mikan /path/to/workspace
 ```
 
-The bot responds in DMs and when mentioned in channels. Slack thread replies fork into isolated sessions using the thread timestamp as part of the session key.
+The bot responds in DMs and when mentioned in channels. Slack thread replies use isolated thread sessions with the thread timestamp as part of the session key.

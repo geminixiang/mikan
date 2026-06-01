@@ -433,7 +433,7 @@ Update this file whenever you modify the environment. On fresh container, read i
 ## Log Queries (for older history)
 Format: \`{"date":"...","ts":"...","user":"...","userName":"...","text":"...","isBot":false}\`
 The log contains user messages and your final responses (not tool calls/results).
-Use \`log.jsonl\` for quick grep-style history. Use \`${conversationPath}/sessions/\` when you need structured turns, tool outputs, or branch lineage.
+Use \`log.jsonl\` for quick grep-style history. Use \`${conversationPath}/sessions/\` when you need structured turns, tool outputs, or thread/session lineage.
 ${isContainerLike || isFirecracker ? "Install jq: apt-get install jq" : ""}
 ${attributionInstructions}
 \`\`\`bash
@@ -1470,7 +1470,7 @@ export async function createRunner(
 
   // Create session manager and settings manager. Top-level/private sessions
   // use the conversation's current pointer; scoped sessions use fixed files.
-  // Platform-specific branch/fork behavior is resolved before runner creation.
+  // Platform-specific scope behavior is resolved before runner creation.
   const isThread = sessionKey.includes(":");
   const { sessionDir, contextFile, threadRootMessage } = sessionScope;
   const sessionManager = openManagedSession(

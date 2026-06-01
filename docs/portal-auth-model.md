@@ -133,7 +133,7 @@ Current behavior:
 Current capability:
 
 - Render a session timeline from a structured session file.
-- Navigate parent/fork session relationships.
+- Navigate parent/thread session relationships.
 - Subscribe to live status/timeline updates over SSE.
 - Send a message into the selected session when `SessionViewInteractiveOptions` is configured.
 

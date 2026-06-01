@@ -118,7 +118,7 @@ flowchart LR
 - `src/runtime/session-runtime.ts`
 - `src/runtime/conversation-orchestrator.ts`
 - `src/sessions/store.ts`
-- `src/adapters/slack/branch-manager.ts`
+- `src/sessions/chat-session-manager.ts`
 
 職責:
 
@@ -246,8 +246,8 @@ sequenceDiagram
 - `log.jsonl` 是平台對話紀錄：Slack/Discord/Telegram 實際發生過什麼
 - `sessions/*.jsonl` 是 LLM 工作上下文/工作紀錄：mikan 拿什麼給 LLM 看，以及 LLM/tool 做了什麼
 - top-level session 用 `current` 指標，但 `current` 不是 channel history；缺失時可從 `log.jsonl` 重建最近 top-level 工作上下文
-- thread / reply session 用固定檔名，讓分支可被單獨追蹤
-- Slack top-level messages share the channel session; Slack thread replies fork to `conversationId:threadTs`
+- thread / reply session 用固定檔名，讓 scoped session 可被單獨追蹤
+- Slack top-level messages share the channel session; Slack thread replies use `conversationId:threadTs`
 - Slack events first materialize a top-level anchor message, then run in `conversationId:anchorTs`
 
 ## 5. Login / Vault / Sandbox 關係
