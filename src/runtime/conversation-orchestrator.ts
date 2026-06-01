@@ -34,7 +34,6 @@ interface ConversationOrchestratorOptions {
   getState: (sessionKey: string) => ConversationRuntimeState | undefined;
   getOrCreateState: (options: {
     conversationId: string;
-    platformName: string;
     sessionKey: string;
     currentMessageId?: string;
   }) => Promise<ConversationRuntimeState>;
@@ -89,7 +88,6 @@ export class ConversationOrchestrator {
     try {
       state = await this.options.getOrCreateState({
         conversationId,
-        platformName: adapters.platform.name,
         sessionKey,
         currentMessageId: event.ts,
       });

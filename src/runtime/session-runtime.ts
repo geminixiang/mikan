@@ -28,7 +28,6 @@ export interface RunSessionOptions {
 
 export interface CreateSessionSandboxOptions {
   conversationId: string;
-  platformName: string;
   sessionKey: string;
 }
 
