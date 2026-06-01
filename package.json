@@ -1,6 +1,6 @@
 {
   "name": "@geminixiang/mikan",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Multi-platform AI coding agent for Slack, Telegram, and Discord",
   "keywords": [
     "agent",

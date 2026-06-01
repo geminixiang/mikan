@@ -9,6 +9,12 @@ any release.
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-06-01
+
+### Fixed
+
+- Make Slack bot-rooted thread session seeds loadable by storing platform-history assistant metadata.
+
 ## [0.2.3] - 2026-06-01
 
 ### Added
