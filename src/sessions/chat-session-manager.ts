@@ -23,12 +23,6 @@ const DEFAULT_RECENT_DAYS = 14;
 const DEFAULT_MAX_TOP_LEVEL_MESSAGES = 200;
 const CHAT_SYNC_CUSTOM_TYPE = "mikan.chat_sync";
 
-interface ChatSyncState {
-  source?: string;
-  messageCount?: number;
-  lastMessageId?: string;
-}
-
 type SessionAppendMessage = Parameters<SessionManager["appendMessage"]>[0];
 
 interface LogRecord {
@@ -460,7 +454,7 @@ function syncSessionManagerFromLog(sessionManager: SessionManager, records: LogR
   if (records.length === 0) return;
 
   const existingEntries = sessionManager.getEntries();
-  const lastSyncedMessageId = getLatestChatSyncState(existingEntries)?.lastMessageId;
+  const lastSyncedMessageId = getLatestChatSyncMessageId(existingEntries);
   const startIndex = lastSyncedMessageId
     ? records.findIndex((record) => record.message.ts === lastSyncedMessageId) + 1
     : 0;
@@ -498,20 +492,14 @@ function forceRewriteSession(sessionManager: SessionManager, sessionFile: string
   atomicWritePrivateFile(sessionFile, `${content}\n`);
 }
 
-function getLatestChatSyncState(entries: SessionEntry[]): ChatSyncState | null {
+function getLatestChatSyncMessageId(entries: SessionEntry[]): string | undefined {
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
     if (entry.type !== "custom" || entry.customType !== CHAT_SYNC_CUSTOM_TYPE) continue;
-    if (!isRecord(entry.data)) return null;
-    return {
-      source: typeof entry.data.source === "string" ? entry.data.source : undefined,
-      messageCount:
-        typeof entry.data.messageCount === "number" ? entry.data.messageCount : undefined,
-      lastMessageId:
-        typeof entry.data.lastMessageId === "string" ? entry.data.lastMessageId : undefined,
-    };
+    if (!isRecord(entry.data)) return undefined;
+    return typeof entry.data.lastMessageId === "string" ? entry.data.lastMessageId : undefined;
   }
-  return null;
+  return undefined;
 }
 
 function buildRepresentedMessageCounts(entries: SessionEntry[]): Map<string, number> {
