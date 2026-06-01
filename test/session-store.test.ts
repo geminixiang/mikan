@@ -385,6 +385,34 @@ describe("thread fork", () => {
     expect(threadContent).not.toContain("second reply");
   });
 
+  test("creates loadable root-only sessions for bot-rooted threads", () => {
+    const sessionDir = getChannelSessionDir(channelDir);
+    const channelFile = resolveManagedSessionFile(sessionDir, channelDir);
+    const threadFile = getThreadSessionFile(channelDir, "C123:1777371539.041289");
+
+    createThreadSessionFileFromRootMessage(
+      threadFile,
+      channelDir,
+      {
+        userName: "Slack API Tester",
+        text: "follow-up request",
+        loggedAt: 123,
+        isBot: true,
+      },
+      channelFile,
+    );
+
+    const threadContent = readFileSync(threadFile, "utf-8");
+    expect(threadContent).toContain(`"parentSession":"${channelFile}"`);
+    expect(threadContent).toContain('"role":"assistant"');
+    expect(threadContent).toContain('"provider":"platform-history"');
+    expect(threadContent).toContain('"totalTokens":0');
+
+    const session = openManagedSession(threadFile, sessionDir, channelDir);
+    expect(() => session.buildSessionContext()).not.toThrow();
+    expect(session.buildSessionContext().messages).toHaveLength(1);
+  });
+
   test("different threads get independent session IDs", () => {
     const sessionDir = getChannelSessionDir(channelDir);
     const channelFile = resolveManagedSessionFile(sessionDir, channelDir);

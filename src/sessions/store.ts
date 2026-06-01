@@ -328,6 +328,17 @@ function stripSlackAttachmentBlock(text: string): string {
   return text.replace(/\n*<slack_attachments>\n[\s\S]*?\n<\/slack_attachments>\s*$/g, "");
 }
 
+function zeroUsage(): object {
+  return {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
+}
+
 function normalizeComparableUserText(text: string): string {
   const withoutTimestamp = text.replace(
     /^\[[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}\]\s+(?=\[[^\]]+\](?:\s+\[in-thread:[^\]]+\])?:\s)/,
@@ -422,6 +433,15 @@ export function createThreadSessionFileFromRootMessage(
     message: {
       role: rootMessage.isBot ? "assistant" : "user",
       content: [{ type: "text", text: rootText }],
+      ...(rootMessage.isBot
+        ? {
+            api: "platform-history",
+            provider: "platform-history",
+            model: "platform-history",
+            usage: zeroUsage(),
+            stopReason: "stop",
+          }
+        : {}),
       ...(rootMessage.loggedAt !== undefined ? { timestamp: rootMessage.loggedAt } : {}),
     },
   };
