@@ -9,6 +9,16 @@ any release.
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-06-01
+
+### Added
+
+- Add a sandbox resource limit tool for checking and temporarily updating managed sandbox CPU and memory limits.
+
+### Fixed
+
+- Isolate Slack sessions rooted at bot messages so thread replies do not inherit unrelated channel history.
+
 ## [0.2.2] - 2026-05-30
 
 ### Added
