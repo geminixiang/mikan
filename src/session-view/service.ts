@@ -264,6 +264,9 @@ function findThreadAnchorEntryId(
     return parentEntries[sharedCount - 1]?.id;
   }
 
+  const contentAnchor = findSharedContentAnchorEntryId(parentEntries, childEntries);
+  if (contentAnchor) return contentAnchor;
+
   const childRoot = findComparableUserMessage(childEntries);
   if (!childRoot) return undefined;
 
@@ -286,6 +289,73 @@ function findEntryIdByMessageTimestamp(
     if (messageTimestamp === timestamp) return entry.id;
   }
   return undefined;
+}
+
+function findSharedContentAnchorEntryId(
+  parentEntries: SessionEntry[],
+  childEntries: SessionEntry[],
+): string | undefined {
+  const parentMessages = parentEntries.flatMap((entry) => {
+    const comparable = getComparableSessionMessage(entry);
+    return comparable ? [comparable] : [];
+  });
+  const childMessages = childEntries.flatMap((entry) => {
+    const comparable = getComparableSessionMessage(entry);
+    return comparable ? [comparable] : [];
+  });
+  if (parentMessages.length === 0 || childMessages.length === 0) return undefined;
+
+  let bestParentEnd = -1;
+  let bestLength = 0;
+  for (let parentStart = 0; parentStart < parentMessages.length; parentStart++) {
+    let length = 0;
+    while (
+      parentStart + length < parentMessages.length &&
+      length < childMessages.length &&
+      comparableSessionMessagesMatch(parentMessages[parentStart + length], childMessages[length])
+    ) {
+      length += 1;
+    }
+    if (length > bestLength) {
+      bestLength = length;
+      bestParentEnd = parentStart + length - 1;
+    }
+  }
+
+  return bestLength > 0 ? parentMessages[bestParentEnd]?.entryId : undefined;
+}
+
+interface ComparableSessionMessage {
+  entryId: string;
+  role: "user" | "assistant";
+  normalizedText: string;
+}
+
+function getComparableSessionMessage(entry: SessionEntry): ComparableSessionMessage | null {
+  if (entry.type !== "message") return null;
+  const role = entry.message.role;
+  if (role !== "user" && role !== "assistant") return null;
+
+  const body =
+    role === "user"
+      ? contentToText(entry.message.content)
+      : assistantContentToText(entry.message.content);
+  const normalizedText = normalizeComparableSessionText(body, role);
+  if (!normalizedText) return null;
+
+  return { entryId: entry.id, role, normalizedText };
+}
+
+function comparableSessionMessagesMatch(
+  parent: ComparableSessionMessage,
+  child: ComparableSessionMessage,
+): boolean {
+  return parent.role === child.role && parent.normalizedText === child.normalizedText;
+}
+
+function normalizeComparableSessionText(text: string, role: "user" | "assistant"): string {
+  const normalized = role === "user" ? normalizeComparableUserText(text) : text.trim();
+  return normalized.replace(/\s+/g, " ").trim();
 }
 
 function findParentAnchorByRootMessage(

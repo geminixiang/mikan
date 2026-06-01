@@ -195,6 +195,31 @@ describe("loadSessionViewModel", () => {
     expect(threadModel.items.some((item) => item.body?.includes("thread only"))).toBe(true);
   });
 
+  test("anchors fixed thread links to the root instead of earlier bootstrap context", () => {
+    const sessionDir = getChannelSessionDir(conversationDir);
+    const channelFile = createManagedSessionFile(sessionDir, conversationDir);
+    const channelSession = openManagedSession(channelFile, sessionDir, conversationDir);
+    channelSession.appendMessage({ ...makeUserMessage("prior context"), timestamp: 1 });
+    channelSession.appendMessage(makeAssistantMessage("prior reply"));
+    channelSession.appendMessage({ ...makeUserMessage("thread root"), timestamp: 2 });
+    channelSession.appendMessage(makeAssistantMessage("channel reply after root"));
+
+    const threadFile = getThreadSessionFile(conversationDir, "D123:1000.0001");
+    createManagedSessionFileAtPath(threadFile, conversationDir);
+    const threadSession = openManagedSession(threadFile, sessionDir, conversationDir);
+    threadSession.appendMessage({ ...makeUserMessage("prior context"), timestamp: 1 });
+    threadSession.appendMessage(makeAssistantMessage("prior reply"));
+    threadSession.appendMessage({ ...makeUserMessage("thread root"), timestamp: 2 });
+    threadSession.appendMessage(makeAssistantMessage("thread reply"));
+
+    const channelModel = loadSessionViewModel(channelFile);
+    const contextItem = channelModel.items.find((item) => item.body?.includes("prior context"));
+    const rootItem = channelModel.items.find((item) => item.body?.includes("thread root"));
+
+    expect(contextItem?.threads).toBeUndefined();
+    expect(rootItem?.threads?.[0]?.fileName).toBe(basename(threadFile));
+  });
+
   test("anchors non-timestamp thread files by matching the root message", () => {
     const sessionDir = getChannelSessionDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
