@@ -490,6 +490,30 @@ describe("uploadFile()", () => {
 });
 
 // ============================================================================
+// Streaming lifecycle
+// ============================================================================
+
+describe("streaming lifecycle", () => {
+  test("delta streaming posts then updates the same message", async () => {
+    const bot = makeDiscordBot();
+    const event = makeEvent({ thread_ts: undefined });
+    const { responseCtx } = createDiscordAdapters(event, bot);
+
+    await responseCtx.appendResponseDelta?.("hello");
+    await responseCtx.appendResponseDelta?.(" world".repeat(20));
+    await responseCtx.finishResponse?.("hello final");
+
+    expect(bot.postReply).toHaveBeenCalledWith("CH001", "MSG001", expect.stringContaining("hello"));
+    expect(bot.updateMessageRaw).toHaveBeenCalledWith(
+      "CH001",
+      "MSG002",
+      expect.stringContaining("world"),
+    );
+    expect(bot.updateMessageRaw).toHaveBeenLastCalledWith("CH001", "MSG002", "hello final");
+  });
+});
+
+// ============================================================================
 // ChatMessage fields
 // ============================================================================
 

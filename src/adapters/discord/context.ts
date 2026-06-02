@@ -12,6 +12,7 @@ import {
   splitText,
   type ChatResponseErrorOperation,
 } from "../shared.js";
+import { BufferedResponseStream } from "../streaming.js";
 import type { DiscordBot, DiscordEvent } from "./bot.js";
 
 const DISCORD_FORMATTING_GUIDE = `## Discord Formatting (Markdown)
@@ -145,6 +146,17 @@ export function createDiscordAdapters(
     }
   }
 
+  const stream = new BufferedResponseStream({
+    flush: async (text) => {
+      await postSplitResponse(isWorking ? text + workingIndicator : text);
+    },
+    finish: async (text) => {
+      isWorking = false;
+      stopTyping();
+      await postSplitResponse(text);
+    },
+  });
+
   async function queueDiscordResponse(
     label: string,
     operation: ChatResponseErrorOperation,
@@ -169,6 +181,7 @@ export function createDiscordAdapters(
         "respond",
         async () => {
           accumulatedText = accumulatedText ? `${accumulatedText}\n${text}` : text;
+          stream.setText(accumulatedText);
           await postSplitResponse(isWorking ? accumulatedText + workingIndicator : accumulatedText);
           if (messageId !== null) {
             bot.logBotResponse(channelId, text, messageId);
@@ -182,12 +195,40 @@ export function createDiscordAdapters(
       );
     },
 
+    appendResponseDelta: async (delta: string) => {
+      await queueDiscordResponse(
+        "appendResponseDelta",
+        "respond",
+        async () => {
+          await stream.append(delta);
+          accumulatedText = stream.getText();
+          if (messageId !== null) {
+            bot.logBotResponse(channelId, delta, messageId);
+          }
+        },
+        () => ({ textLength: delta.length, accumulatedLength: stream.getText().length }),
+      );
+    },
+
+    finishResponse: async (finalText?: string) => {
+      await queueDiscordResponse(
+        "finishResponse",
+        "set_working",
+        async () => {
+          await stream.finish(finalText);
+          accumulatedText = stream.getText();
+        },
+        () => ({ finalTextLength: finalText?.length }),
+      );
+    },
+
     replaceResponse: async (text: string) => {
       await queueDiscordResponse(
         "replaceResponse",
         "replace_response",
         async () => {
           accumulatedText = text;
+          stream.setText(accumulatedText);
           await postSplitResponse(accumulatedText);
         },
         () => ({
