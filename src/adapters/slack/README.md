@@ -8,7 +8,6 @@ This directory implements the Slack platform adapter and Slack-specific session/
 - `context.ts`: Builds the Slack `ChatResponseContext`, including mrkdwn formatting, long-message fallback, tool output, and working-state display.
 - `index.ts`: Re-exports the Slack bot and context modules.
 - `session.ts`: Handles Slack channel/thread session keys, root timestamps, and event-anchor planning.
-- `thread-manager.ts`: Wraps the generic chat session manager for Slack thread registration, bootstrap waiting, and scope resolution.
 
 ## Subdirectories
 

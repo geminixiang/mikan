@@ -12,7 +12,7 @@ import { DiscordBot } from "./adapters/discord/index.js";
 import { TelegramBot } from "./adapters/telegram/index.js";
 import { SlackBot as SlackBotClass } from "./adapters/slack/index.js";
 import { downloadChannel } from "./download.js";
-import { createEventsWatcher } from "./events.js";
+import { EventsWatcher } from "./events.js";
 import * as log from "./log.js";
 import { startLinkServer } from "./login/portal.js";
 import { InMemoryAdminTokenStore } from "./admin/store.js";
@@ -408,7 +408,7 @@ if (LINK_PORT) {
 }
 
 // Start events watcher with explicit platform routing
-const eventsWatcher = createEventsWatcher(workingDir, botsByPlatform);
+const eventsWatcher = new EventsWatcher(join(workingDir, "events"), botsByPlatform);
 const slackBot = botsByPlatform.slack as SlackBotClass | undefined;
 if (slackBot) {
   slackBot.setEventsWatcher(eventsWatcher);

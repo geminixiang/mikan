@@ -24,10 +24,6 @@ export function parseSandboxCommand(text: string): ParsedSandboxCommand | null {
   return { command: matched.command };
 }
 
-function formatSandboxCommandSummary(title: string, lines: string[]): string {
-  return formatCommandSummary(title, lines);
-}
-
 export class SandboxCommandHandler implements CommandHandler {
   async tryHandle(context: CommandContext): Promise<boolean> {
     const parsed = parseSandboxCommand(context.commandText);
@@ -36,9 +32,7 @@ export class SandboxCommandHandler implements CommandHandler {
     if (context.services.sandbox.type !== "image" || !context.services.provisioner) {
       await replyDiagnosticWithContext(
         context.responseCtx,
-        formatSandboxCommandSummary("Sandbox", [
-          "`/pi-sandbox` 目前只支援 `image:*` managed sandbox。",
-        ]),
+        formatCommandSummary("Sandbox", ["`/pi-sandbox` 目前只支援 `image:*` managed sandbox。"]),
         { style: "muted" },
       );
       return true;
@@ -56,7 +50,7 @@ export class SandboxCommandHandler implements CommandHandler {
       });
       await replyDiagnosticWithContext(
         context.responseCtx,
-        formatSandboxCommandSummary("Sandbox Workspace", [
+        formatCommandSummary("Sandbox Workspace", [
           parsed.action === "full"
             ? "已將此 conversation 的 sandbox 設為 full workspace mode。"
             : "已將此 conversation 的 sandbox 設為 private workspace mode。",
@@ -75,7 +69,7 @@ export class SandboxCommandHandler implements CommandHandler {
       if (!boostLimits?.cpus && !boostLimits?.memory) {
         await replyDiagnosticWithContext(
           context.responseCtx,
-          formatSandboxCommandSummary("Sandbox Boost", [
+          formatCommandSummary("Sandbox Boost", [
             "此 mikan instance 尚未設定 sandbox boost 規格。",
             "請先在全域 settings.json 設定 `sandbox.boost`。",
           ]),
@@ -87,7 +81,7 @@ export class SandboxCommandHandler implements CommandHandler {
       const status = await context.services.provisioner.boost(containerKey);
       await replyDiagnosticWithContext(
         context.responseCtx,
-        formatSandboxCommandSummary("Sandbox Boost", [
+        formatCommandSummary("Sandbox Boost", [
           "已暫時提升此 conversation 的 sandbox 規格。",
           `Current: ${formatLimits(status.limits)}`,
           "boost 會在此 sandbox container 關閉後結束。",
@@ -106,7 +100,7 @@ export class SandboxCommandHandler implements CommandHandler {
     );
     await replyDiagnosticWithContext(
       context.responseCtx,
-      formatSandboxCommandSummary(
+      formatCommandSummary(
         "Sandbox",
         [
           `Current: ${formatLimits(status.limits)}`,

@@ -40,10 +40,6 @@ function formatAutoReplyStatus(config: AutoReplyConfig): string {
   return formatCommandSummary("Auto Reply", lines);
 }
 
-function formatAutoReplyUsage(): string {
-  return formatCommandSummary("Auto Reply", ["Usage: `/pi-auto-reply on|off|status`"]);
-}
-
 function applyAction(current: AutoReplyConfig, action: AutoReplyAction): AutoReplyConfig {
   switch (action.type) {
     case "status":
@@ -71,9 +67,11 @@ export class AutoReplyCommandHandler implements CommandHandler {
     }
 
     if (action.type === "invalid") {
-      await replyDiagnosticWithContext(context.responseCtx, formatAutoReplyUsage(), {
-        style: "muted",
-      });
+      await replyDiagnosticWithContext(
+        context.responseCtx,
+        formatCommandSummary("Auto Reply", ["Usage: `/pi-auto-reply on|off|status`"]),
+        { style: "muted" },
+      );
       return true;
     }
 

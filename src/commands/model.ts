@@ -75,10 +75,6 @@ function formatModelSpec(provider: string, model: string, thinkingLevel?: Thinki
   return `${provider}/${model}${thinkingLevel ? `:${thinkingLevel}` : ""}`;
 }
 
-function formatModelCommandSummary(lines: string[]): string {
-  return formatCommandSummary("Model", lines);
-}
-
 export class ModelCommandHandler implements CommandHandler {
   async tryHandle(context: CommandContext): Promise<boolean> {
     const parsed = parseModelCommand(context.commandText);
@@ -89,7 +85,7 @@ export class ModelCommandHandler implements CommandHandler {
       const current = resolveConversationSettings(conversationDir);
       await replyDiagnosticWithContext(
         context.responseCtx,
-        formatModelCommandSummary([
+        formatCommandSummary("Model", [
           `Current: \`${formatModelSpec(current.provider, current.model, current.thinkingLevel)}\``,
           "",
           "Usage: `/pi-model provider/model[:thinking]`",
@@ -103,7 +99,7 @@ export class ModelCommandHandler implements CommandHandler {
     if (!this.isKnownModel(parsed.provider, parsed.model)) {
       await replyDiagnosticWithContext(
         context.responseCtx,
-        formatModelCommandSummary([
+        formatCommandSummary("Model", [
           `找不到模型：\`${formatModelSpec(parsed.provider, parsed.model, parsed.thinkingLevel)}\``,
           "請確認 provider/model 名稱，或先在 pi models.json 註冊自訂模型。",
         ]),
@@ -115,7 +111,7 @@ export class ModelCommandHandler implements CommandHandler {
     if (!context.services.runtime) {
       await replyDiagnosticWithContext(
         context.responseCtx,
-        formatModelCommandSummary([
+        formatCommandSummary("Model", [
           "Model command is not configured correctly on the server. Please try again later.",
         ]),
         { style: "muted" },
@@ -131,7 +127,7 @@ export class ModelCommandHandler implements CommandHandler {
     if (!switched) {
       await replyDiagnosticWithContext(
         context.responseCtx,
-        formatModelCommandSummary([
+        formatCommandSummary("Model", [
           "目前這個 conversation 有執行中的工作，請等它完成或先 `/stop` 後再切換模型。",
         ]),
         { style: "muted" },
@@ -147,7 +143,7 @@ export class ModelCommandHandler implements CommandHandler {
 
     await replyDiagnosticWithContext(
       context.responseCtx,
-      formatModelCommandSummary([
+      formatCommandSummary("Model", [
         `Switched: \`${formatModelSpec(parsed.provider, parsed.model, parsed.thinkingLevel)}\``,
         "下一則訊息會使用新模型。",
       ]),

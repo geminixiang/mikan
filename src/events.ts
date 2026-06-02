@@ -614,14 +614,3 @@ export class EventsWatcher {
     this.knownFiles.delete(filename);
   }
 }
-
-/**
- * Create an events watcher for all configured platforms.
- */
-export function createEventsWatcher(
-  workspaceDir: string,
-  botsByPlatform: Record<string, Bot>,
-): EventsWatcher {
-  const eventsDir = join(workspaceDir, "events");
-  return new EventsWatcher(eventsDir, botsByPlatform);
-}
