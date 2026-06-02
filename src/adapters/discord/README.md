@@ -6,4 +6,3 @@ This directory implements the Discord platform adapter.
 
 - `bot.ts`: Implements Discord event intake, message/reply updates, attachment handling, direct messages, and channel/user lookup.
 - `context.ts`: Converts Discord events into platform-neutral `ChatMessage` / `ChatResponseContext` objects and formats Discord Markdown/tool output.
-- `index.ts`: Re-exports the Discord bot and context modules.
