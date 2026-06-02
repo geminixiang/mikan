@@ -120,7 +120,20 @@ When the LLM put `multi_static_select` in `actions.elements`, Slack returned `in
 
 Slack can return canonical blocks with generated `block_id`s even if mikan did not send them. This is useful evidence in response/canonical logs, but do not rely on generated IDs for mikan-side routing. Prefer explicit `block_id` if the interaction needs stable semantics.
 
-### 8. Log both outbound blocks and user interactions
+### 8. Slack Socket Mode may emit `interactive`, not `block_actions`
+
+Do not assume the Socket Mode event name is only `block_actions`. In testing, Slack button/select clicks arrived through the `interactive` listener.
+
+Good pattern:
+
+```ts
+socketClient.on("block_actions", (payload) => handleBlockAction(payload));
+socketClient.on("interactive", (payload) => handleBlockAction(payload));
+```
+
+If clicks do not reach mikan, first add a short-lived event-name log around these listeners. Do not start by changing app scopes or rewriting interaction code.
+
+### 9. Log both outbound blocks and user interactions
 
 For mikan memory/debuggability, `log.jsonl` should preserve Slack-specific fields without changing Telegram/Discord logs.
 
@@ -150,6 +163,83 @@ Interaction example:
 ```
 
 Keep Slack fields optional and Slack-prefixed so other adapters are unaffected.
+
+### 10. Action events need human-readable labels, not only raw values
+
+A thin event such as:
+
+```text
+[Slack action] q4_c: wrong
+```
+
+is not enough for good follow-up behavior. The LLM may not know what the user selected, what the visible label was, or what question the action belonged to.
+
+Prefer event text that includes the visible selected label and value:
+
+```text
+[Slack action] q4_c: selected "C. 六尾" (value: wrong)
+[Slack action] multi_select_food: selected "壽喜燒", "天婦羅" (values: sukiyaki, tempura)
+```
+
+For quizzes or any button convention using `value: "correct" | "wrong"`, this lets the assistant provide better feedback. If possible, also derive the selected label from `action.text.text` and select labels from `selected_option(s)`.
+
+### 11. Top-level/thread routing should match normal Slack replies
+
+For consistency with mikan's Slack conversation model:
+
+- top-level message action -> top-level session/response
+- thread message action -> thread session/response
+
+Do not automatically route top-level action clicks into a new thread using `container.message_ts` as `thread_ts`. Use only `container.thread_ts` for thread routing.
+
+Bad pattern:
+
+```ts
+const threadTs = container.thread_ts ?? container.message_ts;
+```
+
+Good pattern:
+
+```ts
+const threadTs = container.thread_ts;
+```
+
+### 12. Synthetic Slack action IDs must not look like Slack message timestamps
+
+If a synthetic action event uses a numeric timestamp like `1780386674.744609`, Slack response planning may mistake it for a real Slack message timestamp and call Assistant status APIs with an invalid `thread_ts`.
+
+Use a non-Slack-shaped event id:
+
+```ts
+const ts = `action:${Date.now()}`;
+```
+
+This avoids `invalid_thread_ts` from `assistant.threads.setStatus` for top-level action events.
+
+### 13. Tool errors must propagate to the LLM
+
+Do not send Block Kit through a response helper that catches and swallows Slack API errors. If Slack rejects blocks with `invalid_blocks`, the tool must fail so the LLM can retry with corrected blocks.
+
+Bad symptom:
+
+```text
+Slack respondBlockKit error: invalid_blocks
+✓ slack_blockkit
+Sent Slack Block Kit response
+```
+
+Correct behavior:
+
+```text
+✗ slack_blockkit
+invalid_blocks
+```
+
+Only mark `finalResponseHandledByTool` / `blockKitFinalized` after the block post succeeds.
+
+### 14. Prompt only Slack users about Slack Block Kit
+
+The Slack Block Kit system prompt section should be conditional on `platform.name === "slack"`. Do not show Slack-only UI instructions to Telegram or Discord runs.
 
 ## Debug checklist
 
