@@ -73,21 +73,6 @@ function resolveScopesFromEnv(envKey: string, fallback: string[]): string[] {
   return scopes.length > 0 ? scopes : fallback;
 }
 
-function resolveGoogleWorkspaceCliScopes(): string[] {
-  return resolveScopesFromEnv(
-    "GOOGLE_WORKSPACE_CLI_OAUTH_SCOPES",
-    DEFAULT_GOOGLE_WORKSPACE_CLI_SCOPES,
-  );
-}
-
-function resolveGoogleCloudSdkScopes(): string[] {
-  return resolveScopesFromEnv("GOOGLE_CLOUD_SDK_OAUTH_SCOPES", DEFAULT_GOOGLE_CLOUD_SDK_SCOPES);
-}
-
-function resolveGitHubOAuthScopes(): string[] {
-  return resolveScopesFromEnv("GITHUB_OAUTH_SCOPES", DEFAULT_GITHUB_OAUTH_SCOPES);
-}
-
 function getBuiltinOAuthServices(): OAuthService[] {
   return [
     {
@@ -96,7 +81,7 @@ function getBuiltinOAuthServices(): OAuthService[] {
       aliases: ["github", "github_oauth", "gh_oauth"],
       authorizationUrl: "https://github.com/login/oauth/authorize",
       tokenUrl: "https://github.com/login/oauth/access_token",
-      scopes: resolveGitHubOAuthScopes(),
+      scopes: resolveScopesFromEnv("GITHUB_OAUTH_SCOPES", DEFAULT_GITHUB_OAUTH_SCOPES),
       clientIdEnvKey: "GITHUB_OAUTH_CLIENT_ID",
       clientSecretEnvKey: "GITHUB_OAUTH_CLIENT_SECRET",
       accessTokenEnvKey: "GITHUB_OAUTH_ACCESS_TOKEN",
@@ -109,7 +94,10 @@ function getBuiltinOAuthServices(): OAuthService[] {
       aliases: ["google_workspace_cli", "gws", "googleworkspace", "google-workspace-cli"],
       authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
       tokenUrl: "https://oauth2.googleapis.com/token",
-      scopes: resolveGoogleWorkspaceCliScopes(),
+      scopes: resolveScopesFromEnv(
+        "GOOGLE_WORKSPACE_CLI_OAUTH_SCOPES",
+        DEFAULT_GOOGLE_WORKSPACE_CLI_SCOPES,
+      ),
       clientIdEnvKey: "GOOGLE_WORKSPACE_CLI_CLIENT_ID",
       clientSecretEnvKey: "GOOGLE_WORKSPACE_CLI_CLIENT_SECRET",
       authorizationParams: {
@@ -129,7 +117,10 @@ function getBuiltinOAuthServices(): OAuthService[] {
       aliases: ["google_cloud_sdk", "gcloud", "google-cloud-sdk", "google_cloud", "gcp"],
       authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
       tokenUrl: "https://oauth2.googleapis.com/token",
-      scopes: resolveGoogleCloudSdkScopes(),
+      scopes: resolveScopesFromEnv(
+        "GOOGLE_CLOUD_SDK_OAUTH_SCOPES",
+        DEFAULT_GOOGLE_CLOUD_SDK_SCOPES,
+      ),
       clientIdEnvKey: "GOOGLE_CLOUD_SDK_CLIENT_ID",
       clientSecretEnvKey: "GOOGLE_CLOUD_SDK_CLIENT_SECRET",
       authorizationParams: {

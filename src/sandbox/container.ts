@@ -161,7 +161,7 @@ function createSecureEnvFile(env: Record<string, string>): {
   const envFilePath = join(tempDir, "env.list");
   const content =
     Object.entries(env)
-      .map(([key, value]) => `${key}=${sanitizeEnvValue(value)}`)
+      .map(([key, value]) => `${key}=${value.replace(/\r?\n/g, "")}`)
       .join("\n") + "\n";
   writeFileSync(envFilePath, content, { encoding: "utf-8", mode: PRIVATE_FILE_MODE });
   chmodSync(envFilePath, PRIVATE_FILE_MODE);
@@ -172,8 +172,4 @@ function createSecureEnvFile(env: Record<string, string>): {
       rmSync(tempDir, { recursive: true, force: true });
     },
   };
-}
-
-function sanitizeEnvValue(value: string): string {
-  return value.replace(/\r?\n/g, "");
 }

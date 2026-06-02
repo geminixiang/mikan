@@ -205,7 +205,7 @@ function buildSessionRelation(
 function buildInferredThreadParentRelation(sessionFile: string): SessionViewRelation | undefined {
   if (!getFixedThreadSessionId(sessionFile)) return undefined;
 
-  const parentSession = resolveCurrentChannelSessionForSessionFile(sessionFile);
+  const parentSession = resolveChannelSessionFile(dirname(dirname(sessionFile)));
   if (!parentSession || parentSession === sessionFile) return undefined;
 
   return buildSessionRelation(parentSession, "parent") ?? undefined;
@@ -227,11 +227,7 @@ function isChildThreadSession(
   }
 
   if (!getFixedThreadSessionId(sessionFile)) return false;
-  return resolveCurrentChannelSessionForSessionFile(sessionFile) === expectedParent;
-}
-
-function resolveCurrentChannelSessionForSessionFile(sessionFile: string): string | null {
-  return resolveChannelSessionFile(dirname(dirname(sessionFile)));
+  return resolveChannelSessionFile(dirname(dirname(sessionFile))) === expectedParent;
 }
 
 function getFixedThreadSessionId(sessionFile: string): string | null {

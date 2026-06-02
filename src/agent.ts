@@ -1634,10 +1634,3 @@ export function translateRuntimePathToHost(
 ): string {
   return pathContext.runtimeToHostPath?.(runtimePath) ?? runtimePath;
 }
-
-export function buildInitialPathContextForTest(
-  sandboxConfig: SandboxConfig,
-  hostWorkspaceRoot: string,
-): RuntimePathContext {
-  return getUnresolvedSandboxPathContext(sandboxConfig, hostWorkspaceRoot);
-}

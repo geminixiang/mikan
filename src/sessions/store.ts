@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { existsSync, mkdirSync, rmSync } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { isRecord, parseJsonValue, readTextFileIfExists } from "../file-guards.js";
 import { atomicWritePrivateFile } from "../fs-atomic.js";
@@ -187,7 +187,7 @@ export function createManagedSessionFileAtPath(sessionFile: string, cwd: string)
 }
 
 function writeSessionHeader(sessionFile: string, cwd: string, sessionId = randomUUID()): void {
-  const sessionDir = getFileDir(sessionFile);
+  const sessionDir = dirname(sessionFile);
   mkdirSync(sessionDir, { recursive: true });
   const header = {
     type: "session",
@@ -247,10 +247,6 @@ function shouldRecreatePreinitializedSession(sessionFile: string): boolean {
   } catch {
     return false;
   }
-}
-
-function getFileDir(sessionFile: string): string {
-  return sessionFile.substring(0, sessionFile.lastIndexOf("/"));
 }
 
 function getCurrentSessionPath(sessionDir: string): string | null {

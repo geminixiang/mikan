@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   appendTriggerAttribution,
-  buildInitialPathContextForTest,
+  getUnresolvedSandboxPathContext,
   resolveTriggerAttribution,
   translateRuntimePathToHost,
 } from "../src/agent.js";
@@ -59,7 +59,7 @@ describe("append trigger attribution", () => {
 
 describe("runtime path context", () => {
   test("container runtime paths translate back to host paths", () => {
-    const pathContext = buildInitialPathContextForTest(
+    const pathContext = getUnresolvedSandboxPathContext(
       { type: "container", container: "mikan-sandbox" },
       "/host/workspace",
     );
@@ -75,7 +75,7 @@ describe("runtime path context", () => {
   });
 
   test("image sandbox has an initial runtime path before resolving to a container", () => {
-    const pathContext = buildInitialPathContextForTest(
+    const pathContext = getUnresolvedSandboxPathContext(
       { type: "image", image: "ubuntu:24.04" },
       "/host/workspace",
     );
@@ -91,7 +91,7 @@ describe("runtime path context", () => {
   });
 
   test("cloudflare keeps runtime paths remote and event control plane on host", () => {
-    const pathContext = buildInitialPathContextForTest(
+    const pathContext = getUnresolvedSandboxPathContext(
       { type: "cloudflare", sandboxId: "slack-u123" },
       "/host/workspace",
     );

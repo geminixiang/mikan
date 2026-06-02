@@ -82,16 +82,8 @@ function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export function isThreadSessionKey(sessionKey: string): boolean {
-  return sessionKey.includes(":");
-}
-
-export function extractThreadId(sessionKey: string): string {
-  return extractSessionSuffix(sessionKey);
-}
-
 export function hasMaterializedChatSession(options: HasMaterializedSessionOptions): boolean {
-  if (!isThreadSessionKey(options.sessionKey)) {
+  if (!options.sessionKey.includes(":")) {
     return resolveChannelSessionFile(options.conversationDir) !== null;
   }
   return (
@@ -101,7 +93,7 @@ export function hasMaterializedChatSession(options: HasMaterializedSessionOption
 }
 
 export function registerThreadSession(options: RegisterThreadSessionOptions): string | null {
-  if (!isThreadSessionKey(options.sessionKey)) return null;
+  if (!options.sessionKey.includes(":")) return null;
 
   const threadFile = getThreadSessionFile(options.conversationDir, options.sessionKey);
   return (
@@ -122,7 +114,7 @@ export async function waitForThreadSessionBootstrap(
     pollMs = 100,
   } = options;
 
-  if (!isThreadSessionKey(sessionKey)) return false;
+  if (!sessionKey.includes(":")) return false;
   if (sessionKey === parentSessionKey) return false;
   if (hasThreadSession()) return false;
 
@@ -152,7 +144,7 @@ export class ChatSessionManager {
     const cwd = options.cwd ?? options.conversationDir;
     const sessionDir = getChannelSessionDir(options.conversationDir);
 
-    if (!isThreadSessionKey(options.sessionKey)) {
+    if (!options.sessionKey.includes(":")) {
       const contextFile = this.resolveTopLevelSessionFile({
         conversationDir: options.conversationDir,
         sessionDir,
@@ -176,7 +168,7 @@ export class ChatSessionManager {
     syncSessionManagerFromLog(
       options.sessionManager,
       selectExistingSessionSyncMessages(records, {
-        sessionKey: isThreadSessionKey(options.sessionKey) ? options.sessionKey : null,
+        sessionKey: options.sessionKey.includes(":") ? options.sessionKey : null,
         excludeMessageId: options.currentMessageId,
       }),
     );
@@ -184,7 +176,7 @@ export class ChatSessionManager {
 
   resetSession(options: ResetChatSessionOptions): string {
     const cwd = options.cwd ?? options.conversationDir;
-    if (isThreadSessionKey(options.sessionKey)) {
+    if (options.sessionKey.includes(":")) {
       return createManagedSessionFileAtPath(
         getThreadSessionFile(options.conversationDir, options.sessionKey),
         cwd,
@@ -192,10 +184,6 @@ export class ChatSessionManager {
     }
 
     return createManagedSessionFile(getChannelSessionDir(options.conversationDir), cwd);
-  }
-
-  registerThreadSession(options: RegisterThreadSessionOptions): string | null {
-    return registerThreadSession(options);
   }
 
   hasMaterializedSession(options: HasMaterializedSessionOptions): boolean {
@@ -242,7 +230,7 @@ export class ChatSessionManager {
     currentMessageId?: string;
   }): ResolvedSessionScope {
     const threadFile = getThreadSessionFile(options.conversationDir, options.sessionKey);
-    const threadId = extractThreadId(options.sessionKey);
+    const threadId = extractSessionSuffix(options.sessionKey);
     const records = readConversationLog(options.conversationDir);
     const threadRootMessage = buildThreadRootSeed(findLogRecordById(records, threadId)?.message);
     const existing = tryResolveThreadSession(threadFile);
@@ -365,7 +353,7 @@ function selectExistingSessionSyncMessages(
   records: LogRecord[],
   options: { sessionKey: string | null; excludeMessageId?: string },
 ): LogRecord[] {
-  const threadId = options.sessionKey ? extractThreadId(options.sessionKey) : null;
+  const threadId = options.sessionKey ? extractSessionSuffix(options.sessionKey) : null;
   return dedupeAndSortRecords(
     records.filter((record) => {
       if (!isRenderableChatMessage(record.message, options.excludeMessageId)) return false;
