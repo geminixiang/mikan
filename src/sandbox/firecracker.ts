@@ -11,7 +11,7 @@ import { SandboxError } from "./errors.js";
 import { HostExecutor } from "./host.js";
 import { execSimple, killProcessTree, shellEscape } from "./utils.js";
 
-export function parseFirecrackerSandboxArg(value: string): FirecrackerSandboxConfig | undefined {
+function parseFirecrackerSandboxArg(value: string): FirecrackerSandboxConfig | undefined {
   if (!value.startsWith("firecracker:")) {
     return undefined;
   }
@@ -43,7 +43,7 @@ export function parseFirecrackerSandboxArg(value: string): FirecrackerSandboxCon
   return { type: "firecracker", vmId, hostPath, sshUser, sshPort };
 }
 
-export async function validateFirecrackerSandbox(config: FirecrackerSandboxConfig): Promise<void> {
+async function validateFirecrackerSandbox(config: FirecrackerSandboxConfig): Promise<void> {
   // Check if fc-agent or firecracker CLI is available
   try {
     await execSimple("fc-agent", ["--version"]);

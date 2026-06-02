@@ -1,5 +1,5 @@
-export const DEFAULT_TIMEOUT_MS = 30_000;
-export const DEFAULT_POLL_MS = 2_000;
+const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_POLL_MS = 2_000;
 
 export interface SlackE2eEnv {
   token: string;

@@ -1,15 +1,6 @@
 import type { BotEvent } from "../adapter.js";
 import type { CommandContext } from "./types.js";
 
-export async function replyWithContext(
-  responseCtx: CommandContext["responseCtx"],
-  text: string,
-): Promise<void> {
-  await responseCtx.setTyping(false);
-  await responseCtx.setWorking(false);
-  await responseCtx.respond(text);
-}
-
 export async function replyDiagnosticWithContext(
   responseCtx: CommandContext["responseCtx"],
   text: string,

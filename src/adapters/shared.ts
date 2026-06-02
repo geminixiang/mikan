@@ -51,7 +51,7 @@ export function createChatResponseErrorReporter(
   };
 }
 
-export function reportChatResponseError(err: unknown, context: ChatResponseErrorContext): void {
+function reportChatResponseError(err: unknown, context: ChatResponseErrorContext): void {
   reportUserFacingError(err, {
     domain: "chat_platform",
     surface: "chat_response",

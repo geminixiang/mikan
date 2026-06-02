@@ -4,5 +4,3 @@ export function escapeHtml(value: string): string {
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
   );
 }
-
-export const escapeHtmlAttr = escapeHtml;

@@ -1,4 +1,4 @@
-import { escapeHtml, escapeHtmlAttr } from "./html.js";
+import { escapeHtml } from "./html.js";
 import { PRODUCT_NAME } from "./ui-copy.js";
 
 // ── Shared portal shell ────────────────────────────────────────────────────────
@@ -12,7 +12,7 @@ import { PRODUCT_NAME } from "./ui-copy.js";
 // Sidebar buttons whose target token isn't available are rendered as anchors
 // only when href is provided; otherwise they are buttons in a disabled state.
 
-export type PortalView = "admin" | "session" | "vault";
+type PortalView = "admin" | "session" | "vault";
 
 export interface PortalShellOptions {
   activeView: PortalView;
@@ -67,14 +67,14 @@ function renderNav(activeView: PortalView, navLinks: Partial<Record<PortalView, 
     const isActive = view === activeView;
     const href = navLinks[view];
     const baseClass = `view-nav-btn${isActive ? " active" : ""}${!href && !isActive ? " disabled" : ""}`;
-    const attrs = `data-view="${view}" aria-label="${escapeHtmlAttr(meta.label)}" data-tooltip="${escapeHtmlAttr(meta.label)}"`;
+    const attrs = `data-view="${view}" aria-label="${escapeHtml(meta.label)}" data-tooltip="${escapeHtml(meta.label)}"`;
     if (href && !isActive) {
-      return `<a class="${baseClass}" href="${escapeHtmlAttr(href)}" ${attrs}>${meta.svg}</a>`;
+      return `<a class="${baseClass}" href="${escapeHtml(href)}" ${attrs}>${meta.svg}</a>`;
     }
     if (isActive) {
       return `<span class="${baseClass}" aria-current="page" ${attrs}>${meta.svg}</span>`;
     }
-    return `<span class="${baseClass}" aria-disabled="true" ${attrs} data-tooltip="${escapeHtmlAttr(meta.label)} (no token)">${meta.svg}</span>`;
+    return `<span class="${baseClass}" aria-disabled="true" ${attrs} data-tooltip="${escapeHtml(meta.label)} (no token)">${meta.svg}</span>`;
   });
   return `<nav class="floating-view-nav" aria-label="Primary views">${buttons.join("")}</nav>`;
 }
@@ -92,7 +92,7 @@ function renderTopbar(options: PortalShellOptions): string {
         .map((c) => {
           const label = `${c.label}${c.running ? " (running)" : ""}`;
           const selected = c.id === currentId ? " selected" : "";
-          return `<option value="${escapeHtmlAttr(c.id)}"${selected}>${escapeHtml(label)}</option>`;
+          return `<option value="${escapeHtml(c.id)}"${selected}>${escapeHtml(label)}</option>`;
         })
         .join("");
       switcher = `<select id="conv-switcher" class="conv-inline-select" aria-label="Switch conversation">${opts}</select>`;
@@ -116,7 +116,7 @@ function renderTopbar(options: PortalShellOptions): string {
 
 export function renderPortalShell(options: PortalShellOptions): string {
   const bodyAttrs = Object.entries(options.bodyAttributes ?? {})
-    .map(([key, value]) => `${escapeHtmlAttr(key)}="${escapeHtmlAttr(value)}"`)
+    .map(([key, value]) => `${escapeHtml(key)}="${escapeHtml(value)}"`)
     .join(" ");
   const titleText = `${options.pageTitle} — ${PRODUCT_NAME}`;
   const nav = renderNav(options.activeView, options.navLinks ?? {});
@@ -148,7 +148,7 @@ export function renderPortalShell(options: PortalShellOptions): string {
 
 // ── Shared stylesheet ──────────────────────────────────────────────────────────
 
-export const portalShellStyles = `
+const portalShellStyles = `
   @import url('https://fonts.googleapis.com/css2?family=Lora:wght@400;600&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
   :root {

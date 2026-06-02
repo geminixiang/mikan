@@ -13,7 +13,7 @@ export function createMountedRuntimePathContext(
   };
 }
 
-export function translateMountedRuntimePathToHost(
+function translateMountedRuntimePathToHost(
   runtimePath: string,
   runtimeWorkspaceRoot: string,
   hostWorkspaceRoot: string,

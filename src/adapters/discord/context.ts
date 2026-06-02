@@ -14,7 +14,7 @@ import {
 } from "../shared.js";
 import type { DiscordBot, DiscordEvent } from "./bot.js";
 
-export const DISCORD_FORMATTING_GUIDE = `## Discord Formatting (Markdown)
+const DISCORD_FORMATTING_GUIDE = `## Discord Formatting (Markdown)
 Bold: **text**, Italic: *text*, Code: \`code\`, Block: \`\`\`language\ncode\`\`\`
 Links: [text](url), Spoiler: ||text||
 Keep messages under 2000 characters. Use code blocks for code.`;

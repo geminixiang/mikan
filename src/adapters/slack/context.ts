@@ -14,7 +14,7 @@ import {
 import type { SlackBot, SlackEvent } from "./bot.js";
 import { planSlackAdapterSession } from "./session.js";
 
-export const SLACK_FORMATTING_GUIDE = `## Slack Formatting (mrkdwn, NOT Markdown)
+const SLACK_FORMATTING_GUIDE = `## Slack Formatting (mrkdwn, NOT Markdown)
 Bold: *text*, Italic: _text_, Code: \`code\`, Block: \`\`\`code\`\`\`, Links: <url|text>
 Do NOT use **double asterisks** or [markdown](links).`;
 

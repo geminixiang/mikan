@@ -120,40 +120,6 @@ export interface SlackChannel {
   name: string;
 }
 
-// Types used by agent.ts
-export interface ChannelInfo {
-  id: string;
-  name: string;
-}
-
-export interface UserInfo {
-  id: string;
-  userName: string;
-  displayName: string;
-}
-
-export interface SlackContext {
-  message: {
-    text: string;
-    rawText: string;
-    user: string;
-    userName?: string;
-    channel: string;
-    ts: string;
-    attachments: Array<{ localPath: string }>;
-  };
-  channelName?: string;
-  channels: ChannelInfo[];
-  users: UserInfo[];
-  respond: (text: string, shouldLog?: boolean) => Promise<void>;
-  replaceMessage: (text: string) => Promise<void>;
-  respondDiagnostic: (text: string) => Promise<void>;
-  setTyping: (isTyping: boolean) => Promise<void>;
-  uploadFile: (filePath: string, title?: string) => Promise<void>;
-  setWorking: (working: boolean) => Promise<void>;
-  deleteMessage: () => Promise<void>;
-}
-
 // ============================================================================
 // SlackBot
 // ============================================================================

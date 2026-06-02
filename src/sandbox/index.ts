@@ -7,38 +7,16 @@ import { SandboxError } from "./errors.js";
 import type { Executor, SandboxAdapter, SandboxConfig } from "./types.js";
 
 export type {
-  ContainerSandboxConfig,
   CloudflareSandboxConfig,
   ExecOptions,
   ExecResult,
   Executor,
-  FirecrackerSandboxConfig,
-  HostSandboxConfig,
-  ImageSandboxConfig,
   RuntimePathContext,
   SandboxAdapter,
   SandboxConfig,
 } from "./types.js";
 export { CloudflareSandboxExecutor, ContainerExecutor, FirecrackerExecutor, HostExecutor };
 export { SandboxError } from "./errors.js";
-export {
-  buildContainerExecCommand,
-  containerSandboxAdapter,
-  parseContainerSandboxArg,
-  validateContainerSandbox,
-} from "./container.js";
-export {
-  firecrackerSandboxAdapter,
-  parseFirecrackerSandboxArg,
-  validateFirecrackerSandbox,
-} from "./firecracker.js";
-export {
-  cloudflareSandboxAdapter,
-  parseCloudflareSandboxArg,
-  validateCloudflareSandbox,
-} from "./cloudflare.js";
-export { hostSandboxAdapter, parseHostSandboxArg, validateHostSandbox } from "./host.js";
-export { imageSandboxAdapter, parseImageSandboxArg, validateImageSandbox } from "./image.js";
 
 const sandboxAdapters = [
   hostSandboxAdapter,

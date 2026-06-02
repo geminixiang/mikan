@@ -2,7 +2,7 @@ import type { ImageSandboxConfig, SandboxAdapter } from "./types.js";
 import { SandboxError } from "./errors.js";
 import { execSimple } from "./utils.js";
 
-export function parseImageSandboxArg(value: string): ImageSandboxConfig | undefined {
+function parseImageSandboxArg(value: string): ImageSandboxConfig | undefined {
   if (!value.startsWith("image:")) {
     return undefined;
   }
@@ -14,7 +14,7 @@ export function parseImageSandboxArg(value: string): ImageSandboxConfig | undefi
   return { type: "image", image };
 }
 
-export async function validateImageSandbox(config: ImageSandboxConfig): Promise<void> {
+async function validateImageSandbox(config: ImageSandboxConfig): Promise<void> {
   try {
     await execSimple("docker", ["--version"]);
   } catch {

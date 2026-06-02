@@ -5,7 +5,7 @@ import * as log from "../log.js";
 
 export type LoginCredentialKind = "api_key" | "oauth";
 
-export interface OAuthAuthorizedUserFileOutput {
+interface OAuthAuthorizedUserFileOutput {
   type: "authorized_user";
   relativePath: string;
   targetPath?: string;

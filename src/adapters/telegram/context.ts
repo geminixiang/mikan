@@ -9,7 +9,7 @@ import { createChatResponseErrorReporter, formatToolArgs, splitText } from "../s
 import { sanitizeTelegramHtml } from "./html.js";
 import type { TelegramBot, TelegramEvent } from "./bot.js";
 
-export const TELEGRAM_FORMATTING_GUIDE = `## Telegram Formatting (HTML mode)
+const TELEGRAM_FORMATTING_GUIDE = `## Telegram Formatting (HTML mode)
 Bold: <b>text</b>, Italic: <i>text</i>, Code: <code>code</code>, Pre: <pre>code</pre>
 Links: <a href="url">text</a>
 Do NOT use Markdown asterisks or backtick syntax.

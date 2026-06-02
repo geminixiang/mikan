@@ -4,7 +4,7 @@ import { formatCommandSummary, replyPrivatelyWithContext } from "./utils.js";
 
 const ADMIN_COMMANDS = ["admin", "/admin", "/pi-admin"] as const;
 
-export function parseAdminCommand(text: string): { command: string } | null {
+function parseAdminCommand(text: string): { command: string } | null {
   const matched = matchCommand(text, ADMIN_COMMANDS, { stripMention: true });
   return matched ? { command: matched.command } : null;
 }

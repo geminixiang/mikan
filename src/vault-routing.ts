@@ -6,7 +6,7 @@ export function resolveActorVaultKey(
   conversationId: string,
 ): string {
   if (baseConfig.type === "container") {
-    return containerSharedVaultId(baseConfig.container);
+    return `container-${baseConfig.container}`;
   }
 
   if (
@@ -18,8 +18,4 @@ export function resolveActorVaultKey(
   }
 
   return userId;
-}
-
-export function containerSharedVaultId(containerName: string): string {
-  return `container-${containerName}`;
 }

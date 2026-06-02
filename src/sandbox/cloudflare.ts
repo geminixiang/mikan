@@ -26,7 +26,7 @@ interface CloudflareExecResponse {
   error?: string;
 }
 
-export function parseCloudflareSandboxArg(value: string): CloudflareSandboxConfig | undefined {
+function parseCloudflareSandboxArg(value: string): CloudflareSandboxConfig | undefined {
   if (!value.startsWith("cloudflare:")) {
     return undefined;
   }
@@ -41,7 +41,7 @@ export function parseCloudflareSandboxArg(value: string): CloudflareSandboxConfi
   return { type: "cloudflare", sandboxId };
 }
 
-export async function validateCloudflareSandbox(_config: CloudflareSandboxConfig): Promise<void> {
+async function validateCloudflareSandbox(_config: CloudflareSandboxConfig): Promise<void> {
   const url = resolveCloudflareSandboxUrl();
   try {
     const response = await fetch(new URL("/health", url), {

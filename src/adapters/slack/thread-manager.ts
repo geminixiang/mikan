@@ -1,6 +1,5 @@
 import {
   ChatSessionManager,
-  hasMaterializedChatSession,
   registerThreadSession,
   waitForThreadSessionBootstrap,
   type ThreadBootstrapWaitOptions,
@@ -23,13 +22,6 @@ export interface RegisterSlackThreadSessionOptions {
 }
 
 export type SlackThreadBootstrapWaitOptions = ThreadBootstrapWaitOptions;
-
-export function hasMaterializedSlackThreadSession(
-  conversationDir: string,
-  sessionKey: string,
-): boolean {
-  return hasMaterializedChatSession({ conversationDir, sessionKey });
-}
 
 export function registerSlackThreadSession(
   options: RegisterSlackThreadSessionOptions,

@@ -17,7 +17,7 @@ import { createMountedRuntimePathContext } from "./path-context.js";
 const PRIVATE_DIR_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 
-export function parseContainerSandboxArg(value: string): ContainerSandboxConfig | undefined {
+function parseContainerSandboxArg(value: string): ContainerSandboxConfig | undefined {
   if (!value.startsWith("container:")) {
     return undefined;
   }
@@ -31,7 +31,7 @@ export function parseContainerSandboxArg(value: string): ContainerSandboxConfig 
   return { type: "container", container };
 }
 
-export async function validateContainerSandbox(config: ContainerSandboxConfig): Promise<void> {
+async function validateContainerSandbox(config: ContainerSandboxConfig): Promise<void> {
   try {
     await execSimple("docker", ["--version"]);
   } catch {
@@ -62,7 +62,7 @@ export async function validateContainerSandbox(config: ContainerSandboxConfig): 
   console.log(`  Container '${config.container}' is running.`);
 }
 
-export function buildContainerExecCommand(
+function buildContainerExecCommand(
   container: string,
   command: string,
   envFilePath?: string,

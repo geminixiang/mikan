@@ -68,7 +68,7 @@ export interface SentryRunScopeContext {
   model?: string;
 }
 
-export type UserFacingErrorDomain =
+type UserFacingErrorDomain =
   | "llm"
   | "chat_platform"
   | "mikan"
@@ -77,7 +77,7 @@ export type UserFacingErrorDomain =
   | "events"
   | "session_view";
 
-export type UserFacingErrorSeverity = "warning" | "error" | "fatal";
+type UserFacingErrorSeverity = "warning" | "error" | "fatal";
 
 export interface ReportUserFacingErrorOptions {
   domain: UserFacingErrorDomain;

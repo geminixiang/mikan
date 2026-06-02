@@ -30,7 +30,7 @@ function sanitizeCloudflareSandboxId(value: string): string {
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-export interface ResolvedVaultMount {
+interface ResolvedVaultMount {
   source: string;
   target: string;
 }

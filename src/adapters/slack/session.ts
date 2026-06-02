@@ -44,10 +44,6 @@ export function isSlackThreadSessionKey(sessionKey: string): boolean {
   return parseSlackSessionKey(sessionKey).kind === "thread";
 }
 
-export function resolveSlackSessionRef(channelId: string, threadTs?: string): SlackSessionRef {
-  return threadTs ? { kind: "thread", channelId, threadTs } : { kind: "channel", channelId };
-}
-
 export function resolveSlackSessionKey(channelId: string, threadTs?: string): string {
   const conversationKind: ConversationKind = channelId.startsWith("D") ? "direct" : "shared";
   const sessionKey = resolveChatSessionKey({
@@ -61,18 +57,14 @@ export function resolveSlackSessionKey(channelId: string, threadTs?: string): st
   return formatSlackSessionKey(parseSlackSessionKey(sessionKey));
 }
 
-export function resolveSlackRootTs(messageTs: string, threadTs?: string): string {
-  return threadTs || messageTs;
-}
-
-export function isSlackMessageTs(ts: string | undefined): ts is string {
+function isSlackMessageTs(ts: string | undefined): ts is string {
   return typeof ts === "string" && /^\d+\.\d+$/.test(ts);
 }
 
 export function resolveSlackResponseRootTs(
   event: Pick<SlackSessionEventLike, "ts" | "thread_ts">,
 ): string | undefined {
-  return event.thread_ts ?? (isSlackMessageTs(event.ts) ? resolveSlackRootTs(event.ts) : undefined);
+  return event.thread_ts ?? (isSlackMessageTs(event.ts) ? event.ts : undefined);
 }
 
 export function planSlackAdapterSession(

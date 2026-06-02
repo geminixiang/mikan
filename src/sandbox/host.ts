@@ -10,14 +10,14 @@ import type {
 import { killProcessTree } from "./utils.js";
 import { createMountedRuntimePathContext } from "./path-context.js";
 
-export function parseHostSandboxArg(value: string): HostSandboxConfig | undefined {
+function parseHostSandboxArg(value: string): HostSandboxConfig | undefined {
   if (value === "host") {
     return { type: "host" };
   }
   return undefined;
 }
 
-export async function validateHostSandbox(_config: HostSandboxConfig): Promise<void> {
+async function validateHostSandbox(_config: HostSandboxConfig): Promise<void> {
   return;
 }
 

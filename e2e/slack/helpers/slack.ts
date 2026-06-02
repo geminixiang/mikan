@@ -19,11 +19,11 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export function messageText(message: SlackMessage): string {
+function messageText(message: SlackMessage): string {
   return typeof message.text === "string" ? message.text : "";
 }
 
-export function isTargetBotMessage(message: SlackMessage, botUserId: string): boolean {
+function isTargetBotMessage(message: SlackMessage, botUserId: string): boolean {
   return message.user === botUserId || message.bot_id === botUserId;
 }
 
@@ -67,7 +67,7 @@ export async function uploadTextFile(
   }
 }
 
-export async function fetchThreadMessages(
+async function fetchThreadMessages(
   client: WebClient,
   channel: string,
   threadTs: string,
@@ -77,7 +77,7 @@ export async function fetchThreadMessages(
   return (res.messages ?? []) as SlackMessage[];
 }
 
-export async function fetchRecentMessages(
+async function fetchRecentMessages(
   client: WebClient,
   channel: string,
   oldest: number,
