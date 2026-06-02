@@ -15,7 +15,7 @@ import type {
   ConversationKind,
   PlatformInfo,
 } from "../../adapter.js";
-import { loadAgentConfigForConversation } from "../../config.js";
+import { loadAgentConfigForConversation, MissingGlobalSettingsError } from "../../config.js";
 import type { EventsWatcher } from "../../events.js";
 import * as log from "../../log.js";
 import type { Attachment, ChannelStore } from "../../store.js";
@@ -43,6 +43,20 @@ import {
 import { reportUserFacingError } from "../../sentry.js";
 
 const SLACK_EVENT_ANCHOR_TEXT = "Working on it...";
+
+type SlackReplyMode = "top-level" | "thread";
+
+function loadSlackReplyMode(workingDir: string, conversationId: string): SlackReplyMode {
+  try {
+    return (
+      loadAgentConfigForConversation(join(workingDir, conversationId)).slack?.replyMode ??
+      "top-level"
+    );
+  } catch (err) {
+    if (err instanceof MissingGlobalSettingsError) return "top-level";
+    throw err;
+  }
+}
 
 // Slack WebClient errors carry either `code: "rate_limited"` (retry-after) or
 // the legacy `data.error === "rate_limited"` / 429 status shape.
@@ -143,9 +157,7 @@ export class SlackBot implements Bot {
 
   private createAdapters(event: SlackEvent): BotAdapters {
     return createSlackAdapters(event, this, {
-      replyMode:
-        loadAgentConfigForConversation(join(this.workingDir, event.conversationId)).slack
-          ?.replyMode ?? "top-level",
+      replyMode: loadSlackReplyMode(this.workingDir, event.conversationId),
     });
   }
 
@@ -545,9 +557,7 @@ export class SlackBot implements Bot {
         };
         const adapters = createSlackAdapters(slackEvent, this, {
           initialMessageTs: eventPlan.initialMessageTs,
-          replyMode:
-            loadAgentConfigForConversation(join(this.workingDir, eventForRun.conversationId)).slack
-              ?.replyMode ?? "top-level",
+          replyMode: loadSlackReplyMode(this.workingDir, eventForRun.conversationId),
         });
         return this.handler.handleEvent(eventForRun, this, adapters);
       });
