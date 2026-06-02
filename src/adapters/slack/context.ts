@@ -1,5 +1,6 @@
 import type {
   ChatMessage,
+  ChatResponseBlockKit,
   ChatResponseContext,
   ChatToolResult,
   PlatformInfo,
@@ -108,6 +109,7 @@ export function createSlackAdapters(
   const threadMessageTs: string[] = [];
   let accumulatedText = "";
   let isWorking = true;
+  let blockKitFinalized = false;
   let updatePromise = Promise.resolve();
 
   const channelId = event.channel;
@@ -317,6 +319,32 @@ export function createSlackAdapters(
       await responseCtx.respondDiagnostic(formatSlackToolResult(result));
     },
 
+    respondBlockKit: async (response: ChatResponseBlockKit) => {
+      updatePromise = updatePromise.then(async () => {
+        isWorking = false;
+        accumulatedText = response.text;
+        if (isThreaded && rootTs) {
+          messageTs = await slack.postInThreadBlocks(
+            channelId,
+            rootTs,
+            response.text,
+            response.blocks,
+          );
+        } else {
+          messageTs = await slack.postBlocks(channelId, response.text, response.blocks);
+        }
+        blockKitFinalized = true;
+        slack.logBotResponse(
+          channelId,
+          response.text,
+          messageTs,
+          isThreaded ? rootTs : undefined,
+          response.blocks,
+        );
+      });
+      await updatePromise;
+    },
+
     setTyping: async (isTyping: boolean) => {
       if (isTyping && !messageTs && rootTs) {
         try {
@@ -339,6 +367,14 @@ export function createSlackAdapters(
         "set_working",
         async () => {
           isWorking = working;
+          if (blockKitFinalized) {
+            if (!working && rootTs) {
+              await slack
+                .setAssistantStatus(channelId, rootTs, "")
+                .catch((err) => onAssistantStatusError("clear-on-idle", err));
+            }
+            return;
+          }
           if (messageTs) {
             const displayText = isWorking ? accumulatedText + WORKING_INDICATOR : accumulatedText;
             const updates: Promise<void>[] = [

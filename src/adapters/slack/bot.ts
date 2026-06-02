@@ -369,6 +369,17 @@ export class SlackBot implements Bot {
     });
   }
 
+  async postBlocks(channel: string, text: string, blocks: object[]): Promise<string> {
+    return slackRetry(async () => {
+      const result = await this.webClient.chat.postMessage({
+        channel,
+        text,
+        blocks: blocks as KnownBlock[],
+      });
+      return result.ts as string;
+    });
+  }
+
   async uploadFile(
     channel: string,
     filePath: string,
@@ -392,8 +403,17 @@ export class SlackBot implements Bot {
     appendChannelLog(this.workingDir, channel, entry);
   }
 
-  logBotResponse(channel: string, text: string, ts: string, threadTs?: string): void {
-    appendBotResponseLog(this.workingDir, channel, text, ts, threadTs);
+  logBotResponse(
+    channel: string,
+    text: string,
+    ts: string,
+    threadTs?: string,
+    slackBlocks?: object[],
+  ): void {
+    appendBotResponseLog(this.workingDir, channel, text, ts, threadTs, {
+      platform: "slack",
+      ...(slackBlocks ? { slackBlocks } : {}),
+    });
   }
 
   getPlatformInfo(): PlatformInfo {
@@ -971,6 +991,10 @@ export class SlackBot implements Bot {
     this.socketClient.on("slash_commands", (payload) => void this.handleSlashCommand(payload));
     this.socketClient.on("app_home_opened", (payload) => this.handleAppHomeOpened(payload));
     this.socketClient.on("block_actions", (payload) => void this.handleBlockAction(payload));
+    this.socketClient.on(
+      "interactive",
+      (payload) => void this.handleBlockAction(payload as { body: unknown; ack: () => void }),
+    );
   }
 
   private handleAppMention({ event, ack }: { event: unknown; ack: () => void }): void {
@@ -1320,8 +1344,14 @@ export class SlackBot implements Bot {
 
   private async handleBlockAction({ body, ack }: { body: any; ack: () => void }): Promise<void> {
     const action = body.actions?.[0];
-    if (!action || !action.action_id?.startsWith("force_stop_")) {
+    if (!action) {
       ack();
+      return;
+    }
+
+    if (!action.action_id?.startsWith("force_stop_")) {
+      ack();
+      this.handleSlackInteraction(body, action);
       return;
     }
 
@@ -1349,6 +1379,82 @@ export class SlackBot implements Bot {
           log.logWarning(`Failed to refresh App Home view`, String(err));
         });
     }
+  }
+
+  private handleSlackInteraction(body: any, action: any): void {
+    const container = body.container ?? {};
+    const channelId = container.channel_id;
+    const userId = body.user?.id;
+    if (!channelId || !userId) return;
+
+    const selectedOption = action.selected_option;
+    const selectedOptions = Array.isArray(action.selected_options)
+      ? action.selected_options
+      : undefined;
+    const selectedText = selectedOption?.text?.text ?? selectedOption?.value;
+    const selectedTexts = selectedOptions?.map((option: any) => option.text?.text ?? option.value);
+    const valueText = selectedTexts?.length
+      ? selectedTexts.join(", ")
+      : (selectedText ?? action.value ?? action.action_id);
+    const text = `[Slack action] ${action.action_id}: ${valueText}`;
+    const ts = `action:${Date.now()}`;
+    const threadTs = container.thread_ts;
+    const sessionKey = resolveSlackSessionKey(channelId, threadTs);
+
+    this.logToFile(channelId, {
+      date: new Date().toISOString(),
+      ts,
+      ...(threadTs ? { threadTs } : {}),
+      user: userId,
+      userName: body.user?.username ?? body.user?.name,
+      text,
+      attachments: [],
+      isBot: false,
+      platform: "slack",
+      slackInteraction: {
+        type: "block_actions",
+        actionId: action.action_id,
+        blockId: action.block_id,
+        actionType: action.type,
+        value: action.value,
+        selectedOption: selectedOption
+          ? { text: selectedOption.text?.text, value: selectedOption.value }
+          : undefined,
+        selectedOptions: selectedOptions?.map((option: any) => ({
+          text: option.text?.text,
+          value: option.value,
+        })),
+        messageTs: container.message_ts,
+      },
+    });
+
+    const event: import("../../adapter.js").BotEvent = {
+      type: "slack_action",
+      conversationId: channelId,
+      conversationKind: channelId.startsWith("D") ? "direct" : "shared",
+      ts,
+      user: userId,
+      text,
+      attachments: [],
+      ...(threadTs ? { thread_ts: threadTs } : {}),
+      sessionKey,
+    };
+
+    this.getQueue(this.resolveQueueKey(channelId, sessionKey)).enqueue(async () => {
+      const slackEvent: SlackEvent = {
+        type: event.conversationKind === "direct" ? "dm" : "mention",
+        conversationId: channelId,
+        conversationKind: event.conversationKind,
+        channel: channelId,
+        ts,
+        thread_ts: threadTs,
+        user: userId,
+        text,
+        attachments: [],
+        sessionKey,
+      };
+      return this.handler.handleEvent(event, this, createSlackAdapters(slackEvent, this));
+    });
   }
 
   /**

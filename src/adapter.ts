@@ -22,11 +22,17 @@ export interface ChatToolResult {
   durationMs: number;
 }
 
+export interface ChatResponseBlockKit {
+  text: string;
+  blocks: object[];
+}
+
 export interface ChatResponseContext {
   respond(text: string): Promise<void>;
   replaceResponse(text: string, options?: { createOverflowLink?: () => string }): Promise<void>;
   respondDiagnostic(text: string, options?: { style?: "muted" | "error" }): Promise<void>;
   respondToolResult(result: ChatToolResult): Promise<void>;
+  respondBlockKit?(response: ChatResponseBlockKit): Promise<void>;
   setTyping(isTyping: boolean): Promise<void>;
   setWorking(working: boolean): Promise<void>;
   uploadFile(filePath: string, title?: string): Promise<void>;

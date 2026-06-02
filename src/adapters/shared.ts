@@ -192,6 +192,7 @@ export function appendBotResponseLog(
   text: string,
   ts: string,
   threadTs?: string,
+  extraFields: Record<string, unknown> = {},
 ): void {
   appendChannelLog(workingDir, channel, {
     date: new Date().toISOString(),
@@ -201,6 +202,7 @@ export function appendBotResponseLog(
     text,
     attachments: [],
     isBot: true,
+    ...extraFields,
   });
 }
 

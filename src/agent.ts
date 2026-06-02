@@ -261,6 +261,20 @@ _Triggered by ${triggerAttribution}_
 Do not add this to \`[SILENT]\` responses.
 `
     : "";
+  const slackBlockKitInstructions =
+    platform.name === "slack"
+      ? `
+## Slack Block Kit
+- On Slack, use the \`slack_blockkit\` tool when a response benefits from interaction or structured presentation.
+- Good uses: choices, confirmations, clarifying questions, quizzes, status reports, comparisons, summaries, and step lists.
+- Do not use it for normal short replies or simple factual answers.
+- Supported blocks: section, context, divider, header, actions.
+- Put buttons in actions.elements. Put static_select and multi_static_select in section.accessory.
+- Every interactive element must include action_id. Buttons must include value.
+- Always provide a plain-text fallback in text that matches the visible Block Kit content.
+- When using \`slack_blockkit\`, do not also send a normal text response in the same assistant turn; put the fallback in the tool's text field.
+`
+      : "";
 
   return `You are mikan, a ${platform.name} bot assistant. Be concise. No emojis.
 
@@ -274,7 +288,7 @@ Do not add this to \`[SILENT]\` responses.
 - If a user asks about something that should exist in conversation history but is not found in the current context window, do not answer "I don't know" or "I don't have that". Instead, search the thread session, top-level session, and \`log.jsonl\` before responding.
 - User messages include a \`[in-thread:TS]\` marker when sent from within a platform thread/reply (TS is the thread or parent message identifier). Without this marker, the message is a top-level conversation message.
 ${eventTriggerInstructions}
-${platform.formattingGuide}
+${platform.formattingGuide}${slackBlockKitInstructions}
 
 ## Platform IDs
 Channels: ${channelMappings}
@@ -440,6 +454,7 @@ interface RunnerSessionState {
   stopReason: string;
   errorMessage: string | undefined;
   reportedLlmError: boolean;
+  finalResponseHandledByTool: boolean;
 }
 
 interface PreparedRunContext {
@@ -611,6 +626,7 @@ function createRunState(): RunnerSessionState {
     stopReason: "stop",
     errorMessage: undefined,
     reportedLlmError: false,
+    finalResponseHandledByTool: false,
   };
 }
 
@@ -634,9 +650,13 @@ function resetRunState(
   runState.stopReason = "stop";
   runState.errorMessage = undefined;
   runState.reportedLlmError = false;
+  runState.finalResponseHandledByTool = false;
 }
 
-function createRunQueue(responseCtx: ChatResponseContext): {
+function createRunQueue(
+  responseCtx: ChatResponseContext,
+  runState: RunnerSessionState,
+): {
   queue: { enqueue(fn: () => Promise<void>, errorContext: string): void };
   wait: () => Promise<void>;
 } {
@@ -645,6 +665,7 @@ function createRunQueue(responseCtx: ChatResponseContext): {
     queue: {
       enqueue(fn: () => Promise<void>, errorContext: string): void {
         queueChain = queueChain.then(async () => {
+          if (runState.finalResponseHandledByTool) return;
           try {
             await fn();
           } catch (err) {
@@ -831,6 +852,10 @@ async function finalizeRunResponse(
   }
 
   const finalText = getFinalAssistantText(session);
+  if (runState.finalResponseHandledByTool) {
+    log.logInfo("Final response already handled by tool - skipping final replacement");
+    return;
+  }
   if (finalText.trim() === "[SILENT]" || finalText.trim().startsWith("[SILENT]")) {
     try {
       await responseCtx.deleteResponse();
@@ -988,6 +1013,9 @@ async function prepareRunContext(params: {
   }) => void;
   setSandboxContext: (context: { conversationId: string; userId: string }) => void;
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
+  setBlockKitResponseFunction: (
+    fn: (response: import("./adapter.js").ChatResponseBlockKit) => Promise<void>,
+  ) => void;
   pathContext: RuntimePathContext;
 }): Promise<PreparedRunContext & { pathContext: RuntimePathContext }> {
   const {
@@ -1008,6 +1036,7 @@ async function prepareRunContext(params: {
     setEventContext,
     setSandboxContext,
     setUploadFunction,
+    setBlockKitResponseFunction,
   } = params;
   let pathContext = params.pathContext;
   const sessionConversation = message.sessionKey.split(":")[0];
@@ -1054,9 +1083,17 @@ async function prepareRunContext(params: {
     const hostPath = translateRuntimePathToHost(filePath, pathContext);
     await responseCtx.uploadFile(hostPath, title);
   });
+  setBlockKitResponseFunction(async (response) => {
+    if (platform.name === "slack" && responseCtx.respondBlockKit) {
+      await responseCtx.respondBlockKit(response);
+    } else {
+      await responseCtx.replaceResponse(response.text);
+    }
+    runState.finalResponseHandledByTool = true;
+  });
 
   resetRunState(runState, responseCtx, sessionConversation, message.userName, sessionUuid);
-  const runQueue = createRunQueue(responseCtx);
+  const runQueue = createRunQueue(responseCtx, runState);
   runState.queue = runQueue.queue;
 
   log.logInfo(
@@ -1249,6 +1286,9 @@ function attachSessionEventHandlers(params: {
 
         const thinkingParts: string[] = [];
         const textParts: string[] = [];
+        const hasToolCall = assistantMsg.content.some((part) =>
+          ["tool_use", "toolCall", "tool-call"].includes((part as { type?: string }).type ?? ""),
+        );
         for (const part of assistantMsg.content) {
           if (part.type === "thinking") {
             thinkingParts.push(part.thinking);
@@ -1268,7 +1308,8 @@ function attachSessionEventHandlers(params: {
           );
         }
 
-        if (text.trim()) {
+        if (text.trim() && !hasToolCall) {
+          if (runState.finalResponseHandledByTool) return;
           log.logResponse(logCtx, text);
           queue.enqueue(() => responseCtx.respond(text), "response main");
         }
@@ -1366,11 +1407,13 @@ export async function createRunner(
   let pathContext = getUnresolvedSandboxPathContext(sandboxConfig, workspaceBase);
 
   // Create tools (per-runner, with per-runner upload function setter)
-  const { tools, setUploadFunction, setEventContext, setSandboxContext } = createMikanTools(
-    executor,
-    workspaceDir,
-    { sandbox: sandboxConfig, provisioner },
-  );
+  const {
+    tools,
+    setUploadFunction,
+    setBlockKitResponseFunction,
+    setEventContext,
+    setSandboxContext,
+  } = createMikanTools(executor, workspaceDir, { sandbox: sandboxConfig, provisioner });
 
   // Resolve model from config. Config stores provider/model as user-provided strings,
   // while getModel's public overload is narrowed to generated known providers.
@@ -1463,6 +1506,7 @@ export async function createRunner(
         setEventContext,
         setSandboxContext,
         setUploadFunction,
+        setBlockKitResponseFunction,
         pathContext,
       });
       pathContext = prepared.pathContext;
