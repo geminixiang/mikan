@@ -9,6 +9,12 @@ any release.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-06-02
+
+### Fixed
+
+- Preserve trigger attribution in streamed agent responses so tool-written GitHub comments include the triggering user.
+
 ## [0.3.1] - 2026-06-02
 
 ### Added
