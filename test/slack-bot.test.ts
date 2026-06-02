@@ -530,6 +530,62 @@ describe("SlackBot queues follow-up messages", () => {
     });
   });
 
+  test("bare shared channel mentions ask the agent to use recent context", async () => {
+    const handler = makeHandler();
+    const bot = new SlackBot(handler, {
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      workingDir,
+      store: {} as any,
+    });
+
+    let mentionHandler:
+      | ((payload: {
+          event: {
+            text: string;
+            channel: string;
+            user: string;
+            ts: string;
+            thread_ts?: string;
+          };
+          ack: () => void;
+        }) => void)
+      | undefined;
+
+    (bot as any).startupTs = "0";
+    (bot as any).botUserId = "B123";
+    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
+    (bot as any).socketClient = {
+      on: vi.fn((event: string, fn: unknown) => {
+        if (event === "app_mention") mentionHandler = fn as typeof mentionHandler;
+      }),
+    };
+
+    (bot as any).setupEventHandlers();
+
+    const ack = vi.fn();
+
+    mentionHandler?.({
+      event: {
+        text: "<@B123>",
+        channel: "C123",
+        user: "U123",
+        ts: "1001.00015",
+      },
+      ack,
+    });
+
+    expect(ack).toHaveBeenCalled();
+
+    const queue = (bot as any).getQueue("C123");
+    await queue.processNext();
+
+    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
+      text: "Please respond to the recent conversation context.",
+    });
+  });
+
   test("shared channel mentions preserve mentions of other users", async () => {
     const handler = makeHandler();
     const bot = new SlackBot(handler, {
@@ -641,7 +697,7 @@ describe("SlackBot queues follow-up messages", () => {
     expect(handler.handleEvent).not.toHaveBeenCalled();
   });
 
-  test("shared-channel bare thread replies trigger without a mention after the thread session exists", async () => {
+  test("shared-channel bare thread replies do not trigger after the thread session exists", async () => {
     const handler = makeHandler();
 
     const bot = new SlackBot(handler, {
@@ -683,8 +739,6 @@ describe("SlackBot queues follow-up messages", () => {
       conversationDir,
     );
 
-    const queue = (bot as any).getQueue("C123:1000.0001");
-    queue.processing = true;
     const ack = vi.fn();
 
     messageHandler?.({
@@ -700,19 +754,8 @@ describe("SlackBot queues follow-up messages", () => {
     });
 
     expect(ack).toHaveBeenCalled();
-    expect(queue.size()).toBe(1);
+    expect((bot as any).getQueue("C123:1000.0001").size()).toBe(0);
     expect(handler.handleEvent).not.toHaveBeenCalled();
-
-    queue.processing = false;
-    await queue.processNext();
-
-    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
-      conversationId: "C123",
-      sessionKey: "C123:1000.0001",
-      text: "thread follow-up",
-      thread_ts: "1000.0001",
-    });
   });
 
   test("Slack events create a top-level anchor and run under that thread session", async () => {
@@ -818,31 +861,18 @@ describe("SlackBot queues follow-up messages", () => {
       resolveEventHandled = resolve;
       rejectEventHandled = reject;
     });
-    const replyHandled = new Promise<void>((resolve, reject) => {
-      handler.handleEvent = vi.fn(async (event, _calledBot, adapters) => {
-        try {
-          if (event.ts === "event:deploy-reminder") {
-            expect(event).toMatchObject({
-              conversationId: "C123",
-              sessionKey: "C123:2000.0001",
-            });
-            expect(adapters.message.sessionKey).toBe("C123:2000.0001");
-            resolveEventHandled();
-            await eventRunCanFinish;
-            return;
-          }
-          expect(event).toMatchObject({
-            conversationId: "C123",
-            sessionKey: "C123:2000.0001",
-            text: "thread follow-up",
-            thread_ts: "2000.0001",
-          });
-          resolve();
-        } catch (err) {
-          if (event.ts === "event:deploy-reminder") rejectEventHandled(err);
-          else reject(err);
-        }
-      });
+    handler.handleEvent = vi.fn(async (event, _calledBot, adapters) => {
+      try {
+        expect(event).toMatchObject({
+          conversationId: "C123",
+          sessionKey: "C123:2000.0001",
+        });
+        expect(adapters.message.sessionKey).toBe("C123:2000.0001");
+        resolveEventHandled();
+        await eventRunCanFinish;
+      } catch (err) {
+        rejectEventHandled(err);
+      }
     });
 
     const bot = new SlackBot(handler, {
@@ -873,7 +903,6 @@ describe("SlackBot queues follow-up messages", () => {
       }),
     ]);
 
-    expect((bot as any).shouldTriggerSharedThreadReply("C123", "2000.0001")).toBe(true);
     expect((bot as any).resolveQueueKey("C123", "C123:2000.0001")).toBe("C123:2000.0001");
 
     let messageHandler:
@@ -917,13 +946,13 @@ describe("SlackBot queues follow-up messages", () => {
     });
 
     expect(ack).toHaveBeenCalled();
-    expect(queue.size()).toBe(1);
+    expect(queue.size()).toBe(0);
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
 
     releaseEventRun();
-    await replyHandled;
+    await eventHandled;
 
-    expect(handler.handleEvent).toHaveBeenCalledTimes(2);
+    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
   });
 
   test("external Slack app bot messages are logged but do not trigger mikan", async () => {
@@ -1041,7 +1070,7 @@ describe("SlackBot queues follow-up messages", () => {
     expect(handler.handleEvent).not.toHaveBeenCalled();
   });
 
-  test("shared-channel bare thread replies still trigger while that thread session is running", async () => {
+  test("shared-channel bare thread replies do not trigger while that thread session is running", async () => {
     const handler = makeHandler();
     vi.mocked(handler.isRunning).mockImplementation(
       (sessionKey: string) => sessionKey === "C123:1000.0001",
@@ -1070,7 +1099,7 @@ describe("SlackBot queues follow-up messages", () => {
 
     (bot as any).startupTs = "0";
     (bot as any).botUserId = "B123";
-    (bot as any).logUserMessage = vi.fn().mockReturnValue([]);
+    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
     (bot as any).socketClient = {
       on: vi.fn((event: string, fn: unknown) => {
         if (event === "message") messageHandler = fn as typeof messageHandler;
@@ -1096,7 +1125,7 @@ describe("SlackBot queues follow-up messages", () => {
     });
 
     expect(ack).toHaveBeenCalled();
-    expect(queue.size()).toBe(1);
+    expect(queue.size()).toBe(0);
     expect(handler.handleEvent).not.toHaveBeenCalled();
   });
 

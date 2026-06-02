@@ -520,15 +520,6 @@ export class SlackBot implements Bot {
     });
   }
 
-  private shouldTriggerSharedThreadReply(channelId: string, threadTs?: string): boolean {
-    if (!threadTs) return false;
-
-    const sessionKey = resolveSlackSessionKey(channelId, threadTs);
-    if (this.handler.isRunning(sessionKey)) return true;
-
-    return this.hasKnownThreadSession(channelId, sessionKey);
-  }
-
   private buildHomeView(): { type: "home"; blocks: KnownBlock[] } {
     const blocks: object[] = [
       {
@@ -1002,6 +993,7 @@ export class SlackBot implements Bot {
     // Thread replies get their own isolated session (channelId:thread_ts).
     const sessionKey = resolveSlackSessionKey(e.channel, e.thread_ts);
 
+    const mentionText = this.stripOwnMention(e.text);
     const slackEvent: SlackEvent = {
       type: "mention",
       conversationId: e.channel,
@@ -1010,7 +1002,7 @@ export class SlackBot implements Bot {
       ts: e.ts,
       thread_ts: e.thread_ts,
       user: e.user,
-      text: this.stripOwnMention(e.text),
+      text: mentionText || "Please respond to the recent conversation context.",
       files: e.files,
       sessionKey,
     };
@@ -1124,10 +1116,8 @@ export class SlackBot implements Bot {
       return;
     }
 
-    const isSharedThreadReply =
-      !isDM && this.shouldTriggerSharedThreadReply(e.channel, e.thread_ts);
-    const sessionKey =
-      isDM || isSharedThreadReply ? resolveSlackSessionKey(e.channel, e.thread_ts) : undefined;
+    const isThreadReply = !!e.thread_ts;
+    const sessionKey = isDM ? resolveSlackSessionKey(e.channel, e.thread_ts) : undefined;
 
     const slackEvent: SlackEvent = {
       type: isDM ? "dm" : "mention",
@@ -1156,8 +1146,8 @@ export class SlackBot implements Bot {
       return;
     }
 
-    // Stop command for DM or shared-channel thread reply (app_mention handles "@mikan stop").
-    if ((isDM || (!isDM && e.thread_ts)) && this.isStopText(slackEvent.text)) {
+    // Stop command for DM only (app_mention handles shared-channel "@mikan stop").
+    if (isDM && this.isStopText(slackEvent.text)) {
       const stopTarget = this.resolveStopTarget(e.channel, e.thread_ts);
       if (stopTarget) {
         this.handler.handleStop(stopTarget, e.channel, this);
@@ -1197,13 +1187,19 @@ export class SlackBot implements Bot {
       });
     };
 
-    if (isDM || isSharedThreadReply) {
+    if (isDM) {
       enqueueTriggered();
       ack();
       return;
     }
 
-    // Shared-channel non-mention, non-thread: gate via auto-reply policy.
+    if (isThreadReply) {
+      logOnly();
+      ack();
+      return;
+    }
+
+    // Shared-channel non-mention top-level messages: gate via auto-reply policy.
     // evaluateAutoReplyPolicy never throws — judge errors/timeouts surface as
     // trigger:false with a distinct reason, and the user message has already
     // been queued for logging via logUserMessage above.
