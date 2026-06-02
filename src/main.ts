@@ -33,7 +33,7 @@ import {
   validateSandbox,
 } from "./sandbox/index.js";
 import { FileVaultManager } from "./vault.js";
-import { createSessionRuntime } from "./runtime/index.js";
+import { createSessionRuntime } from "./runtime/session-runtime.js";
 import { ChannelStore } from "./store.js";
 import * as Sentry from "@sentry/node";
 

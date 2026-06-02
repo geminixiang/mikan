@@ -10,7 +10,7 @@ export {
   type RunSessionOptions,
   type SessionRuntime,
   type SessionRuntimeOptions,
-} from "./runtime/index.js";
+} from "./runtime/session-runtime.js";
 export type {
   Bot,
   BotAdapters,
