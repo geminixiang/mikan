@@ -6,6 +6,7 @@ import type {
 } from "../../adapter.js";
 import * as log from "../../log.js";
 import { createChatResponseErrorReporter, formatToolArgs, splitText } from "../shared.js";
+import { BufferedResponseStream } from "../streaming.js";
 import { sanitizeTelegramHtml } from "./html.js";
 import type { TelegramBot, TelegramEvent } from "./bot.js";
 
@@ -123,6 +124,16 @@ export function createTelegramAdapters(
     }
   };
 
+  const stream = new BufferedResponseStream({
+    flush: async (text) => {
+      await sendSplitText(text, sendOrUpdate);
+    },
+    finish: async (text) => {
+      stopTyping();
+      await sendSplitText(text, sendOrUpdate);
+    },
+  });
+
   const queueTelegramSend = async (
     label: string,
     work: () => Promise<void>,
@@ -145,6 +156,7 @@ export function createTelegramAdapters(
         async () => {
           const sanitized = sanitizeTelegramHtml(text);
           accumulatedText = accumulatedText ? `${accumulatedText}\n${sanitized}` : sanitized;
+          stream.setText(accumulatedText);
           await sendSplitText(accumulatedText, sendOrUpdate);
           if (messageId !== null) {
             bot.logBotResponse(conversationId, text, String(messageId));
@@ -159,11 +171,47 @@ export function createTelegramAdapters(
       );
     },
 
+    appendResponseDelta: async (delta: string) => {
+      await queueTelegramSend(
+        "appendResponseDelta",
+        async () => {
+          const sanitized = sanitizeTelegramHtml(delta);
+          await stream.append(sanitized);
+          accumulatedText = stream.getText();
+          if (messageId !== null) {
+            bot.logBotResponse(conversationId, delta, String(messageId));
+          }
+        },
+        (err) =>
+          reportResponseError(err, "respond", {
+            textLength: delta.length,
+            accumulatedLength: stream.getText().length,
+          }),
+      );
+    },
+
+    finishResponse: async (finalText?: string) => {
+      await queueTelegramSend(
+        "finishResponse",
+        async () => {
+          await stream.finish(
+            finalText === undefined ? undefined : sanitizeTelegramHtml(finalText),
+          );
+          accumulatedText = stream.getText();
+        },
+        (err) =>
+          reportResponseError(err, "set_working", {
+            finalTextLength: finalText?.length,
+          }),
+      );
+    },
+
     replaceResponse: async (text: string) => {
       await queueTelegramSend(
         "replaceResponse",
         async () => {
           accumulatedText = sanitizeTelegramHtml(text);
+          stream.setText(accumulatedText);
           await sendSplitText(accumulatedText, sendOrUpdate);
         },
         (err) =>

@@ -452,6 +452,30 @@ describe("uploadFile()", () => {
 });
 
 // ============================================================================
+// Streaming lifecycle
+// ============================================================================
+
+describe("streaming lifecycle", () => {
+  test("delta streaming posts then updates the same message", async () => {
+    const bot = makeTelegramBot();
+    const event = makeEvent({ thread_ts: undefined });
+    const { responseCtx } = createTelegramAdapters(event, bot);
+
+    await responseCtx.appendResponseDelta?.("hello");
+    await responseCtx.appendResponseDelta?.(" world".repeat(20));
+    await responseCtx.finishResponse?.("hello final");
+
+    expect(bot.postMessageRaw).toHaveBeenCalledWith(123456, expect.stringContaining("hello"));
+    expect(bot.updateMessage).toHaveBeenCalledWith(
+      "123456",
+      "1001",
+      expect.stringContaining("world"),
+    );
+    expect(bot.updateMessage).toHaveBeenLastCalledWith("123456", "1001", "hello final");
+  });
+});
+
+// ============================================================================
 // ChatMessage fields
 // ============================================================================
 

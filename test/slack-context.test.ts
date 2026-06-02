@@ -14,6 +14,9 @@ function makeSlackBot(overrides: Partial<SlackBot> = {}): SlackBot {
     postMessage: vi.fn().mockResolvedValue("T001"),
     postInThread: vi.fn().mockResolvedValue("T002"),
     updateMessage: vi.fn().mockResolvedValue(undefined),
+    startMessageStream: vi.fn().mockRejectedValue(new Error("streaming unsupported in mock")),
+    appendMessageStream: vi.fn().mockResolvedValue(undefined),
+    stopMessageStream: vi.fn().mockResolvedValue(undefined),
     deleteMessage: vi.fn().mockResolvedValue(undefined),
     logBotResponse: vi.fn(),
     uploadFile: vi.fn().mockResolvedValue(undefined),
@@ -148,6 +151,30 @@ describe("respond() — non-threaded", () => {
     await responseCtx.respond("hello");
     expect(bot.postMessage).toHaveBeenCalledWith("C001", expect.stringContaining("hello"));
     expect(bot.postInThread).not.toHaveBeenCalled();
+  });
+
+  test("uses Slack stream APIs when available", async () => {
+    const bot = makeSlackBot({
+      startMessageStream: vi.fn().mockResolvedValue("STREAM1"),
+      appendMessageStream: vi.fn().mockResolvedValue(undefined),
+      stopMessageStream: vi.fn().mockResolvedValue(undefined),
+    });
+    const event = makeEvent({ thread_ts: undefined });
+    const { responseCtx } = createSlackAdapters(event, bot);
+
+    await responseCtx.respond("first");
+    await responseCtx.respond("second");
+    await responseCtx.setWorking(false);
+
+    expect(bot.startMessageStream).toHaveBeenCalledWith(
+      "C001",
+      expect.stringContaining("first"),
+      "1000.0001",
+    );
+    expect(bot.appendMessageStream).toHaveBeenCalledWith("C001", "STREAM1", "second");
+    expect(bot.stopMessageStream).toHaveBeenCalledWith("C001", "STREAM1");
+    expect(bot.postMessage).not.toHaveBeenCalled();
+    expect(bot.updateMessage).not.toHaveBeenCalled();
   });
 });
 
@@ -582,5 +609,29 @@ describe("thread_ts boundary values", () => {
     const { responseCtx } = createSlackAdapters(event, bot);
     await responseCtx.uploadFile("/path/to/file.txt", "test");
     expect(bot.uploadFile).toHaveBeenCalledWith("C001", "/path/to/file.txt", "test", "1000.0001");
+  });
+});
+
+describe("streaming lifecycle", () => {
+  test("native stream failure falls back to incremental chat.update for later deltas", async () => {
+    const bot = makeSlackBot({
+      startMessageStream: vi.fn().mockRejectedValue(new Error("missing required field: thread_ts")),
+      postMessage: vi.fn().mockResolvedValue("T001"),
+      updateMessage: vi.fn().mockResolvedValue(undefined),
+    });
+    const event = makeEvent({ thread_ts: undefined });
+    const { responseCtx } = createSlackAdapters(event, bot);
+
+    await responseCtx.appendResponseDelta?.("hello");
+    await responseCtx.appendResponseDelta?.(" world".repeat(20));
+    await responseCtx.finishResponse?.("hello final");
+
+    expect(bot.postMessage).toHaveBeenCalledWith("C001", expect.stringContaining("hello"));
+    expect(bot.updateMessage).toHaveBeenCalledWith(
+      "C001",
+      "T001",
+      expect.stringContaining("world"),
+    );
+    expect(bot.updateMessage).toHaveBeenLastCalledWith("C001", "T001", "hello final");
   });
 });

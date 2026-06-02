@@ -29,6 +29,8 @@ export interface ChatResponseBlockKit {
 
 export interface ChatResponseContext {
   respond(text: string): Promise<void>;
+  appendResponseDelta?(delta: string): Promise<void>;
+  finishResponse?(finalText?: string): Promise<void>;
   replaceResponse(text: string, options?: { createOverflowLink?: () => string }): Promise<void>;
   respondDiagnostic(text: string, options?: { style?: "muted" | "error" }): Promise<void>;
   respondToolResult(result: ChatToolResult): Promise<void>;

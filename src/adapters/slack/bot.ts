@@ -309,6 +309,35 @@ export class SlackBot implements Bot {
     });
   }
 
+  async startMessageStream(channel: string, text: string, threadTs?: string): Promise<string> {
+    return slackRetry(async () => {
+      const result = await this.webClient.apiCall("chat.startStream", {
+        channel,
+        markdown_text: text,
+        ...(threadTs ? { thread_ts: threadTs } : {}),
+      });
+      const ts = (result as { ts?: string }).ts;
+      if (!ts) throw new Error("Slack chat.startStream did not return ts");
+      return ts;
+    });
+  }
+
+  async appendMessageStream(channel: string, ts: string, text: string): Promise<void> {
+    return slackRetry(async () => {
+      await this.webClient.apiCall("chat.appendStream", {
+        channel,
+        ts,
+        markdown_text: text,
+      });
+    });
+  }
+
+  async stopMessageStream(channel: string, ts: string): Promise<void> {
+    return slackRetry(async () => {
+      await this.webClient.apiCall("chat.stopStream", { channel, ts });
+    });
+  }
+
   async deleteMessage(channel: string, ts: string): Promise<void> {
     return slackRetry(async () => {
       await this.webClient.chat.delete({ channel, ts });

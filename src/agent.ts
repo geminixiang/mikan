@@ -1234,6 +1234,24 @@ function attachSessionEventHandlers(params: {
       return;
     }
 
+    if (event.type === "message_update") {
+      const assistantMessageEvent = (
+        event as {
+          assistantMessageEvent?: { type?: string; delta?: string };
+        }
+      ).assistantMessageEvent;
+      if (
+        assistantMessageEvent?.type === "text_delta" &&
+        assistantMessageEvent.delta &&
+        responseCtx.appendResponseDelta
+      ) {
+        queue.enqueue(async () => {
+          await responseCtx.appendResponseDelta?.(assistantMessageEvent.delta ?? "");
+        }, "response delta");
+      }
+      return;
+    }
+
     if (event.type === "message_end") {
       if (event.message.role === "assistant") {
         const assistantMsg = event.message;
@@ -1321,11 +1339,15 @@ function attachSessionEventHandlers(params: {
 
         if (text.trim() && !hasToolCall) {
           if (runState.finalResponseHandledByTool) return;
+          const finalText = appendTriggerAttribution(text, runState.triggerAttribution);
           log.logResponse(logCtx, text);
-          queue.enqueue(
-            () => responseCtx.respond(appendTriggerAttribution(text, runState.triggerAttribution)),
-            "response main",
-          );
+          if (responseCtx.finishResponse) {
+            queue.enqueue(async () => {
+              await responseCtx.finishResponse?.(finalText);
+            }, "response finish");
+          } else {
+            queue.enqueue(() => responseCtx.respond(finalText), "response main");
+          }
         }
       }
       return;
