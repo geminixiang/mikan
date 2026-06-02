@@ -455,6 +455,7 @@ interface RunnerSessionState {
   errorMessage: string | undefined;
   reportedLlmError: boolean;
   finalResponseHandledByTool: boolean;
+  triggerAttribution?: string;
 }
 
 interface PreparedRunContext {
@@ -627,6 +628,7 @@ function createRunState(): RunnerSessionState {
     errorMessage: undefined,
     reportedLlmError: false,
     finalResponseHandledByTool: false,
+    triggerAttribution: undefined,
   };
 }
 
@@ -636,6 +638,7 @@ function resetRunState(
   sessionConversation: string,
   userName: string | undefined,
   sessionUuid: string,
+  triggerAttribution: string | undefined,
 ): void {
   runState.responseCtx = responseCtx;
   runState.logCtx = {
@@ -651,6 +654,7 @@ function resetRunState(
   runState.errorMessage = undefined;
   runState.reportedLlmError = false;
   runState.finalResponseHandledByTool = false;
+  runState.triggerAttribution = triggerAttribution;
 }
 
 function createRunQueue(
@@ -1092,7 +1096,14 @@ async function prepareRunContext(params: {
     runState.finalResponseHandledByTool = true;
   });
 
-  resetRunState(runState, responseCtx, sessionConversation, message.userName, sessionUuid);
+  resetRunState(
+    runState,
+    responseCtx,
+    sessionConversation,
+    message.userName,
+    sessionUuid,
+    triggerAttribution,
+  );
   const runQueue = createRunQueue(responseCtx, runState);
   runState.queue = runQueue.queue;
 
@@ -1311,7 +1322,10 @@ function attachSessionEventHandlers(params: {
         if (text.trim() && !hasToolCall) {
           if (runState.finalResponseHandledByTool) return;
           log.logResponse(logCtx, text);
-          queue.enqueue(() => responseCtx.respond(text), "response main");
+          queue.enqueue(
+            () => responseCtx.respond(appendTriggerAttribution(text, runState.triggerAttribution)),
+            "response main",
+          );
         }
       }
       return;
