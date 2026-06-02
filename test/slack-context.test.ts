@@ -153,25 +153,51 @@ describe("respond() — non-threaded", () => {
     expect(bot.postInThread).not.toHaveBeenCalled();
   });
 
-  test("uses Slack stream APIs when available", async () => {
+  test("default top-level reply mode uses chat.update streaming", async () => {
+    const bot = makeSlackBot({
+      postMessage: vi.fn().mockResolvedValue("MSG1"),
+      startMessageStream: vi.fn().mockResolvedValue("STREAM1"),
+    });
+    const event = makeEvent({ thread_ts: undefined });
+    const { responseCtx } = createSlackAdapters(event, bot);
+
+    await responseCtx.appendResponseDelta?.("first");
+    await responseCtx.appendResponseDelta?.(" second".repeat(20));
+    await responseCtx.finishResponse?.("final");
+
+    expect(bot.startMessageStream).not.toHaveBeenCalled();
+    expect(bot.postMessage).toHaveBeenCalledWith("C001", expect.stringContaining("first"));
+    expect(bot.updateMessage).toHaveBeenCalledWith(
+      "C001",
+      "MSG1",
+      expect.stringContaining("second"),
+    );
+    expect(bot.updateMessage).toHaveBeenLastCalledWith("C001", "MSG1", "final");
+  });
+
+  test("thread reply mode streams top-level inputs in the user message thread", async () => {
     const bot = makeSlackBot({
       startMessageStream: vi.fn().mockResolvedValue("STREAM1"),
       appendMessageStream: vi.fn().mockResolvedValue(undefined),
       stopMessageStream: vi.fn().mockResolvedValue(undefined),
     });
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createSlackAdapters(event, bot);
+    const { responseCtx } = createSlackAdapters(event, bot, { replyMode: "thread" });
 
-    await responseCtx.respond("first");
-    await responseCtx.respond("second");
-    await responseCtx.setWorking(false);
+    await responseCtx.appendResponseDelta?.("first");
+    await responseCtx.appendResponseDelta?.(" second".repeat(20));
+    await responseCtx.finishResponse?.("final");
 
     expect(bot.startMessageStream).toHaveBeenCalledWith(
       "C001",
       expect.stringContaining("first"),
       "1000.0001",
     );
-    expect(bot.appendMessageStream).toHaveBeenCalledWith("C001", "STREAM1", "second");
+    expect(bot.appendMessageStream).toHaveBeenCalledWith(
+      "C001",
+      "STREAM1",
+      expect.stringContaining("second"),
+    );
     expect(bot.stopMessageStream).toHaveBeenCalledWith("C001", "STREAM1");
     expect(bot.postMessage).not.toHaveBeenCalled();
     expect(bot.updateMessage).not.toHaveBeenCalled();
@@ -179,6 +205,26 @@ describe("respond() — non-threaded", () => {
 });
 
 describe("respond() — threaded", () => {
+  test("streaming stays in user's thread regardless of top-level reply mode", async () => {
+    const bot = makeSlackBot({
+      startMessageStream: vi.fn().mockResolvedValue("STREAM1"),
+      appendMessageStream: vi.fn().mockResolvedValue(undefined),
+      stopMessageStream: vi.fn().mockResolvedValue(undefined),
+    });
+    const event = makeEvent({ ts: "1000.0003", thread_ts: "1000.0001" });
+    const { responseCtx } = createSlackAdapters(event, bot, { replyMode: "top-level" });
+
+    await responseCtx.appendResponseDelta?.("first");
+    await responseCtx.finishResponse?.("final");
+
+    expect(bot.startMessageStream).toHaveBeenCalledWith(
+      "C001",
+      expect.stringContaining("first"),
+      "1000.0001",
+    );
+    expect(bot.postMessage).not.toHaveBeenCalled();
+  });
+
   test("first call posts in user's thread (rootTs)", async () => {
     const bot = makeSlackBot();
     const event = makeEvent({ ts: "1000.0003", thread_ts: "1000.0001" });
@@ -613,25 +659,29 @@ describe("thread_ts boundary values", () => {
 });
 
 describe("streaming lifecycle", () => {
-  test("native stream failure falls back to incremental chat.update for later deltas", async () => {
+  test("thread reply mode native stream failure falls back to incremental chat.update", async () => {
     const bot = makeSlackBot({
       startMessageStream: vi.fn().mockRejectedValue(new Error("missing required field: thread_ts")),
       postMessage: vi.fn().mockResolvedValue("T001"),
       updateMessage: vi.fn().mockResolvedValue(undefined),
     });
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createSlackAdapters(event, bot);
+    const { responseCtx } = createSlackAdapters(event, bot, { replyMode: "thread" });
 
     await responseCtx.appendResponseDelta?.("hello");
     await responseCtx.appendResponseDelta?.(" world".repeat(20));
     await responseCtx.finishResponse?.("hello final");
 
-    expect(bot.postMessage).toHaveBeenCalledWith("C001", expect.stringContaining("hello"));
+    expect(bot.postInThread).toHaveBeenCalledWith(
+      "C001",
+      "1000.0001",
+      expect.stringContaining("hello"),
+    );
     expect(bot.updateMessage).toHaveBeenCalledWith(
       "C001",
-      "T001",
+      "T002",
       expect.stringContaining("world"),
     );
-    expect(bot.updateMessage).toHaveBeenLastCalledWith("C001", "T001", "hello final");
+    expect(bot.updateMessage).toHaveBeenLastCalledWith("C001", "T002", "hello final");
   });
 });

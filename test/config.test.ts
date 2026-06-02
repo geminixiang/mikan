@@ -284,6 +284,7 @@ describe("saveAgentConfig", () => {
         image: { workspaceMount: "private" },
         defaultSharedVault: "",
       },
+      slack: { replyMode: "top-level" },
     });
   });
 
@@ -307,6 +308,7 @@ describe("saveAgentConfig", () => {
         image: { workspaceMount: "private" },
         defaultSharedVault: "",
       },
+      slack: { replyMode: "top-level" },
     });
   });
 

@@ -20,8 +20,11 @@ const SLACK_FORMATTING_GUIDE = `## Slack Formatting (mrkdwn, NOT Markdown)
 Bold: *text*, Italic: _text_, Code: \`code\`, Block: \`\`\`code\`\`\`, Links: <url|text>
 Do NOT use **double asterisks** or [markdown](links).`;
 
+type SlackReplyMode = "top-level" | "thread";
+
 export interface SlackAdapterOptions {
   initialMessageTs?: string;
+  replyMode?: SlackReplyMode;
 }
 
 const MAX_MAIN_LENGTH = 35000; // Best-effort streaming cap; final responses use Slack error-driven fallback.
@@ -123,6 +126,8 @@ export function createSlackAdapters(
   const eventFilename = event.ts.match(/^event:([^:]+(?:\.json)?)/)?.[1];
 
   const { rootTs, isThreaded } = sessionPlan;
+  const replyMode = adapterOptions.replyMode ?? "top-level";
+  const replyInThread = Boolean(rootTs && (isThreaded || replyMode === "thread"));
 
   /**
    * Post the first visible reply.
@@ -130,7 +135,7 @@ export function createSlackAdapters(
    * If the triggering message is already inside a thread, stay in that thread.
    */
   const postFirstMessage = async (text: string): Promise<string> => {
-    if (isThreaded && rootTs) {
+    if (replyInThread && rootTs) {
       return slack.postInThread(channelId, rootTs, text);
     }
     return slack.postMessage(channelId, text);
@@ -205,7 +210,7 @@ export function createSlackAdapters(
       await slack.updateMessage(channelId, messageTs, body);
       return;
     }
-    if (isThreaded && rootTs) {
+    if (replyInThread && rootTs) {
       messageTs = await slack.postInThread(channelId, rootTs, body);
       return;
     }
@@ -223,7 +228,7 @@ export function createSlackAdapters(
         await slack.appendMessageStream(channelId, messageTs, chunk);
         return;
       }
-      if (!rootTs) {
+      if (!replyInThread || !rootTs) {
         streamUnavailable = true;
         await postOrUpdateMain(displayText);
         return;
@@ -308,7 +313,7 @@ export function createSlackAdapters(
           await startOrAppendStream(text, displayText);
 
           if (messageTs) {
-            slack.logBotResponse(channelId, text, messageTs, isThreaded ? rootTs : undefined);
+            slack.logBotResponse(channelId, text, messageTs, replyInThread ? rootTs : undefined);
           }
         },
         () => ({
@@ -326,7 +331,7 @@ export function createSlackAdapters(
         async () => {
           await stream.append(delta);
           if (messageTs) {
-            slack.logBotResponse(channelId, delta, messageTs, isThreaded ? rootTs : undefined);
+            slack.logBotResponse(channelId, delta, messageTs, replyInThread ? rootTs : undefined);
           }
         },
         () => ({ textLength: delta.length, accumulatedLength: stream.getText().length }),
@@ -419,7 +424,7 @@ export function createSlackAdapters(
       updatePromise = updatePromise.then(async () => {
         isWorking = false;
         accumulatedText = response.text;
-        if (isThreaded && rootTs) {
+        if (replyInThread && rootTs) {
           messageTs = await slack.postInThreadBlocks(
             channelId,
             rootTs,
@@ -434,7 +439,7 @@ export function createSlackAdapters(
           channelId,
           response.text,
           messageTs,
-          isThreaded ? rootTs : undefined,
+          replyInThread ? rootTs : undefined,
           response.blocks,
         );
       });
