@@ -19,7 +19,11 @@ import { InMemoryAdminTokenStore } from "./admin/store.js";
 import { InMemoryLinkTokenStore } from "./login/store.js";
 import { InMemorySessionViewTokenStore } from "./session-view/store.js";
 import { DockerContainerManager } from "./provisioner.js";
-import { createGlobalSettingsFile, loadAgentConfig, MissingGlobalSettingsError } from "./config.js";
+import {
+  createGlobalSettingsFile,
+  loadGlobalSettings,
+  MissingGlobalSettingsError,
+} from "./config.js";
 import { readEnv, setEnvAliases } from "./env.js";
 import { ensureDirExists, isRecord, readJsonFileIfExists } from "./file-guards.js";
 import {
@@ -266,7 +270,7 @@ if (vaultManager.isEnabled()) {
 
 const startupConfig = (() => {
   try {
-    return loadAgentConfig();
+    return loadGlobalSettings();
   } catch (error) {
     handleStartupError(error);
   }

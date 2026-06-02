@@ -16,7 +16,7 @@ export class MissingGlobalSettingsError extends Error {
 
 type SlackReplyMode = "top-level" | "thread";
 
-export interface SlackConfig {
+interface SlackConfig {
   replyMode?: SlackReplyMode;
 }
 
@@ -225,65 +225,20 @@ function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
   };
 }
 
-function loadRawAgentConfig(): Partial<AgentConfig> {
+function loadRawGlobalSettings(): Partial<AgentConfig> {
   return normalizeSettingsConfig(requireGlobalSettings());
 }
 
-export function loadAgentConfig(): AgentConfig {
-  return toAgentConfig(loadRawAgentConfig());
+export function loadGlobalSettings(): AgentConfig {
+  return toAgentConfig(loadRawGlobalSettings());
 }
 
-export function loadAgentConfigForConversation(conversationDir: string): AgentConfig {
-  const globalConfig = loadRawAgentConfig();
+export function resolveConversationSettings(conversationDir: string): AgentConfig {
+  const globalConfig = loadRawGlobalSettings();
   const conversationConfig = normalizeSettingsConfig(
     loadSettingsFile(join(conversationDir, "settings.json")) ?? {},
   );
   return toAgentConfig({ ...globalConfig, ...conversationConfig });
-}
-
-export function saveConversationModelConfig(
-  conversationDir: string,
-  config: Pick<AgentConfig, "provider" | "model"> & Partial<Pick<AgentConfig, "thinkingLevel">>,
-): void {
-  ensureDirExists(conversationDir);
-  const settingsPath = join(conversationDir, "settings.json");
-  const existing = loadSettingsFile(settingsPath) ?? {};
-  const scopedConfig: SettingsFileConfig = {
-    ...existing,
-    llm: { ...existing.llm, ...config },
-  };
-  atomicWritePrivateFile(settingsPath, JSON.stringify(scopedConfig, null, 2));
-}
-
-export function saveConversationSlackConfig(conversationDir: string, config: SlackConfig): void {
-  ensureDirExists(conversationDir);
-  const settingsPath = join(conversationDir, "settings.json");
-  const existing = loadSettingsFile(settingsPath) ?? {};
-  const scopedConfig: SettingsFileConfig = {
-    ...existing,
-    slack: { ...existing.slack, ...config },
-  };
-  atomicWritePrivateFile(settingsPath, JSON.stringify(scopedConfig, null, 2));
-}
-
-export function saveConversationSandboxConfig(
-  conversationDir: string,
-  config: { imageWorkspaceMount: AgentConfig["sandboxImageWorkspaceMount"] },
-): void {
-  ensureDirExists(conversationDir);
-  const settingsPath = join(conversationDir, "settings.json");
-  const existing = loadSettingsFile(settingsPath) ?? {};
-  const scopedConfig: SettingsFileConfig = {
-    ...existing,
-    sandbox: {
-      ...existing.sandbox,
-      image: {
-        ...existing.sandbox?.image,
-        workspaceMount: config.imageWorkspaceMount,
-      },
-    },
-  };
-  atomicWritePrivateFile(settingsPath, JSON.stringify(scopedConfig, null, 2));
 }
 
 /**
@@ -489,10 +444,12 @@ function patchSettingsConfig(
   return compactSettingsConfig(patched);
 }
 
-export function saveAgentConfig(config: Partial<AgentConfig>): void {
-  const settingsPath = join(getStateDir(), "settings.json");
-
-  let existing: SettingsFileConfig = ONBOARD_SETTINGS;
+function updateSettingsFile(
+  settingsPath: string,
+  patch: Partial<AgentConfig>,
+  defaultSettings: SettingsFileConfig,
+): void {
+  let existing = defaultSettings;
   if (existsSync(settingsPath)) {
     try {
       existing = loadSettingsFile(settingsPath) ?? {};
@@ -505,10 +462,20 @@ export function saveAgentConfig(config: Partial<AgentConfig>): void {
     }
   }
 
-  const merged = patchSettingsConfig(existing, config);
+  ensureDirExists(dirname(settingsPath));
+  atomicWritePrivateFile(
+    settingsPath,
+    JSON.stringify(patchSettingsConfig(existing, patch), null, 2),
+  );
+}
 
-  const dir = dirname(settingsPath);
-  ensureDirExists(dir);
+export function updateGlobalSettings(patch: Partial<AgentConfig>): void {
+  updateSettingsFile(join(getStateDir(), "settings.json"), patch, ONBOARD_SETTINGS);
+}
 
-  atomicWritePrivateFile(settingsPath, JSON.stringify(merged, null, 2));
+export function updateConversationSettings(
+  conversationDir: string,
+  patch: Partial<AgentConfig>,
+): void {
+  updateSettingsFile(join(conversationDir, "settings.json"), patch, {});
 }

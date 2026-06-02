@@ -15,7 +15,7 @@ import type {
   ConversationKind,
   PlatformInfo,
 } from "../../adapter.js";
-import { loadAgentConfigForConversation } from "../../config.js";
+import { resolveConversationSettings } from "../../config.js";
 import type { EventsWatcher } from "../../events.js";
 import * as log from "../../log.js";
 import type { Attachment, ChannelStore } from "../../store.js";
@@ -144,8 +144,8 @@ export class SlackBot implements Bot {
   private createAdapters(event: SlackEvent): BotAdapters {
     return createSlackAdapters(event, this, {
       replyMode:
-        loadAgentConfigForConversation(join(this.workingDir, event.conversationId)).slack
-          ?.replyMode ?? "top-level",
+        resolveConversationSettings(join(this.workingDir, event.conversationId)).slack?.replyMode ??
+        "top-level",
     });
   }
 
@@ -546,7 +546,7 @@ export class SlackBot implements Bot {
         const adapters = createSlackAdapters(slackEvent, this, {
           initialMessageTs: eventPlan.initialMessageTs,
           replyMode:
-            loadAgentConfigForConversation(join(this.workingDir, eventForRun.conversationId)).slack
+            resolveConversationSettings(join(this.workingDir, eventForRun.conversationId)).slack
               ?.replyMode ?? "top-level",
         });
         return this.handler.handleEvent(eventForRun, this, adapters);

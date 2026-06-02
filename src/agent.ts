@@ -26,7 +26,7 @@ import type {
   PlatformName,
 } from "./adapter.js";
 import type { SessionViewTokenStoreLike } from "./commands/types.js";
-import { loadAgentConfigForConversation } from "./config.js";
+import { resolveConversationSettings } from "./config.js";
 import { ActorExecutionResolver } from "./execution-resolver.js";
 import * as log from "./log.js";
 import { reportUserFacingError } from "./sentry.js";
@@ -902,7 +902,7 @@ interface UsageReportContext {
   responseCtx: ChatResponseContext;
   platform: PlatformInfo;
   model: Model<Api>;
-  agentConfig: ReturnType<typeof loadAgentConfigForConversation>;
+  agentConfig: ReturnType<typeof resolveConversationSettings>;
   sessionConversation: string;
   sessionUuid: string;
   waitForQueue: () => Promise<void>;
@@ -1139,7 +1139,7 @@ function attachSessionEventHandlers(params: {
   session: AgentSession;
   runState: RunnerSessionState;
   model: Model<Api>;
-  agentConfig: ReturnType<typeof loadAgentConfigForConversation>;
+  agentConfig: ReturnType<typeof resolveConversationSettings>;
 }): void {
   const { session, runState, model, agentConfig } = params;
   session.subscribe(async (event) => {
@@ -1429,7 +1429,7 @@ export async function createRunner(
     portalBaseUrl?: string;
   },
 ): Promise<AgentRunner> {
-  const agentConfig = loadAgentConfigForConversation(conversationDir);
+  const agentConfig = resolveConversationSettings(conversationDir);
 
   const workspaceBase = join(conversationDir, "..");
   const { executionResolver, executor, getPathContext, resolveExecutorForRun } =

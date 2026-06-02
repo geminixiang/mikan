@@ -3,7 +3,7 @@ import type { ThinkingLevel as PiAiThinkingLevel } from "@earendil-works/pi-ai";
 import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { homedir } from "os";
 import { join } from "path";
-import { loadAgentConfigForConversation, saveConversationModelConfig } from "../config.js";
+import { resolveConversationSettings, updateConversationSettings } from "../config.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
@@ -86,7 +86,7 @@ export class ModelCommandHandler implements CommandHandler {
 
     const conversationDir = join(context.services.workingDir, context.conversationId);
     if (!parsed.provider || !parsed.model) {
-      const current = loadAgentConfigForConversation(conversationDir);
+      const current = resolveConversationSettings(conversationDir);
       await replyDiagnosticWithContext(
         context.responseCtx,
         formatModelCommandSummary([
@@ -139,7 +139,7 @@ export class ModelCommandHandler implements CommandHandler {
       return true;
     }
 
-    saveConversationModelConfig(conversationDir, {
+    updateConversationSettings(conversationDir, {
       provider: parsed.provider,
       model: parsed.model,
       ...(parsed.thinkingLevel ? { thinkingLevel: parsed.thinkingLevel } : {}),

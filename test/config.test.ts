@@ -4,18 +4,16 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   createGlobalSettingsFile,
-  loadAgentConfig,
-  loadAgentConfigForConversation,
+  loadGlobalSettings,
+  resolveConversationSettings,
   resolveSentryDsn,
   resolveStateDirFromArgv,
   resolveWorkspaceDirFromArgv,
-  saveAgentConfig,
-  saveConversationModelConfig,
-  saveConversationSandboxConfig,
-  saveConversationSlackConfig,
+  updateConversationSettings,
+  updateGlobalSettings,
 } from "../src/config.js";
 
-describe("loadAgentConfig", () => {
+describe("loadGlobalSettings", () => {
   let stateDir: string;
 
   beforeEach(() => {
@@ -32,13 +30,13 @@ describe("loadAgentConfig", () => {
   });
 
   test("throws when global settings.json is missing", () => {
-    expect(() => loadAgentConfig()).toThrow(/Missing global settings file/);
+    expect(() => loadGlobalSettings()).toThrow(/Missing global settings file/);
   });
 
   test("creates onboard settings", () => {
     const settingsPath = createGlobalSettingsFile(stateDir);
     expect(settingsPath).toBe(join(stateDir, "settings.json"));
-    const config = loadAgentConfig();
+    const config = loadGlobalSettings();
     expect(config.provider).toBe("anthropic");
     expect(config.model).toBe("claude-sonnet-4-6");
     expect(config.thinkingLevel).toBe("off");
@@ -52,26 +50,26 @@ describe("loadAgentConfig", () => {
   });
 
   test("reads provider and model from settings.json", () => {
-    saveAgentConfig({ provider: "openai", model: "gpt-4o" });
-    const config = loadAgentConfig();
+    updateGlobalSettings({ provider: "openai", model: "gpt-4o" });
+    const config = loadGlobalSettings();
     expect(config.provider).toBe("openai");
     expect(config.model).toBe("gpt-4o");
   });
 
   test("reads sentryDsn from settings.json", () => {
-    saveAgentConfig({ sentryDsn: "https://examplePublicKey@o0.ingest.sentry.io/0" });
-    const config = loadAgentConfig();
+    updateGlobalSettings({ sentryDsn: "https://examplePublicKey@o0.ingest.sentry.io/0" });
+    const config = loadGlobalSettings();
     expect(config.sentryDsn).toBe("https://examplePublicKey@o0.ingest.sentry.io/0");
   });
 
   test("reads sandboxCpus, sandboxMemory, and sandbox boost from settings.json", () => {
-    saveAgentConfig({
+    updateGlobalSettings({
       sandboxCpus: "0.5",
       sandboxMemory: "512m",
       sandboxBoostCpus: "2",
       sandboxBoostMemory: "4g",
     });
-    const config = loadAgentConfig();
+    const config = loadGlobalSettings();
     expect(config.sandboxCpus).toBe("0.5");
     expect(config.sandboxMemory).toBe("512m");
     expect(config.sandboxBoostCpus).toBe("2");
@@ -86,7 +84,7 @@ describe("loadAgentConfig", () => {
       }),
       "utf-8",
     );
-    const config = loadAgentConfig();
+    const config = loadGlobalSettings();
     expect(config.sandboxCpus).toBeUndefined();
     expect(config.sandboxMemory).toBeUndefined();
     expect(config.sandboxBoostCpus).toBeUndefined();
@@ -94,11 +92,11 @@ describe("loadAgentConfig", () => {
   });
 
   test("provider and model come from settings.json, not env vars", () => {
-    saveAgentConfig({ provider: "openai", model: "gpt-4o" });
+    updateGlobalSettings({ provider: "openai", model: "gpt-4o" });
     process.env.MIKAN_AI_PROVIDER = "google";
     process.env.MIKAN_AI_MODEL = "gemini-2.0-flash";
 
-    const config = loadAgentConfig();
+    const config = loadGlobalSettings();
     expect(config.provider).toBe("openai");
     expect(config.model).toBe("gpt-4o");
   });
@@ -113,7 +111,7 @@ describe("loadAgentConfig", () => {
         "utf-8",
       );
       createGlobalSettingsFile(stateDir);
-      const config = loadAgentConfig();
+      const config = loadGlobalSettings();
       expect(config.provider).toBe("anthropic");
       expect(config.model).toBe("claude-sonnet-4-6");
     } finally {
@@ -123,12 +121,12 @@ describe("loadAgentConfig", () => {
 
   test("throws on malformed settings.json instead of silently falling back", () => {
     writeFileSync(join(stateDir, "settings.json"), "{ invalid json }", "utf-8");
-    expect(() => loadAgentConfig()).toThrow(/Malformed settings file/);
+    expect(() => loadGlobalSettings()).toThrow(/Malformed settings file/);
   });
 
   test("throws on settings.json whose top-level value is not an object", () => {
     writeFileSync(join(stateDir, "settings.json"), "[]", "utf-8");
-    expect(() => loadAgentConfig()).toThrow(/expected a JSON object/);
+    expect(() => loadGlobalSettings()).toThrow(/expected a JSON object/);
   });
 
   test("throws on settings.json with invalid nested field types", () => {
@@ -141,7 +139,7 @@ describe("loadAgentConfig", () => {
       "utf-8",
     );
 
-    expect(() => loadAgentConfig()).toThrow(
+    expect(() => loadGlobalSettings()).toThrow(
       /Malformed settings file.*sandbox.*cpus.*Expected string/,
     );
   });
@@ -155,7 +153,7 @@ describe("loadAgentConfig", () => {
       "utf-8",
     );
 
-    expect(() => loadAgentConfig()).toThrow(
+    expect(() => loadGlobalSettings()).toThrow(
       /Malformed settings file.*thinkingLevel.*Expected union value/,
     );
   });
@@ -170,21 +168,21 @@ describe("loadAgentConfig", () => {
       "utf-8",
     );
 
-    expect(() => loadAgentConfigForConversation(conversationDir)).toThrow(
+    expect(() => resolveConversationSettings(conversationDir)).toThrow(
       /Malformed settings file.*workspaceMount/,
     );
   });
 
   test("conversation model config overrides global provider and model only", () => {
-    saveAgentConfig({ provider: "anthropic", model: "claude-sonnet-4-6" });
+    updateGlobalSettings({ provider: "anthropic", model: "claude-sonnet-4-6" });
     const conversationDir = join(stateDir, "workspace", "C123");
-    saveConversationModelConfig(conversationDir, {
+    updateConversationSettings(conversationDir, {
       provider: "openai",
       model: "gpt-4o",
       thinkingLevel: "low",
     });
 
-    const config = loadAgentConfigForConversation(conversationDir);
+    const config = resolveConversationSettings(conversationDir);
     expect(config.provider).toBe("openai");
     expect(config.model).toBe("gpt-4o");
     expect(config.thinkingLevel).toBe("low");
@@ -196,9 +194,9 @@ describe("loadAgentConfig", () => {
   test("conversation sandbox config overrides global image workspace mount", () => {
     createGlobalSettingsFile(stateDir);
     const conversationDir = join(stateDir, "workspace", "C123");
-    saveConversationSandboxConfig(conversationDir, { imageWorkspaceMount: "full" });
+    updateConversationSettings(conversationDir, { sandboxImageWorkspaceMount: "full" });
 
-    const config = loadAgentConfigForConversation(conversationDir);
+    const config = resolveConversationSettings(conversationDir);
     expect(config.sandboxImageWorkspaceMount).toBe("full");
     expect(JSON.parse(readFileSync(join(conversationDir, "settings.json"), "utf-8"))).toEqual({
       sandbox: { image: { workspaceMount: "full" } },
@@ -206,11 +204,11 @@ describe("loadAgentConfig", () => {
   });
 
   test("conversation slack config overrides global reply mode", () => {
-    saveAgentConfig({ slack: { replyMode: "top-level" } });
+    updateGlobalSettings({ slack: { replyMode: "top-level" } });
     const conversationDir = join(stateDir, "workspace", "C123");
-    saveConversationSlackConfig(conversationDir, { replyMode: "thread" });
+    updateConversationSettings(conversationDir, { slack: { replyMode: "thread" } });
 
-    const config = loadAgentConfigForConversation(conversationDir);
+    const config = resolveConversationSettings(conversationDir);
     expect(config.slack?.replyMode).toBe("thread");
     expect(JSON.parse(readFileSync(join(conversationDir, "settings.json"), "utf-8"))).toEqual({
       slack: { replyMode: "thread" },
@@ -253,7 +251,7 @@ describe("resolveSentryDsn", () => {
   });
 
   test("prefers settings.json over env", () => {
-    saveAgentConfig({ sentryDsn: "https://settings.example/1" });
+    updateGlobalSettings({ sentryDsn: "https://settings.example/1" });
     process.env.SENTRY_DSN = "https://env.example/1";
     expect(resolveSentryDsn()).toBe("https://settings.example/1");
   });
@@ -264,7 +262,7 @@ describe("resolveSentryDsn", () => {
   });
 });
 
-describe("saveAgentConfig", () => {
+describe("updateGlobalSettings", () => {
   let stateDir: string;
 
   beforeEach(() => {
@@ -279,8 +277,8 @@ describe("saveAgentConfig", () => {
   });
 
   test("creates settings.json with given config", () => {
-    saveAgentConfig({ provider: "google", model: "gemini-2.0-flash" });
-    const config = loadAgentConfig();
+    updateGlobalSettings({ provider: "google", model: "gemini-2.0-flash" });
+    const config = loadGlobalSettings();
     expect(config.provider).toBe("google");
     expect(config.model).toBe("gemini-2.0-flash");
     expect(JSON.parse(readFileSync(join(stateDir, "settings.json"), "utf-8"))).toEqual({
@@ -302,9 +300,9 @@ describe("saveAgentConfig", () => {
   });
 
   test("merges with existing settings — preserves unrelated fields", () => {
-    saveAgentConfig({ provider: "openai", model: "gpt-4o" });
-    saveAgentConfig({ model: "gpt-4o-mini" });
-    const config = loadAgentConfig();
+    updateGlobalSettings({ provider: "openai", model: "gpt-4o" });
+    updateGlobalSettings({ model: "gpt-4o-mini" });
+    const config = loadGlobalSettings();
     expect(config.provider).toBe("openai");
     expect(config.model).toBe("gpt-4o-mini");
     expect(JSON.parse(readFileSync(join(stateDir, "settings.json"), "utf-8"))).toEqual({
@@ -328,14 +326,14 @@ describe("saveAgentConfig", () => {
   test("creates parent directories if they don't exist", () => {
     const nested = join(stateDir, "a", "b", "c");
     process.env.MIKAN_STATE_DIR = nested;
-    saveAgentConfig({ provider: "anthropic" });
+    updateGlobalSettings({ provider: "anthropic" });
     expect(existsSync(join(nested, "settings.json"))).toBe(true);
   });
 
   test("saves global workspace mount and shared vault settings", () => {
-    saveAgentConfig({ sandboxImageWorkspaceMount: "full", defaultSharedVault: "shared-team" });
+    updateGlobalSettings({ sandboxImageWorkspaceMount: "full", defaultSharedVault: "shared-team" });
 
-    const config = loadAgentConfig();
+    const config = loadGlobalSettings();
     expect(config.sandboxImageWorkspaceMount).toBe("full");
     expect(config.defaultSharedVault).toBe("shared-team");
     expect(

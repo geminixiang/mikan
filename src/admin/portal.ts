@@ -5,14 +5,12 @@ import { join, resolve as pathResolve, sep as pathSep } from "path";
 import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { Bot, PlatformName, RunningSession } from "../adapter.js";
 import {
-  loadAgentConfig,
-  loadAgentConfigForConversation,
   loadConversationAutoReplyConfig,
-  saveAgentConfig,
+  loadGlobalSettings,
+  resolveConversationSettings,
   saveConversationAutoReplyConfig,
-  saveConversationModelConfig,
-  saveConversationSandboxConfig,
-  saveConversationSlackConfig,
+  updateConversationSettings,
+  updateGlobalSettings,
   type AgentConfig,
 } from "../config.js";
 import { escapeHtml } from "../html.js";
@@ -348,8 +346,8 @@ function serveConversationState(
   }
 
   const dir = join(workingDir, conversationId);
-  const globalConfig = loadAgentConfig();
-  const conversationConfig = loadAgentConfigForConversation(dir);
+  const globalConfig = loadGlobalSettings();
+  const conversationConfig = resolveConversationSettings(dir);
   const autoReply = loadConversationAutoReplyConfig(dir);
 
   jsonRes(res, 200, {
@@ -374,7 +372,7 @@ function serveConversationState(
 
 function serveGlobalSettings(res: ServerResponse): void {
   try {
-    const config = loadAgentConfig();
+    const config = loadGlobalSettings();
     jsonRes(res, 200, {
       provider: config.provider,
       model: config.model,
@@ -442,7 +440,7 @@ function serveConversationModelUpdate(
   const dir = join(workingDir, scope.conversationId);
 
   try {
-    saveConversationModelConfig(dir, {
+    updateConversationSettings(dir, {
       provider,
       model,
       ...(thinkingLevel ? { thinkingLevel } : {}),
@@ -481,7 +479,7 @@ function serveConversationSandboxUpdate(
   if (!workingDir) return;
   const dir = join(workingDir, scope.conversationId);
   try {
-    saveConversationSandboxConfig(dir, { imageWorkspaceMount: workspaceMount });
+    updateConversationSettings(dir, { sandboxImageWorkspaceMount: workspaceMount });
     jsonRes(res, 200, { ok: true });
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
@@ -508,7 +506,7 @@ function serveConversationSlackUpdate(
   if (!workingDir) return;
   const dir = join(workingDir, scope.conversationId);
   try {
-    saveConversationSlackConfig(dir, { replyMode });
+    updateConversationSettings(dir, { slack: { replyMode } });
     jsonRes(res, 200, { ok: true });
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
@@ -660,7 +658,7 @@ function serveGlobalModelUpdate(res: ServerResponse, body: Record<string, unknow
   }
 
   try {
-    saveAgentConfig({
+    updateGlobalSettings({
       provider,
       model,
       ...(thinkingLevel ? { thinkingLevel } : {}),
@@ -679,7 +677,7 @@ function serveGlobalSlackUpdate(res: ServerResponse, body: Record<string, unknow
   }
 
   try {
-    saveAgentConfig({ slack: { replyMode } });
+    updateGlobalSettings({ slack: { replyMode } });
     jsonRes(res, 200, { ok: true });
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
@@ -707,7 +705,7 @@ function serveGlobalSandboxUpdate(res: ServerResponse, body: Record<string, unkn
   }
 
   try {
-    saveAgentConfig(update);
+    updateGlobalSettings(update);
     jsonRes(res, 200, { ok: true });
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });

@@ -1,6 +1,6 @@
 import { existsSync } from "fs";
 import { join } from "path";
-import { loadAgentConfig, loadAgentConfigForConversation } from "./config.js";
+import { loadGlobalSettings, resolveConversationSettings } from "./config.js";
 import { ensureDirExists, isRecord, readJsonFileIfExists } from "./file-guards.js";
 import { DockerContainerManager, type ContainerMount } from "./provisioner.js";
 import { createExecutor, type Executor, type SandboxConfig } from "./sandbox/index.js";
@@ -27,9 +27,7 @@ export function readConversationWorkspaceMountMode(
 
   const conversationDir = join(workspaceDir, conversationId);
   try {
-    return (
-      loadAgentConfigForConversation(conversationDir).sandboxImageWorkspaceMount ?? globalDefault
-    );
+    return resolveConversationSettings(conversationDir).sandboxImageWorkspaceMount ?? globalDefault;
   } catch {
     const conversationSettingsPath = join(conversationDir, "settings.json");
     const raw = readConversationSettingsFallback(conversationSettingsPath);
@@ -39,7 +37,7 @@ export function readConversationWorkspaceMountMode(
 
 function readGlobalWorkspaceMountMode(): ImageWorkspaceMountMode {
   try {
-    return loadAgentConfig().sandboxImageWorkspaceMount ?? "private";
+    return loadGlobalSettings().sandboxImageWorkspaceMount ?? "private";
   } catch {
     return "private";
   }
@@ -91,7 +89,7 @@ export class ActorExecutionResolver {
 
     let profile: string | undefined;
     try {
-      profile = loadAgentConfig().defaultSharedVault;
+      profile = loadGlobalSettings().defaultSharedVault;
     } catch {
       return;
     }
