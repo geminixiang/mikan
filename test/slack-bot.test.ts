@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -55,8 +55,7 @@ describe("SlackBot slash commands", () => {
   let workingDir: string;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mikan-slack-bot-${Date.now()}`);
-    mkdirSync(workingDir, { recursive: true });
+    workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-bot-"));
   });
 
   afterEach(() => {
@@ -456,8 +455,7 @@ describe("SlackBot queues follow-up messages", () => {
   let workingDir: string;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mikan-slack-queue-${Date.now()}`);
-    mkdirSync(workingDir, { recursive: true });
+    workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-queue-"));
   });
 
   afterEach(() => {
@@ -1334,8 +1332,7 @@ describe("SlackBot backfill", () => {
   let workingDir: string;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mikan-slack-backfill-${Date.now()}`);
-    mkdirSync(workingDir, { recursive: true });
+    workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-backfill-"));
   });
 
   afterEach(() => {
@@ -1477,8 +1474,7 @@ describe("SlackBot attachments", () => {
   let workingDir: string;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mikan-slack-attachments-${Date.now()}`);
-    mkdirSync(workingDir, { recursive: true });
+    workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-attachments-"));
   });
 
   afterEach(() => {
