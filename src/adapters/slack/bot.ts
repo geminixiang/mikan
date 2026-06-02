@@ -15,6 +15,7 @@ import type {
   ConversationKind,
   PlatformInfo,
 } from "../../adapter.js";
+import { loadAgentConfigForConversation } from "../../config.js";
 import type { EventsWatcher } from "../../events.js";
 import * as log from "../../log.js";
 import type { Attachment, ChannelStore } from "../../store.js";
@@ -139,6 +140,14 @@ export class SlackBot implements Bot {
   private channels = new Map<string, SlackChannel>();
   private queues = new Map<string, ChannelQueue>();
   private eventsWatcher: EventsWatcher | null = null;
+
+  private createAdapters(event: SlackEvent): BotAdapters {
+    return createSlackAdapters(event, this, {
+      replyMode:
+        loadAgentConfigForConversation(join(this.workingDir, event.conversationId)).slack
+          ?.replyMode ?? "top-level",
+    });
+  }
 
   constructor(
     handler: BotHandler,
@@ -536,6 +545,9 @@ export class SlackBot implements Bot {
         };
         const adapters = createSlackAdapters(slackEvent, this, {
           initialMessageTs: eventPlan.initialMessageTs,
+          replyMode:
+            loadAgentConfigForConversation(join(this.workingDir, eventForRun.conversationId)).slack
+              ?.replyMode ?? "top-level",
         });
         return this.handler.handleEvent(eventForRun, this, adapters);
       });
@@ -1091,7 +1103,7 @@ export class SlackBot implements Bot {
 
     this.getQueue(this.resolveQueueKey(e.channel, sessionKey)).enqueue(async () => {
       slackEvent.attachments = await attachmentsPromise;
-      const adapters = createSlackAdapters(slackEvent, this);
+      const adapters = this.createAdapters(slackEvent);
       return this.handler.handleEvent(
         slackEvent as unknown as import("../../adapter.js").BotEvent,
         this,
@@ -1225,7 +1237,7 @@ export class SlackBot implements Bot {
       slackEvent.sessionKey = activeSessionKey;
       this.getQueue(this.resolveQueueKey(e.channel, activeSessionKey)).enqueue(async () => {
         slackEvent.attachments = await attachmentsPromise;
-        const adapters = createSlackAdapters(slackEvent, this);
+        const adapters = this.createAdapters(slackEvent);
         return this.handler.handleEvent(
           slackEvent as unknown as import("../../adapter.js").BotEvent,
           this,
@@ -1482,7 +1494,7 @@ export class SlackBot implements Bot {
         attachments: [],
         sessionKey,
       };
-      return this.handler.handleEvent(event, this, createSlackAdapters(slackEvent, this));
+      return this.handler.handleEvent(event, this, this.createAdapters(slackEvent));
     });
   }
 

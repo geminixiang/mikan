@@ -12,6 +12,7 @@ import {
   saveConversationAutoReplyConfig,
   saveConversationModelConfig,
   saveConversationSandboxConfig,
+  saveConversationSlackConfig,
   type AgentConfig,
 } from "../config.js";
 import { escapeHtml } from "../html.js";
@@ -175,6 +176,10 @@ function routeApiRequest(
         serveConversationAutoReplyUpdate(res, body, services, token);
         return;
       }
+      if (url.pathname === "/admin/api/conversations/slack") {
+        serveConversationSlackUpdate(res, body, services, token);
+        return;
+      }
       if (url.pathname === "/admin/api/conversations/session-link") {
         serveConversationSessionLink(res, body, services, token);
         return;
@@ -193,6 +198,10 @@ function routeApiRequest(
       }
       if (url.pathname === "/admin/api/settings/sandbox") {
         serveGlobalSandboxUpdate(res, body);
+        return;
+      }
+      if (url.pathname === "/admin/api/settings/slack") {
+        serveGlobalSlackUpdate(res, body);
         return;
       }
       jsonRes(res, 404, { error: "Not found" });
@@ -346,6 +355,8 @@ function serveConversationState(
     modelConfig = null;
   }
   const autoReply = loadConversationAutoReplyConfig(dir);
+  const globalConfig = loadAgentConfig();
+  const localSettings = loadAgentConfigForConversation(dir);
 
   jsonRes(res, 200, {
     conversationId,
@@ -355,6 +366,10 @@ function serveConversationState(
     sandboxImageWorkspaceMount: modelConfig?.sandboxImageWorkspaceMount ?? null,
     autoReplyEnabled: autoReply.enabled,
     autoReplyRules: autoReply.rules,
+    slack: {
+      replyMode: localSettings.slack?.replyMode ?? globalConfig.slack?.replyMode ?? "top-level",
+      globalReplyMode: globalConfig.slack?.replyMode ?? "top-level",
+    },
   });
 }
 
@@ -371,6 +386,9 @@ function serveGlobalSettings(res: ServerResponse): void {
       sandboxBoostMemory: config.sandboxBoostMemory ?? null,
       sandboxImageWorkspaceMount: config.sandboxImageWorkspaceMount ?? null,
       defaultSharedVault: config.defaultSharedVault ?? null,
+      slack: {
+        replyMode: config.slack?.replyMode ?? "top-level",
+      },
     });
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
@@ -465,6 +483,33 @@ function serveConversationSandboxUpdate(
   const dir = join(workingDir, scope.conversationId);
   try {
     saveConversationSandboxConfig(dir, { imageWorkspaceMount: workspaceMount });
+    jsonRes(res, 200, { ok: true });
+  } catch (err) {
+    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+function serveConversationSlackUpdate(
+  res: ServerResponse,
+  body: Record<string, unknown>,
+  services: AdminServices,
+  token: AdminToken,
+): void {
+  const replyMode = body.replyMode;
+  if (replyMode !== "top-level" && replyMode !== "thread") {
+    jsonRes(res, 400, { error: "replyMode must be 'top-level' or 'thread'" });
+    return;
+  }
+  const scope = resolveTargetConversation(body, token);
+  if (scope.error) {
+    jsonRes(res, 403, { error: scope.error });
+    return;
+  }
+  const workingDir = requireAdminWorkingDir(res, services);
+  if (!workingDir) return;
+  const dir = join(workingDir, scope.conversationId);
+  try {
+    saveConversationSlackConfig(dir, { replyMode });
     jsonRes(res, 200, { ok: true });
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
@@ -621,6 +666,21 @@ function serveGlobalModelUpdate(res: ServerResponse, body: Record<string, unknow
       model,
       ...(thinkingLevel ? { thinkingLevel } : {}),
     });
+    jsonRes(res, 200, { ok: true });
+  } catch (err) {
+    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+function serveGlobalSlackUpdate(res: ServerResponse, body: Record<string, unknown>): void {
+  const replyMode = body.replyMode;
+  if (replyMode !== "top-level" && replyMode !== "thread") {
+    jsonRes(res, 400, { error: "replyMode must be 'top-level' or 'thread'" });
+    return;
+  }
+
+  try {
+    saveAgentConfig({ slack: { replyMode } });
     jsonRes(res, 200, { ok: true });
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
@@ -1550,6 +1610,11 @@ function renderAdminPage(token: AdminToken): string {
         '<option value="' + m + '"' + (data.sandboxImageWorkspaceMount === m ? ' selected' : '') + '>' + m + '</option>'
       ).join('');
       const rulesText = (data.autoReplyRules || []).join('\\n');
+      const replyModes = ['top-level','thread'];
+      const replyModeOpts = replyModes.map((m) =>
+        '<option value="' + m + '"' + (((data.slack && data.slack.replyMode) || 'top-level') === m ? ' selected' : '') + '>' + m + '</option>'
+      ).join('');
+      const globalReplyMode = (data.slack && data.slack.globalReplyMode) || 'top-level';
       return [
         '<div class="config-grid">',
           '<div class="config-block">',
@@ -1571,6 +1636,13 @@ function renderAdminPage(token: AdminToken): string {
             '<div class="config-row"><label>Mode</label><select id="m-mount">' + mountOpts + '</select></div>',
             '<button class="primary-action-btn" onclick="saveMount(this)">Save mount</button>',
             '<div id="mount-save-result" class="inline-result" style="display:none"></div>',
+          '</div>',
+          '<div class="config-block">',
+            '<h3 class="card-subtitle">Slack</h3>',
+            '<div class="config-row"><label>Reply mode</label><select id="m-slack-reply-mode">' + replyModeOpts + '</select></div>',
+            '<p class="muted-note">Global default: ' + escHtml(globalReplyMode) + '</p>',
+            '<button class="primary-action-btn" onclick="saveSlack(this)">Save Slack</button>',
+            '<div id="slack-save-result" class="inline-result" style="display:none"></div>',
           '</div>',
         '</div>',
       ].join('');
@@ -1634,6 +1706,22 @@ function renderAdminPage(token: AdminToken): string {
         result.style.display = 'block'; result.className = 'inline-result err'; result.textContent = err.message;
       } finally {
         btn.disabled = false; btn.textContent = 'Save mount';
+      }
+    }
+
+    async function saveSlack(btn) {
+      const replyMode = document.getElementById('m-slack-reply-mode').value;
+      const result = document.getElementById('slack-save-result');
+      btn.disabled = true; btn.textContent = 'Saving…'; result.style.display = 'none';
+      try {
+        await apiPost('/admin/api/conversations/slack', {
+          conversationId: activeConversationId, replyMode,
+        });
+        result.style.display = 'block'; result.className = 'inline-result ok'; result.textContent = 'Saved ✓';
+      } catch (err) {
+        result.style.display = 'block'; result.className = 'inline-result err'; result.textContent = err.message;
+      } finally {
+        btn.disabled = false; btn.textContent = 'Save Slack';
       }
     }
 
@@ -1902,6 +1990,10 @@ function renderAdminPage(token: AdminToken): string {
       const mountOpts = mounts.map((m) =>
         '<option value="' + m + '"' + (data.sandboxImageWorkspaceMount === m ? ' selected' : '') + '>' + m + '</option>'
       ).join('');
+      const replyModes = ['top-level','thread'];
+      const replyModeOpts = replyModes.map((m) =>
+        '<option value="' + m + '"' + (((data.slack && data.slack.replyMode) || 'top-level') === m ? ' selected' : '') + '>' + m + '</option>'
+      ).join('');
       return [
         '<div class="config-grid">',
           '<div class="config-block">',
@@ -1920,6 +2012,12 @@ function renderAdminPage(token: AdminToken): string {
             '<div class="config-row"><label>Mount</label><select id="g-mount">' + mountOpts + '</select></div>',
             '<button class="primary-action-btn" onclick="saveGlobalSandbox(this)">Save sandbox</button>',
             '<div id="g-sandbox-result" class="inline-result" style="display:none"></div>',
+          '</div>',
+          '<div class="config-block">',
+            '<h3 class="card-subtitle">Slack</h3>',
+            '<div class="config-row"><label>Reply mode</label><select id="g-slack-reply-mode">' + replyModeOpts + '</select></div>',
+            '<button class="primary-action-btn" onclick="saveGlobalSlack(this)">Save Slack</button>',
+            '<div id="g-slack-result" class="inline-result" style="display:none"></div>',
           '</div>',
         '</div>',
       ].join('');
@@ -1961,6 +2059,20 @@ function renderAdminPage(token: AdminToken): string {
         result.style.display = 'block'; result.className = 'inline-result err'; result.textContent = err.message;
       } finally {
         btn.disabled = false; btn.textContent = 'Save sandbox';
+      }
+    }
+
+    async function saveGlobalSlack(btn) {
+      const replyMode = document.getElementById('g-slack-reply-mode').value;
+      const result = document.getElementById('g-slack-result');
+      btn.disabled = true; btn.textContent = 'Saving…'; result.style.display = 'none';
+      try {
+        await apiPost('/admin/api/settings/slack', { replyMode });
+        result.style.display = 'block'; result.className = 'inline-result ok'; result.textContent = 'Saved ✓';
+      } catch (err) {
+        result.style.display = 'block'; result.className = 'inline-result err'; result.textContent = err.message;
+      } finally {
+        btn.disabled = false; btn.textContent = 'Save Slack';
       }
     }
 

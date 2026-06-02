@@ -1,10 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { BotHandler } from "../src/adapter.js";
 import { SlackBot } from "../src/adapters/slack/bot.js";
 import { defaultCommandHandlers } from "../src/commands/index.js";
+import { createGlobalSettingsFile } from "../src/config.js";
 import type { CommandServices } from "../src/commands/types.js";
 import { ConversationOrchestrator } from "../src/runtime/conversation-orchestrator.js";
 import { createManagedSessionFileAtPath, getThreadSessionFile } from "../src/sessions/store.js";
@@ -55,11 +56,13 @@ describe("SlackBot slash commands", () => {
   let workingDir: string;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mikan-slack-bot-${Date.now()}`);
-    mkdirSync(workingDir, { recursive: true });
+    workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-bot-"));
+    process.env.MIKAN_STATE_DIR = workingDir;
+    createGlobalSettingsFile(workingDir);
   });
 
   afterEach(() => {
+    delete process.env.MIKAN_STATE_DIR;
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
 
@@ -456,11 +459,13 @@ describe("SlackBot queues follow-up messages", () => {
   let workingDir: string;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mikan-slack-queue-${Date.now()}`);
-    mkdirSync(workingDir, { recursive: true });
+    workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-queue-"));
+    process.env.MIKAN_STATE_DIR = workingDir;
+    createGlobalSettingsFile(workingDir);
   });
 
   afterEach(() => {
+    delete process.env.MIKAN_STATE_DIR;
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
 
@@ -1334,11 +1339,13 @@ describe("SlackBot backfill", () => {
   let workingDir: string;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mikan-slack-backfill-${Date.now()}`);
-    mkdirSync(workingDir, { recursive: true });
+    workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-backfill-"));
+    process.env.MIKAN_STATE_DIR = workingDir;
+    createGlobalSettingsFile(workingDir);
   });
 
   afterEach(() => {
+    delete process.env.MIKAN_STATE_DIR;
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
 
@@ -1477,11 +1484,13 @@ describe("SlackBot attachments", () => {
   let workingDir: string;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mikan-slack-attachments-${Date.now()}`);
-    mkdirSync(workingDir, { recursive: true });
+    workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-attachments-"));
+    process.env.MIKAN_STATE_DIR = workingDir;
+    createGlobalSettingsFile(workingDir);
   });
 
   afterEach(() => {
+    delete process.env.MIKAN_STATE_DIR;
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
 

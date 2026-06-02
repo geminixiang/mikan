@@ -14,6 +14,12 @@ export class MissingGlobalSettingsError extends Error {
   }
 }
 
+type SlackReplyMode = "top-level" | "thread";
+
+export interface SlackConfig {
+  replyMode?: SlackReplyMode;
+}
+
 export interface AgentConfig {
   provider: string;
   model: string;
@@ -25,6 +31,7 @@ export interface AgentConfig {
   sandboxBoostMemory?: string;
   sandboxImageWorkspaceMount?: "private" | "full";
   defaultSharedVault?: string;
+  slack?: SlackConfig;
 }
 
 export interface AutoReplyConfig {
@@ -46,6 +53,9 @@ const ONBOARD_SETTINGS: SettingsFileConfig = {
       provider: "anthropic",
       model: "claude-haiku-4-5",
     },
+  },
+  slack: {
+    replyMode: "top-level",
   },
   sandbox: {
     cpus: "0.5",
@@ -87,6 +97,11 @@ const SettingsFileSchema = Type.Object({
   sentry: Type.Optional(
     Type.Object({
       dsn: Type.Optional(Type.String()),
+    }),
+  ),
+  slack: Type.Optional(
+    Type.Object({
+      replyMode: Type.Optional(Type.Union([Type.Literal("top-level"), Type.Literal("thread")])),
     }),
   ),
   sandbox: Type.Optional(
@@ -152,6 +167,7 @@ function normalizeSettingsConfig(config: SettingsFileConfig): Partial<AgentConfi
     ...(config.sandbox?.defaultSharedVault?.trim()
       ? { defaultSharedVault: config.sandbox.defaultSharedVault.trim() }
       : {}),
+    ...(config.slack !== undefined ? { slack: config.slack } : {}),
   };
 }
 
@@ -192,6 +208,7 @@ function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
   const sandboxBoostMemory = fromFile.sandboxBoostMemory;
   const sandboxImageWorkspaceMount = fromFile.sandboxImageWorkspaceMount;
   const defaultSharedVault = fromFile.defaultSharedVault;
+  const slack = fromFile.slack;
 
   return {
     provider,
@@ -204,6 +221,7 @@ function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
     sandboxBoostMemory,
     sandboxImageWorkspaceMount,
     defaultSharedVault,
+    slack,
   };
 }
 
@@ -233,6 +251,17 @@ export function saveConversationModelConfig(
   const scopedConfig: SettingsFileConfig = {
     ...existing,
     llm: { ...existing.llm, ...config },
+  };
+  atomicWritePrivateFile(settingsPath, JSON.stringify(scopedConfig, null, 2));
+}
+
+export function saveConversationSlackConfig(conversationDir: string, config: SlackConfig): void {
+  ensureDirExists(conversationDir);
+  const settingsPath = join(conversationDir, "settings.json");
+  const existing = loadSettingsFile(settingsPath) ?? {};
+  const scopedConfig: SettingsFileConfig = {
+    ...existing,
+    slack: { ...existing.slack, ...config },
   };
   atomicWritePrivateFile(settingsPath, JSON.stringify(scopedConfig, null, 2));
 }
@@ -405,6 +434,7 @@ function compactSettingsConfig(config: SettingsFileConfig): SettingsFileConfig {
     ...(hasDefinedValue(config.sentry) ? { sentry: config.sentry } : {}),
     ...(hasDefinedValue(config.sandbox) ? { sandbox: config.sandbox } : {}),
     ...(hasDefinedValue(config.autoReply) ? { autoReply: config.autoReply } : {}),
+    ...(hasDefinedValue(config.slack) ? { slack: config.slack } : {}),
   };
 }
 
@@ -439,6 +469,10 @@ function patchSettingsConfig(
             },
           }
         : {}),
+    },
+    slack: {
+      ...existing.slack,
+      ...config.slack,
     },
   };
   return compactSettingsConfig(patched);
