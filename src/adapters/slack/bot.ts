@@ -19,7 +19,7 @@ import { resolveConversationSettings } from "../../config.js";
 import type { EventsWatcher } from "../../events.js";
 import * as log from "../../log.js";
 import type { Attachment, ChannelStore } from "../../store.js";
-import { PRODUCT_NAME, formatForceStopped, formatNothingRunning } from "../../ui-copy.js";
+import { PRODUCT_NAME, formatForceStopped, formatNothingRunning } from "../../platform-messages.js";
 import {
   appendBotResponseLog,
   appendChannelLog,

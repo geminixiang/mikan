@@ -6,7 +6,7 @@ import type { CommandHandler, CommandServices } from "../commands/index.js";
 import { isPrivateConversation } from "../commands/utils.js";
 import * as log from "../log.js";
 import { addLifecycleBreadcrumb, applyRunScope, reportUserFacingError } from "../sentry.js";
-import { formatStopped } from "../ui-copy.js";
+import { formatStopped } from "../platform-messages.js";
 import * as Sentry from "@sentry/node";
 import { join } from "path";
 

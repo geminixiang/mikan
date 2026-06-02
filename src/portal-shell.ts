@@ -1,5 +1,5 @@
 import { escapeHtml } from "./html.js";
-import { PRODUCT_NAME } from "./ui-copy.js";
+import { PRODUCT_NAME } from "./platform-messages.js";
 
 // ── Shared portal shell ────────────────────────────────────────────────────────
 //

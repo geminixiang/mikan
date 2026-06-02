@@ -18,7 +18,7 @@ import { renderPortalShell } from "../portal-shell.js";
 import type { SandboxConfig } from "../sandbox/index.js";
 import { resolveExistingSessionFile } from "../session-view/service.js";
 import type { InMemorySessionViewTokenStore } from "../session-view/store.js";
-import { PRODUCT_NAME } from "../ui-copy.js";
+import { PRODUCT_NAME } from "../platform-messages.js";
 import { resolveActorVaultKey } from "../vault-routing.js";
 import { sharedVaultKey, type VaultManager } from "../vault.js";
 import type { AdminToken, InMemoryAdminTokenStore } from "./store.js";

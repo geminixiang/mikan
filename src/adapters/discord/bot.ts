@@ -29,7 +29,7 @@ import type {
 import * as log from "../../log.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
 import { evaluateAutoReplyPolicy } from "../../trigger.js";
-import { formatNothingRunning } from "../../ui-copy.js";
+import { formatNothingRunning } from "../../platform-messages.js";
 import {
   appendBotResponseLog,
   appendChannelLog,

@@ -6,7 +6,7 @@ import type { Bot, BotEvent, BotHandler, PlatformInfo } from "../../adapter.js";
 import * as log from "../../log.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
 import { evaluateAutoReplyPolicy } from "../../trigger.js";
-import { formatAlreadyWorking, formatNothingRunning } from "../../ui-copy.js";
+import { formatAlreadyWorking, formatNothingRunning } from "../../platform-messages.js";
 import {
   appendBotResponseLog,
   appendChannelLog,

@@ -9,7 +9,7 @@ import {
   type ResolveChatSessionScopeOptions,
 } from "../sessions/chat-session-manager.js";
 import type { ResolvedSessionScope } from "../sessions/store.js";
-import { formatNothingRunning, formatStopping } from "../ui-copy.js";
+import { formatNothingRunning, formatStopping } from "../platform-messages.js";
 import {
   ConversationOrchestrator,
   type ConversationRuntimeState,

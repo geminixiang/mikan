@@ -24,7 +24,7 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `store.ts`: Manages channel directories, `log.jsonl` message logging, Slack attachment downloads, and deduplication.
 - `tool-diagnostics.ts`: Decides which tool diagnostics should be surfaced back to chat.
 - `trigger.ts`: Decides whether a message should trigger the agent, including auto-reply rules and LLM judging.
-- `ui-copy.ts`: Centralizes product name and cross-platform UI copy for stopping, stopped, already-working, and idle states.
+- `platform-messages.ts`: Centralizes product name and cross-platform bot status messages for stopping, stopped, already-working, and idle states.
 - `vault-routing.ts`: Resolves vault keys from sandbox type, user, conversation, or container name.
 - `vault.ts`: Implements the file-backed credential vault for env secrets, secret files, shared profiles, and mounts.
 

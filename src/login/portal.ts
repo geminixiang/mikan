@@ -21,7 +21,7 @@ import {
 } from "./index.js";
 import * as log from "../log.js";
 import { reportUserFacingError } from "../sentry.js";
-import { PRODUCT_NAME } from "../ui-copy.js";
+import { PRODUCT_NAME } from "../platform-messages.js";
 import { defaultVaultTargetPath, type VaultManager } from "../vault.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
