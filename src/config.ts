@@ -469,6 +469,17 @@ function patchSettingsConfig(
             },
           }
         : {}),
+      ...(config.sandboxImageWorkspaceMount !== undefined
+        ? {
+            image: {
+              ...existing.sandbox?.image,
+              workspaceMount: config.sandboxImageWorkspaceMount,
+            },
+          }
+        : {}),
+      ...(config.defaultSharedVault !== undefined
+        ? { defaultSharedVault: config.defaultSharedVault }
+        : {}),
     },
     slack: {
       ...existing.slack,

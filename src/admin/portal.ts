@@ -348,26 +348,25 @@ function serveConversationState(
   }
 
   const dir = join(workingDir, conversationId);
-  let modelConfig: AgentConfig | null = null;
-  try {
-    modelConfig = loadAgentConfigForConversation(dir);
-  } catch {
-    modelConfig = null;
-  }
-  const autoReply = loadConversationAutoReplyConfig(dir);
   const globalConfig = loadAgentConfig();
-  const localSettings = loadAgentConfigForConversation(dir);
+  const conversationConfig = loadAgentConfigForConversation(dir);
+  const autoReply = loadConversationAutoReplyConfig(dir);
 
   jsonRes(res, 200, {
     conversationId,
-    provider: modelConfig?.provider ?? null,
-    model: modelConfig?.model ?? null,
-    thinkingLevel: modelConfig?.thinkingLevel ?? null,
-    sandboxImageWorkspaceMount: modelConfig?.sandboxImageWorkspaceMount ?? null,
+    provider: conversationConfig.provider,
+    model: conversationConfig.model,
+    thinkingLevel: conversationConfig.thinkingLevel,
+    globalProvider: globalConfig.provider,
+    globalModel: globalConfig.model,
+    globalThinkingLevel: globalConfig.thinkingLevel,
+    sandboxImageWorkspaceMount: conversationConfig.sandboxImageWorkspaceMount ?? null,
+    globalSandboxImageWorkspaceMount: globalConfig.sandboxImageWorkspaceMount ?? null,
     autoReplyEnabled: autoReply.enabled,
     autoReplyRules: autoReply.rules,
     slack: {
-      replyMode: localSettings.slack?.replyMode ?? globalConfig.slack?.replyMode ?? "top-level",
+      replyMode:
+        conversationConfig.slack?.replyMode ?? globalConfig.slack?.replyMode ?? "top-level",
       globalReplyMode: globalConfig.slack?.replyMode ?? "top-level",
     },
   });
@@ -1615,12 +1614,16 @@ function renderAdminPage(token: AdminToken): string {
         '<option value="' + m + '"' + (((data.slack && data.slack.replyMode) || 'top-level') === m ? ' selected' : '') + '>' + m + '</option>'
       ).join('');
       const globalReplyMode = (data.slack && data.slack.globalReplyMode) || 'top-level';
+      const globalModel = [data.globalProvider, data.globalModel].filter(Boolean).join('/');
+      const globalModelLabel = globalModel + (data.globalThinkingLevel ? ':' + data.globalThinkingLevel : '');
+      const globalMount = data.globalSandboxImageWorkspaceMount || 'private';
       return [
         '<div class="config-grid">',
           '<div class="config-block">',
             '<h3 class="card-subtitle">Model</h3>',
             '<div class="config-row config-row-stack"><label>Model</label><select id="m-model-ref">' + renderModelOptions(data.provider, data.model) + '</select></div>',
             '<div class="config-row"><label>Thinking</label><select id="m-thinking">' + thinkingOpts + '</select></div>',
+            '<p class="muted-note">Global default: ' + escHtml(globalModelLabel) + '</p>',
             '<button class="primary-action-btn" onclick="saveModel(this)">Save model</button>',
             '<div id="model-save-result" class="inline-result" style="display:none"></div>',
           '</div>',
@@ -1634,6 +1637,7 @@ function renderAdminPage(token: AdminToken): string {
           '<div class="config-block">',
             '<h3 class="card-subtitle">Workspace mount</h3>',
             '<div class="config-row"><label>Mode</label><select id="m-mount">' + mountOpts + '</select></div>',
+            '<p class="muted-note">Global default: ' + escHtml(globalMount) + '</p>',
             '<button class="primary-action-btn" onclick="saveMount(this)">Save mount</button>',
             '<div id="mount-save-result" class="inline-result" style="display:none"></div>',
           '</div>',

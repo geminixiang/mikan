@@ -22,27 +22,37 @@ Per-conversation settings live at `<working-directory>/<conversationId>/settings
     "boost": {
       "cpus": "2",
       "memory": "4g"
-    }
+    },
+    "image": {
+      "workspaceMount": "private"
+    },
+    "defaultSharedVault": ""
+  },
+  "slack": {
+    "replyMode": "top-level"
   }
 }
 ```
 
 ## Fields
 
-| Field                  | Default             | Description                                           |
-| ---------------------- | ------------------- | ----------------------------------------------------- |
-| `llm.provider`         | `anthropic`         | AI provider                                           |
-| `llm.model`            | `claude-sonnet-4-6` | Model name                                            |
-| `llm.thinkingLevel`    | `off`               | `off` / `low` / `medium` / `high`                     |
-| `sentry.dsn`           | unset               | Sentry DSN; sensitive prompt/tool content is redacted |
-| `sandbox.cpus`         | unset               | CPU limit for managed containers                      |
-| `sandbox.memory`       | unset               | Memory limit for managed containers                   |
-| `sandbox.boost.cpus`   | unset               | Temporary CPU limit used by `/pi-sandbox boost`       |
-| `sandbox.boost.memory` | unset               | Temporary memory limit used by `/pi-sandbox boost`    |
+| Field                          | Default             | Description                                                                                   |
+| ------------------------------ | ------------------- | --------------------------------------------------------------------------------------------- |
+| `llm.provider`                 | `anthropic`         | AI provider                                                                                   |
+| `llm.model`                    | `claude-sonnet-4-6` | Model name                                                                                    |
+| `llm.thinkingLevel`            | `off`               | `off` / `low` / `medium` / `high`                                                             |
+| `sentry.dsn`                   | unset               | Sentry DSN; sensitive prompt/tool content is redacted                                         |
+| `sandbox.cpus`                 | unset               | CPU limit for managed containers                                                              |
+| `sandbox.memory`               | unset               | Memory limit for managed containers                                                           |
+| `sandbox.boost.cpus`           | unset               | Temporary CPU limit used by `/pi-sandbox boost`                                               |
+| `sandbox.boost.memory`         | unset               | Temporary memory limit used by `/pi-sandbox boost`                                            |
+| `sandbox.image.workspaceMount` | `private`           | `private` mounts only the conversation workspace; `full` mounts the whole workspace directory |
+| `sandbox.defaultSharedVault`   | unset               | Default shared vault key for conversations without their own vault                            |
+| `slack.replyMode`              | `top-level`         | Slack response mode: `top-level` or `thread`                                                  |
 
 `/pi-sandbox` shows the current managed-container CPU/memory limits. `/pi-sandbox boost` temporarily applies `sandbox.boost` to the current conversation; the boost ends when that sandbox container is stopped.
 
-Conversation-local settings written by `/pi-model` use the same shape and usually only include the override:
+Conversation-local settings use the same shape and override global settings for that conversation. Settings written by `/pi-model` usually only include the model override:
 
 ```json
 {

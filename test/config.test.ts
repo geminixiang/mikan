@@ -12,6 +12,7 @@ import {
   saveAgentConfig,
   saveConversationModelConfig,
   saveConversationSandboxConfig,
+  saveConversationSlackConfig,
 } from "../src/config.js";
 
 describe("loadAgentConfig", () => {
@@ -203,6 +204,18 @@ describe("loadAgentConfig", () => {
       sandbox: { image: { workspaceMount: "full" } },
     });
   });
+
+  test("conversation slack config overrides global reply mode", () => {
+    saveAgentConfig({ slack: { replyMode: "top-level" } });
+    const conversationDir = join(stateDir, "workspace", "C123");
+    saveConversationSlackConfig(conversationDir, { replyMode: "thread" });
+
+    const config = loadAgentConfigForConversation(conversationDir);
+    expect(config.slack?.replyMode).toBe("thread");
+    expect(JSON.parse(readFileSync(join(conversationDir, "settings.json"), "utf-8"))).toEqual({
+      slack: { replyMode: "thread" },
+    });
+  });
 });
 
 describe("argv config resolution", () => {
@@ -317,5 +330,19 @@ describe("saveAgentConfig", () => {
     process.env.MIKAN_STATE_DIR = nested;
     saveAgentConfig({ provider: "anthropic" });
     expect(existsSync(join(nested, "settings.json"))).toBe(true);
+  });
+
+  test("saves global workspace mount and shared vault settings", () => {
+    saveAgentConfig({ sandboxImageWorkspaceMount: "full", defaultSharedVault: "shared-team" });
+
+    const config = loadAgentConfig();
+    expect(config.sandboxImageWorkspaceMount).toBe("full");
+    expect(config.defaultSharedVault).toBe("shared-team");
+    expect(
+      JSON.parse(readFileSync(join(stateDir, "settings.json"), "utf-8")).sandbox,
+    ).toMatchObject({
+      image: { workspaceMount: "full" },
+      defaultSharedVault: "shared-team",
+    });
   });
 });
