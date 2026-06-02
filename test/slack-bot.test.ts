@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { BotHandler } from "../src/adapter.js";
 import { SlackBot } from "../src/adapters/slack/bot.js";
 import { defaultCommandHandlers } from "../src/commands/index.js";
+import { createGlobalSettingsFile } from "../src/config.js";
 import type { CommandServices } from "../src/commands/types.js";
 import { ConversationOrchestrator } from "../src/runtime/conversation-orchestrator.js";
 import { createManagedSessionFileAtPath, getThreadSessionFile } from "../src/sessions/store.js";
@@ -56,9 +57,12 @@ describe("SlackBot slash commands", () => {
 
   beforeEach(() => {
     workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-bot-"));
+    process.env.MIKAN_STATE_DIR = workingDir;
+    createGlobalSettingsFile(workingDir);
   });
 
   afterEach(() => {
+    delete process.env.MIKAN_STATE_DIR;
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
 
@@ -456,9 +460,12 @@ describe("SlackBot queues follow-up messages", () => {
 
   beforeEach(() => {
     workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-queue-"));
+    process.env.MIKAN_STATE_DIR = workingDir;
+    createGlobalSettingsFile(workingDir);
   });
 
   afterEach(() => {
+    delete process.env.MIKAN_STATE_DIR;
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
 
@@ -1333,9 +1340,12 @@ describe("SlackBot backfill", () => {
 
   beforeEach(() => {
     workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-backfill-"));
+    process.env.MIKAN_STATE_DIR = workingDir;
+    createGlobalSettingsFile(workingDir);
   });
 
   afterEach(() => {
+    delete process.env.MIKAN_STATE_DIR;
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
 
@@ -1475,9 +1485,12 @@ describe("SlackBot attachments", () => {
 
   beforeEach(() => {
     workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-attachments-"));
+    process.env.MIKAN_STATE_DIR = workingDir;
+    createGlobalSettingsFile(workingDir);
   });
 
   afterEach(() => {
+    delete process.env.MIKAN_STATE_DIR;
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
 
