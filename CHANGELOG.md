@@ -9,6 +9,20 @@ any release.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-06-02
+
+### Added
+
+- Add Slack Block Kit response support and document Block Kit implementation lessons.
+
+### Fixed
+
+- Require explicit mentions before Slack thread replies trigger the bot.
+
+### Tests
+
+- Enforce phase-one strict checks and unused export checks.
+
 ## [0.3.0] - 2026-06-01
 
 ### Added
