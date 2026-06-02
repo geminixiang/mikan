@@ -5,7 +5,12 @@ import type {
   PlatformInfo,
 } from "../../adapter.js";
 import * as log from "../../log.js";
-import { createChatResponseErrorReporter, formatToolArgs, splitText } from "../shared.js";
+import {
+  createChatResponseErrorReporter,
+  formatToolArgs,
+  splitText,
+  type ChatResponseErrorOperation,
+} from "../shared.js";
 import type { SlackBot, SlackEvent } from "./bot.js";
 import { planSlackAdapterSession } from "./session.js";
 
@@ -190,10 +195,41 @@ export function createSlackAdapters(
     isThreaded,
   }));
 
+  const postOrUpdateMain = async (body: string): Promise<void> => {
+    if (messageTs) {
+      await slack.updateMessage(channelId, messageTs, body);
+      return;
+    }
+    if (isThreaded && rootTs) {
+      messageTs = await slack.postInThread(channelId, rootTs, body);
+      return;
+    }
+    messageTs = await postFirstMessage(body);
+  };
+
+  const queueResponseOperation = async (
+    label: string,
+    operation: ChatResponseErrorOperation,
+    work: () => Promise<void>,
+    context: (err: unknown) => Record<string, unknown>,
+  ): Promise<void> => {
+    updatePromise = updatePromise.then(async () => {
+      try {
+        await work();
+      } catch (err) {
+        log.logWarning(`Slack ${label} error`, err instanceof Error ? err.message : String(err));
+        reportResponseError(err, operation, context(err));
+      }
+    });
+    await updatePromise;
+  };
+
   const responseCtx = {
     respond: async (text: string) => {
-      updatePromise = updatePromise.then(async () => {
-        try {
+      await queueResponseOperation(
+        "respond",
+        "respond",
+        async () => {
           accumulatedText = accumulatedText ? `${accumulatedText}\n${text}` : text;
 
           const mainLimit = isWorking
@@ -206,34 +242,25 @@ export function createSlackAdapters(
           }
 
           const displayText = isWorking ? accumulatedText + WORKING_INDICATOR : accumulatedText;
-
-          if (messageTs) {
-            await slack.updateMessage(channelId, messageTs, displayText);
-          } else if (isThreaded && rootTs) {
-            // Reply within the user's thread
-            messageTs = await slack.postInThread(channelId, rootTs, displayText);
-          } else {
-            messageTs = await postFirstMessage(displayText);
-          }
+          await postOrUpdateMain(displayText);
 
           if (messageTs) {
             slack.logBotResponse(channelId, text, messageTs, isThreaded ? rootTs : undefined);
           }
-        } catch (err) {
-          log.logWarning("Slack respond error", err instanceof Error ? err.message : String(err));
-          reportResponseError(err, "respond", {
-            phase: messageTs ? "update" : "initial_post",
-            textLength: text.length,
-            accumulatedLength: accumulatedText.length,
-          });
-        }
-      });
-      await updatePromise;
+        },
+        () => ({
+          phase: messageTs ? "update" : "initial_post",
+          textLength: text.length,
+          accumulatedLength: accumulatedText.length,
+        }),
+      );
     },
 
     replaceResponse: async (text: string, options?: { createOverflowLink?: () => string }) => {
-      updatePromise = updatePromise.then(async () => {
-        try {
+      await queueResponseOperation(
+        "replaceResponse",
+        "replace_response",
+        async () => {
           // Lazy: only mint a token if Slack actually rejects the message.
           let overflowLink: string | undefined;
           const resolveOverflowLink = (): string | undefined => {
@@ -243,29 +270,17 @@ export function createSlackAdapters(
             return overflowLink;
           };
 
-          const postOrUpdate = async (body: string): Promise<void> => {
-            if (messageTs) {
-              await slack.updateMessage(channelId, messageTs, body);
-              return;
-            }
-            if (isThreaded && rootTs) {
-              messageTs = await slack.postInThread(channelId, rootTs, body);
-              return;
-            }
-            messageTs = await postFirstMessage(body);
-          };
-
           accumulatedText = text;
           const displayText = isWorking ? accumulatedText + WORKING_INDICATOR : accumulatedText;
 
           try {
-            await postOrUpdate(displayText);
+            await postOrUpdateMain(displayText);
           } catch (err) {
             if (!isSlackMsgTooLong(err)) throw err;
             const link = resolveOverflowLink();
             const fallback = await postSlackTextWithFallback(
               async (body) => {
-                await postOrUpdate(body);
+                await postOrUpdateMain(body);
               },
               text,
               link,
@@ -276,36 +291,26 @@ export function createSlackAdapters(
               await postDiagnosticDirect(`_(continued from truncated message)_\n\n${continuation}`);
             }
           }
-        } catch (err) {
-          log.logWarning(
-            "Slack replaceResponse error",
-            err instanceof Error ? err.message : String(err),
-          );
-          reportResponseError(err, "replace_response", {
-            textLength: text.length,
-            hadExistingResponse: Boolean(messageTs),
-          });
-        }
-      });
-      await updatePromise;
+        },
+        () => ({
+          textLength: text.length,
+          hadExistingResponse: Boolean(messageTs),
+        }),
+      );
     },
 
     respondDiagnostic: async (text: string, options?: { style?: "muted" | "error" }) => {
-      updatePromise = updatePromise.then(async () => {
-        try {
+      await queueResponseOperation(
+        "respondDiagnostic",
+        "respond_diagnostic",
+        async () => {
           await postDiagnosticDirect(text, options);
-        } catch (err) {
-          log.logWarning(
-            "Slack respondDiagnostic error",
-            err instanceof Error ? err.message : String(err),
-          );
-          reportResponseError(err, "respond_diagnostic", {
-            textLength: text.length,
-            style: options?.style,
-          });
-        }
-      });
-      await updatePromise;
+        },
+        () => ({
+          textLength: text.length,
+          style: options?.style,
+        }),
+      );
     },
 
     respondToolResult: async (result: ChatToolResult) => {
@@ -329,34 +334,28 @@ export function createSlackAdapters(
     },
 
     setWorking: async (working: boolean) => {
-      updatePromise = updatePromise.then(async () => {
-        try {
+      await queueResponseOperation(
+        "setWorking",
+        "set_working",
+        async () => {
           isWorking = working;
           if (messageTs) {
             const displayText = isWorking ? accumulatedText + WORKING_INDICATOR : accumulatedText;
             const updates: Promise<void>[] = [
               slack.updateMessage(channelId, messageTs, displayText),
             ];
-            if (!working) {
-              if (rootTs) {
-                updates.push(
-                  slack
-                    .setAssistantStatus(channelId, rootTs, "")
-                    .catch((err) => onAssistantStatusError("clear-on-idle", err)),
-                );
-              }
+            if (!working && rootTs) {
+              updates.push(
+                slack
+                  .setAssistantStatus(channelId, rootTs, "")
+                  .catch((err) => onAssistantStatusError("clear-on-idle", err)),
+              );
             }
             await Promise.all(updates);
           }
-        } catch (err) {
-          log.logWarning(
-            "Slack setWorking error",
-            err instanceof Error ? err.message : String(err),
-          );
-          reportResponseError(err, "set_working", { working });
-        }
-      });
-      await updatePromise;
+        },
+        () => ({ working }),
+      );
     },
 
     deleteResponse: async () => {

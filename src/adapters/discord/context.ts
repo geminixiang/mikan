@@ -6,7 +6,12 @@ import type {
 } from "../../adapter.js";
 import * as log from "../../log.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
-import { createChatResponseErrorReporter, formatToolArgs, splitText } from "../shared.js";
+import {
+  createChatResponseErrorReporter,
+  formatToolArgs,
+  splitText,
+  type ChatResponseErrorOperation,
+} from "../shared.js";
 import type { DiscordBot, DiscordEvent } from "./bot.js";
 
 export const DISCORD_FORMATTING_GUIDE = `## Discord Formatting (Markdown)
@@ -117,106 +122,96 @@ export function createDiscordAdapters(
     conversationKind: message.conversationKind,
   }));
 
+  async function postOrUpdateResponse(displayText: string): Promise<void> {
+    if (messageId !== null) {
+      await bot.updateMessageRaw(channelId, messageId, displayText);
+      return;
+    }
+    stopTyping();
+    if (threadTargetId) {
+      messageId = await bot.postInThread(channelId, threadTargetId, displayText);
+    } else if (replyTargetId) {
+      messageId = await bot.postReply(channelId, replyTargetId, displayText);
+    } else {
+      messageId = await bot.postMessage(channelId, displayText);
+    }
+  }
+
+  async function postSplitResponse(text: string): Promise<void> {
+    const [displayText, ...extraParts] = splitText(text, MAX_LENGTH, formatDiscordContinuation);
+    await postOrUpdateResponse(displayText);
+    for (const part of extraParts) {
+      await postDiagnosticMessage(part);
+    }
+  }
+
+  async function queueDiscordResponse(
+    label: string,
+    operation: ChatResponseErrorOperation,
+    work: () => Promise<void>,
+    report: (err: unknown) => Record<string, unknown>,
+  ): Promise<void> {
+    updatePromise = updatePromise.then(async () => {
+      try {
+        await work();
+      } catch (err) {
+        log.logWarning(`Discord ${label} error`, err instanceof Error ? err.message : String(err));
+        reportResponseError(err, operation, report(err));
+      }
+    });
+    await updatePromise;
+  }
+
   const responseCtx: ChatResponseContext = {
     respond: async (text: string) => {
-      updatePromise = updatePromise.then(async () => {
-        try {
+      await queueDiscordResponse(
+        "respond",
+        "respond",
+        async () => {
           accumulatedText = accumulatedText ? `${accumulatedText}\n${text}` : text;
-          const [displayText, ...extraParts] = splitText(
-            isWorking ? accumulatedText + workingIndicator : accumulatedText,
-            MAX_LENGTH,
-            formatDiscordContinuation,
-          );
-
-          if (messageId !== null) {
-            await bot.updateMessageRaw(channelId, messageId, displayText);
-          } else {
-            stopTyping();
-            if (threadTargetId) {
-              messageId = await bot.postInThread(channelId, threadTargetId, displayText);
-            } else if (replyTargetId) {
-              messageId = await bot.postReply(channelId, replyTargetId, displayText);
-            } else {
-              messageId = await bot.postMessage(channelId, displayText);
-            }
-          }
-          for (const part of extraParts) {
-            await postDiagnosticMessage(part);
-          }
-
+          await postSplitResponse(isWorking ? accumulatedText + workingIndicator : accumulatedText);
           if (messageId !== null) {
             bot.logBotResponse(channelId, text, messageId);
           }
-        } catch (err) {
-          log.logWarning("Discord respond error", err instanceof Error ? err.message : String(err));
-          reportResponseError(err, "respond", {
-            phase: messageId ? "update" : "initial_post",
-            textLength: text.length,
-            accumulatedLength: accumulatedText.length,
-          });
-        }
-      });
-      await updatePromise;
+        },
+        () => ({
+          phase: messageId ? "update" : "initial_post",
+          textLength: text.length,
+          accumulatedLength: accumulatedText.length,
+        }),
+      );
     },
 
     replaceResponse: async (text: string) => {
-      updatePromise = updatePromise.then(async () => {
-        try {
+      await queueDiscordResponse(
+        "replaceResponse",
+        "replace_response",
+        async () => {
           accumulatedText = text;
-          const [displayText, ...extraParts] = splitText(
-            accumulatedText,
-            MAX_LENGTH,
-            formatDiscordContinuation,
-          );
-
-          if (messageId !== null) {
-            await bot.updateMessageRaw(channelId, messageId, displayText);
-          } else {
-            stopTyping();
-            if (threadTargetId) {
-              messageId = await bot.postInThread(channelId, threadTargetId, displayText);
-            } else if (replyTargetId) {
-              messageId = await bot.postReply(channelId, replyTargetId, displayText);
-            } else {
-              messageId = await bot.postMessage(channelId, displayText);
-            }
-          }
-          for (const part of extraParts) {
-            await postDiagnosticMessage(part);
-          }
-        } catch (err) {
-          log.logWarning(
-            "Discord replaceResponse error",
-            err instanceof Error ? err.message : String(err),
-          );
-          reportResponseError(err, "replace_response", {
-            textLength: text.length,
-            hadExistingResponse: Boolean(messageId),
-          });
-        }
-      });
-      await updatePromise;
+          await postSplitResponse(accumulatedText);
+        },
+        () => ({
+          textLength: text.length,
+          hadExistingResponse: Boolean(messageId),
+        }),
+      );
     },
 
     respondDiagnostic: async (text: string, options?: { style?: "muted" | "error" }) => {
-      updatePromise = updatePromise.then(async () => {
-        try {
+      await queueDiscordResponse(
+        "respondDiagnostic",
+        "respond_diagnostic",
+        async () => {
           const prefix = options?.style === "error" ? "*Error:* " : "";
           for (const part of splitText(`${prefix}${text}`, MAX_LENGTH, formatDiscordContinuation)) {
             await postDiagnosticMessage(part);
           }
-        } catch (err) {
-          log.logWarning(
-            "Discord respondDiagnostic error",
-            err instanceof Error ? err.message : String(err),
-          );
-          reportResponseError(err, "respond_diagnostic", {
-            textLength: text.length,
-            style: options?.style,
-          });
-        }
-      });
-      await updatePromise;
+        },
+        () => ({
+          textLength: text.length,
+          style: options?.style,
+        }),
+      );
     },
 
     respondToolResult: async (result: ChatToolResult) => {

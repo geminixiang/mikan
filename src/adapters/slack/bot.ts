@@ -822,6 +822,66 @@ export class SlackBot implements Bot {
     };
   }
 
+  private buildSlashCommandEvent(
+    payload: {
+      command: string;
+      text?: string;
+      channel_id: string;
+      user_id: string;
+      user_name?: string;
+      thread_ts?: string;
+    },
+    options: { type?: BotEvent["type"]; includeText?: boolean; thread?: boolean } = {},
+  ): { event: BotEvent; adapters: BotAdapters } {
+    const conversationId = payload.channel_id;
+    const isDirectMessage = conversationId.startsWith("D");
+    const createdAt = new Date();
+    const eventTs = (createdAt.getTime() / 1000).toFixed(6);
+    const userName = payload.user_name ?? this.getUser(payload.user_id)?.userName;
+    const commandSuffix = options.includeText ? payload.text?.trim() : undefined;
+    const commandText = commandSuffix ? `${payload.command} ${commandSuffix}` : payload.command;
+    const threadTs = options.thread ? payload.thread_ts : undefined;
+    const sessionKey = options.thread
+      ? resolveSlackSessionKey(conversationId, threadTs)
+      : conversationId;
+
+    this.logToFile(conversationId, {
+      date: createdAt.toISOString(),
+      ts: eventTs,
+      user: payload.user_id,
+      userName,
+      text: commandText,
+      attachments: [],
+      isBot: false,
+      ...(threadTs ? { threadTs } : {}),
+    });
+
+    const event: BotEvent = {
+      type: options.type ?? (isDirectMessage ? "dm" : "mention"),
+      conversationId,
+      conversationKind: isDirectMessage ? "direct" : "shared",
+      ts: eventTs,
+      user: payload.user_id,
+      text: commandText,
+      attachments: [],
+      ...(threadTs ? { thread_ts: threadTs } : {}),
+      sessionKey,
+    };
+
+    const adapters = this.createCommandAdapters(
+      conversationId,
+      payload.user_id,
+      userName,
+      commandText,
+      eventTs,
+      isDirectMessage
+        ? { ...(threadTs ? { threadTs } : {}) }
+        : { ephemeralChannelId: conversationId, ...(threadTs ? { threadTs } : {}) },
+    );
+
+    return { event, adapters };
+  }
+
   private createSlashCommandBot(conversationId: string, threadTs?: string): Bot {
     return {
       start: async () => {},
@@ -846,44 +906,10 @@ export class SlackBot implements Bot {
     user_id: string;
     user_name?: string;
   }): Promise<void> {
-    const commandSuffix = payload.text?.trim();
-    const commandText = commandSuffix ? `${payload.command} ${commandSuffix}` : payload.command;
-    const createdAt = new Date();
-    const eventTs = (createdAt.getTime() / 1000).toFixed(6);
-    const sourceChannelId = payload.channel_id;
-    const isDirectMessage = sourceChannelId.startsWith("D");
-    const userName = payload.user_name ?? this.getUser(payload.user_id)?.userName;
-
-    this.logToFile(sourceChannelId, {
-      date: createdAt.toISOString(),
-      ts: eventTs,
-      user: payload.user_id,
-      userName,
-      text: commandText,
-      attachments: [],
-      isBot: false,
+    const { event, adapters } = this.buildSlashCommandEvent(payload, {
+      type: payload.channel_id.startsWith("D") ? "dm" : "private_command",
+      includeText: true,
     });
-
-    const event: BotEvent = {
-      type: isDirectMessage ? "dm" : "private_command",
-      conversationId: sourceChannelId,
-      conversationKind: isDirectMessage ? "direct" : "shared",
-      ts: eventTs,
-      user: payload.user_id,
-      text: commandText,
-      attachments: [],
-      sessionKey: sourceChannelId,
-    };
-
-    const adapters = this.createCommandAdapters(
-      sourceChannelId,
-      payload.user_id,
-      userName,
-      commandText,
-      eventTs,
-      isDirectMessage ? {} : { ephemeralChannelId: sourceChannelId },
-    );
-
     await this.handler.handleEvent(event, this, adapters);
   }
 
@@ -928,45 +954,7 @@ export class SlackBot implements Bot {
     user_id: string;
     user_name?: string;
   }): Promise<void> {
-    const conversationId = payload.channel_id;
-    const isDirectMessage = conversationId.startsWith("D");
-    const createdAt = new Date();
-    const eventTs = (createdAt.getTime() / 1000).toFixed(6);
-    const userName = payload.user_name ?? this.getUser(payload.user_id)?.userName;
-    const commandSuffix = payload.text?.trim();
-    const commandText = commandSuffix ? `${payload.command} ${commandSuffix}` : payload.command;
-
-    this.logToFile(conversationId, {
-      date: createdAt.toISOString(),
-      ts: eventTs,
-      user: payload.user_id,
-      userName,
-      text: commandText,
-      attachments: [],
-      isBot: false,
-    });
-
-    const sessionKey = conversationId;
-    const event: BotEvent = {
-      type: isDirectMessage ? "dm" : "mention",
-      conversationId,
-      conversationKind: isDirectMessage ? "direct" : "shared",
-      ts: eventTs,
-      user: payload.user_id,
-      text: commandText,
-      attachments: [],
-      sessionKey,
-    };
-
-    const adapters = this.createCommandAdapters(
-      conversationId,
-      payload.user_id,
-      userName,
-      commandText,
-      eventTs,
-      isDirectMessage ? {} : { ephemeralChannelId: conversationId },
-    );
-
+    const { event, adapters } = this.buildSlashCommandEvent(payload, { includeText: true });
     await this.handler.handleEvent(event, this, adapters);
   }
 
@@ -997,48 +985,7 @@ export class SlackBot implements Bot {
     user_name?: string;
     thread_ts?: string;
   }): Promise<void> {
-    const conversationId = payload.channel_id;
-    const isDirectMessage = conversationId.startsWith("D");
-    const createdAt = new Date();
-    const eventTs = (createdAt.getTime() / 1000).toFixed(6);
-    const userName = payload.user_name ?? this.getUser(payload.user_id)?.userName;
-    const commandText = payload.command;
-
-    this.logToFile(conversationId, {
-      date: createdAt.toISOString(),
-      ts: eventTs,
-      user: payload.user_id,
-      userName,
-      text: commandText,
-      attachments: [],
-      isBot: false,
-      threadTs: payload.thread_ts,
-    });
-
-    const sessionKey = resolveSlackSessionKey(conversationId, payload.thread_ts);
-    const event: BotEvent = {
-      type: isDirectMessage ? "dm" : "mention",
-      conversationId,
-      conversationKind: isDirectMessage ? "direct" : "shared",
-      ts: eventTs,
-      user: payload.user_id,
-      text: commandText,
-      attachments: [],
-      thread_ts: payload.thread_ts,
-      sessionKey,
-    };
-
-    const adapters = this.createCommandAdapters(
-      conversationId,
-      payload.user_id,
-      userName,
-      commandText,
-      eventTs,
-      isDirectMessage
-        ? { threadTs: payload.thread_ts }
-        : { ephemeralChannelId: conversationId, threadTs: payload.thread_ts },
-    );
-
+    const { event, adapters } = this.buildSlashCommandEvent(payload, { thread: true });
     await this.handler.handleEvent(event, this, adapters);
   }
 
@@ -1049,48 +996,7 @@ export class SlackBot implements Bot {
     user_name?: string;
     thread_ts?: string;
   }): Promise<void> {
-    const conversationId = payload.channel_id;
-    const isDirectMessage = conversationId.startsWith("D");
-    const createdAt = new Date();
-    const eventTs = (createdAt.getTime() / 1000).toFixed(6);
-    const userName = payload.user_name ?? this.getUser(payload.user_id)?.userName;
-    const commandText = payload.command;
-
-    this.logToFile(conversationId, {
-      date: createdAt.toISOString(),
-      ts: eventTs,
-      user: payload.user_id,
-      userName,
-      text: commandText,
-      attachments: [],
-      isBot: false,
-      threadTs: payload.thread_ts,
-    });
-
-    const sessionKey = resolveSlackSessionKey(conversationId, payload.thread_ts);
-    const event: BotEvent = {
-      type: isDirectMessage ? "dm" : "mention",
-      conversationId,
-      conversationKind: isDirectMessage ? "direct" : "shared",
-      ts: eventTs,
-      user: payload.user_id,
-      text: commandText,
-      attachments: [],
-      thread_ts: payload.thread_ts,
-      sessionKey,
-    };
-
-    const adapters = this.createCommandAdapters(
-      conversationId,
-      payload.user_id,
-      userName,
-      commandText,
-      eventTs,
-      isDirectMessage
-        ? { threadTs: payload.thread_ts }
-        : { ephemeralChannelId: conversationId, threadTs: payload.thread_ts },
-    );
-
+    const { event, adapters } = this.buildSlashCommandEvent(payload, { thread: true });
     await this.handler.handleEvent(event, this, adapters);
   }
 
@@ -1105,70 +1011,212 @@ export class SlackBot implements Bot {
       log.logWarning("Slack socket unable_to_start", err ? String(err) : "");
     });
 
-    // Channel @mentions
-    this.socketClient.on("app_mention", ({ event, ack }) => {
-      const e = event as {
-        text: string;
-        channel: string;
-        user: string;
-        ts: string;
-        thread_ts?: string;
-        files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
-      };
+    this.socketClient.on("app_mention", (payload) => this.handleAppMention(payload));
+    this.socketClient.on("message", (payload) => this.handleMessageEvent(payload));
+    this.socketClient.on("slash_commands", (payload) => void this.handleSlashCommand(payload));
+    this.socketClient.on("app_home_opened", (payload) => this.handleAppHomeOpened(payload));
+    this.socketClient.on("block_actions", (payload) => void this.handleBlockAction(payload));
+  }
 
-      // Skip DMs (handled by message event)
-      if (e.channel.startsWith("D")) {
+  private handleAppMention({ event, ack }: { event: unknown; ack: () => void }): void {
+    const e = event as {
+      text: string;
+      channel: string;
+      user: string;
+      ts: string;
+      thread_ts?: string;
+      files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
+    };
+
+    // Skip DMs (handled by message event)
+    if (e.channel.startsWith("D")) {
+      ack();
+      return;
+    }
+
+    // Top-level mentions use a persistent channel session.
+    // Thread replies get their own isolated session (channelId:thread_ts).
+    const sessionKey = resolveSlackSessionKey(e.channel, e.thread_ts);
+
+    const slackEvent: SlackEvent = {
+      type: "mention",
+      conversationId: e.channel,
+      conversationKind: "shared",
+      channel: e.channel,
+      ts: e.ts,
+      thread_ts: e.thread_ts,
+      user: e.user,
+      text: this.stripOwnMention(e.text),
+      files: e.files,
+      sessionKey,
+    };
+
+    const attachmentsPromise = this.logUserMessage(slackEvent);
+
+    // Only trigger processing for messages AFTER startup (not replayed old messages)
+    if (this.startupTs && e.ts < this.startupTs) {
+      log.logInfo(
+        `[${e.channel}] Logged old message (pre-startup), not triggering: ${slackEvent.text.substring(0, 30)}`,
+      );
+      void attachmentsPromise.catch((err) => {
+        log.logWarning("Failed to log Slack message", String(err));
+      });
+      ack();
+      return;
+    }
+
+    // Check for stop command - execute immediately, don't queue!
+    if (this.isStopText(slackEvent.text)) {
+      const stopTarget = this.resolveStopTarget(e.channel, e.thread_ts);
+      if (stopTarget) {
+        this.handler.handleStop(stopTarget, e.channel, this);
+      } else {
+        this.postMessage(e.channel, formatNothingRunning("slack"));
+      }
+      void attachmentsPromise.catch((err) => {
+        log.logWarning("Failed to log Slack message", String(err));
+      });
+      ack();
+      return;
+    }
+
+    this.getQueue(this.resolveQueueKey(e.channel, sessionKey)).enqueue(async () => {
+      slackEvent.attachments = await attachmentsPromise;
+      const adapters = createSlackAdapters(slackEvent, this);
+      return this.handler.handleEvent(
+        slackEvent as unknown as import("../../adapter.js").BotEvent,
+        this,
+        adapters,
+      );
+    });
+
+    ack();
+  }
+
+  private handleMessageEvent({ event, ack }: { event: unknown; ack: () => void }): void {
+    const e = event as {
+      text?: string;
+      channel: string;
+      user?: string;
+      ts: string;
+      thread_ts?: string;
+      channel_type?: string;
+      subtype?: string;
+      bot_id?: string;
+      app_id?: string;
+      username?: string;
+      bot_profile?: { id?: string; app_id?: string; name?: string; real_name?: string };
+      blocks?: unknown[];
+      attachments?: unknown[];
+      files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
+    };
+
+    const hasFiles = !!e.files && e.files.length > 0;
+    const hasSlackContent = !!e.text || hasFiles || !!e.blocks?.length || !!e.attachments?.length;
+    const isOwnBotMessage =
+      (!!e.user && e.user === this.botUserId) || (!!this.botId && e.bot_id === this.botId);
+    if (isOwnBotMessage) {
+      ack();
+      return;
+    }
+
+    const isExternalBotMessage = !!e.bot_id || e.subtype === "bot_message";
+    if (isExternalBotMessage) {
+      if (e.subtype !== undefined && e.subtype !== "bot_message" && e.subtype !== "file_share") {
         ack();
         return;
       }
-
-      // Top-level mentions use a persistent channel session.
-      // Thread replies get their own isolated session (channelId:thread_ts).
-      const sessionKey = resolveSlackSessionKey(e.channel, e.thread_ts);
-
-      const slackEvent: SlackEvent = {
-        type: "mention",
-        conversationId: e.channel,
-        conversationKind: "shared",
-        channel: e.channel,
-        ts: e.ts,
-        thread_ts: e.thread_ts,
-        user: e.user,
-        text: this.stripOwnMention(e.text),
-        files: e.files,
-        sessionKey,
-      };
-
-      const attachmentsPromise = this.logUserMessage(slackEvent);
-
-      // Only trigger processing for messages AFTER startup (not replayed old messages)
-      if (this.startupTs && e.ts < this.startupTs) {
-        log.logInfo(
-          `[${e.channel}] Logged old message (pre-startup), not triggering: ${slackEvent.text.substring(0, 30)}`,
-        );
-        void attachmentsPromise.catch((err) => {
-          log.logWarning("Failed to log Slack message", String(err));
-        });
+      if (!hasSlackContent) {
         ack();
         return;
       }
+      void this.logExternalBotMessage(e).catch((err) => {
+        log.logWarning("Failed to log Slack bot message", String(err));
+      });
+      ack();
+      return;
+    }
 
-      // Check for stop command - execute immediately, don't queue!
-      if (this.isStopText(slackEvent.text)) {
-        const stopTarget = this.resolveStopTarget(e.channel, e.thread_ts);
-        if (stopTarget) {
-          this.handler.handleStop(stopTarget, e.channel, this);
-        } else {
-          this.postMessage(e.channel, formatNothingRunning("slack"));
-        }
-        void attachmentsPromise.catch((err) => {
-          log.logWarning("Failed to log Slack message", String(err));
-        });
-        ack();
-        return;
+    if (!e.user) {
+      ack();
+      return;
+    }
+    if (e.subtype !== undefined && e.subtype !== "file_share") {
+      ack();
+      return;
+    }
+    if (!hasSlackContent) {
+      ack();
+      return;
+    }
+
+    const isDM = e.channel_type === "im";
+    const conversationKind: ConversationKind = isDM ? "direct" : "shared";
+    const isBotMention = e.text?.includes(`<@${this.botUserId}>`);
+
+    // Skip channel @mentions - already handled by app_mention event
+    if (!isDM && isBotMention) {
+      ack();
+      return;
+    }
+
+    const isSharedThreadReply =
+      !isDM && this.shouldTriggerSharedThreadReply(e.channel, e.thread_ts);
+    const sessionKey =
+      isDM || isSharedThreadReply ? resolveSlackSessionKey(e.channel, e.thread_ts) : undefined;
+
+    const slackEvent: SlackEvent = {
+      type: isDM ? "dm" : "mention",
+      conversationId: e.channel,
+      conversationKind,
+      channel: e.channel,
+      ts: e.ts,
+      thread_ts: e.thread_ts,
+      user: e.user,
+      text: this.stripOwnMention(e.text),
+      files: e.files,
+      sessionKey,
+    };
+
+    const attachmentsPromise = this.logUserMessage(slackEvent);
+
+    // Only trigger processing for messages AFTER startup (not replayed old messages)
+    if (this.startupTs && e.ts < this.startupTs) {
+      log.logInfo(
+        `[${e.channel}] Skipping old message (pre-startup): ${slackEvent.text.substring(0, 30)}`,
+      );
+      void attachmentsPromise.catch((err) => {
+        log.logWarning("Failed to log Slack message", String(err));
+      });
+      ack();
+      return;
+    }
+
+    // Stop command for DM or shared-channel thread reply (app_mention handles "@mikan stop").
+    if ((isDM || (!isDM && e.thread_ts)) && this.isStopText(slackEvent.text)) {
+      const stopTarget = this.resolveStopTarget(e.channel, e.thread_ts);
+      if (stopTarget) {
+        this.handler.handleStop(stopTarget, e.channel, this);
+      } else {
+        this.postMessage(e.channel, formatNothingRunning("slack"));
       }
+      void attachmentsPromise.catch((err) => {
+        log.logWarning("Failed to log Slack message", String(err));
+      });
+      ack();
+      return;
+    }
 
-      this.getQueue(this.resolveQueueKey(e.channel, sessionKey)).enqueue(async () => {
+    const enqueueTriggered = () => {
+      const activeSessionKey =
+        slackEvent.sessionKey ?? resolveSlackSessionKey(e.channel, e.thread_ts);
+      // Auto-reply top-level channel messages start with no sessionKey because
+      // they are only candidates until the policy allows them. Once triggered,
+      // persist the resolved key on the event; otherwise the runtime fallback
+      // treats the message ts as a thread session (`channel:ts`) instead of the
+      // persistent top-level channel session.
+      slackEvent.sessionKey = activeSessionKey;
+      this.getQueue(this.resolveQueueKey(e.channel, activeSessionKey)).enqueue(async () => {
         slackEvent.attachments = await attachmentsPromise;
         const adapters = createSlackAdapters(slackEvent, this);
         return this.handler.handleEvent(
@@ -1177,307 +1225,170 @@ export class SlackBot implements Bot {
           adapters,
         );
       });
+    };
 
-      ack();
-    });
-
-    // All messages (for logging) + DMs (for triggering)
-    this.socketClient.on("message", ({ event, ack }) => {
-      const e = event as {
-        text?: string;
-        channel: string;
-        user?: string;
-        ts: string;
-        thread_ts?: string;
-        channel_type?: string;
-        subtype?: string;
-        bot_id?: string;
-        app_id?: string;
-        username?: string;
-        bot_profile?: { id?: string; app_id?: string; name?: string; real_name?: string };
-        blocks?: unknown[];
-        attachments?: unknown[];
-        files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
-      };
-
-      const hasFiles = !!e.files && e.files.length > 0;
-      const hasSlackContent = !!e.text || hasFiles || !!e.blocks?.length || !!e.attachments?.length;
-      const isOwnBotMessage =
-        (!!e.user && e.user === this.botUserId) || (!!this.botId && e.bot_id === this.botId);
-      if (isOwnBotMessage) {
-        ack();
-        return;
-      }
-
-      const isExternalBotMessage = !!e.bot_id || e.subtype === "bot_message";
-      if (isExternalBotMessage) {
-        if (e.subtype !== undefined && e.subtype !== "bot_message" && e.subtype !== "file_share") {
-          ack();
-          return;
-        }
-        if (!hasSlackContent) {
-          ack();
-          return;
-        }
-        void this.logExternalBotMessage(e).catch((err) => {
-          log.logWarning("Failed to log Slack bot message", String(err));
-        });
-        ack();
-        return;
-      }
-
-      if (!e.user) {
-        ack();
-        return;
-      }
-      if (e.subtype !== undefined && e.subtype !== "file_share") {
-        ack();
-        return;
-      }
-      if (!hasSlackContent) {
-        ack();
-        return;
-      }
-
-      const isDM = e.channel_type === "im";
-      const conversationKind: ConversationKind = isDM ? "direct" : "shared";
-      const isBotMention = e.text?.includes(`<@${this.botUserId}>`);
-
-      // Skip channel @mentions - already handled by app_mention event
-      if (!isDM && isBotMention) {
-        ack();
-        return;
-      }
-
-      const isSharedThreadReply =
-        !isDM && this.shouldTriggerSharedThreadReply(e.channel, e.thread_ts);
-      const sessionKey =
-        isDM || isSharedThreadReply ? resolveSlackSessionKey(e.channel, e.thread_ts) : undefined;
-
-      const slackEvent: SlackEvent = {
-        type: isDM ? "dm" : "mention",
-        conversationId: e.channel,
-        conversationKind,
-        channel: e.channel,
-        ts: e.ts,
-        thread_ts: e.thread_ts,
-        user: e.user,
-        text: this.stripOwnMention(e.text),
-        files: e.files,
-        sessionKey,
-      };
-
-      const attachmentsPromise = this.logUserMessage(slackEvent);
-
-      // Only trigger processing for messages AFTER startup (not replayed old messages)
-      if (this.startupTs && e.ts < this.startupTs) {
-        log.logInfo(
-          `[${e.channel}] Skipping old message (pre-startup): ${slackEvent.text.substring(0, 30)}`,
-        );
-        void attachmentsPromise.catch((err) => {
-          log.logWarning("Failed to log Slack message", String(err));
-        });
-        ack();
-        return;
-      }
-
-      // Stop command for DM or shared-channel thread reply (app_mention handles "@mikan stop").
-      if ((isDM || (!isDM && e.thread_ts)) && this.isStopText(slackEvent.text)) {
-        const stopTarget = this.resolveStopTarget(e.channel, e.thread_ts);
-        if (stopTarget) {
-          this.handler.handleStop(stopTarget, e.channel, this);
-        } else {
-          this.postMessage(e.channel, formatNothingRunning("slack"));
-        }
-        void attachmentsPromise.catch((err) => {
-          log.logWarning("Failed to log Slack message", String(err));
-        });
-        ack();
-        return;
-      }
-
-      const enqueueTriggered = () => {
-        const activeSessionKey =
-          slackEvent.sessionKey ?? resolveSlackSessionKey(e.channel, e.thread_ts);
-        // Auto-reply top-level channel messages start with no sessionKey because
-        // they are only candidates until the policy allows them. Once triggered,
-        // persist the resolved key on the event; otherwise the runtime fallback
-        // treats the message ts as a thread session (`channel:ts`) instead of the
-        // persistent top-level channel session.
-        slackEvent.sessionKey = activeSessionKey;
-        this.getQueue(this.resolveQueueKey(e.channel, activeSessionKey)).enqueue(async () => {
-          slackEvent.attachments = await attachmentsPromise;
-          const adapters = createSlackAdapters(slackEvent, this);
-          return this.handler.handleEvent(
-            slackEvent as unknown as import("../../adapter.js").BotEvent,
-            this,
-            adapters,
-          );
-        });
-      };
-
-      const logOnly = () => {
-        void attachmentsPromise.catch((err) => {
-          log.logWarning("Failed to log Slack message", String(err));
-        });
-      };
-
-      if (isDM || isSharedThreadReply) {
-        enqueueTriggered();
-        ack();
-        return;
-      }
-
-      // Shared-channel non-mention, non-thread: gate via auto-reply policy.
-      // evaluateAutoReplyPolicy never throws — judge errors/timeouts surface as
-      // trigger:false with a distinct reason, and the user message has already
-      // been queued for logging via logUserMessage above.
-      evaluateAutoReplyPolicy({
-        event: slackEvent as unknown as import("../../adapter.js").BotEvent,
-        workingDir: this.workingDir,
-      }).then((triggerResult) => {
-        if (triggerResult.trigger) enqueueTriggered();
-        else logOnly();
+    const logOnly = () => {
+      void attachmentsPromise.catch((err) => {
+        log.logWarning("Failed to log Slack message", String(err));
       });
+    };
 
+    if (isDM || isSharedThreadReply) {
+      enqueueTriggered();
       ack();
+      return;
+    }
+
+    // Shared-channel non-mention, non-thread: gate via auto-reply policy.
+    // evaluateAutoReplyPolicy never throws — judge errors/timeouts surface as
+    // trigger:false with a distinct reason, and the user message has already
+    // been queued for logging via logUserMessage above.
+    evaluateAutoReplyPolicy({
+      event: slackEvent as unknown as import("../../adapter.js").BotEvent,
+      workingDir: this.workingDir,
+    }).then((triggerResult) => {
+      if (triggerResult.trigger) enqueueTriggered();
+      else logOnly();
     });
 
-    this.socketClient.on("slash_commands", async ({ body, ack }) => {
-      const payload = body as {
-        command?: string;
-        text?: string;
-        channel_id?: string;
-        user_id?: string;
-        user_name?: string;
-        thread_ts?: string;
-      };
+    ack();
+  }
 
-      await ack();
+  private async handleSlashCommand({
+    body,
+    ack,
+  }: {
+    body: unknown;
+    ack: () => Promise<void>;
+  }): Promise<void> {
+    const payload = body as {
+      command?: string;
+      text?: string;
+      channel_id?: string;
+      user_id?: string;
+      user_name?: string;
+      thread_ts?: string;
+    };
 
-      if (!payload.command || !payload.channel_id || !payload.user_id) {
-        return;
-      }
+    await ack();
 
-      const handlerPromise =
-        payload.command === "/pi-login"
-          ? this.routeSlashLoginCommand({
+    if (!payload.command || !payload.channel_id || !payload.user_id) {
+      return;
+    }
+
+    const handlerPromise =
+      payload.command === "/pi-login"
+        ? this.routeSlashLoginCommand({
+            command: payload.command,
+            text: payload.text,
+            channel_id: payload.channel_id,
+            user_id: payload.user_id,
+            user_name: payload.user_name,
+          })
+        : payload.command === "/pi-new"
+          ? this.routeSlashNewCommand({
               command: payload.command,
-              text: payload.text,
               channel_id: payload.channel_id,
               user_id: payload.user_id,
               user_name: payload.user_name,
             })
-          : payload.command === "/pi-new"
-            ? this.routeSlashNewCommand({
+          : payload.command === "/pi-session"
+            ? this.routeSlashSessionCommand({
                 command: payload.command,
                 channel_id: payload.channel_id,
                 user_id: payload.user_id,
                 user_name: payload.user_name,
+                thread_ts: payload.thread_ts,
               })
-            : payload.command === "/pi-session"
-              ? this.routeSlashSessionCommand({
+            : payload.command === "/pi-model"
+              ? this.routeSlashModelCommand({
                   command: payload.command,
+                  text: payload.text,
                   channel_id: payload.channel_id,
                   user_id: payload.user_id,
                   user_name: payload.user_name,
-                  thread_ts: payload.thread_ts,
                 })
-              : payload.command === "/pi-model"
-                ? this.routeSlashModelCommand({
+              : payload.command === "/pi-sandbox"
+                ? this.routeSlashSandboxCommand({
                     command: payload.command,
                     text: payload.text,
                     channel_id: payload.channel_id,
                     user_id: payload.user_id,
                     user_name: payload.user_name,
                   })
-                : payload.command === "/pi-sandbox"
-                  ? this.routeSlashSandboxCommand({
+                : payload.command === "/pi-auto-reply"
+                  ? this.routeSlashAutoReplyCommand({
                       command: payload.command,
                       text: payload.text,
                       channel_id: payload.channel_id,
                       user_id: payload.user_id,
                       user_name: payload.user_name,
                     })
-                  : payload.command === "/pi-auto-reply"
-                    ? this.routeSlashAutoReplyCommand({
+                  : payload.command === "/pi-admin"
+                    ? this.routeSlashAdminCommand({
                         command: payload.command,
-                        text: payload.text,
                         channel_id: payload.channel_id,
                         user_id: payload.user_id,
                         user_name: payload.user_name,
+                        thread_ts: payload.thread_ts,
                       })
-                    : payload.command === "/pi-admin"
-                      ? this.routeSlashAdminCommand({
-                          command: payload.command,
-                          channel_id: payload.channel_id,
-                          user_id: payload.user_id,
-                          user_name: payload.user_name,
-                          thread_ts: payload.thread_ts,
-                        })
-                      : null;
+                    : null;
 
-      if (!handlerPromise) {
-        return;
-      }
+    if (!handlerPromise) {
+      return;
+    }
 
-      handlerPromise.catch((err) => {
-        log.logWarning(
-          "Slack slash command error",
-          err instanceof Error ? err.message : String(err),
-        );
-      });
+    handlerPromise.catch((err) => {
+      log.logWarning("Slack slash command error", err instanceof Error ? err.message : String(err));
     });
+  }
 
-    // App Home tab
-    this.socketClient.on("app_home_opened", ({ event, ack }) => {
-      const e = event as { user: string; tab: string };
+  private handleAppHomeOpened({ event, ack }: { event: unknown; ack: () => void }): void {
+    const e = event as { user: string; tab: string };
+    ack();
+    if (e.tab !== "home") return;
+
+    this.webClient.views
+      .publish({
+        user_id: e.user,
+        view: this.buildHomeView(),
+      })
+      .catch((err) => {
+        log.logWarning(`Failed to publish App Home view`, String(err));
+      });
+  }
+
+  private async handleBlockAction({ body, ack }: { body: any; ack: () => void }): Promise<void> {
+    const action = body.actions?.[0];
+    if (!action || !action.action_id?.startsWith("force_stop_")) {
       ack();
-      if (e.tab !== "home") return;
+      return;
+    }
 
+    ack();
+    const sessionKey = action.action_id.replace("force_stop_", "").replace(/_/g, ":");
+    const userId = body.user?.id;
+    const channelId = body.container?.channel_id || sessionKey.split(":")[0];
+
+    log.logInfo(`[Force Stop] User ${userId} requested force stop for ${sessionKey}`);
+
+    // Use handler's forceStop method
+    this.handler.forceStop(sessionKey);
+
+    // Notify in channel
+    await this.postMessage(channelId, formatForceStopped("slack", userId ?? "unknown"));
+
+    // Refresh home tab
+    if (userId) {
       this.webClient.views
         .publish({
-          user_id: e.user,
+          user_id: userId,
           view: this.buildHomeView(),
         })
         .catch((err) => {
-          log.logWarning(`Failed to publish App Home view`, String(err));
+          log.logWarning(`Failed to refresh App Home view`, String(err));
         });
-    });
-
-    // Handle button clicks (Force Stop)
-    this.socketClient.on("block_actions", async ({ body, ack }) => {
-      const action = body.actions?.[0];
-      if (!action || !action.action_id?.startsWith("force_stop_")) {
-        ack();
-        return;
-      }
-
-      ack();
-      const sessionKey = action.action_id.replace("force_stop_", "").replace(/_/g, ":");
-      const userId = body.user?.id;
-      const channelId = body.container?.channel_id || sessionKey.split(":")[0];
-
-      log.logInfo(`[Force Stop] User ${userId} requested force stop for ${sessionKey}`);
-
-      // Use handler's forceStop method
-      this.handler.forceStop(sessionKey);
-
-      // Notify in channel
-      await this.postMessage(channelId, formatForceStopped("slack", userId ?? "unknown"));
-
-      // Refresh home tab
-      if (userId) {
-        this.webClient.views
-          .publish({
-            user_id: userId,
-            view: this.buildHomeView(),
-          })
-          .catch((err) => {
-            log.logWarning(`Failed to refresh App Home view`, String(err));
-          });
-      }
-    });
+    }
   }
 
   /**

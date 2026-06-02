@@ -112,83 +112,81 @@ export function createTelegramAdapters(
     conversationKind: message.conversationKind,
   }));
 
+  const sendSplitText = async (
+    text: string,
+    firstPart: (part: string) => Promise<void>,
+  ): Promise<void> => {
+    const [head, ...tail] = splitText(text, MAX_LENGTH, formatTelegramContinuation);
+    await firstPart(head);
+    for (const part of tail) {
+      await sendContinuation(part);
+    }
+  };
+
+  const queueTelegramSend = async (
+    label: string,
+    work: () => Promise<void>,
+    report: (err: unknown) => void,
+  ): Promise<void> => {
+    updatePromise = updatePromise.then(async () => {
+      try {
+        await work();
+      } catch (err) {
+        await notifyError(bot, chatId, label, err, () => report(err));
+      }
+    });
+    await updatePromise;
+  };
+
   const responseCtx: ChatResponseContext = {
     respond: async (text: string) => {
-      updatePromise = updatePromise.then(async () => {
-        try {
+      await queueTelegramSend(
+        "respond",
+        async () => {
           const sanitized = sanitizeTelegramHtml(text);
           accumulatedText = accumulatedText ? `${accumulatedText}\n${sanitized}` : sanitized;
-          const [firstPart, ...extraParts] = splitText(
-            accumulatedText,
-            MAX_LENGTH,
-            formatTelegramContinuation,
-          );
-          await sendOrUpdate(firstPart);
-          for (const part of extraParts) {
-            await sendContinuation(part);
-          }
+          await sendSplitText(accumulatedText, sendOrUpdate);
           if (messageId !== null) {
             bot.logBotResponse(conversationId, text, String(messageId));
           }
-        } catch (err) {
-          await notifyError(bot, chatId, "respond", err, () =>
-            reportResponseError(err, "respond", {
-              phase: messageId ? "update" : "initial_post",
-              textLength: text.length,
-              accumulatedLength: accumulatedText.length,
-            }),
-          );
-        }
-      });
-      await updatePromise;
+        },
+        (err) =>
+          reportResponseError(err, "respond", {
+            phase: messageId ? "update" : "initial_post",
+            textLength: text.length,
+            accumulatedLength: accumulatedText.length,
+          }),
+      );
     },
 
     replaceResponse: async (text: string) => {
-      updatePromise = updatePromise.then(async () => {
-        try {
+      await queueTelegramSend(
+        "replaceResponse",
+        async () => {
           accumulatedText = sanitizeTelegramHtml(text);
-          const [firstPart, ...extraParts] = splitText(
-            accumulatedText,
-            MAX_LENGTH,
-            formatTelegramContinuation,
-          );
-          await sendOrUpdate(firstPart);
-          for (const part of extraParts) {
-            await sendContinuation(part);
-          }
-        } catch (err) {
-          await notifyError(bot, chatId, "replaceResponse", err, () =>
-            reportResponseError(err, "replace_response", {
-              textLength: text.length,
-              hadExistingResponse: Boolean(messageId),
-            }),
-          );
-        }
-      });
-      await updatePromise;
+          await sendSplitText(accumulatedText, sendOrUpdate);
+        },
+        (err) =>
+          reportResponseError(err, "replace_response", {
+            textLength: text.length,
+            hadExistingResponse: Boolean(messageId),
+          }),
+      );
     },
 
     respondDiagnostic: async (text: string, options?: { style?: "muted" | "error" }) => {
-      updatePromise = updatePromise.then(async () => {
-        try {
+      await queueTelegramSend(
+        "respondDiagnostic",
+        async () => {
           const prefix = options?.style === "error" ? "Error: " : "";
-          for (const part of splitText(
-            sanitizeTelegramHtml(`${prefix}${text}`),
-            MAX_LENGTH,
-            formatTelegramContinuation,
-          )) {
-            await sendContinuation(part);
-          }
-        } catch (err) {
-          await notifyError(bot, chatId, "respondDiagnostic", err, () =>
-            reportResponseError(err, "respond_diagnostic", {
-              textLength: text.length,
-              style: options?.style,
-            }),
-          );
-        }
-      });
-      await updatePromise;
+          await sendSplitText(sanitizeTelegramHtml(`${prefix}${text}`), sendContinuation);
+        },
+        (err) =>
+          reportResponseError(err, "respond_diagnostic", {
+            textLength: text.length,
+            style: options?.style,
+          }),
+      );
     },
 
     respondToolResult: async (result: ChatToolResult) => {
