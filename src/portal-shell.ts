@@ -1,3 +1,4 @@
+import { escapeHtml, escapeHtmlAttr } from "./html.js";
 import { PRODUCT_NAME } from "./ui-copy.js";
 
 // ── Shared portal shell ────────────────────────────────────────────────────────
@@ -36,20 +37,6 @@ export interface PortalShellOptions {
   bodyAttributes?: Record<string, string>;
 }
 
-function escAttr(value: string): string {
-  return value.replace(
-    /[&<>"']/g,
-    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
-  );
-}
-
-function escHtml(value: string): string {
-  return value.replace(
-    /[&<>"']/g,
-    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
-  );
-}
-
 const NAV_ICONS: Record<PortalView, { label: string; svg: string }> = {
   admin: {
     label: "Admin",
@@ -80,21 +67,21 @@ function renderNav(activeView: PortalView, navLinks: Partial<Record<PortalView, 
     const isActive = view === activeView;
     const href = navLinks[view];
     const baseClass = `view-nav-btn${isActive ? " active" : ""}${!href && !isActive ? " disabled" : ""}`;
-    const attrs = `data-view="${view}" aria-label="${escAttr(meta.label)}" data-tooltip="${escAttr(meta.label)}"`;
+    const attrs = `data-view="${view}" aria-label="${escapeHtmlAttr(meta.label)}" data-tooltip="${escapeHtmlAttr(meta.label)}"`;
     if (href && !isActive) {
-      return `<a class="${baseClass}" href="${escAttr(href)}" ${attrs}>${meta.svg}</a>`;
+      return `<a class="${baseClass}" href="${escapeHtmlAttr(href)}" ${attrs}>${meta.svg}</a>`;
     }
     if (isActive) {
       return `<span class="${baseClass}" aria-current="page" ${attrs}>${meta.svg}</span>`;
     }
-    return `<span class="${baseClass}" aria-disabled="true" ${attrs} data-tooltip="${escAttr(meta.label)} (no token)">${meta.svg}</span>`;
+    return `<span class="${baseClass}" aria-disabled="true" ${attrs} data-tooltip="${escapeHtmlAttr(meta.label)} (no token)">${meta.svg}</span>`;
   });
   return `<nav class="floating-view-nav" aria-label="Primary views">${buttons.join("")}</nav>`;
 }
 
 function renderTopbar(options: PortalShellOptions): string {
   const identity = options.identity
-    ? `<span class="topbar-user">${escHtml(options.identity.primary)}${options.identity.secondary ? ` · ${escHtml(options.identity.secondary)}` : ""}</span>`
+    ? `<span class="topbar-user">${escapeHtml(options.identity.primary)}${options.identity.secondary ? ` · ${escapeHtml(options.identity.secondary)}` : ""}</span>`
     : "";
 
   let switcher = "";
@@ -105,12 +92,12 @@ function renderTopbar(options: PortalShellOptions): string {
         .map((c) => {
           const label = `${c.label}${c.running ? " (running)" : ""}`;
           const selected = c.id === currentId ? " selected" : "";
-          return `<option value="${escAttr(c.id)}"${selected}>${escHtml(label)}</option>`;
+          return `<option value="${escapeHtmlAttr(c.id)}"${selected}>${escapeHtml(label)}</option>`;
         })
         .join("");
       switcher = `<select id="conv-switcher" class="conv-inline-select" aria-label="Switch conversation">${opts}</select>`;
     } else {
-      switcher = `<select id="conv-switcher" class="conv-inline-select" aria-label="Switch conversation"><option>${escHtml(currentId)}</option></select>`;
+      switcher = `<select id="conv-switcher" class="conv-inline-select" aria-label="Switch conversation"><option>${escapeHtml(currentId)}</option></select>`;
     }
   }
 
@@ -118,7 +105,7 @@ function renderTopbar(options: PortalShellOptions): string {
     <div class="topbar-brand">
       <span class="topbar-wordmark">${PRODUCT_NAME}</span>
       <span class="topbar-sep">·</span>
-      <span class="topbar-title">${escHtml(options.pageTitle)}</span>
+      <span class="topbar-title">${escapeHtml(options.pageTitle)}</span>
     </div>
     <div class="topbar-meta">
       ${identity}
@@ -129,7 +116,7 @@ function renderTopbar(options: PortalShellOptions): string {
 
 export function renderPortalShell(options: PortalShellOptions): string {
   const bodyAttrs = Object.entries(options.bodyAttributes ?? {})
-    .map(([key, value]) => `${escAttr(key)}="${escAttr(value)}"`)
+    .map(([key, value]) => `${escapeHtmlAttr(key)}="${escapeHtmlAttr(value)}"`)
     .join(" ");
   const titleText = `${options.pageTitle} — ${PRODUCT_NAME}`;
   const nav = renderNav(options.activeView, options.navLinks ?? {});
@@ -143,7 +130,7 @@ export function renderPortalShell(options: PortalShellOptions): string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escHtml(titleText)}</title>
+  <title>${escapeHtml(titleText)}</title>
   <style>${portalShellStyles}</style>
   ${extraStyles}
   ${extraHead}

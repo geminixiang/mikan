@@ -20,6 +20,34 @@ export async function replyDiagnosticWithContext(
   await responseCtx.respondDiagnostic(text, options);
 }
 
+export async function replyPrivatelyWithContext(
+  context: CommandContext,
+  text: string,
+  options?: { style?: "muted" | "error" },
+): Promise<void> {
+  if (context.privateConversation) {
+    await replyDiagnosticWithContext(context.responseCtx, text, options);
+    return;
+  }
+
+  if (context.bot.postPrivateDiagnostic) {
+    await context.bot.postPrivateDiagnostic(
+      context.conversationId,
+      context.platformUserId,
+      text,
+      options,
+    );
+    return;
+  }
+
+  if (context.bot.postPrivate) {
+    await context.bot.postPrivate(context.conversationId, context.platformUserId, text);
+    return;
+  }
+
+  await replyDiagnosticWithContext(context.responseCtx, text, options);
+}
+
 export function formatCommandSummary(title: string, lines: string[]): string {
   const nonEmpty = lines.filter((line) => line.trim().length > 0);
   const compactLines =

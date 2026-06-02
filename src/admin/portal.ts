@@ -14,6 +14,7 @@ import {
   saveConversationSandboxConfig,
   type AgentConfig,
 } from "../config.js";
+import { escapeHtml } from "../html.js";
 import { renderPortalShell } from "../portal-shell.js";
 import type { SandboxConfig } from "../sandbox/index.js";
 import { resolveExistingSessionFile } from "../session-view/service.js";
@@ -1265,12 +1266,7 @@ async function readJsonBody(
   callback(parsed);
 }
 
-function esc(s: string): string {
-  return s.replace(
-    /[&<>"']/g,
-    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
-  );
-}
+const esc = escapeHtml;
 
 // ── HTML ───────────────────────────────────────────────────────────────────────
 

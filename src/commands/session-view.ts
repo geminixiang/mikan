@@ -1,37 +1,16 @@
 import { resolveExistingSessionFile } from "../session-view/service.js";
 import { parseSessionViewCommand } from "../session-view/command.js";
 import type { CommandContext, CommandHandler } from "./types.js";
-import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
+import { formatCommandSummary, replyPrivatelyWithContext } from "./utils.js";
 
 export class SessionViewCommandHandler implements CommandHandler {
   async tryHandle(context: CommandContext): Promise<boolean> {
     if (!parseSessionViewCommand(context.commandText)) return false;
 
     const sendSessionViewReply = async (lines: string[]): Promise<void> => {
-      const text = formatCommandSummary("Session", lines);
-      if (context.privateConversation) {
-        await replyDiagnosticWithContext(context.responseCtx, text, { style: "muted" });
-        return;
-      }
-
-      if (context.bot.postPrivateDiagnostic) {
-        await context.bot.postPrivateDiagnostic(
-          context.conversationId,
-          context.platformUserId,
-          text,
-          {
-            style: "muted",
-          },
-        );
-        return;
-      }
-
-      if (context.bot.postPrivate) {
-        await context.bot.postPrivate(context.conversationId, context.platformUserId, text);
-        return;
-      }
-
-      await replyDiagnosticWithContext(context.responseCtx, text, { style: "muted" });
+      await replyPrivatelyWithContext(context, formatCommandSummary("Session", lines), {
+        style: "muted",
+      });
     };
 
     if (!context.privateConversation && !context.bot.postPrivate) {

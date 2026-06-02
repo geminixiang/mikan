@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { basename } from "path";
 import MarkdownIt from "markdown-it";
 import type { Bot, BotAdapters, BotEvent, BotHandler, ChatResponseContext } from "../adapter.js";
+import { escapeHtml } from "../html.js";
 import * as log from "../log.js";
 import { renderPortalShell } from "../portal-shell.js";
 import { reportUserFacingError } from "../sentry.js";
@@ -978,14 +979,7 @@ function formatDate(value: string): string {
   return date.toLocaleString();
 }
 
-function esc(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
+const esc = escapeHtml;
 
 const sessionViewStyles = `
   :root {

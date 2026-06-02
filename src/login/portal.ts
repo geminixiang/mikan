@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { Bot, PlatformName } from "../adapter.js";
 import { handleAdminRequest, type AdminRuntimeBridge } from "../admin/portal.js";
 import type { InMemoryAdminTokenStore } from "../admin/store.js";
+import { escapeHtml } from "../html.js";
 import { renderPortalShell } from "../portal-shell.js";
 import type { SandboxConfig } from "../sandbox/index.js";
 import { resolveLinkBaseUrl } from "../config.js";
@@ -534,12 +535,7 @@ async function readJsonBody(
 
 // ── HTML helpers ───────────────────────────────────────────────────────────────
 
-function esc(s: string): string {
-  return s.replace(
-    /[&<>"']/g,
-    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
-  );
-}
+const esc = escapeHtml;
 
 const loginViewStyles = `
   /* Login portal inherits all base chrome from the shared shell.
