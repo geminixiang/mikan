@@ -14,6 +14,9 @@ function makeSlackBot(overrides: Partial<SlackBot> = {}): SlackBot {
     postMessage: vi.fn().mockResolvedValue("T001"),
     postInThread: vi.fn().mockResolvedValue("T002"),
     updateMessage: vi.fn().mockResolvedValue(undefined),
+    startMessageStream: vi.fn().mockRejectedValue(new Error("streaming unsupported in mock")),
+    appendMessageStream: vi.fn().mockResolvedValue(undefined),
+    stopMessageStream: vi.fn().mockResolvedValue(undefined),
     deleteMessage: vi.fn().mockResolvedValue(undefined),
     logBotResponse: vi.fn(),
     uploadFile: vi.fn().mockResolvedValue(undefined),
@@ -148,6 +151,30 @@ describe("respond() — non-threaded", () => {
     await responseCtx.respond("hello");
     expect(bot.postMessage).toHaveBeenCalledWith("C001", expect.stringContaining("hello"));
     expect(bot.postInThread).not.toHaveBeenCalled();
+  });
+
+  test("uses Slack stream APIs when available", async () => {
+    const bot = makeSlackBot({
+      startMessageStream: vi.fn().mockResolvedValue("STREAM1"),
+      appendMessageStream: vi.fn().mockResolvedValue(undefined),
+      stopMessageStream: vi.fn().mockResolvedValue(undefined),
+    });
+    const event = makeEvent({ thread_ts: undefined });
+    const { responseCtx } = createSlackAdapters(event, bot);
+
+    await responseCtx.respond("first");
+    await responseCtx.respond("second");
+    await responseCtx.setWorking(false);
+
+    expect(bot.startMessageStream).toHaveBeenCalledWith(
+      "C001",
+      expect.stringContaining("first"),
+      undefined,
+    );
+    expect(bot.appendMessageStream).toHaveBeenCalledWith("C001", "STREAM1", "second");
+    expect(bot.stopMessageStream).toHaveBeenCalledWith("C001", "STREAM1");
+    expect(bot.postMessage).not.toHaveBeenCalled();
+    expect(bot.updateMessage).not.toHaveBeenCalled();
   });
 });
 
