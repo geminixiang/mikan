@@ -840,9 +840,7 @@ export class SlackBot implements Bot {
       userName,
       commandText,
       eventTs,
-      isDirectMessage
-        ? { ...(threadTs ? { threadTs } : {}) }
-        : { ephemeralChannelId: conversationId, ...(threadTs ? { threadTs } : {}) },
+      isDirectMessage ? { threadTs } : { ephemeralChannelId: conversationId, threadTs },
     );
 
     return { event, adapters };
