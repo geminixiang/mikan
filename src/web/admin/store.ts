@@ -1,5 +1,5 @@
-import { randomBytes } from "crypto";
 import type { PlatformName } from "../../adapter.js";
+import { InMemoryTokenStore } from "../token-store.js";
 
 export interface AdminToken {
   token: string;
@@ -13,9 +13,7 @@ export interface AdminToken {
 
 const TTL_MS = 30 * 60 * 1000;
 
-export class InMemoryAdminTokenStore {
-  private tokens = new Map<string, AdminToken>();
-
+export class InMemoryAdminTokenStore extends InMemoryTokenStore<AdminToken> {
   create(args: {
     platform: PlatformName;
     platformUserId: string;
@@ -28,30 +26,16 @@ export class InMemoryAdminTokenStore {
       }
     }
 
-    const token: AdminToken = {
-      token: randomBytes(16).toString("hex"),
+    const { token, expiresAt } = this.mintToken(TTL_MS);
+    const record: AdminToken = {
+      token,
       platform: args.platform,
       platformUserId: args.platformUserId,
       ...(args.platformUserName ? { platformUserName: args.platformUserName } : {}),
       conversationId: args.conversationId,
-      expiresAt: Date.now() + TTL_MS,
+      expiresAt,
     };
-    this.tokens.set(token.token, token);
-    return token;
-  }
-
-  peek(rawToken: string): AdminToken | undefined {
-    const entry = this.tokens.get(rawToken);
-    if (!entry || Date.now() > entry.expiresAt) return undefined;
-    return entry;
-  }
-
-  purge(): void {
-    const now = Date.now();
-    for (const [key, t] of this.tokens) {
-      if (now > t.expiresAt) {
-        this.tokens.delete(key);
-      }
-    }
+    this.tokens.set(token, record);
+    return record;
   }
 }

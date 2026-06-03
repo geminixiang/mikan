@@ -620,34 +620,7 @@ function mapSessionSummaryEntry(entry: SessionBranchSummaryEntry): SessionViewIt
 }
 
 function assistantContentToText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-
-  const lines: string[] = [];
-
-  for (const block of content) {
-    if (!block || typeof block !== "object") continue;
-    const value = block as Record<string, unknown>;
-    if (value.type === "text" && typeof value.text === "string") {
-      lines.push(value.text);
-      continue;
-    }
-    if (value.type === "thinking" && typeof value.thinking === "string") {
-      lines.push(`[thinking]\n${value.thinking}`);
-      continue;
-    }
-    if (value.type === "toolCall") {
-      const name = typeof value.name === "string" ? value.name : "tool";
-      const args = value.arguments === undefined ? "" : JSON.stringify(value.arguments, null, 2);
-      lines.push([`[toolCall] ${name}`, args].filter(Boolean).join("\n"));
-      continue;
-    }
-    if (value.type === "image") {
-      lines.push(`[image ${String(value.mimeType ?? "unknown")}]`);
-    }
-  }
-
-  return lines.join("\n\n");
+  return contentToText(content);
 }
 
 function contentToText(content: unknown): string {

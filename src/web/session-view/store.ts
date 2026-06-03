@@ -1,5 +1,5 @@
-import { randomBytes } from "crypto";
 import type { PlatformName } from "../../adapter.js";
+import { InMemoryTokenStore } from "../token-store.js";
 
 export interface SessionViewToken {
   token: string;
@@ -14,9 +14,7 @@ export interface SessionViewToken {
 
 const TTL_MS = 24 * 60 * 60 * 1000;
 
-export class InMemorySessionViewTokenStore {
-  private tokens = new Map<string, SessionViewToken>();
-
+export class InMemorySessionViewTokenStore extends InMemoryTokenStore<SessionViewToken> {
   create(
     platform: PlatformName,
     platformUserId: string,
@@ -25,32 +23,18 @@ export class InMemorySessionViewTokenStore {
     sessionFile: string,
     platformUserName?: string,
   ): SessionViewToken {
-    const token: SessionViewToken = {
-      token: randomBytes(16).toString("hex"),
+    const { token, expiresAt } = this.mintToken(TTL_MS);
+    const record: SessionViewToken = {
+      token,
       platform,
       platformUserId,
       ...(platformUserName ? { platformUserName } : {}),
       conversationId,
       sessionKey,
       sessionFile,
-      expiresAt: Date.now() + TTL_MS,
+      expiresAt,
     };
-    this.tokens.set(token.token, token);
-    return token;
-  }
-
-  peek(rawToken: string): SessionViewToken | undefined {
-    const entry = this.tokens.get(rawToken);
-    if (!entry || Date.now() > entry.expiresAt) return undefined;
-    return entry;
-  }
-
-  purge(): void {
-    const now = Date.now();
-    for (const [key, value] of this.tokens) {
-      if (now > value.expiresAt) {
-        this.tokens.delete(key);
-      }
-    }
+    this.tokens.set(token, record);
+    return record;
   }
 }

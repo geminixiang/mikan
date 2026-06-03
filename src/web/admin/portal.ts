@@ -14,6 +14,7 @@ import {
   type AgentConfig,
 } from "../../config.js";
 import { escapeHtml } from "../../utils/html.js";
+import { readRawBody } from "../../utils/http-body.js";
 import { renderPortalShell } from "../../portal-shell.js";
 import type { SandboxConfig } from "../../sandbox/index.js";
 import { resolveExistingSessionFile } from "../session-view/service.js";
@@ -212,17 +213,24 @@ function routeApiRequest(
 
 // ── Scope helpers ──────────────────────────────────────────────────────────────
 
-function resolveTargetConversation(
-  body: Record<string, unknown>,
+function resolveConversationId(
+  requested: string,
   token: AdminToken,
 ): { conversationId: string; error?: string } {
-  const requested = typeof body.conversationId === "string" ? body.conversationId.trim() : "";
   if (!requested) return { conversationId: token.conversationId };
   if (requested === token.conversationId) return { conversationId: requested };
   if (requested.includes("/") || requested.includes("..")) {
     return { conversationId: requested, error: "Invalid conversationId." };
   }
   return { conversationId: requested };
+}
+
+function resolveTargetConversation(
+  body: Record<string, unknown>,
+  token: AdminToken,
+): { conversationId: string; error?: string } {
+  const requested = typeof body.conversationId === "string" ? body.conversationId.trim() : "";
+  return resolveConversationId(requested, token);
 }
 
 function requireAdminWorkingDir(res: ServerResponse, services: AdminServices): string | null {
@@ -741,12 +749,7 @@ function resolveConversationFromQuery(
   token: AdminToken,
 ): { conversationId: string; error?: string } {
   const requested = (url.searchParams.get("conversationId") ?? "").trim();
-  if (!requested) return { conversationId: token.conversationId };
-  if (requested === token.conversationId) return { conversationId: requested };
-  if (requested.includes("/") || requested.includes("..")) {
-    return { conversationId: requested, error: "Invalid conversationId." };
-  }
-  return { conversationId: requested };
+  return resolveConversationId(requested, token);
 }
 
 interface SafePathResult {
@@ -1292,25 +1295,8 @@ async function readJsonBody(
   res: ServerResponse,
   callback: (body: Record<string, unknown>) => void,
 ): Promise<void> {
-  let data = "";
-  let tooLarge = false;
-
-  await new Promise<void>((resolve) => {
-    req.on("data", (chunk: Buffer) => {
-      if (tooLarge) return;
-      data += chunk.toString();
-      if (data.length > 32 * 1024) {
-        tooLarge = true;
-        res.writeHead(413);
-        res.end();
-        req.destroy();
-      }
-    });
-    req.on("end", resolve);
-    req.on("error", resolve);
-  });
-
-  if (tooLarge) return;
+  const data = await readRawBody(req, res, 32 * 1024);
+  if (data === null) return;
 
   let parsed: Record<string, unknown>;
   try {
@@ -1500,7 +1486,6 @@ function renderAdminPage(token: AdminToken): string {
         const data = await apiGet('/admin/api/models');
         availableModels = Array.isArray(data.models) ? data.models : [];
       } catch (err) {
-        console.error('Failed to load models', err);
         availableModels = [];
       } finally {
         modelsLoaded = true;
@@ -1566,7 +1551,7 @@ function renderAdminPage(token: AdminToken): string {
         }).join('');
         sel.addEventListener('change', () => setActiveConversation(sel.value));
       } catch (err) {
-        console.error('Failed to load conversations', err);
+        // ignore; conversation selector stays empty
       }
     }
 

@@ -4,6 +4,7 @@ import type { Bot, PlatformName } from "../../adapter.js";
 import { handleAdminRequest, type AdminRuntimeBridge } from "../admin/portal.js";
 import type { InMemoryAdminTokenStore } from "../admin/store.js";
 import { escapeHtml } from "../../utils/html.js";
+import { readRawBody } from "../../utils/http-body.js";
 import { renderPortalShell } from "../../portal-shell.js";
 import type { SandboxConfig } from "../../sandbox/index.js";
 import { resolveLinkBaseUrl } from "../../config.js";
@@ -513,24 +514,9 @@ async function readJsonBody(
   res: ServerResponse,
   onBody: (body: string) => Promise<void>,
 ): Promise<void> {
-  let body = "";
-  let bodyTooLarge = false;
-
-  req.on("data", (chunk: Buffer) => {
-    if (bodyTooLarge) return;
-    body += chunk.toString();
-    if (body.length > 16 * 1024) {
-      bodyTooLarge = true;
-      res.writeHead(413);
-      res.end();
-      req.destroy();
-    }
-  });
-
-  req.on("end", async () => {
-    if (bodyTooLarge) return;
-    await onBody(body);
-  });
+  const body = await readRawBody(req, res, 16 * 1024);
+  if (body === null) return;
+  await onBody(body);
 }
 
 // ── HTML helpers ───────────────────────────────────────────────────────────────
@@ -840,10 +826,6 @@ function renderHtmlDocument(title: string, shellContent: string): string {
   });
 }
 
-function renderPageDocument(title: string, body: string): string {
-  return renderHtmlDocument(title, `<section class="card">${body}</section>`);
-}
-
 function renderStatusPage(
   title: string,
   message: string,
@@ -851,14 +833,14 @@ function renderStatusPage(
   options?: { closeNote?: boolean },
 ): string {
   const closeNote = options?.closeNote ? '<p class="close-note">You can close this tab.</p>' : "";
-  return renderPageDocument(
+  return renderHtmlDocument(
     title,
-    `<div class="stack">
+    `<section class="card"><div class="stack">
       <p class="eyebrow">${PRODUCT_NAME}</p>
       <h1 class="page-title">${esc(title)}</h1>
       <div class="status ${tone}">${esc(message)}</div>
       ${closeNote}
-    </div>`,
+    </div></section>`,
   );
 }
 
