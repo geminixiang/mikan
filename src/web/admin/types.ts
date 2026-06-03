@@ -1,4 +1,5 @@
 import type { PlatformName, RunningSession } from "../../adapter.js";
+import type { TokenRecord } from "../types.js";
 import type { VaultManager } from "../../vault/index.js";
 import type { InMemorySessionViewTokenStore } from "../session-view/store.js";
 
@@ -27,12 +28,10 @@ export interface AdminServices {
   botsByPlatform?: Partial<Record<PlatformName, import("../../adapter.js").Bot>>;
 }
 
-export interface AdminToken {
-  token: string;
+export interface AdminToken extends TokenRecord {
   platform: PlatformName;
   platformUserId: string;
   platformUserName?: string;
   /** The conversation where /admin was invoked. Default scope for the 3 sub-pages. */
   conversationId: string;
-  expiresAt: number;
 }

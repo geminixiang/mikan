@@ -1,6 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { TSchema } from "@sinclair/typebox";
-import type { ChatResponseBlockKit } from "../adapter.js";
+import type { ChatResponseBlockKit, ConversationKind } from "../adapter.js";
 import { createAttachTool } from "../adapters/slack/tools/attach.js";
 import { createSlackBlockKitTool } from "../adapters/slack/tools/block-kit.js";
 import type { DockerContainerManager } from "../provisioner.js";
@@ -26,7 +26,7 @@ export function createMikanTools(
   setEventContext: (context: {
     platform: string;
     conversationId: string;
-    conversationKind: "direct" | "shared";
+    conversationKind: ConversationKind;
     userId: string;
   }) => void;
   setSandboxContext: (context: { conversationId: string; userId: string }) => void;

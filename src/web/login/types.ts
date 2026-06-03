@@ -1,4 +1,5 @@
 import type { PlatformName } from "../../adapter.js";
+import type { TokenRecord } from "../types.js";
 
 export type LoginCredentialKind = "api_key" | "oauth";
 
@@ -36,15 +37,13 @@ export type ParsedLoginCommand =
   | { command: "login" | "/login" | "/pi-login"; action: "shared_list" }
   | { command: "login" | "/login" | "/pi-login"; action: "copy_shared"; name: string };
 
-export interface LinkToken {
-  token: string;
+export interface LinkToken extends TokenRecord {
   platform: PlatformName;
   platformUserId: string;
   vaultId: string;
   providerId: string;
   /** Conversation to notify when binding completes */
   conversationId: string;
-  expiresAt: number;
 }
 
 /** Called after a binding is written, to notify the user in chat */

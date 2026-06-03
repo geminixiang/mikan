@@ -1,36 +1,11 @@
+import type { MikanEvent } from "../types.js";
+
 // ── event tool ───────────────────────────────────────────────────────────────
 
-export type EventPayload =
-  | {
-      type: "immediate";
-      platform: string;
-      conversationId: string;
-      conversationKind: "direct" | "shared";
-      userId: string;
-      text: string;
-    }
-  | {
-      type: "one-shot";
-      platform: string;
-      conversationId: string;
-      conversationKind: "direct" | "shared";
-      userId: string;
-      text: string;
-      at: string;
-    }
-  | {
-      type: "periodic";
-      platform: string;
-      conversationId: string;
-      conversationKind: "direct" | "shared";
-      userId: string;
-      text: string;
-      schedule: string;
-      timezone: string;
-    };
+export type EventPayload = MikanEvent;
 
 export interface EventStore {
-  write(filename: string, payload: EventPayload): Promise<{ path: string; size: number }>;
+  write(filename: string, payload: MikanEvent): Promise<{ path: string; size: number }>;
 }
 
 // ── truncation ───────────────────────────────────────────────────────────────

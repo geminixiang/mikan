@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 import { Bot as GrammyBot, InputFile } from "grammy";
 import type { Message } from "grammy/types";
-import type { Bot, BotEvent, BotHandler, PlatformInfo } from "../../adapter.js";
+import type { Bot, BotEvent, BotHandler, ConversationKind, PlatformInfo } from "../../adapter.js";
 import type { TelegramEvent } from "./types.js";
 import * as log from "../../log.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
@@ -40,7 +40,7 @@ interface MessageContext {
   text: string;
   chatId: string;
   chatType: string;
-  conversationKind: "direct" | "shared";
+  conversationKind: ConversationKind;
   userId: string;
   userName: string;
   msgId: string;

@@ -1,6 +1,7 @@
 import type { BotHandler } from "../../adapter.js";
 import type { Bot } from "../../adapter.js";
 import type { PlatformName } from "../../adapter.js";
+import type { TokenRecord } from "../types.js";
 
 // ── command ──────────────────────────────────────────────────────────────────
 
@@ -52,13 +53,11 @@ export interface SessionViewModel {
 
 // ── store ────────────────────────────────────────────────────────────────────
 
-export interface SessionViewToken {
-  token: string;
+export interface SessionViewToken extends TokenRecord {
   platform: PlatformName;
   platformUserId: string;
   platformUserName?: string;
   conversationId: string;
   sessionKey: string;
   sessionFile: string;
-  expiresAt: number;
 }

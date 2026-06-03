@@ -1,6 +1,6 @@
 import type { ConversationKind } from "../adapter.js";
-export type { ChatPlatform, ResolveSessionKeyOptions } from "./types.js";
-import type { ChatPlatform, ResolveSessionKeyOptions } from "./types.js";
+export type { ResolveSessionKeyOptions } from "./types.js";
+import type { ResolveSessionKeyOptions } from "./types.js";
 
 export function resolveChatSessionKey(options: ResolveSessionKeyOptions): string {
   const {
@@ -20,10 +20,7 @@ export function resolveChatSessionKey(options: ResolveSessionKeyOptions): string
   return `${conversationId}:${threadTs || messageId}`;
 }
 
-export function inferConversationKind(
-  platform: ChatPlatform,
-  conversationId: string,
-): ConversationKind {
+export function inferConversationKind(platform: string, conversationId: string): ConversationKind {
   if (platform === "slack") {
     return conversationId.startsWith("D") ? "direct" : "shared";
   }

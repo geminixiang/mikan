@@ -18,8 +18,6 @@ export interface MikanSessionHeader {
 
 // ── session policy ───────────────────────────────────────────────────────────
 
-export type ChatPlatform = "slack" | "telegram" | "discord" | string;
-
 export interface ResolveSessionKeyOptions {
   conversationId: string;
   conversationKind: ConversationKind;

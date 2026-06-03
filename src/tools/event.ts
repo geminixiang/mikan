@@ -2,6 +2,7 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
+import type { ConversationKind } from "../adapter.js";
 import * as log from "../log.js";
 
 const eventSchema = Type.Object({
@@ -38,7 +39,7 @@ const eventSchema = Type.Object({
 interface EventToolContext {
   platform: string;
   conversationId: string;
-  conversationKind: "direct" | "shared";
+  conversationKind: ConversationKind;
   userId: string;
 }
 
