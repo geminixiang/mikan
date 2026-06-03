@@ -48,3 +48,23 @@ export interface SlackEventAnchorRunPlan<T = SlackEvent> {
   event: T;
   initialMessageTs?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Block action payload shapes (subset used by handleBlockAction /
+// handleSlackInteraction — @slack/types does not export these)
+// ---------------------------------------------------------------------------
+
+export interface SlackBlockAction {
+  action_id: string;
+  block_id?: string;
+  type?: string;
+  value?: string;
+  selected_option?: { text?: { text?: string }; value?: string };
+  selected_options?: Array<{ text?: { text?: string }; value?: string }>;
+}
+
+export interface SlackBlockActionBody {
+  actions?: SlackBlockAction[];
+  container?: { channel_id?: string; thread_ts?: string; message_ts?: string };
+  user?: { id?: string; username?: string; name?: string };
+}

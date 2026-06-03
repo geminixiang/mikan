@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "fs";
+import { readFileSync } from "fs";
 import { basename, join } from "path";
 import { Bot as GrammyBot, InputFile } from "grammy";
 import type { Message } from "grammy/types";
@@ -12,6 +12,7 @@ import {
   appendBotResponseLog,
   appendChannelLog,
   ChannelQueue,
+  downloadUrlToFile,
   resolveOnlyScopedStopTarget,
   resolveStopTarget,
   withRetry,
@@ -296,19 +297,11 @@ export class TelegramBot implements Bot {
       const localPath = `${chatId}/attachments/${filename}`;
       const fullDir = join(this.workingDir, chatId, "attachments");
 
-      mkdirSync(fullDir, { recursive: true });
-
       // Construct download URL
       const downloadUrl = `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`;
 
       // Download the file
-      const response = await fetch(downloadUrl);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const buffer = await response.arrayBuffer();
-      writeFileSync(join(fullDir, filename), Buffer.from(buffer));
+      await downloadUrlToFile(downloadUrl, join(fullDir, filename));
 
       return {
         name: originalName,

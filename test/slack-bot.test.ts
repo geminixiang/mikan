@@ -221,12 +221,15 @@ describe("SlackBot slash commands", () => {
       ["U123", { id: "U123", userName: "alice", displayName: "Alice" }],
     ]);
 
-    await (bot as any).routeSlashSandboxCommand({
-      command: "/pi-sandbox",
-      text: "boost",
-      channel_id: "C123",
-      user_id: "U123",
-      user_name: "alice",
+    await (bot as any).handleSlashCommand({
+      body: {
+        command: "/pi-sandbox",
+        text: "boost",
+        channel_id: "C123",
+        user_id: "U123",
+        user_name: "alice",
+      },
+      ack: vi.fn().mockResolvedValue(undefined),
     });
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
@@ -270,12 +273,15 @@ describe("SlackBot slash commands", () => {
       ["U123", { id: "U123", userName: "alice", displayName: "Alice" }],
     ]);
 
-    await (bot as any).routeSlashAutoReplyCommand({
-      command: "/pi-auto-reply",
-      text: "on",
-      channel_id: "C123",
-      user_id: "U123",
-      user_name: "alice",
+    await (bot as any).handleSlashCommand({
+      body: {
+        command: "/pi-auto-reply",
+        text: "on",
+        channel_id: "C123",
+        user_id: "U123",
+        user_name: "alice",
+      },
+      ack: vi.fn().mockResolvedValue(undefined),
     });
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
@@ -330,20 +336,27 @@ describe("SlackBot slash commands", () => {
       ["U123", { id: "U123", userName: "alice", displayName: "Alice" }],
     ]);
 
-    await (bot as any).routeSlashAutoReplyCommand({
-      command: "/pi-auto-reply",
-      text: "on",
-      channel_id: "C123",
-      user_id: "U123",
-      user_name: "alice",
+    await (bot as any).handleSlashCommand({
+      body: {
+        command: "/pi-auto-reply",
+        text: "on",
+        channel_id: "C123",
+        user_id: "U123",
+        user_name: "alice",
+      },
+      ack: vi.fn().mockResolvedValue(undefined),
     });
 
-    expect(postEphemeral).toHaveBeenCalledWith(
-      expect.objectContaining({
-        channel: "C123",
-        user: "U123",
-        text: expect.stringContaining("Auto-reply is enabled"),
-      }),
+    // handleSlashCommand fires handlerPromise without awaiting it (fast-ack design);
+    // wait until the handler has actually finished before asserting.
+    await vi.waitFor(() =>
+      expect(postEphemeral).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channel: "C123",
+          user: "U123",
+          text: expect.stringContaining("Auto-reply is enabled"),
+        }),
+      ),
     );
     expect(postEphemeral).toHaveBeenCalledWith(
       expect.objectContaining({

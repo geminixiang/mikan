@@ -13,7 +13,7 @@ import {
   type NewsChannel,
   type ThreadChannel,
 } from "discord.js";
-import { mkdirSync, readFileSync, writeFileSync } from "fs";
+import { readFileSync } from "fs";
 import { basename, join } from "path";
 
 import type {
@@ -35,6 +35,7 @@ import {
   appendBotResponseLog,
   appendChannelLog,
   ChannelQueue,
+  downloadUrlToFile,
   resolveOnlyScopedStopTarget,
   resolveStopTarget,
   withRetry,
@@ -341,16 +342,8 @@ export class DiscordBot implements Bot {
    * Download an attachment from URL to local file
    */
   private async downloadAttachment(dir: string, filename: string, url: string): Promise<void> {
-    mkdirSync(dir, { recursive: true });
-
     try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const buffer = await response.arrayBuffer();
-      writeFileSync(join(dir, filename), Buffer.from(buffer));
+      await downloadUrlToFile(url, join(dir, filename));
     } catch (err) {
       throw new Error(`Download failed: ${err instanceof Error ? err.message : String(err)}`, {
         cause: err,

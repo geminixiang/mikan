@@ -8,6 +8,7 @@
  */
 
 import { appendFileSync } from "fs";
+import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
 import type { BotHandler } from "../adapter.js";
 import { ensureDirExists } from "../utils/file-guards.js";
@@ -244,4 +245,18 @@ export function formatToolArgs(args: Record<string, unknown> | undefined): strin
   }
 
   return lines.join("\n");
+}
+
+/**
+ * Fetch `url` and write the response body to `destPath`, creating parent
+ * directories as needed. Throws on non-2xx responses or write failures.
+ */
+export async function downloadUrlToFile(url: string, destPath: string): Promise<void> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+  const buffer = await response.arrayBuffer();
+  await mkdir(join(destPath, ".."), { recursive: true });
+  await writeFile(destPath, Buffer.from(buffer));
 }

@@ -19,7 +19,13 @@ import { resolveConversationSettings } from "../../config.js";
 import type { EventsWatcher } from "../../events.js";
 import * as log from "../../log.js";
 import type { Attachment, ChannelStore } from "../../store.js";
-import type { SlackChannel, SlackEvent, SlackUser } from "./types.js";
+import type {
+  SlackBlockAction,
+  SlackBlockActionBody,
+  SlackChannel,
+  SlackEvent,
+  SlackUser,
+} from "./types.js";
 import { PRODUCT_NAME, formatForceStopped, formatNothingRunning } from "../../platform-messages.js";
 import {
   appendBotResponseLog,
@@ -89,6 +95,24 @@ function buildSlackAppMessageText(event: {
   collectSlackText(event.attachments, parts);
   const deduped = parts.filter((part, index) => parts.indexOf(part) === index);
   return deduped.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Shared mrkdwn truncation helper
+// ---------------------------------------------------------------------------
+
+const MRKDWN_CONTEXT_TEXT_LIMIT = 3000;
+
+/**
+ * Build a Slack context block whose text is capped at the mrkdwn limit.
+ * Used for muted diagnostics and ephemeral command responses.
+ */
+export function buildMrkdwnContextBlock(text: string): object {
+  const blockText =
+    text.length > MRKDWN_CONTEXT_TEXT_LIMIT
+      ? text.substring(0, MRKDWN_CONTEXT_TEXT_LIMIT - 20) + "\n_(truncated)_"
+      : text;
+  return { type: "context", elements: [{ type: "mrkdwn", text: blockText }] };
 }
 
 // ============================================================================
@@ -260,21 +284,14 @@ export class SlackBot implements Bot {
     options?: { style?: "muted" | "error" },
   ): Promise<void> {
     if (options?.style !== "muted") {
-      await this.postPrivate(
+      await this.postEphemeral(
         conversationId,
         userId,
         options?.style === "error" ? `_${text}_` : text,
       );
       return;
     }
-    const CONTEXT_TEXT_LIMIT = 3000;
-    const blockText =
-      text.length > CONTEXT_TEXT_LIMIT
-        ? text.substring(0, CONTEXT_TEXT_LIMIT - 20) + "\n_(truncated)_"
-        : text;
-    await this.postEphemeralBlocks(conversationId, userId, text, [
-      { type: "context", elements: [{ type: "mrkdwn", text: blockText }] },
-    ]);
+    await this.postEphemeralBlocks(conversationId, userId, text, [buildMrkdwnContextBlock(text)]);
   }
 
   async openDirectMessage(userId: string): Promise<string> {
@@ -762,12 +779,7 @@ export class SlackBot implements Bot {
     };
 
     const respondMuted = async (responseText: string) => {
-      const CONTEXT_TEXT_LIMIT = 3000;
-      const blockText =
-        responseText.length > CONTEXT_TEXT_LIMIT
-          ? responseText.substring(0, CONTEXT_TEXT_LIMIT - 20) + "\n_(truncated)_"
-          : responseText;
-      const blocks = [{ type: "context", elements: [{ type: "mrkdwn", text: blockText }] }];
+      const blocks = [buildMrkdwnContextBlock(responseText)];
       if (options.ephemeralChannelId) {
         await this.postEphemeralBlocks(
           options.ephemeralChannelId,
@@ -874,23 +886,6 @@ export class SlackBot implements Bot {
     return { event, adapters };
   }
 
-  private createSlashCommandBot(conversationId: string, threadTs?: string): Bot {
-    return {
-      start: async () => {},
-      postMessage: async (_channel: string, text: string) => {
-        if (threadTs) {
-          return this.postInThread(conversationId, threadTs, text);
-        }
-        return this.postMessage(conversationId, text);
-      },
-      updateMessage: async (channel: string, ts: string, text: string) => {
-        await this.updateMessage(channel, ts, text);
-      },
-      enqueueEvent: (event: BotEvent) => this.enqueueEvent(event),
-      getPlatformInfo: () => this.getPlatformInfo(),
-    };
-  }
-
   private async routeSlashLoginCommand(payload: {
     command: string;
     text?: string;
@@ -935,7 +930,14 @@ export class SlackBot implements Bot {
       isBot: false,
     });
 
-    const commandBot = this.createSlashCommandBot(conversationId);
+    const commandBot: Bot = {
+      start: async () => {},
+      postMessage: async (_channel: string, text: string) => this.postMessage(conversationId, text),
+      updateMessage: async (channel: string, ts: string, text: string) =>
+        this.updateMessage(channel, ts, text),
+      enqueueEvent: (event: BotEvent) => this.enqueueEvent(event),
+      getPlatformInfo: () => this.getPlatformInfo(),
+    };
     await this.handler.handleNewCommand(conversationId, conversationId, commandBot);
   }
 
@@ -948,26 +950,6 @@ export class SlackBot implements Bot {
   }): Promise<void> {
     const { event, adapters } = this.buildSlashCommandEvent(payload, { includeText: true });
     await this.handler.handleEvent(event, this, adapters);
-  }
-
-  private async routeSlashSandboxCommand(payload: {
-    command: string;
-    text?: string;
-    channel_id: string;
-    user_id: string;
-    user_name?: string;
-  }): Promise<void> {
-    await this.routeSlashModelCommand(payload);
-  }
-
-  private async routeSlashAutoReplyCommand(payload: {
-    command: string;
-    text?: string;
-    channel_id: string;
-    user_id: string;
-    user_name?: string;
-  }): Promise<void> {
-    await this.routeSlashModelCommand(payload);
   }
 
   private async routeSlashSessionCommand(payload: {
@@ -1010,7 +992,8 @@ export class SlackBot implements Bot {
     this.socketClient.on("block_actions", (payload) => void this.handleBlockAction(payload));
     this.socketClient.on(
       "interactive",
-      (payload) => void this.handleBlockAction(payload as { body: unknown; ack: () => void }),
+      (payload) =>
+        void this.handleBlockAction(payload as { body: SlackBlockActionBody; ack: () => void }),
     );
   }
 
@@ -1277,63 +1260,52 @@ export class SlackBot implements Bot {
       return;
     }
 
-    const handlerPromise =
-      payload.command === "/pi-login"
-        ? this.routeSlashLoginCommand({
-            command: payload.command,
-            text: payload.text,
-            channel_id: payload.channel_id,
-            user_id: payload.user_id,
-            user_name: payload.user_name,
-          })
-        : payload.command === "/pi-new"
-          ? this.routeSlashNewCommand({
-              command: payload.command,
-              channel_id: payload.channel_id,
-              user_id: payload.user_id,
-              user_name: payload.user_name,
-            })
-          : payload.command === "/pi-session"
-            ? this.routeSlashSessionCommand({
-                command: payload.command,
-                channel_id: payload.channel_id,
-                user_id: payload.user_id,
-                user_name: payload.user_name,
-                thread_ts: payload.thread_ts,
-              })
-            : payload.command === "/pi-model"
-              ? this.routeSlashModelCommand({
-                  command: payload.command,
-                  text: payload.text,
-                  channel_id: payload.channel_id,
-                  user_id: payload.user_id,
-                  user_name: payload.user_name,
-                })
-              : payload.command === "/pi-sandbox"
-                ? this.routeSlashSandboxCommand({
-                    command: payload.command,
-                    text: payload.text,
-                    channel_id: payload.channel_id,
-                    user_id: payload.user_id,
-                    user_name: payload.user_name,
-                  })
-                : payload.command === "/pi-auto-reply"
-                  ? this.routeSlashAutoReplyCommand({
-                      command: payload.command,
-                      text: payload.text,
-                      channel_id: payload.channel_id,
-                      user_id: payload.user_id,
-                      user_name: payload.user_name,
-                    })
-                  : payload.command === "/pi-admin"
-                    ? this.routeSlashAdminCommand({
-                        command: payload.command,
-                        channel_id: payload.channel_id,
-                        user_id: payload.user_id,
-                        user_name: payload.user_name,
-                        thread_ts: payload.thread_ts,
-                      })
-                    : null;
+    const { command, text, channel_id, user_id, user_name, thread_ts } = payload;
+
+    let handlerPromise: Promise<void> | null = null;
+    if (command === "/pi-login") {
+      handlerPromise = this.routeSlashLoginCommand({
+        command,
+        text,
+        channel_id,
+        user_id,
+        user_name,
+      });
+    } else if (command === "/pi-new") {
+      handlerPromise = this.routeSlashNewCommand({ command, channel_id, user_id, user_name });
+    } else if (command === "/pi-session") {
+      handlerPromise = this.routeSlashSessionCommand({
+        command,
+        channel_id,
+        user_id,
+        user_name,
+        thread_ts,
+      });
+    } else if (command === "/pi-model") {
+      handlerPromise = this.routeSlashModelCommand({
+        command,
+        text,
+        channel_id,
+        user_id,
+        user_name,
+      });
+    } else if (command === "/pi-sandbox" || command === "/pi-auto-reply") {
+      handlerPromise = this.routeSlashModelCommand({
+        command,
+        text,
+        channel_id,
+        user_id,
+        user_name,
+      });
+    } else if (command === "/pi-admin") {
+      handlerPromise = this.routeSlashAdminCommand({
+        command,
+        channel_id,
+        user_id,
+        user_name,
+        thread_ts,
+      });
+    }
 
     if (!handlerPromise) {
       return;
@@ -1359,7 +1331,13 @@ export class SlackBot implements Bot {
       });
   }
 
-  private async handleBlockAction({ body, ack }: { body: any; ack: () => void }): Promise<void> {
+  private async handleBlockAction({
+    body,
+    ack,
+  }: {
+    body: SlackBlockActionBody;
+    ack: () => void;
+  }): Promise<void> {
     const action = body.actions?.[0];
     if (!action) {
       ack();
@@ -1398,7 +1376,7 @@ export class SlackBot implements Bot {
     }
   }
 
-  private handleSlackInteraction(body: any, action: any): void {
+  private handleSlackInteraction(body: SlackBlockActionBody, action: SlackBlockAction): void {
     const container = body.container ?? {};
     const channelId = container.channel_id;
     const userId = body.user?.id;
@@ -1409,7 +1387,7 @@ export class SlackBot implements Bot {
       ? action.selected_options
       : undefined;
     const selectedText = selectedOption?.text?.text ?? selectedOption?.value;
-    const selectedTexts = selectedOptions?.map((option: any) => option.text?.text ?? option.value);
+    const selectedTexts = selectedOptions?.map((option) => option.text?.text ?? option.value);
     const valueText = selectedTexts?.length
       ? selectedTexts.join(", ")
       : (selectedText ?? action.value ?? action.action_id);
@@ -1437,7 +1415,7 @@ export class SlackBot implements Bot {
         selectedOption: selectedOption
           ? { text: selectedOption.text?.text, value: selectedOption.value }
           : undefined,
-        selectedOptions: selectedOptions?.map((option: any) => ({
+        selectedOptions: selectedOptions?.map((option) => ({
           text: option.text?.text,
           value: option.value,
         })),

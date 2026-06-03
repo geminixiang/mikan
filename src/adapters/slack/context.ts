@@ -13,7 +13,7 @@ import {
   type ChatResponseErrorOperation,
 } from "../shared.js";
 import { BufferedResponseStream } from "../streaming.js";
-import type { SlackBot, SlackEvent } from "./bot.js";
+import { buildMrkdwnContextBlock, type SlackBot, type SlackEvent } from "./bot.js";
 import { planSlackAdapterSession } from "./session.js";
 export type { SlackAdapterOptions } from "./types.js";
 import type { SlackAdapterOptions } from "./types.js";
@@ -145,13 +145,8 @@ export function createSlackAdapters(
 
     for (const part of splitText(text, MAX_THREAD_LENGTH, formatSlackContinuation)) {
       if (options?.style === "muted") {
-        const CONTEXT_TEXT_LIMIT = 3000;
-        const blockText =
-          part.length > CONTEXT_TEXT_LIMIT
-            ? part.substring(0, CONTEXT_TEXT_LIMIT - 20) + "\n_(truncated)_"
-            : part;
         const ts = await slack.postInThreadBlocks(channelId, threadAnchor, part, [
-          { type: "context", elements: [{ type: "mrkdwn", text: blockText }] },
+          buildMrkdwnContextBlock(part),
         ]);
         threadMessageTs.push(ts);
       } else {
