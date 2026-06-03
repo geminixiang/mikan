@@ -7,24 +7,26 @@ export class SessionViewCommandHandler implements CommandHandler {
   async tryHandle(context: CommandContext): Promise<boolean> {
     if (!parseSessionViewCommand(context.commandText)) return false;
 
-    const sendSessionViewReply = async (lines: string[]): Promise<void> => {
-      await replyPrivatelyWithContext(context, formatCommandSummary("Session", lines), {
-        style: "muted",
-      });
-    };
-
     if (!context.privateConversation && !context.bot.postPrivate) {
-      await sendSessionViewReply([
-        "為了保護對話內容，`/session` 目前只能在與機器人的私訊 / DM 中使用。",
-      ]);
+      await replyPrivatelyWithContext(
+        context,
+        formatCommandSummary("Session", [
+          "為了保護對話內容，`/session` 目前只能在與機器人的私訊 / DM 中使用。",
+        ]),
+        { style: "muted" },
+      );
       return true;
     }
 
     if (!context.services.portalBaseUrl) {
-      await sendSessionViewReply([
-        "Session viewer is not configured.",
-        "Set `MIKAN_LINK_URL` or `MIKAN_LINK_PORT` on the server.",
-      ]);
+      await replyPrivatelyWithContext(
+        context,
+        formatCommandSummary("Session", [
+          "Session viewer is not configured.",
+          "Set `MIKAN_LINK_URL` or `MIKAN_LINK_PORT` on the server.",
+        ]),
+        { style: "muted" },
+      );
       return true;
     }
 
@@ -34,10 +36,14 @@ export class SessionViewCommandHandler implements CommandHandler {
       context.sessionKey,
     );
     if (!sessionFile) {
-      await sendSessionViewReply([
-        "目前還沒有可查看的 session。",
-        "先和機器人對話一次，建立 session 後再試。",
-      ]);
+      await replyPrivatelyWithContext(
+        context,
+        formatCommandSummary("Session", [
+          "目前還沒有可查看的 session。",
+          "先和機器人對話一次，建立 session 後再試。",
+        ]),
+        { style: "muted" },
+      );
       return true;
     }
 
@@ -55,10 +61,14 @@ export class SessionViewCommandHandler implements CommandHandler {
       platformUserName,
     );
 
-    await sendSessionViewReply([
-      `${context.services.portalBaseUrl}/session?token=${token.token}`,
-      "Expires: 24 hours",
-    ]);
+    await replyPrivatelyWithContext(
+      context,
+      formatCommandSummary("Session", [
+        `${context.services.portalBaseUrl}/session?token=${token.token}`,
+        "Expires: 24 hours",
+      ]),
+      { style: "muted" },
+    );
     return true;
   }
 }

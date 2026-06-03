@@ -1,7 +1,6 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ThinkingLevel as PiAiThinkingLevel } from "@earendil-works/pi-ai";
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
-import { homedir } from "os";
+import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { join } from "path";
 import { resolveConversationSettings, updateConversationSettings } from "../config.js";
 import { matchCommand } from "./parse.js";
@@ -76,6 +75,7 @@ function formatModelSpec(provider: string, model: string, thinkingLevel?: Thinki
 }
 
 export class ModelCommandHandler implements CommandHandler {
+  constructor(private readonly modelRegistry: ModelRegistry) {}
   async tryHandle(context: CommandContext): Promise<boolean> {
     const parsed = parseModelCommand(context.commandText);
     if (!parsed) return false;
@@ -153,8 +153,6 @@ export class ModelCommandHandler implements CommandHandler {
   }
 
   private isKnownModel(provider: string, model: string): boolean {
-    const authStorage = AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json"));
-    const registry = ModelRegistry.create(authStorage);
-    return registry.find(provider, model) !== undefined;
+    return this.modelRegistry.find(provider, model) !== undefined;
   }
 }

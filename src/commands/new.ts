@@ -13,32 +13,30 @@ function parseNewCommand(text: string): ParsedNewCommand | null {
   return matched ? { command: matched.command } : null;
 }
 
-async function replyNewSession(context: CommandContext, lines: string[]): Promise<void> {
-  await replyDiagnosticWithContext(
-    context.responseCtx,
-    formatCommandSummary("New Session", lines),
-    {
-      style: "muted",
-    },
-  );
-}
-
 export class NewCommandHandler implements CommandHandler {
   async tryHandle(context: CommandContext): Promise<boolean> {
     if (!parseNewCommand(context.commandText)) return false;
 
     if (!context.privateConversation) {
-      await replyNewSession(context, [
-        "為了避免誤清除共享上下文，`/new` 目前只能在與機器人的私訊 / DM 中使用。",
-      ]);
+      await replyDiagnosticWithContext(
+        context.responseCtx,
+        formatCommandSummary("New Session", [
+          "為了避免誤清除共享上下文，`/new` 目前只能在與機器人的私訊 / DM 中使用。",
+        ]),
+        { style: "muted" },
+      );
       return true;
     }
 
     if (!context.services.runtime) {
-      await replyNewSession(context, [
-        "New command is not configured correctly on the server.",
-        "Please try again later.",
-      ]);
+      await replyDiagnosticWithContext(
+        context.responseCtx,
+        formatCommandSummary("New Session", [
+          "New command is not configured correctly on the server.",
+          "Please try again later.",
+        ]),
+        { style: "muted" },
+      );
       return true;
     }
 
