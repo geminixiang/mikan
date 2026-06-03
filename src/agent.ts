@@ -50,6 +50,7 @@ import {
 import { shouldSurfaceToolDiagnostic } from "./tool-diagnostics.js";
 import { createMikanTools } from "./tools/index.js";
 import * as Sentry from "@sentry/node";
+import { formatLocalTimestamp } from "./utils/date.js";
 
 export interface AgentRunner {
   syncChatHistory(currentMessageId?: string): void;
@@ -688,20 +689,8 @@ function createRunQueue(
   };
 }
 
-function padTwoDigits(n: number): string {
-  return n.toString().padStart(2, "0");
-}
-
 function formatTimestampedUserMessage(message: ChatMessage): string {
-  const now = new Date();
-  const offset = -now.getTimezoneOffset();
-  const offsetSign = offset >= 0 ? "+" : "-";
-  const offsetHours = padTwoDigits(Math.floor(Math.abs(offset) / 60));
-  const offsetMins = padTwoDigits(Math.abs(offset) % 60);
-  const timestamp =
-    `${now.getFullYear()}-${padTwoDigits(now.getMonth() + 1)}-${padTwoDigits(now.getDate())} ` +
-    `${padTwoDigits(now.getHours())}:${padTwoDigits(now.getMinutes())}:${padTwoDigits(now.getSeconds())}` +
-    `${offsetSign}${offsetHours}:${offsetMins}`;
+  const timestamp = formatLocalTimestamp(new Date())!;
   const threadContext = message.threadTs ? ` [in-thread:${message.threadTs}]` : "";
   return `[${timestamp}] [${message.userName || "unknown"}]${threadContext}: ${message.text}`;
 }
@@ -779,7 +768,7 @@ async function writePromptDebugContext(
 }
 
 function getFinalAssistantText(session: AgentSession): string {
-  const lastAssistant = session.messages.filter((message) => message.role === "assistant").pop();
+  const lastAssistant = session.messages.findLast((message) => message.role === "assistant");
   return (
     lastAssistant?.content
       .filter((content): content is { type: "text"; text: string } => content.type === "text")

@@ -2,6 +2,7 @@ import { SessionManager, type SessionEntry } from "@earendil-works/pi-coding-age
 import { join } from "path";
 import type { ConversationLogMessage } from "../context.js";
 import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-guards.js";
+import { formatLocalTimestamp } from "../utils/date.js";
 import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 import * as log from "../log.js";
 import { isPlatformHistorySession } from "./metadata.js";
@@ -594,24 +595,6 @@ function formatHistoryMessage(message: ConversationLogMessage): string {
   const userLabel = message.userName || message.user || "unknown";
   const timestamp = message.date ? formatLocalTimestamp(new Date(message.date)) : null;
   return timestamp ? `[${timestamp}] [${userLabel}]: ${text}` : `[${userLabel}]: ${text}`;
-}
-
-function formatLocalTimestamp(date: Date): string | null {
-  const time = date.getTime();
-  if (!Number.isFinite(time)) return null;
-
-  const offset = -date.getTimezoneOffset();
-  const sign = offset >= 0 ? "+" : "-";
-  const abs = Math.abs(offset);
-  return (
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
-    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}` +
-    `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
-  );
-}
-
-function pad(n: number): string {
-  return n.toString().padStart(2, "0");
 }
 
 function zeroUsage(): object {
