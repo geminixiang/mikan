@@ -6,15 +6,8 @@ import { join } from "path";
 
 const JUDGE_TIMEOUT_MS = 10_000;
 
-export type TriggerIntent = "mention" | "direct" | "thread-continuation" | "auto-reply-candidate";
-
-export type TriggerResult = { trigger: true; reason: string } | { trigger: false; reason: string };
-
-export type AutoReplyJudge = (input: {
-  event: BotEvent;
-  rules: string[];
-  conversationDir: string;
-}) => Promise<boolean>;
+export type { AutoReplyJudge, TriggerIntent, TriggerResult } from "./types.js";
+import type { AutoReplyJudge, TriggerIntent, TriggerResult } from "./types.js";
 
 /**
  * Trivially decide non-auto-reply intents synchronously. For "auto-reply-candidate"

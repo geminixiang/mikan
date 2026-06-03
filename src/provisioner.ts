@@ -33,26 +33,18 @@ interface ContainerState {
   containerName: string;
 }
 
-export interface ContainerMount {
-  source: string;
-  target: string;
-}
-
-export interface ResourceLimits {
-  cpus?: string;
-  memory?: string;
-}
-
-export interface SandboxLimitStatus {
-  limits?: ResourceLimits;
-  boosted: boolean;
-}
-
-export interface ProvisionOptions {
-  containerName?: string;
-  mounts?: ContainerMount[];
-  conversationId?: string;
-}
+export type {
+  ContainerMount,
+  ProvisionOptions,
+  ResourceLimits,
+  SandboxLimitStatus,
+} from "./types.js";
+import type {
+  ContainerMount,
+  ProvisionOptions,
+  ResourceLimits,
+  SandboxLimitStatus,
+} from "./types.js";
 
 export interface DockerContainerManagerOptions {
   limits?: ResourceLimits;

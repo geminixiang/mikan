@@ -12,30 +12,10 @@ import { PRODUCT_NAME } from "./platform-messages.js";
 // Sidebar buttons whose target token isn't available are rendered as anchors
 // only when href is provided; otherwise they are buttons in a disabled state.
 
-type PortalView = "admin" | "session" | "vault";
+export type { PortalShellOptions } from "./types.js";
+import type { PortalShellOptions } from "./types.js";
 
-export interface PortalShellOptions {
-  activeView: PortalView;
-  pageTitle: string;
-  identity?: {
-    primary: string;
-    secondary?: string;
-  };
-  conversationSwitcher?: {
-    currentId: string;
-    options?: Array<{ id: string; label: string; running?: boolean }>;
-  };
-  navLinks?: Partial<Record<PortalView, string>>;
-  body: string;
-  /** Additional CSS appended after the shared stylesheet. */
-  extraStyles?: string;
-  /** Inline script run after body. */
-  inlineScript?: string;
-  /** Extra <head> markup (e.g., third-party fonts already loaded by shared CSS, so usually empty). */
-  extraHead?: string;
-  /** Body-level data-* attributes (e.g., data-session-running). */
-  bodyAttributes?: Record<string, string>;
-}
+type PortalView = "admin" | "session" | "vault";
 
 const NAV_ICONS: Record<PortalView, { label: string; svg: string }> = {
   admin: {

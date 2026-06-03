@@ -8,27 +8,8 @@ import {
 } from "./utils/file-guards.js";
 import { withRetry } from "./adapters/shared.js";
 
-export interface Attachment {
-  original: string; // original filename from uploader
-  localPath: string; // path relative to working dir (e.g., "C12345/attachments/1732531234567_file.png")
-}
-
-export interface LoggedMessage {
-  date: string; // ISO 8601 date (e.g., "2025-11-26T10:44:00.000Z") for easy grepping
-  ts: string; // slack timestamp or epoch ms
-  user: string; // user ID (or "bot" for bot responses)
-  userName?: string; // handle (e.g., "mario")
-  displayName?: string; // display name (e.g., "Mario Zechner")
-  text: string;
-  attachments: Attachment[];
-  isBot: boolean;
-  threadTs?: string; // slack thread timestamp (root message ts)
-}
-
-export interface ChannelStoreConfig {
-  workingDir: string;
-  botToken: string; // needed for authenticated file downloads
-}
+export type { Attachment, ChannelStoreConfig, LoggedMessage } from "./types.js";
+import type { Attachment, ChannelStoreConfig, LoggedMessage } from "./types.js";
 
 class AttachmentDownloadHttpError extends Error {
   constructor(

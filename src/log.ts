@@ -1,12 +1,8 @@
 import chalk from "chalk";
 import { formatToolArgs } from "./adapters/shared.js";
 
-export interface LogContext {
-  conversationId: string;
-  userName?: string;
-  conversationName?: string; // For display like #dev-team vs C16HET4EQ
-  sessionId?: string;
-}
+export type { LogContext } from "./types.js";
+import type { LogContext } from "./types.js";
 
 function timestamp(): string {
   const now = new Date();

@@ -17,39 +17,14 @@ import * as log from "./log.js";
 import { reportUserFacingError } from "./observability/sentry.js";
 import { inferConversationKind } from "./sessions/policy.js";
 
-export interface ImmediateEvent {
-  type: "immediate";
-  platform: string;
-  conversationId: string;
-  conversationKind: ConversationKind;
-  /** Creator userId — routes tool execution to that user's vault selection when fired. */
-  userId?: string;
-  text: string;
-}
-
-export interface OneShotEvent {
-  type: "one-shot";
-  platform: string;
-  conversationId: string;
-  conversationKind: ConversationKind;
-  userId?: string;
-  text: string;
-  at: string; // ISO 8601 with timezone offset
-  // No sessionKey or threadTs: reminders fire as top-level messages regardless of where they were created.
-}
-
-export interface PeriodicEvent {
-  type: "periodic";
-  platform: string;
-  conversationId: string;
-  conversationKind: ConversationKind;
-  userId?: string;
-  text: string;
-  schedule: string; // cron syntax
-  timezone: string; // IANA timezone
-}
-
-export type MikanEvent = ImmediateEvent | OneShotEvent | PeriodicEvent;
+export type {
+  ImmediateEvent,
+  MikanEvent,
+  OneShotEvent,
+  PeriodicEvent,
+  PeriodicEventInfo,
+} from "./types.js";
+import type { ImmediateEvent, MikanEvent, OneShotEvent, PeriodicEvent } from "./types.js";
 
 const EventFileSchema = Type.Object({
   type: Type.Optional(
@@ -68,16 +43,7 @@ const EventFileSchema = Type.Object({
 
 type EventFileData = Static<typeof EventFileSchema>;
 
-export interface PeriodicEventInfo {
-  filename: string;
-  platform: string;
-  conversationId: string;
-  conversationKind: ConversationKind;
-  text: string;
-  schedule: string;
-  timezone: string;
-  nextRun: string | null; // ISO 8601
-}
+import type { PeriodicEventInfo } from "./types.js";
 
 const DEBOUNCE_MS = 100;
 const MAX_RETRIES = 3;

@@ -52,17 +52,8 @@ import { createMikanTools } from "./tools/index.js";
 import * as Sentry from "@sentry/node";
 import { formatLocalTimestamp } from "./utils/date.js";
 
-export interface AgentRunner {
-  syncChatHistory(currentMessageId?: string): void;
-  run(
-    message: ChatMessage,
-    responseCtx: ChatResponseContext,
-    platform: PlatformInfo,
-  ): Promise<{ stopReason: string; errorMessage?: string }>;
-  abort(): void;
-  /** Get current step info (tool name, label) for debugging */
-  getCurrentStep(): { toolName?: string; label?: string } | undefined;
-}
+export type { AgentRunner } from "./types.js";
+import type { AgentRunner } from "./types.js";
 
 const IMAGE_MIME_TYPES: Record<string, string> = {
   jpg: "image/jpeg",

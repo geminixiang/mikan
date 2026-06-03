@@ -8,13 +8,8 @@ import { reportUserFacingError } from "./observability/sentry.js";
 import { normalizeSharedVaultName, type ResolvedVault, type VaultManager } from "./vault/index.js";
 import { resolveActorVaultKey } from "./vault/routing.js";
 
-export interface ActorContext {
-  platform: string;
-  userId: string;
-  conversationId: string;
-}
-
-export type ImageWorkspaceMountMode = "private" | "full";
+export type { ActorContext, ImageWorkspaceMountMode } from "./types.js";
+import type { ActorContext, ImageWorkspaceMountMode } from "./types.js";
 
 export function readConversationWorkspaceMountMode(
   workspaceDir: string | undefined,

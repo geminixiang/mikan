@@ -14,35 +14,8 @@ export class MissingGlobalSettingsError extends Error {
   }
 }
 
-type SlackReplyMode = "top-level" | "thread";
-
-interface SlackConfig {
-  replyMode?: SlackReplyMode;
-}
-
-export interface AgentConfig {
-  provider: string;
-  model: string;
-  thinkingLevel: ThinkingLevel;
-  sentryDsn?: string;
-  sandboxCpus?: string;
-  sandboxMemory?: string;
-  sandboxBoostCpus?: string;
-  sandboxBoostMemory?: string;
-  sandboxImageWorkspaceMount?: "private" | "full";
-  defaultSharedVault?: string;
-  slack?: SlackConfig;
-}
-
-export interface AutoReplyConfig {
-  enabled: boolean;
-  rules: string[];
-}
-
-export interface JudgeModelConfig {
-  provider: string;
-  model: string;
-}
+export type { AgentConfig, AutoReplyConfig, JudgeModelConfig } from "./types.js";
+import type { AgentConfig, AutoReplyConfig, JudgeModelConfig } from "./types.js";
 
 const ONBOARD_SETTINGS: SettingsFileConfig = {
   llm: {
