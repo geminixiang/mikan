@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import { formatToolArgs } from "./adapters/shared.js";
 
 export interface LogContext {
   conversationId: string;
@@ -32,44 +33,6 @@ const LOG_PREVIEW_MAX = 1000;
 function truncate(text: string, maxLen: number): string {
   if (text.length <= maxLen) return text;
   return `${text.substring(0, maxLen)}\n(truncated at ${maxLen} chars)`;
-}
-
-function formatToolArgs(args: Record<string, unknown>): string {
-  const lines: string[] = [];
-
-  for (const [key, value] of Object.entries(args)) {
-    // Skip the label - it's already shown in the tool name
-    if (key === "label") continue;
-
-    // For read tool, format path with offset/limit
-    if (key === "path" && typeof value === "string") {
-      const offset = args.offset as number | undefined;
-      const limit = args.limit as number | undefined;
-      if (offset !== undefined && limit !== undefined) {
-        lines.push(`${value}:${offset}-${offset + limit}`);
-      } else {
-        lines.push(value);
-      }
-      continue;
-    }
-
-    // Skip offset/limit since we already handled them
-    if (key === "offset" || key === "limit") continue;
-
-    // For other values, format them
-    if (typeof value === "string") {
-      // Multi-line strings get indented
-      if (value.includes("\n")) {
-        lines.push(value);
-      } else {
-        lines.push(value);
-      }
-    } else {
-      lines.push(JSON.stringify(value));
-    }
-  }
-
-  return lines.join("\n");
 }
 
 // User messages

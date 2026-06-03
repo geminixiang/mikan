@@ -78,10 +78,6 @@ export interface ThreadBootstrapWaitOptions {
   pollMs?: number;
 }
 
-function defaultSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export function hasMaterializedChatSession(options: HasMaterializedSessionOptions): boolean {
   if (!options.sessionKey.includes(":")) {
     return resolveChannelSessionFile(options.conversationDir) !== null;
@@ -110,7 +106,7 @@ export async function waitForThreadSessionBootstrap(
     sessionKey,
     hasThreadSession,
     isParentRunning,
-    sleep = defaultSleep,
+    sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
     pollMs = 100,
   } = options;
 
@@ -184,10 +180,6 @@ export class ChatSessionManager {
     }
 
     return createManagedSessionFile(getChannelSessionDir(options.conversationDir), cwd);
-  }
-
-  hasMaterializedSession(options: HasMaterializedSessionOptions): boolean {
-    return hasMaterializedChatSession(options);
   }
 
   private resolveTopLevelSessionFile(options: {

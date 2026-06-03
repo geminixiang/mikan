@@ -6,9 +6,8 @@ import * as log from "../log.js";
 import { reportUserFacingError } from "../observability/sentry.js";
 import {
   ChatSessionManager,
-  type ResolveChatSessionScopeOptions,
+  hasMaterializedChatSession,
 } from "../sessions/chat-session-manager.js";
-import type { ResolvedSessionScope } from "../sessions/store.js";
 import { formatNothingRunning, formatStopping } from "../platform-messages.js";
 import {
   ConversationOrchestrator,
@@ -82,7 +81,7 @@ class MikanSessionRuntime implements SessionRuntime {
       getState: (sessionKey) => this.conversationStates.get(sessionKey),
       getOrCreateState: (createOptions) => this.getOrCreateState(createOptions),
       hasMaterializedSession: ({ conversationDir, sessionKey }) =>
-        this.chatSessionManager.hasMaterializedSession({ conversationDir, sessionKey }),
+        hasMaterializedChatSession({ conversationDir, sessionKey }),
       beforeRunTracked: (runPromise) => {
         this.inFlightRuns.add(runPromise);
         Sentry.metrics.gauge("agent.sessions.active", this.inFlightRuns.size);
@@ -234,7 +233,7 @@ class MikanSessionRuntime implements SessionRuntime {
       this.options.workingDir,
       conversationId,
     );
-    const sessionScope = await this.resolveSessionScope({
+    const sessionScope = await this.chatSessionManager.resolveSessionScope({
       conversationDir,
       sessionKey,
       cwd: runtimeCwd,
@@ -283,12 +282,6 @@ class MikanSessionRuntime implements SessionRuntime {
         context: { inFlightRuns: this.inFlightRuns.size, timeoutMs },
       });
     }
-  }
-
-  private async resolveSessionScope(
-    options: ResolveChatSessionScopeOptions,
-  ): Promise<ResolvedSessionScope> {
-    return this.chatSessionManager.resolveSessionScope(options);
   }
 
   private evictIdleSessions(): void {

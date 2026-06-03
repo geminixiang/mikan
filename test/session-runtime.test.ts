@@ -74,9 +74,9 @@ describe("SessionRuntime chat session scope", () => {
       cwd: conversationDir,
     });
 
-    // This intentionally reaches the private scope resolver: the bug was in
+    // This intentionally reaches the session manager directly: the bug was in
     // pre-run session materialization, before a public run can observe it.
-    const sessionScope = await (runtime as any).resolveSessionScope({
+    const sessionScope = await (runtime as any).chatSessionManager.resolveSessionScope({
       conversationDir,
       sessionKey: "C123:2000.0001",
       cwd: conversationDir,
