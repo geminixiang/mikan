@@ -35,22 +35,18 @@ interface ContainerState {
 
 export type {
   ContainerMount,
+  DockerContainerManagerOptions,
   ProvisionOptions,
   ResourceLimits,
   SandboxLimitStatus,
 } from "./types.js";
 import type {
   ContainerMount,
+  DockerContainerManagerOptions,
   ProvisionOptions,
   ResourceLimits,
   SandboxLimitStatus,
 } from "./types.js";
-
-export interface DockerContainerManagerOptions {
-  limits?: ResourceLimits;
-  boostLimits?: ResourceLimits;
-  execFileImpl?: ExecFileAsync;
-}
 
 export class DockerContainerManager {
   private state = new Map<string, ContainerState>();

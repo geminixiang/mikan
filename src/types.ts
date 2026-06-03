@@ -1,4 +1,9 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const _execFileAsync = promisify(execFile);
+type ExecFileAsync = typeof _execFileAsync;
 
 // ── adapter ───────────────────────────────────────────────────────────────────
 
@@ -292,6 +297,12 @@ export interface ProvisionOptions {
   containerName?: string;
   mounts?: ContainerMount[];
   conversationId?: string;
+}
+
+export interface DockerContainerManagerOptions {
+  limits?: ResourceLimits;
+  boostLimits?: ResourceLimits;
+  execFileImpl?: ExecFileAsync;
 }
 
 // ── store ─────────────────────────────────────────────────────────────────────
