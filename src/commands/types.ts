@@ -1,3 +1,4 @@
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Bot, BotAdapters, PlatformName } from "../adapter.js";
 import type { DockerContainerManager } from "../provisioner.js";
 import type { SessionRuntime } from "../runtime/session-runtime.js";
@@ -61,4 +62,18 @@ export interface CommandContext {
 
 export interface CommandHandler {
   tryHandle(context: CommandContext): Promise<boolean>;
+}
+
+// ── command-specific parsed types ────────────────────────────────────────────
+
+export interface ParsedModelCommand {
+  command: "model" | "/model" | "/pi-model";
+  provider?: string;
+  model?: string;
+  thinkingLevel?: ThinkingLevel;
+}
+
+export interface ParsedSandboxCommand {
+  command: "/pi-sandbox" | "/sandbox";
+  action?: "boost" | "private" | "full";
 }

@@ -4,7 +4,7 @@ import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { join } from "path";
 import { resolveConversationSettings, updateConversationSettings } from "../config.js";
 import { matchCommand } from "./parse.js";
-import type { CommandContext, CommandHandler } from "./types.js";
+import type { CommandContext, CommandHandler, ParsedModelCommand } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 
 const PI_AI_THINKING_LEVELS = [
@@ -16,12 +16,7 @@ const PI_AI_THINKING_LEVELS = [
 ] satisfies PiAiThinkingLevel[];
 const THINKING_LEVELS = new Set<ThinkingLevel>(["off", ...PI_AI_THINKING_LEVELS]);
 
-export interface ParsedModelCommand {
-  command: "model" | "/model" | "/pi-model";
-  provider?: string;
-  model?: string;
-  thinkingLevel?: ThinkingLevel;
-}
+export type { ParsedModelCommand } from "./types.js";
 
 const MODEL_COMMANDS = ["model", "/model", "/pi-model"] as const;
 

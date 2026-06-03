@@ -3,13 +3,10 @@ import { updateConversationSettings } from "../config.js";
 import { readConversationWorkspaceMountMode } from "../execution-resolver.js";
 import { resolveActorVaultKey } from "../vault/routing.js";
 import { matchCommand } from "./parse.js";
-import type { CommandContext, CommandHandler } from "./types.js";
+import type { CommandContext, CommandHandler, ParsedSandboxCommand } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 
-export interface ParsedSandboxCommand {
-  command: "/pi-sandbox" | "/sandbox";
-  action?: "boost" | "private" | "full";
-}
+export type { ParsedSandboxCommand } from "./types.js";
 
 const SANDBOX_COMMANDS = ["/pi-sandbox", "/sandbox"] as const;
 
