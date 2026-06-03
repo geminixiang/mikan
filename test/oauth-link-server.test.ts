@@ -3,9 +3,9 @@ import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { startLinkServer } from "../src/login/portal.js";
-import { InMemoryLinkTokenStore } from "../src/login/store.js";
-import { FileVaultManager } from "../src/vault.js";
+import { startLinkServer } from "../src/web/login/portal.js";
+import { InMemoryLinkTokenStore } from "../src/web/login/store.js";
+import { FileVaultManager } from "../src/vault/index.js";
 
 const originalFetch = globalThis.fetch;
 const originalEnv = {

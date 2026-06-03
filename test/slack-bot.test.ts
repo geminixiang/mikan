@@ -10,7 +10,7 @@ import type { CommandServices } from "../src/commands/types.js";
 import { ConversationOrchestrator } from "../src/runtime/conversation-orchestrator.js";
 import { createManagedSessionFileAtPath, getThreadSessionFile } from "../src/sessions/store.js";
 import type { SandboxConfig } from "../src/sandbox/index.js";
-import type { VaultManager } from "../src/vault.js";
+import type { VaultManager } from "../src/vault/index.js";
 
 function makeHandler(): BotHandler {
   return {

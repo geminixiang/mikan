@@ -1,4 +1,4 @@
-import { escapeHtml } from "./html.js";
+import { escapeHtml } from "./utils/html.js";
 import { PRODUCT_NAME } from "./platform-messages.js";
 
 // ── Shared portal shell ────────────────────────────────────────────────────────

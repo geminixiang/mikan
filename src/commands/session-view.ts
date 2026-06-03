@@ -1,5 +1,5 @@
-import { resolveExistingSessionFile } from "../session-view/service.js";
-import { parseSessionViewCommand } from "../session-view/command.js";
+import { resolveExistingSessionFile } from "../web/session-view/service.js";
+import { parseSessionViewCommand } from "../web/session-view/command.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { formatCommandSummary, replyPrivatelyWithContext } from "./utils.js";
 

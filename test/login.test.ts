@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { getOAuthServices, parseLoginCommand, resolveOAuthService } from "../src/login/index.js";
+import {
+  getOAuthServices,
+  parseLoginCommand,
+  resolveOAuthService,
+} from "../src/web/login/index.js";
 
 describe("login command parsing", () => {
   test("parseLoginCommand recognizes login commands only", () => {

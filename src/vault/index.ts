@@ -1,9 +1,9 @@
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "fs";
 import { dirname, isAbsolute, join, normalize, sep } from "path";
-import { readTextFileIfExists } from "./file-guards.js";
-import type { SandboxConfig } from "./sandbox/index.js";
-import { atomicWritePrivateFile } from "./fs-atomic.js";
-import { reportUserFacingError } from "./sentry.js";
+import { readTextFileIfExists } from "../utils/file-guards.js";
+import type { SandboxConfig } from "../sandbox/index.js";
+import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
+import { reportUserFacingError } from "../observability/sentry.js";
 
 const PRIVATE_DIR_MODE = 0o700;
 const SHARED_VAULT_DIR = "shared";

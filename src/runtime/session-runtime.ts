@@ -3,7 +3,7 @@ import { type AgentRunner, createRunner } from "../agent.js";
 import { defaultCommandHandlers } from "../commands/index.js";
 import type { CommandHandler, CommandServices } from "../commands/index.js";
 import * as log from "../log.js";
-import { reportUserFacingError } from "../sentry.js";
+import { reportUserFacingError } from "../observability/sentry.js";
 import {
   ChatSessionManager,
   type ResolveChatSessionScopeOptions,

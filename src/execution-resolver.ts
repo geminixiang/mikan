@@ -1,12 +1,12 @@
 import { existsSync } from "fs";
 import { join } from "path";
 import { loadGlobalSettings, resolveConversationSettings } from "./config.js";
-import { ensureDirExists, isRecord, readJsonFileIfExists } from "./file-guards.js";
+import { ensureDirExists, isRecord, readJsonFileIfExists } from "./utils/file-guards.js";
 import { DockerContainerManager, type ContainerMount } from "./provisioner.js";
 import { createExecutor, type Executor, type SandboxConfig } from "./sandbox/index.js";
-import { reportUserFacingError } from "./sentry.js";
-import { normalizeSharedVaultName, type ResolvedVault, type VaultManager } from "./vault.js";
-import { resolveActorVaultKey } from "./vault-routing.js";
+import { reportUserFacingError } from "./observability/sentry.js";
+import { normalizeSharedVaultName, type ResolvedVault, type VaultManager } from "./vault/index.js";
+import { resolveActorVaultKey } from "./vault/routing.js";
 
 export interface ActorContext {
   platform: string;

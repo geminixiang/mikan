@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/node";
-import { resolveSentryDsn, resolveStateDirFromArgv } from "./config.js";
-import { setEnvAliases } from "./env.js";
+import { resolveSentryDsn, resolveStateDirFromArgv } from "../config.js";
+import { setEnvAliases } from "../utils/env.js";
 import { createSentryInitOptions } from "./sentry.js";
 
 if (!process.env.STATE_DIR && !process.env.MIKAN_STATE_DIR) {

@@ -2,8 +2,8 @@ import { randomUUID } from "crypto";
 import { existsSync, mkdirSync, rmSync } from "fs";
 import { dirname, join } from "path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { isRecord, parseJsonValue, readTextFileIfExists } from "../file-guards.js";
-import { atomicWritePrivateFile } from "../fs-atomic.js";
+import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-guards.js";
+import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 import { isPlatformHistorySession } from "./metadata.js";
 
 export interface ThreadRootMessage {

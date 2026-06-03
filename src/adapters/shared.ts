@@ -10,9 +10,9 @@
 import { appendFileSync } from "fs";
 import { join } from "path";
 import type { BotHandler } from "../adapter.js";
-import { ensureDirExists } from "../file-guards.js";
+import { ensureDirExists } from "../utils/file-guards.js";
 import * as log from "../log.js";
-import { reportUserFacingError } from "../sentry.js";
+import { reportUserFacingError } from "../observability/sentry.js";
 
 export type ChatResponseErrorOperation =
   | "respond"

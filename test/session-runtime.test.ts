@@ -11,7 +11,7 @@ import {
   openManagedSession,
 } from "../src/sessions/store.js";
 import type { SandboxConfig } from "../src/sandbox/index.js";
-import type { VaultManager } from "../src/vault.js";
+import type { VaultManager } from "../src/vault/index.js";
 
 let workingDir: string;
 let conversationDir: string;

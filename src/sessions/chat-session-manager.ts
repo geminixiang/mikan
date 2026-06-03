@@ -1,8 +1,8 @@
 import { SessionManager, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import { join } from "path";
 import type { ConversationLogMessage } from "../context.js";
-import { isRecord, parseJsonValue, readTextFileIfExists } from "../file-guards.js";
-import { atomicWritePrivateFile } from "../fs-atomic.js";
+import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-guards.js";
+import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 import * as log from "../log.js";
 import { isPlatformHistorySession } from "./metadata.js";
 import {

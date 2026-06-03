@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { InMemoryLinkTokenStore } from "../src/login/store.js";
+import { InMemoryLinkTokenStore } from "../src/web/login/store.js";
 
 describe("InMemoryLinkTokenStore", () => {
   afterEach(() => {

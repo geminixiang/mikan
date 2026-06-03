@@ -11,9 +11,9 @@ import {
   getThreadSessionFile,
   resolveChannelSessionFile,
   tryResolveThreadSession,
-} from "../sessions/store.js";
-import { isPlatformHistorySession } from "../sessions/metadata.js";
-import * as log from "../log.js";
+} from "../../sessions/store.js";
+import { isPlatformHistorySession } from "../../sessions/metadata.js";
+import * as log from "../../log.js";
 
 export interface SessionViewItem {
   kind: "user" | "assistant" | "tool" | "system";

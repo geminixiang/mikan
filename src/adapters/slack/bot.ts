@@ -40,7 +40,7 @@ import {
   planSlackEventAnchorRun,
   resolveSlackSessionKey,
 } from "./session.js";
-import { reportUserFacingError } from "../../sentry.js";
+import { reportUserFacingError } from "../../observability/sentry.js";
 
 const SLACK_EVENT_ANCHOR_TEXT = "Working on it...";
 

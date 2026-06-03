@@ -13,8 +13,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ActorExecutionResolver } from "../src/execution-resolver.js";
 import { DockerContainerManager } from "../src/provisioner.js";
 import { HostExecutor } from "../src/sandbox/index.js";
-import { resolveActorVaultKey } from "../src/vault-routing.js";
-import { FileVaultManager, parseEnvFile, sharedVaultKey } from "../src/vault.js";
+import { resolveActorVaultKey } from "../src/vault/routing.js";
+import { FileVaultManager, parseEnvFile, sharedVaultKey } from "../src/vault/index.js";
 
 function mode(path: string): number {
   return statSync(path).mode & 0o777;

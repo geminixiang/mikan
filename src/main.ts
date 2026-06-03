@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import "./instrument.js";
+import "./observability/instrument.js";
 
 import { join, resolve } from "path";
 import { mkdirSync, statSync, writeFileSync } from "fs";
@@ -14,25 +14,25 @@ import { SlackBot as SlackBotClass } from "./adapters/slack/bot.js";
 import { downloadChannel } from "./download.js";
 import { EventsWatcher } from "./events.js";
 import * as log from "./log.js";
-import { startLinkServer } from "./login/portal.js";
-import { InMemoryAdminTokenStore } from "./admin/store.js";
-import { InMemoryLinkTokenStore } from "./login/store.js";
-import { InMemorySessionViewTokenStore } from "./session-view/store.js";
+import { startLinkServer } from "./web/login/portal.js";
+import { InMemoryAdminTokenStore } from "./web/admin/store.js";
+import { InMemoryLinkTokenStore } from "./web/login/store.js";
+import { InMemorySessionViewTokenStore } from "./web/session-view/store.js";
 import { DockerContainerManager } from "./provisioner.js";
 import {
   createGlobalSettingsFile,
   loadGlobalSettings,
   MissingGlobalSettingsError,
 } from "./config.js";
-import { readEnv, setEnvAliases } from "./env.js";
-import { ensureDirExists, isRecord, readJsonFileIfExists } from "./file-guards.js";
+import { readEnv, setEnvAliases } from "./utils/env.js";
+import { ensureDirExists, isRecord, readJsonFileIfExists } from "./utils/file-guards.js";
 import {
   SandboxError,
   parseSandboxArg,
   type SandboxConfig,
   validateSandbox,
 } from "./sandbox/index.js";
-import { FileVaultManager } from "./vault.js";
+import { FileVaultManager } from "./vault/index.js";
 import { createSessionRuntime } from "./runtime/session-runtime.js";
 import { ChannelStore } from "./store.js";
 import * as Sentry from "@sentry/node";

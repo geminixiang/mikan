@@ -12,7 +12,7 @@ import { SessionViewCommandHandler } from "../src/commands/session-view.js";
 import type { CommandContext, CommandHandler, CommandServices } from "../src/commands/types.js";
 import { createManagedSessionFile, getChannelSessionDir } from "../src/sessions/store.js";
 import type { SandboxConfig } from "../src/sandbox/index.js";
-import type { VaultManager } from "../src/vault.js";
+import type { VaultManager } from "../src/vault/index.js";
 
 // ── Fakes ────────────────────────────────────────────────────────────────────
 

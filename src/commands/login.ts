@@ -1,7 +1,7 @@
 import * as log from "../log.js";
-import { parseLoginCommand } from "../login/index.js";
-import { resolveActorVaultKey } from "../vault-routing.js";
-import { sharedVaultKey } from "../vault.js";
+import { parseLoginCommand } from "../web/login/index.js";
+import { resolveActorVaultKey } from "../vault/routing.js";
+import { sharedVaultKey } from "../vault/index.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 

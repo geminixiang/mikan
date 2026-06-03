@@ -1,12 +1,12 @@
 import { createHash, randomBytes } from "crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "http";
-import type { Bot, PlatformName } from "../adapter.js";
+import type { Bot, PlatformName } from "../../adapter.js";
 import { handleAdminRequest, type AdminRuntimeBridge } from "../admin/portal.js";
 import type { InMemoryAdminTokenStore } from "../admin/store.js";
-import { escapeHtml } from "../html.js";
-import { renderPortalShell } from "../portal-shell.js";
-import type { SandboxConfig } from "../sandbox/index.js";
-import { resolveLinkBaseUrl } from "../config.js";
+import { escapeHtml } from "../../utils/html.js";
+import { renderPortalShell } from "../../portal-shell.js";
+import type { SandboxConfig } from "../../sandbox/index.js";
+import { resolveLinkBaseUrl } from "../../config.js";
 import {
   handleSessionViewRequest,
   type SessionViewInteractiveOptions,
@@ -19,10 +19,10 @@ import {
   type LoginCredentialKind,
   type OAuthService,
 } from "./index.js";
-import * as log from "../log.js";
-import { reportUserFacingError } from "../sentry.js";
-import { PRODUCT_NAME } from "../platform-messages.js";
-import { defaultVaultTargetPath, type VaultManager } from "../vault.js";
+import * as log from "../../log.js";
+import { reportUserFacingError } from "../../observability/sentry.js";
+import { PRODUCT_NAME } from "../../platform-messages.js";
+import { defaultVaultTargetPath, type VaultManager } from "../../vault/index.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 

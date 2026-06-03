@@ -1,12 +1,12 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { basename } from "path";
 import MarkdownIt from "markdown-it";
-import type { Bot, BotAdapters, BotEvent, BotHandler, ChatResponseContext } from "../adapter.js";
-import { escapeHtml } from "../html.js";
-import * as log from "../log.js";
-import { renderPortalShell } from "../portal-shell.js";
-import { reportUserFacingError } from "../sentry.js";
-import { inferConversationKind } from "../sessions/policy.js";
+import type { Bot, BotAdapters, BotEvent, BotHandler, ChatResponseContext } from "../../adapter.js";
+import { escapeHtml } from "../../utils/html.js";
+import * as log from "../../log.js";
+import { renderPortalShell } from "../../portal-shell.js";
+import { reportUserFacingError } from "../../observability/sentry.js";
+import { inferConversationKind } from "../../sessions/policy.js";
 import {
   loadSessionViewModel,
   resolveRequestedSessionFile,

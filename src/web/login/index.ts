@@ -1,7 +1,7 @@
-import { matchCommand } from "../commands/parse.js";
-import { readEnv } from "../env.js";
-import { isRecord, parseJsonValue } from "../file-guards.js";
-import * as log from "../log.js";
+import { matchCommand } from "../../commands/parse.js";
+import { readEnv } from "../../utils/env.js";
+import { isRecord, parseJsonValue } from "../../utils/file-guards.js";
+import * as log from "../../log.js";
 
 export type LoginCredentialKind = "api_key" | "oauth";
 

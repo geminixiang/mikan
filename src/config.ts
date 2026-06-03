@@ -3,9 +3,9 @@ import { Type, type Static } from "@sinclair/typebox";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { dirname, join, resolve } from "path";
-import { readEnv } from "./env.js";
-import { ensureDirExists, readJsonSchemaFileIfExists } from "./file-guards.js";
-import { atomicWritePrivateFile } from "./fs-atomic.js";
+import { readEnv } from "./utils/env.js";
+import { ensureDirExists, readJsonSchemaFileIfExists } from "./utils/file-guards.js";
+import { atomicWritePrivateFile } from "./utils/fs-atomic.js";
 
 export class MissingGlobalSettingsError extends Error {
   constructor(public readonly settingsPath: string) {

@@ -1,6 +1,11 @@
 import { appendFile, writeFile } from "fs/promises";
 import { join } from "path";
-import { ensureDirExists, isRecord, parseJsonValue, readTextFileIfExists } from "./file-guards.js";
+import {
+  ensureDirExists,
+  isRecord,
+  parseJsonValue,
+  readTextFileIfExists,
+} from "./utils/file-guards.js";
 import { withRetry } from "./adapters/shared.js";
 
 export interface Attachment {

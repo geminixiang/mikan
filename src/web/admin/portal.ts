@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { homedir } from "os";
 import { join, resolve as pathResolve, sep as pathSep } from "path";
 import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
-import type { Bot, PlatformName, RunningSession } from "../adapter.js";
+import type { Bot, PlatformName, RunningSession } from "../../adapter.js";
 import {
   loadConversationAutoReplyConfig,
   loadGlobalSettings,
@@ -12,15 +12,15 @@ import {
   updateConversationSettings,
   updateGlobalSettings,
   type AgentConfig,
-} from "../config.js";
-import { escapeHtml } from "../html.js";
-import { renderPortalShell } from "../portal-shell.js";
-import type { SandboxConfig } from "../sandbox/index.js";
+} from "../../config.js";
+import { escapeHtml } from "../../utils/html.js";
+import { renderPortalShell } from "../../portal-shell.js";
+import type { SandboxConfig } from "../../sandbox/index.js";
 import { resolveExistingSessionFile } from "../session-view/service.js";
 import type { InMemorySessionViewTokenStore } from "../session-view/store.js";
-import { PRODUCT_NAME } from "../platform-messages.js";
-import { resolveActorVaultKey } from "../vault-routing.js";
-import { sharedVaultKey, type VaultManager } from "../vault.js";
+import { PRODUCT_NAME } from "../../platform-messages.js";
+import { resolveActorVaultKey } from "../../vault/routing.js";
+import { sharedVaultKey, type VaultManager } from "../../vault/index.js";
 import type { AdminToken, InMemoryAdminTokenStore } from "./store.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────────

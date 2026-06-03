@@ -1,5 +1,5 @@
 import { randomBytes } from "crypto";
-import type { PlatformName } from "../adapter.js";
+import type { PlatformName } from "../../adapter.js";
 
 export interface SessionViewToken {
   token: string;

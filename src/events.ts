@@ -12,9 +12,9 @@ import {
 import { readFile } from "fs/promises";
 import { join } from "path";
 import type { Bot, BotEvent, ConversationKind } from "./adapter.js";
-import { ensureDirExists, parseJsonSchemaValue } from "./file-guards.js";
+import { ensureDirExists, parseJsonSchemaValue } from "./utils/file-guards.js";
 import * as log from "./log.js";
-import { reportUserFacingError } from "./sentry.js";
+import { reportUserFacingError } from "./observability/sentry.js";
 import { inferConversationKind } from "./sessions/policy.js";
 
 export interface ImmediateEvent {

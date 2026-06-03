@@ -1,4 +1,4 @@
-import { matchCommand } from "../commands/parse.js";
+import { matchCommand } from "../../commands/parse.js";
 
 export interface ParsedSessionViewCommand {
   command: "session" | "/session" | "/pi-session";

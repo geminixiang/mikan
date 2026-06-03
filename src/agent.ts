@@ -29,7 +29,7 @@ import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import { resolveConversationSettings } from "./config.js";
 import { ActorExecutionResolver } from "./execution-resolver.js";
 import * as log from "./log.js";
-import { reportUserFacingError } from "./sentry.js";
+import { reportUserFacingError } from "./observability/sentry.js";
 import type { DockerContainerManager } from "./provisioner.js";
 import {
   createExecutor,
@@ -38,8 +38,8 @@ import {
   type SandboxConfig,
 } from "./sandbox/index.js";
 import { createMountedRuntimePathContext } from "./sandbox/path-context.js";
-import { addLifecycleBreadcrumb, metricAttributes } from "./sentry.js";
-import type { VaultManager } from "./vault.js";
+import { addLifecycleBreadcrumb, metricAttributes } from "./observability/sentry.js";
+import type { VaultManager } from "./vault/index.js";
 import { ChatSessionManager } from "./sessions/chat-session-manager.js";
 import {
   extractSessionUuid,

@@ -6,7 +6,7 @@ import type {
   RuntimePathContext,
   SandboxAdapter,
 } from "./types.js";
-import { readEnv } from "../env.js";
+import { readEnv } from "../utils/env.js";
 import { SandboxError } from "./errors.js";
 
 const DEFAULT_CLOUDFLARE_CWD = "/workspace";

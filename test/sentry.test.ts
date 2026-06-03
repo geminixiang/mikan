@@ -31,7 +31,7 @@ import {
   sanitizeBreadcrumb,
   sanitizeEvent,
   sanitizeValue,
-} from "../src/sentry.js";
+} from "../src/observability/sentry.js";
 
 describe("reportUserFacingError", () => {
   beforeEach(() => {

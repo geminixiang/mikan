@@ -1,5 +1,5 @@
-import { DockerContainerManager } from "./provisioner.js";
-import type { SandboxConfig } from "./sandbox/index.js";
+import { DockerContainerManager } from "../provisioner.js";
+import type { SandboxConfig } from "../sandbox/index.js";
 export function resolveActorVaultKey(
   baseConfig: SandboxConfig,
   userId: string,

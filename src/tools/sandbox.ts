@@ -2,7 +2,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import type { DockerContainerManager, ResourceLimits } from "../provisioner.js";
 import type { SandboxConfig } from "../sandbox/index.js";
-import { resolveActorVaultKey } from "../vault-routing.js";
+import { resolveActorVaultKey } from "../vault/routing.js";
 
 const sandboxSchema = Type.Object({
   action: Type.Union([Type.Literal("status"), Type.Literal("set")], {
