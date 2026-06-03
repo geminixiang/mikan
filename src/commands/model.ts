@@ -25,20 +25,19 @@ export function parseModelCommand(text: string): ParsedModelCommand | null {
   if (!matched) return null;
 
   if (matched.args.length === 0) {
-    return { command: matched.command };
+    return {};
   }
 
   const spec = matched.args[0];
   const slash = spec.indexOf("/");
   if (slash <= 0 || slash === spec.length - 1) {
-    return { command: matched.command };
+    return {};
   }
 
   const modelSpec = spec.slice(slash + 1);
   const parsedModel = parseModelThinkingLevel(modelSpec);
 
   return {
-    command: matched.command,
     provider: spec.slice(0, slash),
     model: parsedModel.model,
     thinkingLevel: parsedModel.thinkingLevel,

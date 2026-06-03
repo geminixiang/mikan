@@ -13,8 +13,8 @@ import { formatStopped } from "../platform-messages.js";
 import * as Sentry from "@sentry/node";
 import { join } from "path";
 
-export type { ConversationRuntimeState, RunConversationOptions } from "./types.js";
-import type { ConversationRuntimeState, RunConversationOptions } from "./types.js";
+export type { ConversationRuntimeState, RunSessionOptions } from "./types.js";
+import type { ConversationRuntimeState, RunSessionOptions } from "./types.js";
 
 interface ConversationOrchestratorOptions {
   workingDir: string;
@@ -36,7 +36,7 @@ interface ConversationOrchestratorOptions {
 export class ConversationOrchestrator {
   constructor(private readonly options: ConversationOrchestratorOptions) {}
 
-  async runSession({ event, bot, adapters }: RunConversationOptions): Promise<void> {
+  async runSession({ event, bot, adapters }: RunSessionOptions): Promise<void> {
     const conversationId = event.conversationId;
     if (this.options.isShuttingDown()) {
       log.logInfo(
@@ -111,7 +111,7 @@ export class ConversationOrchestrator {
       try {
         const result = await this.runWithInstrumentation(
           adapters,
-          { conversationId, sessionKey, startedAt: state.startedAt! },
+          { conversationId, sessionKey, startedAt: state.startedAt },
           async () => {
             await adapters.responseCtx.setTyping(true);
             await adapters.responseCtx.setWorking(true);

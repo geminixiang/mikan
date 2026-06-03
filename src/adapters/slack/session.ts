@@ -71,7 +71,7 @@ export function planSlackAdapterSession(
 export function planSlackEventAnchorRun<T extends SlackSessionEventLike>(
   event: T,
   anchorTs?: string,
-): SlackEventAnchorRunPlan<T> {
+): SlackEventAnchorRunPlan<T & { sessionKey?: string }> {
   if (!anchorTs || event.thread_ts) {
     return { event };
   }

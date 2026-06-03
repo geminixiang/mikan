@@ -16,9 +16,9 @@ export function parseSandboxCommand(text: string): ParsedSandboxCommand | null {
 
   const action = matched.args.length === 1 ? matched.args[0].toLowerCase() : undefined;
   if (action === "boost" || action === "private" || action === "full") {
-    return { command: matched.command, action };
+    return { action };
   }
-  return { command: matched.command };
+  return {};
 }
 
 export class SandboxCommandHandler implements CommandHandler {

@@ -1,4 +1,5 @@
 import type { PlatformName, RunningSession } from "../../adapter.js";
+import type { LinkTokenStoreLike } from "../../commands/types.js";
 import type { TokenRecord } from "../types.js";
 import type { VaultManager } from "../../vault/index.js";
 import type { InMemorySessionViewTokenStore } from "../session-view/store.js";
@@ -10,15 +11,7 @@ export interface AdminRuntimeBridge {
 
 export interface AdminServices {
   vaultManager: VaultManager;
-  linkTokenStore: {
-    create(
-      platform: PlatformName,
-      platformUserId: string,
-      conversationId: string,
-      vaultId: string,
-      providerId: string,
-    ): { token: string };
-  };
+  linkTokenStore: LinkTokenStoreLike;
   sessionViewTokenStore?: InMemorySessionViewTokenStore;
   adminTokenStore: import("./store.js").InMemoryAdminTokenStore;
   portalBaseUrl?: string;

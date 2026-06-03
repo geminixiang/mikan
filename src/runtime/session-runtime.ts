@@ -246,6 +246,7 @@ class MikanSessionRuntime implements SessionRuntime {
       ),
       stopRequested: false,
       lastAccessedAt: Date.now(),
+      startedAt: 0,
     };
     this.conversationStates.set(sessionKey, state);
     return state;

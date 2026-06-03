@@ -3,19 +3,17 @@ import { parseSandboxCommand } from "../src/commands/sandbox.js";
 
 describe("sandbox command parsing", () => {
   test("parses status command", () => {
-    expect(parseSandboxCommand("/pi-sandbox")).toEqual({ command: "/pi-sandbox" });
+    expect(parseSandboxCommand("/pi-sandbox")).toEqual({});
   });
 
   test("parses boost command", () => {
     expect(parseSandboxCommand("/pi-sandbox boost")).toEqual({
-      command: "/pi-sandbox",
       action: "boost",
     });
   });
 
   test("parses Telegram sandbox alias", () => {
     expect(parseSandboxCommand("/sandbox@my_bot boost")).toEqual({
-      command: "/sandbox",
       action: "boost",
     });
   });

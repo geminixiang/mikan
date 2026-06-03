@@ -18,24 +18,22 @@ export interface OAuthService {
   authorizationUrl: string;
   tokenUrl: string;
   scopes: string[];
+  /** Env var names for reading the OAuth client credentials (input). */
   clientIdEnvKey: string;
   clientSecretEnvKey: string;
-  accessTokenEnvKey?: string;
-  additionalAccessTokenEnvKeys?: string[];
+  /** Env var names to write the access token into after a successful exchange (output). */
+  accessTokenEnvKeys?: string[];
+  /** Env var name to write the refresh token into after a successful exchange (output). */
   refreshTokenEnvKey?: string;
   authorizationParams?: Record<string, string>;
   fileOutput?: OAuthAuthorizedUserFileOutput;
 }
 
 export type ParsedLoginCommand =
-  | { command: "login" | "/login" | "/pi-login"; action: "setup" }
-  | {
-      command: "login" | "/login" | "/pi-login";
-      action: "shared_create" | "shared_update" | "shared_delete";
-      name: string;
-    }
-  | { command: "login" | "/login" | "/pi-login"; action: "shared_list" }
-  | { command: "login" | "/login" | "/pi-login"; action: "copy_shared"; name: string };
+  | { action: "setup" }
+  | { action: "shared_create" | "shared_update" | "shared_delete"; name: string }
+  | { action: "shared_list" }
+  | { action: "copy_shared"; name: string };
 
 export interface LinkToken extends TokenRecord {
   platform: PlatformName;

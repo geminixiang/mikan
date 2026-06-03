@@ -8,14 +8,9 @@ export interface ConversationRuntimeState {
   stopRequested: boolean;
   stopMessageTs?: string;
   lastAccessedAt: number;
-  startedAt?: number;
+  /** Epoch ms when the current run started; 0 when idle. */
+  startedAt: number;
   lastActivityAt?: number;
-}
-
-export interface RunConversationOptions {
-  event: BotEvent;
-  bot: Bot;
-  adapters: BotAdapters;
 }
 
 export interface RunSessionOptions {

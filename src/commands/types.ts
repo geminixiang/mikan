@@ -5,7 +5,7 @@ import type { SessionRuntime } from "../runtime/session-runtime.js";
 import type { SandboxConfig } from "../sandbox/index.js";
 import type { VaultManager } from "../vault/index.js";
 
-interface LinkTokenStoreLike {
+export interface LinkTokenStoreLike {
   create(
     platform: PlatformName,
     platformUserId: string,
@@ -67,13 +67,11 @@ export interface CommandHandler {
 // ── command-specific parsed types ────────────────────────────────────────────
 
 export interface ParsedModelCommand {
-  command: "model" | "/model" | "/pi-model";
   provider?: string;
   model?: string;
   thinkingLevel?: ThinkingLevel;
 }
 
 export interface ParsedSandboxCommand {
-  command: "/pi-sandbox" | "/sandbox";
   action?: "boost" | "private" | "full";
 }

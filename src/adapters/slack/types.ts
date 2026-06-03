@@ -44,9 +44,7 @@ export interface SlackAdapterSessionPlan {
   isThreaded: boolean;
 }
 
-export interface SlackEventAnchorRunPlan<
-  T extends { conversationId: string; ts: string; thread_ts?: string; sessionKey?: string },
-> {
+export interface SlackEventAnchorRunPlan<T = SlackEvent> {
   event: T;
   initialMessageTs?: string;
 }

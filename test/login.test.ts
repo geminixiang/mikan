@@ -7,37 +7,24 @@ import {
 
 describe("login command parsing", () => {
   test("parseLoginCommand recognizes login commands only", () => {
-    expect(parseLoginCommand("/login")).toEqual({ command: "/login", action: "setup" });
-    expect(parseLoginCommand("login")).toEqual({ command: "login", action: "setup" });
-    expect(parseLoginCommand("/login github_oauth")).toEqual({
-      command: "/login",
-      action: "setup",
-    });
-    expect(parseLoginCommand("/pi-login github")).toEqual({
-      command: "/pi-login",
-      action: "setup",
-    });
+    expect(parseLoginCommand("/login")).toEqual({ action: "setup" });
+    expect(parseLoginCommand("login")).toEqual({ action: "setup" });
+    expect(parseLoginCommand("/login github_oauth")).toEqual({ action: "setup" });
+    expect(parseLoginCommand("/pi-login github")).toEqual({ action: "setup" });
     expect(parseLoginCommand("/pi-login shared create gliaclaw")).toEqual({
-      command: "/pi-login",
       action: "shared_create",
       name: "gliaclaw",
     });
     expect(parseLoginCommand("/pi-login shared update gliaclaw")).toEqual({
-      command: "/pi-login",
       action: "shared_update",
       name: "gliaclaw",
     });
     expect(parseLoginCommand("/pi-login shared delete gliaclaw")).toEqual({
-      command: "/pi-login",
       action: "shared_delete",
       name: "gliaclaw",
     });
-    expect(parseLoginCommand("/pi-login shared list")).toEqual({
-      command: "/pi-login",
-      action: "shared_list",
-    });
+    expect(parseLoginCommand("/pi-login shared list")).toEqual({ action: "shared_list" });
     expect(parseLoginCommand("/pi-login copy gliaclaw")).toEqual({
-      command: "/pi-login",
       action: "copy_shared",
       name: "gliaclaw",
     });
@@ -53,7 +40,7 @@ describe("login command parsing", () => {
     expect(getOAuthServices().some((s) => s.id === "github")).toBe(true);
     expect(getOAuthServices().some((s) => s.id === "google_workspace_cli")).toBe(true);
     expect(getOAuthServices().some((s) => s.id === "google_cloud_sdk")).toBe(true);
-    expect(resolveOAuthService("github")?.additionalAccessTokenEnvKeys).toContain("GH_TOKEN");
+    expect(resolveOAuthService("github")?.accessTokenEnvKeys).toContain("GH_TOKEN");
     expect(resolveOAuthService("google_workspace_cli")?.fileOutput).toEqual({
       type: "authorized_user",
       relativePath: "gws.json",

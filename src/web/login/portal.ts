@@ -1559,10 +1559,7 @@ async function handleOAuthCallback(
   }
 
   const updates: Record<string, string> = {};
-  if (service.accessTokenEnvKey) {
-    updates[service.accessTokenEnvKey] = accessToken;
-  }
-  for (const key of service.additionalAccessTokenEnvKeys ?? []) {
+  for (const key of service.accessTokenEnvKeys ?? []) {
     updates[key] = accessToken;
   }
   if (refreshToken && service.refreshTokenEnvKey) {

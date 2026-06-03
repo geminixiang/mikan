@@ -51,8 +51,7 @@ function getBuiltinOAuthServices(): OAuthService[] {
       scopes: resolveScopesFromEnv("GITHUB_OAUTH_SCOPES", DEFAULT_GITHUB_OAUTH_SCOPES),
       clientIdEnvKey: "GITHUB_OAUTH_CLIENT_ID",
       clientSecretEnvKey: "GITHUB_OAUTH_CLIENT_SECRET",
-      accessTokenEnvKey: "GITHUB_OAUTH_ACCESS_TOKEN",
-      additionalAccessTokenEnvKeys: ["GH_TOKEN"],
+      accessTokenEnvKeys: ["GITHUB_OAUTH_ACCESS_TOKEN", "GH_TOKEN"],
       refreshTokenEnvKey: "GITHUB_OAUTH_REFRESH_TOKEN",
     },
     {
@@ -142,8 +141,23 @@ export function getOAuthServices(): OAuthService[] {
           typeof obj.clientIdEnvKey === "string" ? obj.clientIdEnvKey.trim() : "";
         const clientSecretEnvKey =
           typeof obj.clientSecretEnvKey === "string" ? obj.clientSecretEnvKey.trim() : "";
-        const accessTokenEnvKey =
-          typeof obj.accessTokenEnvKey === "string" ? obj.accessTokenEnvKey.trim() : undefined;
+        const accessTokenEnvKeys: string[] = [];
+        if (typeof obj.accessTokenEnvKey === "string" && obj.accessTokenEnvKey.trim()) {
+          accessTokenEnvKeys.push(obj.accessTokenEnvKey.trim());
+        }
+        if (Array.isArray(obj.additionalAccessTokenEnvKeys)) {
+          for (const k of obj.additionalAccessTokenEnvKeys) {
+            if (typeof k === "string" && k.trim()) accessTokenEnvKeys.push(k.trim());
+          }
+        }
+        // New unified form
+        if (Array.isArray(obj.accessTokenEnvKeys)) {
+          for (const k of obj.accessTokenEnvKeys) {
+            if (typeof k === "string" && k.trim() && !accessTokenEnvKeys.includes(k.trim())) {
+              accessTokenEnvKeys.push(k.trim());
+            }
+          }
+        }
         if (
           !id ||
           !label ||
@@ -196,10 +210,7 @@ export function getOAuthServices(): OAuthService[] {
             : [],
           clientIdEnvKey,
           clientSecretEnvKey,
-          accessTokenEnvKey,
-          additionalAccessTokenEnvKeys: Array.isArray(obj.additionalAccessTokenEnvKeys)
-            ? obj.additionalAccessTokenEnvKeys.filter((v): v is string => typeof v === "string")
-            : undefined,
+          accessTokenEnvKeys: accessTokenEnvKeys.length > 0 ? accessTokenEnvKeys : undefined,
           refreshTokenEnvKey:
             typeof obj.refreshTokenEnvKey === "string" ? obj.refreshTokenEnvKey.trim() : undefined,
           authorizationParams: isRecord(obj.authorizationParams)
@@ -244,16 +255,15 @@ export function parseLoginCommand(text: string): ParsedLoginCommand | null {
 
   const [subcommand, operation, name, ...extra] = matched.args;
 
-  if (!subcommand) return { command: matched.command, action: "setup" };
+  if (!subcommand) return { action: "setup" };
 
   if (subcommand.toLowerCase() === "shared") {
     const op = operation?.toLowerCase();
     if (op === "list" && !name && extra.length === 0) {
-      return { command: matched.command, action: "shared_list" };
+      return { action: "shared_list" };
     }
     if ((op === "create" || op === "update" || op === "delete") && !!name && extra.length === 0) {
       return {
-        command: matched.command,
         action: `shared_${op}` as "shared_create" | "shared_update" | "shared_delete",
         name,
       };
@@ -262,12 +272,12 @@ export function parseLoginCommand(text: string): ParsedLoginCommand | null {
   }
 
   if (subcommand.toLowerCase() === "copy" && operation && !name && extra.length === 0) {
-    return { command: matched.command, action: "copy_shared", name: operation };
+    return { action: "copy_shared", name: operation };
   }
 
   // Backward-compatible: older `/pi-login gh` / `/pi-login gws` forms opened the
   // generic login page and let the portal handle provider choice.
-  if (!operation && extra.length === 0) return { command: matched.command, action: "setup" };
+  if (!operation && extra.length === 0) return { action: "setup" };
 
   return null;
 }
