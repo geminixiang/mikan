@@ -18,7 +18,8 @@
 - Preserve existing behavior unless the user explicitly asks to change it.
 - Do not remove intentional-looking functionality without asking first.
 - Reuse existing helpers and project patterns before adding new abstractions.
-- Inline single-line helpers that have only one call site.
+- Avoid thin wrappers — functions that only delegate without adding logic, error handling, or meaningful abstraction. Inline them unless they have multiple call sites or encapsulate a non-trivial concern.
+- Delete indirection rather than polish it. If behavior is unchanged, always prefer the simpler structure.
 - Avoid `any` unless there is no practical typed alternative.
 - Check dependency type definitions in `node_modules` instead of guessing external APIs.
 - Use top-level imports; avoid inline/dynamic imports for normal code and type references.
