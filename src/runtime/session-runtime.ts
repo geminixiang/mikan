@@ -1,7 +1,7 @@
 import type { Bot, BotAdapters, BotEvent, BotHandler, RunningSession } from "../adapter.js";
 import { type AgentRunner, createRunner } from "../agent.js";
-import { defaultCommandHandlers } from "../commands/index.js";
-import type { CommandHandler, CommandServices } from "../commands/index.js";
+import { defaultCommandHandlers } from "../commands/registry.js";
+import type { CommandHandler, CommandServices } from "../commands/types.js";
 import * as log from "../log.js";
 import { reportUserFacingError } from "../observability/sentry.js";
 import {

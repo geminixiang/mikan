@@ -1,5 +1,5 @@
-export { defaultCommandHandlers, dispatchCommand } from "./commands/index.js";
-export type { CommandContext, CommandHandler, CommandServices } from "./commands/index.js";
+export { defaultCommandHandlers, dispatchCommand } from "./commands/registry.js";
+export type { CommandContext, CommandHandler, CommandServices } from "./commands/types.js";
 export * from "./sessions/chat-session-manager.js";
 export * from "./sessions/metadata.js";
 export * from "./sessions/policy.js";

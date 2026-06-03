@@ -1,8 +1,8 @@
 import type { Bot, BotAdapters, BotEvent, PlatformName } from "../adapter.js";
 import { waitForThreadSessionBootstrap } from "../sessions/chat-session-manager.js";
 import type { AgentRunner } from "../agent.js";
-import { dispatchCommand } from "../commands/index.js";
-import type { CommandHandler, CommandServices } from "../commands/index.js";
+import { dispatchCommand } from "../commands/registry.js";
+import type { CommandHandler, CommandServices } from "../commands/types.js";
 import { isPrivateConversation } from "../commands/utils.js";
 import * as log from "../log.js";
 import {

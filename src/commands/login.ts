@@ -1,5 +1,5 @@
 import * as log from "../log.js";
-import { parseLoginCommand } from "../web/login/index.js";
+import { parseLoginCommand } from "../web/login/oauth.js";
 import { resolveActorVaultKey } from "../vault/routing.js";
 import { sharedVaultKey } from "../vault/index.js";
 import type { CommandContext, CommandHandler } from "./types.js";

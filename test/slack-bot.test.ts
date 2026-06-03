@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { BotHandler } from "../src/adapter.js";
 import { SlackBot } from "../src/adapters/slack/bot.js";
-import { defaultCommandHandlers } from "../src/commands/index.js";
+import { defaultCommandHandlers } from "../src/commands/registry.js";
 import { createGlobalSettingsFile } from "../src/config.js";
 import type { CommandServices } from "../src/commands/types.js";
 import { ConversationOrchestrator } from "../src/runtime/conversation-orchestrator.js";

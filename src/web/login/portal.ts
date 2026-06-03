@@ -18,7 +18,7 @@ import {
   resolveOAuthService,
   type LoginCredentialKind,
   type OAuthService,
-} from "./index.js";
+} from "./oauth.js";
 import * as log from "../../log.js";
 import { reportUserFacingError } from "../../observability/sentry.js";
 import { PRODUCT_NAME } from "../../platform-messages.js";

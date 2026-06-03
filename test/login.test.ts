@@ -3,7 +3,7 @@ import {
   getOAuthServices,
   parseLoginCommand,
   resolveOAuthService,
-} from "../src/web/login/index.js";
+} from "../src/web/login/oauth.js";
 
 describe("login command parsing", () => {
   test("parseLoginCommand recognizes login commands only", () => {
