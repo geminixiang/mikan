@@ -26,6 +26,7 @@ import type {
   ChatToolResult,
   PlatformInfo,
 } from "../../adapter.js";
+import type { DiscordEvent } from "./types.js";
 import * as log from "../../log.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
 import { evaluateAutoReplyPolicy } from "../../trigger.js";
@@ -56,10 +57,7 @@ const discordRetry = <T>(fn: () => Promise<T>): Promise<T> =>
 // Types
 // ============================================================================
 
-export interface DiscordEvent extends BotEvent {
-  type: "mention" | "dm";
-  userName?: string;
-}
+export type { DiscordEvent } from "./types.js";
 
 // ============================================================================
 // DiscordBot

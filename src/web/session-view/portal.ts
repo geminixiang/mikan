@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { basename } from "path";
 import MarkdownIt from "markdown-it";
-import type { Bot, BotAdapters, BotEvent, BotHandler, ChatResponseContext } from "../../adapter.js";
+import type { BotAdapters, BotEvent, ChatResponseContext } from "../../adapter.js";
 import { escapeHtml } from "../../utils/html.js";
 import * as log from "../../log.js";
 import { renderPortalShell } from "../../portal-shell.js";
@@ -73,10 +73,8 @@ class SessionViewStreamHub {
 
 const sessionViewStreamHub = new SessionViewStreamHub();
 
-export interface SessionViewInteractiveOptions {
-  handler: BotHandler;
-  botsByPlatform: Partial<Record<string, Bot>>;
-}
+export type { SessionViewInteractiveOptions } from "./types.js";
+import type { SessionViewInteractiveOptions } from "./types.js";
 
 export async function handleSessionViewRequest(
   req: IncomingMessage,

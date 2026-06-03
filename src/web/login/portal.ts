@@ -27,8 +27,8 @@ import { defaultVaultTargetPath, type VaultManager } from "../../vault/index.js"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-/** Called after a binding is written, to notify the user in chat */
-export type NotifyFn = (platform: string, conversationId: string, message: string) => Promise<void>;
+export type { NotifyFn } from "./types.js";
+import type { NotifyFn } from "./types.js";
 
 interface LinkCompleteBody {
   token: string;

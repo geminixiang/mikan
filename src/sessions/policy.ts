@@ -1,15 +1,6 @@
 import type { ConversationKind } from "../adapter.js";
-
-export type ChatPlatform = "slack" | "telegram" | "discord" | string;
-
-export interface ResolveSessionKeyOptions {
-  conversationId: string;
-  conversationKind: ConversationKind;
-  messageId: string;
-  threadTs?: string;
-  persistentTopLevel?: boolean;
-  scopeDirectThreads?: boolean;
-}
+export type { ChatPlatform, ResolveSessionKeyOptions } from "./types.js";
+import type { ChatPlatform, ResolveSessionKeyOptions } from "./types.js";
 
 export function resolveChatSessionKey(options: ResolveSessionKeyOptions): string {
   const {

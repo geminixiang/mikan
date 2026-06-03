@@ -3,6 +3,7 @@ import { basename, join } from "path";
 import { Bot as GrammyBot, InputFile } from "grammy";
 import type { Message } from "grammy/types";
 import type { Bot, BotEvent, BotHandler, PlatformInfo } from "../../adapter.js";
+import type { TelegramEvent } from "./types.js";
 import * as log from "../../log.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
 import { evaluateAutoReplyPolicy } from "../../trigger.js";
@@ -32,10 +33,7 @@ const telegramRetry = <T>(fn: () => Promise<T>): Promise<T> =>
 // Types
 // ============================================================================
 
-export interface TelegramEvent extends BotEvent {
-  type: "message" | "command";
-  userName?: string;
-}
+export type { TelegramEvent } from "./types.js";
 
 interface MessageContext {
   msg: Message;

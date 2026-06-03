@@ -52,38 +52,8 @@ type EventToolParams = {
   filenamePrefix?: string;
 };
 
-export type EventPayload =
-  | {
-      type: "immediate";
-      platform: string;
-      conversationId: string;
-      conversationKind: "direct" | "shared";
-      userId: string;
-      text: string;
-    }
-  | {
-      type: "one-shot";
-      platform: string;
-      conversationId: string;
-      conversationKind: "direct" | "shared";
-      userId: string;
-      text: string;
-      at: string;
-    }
-  | {
-      type: "periodic";
-      platform: string;
-      conversationId: string;
-      conversationKind: "direct" | "shared";
-      userId: string;
-      text: string;
-      schedule: string;
-      timezone: string;
-    };
-
-export interface EventStore {
-  write(filename: string, payload: EventPayload): Promise<{ path: string; size: number }>;
-}
+export type { EventPayload, EventStore } from "./types.js";
+import type { EventPayload, EventStore } from "./types.js";
 
 export class HostEventStore implements EventStore {
   constructor(private readonly eventsDir: string) {}

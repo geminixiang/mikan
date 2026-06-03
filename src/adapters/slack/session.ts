@@ -1,27 +1,13 @@
 import type { ConversationKind } from "../../adapter.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
+export type { SlackAdapterSessionPlan, SlackEventAnchorRunPlan, SlackSessionRef } from "./types.js";
+import type { SlackAdapterSessionPlan, SlackEventAnchorRunPlan, SlackSessionRef } from "./types.js";
 
 interface SlackSessionEventLike {
   conversationId: string;
   ts: string;
   thread_ts?: string;
   sessionKey?: string;
-}
-
-export type SlackSessionRef =
-  | { kind: "channel"; channelId: string }
-  | { kind: "thread"; channelId: string; threadTs: string };
-
-export interface SlackAdapterSessionPlan {
-  sessionKey: string;
-  rootTs?: string;
-  initialMessageTs?: string;
-  isThreaded: boolean;
-}
-
-export interface SlackEventAnchorRunPlan<T extends SlackSessionEventLike> {
-  event: T;
-  initialMessageTs?: string;
 }
 
 export function formatSlackSessionKey(ref: SlackSessionRef): string {

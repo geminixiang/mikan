@@ -5,20 +5,8 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-guards.js";
 import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 import { isPlatformHistorySession } from "./metadata.js";
-
-export interface ThreadRootMessage {
-  text?: string;
-  userName?: string;
-  user?: string;
-  loggedAt?: number;
-  isBot?: boolean;
-}
-
-export interface ResolvedSessionScope {
-  sessionDir: string;
-  contextFile: string;
-  threadRootMessage: ThreadRootMessage | null;
-}
+export type { ResolvedSessionScope, ThreadRootMessage } from "./types.js";
+import type { ResolvedSessionScope, ThreadRootMessage } from "./types.js";
 
 interface PersistableSessionEntryLike {
   type: string;

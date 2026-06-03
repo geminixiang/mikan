@@ -15,38 +15,8 @@ import {
 import { isPlatformHistorySession } from "../../sessions/metadata.js";
 import * as log from "../../log.js";
 
-export interface SessionViewItem {
-  kind: "user" | "assistant" | "tool" | "system";
-  title: string;
-  body?: string;
-  meta?: string;
-  tone?: "default" | "ok" | "err" | "muted";
-  entryId?: string;
-  threads?: SessionViewRelation[];
-}
-
-export interface SessionViewRelation {
-  kind: "parent" | "thread";
-  fileName: string;
-  sessionId: string;
-  title: string;
-  updatedAt: string;
-  entryCount: number;
-  summary?: string;
-  anchorEntryId?: string;
-}
-
-export interface SessionViewModel {
-  sessionId: string;
-  fileName: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  entryCount: number;
-  items: SessionViewItem[];
-  parent?: SessionViewRelation;
-  threads: SessionViewRelation[];
-}
+export type { SessionViewItem, SessionViewRelation, SessionViewModel } from "./types.js";
+import type { SessionViewItem, SessionViewRelation, SessionViewModel } from "./types.js";
 
 export function resolveExistingSessionFile(
   workingDir: string,

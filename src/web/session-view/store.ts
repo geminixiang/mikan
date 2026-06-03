@@ -1,16 +1,7 @@
 import type { PlatformName } from "../../adapter.js";
 import { InMemoryTokenStore } from "../token-store.js";
-
-export interface SessionViewToken {
-  token: string;
-  platform: PlatformName;
-  platformUserId: string;
-  platformUserName?: string;
-  conversationId: string;
-  sessionKey: string;
-  sessionFile: string;
-  expiresAt: number;
-}
+export type { SessionViewToken } from "./types.js";
+import type { SessionViewToken } from "./types.js";
 
 const TTL_MS = 24 * 60 * 60 * 1000;
 

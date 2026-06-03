@@ -1,7 +1,7 @@
-import type { Bot, BotAdapters, BotEvent, BotHandler, RunningSession } from "../adapter.js";
+import type { Bot, BotAdapters, BotEvent, RunningSession } from "../adapter.js";
 import { type AgentRunner, createRunner } from "../agent.js";
 import { defaultCommandHandlers } from "../commands/registry.js";
-import type { CommandHandler, CommandServices } from "../commands/types.js";
+import type { CommandServices } from "../commands/types.js";
 import * as log from "../log.js";
 import { reportUserFacingError } from "../observability/sentry.js";
 import {
@@ -19,29 +19,18 @@ import { getUnresolvedSandboxPathContext } from "../agent.js";
 
 type ConversationState = ConversationRuntimeState;
 
-export interface RunSessionOptions {
-  event: BotEvent;
-  bot: Bot;
-  adapters: BotAdapters;
-}
-
-export interface CreateSessionSandboxOptions {
-  conversationId: string;
-  sessionKey: string;
-}
-
-export interface SessionRuntimeOptions extends Omit<CommandServices, "runtime"> {
-  /** Override the default command handlers (e.g., to add /help, /status). */
-  commandHandlers?: readonly CommandHandler[];
-}
-
-export interface SessionRuntime extends BotHandler {
-  runSession(options: RunSessionOptions): Promise<void>;
-  createSessionSandbox(options: CreateSessionSandboxOptions): Promise<AgentRunner>;
-  switchConversationModel(conversationId: string, provider: string, model: string): boolean;
-  refreshConversationEnvironment(conversationId: string): boolean;
-  shutdown(timeoutMs?: number): Promise<void>;
-}
+export type {
+  CreateSessionSandboxOptions,
+  RunSessionOptions,
+  SessionRuntime,
+  SessionRuntimeOptions,
+} from "./types.js";
+import type {
+  CreateSessionSandboxOptions,
+  RunSessionOptions,
+  SessionRuntime,
+  SessionRuntimeOptions,
+} from "./types.js";
 
 const MAX_SESSIONS = 500;
 const IDLE_TIMEOUT_MS = 3_600_000;

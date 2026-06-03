@@ -19,6 +19,7 @@ import { resolveConversationSettings } from "../../config.js";
 import type { EventsWatcher } from "../../events.js";
 import * as log from "../../log.js";
 import type { Attachment, ChannelStore } from "../../store.js";
+import type { SlackChannel, SlackEvent, SlackUser } from "./types.js";
 import { PRODUCT_NAME, formatForceStopped, formatNothingRunning } from "../../platform-messages.js";
 import {
   appendBotResponseLog,
@@ -94,32 +95,7 @@ function buildSlackAppMessageText(event: {
 // Types
 // ============================================================================
 
-export interface SlackEvent {
-  type: "mention" | "dm";
-  conversationId: string;
-  conversationKind: ConversationKind;
-  channel: string;
-  ts: string;
-  thread_ts?: string;
-  user: string;
-  text: string;
-  files?: Array<{ name?: string; url_private_download?: string; url_private?: string }>;
-  /** Processed attachments with local paths (populated after logUserMessage) */
-  attachments?: Attachment[];
-  /** Session key passed through to BotEvent so handleEvent uses the correct persistent session */
-  sessionKey?: string;
-}
-
-export interface SlackUser {
-  id: string;
-  userName: string;
-  displayName: string;
-}
-
-export interface SlackChannel {
-  id: string;
-  name: string;
-}
+export type { SlackChannel, SlackEvent, SlackUser } from "./types.js";
 
 // ============================================================================
 // SlackBot

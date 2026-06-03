@@ -31,53 +31,24 @@ interface LogRecord {
   index: number;
 }
 
-export interface ChatSessionManagerOptions {
-  recentDays?: number;
-  maxTopLevelMessages?: number;
-  now?: () => Date;
-}
-
-export interface ResolveChatSessionScopeOptions {
-  conversationDir: string;
-  sessionKey: string;
-  cwd?: string;
-  /** The triggering platform message ID. Excluded from bootstrap to avoid duplicate user turns. */
-  currentMessageId?: string;
-}
-
-export interface SyncChatSessionManagerOptions {
-  conversationDir: string;
-  sessionKey: string;
-  sessionManager: SessionManager;
-  /** The triggering platform message ID. Excluded from sync to avoid duplicate user turns. */
-  currentMessageId?: string;
-}
-
-export interface ResetChatSessionOptions {
-  conversationDir: string;
-  sessionKey: string;
-  cwd?: string;
-}
-
-export interface RegisterThreadSessionOptions {
-  conversationDir: string;
-  sessionKey: string;
-  cwd?: string;
-}
-
-export interface HasMaterializedSessionOptions {
-  conversationDir: string;
-  sessionKey: string;
-}
-
-export interface ThreadBootstrapWaitOptions {
-  parentSessionKey: string;
-  sessionKey: string;
-  hasThreadSession: () => boolean;
-  isParentRunning: () => boolean;
-  sleep?: (ms: number) => Promise<void>;
-  pollMs?: number;
-}
+export type {
+  ChatSessionManagerOptions,
+  HasMaterializedSessionOptions,
+  RegisterThreadSessionOptions,
+  ResetChatSessionOptions,
+  ResolveChatSessionScopeOptions,
+  SyncChatSessionManagerOptions,
+  ThreadBootstrapWaitOptions,
+} from "./types.js";
+import type {
+  ChatSessionManagerOptions,
+  HasMaterializedSessionOptions,
+  RegisterThreadSessionOptions,
+  ResetChatSessionOptions,
+  ResolveChatSessionScopeOptions,
+  SyncChatSessionManagerOptions,
+  ThreadBootstrapWaitOptions,
+} from "./types.js";
 
 export function hasMaterializedChatSession(options: HasMaterializedSessionOptions): boolean {
   if (!options.sessionKey.includes(":")) {

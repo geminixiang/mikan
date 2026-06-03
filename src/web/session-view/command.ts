@@ -1,8 +1,6 @@
 import { matchCommand } from "../../commands/parse.js";
-
-export interface ParsedSessionViewCommand {
-  command: "session" | "/session" | "/pi-session";
-}
+export type { ParsedSessionViewCommand } from "./types.js";
+import type { ParsedSessionViewCommand } from "./types.js";
 
 const SESSION_VIEW_COMMANDS = ["session", "/session", "/pi-session"] as const;
 

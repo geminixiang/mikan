@@ -1,9 +1,6 @@
 import { randomBytes } from "crypto";
-
-export interface TokenRecord {
-  token: string;
-  expiresAt: number;
-}
+export type { TokenRecord } from "./types.js";
+import type { TokenRecord } from "./types.js";
 
 /**
  * Generic in-memory TTL token store.

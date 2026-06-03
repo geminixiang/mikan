@@ -3,41 +3,8 @@ import { readEnv } from "../../utils/env.js";
 import { isRecord, parseJsonValue } from "../../utils/file-guards.js";
 import * as log from "../../log.js";
 
-export type LoginCredentialKind = "api_key" | "oauth";
-
-interface OAuthAuthorizedUserFileOutput {
-  type: "authorized_user";
-  relativePath: string;
-  targetPath?: string;
-  envKey?: string;
-  additionalEnvKeys?: string[];
-}
-
-export interface OAuthService {
-  id: string;
-  label: string;
-  aliases: string[];
-  authorizationUrl: string;
-  tokenUrl: string;
-  scopes: string[];
-  clientIdEnvKey: string;
-  clientSecretEnvKey: string;
-  accessTokenEnvKey?: string;
-  additionalAccessTokenEnvKeys?: string[];
-  refreshTokenEnvKey?: string;
-  authorizationParams?: Record<string, string>;
-  fileOutput?: OAuthAuthorizedUserFileOutput;
-}
-
-export type ParsedLoginCommand =
-  | { command: "login" | "/login" | "/pi-login"; action: "setup" }
-  | {
-      command: "login" | "/login" | "/pi-login";
-      action: "shared_create" | "shared_update" | "shared_delete";
-      name: string;
-    }
-  | { command: "login" | "/login" | "/pi-login"; action: "shared_list" }
-  | { command: "login" | "/login" | "/pi-login"; action: "copy_shared"; name: string };
+export type { LoginCredentialKind, OAuthService, ParsedLoginCommand } from "./types.js";
+import type { LoginCredentialKind, OAuthService, ParsedLoginCommand } from "./types.js";
 
 const DEFAULT_GOOGLE_WORKSPACE_CLI_SCOPES = [
   "https://www.googleapis.com/auth/drive",

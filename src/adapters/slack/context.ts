@@ -15,17 +15,12 @@ import {
 import { BufferedResponseStream } from "../streaming.js";
 import type { SlackBot, SlackEvent } from "./bot.js";
 import { planSlackAdapterSession } from "./session.js";
+export type { SlackAdapterOptions } from "./types.js";
+import type { SlackAdapterOptions } from "./types.js";
 
 const SLACK_FORMATTING_GUIDE = `## Slack Formatting (mrkdwn, NOT Markdown)
 Bold: *text*, Italic: _text_, Code: \`code\`, Block: \`\`\`code\`\`\`, Links: <url|text>
 Do NOT use **double asterisks** or [markdown](links).`;
-
-type SlackReplyMode = "top-level" | "thread";
-
-export interface SlackAdapterOptions {
-  initialMessageTs?: string;
-  replyMode?: SlackReplyMode;
-}
 
 const MAX_MAIN_LENGTH = 35000; // Best-effort streaming cap; final responses use Slack error-driven fallback.
 const MAX_THREAD_LENGTH = 20000;

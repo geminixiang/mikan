@@ -1,16 +1,7 @@
 import type { PlatformName } from "../../adapter.js";
 import { InMemoryTokenStore } from "../token-store.js";
-
-export interface LinkToken {
-  token: string;
-  platform: PlatformName;
-  platformUserId: string;
-  vaultId: string;
-  providerId: string;
-  /** Conversation to notify when binding completes */
-  conversationId: string;
-  expiresAt: number;
-}
+export type { LinkToken } from "./types.js";
+import type { LinkToken } from "./types.js";
 
 const TTL_MS = 15 * 60 * 1000;
 

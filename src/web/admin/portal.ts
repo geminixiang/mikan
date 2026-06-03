@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { homedir } from "os";
 import { join, resolve as pathResolve, sep as pathSep } from "path";
 import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
-import type { Bot, PlatformName, RunningSession } from "../../adapter.js";
+
 import {
   loadConversationAutoReplyConfig,
   loadGlobalSettings,
@@ -16,40 +16,14 @@ import {
 import { escapeHtml } from "../../utils/html.js";
 import { readRawBody } from "../../utils/http-body.js";
 import { renderPortalShell } from "../../portal-shell.js";
-import type { SandboxConfig } from "../../sandbox/index.js";
 import { resolveExistingSessionFile } from "../session-view/service.js";
-import type { InMemorySessionViewTokenStore } from "../session-view/store.js";
 import { PRODUCT_NAME } from "../../platform-messages.js";
 import { resolveActorVaultKey } from "../../vault/routing.js";
-import { sharedVaultKey, type VaultManager } from "../../vault/index.js";
-import type { AdminToken, InMemoryAdminTokenStore } from "./store.js";
+import { sharedVaultKey } from "../../vault/index.js";
+import type { AdminToken } from "./store.js";
 
-// ── Types ──────────────────────────────────────────────────────────────────────
-
-export interface AdminRuntimeBridge {
-  getRunningSessions(): RunningSession[];
-  switchConversationModel(conversationId: string, provider: string, model: string): boolean;
-}
-
-export interface AdminServices {
-  vaultManager: VaultManager;
-  linkTokenStore: {
-    create(
-      platform: PlatformName,
-      platformUserId: string,
-      conversationId: string,
-      vaultId: string,
-      providerId: string,
-    ): { token: string };
-  };
-  sessionViewTokenStore?: InMemorySessionViewTokenStore;
-  adminTokenStore: InMemoryAdminTokenStore;
-  portalBaseUrl?: string;
-  workingDir?: string;
-  sandbox?: SandboxConfig;
-  runtime?: AdminRuntimeBridge;
-  botsByPlatform?: Partial<Record<PlatformName, Bot>>;
-}
+export type { AdminRuntimeBridge, AdminServices } from "./types.js";
+import type { AdminRuntimeBridge, AdminServices } from "./types.js";
 
 // ── Handler ────────────────────────────────────────────────────────────────────
 

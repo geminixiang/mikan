@@ -13,35 +13,20 @@ import type { BotHandler } from "../adapter.js";
 import { ensureDirExists } from "../utils/file-guards.js";
 import * as log from "../log.js";
 import { reportUserFacingError } from "../observability/sentry.js";
-
-export type ChatResponseErrorOperation =
-  | "respond"
-  | "replace_response"
-  | "respond_diagnostic"
-  | "set_working";
-
-export interface ChatResponseErrorContext {
-  platform: string;
-  conversationId: string;
-  messageId: string;
-  sessionKey: string;
-  conversationKind: string;
-  operation: ChatResponseErrorOperation;
-  channelId?: string;
-  chatId?: number;
-  responseMessageId?: string | number | null;
-  threadTs?: string;
-  replyTargetId?: string;
-  replyToId?: number | null;
-  isThreaded?: boolean;
-  extra?: Record<string, unknown>;
-}
-
-export type ChatResponseErrorReporter = (
-  err: unknown,
-  operation: ChatResponseErrorOperation,
-  extra?: Record<string, unknown>,
-) => void;
+export type {
+  ChatResponseErrorContext,
+  ChatResponseErrorOperation,
+  ChatResponseErrorReporter,
+  ResolveStopTargetInput,
+  RetryOptions,
+} from "./types.js";
+import type {
+  ChatResponseErrorContext,
+  ChatResponseErrorOperation,
+  ChatResponseErrorReporter,
+  RetryOptions,
+  ResolveStopTargetInput,
+} from "./types.js";
 
 export function createChatResponseErrorReporter(
   resolve: () => Omit<ChatResponseErrorContext, "operation" | "extra">,
@@ -107,13 +92,7 @@ export class ChannelQueue {
   }
 }
 
-export interface RetryOptions {
-  /** Predicate that returns true when an error is worth retrying (rate limit, transient 5xx, etc.). */
-  isRateLimited: (err: Error) => boolean;
-  /** Total attempts including the first call. */
-  maxAttempts?: number;
-  baseDelayMs?: number;
-}
+// RetryOptions is defined in ./types.ts and re-exported from the top of this file.
 
 /**
  * Run `fn` and retry with exponential backoff when its error matches
@@ -206,12 +185,7 @@ export function appendBotResponseLog(
   });
 }
 
-export interface ResolveStopTargetInput {
-  handler: BotHandler;
-  conversationId: string;
-  /** Session key derived from the current message; checked first when present. */
-  sessionKey?: string;
-}
+// ResolveStopTargetInput is defined in ./types.ts and re-exported from the top of this file.
 
 /**
  * Pick which session key a `/stop` should target without applying any

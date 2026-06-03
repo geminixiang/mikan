@@ -1,13 +1,5 @@
-export interface BufferedResponseStreamOptions {
-  minFlushIntervalMs?: number;
-  minFlushChars?: number;
-  now?: () => number;
-}
-
-export interface BufferedResponseStreamSink {
-  flush(text: string): Promise<void>;
-  finish(text: string): Promise<void>;
-}
+export type { BufferedResponseStreamOptions, BufferedResponseStreamSink } from "./types.js";
+import type { BufferedResponseStreamOptions, BufferedResponseStreamSink } from "./types.js";
 
 export class BufferedResponseStream {
   private readonly minFlushIntervalMs: number;

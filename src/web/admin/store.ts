@@ -1,15 +1,7 @@
 import type { PlatformName } from "../../adapter.js";
 import { InMemoryTokenStore } from "../token-store.js";
-
-export interface AdminToken {
-  token: string;
-  platform: PlatformName;
-  platformUserId: string;
-  platformUserName?: string;
-  /** The conversation where /admin was invoked. Default scope for the 3 sub-pages. */
-  conversationId: string;
-  expiresAt: number;
-}
+export type { AdminToken } from "./types.js";
+import type { AdminToken } from "./types.js";
 
 const TTL_MS = 30 * 60 * 1000;
 

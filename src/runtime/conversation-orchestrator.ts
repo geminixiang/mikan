@@ -1,6 +1,5 @@
-import type { Bot, BotAdapters, BotEvent, PlatformName } from "../adapter.js";
+import type { BotAdapters, PlatformName } from "../adapter.js";
 import { waitForThreadSessionBootstrap } from "../sessions/chat-session-manager.js";
-import type { AgentRunner } from "../agent.js";
 import { dispatchCommand } from "../commands/registry.js";
 import type { CommandHandler, CommandServices } from "../commands/types.js";
 import { isPrivateConversation } from "../commands/utils.js";
@@ -14,21 +13,8 @@ import { formatStopped } from "../platform-messages.js";
 import * as Sentry from "@sentry/node";
 import { join } from "path";
 
-export interface ConversationRuntimeState {
-  running: boolean;
-  runner: AgentRunner;
-  stopRequested: boolean;
-  stopMessageTs?: string;
-  lastAccessedAt: number;
-  startedAt?: number;
-  lastActivityAt?: number;
-}
-
-export interface RunConversationOptions {
-  event: BotEvent;
-  bot: Bot;
-  adapters: BotAdapters;
-}
+export type { ConversationRuntimeState, RunConversationOptions } from "./types.js";
+import type { ConversationRuntimeState, RunConversationOptions } from "./types.js";
 
 interface ConversationOrchestratorOptions {
   workingDir: string;

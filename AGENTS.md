@@ -9,6 +9,15 @@
 - When the user asks a question, answer it first before making edits or running implementation commands.
 - When responding to user feedback or analysis, explicitly say whether you agree or disagree before saying what changed.
 
+## Type Organization
+
+- Every module directory that contains non-trivial types must have a `types.ts` file.
+- `types.ts` is the single source for all exported `interface`, `type`, and `enum` definitions within that module.
+- Implementation files (`bot.ts`, `context.ts`, `session.ts`, etc.) import types from `./types.ts` and re-export them for downstream consumers; they do not define types inline.
+- Root-level files (`adapter.ts`, `config.ts`, `context.ts`, `events.ts`, etc.) may keep types co-located if the file itself is already entirely or mostly type declarations.
+- Private (non-exported) types may stay in the file that uses them.
+- Never duplicate a type definition — if a type is needed in multiple files within the same module, it lives in `types.ts`.
+
 ## Coding Rules
 
 - Prefer LBYL (Look Before You Leap) in implementation code: validate preconditions before performing operations when those checks are reliable and do not introduce race conditions.
