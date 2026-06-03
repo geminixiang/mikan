@@ -399,6 +399,7 @@ ls -1 sessions/
 - event: Schedule immediate, one-shot, or periodic follow-ups
 - sandbox: Inspect or temporarily adjust sandbox limits
 - attach: Share files to the platform
+- pm: Project management — create projects/tasks, track status, set periodic reminders to channels or DMs
 
 Each tool requires a "label" parameter (shown to user).
 `;
@@ -1016,6 +1017,12 @@ async function prepareRunContext(params: {
     userId: string;
   }) => void;
   setSandboxContext: (context: { conversationId: string; userId: string }) => void;
+  setPMContext: (context: {
+    platform: string;
+    conversationId: string;
+    conversationKind: ConversationKind;
+    userId: string;
+  }) => void;
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
   setBlockKitResponseFunction: (
     fn: (response: import("./adapter.js").ChatResponseBlockKit) => Promise<void>,
@@ -1039,6 +1046,7 @@ async function prepareRunContext(params: {
     agent,
     setEventContext,
     setSandboxContext,
+    setPMContext,
     setUploadFunction,
     setBlockKitResponseFunction,
   } = params;
@@ -1082,6 +1090,12 @@ async function prepareRunContext(params: {
     userId: message.userId,
   });
   setSandboxContext({ conversationId, userId: message.userId });
+  setPMContext({
+    platform: platform.name,
+    conversationId,
+    conversationKind: message.conversationKind,
+    userId: message.userId,
+  });
 
   setUploadFunction(async (filePath: string, title?: string) => {
     const hostPath = translateRuntimePathToHost(filePath, pathContext);
@@ -1449,6 +1463,7 @@ export async function createRunner(
     setBlockKitResponseFunction,
     setEventContext,
     setSandboxContext,
+    setPMContext,
   } = createMikanTools(executor, workspaceDir, { sandbox: sandboxConfig, provisioner });
 
   // Resolve model from config. Config stores provider/model as user-provided strings,
@@ -1541,6 +1556,7 @@ export async function createRunner(
         agent,
         setEventContext,
         setSandboxContext,
+        setPMContext,
         setUploadFunction,
         setBlockKitResponseFunction,
         pathContext,
