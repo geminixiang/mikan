@@ -9,6 +9,23 @@ any release.
 
 ## [Unreleased]
 
+## [0.4.0-beta.0]
+
+### Added
+
+- Add streamed response deltas across adapters so replies can update progressively.
+- Add Slack reply mode configuration in the admin portal.
+- Add event tool CRUD support for listing, reading, updating, and deleting scheduled events, with conversation-scoped listing by default and explicit all-event listing.
+
+### Changed
+
+- Reorganize source modules and centralize shared type definitions for clearer contributor navigation.
+- Centralize adapter conversation intake and reduce wrapper indirection across runtime, adapters, commands, config, and web modules.
+
+### Fixed
+
+- Persist global settings overrides correctly.
+
 ## [0.3.2] - 2026-06-02
 
 ### Fixed
