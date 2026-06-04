@@ -6,6 +6,12 @@ export type EventPayload = MikanEvent;
 
 export interface EventStore {
   write(filename: string, payload: MikanEvent): Promise<{ path: string; size: number }>;
+  list(): Promise<Array<{ filename: string; payload: MikanEvent; size: number; mtimeMs: number }>>;
+  read(
+    filename: string,
+  ): Promise<{ filename: string; payload: MikanEvent; size: number; mtimeMs: number }>;
+  update(filename: string, payload: MikanEvent): Promise<{ path: string; size: number }>;
+  delete(filename: string): Promise<{ deleted: boolean }>;
 }
 
 // ── truncation ───────────────────────────────────────────────────────────────

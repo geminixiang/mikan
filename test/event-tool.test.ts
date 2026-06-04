@@ -70,6 +70,18 @@ describe("createEventTool", () => {
         writes.push({ filename, payload });
         return { path: `/control/events/${filename}`, size: 123 };
       },
+      async list() {
+        return [];
+      },
+      async read() {
+        throw new Error("not implemented");
+      },
+      async update() {
+        throw new Error("not implemented");
+      },
+      async delete() {
+        return { deleted: true };
+      },
     });
     setEventContext({
       platform: "slack",
@@ -105,6 +117,18 @@ describe("createEventTool", () => {
       async write() {
         throw new Error("control plane unavailable");
       },
+      async list() {
+        return [];
+      },
+      async read() {
+        throw new Error("not implemented");
+      },
+      async update() {
+        throw new Error("not implemented");
+      },
+      async delete() {
+        return { deleted: true };
+      },
     });
     setEventContext({
       platform: "slack",
@@ -120,6 +144,101 @@ describe("createEventTool", () => {
         text: "Check deployment status",
       }),
     ).rejects.toThrow("control plane unavailable");
+  });
+
+  test("lists current conversation by default and all events when requested", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1700000000003);
+    const workspaceDir = makeWorkspace();
+    const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
+    setEventContext({
+      platform: "slack",
+      conversationId: "C123",
+      conversationKind: "shared",
+      userId: "U123",
+    });
+
+    await tool.execute("call-1", {
+      type: "immediate",
+      text: "Visible in this conversation",
+      filenamePrefix: "visible",
+    });
+
+    setEventContext({
+      platform: "slack",
+      conversationId: "C999",
+      conversationKind: "shared",
+      userId: "U123",
+    });
+    await tool.execute("call-2", {
+      type: "immediate",
+      text: "Visible only globally",
+      filenamePrefix: "global",
+    });
+
+    setEventContext({
+      platform: "slack",
+      conversationId: "C123",
+      conversationKind: "shared",
+      userId: "U123",
+    });
+    const scopedResult = await tool.execute("call-3", { action: "list" });
+    expect(scopedResult.content[0]?.text).toContain("visible-1700000000003.json");
+    expect(scopedResult.content[0]?.text).not.toContain("Visible only globally");
+
+    const allResult = await tool.execute("call-4", { action: "list", scope: "all" });
+    expect(allResult.content[0]?.text).toContain("Visible in this conversation");
+    expect(allResult.content[0]?.text).toContain("Visible only globally");
+  });
+
+  test("supports list, read, update, and delete", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1700000000003);
+    const workspaceDir = makeWorkspace();
+    const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
+    setEventContext({
+      platform: "slack",
+      conversationId: "C123",
+      conversationKind: "shared",
+      userId: "U123",
+    });
+
+    await tool.execute("call-1", {
+      type: "immediate",
+      text: "Check deployment status",
+      filenamePrefix: "deploy",
+    });
+
+    const listResult = await tool.execute("call-2", { action: "list" });
+    expect(listResult.content[0]?.text).toContain("deploy-1700000000003.json");
+
+    const readResult = await tool.execute("call-3", {
+      action: "read",
+      filename: "deploy-1700000000003.json",
+    });
+    expect(readResult.content[0]?.text).toContain("Check deployment status");
+
+    await tool.execute("call-4", {
+      action: "update",
+      filename: "deploy-1700000000003.json",
+      type: "periodic",
+      text: "Check deployment status daily",
+      schedule: "0 9 * * *",
+      timezone: "Asia/Taipei",
+    });
+    const updated = JSON.parse(
+      readFileSync(join(workspaceDir, "events", "deploy-1700000000003.json"), "utf-8"),
+    );
+    expect(updated).toMatchObject({
+      type: "periodic",
+      text: "Check deployment status daily",
+      schedule: "0 9 * * *",
+      timezone: "Asia/Taipei",
+    });
+
+    await tool.execute("call-5", {
+      action: "delete",
+      filename: "deploy-1700000000003.json",
+    });
+    expect(existsSync(join(workspaceDir, "events", "deploy-1700000000003.json"))).toBe(false);
   });
 
   test("writes immediate event payload without thread state even when scheduled from a thread", async () => {
