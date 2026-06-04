@@ -18,7 +18,7 @@ const THINKING_LEVELS = new Set<ThinkingLevel>(["off", ...PI_AI_THINKING_LEVELS]
 
 export type { ParsedModelCommand } from "./types.js";
 
-const MODEL_COMMANDS = ["model", "/model", "/pi-model"] as const;
+const MODEL_COMMANDS = ["/model", "/pi-model"] as const;
 
 export function parseModelCommand(text: string): ParsedModelCommand | null {
   const matched = matchCommand(text, MODEL_COMMANDS);

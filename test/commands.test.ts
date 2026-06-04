@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Bot, ChatResponseContext } from "../src/adapter.js";
+import { AdminCommandHandler } from "../src/commands/admin.js";
 import { AutoReplyCommandHandler } from "../src/commands/auto-reply.js";
 import { dispatchCommand } from "../src/commands/registry.js";
 import { LoginCommandHandler } from "../src/commands/login.js";
@@ -207,6 +208,17 @@ describe("dispatchCommand", () => {
   });
 });
 
+// ── AdminCommandHandler ─────────────────────────────────────────────────────
+
+describe("AdminCommandHandler", () => {
+  const handler = new AdminCommandHandler();
+
+  test("requires slash form", async () => {
+    const ctx = buildContext({ commandText: "admin" });
+    expect(await handler.tryHandle(ctx)).toBe(false);
+  });
+});
+
 // ── AutoReplyCommandHandler ─────────────────────────────────────────────────
 
 describe("AutoReplyCommandHandler", () => {
@@ -222,9 +234,12 @@ describe("AutoReplyCommandHandler", () => {
     rmSync(workingDir, { recursive: true, force: true });
   });
 
-  test("declines unrelated commands", async () => {
+  test("declines unrelated commands and bare forms", async () => {
     const ctx = buildContext({ commandText: "hello", services: { workingDir } });
     expect(await handler.tryHandle(ctx)).toBe(false);
+
+    const bareCtx = buildContext({ commandText: "auto-reply on", services: { workingDir } });
+    expect(await handler.tryHandle(bareCtx)).toBe(false);
   });
 
   test("rejects private conversations", async () => {
@@ -685,9 +700,12 @@ describe("SessionViewCommandHandler", () => {
 describe("NewCommandHandler", () => {
   const handler = new NewCommandHandler();
 
-  test("declines unrelated commands", async () => {
+  test("declines unrelated commands and bare forms", async () => {
     const ctx = buildContext({ commandText: "hello" });
     expect(await handler.tryHandle(ctx)).toBe(false);
+
+    const bareCtx = buildContext({ commandText: "new", privateConversation: true });
+    expect(await handler.tryHandle(bareCtx)).toBe(false);
   });
 
   test("rejects shared conversations", async () => {

@@ -3,10 +3,10 @@ import type { CommandContext, CommandHandler } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 
 type ParsedNewCommand = {
-  command: "new" | "/new" | "/pi-new";
+  command: "/new" | "/pi-new";
 };
 
-const NEW_COMMANDS = ["new", "/new", "/pi-new"] as const;
+const NEW_COMMANDS = ["/new", "/pi-new"] as const;
 
 function parseNewCommand(text: string): ParsedNewCommand | null {
   const matched = matchCommand(text, NEW_COMMANDS);

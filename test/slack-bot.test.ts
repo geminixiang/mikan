@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -546,6 +546,237 @@ describe("SlackBot queues follow-up messages", () => {
       sessionKey: "C123",
       text: "second request",
     });
+  });
+
+  test("shared channel auto-reply candidates queue when auto-reply is enabled", async () => {
+    mkdirSync(join(workingDir, "C123"), { recursive: true });
+    writeFileSync(join(workingDir, "C123", "auto-reply"), "");
+
+    const handler = makeHandler();
+    const bot = new SlackBot(handler, {
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      workingDir,
+      store: {} as any,
+    });
+
+    let messageHandler:
+      | ((payload: {
+          event: {
+            text: string;
+            channel: string;
+            user: string;
+            ts: string;
+            channel_type?: string;
+          };
+          ack: () => void;
+        }) => void)
+      | undefined;
+
+    (bot as any).startupTs = "0";
+    (bot as any).botUserId = "B123";
+    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
+    (bot as any).socketClient = {
+      on: vi.fn((event: string, fn: unknown) => {
+        if (event === "message") messageHandler = fn as typeof messageHandler;
+      }),
+    };
+
+    (bot as any).setupEventHandlers();
+
+    const queue = (bot as any).getQueue("C123");
+    queue.processing = true;
+    const ack = vi.fn();
+
+    messageHandler?.({
+      event: {
+        text: "deployment failed",
+        channel: "C123",
+        user: "U123",
+        ts: "1001.0001",
+        channel_type: "channel",
+      },
+      ack,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(ack).toHaveBeenCalled();
+    expect(queue.size()).toBe(1);
+    expect(handler.handleEvent).not.toHaveBeenCalled();
+
+    queue.processing = false;
+    await queue.processNext();
+
+    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
+      conversationId: "C123",
+      sessionKey: "C123",
+      text: "deployment failed",
+    });
+  });
+
+  test("shared channel auto-reply candidates only log when auto-reply is disabled", async () => {
+    const handler = makeHandler();
+    const bot = new SlackBot(handler, {
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      workingDir,
+      store: {} as any,
+    });
+
+    let messageHandler:
+      | ((payload: {
+          event: {
+            text: string;
+            channel: string;
+            user: string;
+            ts: string;
+            channel_type?: string;
+          };
+          ack: () => void;
+        }) => void)
+      | undefined;
+
+    (bot as any).startupTs = "0";
+    (bot as any).botUserId = "B123";
+    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
+    (bot as any).socketClient = {
+      on: vi.fn((event: string, fn: unknown) => {
+        if (event === "message") messageHandler = fn as typeof messageHandler;
+      }),
+    };
+
+    (bot as any).setupEventHandlers();
+
+    const ack = vi.fn();
+
+    messageHandler?.({
+      event: {
+        text: "deployment failed",
+        channel: "C123",
+        user: "U123",
+        ts: "1001.0001",
+        channel_type: "channel",
+      },
+      ack,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(ack).toHaveBeenCalled();
+    expect((bot as any).getQueue("C123").size()).toBe(0);
+    expect(handler.handleEvent).not.toHaveBeenCalled();
+  });
+
+  test("DM stop is handled immediately and bypasses the intake queue", async () => {
+    const handler = makeHandler();
+    vi.mocked(handler.isRunning).mockImplementation((sessionKey: string) => sessionKey === "D123");
+    const bot = new SlackBot(handler, {
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      workingDir,
+      store: {} as any,
+    });
+
+    let messageHandler:
+      | ((payload: {
+          event: {
+            text: string;
+            channel: string;
+            user: string;
+            ts: string;
+            channel_type?: string;
+          };
+          ack: () => void;
+        }) => void)
+      | undefined;
+
+    (bot as any).startupTs = "0";
+    (bot as any).botUserId = "B123";
+    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
+    (bot as any).socketClient = {
+      on: vi.fn((event: string, fn: unknown) => {
+        if (event === "message") messageHandler = fn as typeof messageHandler;
+      }),
+    };
+
+    (bot as any).setupEventHandlers();
+
+    const ack = vi.fn();
+
+    messageHandler?.({
+      event: {
+        text: "stop",
+        channel: "D123",
+        user: "U123",
+        ts: "1001.0001",
+        channel_type: "im",
+      },
+      ack,
+    });
+
+    expect(ack).toHaveBeenCalled();
+    expect(handler.handleStop).toHaveBeenCalledWith("D123", "D123", bot);
+    expect((bot as any).getQueue("D123").size()).toBe(0);
+    expect(handler.handleEvent).not.toHaveBeenCalled();
+  });
+
+  test("bare shared channel stop does not trigger auto-reply", async () => {
+    mkdirSync(join(workingDir, "C123"), { recursive: true });
+    writeFileSync(join(workingDir, "C123", "auto-reply"), "");
+
+    const handler = makeHandler();
+    const bot = new SlackBot(handler, {
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      workingDir,
+      store: {} as any,
+    });
+
+    let messageHandler:
+      | ((payload: {
+          event: {
+            text: string;
+            channel: string;
+            user: string;
+            ts: string;
+            channel_type?: string;
+          };
+          ack: () => void;
+        }) => void)
+      | undefined;
+
+    (bot as any).startupTs = "0";
+    (bot as any).botUserId = "B123";
+    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
+    (bot as any).postMessage = vi.fn().mockResolvedValue("2000.0001");
+    (bot as any).socketClient = {
+      on: vi.fn((event: string, fn: unknown) => {
+        if (event === "message") messageHandler = fn as typeof messageHandler;
+      }),
+    };
+
+    (bot as any).setupEventHandlers();
+
+    const ack = vi.fn();
+
+    messageHandler?.({
+      event: {
+        text: "stop",
+        channel: "C123",
+        user: "U123",
+        ts: "1001.0001",
+        channel_type: "channel",
+      },
+      ack,
+    });
+
+    expect(ack).toHaveBeenCalled();
+    expect(handler.handleStop).not.toHaveBeenCalled();
+    expect((bot as any).postMessage).not.toHaveBeenCalled();
+    expect((bot as any).getQueue("C123").size()).toBe(0);
+    expect(handler.handleEvent).not.toHaveBeenCalled();
   });
 
   test("bare shared channel mentions ask the agent to use recent context", async () => {

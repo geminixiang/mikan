@@ -6,7 +6,6 @@ import type { Bot, BotEvent, BotHandler, ConversationKind, PlatformInfo } from "
 import type { TelegramEvent } from "./types.js";
 import * as log from "../../log.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
-import { evaluateAutoReplyPolicy } from "../../trigger.js";
 import { formatAlreadyWorking, formatNothingRunning } from "../../platform-messages.js";
 import {
   appendBotResponseLog,
@@ -17,6 +16,7 @@ import {
   resolveStopTarget,
   withRetry,
 } from "../shared.js";
+import { processMessageIntake } from "../intake.js";
 import { createTelegramAdapters } from "./context.js";
 import { escapeTelegramHtml } from "./html.js";
 
@@ -482,38 +482,32 @@ export class TelegramBot implements Bot {
         text: cleanedText,
       };
 
-      const triggerResult = isAutoReplyCandidate
-        ? await evaluateAutoReplyPolicy({ event: eventBase, workingDir: this.workingDir })
-        : ({ trigger: true, reason: "addressed" } as const);
-
-      const logEntryBase = {
-        date: new Date(mc.msg.date * 1000).toISOString(),
-        ts: mc.msgId,
-        ...(mc.conversationKind === "shared" && mc.threadTs ? { threadTs: mc.threadTs } : {}),
-        user: mc.userId,
-        userName: mc.userName,
-        text: cleanedText,
-        isBot: false,
-      };
-
-      if (!triggerResult.trigger) {
-        this.logToFile(mc.chatId, { ...logEntryBase, attachments: [] });
-        return;
-      }
-
-      const processedAttachments = await this.processAttachments(mc.chatId, mc.msg);
-      const event: TelegramEvent = { ...eventBase, attachments: processedAttachments };
-
-      this.logToFile(mc.chatId, { ...logEntryBase, attachments: processedAttachments });
-
-      if (this.handler.isRunning(mc.sessionKey)) {
-        await this.postMessage(mc.chatId, formatAlreadyWorking("telegram", "/stop"));
-      } else {
-        this.getQueue(mc.sessionKey).enqueue(() => {
-          const adapters = createTelegramAdapters(event, this);
-          return this.handler.handleEvent(event, this, adapters);
-        });
-      }
+      await processMessageIntake({
+        eventBase,
+        workingDir: this.workingDir,
+        isAutoReplyCandidate,
+        logEntryBase: {
+          date: new Date(mc.msg.date * 1000).toISOString(),
+          ts: mc.msgId,
+          ...(mc.conversationKind === "shared" && mc.threadTs ? { threadTs: mc.threadTs } : {}),
+          user: mc.userId,
+          userName: mc.userName,
+          text: cleanedText,
+          isBot: false,
+        },
+        log: (entry) => this.logToFile(mc.chatId, entry),
+        processAttachments: () => this.processAttachments(mc.chatId, mc.msg),
+        queueKey: mc.sessionKey,
+        enqueue: (queueKey, work) => this.getQueue(queueKey).enqueue(work),
+        handler: this.handler,
+        bot: this,
+        createAdapters: (event) => createTelegramAdapters(event, this),
+        beforeEnqueue: async () => {
+          if (!this.handler.isRunning(mc.sessionKey)) return true;
+          await this.postMessage(mc.chatId, formatAlreadyWorking("telegram", "/stop"));
+          return false;
+        },
+      });
     });
   }
 }

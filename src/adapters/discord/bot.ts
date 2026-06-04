@@ -29,7 +29,6 @@ import type {
 import type { DiscordEvent } from "./types.js";
 import * as log from "../../log.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
-import { evaluateAutoReplyPolicy } from "../../trigger.js";
 import { formatNothingRunning } from "../../platform-messages.js";
 import {
   appendBotResponseLog,
@@ -40,6 +39,7 @@ import {
   resolveStopTarget,
   withRetry,
 } from "../shared.js";
+import { processMessageIntake } from "../intake.js";
 import { createDiscordAdapters } from "./context.js";
 
 // discord.js: DiscordAPIError exposes `.status` (HTTP status) and a `.code`.
@@ -661,37 +661,26 @@ export class DiscordBot implements Bot {
         return;
       }
 
-      const triggerResult = isAutoReplyCandidate
-        ? await evaluateAutoReplyPolicy({ event: eventBase, workingDir: this.workingDir })
-        : ({ trigger: true, reason: "addressed" } as const);
-
-      const logEntryBase = {
-        date: msg.createdAt.toISOString(),
-        ts: msgId,
-        ...(!isDM && threadTs ? { threadTs } : {}),
-        user: userId,
-        userName,
-        text: cleanedText,
-        isBot: false,
-      };
-
-      if (!triggerResult.trigger) {
-        this.logToFile(conversationId, { ...logEntryBase, attachments: [] });
-        return;
-      }
-
-      const processedAttachments = await this.processAttachments(
-        conversationId,
-        msg.attachments,
-        msgId,
-      );
-      const event: DiscordEvent = { ...eventBase, attachments: processedAttachments };
-
-      this.logToFile(conversationId, { ...logEntryBase, attachments: processedAttachments });
-
-      this.getQueue(sessionKey).enqueue(() => {
-        const adapters = createDiscordAdapters(event, this);
-        return this.handler.handleEvent(event, this, adapters);
+      await processMessageIntake({
+        eventBase,
+        workingDir: this.workingDir,
+        isAutoReplyCandidate,
+        logEntryBase: {
+          date: msg.createdAt.toISOString(),
+          ts: msgId,
+          ...(!isDM && threadTs ? { threadTs } : {}),
+          user: userId,
+          userName,
+          text: cleanedText,
+          isBot: false,
+        },
+        log: (entry) => this.logToFile(conversationId, entry),
+        processAttachments: () => this.processAttachments(conversationId, msg.attachments, msgId),
+        queueKey: sessionKey,
+        enqueue: (queueKey, work) => this.getQueue(queueKey).enqueue(work),
+        handler: this.handler,
+        bot: this,
+        createAdapters: (event) => createDiscordAdapters(event, this),
       });
     });
   }

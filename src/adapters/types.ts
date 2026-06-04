@@ -1,3 +1,5 @@
+import type { Bot, BotAdapters, BotEvent, BotHandler } from "../adapter.js";
+
 export type ChatResponseErrorOperation =
   | "respond"
   | "replace_response"
@@ -36,7 +38,7 @@ export interface RetryOptions {
 }
 
 export interface ResolveStopTargetInput {
-  handler: import("../adapter.js").BotHandler;
+  handler: BotHandler;
   conversationId: string;
   /** Session key derived from the current message; checked first when present. */
   sessionKey?: string;
@@ -51,4 +53,21 @@ export interface BufferedResponseStreamOptions {
 export interface BufferedResponseStreamSink {
   flush(text: string): Promise<void>;
   finish(text: string): Promise<void>;
+}
+
+export interface MessageIntakeOptions<TEvent extends BotEvent> {
+  eventBase: TEvent;
+  workingDir: string | undefined;
+  isAutoReplyCandidate: boolean;
+  logEntryBase: Record<string, unknown>;
+  log?: (entry: Record<string, unknown>) => void;
+  processAttachments: () => Promise<unknown[]>;
+  queueKey: string;
+  enqueue: (queueKey: string, work: () => Promise<void>) => void;
+  handler: BotHandler;
+  bot: Bot;
+  createAdapters: (event: TEvent) => BotAdapters;
+  beforeEnqueue?: (event: TEvent) => Promise<boolean> | boolean;
+  onNotTriggered?: () => void;
+  deferAttachmentsUntilRun?: boolean;
 }

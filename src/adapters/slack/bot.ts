@@ -35,7 +35,7 @@ import {
   resolveStopTarget,
   withRetry,
 } from "../shared.js";
-import { evaluateAutoReplyPolicy } from "../../trigger.js";
+import { processMessageIntake } from "../intake.js";
 import { createSlackAdapters } from "./context.js";
 import {
   hasMaterializedChatSession,
@@ -574,6 +574,29 @@ export class SlackBot implements Bot {
     });
   }
 
+  private processSlackMessageIntake(options: {
+    event: SlackEvent;
+    attachmentsPromise: Promise<Attachment[]>;
+    queueKey: string;
+    isAutoReplyCandidate: boolean;
+    onNotTriggered?: () => void;
+  }): void {
+    void processMessageIntake({
+      eventBase: options.event as unknown as BotEvent,
+      workingDir: this.workingDir,
+      isAutoReplyCandidate: options.isAutoReplyCandidate,
+      logEntryBase: {},
+      processAttachments: () => options.attachmentsPromise,
+      queueKey: options.queueKey,
+      enqueue: (queueKey, work) => this.getQueue(queueKey).enqueue(work),
+      handler: this.handler,
+      bot: this,
+      createAdapters: (event) => this.createAdapters(event as SlackEvent),
+      onNotTriggered: options.onNotTriggered,
+      deferAttachmentsUntilRun: true,
+    });
+  }
+
   private buildHomeView(): { type: "home"; blocks: KnownBlock[] } {
     const blocks: object[] = [
       {
@@ -1060,14 +1083,11 @@ export class SlackBot implements Bot {
       return;
     }
 
-    this.getQueue(this.resolveQueueKey(e.channel, sessionKey)).enqueue(async () => {
-      slackEvent.attachments = await attachmentsPromise;
-      const adapters = this.createAdapters(slackEvent);
-      return this.handler.handleEvent(
-        slackEvent as unknown as import("../../adapter.js").BotEvent,
-        this,
-        adapters,
-      );
+    this.processSlackMessageIntake({
+      event: slackEvent,
+      attachmentsPromise,
+      queueKey: this.resolveQueueKey(e.channel, sessionKey),
+      isAutoReplyCandidate: false,
     });
 
     ack();
@@ -1194,14 +1214,11 @@ export class SlackBot implements Bot {
       // treats the message ts as a thread session (`channel:ts`) instead of the
       // persistent top-level channel session.
       slackEvent.sessionKey = activeSessionKey;
-      this.getQueue(this.resolveQueueKey(e.channel, activeSessionKey)).enqueue(async () => {
-        slackEvent.attachments = await attachmentsPromise;
-        const adapters = this.createAdapters(slackEvent);
-        return this.handler.handleEvent(
-          slackEvent as unknown as import("../../adapter.js").BotEvent,
-          this,
-          adapters,
-        );
+      this.processSlackMessageIntake({
+        event: slackEvent,
+        attachmentsPromise,
+        queueKey: this.resolveQueueKey(e.channel, activeSessionKey),
+        isAutoReplyCandidate: false,
       });
     };
 
@@ -1223,16 +1240,14 @@ export class SlackBot implements Bot {
       return;
     }
 
-    // Shared-channel non-mention top-level messages: gate via auto-reply policy.
-    // evaluateAutoReplyPolicy never throws — judge errors/timeouts surface as
-    // trigger:false with a distinct reason, and the user message has already
-    // been queued for logging via logUserMessage above.
-    evaluateAutoReplyPolicy({
-      event: slackEvent as unknown as import("../../adapter.js").BotEvent,
-      workingDir: this.workingDir,
-    }).then((triggerResult) => {
-      if (triggerResult.trigger) enqueueTriggered();
-      else logOnly();
+    const activeSessionKey = resolveSlackSessionKey(e.channel, e.thread_ts);
+    slackEvent.sessionKey = activeSessionKey;
+    this.processSlackMessageIntake({
+      event: slackEvent,
+      attachmentsPromise,
+      queueKey: this.resolveQueueKey(e.channel, activeSessionKey),
+      isAutoReplyCandidate: true,
+      onNotTriggered: logOnly,
     });
 
     ack();
@@ -1423,7 +1438,7 @@ export class SlackBot implements Bot {
       },
     });
 
-    const event: import("../../adapter.js").BotEvent = {
+    const event: BotEvent = {
       type: "slack_action",
       conversationId: channelId,
       conversationKind: channelId.startsWith("D") ? "direct" : "shared",

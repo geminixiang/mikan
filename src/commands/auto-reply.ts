@@ -11,8 +11,6 @@ import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 type AutoReplyAction = { type: "status" } | { type: "on" } | { type: "off" } | { type: "invalid" };
 
 const AUTO_REPLY_COMMANDS = [
-  "auto-reply",
-  "autoreply",
   "/auto-reply",
   "/autoreply",
   "/pi-auto-reply",

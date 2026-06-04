@@ -247,7 +247,7 @@ export function resolveOAuthService(input: string): OAuthService | undefined {
   );
 }
 
-const LOGIN_COMMANDS = ["login", "/login", "/pi-login"] as const;
+const LOGIN_COMMANDS = ["/login", "/pi-login"] as const;
 
 export function parseLoginCommand(text: string): ParsedLoginCommand | null {
   const matched = matchCommand(text, LOGIN_COMMANDS);

@@ -8,7 +8,7 @@ import {
 describe("login command parsing", () => {
   test("parseLoginCommand recognizes login commands only", () => {
     expect(parseLoginCommand("/login")).toEqual({ action: "setup" });
-    expect(parseLoginCommand("login")).toEqual({ action: "setup" });
+    expect(parseLoginCommand("login")).toBeNull();
     expect(parseLoginCommand("/login github_oauth")).toEqual({ action: "setup" });
     expect(parseLoginCommand("/pi-login github")).toEqual({ action: "setup" });
     expect(parseLoginCommand("/pi-login shared create gliaclaw")).toEqual({
