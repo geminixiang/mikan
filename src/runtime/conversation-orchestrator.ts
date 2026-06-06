@@ -7,6 +7,8 @@ import * as log from "../log.js";
 import {
   addLifecycleBreadcrumb,
   applyRunScope,
+  createRunAttributionAttributes,
+  registerTraceAttribution,
   reportUserFacingError,
 } from "../observability/sentry.js";
 import { formatStopped } from "../platform-messages.js";
@@ -160,14 +162,25 @@ export class ConversationOrchestrator {
     const { conversationId, sessionKey, startedAt } = meta;
     const { message, platform } = adapters;
 
+    const attribution = createRunAttributionAttributes({
+      conversationId,
+      sessionKey,
+      messageId: message.id,
+      platform: platform.name,
+      userId: message.userId,
+      userName: message.userName,
+      threadTs: message.threadTs,
+    });
+
     Sentry.metrics.count("agent.run.started", 1, {
-      attributes: { channel: conversationId },
+      attributes: attribution,
     });
 
     return Sentry.startSpan(
-      { name: "agent.run", op: "agent", attributes: { conversationId, sessionKey } },
-      async () =>
+      { name: "agent.run", op: "agent", attributes: attribution },
+      async (span) =>
         Sentry.withScope(async (scope) => {
+          registerTraceAttribution(span, attribution);
           applyRunScope(scope, {
             conversationId,
             sessionKey,
@@ -187,8 +200,7 @@ export class ConversationOrchestrator {
             const result = await body();
             const durationMs = Date.now() - startedAt;
             const completionAttrs = {
-              channel: conversationId,
-              platform: platform.name,
+              ...attribution,
               stop_reason: result.stopReason,
             };
             Sentry.metrics.distribution("agent.run.duration", durationMs, {
@@ -226,7 +238,7 @@ export class ConversationOrchestrator {
               },
             });
             Sentry.metrics.count("agent.run.errors", 1, {
-              attributes: { channel: conversationId, platform: platform.name },
+              attributes: attribution,
             });
             log.logWarning(
               `[${conversationId}] Run error`,

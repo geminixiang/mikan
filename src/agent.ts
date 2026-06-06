@@ -38,7 +38,11 @@ import {
   type SandboxConfig,
 } from "./sandbox/index.js";
 import { createMountedRuntimePathContext } from "./sandbox/path-context.js";
-import { addLifecycleBreadcrumb, metricAttributes } from "./observability/sentry.js";
+import {
+  addLifecycleBreadcrumb,
+  metricAttributes,
+  updateActiveSpanAttribution,
+} from "./observability/sentry.js";
 import type { VaultManager } from "./vault/index.js";
 import { ChatSessionManager } from "./sessions/chat-session-manager.js";
 import {
@@ -1527,6 +1531,12 @@ export async function createRunner(
       });
       pathContext = prepared.pathContext;
 
+      updateActiveSpanAttribution({
+        provider: model.provider,
+        model: agentConfig.model,
+        channel_id: prepared.sessionConversation,
+        session_id: sessionUuid,
+      });
       addLifecycleBreadcrumb("agent.prompt.sent", {
         provider: model.provider,
         model: agentConfig.model,

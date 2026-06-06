@@ -7,9 +7,12 @@ const sentryMock = vi.hoisted(() => {
     setTag: vi.fn(),
     setFingerprint: vi.fn(),
     setContext: vi.fn(),
+    setAttributes: vi.fn(),
+    setUser: vi.fn(),
   };
   return {
     captureException: vi.fn(() => "event-id"),
+    spanToJSON: vi.fn(() => ({ trace_id: "trace-1" })),
     scope,
   };
 });
@@ -19,6 +22,7 @@ vi.mock("@sentry/node", async (importOriginal) => {
   return {
     ...actual,
     captureException: sentryMock.captureException,
+    spanToJSON: sentryMock.spanToJSON,
     withScope: vi.fn((callback: (scope: Scope) => unknown) =>
       callback(sentryMock.scope as unknown as Scope),
     ),
@@ -26,7 +30,11 @@ vi.mock("@sentry/node", async (importOriginal) => {
 });
 
 import {
+  applyRunScope,
+  applySpanAttribution,
+  createRunAttributionAttributes,
   metricAttributes,
+  registerTraceAttribution,
   reportUserFacingError,
   sanitizeBreadcrumb,
   sanitizeEvent,
@@ -40,6 +48,8 @@ describe("reportUserFacingError", () => {
     sentryMock.scope.setTag.mockClear();
     sentryMock.scope.setFingerprint.mockClear();
     sentryMock.scope.setContext.mockClear();
+    sentryMock.scope.setAttributes.mockClear();
+    sentryMock.scope.setUser.mockClear();
   });
 
   test("captures with user-facing tags and sanitized context", () => {
@@ -215,6 +225,87 @@ describe("metricAttributes", () => {
       channel_id: "C1",
       llm_calls: 2,
       error: false,
+    });
+  });
+});
+
+describe("run attribution", () => {
+  beforeEach(() => {
+    sentryMock.scope.setTag.mockClear();
+    sentryMock.scope.setAttributes.mockClear();
+    sentryMock.scope.setUser.mockClear();
+    sentryMock.scope.setContext.mockClear();
+    sentryMock.spanToJSON.mockClear();
+  });
+
+  test("builds consistent discover-friendly attributes", () => {
+    expect(
+      createRunAttributionAttributes({
+        conversationId: "C1",
+        sessionKey: "C1:T1",
+        messageId: "M1",
+        platform: "slack",
+        userId: "U1",
+        userName: undefined,
+        threadTs: "T1",
+        provider: "openai",
+        model: "gpt-5.5",
+      }),
+    ).toEqual({
+      conversation_id: "C1",
+      channel_id: "C1",
+      session_key: "C1:T1",
+      message_id: "M1",
+      platform: "slack",
+      user_id: "U1",
+      thread_ts: "T1",
+      provider: "openai",
+      model: "gpt-5.5",
+    });
+  });
+
+  test("applies attribution to scope tags and attributes", () => {
+    applyRunScope(sentryMock.scope as unknown as Scope, {
+      conversationId: "C1",
+      sessionKey: "C1:T1",
+      messageId: "M1",
+      platform: "slack",
+      userId: "U1",
+      userName: "alice",
+    });
+
+    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("conversation_id", "C1");
+    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("session_key", "C1:T1");
+    expect(sentryMock.scope.setAttributes).toHaveBeenCalledWith(
+      expect.objectContaining({ conversation_id: "C1", channel_id: "C1", user_id: "U1" }),
+    );
+    expect(sentryMock.scope.setUser).toHaveBeenCalledWith({ id: "U1", username: "alice" });
+  });
+
+  test("propagates root attribution onto child spans", () => {
+    const rootSpan = { setAttributes: vi.fn() };
+    registerTraceAttribution(rootSpan, { conversation_id: "C1", session_key: "C1:T1" });
+
+    expect(rootSpan.setAttributes).toHaveBeenCalledWith({
+      conversation_id: "C1",
+      session_key: "C1:T1",
+    });
+    expect(
+      applySpanAttribution({
+        trace_id: "trace-1",
+        span_id: "span-1",
+        start_timestamp: 1,
+        data: { "sentry.op": "gen_ai.chat" },
+      }),
+    ).toEqual({
+      trace_id: "trace-1",
+      span_id: "span-1",
+      start_timestamp: 1,
+      data: {
+        "sentry.op": "gen_ai.chat",
+        conversation_id: "C1",
+        session_key: "C1:T1",
+      },
     });
   });
 });

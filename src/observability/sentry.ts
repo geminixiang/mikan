@@ -54,8 +54,22 @@ const TOKEN_PATTERNS = [
   /\bgh[pousr]_[A-Za-z0-9]{20,}\b/,
 ];
 
-export type { ReportUserFacingErrorOptions, SentryRunScopeContext } from "./types.js";
-import type { ReportUserFacingErrorOptions, SentryRunScopeContext } from "./types.js";
+export type {
+  ReportUserFacingErrorOptions,
+  SentryAttributionAttributes,
+  SentryRunScopeContext,
+  SentrySpanPayload,
+  SentryTransactionPayload,
+} from "./types.js";
+import type {
+  ReportUserFacingErrorOptions,
+  SentryAttributionAttributes,
+  SentryRunScopeContext,
+  SentrySpanPayload,
+  SentryTransactionPayload,
+} from "./types.js";
+
+const traceAttribution = new Map<string, SentryAttributionAttributes>();
 
 export function createSentryInitOptions(dsn?: string) {
   return {
@@ -68,6 +82,12 @@ export function createSentryInitOptions(dsn?: string) {
     enableLogs: true,
     beforeSend(event: ErrorEvent, hint: EventHint): ErrorEvent | null {
       return sanitizeEvent(event, hint);
+    },
+    beforeSendSpan(span: SentrySpanPayload): SentrySpanPayload {
+      return applySpanAttribution(span);
+    },
+    beforeSendTransaction(event: SentryTransactionPayload): SentryTransactionPayload | null {
+      return sanitizeTransactionEvent(event);
     },
     beforeBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb | null {
       return sanitizeBreadcrumb(breadcrumb);
@@ -118,15 +138,49 @@ function setOptionalTag(scope: Scope, key: string, value: string | undefined): v
   if (value !== undefined) scope.setTag(key, value);
 }
 
+export function createRunAttributionAttributes(
+  context: SentryRunScopeContext,
+): SentryAttributionAttributes {
+  return metricAttributes({
+    conversation_id: context.conversationId,
+    channel_id: context.conversationId,
+    session_key: context.sessionKey,
+    message_id: context.messageId,
+    platform: context.platform,
+    user_id: context.userId,
+    thread_ts: context.threadTs,
+    provider: context.provider,
+    model: context.model,
+  });
+}
+
+export function registerTraceAttribution(
+  span: { setAttributes(attributes: SentryAttributionAttributes): unknown },
+  attributes: SentryAttributionAttributes,
+): void {
+  span.setAttributes(attributes);
+  const traceId = Sentry.spanToJSON(span as Parameters<typeof Sentry.spanToJSON>[0]).trace_id;
+  if (!traceId) return;
+  traceAttribution.set(traceId, { ...traceAttribution.get(traceId), ...attributes });
+}
+
+export function updateActiveSpanAttribution(attributes: SentryAttributionAttributes): void {
+  const span = Sentry.getActiveSpan();
+  if (!span) return;
+  registerTraceAttribution(span, attributes);
+}
+
 export function applyRunScope(scope: Scope, context: SentryRunScopeContext): void {
+  const attributes = createRunAttributionAttributes(context);
+
+  for (const [key, value] of Object.entries(attributes)) {
+    scope.setTag(key, value);
+  }
   scope.setTag("conversation_id", context.conversationId);
   scope.setTag("channel_id", context.conversationId);
-  scope.setTag("session_key", context.sessionKey);
-  scope.setTag("platform", context.platform);
   if (context.threadTs) scope.setTag("thread_ts", context.threadTs);
-  if (context.provider) scope.setTag("provider", context.provider);
-  if (context.model) scope.setTag("model", context.model);
 
+  scope.setAttributes(attributes);
   scope.setUser({
     id: context.userId,
     username: context.userName,
@@ -208,6 +262,38 @@ export function sanitizeEvent<T extends Event>(event: T, _hint?: EventHint): T |
     }));
   }
 
+  return sanitized;
+}
+
+export function applySpanAttribution<T extends SentrySpanPayload>(span: T): T {
+  const attributes = traceAttribution.get(span.trace_id);
+  if (!attributes) return span;
+  return {
+    ...span,
+    data: {
+      ...span.data,
+      ...attributes,
+    },
+  };
+}
+
+function sanitizeTransactionEvent<T extends SentryTransactionPayload>(event: T): T | null {
+  const sanitized = sanitizeEvent(event);
+  if (!sanitized) return null;
+
+  const traceContext = sanitized.contexts?.trace;
+  const traceId = traceContext?.trace_id;
+  if (typeof traceId !== "string") return sanitized;
+  const attributes = traceAttribution.get(traceId);
+  if (!attributes) return sanitized;
+
+  const entries = (sanitized as { entries?: Array<{ type?: string; data?: unknown }> }).entries;
+  for (const entry of entries ?? []) {
+    if (entry.type !== "spans" || !Array.isArray(entry.data)) continue;
+    entry.data = entry.data.map((span: SentrySpanPayload) => applySpanAttribution(span));
+  }
+
+  traceAttribution.delete(traceId);
   return sanitized;
 }
 
