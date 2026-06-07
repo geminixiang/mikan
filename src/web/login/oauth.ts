@@ -105,6 +105,109 @@ function getBuiltinOAuthServices(): OAuthService[] {
   ];
 }
 
+function parseOAuthService(value: unknown, index: number): OAuthService | null {
+  if (!isRecord(value)) {
+    log.logWarning(`Skipping OAUTH_SERVICES_JSON[${index}]: expected an object`);
+    return null;
+  }
+
+  const id = typeof value.id === "string" ? value.id.trim() : "";
+  const label = typeof value.label === "string" ? value.label.trim() : "";
+  const authorizationUrl =
+    typeof value.authorizationUrl === "string" ? value.authorizationUrl.trim() : "";
+  const tokenUrl = typeof value.tokenUrl === "string" ? value.tokenUrl.trim() : "";
+  const clientIdEnvKey =
+    typeof value.clientIdEnvKey === "string" ? value.clientIdEnvKey.trim() : "";
+  const clientSecretEnvKey =
+    typeof value.clientSecretEnvKey === "string" ? value.clientSecretEnvKey.trim() : "";
+  const missing = [
+    ["id", id],
+    ["label", label],
+    ["authorizationUrl", authorizationUrl],
+    ["tokenUrl", tokenUrl],
+    ["clientIdEnvKey", clientIdEnvKey],
+    ["clientSecretEnvKey", clientSecretEnvKey],
+  ]
+    .filter((entry) => !entry[1])
+    .map((entry) => entry[0]);
+
+  if (missing.length > 0) {
+    const labelForLog = id ? ` (${id})` : "";
+    log.logWarning(
+      `Skipping OAUTH_SERVICES_JSON[${index}]${labelForLog}: missing ${missing.join(", ")}`,
+    );
+    return null;
+  }
+
+  const accessTokenEnvKeys: string[] = [];
+  if (typeof value.accessTokenEnvKey === "string" && value.accessTokenEnvKey.trim()) {
+    accessTokenEnvKeys.push(value.accessTokenEnvKey.trim());
+  }
+  if (Array.isArray(value.additionalAccessTokenEnvKeys)) {
+    for (const key of value.additionalAccessTokenEnvKeys) {
+      if (typeof key === "string" && key.trim()) accessTokenEnvKeys.push(key.trim());
+    }
+  }
+  if (Array.isArray(value.accessTokenEnvKeys)) {
+    for (const key of value.accessTokenEnvKeys) {
+      if (typeof key === "string" && key.trim() && !accessTokenEnvKeys.includes(key.trim())) {
+        accessTokenEnvKeys.push(key.trim());
+      }
+    }
+  }
+
+  let fileOutput: OAuthService["fileOutput"];
+  if (isRecord(value.fileOutput)) {
+    const fileOutputObj = value.fileOutput;
+    const type = typeof fileOutputObj.type === "string" ? fileOutputObj.type.trim() : "";
+    const relativePath =
+      typeof fileOutputObj.relativePath === "string" ? fileOutputObj.relativePath.trim() : "";
+    const targetPath =
+      typeof fileOutputObj.targetPath === "string" ? fileOutputObj.targetPath.trim() : undefined;
+    const envKey =
+      typeof fileOutputObj.envKey === "string" ? fileOutputObj.envKey.trim() : undefined;
+    const additionalEnvKeys = Array.isArray(fileOutputObj.additionalEnvKeys)
+      ? fileOutputObj.additionalEnvKeys.filter((v): v is string => typeof v === "string")
+      : undefined;
+    if (type === "authorized_user" && relativePath) {
+      fileOutput = {
+        type: "authorized_user",
+        relativePath,
+        targetPath,
+        envKey,
+        additionalEnvKeys,
+      };
+    }
+  }
+
+  return {
+    id: id.toLowerCase(),
+    label,
+    aliases: Array.isArray(value.aliases)
+      ? value.aliases.filter((v): v is string => typeof v === "string").map((v) => v.toLowerCase())
+      : [id.toLowerCase()],
+    authorizationUrl,
+    tokenUrl,
+    scopes: Array.isArray(value.scopes)
+      ? value.scopes.filter((v): v is string => typeof v === "string")
+      : [],
+    clientIdEnvKey,
+    clientSecretEnvKey,
+    accessTokenEnvKeys: accessTokenEnvKeys.length > 0 ? accessTokenEnvKeys : undefined,
+    refreshTokenEnvKey:
+      typeof value.refreshTokenEnvKey === "string" ? value.refreshTokenEnvKey.trim() : undefined,
+    authorizationParams: isRecord(value.authorizationParams)
+      ? Object.fromEntries(
+          Object.entries(value.authorizationParams).filter(
+            (authorizationEntry): authorizationEntry is [string, string] =>
+              typeof authorizationEntry[1] === "string",
+          ),
+        )
+      : undefined,
+    fileOutput,
+  };
+}
+
 export function getOAuthServices(): OAuthService[] {
   const raw = readEnv("OAUTH_SERVICES_JSON");
   const builtins = getBuiltinOAuthServices();
@@ -127,116 +230,14 @@ export function getOAuthServices(): OAuthService[] {
     );
     return builtins;
   }
-  try {
-    const custom = parsed
-      .map((serviceValue): OAuthService | null => {
-        if (!isRecord(serviceValue)) return null;
-        const obj = serviceValue;
-        const id = typeof obj.id === "string" ? obj.id.trim() : "";
-        const label = typeof obj.label === "string" ? obj.label.trim() : "";
-        const authorizationUrl =
-          typeof obj.authorizationUrl === "string" ? obj.authorizationUrl.trim() : "";
-        const tokenUrl = typeof obj.tokenUrl === "string" ? obj.tokenUrl.trim() : "";
-        const clientIdEnvKey =
-          typeof obj.clientIdEnvKey === "string" ? obj.clientIdEnvKey.trim() : "";
-        const clientSecretEnvKey =
-          typeof obj.clientSecretEnvKey === "string" ? obj.clientSecretEnvKey.trim() : "";
-        const accessTokenEnvKeys: string[] = [];
-        if (typeof obj.accessTokenEnvKey === "string" && obj.accessTokenEnvKey.trim()) {
-          accessTokenEnvKeys.push(obj.accessTokenEnvKey.trim());
-        }
-        if (Array.isArray(obj.additionalAccessTokenEnvKeys)) {
-          for (const k of obj.additionalAccessTokenEnvKeys) {
-            if (typeof k === "string" && k.trim()) accessTokenEnvKeys.push(k.trim());
-          }
-        }
-        // New unified form
-        if (Array.isArray(obj.accessTokenEnvKeys)) {
-          for (const k of obj.accessTokenEnvKeys) {
-            if (typeof k === "string" && k.trim() && !accessTokenEnvKeys.includes(k.trim())) {
-              accessTokenEnvKeys.push(k.trim());
-            }
-          }
-        }
-        if (
-          !id ||
-          !label ||
-          !authorizationUrl ||
-          !tokenUrl ||
-          !clientIdEnvKey ||
-          !clientSecretEnvKey
-        ) {
-          return null;
-        }
 
-        let fileOutput: OAuthService["fileOutput"];
-        if (isRecord(obj.fileOutput)) {
-          const fileOutputObj = obj.fileOutput;
-          const type = typeof fileOutputObj.type === "string" ? fileOutputObj.type.trim() : "";
-          const relativePath =
-            typeof fileOutputObj.relativePath === "string" ? fileOutputObj.relativePath.trim() : "";
-          const targetPath =
-            typeof fileOutputObj.targetPath === "string"
-              ? fileOutputObj.targetPath.trim()
-              : undefined;
-          const envKey =
-            typeof fileOutputObj.envKey === "string" ? fileOutputObj.envKey.trim() : undefined;
-          const additionalEnvKeys = Array.isArray(fileOutputObj.additionalEnvKeys)
-            ? fileOutputObj.additionalEnvKeys.filter((v): v is string => typeof v === "string")
-            : undefined;
-          if (type === "authorized_user" && relativePath) {
-            fileOutput = {
-              type: "authorized_user",
-              relativePath,
-              targetPath,
-              envKey,
-              additionalEnvKeys,
-            };
-          }
-        }
-
-        return {
-          id: id.toLowerCase(),
-          label,
-          aliases: Array.isArray(obj.aliases)
-            ? obj.aliases
-                .filter((v): v is string => typeof v === "string")
-                .map((v) => v.toLowerCase())
-            : [id.toLowerCase()],
-          authorizationUrl,
-          tokenUrl,
-          scopes: Array.isArray(obj.scopes)
-            ? obj.scopes.filter((v): v is string => typeof v === "string")
-            : [],
-          clientIdEnvKey,
-          clientSecretEnvKey,
-          accessTokenEnvKeys: accessTokenEnvKeys.length > 0 ? accessTokenEnvKeys : undefined,
-          refreshTokenEnvKey:
-            typeof obj.refreshTokenEnvKey === "string" ? obj.refreshTokenEnvKey.trim() : undefined,
-          authorizationParams: isRecord(obj.authorizationParams)
-            ? Object.fromEntries(
-                Object.entries(obj.authorizationParams).filter(
-                  (authorizationEntry): authorizationEntry is [string, string] =>
-                    typeof authorizationEntry[1] === "string",
-                ),
-              )
-            : undefined,
-          fileOutput,
-        };
-      })
-      .filter((service): service is OAuthService => service !== null);
-
-    const byId = new Map<string, OAuthService>();
-    for (const service of builtins) byId.set(service.id, service);
-    for (const service of custom) byId.set(service.id, service);
-    return [...byId.values()];
-  } catch (err) {
-    log.logWarning(
-      "Failed to apply OAUTH_SERVICES_JSON overrides; using builtin OAuth services",
-      err instanceof Error ? err.message : String(err),
-    );
-    return builtins;
-  }
+  const custom = parsed
+    .map((serviceValue, index) => parseOAuthService(serviceValue, index))
+    .filter((service): service is OAuthService => service !== null);
+  const byId = new Map<string, OAuthService>();
+  for (const service of builtins) byId.set(service.id, service);
+  for (const service of custom) byId.set(service.id, service);
+  return [...byId.values()];
 }
 
 export function resolveOAuthService(input: string): OAuthService | undefined {

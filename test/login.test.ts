@@ -1,9 +1,21 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   getOAuthServices,
   parseLoginCommand,
   resolveOAuthService,
 } from "../src/web/login/oauth.js";
+import * as log from "../src/log.js";
+
+const originalOAuthServicesJson = process.env.OAUTH_SERVICES_JSON;
+
+afterEach(() => {
+  if (originalOAuthServicesJson === undefined) {
+    delete process.env.OAUTH_SERVICES_JSON;
+  } else {
+    process.env.OAUTH_SERVICES_JSON = originalOAuthServicesJson;
+  }
+  vi.restoreAllMocks();
+});
 
 describe("login command parsing", () => {
   test("parseLoginCommand recognizes login commands only", () => {
@@ -53,5 +65,28 @@ describe("login command parsing", () => {
       envKey: "GOOGLE_APPLICATION_CREDENTIALS",
       additionalEnvKeys: ["CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE"],
     });
+  });
+
+  test("skips invalid custom OAuth services with a targeted warning", () => {
+    const logWarning = vi.spyOn(log, "logWarning").mockImplementation(() => {});
+    process.env.OAUTH_SERVICES_JSON = JSON.stringify([
+      { id: "broken", label: "Broken" },
+      {
+        id: "custom",
+        label: "Custom",
+        authorizationUrl: "https://example.com/auth",
+        tokenUrl: "https://example.com/token",
+        clientIdEnvKey: "CUSTOM_CLIENT_ID",
+        clientSecretEnvKey: "CUSTOM_CLIENT_SECRET",
+      },
+    ]);
+
+    const services = getOAuthServices();
+
+    expect(services.some((service) => service.id === "broken")).toBe(false);
+    expect(services.some((service) => service.id === "custom")).toBe(true);
+    expect(logWarning).toHaveBeenCalledWith(
+      "Skipping OAUTH_SERVICES_JSON[0] (broken): missing authorizationUrl, tokenUrl, clientIdEnvKey, clientSecretEnvKey",
+    );
   });
 });

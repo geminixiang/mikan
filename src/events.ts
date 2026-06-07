@@ -475,23 +475,7 @@ export class EventsWatcher {
 
     if (!bot) {
       log.logWarning(`No bot configured for event platform '${event.platform}'`, filename);
-      reportUserFacingError(new Error("Scheduled event delivery failed: missing bot"), {
-        domain: "events",
-        surface: "event_delivery",
-        operation: "event_execute",
-        severity: "error",
-        platform: event.platform,
-        context: {
-          failure: "missing_bot",
-          filename,
-          eventType: event.type,
-          conversationId: event.conversationId,
-          conversationKind: event.conversationKind,
-          deleteAfter,
-          triggeredByEventFile: true,
-          textLength: event.text.length,
-        },
-      });
+      this.reportEventDeliveryFailure(filename, event, deleteAfter, "missing_bot");
       if (deleteAfter) {
         this.deleteFile(filename, "missing-bot");
       }
@@ -516,28 +500,38 @@ export class EventsWatcher {
       this.deleteFile(filename, "executed-and-enqueued");
     } else if (!enqueued) {
       log.logWarning(`Event queue full, discarded: ${filename}`);
-      reportUserFacingError(new Error("Scheduled event delivery failed: queue full"), {
-        domain: "events",
-        surface: "event_delivery",
-        operation: "event_execute",
-        severity: "error",
-        platform: event.platform,
-        context: {
-          failure: "queue_full",
-          filename,
-          eventType: event.type,
-          conversationId: event.conversationId,
-          conversationKind: event.conversationKind,
-          deleteAfter,
-          triggeredByEventFile: true,
-          textLength: event.text.length,
-        },
-      });
+      this.reportEventDeliveryFailure(filename, event, deleteAfter, "queue_full");
       // Still delete immediate/one-shot even if discarded
       if (deleteAfter) {
         this.deleteFile(filename, "queue-full-discarded");
       }
     }
+  }
+
+  private reportEventDeliveryFailure(
+    filename: string,
+    event: MikanEvent,
+    deleteAfter: boolean,
+    failure: "missing_bot" | "queue_full",
+  ): void {
+    const reason = failure === "missing_bot" ? "missing bot" : "queue full";
+    reportUserFacingError(new Error(`Scheduled event delivery failed: ${reason}`), {
+      domain: "events",
+      surface: "event_delivery",
+      operation: "event_execute",
+      severity: "error",
+      platform: event.platform,
+      context: {
+        failure,
+        filename,
+        eventType: event.type,
+        conversationId: event.conversationId,
+        conversationKind: event.conversationKind,
+        deleteAfter,
+        triggeredByEventFile: true,
+        textLength: event.text.length,
+      },
+    });
   }
 
   private buildEventPrompt(event: MikanEvent): string {
