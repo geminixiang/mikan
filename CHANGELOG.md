@@ -9,6 +9,25 @@ any release.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-07
+
+### Added
+
+- Add streamed response deltas across adapters so replies can update progressively.
+- Add Slack reply mode configuration in the admin portal.
+- Add event tool CRUD support for listing, reading, updating, and deleting scheduled events, with conversation-scoped listing by default and explicit all-event listing.
+
+### Changed
+
+- Reorganize source modules and centralize shared type definitions for clearer contributor navigation.
+- Centralize adapter conversation intake and reduce wrapper indirection across runtime, adapters, commands, config, and web modules.
+- Attribute agent Sentry traces with platform and conversation context for clearer operator debugging.
+
+### Fixed
+
+- Persist global settings overrides correctly.
+- Warn when invalid custom OAuth service definitions are skipped instead of silently dropping them.
+
 ## [0.4.0-beta.0]
 
 ### Added
