@@ -111,6 +111,7 @@ export function createSlackAdapters(
   let blockKitFinalized = false;
   let streamActive = false;
   let streamUnavailable = false;
+  let streamedText = "";
   let updatePromise = Promise.resolve();
 
   const channelId = event.channel;
@@ -195,19 +196,40 @@ export function createSlackAdapters(
     isThreaded,
   }));
 
-  const postOrUpdateMain = async (body: string): Promise<void> => {
-    if (messageTs) {
-      await slack.updateMessage(channelId, messageTs, body);
-      return;
+  const postOrUpdateMain = async (body: string, handleMsgTooLong = true): Promise<void> => {
+    const writeMain = async (text: string): Promise<string | void> => {
+      if (messageTs) {
+        await slack.updateMessage(channelId, messageTs, text);
+        return;
+      }
+      if (replyInThread && rootTs) {
+        messageTs = await slack.postInThread(channelId, rootTs, text);
+        return messageTs;
+      }
+      messageTs = await postFirstMessage(text);
+      return messageTs;
+    };
+
+    try {
+      await writeMain(body);
+    } catch (err) {
+      if (!handleMsgTooLong || !isSlackMsgTooLong(err)) throw err;
+      const fallback = await postSlackTextWithFallback(writeMain, body);
+      accumulatedText = fallback.text;
+      stream.setText(accumulatedText);
     }
-    if (replyInThread && rootTs) {
-      messageTs = await slack.postInThread(channelId, rootTs, body);
-      return;
-    }
-    messageTs = await postFirstMessage(body);
   };
 
-  const startOrAppendStream = async (chunk: string, displayText: string): Promise<void> => {
+  const abandonActiveStream = async (): Promise<void> => {
+    if (!streamActive || !messageTs) return;
+    const failedStreamTs = messageTs;
+    streamActive = false;
+    streamedText = "";
+    await slack.stopMessageStream(channelId, failedStreamTs).catch(() => undefined);
+    if (messageTs === failedStreamTs) messageTs = null;
+  };
+
+  const startOrAppendStream = async (text: string, displayText: string): Promise<void> => {
     if (streamUnavailable) {
       await postOrUpdateMain(displayText);
       return;
@@ -215,7 +237,16 @@ export function createSlackAdapters(
 
     try {
       if (messageTs && streamActive) {
-        await slack.appendMessageStream(channelId, messageTs, chunk);
+        if (!text.startsWith(streamedText)) {
+          await abandonActiveStream();
+          await postOrUpdateMain(displayText);
+          return;
+        }
+        const delta = text.slice(streamedText.length);
+        if (delta) {
+          await slack.appendMessageStream(channelId, messageTs, delta);
+          streamedText = text;
+        }
         return;
       }
       if (!replyInThread || !rootTs) {
@@ -223,15 +254,16 @@ export function createSlackAdapters(
         await postOrUpdateMain(displayText);
         return;
       }
-      messageTs = await slack.startMessageStream(channelId, displayText, rootTs);
+      messageTs = await slack.startMessageStream(channelId, text, rootTs);
       streamActive = true;
+      streamedText = text;
     } catch (err) {
       streamUnavailable = true;
-      streamActive = false;
       log.logWarning(
         "Slack streaming unavailable; falling back to chat.update",
         err instanceof Error ? err.message : String(err),
       );
+      await abandonActiveStream();
       await postOrUpdateMain(displayText);
     }
   };
@@ -253,13 +285,32 @@ export function createSlackAdapters(
       accumulatedText = text;
       isWorking = false;
       if (streamActive && messageTs) {
-        await slack.appendMessageStream(channelId, messageTs, accumulatedText);
-        await slack.stopMessageStream(channelId, messageTs);
-        streamActive = false;
-        return;
+        try {
+          if (!accumulatedText.startsWith(streamedText)) {
+            await abandonActiveStream();
+            await postOrUpdateMain(accumulatedText);
+            return;
+          }
+          const delta = accumulatedText.slice(streamedText.length);
+          if (delta) {
+            await slack.appendMessageStream(channelId, messageTs, delta);
+            streamedText = accumulatedText;
+          }
+          await slack.stopMessageStream(channelId, messageTs);
+          streamActive = false;
+          streamedText = "";
+          return;
+        } catch (err) {
+          streamUnavailable = true;
+          log.logWarning(
+            "Slack streaming unavailable; falling back to chat.update",
+            err instanceof Error ? err.message : String(err),
+          );
+          await abandonActiveStream();
+        }
       }
-      if (messageTs) {
-        await slack.updateMessage(channelId, messageTs, accumulatedText);
+      if (messageTs || accumulatedText) {
+        await postOrUpdateMain(accumulatedText);
       }
     },
   });
@@ -366,8 +417,9 @@ export function createSlackAdapters(
             if (streamActive && messageTs) {
               await slack.stopMessageStream(channelId, messageTs);
               streamActive = false;
+              streamedText = "";
             }
-            await postOrUpdateMain(displayText);
+            await postOrUpdateMain(displayText, false);
           } catch (err) {
             if (!isSlackMsgTooLong(err)) throw err;
             const link = resolveOverflowLink();

@@ -184,20 +184,14 @@ describe("respond() — non-threaded", () => {
     const event = makeEvent({ thread_ts: undefined });
     const { responseCtx } = createSlackAdapters(event, bot, { replyMode: "thread" });
 
+    const suffix = " second".repeat(20);
     await responseCtx.appendResponseDelta?.("first");
-    await responseCtx.appendResponseDelta?.(" second".repeat(20));
-    await responseCtx.finishResponse?.("final");
+    await responseCtx.appendResponseDelta?.(suffix);
+    await responseCtx.finishResponse?.(`first${suffix}`);
 
-    expect(bot.startMessageStream).toHaveBeenCalledWith(
-      "C001",
-      expect.stringContaining("first"),
-      "1000.0001",
-    );
-    expect(bot.appendMessageStream).toHaveBeenCalledWith(
-      "C001",
-      "STREAM1",
-      expect.stringContaining("second"),
-    );
+    expect(bot.startMessageStream).toHaveBeenCalledWith("C001", "first", "1000.0001");
+    expect(bot.appendMessageStream).toHaveBeenCalledTimes(1);
+    expect(bot.appendMessageStream).toHaveBeenCalledWith("C001", "STREAM1", suffix);
     expect(bot.stopMessageStream).toHaveBeenCalledWith("C001", "STREAM1");
     expect(bot.postMessage).not.toHaveBeenCalled();
     expect(bot.updateMessage).not.toHaveBeenCalled();
@@ -215,13 +209,9 @@ describe("respond() — threaded", () => {
     const { responseCtx } = createSlackAdapters(event, bot, { replyMode: "top-level" });
 
     await responseCtx.appendResponseDelta?.("first");
-    await responseCtx.finishResponse?.("final");
+    await responseCtx.finishResponse?.("first");
 
-    expect(bot.startMessageStream).toHaveBeenCalledWith(
-      "C001",
-      expect.stringContaining("first"),
-      "1000.0001",
-    );
+    expect(bot.startMessageStream).toHaveBeenCalledWith("C001", "first", "1000.0001");
     expect(bot.postMessage).not.toHaveBeenCalled();
   });
 
@@ -485,6 +475,23 @@ describe("text accumulation", () => {
     expect(fallbackText).toContain("<https://portal.example/session?token=abc|open>");
     expect(fallbackText).not.toContain("END");
   });
+
+  test("respond falls back to short text when Slack says msg_too_long", async () => {
+    const tooLongError = new Error("An API error occurred: msg_too_long") as Error & {
+      data?: { error: string };
+    };
+    tooLongError.data = { error: "msg_too_long" };
+    const bot = makeSlackBot({
+      postMessage: vi.fn().mockRejectedValueOnce(tooLongError).mockResolvedValueOnce("BOT_MSG"),
+    });
+    const event = makeEvent({ thread_ts: undefined });
+    const { responseCtx } = createSlackAdapters(event, bot);
+    await responseCtx.respond(`${"x".repeat(6000)}END`);
+    expect(bot.postMessage).toHaveBeenCalledTimes(2);
+    const fallbackText = vi.mocked(bot.postMessage).mock.calls[1][1] as string;
+    expect(fallbackText).toContain("message too long for Slack");
+    expect(fallbackText).not.toContain("END");
+  });
 });
 
 // ============================================================================
@@ -683,5 +690,32 @@ describe("streaming lifecycle", () => {
       expect.stringContaining("world"),
     );
     expect(bot.updateMessage).toHaveBeenLastCalledWith("C001", "T002", "hello final");
+  });
+
+  test("native stream append conflict abandons the stream message before fallback", async () => {
+    const bot = makeSlackBot({
+      startMessageStream: vi.fn().mockResolvedValue("STREAM1"),
+      appendMessageStream: vi
+        .fn()
+        .mockRejectedValue(new Error("An API error occurred: streaming_state_conflict")),
+      stopMessageStream: vi.fn().mockResolvedValue(undefined),
+      postInThread: vi.fn().mockResolvedValue("FALLBACK1"),
+      updateMessage: vi.fn().mockResolvedValue(undefined),
+    });
+    const event = makeEvent({ thread_ts: undefined });
+    const { responseCtx } = createSlackAdapters(event, bot, { replyMode: "thread" });
+
+    await responseCtx.appendResponseDelta?.("hello");
+    await responseCtx.appendResponseDelta?.(" world");
+    await responseCtx.finishResponse?.("hello world");
+
+    expect(bot.stopMessageStream).toHaveBeenCalledWith("C001", "STREAM1");
+    expect(bot.updateMessage).not.toHaveBeenCalledWith("C001", "STREAM1", expect.any(String));
+    expect(bot.postInThread).toHaveBeenCalledWith(
+      "C001",
+      "1000.0001",
+      expect.stringContaining("hello world"),
+    );
+    expect(bot.updateMessage).not.toHaveBeenCalled();
   });
 });

@@ -67,7 +67,7 @@ export async function uploadTextFile(
   }
 }
 
-async function fetchThreadMessages(
+export async function fetchThreadMessages(
   client: WebClient,
   channel: string,
   threadTs: string,
