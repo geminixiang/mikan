@@ -9,6 +9,21 @@ any release.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-06-08
+
+### Changed
+
+- Update bundled pi packages to the 0.78.1 line.
+
+### Fixed
+
+- Stream Slack responses with delta-only appends to avoid duplicated message segments and streaming state conflicts.
+- Include Slack streaming recipient metadata so threaded streamed replies work in Slack E2E and production workspaces.
+
+### Tests
+
+- Add Slack streaming E2E coverage for delta appends without duplicate text.
+
 ## [0.4.0] - 2026-06-07
 
 ### Added
