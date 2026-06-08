@@ -101,8 +101,7 @@ function stageProxyInjection(command: string, secrets?: SandboxSecrets): string 
     `MIKAN_PROXY_RULES_B64=${shellEscape(payload)} node "$proxy_dir/proxy.mjs" "$proxy_dir/port" & echo $! > "$proxy_dir/pid"`,
     'while [ ! -s "$proxy_dir/port" ]; do sleep 0.05; done',
     'export HTTP_PROXY="http://127.0.0.1:$(cat "$proxy_dir/port")"',
-    'export HTTPS_PROXY="$HTTP_PROXY" ALL_PROXY="$HTTP_PROXY"',
-    'export http_proxy="$HTTP_PROXY" https_proxy="$HTTP_PROXY" all_proxy="$HTTP_PROXY"',
+    'export http_proxy="$HTTP_PROXY"',
     command,
     "proxy_status=$?",
     "proxy_cleanup",
@@ -116,7 +115,6 @@ function proxyScriptBase64(): string {
 
 const INLINE_PROXY_SCRIPT = String.raw`import { createServer, request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { connect } from 'node:net';
 import { writeFileSync } from 'node:fs';
 const rules = JSON.parse(Buffer.from(process.env.MIKAN_PROXY_RULES_B64 || '', 'base64').toString('utf8'));
 const server = createServer((req, res) => {
@@ -131,14 +129,8 @@ const server = createServer((req, res) => {
   upstream.on('error', (error) => { res.writeHead(502); res.end(error.message); });
   req.pipe(upstream);
 });
-server.on('connect', (req, client, head) => {
-  const [host, portRaw] = String(req.url || '').split(':');
-  const upstream = connect(Number(portRaw) || 443, host, () => {
-    client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-    if (head.length) upstream.write(head);
-    upstream.pipe(client); client.pipe(upstream);
-  });
-  upstream.on('error', () => client.destroy());
+server.on('connect', (_req, client) => {
+  client.end('HTTP/1.1 501 Not Implemented\r\nConnection: close\r\n\r\nMIKAN_PROXY_INJECT_HEADERS supports HTTP proxy requests only; HTTPS CONNECT cannot be modified.\n');
 });
 server.listen(0, '127.0.0.1', () => writeFileSync(process.argv[2], String(server.address().port)));
 `;

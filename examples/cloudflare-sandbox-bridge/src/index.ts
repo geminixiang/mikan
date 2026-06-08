@@ -4,6 +4,7 @@ export { Sandbox } from "@cloudflare/sandbox";
 
 interface SandboxSecrets {
   env?: Record<string, string>;
+  files?: Array<{ source: string; target: string }>;
 }
 
 interface ExecRequestBody {
@@ -56,6 +57,12 @@ export default {
 
     if (!body.sandboxId || !body.command) {
       return Response.json({ error: "sandboxId and command are required" }, { status: 400 });
+    }
+    if (body.secrets?.files && body.secrets.files.length > 0) {
+      return Response.json(
+        { error: "secrets.files is not supported by this Cloudflare sandbox bridge" },
+        { status: 400 },
+      );
     }
 
     try {

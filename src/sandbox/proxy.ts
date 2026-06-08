@@ -6,7 +6,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { connect } from "node:net";
+import type { Socket } from "node:net";
 import type { SecretProxyHandle } from "./types.js";
 
 type HeaderRules = Record<string, Record<string, string>>;
@@ -18,15 +18,12 @@ export async function startSecretInjectionProxy(
   host = LOOPBACK_HOST,
 ): Promise<SecretProxyHandle> {
   const server = createServer((request, response) => handleHttpRequest(request, response, rules));
-  server.on("connect", (request, clientSocket, head) => {
-    const [hostname, portRaw] = String(request.url ?? "").split(":");
-    const upstream = connect(Number(portRaw) || 443, hostname, () => {
-      clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
-      if (head.length > 0) upstream.write(head);
-      upstream.pipe(clientSocket);
-      clientSocket.pipe(upstream);
-    });
-    upstream.on("error", () => clientSocket.destroy());
+  server.on("connect", (_request, clientSocket: Socket) => {
+    clientSocket.end(
+      "HTTP/1.1 501 Not Implemented\r\n" +
+        "Connection: close\r\n\r\n" +
+        "MIKAN_PROXY_INJECT_HEADERS supports HTTP proxy requests only; HTTPS CONNECT cannot be modified.\n",
+    );
   });
 
   await listen(server, host);

@@ -1,4 +1,5 @@
 import { createServer, request as httpRequest } from "node:http";
+import { connect as netConnect } from "node:net";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -187,6 +188,31 @@ describe("ContainerExecutor", () => {
     expect(dockerCommand).toContain("gh auth setup-git");
     expect(dockerCommand).toContain("git clone https://github.com/livingbio/skills.git");
   });
+
+  test("enables secret header injection for HTTP proxy traffic only", async () => {
+    const exec = vi
+      .spyOn(HostExecutor.prototype, "exec")
+      .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
+    const executor = new ContainerExecutor(
+      "mikan-sandbox",
+      {
+        env: {
+          MIKAN_PROXY_INJECT_HEADERS: JSON.stringify({ "api.example": { authorization: "x" } }),
+        },
+      },
+      async () => {},
+    );
+
+    await executor.exec("curl http://api.example/check");
+
+    const [[dockerCommand]] = exec.mock.calls;
+    expect(dockerCommand).toContain(
+      'export HTTP_PROXY="http://127.0.0.1:$(cat "$proxy_dir/port")"',
+    );
+    expect(dockerCommand).toContain('export http_proxy="$HTTP_PROXY"');
+    expect(dockerCommand).not.toContain("HTTPS_PROXY");
+    expect(dockerCommand).not.toContain("ALL_PROXY");
+  });
 });
 
 async function runProxyHeaderRequest(upstream: ReturnType<typeof createServer>): Promise<void> {
@@ -233,6 +259,27 @@ describe("Secret injection proxy", () => {
     );
 
     expect(seen.authorization).toBe("Bearer injected");
+  });
+
+  test("rejects HTTPS CONNECT because encrypted headers cannot be injected", async () => {
+    const proxy = await startSecretInjectionProxy({ "example.com": { authorization: "Bearer x" } });
+    try {
+      const proxyUrl = new URL(proxy.url);
+      const response = await new Promise<string>((resolve, reject) => {
+        const socket = netConnect(Number(proxyUrl.port), proxyUrl.hostname, () => {
+          socket.write("CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n");
+        });
+        let data = "";
+        socket.on("data", (chunk) => (data += chunk.toString("utf-8")));
+        socket.on("end", () => resolve(data));
+        socket.on("error", reject);
+      });
+
+      expect(response).toContain("501 Not Implemented");
+      expect(response).toContain("supports HTTP proxy requests only");
+    } finally {
+      await proxy.close();
+    }
   });
 });
 
@@ -360,6 +407,17 @@ describe("CloudflareSandboxExecutor", () => {
       env: { API_TOKEN: "secret" },
       secrets: { env: { API_TOKEN: "secret" } },
     });
+  });
+
+  test("rejects file secrets because the Cloudflare bridge cannot stage local host files", async () => {
+    process.env.MIKAN_CLOUDFLARE_SANDBOX_URL = "https://sandbox.example";
+    const executor = new CloudflareSandboxExecutor("slack-u123", {
+      files: [{ source: "/host/adc.json", target: "/workspace/adc.json" }],
+    });
+
+    await expect(executor.exec("pwd")).rejects.toThrow(
+      "Cloudflare sandbox bridge does not support vault file secrets yet",
+    );
   });
 
   test("reports the configured Cloudflare runtime cwd as workspace path", () => {

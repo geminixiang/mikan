@@ -95,6 +95,12 @@ export class CloudflareSandboxExecutor implements Executor {
     }
 
     try {
+      if (this.secrets?.files && this.secrets.files.length > 0) {
+        throw new SandboxError(
+          "Error: Cloudflare sandbox bridge does not support vault file secrets yet; use env secrets or a container/gondolin sandbox for file-backed credentials",
+        );
+      }
+
       const payload: CloudflareExecPayload = {
         sandboxId: this.sandboxId,
         command,
