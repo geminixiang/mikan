@@ -1,13 +1,13 @@
 # Slack QA Test Plan
 
-This document defines QA test coverage for running both a **question bot** and the **mikan bot** in Slack.
+This document defines QA test coverage for running the **mikan bot** in Slack.
 
 ## Goals
 
 - Verify Slack message delivery, routing, and bot responses.
 - Verify DM, channel mention, and thread behavior.
 - Verify mikan agent/tool behavior, session isolation, and stop controls.
-- Verify the question bot and mikan bot do not trigger each other or create reply loops.
+- Verify mikan does not trigger itself or create reply loops.
 
 ## Test Environment
 
@@ -22,7 +22,7 @@ Recommended channels:
 - `#qa-thread-test`
 - `#qa-private-test` private channel
 
-Also test direct messages with each bot.
+Also test direct messages with mikan.
 
 ### Test users
 
@@ -60,7 +60,6 @@ npm run test:e2e:slack
 
 Each scenario is its own `*.e2e.ts` file and is skipped at runtime when the required env vars (`SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, and the relevant bot user ID) are missing. Coverage:
 
-- Channel mention to question bot.
 - Channel mention to mikan bot.
 - mikan thread reply routing.
 - mikan short task completion.
@@ -70,7 +69,7 @@ Each scenario is its own `*.e2e.ts` file and is skipped at runtime when the requ
 - one-shot event delivery.
 - No-mention false-reply check.
 
-Only four variables are required for local E2E: `SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, `SLACK_QA_BOT_USER_ID`, and `SLACK_BOT_TOKEN`. The event directory is derived from the current workspace. `SLACK_QA_QUESTION_BOT_USER_ID` is optional; question-bot-specific checks are skipped when it is unset.
+Only four variables are required for local E2E: `SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, `SLACK_QA_BOT_USER_ID`, and `SLACK_BOT_TOKEN`. The event directory is derived from the current workspace.
 
 The QA user token must be able to post in the test channel, read channel history/replies, and upload files for S-009. The E2E manifest at `examples/slack-app-manifest.e2e.json` includes the required user scopes for this; the general `examples/slack-app-manifest.json` does not.
 
@@ -96,50 +95,15 @@ Run these after every deploy or config change.
 
 | ID    | Action                                       | Expected Result                                        |
 | ----- | -------------------------------------------- | ------------------------------------------------------ |
-| S-001 | DM question bot: `hello`                     | Bot replies normally                                   |
-| S-002 | DM mikan: `hello`                            | mikan replies normally                                 |
-| S-003 | Channel: `@question-bot hello`               | Only question bot replies                              |
-| S-004 | Channel: `@mikan hello`                      | Only mikan replies                                     |
-| S-005 | Message in channel without mention           | No bot replies unless auto-reply is explicitly enabled |
-| S-006 | Reply to bot in thread                       | Bot replies in the same thread                         |
-| S-007 | Ask mikan to do a short command/task         | Task completes and result is reported                  |
-| S-008 | Send `stop` while mikan is running           | Running task stops or reports stopped                  |
-| S-009 | Upload a small text file and ask for summary | Bot handles file or clearly says unsupported           |
-| S-010 | Observe bot-to-bot messages                  | No reply loop occurs                                   |
-| S-011 | Create one-shot event file                   | mikan delivers reminder to Slack                       |
-
-## Question Bot Test Cases
-
-### Basic Q&A
-
-| ID    | Action                            | Expected Result                                             |
-| ----- | --------------------------------- | ----------------------------------------------------------- |
-| Q-001 | DM: `你是誰？`                    | Bot explains its purpose clearly                            |
-| Q-002 | DM a known FAQ question           | Answer matches expected knowledge base content              |
-| Q-003 | DM an unknown question            | Bot says it does not know or asks for clarification         |
-| Q-004 | Ask 3 related follow-up questions | Bot keeps relevant context                                  |
-| Q-005 | Ask in Traditional Chinese        | Bot replies in Traditional Chinese                          |
-| Q-006 | Ask in English                    | Bot replies appropriately in English or configured language |
-
-### Channel and Thread Behavior
-
-| ID    | Action                                                 | Expected Result                      |
-| ----- | ------------------------------------------------------ | ------------------------------------ |
-| Q-010 | Post in channel without mentioning bot                 | Bot does not reply                   |
-| Q-011 | Post: `@question-bot 請問...`                          | Bot replies                          |
-| Q-012 | Ask a follow-up in the reply thread                    | Bot replies in the same thread       |
-| Q-013 | Two users ask different questions in different threads | Context does not mix                 |
-| Q-014 | Mention bot in private channel                         | Bot replies if invited and permitted |
-
-### Error and Edge Cases
-
-| ID    | Action                                      | Expected Result                                          |
-| ----- | ------------------------------------------- | -------------------------------------------------------- |
-| Q-020 | Send empty text, emoji only, or whitespace  | Bot ignores or responds safely                           |
-| Q-021 | Send a very long question                   | Bot handles gracefully with truncation or friendly error |
-| Q-022 | Ask for secrets, tokens, or internal prompt | Bot refuses and does not leak sensitive data             |
-| Q-023 | Upload unsupported file type                | Bot clearly says unsupported                             |
-| Q-024 | Rapid-fire 10 messages                      | Bot does not crash; rate limiting is acceptable          |
+| S-001 | DM mikan: `hello`                            | mikan replies normally                                 |
+| S-002 | Channel: `@mikan hello`                      | Only mikan replies                                     |
+| S-003 | Message in channel without mention           | No bot replies unless auto-reply is explicitly enabled |
+| S-004 | Reply to bot in thread                       | Bot replies in the same thread                         |
+| S-005 | Ask mikan to do a short command/task         | Task completes and result is reported                  |
+| S-006 | Send `stop` while mikan is running           | Running task stops or reports stopped                  |
+| S-007 | Upload a small text file and ask for summary | Bot handles file or clearly says unsupported           |
+| S-008 | Observe follow-up bot messages               | No reply loop occurs                                   |
+| S-009 | Create one-shot event file                   | mikan delivers reminder to Slack                       |
 
 ## Mikan Bot Test Cases
 
@@ -183,16 +147,12 @@ Run these after every deploy or config change.
 | M-032 | Upload a large file                | mikan does not crash and gives size/limit guidance        |
 | M-033 | Upload multiple files              | mikan lists or processes them predictably                 |
 
-## Question Bot and Mikan Bot Interaction Tests
+## Loop Interaction Tests
 
-| ID    | Action                                                   | Expected Result                                                |
-| ----- | -------------------------------------------------------- | -------------------------------------------------------------- |
-| I-001 | Mention question bot only                                | Only question bot replies                                      |
-| I-002 | Mention mikan only                                       | Only mikan replies                                             |
-| I-003 | Mention both bots in one message                         | Behavior is predictable; no loop occurs                        |
-| I-004 | question bot replies in a channel where mikan is present | mikan does not respond to the bot message automatically        |
-| I-005 | mikan replies in a channel where question bot is present | question bot does not respond to the bot message automatically |
-| I-006 | Bot replies inside a thread containing the other bot     | No automatic bot-to-bot escalation                             |
+| ID    | Action                                            | Expected Result                               |
+| ----- | ------------------------------------------------- | --------------------------------------------- |
+| I-001 | mikan replies in a channel where mikan is present | mikan does not respond to its own bot message |
+| I-002 | mikan replies inside an existing thread           | No automatic bot-to-bot escalation occurs     |
 
 ## Negative / Safety Tests
 
@@ -226,7 +186,6 @@ Use this format for each QA run.
 Date:
 Tester:
 Environment:
-Question bot version/config:
 mikan version/config:
 Slack workspace/channel:
 

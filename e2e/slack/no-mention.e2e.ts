@@ -7,11 +7,9 @@ const ctx = loadContextOrSkip();
 describe.skipIf(!ctx)("Slack no mention", () => {
   if (!ctx) return;
   const { client, env } = ctx;
-  const botUserIds = [env.questionBotUserId, env.mikanBotUserId].filter((id): id is string =>
-    Boolean(id),
-  );
+  const botUserIds = env.mikanBotUserId ? [env.mikanBotUserId] : [];
 
-  it.skipIf(botUserIds.length === 0)("S-005 plain messages do not trigger any bot", async () => {
+  it.skipIf(botUserIds.length === 0)("S-005 plain messages do not trigger mikan", async () => {
     const rootTs = await postMessage(
       client,
       env.channel,
