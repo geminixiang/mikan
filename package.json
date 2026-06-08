@@ -42,9 +42,9 @@
     "test:e2e:slack": "vitest --run --config vitest.e2e.config.ts e2e/slack"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.75.3",
-    "@earendil-works/pi-ai": "^0.75.3",
-    "@earendil-works/pi-coding-agent": "^0.75.3",
+    "@earendil-works/pi-agent-core": "^0.78.1",
+    "@earendil-works/pi-ai": "^0.78.1",
+    "@earendil-works/pi-coding-agent": "^0.78.1",
     "@sentry/node": "^10.51.0",
     "@sinclair/typebox": "^0.34.49",
     "@slack/socket-mode": "^2.0.6",
