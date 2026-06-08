@@ -39,7 +39,8 @@
     "prepublishOnly": "npm run clean && npm run build",
     "prepare": "husky",
     "test:e2e": "vitest --run --config vitest.e2e.config.ts",
-    "test:e2e:slack": "vitest --run --config vitest.e2e.config.ts e2e/slack"
+    "test:e2e:slack": "vitest --run --config vitest.e2e.config.ts e2e/slack",
+    "verify:sandbox-cli-proxy": "node scripts/verify-sandbox-cli-proxy.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.78.1",

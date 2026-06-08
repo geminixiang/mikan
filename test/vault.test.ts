@@ -173,13 +173,17 @@ describe("FileVaultManager", () => {
     expect(mode(credentialPath) & 0o077).toBe(0);
   });
 
-  test("derives per-vault cloudflare sandbox ids", () => {
+  test("derives per-vault cloudflare and gondolin sandbox ids", () => {
     const mgr = new FileVaultManager(tmpDir);
     expect(
       mgr.getSandboxConfig("alice", { type: "cloudflare", sandboxId: "mikan-remote" }),
     ).toEqual({
       type: "cloudflare",
       sandboxId: "mikan-remote-alice",
+    });
+    expect(mgr.getSandboxConfig("alice", { type: "gondolin", sandboxId: "mikan-local" })).toEqual({
+      type: "gondolin",
+      sandboxId: "mikan-local-alice",
     });
   });
 
@@ -350,7 +354,27 @@ describe("ActorExecutionResolver image mode", () => {
     expect(mgr.resolve(DockerContainerManager.sanitizeSegment("D123"))).toBeUndefined();
   });
 
-  test("provisions per-conversation container with inferred vault mounts", async () => {
+  test("uses platform-namespaced vault ids for new users in gondolin mode", async () => {
+    const mgr = new FileVaultManager(tmpDir);
+    const resolver = new ActorExecutionResolver(
+      { type: "gondolin", sandboxId: "mikan-local" },
+      mgr,
+    );
+
+    const executor = await resolver.resolve({
+      platform: "slack",
+      userId: "U123",
+      conversationId: "D123",
+    });
+
+    expect(executor.getSandboxConfig()).toEqual({
+      type: "gondolin",
+      sandboxId: "mikan-local-d123",
+    });
+    expect(mgr.resolve(DockerContainerManager.sanitizeSegment("D123"))).toBeUndefined();
+  });
+
+  test("provisions per-conversation container without mounting vault secrets", async () => {
     const userDir = join(vaultsDir, "d123");
     mkdirSync(join(userDir, ".ssh"), { recursive: true });
 
@@ -381,13 +405,12 @@ describe("ActorExecutionResolver image mode", () => {
         { source: join(tmpDir, "skills"), target: "/workspace/skills" },
         { source: join(tmpDir, "events"), target: "/workspace/events" },
         { source: join(tmpDir, "D123"), target: "/workspace/D123" },
-        { source: join(vaultsDir, "d123", ".ssh"), target: "/root/.ssh" },
       ],
     });
-    expect(exec).toHaveBeenCalledWith(
-      "docker exec -w /workspace mikan-sandbox-d123 sh -c 'pwd'",
-      undefined,
-    );
+    const [[dockerCommand]] = exec.mock.calls;
+    expect(dockerCommand).toContain("mktemp -d /tmp/mikan-vault.");
+    expect(dockerCommand).toContain("/root/.ssh");
+    expect(dockerCommand).toContain("pwd");
   });
 
   test("mounts the full workspace when conversation sandbox mode is full", async () => {

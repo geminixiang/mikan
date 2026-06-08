@@ -6,6 +6,7 @@ import type {
   FirecrackerSandboxConfig,
   RuntimePathContext,
   SandboxAdapter,
+  SandboxSecrets,
 } from "./types.js";
 import { SandboxError } from "./errors.js";
 import { HostExecutor } from "./host.js";
@@ -96,11 +97,12 @@ export class FirecrackerExecutor implements Executor {
     private hostPath: string,
     private sshUser: string = "root",
     private sshPort: number = 22,
-    private env?: Record<string, string>,
+    private secrets?: SandboxSecrets,
   ) {}
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
-    if (!this.env || Object.keys(this.env).length === 0) {
+    const env = this.secrets?.env;
+    if (!env || Object.keys(env).length === 0) {
       const sshCmd =
         this.sshPort === 22
           ? `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${this.sshUser}@${this.vmId} sh -c ${shellEscape(command)}`
@@ -173,7 +175,7 @@ export class FirecrackerExecutor implements Executor {
       child.stdin?.on("error", (error) => {
         stderr += `${error.message}\n`;
       });
-      child.stdin?.end(buildRemoteScript(command, this.env));
+      child.stdin?.end(buildRemoteScript(command, env));
 
       child.on("close", (code) => {
         if (settled) return;
@@ -242,6 +244,6 @@ export const firecrackerSandboxAdapter: SandboxAdapter<FirecrackerSandboxConfig>
   type: "firecracker",
   parse: parseFirecrackerSandboxArg,
   validate: validateFirecrackerSandbox,
-  createExecutor: (config, env) =>
-    new FirecrackerExecutor(config.vmId, config.hostPath, config.sshUser, config.sshPort, env),
+  createExecutor: (config, secrets) =>
+    new FirecrackerExecutor(config.vmId, config.hostPath, config.sshUser, config.sshPort, secrets),
 };

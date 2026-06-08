@@ -186,6 +186,12 @@ function buildEnvDescription(sandboxType: SandboxConfig["type"], workspaceRoot: 
 - Bash commands start in: ${workspaceRoot}
 - Your commands run in a remote container managed by Cloudflare
 - Important: the remote filesystem is not automatically synced back to the host workspace`;
+    case "gondolin":
+      return `You are running through a Gondolin sandbox bridge.
+- Runtime workspace root: ${workspaceRoot}
+- Bash commands start in: ${workspaceRoot}
+- Your commands run in a local micro-VM managed by Gondolin
+- Important: the remote filesystem is not automatically synced back to the host workspace unless the bridge mounts it`;
     default:
       return `You are running directly on the host machine.
 - Runtime workspace root: ${workspaceRoot}
@@ -481,6 +487,7 @@ function createRunnerExecutionContext(
       sandboxConfig.type === "container" ||
       sandboxConfig.type === "image" ||
       sandboxConfig.type === "cloudflare" ||
+      sandboxConfig.type === "gondolin" ||
       sandboxConfig.type === "firecracker")
       ? new ActorExecutionResolver(sandboxConfig, vaultManager, provisioner, workspaceDir)
       : undefined;

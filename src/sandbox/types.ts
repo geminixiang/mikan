@@ -3,7 +3,8 @@ export type SandboxConfig =
   | ContainerSandboxConfig
   | ImageSandboxConfig
   | FirecrackerSandboxConfig
-  | CloudflareSandboxConfig;
+  | CloudflareSandboxConfig
+  | GondolinSandboxConfig;
 
 export interface HostSandboxConfig {
   type: "host";
@@ -30,6 +31,23 @@ export interface FirecrackerSandboxConfig {
 export interface CloudflareSandboxConfig {
   type: "cloudflare";
   sandboxId: string;
+}
+
+export interface GondolinSandboxConfig {
+  type: "gondolin";
+  sandboxId: string;
+}
+
+export interface SandboxSecrets {
+  /** Environment values exposed only for the current command. */
+  env?: Record<string, string>;
+  /** Host files staged into the runtime only for the current command. */
+  files?: Array<{ source: string; target: string }>;
+}
+
+export interface SecretProxyHandle {
+  url: string;
+  close: () => Promise<void>;
 }
 
 export interface Executor {
@@ -82,7 +100,7 @@ export interface SandboxAdapter<TConfig extends SandboxConfig = SandboxConfig> {
   validate(config: TConfig): Promise<void>;
   createExecutor(
     config: TConfig,
-    env?: Record<string, string>,
+    secrets?: SandboxSecrets,
     ensureReady?: () => Promise<void>,
   ): Executor;
 }

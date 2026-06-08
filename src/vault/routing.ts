@@ -12,6 +12,7 @@ export function resolveActorVaultKey(
   if (
     baseConfig.type === "image" ||
     baseConfig.type === "cloudflare" ||
+    baseConfig.type === "gondolin" ||
     baseConfig.type === "firecracker"
   ) {
     return DockerContainerManager.sanitizeSegment(conversationId);

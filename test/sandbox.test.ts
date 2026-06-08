@@ -1,13 +1,19 @@
+import { createServer, request as httpRequest } from "node:http";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   CloudflareSandboxExecutor,
   ContainerExecutor,
   FirecrackerExecutor,
+  GondolinSandboxExecutor,
   HostExecutor,
   SandboxError,
   createExecutor,
   parseSandboxArg,
 } from "../src/sandbox/index.js";
+import { startSecretInjectionProxy } from "../src/sandbox/proxy.js";
 
 describe("parseSandboxArg", () => {
   afterEach(() => {
@@ -55,6 +61,13 @@ describe("parseSandboxArg", () => {
   test("parses cloudflare sandbox", () => {
     expect(parseSandboxArg("cloudflare:slack-u123")).toEqual({
       type: "cloudflare",
+      sandboxId: "slack-u123",
+    });
+  });
+
+  test("parses gondolin sandbox", () => {
+    expect(parseSandboxArg("gondolin:slack-u123")).toEqual({
+      type: "gondolin",
       sandboxId: "slack-u123",
     });
   });
@@ -115,11 +128,45 @@ describe("createExecutor", () => {
       CloudflareSandboxExecutor,
     );
   });
+
+  test("creates gondolin executor", () => {
+    expect(createExecutor({ type: "gondolin", sandboxId: "shared-prefix" })).toBeInstanceOf(
+      GondolinSandboxExecutor,
+    );
+  });
 });
 
 describe("ContainerExecutor", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  test("stages vault files only for the current docker exec command", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "mikan-secret-test-"));
+    try {
+      const source = join(tempDir, "adc.json");
+      writeFileSync(source, '{"token":"secret"}\n');
+      const exec = vi
+        .spyOn(HostExecutor.prototype, "exec")
+        .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
+      const executor = new ContainerExecutor(
+        "mikan-sandbox",
+        { files: [{ source, target: "/workspace/gcloud-adc.json" }] },
+        async () => {},
+      );
+
+      await executor.exec("gcloud auth application-default print-access-token");
+
+      const [[dockerCommand]] = exec.mock.calls;
+      expect(dockerCommand).not.toContain("-v ");
+      expect(dockerCommand).toContain("mktemp -d /tmp/mikan-vault.");
+      expect(dockerCommand).toContain("base64 -d");
+      expect(dockerCommand).toContain("ln -sf");
+      expect(dockerCommand).toContain("/workspace/gcloud-adc.json");
+      expect(dockerCommand).toContain("gcloud auth application-default print-access-token");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   test("bootstraps git credential helper when GitHub token env is injected", async () => {
@@ -128,7 +175,7 @@ describe("ContainerExecutor", () => {
       .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
     const executor = new ContainerExecutor(
       "mikan-sandbox",
-      { GH_TOKEN: "gho_test" },
+      { env: { GH_TOKEN: "gho_test" } },
       async () => {},
     );
 
@@ -139,6 +186,53 @@ describe("ContainerExecutor", () => {
     expect(dockerCommand).toContain("mikan-sandbox sh -c");
     expect(dockerCommand).toContain("gh auth setup-git");
     expect(dockerCommand).toContain("git clone https://github.com/livingbio/skills.git");
+  });
+});
+
+async function runProxyHeaderRequest(upstream: ReturnType<typeof createServer>): Promise<void> {
+  const address = upstream.address();
+  if (!address || typeof address === "string") throw new Error("no port");
+  const host = `127.0.0.1:${address.port}`;
+  const proxy = await startSecretInjectionProxy({ [host]: { authorization: "Bearer injected" } });
+  try {
+    await new Promise<void>((resolve) => {
+      const proxyUrl = new URL(proxy.url);
+      const req = httpRequest(
+        {
+          hostname: proxyUrl.hostname,
+          port: proxyUrl.port,
+          method: "GET",
+          path: `http://${host}/check`,
+        },
+        (res) => {
+          res.resume();
+          res.on("end", resolve);
+        },
+      );
+      req.end();
+    });
+  } finally {
+    await proxy.close();
+  }
+}
+
+describe("Secret injection proxy", () => {
+  test("injects configured headers into proxied HTTP requests", async () => {
+    const seen = await new Promise<Record<string, string | string[] | undefined>>(
+      (resolve, reject) => {
+        const upstream = createServer((request, response) => {
+          resolve(request.headers);
+          response.end("ok");
+        });
+        upstream.listen(0, "127.0.0.1", () => {
+          runProxyHeaderRequest(upstream)
+            .catch(reject)
+            .finally(() => upstream.close());
+        });
+      },
+    );
+
+    expect(seen.authorization).toBe("Bearer injected");
   });
 });
 
@@ -185,6 +279,49 @@ describe("FirecrackerExecutor", () => {
   });
 });
 
+describe("GondolinSandboxExecutor", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    process.env = { ...originalEnv };
+  });
+
+  test("posts exec requests to the bridge with secrets", async () => {
+    process.env.MIKAN_GONDOLIN_SANDBOX_URL = "https://gondolin.example";
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({ stdout: "ok\n", stderr: "", code: 0 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const executor = new GondolinSandboxExecutor("slack-u123", {
+      env: { API_TOKEN: "secret" },
+    });
+    await expect(executor.exec("pwd", { timeout: 5 })).resolves.toEqual({
+      stdout: "ok\n",
+      stderr: "",
+      code: 0,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      new URL("/exec", "https://gondolin.example"),
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "content-type": "application/json" }),
+      }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      sandboxId: "slack-u123",
+      command: "pwd",
+      timeoutSeconds: 5,
+      cwd: "/workspace",
+      env: { API_TOKEN: "secret" },
+      secrets: { env: { API_TOKEN: "secret" } },
+    });
+  });
+});
+
 describe("CloudflareSandboxExecutor", () => {
   const originalEnv = { ...process.env };
 
@@ -201,7 +338,7 @@ describe("CloudflareSandboxExecutor", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const executor = new CloudflareSandboxExecutor("slack-u123", { API_TOKEN: "secret" });
+    const executor = new CloudflareSandboxExecutor("slack-u123", { env: { API_TOKEN: "secret" } });
     await expect(executor.exec("pwd", { timeout: 5 })).resolves.toEqual({
       stdout: "ok\n",
       stderr: "",
@@ -221,6 +358,7 @@ describe("CloudflareSandboxExecutor", () => {
       timeoutSeconds: 5,
       cwd: "/workspace",
       env: { API_TOKEN: "secret" },
+      secrets: { env: { API_TOKEN: "secret" } },
     });
   });
 

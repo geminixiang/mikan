@@ -2,12 +2,17 @@ import { getSandbox, type Sandbox as CloudflareSandbox } from "@cloudflare/sandb
 
 export { Sandbox } from "@cloudflare/sandbox";
 
+interface SandboxSecrets {
+  env?: Record<string, string>;
+}
+
 interface ExecRequestBody {
   sandboxId?: string;
   command?: string;
   timeoutSeconds?: number;
   cwd?: string;
   env?: Record<string, string>;
+  secrets?: SandboxSecrets;
 }
 
 interface Env {
@@ -64,7 +69,7 @@ export default {
             ? body.timeoutSeconds * 1000
             : undefined,
         cwd: body.cwd || "/workspace",
-        env: body.env,
+        env: body.env ?? body.secrets?.env,
       });
 
       return Response.json({
