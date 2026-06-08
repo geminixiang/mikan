@@ -189,7 +189,7 @@ describe("respond() — non-threaded", () => {
     await responseCtx.appendResponseDelta?.(suffix);
     await responseCtx.finishResponse?.(`first${suffix}`);
 
-    expect(bot.startMessageStream).toHaveBeenCalledWith("C001", "first", "1000.0001");
+    expect(bot.startMessageStream).toHaveBeenCalledWith("C001", "first", "1000.0001", "U001");
     expect(bot.appendMessageStream).toHaveBeenCalledTimes(1);
     expect(bot.appendMessageStream).toHaveBeenCalledWith("C001", "STREAM1", suffix);
     expect(bot.stopMessageStream).toHaveBeenCalledWith("C001", "STREAM1");
@@ -211,7 +211,7 @@ describe("respond() — threaded", () => {
     await responseCtx.appendResponseDelta?.("first");
     await responseCtx.finishResponse?.("first");
 
-    expect(bot.startMessageStream).toHaveBeenCalledWith("C001", "first", "1000.0001");
+    expect(bot.startMessageStream).toHaveBeenCalledWith("C001", "first", "1000.0001", "U001");
     expect(bot.postMessage).not.toHaveBeenCalled();
   });
 

@@ -22,13 +22,15 @@ describe.skipIf(!ctx || !ctx.env.streamingBotToken)("Slack streaming API", () =>
 
     try {
       rootTs = await postMessage(client, env.channel, `Slack streaming e2e root ${token}`);
-      const auth = await botClient.auth.test();
-      const recipientTeamId = typeof auth.team_id === "string" ? auth.team_id : undefined;
+      const [botAuth, userAuth] = await Promise.all([botClient.auth.test(), client.auth.test()]);
+      const recipientTeamId = typeof botAuth.team_id === "string" ? botAuth.team_id : undefined;
+      const recipientUserId = typeof userAuth.user_id === "string" ? userAuth.user_id : undefined;
       const start = await botClient.apiCall("chat.startStream", {
         channel: env.channel,
         thread_ts: rootTs,
         markdown_text: initial,
         ...(recipientTeamId ? { recipient_team_id: recipientTeamId } : {}),
+        ...(recipientUserId ? { recipient_user_id: recipientUserId } : {}),
       });
       streamTs = String((start as { ts?: string }).ts ?? "");
       expect(streamTs, `chat.startStream missing ts: ${JSON.stringify(start)}`).not.toBe("");

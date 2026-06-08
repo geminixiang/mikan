@@ -254,7 +254,7 @@ export function createSlackAdapters(
         await postOrUpdateMain(displayText);
         return;
       }
-      messageTs = await slack.startMessageStream(channelId, text, rootTs);
+      messageTs = await slack.startMessageStream(channelId, text, rootTs, event.user);
       streamActive = true;
       streamedText = text;
     } catch (err) {

@@ -313,13 +313,19 @@ export class SlackBot implements Bot {
     });
   }
 
-  async startMessageStream(channel: string, text: string, threadTs?: string): Promise<string> {
+  async startMessageStream(
+    channel: string,
+    text: string,
+    threadTs?: string,
+    recipientUserId?: string,
+  ): Promise<string> {
     return slackRetry(async () => {
       const result = await this.webClient.apiCall("chat.startStream", {
         channel,
         markdown_text: text,
         ...(threadTs ? { thread_ts: threadTs } : {}),
         ...(this.teamId ? { recipient_team_id: this.teamId } : {}),
+        ...(recipientUserId ? { recipient_user_id: recipientUserId } : {}),
       });
       const ts = (result as { ts?: string }).ts;
       if (!ts) throw new Error("Slack chat.startStream did not return ts");
