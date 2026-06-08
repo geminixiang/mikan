@@ -23,7 +23,11 @@ export function readSlackE2eEnv(): SlackE2eEnv {
     channel,
     mikanBotUserId: env.SLACK_QA_BOT_USER_ID || undefined,
     questionBotUserId: env.SLACK_QA_QUESTION_BOT_USER_ID || undefined,
-    streamingBotToken: env.SLACK_QA_STREAMING_BOT_TOKEN || env.SLACK_QA_BOT_TOKEN || undefined,
+    streamingBotToken:
+      env.SLACK_QA_STREAMING_BOT_TOKEN ||
+      env.SLACK_QA_BOT_TOKEN ||
+      env.SLACK_BOT_TOKEN ||
+      undefined,
     timeoutMs: Number(env.SLACK_QA_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS),
     pollMs: Number(env.SLACK_QA_POLL_MS ?? DEFAULT_POLL_MS),
     eventsDir: env.SLACK_QA_EVENTS_DIR ?? `${process.cwd()}/events`,

@@ -53,8 +53,8 @@ The Slack smoke suite lives under `e2e/slack/` and runs on Vitest (`vitest.e2e.c
 ```bash
 SLACK_QA_USER_TOKEN=xoxp-... \
 SLACK_QA_CHANNEL_ID=C0123456789 \
-SLACK_QA_QUESTION_BOT_USER_ID=UQUESTION \
 SLACK_QA_BOT_USER_ID=UMIKAN \
+SLACK_BOT_TOKEN=xoxb-... \
 npm run test:e2e:slack
 ```
 
@@ -70,7 +70,7 @@ Each scenario is its own `*.e2e.ts` file and is skipped at runtime when the requ
 - one-shot event delivery.
 - No-mention false-reply check.
 
-Only three variables are required for local E2E: `SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, and `SLACK_QA_BOT_USER_ID`. The event directory is derived from the current workspace.
+Only four variables are required for local E2E: `SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, `SLACK_QA_BOT_USER_ID`, and `SLACK_BOT_TOKEN`. The event directory is derived from the current workspace. `SLACK_QA_QUESTION_BOT_USER_ID` is optional; question-bot-specific checks are skipped when it is unset.
 
 The QA user token must be able to post in the test channel, read channel history/replies, and upload files for S-009. The E2E manifest at `examples/slack-app-manifest.e2e.json` includes the required user scopes for this; the general `examples/slack-app-manifest.json` does not.
 
