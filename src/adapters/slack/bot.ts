@@ -133,6 +133,7 @@ export class SlackBot implements Bot {
   private store: ChannelStore;
   private botUserId: string | null = null;
   private botId: string | null = null;
+  private teamId: string | null = null;
   private ownMentionRegex: RegExp | null = null;
   private startupTs: string | null = null; // Messages older than this are just logged, not processed
 
@@ -177,6 +178,7 @@ export class SlackBot implements Bot {
     const auth = await this.webClient.auth.test();
     this.botUserId = auth.user_id as string;
     this.botId = typeof auth.bot_id === "string" ? auth.bot_id : null;
+    this.teamId = typeof auth.team_id === "string" ? auth.team_id : null;
 
     await Promise.all([this.fetchUsers(), this.fetchChannels()]);
     log.logInfo(`Loaded ${this.channels.size} channels, ${this.users.size} users`);
@@ -317,6 +319,7 @@ export class SlackBot implements Bot {
         channel,
         markdown_text: text,
         ...(threadTs ? { thread_ts: threadTs } : {}),
+        ...(this.teamId ? { recipient_team_id: this.teamId } : {}),
       });
       const ts = (result as { ts?: string }).ts;
       if (!ts) throw new Error("Slack chat.startStream did not return ts");
