@@ -3,6 +3,7 @@ import { VM, RealFSProvider, createHttpHooks } from "@earendil-works/gondolin";
 
 interface SandboxSecrets {
   env?: Record<string, string>;
+  files?: Array<{ source: string; target: string }>;
 }
 
 interface ExecRequestBody {
@@ -43,12 +44,12 @@ function json(response: ServerResponse, status: number, value: unknown): void {
   response.end(JSON.stringify(value));
 }
 
-function ensureVm(sandboxId: string, env?: Record<string, string>): Promise<VM> {
+function ensureVm(sandboxId: string, secrets?: SandboxSecrets): Promise<VM> {
   const existing = sessions.get(sandboxId);
   if (existing) return existing;
 
   const created = VM.create({
-    ...buildHttpPolicy(env),
+    ...buildHttpPolicy(secrets?.env),
     vfs: {
       mounts: {
         "/workspace": new RealFSProvider(WORKSPACE),
@@ -67,14 +68,9 @@ function buildHttpPolicy(env?: Record<string, string>) {
   const allowedHosts = Object.keys(rules);
   let index = 0;
   for (const [host, headers] of Object.entries(rules)) {
-    for (const [header, value] of Object.entries(headers)) {
+    for (const value of Object.values(headers)) {
       const name = `MIKAN_PROXY_SECRET_${index++}`;
       secretEntries[name] = { hosts: [host], value };
-      env ??= {};
-      env[name] = value;
-      // Gondolin replaces placeholders in outbound headers. The caller can use
-      // this env value in intercepted commands or explicit curl headers.
-      env[`MIKAN_PROXY_HEADER_${header.toUpperCase().replace(/[^A-Z0-9_]/g, "_")}`] = value;
     }
   }
 
@@ -82,7 +78,7 @@ function buildHttpPolicy(env?: Record<string, string>) {
     allowedHosts,
     secrets: secretEntries,
   });
-  return { httpHooks, env: { ...env, ...hookEnv } };
+  return { httpHooks, env: hookEnv };
 }
 
 function parseProxyRules(
@@ -107,12 +103,22 @@ async function handleExec(request: IncomingMessage, response: ServerResponse): P
     return;
   }
 
+  if (body.env && Object.keys(body.env).length > 0) {
+    json(response, 400, {
+      error:
+        "env injection is not supported because sandbox commands can read environment variables",
+    });
+    return;
+  }
+  if (body.secrets?.files && body.secrets.files.length > 0) {
+    json(response, 400, { error: "secrets.files is not supported by this Gondolin bridge" });
+    return;
+  }
+
   try {
-    const env = body.env ?? body.secrets?.env;
-    const vm = await ensureVm(body.sandboxId, env);
+    const vm = await ensureVm(body.sandboxId, body.secrets);
     const result = await vm.exec(body.command, {
       cwd: body.cwd || "/workspace",
-      env,
       timeout: body.timeoutSeconds ? body.timeoutSeconds * 1000 : undefined,
     });
 

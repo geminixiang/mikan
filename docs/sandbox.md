@@ -10,8 +10,8 @@
 | `container:<name>`                                          | 既有 Docker container | 注入                | `container-<name>`           | one container one vault；多人共用同一 container 就共用該 vault                     |
 | `image:<image>`                                             | mikan 管理的 Docker   | exec 時短暫注入     | generated conversation vault | 目前最推薦的隔離模式；vault 不會作為長期 bind mount 留在 container 內              |
 | `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM        | 注入                | generated conversation vault | Alpha 超早期；VM 需自行啟動，workspace 需在 VM 內掛到 `/workspace`，目前不建議使用 |
-| `cloudflare:<sandbox-id>`                                   | Cloudflare Worker     | 注入                | generated conversation vault | Experimental；需自行部署 `@cloudflare/sandbox` bridge，host workspace 不會自動同步 |
-| `gondolin:<sandbox-id>`                                     | Gondolin micro-VM     | 注入                | generated conversation vault | Experimental；需自行啟動 Gondolin bridge，本機 micro-VM sandbox                    |
+| `cloudflare:<sandbox-id>`                                   | Cloudflare Worker     | proxy-only          | generated conversation vault | Experimental；普通 vault env 不會進 sandbox；host workspace 不會自動同步           |
+| `gondolin:<sandbox-id>`                                     | Gondolin micro-VM     | proxy-only          | generated conversation vault | Experimental；普通 vault env 不會進 VM；secret 由 bridge-side policy 注入          |
 
 `docker:*` 不是可用模式；請改用 `container:*` 或 `image:*`。
 
@@ -24,7 +24,7 @@
 | command 執行                         | ✅       | ✅                 | ✅              | ✅              | ✅             | ✅             |
 | mikan 管理 runtime lifecycle         | 不適用   | ❌                 | ✅              | ❌              | ❌             | bridge 管理    |
 | per-conversation container / runtime | ❌       | ❌                 | ✅              | 需自行管理      | bridge 衍生 id | bridge 衍生 id |
-| per-conversation vault env           | ❌       | ❌                 | ✅              | ✅              | ✅             | ✅             |
+| per-conversation vault env           | ❌       | ❌                 | ✅              | ✅              | ❌             | ❌             |
 | vault file 執行期短暫投影            | ❌       | ❌                 | ✅              | ❌              | ❌             | bridge 實作    |
 | workspace 自動掛載                   | host     | 需自行掛載         | ✅              | 需自行掛載      | ❌             | bridge 掛載    |
 | private workspace mount mode         | 不適用   | ❌                 | ✅              | ❌              | ❌             | ❌             |
@@ -289,7 +289,8 @@ mikan --sandbox=cloudflare:mikan-remote /path/to/workspace
 特性：
 
 - mikan 會把 remote sandbox id 衍生為 `<base-sandbox-id>-<vault-key>`
-- vault env 會在每次 `exec()` 時透過 bridge 注入
+- 普通 vault env 不會放進 `/exec` payload，也不會成為 remote command 的環境變數
+- 只有 `MIKAN_PROXY_INJECT_HEADERS` 會以 `secrets.env` 送到 bridge；範例 Cloudflare bridge 會建立短期 proxy session，只把 `HTTP_PROXY` / `http_proxy` capability URL 注入 sandbox，header secret 由 bridge-side proxy 加上
 - vault 選擇邏輯和 `image` 類似：使用 conversation ID 產生 platform-scoped vault key
 
 限制：
@@ -319,8 +320,9 @@ mikan --sandbox=gondolin:mikan-local /path/to/workspace
 特性：
 
 - mikan 會把 sandbox id 衍生為 `<base-sandbox-id>-<vault-key>`
-- vault env / secrets 會送到 bridge 的 `/exec` payload
-- bridge 可把 `MIKAN_PROXY_INJECT_HEADERS` 轉成 Gondolin host-side HTTP hooks，讓 secret 由 host-side policy 處理
+- 普通 vault env 不會放進 `/exec` payload，也不會成為 VM command 的環境變數
+- 只有 `MIKAN_PROXY_INJECT_HEADERS` 會以 `secrets.env` 送到 bridge
+- bridge 可把 `MIKAN_PROXY_INJECT_HEADERS` 轉成 Gondolin host-side HTTP hooks，讓 secret 由 host-side policy 處理；sandbox 只能看到 hook 產生的非 secret env，不會看到 vault secret value
 - workspace 是否掛載、VM lifecycle、HTTP/TLS policy 都由 bridge 控制
 
 限制：

@@ -334,7 +334,7 @@ describe("GondolinSandboxExecutor", () => {
     process.env = { ...originalEnv };
   });
 
-  test("posts exec requests to the bridge with secrets", async () => {
+  test("does not expose vault env secrets in bridge exec payload", async () => {
     process.env.MIKAN_GONDOLIN_SANDBOX_URL = "https://gondolin.example";
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -363,8 +363,28 @@ describe("GondolinSandboxExecutor", () => {
       command: "pwd",
       timeoutSeconds: 5,
       cwd: "/workspace",
-      env: { API_TOKEN: "secret" },
-      secrets: { env: { API_TOKEN: "secret" } },
+    });
+  });
+
+  test("sends only proxy header rules to the bridge", async () => {
+    process.env.MIKAN_GONDOLIN_SANDBOX_URL = "https://gondolin.example";
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({ stdout: "ok\n", stderr: "", code: 0 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const proxyRules = JSON.stringify({ "api.example": { authorization: "Bearer injected" } });
+    const executor = new GondolinSandboxExecutor("slack-u123", {
+      env: { API_TOKEN: "secret", MIKAN_PROXY_INJECT_HEADERS: proxyRules },
+    });
+    await executor.exec("curl http://api.example/check");
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      sandboxId: "slack-u123",
+      command: "curl http://api.example/check",
+      cwd: "/workspace",
+      secrets: { env: { MIKAN_PROXY_INJECT_HEADERS: proxyRules } },
     });
   });
 });
@@ -377,7 +397,7 @@ describe("CloudflareSandboxExecutor", () => {
     process.env = { ...originalEnv };
   });
 
-  test("posts exec requests to the bridge", async () => {
+  test("does not expose vault env secrets in bridge exec payload", async () => {
     process.env.MIKAN_CLOUDFLARE_SANDBOX_URL = "https://sandbox.example";
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -404,8 +424,28 @@ describe("CloudflareSandboxExecutor", () => {
       command: "pwd",
       timeoutSeconds: 5,
       cwd: "/workspace",
-      env: { API_TOKEN: "secret" },
-      secrets: { env: { API_TOKEN: "secret" } },
+    });
+  });
+
+  test("sends only proxy header rules to the bridge", async () => {
+    process.env.MIKAN_CLOUDFLARE_SANDBOX_URL = "https://sandbox.example";
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({ stdout: "ok\n", stderr: "", code: 0 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const proxyRules = JSON.stringify({ "api.example": { authorization: "Bearer injected" } });
+    const executor = new CloudflareSandboxExecutor("slack-u123", {
+      env: { API_TOKEN: "secret", MIKAN_PROXY_INJECT_HEADERS: proxyRules },
+    });
+    await executor.exec("curl http://api.example/check");
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      sandboxId: "slack-u123",
+      command: "curl http://api.example/check",
+      cwd: "/workspace",
+      secrets: { env: { MIKAN_PROXY_INJECT_HEADERS: proxyRules } },
     });
   });
 

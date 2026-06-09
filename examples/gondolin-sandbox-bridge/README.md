@@ -45,8 +45,11 @@ mikan 會呼叫：
   "command": "pwd",
   "cwd": "/workspace",
   "timeoutSeconds": 30,
-  "env": {},
-  "secrets": { "env": {} }
+  "secrets": {
+    "env": {
+      "MIKAN_PROXY_INJECT_HEADERS": "{...}"
+    }
+  }
 }
 ```
 
@@ -58,6 +61,8 @@ mikan 會呼叫：
 
 ## Secret / proxy 語意
 
-bridge 接受 mikan 的 `secrets.env`。若包含 `MIKAN_PROXY_INJECT_HEADERS`，bridge 會建立 Gondolin `createHttpHooks()` policy，讓 Gondolin host-side HTTP policy 負責替允許 host 的 outbound request 做 secret replacement。
+mikan 不會把普通 vault env 送進 `/exec` payload，因為 sandbox command 可以直接讀取環境變數。只有 `MIKAN_PROXY_INJECT_HEADERS` 會放在 `secrets.env`。
 
-目前這個範例保留最小實作；production bridge 應依實際 CLI（`gh`、`gcloud`、`gws`、`sentry-cli`）加上 intercepted-command wrappers，把 CLI credential discovery 轉成 Gondolin placeholder header 或短期 file/env。
+bridge 會把 `MIKAN_PROXY_INJECT_HEADERS` 轉成 Gondolin `createHttpHooks()` policy，讓 Gondolin host-side HTTP policy 負責替允許 host 的 outbound request 做 secret replacement。secret value 不會作為 `vm.exec()` env 傳入 VM。
+
+目前這個範例保留最小實作；production bridge 應依實際 CLI（`gh`、`gcloud`、`gws`、`sentry-cli`）加上 intercepted-command wrappers，把 CLI credential discovery 轉成 Gondolin placeholder header 或短期 host-side policy。

@@ -9,6 +9,7 @@ import type {
 } from "./types.js";
 import { readEnv } from "../utils/env.js";
 import { SandboxError } from "./errors.js";
+import { buildRemoteSandboxSecrets, hasVaultFileSecrets } from "./remote-secrets.js";
 
 const DEFAULT_CLOUDFLARE_CWD = "/workspace";
 
@@ -95,9 +96,9 @@ export class CloudflareSandboxExecutor implements Executor {
     }
 
     try {
-      if (this.secrets?.files && this.secrets.files.length > 0) {
+      if (hasVaultFileSecrets(this.secrets)) {
         throw new SandboxError(
-          "Error: Cloudflare sandbox bridge does not support vault file secrets yet; use env secrets or a container/gondolin sandbox for file-backed credentials",
+          "Error: Cloudflare sandbox bridge does not support vault file secrets yet; use proxy-injected HTTP credentials or a container/gondolin sandbox for file-backed credentials",
         );
       }
 
@@ -106,10 +107,9 @@ export class CloudflareSandboxExecutor implements Executor {
         command,
         cwd: this.cwd,
       };
+      const remoteSecrets = buildRemoteSandboxSecrets(this.secrets);
       if (options?.timeout) payload.timeoutSeconds = options.timeout;
-      if (this.secrets?.env && Object.keys(this.secrets.env).length > 0)
-        payload.env = this.secrets.env;
-      if (this.secrets) payload.secrets = this.secrets;
+      if (remoteSecrets) payload.secrets = remoteSecrets;
 
       const response = await fetch(new URL("/exec", resolveCloudflareSandboxUrl()), {
         method: "POST",
