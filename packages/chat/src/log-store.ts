@@ -1,9 +1,10 @@
 import { randomUUID } from "crypto";
-import { mkdirSync, readFileSync } from "fs";
+import { appendFileSync, mkdirSync, readFileSync } from "fs";
 import { appendFile } from "fs/promises";
 import { join } from "path";
 import type {
   AgentMessageContext,
+  BotResponseLogInput,
   ConversationEventRecord,
   ConversationLogEventType,
   ConversationLogRecord,
@@ -28,6 +29,29 @@ export class ConversationLogStore {
 
   async append(conversationId: string, record: ConversationLogRecord): Promise<void> {
     await appendFile(this.getLogPath(conversationId), `${JSON.stringify(record)}\n`, "utf-8");
+  }
+
+  appendSync(conversationId: string, record: ConversationLogRecord): void {
+    appendFileSync(this.getLogPath(conversationId), `${JSON.stringify(record)}\n`, "utf-8");
+  }
+
+  async appendLoggedMessage(conversationId: string, message: LoggedMessage): Promise<void> {
+    await this.append(conversationId, normalizeLoggedMessage(message));
+  }
+
+  appendLoggedMessageSync(conversationId: string, message: LoggedMessage): void {
+    this.appendSync(conversationId, normalizeLoggedMessage(message));
+  }
+
+  async appendBotResponse(
+    conversationId: string,
+    input: BotResponseLogInput,
+  ): Promise<void> {
+    await this.appendLoggedMessage(conversationId, createBotResponseLogMessage(input));
+  }
+
+  appendBotResponseSync(conversationId: string, input: BotResponseLogInput): void {
+    this.appendLoggedMessageSync(conversationId, createBotResponseLogMessage(input));
   }
 
   async appendEvent(conversationId: string, event: ConversationEventRecord): Promise<void> {
@@ -94,6 +118,35 @@ export function normalizeLoggedMessage(message: LoggedMessage): ConversationLogR
 
 export function normalizeLogEntry(entry: object): ConversationLogRecord {
   return normalizeLoggedMessage(entry as LoggedMessage);
+}
+
+export function appendLoggedMessageSync(
+  options: ConversationLogStoreOptions,
+  conversationId: string,
+  message: LoggedMessage,
+): void {
+  createConversationLogStore(options).appendLoggedMessageSync(conversationId, message);
+}
+
+export function appendBotResponseLogSync(
+  options: ConversationLogStoreOptions,
+  conversationId: string,
+  input: BotResponseLogInput,
+): void {
+  createConversationLogStore(options).appendBotResponseSync(conversationId, input);
+}
+
+export function createBotResponseLogMessage(input: BotResponseLogInput): LoggedMessage {
+  return {
+    date: input.date ?? new Date().toISOString(),
+    ts: input.ts,
+    threadTs: input.threadTs,
+    user: "bot",
+    text: input.text,
+    attachments: [],
+    isBot: true,
+    ...input.extraFields,
+  };
 }
 
 export function createConversationEvent(input: {

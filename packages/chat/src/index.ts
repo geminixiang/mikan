@@ -1,5 +1,8 @@
 export {
   ConversationLogStore,
+  appendBotResponseLogSync,
+  appendLoggedMessageSync,
+  createBotResponseLogMessage,
   createConversationLogStore,
   createConversationEvent,
   normalizeLogEntry,
@@ -8,6 +11,7 @@ export {
 export type {
   AgentMessageContext,
   Attachment,
+  BotResponseLogInput,
   ConversationEventRecord,
   ConversationLogEventType,
   ConversationLogRecord,

@@ -79,6 +79,14 @@ export interface AgentMessageContext {
   events: ConversationEventRecord[];
 }
 
+export interface BotResponseLogInput {
+  text: string;
+  ts: string;
+  threadTs?: string;
+  date?: string;
+  extraFields?: Partial<LoggedMessage>;
+}
+
 export interface ConversationLogStoreOptions {
   rootDir: string;
 }
