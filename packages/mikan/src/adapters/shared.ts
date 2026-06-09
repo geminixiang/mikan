@@ -159,7 +159,11 @@ export function splitText(
  * adapter uses for human-readable message history.
  */
 export function appendChannelLog(workingDir: string, channel: string, entry: object): void {
-  appendLoggedMessageSync({ rootDir: workingDir }, channel, entry as Parameters<typeof appendLoggedMessageSync>[2]);
+  appendLoggedMessageSync(
+    { rootDir: workingDir },
+    channel,
+    entry as Parameters<typeof appendLoggedMessageSync>[2],
+  );
 }
 
 /** Convenience for appending the bot's own outbound message. */

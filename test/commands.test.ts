@@ -10,8 +10,15 @@ import { LoginCommandHandler } from "../packages/mikan/src/commands/login.js";
 import { NewCommandHandler } from "../packages/mikan/src/commands/new.js";
 import { SandboxCommandHandler } from "../packages/mikan/src/commands/sandbox.js";
 import { SessionViewCommandHandler } from "../packages/mikan/src/commands/session-view.js";
-import type { CommandContext, CommandHandler, CommandServices } from "../packages/mikan/src/commands/types.js";
-import { createManagedSessionFile, getChannelSessionDir } from "../packages/mikan/src/sessions/store.js";
+import type {
+  CommandContext,
+  CommandHandler,
+  CommandServices,
+} from "../packages/mikan/src/commands/types.js";
+import {
+  createManagedSessionFile,
+  getChannelSessionDir,
+} from "../packages/mikan/src/sessions/store.js";
 import type { SandboxConfig } from "../packages/mikan/src/sandbox/index.js";
 import type { VaultManager } from "../packages/mikan/src/vault/index.js";
 

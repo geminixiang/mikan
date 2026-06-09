@@ -8,7 +8,10 @@ import { defaultCommandHandlers } from "../packages/mikan/src/commands/registry.
 import { createGlobalSettingsFile } from "../packages/mikan/src/config.js";
 import type { CommandServices } from "../packages/mikan/src/commands/types.js";
 import { ConversationOrchestrator } from "../packages/mikan/src/runtime/conversation-orchestrator.js";
-import { createManagedSessionFileAtPath, getThreadSessionFile } from "../packages/mikan/src/sessions/store.js";
+import {
+  createManagedSessionFileAtPath,
+  getThreadSessionFile,
+} from "../packages/mikan/src/sessions/store.js";
 import type { SandboxConfig } from "../packages/mikan/src/sandbox/index.js";
 import type { VaultManager } from "../packages/mikan/src/vault/index.js";
 

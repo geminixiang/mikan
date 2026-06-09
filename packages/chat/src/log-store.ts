@@ -43,10 +43,7 @@ export class ConversationLogStore {
     this.appendSync(conversationId, normalizeLoggedMessage(message));
   }
 
-  async appendBotResponse(
-    conversationId: string,
-    input: BotResponseLogInput,
-  ): Promise<void> {
+  async appendBotResponse(conversationId: string, input: BotResponseLogInput): Promise<void> {
     await this.appendLoggedMessage(conversationId, createBotResponseLogMessage(input));
   }
 
@@ -184,9 +181,10 @@ function eventToLogRecord(event: ConversationEventRecord): ConversationLogRecord
     };
   }
 
-  const text = typeof event.payload === "object" && event.payload && "text" in event.payload
-    ? String(event.payload.text)
-    : "";
+  const text =
+    typeof event.payload === "object" && event.payload && "text" in event.payload
+      ? String(event.payload.text)
+      : "";
   return {
     id: event.id,
     conversationId: event.conversationId,
@@ -225,7 +223,10 @@ function isConversationLogRecord(value: unknown): value is ConversationLogRecord
   );
 }
 
-function toEventRecord(conversationId: string, record: ConversationLogRecord): ConversationEventRecord {
+function toEventRecord(
+  conversationId: string,
+  record: ConversationLogRecord,
+): ConversationEventRecord {
   return {
     id: record.id ?? `${conversationId}:${record.ts}:${record.user}`,
     conversationId: record.conversationId ?? conversationId,

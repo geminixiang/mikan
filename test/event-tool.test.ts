@@ -3,7 +3,11 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { createEventTool, HostEventStore, type EventPayload } from "../packages/mikan/src/tools/event.js";
+import {
+  createEventTool,
+  HostEventStore,
+  type EventPayload,
+} from "../packages/mikan/src/tools/event.js";
 
 describe("createEventTool", () => {
   const tempDirs: string[] = [];

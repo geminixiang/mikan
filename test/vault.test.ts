@@ -14,7 +14,11 @@ import { ActorExecutionResolver } from "../packages/mikan/src/execution-resolver
 import { DockerContainerManager } from "../packages/mikan/src/provisioner.js";
 import { HostExecutor } from "../packages/mikan/src/sandbox/index.js";
 import { resolveActorVaultKey } from "../packages/mikan/src/vault/routing.js";
-import { FileVaultManager, parseEnvFile, sharedVaultKey } from "../packages/mikan/src/vault/index.js";
+import {
+  FileVaultManager,
+  parseEnvFile,
+  sharedVaultKey,
+} from "../packages/mikan/src/vault/index.js";
 
 function mode(path: string): number {
   return statSync(path).mode & 0o777;
