@@ -3,8 +3,8 @@ import {
   getOAuthServices,
   parseLoginCommand,
   resolveOAuthService,
-} from "../src/web/login/oauth.js";
-import * as log from "../src/log.js";
+} from "../packages/mikan/src/web/login/oauth.js";
+import * as log from "../packages/mikan/src/log.js";
 
 const originalOAuthServicesJson = process.env.OAUTH_SERVICES_JSON;
 

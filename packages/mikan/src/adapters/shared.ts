@@ -10,8 +10,8 @@
 import { appendFileSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
+import { ConversationLogStore, normalizeLogEntry } from "@geminixiang/mikan-chat";
 import type { BotHandler } from "../adapter.js";
-import { ensureDirExists } from "../utils/file-guards.js";
 import * as log from "../log.js";
 import { reportUserFacingError } from "../observability/sentry.js";
 export type {
@@ -160,9 +160,8 @@ export function splitText(
  * adapter uses for human-readable message history.
  */
 export function appendChannelLog(workingDir: string, channel: string, entry: object): void {
-  const dir = join(workingDir, channel);
-  ensureDirExists(dir);
-  appendFileSync(join(dir, "log.jsonl"), `${JSON.stringify(entry)}\n`);
+  const store = new ConversationLogStore({ rootDir: workingDir });
+  appendFileSync(store.getLogPath(channel), `${JSON.stringify(normalizeLogEntry(entry))}\n`);
 }
 
 /** Convenience for appending the bot's own outbound message. */

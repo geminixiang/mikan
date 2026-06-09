@@ -5,7 +5,7 @@ import {
   planSlackAdapterSession,
   planSlackEventAnchorRun,
   resolveSlackResponseRootTs,
-} from "../src/adapters/slack/session.js";
+} from "../packages/mikan/src/adapters/slack/session.js";
 
 describe("Slack session planning", () => {
   test("top-level user turns use the persistent channel session", () => {

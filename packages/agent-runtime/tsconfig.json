@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "composite": true
+  },
+  "references": [{ "path": "../chat" }],
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "**/*.d.ts", "src/**/*.d.ts"]
+}

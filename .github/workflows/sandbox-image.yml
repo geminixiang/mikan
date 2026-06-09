@@ -8,6 +8,7 @@ on:
     paths:
       - docker/mikan-sandbox.Dockerfile
       - package.json
+      - packages/mikan/package.json
       - .github/workflows/sandbox-image.yml
   workflow_dispatch:
 
@@ -30,7 +31,7 @@ jobs:
 
           owner=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
           image="ghcr.io/${owner}/mikan-sandbox"
-          version=$(node -p "require('./package.json').version")
+          version=$(node -p "require('./packages/mikan/package.json').version")
           short_sha="${GITHUB_SHA::7}"
 
           tags=(

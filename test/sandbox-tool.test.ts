@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { createSandboxTool } from "../src/tools/sandbox.js";
+import { createSandboxTool } from "../packages/mikan/src/tools/sandbox.js";
 
 describe("createSandboxTool", () => {
   test("sets limits for the current image sandbox conversation", async () => {

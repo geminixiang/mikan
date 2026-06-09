@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { DockerContainerManager } from "../src/provisioner.js";
+import { DockerContainerManager } from "../packages/mikan/src/provisioner.js";
 
 function createDeferred<T>(): {
   promise: Promise<T>;

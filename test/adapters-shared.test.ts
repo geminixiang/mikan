@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
-import type { BotHandler, RunningSession } from "../src/adapter.js";
-import { resolveOnlyScopedStopTarget, resolveStopTarget } from "../src/adapters/shared.js";
+import type { BotHandler, RunningSession } from "../packages/mikan/src/adapter.js";
+import { resolveOnlyScopedStopTarget, resolveStopTarget } from "../packages/mikan/src/adapters/shared.js";
 
 function makeHandler(runningKeys: string[] = []): BotHandler {
   const running = new Set(runningKeys);

@@ -36,8 +36,8 @@ jobs:
           LOG_FILE="$RUNNER_TEMP/mikan-slack-e2e.log"
           STATE_DIR="$RUNNER_TEMP/mikan-state"
 
-          node dist/main.js --onboard --state-dir "$STATE_DIR"
-          node dist/main.js --state-dir "$STATE_DIR" "$GITHUB_WORKSPACE" >"$LOG_FILE" 2>&1 &
+          node packages/mikan/dist/main.js --onboard --state-dir "$STATE_DIR"
+          node packages/mikan/dist/main.js --state-dir "$STATE_DIR" "$GITHUB_WORKSPACE" >"$LOG_FILE" 2>&1 &
           MIKAN_PID=$!
 
           cleanup() {

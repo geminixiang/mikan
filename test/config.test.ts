@@ -11,7 +11,7 @@ import {
   resolveWorkspaceDirFromArgv,
   updateConversationSettings,
   updateGlobalSettings,
-} from "../src/config.js";
+} from "../packages/mikan/src/config.js";
 
 describe("loadGlobalSettings", () => {
   let stateDir: string;

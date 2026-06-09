@@ -1,0 +1,59 @@
+{
+  "name": "@geminixiang/mikan",
+  "version": "0.4.1",
+  "description": "Multi-platform AI coding agent for Slack, Telegram, and Discord",
+  "keywords": [
+    "agent",
+    "ai",
+    "bot",
+    "discord",
+    "slack",
+    "telegram"
+  ],
+  "license": "MIT",
+  "author": "geminixiang",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/geminixiang/mikan.git"
+  },
+  "bin": {
+    "mikan": "dist/main.js"
+  },
+  "files": [
+    "dist",
+    "CHANGELOG.md"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "clean": "shx rm -rf dist",
+    "build": "tsgo -p tsconfig.build.json && shx chmod +x dist/main.js",
+    "dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.78.1",
+    "@earendil-works/pi-ai": "^0.78.1",
+    "@earendil-works/pi-coding-agent": "^0.78.1",
+    "@geminixiang/mikan-chat": "0.4.1",
+    "@sentry/node": "^10.51.0",
+    "@sinclair/typebox": "^0.34.49",
+    "@slack/socket-mode": "^2.0.6",
+    "@slack/web-api": "^7.15.0",
+    "chalk": "^5.6.2",
+    "croner": "^10.0.1",
+    "diff": "^8.0.4",
+    "discord.js": "^14.26.2",
+    "grammy": "^1.42.0",
+    "markdown-it": "^14.1.1"
+  },
+  "devDependencies": {
+    "@slack/types": "^2.21.1",
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^25.5.0"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

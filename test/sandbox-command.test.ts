@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { parseSandboxCommand } from "../src/commands/sandbox.js";
+import { parseSandboxCommand } from "../packages/mikan/src/commands/sandbox.js";
 
 describe("sandbox command parsing", () => {
   test("parses status command", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
-import type { BotHandler } from "../src/adapter.js";
-import { SlackBot } from "../src/adapters/slack/bot.js";
+import type { BotHandler } from "../packages/mikan/src/adapter.js";
+import { SlackBot } from "../packages/mikan/src/adapters/slack/bot.js";
 
 /**
  * Test the stop command resolution logic in SlackBot.

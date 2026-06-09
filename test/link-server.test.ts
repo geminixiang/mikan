@@ -3,10 +3,10 @@ import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { InMemoryAdminTokenStore } from "../src/web/admin/store.js";
-import { startLinkServer } from "../src/web/login/portal.js";
-import { InMemoryLinkTokenStore } from "../src/web/login/store.js";
-import { FileVaultManager } from "../src/vault/index.js";
+import { InMemoryAdminTokenStore } from "../packages/mikan/src/web/admin/store.js";
+import { startLinkServer } from "../packages/mikan/src/web/login/portal.js";
+import { InMemoryLinkTokenStore } from "../packages/mikan/src/web/login/store.js";
+import { FileVaultManager } from "../packages/mikan/src/vault/index.js";
 
 async function waitForListening(server: Server): Promise<void> {
   if (server.listening) return;

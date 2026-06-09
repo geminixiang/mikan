@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
-import type { DiscordBot, DiscordEvent } from "../src/adapters/discord/bot.js";
-import { createDiscordAdapters } from "../src/adapters/discord/context.js";
+import type { DiscordBot, DiscordEvent } from "../packages/mikan/src/adapters/discord/bot.js";
+import { createDiscordAdapters } from "../packages/mikan/src/adapters/discord/context.js";
 
 // ============================================================================
 // Minimal DiscordBot mock

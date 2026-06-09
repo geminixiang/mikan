@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { createSlackBlockKitTool } from "../src/adapters/slack/tools/block-kit.js";
+import { createSlackBlockKitTool } from "../packages/mikan/src/adapters/slack/tools/block-kit.js";
 
 describe("slack_blockkit tool", () => {
   test("accepts multi_static_select in section.accessory", async () => {

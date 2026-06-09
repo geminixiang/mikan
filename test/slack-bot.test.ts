@@ -2,15 +2,15 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { BotHandler } from "../src/adapter.js";
-import { SlackBot } from "../src/adapters/slack/bot.js";
-import { defaultCommandHandlers } from "../src/commands/registry.js";
-import { createGlobalSettingsFile } from "../src/config.js";
-import type { CommandServices } from "../src/commands/types.js";
-import { ConversationOrchestrator } from "../src/runtime/conversation-orchestrator.js";
-import { createManagedSessionFileAtPath, getThreadSessionFile } from "../src/sessions/store.js";
-import type { SandboxConfig } from "../src/sandbox/index.js";
-import type { VaultManager } from "../src/vault/index.js";
+import type { BotHandler } from "../packages/mikan/src/adapter.js";
+import { SlackBot } from "../packages/mikan/src/adapters/slack/bot.js";
+import { defaultCommandHandlers } from "../packages/mikan/src/commands/registry.js";
+import { createGlobalSettingsFile } from "../packages/mikan/src/config.js";
+import type { CommandServices } from "../packages/mikan/src/commands/types.js";
+import { ConversationOrchestrator } from "../packages/mikan/src/runtime/conversation-orchestrator.js";
+import { createManagedSessionFileAtPath, getThreadSessionFile } from "../packages/mikan/src/sessions/store.js";
+import type { SandboxConfig } from "../packages/mikan/src/sandbox/index.js";
+import type { VaultManager } from "../packages/mikan/src/vault/index.js";
 
 function makeHandler(): BotHandler {
   return {

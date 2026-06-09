@@ -2,18 +2,18 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { Bot, ChatResponseContext } from "../src/adapter.js";
-import { AdminCommandHandler } from "../src/commands/admin.js";
-import { AutoReplyCommandHandler } from "../src/commands/auto-reply.js";
-import { dispatchCommand } from "../src/commands/registry.js";
-import { LoginCommandHandler } from "../src/commands/login.js";
-import { NewCommandHandler } from "../src/commands/new.js";
-import { SandboxCommandHandler } from "../src/commands/sandbox.js";
-import { SessionViewCommandHandler } from "../src/commands/session-view.js";
-import type { CommandContext, CommandHandler, CommandServices } from "../src/commands/types.js";
-import { createManagedSessionFile, getChannelSessionDir } from "../src/sessions/store.js";
-import type { SandboxConfig } from "../src/sandbox/index.js";
-import type { VaultManager } from "../src/vault/index.js";
+import type { Bot, ChatResponseContext } from "../packages/mikan/src/adapter.js";
+import { AdminCommandHandler } from "../packages/mikan/src/commands/admin.js";
+import { AutoReplyCommandHandler } from "../packages/mikan/src/commands/auto-reply.js";
+import { dispatchCommand } from "../packages/mikan/src/commands/registry.js";
+import { LoginCommandHandler } from "../packages/mikan/src/commands/login.js";
+import { NewCommandHandler } from "../packages/mikan/src/commands/new.js";
+import { SandboxCommandHandler } from "../packages/mikan/src/commands/sandbox.js";
+import { SessionViewCommandHandler } from "../packages/mikan/src/commands/session-view.js";
+import type { CommandContext, CommandHandler, CommandServices } from "../packages/mikan/src/commands/types.js";
+import { createManagedSessionFile, getChannelSessionDir } from "../packages/mikan/src/sessions/store.js";
+import type { SandboxConfig } from "../packages/mikan/src/sandbox/index.js";
+import type { VaultManager } from "../packages/mikan/src/vault/index.js";
 
 // ── Fakes ────────────────────────────────────────────────────────────────────
 

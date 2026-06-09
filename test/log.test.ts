@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import * as log from "../src/log.js";
+import * as log from "../packages/mikan/src/log.js";
 
 describe("log functions exist", () => {
   test("all expected log functions are exported", () => {

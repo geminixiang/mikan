@@ -1,28 +1,8 @@
 {
-  "compilerOptions": {
-    "target": "ES2023",
-    "module": "Node16",
-    "lib": ["ES2023"],
-    "strict": true,
-    "noImplicitOverride": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "allowUnusedLabels": false,
-    "allowUnreachableCode": false,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-    "inlineSources": true,
-    "inlineSourceMap": false,
-    "moduleResolution": "Node16",
-    "resolveJsonModule": true,
-    "allowImportingTsExtensions": false,
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
-    "useDefineForClassFields": false,
-    "types": ["node"]
-  }
+  "files": [],
+  "references": [
+    { "path": "./packages/chat" },
+    { "path": "./packages/agent-runtime" },
+    { "path": "./packages/mikan" }
+  ]
 }

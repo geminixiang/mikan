@@ -307,23 +307,6 @@ export interface DockerContainerManagerOptions {
 
 // ── store ─────────────────────────────────────────────────────────────────────
 
-export interface Attachment {
-  original: string;
-  localPath: string;
-}
-
-export interface LoggedMessage {
-  date: string;
-  ts: string;
-  user: string;
-  userName?: string;
-  displayName?: string;
-  text: string;
-  attachments: Attachment[];
-  isBot: boolean;
-  threadTs?: string;
-}
-
 export interface ChannelStoreConfig {
   workingDir: string;
   botToken: string;

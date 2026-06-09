@@ -1,15 +1,13 @@
-import { appendFile, writeFile } from "fs/promises";
+import { writeFile } from "fs/promises";
 import { join } from "path";
-import {
-  ensureDirExists,
-  isRecord,
-  parseJsonValue,
-  readTextFileIfExists,
-} from "./utils/file-guards.js";
+import { ConversationLogStore, normalizeLoggedMessage } from "@geminixiang/mikan-chat";
+import { ensureDirExists } from "./utils/file-guards.js";
 import { withRetry } from "./adapters/shared.js";
 
-export type { Attachment, ChannelStoreConfig, LoggedMessage } from "./types.js";
-import type { Attachment, ChannelStoreConfig, LoggedMessage } from "./types.js";
+export type { Attachment, LoggedMessage } from "@geminixiang/mikan-chat";
+export type { ChannelStoreConfig } from "./types.js";
+import type { Attachment, LoggedMessage } from "@geminixiang/mikan-chat";
+import type { ChannelStoreConfig } from "./types.js";
 
 class AttachmentDownloadHttpError extends Error {
   constructor(
@@ -28,6 +26,7 @@ function isRetryableAttachmentDownloadError(error: unknown): boolean {
 export class ChannelStore {
   private workingDir: string;
   private botToken: string;
+  private conversationLogStore: ConversationLogStore;
   // Track recently logged message timestamps to prevent duplicates
   // Key: "channelId:ts", automatically cleaned up after 60 seconds
   private recentlyLogged = new Map<string, number>();
@@ -35,6 +34,7 @@ export class ChannelStore {
   constructor(config: ChannelStoreConfig) {
     this.workingDir = config.workingDir;
     this.botToken = config.botToken;
+    this.conversationLogStore = new ConversationLogStore({ rootDir: this.workingDir });
 
     // Ensure working directory exists
     ensureDirExists(this.workingDir);
@@ -111,7 +111,7 @@ export class ChannelStore {
       return false; // Already logged
     }
 
-    const logPath = join(this.getChannelDir(channelId), "log.jsonl");
+    this.getChannelDir(channelId);
 
     // Ensure message has a date field
     if (!message.date) {
@@ -127,8 +127,7 @@ export class ChannelStore {
       message.date = date.toISOString();
     }
 
-    const line = `${JSON.stringify(message)}\n`;
-    await appendFile(logPath, line, "utf-8");
+    await this.conversationLogStore.append(channelId, normalizeLoggedMessage(message));
 
     // Mark as logged only after the append succeeds. Otherwise a transient
     // write failure can make retries look like duplicates and drop messages.
@@ -156,24 +155,8 @@ export class ChannelStore {
    * Returns null if no log exists
    */
   getLastTimestamp(channelId: string): string | null {
-    const logPath = join(this.workingDir, channelId, "log.jsonl");
-    const content = readTextFileIfExists(logPath);
-    if (content === undefined) {
-      return null;
-    }
-
     try {
-      const lines = content.trim().split("\n");
-      if (lines.length === 0 || lines[0] === "") {
-        return null;
-      }
-      const lastLine = lines[lines.length - 1];
-      const message = parseJsonValue(
-        lastLine,
-        (value): value is LoggedMessage => isRecord(value) && typeof value.ts === "string",
-        (detail) => (detail === "unexpected JSON shape" ? "log entry missing timestamp" : detail),
-      );
-      return message.ts;
+      return this.conversationLogStore.getLastTimestamp(channelId);
     } catch {
       return null;
     }

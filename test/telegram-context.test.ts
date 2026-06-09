@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
-import type { TelegramBot, TelegramEvent } from "../src/adapters/telegram/bot.js";
-import { createTelegramAdapters } from "../src/adapters/telegram/context.js";
+import type { TelegramBot, TelegramEvent } from "../packages/mikan/src/adapters/telegram/bot.js";
+import { createTelegramAdapters } from "../packages/mikan/src/adapters/telegram/context.js";
 
 // ============================================================================
 // Minimal TelegramBot mock

@@ -15,7 +15,7 @@ import {
   resolveSessionFile,
   tryResolveCurrentSession,
   tryResolveThreadSession,
-} from "../src/sessions/store.js";
+} from "../packages/mikan/src/sessions/store.js";
 
 let channelDir: string;
 let nextTimestamp = 1;

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { inferConversationKind, resolveChatSessionKey } from "../src/sessions/policy.js";
+import { inferConversationKind, resolveChatSessionKey } from "../packages/mikan/src/sessions/policy.js";
 
 describe("resolveChatSessionKey", () => {
   test("direct top-level conversations use one persistent session", () => {
