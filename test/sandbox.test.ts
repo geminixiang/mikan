@@ -7,7 +7,7 @@ import {
   SandboxError,
   createExecutor,
   parseSandboxArg,
-} from "../src/sandbox/index.js";
+} from "../packages/mikan/src/sandbox/index.js";
 
 describe("parseSandboxArg", () => {
   afterEach(() => {

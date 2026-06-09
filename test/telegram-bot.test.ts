@@ -2,8 +2,8 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { BotHandler } from "../src/adapter.js";
-import { TelegramBot } from "../src/adapters/telegram/bot.js";
+import type { BotHandler } from "../packages/mikan/src/adapter.js";
+import { TelegramBot } from "../packages/mikan/src/adapters/telegram/bot.js";
 
 function makeHandler(): BotHandler {
   return {

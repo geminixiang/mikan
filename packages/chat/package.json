@@ -1,0 +1,19 @@
+{
+  "name": "@geminixiang/mikan-chat",
+  "version": "0.4.1",
+  "description": "Conversation event log and projection core for mikan",
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "clean": "shx rm -rf dist",
+    "build": "tsgo -p tsconfig.build.json"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

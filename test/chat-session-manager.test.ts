@@ -3,12 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { ChatSessionManager, registerThreadSession } from "../src/sessions/chat-session-manager.js";
+import {
+  ChatSessionManager,
+  registerThreadSession,
+} from "../packages/mikan/src/sessions/chat-session-manager.js";
 import {
   getChannelSessionDir,
   getThreadSessionFile,
   openManagedSession,
-} from "../src/sessions/store.js";
+} from "../packages/mikan/src/sessions/store.js";
 
 let conversationDir: string;
 

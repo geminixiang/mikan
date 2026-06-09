@@ -39,7 +39,7 @@ import {
   sanitizeBreadcrumb,
   sanitizeEvent,
   sanitizeValue,
-} from "../src/observability/sentry.js";
+} from "../packages/mikan/src/observability/sentry.js";
 
 describe("reportUserFacingError", () => {
   beforeEach(() => {

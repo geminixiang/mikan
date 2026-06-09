@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Collection } from "discord.js";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { BotHandler } from "../src/adapter.js";
-import { DiscordBot } from "../src/adapters/discord/bot.js";
+import type { BotHandler } from "../packages/mikan/src/adapter.js";
+import { DiscordBot } from "../packages/mikan/src/adapters/discord/bot.js";
 
 function makeHandler(): BotHandler {
   return {

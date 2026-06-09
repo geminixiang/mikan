@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
-import type { SlackBot, SlackEvent } from "../src/adapters/slack/bot.js";
-import { createSlackAdapters } from "../src/adapters/slack/context.js";
+import type { SlackBot, SlackEvent } from "../packages/mikan/src/adapters/slack/bot.js";
+import { createSlackAdapters } from "../packages/mikan/src/adapters/slack/context.js";
 
 // ============================================================================
 // Minimal SlackBot mock

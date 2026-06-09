@@ -2,8 +2,8 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { Bot, BotEvent } from "../src/adapter.js";
-import { EventsWatcher } from "../src/events.js";
+import type { Bot, BotEvent } from "../packages/mikan/src/adapter.js";
+import { EventsWatcher } from "../packages/mikan/src/events.js";
 
 function makeBot(platform: string) {
   const enqueueEvent = vi.fn<(event: BotEvent) => boolean>().mockReturnValue(true);

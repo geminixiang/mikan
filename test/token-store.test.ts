@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { InMemoryAdminTokenStore } from "../src/web/admin/store.js";
-import { InMemoryLinkTokenStore } from "../src/web/login/store.js";
-import { InMemorySessionViewTokenStore } from "../src/web/session-view/store.js";
+import { InMemoryAdminTokenStore } from "../packages/mikan/src/web/admin/store.js";
+import { InMemoryLinkTokenStore } from "../packages/mikan/src/web/login/store.js";
+import { InMemorySessionViewTokenStore } from "../packages/mikan/src/web/session-view/store.js";
 
 // ── InMemoryTokenStore base behaviour ─────────────────────────────────────────
 // Tested through InMemoryAdminTokenStore (simplest create signature).

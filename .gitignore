@@ -12,3 +12,5 @@ bin/
 vaults/*/
 
 ecosystem.config.cjs
+
+*.tsbuildinfo

@@ -4,7 +4,7 @@ import {
   getUnresolvedSandboxPathContext,
   resolveTriggerAttribution,
   translateRuntimePathToHost,
-} from "../src/agent.js";
+} from "../packages/mikan/src/agent.js";
 
 describe("trigger attribution", () => {
   test("uses event filename from event prompt marker", () => {

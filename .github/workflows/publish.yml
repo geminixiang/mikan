@@ -35,9 +35,9 @@ jobs:
 
       - name: Publish to npm
         run: |
-          VERSION=$(node -p "require('./package.json').version")
+          VERSION=$(node -p "require('./packages/mikan/package.json').version")
           if [[ "$VERSION" == *-* ]]; then
-            npm publish --provenance --access public --tag beta
+            npm publish --workspace @geminixiang/mikan --provenance --access public --tag beta
           else
-            npm publish --provenance --access public
+            npm publish --workspace @geminixiang/mikan --provenance --access public
           fi

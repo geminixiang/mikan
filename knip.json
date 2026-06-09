@@ -1,3 +1,25 @@
 {
-  "ignore": ["examples/**", "scripts/**"]
+  "workspaces": {
+    ".": {
+      "ignore": ["examples/**", "scripts/**"],
+      "ignoreDependencies": [
+        "@earendil-works/pi-ai",
+        "@earendil-works/pi-coding-agent",
+        "@sentry/node",
+        "@slack/types",
+        "@slack/web-api",
+        "@types/markdown-it",
+        "discord.js"
+      ]
+    },
+    "packages/mikan": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/chat": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/agent-runtime": {
+      "project": ["src/**/*.ts"]
+    }
+  }
 }

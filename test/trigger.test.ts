@@ -2,9 +2,9 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import type { BotEvent } from "../src/adapter.js";
-import { saveConversationAutoReplyConfig } from "../src/config.js";
-import { decideTrigger, evaluateAutoReplyPolicy } from "../src/trigger.js";
+import type { BotEvent } from "../packages/mikan/src/adapter.js";
+import { saveConversationAutoReplyConfig } from "../packages/mikan/src/config.js";
+import { decideTrigger, evaluateAutoReplyPolicy } from "../packages/mikan/src/trigger.js";
 
 describe("decideTrigger", () => {
   test("trivially triggers mention, direct, and thread continuation intents", () => {

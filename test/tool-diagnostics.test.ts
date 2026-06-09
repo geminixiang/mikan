@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { shouldSurfaceToolDiagnostic } from "../src/tool-diagnostics.js";
+import { shouldSurfaceToolDiagnostic } from "../packages/mikan/src/tool-diagnostics.js";
 
 describe("tool diagnostic surface policy", () => {
   test("hides noisy built-in tools from chat surfaces", () => {

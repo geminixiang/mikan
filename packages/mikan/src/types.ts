@@ -174,21 +174,6 @@ export interface JudgeModelConfig {
   model: string;
 }
 
-// ── context ───────────────────────────────────────────────────────────────────
-
-/**
- * Platform conversation history entry from log.jsonl.
- */
-export interface ConversationLogMessage {
-  date?: string;
-  ts?: string;
-  threadTs?: string;
-  user?: string;
-  userName?: string;
-  text?: string;
-  isBot?: boolean;
-}
-
 // ── events ────────────────────────────────────────────────────────────────────
 
 export interface ImmediateEvent {
@@ -306,23 +291,6 @@ export interface DockerContainerManagerOptions {
 }
 
 // ── store ─────────────────────────────────────────────────────────────────────
-
-export interface Attachment {
-  original: string;
-  localPath: string;
-}
-
-export interface LoggedMessage {
-  date: string;
-  ts: string;
-  user: string;
-  userName?: string;
-  displayName?: string;
-  text: string;
-  attachments: Attachment[];
-  isBot: boolean;
-  threadTs?: string;
-}
 
 export interface ChannelStoreConfig {
   workingDir: string;

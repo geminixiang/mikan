@@ -1,5 +1,3 @@
-import type { ConversationKind } from "../adapter.js";
-
 // ── session metadata ─────────────────────────────────────────────────────────
 
 export interface MikanSessionHeader {
@@ -14,17 +12,6 @@ export interface MikanSessionHeader {
     file?: string;
     recentDays?: number;
   };
-}
-
-// ── session policy ───────────────────────────────────────────────────────────
-
-export interface ResolveSessionKeyOptions {
-  conversationId: string;
-  conversationKind: ConversationKind;
-  messageId: string;
-  threadTs?: string;
-  persistentTopLevel?: boolean;
-  scopeDirectThreads?: boolean;
 }
 
 // ── session store ────────────────────────────────────────────────────────────

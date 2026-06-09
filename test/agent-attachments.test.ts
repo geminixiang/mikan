@@ -2,9 +2,9 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { buildPromptPayload } from "../src/agent.js";
-import type { ChatMessage } from "../src/adapter.js";
-import { createMountedRuntimePathContext } from "../src/sandbox/path-context.js";
+import { buildPromptPayload } from "../packages/mikan/src/agent.js";
+import type { ChatMessage } from "../packages/mikan/src/adapter.js";
+import { createMountedRuntimePathContext } from "../packages/mikan/src/sandbox/path-context.js";
 
 let workspaceDir: string;
 

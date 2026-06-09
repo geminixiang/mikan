@@ -1,6 +1,6 @@
-import type { ConversationKind } from "../adapter.js";
+import type { ConversationKind, ResolveSessionKeyOptions } from "./types.js";
+
 export type { ResolveSessionKeyOptions } from "./types.js";
-import type { ResolveSessionKeyOptions } from "./types.js";
 
 export function resolveChatSessionKey(options: ResolveSessionKeyOptions): string {
   const {

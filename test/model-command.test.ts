@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { parseModelCommand } from "../src/commands/model.js";
+import { parseModelCommand } from "../packages/mikan/src/commands/model.js";
 
 describe("model command parsing", () => {
   test("requires slash form", () => {

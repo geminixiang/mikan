@@ -9,13 +9,13 @@ import {
   getChannelSessionDir,
   getThreadSessionFile,
   openManagedSession,
-} from "../src/sessions/store.js";
-import { parseUserBody } from "../src/web/session-view/portal.js";
-import { parseSessionViewCommand } from "../src/web/session-view/command.js";
+} from "../packages/mikan/src/sessions/store.js";
+import { parseUserBody } from "../packages/mikan/src/web/session-view/portal.js";
+import { parseSessionViewCommand } from "../packages/mikan/src/web/session-view/command.js";
 import {
   loadSessionViewModel,
   resolveExistingSessionFile,
-} from "../src/web/session-view/service.js";
+} from "../packages/mikan/src/web/session-view/service.js";
 
 let workspaceDir: string;
 let conversationDir: string;

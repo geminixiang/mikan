@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
-import type { Bot, BotAdapters, BotEvent, BotHandler } from "../src/adapter.js";
-import { processMessageIntake } from "../src/adapters/intake.js";
+import type { Bot, BotAdapters, BotEvent, BotHandler } from "../packages/mikan/src/adapter.js";
+import { processMessageIntake } from "../packages/mikan/src/adapters/intake.js";
 
 function makeEvent(overrides: Partial<BotEvent> = {}): BotEvent {
   return {

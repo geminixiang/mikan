@@ -1,0 +1,22 @@
+{
+  "name": "@geminixiang/mikan-agent-runtime",
+  "version": "0.4.1",
+  "description": "Platform-neutral agent runtime for mikan",
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "clean": "shx rm -rf dist",
+    "build": "tsgo -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "@geminixiang/mikan-chat": "0.4.1"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { BufferedResponseStream } from "../src/adapters/streaming.js";
+import { BufferedResponseStream } from "../packages/mikan/src/adapters/streaming.js";
 
 describe("BufferedResponseStream", () => {
   test("flushes immediately on first delta and buffers small subsequent deltas", async () => {

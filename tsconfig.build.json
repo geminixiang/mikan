@@ -1,9 +1,8 @@
 {
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "outDir": "./dist",
-    "rootDir": "./src"
-  },
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "**/*.d.ts", "src/**/*.d.ts"]
+  "files": [],
+  "references": [
+    { "path": "./packages/chat/tsconfig.build.json" },
+    { "path": "./packages/agent-runtime/tsconfig.build.json" },
+    { "path": "./packages/mikan/tsconfig.build.json" }
+  ]
 }

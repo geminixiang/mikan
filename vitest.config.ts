@@ -5,7 +5,11 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],
-      include: ["src/commands/auto-reply.ts", "src/file-guards.ts", "src/tools/event.ts"],
+      include: [
+        "packages/mikan/src/commands/auto-reply.ts",
+        "packages/mikan/src/utils/file-guards.ts",
+        "packages/mikan/src/tools/event.ts",
+      ],
       thresholds: {
         statements: 95,
         branches: 85,

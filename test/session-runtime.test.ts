@@ -2,16 +2,16 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { registerThreadSession } from "../src/sessions/chat-session-manager.js";
-import { createSessionRuntime } from "../src/runtime/session-runtime.js";
+import { registerThreadSession } from "../packages/mikan/src/sessions/chat-session-manager.js";
+import { createSessionRuntime } from "../packages/mikan/src/runtime/session-runtime.js";
 import {
   createManagedSessionFile,
   getChannelSessionDir,
   getThreadSessionFile,
   openManagedSession,
-} from "../src/sessions/store.js";
-import type { SandboxConfig } from "../src/sandbox/index.js";
-import type { VaultManager } from "../src/vault/index.js";
+} from "../packages/mikan/src/sessions/store.js";
+import type { SandboxConfig } from "../packages/mikan/src/sandbox/index.js";
+import type { VaultManager } from "../packages/mikan/src/vault/index.js";
 
 let workingDir: string;
 let conversationDir: string;

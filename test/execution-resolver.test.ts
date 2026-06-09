@@ -2,8 +2,8 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { createGlobalSettingsFile } from "../src/config.js";
-import { readConversationWorkspaceMountMode } from "../src/execution-resolver.js";
+import { createGlobalSettingsFile } from "../packages/mikan/src/config.js";
+import { readConversationWorkspaceMountMode } from "../packages/mikan/src/execution-resolver.js";
 
 describe("readConversationWorkspaceMountMode", () => {
   let stateDir: string;

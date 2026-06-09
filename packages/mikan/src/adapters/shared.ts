@@ -7,11 +7,10 @@
  * markup wrappers — so it lives here once.
  */
 
-import { appendFileSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
+import { appendBotResponseLogSync, appendLoggedMessageSync } from "@geminixiang/mikan-chat";
 import type { BotHandler } from "../adapter.js";
-import { ensureDirExists } from "../utils/file-guards.js";
 import * as log from "../log.js";
 import { reportUserFacingError } from "../observability/sentry.js";
 export type {
@@ -160,9 +159,11 @@ export function splitText(
  * adapter uses for human-readable message history.
  */
 export function appendChannelLog(workingDir: string, channel: string, entry: object): void {
-  const dir = join(workingDir, channel);
-  ensureDirExists(dir);
-  appendFileSync(join(dir, "log.jsonl"), `${JSON.stringify(entry)}\n`);
+  appendLoggedMessageSync(
+    { rootDir: workingDir },
+    channel,
+    entry as Parameters<typeof appendLoggedMessageSync>[2],
+  );
 }
 
 /** Convenience for appending the bot's own outbound message. */
@@ -174,15 +175,11 @@ export function appendBotResponseLog(
   threadTs?: string,
   extraFields: Record<string, unknown> = {},
 ): void {
-  appendChannelLog(workingDir, channel, {
-    date: new Date().toISOString(),
-    ts,
-    ...(threadTs ? { threadTs } : {}),
-    user: "bot",
+  appendBotResponseLogSync({ rootDir: workingDir }, channel, {
     text,
-    attachments: [],
-    isBot: true,
-    ...extraFields,
+    ts,
+    threadTs,
+    extraFields,
   });
 }
 
