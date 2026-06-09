@@ -8,6 +8,8 @@ export type JsonValue =
 
 export type Platform = "slack" | "discord" | "telegram" | string;
 
+export type ConversationKind = "direct" | "shared";
+
 export type ConversationLogEventType =
   | "platform.message.received"
   | "platform.attachment.received"
@@ -25,6 +27,18 @@ export type ConversationLogEventType =
 export interface Attachment {
   original: string;
   localPath: string;
+}
+
+export interface ConversationLogMessage {
+  date?: string;
+  ts?: string;
+  threadTs?: string;
+  user?: string;
+  userName?: string;
+  displayName?: string;
+  text?: string;
+  attachments?: Attachment[];
+  isBot?: boolean;
 }
 
 export interface LoggedMessage {
@@ -85,6 +99,15 @@ export interface BotResponseLogInput {
   threadTs?: string;
   date?: string;
   extraFields?: Partial<LoggedMessage>;
+}
+
+export interface ResolveSessionKeyOptions {
+  conversationId: string;
+  conversationKind: ConversationKind;
+  messageId: string;
+  threadTs?: string;
+  persistentTopLevel?: boolean;
+  scopeDirectThreads?: boolean;
 }
 
 export interface ConversationLogStoreOptions {

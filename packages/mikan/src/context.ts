@@ -1,1 +1,1 @@
-export type { ConversationLogMessage } from "./types.js";
+export type { ConversationLogMessage } from "@geminixiang/mikan-chat";

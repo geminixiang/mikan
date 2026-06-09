@@ -174,21 +174,6 @@ export interface JudgeModelConfig {
   model: string;
 }
 
-// ── context ───────────────────────────────────────────────────────────────────
-
-/**
- * Platform conversation history entry from log.jsonl.
- */
-export interface ConversationLogMessage {
-  date?: string;
-  ts?: string;
-  threadTs?: string;
-  user?: string;
-  userName?: string;
-  text?: string;
-  isBot?: boolean;
-}
-
 // ── events ────────────────────────────────────────────────────────────────────
 
 export interface ImmediateEvent {
