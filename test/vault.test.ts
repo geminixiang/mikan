@@ -408,8 +408,8 @@ describe("ActorExecutionResolver image mode", () => {
       ],
     });
     const [[dockerCommand]] = exec.mock.calls;
-    expect(dockerCommand).toContain("mktemp -d /tmp/mikan-vault.");
-    expect(dockerCommand).toContain("/root/.ssh");
+    expect(dockerCommand).not.toContain("mktemp -d /tmp/mikan-vault.");
+    expect(dockerCommand).not.toContain("/root/.ssh");
     expect(dockerCommand).toContain("pwd");
   });
 

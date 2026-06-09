@@ -1,5 +1,4 @@
-import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -15,7 +14,7 @@ import { SandboxError } from "./errors.js";
 import { execSimple, shellEscape } from "./utils.js";
 import { HostExecutor } from "./host.js";
 import { createMountedRuntimePathContext } from "./path-context.js";
-import { parseProxyHeaderRules, stripProxySecretEnv } from "./proxy.js";
+import { parseProxyHeaderRules } from "./proxy.js";
 
 const PRIVATE_DIR_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
@@ -75,19 +74,7 @@ function buildContainerExecCommand(
 }
 
 function withRuntimeBootstrap(command: string, secrets?: SandboxSecrets): string {
-  const script = stageCommandSecrets(stageProxyInjection(command, secrets), secrets);
-  if (!hasGitHubToken(secrets?.env)) {
-    return script;
-  }
-
-  return [
-    "if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then gh auth setup-git >/dev/null 2>&1 || true; fi",
-    script,
-  ].join("\n");
-}
-
-function hasGitHubToken(env?: Record<string, string>): boolean {
-  return Boolean(env?.GH_TOKEN || env?.GITHUB_TOKEN || env?.GITHUB_OAUTH_ACCESS_TOKEN);
+  return stageProxyInjection(command, secrets);
 }
 
 function stageProxyInjection(command: string, secrets?: SandboxSecrets): string {
@@ -135,46 +122,6 @@ server.on('connect', (_req, client) => {
 server.listen(0, '127.0.0.1', () => writeFileSync(process.argv[2], String(server.address().port)));
 `;
 
-function stageCommandSecrets(command: string, secrets?: SandboxSecrets): string {
-  const files = secrets?.files ?? [];
-  if (files.length === 0) {
-    return command;
-  }
-
-  const cleanupSteps = ['rm -rf "$tmp"'];
-  const steps = ["tmp=$(mktemp -d /tmp/mikan-vault.XXXXXX)"];
-  for (const [index, file] of files.entries()) {
-    const staged = `"$tmp/secret-${index}"`;
-    const backup = `"$tmp/backup-${index}"`;
-    const target = shellEscape(file.target);
-    cleanupSteps.unshift(`rm -rf ${target}`, `[ ! -e ${backup} ] || mv ${backup} ${target}`);
-    steps.push(`mkdir -p ${shellEscape(dirnameShell(file.target))}`);
-    steps.push(`[ ! -e ${target} ] && [ ! -L ${target} ] || mv ${target} ${backup}`);
-    if (statSync(file.source).isDirectory()) {
-      const payload = execFileSync("tar", ["-C", file.source, "-czf", "-", "."]).toString("base64");
-      steps.push(`mkdir -p ${staged}`);
-      steps.push(
-        `base64 -d <<'MIKAN_SECRET_${index}' | tar -xzf - -C ${staged}\n${payload}\nMIKAN_SECRET_${index}`,
-      );
-      steps.push(`ln -sfn ${staged} ${target}`);
-    } else {
-      const payload = readFileSync(file.source).toString("base64");
-      steps.push(
-        `base64 -d > ${staged} <<'MIKAN_SECRET_${index}'\n${payload}\nMIKAN_SECRET_${index}`,
-      );
-      steps.push(`ln -sf ${staged} ${target}`);
-    }
-  }
-  steps.splice(1, 0, `cleanup() { ${cleanupSteps.join("; ")}; }`, "trap cleanup EXIT");
-  steps.push(command);
-  return steps.join("\n");
-}
-
-function dirnameShell(path: string): string {
-  const index = path.lastIndexOf("/");
-  return index <= 0 ? "/" : path.slice(0, index);
-}
-
 export class ContainerExecutor implements Executor {
   constructor(
     private container: string,
@@ -204,9 +151,8 @@ export class ContainerExecutor implements Executor {
     }
   }
 
-  private buildCommandEnv(): Record<string, string> | undefined {
-    if (!this.secrets?.env) return undefined;
-    return stripProxySecretEnv(this.secrets.env);
+  private buildCommandEnv(): undefined {
+    return undefined;
   }
 
   getWorkspacePath(_hostPath: string): string {

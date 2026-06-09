@@ -1,8 +1,6 @@
 import { createServer, request as httpRequest } from "node:http";
 import { connect as netConnect } from "node:net";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   CloudflareSandboxExecutor,
@@ -142,51 +140,26 @@ describe("ContainerExecutor", () => {
     vi.restoreAllMocks();
   });
 
-  test("stages vault files only for the current docker exec command", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "mikan-secret-test-"));
-    try {
-      const source = join(tempDir, "adc.json");
-      writeFileSync(source, '{"token":"secret"}\n');
-      const exec = vi
-        .spyOn(HostExecutor.prototype, "exec")
-        .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
-      const executor = new ContainerExecutor(
-        "mikan-sandbox",
-        { files: [{ source, target: "/workspace/gcloud-adc.json" }] },
-        async () => {},
-      );
-
-      await executor.exec("gcloud auth application-default print-access-token");
-
-      const [[dockerCommand]] = exec.mock.calls;
-      expect(dockerCommand).not.toContain("-v ");
-      expect(dockerCommand).toContain("mktemp -d /tmp/mikan-vault.");
-      expect(dockerCommand).toContain("base64 -d");
-      expect(dockerCommand).toContain("ln -sf");
-      expect(dockerCommand).toContain("/workspace/gcloud-adc.json");
-      expect(dockerCommand).toContain("gcloud auth application-default print-access-token");
-    } finally {
-      rmSync(tempDir, { recursive: true, force: true });
-    }
-  });
-
-  test("bootstraps git credential helper when GitHub token env is injected", async () => {
+  test("does not inject vault env or file secrets into docker exec", async () => {
     const exec = vi
       .spyOn(HostExecutor.prototype, "exec")
       .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
     const executor = new ContainerExecutor(
       "mikan-sandbox",
-      { env: { GH_TOKEN: "gho_test" } },
+      {
+        env: { GH_TOKEN: "gho_test" },
+        files: [{ source: "/host/adc.json", target: "/workspace/gcloud-adc.json" }],
+      },
       async () => {},
     );
 
-    await executor.exec("git clone https://github.com/livingbio/skills.git");
+    await executor.exec("printf $GH_TOKEN && test -e /workspace/gcloud-adc.json");
 
     const [[dockerCommand]] = exec.mock.calls;
-    expect(dockerCommand).toContain("docker exec --env-file ");
-    expect(dockerCommand).toContain("mikan-sandbox sh -c");
-    expect(dockerCommand).toContain("gh auth setup-git");
-    expect(dockerCommand).toContain("git clone https://github.com/livingbio/skills.git");
+    expect(dockerCommand).not.toContain("--env-file");
+    expect(dockerCommand).not.toContain("gho_test");
+    expect(dockerCommand).not.toContain("mktemp -d /tmp/mikan-vault.");
+    expect(dockerCommand).toContain("printf $GH_TOKEN && test -e /workspace/gcloud-adc.json");
   });
 
   test("enables secret header injection for HTTP proxy traffic only", async () => {
@@ -447,17 +420,6 @@ describe("CloudflareSandboxExecutor", () => {
       cwd: "/workspace",
       secrets: { env: { MIKAN_PROXY_INJECT_HEADERS: proxyRules } },
     });
-  });
-
-  test("rejects file secrets because the Cloudflare bridge cannot stage local host files", async () => {
-    process.env.MIKAN_CLOUDFLARE_SANDBOX_URL = "https://sandbox.example";
-    const executor = new CloudflareSandboxExecutor("slack-u123", {
-      files: [{ source: "/host/adc.json", target: "/workspace/adc.json" }],
-    });
-
-    await expect(executor.exec("pwd")).rejects.toThrow(
-      "Cloudflare sandbox bridge does not support vault file secrets yet",
-    );
   });
 
   test("reports the configured Cloudflare runtime cwd as workspace path", () => {

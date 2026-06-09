@@ -7,7 +7,3 @@ export function buildRemoteSandboxSecrets(secrets?: SandboxSecrets): SandboxSecr
   if (!proxyRules) return undefined;
   return { env: { [PROXY_SECRET_ENV_KEY]: proxyRules } };
 }
-
-export function hasVaultFileSecrets(secrets?: SandboxSecrets): boolean {
-  return Boolean(secrets?.files && secrets.files.length > 0);
-}

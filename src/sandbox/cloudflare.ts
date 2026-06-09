@@ -9,7 +9,7 @@ import type {
 } from "./types.js";
 import { readEnv } from "../utils/env.js";
 import { SandboxError } from "./errors.js";
-import { buildRemoteSandboxSecrets, hasVaultFileSecrets } from "./remote-secrets.js";
+import { buildRemoteSandboxSecrets } from "./remote-secrets.js";
 
 const DEFAULT_CLOUDFLARE_CWD = "/workspace";
 
@@ -96,12 +96,6 @@ export class CloudflareSandboxExecutor implements Executor {
     }
 
     try {
-      if (hasVaultFileSecrets(this.secrets)) {
-        throw new SandboxError(
-          "Error: Cloudflare sandbox bridge does not support vault file secrets yet; use proxy-injected HTTP credentials or a container/gondolin sandbox for file-backed credentials",
-        );
-      }
-
       const payload: CloudflareExecPayload = {
         sandboxId: this.sandboxId,
         command,

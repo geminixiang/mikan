@@ -1,4 +1,3 @@
-import { existsSync } from "fs";
 import { join } from "path";
 import { loadGlobalSettings, resolveConversationSettings } from "./config.js";
 import { ensureDirExists, isRecord, readJsonFileIfExists } from "./utils/file-guards.js";
@@ -167,27 +166,9 @@ export class ActorExecutionResolver {
   }
 
   private resolveSecrets(vault: ResolvedVault): SandboxSecrets | undefined {
-    const files = vault.mounts.filter((mount) => {
-      if (existsSync(mount.source)) return true;
-      reportUserFacingError(new Error("Vault secret source is missing"), {
-        domain: "sandbox",
-        surface: "vault_runtime_secrets",
-        operation: "resolve_secrets",
-        severity: "warning",
-        context: {
-          sandboxType: this.baseConfig.type,
-          target: mount.target,
-          hasVault: true,
-        },
-      });
-      return false;
-    });
-    const hasEnv = Object.keys(vault.env).length > 0;
-    if (!hasEnv && files.length === 0) return undefined;
-    return {
-      ...(hasEnv ? { env: vault.env } : {}),
-      ...(files.length > 0 ? { files } : {}),
-    };
+    const proxyRules = vault.env.MIKAN_PROXY_INJECT_HEADERS;
+    if (!proxyRules) return undefined;
+    return { env: { MIKAN_PROXY_INJECT_HEADERS: proxyRules } };
   }
 
   private buildImageSandboxMounts(conversationId: string): ContainerMount[] {

@@ -44,12 +44,6 @@ export function parseProxyHeaderRules(env?: Record<string, string>): HeaderRules
   return parsed;
 }
 
-export function stripProxySecretEnv(env: Record<string, string>): Record<string, string> {
-  const next = { ...env };
-  delete next.MIKAN_PROXY_INJECT_HEADERS;
-  return next;
-}
-
 function handleHttpRequest(
   request: IncomingMessage,
   response: ServerResponse,
