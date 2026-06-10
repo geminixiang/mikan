@@ -31,7 +31,6 @@ function makeCommandServices(workingDir: string): CommandServices {
     vaultManager: {
       hasEntry: () => false,
       resolve: () => undefined,
-      getSandboxConfig: (_uid, base) => base,
       list: () => [],
       isEnabled: () => true,
       upsertEnv: () => {},

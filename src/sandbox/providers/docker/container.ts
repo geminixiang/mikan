@@ -5,14 +5,13 @@ import type {
   ContainerSandboxConfig,
   ExecOptions,
   ExecResult,
-  Executor,
   RuntimePathContext,
-  SandboxAdapter,
-} from "./types.js";
-import { SandboxError } from "./errors.js";
-import { execSimple, shellEscape } from "./utils.js";
-import { HostExecutor } from "./host.js";
-import { createMountedRuntimePathContext } from "./path-context.js";
+} from "../../types.js";
+import type { SandboxInstance, SandboxProvider } from "../../spi.js";
+import { SandboxError } from "../../errors.js";
+import { execSimple, shellEscape } from "../../utils.js";
+import { HostExecutor } from "../host.js";
+import { createMountedRuntimePathContext } from "../../path-context.js";
 
 const PRIVATE_DIR_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
@@ -86,12 +85,16 @@ function hasGitHubToken(env?: Record<string, string>): boolean {
   return Boolean(env?.GH_TOKEN || env?.GITHUB_TOKEN || env?.GITHUB_OAUTH_ACCESS_TOKEN);
 }
 
-export class ContainerExecutor implements Executor {
+export class ContainerExecutor implements SandboxInstance {
   constructor(
     private container: string,
     private env?: Record<string, string>,
     private ensureReady?: () => Promise<void>,
   ) {}
+
+  get id(): string {
+    return this.container;
+  }
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
     if (this.ensureReady) {
@@ -127,12 +130,22 @@ export class ContainerExecutor implements Executor {
   }
 }
 
-export const containerSandboxAdapter: SandboxAdapter<ContainerSandboxConfig> = {
+export const containerSandboxProvider: SandboxProvider<ContainerSandboxConfig> = {
   type: "container",
+  usage: "container:<container-name>",
+  capabilities: {
+    lifecycle: "external",
+    credentialScope: "instance",
+    envInjection: "per-exec",
+    fileMounts: false,
+  },
   parse: parseContainerSandboxArg,
   validate: validateContainerSandbox,
-  createExecutor: (config, env, ensureReady) =>
-    new ContainerExecutor(config.container, env, ensureReady),
+  getPathContext: (_config, hostWorkspaceRoot) =>
+    createMountedRuntimePathContext(hostWorkspaceRoot, "/workspace"),
+  instanceScopeKey: (config) => `container-${config.container}`,
+  acquire: (config, ctx) => new ContainerExecutor(config.container, ctx.env),
+  attach: (config, env, ensureReady) => new ContainerExecutor(config.container, env, ensureReady),
 };
 
 async function ensureContainerRunning(container: string): Promise<void> {

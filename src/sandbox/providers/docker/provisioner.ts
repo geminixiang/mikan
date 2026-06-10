@@ -2,8 +2,9 @@ import { execFile } from "child_process";
 import { createHash } from "crypto";
 import { readFileSync, statSync } from "fs";
 import { promisify } from "util";
-import * as log from "./log.js";
-import { reportUserFacingError } from "./observability/sentry.js";
+import * as log from "../../../log.js";
+import { reportUserFacingError } from "../../../observability/sentry.js";
+import { sanitizeScopeSegment } from "../../scope.js";
 
 const execFileAsync = promisify(execFile);
 type ExecFileAsync = typeof execFileAsync;
@@ -39,14 +40,14 @@ export type {
   ProvisionOptions,
   ResourceLimits,
   SandboxLimitStatus,
-} from "./types.js";
+} from "../../../types.js";
 import type {
   ContainerMount,
   DockerContainerManagerOptions,
   ProvisionOptions,
   ResourceLimits,
   SandboxLimitStatus,
-} from "./types.js";
+} from "../../../types.js";
 
 export class DockerContainerManager {
   private state = new Map<string, ContainerState>();
@@ -77,11 +78,7 @@ export class DockerContainerManager {
   }
 
   static sanitizeSegment(value: string): string {
-    const sanitized = value
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-    return sanitized || "unknown";
+    return sanitizeScopeSegment(value);
   }
 
   static containerName(containerKey: string): string {

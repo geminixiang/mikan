@@ -18,7 +18,7 @@ import { startLinkServer } from "./web/login/portal.js";
 import { InMemoryAdminTokenStore } from "./web/admin/store.js";
 import { InMemoryLinkTokenStore } from "./web/login/store.js";
 import { InMemorySessionViewTokenStore } from "./web/session-view/store.js";
-import { DockerContainerManager } from "./provisioner.js";
+import { DockerContainerManager } from "./sandbox/index.js";
 import {
   createGlobalSettingsFile,
   loadGlobalSettings,

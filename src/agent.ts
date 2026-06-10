@@ -30,14 +30,14 @@ import { resolveConversationSettings } from "./config.js";
 import { ActorExecutionResolver } from "./execution-resolver.js";
 import * as log from "./log.js";
 import { reportUserFacingError } from "./observability/sentry.js";
-import type { DockerContainerManager } from "./provisioner.js";
+import type { DockerContainerManager } from "./sandbox/index.js";
 import {
   createExecutor,
+  getSandboxProvider,
   type Executor,
   type RuntimePathContext,
   type SandboxConfig,
 } from "./sandbox/index.js";
-import { createMountedRuntimePathContext } from "./sandbox/path-context.js";
 import {
   addLifecycleBreadcrumb,
   metricAttributes,
@@ -409,11 +409,7 @@ export function getUnresolvedSandboxPathContext(
   sandboxConfig: SandboxConfig,
   hostWorkspaceRoot: string,
 ): RuntimePathContext {
-  if (sandboxConfig.type === "image") {
-    return createMountedRuntimePathContext(hostWorkspaceRoot, "/workspace");
-  }
-
-  return createExecutor(sandboxConfig).getPathContext(hostWorkspaceRoot);
+  return getSandboxProvider(sandboxConfig.type).getPathContext(sandboxConfig, hostWorkspaceRoot);
 }
 
 interface RunnerExecutionContext {
@@ -474,14 +470,11 @@ function createRunnerExecutionContext(
   workspaceDir: string,
   hostWorkspacePath: string,
 ): RunnerExecutionContext {
+  const capabilities = getSandboxProvider(sandboxConfig.type).capabilities;
+  const needsActorResolution =
+    capabilities.envInjection !== "none" || capabilities.lifecycle === "managed";
   const executionResolver =
-    vaultManager &&
-    sandboxConfig.type !== "host" &&
-    (vaultManager.isEnabled() ||
-      sandboxConfig.type === "container" ||
-      sandboxConfig.type === "image" ||
-      sandboxConfig.type === "cloudflare" ||
-      sandboxConfig.type === "firecracker")
+    vaultManager && needsActorResolution
       ? new ActorExecutionResolver(sandboxConfig, vaultManager, provisioner, workspaceDir)
       : undefined;
 

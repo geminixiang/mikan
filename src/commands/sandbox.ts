@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { updateConversationSettings } from "../config.js";
 import { readConversationWorkspaceMountMode } from "../execution-resolver.js";
-import { resolveActorVaultKey } from "../vault/routing.js";
+import { resolveActorScopeKey } from "../sandbox/index.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler, ParsedSandboxCommand } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
@@ -35,7 +35,7 @@ export class SandboxCommandHandler implements CommandHandler {
       return true;
     }
 
-    const containerKey = resolveActorVaultKey(
+    const containerKey = resolveActorScopeKey(
       context.services.sandbox,
       context.platformUserId,
       context.conversationId,

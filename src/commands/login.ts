@@ -1,13 +1,13 @@
 import * as log from "../log.js";
 import { parseLoginCommand } from "../web/login/oauth.js";
-import { resolveActorVaultKey } from "../vault/routing.js";
+import { resolveActorScopeKey } from "../sandbox/index.js";
 import { sharedVaultKey } from "../vault/index.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 
 function ensureLoginVault(context: CommandContext): string {
   const { services, platformUserId, conversationId, vaultConversationId } = context;
-  return resolveActorVaultKey(
+  return resolveActorScopeKey(
     services.sandbox,
     platformUserId,
     vaultConversationId ?? conversationId,

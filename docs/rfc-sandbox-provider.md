@@ -1,7 +1,7 @@
 # RFC: Sandbox Provider 架構與 Secret 注入安全模型
 
-- 狀態：Draft
-- 範圍：`src/sandbox/`、`src/vault/`、`src/provisioner.ts`、`src/execution-resolver.ts`
+- 狀態：Phase 1 已實作（SPI / registry / providers / capability-driven routing）；Phase 2–4 規劃中
+- 範圍：`src/sandbox/`、`src/vault/`、`src/execution-resolver.ts`
 - 目標：解耦 sandbox 抽象，使其能以「外掛 provider」方式兼容第三方沙盒（Cloudflare Sandbox、E2B、gondolin、Docker Sandboxes），並把 vault secret 注入從「secrets 與 untrusted code 同處一室」升級為業界標準的 control-plane 託管模型。
 
 ---
@@ -37,12 +37,12 @@
 
 ### 1.5 Vault 注入的安全隱患
 
-| 模式 | 注入方式 | 風險 |
-| --- | --- | --- |
+| 模式                    | 注入方式                                                                       | 風險                                                                                                                                                            |
+| ----------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `container:` / `image:` | 每次 exec 寫 secrets 到 host tmpdir env file（0600）→ `docker exec --env-file` | secrets 進入容器內整個 process tree 的 env；沙盒內 untrusted code 用 `env` 或 `/proc/*/environ` 即可整包讀走後 exfiltrate。host 端 crash 時 env file 可能殘留。 |
-| `cloudflare:` | 每次 exec 把整包 vault env 放進 HTTP POST body 送 bridge | secrets 每次過網路；可能進 Worker logs / observability pipeline；bridge 只有單一 static bearer token。 |
-| `firecracker:` | SSH stdin 注入 | 同樣是「整包 env 進 VM」。 |
-| vault file mounts | 直接 bind mount（`/root/.ssh`、gcloud ADC 等） | 沙盒內 agent code 可直接讀走私鑰原文。 |
+| `cloudflare:`           | 每次 exec 把整包 vault env 放進 HTTP POST body 送 bridge                       | secrets 每次過網路；可能進 Worker logs / observability pipeline；bridge 只有單一 static bearer token。                                                          |
+| `firecracker:`          | SSH stdin 注入                                                                 | 同樣是「整包 env 進 VM」。                                                                                                                                      |
+| vault file mounts       | 直接 bind mount（`/root/.ssh`、gcloud ADC 等）                                 | 沙盒內 agent code 可直接讀走私鑰原文。                                                                                                                          |
 
 根本問題只有一個：**secrets 與 untrusted code 同處一室**。只要 agent 生成的程式碼在沙盒內能讀到真值，任何網路出口都是 exfiltration 通道。這不是哪個注入管道實作得不夠細的問題，而是模型問題。
 
@@ -52,12 +52,12 @@
 
 2025–2026 年主要 agent sandbox 的 API 都收斂到同一個形狀：**provider 建立/連接 sandbox instance → instance 提供 exec / fs / lifecycle**。
 
-| | 建立/連接 | 執行 | 檔案 | Secrets |
-| --- | --- | --- | --- | --- |
-| **E2B** | `Sandbox.create({envs})` / `Sandbox.connect(id)` / `pause()` / `kill()` | `sbx.commands.run(cmd, {cwd, envs, timeoutMs, background})` | `sbx.files.read/write/list` | create-time 或 per-run envs |
-| **Cloudflare Sandbox SDK** | `getSandbox(ns, id)` | `sandbox.exec(cmd, {cwd, env})`、`startProcess` | `sandbox.writeFile/readFile` | per-exec env |
-| **Docker Sandboxes (`sbx`)** | microVM per sandbox，自帶獨立 dockerd | `sbx run` / agent 直接在內 | VM 內檔案系統 | 環境隔離靠 microVM 邊界 |
-| **gondolin** | `VM.create({httpHooks, env})` / `vm.close()` | `vm.exec(cmd)` | programmable VFS mounts | **guest 只看到 placeholder；host 端 egress proxy 在 allowlisted 目的地替換真值** |
+|                              | 建立/連接                                                               | 執行                                                        | 檔案                         | Secrets                                                                          |
+| ---------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------- |
+| **E2B**                      | `Sandbox.create({envs})` / `Sandbox.connect(id)` / `pause()` / `kill()` | `sbx.commands.run(cmd, {cwd, envs, timeoutMs, background})` | `sbx.files.read/write/list`  | create-time 或 per-run envs                                                      |
+| **Cloudflare Sandbox SDK**   | `getSandbox(ns, id)`                                                    | `sandbox.exec(cmd, {cwd, env})`、`startProcess`             | `sandbox.writeFile/readFile` | per-exec env                                                                     |
+| **Docker Sandboxes (`sbx`)** | microVM per sandbox，自帶獨立 dockerd                                   | `sbx run` / agent 直接在內                                  | VM 內檔案系統                | 環境隔離靠 microVM 邊界                                                          |
+| **gondolin**                 | `VM.create({httpHooks, env})` / `vm.close()`                            | `vm.exec(cmd)`                                              | programmable VFS mounts      | **guest 只看到 placeholder；host 端 egress proxy 在 allowlisted 目的地替換真值** |
 
 兩個關鍵結論：
 
@@ -91,7 +91,7 @@ export interface AcquireContext {
   /** control plane 計算出的 scope key（取代散落各處的 vault key 推導） */
   scopeKey: string;
   workspace: WorkspaceSpec; // host root + 想要的掛載/同步模式
-  secrets: SecretSource;    // 見 3.3；provider 依自身 capability 取用
+  secrets: SecretSource; // 見 3.3；provider 依自身 capability 取用
 }
 
 export interface SandboxInstance {
@@ -134,7 +134,7 @@ function resolveScopeKey(provider: SandboxProvider, spec, userId, conversationId
   if (provider.capabilities.isolation === "shared") {
     return provider.sharedScopeKey(spec); // e.g. "container-<name>"
   }
-  return sanitizeSegment(conversationId);  // per-acquire：1 conversation = 1 vault = 1 instance
+  return sanitizeSegment(conversationId); // per-acquire：1 conversation = 1 vault = 1 instance
 }
 ```
 
@@ -182,12 +182,12 @@ src/sandbox/
 
 ## 4. 遷移計畫
 
-| Phase | 內容 | 行為變化 |
-| --- | --- | --- |
-| **1. SPI 抽取** | 定義 spi.ts / registry.ts；五個現有後端原樣搬進 provider 形狀；`image:` 特例與 `ensureReady` 收進 docker provider；vault routing 改走 capabilities | 無（CLI 字串、vault 目錄、容器命名全部不變；以現有 test suite 驗證） |
-| **2. Secret Tier 1** | `SecretInjector` + at-create 注入 + fs file-push；cloudflare 停止 per-exec env；docker 移除 tmpdir env file | 安全性提升，使用者無感 |
-| **3. 新 providers** | `e2b:<template>`、`gondolin` provider | 新功能 |
-| **4. Secret Tier 2** | gondolin httpHooks 接 vault；cloudflare bridge / docker sidecar egress broker | secrets 不再進 sandbox（per-provider 漸進啟用） |
+| Phase                | 內容                                                                                                                                               | 行為變化                                                             |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| **1. SPI 抽取**      | 定義 spi.ts / registry.ts；五個現有後端原樣搬進 provider 形狀；`image:` 特例與 `ensureReady` 收進 docker provider；vault routing 改走 capabilities | 無（CLI 字串、vault 目錄、容器命名全部不變；以現有 test suite 驗證） |
+| **2. Secret Tier 1** | `SecretInjector` + at-create 注入 + fs file-push；cloudflare 停止 per-exec env；docker 移除 tmpdir env file                                        | 安全性提升，使用者無感                                               |
+| **3. 新 providers**  | `e2b:<template>`、`gondolin` provider                                                                                                              | 新功能                                                               |
+| **4. Secret Tier 2** | gondolin httpHooks 接 vault；cloudflare bridge / docker sidecar egress broker                                                                      | secrets 不再進 sandbox（per-provider 漸進啟用）                      |
 
 Phase 1 是純重構且可完全由現有測試覆蓋，建議先做——它直接解掉「加第三方沙盒要改四處」的阻力；Phase 2 解掉最痛的注入隱患；3、4 之後都是在穩定 SPI 上加 provider，不再動 control plane。
 

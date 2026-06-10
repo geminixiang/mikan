@@ -6,7 +6,10 @@ import {
   HostExecutor,
   SandboxError,
   createExecutor,
+  getSandboxProvider,
+  getSandboxProviders,
   parseSandboxArg,
+  resolveActorScopeKey,
 } from "../src/sandbox/index.js";
 
 describe("parseSandboxArg", () => {
@@ -234,5 +237,109 @@ describe("CloudflareSandboxExecutor", () => {
       runtimeWorkspaceRoot: "/remote/workspace",
     });
     expect(executor.getPathContext("/host/workspace").runtimeToHostPath).toBeUndefined();
+  });
+});
+
+describe("sandbox provider capabilities", () => {
+  test("declares capabilities for every builtin provider", () => {
+    const byType = Object.fromEntries(
+      getSandboxProviders().map((provider) => [provider.type, provider.capabilities]),
+    );
+    expect(byType).toEqual({
+      host: {
+        lifecycle: "external",
+        credentialScope: "user",
+        envInjection: "none",
+        fileMounts: false,
+      },
+      container: {
+        lifecycle: "external",
+        credentialScope: "instance",
+        envInjection: "per-exec",
+        fileMounts: false,
+      },
+      image: {
+        lifecycle: "managed",
+        credentialScope: "conversation",
+        envInjection: "per-exec",
+        fileMounts: true,
+      },
+      firecracker: {
+        lifecycle: "external",
+        credentialScope: "conversation",
+        envInjection: "per-exec",
+        fileMounts: false,
+      },
+      cloudflare: {
+        lifecycle: "managed",
+        credentialScope: "conversation",
+        envInjection: "per-exec",
+        fileMounts: false,
+      },
+    });
+  });
+});
+
+describe("resolveActorScopeKey", () => {
+  test("scopes host credentials to the user", () => {
+    expect(resolveActorScopeKey({ type: "host" }, "U123", "D123")).toBe("U123");
+  });
+
+  test("scopes shared-container credentials to the container", () => {
+    expect(
+      resolveActorScopeKey({ type: "container", container: "mikan-tools" }, "U123", "D123"),
+    ).toBe("container-mikan-tools");
+  });
+
+  test("scopes managed sandbox credentials to the conversation", () => {
+    expect(resolveActorScopeKey({ type: "image", image: "ubuntu:24.04" }, "U123", "D123")).toBe(
+      "d123",
+    );
+    expect(
+      resolveActorScopeKey({ type: "cloudflare", sandboxId: "mikan-remote" }, "U123", "D123"),
+    ).toBe("d123");
+    expect(
+      resolveActorScopeKey(
+        { type: "firecracker", vmId: "vm1", hostPath: "/srv/ws" },
+        "U123",
+        "D 12/3!",
+      ),
+    ).toBe("d-12-3");
+  });
+});
+
+describe("provider acquire", () => {
+  test("cloudflare derives a per-scope sandbox id", async () => {
+    const provider = getSandboxProvider("cloudflare");
+    const instance = await provider.acquire(
+      { type: "cloudflare", sandboxId: "mikan-remote" },
+      { userId: "U123", conversationId: "D123", scopeKey: "alice" },
+    );
+
+    expect(instance.id).toBe("mikan-remote-alice");
+    expect(instance.getSandboxConfig()).toEqual({
+      type: "cloudflare",
+      sandboxId: "mikan-remote-alice",
+    });
+  });
+
+  test("image acquires a managed per-scope container instance", async () => {
+    const provider = getSandboxProvider("image");
+    const instance = await provider.acquire(
+      { type: "image", image: "ubuntu:24.04" },
+      { userId: "U123", conversationId: "D123", scopeKey: "d123" },
+    );
+
+    expect(instance.id).toBe("mikan-sandbox-d123");
+    expect(instance.getSandboxConfig()).toEqual({
+      type: "container",
+      container: "mikan-sandbox-d123",
+    });
+  });
+
+  test("image cannot be attached without actor context", () => {
+    expect(() =>
+      getSandboxProvider("image").attach({ type: "image", image: "ubuntu:24.04" }),
+    ).toThrowError(SandboxError);
   });
 });

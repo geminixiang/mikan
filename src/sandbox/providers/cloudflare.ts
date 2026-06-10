@@ -2,12 +2,12 @@ import type {
   CloudflareSandboxConfig,
   ExecOptions,
   ExecResult,
-  Executor,
   RuntimePathContext,
-  SandboxAdapter,
-} from "./types.js";
-import { readEnv } from "../utils/env.js";
-import { SandboxError } from "./errors.js";
+} from "../types.js";
+import type { SandboxInstance, SandboxProvider } from "../spi.js";
+import { readEnv } from "../../utils/env.js";
+import { sanitizeScopeSegment } from "../scope.js";
+import { SandboxError } from "../errors.js";
 
 const DEFAULT_CLOUDFLARE_CWD = "/workspace";
 
@@ -65,7 +65,12 @@ async function validateCloudflareSandbox(_config: CloudflareSandboxConfig): Prom
   );
 }
 
-export class CloudflareSandboxExecutor implements Executor {
+/** Derive the per-scope remote sandbox id from the configured base id. */
+function deriveCloudflareSandboxId(baseSandboxId: string, scopeKey: string): string {
+  return `${baseSandboxId}-${sanitizeScopeSegment(scopeKey)}`;
+}
+
+export class CloudflareSandboxExecutor implements SandboxInstance {
   private readonly cwd: string;
 
   constructor(
@@ -74,6 +79,10 @@ export class CloudflareSandboxExecutor implements Executor {
     _ensureReady?: () => Promise<void>,
   ) {
     this.cwd = readEnv("CLOUDFLARE_SANDBOX_CWD") || DEFAULT_CLOUDFLARE_CWD;
+  }
+
+  get id(): string {
+    return this.sandboxId;
   }
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
@@ -159,11 +168,27 @@ export class CloudflareSandboxExecutor implements Executor {
   }
 }
 
-export const cloudflareSandboxAdapter: SandboxAdapter<CloudflareSandboxConfig> = {
+export const cloudflareSandboxProvider: SandboxProvider<CloudflareSandboxConfig> = {
   type: "cloudflare",
+  usage: "cloudflare:<sandbox-id>",
+  capabilities: {
+    lifecycle: "managed",
+    credentialScope: "conversation",
+    envInjection: "per-exec",
+    fileMounts: false,
+  },
   parse: parseCloudflareSandboxArg,
   validate: validateCloudflareSandbox,
-  createExecutor: (config, env, ensureReady) =>
+  getPathContext: (_config, hostWorkspaceRoot) => ({
+    hostWorkspaceRoot,
+    runtimeWorkspaceRoot: readEnv("CLOUDFLARE_SANDBOX_CWD") || DEFAULT_CLOUDFLARE_CWD,
+  }),
+  acquire: (config, ctx) =>
+    new CloudflareSandboxExecutor(
+      deriveCloudflareSandboxId(config.sandboxId, ctx.scopeKey),
+      ctx.env,
+    ),
+  attach: (config, env, ensureReady) =>
     new CloudflareSandboxExecutor(config.sandboxId, env, ensureReady),
 };
 

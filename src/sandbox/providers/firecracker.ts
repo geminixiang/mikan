@@ -2,14 +2,13 @@ import { spawn } from "child_process";
 import type {
   ExecOptions,
   ExecResult,
-  Executor,
   FirecrackerSandboxConfig,
   RuntimePathContext,
-  SandboxAdapter,
-} from "./types.js";
-import { SandboxError } from "./errors.js";
+} from "../types.js";
+import type { SandboxInstance, SandboxProvider } from "../spi.js";
+import { SandboxError } from "../errors.js";
 import { HostExecutor } from "./host.js";
-import { execSimple, killProcessTree, shellEscape } from "./utils.js";
+import { execSimple, killProcessTree, shellEscape } from "../utils.js";
 
 function parseFirecrackerSandboxArg(value: string): FirecrackerSandboxConfig | undefined {
   if (!value.startsWith("firecracker:")) {
@@ -90,7 +89,7 @@ async function validateFirecrackerSandbox(config: FirecrackerSandboxConfig): Pro
   console.log(`  Firecracker VM '${config.vmId}' configured with workspace '${config.hostPath}'.`);
 }
 
-export class FirecrackerExecutor implements Executor {
+export class FirecrackerExecutor implements SandboxInstance {
   constructor(
     private vmId: string,
     private hostPath: string,
@@ -98,6 +97,10 @@ export class FirecrackerExecutor implements Executor {
     private sshPort: number = 22,
     private env?: Record<string, string>,
   ) {}
+
+  get id(): string {
+    return this.vmId;
+  }
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
     if (!this.env || Object.keys(this.env).length === 0) {
@@ -238,10 +241,23 @@ function buildRemoteScript(command: string, env?: Record<string, string>): strin
   return `${exports}${command}\n`;
 }
 
-export const firecrackerSandboxAdapter: SandboxAdapter<FirecrackerSandboxConfig> = {
+export const firecrackerSandboxProvider: SandboxProvider<FirecrackerSandboxConfig> = {
   type: "firecracker",
+  usage: "firecracker:<vm-id>:<host-path>",
+  capabilities: {
+    lifecycle: "external",
+    credentialScope: "conversation",
+    envInjection: "per-exec",
+    fileMounts: false,
+  },
   parse: parseFirecrackerSandboxArg,
   validate: validateFirecrackerSandbox,
-  createExecutor: (config, env) =>
+  getPathContext: (_config, hostWorkspaceRoot) => ({
+    hostWorkspaceRoot,
+    runtimeWorkspaceRoot: "/workspace",
+  }),
+  acquire: (config, ctx) =>
+    new FirecrackerExecutor(config.vmId, config.hostPath, config.sshUser, config.sshPort, ctx.env),
+  attach: (config, env) =>
     new FirecrackerExecutor(config.vmId, config.hostPath, config.sshUser, config.sshPort, env),
 };

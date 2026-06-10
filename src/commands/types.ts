@@ -1,6 +1,6 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Bot, BotAdapters, PlatformName } from "../adapter.js";
-import type { DockerContainerManager } from "../provisioner.js";
+import type { DockerContainerManager } from "../sandbox/index.js";
 import type { SessionRuntime } from "../runtime/session-runtime.js";
 import type { SandboxConfig } from "../sandbox/index.js";
 import type { VaultManager } from "../vault/index.js";
