@@ -1,5 +1,10 @@
 import { VM, createHttpHooks } from "@earendil-works/gondolin";
-import type { ExecResult as GondolinExecResult, VMOptions } from "@earendil-works/gondolin";
+import type {
+  CreateHttpHooksResult,
+  ExecResult as GondolinExecResult,
+  SecretDefinition,
+  VMOptions,
+} from "@earendil-works/gondolin";
 import { readEnv } from "../../utils/env.js";
 import { SandboxError } from "../errors.js";
 import type { SandboxFs, SandboxInstance, SandboxProvider } from "../spi.js";
@@ -90,6 +95,7 @@ export const gondolinSandboxProvider: SandboxProvider<GondolinSandboxConfig> = {
     envInjection: "at-create",
     fileMounts: false,
     filePush: true,
+    egressBroker: true,
   },
   parse: parseGondolinSandboxArg,
   validate: validateGondolinSandbox,
@@ -98,7 +104,7 @@ export const gondolinSandboxProvider: SandboxProvider<GondolinSandboxConfig> = {
     runtimeWorkspaceRoot: readEnv("GONDOLIN_SANDBOX_CWD") || DEFAULT_GONDOLIN_CWD,
   }),
   acquire: async (config, ctx) => {
-    const vm = await VM.create(buildGondolinOptions(config, ctx.env));
+    const vm = await VM.create(buildGondolinVmOptions(config, ctx.env));
     return new GondolinSandboxExecutor(config, vm);
   },
   attach: () => {
@@ -108,30 +114,34 @@ export const gondolinSandboxProvider: SandboxProvider<GondolinSandboxConfig> = {
   },
 };
 
-function buildGondolinOptions(
+export function buildGondolinVmOptions(
   config: GondolinSandboxConfig,
   env?: Record<string, string>,
 ): VMOptions {
-  const hookHosts = readCommaSeparatedEnv("GONDOLIN_SECRET_HOSTS");
-  if (hookHosts.length === 0) {
-    return {
-      env,
-      sessionLabel: config.profile ? `mikan:${config.profile}` : "mikan",
-    };
-  }
-
-  const hooks = createHttpHooks({
-    allowedHosts: readCommaSeparatedEnv("GONDOLIN_ALLOWED_HOSTS"),
-    secrets: Object.fromEntries(
-      Object.entries(env ?? {}).map(([name, value]) => [name, { value, hosts: hookHosts }]),
-    ),
-  });
-
+  const hooks = buildGondolinSecretHooks(env);
   return {
-    env: hooks.env,
-    httpHooks: hooks.httpHooks,
+    env: hooks?.env ?? env,
+    httpHooks: hooks?.httpHooks,
     sessionLabel: config.profile ? `mikan:${config.profile}` : "mikan",
   };
+}
+
+function buildGondolinSecretHooks(
+  env?: Record<string, string>,
+): Pick<CreateHttpHooksResult, "env" | "httpHooks"> | undefined {
+  const hookHosts = readCommaSeparatedEnv("GONDOLIN_SECRET_HOSTS");
+  if (hookHosts.length === 0) return undefined;
+
+  const secrets = Object.fromEntries(
+    Object.entries(env ?? {}).map(([name, value]) => [
+      name,
+      { value, hosts: hookHosts } satisfies SecretDefinition,
+    ]),
+  );
+  return createHttpHooks({
+    allowedHosts: readCommaSeparatedEnv("GONDOLIN_ALLOWED_HOSTS"),
+    secrets,
+  });
 }
 
 function mapGondolinExecResult(result: GondolinExecResult): ExecResult {

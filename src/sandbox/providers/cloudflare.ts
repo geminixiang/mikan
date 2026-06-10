@@ -250,6 +250,7 @@ export const cloudflareSandboxProvider: SandboxProvider<CloudflareSandboxConfig>
     envInjection: "at-create",
     fileMounts: false,
     filePush: true,
+    egressBroker: false,
   },
   parse: parseCloudflareSandboxArg,
   validate: validateCloudflareSandbox,

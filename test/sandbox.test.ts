@@ -355,6 +355,7 @@ describe("sandbox provider capabilities", () => {
         envInjection: "none",
         fileMounts: false,
         filePush: false,
+        egressBroker: false,
       },
       container: {
         lifecycle: "external",
@@ -362,6 +363,7 @@ describe("sandbox provider capabilities", () => {
         envInjection: "per-exec",
         fileMounts: false,
         filePush: false,
+        egressBroker: false,
       },
       image: {
         lifecycle: "managed",
@@ -369,6 +371,7 @@ describe("sandbox provider capabilities", () => {
         envInjection: "per-exec",
         fileMounts: true,
         filePush: false,
+        egressBroker: false,
       },
       firecracker: {
         lifecycle: "external",
@@ -376,6 +379,7 @@ describe("sandbox provider capabilities", () => {
         envInjection: "per-exec",
         fileMounts: false,
         filePush: false,
+        egressBroker: false,
       },
       cloudflare: {
         lifecycle: "managed",
@@ -383,6 +387,7 @@ describe("sandbox provider capabilities", () => {
         envInjection: "at-create",
         fileMounts: false,
         filePush: true,
+        egressBroker: false,
       },
       e2b: {
         lifecycle: "managed",
@@ -390,6 +395,7 @@ describe("sandbox provider capabilities", () => {
         envInjection: "at-create",
         fileMounts: false,
         filePush: true,
+        egressBroker: false,
       },
       gondolin: {
         lifecycle: "managed",
@@ -397,6 +403,7 @@ describe("sandbox provider capabilities", () => {
         envInjection: "at-create",
         fileMounts: false,
         filePush: true,
+        egressBroker: true,
       },
     });
   });

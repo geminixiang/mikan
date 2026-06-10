@@ -61,6 +61,7 @@ export function createImageSandboxProvider(
       envInjection: "per-exec",
       fileMounts: true,
       filePush: false,
+      egressBroker: false,
     },
     parse: parseImageSandboxArg,
     validate: validateImageSandbox,

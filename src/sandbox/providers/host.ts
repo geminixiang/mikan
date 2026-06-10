@@ -103,6 +103,7 @@ export const hostSandboxProvider: SandboxProvider<HostSandboxConfig> = {
     envInjection: "none",
     fileMounts: false,
     filePush: false,
+    egressBroker: false,
   },
   parse: (value) => (value === "host" ? { type: "host" } : undefined),
   validate: async () => {},

@@ -1,6 +1,6 @@
 # RFC: Sandbox Provider 架構與 Secret 注入安全模型
 
-- 狀態：Phase 1（SPI / registry / providers / capability-driven routing）與 Phase 2（Tier 1 secret injection：docker 無檔案化 env 注入、cloudflare session env + fs file push、注入 audit chokepoint）已實作；Phase 3–4 進行中
+- 狀態：Phase 1（SPI / registry / providers / capability-driven routing）、Phase 2（Tier 1 secret injection：docker 無檔案化 env 注入、cloudflare session env + fs file push、注入 audit chokepoint）、Phase 3（E2B / gondolin providers）、Phase 4（gondolin Tier 2 egress-broker secret hooks）已實作
 - 範圍：`src/sandbox/`、`src/vault/`、`src/execution-resolver.ts`
 - 目標：解耦 sandbox 抽象，使其能以「外掛 provider」方式兼容第三方沙盒（Cloudflare Sandbox、E2B、gondolin、Docker Sandboxes），並把 vault secret 注入從「secrets 與 untrusted code 同處一室」升級為業界標準的 control-plane 託管模型。
 

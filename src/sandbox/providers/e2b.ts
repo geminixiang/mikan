@@ -99,6 +99,7 @@ export const e2bSandboxProvider: SandboxProvider<E2BSandboxConfig> = {
     envInjection: "at-create",
     fileMounts: false,
     filePush: true,
+    egressBroker: false,
   },
   parse: parseE2BSandboxArg,
   validate: validateE2BSandbox,

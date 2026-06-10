@@ -250,6 +250,7 @@ export const firecrackerSandboxProvider: SandboxProvider<FirecrackerSandboxConfi
     envInjection: "per-exec",
     fileMounts: false,
     filePush: false,
+    egressBroker: false,
   },
   parse: parseFirecrackerSandboxArg,
   validate: validateFirecrackerSandbox,

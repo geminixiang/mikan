@@ -30,6 +30,8 @@ export interface SandboxCapabilities {
   fileMounts: boolean;
   /** Whether vault files can be pushed into the runtime via the instance fs API. */
   filePush: boolean;
+  /** Whether env secrets can stay host-side and be substituted only on approved egress. */
+  egressBroker: boolean;
 }
 
 /** The actor a sandbox instance is being acquired for. */

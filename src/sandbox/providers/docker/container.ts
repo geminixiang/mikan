@@ -146,6 +146,7 @@ export const containerSandboxProvider: SandboxProvider<ContainerSandboxConfig> =
     envInjection: "per-exec",
     fileMounts: false,
     filePush: false,
+    egressBroker: false,
   },
   parse: parseContainerSandboxArg,
   validate: validateContainerSandbox,
