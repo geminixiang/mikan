@@ -249,6 +249,7 @@ export const firecrackerSandboxProvider: SandboxProvider<FirecrackerSandboxConfi
     credentialScope: "conversation",
     envInjection: "per-exec",
     fileMounts: false,
+    filePush: false,
   },
   parse: parseFirecrackerSandboxArg,
   validate: validateFirecrackerSandbox,

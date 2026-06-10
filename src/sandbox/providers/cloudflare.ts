@@ -4,7 +4,7 @@ import type {
   ExecResult,
   RuntimePathContext,
 } from "../types.js";
-import type { SandboxInstance, SandboxProvider } from "../spi.js";
+import type { SandboxFs, SandboxInstance, SandboxProvider } from "../spi.js";
 import { readEnv } from "../../utils/env.js";
 import { sanitizeScopeSegment } from "../scope.js";
 import { SandboxError } from "../errors.js";
@@ -16,6 +16,7 @@ interface CloudflareExecPayload {
   command: string;
   timeoutSeconds?: number;
   cwd?: string;
+  /** Legacy bridges only: session env injection via /env is preferred. */
   env?: Record<string, string>;
 }
 
@@ -72,6 +73,8 @@ function deriveCloudflareSandboxId(baseSandboxId: string, scopeKey: string): str
 
 export class CloudflareSandboxExecutor implements SandboxInstance {
   private readonly cwd: string;
+  /** Resolves to "session" once env is pushed, or "legacy" for old bridges without /env. */
+  private sessionEnvPromise?: Promise<"session" | "legacy">;
 
   constructor(
     private readonly sandboxId: string,
@@ -83,6 +86,22 @@ export class CloudflareSandboxExecutor implements SandboxInstance {
 
   get id(): string {
     return this.sandboxId;
+  }
+
+  get fs(): SandboxFs {
+    return {
+      mkdir: async (path) => {
+        await this.bridgePost("/mkdir", { sandboxId: this.sandboxId, path });
+      },
+      writeFile: async (path, content) => {
+        await this.bridgePost("/write-file", {
+          sandboxId: this.sandboxId,
+          path,
+          content,
+          mode: "600",
+        });
+      },
+    };
   }
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
@@ -102,13 +121,14 @@ export class CloudflareSandboxExecutor implements SandboxInstance {
     }
 
     try {
+      const includeLegacyEnv = await this.ensureSessionEnv(controller.signal);
       const payload: CloudflareExecPayload = {
         sandboxId: this.sandboxId,
         command,
         cwd: this.cwd,
       };
       if (options?.timeout) payload.timeoutSeconds = options.timeout;
-      if (this.env && Object.keys(this.env).length > 0) payload.env = this.env;
+      if (includeLegacyEnv && this.env) payload.env = this.env;
 
       const response = await fetch(new URL("/exec", resolveCloudflareSandboxUrl()), {
         method: "POST",
@@ -152,6 +172,59 @@ export class CloudflareSandboxExecutor implements SandboxInstance {
     }
   }
 
+  /**
+   * Push vault env to the bridge session once per instance instead of
+   * resending secrets in every /exec payload. Returns true when a legacy
+   * bridge (no /env endpoint) still needs per-exec env.
+   */
+  private async ensureSessionEnv(signal?: AbortSignal): Promise<boolean> {
+    if (!this.env || Object.keys(this.env).length === 0) {
+      return false;
+    }
+
+    if (!this.sessionEnvPromise) {
+      this.sessionEnvPromise = this.pushSessionEnv(signal).catch((error) => {
+        // Allow the next exec to retry instead of caching the failure.
+        this.sessionEnvPromise = undefined;
+        throw error;
+      });
+    }
+    return (await this.sessionEnvPromise) === "legacy";
+  }
+
+  private async pushSessionEnv(signal?: AbortSignal): Promise<"session" | "legacy"> {
+    const response = await fetch(new URL("/env", resolveCloudflareSandboxUrl()), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...buildCloudflareHeaders(),
+      },
+      body: JSON.stringify({ sandboxId: this.sandboxId, env: this.env }),
+      signal,
+    });
+    if (response.ok) {
+      return "session";
+    }
+    if (response.status === 404 || response.status === 405) {
+      return "legacy";
+    }
+    throw new Error(`Cloudflare sandbox bridge /env returned HTTP ${response.status}`);
+  }
+
+  private async bridgePost(path: string, body: unknown): Promise<void> {
+    const response = await fetch(new URL(path, resolveCloudflareSandboxUrl()), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...buildCloudflareHeaders(),
+      },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      throw new Error(`Cloudflare sandbox bridge ${path} returned HTTP ${response.status}`);
+    }
+  }
+
   getWorkspacePath(_hostPath: string): string {
     return this.cwd;
   }
@@ -174,8 +247,9 @@ export const cloudflareSandboxProvider: SandboxProvider<CloudflareSandboxConfig>
   capabilities: {
     lifecycle: "managed",
     credentialScope: "conversation",
-    envInjection: "per-exec",
+    envInjection: "at-create",
     fileMounts: false,
+    filePush: true,
   },
   parse: parseCloudflareSandboxArg,
   validate: validateCloudflareSandbox,

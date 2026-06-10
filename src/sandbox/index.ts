@@ -15,6 +15,7 @@ export type {
   ActorRef,
   CredentialScope,
   SandboxCapabilities,
+  SandboxFs,
   SandboxInstance,
   SandboxLifecycle,
   SandboxProvider,

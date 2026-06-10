@@ -60,6 +60,7 @@ export function createImageSandboxProvider(
       credentialScope: "conversation",
       envInjection: "per-exec",
       fileMounts: true,
+      filePush: false,
     },
     parse: parseImageSandboxArg,
     validate: validateImageSandbox,

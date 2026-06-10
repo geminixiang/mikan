@@ -68,6 +68,12 @@ export interface RuntimePathContext {
 export interface ExecOptions {
   timeout?: number;
   signal?: AbortSignal;
+  /**
+   * Extra environment variables merged over the parent process env for
+   * host-spawned commands. Used to hand secrets to child processes without
+   * writing them to disk or the command line.
+   */
+  env?: Record<string, string>;
 }
 
 export interface ExecResult {

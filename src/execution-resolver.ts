@@ -11,6 +11,7 @@ import {
   type SandboxConfig,
   type SandboxProvider,
 } from "./sandbox/index.js";
+import { auditSecretInjection, pushVaultFileMounts } from "./sandbox/secret-injection.js";
 import { reportUserFacingError } from "./observability/sentry.js";
 import { normalizeSharedVaultName, type ResolvedVault, type VaultManager } from "./vault/index.js";
 
@@ -92,13 +93,53 @@ export class ActorExecutionResolver {
       ? this.resolveMounts(context.conversationId, vault)
       : undefined;
 
-    return await this.provider.acquire(this.baseConfig, {
+    const instance = await this.provider.acquire(this.baseConfig, {
       userId: context.userId,
       conversationId: context.conversationId,
       scopeKey,
       env,
       mounts,
     });
+
+    const pushedFiles = await this.pushVaultFiles(instance, scopeKey, context, vault);
+    auditSecretInjection({
+      providerType: this.provider.type,
+      scopeKey,
+      envKeys: env ? Object.keys(env) : [],
+      envMode: capabilities.envInjection,
+      pushedFiles,
+      mountedFiles: capabilities.fileMounts ? (vault?.mounts.length ?? 0) : 0,
+    });
+    return instance;
+  }
+
+  private async pushVaultFiles(
+    instance: Awaited<ReturnType<SandboxProvider["acquire"]>>,
+    scopeKey: string,
+    context: ActorContext,
+    vault?: ResolvedVault,
+  ): Promise<number> {
+    if (!this.provider.capabilities.filePush || !vault || vault.mounts.length === 0) {
+      return 0;
+    }
+
+    try {
+      return await pushVaultFileMounts(instance, vault.mounts);
+    } catch (err) {
+      // Degrade gracefully: a failed credential push must not block the run.
+      reportUserFacingError(err, {
+        domain: "sandbox",
+        surface: "vault_injection",
+        operation: "push_vault_files",
+        severity: "warning",
+        context: {
+          sandboxType: this.baseConfig.type,
+          conversationId: context.conversationId,
+          vaultKey: scopeKey,
+        },
+      });
+      return 0;
+    }
   }
 
   private ensureDefaultSharedVault(scopeKey: string): void {

@@ -19,10 +19,17 @@ export type CredentialScope = "user" | "conversation" | "instance";
 export interface SandboxCapabilities {
   lifecycle: SandboxLifecycle;
   credentialScope: CredentialScope;
-  /** How vault env vars reach the runtime. "none" means env is never injected. */
-  envInjection: "none" | "per-exec";
+  /**
+   * How vault env vars reach the runtime.
+   * - "none": env is never injected.
+   * - "per-exec": injected on every command execution.
+   * - "at-create": injected once when the instance/session is established.
+   */
+  envInjection: "none" | "per-exec" | "at-create";
   /** Whether vault files can be projected into the runtime via bind mounts. */
   fileMounts: boolean;
+  /** Whether vault files can be pushed into the runtime via the instance fs API. */
+  filePush: boolean;
 }
 
 /** The actor a sandbox instance is being acquired for. */
@@ -41,6 +48,14 @@ export interface AcquireContext extends ActorRef {
   mounts?: ContainerMount[];
 }
 
+/** Minimal filesystem surface for pushing files into a sandbox runtime. */
+export interface SandboxFs {
+  /** Recursively create a directory inside the runtime. */
+  mkdir(path: string): Promise<void>;
+  /** Write a private (0600) text file inside the runtime. */
+  writeFile(path: string, content: string): Promise<void>;
+}
+
 /**
  * A ready-to-use sandbox runtime. Supersets the legacy Executor contract so
  * tools (bash/read/write/edit) keep working against any provider.
@@ -48,6 +63,8 @@ export interface AcquireContext extends ActorRef {
 export interface SandboxInstance extends Executor {
   /** Stable identifier of the underlying runtime (container name, sandbox id, "host"). */
   readonly id: string;
+  /** Filesystem push API; present when the provider declares capabilities.filePush. */
+  readonly fs?: SandboxFs;
   /** Stop the runtime while keeping it resumable (e.g. docker stop). */
   suspend?(): Promise<void>;
   /** Remove the runtime and its associated resources. */

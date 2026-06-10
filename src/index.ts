@@ -48,6 +48,7 @@ export type {
   ImageSandboxConfig,
   SandboxCapabilities,
   SandboxConfig,
+  SandboxFs,
   SandboxInstance,
   SandboxLifecycle,
   SandboxProvider,

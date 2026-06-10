@@ -15,6 +15,7 @@ export class HostExecutor implements SandboxInstance {
       const child = spawn(shell, [...shellArgs, command], {
         detached: true,
         stdio: ["ignore", "pipe", "pipe"],
+        env: options?.env ? { ...process.env, ...options.env } : process.env,
       });
 
       let stdout = "";
@@ -101,6 +102,7 @@ export const hostSandboxProvider: SandboxProvider<HostSandboxConfig> = {
     credentialScope: "user",
     envInjection: "none",
     fileMounts: false,
+    filePush: false,
   },
   parse: (value) => (value === "host" ? { type: "host" } : undefined),
   validate: async () => {},
