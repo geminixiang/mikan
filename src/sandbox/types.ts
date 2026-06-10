@@ -3,7 +3,9 @@ export type SandboxConfig =
   | ContainerSandboxConfig
   | ImageSandboxConfig
   | FirecrackerSandboxConfig
-  | CloudflareSandboxConfig;
+  | CloudflareSandboxConfig
+  | E2BSandboxConfig
+  | GondolinSandboxConfig;
 
 export interface HostSandboxConfig {
   type: "host";
@@ -30,6 +32,16 @@ export interface FirecrackerSandboxConfig {
 export interface CloudflareSandboxConfig {
   type: "cloudflare";
   sandboxId: string;
+}
+
+export interface E2BSandboxConfig {
+  type: "e2b";
+  template: string;
+}
+
+export interface GondolinSandboxConfig {
+  type: "gondolin";
+  profile?: string;
 }
 
 export interface Executor {

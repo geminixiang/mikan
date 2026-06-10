@@ -8,6 +8,8 @@ import { createImageSandboxProvider, imageSandboxProvider } from "./providers/do
 import type { DockerContainerManager } from "./providers/docker/provisioner.js";
 import { firecrackerSandboxProvider } from "./providers/firecracker.js";
 import { cloudflareSandboxProvider } from "./providers/cloudflare.js";
+import { e2bSandboxProvider } from "./providers/e2b.js";
+import { gondolinSandboxProvider } from "./providers/gondolin.js";
 
 /** Runtime services a provider may need when acquiring managed instances. */
 export interface SandboxProviderDeps {
@@ -39,6 +41,14 @@ const entries: RegistryEntry[] = [
   {
     factory: () => cloudflareSandboxProvider as SandboxProvider,
     defaultProvider: cloudflareSandboxProvider,
+  },
+  {
+    factory: () => e2bSandboxProvider as SandboxProvider,
+    defaultProvider: e2bSandboxProvider,
+  },
+  {
+    factory: () => gondolinSandboxProvider as SandboxProvider,
+    defaultProvider: gondolinSandboxProvider,
   },
 ];
 

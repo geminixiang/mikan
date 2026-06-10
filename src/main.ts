@@ -342,7 +342,13 @@ const sandboxDesc =
         ? `image:${sandbox.image}`
         : sandbox.type === "firecracker"
           ? `firecracker:${sandbox.vmId}`
-          : `cloudflare:${sandbox.sandboxId}`;
+          : sandbox.type === "cloudflare"
+            ? `cloudflare:${sandbox.sandboxId}`
+            : sandbox.type === "e2b"
+              ? `e2b:${sandbox.template}`
+              : sandbox.profile
+                ? `gondolin:${sandbox.profile}`
+                : "gondolin";
 log.logStartup(workingDir, sandboxDesc);
 
 const bots: Bot[] = [];

@@ -186,6 +186,18 @@ function buildEnvDescription(sandboxType: SandboxConfig["type"], workspaceRoot: 
 - Bash commands start in: ${workspaceRoot}
 - Your commands run in a remote container managed by Cloudflare
 - Important: the remote filesystem is not automatically synced back to the host workspace`;
+    case "e2b":
+      return `You are running inside an E2B sandbox.
+- Runtime workspace root: ${workspaceRoot}
+- Bash commands start in: ${workspaceRoot}
+- Your commands run in a remote sandbox created from the configured E2B template
+- Important: the remote filesystem is not automatically synced back to the host workspace`;
+    case "gondolin":
+      return `You are running inside a gondolin microVM sandbox.
+- Runtime workspace root: ${workspaceRoot}
+- Bash commands start in: ${workspaceRoot}
+- Network egress may be policy-controlled by host-side hooks
+- Important: the VM filesystem is not automatically synced back to the host workspace`;
     default:
       return `You are running directly on the host machine.
 - Runtime workspace root: ${workspaceRoot}

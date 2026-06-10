@@ -66,6 +66,21 @@ describe("parseSandboxArg", () => {
     });
   });
 
+  test("parses e2b sandbox", () => {
+    expect(parseSandboxArg("e2b:base")).toEqual({
+      type: "e2b",
+      template: "base",
+    });
+  });
+
+  test("parses gondolin sandbox", () => {
+    expect(parseSandboxArg("gondolin")).toEqual({ type: "gondolin" });
+    expect(parseSandboxArg("gondolin:alpine")).toEqual({
+      type: "gondolin",
+      profile: "alpine",
+    });
+  });
+
   test("rejects invalid firecracker SSH port", () => {
     expect(() => parseSandboxArg("firecracker:vm1:/srv/workspace:root:99999")).toThrowError(
       SandboxError,
@@ -369,6 +384,20 @@ describe("sandbox provider capabilities", () => {
         fileMounts: false,
         filePush: true,
       },
+      e2b: {
+        lifecycle: "managed",
+        credentialScope: "conversation",
+        envInjection: "at-create",
+        fileMounts: false,
+        filePush: true,
+      },
+      gondolin: {
+        lifecycle: "managed",
+        credentialScope: "conversation",
+        envInjection: "at-create",
+        fileMounts: false,
+        filePush: true,
+      },
     });
   });
 });
@@ -391,6 +420,8 @@ describe("resolveActorScopeKey", () => {
     expect(
       resolveActorScopeKey({ type: "cloudflare", sandboxId: "mikan-remote" }, "U123", "D123"),
     ).toBe("d123");
+    expect(resolveActorScopeKey({ type: "e2b", template: "base" }, "U123", "D123")).toBe("d123");
+    expect(resolveActorScopeKey({ type: "gondolin" }, "U123", "D123")).toBe("d123");
     expect(
       resolveActorScopeKey(
         { type: "firecracker", vmId: "vm1", hostPath: "/srv/ws" },
