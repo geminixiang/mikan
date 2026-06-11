@@ -3,6 +3,7 @@ import {
   appendTriggerAttribution,
   getUnresolvedSandboxPathContext,
   resolveTriggerAttribution,
+  translateAttachPathToHost,
   translateRuntimePathToHost,
 } from "../src/agent.js";
 
@@ -87,6 +88,28 @@ describe("runtime path context", () => {
     expect(pathContext.runtimeToHostPath).toBeTypeOf("function");
     expect(translateRuntimePathToHost("/workspace/C123/report.txt", pathContext)).toBe(
       "/host/workspace/C123/report.txt",
+    );
+  });
+
+  test("relative attach paths resolve from the runtime workspace", () => {
+    const pathContext = getUnresolvedSandboxPathContext(
+      { type: "image", image: "ubuntu:24.04" },
+      "/host/workspace",
+    );
+
+    expect(translateAttachPathToHost("gpt-5-mini.md", pathContext)).toBe(
+      "/host/workspace/gpt-5-mini.md",
+    );
+  });
+
+  test("absolute attach paths still translate from runtime to host", () => {
+    const pathContext = getUnresolvedSandboxPathContext(
+      { type: "image", image: "ubuntu:24.04" },
+      "/host/workspace",
+    );
+
+    expect(translateAttachPathToHost("/workspace/gpt-5-mini.md", pathContext)).toBe(
+      "/host/workspace/gpt-5-mini.md",
     );
   });
 

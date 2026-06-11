@@ -1068,7 +1068,7 @@ async function prepareRunContext(params: {
   setSandboxContext({ conversationId, userId: message.userId });
 
   setUploadFunction(async (filePath: string, title?: string) => {
-    const hostPath = translateRuntimePathToHost(filePath, pathContext);
+    const hostPath = translateAttachPathToHost(filePath, pathContext);
     await responseCtx.uploadFile(hostPath, title);
   });
   setBlockKitResponseFunction(async (response) => {
@@ -1624,4 +1624,14 @@ export function translateRuntimePathToHost(
   pathContext: RuntimePathContext,
 ): string {
   return pathContext.runtimeToHostPath?.(runtimePath) ?? runtimePath;
+}
+
+export function translateAttachPathToHost(
+  filePath: string,
+  pathContext: RuntimePathContext,
+): string {
+  const runtimePath = posix.isAbsolute(filePath)
+    ? filePath
+    : posix.join(pathContext.runtimeWorkspaceRoot, filePath);
+  return translateRuntimePathToHost(runtimePath, pathContext);
 }
