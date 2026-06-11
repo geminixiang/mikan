@@ -9,6 +9,13 @@ any release.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-06-11
+
+### Fixed
+
+- Resolve custom providers through pi's model registry so conversation settings can select models from `models.json`.
+- Resolve attached file paths from the sandbox runtime workspace so image sandboxes upload generated files from the correct host path.
+
 ## [0.4.1] - 2026-06-08
 
 ### Changed
