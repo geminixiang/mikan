@@ -1,8 +1,8 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
-import type { DockerContainerManager, ResourceLimits } from "../provisioner.js";
+import type { DockerContainerManager, ResourceLimits } from "../sandbox/index.js";
 import type { SandboxConfig } from "../sandbox/index.js";
-import { resolveActorVaultKey } from "../vault/routing.js";
+import { resolveActorScopeKey } from "../sandbox/index.js";
 
 const sandboxSchema = Type.Object({
   action: Type.Union([Type.Literal("status"), Type.Literal("set")], {
@@ -59,7 +59,7 @@ export function createSandboxTool(controller: SandboxToolController): {
         throw new Error("The sandbox tool only supports image:* managed sandboxes");
       }
 
-      const containerKey = resolveActorVaultKey(
+      const containerKey = resolveActorScopeKey(
         controller.sandbox,
         sandboxContext.userId,
         sandboxContext.conversationId,

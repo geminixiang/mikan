@@ -11,9 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ActorExecutionResolver } from "../src/execution-resolver.js";
-import { DockerContainerManager } from "../src/provisioner.js";
-import { HostExecutor } from "../src/sandbox/index.js";
-import { resolveActorVaultKey } from "../src/vault/routing.js";
+import { HostExecutor, resolveActorScopeKey, sanitizeScopeSegment } from "../src/sandbox/index.js";
 import { FileVaultManager, parseEnvFile, sharedVaultKey } from "../src/vault/index.js";
 
 function mode(path: string): number {
@@ -172,35 +170,6 @@ describe("FileVaultManager", () => {
     expect(readFileSync(credentialPath, "utf-8")).toBe("new");
     expect(mode(credentialPath) & 0o077).toBe(0);
   });
-
-  test("derives per-vault cloudflare sandbox ids", () => {
-    const mgr = new FileVaultManager(tmpDir);
-    expect(
-      mgr.getSandboxConfig("alice", { type: "cloudflare", sandboxId: "mikan-remote" }),
-    ).toEqual({
-      type: "cloudflare",
-      sandboxId: "mikan-remote-alice",
-    });
-  });
-
-  test("does not alter non-cloudflare base sandbox configs", () => {
-    const mgr = new FileVaultManager(tmpDir);
-    expect(mgr.getSandboxConfig("U123", { type: "image", image: "ubuntu:24.04" })).toEqual({
-      type: "image",
-      image: "ubuntu:24.04",
-    });
-    expect(
-      mgr.getSandboxConfig("U123", {
-        type: "firecracker",
-        vmId: "base-vm",
-        hostPath: "/host/workspace",
-      }),
-    ).toEqual({
-      type: "firecracker",
-      vmId: "base-vm",
-      hostPath: "/host/workspace",
-    });
-  });
 });
 
 describe("ActorExecutionResolver image mode", () => {
@@ -246,7 +215,7 @@ describe("ActorExecutionResolver image mode", () => {
       type: "container",
       container: "mikan-sandbox-d123",
     });
-    expect(mgr.resolve(DockerContainerManager.sanitizeSegment("D123"))).toBeUndefined();
+    expect(mgr.resolve(sanitizeScopeSegment("D123"))).toBeUndefined();
   });
 
   test("copies the default shared vault for a new image sandbox vault", async () => {
@@ -314,7 +283,7 @@ describe("ActorExecutionResolver image mode", () => {
   test("login and execution use the same generated vault key in image mode", async () => {
     const mgr = new FileVaultManager(tmpDir);
     const baseConfig = { type: "image", image: "ubuntu:24.04" } as const;
-    const vaultKey = resolveActorVaultKey(baseConfig, "U123", "D123");
+    const scopeKey = resolveActorScopeKey(baseConfig, "U123", "D123");
 
     const resolver = new ActorExecutionResolver(baseConfig, mgr, undefined, tmpDir);
     const executor = await resolver.resolve({
@@ -323,7 +292,7 @@ describe("ActorExecutionResolver image mode", () => {
       conversationId: "D123",
     });
 
-    expect(vaultKey).toBe("d123");
+    expect(scopeKey).toBe("d123");
     expect(executor.getSandboxConfig()).toEqual({
       type: "container",
       container: "mikan-sandbox-d123",
@@ -347,7 +316,7 @@ describe("ActorExecutionResolver image mode", () => {
       type: "cloudflare",
       sandboxId: "mikan-remote-d123",
     });
-    expect(mgr.resolve(DockerContainerManager.sanitizeSegment("D123"))).toBeUndefined();
+    expect(mgr.resolve(sanitizeScopeSegment("D123"))).toBeUndefined();
   });
 
   test("provisions per-conversation container with inferred vault mounts", async () => {

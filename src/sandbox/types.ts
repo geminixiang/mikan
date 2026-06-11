@@ -3,7 +3,9 @@ export type SandboxConfig =
   | ContainerSandboxConfig
   | ImageSandboxConfig
   | FirecrackerSandboxConfig
-  | CloudflareSandboxConfig;
+  | CloudflareSandboxConfig
+  | E2BSandboxConfig
+  | GondolinSandboxConfig;
 
 export interface HostSandboxConfig {
   type: "host";
@@ -30,6 +32,16 @@ export interface FirecrackerSandboxConfig {
 export interface CloudflareSandboxConfig {
   type: "cloudflare";
   sandboxId: string;
+}
+
+export interface E2BSandboxConfig {
+  type: "e2b";
+  template: string;
+}
+
+export interface GondolinSandboxConfig {
+  type: "gondolin";
+  profile?: string;
 }
 
 export interface Executor {
@@ -68,21 +80,16 @@ export interface RuntimePathContext {
 export interface ExecOptions {
   timeout?: number;
   signal?: AbortSignal;
+  /**
+   * Extra environment variables merged over the parent process env for
+   * host-spawned commands. Used to hand secrets to child processes without
+   * writing them to disk or the command line.
+   */
+  env?: Record<string, string>;
 }
 
 export interface ExecResult {
   stdout: string;
   stderr: string;
   code: number;
-}
-
-export interface SandboxAdapter<TConfig extends SandboxConfig = SandboxConfig> {
-  type: TConfig["type"];
-  parse(value: string): TConfig | undefined;
-  validate(config: TConfig): Promise<void>;
-  createExecutor(
-    config: TConfig,
-    env?: Record<string, string>,
-    ensureReady?: () => Promise<void>,
-  ): Executor;
 }

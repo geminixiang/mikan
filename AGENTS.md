@@ -89,7 +89,7 @@ Stack:
 - **Platform adapters**: `src/adapters/{slack,discord,telegram}/`.
 - **Slack Block Kit/tools**: `src/adapters/slack/tools/`, `test/slack-block-kit-tool.test.ts`.
 - **Runtime/session logic**: `src/runtime/`, `src/sessions/`, related tests in `test/session-*.test.ts` and `test/*session*.test.ts`.
-- **Sandbox execution**: `src/sandbox/`, `src/execution-resolver.ts`, `src/provisioner.ts`, `docs/sandbox.md`.
+- **Sandbox execution**: `src/sandbox/` (SPI, registry, providers incl. Docker provisioner), `src/execution-resolver.ts`, `docs/sandbox.md`.
 - **Vault/login/OAuth**: `src/vault/`, `src/web/login/`, `test/login.test.ts`, `test/oauth-link-server.test.ts`.
 - **Observability**: `src/observability/`, `src/sentry.ts` compatibility export, `test/sentry.test.ts`.
 - **Config**: `src/config.ts`, `docs/configuration.md`, `test/config.test.ts`.

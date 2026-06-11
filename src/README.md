@@ -10,12 +10,11 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `context.ts`: Finds platform messages by message id from a conversation `log.jsonl` file.
 - `download.ts`: Downloads Slack channel history and prints top-level messages with thread replies.
 - `events.ts`: Watches `events/` JSON files and fires immediate, one-shot, and periodic bot events.
-- `execution-resolver.ts`: Resolves the concrete executor and credential injection for an actor, conversation, vault, and sandbox.
+- `execution-resolver.ts`: Derives actor scope keys, resolves vaults, and acquires sandbox instances through provider capabilities.
 - `index.ts`: Exposes the package public API through barrel exports.
 - `log.ts`: Centralizes CLI log formatting for messages, tools, responses, usage, startup, and backfill.
 - `main.ts`: CLI entrypoint that parses arguments and starts config, sandbox, vault, runtime, portal, events, and platform bots.
 - `portal-shell.ts`: Renders the shared HTML shell, navigation, and CSS for admin/session/vault portals.
-- `provisioner.ts`: Manages per-vault Docker image sandbox containers, mounts, resource limits, boosts, and idle shutdown.
 - `store.ts`: Manages channel directories, `log.jsonl` message logging, Slack attachment downloads, and deduplication.
 - `tool-diagnostics.ts`: Decides which tool diagnostics should be surfaced back to chat.
 - `trigger.ts`: Decides whether a message should trigger the agent, including auto-reply rules and LLM judging.
@@ -28,9 +27,9 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `observability/`: Sentry initialization, error reporting helpers, and startup instrumentation.
 - `web/`: Web portals — admin, login/OAuth, and session view.
 - `runtime/`: Conversation and session runtime orchestration.
-- `sandbox/`: Host/container/image/firecracker/cloudflare sandbox abstractions and executors.
+- `sandbox/`: Sandbox provider SPI, registry, scope routing, and host/container/image/firecracker/cloudflare providers (incl. the Docker provisioner).
 - `session-view/`: Session View command, portal, model loader, and token storage.
 - `sessions/`: Chat-history synchronization, session file management, and session policy.
 - `tools/`: Agent tools such as read, bash, edit, write, event, and sandbox.
 - `utils/`: Low-level utilities — environment variable reading, atomic file writes, safe JSON/text helpers, and HTML escaping.
-- `vault/`: File-backed credential vault implementation and vault-key routing.
+- `vault/`: File-backed credential vault implementation (sandbox-agnostic; scope keys come from `sandbox/registry.ts`).

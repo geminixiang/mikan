@@ -53,7 +53,7 @@ flowchart LR
 
   subgraph Services["Auxiliary Services"]
     VaultManager["src/vault.ts\nFileVaultManager"]
-    Provisioner["src/provisioner.ts\nDockerContainerManager"]
+    Provisioner["src/sandbox/providers/docker/provisioner.ts\nDockerContainerManager"]
     LinkServer["src/login/portal.ts\nlink/admin/session portal host"]
     SessionViewer["src/session-view/*\nweb session viewer"]
     EventsWatcher["src/events.ts\nwatch + schedule events"]
@@ -144,18 +144,17 @@ flowchart LR
 
 ### D. 執行環境層
 
-- `src/sandbox/*`
-- `src/provisioner.ts`
+- `src/sandbox/*`（SPI、registry、providers；Docker provisioner 在 `src/sandbox/providers/docker/`）
 - `src/execution-resolver.ts`
 
 職責:
 
-- 統一抽象 `Executor`
+- 統一抽象 `SandboxProvider` / `SandboxInstance`（`Executor` 為其子集，供 tools 使用）
 - sandbox runtime 分成兩類:
   - shared: `host` / `container:<name>`，同一個 host 或指定 container 共用
   - isolated: `image:<image>` / `firecracker:*` / `cloudflare:*`，依 actor/conversation/vault 路由到隔離的執行環境
-- 透過 `ActorExecutionResolver` 依 user/conversation/vault 決定實際 executor
-- 在 `image` 模式下自動建立與回收 Docker container，並把 `image:<image>` 解析成 concrete `container:<name>` executor
+- 透過 `ActorExecutionResolver` 依 provider 宣告的 capabilities（credential scope / lifecycle / env injection / file mounts）推導 scope key 並取得 instance
+- 在 `image` 模式下由 docker image provider 自動建立與回收 per-conversation container
 
 ### E. 狀態與持久化層
 

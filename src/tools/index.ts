@@ -3,7 +3,7 @@ import type { TSchema } from "@sinclair/typebox";
 import type { ChatResponseBlockKit, ConversationKind } from "../adapter.js";
 import { createAttachTool } from "../adapters/slack/tools/attach.js";
 import { createSlackBlockKitTool } from "../adapters/slack/tools/block-kit.js";
-import type { DockerContainerManager } from "../provisioner.js";
+import type { DockerContainerManager } from "../sandbox/index.js";
 import type { Executor, SandboxConfig } from "../sandbox/index.js";
 import { createBashTool } from "./bash.js";
 import { createEditTool } from "./edit.js";

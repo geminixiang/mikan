@@ -1,5 +1,3 @@
-import type { SandboxConfig } from "../sandbox/index.js";
-
 export interface ResolvedVaultMount {
   source: string;
   target: string;
@@ -22,8 +20,6 @@ export interface VaultManager {
   hasEntry(key: string): boolean;
   /** Resolve vault for a user; returns undefined when no directory exists. */
   resolve(userId: string): ResolvedVault | undefined;
-  /** Get sandbox config with credential injection for a user */
-  getSandboxConfig(userId: string, baseConfig: SandboxConfig): SandboxConfig;
   /** List all vaults discovered under vaults/. */
   list(): ResolvedVault[];
   /** Check if the vaults directory exists. */

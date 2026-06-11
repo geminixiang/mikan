@@ -4,13 +4,15 @@
 
 ## 支援模式
 
-| 模式                                                        | 執行位置              | Vault env injection | Vault key 語意               | 備註                                                                               |
-| ----------------------------------------------------------- | --------------------- | ------------------- | ---------------------------- | ---------------------------------------------------------------------------------- |
-| `host`                                                      | 宿主機                | 不注入              | 可存，但執行時不用           | 最適合本機開發；不把 vault env 放進 host process                                   |
-| `container:<name>`                                          | 既有 Docker container | 注入                | `container-<name>`           | one container one vault；多人共用同一 container 就共用該 vault                     |
-| `image:<image>`                                             | mikan 管理的 Docker   | 注入                | generated conversation vault | 目前最推薦的隔離模式；`1 conversation = 1 vault = 1 container`                     |
-| `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM        | 注入                | generated conversation vault | Alpha 超早期；VM 需自行啟動，workspace 需在 VM 內掛到 `/workspace`，目前不建議使用 |
-| `cloudflare:<sandbox-id>`                                   | Cloudflare Worker     | 注入                | generated conversation vault | Experimental；需自行部署 `@cloudflare/sandbox` bridge，host workspace 不會自動同步 |
+| 模式                                                        | 執行位置              | Vault env injection | Vault key 語意               | 備註                                                                                          |
+| ----------------------------------------------------------- | --------------------- | ------------------- | ---------------------------- | --------------------------------------------------------------------------------------------- |
+| `host`                                                      | 宿主機                | 不注入              | 可存，但執行時不用           | 最適合本機開發；不把 vault env 放進 host process                                              |
+| `container:<name>`                                          | 既有 Docker container | 注入                | `container-<name>`           | one container one vault；多人共用同一 container 就共用該 vault                                |
+| `image:<image>`                                             | mikan 管理的 Docker   | 注入                | generated conversation vault | 目前最推薦的隔離模式；`1 conversation = 1 vault = 1 container`                                |
+| `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM        | 注入                | generated conversation vault | Alpha 超早期；VM 需自行啟動，workspace 需在 VM 內掛到 `/workspace`，目前不建議使用            |
+| `cloudflare:<sandbox-id>`                                   | Cloudflare Worker     | 注入                | generated conversation vault | Experimental；需自行部署 `@cloudflare/sandbox` bridge，host workspace 不會自動同步            |
+| `e2b:<template>`                                            | E2B sandbox           | 建立時注入          | generated conversation vault | Experimental；遠端 filesystem 不會自動同步回 host                                             |
+| `gondolin[:profile]`                                        | gondolin microVM      | 建立時注入 / Tier 2 | generated conversation vault | Experimental；設定 `GONDOLIN_SECRET_HOSTS` 後 env secrets 以 placeholder + egress broker 處理 |
 
 `docker:*` 不是可用模式；請改用 `container:*` 或 `image:*`。
 
@@ -18,20 +20,21 @@
 
 `image:<image>` 是目前主要開發與推薦的 sandbox 模式；其他模式保留為本機開發、相容、或實驗用途，部分能力不會補齊。
 
-| 能力                                 | `host`   | `container:<name>` | `image:<image>` | `firecracker:*` | `cloudflare:*` |
-| ------------------------------------ | -------- | ------------------ | --------------- | --------------- | -------------- |
-| command 執行                         | ✅       | ✅                 | ✅              | ✅              | ✅             |
-| mikan 管理 runtime lifecycle         | 不適用   | ❌                 | ✅              | ❌              | ❌             |
-| per-conversation container / runtime | ❌       | ❌                 | ✅              | 需自行管理      | bridge 衍生 id |
-| per-conversation vault env           | ❌       | ❌                 | ✅              | ✅              | ✅             |
-| vault file 自動投影 / bind mount     | ❌       | ❌                 | ✅              | ❌              | ❌             |
-| workspace 自動掛載                   | host     | 需自行掛載         | ✅              | 需自行掛載      | ❌             |
-| private workspace mount mode         | 不適用   | ❌                 | ✅              | ❌              | ❌             |
-| idle auto-stop / recreate            | 不適用   | ❌                 | ✅              | ❌              | ❌             |
-| CPU / memory default limits          | ❌       | ❌                 | ✅              | ❌              | ❌             |
-| `/pi-sandbox boost`                  | ❌       | ❌                 | ✅              | ❌              | ❌             |
-| agent `sandbox` tool 設定 limits     | ❌       | ❌                 | ✅              | ❌              | ❌             |
-| 推薦程度                             | 本機開發 | legacy / 相容      | 主線            | alpha           | experimental   |
+| 能力                                 | `host`   | `container:<name>` | `image:<image>` | `firecracker:*` | `cloudflare:*`    | `e2b:*`      | `gondolin:*`       |
+| ------------------------------------ | -------- | ------------------ | --------------- | --------------- | ----------------- | ------------ | ------------------ |
+| command 執行                         | ✅       | ✅                 | ✅              | ✅              | ✅                | ✅           | ✅                 |
+| mikan 管理 runtime lifecycle         | 不適用   | ❌                 | ✅              | ❌              | ✅                | ✅           | ✅                 |
+| per-conversation container / runtime | ❌       | ❌                 | ✅              | 需自行管理      | bridge 衍生 id    | ✅           | ✅                 |
+| per-conversation vault env           | ❌       | ❌                 | ✅              | ✅              | ✅                | ✅           | ✅                 |
+| vault file 自動投影（mount / push）  | ❌       | ❌                 | ✅              | ❌              | ✅（新版 bridge） | ✅           | ✅                 |
+| Tier 2 egress broker secrets         | ❌       | ❌                 | ❌              | ❌              | ❌                | ❌           | ✅（需設定 hosts） |
+| workspace 自動掛載                   | host     | 需自行掛載         | ✅              | 需自行掛載      | ❌                | ❌           | ❌                 |
+| private workspace mount mode         | 不適用   | ❌                 | ✅              | ❌              | ❌                | ❌           | ❌                 |
+| idle auto-stop / recreate            | 不適用   | ❌                 | ✅              | ❌              | ❌                | E2B timeout  | ❌                 |
+| CPU / memory default limits          | ❌       | ❌                 | ✅              | ❌              | ❌                | provider     | provider           |
+| `/pi-sandbox boost`                  | ❌       | ❌                 | ✅              | ❌              | ❌                | ❌           | ❌                 |
+| agent `sandbox` tool 設定 limits     | ❌       | ❌                 | ✅              | ❌              | ❌                | ❌           | ❌                 |
+| 推薦程度                             | 本機開發 | legacy / 相容      | 主線            | alpha           | experimental      | experimental | experimental       |
 
 ---
 
@@ -155,7 +158,7 @@ container-<name>
 
 限制：
 
-- mikan 只在 `docker exec` 時注入 env
+- mikan 只在 `docker exec` 時注入 env（透過 docker CLI 的 process env + `-e KEY`，不寫入任何暫存檔）
 - `docker exec` 不能新增 bind mount
 - vault file credential 會被保存，但目前不會自動投影到 container 內的 target path
 
@@ -284,14 +287,14 @@ mikan --sandbox=cloudflare:mikan-remote /path/to/workspace
 特性：
 
 - mikan 會把 remote sandbox id 衍生為 `<base-sandbox-id>-<vault-key>`
-- vault env 會在每次 `exec()` 時透過 bridge 注入
+- vault env 會在 instance 建立後透過 bridge `/env` 注入一次（session-scoped）；偵測到舊版 bridge（無 `/env`）時自動 fallback 回每次 exec 注入
 - vault 選擇邏輯和 `image` 類似：使用 conversation ID 產生 platform-scoped vault key
 
 限制：
 
 - 遠端 `/workspace` 不會自動 mirror 本機工作目錄
 - 因此 `pwd` 會顯示 `/workspace`，但 `ls` 可能是空的；這是預期行為，不代表它正在讀你的本機 repo
-- vault file credential 目前不會自動投影到 Cloudflare sandbox
+- vault file credential 會透過 bridge `/mkdir` + `/write-file` 自動投影（檔案以 0600 寫入；需要新版 bridge）
 - 需要自行部署 bridge Worker 與對應 container image
 
 可直接使用範例 bridge：

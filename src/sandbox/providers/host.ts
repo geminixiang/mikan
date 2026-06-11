@@ -1,27 +1,12 @@
 import { spawn } from "child_process";
-import type {
-  ExecOptions,
-  ExecResult,
-  Executor,
-  HostSandboxConfig,
-  RuntimePathContext,
-  SandboxAdapter,
-} from "./types.js";
-import { killProcessTree } from "./utils.js";
-import { createMountedRuntimePathContext } from "./path-context.js";
+import type { ExecOptions, ExecResult, HostSandboxConfig, RuntimePathContext } from "../types.js";
+import type { SandboxInstance, SandboxProvider } from "../spi.js";
+import { killProcessTree } from "../utils.js";
+import { createMountedRuntimePathContext } from "../path-context.js";
 
-function parseHostSandboxArg(value: string): HostSandboxConfig | undefined {
-  if (value === "host") {
-    return { type: "host" };
-  }
-  return undefined;
-}
+export class HostExecutor implements SandboxInstance {
+  readonly id = "host";
 
-async function validateHostSandbox(_config: HostSandboxConfig): Promise<void> {
-  return;
-}
-
-export class HostExecutor implements Executor {
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
     return new Promise((resolve, reject) => {
       const shell = process.platform === "win32" ? "cmd" : "sh";
@@ -30,6 +15,7 @@ export class HostExecutor implements Executor {
       const child = spawn(shell, [...shellArgs, command], {
         detached: true,
         stdio: ["ignore", "pipe", "pipe"],
+        env: options?.env ? { ...process.env, ...options.env } : process.env,
       });
 
       let stdout = "";
@@ -108,9 +94,21 @@ export class HostExecutor implements Executor {
   }
 }
 
-export const hostSandboxAdapter: SandboxAdapter<HostSandboxConfig> = {
+export const hostSandboxProvider: SandboxProvider<HostSandboxConfig> = {
   type: "host",
-  parse: parseHostSandboxArg,
-  validate: validateHostSandbox,
-  createExecutor: () => new HostExecutor(),
+  usage: "host",
+  capabilities: {
+    lifecycle: "external",
+    credentialScope: "user",
+    envInjection: "none",
+    fileMounts: false,
+    filePush: false,
+    egressBroker: false,
+  },
+  parse: (value) => (value === "host" ? { type: "host" } : undefined),
+  validate: async () => {},
+  getPathContext: (_config, hostWorkspaceRoot) =>
+    createMountedRuntimePathContext(hostWorkspaceRoot, hostWorkspaceRoot),
+  acquire: () => new HostExecutor(),
+  attach: () => new HostExecutor(),
 };

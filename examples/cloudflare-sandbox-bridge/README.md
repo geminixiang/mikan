@@ -8,7 +8,7 @@ mikan --sandbox=cloudflare:mikan-remote /path/to/workspace
 
 ## 內容
 
-- `src/index.ts`: Worker bridge，提供 `/health` 與 `/exec`
+- `src/index.ts`: Worker bridge，提供 `/health`、`/exec`、`/env`、`/mkdir`、`/write-file`
 - `Dockerfile`: Cloudflare sandbox container entrypoint
 - `wrangler.jsonc`: Durable Object / Containers 設定
 - `package.json`: 安裝 `@cloudflare/sandbox` 與 `wrangler`
@@ -48,12 +48,11 @@ Request body:
   "sandboxId": "mikan-remote-slack-u123",
   "command": "pwd",
   "timeoutSeconds": 30,
-  "cwd": "/workspace",
-  "env": {
-    "OPENAI_API_KEY": "..."
-  }
+  "cwd": "/workspace"
 }
 ```
+
+`env` 欄位仍可使用（舊版 mikan 相容），但新版 mikan 會改用 `/env` 做 session-scoped 注入，不再於每次 exec 重送 secrets。
 
 Response body:
 
@@ -65,9 +64,38 @@ Response body:
 }
 ```
 
+### `POST /env`
+
+把 vault env 注入 sandbox session（`setEnvVars`），每個 instance 只需呼叫一次：
+
+```json
+{
+  "sandboxId": "mikan-remote-slack-u123",
+  "env": { "OPENAI_API_KEY": "..." }
+}
+```
+
+### `POST /mkdir`
+
+```json
+{ "sandboxId": "mikan-remote-slack-u123", "path": "/root/.config/gh" }
+```
+
+### `POST /write-file`
+
+寫入 credential 檔案，`mode` 為選填八進位字串（寫入後以 `chmod` 套用）：
+
+```json
+{
+  "sandboxId": "mikan-remote-slack-u123",
+  "path": "/root/.config/gh/hosts.yml",
+  "content": "github.com:\n  token: ...",
+  "mode": "600"
+}
+```
+
 ## 限制
 
-- 目前 bridge 只提供 command execution；沒有自動同步宿主機 workspace
+- 沒有自動同步宿主機 workspace
 - 遠端 `/workspace` 只是 container 內目錄，不是本機 `/path/to/workspace` 的 mount
-- mikan vault file mounts 不會自動投影到 Cloudflare sandbox
 - 如果你要讓 remote sandbox 看見 repo 檔案，需自行設計 upload/sync 流程

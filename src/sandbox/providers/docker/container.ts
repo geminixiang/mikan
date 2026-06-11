@@ -1,21 +1,14 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type {
   ContainerSandboxConfig,
   ExecOptions,
   ExecResult,
-  Executor,
   RuntimePathContext,
-  SandboxAdapter,
-} from "./types.js";
-import { SandboxError } from "./errors.js";
-import { execSimple, shellEscape } from "./utils.js";
-import { HostExecutor } from "./host.js";
-import { createMountedRuntimePathContext } from "./path-context.js";
-
-const PRIVATE_DIR_MODE = 0o700;
-const PRIVATE_FILE_MODE = 0o600;
+} from "../../types.js";
+import type { SandboxInstance, SandboxProvider } from "../../spi.js";
+import { SandboxError } from "../../errors.js";
+import { execSimple, shellEscape } from "../../utils.js";
+import { HostExecutor } from "../host.js";
+import { createMountedRuntimePathContext } from "../../path-context.js";
 
 function parseContainerSandboxArg(value: string): ContainerSandboxConfig | undefined {
   if (!value.startsWith("container:")) {
@@ -65,10 +58,26 @@ async function validateContainerSandbox(config: ContainerSandboxConfig): Promise
 function buildContainerExecCommand(
   container: string,
   command: string,
-  envFilePath?: string,
+  env?: Record<string, string>,
 ): string {
-  const envPart = envFilePath ? `--env-file ${shellEscape(envFilePath)} ` : "";
+  // Secrets are handed to `docker exec` through the docker CLI's own process
+  // env (`-e KEY` without a value reads from it), so they never touch disk or
+  // the command line.
+  const envPart = envFlagKeys(env)
+    .map((key) => `-e ${key} `)
+    .join("");
   return `docker exec ${envPart}-w /workspace ${container} sh -c ${shellEscape(command)}`;
+}
+
+function envFlagKeys(env?: Record<string, string>): string[] {
+  if (!env) return [];
+  const keys = Object.keys(env).toSorted();
+  for (const key of keys) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      throw new SandboxError(`Invalid environment variable name for docker exec: ${key}`);
+    }
+  }
+  return keys;
 }
 
 function withRuntimeBootstrap(command: string, env?: Record<string, string>): string {
@@ -86,12 +95,16 @@ function hasGitHubToken(env?: Record<string, string>): boolean {
   return Boolean(env?.GH_TOKEN || env?.GITHUB_TOKEN || env?.GITHUB_OAUTH_ACCESS_TOKEN);
 }
 
-export class ContainerExecutor implements Executor {
+export class ContainerExecutor implements SandboxInstance {
   constructor(
     private container: string,
     private env?: Record<string, string>,
     private ensureReady?: () => Promise<void>,
   ) {}
+
+  get id(): string {
+    return this.container;
+  }
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
     if (this.ensureReady) {
@@ -101,17 +114,14 @@ export class ContainerExecutor implements Executor {
     }
 
     const hostExecutor = new HostExecutor();
-    const temp = this.env ? createSecureEnvFile(this.env) : undefined;
-    try {
-      const dockerCmd = buildContainerExecCommand(
-        this.container,
-        withRuntimeBootstrap(command, this.env),
-        temp?.envFilePath,
-      );
-      return await hostExecutor.exec(dockerCmd, options);
-    } finally {
-      temp?.cleanup();
-    }
+    const dockerCmd = buildContainerExecCommand(
+      this.container,
+      withRuntimeBootstrap(command, this.env),
+      this.env,
+    );
+    const hostOptions =
+      this.env && Object.keys(this.env).length > 0 ? { ...options, env: this.env } : options;
+    return await hostExecutor.exec(dockerCmd, hostOptions);
   }
 
   getWorkspacePath(_hostPath: string): string {
@@ -127,12 +137,24 @@ export class ContainerExecutor implements Executor {
   }
 }
 
-export const containerSandboxAdapter: SandboxAdapter<ContainerSandboxConfig> = {
+export const containerSandboxProvider: SandboxProvider<ContainerSandboxConfig> = {
   type: "container",
+  usage: "container:<container-name>",
+  capabilities: {
+    lifecycle: "external",
+    credentialScope: "instance",
+    envInjection: "per-exec",
+    fileMounts: false,
+    filePush: false,
+    egressBroker: false,
+  },
   parse: parseContainerSandboxArg,
   validate: validateContainerSandbox,
-  createExecutor: (config, env, ensureReady) =>
-    new ContainerExecutor(config.container, env, ensureReady),
+  getPathContext: (_config, hostWorkspaceRoot) =>
+    createMountedRuntimePathContext(hostWorkspaceRoot, "/workspace"),
+  instanceScopeKey: (config) => `container-${config.container}`,
+  acquire: (config, ctx) => new ContainerExecutor(config.container, ctx.env),
+  attach: (config, env, ensureReady) => new ContainerExecutor(config.container, env, ensureReady),
 };
 
 async function ensureContainerRunning(container: string): Promise<void> {
@@ -150,26 +172,4 @@ async function ensureContainerRunning(container: string): Promise<void> {
       { cause: error },
     );
   }
-}
-
-function createSecureEnvFile(env: Record<string, string>): {
-  envFilePath: string;
-  cleanup: () => void;
-} {
-  const tempDir = mkdtempSync(join(tmpdir(), "mikan-docker-env-"));
-  chmodSync(tempDir, PRIVATE_DIR_MODE);
-  const envFilePath = join(tempDir, "env.list");
-  const content =
-    Object.entries(env)
-      .map(([key, value]) => `${key}=${value.replace(/\r?\n/g, "")}`)
-      .join("\n") + "\n";
-  writeFileSync(envFilePath, content, { encoding: "utf-8", mode: PRIVATE_FILE_MODE });
-  chmodSync(envFilePath, PRIVATE_FILE_MODE);
-
-  return {
-    envFilePath,
-    cleanup: () => {
-      rmSync(tempDir, { recursive: true, force: true });
-    },
-  };
 }

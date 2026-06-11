@@ -37,7 +37,6 @@ function makeRuntime() {
     vaultManager: {
       hasEntry: () => false,
       resolve: () => undefined,
-      getSandboxConfig: (_uid, base) => base,
       list: () => [],
       isEnabled: () => true,
       upsertEnv: () => {},
