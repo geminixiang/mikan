@@ -1,8 +1,11 @@
-import { completeSimple, getModel, type Api, type Model } from "@earendil-works/pi-ai";
+import { completeSimple } from "@earendil-works/pi-ai";
+import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { BotEvent } from "./adapter.js";
 import { loadAutoReplyJudgeModel, loadConversationAutoReplyConfig } from "./config.js";
 import * as log from "./log.js";
+import { homedir } from "os";
 import { join } from "path";
+import { resolveConfiguredModel } from "./model-registry.js";
 
 const JUDGE_TIMEOUT_MS = 10_000;
 
@@ -88,9 +91,15 @@ async function judgeAutoReplyWithLlm(input: {
   conversationDir: string;
 }): Promise<boolean> {
   const judgeConfig = loadAutoReplyJudgeModel(input.conversationDir);
-  // Config stores provider/model as user-provided strings, while getModel's public
-  // overload is narrowed to generated known providers.
-  const model = getModel(judgeConfig.provider as never, judgeConfig.model as never) as Model<Api>;
+  const modelRegistry = ModelRegistry.create(
+    AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json")),
+  );
+  const model = resolveConfiguredModel(modelRegistry, judgeConfig.provider, judgeConfig.model);
+  const auth = await modelRegistry.getApiKeyAndHeaders(model);
+  if (!auth.ok) {
+    throw new Error(auth.error);
+  }
+
   const answer = await completeSimple(
     model,
     {
@@ -117,6 +126,8 @@ async function judgeAutoReplyWithLlm(input: {
       temperature: 0,
       maxTokens: 4,
       reasoning: "minimal",
+      apiKey: auth.apiKey,
+      headers: auth.headers,
     },
   );
   const text = answer.content

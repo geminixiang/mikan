@@ -1,5 +1,5 @@
 import { Agent, type ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { getModel, type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
+import { type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
 import {
   AgentSession,
   AuthStorage,
@@ -55,6 +55,7 @@ import { shouldSurfaceToolDiagnostic } from "./tool-diagnostics.js";
 import { createMikanTools } from "./tools/index.js";
 import * as Sentry from "@sentry/node";
 import { formatLocalTimestamp } from "./utils/date.js";
+import { resolveConfiguredModel } from "./model-registry.js";
 
 export type { AgentRunner } from "./types.js";
 import type { AgentRunner } from "./types.js";
@@ -527,6 +528,7 @@ async function createConfiguredAgentSession(params: {
   tools: Awaited<ReturnType<typeof createMikanTools>>["tools"];
   sessionManager: SessionManager;
   settingsManager: SettingsManager;
+  modelRegistry: ModelRegistry;
 }): Promise<ConfiguredAgentSession> {
   const {
     conversationId,
@@ -538,10 +540,8 @@ async function createConfiguredAgentSession(params: {
     tools,
     sessionManager,
     settingsManager,
+    modelRegistry,
   } = params;
-
-  const authStorage = AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json"));
-  const modelRegistry = ModelRegistry.create(authStorage);
   const agent = new Agent({
     initialState: {
       systemPrompt,
@@ -550,11 +550,11 @@ async function createConfiguredAgentSession(params: {
       tools,
     },
     convertToLlm,
-    getApiKey: async () => {
-      const key = await modelRegistry.getApiKeyForProvider(model.provider);
+    getApiKey: async (provider) => {
+      const key = await modelRegistry.getApiKeyForProvider(provider);
       if (!key) {
         throw new Error(
-          `No API key for provider "${model.provider}". Set the appropriate environment variable or configure via auth.json`,
+          `No API key for provider "${provider}". Set the appropriate environment variable or configure via auth.json`,
         );
       }
       return key;
@@ -1435,9 +1435,9 @@ export async function createRunner(
     setSandboxContext,
   } = createMikanTools(executor, workspaceDir, { sandbox: sandboxConfig, provisioner });
 
-  // Resolve model from config. Config stores provider/model as user-provided strings,
-  // while getModel's public overload is narrowed to generated known providers.
-  const model = getModel(agentConfig.provider as never, agentConfig.model as never) as Model<Api>;
+  const authStorage = AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json"));
+  const modelRegistry = ModelRegistry.create(authStorage);
+  const model = resolveConfiguredModel(modelRegistry, agentConfig.provider, agentConfig.model);
 
   // Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
   const memory = await getMemory(conversationDir);
@@ -1487,6 +1487,7 @@ export async function createRunner(
     tools,
     sessionManager,
     settingsManager,
+    modelRegistry,
   });
 
   // Mutable per-run state - event handler references this
