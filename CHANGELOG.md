@@ -9,6 +9,13 @@ any release.
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-06-12
+
+### Added
+
+- Group admin model selectors by verified availability for OpenAI and Anthropic keys.
+- Log the active provider and model when each agent run starts to simplify server-side debugging.
+
 ## [0.4.2] - 2026-06-11
 
 ### Fixed
