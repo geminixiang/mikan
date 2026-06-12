@@ -1532,6 +1532,10 @@ export async function createRunner(
       });
       pathContext = prepared.pathContext;
 
+      if (runState.logCtx) {
+        log.logAgentRunStart(runState.logCtx, model.provider, model.id, model.name);
+      }
+
       updateActiveSpanAttribution({
         provider: model.provider,
         model: agentConfig.model,

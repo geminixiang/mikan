@@ -20,6 +20,7 @@ import { resolveExistingSessionFile } from "../session-view/service.js";
 import { PRODUCT_NAME } from "../../platform-messages.js";
 import { resolveActorVaultKey } from "../../vault/routing.js";
 import { sharedVaultKey } from "../../vault/index.js";
+import { modelKey, resolveAdminModelAccessStatuses } from "./provider-models.js";
 import type { AdminToken } from "./store.js";
 
 export type { AdminRuntimeBridge, AdminServices } from "./types.js";
@@ -378,7 +379,9 @@ async function serveModelsList(res: ServerResponse): Promise<void> {
   try {
     const authStorage = AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json"));
     const registry = ModelRegistry.create(authStorage);
-    const models = (await registry.getAvailable()).map((model) => ({
+    const availableModels = await registry.getAvailable();
+    const statuses = await resolveAdminModelAccessStatuses(registry, availableModels);
+    const models = availableModels.map((model) => ({
       provider: model.provider,
       id: model.id,
       name: model.name ?? model.id,
@@ -386,6 +389,7 @@ async function serveModelsList(res: ServerResponse): Promise<void> {
       input: model.input,
       contextWindow: model.contextWindow,
       maxTokens: model.maxTokens,
+      status: statuses.get(modelKey(model.provider, model.id))?.status ?? "available",
     }));
     jsonRes(res, 200, { models });
   } catch (err) {
@@ -1476,10 +1480,13 @@ function renderAdminPage(token: AdminToken): string {
     function renderModelOptions(currentProvider, currentModel) {
       const current = modelRef(currentProvider, currentModel);
       const seen = new Set();
-      const options = [];
+      const groups = {
+        available: [],
+        unverified: [],
+      };
       if (current) {
         seen.add(current);
-        options.push('<option value="' + escAttr(current) + '">' + escHtml(current + ' (current)') + '</option>');
+        groups.available.push('<option value="' + escAttr(current) + '">' + escHtml(current + ' (current)') + '</option>');
       }
       for (const model of availableModels) {
         const ref = modelRef(model.provider, model.id);
@@ -1488,12 +1495,17 @@ function renderAdminPage(token: AdminToken): string {
         const details = [model.name && model.name !== model.id ? model.name : '', model.reasoning ? 'thinking' : '', Array.isArray(model.input) && model.input.includes('image') ? 'image' : '']
           .filter(Boolean)
           .join(' · ');
-        options.push('<option value="' + escAttr(ref) + '">' + escHtml(details ? ref + ' — ' + details : ref) + '</option>');
+        const option = '<option value="' + escAttr(ref) + '">' + escHtml(details ? ref + ' — ' + details : ref) + '</option>';
+        if (model.status === 'unverified') groups.unverified.push(option);
+        else groups.available.push(option);
       }
-      if (options.length === 0) {
+      const sections = [];
+      if (groups.available.length > 0) sections.push('<optgroup label="Available">' + groups.available.join('') + '</optgroup>');
+      if (groups.unverified.length > 0) sections.push('<optgroup label="Configured but unverified">' + groups.unverified.join('') + '</optgroup>');
+      if (sections.length === 0) {
         return '<option value="">No available models</option>';
       }
-      return options.join('');
+      return sections.join('');
     }
 
     // ── Tab switching ────────────────────────────────────────────────────────────

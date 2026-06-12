@@ -91,6 +91,21 @@ export function logToolError(
   console.log(chalk.dim(indented));
 }
 
+// Agent run
+export function logAgentRunStart(
+  ctx: LogContext,
+  provider: string,
+  model: string,
+  modelName?: string,
+): void {
+  const displayName = modelName && modelName !== model ? ` (${modelName})` : "";
+  console.log(
+    chalk.blue(
+      `${timestamp()} ${formatContext(ctx)} ▶ Agent run: ${provider}/${model}${displayName}`,
+    ),
+  );
+}
+
 // Response streaming
 export function logResponseStart(ctx: LogContext): void {
   console.log(chalk.yellow(`${timestamp()} ${formatContext(ctx)} → Streaming response...`));
