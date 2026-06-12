@@ -9,6 +9,12 @@ any release.
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-06-12
+
+### Fixed
+
+- Require exact provider model ID matches when grouping verified admin model availability.
+
 ## [0.4.3] - 2026-06-12
 
 ### Added
