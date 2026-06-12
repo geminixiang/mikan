@@ -113,14 +113,7 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
 }
 
 function modelIsListed(providerModelIds: Set<string>, registryModelId: string): boolean {
-  if (providerModelIds.size === 0) return true;
-  if (providerModelIds.has(registryModelId)) return true;
-
-  for (const providerModelId of providerModelIds) {
-    if (providerModelId.startsWith(`${registryModelId}-`)) return true;
-    if (registryModelId.startsWith(`${providerModelId}-`)) return true;
-  }
-  return false;
+  return providerModelIds.size === 0 || providerModelIds.has(registryModelId);
 }
 
 function hashApiKey(apiKey: string): string {
