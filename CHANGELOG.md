@@ -9,6 +9,12 @@ any release.
 
 ## [Unreleased]
 
+## [0.5.0-beta.0]
+
+### Changed
+
+- Limit sandbox vault environment injection to the detected CLI so unrelated bash commands do not receive stored secrets.
+
 ## [0.4.4] - 2026-06-12
 
 ### Fixed
