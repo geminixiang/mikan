@@ -62,15 +62,13 @@ function buildContainerExecCommand(
   command: string,
   env?: Record<string, string>,
 ): string {
-  const envPart = buildCliEnvArgs(resolveCommandEnv(command, env));
+  const commandEnv = resolveCommandEnv(command, env);
+  const envPart = commandEnv
+    ? Object.entries(commandEnv)
+        .map(([key, value]) => `-e ${shellEscape(`${key}=${value}`)} `)
+        .join("")
+    : "";
   return `docker exec ${envPart}-w /workspace ${container} sh -c ${shellEscape(command)}`;
-}
-
-function buildCliEnvArgs(env?: Record<string, string>): string {
-  if (!env) return "";
-  return Object.entries(env)
-    .map(([key, value]) => `-e ${shellEscape(`${key}=${value}`)} `)
-    .join("");
 }
 
 export class ContainerExecutor implements Executor {
