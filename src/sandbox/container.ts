@@ -1,6 +1,3 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type {
   ContainerSandboxConfig,
   ExecOptions,
@@ -10,12 +7,10 @@ import type {
   SandboxAdapter,
 } from "./types.js";
 import { SandboxError } from "./errors.js";
+import { resolveCommandEnv } from "./credential-policy.js";
 import { execSimple, shellEscape } from "./utils.js";
 import { HostExecutor } from "./host.js";
 import { createMountedRuntimePathContext } from "./path-context.js";
-
-const PRIVATE_DIR_MODE = 0o700;
-const PRIVATE_FILE_MODE = 0o600;
 
 function parseContainerSandboxArg(value: string): ContainerSandboxConfig | undefined {
   if (!value.startsWith("container:")) {
@@ -65,25 +60,17 @@ async function validateContainerSandbox(config: ContainerSandboxConfig): Promise
 function buildContainerExecCommand(
   container: string,
   command: string,
-  envFilePath?: string,
+  env?: Record<string, string>,
 ): string {
-  const envPart = envFilePath ? `--env-file ${shellEscape(envFilePath)} ` : "";
+  const envPart = buildCliEnvArgs(resolveCommandEnv(command, env));
   return `docker exec ${envPart}-w /workspace ${container} sh -c ${shellEscape(command)}`;
 }
 
-function withRuntimeBootstrap(command: string, env?: Record<string, string>): string {
-  if (!hasGitHubToken(env)) {
-    return command;
-  }
-
-  return [
-    "if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then gh auth setup-git >/dev/null 2>&1 || true; fi",
-    command,
-  ].join("\n");
-}
-
-function hasGitHubToken(env?: Record<string, string>): boolean {
-  return Boolean(env?.GH_TOKEN || env?.GITHUB_TOKEN || env?.GITHUB_OAUTH_ACCESS_TOKEN);
+function buildCliEnvArgs(env?: Record<string, string>): string {
+  if (!env) return "";
+  return Object.entries(env)
+    .map(([key, value]) => `-e ${shellEscape(`${key}=${value}`)} `)
+    .join("");
 }
 
 export class ContainerExecutor implements Executor {
@@ -101,17 +88,8 @@ export class ContainerExecutor implements Executor {
     }
 
     const hostExecutor = new HostExecutor();
-    const temp = this.env ? createSecureEnvFile(this.env) : undefined;
-    try {
-      const dockerCmd = buildContainerExecCommand(
-        this.container,
-        withRuntimeBootstrap(command, this.env),
-        temp?.envFilePath,
-      );
-      return await hostExecutor.exec(dockerCmd, options);
-    } finally {
-      temp?.cleanup();
-    }
+    const dockerCmd = buildContainerExecCommand(this.container, command, this.env);
+    return await hostExecutor.exec(dockerCmd, options);
   }
 
   getWorkspacePath(_hostPath: string): string {
@@ -150,26 +128,4 @@ async function ensureContainerRunning(container: string): Promise<void> {
       { cause: error },
     );
   }
-}
-
-function createSecureEnvFile(env: Record<string, string>): {
-  envFilePath: string;
-  cleanup: () => void;
-} {
-  const tempDir = mkdtempSync(join(tmpdir(), "mikan-docker-env-"));
-  chmodSync(tempDir, PRIVATE_DIR_MODE);
-  const envFilePath = join(tempDir, "env.list");
-  const content =
-    Object.entries(env)
-      .map(([key, value]) => `${key}=${value.replace(/\r?\n/g, "")}`)
-      .join("\n") + "\n";
-  writeFileSync(envFilePath, content, { encoding: "utf-8", mode: PRIVATE_FILE_MODE });
-  chmodSync(envFilePath, PRIVATE_FILE_MODE);
-
-  return {
-    envFilePath,
-    cleanup: () => {
-      rmSync(tempDir, { recursive: true, force: true });
-    },
-  };
 }

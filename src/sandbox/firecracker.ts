@@ -8,6 +8,7 @@ import type {
   SandboxAdapter,
 } from "./types.js";
 import { SandboxError } from "./errors.js";
+import { resolveCommandEnv } from "./credential-policy.js";
 import { HostExecutor } from "./host.js";
 import { execSimple, killProcessTree, shellEscape } from "./utils.js";
 
@@ -100,7 +101,8 @@ export class FirecrackerExecutor implements Executor {
   ) {}
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
-    if (!this.env || Object.keys(this.env).length === 0) {
+    const commandEnv = resolveCommandEnv(command, this.env);
+    if (!commandEnv || Object.keys(commandEnv).length === 0) {
       const sshCmd =
         this.sshPort === 22
           ? `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${this.sshUser}@${this.vmId} sh -c ${shellEscape(command)}`
@@ -173,7 +175,7 @@ export class FirecrackerExecutor implements Executor {
       child.stdin?.on("error", (error) => {
         stderr += `${error.message}\n`;
       });
-      child.stdin?.end(buildRemoteScript(command, this.env));
+      child.stdin?.end(buildRemoteScript(command, commandEnv));
 
       child.on("close", (code) => {
         if (settled) return;
