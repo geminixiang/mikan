@@ -1,5 +1,6 @@
 import type {
   CloudflareSandboxConfig,
+  EnvExposurePolicy,
   ExecOptions,
   ExecResult,
   Executor,
@@ -73,6 +74,7 @@ export class CloudflareSandboxExecutor implements Executor {
     private readonly sandboxId: string,
     private readonly env?: Record<string, string>,
     _ensureReady?: () => Promise<void>,
+    private readonly envPolicy?: EnvExposurePolicy,
   ) {
     this.cwd = readEnv("CLOUDFLARE_SANDBOX_CWD") || DEFAULT_CLOUDFLARE_CWD;
   }
@@ -100,7 +102,7 @@ export class CloudflareSandboxExecutor implements Executor {
         cwd: this.cwd,
       };
       if (options?.timeout) payload.timeoutSeconds = options.timeout;
-      const commandEnv = resolveCommandEnv(command, this.env);
+      const commandEnv = resolveCommandEnv(command, this.env, this.envPolicy);
       if (commandEnv) payload.env = commandEnv;
 
       const response = await fetch(new URL("/exec", resolveCloudflareSandboxUrl()), {
@@ -165,8 +167,8 @@ export const cloudflareSandboxAdapter: SandboxAdapter<CloudflareSandboxConfig> =
   type: "cloudflare",
   parse: parseCloudflareSandboxArg,
   validate: validateCloudflareSandbox,
-  createExecutor: (config, env, ensureReady) =>
-    new CloudflareSandboxExecutor(config.sandboxId, env, ensureReady),
+  createExecutor: (config, env, ensureReady, envPolicy) =>
+    new CloudflareSandboxExecutor(config.sandboxId, env, ensureReady, envPolicy),
 };
 
 function resolveCloudflareSandboxUrl(): URL {

@@ -1,5 +1,6 @@
 import type {
   ContainerSandboxConfig,
+  EnvExposurePolicy,
   ExecOptions,
   ExecResult,
   Executor,
@@ -61,8 +62,9 @@ function buildContainerExecCommand(
   container: string,
   command: string,
   env?: Record<string, string>,
+  envPolicy?: EnvExposurePolicy,
 ): string {
-  const commandEnv = resolveCommandEnv(command, env);
+  const commandEnv = resolveCommandEnv(command, env, envPolicy);
   const envPart = commandEnv
     ? Object.entries(commandEnv)
         .map(([key, value]) => `-e ${shellEscape(`${key}=${value}`)} `)
@@ -76,6 +78,7 @@ export class ContainerExecutor implements Executor {
     private container: string,
     private env?: Record<string, string>,
     private ensureReady?: () => Promise<void>,
+    private envPolicy?: EnvExposurePolicy,
   ) {}
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
@@ -86,7 +89,7 @@ export class ContainerExecutor implements Executor {
     }
 
     const hostExecutor = new HostExecutor();
-    const dockerCmd = buildContainerExecCommand(this.container, command, this.env);
+    const dockerCmd = buildContainerExecCommand(this.container, command, this.env, this.envPolicy);
     return await hostExecutor.exec(dockerCmd, options);
   }
 
@@ -107,8 +110,8 @@ export const containerSandboxAdapter: SandboxAdapter<ContainerSandboxConfig> = {
   type: "container",
   parse: parseContainerSandboxArg,
   validate: validateContainerSandbox,
-  createExecutor: (config, env, ensureReady) =>
-    new ContainerExecutor(config.container, env, ensureReady),
+  createExecutor: (config, env, ensureReady, envPolicy) =>
+    new ContainerExecutor(config.container, env, ensureReady, envPolicy),
 };
 
 async function ensureContainerRunning(container: string): Promise<void> {

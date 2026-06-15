@@ -1,3 +1,5 @@
+import type { EnvExposurePolicy } from "./types.js";
+
 interface CliEnvPolicy {
   cliNames: string[];
   envKeys: string[];
@@ -32,25 +34,107 @@ const CLI_ENV_POLICIES: CliEnvPolicy[] = [
 
 const PACKAGE_RUNNERS = new Set(["npx", "bunx"]);
 const DLX_RUNNERS = new Set(["pnpm", "yarn"]);
+const KNOWN_CLI_ENV_KEYS = new Set(CLI_ENV_POLICIES.flatMap((policy) => policy.envKeys));
+
+/**
+ * CLI names the credential policy recognizes, sorted for stable UI rendering.
+ * The login portal renders these as suggested command groups so the web
+ * exposure picker stays in sync with the injection logic in this module.
+ */
+export const KNOWN_CLI_NAMES: string[] = [
+  ...new Set(CLI_ENV_POLICIES.flatMap((policy) => policy.cliNames)),
+].toSorted((left, right) => left.localeCompare(right));
 
 export function resolveCommandEnv(
   command: string,
   vaultEnv?: Record<string, string>,
+  envPolicy: EnvExposurePolicy = {},
 ): Record<string, string> | undefined {
   if (!vaultEnv) return undefined;
 
   const cli = detectCommandCli(command);
-  if (!cli) return undefined;
-
+  const allowedKeys = resolveAllowedEnvKeys(cli, vaultEnv, envPolicy);
   const env: Record<string, string> = {};
-  for (const policy of CLI_ENV_POLICIES) {
-    if (!policy.cliNames.includes(cli)) continue;
-    for (const key of policy.envKeys) {
-      if (key in vaultEnv) env[key] = vaultEnv[key];
-    }
+  for (const key of allowedKeys) {
+    if (key in vaultEnv) env[key] = vaultEnv[key];
   }
 
   return Object.keys(env).length > 0 ? env : undefined;
+}
+
+export function defaultEnvExposurePolicyForKeys(envKeys: string[]): EnvExposurePolicy {
+  const always: string[] = [];
+  const commandsByCli: Record<string, string[]> = {};
+  for (const envKey of envKeys) {
+    const commands = defaultCommandsForKnownEnvKey(envKey);
+    if (commands.length === 0) {
+      always.push(envKey);
+      continue;
+    }
+    for (const command of commands) {
+      commandsByCli[command] = [...(commandsByCli[command] ?? []), envKey];
+    }
+  }
+  return normalizeEnvExposurePolicy({ always, commands: commandsByCli });
+}
+
+export function normalizeEnvExposurePolicy(policy: EnvExposurePolicy): EnvExposurePolicy {
+  const always = [...new Set(policy.always ?? [])]
+    .filter(isValidEnvKey)
+    .toSorted((left, right) => left.localeCompare(right));
+  const commandEntries: Array<[string, string[]]> = [];
+  for (const [rawCommand, envKeys] of Object.entries(policy.commands ?? {})) {
+    const command = normalizeCliName(rawCommand.trim());
+    const normalizedEnvKeys = [...new Set(envKeys)]
+      .filter(isValidEnvKey)
+      .toSorted((left, right) => left.localeCompare(right));
+    if (command && normalizedEnvKeys.length > 0) commandEntries.push([command, normalizedEnvKeys]);
+  }
+  const commands = Object.fromEntries(
+    commandEntries.toSorted(([left], [right]) => left.localeCompare(right)),
+  );
+  return { always, commands };
+}
+
+function resolveAllowedEnvKeys(
+  cli: string | undefined,
+  vaultEnv: Record<string, string>,
+  envPolicy: EnvExposurePolicy,
+): Set<string> {
+  const allowed = new Set<string>();
+  const explicitlyConfigured = collectConfiguredEnvKeys(envPolicy);
+
+  for (const key of envPolicy.always ?? []) allowed.add(key);
+  if (cli) {
+    for (const key of envPolicy.commands?.[cli] ?? []) allowed.add(key);
+  }
+
+  for (const key of Object.keys(vaultEnv)) {
+    if (explicitlyConfigured.has(key)) continue;
+    const commands = defaultCommandsForKnownEnvKey(key);
+    if (commands.length === 0 || (cli && commands.includes(cli))) allowed.add(key);
+  }
+
+  return allowed;
+}
+
+function collectConfiguredEnvKeys(envPolicy: EnvExposurePolicy): Set<string> {
+  const keys = new Set(envPolicy.always ?? []);
+  for (const envKeys of Object.values(envPolicy.commands ?? {})) {
+    for (const envKey of envKeys) keys.add(envKey);
+  }
+  return keys;
+}
+
+function defaultCommandsForKnownEnvKey(envKey: string): string[] {
+  if (!KNOWN_CLI_ENV_KEYS.has(envKey)) return [];
+
+  const commands = new Set<string>();
+  for (const policy of CLI_ENV_POLICIES) {
+    if (!policy.envKeys.includes(envKey)) continue;
+    for (const cliName of policy.cliNames) commands.add(cliName);
+  }
+  return [...commands];
 }
 
 function detectCommandCli(command: string): string | undefined {
@@ -82,4 +166,8 @@ function tokenizeCommandPrefix(command: string): string[] {
 
 function normalizeCliName(token: string): string {
   return token.split("/").pop() ?? token;
+}
+
+function isValidEnvKey(value: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
 }

@@ -1,5 +1,6 @@
 import { spawn } from "child_process";
 import type {
+  EnvExposurePolicy,
   ExecOptions,
   ExecResult,
   Executor,
@@ -98,10 +99,11 @@ export class FirecrackerExecutor implements Executor {
     private sshUser: string = "root",
     private sshPort: number = 22,
     private env?: Record<string, string>,
+    private envPolicy?: EnvExposurePolicy,
   ) {}
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
-    const commandEnv = resolveCommandEnv(command, this.env);
+    const commandEnv = resolveCommandEnv(command, this.env, this.envPolicy);
     if (!commandEnv || Object.keys(commandEnv).length === 0) {
       const sshCmd =
         this.sshPort === 22
@@ -244,6 +246,13 @@ export const firecrackerSandboxAdapter: SandboxAdapter<FirecrackerSandboxConfig>
   type: "firecracker",
   parse: parseFirecrackerSandboxArg,
   validate: validateFirecrackerSandbox,
-  createExecutor: (config, env) =>
-    new FirecrackerExecutor(config.vmId, config.hostPath, config.sshUser, config.sshPort, env),
+  createExecutor: (config, env, _ensureReady, envPolicy) =>
+    new FirecrackerExecutor(
+      config.vmId,
+      config.hostPath,
+      config.sshUser,
+      config.sshPort,
+      env,
+      envPolicy,
+    ),
 };

@@ -88,9 +88,35 @@ describe("FileVaultManager", () => {
     expect(readFileSync(join(vaultsDir, "U123", "env"), "utf-8")).toBe(
       "GITHUB_TOKEN=ghp_123\nOPENAI_API_KEY=sk-new\n",
     );
+    expect(mgr.resolve("U123")?.envPolicy).toEqual({});
     expect(mode(vaultsDir) & 0o077).toBe(0);
     expect(mode(join(vaultsDir, "U123")) & 0o077).toBe(0);
     expect(mode(join(vaultsDir, "U123", "env")) & 0o077).toBe(0);
+  });
+
+  test("upsertEnv persists env exposure policy metadata", () => {
+    const mgr = new FileVaultManager(tmpDir);
+
+    mgr.upsertEnv(
+      "U123",
+      { HELLO_TOKEN: "hello", GH_TOKEN: "gho_test" },
+      {
+        always: ["HELLO_TOKEN"],
+        commands: { gh: ["GH_TOKEN"] },
+      },
+    );
+
+    expect(mgr.resolve("U123")?.envPolicy).toEqual({
+      always: ["HELLO_TOKEN"],
+      commands: { gh: ["GH_TOKEN"] },
+    });
+    expect(JSON.parse(readFileSync(join(vaultsDir, "U123", "policy.json"), "utf-8"))).toEqual({
+      env: {
+        always: ["HELLO_TOKEN"],
+        commands: { gh: ["GH_TOKEN"] },
+      },
+    });
+    expect(mode(join(vaultsDir, "U123", "policy.json")) & 0o077).toBe(0);
   });
 
   test("upsertEnv tightens permissions on an existing env file", () => {

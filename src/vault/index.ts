@@ -1,9 +1,10 @@
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "fs";
 import { dirname, isAbsolute, join, normalize, sep } from "path";
-import { readTextFileIfExists } from "../utils/file-guards.js";
-import type { SandboxConfig } from "../sandbox/index.js";
+import { isRecord, readJsonFileIfExists, readTextFileIfExists } from "../utils/file-guards.js";
+import type { EnvExposurePolicy, SandboxConfig } from "../sandbox/index.js";
 import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 import { reportUserFacingError } from "../observability/sentry.js";
+import { normalizeEnvExposurePolicy } from "../sandbox/credential-policy.js";
 
 const PRIVATE_DIR_MODE = 0o700;
 const SHARED_VAULT_DIR = "shared";
@@ -28,6 +29,7 @@ function sanitizeCloudflareSandboxId(value: string): string {
   );
 }
 
+export { defaultEnvExposurePolicyForKeys, KNOWN_CLI_NAMES } from "../sandbox/credential-policy.js";
 export type { ResolvedVault, VaultManager } from "./types.js";
 import type { ResolvedVault, ResolvedVaultMount, VaultManager } from "./types.js";
 
@@ -145,7 +147,7 @@ export class FileVaultManager implements VaultManager {
     return Array.from(keys, (key) => this.buildResolved(key));
   }
 
-  upsertEnv(key: string, env: Record<string, string>): void {
+  upsertEnv(key: string, env: Record<string, string>, envPolicy?: EnvExposurePolicy): void {
     const dir = join(this.vaultsDir, key);
     const envPath = join(dir, "env");
     ensurePrivateDir(this.vaultsDir);
@@ -159,6 +161,9 @@ export class FileVaultManager implements VaultManager {
         .map(([envKey, value]) => `${envKey}=${value}`)
         .join("\n") + "\n";
     atomicWritePrivateFile(envPath, content);
+    if (envPolicy && Object.keys(envPolicy).length > 0) {
+      writeEnvPolicyFile(dir, envPolicy);
+    }
   }
 
   upsertFile(key: string, relativePath: string, content: string, targetPath?: string): void {
@@ -206,6 +211,7 @@ export class FileVaultManager implements VaultManager {
       dir,
       mounts,
       env,
+      envPolicy: readEnvPolicyFile(dir),
     };
   }
 }
@@ -215,7 +221,7 @@ function inferMountsFromDir(dir: string): ResolvedVaultMount[] {
 
   const mounts: ResolvedVaultMount[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name === "env") continue;
+    if (entry.name === "env" || entry.name === "policy.json") continue;
     const source = join(dir, entry.name);
     const target = inferredVaultTargetPath(entry.name);
     if (!target) continue;
@@ -227,6 +233,66 @@ function inferMountsFromDir(dir: string): ResolvedVaultMount[] {
 function ensurePrivateDir(path: string): void {
   mkdirSync(path, { recursive: true, mode: PRIVATE_DIR_MODE });
   chmodSync(path, PRIVATE_DIR_MODE);
+}
+
+function readEnvPolicyFile(dir: string): EnvExposurePolicy {
+  return readVaultPolicyFile(dir).env ?? {};
+}
+
+function writeEnvPolicyFile(dir: string, envPolicy: EnvExposurePolicy): void {
+  const existing = readVaultPolicyFile(dir);
+  const mergedEnvPolicy = mergeEnvExposurePolicies(existing.env ?? {}, envPolicy);
+  const policy = { ...existing, env: mergedEnvPolicy };
+  atomicWritePrivateFile(join(dir, "policy.json"), `${JSON.stringify(policy, null, 2)}\n`);
+}
+
+function readVaultPolicyFile(dir: string): { env?: EnvExposurePolicy } {
+  return (
+    readJsonFileIfExists(
+      join(dir, "policy.json"),
+      isVaultPolicy,
+      (detail) => `Ignoring malformed vault policy.json: ${detail}`,
+    ) ?? {}
+  );
+}
+
+function isVaultPolicy(value: unknown): value is { env?: EnvExposurePolicy } {
+  return isRecord(value) && (value.env === undefined || isEnvExposurePolicy(value.env));
+}
+
+function mergeEnvExposurePolicies(
+  existing: EnvExposurePolicy,
+  updates: EnvExposurePolicy,
+): EnvExposurePolicy {
+  const merged: EnvExposurePolicy = {
+    always: [...(existing.always ?? []), ...(updates.always ?? [])],
+    commands: { ...existing.commands },
+  };
+  for (const [command, envKeys] of Object.entries(updates.commands ?? {})) {
+    merged.commands![command] = [...(merged.commands![command] ?? []), ...envKeys];
+  }
+  return normalizeEnvExposurePolicy(merged);
+}
+
+function isEnvExposurePolicy(value: unknown): value is EnvExposurePolicy {
+  if (!isRecord(value)) return false;
+  if (value.always !== undefined) {
+    if (
+      !Array.isArray(value.always) ||
+      !value.always.every((envKey) => typeof envKey === "string")
+    ) {
+      return false;
+    }
+  }
+  if (value.commands !== undefined) {
+    if (!isRecord(value.commands)) return false;
+    for (const envKeys of Object.values(value.commands)) {
+      if (!Array.isArray(envKeys) || !envKeys.every((envKey) => typeof envKey === "string")) {
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 function copyVaultDir(
@@ -254,6 +320,13 @@ function copyVaultDir(
           .join("\n") + "\n";
       atomicWritePrivateFile(targetPath, content);
       envKeysCopied += Object.keys(sourceEnv).length;
+      continue;
+    }
+
+    if (entry.name === "policy.json" && entry.isFile()) {
+      const sourcePolicy = readEnvPolicyFile(sourceDir);
+      const targetPolicy = readEnvPolicyFile(targetDir);
+      writeEnvPolicyFile(targetDir, { ...targetPolicy, ...sourcePolicy });
       continue;
     }
 

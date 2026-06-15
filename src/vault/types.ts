@@ -1,4 +1,4 @@
-import type { SandboxConfig } from "../sandbox/index.js";
+import type { EnvExposurePolicy, SandboxConfig } from "../sandbox/index.js";
 
 export interface ResolvedVaultMount {
   source: string;
@@ -15,6 +15,8 @@ export interface ResolvedVault {
   mounts: ResolvedVaultMount[];
   /** Parsed from env file */
   env: Record<string, string>;
+  /** Parsed from policy.json env section */
+  envPolicy: EnvExposurePolicy;
 }
 
 export interface VaultManager {
@@ -29,7 +31,7 @@ export interface VaultManager {
   /** Check if the vaults directory exists. */
   isEnabled(): boolean;
   /** Merge environment variables into vaults/<key>/env and persist them to disk. */
-  upsertEnv(key: string, env: Record<string, string>): void;
+  upsertEnv(key: string, env: Record<string, string>, envPolicy?: EnvExposurePolicy): void;
   /** Write a private file into vaults/<key>/ and ensure it is mounted into the sandbox. */
   upsertFile(key: string, relativePath: string, content: string, targetPath?: string): void;
   /** List named shared login profiles under vaults/shared/. */

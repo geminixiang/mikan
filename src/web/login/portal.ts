@@ -23,7 +23,13 @@ import {
 import * as log from "../../log.js";
 import { reportUserFacingError } from "../../observability/sentry.js";
 import { PRODUCT_NAME } from "../../platform-messages.js";
-import { defaultVaultTargetPath, type VaultManager } from "../../vault/index.js";
+import {
+  defaultEnvExposurePolicyForKeys,
+  defaultVaultTargetPath,
+  KNOWN_CLI_NAMES,
+  type VaultManager,
+} from "../../vault/index.js";
+import type { EnvExposurePolicy } from "../../sandbox/index.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -36,6 +42,7 @@ interface LinkCompleteBody {
   envKey?: string;
   credential?: string;
   env?: Record<string, string>;
+  envPolicy?: EnvExposurePolicy;
 }
 
 interface OAuthStartBody {
@@ -60,6 +67,7 @@ interface SecretPresetField {
   optional?: boolean;
   pattern?: string;
   patternMessage?: string;
+  exposureCommands?: string[];
 }
 
 interface SecretPreset {
@@ -86,6 +94,7 @@ const SECRET_PRESETS: SecretPreset[] = [
         type: "password",
         placeholder: "cfut_...",
         helpText: "Recommended for Wrangler, CI, and sandbox use.",
+        exposureCommands: ["wrangler"],
       },
       {
         envKey: "CLOUDFLARE_ACCOUNT_ID",
@@ -93,6 +102,7 @@ const SECRET_PRESETS: SecretPreset[] = [
         type: "text",
         placeholder: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
         helpText: "Find this via wrangler whoami or in the Cloudflare dashboard account page.",
+        exposureCommands: ["wrangler"],
         pattern: "^[A-Fa-f0-9]{32}$",
         patternMessage: "Account ID must be a 32-character hexadecimal string.",
       },
@@ -174,6 +184,7 @@ const SECRET_PRESETS: SecretPreset[] = [
         type: "password",
         placeholder: "github_pat_...",
         helpText: "One value will be written to both GH_TOKEN and GITHUB_TOKEN.",
+        exposureCommands: ["gh"],
       },
     ],
   },
@@ -189,6 +200,7 @@ const SECRET_PRESETS: SecretPreset[] = [
         type: "password",
         placeholder: "vercel_...",
         helpText: "Required for Vercel CLI and API access.",
+        exposureCommands: ["vercel"],
       },
       {
         envKey: "VERCEL_ORG_ID",
@@ -196,6 +208,7 @@ const SECRET_PRESETS: SecretPreset[] = [
         type: "text",
         placeholder: "team_...",
         helpText: "Optional. Set this when you want to target a specific team or account.",
+        exposureCommands: ["vercel"],
         optional: true,
       },
       {
@@ -204,6 +217,7 @@ const SECRET_PRESETS: SecretPreset[] = [
         type: "text",
         placeholder: "prj_...",
         helpText: "Optional. Set this when deploy scripts need a fixed project reference.",
+        exposureCommands: ["vercel"],
         optional: true,
       },
     ],
@@ -222,6 +236,7 @@ const SECRET_PRESETS: SecretPreset[] = [
         placeholder: "sntrys_...",
         helpText:
           "Required for Sentry CLI, releases, and sourcemap uploads. Also written to /root/.sentryclirc.",
+        exposureCommands: ["sentry-cli"],
       },
       {
         envKey: "SENTRY_ORG",
@@ -229,6 +244,7 @@ const SECRET_PRESETS: SecretPreset[] = [
         type: "text",
         placeholder: "my-org",
         helpText: "Optional. Helpful for Sentry CLI commands and CI automation.",
+        exposureCommands: ["sentry-cli"],
         optional: true,
       },
       {
@@ -237,6 +253,7 @@ const SECRET_PRESETS: SecretPreset[] = [
         type: "text",
         placeholder: "my-project",
         helpText: "Optional. Helpful for release and sourcemap commands.",
+        exposureCommands: ["sentry-cli"],
         optional: true,
       },
     ],
@@ -656,6 +673,57 @@ const loginViewStyles = `
     gap: 6px;
   }
 
+  .policy-rows {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .policy-row {
+    display: grid;
+    grid-template-columns: minmax(120px, 0.35fr) minmax(180px, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .stored-rows {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .stored-row {
+    display: grid;
+    grid-template-columns: minmax(140px, 1fr) minmax(150px, 0.7fr) minmax(0, 0.7fr);
+    gap: 8px;
+    align-items: center;
+  }
+
+  .stored-row .stored-key {
+    overflow-wrap: anywhere;
+    font-size: 0.86rem;
+  }
+
+  .stored-row .stored-custom[hidden] {
+    display: none;
+  }
+
+  @media (max-width: 640px) {
+    .stored-row { grid-template-columns: 1fr; gap: 6px; }
+  }
+
+  .secondary-button {
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.85);
+    color: var(--text);
+    cursor: pointer;
+    font: 500 0.86rem/1.2 'DM Sans', sans-serif;
+  }
+
+  .secondary-button:hover:not(:disabled) { border-color: var(--text); }
+
   .help {
     position: relative;
     display: inline-flex;
@@ -844,27 +912,103 @@ function renderStatusPage(
   );
 }
 
+/**
+ * Per-key exposure as rendered in the "Currently stored" editor. `command` is
+ * `undefined` when the key is injected into every command (the `always` list);
+ * otherwise it is the single CLI name the key is scoped to.
+ */
+interface ExistingSecretExposure {
+  envKey: string;
+  command?: string;
+}
+
 interface ExistingSecretsSummary {
-  envKeys: string[];
+  exposures: ExistingSecretExposure[];
   mountTargets: string[];
 }
 
+/**
+ * Map a vault's env keys to their current exposure for the editor. Keys present
+ * in the stored policy use that policy; keys missing from it (legacy flat env
+ * vaults) fall back to `defaultEnvExposurePolicyForKeys` so known keys preselect
+ * their CLI and unknown keys preselect Always. A key scoped to multiple CLIs is
+ * shown under the first one — the editor only models a single scope per key.
+ */
 function describeVaultSecrets(vaultManager: VaultManager, vaultId: string): ExistingSecretsSummary {
   const vault = vaultManager.resolve(vaultId);
   if (!vault) {
-    return { envKeys: [], mountTargets: [] };
+    return { exposures: [], mountTargets: [] };
   }
 
+  const envKeys = Object.keys(vault.env);
+  const policy = vault.envPolicy ?? {};
+  const known = new Set(policy.always ?? []);
+  const commandByKey = new Map<string, string>();
+  for (const [command, keys] of Object.entries(policy.commands ?? {})) {
+    for (const key of keys) {
+      known.add(key);
+      if (!commandByKey.has(key)) commandByKey.set(key, command);
+    }
+  }
+
+  const missingKeys = envKeys.filter((key) => !known.has(key));
+  const fallback = defaultEnvExposurePolicyForKeys(missingKeys);
+  for (const [command, keys] of Object.entries(fallback.commands ?? {})) {
+    for (const key of keys) {
+      if (!commandByKey.has(key)) commandByKey.set(key, command);
+    }
+  }
+
+  // Any key without a CLI scope (policy `always`, fallback `always`, or
+  // otherwise unmatched) is exposed to every command.
+  const exposures = envKeys
+    .toSorted((left, right) => left.localeCompare(right))
+    .map((envKey) => {
+      const command = commandByKey.get(envKey);
+      return command ? { envKey, command } : { envKey };
+    });
+
   return {
-    envKeys: Object.keys(vault.env).toSorted((left, right) => left.localeCompare(right)),
+    exposures,
     mountTargets: [...new Set(vault.mounts.map((mount) => mount.target))].toSorted((left, right) =>
       left.localeCompare(right),
     ),
   };
 }
 
+const ALWAYS_EXPOSURE_VALUE = "__always__";
+const CUSTOM_EXPOSURE_VALUE = "__custom__";
+
+function selectedAttr(match: boolean): string {
+  return match ? ' selected="selected"' : "";
+}
+
+/** Build the <option> list for an exposure picker, preselecting `command`. */
+function renderExposureOptions(command: string | undefined): string {
+  const isKnown = command !== undefined && KNOWN_CLI_NAMES.includes(command);
+  const isCustom = command !== undefined && !isKnown;
+
+  const knownOptions = KNOWN_CLI_NAMES.map(
+    (cli) => `<option value="${esc(cli)}"${selectedAttr(command === cli)}>${esc(cli)}</option>`,
+  ).join("");
+
+  const customLabel = isCustom ? `Custom: ${esc(command!)}` : "Custom command…";
+
+  return (
+    `<option value="${ALWAYS_EXPOSURE_VALUE}"${selectedAttr(command === undefined)}>Always (every command)</option>` +
+    knownOptions +
+    `<option value="${CUSTOM_EXPOSURE_VALUE}"${selectedAttr(isCustom)} data-custom-value="${isCustom ? esc(command!) : ""}">${customLabel}</option>`
+  );
+}
+
+/**
+ * Render the editable "Currently stored" section: one row per stored env key
+ * with an exposure picker (Always / a CLI / Custom). Values are never shown.
+ * The browser reads these rows back on Save and merges them into the policy,
+ * overriding the per-provider defaults.
+ */
 function renderSecretsSummary(summary: ExistingSecretsSummary): string {
-  if (summary.envKeys.length === 0 && summary.mountTargets.length === 0) {
+  if (summary.exposures.length === 0 && summary.mountTargets.length === 0) {
     return `
   <section class="secrets-summary">
     <h2>Currently stored</h2>
@@ -872,7 +1016,20 @@ function renderSecretsSummary(summary: ExistingSecretsSummary): string {
   </section>`;
   }
 
-  const envItems = summary.envKeys.map((envKey) => `<li><code>${esc(envKey)}</code></li>`).join("");
+  const envRows = summary.exposures
+    .map((exposure) => {
+      const customValue =
+        exposure.command !== undefined && !KNOWN_CLI_NAMES.includes(exposure.command)
+          ? exposure.command
+          : "";
+      return `<div class="stored-row" data-stored-row data-stored-key="${esc(exposure.envKey)}">
+        <code class="stored-key">${esc(exposure.envKey)}</code>
+        <select data-stored-exposure aria-label="Exposure for ${esc(exposure.envKey)}">${renderExposureOptions(exposure.command)}</select>
+        <input type="text" data-stored-custom class="stored-custom" placeholder="command" value="${esc(customValue)}" autocomplete="off"${customValue ? "" : " hidden"}>
+      </div>`;
+    })
+    .join("");
+
   const mountItems = summary.mountTargets
     .map((target) => `<li><code>${esc(target)}</code></li>`)
     .join("");
@@ -880,8 +1037,8 @@ function renderSecretsSummary(summary: ExistingSecretsSummary): string {
   return `
   <section class="secrets-summary">
     <h2>Currently stored</h2>
-    <p>Only secret names and mounted paths are shown here. Secret values are never displayed.</p>
-    ${summary.envKeys.length > 0 ? `<p><strong>Environment keys</strong></p><ul>${envItems}</ul>` : ""}
+    <p>Secret values are never displayed. Choose where each key is injected: <strong>Always</strong> exposes it to every sandbox command; a CLI name exposes it only to commands starting with that tool.</p>
+    ${summary.exposures.length > 0 ? `<div class="stored-rows" data-stored-rows>${envRows}</div>` : ""}
     ${summary.mountTargets.length > 0 ? `<p><strong>Mounted secret files</strong></p><ul>${mountItems}</ul>` : ""}
   </section>`;
 }
@@ -927,6 +1084,23 @@ function renderHelpIcon(html: string): string {
   </span>`;
 }
 
+function renderEnvPolicyEditor(): string {
+  const cliOptions = KNOWN_CLI_NAMES.map((cli) => `<option value="${esc(cli)}"></option>`).join("");
+  return `<section class="card provider-card" id="env-policy-editor">
+    <div class="provider-header">
+      ${renderServiceLogo("manual")}
+      <h2 class="provider-title">Add a command group</h2>
+      ${renderHelpIcon(esc("Define a CLI and the env keys it should receive. Keys are injected when a sandbox bash command appears to start with that CLI. Use this for tools without a provider preset, or to grant extra keys to a command."))}
+    </div>
+    <datalist id="known-cli-names">${cliOptions}</datalist>
+    <div class="provider-field">
+      <div id="policyRows" class="policy-rows" data-policy-rows></div>
+      <button type="button" class="secondary-button" onclick="addPolicyRow()">Add command group</button>
+      <p class="panel-note">Examples: <code>gh</code> → <code>GH_TOKEN, GITHUB_TOKEN</code>, <code>wrangler</code> → <code>CLOUDFLARE_API_TOKEN</code>.</p>
+    </div>
+  </section>`;
+}
+
 function renderPresetProviderCard(preset: SecretPreset): string {
   const headerHelp = preset.note ? renderHelpIcon(esc(preset.note)) : "";
   const fields = preset.fields
@@ -945,6 +1119,7 @@ function renderPresetProviderCard(preset: SecretPreset): string {
           placeholder="${esc(field.placeholder)}"
           data-env-key="${esc(field.envKey)}"
           data-env-keys="${esc(resolveFieldEnvKeys(field).join(","))}"
+          data-exposure-commands="${esc((field.exposureCommands ?? []).join(","))}"
           data-field-label="${esc(field.label)}"
           ${field.optional ? 'data-optional="true"' : ""}
           ${field.pattern ? `data-pattern="${esc(field.pattern)}"` : ""}
@@ -1028,6 +1203,7 @@ function renderCredentialPage(
 <div id="api-panel" class="panel">
   ${presetCards}
   ${renderManualProviderCard(initialEnvKey, secretLabel, placeholder)}
+  ${renderEnvPolicyEditor()}
 </div>
 
 <div id="oauth-panel" class="panel card stack">
@@ -1066,13 +1242,22 @@ function renderCredentialPage(
       document.getElementById('oauth-panel').classList.toggle('active', mode === 'oauth');
     }
 
+    function splitList(value) {
+      return value.split(',').map((entry) => entry.trim()).filter(Boolean);
+    }
+
+    function mergeCommandPolicy(policy, command, envKeys) {
+      if (!command || envKeys.length === 0) return;
+      policy.commands[command] = Array.from(new Set([...(policy.commands[command] || []), ...envKeys]));
+    }
+
     function collectManualCard(card) {
       const envKey = card.querySelector('#envKey').value.trim();
       const credential = card.querySelector('#credential').value.trim();
       if (!envKey && !credential) return { skip: true };
       if (!envKeyPattern.test(envKey)) return { error: 'Manual entry: please enter a valid environment key.' };
       if (!credential) return { error: 'Manual entry: please enter a secret value.' };
-      return { env: { [envKey]: credential } };
+      return { env: { [envKey]: credential }, defaultPolicy: { always: [envKey], commands: {} } };
     }
 
     function collectPresetCard(card) {
@@ -1081,6 +1266,7 @@ function renderCredentialPage(
       if (!filled) return { skip: true };
 
       const env = {};
+      const defaultPolicy = { always: [], commands: {} };
       for (const input of inputs) {
         const value = input.value.trim();
         const label = input.dataset.fieldLabel || input.dataset.envKey || 'a value';
@@ -1092,32 +1278,142 @@ function renderCredentialPage(
         if (input.dataset.pattern && !(new RegExp(input.dataset.pattern).test(value))) {
           return { error: input.dataset.patternMessage || ('Invalid ' + label + '.') };
         }
-        const envKeys = (input.dataset.envKeys || input.dataset.envKey || '')
-          .split(',')
-          .map((entry) => entry.trim())
-          .filter(Boolean);
+        const envKeys = splitList(input.dataset.envKeys || input.dataset.envKey || '');
         for (const envKey of envKeys) {
           env[envKey] = value;
         }
+        const commands = splitList(input.dataset.exposureCommands || '');
+        if (commands.length === 0) {
+          defaultPolicy.always.push(...envKeys);
+        } else {
+          for (const command of commands) mergeCommandPolicy(defaultPolicy, command, envKeys);
+        }
       }
-      return { env };
+      return { env, defaultPolicy };
+    }
+
+    // Read the "Currently stored" rows. Each row maps one already-stored key to
+    // a single exposure (Always or one CLI). These are authoritative overrides:
+    // they win over the per-provider defaults so a user can re-scope a key.
+    function collectStoredExposures() {
+      const override = { always: [], commands: {}, keys: new Set() };
+      for (const row of document.querySelectorAll('[data-stored-row]')) {
+        const envKey = row.dataset.storedKey;
+        if (!envKey) continue;
+        const select = row.querySelector('[data-stored-exposure]');
+        const value = select.value;
+        override.keys.add(envKey);
+        if (value === '${ALWAYS_EXPOSURE_VALUE}') {
+          override.always.push(envKey);
+        } else if (value === '${CUSTOM_EXPOSURE_VALUE}') {
+          const command = row.querySelector('[data-stored-custom]').value.trim();
+          if (!command) return { error: 'Enter a command for ' + envKey + ', or pick Always.' };
+          mergeCommandPolicy(override, command, [envKey]);
+        } else {
+          mergeCommandPolicy(override, value, [envKey]);
+        }
+      }
+      return { override };
+    }
+
+    function collectCommandPolicy(defaultPolicy) {
+      const envPolicy = { always: [], commands: {} };
+      // Start from the per-provider defaults derived while collecting values.
+      envPolicy.always.push(...defaultPolicy.always);
+      for (const [command, envKeys] of Object.entries(defaultPolicy.commands)) {
+        mergeCommandPolicy(envPolicy, command, envKeys);
+      }
+      // Apply "Currently stored" overrides: drop each overridden key from the
+      // defaults first, then re-add it under the chosen exposure.
+      const stored = collectStoredExposures();
+      if (stored.error) return stored;
+      const override = stored.override;
+      if (override.keys.size > 0) {
+        envPolicy.always = envPolicy.always.filter((key) => !override.keys.has(key));
+        for (const command of Object.keys(envPolicy.commands)) {
+          envPolicy.commands[command] = envPolicy.commands[command].filter((key) => !override.keys.has(key));
+          if (envPolicy.commands[command].length === 0) delete envPolicy.commands[command];
+        }
+        envPolicy.always.push(...override.always);
+        for (const [command, envKeys] of Object.entries(override.commands)) {
+          mergeCommandPolicy(envPolicy, command, envKeys);
+        }
+      }
+      // Apply the "Add a command group" rows.
+      for (const row of document.querySelectorAll('[data-policy-row]')) {
+        const command = row.querySelector('[data-policy-command]').value.trim();
+        const envKeys = splitList(row.querySelector('[data-policy-env-keys]').value);
+        if (!command && envKeys.length === 0) continue;
+        if (!command || envKeys.length === 0) return { error: 'Each command group needs both a command and env keys.' };
+        if (!envKeys.every((key) => envKeyPattern.test(key))) return { error: 'Command group "' + command + '" has an invalid env key.' };
+        mergeCommandPolicy(envPolicy, command, envKeys);
+      }
+      envPolicy.always = Array.from(new Set(envPolicy.always));
+      return { envPolicy };
     }
 
     function collectApiEnv() {
       const env = {};
+      const defaultPolicy = { always: [], commands: {} };
       let any = false;
-      for (const card of document.querySelectorAll('.provider-card')) {
+      for (const card of document.querySelectorAll('.provider-card[data-provider-kind]')) {
         const result = card.dataset.providerKind === 'manual'
           ? collectManualCard(card)
           : collectPresetCard(card);
         if (result.skip) continue;
         if (result.error) return { error: result.error };
         Object.assign(env, result.env);
+        defaultPolicy.always.push(...(result.defaultPolicy?.always || []));
+        for (const [command, envKeys] of Object.entries(result.defaultPolicy?.commands || {})) {
+          mergeCommandPolicy(defaultPolicy, command, envKeys);
+        }
         any = true;
       }
-      if (!any) return { error: 'Fill in at least one provider before continuing.' };
-      return { env };
+      const policy = collectCommandPolicy(defaultPolicy);
+      if (policy.error) return policy;
+
+      // Allow saving with no new values when the user only re-scoped existing
+      // keys or added a command group — that is a policy-only update.
+      const hasStored = document.querySelector('[data-stored-row]') !== null;
+      const hasPolicy = policy.envPolicy.always.length > 0 || Object.keys(policy.envPolicy.commands).length > 0;
+      if (!any && !(hasStored && hasPolicy)) {
+        return { error: 'Fill in at least one provider, or adjust a stored key, before continuing.' };
+      }
+      return { env, envPolicy: policy.envPolicy };
     }
+
+    function syncStoredRow(row) {
+      const select = row.querySelector('[data-stored-exposure]');
+      const custom = row.querySelector('[data-stored-custom]');
+      const isCustom = select.value === '${CUSTOM_EXPOSURE_VALUE}';
+      custom.hidden = !isCustom;
+      if (isCustom && !custom.value) {
+        const opt = select.options[select.selectedIndex];
+        if (opt && opt.dataset.customValue) custom.value = opt.dataset.customValue;
+      }
+    }
+
+    for (const row of document.querySelectorAll('[data-stored-row]')) {
+      row.querySelector('[data-stored-exposure]').addEventListener('change', () => syncStoredRow(row));
+      syncStoredRow(row);
+    }
+
+    function renderPolicyRow(command = '', envKeys = []) {
+      const row = document.createElement('div');
+      row.className = 'policy-row';
+      row.dataset.policyRow = 'true';
+      row.innerHTML = '<input type="text" list="known-cli-names" data-policy-command placeholder="gh" value="' + command + '">' +
+        '<input type="text" data-policy-env-keys placeholder="GH_TOKEN, GITHUB_TOKEN" value="' + envKeys.join(', ') + '">' +
+        '<button type="button" class="secondary-button" data-policy-remove>Remove</button>';
+      row.querySelector('[data-policy-remove]').addEventListener('click', () => row.remove());
+      return row;
+    }
+
+    function addPolicyRow(command = '', envKeys = []) {
+      document.querySelector('[data-policy-rows]').appendChild(renderPolicyRow(command, envKeys));
+    }
+
+    window.addPolicyRow = addPolicyRow;
 
     async function startOAuthFlow() {
       const serviceId = document.getElementById('oauthService').value;
@@ -1146,7 +1442,7 @@ function renderCredentialPage(
       const r = await fetch('/api/link/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: '${esc(token)}', mode: 'api_key', env: payload.env }),
+        body: JSON.stringify({ token: '${esc(token)}', mode: 'api_key', env: payload.env, envPolicy: payload.envPolicy }),
       });
       const data = await r.json();
       if (r.ok) {
@@ -1166,6 +1462,8 @@ function renderCredentialPage(
         openHelp = null;
       }
     }
+
+    addPolicyRow();
 
     for (const trigger of document.querySelectorAll('.help-trigger')) {
       trigger.addEventListener('click', (event) => {
@@ -1225,11 +1523,11 @@ function isValidEnvKey(value: string): boolean {
 
 function extractEnvUpdates(data: Partial<LinkCompleteBody>): {
   updates?: Record<string, string>;
+  envPolicy?: EnvExposurePolicy;
   error?: string;
 } {
   if (data.env && typeof data.env === "object" && !Array.isArray(data.env)) {
     const rawEntries = Object.entries(data.env);
-    if (rawEntries.length === 0) return { error: "Missing required field: env" };
 
     const updates: Record<string, string> = {};
     for (const [rawKey, rawValue] of rawEntries) {
@@ -1240,18 +1538,56 @@ function extractEnvUpdates(data: Partial<LinkCompleteBody>): {
       updates[envKey] = credential;
     }
 
-    return { updates };
+    // Policy-only saves (re-scoping existing keys without re-entering values)
+    // are allowed: an empty `env` is fine as long as a policy is supplied.
+    if (rawEntries.length === 0 && !data.envPolicy) {
+      return { error: "Missing required field: env" };
+    }
+
+    const envPolicy = extractEnvPolicy(data.envPolicy, Object.keys(updates));
+    if (envPolicy.error) return { error: envPolicy.error };
+    return { updates, envPolicy: envPolicy.policy };
   }
 
   const envKey = data.envKey?.trim() ?? "";
   const credential = data.credential?.trim() ?? "";
   if (!isValidEnvKey(envKey)) return { error: "Invalid envKey format" };
   if (!credential) return { error: "Missing required field: credential" };
-  return { updates: { [envKey]: credential } };
+  const envPolicy = extractEnvPolicy(data.envPolicy, [envKey]);
+  if (envPolicy.error) return { error: envPolicy.error };
+  return { updates: { [envKey]: credential }, envPolicy: envPolicy.policy };
+}
+
+function extractEnvPolicy(
+  rawPolicy: EnvExposurePolicy | undefined,
+  envKeys: string[],
+): { policy?: EnvExposurePolicy; error?: string } {
+  if (!rawPolicy) return { policy: defaultEnvExposurePolicyForKeys(envKeys) };
+  if (!isEnvExposurePolicy(rawPolicy)) return { error: "Invalid envPolicy payload" };
+  return { policy: rawPolicy };
+}
+
+function isEnvExposurePolicy(value: unknown): value is EnvExposurePolicy {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const policy = value as EnvExposurePolicy;
+  if (policy.always !== undefined) {
+    if (!Array.isArray(policy.always) || !policy.always.every(isValidEnvKey)) return false;
+  }
+  if (policy.commands !== undefined) {
+    if (typeof policy.commands !== "object" || Array.isArray(policy.commands)) return false;
+    for (const [command, envKeys] of Object.entries(policy.commands)) {
+      if (!command.trim()) return false;
+      if (!Array.isArray(envKeys) || !envKeys.every(isValidEnvKey)) return false;
+    }
+  }
+  return true;
 }
 
 function renderStoredEnvMessage(envKeys: string[], fileTargets: string[] = []): string {
   const fileSuffix = fileTargets.length > 0 ? ` Mounted file(s): ${fileTargets.join(", ")}.` : "";
+  if (envKeys.length === 0) {
+    return `Injection policy updated.${fileSuffix}`;
+  }
   if (envKeys.length === 1) {
     return `${envKeys[0]} stored successfully in vault.${fileSuffix}`;
   }
@@ -1299,7 +1635,7 @@ async function handleLinkComplete(
     return;
   }
 
-  const { updates, error } = extractEnvUpdates(data);
+  const { updates, envPolicy, error } = extractEnvUpdates(data);
   if (!updates || error) {
     res.writeHead(400, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: error ?? "Invalid env payload" }));
@@ -1321,7 +1657,7 @@ async function handleLinkComplete(
   const sentryCliConfig = renderSentryCliConfig(updates);
 
   try {
-    vaultManager.upsertEnv(linkToken.vaultId, updates);
+    vaultManager.upsertEnv(linkToken.vaultId, updates, envPolicy);
     if (sentryCliConfig) {
       vaultManager.upsertFile(
         linkToken.vaultId,
@@ -1592,7 +1928,8 @@ async function handleOAuthCallback(
   const storedTargets: string[] = [];
   try {
     if (Object.keys(updates).length > 0) {
-      vaultManager.upsertEnv(linkToken.vaultId, updates);
+      const envPolicy = defaultEnvExposurePolicyForKeys(Object.keys(updates));
+      vaultManager.upsertEnv(linkToken.vaultId, updates, envPolicy);
       storedTargets.push(...Object.keys(updates).toSorted());
     }
     if (fileOutput?.type === "authorized_user" && refreshToken) {

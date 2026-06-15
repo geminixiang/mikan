@@ -75,6 +75,7 @@ export class ActorExecutionResolver {
       config,
       env,
       this.buildEnsureReadyCallback(vaultKey, context.conversationId, config, vault),
+      vault?.envPolicy,
     );
   }
 

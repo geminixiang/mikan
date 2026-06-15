@@ -4,12 +4,13 @@ import { CloudflareSandboxExecutor, cloudflareSandboxAdapter } from "./cloudflar
 import { HostExecutor, hostSandboxAdapter } from "./host.js";
 import { imageSandboxAdapter } from "./image.js";
 import { SandboxError } from "./errors.js";
-import type { Executor, SandboxAdapter, SandboxConfig } from "./types.js";
+import type { EnvExposurePolicy, Executor, SandboxAdapter, SandboxConfig } from "./types.js";
 
 export type {
   CloudflareSandboxConfig,
   ExecOptions,
   ExecResult,
+  EnvExposurePolicy,
   Executor,
   RuntimePathContext,
   SandboxAdapter,
@@ -68,10 +69,11 @@ export function createExecutor(
   config: SandboxConfig,
   env?: Record<string, string>,
   ensureReady?: () => Promise<void>,
+  envPolicy?: EnvExposurePolicy,
 ): Executor {
   const adapter = sandboxAdapterByType.get(config.type);
   if (!adapter) {
     throw new SandboxError(`Error: Unsupported sandbox type '${config.type}'`);
   }
-  return adapter.createExecutor(config, env, ensureReady);
+  return adapter.createExecutor(config, env, ensureReady, envPolicy);
 }

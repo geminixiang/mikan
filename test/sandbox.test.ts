@@ -8,6 +8,10 @@ import {
   createExecutor,
   parseSandboxArg,
 } from "../src/sandbox/index.js";
+import {
+  defaultEnvExposurePolicyForKeys,
+  KNOWN_CLI_NAMES,
+} from "../src/sandbox/credential-policy.js";
 
 describe("parseSandboxArg", () => {
   afterEach(() => {
@@ -136,7 +140,7 @@ describe("ContainerExecutor", () => {
 
     const [[dockerCommand]] = exec.mock.calls;
     expect(dockerCommand).toContain("docker exec -e 'GH_TOKEN=gho_test' ");
-    expect(dockerCommand).not.toContain("API_TOKEN");
+    expect(dockerCommand).toContain("API_TOKEN=secret");
     expect(dockerCommand).toContain("mikan-sandbox sh -c");
     expect(dockerCommand).toContain("gh repo view livingbio/skills");
   });
@@ -159,7 +163,7 @@ describe("ContainerExecutor", () => {
     expect(dockerCommand).not.toContain("GH_TOKEN");
   });
 
-  test("does not inject vault env for unrelated commands", async () => {
+  test("injects unknown vault env but not known CLI env for unrelated commands", async () => {
     const exec = vi
       .spyOn(HostExecutor.prototype, "exec")
       .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
@@ -174,7 +178,53 @@ describe("ContainerExecutor", () => {
     const [[dockerCommand]] = exec.mock.calls;
     expect(dockerCommand).not.toContain("--env-file");
     expect(dockerCommand).not.toContain("GH_TOKEN");
-    expect(dockerCommand).not.toContain("API_TOKEN");
+    expect(dockerCommand).toContain("API_TOKEN=secret");
+  });
+
+  test("honors command-centric exposure policy", async () => {
+    const exec = vi
+      .spyOn(HostExecutor.prototype, "exec")
+      .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
+    const executor = new ContainerExecutor(
+      "mikan-sandbox",
+      { API_TOKEN: "secret" },
+      async () => {},
+      { commands: { python: ["API_TOKEN"] } },
+    );
+
+    await executor.exec("python script.py");
+
+    const [[dockerCommand]] = exec.mock.calls;
+    expect(dockerCommand).toContain("API_TOKEN=secret");
+  });
+});
+
+describe("credential policy CLI registry", () => {
+  test("KNOWN_CLI_NAMES covers every CLI a default policy can scope to", () => {
+    // The login portal renders KNOWN_CLI_NAMES as suggested command groups, so
+    // it must stay in sync with the CLIs that defaultEnvExposurePolicyForKeys
+    // can actually emit — otherwise a derived scope would be unselectable.
+    const knownEnvKeys = [
+      "GH_TOKEN",
+      "GITHUB_TOKEN",
+      "GITHUB_OAUTH_ACCESS_TOKEN",
+      "GOOGLE_APPLICATION_CREDENTIALS",
+      "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE",
+      "CLOUDSDK_CONFIG",
+      "CLOUDFLARE_API_TOKEN",
+      "CLOUDFLARE_ACCOUNT_ID",
+      "VERCEL_TOKEN",
+      "VERCEL_ORG_ID",
+      "VERCEL_PROJECT_ID",
+      "SENTRY_AUTH_TOKEN",
+      "SENTRY_ORG",
+      "SENTRY_PROJECT",
+    ];
+    const policy = defaultEnvExposurePolicyForKeys(knownEnvKeys);
+    for (const command of Object.keys(policy.commands ?? {})) {
+      expect(KNOWN_CLI_NAMES).toContain(command);
+    }
+    expect(KNOWN_CLI_NAMES).toEqual([...KNOWN_CLI_NAMES].toSorted());
   });
 });
 
@@ -239,6 +289,7 @@ describe("CloudflareSandboxExecutor", () => {
 
     const executor = new CloudflareSandboxExecutor("slack-u123", {
       CLOUDFLARE_API_TOKEN: "secret",
+      API_TOKEN: "custom",
     });
     await expect(executor.exec("wrangler whoami", { timeout: 5 })).resolves.toEqual({
       stdout: "ok\n",
@@ -258,7 +309,7 @@ describe("CloudflareSandboxExecutor", () => {
       command: "wrangler whoami",
       timeoutSeconds: 5,
       cwd: "/workspace",
-      env: { CLOUDFLARE_API_TOKEN: "secret" },
+      env: { API_TOKEN: "custom", CLOUDFLARE_API_TOKEN: "secret" },
     });
   });
 

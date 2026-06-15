@@ -32,6 +32,11 @@ export interface CloudflareSandboxConfig {
   sandboxId: string;
 }
 
+export interface EnvExposurePolicy {
+  always?: string[];
+  commands?: Record<string, string[]>;
+}
+
 export interface Executor {
   /**
    * Execute a bash command.
@@ -84,5 +89,6 @@ export interface SandboxAdapter<TConfig extends SandboxConfig = SandboxConfig> {
     config: TConfig,
     env?: Record<string, string>,
     ensureReady?: () => Promise<void>,
+    envPolicy?: EnvExposurePolicy,
   ): Executor;
 }
