@@ -120,6 +120,8 @@ mikan --sandbox=host /path/to/workspace
 
 ```bash
 docker run -d --name mikan-tools \
+  --cap-drop=ALL \
+  --security-opt=no-new-privileges \
   -v /path/to/workspace:/workspace \
   alpine:latest sleep infinity
 
@@ -130,6 +132,7 @@ mikan --sandbox=container:mikan-tools /path/to/workspace
 
 - mikan 使用 `docker exec` 在既有 container 中執行 command
 - container 內 workspace 預期是 `/workspace`
+- 建議建立 container 時加上 `--cap-drop=ALL` 與 `--security-opt=no-new-privileges`，避免 container 內程序取得額外權限
 - vault key 是：
 
 ```text
@@ -184,6 +187,7 @@ mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 
 - mikan 會為每個 conversation 建立一個獨立 vault 與 container
 - 每個 container 會綁定自己的 Docker bridge network，彼此預設互相隔離
+- 建立 managed container 時會加上 `--cap-drop=ALL` 與 `--security-opt=no-new-privileges`
 - container 內只會看到 `/workspace/MEMORY.md`、`/workspace/skills`、`/workspace/events` 與當前 conversation 目錄
 - vault env 會在執行時注入
 - vault file credential 會依 target path 自動 bind mount 進 container
