@@ -328,6 +328,8 @@ export class DockerContainerManager {
       "ALL",
       "--security-opt",
       "no-new-privileges",
+      "--pids-limit",
+      "1024",
       ...labels,
       ...this.resourceLimitArgs(this.effectiveLimits(containerKey)),
       ...this.mountArgs(mounts),
