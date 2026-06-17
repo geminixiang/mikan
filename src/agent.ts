@@ -612,6 +612,22 @@ function createEmptyUsageTotals() {
   };
 }
 
+export function shouldReportUsageSummary(usage: {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cost: { total: number };
+}): boolean {
+  return (
+    usage.input > 0 ||
+    usage.output > 0 ||
+    usage.cacheRead > 0 ||
+    usage.cacheWrite > 0 ||
+    usage.cost.total > 0
+  );
+}
+
 function createRunState(): RunnerSessionState {
   return {
     responseCtx: null,
@@ -904,7 +920,7 @@ async function reportUsageSummary(ctx: UsageReportContext): Promise<void> {
     sessionUuid,
     waitForQueue,
   } = ctx;
-  if (runState.totalUsage.cost.total <= 0) return;
+  if (!shouldReportUsageSummary(runState.totalUsage)) return;
 
   const lastAssistantMessage = session.messages
     .slice()
