@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
+import { ChatSessionManager } from "../src/sessions/chat-session-manager.js";
 import {
   createManagedSessionFile,
   createManagedSessionFileAtPath,
@@ -80,6 +81,43 @@ function seedManagedSession(
   sessionManager.appendMessage(makeUserMessage(text));
   sessionManager.appendMessage(makeAssistantMessage(`${text} reply`));
   return sessionFile;
+}
+
+function parseSessionEntries(sessionFile: string): Array<Record<string, unknown>> {
+  return readFileSync(sessionFile, "utf-8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+function rewriteSessionTimestamp(sessionFile: string, timestamp: string): void {
+  const lines = readFileSync(sessionFile, "utf-8").split("\n");
+  const header = JSON.parse(lines[0]!) as Record<string, unknown>;
+  header.timestamp = timestamp;
+  lines[0] = JSON.stringify(header);
+  writeFileSync(sessionFile, lines.join("\n"));
+}
+
+function appendLogMessage(options: {
+  ts: string;
+  date: string;
+  text: string;
+  threadTs?: string;
+  isBot?: boolean;
+}): void {
+  writeFileSync(
+    join(channelDir, "log.jsonl"),
+    `${JSON.stringify({
+      date: options.date,
+      ts: options.ts,
+      threadTs: options.threadTs,
+      user: options.isBot ? "bot" : "U1",
+      userName: options.isBot ? undefined : "alice",
+      text: options.text,
+      isBot: options.isBot === true,
+    })}\n`,
+    { flag: "a" },
+  );
 }
 
 describe("getChannelSessionDir", () => {
@@ -291,6 +329,165 @@ describe("fixed thread sessions", () => {
     const threadSM = openManagedSession(threadFile, sessionDir, channelDir);
     const entries = threadSM.getEntries().filter((e: { type: string }) => e.type === "message");
     expect(entries.length).toBe(0);
+  });
+});
+
+describe("top-level session rotation", () => {
+  test("rotates shared top-level sessions on biweekly Sunday bucket changes", async () => {
+    const sessionDir = getChannelSessionDir(channelDir);
+    const oldFile = createManagedSessionFile(sessionDir, channelDir);
+    rewriteSessionTimestamp(oldFile, "2026-01-05T12:00:00.000Z");
+    const oldSession = openManagedSession(oldFile, sessionDir, channelDir);
+    oldSession.appendMessage(makeUserMessage("stale active context"));
+
+    appendLogMessage({
+      ts: "1771027200.000000",
+      date: "2026-02-14T00:00:00.000Z",
+      text: "outside two week bootstrap",
+    });
+    appendLogMessage({
+      ts: "1771545600.000000",
+      date: "2026-02-20T00:00:00.000Z",
+      text: "recent bootstrap context",
+    });
+
+    const manager = new ChatSessionManager({ now: () => new Date("2026-03-01T12:00:00.000Z") });
+    const scope = await manager.resolveSessionScope({
+      conversationDir: channelDir,
+      sessionKey: "C123",
+      cwd: channelDir,
+      rotateTopLevelSession: true,
+    });
+
+    expect(scope.contextFile).not.toBe(oldFile);
+    expect(tryResolveCurrentSession(sessionDir)).toBe(scope.contextFile);
+    const content = readFileSync(scope.contextFile, "utf-8");
+    expect(content).toContain("recent bootstrap context");
+    expect(content).not.toContain("outside two week bootstrap");
+    expect(content).not.toContain("stale active context");
+  });
+
+  test("does not rotate top-level sessions inside the same biweekly bucket", async () => {
+    const sessionDir = getChannelSessionDir(channelDir);
+    const currentFile = createManagedSessionFile(sessionDir, channelDir);
+    rewriteSessionTimestamp(currentFile, "2026-02-23T12:00:00.000Z");
+
+    const manager = new ChatSessionManager({ now: () => new Date("2026-02-28T12:00:00.000Z") });
+    const scope = await manager.resolveSessionScope({
+      conversationDir: channelDir,
+      sessionKey: "C123",
+      cwd: channelDir,
+      rotateTopLevelSession: true,
+    });
+
+    expect(scope.contextFile).toBe(currentFile);
+    expect(tryResolveCurrentSession(sessionDir)).toBe(currentFile);
+  });
+
+  test("does not rotate stale top-level sessions when rotation policy is disabled", async () => {
+    const sessionDir = getChannelSessionDir(channelDir);
+    const currentFile = createManagedSessionFile(sessionDir, channelDir);
+    rewriteSessionTimestamp(currentFile, "2026-01-05T12:00:00.000Z");
+
+    const manager = new ChatSessionManager({ now: () => new Date("2026-03-01T12:00:00.000Z") });
+    const scope = await manager.resolveSessionScope({
+      conversationDir: channelDir,
+      sessionKey: "C123",
+      cwd: channelDir,
+      rotateTopLevelSession: false,
+    });
+
+    expect(scope.contextFile).toBe(currentFile);
+    expect(tryResolveCurrentSession(sessionDir)).toBe(currentFile);
+  });
+
+  test("does not rotate thread sessions", async () => {
+    const sessionDir = getChannelSessionDir(channelDir);
+    const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
+    seedManagedSession(threadFile, sessionDir, channelDir, "thread context");
+    rewriteSessionTimestamp(threadFile, "2026-01-05T12:00:00.000Z");
+
+    const manager = new ChatSessionManager({ now: () => new Date("2026-03-01T12:00:00.000Z") });
+    const scope = await manager.resolveSessionScope({
+      conversationDir: channelDir,
+      sessionKey: "C123:1000.0001",
+      cwd: channelDir,
+      rotateTopLevelSession: true,
+    });
+
+    expect(scope.contextFile).toBe(threadFile);
+    expect(readFileSync(threadFile, "utf-8")).toContain("thread context");
+  });
+
+  test("keeps old top-level context out of thread sessions after bootstrap", async () => {
+    const manager = new ChatSessionManager({ now: () => new Date("2026-03-01T12:00:00.000Z") });
+    appendLogMessage({
+      ts: "1770163200.000000",
+      date: "2026-02-04T00:00:00.000Z",
+      text: "old top-level context",
+    });
+    appendLogMessage({
+      ts: "1771545600.000000",
+      date: "2026-02-20T00:00:00.000Z",
+      text: "thread root",
+    });
+    appendLogMessage({
+      ts: "1771545601.000000",
+      date: "2026-02-20T00:00:01.000Z",
+      text: "thread reply",
+      threadTs: "1771545600.000000",
+    });
+
+    const created = await manager.resolveSessionScope({
+      conversationDir: channelDir,
+      sessionKey: "C123:1771545600.000000",
+      cwd: channelDir,
+    });
+    const reused = await manager.resolveSessionScope({
+      conversationDir: channelDir,
+      sessionKey: "C123:1771545600.000000",
+      cwd: channelDir,
+    });
+
+    expect(reused.contextFile).toBe(created.contextFile);
+    const content = readFileSync(reused.contextFile, "utf-8");
+    expect(content).toContain("thread root");
+    expect(content).toContain("thread reply");
+    expect(content).not.toContain("old top-level context");
+  });
+
+  test("keeps old log messages out after rotation sync", async () => {
+    const sessionDir = getChannelSessionDir(channelDir);
+    const oldFile = createManagedSessionFile(sessionDir, channelDir);
+    rewriteSessionTimestamp(oldFile, "2026-01-05T12:00:00.000Z");
+    appendLogMessage({
+      ts: "1770163200.000000",
+      date: "2026-02-04T00:00:00.000Z",
+      text: "old log only",
+    });
+
+    const manager = new ChatSessionManager({ now: () => new Date("2026-03-01T12:00:00.000Z") });
+    const rotated = await manager.resolveSessionScope({
+      conversationDir: channelDir,
+      sessionKey: "C123",
+      cwd: channelDir,
+      rotateTopLevelSession: true,
+    });
+    rewriteSessionTimestamp(rotated.contextFile, "2026-03-01T12:00:00.000Z");
+    const reused = await manager.resolveSessionScope({
+      conversationDir: channelDir,
+      sessionKey: "C123",
+      cwd: channelDir,
+      rotateTopLevelSession: true,
+    });
+
+    expect(reused.contextFile).toBe(rotated.contextFile);
+    expect(readFileSync(reused.contextFile, "utf-8")).not.toContain("old log only");
+    expect(
+      parseSessionEntries(reused.contextFile).some(
+        (entry) => entry.type === "custom" && entry.customType === "mikan.chat_sync",
+      ),
+    ).toBe(true);
   });
 });
 

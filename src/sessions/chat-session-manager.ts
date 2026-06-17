@@ -23,6 +23,8 @@ import {
 const DEFAULT_RECENT_DAYS = 14;
 const DEFAULT_MAX_TOP_LEVEL_MESSAGES = 200;
 const CHAT_SYNC_CUSTOM_TYPE = "mikan.chat_sync";
+const BIWEEKLY_ROTATION_ANCHOR = new Date(2026, 0, 4); // Sunday
+const BIWEEKLY_MS = 14 * 24 * 60 * 60 * 1000;
 
 type SessionAppendMessage = Parameters<SessionManager["appendMessage"]>[0];
 
@@ -118,6 +120,7 @@ export class ChatSessionManager {
         sessionDir,
         cwd,
         currentMessageId: options.currentMessageId,
+        rotateTopLevelSession: options.rotateTopLevelSession === true,
       });
       return { sessionDir, contextFile, threadRootMessage: null };
     }
@@ -159,20 +162,23 @@ export class ChatSessionManager {
     sessionDir: string;
     cwd: string;
     currentMessageId?: string;
+    rotateTopLevelSession: boolean;
   }): string {
     const records = readConversationLog(options.conversationDir);
     const existing = tryResolveCurrentSession(options.sessionDir);
     if (existing && !isPlatformHistorySession(existing)) {
-      syncSessionFromLog(
-        existing,
-        options.sessionDir,
-        options.cwd,
-        selectExistingSessionSyncMessages(records, {
-          sessionKey: null,
-          excludeMessageId: options.currentMessageId,
-        }),
-      );
-      return existing;
+      if (!options.rotateTopLevelSession || !shouldRotateTopLevelSession(existing, this.now())) {
+        syncSessionFromLog(
+          existing,
+          options.sessionDir,
+          options.cwd,
+          selectExistingSessionSyncMessages(records, {
+            sessionKey: null,
+            excludeMessageId: options.currentMessageId,
+          }),
+        );
+        return existing;
+      }
     }
 
     const sessionFile = createManagedSessionFile(options.sessionDir, options.cwd);
@@ -182,7 +188,16 @@ export class ChatSessionManager {
       now: this.now(),
       excludeMessageId: options.currentMessageId,
     });
-    bootstrapSessionFromLog(sessionFile, options.sessionDir, options.cwd, bootstrapRecords);
+    bootstrapSessionFromLog(
+      sessionFile,
+      options.sessionDir,
+      options.cwd,
+      bootstrapRecords,
+      latestSyncMessageId(records, {
+        sessionKey: null,
+        excludeMessageId: options.currentMessageId,
+      }),
+    );
     return sessionFile;
   }
 
@@ -218,10 +233,53 @@ export class ChatSessionManager {
       now: this.now(),
       excludeMessageId: options.currentMessageId,
     });
-    bootstrapSessionFromLog(threadFile, options.sessionDir, options.cwd, bootstrapRecords);
+    bootstrapSessionFromLog(
+      threadFile,
+      options.sessionDir,
+      options.cwd,
+      bootstrapRecords,
+      latestSyncMessageId(records, {
+        sessionKey: options.sessionKey,
+        excludeMessageId: options.currentMessageId,
+      }),
+    );
 
     return { sessionDir: options.sessionDir, contextFile: threadFile, threadRootMessage };
   }
+}
+
+function shouldRotateTopLevelSession(sessionFile: string, now: Date): boolean {
+  const timestamp = readSessionTimestamp(sessionFile);
+  return timestamp !== null && biweeklyBucket(timestamp) !== biweeklyBucket(now);
+}
+
+function readSessionTimestamp(sessionFile: string): Date | null {
+  const raw = readTextFileIfExists(sessionFile);
+  if (raw === undefined) return null;
+  const firstLine = raw.split("\n").find((line) => line.trim());
+  if (!firstLine) return null;
+  try {
+    const header = parseJsonValue(
+      firstLine,
+      (value): value is { timestamp?: unknown } => isRecord(value),
+      (detail) => (detail === "unexpected JSON shape" ? "expected a JSON object" : detail),
+    );
+    if (typeof header.timestamp !== "string") return null;
+    const date = new Date(header.timestamp);
+    return Number.isFinite(date.getTime()) ? date : null;
+  } catch {
+    return null;
+  }
+}
+
+function biweeklyBucket(date: Date): number {
+  const weekStart = sundayStart(date).getTime();
+  const anchor = sundayStart(BIWEEKLY_ROTATION_ANCHOR).getTime();
+  return Math.floor((weekStart - anchor) / BIWEEKLY_MS);
+}
+
+function sundayStart(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() - date.getDay());
 }
 
 function readConversationLog(conversationDir: string): LogRecord[] {
@@ -327,6 +385,13 @@ function selectExistingSessionSyncMessages(
   );
 }
 
+function latestSyncMessageId(
+  records: LogRecord[],
+  options: { sessionKey: string | null; excludeMessageId?: string },
+): string | undefined {
+  return selectExistingSessionSyncMessages(records, options).at(-1)?.message.ts;
+}
+
 function isRenderableChatMessage(
   message: ConversationLogMessage,
   excludeMessageId?: string,
@@ -379,15 +444,16 @@ function bootstrapSessionFromLog(
   sessionDir: string,
   cwd: string,
   records: LogRecord[],
+  lastMessageId = records.at(-1)?.message.ts,
 ): void {
-  if (records.length === 0) return;
+  if (records.length === 0 && !lastMessageId) return;
 
   const sessionManager = openManagedSession(sessionFile, sessionDir, cwd);
   appendLogRecordsToSession(sessionManager, records);
   sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
     source: "log.jsonl",
     messageCount: records.length,
-    lastMessageId: records.at(-1)?.message.ts,
+    lastMessageId,
   });
   forceRewriteSession(sessionManager, sessionFile);
 }

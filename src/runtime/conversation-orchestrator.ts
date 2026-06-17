@@ -1,4 +1,4 @@
-import type { BotAdapters, PlatformName } from "../adapter.js";
+import type { BotAdapters, ConversationKind, PlatformName } from "../adapter.js";
 import { waitForThreadSessionBootstrap } from "../sessions/chat-session-manager.js";
 import { dispatchCommand } from "../commands/registry.js";
 import type { CommandHandler, CommandServices } from "../commands/types.js";
@@ -28,6 +28,7 @@ interface ConversationOrchestratorOptions {
     conversationId: string;
     sessionKey: string;
     currentMessageId?: string;
+    conversationKind?: ConversationKind;
   }) => Promise<ConversationRuntimeState>;
   hasMaterializedSession: (options: { conversationDir: string; sessionKey: string }) => boolean;
   beforeRunTracked: (runPromise: Promise<void>) => void;
@@ -82,6 +83,7 @@ export class ConversationOrchestrator {
         conversationId,
         sessionKey,
         currentMessageId: event.ts,
+        conversationKind: event.conversationKind,
       });
       state.runner.syncChatHistory(event.ts);
     } catch (err) {

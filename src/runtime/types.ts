@@ -1,5 +1,5 @@
 import type { AgentRunner } from "../agent.js";
-import type { Bot, BotAdapters, BotEvent, BotHandler } from "../adapter.js";
+import type { Bot, BotAdapters, BotEvent, BotHandler, ConversationKind } from "../adapter.js";
 import type { CommandServices } from "../commands/types.js";
 
 export interface ConversationRuntimeState {
@@ -8,6 +8,7 @@ export interface ConversationRuntimeState {
   stopRequested: boolean;
   stopMessageTs?: string;
   lastAccessedAt: number;
+  sessionFile: string;
   /** Epoch ms when the current run started; 0 when idle. */
   startedAt: number;
   lastActivityAt?: number;
@@ -22,6 +23,7 @@ export interface RunSessionOptions {
 export interface CreateSessionSandboxOptions {
   conversationId: string;
   sessionKey: string;
+  conversationKind?: ConversationKind;
 }
 
 export interface SessionRuntimeOptions extends Omit<CommandServices, "runtime"> {

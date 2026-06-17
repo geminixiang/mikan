@@ -211,10 +211,7 @@ class MikanSessionRuntime implements SessionRuntime {
   ): Promise<ConversationState> {
     const { conversationId, sessionKey, currentMessageId } = options;
     const existing = this.conversationStates.get(sessionKey);
-    if (existing) {
-      existing.lastAccessedAt = Date.now();
-      return existing;
-    }
+    if (existing?.running) return existing;
 
     const conversationDir = join(this.options.workingDir, conversationId);
     const runtimeCwd = runtimeCwdForSandbox(
@@ -227,7 +224,14 @@ class MikanSessionRuntime implements SessionRuntime {
       sessionKey,
       cwd: runtimeCwd,
       currentMessageId,
+      rotateTopLevelSession: options.conversationKind === "shared" && sessionKey === conversationId,
     });
+
+    if (existing && existing.sessionFile === sessionScope.contextFile) {
+      existing.lastAccessedAt = Date.now();
+      return existing;
+    }
+
     const state: ConversationState = {
       running: false,
       runner: await createRunner(
@@ -246,6 +250,7 @@ class MikanSessionRuntime implements SessionRuntime {
       ),
       stopRequested: false,
       lastAccessedAt: Date.now(),
+      sessionFile: sessionScope.contextFile,
       startedAt: 0,
     };
     this.conversationStates.set(sessionKey, state);
