@@ -122,59 +122,23 @@ describe("ContainerExecutor", () => {
     vi.restoreAllMocks();
   });
 
-  test("injects GitHub token only for gh cli commands", async () => {
+  test("bootstraps git credential helper when GitHub token env is injected", async () => {
     const exec = vi
       .spyOn(HostExecutor.prototype, "exec")
       .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
     const executor = new ContainerExecutor(
       "mikan-sandbox",
-      { GH_TOKEN: "gho_test", API_TOKEN: "secret" },
+      { GH_TOKEN: "gho_test" },
       async () => {},
     );
 
-    await executor.exec("gh repo view livingbio/skills");
+    await executor.exec("git clone https://github.com/livingbio/skills.git");
 
     const [[dockerCommand]] = exec.mock.calls;
-    expect(dockerCommand).toContain("docker exec -e 'GH_TOKEN=gho_test' ");
-    expect(dockerCommand).not.toContain("API_TOKEN");
+    expect(dockerCommand).toContain("docker exec --env-file ");
     expect(dockerCommand).toContain("mikan-sandbox sh -c");
-    expect(dockerCommand).toContain("gh repo view livingbio/skills");
-  });
-
-  test("injects Cloudflare env for npx wrangler commands", async () => {
-    const exec = vi
-      .spyOn(HostExecutor.prototype, "exec")
-      .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
-    const executor = new ContainerExecutor(
-      "mikan-sandbox",
-      { GH_TOKEN: "gho_test", CLOUDFLARE_API_TOKEN: "cf_test", CLOUDFLARE_ACCOUNT_ID: "acct" },
-      async () => {},
-    );
-
-    await executor.exec("npx wrangler deploy");
-
-    const [[dockerCommand]] = exec.mock.calls;
-    expect(dockerCommand).toContain("CLOUDFLARE_API_TOKEN=cf_test");
-    expect(dockerCommand).toContain("CLOUDFLARE_ACCOUNT_ID=acct");
-    expect(dockerCommand).not.toContain("GH_TOKEN");
-  });
-
-  test("does not inject vault env for unrelated commands", async () => {
-    const exec = vi
-      .spyOn(HostExecutor.prototype, "exec")
-      .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
-    const executor = new ContainerExecutor(
-      "mikan-sandbox",
-      { GH_TOKEN: "gho_test", API_TOKEN: "secret" },
-      async () => {},
-    );
-
-    await executor.exec("env");
-
-    const [[dockerCommand]] = exec.mock.calls;
-    expect(dockerCommand).not.toContain("--env-file");
-    expect(dockerCommand).not.toContain("GH_TOKEN");
-    expect(dockerCommand).not.toContain("API_TOKEN");
+    expect(dockerCommand).toContain("gh auth setup-git");
+    expect(dockerCommand).toContain("git clone https://github.com/livingbio/skills.git");
   });
 });
 
@@ -237,10 +201,8 @@ describe("CloudflareSandboxExecutor", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const executor = new CloudflareSandboxExecutor("slack-u123", {
-      CLOUDFLARE_API_TOKEN: "secret",
-    });
-    await expect(executor.exec("wrangler whoami", { timeout: 5 })).resolves.toEqual({
+    const executor = new CloudflareSandboxExecutor("slack-u123", { API_TOKEN: "secret" });
+    await expect(executor.exec("pwd", { timeout: 5 })).resolves.toEqual({
       stdout: "ok\n",
       stderr: "",
       code: 0,
@@ -255,10 +217,10 @@ describe("CloudflareSandboxExecutor", () => {
     );
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
       sandboxId: "slack-u123",
-      command: "wrangler whoami",
+      command: "pwd",
       timeoutSeconds: 5,
       cwd: "/workspace",
-      env: { CLOUDFLARE_API_TOKEN: "secret" },
+      env: { API_TOKEN: "secret" },
     });
   });
 

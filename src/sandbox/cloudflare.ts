@@ -8,7 +8,6 @@ import type {
 } from "./types.js";
 import { readEnv } from "../utils/env.js";
 import { SandboxError } from "./errors.js";
-import { resolveCommandEnv } from "./credential-policy.js";
 
 const DEFAULT_CLOUDFLARE_CWD = "/workspace";
 
@@ -100,8 +99,7 @@ export class CloudflareSandboxExecutor implements Executor {
         cwd: this.cwd,
       };
       if (options?.timeout) payload.timeoutSeconds = options.timeout;
-      const commandEnv = resolveCommandEnv(command, this.env);
-      if (commandEnv) payload.env = commandEnv;
+      if (this.env && Object.keys(this.env).length > 0) payload.env = this.env;
 
       const response = await fetch(new URL("/exec", resolveCloudflareSandboxUrl()), {
         method: "POST",
