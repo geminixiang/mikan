@@ -9,6 +9,25 @@ any release.
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-06-17
+
+### Added
+
+- Rotate shared top-level channel sessions on biweekly Sunday boundaries while keeping thread sessions fixed.
+
+### Changed
+
+- Bootstrap rotated shared channel sessions from the recent two-week chat log window and prevent older log history from being resynced into the active session.
+- Harden managed Docker sandboxes with dropped capabilities, no-new-privileges, and a PID limit.
+
+### Fixed
+
+- Report usage summaries when token usage is available even if provider pricing data is missing.
+
+### Tests
+
+- Add coverage for session rotation, thread bootstrap watermarks, sandbox hardening flags, and usage summaries without cost data.
+
 ## [0.4.4] - 2026-06-12
 
 ### Fixed
