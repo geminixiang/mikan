@@ -103,6 +103,7 @@ export function createSlackResponseContext({
   let accumulatedText = "";
   let isWorking = true;
   let blockKitFinalized = false;
+  let mainResponseLogged = false;
   let streamActive = false;
   let streamUnavailable = false;
   let streamedText = "";
@@ -318,10 +319,6 @@ export function createSlackResponseContext({
           stream.setText(accumulatedText);
           const displayText = isWorking ? accumulatedText + WORKING_INDICATOR : accumulatedText;
           await startOrAppendStream(text, displayText);
-
-          if (messageTs) {
-            slack.logBotResponse(channelId, text, messageTs, replyInThread ? rootTs : undefined);
-          }
         },
         () => ({
           phase: messageTs ? "update" : "initial_post",
@@ -337,9 +334,6 @@ export function createSlackResponseContext({
         "respond",
         async () => {
           await stream.append(delta);
-          if (messageTs) {
-            slack.logBotResponse(channelId, delta, messageTs, replyInThread ? rootTs : undefined);
-          }
         },
         () => ({ textLength: delta.length, accumulatedLength: stream.getText().length }),
       );
@@ -352,6 +346,15 @@ export function createSlackResponseContext({
         async () => {
           await stream.finish(finalText);
           accumulatedText = stream.getText();
+          if (messageTs && accumulatedText.trim() && !mainResponseLogged) {
+            slack.logBotResponse(
+              channelId,
+              accumulatedText,
+              messageTs,
+              replyInThread ? rootTs : undefined,
+            );
+            mainResponseLogged = true;
+          }
           if (!rootTs) return;
           await slack
             .setAssistantStatus(channelId, rootTs, "")
@@ -450,6 +453,7 @@ export function createSlackResponseContext({
           replyInThread ? rootTs : undefined,
           response.blocks,
         );
+        mainResponseLogged = true;
       });
       await updatePromise;
     },

@@ -173,6 +173,8 @@ describe("respond() — non-threaded", () => {
       expect.stringContaining("second"),
     );
     expect(bot.updateMessage).toHaveBeenLastCalledWith("C001", "MSG1", "final");
+    expect(bot.logBotResponse).toHaveBeenCalledTimes(1);
+    expect(bot.logBotResponse).toHaveBeenCalledWith("C001", "final", "MSG1", undefined);
   });
 
   test("thread reply mode streams top-level inputs in the user message thread", async () => {

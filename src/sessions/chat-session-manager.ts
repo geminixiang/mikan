@@ -304,7 +304,34 @@ function readConversationLog(conversationDir: string): LogRecord[] {
       );
     }
   }
-  return records;
+  return coalesceBotLogChunks(records);
+}
+
+function coalesceBotLogChunks(records: LogRecord[]): LogRecord[] {
+  const coalesced: LogRecord[] = [];
+  for (const record of records) {
+    const previous = coalesced.at(-1);
+    if (previous && canCoalesceBotLogChunk(previous.message, record.message)) {
+      previous.message.text = `${previous.message.text ?? ""}${record.message.text ?? ""}`;
+      continue;
+    }
+    coalesced.push({ ...record, message: { ...record.message } });
+  }
+  return coalesced;
+}
+
+function canCoalesceBotLogChunk(
+  previous: ConversationLogMessage,
+  current: ConversationLogMessage,
+): boolean {
+  return (
+    previous.isBot === true &&
+    current.isBot === true &&
+    !!previous.ts &&
+    previous.ts === current.ts &&
+    previous.threadTs === current.threadTs &&
+    previous.user === current.user
+  );
 }
 
 function findLogRecordById(records: LogRecord[], messageId: string): LogRecord | undefined {

@@ -115,6 +115,57 @@ describe("ChatSessionManager", () => {
     expect(text).not.toContain("current message");
   });
 
+  test("coalesces streamed bot log chunks before applying top-level history limit", async () => {
+    writeLog([
+      {
+        date: "2026-05-01T00:00:00.000Z",
+        ts: "1000.0001",
+        user: "U1",
+        userName: "alice",
+        text: "question",
+        isBot: false,
+      },
+      {
+        date: "2026-05-01T00:00:01.000Z",
+        ts: "1000.0002",
+        user: "bot",
+        text: "One",
+        isBot: true,
+      },
+      {
+        date: "2026-05-01T00:00:01.001Z",
+        ts: "1000.0002",
+        user: "bot",
+        text: " two",
+        isBot: true,
+      },
+      {
+        date: "2026-05-01T00:00:01.002Z",
+        ts: "1000.0002",
+        user: "bot",
+        text: " three",
+        isBot: true,
+      },
+    ]);
+
+    const manager = new ChatSessionManager({
+      recentDays: 7,
+      maxTopLevelMessages: 2,
+      now: () => new Date("2026-05-01T00:00:03.000Z"),
+    });
+
+    const scope = await manager.resolveSessionScope({
+      conversationDir,
+      sessionKey: "C123",
+      cwd: conversationDir,
+    });
+
+    const text = readContextText(scope.contextFile);
+    expect(text).toContain("question");
+    expect(text).toContain("One two three");
+    expect(countJsonlEntries(scope.contextFile, (entry) => entry.type === "message")).toBe(2);
+  });
+
   test("bootstraps a thread session from recent top-level log history plus thread history", async () => {
     writeLog([
       {
