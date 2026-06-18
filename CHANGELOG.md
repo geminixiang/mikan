@@ -9,6 +9,17 @@ any release.
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-06-18
+
+### Fixed
+
+- Store Slack streamed responses as a single finalized bot log entry instead of per-delta fragments.
+- Coalesce legacy Slack bot log fragments when bootstrapping chat sessions so platform history is not filled with partial words.
+
+### Tests
+
+- Add coverage for coalescing streamed bot history and logging only finalized Slack responses.
+
 ## [0.4.5] - 2026-06-17
 
 ### Added
