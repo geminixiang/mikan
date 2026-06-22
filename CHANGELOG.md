@@ -9,6 +9,20 @@ any release.
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-06-22
+
+### Fixed
+
+- Apply the recent-days and max-messages history window when syncing existing chat sessions so resuming a session no longer replays unbounded older log history.
+
+### Changed
+
+- Always report a usage summary whenever token usage is available.
+
+### Tests
+
+- Add coverage for capping existing chat history sync to the recent history window.
+
 ## [0.4.6] - 2026-06-18
 
 ### Fixed
