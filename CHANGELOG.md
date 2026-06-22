@@ -9,6 +9,12 @@ any release.
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-06-22
+
+### Changed
+
+- Update bundled pi packages to the 0.79.9 line.
+
 ## [0.4.7] - 2026-06-22
 
 ### Fixed
