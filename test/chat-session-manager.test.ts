@@ -434,6 +434,124 @@ describe("ChatSessionManager", () => {
     expect(readFileSync(secondScope.contextFile, "utf-8").match(/\bk2\b/g)).toHaveLength(1);
   });
 
+  test("applies the same message cap when syncing an existing top-level session", async () => {
+    writeLog([
+      {
+        date: "2026-05-01T00:00:00.000Z",
+        ts: "1000.0001",
+        user: "U1",
+        userName: "alice",
+        text: "seed",
+        isBot: false,
+      },
+    ]);
+
+    const manager = new ChatSessionManager({
+      recentDays: 7,
+      maxTopLevelMessages: 2,
+      now: () => new Date("2026-05-01T00:00:04.000Z"),
+    });
+    const firstScope = await manager.resolveSessionScope({
+      conversationDir,
+      sessionKey: "C123",
+      cwd: conversationDir,
+    });
+
+    writeLog([
+      {
+        date: "2026-05-01T00:00:00.000Z",
+        ts: "1000.0001",
+        user: "U1",
+        userName: "alice",
+        text: "seed",
+        isBot: false,
+      },
+      {
+        date: "2026-05-01T00:00:01.000Z",
+        ts: "1000.0002",
+        user: "U1",
+        userName: "alice",
+        text: "sync0",
+        isBot: false,
+      },
+      {
+        date: "2026-05-01T00:00:02.000Z",
+        ts: "1000.0003",
+        user: "U1",
+        userName: "alice",
+        text: "sync1",
+        isBot: false,
+      },
+      {
+        date: "2026-05-01T00:00:03.000Z",
+        ts: "1000.0004",
+        user: "U1",
+        userName: "alice",
+        text: "sync2",
+        isBot: false,
+      },
+    ]);
+
+    const secondScope = await manager.resolveSessionScope({
+      conversationDir,
+      sessionKey: "C123",
+      cwd: conversationDir,
+    });
+
+    expect(secondScope.contextFile).toBe(firstScope.contextFile);
+    const text = readContextText(secondScope.contextFile);
+    expect(text).toContain("seed");
+    expect(text).not.toContain("sync0");
+    expect(text).toContain("sync1");
+    expect(text).toContain("sync2");
+  });
+
+  test("does not resync the full log when an existing sync marker is missing", async () => {
+    writeLog([
+      {
+        date: "2026-05-01T00:00:00.000Z",
+        ts: "1000.0001",
+        user: "U1",
+        userName: "alice",
+        text: "seed",
+        isBot: false,
+      },
+    ]);
+
+    const manager = new ChatSessionManager({
+      recentDays: 7,
+      maxTopLevelMessages: 20,
+      now: () => new Date("2026-05-01T00:00:03.000Z"),
+    });
+    const firstScope = await manager.resolveSessionScope({
+      conversationDir,
+      sessionKey: "C123",
+      cwd: conversationDir,
+    });
+
+    writeLog([
+      {
+        date: "2026-05-01T00:00:02.000Z",
+        ts: "1000.0003",
+        user: "U1",
+        userName: "alice",
+        text: "would refill from start",
+        isBot: false,
+      },
+    ]);
+
+    const secondScope = await manager.resolveSessionScope({
+      conversationDir,
+      sessionKey: "C123",
+      cwd: conversationDir,
+    });
+
+    expect(secondScope.contextFile).toBe(firstScope.contextFile);
+    const text = readContextText(secondScope.contextFile);
+    expect(text).toContain("seed");
+    expect(text).not.toContain("would refill from start");
+  });
+
   test("does not duplicate user-only bootstrapped history after the first assistant reply", async () => {
     writeLog([
       {

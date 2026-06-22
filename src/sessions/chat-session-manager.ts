@@ -142,6 +142,7 @@ export class ChatSessionManager {
         sessionKey: options.sessionKey.includes(":") ? options.sessionKey : null,
         excludeMessageId: options.currentMessageId,
       }),
+      this.historyWindow(),
     );
   }
 
@@ -176,6 +177,7 @@ export class ChatSessionManager {
             sessionKey: null,
             excludeMessageId: options.currentMessageId,
           }),
+          this.historyWindow(),
         );
         return existing;
       }
@@ -201,6 +203,10 @@ export class ChatSessionManager {
     return sessionFile;
   }
 
+  private historyWindow(): HistoryWindow {
+    return { recentDays: this.recentDays, maxMessages: this.maxTopLevelMessages, now: this.now() };
+  }
+
   private resolveThreadSessionScope(options: {
     conversationDir: string;
     sessionDir: string;
@@ -222,6 +228,7 @@ export class ChatSessionManager {
           sessionKey: options.sessionKey,
           excludeMessageId: options.currentMessageId,
         }),
+        this.historyWindow(),
       );
       return { sessionDir: options.sessionDir, contextFile: existing, threadRootMessage };
     }
@@ -350,9 +357,16 @@ function selectRecentTopLevelMessages(
     excludeMessageId?: string;
   },
 ): LogRecord[] {
+  return selectRecentMessages(
+    records.filter((record) => isTopLevelHistoryMessage(record.message, options.excludeMessageId)),
+    options,
+  );
+}
+
+function selectRecentMessages(records: LogRecord[], options: HistoryWindow): LogRecord[] {
   const sinceMs = options.now.getTime() - options.recentDays * 24 * 60 * 60 * 1000;
   return records
-    .filter((record) => isTopLevelHistoryMessage(record.message, sinceMs, options.excludeMessageId))
+    .filter((record) => isRecentHistoryMessage(record.message, sinceMs))
     .slice(-options.maxMessages);
 }
 
@@ -387,13 +401,14 @@ function selectThreadBootstrapMessages(
 
 function isTopLevelHistoryMessage(
   message: ConversationLogMessage,
-  sinceMs: number,
   excludeMessageId?: string,
 ): boolean {
   if (!isRenderableChatMessage(message, excludeMessageId)) return false;
-  if (message.threadTs) return false;
-  if (!message.date) return true;
+  return !message.threadTs;
+}
 
+function isRecentHistoryMessage(message: ConversationLogMessage, sinceMs: number): boolean {
+  if (!message.date) return true;
   const dateMs = new Date(message.date).getTime();
   return !Number.isFinite(dateMs) || dateMs >= sinceMs;
 }
@@ -485,25 +500,42 @@ function bootstrapSessionFromLog(
   forceRewriteSession(sessionManager, sessionFile);
 }
 
+interface HistoryWindow {
+  recentDays: number;
+  maxMessages: number;
+  now: Date;
+}
+
 function syncSessionFromLog(
   sessionFile: string,
   sessionDir: string,
   cwd: string,
   records: LogRecord[],
+  historyWindow: HistoryWindow,
 ): void {
   if (records.length === 0) return;
-  syncSessionManagerFromLog(openManagedSession(sessionFile, sessionDir, cwd), records);
+  syncSessionManagerFromLog(
+    openManagedSession(sessionFile, sessionDir, cwd),
+    records,
+    historyWindow,
+  );
 }
 
-function syncSessionManagerFromLog(sessionManager: SessionManager, records: LogRecord[]): void {
+function syncSessionManagerFromLog(
+  sessionManager: SessionManager,
+  records: LogRecord[],
+  historyWindow: HistoryWindow,
+): void {
   if (records.length === 0) return;
 
   const existingEntries = sessionManager.getEntries();
   const lastSyncedMessageId = getLatestChatSyncMessageId(existingEntries);
-  const startIndex = lastSyncedMessageId
-    ? records.findIndex((record) => record.message.ts === lastSyncedMessageId) + 1
-    : 0;
-  const syncCandidates = records.slice(Math.max(startIndex, 0));
+  const lastSyncedIndex = lastSyncedMessageId
+    ? records.findIndex((record) => record.message.ts === lastSyncedMessageId)
+    : -1;
+  if (lastSyncedMessageId && lastSyncedIndex === -1) return;
+
+  const syncCandidates = selectRecentMessages(records.slice(lastSyncedIndex + 1), historyWindow);
   if (syncCandidates.length === 0) return;
 
   const represented = buildRepresentedMessageCounts(existingEntries);
