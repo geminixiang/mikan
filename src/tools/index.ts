@@ -8,6 +8,7 @@ import type { Executor, SandboxConfig } from "../sandbox/index.js";
 import { createBashTool } from "./bash.js";
 import { createEditTool } from "./edit.js";
 import { createEventTool, HostEventStore } from "./event.js";
+import { createPMTool } from "./pm.js";
 import { createReadTool } from "./read.js";
 import { createSandboxTool } from "./sandbox.js";
 import { createWriteTool } from "./write.js";
@@ -30,6 +31,12 @@ export function createMikanTools(
     userId: string;
   }) => void;
   setSandboxContext: (context: { conversationId: string; userId: string }) => void;
+  setPMContext: (context: {
+    platform: string;
+    conversationId: string;
+    conversationKind: "direct" | "shared";
+    userId: string;
+  }) => void;
 } {
   const { tool: attachTool, setUploadFunction } = createAttachTool();
   const { tool: slackBlockKitTool, setBlockKitResponseFunction } = createSlackBlockKitTool();
@@ -39,6 +46,7 @@ export function createMikanTools(
   const { tool: sandboxTool, setSandboxContext } = createSandboxTool(
     sandboxController ?? { sandbox: executor.getSandboxConfig() },
   );
+  const { tool: pmTool, setPMContext } = createPMTool(workspaceDir);
   return {
     tools: [
       createReadTool(executor),
@@ -47,6 +55,7 @@ export function createMikanTools(
       createWriteTool(executor),
       eventTool,
       sandboxTool,
+      pmTool,
       attachTool,
       slackBlockKitTool,
     ],
@@ -54,5 +63,6 @@ export function createMikanTools(
     setBlockKitResponseFunction,
     setEventContext,
     setSandboxContext,
+    setPMContext,
   };
 }
