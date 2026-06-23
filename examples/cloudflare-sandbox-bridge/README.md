@@ -49,8 +49,10 @@ Request body:
   "command": "pwd",
   "timeoutSeconds": 30,
   "cwd": "/workspace",
-  "env": {
-    "OPENAI_API_KEY": "..."
+  "secrets": {
+    "env": {
+      "MIKAN_PROXY_INJECT_HEADERS": "{...}"
+    }
   }
 }
 ```
@@ -69,5 +71,8 @@ Response body:
 
 - 目前 bridge 只提供 command execution；沒有自動同步宿主機 workspace
 - 遠端 `/workspace` 只是 container 內目錄，不是本機 `/path/to/workspace` 的 mount
-- mikan vault file mounts 不會自動投影到 Cloudflare sandbox
+- 普通 vault env 不會送進 Cloudflare sandbox，因為 command 可以直接讀環境變數
+- `MIKAN_PROXY_INJECT_HEADERS` 會由 bridge 轉成短期 proxy session；sandbox 只拿到 `HTTP_PROXY` / `http_proxy` capability URL，真正 header secret 由 bridge-side proxy 注入
+- proxy 只支援 HTTP proxy request；HTTPS `CONNECT` 不能修改加密後的 header，bridge 會回 501
+- `secrets.files` 不會自動投影到 Cloudflare sandbox
 - 如果你要讓 remote sandbox 看見 repo 檔案，需自行設計 upload/sync 流程

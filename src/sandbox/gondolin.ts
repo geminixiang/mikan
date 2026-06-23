@@ -1,8 +1,8 @@
 import type {
-  CloudflareSandboxConfig,
   ExecOptions,
   ExecResult,
   Executor,
+  GondolinSandboxConfig,
   RuntimePathContext,
   SandboxAdapter,
   SandboxSecrets,
@@ -11,9 +11,9 @@ import { readEnv } from "../utils/env.js";
 import { SandboxError } from "./errors.js";
 import { buildRemoteSandboxSecrets } from "./remote-secrets.js";
 
-const DEFAULT_CLOUDFLARE_CWD = "/workspace";
+const DEFAULT_GONDOLIN_CWD = "/workspace";
 
-interface CloudflareExecPayload {
+interface GondolinExecPayload {
   sandboxId: string;
   command: string;
   timeoutSeconds?: number;
@@ -22,37 +22,37 @@ interface CloudflareExecPayload {
   secrets?: SandboxSecrets;
 }
 
-interface CloudflareExecResponse {
+interface GondolinExecResponse {
   stdout?: string;
   stderr?: string;
   code?: number;
   error?: string;
 }
 
-function parseCloudflareSandboxArg(value: string): CloudflareSandboxConfig | undefined {
-  if (!value.startsWith("cloudflare:")) {
+function parseGondolinSandboxArg(value: string): GondolinSandboxConfig | undefined {
+  if (!value.startsWith("gondolin:")) {
     return undefined;
   }
 
-  const sandboxId = value.slice("cloudflare:".length).trim();
+  const sandboxId = value.slice("gondolin:".length).trim();
   if (!sandboxId) {
     throw new SandboxError(
-      "Error: cloudflare sandbox requires sandbox id (e.g., cloudflare:slack-u123)",
+      "Error: gondolin sandbox requires sandbox id (e.g., gondolin:slack-u123)",
     );
   }
 
-  return { type: "cloudflare", sandboxId };
+  return { type: "gondolin", sandboxId };
 }
 
-async function validateCloudflareSandbox(_config: CloudflareSandboxConfig): Promise<void> {
-  const url = resolveCloudflareSandboxUrl();
+async function validateGondolinSandbox(_config: GondolinSandboxConfig): Promise<void> {
+  const url = resolveGondolinSandboxUrl();
   try {
     const response = await fetch(new URL("/health", url), {
-      headers: buildCloudflareHeaders(),
+      headers: buildGondolinHeaders(),
     });
     if (!response.ok) {
       throw new SandboxError(
-        `Error: Cloudflare sandbox bridge health check failed with HTTP ${response.status}`,
+        `Error: Gondolin sandbox bridge health check failed with HTTP ${response.status}`,
       );
     }
   } catch (error) {
@@ -60,15 +60,13 @@ async function validateCloudflareSandbox(_config: CloudflareSandboxConfig): Prom
       throw error;
     }
     const detail = error instanceof Error ? error.message : String(error);
-    throw new SandboxError(`Error: Cloudflare sandbox bridge is not reachable: ${detail}`);
+    throw new SandboxError(`Error: Gondolin sandbox bridge is not reachable: ${detail}`);
   }
 
-  console.log(
-    `  Cloudflare sandbox bridge enabled. Base URL: ${url.toString().replace(/\/$/, "")}`,
-  );
+  console.log(`  Gondolin sandbox bridge enabled. Base URL: ${url.toString().replace(/\/$/, "")}`);
 }
 
-export class CloudflareSandboxExecutor implements Executor {
+export class GondolinSandboxExecutor implements Executor {
   private readonly cwd: string;
 
   constructor(
@@ -76,7 +74,7 @@ export class CloudflareSandboxExecutor implements Executor {
     private readonly secrets?: SandboxSecrets,
     _ensureReady?: () => Promise<void>,
   ) {
-    this.cwd = readEnv("CLOUDFLARE_SANDBOX_CWD") || DEFAULT_CLOUDFLARE_CWD;
+    this.cwd = readEnv("GONDOLIN_SANDBOX_CWD") || DEFAULT_GONDOLIN_CWD;
   }
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
@@ -96,7 +94,7 @@ export class CloudflareSandboxExecutor implements Executor {
     }
 
     try {
-      const payload: CloudflareExecPayload = {
+      const payload: GondolinExecPayload = {
         sandboxId: this.sandboxId,
         command,
         cwd: this.cwd,
@@ -105,24 +103,24 @@ export class CloudflareSandboxExecutor implements Executor {
       if (options?.timeout) payload.timeoutSeconds = options.timeout;
       if (remoteSecrets) payload.secrets = remoteSecrets;
 
-      const response = await fetch(new URL("/exec", resolveCloudflareSandboxUrl()), {
+      const response = await fetch(new URL("/exec", resolveGondolinSandboxUrl()), {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          ...buildCloudflareHeaders(),
+          ...buildGondolinHeaders(),
         },
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
 
       const raw = (await response.text()).trim();
-      const parsed = raw ? (JSON.parse(raw) as CloudflareExecResponse) : {};
+      const parsed = raw ? (JSON.parse(raw) as GondolinExecResponse) : {};
 
       if (!response.ok) {
         throw new Error(
           parsed.error ||
             parsed.stderr ||
-            `Cloudflare sandbox bridge returned HTTP ${response.status}`,
+            `Gondolin sandbox bridge returned HTTP ${response.status}`,
         );
       }
 
@@ -158,24 +156,24 @@ export class CloudflareSandboxExecutor implements Executor {
     };
   }
 
-  getSandboxConfig(): CloudflareSandboxConfig {
-    return { type: "cloudflare", sandboxId: this.sandboxId };
+  getSandboxConfig(): GondolinSandboxConfig {
+    return { type: "gondolin", sandboxId: this.sandboxId };
   }
 }
 
-export const cloudflareSandboxAdapter: SandboxAdapter<CloudflareSandboxConfig> = {
-  type: "cloudflare",
-  parse: parseCloudflareSandboxArg,
-  validate: validateCloudflareSandbox,
+export const gondolinSandboxAdapter: SandboxAdapter<GondolinSandboxConfig> = {
+  type: "gondolin",
+  parse: parseGondolinSandboxArg,
+  validate: validateGondolinSandbox,
   createExecutor: (config, secrets, ensureReady) =>
-    new CloudflareSandboxExecutor(config.sandboxId, secrets, ensureReady),
+    new GondolinSandboxExecutor(config.sandboxId, secrets, ensureReady),
 };
 
-function resolveCloudflareSandboxUrl(): URL {
-  const raw = readEnv("CLOUDFLARE_SANDBOX_URL");
+function resolveGondolinSandboxUrl(): URL {
+  const raw = readEnv("GONDOLIN_SANDBOX_URL");
   if (!raw) {
     throw new SandboxError(
-      "Error: CLOUDFLARE_SANDBOX_URL or MIKAN_CLOUDFLARE_SANDBOX_URL is required for cloudflare sandbox mode",
+      "Error: GONDOLIN_SANDBOX_URL or MIKAN_GONDOLIN_SANDBOX_URL is required for gondolin sandbox mode",
     );
   }
 
@@ -183,11 +181,11 @@ function resolveCloudflareSandboxUrl(): URL {
     return new URL(raw);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    throw new SandboxError(`Error: invalid CLOUDFLARE_SANDBOX_URL: ${detail}`);
+    throw new SandboxError(`Error: invalid GONDOLIN_SANDBOX_URL: ${detail}`);
   }
 }
 
-function buildCloudflareHeaders(): Record<string, string> {
-  const token = readEnv("CLOUDFLARE_SANDBOX_TOKEN");
+function buildGondolinHeaders(): Record<string, string> {
+  const token = readEnv("GONDOLIN_SANDBOX_TOKEN");
   return token ? { authorization: `Bearer ${token}` } : {};
 }

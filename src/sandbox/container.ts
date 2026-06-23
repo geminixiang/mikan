@@ -8,11 +8,13 @@ import type {
   Executor,
   RuntimePathContext,
   SandboxAdapter,
+  SandboxSecrets,
 } from "./types.js";
 import { SandboxError } from "./errors.js";
 import { execSimple, shellEscape } from "./utils.js";
 import { HostExecutor } from "./host.js";
 import { createMountedRuntimePathContext } from "./path-context.js";
+import { parseProxyHeaderRules } from "./proxy.js";
 
 const PRIVATE_DIR_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
@@ -71,25 +73,59 @@ function buildContainerExecCommand(
   return `docker exec ${envPart}-w /workspace ${container} sh -c ${shellEscape(command)}`;
 }
 
-function withRuntimeBootstrap(command: string, env?: Record<string, string>): string {
-  if (!hasGitHubToken(env)) {
-    return command;
-  }
+function withRuntimeBootstrap(command: string, secrets?: SandboxSecrets): string {
+  return stageProxyInjection(command, secrets);
+}
 
+function stageProxyInjection(command: string, secrets?: SandboxSecrets): string {
+  const rules = parseProxyHeaderRules(secrets?.env);
+  if (!rules) return command;
+  const payload = Buffer.from(JSON.stringify(rules), "utf-8").toString("base64");
   return [
-    "if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then gh auth setup-git >/dev/null 2>&1 || true; fi",
+    "proxy_dir=$(mktemp -d /tmp/mikan-proxy.XXXXXX)",
+    'proxy_cleanup() { [ ! -f "$proxy_dir/pid" ] || kill "$(cat "$proxy_dir/pid")" 2>/dev/null || true; rm -rf "$proxy_dir"; }',
+    `base64 -d > "$proxy_dir/proxy.mjs" <<'MIKAN_PROXY'\n${proxyScriptBase64()}\nMIKAN_PROXY`,
+    `MIKAN_PROXY_RULES_B64=${shellEscape(payload)} node "$proxy_dir/proxy.mjs" "$proxy_dir/port" & echo $! > "$proxy_dir/pid"`,
+    'while [ ! -s "$proxy_dir/port" ]; do sleep 0.05; done',
+    'export HTTP_PROXY="http://127.0.0.1:$(cat "$proxy_dir/port")"',
+    'export http_proxy="$HTTP_PROXY"',
     command,
+    "proxy_status=$?",
+    "proxy_cleanup",
+    "exit $proxy_status",
   ].join("\n");
 }
 
-function hasGitHubToken(env?: Record<string, string>): boolean {
-  return Boolean(env?.GH_TOKEN || env?.GITHUB_TOKEN || env?.GITHUB_OAUTH_ACCESS_TOKEN);
+function proxyScriptBase64(): string {
+  return Buffer.from(INLINE_PROXY_SCRIPT, "utf-8").toString("base64");
 }
+
+const INLINE_PROXY_SCRIPT = String.raw`import { createServer, request as httpRequest } from 'node:http';
+import { request as httpsRequest } from 'node:https';
+import { writeFileSync } from 'node:fs';
+const rules = JSON.parse(Buffer.from(process.env.MIKAN_PROXY_RULES_B64 || '', 'base64').toString('utf8'));
+const server = createServer((req, res) => {
+  if (!req.url || !/^https?:\/\//.test(req.url)) { res.writeHead(400); res.end('absolute URL required'); return; }
+  const target = new URL(req.url);
+  for (const [key, value] of Object.entries(rules[target.host] || {})) req.headers[key.toLowerCase()] = value;
+  const requestImpl = target.protocol === 'https:' ? httpsRequest : httpRequest;
+  const upstream = requestImpl(target, { method: req.method, headers: req.headers }, (upstreamRes) => {
+    res.writeHead(upstreamRes.statusCode || 502, upstreamRes.headers);
+    upstreamRes.pipe(res);
+  });
+  upstream.on('error', (error) => { res.writeHead(502); res.end(error.message); });
+  req.pipe(upstream);
+});
+server.on('connect', (_req, client) => {
+  client.end('HTTP/1.1 501 Not Implemented\r\nConnection: close\r\n\r\nMIKAN_PROXY_INJECT_HEADERS supports HTTP proxy requests only; HTTPS CONNECT cannot be modified.\n');
+});
+server.listen(0, '127.0.0.1', () => writeFileSync(process.argv[2], String(server.address().port)));
+`;
 
 export class ContainerExecutor implements Executor {
   constructor(
     private container: string,
-    private env?: Record<string, string>,
+    private secrets?: SandboxSecrets,
     private ensureReady?: () => Promise<void>,
   ) {}
 
@@ -101,17 +137,22 @@ export class ContainerExecutor implements Executor {
     }
 
     const hostExecutor = new HostExecutor();
-    const temp = this.env ? createSecureEnvFile(this.env) : undefined;
+    const env = this.buildCommandEnv();
+    const temp = env ? createSecureEnvFile(env) : undefined;
     try {
       const dockerCmd = buildContainerExecCommand(
         this.container,
-        withRuntimeBootstrap(command, this.env),
+        withRuntimeBootstrap(command, this.secrets),
         temp?.envFilePath,
       );
       return await hostExecutor.exec(dockerCmd, options);
     } finally {
       temp?.cleanup();
     }
+  }
+
+  private buildCommandEnv(): undefined {
+    return undefined;
   }
 
   getWorkspacePath(_hostPath: string): string {
@@ -131,8 +172,8 @@ export const containerSandboxAdapter: SandboxAdapter<ContainerSandboxConfig> = {
   type: "container",
   parse: parseContainerSandboxArg,
   validate: validateContainerSandbox,
-  createExecutor: (config, env, ensureReady) =>
-    new ContainerExecutor(config.container, env, ensureReady),
+  createExecutor: (config, secrets, ensureReady) =>
+    new ContainerExecutor(config.container, secrets, ensureReady),
 };
 
 async function ensureContainerRunning(container: string): Promise<void> {

@@ -1,10 +1,11 @@
 import { ContainerExecutor, containerSandboxAdapter } from "./container.js";
 import { FirecrackerExecutor, firecrackerSandboxAdapter } from "./firecracker.js";
 import { CloudflareSandboxExecutor, cloudflareSandboxAdapter } from "./cloudflare.js";
+import { GondolinSandboxExecutor, gondolinSandboxAdapter } from "./gondolin.js";
 import { HostExecutor, hostSandboxAdapter } from "./host.js";
 import { imageSandboxAdapter } from "./image.js";
 import { SandboxError } from "./errors.js";
-import type { Executor, SandboxAdapter, SandboxConfig } from "./types.js";
+import type { Executor, SandboxAdapter, SandboxConfig, SandboxSecrets } from "./types.js";
 
 export type {
   CloudflareSandboxConfig,
@@ -14,8 +15,15 @@ export type {
   RuntimePathContext,
   SandboxAdapter,
   SandboxConfig,
+  SandboxSecrets,
 } from "./types.js";
-export { CloudflareSandboxExecutor, ContainerExecutor, FirecrackerExecutor, HostExecutor };
+export {
+  CloudflareSandboxExecutor,
+  ContainerExecutor,
+  FirecrackerExecutor,
+  GondolinSandboxExecutor,
+  HostExecutor,
+};
 export { SandboxError } from "./errors.js";
 
 const sandboxAdapters = [
@@ -24,6 +32,7 @@ const sandboxAdapters = [
   imageSandboxAdapter,
   firecrackerSandboxAdapter,
   cloudflareSandboxAdapter,
+  gondolinSandboxAdapter,
 ] as const;
 const sandboxAdapterByType = new Map(
   sandboxAdapters.map((adapter) => [adapter.type, adapter]),
@@ -48,7 +57,7 @@ export function parseSandboxArg(value: string): SandboxConfig {
   }
 
   throw new SandboxError(
-    `Error: Invalid sandbox type '${value}'. Use 'host', 'container:<container-name>', 'image:<image-name>', 'firecracker:<vm-id>:<host-path>', or 'cloudflare:<sandbox-id>'`,
+    `Error: Invalid sandbox type '${value}'. Use 'host', 'container:<container-name>', 'image:<image-name>', 'firecracker:<vm-id>:<host-path>', 'cloudflare:<sandbox-id>', or 'gondolin:<sandbox-id>'`,
   );
 }
 
@@ -66,12 +75,12 @@ export async function validateSandbox(config: SandboxConfig): Promise<void> {
  */
 export function createExecutor(
   config: SandboxConfig,
-  env?: Record<string, string>,
+  secrets?: SandboxSecrets,
   ensureReady?: () => Promise<void>,
 ): Executor {
   const adapter = sandboxAdapterByType.get(config.type);
   if (!adapter) {
     throw new SandboxError(`Error: Unsupported sandbox type '${config.type}'`);
   }
-  return adapter.createExecutor(config, env, ensureReady);
+  return adapter.createExecutor(config, secrets, ensureReady);
 }

@@ -1,13 +1,18 @@
+import { createServer, request as httpRequest } from "node:http";
+import { connect as netConnect } from "node:net";
+
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   CloudflareSandboxExecutor,
   ContainerExecutor,
   FirecrackerExecutor,
+  GondolinSandboxExecutor,
   HostExecutor,
   SandboxError,
   createExecutor,
   parseSandboxArg,
 } from "../src/sandbox/index.js";
+import { startSecretInjectionProxy } from "../src/sandbox/proxy.js";
 
 describe("parseSandboxArg", () => {
   afterEach(() => {
@@ -55,6 +60,13 @@ describe("parseSandboxArg", () => {
   test("parses cloudflare sandbox", () => {
     expect(parseSandboxArg("cloudflare:slack-u123")).toEqual({
       type: "cloudflare",
+      sandboxId: "slack-u123",
+    });
+  });
+
+  test("parses gondolin sandbox", () => {
+    expect(parseSandboxArg("gondolin:slack-u123")).toEqual({
+      type: "gondolin",
       sandboxId: "slack-u123",
     });
   });
@@ -115,6 +127,12 @@ describe("createExecutor", () => {
       CloudflareSandboxExecutor,
     );
   });
+
+  test("creates gondolin executor", () => {
+    expect(createExecutor({ type: "gondolin", sandboxId: "shared-prefix" })).toBeInstanceOf(
+      GondolinSandboxExecutor,
+    );
+  });
 });
 
 describe("ContainerExecutor", () => {
@@ -122,23 +140,119 @@ describe("ContainerExecutor", () => {
     vi.restoreAllMocks();
   });
 
-  test("bootstraps git credential helper when GitHub token env is injected", async () => {
+  test("does not inject vault env or file secrets into docker exec", async () => {
     const exec = vi
       .spyOn(HostExecutor.prototype, "exec")
       .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
     const executor = new ContainerExecutor(
       "mikan-sandbox",
-      { GH_TOKEN: "gho_test" },
+      {
+        env: { GH_TOKEN: "gho_test" },
+        files: [{ source: "/host/adc.json", target: "/workspace/gcloud-adc.json" }],
+      },
       async () => {},
     );
 
-    await executor.exec("git clone https://github.com/livingbio/skills.git");
+    await executor.exec("printf $GH_TOKEN && test -e /workspace/gcloud-adc.json");
 
     const [[dockerCommand]] = exec.mock.calls;
-    expect(dockerCommand).toContain("docker exec --env-file ");
-    expect(dockerCommand).toContain("mikan-sandbox sh -c");
-    expect(dockerCommand).toContain("gh auth setup-git");
-    expect(dockerCommand).toContain("git clone https://github.com/livingbio/skills.git");
+    expect(dockerCommand).not.toContain("--env-file");
+    expect(dockerCommand).not.toContain("gho_test");
+    expect(dockerCommand).not.toContain("mktemp -d /tmp/mikan-vault.");
+    expect(dockerCommand).toContain("printf $GH_TOKEN && test -e /workspace/gcloud-adc.json");
+  });
+
+  test("enables secret header injection for HTTP proxy traffic only", async () => {
+    const exec = vi
+      .spyOn(HostExecutor.prototype, "exec")
+      .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
+    const executor = new ContainerExecutor(
+      "mikan-sandbox",
+      {
+        env: {
+          MIKAN_PROXY_INJECT_HEADERS: JSON.stringify({ "api.example": { authorization: "x" } }),
+        },
+      },
+      async () => {},
+    );
+
+    await executor.exec("curl http://api.example/check");
+
+    const [[dockerCommand]] = exec.mock.calls;
+    expect(dockerCommand).toContain(
+      'export HTTP_PROXY="http://127.0.0.1:$(cat "$proxy_dir/port")"',
+    );
+    expect(dockerCommand).toContain('export http_proxy="$HTTP_PROXY"');
+    expect(dockerCommand).not.toContain("HTTPS_PROXY");
+    expect(dockerCommand).not.toContain("ALL_PROXY");
+  });
+});
+
+async function runProxyHeaderRequest(upstream: ReturnType<typeof createServer>): Promise<void> {
+  const address = upstream.address();
+  if (!address || typeof address === "string") throw new Error("no port");
+  const host = `127.0.0.1:${address.port}`;
+  const proxy = await startSecretInjectionProxy({ [host]: { authorization: "Bearer injected" } });
+  try {
+    await new Promise<void>((resolve) => {
+      const proxyUrl = new URL(proxy.url);
+      const req = httpRequest(
+        {
+          hostname: proxyUrl.hostname,
+          port: proxyUrl.port,
+          method: "GET",
+          path: `http://${host}/check`,
+        },
+        (res) => {
+          res.resume();
+          res.on("end", resolve);
+        },
+      );
+      req.end();
+    });
+  } finally {
+    await proxy.close();
+  }
+}
+
+describe("Secret injection proxy", () => {
+  test("injects configured headers into proxied HTTP requests", async () => {
+    const seen = await new Promise<Record<string, string | string[] | undefined>>(
+      (resolve, reject) => {
+        const upstream = createServer((request, response) => {
+          resolve(request.headers);
+          response.end("ok");
+        });
+        upstream.listen(0, "127.0.0.1", () => {
+          runProxyHeaderRequest(upstream)
+            .catch(reject)
+            .finally(() => upstream.close());
+        });
+      },
+    );
+
+    expect(seen.authorization).toBe("Bearer injected");
+  });
+
+  test("rejects HTTPS CONNECT because encrypted headers cannot be injected", async () => {
+    const proxy = await startSecretInjectionProxy({ "example.com": { authorization: "Bearer x" } });
+    try {
+      const proxyUrl = new URL(proxy.url);
+      const response = await new Promise<string>((resolve, reject) => {
+        const socket = netConnect(Number(proxyUrl.port), proxyUrl.hostname, () => {
+          socket.write("CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n");
+        });
+        let data = "";
+        socket.on("data", (chunk) => (data += chunk.toString("utf-8")));
+        socket.on("end", () => resolve(data));
+        socket.on("error", reject);
+      });
+
+      expect(response).toContain("501 Not Implemented");
+      expect(response).toContain("supports HTTP proxy requests only");
+    } finally {
+      await proxy.close();
+    }
   });
 });
 
@@ -185,6 +299,69 @@ describe("FirecrackerExecutor", () => {
   });
 });
 
+describe("GondolinSandboxExecutor", () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    process.env = { ...originalEnv };
+  });
+
+  test("does not expose vault env secrets in bridge exec payload", async () => {
+    process.env.MIKAN_GONDOLIN_SANDBOX_URL = "https://gondolin.example";
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({ stdout: "ok\n", stderr: "", code: 0 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const executor = new GondolinSandboxExecutor("slack-u123", {
+      env: { API_TOKEN: "secret" },
+    });
+    await expect(executor.exec("pwd", { timeout: 5 })).resolves.toEqual({
+      stdout: "ok\n",
+      stderr: "",
+      code: 0,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      new URL("/exec", "https://gondolin.example"),
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "content-type": "application/json" }),
+      }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      sandboxId: "slack-u123",
+      command: "pwd",
+      timeoutSeconds: 5,
+      cwd: "/workspace",
+    });
+  });
+
+  test("sends only proxy header rules to the bridge", async () => {
+    process.env.MIKAN_GONDOLIN_SANDBOX_URL = "https://gondolin.example";
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({ stdout: "ok\n", stderr: "", code: 0 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const proxyRules = JSON.stringify({ "api.example": { authorization: "Bearer injected" } });
+    const executor = new GondolinSandboxExecutor("slack-u123", {
+      env: { API_TOKEN: "secret", MIKAN_PROXY_INJECT_HEADERS: proxyRules },
+    });
+    await executor.exec("curl http://api.example/check");
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      sandboxId: "slack-u123",
+      command: "curl http://api.example/check",
+      cwd: "/workspace",
+      secrets: { env: { MIKAN_PROXY_INJECT_HEADERS: proxyRules } },
+    });
+  });
+});
+
 describe("CloudflareSandboxExecutor", () => {
   const originalEnv = { ...process.env };
 
@@ -193,7 +370,7 @@ describe("CloudflareSandboxExecutor", () => {
     process.env = { ...originalEnv };
   });
 
-  test("posts exec requests to the bridge", async () => {
+  test("does not expose vault env secrets in bridge exec payload", async () => {
     process.env.MIKAN_CLOUDFLARE_SANDBOX_URL = "https://sandbox.example";
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -201,7 +378,7 @@ describe("CloudflareSandboxExecutor", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const executor = new CloudflareSandboxExecutor("slack-u123", { API_TOKEN: "secret" });
+    const executor = new CloudflareSandboxExecutor("slack-u123", { env: { API_TOKEN: "secret" } });
     await expect(executor.exec("pwd", { timeout: 5 })).resolves.toEqual({
       stdout: "ok\n",
       stderr: "",
@@ -220,7 +397,28 @@ describe("CloudflareSandboxExecutor", () => {
       command: "pwd",
       timeoutSeconds: 5,
       cwd: "/workspace",
-      env: { API_TOKEN: "secret" },
+    });
+  });
+
+  test("sends only proxy header rules to the bridge", async () => {
+    process.env.MIKAN_CLOUDFLARE_SANDBOX_URL = "https://sandbox.example";
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({ stdout: "ok\n", stderr: "", code: 0 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const proxyRules = JSON.stringify({ "api.example": { authorization: "Bearer injected" } });
+    const executor = new CloudflareSandboxExecutor("slack-u123", {
+      env: { API_TOKEN: "secret", MIKAN_PROXY_INJECT_HEADERS: proxyRules },
+    });
+    await executor.exec("curl http://api.example/check");
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      sandboxId: "slack-u123",
+      command: "curl http://api.example/check",
+      cwd: "/workspace",
+      secrets: { env: { MIKAN_PROXY_INJECT_HEADERS: proxyRules } },
     });
   });
 

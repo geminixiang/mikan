@@ -224,7 +224,7 @@ if (parsedArgs.downloadChannel) {
 // Normal bot mode - require working dir
 if (!parsedArgs.workingDir) {
   console.error(
-    "Usage: mikan [--state-dir=<dir>] [--sandbox=host|container:<name>|image:<image>|firecracker:<vm-id>:<host-path>|cloudflare:<sandbox-id>] <working-directory>",
+    "Usage: mikan [--state-dir=<dir>] [--sandbox=host|container:<name>|image:<image>|firecracker:<vm-id>:<host-path>|cloudflare:<sandbox-id>|gondolin:<sandbox-id>] <working-directory>",
   );
   console.error("       mikan --onboard [--state-dir=<dir>]");
   console.error("       mikan --download <channel-id>");
@@ -262,7 +262,10 @@ if (vaultManager.isEnabled()) {
   console.log(
     sandbox.type === "container"
       ? "  Vault system enabled. Container vault active."
-      : sandbox.type === "image" || sandbox.type === "firecracker" || sandbox.type === "cloudflare"
+      : sandbox.type === "image" ||
+          sandbox.type === "firecracker" ||
+          sandbox.type === "cloudflare" ||
+          sandbox.type === "gondolin"
         ? "  Vault system enabled. Conversation-scoped credential routing active."
         : "  Vault system enabled. Host mode will not inject vault env.",
   );
@@ -342,7 +345,9 @@ const sandboxDesc =
         ? `image:${sandbox.image}`
         : sandbox.type === "firecracker"
           ? `firecracker:${sandbox.vmId}`
-          : `cloudflare:${sandbox.sandboxId}`;
+          : sandbox.type === "cloudflare"
+            ? `cloudflare:${sandbox.sandboxId}`
+            : `gondolin:${sandbox.sandboxId}`;
 log.logStartup(workingDir, sandboxDesc);
 
 const bots: Bot[] = [];

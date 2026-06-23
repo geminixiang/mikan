@@ -127,9 +127,9 @@ export class FileVaultManager implements VaultManager {
   }
 
   getSandboxConfig(userId: string, baseConfig: SandboxConfig): SandboxConfig {
-    if (baseConfig.type === "cloudflare") {
+    if (baseConfig.type === "cloudflare" || baseConfig.type === "gondolin") {
       return {
-        type: "cloudflare",
+        type: baseConfig.type,
         sandboxId: `${baseConfig.sandboxId}-${sanitizeCloudflareSandboxId(userId)}`,
       };
     }

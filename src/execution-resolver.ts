@@ -1,9 +1,13 @@
-import { existsSync } from "fs";
 import { join } from "path";
 import { loadGlobalSettings, resolveConversationSettings } from "./config.js";
 import { ensureDirExists, isRecord, readJsonFileIfExists } from "./utils/file-guards.js";
 import { DockerContainerManager, type ContainerMount } from "./provisioner.js";
-import { createExecutor, type Executor, type SandboxConfig } from "./sandbox/index.js";
+import {
+  createExecutor,
+  type Executor,
+  type SandboxConfig,
+  type SandboxSecrets,
+} from "./sandbox/index.js";
 import { reportUserFacingError } from "./observability/sentry.js";
 import { normalizeSharedVaultName, type ResolvedVault, type VaultManager } from "./vault/index.js";
 import { resolveActorVaultKey } from "./vault/routing.js";
@@ -69,17 +73,21 @@ export class ActorExecutionResolver {
 
     const vault = this.vaultManager.resolve(vaultKey);
     const config = this.resolveSandboxConfig(vaultKey);
-    const env =
-      config.type !== "host" && vault && Object.keys(vault.env).length > 0 ? vault.env : undefined;
+    const secrets = config.type !== "host" && vault ? this.resolveSecrets(vault) : undefined;
     return createExecutor(
       config,
-      env,
+      secrets,
       this.buildEnsureReadyCallback(vaultKey, context.conversationId, config, vault),
     );
   }
 
   private ensureDefaultSharedVault(vaultKey: string): void {
-    if (this.baseConfig.type !== "image" && this.baseConfig.type !== "cloudflare") return;
+    if (
+      this.baseConfig.type !== "image" &&
+      this.baseConfig.type !== "cloudflare" &&
+      this.baseConfig.type !== "gondolin"
+    )
+      return;
     if (this.vaultManager.hasEntry(vaultKey)) return;
 
     let profile: string | undefined;
@@ -153,30 +161,14 @@ export class ActorExecutionResolver {
     };
   }
 
-  private resolveMounts(conversationId: string, vault?: ResolvedVault): ContainerMount[] {
-    const mountsByTarget = new Map<string, ContainerMount>();
-    for (const mount of this.buildImageSandboxMounts(conversationId)) {
-      mountsByTarget.set(mount.target, mount);
-    }
-    for (const mount of vault?.mounts ?? []) {
-      if (!existsSync(mount.source)) {
-        reportUserFacingError(new Error("Vault mount source is missing"), {
-          domain: "sandbox",
-          surface: "vault_injection",
-          operation: "resolve_mounts",
-          severity: "warning",
-          context: {
-            sandboxType: "image",
-            conversationId,
-            target: mount.target,
-            hasVault: Boolean(vault),
-          },
-        });
-        continue;
-      }
-      mountsByTarget.set(mount.target, { source: mount.source, target: mount.target });
-    }
-    return [...mountsByTarget.values()];
+  private resolveMounts(conversationId: string, _vault?: ResolvedVault): ContainerMount[] {
+    return this.buildImageSandboxMounts(conversationId);
+  }
+
+  private resolveSecrets(vault: ResolvedVault): SandboxSecrets | undefined {
+    const proxyRules = vault.env.MIKAN_PROXY_INJECT_HEADERS;
+    if (!proxyRules) return undefined;
+    return { env: { MIKAN_PROXY_INJECT_HEADERS: proxyRules } };
   }
 
   private buildImageSandboxMounts(conversationId: string): ContainerMount[] {
