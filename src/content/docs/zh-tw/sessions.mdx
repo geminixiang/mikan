@@ -1,0 +1,45 @@
+---
+title: 工作階段
+description: mikan 如何分離平台聊天歷史與 pi-coding-agent 結構化工作階段。
+---
+
+import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
+
+<CardGrid>
+  <Card title="平台聊天歷史" icon="open-book">
+    `log.jsonl` 保留可供人閱讀的平台訊息，用來 bootstrap thread 或 reply context。
+  </Card>
+  <Card title="pi 結構化 context" icon="rocket">
+    `sessions/*.jsonl` 保存 tool results 與 agent turn，讓 pi-coding-agent 可以延續工作。
+  </Card>
+  <Card title="固定 scope" icon="lock">
+    Thread、reply chain 與 shared channel 會映射到固定 session files，避免不同對話互相污染。
+  </Card>
+</CardGrid>
+
+## 平台工作階段模型
+
+| 平台     | `sessionKey` 規則                                                                 | 備註                                                          |
+| -------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Slack    | top-level / DM：`conversationId`；thread：`conversationId:threadTs`               | thread sessions 是由近期聊天歷史 bootstrap 的固定檔案         |
+| Discord  | DM：`channelId`；shared top-level：`channelId:messageId`；reply/thread：rooted id | shared channels 中的 replies 會延續 root message session      |
+| Telegram | private：`chatId`；shared top-level：`chatId:messageId`；reply chain：root reply  | 沒有原生 thread model；shared sessions 會從 reply chains 推斷 |
+
+## 檔案
+
+<FileTree>
+
+- workspace/
+  - **log.jsonl** 平台訊息歷史
+  - sessions/
+    - **current** 指向使用中的 top-level session
+    - **\*.jsonl** 結構化 pi-coding-agent context，包含 tool results
+    - **scope-derived files** thread / reply scopes 的固定 session files
+
+</FileTree>
+
+## 重設
+
+<Aside type="tip" title="保留可稽核紀錄">
+  在聊天中使用 `new` / `/new` 重設目前工作階段。除非手動移除，先前的檔案會留在磁碟上供檢查。
+</Aside>

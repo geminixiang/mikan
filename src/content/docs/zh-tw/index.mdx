@@ -4,9 +4,19 @@ description: 適用於 Slack、Telegram 與 Discord 的多平台 AI 程式代理
 template: splash
 ---
 
+import Hero from "starlight-theme-mikan/components/Hero.astro";
 import Features from "starlight-theme-mikan/components/Features.astro";
 import CTA from "starlight-theme-mikan/components/CTA.astro";
 
+<Hero
+  eyebrow="AI 程式代理"
+  title="mikan"
+  tagline="適用於 Slack、Telegram 與 Discord 的多平台 AI 程式代理。它會分離聊天記錄、agent 工作階段與 sandbox 執行。"
+  actions={[
+    { text: "開始設定", href: "/configuration/", variant: "primary" },
+    { text: "查看 GitHub", href: "https://github.com/geminixiang/mikan", variant: "secondary" },
+  ]}
+/>
 <Features
   items={[
     {

@@ -3,11 +3,25 @@ title: 平台接入層
 description: Slack、Discord 與 Telegram adapter 如何把平台事件轉成 mikan 的共同 runtime 格式。
 ---
 
+import { Aside, Card, CardGrid, LinkCard, Steps } from "@astrojs/starlight/components";
+
 它的目標是讓 `src/runtime/*` 和 `src/agent.ts` 不需要知道每個平台的 SDK、thread 規則、訊息更新 API 或檔案下載方式。
+
+<CardGrid>
+  <Card title="事件正規化" icon="setting">
+    將平台原生 message、mention、slash command 或 reply 轉成共同 `BotEvent`。
+  </Card>
+  <Card title="Session routing" icon="open-book">
+    根據 channel、thread、reply chain 算出 `sessionKey`，讓對話進入正確工作階段。
+  </Card>
+  <Card title="回覆能力" icon="rocket">
+    `ChatResponseContext` 封裝回覆、更新、typing/working 狀態與檔案上傳。
+  </Card>
+</CardGrid>
 
 ## 接入層做什麼
 
-每個平台 adapter 都會處理同一組責任：
+<Steps>
 
 1. 接收平台事件，例如訊息、mention、slash command 或 reply。
 2. 判斷訊息是否應該觸發 mikan：DM、mention、thread reply、auto-reply policy。
@@ -16,6 +30,8 @@ description: Slack、Discord 與 Telegram adapter 如何把平台事件轉成 mi
 5. 下載附件並寫入 workspace 的 `attachments/`。
 6. 建立 `ChatResponseContext`，封裝回覆、更新、typing/working 狀態與檔案上傳。
 7. 把事件交給 `BotHandler`，也就是 `SessionRuntime`。
+
+</Steps>
 
 共同型別由 `src/adapter.ts` 匯出，實作型別放在 `src/types.ts` 與 `src/adapters/types.ts`。
 
@@ -39,8 +55,6 @@ sequenceDiagram
   C->>P: 平台格式化與送出
 ```
 
-`src/adapters/intake.ts` 提供共同的 message ingress pipeline。平台 adapter 仍保留平台專屬的前處理與 stop semantics，但觸發判斷、附件處理、寫 log、排 queue、呼叫 handler 的順序集中在這裡。
-
 ## 共同工具
 
 | 檔案                        | 用途                                                                          |
@@ -52,15 +66,27 @@ sequenceDiagram
 
 ## 平台差異
 
-| 平台     | 主要差異                                                                                             | 子頁面                                    |
-| -------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| Slack    | Socket Mode、channel/thread session、Block Kit、assistant status、Slack mrkdwn。                     | [Slack](platform-adapters/slack.md)       |
-| Discord  | Gateway events、guild/DM/thread channel、slash command、Discord Markdown、typing indicator。         | [Discord](platform-adapters/discord.md)   |
-| Telegram | long polling、private/group chat、reply-based session、Telegram HTML mode、photo/document download。 | [Telegram](platform-adapters/telegram.md) |
+<LinkCard
+  title="Slack"
+  description="Socket Mode、channel/thread session、Block Kit、assistant status、Slack mrkdwn。"
+  href="platform-adapters/slack/"
+/>
+<LinkCard
+  title="Discord"
+  description="Gateway events、guild/DM/thread channel、slash command、Discord Markdown、typing indicator。"
+  href="platform-adapters/discord/"
+/>
+<LinkCard
+  title="Telegram"
+  description="Long polling、private/group chat、reply-based session、Telegram HTML mode、photo/document download。"
+  href="platform-adapters/telegram/"
+/>
 
 ## 與核心執行階段的邊界
 
-平台 adapter 可以知道平台 SDK 與訊息格式，但不應該知道 agent 如何執行任務。
+<Aside type="note" title="依賴方向">
+  平台 adapter 可以知道平台 SDK 與訊息格式，但不應該知道 agent 如何執行任務。
+</Aside>
 
 核心執行階段只依賴這些共同抽象：
 

@@ -3,6 +3,22 @@ title: 聊天指令
 description: mikan 在 Slack、Discord 與 Telegram 中支援的文字指令與 slash-command 別名。
 ---
 
+import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/components";
+
+<CardGrid>
+  <Card title="登入與憑證" icon="lock">
+    `/login` 會開啟 15 分鐘有效連結，讓你在 DM 中安全儲存 API keys 或完成 OAuth。
+  </Card>
+  <Card title="工作階段" icon="open-book">
+    `session` 開啟目前工作階段檢視器；`new` 重設目前對話並開始新的 session。
+  </Card>
+  <Card title="模型與回覆" icon="rocket">
+    `model` 切換 LLM；`auto-reply` 控制群組或頻道中的自動回覆 policy。
+  </Card>
+</CardGrid>
+
+## 指令速查
+
 | 指令                                                       | 用途                                                                            |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | `/login` / `/pi-login`                                     | 開啟 15 分鐘有效的連結，用來儲存 API keys 或執行內建 OAuth flows。僅限 DM。     |
@@ -13,18 +29,31 @@ description: mikan 在 Slack、Discord 與 Telegram 中支援的文字指令與 
 | `stop` / `/stop`                                           | 停止目前執行。在 Slack 上，請使用文字指令，確保討論串本地的 stop 路由保持準確。 |
 | `/pi-sandbox`                                              | 顯示或暫時提升受管理容器的 CPU / 記憶體限制。                                   |
 
-在 Slack 上，你可以註冊原生指令，例如 `/pi-login`、`/pi-session`、`/pi-model`、`/pi-auto-reply` 與 `/pi-new`。
+<Aside type="tip" title="Slack 原生指令">
+  在 Slack 上，你可以註冊 `/pi-login`、`/pi-session`、`/pi-model`、`/pi-auto-reply` 與 `/pi-new`。
+</Aside>
 
 ## Web 工作階段檢視器
 
 工作階段檢視器使用與 login/vault 和 admin 相同的連結伺服器。目前的工作階段檢視可顯示時間軸；當互動式 portal wiring 啟用時，也能把訊息送回該工作階段。
 
-```bash
-export LINK_URL="https://mikan.example.com"   # public base URL
-export LINK_PORT=8181                         # optional, defaults to 8181
-```
+<Steps>
 
-本機測試時可以只設定 `LINK_PORT`；mikan 會使用 `http://localhost:<port>`。
+1. 設定 public base URL：
+
+   ```bash
+   export LINK_URL="https://mikan.example.com"
+   ```
+
+2. 視需要調整 port；預設是 `8181`：
+
+   ```bash
+   export LINK_PORT=8181
+   ```
+
+3. 本機測試時可以只設定 `LINK_PORT`；mikan 會使用 `http://localhost:<port>`。
+
+</Steps>
 
 關於 admin、login/vault 與 session-view 連結的差異，請參閱 [Portal 驗證與 capability 模型](portal-auth-model.md)。
 
@@ -32,6 +61,6 @@ export LINK_PORT=8181                         # optional, defaults to 8181
 
 內建 OAuth 文件：
 
-- [GitHub](oauth/github.md)
-- [Google Workspace](oauth/google-workspace.md)
-- [Google Cloud SDK / gcloud](oauth/google-cloud-sdk.md)
+- [GitHub](oauth/github.md) <Badge text="OAuth" variant="default" />
+- [Google Workspace](oauth/google-workspace.md) <Badge text="OAuth" variant="default" />
+- [Google Cloud SDK / gcloud](oauth/google-cloud-sdk.md) <Badge text="OAuth" variant="default" />

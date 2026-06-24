@@ -3,6 +3,24 @@ title: Sandbox
 description: 比較 mikan 支援的 host、container、image、Firecracker 與 Cloudflare sandbox 模式。
 ---
 
+import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+<CardGrid>
+  <Card title="本機開發" icon="setting">
+    `host` 最少設定、不注入 vault env，適合只在可信任機器上開發。
+  </Card>
+  <Card title="主線隔離" icon="rocket">
+    `image:<image>` 由 mikan 管理 lifecycle、workspace mount、vault env 與資源限制。
+  </Card>
+  <Card title="實驗模式" icon="moon">
+    `firecracker:*` 與 `cloudflare:*` 保留給自行管理 runtime 或 bridge 的場景。
+  </Card>
+</CardGrid>
+
+<Aside type="caution" title="模式名稱">
+  `docker:*` 不是可用模式；請改用 `container:*` 或 `image:*`。
+</Aside>
+
 ## 支援模式
 
 | 模式                                                        | 執行位置              | Vault env injection | Vault key 語意               | 備註                                                                               |
@@ -13,19 +31,33 @@ description: 比較 mikan 支援的 host、container、image、Firecracker 與 C
 | `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM        | 注入                | generated conversation vault | Alpha 超早期；VM 需自行啟動，workspace 需在 VM 內掛到 `/workspace`，目前不建議使用 |
 | `cloudflare:<sandbox-id>`                                   | Cloudflare Worker     | 注入                | generated conversation vault | Experimental；需自行部署 `@cloudflare/sandbox` bridge，host workspace 不會自動同步 |
 
-`docker:*` 不是可用模式；請改用 `container:*` 或 `image:*`。
-
 ## 各模式文件
 
-- [Host sandbox](host/)
-- [Container sandbox](container/)
-- [Image sandbox](image/)
-- [Firecracker sandbox](firecracker/)
-- [Cloudflare sandbox](cloudflare/)
+<LinkCard title="Host sandbox" description="直接在宿主機執行工具；最適合本機開發。" href="host/" />
+<LinkCard
+  title="Container sandbox"
+  description="連到既有 Docker container，沿用使用者管理的 lifecycle。"
+  href="container/"
+/>
+<LinkCard
+  title="Image sandbox"
+  description="由 mikan 管理 per-conversation container 與資源限制。"
+  href="image/"
+/>
+<LinkCard
+  title="Firecracker sandbox"
+  description="連到自行啟動的 Firecracker VM。"
+  href="firecracker/"
+/>
+<LinkCard
+  title="Cloudflare sandbox"
+  description="透過 Cloudflare Worker bridge 執行工具。"
+  href="cloudflare/"
+/>
 
 ## 能力差異
 
-`image:<image>` 是目前主要開發與推薦的 sandbox 模式；其他模式保留為本機開發、相容、或實驗用途，部分能力不會補齊。
+`image:<image>` <Badge text="推薦" variant="success" /> 是目前主要開發與推薦的 sandbox 模式；其他模式保留為本機開發、相容、或實驗用途，部分能力不會補齊。
 
 | 能力                                 | `host`   | `container:<name>` | `image:<image>` | `firecracker:*` | `cloudflare:*` |
 | ------------------------------------ | -------- | ------------------ | --------------- | --------------- | -------------- |
