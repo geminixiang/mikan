@@ -1,10 +1,7 @@
 ---
 title: Cloudflare sandbox
+description: 使用自行部署的 Cloudflare Worker bridge 執行 experimental Cloudflare sandbox。
 ---
-
-# Cloudflare sandbox
-
-警告：Cloudflare 支援目前是 experimental。mikan 會透過你自行部署的 Cloudflare Worker bridge 呼叫 `@cloudflare/sandbox`，但不會自動把宿主機 workspace 同步到遠端 container。
 
 ```bash
 export CLOUDFLARE_SANDBOX_URL="https://your-bridge.workers.dev"

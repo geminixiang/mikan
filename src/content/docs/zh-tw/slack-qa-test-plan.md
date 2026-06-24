@@ -1,10 +1,7 @@
 ---
 title: Slack QA 測試計畫
+description: 在 Slack 中驗證 mikan bot 訊息送達、routing、session、Block Kit 與 sandbox 行為的測試清單。
 ---
-
-# Slack QA 測試計畫
-
-這份文件定義在 Slack 中執行 **mikan bot** 的 QA 測試覆蓋範圍。
 
 ## 目標
 

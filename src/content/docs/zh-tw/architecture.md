@@ -1,15 +1,7 @@
 ---
 title: mikan 架構
+description: 了解 mikan 的平台接入、工作階段、agent、sandbox、vault 與 web portal 如何串接。
 ---
-
-# mikan 架構
-
-這份文件整理 `mikan` 專案的核心架構，重點放在：
-
-- 多平台訊息如何進入系統
-- session / context 如何持久化
-- agent 如何透過 tools 與 sandbox 執行工作
-- login / vault / session viewer / events 如何掛接到主流程
 
 ## 1. 系統總覽
 

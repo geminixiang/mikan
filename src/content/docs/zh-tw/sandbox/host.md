@@ -1,8 +1,7 @@
 ---
 title: Host sandbox
+description: 直接在宿主機執行 commands，適合本機開發與不注入 vault env 的情境。
 ---
-
-# Host sandbox
 
 ```bash
 mikan --sandbox=host /path/to/workspace

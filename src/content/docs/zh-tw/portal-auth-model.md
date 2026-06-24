@@ -1,10 +1,7 @@
 ---
 title: Portal 驗證與 capability 模型
+description: mikan admin、login 與 session portal 使用的短期 capability token 權限模型。
 ---
-
-# Portal 驗證與 capability 模型
-
-mikan 的 web portal 不是單一登入狀態。它由同一個 HTTP server 提供三種介面，但每種介面使用不同的短期 capability token。
 
 這樣設計的目標是：讓使用者可以方便地開啟管理、登入與 session 檢視頁面，同時避免把「看資料」、「改設定」和「寫入 secret」混成同一種權限。
 

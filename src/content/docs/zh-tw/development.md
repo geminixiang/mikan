@@ -1,8 +1,7 @@
 ---
 title: 開發
+description: mikan 開發環境、測試、格式化、建置與本機執行方式。
 ---
-
-# 開發
 
 ```bash
 npm run dev         # 以 watch mode 建置

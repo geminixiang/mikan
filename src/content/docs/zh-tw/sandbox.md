@@ -1,10 +1,7 @@
 ---
 title: Sandbox
+description: 比較 mikan 支援的 host、container、image、Firecracker 與 Cloudflare sandbox 模式。
 ---
-
-# Sandbox
-
-這份文件說明 mikan 目前支援的 sandbox 模式。Credential vault 的詳細行為請見 [Vault](vault/)。
 
 ## 支援模式
 

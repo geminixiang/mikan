@@ -1,10 +1,7 @@
 ---
 title: Vault
+description: mikan 如何把 credentials 存在 state directory，並依 sandbox 模式注入 env 或 file mounts。
 ---
-
-# Vault
-
-mikan 會把 credentials 存在 workspace 外的 state directory，然後依目前 sandbox 模式注入到 sandbox execution。
 
 ## State directory 與 vault 位置
 

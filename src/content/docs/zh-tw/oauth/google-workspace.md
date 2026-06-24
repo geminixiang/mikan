@@ -1,10 +1,10 @@
 ---
 title: Google Workspace CLI OAuth 設定
+description: 設定 Google Workspace CLI OAuth，讓 mikan 儲存並投影 Google Workspace credentials。
+sidebar:
+  order: 3
+  label: Google Workspace CLI
 ---
-
-# Google Workspace CLI OAuth 設定
-
-這份文件說明如何設定 mikan `/login` 內建的 Google Workspace CLI OAuth。
 
 > 注意：mikan 會把 Google authorized_user JSON 存進 vault，並保存 target path metadata。`image` sandbox 會把這類 vault file 自動投影到 container 內的 target path；現有 `container` / `firecracker` runtime 仍不會自動做 file projection。
 

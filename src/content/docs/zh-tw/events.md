@@ -1,10 +1,7 @@
 ---
 title: 事件
+description: 透過 workspace events 目錄觸發 agent 的事件格式與處理流程。
 ---
-
-# 事件
-
-事件是寫入工作區內 `events/` 目錄的 JSON 檔案。harness 會監看這個目錄，並在檔案出現時觸發 agent。
 
 ## 事件類型
 

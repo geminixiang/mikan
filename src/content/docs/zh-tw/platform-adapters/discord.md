@@ -1,10 +1,7 @@
 ---
 title: Discord 接入
+description: Discord adapter 的事件接收、session scope、slash commands 與訊息回覆流程。
 ---
-
-# Discord 接入
-
-Discord adapter 位於 `src/adapters/discord/*`。它使用 Discord.js 接收 Gateway events，並將 guild、DM、thread 訊息轉成 mikan 的共同事件格式。
 
 ## 主要程式碼
 

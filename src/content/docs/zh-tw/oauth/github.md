@@ -1,10 +1,10 @@
 ---
 title: GitHub OAuth 設定
+description: 建立 GitHub OAuth App，讓 mikan 的 /login 儲存並注入 GitHub credentials。
+sidebar:
+  order: 1
+  label: GitHub
 ---
-
-# GitHub OAuth 設定
-
-這份文件說明如何設定 mikan `/login` 內建的 GitHub OAuth。
 
 ## 1. 建立 GitHub OAuth App
 

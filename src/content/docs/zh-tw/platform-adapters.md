@@ -1,10 +1,7 @@
 ---
 title: 平台接入層
+description: Slack、Discord 與 Telegram adapter 如何把平台事件轉成 mikan 的共同 runtime 格式。
 ---
-
-# 平台接入層
-
-平台接入層負責把 Slack、Discord、Telegram 的原生事件轉成 mikan 核心執行階段可以理解的共同格式。
 
 它的目標是讓 `src/runtime/*` 和 `src/agent.ts` 不需要知道每個平台的 SDK、thread 規則、訊息更新 API 或檔案下載方式。
 

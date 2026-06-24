@@ -1,8 +1,7 @@
 ---
 title: Image sandbox
+description: 使用 mikan 管理的 per-conversation Docker container 與 vault 隔離。
 ---
-
-# Image sandbox
 
 ```bash
 # Pull the prebuilt image from GHCR

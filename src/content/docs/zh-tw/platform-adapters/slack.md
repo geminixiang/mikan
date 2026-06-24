@@ -1,10 +1,7 @@
 ---
 title: Slack 接入
+description: Slack adapter 的 Socket Mode 事件、thread routing、Block Kit 與回覆生命週期。
 ---
-
-# Slack 接入
-
-Slack adapter 位於 `src/adapters/slack/*`。它透過 Slack Socket Mode 接收事件，並使用 Slack Web API 回覆訊息、更新狀態與上傳檔案。
 
 ## 主要程式碼
 

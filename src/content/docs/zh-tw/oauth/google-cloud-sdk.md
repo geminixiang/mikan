@@ -1,10 +1,10 @@
 ---
-title: Google Cloud SDK (gcloud) OAuth 設定
+title: Google Cloud SDK OAuth 設定
+description: 設定 Google Cloud SDK OAuth，讓 sandbox 內的 gcloud 使用登入後的 user credential。
+sidebar:
+  order: 2
+  label: Google Cloud SDK
 ---
-
-# Google Cloud SDK (gcloud) OAuth 設定
-
-這份文件說明如何設定 mikan `/login` / `/pi-login` 內建的 Google Cloud SDK OAuth，讓 sandbox 內的 `gcloud` 使用登入後的 user credential。
 
 > 注意：mikan 會把 Google `authorized_user` JSON 存進 vault，並保存 target path metadata。`image` sandbox 會把這類 vault file 自動投影到 container 內的 target path；現有 `container` / `firecracker` runtime 仍不會自動做 file projection。
 

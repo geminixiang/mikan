@@ -1,10 +1,7 @@
 ---
 title: Telegram 接入
+description: Telegram adapter 的 long polling、訊息更新、typing、檔案下載與 session scope。
 ---
-
-# Telegram 接入
-
-Telegram adapter 位於 `src/adapters/telegram/*`。它使用 grammy long polling 接收訊息，並用 Telegram Bot API 回覆、更新訊息、顯示 typing、下載檔案。
 
 ## 主要程式碼
 

@@ -1,10 +1,7 @@
 ---
 title: 設定
+description: 設定全域與對話層級的模型、sandbox、Slack 回覆模式、auto-reply 與 vault 預設值。
 ---
-
-# 設定
-
-mikan 會從 `<state-dir>/settings.json` 讀取全域設定（預設為 `~/.mikan/settings.json`，可用 `--state-dir` 或 `STATE_DIR` 覆寫）。這個檔案會透過 `mikan --onboard` 明確建立。
 
 每個對話的設定位於 `<working-directory>/<conversationId>/settings.json`，並會覆寫該對話的全域設定。
 

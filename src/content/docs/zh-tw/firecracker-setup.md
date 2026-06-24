@@ -1,10 +1,7 @@
 ---
 title: Firecracker 設定指南
+description: 設定 Firecracker microVM，供 mikan 的 experimental Firecracker sandbox 模式使用。
 ---
-
-# Firecracker 設定指南
-
-這份指南說明如何設定 Firecracker microVM，供 mikan sandbox mode 使用。
 
 警告：mikan 的 Firecracker 支援仍處於非常早期的 alpha。這份指南保留給實驗與驗證使用；它還不是一般開發或 production 建議使用的 sandbox 路徑。除非你正在明確測試 Firecracker，否則請優先使用 `image:<image>`。
 

@@ -1,8 +1,7 @@
 ---
 title: 部署
+description: 使用 PM2、Docker sandbox image 與 state directory 部署長時間執行的 mikan。
 ---
-
-# 部署
 
 ## PM2
 

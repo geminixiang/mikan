@@ -1,10 +1,7 @@
 ---
 title: Firecracker sandbox
+description: 透過 SSH 進入自行管理的 Firecracker VM 執行 commands 並注入 vault env。
 ---
-
-# Firecracker sandbox
-
-警告：Firecracker 支援仍在 alpha 超早期階段。目前僅適合實驗與驗證，不建議作為一般開發或正式環境的主要 sandbox 模式。大多數情況下請優先使用 `image:<image>`。
 
 ```bash
 mikan --sandbox=firecracker:192.168.1.100:/home/mikan/workspace /home/mikan/workspace

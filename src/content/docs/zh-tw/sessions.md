@@ -1,10 +1,7 @@
 ---
 title: 工作階段
+description: mikan 如何分離平台聊天歷史與 pi-coding-agent 結構化工作階段。
 ---
-
-# 工作階段
-
-mikan 會將平台聊天歷史與 pi-coding-agent 的結構化工作階段歷史分開。
 
 ## 平台工作階段模型
 
