@@ -39,7 +39,10 @@
     "prepublishOnly": "npm run clean && npm run build",
     "prepare": "husky",
     "test:e2e": "vitest --run --config vitest.e2e.config.ts",
-    "test:e2e:slack": "vitest --run --config vitest.e2e.config.ts e2e/slack"
+    "test:e2e:slack": "vitest --run --config vitest.e2e.config.ts e2e/slack",
+    "docs:dev": "astro dev",
+    "docs:build": "astro build",
+    "docs:preview": "astro preview"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.79.9",
@@ -57,16 +60,21 @@
     "markdown-it": "^14.1.1"
   },
   "devDependencies": {
+    "@astrojs/mdx": "^5.0.6",
+    "@astrojs/starlight": "^0.39.3",
     "@slack/types": "^2.21.1",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^25.5.0",
     "@typescript/native-preview": "7.0.0-dev.20260328.1",
     "@vitest/coverage-v8": "^4.1.7",
+    "astro": "^6.4.8",
     "husky": "^9.1.7",
     "knip": "^6.15.0",
     "oxfmt": "^0.44.0",
     "oxlint": "^1.59.0",
+    "remark-gfm": "^4.0.1",
     "shx": "^0.4.0",
+    "starlight-theme-mikan": "github:geminixiang/mikan-starlight-theme",
     "typescript": "^6.0.2",
     "vitest": "^4.1.3"
   },
