@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate docs/assets/architecture.png.
+"""Generate src/content/docs/assets/architecture.png.
 
 The README uses a PNG instead of Mermaid because GitHub mobile does not
 consistently render Mermaid diagrams. Keep this generator versioned so the
@@ -10,7 +10,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "docs" / "assets" / "architecture.png"
+OUT = ROOT / "src" / "content" / "docs" / "assets" / "architecture.png"
 
 W, H = 2200, 1150
 BG = "#fbfaf7"

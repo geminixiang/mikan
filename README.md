@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/mikan.png" alt="mikan — multi-platform AI coding agent" width="100%">
+  <img src="src/content/docs/assets/mikan.png" alt="mikan — multi-platform AI coding agent" width="100%">
 </p>
 
 # mikan
@@ -13,7 +13,7 @@ A multi-platform AI coding agent for Slack, Telegram, and Discord.
 
 mikan keeps the chat record, agent session, and execution runtime separate:
 
-![mikan architecture](docs/assets/architecture.png)
+![mikan architecture](src/content/docs/assets/architecture.png)
 
 - **Chat / conversation data** is the platform-facing record: `log.jsonl`, attachments, and conversation files.
 - **Session orchestration** turns platform events into agent runs, handles top-level/thread scopes, and persists pi-coding-agent structured context under `sessions/*.jsonl`.
@@ -68,11 +68,11 @@ export DISCORD_BOT_TOKEN=MTI...
 
 ## Platforms
 
-- **Slack** — create a Socket Mode app using [docs/slack-bot-minimal-guide.md](docs/slack-bot-minimal-guide.md). The bot responds when `@mentioned` in channels and to all DMs.
+- **Slack** — create a Socket Mode app using [src/content/docs/slack-bot-minimal-guide.md](src/content/docs/slack-bot-minimal-guide.md). The bot responds when `@mentioned` in channels and to all DMs.
 - **Telegram** — create a bot via [@BotFather](https://t.me/BotFather). The bot responds to private messages, `@mention`, and reply chains in groups.
 - **Discord** — create an application in the [Discord Developer Portal](https://discord.com/developers/applications), enable **Message Content Intent**, and invite it with message/file permissions.
 
-Slack threads, Discord replies/threads, and Telegram reply chains are mapped to independent session scopes. See [docs/sessions.md](docs/sessions.md).
+Slack threads, Discord replies/threads, and Telegram reply chains are mapped to independent session scopes. See [src/content/docs/sessions.md](src/content/docs/sessions.md).
 
 ## Sandbox
 
@@ -84,7 +84,7 @@ Slack threads, Discord replies/threads, and Telegram reply chains are mapped to 
 | `firecracker:<vm-id>:<path>` | Firecracker microVM (alpha; not recommended)                           |
 | `cloudflare:<sandbox-id>`    | Cloudflare Worker bridge (experimental; no auto workspace sync)        |
 
-For routing, mounts, vault behavior, managed container details, and Firecracker/Cloudflare notes, see [docs/sandbox.md](docs/sandbox.md).
+For routing, mounts, vault behavior, managed container details, and Firecracker/Cloudflare notes, see [src/content/docs/sandbox.md](src/content/docs/sandbox.md).
 
 ## Chat commands
 
@@ -97,7 +97,7 @@ For routing, mounts, vault behavior, managed container details, and Firecracker/
 | `auto-reply` / `/pi-auto-reply on\|off\|status`            | Control group/channel auto-reply                 |
 | `stop` / `/stop`                                           | Stop the current run                             |
 
-See [docs/commands.md](docs/commands.md) for command details and web session viewer setup.
+See [src/content/docs/commands.md](src/content/docs/commands.md) for command details and web session viewer setup.
 
 ## Configuration
 
@@ -113,7 +113,7 @@ mikan reads global settings from `<state-dir>/settings.json`; per-conversation o
 }
 ```
 
-See [docs/configuration.md](docs/configuration.md) for all fields.
+See [src/content/docs/configuration.md](src/content/docs/configuration.md) for all fields.
 
 ## Data layout
 
@@ -137,11 +137,11 @@ See [docs/configuration.md](docs/configuration.md) for all fields.
 
 ## More docs
 
-- [Events](docs/events.md)
-- [Skills](docs/skills.md)
-- [Deployment](docs/deployment.md)
-- [Development](docs/development.md)
-- [Sandbox](docs/sandbox.md)
+- [Events](src/content/docs/events.md)
+- [Skills](src/content/docs/skills.md)
+- [Deployment](src/content/docs/deployment.md)
+- [Development](src/content/docs/development.md)
+- [Sandbox](src/content/docs/sandbox.md)
 
 ## Slack: Download channel history
 
@@ -159,7 +159,7 @@ npm run fmt:check
 npm run build
 ```
 
-See [docs/development.md](docs/development.md) for E2E tests.
+See [src/content/docs/development.md](src/content/docs/development.md) for E2E tests.
 
 ## Contributing
 

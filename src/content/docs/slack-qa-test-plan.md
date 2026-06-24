@@ -38,7 +38,7 @@ Also test direct messages with mikan.
 
 ## Slack App Setup Checklist
 
-For mikan, follow `docs/slack-bot-minimal-guide.md`.
+For mikan, follow `slack-bot-minimal-guide.md`.
 
 Minimum checks:
 

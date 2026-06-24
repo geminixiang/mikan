@@ -36,7 +36,7 @@ Husky runs `lint` + `fmt` on staged `*.ts` files via pre-commit; `*.test.ts` cha
 
 E2E tests (`npm run test:e2e`, `npm run test:e2e:slack`) hit real Slack/Discord/Telegram APIs. They require a dedicated test workspace and tokens (`SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, `SLACK_QA_BOT_USER_ID` for Slack). Skip them locally unless you have a sandbox set up — CI runs them on tagged branches.
 
-See [`docs/slack-qa-test-plan.md`](docs/slack-qa-test-plan.md) for the Slack E2E setup.
+See [`src/content/docs/slack-qa-test-plan.md`](src/content/docs/slack-qa-test-plan.md) for the Slack E2E setup.
 
 ## Submitting changes
 

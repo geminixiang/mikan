@@ -37,7 +37,7 @@ Stack:
   - `utils/`: filesystem, env, date, HTML, HTTP-body helpers.
 - `test/`: unit/integration tests run by `npm test`.
 - `e2e/`: real-platform e2e tests, currently Slack-focused.
-- `docs/`: architecture, commands, configuration, deployment, sandbox, sessions, Slack guides.
+- `src/content/docs/`: Starlight documentation source (architecture, commands, configuration, deployment, sandbox, sessions, Slack guides).
 - `examples/`: Slack app manifests.
 - `scripts/`: maintenance and migration scripts.
 - `deploy/`, `docker/`: deployment assets and sandbox Dockerfile.
@@ -84,15 +84,15 @@ Stack:
 ## WHERE TO LOOK
 
 - **Source map**: `src/README.md` plus per-subdirectory `README.md` files.
-- **Architecture**: `README.md`, `docs/architecture.md`, `docs/sessions.md`, `docs/sandbox.md`.
-- **Commands/user behavior**: `docs/commands.md`, `src/commands/`.
+- **Architecture**: `README.md`, `src/content/docs/architecture.md`, `src/content/docs/sessions.md`, `src/content/docs/sandbox.md`.
+- **Commands/user behavior**: `src/content/docs/commands.md`, `src/commands/`.
 - **Platform adapters**: `src/adapters/{slack,discord,telegram}/`.
 - **Slack Block Kit/tools**: `src/adapters/slack/tools/`, `test/slack-block-kit-tool.test.ts`.
 - **Runtime/session logic**: `src/runtime/`, `src/sessions/`, related tests in `test/session-*.test.ts` and `test/*session*.test.ts`.
-- **Sandbox execution**: `src/sandbox/`, `src/execution-resolver.ts`, `src/provisioner.ts`, `docs/sandbox.md`.
+- **Sandbox execution**: `src/sandbox/`, `src/execution-resolver.ts`, `src/provisioner.ts`, `src/content/docs/sandbox.md`.
 - **Vault/login/OAuth**: `src/vault/`, `src/web/login/`, `test/login.test.ts`, `test/oauth-link-server.test.ts`.
 - **Observability**: `src/observability/`, `src/sentry.ts` compatibility export, `test/sentry.test.ts`.
-- **Config**: `src/config.ts`, `docs/configuration.md`, `test/config.test.ts`.
+- **Config**: `src/config.ts`, `src/content/docs/configuration.md`, `test/config.test.ts`.
 - **Docs for contributors**: `CONTRIBUTING.md`, `CONTEXT.md`, `CHANGELOG.md`.
 
 ## NOTES
@@ -102,8 +102,8 @@ Stack:
 - `dist/` is generated from `src/`; edit `src/` and run build instead of modifying `dist/` directly.
 - `npm run build` emits declarations and JS to `dist/` and makes `dist/main.js` executable.
 - `/login` stores credentials under `--state-dir`; avoid logging secrets and validate state-dir safety.
-- Sandbox modes have different credential/mount behavior. Check `docs/sandbox.md` and `src/sandbox/types.ts` before changing executor logic.
-- Slack/Discord/Telegram adapters map threads/replies to independent session scopes; check `docs/sessions.md` before changing conversation IDs or session keys.
+- Sandbox modes have different credential/mount behavior. Check `src/content/docs/sandbox.md` and `src/sandbox/types.ts` before changing executor logic.
+- Slack/Discord/Telegram adapters map threads/replies to independent session scopes; check `src/content/docs/sessions.md` before changing conversation IDs or session keys.
 - Cloudflare AI image input note for related Quro work: send raw base64 strings in `images`, not data URIs, when calling `env.AI.run('openai/gpt-image-2', ...)`.
 
 # Development Rules

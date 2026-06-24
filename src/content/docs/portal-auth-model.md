@@ -176,7 +176,7 @@ A future dashboard can introduce a higher-level portal identity, but it should n
 
 ## Known alignment notes
 
-- `docs/commands.md` should describe `session` as a web session view, not strictly read-only, while `/session/message` exists.
+- `commands.md` should describe `session` as a web session view, not strictly read-only, while `/session/message` exists.
 - `src/login/portal.ts` is broader than its name: it hosts admin, session view, and login routes.
 - `src/portal-shell.ts` is shared presentation only; it is not an auth boundary.
 - Token stores are in-memory and are purged every five minutes from `src/main.ts`; restarting the process invalidates all outstanding web tokens.
