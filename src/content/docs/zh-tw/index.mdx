@@ -1,0 +1,54 @@
+---
+title: mikan
+description: 適用於 Slack、Telegram 與 Discord 的多平台 AI 程式代理。
+template: splash
+---
+
+import Hero from "starlight-theme-mikan/components/Hero.astro";
+import Features from "starlight-theme-mikan/components/Features.astro";
+import CTA from "starlight-theme-mikan/components/CTA.astro";
+
+<Hero
+  eyebrow="AI 程式代理"
+  title="mikan"
+  tagline="適用於 Slack、Telegram 與 Discord 的多平台 AI 程式代理。它會將聊天記錄、代理工作階段與沙盒執行分開管理。"
+  actions={[
+    { text: "開始使用", href: "/configuration/", variant: "primary" },
+    {
+      text: "在 GitHub 上查看",
+      href: "https://github.com/geminixiang/mikan",
+      variant: "secondary",
+    },
+  ]}
+/>
+
+<Features
+  items={[
+    {
+      icon: "rocket",
+      title: "多平台",
+      body: "Slack、Telegram 與 Discord 轉接器，並為討論串與回覆提供獨立的對話範圍。",
+    },
+    {
+      icon: "setting",
+      title: "沙盒執行",
+      body: "在主機、Docker 容器、Firecracker microVM，或 Cloudflare bridge 上執行工具。",
+    },
+    {
+      icon: "lock",
+      title: "憑證保管庫",
+      body: "將執行階段憑證儲存在狀態目錄下，並注入到沙盒執行中。",
+    },
+    {
+      icon: "open-book",
+      title: "工作階段記憶",
+      body: "持久化聊天記錄、pi 工作階段、工作區記憶、技能與排程事件。",
+    },
+  ]}
+/>
+
+<CTA
+  title="從架構開始"
+  body="了解平台記錄、工作階段編排、代理執行、沙盒執行階段與保管庫憑證之間的分工。"
+  actions={[{ text: "閱讀架構", href: "/architecture/", variant: "primary" }]}
+/>

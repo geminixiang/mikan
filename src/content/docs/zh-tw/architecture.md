@@ -1,10 +1,10 @@
 ---
-title: mikan Architecture
+title: mikan 架構
 ---
 
-# mikan Architecture
+# mikan 架構
 
-這份文件整理 `mikan` 專案的核心架構，重點放在:
+這份文件整理 `mikan` 專案的核心架構，重點放在：
 
 - 多平台訊息如何進入系統
 - session / context 如何持久化
@@ -15,52 +15,52 @@ title: mikan Architecture
 
 ```mermaid
 flowchart LR
-  subgraph Clients["Chat Platforms"]
+  subgraph Clients["聊天平台"]
     Slack["Slack"]
     Telegram["Telegram"]
     Discord["Discord"]
   end
 
-  subgraph Adapters["Platform Adapters"]
+  subgraph Adapters["平台轉接器"]
     SlackAdapter["src/adapters/slack/*"]
     TelegramAdapter["src/adapters/telegram/*"]
     DiscordAdapter["src/adapters/discord/*"]
   end
 
-  subgraph Runtime["Core Runtime"]
-    Main["src/main.ts\nCLI bootstrap"]
-    SessionRuntime["src/runtime/session-runtime.ts\nSessionRuntime + runner cache"]
-    Orchestrator["src/runtime/conversation-orchestrator.ts\nrun lifecycle + commands"]
+  subgraph Runtime["核心執行階段"]
+    Main["src/main.ts\nCLI 啟動"]
+    SessionRuntime["src/runtime/session-runtime.ts\nSessionRuntime + runner 快取"]
+    Orchestrator["src/runtime/conversation-orchestrator.ts\n執行生命週期 + 指令"]
     AgentRunner["src/agent.ts\ncreateRunner()"]
   end
 
-  subgraph AgentStack["Agent Stack"]
+  subgraph AgentStack["Agent 堆疊"]
     PiAgent["@earendil-works/pi-agent-core\nAgent"]
     PiCoding["@earendil-works/pi-coding-agent\nAgentSession / SessionManager / Skills"]
-    PiAI["@earendil-works/pi-ai\nprovider + model"]
+    PiAI["@earendil-works/pi-ai\nprovider + 模型"]
     MikanTools["src/tools/*\nread / bash / edit / write / event / attach"]
     Executor["src/sandbox/*\nExecutor\nshared: host / container\nisolated: image / firecracker / cloudflare"]
   end
 
-  subgraph Persistence["Project Workspace"]
+  subgraph Persistence["專案工作區"]
     ConversationDir["<workspace>/<conversation>/\nlog.jsonl / MEMORY.md / attachments / skills"]
     Sessions["sessions/\ncurrent + *.jsonl"]
     EventsDir["events/*.json"]
     LocalSettings["<conversation>/settings.json"]
   end
 
-  subgraph StateDir["State Dir (~/.mikan or --state-dir)"]
+  subgraph StateDir["狀態目錄 (~/.mikan 或 --state-dir)"]
     GlobalSettings["settings.json\nglobal defaults"]
-    Vaults["vaults/\nconversation-scoped secret directories"]
+    Vaults["vaults/\nconversation-scoped secret 目錄"]
     LinkTokens["admin/login/session tokens\nin-memory stores"]
   end
 
-  subgraph Services["Auxiliary Services"]
+  subgraph Services["輔助服務"]
     VaultManager["src/vault/index.ts\nFileVaultManager"]
     Provisioner["src/provisioner.ts\nDockerContainerManager"]
     LinkServer["src/web/login/portal.ts\nlink/admin/session portal host"]
     SessionViewer["src/web/session-view/*\nweb session viewer"]
-    EventsWatcher["src/events.ts\nwatch + schedule events"]
+    EventsWatcher["src/events.ts\n監看 + 排程事件"]
   end
 
   Slack --> SlackAdapter
@@ -109,9 +109,9 @@ flowchart LR
 - `src/adapters/discord/*`
 - `src/adapter.ts`
 
-職責:
+職責：
 
-- 接 Slack / Telegram / Discord 原生事件
+- 接收 Slack / Telegram / Discord 原生事件
 - 轉成統一的 `BotEvent`、`ChatMessage`、`ChatResponseContext`
 - 依平台規則計算 `sessionKey`
 - 封裝回覆、typing、working、檔案上傳等平台差異
@@ -124,7 +124,7 @@ flowchart LR
 - `src/sessions/store.ts`
 - `src/sessions/chat-session-manager.ts`
 
-職責:
+職責：
 
 - 啟動 CLI、讀取 env / args / `settings.json`
 - 建立 `SessionRuntime` 作為各平台 bot 的 `BotHandler`
@@ -138,7 +138,7 @@ flowchart LR
 - `src/context.ts`
 - `src/tools/*`
 
-職責:
+職責：
 
 - 建立 `AgentRunner`
 - 載入模型、skills、memory、session context
@@ -152,10 +152,10 @@ flowchart LR
 - `src/provisioner.ts`
 - `src/execution-resolver.ts`
 
-職責:
+職責：
 
 - 統一抽象 `Executor`
-- sandbox runtime 分成兩類:
+- sandbox runtime 分成兩類：
   - shared: `host` / `container:<name>`，同一個 host 或指定 container 共用
   - isolated: `image:<image>` / `firecracker:*` / `cloudflare:*`，依 actor/conversation/vault 路由到隔離的執行環境
 - 透過 `ActorExecutionResolver` 依 user/conversation/vault 決定實際 executor
@@ -168,9 +168,9 @@ flowchart LR
 - `src/context.ts`
 - `src/vault/index.ts`
 
-職責:
+職責：
 
-- session 檔案管理: `sessions/current` 與 `*.jsonl`
+- session 檔案管理： `sessions/current` 與 `*.jsonl`
 - `log.jsonl` 與 structured session 的雙軌歷史保存
 - workspace / conversation 級別 `MEMORY.md`
 - per-conversation vault 憑證與 mount / env 注入
@@ -182,7 +182,7 @@ flowchart LR
 - `src/web/session-view/*`
 - `src/events.ts`
 
-職責:
+職責：
 
 - `src/web/login/portal.ts` 目前是 link server host，會掛接 login/vault、admin、session-view routes
 - 提供 Web login portal，支援 API key 與 OAuth 寫入 vault
@@ -245,14 +245,14 @@ sequenceDiagram
         └── <scope_id>.jsonl   # thread / reply scoped sessions
 ```
 
-設計重點:
+設計重點：
 
 - `log.jsonl` 是平台對話紀錄：Slack/Discord/Telegram 實際發生過什麼
 - `sessions/*.jsonl` 是 LLM 工作上下文/工作紀錄：mikan 拿什麼給 LLM 看，以及 LLM/tool 做了什麼
 - top-level session 用 `current` 指標，但 `current` 不是 channel history；缺失時可從 `log.jsonl` 重建最近 top-level 工作上下文
 - thread / reply session 用固定檔名，讓 scoped session 可被單獨追蹤
-- Slack top-level messages share the channel session; Slack thread replies use `conversationId:threadTs`
-- Slack events first materialize a top-level anchor message, then run in `conversationId:anchorTs`
+- Slack top-level 訊息共用 channel session；Slack thread replies 使用 `conversationId:threadTs`
+- Slack events 會先建立 top-level anchor message，再用 `conversationId:anchorTs` 執行
 
 ## 5. Login / Vault / Sandbox 關係
 
@@ -272,7 +272,7 @@ flowchart TD
   Resolver --> Sandbox["host / container / image / firecracker / cloudflare"]
 ```
 
-重點:
+重點：
 
 - 憑證不直接進 workspace
 - vault 存在 `--state-dir`
@@ -294,15 +294,15 @@ flowchart TD
 
 ## 7. 架構結論
 
-如果用一句話總結，`mikan` 的核心其實是:
+如果用一句話總結，`mikan` 的核心其實是：
 
 > 一個以 `main.ts` 為協調中心、以 `agent.ts` 為執行核心、以 `session/vault/sandbox` 為基礎設施的多平台 AI agent bot。
 
 可以把它理解成 6 個核心子系統:
 
-1. Platform adapters
-2. Bot runtime orchestration
+1. 平台轉接器
+2. Bot runtime 協調
 3. Agent + tools
-4. Session/context persistence
+4. Session/context 持久化
 5. Vault + sandbox execution routing
 6. Web/event side services
