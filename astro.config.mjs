@@ -99,46 +99,56 @@ export default defineConfig({
               link: "/sessions/",
             },
             {
-              label: "Sandbox",
-              translations: { "zh-TW": "沙盒", "zh-CN": "沙盒", ja: "サンドボックス" },
+              label: "Execution Environment",
+              translations: { "zh-TW": "執行環境", "zh-CN": "沙盒", ja: "サンドボックス" },
               items: [
                 {
-                  label: "Overview",
-                  translations: { "zh-TW": "總覽", "zh-CN": "总览", ja: "概要" },
-                  link: "/sandbox/",
-                },
-                {
-                  label: "Host",
-                  translations: { "zh-TW": "Host", "zh-CN": "Host", ja: "Host" },
-                  link: "/sandbox/host/",
-                },
-                {
-                  label: "Container",
-                  translations: { "zh-TW": "Container", "zh-CN": "Container", ja: "Container" },
-                  link: "/sandbox/container/",
-                },
-                {
-                  label: "Image",
-                  translations: { "zh-TW": "Image", "zh-CN": "Image", ja: "Image" },
-                  link: "/sandbox/image/",
-                },
-                {
-                  label: "Firecracker",
-                  translations: {
-                    "zh-TW": "Firecracker",
-                    "zh-CN": "Firecracker",
-                    ja: "Firecracker",
-                  },
-                  link: "/sandbox/firecracker/",
-                },
-                {
-                  label: "Cloudflare",
-                  translations: { "zh-TW": "Cloudflare", "zh-CN": "Cloudflare", ja: "Cloudflare" },
-                  link: "/sandbox/cloudflare/",
+                  label: "Sandbox",
+                  translations: { "zh-TW": "沙盒", "zh-CN": "沙盒", ja: "サンドボックス" },
+                  items: [
+                    {
+                      label: "Overview",
+                      translations: { "zh-TW": "總覽", "zh-CN": "总览", ja: "概要" },
+                      link: "/sandbox/",
+                    },
+                    {
+                      label: "Host",
+                      translations: { "zh-TW": "Host", "zh-CN": "Host", ja: "Host" },
+                      link: "/sandbox/host/",
+                    },
+                    {
+                      label: "Container",
+                      translations: { "zh-TW": "Container", "zh-CN": "Container", ja: "Container" },
+                      link: "/sandbox/container/",
+                    },
+                    {
+                      label: "Image",
+                      translations: { "zh-TW": "Image", "zh-CN": "Image", ja: "Image" },
+                      link: "/sandbox/image/",
+                    },
+                    {
+                      label: "Firecracker",
+                      translations: {
+                        "zh-TW": "Firecracker",
+                        "zh-CN": "Firecracker",
+                        ja: "Firecracker",
+                      },
+                      link: "/sandbox/firecracker/",
+                    },
+                    {
+                      label: "Cloudflare",
+                      translations: {
+                        "zh-TW": "Cloudflare",
+                        "zh-CN": "Cloudflare",
+                        ja: "Cloudflare",
+                      },
+                      link: "/sandbox/cloudflare/",
+                    },
+                  ],
                 },
                 {
                   label: "Vault",
-                  translations: { "zh-TW": "Vault", "zh-CN": "Vault", ja: "Vault" },
+                  translations: { "zh-TW": "憑證保管庫", "zh-CN": "Vault", ja: "Vault" },
                   link: "/sandbox/vault/",
                 },
               ],
