@@ -5,46 +5,13 @@ template: splash
 ---
 
 import Hero from "starlight-theme-mikan/components/Hero.astro";
-import Features from "starlight-theme-mikan/components/Features.astro";
-import CTA from "starlight-theme-mikan/components/CTA.astro";
 
 <Hero
   eyebrow="AI coding agent"
   title="mikan"
   tagline="A multi-platform AI coding agent for Slack, Telegram, and Discord. It keeps chat logs, agent sessions, and sandbox execution separate."
   actions={[
-    { text: "Get started", href: "/configuration/", variant: "primary" },
+    { text: "Get started", href: "/ja/configuration/", variant: "primary" },
     { text: "View on GitHub", href: "https://github.com/geminixiang/mikan", variant: "secondary" },
   ]}
-/>
-
-<Features
-  items={[
-    {
-      icon: "rocket",
-      title: "Multi-platform",
-      body: "Slack, Telegram, and Discord adapters with independent conversation scopes for threads and replies.",
-    },
-    {
-      icon: "setting",
-      title: "Sandbox execution",
-      body: "Run tools on host, Docker containers, Firecracker microVMs, or a Cloudflare bridge.",
-    },
-    {
-      icon: "lock",
-      title: "Credential vaults",
-      body: "Store runtime credentials under the state directory and inject them into sandbox runs.",
-    },
-    {
-      icon: "open-book",
-      title: "Session memory",
-      body: "Persist chat logs, pi sessions, workspace memory, skills, and scheduled events.",
-    },
-  ]}
-/>
-
-<CTA
-  title="Start with the architecture"
-  body="Understand the split between platform logs, session orchestration, agent runs, sandbox runtime, and vault credentials."
-  actions={[{ text: "Read architecture", href: "/architecture/", variant: "primary" }]}
 />

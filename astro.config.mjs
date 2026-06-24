@@ -26,7 +26,7 @@ export default defineConfig({
         ja: { label: "日本語", lang: "ja" },
       },
       defaultLocale: "root",
-      pagination: true,
+      pagination: false,
       sidebar: [
         {
           label: "Start",
