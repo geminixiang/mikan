@@ -108,6 +108,35 @@ export default defineConfig({
                   link: "/sandbox/",
                 },
                 {
+                  label: "Host",
+                  translations: { "zh-TW": "Host", "zh-CN": "Host", ja: "Host" },
+                  link: "/sandbox/host/",
+                },
+                {
+                  label: "Container",
+                  translations: { "zh-TW": "Container", "zh-CN": "Container", ja: "Container" },
+                  link: "/sandbox/container/",
+                },
+                {
+                  label: "Image",
+                  translations: { "zh-TW": "Image", "zh-CN": "Image", ja: "Image" },
+                  link: "/sandbox/image/",
+                },
+                {
+                  label: "Firecracker",
+                  translations: {
+                    "zh-TW": "Firecracker",
+                    "zh-CN": "Firecracker",
+                    ja: "Firecracker",
+                  },
+                  link: "/sandbox/firecracker/",
+                },
+                {
+                  label: "Cloudflare",
+                  translations: { "zh-TW": "Cloudflare", "zh-CN": "Cloudflare", ja: "Cloudflare" },
+                  link: "/sandbox/cloudflare/",
+                },
+                {
                   label: "Vault",
                   translations: { "zh-TW": "Vault", "zh-CN": "Vault", ja: "Vault" },
                   link: "/sandbox/vault/",
