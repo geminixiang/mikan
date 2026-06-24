@@ -1,5 +1,7 @@
 node_modules/
 dist/
+site-dist/
+.astro/
 coverage/
 data/
 bin/
