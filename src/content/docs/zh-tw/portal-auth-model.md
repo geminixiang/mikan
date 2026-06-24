@@ -6,6 +6,18 @@ title: Portal 驗證與 capability 模型
 
 本文說明 mikan 目前的 web 介面，以及它們使用的 token 模型。這份文件刻意採描述性寫法：它記錄目前程式碼中已存在的行為，讓未來 dashboard/refactor 工作能保留正確的風險邊界。
 
+最短講法：
+
+- **Admin token**：控制台能力。能看/改設定，也能產生其他 link，但不能直接寫 secret。
+- **Login / link token**：寫入 secret 的一次性能力。短效，完成寫入或 OAuth callback 後消耗。
+- **Session view token**：檢視 session 的能力；目前也能在 interactive wiring 可用時送訊息回 session。
+
+```text
+/admin  ── Admin token ──> settings / workspace / link generation
+/link   ── Link token  ──> vault secret writes / OAuth completion
+/session── View token  ──> timeline view / optional session message
+```
+
 ## Web 介面
 
 mikan 目前從 `src/web/login/portal.ts` 中由 `startLinkServer()` 啟動的 link server，暴露三個相關但不同的瀏覽器介面：
@@ -16,7 +28,7 @@ mikan 目前從 `src/web/login/portal.ts` 中由 `startLinkServer()` 啟動的 l
 | Login / vault portal | `/link`, `/api/link/complete`, `/api/oauth/start`, `/oauth/callback` | `/login` / `/pi-login` 或 admin 產生的 login link                   | 將 API keys 與 OAuth credentials 儲存到 vault。                                            | 最高     | `InMemoryLinkTokenStore` 加上短生命週期 OAuth state |
 | Session view         | `/session`, `/session/stream`, `/session/message`                    | `session` / `/session` / `/pi-session` 或 admin 產生的 session link | 檢視 session timeline，並在 interactive wiring 可用時，將訊息送回該 session。              | 中       | `InMemorySessionViewTokenStore`                     |
 
-這三個介面透過 `src/portal-shell.ts` 共用視覺外殼，但它們刻意不共用同一個 authorization token。
+這三個介面透過 `src/portal-shell.ts` 共用視覺外殼，但它們刻意不共用同一個 authorization token。換句話說：**同一個 web server、同一套 UI shell、三種不同 capability**。
 
 ## 目前的伺服器 ownership
 
@@ -36,7 +48,7 @@ mikan 目前從 `src/web/login/portal.ts` 中由 `startLinkServer()` 啟動的 l
 
 ### Admin token
 
-在 `src/web/admin/store.ts` 中定義為 `AdminToken`，並由 `InMemoryAdminTokenStore` 儲存。
+位置：`src/web/admin/types.ts` 定義 `AdminToken`，`src/web/admin/store.ts` 的 `InMemoryAdminTokenStore` 負責儲存與簽發。
 
 目前屬性：
 
@@ -69,10 +81,11 @@ mikan 目前從 `src/web/login/portal.ts` 中由 `startLinkServer()` 啟動的 l
 重要邊界：
 
 - Admin token 可以產生 login link，但它本身不會把 secret values 寫入 vault。Secret writes 仍會經過 login/vault token flow。
+- Admin token 是可重複使用的短 session capability，不是 one-shot action token。
 
 ### Login / link token
 
-在 `src/web/login/types.ts` 中定義為 `LinkToken`，並由 `InMemoryLinkTokenStore` 儲存。
+位置：`src/web/login/types.ts` 定義 `LinkToken`，`src/web/login/store.ts` 的 `InMemoryLinkTokenStore` 負責儲存與簽發。
 
 目前屬性：
 
@@ -96,7 +109,7 @@ mikan 目前從 `src/web/login/portal.ts` 中由 `startLinkServer()` 啟動的 l
 目前 capability：
 
 - 為特定 vault render credential/OAuth onboarding form。
-- 將環境變數與選定的 file mounts 寫入該 vault。
+- 將環境變數與 preset/OAuth 定義的 file mounts 寫入該 vault。
 - 完成支援的 OAuth flows，並持久化 tokens/credential files。
 - Credential storage 成功後通知來源 conversation。
 
@@ -110,10 +123,11 @@ mikan 目前從 `src/web/login/portal.ts` 中由 `startLinkServer()` 啟動的 l
 重要邊界：
 
 - Link token 是高風險 action capability，不是一般 dashboard session。它應維持短生命週期，且寫入時為 one-shot。
+- `peek()` 只用來顯示頁面或開始 OAuth；真正寫入 secret 的路徑使用 `consume()`。
 
 ### Session view token
 
-在 `src/web/session-view/store.ts` 中定義為 `SessionViewToken`，並由 `InMemorySessionViewTokenStore` 儲存。
+位置：`src/web/session-view/types.ts` 定義 `SessionViewToken`，`src/web/session-view/store.ts` 的 `InMemorySessionViewTokenStore` 負責儲存與簽發。
 
 目前屬性：
 
@@ -144,6 +158,8 @@ mikan 目前從 `src/web/login/portal.ts` 中由 `startLinkServer()` 啟動的 l
 重要邊界：
 
 - 目前程式碼中的 Session view 不是純 read-only，因為 `/session/message` 可以用 `session_view` event 呼叫 `handler.handleEvent()`。只要該 route 尚未停用或移除，面向使用者的文案就應避免稱它為 read-only。
+- Session view 的 message/stream routes 需要 `SessionViewInteractiveOptions`；沒有 interactive wiring 時，頁面檢視可存在，但送訊息與 SSE stream 不可用。
+- `/session/message` 解析 JSON body token，但不像 login credential POST routes 一樣套用 `enforceCsrf()`。這個 route 的邊界是 session view capability token 本身。
 
 ## Route-to-token 矩陣
 
@@ -158,7 +174,21 @@ mikan 目前從 `src/web/login/portal.ts` 中由 `startLinkServer()` 啟動的 l
 | `/oauth/callback`    | `GET`  | query `state`     | OAuth state + `linkTokenStore.consume()` | 花費 OAuth state 與 link token。                                          |
 | `/session`           | `GET`  | query `token`     | `sessionViewTokenStore.peek()`           | Render session page。                                                     |
 | `/session/stream`    | `GET`  | query `token`     | `sessionViewTokenStore.peek()`           | 開啟 SSE stream；需要 interactive wiring。                                |
-| `/session/message`   | `POST` | JSON body `token` | `sessionViewTokenStore.peek()`           | 送出 `session_view` event；需要 interactive wiring。                      |
+| `/session/message`   | `POST` | JSON body `token` | `sessionViewTokenStore.peek()`           | 送出 `session_view` event；需要 interactive wiring；不消耗 token。        |
+
+## 講解時可用的判斷規則
+
+先問「這個 link 會做什麼事？」：
+
+1. **只改設定或產生 link** → Admin token。
+2. **會寫 secret / OAuth credential** → Login / link token，而且寫入時 one-shot。
+3. **看 session 或從 session 頁面送訊息** → Session view token。
+
+再問「token 被用掉嗎？」：
+
+- Admin：不消耗，30 分鐘內可重複用。
+- Login：顯示頁面不消耗；完成 credential 或 OAuth callback 會消耗。
+- Session view：不消耗，24 小時內可重複用。
 
 ## 為什麼不應攤平成同一種 token
 
