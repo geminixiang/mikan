@@ -1,0 +1,75 @@
+---
+title: 平台接入層
+---
+
+# 平台接入層
+
+平台接入層負責把 Slack、Discord、Telegram 的原生事件轉成 mikan 核心執行階段可以理解的共同格式。
+
+它的目標是讓 `src/runtime/*` 和 `src/agent.ts` 不需要知道每個平台的 SDK、thread 規則、訊息更新 API 或檔案下載方式。
+
+## 接入層做什麼
+
+每個平台 adapter 都會處理同一組責任：
+
+1. 接收平台事件，例如訊息、mention、slash command 或 reply。
+2. 判斷訊息是否應該觸發 mikan：DM、mention、thread reply、auto-reply policy。
+3. 轉成共同的 `BotEvent` 與 `ChatMessage`。
+4. 計算 `sessionKey`，讓不同 channel、thread、reply 可以對應到正確 session。
+5. 下載附件並寫入 workspace 的 `attachments/`。
+6. 建立 `ChatResponseContext`，封裝回覆、更新、typing/working 狀態與檔案上傳。
+7. 把事件交給 `BotHandler`，也就是 `SessionRuntime`。
+
+共同型別由 `src/adapter.ts` 匯出，實作型別放在 `src/types.ts` 與 `src/adapters/types.ts`。
+
+## 共同流程
+
+```mermaid
+sequenceDiagram
+  participant P as Platform SDK
+  participant A as Platform adapter
+  participant I as processMessageIntake()
+  participant R as SessionRuntime
+  participant C as ChatResponseContext
+
+  P->>A: 原生訊息 / slash command / reply
+  A->>A: 解析 conversation、user、thread、attachments
+  A->>I: BotEvent base + trigger/log/attachment hooks
+  I->>I: auto-reply / trigger 判斷
+  I->>A: 需要時下載附件
+  I->>R: handler.handleEvent(event, bot, adapters)
+  R->>C: respond / replaceResponse / setWorking / uploadFile
+  C->>P: 平台格式化與送出
+```
+
+`src/adapters/intake.ts` 提供共同的 message ingress pipeline。平台 adapter 仍保留平台專屬的前處理與 stop semantics，但觸發判斷、附件處理、寫 log、排 queue、呼叫 handler 的順序集中在這裡。
+
+## 共同工具
+
+| 檔案                        | 用途                                                                          |
+| --------------------------- | ----------------------------------------------------------------------------- |
+| `src/adapter.ts`            | 對外匯出 `Bot`、`BotEvent`、`ChatMessage`、`ChatResponseContext` 等共同介面。 |
+| `src/adapters/intake.ts`    | 共用訊息入口流程：trigger、log、attachment、queue、handler 呼叫順序。         |
+| `src/adapters/shared.ts`    | 共用 retry、queue、長訊息切割、log、stop target resolution。                  |
+| `src/adapters/streaming.ts` | 將 streaming response buffer 後再 flush，避免過度頻繁更新平台訊息。           |
+
+## 平台差異
+
+| 平台     | 主要差異                                                                                             | 子頁面                                    |
+| -------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| Slack    | Socket Mode、channel/thread session、Block Kit、assistant status、Slack mrkdwn。                     | [Slack](platform-adapters/slack.md)       |
+| Discord  | Gateway events、guild/DM/thread channel、slash command、Discord Markdown、typing indicator。         | [Discord](platform-adapters/discord.md)   |
+| Telegram | long polling、private/group chat、reply-based session、Telegram HTML mode、photo/document download。 | [Telegram](platform-adapters/telegram.md) |
+
+## 與核心執行階段的邊界
+
+平台 adapter 可以知道平台 SDK 與訊息格式，但不應該知道 agent 如何執行任務。
+
+核心執行階段只依賴這些共同抽象：
+
+- `BotEvent`：一次使用者或平台事件。
+- `Bot`：平台 bot 能力，例如 post message、upload file。
+- `BotAdapters`：一次事件附帶的 `message`、`responseCtx`、`platform` metadata。
+- `ChatResponseContext`：agent 回覆時使用的通道。
+
+如果新增平台，優先實作這些抽象，不要把平台 SDK 細節帶進 `src/runtime/*` 或 `src/agent.ts`。

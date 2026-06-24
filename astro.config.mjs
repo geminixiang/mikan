@@ -57,6 +57,36 @@ export default defineConfig({
               link: "/architecture/",
             },
             {
+              label: "Platform Adapters",
+              translations: {
+                "zh-TW": "平台接入層",
+                "zh-CN": "平台接入层",
+                ja: "プラットフォーム接続",
+              },
+              items: [
+                {
+                  label: "Overview",
+                  translations: { "zh-TW": "總覽", "zh-CN": "总览", ja: "概要" },
+                  link: "/platform-adapters/",
+                },
+                {
+                  label: "Slack",
+                  translations: { "zh-TW": "Slack", "zh-CN": "Slack", ja: "Slack" },
+                  link: "/platform-adapters/slack/",
+                },
+                {
+                  label: "Discord",
+                  translations: { "zh-TW": "Discord", "zh-CN": "Discord", ja: "Discord" },
+                  link: "/platform-adapters/discord/",
+                },
+                {
+                  label: "Telegram",
+                  translations: { "zh-TW": "Telegram", "zh-CN": "Telegram", ja: "Telegram" },
+                  link: "/platform-adapters/telegram/",
+                },
+              ],
+            },
+            {
               label: "Sessions",
               translations: { "zh-TW": "工作階段", "zh-CN": "会话", ja: "セッション" },
               link: "/sessions/",

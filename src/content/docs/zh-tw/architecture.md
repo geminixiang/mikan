@@ -104,6 +104,8 @@ flowchart LR
 
 ### A. 平台接入層
 
+平台接入層的完整說明請見 [平台接入層](platform-adapters.md)，各平台細節請見 [Slack](platform-adapters/slack.md)、[Discord](platform-adapters/discord.md)、[Telegram](platform-adapters/telegram.md)。
+
 - `src/adapters/slack/*`
 - `src/adapters/telegram/*`
 - `src/adapters/discord/*`
