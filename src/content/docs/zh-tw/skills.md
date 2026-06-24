@@ -11,7 +11,9 @@ mikan 會從兩個 `skills/` 位置載入自訂 CLI tools：
 | Workspace-level（global skills）   | 整個 workspace 內所有 conversations 都可用的共用工具 | `<workspace>/skills/<skill-name>/`                  | `/workspace/skills/<skill-name>/`                  |
 | Conversation-level（local skills） | 只給單一 conversation / channel / DM 使用的工具      | `<workspace>/<conversationId>/skills/<skill-name>/` | `/workspace/<conversationId>/skills/<skill-name>/` |
 
+:::note
 mikan 會先載入 workspace-level skills，再載入 conversation-level skills。若兩邊有相同 `name`，conversation-level skill 會覆蓋 workspace-level skill。
+:::
 
 ## 目錄結構
 

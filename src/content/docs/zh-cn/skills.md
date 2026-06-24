@@ -11,7 +11,9 @@ mikan loads custom CLI tools from two `skills/` locations:
 | Workspace-level (global skills)   | Reusable tools available to every conversation in the workspace | `<workspace>/skills/<skill-name>/`                  | `/workspace/skills/<skill-name>/`                  |
 | Conversation-level (local skills) | Tools only for one conversation/channel/DM                      | `<workspace>/<conversationId>/skills/<skill-name>/` | `/workspace/<conversationId>/skills/<skill-name>/` |
 
+:::note
 Workspace-level skills are loaded first. Conversation-level skills are loaded second and override a workspace skill with the same `name`.
+:::
 
 ## Directory layout
 
