@@ -7,6 +7,13 @@ import remarkGfm from "remark-gfm";
 export default defineConfig({
   site: "https://geminixiang.github.io/",
   devToolbar: { enabled: false },
+  vite: {
+    server: {
+      watch: {
+        ignored: ["**/.astro/settings.json"],
+      },
+    },
+  },
   outDir: "./site-dist",
   integrations: [
     starlight({
