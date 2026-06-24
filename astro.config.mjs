@@ -64,7 +64,18 @@ export default defineConfig({
             {
               label: "Sandbox",
               translations: { "zh-TW": "沙盒", "zh-CN": "沙盒", ja: "サンドボックス" },
-              link: "/sandbox/",
+              items: [
+                {
+                  label: "Overview",
+                  translations: { "zh-TW": "總覽", "zh-CN": "总览", ja: "概要" },
+                  link: "/sandbox/",
+                },
+                {
+                  label: "Vault",
+                  translations: { "zh-TW": "Vault", "zh-CN": "Vault", ja: "Vault" },
+                  link: "/sandbox/vault/",
+                },
+              ],
             },
             {
               label: "Events",
