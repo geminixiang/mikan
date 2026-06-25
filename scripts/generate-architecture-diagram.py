@@ -108,14 +108,14 @@ def main():
     draw.text((80, 55), "mikan architecture", font=TITLE, fill=TEXT)
     draw.text(
         (80, 112),
-        "Chat history, structured agent sessions, and sandbox runtime are intentionally separate.",
+        "Messaging adapters normalize conversation events; conversation memory and pi agent sessions stay separate.",
         font=SUBTITLE,
         fill=MUTED,
     )
 
     platform = (80, 245, 360, 355)
     rounded_rect(draw, platform, GRAY, GRAY_BORDER, radius=28)
-    text_center(draw, platform, "Slack / Discord /\nTelegram adapter")
+    text_center(draw, platform, "SlackBot / DiscordBot /\nTelegramBot")
 
     content_box(
         draw,
@@ -123,8 +123,8 @@ def main():
         205,
         430,
         230,
-        "1. Chat / conversation data",
-        ["log.jsonl platform history", "attachments/", "conversation files"],
+        "1. Conversation memory",
+        ["log.jsonl visible history", "attachments/", "conversation files"],
         BLUE,
         BLUE_BORDER,
     )
@@ -134,8 +134,8 @@ def main():
         500,
         430,
         280,
-        "2. Session orchestration",
-        ["SessionRuntime", "ConversationOrchestrator", "top-level / thread / fork", "sessions/*.jsonl context"],
+        "2. Conversation runtime",
+        ["ConversationRuntime", "AgentRunController", "conversation / thread scope", "sessions/*.jsonl context"],
         GREEN,
         GREEN_BORDER,
     )
@@ -145,8 +145,8 @@ def main():
         500,
         430,
         280,
-        "pi-coding-agent harness",
-        ["AgentRunner", "AgentSession", "model loop", "mikan tools"],
+        "pi-coding-agent boundary",
+        ["PiAgentWrapper", "AgentSession", "model loop", "mikan tools"],
         PURPLE,
         PURPLE_BORDER,
     )
@@ -174,11 +174,11 @@ def main():
     )
 
     arrow(draw, (360, 300), (470, 300))
-    edge_label(draw, 383, 270, "records")
+    edge_label(draw, 383, 270, "ConversationEvent")
     arrow(draw, (685, 435), (685, 500))
-    edge_label(draw, 710, 455, "materializes / scopes")
+    edge_label(draw, 710, 455, "selects memory")
     arrow(draw, (900, 640), (1030, 640))
-    edge_label(draw, 940, 605, "runs")
+    edge_label(draw, 940, 605, "PiAgentWrapper.run")
     arrow(draw, (1460, 640), (1610, 640))
     edge_label(draw, 1490, 605, "executes tools in")
     arrow(draw, (1845, 435), (1845, 500))
@@ -192,19 +192,19 @@ def main():
     draw.text((120, 930), "Responsibility boundary", font=LABEL, fill=TEXT)
     draw.text(
         (120, 975),
-        "Chat stores platform-visible history.  Session selects/forks structured context for a run.  Harness performs the model/tool loop.",
+        "Messaging adapters own platform APIs and create ConversationEvent + ConversationContext.  ConversationRuntime queues and controls runs.",
         font=SMALL,
         fill=MUTED,
     )
     draw.text(
         (120, 1008),
-        "Sandbox decides where commands run and how runtime paths map.  Vault supplies sensitive env and file mounts.",
+        "AgentMemoryFileManager bridges log.jsonl and sessions/*.jsonl.  PiAgentWrapper performs the model/tool loop.",
         font=SMALL,
         fill=MUTED,
     )
     draw.text(
         (80, 1080),
-        "Sandbox runtime classes: shared = host/container; isolated = image/firecracker/cloudflare. Future providers can plug in behind Executor.",
+        "ConversationResponder is the only reply path back to Slack/Discord/Telegram.  Sandbox decides where tools run and how paths map.",
         font=SMALL,
         fill=MUTED,
     )
