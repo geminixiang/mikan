@@ -1,4 +1,4 @@
-import type { Bot, BotAdapters, BotEvent, BotHandler } from "../adapter.js";
+import type { Bot, PlatformEventContext, BotEvent, BotHandler } from "../adapter.js";
 
 export type ChatResponseErrorOperation =
   | "respond"
@@ -66,7 +66,7 @@ export interface MessageIntakeOptions<TEvent extends BotEvent> {
   enqueue: (queueKey: string, work: () => Promise<void>) => void;
   handler: BotHandler;
   bot: Bot;
-  createAdapters: (event: TEvent) => BotAdapters;
+  createContext: (event: TEvent) => PlatformEventContext;
   beforeEnqueue?: (event: TEvent) => Promise<boolean> | boolean;
   onNotTriggered?: () => void;
   deferAttachmentsUntilRun?: boolean;

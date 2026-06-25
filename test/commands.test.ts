@@ -130,10 +130,10 @@ interface BuildContextArgs {
 }
 
 function buildContext(args: BuildContextArgs): CommandContext & {
-  responseCtx: RecordingResponseCtx;
+  responder: RecordingResponseCtx;
 } {
   const sandbox: SandboxConfig = { type: "host" };
-  const responseCtx = fakeResponseCtx();
+  const responder = fakeResponseCtx();
   const services: CommandServices = {
     workingDir: "/tmp/no-such-working-dir",
     runtime: {
@@ -158,7 +158,7 @@ function buildContext(args: BuildContextArgs): CommandContext & {
   };
   return {
     bot: args.bot ?? fakeBot(),
-    responseCtx,
+    responder,
     platform: args.platform ?? "slack",
     platformUserId: "U123",
     conversationId: args.conversationId ?? "C123",
@@ -250,7 +250,7 @@ describe("AutoReplyCommandHandler", () => {
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(ctx.responseCtx.responses[0]).toContain("只能在 group/channel");
+    expect(ctx.responder.responses[0]).toContain("只能在 group/channel");
   });
 
   test("enables and disables auto-reply using mom-compatible marker files", async () => {
@@ -259,8 +259,8 @@ describe("AutoReplyCommandHandler", () => {
       services: { workingDir },
     });
     expect(await handler.tryHandle(enableCtx)).toBe(true);
-    expect(enableCtx.responseCtx.responses[0]).toContain("Auto-reply is enabled");
-    expect(enableCtx.responseCtx.responses[0]).toContain("Edit rules at:");
+    expect(enableCtx.responder.responses[0]).toContain("Auto-reply is enabled");
+    expect(enableCtx.responder.responses[0]).toContain("Edit rules at:");
 
     const enabledPath = join(workingDir, "C123", "auto-reply");
     expect(readFileSync(enabledPath, "utf-8")).toBe("");
@@ -272,9 +272,9 @@ describe("AutoReplyCommandHandler", () => {
       services: { workingDir },
     });
     expect(await handler.tryHandle(disableCtx)).toBe(true);
-    expect(disableCtx.responseCtx.responses[0]).toContain("Auto-reply is disabled");
-    expect(disableCtx.responseCtx.responses[0]).toContain("Current rules:");
-    expect(disableCtx.responseCtx.responses[0]).toContain(
+    expect(disableCtx.responder.responses[0]).toContain("Auto-reply is disabled");
+    expect(disableCtx.responder.responses[0]).toContain("Current rules:");
+    expect(disableCtx.responder.responses[0]).toContain(
       "Reply when someone asks about deployments.",
     );
     expect(existsSync(enabledPath)).toBe(false);
@@ -298,9 +298,9 @@ describe("AutoReplyCommandHandler", () => {
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(ctx.responseCtx.responses[0]).toContain("Auto-reply is enabled");
-    expect(ctx.responseCtx.responses[0]).toContain("Current rules:");
-    expect(ctx.responseCtx.responses[0]).toContain("Reply when someone asks about deploys.");
+    expect(ctx.responder.responses[0]).toContain("Auto-reply is enabled");
+    expect(ctx.responder.responses[0]).toContain("Current rules:");
+    expect(ctx.responder.responses[0]).toContain("Reply when someone asks about deploys.");
   });
 
   test("rejects rule management to match mom-compatible slash command surface", async () => {
@@ -309,7 +309,7 @@ describe("AutoReplyCommandHandler", () => {
       services: { workingDir },
     });
     expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(ctx.responseCtx.responses[0]).toContain("/pi-auto-reply on|off|status");
+    expect(ctx.responder.responses[0]).toContain("/pi-auto-reply on|off|status");
     expect(existsSync(join(workingDir, "C123", "settings.json"))).toBe(false);
   });
 });
@@ -334,7 +334,7 @@ describe("LoginCommandHandler", () => {
 
     expect(await handler.tryHandle(ctx)).toBe(true);
     expect(linkTokenStore.created).toHaveLength(0);
-    expect(ctx.responseCtx.responses[0]).toContain("私訊");
+    expect(ctx.responder.responses[0]).toContain("私訊");
   });
 
   test("reports missing portalBaseUrl", async () => {
@@ -347,7 +347,7 @@ describe("LoginCommandHandler", () => {
 
     expect(await handler.tryHandle(ctx)).toBe(true);
     expect(linkTokenStore.created).toHaveLength(0);
-    expect(ctx.responseCtx.responses[0]).toContain("MIKAN_LINK_URL");
+    expect(ctx.responder.responses[0]).toContain("MIKAN_LINK_URL");
   });
 
   test("creates a link token and replies with the portal URL", async () => {
@@ -368,7 +368,7 @@ describe("LoginCommandHandler", () => {
         providerId: "",
       },
     ]);
-    expect(ctx.responseCtx.responses[0]).toContain("https://portal.example/link?token=tok-link");
+    expect(ctx.responder.responses[0]).toContain("https://portal.example/link?token=tok-link");
   });
 
   test("creates a link token for shared profile setup", async () => {
@@ -389,7 +389,7 @@ describe("LoginCommandHandler", () => {
         providerId: "",
       },
     ]);
-    expect(ctx.responseCtx.responses[0]).toContain("shared login profile (gliaclaw)");
+    expect(ctx.responder.responses[0]).toContain("shared login profile (gliaclaw)");
   });
 
   test("lists and deletes shared login profiles", async () => {
@@ -403,7 +403,7 @@ describe("LoginCommandHandler", () => {
       services: { vaultManager },
     });
     expect(await handler.tryHandle(listCtx)).toBe(true);
-    expect(listCtx.responseCtx.responses[0]).toContain("gliaclaw");
+    expect(listCtx.responder.responses[0]).toContain("gliaclaw");
 
     const deleteCtx = buildContext({
       commandText: "/pi-login shared delete gliaclaw",
@@ -432,8 +432,8 @@ describe("LoginCommandHandler", () => {
     expect(vaultManager.copySharedVaultTo).toHaveBeenCalledWith("gliaclaw", "c123");
     expect(ctx.services.runtime?.refreshConversationEnvironment).toHaveBeenCalledWith("C123");
     expect(remove).toHaveBeenCalledWith("c123");
-    expect(ctx.responseCtx.responses[0]).toContain("Copied shared login profile `gliaclaw`");
-    expect(ctx.responseCtx.responses[0]).toContain("will be recreated with the copied env");
+    expect(ctx.responder.responses[0]).toContain("Copied shared login profile `gliaclaw`");
+    expect(ctx.responder.responses[0]).toContain("will be recreated with the copied env");
   });
 
   test("does not restart an image sandbox while the target conversation is running", async () => {
@@ -466,7 +466,7 @@ describe("LoginCommandHandler", () => {
     expect(await handler.tryHandle(ctx)).toBe(true);
     expect(remove).not.toHaveBeenCalled();
     expect(ctx.services.runtime?.refreshConversationEnvironment).toHaveBeenCalledWith("C123");
-    expect(ctx.responseCtx.responses[0]).toContain("currently running");
+    expect(ctx.responder.responses[0]).toContain("currently running");
   });
 
   test("uses vaultConversationId for vault routing when reply channel differs", async () => {
@@ -548,7 +548,7 @@ describe("SandboxCommandHandler", () => {
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(ctx.responseCtx.responses[0]).toContain("Workspace mount: private");
+    expect(ctx.responder.responses[0]).toContain("Workspace mount: private");
   });
 
   test("switches a conversation to full workspace mode", async () => {
@@ -571,7 +571,7 @@ describe("SandboxCommandHandler", () => {
       readFileSync(join(workingDir, "C123", "settings.json"), "utf-8"),
     ) as { sandbox: { image: { workspaceMount: string } } };
     expect(sandboxConfig.sandbox.image.workspaceMount).toBe("full");
-    expect(ctx.responseCtx.responses[0]).toContain("Workspace mount: full");
+    expect(ctx.responder.responses[0]).toContain("Workspace mount: full");
   });
 
   test("switches a conversation back to private workspace mode", async () => {
@@ -595,7 +595,7 @@ describe("SandboxCommandHandler", () => {
       readFileSync(join(workingDir, "C123", "settings.json"), "utf-8"),
     ) as { sandbox: { image: { workspaceMount: string } } };
     expect(sandboxConfig.sandbox.image.workspaceMount).toBe("private");
-    expect(ctx.responseCtx.responses[0]).toContain("Workspace mount: private");
+    expect(ctx.responder.responses[0]).toContain("Workspace mount: private");
   });
 });
 
@@ -659,7 +659,7 @@ describe("SessionViewCommandHandler", () => {
 
     expect(await handler.tryHandle(ctx)).toBe(true);
     expect(sessionViewTokenStore.created).toHaveLength(0);
-    expect(ctx.responseCtx.responses[0]).toContain("私訊");
+    expect(ctx.responder.responses[0]).toContain("私訊");
   });
 
   test("reports missing session file", async () => {
@@ -672,7 +672,7 @@ describe("SessionViewCommandHandler", () => {
 
     expect(await handler.tryHandle(ctx)).toBe(true);
     expect(sessionViewTokenStore.created).toHaveLength(0);
-    expect(ctx.responseCtx.responses[0]).toContain("還沒有可查看的 session");
+    expect(ctx.responder.responses[0]).toContain("還沒有可查看的 session");
   });
 
   test("creates a token and replies with the portal URL in private conversations", async () => {
@@ -693,7 +693,7 @@ describe("SessionViewCommandHandler", () => {
 
     expect(await handler.tryHandle(ctx)).toBe(true);
     expect(sessionViewTokenStore.created).toEqual([{ sessionFile: expectedFile }]);
-    expect(ctx.responseCtx.responses[0]).toContain("https://portal.example/session?token=tok-sv");
+    expect(ctx.responder.responses[0]).toContain("https://portal.example/session?token=tok-sv");
   });
 });
 
@@ -715,7 +715,7 @@ describe("NewCommandHandler", () => {
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(ctx.responseCtx.responses[0]).toContain("只能在與機器人的私訊");
+    expect(ctx.responder.responses[0]).toContain("只能在與機器人的私訊");
     expect(ctx.services.runtime.handleNewCommand).not.toHaveBeenCalled();
   });
 

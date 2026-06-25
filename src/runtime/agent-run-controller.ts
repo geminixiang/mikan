@@ -1,4 +1,4 @@
-import type { BotAdapters, ConversationKind, PlatformName } from "../adapter.js";
+import type { PlatformEventContext, ConversationKind, PlatformName } from "../adapter.js";
 import { waitForThreadSessionBootstrap } from "../sessions/agent-memory-file-manager.js";
 import { dispatchCommand } from "../commands/registry.js";
 import type { CommandHandler, CommandServices } from "../commands/types.js";
@@ -39,7 +39,7 @@ interface AgentRunControllerOptions {
 export class AgentRunController {
   constructor(private readonly options: AgentRunControllerOptions) {}
 
-  async runSession({ event, bot, adapters }: RunSessionOptions): Promise<void> {
+  async runSession({ event, bot, context }: RunSessionOptions): Promise<void> {
     const conversationId = event.conversationId;
     if (this.options.isShuttingDown()) {
       log.logInfo(
@@ -52,8 +52,8 @@ export class AgentRunController {
     const privateConversation = isPrivateConversation(event);
     const handledCommand = await dispatchCommand(this.options.commandHandlers, {
       bot,
-      responseCtx: adapters.responseCtx,
-      platform: adapters.platform.name as PlatformName,
+      responder: context.responder,
+      platform: context.platform.name as PlatformName,
       platformUserId: event.user,
       conversationId,
       vaultConversationId: event.vaultConversationId,
@@ -92,13 +92,13 @@ export class AgentRunController {
         surface: "session_setup",
         operation: "get_or_create_state",
         severity: "error",
-        platform: adapters.platform.name,
+        platform: context.platform.name,
         context: {
           conversationId,
           sessionKey,
-          messageId: adapters.message.id,
-          threadTs: adapters.message.threadTs,
-          attachmentCount: adapters.message.attachments?.length ?? 0,
+          messageId: context.message.id,
+          threadTs: context.message.threadTs,
+          attachmentCount: context.message.attachments?.length ?? 0,
         },
       });
       throw err;
@@ -114,17 +114,17 @@ export class AgentRunController {
     const runPromise = (async () => {
       try {
         const result = await this.runWithInstrumentation(
-          adapters,
+          context,
           { conversationId, sessionKey, startedAt: state.startedAt },
           async () => {
-            await adapters.responseCtx.setTyping(true);
-            await adapters.responseCtx.setWorking(true);
+            await context.responder.setTyping(true);
+            await context.responder.setWorking(true);
             const runnerResult = await state.runner.run(
-              adapters.message,
-              adapters.responseCtx,
-              adapters.platform,
+              context.message,
+              context.responder,
+              context.platform,
             );
-            await adapters.responseCtx.setWorking(false);
+            await context.responder.setWorking(false);
             return runnerResult;
           },
         );
@@ -153,7 +153,7 @@ export class AgentRunController {
   }
 
   private async runWithInstrumentation(
-    adapters: BotAdapters,
+    context: PlatformEventContext,
     meta: {
       conversationId: string;
       sessionKey: string;
@@ -162,7 +162,7 @@ export class AgentRunController {
     body: () => Promise<{ stopReason: string; errorMessage?: string }>,
   ): Promise<{ stopReason: string; errorMessage?: string } | undefined> {
     const { conversationId, sessionKey, startedAt } = meta;
-    const { message, platform } = adapters;
+    const { message, platform } = context;
 
     const attribution = createRunAttributionAttributes({
       conversationId,

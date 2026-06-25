@@ -1,6 +1,6 @@
 export type {
   Bot,
-  BotAdapters,
+  PlatformEventContext,
   BotEvent,
   BotHandler,
   ChatAdapter,

@@ -149,8 +149,8 @@ export class TelegramBot implements Bot {
     }
     log.logInfo(`Enqueueing event for ${conversationId}: ${event.text.substring(0, 50)}`);
     queue.enqueue(() => {
-      const adapters = createTelegramAdapters(event as TelegramEvent, this);
-      return this.handler.handleEvent(event, this, adapters);
+      const context = createTelegramAdapters(event as TelegramEvent, this);
+      return this.handler.handleEvent(event, this, context);
     });
     return true;
   }
@@ -435,8 +435,8 @@ export class TelegramBot implements Bot {
         attachments: [],
         isBot: false,
       });
-      const adapters = createTelegramAdapters(event, this);
-      await this.handler.handleEvent(event, this, adapters);
+      const context = createTelegramAdapters(event, this);
+      await this.handler.handleEvent(event, this, context);
     });
 
     // --- Catch-all for regular (non-command) messages ---
@@ -501,7 +501,7 @@ export class TelegramBot implements Bot {
         enqueue: (queueKey, work) => this.getQueue(queueKey).enqueue(work),
         handler: this.handler,
         bot: this,
-        createAdapters: (event) => createTelegramAdapters(event, this),
+        createContext: (event) => createTelegramAdapters(event, this),
         beforeEnqueue: async () => {
           if (!this.handler.isRunning(mc.sessionKey)) return true;
           await this.postMessage(mc.chatId, formatAlreadyWorking("telegram", "/stop"));

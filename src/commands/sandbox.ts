@@ -28,7 +28,7 @@ export class SandboxCommandHandler implements CommandHandler {
 
     if (context.services.sandbox.type !== "image" || !context.services.provisioner) {
       await replyDiagnosticWithContext(
-        context.responseCtx,
+        context.responder,
         formatCommandSummary("Sandbox", ["`/pi-sandbox` 目前只支援 `image:*` managed sandbox。"]),
         { style: "muted" },
       );
@@ -46,7 +46,7 @@ export class SandboxCommandHandler implements CommandHandler {
         sandboxImageWorkspaceMount: parsed.action,
       });
       await replyDiagnosticWithContext(
-        context.responseCtx,
+        context.responder,
         formatCommandSummary("Sandbox Workspace", [
           parsed.action === "full"
             ? "已將此 conversation 的 sandbox 設為 full workspace mode。"
@@ -65,7 +65,7 @@ export class SandboxCommandHandler implements CommandHandler {
       const boostLimits = context.services.provisioner.getBoostLimits();
       if (!boostLimits?.cpus && !boostLimits?.memory) {
         await replyDiagnosticWithContext(
-          context.responseCtx,
+          context.responder,
           formatCommandSummary("Sandbox Boost", [
             "此 mikan instance 尚未設定 sandbox boost 規格。",
             "請先在全域 settings.json 設定 `sandbox.boost`。",
@@ -77,7 +77,7 @@ export class SandboxCommandHandler implements CommandHandler {
 
       const status = await context.services.provisioner.boost(containerKey);
       await replyDiagnosticWithContext(
-        context.responseCtx,
+        context.responder,
         formatCommandSummary("Sandbox Boost", [
           "已暫時提升此 conversation 的 sandbox 規格。",
           `Current: ${formatLimits(status.limits)}`,
@@ -96,7 +96,7 @@ export class SandboxCommandHandler implements CommandHandler {
       context.conversationId,
     );
     await replyDiagnosticWithContext(
-      context.responseCtx,
+      context.responder,
       formatCommandSummary(
         "Sandbox",
         [

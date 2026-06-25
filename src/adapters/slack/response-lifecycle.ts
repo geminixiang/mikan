@@ -299,7 +299,7 @@ export function createSlackResponseContext({
     await updatePromise;
   };
 
-  const responseCtx: PlatformResponder = {
+  const responder: PlatformResponder = {
     respond: async (text: string) => {
       await queueResponseOperation(
         "respond",
@@ -428,7 +428,7 @@ export function createSlackResponseContext({
     },
 
     respondToolResult: async (result: ChatToolResult) => {
-      await responseCtx.respondDiagnostic(formatSlackToolResult(result));
+      await responder.respondDiagnostic(formatSlackToolResult(result));
     },
 
     respondBlockKit: async (response: ChatResponseBlockKit) => {
@@ -542,5 +542,5 @@ export function createSlackResponseContext({
     },
   };
 
-  return responseCtx;
+  return responder;
 }

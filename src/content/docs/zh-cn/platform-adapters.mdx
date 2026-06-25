@@ -50,7 +50,7 @@ sequenceDiagram
   A->>I: BotEvent base + trigger/log/attachment hooks
   I->>I: auto-reply / trigger 判断
   I->>A: 需要时下载附件
-  I->>R: handler.handleEvent(event, bot, adapters)
+  I->>R: handler.handleEvent(event, bot, context)
   R->>C: respond / replaceResponse / setWorking / uploadFile
   C->>P: 平台格式化与发送
 ```
@@ -92,7 +92,7 @@ sequenceDiagram
 
 - `BotEvent`：一次使用者或平台事件。
 - `Bot`：平台 bot 能力，例如 post message、upload file。
-- `BotAdapters`：一次事件附帶的 `message`、`responseCtx`、`platform` metadata。
+- `PlatformEventContext`：一次事件附帶的 `message`、`responder`、`platform` metadata。
 - `PlatformResponder`：agent 回复时使用的通道。
 
 如果新增平台，优先实现这些抽象，不要把平台 SDK 细节带进 `src/runtime/*` 或 `src/agent.ts`。

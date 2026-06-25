@@ -1,4 +1,4 @@
-import type { Bot, BotAdapters, BotEvent, RunningSession } from "../adapter.js";
+import type { Bot, PlatformEventContext, BotEvent, RunningSession } from "../adapter.js";
 import { type PiAgentWrapper, createRunner } from "../agent.js";
 import { defaultCommandHandlers } from "../commands/registry.js";
 import type { CommandServices } from "../commands/types.js";
@@ -148,10 +148,10 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     await bot.postMessage(conversationId, "Conversation reset. Send a new message to start fresh.");
   }
 
-  async handleEvent(event: BotEvent, bot: Bot, adapters: BotAdapters): Promise<void> {
+  async handleEvent(event: BotEvent, bot: Bot, context: PlatformEventContext): Promise<void> {
     const sessionKey = event.sessionKey ?? `${event.conversationId}:${event.thread_ts ?? event.ts}`;
     const previous = this.sessionQueues.get(sessionKey) ?? Promise.resolve();
-    const next = previous.catch(() => {}).then(() => this.runSession({ event, bot, adapters }));
+    const next = previous.catch(() => {}).then(() => this.runSession({ event, bot, context }));
     this.sessionQueues.set(sessionKey, next);
     try {
       await next;
@@ -162,8 +162,8 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     }
   }
 
-  async runSession({ event, bot, adapters }: RunSessionOptions): Promise<void> {
-    await this.orchestrator.runSession({ event, bot, adapters });
+  async runSession({ event, bot, context }: RunSessionOptions): Promise<void> {
+    await this.orchestrator.runSession({ event, bot, context });
   }
 
   async createSessionSandbox(options: CreateSessionSandboxOptions): Promise<PiAgentWrapper> {

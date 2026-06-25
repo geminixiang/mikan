@@ -57,7 +57,7 @@ export class AutoReplyCommandHandler implements CommandHandler {
 
     if (context.privateConversation) {
       await replyDiagnosticWithContext(
-        context.responseCtx,
+        context.responder,
         formatCommandSummary("Auto Reply", ["只能在 group/channel 裡設定。"]),
         { style: "muted" },
       );
@@ -66,7 +66,7 @@ export class AutoReplyCommandHandler implements CommandHandler {
 
     if (action.type === "invalid") {
       await replyDiagnosticWithContext(
-        context.responseCtx,
+        context.responder,
         formatCommandSummary("Auto Reply", ["Usage: `/pi-auto-reply on|off|status`"]),
         { style: "muted" },
       );
@@ -85,7 +85,7 @@ export class AutoReplyCommandHandler implements CommandHandler {
       action.type === "on"
         ? `${status}\nEdit rules at: \`${join(conversationDir, "auto-reply")}\``
         : status;
-    await replyDiagnosticWithContext(context.responseCtx, text, {
+    await replyDiagnosticWithContext(context.responder, text, {
       style: "muted",
     });
     return true;

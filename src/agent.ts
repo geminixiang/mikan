@@ -429,7 +429,7 @@ interface RunnerExecutionContext {
 }
 
 interface RunnerSessionState {
-  responseCtx: PlatformResponder | null;
+  responder: PlatformResponder | null;
   logCtx: {
     conversationId: string;
     userName?: string;
@@ -614,7 +614,7 @@ function createEmptyUsageTotals() {
 
 function createRunState(): RunnerSessionState {
   return {
-    responseCtx: null,
+    responder: null,
     logCtx: null,
     queue: null,
     pendingTools: new Map<string, { toolName: string; args: unknown; startTime: number }>(),
@@ -630,13 +630,13 @@ function createRunState(): RunnerSessionState {
 
 function resetRunState(
   runState: RunnerSessionState,
-  responseCtx: PlatformResponder,
+  responder: PlatformResponder,
   sessionConversation: string,
   userName: string | undefined,
   sessionUuid: string,
   triggerAttribution: string | undefined,
 ): void {
-  runState.responseCtx = responseCtx;
+  runState.responder = responder;
   runState.logCtx = {
     conversationId: sessionConversation,
     userName,
@@ -654,7 +654,7 @@ function resetRunState(
 }
 
 function createRunQueue(
-  responseCtx: PlatformResponder,
+  responder: PlatformResponder,
   runState: RunnerSessionState,
 ): {
   queue: { enqueue(fn: () => Promise<void>, errorContext: string): void };
@@ -672,7 +672,7 @@ function createRunQueue(
             const errMsg = err instanceof Error ? err.message : String(err);
             log.logWarning(`API error (${errorContext})`, errMsg);
             try {
-              await responseCtx.respondDiagnostic(`Error: ${errMsg}`, { style: "error" });
+              await responder.respondDiagnostic(`Error: ${errMsg}`, { style: "error" });
             } catch {
               // Ignore
             }
@@ -783,7 +783,7 @@ export function appendTriggerAttribution(
 }
 
 async function finalizeRunResponse(
-  responseCtx: PlatformResponder,
+  responder: PlatformResponder,
   session: AgentSession,
   runState: RunnerSessionState,
   options?: {
@@ -816,8 +816,8 @@ async function finalizeRunResponse(
       });
     }
     try {
-      await responseCtx.replaceResponse("_Sorry, something went wrong_");
-      await responseCtx.respondDiagnostic(`Error: ${runState.errorMessage}`, {
+      await responder.replaceResponse("_Sorry, something went wrong_");
+      await responder.respondDiagnostic(`Error: ${runState.errorMessage}`, {
         style: "error",
       });
     } catch (err) {
@@ -846,7 +846,7 @@ async function finalizeRunResponse(
   }
   if (finalText.trim() === "[SILENT]" || finalText.trim().startsWith("[SILENT]")) {
     try {
-      await responseCtx.deleteResponse();
+      await responder.deleteResponse();
       log.logInfo("Silent response - deleted message and thread");
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -858,7 +858,7 @@ async function finalizeRunResponse(
   if (!finalText.trim()) return;
 
   try {
-    await responseCtx.replaceResponse(
+    await responder.replaceResponse(
       appendTriggerAttribution(finalText, options?.triggerAttribution),
       { createOverflowLink: options?.createOverflowLink },
     );
@@ -883,7 +883,7 @@ async function finalizeRunResponse(
 interface UsageReportContext {
   session: AgentSession;
   runState: RunnerSessionState;
-  responseCtx: PlatformResponder;
+  responder: PlatformResponder;
   platform: PlatformInfo;
   model: Model<Api>;
   agentConfig: ReturnType<typeof resolveConversationSettings>;
@@ -896,7 +896,7 @@ async function reportUsageSummary(ctx: UsageReportContext): Promise<void> {
   const {
     session,
     runState,
-    responseCtx,
+    responder,
     platform,
     model,
     agentConfig,
@@ -957,7 +957,7 @@ async function reportUsageSummary(ctx: UsageReportContext): Promise<void> {
   );
   if (platform.diagnostics?.showUsageSummary === true) {
     runState.queue!.enqueue(
-      () => responseCtx.respondDiagnostic(summary, { style: "muted" }),
+      () => responder.respondDiagnostic(summary, { style: "muted" }),
       "usage summary",
     );
     await waitForQueue();
@@ -978,7 +978,7 @@ function reloadSessionMessages(
 
 async function prepareRunContext(params: {
   message: ChatMessage;
-  responseCtx: PlatformResponder;
+  responder: PlatformResponder;
   platform: PlatformInfo;
   conversationId: string;
   conversationDir: string;
@@ -1006,7 +1006,7 @@ async function prepareRunContext(params: {
 }): Promise<PreparedRunContext & { pathContext: RuntimePathContext }> {
   const {
     message,
-    responseCtx,
+    responder,
     platform,
     conversationId,
     conversationDir,
@@ -1067,26 +1067,26 @@ async function prepareRunContext(params: {
 
   setUploadFunction(async (filePath: string, title?: string) => {
     const hostPath = translateAttachPathToHost(filePath, pathContext);
-    await responseCtx.uploadFile(hostPath, title);
+    await responder.uploadFile(hostPath, title);
   });
   setBlockKitResponseFunction(async (response) => {
-    if (platform.name === "slack" && responseCtx.respondBlockKit) {
-      await responseCtx.respondBlockKit(response);
+    if (platform.name === "slack" && responder.respondBlockKit) {
+      await responder.respondBlockKit(response);
     } else {
-      await responseCtx.replaceResponse(response.text);
+      await responder.replaceResponse(response.text);
     }
     runState.finalResponseHandledByTool = true;
   });
 
   resetRunState(
     runState,
-    responseCtx,
+    responder,
     sessionConversation,
     message.userName,
     sessionUuid,
     triggerAttribution,
   );
-  const runQueue = createRunQueue(responseCtx, runState);
+  const runQueue = createRunQueue(responder, runState);
   runState.queue = runQueue.queue;
 
   log.logInfo(
@@ -1125,9 +1125,9 @@ function attachSessionEventHandlers(params: {
 }): void {
   const { session, runState, model, agentConfig } = params;
   session.subscribe(async (event) => {
-    if (!runState.responseCtx || !runState.logCtx || !runState.queue) return;
+    if (!runState.responder || !runState.logCtx || !runState.queue) return;
 
-    const { responseCtx, logCtx, queue, pendingTools } = runState;
+    const { responder, logCtx, queue, pendingTools } = runState;
     const baseAttrs = { channel_id: logCtx.conversationId, session_id: logCtx.sessionId };
 
     if (event.type === "tool_execution_start") {
@@ -1190,12 +1190,12 @@ function attachSessionEventHandlers(params: {
           isError: event.isError,
           durationMs,
         };
-        queue.enqueue(() => responseCtx.respondToolResult(toolResult), "tool result diagnostic");
+        queue.enqueue(() => responder.respondToolResult(toolResult), "tool result diagnostic");
       }
 
       if (event.isError && shouldSurfaceToolDiagnostic(event.toolName)) {
         queue.enqueue(
-          () => responseCtx.respond(`_Error: ${truncate(resultStr, 200)}_`),
+          () => responder.respond(`_Error: ${truncate(resultStr, 200)}_`),
           "tool error",
         );
       }
@@ -1225,10 +1225,10 @@ function attachSessionEventHandlers(params: {
       if (
         assistantMessageEvent?.type === "text_delta" &&
         assistantMessageEvent.delta &&
-        responseCtx.appendResponseDelta
+        responder.appendResponseDelta
       ) {
         queue.enqueue(async () => {
-          await responseCtx.appendResponseDelta?.(assistantMessageEvent.delta ?? "");
+          await responder.appendResponseDelta?.(assistantMessageEvent.delta ?? "");
         }, "response delta");
       }
       return;
@@ -1312,23 +1312,20 @@ function attachSessionEventHandlers(params: {
 
         for (const thinking of thinkingParts) {
           log.logThinking(logCtx, thinking);
-          queue.enqueue(() => responseCtx.respond(`_${thinking}_`), "thinking main");
-          queue.enqueue(
-            () => responseCtx.respondDiagnostic(`_${thinking}_`),
-            "thinking diagnostic",
-          );
+          queue.enqueue(() => responder.respond(`_${thinking}_`), "thinking main");
+          queue.enqueue(() => responder.respondDiagnostic(`_${thinking}_`), "thinking diagnostic");
         }
 
         if (text.trim() && !hasToolCall) {
           if (runState.finalResponseHandledByTool) return;
           const finalText = appendTriggerAttribution(text, runState.triggerAttribution);
           log.logResponse(logCtx, text);
-          if (responseCtx.finishResponse) {
+          if (responder.finishResponse) {
             queue.enqueue(async () => {
-              await responseCtx.finishResponse?.(finalText);
+              await responder.finishResponse?.(finalText);
             }, "response finish");
           } else {
-            queue.enqueue(() => responseCtx.respond(finalText), "response main");
+            queue.enqueue(() => responder.respond(finalText), "response main");
           }
         }
       }
@@ -1337,7 +1334,7 @@ function attachSessionEventHandlers(params: {
 
     if (event.type === "compaction_start") {
       log.logInfo(`Auto-compaction started (reason: ${event.reason})`);
-      queue.enqueue(() => responseCtx.respond("_Compacting context..._"), "compaction start");
+      queue.enqueue(() => responder.respond("_Compacting context..._"), "compaction start");
       return;
     }
 
@@ -1353,7 +1350,7 @@ function attachSessionEventHandlers(params: {
     if (event.type === "auto_retry_start") {
       log.logWarning(`Retrying (${event.attempt}/${event.maxAttempts})`, event.errorMessage);
       queue.enqueue(
-        () => responseCtx.respond(`_Retrying (${event.attempt}/${event.maxAttempts})..._`),
+        () => responder.respond(`_Retrying (${event.attempt}/${event.maxAttempts})..._`),
         "retry",
       );
     }
@@ -1504,12 +1501,12 @@ export async function createRunner(
 
     async run(
       message: ChatMessage,
-      responseCtx: PlatformResponder,
+      responder: PlatformResponder,
       platform: PlatformInfo,
     ): Promise<{ stopReason: string; errorMessage?: string }> {
       const prepared = await prepareRunContext({
         message,
-        responseCtx,
+        responder,
         platform,
         conversationId,
         conversationDir,
@@ -1574,7 +1571,7 @@ export async function createRunner(
             }
           : undefined;
 
-      await finalizeRunResponse(responseCtx, session, runState, {
+      await finalizeRunResponse(responder, session, runState, {
         triggerAttribution: prepared.triggerAttribution,
         createOverflowLink,
         platform: platform.name,
@@ -1586,7 +1583,7 @@ export async function createRunner(
       await reportUsageSummary({
         session,
         runState,
-        responseCtx,
+        responder,
         platform,
         model,
         agentConfig,
@@ -1596,7 +1593,7 @@ export async function createRunner(
       });
 
       // Clear run state
-      runState.responseCtx = null;
+      runState.responder = null;
       runState.logCtx = null;
       runState.queue = null;
 

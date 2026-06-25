@@ -110,10 +110,10 @@ export interface Bot {
   ): Promise<void>;
 }
 
-/** Pre-created platform adapters passed to the handler */
-export interface BotAdapters {
+/** Normalized platform data and reply hook for one event. */
+export interface PlatformEventContext {
   message: ChatMessage;
-  responseCtx: PlatformResponder;
+  responder: PlatformResponder;
   platform: PlatformInfo;
 }
 
@@ -127,7 +127,7 @@ export interface RunningSession {
 export interface BotHandler {
   isRunning(sessionKey: string): boolean;
   getRunningSessions(): RunningSession[];
-  handleEvent(event: BotEvent, bot: Bot, adapters: BotAdapters): Promise<void>;
+  handleEvent(event: BotEvent, bot: Bot, context: PlatformEventContext): Promise<void>;
   handleStop(sessionKey: string, conversationId: string, bot: Bot): Promise<void>;
   forceStop(sessionKey: string): void;
   handleNewCommand(sessionKey: string, conversationId: string, bot: Bot): Promise<void>;
@@ -139,7 +139,7 @@ export interface PiAgentWrapper {
   syncChatHistory(currentMessageId?: string): void;
   run(
     message: ChatMessage,
-    responseCtx: PlatformResponder,
+    responder: PlatformResponder,
     platform: PlatformInfo,
   ): Promise<{ stopReason: string; errorMessage?: string }>;
   abort(): void;

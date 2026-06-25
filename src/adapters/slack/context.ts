@@ -15,7 +15,7 @@ export function createSlackAdapters(
   adapterOptions: SlackAdapterOptions = {},
 ): {
   message: ChatMessage;
-  responseCtx: PlatformResponder;
+  responder: PlatformResponder;
   platform: PlatformInfo;
 } {
   const sessionPlan = planSlackAdapterSession(event, {
@@ -49,7 +49,7 @@ export function createSlackAdapters(
     },
   };
 
-  const responseCtx = createSlackResponseContext({
+  const responder = createSlackResponseContext({
     event,
     slack,
     sessionPlan,
@@ -57,5 +57,5 @@ export function createSlackAdapters(
     message,
   });
 
-  return { message, responseCtx, platform };
+  return { message, responder, platform };
 }

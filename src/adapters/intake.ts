@@ -30,8 +30,8 @@ export async function processMessageIntake<TEvent extends BotEvent>(
       if (options.beforeEnqueue && !(await options.beforeEnqueue(event))) {
         return;
       }
-      const adapters = options.createAdapters(event);
-      return options.handler.handleEvent(event, options.bot, adapters);
+      const context = options.createContext(event);
+      return options.handler.handleEvent(event, options.bot, context);
     });
     return;
   }
@@ -45,7 +45,7 @@ export async function processMessageIntake<TEvent extends BotEvent>(
   }
 
   options.enqueue(options.queueKey, () => {
-    const adapters = options.createAdapters(event);
-    return options.handler.handleEvent(event, options.bot, adapters);
+    const context = options.createContext(event);
+    return options.handler.handleEvent(event, options.bot, context);
   });
 }

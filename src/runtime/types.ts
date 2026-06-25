@@ -1,5 +1,11 @@
 import type { PiAgentWrapper } from "../agent.js";
-import type { Bot, BotAdapters, BotEvent, BotHandler, ConversationKind } from "../adapter.js";
+import type {
+  Bot,
+  PlatformEventContext,
+  BotEvent,
+  BotHandler,
+  ConversationKind,
+} from "../adapter.js";
 import type { CommandServices } from "../commands/types.js";
 
 export interface ConversationRuntimeState {
@@ -17,7 +23,7 @@ export interface ConversationRuntimeState {
 export interface RunSessionOptions {
   event: BotEvent;
   bot: Bot;
-  adapters: BotAdapters;
+  context: PlatformEventContext;
 }
 
 export interface CreateSessionSandboxOptions {

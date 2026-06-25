@@ -51,7 +51,7 @@ sequenceDiagram
   A->>I: BotEvent base + trigger/log/attachment hooks
   I->>I: auto-reply / trigger decision
   I->>A: download attachments when needed
-  I->>R: handler.handleEvent(event, bot, adapters)
+  I->>R: handler.handleEvent(event, bot, context)
   R->>C: respond / replaceResponse / setWorking / uploadFile
   C->>P: platform formatting and send
 ```
@@ -94,7 +94,7 @@ The core runtime depends only on these shared abstractions:
 
 - `BotEvent`: one user or platform event.
 - `Bot`: platform bot capabilities, such as post message and upload file.
-- `BotAdapters`: `message`, `responseCtx`, and `platform` metadata attached to an event.
+- `PlatformEventContext`: `message`, `responder`, and `platform` metadata attached to an event.
 - `PlatformResponder`: the channel used by the agent to reply.
 
 When adding a platform, implement these abstractions first. Do not bring platform SDK details into `src/runtime/*` or `src/agent.ts`.

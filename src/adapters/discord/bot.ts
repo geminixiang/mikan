@@ -18,7 +18,7 @@ import { basename, join } from "path";
 
 import type {
   Bot,
-  BotAdapters,
+  PlatformEventContext,
   BotEvent,
   BotHandler,
   ChatMessage,
@@ -182,8 +182,8 @@ export class DiscordBot implements Bot {
     }
     log.logInfo(`Enqueueing event for ${conversationId}: ${event.text.substring(0, 50)}`);
     queue.enqueue(() => {
-      const adapters = createDiscordAdapters(event as DiscordEvent, this);
-      return this.handler.handleEvent(event, this, adapters);
+      const context = createDiscordAdapters(event as DiscordEvent, this);
+      return this.handler.handleEvent(event, this, context);
     });
     return true;
   }
@@ -429,7 +429,7 @@ export class DiscordBot implements Bot {
     commandText: string,
     sessionKey: string,
     conversationId: string,
-  ): BotAdapters {
+  ): PlatformEventContext {
     const isDM = !interaction.inGuild();
     const userId = interaction.user.id;
     const userName = interaction.user.username;
@@ -459,7 +459,7 @@ export class DiscordBot implements Bot {
       await interaction.reply({ content: text, ephemeral: shouldUseEphemeral });
     };
 
-    const responseCtx: PlatformResponder = {
+    const responder: PlatformResponder = {
       respond: async (text: string) => {
         await respondPrivately(text);
       },
@@ -482,7 +482,7 @@ export class DiscordBot implements Bot {
       deleteResponse: async () => {},
     };
 
-    return { message, responseCtx, platform };
+    return { message, responder, platform };
   }
 
   private setupEventHandlers(): void {
@@ -540,7 +540,7 @@ export class DiscordBot implements Bot {
         isBot: false,
       });
 
-      const adapters = this.createSlashCommandAdapters(
+      const context = this.createSlashCommandAdapters(
         interaction,
         commandText,
         sessionKey,
@@ -549,7 +549,7 @@ export class DiscordBot implements Bot {
       try {
         if (interaction.commandName === "new") {
           await this.handler.handleNewCommand(sessionKey, conversationId, this);
-          await adapters.responseCtx.respond("Started a new conversation.");
+          await context.responder.respond("Started a new conversation.");
           return;
         }
 
@@ -557,9 +557,9 @@ export class DiscordBot implements Bot {
           const stopTarget = this.resolveStopTarget(conversationId, sessionKey);
           if (stopTarget) {
             await this.handler.handleStop(stopTarget, conversationId, this);
-            await adapters.responseCtx.respond("Stopped the current conversation.");
+            await context.responder.respond("Stopped the current conversation.");
           } else {
-            await adapters.responseCtx.respond(formatNothingRunning("discord"));
+            await context.responder.respond(formatNothingRunning("discord"));
           }
           return;
         }
@@ -576,7 +576,7 @@ export class DiscordBot implements Bot {
           attachments: [],
         };
 
-        await this.handler.handleEvent(event, this, adapters);
+        await this.handler.handleEvent(event, this, context);
       } catch (err) {
         log.logWarning(
           "Discord slash command error",
@@ -680,7 +680,7 @@ export class DiscordBot implements Bot {
         enqueue: (queueKey, work) => this.getQueue(queueKey).enqueue(work),
         handler: this.handler,
         bot: this,
-        createAdapters: (event) => createDiscordAdapters(event, this),
+        createContext: (event) => createDiscordAdapters(event, this),
       });
     });
   }

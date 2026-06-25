@@ -102,7 +102,7 @@ describe("SlackBot slash commands", () => {
 
     expect(open).not.toHaveBeenCalled();
 
-    const [event, calledBot, adapters] = vi.mocked(handler.handleEvent).mock.calls[0];
+    const [event, calledBot, context] = vi.mocked(handler.handleEvent).mock.calls[0];
     expect(event).toMatchObject({
       type: "private_command",
       conversationId: "C123",
@@ -113,7 +113,7 @@ describe("SlackBot slash commands", () => {
     });
     expect(calledBot).toBe(bot);
 
-    await adapters.responseCtx.respond("login link");
+    await context.responder.respond("login link");
     expect(postEphemeral).toHaveBeenLastCalledWith({
       channel: "C123",
       user: "U123",
@@ -197,8 +197,8 @@ describe("SlackBot slash commands", () => {
 
   test("/pi-sandbox in a shared channel routes to command handling ephemerally", async () => {
     const handler = makeHandler();
-    handler.handleEvent = vi.fn(async (_event, _bot, adapters) => {
-      await adapters.responseCtx.respond("sandbox status");
+    handler.handleEvent = vi.fn(async (_event, _bot, context) => {
+      await context.responder.respond("sandbox status");
     });
 
     const bot = new SlackBot(handler, {
@@ -249,8 +249,8 @@ describe("SlackBot slash commands", () => {
 
   test("/pi-auto-reply in a shared channel routes to command handling ephemerally", async () => {
     const handler = makeHandler();
-    handler.handleEvent = vi.fn(async (_event, _bot, adapters) => {
-      await adapters.responseCtx.respond("auto reply status");
+    handler.handleEvent = vi.fn(async (_event, _bot, context) => {
+      await context.responder.respond("auto reply status");
     });
 
     const bot = new SlackBot(handler, {
@@ -319,8 +319,8 @@ describe("SlackBot slash commands", () => {
       afterRunTracked: vi.fn(),
       onRunFinished: vi.fn(),
     });
-    (handler.handleEvent as any).mockImplementation((event: any, eventBot: any, adapters: any) =>
-      orchestrator.runSession({ event, bot: eventBot, adapters }),
+    (handler.handleEvent as any).mockImplementation((event: any, eventBot: any, context: any) =>
+      orchestrator.runSession({ event, bot: eventBot, context }),
     );
 
     const postEphemeral = vi.fn().mockResolvedValue(undefined);
@@ -374,8 +374,8 @@ describe("SlackBot slash commands", () => {
 
   test("/pi-session in a shared channel returns the link ephemerally", async () => {
     const handler = makeHandler();
-    handler.handleEvent = vi.fn(async (_event, _bot, adapters) => {
-      await adapters.responseCtx.respond("session link");
+    handler.handleEvent = vi.fn(async (_event, _bot, context) => {
+      await context.responder.respond("session link");
     });
 
     const bot = new SlackBot(handler, {
@@ -422,8 +422,8 @@ describe("SlackBot slash commands", () => {
 
   test("/pi-session in a shared channel thread returns the link ephemerally in that thread", async () => {
     const handler = makeHandler();
-    handler.handleEvent = vi.fn(async (_event, _bot, adapters) => {
-      await adapters.responseCtx.respond("thread session link");
+    handler.handleEvent = vi.fn(async (_event, _bot, context) => {
+      await context.responder.respond("thread session link");
     });
 
     const bot = new SlackBot(handler, {
@@ -1010,15 +1010,15 @@ describe("SlackBot queues follow-up messages", () => {
   test("Slack events create a top-level anchor and run under that thread session", async () => {
     const handler = makeHandler();
     const handled = new Promise<void>((resolve, reject) => {
-      handler.handleEvent = vi.fn(async (event, _calledBot, adapters) => {
+      handler.handleEvent = vi.fn(async (event, _calledBot, context) => {
         try {
           expect(event).toMatchObject({
             conversationId: "C123",
             sessionKey: "C123:2000.0001",
             ts: "event:deploy-reminder",
           });
-          expect(adapters.message.sessionKey).toBe("C123:2000.0001");
-          await adapters.responseCtx.respond("event done");
+          expect(context.message.sessionKey).toBe("C123:2000.0001");
+          await context.responder.respond("event done");
           resolve();
         } catch (err) {
           reject(err);
@@ -1110,13 +1110,13 @@ describe("SlackBot queues follow-up messages", () => {
       resolveEventHandled = resolve;
       rejectEventHandled = reject;
     });
-    handler.handleEvent = vi.fn(async (event, _calledBot, adapters) => {
+    handler.handleEvent = vi.fn(async (event, _calledBot, context) => {
       try {
         expect(event).toMatchObject({
           conversationId: "C123",
           sessionKey: "C123:2000.0001",
         });
-        expect(adapters.message.sessionKey).toBe("C123:2000.0001");
+        expect(context.message.sessionKey).toBe("C123:2000.0001");
         resolveEventHandled();
         await eventRunCanFinish;
       } catch (err) {

@@ -78,7 +78,7 @@ export class ModelCommandHandler implements CommandHandler {
     if (!parsed.provider || !parsed.model) {
       const current = resolveConversationSettings(conversationDir);
       await replyDiagnosticWithContext(
-        context.responseCtx,
+        context.responder,
         formatCommandSummary("Model", [
           `Current: \`${formatModelSpec(current.provider, current.model, current.thinkingLevel)}\``,
           "",
@@ -92,7 +92,7 @@ export class ModelCommandHandler implements CommandHandler {
 
     if (!this.isKnownModel(parsed.provider, parsed.model)) {
       await replyDiagnosticWithContext(
-        context.responseCtx,
+        context.responder,
         formatCommandSummary("Model", [
           `找不到模型：\`${formatModelSpec(parsed.provider, parsed.model, parsed.thinkingLevel)}\``,
           "請確認 provider/model 名稱，或先在 pi models.json 註冊自訂模型。",
@@ -104,7 +104,7 @@ export class ModelCommandHandler implements CommandHandler {
 
     if (!context.services.runtime) {
       await replyDiagnosticWithContext(
-        context.responseCtx,
+        context.responder,
         formatCommandSummary("Model", [
           "Model command is not configured correctly on the server. Please try again later.",
         ]),
@@ -120,7 +120,7 @@ export class ModelCommandHandler implements CommandHandler {
     );
     if (!switched) {
       await replyDiagnosticWithContext(
-        context.responseCtx,
+        context.responder,
         formatCommandSummary("Model", [
           "目前這個 conversation 有執行中的工作，請等它完成或先 `/stop` 後再切換模型。",
         ]),
@@ -136,7 +136,7 @@ export class ModelCommandHandler implements CommandHandler {
     });
 
     await replyDiagnosticWithContext(
-      context.responseCtx,
+      context.responder,
       formatCommandSummary("Model", [
         `Switched: \`${formatModelSpec(parsed.provider, parsed.model, parsed.thinkingLevel)}\``,
         "下一則訊息會使用新模型。",

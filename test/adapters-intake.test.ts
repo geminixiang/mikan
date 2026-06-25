@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import type { Bot, BotAdapters, BotEvent, BotHandler } from "../src/adapter.js";
+import type { Bot, PlatformEventContext, BotEvent, BotHandler } from "../src/adapter.js";
 import { processMessageIntake } from "../src/adapters/intake.js";
 
 function makeEvent(overrides: Partial<BotEvent> = {}): BotEvent {
@@ -26,7 +26,7 @@ function makeHandler(): BotHandler {
 }
 
 const bot = {} as Bot;
-const adapters = {} as BotAdapters;
+const context = {} as PlatformEventContext;
 
 describe("processMessageIntake", () => {
   test("logs non-triggered auto-reply candidates without queueing", async () => {
@@ -46,7 +46,7 @@ describe("processMessageIntake", () => {
       enqueue,
       handler,
       bot,
-      createAdapters: vi.fn().mockReturnValue(adapters),
+      createContext: vi.fn().mockReturnValue(context),
       onNotTriggered,
     });
 
@@ -61,7 +61,7 @@ describe("processMessageIntake", () => {
     const work: Array<() => Promise<void>> = [];
     const attachments = [{ name: "a.txt", localPath: "C1/a.txt" }];
     const log = vi.fn();
-    const createAdapters = vi.fn().mockReturnValue(adapters);
+    const createContext = vi.fn().mockReturnValue(context);
 
     await processMessageIntake({
       eventBase: makeEvent(),
@@ -74,7 +74,7 @@ describe("processMessageIntake", () => {
       enqueue: (_queueKey, queuedWork) => work.push(queuedWork),
       handler,
       bot,
-      createAdapters,
+      createContext,
     });
 
     expect(log).toHaveBeenCalledWith({ text: "hello", attachments });
@@ -83,11 +83,11 @@ describe("processMessageIntake", () => {
 
     await work[0]!();
 
-    expect(createAdapters).toHaveBeenCalledWith(expect.objectContaining({ attachments }));
+    expect(createContext).toHaveBeenCalledWith(expect.objectContaining({ attachments }));
     expect(handler.handleEvent).toHaveBeenCalledWith(
       expect.objectContaining({ attachments }),
       bot,
-      adapters,
+      context,
     );
   });
 
@@ -106,7 +106,7 @@ describe("processMessageIntake", () => {
       enqueue: (_queueKey, queuedWork) => work.push(queuedWork),
       handler,
       bot,
-      createAdapters: vi.fn().mockReturnValue(adapters),
+      createContext: vi.fn().mockReturnValue(context),
       deferAttachmentsUntilRun: true,
     });
 

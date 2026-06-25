@@ -15,7 +15,7 @@ function ensureLoginVault(context: CommandContext): string {
 }
 
 async function replyVault(context: CommandContext, lines: string[]): Promise<void> {
-  await replyDiagnosticWithContext(context.responseCtx, formatCommandSummary("Vault", lines), {
+  await replyDiagnosticWithContext(context.responder, formatCommandSummary("Vault", lines), {
     style: "muted",
   });
 }

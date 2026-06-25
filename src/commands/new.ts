@@ -19,7 +19,7 @@ export class NewCommandHandler implements CommandHandler {
 
     if (!context.privateConversation) {
       await replyDiagnosticWithContext(
-        context.responseCtx,
+        context.responder,
         formatCommandSummary("New Session", [
           "為了避免誤清除共享上下文，`/new` 目前只能在與機器人的私訊 / DM 中使用。",
         ]),
@@ -30,7 +30,7 @@ export class NewCommandHandler implements CommandHandler {
 
     if (!context.services.runtime) {
       await replyDiagnosticWithContext(
-        context.responseCtx,
+        context.responder,
         formatCommandSummary("New Session", [
           "New command is not configured correctly on the server.",
           "Please try again later.",

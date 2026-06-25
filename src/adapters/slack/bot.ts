@@ -6,7 +6,7 @@ import { readFile } from "fs/promises";
 import { basename, join } from "path";
 import type {
   Bot,
-  BotAdapters,
+  PlatformEventContext,
   BotEvent,
   BotHandler,
   ChatMessage,
@@ -142,7 +142,7 @@ export class SlackBot implements Bot {
   private queues = new Map<string, PlatformEventQueue>();
   private eventsWatcher: EventsWatcher | null = null;
 
-  private createAdapters(event: SlackEvent): BotAdapters {
+  private createContext(event: SlackEvent): PlatformEventContext {
     return createSlackAdapters(event, this, {
       replyMode:
         resolveConversationSettings(join(this.workingDir, event.conversationId)).slack?.replyMode ??
@@ -545,13 +545,13 @@ export class SlackBot implements Bot {
           })),
           sessionKey: eventForRun.sessionKey,
         };
-        const adapters = createSlackAdapters(slackEvent, this, {
+        const context = createSlackAdapters(slackEvent, this, {
           initialMessageTs: eventPlan.initialMessageTs,
           replyMode:
             resolveConversationSettings(join(this.workingDir, eventForRun.conversationId)).slack
               ?.replyMode ?? "top-level",
         });
-        return this.handler.handleEvent(eventForRun, this, adapters);
+        return this.handler.handleEvent(eventForRun, this, context);
       });
     });
     return true;
@@ -600,7 +600,7 @@ export class SlackBot implements Bot {
       enqueue: (queueKey, work) => this.getQueue(queueKey).enqueue(work),
       handler: this.handler,
       bot: this,
-      createAdapters: (event) => this.createAdapters(event as SlackEvent),
+      createContext: (event) => this.createContext(event as SlackEvent),
       onNotTriggered: options.onNotTriggered,
       deferAttachmentsUntilRun: true,
     });
@@ -785,7 +785,7 @@ export class SlackBot implements Bot {
     text: string,
     ts: string,
     options: { ephemeralChannelId?: string; threadTs?: string } = {},
-  ): BotAdapters {
+  ): PlatformEventContext {
     const message: ChatMessage = {
       id: ts,
       sessionKey: conversationId,
@@ -826,7 +826,7 @@ export class SlackBot implements Bot {
       this.logBotResponse(conversationId, responseText, messageTs);
     };
 
-    const responseCtx: PlatformResponder = {
+    const responder: PlatformResponder = {
       respond,
       replaceResponse: respond,
       respondDiagnostic: async (
@@ -855,7 +855,7 @@ export class SlackBot implements Bot {
 
     return {
       message,
-      responseCtx,
+      responder,
       platform: this.getPlatformInfo(),
     };
   }
@@ -870,7 +870,7 @@ export class SlackBot implements Bot {
       thread_ts?: string;
     },
     options: { type?: BotEvent["type"]; includeText?: boolean; thread?: boolean } = {},
-  ): { event: BotEvent; adapters: BotAdapters } {
+  ): { event: BotEvent; context: PlatformEventContext } {
     const conversationId = payload.channel_id;
     const isDirectMessage = conversationId.startsWith("D");
     const createdAt = new Date();
@@ -906,7 +906,7 @@ export class SlackBot implements Bot {
       sessionKey,
     };
 
-    const adapters = this.createCommandAdapters(
+    const context = this.createCommandAdapters(
       conversationId,
       payload.user_id,
       userName,
@@ -915,7 +915,7 @@ export class SlackBot implements Bot {
       isDirectMessage ? { threadTs } : { ephemeralChannelId: conversationId, threadTs },
     );
 
-    return { event, adapters };
+    return { event, context };
   }
 
   private async routeSlashLoginCommand(payload: {
@@ -925,11 +925,11 @@ export class SlackBot implements Bot {
     user_id: string;
     user_name?: string;
   }): Promise<void> {
-    const { event, adapters } = this.buildSlashCommandEvent(payload, {
+    const { event, context } = this.buildSlashCommandEvent(payload, {
       type: payload.channel_id.startsWith("D") ? "dm" : "private_command",
       includeText: true,
     });
-    await this.handler.handleEvent(event, this, adapters);
+    await this.handler.handleEvent(event, this, context);
   }
 
   private async routeSlashNewCommand(payload: {
@@ -980,8 +980,8 @@ export class SlackBot implements Bot {
     user_id: string;
     user_name?: string;
   }): Promise<void> {
-    const { event, adapters } = this.buildSlashCommandEvent(payload, { includeText: true });
-    await this.handler.handleEvent(event, this, adapters);
+    const { event, context } = this.buildSlashCommandEvent(payload, { includeText: true });
+    await this.handler.handleEvent(event, this, context);
   }
 
   private async routeSlashSessionCommand(payload: {
@@ -991,8 +991,8 @@ export class SlackBot implements Bot {
     user_name?: string;
     thread_ts?: string;
   }): Promise<void> {
-    const { event, adapters } = this.buildSlashCommandEvent(payload, { thread: true });
-    await this.handler.handleEvent(event, this, adapters);
+    const { event, context } = this.buildSlashCommandEvent(payload, { thread: true });
+    await this.handler.handleEvent(event, this, context);
   }
 
   private async routeSlashAdminCommand(payload: {
@@ -1002,8 +1002,8 @@ export class SlackBot implements Bot {
     user_name?: string;
     thread_ts?: string;
   }): Promise<void> {
-    const { event, adapters } = this.buildSlashCommandEvent(payload, { thread: true });
-    await this.handler.handleEvent(event, this, adapters);
+    const { event, context } = this.buildSlashCommandEvent(payload, { thread: true });
+    await this.handler.handleEvent(event, this, context);
   }
 
   private setupEventHandlers(): void {
@@ -1472,7 +1472,7 @@ export class SlackBot implements Bot {
         attachments: [],
         sessionKey,
       };
-      return this.handler.handleEvent(event, this, this.createAdapters(slackEvent));
+      return this.handler.handleEvent(event, this, this.createContext(slackEvent));
     });
   }
 

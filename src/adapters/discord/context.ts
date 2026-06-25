@@ -45,7 +45,7 @@ export function createDiscordAdapters(
   bot: DiscordBot,
 ): {
   message: ChatMessage;
-  responseCtx: PlatformResponder;
+  responder: PlatformResponder;
   platform: PlatformInfo;
 } {
   let messageId: string | null = null;
@@ -174,7 +174,7 @@ export function createDiscordAdapters(
     await updatePromise;
   }
 
-  const responseCtx: PlatformResponder = {
+  const responder: PlatformResponder = {
     respond: async (text: string) => {
       await queueDiscordResponse(
         "respond",
@@ -256,7 +256,7 @@ export function createDiscordAdapters(
     },
 
     respondToolResult: async (result: ChatToolResult) => {
-      await responseCtx.respondDiagnostic(formatToolResult(result));
+      await responder.respondDiagnostic(formatToolResult(result));
     },
 
     setTyping: async (isTyping: boolean) => {
@@ -323,5 +323,5 @@ export function createDiscordAdapters(
     },
   };
 
-  return { message, responseCtx, platform };
+  return { message, responder, platform };
 }

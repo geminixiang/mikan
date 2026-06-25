@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { basename } from "path";
 import MarkdownIt from "markdown-it";
-import type { BotAdapters, BotEvent, PlatformResponder } from "../../adapter.js";
+import type { PlatformEventContext, BotEvent, PlatformResponder } from "../../adapter.js";
 import { escapeHtml } from "../../utils/html.js";
 import * as log from "../../log.js";
 import { renderPortalShell } from "../../portal-shell.js";
@@ -637,7 +637,7 @@ async function handleSessionMessageRequest(
     platformInfo.users.find((user) => user.id === entry.platformUserId)?.userName ||
     platformInfo.users.find((user) => user.id === entry.platformUserId)?.displayName ||
     "unknown";
-  const responseCtx = createSessionViewResponseContext((event) => {
+  const responder = createSessionViewResponseContext((event) => {
     sessionViewStreamHub.publish(streamKey, event);
   });
   const event: BotEvent = {
@@ -653,7 +653,7 @@ async function handleSessionMessageRequest(
       ? { thread_ts: activeSessionKey.split(":").slice(1).join(":") }
       : {}),
   };
-  const adapters: BotAdapters = {
+  const context: PlatformEventContext = {
     message: {
       id: ts,
       sessionKey: activeSessionKey,
@@ -664,7 +664,7 @@ async function handleSessionMessageRequest(
       attachments: [],
       threadTs: event.thread_ts,
     },
-    responseCtx,
+    responder,
     platform: { ...platformInfo, diagnostics: { showUsageSummary: false } },
   };
 
@@ -675,7 +675,7 @@ async function handleSessionMessageRequest(
   });
 
   void interactive.handler
-    .handleEvent(event, bot, adapters)
+    .handleEvent(event, bot, context)
     .then(() => {
       if (!targetSessionFile) {
         sessionViewStreamHub.publish(streamKey, { type: "status", running: false });

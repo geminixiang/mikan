@@ -50,7 +50,7 @@ sequenceDiagram
   A->>I: BotEvent base + trigger/log/attachment hooks
   I->>I: auto-reply / trigger 判定
   I->>A: 必要に応じて添付ファイルをダウンロード
-  I->>R: handler.handleEvent(event, bot, adapters)
+  I->>R: handler.handleEvent(event, bot, context)
   R->>C: respond / replaceResponse / setWorking / uploadFile
   C->>P: プラットフォーム形式へ整形して送信
 ```
@@ -93,7 +93,7 @@ sequenceDiagram
 
 - `BotEvent`：1 回のユーザーまたはプラットフォームイベント。
 - `Bot`：post message、upload file などのプラットフォーム bot 能力。
-- `BotAdapters`：1 回のイベントに付随する `message`、`responseCtx`、`platform` metadata。
+- `PlatformEventContext`：1 回のイベントに付随する `message`、`responder`、`platform` metadata。
 - `PlatformResponder`：agent が返信するときに使うチャネル。
 
 新しいプラットフォームを追加する場合は、まずこれらの抽象を実装し、プラットフォーム SDK の詳細を `src/runtime/*` や `src/agent.ts` に持ち込まないでください。

@@ -13,7 +13,7 @@ export {
 } from "./runtime/conversation-runtime.js";
 export type {
   Bot,
-  BotAdapters,
+  PlatformEventContext,
   BotEvent,
   BotHandler,
   ChatAdapter,

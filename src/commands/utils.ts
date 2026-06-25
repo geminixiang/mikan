@@ -2,13 +2,13 @@ import type { BotEvent } from "../adapter.js";
 import type { CommandContext } from "./types.js";
 
 export async function replyDiagnosticWithContext(
-  responseCtx: CommandContext["responseCtx"],
+  responder: CommandContext["responder"],
   text: string,
   options?: { style?: "muted" | "error" },
 ): Promise<void> {
-  await responseCtx.setTyping(false);
-  await responseCtx.setWorking(false);
-  await responseCtx.respondDiagnostic(text, options);
+  await responder.setTyping(false);
+  await responder.setWorking(false);
+  await responder.respondDiagnostic(text, options);
 }
 
 export async function replyPrivatelyWithContext(
@@ -17,7 +17,7 @@ export async function replyPrivatelyWithContext(
   options?: { style?: "muted" | "error" },
 ): Promise<void> {
   if (context.privateConversation) {
-    await replyDiagnosticWithContext(context.responseCtx, text, options);
+    await replyDiagnosticWithContext(context.responder, text, options);
     return;
   }
 
@@ -36,7 +36,7 @@ export async function replyPrivatelyWithContext(
     return;
   }
 
-  await replyDiagnosticWithContext(context.responseCtx, text, options);
+  await replyDiagnosticWithContext(context.responder, text, options);
 }
 
 export function formatCommandSummary(title: string, lines: string[]): string {

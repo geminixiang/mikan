@@ -50,7 +50,7 @@ export function createTelegramAdapters(
   bot: TelegramBot,
 ): {
   message: ChatMessage;
-  responseCtx: PlatformResponder;
+  responder: PlatformResponder;
   platform: PlatformInfo;
 } {
   let messageId: number | null = null;
@@ -149,7 +149,7 @@ export function createTelegramAdapters(
     await updatePromise;
   };
 
-  const responseCtx: PlatformResponder = {
+  const responder: PlatformResponder = {
     respond: async (text: string) => {
       await queueTelegramSend(
         "respond",
@@ -238,7 +238,7 @@ export function createTelegramAdapters(
     },
 
     respondToolResult: async (result: ChatToolResult) => {
-      await responseCtx.respondDiagnostic(formatToolResult(result));
+      await responder.respondDiagnostic(formatToolResult(result));
     },
 
     setTyping: async (isTyping: boolean) => {
@@ -284,5 +284,5 @@ export function createTelegramAdapters(
     },
   };
 
-  return { message, responseCtx, platform };
+  return { message, responder, platform };
 }

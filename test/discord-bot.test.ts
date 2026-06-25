@@ -337,8 +337,8 @@ describe("DiscordBot message routing", () => {
 
   test("/session slash command in shared channels replies ephemerally", async () => {
     const handler = makeHandler();
-    handler.handleEvent = vi.fn(async (_event, _bot, adapters) => {
-      await adapters.responseCtx.respond("session link");
+    handler.handleEvent = vi.fn(async (_event, _bot, context) => {
+      await context.responder.respond("session link");
     });
 
     const bot = new DiscordBot(handler, { token: "TEST_TOKEN", workingDir });
@@ -378,8 +378,8 @@ describe("DiscordBot message routing", () => {
 
   test("/session slash command in a Discord thread uses parent channel conversationId", async () => {
     const handler = makeHandler();
-    handler.handleEvent = vi.fn(async (_event, _bot, adapters) => {
-      await adapters.responseCtx.respond("session link");
+    handler.handleEvent = vi.fn(async (_event, _bot, context) => {
+      await context.responder.respond("session link");
     });
 
     const bot = new DiscordBot(handler, { token: "TEST_TOKEN", workingDir });

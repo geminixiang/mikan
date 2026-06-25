@@ -80,8 +80,8 @@ describe("respond() — non-threaded", () => {
   test("first call posts to channel", async () => {
     const bot = makeTelegramBot();
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.respond("hello");
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.respond("hello");
     expect(bot.postMessageRaw).toHaveBeenCalledWith(123456, expect.stringContaining("hello"));
     expect(bot.postReply).not.toHaveBeenCalled();
   });
@@ -89,9 +89,9 @@ describe("respond() — non-threaded", () => {
   test("subsequent calls update the same message", async () => {
     const bot = makeTelegramBot({ postMessageRaw: vi.fn().mockResolvedValue(2001) });
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.respond("first");
-    await responseCtx.respond("second");
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.respond("first");
+    await responder.respond("second");
     expect(bot.postMessageRaw).toHaveBeenCalledTimes(1);
     expect(bot.updateMessage).toHaveBeenCalledWith(
       "123456",
@@ -103,9 +103,9 @@ describe("respond() — non-threaded", () => {
   test("update call accumulates text with newline", async () => {
     const bot = makeTelegramBot({ postMessageRaw: vi.fn().mockResolvedValue(2001) });
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.respond("line1");
-    await responseCtx.respond("line2");
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.respond("line1");
+    await responder.respond("line2");
     const updateCall = vi.mocked(bot.updateMessage).mock.calls[0];
     expect(updateCall[2]).toContain("line1");
     expect(updateCall[2]).toContain("line2");
@@ -114,16 +114,16 @@ describe("respond() — non-threaded", () => {
   test("calls logBotResponse on successful respond", async () => {
     const bot = makeTelegramBot({ postMessageRaw: vi.fn().mockResolvedValue(2001) });
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.respond("hello");
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.respond("hello");
     expect(bot.logBotResponse).toHaveBeenCalledWith("123456", "hello", "2001");
   });
 
   test("escapes unsupported HTML-like tokens but keeps Telegram tags", async () => {
     const bot = makeTelegramBot();
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.respond("Usage: gws +read --id <ID> with <b>bold</b>");
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.respond("Usage: gws +read --id <ID> with <b>bold</b>");
     expect(bot.postMessageRaw).toHaveBeenCalledWith(
       123456,
       "Usage: gws +read --id &lt;ID&gt; with <b>bold</b>",
@@ -135,8 +135,8 @@ describe("respond() — threaded (reply to parent message)", () => {
   test("first call posts as reply to parent message", async () => {
     const bot = makeTelegramBot();
     const event = makeEvent({ ts: "1003", thread_ts: "1001" });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.respond("hello");
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.respond("hello");
     expect(bot.postReply).toHaveBeenCalledWith(123456, 1001, expect.stringContaining("hello"));
     expect(bot.postMessageRaw).not.toHaveBeenCalled();
   });
@@ -144,9 +144,9 @@ describe("respond() — threaded (reply to parent message)", () => {
   test("subsequent calls update the reply message", async () => {
     const bot = makeTelegramBot({ postReply: vi.fn().mockResolvedValue(3001) });
     const event = makeEvent({ ts: "1003", thread_ts: "1001" });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.respond("first");
-    await responseCtx.respond("second");
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.respond("first");
+    await responder.respond("second");
     expect(bot.postReply).toHaveBeenCalledTimes(1);
     expect(bot.updateMessage).toHaveBeenCalledWith(
       "123456",
@@ -164,10 +164,10 @@ describe("respondDiagnostic()", () => {
   test("non-threaded: posts a regular diagnostic message", async () => {
     const bot = makeTelegramBot({ postMessageRaw: vi.fn().mockResolvedValue(2001) });
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.respond("main");
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.respond("main");
     vi.clearAllMocks();
-    await responseCtx.respondDiagnostic("detail");
+    await responder.respondDiagnostic("detail");
     expect(bot.postMessageRaw).toHaveBeenCalledWith(123456, "detail");
     expect(bot.postReply).not.toHaveBeenCalled();
   });
@@ -175,10 +175,10 @@ describe("respondDiagnostic()", () => {
   test("threaded: still posts diagnostics as regular chat messages", async () => {
     const bot = makeTelegramBot({ postReply: vi.fn().mockResolvedValue(3001) });
     const event = makeEvent({ ts: "1003", thread_ts: "1001" });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.respond("main");
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.respond("main");
     vi.clearAllMocks();
-    await responseCtx.respondDiagnostic("detail");
+    await responder.respondDiagnostic("detail");
     expect(bot.postMessageRaw).toHaveBeenCalledWith(123456, "detail");
     expect(bot.postReply).not.toHaveBeenCalled();
   });
@@ -186,8 +186,8 @@ describe("respondDiagnostic()", () => {
   test("non-threaded: can post before a main message exists", async () => {
     const bot = makeTelegramBot();
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.respondDiagnostic("detail");
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.respondDiagnostic("detail");
     expect(bot.postMessageRaw).toHaveBeenCalledWith(123456, "detail");
     expect(bot.postReply).not.toHaveBeenCalled();
   });
@@ -195,8 +195,8 @@ describe("respondDiagnostic()", () => {
   test("respondToolResult formats and posts diagnostics", async () => {
     const bot = makeTelegramBot();
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.respondToolResult({
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.respondToolResult({
       toolName: "bash",
       label: "list files",
       args: { label: "list files", command: "ls" },
@@ -219,8 +219,8 @@ describe("setTyping()", () => {
   test("sends typing action immediately", async () => {
     const bot = makeTelegramBot();
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.setTyping(true);
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.setTyping(true);
     expect(bot.sendTyping).toHaveBeenCalledWith(123456);
     expect(bot.postMessageRaw).not.toHaveBeenCalled();
   });
@@ -228,8 +228,8 @@ describe("setTyping()", () => {
   test("does not post placeholder message", async () => {
     const bot = makeTelegramBot();
     const event = makeEvent({ ts: "1003", thread_ts: "1001" });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.setTyping(true);
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.setTyping(true);
     expect(bot.sendTyping).toHaveBeenCalledWith(123456);
     expect(bot.postReply).not.toHaveBeenCalled();
     expect(bot.postMessageRaw).not.toHaveBeenCalled();
@@ -238,8 +238,8 @@ describe("setTyping()", () => {
   test("setTyping(false) does nothing if not typing", async () => {
     const bot = makeTelegramBot();
     const event = makeEvent();
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.setTyping(false);
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.setTyping(false);
     expect(bot.postMessageRaw).not.toHaveBeenCalled();
     expect(bot.sendTyping).not.toHaveBeenCalled();
   });
@@ -247,20 +247,20 @@ describe("setTyping()", () => {
   test("setTyping(true) twice does not duplicate interval", async () => {
     const bot = makeTelegramBot();
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.setTyping(true);
-    await responseCtx.setTyping(true); // should be no-op
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.setTyping(true);
+    await responder.setTyping(true); // should be no-op
     expect(bot.sendTyping).toHaveBeenCalledTimes(1);
   });
 
   test("setTyping(false) allows re-triggering", async () => {
     const bot = makeTelegramBot();
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.setTyping(true);
-    await responseCtx.setTyping(false);
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.setTyping(true);
+    await responder.setTyping(false);
     vi.clearAllMocks();
-    await responseCtx.setTyping(true);
+    await responder.setTyping(true);
     expect(bot.sendTyping).toHaveBeenCalledTimes(1);
   });
 });
@@ -273,20 +273,20 @@ describe("setWorking()", () => {
   test("setWorking(false) allows typing to be re-triggered", async () => {
     const bot = makeTelegramBot();
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.setTyping(true);
-    await responseCtx.setWorking(false);
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.setTyping(true);
+    await responder.setWorking(false);
     vi.clearAllMocks();
     // After setWorking(false), typing can be started again
-    await responseCtx.setTyping(true);
+    await responder.setTyping(true);
     expect(bot.sendTyping).toHaveBeenCalledTimes(1);
   });
 
   test("respond() does not append working indicator", async () => {
     const bot = makeTelegramBot();
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.respond("content");
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.respond("content");
     const posted = vi.mocked(bot.postMessageRaw).mock.calls[0][1] as string;
     expect(posted).toBe("content");
   });
@@ -300,9 +300,9 @@ describe("replaceResponse()", () => {
   test("replaces accumulated text entirely", async () => {
     const bot = makeTelegramBot({ postMessageRaw: vi.fn().mockResolvedValue(2001) });
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.respond("original text");
-    await responseCtx.replaceResponse("replacement");
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.respond("original text");
+    await responder.replaceResponse("replacement");
     const updateCall = vi.mocked(bot.updateMessage).mock.calls[0];
     expect(updateCall[2]).not.toContain("original text");
     expect(updateCall[2]).toContain("replacement");
@@ -311,9 +311,9 @@ describe("replaceResponse()", () => {
   test("replaceResponse splits long text into continuation messages", async () => {
     const bot = makeTelegramBot({ postMessageRaw: vi.fn().mockResolvedValue(2001) });
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.setWorking(false);
-    await responseCtx.replaceResponse("x".repeat(4000));
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.setWorking(false);
+    await responder.replaceResponse("x".repeat(4000));
     const posted = vi.mocked(bot.postMessageRaw).mock.calls[0][1] as string;
     expect(posted.length).toBeLessThanOrEqual(3800);
     expect(posted).toContain("continued");
@@ -323,10 +323,8 @@ describe("replaceResponse()", () => {
   test("replaceResponse converts HTML tables into Telegram-safe pre blocks", async () => {
     const bot = makeTelegramBot();
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.replaceResponse(
-      "<table><tr><th>Name</th></tr><tr><td>Alice</td></tr></table>",
-    );
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.replaceResponse("<table><tr><th>Name</th></tr><tr><td>Alice</td></tr></table>");
     expect(bot.postMessageRaw).toHaveBeenCalledWith(123456, expect.stringContaining("<pre>"));
     const posted = vi.mocked(bot.postMessageRaw).mock.calls[0][1] as string;
     expect(posted).toContain("| Name  |");
@@ -342,8 +340,8 @@ describe("text splitting", () => {
   test("long text is split at 3800 chars", async () => {
     const bot = makeTelegramBot();
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.respond("x".repeat(4000));
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.respond("x".repeat(4000));
     const posted = vi.mocked(bot.postMessageRaw).mock.calls[0][1] as string;
     expect(posted.length).toBeLessThanOrEqual(3800);
     expect(posted).toContain("continued");
@@ -353,9 +351,9 @@ describe("text splitting", () => {
   test("text exactly at 3800 chars is not split when not working", async () => {
     const bot = makeTelegramBot();
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.setWorking(false);
-    await responseCtx.respond("x".repeat(3800));
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.setWorking(false);
+    await responder.respond("x".repeat(3800));
     const posted = vi.mocked(bot.postMessageRaw).mock.calls[0][1] as string;
     expect(posted.length).toBe(3800);
     expect(posted).not.toContain("continued");
@@ -365,8 +363,8 @@ describe("text splitting", () => {
   test("text at 3801 chars is split", async () => {
     const bot = makeTelegramBot();
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.respond("x".repeat(3801));
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.respond("x".repeat(3801));
     const posted = vi.mocked(bot.postMessageRaw).mock.calls[0][1] as string;
     expect(posted.length).toBeLessThanOrEqual(3800);
     expect(posted).toContain("continued");
@@ -386,9 +384,9 @@ describe("deleteResponse()", () => {
       postReply: vi.fn().mockResolvedValue(3001),
     });
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.respond("main");
-    await responseCtx.deleteResponse();
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.respond("main");
+    await responder.deleteResponse();
     expect(bot.deleteMessageRaw).toHaveBeenCalledWith(123456, 2001);
     expect(bot.deleteMessageRaw).toHaveBeenCalledTimes(1);
   });
@@ -396,8 +394,8 @@ describe("deleteResponse()", () => {
   test("does nothing if no message was created", async () => {
     const bot = makeTelegramBot();
     const event = makeEvent();
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.deleteResponse();
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.deleteResponse();
     expect(bot.deleteMessageRaw).not.toHaveBeenCalled();
   });
 });
@@ -437,16 +435,16 @@ describe("uploadFile()", () => {
   test("calls bot.uploadFile with channel, path, and title", async () => {
     const bot = makeTelegramBot();
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.uploadFile("/path/to/file.txt", "My File");
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.uploadFile("/path/to/file.txt", "My File");
     expect(bot.uploadFile).toHaveBeenCalledWith("123456", "/path/to/file.txt", "My File");
   });
 
   test("calls bot.uploadFile without title", async () => {
     const bot = makeTelegramBot();
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
-    await responseCtx.uploadFile("/path/to/image.png");
+    const { responder } = createTelegramAdapters(event, bot);
+    await responder.uploadFile("/path/to/image.png");
     expect(bot.uploadFile).toHaveBeenCalledWith("123456", "/path/to/image.png", undefined);
   });
 });
@@ -459,11 +457,11 @@ describe("streaming lifecycle", () => {
   test("delta streaming posts then updates the same message", async () => {
     const bot = makeTelegramBot();
     const event = makeEvent({ thread_ts: undefined });
-    const { responseCtx } = createTelegramAdapters(event, bot);
+    const { responder } = createTelegramAdapters(event, bot);
 
-    await responseCtx.appendResponseDelta?.("hello");
-    await responseCtx.appendResponseDelta?.(" world".repeat(20));
-    await responseCtx.finishResponse?.("hello final");
+    await responder.appendResponseDelta?.("hello");
+    await responder.appendResponseDelta?.(" world".repeat(20));
+    await responder.finishResponse?.("hello final");
 
     expect(bot.postMessageRaw).toHaveBeenCalledWith(123456, expect.stringContaining("hello"));
     expect(bot.updateMessage).toHaveBeenCalledWith(
