@@ -7,10 +7,10 @@ import { mkdirSync, statSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { fileURLToPath } from "url";
 import { dirname, join as pathJoin } from "path";
-import type { Bot } from "./adapter.js";
-import { DiscordBot } from "./adapters/discord/bot.js";
-import { TelegramBot } from "./adapters/telegram/bot.js";
-import { SlackBot as SlackBotClass } from "./adapters/slack/bot.js";
+import type { MessagingBot } from "./adapter.js";
+import { DiscordMessagingBot } from "./adapters/discord/bot.js";
+import { TelegramMessagingBot } from "./adapters/telegram/bot.js";
+import { SlackMessagingBot as SlackMessagingBotClass } from "./adapters/slack/bot.js";
 import { downloadChannel } from "./download.js";
 import { EventsWatcher } from "./events.js";
 import * as log from "./log.js";
@@ -345,24 +345,24 @@ const sandboxDesc =
           : `cloudflare:${sandbox.sandboxId}`;
 log.logStartup(workingDir, sandboxDesc);
 
-const bots: Bot[] = [];
-const botsByPlatform: Record<string, Bot> = {};
+const bots: MessagingBot[] = [];
+const botsByPlatform: Record<string, MessagingBot> = {};
 
 if (hasSlack) {
-  const slackBotToken = SLACK_BOT_TOKEN;
+  const slackMessagingBotToken = SLACK_BOT_TOKEN;
   const slackAppToken = SLACK_APP_TOKEN;
-  if (!slackBotToken || !slackAppToken) {
+  if (!slackMessagingBotToken || !slackAppToken) {
     throw new Error("Slack startup requires both SLACK_APP_TOKEN and SLACK_BOT_TOKEN");
   }
-  const sharedStore = new ChannelStore({ workingDir, botToken: slackBotToken });
-  const slackBot = new SlackBotClass(handler, {
+  const sharedStore = new ChannelStore({ workingDir, botToken: slackMessagingBotToken });
+  const slackMessagingBot = new SlackMessagingBotClass(handler, {
     appToken: slackAppToken,
-    botToken: slackBotToken,
+    botToken: slackMessagingBotToken,
     workingDir,
     store: sharedStore,
   });
-  bots.push(slackBot);
-  botsByPlatform.slack = slackBot;
+  bots.push(slackMessagingBot);
+  botsByPlatform.slack = slackMessagingBot;
   log.logInfo("Platform: Slack");
 }
 if (hasTelegram) {
@@ -370,12 +370,12 @@ if (hasTelegram) {
   if (!telegramToken) {
     throw new Error("Telegram startup requires TELEGRAM_BOT_TOKEN");
   }
-  const telegramBot = new TelegramBot(handler, {
+  const telegramMessagingBot = new TelegramMessagingBot(handler, {
     token: telegramToken,
     workingDir,
   });
-  bots.push(telegramBot);
-  botsByPlatform.telegram = telegramBot;
+  bots.push(telegramMessagingBot);
+  botsByPlatform.telegram = telegramMessagingBot;
   log.logInfo("Platform: Telegram");
 }
 if (hasDiscord) {
@@ -383,12 +383,12 @@ if (hasDiscord) {
   if (!discordToken) {
     throw new Error("Discord startup requires DISCORD_BOT_TOKEN");
   }
-  const discordBot = new DiscordBot(handler, {
+  const discordMessagingBot = new DiscordMessagingBot(handler, {
     token: discordToken,
     workingDir,
   });
-  bots.push(discordBot);
-  botsByPlatform.discord = discordBot;
+  bots.push(discordMessagingBot);
+  botsByPlatform.discord = discordMessagingBot;
   log.logInfo("Platform: Discord");
 }
 
@@ -409,9 +409,9 @@ if (LINK_PORT) {
 
 // Start events watcher with explicit platform routing
 const eventsWatcher = new EventsWatcher(join(workingDir, "events"), botsByPlatform);
-const slackBot = botsByPlatform.slack as SlackBotClass | undefined;
-if (slackBot) {
-  slackBot.setEventsWatcher(eventsWatcher);
+const slackMessagingBot = botsByPlatform.slack as SlackMessagingBotClass | undefined;
+if (slackMessagingBot) {
+  slackMessagingBot.setEventsWatcher(eventsWatcher);
 }
 eventsWatcher.start();
 

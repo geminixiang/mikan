@@ -18,11 +18,11 @@ import { mkdir, readFile, writeFile } from "fs/promises";
 import { homedir } from "os";
 import { join, posix } from "path";
 import type {
-  ChatMessage,
-  PlatformResponder,
+  ConversationMessage,
+  ConversationResponder,
   ChatToolResult,
   ConversationKind,
-  PlatformInfo,
+  MessagingInfo,
   PlatformName,
 } from "./adapter.js";
 import type { SessionViewTokenStoreLike } from "./commands/types.js";
@@ -196,7 +196,7 @@ function buildEnvDescription(sandboxType: SandboxConfig["type"], workspaceRoot: 
 }
 
 export function resolveTriggerAttribution(
-  message: Pick<ChatMessage, "id" | "text" | "userName">,
+  message: Pick<ConversationMessage, "id" | "text" | "userName">,
 ): string | undefined {
   const eventTextMatch = message.text.match(/^\[EVENT:([^:]+):/);
   if (eventTextMatch) return `[event: ${eventTextMatch[1]}]`;
@@ -213,7 +213,7 @@ function buildSystemPrompt(
   currentUserId: string | undefined,
   memory: string,
   sandboxConfig: SandboxConfig,
-  platform: PlatformInfo,
+  platform: MessagingInfo,
   skills: Skill[],
   isEventTrigger = false,
   triggerAttribution?: string,
@@ -368,7 +368,7 @@ Maintain ${workspaceRoot}/SYSTEM.md to log all environment modifications:
 Update this file whenever you modify the environment. On fresh container, read it first to restore your setup.
 
 ## Log Queries (for older history)
-Format: \`{"date":"...","ts":"...","user":"...","userName":"...","text":"...","isBot":false}\`
+Format: \`{"date":"...","ts":"...","user":"...","userName":"...","text":"...","isMessagingBot":false}\`
 The log contains user messages and your final responses (not tool calls/results).
 Use \`log.jsonl\` for quick grep-style history. Use \`${conversationPath}/sessions/\` when you need structured turns, tool outputs, or thread/session lineage.
 ${isContainerLike || isFirecracker ? "Install jq: apt-get install jq" : ""}
@@ -429,7 +429,7 @@ interface RunnerExecutionContext {
 }
 
 interface RunnerSessionState {
-  responder: PlatformResponder | null;
+  responder: ConversationResponder | null;
   logCtx: {
     conversationId: string;
     userName?: string;
@@ -630,7 +630,7 @@ function createRunState(): RunnerSessionState {
 
 function resetRunState(
   runState: RunnerSessionState,
-  responder: PlatformResponder,
+  responder: ConversationResponder,
   sessionConversation: string,
   userName: string | undefined,
   sessionUuid: string,
@@ -654,7 +654,7 @@ function resetRunState(
 }
 
 function createRunQueue(
-  responder: PlatformResponder,
+  responder: ConversationResponder,
   runState: RunnerSessionState,
 ): {
   queue: { enqueue(fn: () => Promise<void>, errorContext: string): void };
@@ -684,14 +684,14 @@ function createRunQueue(
   };
 }
 
-function formatTimestampedUserMessage(message: ChatMessage): string {
+function formatTimestampedUserMessage(message: ConversationMessage): string {
   const timestamp = formatLocalTimestamp(new Date())!;
   const threadContext = message.threadTs ? ` [in-thread:${message.threadTs}]` : "";
   return `[${timestamp}] [${message.userName || "unknown"}]${threadContext}: ${message.text}`;
 }
 
 function collectMessageAttachments(
-  message: ChatMessage,
+  message: ConversationMessage,
   workspacePath: string,
   pathContext?: RuntimePathContext,
 ): { imageAttachments: ImageContent[]; nonImagePaths: string[] } {
@@ -722,7 +722,7 @@ function collectMessageAttachments(
 }
 
 export function buildPromptPayload(
-  message: ChatMessage,
+  message: ConversationMessage,
   workspacePath: string,
   pathContext?: RuntimePathContext,
 ): {
@@ -783,7 +783,7 @@ export function appendTriggerAttribution(
 }
 
 async function finalizeRunResponse(
-  responder: PlatformResponder,
+  responder: ConversationResponder,
   session: AgentSession,
   runState: RunnerSessionState,
   options?: {
@@ -883,8 +883,8 @@ async function finalizeRunResponse(
 interface UsageReportContext {
   session: AgentSession;
   runState: RunnerSessionState;
-  responder: PlatformResponder;
-  platform: PlatformInfo;
+  responder: ConversationResponder;
+  platform: MessagingInfo;
   model: Model<Api>;
   agentConfig: ReturnType<typeof resolveConversationSettings>;
   sessionConversation: string;
@@ -977,9 +977,9 @@ function reloadSessionMessages(
 }
 
 async function prepareRunContext(params: {
-  message: ChatMessage;
-  responder: PlatformResponder;
-  platform: PlatformInfo;
+  message: ConversationMessage;
+  responder: ConversationResponder;
+  platform: MessagingInfo;
   conversationId: string;
   conversationDir: string;
   sessionUuid: string;
@@ -1437,7 +1437,7 @@ export async function createRunner(
   // Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
   const memory = await getMemory(conversationDir);
   const skills = loadMikanSkills(conversationDir, pathContext.runtimeWorkspaceRoot);
-  const emptyPlatform: PlatformInfo = {
+  const emptyPlatform: MessagingInfo = {
     name: "chat",
     formattingGuide: "",
     channels: [],
@@ -1500,9 +1500,9 @@ export async function createRunner(
     },
 
     async run(
-      message: ChatMessage,
-      responder: PlatformResponder,
-      platform: PlatformInfo,
+      message: ConversationMessage,
+      responder: ConversationResponder,
+      platform: MessagingInfo,
     ): Promise<{ stopReason: string; errorMessage?: string }> {
       const prepared = await prepareRunContext({
         message,

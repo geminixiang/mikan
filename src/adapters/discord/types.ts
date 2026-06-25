@@ -1,6 +1,6 @@
-import type { BotEvent } from "../../adapter.js";
+import type { ConversationEvent } from "../../adapter.js";
 
-export interface DiscordEvent extends BotEvent {
+export interface DiscordEvent extends ConversationEvent {
   type: "mention" | "dm";
   userName?: string;
 }

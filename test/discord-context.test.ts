@@ -1,12 +1,14 @@
 import { describe, expect, test, vi } from "vitest";
-import type { DiscordBot, DiscordEvent } from "../src/adapters/discord/bot.js";
+import type { DiscordMessagingBot, DiscordEvent } from "../src/adapters/discord/bot.js";
 import { createDiscordAdapters } from "../src/adapters/discord/context.js";
 
 // ============================================================================
-// Minimal DiscordBot mock
+// Minimal DiscordMessagingBot mock
 // ============================================================================
 
-function makeDiscordBot(overrides: Partial<DiscordBot> = {}): DiscordBot {
+function makeDiscordMessagingBot(
+  overrides: Partial<DiscordMessagingBot> = {},
+): DiscordMessagingBot {
   return {
     postReply: vi.fn().mockResolvedValue("MSG002"),
     postInThread: vi.fn().mockResolvedValue("MSG003"),
@@ -17,16 +19,16 @@ function makeDiscordBot(overrides: Partial<DiscordBot> = {}): DiscordBot {
     logBotResponse: vi.fn(),
     getAllChannels: vi.fn().mockReturnValue([]),
     getAllUsers: vi.fn().mockReturnValue([]),
-    // Bot interface stubs
+    // MessagingBot interface stubs
     start: vi.fn(),
     postMessage: vi.fn().mockResolvedValue("MSG001"),
     updateMessage: vi.fn().mockResolvedValue(undefined),
     enqueueEvent: vi.fn().mockReturnValue(true),
-    getPlatformInfo: vi
+    getMessagingInfo: vi
       .fn()
       .mockReturnValue({ name: "discord", formattingGuide: "", channels: [], users: [] }),
     ...overrides,
-  } as unknown as DiscordBot;
+  } as unknown as DiscordMessagingBot;
 }
 
 function makeEvent(overrides: Partial<DiscordEvent> = {}): DiscordEvent {
@@ -48,27 +50,27 @@ function makeEvent(overrides: Partial<DiscordEvent> = {}): DiscordEvent {
 describe("session key derivation", () => {
   test("non-threaded: sessionKey = channel", () => {
     const event = makeEvent({ ts: "MSG001", thread_ts: undefined });
-    const { message } = createDiscordAdapters(event, makeDiscordBot());
+    const { message } = createDiscordAdapters(event, makeDiscordMessagingBot());
     expect(message.sessionKey).toBe("CH001");
   });
 
   test("threaded: sessionKey = channel:thread_ts", () => {
     const event = makeEvent({ ts: "MSG003", thread_ts: "MSG001" });
-    const { message } = createDiscordAdapters(event, makeDiscordBot());
+    const { message } = createDiscordAdapters(event, makeDiscordMessagingBot());
     expect(message.sessionKey).toBe("CH001:MSG001");
   });
 
   test("message id is always event.ts", () => {
     const event = makeEvent({ ts: "MSG005", thread_ts: "MSG001" });
-    const { message } = createDiscordAdapters(event, makeDiscordBot());
+    const { message } = createDiscordAdapters(event, makeDiscordMessagingBot());
     expect(message.id).toBe("MSG005");
   });
 
   test("different threads in same channel produce different session keys", () => {
     const event1 = makeEvent({ ts: "MSG003", thread_ts: "MSG001" });
     const event2 = makeEvent({ ts: "MSG006", thread_ts: "MSG004" });
-    const { message: m1 } = createDiscordAdapters(event1, makeDiscordBot());
-    const { message: m2 } = createDiscordAdapters(event2, makeDiscordBot());
+    const { message: m1 } = createDiscordAdapters(event1, makeDiscordMessagingBot());
+    const { message: m2 } = createDiscordAdapters(event2, makeDiscordMessagingBot());
     expect(m1.sessionKey).toBe("CH001:MSG001");
     expect(m2.sessionKey).toBe("CH001:MSG004");
     expect(m1.sessionKey).not.toBe(m2.sessionKey);
@@ -77,8 +79,8 @@ describe("session key derivation", () => {
   test("top-level follow-ups in same channel reuse the same session key", () => {
     const event1 = makeEvent({ ts: "MSG001", thread_ts: undefined });
     const event2 = makeEvent({ ts: "MSG002", thread_ts: undefined });
-    const { message: m1 } = createDiscordAdapters(event1, makeDiscordBot());
-    const { message: m2 } = createDiscordAdapters(event2, makeDiscordBot());
+    const { message: m1 } = createDiscordAdapters(event1, makeDiscordMessagingBot());
+    const { message: m2 } = createDiscordAdapters(event2, makeDiscordMessagingBot());
     expect(m1.sessionKey).toBe("CH001");
     expect(m2.sessionKey).toBe("CH001");
   });
@@ -90,7 +92,7 @@ describe("session key derivation", () => {
 
 describe("respond() — non-threaded (replies to trigger message)", () => {
   test("first call posts as reply to the trigger message", async () => {
-    const bot = makeDiscordBot();
+    const bot = makeDiscordMessagingBot();
     const event = makeEvent({ ts: "MSG001", thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.respond("hello");
@@ -99,7 +101,7 @@ describe("respond() — non-threaded (replies to trigger message)", () => {
   });
 
   test("subsequent calls update the same message", async () => {
-    const bot = makeDiscordBot({ postReply: vi.fn().mockResolvedValue("REPLY001") });
+    const bot = makeDiscordMessagingBot({ postReply: vi.fn().mockResolvedValue("REPLY001") });
     const event = makeEvent({ ts: "MSG001", thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.respond("first");
@@ -113,7 +115,7 @@ describe("respond() — non-threaded (replies to trigger message)", () => {
   });
 
   test("update call accumulates text with newline", async () => {
-    const bot = makeDiscordBot({ postReply: vi.fn().mockResolvedValue("REPLY001") });
+    const bot = makeDiscordMessagingBot({ postReply: vi.fn().mockResolvedValue("REPLY001") });
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.respond("line1");
@@ -124,7 +126,7 @@ describe("respond() — non-threaded (replies to trigger message)", () => {
   });
 
   test("synthetic event without a Discord message id posts to the channel", async () => {
-    const bot = makeDiscordBot({ postMessage: vi.fn().mockResolvedValue("BOT_MSG") });
+    const bot = makeDiscordMessagingBot({ postMessage: vi.fn().mockResolvedValue("BOT_MSG") });
     const event = makeEvent({
       ts: "event:one-shot-1777454334068.json",
       thread_ts: undefined,
@@ -140,7 +142,7 @@ describe("respond() — non-threaded (replies to trigger message)", () => {
 
 describe("respond() — threaded", () => {
   test("first call posts in thread", async () => {
-    const bot = makeDiscordBot();
+    const bot = makeDiscordMessagingBot();
     const event = makeEvent({ ts: "MSG003", thread_ts: "THREAD001" });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.respond("hello");
@@ -153,7 +155,9 @@ describe("respond() — threaded", () => {
   });
 
   test("subsequent calls update the thread message", async () => {
-    const bot = makeDiscordBot({ postInThread: vi.fn().mockResolvedValue("THREAD_MSG001") });
+    const bot = makeDiscordMessagingBot({
+      postInThread: vi.fn().mockResolvedValue("THREAD_MSG001"),
+    });
     const event = makeEvent({ ts: "MSG003", thread_ts: "THREAD001" });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.respond("first");
@@ -173,7 +177,7 @@ describe("respond() — threaded", () => {
 
 describe("respondDiagnostic()", () => {
   test("non-threaded: posts as a reply to the trigger message", async () => {
-    const bot = makeDiscordBot({ postReply: vi.fn().mockResolvedValue("BOT_MSG") });
+    const bot = makeDiscordMessagingBot({ postReply: vi.fn().mockResolvedValue("BOT_MSG") });
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.respond("main");
@@ -184,7 +188,7 @@ describe("respondDiagnostic()", () => {
   });
 
   test("threaded: posts in the platform thread", async () => {
-    const bot = makeDiscordBot({ postInThread: vi.fn().mockResolvedValue("THREAD_MSG") });
+    const bot = makeDiscordMessagingBot({ postInThread: vi.fn().mockResolvedValue("THREAD_MSG") });
     const event = makeEvent({ ts: "MSG003", thread_ts: "THREAD001" });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.respond("main");
@@ -194,7 +198,7 @@ describe("respondDiagnostic()", () => {
   });
 
   test("non-threaded: can post before a main message exists", async () => {
-    const bot = makeDiscordBot();
+    const bot = makeDiscordMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.respondDiagnostic("detail");
@@ -203,7 +207,7 @@ describe("respondDiagnostic()", () => {
   });
 
   test("respondToolResult formats and posts diagnostics", async () => {
-    const bot = makeDiscordBot();
+    const bot = makeDiscordMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.respondToolResult({
@@ -222,7 +226,7 @@ describe("respondDiagnostic()", () => {
   });
 
   test("synthetic event: diagnostics after main response reply to bot message", async () => {
-    const bot = makeDiscordBot({ postMessage: vi.fn().mockResolvedValue("BOT_MSG") });
+    const bot = makeDiscordMessagingBot({ postMessage: vi.fn().mockResolvedValue("BOT_MSG") });
     const event = makeEvent({
       ts: "event:one-shot-1777454334068.json",
       thread_ts: undefined,
@@ -237,7 +241,7 @@ describe("respondDiagnostic()", () => {
   });
 
   test("synthetic event: diagnostics before main response post to the channel", async () => {
-    const bot = makeDiscordBot({ postMessage: vi.fn().mockResolvedValue("DIAG_MSG") });
+    const bot = makeDiscordMessagingBot({ postMessage: vi.fn().mockResolvedValue("DIAG_MSG") });
     const event = makeEvent({
       ts: "event:one-shot-1777454334068.json",
       thread_ts: undefined,
@@ -258,7 +262,7 @@ describe("respondDiagnostic()", () => {
 describe("setTyping()", () => {
   // Discord uses persistent typing indicator interval, no initial message
   test("sends typing indicator (persistent)", async () => {
-    const bot = makeDiscordBot();
+    const bot = makeDiscordMessagingBot();
     const event = makeEvent({ ts: "MSG001", thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.setTyping(true);
@@ -268,7 +272,7 @@ describe("setTyping()", () => {
   });
 
   test("setTyping(false) stops typing and allows restart", async () => {
-    const bot = makeDiscordBot();
+    const bot = makeDiscordMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
     // Start typing
@@ -282,7 +286,7 @@ describe("setTyping()", () => {
   });
 
   test("threaded: sends typing indicator", async () => {
-    const bot = makeDiscordBot();
+    const bot = makeDiscordMessagingBot();
     const event = makeEvent({ ts: "MSG003", thread_ts: "THREAD001" });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.setTyping(true);
@@ -291,7 +295,7 @@ describe("setTyping()", () => {
   });
 
   test("setTyping(false) does nothing", async () => {
-    const bot = makeDiscordBot();
+    const bot = makeDiscordMessagingBot();
     const event = makeEvent();
     const { responder } = createDiscordAdapters(event, bot);
     await responder.setTyping(false);
@@ -301,7 +305,7 @@ describe("setTyping()", () => {
   });
 
   test("setTyping(true) after message exists does nothing", async () => {
-    const bot = makeDiscordBot();
+    const bot = makeDiscordMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.setTyping(true); // creates message
@@ -312,7 +316,7 @@ describe("setTyping()", () => {
   });
 
   test("event: sends typing indicator", async () => {
-    const bot = makeDiscordBot();
+    const bot = makeDiscordMessagingBot();
     const event = makeEvent({ text: "run deploy" });
     const { responder } = createDiscordAdapters(event, bot, /* isEvent= */ true);
     await responder.setTyping(true);
@@ -328,7 +332,7 @@ describe("setTyping()", () => {
 
 describe("setWorking()", () => {
   test("respond() while working appends indicator", async () => {
-    const bot = makeDiscordBot();
+    const bot = makeDiscordMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
     // Default isWorking=true
@@ -338,7 +342,7 @@ describe("setWorking()", () => {
   });
 
   test("setWorking(false) removes indicator on update", async () => {
-    const bot = makeDiscordBot({ postReply: vi.fn().mockResolvedValue("REPLY001") });
+    const bot = makeDiscordMessagingBot({ postReply: vi.fn().mockResolvedValue("REPLY001") });
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.respond("content");
@@ -355,7 +359,7 @@ describe("setWorking()", () => {
 
 describe("replaceResponse()", () => {
   test("replaces accumulated text entirely", async () => {
-    const bot = makeDiscordBot({ postReply: vi.fn().mockResolvedValue("REPLY001") });
+    const bot = makeDiscordMessagingBot({ postReply: vi.fn().mockResolvedValue("REPLY001") });
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.respond("original text");
@@ -372,7 +376,7 @@ describe("replaceResponse()", () => {
 
 describe("text splitting", () => {
   test("long text is split at 1900 chars", async () => {
-    const bot = makeDiscordBot();
+    const bot = makeDiscordMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.respond("x".repeat(2100));
@@ -383,7 +387,7 @@ describe("text splitting", () => {
   });
 
   test("text exactly at 1900 chars is not split when not working", async () => {
-    const bot = makeDiscordBot();
+    const bot = makeDiscordMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.setWorking(false);
@@ -395,7 +399,7 @@ describe("text splitting", () => {
   });
 
   test("text at 1901 chars is split", async () => {
-    const bot = makeDiscordBot();
+    const bot = makeDiscordMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.respond("x".repeat(1901));
@@ -413,7 +417,7 @@ describe("text splitting", () => {
 describe("deleteResponse()", () => {
   // Discord threads not used here — only deletes main message
   test("deletes main message", async () => {
-    const bot = makeDiscordBot({
+    const bot = makeDiscordMessagingBot({
       postReply: vi.fn().mockResolvedValue("MAIN_MSG"),
       postInThread: vi.fn().mockResolvedValue("THREAD_MSG"),
     });
@@ -426,7 +430,7 @@ describe("deleteResponse()", () => {
   });
 
   test("does nothing if no message was created", async () => {
-    const bot = makeDiscordBot();
+    const bot = makeDiscordMessagingBot();
     const event = makeEvent();
     const { responder } = createDiscordAdapters(event, bot);
     await responder.deleteResponse();
@@ -435,27 +439,27 @@ describe("deleteResponse()", () => {
 });
 
 // ============================================================================
-// PlatformInfo
+// MessagingInfo
 // ============================================================================
 
 describe("platform info", () => {
   test("name is 'discord'", () => {
-    const { platform } = createDiscordAdapters(makeEvent(), makeDiscordBot());
+    const { platform } = createDiscordAdapters(makeEvent(), makeDiscordMessagingBot());
     expect(platform.name).toBe("discord");
   });
 
   test("formattingGuide mentions markdown syntax", () => {
-    const { platform } = createDiscordAdapters(makeEvent(), makeDiscordBot());
+    const { platform } = createDiscordAdapters(makeEvent(), makeDiscordMessagingBot());
     expect(platform.formattingGuide).toContain("**");
   });
 
   test("does not show usage summary diagnostics", () => {
-    const { platform } = createDiscordAdapters(makeEvent(), makeDiscordBot());
+    const { platform } = createDiscordAdapters(makeEvent(), makeDiscordMessagingBot());
     expect(platform.diagnostics?.showUsageSummary).not.toBe(true);
   });
 
-  test("channels and users come from DiscordBot", () => {
-    const bot = makeDiscordBot({
+  test("channels and users come from DiscordMessagingBot", () => {
+    const bot = makeDiscordMessagingBot({
       getAllChannels: vi.fn().mockReturnValue([{ id: "CH001", name: "general" }]),
       getAllUsers: vi
         .fn()
@@ -473,7 +477,7 @@ describe("platform info", () => {
 
 describe("uploadFile()", () => {
   test("calls bot.uploadFile with channel, path, and title", async () => {
-    const bot = makeDiscordBot();
+    const bot = makeDiscordMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.uploadFile("/path/to/file.txt", "My File");
@@ -481,7 +485,7 @@ describe("uploadFile()", () => {
   });
 
   test("calls bot.uploadFile without title", async () => {
-    const bot = makeDiscordBot();
+    const bot = makeDiscordMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.uploadFile("/path/to/image.png");
@@ -495,7 +499,7 @@ describe("uploadFile()", () => {
 
 describe("streaming lifecycle", () => {
   test("delta streaming posts then updates the same message", async () => {
-    const bot = makeDiscordBot();
+    const bot = makeDiscordMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
 
@@ -514,27 +518,27 @@ describe("streaming lifecycle", () => {
 });
 
 // ============================================================================
-// ChatMessage fields
+// ConversationMessage fields
 // ============================================================================
 
 describe("message fields", () => {
   test("userId and userName are populated from event", () => {
     const event = makeEvent({ user: "U999", userName: "bob" });
-    const { message } = createDiscordAdapters(event, makeDiscordBot());
+    const { message } = createDiscordAdapters(event, makeDiscordMessagingBot());
     expect(message.userId).toBe("U999");
     expect(message.userName).toBe("bob");
   });
 
   test("text matches event.text", () => {
     const event = makeEvent({ text: "what is 2+2?" });
-    const { message } = createDiscordAdapters(event, makeDiscordBot());
+    const { message } = createDiscordAdapters(event, makeDiscordMessagingBot());
     expect(message.text).toBe("what is 2+2?");
   });
 
   test("attachments are populated from event", () => {
     const attachments = [{ name: "file.txt", localPath: "/tmp/file.txt" }];
     const event = makeEvent({ attachments });
-    const { message } = createDiscordAdapters(event, makeDiscordBot());
+    const { message } = createDiscordAdapters(event, makeDiscordMessagingBot());
     expect(message.attachments).toEqual(attachments);
   });
 });

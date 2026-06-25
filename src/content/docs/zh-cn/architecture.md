@@ -89,7 +89,7 @@ flowchart LR
   Executor -. shared: host / container, isolated: image / firecracker / cloudflare .-> ConversationDir
   Provisioner -. isolated image sandbox lifecycle .-> Executor
   VaultManager -. env + mount routing .-> Executor
-  EventsWatcher -. enqueue BotEvent .-> Main
+  EventsWatcher -. enqueue ConversationEvent .-> Main
 ```
 
 ## 2. 主要分层
@@ -106,7 +106,7 @@ flowchart LR
 职责：
 
 - 接收 Slack / Telegram / Discord 原生事件
-- 转成统一的 `BotEvent`、`ChatMessage`、`PlatformResponder`
+- 转成统一的 `ConversationEvent`、`ConversationMessage`、`ConversationResponder`
 - 依平台规则计算 `sessionKey`
 - 封装回覆、typing、working、档案上传等平台差异
 
@@ -121,7 +121,7 @@ flowchart LR
 职责：
 
 - 启动 CLI、读取 env / args / `settings.json`
-- 建立 `ConversationRuntime` 作为各平台 bot 的 `BotHandler`
+- 建立 `ConversationRuntime` 作为各平台 bot 的 `MessagingEventHandler`
 - 透过 `AgentRunController` dispatch `/login`、`/session`、`stop`、`new` 等控制命令
 - 管理 `conversationStates` 与 per-session queue，避免同一 session 重复执行
 - 决定每个 session scope 对应哪个 `PiAgentWrapper`
@@ -200,18 +200,18 @@ sequenceDiagram
 
   U->>P: 發送訊息 / mention / reply
   P->>A: 平台事件
-  A->>M: BotEvent + ChatMessage + ResponseContext
+  A->>M: ConversationEvent + ConversationMessage + ResponseContext
   M->>M: queue event + dispatch commands
   M->>S: resolve session scope
   S-->>M: contextFile + sessionDir
   M->>R: getState() / run()
-  R->>W: 讀取 MEMORY.md / sessions/*.jsonl；必要時查 log.jsonl
+  R->>W: 读取 MEMORY.md / sessions/*.jsonl，必要时查 log.jsonl
   R->>R: 建立 system prompt / skills / model / session context
   R->>T: 執行工具
   T->>X: read / bash / edit / write / event / attach
   X-->>T: tool result
   T-->>R: 結果回傳
-  R->>W: 寫入 structured session；adapter 記錄平台 log
+  R->>W: 写入 structured session，adapter 记录平台 log
   R-->>M: final response
   M-->>A: 回覆內容 / 診斷 / 檔案
   A-->>P: 平台訊息更新
@@ -275,7 +275,7 @@ flowchart TD
 
 ## 6. Events 与一般对话的差异
 
-`events/*.json` 会被 `EventsWatcher` 监看，之后转成 `BotEvent` 再走一次正常流程。
+`events/*.json` 会被 `EventsWatcher` 监看，之后转成 `ConversationEvent` 再走一次正常流程。
 也就是说 events 不是独立执行器，而是「另一个讯息入口」。
 
 这让下列能力共用同一套机制:

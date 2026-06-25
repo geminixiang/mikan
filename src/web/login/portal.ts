@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "http";
-import type { Bot, PlatformName } from "../../adapter.js";
+import type { MessagingBot, PlatformName } from "../../adapter.js";
 import { handleAdminRequest, type AdminRuntimeBridge } from "../admin/portal.js";
 import type { InMemoryAdminTokenStore } from "../admin/store.js";
 import { escapeHtml } from "../../utils/html.js";
@@ -267,7 +267,7 @@ export function startLinkServer(
     workingDir?: string;
     runtime?: AdminRuntimeBridge;
     sandbox?: SandboxConfig;
-    botsByPlatform?: Partial<Record<PlatformName, Bot>>;
+    botsByPlatform?: Partial<Record<PlatformName, MessagingBot>>;
   },
 ): Server {
   const oauthStates = new Map<string, PendingOAuthState>();

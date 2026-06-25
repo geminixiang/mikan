@@ -1,4 +1,4 @@
-import type { BotEvent } from "../adapter.js";
+import type { ConversationEvent } from "../adapter.js";
 import type { CommandContext } from "./types.js";
 
 export async function replyDiagnosticWithContext(
@@ -46,7 +46,7 @@ export function formatCommandSummary(title: string, lines: string[]): string {
   return [`_${title}_`, ...compactLines].join("\n");
 }
 
-export function isPrivateConversation(event: BotEvent): boolean {
+export function isPrivateConversation(event: ConversationEvent): boolean {
   return (
     event.conversationKind === "direct" || event.type === "dm" || event.type === "private_command"
   );

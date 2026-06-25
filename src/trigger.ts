@@ -1,6 +1,6 @@
 import { completeSimple } from "@earendil-works/pi-ai";
 import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
-import type { BotEvent } from "./adapter.js";
+import type { ConversationEvent } from "./adapter.js";
 import { loadAutoReplyJudgeModel, loadConversationAutoReplyConfig } from "./config.js";
 import * as log from "./log.js";
 import { homedir } from "os";
@@ -28,7 +28,7 @@ export function decideTrigger(
  * can apply a single uniform "do not trigger, but still log" policy.
  */
 export async function evaluateAutoReplyPolicy(input: {
-  event: BotEvent;
+  event: ConversationEvent;
   workingDir: string | undefined;
   judge?: AutoReplyJudge;
   timeoutMs?: number;
@@ -86,7 +86,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 async function judgeAutoReplyWithLlm(input: {
-  event: BotEvent;
+  event: ConversationEvent;
   rules: string[];
   conversationDir: string;
 }): Promise<boolean> {

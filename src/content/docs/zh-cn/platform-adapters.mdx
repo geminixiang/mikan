@@ -9,13 +9,13 @@ import { Aside, Card, CardGrid, LinkCard, Steps } from "@astrojs/starlight/compo
 
 <CardGrid>
   <Card title="事件标准化" icon="setting">
-    将平台原生 message、mention、slash command 或 reply 转为通用 `BotEvent`。
+    将平台原生 message、mention、slash command 或 reply 转为通用 `ConversationEvent`。
   </Card>
   <Card title="Session routing" icon="open-book">
     根据 channel、thread、reply chain 算出 `sessionKey`，让对话进入正确会话。
   </Card>
   <Card title="回复能力" icon="rocket">
-    `PlatformResponder` 封装回复、更新、typing/working 状态与文件上传。
+    `ConversationResponder` 封装回复、更新、typing/working 状态与文件上传。
   </Card>
 </CardGrid>
 
@@ -25,11 +25,11 @@ import { Aside, Card, CardGrid, LinkCard, Steps } from "@astrojs/starlight/compo
 
 1. 接收平台事件，例如消息、mention、slash command 或 reply。
 2. 判断消息是否应该触发 mikan：DM、mention、thread reply、auto-reply policy。
-3. 转为通用的 `BotEvent` 与 `ChatMessage`。
+3. 转为通用的 `ConversationEvent` 与 `ConversationMessage`。
 4. 计算 `sessionKey`，让不同 channel、thread、reply 可以对应到正确 session。
 5. 下载附件并写入 workspace 的 `attachments/`。
-6. 创建 `PlatformResponder`，封装回复、更新、typing/working 状态与文件上传。
-7. 把事件交给 `BotHandler`，也就是 `ConversationRuntime`。
+6. 创建 `ConversationResponder`，封装回复、更新、typing/working 状态与文件上传。
+7. 把事件交给 `MessagingEventHandler`，也就是 `ConversationRuntime`。
 
 </Steps>
 
@@ -43,11 +43,11 @@ sequenceDiagram
   participant A as Platform adapter
   participant I as processMessageIntake()
   participant R as ConversationRuntime
-  participant C as PlatformResponder
+  participant C as ConversationResponder
 
   P->>A: 原生消息 / slash command / reply
   A->>A: 解析 conversation、user、thread、attachments
-  A->>I: BotEvent base + trigger/log/attachment hooks
+  A->>I: ConversationEvent base + trigger/log/attachment hooks
   I->>I: auto-reply / trigger 判断
   I->>A: 需要时下载附件
   I->>R: handler.handleEvent(event, bot, context)
@@ -57,12 +57,12 @@ sequenceDiagram
 
 ## 通用工具
 
-| 文件                        | 用途                                                                        |
-| --------------------------- | --------------------------------------------------------------------------- |
-| `src/adapter.ts`            | 对外导出 `Bot`、`BotEvent`、`ChatMessage`、`PlatformResponder` 等通用接口。 |
-| `src/adapters/intake.ts`    | 共享消息入口流程：trigger、log、attachment、queue、handler 调用顺序。       |
-| `src/adapters/shared.ts`    | 共享 retry、queue、长消息切分、log、stop target resolution。                |
-| `src/adapters/streaming.ts` | 将 streaming response buffer 后再 flush，避免过于频繁更新平台消息。         |
+| 文件                        | 用途                                                                                                      |
+| --------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `src/adapter.ts`            | 对外导出 `MessagingBot`、`ConversationEvent`、`ConversationMessage`、`ConversationResponder` 等通用接口。 |
+| `src/adapters/intake.ts`    | 共享消息入口流程：trigger、log、attachment、queue、handler 调用顺序。                                     |
+| `src/adapters/shared.ts`    | 共享 retry、queue、长消息切分、log、stop target resolution。                                              |
+| `src/adapters/streaming.ts` | 将 streaming response buffer 后再 flush，避免过于频繁更新平台消息。                                       |
 
 ## 平台差异
 
@@ -90,9 +90,9 @@ sequenceDiagram
 
 核心执行阶段只依赖这些通用抽象：
 
-- `BotEvent`：一次使用者或平台事件。
-- `Bot`：平台 bot 能力，例如 post message、upload file。
-- `PlatformEventContext`：一次事件附帶的 `message`、`responder`、`platform` metadata。
-- `PlatformResponder`：agent 回复时使用的通道。
+- `ConversationEvent`：一次使用者或平台事件。
+- `MessagingBot`：平台 messaging bot 能力，例如 post message、upload file。
+- `ConversationContext`：一次事件附帶的 `message`、`responder`、`platform` metadata。
+- `ConversationResponder`：agent 回复时使用的通道。
 
 如果新增平台，优先实现这些抽象，不要把平台 SDK 细节带进 `src/runtime/*` 或 `src/agent.ts`。

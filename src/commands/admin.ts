@@ -26,7 +26,7 @@ export class AdminCommandHandler implements CommandHandler {
     }
 
     const platformUser = context.bot
-      .getPlatformInfo()
+      .getMessagingInfo()
       .users.find((user) => user.id === context.platformUserId);
     const platformUserName = platformUser?.userName || platformUser?.displayName;
 

@@ -1,6 +1,6 @@
-import type { BotEvent } from "../../adapter.js";
+import type { ConversationEvent } from "../../adapter.js";
 
-export interface TelegramEvent extends BotEvent {
+export interface TelegramEvent extends ConversationEvent {
   type: "message" | "command";
   userName?: string;
 }

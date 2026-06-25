@@ -17,14 +17,14 @@ import { readFileSync } from "fs";
 import { basename, join } from "path";
 
 import type {
-  Bot,
-  PlatformEventContext,
-  BotEvent,
-  BotHandler,
-  ChatMessage,
-  PlatformResponder,
+  MessagingBot,
+  ConversationContext,
+  ConversationEvent,
+  MessagingEventHandler,
+  ConversationMessage,
+  ConversationResponder,
   ChatToolResult,
-  PlatformInfo,
+  MessagingInfo,
 } from "../../adapter.js";
 import type { DiscordEvent } from "./types.js";
 import * as log from "../../log.js";
@@ -33,7 +33,7 @@ import { formatNothingRunning } from "../../platform-messages.js";
 import {
   appendBotResponseLog,
   appendChannelLog,
-  PlatformEventQueue,
+  MessagingEventQueue,
   downloadUrlToFile,
   resolveOnlyScopedStopTarget,
   resolveStopTarget,
@@ -43,7 +43,7 @@ import { processMessageIntake } from "../intake.js";
 import { createDiscordAdapters } from "./context.js";
 
 // discord.js: DiscordAPIError exposes `.status` (HTTP status) and a `.code`.
-// RateLimitError fires when the internal queue gives up. Both should retry.
+// RateLimitError fires when the internal queue gives up. MessagingBoth should retry.
 function discordIsRateLimited(err: Error): boolean {
   if ((err as { status?: number }).status === 429) return true;
   if ((err as { httpStatus?: number }).httpStatus === 429) return true;
@@ -61,21 +61,21 @@ const discordRetry = <T>(fn: () => Promise<T>): Promise<T> =>
 export type { DiscordEvent } from "./types.js";
 
 // ============================================================================
-// DiscordBot
+// DiscordMessagingBot
 // ============================================================================
 
-export class DiscordBot implements Bot {
+export class DiscordMessagingBot implements MessagingBot {
   private client: Client;
-  private handler: BotHandler;
+  private handler: MessagingEventHandler;
   private token: string;
   private workingDir: string;
   private botUserId: string | null = null;
-  private queues = new Map<string, PlatformEventQueue>();
+  private queues = new Map<string, MessagingEventQueue>();
   private startupTime: number = 0;
   private channels = new Map<string, { id: string; name: string }>();
   private users = new Map<string, { id: string; userName: string; displayName: string }>();
 
-  constructor(handler: BotHandler, config: { token: string; workingDir: string }) {
+  constructor(handler: MessagingEventHandler, config: { token: string; workingDir: string }) {
     this.handler = handler;
     this.token = config.token;
     this.workingDir = config.workingDir;
@@ -91,7 +91,7 @@ export class DiscordBot implements Bot {
   }
 
   // ==========================================================================
-  // Public API (implements Bot)
+  // Public API (implements MessagingBot)
   // ==========================================================================
 
   async start(): Promise<void> {
@@ -171,7 +171,7 @@ export class DiscordBot implements Bot {
     await this.updateMessageRaw(channel, ts, text);
   }
 
-  enqueueEvent(event: BotEvent): boolean {
+  enqueueEvent(event: ConversationEvent): boolean {
     const conversationId = event.conversationId;
     const queue = this.getQueue(conversationId);
     if (queue.size() >= 5) {
@@ -188,7 +188,7 @@ export class DiscordBot implements Bot {
     return true;
   }
 
-  getPlatformInfo(): PlatformInfo {
+  getMessagingInfo(): MessagingInfo {
     return {
       name: "discord",
       formattingGuide:
@@ -355,10 +355,10 @@ export class DiscordBot implements Bot {
   // Private - Event Handlers
   // ==========================================================================
 
-  private getQueue(channelId: string): PlatformEventQueue {
+  private getQueue(channelId: string): MessagingEventQueue {
     let queue = this.queues.get(channelId);
     if (!queue) {
-      queue = new PlatformEventQueue("Discord");
+      queue = new MessagingEventQueue("Discord");
       this.queues.set(channelId, queue);
     }
     return queue;
@@ -392,7 +392,7 @@ export class DiscordBot implements Bot {
     }
   }
 
-  private stripBotMention(text: string): string {
+  private stripMessagingBotMention(text: string): string {
     if (!this.botUserId) return text;
     return text.replace(new RegExp(`<@!?${this.botUserId}>`, "g"), "").trim();
   }
@@ -429,14 +429,14 @@ export class DiscordBot implements Bot {
     commandText: string,
     sessionKey: string,
     conversationId: string,
-  ): PlatformEventContext {
+  ): ConversationContext {
     const isDM = !interaction.inGuild();
     const userId = interaction.user.id;
     const userName = interaction.user.username;
-    const platform = this.getPlatformInfo();
+    const platform = this.getMessagingInfo();
     const shouldUseEphemeral = !isDM;
 
-    const message: ChatMessage = {
+    const message: ConversationMessage = {
       id: interaction.id,
       sessionKey,
       conversationKind: isDM ? "direct" : "shared",
@@ -459,7 +459,7 @@ export class DiscordBot implements Bot {
       await interaction.reply({ content: text, ephemeral: shouldUseEphemeral });
     };
 
-    const responder: PlatformResponder = {
+    const responder: ConversationResponder = {
       respond: async (text: string) => {
         await respondPrivately(text);
       },
@@ -537,7 +537,7 @@ export class DiscordBot implements Bot {
         userName: interaction.user.username,
         text: commandText,
         attachments: [],
-        isBot: false,
+        isMessagingBot: false,
       });
 
       const context = this.createSlashCommandAdapters(
@@ -564,7 +564,7 @@ export class DiscordBot implements Bot {
           return;
         }
 
-        const event: BotEvent = {
+        const event: ConversationEvent = {
           type: "dm",
           conversationId,
           conversationKind: isDM ? "direct" : "shared",
@@ -636,7 +636,7 @@ export class DiscordBot implements Bot {
         threadTs,
       });
 
-      const cleanedText = this.stripBotMention(msg.content);
+      const cleanedText = this.stripMessagingBotMention(msg.content);
 
       const eventBase: DiscordEvent = {
         type: isDM ? "dm" : "mention",
@@ -672,7 +672,7 @@ export class DiscordBot implements Bot {
           user: userId,
           userName,
           text: cleanedText,
-          isBot: false,
+          isMessagingBot: false,
         },
         log: (entry) => this.logToFile(conversationId, entry),
         processAttachments: () => this.processAttachments(conversationId, msg.attachments, msgId),

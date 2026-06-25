@@ -11,7 +11,7 @@ export type ConversationKind = "direct" | "shared";
 
 export type PlatformName = "slack" | "discord" | "telegram";
 
-export interface ChatMessage {
+export interface ConversationMessage {
   id: string;
   sessionKey: string;
   conversationKind: ConversationKind;
@@ -36,7 +36,7 @@ export interface ChatResponseBlockKit {
   blocks: object[];
 }
 
-export interface PlatformResponder {
+export interface ConversationResponder {
   respond(text: string): Promise<void>;
   appendResponseDelta?(delta: string): Promise<void>;
   finishResponse?(finalText?: string): Promise<void>;
@@ -50,7 +50,7 @@ export interface PlatformResponder {
   deleteResponse(): Promise<void>;
 }
 
-export interface PlatformInfo {
+export interface MessagingInfo {
   name: string;
   formattingGuide: string;
   channels: { id: string; name: string }[];
@@ -63,13 +63,13 @@ export interface PlatformInfo {
 export interface ChatAdapter {
   start(): Promise<void>;
   stop(): Promise<void>;
-  getPlatformInfo(): PlatformInfo;
+  getMessagingInfo(): MessagingInfo;
 }
 
 /**
  * A platform-agnostic event (message/mention) that triggers the agent.
  */
-export interface BotEvent {
+export interface ConversationEvent {
   type: string;
   /** Platform-specific raw conversation/channel/chat identifier */
   conversationId: string;
@@ -95,12 +95,12 @@ export interface BotEvent {
  * Minimum interface that every platform bot must implement,
  * used by the central handler in main.ts and by EventsWatcher.
  */
-export interface Bot {
+export interface MessagingBot {
   start(): Promise<void>;
   postMessage(channel: string, text: string): Promise<string>;
   updateMessage(channel: string, ts: string, text: string): Promise<void>;
-  enqueueEvent(event: BotEvent): boolean;
-  getPlatformInfo(): PlatformInfo;
+  enqueueEvent(event: ConversationEvent): boolean;
+  getMessagingInfo(): MessagingInfo;
   postPrivate?(conversationId: string, userId: string, text: string): Promise<void>;
   postPrivateDiagnostic?(
     conversationId: string,
@@ -111,10 +111,10 @@ export interface Bot {
 }
 
 /** Normalized platform data and reply hook for one event. */
-export interface PlatformEventContext {
-  message: ChatMessage;
-  responder: PlatformResponder;
-  platform: PlatformInfo;
+export interface ConversationContext {
+  message: ConversationMessage;
+  responder: ConversationResponder;
+  platform: MessagingInfo;
 }
 
 export interface RunningSession {
@@ -124,13 +124,17 @@ export interface RunningSession {
   currentTool?: string;
 }
 
-export interface BotHandler {
+export interface MessagingEventHandler {
   isRunning(sessionKey: string): boolean;
   getRunningSessions(): RunningSession[];
-  handleEvent(event: BotEvent, bot: Bot, context: PlatformEventContext): Promise<void>;
-  handleStop(sessionKey: string, conversationId: string, bot: Bot): Promise<void>;
+  handleEvent(
+    event: ConversationEvent,
+    bot: MessagingBot,
+    context: ConversationContext,
+  ): Promise<void>;
+  handleStop(sessionKey: string, conversationId: string, bot: MessagingBot): Promise<void>;
   forceStop(sessionKey: string): void;
-  handleNewCommand(sessionKey: string, conversationId: string, bot: Bot): Promise<void>;
+  handleNewCommand(sessionKey: string, conversationId: string, bot: MessagingBot): Promise<void>;
 }
 
 // ── agent ─────────────────────────────────────────────────────────────────────
@@ -138,9 +142,9 @@ export interface BotHandler {
 export interface PiAgentWrapper {
   syncChatHistory(currentMessageId?: string): void;
   run(
-    message: ChatMessage,
-    responder: PlatformResponder,
-    platform: PlatformInfo,
+    message: ConversationMessage,
+    responder: ConversationResponder,
+    platform: MessagingInfo,
   ): Promise<{ stopReason: string; errorMessage?: string }>;
   abort(): void;
   getCurrentStep(): { toolName?: string; label?: string } | undefined;
@@ -186,7 +190,7 @@ export interface ConversationLogMessage {
   user?: string;
   userName?: string;
   text?: string;
-  isBot?: boolean;
+  isMessagingBot?: boolean;
 }
 
 // ── events ────────────────────────────────────────────────────────────────────
@@ -320,7 +324,7 @@ export interface LoggedMessage {
   displayName?: string;
   text: string;
   attachments: Attachment[];
-  isBot: boolean;
+  isMessagingBot: boolean;
   threadTs?: string;
 }
 
@@ -336,7 +340,7 @@ export type TriggerIntent = "mention" | "direct" | "thread-continuation" | "auto
 export type TriggerResult = { trigger: true; reason: string } | { trigger: false; reason: string };
 
 export type AutoReplyJudge = (input: {
-  event: BotEvent;
+  event: ConversationEvent;
   rules: string[];
   conversationDir: string;
 }) => Promise<boolean>;

@@ -18,7 +18,7 @@ export interface AdminServices {
   workingDir?: string;
   sandbox?: import("../../sandbox/index.js").SandboxConfig;
   runtime?: AdminRuntimeBridge;
-  botsByPlatform?: Partial<Record<PlatformName, import("../../adapter.js").Bot>>;
+  botsByPlatform?: Partial<Record<PlatformName, import("../../adapter.js").MessagingBot>>;
 }
 
 export interface AdminToken extends TokenRecord {

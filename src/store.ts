@@ -147,7 +147,7 @@ export class ChannelStore {
       user: "bot",
       text,
       attachments: [],
-      isBot: true,
+      isMessagingBot: true,
     });
   }
 

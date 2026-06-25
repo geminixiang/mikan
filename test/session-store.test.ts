@@ -103,7 +103,7 @@ function appendLogMessage(options: {
   date: string;
   text: string;
   threadTs?: string;
-  isBot?: boolean;
+  isMessagingBot?: boolean;
 }): void {
   writeFileSync(
     join(channelDir, "log.jsonl"),
@@ -111,10 +111,10 @@ function appendLogMessage(options: {
       date: options.date,
       ts: options.ts,
       threadTs: options.threadTs,
-      user: options.isBot ? "bot" : "U1",
-      userName: options.isBot ? undefined : "alice",
+      user: options.isMessagingBot ? "bot" : "U1",
+      userName: options.isMessagingBot ? undefined : "alice",
       text: options.text,
-      isBot: options.isBot === true,
+      isMessagingBot: options.isMessagingBot === true,
     })}\n`,
     { flag: "a" },
   );

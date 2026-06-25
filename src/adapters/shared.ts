@@ -10,7 +10,7 @@
 import { appendFileSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
-import type { BotHandler } from "../adapter.js";
+import type { MessagingEventHandler } from "../adapter.js";
 import { ensureDirExists } from "../utils/file-guards.js";
 import * as log from "../log.js";
 import { reportUserFacingError } from "../observability/sentry.js";
@@ -61,7 +61,7 @@ function reportChatResponseError(err: unknown, context: ChatResponseErrorContext
   });
 }
 
-export class PlatformEventQueue {
+export class MessagingEventQueue {
   private queue: Array<() => Promise<void>> = [];
   private processing = false;
 
@@ -181,7 +181,7 @@ export function appendBotResponseLog(
     user: "bot",
     text,
     attachments: [],
-    isBot: true,
+    isMessagingBot: true,
     ...extraFields,
   });
 }
@@ -207,7 +207,7 @@ export function resolveStopTarget(input: ResolveStopTargetInput): string | null 
  * there are zero or multiple matches.
  */
 export function resolveOnlyScopedStopTarget(
-  handler: BotHandler,
+  handler: MessagingEventHandler,
   conversationId: string,
 ): string | null {
   const runningScopes = handler

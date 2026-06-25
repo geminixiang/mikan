@@ -1,7 +1,11 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { basename } from "path";
 import MarkdownIt from "markdown-it";
-import type { PlatformEventContext, BotEvent, PlatformResponder } from "../../adapter.js";
+import type {
+  ConversationContext,
+  ConversationEvent,
+  ConversationResponder,
+} from "../../adapter.js";
 import { escapeHtml } from "../../utils/html.js";
 import * as log from "../../log.js";
 import { renderPortalShell } from "../../portal-shell.js";
@@ -631,7 +635,7 @@ async function handleSessionMessageRequest(
   const streamKey = sessionStreamKey({ ...entry, sessionKey: activeSessionKey });
   const conversationKind = inferConversationKind(entry.platform, entry.conversationId);
   const ts = (Date.now() / 1000).toFixed(6);
-  const platformInfo = bot.getPlatformInfo();
+  const platformInfo = bot.getMessagingInfo();
   const platformUserName =
     entry.platformUserName ||
     platformInfo.users.find((user) => user.id === entry.platformUserId)?.userName ||
@@ -640,7 +644,7 @@ async function handleSessionMessageRequest(
   const responder = createSessionViewResponseContext((event) => {
     sessionViewStreamHub.publish(streamKey, event);
   });
-  const event: BotEvent = {
+  const event: ConversationEvent = {
     type: "session_view",
     conversationId: entry.conversationId,
     conversationKind,
@@ -653,7 +657,7 @@ async function handleSessionMessageRequest(
       ? { thread_ts: activeSessionKey.split(":").slice(1).join(":") }
       : {}),
   };
-  const context: PlatformEventContext = {
+  const context: ConversationContext = {
     message: {
       id: ts,
       sessionKey: activeSessionKey,
@@ -720,7 +724,7 @@ async function handleSessionMessageRequest(
 
 function createSessionViewResponseContext(
   publish: (event: SessionStreamEvent) => void,
-): PlatformResponder {
+): ConversationResponder {
   let accumulatedText = "";
 
   return {
@@ -814,14 +818,14 @@ const sessionViewScript = `
     let liveAssistant = null;
     let running = document.body.dataset.sessionRunning === 'true';
 
-    const isNearBottom = () => window.innerHeight + window.scrollY >= document.body.offsetHeight - 120;
+    const isNearMessagingBottom = () => window.innerHeight + window.scrollY >= document.body.offsetHeight - 120;
     const scrollToLatest = (behavior = 'smooth') => window.scrollTo({ top: document.body.scrollHeight, behavior });
     const toggleJumpButton = () => {
       if (!jumpLatestBtn) return;
-      jumpLatestBtn.hidden = isNearBottom();
+      jumpLatestBtn.hidden = isNearMessagingBottom();
     };
     const updateFollowState = () => {
-      if (isNearBottom()) scrollToLatest('smooth');
+      if (isNearMessagingBottom()) scrollToLatest('smooth');
       else toggleJumpButton();
     };
     const canSubmit = () => Boolean(textarea && textarea.value.trim()) && !running;

@@ -1,7 +1,7 @@
 import type {
-  ChatMessage,
+  ConversationMessage,
   ChatResponseBlockKit,
-  PlatformResponder,
+  ConversationResponder,
   ChatToolResult,
 } from "../../adapter.js";
 import * as log from "../../log.js";
@@ -12,7 +12,7 @@ import {
   type ChatResponseErrorOperation,
 } from "../shared.js";
 import { BufferedResponseStream } from "../streaming.js";
-import { buildMrkdwnContextBlock, type SlackBot, type SlackEvent } from "./bot.js";
+import { buildMrkdwnContextBlock, type SlackMessagingBot, type SlackEvent } from "./bot.js";
 import type { SlackAdapterSessionPlan } from "./types.js";
 
 const MAX_MAIN_LENGTH = 35000; // Best-effort streaming cap; final responses use Slack error-driven fallback.
@@ -84,11 +84,11 @@ export function createSlackResponseContext({
   message,
 }: {
   event: SlackEvent;
-  slack: SlackBot;
+  slack: SlackMessagingBot;
   sessionPlan: SlackAdapterSessionPlan;
   replyMode: "top-level" | "thread";
-  message: ChatMessage;
-}): PlatformResponder {
+  message: ConversationMessage;
+}): ConversationResponder {
   let messageTs: string | null = sessionPlan.initialMessageTs ?? null;
   let assistantStatusFailureWarned = false;
   const onAssistantStatusError = (label: string, err: unknown): void => {
@@ -299,7 +299,7 @@ export function createSlackResponseContext({
     await updatePromise;
   };
 
-  const responder: PlatformResponder = {
+  const responder: ConversationResponder = {
     respond: async (text: string) => {
       await queueResponseOperation(
         "respond",

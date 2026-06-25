@@ -1,5 +1,5 @@
-import type { BotHandler } from "../../adapter.js";
-import type { Bot } from "../../adapter.js";
+import type { MessagingEventHandler } from "../../adapter.js";
+import type { MessagingBot } from "../../adapter.js";
 import type { PlatformName } from "../../adapter.js";
 import type { TokenRecord } from "../types.js";
 
@@ -12,8 +12,8 @@ export interface ParsedSessionViewCommand {
 // ── portal ───────────────────────────────────────────────────────────────────
 
 export interface SessionViewInteractiveOptions {
-  handler: BotHandler;
-  botsByPlatform: Partial<Record<string, Bot>>;
+  handler: MessagingEventHandler;
+  botsByPlatform: Partial<Record<string, MessagingBot>>;
 }
 
 // ── service ──────────────────────────────────────────────────────────────────

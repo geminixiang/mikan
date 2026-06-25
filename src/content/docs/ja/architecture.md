@@ -89,7 +89,7 @@ flowchart LR
   Executor -. shared: host / container, isolated: image / firecracker / cloudflare .-> ConversationDir
   Provisioner -. isolated image sandbox lifecycle .-> Executor
   VaultManager -. env + mount routing .-> Executor
-  EventsWatcher -. enqueue BotEvent .-> Main
+  EventsWatcher -. enqueue ConversationEvent .-> Main
 ```
 
 ## 2. 主なレイヤー
@@ -106,7 +106,7 @@ flowchart LR
 責務:
 
 - Slack / Telegram / Discord のネイティブイベントを受け取る
-- 統一された `BotEvent`、`ChatMessage`、`PlatformResponder` に変換する
+- 統一された `ConversationEvent`、`ConversationMessage`、`ConversationResponder` に変換する
 - プラットフォームの規則に従って `sessionKey` を計算する
 - 返信、typing、working、ファイルアップロードなどのプラットフォーム差分を隠蔽する
 
@@ -121,7 +121,7 @@ flowchart LR
 責務:
 
 - CLI を起動し、env / args / `settings.json` を読み込む
-- 各プラットフォーム bot の `BotHandler` として `ConversationRuntime` を作成する
+- 各プラットフォーム bot の `MessagingEventHandler` として `ConversationRuntime` を作成する
 - `AgentRunController` を通じて `/login`、`/session`、`stop`、`new` などの制御コマンドを dispatch する
 - `conversationStates` と per-session queue を管理し、同じ session の重複実行を防ぐ
 - 各 session scope に対応する `PiAgentWrapper` を決定する
@@ -200,18 +200,18 @@ sequenceDiagram
 
   U->>P: メッセージ / mention / reply を送信
   P->>A: プラットフォームイベント
-  A->>M: BotEvent + ChatMessage + ResponseContext
+  A->>M: ConversationEvent + ConversationMessage + ResponseContext
   M->>M: queue event + dispatch commands
   M->>S: resolve session scope
   S-->>M: contextFile + sessionDir
   M->>R: getState() / run()
-  R->>W: MEMORY.md / sessions/*.jsonl を読む。必要なら log.jsonl を調べる
+  R->>W: MEMORY.md / sessions/*.jsonl を読む、必要なら log.jsonl を調べる
   R->>R: system prompt / skills / model / session context を作成
   R->>T: ツールを実行
   T->>X: read / bash / edit / write / event / attach
   X-->>T: tool result
   T-->>R: 結果を返す
-  R->>W: structured session に書き込む。adapter がプラットフォーム log を記録
+  R->>W: structured session に書き込む、adapter がプラットフォーム log を記録
   R-->>M: final response
   M-->>A: 返信内容 / 診断 / ファイル
   A-->>P: プラットフォームメッセージを更新
@@ -275,7 +275,7 @@ flowchart TD
 
 ## 6. Events と通常会話の違い
 
-`events/*.json` は `EventsWatcher` に監視され、その後 `BotEvent` に変換されて通常フローをもう一度通ります。
+`events/*.json` は `EventsWatcher` に監視され、その後 `ConversationEvent` に変換されて通常フローをもう一度通ります。
 つまり events は独立した実行器ではなく、「別のメッセージ入口」です。
 
 これにより、次の機能が同じ仕組みを共有します:

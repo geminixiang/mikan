@@ -48,7 +48,7 @@ export class SessionViewCommandHandler implements CommandHandler {
     }
 
     const platformUser = context.bot
-      .getPlatformInfo()
+      .getMessagingInfo()
       .users.find((user) => user.id === context.platformUserId);
     const platformUserName = platformUser?.userName || platformUser?.displayName;
 

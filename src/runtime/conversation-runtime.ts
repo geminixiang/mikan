@@ -1,4 +1,9 @@
-import type { Bot, PlatformEventContext, BotEvent, RunningSession } from "../adapter.js";
+import type {
+  MessagingBot,
+  ConversationContext,
+  ConversationEvent,
+  RunningSession,
+} from "../adapter.js";
 import { type PiAgentWrapper, createRunner } from "../agent.js";
 import { defaultCommandHandlers } from "../commands/registry.js";
 import type { CommandServices } from "../commands/types.js";
@@ -105,7 +110,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     return sessions;
   }
 
-  async handleStop(sessionKey: string, conversationId: string, bot: Bot): Promise<void> {
+  async handleStop(sessionKey: string, conversationId: string, bot: MessagingBot): Promise<void> {
     const state = this.conversationStates.get(sessionKey);
     if (state?.running) {
       state.stopRequested = true;
@@ -127,7 +132,11 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     }
   }
 
-  async handleNewCommand(sessionKey: string, conversationId: string, bot: Bot): Promise<void> {
+  async handleNewCommand(
+    sessionKey: string,
+    conversationId: string,
+    bot: MessagingBot,
+  ): Promise<void> {
     const state = this.conversationStates.get(sessionKey);
     if (state?.running) {
       state.stopRequested = true;
@@ -148,7 +157,11 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     await bot.postMessage(conversationId, "Conversation reset. Send a new message to start fresh.");
   }
 
-  async handleEvent(event: BotEvent, bot: Bot, context: PlatformEventContext): Promise<void> {
+  async handleEvent(
+    event: ConversationEvent,
+    bot: MessagingBot,
+    context: ConversationContext,
+  ): Promise<void> {
     const sessionKey = event.sessionKey ?? `${event.conversationId}:${event.thread_ts ?? event.ts}`;
     const previous = this.sessionQueues.get(sessionKey) ?? Promise.resolve();
     const next = previous.catch(() => {}).then(() => this.runSession({ event, bot, context }));

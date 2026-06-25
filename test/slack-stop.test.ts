@@ -1,21 +1,21 @@
 import { describe, expect, test, vi } from "vitest";
-import type { BotHandler } from "../src/adapter.js";
-import { SlackBot } from "../src/adapters/slack/bot.js";
+import type { MessagingEventHandler } from "../src/adapter.js";
+import { SlackMessagingBot } from "../src/adapters/slack/bot.js";
 
 /**
- * Test the stop command resolution logic in SlackBot.
+ * Test the stop command resolution logic in SlackMessagingBot.
  *
  * The resolveStopTarget method is private, so we test it indirectly by
  * accessing it via the class prototype. The key scenario:
  * - Top-level mention starts a run with sessionKey = channelId
- * - Bot replies in a thread under the user's message
+ * - MessagingBot replies in a thread under the user's message
  * - User says "stop" in that thread → event has thread_ts
  * - thread sessionKey = channelId:thread_ts is NOT running
  * - channel sessionKey = channelId IS running
  * - Stop should target channelId
  */
 
-function makeHandler(runningKeys: string[] = []): BotHandler {
+function makeHandler(runningKeys: string[] = []): MessagingEventHandler {
   const running = new Set(runningKeys);
   return {
     isRunning: vi.fn((key: string) => running.has(key)),
@@ -27,11 +27,11 @@ function makeHandler(runningKeys: string[] = []): BotHandler {
   };
 }
 
-function makeBot(handler: BotHandler): SlackBot {
+function makeMessagingBot(handler: MessagingEventHandler): SlackMessagingBot {
   // We only need the handler for resolveStopTarget, but the constructor
   // requires more. We'll create a minimal instance with just enough to test.
   // Access the private method via prototype binding.
-  const bot = Object.create(SlackBot.prototype);
+  const bot = Object.create(SlackMessagingBot.prototype);
   bot.handler = handler;
   return bot;
 }
@@ -39,7 +39,7 @@ function makeBot(handler: BotHandler): SlackBot {
 describe("stop command resolution in threads", () => {
   test("stop in thread targets thread session when thread is running", () => {
     const handler = makeHandler(["C123:1000.0001"]);
-    const bot = makeBot(handler);
+    const bot = makeMessagingBot(handler);
     const target = (bot as any).resolveStopTarget("C123", "1000.0001");
     expect(target).toBe("C123:1000.0001");
   });
@@ -50,21 +50,21 @@ describe("stop command resolution in threads", () => {
     // Thread session (C123:1000.0001) is NOT running
     // Channel session (C123) IS running
     const handler = makeHandler(["C123"]);
-    const bot = makeBot(handler);
+    const bot = makeMessagingBot(handler);
     const target = (bot as any).resolveStopTarget("C123", "1000.0001");
     expect(target).toBe("C123");
   });
 
   test("stop in thread returns null when nothing is running", () => {
     const handler = makeHandler([]);
-    const bot = makeBot(handler);
+    const bot = makeMessagingBot(handler);
     const target = (bot as any).resolveStopTarget("C123", "1000.0001");
     expect(target).toBeNull();
   });
 
   test("stop at top level targets channel session", () => {
     const handler = makeHandler(["C123"]);
-    const bot = makeBot(handler);
+    const bot = makeMessagingBot(handler);
     const target = (bot as any).resolveStopTarget("C123", undefined);
     expect(target).toBe("C123");
   });
@@ -74,7 +74,7 @@ describe("stop command resolution in threads", () => {
     vi.mocked(handler.getRunningSessions).mockReturnValue([
       { sessionKey: "C123:1000.0001", startedAt: 1 },
     ]);
-    const bot = makeBot(handler);
+    const bot = makeMessagingBot(handler);
     const target = (bot as any).resolveStopTarget("C123", undefined);
     expect(target).toBe("C123:1000.0001");
   });
@@ -85,35 +85,35 @@ describe("stop command resolution in threads", () => {
       { sessionKey: "C123:1000.0001", startedAt: 1 },
       { sessionKey: "C123:1000.0002", startedAt: 2 },
     ]);
-    const bot = makeBot(handler);
+    const bot = makeMessagingBot(handler);
     const target = (bot as any).resolveStopTarget("C123", undefined);
     expect(target).toBeNull();
   });
 
   test("stop at top level returns null when not running", () => {
     const handler = makeHandler([]);
-    const bot = makeBot(handler);
+    const bot = makeMessagingBot(handler);
     const target = (bot as any).resolveStopTarget("C123", undefined);
     expect(target).toBeNull();
   });
 
   test("thread session takes priority over channel session when both are running", () => {
     const handler = makeHandler(["C123", "C123:1000.0001"]);
-    const bot = makeBot(handler);
+    const bot = makeMessagingBot(handler);
     const target = (bot as any).resolveStopTarget("C123", "1000.0001");
     expect(target).toBe("C123:1000.0001");
   });
 
   test("DM thread stop targets the DM thread session first", () => {
     const handler = makeHandler(["D123", "D123:1000.0001"]);
-    const bot = makeBot(handler);
+    const bot = makeMessagingBot(handler);
     const target = (bot as any).resolveStopTarget("D123", "1000.0001");
     expect(target).toBe("D123:1000.0001");
   });
 
   test("DM thread stop falls back to the top-level DM session", () => {
     const handler = makeHandler(["D123"]);
-    const bot = makeBot(handler);
+    const bot = makeMessagingBot(handler);
     const target = (bot as any).resolveStopTarget("D123", "1000.0001");
     expect(target).toBe("D123");
   });
@@ -123,7 +123,7 @@ describe("stop command resolution in threads", () => {
     vi.mocked(handler.getRunningSessions).mockReturnValue([
       { sessionKey: "D123:1000.0001", startedAt: 1 },
     ]);
-    const bot = makeBot(handler);
+    const bot = makeMessagingBot(handler);
     const target = (bot as any).resolveStopTarget("D123", undefined);
     expect(target).toBe("D123:1000.0001");
   });

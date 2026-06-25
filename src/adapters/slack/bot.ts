@@ -5,15 +5,15 @@ import { existsSync, readFileSync } from "fs";
 import { readFile } from "fs/promises";
 import { basename, join } from "path";
 import type {
-  Bot,
-  PlatformEventContext,
-  BotEvent,
-  BotHandler,
-  ChatMessage,
-  PlatformResponder,
+  MessagingBot,
+  ConversationContext,
+  ConversationEvent,
+  MessagingEventHandler,
+  ConversationMessage,
+  ConversationResponder,
   ChatToolResult,
   ConversationKind,
-  PlatformInfo,
+  MessagingInfo,
 } from "../../adapter.js";
 import { resolveConversationSettings } from "../../config.js";
 import type { EventsWatcher } from "../../events.js";
@@ -30,7 +30,7 @@ import { PRODUCT_NAME, formatForceStopped, formatNothingRunning } from "../../pl
 import {
   appendBotResponseLog,
   appendChannelLog,
-  PlatformEventQueue,
+  MessagingEventQueue,
   resolveOnlyScopedStopTarget,
   resolveStopTarget,
   withRetry,
@@ -122,13 +122,13 @@ export function buildMrkdwnContextBlock(text: string): object {
 export type { SlackChannel, SlackEvent, SlackUser } from "./types.js";
 
 // ============================================================================
-// SlackBot
+// SlackMessagingBot
 // ============================================================================
 
-export class SlackBot implements Bot {
+export class SlackMessagingBot implements MessagingBot {
   private socketClient: SocketModeClient;
   private webClient: WebClient;
-  private handler: BotHandler;
+  private handler: MessagingEventHandler;
   private workingDir: string;
   private store: ChannelStore;
   private botUserId: string | null = null;
@@ -139,10 +139,10 @@ export class SlackBot implements Bot {
 
   private users = new Map<string, SlackUser>();
   private channels = new Map<string, SlackChannel>();
-  private queues = new Map<string, PlatformEventQueue>();
+  private queues = new Map<string, MessagingEventQueue>();
   private eventsWatcher: EventsWatcher | null = null;
 
-  private createContext(event: SlackEvent): PlatformEventContext {
+  private createContext(event: SlackEvent): ConversationContext {
     return createSlackAdapters(event, this, {
       replyMode:
         resolveConversationSettings(join(this.workingDir, event.conversationId)).slack?.replyMode ??
@@ -151,7 +151,7 @@ export class SlackBot implements Bot {
   }
 
   constructor(
-    handler: BotHandler,
+    handler: MessagingEventHandler,
     config: { appToken: string; botToken: string; workingDir: string; store: ChannelStore },
   ) {
     this.handler = handler;
@@ -456,7 +456,7 @@ export class SlackBot implements Bot {
     });
   }
 
-  getPlatformInfo(): PlatformInfo {
+  getMessagingInfo(): MessagingInfo {
     return {
       name: "slack",
       formattingGuide:
@@ -481,7 +481,7 @@ export class SlackBot implements Bot {
    * Enqueue an event for processing. Always queues (no "already working" rejection).
    * Returns true if enqueued, false if queue is full (max 5).
    */
-  enqueueEvent(event: BotEvent): boolean {
+  enqueueEvent(event: ConversationEvent): boolean {
     const conversationId = event.conversationId;
     const queue = this.getQueue(conversationId);
     if (queue.size() >= 5) {
@@ -561,10 +561,10 @@ export class SlackBot implements Bot {
   // Private - Event Handlers
   // ==========================================================================
 
-  private getQueue(channelId: string): PlatformEventQueue {
+  private getQueue(channelId: string): MessagingEventQueue {
     let queue = this.queues.get(channelId);
     if (!queue) {
-      queue = new PlatformEventQueue("Slack");
+      queue = new MessagingEventQueue("Slack");
       this.queues.set(channelId, queue);
     }
     return queue;
@@ -591,7 +591,7 @@ export class SlackBot implements Bot {
     onNotTriggered?: () => void;
   }): void {
     void processMessageIntake({
-      eventBase: options.event as unknown as BotEvent,
+      eventBase: options.event as unknown as ConversationEvent,
       workingDir: this.workingDir,
       isAutoReplyCandidate: options.isAutoReplyCandidate,
       logEntryBase: {},
@@ -785,8 +785,8 @@ export class SlackBot implements Bot {
     text: string,
     ts: string,
     options: { ephemeralChannelId?: string; threadTs?: string } = {},
-  ): PlatformEventContext {
-    const message: ChatMessage = {
+  ): ConversationContext {
+    const message: ConversationMessage = {
       id: ts,
       sessionKey: conversationId,
       conversationKind: options.ephemeralChannelId ? "shared" : "direct",
@@ -826,7 +826,7 @@ export class SlackBot implements Bot {
       this.logBotResponse(conversationId, responseText, messageTs);
     };
 
-    const responder: PlatformResponder = {
+    const responder: ConversationResponder = {
       respond,
       replaceResponse: respond,
       respondDiagnostic: async (
@@ -856,7 +856,7 @@ export class SlackBot implements Bot {
     return {
       message,
       responder,
-      platform: this.getPlatformInfo(),
+      platform: this.getMessagingInfo(),
     };
   }
 
@@ -869,8 +869,8 @@ export class SlackBot implements Bot {
       user_name?: string;
       thread_ts?: string;
     },
-    options: { type?: BotEvent["type"]; includeText?: boolean; thread?: boolean } = {},
-  ): { event: BotEvent; context: PlatformEventContext } {
+    options: { type?: ConversationEvent["type"]; includeText?: boolean; thread?: boolean } = {},
+  ): { event: ConversationEvent; context: ConversationContext } {
     const conversationId = payload.channel_id;
     const isDirectMessage = conversationId.startsWith("D");
     const createdAt = new Date();
@@ -890,11 +890,11 @@ export class SlackBot implements Bot {
       userName,
       text: commandText,
       attachments: [],
-      isBot: false,
+      isMessagingBot: false,
       ...(threadTs ? { threadTs } : {}),
     });
 
-    const event: BotEvent = {
+    const event: ConversationEvent = {
       type: options.type ?? (isDirectMessage ? "dm" : "mention"),
       conversationId,
       conversationKind: isDirectMessage ? "direct" : "shared",
@@ -959,18 +959,18 @@ export class SlackBot implements Bot {
       userName,
       text: payload.command,
       attachments: [],
-      isBot: false,
+      isMessagingBot: false,
     });
 
-    const commandBot: Bot = {
+    const commandMessagingBot: MessagingBot = {
       start: async () => {},
       postMessage: async (_channel: string, text: string) => this.postMessage(conversationId, text),
       updateMessage: async (channel: string, ts: string, text: string) =>
         this.updateMessage(channel, ts, text),
-      enqueueEvent: (event: BotEvent) => this.enqueueEvent(event),
-      getPlatformInfo: () => this.getPlatformInfo(),
+      enqueueEvent: (event: ConversationEvent) => this.enqueueEvent(event),
+      getMessagingInfo: () => this.getMessagingInfo(),
     };
-    await this.handler.handleNewCommand(conversationId, conversationId, commandBot);
+    await this.handler.handleNewCommand(conversationId, conversationId, commandMessagingBot);
   }
 
   private async routeSlashModelCommand(payload: {
@@ -1122,15 +1122,15 @@ export class SlackBot implements Bot {
 
     const hasFiles = !!e.files && e.files.length > 0;
     const hasSlackContent = !!e.text || hasFiles || !!e.blocks?.length || !!e.attachments?.length;
-    const isOwnBotMessage =
+    const isOwnMessagingBotMessage =
       (!!e.user && e.user === this.botUserId) || (!!this.botId && e.bot_id === this.botId);
-    if (isOwnBotMessage) {
+    if (isOwnMessagingBotMessage) {
       ack();
       return;
     }
 
-    const isExternalBotMessage = !!e.bot_id || e.subtype === "bot_message";
-    if (isExternalBotMessage) {
+    const isExternalMessagingBotMessage = !!e.bot_id || e.subtype === "bot_message";
+    if (isExternalMessagingBotMessage) {
       if (e.subtype !== undefined && e.subtype !== "bot_message" && e.subtype !== "file_share") {
         ack();
         return;
@@ -1139,7 +1139,7 @@ export class SlackBot implements Bot {
         ack();
         return;
       }
-      void this.logExternalBotMessage(e).catch((err) => {
+      void this.logExternalMessagingBotMessage(e).catch((err) => {
         log.logWarning("Failed to log Slack bot message", String(err));
       });
       ack();
@@ -1161,10 +1161,10 @@ export class SlackBot implements Bot {
 
     const isDM = e.channel_type === "im";
     const conversationKind: ConversationKind = isDM ? "direct" : "shared";
-    const isBotMention = e.text?.includes(`<@${this.botUserId}>`);
+    const isMessagingBotMention = e.text?.includes(`<@${this.botUserId}>`);
 
     // Skip channel @mentions - already handled by app_mention event
-    if (!isDM && isBotMention) {
+    if (!isDM && isMessagingBotMention) {
       ack();
       return;
     }
@@ -1428,7 +1428,7 @@ export class SlackBot implements Bot {
       userName: body.user?.username ?? body.user?.name,
       text,
       attachments: [],
-      isBot: false,
+      isMessagingBot: false,
       platform: "slack",
       slackInteraction: {
         type: "block_actions",
@@ -1447,7 +1447,7 @@ export class SlackBot implements Bot {
       },
     });
 
-    const event: BotEvent = {
+    const event: ConversationEvent = {
       type: "slack_action",
       conversationId: channelId,
       conversationKind: channelId.startsWith("D") ? "direct" : "shared",
@@ -1501,13 +1501,13 @@ export class SlackBot implements Bot {
       displayName: user?.displayName,
       text: event.text,
       attachments,
-      isBot: false,
+      isMessagingBot: false,
     });
     if (attachmentError) throw attachmentError;
     return attachments;
   }
 
-  private async logExternalBotMessage(event: {
+  private async logExternalMessagingBotMessage(event: {
     channel: string;
     ts: string;
     thread_ts?: string;
@@ -1535,7 +1535,7 @@ export class SlackBot implements Bot {
       displayName: botName,
       text: buildSlackAppMessageText(event),
       attachments,
-      isBot: true,
+      isMessagingBot: true,
       botId: event.bot_id,
       appId: event.app_id ?? event.bot_profile?.app_id,
       subtype: event.subtype,
@@ -1617,8 +1617,8 @@ export class SlackBot implements Bot {
     const relevantMessages = allMessages.filter((msg) => {
       if (!msg.ts || existingTs.has(msg.ts)) return false; // Skip duplicates
       if (msg.user === this.botUserId) return true;
-      const isExternalBotMessage = !!msg.bot_id || msg.subtype === "bot_message";
-      if (isExternalBotMessage) {
+      const isExternalMessagingBotMessage = !!msg.bot_id || msg.subtype === "bot_message";
+      if (isExternalMessagingBotMessage) {
         if (this.botId && msg.bot_id === this.botId) return false;
         if (
           msg.subtype !== undefined &&
@@ -1646,10 +1646,10 @@ export class SlackBot implements Bot {
     // Log each message to log.jsonl
     for (const msg of relevantMessages) {
       const isMikanMessage = msg.user === this.botUserId;
-      const isExternalBotMessage =
+      const isExternalMessagingBotMessage =
         !isMikanMessage && (!!msg.bot_id || msg.subtype === "bot_message");
-      if (isExternalBotMessage) {
-        await this.logExternalBotMessage({ ...msg, channel: channelId, ts: msg.ts! });
+      if (isExternalMessagingBotMessage) {
+        await this.logExternalMessagingBotMessage({ ...msg, channel: channelId, ts: msg.ts! });
         continue;
       }
 
@@ -1668,7 +1668,7 @@ export class SlackBot implements Bot {
         displayName: isMikanMessage ? undefined : user?.displayName,
         text,
         attachments,
-        isBot: isMikanMessage,
+        isMessagingBot: isMikanMessage,
       });
     }
 

@@ -280,7 +280,7 @@ function conversationLastActivity(workingDir: string, conversationId: string): n
 
 function conversationDisplayLabel(services: AdminServices, conversationId: string): string {
   for (const [platform, bot] of Object.entries(services.botsByPlatform ?? {})) {
-    const channel = bot?.getPlatformInfo().channels.find((c) => c.id === conversationId);
+    const channel = bot?.getMessagingInfo().channels.find((c) => c.id === conversationId);
     if (channel) return `${platform}:#${channel.name}:${conversationId}`;
   }
   return conversationId;

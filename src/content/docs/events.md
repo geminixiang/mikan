@@ -76,11 +76,11 @@ Common schedules:
 
 Event files do not carry a `sessionKey` or thread target. Event text must be self-contained because scheduled/background events are not a continuation of the live chat turn that created them.
 
-| Platform/event source   | Visible delivery method           | Session key                            | Thread target     |
-| ----------------------- | --------------------------------- | -------------------------------------- | ----------------- |
-| Slack event file/tool   | New top-level anchor message      | `<conversationId>:<anchor message ts>` | None              |
-| Slack direct `BotEvent` | Provided `thread_ts` has priority | `<conversationId>:<thread_ts>` if set  | Optional          |
-| Other platform events   | Platform adapter default          | Platform adapter default event session | Adapter-dependent |
+| Platform/event source            | Visible delivery method           | Session key                            | Thread target     |
+| -------------------------------- | --------------------------------- | -------------------------------------- | ----------------- |
+| Slack event file/tool            | New top-level anchor message      | `<conversationId>:<anchor message ts>` | None              |
+| Slack direct `ConversationEvent` | Provided `thread_ts` has priority | `<conversationId>:<thread_ts>` if set  | Optional          |
+| Other platform events            | Platform adapter default          | Platform adapter default event session | Adapter-dependent |
 
 For Slack event files, mikan first creates a top-level Slack message when the event fires. That message timestamp becomes the anchor, and the run uses the fixed session key `<conversationId>:<anchor message ts>`.
 

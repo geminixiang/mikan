@@ -13,7 +13,7 @@ export interface SlackEvent {
   files?: Array<{ name?: string; url_private_download?: string; url_private?: string }>;
   /** Processed attachments with local paths (populated after logUserMessage) */
   attachments?: Attachment[];
-  /** Session key passed through to BotEvent so handleEvent uses the correct persistent session */
+  /** Session key passed through to ConversationEvent so handleEvent uses the correct persistent session */
   sessionKey?: string;
 }
 

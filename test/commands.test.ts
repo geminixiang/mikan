@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { Bot, PlatformResponder } from "../src/adapter.js";
+import type { MessagingBot, ConversationResponder } from "../src/adapter.js";
 import { AdminCommandHandler } from "../src/commands/admin.js";
 import { AutoReplyCommandHandler } from "../src/commands/auto-reply.js";
 import { dispatchCommand } from "../src/commands/registry.js";
@@ -17,7 +17,7 @@ import type { VaultManager } from "../src/vault/index.js";
 
 // ── Fakes ────────────────────────────────────────────────────────────────────
 
-interface RecordingResponseCtx extends PlatformResponder {
+interface RecordingResponseCtx extends ConversationResponder {
   responses: string[];
 }
 
@@ -40,13 +40,13 @@ function fakeResponseCtx(): RecordingResponseCtx {
   } as RecordingResponseCtx;
 }
 
-function fakeBot(overrides: Partial<Bot> = {}): Bot {
+function fakeMessagingBot(overrides: Partial<MessagingBot> = {}): MessagingBot {
   return {
     start: vi.fn(async () => {}),
     postMessage: vi.fn(async () => "ts-1"),
     updateMessage: vi.fn(async () => {}),
     enqueueEvent: vi.fn(() => true),
-    getPlatformInfo: vi.fn(() => ({
+    getMessagingInfo: vi.fn(() => ({
       name: "slack",
       formattingGuide: "",
       channels: [],
@@ -124,7 +124,7 @@ interface BuildContextArgs {
   privateConversation?: boolean;
   conversationId?: string;
   vaultConversationId?: string;
-  bot?: Bot;
+  bot?: MessagingBot;
   services?: Partial<CommandServices>;
   platform?: "slack" | "discord" | "telegram";
 }
@@ -157,7 +157,7 @@ function buildContext(args: BuildContextArgs): CommandContext & {
     ...args.services,
   };
   return {
-    bot: args.bot ?? fakeBot(),
+    bot: args.bot ?? fakeMessagingBot(),
     responder,
     platform: args.platform ?? "slack",
     platformUserId: "U123",
@@ -629,7 +629,7 @@ describe("SessionViewCommandHandler", () => {
     createManagedSessionFile(getChannelSessionDir(conversationDir), conversationDir);
 
     const postPrivate = vi.fn(async () => {});
-    const bot = fakeBot({ postPrivate });
+    const bot = fakeMessagingBot({ postPrivate });
     const sessionViewTokenStore = fakeSessionViewTokenStore();
     const ctx = buildContext({
       commandText: "/session",
@@ -647,7 +647,7 @@ describe("SessionViewCommandHandler", () => {
   });
 
   test("rejects shared conversations on platforms without postPrivate", async () => {
-    const bot = fakeBot();
+    const bot = fakeMessagingBot();
     delete (bot as { postPrivate?: unknown }).postPrivate;
     const sessionViewTokenStore = fakeSessionViewTokenStore();
     const ctx = buildContext({

@@ -71,7 +71,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "too old",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:00:00.000Z",
@@ -79,14 +79,14 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "recent question",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:00:01.000Z",
         ts: "1000.0003",
         user: "bot",
         text: "recent answer",
-        isBot: true,
+        isMessagingBot: true,
       },
       {
         date: "2026-05-01T00:00:02.000Z",
@@ -94,7 +94,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "current message",
-        isBot: false,
+        isMessagingBot: false,
       },
     ]);
 
@@ -126,28 +126,28 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "question",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:00:01.000Z",
         ts: "1000.0002",
         user: "bot",
         text: "One",
-        isBot: true,
+        isMessagingBot: true,
       },
       {
         date: "2026-05-01T00:00:01.001Z",
         ts: "1000.0002",
         user: "bot",
         text: " two",
-        isBot: true,
+        isMessagingBot: true,
       },
       {
         date: "2026-05-01T00:00:01.002Z",
         ts: "1000.0002",
         user: "bot",
         text: " three",
-        isBot: true,
+        isMessagingBot: true,
       },
     ]);
 
@@ -177,7 +177,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "top-level context",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:01:00.000Z",
@@ -185,7 +185,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U2",
         userName: "bob",
         text: "thread root",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:01:01.000Z",
@@ -193,7 +193,7 @@ describe("AgentMemoryFileManager", () => {
         threadTs: "2000.0001",
         user: "bot",
         text: "thread bot reply",
-        isBot: true,
+        isMessagingBot: true,
       },
       {
         date: "2026-05-01T00:01:02.000Z",
@@ -202,7 +202,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U2",
         userName: "bob",
         text: "current thread message",
-        isBot: false,
+        isMessagingBot: false,
       },
     ]);
 
@@ -236,7 +236,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "thread0",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:00:01.000Z",
@@ -244,7 +244,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "thread1",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:00:02.000Z",
@@ -252,7 +252,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "thread2",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:00:03.000Z",
@@ -260,7 +260,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "thread3",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:00:04.000Z",
@@ -268,14 +268,14 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "next one is?",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:00:05.000Z",
         ts: "1000.0006",
         user: "bot",
         text: "thread4",
-        isBot: true,
+        isMessagingBot: true,
       },
       {
         date: "2026-05-01T00:00:06.000Z",
@@ -284,7 +284,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "current thread question",
-        isBot: false,
+        isMessagingBot: false,
       },
     ]);
 
@@ -318,7 +318,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "k0",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:00:01.000Z",
@@ -326,7 +326,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "k1",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:00:02.000Z",
@@ -334,14 +334,14 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "next one is?",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:00:03.000Z",
         ts: "1000.0004",
         user: "bot",
         text: "k2",
-        isBot: true,
+        isMessagingBot: true,
       },
       {
         date: "2026-05-01T00:00:04.000Z",
@@ -349,7 +349,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "/pi-session",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:00:05.000Z",
@@ -357,7 +357,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "thread0",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:00:06.000Z",
@@ -365,7 +365,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "thread1",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:00:07.000Z",
@@ -373,7 +373,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "current question",
-        isBot: false,
+        isMessagingBot: false,
       },
     ];
     writeLog(logEntries.slice(0, 3));
@@ -445,7 +445,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "seed",
-        isBot: false,
+        isMessagingBot: false,
       },
     ]);
 
@@ -467,7 +467,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "seed",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:00:01.000Z",
@@ -475,7 +475,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "sync0",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:00:02.000Z",
@@ -483,7 +483,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "sync1",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:00:03.000Z",
@@ -491,7 +491,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "sync2",
-        isBot: false,
+        isMessagingBot: false,
       },
     ]);
 
@@ -517,7 +517,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "seed",
-        isBot: false,
+        isMessagingBot: false,
       },
     ]);
 
@@ -539,7 +539,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "would refill from start",
-        isBot: false,
+        isMessagingBot: false,
       },
     ]);
 
@@ -563,7 +563,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "u0",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:00:01.000Z",
@@ -571,7 +571,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "u1",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:00:02.000Z",
@@ -579,7 +579,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "current message",
-        isBot: false,
+        isMessagingBot: false,
       },
     ]);
 
@@ -637,7 +637,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "top-level context",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:00:01.000Z",
@@ -645,7 +645,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "thread root",
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:00:02.000Z",
@@ -654,7 +654,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "current thread question",
-        isBot: false,
+        isMessagingBot: false,
       },
     ]);
 
@@ -694,7 +694,7 @@ describe("AgentMemoryFileManager", () => {
         user: "U1",
         userName: "alice",
         text: "channel history should not leak",
-        isBot: false,
+        isMessagingBot: false,
       },
     ]);
 

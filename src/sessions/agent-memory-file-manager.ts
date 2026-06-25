@@ -311,14 +311,14 @@ function readConversationLog(conversationDir: string): LogRecord[] {
       );
     }
   }
-  return coalesceBotLogChunks(records);
+  return coalesceMessagingBotLogChunks(records);
 }
 
-function coalesceBotLogChunks(records: LogRecord[]): LogRecord[] {
+function coalesceMessagingBotLogChunks(records: LogRecord[]): LogRecord[] {
   const coalesced: LogRecord[] = [];
   for (const record of records) {
     const previous = coalesced.at(-1);
-    if (previous && canCoalesceBotLogChunk(previous.message, record.message)) {
+    if (previous && canCoalesceMessagingBotLogChunk(previous.message, record.message)) {
       previous.message.text = `${previous.message.text ?? ""}${record.message.text ?? ""}`;
       continue;
     }
@@ -327,13 +327,13 @@ function coalesceBotLogChunks(records: LogRecord[]): LogRecord[] {
   return coalesced;
 }
 
-function canCoalesceBotLogChunk(
+function canCoalesceMessagingBotLogChunk(
   previous: ConversationLogMessage,
   current: ConversationLogMessage,
 ): boolean {
   return (
-    previous.isBot === true &&
-    current.isBot === true &&
+    previous.isMessagingBot === true &&
+    current.isMessagingBot === true &&
     !!previous.ts &&
     previous.ts === current.ts &&
     previous.threadTs === current.threadTs &&
@@ -392,7 +392,7 @@ function selectThreadBootstrapMessages(
   });
   const threadRecords = records.filter(
     (record) =>
-      isRenderableChatMessage(record.message, options.excludeMessageId) &&
+      isRenderableConversationMessage(record.message, options.excludeMessageId) &&
       (record.message.ts === threadId || record.message.threadTs === threadId),
   );
 
@@ -403,7 +403,7 @@ function isTopLevelHistoryMessage(
   message: ConversationLogMessage,
   excludeMessageId?: string,
 ): boolean {
-  if (!isRenderableChatMessage(message, excludeMessageId)) return false;
+  if (!isRenderableConversationMessage(message, excludeMessageId)) return false;
   return !message.threadTs;
 }
 
@@ -420,7 +420,7 @@ function selectExistingSessionSyncMessages(
   const threadId = options.sessionKey ? extractSessionSuffix(options.sessionKey) : null;
   return dedupeAndSortRecords(
     records.filter((record) => {
-      if (!isRenderableChatMessage(record.message, options.excludeMessageId)) return false;
+      if (!isRenderableConversationMessage(record.message, options.excludeMessageId)) return false;
       if (!threadId) return !record.message.threadTs;
       return record.message.ts === threadId || record.message.threadTs === threadId;
     }),
@@ -434,7 +434,7 @@ function latestSyncMessageId(
   return selectExistingSessionSyncMessages(records, options).at(-1)?.message.ts;
 }
 
-function isRenderableChatMessage(
+function isRenderableConversationMessage(
   message: ConversationLogMessage,
   excludeMessageId?: string,
 ): boolean {
@@ -446,7 +446,7 @@ function isRenderableChatMessage(
 function isChatCommandMessage(message: ConversationLogMessage): boolean {
   const text = message.text?.trim() ?? "";
   return (
-    !message.isBot &&
+    !message.isMessagingBot &&
     /^\/(?:pi-[\w-]+|login|session|new|stop|model|sandbox|admin|auto-reply)(?:@\w+)?(?:\s|$)/i.test(
       text,
     )
@@ -612,7 +612,7 @@ function comparableSessionMessage(entry: SessionEntry): string | null {
 function comparableLogMessage(message: ConversationLogMessage): string | null {
   const text = message.text?.trim();
   if (!text) return null;
-  return `${message.isBot ? "assistant" : "user"}:${normalizeComparableText(text)}`;
+  return `${message.isMessagingBot ? "assistant" : "user"}:${normalizeComparableText(text)}`;
 }
 
 function getSessionMessageText(entry: SessionEntry): string {
@@ -639,7 +639,7 @@ function buildHistorySessionMessage(message: ConversationLogMessage): SessionApp
   if (!text) return null;
 
   const timestamp = parseMessageTimestamp(message);
-  if (!message.isBot) {
+  if (!message.isMessagingBot) {
     return {
       role: "user",
       content: [{ type: "text", text: formatHistoryMessage(message) }],
@@ -668,7 +668,7 @@ function buildThreadRootSeed(
     userName: message.userName,
     user: message.user,
     loggedAt: message.date ? new Date(message.date).getTime() : undefined,
-    isBot: message.isBot,
+    isMessagingBot: message.isMessagingBot,
   };
 }
 

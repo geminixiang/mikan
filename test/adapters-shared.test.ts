@@ -1,8 +1,8 @@
 import { describe, expect, test, vi } from "vitest";
-import type { BotHandler, RunningSession } from "../src/adapter.js";
+import type { MessagingEventHandler, RunningSession } from "../src/adapter.js";
 import { resolveOnlyScopedStopTarget, resolveStopTarget } from "../src/adapters/shared.js";
 
-function makeHandler(runningKeys: string[] = []): BotHandler {
+function makeHandler(runningKeys: string[] = []): MessagingEventHandler {
   const running = new Set(runningKeys);
   const runningSessions: RunningSession[] = runningKeys.map((sessionKey, index) => ({
     sessionKey,

@@ -1,8 +1,14 @@
 import { readFileSync } from "fs";
 import { basename, join } from "path";
-import { Bot as GrammyBot, InputFile } from "grammy";
+import { Bot as GrammyMessagingBot, InputFile } from "grammy";
 import type { Message } from "grammy/types";
-import type { Bot, BotEvent, BotHandler, ConversationKind, PlatformInfo } from "../../adapter.js";
+import type {
+  MessagingBot,
+  ConversationEvent,
+  MessagingEventHandler,
+  ConversationKind,
+  MessagingInfo,
+} from "../../adapter.js";
 import type { TelegramEvent } from "./types.js";
 import * as log from "../../log.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
@@ -10,7 +16,7 @@ import { formatAlreadyWorking, formatNothingRunning } from "../../platform-messa
 import {
   appendBotResponseLog,
   appendChannelLog,
-  PlatformEventQueue,
+  MessagingEventQueue,
   downloadUrlToFile,
   resolveOnlyScopedStopTarget,
   resolveStopTarget,
@@ -50,35 +56,35 @@ interface MessageContext {
 }
 
 // ============================================================================
-// TelegramBot
+// TelegramMessagingBot
 // ============================================================================
 
 function isTelegramHtmlParseError(message: string): boolean {
   return message.includes("can't parse entities");
 }
 
-export class TelegramBot implements Bot {
-  private client: GrammyBot;
-  private handler: BotHandler;
+export class TelegramMessagingBot implements MessagingBot {
+  private client: GrammyMessagingBot;
+  private handler: MessagingEventHandler;
   private botToken: string;
   private workingDir: string;
   private botUserId: string | null = null;
   private botUsername: string | null = null;
-  private queues = new Map<string, PlatformEventQueue>();
+  private queues = new Map<string, MessagingEventQueue>();
   private startupTime: number = 0;
 
-  constructor(handler: BotHandler, config: { token: string; workingDir: string }) {
+  constructor(handler: MessagingEventHandler, config: { token: string; workingDir: string }) {
     this.handler = handler;
     this.botToken = config.token;
     this.workingDir = config.workingDir;
-    this.client = new GrammyBot(config.token);
+    this.client = new GrammyMessagingBot(config.token);
     this.client.catch((err) => {
       log.logWarning("Telegram error", err instanceof Error ? err.message : String(err));
     });
   }
 
   // ==========================================================================
-  // Public API (implements Bot)
+  // Public API (implements MessagingBot)
   // ==========================================================================
 
   async start(): Promise<void> {
@@ -138,7 +144,7 @@ export class TelegramBot implements Bot {
     });
   }
 
-  enqueueEvent(event: BotEvent): boolean {
+  enqueueEvent(event: ConversationEvent): boolean {
     const conversationId = event.conversationId;
     const queue = this.getQueue(conversationId);
     if (queue.size() >= 5) {
@@ -155,7 +161,7 @@ export class TelegramBot implements Bot {
     return true;
   }
 
-  getPlatformInfo(): PlatformInfo {
+  getMessagingInfo(): MessagingInfo {
     return {
       name: "telegram",
       formattingGuide:
@@ -242,7 +248,7 @@ export class TelegramBot implements Bot {
   /**
    * Process attachments from a Telegram message
    * Downloads files before returning metadata so the agent can read them immediately
-   * Returns format compatible with ChatMessage: { name: string, localPath: string }[]
+   * Returns format compatible with ConversationMessage: { name: string, localPath: string }[]
    */
   async processAttachments(
     chatId: string,
@@ -317,10 +323,10 @@ export class TelegramBot implements Bot {
   // Private - Event Handlers
   // ==========================================================================
 
-  private getQueue(channelId: string): PlatformEventQueue {
+  private getQueue(channelId: string): MessagingEventQueue {
     let queue = this.queues.get(channelId);
     if (!queue) {
-      queue = new PlatformEventQueue("Telegram");
+      queue = new MessagingEventQueue("Telegram");
       this.queues.set(channelId, queue);
     }
     return queue;
@@ -364,7 +370,7 @@ export class TelegramBot implements Bot {
     };
   }
 
-  private isAddressedToBot(text: string, chatType: string): boolean {
+  private isAddressedToMessagingBot(text: string, chatType: string): boolean {
     if (chatType === "private") return true;
     if (!this.botUsername) return false;
     return text.toLowerCase().includes(`@${this.botUsername.toLowerCase()}`);
@@ -433,7 +439,7 @@ export class TelegramBot implements Bot {
         userName: mc.userName,
         text: cleanedText,
         attachments: [],
-        isBot: false,
+        isMessagingBot: false,
       });
       const context = createTelegramAdapters(event, this);
       await this.handler.handleEvent(event, this, context);
@@ -446,7 +452,7 @@ export class TelegramBot implements Bot {
       if (!mc) return;
 
       const cleanedText = this.cleanText(mc.text);
-      const addressedToBot = this.isAddressedToBot(mc.text, mc.chatType);
+      const addressedToMessagingBot = this.isAddressedToMessagingBot(mc.text, mc.chatType);
 
       if (this.isStopText(cleanedText)) {
         this.logToFile(mc.chatId, {
@@ -456,19 +462,19 @@ export class TelegramBot implements Bot {
           userName: mc.userName,
           text: cleanedText,
           attachments: [],
-          isBot: false,
+          isMessagingBot: false,
         });
 
         const stopTarget = this.resolveStopTarget(mc);
         if (stopTarget) {
           await this.handler.handleStop(stopTarget, mc.chatId, this);
-        } else if (addressedToBot || mc.chatType === "private") {
+        } else if (addressedToMessagingBot || mc.chatType === "private") {
           await this.postMessage(mc.chatId, formatNothingRunning("telegram"));
         }
         return;
       }
 
-      const isAutoReplyCandidate = mc.chatType !== "private" && !addressedToBot;
+      const isAutoReplyCandidate = mc.chatType !== "private" && !addressedToMessagingBot;
 
       const eventBase: TelegramEvent = {
         type: "message",
@@ -493,7 +499,7 @@ export class TelegramBot implements Bot {
           user: mc.userId,
           userName: mc.userName,
           text: cleanedText,
-          isBot: false,
+          isMessagingBot: false,
         },
         log: (entry) => this.logToFile(mc.chatId, entry),
         processAttachments: () => this.processAttachments(mc.chatId, mc.msg),

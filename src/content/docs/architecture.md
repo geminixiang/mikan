@@ -89,7 +89,7 @@ flowchart LR
   Executor -. shared: host / container, isolated: image / firecracker / cloudflare .-> ConversationDir
   Provisioner -. isolated image sandbox lifecycle .-> Executor
   VaultManager -. env + mount routing .-> Executor
-  EventsWatcher -. enqueue BotEvent .-> Main
+  EventsWatcher -. enqueue ConversationEvent .-> Main
 ```
 
 ## 2. Main layers
@@ -106,7 +106,7 @@ For the full platform adapter description, see [Platform adapters](platform-adap
 Responsibilities:
 
 - receive native Slack / Telegram / Discord events
-- convert them to unified `BotEvent`, `ChatMessage`, and `PlatformResponder` values
+- convert them to unified `ConversationEvent`, `ConversationMessage`, and `ConversationResponder` values
 - compute `sessionKey` according to platform rules
 - wrap platform differences such as replies, typing, working state, and file upload
 
@@ -121,7 +121,7 @@ Responsibilities:
 Responsibilities:
 
 - start the CLI and read env / args / `settings.json`
-- create `ConversationRuntime` as the `BotHandler` for each platform bot
+- create `ConversationRuntime` as the `MessagingEventHandler` for each platform bot
 - dispatch control commands such as `/login`, `/session`, `stop`, and `new` through `AgentRunController`
 - manage `conversationStates` and per-session queues to avoid duplicate runs in the same session
 - decide which `PiAgentWrapper` corresponds to each session scope
@@ -200,18 +200,18 @@ sequenceDiagram
 
   U->>P: send message / mention / reply
   P->>A: platform event
-  A->>M: BotEvent + ChatMessage + ResponseContext
+  A->>M: ConversationEvent + ConversationMessage + ResponseContext
   M->>M: queue event + dispatch commands
   M->>S: resolve session scope
   S-->>M: contextFile + sessionDir
   M->>R: getState() / run()
-  R->>W: read MEMORY.md / sessions/*.jsonl; query log.jsonl when needed
+  R->>W: read MEMORY.md / sessions/*.jsonl, query log.jsonl when needed
   R->>R: build system prompt / skills / model / session context
   R->>T: execute tools
   T->>X: read / bash / edit / write / event / attach
   X-->>T: tool result
   T-->>R: return result
-  R->>W: write structured session; adapter records platform log
+  R->>W: write structured session, adapter records platform log
   R-->>M: final response
   M-->>A: response content / diagnostics / files
   A-->>P: platform message update
@@ -275,7 +275,7 @@ Key points:
 
 ## 6. Differences between events and normal chats
 
-`events/*.json` is watched by `EventsWatcher`, then converted into `BotEvent` and sent through the normal flow again.
+`events/*.json` is watched by `EventsWatcher`, then converted into `ConversationEvent` and sent through the normal flow again.
 In other words, events are not a separate executor; they are another message intake path.
 
 This lets these capabilities share the same mechanism:

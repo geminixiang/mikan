@@ -1,4 +1,4 @@
-import type { PlatformEventContext, ConversationKind, PlatformName } from "../adapter.js";
+import type { ConversationContext, ConversationKind, PlatformName } from "../adapter.js";
 import { waitForThreadSessionBootstrap } from "../sessions/agent-memory-file-manager.js";
 import { dispatchCommand } from "../commands/registry.js";
 import type { CommandHandler, CommandServices } from "../commands/types.js";
@@ -153,7 +153,7 @@ export class AgentRunController {
   }
 
   private async runWithInstrumentation(
-    context: PlatformEventContext,
+    context: ConversationContext,
     meta: {
       conversationId: string;
       sessionKey: string;

@@ -1,12 +1,14 @@
 import { describe, expect, test, vi } from "vitest";
-import type { TelegramBot, TelegramEvent } from "../src/adapters/telegram/bot.js";
+import type { TelegramMessagingBot, TelegramEvent } from "../src/adapters/telegram/bot.js";
 import { createTelegramAdapters } from "../src/adapters/telegram/context.js";
 
 // ============================================================================
-// Minimal TelegramBot mock
+// Minimal TelegramMessagingBot mock
 // ============================================================================
 
-function makeTelegramBot(overrides: Partial<TelegramBot> = {}): TelegramBot {
+function makeTelegramMessagingBot(
+  overrides: Partial<TelegramMessagingBot> = {},
+): TelegramMessagingBot {
   return {
     postMessageRaw: vi.fn().mockResolvedValue(1001),
     postReply: vi.fn().mockResolvedValue(1002),
@@ -15,15 +17,15 @@ function makeTelegramBot(overrides: Partial<TelegramBot> = {}): TelegramBot {
     sendTyping: vi.fn().mockResolvedValue(undefined),
     uploadFile: vi.fn().mockResolvedValue(undefined),
     logBotResponse: vi.fn(),
-    // Bot interface stubs
+    // MessagingBot interface stubs
     start: vi.fn(),
     postMessage: vi.fn().mockResolvedValue("1001"),
     enqueueEvent: vi.fn().mockReturnValue(true),
-    getPlatformInfo: vi
+    getMessagingInfo: vi
       .fn()
       .mockReturnValue({ name: "telegram", formattingGuide: "", channels: [], users: [] }),
     ...overrides,
-  } as unknown as TelegramBot;
+  } as unknown as TelegramMessagingBot;
 }
 
 function makeEvent(overrides: Partial<TelegramEvent> = {}): TelegramEvent {
@@ -45,27 +47,27 @@ function makeEvent(overrides: Partial<TelegramEvent> = {}): TelegramEvent {
 describe("session key derivation", () => {
   test("non-threaded: sessionKey = channel:ts", () => {
     const event = makeEvent({ ts: "1001", thread_ts: undefined });
-    const { message } = createTelegramAdapters(event, makeTelegramBot());
+    const { message } = createTelegramAdapters(event, makeTelegramMessagingBot());
     expect(message.sessionKey).toBe("123456:1001");
   });
 
   test("threaded: sessionKey = channel:thread_ts", () => {
     const event = makeEvent({ ts: "1003", thread_ts: "1001" });
-    const { message } = createTelegramAdapters(event, makeTelegramBot());
+    const { message } = createTelegramAdapters(event, makeTelegramMessagingBot());
     expect(message.sessionKey).toBe("123456:1001");
   });
 
   test("message id is always event.ts", () => {
     const event = makeEvent({ ts: "1005", thread_ts: "1001" });
-    const { message } = createTelegramAdapters(event, makeTelegramBot());
+    const { message } = createTelegramAdapters(event, makeTelegramMessagingBot());
     expect(message.id).toBe("1005");
   });
 
   test("different threads in same channel produce different session keys", () => {
     const event1 = makeEvent({ ts: "1003", thread_ts: "1001" });
     const event2 = makeEvent({ ts: "1006", thread_ts: "1004" });
-    const { message: m1 } = createTelegramAdapters(event1, makeTelegramBot());
-    const { message: m2 } = createTelegramAdapters(event2, makeTelegramBot());
+    const { message: m1 } = createTelegramAdapters(event1, makeTelegramMessagingBot());
+    const { message: m2 } = createTelegramAdapters(event2, makeTelegramMessagingBot());
     expect(m1.sessionKey).toBe("123456:1001");
     expect(m2.sessionKey).toBe("123456:1004");
     expect(m1.sessionKey).not.toBe(m2.sessionKey);
@@ -78,7 +80,7 @@ describe("session key derivation", () => {
 
 describe("respond() — non-threaded", () => {
   test("first call posts to channel", async () => {
-    const bot = makeTelegramBot();
+    const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.respond("hello");
@@ -87,7 +89,7 @@ describe("respond() — non-threaded", () => {
   });
 
   test("subsequent calls update the same message", async () => {
-    const bot = makeTelegramBot({ postMessageRaw: vi.fn().mockResolvedValue(2001) });
+    const bot = makeTelegramMessagingBot({ postMessageRaw: vi.fn().mockResolvedValue(2001) });
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.respond("first");
@@ -101,7 +103,7 @@ describe("respond() — non-threaded", () => {
   });
 
   test("update call accumulates text with newline", async () => {
-    const bot = makeTelegramBot({ postMessageRaw: vi.fn().mockResolvedValue(2001) });
+    const bot = makeTelegramMessagingBot({ postMessageRaw: vi.fn().mockResolvedValue(2001) });
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.respond("line1");
@@ -112,7 +114,7 @@ describe("respond() — non-threaded", () => {
   });
 
   test("calls logBotResponse on successful respond", async () => {
-    const bot = makeTelegramBot({ postMessageRaw: vi.fn().mockResolvedValue(2001) });
+    const bot = makeTelegramMessagingBot({ postMessageRaw: vi.fn().mockResolvedValue(2001) });
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.respond("hello");
@@ -120,7 +122,7 @@ describe("respond() — non-threaded", () => {
   });
 
   test("escapes unsupported HTML-like tokens but keeps Telegram tags", async () => {
-    const bot = makeTelegramBot();
+    const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.respond("Usage: gws +read --id <ID> with <b>bold</b>");
@@ -133,7 +135,7 @@ describe("respond() — non-threaded", () => {
 
 describe("respond() — threaded (reply to parent message)", () => {
   test("first call posts as reply to parent message", async () => {
-    const bot = makeTelegramBot();
+    const bot = makeTelegramMessagingBot();
     const event = makeEvent({ ts: "1003", thread_ts: "1001" });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.respond("hello");
@@ -142,7 +144,7 @@ describe("respond() — threaded (reply to parent message)", () => {
   });
 
   test("subsequent calls update the reply message", async () => {
-    const bot = makeTelegramBot({ postReply: vi.fn().mockResolvedValue(3001) });
+    const bot = makeTelegramMessagingBot({ postReply: vi.fn().mockResolvedValue(3001) });
     const event = makeEvent({ ts: "1003", thread_ts: "1001" });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.respond("first");
@@ -162,7 +164,7 @@ describe("respond() — threaded (reply to parent message)", () => {
 
 describe("respondDiagnostic()", () => {
   test("non-threaded: posts a regular diagnostic message", async () => {
-    const bot = makeTelegramBot({ postMessageRaw: vi.fn().mockResolvedValue(2001) });
+    const bot = makeTelegramMessagingBot({ postMessageRaw: vi.fn().mockResolvedValue(2001) });
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.respond("main");
@@ -173,7 +175,7 @@ describe("respondDiagnostic()", () => {
   });
 
   test("threaded: still posts diagnostics as regular chat messages", async () => {
-    const bot = makeTelegramBot({ postReply: vi.fn().mockResolvedValue(3001) });
+    const bot = makeTelegramMessagingBot({ postReply: vi.fn().mockResolvedValue(3001) });
     const event = makeEvent({ ts: "1003", thread_ts: "1001" });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.respond("main");
@@ -184,7 +186,7 @@ describe("respondDiagnostic()", () => {
   });
 
   test("non-threaded: can post before a main message exists", async () => {
-    const bot = makeTelegramBot();
+    const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.respondDiagnostic("detail");
@@ -193,7 +195,7 @@ describe("respondDiagnostic()", () => {
   });
 
   test("respondToolResult formats and posts diagnostics", async () => {
-    const bot = makeTelegramBot();
+    const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.respondToolResult({
@@ -217,7 +219,7 @@ describe("respondDiagnostic()", () => {
 
 describe("setTyping()", () => {
   test("sends typing action immediately", async () => {
-    const bot = makeTelegramBot();
+    const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.setTyping(true);
@@ -226,7 +228,7 @@ describe("setTyping()", () => {
   });
 
   test("does not post placeholder message", async () => {
-    const bot = makeTelegramBot();
+    const bot = makeTelegramMessagingBot();
     const event = makeEvent({ ts: "1003", thread_ts: "1001" });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.setTyping(true);
@@ -236,7 +238,7 @@ describe("setTyping()", () => {
   });
 
   test("setTyping(false) does nothing if not typing", async () => {
-    const bot = makeTelegramBot();
+    const bot = makeTelegramMessagingBot();
     const event = makeEvent();
     const { responder } = createTelegramAdapters(event, bot);
     await responder.setTyping(false);
@@ -245,7 +247,7 @@ describe("setTyping()", () => {
   });
 
   test("setTyping(true) twice does not duplicate interval", async () => {
-    const bot = makeTelegramBot();
+    const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.setTyping(true);
@@ -254,7 +256,7 @@ describe("setTyping()", () => {
   });
 
   test("setTyping(false) allows re-triggering", async () => {
-    const bot = makeTelegramBot();
+    const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.setTyping(true);
@@ -271,7 +273,7 @@ describe("setTyping()", () => {
 
 describe("setWorking()", () => {
   test("setWorking(false) allows typing to be re-triggered", async () => {
-    const bot = makeTelegramBot();
+    const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.setTyping(true);
@@ -283,7 +285,7 @@ describe("setWorking()", () => {
   });
 
   test("respond() does not append working indicator", async () => {
-    const bot = makeTelegramBot();
+    const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.respond("content");
@@ -298,7 +300,7 @@ describe("setWorking()", () => {
 
 describe("replaceResponse()", () => {
   test("replaces accumulated text entirely", async () => {
-    const bot = makeTelegramBot({ postMessageRaw: vi.fn().mockResolvedValue(2001) });
+    const bot = makeTelegramMessagingBot({ postMessageRaw: vi.fn().mockResolvedValue(2001) });
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.respond("original text");
@@ -309,7 +311,7 @@ describe("replaceResponse()", () => {
   });
 
   test("replaceResponse splits long text into continuation messages", async () => {
-    const bot = makeTelegramBot({ postMessageRaw: vi.fn().mockResolvedValue(2001) });
+    const bot = makeTelegramMessagingBot({ postMessageRaw: vi.fn().mockResolvedValue(2001) });
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.setWorking(false);
@@ -321,7 +323,7 @@ describe("replaceResponse()", () => {
   });
 
   test("replaceResponse converts HTML tables into Telegram-safe pre blocks", async () => {
-    const bot = makeTelegramBot();
+    const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.replaceResponse("<table><tr><th>Name</th></tr><tr><td>Alice</td></tr></table>");
@@ -338,7 +340,7 @@ describe("replaceResponse()", () => {
 
 describe("text splitting", () => {
   test("long text is split at 3800 chars", async () => {
-    const bot = makeTelegramBot();
+    const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.respond("x".repeat(4000));
@@ -349,7 +351,7 @@ describe("text splitting", () => {
   });
 
   test("text exactly at 3800 chars is not split when not working", async () => {
-    const bot = makeTelegramBot();
+    const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.setWorking(false);
@@ -361,7 +363,7 @@ describe("text splitting", () => {
   });
 
   test("text at 3801 chars is split", async () => {
-    const bot = makeTelegramBot();
+    const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.respond("x".repeat(3801));
@@ -379,7 +381,7 @@ describe("text splitting", () => {
 describe("deleteResponse()", () => {
   // Telegram has no threads — only deletes main message
   test("deletes main message", async () => {
-    const bot = makeTelegramBot({
+    const bot = makeTelegramMessagingBot({
       postMessageRaw: vi.fn().mockResolvedValue(2001),
       postReply: vi.fn().mockResolvedValue(3001),
     });
@@ -392,7 +394,7 @@ describe("deleteResponse()", () => {
   });
 
   test("does nothing if no message was created", async () => {
-    const bot = makeTelegramBot();
+    const bot = makeTelegramMessagingBot();
     const event = makeEvent();
     const { responder } = createTelegramAdapters(event, bot);
     await responder.deleteResponse();
@@ -401,27 +403,27 @@ describe("deleteResponse()", () => {
 });
 
 // ============================================================================
-// PlatformInfo
+// MessagingInfo
 // ============================================================================
 
 describe("platform info", () => {
   test("name is 'telegram'", () => {
-    const { platform } = createTelegramAdapters(makeEvent(), makeTelegramBot());
+    const { platform } = createTelegramAdapters(makeEvent(), makeTelegramMessagingBot());
     expect(platform.name).toBe("telegram");
   });
 
   test("formattingGuide mentions HTML tags", () => {
-    const { platform } = createTelegramAdapters(makeEvent(), makeTelegramBot());
+    const { platform } = createTelegramAdapters(makeEvent(), makeTelegramMessagingBot());
     expect(platform.formattingGuide).toContain("<b>");
   });
 
   test("does not show usage summary diagnostics", () => {
-    const { platform } = createTelegramAdapters(makeEvent(), makeTelegramBot());
+    const { platform } = createTelegramAdapters(makeEvent(), makeTelegramMessagingBot());
     expect(platform.diagnostics?.showUsageSummary).not.toBe(true);
   });
 
   test("channels and users are empty (Telegram has no guild registry)", () => {
-    const { platform } = createTelegramAdapters(makeEvent(), makeTelegramBot());
+    const { platform } = createTelegramAdapters(makeEvent(), makeTelegramMessagingBot());
     expect(platform.channels).toEqual([]);
     expect(platform.users).toEqual([]);
   });
@@ -433,7 +435,7 @@ describe("platform info", () => {
 
 describe("uploadFile()", () => {
   test("calls bot.uploadFile with channel, path, and title", async () => {
-    const bot = makeTelegramBot();
+    const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.uploadFile("/path/to/file.txt", "My File");
@@ -441,7 +443,7 @@ describe("uploadFile()", () => {
   });
 
   test("calls bot.uploadFile without title", async () => {
-    const bot = makeTelegramBot();
+    const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.uploadFile("/path/to/image.png");
@@ -455,7 +457,7 @@ describe("uploadFile()", () => {
 
 describe("streaming lifecycle", () => {
   test("delta streaming posts then updates the same message", async () => {
-    const bot = makeTelegramBot();
+    const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
 
@@ -474,27 +476,27 @@ describe("streaming lifecycle", () => {
 });
 
 // ============================================================================
-// ChatMessage fields
+// ConversationMessage fields
 // ============================================================================
 
 describe("message fields", () => {
   test("userId and userName are populated from event", () => {
     const event = makeEvent({ user: "U999", userName: "alice" });
-    const { message } = createTelegramAdapters(event, makeTelegramBot());
+    const { message } = createTelegramAdapters(event, makeTelegramMessagingBot());
     expect(message.userId).toBe("U999");
     expect(message.userName).toBe("alice");
   });
 
   test("text matches event.text", () => {
     const event = makeEvent({ text: "what time is it?" });
-    const { message } = createTelegramAdapters(event, makeTelegramBot());
+    const { message } = createTelegramAdapters(event, makeTelegramMessagingBot());
     expect(message.text).toBe("what time is it?");
   });
 
   test("attachments are populated from event", () => {
     const attachments = [{ name: "file.txt", localPath: "/tmp/file.txt" }];
     const event = makeEvent({ attachments });
-    const { message } = createTelegramAdapters(event, makeTelegramBot());
+    const { message } = createTelegramAdapters(event, makeTelegramMessagingBot());
     expect(message.attachments).toEqual(attachments);
   });
 });

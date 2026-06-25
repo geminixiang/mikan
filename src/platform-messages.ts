@@ -1,12 +1,12 @@
-import type { Bot, PlatformInfo } from "./adapter.js";
+import type { MessagingBot, MessagingInfo } from "./adapter.js";
 
 export const PRODUCT_NAME = "mikan";
 
-type PlatformSource = Bot | PlatformInfo | string;
+type PlatformSource = MessagingBot | MessagingInfo | string;
 
 function resolvePlatformName(source: PlatformSource): string {
   if (typeof source === "string") return source;
-  if ("getPlatformInfo" in source) return source.getPlatformInfo().name;
+  if ("getMessagingInfo" in source) return source.getMessagingInfo().name;
   return source.name;
 }
 

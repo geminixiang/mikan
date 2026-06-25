@@ -1,5 +1,5 @@
-import type { ChatMessage, PlatformResponder, PlatformInfo } from "../../adapter.js";
-import { type SlackBot, type SlackEvent } from "./bot.js";
+import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../../adapter.js";
+import { type SlackMessagingBot, type SlackEvent } from "./bot.js";
 import { createSlackResponseContext } from "./response-lifecycle.js";
 import { planSlackAdapterSession } from "./session.js";
 export type { SlackAdapterOptions } from "./types.js";
@@ -11,19 +11,19 @@ Do NOT use **double asterisks** or [markdown](links).`;
 
 export function createSlackAdapters(
   event: SlackEvent,
-  slack: SlackBot,
+  slack: SlackMessagingBot,
   adapterOptions: SlackAdapterOptions = {},
 ): {
-  message: ChatMessage;
-  responder: PlatformResponder;
-  platform: PlatformInfo;
+  message: ConversationMessage;
+  responder: ConversationResponder;
+  platform: MessagingInfo;
 } {
   const sessionPlan = planSlackAdapterSession(event, {
     initialMessageTs: adapterOptions.initialMessageTs,
   });
   const user = slack.getUser(event.user);
 
-  const message: ChatMessage = {
+  const message: ConversationMessage = {
     id: event.ts,
     sessionKey: sessionPlan.sessionKey,
     conversationKind: event.conversationKind,
@@ -37,7 +37,7 @@ export function createSlackAdapters(
     threadTs: event.thread_ts,
   };
 
-  const platform: PlatformInfo = {
+  const platform: MessagingInfo = {
     name: "slack",
     formattingGuide: SLACK_FORMATTING_GUIDE,
     channels: slack.getAllChannels().map((c) => ({ id: c.id, name: c.name })),

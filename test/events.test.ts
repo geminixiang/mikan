@@ -2,18 +2,18 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { Bot, BotEvent } from "../src/adapter.js";
+import type { MessagingBot, ConversationEvent } from "../src/adapter.js";
 import { EventsWatcher } from "../src/events.js";
 
-function makeBot(platform: string) {
-  const enqueueEvent = vi.fn<(event: BotEvent) => boolean>().mockReturnValue(true);
+function makeMessagingBot(platform: string) {
+  const enqueueEvent = vi.fn<(event: ConversationEvent) => boolean>().mockReturnValue(true);
 
-  const bot: Bot = {
+  const bot: MessagingBot = {
     start: async () => {},
     postMessage: async () => "1",
     updateMessage: async () => {},
     enqueueEvent,
-    getPlatformInfo: () => ({
+    getMessagingInfo: () => ({
       name: platform,
       formattingGuide: "",
       channels: [],
@@ -39,7 +39,7 @@ describe("EventsWatcher platform routing", () => {
   });
 
   test("defaults platform when exactly one bot is configured", () => {
-    const { bot } = makeBot("telegram");
+    const { bot } = makeMessagingBot("telegram");
     const watcher = new EventsWatcher(eventsDir, { telegram: bot }) as any;
 
     const parsed = watcher.parseEvent(
@@ -62,7 +62,7 @@ describe("EventsWatcher platform routing", () => {
   });
 
   test("accepts legacy channelId field for backward compatibility", () => {
-    const { bot } = makeBot("slack");
+    const { bot } = makeMessagingBot("slack");
     const watcher = new EventsWatcher(eventsDir, { slack: bot }) as any;
 
     const parsed = watcher.parseEvent(
@@ -85,7 +85,7 @@ describe("EventsWatcher platform routing", () => {
   });
 
   test("infers Discord DM event conversation kind from DM-prefixed conversation IDs", () => {
-    const { bot } = makeBot("discord");
+    const { bot } = makeMessagingBot("discord");
     const watcher = new EventsWatcher(eventsDir, { discord: bot }) as any;
 
     const parsed = watcher.parseEvent(
@@ -108,11 +108,11 @@ describe("EventsWatcher platform routing", () => {
   });
 
   test("rejects ambiguous events when multiple platforms are configured", () => {
-    const { bot: slackBot } = makeBot("slack");
-    const { bot: telegramBot } = makeBot("telegram");
+    const { bot: slackMessagingBot } = makeMessagingBot("slack");
+    const { bot: telegramMessagingBot } = makeMessagingBot("telegram");
     const watcher = new EventsWatcher(eventsDir, {
-      slack: slackBot,
-      telegram: telegramBot,
+      slack: slackMessagingBot,
+      telegram: telegramMessagingBot,
     }) as any;
 
     expect(() =>
@@ -128,7 +128,7 @@ describe("EventsWatcher platform routing", () => {
   });
 
   test("rejects event files with invalid field types", () => {
-    const { bot } = makeBot("slack");
+    const { bot } = makeMessagingBot("slack");
     const watcher = new EventsWatcher(eventsDir, { slack: bot }) as any;
 
     expect(() =>
@@ -144,7 +144,7 @@ describe("EventsWatcher platform routing", () => {
   });
 
   test("rejects event files whose top-level JSON is not an object", () => {
-    const { bot } = makeBot("slack");
+    const { bot } = makeMessagingBot("slack");
     const watcher = new EventsWatcher(eventsDir, { slack: bot }) as any;
 
     expect(() => watcher.parseEvent("[]", "array.json")).toThrow(
@@ -153,7 +153,7 @@ describe("EventsWatcher platform routing", () => {
   });
 
   test("ignores transient missing-file signals so scheduled events stay active", async () => {
-    const { bot } = makeBot("slack");
+    const { bot } = makeMessagingBot("slack");
     const watcher = new EventsWatcher(eventsDir, { slack: bot }) as any;
     const filename = "reminder.json";
     const filePath = join(eventsDir, filename);
@@ -197,7 +197,7 @@ describe("EventsWatcher platform routing", () => {
   });
 
   test("keeps a scheduled one-shot timer even if the file truly disappears", async () => {
-    const { bot } = makeBot("slack");
+    const { bot } = makeMessagingBot("slack");
     const watcher = new EventsWatcher(eventsDir, { slack: bot }) as any;
     const filename = "reminder.json";
     const filePath = join(eventsDir, filename);
@@ -225,11 +225,11 @@ describe("EventsWatcher platform routing", () => {
   });
 
   test("routes synthetic events to the explicitly requested platform", () => {
-    const { bot: slackBot, enqueueEvent: enqueueSlack } = makeBot("slack");
-    const { bot: discordBot, enqueueEvent: enqueueDiscord } = makeBot("discord");
+    const { bot: slackMessagingBot, enqueueEvent: enqueueSlack } = makeMessagingBot("slack");
+    const { bot: discordMessagingBot, enqueueEvent: enqueueDiscord } = makeMessagingBot("discord");
     const watcher = new EventsWatcher(eventsDir, {
-      slack: slackBot,
-      discord: discordBot,
+      slack: slackMessagingBot,
+      discord: discordMessagingBot,
     }) as any;
 
     watcher.execute("deploy-reminder.json", {

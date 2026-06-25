@@ -1,14 +1,14 @@
 import type {
-  ChatMessage,
-  PlatformResponder,
+  ConversationMessage,
+  ConversationResponder,
   ChatToolResult,
-  PlatformInfo,
+  MessagingInfo,
 } from "../../adapter.js";
 import * as log from "../../log.js";
 import { createChatResponseErrorReporter, formatToolArgs, splitText } from "../shared.js";
 import { BufferedResponseStream } from "../streaming.js";
 import { sanitizeTelegramHtml } from "./html.js";
-import type { TelegramBot, TelegramEvent } from "./bot.js";
+import type { TelegramMessagingBot, TelegramEvent } from "./bot.js";
 
 const TELEGRAM_FORMATTING_GUIDE = `## Telegram Formatting (HTML mode)
 Bold: <b>text</b>, Italic: <i>text</i>, Code: <code>code</code>, Pre: <pre>code</pre>
@@ -22,7 +22,7 @@ const MAX_LENGTH = 3800;
 const formatTelegramContinuation = (partNum: number): string => `(continued ${partNum})`;
 
 async function notifyError(
-  bot: TelegramBot,
+  bot: TelegramMessagingBot,
   chatId: number,
   label: string,
   err: unknown,
@@ -47,11 +47,11 @@ function formatToolResult(result: ChatToolResult): string {
 
 export function createTelegramAdapters(
   event: TelegramEvent,
-  bot: TelegramBot,
+  bot: TelegramMessagingBot,
 ): {
-  message: ChatMessage;
-  responder: PlatformResponder;
-  platform: PlatformInfo;
+  message: ConversationMessage;
+  responder: ConversationResponder;
+  platform: MessagingInfo;
 } {
   let messageId: number | null = null;
   let accumulatedText = "";
@@ -70,7 +70,7 @@ export function createTelegramAdapters(
   const chatId = parseInt(conversationId);
   const replyToId = event.thread_ts ? parseInt(event.thread_ts) : null;
 
-  const message: ChatMessage = {
+  const message: ConversationMessage = {
     id: event.ts,
     sessionKey: event.sessionKey ?? `${conversationId}:${event.thread_ts ?? event.ts}`,
     conversationKind: event.conversationKind,
@@ -81,7 +81,7 @@ export function createTelegramAdapters(
     threadTs: event.thread_ts,
   };
 
-  const platform: PlatformInfo = {
+  const platform: MessagingInfo = {
     name: "telegram",
     formattingGuide: TELEGRAM_FORMATTING_GUIDE,
     channels: [],
@@ -149,7 +149,7 @@ export function createTelegramAdapters(
     await updatePromise;
   };
 
-  const responder: PlatformResponder = {
+  const responder: ConversationResponder = {
     respond: async (text: string) => {
       await queueTelegramSend(
         "respond",

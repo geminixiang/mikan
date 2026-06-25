@@ -1,9 +1,9 @@
 import type { PiAgentWrapper } from "../agent.js";
 import type {
-  Bot,
-  PlatformEventContext,
-  BotEvent,
-  BotHandler,
+  MessagingBot,
+  ConversationContext,
+  ConversationEvent,
+  MessagingEventHandler,
   ConversationKind,
 } from "../adapter.js";
 import type { CommandServices } from "../commands/types.js";
@@ -21,9 +21,9 @@ export interface ConversationRuntimeState {
 }
 
 export interface RunSessionOptions {
-  event: BotEvent;
-  bot: Bot;
-  context: PlatformEventContext;
+  event: ConversationEvent;
+  bot: MessagingBot;
+  context: ConversationContext;
 }
 
 export interface CreateSessionSandboxOptions {
@@ -39,7 +39,7 @@ export interface ConversationRuntimeOptions extends Omit<CommandServices, "runti
 
 import type { CommandHandler } from "../commands/types.js";
 
-export interface ConversationRuntime extends BotHandler {
+export interface ConversationRuntime extends MessagingEventHandler {
   runSession(options: RunSessionOptions): Promise<void>;
   createSessionSandbox(options: CreateSessionSandboxOptions): Promise<PiAgentWrapper>;
   switchConversationModel(conversationId: string, provider: string, model: string): boolean;

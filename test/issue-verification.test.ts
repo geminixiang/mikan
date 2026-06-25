@@ -25,7 +25,7 @@ describe("ISSUE VERIFICATION: Grep can search historical records", () => {
         userName: "alice",
         text: "Hello team",
         attachments: [],
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2025-01-02T10:00:00.000Z",
@@ -34,7 +34,7 @@ describe("ISSUE VERIFICATION: Grep can search historical records", () => {
         userName: "bob",
         text: "I found a bug in the login flow",
         attachments: [],
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2025-01-03T10:00:00.000Z",
@@ -43,7 +43,7 @@ describe("ISSUE VERIFICATION: Grep can search historical records", () => {
         userName: "mikan",
         text: "Hello! How can I help?",
         attachments: [],
-        isBot: true,
+        isMessagingBot: true,
       },
       {
         date: "2025-01-04T10:00:00.000Z",
@@ -52,7 +52,7 @@ describe("ISSUE VERIFICATION: Grep can search historical records", () => {
         userName: "alice",
         text: "The database is running slow",
         attachments: [],
-        isBot: false,
+        isMessagingBot: false,
       },
       {
         date: "2025-03-13T10:00:00.000Z",
@@ -61,7 +61,7 @@ describe("ISSUE VERIFICATION: Grep can search historical records", () => {
         userName: "charlie",
         text: "Can someone review my PR?",
         attachments: [],
-        isBot: false,
+        isMessagingBot: false,
       },
     ];
 
@@ -127,7 +127,7 @@ describe("ISSUE VERIFICATION: Grep can search historical records", () => {
       expect(parsed).toHaveProperty("userName");
       expect(parsed).toHaveProperty("text");
       expect(parsed).toHaveProperty("attachments");
-      expect(parsed).toHaveProperty("isBot");
+      expect(parsed).toHaveProperty("isMessagingBot");
     }
   });
 

@@ -9,13 +9,15 @@ import { Aside, Card, CardGrid, LinkCard, Steps } from "@astrojs/starlight/compo
 
 <CardGrid>
   <Card title="イベント正規化" icon="setting">
-    プラットフォーム固有の message、mention、slash command、reply を共通の `BotEvent` に変換します。
+    プラットフォーム固有の message、mention、slash command、reply を共通の `ConversationEvent`
+    に変換します。
   </Card>
   <Card title="Session routing" icon="open-book">
     channel、thread、reply chain から `sessionKey` を算出し、会話を正しいセッションへ送ります。
   </Card>
   <Card title="返信機能" icon="rocket">
-    `PlatformResponder` が返信、更新、typing/working 状態、ファイルアップロードをカプセル化します。
+    `ConversationResponder` が返信、更新、typing/working
+    状態、ファイルアップロードをカプセル化します。
   </Card>
 </CardGrid>
 
@@ -25,11 +27,11 @@ import { Aside, Card, CardGrid, LinkCard, Steps } from "@astrojs/starlight/compo
 
 1. メッセージ、mention、slash command、reply などのプラットフォームイベントを受け取る。
 2. そのメッセージが mikan を起動すべきか判定する：DM、mention、thread reply、auto-reply policy。
-3. 共通の `BotEvent` と `ChatMessage` に変換する。
+3. 共通の `ConversationEvent` と `ConversationMessage` に変換する。
 4. `sessionKey` を計算し、異なる channel、thread、reply を正しい session に対応させる。
 5. 添付ファイルをダウンロードし、workspace の `attachments/` に書き込む。
-6. `PlatformResponder` を作成し、返信、更新、typing/working 状態、ファイルアップロードをカプセル化する。
-7. イベントを `BotHandler`、つまり `ConversationRuntime` に渡す。
+6. `ConversationResponder` を作成し、返信、更新、typing/working 状態、ファイルアップロードをカプセル化する。
+7. イベントを `MessagingEventHandler`、つまり `ConversationRuntime` に渡す。
 
 </Steps>
 
@@ -43,11 +45,11 @@ sequenceDiagram
   participant A as Platform adapter
   participant I as processMessageIntake()
   participant R as ConversationRuntime
-  participant C as PlatformResponder
+  participant C as ConversationResponder
 
   P->>A: ネイティブメッセージ / slash command / reply
   A->>A: conversation、user、thread、attachments を解析
-  A->>I: BotEvent base + trigger/log/attachment hooks
+  A->>I: ConversationEvent base + trigger/log/attachment hooks
   I->>I: auto-reply / trigger 判定
   I->>A: 必要に応じて添付ファイルをダウンロード
   I->>R: handler.handleEvent(event, bot, context)
@@ -57,12 +59,12 @@ sequenceDiagram
 
 ## 共通ユーティリティ
 
-| ファイル                    | 用途                                                                                           |
-| --------------------------- | ---------------------------------------------------------------------------------------------- |
-| `src/adapter.ts`            | `Bot`、`BotEvent`、`ChatMessage`、`PlatformResponder` などの共通 interface を外部公開。        |
-| `src/adapters/intake.ts`    | 共通メッセージ入口フロー：trigger、log、attachment、queue、handler 呼び出し順。                |
-| `src/adapters/shared.ts`    | 共通の retry、queue、長文メッセージ分割、log、stop target resolution。                         |
-| `src/adapters/streaming.ts` | streaming response を buffer してから flush し、プラットフォームメッセージの更新頻度を抑える。 |
+| ファイル                    | 用途                                                                                                                  |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `src/adapter.ts`            | `MessagingBot`、`ConversationEvent`、`ConversationMessage`、`ConversationResponder` などの共通 interface を外部公開。 |
+| `src/adapters/intake.ts`    | 共通メッセージ入口フロー：trigger、log、attachment、queue、handler 呼び出し順。                                       |
+| `src/adapters/shared.ts`    | 共通の retry、queue、長文メッセージ分割、log、stop target resolution。                                                |
+| `src/adapters/streaming.ts` | streaming response を buffer してから flush し、プラットフォームメッセージの更新頻度を抑える。                        |
 
 ## プラットフォーム差分
 
@@ -91,9 +93,9 @@ sequenceDiagram
 
 コア runtime は次の共通抽象だけに依存します。
 
-- `BotEvent`：1 回のユーザーまたはプラットフォームイベント。
-- `Bot`：post message、upload file などのプラットフォーム bot 能力。
-- `PlatformEventContext`：1 回のイベントに付随する `message`、`responder`、`platform` metadata。
-- `PlatformResponder`：agent が返信するときに使うチャネル。
+- `ConversationEvent`：1 回のユーザーまたはプラットフォームイベント。
+- `MessagingBot`：post message、upload file などのプラットフォーム messaging bot 能力。
+- `ConversationContext`：1 回のイベントに付随する `message`、`responder`、`platform` metadata。
+- `ConversationResponder`：agent が返信するときに使うチャネル。
 
 新しいプラットフォームを追加する場合は、まずこれらの抽象を実装し、プラットフォーム SDK の詳細を `src/runtime/*` や `src/agent.ts` に持ち込まないでください。

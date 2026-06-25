@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { buildPromptPayload } from "../src/agent.js";
-import type { ChatMessage } from "../src/adapter.js";
+import type { ConversationMessage } from "../src/adapter.js";
 import { createMountedRuntimePathContext } from "../src/sandbox/path-context.js";
 
 let workspaceDir: string;
@@ -17,7 +17,7 @@ afterEach(() => {
   rmSync(workspaceDir, { recursive: true, force: true });
 });
 
-function makeMessage(localPath: string): ChatMessage {
+function makeMessage(localPath: string): ConversationMessage {
   return {
     id: "M1",
     sessionKey: "C123",

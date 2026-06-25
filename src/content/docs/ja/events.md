@@ -79,7 +79,7 @@ Cron 形式: `minute hour day-of-month month day-of-week`
 | プラットフォーム/イベントソース  | 見える配信方法                | Session key                                     | Thread 目標    |
 | -------------------------------- | ----------------------------- | ----------------------------------------------- | -------------- |
 | Slack event file/tool            | 新しいトップレベルのアンカー  | `<conversationId>:<anchor message ts>`          | なし           |
-| Slack direct `BotEvent`          | 指定された `thread_ts` を優先 | 設定されていれば `<conversationId>:<thread_ts>` | 任意           |
+| Slack direct `ConversationEvent` | 指定された `thread_ts` を優先 | 設定されていれば `<conversationId>:<thread_ts>` | 任意           |
 | その他のプラットフォームイベント | プラットフォーム adapter 既定 | プラットフォーム adapter 既定の event session   | adapter に依存 |
 
 Slack イベントファイルでは、イベント起動時にまずトップレベルの Slack メッセージを能動的に作成します。そのメッセージのタイムスタンプがアンカーになり、その実行では固定 session key `<conversationId>:<anchor message ts>` を使います。

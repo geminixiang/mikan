@@ -1,4 +1,4 @@
-import type { BotEvent } from "../adapter.js";
+import type { ConversationEvent } from "../adapter.js";
 import { evaluateAutoReplyPolicy } from "../trigger.js";
 import type { MessageIntakeOptions } from "./types.js";
 
@@ -9,7 +9,7 @@ import type { MessageIntakeOptions } from "./types.js";
  * semantics. This module owns the common trigger/log/attachment/queue/handler
  * ordering for messages that may start an agent run.
  */
-export async function processMessageIntake<TEvent extends BotEvent>(
+export async function processMessageIntake<TEvent extends ConversationEvent>(
   options: MessageIntakeOptions<TEvent>,
 ): Promise<void> {
   const triggerResult = options.isAutoReplyCandidate

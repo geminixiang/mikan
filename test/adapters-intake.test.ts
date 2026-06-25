@@ -1,8 +1,13 @@
 import { describe, expect, test, vi } from "vitest";
-import type { Bot, PlatformEventContext, BotEvent, BotHandler } from "../src/adapter.js";
+import type {
+  MessagingBot,
+  ConversationContext,
+  ConversationEvent,
+  MessagingEventHandler,
+} from "../src/adapter.js";
 import { processMessageIntake } from "../src/adapters/intake.js";
 
-function makeEvent(overrides: Partial<BotEvent> = {}): BotEvent {
+function makeEvent(overrides: Partial<ConversationEvent> = {}): ConversationEvent {
   return {
     type: "message",
     conversationId: "C1",
@@ -14,7 +19,7 @@ function makeEvent(overrides: Partial<BotEvent> = {}): BotEvent {
   };
 }
 
-function makeHandler(): BotHandler {
+function makeHandler(): MessagingEventHandler {
   return {
     isRunning: vi.fn().mockReturnValue(false),
     getRunningSessions: vi.fn().mockReturnValue([]),
@@ -25,8 +30,8 @@ function makeHandler(): BotHandler {
   };
 }
 
-const bot = {} as Bot;
-const context = {} as PlatformEventContext;
+const bot = {} as MessagingBot;
+const context = {} as ConversationContext;
 
 describe("processMessageIntake", () => {
   test("logs non-triggered auto-reply candidates without queueing", async () => {

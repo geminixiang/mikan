@@ -11,7 +11,7 @@ import {
 } from "fs";
 import { readFile } from "fs/promises";
 import { join } from "path";
-import type { Bot, BotEvent, ConversationKind } from "./adapter.js";
+import type { MessagingBot, ConversationEvent, ConversationKind } from "./adapter.js";
 import { ensureDirExists, parseJsonSchemaValue } from "./utils/file-guards.js";
 import * as log from "./log.js";
 import { reportUserFacingError } from "./observability/sentry.js";
@@ -60,7 +60,7 @@ export class EventsWatcher {
 
   constructor(
     private eventsDir: string,
-    private botsByPlatform: Record<string, Bot>,
+    private botsByPlatform: Record<string, MessagingBot>,
   ) {
     this.startTime = Date.now();
   }
@@ -483,7 +483,7 @@ export class EventsWatcher {
     }
 
     const eventId = filename.replace(/\.json$/i, "");
-    const botEvent: BotEvent = {
+    const botEvent: ConversationEvent = {
       type: "mention",
       conversationId: event.conversationId,
       conversationKind: event.conversationKind,

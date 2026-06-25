@@ -2,8 +2,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { BotHandler } from "../src/adapter.js";
-import { SlackBot } from "../src/adapters/slack/bot.js";
+import type { MessagingEventHandler } from "../src/adapter.js";
+import { SlackMessagingBot } from "../src/adapters/slack/bot.js";
 import { defaultCommandHandlers } from "../src/commands/registry.js";
 import { createGlobalSettingsFile } from "../src/config.js";
 import type { CommandServices } from "../src/commands/types.js";
@@ -12,7 +12,7 @@ import { createManagedSessionFileAtPath, getThreadSessionFile } from "../src/ses
 import type { SandboxConfig } from "../src/sandbox/index.js";
 import type { VaultManager } from "../src/vault/index.js";
 
-function makeHandler(): BotHandler {
+function makeHandler(): MessagingEventHandler {
   return {
     isRunning: vi.fn().mockReturnValue(false),
     getRunningSessions: vi.fn().mockReturnValue([]),
@@ -52,7 +52,7 @@ function makeCommandServices(workingDir: string): CommandServices {
   };
 }
 
-describe("SlackBot slash commands", () => {
+describe("SlackMessagingBot slash commands", () => {
   let workingDir: string;
 
   beforeEach(() => {
@@ -68,7 +68,7 @@ describe("SlackBot slash commands", () => {
 
   test("/pi-login in a shared channel responds ephemerally without opening a DM", async () => {
     const handler = makeHandler();
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -102,7 +102,7 @@ describe("SlackBot slash commands", () => {
 
     expect(open).not.toHaveBeenCalled();
 
-    const [event, calledBot, context] = vi.mocked(handler.handleEvent).mock.calls[0];
+    const [event, calledMessagingBot, context] = vi.mocked(handler.handleEvent).mock.calls[0];
     expect(event).toMatchObject({
       type: "private_command",
       conversationId: "C123",
@@ -111,7 +111,7 @@ describe("SlackBot slash commands", () => {
       text: "/pi-login github",
       sessionKey: "C123",
     });
-    expect(calledBot).toBe(bot);
+    expect(calledMessagingBot).toBe(bot);
 
     await context.responder.respond("login link");
     expect(postEphemeral).toHaveBeenLastCalledWith({
@@ -124,15 +124,15 @@ describe("SlackBot slash commands", () => {
 
   test("/pi-new in a DM resets the DM session", async () => {
     const handler = makeHandler();
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
       store: {} as any,
     });
 
-    handler.handleNewCommand = vi.fn(async (_sessionKey, conversationId, commandBot) => {
-      await commandBot.postMessage(
+    handler.handleNewCommand = vi.fn(async (_sessionKey, conversationId, commandMessagingBot) => {
+      await commandMessagingBot.postMessage(
         conversationId,
         "Conversation reset. Send a new message to start fresh.",
       );
@@ -163,7 +163,7 @@ describe("SlackBot slash commands", () => {
 
   test("/pi-new in a shared channel is rejected with an ephemeral hint", async () => {
     const handler = makeHandler();
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -201,7 +201,7 @@ describe("SlackBot slash commands", () => {
       await context.responder.respond("sandbox status");
     });
 
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -253,7 +253,7 @@ describe("SlackBot slash commands", () => {
       await context.responder.respond("auto reply status");
     });
 
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -301,7 +301,7 @@ describe("SlackBot slash commands", () => {
 
   test("/pi-auto-reply in a shared channel is accepted by the command handler", async () => {
     const handler = makeHandler();
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -319,8 +319,9 @@ describe("SlackBot slash commands", () => {
       afterRunTracked: vi.fn(),
       onRunFinished: vi.fn(),
     });
-    (handler.handleEvent as any).mockImplementation((event: any, eventBot: any, context: any) =>
-      orchestrator.runSession({ event, bot: eventBot, context }),
+    (handler.handleEvent as any).mockImplementation(
+      (event: any, eventMessagingBot: any, context: any) =>
+        orchestrator.runSession({ event, bot: eventMessagingBot, context }),
     );
 
     const postEphemeral = vi.fn().mockResolvedValue(undefined);
@@ -378,7 +379,7 @@ describe("SlackBot slash commands", () => {
       await context.responder.respond("session link");
     });
 
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -426,7 +427,7 @@ describe("SlackBot slash commands", () => {
       await context.responder.respond("thread session link");
     });
 
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -468,7 +469,7 @@ describe("SlackBot slash commands", () => {
   });
 });
 
-describe("SlackBot queues follow-up messages", () => {
+describe("SlackMessagingBot queues follow-up messages", () => {
   let workingDir: string;
 
   beforeEach(() => {
@@ -486,7 +487,7 @@ describe("SlackBot queues follow-up messages", () => {
     const handler = makeHandler();
     vi.mocked(handler.isRunning).mockImplementation((sessionKey: string) => sessionKey === "C123");
 
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -553,7 +554,7 @@ describe("SlackBot queues follow-up messages", () => {
     writeFileSync(join(workingDir, "C123", "auto-reply"), "");
 
     const handler = makeHandler();
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -618,7 +619,7 @@ describe("SlackBot queues follow-up messages", () => {
 
   test("shared channel auto-reply candidates only log when auto-reply is disabled", async () => {
     const handler = makeHandler();
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -672,7 +673,7 @@ describe("SlackBot queues follow-up messages", () => {
   test("DM stop is handled immediately and bypasses the intake queue", async () => {
     const handler = makeHandler();
     vi.mocked(handler.isRunning).mockImplementation((sessionKey: string) => sessionKey === "D123");
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -727,7 +728,7 @@ describe("SlackBot queues follow-up messages", () => {
     writeFileSync(join(workingDir, "C123", "auto-reply"), "");
 
     const handler = makeHandler();
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -781,7 +782,7 @@ describe("SlackBot queues follow-up messages", () => {
 
   test("bare shared channel mentions ask the agent to use recent context", async () => {
     const handler = makeHandler();
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -837,7 +838,7 @@ describe("SlackBot queues follow-up messages", () => {
 
   test("shared channel mentions preserve mentions of other users", async () => {
     const handler = makeHandler();
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -894,7 +895,7 @@ describe("SlackBot queues follow-up messages", () => {
   test("first shared-channel thread reply waits behind the channel queue until the thread session exists", async () => {
     const handler = makeHandler();
 
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -949,7 +950,7 @@ describe("SlackBot queues follow-up messages", () => {
   test("shared-channel bare thread replies do not trigger after the thread session exists", async () => {
     const handler = makeHandler();
 
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -1010,7 +1011,7 @@ describe("SlackBot queues follow-up messages", () => {
   test("Slack events create a top-level anchor and run under that thread session", async () => {
     const handler = makeHandler();
     const handled = new Promise<void>((resolve, reject) => {
-      handler.handleEvent = vi.fn(async (event, _calledBot, context) => {
+      handler.handleEvent = vi.fn(async (event, _calledMessagingBot, context) => {
         try {
           expect(event).toMatchObject({
             conversationId: "C123",
@@ -1026,7 +1027,7 @@ describe("SlackBot queues follow-up messages", () => {
       });
     });
 
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -1066,7 +1067,7 @@ describe("SlackBot queues follow-up messages", () => {
 
   test("Slack events report anchor failures instead of creating legacy event sessions", async () => {
     const handler = makeHandler();
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -1110,7 +1111,7 @@ describe("SlackBot queues follow-up messages", () => {
       resolveEventHandled = resolve;
       rejectEventHandled = reject;
     });
-    handler.handleEvent = vi.fn(async (event, _calledBot, context) => {
+    handler.handleEvent = vi.fn(async (event, _calledMessagingBot, context) => {
       try {
         expect(event).toMatchObject({
           conversationId: "C123",
@@ -1124,7 +1125,7 @@ describe("SlackBot queues follow-up messages", () => {
       }
     });
 
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -1207,7 +1208,7 @@ describe("SlackBot queues follow-up messages", () => {
   test("external Slack app bot messages are logged but do not trigger mikan", async () => {
     const handler = makeHandler();
 
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -1234,7 +1235,7 @@ describe("SlackBot queues follow-up messages", () => {
     (bot as any).startupTs = "0";
     (bot as any).botUserId = "U_MIKAN";
     (bot as any).botId = "B_MIKAN";
-    (bot as any).logExternalBotMessage = vi.fn().mockResolvedValue([]);
+    (bot as any).logExternalMessagingBotMessage = vi.fn().mockResolvedValue([]);
     (bot as any).socketClient = {
       on: vi.fn((event: string, fn: unknown) => {
         if (event === "message") messageHandler = fn as typeof messageHandler;
@@ -1259,7 +1260,7 @@ describe("SlackBot queues follow-up messages", () => {
     });
 
     expect(ack).toHaveBeenCalled();
-    expect((bot as any).logExternalBotMessage).toHaveBeenCalledWith(
+    expect((bot as any).logExternalMessagingBotMessage).toHaveBeenCalledWith(
       expect.objectContaining({ bot_id: "B_SENTRY", username: "Sentry" }),
     );
     expect(handler.handleEvent).not.toHaveBeenCalled();
@@ -1268,7 +1269,7 @@ describe("SlackBot queues follow-up messages", () => {
   test("shared-channel bare thread replies do not trigger for unrelated threads", async () => {
     const handler = makeHandler();
 
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -1325,7 +1326,7 @@ describe("SlackBot queues follow-up messages", () => {
       (sessionKey: string) => sessionKey === "C123:1000.0001",
     );
 
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -1382,7 +1383,7 @@ describe("SlackBot queues follow-up messages", () => {
     const handler = makeHandler();
     vi.mocked(handler.isRunning).mockImplementation((sessionKey: string) => sessionKey === "D123");
 
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -1448,7 +1449,7 @@ describe("SlackBot queues follow-up messages", () => {
   test("first DM thread reply waits behind the top-level DM queue until the thread session exists", async () => {
     const handler = makeHandler();
 
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -1508,7 +1509,7 @@ describe("SlackBot queues follow-up messages", () => {
       (sessionKey: string) => sessionKey === "D123:2000.0001",
     );
 
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -1579,7 +1580,7 @@ describe("SlackBot queues follow-up messages", () => {
   });
 });
 
-describe("SlackBot backfill", () => {
+describe("SlackMessagingBot backfill", () => {
   let workingDir: string;
 
   beforeEach(() => {
@@ -1595,7 +1596,7 @@ describe("SlackBot backfill", () => {
 
   test("backfill preserves threadTs for thread replies", async () => {
     const handler = makeHandler();
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -1633,7 +1634,7 @@ describe("SlackBot backfill", () => {
 
   test("backfill logs external app bot messages", async () => {
     const handler = makeHandler();
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -1688,7 +1689,7 @@ describe("SlackBot backfill", () => {
 
   test("backfill preserves mentions of other users while stripping mikan", async () => {
     const handler = makeHandler();
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,
@@ -1724,7 +1725,7 @@ describe("SlackBot backfill", () => {
   });
 });
 
-describe("SlackBot attachments", () => {
+describe("SlackMessagingBot attachments", () => {
   let workingDir: string;
 
   beforeEach(() => {
@@ -1740,7 +1741,7 @@ describe("SlackBot attachments", () => {
 
   test("waits for attachment downloads before invoking the agent", async () => {
     const handler = makeHandler();
-    const bot = new SlackBot(handler, {
+    const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workingDir,

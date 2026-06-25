@@ -34,7 +34,7 @@ export interface ThreadRootMessage {
   userName?: string;
   user?: string;
   loggedAt?: number;
-  isBot?: boolean;
+  isMessagingBot?: boolean;
 }
 
 export interface ResolvedSessionScope {

@@ -76,11 +76,11 @@ Cron 格式：`minute hour day-of-month month day-of-week`
 
 事件檔案不帶有 `sessionKey` 或 thread 目標。事件文字必須自給自足，因為排程/背景事件不是建立它的即時聊天回合的延續。
 
-| 平台/事件來源           | 可見的送達方式          | Session key                                 | Thread 目標     |
-| ----------------------- | ----------------------- | ------------------------------------------- | --------------- |
-| Slack event file/tool   | 新的頂層錨點訊息        | `<conversationId>:<anchor message ts>`      | 無              |
-| Slack direct `BotEvent` | 提供的 `thread_ts` 優先 | 若有設定則為 `<conversationId>:<thread_ts>` | 可選            |
-| 其他平台事件            | 平台 adapter 預設       | 平台 adapter 預設事件 session               | 依 adapter 而定 |
+| 平台/事件來源                    | 可見的送達方式          | Session key                                 | Thread 目標     |
+| -------------------------------- | ----------------------- | ------------------------------------------- | --------------- |
+| Slack event file/tool            | 新的頂層錨點訊息        | `<conversationId>:<anchor message ts>`      | 無              |
+| Slack direct `ConversationEvent` | 提供的 `thread_ts` 優先 | 若有設定則為 `<conversationId>:<thread_ts>` | 可選            |
+| 其他平台事件                     | 平台 adapter 預設       | 平台 adapter 預設事件 session               | 依 adapter 而定 |
 
 對 Slack 事件檔案來說，事件觸發時會先主動建立一則頂層 Slack 訊息。該訊息時間戳會成為錨點，而該次執行會使用固定的 session key `<conversationId>:<anchor message ts>`。
 

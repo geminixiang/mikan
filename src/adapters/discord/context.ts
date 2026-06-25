@@ -1,8 +1,8 @@
 import type {
-  ChatMessage,
-  PlatformResponder,
+  ConversationMessage,
+  ConversationResponder,
   ChatToolResult,
-  PlatformInfo,
+  MessagingInfo,
 } from "../../adapter.js";
 import * as log from "../../log.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
@@ -13,7 +13,7 @@ import {
   type ChatResponseErrorOperation,
 } from "../shared.js";
 import { BufferedResponseStream } from "../streaming.js";
-import type { DiscordBot, DiscordEvent } from "./bot.js";
+import type { DiscordMessagingBot, DiscordEvent } from "./bot.js";
 
 const DISCORD_FORMATTING_GUIDE = `## Discord Formatting (Markdown)
 Bold: **text**, Italic: *text*, Code: \`code\`, Block: \`\`\`language\ncode\`\`\`
@@ -42,11 +42,11 @@ function formatToolResult(result: ChatToolResult): string {
 
 export function createDiscordAdapters(
   event: DiscordEvent,
-  bot: DiscordBot,
+  bot: DiscordMessagingBot,
 ): {
-  message: ChatMessage;
-  responder: PlatformResponder;
-  platform: PlatformInfo;
+  message: ConversationMessage;
+  responder: ConversationResponder;
+  platform: MessagingInfo;
 } {
   let messageId: string | null = null;
   let accumulatedText = "";
@@ -68,7 +68,7 @@ export function createDiscordAdapters(
   const threadTargetId = isDiscordMessageReference(event.thread_ts) ? event.thread_ts : undefined;
   const replyTargetId = isDiscordMessageReference(event.ts) ? event.ts : undefined;
 
-  const message: ChatMessage = {
+  const message: ConversationMessage = {
     id: event.ts,
     sessionKey:
       event.sessionKey ??
@@ -87,7 +87,7 @@ export function createDiscordAdapters(
     threadTs: event.thread_ts,
   };
 
-  const platform: PlatformInfo = {
+  const platform: MessagingInfo = {
     name: "discord",
     formattingGuide: DISCORD_FORMATTING_GUIDE,
     channels: bot.getAllChannels(),
@@ -174,7 +174,7 @@ export function createDiscordAdapters(
     await updatePromise;
   }
 
-  const responder: PlatformResponder = {
+  const responder: ConversationResponder = {
     respond: async (text: string) => {
       await queueDiscordResponse(
         "respond",

@@ -12,16 +12,16 @@ export {
   type ConversationRuntimeOptions,
 } from "./runtime/conversation-runtime.js";
 export type {
-  Bot,
-  PlatformEventContext,
-  BotEvent,
-  BotHandler,
+  MessagingBot,
+  ConversationContext,
+  ConversationEvent,
+  MessagingEventHandler,
   ChatAdapter,
-  ChatMessage,
-  PlatformResponder,
+  ConversationMessage,
+  ConversationResponder,
   ChatToolResult,
   ConversationKind,
-  PlatformInfo,
+  MessagingInfo,
   RunningSession,
 } from "./adapter.js";
 export {

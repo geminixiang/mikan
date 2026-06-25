@@ -2,7 +2,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import type { BotEvent } from "../src/adapter.js";
+import type { ConversationEvent } from "../src/adapter.js";
 import { saveConversationAutoReplyConfig } from "../src/config.js";
 import { decideTrigger, evaluateAutoReplyPolicy } from "../src/trigger.js";
 
@@ -29,7 +29,7 @@ describe("evaluateAutoReplyPolicy", () => {
     rmSync(workingDir, { recursive: true, force: true });
   });
 
-  const event: BotEvent = {
+  const event: ConversationEvent = {
     type: "mention",
     conversationId: "C123",
     conversationKind: "shared",

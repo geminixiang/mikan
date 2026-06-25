@@ -1,5 +1,5 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { Bot, PlatformEventContext, PlatformName } from "../adapter.js";
+import type { MessagingBot, ConversationContext, PlatformName } from "../adapter.js";
 import type { DockerContainerManager } from "../provisioner.js";
 import type { ConversationRuntime } from "../runtime/conversation-runtime.js";
 import type { SandboxConfig } from "../sandbox/index.js";
@@ -48,8 +48,8 @@ export interface CommandServices {
 }
 
 export interface CommandContext {
-  bot: Bot;
-  responder: PlatformEventContext["responder"];
+  bot: MessagingBot;
+  responder: ConversationContext["responder"];
   platform: PlatformName;
   platformUserId: string;
   conversationId: string;
