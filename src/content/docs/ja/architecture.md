@@ -21,9 +21,9 @@ flowchart LR
 
   subgraph Runtime["コアランタイム"]
     Main["src/main.ts\nCLI 起動"]
-    SessionRuntime["src/runtime/session-runtime.ts\nSessionRuntime + runner キャッシュ"]
-    Orchestrator["src/runtime/conversation-orchestrator.ts\n実行ライフサイクル + コマンド"]
-    AgentRunner["src/agent.ts\ncreateRunner()"]
+    ConversationRuntime["src/runtime/conversation-runtime.ts\nConversationRuntime + runner キャッシュ"]
+    Orchestrator["src/runtime/agent-run-controller.ts\n実行ライフサイクル + コマンド"]
+    PiAgentWrapper["src/agent.ts\ncreateRunner()"]
   end
 
   subgraph AgentStack["Agent スタック"]
@@ -63,14 +63,14 @@ flowchart LR
   TelegramAdapter --> Main
   DiscordAdapter --> Main
 
-  Main --> SessionRuntime
-  SessionRuntime --> Orchestrator
-  SessionRuntime --> AgentRunner
+  Main --> ConversationRuntime
+  ConversationRuntime --> Orchestrator
+  ConversationRuntime --> PiAgentWrapper
 
-  AgentRunner --> PiAgent
-  AgentRunner --> PiCoding
-  AgentRunner --> PiAI
-  AgentRunner --> MikanTools
+  PiAgentWrapper --> PiAgent
+  PiAgentWrapper --> PiCoding
+  PiAgentWrapper --> PiAI
+  PiAgentWrapper --> MikanTools
   MikanTools --> Executor
 
   Main --> VaultManager
@@ -79,14 +79,14 @@ flowchart LR
   Main --> EventsWatcher
   LinkServer --> SessionViewer
 
-  AgentRunner --> ConversationDir
-  AgentRunner --> Sessions
+  PiAgentWrapper --> ConversationDir
+  PiAgentWrapper --> Sessions
   Main --> GlobalSettings
   EventsWatcher --> EventsDir
   VaultManager --> Vaults
   LinkServer --> LinkTokens
 
-  Executor -. shared: host / container; isolated: image / firecracker / cloudflare .-> ConversationDir
+  Executor -. shared: host / container, isolated: image / firecracker / cloudflare .-> ConversationDir
   Provisioner -. isolated image sandbox lifecycle .-> Executor
   VaultManager -. env + mount routing .-> Executor
   EventsWatcher -. enqueue BotEvent .-> Main
@@ -106,25 +106,25 @@ flowchart LR
 責務:
 
 - Slack / Telegram / Discord のネイティブイベントを受け取る
-- 統一された `BotEvent`、`ChatMessage`、`ChatResponseContext` に変換する
+- 統一された `BotEvent`、`ChatMessage`、`PlatformResponder` に変換する
 - プラットフォームの規則に従って `sessionKey` を計算する
 - 返信、typing、working、ファイルアップロードなどのプラットフォーム差分を隠蔽する
 
 ### B. コア調整レイヤー
 
 - `src/main.ts`
-- `src/runtime/session-runtime.ts`
-- `src/runtime/conversation-orchestrator.ts`
+- `src/runtime/conversation-runtime.ts`
+- `src/runtime/agent-run-controller.ts`
 - `src/sessions/store.ts`
-- `src/sessions/chat-session-manager.ts`
+- `src/sessions/agent-memory-file-manager.ts`
 
 責務:
 
 - CLI を起動し、env / args / `settings.json` を読み込む
-- 各プラットフォーム bot の `BotHandler` として `SessionRuntime` を作成する
-- `ConversationOrchestrator` を通じて `/login`、`/session`、`stop`、`new` などの制御コマンドを dispatch する
+- 各プラットフォーム bot の `BotHandler` として `ConversationRuntime` を作成する
+- `AgentRunController` を通じて `/login`、`/session`、`stop`、`new` などの制御コマンドを dispatch する
 - `conversationStates` と per-session queue を管理し、同じ session の重複実行を防ぐ
-- 各 session scope に対応する `AgentRunner` を決定する
+- 各 session scope に対応する `PiAgentWrapper` を決定する
 
 ### C. Agent 実行レイヤー
 
@@ -134,7 +134,7 @@ flowchart LR
 
 責務:
 
-- `AgentRunner` を作成する
+- `PiAgentWrapper` を作成する
 - モデル、skills、memory、session context を読み込む
 - ユーザーメッセージを `pi-agent-core` / `pi-coding-agent` に渡す
 - tool calls をローカルの `read/bash/edit/write/event/attach` に接続する
@@ -158,7 +158,7 @@ flowchart LR
 ### E. 状態と永続化レイヤー
 
 - `src/sessions/store.ts`
-- `src/sessions/chat-session-manager.ts`
+- `src/sessions/agent-memory-file-manager.ts`
 - `src/context.ts`
 - `src/vault/index.ts`
 
@@ -191,9 +191,9 @@ sequenceDiagram
   participant U as User
   participant P as Slack / Telegram / Discord
   participant A as Adapter
-  participant M as SessionRuntime / Orchestrator
+  participant M as ConversationRuntime / Orchestrator
   participant S as sessions/store.ts
-  participant R as agent.ts / AgentRunner
+  participant R as agent.ts / PiAgentWrapper
   participant T as tools/*
   participant X as sandbox Executor
   participant W as Workspace / sessions

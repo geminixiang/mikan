@@ -6,7 +6,7 @@ export type {
   ChatAdapter,
   ChatMessage,
   ChatResponseBlockKit,
-  ChatResponseContext,
+  PlatformResponder,
   ChatToolResult,
   ConversationKind,
   PlatformInfo,

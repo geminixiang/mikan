@@ -1,5 +1,5 @@
 import type { BotAdapters, ConversationKind, PlatformName } from "../adapter.js";
-import { waitForThreadSessionBootstrap } from "../sessions/chat-session-manager.js";
+import { waitForThreadSessionBootstrap } from "../sessions/agent-memory-file-manager.js";
 import { dispatchCommand } from "../commands/registry.js";
 import type { CommandHandler, CommandServices } from "../commands/types.js";
 import { isPrivateConversation } from "../commands/utils.js";
@@ -18,7 +18,7 @@ import { join } from "path";
 export type { ConversationRuntimeState, RunSessionOptions } from "./types.js";
 import type { ConversationRuntimeState, RunSessionOptions } from "./types.js";
 
-interface ConversationOrchestratorOptions {
+interface AgentRunControllerOptions {
   workingDir: string;
   commandHandlers: readonly CommandHandler[];
   commandServices: CommandServices;
@@ -36,8 +36,8 @@ interface ConversationOrchestratorOptions {
   onRunFinished: () => void;
 }
 
-export class ConversationOrchestrator {
-  constructor(private readonly options: ConversationOrchestratorOptions) {}
+export class AgentRunController {
+  constructor(private readonly options: AgentRunControllerOptions) {}
 
   async runSession({ event, bot, adapters }: RunSessionOptions): Promise<void> {
     const conversationId = event.conversationId;

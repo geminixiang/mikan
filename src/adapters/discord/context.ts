@@ -1,6 +1,6 @@
 import type {
   ChatMessage,
-  ChatResponseContext,
+  PlatformResponder,
   ChatToolResult,
   PlatformInfo,
 } from "../../adapter.js";
@@ -45,7 +45,7 @@ export function createDiscordAdapters(
   bot: DiscordBot,
 ): {
   message: ChatMessage;
-  responseCtx: ChatResponseContext;
+  responseCtx: PlatformResponder;
   platform: PlatformInfo;
 } {
   let messageId: string | null = null;
@@ -174,7 +174,7 @@ export function createDiscordAdapters(
     await updatePromise;
   }
 
-  const responseCtx: ChatResponseContext = {
+  const responseCtx: PlatformResponder = {
     respond: async (text: string) => {
       await queueDiscordResponse(
         "respond",

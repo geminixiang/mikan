@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { Bot, ChatResponseContext } from "../src/adapter.js";
+import type { Bot, PlatformResponder } from "../src/adapter.js";
 import { AdminCommandHandler } from "../src/commands/admin.js";
 import { AutoReplyCommandHandler } from "../src/commands/auto-reply.js";
 import { dispatchCommand } from "../src/commands/registry.js";
@@ -17,7 +17,7 @@ import type { VaultManager } from "../src/vault/index.js";
 
 // ── Fakes ────────────────────────────────────────────────────────────────────
 
-interface RecordingResponseCtx extends ChatResponseContext {
+interface RecordingResponseCtx extends PlatformResponder {
   responses: string[];
 }
 

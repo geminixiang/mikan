@@ -1,10 +1,10 @@
-import type { AgentRunner } from "../agent.js";
+import type { PiAgentWrapper } from "../agent.js";
 import type { Bot, BotAdapters, BotEvent, BotHandler, ConversationKind } from "../adapter.js";
 import type { CommandServices } from "../commands/types.js";
 
 export interface ConversationRuntimeState {
   running: boolean;
-  runner: AgentRunner;
+  runner: PiAgentWrapper;
   stopRequested: boolean;
   stopMessageTs?: string;
   lastAccessedAt: number;
@@ -26,16 +26,16 @@ export interface CreateSessionSandboxOptions {
   conversationKind?: ConversationKind;
 }
 
-export interface SessionRuntimeOptions extends Omit<CommandServices, "runtime"> {
+export interface ConversationRuntimeOptions extends Omit<CommandServices, "runtime"> {
   /** Override the default command handlers (e.g., to add /help, /status). */
   commandHandlers?: readonly CommandHandler[];
 }
 
 import type { CommandHandler } from "../commands/types.js";
 
-export interface SessionRuntime extends BotHandler {
+export interface ConversationRuntime extends BotHandler {
   runSession(options: RunSessionOptions): Promise<void>;
-  createSessionSandbox(options: CreateSessionSandboxOptions): Promise<AgentRunner>;
+  createSessionSandbox(options: CreateSessionSandboxOptions): Promise<PiAgentWrapper>;
   switchConversationModel(conversationId: string, provider: string, model: string): boolean;
   refreshConversationEnvironment(conversationId: string): boolean;
   shutdown(timeoutMs?: number): Promise<void>;

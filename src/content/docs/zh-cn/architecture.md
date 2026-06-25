@@ -21,9 +21,9 @@ flowchart LR
 
   subgraph Runtime["核心執行階段"]
     Main["src/main.ts\nCLI 啟動"]
-    SessionRuntime["src/runtime/session-runtime.ts\nSessionRuntime + runner 快取"]
-    Orchestrator["src/runtime/conversation-orchestrator.ts\n執行生命週期 + 指令"]
-    AgentRunner["src/agent.ts\ncreateRunner()"]
+    ConversationRuntime["src/runtime/conversation-runtime.ts\nConversationRuntime + runner 快取"]
+    Orchestrator["src/runtime/agent-run-controller.ts\n執行生命週期 + 指令"]
+    PiAgentWrapper["src/agent.ts\ncreateRunner()"]
   end
 
   subgraph AgentStack["Agent 堆疊"]
@@ -63,14 +63,14 @@ flowchart LR
   TelegramAdapter --> Main
   DiscordAdapter --> Main
 
-  Main --> SessionRuntime
-  SessionRuntime --> Orchestrator
-  SessionRuntime --> AgentRunner
+  Main --> ConversationRuntime
+  ConversationRuntime --> Orchestrator
+  ConversationRuntime --> PiAgentWrapper
 
-  AgentRunner --> PiAgent
-  AgentRunner --> PiCoding
-  AgentRunner --> PiAI
-  AgentRunner --> MikanTools
+  PiAgentWrapper --> PiAgent
+  PiAgentWrapper --> PiCoding
+  PiAgentWrapper --> PiAI
+  PiAgentWrapper --> MikanTools
   MikanTools --> Executor
 
   Main --> VaultManager
@@ -79,14 +79,14 @@ flowchart LR
   Main --> EventsWatcher
   LinkServer --> SessionViewer
 
-  AgentRunner --> ConversationDir
-  AgentRunner --> Sessions
+  PiAgentWrapper --> ConversationDir
+  PiAgentWrapper --> Sessions
   Main --> GlobalSettings
   EventsWatcher --> EventsDir
   VaultManager --> Vaults
   LinkServer --> LinkTokens
 
-  Executor -. shared: host / container; isolated: image / firecracker / cloudflare .-> ConversationDir
+  Executor -. shared: host / container, isolated: image / firecracker / cloudflare .-> ConversationDir
   Provisioner -. isolated image sandbox lifecycle .-> Executor
   VaultManager -. env + mount routing .-> Executor
   EventsWatcher -. enqueue BotEvent .-> Main
@@ -106,25 +106,25 @@ flowchart LR
 职责：
 
 - 接收 Slack / Telegram / Discord 原生事件
-- 转成统一的 `BotEvent`、`ChatMessage`、`ChatResponseContext`
+- 转成统一的 `BotEvent`、`ChatMessage`、`PlatformResponder`
 - 依平台规则计算 `sessionKey`
 - 封装回覆、typing、working、档案上传等平台差异
 
 ### B. 核心协调层
 
 - `src/main.ts`
-- `src/runtime/session-runtime.ts`
-- `src/runtime/conversation-orchestrator.ts`
+- `src/runtime/conversation-runtime.ts`
+- `src/runtime/agent-run-controller.ts`
 - `src/sessions/store.ts`
-- `src/sessions/chat-session-manager.ts`
+- `src/sessions/agent-memory-file-manager.ts`
 
 职责：
 
 - 启动 CLI、读取 env / args / `settings.json`
-- 建立 `SessionRuntime` 作为各平台 bot 的 `BotHandler`
-- 透过 `ConversationOrchestrator` dispatch `/login`、`/session`、`stop`、`new` 等控制命令
+- 建立 `ConversationRuntime` 作为各平台 bot 的 `BotHandler`
+- 透过 `AgentRunController` dispatch `/login`、`/session`、`stop`、`new` 等控制命令
 - 管理 `conversationStates` 与 per-session queue，避免同一 session 重复执行
-- 决定每个 session scope 对应哪个 `AgentRunner`
+- 决定每个 session scope 对应哪个 `PiAgentWrapper`
 
 ### C. Agent 执行层
 
@@ -134,7 +134,7 @@ flowchart LR
 
 职责：
 
-- 建立 `AgentRunner`
+- 建立 `PiAgentWrapper`
 - 载入模型、skills、memory、session context
 - 将使用者讯息送入 `pi-agent-core` / `pi-coding-agent`
 - 把 tool calls 接到本地 `read/bash/edit/write/event/attach`
@@ -158,7 +158,7 @@ flowchart LR
 ### E. 状态与持久化层
 
 - `src/sessions/store.ts`
-- `src/sessions/chat-session-manager.ts`
+- `src/sessions/agent-memory-file-manager.ts`
 - `src/context.ts`
 - `src/vault/index.ts`
 
@@ -191,9 +191,9 @@ sequenceDiagram
   participant U as User
   participant P as Slack / Telegram / Discord
   participant A as Adapter
-  participant M as SessionRuntime / Orchestrator
+  participant M as ConversationRuntime / Orchestrator
   participant S as sessions/store.ts
-  participant R as agent.ts / AgentRunner
+  participant R as agent.ts / PiAgentWrapper
   participant T as tools/*
   participant X as sandbox Executor
   participant W as Workspace / sessions

@@ -1,18 +1,15 @@
 import type { Bot, BotAdapters, BotEvent, RunningSession } from "../adapter.js";
-import { type AgentRunner, createRunner } from "../agent.js";
+import { type PiAgentWrapper, createRunner } from "../agent.js";
 import { defaultCommandHandlers } from "../commands/registry.js";
 import type { CommandServices } from "../commands/types.js";
 import * as log from "../log.js";
 import { reportUserFacingError } from "../observability/sentry.js";
 import {
-  ChatSessionManager,
+  AgentMemoryFileManager,
   hasMaterializedChatSession,
-} from "../sessions/chat-session-manager.js";
+} from "../sessions/agent-memory-file-manager.js";
 import { formatNothingRunning, formatStopping } from "../platform-messages.js";
-import {
-  ConversationOrchestrator,
-  type ConversationRuntimeState,
-} from "./conversation-orchestrator.js";
+import { AgentRunController, type ConversationRuntimeState } from "./agent-run-controller.js";
 import * as Sentry from "@sentry/node";
 import { join } from "path";
 import { getUnresolvedSandboxPathContext } from "../agent.js";
@@ -22,21 +19,21 @@ type ConversationState = ConversationRuntimeState;
 export type {
   CreateSessionSandboxOptions,
   RunSessionOptions,
-  SessionRuntime,
-  SessionRuntimeOptions,
+  ConversationRuntime,
+  ConversationRuntimeOptions,
 } from "./types.js";
 import type {
   CreateSessionSandboxOptions,
   RunSessionOptions,
-  SessionRuntime,
-  SessionRuntimeOptions,
+  ConversationRuntime,
+  ConversationRuntimeOptions,
 } from "./types.js";
 
 const MAX_SESSIONS = 500;
 const IDLE_TIMEOUT_MS = 3_600_000;
 
 function runtimeCwdForSandbox(
-  sandbox: SessionRuntimeOptions["sandbox"],
+  sandbox: ConversationRuntimeOptions["sandbox"],
   hostWorkspaceRoot: string,
   conversationId: string,
 ): string {
@@ -47,22 +44,24 @@ function runtimeCwdForSandbox(
   return `${runtimeWorkspaceRoot.replace(/\/+$/, "")}/${conversationId}`;
 }
 
-export function createSessionRuntime(options: SessionRuntimeOptions): SessionRuntime {
-  return new MikanSessionRuntime(options);
+export function createConversationRuntime(
+  options: ConversationRuntimeOptions,
+): ConversationRuntime {
+  return new ConversationRuntimeImpl(options);
 }
 
-class MikanSessionRuntime implements SessionRuntime {
+class ConversationRuntimeImpl implements ConversationRuntime {
   private readonly conversationStates = new Map<string, ConversationState>();
   private readonly sessionQueues = new Map<string, Promise<void>>();
   private readonly inFlightRuns = new Set<Promise<void>>();
-  private readonly orchestrator: ConversationOrchestrator;
-  private readonly chatSessionManager = new ChatSessionManager();
+  private readonly orchestrator: AgentRunController;
+  private readonly chatSessionManager = new AgentMemoryFileManager();
   private isShuttingDown = false;
 
-  constructor(private readonly options: SessionRuntimeOptions) {
+  constructor(private readonly options: ConversationRuntimeOptions) {
     const commandServices: CommandServices = { ...options, runtime: this };
     const commandHandlers = options.commandHandlers ?? defaultCommandHandlers();
-    this.orchestrator = new ConversationOrchestrator({
+    this.orchestrator = new AgentRunController({
       workingDir: options.workingDir,
       commandHandlers,
       commandServices,
@@ -167,7 +166,7 @@ class MikanSessionRuntime implements SessionRuntime {
     await this.orchestrator.runSession({ event, bot, adapters });
   }
 
-  async createSessionSandbox(options: CreateSessionSandboxOptions): Promise<AgentRunner> {
+  async createSessionSandbox(options: CreateSessionSandboxOptions): Promise<PiAgentWrapper> {
     const state = await this.getOrCreateState(options);
     return state.runner;
   }

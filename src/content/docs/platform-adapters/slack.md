@@ -5,13 +5,13 @@ description: Socket Mode events, thread routing, Block Kit, and response lifecyc
 
 ## Main code
 
-| File                                       | Purpose                                                                                                 |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| `src/adapters/slack/bot.ts`                | Slack bot core: Socket Mode events, slash commands, Block Kit actions, file download, message sending.  |
-| `src/adapters/slack/context.ts`            | Creates the Slack `ChatResponseContext`; handles mrkdwn, reply modes, working state, and long messages. |
-| `src/adapters/slack/session.ts`            | Slack channel/thread session key rules.                                                                 |
-| `src/adapters/slack/response-lifecycle.ts` | Slack response lifecycle and streaming updates.                                                         |
-| `src/adapters/slack/tools/*`               | Slack-specific tools such as attachment and Block Kit support.                                          |
+| File                                       | Purpose                                                                                                |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `src/adapters/slack/bot.ts`                | Slack bot core: Socket Mode events, slash commands, Block Kit actions, file download, message sending. |
+| `src/adapters/slack/context.ts`            | Creates the Slack `PlatformResponder`; handles mrkdwn, reply modes, working state, and long messages.  |
+| `src/adapters/slack/session.ts`            | Slack channel/thread session key rules.                                                                |
+| `src/adapters/slack/response-lifecycle.ts` | Slack response lifecycle and streaming updates.                                                        |
+| `src/adapters/slack/tools/*`               | Slack-specific tools such as attachment and Block Kit support.                                         |
 
 ## Event sources
 

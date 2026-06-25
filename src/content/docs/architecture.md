@@ -21,9 +21,9 @@ flowchart LR
 
   subgraph Runtime["Core runtime"]
     Main["src/main.ts\nCLI startup"]
-    SessionRuntime["src/runtime/session-runtime.ts\nSessionRuntime + runner cache"]
-    Orchestrator["src/runtime/conversation-orchestrator.ts\nrun lifecycle + commands"]
-    AgentRunner["src/agent.ts\ncreateRunner()"]
+    ConversationRuntime["src/runtime/conversation-runtime.ts\nConversationRuntime + runner cache"]
+    Orchestrator["src/runtime/agent-run-controller.ts\nrun lifecycle + commands"]
+    PiAgentWrapper["src/agent.ts\ncreateRunner()"]
   end
 
   subgraph AgentStack["Agent stack"]
@@ -63,14 +63,14 @@ flowchart LR
   TelegramAdapter --> Main
   DiscordAdapter --> Main
 
-  Main --> SessionRuntime
-  SessionRuntime --> Orchestrator
-  SessionRuntime --> AgentRunner
+  Main --> ConversationRuntime
+  ConversationRuntime --> Orchestrator
+  ConversationRuntime --> PiAgentWrapper
 
-  AgentRunner --> PiAgent
-  AgentRunner --> PiCoding
-  AgentRunner --> PiAI
-  AgentRunner --> MikanTools
+  PiAgentWrapper --> PiAgent
+  PiAgentWrapper --> PiCoding
+  PiAgentWrapper --> PiAI
+  PiAgentWrapper --> MikanTools
   MikanTools --> Executor
 
   Main --> VaultManager
@@ -79,14 +79,14 @@ flowchart LR
   Main --> EventsWatcher
   LinkServer --> SessionViewer
 
-  AgentRunner --> ConversationDir
-  AgentRunner --> Sessions
+  PiAgentWrapper --> ConversationDir
+  PiAgentWrapper --> Sessions
   Main --> GlobalSettings
   EventsWatcher --> EventsDir
   VaultManager --> Vaults
   LinkServer --> LinkTokens
 
-  Executor -. shared: host / container; isolated: image / firecracker / cloudflare .-> ConversationDir
+  Executor -. shared: host / container, isolated: image / firecracker / cloudflare .-> ConversationDir
   Provisioner -. isolated image sandbox lifecycle .-> Executor
   VaultManager -. env + mount routing .-> Executor
   EventsWatcher -. enqueue BotEvent .-> Main
@@ -106,25 +106,25 @@ For the full platform adapter description, see [Platform adapters](platform-adap
 Responsibilities:
 
 - receive native Slack / Telegram / Discord events
-- convert them to unified `BotEvent`, `ChatMessage`, and `ChatResponseContext` values
+- convert them to unified `BotEvent`, `ChatMessage`, and `PlatformResponder` values
 - compute `sessionKey` according to platform rules
 - wrap platform differences such as replies, typing, working state, and file upload
 
 ### B. Core orchestration layer
 
 - `src/main.ts`
-- `src/runtime/session-runtime.ts`
-- `src/runtime/conversation-orchestrator.ts`
+- `src/runtime/conversation-runtime.ts`
+- `src/runtime/agent-run-controller.ts`
 - `src/sessions/store.ts`
-- `src/sessions/chat-session-manager.ts`
+- `src/sessions/agent-memory-file-manager.ts`
 
 Responsibilities:
 
 - start the CLI and read env / args / `settings.json`
-- create `SessionRuntime` as the `BotHandler` for each platform bot
-- dispatch control commands such as `/login`, `/session`, `stop`, and `new` through `ConversationOrchestrator`
+- create `ConversationRuntime` as the `BotHandler` for each platform bot
+- dispatch control commands such as `/login`, `/session`, `stop`, and `new` through `AgentRunController`
 - manage `conversationStates` and per-session queues to avoid duplicate runs in the same session
-- decide which `AgentRunner` corresponds to each session scope
+- decide which `PiAgentWrapper` corresponds to each session scope
 
 ### C. Agent execution layer
 
@@ -134,7 +134,7 @@ Responsibilities:
 
 Responsibilities:
 
-- create `AgentRunner`
+- create `PiAgentWrapper`
 - load model, skills, memory, and session context
 - send user messages into `pi-agent-core` / `pi-coding-agent`
 - connect tool calls to local `read/bash/edit/write/event/attach`
@@ -158,7 +158,7 @@ Responsibilities:
 ### E. State and persistence layer
 
 - `src/sessions/store.ts`
-- `src/sessions/chat-session-manager.ts`
+- `src/sessions/agent-memory-file-manager.ts`
 - `src/context.ts`
 - `src/vault/index.ts`
 
@@ -191,9 +191,9 @@ sequenceDiagram
   participant U as User
   participant P as Slack / Telegram / Discord
   participant A as Adapter
-  participant M as SessionRuntime / Orchestrator
+  participant M as ConversationRuntime / Orchestrator
   participant S as sessions/store.ts
-  participant R as agent.ts / AgentRunner
+  participant R as agent.ts / PiAgentWrapper
   participant T as tools/*
   participant X as sandbox Executor
   participant W as Workspace / sessions

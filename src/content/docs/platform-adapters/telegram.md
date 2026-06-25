@@ -5,12 +5,12 @@ description: Long polling, message updates, typing, file downloads, and session 
 
 ## Main code
 
-| File                               | Purpose                                                                                     |
-| ---------------------------------- | ------------------------------------------------------------------------------------------- |
-| `src/adapters/telegram/bot.ts`     | Telegram bot core: commands, message handler, attachments, file download, reply sending.    |
-| `src/adapters/telegram/context.ts` | Creates the Telegram `ChatResponseContext`; handles HTML mode, typing, and message updates. |
-| `src/adapters/telegram/html.ts`    | Escapes / sanitizes Telegram HTML to avoid sending markup unsupported by Telegram.          |
-| `src/adapters/telegram/types.ts`   | Telegram adapter-specific types.                                                            |
+| File                               | Purpose                                                                                   |
+| ---------------------------------- | ----------------------------------------------------------------------------------------- |
+| `src/adapters/telegram/bot.ts`     | Telegram bot core: commands, message handler, attachments, file download, reply sending.  |
+| `src/adapters/telegram/context.ts` | Creates the Telegram `PlatformResponder`; handles HTML mode, typing, and message updates. |
+| `src/adapters/telegram/html.ts`    | Escapes / sanitizes Telegram HTML to avoid sending markup unsupported by Telegram.        |
+| `src/adapters/telegram/types.ts`   | Telegram adapter-specific types.                                                          |
 
 ## Event sources
 

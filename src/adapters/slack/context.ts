@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatResponseContext, PlatformInfo } from "../../adapter.js";
+import type { ChatMessage, PlatformResponder, PlatformInfo } from "../../adapter.js";
 import { type SlackBot, type SlackEvent } from "./bot.js";
 import { createSlackResponseContext } from "./response-lifecycle.js";
 import { planSlackAdapterSession } from "./session.js";
@@ -15,7 +15,7 @@ export function createSlackAdapters(
   adapterOptions: SlackAdapterOptions = {},
 ): {
   message: ChatMessage;
-  responseCtx: ChatResponseContext;
+  responseCtx: PlatformResponder;
   platform: PlatformInfo;
 } {
   const sessionPlan = planSlackAdapterSession(event, {

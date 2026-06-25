@@ -15,7 +15,7 @@ import { Aside, Card, CardGrid, LinkCard, Steps } from "@astrojs/starlight/compo
     根据 channel、thread、reply chain 算出 `sessionKey`，让对话进入正确会话。
   </Card>
   <Card title="回复能力" icon="rocket">
-    `ChatResponseContext` 封装回复、更新、typing/working 状态与文件上传。
+    `PlatformResponder` 封装回复、更新、typing/working 状态与文件上传。
   </Card>
 </CardGrid>
 
@@ -28,8 +28,8 @@ import { Aside, Card, CardGrid, LinkCard, Steps } from "@astrojs/starlight/compo
 3. 转为通用的 `BotEvent` 与 `ChatMessage`。
 4. 计算 `sessionKey`，让不同 channel、thread、reply 可以对应到正确 session。
 5. 下载附件并写入 workspace 的 `attachments/`。
-6. 创建 `ChatResponseContext`，封装回复、更新、typing/working 状态与文件上传。
-7. 把事件交给 `BotHandler`，也就是 `SessionRuntime`。
+6. 创建 `PlatformResponder`，封装回复、更新、typing/working 状态与文件上传。
+7. 把事件交给 `BotHandler`，也就是 `ConversationRuntime`。
 
 </Steps>
 
@@ -42,8 +42,8 @@ sequenceDiagram
   participant P as Platform SDK
   participant A as Platform adapter
   participant I as processMessageIntake()
-  participant R as SessionRuntime
-  participant C as ChatResponseContext
+  participant R as ConversationRuntime
+  participant C as PlatformResponder
 
   P->>A: 原生消息 / slash command / reply
   A->>A: 解析 conversation、user、thread、attachments
@@ -57,12 +57,12 @@ sequenceDiagram
 
 ## 通用工具
 
-| 文件                        | 用途                                                                          |
-| --------------------------- | ----------------------------------------------------------------------------- |
-| `src/adapter.ts`            | 对外导出 `Bot`、`BotEvent`、`ChatMessage`、`ChatResponseContext` 等通用接口。 |
-| `src/adapters/intake.ts`    | 共享消息入口流程：trigger、log、attachment、queue、handler 调用顺序。         |
-| `src/adapters/shared.ts`    | 共享 retry、queue、长消息切分、log、stop target resolution。                  |
-| `src/adapters/streaming.ts` | 将 streaming response buffer 后再 flush，避免过于频繁更新平台消息。           |
+| 文件                        | 用途                                                                        |
+| --------------------------- | --------------------------------------------------------------------------- |
+| `src/adapter.ts`            | 对外导出 `Bot`、`BotEvent`、`ChatMessage`、`PlatformResponder` 等通用接口。 |
+| `src/adapters/intake.ts`    | 共享消息入口流程：trigger、log、attachment、queue、handler 调用顺序。       |
+| `src/adapters/shared.ts`    | 共享 retry、queue、长消息切分、log、stop target resolution。                |
+| `src/adapters/streaming.ts` | 将 streaming response buffer 后再 flush，避免过于频繁更新平台消息。         |
 
 ## 平台差异
 
@@ -93,6 +93,6 @@ sequenceDiagram
 - `BotEvent`：一次使用者或平台事件。
 - `Bot`：平台 bot 能力，例如 post message、upload file。
 - `BotAdapters`：一次事件附帶的 `message`、`responseCtx`、`platform` metadata。
-- `ChatResponseContext`：agent 回复时使用的通道。
+- `PlatformResponder`：agent 回复时使用的通道。
 
 如果新增平台，优先实现这些抽象，不要把平台 SDK 细节带进 `src/runtime/*` 或 `src/agent.ts`。

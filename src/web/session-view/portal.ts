@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { basename } from "path";
 import MarkdownIt from "markdown-it";
-import type { BotAdapters, BotEvent, ChatResponseContext } from "../../adapter.js";
+import type { BotAdapters, BotEvent, PlatformResponder } from "../../adapter.js";
 import { escapeHtml } from "../../utils/html.js";
 import * as log from "../../log.js";
 import { renderPortalShell } from "../../portal-shell.js";
@@ -720,7 +720,7 @@ async function handleSessionMessageRequest(
 
 function createSessionViewResponseContext(
   publish: (event: SessionStreamEvent) => void,
-): ChatResponseContext {
+): PlatformResponder {
   let accumulatedText = "";
 
   return {

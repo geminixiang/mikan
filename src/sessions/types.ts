@@ -45,7 +45,7 @@ export interface ResolvedSessionScope {
 
 // ── chat session manager ─────────────────────────────────────────────────────
 
-export interface ChatSessionManagerOptions {
+export interface AgentMemoryFileManagerOptions {
   recentDays?: number;
   maxTopLevelMessages?: number;
   now?: () => Date;
@@ -61,7 +61,7 @@ export interface ResolveChatSessionScopeOptions {
   rotateTopLevelSession?: boolean;
 }
 
-export interface SyncChatSessionManagerOptions {
+export interface SyncAgentMemoryFileManagerOptions {
   conversationDir: string;
   sessionKey: string;
   sessionManager: import("@earendil-works/pi-coding-agent").SessionManager;

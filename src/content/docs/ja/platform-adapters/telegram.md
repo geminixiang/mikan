@@ -8,7 +8,7 @@ description: Telegram adapter の long polling、メッセージ更新、typing�
 | ファイル                           | 用途                                                                                     |
 | ---------------------------------- | ---------------------------------------------------------------------------------------- |
 | `src/adapters/telegram/bot.ts`     | Telegram bot 本体：commands、message handler、attachments、file download、返信送信。     |
-| `src/adapters/telegram/context.ts` | Telegram 版 `ChatResponseContext` を作成し、HTML mode、typing、message update を処理。   |
+| `src/adapters/telegram/context.ts` | Telegram 版 `PlatformResponder` を作成し、HTML mode、typing、message update を処理。     |
 | `src/adapters/telegram/html.ts`    | Telegram HTML を escape / sanitize し、Telegram が未対応の markup を送らないようにする。 |
 | `src/adapters/telegram/types.ts`   | Telegram adapter 専用型。                                                                |
 

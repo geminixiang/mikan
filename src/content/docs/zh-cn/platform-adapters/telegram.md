@@ -8,7 +8,7 @@ description: Telegram adapter 的 long polling、消息更新、typing、文件�
 | 文件                               | 用途                                                                                 |
 | ---------------------------------- | ------------------------------------------------------------------------------------ |
 | `src/adapters/telegram/bot.ts`     | Telegram bot 主体：commands、message handler、attachments、file download、回复送出。 |
-| `src/adapters/telegram/context.ts` | 创建 Telegram 版 `ChatResponseContext`，处理 HTML mode、typing、message update。     |
+| `src/adapters/telegram/context.ts` | 创建 Telegram 版 `PlatformResponder`，处理 HTML mode、typing、message update。       |
 | `src/adapters/telegram/html.ts`    | Escape / sanitize Telegram HTML，避免送出 Telegram 不支持的 markup。                 |
 | `src/adapters/telegram/types.ts`   | Telegram adapter 专用类型。                                                          |
 

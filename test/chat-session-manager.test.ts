@@ -3,7 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { ChatSessionManager, registerThreadSession } from "../src/sessions/chat-session-manager.js";
+import {
+  AgentMemoryFileManager,
+  registerThreadSession,
+} from "../src/sessions/agent-memory-file-manager.js";
 import {
   getChannelSessionDir,
   getThreadSessionFile,
@@ -59,7 +62,7 @@ function countJsonlEntries(
     .filter(predicate).length;
 }
 
-describe("ChatSessionManager", () => {
+describe("AgentMemoryFileManager", () => {
   test("bootstraps a top-level session from recent log history and excludes current message", async () => {
     writeLog([
       {
@@ -95,7 +98,7 @@ describe("ChatSessionManager", () => {
       },
     ]);
 
-    const manager = new ChatSessionManager({
+    const manager = new AgentMemoryFileManager({
       recentDays: 7,
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
@@ -148,7 +151,7 @@ describe("ChatSessionManager", () => {
       },
     ]);
 
-    const manager = new ChatSessionManager({
+    const manager = new AgentMemoryFileManager({
       recentDays: 7,
       maxTopLevelMessages: 2,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
@@ -203,7 +206,7 @@ describe("ChatSessionManager", () => {
       },
     ]);
 
-    const manager = new ChatSessionManager({
+    const manager = new AgentMemoryFileManager({
       recentDays: 7,
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:01:03.000Z"),
@@ -285,7 +288,7 @@ describe("ChatSessionManager", () => {
       },
     ]);
 
-    const manager = new ChatSessionManager({
+    const manager = new AgentMemoryFileManager({
       recentDays: 7,
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:07.000Z"),
@@ -375,7 +378,7 @@ describe("ChatSessionManager", () => {
     ];
     writeLog(logEntries.slice(0, 3));
 
-    const manager = new ChatSessionManager({
+    const manager = new AgentMemoryFileManager({
       recentDays: 7,
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:08.000Z"),
@@ -446,7 +449,7 @@ describe("ChatSessionManager", () => {
       },
     ]);
 
-    const manager = new ChatSessionManager({
+    const manager = new AgentMemoryFileManager({
       recentDays: 7,
       maxTopLevelMessages: 2,
       now: () => new Date("2026-05-01T00:00:04.000Z"),
@@ -518,7 +521,7 @@ describe("ChatSessionManager", () => {
       },
     ]);
 
-    const manager = new ChatSessionManager({
+    const manager = new AgentMemoryFileManager({
       recentDays: 7,
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
@@ -580,7 +583,7 @@ describe("ChatSessionManager", () => {
       },
     ]);
 
-    const manager = new ChatSessionManager({
+    const manager = new AgentMemoryFileManager({
       recentDays: 7,
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
@@ -655,7 +658,7 @@ describe("ChatSessionManager", () => {
       },
     ]);
 
-    const manager = new ChatSessionManager({
+    const manager = new AgentMemoryFileManager({
       recentDays: 7,
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
@@ -697,7 +700,7 @@ describe("ChatSessionManager", () => {
 
     registerThreadSession({ conversationDir, sessionKey: "C123:2000.0001", cwd: conversationDir });
 
-    const manager = new ChatSessionManager();
+    const manager = new AgentMemoryFileManager();
     const scope = await manager.resolveSessionScope({
       conversationDir,
       sessionKey: "C123:2000.0001",

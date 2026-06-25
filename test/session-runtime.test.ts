@@ -2,8 +2,8 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { registerThreadSession } from "../src/sessions/chat-session-manager.js";
-import { createSessionRuntime } from "../src/runtime/session-runtime.js";
+import { registerThreadSession } from "../src/sessions/agent-memory-file-manager.js";
+import { createConversationRuntime } from "../src/runtime/conversation-runtime.js";
 import {
   createManagedSessionFile,
   getChannelSessionDir,
@@ -31,7 +31,7 @@ afterEach(() => {
 
 function makeRuntime() {
   const sandbox: SandboxConfig = { type: "host" };
-  return createSessionRuntime({
+  return createConversationRuntime({
     workingDir,
     sandbox,
     vaultManager: {
@@ -60,7 +60,7 @@ function makeUserMessage(text: string) {
   } as const;
 }
 
-describe("SessionRuntime chat session scope", () => {
+describe("ConversationRuntime chat session scope", () => {
   test("uses a pre-registered empty thread session for Slack event anchors", async () => {
     const sessionDir = getChannelSessionDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);

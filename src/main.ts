@@ -33,7 +33,7 @@ import {
   validateSandbox,
 } from "./sandbox/index.js";
 import { FileVaultManager } from "./vault/index.js";
-import { createSessionRuntime } from "./runtime/session-runtime.js";
+import { createConversationRuntime } from "./runtime/conversation-runtime.js";
 import { ChannelStore } from "./store.js";
 import * as Sentry from "@sentry/node";
 
@@ -322,7 +322,7 @@ if (provisioner) {
   await provisioner.stopIdle(IMAGE_IDLE_TIMEOUT_MS);
   setInterval(() => provisioner.stopIdle(IMAGE_IDLE_TIMEOUT_MS), IMAGE_IDLE_TIMEOUT_MS).unref();
 }
-const handler = createSessionRuntime({
+const handler = createConversationRuntime({
   workingDir,
   sandbox,
   vaultManager,

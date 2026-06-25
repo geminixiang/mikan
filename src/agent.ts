@@ -19,7 +19,7 @@ import { homedir } from "os";
 import { join, posix } from "path";
 import type {
   ChatMessage,
-  ChatResponseContext,
+  PlatformResponder,
   ChatToolResult,
   ConversationKind,
   PlatformInfo,
@@ -44,7 +44,7 @@ import {
   updateActiveSpanAttribution,
 } from "./observability/sentry.js";
 import type { VaultManager } from "./vault/index.js";
-import { ChatSessionManager } from "./sessions/chat-session-manager.js";
+import { AgentMemoryFileManager } from "./sessions/agent-memory-file-manager.js";
 import {
   extractSessionUuid,
   openManagedSession,
@@ -57,8 +57,8 @@ import * as Sentry from "@sentry/node";
 import { formatLocalTimestamp } from "./utils/date.js";
 import { resolveConfiguredModel } from "./model-registry.js";
 
-export type { AgentRunner } from "./types.js";
-import type { AgentRunner } from "./types.js";
+export type { PiAgentWrapper } from "./types.js";
+import type { PiAgentWrapper } from "./types.js";
 
 const IMAGE_MIME_TYPES: Record<string, string> = {
   jpg: "image/jpeg",
@@ -429,7 +429,7 @@ interface RunnerExecutionContext {
 }
 
 interface RunnerSessionState {
-  responseCtx: ChatResponseContext | null;
+  responseCtx: PlatformResponder | null;
   logCtx: {
     conversationId: string;
     userName?: string;
@@ -630,7 +630,7 @@ function createRunState(): RunnerSessionState {
 
 function resetRunState(
   runState: RunnerSessionState,
-  responseCtx: ChatResponseContext,
+  responseCtx: PlatformResponder,
   sessionConversation: string,
   userName: string | undefined,
   sessionUuid: string,
@@ -654,7 +654,7 @@ function resetRunState(
 }
 
 function createRunQueue(
-  responseCtx: ChatResponseContext,
+  responseCtx: PlatformResponder,
   runState: RunnerSessionState,
 ): {
   queue: { enqueue(fn: () => Promise<void>, errorContext: string): void };
@@ -783,7 +783,7 @@ export function appendTriggerAttribution(
 }
 
 async function finalizeRunResponse(
-  responseCtx: ChatResponseContext,
+  responseCtx: PlatformResponder,
   session: AgentSession,
   runState: RunnerSessionState,
   options?: {
@@ -883,7 +883,7 @@ async function finalizeRunResponse(
 interface UsageReportContext {
   session: AgentSession;
   runState: RunnerSessionState;
-  responseCtx: ChatResponseContext;
+  responseCtx: PlatformResponder;
   platform: PlatformInfo;
   model: Model<Api>;
   agentConfig: ReturnType<typeof resolveConversationSettings>;
@@ -978,7 +978,7 @@ function reloadSessionMessages(
 
 async function prepareRunContext(params: {
   message: ChatMessage;
-  responseCtx: ChatResponseContext;
+  responseCtx: PlatformResponder;
   platform: PlatformInfo;
   conversationId: string;
   conversationDir: string;
@@ -1391,7 +1391,7 @@ function extractToolResultText(result: unknown): string {
 }
 
 /**
- * Create a new AgentRunner for a channel.
+ * Create a new PiAgentWrapper for a channel.
  * Sets up the session and subscribes to events once.
  *
  * Runner caching is handled by the caller (channelStates in main.ts).
@@ -1410,7 +1410,7 @@ export async function createRunner(
     tokenStore: SessionViewTokenStoreLike;
     portalBaseUrl?: string;
   },
-): Promise<AgentRunner> {
+): Promise<PiAgentWrapper> {
   const agentConfig = resolveConversationSettings(conversationDir);
 
   const workspaceBase = join(conversationDir, "..");
@@ -1473,7 +1473,7 @@ export async function createRunner(
   }
 
   const sessionUuid = extractSessionUuid(contextFile);
-  const chatSessionManager = new ChatSessionManager();
+  const chatSessionManager = new AgentMemoryFileManager();
   const settingsManager = SettingsManager.inMemory();
   const { agent, session } = await createConfiguredAgentSession({
     conversationId,
@@ -1504,7 +1504,7 @@ export async function createRunner(
 
     async run(
       message: ChatMessage,
-      responseCtx: ChatResponseContext,
+      responseCtx: PlatformResponder,
       platform: PlatformInfo,
     ): Promise<{ stopReason: string; errorMessage?: string }> {
       const prepared = await prepareRunContext({

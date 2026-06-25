@@ -8,7 +8,7 @@ description: Discord adapter 的事件接收、session scope、slash commands �
 | 檔案                              | 用途                                                                                      |
 | --------------------------------- | ----------------------------------------------------------------------------------------- |
 | `src/adapters/discord/bot.ts`     | Discord bot 主體：message events、slash commands、attachments、channel lookup、回覆送出。 |
-| `src/adapters/discord/context.ts` | 建立 Discord 版 `ChatResponseContext`，處理 Markdown、typing indicator、message update。  |
+| `src/adapters/discord/context.ts` | 建立 Discord 版 `PlatformResponder`，處理 Markdown、typing indicator、message update。    |
 | `src/adapters/discord/types.ts`   | Discord adapter 專用型別。                                                                |
 
 ## 事件來源

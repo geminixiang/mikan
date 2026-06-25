@@ -10,7 +10,7 @@ import { formatAlreadyWorking, formatNothingRunning } from "../../platform-messa
 import {
   appendBotResponseLog,
   appendChannelLog,
-  ChannelQueue,
+  PlatformEventQueue,
   downloadUrlToFile,
   resolveOnlyScopedStopTarget,
   resolveStopTarget,
@@ -64,7 +64,7 @@ export class TelegramBot implements Bot {
   private workingDir: string;
   private botUserId: string | null = null;
   private botUsername: string | null = null;
-  private queues = new Map<string, ChannelQueue>();
+  private queues = new Map<string, PlatformEventQueue>();
   private startupTime: number = 0;
 
   constructor(handler: BotHandler, config: { token: string; workingDir: string }) {
@@ -317,10 +317,10 @@ export class TelegramBot implements Bot {
   // Private - Event Handlers
   // ==========================================================================
 
-  private getQueue(channelId: string): ChannelQueue {
+  private getQueue(channelId: string): PlatformEventQueue {
     let queue = this.queues.get(channelId);
     if (!queue) {
-      queue = new ChannelQueue("Telegram");
+      queue = new PlatformEventQueue("Telegram");
       this.queues.set(channelId, queue);
     }
     return queue;

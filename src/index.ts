@@ -1,16 +1,16 @@
 export { defaultCommandHandlers, dispatchCommand } from "./commands/registry.js";
 export type { CommandContext, CommandHandler, CommandServices } from "./commands/types.js";
-export * from "./sessions/chat-session-manager.js";
+export * from "./sessions/agent-memory-file-manager.js";
 export * from "./sessions/metadata.js";
 export * from "./sessions/policy.js";
 export * from "./sessions/store.js";
 export {
-  createSessionRuntime,
+  createConversationRuntime,
   type CreateSessionSandboxOptions,
   type RunSessionOptions,
-  type SessionRuntime,
-  type SessionRuntimeOptions,
-} from "./runtime/session-runtime.js";
+  type ConversationRuntime,
+  type ConversationRuntimeOptions,
+} from "./runtime/conversation-runtime.js";
 export type {
   Bot,
   BotAdapters,
@@ -18,7 +18,7 @@ export type {
   BotHandler,
   ChatAdapter,
   ChatMessage,
-  ChatResponseContext,
+  PlatformResponder,
   ChatToolResult,
   ConversationKind,
   PlatformInfo,

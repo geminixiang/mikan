@@ -61,7 +61,7 @@ function reportChatResponseError(err: unknown, context: ChatResponseErrorContext
   });
 }
 
-export class ChannelQueue {
+export class PlatformEventQueue {
   private queue: Array<() => Promise<void>> = [];
   private processing = false;
 

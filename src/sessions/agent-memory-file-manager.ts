@@ -34,21 +34,21 @@ interface LogRecord {
 }
 
 export type {
-  ChatSessionManagerOptions,
+  AgentMemoryFileManagerOptions,
   HasMaterializedSessionOptions,
   RegisterThreadSessionOptions,
   ResetChatSessionOptions,
   ResolveChatSessionScopeOptions,
-  SyncChatSessionManagerOptions,
+  SyncAgentMemoryFileManagerOptions,
   ThreadBootstrapWaitOptions,
 } from "./types.js";
 import type {
-  ChatSessionManagerOptions,
+  AgentMemoryFileManagerOptions,
   HasMaterializedSessionOptions,
   RegisterThreadSessionOptions,
   ResetChatSessionOptions,
   ResolveChatSessionScopeOptions,
-  SyncChatSessionManagerOptions,
+  SyncAgentMemoryFileManagerOptions,
   ThreadBootstrapWaitOptions,
 } from "./types.js";
 
@@ -97,12 +97,12 @@ export async function waitForThreadSessionBootstrap(
   return waited;
 }
 
-export class ChatSessionManager {
+export class AgentMemoryFileManager {
   private readonly recentDays: number;
   private readonly maxTopLevelMessages: number;
   private readonly now: () => Date;
 
-  constructor(options: ChatSessionManagerOptions = {}) {
+  constructor(options: AgentMemoryFileManagerOptions = {}) {
     this.recentDays = options.recentDays ?? DEFAULT_RECENT_DAYS;
     this.maxTopLevelMessages = options.maxTopLevelMessages ?? DEFAULT_MAX_TOP_LEVEL_MESSAGES;
     this.now = options.now ?? (() => new Date());
@@ -134,7 +134,7 @@ export class ChatSessionManager {
     });
   }
 
-  syncSessionManager(options: SyncChatSessionManagerOptions): void {
+  syncSessionManager(options: SyncAgentMemoryFileManagerOptions): void {
     const records = readConversationLog(options.conversationDir);
     syncSessionManagerFromLog(
       options.sessionManager,

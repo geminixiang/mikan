@@ -22,7 +22,7 @@ import type {
   BotEvent,
   BotHandler,
   ChatMessage,
-  ChatResponseContext,
+  PlatformResponder,
   ChatToolResult,
   PlatformInfo,
 } from "../../adapter.js";
@@ -33,7 +33,7 @@ import { formatNothingRunning } from "../../platform-messages.js";
 import {
   appendBotResponseLog,
   appendChannelLog,
-  ChannelQueue,
+  PlatformEventQueue,
   downloadUrlToFile,
   resolveOnlyScopedStopTarget,
   resolveStopTarget,
@@ -70,7 +70,7 @@ export class DiscordBot implements Bot {
   private token: string;
   private workingDir: string;
   private botUserId: string | null = null;
-  private queues = new Map<string, ChannelQueue>();
+  private queues = new Map<string, PlatformEventQueue>();
   private startupTime: number = 0;
   private channels = new Map<string, { id: string; name: string }>();
   private users = new Map<string, { id: string; userName: string; displayName: string }>();
@@ -355,10 +355,10 @@ export class DiscordBot implements Bot {
   // Private - Event Handlers
   // ==========================================================================
 
-  private getQueue(channelId: string): ChannelQueue {
+  private getQueue(channelId: string): PlatformEventQueue {
     let queue = this.queues.get(channelId);
     if (!queue) {
-      queue = new ChannelQueue("Discord");
+      queue = new PlatformEventQueue("Discord");
       this.queues.set(channelId, queue);
     }
     return queue;
@@ -459,7 +459,7 @@ export class DiscordBot implements Bot {
       await interaction.reply({ content: text, ephemeral: shouldUseEphemeral });
     };
 
-    const responseCtx: ChatResponseContext = {
+    const responseCtx: PlatformResponder = {
       respond: async (text: string) => {
         await respondPrivately(text);
       },

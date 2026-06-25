@@ -10,7 +10,7 @@ import type {
   BotEvent,
   BotHandler,
   ChatMessage,
-  ChatResponseContext,
+  PlatformResponder,
   ChatToolResult,
   ConversationKind,
   PlatformInfo,
@@ -30,7 +30,7 @@ import { PRODUCT_NAME, formatForceStopped, formatNothingRunning } from "../../pl
 import {
   appendBotResponseLog,
   appendChannelLog,
-  ChannelQueue,
+  PlatformEventQueue,
   resolveOnlyScopedStopTarget,
   resolveStopTarget,
   withRetry,
@@ -40,7 +40,7 @@ import { createSlackAdapters } from "./context.js";
 import {
   hasMaterializedChatSession,
   registerThreadSession,
-} from "../../sessions/chat-session-manager.js";
+} from "../../sessions/agent-memory-file-manager.js";
 import {
   isSlackThreadSessionKey,
   planSlackAdapterSession,
@@ -139,7 +139,7 @@ export class SlackBot implements Bot {
 
   private users = new Map<string, SlackUser>();
   private channels = new Map<string, SlackChannel>();
-  private queues = new Map<string, ChannelQueue>();
+  private queues = new Map<string, PlatformEventQueue>();
   private eventsWatcher: EventsWatcher | null = null;
 
   private createAdapters(event: SlackEvent): BotAdapters {
@@ -561,10 +561,10 @@ export class SlackBot implements Bot {
   // Private - Event Handlers
   // ==========================================================================
 
-  private getQueue(channelId: string): ChannelQueue {
+  private getQueue(channelId: string): PlatformEventQueue {
     let queue = this.queues.get(channelId);
     if (!queue) {
-      queue = new ChannelQueue("Slack");
+      queue = new PlatformEventQueue("Slack");
       this.queues.set(channelId, queue);
     }
     return queue;
@@ -826,7 +826,7 @@ export class SlackBot implements Bot {
       this.logBotResponse(conversationId, responseText, messageTs);
     };
 
-    const responseCtx: ChatResponseContext = {
+    const responseCtx: PlatformResponder = {
       respond,
       replaceResponse: respond,
       respondDiagnostic: async (

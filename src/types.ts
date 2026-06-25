@@ -36,7 +36,7 @@ export interface ChatResponseBlockKit {
   blocks: object[];
 }
 
-export interface ChatResponseContext {
+export interface PlatformResponder {
   respond(text: string): Promise<void>;
   appendResponseDelta?(delta: string): Promise<void>;
   finishResponse?(finalText?: string): Promise<void>;
@@ -113,7 +113,7 @@ export interface Bot {
 /** Pre-created platform adapters passed to the handler */
 export interface BotAdapters {
   message: ChatMessage;
-  responseCtx: ChatResponseContext;
+  responseCtx: PlatformResponder;
   platform: PlatformInfo;
 }
 
@@ -135,11 +135,11 @@ export interface BotHandler {
 
 // ── agent ─────────────────────────────────────────────────────────────────────
 
-export interface AgentRunner {
+export interface PiAgentWrapper {
   syncChatHistory(currentMessageId?: string): void;
   run(
     message: ChatMessage,
-    responseCtx: ChatResponseContext,
+    responseCtx: PlatformResponder,
     platform: PlatformInfo,
   ): Promise<{ stopReason: string; errorMessage?: string }>;
   abort(): void;

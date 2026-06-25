@@ -1,7 +1,7 @@
 import type {
   ChatMessage,
   ChatResponseBlockKit,
-  ChatResponseContext,
+  PlatformResponder,
   ChatToolResult,
 } from "../../adapter.js";
 import * as log from "../../log.js";
@@ -88,7 +88,7 @@ export function createSlackResponseContext({
   sessionPlan: SlackAdapterSessionPlan;
   replyMode: "top-level" | "thread";
   message: ChatMessage;
-}): ChatResponseContext {
+}): PlatformResponder {
   let messageTs: string | null = sessionPlan.initialMessageTs ?? null;
   let assistantStatusFailureWarned = false;
   const onAssistantStatusError = (label: string, err: unknown): void => {
@@ -299,7 +299,7 @@ export function createSlackResponseContext({
     await updatePromise;
   };
 
-  const responseCtx: ChatResponseContext = {
+  const responseCtx: PlatformResponder = {
     respond: async (text: string) => {
       await queueResponseOperation(
         "respond",

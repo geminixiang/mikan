@@ -1,7 +1,7 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Bot, BotAdapters, PlatformName } from "../adapter.js";
 import type { DockerContainerManager } from "../provisioner.js";
-import type { SessionRuntime } from "../runtime/session-runtime.js";
+import type { ConversationRuntime } from "../runtime/conversation-runtime.js";
 import type { SandboxConfig } from "../sandbox/index.js";
 import type { VaultManager } from "../vault/index.js";
 
@@ -37,7 +37,7 @@ interface AdminTokenStoreLike {
 
 export interface CommandServices {
   workingDir: string;
-  runtime?: SessionRuntime;
+  runtime?: ConversationRuntime;
   sandbox: SandboxConfig;
   vaultManager: VaultManager;
   provisioner?: DockerContainerManager;

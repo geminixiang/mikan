@@ -5,11 +5,11 @@ description: Event intake, session scope, slash commands, and message response f
 
 ## Main code
 
-| File                              | Purpose                                                                                              |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `src/adapters/discord/bot.ts`     | Discord bot core: message events, slash commands, attachments, channel lookup, reply sending.        |
-| `src/adapters/discord/context.ts` | Creates the Discord `ChatResponseContext`; handles Markdown, typing indicators, and message updates. |
-| `src/adapters/discord/types.ts`   | Discord adapter-specific types.                                                                      |
+| File                              | Purpose                                                                                            |
+| --------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `src/adapters/discord/bot.ts`     | Discord bot core: message events, slash commands, attachments, channel lookup, reply sending.      |
+| `src/adapters/discord/context.ts` | Creates the Discord `PlatformResponder`; handles Markdown, typing indicators, and message updates. |
+| `src/adapters/discord/types.ts`   | Discord adapter-specific types.                                                                    |
 
 ## Event sources
 

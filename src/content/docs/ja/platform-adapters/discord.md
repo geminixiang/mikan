@@ -5,11 +5,11 @@ description: Discord adapter のイベント受信、session scope、slash comma
 
 ## 主要コード
 
-| ファイル                          | 用途                                                                                           |
-| --------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `src/adapters/discord/bot.ts`     | Discord bot 本体：message events、slash commands、attachments、channel lookup、返信送信。      |
-| `src/adapters/discord/context.ts` | Discord 版 `ChatResponseContext` を作成し、Markdown、typing indicator、message update を処理。 |
-| `src/adapters/discord/types.ts`   | Discord adapter 専用型。                                                                       |
+| ファイル                          | 用途                                                                                         |
+| --------------------------------- | -------------------------------------------------------------------------------------------- |
+| `src/adapters/discord/bot.ts`     | Discord bot 本体：message events、slash commands、attachments、channel lookup、返信送信。    |
+| `src/adapters/discord/context.ts` | Discord 版 `PlatformResponder` を作成し、Markdown、typing indicator、message update を処理。 |
+| `src/adapters/discord/types.ts`   | Discord adapter 専用型。                                                                     |
 
 ## イベントソース
 

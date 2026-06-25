@@ -7,7 +7,7 @@ import { SlackBot } from "../src/adapters/slack/bot.js";
 import { defaultCommandHandlers } from "../src/commands/registry.js";
 import { createGlobalSettingsFile } from "../src/config.js";
 import type { CommandServices } from "../src/commands/types.js";
-import { ConversationOrchestrator } from "../src/runtime/conversation-orchestrator.js";
+import { AgentRunController } from "../src/runtime/agent-run-controller.js";
 import { createManagedSessionFileAtPath, getThreadSessionFile } from "../src/sessions/store.js";
 import type { SandboxConfig } from "../src/sandbox/index.js";
 import type { VaultManager } from "../src/vault/index.js";
@@ -308,7 +308,7 @@ describe("SlackBot slash commands", () => {
       store: {} as any,
     });
 
-    const orchestrator = new ConversationOrchestrator({
+    const orchestrator = new AgentRunController({
       workingDir,
       commandHandlers: defaultCommandHandlers(),
       commandServices: makeCommandServices(workingDir),

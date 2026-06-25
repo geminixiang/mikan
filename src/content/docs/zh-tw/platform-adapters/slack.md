@@ -8,7 +8,7 @@ description: Slack adapter 的 Socket Mode 事件、thread routing、Block Kit �
 | 檔案                                       | 用途                                                                                        |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------- |
 | `src/adapters/slack/bot.ts`                | Slack bot 主體：Socket Mode events、slash commands、Block Kit actions、檔案下載、訊息送出。 |
-| `src/adapters/slack/context.ts`            | 建立 Slack 版 `ChatResponseContext`，處理 mrkdwn、回覆模式、working state、長訊息。         |
+| `src/adapters/slack/context.ts`            | 建立 Slack 版 `PlatformResponder`，處理 mrkdwn、回覆模式、working state、長訊息。           |
 | `src/adapters/slack/session.ts`            | Slack channel/thread session key 規則。                                                     |
 | `src/adapters/slack/response-lifecycle.ts` | Slack 回覆生命週期與 streaming 更新。                                                       |
 | `src/adapters/slack/tools/*`               | Slack 專用工具，例如附件與 Block Kit 支援。                                                 |

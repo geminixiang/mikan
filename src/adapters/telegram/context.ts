@@ -1,6 +1,6 @@
 import type {
   ChatMessage,
-  ChatResponseContext,
+  PlatformResponder,
   ChatToolResult,
   PlatformInfo,
 } from "../../adapter.js";
@@ -50,7 +50,7 @@ export function createTelegramAdapters(
   bot: TelegramBot,
 ): {
   message: ChatMessage;
-  responseCtx: ChatResponseContext;
+  responseCtx: PlatformResponder;
   platform: PlatformInfo;
 } {
   let messageId: number | null = null;
@@ -149,7 +149,7 @@ export function createTelegramAdapters(
     await updatePromise;
   };
 
-  const responseCtx: ChatResponseContext = {
+  const responseCtx: PlatformResponder = {
     respond: async (text: string) => {
       await queueTelegramSend(
         "respond",
