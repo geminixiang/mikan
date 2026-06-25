@@ -3,6 +3,13 @@ import { InMemoryAdminTokenStore } from "../src/web/admin/store.js";
 import { InMemoryLinkTokenStore } from "../src/web/login/store.js";
 import { InMemorySessionViewTokenStore } from "../src/web/session-view/store.js";
 
+function makeStore() {
+  const store = new InMemoryAdminTokenStore();
+  const create = () =>
+    store.create({ platform: "slack", platformUserId: "U1", conversationId: "D1" });
+  return { store, create };
+}
+
 // ── InMemoryTokenStore base behaviour ─────────────────────────────────────────
 // Tested through InMemoryAdminTokenStore (simplest create signature).
 
@@ -10,13 +17,6 @@ describe("InMemoryTokenStore base", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
-
-  function makeStore() {
-    const store = new InMemoryAdminTokenStore();
-    const create = () =>
-      store.create({ platform: "slack", platformUserId: "U1", conversationId: "D1" });
-    return { store, create };
-  }
 
   // ── peek ──────────────────────────────────────────────────────────────────
 

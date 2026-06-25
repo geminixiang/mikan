@@ -1,4 +1,4 @@
-import { completeSimple } from "@earendil-works/pi-ai";
+import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { ConversationEvent } from "./adapter.js";
 import { loadAutoReplyJudgeModel, loadConversationAutoReplyConfig } from "./config.js";

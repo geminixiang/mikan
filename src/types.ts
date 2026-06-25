@@ -2,8 +2,8 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { execFile } from "child_process";
 import { promisify } from "util";
 
-const _execFileAsync = promisify(execFile);
-type ExecFileAsync = typeof _execFileAsync;
+const execFileAsync = promisify(execFile);
+type ExecFileAsync = typeof execFileAsync;
 
 // ── adapter ───────────────────────────────────────────────────────────────────
 

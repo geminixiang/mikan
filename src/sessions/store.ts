@@ -6,7 +6,6 @@ import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-gu
 import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 import { isPlatformHistorySession } from "./metadata.js";
 export type { ResolvedSessionScope, ThreadRootMessage } from "./types.js";
-import type { ResolvedSessionScope, ThreadRootMessage } from "./types.js";
 
 interface PersistableSessionEntryLike {
   type: string;
@@ -18,8 +17,8 @@ interface SessionManagerInternal {
   sessionFile?: string;
   fileEntries?: PersistableSessionEntryLike[];
   flushed?: boolean;
-  _persist?: (entry: unknown) => void;
-  __mikanDeferredFlushPatch?: boolean;
+  ["_persist"]?: (entry: unknown) => void;
+  ["__mikanDeferredFlushPatch"]?: boolean;
 }
 
 /**
@@ -127,12 +126,12 @@ function patchDeferredFlushRewrite(sessionManager: SessionManager): SessionManag
   // Mikan may deliberately prefill chat history from log.jsonl, so that deferred flush must
   // rewrite the already-prefilled file instead of appending a second copy of every entry.
   const internal = sessionManager as unknown as SessionManagerInternal;
-  if (internal.__mikanDeferredFlushPatch || typeof internal._persist !== "function") {
+  if (internal["__mikanDeferredFlushPatch"] || typeof internal["_persist"] !== "function") {
     return sessionManager;
   }
 
-  const originalPersist = internal._persist.bind(sessionManager);
-  internal._persist = (entry: unknown): void => {
+  const originalPersist = internal["_persist"].bind(sessionManager);
+  internal["_persist"] = (entry: unknown): void => {
     const entries = internal.fileEntries;
     const sessionFile = internal.sessionFile;
     const shouldRewriteDeferredFlush =
@@ -156,7 +155,7 @@ function patchDeferredFlushRewrite(sessionManager: SessionManager): SessionManag
     );
     internal.flushed = true;
   };
-  internal.__mikanDeferredFlushPatch = true;
+  internal["__mikanDeferredFlushPatch"] = true;
   return sessionManager;
 }
 

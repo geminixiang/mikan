@@ -17,6 +17,50 @@ function makeHandler(): MessagingEventHandler {
   };
 }
 
+function installMessageHandler(bot: DiscordMessagingBot): (msg: any) => Promise<void> {
+  let messageHandler: ((msg: any) => Promise<void>) | undefined;
+  (bot as any).startupTime = 0;
+  (bot as any).botUserId = "BOT";
+  (bot as any).processAttachments = vi.fn().mockResolvedValue([]);
+  (bot as any).client = {
+    on: vi.fn((event: string, handlerFn: (msg: any) => Promise<void>) => {
+      if (event === "messageCreate") messageHandler = handlerFn;
+    }),
+  };
+  (bot as any).setupEventHandlers();
+  if (!messageHandler) throw new Error("message handler not installed");
+  return messageHandler;
+}
+
+function installInteractionHandler(bot: DiscordMessagingBot): (interaction: any) => Promise<void> {
+  let interactionHandler: ((interaction: any) => Promise<void>) | undefined;
+  (bot as any).client = {
+    on: vi.fn((event: string, handlerFn: (payload: any) => Promise<void>) => {
+      if (event === "interactionCreate") interactionHandler = handlerFn;
+    }),
+  };
+  (bot as any).setupEventHandlers();
+  if (!interactionHandler) throw new Error("interaction handler not installed");
+  return interactionHandler;
+}
+
+function makeDiscordMessage(overrides: Record<string, any> = {}) {
+  return {
+    id: "M1",
+    channelId: "C1",
+    createdTimestamp: Date.now() + 10,
+    createdAt: new Date("2026-04-01T10:00:00.000Z"),
+    content: "<@BOT> hello",
+    author: { id: "U1", username: "alice", bot: false },
+    member: { displayName: "Alice" },
+    channel: { type: 0, isThread: () => false, name: "general" },
+    mentions: { users: { has: (id: string) => id === "BOT" } },
+    reference: undefined,
+    attachments: new Collection(),
+    ...overrides,
+  };
+}
+
 describe("DiscordMessagingBot attachments", () => {
   let workingDir: string;
 
@@ -77,52 +121,6 @@ describe("DiscordMessagingBot message routing", () => {
   afterEach(() => {
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
-
-  function installMessageHandler(bot: DiscordMessagingBot): (msg: any) => Promise<void> {
-    let messageHandler: ((msg: any) => Promise<void>) | undefined;
-    (bot as any).startupTime = 0;
-    (bot as any).botUserId = "BOT";
-    (bot as any).processAttachments = vi.fn().mockResolvedValue([]);
-    (bot as any).client = {
-      on: vi.fn((event: string, handlerFn: (msg: any) => Promise<void>) => {
-        if (event === "messageCreate") messageHandler = handlerFn;
-      }),
-    };
-    (bot as any).setupEventHandlers();
-    if (!messageHandler) throw new Error("message handler not installed");
-    return messageHandler;
-  }
-
-  function installInteractionHandler(
-    bot: DiscordMessagingBot,
-  ): (interaction: any) => Promise<void> {
-    let interactionHandler: ((interaction: any) => Promise<void>) | undefined;
-    (bot as any).client = {
-      on: vi.fn((event: string, handlerFn: (payload: any) => Promise<void>) => {
-        if (event === "interactionCreate") interactionHandler = handlerFn;
-      }),
-    };
-    (bot as any).setupEventHandlers();
-    if (!interactionHandler) throw new Error("interaction handler not installed");
-    return interactionHandler;
-  }
-
-  function makeDiscordMessage(overrides: Record<string, any> = {}) {
-    return {
-      id: "M1",
-      channelId: "C1",
-      createdTimestamp: Date.now() + 10,
-      createdAt: new Date("2026-04-01T10:00:00.000Z"),
-      content: "<@BOT> hello",
-      author: { id: "U1", username: "alice", bot: false },
-      member: { displayName: "Alice" },
-      channel: { type: 0, isThread: () => false, name: "general" },
-      mentions: { users: { has: (id: string) => id === "BOT" } },
-      reference: undefined,
-      attachments: new Collection(),
-      ...overrides,
-    };
-  }
 
   test("uses a persistent session key for DMs", async () => {
     const handler = makeHandler();

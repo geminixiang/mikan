@@ -24,7 +24,7 @@ import { modelKey, resolveAdminModelAccessStatuses } from "./provider-models.js"
 import type { AdminToken } from "./store.js";
 
 export type { AdminRuntimeBridge, AdminServices } from "./types.js";
-import type { AdminRuntimeBridge, AdminServices } from "./types.js";
+import type { AdminServices } from "./types.js";
 
 // ── Handler ────────────────────────────────────────────────────────────────────
 

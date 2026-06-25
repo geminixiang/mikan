@@ -23,7 +23,6 @@ export type {
 } from "./types.js";
 import type {
   ChatResponseErrorContext,
-  ChatResponseErrorOperation,
   ChatResponseErrorReporter,
   RetryOptions,
   ResolveStopTargetInput,

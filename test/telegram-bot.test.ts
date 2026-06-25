@@ -42,6 +42,24 @@ function makeMessage(overrides: Record<string, any> = {}) {
   };
 }
 
+function installMessageHandler(
+  bot: TelegramMessagingBot,
+): (ctx: { message: any }) => Promise<void> {
+  let messageHandler: ((ctx: { message: any }) => Promise<void>) | undefined;
+  (bot as any).startupTime = 0;
+  (bot as any).botUsername = "mikan_bot";
+  (bot as any).processAttachments = vi.fn().mockResolvedValue([]);
+  (bot as any).client = {
+    command: vi.fn(),
+    on: vi.fn((event: string, handlerFn: (ctx: { message: any }) => Promise<void>) => {
+      if (event === "message") messageHandler = handlerFn;
+    }),
+  };
+  (bot as any).setupEventHandlers();
+  if (!messageHandler) throw new Error("message handler not installed");
+  return messageHandler;
+}
+
 describe("TelegramMessagingBot extractMessageContext", () => {
   let workingDir: string;
 
@@ -195,24 +213,6 @@ describe("TelegramMessagingBot message logging", () => {
   afterEach(() => {
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
-
-  function installMessageHandler(
-    bot: TelegramMessagingBot,
-  ): (ctx: { message: any }) => Promise<void> {
-    let messageHandler: ((ctx: { message: any }) => Promise<void>) | undefined;
-    (bot as any).startupTime = 0;
-    (bot as any).botUsername = "mikan_bot";
-    (bot as any).processAttachments = vi.fn().mockResolvedValue([]);
-    (bot as any).client = {
-      command: vi.fn(),
-      on: vi.fn((event: string, handlerFn: (ctx: { message: any }) => Promise<void>) => {
-        if (event === "message") messageHandler = handlerFn;
-      }),
-    };
-    (bot as any).setupEventHandlers();
-    if (!messageHandler) throw new Error("message handler not installed");
-    return messageHandler;
-  }
 
   test("logs threadTs for shared chat replies", async () => {
     const bot = new TelegramMessagingBot(makeHandler(), { token: "T", workingDir });

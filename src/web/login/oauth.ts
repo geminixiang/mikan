@@ -4,7 +4,7 @@ import { isRecord, parseJsonValue } from "../../utils/file-guards.js";
 import * as log from "../../log.js";
 
 export type { LoginCredentialKind, OAuthService, ParsedLoginCommand } from "./types.js";
-import type { LoginCredentialKind, OAuthService, ParsedLoginCommand } from "./types.js";
+import type { OAuthService, ParsedLoginCommand } from "./types.js";
 
 const DEFAULT_GOOGLE_WORKSPACE_CLI_SCOPES = [
   "https://www.googleapis.com/auth/drive",
