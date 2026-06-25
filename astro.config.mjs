@@ -230,8 +230,13 @@ export default defineConfig({
         {
           name: "mikan-footer-credit",
           hooks: {
-            "config:setup"({ updateConfig }) {
-              updateConfig({ components: { Footer: "./src/components/Footer.astro" } });
+            "config:setup"({ config, updateConfig }) {
+              updateConfig({
+                components: {
+                  ...config.components,
+                  Footer: "./src/components/Footer.astro",
+                },
+              });
             },
           },
         },
