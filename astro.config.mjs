@@ -225,7 +225,18 @@ export default defineConfig({
           href: "https://github.com/geminixiang/mikan",
         },
       ],
-      plugins: [mikanTheme(), mikanAgentMarkdown()],
+      plugins: [
+        mikanTheme(),
+        {
+          name: "mikan-footer-credit",
+          hooks: {
+            "config:setup"({ updateConfig }) {
+              updateConfig({ components: { Footer: "./src/components/Footer.astro" } });
+            },
+          },
+        },
+        mikanAgentMarkdown(),
+      ],
     }),
     mdx(),
   ],

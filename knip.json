@@ -1,3 +1,3 @@
 {
-  "ignore": ["examples/**", "scripts/**"]
+  "ignore": ["examples/**", "scripts/**", "src/components/Footer.astro"]
 }

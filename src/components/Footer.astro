@@ -1,0 +1,97 @@
+---
+import { Icon } from "@astrojs/starlight/components";
+import Pagination from "virtual:starlight/components/Pagination";
+import config from "virtual:starlight/user-config";
+import sumieFooter from "../../node_modules/starlight-theme-mikan/src/assets/footer-sumie.webp";
+
+/**
+ * Footer: the per-page pagination row Starlight expects, plus a full-bleed
+ * sumi-e (ink-wash) site footer band that runs across every page.
+ *
+ * Starlight renders the Footer slot *inside* the content column (beside the
+ * sidebar + ToC), so a CSS-only 100vw break-out can only ever fill the content
+ * column. To span the true viewport width, a tiny inline script relocates the
+ * band to <body> on load (and removes any stale copy on view transitions).
+ *
+ * The backdrop is an ink-wash mountain landscape (footer-sumie.webp), imported
+ * so Vite fingerprints it and handed to CSS via --mk-footer-img. The band's top
+ * edge fades into the page (mask on .mikan-sitefooter) and its bottom carries a
+ * deep-ink scrim for the white overlay text. Dark mode inverts + hue-rotates the
+ * image (sky → ink, orange sun preserved). See index.css for the layering.
+ */
+const socialLinks = Array.isArray(config.social)
+  ? config.social
+  : config.social && typeof config.social === "object"
+    ? Object.entries(config.social).map(([icon, href]) => ({
+        href: String(href),
+        icon,
+        label: icon,
+      }))
+    : [];
+
+const year = new Date().getFullYear();
+const { siteTitle } = Astro.locals.starlightRoute;
+// `tagline` is a top-level Starlight config field not surfaced on the virtual
+// config's type; read it defensively so the band degrades when omitted.
+const tagline = (config as { tagline?: string }).tagline;
+---
+
+<footer class="mikan-footer print:hidden">
+  <Pagination />
+</footer>
+
+<div
+  class="mikan-sitefooter print:hidden"
+  role="contentinfo"
+  data-mikan-sitefooter
+  style={`--mk-footer-img: url('${sumieFooter.src}')`}
+>
+  <div class="mikan-sitefooter-art" aria-hidden="true"></div>
+
+  <div class="mikan-sitefooter-inner">
+    <div class="mikan-sitefooter-brand">
+      {siteTitle && <span class="mikan-sitefooter-name">{siteTitle}</span>}
+      {tagline && <p class="mikan-sitefooter-tagline">{tagline}</p>}
+    </div>
+
+    <div class="mikan-sitefooter-aside">
+      {
+        socialLinks.length > 0 && (
+          <nav class="mikan-sitefooter-social" aria-label="Project links">
+            {socialLinks.map(({ label, href, icon }) => (
+              <a {href} rel="me" aria-label={label} title={label}>
+                <Icon name={icon as never} />
+              </a>
+            ))}
+          </nav>
+        )
+      }
+      <p class="mikan-sitefooter-meta">
+        <span>© {year} {siteTitle}</span>
+        <span class="mikan-sitefooter-dot" aria-hidden="true">·</span>
+        <span>Built with <a href="https://pi.dev/">Pi</a></span>
+      </p>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Relocate the band to <body> so it spans the full viewport width rather than
+  // the content column Starlight renders the Footer slot inside. Idempotent and
+  // re-run on Astro view transitions.
+  function placeMikanFooter() {
+    const bands = document.querySelectorAll("[data-mikan-sitefooter]");
+    // Keep the last one (current page), drop any leftover from a prior view.
+    bands.forEach((band, i) => {
+      if (i < bands.length - 1) {
+        band.remove();
+        return;
+      }
+      if (band.parentElement !== document.body) {
+        document.body.appendChild(band);
+      }
+    });
+  }
+  placeMikanFooter();
+  document.addEventListener("astro:page-load", placeMikanFooter);
+</script>
