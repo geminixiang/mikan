@@ -5,6 +5,7 @@ const REDACTED = "[REDACTED]";
 const REDACTED_PATH = "[REDACTED_PATH]";
 const MAX_STRING_LENGTH = 256;
 const MAX_DEPTH = 4;
+const TRACE_ATTRIBUTION_TTL_MS = 5 * 60 * 1000;
 
 const SENSITIVE_KEYS = new Set([
   "accesstoken",
@@ -14,6 +15,7 @@ const SENSITIVE_KEYS = new Set([
   "attachments",
   "authorization",
   "body",
+  "clientsecret",
   "code",
   "content",
   "contents",
@@ -69,7 +71,12 @@ import type {
   SentryTransactionPayload,
 } from "./types.js";
 
-const traceAttribution = new Map<string, SentryAttributionAttributes>();
+type TraceAttributionEntry = {
+  attributes: SentryAttributionAttributes;
+  expiresAt: number;
+};
+
+const traceAttribution = new Map<string, TraceAttributionEntry>();
 
 export function createSentryInitOptions(dsn?: string) {
   return {
@@ -77,7 +84,7 @@ export function createSentryInitOptions(dsn?: string) {
     environment: process.env.SENTRY_ENVIRONMENT ?? "production",
     enabled: Boolean(dsn) && process.env.SENTRY_ENABLED !== "false",
     sendDefaultPii: false,
-    tracesSampleRate: process.env.NODE_ENV === "development" ? 1.0 : 1.0,
+    tracesSampleRate: 1.0,
     includeLocalVariables: false,
     enableLogs: true,
     beforeSend(event: ErrorEvent, hint: EventHint): ErrorEvent | null {
@@ -161,7 +168,13 @@ export function registerTraceAttribution(
   span.setAttributes(attributes);
   const traceId = Sentry.spanToJSON(span as Parameters<typeof Sentry.spanToJSON>[0]).trace_id;
   if (!traceId) return;
-  traceAttribution.set(traceId, { ...traceAttribution.get(traceId), ...attributes });
+
+  const now = Date.now();
+  pruneExpiredTraceAttributions(now);
+  traceAttribution.set(traceId, {
+    attributes: { ...traceAttribution.get(traceId)?.attributes, ...attributes },
+    expiresAt: now + TRACE_ATTRIBUTION_TTL_MS,
+  });
 }
 
 export function updateActiveSpanAttribution(attributes: SentryAttributionAttributes): void {
@@ -176,10 +189,6 @@ export function applyRunScope(scope: Scope, context: SentryRunScopeContext): voi
   for (const [key, value] of Object.entries(attributes)) {
     scope.setTag(key, value);
   }
-  scope.setTag("conversation_id", context.conversationId);
-  scope.setTag("channel_id", context.conversationId);
-  if (context.threadTs) scope.setTag("thread_ts", context.threadTs);
-
   scope.setAttributes(attributes);
   scope.setUser({
     id: context.userId,
@@ -266,7 +275,7 @@ export function sanitizeEvent<T extends Event>(event: T, _hint?: EventHint): T |
 }
 
 export function applySpanAttribution<T extends SentrySpanPayload>(span: T): T {
-  const attributes = traceAttribution.get(span.trace_id);
+  const attributes = getTraceAttribution(span.trace_id);
   if (!attributes) return span;
   return {
     ...span,
@@ -284,7 +293,7 @@ function sanitizeTransactionEvent<T extends SentryTransactionPayload>(event: T):
   const traceContext = sanitized.contexts?.trace;
   const traceId = traceContext?.trace_id;
   if (typeof traceId !== "string") return sanitized;
-  const attributes = traceAttribution.get(traceId);
+  const attributes = getTraceAttribution(traceId);
   if (!attributes) return sanitized;
 
   const entries = (sanitized as { entries?: Array<{ type?: string; data?: unknown }> }).entries;
@@ -346,9 +355,23 @@ function sanitizeRequest(request: Event["request"]): Event["request"] {
   };
 }
 
+function getTraceAttribution(traceId: string): SentryAttributionAttributes | undefined {
+  const entry = traceAttribution.get(traceId);
+  if (!entry) return undefined;
+  if (entry.expiresAt > Date.now()) return entry.attributes;
+  traceAttribution.delete(traceId);
+  return undefined;
+}
+
+function pruneExpiredTraceAttributions(now: number): void {
+  for (const [traceId, entry] of traceAttribution) {
+    if (entry.expiresAt <= now) traceAttribution.delete(traceId);
+  }
+}
+
 function isSensitiveKey(key?: string): boolean {
   if (!key) return false;
-  return SENSITIVE_KEYS.has(key.toLowerCase());
+  return SENSITIVE_KEYS.has(key.toLowerCase().replace(/[^a-z0-9]/g, ""));
 }
 
 function summarizeValue(value: unknown, key?: string): string {

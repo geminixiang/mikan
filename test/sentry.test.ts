@@ -147,10 +147,18 @@ describe("sanitizeValue", () => {
 
   test("redacts integration secret-shaped keys", () => {
     expect(
-      sanitizeValue({ accessToken: "abc", refreshToken: "def", url: "https://example.com/x" }),
+      sanitizeValue({
+        accessToken: "abc",
+        refreshToken: "def",
+        api_key: "ghi",
+        client_secret: "jkl",
+        url: "https://example.com/x",
+      }),
     ).toEqual({
       accessToken: "[Redacted accessToken; length=3]",
       refreshToken: "[Redacted refreshToken; length=3]",
+      api_key: "[Redacted api_key; length=3]",
+      client_secret: "[Redacted client_secret; length=3]",
       url: "[Redacted url; length=21]",
     });
   });
@@ -307,5 +315,24 @@ describe("run attribution", () => {
         session_key: "C1:T1",
       },
     });
+  });
+
+  test("drops expired trace attribution", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    try {
+      registerTraceAttribution({ setAttributes: vi.fn() }, { conversation_id: "C1" });
+      vi.setSystemTime(new Date("2026-01-01T00:06:00Z"));
+
+      const span = {
+        trace_id: "trace-1",
+        span_id: "span-1",
+        start_timestamp: 1,
+        data: { "sentry.op": "gen_ai.chat" },
+      };
+      expect(applySpanAttribution(span)).toEqual(span);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
