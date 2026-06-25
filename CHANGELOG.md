@@ -9,6 +9,25 @@ any release.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-25
+
+### Added
+
+- Add the Starlight documentation site with localized docs for English, Japanese, Simplified Chinese, and Traditional Chinese.
+- Add platform adapter guides for Slack, Discord, and Telegram.
+- Add a web agent-events portal for streaming agent events.
+
+### Changed
+
+- Align adapter, runtime, and session naming around conversation terminology for clearer contributor navigation.
+- Update project dependencies and bundled pi packages.
+
+### Fixed
+
+- Preserve custom Starlight theme component overrides.
+- Keep the docs dev server from restarting when settings cleanup runs.
+- Tighten Sentry event sanitization.
+
 ## [0.4.8] - 2026-06-22
 
 ### Changed
