@@ -1,16 +1,13 @@
 ---
-title: Events
+title: 事件
+description: 透过 workspace events 目录触发 agent 的事件格式与处理流程。
 ---
 
-# Events
+## 事件类型
 
-Events are JSON files written to the `events/` directory inside the workspace. The harness watches this directory and triggers the agent when a file appears.
+### 立即
 
-## Event Types
-
-### Immediate
-
-Triggers as soon as the harness sees the file. Useful for signaling from external scripts or webhooks.
+harness 一看到档案就会触发。适合从外部脚本或 webhook 发送讯号。
 
 ```json
 {
@@ -23,9 +20,9 @@ Triggers as soon as the harness sees the file. Useful for signaling from externa
 }
 ```
 
-### One-shot
+### 单次
 
-Triggers once at a specific time. Use for reminders and future callbacks.
+在指定时间触发一次。适合提醒事项与未来的 callback。
 
 ```json
 {
@@ -39,11 +36,11 @@ Triggers once at a specific time. Use for reminders and future callbacks.
 }
 ```
 
-`at` must be an ISO 8601 timestamp with UTC offset.
+`at` 必须是含 UTC offset 的 ISO 8601 时间戳记。
 
-### Periodic
+### 周期性
 
-Triggers on a cron schedule. Persists until deleted.
+依 cron 排程触发。会持续存在，直到档案被删除。
 
 ```json
 {
@@ -58,53 +55,53 @@ Triggers on a cron schedule. Persists until deleted.
 }
 ```
 
-Cron format: `minute hour day-of-month month day-of-week`
+Cron 格式：`minute hour day-of-month month day-of-week`
 
-Common schedules:
+常见排程：
 
-- `0 9 * * *` — daily at 09:00
-- `0 9 * * 1-5` — weekdays at 09:00
-- `0 0 1 * *` — first of each month at midnight
+- `0 9 * * *` — 每天 09:00
+- `0 9 * * 1-5` — 平日 09:00
+- `0 0 1 * *` — 每月第一天午夜
 
-## Routing Fields
+## 路由栏位
 
-| Field              | Description                                                                                          |
-| ------------------ | ---------------------------------------------------------------------------------------------------- |
-| `platform`         | Target bot platform (e.g. `slack`)                                                                   |
-| `conversationId`   | Channel or DM ID to post into                                                                        |
-| `conversationKind` | `"shared"` (channel) or `"direct"` (DM)                                                              |
-| `userId`           | Platform user ID of whoever requested the event; used for vault/credential routing in per-user modes |
+| 栏位               | 说明                                                                    |
+| ------------------ | ----------------------------------------------------------------------- |
+| `platform`         | 目标 bot 平台（例如 `slack`）                                           |
+| `conversationId`   | 要发送到的频道或 DM ID                                                  |
+| `conversationKind` | `"shared"`（频道）或 `"direct"`（DM）                                   |
+| `userId`           | 请求此事件的平台使用者 ID；在 per-user 模式中用于 vault/credential 路由 |
 
-## Session Binding
+## Session 绑定
 
-Event files do not carry `sessionKey` or thread targeting. The event text must be self-contained because a scheduled/background event is not a continuation of the live chat turn that created it.
+事件档案不带有 `sessionKey` 或 thread 目标。事件文字必须自给自足，因为排程/背景事件不是建立它的即时聊天回合的延续。
 
-| Platform/event source   | Visible delivery          | Session key                            | Thread targeting |
-| ----------------------- | ------------------------- | -------------------------------------- | ---------------- |
-| Slack event file/tool   | New top-level anchor      | `<conversationId>:<anchor message ts>` | None             |
-| Slack direct `BotEvent` | Provided `thread_ts` wins | `<conversationId>:<thread_ts>` if set  | Optional         |
-| Other platform event    | Platform adapter default  | Platform adapter default event session | Adapter-specific |
+| 平台/事件来源           | 可见的送达方式          | Session key                                 | Thread 目标     |
+| ----------------------- | ----------------------- | ------------------------------------------- | --------------- |
+| Slack event file/tool   | 新的顶层锚点讯息        | `<conversationId>:<anchor message ts>`      | 无              |
+| Slack direct `BotEvent` | 提供的 `thread_ts` 优先 | 若有设定则为 `<conversationId>:<thread_ts>` | 可选            |
+| 其他平台事件            | 平台 adapter 预设       | 平台 adapter 预设事件 session               | 依 adapter 而定 |
 
-For Slack event files, firing an event actively creates a top-level Slack message first. That message timestamp becomes the anchor and the run uses the fixed session key `<conversationId>:<anchor message ts>`.
+对 Slack 事件档案来说，事件触发时会先主动建立一则顶层 Slack 讯息。该讯息时间戳会成为锚点，而该次执行会使用固定的 session key `<conversationId>:<anchor message ts>`。
 
-This keeps event runs visible in the channel and isolates them from the persistent top-level session. The top-level channel history remains available in `log.jsonl` for explicit lookup, but it is not implicitly copied into the event session.
+这会让事件执行在频道中可见，并将它们与持久的顶层 session 隔离。顶层频道历史仍可在 `log.jsonl` 中供明确查询，但不会被隐式复制到事件 session。
 
-## Thread Targeting
+## Thread 目标
 
-Events are delivered as top-level messages. They should not be buried in a historical thread or reply chain.
+事件会以顶层讯息送达。不应把它们埋在历史 thread 或回覆串中。
 
-The `event` tool (available to the agent) fills the routing fields automatically. Use it instead of writing JSON by hand.
+agent 可用的 `event` tool 会自动填入路由栏位。请使用它，不要手写 JSON。
 
-## Lifecycle
+## 生命周期
 
-- **Immediate** and **one-shot** files are deleted automatically after the event fires.
-- **Periodic** files persist. Delete the file to cancel.
-- Maximum 5 events can be queued at once.
+- **立即**与**单次**档案会在事件触发后自动删除。
+- **周期性**档案会持续存在。删除档案即可取消。
+- 一次最多可排入 5 个事件。
 
-## Silent Response
+## 静默回应
 
-For periodic events with nothing to report, respond with exactly `[SILENT]`. The harness deletes the status message and posts nothing to the platform, avoiding channel spam.
+对于没有内容可回报的周期性事件，请精确回应 `[SILENT]`。harness 会删除状态讯息，且不向平台发文，以避免频道洗版。
 
 ## Debouncing
 
-When writing scripts that emit immediate events (email watchers, webhook handlers), always debounce. Collect events over a window and emit one summary event rather than one event per item.
+撰写会送出立即事件的脚本（email watchers、webhook handlers）时，务必做 debounce。在一段时间窗内收集事件，并送出一个摘要事件，而不是每个项目送出一个事件。

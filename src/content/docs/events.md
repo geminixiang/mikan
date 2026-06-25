@@ -1,16 +1,13 @@
 ---
 title: Events
+description: Event formats and processing flow for triggering the agent through the workspace events directory.
 ---
 
-# Events
-
-Events are JSON files written to the `events/` directory inside the workspace. The harness watches this directory and triggers the agent when a file appears.
-
-## Event Types
+## Event types
 
 ### Immediate
 
-Triggers as soon as the harness sees the file. Useful for signaling from external scripts or webhooks.
+The harness triggers as soon as it sees the file. This is useful for signals from external scripts or webhooks.
 
 ```json
 {
@@ -25,7 +22,7 @@ Triggers as soon as the harness sees the file. Useful for signaling from externa
 
 ### One-shot
 
-Triggers once at a specific time. Use for reminders and future callbacks.
+Trigger once at a specified time. This is useful for reminders and future callbacks.
 
 ```json
 {
@@ -39,11 +36,11 @@ Triggers once at a specific time. Use for reminders and future callbacks.
 }
 ```
 
-`at` must be an ISO 8601 timestamp with UTC offset.
+`at` must be an ISO 8601 timestamp with a UTC offset.
 
 ### Periodic
 
-Triggers on a cron schedule. Persists until deleted.
+Trigger on a cron schedule. The file stays in place until it is deleted.
 
 ```json
 {
@@ -62,49 +59,49 @@ Cron format: `minute hour day-of-month month day-of-week`
 
 Common schedules:
 
-- `0 9 * * *` — daily at 09:00
+- `0 9 * * *` — every day at 09:00
 - `0 9 * * 1-5` — weekdays at 09:00
-- `0 0 1 * *` — first of each month at midnight
+- `0 0 1 * *` — midnight on the first day of every month
 
-## Routing Fields
+## Routing fields
 
-| Field              | Description                                                                                          |
-| ------------------ | ---------------------------------------------------------------------------------------------------- |
-| `platform`         | Target bot platform (e.g. `slack`)                                                                   |
-| `conversationId`   | Channel or DM ID to post into                                                                        |
-| `conversationKind` | `"shared"` (channel) or `"direct"` (DM)                                                              |
-| `userId`           | Platform user ID of whoever requested the event; used for vault/credential routing in per-user modes |
+| Field              | Description                                                                                    |
+| ------------------ | ---------------------------------------------------------------------------------------------- |
+| `platform`         | Target bot platform, for example `slack`                                                       |
+| `conversationId`   | Channel or DM ID to send to                                                                    |
+| `conversationKind` | `"shared"` (channel) or `"direct"` (DM)                                                        |
+| `userId`           | Platform user ID that requested this event; used for vault/credential routing in per-user mode |
 
-## Session Binding
+## Session binding
 
-Event files do not carry `sessionKey` or thread targeting. The event text must be self-contained because a scheduled/background event is not a continuation of the live chat turn that created it.
+Event files do not carry a `sessionKey` or thread target. Event text must be self-contained because scheduled/background events are not a continuation of the live chat turn that created them.
 
-| Platform/event source   | Visible delivery          | Session key                            | Thread targeting |
-| ----------------------- | ------------------------- | -------------------------------------- | ---------------- |
-| Slack event file/tool   | New top-level anchor      | `<conversationId>:<anchor message ts>` | None             |
-| Slack direct `BotEvent` | Provided `thread_ts` wins | `<conversationId>:<thread_ts>` if set  | Optional         |
-| Other platform event    | Platform adapter default  | Platform adapter default event session | Adapter-specific |
+| Platform/event source   | Visible delivery method           | Session key                            | Thread target     |
+| ----------------------- | --------------------------------- | -------------------------------------- | ----------------- |
+| Slack event file/tool   | New top-level anchor message      | `<conversationId>:<anchor message ts>` | None              |
+| Slack direct `BotEvent` | Provided `thread_ts` has priority | `<conversationId>:<thread_ts>` if set  | Optional          |
+| Other platform events   | Platform adapter default          | Platform adapter default event session | Adapter-dependent |
 
-For Slack event files, firing an event actively creates a top-level Slack message first. That message timestamp becomes the anchor and the run uses the fixed session key `<conversationId>:<anchor message ts>`.
+For Slack event files, mikan first creates a top-level Slack message when the event fires. That message timestamp becomes the anchor, and the run uses the fixed session key `<conversationId>:<anchor message ts>`.
 
-This keeps event runs visible in the channel and isolates them from the persistent top-level session. The top-level channel history remains available in `log.jsonl` for explicit lookup, but it is not implicitly copied into the event session.
+This makes event runs visible in the channel and isolates them from the persistent top-level session. Top-level channel history is still available in `log.jsonl` for explicit lookup, but it is not implicitly copied into the event session.
 
-## Thread Targeting
+## Thread target
 
-Events are delivered as top-level messages. They should not be buried in a historical thread or reply chain.
+Events are delivered as top-level messages. They should not be buried inside old threads or reply chains.
 
-The `event` tool (available to the agent) fills the routing fields automatically. Use it instead of writing JSON by hand.
+The agent's `event` tool fills routing fields automatically. Use it instead of hand-writing JSON.
 
 ## Lifecycle
 
 - **Immediate** and **one-shot** files are deleted automatically after the event fires.
-- **Periodic** files persist. Delete the file to cancel.
-- Maximum 5 events can be queued at once.
+- **Periodic** files stay in place. Delete the file to cancel the event.
+- At most 5 events can be queued at once.
 
-## Silent Response
+## Silent responses
 
-For periodic events with nothing to report, respond with exactly `[SILENT]`. The harness deletes the status message and posts nothing to the platform, avoiding channel spam.
+For periodic events that have nothing to report, respond exactly with `[SILENT]`. The harness deletes the status message and does not post to the platform, avoiding channel spam.
 
 ## Debouncing
 
-When writing scripts that emit immediate events (email watchers, webhook handlers), always debounce. Collect events over a window and emit one summary event rather than one event per item.
+When writing scripts that send immediate events, such as email watchers or webhook handlers, debounce them. Collect events inside a time window and send one summary event instead of one event per item.

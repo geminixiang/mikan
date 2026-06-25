@@ -1,21 +1,18 @@
 ---
 title: Skills
+description: Load locations, sandbox paths, and tool structure for workspace-level and conversation-level skills.
 ---
 
-# Skills
-
-mikan loads custom CLI tools from two `skills/` locations:
-
-| Level                             | Purpose                                                         | Host path                                           | Runtime path in sandbox                            |
-| --------------------------------- | --------------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------- |
-| Workspace-level (global skills)   | Reusable tools available to every conversation in the workspace | `<workspace>/skills/<skill-name>/`                  | `/workspace/skills/<skill-name>/`                  |
-| Conversation-level (local skills) | Tools only for one conversation/channel/DM                      | `<workspace>/<conversationId>/skills/<skill-name>/` | `/workspace/<conversationId>/skills/<skill-name>/` |
+| Level                             | Purpose                                                    | Host path                                           | Runtime path inside sandbox                        |
+| --------------------------------- | ---------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------- |
+| Workspace-level (global skills)   | Shared tools available to all conversations in a workspace | `<workspace>/skills/<skill-name>/`                  | `/workspace/skills/<skill-name>/`                  |
+| Conversation-level (local skills) | Tools for one conversation / channel / DM only             | `<workspace>/<conversationId>/skills/<skill-name>/` | `/workspace/<conversationId>/skills/<skill-name>/` |
 
 :::note
-Workspace-level skills are loaded first. Conversation-level skills are loaded second and override a workspace skill with the same `name`.
+mikan loads workspace-level skills first, then conversation-level skills. If both sides define the same `name`, the conversation-level skill overrides the workspace-level skill.
 :::
 
-## Directory layout
+## Directory structure
 
 ```text
 <workspace>/
@@ -30,7 +27,7 @@ Workspace-level skills are loaded first. Conversation-level skills are loaded se
             └── run.sh
 ```
 
-Each skill directory needs a `SKILL.md` file:
+Each skill directory needs a `SKILL.md`:
 
 ```yaml
 ---
@@ -41,10 +38,10 @@ description: Does something useful
 Usage: {baseDir}/run.sh <args>
 ```
 
-`name` and `description` are required. Use `{baseDir}` in instructions when referring to files inside the skill directory; mikan replaces it with the runtime path for that skill.
+`name` and `description` are required. To reference files inside the skill directory in the description, use `{baseDir}`; mikan replaces it with that skill's runtime path.
 
-## When to use each level
+## Which level to use
 
-Use workspace-level skills for shared tools: company APIs, common scripts, release helpers, reporting tools, or anything useful across multiple conversations.
+Workspace-level skills are good for shared tools: company APIs, common scripts, release helpers, reporting tools, or any capability used by multiple conversations.
 
-Use conversation-level skills for local tools: channel-specific workflows, temporary helpers, or a tool that should not appear in other conversations.
+Conversation-level skills are good for local tools: a specific channel workflow, a temporary helper, or tools that should not appear in other conversations.

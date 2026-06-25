@@ -1,16 +1,16 @@
 ---
-title: Google Workspace CLI OAuth Setup
+title: Google Workspace CLI OAuth の設定
+description: Google Workspace CLI OAuth を設定し、mikan に Google Workspace 認証情報を保存およびプロジェクション（投影）させます。
+sidebar:
+  order: 3
+  label: Google Workspace CLI
 ---
 
-# Google Workspace CLI OAuth Setup
+> 注意：mikan は Google の authorized_user JSON を vault に保存し、ターゲットパス（target path）のメタデータを保持します。`image` サンドボックスは、この種の vault ファイルをコンテナ内のターゲットパスへ自動的に投影（プロジェクション）します。現行の `container` / `firecracker` ランタイムは、依然として自動的なファイルのプロジェクションを行いません。
 
-這份文件說明如何設定 mikan `/login` 內建的 Google Workspace CLI OAuth。
+## 1. Google OAuth クライアントの作成
 
-> 注意：mikan 會把 Google authorized_user JSON 存進 vault，並保存 target path metadata。`image` sandbox 會把這類 vault file 自動投影到 container 內的 target path；現有 `container` / `firecracker` runtime 仍不會自動做 file projection。
-
-## 1. 建立 Google OAuth Client
-
-到 Google Cloud Console：
+Google Cloud Console に移動します：
 
 ```text
 APIs & Services → Credentials → Create Credentials → OAuth client ID
@@ -18,23 +18,23 @@ APIs & Services → Credentials → Create Credentials → OAuth client ID
 
 設定：
 
-- Application type：`Web application`
-- Authorized redirect URI：`<LINK_URL>/oauth/callback`
+- アプリケーションの種類（Application type）：`Web application`
+- 承認済みのリダイレクト URI（Authorized redirect URI）：`<LINK_URL>/oauth/callback`
 
-範例：
+例：
 
 ```text
 LINK_URL=https://mikan.example.com
 Redirect URI=https://mikan.example.com/oauth/callback
 ```
 
-如果 OAuth app 還在 testing mode，請把使用者加入：
+OAuth アプリがまだテストモード（testing mode）の場合は、テストユーザーを追加してください：
 
 ```text
 OAuth consent screen → Test users
 ```
 
-## 2. 設定環境變數
+## 2. 環境変数の設定
 
 ```bash
 export LINK_URL="https://mikan.example.com"
@@ -42,31 +42,31 @@ export GOOGLE_WORKSPACE_CLI_CLIENT_ID="<client-id>"
 export GOOGLE_WORKSPACE_CLI_CLIENT_SECRET="<client-secret>"
 ```
 
-如果沒有設定 `LINK_PORT`，mikan 會在 `LINK_URL` 存在時預設監聽 `8181`。
+`LINK_PORT` が設定されていない場合、mikan は `LINK_URL` が存在するときにデフォルトで `8181` ポートを監視します。
 
-可選：覆蓋預設 scopes：
+任意：デフォルトのスコープ（scopes）のオーバーライド：
 
 ```bash
 export GOOGLE_WORKSPACE_CLI_OAUTH_SCOPES="https://www.googleapis.com/auth/drive https://mail.google.com/ https://www.googleapis.com/auth/calendar"
 ```
 
-## 3. 使用 `/login`
+## 3. `/login` の使用
 
-如果你希望後續 runtime 自動把這份 credential file 投影到 `/root/.config/gws/credentials.json`，建議用 `image` sandbox 啟動 mikan：
+以降のランタイムでこの認証情報（credential）ファイルを `/root/.config/gws/credentials.json` に自動的に投影したい場合は、`image` サンドボックスを使用して mikan を起動することをお勧めします：
 
 ```bash
 mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 ```
 
-在與 bot 的私訊中輸入：
+ボットとのダイレクトメッセージ（DM）で以下を入力します：
 
 ```text
 /login
 ```
 
-打開 mikan 回傳的 link，選擇 Google Workspace CLI OAuth。
+mikan から返されたリンクを開き、Google Workspace CLI OAuth を選択します。
 
-成功後，mikan 會把 authorized user credential 存成 vault file，例如：
+成功すると、mikan は承認されたユーザーの認証情報（authorized user credential）を vault ファイルとして保存します。例：
 
 ```json
 {
@@ -77,14 +77,14 @@ mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 }
 ```
 
-預設 metadata target path 是：
+デフォルトのメタデータターゲットパス（metadata target path）は以下の通りです：
 
 ```text
 /root/.config/gws/credentials.json
 ```
 
-## Notes
+## 注意事項
 
-- mikan 使用 web OAuth callback，因此 Google OAuth client 必須是 `Web application`，不是 desktop app。
-- 如果 Google 沒有回傳 `refresh_token`，請撤銷既有 consent 後重新 `/login`。mikan 會要求 `access_type=offline` 與 `prompt=consent`，但 Google 仍可能因既有授權而省略 refresh token。
-- 若要讓 `gws.json` 自動出現在 `/root/.config/gws/credentials.json`，請使用 `image` sandbox。`container` / `firecracker` 目前仍只會保存 file credential metadata，不會自動投影。
+- mikan は Web OAuth コールバックを使用するため、Google OAuth クライアントはデスクトップアプリではなく、`Web application` である必要があります。
+- Google から `refresh_token` が返されない場合は、既存の同意（consent）を取り消してから再度 `/login` を行ってください。mikan は `access_type=offline` および `prompt=consent` を要求しますが、既存の承認があるために Google がリフレッシュトークンを省略することがあります。
+- `gws.json` を `/root/.config/gws/credentials.json` に自動的に表示させるには、`image` サンドボックスを使用してください。`container` / `firecracker` は、現時点ではファイル認証情報のメタデータ（file credential metadata）を保存するのみで、自動投影は行いません。

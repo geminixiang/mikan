@@ -1,32 +1,29 @@
 ---
-title: Slack Bot Minimal Setup Guide
+title: Slack Bot 最小セットアップガイド
+description: Socket Mode で mikan を実行するために必要な最小限の Slack app 権限、イベント、manifest 設定。
 ---
 
-# Slack Bot Minimal Setup Guide
+`examples/slack-app-manifest.json` のサンプル manifest を使って app を作成することもできます。
 
-This guide lists the minimum Slack app settings needed to run `mikan` over Socket Mode.
+## 1. Slack app を作成
 
-You can also create the app from the example manifest at `examples/slack-app-manifest.json`.
+1. <https://api.slack.com/apps> を開く。
+2. **Create New App** をクリックする。
+3. **From scratch** を選ぶ。
+4. `mikan` などの app 名を選び、workspace を選択する。
 
-## 1. Create the Slack app
+## 2. Socket Mode を有効化
 
-1. Open <https://api.slack.com/apps>.
-2. Click **Create New App**.
-3. Choose **From scratch**.
-4. Pick an app name, for example `mikan`, and select your workspace.
+1. **Settings → Socket Mode** に移動する。
+2. **Enable Socket Mode** をオンにする。
+3. `connections:write` scope を持つ app-level token を作成する。
+4. token を `SLACK_APP_TOKEN` として保存する。
 
-## 2. Enable Socket Mode
+Token は `xapp-` で始まります。
 
-1. Go to **Settings → Socket Mode**.
-2. Turn **Enable Socket Mode** on.
-3. Create an app-level token with the `connections:write` scope.
-4. Save the token as `SLACK_APP_TOKEN`.
+## 3. bot token scopes を設定
 
-The token starts with `xapp-`.
-
-## 3. Configure bot token scopes
-
-Go to **OAuth & Permissions → Scopes → Bot Token Scopes** and add:
+**OAuth & Permissions → Scopes → Bot Token Scopes** に移動し、次を追加します。
 
 - `app_mentions:read`
 - `assistant:write`
@@ -42,23 +39,23 @@ Go to **OAuth & Permissions → Scopes → Bot Token Scopes** and add:
 - `im:write`
 - `users:read`
 
-Then install or reinstall the app to your workspace and save the bot token as `SLACK_BOT_TOKEN`.
+次に app を workspace にインストールまたは再インストールし、bot token を `SLACK_BOT_TOKEN` として保存します。
 
-The token starts with `xoxb-`.
+Token は `xoxb-` で始まります。
 
-## 4. Enable App Home and Agent mode
+## 4. App Home と Agent モードを有効化
 
-1. Go to **Features → App Home**.
-2. Enable **Home Tab**.
-3. In **Agents & AI Apps**, enable **Agent or Assistant**.
+1. **Features → App Home** に移動する。
+2. **Home Tab** を有効化する。
+3. **Agents & AI Apps** で **Agent or Assistant** を有効化する。
 
-This allows Slack's native assistant thread events and working indicators to reach the bot.
+これにより Slack ネイティブの assistant thread events と working indicators が bot に届きます。
 
-## 5. Subscribe to bot events
+## 5. bot events を購読
 
-Go to **Features → Event Subscriptions** and enable events.
+**Features → Event Subscriptions** に移動し、events を有効化します。
 
-Subscribe to these bot events:
+次の bot events を購読します。
 
 - `app_home_opened`
 - `app_mention`
@@ -68,25 +65,25 @@ Subscribe to these bot events:
 - `message.groups`
 - `message.im`
 
-## 6. Enable interactivity
+## 6. interactivity を有効化
 
-Go to **Features → Interactivity & Shortcuts** and turn interactivity on.
+**Features → Interactivity & Shortcuts** に移動し、interactivity をオンにします。
 
-A public request URL is not required for Socket Mode-only local development, but Slack may still ask for one in some app configurations.
+Socket Mode だけでローカル開発する場合、公開 request URL は不要です。ただし一部の app 設定では Slack が入力を求めることがあります。
 
-## 7. Optional slash commands
+## 7. 任意の slash commands
 
-The example manifest includes slash commands for common controls:
+サンプル manifest には、よく使う制御用 slash commands が含まれています。
 
 - `/pi-login` → login portal
-- `/pi-new` → start a new DM session
+- `/pi-new` → 新しい DM session を開始
 - `/pi-session` → session viewer
-- `/pi-model` → switch this conversation's LLM (`provider/model[:thinking]`, e.g. `anthropic/claude-sonnet-4-6:off`)
-- `/pi-auto-reply` → manage group/channel auto-reply rules
+- `/pi-model` → この conversation の LLM を切り替え（`provider/model[:thinking]`、例：`anthropic/claude-sonnet-4-6:off`）
+- `/pi-auto-reply` → group/channel auto-reply rules を管理
 
-Slash commands are optional because text commands also work in supported contexts. Keep `stop` as a text command (`stop` or `/stop`) so thread-local stop routing can target the correct session.
+Slash commands は任意です。対応する状況ではテキスト指令も使えるためです。`stop` は文字指令（`stop` または `/stop`）として残してください。これにより thread-local stop routing が正しい session を指せます。
 
-## 8. Run mikan
+## 8. mikan を実行
 
 ```bash
 export SLACK_APP_TOKEN=xapp-...
@@ -95,4 +92,4 @@ export SLACK_BOT_TOKEN=xoxb-...
 mikan --state-dir ~/.mikan /path/to/workspace
 ```
 
-The bot responds in DMs and when mentioned in channels. Slack thread replies use isolated thread sessions with the thread timestamp as part of the session key.
+Bot は DM で応答し、channel では mention されたときに応答します。Slack thread replies は隔離された thread sessions を使い、thread timestamp を session key の一部にします。

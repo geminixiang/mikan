@@ -1,0 +1,62 @@
+---
+title: 部署
+description: 使用 PM2、Docker sandbox image 与 state directory 部署长时间执行的 mikan。
+---
+
+import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
+
+<CardGrid>
+  <Card title="PM2 常驻" icon="setting">
+    使用 PM2 supervisor 让 mikan daemonize、crash restart，并支持开机自动启动。
+  </Card>
+  <Card title="Sandbox image" icon="rocket">
+    先拉取 `ghcr.io/geminixiang/mikan-sandbox:latest`，再让 mikan 用 image sandbox 隔离工具执行。
+  </Card>
+  <Card title="State directory" icon="lock">
+    保留 state directory，让会话、vault 与 runtime 状态在 reload 后继续存在。
+  </Card>
+</CardGrid>
+
+## PM2
+
+长时间执行的部署建议使用 [PM2](https://pm2.keymetrics.io/) 作为进程 supervisor。它会将 mikan daemonize、在 crash 时重新启动，并可在重启后繼续運作。
+
+<Steps>
+
+1. 安裝 mikan 与 pm2：
+
+   ```bash
+   npm i -g @geminixiang/mikan pm2
+   ```
+
+2. 下载你要使用的 sandbox container/image 依赖：
+
+   ```bash
+   docker pull ghcr.io/geminixiang/mikan-sandbox:latest
+   ```
+
+3. 获取 ecosystem file，編辑 args 与环境 token，然后启动：
+
+   ```bash
+   curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
+   pm2 start ecosystem.config.cjs
+   pm2 save
+   pm2 startup
+   ```
+
+4. 执行 `pm2 startup` 输出的命令，启用开机自动启动。
+
+</Steps>
+
+## 升级
+
+```bash
+npm i -g @geminixiang/mikan && pm2 reload mikan
+```
+
+<Aside type="note" title="Graceful reload">
+  `pm2 reload` 会送出 SIGTERM，并在送出 SIGKILL 前最多等待 `kill_timeout`（随附设置中为 60s）。mikan
+  内部的 graceful shutdown 会在这段时间内排空进行中的 LLM turns，因此 reload 不会中断使用中的对话。
+</Aside>
+
+所有可调整项请見 [`../deploy/pm2/ecosystem.config.cjs`](../deploy/pm2/ecosystem.config.cjs)。

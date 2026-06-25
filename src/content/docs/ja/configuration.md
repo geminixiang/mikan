@@ -1,14 +1,11 @@
 ---
-title: Configuration
+title: 設定
+description: グローバルおよび会話レベルのモデル、sandbox、Slack 返信モード、auto-reply、vault の既定値を設定します。
 ---
 
-# Configuration
+各会話の設定は `<working-directory>/<conversationId>/settings.json` にあり、その会話ではグローバル設定を上書きします。
 
-mikan reads global settings from `<state-dir>/settings.json` (default `~/.mikan/settings.json`, override with `--state-dir` or `STATE_DIR`). This file is created explicitly with `mikan --onboard`.
-
-Per-conversation settings live at `<working-directory>/<conversationId>/settings.json` and override global settings for that conversation.
-
-## Example
+## 例
 
 ```json
 {
@@ -38,25 +35,25 @@ Per-conversation settings live at `<working-directory>/<conversationId>/settings
 }
 ```
 
-## Fields
+## フィールド
 
-| Field                          | Default             | Description                                                                                   |
-| ------------------------------ | ------------------- | --------------------------------------------------------------------------------------------- |
-| `llm.provider`                 | `anthropic`         | AI provider                                                                                   |
-| `llm.model`                    | `claude-sonnet-4-6` | Model name                                                                                    |
-| `llm.thinkingLevel`            | `off`               | `off` / `low` / `medium` / `high`                                                             |
-| `sentry.dsn`                   | unset               | Sentry DSN; sensitive prompt/tool content is redacted                                         |
-| `sandbox.cpus`                 | unset               | CPU limit for managed containers                                                              |
-| `sandbox.memory`               | unset               | Memory limit for managed containers                                                           |
-| `sandbox.boost.cpus`           | unset               | Temporary CPU limit used by `/pi-sandbox boost`                                               |
-| `sandbox.boost.memory`         | unset               | Temporary memory limit used by `/pi-sandbox boost`                                            |
-| `sandbox.image.workspaceMount` | `private`           | `private` mounts only the conversation workspace; `full` mounts the whole workspace directory |
-| `sandbox.defaultSharedVault`   | unset               | Default shared vault key for conversations without their own vault                            |
-| `slack.replyMode`              | `top-level`         | Slack response mode: `top-level` or `thread`                                                  |
+| フィールド                     | 既定値              | 説明                                                                                                  |
+| ------------------------------ | ------------------- | ----------------------------------------------------------------------------------------------------- |
+| `llm.provider`                 | `anthropic`         | AI プロバイダー                                                                                       |
+| `llm.model`                    | `claude-sonnet-4-6` | モデル名                                                                                              |
+| `llm.thinkingLevel`            | `off`               | `off` / `low` / `medium` / `high`                                                                     |
+| `sentry.dsn`                   | 未設定              | Sentry DSN。機密性の高い prompt / tool 内容はマスクされます                                           |
+| `sandbox.cpus`                 | 未設定              | 管理対象 container の CPU 制限                                                                        |
+| `sandbox.memory`               | 未設定              | 管理対象 container のメモリ制限                                                                       |
+| `sandbox.boost.cpus`           | 未設定              | `/pi-sandbox boost` が使う一時的な CPU 制限                                                           |
+| `sandbox.boost.memory`         | 未設定              | `/pi-sandbox boost` が使う一時的なメモリ制限                                                          |
+| `sandbox.image.workspaceMount` | `private`           | `private` は会話 workspace のみをマウントします。`full` は workspace ディレクトリ全体をマウントします |
+| `sandbox.defaultSharedVault`   | 未設定              | 独自の保管庫を持たない会話に使う既定の共有保管庫キー                                                  |
+| `slack.replyMode`              | `top-level`         | Slack 応答モード: `top-level` または `thread`                                                         |
 
-`/pi-sandbox` shows the current managed-container CPU/memory limits. `/pi-sandbox boost` temporarily applies `sandbox.boost` to the current conversation; the boost ends when that sandbox container is stopped.
+`/pi-sandbox` は現在の管理対象 container の CPU / メモリ制限を表示します。`/pi-sandbox boost` は `sandbox.boost` を現在の会話へ一時的に適用します。その sandbox container が停止すると、boost も終了します。
 
-Conversation-local settings use the same shape and override global settings for that conversation. Settings written by `/pi-model` usually only include the model override:
+会話ローカル設定は同じ構造を使い、その会話のグローバル設定を上書きします。`/pi-model` が書き込む設定は通常、モデル上書きのみを含みます:
 
 ```json
 {
@@ -68,6 +65,6 @@ Conversation-local settings use the same shape and override global settings for 
 }
 ```
 
-Every environment variable also supports a `MIKAN_` prefix for deployment-specific namespacing. For example, `MIKAN_SLACK_APP_TOKEN` and `MIKAN_LINK_URL` are accepted fallbacks. Unprefixed variables take precedence.
+各環境変数は、デプロイ専用の名前空間として `MIKAN_` プレフィックスもサポートします。たとえば `MIKAN_SLACK_APP_TOKEN` と `MIKAN_LINK_URL` はどちらも fallback として受け付けられます。プレフィックスなしの変数が優先されます。
 
-mikan writes logs to stdout/stderr. Use your process manager or host platform (for example PM2, systemd, Docker, or a cloud logging agent) to route logs to your preferred backend.
+mikan はログを stdout/stderr に書き込みます。プロセスマネージャーまたはホストプラットフォーム（PM2、systemd、Docker、クラウドログエージェントなど）を使って、好みのバックエンドへログを転送してください。

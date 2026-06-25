@@ -1,208 +1,205 @@
 ---
-title: Firecracker Setup Guide
+title: Firecracker 设定指南
+description: 设定 Firecracker microVM，供 mikan 的 experimental Firecracker sandbox 模式使用。
 ---
 
-# Firecracker Setup Guide
+警告：mikan 的 Firecracker 支援仍处于非常早期的 alpha。这份指南保留给实验与验证使用；它还不是一般开发或 production 建议使用的 sandbox 路径。除非你正在明确测试 Firecracker，否则请优先使用 `image:<image>`。
 
-This guide explains how to set up Firecracker microVM for use with mikan sandbox mode.
+## 先决条件
 
-Warning: Firecracker support in mikan is still in very early alpha. This guide is kept for experimentation and validation work; it is not the recommended sandbox path for normal development or production use yet. Prefer `image:<image>` unless you are explicitly testing Firecracker.
+- 支援 KVM 的 Linux host
+- 可用 root/sudo 权限设定网路
+- VM 使用 SSH key-based authentication
 
-## Prerequisites
+## 安装步骤
 
-- Linux host with KVM support
-- Root/sudo access for network configuration
-- SSH key-based authentication to VM
-
-## Installation Steps
-
-### 1. Install Firecracker Binary
+### 1. 安装 Firecracker binary
 
 ```bash
-# Download and install Firecracker
+# 下載並安裝 Firecracker
 mkdir -p /home/gemini/firecracker
 cp release-v1.15.0-x86_64/firecracker-v1.15.0-x86_64 /usr/local/bin/firecracker
 chmod +x /usr/local/bin/firecracker
 
-# Verify
+# 驗證
 firecracker --version
 ```
 
-### 2. Download Kernel and Rootfs
+### 2. 下载 kernel 与 rootfs
 
-Follow the official Firecracker getting-started guide to download kernel and rootfs:
+依照官方 Firecracker getting-started guide 下载 kernel 与 rootfs：
 
 ```bash
 cd /home/gemini/firecracker
 
-# Get CI version from latest release
+# 從最新 release 取得 CI version
 ARCH="x86_64"
 release_url="https://github.com/firecracker-microvm/firecracker/releases"
 CI_VERSION=$(basename $(curl -fsSLI -o /dev/null -w %{url_effective} ${release_url}/latest))
 
-# Download kernel
+# 下載 kernel
 latest_kernel_key=$(curl "http://spec.ccfc.min.s3.amazonaws.com/?prefix=firecracker-ci/${CI_VERSION}/$ARCH/vmlinux-&list-type=2" 2>/dev/null | \
     grep -oP "(?<=<Key>)(firecracker-ci/${CI_VERSION}/$ARCH/vmlinux-[0-9]+\.[0-9]+\.[0-9]{1,3})(?=</Key>)" | sort -V | tail -1)
 wget "https://s3.amazonaws.com/spec.ccfc.min/${latest_kernel_key}" -O vmlinux
 
-# Download rootfs squashfs
+# 下載 rootfs squashfs
 latest_ubuntu_key=$(curl "http://spec.ccfc.min.s3.amazonaws.com/?prefix=firecracker-ci/${CI_VERSION}/$ARCH/ubuntu-&list-type=2" 2>/dev/null | \
     grep -oP "(?<=<Key>)(firecracker-ci/${CI_VERSION}/$ARCH/ubuntu-[0-9]+\.[0-9]+\.squashfs)(?=</Key>)" | sort -V | tail -1)
 wget "https://s3.amazonaws.com/spec.ccfc.min/${latest_ubuntu_key}" -O ubuntu-24.04.squashfs.upstream
 ```
 
-### 3. Extract and Configure Rootfs
+### 3. 解开并设定 rootfs
 
 ```bash
 cd /home/gemini/firecracker
 
-# Extract squashfs
+# 解開 squashfs
 unsquashfs ubuntu-24.04.squashfs.upstream
 
-# Generate SSH key for VM access
+# 產生 VM 存取用 SSH key
 ssh-keygen -f id_rsa -N "" -q
 
-# Add public key to rootfs
+# 將 public key 加入 rootfs
 mkdir -p squashfs-root/root/.ssh
 cp id_rsa.pub squashfs-root/root/.ssh/authorized_keys
 
-# Create ext4 filesystem
+# 建立 ext4 filesystem
 truncate -s 1G ubuntu-24.04.ext4
 mkfs.ext4 -d squashfs-root -F ubuntu-24.04.ext4
 ```
 
-### 4. Start Firecracker (Two Terminals Required)
+### 4. 启动 Firecracker（需要两个 terminal）
 
-#### Terminal 1: Setup Network and Start Firecracker
+#### Terminal 1：设定网路并启动 Firecracker
 
 ```bash
 cd /home/gemini/firecracker
 
-# Setup tap interface
+# 設定 tap interface
 sudo ip link del tap0 2>/dev/null || true
 sudo ip tuntap add dev tap0 mode tap
 sudo ip addr add 172.16.0.1/30 dev tap0
 sudo ip link set dev tap0 up
 
-# Enable IP forwarding
+# 啟用 IP forwarding
 sudo sh -c "echo 1 > /proc/sys/net/ipv4/ip_forward"
 sudo iptables -P FORWARD ACCEPT
 
-# Start firecracker
+# 啟動 firecracker
 sudo firecracker --api-sock /tmp/firecracker.socket --enable-pci
 ```
 
-#### Terminal 2: Configure VM
+#### Terminal 2：设定 VM
 
 ```bash
 cd /home/gemini/firecracker
 API_SOCKET="/tmp/firecracker.socket"
 
-# Set log file
+# 設定 log file
 sudo curl -X PUT --unix-socket "${API_SOCKET}" \
     --data '{"log_path": "./firecracker.log", "level": "Debug", "show_level": true, "show_log_origin": true}' \
     "http://localhost/logger"
 
-# Set boot source
+# 設定 boot source
 sudo curl -X PUT --unix-socket "${API_SOCKET}" \
     --data '{"kernel_image_path": "./vmlinux", "boot_args": "console=ttyS0 reboot=k panic=1"}' \
     "http://localhost/boot-source"
 
-# Set rootfs
+# 設定 rootfs
 sudo curl -X PUT --unix-socket "${API_SOCKET}" \
     --data '{"drive_id": "rootfs", "path_on_host": "./ubuntu-24.04.ext4", "is_root_device": true, "is_read_only": false}' \
     "http://localhost/drives/rootfs"
 
-# Set network interface (MAC determines IP: 06:00:AC:10:00:02 → 172.16.0.2)
+# 設定 network interface（MAC 決定 IP：06:00:AC:10:00:02 → 172.16.0.2）
 sudo curl -X PUT --unix-socket "${API_SOCKET}" \
     --data '{"iface_id": "net1", "guest_mac": "06:00:AC:10:00:02", "host_dev_name": "tap0"}' \
     "http://localhost/network-interfaces/net1"
 
-# Start VM
+# 啟動 VM
 sleep 0.5
 sudo curl -X PUT --unix-socket "${API_SOCKET}" \
     --data '{"action_type": "InstanceStart"}' \
     "http://localhost/actions"
 
-# Wait for boot
+# 等待開機
 sleep 3s
 
-# Setup guest network and DNS
+# 設定 guest network 與 DNS
 ssh -i ./id_rsa -o StrictHostKeyChecking=no root@172.16.0.2 \
     "ip route add default via 172.16.0.1 && echo 'nameserver 8.8.8.8' > /etc/resolv.conf"
 ```
 
-### 5. Verify SSH Access
+### 5. 验证 SSH 存取
 
 ```bash
-# Test SSH connection
+# 測試 SSH 連線
 ssh -i ./id_rsa root@172.16.0.2 "echo 'Connected!' && uname -a"
 
-# Should see: Connected!
+# 應看到：Connected!
 # Linux localhost 6.1.0... x86_64 GNU/Linux
 ```
 
-## Usage with Mikan
+## 与 Mikan 搭配使用
 
-Once the VM is running:
+VM 启动后：
 
 ```bash
-# Run mikan with Firecracker sandbox
+# 使用 Firecracker sandbox 執行 mikan
 mikan --sandbox=firecracker:172.16.0.2:/home/gemini/workspace /home/gemini/workspace
 
-# With custom SSH user
+# 使用自訂 SSH user
 mikan --sandbox=firecracker:172.16.0.2:/home/gemini/workspace:ubuntu /home/gemini/workspace
 
-# With custom SSH port
+# 使用自訂 SSH port
 mikan --sandbox=firecracker:172.16.0.2:/home/gemini/workspace:root:22 /home/gemini/workspace
 ```
 
-## Shutdown
+## 关机
 
-Inside the VM:
+在 VM 内：
 
 ```bash
 reboot
 ```
 
-This gracefully shuts down Firecracker. To force kill:
+这会正常关闭 Firecracker。若要强制结束：
 
 ```bash
 sudo killall firecracker
 ```
 
-## Troubleshooting
+## 疑难排解
 
-### KVM Access Denied
+### KVM access denied
 
 ```bash
-# Check KVM module
+# 檢查 KVM module
 lsmod | grep kvm
 
-# Grant access
+# 授權存取
 sudo setfacl -m u:${USER}:rw /dev/kvm
-# Or add user to kvm group
+# 或將 user 加入 kvm group
 sudo usermod -aG kvm ${USER}
 ```
 
-### VM Won't Boot
+### VM 无法开机
 
-- Check logs: `tail -f /home/gemini/firecracker/firecracker.log`
-- Verify kernel and rootfs paths are correct
-- Ensure tap interface is up: `ip link show tap0`
+- 检查 logs：`tail -f /home/gemini/firecracker/firecracker.log`
+- 确认 kernel 与 rootfs path 正确
+- 确认 tap interface 已启用：`ip link show tap0`
 
-### SSH Connection Refused
+### SSH connection refused
 
-- Wait longer for VM to boot (try 10s)
-- Check network: `ping 172.16.0.2`
-- Verify SSH is running in VM: `ssh -v -i ./id_rsa root@172.16.0.2`
+- 多等一点让 VM 开机（试 10 秒）
+- 检查网路：`ping 172.16.0.2`
+- 确认 SSH 在 VM 中执行：`ssh -v -i ./id_rsa root@172.16.0.2`
 
-## Files Summary
+## 档案摘要
 
-| File                | Description                    |
-| ------------------- | ------------------------------ |
-| `vmlinux`           | Linux kernel for Firecracker   |
-| `ubuntu-24.04.ext4` | Root filesystem (1GB)          |
-| `id_rsa`            | SSH private key (keep secret!) |
-| `id_rsa.pub`        | SSH public key                 |
-| `firecracker.log`   | Firecracker execution log      |
+| File                | 说明                            |
+| ------------------- | ------------------------------- |
+| `vmlinux`           | Firecracker 使用的 Linux kernel |
+| `ubuntu-24.04.ext4` | Root filesystem (1GB)           |
+| `id_rsa`            | SSH private key（请保密！）     |
+| `id_rsa.pub`        | SSH public key                  |
+| `firecracker.log`   | Firecracker execution log       |

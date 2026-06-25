@@ -1,16 +1,13 @@
 ---
-title: Events
+title: イベント
+description: workspace の events ディレクトリを通じて agent を起動するイベント形式と処理フロー。
 ---
 
-# Events
+## イベントタイプ
 
-Events are JSON files written to the `events/` directory inside the workspace. The harness watches this directory and triggers the agent when a file appears.
+### 即時
 
-## Event Types
-
-### Immediate
-
-Triggers as soon as the harness sees the file. Useful for signaling from external scripts or webhooks.
+harness がファイルを見つけるとすぐに起動します。外部スクリプトや webhook からシグナルを送る用途に適しています。
 
 ```json
 {
@@ -23,9 +20,9 @@ Triggers as soon as the harness sees the file. Useful for signaling from externa
 }
 ```
 
-### One-shot
+### 単発
 
-Triggers once at a specific time. Use for reminders and future callbacks.
+指定時刻に一度だけ起動します。リマインダーや将来の callback に適しています。
 
 ```json
 {
@@ -39,11 +36,11 @@ Triggers once at a specific time. Use for reminders and future callbacks.
 }
 ```
 
-`at` must be an ISO 8601 timestamp with UTC offset.
+`at` は UTC offset 付きの ISO 8601 タイムスタンプでなければなりません。
 
-### Periodic
+### 定期
 
-Triggers on a cron schedule. Persists until deleted.
+cron スケジュールに従って起動します。ファイルが削除されるまで残り続けます。
 
 ```json
 {
@@ -58,53 +55,53 @@ Triggers on a cron schedule. Persists until deleted.
 }
 ```
 
-Cron format: `minute hour day-of-month month day-of-week`
+Cron 形式: `minute hour day-of-month month day-of-week`
 
-Common schedules:
+よく使うスケジュール:
 
-- `0 9 * * *` — daily at 09:00
-- `0 9 * * 1-5` — weekdays at 09:00
-- `0 0 1 * *` — first of each month at midnight
+- `0 9 * * *` — 毎日 09:00
+- `0 9 * * 1-5` — 平日 09:00
+- `0 0 1 * *` — 毎月 1 日の午前 0 時
 
-## Routing Fields
+## ルーティングフィールド
 
-| Field              | Description                                                                                          |
-| ------------------ | ---------------------------------------------------------------------------------------------------- |
-| `platform`         | Target bot platform (e.g. `slack`)                                                                   |
-| `conversationId`   | Channel or DM ID to post into                                                                        |
-| `conversationKind` | `"shared"` (channel) or `"direct"` (DM)                                                              |
-| `userId`           | Platform user ID of whoever requested the event; used for vault/credential routing in per-user modes |
+| フィールド         | 説明                                                                                                         |
+| ------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `platform`         | 対象 bot プラットフォーム（例: `slack`）                                                                     |
+| `conversationId`   | 送信先のチャンネルまたは DM ID                                                                               |
+| `conversationKind` | `"shared"`（チャンネル）または `"direct"`（DM）                                                              |
+| `userId`           | このイベントを要求したプラットフォームユーザー ID。per-user モードでは vault/credential routing に使われます |
 
-## Session Binding
+## Session バインディング
 
-Event files do not carry `sessionKey` or thread targeting. The event text must be self-contained because a scheduled/background event is not a continuation of the live chat turn that created it.
+イベントファイルには `sessionKey` や thread 目標は含まれません。スケジュール/バックグラウンドイベントは、それを作成したリアルタイムチャットターンの続きではないため、イベント本文は自己完結している必要があります。
 
-| Platform/event source   | Visible delivery          | Session key                            | Thread targeting |
-| ----------------------- | ------------------------- | -------------------------------------- | ---------------- |
-| Slack event file/tool   | New top-level anchor      | `<conversationId>:<anchor message ts>` | None             |
-| Slack direct `BotEvent` | Provided `thread_ts` wins | `<conversationId>:<thread_ts>` if set  | Optional         |
-| Other platform event    | Platform adapter default  | Platform adapter default event session | Adapter-specific |
+| プラットフォーム/イベントソース  | 見える配信方法                | Session key                                     | Thread 目標    |
+| -------------------------------- | ----------------------------- | ----------------------------------------------- | -------------- |
+| Slack event file/tool            | 新しいトップレベルのアンカー  | `<conversationId>:<anchor message ts>`          | なし           |
+| Slack direct `BotEvent`          | 指定された `thread_ts` を優先 | 設定されていれば `<conversationId>:<thread_ts>` | 任意           |
+| その他のプラットフォームイベント | プラットフォーム adapter 既定 | プラットフォーム adapter 既定の event session   | adapter に依存 |
 
-For Slack event files, firing an event actively creates a top-level Slack message first. That message timestamp becomes the anchor and the run uses the fixed session key `<conversationId>:<anchor message ts>`.
+Slack イベントファイルでは、イベント起動時にまずトップレベルの Slack メッセージを能動的に作成します。そのメッセージのタイムスタンプがアンカーになり、その実行では固定 session key `<conversationId>:<anchor message ts>` を使います。
 
-This keeps event runs visible in the channel and isolates them from the persistent top-level session. The top-level channel history remains available in `log.jsonl` for explicit lookup, but it is not implicitly copied into the event session.
+これにより、イベント実行はチャンネル内で見える状態になり、永続的な top-level session から隔離されます。トップレベルチャンネル履歴は明示的な検索用に `log.jsonl` で引き続き利用できますが、イベント session へ暗黙にコピーされることはありません。
 
-## Thread Targeting
+## Thread 目標
 
-Events are delivered as top-level messages. They should not be buried in a historical thread or reply chain.
+イベントはトップレベルメッセージとして配信されます。履歴 thread や返信スレッドの中に埋めるべきではありません。
 
-The `event` tool (available to the agent) fills the routing fields automatically. Use it instead of writing JSON by hand.
+agent が利用できる `event` tool はルーティングフィールドを自動入力します。JSON を手書きせず、これを使ってください。
 
-## Lifecycle
+## ライフサイクル
 
-- **Immediate** and **one-shot** files are deleted automatically after the event fires.
-- **Periodic** files persist. Delete the file to cancel.
-- Maximum 5 events can be queued at once.
+- **即時** と **単発** ファイルは、イベント起動後に自動削除されます。
+- **定期** ファイルは残り続けます。ファイルを削除するとキャンセルできます。
+- 一度に最大 5 個のイベントをキューに入れられます。
 
-## Silent Response
+## サイレント応答
 
-For periodic events with nothing to report, respond with exactly `[SILENT]`. The harness deletes the status message and posts nothing to the platform, avoiding channel spam.
+報告する内容がない定期イベントでは、正確に `[SILENT]` と応答してください。harness はステータスメッセージを削除し、チャンネル荒らしを避けるためにプラットフォームへ投稿しません。
 
 ## Debouncing
 
-When writing scripts that emit immediate events (email watchers, webhook handlers), always debounce. Collect events over a window and emit one summary event rather than one event per item.
+即時イベントを送信するスクリプト（email watchers、webhook handlers）を書くときは、必ず debounce してください。各項目ごとにイベントを送るのではなく、一定の時間枠でイベントを集め、1 つの要約イベントを送信してください。

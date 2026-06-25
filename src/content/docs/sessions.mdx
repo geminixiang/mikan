@@ -1,0 +1,47 @@
+---
+title: Sessions
+description: How mikan separates platform chat history from pi-coding-agent structured sessions.
+---
+
+import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
+
+<CardGrid>
+  <Card title="Platform chat history" icon="open-book">
+    `log.jsonl` keeps human-readable platform messages used to bootstrap thread or reply context.
+  </Card>
+  <Card title="pi structured context" icon="rocket">
+    `sessions/*.jsonl` stores tool results and agent turns so pi-coding-agent can continue work.
+  </Card>
+  <Card title="Fixed scope" icon="lock">
+    Threads, reply chains, and shared channels map to fixed session files so different conversations
+    do not contaminate each other.
+  </Card>
+</CardGrid>
+
+## Platform session model
+
+| Platform | `sessionKey` rule                                                                 | Notes                                                                  |
+| -------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Slack    | top-level / DM: `conversationId`; thread: `conversationId:threadTs`               | thread sessions are fixed files bootstrapped from recent chat history  |
+| Discord  | DM: `channelId`; shared top-level: `channelId:messageId`; reply/thread: rooted id | replies in shared channels continue the root message session           |
+| Telegram | private: `chatId`; shared top-level: `chatId:messageId`; reply chain: root reply  | no native thread model; shared sessions are inferred from reply chains |
+
+## Files
+
+<FileTree>
+
+- workspace/
+  - **log.jsonl** platform message history
+  - sessions/
+    - **current** points to the active top-level session
+    - **\*.jsonl** structured pi-coding-agent context, including tool results
+    - **scope-derived files** fixed session files for thread / reply scopes
+
+</FileTree>
+
+## Reset
+
+<Aside type="tip" title="Keep an audit trail">
+  Use `new` / `/new` in chat to reset the current session. Unless you remove them manually, previous
+  files stay on disk for inspection.
+</Aside>

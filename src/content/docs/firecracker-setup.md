@@ -1,22 +1,19 @@
 ---
-title: Firecracker Setup Guide
+title: Firecracker setup guide
+description: Configure a Firecracker microVM for mikan's experimental Firecracker sandbox mode.
 ---
 
-# Firecracker Setup Guide
-
-This guide explains how to set up Firecracker microVM for use with mikan sandbox mode.
-
-Warning: Firecracker support in mikan is still in very early alpha. This guide is kept for experimentation and validation work; it is not the recommended sandbox path for normal development or production use yet. Prefer `image:<image>` unless you are explicitly testing Firecracker.
+Warning: mikan's Firecracker support is still very early alpha. This guide is kept for experiments and validation; it is not yet the recommended sandbox path for normal development or production. Unless you are explicitly testing Firecracker, prefer `image:<image>`.
 
 ## Prerequisites
 
 - Linux host with KVM support
-- Root/sudo access for network configuration
-- SSH key-based authentication to VM
+- root/sudo access for network setup
+- VM uses SSH key-based authentication
 
-## Installation Steps
+## Installation steps
 
-### 1. Install Firecracker Binary
+### 1. Install the Firecracker binary
 
 ```bash
 # Download and install Firecracker
@@ -28,14 +25,14 @@ chmod +x /usr/local/bin/firecracker
 firecracker --version
 ```
 
-### 2. Download Kernel and Rootfs
+### 2. Download kernel and rootfs
 
-Follow the official Firecracker getting-started guide to download kernel and rootfs:
+Follow the official Firecracker getting-started guide to download the kernel and rootfs:
 
 ```bash
 cd /home/gemini/firecracker
 
-# Get CI version from latest release
+# Get CI version from the latest release
 ARCH="x86_64"
 release_url="https://github.com/firecracker-microvm/firecracker/releases"
 CI_VERSION=$(basename $(curl -fsSLI -o /dev/null -w %{url_effective} ${release_url}/latest))
@@ -51,12 +48,12 @@ latest_ubuntu_key=$(curl "http://spec.ccfc.min.s3.amazonaws.com/?prefix=firecrac
 wget "https://s3.amazonaws.com/spec.ccfc.min/${latest_ubuntu_key}" -O ubuntu-24.04.squashfs.upstream
 ```
 
-### 3. Extract and Configure Rootfs
+### 3. Unpack and configure rootfs
 
 ```bash
 cd /home/gemini/firecracker
 
-# Extract squashfs
+# Unpack squashfs
 unsquashfs ubuntu-24.04.squashfs.upstream
 
 # Generate SSH key for VM access
@@ -71,14 +68,14 @@ truncate -s 1G ubuntu-24.04.ext4
 mkfs.ext4 -d squashfs-root -F ubuntu-24.04.ext4
 ```
 
-### 4. Start Firecracker (Two Terminals Required)
+### 4. Start Firecracker (requires two terminals)
 
-#### Terminal 1: Setup Network and Start Firecracker
+#### Terminal 1: configure networking and start Firecracker
 
 ```bash
 cd /home/gemini/firecracker
 
-# Setup tap interface
+# Configure tap interface
 sudo ip link del tap0 2>/dev/null || true
 sudo ip tuntap add dev tap0 mode tap
 sudo ip addr add 172.16.0.1/30 dev tap0
@@ -92,28 +89,28 @@ sudo iptables -P FORWARD ACCEPT
 sudo firecracker --api-sock /tmp/firecracker.socket --enable-pci
 ```
 
-#### Terminal 2: Configure VM
+#### Terminal 2: configure VM
 
 ```bash
 cd /home/gemini/firecracker
 API_SOCKET="/tmp/firecracker.socket"
 
-# Set log file
+# Configure log file
 sudo curl -X PUT --unix-socket "${API_SOCKET}" \
     --data '{"log_path": "./firecracker.log", "level": "Debug", "show_level": true, "show_log_origin": true}' \
     "http://localhost/logger"
 
-# Set boot source
+# Configure boot source
 sudo curl -X PUT --unix-socket "${API_SOCKET}" \
     --data '{"kernel_image_path": "./vmlinux", "boot_args": "console=ttyS0 reboot=k panic=1"}' \
     "http://localhost/boot-source"
 
-# Set rootfs
+# Configure rootfs
 sudo curl -X PUT --unix-socket "${API_SOCKET}" \
     --data '{"drive_id": "rootfs", "path_on_host": "./ubuntu-24.04.ext4", "is_root_device": true, "is_read_only": false}' \
     "http://localhost/drives/rootfs"
 
-# Set network interface (MAC determines IP: 06:00:AC:10:00:02 → 172.16.0.2)
+# Configure network interface (MAC determines IP: 06:00:AC:10:00:02 → 172.16.0.2)
 sudo curl -X PUT --unix-socket "${API_SOCKET}" \
     --data '{"iface_id": "net1", "guest_mac": "06:00:AC:10:00:02", "host_dev_name": "tap0"}' \
     "http://localhost/network-interfaces/net1"
@@ -127,33 +124,33 @@ sudo curl -X PUT --unix-socket "${API_SOCKET}" \
 # Wait for boot
 sleep 3s
 
-# Setup guest network and DNS
+# Configure guest network and DNS
 ssh -i ./id_rsa -o StrictHostKeyChecking=no root@172.16.0.2 \
     "ip route add default via 172.16.0.1 && echo 'nameserver 8.8.8.8' > /etc/resolv.conf"
 ```
 
-### 5. Verify SSH Access
+### 5. Verify SSH access
 
 ```bash
 # Test SSH connection
 ssh -i ./id_rsa root@172.16.0.2 "echo 'Connected!' && uname -a"
 
-# Should see: Connected!
+# Expected output: Connected!
 # Linux localhost 6.1.0... x86_64 GNU/Linux
 ```
 
-## Usage with Mikan
+## Use with Mikan
 
-Once the VM is running:
+After the VM starts:
 
 ```bash
 # Run mikan with Firecracker sandbox
 mikan --sandbox=firecracker:172.16.0.2:/home/gemini/workspace /home/gemini/workspace
 
-# With custom SSH user
+# Use a custom SSH user
 mikan --sandbox=firecracker:172.16.0.2:/home/gemini/workspace:ubuntu /home/gemini/workspace
 
-# With custom SSH port
+# Use a custom SSH port
 mikan --sandbox=firecracker:172.16.0.2:/home/gemini/workspace:root:22 /home/gemini/workspace
 ```
 
@@ -165,7 +162,7 @@ Inside the VM:
 reboot
 ```
 
-This gracefully shuts down Firecracker. To force kill:
+This shuts down Firecracker normally. To force exit:
 
 ```bash
 sudo killall firecracker
@@ -173,7 +170,7 @@ sudo killall firecracker
 
 ## Troubleshooting
 
-### KVM Access Denied
+### KVM access denied
 
 ```bash
 # Check KVM module
@@ -185,24 +182,24 @@ sudo setfacl -m u:${USER}:rw /dev/kvm
 sudo usermod -aG kvm ${USER}
 ```
 
-### VM Won't Boot
+### VM does not boot
 
 - Check logs: `tail -f /home/gemini/firecracker/firecracker.log`
-- Verify kernel and rootfs paths are correct
-- Ensure tap interface is up: `ip link show tap0`
+- Confirm kernel and rootfs paths are correct
+- Confirm the tap interface is enabled: `ip link show tap0`
 
-### SSH Connection Refused
+### SSH connection refused
 
-- Wait longer for VM to boot (try 10s)
+- Wait a little longer for VM boot (try 10 seconds)
 - Check network: `ping 172.16.0.2`
-- Verify SSH is running in VM: `ssh -v -i ./id_rsa root@172.16.0.2`
+- Confirm SSH is running in the VM: `ssh -v -i ./id_rsa root@172.16.0.2`
 
-## Files Summary
+## File summary
 
-| File                | Description                    |
-| ------------------- | ------------------------------ |
-| `vmlinux`           | Linux kernel for Firecracker   |
-| `ubuntu-24.04.ext4` | Root filesystem (1GB)          |
-| `id_rsa`            | SSH private key (keep secret!) |
-| `id_rsa.pub`        | SSH public key                 |
-| `firecracker.log`   | Firecracker execution log      |
+| File                | Description                       |
+| ------------------- | --------------------------------- |
+| `vmlinux`           | Linux kernel used by Firecracker  |
+| `ubuntu-24.04.ext4` | Root filesystem (1GB)             |
+| `id_rsa`            | SSH private key (keep it secret!) |
+| `id_rsa.pub`        | SSH public key                    |
+| `firecracker.log`   | Firecracker execution log         |

@@ -1,0 +1,66 @@
+---
+title: 聊天命令
+description: mikan 在 Slack、Discord 与 Telegram 中支持的文本命令与 slash-command 别名。
+---
+
+import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/components";
+
+<CardGrid>
+  <Card title="登录与凭证" icon="lock">
+    `/login` 会开启 15 分钟有效链接，让你在 DM 中安全存储 API keys 或完成 OAuth。
+  </Card>
+  <Card title="会话" icon="open-book">
+    `session` 开启当前会话查看器；`new` 重置当前对话并开始新的 session。
+  </Card>
+  <Card title="模型与回复" icon="rocket">
+    `model` 切换 LLM；`auto-reply` 控制群组或频道中的自动回复 policy。
+  </Card>
+</CardGrid>
+
+## 命令速查
+
+| 指令                                                       | 用途                                                                            |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `/login` / `/pi-login`                                     | 开启 15 分钟有效的链接，用于存储 API keys 或执行内置 OAuth flows。仅限 DM。     |
+| `session` / `/session`                                     | 开启当前会话的网页查看。仅限 DM。                                               |
+| `new` / `/new`                                             | 重置当前会话并重新开始。仅限 DM。                                               |
+| `model` / `/model` / `/pi-model provider/model[:thinking]` | 切换当前对话使用的 LLM，例如 `/pi-model anthropic/claude-sonnet-4-6:off`。      |
+| `auto-reply` / `/pi-auto-reply on\|off\|status`            | 控制当前对话在群组 / 频道中的 auto-reply。                                      |
+| `stop` / `/stop`                                           | 停止当前执行。在 Slack 上，请使用文本命令，确保讨论串本地的 stop 路由保持准确。 |
+| `/pi-sandbox`                                              | 显示或暂时提升托管容器的 CPU / 内存限制。                                       |
+
+<Aside type="tip" title="Slack 原生命令">
+  在 Slack 上，你可以注册 `/pi-login`、`/pi-session`、`/pi-model`、`/pi-auto-reply` 与 `/pi-new`。
+</Aside>
+
+## Web 会话查看器
+
+会话查看器使用与 login/vault 和 admin 相同的链接服务器。当前的会话查看可显示时间轴；当交互式 portal wiring 启用时，也能把消息送回该会话。
+
+<Steps>
+
+1. 设置 public base URL：
+
+   ```bash
+   export LINK_URL="https://mikan.example.com"
+   ```
+
+2. 视需要调整 port；默认是 `8181`：
+
+   ```bash
+   export LINK_PORT=8181
+   ```
+
+3. 本地测试时可以只设置 `LINK_PORT`；mikan 会使用 `http://localhost:<port>`。
+
+</Steps>
+
+关于 admin、login/vault 与 session-view 链接的差异，请参阅 [Portal 认证与 capability 模型](portal-auth-model.md)。
+
+## OAuth flows
+
+内置 OAuth 文件：
+
+- [GitHub](oauth/github.md) <Badge text="OAuth" variant="default" />
+- [Google Workspace](oauth/google-workspace.md) <Badge text="OAuth" variant="default" />
+- [Google Cloud SDK / gcloud](oauth/google-cloud-sdk.md) <Badge text="OAuth" variant="default" />

@@ -1,40 +1,40 @@
 ---
-title: Google Cloud SDK (gcloud) OAuth Setup
+title: Google Cloud SDK OAuth の設定
+description: sandbox 内の gcloud がログイン後のユーザー認証情報を使用できるように、Google Cloud SDK OAuth を設定します。
+sidebar:
+  order: 2
+  label: Google Cloud SDK
 ---
 
-# Google Cloud SDK (gcloud) OAuth Setup
+> 注意：mikan は Google の `authorized_user` JSON を vault に保存し、target path のメタデータを保持します。`image` sandbox はこの種の vault ファイルをコンテナ内の target path に自動的にプロジェクション（投影）しますが、現在の `container` / `firecracker` ランタイムはまだ自動ファイルプロジェクションに対応していません。
 
-這份文件說明如何設定 mikan `/login` / `/pi-login` 內建的 Google Cloud SDK OAuth，讓 sandbox 內的 `gcloud` 使用登入後的 user credential。
+## 1. Google OAuth クライアントの作成
 
-> 注意：mikan 會把 Google `authorized_user` JSON 存進 vault，並保存 target path metadata。`image` sandbox 會把這類 vault file 自動投影到 container 內的 target path；現有 `container` / `firecracker` runtime 仍不會自動做 file projection。
-
-## 1. 建立 Google OAuth Client
-
-到 Google Cloud Console：
+Google Cloud コンソールに移動します：
 
 ```text
-APIs & Services → Credentials → Create Credentials → OAuth client ID
+API とサービス → 認証情報 → 認証情報を作成 → OAuth クライアント ID
 ```
 
 設定：
 
-- Application type：`Web application`
-- Authorized redirect URI：`<LINK_URL>/oauth/callback`
+- アプリケーションの種類：`ウェブ アプリケーション`
+- 承認されたリダイレクト URI：`<LINK_URL>/oauth/callback`
 
-範例：
+例：
 
 ```text
 LINK_URL=https://mikan.example.com
-Redirect URI=https://mikan.example.com/oauth/callback
+リダイレクト URI=https://mikan.example.com/oauth/callback
 ```
 
-如果 OAuth app 還在 testing mode，請把使用者加入：
+OAuth アプリがまだテストモード（Testing mode）の場合は、ユーザーを追加してください：
 
 ```text
-OAuth consent screen → Test users
+OAuth 同意画面 → テストユーザー
 ```
 
-## 2. 設定環境變數
+## 2. 環境変数の設定
 
 ```bash
 export LINK_URL="https://mikan.example.com"
@@ -42,42 +42,42 @@ export GOOGLE_CLOUD_SDK_CLIENT_ID="<client-id>"
 export GOOGLE_CLOUD_SDK_CLIENT_SECRET="<client-secret>"
 ```
 
-如果沒有設定 `LINK_PORT`，mikan 會在 `LINK_URL` 存在時預設監聽 `8181`。
+`LINK_PORT` が設定されていない場合、`LINK_URL` が存在するときに mikan はデフォルトで `8181` ポートを監視します。
 
-可選：覆蓋預設 scopes：
+任意：デフォルトのスコープ（scopes）を上書きする：
 
 ```bash
 export GOOGLE_CLOUD_SDK_OAUTH_SCOPES="openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/cloud-platform"
 ```
 
-## 3. 使用 `/pi-login`
+## 3. `/pi-login` の使用
 
-如果你希望後續 runtime 自動把 credential file 投影到 `/root/.config/gcloud/application_default_credentials.json`，建議用 `image` sandbox 啟動 mikan：
+後続のランタイムで認証情報ファイルを `/root/.config/gcloud/application_default_credentials.json` に自動的にプロジェクションしたい場合は、`image` sandbox を使用して mikan を起動することをお勧めします：
 
 ```bash
 mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 ```
 
-在與 bot 的私訊中輸入：
+ボットとのダイレクトメッセージ（DM）で以下を入力します：
 
 ```text
 /pi-login
 ```
 
-打開 mikan 回傳的 link，選擇 **Google Cloud SDK (gcloud)**。
+mikan から返信されたリンクを開き、**Google Cloud SDK (gcloud)** を選択します。
 
-成功後，mikan 會：
+成功すると、mikan は以下の処理を行います：
 
-- 存入 vault file：`gcloud-adc.json`
-- 在 sandbox 投影到：`/root/.config/gcloud/application_default_credentials.json`
-- 設定 env：
+- vault ファイルに保存：`gcloud-adc.json`
+- sandbox 内の以下にプロジェクション：`/root/.config/gcloud/application_default_credentials.json`
+- 環境変数を設定：
   - `GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json`
   - `CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=/root/.config/gcloud/application_default_credentials.json`
 
-`CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE` 會讓 `gcloud` 優先使用這份 credential file。
+`CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE` により、`gcloud` はこの認証情報ファイルを優先的に使用するようになります。
 
-## Notes
+## 注意事項
 
-- mikan 使用 web OAuth callback，因此 Google OAuth client 必須是 `Web application`，不是 desktop app。
-- 如果 Google 沒有回傳 `refresh_token`，請撤銷既有 consent 後重新 `/pi-login`。mikan 會要求 `access_type=offline` 與 `prompt=consent`，但 Google 仍可能因既有授權而省略 refresh token。
-- 若要讓 credential file 自動出現在 `/root/.config/gcloud/application_default_credentials.json`，請使用 `image` sandbox。`container` / `firecracker` 目前仍只會保存 file credential metadata，不會自動投影。
+- mikan は Web OAuth コールバックを使用するため、Google OAuth クライアントはデスクトップ アプリ（desktop app）ではなく、`ウェブ アプリケーション`（Web application）である必要があります。
+- Google から `refresh_token` が返されない場合は、既存の同意（consent）を取り消してから、再度 `/pi-login` を実行してください。mikan は `access_type=offline` と `prompt=consent` を要求しますが、既存の授権があるため、Google がリフレッシュトークンを省略する場合があります。
+- 認証情報ファイルを `/root/.config/gcloud/application_default_credentials.json` に自動的に表示させるには、`image` sandbox を使用してください。`container` / `firecracker` は現在、ファイルの認証情報メタデータを保存するのみで、自動プロジェクションは行いません。

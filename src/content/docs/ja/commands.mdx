@@ -1,0 +1,69 @@
+---
+title: チャットコマンド
+description: mikan が Slack、Discord、Telegram で対応するテキストコマンドと slash-command エイリアス。
+---
+
+import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/components";
+
+<CardGrid>
+  <Card title="ログインと認証情報" icon="lock">
+    `/login` は 15 分間有効なリンクを開き、DM で API keys を安全に保存したり OAuth
+    を完了したりできます。
+  </Card>
+  <Card title="セッション" icon="open-book">
+    `session` は現在のセッションビューアーを開きます。`new` は現在の会話をリセットして新しい session
+    を開始します。
+  </Card>
+  <Card title="モデルと返信" icon="rocket">
+    `model` は LLM を切り替えます。`auto-reply` はグループまたはチャンネルでの自動返信 policy
+    を制御します。
+  </Card>
+</CardGrid>
+
+## コマンド早見表
+
+| コマンド                                                   | 用途                                                                                                                  |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `/login` / `/pi-login`                                     | API keys の保存、または組み込み OAuth flows の実行に使う 15 分間有効なリンクを開きます。DM のみ。                     |
+| `session` / `/session`                                     | 現在のセッションの Web ビューを開きます。DM のみ。                                                                    |
+| `new` / `/new`                                             | 現在のセッションをリセットして最初から始めます。DM のみ。                                                             |
+| `model` / `/model` / `/pi-model provider/model[:thinking]` | 現在の会話で使う LLM を切り替えます。例: `/pi-model anthropic/claude-sonnet-4-6:off`。                                |
+| `auto-reply` / `/pi-auto-reply on\|off\|status`            | 現在の会話におけるグループ / チャンネルでの auto-reply を制御します。                                                 |
+| `stop` / `/stop`                                           | 現在の実行を停止します。Slack では、thread ローカルの stop ルーティングを正確に保つためテキスト指令を使ってください。 |
+| `/pi-sandbox`                                              | 管理対象 container の CPU / メモリ制限を表示、または一時的に引き上げます。                                            |
+
+<Aside type="tip" title="Slack ネイティブコマンド">
+  Slack では `/pi-login`、`/pi-session`、`/pi-model`、`/pi-auto-reply`、`/pi-new` を登録できます。
+</Aside>
+
+## Web セッションビューアー
+
+セッションビューアーは login/vault と admin と同じリンクサーバーを使います。現在のセッションビューではタイムラインを表示できます。インタラクティブな portal wiring が有効な場合は、そのセッションへメッセージを送り返すこともできます。
+
+<Steps>
+
+1. public base URL を設定します。
+
+   ```bash
+   export LINK_URL="https://mikan.example.com"
+   ```
+
+2. 必要に応じて port を調整します。既定値は `8181` です。
+
+   ```bash
+   export LINK_PORT=8181
+   ```
+
+3. ローカルテストでは `LINK_PORT` だけを設定できます。mikan は `http://localhost:<port>` を使います。
+
+</Steps>
+
+admin、login/vault、session-view リンクの違いについては、[Portal 認証と capability モデル](portal-auth-model.md)を参照してください。
+
+## OAuth flows
+
+組み込み OAuth ドキュメント:
+
+- [GitHub](oauth/github.md) <Badge text="OAuth" variant="default" />
+- [Google Workspace](oauth/google-workspace.md) <Badge text="OAuth" variant="default" />
+- [Google Cloud SDK / gcloud](oauth/google-cloud-sdk.md) <Badge text="OAuth" variant="default" />

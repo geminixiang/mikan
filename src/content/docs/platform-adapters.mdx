@@ -1,0 +1,100 @@
+---
+title: Platform adapters
+description: How Slack, Discord, and Telegram adapters convert platform events into mikan's shared runtime format.
+---
+
+import { Aside, Card, CardGrid, LinkCard, Steps } from "@astrojs/starlight/components";
+
+Their goal is to keep `src/runtime/*` and `src/agent.ts` from knowing each platform's SDK, thread rules, message update API, or file download behavior.
+
+<CardGrid>
+  <Card title="Event normalization" icon="setting">
+    Convert native platform messages, mentions, slash commands, or replies into a shared `BotEvent`.
+  </Card>
+  <Card title="Session routing" icon="open-book">
+    Compute `sessionKey` from channels, threads, and reply chains so conversations enter the right
+    session.
+  </Card>
+  <Card title="Response capability" icon="rocket">
+    `ChatResponseContext` wraps replies, updates, typing/working state, and file uploads.
+  </Card>
+</CardGrid>
+
+## What adapters do
+
+<Steps>
+
+1. Receive platform events such as messages, mentions, slash commands, or replies.
+2. Decide whether the message should trigger mikan: DM, mention, thread reply, or auto-reply policy.
+3. Convert it to shared `BotEvent` and `ChatMessage` values.
+4. Compute `sessionKey` so different channels, threads, and replies map to the right session.
+5. Download attachments and write them to `attachments/` in the workspace.
+6. Create a `ChatResponseContext` that wraps replies, updates, typing/working state, and file uploads.
+7. Hand the event to `BotHandler`, which is `SessionRuntime`.
+
+</Steps>
+
+Shared types are exported from `src/adapter.ts`; implementation types live in `src/types.ts` and `src/adapters/types.ts`.
+
+## Shared flow
+
+```mermaid
+sequenceDiagram
+  participant P as Platform SDK
+  participant A as Platform adapter
+  participant I as processMessageIntake()
+  participant R as SessionRuntime
+  participant C as ChatResponseContext
+
+  P->>A: native message / slash command / reply
+  A->>A: parse conversation, user, thread, attachments
+  A->>I: BotEvent base + trigger/log/attachment hooks
+  I->>I: auto-reply / trigger decision
+  I->>A: download attachments when needed
+  I->>R: handler.handleEvent(event, bot, adapters)
+  R->>C: respond / replaceResponse / setWorking / uploadFile
+  C->>P: platform formatting and send
+```
+
+## Shared utilities
+
+| File                        | Purpose                                                                                               |
+| --------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `src/adapter.ts`            | Exports shared interfaces such as `Bot`, `BotEvent`, `ChatMessage`, and `ChatResponseContext`.        |
+| `src/adapters/intake.ts`    | Shared message intake flow: trigger, log, attachment, queue, and handler call order.                  |
+| `src/adapters/shared.ts`    | Shared retry, queue, long message splitting, log, and stop target resolution.                         |
+| `src/adapters/streaming.ts` | Buffers streaming response updates before flushing to avoid overly frequent platform message updates. |
+
+## Platform differences
+
+<LinkCard
+  title="Slack"
+  description="Socket Mode, channel/thread sessions, Block Kit, assistant status, and Slack mrkdwn."
+  href="platform-adapters/slack/"
+/>
+<LinkCard
+  title="Discord"
+  description="Gateway events, guild/DM/thread channels, slash commands, Discord Markdown, and typing indicators."
+  href="platform-adapters/discord/"
+/>
+<LinkCard
+  title="Telegram"
+  description="Long polling, private/group chat, reply-based sessions, Telegram HTML mode, and photo/document downloads."
+  href="platform-adapters/telegram/"
+/>
+
+## Boundary with the core runtime
+
+<Aside type="note" title="Dependency direction">
+  Platform adapters may know platform SDKs and message formats, but should not know how the agent
+  executes tasks.
+</Aside>
+
+The core runtime depends only on these shared abstractions:
+
+- `BotEvent`: one user or platform event.
+- `Bot`: platform bot capabilities, such as post message and upload file.
+- `BotAdapters`: `message`, `responseCtx`, and `platform` metadata attached to an event.
+- `ChatResponseContext`: the channel used by the agent to reply.
+
+When adding a platform, implement these abstractions first. Do not bring platform SDK details into `src/runtime/*` or `src/agent.ts`.

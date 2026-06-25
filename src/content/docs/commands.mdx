@@ -1,0 +1,68 @@
+---
+title: Chat commands
+description: Text commands and slash-command aliases supported by mikan in Slack, Discord, and Telegram.
+---
+
+import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/components";
+
+<CardGrid>
+  <Card title="Login and credentials" icon="lock">
+    `/login` opens a 15-minute link so you can safely store API keys or complete OAuth from a DM.
+  </Card>
+  <Card title="Sessions" icon="open-book">
+    `session` opens the current session viewer; `new` resets the current conversation and starts a
+    new session.
+  </Card>
+  <Card title="Model and replies" icon="rocket">
+    `model` switches the LLM; `auto-reply` controls automatic reply policy in groups or channels.
+  </Card>
+</CardGrid>
+
+## Command quick reference
+
+| Command                                                    | Purpose                                                                                               |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `/login` / `/pi-login`                                     | Open a 15-minute link for storing API keys or running built-in OAuth flows. DM only.                  |
+| `session` / `/session`                                     | Open a web view for the current session. DM only.                                                     |
+| `new` / `/new`                                             | Reset the current session and start over. DM only.                                                    |
+| `model` / `/model` / `/pi-model provider/model[:thinking]` | Switch the LLM for the current conversation, for example `/pi-model anthropic/claude-sonnet-4-6:off`. |
+| `auto-reply` / `/pi-auto-reply on\|off\|status`            | Control auto-reply for the current group / channel.                                                   |
+| `stop` / `/stop`                                           | Stop the current run. On Slack, prefer the text command so thread-local stop routing stays accurate.  |
+| `/pi-sandbox`                                              | Show or temporarily boost CPU / memory limits for managed containers.                                 |
+
+<Aside type="tip" title="Slack native commands">
+  On Slack, you can register `/pi-login`, `/pi-session`, `/pi-model`, `/pi-auto-reply`, and
+  `/pi-new`.
+</Aside>
+
+## Web session viewer
+
+The session viewer uses the same link server as login/vault and admin. The current session view can display the timeline; when interactive portal wiring is available, it can also send messages back to that session.
+
+<Steps>
+
+1. Set the public base URL:
+
+   ```bash
+   export LINK_URL="https://mikan.example.com"
+   ```
+
+2. Adjust the port if needed; the default is `8181`:
+
+   ```bash
+   export LINK_PORT=8181
+   ```
+
+3. For local testing, you can set only `LINK_PORT`; mikan will use `http://localhost:<port>`.
+
+</Steps>
+
+For the differences between admin, login/vault, and session-view links, see [Portal auth and capability model](portal-auth-model.md).
+
+## OAuth flows
+
+Built-in OAuth docs:
+
+- [GitHub](oauth/github.md) <Badge text="OAuth" variant="default" />
+- [Google Workspace](oauth/google-workspace.md) <Badge text="OAuth" variant="default" />
+- [Google Cloud SDK / gcloud](oauth/google-cloud-sdk.md) <Badge text="OAuth" variant="default" />

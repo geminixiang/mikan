@@ -1,33 +1,33 @@
 ---
-title: GitHub OAuth Setup
+title: GitHub OAuth setup
+description: Create a GitHub OAuth App so mikan /login can store and inject GitHub credentials.
+sidebar:
+  order: 1
+  label: GitHub
 ---
 
-# GitHub OAuth Setup
+## 1. Create a GitHub OAuth App
 
-這份文件說明如何設定 mikan `/login` 內建的 GitHub OAuth。
-
-## 1. 建立 GitHub OAuth App
-
-到 GitHub：
+In GitHub, go to:
 
 ```text
 Settings → Developer settings → OAuth Apps → New OAuth App
 ```
 
-填入：
+Fill in:
 
-- Application name：例如 `mikan`
-- Homepage URL：你的 `LINK_URL`
-- Authorization callback URL：`<LINK_URL>/oauth/callback`
+- Application name: for example `mikan`
+- Homepage URL: your `LINK_URL`
+- Authorization callback URL: `<LINK_URL>/oauth/callback`
 
-範例：
+Example:
 
 ```text
 LINK_URL=https://mikan.example.com
 Callback URL=https://mikan.example.com/oauth/callback
 ```
 
-## 2. 設定環境變數
+## 2. Set environment variables
 
 ```bash
 export LINK_URL="https://mikan.example.com"
@@ -35,57 +35,57 @@ export GITHUB_OAUTH_CLIENT_ID="<client-id>"
 export GITHUB_OAUTH_CLIENT_SECRET="<client-secret>"
 ```
 
-如果沒有設定 `LINK_PORT`，mikan 會在 `LINK_URL` 存在時預設監聽 `8181`。
+If `LINK_PORT` is not set, mikan listens on `8181` by default when `LINK_URL` exists.
 
-## 3. 啟動 mikan
+## 3. Start mikan
 
 ```bash
 mikan --sandbox=container:mikan-tools /path/to/workspace
 ```
 
-或使用 managed per-user container：
+Or use a managed per-user container:
 
 ```bash
 mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 ```
 
-或：
+Or:
 
 ```bash
 mikan --sandbox=firecracker:192.168.1.100:/path/to/workspace /path/to/workspace
 ```
 
-## 4. 使用 `/login`
+## 4. Use `/login`
 
-在與 bot 的私訊中輸入：
+In a DM with the bot, type:
 
 ```text
 /login
 ```
 
-打開 mikan 回傳的 link，選擇 GitHub OAuth。
+Open the link returned by mikan and choose GitHub OAuth.
 
-成功後，mikan 會把 token 寫入對應 vault 的 `env`，包含：
+After success, mikan writes the token into the corresponding vault's `env`, including:
 
 ```text
 GITHUB_OAUTH_ACCESS_TOKEN
 GH_TOKEN
 ```
 
-在 `container` / `image` / `firecracker` sandbox 中，後續工具執行會注入這些 env。
+In `container` / `image` / `firecracker` sandboxes, these env vars are injected into later tool runs.
 
 ## Scopes
 
-預設 GitHub OAuth scopes：
+Default GitHub OAuth scopes:
 
 ```text
 repo read:user user:email read:org gist
 ```
 
-可用環境變數覆蓋：
+Override them with an environment variable:
 
 ```bash
 export GITHUB_OAUTH_SCOPES="repo read:user user:email read:org gist workflow"
 ```
 
-請只加入你真的需要的 scopes。較高權限 scopes 會增加 credential 外洩時的風險。
+Only add scopes you actually need. Higher-privilege scopes increase risk if credentials leak.

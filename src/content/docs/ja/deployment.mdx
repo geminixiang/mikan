@@ -1,0 +1,64 @@
+---
+title: デプロイ
+description: PM2、Docker sandbox image、state directory を使って、長時間実行する mikan をデプロイします。
+---
+
+import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
+
+<CardGrid>
+  <Card title="PM2 常駐" icon="setting">
+    PM2 supervisor を使い、mikan の daemonize、crash restart、起動時の自動開始に対応します。
+  </Card>
+  <Card title="Sandbox image" icon="rocket">
+    先に `ghcr.io/geminixiang/mikan-sandbox:latest` を pull し、mikan が image sandbox
+    でツール実行を隔離できるようにします。
+  </Card>
+  <Card title="State directory" icon="lock">
+    state directory を保持し、セッション、vault、runtime 状態が reload 後も残るようにします。
+  </Card>
+</CardGrid>
+
+## PM2
+
+長時間実行するデプロイでは、[PM2](https://pm2.keymetrics.io/) をプロセス supervisor として使うことを推奨します。PM2 は mikan を daemonize し、crash 時に再起動し、再起動後も動作を継続できます。
+
+<Steps>
+
+1. mikan と pm2 をインストールします。
+
+   ```bash
+   npm i -g @geminixiang/mikan pm2
+   ```
+
+2. 利用する sandbox container/image の依存物を取得します。
+
+   ```bash
+   docker pull ghcr.io/geminixiang/mikan-sandbox:latest
+   ```
+
+3. ecosystem file を取得し、args と環境 token を編集してから起動します。
+
+   ```bash
+   curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
+   pm2 start ecosystem.config.cjs
+   pm2 save
+   pm2 startup
+   ```
+
+4. `pm2 startup` が出力したコマンドを実行し、起動時の自動開始を有効にします。
+
+</Steps>
+
+## アップグレード
+
+```bash
+npm i -g @geminixiang/mikan && pm2 reload mikan
+```
+
+<Aside type="note" title="Graceful reload">
+  `pm2 reload` は SIGTERM を送信し、SIGKILL を送る前に最大 `kill_timeout`（同梱設定では
+  60s）待機します。mikan 内部の graceful shutdown はこの時間内に進行中の LLM turns
+  を排出するため、reload が利用中の会話を中断することはありません。
+</Aside>
+
+調整可能な全項目は [`../deploy/pm2/ecosystem.config.cjs`](../deploy/pm2/ecosystem.config.cjs) を参照してください。

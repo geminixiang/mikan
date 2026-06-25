@@ -1,0 +1,64 @@
+---
+title: Deployment
+description: Deploy long-running mikan with PM2, Docker sandbox images, and a state directory.
+---
+
+import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
+
+<CardGrid>
+  <Card title="PM2 daemon" icon="setting">
+    Use the PM2 supervisor to daemonize mikan, restart it after crashes, and start it on boot.
+  </Card>
+  <Card title="Sandbox image" icon="rocket">
+    Pull `ghcr.io/geminixiang/mikan-sandbox:latest`, then let mikan isolate tool execution with the
+    image sandbox.
+  </Card>
+  <Card title="State directory" icon="lock">
+    Keep the state directory so sessions, vaults, and runtime state survive reloads.
+  </Card>
+</CardGrid>
+
+## PM2
+
+For long-running deployments, [PM2](https://pm2.keymetrics.io/) is the recommended process supervisor. It daemonizes mikan, restarts it after crashes, and can keep it running after reboots.
+
+<Steps>
+
+1. Install mikan and pm2:
+
+   ```bash
+   npm i -g @geminixiang/mikan pm2
+   ```
+
+2. Pull the sandbox container/image dependency you want to use:
+
+   ```bash
+   docker pull ghcr.io/geminixiang/mikan-sandbox:latest
+   ```
+
+3. Fetch the ecosystem file, edit args and environment tokens, then start:
+
+   ```bash
+   curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
+   pm2 start ecosystem.config.cjs
+   pm2 save
+   pm2 startup
+   ```
+
+4. Run the command printed by `pm2 startup` to enable startup on boot.
+
+</Steps>
+
+## Upgrade
+
+```bash
+npm i -g @geminixiang/mikan && pm2 reload mikan
+```
+
+<Aside type="note" title="Graceful reload">
+  `pm2 reload` sends SIGTERM and waits up to `kill_timeout` before SIGKILL (60s in the included
+  config). mikan's internal graceful shutdown drains in-flight LLM turns during that window, so
+  reloads do not interrupt active conversations.
+</Aside>
+
+See all tunables in [`../deploy/pm2/ecosystem.config.cjs`](../deploy/pm2/ecosystem.config.cjs).

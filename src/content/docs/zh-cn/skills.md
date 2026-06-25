@@ -1,21 +1,18 @@
 ---
-title: Skills
+title: 技能
+description: workspace-level 与 conversation-level skills 的载入位置、sandbox 路径与工具结构。
 ---
 
-# Skills
-
-mikan loads custom CLI tools from two `skills/` locations:
-
-| Level                             | Purpose                                                         | Host path                                           | Runtime path in sandbox                            |
-| --------------------------------- | --------------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------- |
-| Workspace-level (global skills)   | Reusable tools available to every conversation in the workspace | `<workspace>/skills/<skill-name>/`                  | `/workspace/skills/<skill-name>/`                  |
-| Conversation-level (local skills) | Tools only for one conversation/channel/DM                      | `<workspace>/<conversationId>/skills/<skill-name>/` | `/workspace/<conversationId>/skills/<skill-name>/` |
+| 层级                               | 用途                                                 | Host path                                           | Sandbox 内 runtime path                            |
+| ---------------------------------- | ---------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------- |
+| Workspace-level（global skills）   | 整个 workspace 内所有 conversations 都可用的共用工具 | `<workspace>/skills/<skill-name>/`                  | `/workspace/skills/<skill-name>/`                  |
+| Conversation-level（local skills） | 只给单一 conversation / channel / DM 使用的工具      | `<workspace>/<conversationId>/skills/<skill-name>/` | `/workspace/<conversationId>/skills/<skill-name>/` |
 
 :::note
-Workspace-level skills are loaded first. Conversation-level skills are loaded second and override a workspace skill with the same `name`.
+mikan 会先载入 workspace-level skills，再载入 conversation-level skills。若两边有相同 `name`，conversation-level skill 会覆盖 workspace-level skill。
 :::
 
-## Directory layout
+## 目录结构
 
 ```text
 <workspace>/
@@ -30,7 +27,7 @@ Workspace-level skills are loaded first. Conversation-level skills are loaded se
             └── run.sh
 ```
 
-Each skill directory needs a `SKILL.md` file:
+每个 skill 目录都需要一个 `SKILL.md`：
 
 ```yaml
 ---
@@ -41,10 +38,10 @@ description: Does something useful
 Usage: {baseDir}/run.sh <args>
 ```
 
-`name` and `description` are required. Use `{baseDir}` in instructions when referring to files inside the skill directory; mikan replaces it with the runtime path for that skill.
+`name` 与 `description` 必填。若要在说明中引用 skill 目录内的档案，请使用 `{baseDir}`；mikan 会把它换成该 skill 的 runtime path。
 
-## When to use each level
+## 什么时候用哪一层
 
-Use workspace-level skills for shared tools: company APIs, common scripts, release helpers, reporting tools, or anything useful across multiple conversations.
+Workspace-level skills 适合共用工具：公司 API、常用 scripts、release helpers、reporting tools，或任何多个 conversations 都会用到的能力。
 
-Use conversation-level skills for local tools: channel-specific workflows, temporary helpers, or a tool that should not appear in other conversations.
+Conversation-level skills 适合本地工具：特定 channel workflow、暂时 helper，或不应出现在其他 conversations 的工具。

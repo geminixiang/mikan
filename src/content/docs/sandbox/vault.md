@@ -1,12 +1,9 @@
 ---
 title: Vault
+description: How mikan stores credentials in the state directory and injects env or file mounts by sandbox mode.
 ---
 
-# Vault
-
-mikan stores credentials outside the workspace in the state directory, then injects them into sandbox executions according to the active sandbox mode.
-
-## State directory and vault path
+## State directory and vault location
 
 The default state directory is:
 
@@ -14,7 +11,7 @@ The default state directory is:
 ~/.mikan/
 ```
 
-Important files:
+Important contents include:
 
 ```text
 ~/.mikan/
@@ -23,30 +20,30 @@ Important files:
     └── <vault-id>/
 ```
 
-You can override it with `--state-dir`:
+You can also specify it with `--state-dir`:
 
 ```bash
 mikan --state-dir=/secure/mikan-state --sandbox=container:mikan-tools /path/to/workspace
 ```
 
-Credentials are then stored under:
+Credentials are then stored in:
 
 ```text
 /secure/mikan-state/vaults/
 ```
 
-Global settings live at `<state-dir>/settings.json`. Conversation-local settings live at `<working-directory>/<conversationId>/settings.json` and override global defaults for that conversation.
+The global settings file is at `<state-dir>/settings.json`. Conversation-local settings are at `<working-directory>/<conversationId>/settings.json` and override the global defaults for that conversation.
 
-At startup, mikan rejects a `--state-dir` that is world-writable or not owned by the current user, so other local users cannot tamper with settings or vault contents.
+At startup, mikan refuses a `--state-dir` that is world-writable or not owned by the current user, preventing other local users from tampering with settings or vault contents.
 
 ## Vault contents
 
-Each vault is a directory under `vaults/`. It can contain:
+Each vault is a directory under `vaults/` and may contain:
 
-- `env` file: environment variables in `KEY=value` format
-- file credentials: for example `gws.json` or `.ssh/config`
+- `env` file: environment variables in `KEY=value` form
+- file credentials: for example `gws.json`, `.ssh/config`
 
-mikan infers mount targets from names/paths, for example `gws.json` → `/root/.config/gws/credentials.json` and `.ssh/` → `/root/.ssh`.
+mikan infers mount targets from file names/paths, such as `gws.json` → `/root/.config/gws/credentials.json` and `.ssh/` → `/root/.ssh`.
 
 Example:
 
@@ -66,33 +63,33 @@ GITHUB_OAUTH_ACCESS_TOKEN=gho_xxx
 
 ## Sandbox behavior
 
-| Sandbox mode       | Vault env injection | File credential projection | Vault key                                                         |
-| ------------------ | ------------------- | -------------------------- | ----------------------------------------------------------------- |
-| `host`             | No                  | No                         | Credentials can be stored but are not injected into host commands |
-| `container:<name>` | Yes                 | No                         | `container-<name>`                                                |
-| `image:<image>`    | Yes                 | Yes                        | generated conversation vault, usually the conversation ID         |
-| `firecracker:*`    | Yes                 | No                         | generated conversation vault                                      |
-| `cloudflare:*`     | Yes                 | No                         | generated platform-scoped conversation vault                      |
+| Sandbox mode       | Vault env injection | File credential projection | Vault key                                                      |
+| ------------------ | ------------------- | -------------------------- | -------------------------------------------------------------- |
+| `host`             | not injected        | not projected              | credentials can be stored, but not injected into host commands |
+| `container:<name>` | injected            | not projected              | `container-<name>`                                             |
+| `image:<image>`    | injected            | automatically projected    | generated conversation vault, usually the conversation ID      |
+| `firecracker:*`    | injected            | not projected              | generated conversation vault                                   |
+| `cloudflare:*`     | injected            | not projected              | generated platform-scoped conversation vault                   |
 
 ## `/login`
 
-Users run this in a DM/private chat:
+In a DM / private message, run:
 
 ```text
 /login
 ```
 
-mikan returns a 15-minute onboarding link. The web page can store:
+mikan creates a 15-minute onboarding link. In the web page, users can store:
 
 - arbitrary API keys / env vars
 - GitHub OAuth credentials
 - Google Workspace CLI OAuth credentials
 
-`/login` only works in DM/private chat, so other people in a shared channel cannot grab the credential onboarding link.
+`/login` only works in DMs / private messages so other people in shared channels cannot obtain a credential onboarding link.
 
 ## Enable the link server
 
-For production, set the public URL:
+For production deployments, set the public URL:
 
 ```bash
 export LINK_URL="https://mikan.example.com"
@@ -100,25 +97,25 @@ export LINK_URL="https://mikan.example.com"
 
 If `LINK_PORT` is not set, mikan defaults to port `8181` when `LINK_URL` exists.
 
-You can also set the port explicitly:
+You can also set it explicitly:
 
 ```bash
 export LINK_PORT=8181
 ```
 
-For local testing, setting only `LINK_PORT` is enough:
+For local testing, you can set only:
 
 ```bash
 export LINK_PORT=8181
 ```
 
-The `/login` link will use:
+The `/login` link will then use:
 
 ```text
 http://localhost:8181
 ```
 
-OAuth callback URL:
+OAuth callback URL is:
 
 ```text
 <LINK_URL>/oauth/callback

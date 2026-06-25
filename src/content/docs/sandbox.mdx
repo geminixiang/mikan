@@ -1,0 +1,79 @@
+---
+title: Sandbox
+description: Compare mikan's supported host, container, image, Firecracker, and Cloudflare sandbox modes.
+---
+
+import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+<CardGrid>
+  <Card title="Local development" icon="setting">
+    `host` has the least setup and does not inject vault env, making it suitable for development on trusted machines.
+  </Card>
+  <Card title="Mainline isolation" icon="rocket">
+    `image:<image>` lets mikan manage lifecycle, workspace mounts, vault env, and resource limits.
+  </Card>
+  <Card title="Experimental modes" icon="moon">
+    `firecracker:*` and `cloudflare:*` are reserved for scenarios where you manage the runtime or bridge yourself.
+  </Card>
+</CardGrid>
+
+<Aside type="caution" title="Mode names">
+  `docker:*` is not a supported mode; use `container:*` or `image:*` instead.
+</Aside>
+
+## Supported modes
+
+| Mode                                                        | Execution location        | Vault env injection | Vault key semantics               | Notes                                                                                                    |
+| ----------------------------------------------------------- | ------------------------- | ------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `host`                                                      | host machine              | not injected        | can store, but unused at run time | Best for local development; does not put vault env into the host process                                 |
+| `container:<name>`                                          | existing Docker container | injected            | `container-<name>`                | one container one vault; multiple people sharing one container also share its vault                      |
+| `image:<image>`                                             | Docker managed by mikan   | injected            | generated conversation vault      | Current recommended isolation mode; `1 conversation = 1 vault = 1 container`                             |
+| `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM            | injected            | generated conversation vault      | Very early alpha; you must start the VM and mount workspace at `/workspace`; not recommended yet         |
+| `cloudflare:<sandbox-id>`                                   | Cloudflare Worker         | injected            | generated conversation vault      | Experimental; requires your own `@cloudflare/sandbox` bridge; host workspace is not synced automatically |
+
+## Per-mode docs
+
+<LinkCard
+  title="Host sandbox"
+  description="Run tools directly on the host; best for local development."
+  href="host/"
+/>
+<LinkCard
+  title="Container sandbox"
+  description="Connect to an existing Docker container and reuse your own lifecycle management."
+  href="container/"
+/>
+<LinkCard
+  title="Image sandbox"
+  description="Let mikan manage per-conversation containers and resource limits."
+  href="image/"
+/>
+<LinkCard
+  title="Firecracker sandbox"
+  description="Connect to a Firecracker VM that you start yourself."
+  href="firecracker/"
+/>
+<LinkCard
+  title="Cloudflare sandbox"
+  description="Run tools through a Cloudflare Worker bridge."
+  href="cloudflare/"
+/>
+
+## Capability differences
+
+`image:<image>` <Badge text="recommended" variant="success" /> is the primary developed and recommended sandbox mode today; the other modes are kept for local development, compatibility, or experiments, and some capabilities will not be filled in.
+
+| Capability                                   | `host`         | `container:<name>`     | `image:<image>` | `firecracker:*` | `cloudflare:*`    |
+| -------------------------------------------- | -------------- | ---------------------- | --------------- | --------------- | ----------------- |
+| command execution                            | ✅             | ✅                     | ✅              | ✅              | ✅                |
+| mikan-managed runtime lifecycle              | not applicable | ❌                     | ✅              | ❌              | ❌                |
+| per-conversation container / runtime         | ❌             | ❌                     | ✅              | self-managed    | bridge-derived id |
+| per-conversation vault env                   | ❌             | ❌                     | ✅              | ✅              | ✅                |
+| automatic vault file projection / bind mount | ❌             | ❌                     | ✅              | ❌              | ❌                |
+| automatic workspace mount                    | host           | self-managed           | ✅              | self-managed    | ❌                |
+| private workspace mount mode                 | not applicable | ❌                     | ✅              | ❌              | ❌                |
+| idle auto-stop / recreate                    | not applicable | ❌                     | ✅              | ❌              | ❌                |
+| default CPU / memory limits                  | ❌             | ❌                     | ✅              | ❌              | ❌                |
+| `/pi-sandbox boost`                          | ❌             | ❌                     | ✅              | ❌              | ❌                |
+| agent `sandbox` tool sets limits             | ❌             | ❌                     | ✅              | ❌              | ❌                |
+| recommendation level                         | local dev      | legacy / compatibility | mainline        | alpha           | experimental      |

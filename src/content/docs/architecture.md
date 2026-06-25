@@ -1,40 +1,32 @@
 ---
-title: mikan Architecture
+title: mikan architecture
+description: Learn how mikan connects platform adapters, sessions, agent, sandbox, vault, and web portals.
 ---
 
-# mikan Architecture
-
-這份文件整理 `mikan` 專案的核心架構，重點放在:
-
-- 多平台訊息如何進入系統
-- session / context 如何持久化
-- agent 如何透過 tools 與 sandbox 執行工作
-- login / vault / session viewer / events 如何掛接到主流程
-
-## 1. 系統總覽
+## 1. System overview
 
 ```mermaid
 flowchart LR
-  subgraph Clients["Chat Platforms"]
+  subgraph Clients["Chat platforms"]
     Slack["Slack"]
     Telegram["Telegram"]
     Discord["Discord"]
   end
 
-  subgraph Adapters["Platform Adapters"]
+  subgraph Adapters["Platform adapters"]
     SlackAdapter["src/adapters/slack/*"]
     TelegramAdapter["src/adapters/telegram/*"]
     DiscordAdapter["src/adapters/discord/*"]
   end
 
-  subgraph Runtime["Core Runtime"]
-    Main["src/main.ts\nCLI bootstrap"]
+  subgraph Runtime["Core runtime"]
+    Main["src/main.ts\nCLI startup"]
     SessionRuntime["src/runtime/session-runtime.ts\nSessionRuntime + runner cache"]
     Orchestrator["src/runtime/conversation-orchestrator.ts\nrun lifecycle + commands"]
     AgentRunner["src/agent.ts\ncreateRunner()"]
   end
 
-  subgraph AgentStack["Agent Stack"]
+  subgraph AgentStack["Agent stack"]
     PiAgent["@earendil-works/pi-agent-core\nAgent"]
     PiCoding["@earendil-works/pi-coding-agent\nAgentSession / SessionManager / Skills"]
     PiAI["@earendil-works/pi-ai\nprovider + model"]
@@ -42,25 +34,25 @@ flowchart LR
     Executor["src/sandbox/*\nExecutor\nshared: host / container\nisolated: image / firecracker / cloudflare"]
   end
 
-  subgraph Persistence["Project Workspace"]
+  subgraph Persistence["Project workspace"]
     ConversationDir["<workspace>/<conversation>/\nlog.jsonl / MEMORY.md / attachments / skills"]
     Sessions["sessions/\ncurrent + *.jsonl"]
     EventsDir["events/*.json"]
     LocalSettings["<conversation>/settings.json"]
   end
 
-  subgraph StateDir["State Dir (~/.mikan or --state-dir)"]
+  subgraph StateDir["State directory (~/.mikan or --state-dir)"]
     GlobalSettings["settings.json\nglobal defaults"]
     Vaults["vaults/\nconversation-scoped secret directories"]
     LinkTokens["admin/login/session tokens\nin-memory stores"]
   end
 
-  subgraph Services["Auxiliary Services"]
+  subgraph Services["Supporting services"]
     VaultManager["src/vault/index.ts\nFileVaultManager"]
     Provisioner["src/provisioner.ts\nDockerContainerManager"]
     LinkServer["src/web/login/portal.ts\nlink/admin/session portal host"]
     SessionViewer["src/web/session-view/*\nweb session viewer"]
-    EventsWatcher["src/events.ts\nwatch + schedule events"]
+    EventsWatcher["src/events.ts\nwatch + scheduled events"]
   end
 
   Slack --> SlackAdapter
@@ -100,23 +92,25 @@ flowchart LR
   EventsWatcher -. enqueue BotEvent .-> Main
 ```
 
-## 2. 主要分層
+## 2. Main layers
 
-### A. 平台接入層
+### A. Platform adapter layer
+
+For the full platform adapter description, see [Platform adapters](platform-adapters.md). For platform details, see [Slack](platform-adapters/slack.md), [Discord](platform-adapters/discord.md), and [Telegram](platform-adapters/telegram.md).
 
 - `src/adapters/slack/*`
 - `src/adapters/telegram/*`
 - `src/adapters/discord/*`
 - `src/adapter.ts`
 
-職責:
+Responsibilities:
 
-- 接 Slack / Telegram / Discord 原生事件
-- 轉成統一的 `BotEvent`、`ChatMessage`、`ChatResponseContext`
-- 依平台規則計算 `sessionKey`
-- 封裝回覆、typing、working、檔案上傳等平台差異
+- receive native Slack / Telegram / Discord events
+- convert them to unified `BotEvent`, `ChatMessage`, and `ChatResponseContext` values
+- compute `sessionKey` according to platform rules
+- wrap platform differences such as replies, typing, working state, and file upload
 
-### B. 核心協調層
+### B. Core orchestration layer
 
 - `src/main.ts`
 - `src/runtime/session-runtime.ts`
@@ -124,73 +118,73 @@ flowchart LR
 - `src/sessions/store.ts`
 - `src/sessions/chat-session-manager.ts`
 
-職責:
+Responsibilities:
 
-- 啟動 CLI、讀取 env / args / `settings.json`
-- 建立 `SessionRuntime` 作為各平台 bot 的 `BotHandler`
-- 透過 `ConversationOrchestrator` dispatch `/login`、`/session`、`stop`、`new` 等控制命令
-- 管理 `conversationStates` 與 per-session queue，避免同一 session 重複執行
-- 決定每個 session scope 對應哪個 `AgentRunner`
+- start the CLI and read env / args / `settings.json`
+- create `SessionRuntime` as the `BotHandler` for each platform bot
+- dispatch control commands such as `/login`, `/session`, `stop`, and `new` through `ConversationOrchestrator`
+- manage `conversationStates` and per-session queues to avoid duplicate runs in the same session
+- decide which `AgentRunner` corresponds to each session scope
 
-### C. Agent 執行層
+### C. Agent execution layer
 
 - `src/agent.ts`
 - `src/context.ts`
 - `src/tools/*`
 
-職責:
+Responsibilities:
 
-- 建立 `AgentRunner`
-- 載入模型、skills、memory、session context
-- 將使用者訊息送入 `pi-agent-core` / `pi-coding-agent`
-- 把 tool calls 接到本地 `read/bash/edit/write/event/attach`
-- 把 tool 結果回寫 session，並透過 adapter 回傳給平台
+- create `AgentRunner`
+- load model, skills, memory, and session context
+- send user messages into `pi-agent-core` / `pi-coding-agent`
+- connect tool calls to local `read/bash/edit/write/event/attach`
+- write tool results back to the session and return responses through the adapter
 
-### D. 執行環境層
+### D. Execution environment layer
 
 - `src/sandbox/*`
 - `src/provisioner.ts`
 - `src/execution-resolver.ts`
 
-職責:
+Responsibilities:
 
-- 統一抽象 `Executor`
-- sandbox runtime 分成兩類:
-  - shared: `host` / `container:<name>`，同一個 host 或指定 container 共用
-  - isolated: `image:<image>` / `firecracker:*` / `cloudflare:*`，依 actor/conversation/vault 路由到隔離的執行環境
-- 透過 `ActorExecutionResolver` 依 user/conversation/vault 決定實際 executor
-- 在 `image` 模式下自動建立與回收 Docker container，並把 `image:<image>` 解析成 concrete `container:<name>` executor
+- provide a unified `Executor` abstraction
+- split sandbox runtimes into two categories:
+  - shared: `host` / `container:<name>`, where the same host or named container is shared
+  - isolated: `image:<image>` / `firecracker:*` / `cloudflare:*`, routed by actor/conversation/vault to isolated execution environments
+- use `ActorExecutionResolver` to decide the actual executor by user/conversation/vault
+- in `image` mode, automatically create and recycle Docker containers, resolving `image:<image>` to a concrete `container:<name>` executor
 
-### E. 狀態與持久化層
+### E. State and persistence layer
 
 - `src/sessions/store.ts`
 - `src/sessions/chat-session-manager.ts`
 - `src/context.ts`
 - `src/vault/index.ts`
 
-職責:
+Responsibilities:
 
-- session 檔案管理: `sessions/current` 與 `*.jsonl`
-- `log.jsonl` 與 structured session 的雙軌歷史保存
-- workspace / conversation 級別 `MEMORY.md`
-- per-conversation vault 憑證與 mount / env 注入
+- session file management: `sessions/current` and `*.jsonl`
+- dual-track history persistence with `log.jsonl` and structured sessions
+- workspace / conversation-level `MEMORY.md`
+- per-conversation vault credentials and mount / env injection
 
-### F. 輔助服務層
+### F. Supporting services layer
 
 - `src/web/login/*`
 - `src/web/admin/*`
 - `src/web/session-view/*`
 - `src/events.ts`
 
-職責:
+Responsibilities:
 
-- `src/web/login/portal.ts` 目前是 link server host，會掛接 login/vault、admin、session-view routes
-- 提供 Web login portal，支援 API key 與 OAuth 寫入 vault
-- 提供 admin portal，支援 conversation/settings/workspace/events/skills 管理與 link generation
-- 提供 session viewer；目前可顯示 session timeline，且在 interactive wiring 啟用時可透過 `/session/message` 送訊息
-- 監看 `events/*.json`，把排程事件重新注入 bot 流程
+- `src/web/login/portal.ts` is currently the link server host and mounts login/vault, admin, and session-view routes
+- provide a web login portal that supports API key and OAuth writes into the vault
+- provide an admin portal for conversation/settings/workspace/events/skills management and link generation
+- provide a session viewer; it can currently display session timelines and, when interactive wiring is enabled, send messages through `/session/message`
+- watch `events/*.json` and re-inject scheduled events into the bot flow
 
-## 3. 訊息處理流程
+## 3. Message processing flow
 
 ```mermaid
 sequenceDiagram
@@ -204,57 +198,57 @@ sequenceDiagram
   participant X as sandbox Executor
   participant W as Workspace / sessions
 
-  U->>P: 發送訊息 / mention / reply
-  P->>A: 平台事件
+  U->>P: send message / mention / reply
+  P->>A: platform event
   A->>M: BotEvent + ChatMessage + ResponseContext
   M->>M: queue event + dispatch commands
   M->>S: resolve session scope
   S-->>M: contextFile + sessionDir
   M->>R: getState() / run()
-  R->>W: 讀取 MEMORY.md / sessions/*.jsonl；必要時查 log.jsonl
-  R->>R: 建立 system prompt / skills / model / session context
-  R->>T: 執行工具
+  R->>W: read MEMORY.md / sessions/*.jsonl; query log.jsonl when needed
+  R->>R: build system prompt / skills / model / session context
+  R->>T: execute tools
   T->>X: read / bash / edit / write / event / attach
   X-->>T: tool result
-  T-->>R: 結果回傳
-  R->>W: 寫入 structured session；adapter 記錄平台 log
+  T-->>R: return result
+  R->>W: write structured session; adapter records platform log
   R-->>M: final response
-  M-->>A: 回覆內容 / 診斷 / 檔案
-  A-->>P: 平台訊息更新
-  P-->>U: 使用者看到回覆
+  M-->>A: response content / diagnostics / files
+  A-->>P: platform message update
+  P-->>U: user sees response
 ```
 
-## 4. Session 與檔案佈局
+## 4. Sessions and file layout
 
-`mikan` 的上下文不是只靠記憶體，而是主要落在 workspace 目錄:
+`mikan` does not keep context only in memory; it mainly lands in the workspace directory:
 
 ```text
 <workspace>/
-├── MEMORY.md                  # workspace 級記憶
-├── events/                    # 排程與外部事件
+├── MEMORY.md                  # workspace-level memory
+├── events/                    # scheduled and external events
 └── <conversationId>/
     ├── settings.json          # conversation-local overrides
-    ├── MEMORY.md              # conversation 級記憶
-    ├── log.jsonl              # 可 grep 的人類可讀訊息歷史
-    ├── attachments/           # 平台附件下載
-    ├── scratch/               # 執行中的工作區
-    ├── skills/                # conversation 自訂 skills
+    ├── MEMORY.md              # conversation-level memory
+    ├── log.jsonl              # grep-friendly human-readable message history
+    ├── attachments/           # platform attachment downloads
+    ├── scratch/               # in-progress working area
+    ├── skills/                # conversation custom skills
     └── sessions/
         ├── current            # top-level session pointer
         ├── <timestamp>_<id>.jsonl
         └── <scope_id>.jsonl   # thread / reply scoped sessions
 ```
 
-設計重點:
+Design points:
 
-- `log.jsonl` 是平台對話紀錄：Slack/Discord/Telegram 實際發生過什麼
-- `sessions/*.jsonl` 是 LLM 工作上下文/工作紀錄：mikan 拿什麼給 LLM 看，以及 LLM/tool 做了什麼
-- top-level session 用 `current` 指標，但 `current` 不是 channel history；缺失時可從 `log.jsonl` 重建最近 top-level 工作上下文
-- thread / reply session 用固定檔名，讓 scoped session 可被單獨追蹤
-- Slack top-level messages share the channel session; Slack thread replies use `conversationId:threadTs`
-- Slack events first materialize a top-level anchor message, then run in `conversationId:anchorTs`
+- `log.jsonl` is the platform conversation log: what actually happened in Slack/Discord/Telegram
+- `sessions/*.jsonl` is the LLM working context/log: what mikan gave the LLM and what the LLM/tool did
+- the top-level session uses the `current` pointer, but `current` is not channel history; when missing, recent top-level working context can be rebuilt from `log.jsonl`
+- thread / reply sessions use fixed file names so scoped sessions can be tracked separately
+- Slack top-level messages share a channel session; Slack thread replies use `conversationId:threadTs`
+- Slack events first create a top-level anchor message, then run with `conversationId:anchorTs`
 
-## 5. Login / Vault / Sandbox 關係
+## 5. Login / Vault / Sandbox relationship
 
 ```mermaid
 flowchart TD
@@ -272,33 +266,33 @@ flowchart TD
   Resolver --> Sandbox["host / container / image / firecracker / cloudflare"]
 ```
 
-重點:
+Key points:
 
-- 憑證不直接進 workspace
-- vault 存在 `--state-dir`
-- 執行時才由 conversation vault 路由到對應 sandbox
-- `image` / `firecracker` / `cloudflare` 模式使用 per-actor/per-conversation vault routing；`container:<name>` 使用 shared container vault；`host` 不注入 vault env
+- credentials do not go directly into the workspace
+- vaults live in `--state-dir`
+- at execution time, the conversation vault is routed to the corresponding sandbox
+- `image` / `firecracker` / `cloudflare` modes use per-actor/per-conversation vault routing; `container:<name>` uses a shared container vault; `host` does not inject vault env
 
-## 6. Events 與一般對話的差異
+## 6. Differences between events and normal chats
 
-`events/*.json` 會被 `EventsWatcher` 監看，之後轉成 `BotEvent` 再走一次正常流程。
-也就是說 events 不是獨立執行器，而是「另一個訊息入口」。
+`events/*.json` is watched by `EventsWatcher`, then converted into `BotEvent` and sent through the normal flow again.
+In other words, events are not a separate executor; they are another message intake path.
 
-這讓下列能力共用同一套機制:
+This lets these capabilities share the same mechanism:
 
 - session context
 - vault routing
 - tool execution
-- 平台回覆
-- stop / running state 管理
+- platform replies
+- stop / running state management
 
-## 7. 架構結論
+## 7. Architecture conclusion
 
-如果用一句話總結，`mikan` 的核心其實是:
+In one sentence, the core of `mikan` is:
 
-> 一個以 `main.ts` 為協調中心、以 `agent.ts` 為執行核心、以 `session/vault/sandbox` 為基礎設施的多平台 AI agent bot。
+> A multi-platform AI agent bot coordinated by `main.ts`, executed by `agent.ts`, and supported by `session/vault/sandbox` infrastructure.
 
-可以把它理解成 6 個核心子系統:
+You can think of it as 6 core subsystems:
 
 1. Platform adapters
 2. Bot runtime orchestration

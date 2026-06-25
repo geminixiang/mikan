@@ -1,10 +1,10 @@
 ---
-title: GitHub OAuth Setup
+title: GitHub OAuth 设定
+description: 建立 GitHub OAuth App，让 mikan 的 /login 储存并注入 GitHub credentials。
+sidebar:
+  order: 1
+  label: GitHub
 ---
-
-# GitHub OAuth Setup
-
-這份文件說明如何設定 mikan `/login` 內建的 GitHub OAuth。
 
 ## 1. 建立 GitHub OAuth App
 
@@ -20,14 +20,14 @@ Settings → Developer settings → OAuth Apps → New OAuth App
 - Homepage URL：你的 `LINK_URL`
 - Authorization callback URL：`<LINK_URL>/oauth/callback`
 
-範例：
+范例：
 
 ```text
 LINK_URL=https://mikan.example.com
 Callback URL=https://mikan.example.com/oauth/callback
 ```
 
-## 2. 設定環境變數
+## 2. 设定环境变数
 
 ```bash
 export LINK_URL="https://mikan.example.com"
@@ -35,9 +35,9 @@ export GITHUB_OAUTH_CLIENT_ID="<client-id>"
 export GITHUB_OAUTH_CLIENT_SECRET="<client-secret>"
 ```
 
-如果沒有設定 `LINK_PORT`，mikan 會在 `LINK_URL` 存在時預設監聽 `8181`。
+如果没有设定 `LINK_PORT`，mikan 会在 `LINK_URL` 存在时预设监听 `8181`。
 
-## 3. 啟動 mikan
+## 3. 启动 mikan
 
 ```bash
 mikan --sandbox=container:mikan-tools /path/to/workspace
@@ -57,35 +57,35 @@ mikan --sandbox=firecracker:192.168.1.100:/path/to/workspace /path/to/workspace
 
 ## 4. 使用 `/login`
 
-在與 bot 的私訊中輸入：
+在与 bot 的私讯中输入：
 
 ```text
 /login
 ```
 
-打開 mikan 回傳的 link，選擇 GitHub OAuth。
+打开 mikan 回传的 link，选择 GitHub OAuth。
 
-成功後，mikan 會把 token 寫入對應 vault 的 `env`，包含：
+成功后，mikan 会把 token 写入对应 vault 的 `env`，包含：
 
 ```text
 GITHUB_OAUTH_ACCESS_TOKEN
 GH_TOKEN
 ```
 
-在 `container` / `image` / `firecracker` sandbox 中，後續工具執行會注入這些 env。
+在 `container` / `image` / `firecracker` sandbox 中，后续工具执行会注入这些 env。
 
 ## Scopes
 
-預設 GitHub OAuth scopes：
+预设 GitHub OAuth scopes：
 
 ```text
 repo read:user user:email read:org gist
 ```
 
-可用環境變數覆蓋：
+可用环境变数覆盖：
 
 ```bash
 export GITHUB_OAUTH_SCOPES="repo read:user user:email read:org gist workflow"
 ```
 
-請只加入你真的需要的 scopes。較高權限 scopes 會增加 credential 外洩時的風險。
+请只加入你真的需要的 scopes。较高权限 scopes 会增加 credential 外泄时的风险。

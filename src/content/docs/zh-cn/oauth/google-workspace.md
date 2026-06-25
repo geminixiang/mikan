@@ -1,12 +1,12 @@
 ---
-title: Google Workspace CLI OAuth Setup
+title: Google Workspace CLI OAuth 设定
+description: 设定 Google Workspace CLI OAuth，让 mikan 储存并投影 Google Workspace credentials。
+sidebar:
+  order: 3
+  label: Google Workspace CLI
 ---
 
-# Google Workspace CLI OAuth Setup
-
-這份文件說明如何設定 mikan `/login` 內建的 Google Workspace CLI OAuth。
-
-> 注意：mikan 會把 Google authorized_user JSON 存進 vault，並保存 target path metadata。`image` sandbox 會把這類 vault file 自動投影到 container 內的 target path；現有 `container` / `firecracker` runtime 仍不會自動做 file projection。
+> 注意：mikan 会把 Google authorized_user JSON 存进 vault，并保存 target path metadata。`image` sandbox 会把这类 vault file 自动投影到 container 内的 target path；现有 `container` / `firecracker` runtime 仍不会自动做 file projection。
 
 ## 1. 建立 Google OAuth Client
 
@@ -16,25 +16,25 @@ title: Google Workspace CLI OAuth Setup
 APIs & Services → Credentials → Create Credentials → OAuth client ID
 ```
 
-設定：
+设定：
 
 - Application type：`Web application`
 - Authorized redirect URI：`<LINK_URL>/oauth/callback`
 
-範例：
+范例：
 
 ```text
 LINK_URL=https://mikan.example.com
 Redirect URI=https://mikan.example.com/oauth/callback
 ```
 
-如果 OAuth app 還在 testing mode，請把使用者加入：
+如果 OAuth app 还在 testing mode，请把使用者加入：
 
 ```text
 OAuth consent screen → Test users
 ```
 
-## 2. 設定環境變數
+## 2. 设定环境变数
 
 ```bash
 export LINK_URL="https://mikan.example.com"
@@ -42,9 +42,9 @@ export GOOGLE_WORKSPACE_CLI_CLIENT_ID="<client-id>"
 export GOOGLE_WORKSPACE_CLI_CLIENT_SECRET="<client-secret>"
 ```
 
-如果沒有設定 `LINK_PORT`，mikan 會在 `LINK_URL` 存在時預設監聽 `8181`。
+如果没有设定 `LINK_PORT`，mikan 会在 `LINK_URL` 存在时预设监听 `8181`。
 
-可選：覆蓋預設 scopes：
+可选：覆盖预设 scopes：
 
 ```bash
 export GOOGLE_WORKSPACE_CLI_OAUTH_SCOPES="https://www.googleapis.com/auth/drive https://mail.google.com/ https://www.googleapis.com/auth/calendar"
@@ -52,21 +52,21 @@ export GOOGLE_WORKSPACE_CLI_OAUTH_SCOPES="https://www.googleapis.com/auth/drive 
 
 ## 3. 使用 `/login`
 
-如果你希望後續 runtime 自動把這份 credential file 投影到 `/root/.config/gws/credentials.json`，建議用 `image` sandbox 啟動 mikan：
+如果你希望后续 runtime 自动把这份 credential file 投影到 `/root/.config/gws/credentials.json`，建议用 `image` sandbox 启动 mikan：
 
 ```bash
 mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 ```
 
-在與 bot 的私訊中輸入：
+在与 bot 的私讯中输入：
 
 ```text
 /login
 ```
 
-打開 mikan 回傳的 link，選擇 Google Workspace CLI OAuth。
+打开 mikan 回传的 link，选择 Google Workspace CLI OAuth。
 
-成功後，mikan 會把 authorized user credential 存成 vault file，例如：
+成功后，mikan 会把 authorized user credential 存成 vault file，例如：
 
 ```json
 {
@@ -77,14 +77,14 @@ mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 }
 ```
 
-預設 metadata target path 是：
+预设 metadata target path 是：
 
 ```text
 /root/.config/gws/credentials.json
 ```
 
-## Notes
+## 注意事项
 
-- mikan 使用 web OAuth callback，因此 Google OAuth client 必須是 `Web application`，不是 desktop app。
-- 如果 Google 沒有回傳 `refresh_token`，請撤銷既有 consent 後重新 `/login`。mikan 會要求 `access_type=offline` 與 `prompt=consent`，但 Google 仍可能因既有授權而省略 refresh token。
-- 若要讓 `gws.json` 自動出現在 `/root/.config/gws/credentials.json`，請使用 `image` sandbox。`container` / `firecracker` 目前仍只會保存 file credential metadata，不會自動投影。
+- mikan 使用 web OAuth callback，因此 Google OAuth client 必须是 `Web application`，不是 desktop app。
+- 如果 Google 没有回传 `refresh_token`，请撤销既有 consent 后重新 `/login`。mikan 会要求 `access_type=offline` 与 `prompt=consent`，但 Google 仍可能因既有授权而省略 refresh token。
+- 若要让 `gws.json` 自动出现在 `/root/.config/gws/credentials.json`，请使用 `image` sandbox。`container` / `firecracker` 目前仍只会保存 file credential metadata，不会自动投影。

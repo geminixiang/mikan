@@ -1,20 +1,17 @@
 ---
 title: Vault
+description: mikan が credentials を state directory に保存し、sandbox mode に応じて env または file mounts として注入する仕組み。
 ---
 
-# Vault
+## State directory と vault の場所
 
-mikan stores credentials outside the workspace in the state directory, then injects them into sandbox executions according to the active sandbox mode.
-
-## State directory and vault path
-
-The default state directory is:
+state directory のデフォルトは次のとおりです：
 
 ```text
 ~/.mikan/
 ```
 
-Important files:
+重要な内容：
 
 ```text
 ~/.mikan/
@@ -23,32 +20,32 @@ Important files:
     └── <vault-id>/
 ```
 
-You can override it with `--state-dir`:
+`--state-dir` で指定することもできます：
 
 ```bash
 mikan --state-dir=/secure/mikan-state --sandbox=container:mikan-tools /path/to/workspace
 ```
 
-Credentials are then stored under:
+この場合、credential は次に保存されます：
 
 ```text
 /secure/mikan-state/vaults/
 ```
 
-Global settings live at `<state-dir>/settings.json`. Conversation-local settings live at `<working-directory>/<conversationId>/settings.json` and override global defaults for that conversation.
+グローバル設定ファイルは `<state-dir>/settings.json` にあります。Conversation-local 設定は `<working-directory>/<conversationId>/settings.json` にあり、その conversation のグローバルデフォルトを上書きします。
 
-At startup, mikan rejects a `--state-dir` that is world-writable or not owned by the current user, so other local users cannot tamper with settings or vault contents.
+起動時、mikan は world-writable または現在のユーザー所有でない `--state-dir` の使用を拒否し、ローカルの他ユーザーによる settings や vault 内容の改ざんを防ぎます。
 
-## Vault contents
+## Vault の内容
 
-Each vault is a directory under `vaults/`. It can contain:
+各 vault は `vaults/` 配下のディレクトリで、次を含められます：
 
-- `env` file: environment variables in `KEY=value` format
-- file credentials: for example `gws.json` or `.ssh/config`
+- `env` file：`KEY=value` 形式の環境変数
+- file credentials：例：`gws.json`、`.ssh/config`
 
-mikan infers mount targets from names/paths, for example `gws.json` → `/root/.config/gws/credentials.json` and `.ssh/` → `/root/.ssh`.
+mikan はファイル名/パスから mount target を自動推論します。例：`gws.json` → `/root/.config/gws/credentials.json`、`.ssh/` → `/root/.ssh`。
 
-Example:
+例：
 
 ```text
 ~/.mikan/vaults/
@@ -57,68 +54,68 @@ Example:
     └── gws.json
 ```
 
-`env` example:
+`env` の例：
 
 ```env
 GH_TOKEN=ghp_xxx
 GITHUB_OAUTH_ACCESS_TOKEN=gho_xxx
 ```
 
-## Sandbox behavior
+## Sandbox の挙動
 
-| Sandbox mode       | Vault env injection | File credential projection | Vault key                                                         |
-| ------------------ | ------------------- | -------------------------- | ----------------------------------------------------------------- |
-| `host`             | No                  | No                         | Credentials can be stored but are not injected into host commands |
-| `container:<name>` | Yes                 | No                         | `container-<name>`                                                |
-| `image:<image>`    | Yes                 | Yes                        | generated conversation vault, usually the conversation ID         |
-| `firecracker:*`    | Yes                 | No                         | generated conversation vault                                      |
-| `cloudflare:*`     | Yes                 | No                         | generated platform-scoped conversation vault                      |
+| Sandbox mode       | Vault env injection | File credential projection | Vault key                                             |
+| ------------------ | ------------------- | -------------------------- | ----------------------------------------------------- |
+| `host`             | 注入しない          | 投影しない                 | credentials は保存できるが host commands へ注入しない |
+| `container:<name>` | 注入する            | 投影しない                 | `container-<name>`                                    |
+| `image:<image>`    | 注入する            | 自動投影                   | generated conversation vault。通常は conversation ID  |
+| `firecracker:*`    | 注入する            | 投影しない                 | generated conversation vault                          |
+| `cloudflare:*`     | 注入する            | 投影しない                 | generated platform-scoped conversation vault          |
 
 ## `/login`
 
-Users run this in a DM/private chat:
+ユーザーは DM / private chat で次を実行します：
 
 ```text
 /login
 ```
 
-mikan returns a 15-minute onboarding link. The web page can store:
+mikan は 15 分間有効な onboarding link を生成します。ユーザーは Web ページで次を保存できます：
 
-- arbitrary API keys / env vars
-- GitHub OAuth credentials
-- Google Workspace CLI OAuth credentials
+- 任意の API key / env var
+- GitHub OAuth credential
+- Google Workspace CLI OAuth credential
 
-`/login` only works in DM/private chat, so other people in a shared channel cannot grab the credential onboarding link.
+`/login` は DM / private chat でのみ使用でき、共有チャンネル内の他人が credential onboarding link を取得することを防ぎます。
 
-## Enable the link server
+## link server の有効化
 
-For production, set the public URL:
+本番デプロイでは公開 URL を設定します：
 
 ```bash
 export LINK_URL="https://mikan.example.com"
 ```
 
-If `LINK_PORT` is not set, mikan defaults to port `8181` when `LINK_URL` exists.
+`LINK_PORT` が未設定の場合、`LINK_URL` が存在すると mikan はデフォルトで port `8181` を使用します。
 
-You can also set the port explicitly:
-
-```bash
-export LINK_PORT=8181
-```
-
-For local testing, setting only `LINK_PORT` is enough:
+明示的に指定することもできます：
 
 ```bash
 export LINK_PORT=8181
 ```
 
-The `/login` link will use:
+ローカルテストだけなら、次だけを設定しても構いません：
+
+```bash
+export LINK_PORT=8181
+```
+
+このとき `/login` link は次を使用します：
 
 ```text
 http://localhost:8181
 ```
 
-OAuth callback URL:
+OAuth callback URL は次のとおりです：
 
 ```text
 <LINK_URL>/oauth/callback

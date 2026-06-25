@@ -1,0 +1,49 @@
+---
+title: セッション
+description: mikan がプラットフォームのチャット履歴と pi-coding-agent の構造化セッションをどのように分離するか。
+---
+
+import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
+
+<CardGrid>
+  <Card title="プラットフォームのチャット履歴" icon="open-book">
+    `log.jsonl` は、人が読めるプラットフォームメッセージを保持し、thread または reply context の
+    bootstrap に使います。
+  </Card>
+  <Card title="pi 構造化 context" icon="rocket">
+    `sessions/*.jsonl` は tool results と agent turn を保存し、pi-coding-agent
+    が作業を継続できるようにします。
+  </Card>
+  <Card title="固定 scope" icon="lock">
+    Thread、reply chain、shared channel は固定 session files
+    にマップされ、別の会話が混ざらないようにします。
+  </Card>
+</CardGrid>
+
+## プラットフォームセッションモデル
+
+| プラットフォーム | `sessionKey` ルール                                                               | 備考                                                                                   |
+| ---------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Slack            | top-level / DM: `conversationId`; thread: `conversationId:threadTs`               | thread sessions は直近のチャット履歴から bootstrap される固定ファイルです              |
+| Discord          | DM: `channelId`; shared top-level: `channelId:messageId`; reply/thread: rooted id | shared channels の replies は root message session を継続します                        |
+| Telegram         | private: `chatId`; shared top-level: `chatId:messageId`; reply chain: root reply  | ネイティブ thread model はありません。shared sessions は reply chains から推測されます |
+
+## ファイル
+
+<FileTree>
+
+- workspace/
+  - **log.jsonl** プラットフォームメッセージ履歴
+  - sessions/
+    - **current** 使用中の top-level session を指します
+    - **\*.jsonl** tool results を含む、構造化 pi-coding-agent context
+    - **scope-derived files** thread / reply scopes の固定 session files
+
+</FileTree>
+
+## リセット
+
+<Aside type="tip" title="監査可能な記録を保持">
+  チャットで `new` / `/new`
+  を使うと現在のセッションをリセットできます。手動で削除しない限り、以前のファイルは確認用にディスク上へ残ります。
+</Aside>

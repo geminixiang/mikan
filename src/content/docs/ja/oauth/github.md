@@ -1,33 +1,33 @@
 ---
-title: GitHub OAuth Setup
+title: GitHub OAuth の設定
+description: GitHub OAuth App を作成し、mikan の /login が GitHub 認証情報を保存および注入できるようにします。
+sidebar:
+  order: 1
+  label: GitHub
 ---
 
-# GitHub OAuth Setup
+## 1. GitHub OAuth App の作成
 
-這份文件說明如何設定 mikan `/login` 內建的 GitHub OAuth。
-
-## 1. 建立 GitHub OAuth App
-
-到 GitHub：
+GitHub にアクセスします：
 
 ```text
 Settings → Developer settings → OAuth Apps → New OAuth App
 ```
 
-填入：
+以下を入力します：
 
-- Application name：例如 `mikan`
-- Homepage URL：你的 `LINK_URL`
+- Application name：例 `mikan`
+- Homepage URL：お使いの `LINK_URL`
 - Authorization callback URL：`<LINK_URL>/oauth/callback`
 
-範例：
+例：
 
 ```text
 LINK_URL=https://mikan.example.com
 Callback URL=https://mikan.example.com/oauth/callback
 ```
 
-## 2. 設定環境變數
+## 2. 環境変数の設定
 
 ```bash
 export LINK_URL="https://mikan.example.com"
@@ -35,57 +35,57 @@ export GITHUB_OAUTH_CLIENT_ID="<client-id>"
 export GITHUB_OAUTH_CLIENT_SECRET="<client-secret>"
 ```
 
-如果沒有設定 `LINK_PORT`，mikan 會在 `LINK_URL` 存在時預設監聽 `8181`。
+`LINK_PORT` が設定されていない場合、`LINK_URL` が存在していれば、mikan はデフォルトで `8181` ポートをリスンします。
 
-## 3. 啟動 mikan
+## 3. mikan の起動
 
 ```bash
 mikan --sandbox=container:mikan-tools /path/to/workspace
 ```
 
-或使用 managed per-user container：
+または、ユーザーごとに管理されたコンテナ（managed per-user container）を使用する場合：
 
 ```bash
 mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 ```
 
-或：
+または：
 
 ```bash
 mikan --sandbox=firecracker:192.168.1.100:/path/to/workspace /path/to/workspace
 ```
 
-## 4. 使用 `/login`
+## 4. `/login` の使用
 
-在與 bot 的私訊中輸入：
+ボットとの DM（ダイレクトメッセージ）で以下を入力します：
 
 ```text
 /login
 ```
 
-打開 mikan 回傳的 link，選擇 GitHub OAuth。
+mikan から返されたリンクを開き、GitHub OAuth を選択します。
 
-成功後，mikan 會把 token 寫入對應 vault 的 `env`，包含：
+成功すると、mikan は対応する vault の `env` にトークンを書き込みます。これには以下が含まれます：
 
 ```text
 GITHUB_OAUTH_ACCESS_TOKEN
 GH_TOKEN
 ```
 
-在 `container` / `image` / `firecracker` sandbox 中，後續工具執行會注入這些 env。
+`container` / `image` / `firecracker` サンドボックスでは、その後のツール実行時にこれらの環境変数が注入されます。
 
-## Scopes
+## スコープ
 
-預設 GitHub OAuth scopes：
+デフォルトの GitHub OAuth スコープ：
 
 ```text
 repo read:user user:email read:org gist
 ```
 
-可用環境變數覆蓋：
+環境変数を使用して上書きできます：
 
 ```bash
 export GITHUB_OAUTH_SCOPES="repo read:user user:email read:org gist workflow"
 ```
 
-請只加入你真的需要的 scopes。較高權限 scopes 會增加 credential 外洩時的風險。
+本当に必要なスコープのみを追加してください。権限の強いスコープは、認証情報が漏洩した際のリスクを高めます。

@@ -1,32 +1,29 @@
 ---
-title: Slack Bot Minimal Setup Guide
+title: Slack Bot 最小设定指南
+description: 透过 Socket Mode 执行 mikan 所需的最小 Slack app 权限、事件与 manifest 设定。
 ---
 
-# Slack Bot Minimal Setup Guide
+你也可以使用 `examples/slack-app-manifest.json` 的范例 manifest 建立 app。
 
-This guide lists the minimum Slack app settings needed to run `mikan` over Socket Mode.
+## 1. 建立 Slack app
 
-You can also create the app from the example manifest at `examples/slack-app-manifest.json`.
+1. 开启 <https://api.slack.com/apps>。
+2. 点选 **Create New App**。
+3. 选择 **From scratch**。
+4. 选择 app 名称，例如 `mikan`，并选取你的 workspace。
 
-## 1. Create the Slack app
+## 2. 启用 Socket Mode
 
-1. Open <https://api.slack.com/apps>.
-2. Click **Create New App**.
-3. Choose **From scratch**.
-4. Pick an app name, for example `mikan`, and select your workspace.
+1. 前往 **Settings → Socket Mode**。
+2. 开启 **Enable Socket Mode**。
+3. 建立具备 `connections:write` scope 的 app-level token。
+4. 将 token 储存为 `SLACK_APP_TOKEN`。
 
-## 2. Enable Socket Mode
+Token 会以 `xapp-` 开头。
 
-1. Go to **Settings → Socket Mode**.
-2. Turn **Enable Socket Mode** on.
-3. Create an app-level token with the `connections:write` scope.
-4. Save the token as `SLACK_APP_TOKEN`.
+## 3. 设定 bot token scopes
 
-The token starts with `xapp-`.
-
-## 3. Configure bot token scopes
-
-Go to **OAuth & Permissions → Scopes → Bot Token Scopes** and add:
+前往 **OAuth & Permissions → Scopes → Bot Token Scopes**，加入：
 
 - `app_mentions:read`
 - `assistant:write`
@@ -42,23 +39,23 @@ Go to **OAuth & Permissions → Scopes → Bot Token Scopes** and add:
 - `im:write`
 - `users:read`
 
-Then install or reinstall the app to your workspace and save the bot token as `SLACK_BOT_TOKEN`.
+接着将 app 安装或重新安装到你的 workspace，并把 bot token 储存为 `SLACK_BOT_TOKEN`。
 
-The token starts with `xoxb-`.
+Token 会以 `xoxb-` 开头。
 
-## 4. Enable App Home and Agent mode
+## 4. 启用 App Home 与 Agent 模式
 
-1. Go to **Features → App Home**.
-2. Enable **Home Tab**.
-3. In **Agents & AI Apps**, enable **Agent or Assistant**.
+1. 前往 **Features → App Home**。
+2. 启用 **Home Tab**。
+3. 在 **Agents & AI Apps** 中启用 **Agent or Assistant**。
 
-This allows Slack's native assistant thread events and working indicators to reach the bot.
+这会让 Slack 原生 assistant thread events 与 working indicators 传到 bot。
 
-## 5. Subscribe to bot events
+## 5. 订阅 bot events
 
-Go to **Features → Event Subscriptions** and enable events.
+前往 **Features → Event Subscriptions** 并启用 events。
 
-Subscribe to these bot events:
+订阅以下 bot events：
 
 - `app_home_opened`
 - `app_mention`
@@ -68,25 +65,25 @@ Subscribe to these bot events:
 - `message.groups`
 - `message.im`
 
-## 6. Enable interactivity
+## 6. 启用 interactivity
 
-Go to **Features → Interactivity & Shortcuts** and turn interactivity on.
+前往 **Features → Interactivity & Shortcuts** 并开启 interactivity。
 
-A public request URL is not required for Socket Mode-only local development, but Slack may still ask for one in some app configurations.
+若只使用 Socket Mode 进行本机开发，不需要公开 request URL；但某些 app 设定中 Slack 仍可能要求填写。
 
-## 7. Optional slash commands
+## 7. 可选的 slash commands
 
-The example manifest includes slash commands for common controls:
+范例 manifest 包含常用控制用的 slash commands：
 
 - `/pi-login` → login portal
-- `/pi-new` → start a new DM session
+- `/pi-new` → 开始新的 DM session
 - `/pi-session` → session viewer
-- `/pi-model` → switch this conversation's LLM (`provider/model[:thinking]`, e.g. `anthropic/claude-sonnet-4-6:off`)
-- `/pi-auto-reply` → manage group/channel auto-reply rules
+- `/pi-model` → 切换此 conversation 的 LLM（`provider/model[:thinking]`，例如 `anthropic/claude-sonnet-4-6:off`）
+- `/pi-auto-reply` → 管理 group/channel auto-reply rules
 
-Slash commands are optional because text commands also work in supported contexts. Keep `stop` as a text command (`stop` or `/stop`) so thread-local stop routing can target the correct session.
+Slash commands 是可选的，因为文字指令在支援的情境中也可使用。请将 `stop` 保留为文字指令（`stop` 或 `/stop`），让 thread-local stop routing 能指向正确的 session。
 
-## 8. Run mikan
+## 8. 执行 mikan
 
 ```bash
 export SLACK_APP_TOKEN=xapp-...
@@ -95,4 +92,4 @@ export SLACK_BOT_TOKEN=xoxb-...
 mikan --state-dir ~/.mikan /path/to/workspace
 ```
 
-The bot responds in DMs and when mentioned in channels. Slack thread replies use isolated thread sessions with the thread timestamp as part of the session key.
+Bot 会在 DM 中回应，也会在 channel 中被 mention 时回应。Slack thread replies 会使用隔离的 thread sessions，并把 thread timestamp 作为 session key 的一部分。

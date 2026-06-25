@@ -1,21 +1,18 @@
 ---
-title: Skills
+title: スキル
+description: workspace-level と conversation-level skills の読み込み場所、sandbox path、tool 構造。
 ---
 
-# Skills
-
-mikan loads custom CLI tools from two `skills/` locations:
-
-| Level                             | Purpose                                                         | Host path                                           | Runtime path in sandbox                            |
-| --------------------------------- | --------------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------- |
-| Workspace-level (global skills)   | Reusable tools available to every conversation in the workspace | `<workspace>/skills/<skill-name>/`                  | `/workspace/skills/<skill-name>/`                  |
-| Conversation-level (local skills) | Tools only for one conversation/channel/DM                      | `<workspace>/<conversationId>/skills/<skill-name>/` | `/workspace/<conversationId>/skills/<skill-name>/` |
+| レベル                             | 用途                                                     | Host path                                           | Sandbox 内 runtime path                            |
+| ---------------------------------- | -------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------- |
+| Workspace-level（global skills）   | workspace 全体のすべての conversations で使える共有 tool | `<workspace>/skills/<skill-name>/`                  | `/workspace/skills/<skill-name>/`                  |
+| Conversation-level（local skills） | 単一の conversation / channel / DM だけで使う tool       | `<workspace>/<conversationId>/skills/<skill-name>/` | `/workspace/<conversationId>/skills/<skill-name>/` |
 
 :::note
-Workspace-level skills are loaded first. Conversation-level skills are loaded second and override a workspace skill with the same `name`.
+mikan は workspace-level skills を先に読み込み、その後 conversation-level skills を読み込みます。両方に同じ `name` がある場合、conversation-level skill が workspace-level skill を上書きします。
 :::
 
-## Directory layout
+## ディレクトリ構造
 
 ```text
 <workspace>/
@@ -30,7 +27,7 @@ Workspace-level skills are loaded first. Conversation-level skills are loaded se
             └── run.sh
 ```
 
-Each skill directory needs a `SKILL.md` file:
+各 skill ディレクトリには `SKILL.md` が必要です：
 
 ```yaml
 ---
@@ -41,10 +38,10 @@ description: Does something useful
 Usage: {baseDir}/run.sh <args>
 ```
 
-`name` and `description` are required. Use `{baseDir}` in instructions when referring to files inside the skill directory; mikan replaces it with the runtime path for that skill.
+`name` と `description` は必須です。skill ディレクトリ内のファイルを説明で参照する場合は `{baseDir}` を使ってください。mikan がその skill の runtime path に置き換えます。
 
-## When to use each level
+## どちらのレベルを使うべきか
 
-Use workspace-level skills for shared tools: company APIs, common scripts, release helpers, reporting tools, or anything useful across multiple conversations.
+Workspace-level skills は共有 tool に適しています：会社 API、よく使う scripts、release helpers、reporting tools、または複数 conversations で使う能力。
 
-Use conversation-level skills for local tools: channel-specific workflows, temporary helpers, or a tool that should not appear in other conversations.
+Conversation-level skills はローカル tool に適しています：特定 channel workflow、一時的な helper、または他の conversations に出すべきではない tool。

@@ -1,14 +1,11 @@
 ---
-title: Slack Bot Minimal Setup Guide
+title: Slack Bot minimal setup guide
+description: Minimal Slack app permissions, events, and manifest settings required to run mikan through Socket Mode.
 ---
 
-# Slack Bot Minimal Setup Guide
+You can also create the app with the example manifest in `examples/slack-app-manifest.json`.
 
-This guide lists the minimum Slack app settings needed to run `mikan` over Socket Mode.
-
-You can also create the app from the example manifest at `examples/slack-app-manifest.json`.
-
-## 1. Create the Slack app
+## 1. Create a Slack app
 
 1. Open <https://api.slack.com/apps>.
 2. Click **Create New App**.
@@ -18,9 +15,9 @@ You can also create the app from the example manifest at `examples/slack-app-man
 ## 2. Enable Socket Mode
 
 1. Go to **Settings → Socket Mode**.
-2. Turn **Enable Socket Mode** on.
+2. Turn on **Enable Socket Mode**.
 3. Create an app-level token with the `connections:write` scope.
-4. Save the token as `SLACK_APP_TOKEN`.
+4. Store the token as `SLACK_APP_TOKEN`.
 
 The token starts with `xapp-`.
 
@@ -42,7 +39,7 @@ Go to **OAuth & Permissions → Scopes → Bot Token Scopes** and add:
 - `im:write`
 - `users:read`
 
-Then install or reinstall the app to your workspace and save the bot token as `SLACK_BOT_TOKEN`.
+Then install or reinstall the app to your workspace and store the bot token as `SLACK_BOT_TOKEN`.
 
 The token starts with `xoxb-`.
 
@@ -50,9 +47,9 @@ The token starts with `xoxb-`.
 
 1. Go to **Features → App Home**.
 2. Enable **Home Tab**.
-3. In **Agents & AI Apps**, enable **Agent or Assistant**.
+3. Enable **Agent or Assistant** under **Agents & AI Apps**.
 
-This allows Slack's native assistant thread events and working indicators to reach the bot.
+This sends Slack native assistant thread events and working indicators to the bot.
 
 ## 5. Subscribe to bot events
 
@@ -70,21 +67,21 @@ Subscribe to these bot events:
 
 ## 6. Enable interactivity
 
-Go to **Features → Interactivity & Shortcuts** and turn interactivity on.
+Go to **Features → Interactivity & Shortcuts** and enable interactivity.
 
-A public request URL is not required for Socket Mode-only local development, but Slack may still ask for one in some app configurations.
+If you only use Socket Mode for local development, you do not need a public request URL, though Slack may still require one in some app settings.
 
 ## 7. Optional slash commands
 
-The example manifest includes slash commands for common controls:
+The example manifest includes common control slash commands:
 
 - `/pi-login` → login portal
 - `/pi-new` → start a new DM session
 - `/pi-session` → session viewer
-- `/pi-model` → switch this conversation's LLM (`provider/model[:thinking]`, e.g. `anthropic/claude-sonnet-4-6:off`)
+- `/pi-model` → switch this conversation's LLM (`provider/model[:thinking]`, for example `anthropic/claude-sonnet-4-6:off`)
 - `/pi-auto-reply` → manage group/channel auto-reply rules
 
-Slash commands are optional because text commands also work in supported contexts. Keep `stop` as a text command (`stop` or `/stop`) so thread-local stop routing can target the correct session.
+Slash commands are optional because text commands also work in supported contexts. Keep `stop` as a text command (`stop` or `/stop`) so thread-local stop routing can point at the correct session.
 
 ## 8. Run mikan
 
@@ -95,4 +92,4 @@ export SLACK_BOT_TOKEN=xoxb-...
 mikan --state-dir ~/.mikan /path/to/workspace
 ```
 
-The bot responds in DMs and when mentioned in channels. Slack thread replies use isolated thread sessions with the thread timestamp as part of the session key.
+The bot responds in DMs and when mentioned in channels. Slack thread replies use isolated thread sessions and include the thread timestamp as part of the session key.

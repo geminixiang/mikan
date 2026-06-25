@@ -1,12 +1,12 @@
 ---
-title: Google Cloud SDK (gcloud) OAuth Setup
+title: Google Cloud SDK OAuth 设定
+description: 设定 Google Cloud SDK OAuth，让 sandbox 内的 gcloud 使用登入后的 user credential。
+sidebar:
+  order: 2
+  label: Google Cloud SDK
 ---
 
-# Google Cloud SDK (gcloud) OAuth Setup
-
-這份文件說明如何設定 mikan `/login` / `/pi-login` 內建的 Google Cloud SDK OAuth，讓 sandbox 內的 `gcloud` 使用登入後的 user credential。
-
-> 注意：mikan 會把 Google `authorized_user` JSON 存進 vault，並保存 target path metadata。`image` sandbox 會把這類 vault file 自動投影到 container 內的 target path；現有 `container` / `firecracker` runtime 仍不會自動做 file projection。
+> 注意：mikan 会把 Google `authorized_user` JSON 存进 vault，并保存 target path metadata。`image` sandbox 会把这类 vault file 自动投影到 container 内的 target path；现有 `container` / `firecracker` runtime 仍不会自动做 file projection。
 
 ## 1. 建立 Google OAuth Client
 
@@ -16,25 +16,25 @@ title: Google Cloud SDK (gcloud) OAuth Setup
 APIs & Services → Credentials → Create Credentials → OAuth client ID
 ```
 
-設定：
+设定：
 
 - Application type：`Web application`
 - Authorized redirect URI：`<LINK_URL>/oauth/callback`
 
-範例：
+范例：
 
 ```text
 LINK_URL=https://mikan.example.com
 Redirect URI=https://mikan.example.com/oauth/callback
 ```
 
-如果 OAuth app 還在 testing mode，請把使用者加入：
+如果 OAuth app 还在 testing mode，请把使用者加入：
 
 ```text
 OAuth consent screen → Test users
 ```
 
-## 2. 設定環境變數
+## 2. 设定环境变数
 
 ```bash
 export LINK_URL="https://mikan.example.com"
@@ -42,9 +42,9 @@ export GOOGLE_CLOUD_SDK_CLIENT_ID="<client-id>"
 export GOOGLE_CLOUD_SDK_CLIENT_SECRET="<client-secret>"
 ```
 
-如果沒有設定 `LINK_PORT`，mikan 會在 `LINK_URL` 存在時預設監聽 `8181`。
+如果没有设定 `LINK_PORT`，mikan 会在 `LINK_URL` 存在时预设监听 `8181`。
 
-可選：覆蓋預設 scopes：
+可选：覆盖预设 scopes：
 
 ```bash
 export GOOGLE_CLOUD_SDK_OAUTH_SCOPES="openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/cloud-platform"
@@ -52,32 +52,32 @@ export GOOGLE_CLOUD_SDK_OAUTH_SCOPES="openid https://www.googleapis.com/auth/use
 
 ## 3. 使用 `/pi-login`
 
-如果你希望後續 runtime 自動把 credential file 投影到 `/root/.config/gcloud/application_default_credentials.json`，建議用 `image` sandbox 啟動 mikan：
+如果你希望后续 runtime 自动把 credential file 投影到 `/root/.config/gcloud/application_default_credentials.json`，建议用 `image` sandbox 启动 mikan：
 
 ```bash
 mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 ```
 
-在與 bot 的私訊中輸入：
+在与 bot 的私讯中输入：
 
 ```text
 /pi-login
 ```
 
-打開 mikan 回傳的 link，選擇 **Google Cloud SDK (gcloud)**。
+打开 mikan 回传的 link，选择 **Google Cloud SDK (gcloud)**。
 
-成功後，mikan 會：
+成功后，mikan 会：
 
 - 存入 vault file：`gcloud-adc.json`
 - 在 sandbox 投影到：`/root/.config/gcloud/application_default_credentials.json`
-- 設定 env：
+- 设定 env：
   - `GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json`
   - `CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=/root/.config/gcloud/application_default_credentials.json`
 
-`CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE` 會讓 `gcloud` 優先使用這份 credential file。
+`CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE` 会让 `gcloud` 优先使用这份 credential file。
 
-## Notes
+## 注意事项
 
-- mikan 使用 web OAuth callback，因此 Google OAuth client 必須是 `Web application`，不是 desktop app。
-- 如果 Google 沒有回傳 `refresh_token`，請撤銷既有 consent 後重新 `/pi-login`。mikan 會要求 `access_type=offline` 與 `prompt=consent`，但 Google 仍可能因既有授權而省略 refresh token。
-- 若要讓 credential file 自動出現在 `/root/.config/gcloud/application_default_credentials.json`，請使用 `image` sandbox。`container` / `firecracker` 目前仍只會保存 file credential metadata，不會自動投影。
+- mikan 使用 web OAuth callback，因此 Google OAuth client 必须是 `Web application`，不是 desktop app。
+- 如果 Google 没有回传 `refresh_token`，请撤销既有 consent 后重新 `/pi-login`。mikan 会要求 `access_type=offline` 与 `prompt=consent`，但 Google 仍可能因既有授权而省略 refresh token。
+- 若要让 credential file 自动出现在 `/root/.config/gcloud/application_default_credentials.json`，请使用 `image` sandbox。`container` / `firecracker` 目前仍只会保存 file credential metadata，不会自动投影。
