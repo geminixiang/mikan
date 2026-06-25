@@ -93,7 +93,7 @@ description: 了解 mikan 的平台接入、工作阶段、agent、sandbox、vau
 
 职责：
 
-- `src/web/login/portal.ts` 目前是 link server host，会挂接 login/vault、admin、session-view routes
+- `src/web/server.ts` 负责 HTTP server，并挂接 login/vault、admin、session-view、agent-event routes
 - 提供 Web login portal，支援 API key 与 OAuth 写入 vault
 - 提供 admin portal，支援 conversation/settings/workspace/events/skills 管理与 link generation
 - 提供 session viewer；目前可显示 session timeline，且在 interactive wiring 启用时可透过 `/session/message` 送讯息
@@ -171,7 +171,7 @@ flowchart TD
   LoginCmd --> Main["main.ts"]
   Main --> LinkToken["InMemoryLinkTokenStore"]
   Main --> VaultRouting["vault-routing.ts"]
-  Main --> LinkServer["web/login/portal.ts"]
+  Main --> WebServer["web/server.ts"]
   LinkServer --> Browser["Browser Portal"]
   Browser --> OAuth["OAuth provider / API key form"]
   OAuth --> LinkServer

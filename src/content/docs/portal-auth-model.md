@@ -115,14 +115,14 @@ Even if a full dashboard is added later, these boundaries should remain:
 
 | Feature              | Main code                                                         |
 | -------------------- | ----------------------------------------------------------------- |
-| Portal HTTP server   | `startLinkServer()` in `src/web/login/portal.ts`                  |
+| Portal HTTP server   | `startWebServer()` in `src/web/server.ts`                         |
 | Admin portal         | `src/web/admin/portal.ts`, `src/web/admin/store.ts`               |
 | Login / vault portal | `src/web/login/portal.ts`, `src/web/login/store.ts`               |
 | Session view         | `src/web/session-view/portal.ts`, `src/web/session-view/store.ts` |
 | Shared token store   | `src/web/token-store.ts`                                          |
 | Shared portal shell  | `src/portal-shell.ts`                                             |
 
-`startLinkServer()` dispatch order:
+`startWebServer()` dispatch order:
 
 1. `GET /health`
 2. Admin routes

@@ -115,14 +115,14 @@ Session view token 锚定到 base session file。使用 `/session?session=<file.
 
 | 功能                 | 主要程式码                                                        |
 | -------------------- | ----------------------------------------------------------------- |
-| Portal HTTP server   | `src/web/login/portal.ts` 的 `startLinkServer()`                  |
+| Portal HTTP server   | `src/web/server.ts` 的 `startWebServer()`                         |
 | Admin portal         | `src/web/admin/portal.ts`、`src/web/admin/store.ts`               |
 | Login / vault portal | `src/web/login/portal.ts`、`src/web/login/store.ts`               |
 | Session view         | `src/web/session-view/portal.ts`、`src/web/session-view/store.ts` |
 | 共用 token store     | `src/web/token-store.ts`                                          |
 | 共用 portal shell    | `src/portal-shell.ts`                                             |
 
-`startLinkServer()` 的 dispatch 顺序是：
+`startWebServer()` 的 dispatch 顺序是：
 
 1. `GET /health`
 2. Admin routes

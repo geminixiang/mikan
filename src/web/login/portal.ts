@@ -1,18 +1,10 @@
 import { createHash, randomBytes } from "crypto";
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "http";
-import type { MessagingBot, PlatformName } from "../../adapter.js";
-import { handleAdminRequest, type AdminRuntimeBridge } from "../admin/portal.js";
-import type { InMemoryAdminTokenStore } from "../admin/store.js";
+import type { IncomingMessage, ServerResponse } from "http";
 import { escapeHtml } from "../../utils/html.js";
 import { readRawBody } from "../../utils/http-body.js";
 import { renderPortalShell } from "../../portal-shell.js";
-import type { SandboxConfig } from "../../sandbox/index.js";
 import { resolveLinkBaseUrl } from "../../config.js";
-import {
-  handleSessionViewRequest,
-  type SessionViewInteractiveOptions,
-} from "../session-view/portal.js";
-import type { InMemorySessionViewTokenStore } from "../session-view/store.js";
+import { requestBaseUrl } from "../request.js";
 import type { InMemoryLinkTokenStore } from "./store.js";
 import {
   getOAuthServices,
@@ -243,7 +235,7 @@ const SECRET_PRESETS: SecretPreset[] = [
   },
 ];
 
-// ── startLinkServer ────────────────────────────────────────────────────────────
+// ── request handler ───────────────────────────────────────────────────────────
 
 /**
  * Start a small HTTP server that receives credential onboarding callbacks from the web portal.
@@ -255,197 +247,97 @@ const SECRET_PRESETS: SecretPreset[] = [
  *   POST /api/oauth/start     — creates provider OAuth redirect URL
  *   GET  /oauth/callback      — OAuth callback endpoint
  */
-export function startLinkServer(
-  port: number,
+export function createLoginRequestHandler(
   linkTokenStore: InMemoryLinkTokenStore,
   vaultManager: VaultManager,
   notify: NotifyFn,
-  sessionViewTokenStore?: InMemorySessionViewTokenStore,
-  sessionViewInteractive?: SessionViewInteractiveOptions,
-  adminOptions?: {
-    adminTokenStore: InMemoryAdminTokenStore;
-    workingDir?: string;
-    runtime?: AdminRuntimeBridge;
-    sandbox?: SandboxConfig;
-    botsByPlatform?: Partial<Record<PlatformName, MessagingBot>>;
-  },
-): Server {
+): (req: IncomingMessage, res: ServerResponse, url: URL) => boolean {
   const oauthStates = new Map<string, PendingOAuthState>();
 
-  const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-    try {
-      const url = new URL(req.url ?? "/", requestBaseUrl(req));
+  return (req, res, url) => {
+    if (req.method === "GET" && url.pathname === "/link") {
+      const rawToken = url.searchParams.get("token") ?? "";
+      const linkToken = linkTokenStore.peek(rawToken);
 
-      if (req.method === "GET" && url.pathname === "/health") {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true }));
-        return;
-      }
-
-      if (
-        adminOptions?.adminTokenStore &&
-        handleAdminRequest(req, res, url, {
-          vaultManager,
-          linkTokenStore,
-          sessionViewTokenStore,
-          adminTokenStore: adminOptions.adminTokenStore,
-          portalBaseUrl: resolveLinkBaseUrl() ?? undefined,
-          workingDir: adminOptions.workingDir,
-          runtime: adminOptions.runtime,
-          sandbox: adminOptions.sandbox,
-          botsByPlatform: adminOptions.botsByPlatform,
-        })
-      ) {
-        return;
-      }
-
-      if (
-        await handleSessionViewRequest(req, res, url, sessionViewTokenStore, sessionViewInteractive)
-      ) {
-        return;
-      }
-
-      if (req.method === "GET" && url.pathname === "/link") {
-        const rawToken = url.searchParams.get("token") ?? "";
-        const linkToken = linkTokenStore.peek(rawToken);
-
-        if (!linkToken) {
-          res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-          res.end(
-            renderErrorPage(
-              "This link is invalid or has expired. Ask the bot for a new /login link.",
-            ),
-          );
-          return;
-        }
-
-        const oauthServiceHint = linkToken.providerId
-          ? resolveOAuthService(linkToken.providerId)
-          : undefined;
-        const oauthServices = getOAuthServices();
-        const defaultMode: LoginCredentialKind = oauthServiceHint ? "oauth" : "api_key";
-        const existingSecrets = describeVaultSecrets(vaultManager, linkToken.vaultId);
-
-        const title = oauthServiceHint ? `${oauthServiceHint.label} OAuth` : "Store Secret";
-        const helpText = oauthServiceHint
-          ? `Authorize ${oauthServiceHint.label} and store tokens in your vault.`
-          : "Set any environment variable key/value pair in your vault.";
-        const secretLabel = "Secret value";
-        const placeholder = "sk-...";
-        const initialEnvKey = "";
-
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      if (!linkToken) {
+        res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
         res.end(
-          renderCredentialPage(
-            rawToken,
-            title,
-            defaultMode,
-            initialEnvKey,
-            secretLabel,
-            placeholder,
-            helpText,
-            oauthServices,
-            oauthServiceHint?.id,
-            existingSecrets,
+          renderErrorPage(
+            "This link is invalid or has expired. Ask the bot for a new /login link.",
           ),
         );
-        return;
+        return true;
       }
 
-      if (req.method === "POST" && url.pathname === "/api/link/complete") {
-        if (!enforceCsrf(req, res)) return;
-        void readJsonBody(req, res, async (body) => {
-          await handleLinkComplete(body, linkTokenStore, vaultManager, notify, res);
-        });
-        return;
-      }
+      const oauthServiceHint = linkToken.providerId
+        ? resolveOAuthService(linkToken.providerId)
+        : undefined;
+      const oauthServices = getOAuthServices();
+      const defaultMode: LoginCredentialKind = oauthServiceHint ? "oauth" : "api_key";
+      const existingSecrets = describeVaultSecrets(vaultManager, linkToken.vaultId);
 
-      if (req.method === "POST" && url.pathname === "/api/oauth/start") {
-        if (!enforceCsrf(req, res)) return;
-        void readJsonBody(req, res, async (body) => {
-          await handleOAuthStart(body, req, linkTokenStore, oauthStates, res);
-        });
-        return;
-      }
-
-      if (req.method === "GET" && url.pathname === "/oauth/callback") {
-        void handleOAuthCallback(
-          url,
-          req,
-          linkTokenStore,
-          vaultManager,
-          notify,
-          oauthStates,
-          res,
-        ).catch((err: Error) => {
-          log.logWarning("OAuth callback failed", err.message);
-          reportUserFacingError(err, {
-            domain: "login",
-            surface: "oauth",
-            operation: "oauth_callback",
-            severity: "error",
-            context: { route: "/oauth/callback" },
-          });
-          res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
-          res.end(renderErrorPage("OAuth callback failed. Please retry /login."));
-        });
-        return;
-      }
-
-      res.writeHead(404);
-      res.end();
-    } catch (err) {
-      log.logWarning("Link server request error", err instanceof Error ? err.message : String(err));
-      if (!res.headersSent) {
-        res.writeHead(500, { "Content-Type": "application/json" });
-      }
-      res.end(JSON.stringify({ error: "Internal server error" }));
-    }
-  });
-
-  // Bind to loopback when MIKAN_LINK_URL is unset so the credential UI and OAuth
-  // callbacks are not exposed on public interfaces by default. Production
-  // deployments set MIKAN_LINK_URL and are expected to front this server with a
-  // reverse proxy, which can still reach it via 0.0.0.0.
-  const bindHost = resolveLinkBaseUrl() ? undefined : "127.0.0.1";
-  server.listen(port, bindHost, () => {
-    log.logInfo(`Link callback server listening on ${bindHost ?? "0.0.0.0"}:${port}`);
-    if (!resolveLinkBaseUrl()) {
-      log.logWarning(
-        "MIKAN_LINK_URL is not set — bound to 127.0.0.1 and OAuth redirect_uri will be " +
-          "derived from request headers (Host / X-Forwarded-*). Set " +
-          "MIKAN_LINK_URL=https://your-host.example.com for production.",
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(
+        renderCredentialPage(
+          rawToken,
+          oauthServiceHint ? `${oauthServiceHint.label} OAuth` : "Store Secret",
+          defaultMode,
+          "",
+          "Secret value",
+          "sk-...",
+          oauthServiceHint
+            ? `Authorize ${oauthServiceHint.label} and store tokens in your vault.`
+            : "Set any environment variable key/value pair in your vault.",
+          oauthServices,
+          oauthServiceHint?.id,
+          existingSecrets,
+        ),
       );
+      return true;
     }
-  });
 
-  server.on("error", (err) => {
-    log.logWarning("Link server error", err.message);
-  });
+    if (req.method === "POST" && url.pathname === "/api/link/complete") {
+      if (!enforceCsrf(req, res)) return true;
+      void readJsonBody(req, res, async (body) => {
+        await handleLinkComplete(body, linkTokenStore, vaultManager, notify, res);
+      });
+      return true;
+    }
 
-  return server;
-}
+    if (req.method === "POST" && url.pathname === "/api/oauth/start") {
+      if (!enforceCsrf(req, res)) return true;
+      void readJsonBody(req, res, async (body) => {
+        await handleOAuthStart(body, req, linkTokenStore, oauthStates, res);
+      });
+      return true;
+    }
 
-/**
- * Resolve the externally-visible base URL of this server.
- *
- * Prefers MIKAN_LINK_URL (see config.ts) so the OAuth `redirect_uri` is
- * deterministic and not influenced by attacker-controlled request headers.
- * Falls back to Host / X-Forwarded-* only when no base URL is configured
- * — intended for local development.
- */
-function requestBaseUrl(req: IncomingMessage): string {
-  const configured = resolveLinkBaseUrl();
-  if (configured) return configured;
+    if (req.method === "GET" && url.pathname === "/oauth/callback") {
+      void handleOAuthCallback(
+        url,
+        req,
+        linkTokenStore,
+        vaultManager,
+        notify,
+        oauthStates,
+        res,
+      ).catch((err: Error) => {
+        log.logWarning("OAuth callback failed", err.message);
+        reportUserFacingError(err, {
+          domain: "login",
+          surface: "oauth",
+          operation: "oauth_callback",
+          severity: "error",
+          context: { route: "/oauth/callback" },
+        });
+        res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderErrorPage("OAuth callback failed. Please retry /login."));
+      });
+      return true;
+    }
 
-  const protoRaw = (req.headers["x-forwarded-proto"] as string | undefined)?.split(",")[0]?.trim();
-  const proto = protoRaw || "http";
-  const host =
-    ((req.headers["x-forwarded-host"] as string | undefined)?.split(",")[0]?.trim() ??
-      req.headers.host ??
-      `localhost`) ||
-    `localhost`;
-  return `${proto}://${host}`;
+    return false;
+  };
 }
 
 /**

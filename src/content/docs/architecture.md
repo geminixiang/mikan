@@ -93,7 +93,7 @@ Responsibilities:
 
 Responsibilities:
 
-- `src/web/login/portal.ts` is currently the link server host and mounts login/vault, admin, and session-view routes
+- `src/web/server.ts` owns the HTTP server and mounts login/vault, admin, session-view, and agent-event routes
 - provide a web login portal that supports API key and OAuth writes into the vault
 - provide an admin portal for conversation/settings/workspace/events/skills management and link generation
 - provide a session viewer; it can currently display session timelines and, when interactive wiring is enabled, send messages through `/session/message`
@@ -171,7 +171,7 @@ flowchart TD
   LoginCmd --> Main["main.ts"]
   Main --> LinkToken["InMemoryLinkTokenStore"]
   Main --> VaultRouting["vault-routing.ts"]
-  Main --> LinkServer["web/login/portal.ts"]
+  Main --> WebServer["web/server.ts"]
   LinkServer --> Browser["Browser Portal"]
   Browser --> OAuth["OAuth provider / API key form"]
   OAuth --> LinkServer

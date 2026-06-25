@@ -14,7 +14,7 @@ import { SlackMessagingBot as SlackMessagingBotClass } from "./adapters/slack/bo
 import { downloadChannel } from "./download.js";
 import { EventsWatcher } from "./events.js";
 import * as log from "./log.js";
-import { startLinkServer } from "./web/login/portal.js";
+import { startWebServer } from "./web/server.js";
 import { InMemoryAdminTokenStore } from "./web/admin/store.js";
 import { InMemoryLinkTokenStore } from "./web/login/store.js";
 import { InMemorySessionViewTokenStore } from "./web/session-view/store.js";
@@ -393,18 +393,18 @@ if (hasDiscord) {
 }
 
 if (LINK_PORT) {
-  startLinkServer(
-    LINK_PORT,
+  startWebServer({
+    port: LINK_PORT,
     linkTokenStore,
     vaultManager,
-    async (platform, conversationId, message) => {
+    notify: async (platform, conversationId, message) => {
       const bot = botsByPlatform[platform];
       if (bot) await bot.postMessage(conversationId, message);
     },
     sessionViewTokenStore,
-    { handler, botsByPlatform },
-    { adminTokenStore, workingDir, runtime: handler, sandbox, botsByPlatform },
-  );
+    sessionViewInteractive: { handler, botsByPlatform },
+    adminOptions: { adminTokenStore, workingDir, runtime: handler, sandbox, botsByPlatform },
+  });
 }
 
 // Start events watcher with explicit platform routing

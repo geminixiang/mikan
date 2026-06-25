@@ -25,6 +25,7 @@ import type {
   MessagingInfo,
   PlatformName,
 } from "./adapter.js";
+import type { AgentEventPayload } from "./types.js";
 import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import { resolveConversationSettings } from "./config.js";
 import { ActorExecutionResolver } from "./execution-resolver.js";
@@ -56,6 +57,7 @@ import { createMikanTools } from "./tools/index.js";
 import * as Sentry from "@sentry/node";
 import { formatLocalTimestamp } from "./utils/date.js";
 import { resolveConfiguredModel } from "./model-registry.js";
+import { emitAgentEvent } from "./agent-events.js";
 
 export type { PiAgentWrapper } from "./types.js";
 import type { PiAgentWrapper } from "./types.js";
@@ -1117,6 +1119,18 @@ async function prepareRunContext(params: {
   };
 }
 
+function formatAgentActorName(userName: string | undefined, fallback: string): string {
+  return userName ? `DM:${userName}` : fallback;
+}
+
+function sendAgentEvent(payload: {
+  sessionId: string;
+  actorName: string;
+  event: AgentEventPayload;
+}): void {
+  emitAgentEvent({ source: "mikan", ...payload });
+}
+
 function attachSessionEventHandlers(params: {
   session: AgentSession;
   runState: RunnerSessionState;
@@ -1129,10 +1143,21 @@ function attachSessionEventHandlers(params: {
 
     const { responder, logCtx, queue, pendingTools } = runState;
     const baseAttrs = { channel_id: logCtx.conversationId, session_id: logCtx.sessionId };
+    const agentEventSessionId = logCtx.sessionId ?? logCtx.conversationId;
 
     if (event.type === "tool_execution_start") {
       const args = (event.args ?? {}) as { label?: string };
       const label = args.label || event.toolName;
+      sendAgentEvent({
+        sessionId: agentEventSessionId,
+        actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
+        event: {
+          kind: "toolStart",
+          toolId: event.toolCallId,
+          toolName: event.toolName,
+          input: { label },
+        },
+      });
 
       pendingTools.set(event.toolCallId, {
         toolName: event.toolName,
@@ -1151,6 +1176,11 @@ function attachSessionEventHandlers(params: {
     if (event.type === "tool_execution_end") {
       const resultStr = extractToolResultText(event.result);
       const pending = pendingTools.get(event.toolCallId);
+      sendAgentEvent({
+        sessionId: agentEventSessionId,
+        actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
+        event: { kind: "toolEnd", toolId: event.toolCallId },
+      });
       pendingTools.delete(event.toolCallId);
       const durationMs = pending ? Date.now() - pending.startTime : 0;
 
@@ -1205,6 +1235,11 @@ function attachSessionEventHandlers(params: {
     if (event.type === "message_start") {
       if (event.message.role === "assistant") {
         runState.llmCallCount += 1;
+        sendAgentEvent({
+          sessionId: agentEventSessionId,
+          actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
+          event: { kind: "sessionStart" },
+        });
         addLifecycleBreadcrumb("agent.llm.call.started", {
           call_index: runState.llmCallCount,
           provider: model.provider,
@@ -1320,6 +1355,11 @@ function attachSessionEventHandlers(params: {
           if (runState.finalResponseHandledByTool) return;
           const finalText = appendTriggerAttribution(text, runState.triggerAttribution);
           log.logResponse(logCtx, text);
+          sendAgentEvent({
+            sessionId: agentEventSessionId,
+            actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
+            event: { kind: "turnEnd" },
+          });
           if (responder.finishResponse) {
             queue.enqueue(async () => {
               await responder.finishResponse?.(finalText);
@@ -1349,6 +1389,11 @@ function attachSessionEventHandlers(params: {
 
     if (event.type === "auto_retry_start") {
       log.logWarning(`Retrying (${event.attempt}/${event.maxAttempts})`, event.errorMessage);
+      sendAgentEvent({
+        sessionId: agentEventSessionId,
+        actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
+        event: { kind: "sessionStart" },
+      });
       queue.enqueue(
         () => responder.respond(`_Retrying (${event.attempt}/${event.maxAttempts})..._`),
         "retry",
@@ -1544,6 +1589,11 @@ export async function createRunner(
         session_id: sessionUuid,
         attachment_count: message.attachments?.length ?? 0,
         image_attachment_count: prepared.imageAttachments.length,
+      });
+      sendAgentEvent({
+        sessionId: sessionUuid,
+        actorName: formatAgentActorName(message.userName, prepared.sessionConversation),
+        event: { kind: "sessionStart" },
       });
 
       await session.prompt(

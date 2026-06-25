@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { InMemoryAdminTokenStore } from "../src/web/admin/store.js";
-import { startLinkServer } from "../src/web/login/portal.js";
+import { startWebServer } from "../src/web/server.js";
 import { InMemoryLinkTokenStore } from "../src/web/login/store.js";
 import { FileVaultManager } from "../src/vault/index.js";
 
@@ -19,6 +19,26 @@ function baseUrl(server: Server): string {
     throw new Error("Link server did not expose a TCP address");
   }
   return `http://127.0.0.1:${address.port}`;
+}
+
+function startTestWebServer(
+  port: number,
+  linkTokenStore: InMemoryLinkTokenStore,
+  vaultManager: FileVaultManager,
+  notify: Parameters<typeof startWebServer>[0]["notify"],
+  sessionViewTokenStore?: Parameters<typeof startWebServer>[0]["sessionViewTokenStore"],
+  sessionViewInteractive?: Parameters<typeof startWebServer>[0]["sessionViewInteractive"],
+  adminOptions?: Parameters<typeof startWebServer>[0]["adminOptions"],
+): Server {
+  return startWebServer({
+    port,
+    linkTokenStore,
+    vaultManager,
+    notify,
+    sessionViewTokenStore,
+    sessionViewInteractive,
+    adminOptions,
+  });
 }
 
 describe("link server", () => {
@@ -79,7 +99,7 @@ describe("link server", () => {
 
     const tokenStore = new InMemoryLinkTokenStore();
     const token = tokenStore.create("telegram", "U123", "123", "vault-u123", "");
-    const server = startLinkServer(0, tokenStore, vaultManager, async () => {});
+    const server = startTestWebServer(0, tokenStore, vaultManager, async () => {});
     servers.push(server);
     await waitForListening(server);
 
@@ -109,7 +129,7 @@ describe("link server", () => {
       platformUserId: "U-admin",
       conversationId: "123",
     });
-    const server = startLinkServer(
+    const server = startTestWebServer(
       0,
       tokenStore,
       vaultManager,
@@ -146,7 +166,7 @@ describe("link server", () => {
 
     const tokenStore = new InMemoryLinkTokenStore();
     const token = tokenStore.create("telegram", "U234", "234", "vault-u234", "");
-    const server = startLinkServer(0, tokenStore, vaultManager, async () => {});
+    const server = startTestWebServer(0, tokenStore, vaultManager, async () => {});
     servers.push(server);
     await waitForListening(server);
 
@@ -184,7 +204,7 @@ describe("link server", () => {
     const tokenStore = new InMemoryLinkTokenStore();
     const token = tokenStore.create("telegram", "U345", "345", "vault-u345", "");
     const notify = vi.fn().mockResolvedValue(undefined);
-    const server = startLinkServer(0, tokenStore, vaultManager, notify);
+    const server = startTestWebServer(0, tokenStore, vaultManager, notify);
     servers.push(server);
     await waitForListening(server);
 
@@ -244,7 +264,7 @@ describe("link server", () => {
 
     const tokenStore = new InMemoryLinkTokenStore();
     const token = tokenStore.create("telegram", "U777", "777", "vault-u777", "");
-    const server = startLinkServer(0, tokenStore, vaultManager, async () => {});
+    const server = startTestWebServer(0, tokenStore, vaultManager, async () => {});
     servers.push(server);
     await waitForListening(server);
 
@@ -277,7 +297,7 @@ describe("link server", () => {
     const tokenStore = new InMemoryLinkTokenStore();
     const token = tokenStore.create("telegram", "U889", "889", "vault-u889", "");
     const notify = vi.fn().mockResolvedValue(undefined);
-    const server = startLinkServer(0, tokenStore, vaultManager, notify);
+    const server = startTestWebServer(0, tokenStore, vaultManager, notify);
     servers.push(server);
     await waitForListening(server);
 
@@ -329,7 +349,7 @@ describe("link server", () => {
     const tokenStore = new InMemoryLinkTokenStore();
     const token = tokenStore.create("telegram", "U888", "888", "vault-u888", "");
     const notify = vi.fn().mockResolvedValue(undefined);
-    const server = startLinkServer(0, tokenStore, vaultManager, notify);
+    const server = startTestWebServer(0, tokenStore, vaultManager, notify);
     servers.push(server);
     await waitForListening(server);
 
@@ -375,7 +395,7 @@ describe("link server", () => {
 
     const tokenStore = new InMemoryLinkTokenStore();
     const token = tokenStore.create("telegram", "U999", "999", "vault-u999", "");
-    const server = startLinkServer(0, tokenStore, vaultManager, async () => {});
+    const server = startTestWebServer(0, tokenStore, vaultManager, async () => {});
     servers.push(server);
     await waitForListening(server);
 

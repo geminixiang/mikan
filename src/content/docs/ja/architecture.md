@@ -93,7 +93,7 @@ description: mikan のプラットフォーム接続、セッション、agent�
 
 責務:
 
-- `src/web/login/portal.ts` は現在 link server host で、login/vault、admin、session-view routes をマウントする
+- `src/web/server.ts` は HTTP server を所有し、login/vault、admin、session-view、agent-event routes をマウントする
 - Web login portal を提供し、API key と OAuth の vault 書き込みをサポートする
 - admin portal を提供し、conversation/settings/workspace/events/skills 管理と link generation をサポートする
 - session viewer を提供する。現在は session timeline を表示でき、interactive wiring が有効な場合は `/session/message` からメッセージを送れる
@@ -171,7 +171,7 @@ flowchart TD
   LoginCmd --> Main["main.ts"]
   Main --> LinkToken["InMemoryLinkTokenStore"]
   Main --> VaultRouting["vault-routing.ts"]
-  Main --> LinkServer["web/login/portal.ts"]
+  Main --> WebServer["web/server.ts"]
   LinkServer --> Browser["Browser Portal"]
   Browser --> OAuth["OAuth provider / API key form"]
   OAuth --> LinkServer

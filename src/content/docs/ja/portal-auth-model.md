@@ -115,14 +115,14 @@ Session view token は base session file に固定されます。`/session?sessi
 
 | 機能                 | 主要コード                                                        |
 | -------------------- | ----------------------------------------------------------------- |
-| Portal HTTP server   | `src/web/login/portal.ts` の `startLinkServer()`                  |
+| Portal HTTP server   | `src/web/server.ts` の `startWebServer()`                         |
 | Admin portal         | `src/web/admin/portal.ts`、`src/web/admin/store.ts`               |
 | Login / vault portal | `src/web/login/portal.ts`、`src/web/login/store.ts`               |
 | Session view         | `src/web/session-view/portal.ts`、`src/web/session-view/store.ts` |
 | 共通 token store     | `src/web/token-store.ts`                                          |
 | 共通 portal shell    | `src/portal-shell.ts`                                             |
 
-`startLinkServer()` の dispatch 順序：
+`startWebServer()` の dispatch 順序：
 
 1. `GET /health`
 2. Admin routes

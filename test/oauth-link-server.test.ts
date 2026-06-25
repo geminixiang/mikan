@@ -3,7 +3,7 @@ import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { startLinkServer } from "../src/web/login/portal.js";
+import { startWebServer } from "../src/web/server.js";
 import { InMemoryLinkTokenStore } from "../src/web/login/store.js";
 import { FileVaultManager } from "../src/vault/index.js";
 
@@ -70,7 +70,7 @@ async function createFlow(
 
   const tokenStore = new InMemoryLinkTokenStore();
   const token = tokenStore.create("telegram", userId, userId.replace(/^U/, ""), vaultId, "");
-  const server = startLinkServer(0, tokenStore, vaultManager, notify);
+  const server = startWebServer({ port: 0, linkTokenStore: tokenStore, vaultManager, notify });
   servers.push(server);
   await waitForListening(server);
 
