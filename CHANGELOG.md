@@ -9,6 +9,12 @@ any release.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-06-26
+
+### Added
+
+- Show the top 20 pi sessions by token usage in the admin portal, including channel labels and raw input, output, cache read, cache write, total, and cost columns.
+
 ## [0.5.1] - 2026-06-26
 
 ### Added
