@@ -9,6 +9,13 @@ any release.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-06-26
+
+### Added
+
+- Render markdown as Slack Block Kit.
+- Show live tool progress during agent runs.
+
 ## [0.5.0] - 2026-06-25
 
 ### Added
