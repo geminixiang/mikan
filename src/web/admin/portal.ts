@@ -1,8 +1,8 @@
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "fs";
 import type { IncomingMessage, ServerResponse } from "http";
 import { homedir } from "os";
-import { join, resolve as pathResolve, sep as pathSep } from "path";
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { basename, join, resolve as pathResolve, sep as pathSep } from "path";
+import { AuthStorage, ModelRegistry, SessionManager } from "@earendil-works/pi-coding-agent";
 
 import {
   loadConversationAutoReplyConfig,
@@ -84,6 +84,10 @@ function routeApiRequest(
     }
     if (url.pathname === "/admin/api/conversations") {
       serveConversationsList(res, services);
+      return;
+    }
+    if (url.pathname === "/admin/api/session-usage") {
+      serveSessionUsage(res, services);
       return;
     }
     if (url.pathname === "/admin/api/conversation-state") {
@@ -310,6 +314,112 @@ function serveConversationsList(res: ServerResponse, services: AdminServices): v
   });
 
   jsonRes(res, 200, { conversations });
+}
+
+interface SessionUsageRow {
+  conversationId: string;
+  label: string;
+  fileName: string;
+  sessionId: string;
+  updatedAt: string;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+  cost: number;
+}
+
+function serveSessionUsage(res: ServerResponse, services: AdminServices): void {
+  const workingDir = requireAdminWorkingDir(res, services);
+  if (!workingDir) return;
+
+  const rows = listConversationDirs(workingDir)
+    .flatMap((conversationId) =>
+      listConversationSessionUsage(
+        workingDir,
+        conversationId,
+        conversationDisplayLabel(services, conversationId),
+      ),
+    )
+    .toSorted((a, b) => b.total - a.total)
+    .slice(0, 20);
+
+  jsonRes(res, 200, { sessions: rows });
+}
+
+function listConversationSessionUsage(
+  workingDir: string,
+  conversationId: string,
+  label: string,
+): SessionUsageRow[] {
+  const sessionDir = join(workingDir, conversationId, "sessions");
+  try {
+    return readdirSync(sessionDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
+      .flatMap((entry) => readSessionUsage(join(sessionDir, entry.name), conversationId, label));
+  } catch {
+    return [];
+  }
+}
+
+function readSessionUsage(
+  sessionFile: string,
+  conversationId: string,
+  label: string,
+): SessionUsageRow[] {
+  try {
+    const manager = SessionManager.open(sessionFile);
+    const header = manager.getHeader();
+    if (!header) return [];
+
+    const entries = manager.getEntries();
+    const usage = entries.reduce(
+      (sum, entry) => {
+        if (entry.type !== "message" || entry.message.role !== "assistant") return sum;
+        const message = entry.message as unknown as AssistantUsageMessage;
+        const item = message.usage;
+        if (!item) return sum;
+        sum.input += numberOrZero(item.input);
+        sum.output += numberOrZero(item.output);
+        sum.cacheRead += numberOrZero(item.cacheRead);
+        sum.cacheWrite += numberOrZero(item.cacheWrite);
+        sum.cost += numberOrZero(item.cost?.total);
+        return sum;
+      },
+      { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 },
+    );
+    const total = usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+    if (total <= 0) return [];
+
+    return [
+      {
+        conversationId,
+        label,
+        fileName: basename(sessionFile),
+        sessionId: header.id,
+        updatedAt: entries.at(-1)?.timestamp ?? header.timestamp,
+        ...usage,
+        total,
+      },
+    ];
+  } catch {
+    return [];
+  }
+}
+
+interface AssistantUsageMessage {
+  usage?: {
+    input?: unknown;
+    output?: unknown;
+    cacheRead?: unknown;
+    cacheWrite?: unknown;
+    cost?: { total?: unknown };
+  };
+}
+
+function numberOrZero(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function serveConversationState(
@@ -1389,6 +1499,17 @@ function renderAdminPage(token: AdminToken): string {
       <section class="card sect">
         <header class="sect-head">
           <div>
+            <p class="eyebrow">Token Usage</p>
+            <h2 class="card-title">Top 20 sessions</h2>
+          </div>
+          <button class="refresh-btn" onclick="loadSessionUsage()">↻</button>
+        </header>
+        <div id="session-usage-content"><div class="loading-msg">Loading…</div></div>
+      </section>
+
+      <section class="card sect">
+        <header class="sect-head">
+          <div>
             <p class="eyebrow">Global Settings</p>
             <h2 class="card-title">全域預設</h2>
           </div>
@@ -1915,6 +2036,7 @@ function renderAdminPage(token: AdminToken): string {
       if (globalLoaded) return;
       globalLoaded = true;
       loadAllConversations();
+      loadSessionUsage();
       loadGlobalSettings();
       loadGlobalSkills();
       loadEvents();
@@ -1940,6 +2062,37 @@ function renderAdminPage(token: AdminToken): string {
       } catch (err) {
         container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
       }
+    }
+
+    async function loadSessionUsage() {
+      const container = document.getElementById('session-usage-content');
+      container.innerHTML = '<div class="loading-msg">Loading…</div>';
+      try {
+        const data = await apiGet('/admin/api/session-usage');
+        if (data.sessions.length === 0) {
+          container.innerHTML = '<div class="empty-state">No token usage found</div>';
+          return;
+        }
+        container.innerHTML = '<div class="usage-table-wrap"><table class="usage-table"><thead><tr><th>#</th><th>Channel</th><th>Session</th><th>Updated</th><th>Input</th><th>Output</th><th>Cache Read</th><th>Cache Write</th><th>Total</th><th>Cost</th></tr></thead><tbody>' +
+          data.sessions.map((s, i) => '<tr>' +
+            '<td>' + (i + 1) + '</td>' +
+            '<td>' + escHtml(s.label || s.conversationId) + '</td>' +
+            '<td><code>' + escHtml(s.fileName) + '</code></td>' +
+            '<td>' + escHtml(new Date(s.updatedAt).toLocaleString()) + '</td>' +
+            '<td>' + fmtNum(s.input) + '</td>' +
+            '<td>' + fmtNum(s.output) + '</td>' +
+            '<td>' + fmtNum(s.cacheRead) + '</td>' +
+            '<td>' + fmtNum(s.cacheWrite) + '</td>' +
+            '<td><strong>' + fmtNum(s.total) + '</strong></td>' +
+            '<td>' + (s.cost > 0 ? '$' + Number(s.cost).toFixed(4) : '—') + '</td>' +
+          '</tr>').join('') + '</tbody></table></div>';
+      } catch (err) {
+        container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
+      }
+    }
+
+    function fmtNum(value) {
+      return Number(value || 0).toLocaleString('en-US');
     }
 
     async function loadGlobalSettings() {
@@ -2304,6 +2457,18 @@ const adminViewStyles = `
   .conv-row-btn:hover { background: rgba(0,0,0,0.05); border-color: rgba(0,0,0,0.14); }
   .conv-id { flex: 1; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 0.84rem; }
   .conv-last { color: var(--subtle); font-size: 0.78rem; }
+
+  .usage-table-wrap { overflow-x: auto; }
+  .usage-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+  .usage-table th, .usage-table td {
+    padding: 8px 10px; border-bottom: 1px solid var(--border);
+    text-align: left; white-space: nowrap;
+  }
+  .usage-table th {
+    color: var(--subtle); font-size: 0.68rem;
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .usage-table code { font-size: 0.72rem; }
 
   .status-pill {
     display: inline-flex; padding: 2px 9px; border-radius: 999px;
