@@ -241,6 +241,22 @@ Only mark `finalResponseHandledByTool` / `blockKitFinalized` after the block pos
 
 The Slack Block Kit system prompt section should be conditional on `platform.name === "slack"`. Do not show Slack-only UI instructions to Telegram or Discord runs.
 
+### 15. Use Slack native `table` blocks for Markdown tables
+
+Do not convert Markdown tables to `section.fields`. Slack `section.fields` always renders as a two-column layout, so wide tables become weird paired columns.
+
+For Markdown table content, render a native Block Kit `table` block instead:
+
+```ts
+{
+  type: "table",
+  rows: rows.map((row) => row.map((cell) => ({ type: "raw_text", text: cell }))),
+  column_settings: headers.map(() => ({ is_wrapped: true })),
+}
+```
+
+If the source table has no index column, prepend a `#` column before building the table. This is the correct responder-level fallback for Slack table presentation; use `section.fields` only for short key/value summaries, not real tables.
+
 ## Debug checklist
 
 When Block Kit does not render or disappears:

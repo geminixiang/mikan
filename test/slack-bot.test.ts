@@ -158,6 +158,12 @@ describe("SlackMessagingBot slash commands", () => {
     expect(postMessage).toHaveBeenCalledWith({
       channel: "D123",
       text: "Conversation reset. Send a new message to start fresh.",
+      blocks: [
+        {
+          type: "section",
+          text: { type: "mrkdwn", text: "Conversation reset. Send a new message to start fresh." },
+        },
+      ],
     });
   });
 
@@ -1063,6 +1069,26 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       expect.stringContaining("event done"),
     );
     expect(existsSync(getThreadSessionFile(join(workingDir, "C123"), "C123:2000.0001"))).toBe(true);
+  });
+
+  test("postInThread wraps text in Block Kit fallback", async () => {
+    const bot = new SlackMessagingBot(makeHandler(), {
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      workingDir,
+      store: {} as any,
+    });
+    const postMessage = vi.fn().mockResolvedValue({ ts: "2000.0001" });
+    (bot as any).webClient = { chat: { postMessage } };
+
+    await bot.postInThread("C123", "1000.0001", "x".repeat(600));
+
+    expect(postMessage).toHaveBeenCalledWith({
+      channel: "C123",
+      thread_ts: "1000.0001",
+      text: "x".repeat(600),
+      blocks: [{ type: "section", text: { type: "mrkdwn", text: "x".repeat(600) } }],
+    });
   });
 
   test("Slack events report anchor failures instead of creating legacy event sessions", async () => {

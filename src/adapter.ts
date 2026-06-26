@@ -5,7 +5,6 @@ export type {
   MessagingEventHandler,
   ChatAdapter,
   ConversationMessage,
-  ChatResponseBlockKit,
   ConversationResponder,
   ChatToolResult,
   ConversationKind,

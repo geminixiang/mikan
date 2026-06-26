@@ -1,9 +1,4 @@
-import type {
-  ConversationMessage,
-  ChatResponseBlockKit,
-  ConversationResponder,
-  ChatToolResult,
-} from "../../adapter.js";
+import type { ConversationMessage, ConversationResponder, ChatToolResult } from "../../adapter.js";
 import * as log from "../../log.js";
 import {
   createChatResponseErrorReporter,
@@ -102,7 +97,6 @@ export function createSlackResponseContext({
   const threadMessageTs: string[] = [];
   let accumulatedText = "";
   let isWorking = true;
-  let blockKitFinalized = false;
   let mainResponseLogged = false;
   let streamActive = false;
   let streamUnavailable = false;
@@ -431,33 +425,6 @@ export function createSlackResponseContext({
       await responder.respondDiagnostic(formatSlackToolResult(result));
     },
 
-    respondBlockKit: async (response: ChatResponseBlockKit) => {
-      updatePromise = updatePromise.then(async () => {
-        isWorking = false;
-        accumulatedText = response.text;
-        if (replyInThread && rootTs) {
-          messageTs = await slack.postInThreadBlocks(
-            channelId,
-            rootTs,
-            response.text,
-            response.blocks,
-          );
-        } else {
-          messageTs = await slack.postBlocks(channelId, response.text, response.blocks);
-        }
-        blockKitFinalized = true;
-        slack.logBotResponse(
-          channelId,
-          response.text,
-          messageTs,
-          replyInThread ? rootTs : undefined,
-          response.blocks,
-        );
-        mainResponseLogged = true;
-      });
-      await updatePromise;
-    },
-
     setTyping: async (isTyping: boolean) => {
       if (isTyping && !messageTs && rootTs) {
         try {
@@ -480,14 +447,6 @@ export function createSlackResponseContext({
         "set_working",
         async () => {
           isWorking = working;
-          if (blockKitFinalized) {
-            if (!working && rootTs) {
-              await slack
-                .setAssistantStatus(channelId, rootTs, "")
-                .catch((err) => onAssistantStatusError("clear-on-idle", err));
-            }
-            return;
-          }
           if (messageTs) {
             const displayText = isWorking ? accumulatedText + WORKING_INDICATOR : accumulatedText;
             const updates: Promise<void>[] =

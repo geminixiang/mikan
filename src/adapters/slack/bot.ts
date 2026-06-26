@@ -48,6 +48,7 @@ import {
   resolveSlackSessionKey,
 } from "./session.js";
 import { reportUserFacingError } from "../../observability/sentry.js";
+import { renderSlackBlocks } from "./blocks.js";
 
 const SLACK_EVENT_ANCHOR_TEXT = "Working on it...";
 
@@ -225,7 +226,8 @@ export class SlackMessagingBot implements MessagingBot {
 
   async postMessage(channel: string, text: string): Promise<string> {
     return slackRetry(async () => {
-      const result = await this.webClient.chat.postMessage({ channel, text });
+      const payload = { channel, ...renderSlackBlocks(text) };
+      const result = await this.webClient.chat.postMessage(payload);
       return result.ts as string;
     });
   }
@@ -266,11 +268,8 @@ export class SlackMessagingBot implements MessagingBot {
 
   async postMessageBlocks(channel: string, text: string, blocks: object[]): Promise<string> {
     return slackRetry(async () => {
-      const result = await this.webClient.chat.postMessage({
-        channel,
-        text,
-        blocks: blocks as KnownBlock[],
-      });
+      const payload = { channel, text, blocks: blocks as KnownBlock[] };
+      const result = await this.webClient.chat.postMessage(payload);
       return result.ts as string;
     });
   }
@@ -309,7 +308,8 @@ export class SlackMessagingBot implements MessagingBot {
 
   async updateMessage(channel: string, ts: string, text: string): Promise<void> {
     return slackRetry(async () => {
-      await this.webClient.chat.update({ channel, ts, text });
+      const payload = { channel, ts, ...renderSlackBlocks(text) };
+      await this.webClient.chat.update(payload);
     });
   }
 
@@ -372,22 +372,8 @@ export class SlackMessagingBot implements MessagingBot {
 
   async postInThread(channel: string, threadTs: string, text: string): Promise<string> {
     return slackRetry(async () => {
-      // Use Block Kit section for long messages to trigger Slack's "Show more" collapsing (~700 chars)
-      const SECTION_TEXT_LIMIT = 3000;
-      if (text.length > 500) {
-        const blockText =
-          text.length > SECTION_TEXT_LIMIT
-            ? text.substring(0, SECTION_TEXT_LIMIT - 20) + "\n_(truncated)_"
-            : text;
-        const result = await this.webClient.chat.postMessage({
-          channel,
-          thread_ts: threadTs,
-          text, // full text as notification fallback
-          blocks: [{ type: "section", text: { type: "mrkdwn", text: blockText } }],
-        });
-        return result.ts as string;
-      }
-      const result = await this.webClient.chat.postMessage({ channel, thread_ts: threadTs, text });
+      const payload = { channel, thread_ts: threadTs, ...renderSlackBlocks(text) };
+      const result = await this.webClient.chat.postMessage(payload);
       return result.ts as string;
     });
   }
@@ -399,23 +385,13 @@ export class SlackMessagingBot implements MessagingBot {
     blocks: object[],
   ): Promise<string> {
     return slackRetry(async () => {
-      const result = await this.webClient.chat.postMessage({
+      const payload = {
         channel,
         thread_ts: threadTs,
         text, // fallback for notifications
         blocks: blocks as KnownBlock[],
-      });
-      return result.ts as string;
-    });
-  }
-
-  async postBlocks(channel: string, text: string, blocks: object[]): Promise<string> {
-    return slackRetry(async () => {
-      const result = await this.webClient.chat.postMessage({
-        channel,
-        text,
-        blocks: blocks as KnownBlock[],
-      });
+      };
+      const result = await this.webClient.chat.postMessage(payload);
       return result.ts as string;
     });
   }

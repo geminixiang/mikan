@@ -1,8 +1,7 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { TSchema } from "@sinclair/typebox";
-import type { ChatResponseBlockKit, ConversationKind } from "../adapter.js";
+import type { ConversationKind } from "../adapter.js";
 import { createAttachTool } from "../adapters/slack/tools/attach.js";
-import { createSlackBlockKitTool } from "../adapters/slack/tools/block-kit.js";
 import type { DockerContainerManager } from "../provisioner.js";
 import type { Executor, SandboxConfig } from "../sandbox/index.js";
 import { createBashTool } from "./bash.js";
@@ -22,7 +21,6 @@ export function createMikanTools(
 ): {
   tools: AgentTool<TSchema>[];
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
-  setBlockKitResponseFunction: (fn: (response: ChatResponseBlockKit) => Promise<void>) => void;
   setEventContext: (context: {
     platform: string;
     conversationId: string;
@@ -32,7 +30,6 @@ export function createMikanTools(
   setSandboxContext: (context: { conversationId: string; userId: string }) => void;
 } {
   const { tool: attachTool, setUploadFunction } = createAttachTool();
-  const { tool: slackBlockKitTool, setBlockKitResponseFunction } = createSlackBlockKitTool();
   const { tool: eventTool, setEventContext } = createEventTool(
     HostEventStore.fromWorkspaceDir(workspaceDir),
   );
@@ -48,10 +45,8 @@ export function createMikanTools(
       eventTool,
       sandboxTool,
       attachTool,
-      slackBlockKitTool,
     ],
     setUploadFunction,
-    setBlockKitResponseFunction,
     setEventContext,
     setSandboxContext,
   };

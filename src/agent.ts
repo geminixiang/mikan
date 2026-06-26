@@ -261,15 +261,9 @@ Do not add this to \`[SILENT]\` responses.
   const slackBlockKitInstructions =
     platform.name === "slack"
       ? `
-## Slack Block Kit
-- On Slack, use the \`slack_blockkit\` tool when a response benefits from interaction or structured presentation.
-- Good uses: choices, confirmations, clarifying questions, quizzes, status reports, comparisons, summaries, and step lists.
-- Do not use it for normal short replies or simple factual answers.
-- Supported blocks: section, context, divider, header, actions.
-- Put buttons in actions.elements. Put static_select and multi_static_select in section.accessory.
-- Every interactive element must include action_id. Buttons must include value.
-- Always provide a plain-text fallback in text that matches the visible Block Kit content.
-- When using \`slack_blockkit\`, do not also send a normal text response in the same assistant turn; put the fallback in the tool's text field.
+## Slack Rendering
+- The Slack adapter renders responses with Block Kit automatically. Answer normally using Slack mrkdwn.
+- Do not emit markdown pipe tables; Slack does not render them as tables. Prefer short sections or bullet lists.
 `
       : "";
 
@@ -1027,9 +1021,6 @@ async function prepareRunContext(params: {
   }) => void;
   setSandboxContext: (context: { conversationId: string; userId: string }) => void;
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
-  setBlockKitResponseFunction: (
-    fn: (response: import("./adapter.js").ChatResponseBlockKit) => Promise<void>,
-  ) => void;
   pathContext: RuntimePathContext;
 }): Promise<PreparedRunContext & { pathContext: RuntimePathContext }> {
   const {
@@ -1050,7 +1041,6 @@ async function prepareRunContext(params: {
     setEventContext,
     setSandboxContext,
     setUploadFunction,
-    setBlockKitResponseFunction,
   } = params;
   let pathContext = params.pathContext;
   const sessionConversation = message.sessionKey.split(":")[0];
@@ -1096,14 +1086,6 @@ async function prepareRunContext(params: {
   setUploadFunction(async (filePath: string, title?: string) => {
     const hostPath = translateAttachPathToHost(filePath, pathContext);
     await responder.uploadFile(hostPath, title);
-  });
-  setBlockKitResponseFunction(async (response) => {
-    if (platform.name === "slack" && responder.respondBlockKit) {
-      await responder.respondBlockKit(response);
-    } else {
-      await responder.replaceResponse(response.text);
-    }
-    runState.finalResponseHandledByTool = true;
   });
 
   resetRunState(
@@ -1488,13 +1470,11 @@ export async function createRunner(
   let pathContext = getUnresolvedSandboxPathContext(sandboxConfig, workspaceBase);
 
   // Create tools (per-runner, with per-runner upload function setter)
-  const {
-    tools,
-    setUploadFunction,
-    setBlockKitResponseFunction,
-    setEventContext,
-    setSandboxContext,
-  } = createMikanTools(executor, workspaceDir, { sandbox: sandboxConfig, provisioner });
+  const { tools, setUploadFunction, setEventContext, setSandboxContext } = createMikanTools(
+    executor,
+    workspaceDir,
+    { sandbox: sandboxConfig, provisioner },
+  );
 
   const authStorage = AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json"));
   const modelRegistry = ModelRegistry.create(authStorage);
@@ -1588,7 +1568,6 @@ export async function createRunner(
         setEventContext,
         setSandboxContext,
         setUploadFunction,
-        setBlockKitResponseFunction,
         pathContext,
       });
       pathContext = prepared.pathContext;

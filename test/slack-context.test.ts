@@ -19,6 +19,7 @@ function makeSlackMessagingBot(overrides: Partial<SlackMessagingBot> = {}): Slac
     stopMessageStream: vi.fn().mockResolvedValue(undefined),
     deleteMessage: vi.fn().mockResolvedValue(undefined),
     logBotResponse: vi.fn(),
+    setAssistantStatus: vi.fn().mockResolvedValue(undefined),
     uploadFile: vi.fn().mockResolvedValue(undefined),
     start: vi.fn(),
     getChannel: vi.fn().mockReturnValue(undefined),
