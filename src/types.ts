@@ -158,33 +158,6 @@ export interface PiAgentWrapper {
   getCurrentStep(): { toolName?: string; label?: string } | undefined;
 }
 
-export interface ConversationRunUsage {
-  at: string;
-  provider: string;
-  model: string;
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-  cost: {
-    input: number;
-    output: number;
-    cacheRead: number;
-    cacheWrite: number;
-    total: number;
-  };
-  tools: string[];
-}
-
-export interface ConversationUsage {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-  cost: ConversationRunUsage["cost"];
-  runs: ConversationRunUsage[];
-}
-
 // ── config ────────────────────────────────────────────────────────────────────
 
 export interface AgentConfig {
