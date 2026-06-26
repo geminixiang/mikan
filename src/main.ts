@@ -61,11 +61,8 @@ const SLACK_BOT_TOKEN = readEnv("SLACK_BOT_TOKEN");
 const TELEGRAM_BOT_TOKEN = readEnv("TELEGRAM_BOT_TOKEN");
 const DISCORD_BOT_TOKEN = readEnv("DISCORD_BOT_TOKEN");
 const LINK_URL = readEnv("LINK_URL");
-const LINK_PORT = readEnv("LINK_PORT")
-  ? parseInt(readEnv("LINK_PORT") ?? "", 10)
-  : LINK_URL
-    ? 8181
-    : undefined;
+const LINK_PORT_RAW = readEnv("LINK_PORT");
+const LINK_PORT = LINK_PORT_RAW ? parseInt(LINK_PORT_RAW, 10) : LINK_URL ? 8181 : undefined;
 
 interface ParsedArgs {
   workingDir?: string;

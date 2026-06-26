@@ -616,9 +616,14 @@ function serveConversationAutoReplyUpdate(
   token: AdminToken,
 ): void {
   const enabled = body.enabled === true;
-  const rules = Array.isArray(body.rules)
-    ? body.rules.filter((r): r is string => typeof r === "string")
-    : undefined;
+  const rules = body.rules;
+  if (
+    rules !== undefined &&
+    (!Array.isArray(rules) || rules.some((rule) => typeof rule !== "string"))
+  ) {
+    jsonRes(res, 400, { error: "rules must be an array of strings" });
+    return;
+  }
   const scope = resolveTargetConversation(body, token);
   if (scope.error) {
     jsonRes(res, 403, { error: scope.error });

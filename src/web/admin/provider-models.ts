@@ -56,7 +56,7 @@ function groupModelsByProvider(models: Model<Api>[]): Map<string, Model<Api>[]> 
 async function fetchProviderModelIds(
   registry: ModelRegistry,
   provider: string,
-): Promise<Set<string>> {
+): Promise<Set<string> | undefined> {
   if (provider !== "openai" && provider !== "anthropic") return new Set<string>();
 
   const apiKey = await registry.getApiKeyForProvider(provider);
@@ -77,7 +77,7 @@ async function fetchProviderModelIds(
     });
     return modelIds;
   } catch {
-    return new Set<string>();
+    return undefined;
   }
 }
 
@@ -112,8 +112,13 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
   }
 }
 
-function modelIsListed(providerModelIds: Set<string>, registryModelId: string): boolean {
-  return providerModelIds.size === 0 || providerModelIds.has(registryModelId);
+function modelIsListed(
+  providerModelIds: Set<string> | undefined,
+  registryModelId: string,
+): boolean {
+  return providerModelIds
+    ? providerModelIds.size === 0 || providerModelIds.has(registryModelId)
+    : false;
 }
 
 function hashApiKey(apiKey: string): string {

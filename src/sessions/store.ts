@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { existsSync, mkdirSync, rmSync } from "fs";
-import { dirname, join } from "path";
+import { basename, dirname, join } from "path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-guards.js";
 import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
@@ -56,8 +56,7 @@ export function resolveManagedSessionFile(sessionDir: string, cwd: string): stri
  * e.g. "2026-04-05T00-00_7b54cf90.jsonl" → "7b54cf90"
  */
 export function extractSessionUuid(sessionFile: string): string {
-  const base = sessionFile.split("/").pop() ?? sessionFile;
-  return base.replace(".jsonl", "").split("_").pop() ?? base;
+  return basename(sessionFile).replace(".jsonl", "").split("_").pop()!;
 }
 
 /**
