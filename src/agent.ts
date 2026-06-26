@@ -20,7 +20,6 @@ import { join, posix } from "path";
 import type {
   ConversationMessage,
   ConversationResponder,
-  ChatToolResult,
   ConversationKind,
   MessagingInfo,
   PlatformName,
@@ -52,7 +51,6 @@ import {
   type ResolvedSessionScope,
   type ThreadRootMessage,
 } from "./sessions/store.js";
-import { shouldSurfaceToolDiagnostic } from "./tool-diagnostics.js";
 import { createMikanTools } from "./tools/index.js";
 import * as Sentry from "@sentry/node";
 import { formatLocalTimestamp } from "./utils/date.js";
@@ -403,11 +401,6 @@ Each tool requires a "label" parameter (shown to user).
 `;
 }
 
-function truncate(text: string, maxLen: number): string {
-  if (text.length <= maxLen) return text;
-  return `${text.substring(0, maxLen - 3)}...`;
-}
-
 export function getUnresolvedSandboxPathContext(
   sandboxConfig: SandboxConfig,
   hostWorkspaceRoot: string,
@@ -442,6 +435,7 @@ interface RunnerSessionState {
     enqueue(fn: () => Promise<void>, errorContext: string): void;
   } | null;
   pendingTools: Map<string, { toolName: string; args: unknown; startTime: number }>;
+  toolProgress: Map<string, { label: string; status: "running" | "done" | "error" }>;
   totalUsage: {
     input: number;
     output: number;
@@ -620,6 +614,7 @@ function createRunState(): RunnerSessionState {
     logCtx: null,
     queue: null,
     pendingTools: new Map<string, { toolName: string; args: unknown; startTime: number }>(),
+    toolProgress: new Map<string, { label: string; status: "running" | "done" | "error" }>(),
     totalUsage: createEmptyUsageTotals(),
     llmCallCount: 0,
     stopReason: "stop",
@@ -646,6 +641,7 @@ function resetRunState(
     sessionId: sessionUuid,
   };
   runState.pendingTools.clear();
+  runState.toolProgress.clear();
   runState.totalUsage = createEmptyUsageTotals();
   runState.llmCallCount = 0;
   runState.stopReason = "stop";
@@ -784,6 +780,33 @@ export function appendTriggerAttribution(
   return `${text.trimEnd()}\n\n${suffix}`;
 }
 
+function extractToolLabel(toolName: string, args: unknown): string {
+  const label = (args as { label?: unknown } | undefined)?.label;
+  if (typeof label !== "string") return toolName;
+  return label.trim() || toolName;
+}
+
+function formatToolProgress(runState: RunnerSessionState): string {
+  const lines = Array.from(runState.toolProgress.values()).map((item) => {
+    const marker = item.status === "running" ? "•" : item.status === "error" ? "✗" : "✓";
+    return `${marker} ${item.label}`;
+  });
+  return lines.join("\n");
+}
+
+function formatResponseWithToolProgress(text: string, runState: RunnerSessionState): string {
+  const progress = formatToolProgress(runState);
+  return progress ? `${progress}\n\n${text}` : text;
+}
+
+async function replaceResponseWithToolProgress(
+  responder: ConversationResponder,
+  runState: RunnerSessionState,
+): Promise<void> {
+  const progress = formatToolProgress(runState);
+  if (progress) await responder.replaceResponse(progress);
+}
+
 async function finalizeRunResponse(
   responder: ConversationResponder,
   session: AgentSession,
@@ -861,7 +884,10 @@ async function finalizeRunResponse(
 
   try {
     await responder.replaceResponse(
-      appendTriggerAttribution(finalText, options?.triggerAttribution),
+      appendTriggerAttribution(
+        formatResponseWithToolProgress(finalText, runState),
+        options?.triggerAttribution,
+      ),
       { createOverflowLink: options?.createOverflowLink },
     );
   } catch (err) {
@@ -1164,6 +1190,14 @@ function attachSessionEventHandlers(params: {
         args: event.args,
         startTime: Date.now(),
       });
+      runState.toolProgress.set(event.toolCallId, {
+        label: extractToolLabel(event.toolName, event.args),
+        status: "running",
+      });
+      queue.enqueue(
+        () => replaceResponseWithToolProgress(responder, runState),
+        "tool progress update",
+      );
       addLifecycleBreadcrumb("agent.tool.started", {
         tool: event.toolName,
         ...baseAttrs,
@@ -1181,6 +1215,12 @@ function attachSessionEventHandlers(params: {
         actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
         event: { kind: "toolEnd", toolId: event.toolCallId },
       });
+      const progress = runState.toolProgress.get(event.toolCallId);
+      if (progress) progress.status = event.isError ? "error" : "done";
+      queue.enqueue(
+        () => replaceResponseWithToolProgress(responder, runState),
+        "tool progress update",
+      );
       pendingTools.delete(event.toolCallId);
       const durationMs = pending ? Date.now() - pending.startTime : 0;
 
@@ -1211,24 +1251,6 @@ function attachSessionEventHandlers(params: {
         log.logToolSuccess(logCtx, event.toolName, durationMs, resultStr);
       }
 
-      if (shouldSurfaceToolDiagnostic(event.toolName)) {
-        const toolResult: ChatToolResult = {
-          toolName: event.toolName,
-          label: pending?.args ? (pending.args as { label?: string }).label : undefined,
-          args: pending?.args as Record<string, unknown> | undefined,
-          result: truncate(resultStr, TOOL_RESULT_DIAGNOSTIC_CAP),
-          isError: event.isError,
-          durationMs,
-        };
-        queue.enqueue(() => responder.respondToolResult(toolResult), "tool result diagnostic");
-      }
-
-      if (event.isError && shouldSurfaceToolDiagnostic(event.toolName)) {
-        queue.enqueue(
-          () => responder.respond(`_Error: ${truncate(resultStr, 200)}_`),
-          "tool error",
-        );
-      }
       return;
     }
 
@@ -1353,7 +1375,10 @@ function attachSessionEventHandlers(params: {
 
         if (text.trim() && !hasToolCall) {
           if (runState.finalResponseHandledByTool) return;
-          const finalText = appendTriggerAttribution(text, runState.triggerAttribution);
+          const finalText = appendTriggerAttribution(
+            formatResponseWithToolProgress(text, runState),
+            runState.triggerAttribution,
+          );
           log.logResponse(logCtx, text);
           sendAgentEvent({
             sessionId: agentEventSessionId,
@@ -1401,10 +1426,6 @@ function attachSessionEventHandlers(params: {
     }
   });
 }
-
-// Cap raw tool output before handing it to adapters. Bash output can be MB; without
-// this each adapter's splitter would fan it out into many sequential platform posts.
-const TOOL_RESULT_DIAGNOSTIC_CAP = 8000;
 
 function extractToolResultText(result: unknown): string {
   if (typeof result === "string") {

@@ -17,7 +17,6 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `portal-shell.ts`: Renders the shared HTML shell, navigation, and CSS for admin/session/vault portals.
 - `provisioner.ts`: Manages per-vault Docker image sandbox containers, mounts, resource limits, boosts, and idle shutdown.
 - `store.ts`: Manages channel directories, `log.jsonl` message logging, Slack attachment downloads, and deduplication.
-- `tool-diagnostics.ts`: Decides which tool diagnostics should be surfaced back to chat.
 - `trigger.ts`: Decides whether a message should trigger the agent, including auto-reply rules and LLM judging.
 - `platform-messages.ts`: Centralizes product name and cross-platform bot status messages for stopping, stopped, already-working, and idle states.
 
