@@ -44,10 +44,12 @@ jobs:
           MIKAN_PID=$!
 
           cleanup() {
+            local exit_code=$?
             kill "$MIKAN_PID" 2>/dev/null || true
+            wait "$MIKAN_PID" 2>/dev/null || true
             echo "----- mikan log -----"
             cat "$LOG_FILE" || true
-            rm -rf "$WORKSPACE_TMP"
+            [ "$exit_code" -eq 0 ] && rm -rf "$WORKSPACE_TMP" || true
           }
           trap cleanup EXIT
 

@@ -1,5 +1,3 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
-import { join } from "path";
 import type { WebClient } from "@slack/web-api";
 
 export interface SlackMessage {
@@ -49,23 +47,14 @@ export async function uploadTextFile(
   content: string,
   initialComment: string,
 ): Promise<void> {
-  const workspaceTmpDir = join(process.cwd(), ".workspace", "tmp");
-  await mkdir(workspaceTmpDir, { recursive: true });
-  const tempDir = await mkdtemp(join(workspaceTmpDir, "mikan-slack-e2e-"));
-  const filePath = join(tempDir, filename);
-  try {
-    await writeFile(filePath, content);
-    const res = await client.files.uploadV2({
-      channel_id: channel,
-      file: await readFile(filePath),
-      filename,
-      title: filename,
-      initial_comment: initialComment,
-    });
-    if (!res.ok) throw new Error(`files.uploadV2 failed: ${res.error ?? "unknown"}`);
-  } finally {
-    await rm(tempDir, { recursive: true, force: true });
-  }
+  const res = await client.files.uploadV2({
+    channel_id: channel,
+    file: Buffer.from(content),
+    filename,
+    title: filename,
+    initial_comment: initialComment,
+  });
+  if (!res.ok) throw new Error(`files.uploadV2 failed: ${res.error ?? "unknown"}`);
 }
 
 export async function fetchThreadMessages(
