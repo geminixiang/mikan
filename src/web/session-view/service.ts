@@ -302,10 +302,7 @@ function getComparableSessionMessage(entry: SessionEntry): ComparableSessionMess
   const role = entry.message.role;
   if (role !== "user" && role !== "assistant") return null;
 
-  const body =
-    role === "user"
-      ? contentToText(entry.message.content)
-      : assistantContentToText(entry.message.content);
+  const body = contentToText(entry.message.content);
   const normalizedText = normalizeComparableSessionText(body, role);
   if (!normalizedText) return null;
 
@@ -492,8 +489,7 @@ function mapMessageEntry(entry: SessionMessageEntry): SessionViewItem {
       };
     case "assistant": {
       const assistantBody =
-        assistantContentToText(message.content) ||
-        (message.errorMessage ? `_${message.errorMessage}_` : "");
+        contentToText(message.content) || (message.errorMessage ? `_${message.errorMessage}_` : "");
       const metaParts = [message.provider, message.model, message.stopReason].filter(Boolean);
       return {
         kind: "assistant",
@@ -587,10 +583,6 @@ function mapSessionSummaryEntry(entry: SessionBranchSummaryEntry): SessionViewIt
     meta: entry.timestamp,
     tone: "muted",
   };
-}
-
-function assistantContentToText(content: unknown): string {
-  return contentToText(content);
 }
 
 function contentToText(content: unknown): string {

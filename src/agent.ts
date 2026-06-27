@@ -466,13 +466,7 @@ function createRunnerExecutionContext(
   hostWorkspacePath: string,
 ): RunnerExecutionContext {
   const executionResolver =
-    vaultManager &&
-    sandboxConfig.type !== "host" &&
-    (vaultManager.isEnabled() ||
-      sandboxConfig.type === "container" ||
-      sandboxConfig.type === "image" ||
-      sandboxConfig.type === "cloudflare" ||
-      sandboxConfig.type === "firecracker")
+    vaultManager && sandboxConfig.type !== "host"
       ? new ActorExecutionResolver(sandboxConfig, vaultManager, provisioner, workspaceDir)
       : undefined;
 

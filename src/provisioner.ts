@@ -65,15 +65,11 @@ export class DockerContainerManager {
 
   constructor(
     private readonly image: string,
-    options: DockerContainerManagerOptions | ExecFileAsync = {},
+    options: DockerContainerManagerOptions = {},
   ) {
-    if (typeof options === "function") {
-      this.execFileImpl = options;
-    } else {
-      this.limits = options.limits;
-      this.boostLimits = options.boostLimits;
-      this.execFileImpl = options.execFileImpl ?? execFileAsync;
-    }
+    this.limits = options.limits;
+    this.boostLimits = options.boostLimits;
+    this.execFileImpl = options.execFileImpl ?? execFileAsync;
   }
 
   static sanitizeSegment(value: string): string {

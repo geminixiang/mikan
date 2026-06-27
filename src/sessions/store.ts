@@ -77,9 +77,7 @@ export function extractSessionSuffix(sessionKey: string): string {
  */
 export function createNewSessionFile(sessionDir: string): string {
   mkdirSync(sessionDir, { recursive: true });
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const uuid = randomUUID().slice(0, 8);
-  const filename = `${timestamp}_${uuid}.jsonl`;
+  const filename = createSessionFilename();
   const filePath = join(sessionDir, filename);
   atomicWritePrivateFile(filePath, "");
   atomicWritePrivateFile(join(sessionDir, "current"), filename);
@@ -93,9 +91,8 @@ export function createNewSessionFile(sessionDir: string): string {
  */
 export function createManagedSessionFile(sessionDir: string, cwd: string): string {
   mkdirSync(sessionDir, { recursive: true });
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const sessionId = randomUUID();
-  const sessionFile = join(sessionDir, `${timestamp}_${sessionId.slice(0, 8)}.jsonl`);
+  const sessionFile = join(sessionDir, createSessionFilename(sessionId));
   writeSessionHeader(sessionFile, cwd, sessionId);
   setCurrentPointer(sessionDir, sessionFile);
   return sessionFile;
@@ -156,6 +153,11 @@ function patchDeferredFlushRewrite(sessionManager: SessionManager): SessionManag
   };
   internal["__mikanDeferredFlushPatch"] = true;
   return sessionManager;
+}
+
+function createSessionFilename(sessionId = randomUUID()): string {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return `${timestamp}_${sessionId.slice(0, 8)}.jsonl`;
 }
 
 function setCurrentPointer(sessionDir: string, sessionFilePath: string): void {

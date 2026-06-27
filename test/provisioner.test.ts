@@ -23,7 +23,7 @@ describe("DockerContainerManager", () => {
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u123\n" })
       .mockResolvedValueOnce({ stdout: "started\n" });
-    const manager = new DockerContainerManager("ubuntu:24.04", execMock as any);
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
 
     await manager.provision("slack-u123");
     await manager.provision("slack-u123");
@@ -76,7 +76,7 @@ describe("DockerContainerManager", () => {
       .mockRejectedValueOnce(new Error("No such object"))
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "new-container-id\n" });
-    const manager = new DockerContainerManager("ubuntu:24.04", execMock as any);
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
 
     await manager.provision("slack-u123");
     await manager.provision("slack-u123");
@@ -114,7 +114,7 @@ describe("DockerContainerManager", () => {
       .mockResolvedValueOnce({ stdout: "network-id\n" })
       .mockResolvedValueOnce({ stdout: "new-container-id\n" })
       .mockResolvedValueOnce({ stdout: "" });
-    const manager = new DockerContainerManager("ubuntu:24.04", execMock as any);
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
 
     await manager.provision("alice", {
       containerName: "alice-box",
@@ -179,7 +179,7 @@ describe("DockerContainerManager", () => {
       )
       .mockResolvedValueOnce({ stdout: "network-id\n" })
       .mockResolvedValueOnce({ stdout: "new-container-id\n" });
-    const manager = new DockerContainerManager("ubuntu:24.04", execMock as any);
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
 
     await manager.provision("slack-u123-d123", {
       conversationId: "D123",
@@ -215,7 +215,7 @@ describe("DockerContainerManager", () => {
       .mockResolvedValueOnce({ stdout: "removed\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "new-container-id\n" });
-    const manager = new DockerContainerManager("ubuntu:24.04", execMock as any);
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
 
     await manager.provision("alice", {
       containerName: "alice-box",
@@ -264,7 +264,7 @@ describe("DockerContainerManager", () => {
       .mockResolvedValueOnce({ stdout: "removed\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "new-container-id\n" });
-    const manager = new DockerContainerManager("ubuntu:24.04", execMock as any);
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
 
     await manager.provision("slack-u123");
 
@@ -303,7 +303,7 @@ describe("DockerContainerManager", () => {
       .mockResolvedValueOnce({ stdout: "true\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u222\n" });
-    const manager = new DockerContainerManager("ubuntu:24.04", execMock as any);
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
 
     await manager.provision("slack-u111");
     await manager.provision("slack-u222");
@@ -327,7 +327,7 @@ describe("DockerContainerManager", () => {
       .mockResolvedValueOnce({
         stdout: "true\t2026-04-22T00:00:00.000000000Z\tslack-u123\tD123\n",
       });
-    const manager = new DockerContainerManager("ubuntu:24.04", execMock as any);
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
 
     await manager.reconcile();
 
@@ -345,7 +345,7 @@ describe("DockerContainerManager", () => {
       .mockResolvedValueOnce({ stdout: "" })
       .mockResolvedValueOnce({ stdout: "true\t2026-04-22T00:00:00.000000000Z\tslack-u123\t\n" })
       .mockResolvedValueOnce({ stdout: "removed\n" });
-    const manager = new DockerContainerManager("ubuntu:24.04", execMock as any);
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
 
     await manager.reconcile();
 
@@ -362,7 +362,7 @@ describe("DockerContainerManager", () => {
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockReturnValueOnce(startDeferred.promise);
 
-    const manager = new DockerContainerManager("ubuntu:24.04", execMock as any);
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
 
     const first = manager.provision("slack-u123");
     const second = manager.provision("slack-u123");
@@ -386,7 +386,7 @@ describe("DockerContainerManager", () => {
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "new-id\n" });
 
-    const manager = new DockerContainerManager("ubuntu:24.04", execMock as any);
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
 
     await expect(manager.provision("slack-u123")).rejects.toThrow(/start failed/);
 
@@ -484,7 +484,7 @@ describe("DockerContainerManager", () => {
       .mockResolvedValueOnce({ stdout: "true\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u123\n" });
-    const manager = new DockerContainerManager("ubuntu:24.04", execMock as any);
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
 
     await manager.provision("slack-u123");
 
@@ -647,7 +647,7 @@ describe("DockerContainerManager", () => {
       .mockResolvedValueOnce({ stdout: "new-container-id\n" })
       .mockResolvedValueOnce({ stdout: "removed\n" })
       .mockResolvedValueOnce({ stdout: "network removed\n" });
-    const manager = new DockerContainerManager("ubuntu:24.04", execMock as any);
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
 
     await manager.provision("slack-u123");
     await manager.remove("slack-u123");

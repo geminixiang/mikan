@@ -1,5 +1,5 @@
 import { appendFile, writeFile } from "fs/promises";
-import { join } from "path";
+import { dirname, join } from "path";
 import {
   ensureDirExists,
   isRecord,
@@ -200,7 +200,7 @@ export class ChannelStore {
     const filePath = join(this.workingDir, localPath);
 
     // Ensure directory exists
-    const parentDir = join(this.workingDir, localPath.substring(0, localPath.lastIndexOf("/")));
+    const parentDir = join(this.workingDir, dirname(localPath));
     ensureDirExists(parentDir);
 
     const response = await fetch(url, {

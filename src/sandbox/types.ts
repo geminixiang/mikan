@@ -79,8 +79,8 @@ export interface ExecResult {
 export interface SandboxAdapter<TConfig extends SandboxConfig = SandboxConfig> {
   type: TConfig["type"];
   parse(value: string): TConfig | undefined;
-  validate(config: TConfig): Promise<void>;
-  createExecutor(
+  validate?(config: TConfig): Promise<void>;
+  createExecutor?(
     config: TConfig,
     env?: Record<string, string>,
     ensureReady?: () => Promise<void>,

@@ -90,7 +90,7 @@ export class ModelCommandHandler implements CommandHandler {
       return true;
     }
 
-    if (!this.isKnownModel(parsed.provider, parsed.model)) {
+    if (!this.modelRegistry.find(parsed.provider, parsed.model)) {
       await replyDiagnosticWithContext(
         context.responder,
         formatCommandSummary("Model", [
@@ -144,9 +144,5 @@ export class ModelCommandHandler implements CommandHandler {
       { style: "muted" },
     );
     return true;
-  }
-
-  private isKnownModel(provider: string, model: string): boolean {
-    return this.modelRegistry.find(provider, model) !== undefined;
   }
 }

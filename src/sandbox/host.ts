@@ -17,10 +17,6 @@ function parseHostSandboxArg(value: string): HostSandboxConfig | undefined {
   return undefined;
 }
 
-async function validateHostSandbox(_config: HostSandboxConfig): Promise<void> {
-  return;
-}
-
 export class HostExecutor implements Executor {
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
     return new Promise((resolve, reject) => {
@@ -111,6 +107,5 @@ export class HostExecutor implements Executor {
 export const hostSandboxAdapter: SandboxAdapter<HostSandboxConfig> = {
   type: "host",
   parse: parseHostSandboxArg,
-  validate: validateHostSandbox,
   createExecutor: () => new HostExecutor(),
 };

@@ -27,7 +27,4 @@ export const imageSandboxAdapter: SandboxAdapter<ImageSandboxConfig> = {
   type: "image",
   parse: parseImageSandboxArg,
   validate: validateImageSandbox,
-  createExecutor: () => {
-    throw new SandboxError("Error: image sandbox must resolve to a concrete container executor");
-  },
 };

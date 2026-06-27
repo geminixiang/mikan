@@ -1,6 +1,6 @@
 import { SessionManager, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import { join } from "path";
-import type { ConversationLogMessage } from "../context.js";
+import type { ConversationLogMessage } from "../types.js";
 import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-guards.js";
 import { formatLocalTimestamp } from "../utils/date.js";
 import { atomicWritePrivateFile } from "../utils/fs-atomic.js";

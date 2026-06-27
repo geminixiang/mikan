@@ -58,7 +58,7 @@ export async function validateSandbox(config: SandboxConfig): Promise<void> {
     throw new SandboxError(`Error: Unsupported sandbox type '${config.type}'`);
   }
 
-  await adapter.validate(config);
+  await adapter.validate?.(config);
 }
 
 /**
@@ -72,6 +72,9 @@ export function createExecutor(
   const adapter = sandboxAdapterByType.get(config.type);
   if (!adapter) {
     throw new SandboxError(`Error: Unsupported sandbox type '${config.type}'`);
+  }
+  if (!adapter.createExecutor) {
+    throw new SandboxError("Error: image sandbox must resolve to a concrete container executor");
   }
   return adapter.createExecutor(config, env, ensureReady);
 }

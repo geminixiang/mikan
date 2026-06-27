@@ -6,7 +6,7 @@ import type {
   MessagingEventHandler,
   ConversationKind,
 } from "../adapter.js";
-import type { CommandServices } from "../commands/types.js";
+import type { CommandHandler, CommandServices } from "../commands/types.js";
 
 export interface ConversationRuntimeState {
   running: boolean;
@@ -36,8 +36,6 @@ export interface ConversationRuntimeOptions extends Omit<CommandServices, "runti
   /** Override the default command handlers (e.g., to add /help, /status). */
   commandHandlers?: readonly CommandHandler[];
 }
-
-import type { CommandHandler } from "../commands/types.js";
 
 export interface ConversationRuntime extends MessagingEventHandler {
   runSession(options: RunSessionOptions): Promise<void>;
