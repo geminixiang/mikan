@@ -33,17 +33,21 @@ jobs:
         run: |
           set -euo pipefail
 
-          LOG_FILE="$RUNNER_TEMP/mikan-slack-e2e.log"
-          STATE_DIR="$RUNNER_TEMP/mikan-state"
+          WORKSPACE_TMP="$GITHUB_WORKSPACE/.workspace"
+          LOG_FILE="$WORKSPACE_TMP/mikan-slack-e2e.log"
+          STATE_DIR="$WORKSPACE_TMP/mikan-state"
+          WORKING_DIR="$WORKSPACE_TMP/mikan-workspace"
+          mkdir -p "$WORKING_DIR"
 
           node dist/main.js --onboard --state-dir "$STATE_DIR"
-          node dist/main.js --state-dir "$STATE_DIR" "$GITHUB_WORKSPACE" >"$LOG_FILE" 2>&1 &
+          node dist/main.js --state-dir "$STATE_DIR" "$WORKING_DIR" >"$LOG_FILE" 2>&1 &
           MIKAN_PID=$!
 
           cleanup() {
             kill "$MIKAN_PID" 2>/dev/null || true
             echo "----- mikan log -----"
             cat "$LOG_FILE" || true
+            rm -rf "$WORKSPACE_TMP"
           }
           trap cleanup EXIT
 

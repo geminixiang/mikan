@@ -1,5 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
-import { tmpdir } from "os";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import type { WebClient } from "@slack/web-api";
 
@@ -50,7 +49,9 @@ export async function uploadTextFile(
   content: string,
   initialComment: string,
 ): Promise<void> {
-  const tempDir = await mkdtemp(join(tmpdir(), "mikan-slack-e2e-"));
+  const workspaceTmpDir = join(process.cwd(), ".workspace", "tmp");
+  await mkdir(workspaceTmpDir, { recursive: true });
+  const tempDir = await mkdtemp(join(workspaceTmpDir, "mikan-slack-e2e-"));
   const filePath = join(tempDir, filename);
   try {
     await writeFile(filePath, content);

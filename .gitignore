@@ -5,6 +5,7 @@ site-dist/
 coverage/
 data/
 bin/
+.workspace/
 
 *.env
 .env*

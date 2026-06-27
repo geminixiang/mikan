@@ -40,7 +40,7 @@
     "prepare": "husky",
     "test:e2e": "vitest --run --config vitest.e2e.config.ts",
     "test:e2e:slack": "vitest --run --config vitest.e2e.config.ts e2e/slack",
-    "test:e2e:slack:coverage": "vitest --run --coverage --config vitest.e2e.config.ts e2e/slack",
+    "test:e2e:slack:coverage": "vitest --run --coverage --coverage.reportsDirectory=.workspace/coverage --config vitest.e2e.config.ts e2e/slack",
     "docs:dev": "astro dev",
     "docs:build": "astro build",
     "docs:preview": "astro preview"
