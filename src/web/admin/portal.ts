@@ -28,12 +28,12 @@ import type { AdminServices } from "./types.js";
 
 // ── Handler ────────────────────────────────────────────────────────────────────
 
-export function handleAdminRequest(
+export async function handleAdminRequest(
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
   services: AdminServices,
-): boolean {
+): Promise<boolean> {
   if (!url.pathname.startsWith("/admin")) return false;
 
   if (req.method === "GET" && url.pathname === "/admin") {
@@ -57,7 +57,7 @@ export function handleAdminRequest(
   }
 
   if (url.pathname.startsWith("/admin/api/")) {
-    routeApiRequest(req, res, url, services);
+    await routeApiRequest(req, res, url, services);
     return true;
   }
 
@@ -66,12 +66,12 @@ export function handleAdminRequest(
 
 // ── API routing ────────────────────────────────────────────────────────────────
 
-function routeApiRequest(
+async function routeApiRequest(
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
   services: AdminServices,
-): void {
+): Promise<void> {
   if (req.method === "GET") {
     const token = services.adminTokenStore.peek(url.searchParams.get("token") ?? "");
     if (!token) {
@@ -134,60 +134,61 @@ function routeApiRequest(
     return;
   }
 
-  if (req.method === "POST") {
-    void readJsonBody(req, res, (body) => {
-      const rawToken = typeof body.token === "string" ? body.token : "";
-      const token = services.adminTokenStore.peek(rawToken);
-      if (!token) {
-        jsonRes(res, 403, { error: "Unauthorized" });
-        return;
-      }
-      if (url.pathname === "/admin/api/conversations/model") {
-        serveConversationModelUpdate(res, body, services, token);
-        return;
-      }
-      if (url.pathname === "/admin/api/conversations/sandbox") {
-        serveConversationSandboxUpdate(res, body, services, token);
-        return;
-      }
-      if (url.pathname === "/admin/api/conversations/auto-reply") {
-        serveConversationAutoReplyUpdate(res, body, services, token);
-        return;
-      }
-      if (url.pathname === "/admin/api/conversations/slack") {
-        serveConversationSlackUpdate(res, body, services, token);
-        return;
-      }
-      if (url.pathname === "/admin/api/conversations/session-link") {
-        serveConversationSessionLink(res, body, services, token);
-        return;
-      }
-      if (url.pathname === "/admin/api/conversations/login-link") {
-        serveConversationLoginLink(res, body, services, token);
-        return;
-      }
-      if (url.pathname === "/admin/api/conversations/events/delete") {
-        serveConversationEventDelete(res, body, services, token);
-        return;
-      }
-      if (url.pathname === "/admin/api/settings/model") {
-        serveGlobalModelUpdate(res, body);
-        return;
-      }
-      if (url.pathname === "/admin/api/settings/sandbox") {
-        serveGlobalSandboxUpdate(res, body);
-        return;
-      }
-      if (url.pathname === "/admin/api/settings/slack") {
-        serveGlobalSlackUpdate(res, body);
-        return;
-      }
-      jsonRes(res, 404, { error: "Not found" });
-    });
+  if (req.method !== "POST") {
+    jsonRes(res, 405, { error: "Method not allowed" });
     return;
   }
 
-  jsonRes(res, 405, { error: "Method not allowed" });
+  const body = await readJsonBody(req, res);
+  if (!body) return;
+
+  const rawToken = typeof body.token === "string" ? body.token : "";
+  const token = services.adminTokenStore.peek(rawToken);
+  if (!token) {
+    jsonRes(res, 403, { error: "Unauthorized" });
+    return;
+  }
+  if (url.pathname === "/admin/api/conversations/model") {
+    serveConversationModelUpdate(res, body, services, token);
+    return;
+  }
+  if (url.pathname === "/admin/api/conversations/sandbox") {
+    serveConversationSandboxUpdate(res, body, services, token);
+    return;
+  }
+  if (url.pathname === "/admin/api/conversations/auto-reply") {
+    serveConversationAutoReplyUpdate(res, body, services, token);
+    return;
+  }
+  if (url.pathname === "/admin/api/conversations/slack") {
+    serveConversationSlackUpdate(res, body, services, token);
+    return;
+  }
+  if (url.pathname === "/admin/api/conversations/session-link") {
+    serveConversationSessionLink(res, body, services, token);
+    return;
+  }
+  if (url.pathname === "/admin/api/conversations/login-link") {
+    serveConversationLoginLink(res, body, services, token);
+    return;
+  }
+  if (url.pathname === "/admin/api/conversations/events/delete") {
+    serveConversationEventDelete(res, body, services, token);
+    return;
+  }
+  if (url.pathname === "/admin/api/settings/model") {
+    serveGlobalModelUpdate(res, body);
+    return;
+  }
+  if (url.pathname === "/admin/api/settings/sandbox") {
+    serveGlobalSandboxUpdate(res, body);
+    return;
+  }
+  if (url.pathname === "/admin/api/settings/slack") {
+    serveGlobalSlackUpdate(res, body);
+    return;
+  }
+  jsonRes(res, 404, { error: "Not found" });
 }
 
 // ── Scope helpers ──────────────────────────────────────────────────────────────
@@ -1386,20 +1387,16 @@ function jsonRes(res: ServerResponse, status: number, body: unknown): void {
 async function readJsonBody(
   req: IncomingMessage,
   res: ServerResponse,
-  callback: (body: Record<string, unknown>) => void,
-): Promise<void> {
+): Promise<Record<string, unknown> | null> {
   const data = await readRawBody(req, res, 32 * 1024);
-  if (data === null) return;
+  if (data === null) return null;
 
-  let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(data) as Record<string, unknown>;
+    return JSON.parse(data) as Record<string, unknown>;
   } catch {
     jsonRes(res, 400, { error: "Invalid JSON" });
-    return;
+    return null;
   }
-
-  callback(parsed);
 }
 
 const esc = escapeHtml;

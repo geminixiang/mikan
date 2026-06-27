@@ -87,6 +87,8 @@ function hasGitHubToken(env?: Record<string, string>): boolean {
 }
 
 export class ContainerExecutor implements Executor {
+  private readonly hostExecutor = new HostExecutor();
+
   constructor(
     private container: string,
     private env?: Record<string, string>,
@@ -100,7 +102,6 @@ export class ContainerExecutor implements Executor {
       await ensureContainerRunning(this.container);
     }
 
-    const hostExecutor = new HostExecutor();
     const temp = this.env ? createSecureEnvFile(this.env) : undefined;
     try {
       const dockerCmd = buildContainerExecCommand(
@@ -108,7 +109,7 @@ export class ContainerExecutor implements Executor {
         withRuntimeBootstrap(command, this.env),
         temp?.envFilePath,
       );
-      return await hostExecutor.exec(dockerCmd, options);
+      return await this.hostExecutor.exec(dockerCmd, options);
     } finally {
       temp?.cleanup();
     }

@@ -55,7 +55,7 @@ export function startWebServer(options: StartWebServerOptions): Server {
       const adminOptions = options.adminOptions;
       if (
         adminOptions?.adminTokenStore &&
-        handleAdminRequest(req, res, url, {
+        (await handleAdminRequest(req, res, url, {
           vaultManager: options.vaultManager,
           linkTokenStore: options.linkTokenStore,
           sessionViewTokenStore: options.sessionViewTokenStore,
@@ -65,7 +65,7 @@ export function startWebServer(options: StartWebServerOptions): Server {
           runtime: adminOptions.runtime,
           sandbox: adminOptions.sandbox,
           botsByPlatform: adminOptions.botsByPlatform,
-        })
+        }))
       ) {
         return;
       }

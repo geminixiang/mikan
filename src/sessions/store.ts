@@ -200,11 +200,7 @@ function hasSessionHeader(sessionFile: string): boolean {
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
-      const entry = parseJsonValue(
-        trimmed,
-        (value): value is { type?: string } => isRecord(value),
-        (detail) => (detail === "unexpected JSON shape" ? "expected a JSON object" : detail),
-      );
+      const entry = parseSessionEntry(trimmed);
       return entry.type === "session";
     }
   } catch {
@@ -221,18 +217,20 @@ function shouldRecreatePreinitializedSession(sessionFile: string): boolean {
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean)
-      .map((line) =>
-        parseJsonValue(
-          line,
-          (value): value is { type?: string } => isRecord(value),
-          (detail) => (detail === "unexpected JSON shape" ? "expected a JSON object" : detail),
-        ),
-      );
+      .map(parseSessionEntry);
 
     return entries.length === 1 && entries[0]?.type === "session";
   } catch {
     return false;
   }
+}
+
+function parseSessionEntry(line: string): { type?: string } {
+  return parseJsonValue(
+    line,
+    (value): value is { type?: string } => isRecord(value),
+    (detail) => (detail === "unexpected JSON shape" ? "expected a JSON object" : detail),
+  );
 }
 
 function getCurrentSessionPath(sessionDir: string): string | null {
