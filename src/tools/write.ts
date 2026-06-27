@@ -1,6 +1,8 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
+import { dirname } from "path";
 import type { Executor } from "../sandbox/index.js";
+import { shellEscape } from "../sandbox/utils.js";
 
 const writeSchema = Type.Object({
   label: Type.String({ description: "Brief description of what you're writing (shown to user)" }),
@@ -20,11 +22,7 @@ export function createWriteTool(executor: Executor): AgentTool<typeof writeSchem
       { path, content }: { label: string; path: string; content: string },
       signal?: AbortSignal,
     ) => {
-      // Create parent directories and write file using heredoc
-      const dir = path.includes("/") ? path.substring(0, path.lastIndexOf("/")) : ".";
-
-      // Use printf to handle content with special characters, pipe to file
-      // This avoids issues with heredoc and special characters
+      const dir = dirname(path);
       const cmd = `mkdir -p ${shellEscape(dir)} && printf '%s' ${shellEscape(content)} > ${shellEscape(path)}`;
 
       const result = await executor.exec(cmd, { signal });
@@ -38,8 +36,4 @@ export function createWriteTool(executor: Executor): AgentTool<typeof writeSchem
       };
     },
   };
-}
-
-function shellEscape(s: string): string {
-  return `'${s.replace(/'/g, "'\\''")}'`;
 }

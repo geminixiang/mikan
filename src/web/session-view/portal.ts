@@ -6,6 +6,7 @@ import type {
   ConversationEvent,
   ConversationResponder,
 } from "../../adapter.js";
+import { readRawBody } from "../../utils/http-body.js";
 import { escapeHtml } from "../../utils/html.js";
 import * as log from "../../log.js";
 import { renderPortalShell } from "../../portal-shell.js";
@@ -568,9 +569,12 @@ async function handleSessionMessageRequest(
     return;
   }
 
+  const rawBody = await readRawBody(req, res, 1024 * 1024);
+  if (rawBody === null) return;
+
   let body: { token?: string; text?: string; session?: string; sessionKey?: string };
   try {
-    body = JSON.parse(await readRequestBody(req)) as {
+    body = JSON.parse(rawBody) as {
       token?: string;
       text?: string;
       session?: string;
@@ -756,22 +760,6 @@ function createSessionViewResponseContext(
       publish({ type: "assistant_remove" });
     },
   };
-}
-
-function readRequestBody(req: IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let data = "";
-    req.setEncoding("utf8");
-    req.on("data", (chunk) => {
-      data += chunk;
-      if (data.length > 1024 * 1024) {
-        reject(new Error("Request body too large"));
-        req.destroy();
-      }
-    });
-    req.on("end", () => resolve(data));
-    req.on("error", reject);
-  });
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {

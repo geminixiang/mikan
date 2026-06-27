@@ -3,6 +3,7 @@ import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { extname } from "path";
 import type { Executor } from "../sandbox/index.js";
+import { shellEscape } from "../sandbox/utils.js";
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
@@ -167,8 +168,4 @@ export function createReadTool(executor: Executor): AgentTool<typeof readSchema>
       };
     },
   };
-}
-
-function shellEscape(s: string): string {
-  return `'${s.replace(/'/g, "'\\''")}'`;
 }

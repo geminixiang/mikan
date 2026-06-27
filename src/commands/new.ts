@@ -2,20 +2,11 @@ import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 
-type ParsedNewCommand = {
-  command: "/new" | "/pi-new";
-};
-
 const NEW_COMMANDS = ["/new", "/pi-new"] as const;
-
-function parseNewCommand(text: string): ParsedNewCommand | null {
-  const matched = matchCommand(text, NEW_COMMANDS);
-  return matched ? { command: matched.command } : null;
-}
 
 export class NewCommandHandler implements CommandHandler {
   async tryHandle(context: CommandContext): Promise<boolean> {
-    if (!parseNewCommand(context.commandText)) return false;
+    if (!matchCommand(context.commandText, NEW_COMMANDS)) return false;
 
     if (!context.privateConversation) {
       await replyDiagnosticWithContext(

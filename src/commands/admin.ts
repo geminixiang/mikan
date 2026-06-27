@@ -4,14 +4,9 @@ import { formatCommandSummary, replyPrivatelyWithContext } from "./utils.js";
 
 const ADMIN_COMMANDS = ["/admin", "/pi-admin"] as const;
 
-function parseAdminCommand(text: string): { command: string } | null {
-  const matched = matchCommand(text, ADMIN_COMMANDS, { stripMention: true });
-  return matched ? { command: matched.command } : null;
-}
-
 export class AdminCommandHandler implements CommandHandler {
   async tryHandle(context: CommandContext): Promise<boolean> {
-    if (!parseAdminCommand(context.commandText)) return false;
+    if (!matchCommand(context.commandText, ADMIN_COMMANDS, { stripMention: true })) return false;
 
     if (!context.services.portalBaseUrl) {
       await replyPrivatelyWithContext(
