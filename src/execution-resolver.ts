@@ -7,6 +7,7 @@ import { createExecutor, type Executor, type SandboxConfig } from "./sandbox/ind
 import { reportUserFacingError } from "./observability/sentry.js";
 import { normalizeSharedVaultName, type ResolvedVault, type VaultManager } from "./vault/index.js";
 import { resolveActorVaultKey } from "./vault/routing.js";
+import * as log from "./log.js";
 
 export type { ActorContext, ImageWorkspaceMountMode } from "./types.js";
 import type { ActorContext, ImageWorkspaceMountMode } from "./types.js";
@@ -23,7 +24,11 @@ export function readConversationWorkspaceMountMode(
   const conversationDir = join(workspaceDir, conversationId);
   try {
     return resolveConversationSettings(conversationDir).sandboxImageWorkspaceMount ?? globalDefault;
-  } catch {
+  } catch (err) {
+    log.logWarning(
+      "Falling back while resolving conversation workspace mount",
+      err instanceof Error ? err.message : String(err),
+    );
     const conversationSettingsPath = join(conversationDir, "settings.json");
     const raw = readConversationSettingsFallback(conversationSettingsPath);
     return raw?.sandbox?.image?.workspaceMount ?? globalDefault;
@@ -33,7 +38,11 @@ export function readConversationWorkspaceMountMode(
 function readGlobalWorkspaceMountMode(): ImageWorkspaceMountMode {
   try {
     return loadGlobalSettings().sandboxImageWorkspaceMount ?? "private";
-  } catch {
+  } catch (err) {
+    log.logWarning(
+      "Using default workspace mount because global settings could not be read",
+      err instanceof Error ? err.message : String(err),
+    );
     return "private";
   }
 }
@@ -48,7 +57,11 @@ function readConversationSettingsFallback(
         isRecord(value),
       () => "Ignoring malformed conversation settings file while resolving workspace mount",
     );
-  } catch {
+  } catch (err) {
+    log.logWarning(
+      "Ignoring malformed conversation settings fallback while resolving workspace mount",
+      err instanceof Error ? err.message : String(err),
+    );
     return undefined;
   }
 }

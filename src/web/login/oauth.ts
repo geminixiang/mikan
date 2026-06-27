@@ -139,20 +139,28 @@ function parseOAuthService(value: unknown, index: number): OAuthService | null {
     return null;
   }
 
+  const aliases = parseStringArray(value.aliases, "aliases", index, id);
+  if (aliases === null) return null;
+  const scopes = parseStringArray(value.scopes, "scopes", index, id);
+  if (scopes === null) return null;
+  const authorizationParams = parseStringRecord(
+    value.authorizationParams,
+    "authorizationParams",
+    index,
+    id,
+  );
+  if (authorizationParams === null) return null;
+
   const accessTokenEnvKeys: string[] = [];
   if (typeof value.accessTokenEnvKey === "string" && value.accessTokenEnvKey.trim()) {
     accessTokenEnvKeys.push(value.accessTokenEnvKey.trim());
   }
-  if (Array.isArray(value.additionalAccessTokenEnvKeys)) {
-    for (const key of value.additionalAccessTokenEnvKeys) {
-      if (typeof key === "string" && key.trim()) accessTokenEnvKeys.push(key.trim());
-    }
-  }
-  if (Array.isArray(value.accessTokenEnvKeys)) {
-    for (const key of value.accessTokenEnvKeys) {
-      if (typeof key === "string" && key.trim() && !accessTokenEnvKeys.includes(key.trim())) {
-        accessTokenEnvKeys.push(key.trim());
-      }
+  for (const field of ["additionalAccessTokenEnvKeys", "accessTokenEnvKeys"] as const) {
+    const keys = parseStringArray(value[field], field, index, id);
+    if (keys === null) return null;
+    for (const key of keys ?? []) {
+      const trimmed = key.trim();
+      if (trimmed && !accessTokenEnvKeys.includes(trimmed)) accessTokenEnvKeys.push(trimmed);
     }
   }
 
@@ -166,9 +174,13 @@ function parseOAuthService(value: unknown, index: number): OAuthService | null {
       typeof fileOutputObj.targetPath === "string" ? fileOutputObj.targetPath.trim() : undefined;
     const envKey =
       typeof fileOutputObj.envKey === "string" ? fileOutputObj.envKey.trim() : undefined;
-    const additionalEnvKeys = Array.isArray(fileOutputObj.additionalEnvKeys)
-      ? fileOutputObj.additionalEnvKeys.filter((v): v is string => typeof v === "string")
-      : undefined;
+    const additionalEnvKeys = parseStringArray(
+      fileOutputObj.additionalEnvKeys,
+      "fileOutput.additionalEnvKeys",
+      index,
+      id,
+    );
+    if (additionalEnvKeys === null) return null;
     if (type === "authorized_user" && relativePath) {
       fileOutput = {
         type: "authorized_user",
@@ -183,29 +195,46 @@ function parseOAuthService(value: unknown, index: number): OAuthService | null {
   return {
     id: id.toLowerCase(),
     label,
-    aliases: Array.isArray(value.aliases)
-      ? value.aliases.filter((v): v is string => typeof v === "string").map((v) => v.toLowerCase())
-      : [id.toLowerCase()],
+    aliases: aliases?.map((v) => v.toLowerCase()) ?? [id.toLowerCase()],
     authorizationUrl,
     tokenUrl,
-    scopes: Array.isArray(value.scopes)
-      ? value.scopes.filter((v): v is string => typeof v === "string")
-      : [],
+    scopes: scopes ?? [],
     clientIdEnvKey,
     clientSecretEnvKey,
     accessTokenEnvKeys: accessTokenEnvKeys.length > 0 ? accessTokenEnvKeys : undefined,
     refreshTokenEnvKey:
       typeof value.refreshTokenEnvKey === "string" ? value.refreshTokenEnvKey.trim() : undefined,
-    authorizationParams: isRecord(value.authorizationParams)
-      ? Object.fromEntries(
-          Object.entries(value.authorizationParams).filter(
-            (authorizationEntry): authorizationEntry is [string, string] =>
-              typeof authorizationEntry[1] === "string",
-          ),
-        )
-      : undefined,
+    authorizationParams: authorizationParams ?? undefined,
     fileOutput,
   };
+}
+
+function parseStringArray(
+  value: unknown,
+  field: string,
+  index: number,
+  id: string,
+): string[] | undefined | null {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
+    log.logWarning(`Skipping OAUTH_SERVICES_JSON[${index}] (${id}): ${field} must be strings`);
+    return null;
+  }
+  return value;
+}
+
+function parseStringRecord(
+  value: unknown,
+  field: string,
+  index: number,
+  id: string,
+): Record<string, string> | undefined | null {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || Object.values(value).some((entry) => typeof entry !== "string")) {
+    log.logWarning(`Skipping OAUTH_SERVICES_JSON[${index}] (${id}): ${field} must be strings`);
+    return null;
+  }
+  return value as Record<string, string>;
 }
 
 export function getOAuthServices(): OAuthService[] {

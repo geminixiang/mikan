@@ -885,7 +885,7 @@ function buildTree(startDir: string, relPrefix: string): TreeNode | null {
     } catch {
       return null;
     }
-    const name = rel === "" ? "." : (rel.split(/[\\/]/).pop() ?? rel);
+    const name = rel === "" ? "." : basename(rel);
     if (!stats.isDirectory()) {
       counter.value += 1;
       return {
