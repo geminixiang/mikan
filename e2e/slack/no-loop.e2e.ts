@@ -29,7 +29,7 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack no bot-to-bot loop", () 
       botUserId: primary,
       rootTs,
       startedAt,
-      timeoutMs: env.timeoutMs,
+      timeoutMs: Math.max(env.timeoutMs, 45_000),
       pollMs: env.pollMs,
     });
     expect(firstReply, "no initial reply to observe").not.toBeNull();
