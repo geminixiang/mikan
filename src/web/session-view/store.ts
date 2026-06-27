@@ -14,18 +14,13 @@ export class InMemorySessionViewTokenStore extends InMemoryTokenStore<SessionVie
     sessionFile: string,
     platformUserName?: string,
   ): SessionViewToken {
-    const { token, expiresAt } = this.mintToken(TTL_MS);
-    const record: SessionViewToken = {
-      token,
+    return this.createRecord(TTL_MS, {
       platform,
       platformUserId,
       ...(platformUserName ? { platformUserName } : {}),
       conversationId,
       sessionKey,
       sessionFile,
-      expiresAt,
-    };
-    this.tokens.set(token, record);
-    return record;
+    });
   }
 }

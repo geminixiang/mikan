@@ -12,22 +12,14 @@ export class InMemoryAdminTokenStore extends InMemoryTokenStore<AdminToken> {
     conversationId: string;
     platformUserName?: string;
   }): AdminToken {
-    for (const [key, t] of this.tokens) {
-      if (t.platform === args.platform && t.platformUserId === args.platformUserId) {
-        this.tokens.delete(key);
-      }
-    }
-
-    const { token, expiresAt } = this.mintToken(TTL_MS);
-    const record: AdminToken = {
-      token,
+    this.deleteWhere(
+      (token) => token.platform === args.platform && token.platformUserId === args.platformUserId,
+    );
+    return this.createRecord(TTL_MS, {
       platform: args.platform,
       platformUserId: args.platformUserId,
       ...(args.platformUserName ? { platformUserName: args.platformUserName } : {}),
       conversationId: args.conversationId,
-      expiresAt,
-    };
-    this.tokens.set(token, record);
-    return record;
+    });
   }
 }

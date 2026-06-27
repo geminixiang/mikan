@@ -1,8 +1,10 @@
-import type { PlatformName, RunningSession } from "../../adapter.js";
+import type { MessagingBot, PlatformName, RunningSession } from "../../adapter.js";
 import type { LinkTokenStoreLike } from "../../commands/types.js";
-import type { TokenRecord } from "../types.js";
+import type { SandboxConfig } from "../../sandbox/index.js";
 import type { VaultManager } from "../../vault/index.js";
 import type { InMemorySessionViewTokenStore } from "../session-view/store.js";
+import type { TokenRecord } from "../types.js";
+import type { InMemoryAdminTokenStore } from "./store.js";
 
 export interface AdminRuntimeBridge {
   getRunningSessions(): RunningSession[];
@@ -13,12 +15,12 @@ export interface AdminServices {
   vaultManager: VaultManager;
   linkTokenStore: LinkTokenStoreLike;
   sessionViewTokenStore?: InMemorySessionViewTokenStore;
-  adminTokenStore: import("./store.js").InMemoryAdminTokenStore;
+  adminTokenStore: InMemoryAdminTokenStore;
   portalBaseUrl?: string;
   workingDir?: string;
-  sandbox?: import("../../sandbox/index.js").SandboxConfig;
+  sandbox?: SandboxConfig;
   runtime?: AdminRuntimeBridge;
-  botsByPlatform?: Partial<Record<PlatformName, import("../../adapter.js").MessagingBot>>;
+  botsByPlatform?: Partial<Record<PlatformName, MessagingBot>>;
 }
 
 export interface AdminToken extends TokenRecord {

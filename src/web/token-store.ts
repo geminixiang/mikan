@@ -2,21 +2,20 @@ import { randomBytes } from "crypto";
 export type { TokenRecord } from "./types.js";
 import type { TokenRecord } from "./types.js";
 
-/**
- * Generic in-memory TTL token store.
- *
- * Subclasses call `mintToken(ttlMs)` to create a new token string and
- * expiry, then assemble the full record. The base class provides `peek`,
- * `consume`, and `purge`.
- */
 export class InMemoryTokenStore<T extends TokenRecord> {
   protected readonly tokens = new Map<string, T>();
 
-  protected mintToken(ttlMs: number): Pick<TokenRecord, "token" | "expiresAt"> {
-    return {
-      token: randomBytes(16).toString("hex"),
-      expiresAt: Date.now() + ttlMs,
-    };
+  protected createRecord(ttlMs: number, data: Omit<T, keyof TokenRecord>): T {
+    const token = randomBytes(16).toString("hex");
+    const record = { ...data, token, expiresAt: Date.now() + ttlMs } as T;
+    this.tokens.set(token, record);
+    return record;
+  }
+
+  protected deleteWhere(predicate: (record: T) => boolean): void {
+    for (const [key, record] of this.tokens) {
+      if (predicate(record)) this.tokens.delete(key);
+    }
   }
 
   peek(rawToken: string): T | undefined {
