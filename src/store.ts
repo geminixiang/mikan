@@ -31,6 +31,7 @@ export class ChannelStore {
   // Track recently logged message timestamps to prevent duplicates
   // Key: "channelId:ts", automatically cleaned up after 60 seconds
   private recentlyLogged = new Map<string, number>();
+  private loggingMessages = new Set<string>();
 
   constructor(config: ChannelStoreConfig) {
     this.workingDir = config.workingDir;
@@ -107,9 +108,10 @@ export class ChannelStore {
   async logMessage(channelId: string, message: LoggedMessage): Promise<boolean> {
     // Check for duplicate (same channel + timestamp)
     const dedupeKey = `${channelId}:${message.ts}`;
-    if (this.recentlyLogged.has(dedupeKey)) {
-      return false; // Already logged
+    if (this.recentlyLogged.has(dedupeKey) || this.loggingMessages.has(dedupeKey)) {
+      return false; // Already logged or being logged
     }
+    this.loggingMessages.add(dedupeKey);
 
     const logPath = join(this.getChannelDir(channelId), "log.jsonl");
 
@@ -127,14 +129,18 @@ export class ChannelStore {
       message.date = date.toISOString();
     }
 
-    const line = `${JSON.stringify(message)}\n`;
-    await appendFile(logPath, line, "utf-8");
+    try {
+      const line = `${JSON.stringify(message)}\n`;
+      await appendFile(logPath, line, "utf-8");
 
-    // Mark as logged only after the append succeeds. Otherwise a transient
-    // write failure can make retries look like duplicates and drop messages.
-    this.recentlyLogged.set(dedupeKey, Date.now());
-    setTimeout(() => this.recentlyLogged.delete(dedupeKey), 60000);
-    return true;
+      // Mark as logged only after the append succeeds. Otherwise a transient
+      // write failure can make retries look like duplicates and drop messages.
+      this.recentlyLogged.set(dedupeKey, Date.now());
+      setTimeout(() => this.recentlyLogged.delete(dedupeKey), 60000);
+      return true;
+    } finally {
+      this.loggingMessages.delete(dedupeKey);
+    }
   }
 
   /**

@@ -1,10 +1,10 @@
-import { constants } from "node:fs";
-import { mkdir, open, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import type { ConversationKind } from "../adapter.js";
 import * as log from "../log.js";
+import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 
 const eventSchema = Type.Object({
   action: Type.Optional(
@@ -129,7 +129,7 @@ export class HostEventStore implements EventStore {
   }
 
   async update(filename: string, payload: EventPayload): Promise<{ path: string; size: number }> {
-    return this.writePayload(filename, payload, constants.O_WRONLY | constants.O_TRUNC);
+    return this.writePayload(filename, payload, true);
   }
 
   async delete(filename: string): Promise<{ deleted: boolean }> {
@@ -141,17 +141,15 @@ export class HostEventStore implements EventStore {
   private async writePayload(
     filename: string,
     payload: EventPayload,
-    flag?: string | number,
+    requireExisting = false,
   ): Promise<{ path: string; size: number }> {
     await mkdir(this.eventsDir, { recursive: true });
     const safeFilename = validateEventFilename(filename);
     const filePath = join(this.eventsDir, safeFilename);
-    if (flag === undefined) {
-      await writeFile(filePath, JSON.stringify(payload) + "\n", "utf-8");
-    } else {
-      await using file = await open(filePath, flag);
-      await file.writeFile(JSON.stringify(payload) + "\n", "utf-8");
+    if (requireExisting) {
+      await stat(filePath);
     }
+    atomicWritePrivateFile(filePath, JSON.stringify(payload) + "\n");
     const fileStat = await stat(filePath);
     return { path: filePath, size: fileStat.size };
   }

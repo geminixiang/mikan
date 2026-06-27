@@ -9,7 +9,7 @@
 
 import { appendFileSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
-import { join } from "path";
+import { dirname, join } from "path";
 import type { MessagingEventHandler } from "../adapter.js";
 import { ensureDirExists } from "../utils/file-guards.js";
 import * as log from "../log.js";
@@ -256,6 +256,6 @@ export async function downloadUrlToFile(url: string, destPath: string): Promise<
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
   const buffer = await response.arrayBuffer();
-  await mkdir(join(destPath, ".."), { recursive: true });
+  await mkdir(dirname(destPath), { recursive: true });
   await writeFile(destPath, Buffer.from(buffer));
 }

@@ -73,6 +73,15 @@ Stack:
   - Prefer LBYL validation when reliable; use EAFP only for TOCTOU-prone or clearer error handling.
   - Handle errors explicitly. Do not silently swallow failures.
   - Avoid thin wrappers and unnecessary indirection; reuse existing helpers before adding abstractions.
+- **File I/O**:
+  - Use Node `fs` / `fs/promises` directly for ordinary reads, writes, directory scans, streams, and watchers; do not add a generic FileIO wrapper just to hide `fs`.
+  - Reuse `src/utils/file-guards.ts` for common optional text/JSON reads and schema-validated JSON parsing instead of hand-rolling `try readFile + JSON.parse` in multiple places.
+  - Use `atomicWritePrivateFile` for important state files where readers must not see partial content, especially settings, session pointers, event JSON, credentials, and marker files.
+  - Use append APIs directly for append-only JSONL logs; add an in-process guard or domain lock when duplicate concurrent appends would corrupt semantics.
+  - For read-modify-write state shared across requests/processes, prefer a small domain-specific lock/storage backend, following pi's settings/auth pattern, not a broad filesystem abstraction.
+  - Keep secret/vault file permissions explicit at the call site (`mode`, `chmod`, private directories); do not hide security semantics inside generic helpers.
+  - Use `dirname(path)` for parent directory creation. Avoid path tricks like `join(path, "..")`.
+  - Keep `fs.watch`, streams, binary attachment writes, and sandbox/temp-file handling close to their call sites unless repeated behavior proves a helper is needed.
 - **Lint/format**:
   - `oxlint` enforces correctness/suspicious rules as errors and unused vars as errors.
   - `oxfmt` is the formatter.

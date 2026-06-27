@@ -1,6 +1,6 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "@sinclair/typebox";
-import { existsSync, readFileSync, renameSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, renameSync } from "fs";
 import { homedir } from "os";
 import { dirname, join, resolve } from "path";
 import { readEnv } from "./utils/env.js";
@@ -276,7 +276,7 @@ export function saveConversationAutoReplyConfig(
     renameSync(otherPath, targetPath);
   }
 
-  writeFileSync(targetPath, config.rules.join("\n"), "utf-8");
+  atomicWritePrivateFile(targetPath, config.rules.join("\n"));
 }
 
 export function resolveWorkspaceDirFromArgv(args = process.argv.slice(2)): string | undefined {
