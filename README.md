@@ -2,7 +2,7 @@
   <img src="src/content/docs/assets/mikan.png" alt="mikan — multi-platform AI coding agent" width="100%">
 </p>
 
-# mikan
+# @geminixiang/mikan
 
 [![npm version](https://img.shields.io/npm/v/@geminixiang/mikan.svg)](https://www.npmjs.com/package/@geminixiang/mikan)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
