@@ -51,7 +51,7 @@ description: 了解 mikan 的平台接入、工作阶段、agent、sandbox、vau
 
 - 建立 `PiAgentWrapper`
 - 载入模型、skills、memory、session context
-- 将使用者讯息送入 `pi-agent-core` / `pi-coding-agent`
+- 将使用者讯息送入 mikan harness (`pi-agent-core`)
 - 把 tool calls 接到本地 `read/bash/edit/write/event/attach`
 - 把 tool 结果回写 session，并透过 adapter 回传给平台
 

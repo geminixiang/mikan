@@ -1,6 +1,6 @@
 ---
 title: 工作階段
-description: mikan 如何分離平台聊天歷史與 pi-coding-agent 結構化工作階段。
+description: mikan 如何分離平台聊天歷史與 mikan 結構化工作階段。
 ---
 
 import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
@@ -10,7 +10,7 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
     `log.jsonl` 保留可供人閱讀的平台訊息，用來 bootstrap thread 或 reply context。
   </Card>
   <Card title="pi 結構化 context" icon="rocket">
-    `sessions/*.jsonl` 保存 tool results 與 agent turn，讓 pi-coding-agent 可以延續工作。
+    `sessions/*.jsonl` 保存 tool results 與 agent turn，讓 mikan harness 可以延續工作。
   </Card>
   <Card title="固定 scope" icon="lock">
     Thread、reply chain 與 shared channel 會映射到固定 session files，避免不同對話互相污染。
@@ -33,7 +33,7 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
   - **log.jsonl** 平台訊息歷史
   - sessions/
     - **current** 指向使用中的 top-level session
-    - **\*.jsonl** 結構化 pi-coding-agent context，包含 tool results
+    - **\*.jsonl** 結構化 mikan harness context，包含 tool results
     - **scope-derived files** thread / reply scopes 的固定 session files
 
 </FileTree>
