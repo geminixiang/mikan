@@ -1470,7 +1470,7 @@ export async function createRunner(
     { sandbox: sandboxConfig, provisioner },
   );
 
-  const authStorage = AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json"));
+  const authStorage = AuthStorage.create(join(homedir(), ".mikan", "auth.json"));
   const modelRegistry = ModelRegistry.create(authStorage);
   const model = resolveConfiguredModel(modelRegistry, agentConfig.provider, agentConfig.model);
 

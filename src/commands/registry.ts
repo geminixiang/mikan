@@ -12,7 +12,7 @@ import { SessionViewCommandHandler } from "./session-view.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 
 export function defaultCommandHandlers(): CommandHandler[] {
-  const authStorage = AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json"));
+  const authStorage = AuthStorage.create(join(homedir(), ".mikan", "auth.json"));
   const modelRegistry = ModelRegistry.create(authStorage);
   return [
     new AdminCommandHandler(),

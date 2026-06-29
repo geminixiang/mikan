@@ -51,7 +51,7 @@ export class ModelRegistry {
   static create(authStorage: AuthStorage, modelsJsonPath?: string): ModelRegistry {
     return new ModelRegistry(
       authStorage,
-      modelsJsonPath ?? join(homedir(), ".pi", "agent", "models.json"),
+      modelsJsonPath ?? join(homedir(), ".mikan", "models.json"),
     );
   }
 

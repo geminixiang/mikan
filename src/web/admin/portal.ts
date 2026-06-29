@@ -490,7 +490,7 @@ function serveGlobalSettings(res: ServerResponse): void {
 
 async function serveModelsList(res: ServerResponse): Promise<void> {
   try {
-    const authStorage = AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json"));
+    const authStorage = AuthStorage.create(join(homedir(), ".mikan", "auth.json"));
     const registry = ModelRegistry.create(authStorage);
     const availableModels = await registry.getAvailable();
     const statuses = await resolveAdminModelAccessStatuses(registry, availableModels);

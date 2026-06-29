@@ -8,7 +8,7 @@ import {
   createCustomMessage,
 } from "@earendil-works/pi-agent-core";
 
-export const CURRENT_SESSION_VERSION = 3;
+const CURRENT_SESSION_VERSION = 3;
 
 export interface SessionHeader {
   type: "session";
@@ -19,7 +19,7 @@ export interface SessionHeader {
   parentSession?: string;
 }
 
-export interface SessionEntryBase {
+interface SessionEntryBase {
   type: string;
   id: string;
   parentId: string | null;
@@ -31,16 +31,16 @@ export interface SessionMessageEntry extends SessionEntryBase {
   message: AgentMessage;
 }
 
-export type ThinkingLevelChangeEntry = SessionEntryBase & {
+type ThinkingLevelChangeEntry = SessionEntryBase & {
   type: "thinking_level_change";
   thinkingLevel: string;
 };
-export type ModelChangeEntry = SessionEntryBase & {
+type ModelChangeEntry = SessionEntryBase & {
   type: "model_change";
   provider: string;
   modelId: string;
 };
-export type CustomMessageEntry = SessionEntryBase & {
+type CustomMessageEntry = SessionEntryBase & {
   type: "custom_message";
   customType: string;
   content: unknown;
@@ -60,10 +60,10 @@ export type CompactionEntry = SessionEntryBase & {
   details?: unknown;
   fromHook?: boolean;
 };
-export type LabelEntry = SessionEntryBase & { type: "label"; targetId: string; label?: string };
-export type CustomEntry = SessionEntryBase & { type: "custom"; customType: string; data?: unknown };
-export type SessionNameEntry = SessionEntryBase & { type: "session_name"; name: string };
-export type SessionInfoEntry = SessionEntryBase & { type: "session_info"; name?: string };
+type LabelEntry = SessionEntryBase & { type: "label"; targetId: string; label?: string };
+type CustomEntry = SessionEntryBase & { type: "custom"; customType: string; data?: unknown };
+type SessionNameEntry = SessionEntryBase & { type: "session_name"; name: string };
+type SessionInfoEntry = SessionEntryBase & { type: "session_info"; name?: string };
 
 export type SessionEntry =
   | SessionHeader
@@ -117,7 +117,7 @@ function parseEntries(filePath: string): SessionEntry[] {
     .filter((entry): entry is SessionEntry => entry !== null);
 }
 
-export function buildSessionContext(
+function buildSessionContext(
   entries: SessionEntry[],
   leafId?: string | null,
   byId?: Map<string, SessionEntry>,

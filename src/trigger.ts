@@ -95,7 +95,7 @@ async function judgeAutoReplyWithLlm(input: {
 }): Promise<boolean> {
   const judgeConfig = loadAutoReplyJudgeModel(input.conversationDir);
   const modelRegistry = ModelRegistry.create(
-    AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json")),
+    AuthStorage.create(join(homedir(), ".mikan", "auth.json")),
   );
   const model = resolveConfiguredModel(modelRegistry, judgeConfig.provider, judgeConfig.model);
   const auth = await modelRegistry.getApiKeyAndHeaders(model);
