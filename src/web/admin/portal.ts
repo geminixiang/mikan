@@ -2,7 +2,9 @@ import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "fs";
 import type { IncomingMessage, ServerResponse } from "http";
 import { homedir } from "os";
 import { basename, join, resolve as pathResolve, sep as pathSep } from "path";
-import { AuthStorage, ModelRegistry, SessionManager } from "@earendil-works/pi-coding-agent";
+import { AuthStorage } from "../../harness/auth-storage.js";
+import { ModelRegistry } from "../../harness/model-registry.js";
+import { SessionManager } from "../../harness/session-manager.js";
 
 import {
   loadConversationAutoReplyConfig,

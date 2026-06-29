@@ -1,4 +1,4 @@
-import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { SessionManager } from "../harness/session-manager.js";
 export type { MikanSessionHeader } from "./types.js";
 import type { MikanSessionHeader } from "./types.js";
 

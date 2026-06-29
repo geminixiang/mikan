@@ -1,7 +1,8 @@
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { AuthStorage } from "../src/harness/auth-storage.js";
+import { ModelRegistry } from "../src/harness/model-registry.js";
 import { describe, expect, test } from "vitest";
 import { resolveConfiguredModel } from "../src/model-registry.js";
 

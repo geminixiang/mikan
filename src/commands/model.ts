@@ -1,6 +1,6 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ThinkingLevel as PiAiThinkingLevel } from "@earendil-works/pi-ai";
-import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import type { ModelRegistry } from "../harness/model-registry.js";
 import { join } from "path";
 import { resolveConversationSettings, updateConversationSettings } from "../config.js";
 import { matchCommand } from "./parse.js";

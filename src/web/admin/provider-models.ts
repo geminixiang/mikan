@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import type { ModelRegistry } from "../../harness/model-registry.js";
 
 type AdminModelStatus = "available" | "unverified";
 

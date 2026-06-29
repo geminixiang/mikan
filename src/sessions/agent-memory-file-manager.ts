@@ -1,4 +1,4 @@
-import { SessionManager, type SessionEntry } from "@earendil-works/pi-coding-agent";
+import { SessionManager, type SessionEntry } from "../harness/session-manager.js";
 import { join } from "path";
 import type { ConversationLogMessage } from "../types.js";
 import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-guards.js";

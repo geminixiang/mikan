@@ -6,7 +6,7 @@ import {
   type CompactionEntry,
   type SessionEntry,
   type SessionMessageEntry,
-} from "@earendil-works/pi-coding-agent";
+} from "../../harness/session-manager.js";
 import {
   getThreadSessionFile,
   resolveChannelSessionFile,

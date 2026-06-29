@@ -1,4 +1,5 @@
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { AuthStorage } from "../harness/auth-storage.js";
+import { ModelRegistry } from "../harness/model-registry.js";
 import { homedir } from "os";
 import { join } from "path";
 import { AdminCommandHandler } from "./admin.js";

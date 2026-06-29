@@ -1,5 +1,5 @@
 import { type Api, type Model } from "@earendil-works/pi-ai";
-import { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { ModelRegistry } from "./harness/model-registry.js";
 
 export function resolveConfiguredModel(
   modelRegistry: ModelRegistry,

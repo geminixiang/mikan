@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { existsSync, mkdirSync, rmSync } from "fs";
 import { basename, dirname, join } from "path";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { SessionManager } from "../harness/session-manager.js";
 import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-guards.js";
 import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 import { isPlatformHistorySession } from "./metadata.js";
