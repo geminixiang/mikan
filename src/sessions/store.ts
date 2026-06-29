@@ -7,20 +7,6 @@ import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 import { isPlatformHistorySession } from "./metadata.js";
 export type { ResolvedSessionScope, ThreadRootMessage } from "./types.js";
 
-interface PersistableSessionEntryLike {
-  type: string;
-  message?: { role?: string };
-}
-
-interface SessionManagerInternal {
-  persist?: boolean;
-  sessionFile?: string;
-  fileEntries?: PersistableSessionEntryLike[];
-  flushed?: boolean;
-  ["_persist"]?: (entry: unknown) => void;
-  ["__mikanDeferredFlushPatch"]?: boolean;
-}
-
 /**
  * Returns the shared session directory for a conversation.
  * Channel sessions use a current pointer within this directory.
@@ -111,45 +97,7 @@ export function openManagedSession(
     rmSync(sessionFile, { force: true });
   }
 
-  return patchDeferredFlushRewrite(SessionManager.open(sessionFile, sessionDir, cwd));
-}
-
-function patchDeferredFlushRewrite(sessionManager: SessionManager): SessionManager {
-  // pi SessionManager defers writing user-only sessions until the first assistant message.
-  // Mikan may deliberately prefill chat history from log.jsonl, so that deferred flush must
-  // rewrite the already-prefilled file instead of appending a second copy of every entry.
-  const internal = sessionManager as unknown as SessionManagerInternal;
-  if (internal["__mikanDeferredFlushPatch"] || typeof internal["_persist"] !== "function") {
-    return sessionManager;
-  }
-
-  const originalPersist = internal["_persist"].bind(sessionManager);
-  internal["_persist"] = (entry: unknown): void => {
-    const entries = internal.fileEntries;
-    const sessionFile = internal.sessionFile;
-    const shouldRewriteDeferredFlush =
-      internal.persist === true &&
-      internal.flushed === false &&
-      !!sessionFile &&
-      existsSync(sessionFile) &&
-      Array.isArray(entries) &&
-      entries.some(
-        (fileEntry) => fileEntry.type === "message" && fileEntry.message?.role === "assistant",
-      );
-
-    if (!shouldRewriteDeferredFlush) {
-      originalPersist(entry);
-      return;
-    }
-
-    atomicWritePrivateFile(
-      sessionFile,
-      `${entries.map((fileEntry) => JSON.stringify(fileEntry)).join("\n")}\n`,
-    );
-    internal.flushed = true;
-  };
-  internal["__mikanDeferredFlushPatch"] = true;
-  return sessionManager;
+  return SessionManager.open(sessionFile, sessionDir, cwd);
 }
 
 function createSessionFilename(sessionId = randomUUID()): string {
