@@ -56,6 +56,22 @@ describe("append trigger attribution", () => {
     const already = "Done.\n\n_Triggered by [event: foo_bar.json]_";
     expect(appendTriggerAttribution(already, "[event: foo_bar.json]")).toBe(already);
   });
+
+  test("adds session link to event attribution", () => {
+    expect(appendTriggerAttribution("Done.", "[event: daily]", "https://mikan/session?t=1")).toBe(
+      "Done.\n\n_Triggered by [event: daily] · session: https://mikan/session?t=1_",
+    );
+  });
+
+  test("upgrades existing event attribution with session link", () => {
+    expect(
+      appendTriggerAttribution(
+        "Done.\n\n_Triggered by [event: daily]_",
+        "[event: daily]",
+        "https://mikan/session?t=1",
+      ),
+    ).toBe("Done.\n\n_Triggered by [event: daily] · session: https://mikan/session?t=1_");
+  });
 });
 
 describe("runtime path context", () => {

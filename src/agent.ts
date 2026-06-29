@@ -761,11 +761,23 @@ function getFinalAssistantText(session: AgentSession): string {
 export function appendTriggerAttribution(
   text: string,
   triggerAttribution: string | undefined,
+  sessionLink?: string,
 ): string {
   if (!triggerAttribution) return text;
-  const suffix = `_Triggered by ${triggerAttribution}_`;
-  if (text.trimEnd().endsWith(suffix)) return text;
-  return `${text.trimEnd()}\n\n${suffix}`;
+  const trimmed = text.trimEnd();
+  const legacySuffix = `_Triggered by ${triggerAttribution}_`;
+  const suffix = sessionLink
+    ? `_Triggered by ${triggerAttribution} · session: ${sessionLink}_`
+    : legacySuffix;
+  if (trimmed.endsWith(suffix)) return text;
+  const body = trimmed.endsWith(legacySuffix)
+    ? trimmed.slice(0, -legacySuffix.length).trimEnd()
+    : trimmed;
+  return `${body}\n\n${suffix}`;
+}
+
+function isEventTriggerAttribution(triggerAttribution: string | undefined): boolean {
+  return triggerAttribution?.startsWith("[event:") === true;
 }
 
 function extractToolLabel(toolName: string, args: unknown): string {
@@ -801,6 +813,7 @@ async function finalizeRunResponse(
   runState: RunnerSessionState,
   options?: {
     triggerAttribution?: string;
+    triggerSessionLink?: string;
     createOverflowLink?: () => string;
     platform?: string;
     model?: Model<Api>;
@@ -875,6 +888,7 @@ async function finalizeRunResponse(
       appendTriggerAttribution(
         formatResponseWithToolProgress(finalText, runState),
         options?.triggerAttribution,
+        options?.triggerSessionLink,
       ),
       { createOverflowLink: options?.createOverflowLink },
     );
@@ -1618,24 +1632,31 @@ export async function createRunner(
 
       const sessionViewTokenStore = sessionView?.tokenStore;
       const sessionViewPortalBaseUrl = sessionView?.portalBaseUrl;
-      const createOverflowLink =
+      let sessionViewLink: string | undefined;
+      const createSessionViewLink =
         sessionViewTokenStore && sessionViewPortalBaseUrl
           ? () => {
-              const token = sessionViewTokenStore.create(
-                platform.name as PlatformName,
-                message.userId,
-                conversationId,
-                message.sessionKey,
-                contextFile,
-                message.userName,
-              );
-              return `${sessionViewPortalBaseUrl}/session?token=${token.token}`;
+              if (!sessionViewLink) {
+                const token = sessionViewTokenStore.create(
+                  platform.name as PlatformName,
+                  message.userId,
+                  conversationId,
+                  message.sessionKey,
+                  contextFile,
+                  message.userName,
+                );
+                sessionViewLink = `${sessionViewPortalBaseUrl}/session?token=${token.token}`;
+              }
+              return sessionViewLink;
             }
           : undefined;
 
       await finalizeRunResponse(responder, session, runState, {
         triggerAttribution: prepared.triggerAttribution,
-        createOverflowLink,
+        triggerSessionLink: isEventTriggerAttribution(prepared.triggerAttribution)
+          ? createSessionViewLink?.()
+          : undefined,
+        createOverflowLink: createSessionViewLink,
         platform: platform.name,
         model,
         sessionConversation: prepared.sessionConversation,
