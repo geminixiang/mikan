@@ -119,13 +119,11 @@ export class AgentRunController {
           async () => {
             await context.responder.setTyping(true);
             await context.responder.setWorking(true);
-            const runnerResult = await state.runner.run(
-              context.message,
-              context.responder,
-              context.platform,
-            );
-            await context.responder.setWorking(false);
-            return runnerResult;
+            try {
+              return await state.runner.run(context.message, context.responder, context.platform);
+            } finally {
+              await context.responder.setWorking(false);
+            }
           },
         );
 

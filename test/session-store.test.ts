@@ -218,6 +218,23 @@ describe("managed session initialization", () => {
     expect(countSessionHeaders(sessionFile)).toBe(1);
   });
 
+  test("opens a missing managed session file with the provided cwd", () => {
+    const sessionDir = getChannelSessionDir(channelDir);
+    const sessionFile = join(sessionDir, "missing.jsonl");
+    const sessionManager = openManagedSession(sessionFile, sessionDir, channelDir);
+
+    sessionManager.appendMessage(makeUserMessage("hello"));
+    sessionManager.appendMessage(makeAssistantMessage("hi"));
+
+    const entries = parseSessionEntries(sessionFile);
+    const header = entries.find((entry) => entry.type === "session") as
+      | { cwd?: string }
+      | undefined;
+
+    expect(header?.cwd).toBe(channelDir);
+    expect(countSessionHeaders(sessionFile)).toBe(1);
+  });
+
   test("top-level agent runs replace platform-history current with a live session", () => {
     const sessionDir = getChannelSessionDir(channelDir);
     mkdirSync(sessionDir, { recursive: true });

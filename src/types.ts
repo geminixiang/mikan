@@ -62,6 +62,9 @@ export interface ChatAdapter {
 
 export type AgentEventPayload =
   | { kind: "sessionStart" }
+  | { kind: "responseDelta"; delta: string }
+  | { kind: "responseFinal"; text: string }
+  | { kind: "diagnostic"; text: string }
   | { kind: "toolStart"; toolId: string; toolName: string; input?: unknown }
   | { kind: "toolEnd"; toolId: string }
   | { kind: "turnEnd"; awaitingInput?: boolean }

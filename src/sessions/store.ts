@@ -111,10 +111,7 @@ export function openManagedSession(
     rmSync(sessionFile, { force: true });
   }
 
-  const SessionManagerCtor = SessionManager as unknown as {
-    new (cwd: string, sessionDir: string, sessionFile: string, persist: boolean): SessionManager;
-  };
-  return patchDeferredFlushRewrite(new SessionManagerCtor(cwd, sessionDir, sessionFile, true));
+  return patchDeferredFlushRewrite(SessionManager.open(sessionFile, sessionDir, cwd));
 }
 
 function patchDeferredFlushRewrite(sessionManager: SessionManager): SessionManager {

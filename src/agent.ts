@@ -1133,6 +1133,7 @@ function sendAgentEvent(payload: {
   emitAgentEvent({ source: "mikan", ...payload });
 }
 
+// ponytail: additive SSE mirror only; keep responder rendering here until another frontend needs the same stream.
 function attachSessionEventHandlers(params: {
   session: AgentSession;
   runState: RunnerSessionState;
@@ -1255,14 +1256,17 @@ function attachSessionEventHandlers(params: {
           assistantMessageEvent?: { type?: string; delta?: string };
         }
       ).assistantMessageEvent;
-      if (
-        assistantMessageEvent?.type === "text_delta" &&
-        assistantMessageEvent.delta &&
-        responder.appendResponseDelta
-      ) {
-        queue.enqueue(async () => {
-          await responder.appendResponseDelta?.(assistantMessageEvent.delta ?? "");
-        }, "response delta");
+      if (assistantMessageEvent?.type === "text_delta" && assistantMessageEvent.delta) {
+        sendAgentEvent({
+          sessionId: agentEventSessionId,
+          actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
+          event: { kind: "responseDelta", delta: assistantMessageEvent.delta },
+        });
+        if (responder.appendResponseDelta) {
+          queue.enqueue(async () => {
+            await responder.appendResponseDelta?.(assistantMessageEvent.delta ?? "");
+          }, "response delta");
+        }
       }
       return;
     }
@@ -1359,6 +1363,11 @@ function attachSessionEventHandlers(params: {
           sendAgentEvent({
             sessionId: agentEventSessionId,
             actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
+            event: { kind: "responseFinal", text: finalText },
+          });
+          sendAgentEvent({
+            sessionId: agentEventSessionId,
+            actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
             event: { kind: "turnEnd" },
           });
           if (responder.finishResponse) {
@@ -1374,8 +1383,14 @@ function attachSessionEventHandlers(params: {
     }
 
     if (event.type === "compaction_start") {
+      const text = "_Compacting context..._";
       log.logInfo(`Auto-compaction started (reason: ${event.reason})`);
-      queue.enqueue(() => responder.respond("_Compacting context..._"), "compaction start");
+      sendAgentEvent({
+        sessionId: agentEventSessionId,
+        actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
+        event: { kind: "diagnostic", text },
+      });
+      queue.enqueue(() => responder.respond(text), "compaction start");
       return;
     }
 
@@ -1395,10 +1410,13 @@ function attachSessionEventHandlers(params: {
         actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
         event: { kind: "sessionStart" },
       });
-      queue.enqueue(
-        () => responder.respond(`_Retrying (${event.attempt}/${event.maxAttempts})..._`),
-        "retry",
-      );
+      const text = `_Retrying (${event.attempt}/${event.maxAttempts})..._`;
+      sendAgentEvent({
+        sessionId: agentEventSessionId,
+        actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
+        event: { kind: "diagnostic", text },
+      });
+      queue.enqueue(() => responder.respond(text), "retry");
     }
   });
 }
