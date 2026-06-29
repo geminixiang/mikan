@@ -1,18 +1,10 @@
-import { Agent, type ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { Agent, convertToLlm, type ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
-import {
-  AgentSession,
-  AuthStorage,
-  convertToLlm,
-  DefaultResourceLoader,
-  formatSkillsForPrompt,
-  getAgentDir,
-  loadSkillsFromDir,
-  ModelRegistry,
-  SessionManager,
-  SettingsManager,
-  type Skill,
-} from "@earendil-works/pi-coding-agent";
+import { AgentSession } from "./harness/agent-session.js";
+import { AuthStorage } from "./harness/auth-storage.js";
+import { ModelRegistry } from "./harness/model-registry.js";
+import { SessionManager } from "./harness/session-manager.js";
+import { formatSkillsForPrompt, loadSkillsFromDir, type Skill } from "./harness/skills.js";
 import { existsSync, readFileSync } from "fs";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import { homedir } from "os";
@@ -511,7 +503,6 @@ async function createConfiguredAgentSession(params: {
   thinkingLevel: ThinkingLevel;
   tools: Awaited<ReturnType<typeof createMikanTools>>["tools"];
   sessionManager: SessionManager;
-  settingsManager: SettingsManager;
   modelRegistry: ModelRegistry;
 }): Promise<ConfiguredAgentSession> {
   const {
@@ -523,7 +514,6 @@ async function createConfiguredAgentSession(params: {
     thinkingLevel,
     tools,
     sessionManager,
-    settingsManager,
     modelRegistry,
   } = params;
   const agent = new Agent({
@@ -553,36 +543,10 @@ async function createConfiguredAgentSession(params: {
     );
   }
 
-  const resourceLoader = new DefaultResourceLoader({
-    cwd: workspaceDir,
-    agentDir: getAgentDir(),
-    systemPrompt,
-  });
-  try {
-    await resourceLoader.reload();
-    const extResult = resourceLoader.getExtensions();
-    if (extResult.errors.length > 0) {
-      for (const err of extResult.errors) {
-        log.logWarning(`[${conversationId}] Extension load error: ${err.path}`, err.error);
-      }
-    }
-    log.logInfo(
-      `[${conversationId}] Loaded ${extResult.extensions.length} extension(s): ${extResult.extensions.map((extension) => extension.path).join(", ")}`,
-    );
-  } catch (error) {
-    log.logWarning(`[${conversationId}] Failed to load resources`, String(error));
-  }
+  void workspaceDir;
+  void runtimeWorkspaceRoot;
 
-  const baseToolsOverride = Object.fromEntries(tools.map((tool) => [tool.name, tool]));
-  const session = new AgentSession({
-    agent,
-    sessionManager,
-    settingsManager,
-    cwd: runtimeWorkspaceRoot,
-    modelRegistry,
-    resourceLoader,
-    baseToolsOverride,
-  });
+  const session = new AgentSession(agent, sessionManager);
   return { agent, session };
 }
 
@@ -1348,13 +1312,17 @@ function attachSessionEventHandlers(params: {
 
         const thinkingParts: string[] = [];
         const textParts: string[] = [];
-        const hasToolCall = assistantMsg.content.some((part) =>
-          ["tool_use", "toolCall", "tool-call"].includes((part as { type?: string }).type ?? ""),
+        const hasToolCall = assistantMsg.content.some((part: { type?: string }) =>
+          ["tool_use", "toolCall", "tool-call"].includes(part.type ?? ""),
         );
-        for (const part of assistantMsg.content) {
-          if (part.type === "thinking") {
+        for (const part of assistantMsg.content as Array<{
+          type?: string;
+          thinking?: string;
+          text?: string;
+        }>) {
+          if (part.type === "thinking" && part.thinking) {
             thinkingParts.push(part.thinking);
-          } else if (part.type === "text") {
+          } else if (part.type === "text" && part.text) {
             textParts.push(part.text);
           }
         }
@@ -1543,7 +1511,6 @@ export async function createRunner(
 
   const sessionUuid = extractSessionUuid(contextFile);
   const chatSessionManager = new AgentMemoryFileManager();
-  const settingsManager = SettingsManager.inMemory();
   const { agent, session } = await createConfiguredAgentSession({
     conversationId,
     workspaceDir,
@@ -1553,7 +1520,6 @@ export async function createRunner(
     thinkingLevel: agentConfig.thinkingLevel,
     tools,
     sessionManager,
-    settingsManager,
     modelRegistry,
   });
 
