@@ -50,6 +50,9 @@ function applyAction(current: AutoReplyConfig, action: AutoReplyAction): AutoRep
   }
 }
 
+/**
+ * @deprecated Auto-reply is kept for compatibility while its future is undecided.
+ */
 export class AutoReplyCommandHandler implements CommandHandler {
   async tryHandle(context: CommandContext): Promise<boolean> {
     const action = parseAutoReplyCommand(context.commandText);

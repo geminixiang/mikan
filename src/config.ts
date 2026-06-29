@@ -218,6 +218,8 @@ export function resolveConversationSettings(conversationDir: string): AgentConfi
  * Resolve the model used to judge auto-reply rules. Falls back to the main
  * llm.{provider,model} when llm.autoReply is not set, so a missing override
  * keeps current behavior.
+ *
+ * @deprecated Auto-reply is kept for compatibility while its future is undecided.
  */
 export function loadAutoReplyJudgeModel(conversationDir?: string): JudgeModelConfig {
   const global = requireGlobalSettings();
@@ -245,6 +247,8 @@ function readAutoReplyRulesFile(path: string): string[] {
  * - `auto-reply` exists: enabled; empty file means reply to any top-level message.
  * - `auto-reply.disabled` exists: disabled, preserving any rules text for re-enable.
  * - neither exists: disabled.
+ *
+ * @deprecated Auto-reply is kept for compatibility while its future is undecided.
  */
 export function loadConversationAutoReplyConfig(conversationDir: string): AutoReplyConfig {
   const enabledPath = join(conversationDir, AUTO_REPLY_FILE);
@@ -260,7 +264,11 @@ export function loadConversationAutoReplyConfig(conversationDir: string): AutoRe
   return { enabled: false, rules: [] };
 }
 
-/** Save auto-reply state using mom-compatible marker files. */
+/**
+ * Save auto-reply state using mom-compatible marker files.
+ *
+ * @deprecated Auto-reply is kept for compatibility while its future is undecided.
+ */
 export function saveConversationAutoReplyConfig(
   conversationDir: string,
   config: AutoReplyConfig,

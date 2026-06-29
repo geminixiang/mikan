@@ -179,6 +179,9 @@ export interface AgentConfig {
   };
 }
 
+/**
+ * @deprecated Auto-reply is kept for compatibility while its future is undecided.
+ */
 export interface AutoReplyConfig {
   enabled: boolean;
   rules: string[];
@@ -350,6 +353,9 @@ export type TriggerIntent = "mention" | "direct" | "thread-continuation" | "auto
 
 export type TriggerResult = { trigger: true; reason: string } | { trigger: false; reason: string };
 
+/**
+ * @deprecated Auto-reply is kept for compatibility while its future is undecided.
+ */
 export type AutoReplyJudge = (input: {
   event: ConversationEvent;
   rules: string[];

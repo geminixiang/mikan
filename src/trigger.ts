@@ -26,6 +26,8 @@ export function decideTrigger(
  * Decide whether to auto-reply. Never throws — judge errors and timeouts are
  * folded into a `trigger: false` result with a distinct reason, so adapters
  * can apply a single uniform "do not trigger, but still log" policy.
+ *
+ * @deprecated Auto-reply is kept for compatibility while its future is undecided.
  */
 export async function evaluateAutoReplyPolicy(input: {
   event: ConversationEvent;
