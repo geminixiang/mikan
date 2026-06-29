@@ -31,6 +31,8 @@
     "build": "tsgo -p tsconfig.build.json && shx chmod +x dist/main.js",
     "dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
     "test": "vitest --run",
+    "test:coverage": "vitest --run --coverage",
+    "test:coverage:check": "vitest --run --coverage",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",
