@@ -2,7 +2,7 @@ import { Agent, convertToLlm, type ThinkingLevel } from "@earendil-works/pi-agen
 import { type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
 import { AgentSession } from "./harness/agent-session.js";
 import { AuthStorage } from "./harness/auth-storage.js";
-import { getAuthPath, getProjectSkillsDir } from "./harness/config.js";
+import { getAuthPath } from "./harness/config.js";
 import { ModelRegistry } from "./harness/model-registry.js";
 import { SessionManager } from "./harness/session-manager.js";
 import { formatSkillsForPrompt, loadSkillsFromDir, type Skill } from "./harness/skills.js";
@@ -123,19 +123,22 @@ function loadMikanSkills(conversationDir: string, workspacePath: string): Skill[
     return hostPath;
   };
 
-  const loadSkillDir = (dir: string, source: string): void => {
-    for (const skill of loadSkillsFromDir({ dir, source }).skills) {
-      skill.filePath = translatePath(skill.filePath);
-      skill.baseDir = translatePath(skill.baseDir);
-      skillMap.set(skill.name, skill);
-    }
-  };
+  // Load workspace-level skills (global)
+  const workspaceSkillsDir = join(hostWorkspacePath, "skills");
+  for (const skill of loadSkillsFromDir({ dir: workspaceSkillsDir, source: "workspace" }).skills) {
+    // Translate paths to container paths for system prompt
+    skill.filePath = translatePath(skill.filePath);
+    skill.baseDir = translatePath(skill.baseDir);
+    skillMap.set(skill.name, skill);
+  }
 
-  // Legacy skills/ remains readable; .mikan/skills is the pi-style config path.
-  loadSkillDir(join(hostWorkspacePath, "skills"), "workspace");
-  loadSkillDir(getProjectSkillsDir(hostWorkspacePath), "workspace");
-  loadSkillDir(join(conversationDir, "skills"), "channel");
-  loadSkillDir(getProjectSkillsDir(conversationDir), "channel");
+  // Load conversation-specific skills (override workspace skills on collision)
+  const conversationSkillsDir = join(conversationDir, "skills");
+  for (const skill of loadSkillsFromDir({ dir: conversationSkillsDir, source: "channel" }).skills) {
+    skill.filePath = translatePath(skill.filePath);
+    skill.baseDir = translatePath(skill.baseDir);
+    skillMap.set(skill.name, skill);
+  }
 
   return Array.from(skillMap.values());
 }
@@ -285,7 +288,7 @@ ${envDescription}
 ## Workspace Layout
 ${workspaceRoot}/
 ├── MEMORY.md                    # Global memory (all conversations)
-├── .mikan/skills/               # Global CLI tools you create
+├── skills/                      # Global CLI tools you create
 └── ${conversationId}/           # This conversation
     ├── MEMORY.md                # Conversation-specific memory
     ├── log.jsonl                # Human-readable message history (no tool results)
@@ -295,13 +298,13 @@ ${workspaceRoot}/
     │   └── <scope_id>.jsonl        # Scoped thread/reply session files
     ├── attachments/             # User-shared files
     ├── scratch/                 # Working directory for clones/downloads/experiments: ${scratchPath}
-    └── .mikan/skills/           # Conversation-specific tools
+    └── skills/                  # Conversation-specific tools
 
 ## Skills (Custom CLI Tools)
 You can create reusable CLI tools for recurring tasks (email, APIs, data processing, etc.).
 
 ### Creating Skills
-Store in \`${workspaceRoot}/.mikan/skills/<name>/\` (global) or \`${conversationPath}/.mikan/skills/<name>/\` (conversation-specific).
+Store in \`${workspaceRoot}/skills/<name>/\` (global) or \`${conversationPath}/skills/<name>/\` (conversation-specific).
 Each skill directory needs a \`SKILL.md\` with YAML frontmatter:
 
 \`\`\`markdown

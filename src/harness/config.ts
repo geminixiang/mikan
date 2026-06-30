@@ -21,6 +21,6 @@ export function getSettingsPath(): string {
   return join(getMikanDir(), "settings.json");
 }
 
-export function getProjectSkillsDir(cwd: string): string {
-  return join(cwd, CONFIG_DIR_NAME, "skills");
+export function getExtensionsDir(): string {
+  return join(getMikanDir(), "extensions");
 }

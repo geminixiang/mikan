@@ -29,7 +29,7 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 - **Credential vaults** — `/login` stores credentials under `--state-dir` and injects env into sandbox runs
 - **Web session viewer** — read-only web view of the current session via `session` / `/session`
 - **Persistent memory** — workspace-level and channel-level `MEMORY.md`
-- **Skills** — drop CLI tools into `.mikan/skills/`
+- **Skills** — drop CLI tools into `skills/`
 - **Events** — schedule one-shot or recurring tasks via JSON files
 - **Multi-provider** — any provider/model supported by `pi-ai`
 
@@ -120,20 +120,21 @@ See [src/content/docs/configuration.md](src/content/docs/configuration.md) for a
 ```text
 <state-dir>/
 ├── settings.json
+├── auth.json
+├── models.json
+├── extensions/
 └── vaults/
 
 <working-directory>/
 ├── MEMORY.md
 ├── SYSTEM.md
-├── .mikan/
-│   └── skills/
+├── skills/
 ├── events/
 └── <conversation-id>/
     ├── log.jsonl
     ├── attachments/
     ├── scratch/
-    ├── .mikan/
-    │   └── skills/
+    ├── skills/
     └── sessions/
 ```
 

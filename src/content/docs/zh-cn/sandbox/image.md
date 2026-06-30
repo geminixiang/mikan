@@ -25,7 +25,7 @@ mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 - mikan 会为每个 conversation 创建一个独立 vault 与 container
 - 每个 container 会绑定自己的 Docker bridge network，彼此默认互相隔离
 - 创建 managed container 时会加上 `--cap-drop=ALL`、`--security-opt=no-new-privileges` 与 `--pids-limit=1024`
-- container 内只会看到 `/workspace/MEMORY.md`、`/workspace/.mikan/skills`、`/workspace/events` 与当前 conversation 目录
+- container 内只会看到 `/workspace/MEMORY.md`、`/workspace/skills`、`/workspace/events` 与当前 conversation 目录
 - vault env 会在执行时注入
 - vault file credential 会按 target path 自动 bind mount 进 container
 - 空闲 container 会自动 stop；下次需要时再 start 或 recreate

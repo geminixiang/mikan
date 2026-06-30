@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "fs";
 import type { IncomingMessage, ServerResponse } from "http";
 import { basename, join, resolve as pathResolve, sep as pathSep } from "path";
 import { AuthStorage } from "../../harness/auth-storage.js";
-import { getAuthPath, getProjectSkillsDir } from "../../harness/config.js";
+import { getAuthPath } from "../../harness/config.js";
 import { ModelRegistry } from "../../harness/model-registry.js";
 import { SessionManager } from "../../harness/session-manager.js";
 
@@ -1145,9 +1145,9 @@ function serveSkillsList(
   }
   const workingDir = requireAdminWorkingDir(res, services);
   if (!workingDir) return;
-  const global = readSkillsFromDir(getProjectSkillsDir(workingDir), "global");
+  const global = readSkillsFromDir(join(workingDir, "skills"), "global");
   const conversation = readSkillsFromDir(
-    getProjectSkillsDir(join(workingDir, scope.conversationId)),
+    join(workingDir, scope.conversationId, "skills"),
     "conversation",
   );
   jsonRes(res, 200, {
@@ -1188,8 +1188,8 @@ function serveSkillFile(
 
   const skillsRoot =
     source === "global"
-      ? getProjectSkillsDir(workingDir)
-      : getProjectSkillsDir(join(workingDir, scope.conversationId));
+      ? join(workingDir, "skills")
+      : join(workingDir, scope.conversationId, "skills");
   const safe = safeJoinUnderRoot(skillsRoot, join(directory, "SKILL.md"));
   if (safe.error) {
     jsonRes(res, 400, { error: safe.error });

@@ -34,7 +34,7 @@ import {
 import { FileVaultManager } from "./vault/index.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
 import { ChannelStore } from "./store.js";
-import { getMikanDir, getProjectSkillsDir } from "./harness/config.js";
+import { getExtensionsDir, getMikanDir } from "./harness/config.js";
 import * as Sentry from "@sentry/node";
 
 function getVersion(): string {
@@ -197,6 +197,7 @@ if (parsedArgs.showOnboard) {
   const stateDir = parsedArgs.stateDir ?? getMikanDir();
   setEnvAliases("STATE_DIR", stateDir);
   ensureSecureStateDir(stateDir);
+  ensureDirExists(getExtensionsDir());
   try {
     const settingsPath = createGlobalSettingsFile(stateDir);
     console.log(`Created global settings at ${settingsPath}`);
@@ -232,6 +233,7 @@ const { workingDir, sandbox } = { workingDir: parsedArgs.workingDir, sandbox: pa
 const stateDir = parsedArgs.stateDir ?? getMikanDir();
 setEnvAliases("STATE_DIR", stateDir);
 ensureSecureStateDir(stateDir);
+ensureDirExists(getExtensionsDir());
 
 // Validate platform tokens
 const hasSlack = !!(SLACK_APP_TOKEN && SLACK_BOT_TOKEN);
@@ -290,7 +292,7 @@ const provisioner =
     : undefined;
 
 if (sandbox.type === "image") {
-  ensureDirExists(getProjectSkillsDir(workingDir));
+  ensureDirExists(join(workingDir, "skills"));
   ensureDirExists(join(workingDir, "events"));
   try {
     writeFileSync(join(workingDir, "MEMORY.md"), "", { flag: "wx" });

@@ -7,7 +7,6 @@ import { createExecutor, type Executor, type SandboxConfig } from "./sandbox/ind
 import { reportUserFacingError } from "./observability/sentry.js";
 import { normalizeSharedVaultName, type ResolvedVault, type VaultManager } from "./vault/index.js";
 import { resolveActorVaultKey } from "./vault/routing.js";
-import { getProjectSkillsDir } from "./harness/config.js";
 import * as log from "./log.js";
 
 export type { ActorContext, ImageWorkspaceMountMode } from "./types.js";
@@ -208,16 +207,11 @@ export class ActorExecutionResolver {
       this.ensuredConversationDirs.add(conversationId);
     }
 
-    const mounts = [
+    return [
       { source: join(this.workspaceDir, "MEMORY.md"), target: "/workspace/MEMORY.md" },
-      { source: getProjectSkillsDir(this.workspaceDir), target: "/workspace/.mikan/skills" },
+      { source: join(this.workspaceDir, "skills"), target: "/workspace/skills" },
       { source: join(this.workspaceDir, "events"), target: "/workspace/events" },
       { source: conversationDir, target: `/workspace/${conversationId}` },
     ];
-    const legacySkillsDir = join(this.workspaceDir, "skills");
-    if (existsSync(legacySkillsDir)) {
-      mounts.splice(2, 0, { source: legacySkillsDir, target: "/workspace/skills" });
-    }
-    return mounts;
   }
 }
