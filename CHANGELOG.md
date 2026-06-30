@@ -9,6 +9,28 @@ any release.
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-06-30
+
+### Added
+
+- Append a session-view link to event-triggered attribution messages.
+- Show raw cached token counts and cache-hit rate in usage summaries.
+
+### Changed
+
+- Use a stable, low-noise usage summary layout with token units and fixed cost breakdowns.
+- Mark the auto-reply command as deprecated.
+
+### Fixed
+
+- Harden state file writes to avoid readers seeing partial state.
+- Reject malformed OAuth configuration during login setup.
+
+### Tests
+
+- Add unit coverage for utility and tool modules.
+- Expand Slack end-to-end coverage and make CI Slack artifacts more reliable.
+
 ## [0.5.2] - 2026-06-26
 
 ### Added
