@@ -5,9 +5,9 @@ import { createMikanAgent, createMikanSessionServices } from "./harness/agent-se
 import { AgentSession } from "./harness/agent-session.js";
 import { SessionManager } from "./harness/session-manager.js";
 import { buildSystemPrompt } from "./harness/system-prompt.js";
-import { loadSkillsFromDir, type Skill } from "./harness/skills.js";
+import { MikanResourceLoader } from "./harness/resource-loader.js";
 import { existsSync, readFileSync } from "fs";
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { mkdir, writeFile } from "fs/promises";
 import { join, posix } from "path";
 import type {
   ConversationMessage,
@@ -57,78 +57,6 @@ const IMAGE_MIME_TYPES: Record<string, string> = {
 
 function getImageMimeType(filename: string): string | undefined {
   return IMAGE_MIME_TYPES[filename.toLowerCase().split(".").pop() || ""];
-}
-
-async function getMemory(conversationDir: string): Promise<string> {
-  const parts: string[] = [];
-
-  // Read workspace-level memory (shared across all conversations)
-  const workspaceMemoryPath = join(conversationDir, "..", "MEMORY.md");
-  if (existsSync(workspaceMemoryPath)) {
-    try {
-      const content = (await readFile(workspaceMemoryPath, "utf-8")).trim();
-      if (content) {
-        parts.push(`### Global Workspace Memory\n${content}`);
-      }
-    } catch (error) {
-      log.logWarning("Failed to read workspace memory", `${workspaceMemoryPath}: ${error}`);
-    }
-  }
-
-  // Read conversation-specific memory
-  const conversationMemoryPath = join(conversationDir, "MEMORY.md");
-  if (existsSync(conversationMemoryPath)) {
-    try {
-      const content = (await readFile(conversationMemoryPath, "utf-8")).trim();
-      if (content) {
-        parts.push(`### Conversation-Specific Memory\n${content}`);
-      }
-    } catch (error) {
-      log.logWarning("Failed to read conversation memory", `${conversationMemoryPath}: ${error}`);
-    }
-  }
-
-  if (parts.length === 0) {
-    return "(no working memory yet)";
-  }
-
-  return parts.join("\n\n");
-}
-
-function loadMikanSkills(conversationDir: string, workspacePath: string): Skill[] {
-  const skillMap = new Map<string, Skill>();
-
-  // conversationDir is the host path (e.g., /Users/.../data/C0A34FL8PMH)
-  // hostWorkspacePath is the parent directory on host
-  // workspacePath is the container path (e.g., /workspace)
-  const hostWorkspacePath = join(conversationDir, "..");
-
-  // Helper to translate host paths to container paths
-  const translatePath = (hostPath: string): string => {
-    if (hostPath.startsWith(hostWorkspacePath)) {
-      return workspacePath + hostPath.slice(hostWorkspacePath.length);
-    }
-    return hostPath;
-  };
-
-  // Load workspace-level skills (global)
-  const workspaceSkillsDir = join(hostWorkspacePath, "skills");
-  for (const skill of loadSkillsFromDir({ dir: workspaceSkillsDir, source: "workspace" }).skills) {
-    // Translate paths to container paths for system prompt
-    skill.filePath = translatePath(skill.filePath);
-    skill.baseDir = translatePath(skill.baseDir);
-    skillMap.set(skill.name, skill);
-  }
-
-  // Load conversation-specific skills (override workspace skills on collision)
-  const conversationSkillsDir = join(conversationDir, "skills");
-  for (const skill of loadSkillsFromDir({ dir: conversationSkillsDir, source: "channel" }).skills) {
-    skill.filePath = translatePath(skill.filePath);
-    skill.baseDir = translatePath(skill.baseDir);
-    skillMap.set(skill.name, skill);
-  }
-
-  return Array.from(skillMap.values());
 }
 
 export function resolveTriggerAttribution(
@@ -688,6 +616,7 @@ async function prepareRunContext(params: {
   setSandboxContext: (context: { conversationId: string; userId: string }) => void;
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
   pathContext: RuntimePathContext;
+  resourceLoader: MikanResourceLoader;
 }): Promise<PreparedRunContext & { pathContext: RuntimePathContext }> {
   const {
     message,
@@ -707,6 +636,7 @@ async function prepareRunContext(params: {
     setEventContext,
     setSandboxContext,
     setUploadFunction,
+    resourceLoader,
   } = params;
   let pathContext = params.pathContext;
   const sessionConversation = message.sessionKey.split(":")[0];
@@ -724,8 +654,9 @@ async function prepareRunContext(params: {
 
   reloadSessionMessages(sessionManager, conversationId, agent);
 
-  const memory = await getMemory(conversationDir);
-  const skills = loadMikanSkills(conversationDir, pathContext.runtimeWorkspaceRoot);
+  const loaded = resourceLoader.load();
+  const memory = loaded.memory;
+  const skills = loaded.skills;
   const triggerAttribution = resolveTriggerAttribution(message);
   const systemPrompt = buildSystemPrompt({
     workspacePath: pathContext.runtimeWorkspaceRoot,
@@ -1169,8 +1100,14 @@ export async function createRunner(
   const model = resolveConfiguredModel(modelRegistry, agentConfig.provider, agentConfig.model);
 
   // Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
-  const memory = await getMemory(conversationDir);
-  const skills = loadMikanSkills(conversationDir, pathContext.runtimeWorkspaceRoot);
+  const resourceLoader = new MikanResourceLoader(
+    conversationDir,
+    pathContext.runtimeWorkspaceRoot,
+    workspaceBase,
+  );
+  const loaded = resourceLoader.load();
+  const memory = loaded.memory;
+  const skills = loaded.skills;
   const emptyPlatform: MessagingInfo = {
     name: "chat",
     formattingGuide: "",
@@ -1247,6 +1184,7 @@ export async function createRunner(
         setSandboxContext,
         setUploadFunction,
         pathContext,
+        resourceLoader,
       });
       pathContext = prepared.pathContext;
 
