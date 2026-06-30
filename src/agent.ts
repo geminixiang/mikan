@@ -1,9 +1,7 @@
-import { Agent, convertToLlm, type ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { Agent } from "@earendil-works/pi-agent-core";
 import { type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
+import { createMikanAgent, createMikanSessionServices } from "./harness/agent-session-services.js";
 import { AgentSession } from "./harness/agent-session.js";
-import { AuthStorage } from "./harness/auth-storage.js";
-import { getAuthPath } from "./harness/config.js";
-import { ModelRegistry } from "./harness/model-registry.js";
 import { SessionManager } from "./harness/session-manager.js";
 import { buildSystemPrompt } from "./harness/system-prompt.js";
 import { loadSkillsFromDir, type Skill } from "./harness/skills.js";
@@ -213,11 +211,6 @@ interface PreparedRunContext {
   triggerAttribution?: string;
 }
 
-interface ConfiguredAgentSession {
-  agent: Agent;
-  session: AgentSession;
-}
-
 function createRunnerExecutionContext(
   sandboxConfig: SandboxConfig,
   vaultManager: VaultManager | undefined,
@@ -260,55 +253,6 @@ function createRunnerExecutionContext(
       activeExecutor = await executionResolver.resolve(context);
     },
   };
-}
-
-async function createConfiguredAgentSession(params: {
-  conversationId: string;
-  systemPrompt: string;
-  model: Model<Api>;
-  thinkingLevel: ThinkingLevel;
-  tools: Awaited<ReturnType<typeof createMikanTools>>["tools"];
-  sessionManager: SessionManager;
-  modelRegistry: ModelRegistry;
-}): Promise<ConfiguredAgentSession> {
-  const {
-    conversationId,
-    systemPrompt,
-    model,
-    thinkingLevel,
-    tools,
-    sessionManager,
-    modelRegistry,
-  } = params;
-  const agent = new Agent({
-    initialState: {
-      systemPrompt,
-      model,
-      thinkingLevel,
-      tools,
-    },
-    convertToLlm,
-    getApiKey: async (provider) => {
-      const key = await modelRegistry.getApiKeyForProvider(provider);
-      if (!key) {
-        throw new Error(
-          `No API key for provider "${provider}". Set the appropriate environment variable or configure via auth.json`,
-        );
-      }
-      return key;
-    },
-  });
-
-  const loadedSession = sessionManager.buildSessionContext();
-  if (loadedSession.messages.length > 0) {
-    agent.state.messages = loadedSession.messages;
-    log.logInfo(
-      `[${conversationId}] Reloaded ${loadedSession.messages.length} messages from session context`,
-    );
-  }
-
-  const session = new AgentSession(agent, sessionManager);
-  return { agent, session };
 }
 
 function createEmptyUsageTotals() {
@@ -1231,8 +1175,8 @@ export async function createRunner(
     { sandbox: sandboxConfig, provisioner },
   );
 
-  const authStorage = AuthStorage.create(getAuthPath());
-  const modelRegistry = ModelRegistry.create(authStorage);
+  const services = createMikanSessionServices();
+  const { modelRegistry } = services;
   const model = resolveConfiguredModel(modelRegistry, agentConfig.provider, agentConfig.model);
 
   // Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
@@ -1271,15 +1215,16 @@ export async function createRunner(
 
   const sessionUuid = extractSessionUuid(contextFile);
   const chatSessionManager = new AgentMemoryFileManager();
-  const { agent, session } = await createConfiguredAgentSession({
-    conversationId,
+  const { agent } = await createMikanAgent({
+    services,
+    sessionManager,
     systemPrompt,
     model,
     thinkingLevel: agentConfig.thinkingLevel,
     tools,
-    sessionManager,
-    modelRegistry,
+    conversationId,
   });
+  const session = new AgentSession(agent, sessionManager);
 
   // Mutable per-run state - event handler references this
   const runState = createRunState();
