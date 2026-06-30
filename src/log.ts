@@ -179,10 +179,9 @@ export function logUsageSummary(
 ): string {
   const lines: string[] = [];
   lines.push("_Usage Summary_");
-  const fresh = usage.cacheRead > 0 ? usage.input - usage.cacheRead : usage.input;
-  const hitPct = usage.cacheRead > 0 ? ((usage.cacheRead / usage.input) * 100).toFixed(1) : "0.0";
-  const cacheLabel = ` · ${usage.cacheRead.toLocaleString()} cached (${hitPct}%)`;
-  lines.push(`Input:     ${fresh.toLocaleString()} tokens${cacheLabel}`);
+  lines.push(
+    `Input:     ${usage.input.toLocaleString()} tokens · ${usage.cacheRead.toLocaleString()} cached`,
+  );
   lines.push(`Output:    ${usage.output.toLocaleString()} tokens`);
   if (contextTokens && contextWindow) {
     const contextPercent = ((contextTokens / contextWindow) * 100).toFixed(1);
