@@ -90,6 +90,10 @@ async function routeApiRequest(
       serveSessionUsage(res, services);
       return;
     }
+    if (url.pathname === "/admin/api/conversation-usage") {
+      serveConversationUsage(res, url, services);
+      return;
+    }
     if (url.pathname === "/admin/api/conversation-state") {
       serveConversationState(res, url, services, token);
       return;
@@ -421,6 +425,128 @@ interface AssistantUsageMessage {
 
 function numberOrZero(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+interface UsageBucket {
+  date: string;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+  cost: number;
+}
+
+function localDayKey(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function emptyBucket(date: string): UsageBucket {
+  return { date, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0, cost: 0 };
+}
+
+/** Per-conversation daily token usage over the last N days (N clamped to 1..7). */
+function serveConversationUsage(res: ServerResponse, url: URL, services: AdminServices): void {
+  const workingDir = requireAdminWorkingDir(res, services);
+  if (!workingDir) return;
+
+  const conversationId = url.searchParams.get("conversationId") ?? "";
+  if (!conversationId || !listConversationDirs(workingDir).includes(conversationId)) {
+    jsonRes(res, 400, { error: "Unknown conversationId" });
+    return;
+  }
+
+  const daysRaw = parseInt(url.searchParams.get("days") ?? "7", 10);
+  const days = Number.isFinite(daysRaw) ? Math.min(7, Math.max(1, daysRaw)) : 7;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const buckets = new Map<string, UsageBucket>();
+  const order: string[] = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const key = localDayKey(d);
+    order.push(key);
+    buckets.set(key, emptyBucket(key));
+  }
+  const cutoff = new Date(today);
+  cutoff.setDate(today.getDate() - (days - 1));
+
+  const sessionDir = join(workingDir, conversationId, "sessions");
+  try {
+    for (const entry of readdirSync(sessionDir, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+      accumulateSessionUsageByDay(join(sessionDir, entry.name), cutoff, buckets);
+    }
+  } catch {
+    // No sessions directory yet — return empty buckets.
+  }
+
+  const series = order.map((key) => buckets.get(key) ?? emptyBucket(key));
+  const totals = series.reduce((sum, b) => {
+    sum.input += b.input;
+    sum.output += b.output;
+    sum.cacheRead += b.cacheRead;
+    sum.cacheWrite += b.cacheWrite;
+    sum.total += b.total;
+    sum.cost += b.cost;
+    return sum;
+  }, emptyBucket(""));
+
+  jsonRes(res, 200, {
+    conversationId,
+    label: conversationDisplayLabel(services, conversationId),
+    days,
+    buckets: series,
+    totals: {
+      input: totals.input,
+      output: totals.output,
+      cacheRead: totals.cacheRead,
+      cacheWrite: totals.cacheWrite,
+      total: totals.total,
+      cost: totals.cost,
+    },
+  });
+}
+
+function accumulateSessionUsageByDay(
+  sessionFile: string,
+  cutoff: Date,
+  buckets: Map<string, UsageBucket>,
+): void {
+  try {
+    const manager = SessionManager.open(sessionFile);
+    if (!manager.getHeader()) return;
+
+    for (const entry of manager.getEntries()) {
+      if (entry.type !== "message" || entry.message.role !== "assistant") continue;
+      const usage = (entry.message as unknown as AssistantUsageMessage).usage;
+      if (!usage || !entry.timestamp) continue;
+
+      const when = new Date(entry.timestamp);
+      if (Number.isNaN(when.getTime()) || when < cutoff) continue;
+
+      const bucket = buckets.get(localDayKey(when));
+      if (!bucket) continue;
+
+      const input = numberOrZero(usage.input);
+      const output = numberOrZero(usage.output);
+      const cacheRead = numberOrZero(usage.cacheRead);
+      const cacheWrite = numberOrZero(usage.cacheWrite);
+      bucket.input += input;
+      bucket.output += output;
+      bucket.cacheRead += cacheRead;
+      bucket.cacheWrite += cacheWrite;
+      bucket.total += input + output + cacheRead + cacheWrite;
+      bucket.cost += numberOrZero(usage.cost?.total);
+    }
+  } catch {
+    // Skip unreadable session files.
+  }
 }
 
 function serveConversationState(
@@ -1512,6 +1638,26 @@ function renderAdminPage(token: AdminToken): string {
       <section class="card sect">
         <header class="sect-head">
           <div>
+            <p class="eyebrow">Token Usage</p>
+            <h2 class="card-title">Usage timeline</h2>
+          </div>
+          <button class="refresh-btn" onclick="loadUsageTimeline()">↻</button>
+        </header>
+        <div class="timeline-controls">
+          <label>Conversation
+            <select id="timeline-conv" onchange="loadUsageTimeline()"></select>
+          </label>
+          <label>Range
+            <input type="range" id="timeline-days" min="1" max="7" value="7" step="1" oninput="onTimelineDaysInput()">
+            <span id="timeline-days-out">7 d</span>
+          </label>
+        </div>
+        <div id="usage-timeline-content"><div class="loading-msg">Loading…</div></div>
+      </section>
+
+      <section class="card sect">
+        <header class="sect-head">
+          <div>
             <p class="eyebrow">Global Settings</p>
             <h2 class="card-title">全域預設</h2>
           </div>
@@ -2039,6 +2185,7 @@ function renderAdminPage(token: AdminToken): string {
       globalLoaded = true;
       loadAllConversations();
       loadSessionUsage();
+      loadUsageTimeline();
       loadGlobalSettings();
       loadGlobalSkills();
       loadEvents();
@@ -2095,6 +2242,91 @@ function renderAdminPage(token: AdminToken): string {
 
     function fmtNum(value) {
       return Number(value || 0).toLocaleString('en-US');
+    }
+
+    let timelineConvLoaded = false;
+    async function ensureTimelineConvOptions() {
+      if (timelineConvLoaded) return;
+      const sel = document.getElementById('timeline-conv');
+      const data = await apiGet('/admin/api/conversations');
+      if (!data.conversations.length) {
+        sel.innerHTML = '<option value="">No conversations</option>';
+        return;
+      }
+      sel.innerHTML = data.conversations.map((c) =>
+        '<option value="' + escAttr(c.conversationId) + '"' +
+        (c.conversationId === defaultConversationId ? ' selected' : '') + '>' +
+        escHtml(c.label || c.conversationId) + '</option>'
+      ).join('');
+      timelineConvLoaded = true;
+    }
+
+    function onTimelineDaysInput() {
+      const days = document.getElementById('timeline-days').value;
+      document.getElementById('timeline-days-out').textContent = days + ' d';
+      loadUsageTimeline();
+    }
+
+    async function loadUsageTimeline() {
+      const container = document.getElementById('usage-timeline-content');
+      try {
+        await ensureTimelineConvOptions();
+        const conv = document.getElementById('timeline-conv').value;
+        if (!conv) {
+          container.innerHTML = '<div class="empty-state">No conversations found</div>';
+          return;
+        }
+        const days = document.getElementById('timeline-days').value || '7';
+        container.innerHTML = '<div class="loading-msg">Loading…</div>';
+        const data = await apiGet('/admin/api/conversation-usage?conversationId=' +
+          encodeURIComponent(conv) + '&days=' + encodeURIComponent(days));
+        container.innerHTML = renderUsageTimeline(data);
+      } catch (err) {
+        container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
+      }
+    }
+
+    function tlCard(label, value) {
+      return '<div class="tl-card"><div class="tl-card-label">' + label +
+        '</div><div class="tl-card-value">' + value + '</div></div>';
+    }
+
+    function renderUsageTimeline(data) {
+      const buckets = data.buckets || [];
+      const totals = data.totals || { total: 0, cost: 0, cacheRead: 0 };
+      const cacheHit = totals.total > 0 ? Math.round((totals.cacheRead / totals.total) * 100) : 0;
+      const cards = '<div class="tl-cards">' +
+        tlCard('Total cost', totals.cost > 0 ? '$' + Number(totals.cost).toFixed(4) : '—') +
+        tlCard('Total tokens', fmtNum(totals.total)) +
+        tlCard('Cache hit', cacheHit + '%') +
+      '</div>';
+
+      if (totals.total === 0) {
+        return cards + '<div class="empty-state">No token usage in this range</div>';
+      }
+
+      const max = Math.max(1, ...buckets.map((b) => b.total));
+      const px = (v) => Math.round((v / max) * 120);
+      const legend = '<div class="tl-legend">' +
+        '<span><i class="sw sw-cache"></i>Cache read</span>' +
+        '<span><i class="sw sw-input"></i>Input</span>' +
+        '<span><i class="sw sw-output"></i>Output</span>' +
+      '</div>';
+      const bars = buckets.map((b) => {
+        const title = b.date + ' · ' + fmtNum(b.total) + ' tok' +
+          (b.cost > 0 ? ' · $' + Number(b.cost).toFixed(4) : '');
+        const inner = b.total > 0
+          ? '<span class="tl-seg tl-output" style="height:' + px(b.output) + 'px"></span>' +
+            '<span class="tl-seg tl-input" style="height:' + px(b.input) + 'px"></span>' +
+            '<span class="tl-seg tl-cache" style="height:' + px(b.cacheRead + b.cacheWrite) + 'px"></span>'
+          : '<span class="tl-empty"></span>';
+        return '<div class="tl-bar" title="' + escAttr(title) + '">' + inner + '</div>';
+      }).join('');
+      const axis = buckets.length
+        ? '<div class="tl-axis"><span>' + escHtml(buckets[0].date.slice(5)) +
+          '</span><span>' + escHtml(buckets[buckets.length - 1].date.slice(5)) + '</span></div>'
+        : '';
+      return cards + legend + '<div class="tl-chart">' + bars + '</div>' + axis;
     }
 
     async function loadGlobalSettings() {
@@ -2471,6 +2703,44 @@ const adminViewStyles = `
     text-transform: uppercase; letter-spacing: 0.08em;
   }
   .usage-table code { font-size: 0.72rem; }
+
+  .timeline-controls {
+    display: flex; flex-wrap: wrap; gap: 18px; align-items: center; margin-bottom: 16px;
+  }
+  .timeline-controls label {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 0.76rem; color: var(--muted);
+  }
+  .timeline-controls select {
+    padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px;
+    background: #fff; color: var(--text); font-size: 0.8rem; max-width: 240px;
+  }
+  .timeline-controls input[type="range"] { width: 120px; }
+  #timeline-days-out { font-variant-numeric: tabular-nums; color: var(--text); min-width: 26px; }
+  .tl-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+  .tl-card { background: rgba(0,0,0,0.025); border-radius: 10px; padding: 10px 12px; }
+  .tl-card-label { font-size: 0.73rem; color: var(--muted); margin-bottom: 4px; }
+  .tl-card-value { font-size: 1.35rem; font-weight: 600; color: var(--text); }
+  .tl-legend { display: flex; gap: 16px; font-size: 0.73rem; color: var(--muted); margin-bottom: 10px; }
+  .tl-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  .sw-cache { background: rgba(0,0,0,0.18); }
+  .sw-input { background: var(--accent); }
+  .sw-output { background: var(--ok-text); }
+  .tl-chart {
+    display: flex; align-items: flex-end; gap: 6px;
+    height: 132px; border-bottom: 1px solid var(--border);
+  }
+  .tl-bar {
+    flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end;
+    border-radius: 3px 3px 0 0; overflow: hidden;
+  }
+  .tl-seg { display: block; width: 100%; }
+  .tl-seg.tl-output { background: var(--ok-text); }
+  .tl-seg.tl-input { background: var(--accent); }
+  .tl-seg.tl-cache { background: rgba(0,0,0,0.18); }
+  .tl-empty { display: block; width: 100%; height: 3px; background: var(--border); }
+  .tl-axis { display: flex; justify-content: space-between; margin-top: 6px; font-size: 0.7rem; color: var(--subtle); }
 
   .status-pill {
     display: inline-flex; padding: 2px 9px; border-radius: 999px;

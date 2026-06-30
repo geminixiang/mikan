@@ -6,6 +6,7 @@ coverage/
 data/
 bin/
 .workspace/
+workspace/
 
 *.env
 .env*
