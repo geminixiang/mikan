@@ -179,14 +179,17 @@ export function logUsageSummary(
 ): string {
   const lines: string[] = [];
   lines.push("_Usage Summary_");
+  const cacheHitBase = usage.input + usage.cacheRead + usage.cacheWrite;
+  const cacheHitPct =
+    cacheHitBase > 0 ? ((usage.cacheRead / cacheHitBase) * 100).toFixed(1) : "0.0";
   lines.push(
-    `Input:     ${usage.input.toLocaleString()} tokens · ${usage.cacheRead.toLocaleString()} cached`,
+    `Input: ${usage.input.toLocaleString()} tokens · ${usage.cacheRead.toLocaleString()} cached · CH ${cacheHitPct}%`,
   );
-  lines.push(`Output:    ${usage.output.toLocaleString()} tokens`);
+  lines.push(`Output: ${usage.output.toLocaleString()} tokens`);
   if (contextTokens && contextWindow) {
     const contextPercent = ((contextTokens / contextWindow) * 100).toFixed(1);
     lines.push(
-      `Context:   ${formatTokenCount(contextTokens)} / ${formatTokenCount(contextWindow)} (${contextPercent}%)`,
+      `Context: ${formatTokenCount(contextTokens)} / ${formatTokenCount(contextWindow)} (${contextPercent}%)`,
     );
   }
   const costParts: string[] = [
@@ -194,7 +197,7 @@ export function logUsageSummary(
     `\$${usage.cost.cacheRead.toFixed(4)} cache`,
     `\$${usage.cost.output.toFixed(4)} out`,
   ];
-  lines.push(`Cost:      ` + costParts.join(" + ") + ` = *\$${usage.cost.total.toFixed(4)}*`);
+  lines.push(`Cost: ` + costParts.join(" + ") + ` = *\$${usage.cost.total.toFixed(4)}*`);
 
   const summary = lines.join("\n");
 
