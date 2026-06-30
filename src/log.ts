@@ -179,36 +179,30 @@ export function logUsageSummary(
 ): string {
   const lines: string[] = [];
   lines.push("_Usage Summary_");
-  lines.push(`Tokens: ${usage.input.toLocaleString()} in, ${usage.output.toLocaleString()} out`);
-  if (usage.cacheRead > 0 || usage.cacheWrite > 0) {
-    lines.push(
-      `Cache: ${usage.cacheRead.toLocaleString()} read, ${usage.cacheWrite.toLocaleString()} write`,
-    );
-  }
+  const fresh = usage.cacheRead > 0 ? usage.input - usage.cacheRead : usage.input;
+  const hitPct = usage.cacheRead > 0 ? ((usage.cacheRead / usage.input) * 100).toFixed(1) : "0.0";
+  const cacheLabel = ` · ${usage.cacheRead.toLocaleString()} cached (${hitPct}%)`;
+  lines.push(`Input:     ${fresh.toLocaleString()} tokens${cacheLabel}`);
+  lines.push(`Output:    ${usage.output.toLocaleString()} tokens`);
   if (contextTokens && contextWindow) {
     const contextPercent = ((contextTokens / contextWindow) * 100).toFixed(1);
     lines.push(
-      `Context: ${formatTokenCount(contextTokens)} / ${formatTokenCount(contextWindow)} (${contextPercent}%)`,
+      `Context:   ${formatTokenCount(contextTokens)} / ${formatTokenCount(contextWindow)} (${contextPercent}%)`,
     );
   }
-  lines.push(
-    `Cost: $${usage.cost.input.toFixed(4)} in, $${usage.cost.output.toFixed(4)} out` +
-      (usage.cacheRead > 0 || usage.cacheWrite > 0
-        ? `, $${usage.cost.cacheRead.toFixed(4)} cache read, $${usage.cost.cacheWrite.toFixed(4)} cache write`
-        : ""),
-  );
-  lines.push(`*Total: $${usage.cost.total.toFixed(4)}*`);
+  const costParts: string[] = [
+    `\$${usage.cost.input.toFixed(4)} in`,
+    `\$${usage.cost.cacheRead.toFixed(4)} cache`,
+    `\$${usage.cost.output.toFixed(4)} out`,
+  ];
+  lines.push(`Cost:      ` + costParts.join(" + ") + ` = *\$${usage.cost.total.toFixed(4)}*`);
 
   const summary = lines.join("\n");
 
   console.log(chalk.yellow(`${timestamp()} ${formatContext(ctx)} 💰 Usage`));
   console.log(
     chalk.dim(
-      `           ${usage.input.toLocaleString()} in + ${usage.output.toLocaleString()} out` +
-        (usage.cacheRead > 0 || usage.cacheWrite > 0
-          ? ` (${usage.cacheRead.toLocaleString()} cache read, ${usage.cacheWrite.toLocaleString()} cache write)`
-          : "") +
-        ` = $${usage.cost.total.toFixed(4)}`,
+      `           in ${usage.input.toLocaleString()} → out ${usage.output.toLocaleString()} = $${usage.cost.total.toFixed(4)}`,
     ),
   );
 
