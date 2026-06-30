@@ -106,6 +106,7 @@
   "knip": {
     "ignoreBinaries": [
       "taskkill"
-    ]
+    ],
+    "ignoreDependencies": []
   }
 }

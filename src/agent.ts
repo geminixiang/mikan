@@ -1,5 +1,6 @@
 import { Agent } from "@earendil-works/pi-agent-core";
 import { type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
+import { AgentSessionRuntime } from "./harness/agent-session-runtime.js";
 import { createMikanAgent, createMikanSessionServices } from "./harness/agent-session-services.js";
 import { AgentSession } from "./harness/agent-session.js";
 import { SessionManager } from "./harness/session-manager.js";
@@ -36,12 +37,7 @@ import {
 } from "./observability/sentry.js";
 import type { VaultManager } from "./vault/index.js";
 import { AgentMemoryFileManager } from "./sessions/agent-memory-file-manager.js";
-import {
-  extractSessionUuid,
-  openManagedSession,
-  type ResolvedSessionScope,
-  type ThreadRootMessage,
-} from "./sessions/store.js";
+import { type ResolvedSessionScope } from "./sessions/store.js";
 import { createMikanTools } from "./tools/index.js";
 import * as Sentry from "@sentry/node";
 import { formatLocalTimestamp } from "./utils/date.js";
@@ -61,13 +57,6 @@ const IMAGE_MIME_TYPES: Record<string, string> = {
 
 function getImageMimeType(filename: string): string | undefined {
   return IMAGE_MIME_TYPES[filename.toLowerCase().split(".").pop() || ""];
-}
-
-function buildThreadSessionName(message: ThreadRootMessage | null): string | undefined {
-  const text = message?.text?.trim();
-  if (!text) return undefined;
-  const userLabel = message?.userName || message?.user || "unknown";
-  return `[${userLabel}]: ${text}`;
 }
 
 async function getMemory(conversationDir: string): Promise<string> {
@@ -1198,33 +1187,25 @@ export async function createRunner(
     skills,
   });
 
-  // Create session manager and settings manager. Top-level/private sessions
-  // use the conversation's current pointer; scoped sessions use fixed files.
-  // Platform-specific scope behavior is resolved before runner creation.
-  const isThread = sessionKey.includes(":");
-  const { sessionDir, contextFile, threadRootMessage } = sessionScope;
-  const sessionManager = openManagedSession(
-    contextFile,
-    sessionDir,
+  // Create session runtime
+  const { contextFile } = sessionScope;
+  const sessionRuntime = new AgentSessionRuntime(
+    sessionKey,
+    conversationDir,
     pathContext.runtimeWorkspaceRoot,
+    sessionScope,
   );
-  const threadSessionName = buildThreadSessionName(threadRootMessage);
-  if (isThread && threadSessionName && sessionManager.getSessionName() !== threadSessionName) {
-    sessionManager.appendSessionInfo(threadSessionName);
-  }
-
-  const sessionUuid = extractSessionUuid(contextFile);
   const chatSessionManager = new AgentMemoryFileManager();
   const { agent } = await createMikanAgent({
     services,
-    sessionManager,
+    sessionManager: sessionRuntime.sessionManager,
     systemPrompt,
     model,
     thinkingLevel: agentConfig.thinkingLevel,
     tools,
     conversationId,
   });
-  const session = new AgentSession(agent, sessionManager);
+  const session = new AgentSession(agent, sessionRuntime.sessionManager);
 
   // Mutable per-run state - event handler references this
   const runState = createRunState();
@@ -1235,7 +1216,7 @@ export async function createRunner(
       chatSessionManager.syncSessionManager({
         conversationDir,
         sessionKey,
-        sessionManager,
+        sessionManager: sessionRuntime.sessionManager,
         currentMessageId,
       });
     },
@@ -1245,6 +1226,8 @@ export async function createRunner(
       responder: ConversationResponder,
       platform: MessagingInfo,
     ): Promise<{ stopReason: string; errorMessage?: string }> {
+      const sessionUuid = sessionRuntime.sessionUuid;
+      const sessionManager = sessionRuntime.sessionManager;
       const prepared = await prepareRunContext({
         message,
         responder,

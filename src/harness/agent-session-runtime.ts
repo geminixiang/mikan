@@ -26,7 +26,7 @@ export interface ResolvedSessionScope {
 }
 
 /** Thread root message for thread session naming. */
-export interface ThreadRootMessage {
+interface ThreadRootMessage {
   text?: string;
   userName?: string;
   user?: string;
@@ -42,9 +42,20 @@ export class AgentSessionRuntime {
     readonly cwd: string,
     scope: ResolvedSessionScope,
   ) {
-    const { sessionDir, contextFile } = scope;
+    const { sessionDir, contextFile, threadRootMessage } = scope;
     this.sessionManagerInstance = openManagedSession(contextFile, sessionDir, cwd);
     this.sessionUuidValue = extractUuid(contextFile);
+
+    // Name thread sessions after the root message
+    const isThread = sessionKey.includes(":");
+    const threadSessionName = buildThreadSessionName(threadRootMessage);
+    if (
+      isThread &&
+      threadSessionName &&
+      this.sessionManagerInstance.getSessionName() !== threadSessionName
+    ) {
+      this.sessionManagerInstance.appendSessionInfo(threadSessionName);
+    }
   }
 
   get sessionManager(): SessionManager {
@@ -74,4 +85,9 @@ export class AgentSessionRuntime {
   }
 }
 
-export { extractUuid as extractSessionUuid };
+function buildThreadSessionName(message: ThreadRootMessage | null): string | undefined {
+  const text = message?.text?.trim();
+  if (!text) return undefined;
+  const userLabel = message?.userName || message?.user || "unknown";
+  return `[${userLabel}]: ${text}`;
+}
