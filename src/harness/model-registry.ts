@@ -1,13 +1,11 @@
 import { existsSync, readFileSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
 import { getModels, getProviders } from "@earendil-works/pi-ai/compat";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { AuthStorage } from "./auth-storage.js";
+import { getModelsPath } from "./config.js";
+import type { ResolvedRequestAuth } from "./types.js";
 
-export type ResolvedRequestAuth =
-  | { ok: true; apiKey?: string; headers?: Record<string, string>; env?: Record<string, string> }
-  | { ok: false; error: string };
+export type { ResolvedRequestAuth } from "./types.js";
 
 interface ModelsConfig {
   providers?: Record<string, ProviderConfig>;
@@ -49,10 +47,7 @@ export class ModelRegistry {
   }
 
   static create(authStorage: AuthStorage, modelsJsonPath?: string): ModelRegistry {
-    return new ModelRegistry(
-      authStorage,
-      modelsJsonPath ?? join(homedir(), ".mikan", "models.json"),
-    );
+    return new ModelRegistry(authStorage, modelsJsonPath ?? getModelsPath());
   }
 
   refresh(): void {

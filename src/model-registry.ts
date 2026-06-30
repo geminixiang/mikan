@@ -10,6 +10,6 @@ export function resolveConfiguredModel(
   if (model) return model;
 
   throw new Error(
-    `Unknown model "${provider}/${modelId}". Configure it in pi models.json or choose a registered model.`,
+    `Unknown model "${provider}/${modelId}". Configure it in mikan models.json or choose a registered model.`,
   );
 }

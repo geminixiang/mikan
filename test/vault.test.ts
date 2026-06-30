@@ -353,6 +353,7 @@ describe("ActorExecutionResolver image mode", () => {
   test("provisions per-conversation container with inferred vault mounts", async () => {
     const userDir = join(vaultsDir, "d123");
     mkdirSync(join(userDir, ".ssh"), { recursive: true });
+    mkdirSync(join(tmpDir, "skills"));
 
     const mgr = new FileVaultManager(tmpDir);
     const provision = vi.fn().mockResolvedValue("mikan-sandbox-d123");
@@ -378,6 +379,7 @@ describe("ActorExecutionResolver image mode", () => {
       conversationId: "D123",
       mounts: [
         { source: join(tmpDir, "MEMORY.md"), target: "/workspace/MEMORY.md" },
+        { source: join(tmpDir, ".mikan", "skills"), target: "/workspace/.mikan/skills" },
         { source: join(tmpDir, "skills"), target: "/workspace/skills" },
         { source: join(tmpDir, "events"), target: "/workspace/events" },
         { source: join(tmpDir, "D123"), target: "/workspace/D123" },

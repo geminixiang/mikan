@@ -1,8 +1,8 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "@sinclair/typebox";
 import { existsSync, readFileSync, renameSync } from "fs";
-import { homedir } from "os";
 import { dirname, join, resolve } from "path";
+import { getMikanDir, getSettingsPath as getMikanSettingsPath } from "./harness/config.js";
 import { readEnv } from "./utils/env.js";
 import { ensureDirExists, readJsonSchemaFileIfExists } from "./utils/file-guards.js";
 import { atomicWritePrivateFile } from "./utils/fs-atomic.js";
@@ -116,8 +116,7 @@ function loadSettingsFile(settingsPath: string): SettingsFileConfig | undefined 
 }
 
 function getStateDir(): string {
-  const raw = readEnv("STATE_DIR");
-  return raw ? resolve(raw) : join(homedir(), ".mikan");
+  return getMikanDir();
 }
 
 function normalizeSettingsConfig(config: SettingsFileConfig): Partial<AgentConfig> {
@@ -145,7 +144,7 @@ function normalizeSettingsConfig(config: SettingsFileConfig): Partial<AgentConfi
 }
 
 function getSettingsPath(): string {
-  return join(getStateDir(), "settings.json");
+  return getMikanSettingsPath();
 }
 
 function requireGlobalSettings(): SettingsFileConfig {
@@ -327,7 +326,7 @@ export function resolveStateDirFromArgv(args = process.argv.slice(2)): string {
     }
   }
 
-  return join(homedir(), ".mikan");
+  return getMikanDir();
 }
 
 export function resolveSentryDsn(): string | undefined {

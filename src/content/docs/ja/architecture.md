@@ -140,6 +140,7 @@ sequenceDiagram
 ```text
 <workspace>/
 ├── MEMORY.md                  # workspace レベルの記憶
+├── .mikan/skills/             # workspace カスタム skills
 ├── events/                    # スケジュールと外部イベント
 └── <conversationId>/
     ├── settings.json          # conversation-local overrides
@@ -147,7 +148,7 @@ sequenceDiagram
     ├── log.jsonl              # grep 可能な人間可読メッセージ履歴
     ├── attachments/           # プラットフォーム添付ファイルのダウンロード
     ├── scratch/               # 実行中の作業領域
-    ├── skills/                # conversation カスタム skills
+    ├── .mikan/skills/         # conversation カスタム skills
     └── sessions/
         ├── current            # top-level session pointer
         ├── <timestamp>_<id>.jsonl

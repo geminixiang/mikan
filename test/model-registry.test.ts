@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { mkdtempSync, rmSync, statSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { AuthStorage } from "../src/harness/auth-storage.js";
@@ -57,6 +57,44 @@ describe("resolveConfiguredModel", () => {
       expect(() => resolveConfiguredModel(registry, "missing", "model")).toThrow(
         'Unknown model "missing/model"',
       );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("uses pi-ai provider environment aliases", () => {
+    const previousGemini = process.env.GEMINI_API_KEY;
+    const previousGoogle = process.env.GOOGLE_API_KEY;
+    const dir = mkdtempSync(join(tmpdir(), "mikan-google-model-registry-"));
+    process.env.GEMINI_API_KEY = "dev";
+    delete process.env.GOOGLE_API_KEY;
+
+    try {
+      const authStorage = AuthStorage.create(join(dir, "auth.json"));
+      const registry = ModelRegistry.create(authStorage, join(dir, "models.json"));
+
+      expect(authStorage.getProviderAuthStatus("google")).toEqual({
+        configured: true,
+        source: "GEMINI_API_KEY",
+      });
+      expect(registry.getAvailable().some((model) => model.provider === "google")).toBe(true);
+    } finally {
+      if (previousGemini === undefined) delete process.env.GEMINI_API_KEY;
+      else process.env.GEMINI_API_KEY = previousGemini;
+      if (previousGoogle === undefined) delete process.env.GOOGLE_API_KEY;
+      else process.env.GOOGLE_API_KEY = previousGoogle;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("stores auth.json privately", () => {
+    const dir = mkdtempSync(join(tmpdir(), "mikan-auth-storage-"));
+    const authPath = join(dir, "auth.json");
+
+    try {
+      AuthStorage.create(authPath).setApiKey("custom", "dev");
+
+      expect(statSync(authPath).mode & 0o777).toBe(0o600);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

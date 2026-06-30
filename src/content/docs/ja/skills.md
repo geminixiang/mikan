@@ -3,10 +3,10 @@ title: スキル
 description: workspace-level と conversation-level skills の読み込み場所、sandbox path、tool 構造。
 ---
 
-| レベル                             | 用途                                                     | Host path                                           | Sandbox 内 runtime path                            |
-| ---------------------------------- | -------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------- |
-| Workspace-level（global skills）   | workspace 全体のすべての conversations で使える共有 tool | `<workspace>/skills/<skill-name>/`                  | `/workspace/skills/<skill-name>/`                  |
-| Conversation-level（local skills） | 単一の conversation / channel / DM だけで使う tool       | `<workspace>/<conversationId>/skills/<skill-name>/` | `/workspace/<conversationId>/skills/<skill-name>/` |
+| レベル                             | 用途                                                     | Host path                                                  | Sandbox 内 runtime path                                   |
+| ---------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------- |
+| Workspace-level（global skills）   | workspace 全体のすべての conversations で使える共有 tool | `<workspace>/.mikan/skills/<skill-name>/`                  | `/workspace/.mikan/skills/<skill-name>/`                  |
+| Conversation-level（local skills） | 単一の conversation / channel / DM だけで使う tool       | `<workspace>/<conversationId>/.mikan/skills/<skill-name>/` | `/workspace/<conversationId>/.mikan/skills/<skill-name>/` |
 
 :::note
 mikan は workspace-level skills を先に読み込み、その後 conversation-level skills を読み込みます。両方に同じ `name` がある場合、conversation-level skill が workspace-level skill を上書きします。
@@ -16,12 +16,12 @@ mikan は workspace-level skills を先に読み込み、その後 conversation-
 
 ```text
 <workspace>/
-├── skills/
+├── .mikan/skills/
 │   └── my-global-tool/
 │       ├── SKILL.md
 │       └── run.sh
 └── <conversationId>/
-    └── skills/
+    └── .mikan/skills/
         └── my-local-tool/
             ├── SKILL.md
             └── run.sh

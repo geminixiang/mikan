@@ -1,7 +1,6 @@
 import { AuthStorage } from "../harness/auth-storage.js";
+import { getAuthPath } from "../harness/config.js";
 import { ModelRegistry } from "../harness/model-registry.js";
-import { homedir } from "os";
-import { join } from "path";
 import { AdminCommandHandler } from "./admin.js";
 import { AutoReplyCommandHandler } from "./auto-reply.js";
 import { LoginCommandHandler } from "./login.js";
@@ -12,7 +11,7 @@ import { SessionViewCommandHandler } from "./session-view.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 
 export function defaultCommandHandlers(): CommandHandler[] {
-  const authStorage = AuthStorage.create(join(homedir(), ".mikan", "auth.json"));
+  const authStorage = AuthStorage.create(getAuthPath());
   const modelRegistry = ModelRegistry.create(authStorage);
   return [
     new AdminCommandHandler(),

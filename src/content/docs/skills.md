@@ -3,10 +3,10 @@ title: Skills
 description: Load locations, sandbox paths, and tool structure for workspace-level and conversation-level skills.
 ---
 
-| Level                             | Purpose                                                    | Host path                                           | Runtime path inside sandbox                        |
-| --------------------------------- | ---------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------- |
-| Workspace-level (global skills)   | Shared tools available to all conversations in a workspace | `<workspace>/skills/<skill-name>/`                  | `/workspace/skills/<skill-name>/`                  |
-| Conversation-level (local skills) | Tools for one conversation / channel / DM only             | `<workspace>/<conversationId>/skills/<skill-name>/` | `/workspace/<conversationId>/skills/<skill-name>/` |
+| Level                             | Purpose                                                    | Host path                                                  | Runtime path inside sandbox                               |
+| --------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------- |
+| Workspace-level (global skills)   | Shared tools available to all conversations in a workspace | `<workspace>/.mikan/skills/<skill-name>/`                  | `/workspace/.mikan/skills/<skill-name>/`                  |
+| Conversation-level (local skills) | Tools for one conversation / channel / DM only             | `<workspace>/<conversationId>/.mikan/skills/<skill-name>/` | `/workspace/<conversationId>/.mikan/skills/<skill-name>/` |
 
 :::note
 mikan loads workspace-level skills first, then conversation-level skills. If both sides define the same `name`, the conversation-level skill overrides the workspace-level skill.
@@ -16,12 +16,12 @@ mikan loads workspace-level skills first, then conversation-level skills. If bot
 
 ```text
 <workspace>/
-├── skills/
+├── .mikan/skills/
 │   └── my-global-tool/
 │       ├── SKILL.md
 │       └── run.sh
 └── <conversationId>/
-    └── skills/
+    └── .mikan/skills/
         └── my-local-tool/
             ├── SKILL.md
             └── run.sh

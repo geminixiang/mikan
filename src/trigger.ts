@@ -1,10 +1,10 @@
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { AuthStorage } from "./harness/auth-storage.js";
+import { getAuthPath } from "./harness/config.js";
 import { ModelRegistry } from "./harness/model-registry.js";
 import type { ConversationEvent } from "./adapter.js";
 import { loadAutoReplyJudgeModel, loadConversationAutoReplyConfig } from "./config.js";
 import * as log from "./log.js";
-import { homedir } from "os";
 import { join } from "path";
 import { resolveConfiguredModel } from "./model-registry.js";
 
@@ -94,9 +94,7 @@ async function judgeAutoReplyWithLlm(input: {
   conversationDir: string;
 }): Promise<boolean> {
   const judgeConfig = loadAutoReplyJudgeModel(input.conversationDir);
-  const modelRegistry = ModelRegistry.create(
-    AuthStorage.create(join(homedir(), ".mikan", "auth.json")),
-  );
+  const modelRegistry = ModelRegistry.create(AuthStorage.create(getAuthPath()));
   const model = resolveConfiguredModel(modelRegistry, judgeConfig.provider, judgeConfig.model);
   const auth = await modelRegistry.getApiKeyAndHeaders(model);
   if (!auth.ok) {

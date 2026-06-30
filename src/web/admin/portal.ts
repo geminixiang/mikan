@@ -1,8 +1,8 @@
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "fs";
 import type { IncomingMessage, ServerResponse } from "http";
-import { homedir } from "os";
 import { basename, join, resolve as pathResolve, sep as pathSep } from "path";
 import { AuthStorage } from "../../harness/auth-storage.js";
+import { getAuthPath, getProjectSkillsDir } from "../../harness/config.js";
 import { ModelRegistry } from "../../harness/model-registry.js";
 import { SessionManager } from "../../harness/session-manager.js";
 
@@ -490,7 +490,7 @@ function serveGlobalSettings(res: ServerResponse): void {
 
 async function serveModelsList(res: ServerResponse): Promise<void> {
   try {
-    const authStorage = AuthStorage.create(join(homedir(), ".mikan", "auth.json"));
+    const authStorage = AuthStorage.create(getAuthPath());
     const registry = ModelRegistry.create(authStorage);
     const availableModels = await registry.getAvailable();
     const statuses = await resolveAdminModelAccessStatuses(registry, availableModels);
@@ -1145,9 +1145,9 @@ function serveSkillsList(
   }
   const workingDir = requireAdminWorkingDir(res, services);
   if (!workingDir) return;
-  const global = readSkillsFromDir(join(workingDir, "skills"), "global");
+  const global = readSkillsFromDir(getProjectSkillsDir(workingDir), "global");
   const conversation = readSkillsFromDir(
-    join(workingDir, scope.conversationId, "skills"),
+    getProjectSkillsDir(join(workingDir, scope.conversationId)),
     "conversation",
   );
   jsonRes(res, 200, {
@@ -1188,8 +1188,8 @@ function serveSkillFile(
 
   const skillsRoot =
     source === "global"
-      ? join(workingDir, "skills")
-      : join(workingDir, scope.conversationId, "skills");
+      ? getProjectSkillsDir(workingDir)
+      : getProjectSkillsDir(join(workingDir, scope.conversationId));
   const safe = safeJoinUnderRoot(skillsRoot, join(directory, "SKILL.md"));
   if (safe.error) {
     jsonRes(res, 400, { error: safe.error });

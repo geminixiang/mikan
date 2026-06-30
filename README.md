@@ -16,8 +16,8 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 ![mikan architecture](src/content/docs/assets/architecture.png)
 
 - **Chat / conversation data** is the platform-facing record: `log.jsonl`, attachments, and conversation files.
-- **Session orchestration** turns platform events into agent runs, handles top-level/thread scopes, and persists pi-coding-agent structured context under `sessions/*.jsonl`.
-- **pi-coding-agent harness** runs the model loop and calls mikan tools.
+- **Session orchestration** turns platform events into agent runs, handles top-level/thread scopes, and persists mikan structured context under `sessions/*.jsonl`.
+- **mikan harness** follows pi-coding-agent's execution spine, then adapts it for messaging-platform conversations.
 - **Sandbox runtime** is where tool commands execute: host, Docker container/image, Firecracker, or Cloudflare bridge.
 - **Vault** provides runtime credentials as env vars and mounted secret files.
 
@@ -29,7 +29,7 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 - **Credential vaults** — `/login` stores credentials under `--state-dir` and injects env into sandbox runs
 - **Web session viewer** — read-only web view of the current session via `session` / `/session`
 - **Persistent memory** — workspace-level and channel-level `MEMORY.md`
-- **Skills** — drop CLI tools into `skills/`
+- **Skills** — drop CLI tools into `.mikan/skills/`
 - **Events** — schedule one-shot or recurring tasks via JSON files
 - **Multi-provider** — any provider/model supported by `pi-ai`
 
@@ -125,13 +125,15 @@ See [src/content/docs/configuration.md](src/content/docs/configuration.md) for a
 <working-directory>/
 ├── MEMORY.md
 ├── SYSTEM.md
-├── skills/
+├── .mikan/
+│   └── skills/
 ├── events/
 └── <conversation-id>/
     ├── log.jsonl
     ├── attachments/
     ├── scratch/
-    ├── skills/
+    ├── .mikan/
+    │   └── skills/
     └── sessions/
 ```
 

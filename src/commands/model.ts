@@ -95,7 +95,7 @@ export class ModelCommandHandler implements CommandHandler {
         context.responder,
         formatCommandSummary("Model", [
           `找不到模型：\`${formatModelSpec(parsed.provider, parsed.model, parsed.thinkingLevel)}\``,
-          "請確認 provider/model 名稱，或先在 pi models.json 註冊自訂模型。",
+          "請確認 provider/model 名稱，或先在 mikan models.json 註冊自訂模型。",
         ]),
         { style: "muted" },
       );

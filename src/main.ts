@@ -4,7 +4,6 @@ import "./observability/instrument.js";
 
 import { join, resolve } from "path";
 import { mkdirSync, statSync, writeFileSync } from "fs";
-import { homedir } from "os";
 import { fileURLToPath } from "url";
 import { dirname, join as pathJoin } from "path";
 import type { MessagingBot } from "./adapter.js";
@@ -35,6 +34,7 @@ import {
 import { FileVaultManager } from "./vault/index.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
 import { ChannelStore } from "./store.js";
+import { getMikanDir, getProjectSkillsDir } from "./harness/config.js";
 import * as Sentry from "@sentry/node";
 
 function getVersion(): string {
@@ -194,7 +194,7 @@ if (parsedArgs.showVersion) {
 
 // Handle --onboard mode
 if (parsedArgs.showOnboard) {
-  const stateDir = parsedArgs.stateDir ?? join(homedir(), ".mikan");
+  const stateDir = parsedArgs.stateDir ?? getMikanDir();
   setEnvAliases("STATE_DIR", stateDir);
   ensureSecureStateDir(stateDir);
   try {
@@ -229,7 +229,7 @@ if (!parsedArgs.workingDir) {
 }
 
 const { workingDir, sandbox } = { workingDir: parsedArgs.workingDir, sandbox: parsedArgs.sandbox };
-const stateDir = parsedArgs.stateDir ?? join(homedir(), ".mikan");
+const stateDir = parsedArgs.stateDir ?? getMikanDir();
 setEnvAliases("STATE_DIR", stateDir);
 ensureSecureStateDir(stateDir);
 
@@ -290,7 +290,7 @@ const provisioner =
     : undefined;
 
 if (sandbox.type === "image") {
-  ensureDirExists(join(workingDir, "skills"));
+  ensureDirExists(getProjectSkillsDir(workingDir));
   ensureDirExists(join(workingDir, "events"));
   try {
     writeFileSync(join(workingDir, "MEMORY.md"), "", { flag: "wx" });

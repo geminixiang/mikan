@@ -1,11 +1,11 @@
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname } from "path";
-import { mkdirSync } from "fs";
+import { findEnvKeys, getEnvApiKey } from "@earendil-works/pi-ai/compat";
+import type { AuthStatus } from "./types.js";
 
-export interface AuthStatus {
-  configured: boolean;
-  source?: string;
-}
+export type { AuthStatus } from "./types.js";
+
+const AUTH_FILE_WRITE_OPTIONS = { encoding: "utf-8", mode: 0o600 } as const;
 
 export class AuthStorage {
   private constructor(private readonly path: string) {}
@@ -15,7 +15,7 @@ export class AuthStorage {
   }
 
   getApiKey(provider: string): string | undefined {
-    const env = process.env[getProviderEnvName(provider)];
+    const env = getEnvApiKey(provider) ?? process.env[getFallbackProviderEnvName(provider)];
     if (env) return env;
     return this.read().apiKeys?.[provider];
   }
@@ -24,13 +24,17 @@ export class AuthStorage {
     const data = this.read();
     data.apiKeys ??= {};
     data.apiKeys[provider] = apiKey;
-    mkdirSync(dirname(this.path), { recursive: true });
-    writeFileSync(this.path, JSON.stringify(data, null, 2));
+    mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 });
+    writeFileSync(this.path, JSON.stringify(data, null, 2), AUTH_FILE_WRITE_OPTIONS);
+    chmodSync(this.path, 0o600);
   }
 
   getProviderAuthStatus(provider: string): AuthStatus {
-    const envName = getProviderEnvName(provider);
-    if (process.env[envName]) return { configured: true, source: envName };
+    const envName = findEnvKeys(provider)?.[0];
+    if (envName) return { configured: true, source: envName };
+    const fallbackEnvName = getFallbackProviderEnvName(provider);
+    if (process.env[fallbackEnvName]) return { configured: true, source: fallbackEnvName };
+    if (getEnvApiKey(provider)) return { configured: true, source: "environment" };
     if (this.read().apiKeys?.[provider]) return { configured: true, source: this.path };
     return { configured: false };
   }
@@ -45,19 +49,6 @@ export class AuthStorage {
   }
 }
 
-function getProviderEnvName(provider: string): string {
-  switch (provider) {
-    case "anthropic":
-      return "ANTHROPIC_API_KEY";
-    case "openai":
-      return "OPENAI_API_KEY";
-    case "google":
-      return "GOOGLE_API_KEY";
-    case "mistral":
-      return "MISTRAL_API_KEY";
-    case "openrouter":
-      return "OPENROUTER_API_KEY";
-    default:
-      return `${provider.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_API_KEY`;
-  }
+function getFallbackProviderEnvName(provider: string): string {
+  return `${provider.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_API_KEY`;
 }

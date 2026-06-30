@@ -1,19 +1,8 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { basename, dirname, join } from "path";
+import type { LoadSkillsResult, Skill } from "./types.js";
 
-export interface Skill {
-  name: string;
-  description: string;
-  filePath: string;
-  baseDir: string;
-  disableModelInvocation?: boolean;
-  source?: string;
-}
-
-interface LoadSkillsResult {
-  skills: Skill[];
-  diagnostics: Array<{ type: "warning"; message: string; path: string }>;
-}
+export type { LoadSkillsResult, Skill } from "./types.js";
 
 export function loadSkillsFromDir(options: { dir: string; source: string }): LoadSkillsResult {
   return loadSkillsFromDirInternal(options.dir, options.source, true);
