@@ -105,14 +105,6 @@ export class ModelRegistry {
     return this.customApiKeys.get(provider) ?? this.authStorage.getApiKey(provider);
   }
 
-  getProviderDisplayName(provider: string): string {
-    return provider;
-  }
-
-  isUsingOAuth(): boolean {
-    return false;
-  }
-
   private addProviderModels(provider: string, config: ProviderConfig): void {
     if (config.apiKey) this.customApiKeys.set(provider, config.apiKey);
     if (config.headers) this.customHeaders.set(provider, config.headers);

@@ -1,8 +1,9 @@
-import { Agent } from "@earendil-works/pi-agent-core";
+import { Agent, DEFAULT_COMPACTION_SETTINGS } from "@earendil-works/pi-agent-core";
 import { type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
 import { AgentSessionRuntime } from "./harness/agent-session-runtime.js";
 import { createMikanAgent, createMikanSessionServices } from "./harness/agent-session-services.js";
 import { AgentSession } from "./harness/agent-session.js";
+import { DEFAULT_RETRY_SETTINGS } from "./harness/retry-policy.js";
 import { SessionManager } from "./harness/session-manager.js";
 import { buildSystemPrompt } from "./harness/system-prompt.js";
 import { MikanResourceLoader } from "./harness/resource-loader.js";
@@ -1097,6 +1098,9 @@ export async function createRunner(
 
   const services = createMikanSessionServices();
   const { modelRegistry } = services;
+  for (const diagnostic of services.diagnostics) {
+    log.logWarning(diagnostic.message);
+  }
   const model = resolveConfiguredModel(modelRegistry, agentConfig.provider, agentConfig.model);
 
   // Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
@@ -1133,7 +1137,7 @@ export async function createRunner(
     sessionScope,
   );
   const chatSessionManager = new AgentMemoryFileManager();
-  const { agent } = await createMikanAgent({
+  const { agent, session } = await createMikanAgent({
     services,
     sessionManager: sessionRuntime.sessionManager,
     systemPrompt,
@@ -1141,8 +1145,9 @@ export async function createRunner(
     thinkingLevel: agentConfig.thinkingLevel,
     tools,
     conversationId,
+    retrySettings: { ...DEFAULT_RETRY_SETTINGS, ...agentConfig.retry },
+    compactionSettings: { ...DEFAULT_COMPACTION_SETTINGS, ...agentConfig.compaction },
   });
-  const session = new AgentSession(agent, sessionRuntime.sessionManager);
 
   // Mutable per-run state - event handler references this
   const runState = createRunState();

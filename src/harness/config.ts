@@ -13,6 +13,11 @@ export function getAuthPath(): string {
   return join(getMikanDir(), "auth.json");
 }
 
+/** Where mikan stored auth.json before the self-built harness switched the default state dir. */
+export function getLegacyAuthPath(): string {
+  return join(homedir(), ".pi", "mikan", "auth.json");
+}
+
 export function getModelsPath(): string {
   return join(getMikanDir(), "models.json");
 }

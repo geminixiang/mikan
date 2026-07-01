@@ -177,6 +177,16 @@ export interface AgentConfig {
   slack?: {
     replyMode?: "top-level" | "thread";
   };
+  retry?: {
+    enabled?: boolean;
+    maxRetries?: number;
+    baseDelayMs?: number;
+  };
+  compaction?: {
+    enabled?: boolean;
+    reserveTokens?: number;
+    keepRecentTokens?: number;
+  };
 }
 
 /**

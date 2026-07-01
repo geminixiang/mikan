@@ -26,8 +26,6 @@ export interface LoadedResources {
 }
 
 export class MikanResourceLoader {
-  private lastMemory: string | undefined;
-
   constructor(
     private readonly conversationDir: string,
     /** Runtime workspace root (for sandbox path translation). May differ from host path. */
@@ -42,12 +40,6 @@ export class MikanResourceLoader {
     const memory = this.loadMemory(diagnostics);
     const skills = this.loadSkills(diagnostics);
     return { memory, skills, diagnostics };
-  }
-
-  /** Reload memory only — skips skills which rarely change during a session. */
-  reloadMemory(): string {
-    this.lastMemory = this.loadMemory([]);
-    return this.lastMemory;
   }
 
   private loadMemory(_diagnostics: ResourceDiagnostic[]): string {

@@ -7,6 +7,7 @@ import {
   createCompactionSummaryMessage,
   createCustomMessage,
 } from "@earendil-works/pi-agent-core";
+import * as log from "../log.js";
 import type { SessionContext, SessionEntry, SessionHeader } from "./types.js";
 
 export type {
@@ -37,12 +38,44 @@ function hasEntryId(entry: SessionEntry): entry is SessionEntry & { id: string }
   return typeof (entry as { id?: unknown }).id === "string";
 }
 
+/** Validates a parsed first line is a real session header, not arbitrary JSON. */
+function isValidHeader(value: unknown): value is SessionHeader {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    record.type === "session" &&
+    typeof record.id === "string" &&
+    record.id.length > 0 &&
+    typeof record.timestamp === "string" &&
+    record.timestamp.length > 0 &&
+    typeof record.cwd === "string" &&
+    record.cwd.length > 0
+  );
+}
+
 function parseEntries(filePath: string): SessionEntry[] {
   if (!existsSync(filePath)) return [];
-  return readFileSync(filePath, "utf-8")
+  const lines = readFileSync(filePath, "utf-8")
     .split("\n")
     .map((line) => line.trim())
-    .filter(Boolean)
+    .filter(Boolean);
+  if (lines.length === 0) return [];
+
+  let header: unknown;
+  try {
+    header = JSON.parse(lines[0]!);
+  } catch {
+    header = undefined;
+  }
+  if (!isValidHeader(header) || header.version !== CURRENT_SESSION_VERSION) {
+    log.logWarning(
+      `Session file has an invalid or unsupported header, starting a fresh session`,
+      filePath,
+    );
+    return [];
+  }
+
+  return lines
     .map((line) => {
       try {
         return JSON.parse(line) as SessionEntry;
@@ -53,17 +86,17 @@ function parseEntries(filePath: string): SessionEntry[] {
     .filter((entry): entry is SessionEntry => entry !== null);
 }
 
-function buildSessionContext(
+/** Walks the parentId chain from the leaf back to (but excluding) the session header. */
+function walkPath(
   entries: SessionEntry[],
-  leafId?: string | null,
-  byId?: Map<string, SessionEntry>,
-): SessionContext {
-  const index = byId ?? new Map(entries.filter(hasEntryId).map((entry) => [entry.id, entry]));
-  if (leafId === null) return { messages: [], thinkingLevel: "off", model: null };
+  leafId: string | null | undefined,
+  index: Map<string, SessionEntry>,
+): SessionEntry[] {
+  if (leafId === null) return [];
 
   let leaf = leafId ? index.get(leafId) : undefined;
   leaf ??= entries.toReversed().find((entry) => entry.type !== "session");
-  if (!leaf || leaf.type === "session") return { messages: [], thinkingLevel: "off", model: null };
+  if (!leaf || leaf.type === "session") return [];
 
   const path: SessionEntry[] = [];
   let current: SessionEntry | undefined = leaf;
@@ -73,6 +106,17 @@ function buildSessionContext(
     current = parentId ? index.get(parentId) : undefined;
   }
   path.reverse();
+  return path;
+}
+
+function buildSessionContext(
+  entries: SessionEntry[],
+  leafId?: string | null,
+  byId?: Map<string, SessionEntry>,
+): SessionContext {
+  const index = byId ?? new Map(entries.filter(hasEntryId).map((entry) => [entry.id, entry]));
+  const path = walkPath(entries, leafId, index);
+  if (path.length === 0) return { messages: [], thinkingLevel: "off", model: null };
 
   let thinkingLevel = "off";
   let model: SessionContext["model"] = null;
@@ -157,10 +201,6 @@ export class SessionManager {
     return new SessionManager(cwd, sessionDir ?? join(process.cwd(), ".sessions"), undefined, true);
   }
 
-  static inMemory(cwd = process.cwd()): SessionManager {
-    return new SessionManager(cwd, "", undefined, false);
-  }
-
   getHeader(): SessionHeader | null {
     return this.entries.find((entry): entry is SessionHeader => entry.type === "session") ?? null;
   }
@@ -200,6 +240,28 @@ export class SessionManager {
 
   buildSessionContext(): SessionContext {
     return buildSessionContext(this.entries, this.leafId, this.byId);
+  }
+
+  /** Entries on the path from the session root to the current leaf, excluding the header. */
+  getBranch(): SessionEntry[] {
+    return walkPath(this.entries, this.leafId, this.byId);
+  }
+
+  appendCompaction(
+    summary: string,
+    firstKeptEntryId: string,
+    tokensBefore: number,
+    details?: unknown,
+    fromHook?: boolean,
+  ): string {
+    return this.appendEntry({
+      type: "compaction",
+      summary,
+      firstKeptEntryId,
+      tokensBefore,
+      details,
+      fromHook,
+    });
   }
 
   private newSession(): void {

@@ -104,6 +104,20 @@ const SettingsFileSchema = Type.Object({
       rules: Type.Optional(Type.Array(Type.String())),
     }),
   ),
+  retry: Type.Optional(
+    Type.Object({
+      enabled: Type.Optional(Type.Boolean()),
+      maxRetries: Type.Optional(Type.Number()),
+      baseDelayMs: Type.Optional(Type.Number()),
+    }),
+  ),
+  compaction: Type.Optional(
+    Type.Object({
+      enabled: Type.Optional(Type.Boolean()),
+      reserveTokens: Type.Optional(Type.Number()),
+      keepRecentTokens: Type.Optional(Type.Number()),
+    }),
+  ),
 });
 
 type SettingsFileConfig = Static<typeof SettingsFileSchema>;
@@ -141,6 +155,8 @@ function normalizeSettingsConfig(config: SettingsFileConfig): Partial<AgentConfi
       ? { defaultSharedVault: config.sandbox.defaultSharedVault.trim() }
       : {}),
     ...(config.slack !== undefined ? { slack: config.slack } : {}),
+    ...(config.retry !== undefined ? { retry: config.retry } : {}),
+    ...(config.compaction !== undefined ? { compaction: config.compaction } : {}),
   };
 }
 
@@ -182,6 +198,8 @@ function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
   const sandboxImageWorkspaceMount = fromFile.sandboxImageWorkspaceMount;
   const defaultSharedVault = fromFile.defaultSharedVault;
   const slack = fromFile.slack;
+  const retry = fromFile.retry;
+  const compaction = fromFile.compaction;
 
   return {
     provider,
@@ -195,6 +213,8 @@ function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
     sandboxImageWorkspaceMount,
     defaultSharedVault,
     slack,
+    retry,
+    compaction,
   };
 }
 
@@ -371,6 +391,8 @@ function compactSettingsConfig(config: SettingsFileConfig): SettingsFileConfig {
     ...(hasDefinedValue(config.sandbox) ? { sandbox: config.sandbox } : {}),
     ...(hasDefinedValue(config.autoReply) ? { autoReply: config.autoReply } : {}),
     ...(hasDefinedValue(config.slack) ? { slack: config.slack } : {}),
+    ...(hasDefinedValue(config.retry) ? { retry: config.retry } : {}),
+    ...(hasDefinedValue(config.compaction) ? { compaction: config.compaction } : {}),
   };
 }
 
@@ -420,6 +442,14 @@ function patchSettingsConfig(
     slack: {
       ...existing.slack,
       ...config.slack,
+    },
+    retry: {
+      ...existing.retry,
+      ...config.retry,
+    },
+    compaction: {
+      ...existing.compaction,
+      ...config.compaction,
     },
   };
   return compactSettingsConfig(patched);
