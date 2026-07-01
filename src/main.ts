@@ -3,7 +3,7 @@
 import "./observability/instrument.js";
 
 import { join, resolve } from "path";
-import { mkdirSync, statSync, writeFileSync } from "fs";
+import { mkdirSync, statSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join as pathJoin } from "path";
 import type { MessagingBot } from "./adapter.js";
@@ -14,25 +14,11 @@ import { downloadChannel } from "./download.js";
 import { EventsWatcher } from "./events.js";
 import * as log from "./log.js";
 import { startWebServer } from "./web/server.js";
-import { InMemoryAdminTokenStore } from "./web/admin/store.js";
-import { InMemoryLinkTokenStore } from "./web/login/store.js";
-import { InMemorySessionViewTokenStore } from "./web/session-view/store.js";
-import { DockerContainerManager } from "./provisioner.js";
-import {
-  createGlobalSettingsFile,
-  loadGlobalSettings,
-  MissingGlobalSettingsError,
-} from "./config.js";
+import { createGlobalSettingsFile, MissingGlobalSettingsError } from "./config.js";
 import { readEnv, setEnvAliases } from "./utils/env.js";
 import { ensureDirExists, isRecord, readJsonFileIfExists } from "./utils/file-guards.js";
-import {
-  SandboxError,
-  parseSandboxArg,
-  type SandboxConfig,
-  validateSandbox,
-} from "./sandbox/index.js";
-import { FileVaultManager } from "./vault/index.js";
-import { createConversationRuntime } from "./runtime/conversation-runtime.js";
+import { SandboxError, parseSandboxArg, type SandboxConfig } from "./sandbox/index.js";
+import { MikanHarness } from "./mikan-harness.js";
 import { ChannelStore } from "./store.js";
 import { getExtensionsDir, getMikanDir } from "./harness/config.js";
 import * as Sentry from "@sentry/node";
@@ -250,87 +236,23 @@ if (!hasSlack && !hasTelegram && !hasDiscord) {
   process.exit(1);
 }
 
-try {
-  await validateSandbox(sandbox);
-} catch (error) {
-  handleStartupError(error);
-}
-
-const vaultManager = new FileVaultManager(stateDir);
-if (vaultManager.isEnabled()) {
-  console.log(
-    sandbox.type === "container"
-      ? "  Vault system enabled. Container vault active."
-      : sandbox.type === "image" || sandbox.type === "firecracker" || sandbox.type === "cloudflare"
-        ? "  Vault system enabled. Conversation-scoped credential routing active."
-        : "  Vault system enabled. Host mode will not inject vault env.",
-  );
-}
-
-const startupConfig = (() => {
-  try {
-    return loadGlobalSettings();
-  } catch (error) {
-    handleStartupError(error);
-  }
-})();
-const sandboxLimits =
-  startupConfig.sandboxCpus || startupConfig.sandboxMemory
-    ? { cpus: startupConfig.sandboxCpus, memory: startupConfig.sandboxMemory }
-    : undefined;
-const sandboxBoostLimits =
-  startupConfig.sandboxBoostCpus || startupConfig.sandboxBoostMemory
-    ? { cpus: startupConfig.sandboxBoostCpus, memory: startupConfig.sandboxBoostMemory }
-    : undefined;
-
-const provisioner =
-  sandbox.type === "image"
-    ? new DockerContainerManager(sandbox.image, {
-        limits: sandboxLimits,
-        boostLimits: sandboxBoostLimits,
-      })
-    : undefined;
-
-if (sandbox.type === "image") {
-  ensureDirExists(join(workingDir, "skills"));
-  ensureDirExists(join(workingDir, "events"));
-  try {
-    writeFileSync(join(workingDir, "MEMORY.md"), "", { flag: "wx" });
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-  }
-}
-
-const linkTokenStore = new InMemoryLinkTokenStore();
-const sessionViewTokenStore = new InMemorySessionViewTokenStore();
-const adminTokenStore = new InMemoryAdminTokenStore();
-setInterval(() => linkTokenStore.purge(), 5 * 60 * 1000).unref();
-setInterval(() => sessionViewTokenStore.purge(), 5 * 60 * 1000).unref();
-setInterval(() => adminTokenStore.purge(), 5 * 60 * 1000).unref();
-
 function portalBaseUrl(): string | undefined {
   if (LINK_URL) return LINK_URL.replace(/\/+$/, "");
   if (LINK_PORT) return `http://localhost:${LINK_PORT}`;
   return undefined;
 }
-/** Idle timeout for managed image containers (10 minutes) */
-const IMAGE_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
-if (provisioner) {
-  await provisioner.reconcile();
-  await provisioner.stopIdle(IMAGE_IDLE_TIMEOUT_MS);
-  setInterval(() => provisioner.stopIdle(IMAGE_IDLE_TIMEOUT_MS), IMAGE_IDLE_TIMEOUT_MS).unref();
+let mikan: MikanHarness;
+try {
+  mikan = await MikanHarness.create({
+    workingDir,
+    stateDir,
+    sandbox,
+    portalBaseUrl: portalBaseUrl(),
+  });
+} catch (error) {
+  handleStartupError(error);
 }
-const handler = createConversationRuntime({
-  workingDir,
-  sandbox,
-  vaultManager,
-  provisioner,
-  linkTokenStore,
-  sessionViewTokenStore,
-  adminTokenStore,
-  portalBaseUrl: portalBaseUrl(),
-});
 
 const sandboxDesc =
   sandbox.type === "host"
@@ -354,7 +276,7 @@ if (hasSlack) {
     throw new Error("Slack startup requires both SLACK_APP_TOKEN and SLACK_BOT_TOKEN");
   }
   const sharedStore = new ChannelStore({ workingDir, botToken: slackMessagingBotToken });
-  const slackMessagingBot = new SlackMessagingBotClass(handler, {
+  const slackMessagingBot = new SlackMessagingBotClass(mikan.runtime, {
     appToken: slackAppToken,
     botToken: slackMessagingBotToken,
     workingDir,
@@ -369,7 +291,7 @@ if (hasTelegram) {
   if (!telegramToken) {
     throw new Error("Telegram startup requires TELEGRAM_BOT_TOKEN");
   }
-  const telegramMessagingBot = new TelegramMessagingBot(handler, {
+  const telegramMessagingBot = new TelegramMessagingBot(mikan.runtime, {
     token: telegramToken,
     workingDir,
   });
@@ -382,7 +304,7 @@ if (hasDiscord) {
   if (!discordToken) {
     throw new Error("Discord startup requires DISCORD_BOT_TOKEN");
   }
-  const discordMessagingBot = new DiscordMessagingBot(handler, {
+  const discordMessagingBot = new DiscordMessagingBot(mikan.runtime, {
     token: discordToken,
     workingDir,
   });
@@ -394,15 +316,21 @@ if (hasDiscord) {
 if (LINK_PORT) {
   startWebServer({
     port: LINK_PORT,
-    linkTokenStore,
-    vaultManager,
+    linkTokenStore: mikan.linkTokenStore,
+    vaultManager: mikan.vaultManager,
     notify: async (platform, conversationId, message) => {
       const bot = botsByPlatform[platform];
       if (bot) await bot.postMessage(conversationId, message);
     },
-    sessionViewTokenStore,
-    sessionViewInteractive: { handler, botsByPlatform },
-    adminOptions: { adminTokenStore, workingDir, runtime: handler, sandbox, botsByPlatform },
+    sessionViewTokenStore: mikan.sessionViewTokenStore,
+    sessionViewInteractive: { handler: mikan.runtime, botsByPlatform },
+    adminOptions: {
+      adminTokenStore: mikan.adminTokenStore,
+      workingDir,
+      runtime: mikan.runtime,
+      sandbox,
+      botsByPlatform,
+    },
   });
 }
 
@@ -416,7 +344,7 @@ eventsWatcher.start();
 
 // Handle shutdown
 async function shutdown(): Promise<void> {
-  await handler.shutdown();
+  await mikan.shutdown();
   eventsWatcher.stop();
   await Sentry.close(5000);
   process.exit(0);
