@@ -191,7 +191,12 @@ export class MikanSessionStorage implements SessionStorage<MikanSessionMetadata>
    * as a side effect of merely inspecting them.
    */
   static peekHeader(sessionFile: string): RawSessionHeader | null {
-    const raw = readTextFileIfExists(sessionFile);
+    let raw: string | undefined;
+    try {
+      raw = readTextFileIfExists(sessionFile);
+    } catch {
+      return null;
+    }
     if (raw === undefined) return null;
     const firstLine = raw.split("\n").find((line) => line.trim());
     if (!firstLine) return null;
