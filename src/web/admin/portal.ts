@@ -2237,6 +2237,8 @@ function renderAdminPage(token: AdminToken): string {
     }
 
     let timelineConvLoaded = false;
+    let timelineData = null;
+    let timelineFilter = null;
     async function ensureTimelineConvOptions() {
       if (timelineConvLoaded) return;
       const sel = document.getElementById('timeline-conv');
@@ -2277,6 +2279,7 @@ function renderAdminPage(token: AdminToken): string {
         container.innerHTML = '<div class="loading-msg">Loading…</div>';
         const data = await apiGet('/admin/api/conversation-usage?conversationId=' +
           encodeURIComponent(conv));
+        timelineData = data;
         container.innerHTML = renderUsageTimeline(data);
       } catch (err) {
         container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
@@ -2286,6 +2289,21 @@ function renderAdminPage(token: AdminToken): string {
     function tlCard(label, value) {
       return '<div class="tl-card"><div class="tl-card-label">' + label +
         '</div><div class="tl-card-value">' + value + '</div></div>';
+    }
+
+    const TL_SERIES = [
+      { key: 'cacheRead', seg: 'tl-cache-read', sw: 'sw-cache-read', label: 'Cache read' },
+      { key: 'cacheWrite', seg: 'tl-cache-write', sw: 'sw-cache-write', label: 'Cache write' },
+      { key: 'input', seg: 'tl-input', sw: 'sw-input', label: 'Input' },
+      { key: 'output', seg: 'tl-output', sw: 'sw-output', label: 'Output' },
+    ];
+
+    // Click a legend item to show only that series; click it again for all.
+    function toggleTimelineFilter(key) {
+      timelineFilter = timelineFilter === key ? null : key;
+      if (timelineData) {
+        document.getElementById('usage-timeline-content').innerHTML = renderUsageTimeline(timelineData);
+      }
     }
 
     function renderUsageTimeline(data) {
@@ -2305,28 +2323,41 @@ function renderAdminPage(token: AdminToken): string {
         return cards + emptyNote;
       }
 
-      const max = Math.max(1, ...buckets.map((b) => b.total));
+      const active = TL_SERIES.find((s) => s.key === timelineFilter) || null;
+      const valueOf = (b) => active ? (b[active.key] || 0) : b.total;
+      const max = Math.max(1, ...buckets.map(valueOf));
       const px = (v) => Math.round((v / max) * 180);
-      const legend = '<div class="tl-legend">' +
-        '<span><i class="sw sw-cache-read"></i>Cache read</span>' +
-        '<span><i class="sw sw-cache-write"></i>Cache write</span>' +
-        '<span><i class="sw sw-input"></i>Input</span>' +
-        '<span><i class="sw sw-output"></i>Output</span>' +
-      '</div>';
+
+      const legend = '<div class="tl-legend">' + TL_SERIES.map((s) => {
+        const cls = 'tl-legend-item' +
+          (active && active.key === s.key ? ' active' : (active ? ' dim' : ''));
+        return '<span class="' + cls + '" onclick="toggleTimelineFilter(\\'' + s.key + '\\')">' +
+          '<i class="sw ' + s.sw + '"></i>' + s.label + '</span>';
+      }).join('') + '</div>';
+
       const bars = buckets.map((b) => {
-        const tip = b.date + ' · ' + fmtNum(b.total) + ' tokens' +
-          (b.cost > 0 ? ' · $' + Number(b.cost).toFixed(4) : '');
-        const inner = b.total > 0
-          ? '<span class="tl-seg tl-output" style="height:' + px(b.output) + 'px"></span>' +
+        const val = valueOf(b);
+        const tip = active
+          ? b.date + ' · ' + active.label + ': ' + fmtNum(b[active.key] || 0) + ' tokens'
+          : b.date + ' · ' + fmtNum(b.total) + ' tokens' +
+            (b.cost > 0 ? ' · $' + Number(b.cost).toFixed(4) : '');
+        let inner;
+        if (val <= 0) {
+          inner = '<span class="tl-empty"></span>';
+        } else if (active) {
+          inner = '<span class="tl-seg ' + active.seg + '" style="height:' + px(val) + 'px"></span>';
+        } else {
+          inner = '<span class="tl-seg tl-output" style="height:' + px(b.output) + 'px"></span>' +
             '<span class="tl-seg tl-input" style="height:' + px(b.input) + 'px"></span>' +
             '<span class="tl-seg tl-cache-write" style="height:' + px(b.cacheWrite) + 'px"></span>' +
-            '<span class="tl-seg tl-cache-read" style="height:' + px(b.cacheRead) + 'px"></span>'
-          : '<span class="tl-empty"></span>';
+            '<span class="tl-seg tl-cache-read" style="height:' + px(b.cacheRead) + 'px"></span>';
+        }
         return '<div class="tl-bar">' +
           '<span class="tl-tip">' + escHtml(tip) + '</span>' +
           '<div class="tl-fill">' + inner + '</div>' +
         '</div>';
       }).join('');
+
       const axis = buckets.length
         ? '<div class="tl-axis"><span>' + escHtml(buckets[0].date.slice(5)) +
           '</span><span>' + escHtml(buckets[buckets.length - 1].date.slice(5)) + '</span></div>'
@@ -2732,6 +2763,10 @@ const adminViewStyles = `
   .tl-card-value { font-size: 1.35rem; font-weight: 600; color: var(--text); }
   .tl-legend { display: flex; gap: 16px; font-size: 0.73rem; color: var(--muted); margin-bottom: 10px; }
   .tl-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .tl-legend-item { cursor: pointer; transition: opacity 100ms; }
+  .tl-legend-item:hover { text-decoration: underline; }
+  .tl-legend-item.active { color: var(--text); font-weight: 600; text-decoration: underline; }
+  .tl-legend-item.dim { opacity: 0.4; }
   .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
   .sw-cache-read { background: rgba(0,0,0,0.18); }
   .sw-cache-write { background: #3b6fb0; }
