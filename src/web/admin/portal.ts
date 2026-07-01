@@ -459,8 +459,7 @@ function serveConversationUsage(res: ServerResponse, url: URL, services: AdminSe
     return;
   }
 
-  const daysRaw = parseInt(url.searchParams.get("days") ?? "7", 10);
-  const days = Number.isFinite(daysRaw) ? Math.min(7, Math.max(1, daysRaw)) : 7;
+  const days = 14;
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -476,11 +475,12 @@ function serveConversationUsage(res: ServerResponse, url: URL, services: AdminSe
   const cutoff = new Date(today);
   cutoff.setDate(today.getDate() - (days - 1));
 
+  const flags = { hasOlder: false };
   const sessionDir = join(workingDir, conversationId, "sessions");
   try {
     for (const entry of readdirSync(sessionDir, { withFileTypes: true })) {
       if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
-      accumulateSessionUsageByDay(join(sessionDir, entry.name), cutoff, buckets);
+      accumulateSessionUsageByDay(join(sessionDir, entry.name), cutoff, buckets, flags);
     }
   } catch {
     // No sessions directory yet — return empty buckets.
@@ -501,6 +501,7 @@ function serveConversationUsage(res: ServerResponse, url: URL, services: AdminSe
     conversationId,
     label: conversationDisplayLabel(services, conversationId),
     days,
+    hasOlder: flags.hasOlder,
     buckets: series,
     totals: {
       input: totals.input,
@@ -517,6 +518,7 @@ function accumulateSessionUsageByDay(
   sessionFile: string,
   cutoff: Date,
   buckets: Map<string, UsageBucket>,
+  flags: { hasOlder: boolean },
 ): void {
   try {
     const manager = SessionManager.open(sessionFile);
@@ -528,7 +530,11 @@ function accumulateSessionUsageByDay(
       if (!usage || !entry.timestamp) continue;
 
       const when = new Date(entry.timestamp);
-      if (Number.isNaN(when.getTime()) || when < cutoff) continue;
+      if (Number.isNaN(when.getTime())) continue;
+      if (when < cutoff) {
+        flags.hasOlder = true;
+        continue;
+      }
 
       const bucket = buckets.get(localDayKey(when));
       if (!bucket) continue;
@@ -1647,10 +1653,6 @@ function renderAdminPage(token: AdminToken): string {
           <label>Conversation
             <select id="timeline-conv" onchange="loadUsageTimeline()"></select>
           </label>
-          <label>Range
-            <input type="range" id="timeline-days" min="1" max="7" value="7" step="1" oninput="onTimelineDaysInput()">
-            <span id="timeline-days-out">7 d</span>
-          </label>
         </div>
         <div id="usage-timeline-content"><div class="loading-msg">Loading…</div></div>
       </section>
@@ -2261,12 +2263,6 @@ function renderAdminPage(token: AdminToken): string {
       timelineConvLoaded = true;
     }
 
-    function onTimelineDaysInput() {
-      const days = document.getElementById('timeline-days').value;
-      document.getElementById('timeline-days-out').textContent = days + ' d';
-      loadUsageTimeline();
-    }
-
     async function loadUsageTimeline() {
       const container = document.getElementById('usage-timeline-content');
       try {
@@ -2276,10 +2272,9 @@ function renderAdminPage(token: AdminToken): string {
           container.innerHTML = '<div class="empty-state">No conversations found</div>';
           return;
         }
-        const days = document.getElementById('timeline-days').value || '7';
         container.innerHTML = '<div class="loading-msg">Loading…</div>';
         const data = await apiGet('/admin/api/conversation-usage?conversationId=' +
-          encodeURIComponent(conv) + '&days=' + encodeURIComponent(days));
+          encodeURIComponent(conv));
         container.innerHTML = renderUsageTimeline(data);
       } catch (err) {
         container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
@@ -2302,7 +2297,10 @@ function renderAdminPage(token: AdminToken): string {
       '</div>';
 
       if (totals.total === 0) {
-        return cards + '<div class="empty-state">No token usage in this range</div>';
+        const emptyNote = data.hasOlder
+          ? '<div class="tl-note">No usage in the last 14 days · earlier activity exists</div>'
+          : '<div class="empty-state">No token usage in the last 14 days</div>';
+        return cards + emptyNote;
       }
 
       const max = Math.max(1, ...buckets.map((b) => b.total));
@@ -2326,7 +2324,10 @@ function renderAdminPage(token: AdminToken): string {
         ? '<div class="tl-axis"><span>' + escHtml(buckets[0].date.slice(5)) +
           '</span><span>' + escHtml(buckets[buckets.length - 1].date.slice(5)) + '</span></div>'
         : '';
-      return cards + legend + '<div class="tl-chart">' + bars + '</div>' + axis;
+      const note = data.hasOlder
+        ? '<div class="tl-note">Showing last 14 days · earlier activity not shown</div>'
+        : '<div class="tl-note">Showing last 14 days</div>';
+      return cards + legend + '<div class="tl-chart">' + bars + '</div>' + axis + note;
     }
 
     async function loadGlobalSettings() {
@@ -2715,8 +2716,7 @@ const adminViewStyles = `
     padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px;
     background: #fff; color: var(--text); font-size: 0.8rem; max-width: 240px;
   }
-  .timeline-controls input[type="range"] { width: 120px; }
-  #timeline-days-out { font-variant-numeric: tabular-nums; color: var(--text); min-width: 26px; }
+  .tl-note { margin-top: 8px; font-size: 0.72rem; color: var(--subtle); }
   .tl-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
   .tl-card { background: rgba(0,0,0,0.025); border-radius: 10px; padding: 10px 12px; }
   .tl-card-label { font-size: 0.73rem; color: var(--muted); margin-bottom: 4px; }
