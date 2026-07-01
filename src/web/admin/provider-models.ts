@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import type { MikanModels } from "../../harness/index.js";
 
 type AdminModelStatus = "available" | "unverified";
 
@@ -19,7 +19,7 @@ interface ProviderModelsCacheEntry {
 const providerModelsCache = new Map<string, ProviderModelsCacheEntry>();
 
 export async function resolveAdminModelAccessStatuses(
-  registry: ModelRegistry,
+  registry: MikanModels,
   models: Model<Api>[],
 ): Promise<Map<string, AdminModelAccessStatus>> {
   const result = new Map<string, AdminModelAccessStatus>();
@@ -54,7 +54,7 @@ function groupModelsByProvider(models: Model<Api>[]): Map<string, Model<Api>[]> 
 }
 
 async function fetchProviderModelIds(
-  registry: ModelRegistry,
+  registry: MikanModels,
   provider: string,
 ): Promise<Set<string> | undefined> {
   if (provider !== "openai" && provider !== "anthropic") return new Set<string>();

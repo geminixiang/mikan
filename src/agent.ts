@@ -1,21 +1,16 @@
-import { Agent, type ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
 import {
-  AgentSession,
-  AuthStorage,
-  convertToLlm,
-  DefaultResourceLoader,
   formatSkillsForPrompt,
-  getAgentDir,
+  loadExtensions,
   loadSkillsFromDir,
-  ModelRegistry,
-  SessionManager,
-  SettingsManager,
-  type Skill,
-} from "@earendil-works/pi-coding-agent";
+  MikanAgentSession,
+  MikanModels,
+  type MikanSkill,
+  type SessionStore,
+} from "./harness/index.js";
 import { existsSync, readFileSync } from "fs";
 import { mkdir, readFile, writeFile } from "fs/promises";
-import { homedir } from "os";
 import { join, posix } from "path";
 import type {
   ConversationMessage,
@@ -115,8 +110,8 @@ async function getMemory(conversationDir: string): Promise<string> {
   return parts.join("\n\n");
 }
 
-function loadMikanSkills(conversationDir: string, workspacePath: string): Skill[] {
-  const skillMap = new Map<string, Skill>();
+function loadMikanSkills(conversationDir: string, workspacePath: string): MikanSkill[] {
+  const skillMap = new Map<string, MikanSkill>();
 
   // conversationDir is the host path (e.g., /Users/.../data/C0A34FL8PMH)
   // hostWorkspacePath is the parent directory on host
@@ -214,7 +209,7 @@ function buildSystemPrompt(
   memory: string,
   sandboxConfig: SandboxConfig,
   platform: MessagingInfo,
-  skills: Skill[],
+  skills: MikanSkill[],
   isEventTrigger = false,
   triggerAttribution?: string,
 ): string {
@@ -454,8 +449,7 @@ interface PreparedRunContext {
 }
 
 interface ConfiguredAgentSession {
-  agent: Agent;
-  session: AgentSession;
+  session: MikanAgentSession;
 }
 
 function createRunnerExecutionContext(
@@ -504,86 +498,55 @@ function createRunnerExecutionContext(
 
 async function createConfiguredAgentSession(params: {
   conversationId: string;
+  conversationDir: string;
   workspaceDir: string;
-  runtimeWorkspaceRoot: string;
   systemPrompt: string;
   model: Model<Api>;
   thinkingLevel: ThinkingLevel;
   tools: Awaited<ReturnType<typeof createMikanTools>>["tools"];
-  sessionManager: SessionManager;
-  settingsManager: SettingsManager;
-  modelRegistry: ModelRegistry;
+  sessionStore: SessionStore;
+  models: MikanModels;
 }): Promise<ConfiguredAgentSession> {
   const {
     conversationId,
+    conversationDir,
     workspaceDir,
-    runtimeWorkspaceRoot,
     systemPrompt,
     model,
     thinkingLevel,
     tools,
-    sessionManager,
-    settingsManager,
-    modelRegistry,
+    sessionStore,
+    models,
   } = params;
-  const agent = new Agent({
-    initialState: {
-      systemPrompt,
-      model,
-      thinkingLevel,
-      tools,
-    },
-    convertToLlm,
-    getApiKey: async (provider) => {
-      const key = await modelRegistry.getApiKeyForProvider(provider);
-      if (!key) {
-        throw new Error(
-          `No API key for provider "${provider}". Set the appropriate environment variable or configure via auth.json`,
-        );
-      }
-      return key;
-    },
-  });
 
-  const loadedSession = sessionManager.buildSessionContext();
-  if (loadedSession.messages.length > 0) {
-    agent.state.messages = loadedSession.messages;
+  const extensionsResult = await loadExtensions({
+    dirs: [join(conversationDir, "..", "extensions"), join(conversationDir, "extensions")],
+    context: { conversationId, workspaceDir, model, thinkingLevel },
+  });
+  for (const err of extensionsResult.errors) {
+    log.logWarning(`[${conversationId}] Extension load error: ${err.path}`, err.error);
+  }
+  if (extensionsResult.extensions.length > 0) {
     log.logInfo(
-      `[${conversationId}] Reloaded ${loadedSession.messages.length} messages from session context`,
+      `[${conversationId}] Loaded ${extensionsResult.extensions.length} extension(s): ${extensionsResult.extensions.map((extension) => extension.name).join(", ")}`,
     );
   }
 
-  const resourceLoader = new DefaultResourceLoader({
-    cwd: workspaceDir,
-    agentDir: getAgentDir(),
+  const session = new MikanAgentSession({
     systemPrompt,
+    model,
+    thinkingLevel,
+    tools,
+    models,
+    sessionStore,
+    extensions: extensionsResult.registry,
   });
-  try {
-    await resourceLoader.reload();
-    const extResult = resourceLoader.getExtensions();
-    if (extResult.errors.length > 0) {
-      for (const err of extResult.errors) {
-        log.logWarning(`[${conversationId}] Extension load error: ${err.path}`, err.error);
-      }
-    }
-    log.logInfo(
-      `[${conversationId}] Loaded ${extResult.extensions.length} extension(s): ${extResult.extensions.map((extension) => extension.path).join(", ")}`,
-    );
-  } catch (error) {
-    log.logWarning(`[${conversationId}] Failed to load resources`, String(error));
-  }
 
-  const baseToolsOverride = Object.fromEntries(tools.map((tool) => [tool.name, tool]));
-  const session = new AgentSession({
-    agent,
-    sessionManager,
-    settingsManager,
-    cwd: runtimeWorkspaceRoot,
-    modelRegistry,
-    resourceLoader,
-    baseToolsOverride,
-  });
-  return { agent, session };
+  const reloaded = session.reloadFromSession();
+  if (reloaded > 0) {
+    log.logInfo(`[${conversationId}] Reloaded ${reloaded} messages from session context`);
+  }
+  return { session };
 }
 
 function createEmptyUsageTotals() {
@@ -732,7 +695,7 @@ export function buildPromptPayload(
 async function writePromptDebugContext(
   conversationDir: string,
   systemPrompt: string,
-  session: AgentSession,
+  session: MikanAgentSession,
   userMessage: string,
   imageAttachmentCount: number,
 ): Promise<void> {
@@ -748,7 +711,7 @@ async function writePromptDebugContext(
   );
 }
 
-function getFinalAssistantText(session: AgentSession): string {
+function getFinalAssistantText(session: MikanAgentSession): string {
   const lastAssistant = session.messages.findLast((message) => message.role === "assistant");
   return (
     lastAssistant?.content
@@ -809,7 +772,7 @@ async function replaceResponseWithToolProgress(
 
 async function finalizeRunResponse(
   responder: ConversationResponder,
-  session: AgentSession,
+  session: MikanAgentSession,
   runState: RunnerSessionState,
   options?: {
     triggerAttribution?: string;
@@ -911,7 +874,7 @@ async function finalizeRunResponse(
 }
 
 interface UsageReportContext {
-  session: AgentSession;
+  session: MikanAgentSession;
   runState: RunnerSessionState;
   responder: ConversationResponder;
   platform: MessagingInfo;
@@ -994,15 +957,10 @@ async function reportUsageSummary(ctx: UsageReportContext): Promise<void> {
   }
 }
 
-function reloadSessionMessages(
-  sessionManager: SessionManager,
-  conversationId: string,
-  agent: Agent,
-): void {
-  const messages = sessionManager.buildSessionContext().messages;
-  if (messages.length > 0) {
-    agent.state.messages = messages;
-    log.logInfo(`[${conversationId}] Reloaded ${messages.length} messages from context`);
+function reloadSessionMessages(session: MikanAgentSession, conversationId: string): void {
+  const reloaded = session.reloadFromSession();
+  if (reloaded > 0) {
+    log.logInfo(`[${conversationId}] Reloaded ${reloaded} messages from context`);
   }
 }
 
@@ -1018,9 +976,7 @@ async function prepareRunContext(params: {
   executionResolver?: ActorExecutionResolver;
   resolveExecutorForRun: RunnerExecutionContext["resolveExecutorForRun"];
   getPathContext: () => RuntimePathContext;
-  sessionManager: SessionManager;
-  session: AgentSession;
-  agent: Agent;
+  session: MikanAgentSession;
   setEventContext: (context: {
     platform: string;
     conversationId: string;
@@ -1043,9 +999,7 @@ async function prepareRunContext(params: {
     executionResolver,
     resolveExecutorForRun,
     getPathContext,
-    sessionManager,
     session,
-    agent,
     setEventContext,
     setSandboxContext,
     setUploadFunction,
@@ -1064,7 +1018,7 @@ async function prepareRunContext(params: {
     pathContext = getPathContext();
   }
 
-  reloadSessionMessages(sessionManager, conversationId, agent);
+  reloadSessionMessages(session, conversationId);
 
   const memory = await getMemory(conversationDir);
   const skills = loadMikanSkills(conversationDir, pathContext.runtimeWorkspaceRoot);
@@ -1149,7 +1103,7 @@ function sendAgentEvent(payload: {
 
 // ponytail: additive SSE mirror only; keep responder rendering here until another frontend needs the same stream.
 function attachSessionEventHandlers(params: {
-  session: AgentSession;
+  session: MikanAgentSession;
   runState: RunnerSessionState;
   model: Model<Api>;
   agentConfig: ReturnType<typeof resolveConversationSettings>;
@@ -1502,8 +1456,10 @@ export async function createRunner(
     { sandbox: sandboxConfig, provisioner },
   );
 
-  const authStorage = AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json"));
-  const modelRegistry = ModelRegistry.create(authStorage);
+  const modelRegistry = MikanModels.create();
+  if (modelRegistry.getError()) {
+    log.logWarning("models.json load error", modelRegistry.getError()!);
+  }
   const model = resolveConfiguredModel(modelRegistry, agentConfig.provider, agentConfig.model);
 
   // Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
@@ -1530,12 +1486,8 @@ export async function createRunner(
   // use the conversation's current pointer; scoped sessions use fixed files.
   // Platform-specific scope behavior is resolved before runner creation.
   const isThread = sessionKey.includes(":");
-  const { sessionDir, contextFile, threadRootMessage } = sessionScope;
-  const sessionManager = openManagedSession(
-    contextFile,
-    sessionDir,
-    pathContext.runtimeWorkspaceRoot,
-  );
+  const { contextFile, threadRootMessage } = sessionScope;
+  const sessionManager = openManagedSession(contextFile, pathContext.runtimeWorkspaceRoot);
   const threadSessionName = buildThreadSessionName(threadRootMessage);
   if (isThread && threadSessionName && sessionManager.getSessionName() !== threadSessionName) {
     sessionManager.appendSessionInfo(threadSessionName);
@@ -1543,18 +1495,16 @@ export async function createRunner(
 
   const sessionUuid = extractSessionUuid(contextFile);
   const chatSessionManager = new AgentMemoryFileManager();
-  const settingsManager = SettingsManager.inMemory();
-  const { agent, session } = await createConfiguredAgentSession({
+  const { session } = await createConfiguredAgentSession({
     conversationId,
+    conversationDir,
     workspaceDir,
-    runtimeWorkspaceRoot: pathContext.runtimeWorkspaceRoot,
     systemPrompt,
     model,
     thinkingLevel: agentConfig.thinkingLevel,
     tools,
-    sessionManager,
-    settingsManager,
-    modelRegistry,
+    sessionStore: sessionManager,
+    models: modelRegistry,
   });
 
   // Mutable per-run state - event handler references this
@@ -1588,9 +1538,7 @@ export async function createRunner(
         executionResolver,
         resolveExecutorForRun,
         getPathContext,
-        sessionManager,
         session,
-        agent,
         setEventContext,
         setSandboxContext,
         setUploadFunction,

@@ -1,15 +1,17 @@
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { MikanModels } from "../src/harness/index.js";
 import { describe, expect, test } from "vitest";
 import { resolveConfiguredModel } from "../src/model-registry.js";
 
-function withTempRegistry(config: unknown): ModelRegistry {
+function withTempRegistry(config: unknown): MikanModels {
   const dir = mkdtempSync(join(tmpdir(), "mikan-model-registry-"));
   writeFileSync(join(dir, "models.json"), JSON.stringify(config));
-  const authStorage = AuthStorage.create(join(dir, "auth.json"));
-  return ModelRegistry.create(authStorage, join(dir, "models.json"));
+  return MikanModels.create({
+    authPath: join(dir, "auth.json"),
+    modelsJsonPath: join(dir, "models.json"),
+  });
 }
 
 describe("resolveConfiguredModel", () => {
@@ -48,10 +50,10 @@ describe("resolveConfiguredModel", () => {
   test("throws a clear error for unknown models", () => {
     const dir = mkdtempSync(join(tmpdir(), "mikan-empty-model-registry-"));
     try {
-      const registry = ModelRegistry.create(
-        AuthStorage.create(join(dir, "auth.json")),
-        join(dir, "models.json"),
-      );
+      const registry = MikanModels.create({
+        authPath: join(dir, "auth.json"),
+        modelsJsonPath: join(dir, "models.json"),
+      });
 
       expect(() => resolveConfiguredModel(registry, "missing", "model")).toThrow(
         'Unknown model "missing/model"',

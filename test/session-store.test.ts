@@ -77,7 +77,7 @@ function seedManagedSession(
   text: string,
 ): string {
   createManagedSessionFileAtPath(sessionFile, cwd);
-  const sessionManager = openManagedSession(sessionFile, sessionDir, cwd);
+  const sessionManager = openManagedSession(sessionFile, cwd);
   sessionManager.appendMessage(makeUserMessage(text));
   sessionManager.appendMessage(makeAssistantMessage(`${text} reply`));
   return sessionFile;
@@ -203,7 +203,7 @@ describe("managed session initialization", () => {
   test("creates a channel session with the provided cwd", () => {
     const sessionDir = getChannelSessionDir(channelDir);
     const sessionFile = resolveManagedSessionFile(sessionDir, channelDir);
-    const sessionManager = openManagedSession(sessionFile, sessionDir, channelDir);
+    const sessionManager = openManagedSession(sessionFile, channelDir);
 
     sessionManager.appendMessage(makeUserMessage("hello"));
     sessionManager.appendMessage(makeAssistantMessage("hi"));
@@ -221,7 +221,7 @@ describe("managed session initialization", () => {
   test("opens a missing managed session file with the provided cwd", () => {
     const sessionDir = getChannelSessionDir(channelDir);
     const sessionFile = join(sessionDir, "missing.jsonl");
-    const sessionManager = openManagedSession(sessionFile, sessionDir, channelDir);
+    const sessionManager = openManagedSession(sessionFile, channelDir);
 
     sessionManager.appendMessage(makeUserMessage("hello"));
     sessionManager.appendMessage(makeAssistantMessage("hi"));
@@ -262,10 +262,9 @@ describe("managed session initialization", () => {
   });
 
   test("creates a fixed-path thread session with the provided cwd", () => {
-    const sessionDir = getChannelSessionDir(channelDir);
     const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
     createManagedSessionFileAtPath(threadFile, channelDir);
-    const sessionManager = openManagedSession(threadFile, sessionDir, channelDir);
+    const sessionManager = openManagedSession(threadFile, channelDir);
 
     sessionManager.appendMessage(makeUserMessage("hello thread"));
     sessionManager.appendMessage(makeAssistantMessage("thread reply"));
@@ -285,14 +284,14 @@ describe("fixed thread sessions", () => {
   test("thread session has a different session ID than channel session", () => {
     const sessionDir = getChannelSessionDir(channelDir);
     const channelFile = resolveManagedSessionFile(sessionDir, channelDir);
-    const channelSM = openManagedSession(channelFile, sessionDir, channelDir);
+    const channelSM = openManagedSession(channelFile, channelDir);
     channelSM.appendMessage(makeUserMessage("hello channel"));
     channelSM.appendMessage(makeAssistantMessage("hi there"));
     const channelSessionId = channelSM.getSessionId();
 
     const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
     createManagedSessionFileAtPath(threadFile, channelDir);
-    const threadSM = openManagedSession(threadFile, sessionDir, channelDir);
+    const threadSM = openManagedSession(threadFile, channelDir);
     threadSM.appendMessage(makeUserMessage("hello thread"));
     threadSM.appendMessage(makeAssistantMessage("thread reply"));
 
@@ -301,10 +300,9 @@ describe("fixed thread sessions", () => {
   });
 
   test("second thread access reuses the same fixed thread file", () => {
-    const sessionDir = getChannelSessionDir(channelDir);
     const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
     createManagedSessionFileAtPath(threadFile, channelDir);
-    const threadSM = openManagedSession(threadFile, sessionDir, channelDir);
+    const threadSM = openManagedSession(threadFile, channelDir);
     const threadSessionId = threadSM.getSessionId();
 
     threadSM.appendMessage(makeUserMessage("thread msg"));
@@ -313,7 +311,7 @@ describe("fixed thread sessions", () => {
     const existing = tryResolveThreadSession(threadFile);
     expect(existing).toBe(threadFile);
 
-    const reopened = openManagedSession(existing!, sessionDir, channelDir);
+    const reopened = openManagedSession(existing!, channelDir);
     expect(reopened.getSessionId()).toBe(threadSessionId);
     expect(readFileSync(existing!, "utf-8")).toContain("thread msg");
   });
@@ -321,15 +319,15 @@ describe("fixed thread sessions", () => {
   test("different threads get independent session IDs", () => {
     const sessionDir = getChannelSessionDir(channelDir);
     const channelFile = resolveManagedSessionFile(sessionDir, channelDir);
-    const channelSM = openManagedSession(channelFile, sessionDir, channelDir);
+    const channelSM = openManagedSession(channelFile, channelDir);
 
     const thread1File = getThreadSessionFile(channelDir, "C123:1000.0001");
     const thread2File = getThreadSessionFile(channelDir, "C123:1000.0002");
     createManagedSessionFileAtPath(thread1File, channelDir);
     createManagedSessionFileAtPath(thread2File, channelDir);
 
-    const thread1SM = openManagedSession(thread1File, sessionDir, channelDir);
-    const thread2SM = openManagedSession(thread2File, sessionDir, channelDir);
+    const thread1SM = openManagedSession(thread1File, channelDir);
+    const thread2SM = openManagedSession(thread2File, channelDir);
 
     const ids = new Set([
       channelSM.getSessionId(),
@@ -340,10 +338,9 @@ describe("fixed thread sessions", () => {
   });
 
   test("fresh thread file can be created without a channel source", () => {
-    const sessionDir = getChannelSessionDir(channelDir);
     const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
     createManagedSessionFileAtPath(threadFile, channelDir);
-    const threadSM = openManagedSession(threadFile, sessionDir, channelDir);
+    const threadSM = openManagedSession(threadFile, channelDir);
     const entries = threadSM.getEntries().filter((e: { type: string }) => e.type === "message");
     expect(entries.length).toBe(0);
   });
@@ -354,7 +351,7 @@ describe("top-level session rotation", () => {
     const sessionDir = getChannelSessionDir(channelDir);
     const oldFile = createManagedSessionFile(sessionDir, channelDir);
     rewriteSessionTimestamp(oldFile, "2026-01-05T12:00:00.000Z");
-    const oldSession = openManagedSession(oldFile, sessionDir, channelDir);
+    const oldSession = openManagedSession(oldFile, channelDir);
     oldSession.appendMessage(makeUserMessage("stale active context"));
 
     appendLogMessage({
@@ -512,7 +509,7 @@ describe("session-scoped /new reset", () => {
   test("channel /new rotates channel current pointer and keeps thread session intact", () => {
     const sessionDir = getChannelSessionDir(channelDir);
     const channelFile = createManagedSessionFile(sessionDir, channelDir);
-    const originalChannel = openManagedSession(channelFile, sessionDir, channelDir);
+    const originalChannel = openManagedSession(channelFile, channelDir);
     originalChannel.appendMessage(makeUserMessage("channel"));
     originalChannel.appendMessage(makeAssistantMessage("channel reply"));
 
@@ -530,7 +527,7 @@ describe("session-scoped /new reset", () => {
   test("thread /new resets the same fixed file and keeps channel plus sibling thread intact", () => {
     const sessionDir = getChannelSessionDir(channelDir);
     const channelFile = createManagedSessionFile(sessionDir, channelDir);
-    const channelSM = openManagedSession(channelFile, sessionDir, channelDir);
+    const channelSM = openManagedSession(channelFile, channelDir);
     channelSM.appendMessage(makeUserMessage("channel"));
     channelSM.appendMessage(makeAssistantMessage("channel reply"));
 

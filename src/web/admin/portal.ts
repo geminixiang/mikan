@@ -1,8 +1,7 @@
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "fs";
 import type { IncomingMessage, ServerResponse } from "http";
-import { homedir } from "os";
 import { basename, join, resolve as pathResolve, sep as pathSep } from "path";
-import { AuthStorage, ModelRegistry, SessionManager } from "@earendil-works/pi-coding-agent";
+import { MikanModels, SessionStore } from "../../harness/index.js";
 
 import {
   loadConversationAutoReplyConfig,
@@ -370,7 +369,7 @@ function readSessionUsage(
   label: string,
 ): SessionUsageRow[] {
   try {
-    const manager = SessionManager.open(sessionFile);
+    const manager = SessionStore.open(sessionFile);
     const header = manager.getHeader();
     if (!header) return [];
 
@@ -488,8 +487,7 @@ function serveGlobalSettings(res: ServerResponse): void {
 
 async function serveModelsList(res: ServerResponse): Promise<void> {
   try {
-    const authStorage = AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json"));
-    const registry = ModelRegistry.create(authStorage);
+    const registry = MikanModels.create();
     const availableModels = await registry.getAvailable();
     const statuses = await resolveAdminModelAccessStatuses(registry, availableModels);
     const models = availableModels.map((model) => ({

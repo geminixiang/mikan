@@ -1,6 +1,6 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ThinkingLevel as PiAiThinkingLevel } from "@earendil-works/pi-ai";
-import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import type { MikanModels } from "../harness/index.js";
 import { join } from "path";
 import { resolveConversationSettings, updateConversationSettings } from "../config.js";
 import { matchCommand } from "./parse.js";
@@ -69,7 +69,7 @@ function formatModelSpec(provider: string, model: string, thinkingLevel?: Thinki
 }
 
 export class ModelCommandHandler implements CommandHandler {
-  constructor(private readonly modelRegistry: ModelRegistry) {}
+  constructor(private readonly modelRegistry: MikanModels) {}
   async tryHandle(context: CommandContext): Promise<boolean> {
     const parsed = parseModelCommand(context.commandText);
     if (!parsed) return false;

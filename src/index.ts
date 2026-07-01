@@ -1,4 +1,5 @@
 export { defaultCommandHandlers, dispatchCommand } from "./commands/registry.js";
+export * from "./harness/index.js";
 export type { CommandContext, CommandHandler, CommandServices } from "./commands/types.js";
 export * from "./sessions/agent-memory-file-manager.js";
 export * from "./sessions/metadata.js";

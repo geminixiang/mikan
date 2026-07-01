@@ -1,12 +1,12 @@
 import { type Api, type Model } from "@earendil-works/pi-ai";
-import { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import type { MikanModels } from "./harness/index.js";
 
 export function resolveConfiguredModel(
-  modelRegistry: ModelRegistry,
+  modelRegistry: MikanModels,
   provider: string,
   modelId: string,
 ): Model<Api> {
-  const model = modelRegistry.find(provider, modelId) as Model<Api> | undefined;
+  const model = modelRegistry.find(provider, modelId);
   if (model) return model;
 
   throw new Error(
