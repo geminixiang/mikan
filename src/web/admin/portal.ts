@@ -1634,21 +1634,12 @@ function renderAdminPage(token: AdminToken): string {
         <header class="sect-head">
           <div>
             <p class="eyebrow">Token Usage</p>
-            <h2 class="card-title">Top 20 sessions</h2>
           </div>
-          <button class="refresh-btn" onclick="loadSessionUsage()">↻</button>
+          <button class="refresh-btn" onclick="loadTokenUsage()">↻</button>
         </header>
+        <h2 class="card-subtitle" style="margin-bottom:10px">Top 20 sessions</h3>
         <div id="session-usage-content"><div class="loading-msg">Loading…</div></div>
-      </section>
-
-      <section class="card sect">
-        <header class="sect-head">
-          <div>
-            <p class="eyebrow">Token Usage</p>
-            <h2 class="card-title">Usage timeline</h2>
-          </div>
-          <button class="refresh-btn" onclick="loadUsageTimeline()">↻</button>
-        </header>
+        <h2 class="card-subtitle" style="margin:24px 0 10px">Usage timeline</h3>
         <div class="timeline-controls">
           <label>Conversation
             <select id="timeline-conv" onchange="loadUsageTimeline()"></select>
@@ -2186,8 +2177,7 @@ function renderAdminPage(token: AdminToken): string {
       if (globalLoaded) return;
       globalLoaded = true;
       loadAllConversations();
-      loadSessionUsage();
-      loadUsageTimeline();
+      loadTokenUsage();
       loadGlobalSettings();
       loadGlobalSkills();
       loadEvents();
@@ -2250,17 +2240,29 @@ function renderAdminPage(token: AdminToken): string {
     async function ensureTimelineConvOptions() {
       if (timelineConvLoaded) return;
       const sel = document.getElementById('timeline-conv');
+      const prev = sel.value;
       const data = await apiGet('/admin/api/conversations');
       if (!data.conversations.length) {
         sel.innerHTML = '<option value="">No conversations</option>';
+        timelineConvLoaded = true;
         return;
       }
+      const want = prev || defaultConversationId;
       sel.innerHTML = data.conversations.map((c) =>
         '<option value="' + escAttr(c.conversationId) + '"' +
-        (c.conversationId === defaultConversationId ? ' selected' : '') + '>' +
+        (c.conversationId === want ? ' selected' : '') + '>' +
         escHtml(c.label || c.conversationId) + '</option>'
       ).join('');
       timelineConvLoaded = true;
+    }
+
+    // Shared refresh for the merged Token Usage section: reloads the session
+    // ranking and re-fetches the conversation list (so new sessions appear),
+    // preserving the currently selected conversation.
+    async function loadTokenUsage() {
+      loadSessionUsage();
+      timelineConvLoaded = false;
+      await loadUsageTimeline();
     }
 
     async function loadUsageTimeline() {
