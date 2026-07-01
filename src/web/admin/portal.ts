@@ -2304,21 +2304,24 @@ function renderAdminPage(token: AdminToken): string {
       }
 
       const max = Math.max(1, ...buckets.map((b) => b.total));
-      const px = (v) => Math.round((v / max) * 120);
+      const px = (v) => Math.round((v / max) * 180);
       const legend = '<div class="tl-legend">' +
         '<span><i class="sw sw-cache"></i>Cache read</span>' +
         '<span><i class="sw sw-input"></i>Input</span>' +
         '<span><i class="sw sw-output"></i>Output</span>' +
       '</div>';
       const bars = buckets.map((b) => {
-        const title = b.date + ' · ' + fmtNum(b.total) + ' tok' +
+        const tip = b.date + ' · ' + fmtNum(b.total) + ' tokens' +
           (b.cost > 0 ? ' · $' + Number(b.cost).toFixed(4) : '');
         const inner = b.total > 0
           ? '<span class="tl-seg tl-output" style="height:' + px(b.output) + 'px"></span>' +
             '<span class="tl-seg tl-input" style="height:' + px(b.input) + 'px"></span>' +
             '<span class="tl-seg tl-cache" style="height:' + px(b.cacheRead + b.cacheWrite) + 'px"></span>'
           : '<span class="tl-empty"></span>';
-        return '<div class="tl-bar" title="' + escAttr(title) + '">' + inner + '</div>';
+        return '<div class="tl-bar">' +
+          '<span class="tl-tip">' + escHtml(tip) + '</span>' +
+          '<div class="tl-fill">' + inner + '</div>' +
+        '</div>';
       }).join('');
       const axis = buckets.length
         ? '<div class="tl-axis"><span>' + escHtml(buckets[0].date.slice(5)) +
@@ -2327,7 +2330,7 @@ function renderAdminPage(token: AdminToken): string {
       const note = data.hasOlder
         ? '<div class="tl-note">Showing last 14 days · earlier activity not shown</div>'
         : '<div class="tl-note">Showing last 14 days</div>';
-      const peak = '<div class="tl-peak" style="bottom:120px"><span class="tl-peak-label">' +
+      const peak = '<div class="tl-peak" style="bottom:180px"><span class="tl-peak-label">' +
         fmtNum(max) + ' tokens</span></div>';
       return cards + legend + '<div class="tl-chart">' + peak + bars + '</div>' + axis + note;
     }
@@ -2732,7 +2735,7 @@ const adminViewStyles = `
   .tl-chart {
     position: relative;
     display: flex; align-items: flex-end; gap: 6px;
-    height: 144px; border-bottom: 1px solid var(--border);
+    height: 216px; border-bottom: 1px solid var(--border);
   }
   .tl-peak {
     position: absolute; left: 0; right: 0; height: 0;
@@ -2743,9 +2746,23 @@ const adminViewStyles = `
     font-size: 0.7rem; color: var(--accent); white-space: nowrap;
   }
   .tl-bar {
-    flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end;
+    position: relative; flex: 1; min-width: 0; height: 180px;
+    display: flex; flex-direction: column; justify-content: flex-end;
+    border-radius: 6px 6px 0 0; transition: background 80ms ease;
+  }
+  .tl-bar:hover { background: rgba(0,0,0,0.06); }
+  .tl-bar:hover .tl-seg { opacity: 0.55; }
+  .tl-fill {
+    display: flex; flex-direction: column; justify-content: flex-end;
     border-radius: 3px 3px 0 0; overflow: hidden;
   }
+  .tl-tip {
+    position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+    margin-bottom: 6px; padding: 5px 9px; border-radius: 6px;
+    background: var(--text); color: #fafafa; font-size: 0.7rem; line-height: 1.35;
+    white-space: nowrap; opacity: 0; pointer-events: none; z-index: 5;
+  }
+  .tl-bar:hover .tl-tip { opacity: 1; }
   .tl-seg { display: block; width: 100%; }
   .tl-seg.tl-output { background: var(--ok-text); }
   .tl-seg.tl-input { background: var(--accent); }
