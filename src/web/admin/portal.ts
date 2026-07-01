@@ -2327,7 +2327,9 @@ function renderAdminPage(token: AdminToken): string {
       const note = data.hasOlder
         ? '<div class="tl-note">Showing last 14 days · earlier activity not shown</div>'
         : '<div class="tl-note">Showing last 14 days</div>';
-      return cards + legend + '<div class="tl-chart">' + bars + '</div>' + axis + note;
+      const peak = '<div class="tl-peak" style="bottom:120px"><span class="tl-peak-label">' +
+        fmtNum(max) + ' tokens</span></div>';
+      return cards + legend + '<div class="tl-chart">' + peak + bars + '</div>' + axis + note;
     }
 
     async function loadGlobalSettings() {
@@ -2728,8 +2730,17 @@ const adminViewStyles = `
   .sw-input { background: var(--accent); }
   .sw-output { background: var(--ok-text); }
   .tl-chart {
+    position: relative;
     display: flex; align-items: flex-end; gap: 6px;
-    height: 132px; border-bottom: 1px solid var(--border);
+    height: 144px; border-bottom: 1px solid var(--border);
+  }
+  .tl-peak {
+    position: absolute; left: 0; right: 0; height: 0;
+    border-top: 1px dashed var(--accent); pointer-events: none;
+  }
+  .tl-peak-label {
+    position: absolute; left: 0; top: -15px;
+    font-size: 0.7rem; color: var(--accent); white-space: nowrap;
   }
   .tl-bar {
     flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end;
