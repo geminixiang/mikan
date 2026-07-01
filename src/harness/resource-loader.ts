@@ -26,6 +26,9 @@ export interface LoadedResources {
 }
 
 export class MikanResourceLoader {
+  private cachedSkills: Skill[] = [];
+  private cachedSkillDiagnostics: ResourceDiagnostic[] = [];
+
   constructor(
     private readonly conversationDir: string,
     /** Runtime workspace root (for sandbox path translation). May differ from host path. */
@@ -34,15 +37,31 @@ export class MikanResourceLoader {
     private readonly hostWorkspaceRoot: string,
   ) {}
 
-  /** Load all resources fresh. */
+  /** Load all resources fresh, including a full skills directory walk. */
   load(): LoadedResources {
-    const diagnostics: ResourceDiagnostic[] = [];
-    const memory = this.loadMemory(diagnostics);
-    const skills = this.loadSkills(diagnostics);
-    return { memory, skills, diagnostics };
+    const skillDiagnostics: ResourceDiagnostic[] = [];
+    const skills = this.loadSkills(skillDiagnostics);
+    this.cachedSkills = skills;
+    this.cachedSkillDiagnostics = skillDiagnostics;
+    return { memory: this.loadMemory(), skills, diagnostics: skillDiagnostics };
   }
 
-  private loadMemory(_diagnostics: ResourceDiagnostic[]): string {
+  /**
+   * Refresh memory only, reusing skills from the last load()/reloadMemory()
+   * call. Skills rarely change mid-session, so re-walking the skills
+   * directory tree (with frontmatter parsing) on every single incoming
+   * message is wasted synchronous I/O for a bot juggling many concurrent
+   * conversations. Call load() at least once before this.
+   */
+  reloadMemory(): LoadedResources {
+    return {
+      memory: this.loadMemory(),
+      skills: this.cachedSkills,
+      diagnostics: this.cachedSkillDiagnostics,
+    };
+  }
+
+  private loadMemory(): string {
     const parts: string[] = [];
 
     const workspaceMemoryPath = join(this.hostWorkspaceRoot, "MEMORY.md");

@@ -655,7 +655,7 @@ async function prepareRunContext(params: {
 
   reloadSessionMessages(sessionManager, conversationId, agent);
 
-  const loaded = resourceLoader.load();
+  const loaded = resourceLoader.reloadMemory();
   const memory = loaded.memory;
   const skills = loaded.skills;
   const triggerAttribution = resolveTriggerAttribution(message);
