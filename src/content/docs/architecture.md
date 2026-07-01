@@ -51,7 +51,7 @@ Responsibilities:
 
 - create `PiAgentWrapper`
 - load model, skills, memory, and session context
-- send user messages into `pi-agent-core` / `pi-coding-agent`
+- send user messages into mikan's own harness (`src/harness/*`), built on `pi-agent-core`'s `AgentHarness`
 - connect tool calls to local `read/bash/edit/write/event/attach`
 - write tool results back to the session and return responses through the adapter
 

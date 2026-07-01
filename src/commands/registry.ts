@@ -1,6 +1,4 @@
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
-import { homedir } from "os";
-import { join } from "path";
+import { createMikanModels } from "../harness/models.js";
 import { AdminCommandHandler } from "./admin.js";
 import { AutoReplyCommandHandler } from "./auto-reply.js";
 import { LoginCommandHandler } from "./login.js";
@@ -11,14 +9,13 @@ import { SessionViewCommandHandler } from "./session-view.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 
 export function defaultCommandHandlers(): CommandHandler[] {
-  const authStorage = AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json"));
-  const modelRegistry = ModelRegistry.create(authStorage);
+  const models = createMikanModels();
   return [
     new AdminCommandHandler(),
     new LoginCommandHandler(),
     new SessionViewCommandHandler(),
     new AutoReplyCommandHandler(),
-    new ModelCommandHandler(modelRegistry),
+    new ModelCommandHandler(models),
     new SandboxCommandHandler(),
     new NewCommandHandler(),
   ];

@@ -1,6 +1,6 @@
 ---
 title: 会话
-description: mikan 如何分离平台聊天历史与 pi-coding-agent 结构化会话。
+description: mikan 如何分离平台聊天历史与其自有 harness 的结构化会话。
 ---
 
 import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
@@ -9,8 +9,8 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
   <Card title="平台聊天历史" icon="open-book">
     `log.jsonl` 保留可供人阅读的平台消息，用于 bootstrap thread 或 reply context。
   </Card>
-  <Card title="pi 结构化 context" icon="rocket">
-    `sessions/*.jsonl` 保存 tool results 与 agent turn，让 pi-coding-agent 可以延续工作。
+  <Card title="结构化 context" icon="rocket">
+    `sessions/*.jsonl` 保存 tool results 与 agent turn，让 mikan 自有的 harness 可以延续工作。
   </Card>
   <Card title="固定 scope" icon="lock">
     Thread、reply chain 与 shared channel 会映射到固定 session files，避免不同对话互相污染。
@@ -33,7 +33,7 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
   - **log.jsonl** 平台消息历史
   - sessions/
     - **current** 指向使用中的 top-level session
-    - **\*.jsonl** 结构化 pi-coding-agent context，包含 tool results
+    - **\*.jsonl** 结构化 harness context，包含 tool results
     - **scope-derived files** thread / reply scopes 的固定 session files
 
 </FileTree>

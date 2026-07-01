@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   AgentMemoryFileManager,
@@ -35,18 +34,20 @@ function writeLog(entries: object[]): void {
   );
 }
 
-function readContextText(sessionFile: string): string {
-  const session = SessionManager.open(
+async function readContextText(sessionFile: string): Promise<string> {
+  const session = openManagedSession(
     sessionFile,
     getChannelSessionDir(conversationDir),
     conversationDir,
   );
-  return session
-    .buildSessionContext()
-    .messages.map((message) =>
-      typeof message.content === "string"
-        ? message.content
-        : message.content.map((part) => (part.type === "text" ? part.text : "")).join("\n"),
+  const context = await session.buildContext();
+  return context.messages
+    .map((message) =>
+      !("content" in message)
+        ? ""
+        : typeof message.content === "string"
+          ? message.content
+          : message.content.map((part) => (part.type === "text" ? part.text : "")).join("\n"),
     )
     .join("\n---\n");
 }
@@ -111,7 +112,7 @@ describe("AgentMemoryFileManager", () => {
       currentMessageId: "1000.0004",
     });
 
-    const text = readContextText(scope.contextFile);
+    const text = await readContextText(scope.contextFile);
     expect(text).toContain("recent question");
     expect(text).toContain("recent answer");
     expect(text).not.toContain("too old");
@@ -163,7 +164,7 @@ describe("AgentMemoryFileManager", () => {
       cwd: conversationDir,
     });
 
-    const text = readContextText(scope.contextFile);
+    const text = await readContextText(scope.contextFile);
     expect(text).toContain("question");
     expect(text).toContain("One two three");
     expect(countJsonlEntries(scope.contextFile, (entry) => entry.type === "message")).toBe(2);
@@ -221,7 +222,7 @@ describe("AgentMemoryFileManager", () => {
 
     expect(scope.contextFile).toBe(getThreadSessionFile(conversationDir, "C123:2000.0001"));
     expect(scope.threadRootMessage?.text).toBe("thread root");
-    const text = readContextText(scope.contextFile);
+    const text = await readContextText(scope.contextFile);
     expect(text).toContain("top-level context");
     expect(text).toContain("thread root");
     expect(text).toContain("thread bot reply");
@@ -300,7 +301,7 @@ describe("AgentMemoryFileManager", () => {
       currentMessageId: "1000.0007",
     });
 
-    const text = readContextText(scope.contextFile);
+    const text = await readContextText(scope.contextFile);
     expect(text).toContain("thread0");
     expect(text).toContain("thread1");
     expect(text).toContain("thread2");
@@ -394,12 +395,12 @@ describe("AgentMemoryFileManager", () => {
       firstScope.sessionDir,
       conversationDir,
     );
-    session.appendMessage({
+    await session.appendMessage({
       role: "user",
       content: [{ type: "text", text: "[2026-05-01 00:00:02+00:00] [alice]: next one is?" }],
       timestamp: 1,
     });
-    session.appendMessage({
+    await session.appendMessage({
       role: "assistant",
       content: [{ type: "text", text: "k2" }],
       api: "platform-history",
@@ -425,7 +426,7 @@ describe("AgentMemoryFileManager", () => {
       currentMessageId: "1000.0008",
     });
 
-    const text = readContextText(secondScope.contextFile);
+    const text = await readContextText(secondScope.contextFile);
     expect(text).toContain("k0");
     expect(text).toContain("k1");
     expect(text).toContain("k2");
@@ -502,7 +503,7 @@ describe("AgentMemoryFileManager", () => {
     });
 
     expect(secondScope.contextFile).toBe(firstScope.contextFile);
-    const text = readContextText(secondScope.contextFile);
+    const text = await readContextText(secondScope.contextFile);
     expect(text).toContain("seed");
     expect(text).not.toContain("sync0");
     expect(text).toContain("sync1");
@@ -550,7 +551,7 @@ describe("AgentMemoryFileManager", () => {
     });
 
     expect(secondScope.contextFile).toBe(firstScope.contextFile);
-    const text = readContextText(secondScope.contextFile);
+    const text = await readContextText(secondScope.contextFile);
     expect(text).toContain("seed");
     expect(text).not.toContain("would refill from start");
   });
@@ -596,12 +597,12 @@ describe("AgentMemoryFileManager", () => {
     });
 
     const session = openManagedSession(scope.contextFile, scope.sessionDir, conversationDir);
-    session.appendMessage({
+    await session.appendMessage({
       role: "user",
       content: [{ type: "text", text: "[alice]: current message" }],
       timestamp: 1,
     });
-    session.appendMessage({
+    await session.appendMessage({
       role: "assistant",
       content: [{ type: "text", text: "u2" }],
       api: "platform-history",
@@ -671,7 +672,7 @@ describe("AgentMemoryFileManager", () => {
     });
     const session = openManagedSession(scope.contextFile, scope.sessionDir, conversationDir);
 
-    manager.syncSessionManager({
+    await manager.syncSessionManager({
       conversationDir,
       sessionKey: "C123:2000.0001",
       sessionManager: session,

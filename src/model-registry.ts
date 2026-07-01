@@ -1,12 +1,11 @@
-import { type Api, type Model } from "@earendil-works/pi-ai";
-import { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { type Api, type Model, type Models } from "@earendil-works/pi-ai";
 
 export function resolveConfiguredModel(
-  modelRegistry: ModelRegistry,
+  models: Models,
   provider: string,
   modelId: string,
 ): Model<Api> {
-  const model = modelRegistry.find(provider, modelId) as Model<Api> | undefined;
+  const model = models.getModel(provider, modelId);
   if (model) return model;
 
   throw new Error(

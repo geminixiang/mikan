@@ -1,9 +1,9 @@
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "fs";
 import type { IncomingMessage, ServerResponse } from "http";
-import { homedir } from "os";
 import { basename, join, resolve as pathResolve, sep as pathSep } from "path";
-import { AuthStorage, ModelRegistry, SessionManager } from "@earendil-works/pi-coding-agent";
 
+import { createMikanModels, getAvailableModels } from "../../harness/models.js";
+import { MikanSessionStorage } from "../../harness/session-storage.js";
 import {
   loadConversationAutoReplyConfig,
   loadGlobalSettings,
@@ -87,7 +87,7 @@ async function routeApiRequest(
       return;
     }
     if (url.pathname === "/admin/api/session-usage") {
-      serveSessionUsage(res, services);
+      await serveSessionUsage(res, services);
       return;
     }
     if (url.pathname === "/admin/api/conversation-state") {
@@ -331,50 +331,56 @@ interface SessionUsageRow {
   cost: number;
 }
 
-function serveSessionUsage(res: ServerResponse, services: AdminServices): void {
+async function serveSessionUsage(res: ServerResponse, services: AdminServices): Promise<void> {
   const workingDir = requireAdminWorkingDir(res, services);
   if (!workingDir) return;
 
-  const rows = listConversationDirs(workingDir)
-    .flatMap((conversationId) =>
-      listConversationSessionUsage(
-        workingDir,
-        conversationId,
-        conversationDisplayLabel(services, conversationId),
+  const rows = (
+    await Promise.all(
+      listConversationDirs(workingDir).map((conversationId) =>
+        listConversationSessionUsage(
+          workingDir,
+          conversationId,
+          conversationDisplayLabel(services, conversationId),
+        ),
       ),
     )
+  )
+    .flat()
     .toSorted((a, b) => b.total - a.total)
     .slice(0, 20);
 
   jsonRes(res, 200, { sessions: rows });
 }
 
-function listConversationSessionUsage(
+async function listConversationSessionUsage(
   workingDir: string,
   conversationId: string,
   label: string,
-): SessionUsageRow[] {
+): Promise<SessionUsageRow[]> {
   const sessionDir = join(workingDir, conversationId, "sessions");
   try {
-    return readdirSync(sessionDir, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
-      .flatMap((entry) => readSessionUsage(join(sessionDir, entry.name), conversationId, label));
+    const rows = await Promise.all(
+      readdirSync(sessionDir, { withFileTypes: true })
+        .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
+        .map((entry) => readSessionUsage(join(sessionDir, entry.name), conversationId, label)),
+    );
+    return rows.flat();
   } catch {
     return [];
   }
 }
 
-function readSessionUsage(
+async function readSessionUsage(
   sessionFile: string,
   conversationId: string,
   label: string,
-): SessionUsageRow[] {
+): Promise<SessionUsageRow[]> {
   try {
-    const manager = SessionManager.open(sessionFile);
-    const header = manager.getHeader();
-    if (!header) return [];
+    const storage = MikanSessionStorage.openReadOnly(sessionFile);
+    const header = storage.getRawHeader();
 
-    const entries = manager.getEntries();
+    const entries = await storage.getEntries();
     const usage = entries.reduce(
       (sum, entry) => {
         if (entry.type !== "message" || entry.message.role !== "assistant") return sum;
@@ -488,10 +494,9 @@ function serveGlobalSettings(res: ServerResponse): void {
 
 async function serveModelsList(res: ServerResponse): Promise<void> {
   try {
-    const authStorage = AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json"));
-    const registry = ModelRegistry.create(authStorage);
-    const availableModels = await registry.getAvailable();
-    const statuses = await resolveAdminModelAccessStatuses(registry, availableModels);
+    const modelCatalog = createMikanModels();
+    const availableModels = await getAvailableModels(modelCatalog);
+    const statuses = await resolveAdminModelAccessStatuses(modelCatalog, availableModels);
     const models = availableModels.map((model) => ({
       provider: model.provider,
       id: model.id,

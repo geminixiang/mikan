@@ -155,7 +155,7 @@ export async function handleSessionViewRequest(
   }
 
   try {
-    const model = loadSessionViewModel(targetSessionFile);
+    const model = await loadSessionViewModel(targetSessionFile);
     const displayedSessionKey = resolveDisplayedSessionKey(entry, targetSessionFile);
     const isRunning = interactive?.handler.isRunning(displayedSessionKey) ?? false;
     res.writeHead(200, {
@@ -684,12 +684,12 @@ async function handleSessionMessageRequest(
 
   void interactive.handler
     .handleEvent(event, bot, context)
-    .then(() => {
+    .then(async () => {
       if (!targetSessionFile) {
         sessionViewStreamHub.publish(streamKey, { type: "status", running: false });
         return;
       }
-      const model = loadSessionViewModel(targetSessionFile);
+      const model = await loadSessionViewModel(targetSessionFile);
       sessionViewStreamHub.publish(streamKey, {
         type: "refresh",
         timelineHtml: renderTimelineItems(model.items, token),

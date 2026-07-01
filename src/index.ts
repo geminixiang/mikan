@@ -39,3 +39,14 @@ export type {
   SandboxAdapter,
   SandboxConfig,
 } from "./sandbox/index.js";
+export {
+  MIKAN_EXTENSIONS_DIR,
+  loadMikanExtensions,
+  collectExtensionContributions,
+  getMikanExtensionContributions,
+  type MikanExtensionContext,
+  type MikanExtensionModule,
+  type LoadedExtension,
+  type ExtensionLoadResult,
+  type CollectedExtensionContributions,
+} from "./harness/extensions.js";

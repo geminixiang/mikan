@@ -1,12 +1,12 @@
 import { basename, dirname, join, resolve } from "path";
 import { existsSync, readdirSync } from "fs";
-import {
-  SessionManager,
-  type BranchSummaryEntry as SessionBranchSummaryEntry,
-  type CompactionEntry,
-  type SessionEntry,
-  type SessionMessageEntry,
-} from "@earendil-works/pi-coding-agent";
+import type {
+  BranchSummaryEntry as SessionBranchSummaryEntry,
+  CompactionEntry,
+  MessageEntry as SessionMessageEntry,
+  SessionTreeEntry as SessionEntry,
+} from "@earendil-works/pi-agent-core";
+import { MikanSessionStorage } from "../../harness/session-storage.js";
 import {
   getThreadSessionFile,
   resolveChannelSessionFile,
@@ -30,22 +30,36 @@ export function resolveExistingSessionFile(
   return resolveChannelSessionFile(conversationDir);
 }
 
-export function loadSessionViewModel(sessionFile: string): SessionViewModel {
-  const resolvedFile = resolve(sessionFile);
-  const sm = SessionManager.open(resolvedFile);
-  const header = sm.getHeader();
-  if (!header) throw new Error(`No valid session found: ${sessionFile}`);
+function getSessionName(entries: SessionEntry[]): string | undefined {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
+    if (entry.type !== "session_info") continue;
+    const name = entry.name?.trim();
+    if (name) return name;
+  }
+  return undefined;
+}
 
-  const entries = sm.getEntries();
+export async function loadSessionViewModel(sessionFile: string): Promise<SessionViewModel> {
+  const resolvedFile = resolve(sessionFile);
+  const storage = MikanSessionStorage.openReadOnly(resolvedFile);
+  const header = storage.getRawHeader();
+
+  const entries = await storage.getEntries();
   const updatedAt = entries.at(-1)?.timestamp ?? header.timestamp;
-  const title = sm.getSessionName() || `Session ${header.id.slice(0, 8)}`;
+  const title = getSessionName(entries) || `Session ${header.id.slice(0, 8)}`;
 
   const parent = header.parentSession
-    ? buildSessionRelation(resolve(header.parentSession), "parent")
-    : buildInferredThreadParentRelation(resolvedFile);
-  const threads = listRelatedSessionFiles(resolvedFile)
-    .filter((candidate) => candidate !== resolvedFile)
-    .map((candidate) => buildSessionRelation(candidate, "thread", resolvedFile))
+    ? await buildSessionRelation(resolve(header.parentSession), "parent")
+    : await buildInferredThreadParentRelation(resolvedFile);
+  const relatedFiles = listRelatedSessionFiles(resolvedFile).filter(
+    (candidate) => candidate !== resolvedFile,
+  );
+  const threads = (
+    await Promise.all(
+      relatedFiles.map((candidate) => buildSessionRelation(candidate, "thread", resolvedFile)),
+    )
+  )
     .filter((relation): relation is SessionViewRelation => relation !== null)
     .toSorted((a, b) => (a.updatedAt < b.updatedAt ? -1 : a.updatedAt > b.updatedAt ? 1 : 0));
 
@@ -98,20 +112,9 @@ export function resolveRequestedSessionFile(
   const candidate = join(dirname(resolvedBase), fileName);
   if (!existsSync(candidate)) return null;
 
-  let sm: SessionManager;
-  try {
-    sm = SessionManager.open(candidate);
-  } catch (err) {
-    throw new Error(
-      `Session file is corrupted: ${candidate}: ${
-        err instanceof Error ? err.message : String(err)
-      }`,
-      { cause: err },
-    );
-  }
-  if (!sm.getHeader()) {
-    throw new Error(`Session file is missing a valid header: ${candidate}`);
-  }
+  // Validates the file has a readable header; throws (surfaced to the caller)
+  // if the file is corrupted, without ever creating/rewriting it.
+  MikanSessionStorage.openReadOnly(candidate);
   return candidate;
 }
 
@@ -124,14 +127,14 @@ function listRelatedSessionFiles(sessionFile: string): string[] {
     .map((fileName) => join(dir, fileName));
 }
 
-function buildSessionRelation(
+async function buildSessionRelation(
   sessionFile: string,
   kind: "parent" | "thread",
   expectedParent?: string,
-): SessionViewRelation | null {
-  let sm: SessionManager;
+): Promise<SessionViewRelation | null> {
+  let storage: MikanSessionStorage;
   try {
-    sm = SessionManager.open(sessionFile);
+    storage = MikanSessionStorage.openReadOnly(sessionFile);
   } catch (err) {
     log.logWarning(
       `Skipping corrupted session file while building ${kind} relation: ${sessionFile}`,
@@ -139,32 +142,31 @@ function buildSessionRelation(
     );
     return null;
   }
-  const header = sm.getHeader();
-  if (!header) {
-    log.logWarning(
-      `Skipping session file with missing header while building ${kind} relation: ${sessionFile}`,
-    );
-    return null;
-  }
+  const header = storage.getRawHeader();
+
   if (
     kind === "thread" &&
-    !isChildThreadSession(sessionFile, header.parentSession, expectedParent)
+    !(await isChildThreadSession(sessionFile, header.parentSession, expectedParent))
   ) {
     return null;
   }
 
-  const entries = sm.getEntries();
+  const entries = await storage.getEntries();
   const updatedAt = entries.at(-1)?.timestamp ?? header.timestamp;
   const threadId = kind === "thread" ? getFixedThreadSessionId(sessionFile) : null;
   const anchorEntryId =
     kind === "thread" && expectedParent
-      ? findThreadAnchorEntryId(SessionManager.open(expectedParent).getEntries(), entries, threadId)
+      ? findThreadAnchorEntryId(
+          await MikanSessionStorage.openReadOnly(expectedParent).getEntries(),
+          entries,
+          threadId,
+        )
       : undefined;
   return {
     kind,
     fileName: basename(sessionFile),
     sessionId: header.id,
-    title: sm.getSessionName() || `Session ${header.id.slice(0, 8)}`,
+    title: getSessionName(entries) || `Session ${header.id.slice(0, 8)}`,
     updatedAt,
     entryCount: entries.length,
     summary: extractSessionSummary(entries),
@@ -172,20 +174,22 @@ function buildSessionRelation(
   };
 }
 
-function buildInferredThreadParentRelation(sessionFile: string): SessionViewRelation | undefined {
+async function buildInferredThreadParentRelation(
+  sessionFile: string,
+): Promise<SessionViewRelation | undefined> {
   if (!getFixedThreadSessionId(sessionFile)) return undefined;
 
   const parentSession = resolveChannelSessionFile(dirname(dirname(sessionFile)));
   if (!parentSession || parentSession === sessionFile) return undefined;
 
-  return buildSessionRelation(parentSession, "parent") ?? undefined;
+  return (await buildSessionRelation(parentSession, "parent")) ?? undefined;
 }
 
-function isChildThreadSession(
+async function isChildThreadSession(
   sessionFile: string,
   parentSession: string | undefined,
   expectedParent: string | undefined,
-): boolean {
+): Promise<boolean> {
   if (!expectedParent) return false;
 
   if (parentSession) {

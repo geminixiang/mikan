@@ -1,21 +1,21 @@
-import { Agent, type ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
 import {
-  AgentSession,
-  AuthStorage,
-  convertToLlm,
-  DefaultResourceLoader,
-  formatSkillsForPrompt,
-  getAgentDir,
-  loadSkillsFromDir,
-  ModelRegistry,
-  SessionManager,
-  SettingsManager,
+  AgentHarness,
+  DEFAULT_COMPACTION_SETTINGS,
+  formatSkillsForSystemPrompt,
+  shouldCompact,
+  type Session,
   type Skill,
-} from "@earendil-works/pi-coding-agent";
+  type ThinkingLevel,
+} from "@earendil-works/pi-agent-core";
+import {
+  type Api,
+  type AssistantMessage,
+  type ImageContent,
+  type Model,
+  type Models,
+} from "@earendil-works/pi-ai";
 import { existsSync, readFileSync } from "fs";
 import { mkdir, readFile, writeFile } from "fs/promises";
-import { homedir } from "os";
 import { join, posix } from "path";
 import type {
   ConversationMessage,
@@ -28,6 +28,10 @@ import type { AgentEventPayload } from "./types.js";
 import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import { resolveConversationSettings } from "./config.js";
 import { ActorExecutionResolver } from "./execution-resolver.js";
+import { createMikanExecutionEnv } from "./harness/env.js";
+import { getMikanExtensionContributions } from "./harness/extensions.js";
+import { createMikanModels } from "./harness/models.js";
+import { loadMikanSkills } from "./harness/skills.js";
 import * as log from "./log.js";
 import { reportUserFacingError } from "./observability/sentry.js";
 import type { DockerContainerManager } from "./provisioner.js";
@@ -113,42 +117,6 @@ async function getMemory(conversationDir: string): Promise<string> {
   }
 
   return parts.join("\n\n");
-}
-
-function loadMikanSkills(conversationDir: string, workspacePath: string): Skill[] {
-  const skillMap = new Map<string, Skill>();
-
-  // conversationDir is the host path (e.g., /Users/.../data/C0A34FL8PMH)
-  // hostWorkspacePath is the parent directory on host
-  // workspacePath is the container path (e.g., /workspace)
-  const hostWorkspacePath = join(conversationDir, "..");
-
-  // Helper to translate host paths to container paths
-  const translatePath = (hostPath: string): string => {
-    if (hostPath.startsWith(hostWorkspacePath)) {
-      return workspacePath + hostPath.slice(hostWorkspacePath.length);
-    }
-    return hostPath;
-  };
-
-  // Load workspace-level skills (global)
-  const workspaceSkillsDir = join(hostWorkspacePath, "skills");
-  for (const skill of loadSkillsFromDir({ dir: workspaceSkillsDir, source: "workspace" }).skills) {
-    // Translate paths to container paths for system prompt
-    skill.filePath = translatePath(skill.filePath);
-    skill.baseDir = translatePath(skill.baseDir);
-    skillMap.set(skill.name, skill);
-  }
-
-  // Load conversation-specific skills (override workspace skills on collision)
-  const conversationSkillsDir = join(conversationDir, "skills");
-  for (const skill of loadSkillsFromDir({ dir: conversationSkillsDir, source: "channel" }).skills) {
-    skill.filePath = translatePath(skill.filePath);
-    skill.baseDir = translatePath(skill.baseDir);
-    skillMap.set(skill.name, skill);
-  }
-
-  return Array.from(skillMap.values());
 }
 
 function buildRuntimePaths(runtimeWorkspaceRoot: string, conversationId: string) {
@@ -330,7 +298,7 @@ Scripts are in: {baseDir}/
 \`name\` and \`description\` are required. Use \`{baseDir}\` as placeholder for the skill's directory path.
 
 ### Available Skills
-${skills.length > 0 ? formatSkillsForPrompt(skills) : "(no skills installed yet)"}
+${skills.length > 0 ? formatSkillsForSystemPrompt(skills) : "(no skills installed yet)"}
 
 ## Events
 Use the \`event\` tool to schedule immediate, one-shot, or periodic follow-ups. It writes to the host-side mikan control plane and fills routing fields for the current conversation automatically.
@@ -443,6 +411,10 @@ interface RunnerSessionState {
   reportedLlmError: boolean;
   finalResponseHandledByTool: boolean;
   triggerAttribution?: string;
+  /** Last assistant message seen this run (any stop reason), for final-response extraction. */
+  lastAssistantMessage: AssistantMessage | undefined;
+  /** Last non-aborted assistant message this run, for context-window/compaction accounting. */
+  lastNonAbortedAssistantMessage: AssistantMessage | undefined;
 }
 
 interface PreparedRunContext {
@@ -451,11 +423,6 @@ interface PreparedRunContext {
   userMessage: string;
   imageAttachments: ImageContent[];
   triggerAttribution?: string;
-}
-
-interface ConfiguredAgentSession {
-  agent: Agent;
-  session: AgentSession;
 }
 
 function createRunnerExecutionContext(
@@ -502,88 +469,27 @@ function createRunnerExecutionContext(
   };
 }
 
-async function createConfiguredAgentSession(params: {
-  conversationId: string;
-  workspaceDir: string;
-  runtimeWorkspaceRoot: string;
-  systemPrompt: string;
+async function createConfiguredAgentHarness(params: {
+  env: ReturnType<typeof createMikanExecutionEnv>;
+  session: Session;
+  models: Models;
+  systemPromptState: { current: string };
   model: Model<Api>;
   thinkingLevel: ThinkingLevel;
   tools: Awaited<ReturnType<typeof createMikanTools>>["tools"];
-  sessionManager: SessionManager;
-  settingsManager: SettingsManager;
-  modelRegistry: ModelRegistry;
-}): Promise<ConfiguredAgentSession> {
-  const {
-    conversationId,
-    workspaceDir,
-    runtimeWorkspaceRoot,
-    systemPrompt,
+  skills: Skill[];
+}): Promise<AgentHarness> {
+  const { env, session, models, systemPromptState, model, thinkingLevel, tools, skills } = params;
+  return new AgentHarness({
+    env,
+    session,
+    models,
+    tools,
+    resources: { skills },
+    systemPrompt: () => systemPromptState.current,
     model,
     thinkingLevel,
-    tools,
-    sessionManager,
-    settingsManager,
-    modelRegistry,
-  } = params;
-  const agent = new Agent({
-    initialState: {
-      systemPrompt,
-      model,
-      thinkingLevel,
-      tools,
-    },
-    convertToLlm,
-    getApiKey: async (provider) => {
-      const key = await modelRegistry.getApiKeyForProvider(provider);
-      if (!key) {
-        throw new Error(
-          `No API key for provider "${provider}". Set the appropriate environment variable or configure via auth.json`,
-        );
-      }
-      return key;
-    },
   });
-
-  const loadedSession = sessionManager.buildSessionContext();
-  if (loadedSession.messages.length > 0) {
-    agent.state.messages = loadedSession.messages;
-    log.logInfo(
-      `[${conversationId}] Reloaded ${loadedSession.messages.length} messages from session context`,
-    );
-  }
-
-  const resourceLoader = new DefaultResourceLoader({
-    cwd: workspaceDir,
-    agentDir: getAgentDir(),
-    systemPrompt,
-  });
-  try {
-    await resourceLoader.reload();
-    const extResult = resourceLoader.getExtensions();
-    if (extResult.errors.length > 0) {
-      for (const err of extResult.errors) {
-        log.logWarning(`[${conversationId}] Extension load error: ${err.path}`, err.error);
-      }
-    }
-    log.logInfo(
-      `[${conversationId}] Loaded ${extResult.extensions.length} extension(s): ${extResult.extensions.map((extension) => extension.path).join(", ")}`,
-    );
-  } catch (error) {
-    log.logWarning(`[${conversationId}] Failed to load resources`, String(error));
-  }
-
-  const baseToolsOverride = Object.fromEntries(tools.map((tool) => [tool.name, tool]));
-  const session = new AgentSession({
-    agent,
-    sessionManager,
-    settingsManager,
-    cwd: runtimeWorkspaceRoot,
-    modelRegistry,
-    resourceLoader,
-    baseToolsOverride,
-  });
-  return { agent, session };
 }
 
 function createEmptyUsageTotals() {
@@ -610,6 +516,8 @@ function createRunState(): RunnerSessionState {
     reportedLlmError: false,
     finalResponseHandledByTool: false,
     triggerAttribution: undefined,
+    lastAssistantMessage: undefined,
+    lastNonAbortedAssistantMessage: undefined,
   };
 }
 
@@ -637,6 +545,8 @@ function resetRunState(
   runState.reportedLlmError = false;
   runState.finalResponseHandledByTool = false;
   runState.triggerAttribution = triggerAttribution;
+  runState.lastAssistantMessage = undefined;
+  runState.lastNonAbortedAssistantMessage = undefined;
 }
 
 function createRunQueue(
@@ -732,13 +642,14 @@ export function buildPromptPayload(
 async function writePromptDebugContext(
   conversationDir: string,
   systemPrompt: string,
-  session: AgentSession,
+  session: Session,
   userMessage: string,
   imageAttachmentCount: number,
 ): Promise<void> {
+  const context = await session.buildContext();
   const debugContext = {
     systemPrompt,
-    messages: session.messages,
+    messages: context.messages,
     newUserMessage: userMessage,
     imageAttachmentCount,
   };
@@ -748,8 +659,8 @@ async function writePromptDebugContext(
   );
 }
 
-function getFinalAssistantText(session: AgentSession): string {
-  const lastAssistant = session.messages.findLast((message) => message.role === "assistant");
+function getFinalAssistantText(runState: RunnerSessionState): string {
+  const lastAssistant = runState.lastAssistantMessage;
   return (
     lastAssistant?.content
       .filter((content): content is { type: "text"; text: string } => content.type === "text")
@@ -809,7 +720,6 @@ async function replaceResponseWithToolProgress(
 
 async function finalizeRunResponse(
   responder: ConversationResponder,
-  session: AgentSession,
   runState: RunnerSessionState,
   options?: {
     triggerAttribution?: string;
@@ -865,7 +775,7 @@ async function finalizeRunResponse(
     return;
   }
 
-  const finalText = getFinalAssistantText(session);
+  const finalText = getFinalAssistantText(runState);
   if (runState.finalResponseHandledByTool) {
     log.logInfo("Final response already handled by tool - skipping final replacement");
     return;
@@ -911,7 +821,6 @@ async function finalizeRunResponse(
 }
 
 interface UsageReportContext {
-  session: AgentSession;
   runState: RunnerSessionState;
   responder: ConversationResponder;
   platform: MessagingInfo;
@@ -922,9 +831,23 @@ interface UsageReportContext {
   waitForQueue: () => Promise<void>;
 }
 
+/** Returns the context-token count and window size, for both usage reporting and auto-compaction. */
+function computeContextUsage(
+  runState: RunnerSessionState,
+  model: Model<Api>,
+): { contextTokens: number; contextWindow: number } {
+  const lastAssistantMessage = runState.lastNonAbortedAssistantMessage;
+  const contextTokens = lastAssistantMessage
+    ? lastAssistantMessage.usage.input +
+      lastAssistantMessage.usage.output +
+      lastAssistantMessage.usage.cacheRead +
+      lastAssistantMessage.usage.cacheWrite
+    : 0;
+  return { contextTokens, contextWindow: model.contextWindow || 200000 };
+}
+
 async function reportUsageSummary(ctx: UsageReportContext): Promise<void> {
   const {
-    session,
     runState,
     responder,
     platform,
@@ -934,21 +857,7 @@ async function reportUsageSummary(ctx: UsageReportContext): Promise<void> {
     sessionUuid,
     waitForQueue,
   } = ctx;
-  const lastAssistantMessage = session.messages
-    .slice()
-    .toReversed()
-    .find(
-      (message): message is Extract<typeof message, { role: "assistant" }> =>
-        message.role === "assistant" && message.stopReason !== "aborted",
-    );
-
-  const contextTokens = lastAssistantMessage
-    ? lastAssistantMessage.usage.input +
-      lastAssistantMessage.usage.output +
-      lastAssistantMessage.usage.cacheRead +
-      lastAssistantMessage.usage.cacheWrite
-    : 0;
-  const contextWindow = model.contextWindow || 200000;
+  const { contextTokens, contextWindow } = computeContextUsage(runState, model);
 
   const { totalUsage } = runState;
   const runMetricAttributes = metricAttributes({
@@ -994,16 +903,30 @@ async function reportUsageSummary(ctx: UsageReportContext): Promise<void> {
   }
 }
 
-function reloadSessionMessages(
-  sessionManager: SessionManager,
-  conversationId: string,
-  agent: Agent,
-): void {
-  const messages = sessionManager.buildSessionContext().messages;
-  if (messages.length > 0) {
-    agent.state.messages = messages;
-    log.logInfo(`[${conversationId}] Reloaded ${messages.length} messages from context`);
+/** Compact the session when context usage crosses the default threshold, mirroring the
+ * automatic compaction pi-coding-agent's AgentSession used to perform. AgentHarness only
+ * exposes the primitive (`compact()`); mikan owns the trigger decision. */
+async function maybeAutoCompact(
+  harness: AgentHarness,
+  runState: RunnerSessionState,
+  model: Model<Api>,
+): Promise<void> {
+  const { contextTokens, contextWindow } = computeContextUsage(runState, model);
+  if (!shouldCompact(contextTokens, contextWindow, DEFAULT_COMPACTION_SETTINGS)) return;
+
+  try {
+    await harness.compact();
+  } catch (error) {
+    log.logWarning(
+      "Auto-compaction failed",
+      error instanceof Error ? error.message : String(error),
+    );
   }
+}
+
+function reloadSessionMessages(): void {
+  // AgentHarness re-reads the session's current context from storage at the
+  // start of every prompt() call, so no manual reload/reassignment is needed.
 }
 
 async function prepareRunContext(params: {
@@ -1018,9 +941,8 @@ async function prepareRunContext(params: {
   executionResolver?: ActorExecutionResolver;
   resolveExecutorForRun: RunnerExecutionContext["resolveExecutorForRun"];
   getPathContext: () => RuntimePathContext;
-  sessionManager: SessionManager;
-  session: AgentSession;
-  agent: Agent;
+  session: Session;
+  systemPromptState: { current: string };
   setEventContext: (context: {
     platform: string;
     conversationId: string;
@@ -1043,9 +965,8 @@ async function prepareRunContext(params: {
     executionResolver,
     resolveExecutorForRun,
     getPathContext,
-    sessionManager,
     session,
-    agent,
+    systemPromptState,
     setEventContext,
     setSandboxContext,
     setUploadFunction,
@@ -1064,10 +985,11 @@ async function prepareRunContext(params: {
     pathContext = getPathContext();
   }
 
-  reloadSessionMessages(sessionManager, conversationId, agent);
+  reloadSessionMessages();
 
   const memory = await getMemory(conversationDir);
-  const skills = loadMikanSkills(conversationDir, pathContext.runtimeWorkspaceRoot);
+  const env = createMikanExecutionEnv(pathContext.runtimeWorkspaceRoot);
+  const skills = await loadMikanSkills(env, conversationDir, pathContext.runtimeWorkspaceRoot);
   const triggerAttribution = resolveTriggerAttribution(message);
   const systemPrompt = buildSystemPrompt(
     pathContext.runtimeWorkspaceRoot,
@@ -1081,7 +1003,7 @@ async function prepareRunContext(params: {
     message.id.startsWith("event:"),
     triggerAttribution,
   );
-  session.agent.state.systemPrompt = systemPrompt;
+  systemPromptState.current = systemPrompt;
 
   setEventContext({
     platform: platform.name,
@@ -1149,13 +1071,13 @@ function sendAgentEvent(payload: {
 
 // ponytail: additive SSE mirror only; keep responder rendering here until another frontend needs the same stream.
 function attachSessionEventHandlers(params: {
-  session: AgentSession;
+  harness: AgentHarness;
   runState: RunnerSessionState;
   model: Model<Api>;
   agentConfig: ReturnType<typeof resolveConversationSettings>;
 }): void {
-  const { session, runState, model, agentConfig } = params;
-  session.subscribe(async (event) => {
+  const { harness, runState, model, agentConfig } = params;
+  harness.subscribe(async (event) => {
     if (!runState.responder || !runState.logCtx || !runState.queue) return;
 
     const { responder, logCtx, queue, pendingTools } = runState;
@@ -1288,6 +1210,10 @@ function attachSessionEventHandlers(params: {
     if (event.type === "message_end") {
       if (event.message.role === "assistant") {
         const assistantMsg = event.message;
+        runState.lastAssistantMessage = assistantMsg;
+        if (assistantMsg.stopReason !== "aborted") {
+          runState.lastNonAbortedAssistantMessage = assistantMsg;
+        }
 
         if (assistantMsg.stopReason) {
           runState.stopReason = assistantMsg.stopReason;
@@ -1396,9 +1322,9 @@ function attachSessionEventHandlers(params: {
       return;
     }
 
-    if (event.type === "compaction_start") {
+    if (event.type === "session_before_compact") {
       const text = "_Compacting context..._";
-      log.logInfo(`Auto-compaction started (reason: ${event.reason})`);
+      log.logInfo("Auto-compaction started");
       sendAgentEvent({
         sessionId: agentEventSessionId,
         actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
@@ -1408,29 +1334,11 @@ function attachSessionEventHandlers(params: {
       return;
     }
 
-    if (event.type === "compaction_end") {
-      if (event.result) {
-        log.logInfo(`Auto-compaction complete: ${event.result.tokensBefore} tokens compacted`);
-      } else if (event.aborted) {
-        log.logInfo("Auto-compaction aborted");
-      }
+    if (event.type === "session_compact") {
+      log.logInfo(
+        `Auto-compaction complete: ${event.compactionEntry.tokensBefore} tokens compacted`,
+      );
       return;
-    }
-
-    if (event.type === "auto_retry_start") {
-      log.logWarning(`Retrying (${event.attempt}/${event.maxAttempts})`, event.errorMessage);
-      sendAgentEvent({
-        sessionId: agentEventSessionId,
-        actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
-        event: { kind: "sessionStart" },
-      });
-      const text = `_Retrying (${event.attempt}/${event.maxAttempts})..._`;
-      sendAgentEvent({
-        sessionId: agentEventSessionId,
-        actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
-        event: { kind: "diagnostic", text },
-      });
-      queue.enqueue(() => responder.respond(text), "retry");
     }
   });
 }
@@ -1496,19 +1404,22 @@ export async function createRunner(
   let pathContext = getUnresolvedSandboxPathContext(sandboxConfig, workspaceBase);
 
   // Create tools (per-runner, with per-runner upload function setter)
-  const { tools, setUploadFunction, setEventContext, setSandboxContext } = createMikanTools(
-    executor,
-    workspaceDir,
-    { sandbox: sandboxConfig, provisioner },
-  );
+  const {
+    tools: builtinTools,
+    setUploadFunction,
+    setEventContext,
+    setSandboxContext,
+  } = createMikanTools(executor, workspaceDir, { sandbox: sandboxConfig, provisioner });
+  const { tools: extensionTools } = await getMikanExtensionContributions();
+  const tools = [...builtinTools, ...extensionTools];
 
-  const authStorage = AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json"));
-  const modelRegistry = ModelRegistry.create(authStorage);
-  const model = resolveConfiguredModel(modelRegistry, agentConfig.provider, agentConfig.model);
+  const models = createMikanModels();
+  const model = resolveConfiguredModel(models, agentConfig.provider, agentConfig.model);
 
   // Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
   const memory = await getMemory(conversationDir);
-  const skills = loadMikanSkills(conversationDir, pathContext.runtimeWorkspaceRoot);
+  const env = createMikanExecutionEnv(pathContext.runtimeWorkspaceRoot);
+  const skills = await loadMikanSkills(env, conversationDir, pathContext.runtimeWorkspaceRoot);
   const emptyPlatform: MessagingInfo = {
     name: "chat",
     formattingGuide: "",
@@ -1525,48 +1436,41 @@ export async function createRunner(
     emptyPlatform,
     skills,
   );
+  const systemPromptState = { current: systemPrompt };
 
-  // Create session manager and settings manager. Top-level/private sessions
-  // use the conversation's current pointer; scoped sessions use fixed files.
-  // Platform-specific scope behavior is resolved before runner creation.
+  // Create session. Top-level/private sessions use the conversation's current
+  // pointer; scoped sessions use fixed files. Platform-specific scope behavior
+  // is resolved before runner creation.
   const isThread = sessionKey.includes(":");
   const { sessionDir, contextFile, threadRootMessage } = sessionScope;
-  const sessionManager = openManagedSession(
-    contextFile,
-    sessionDir,
-    pathContext.runtimeWorkspaceRoot,
-  );
+  const session = openManagedSession(contextFile, sessionDir, pathContext.runtimeWorkspaceRoot);
   const threadSessionName = buildThreadSessionName(threadRootMessage);
-  if (isThread && threadSessionName && sessionManager.getSessionName() !== threadSessionName) {
-    sessionManager.appendSessionInfo(threadSessionName);
+  if (isThread && threadSessionName && (await session.getSessionName()) !== threadSessionName) {
+    await session.appendSessionName(threadSessionName);
   }
 
   const sessionUuid = extractSessionUuid(contextFile);
-  const chatSessionManager = new AgentMemoryFileManager();
-  const settingsManager = SettingsManager.inMemory();
-  const { agent, session } = await createConfiguredAgentSession({
-    conversationId,
-    workspaceDir,
-    runtimeWorkspaceRoot: pathContext.runtimeWorkspaceRoot,
-    systemPrompt,
+  const harness = await createConfiguredAgentHarness({
+    env,
+    session,
+    models,
+    systemPromptState,
     model,
     thinkingLevel: agentConfig.thinkingLevel,
     tools,
-    sessionManager,
-    settingsManager,
-    modelRegistry,
+    skills,
   });
 
   // Mutable per-run state - event handler references this
   const runState = createRunState();
-  attachSessionEventHandlers({ session, runState, model, agentConfig });
+  attachSessionEventHandlers({ harness, runState, model, agentConfig });
 
   return {
-    syncChatHistory(currentMessageId?: string): void {
-      chatSessionManager.syncSessionManager({
+    async syncChatHistory(currentMessageId?: string): Promise<void> {
+      await new AgentMemoryFileManager().syncSessionManager({
         conversationDir,
         sessionKey,
-        sessionManager,
+        sessionManager: session,
         currentMessageId,
       });
     },
@@ -1588,9 +1492,8 @@ export async function createRunner(
         executionResolver,
         resolveExecutorForRun,
         getPathContext,
-        sessionManager,
         session,
-        agent,
+        systemPromptState,
         setEventContext,
         setSandboxContext,
         setUploadFunction,
@@ -1622,7 +1525,7 @@ export async function createRunner(
         event: { kind: "sessionStart" },
       });
 
-      await session.prompt(
+      await harness.prompt(
         prepared.userMessage,
         prepared.imageAttachments.length > 0 ? { images: prepared.imageAttachments } : undefined,
       );
@@ -1651,7 +1554,7 @@ export async function createRunner(
             }
           : undefined;
 
-      await finalizeRunResponse(responder, session, runState, {
+      await finalizeRunResponse(responder, runState, {
         triggerAttribution: prepared.triggerAttribution,
         triggerSessionLink: isEventTriggerAttribution(prepared.triggerAttribution)
           ? createSessionViewLink?.()
@@ -1664,7 +1567,6 @@ export async function createRunner(
       });
 
       await reportUsageSummary({
-        session,
         runState,
         responder,
         platform,
@@ -1675,6 +1577,8 @@ export async function createRunner(
         waitForQueue: () => prepared.runQueue.wait(),
       });
 
+      await maybeAutoCompact(harness, runState, model);
+
       // Clear run state
       runState.responder = null;
       runState.logCtx = null;
@@ -1684,7 +1588,7 @@ export async function createRunner(
     },
 
     abort(): void {
-      session.abort();
+      void harness.abort();
     },
 
     getCurrentStep(): { toolName?: string; label?: string } | undefined {

@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
-import type { Api, Model } from "@earendil-works/pi-ai";
-import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import type { Api, Model, Models } from "@earendil-works/pi-ai";
+import { getApiKeyForProvider } from "../../harness/models.js";
 
 type AdminModelStatus = "available" | "unverified";
 
@@ -19,15 +19,15 @@ interface ProviderModelsCacheEntry {
 const providerModelsCache = new Map<string, ProviderModelsCacheEntry>();
 
 export async function resolveAdminModelAccessStatuses(
-  registry: ModelRegistry,
-  models: Model<Api>[],
+  models: Models,
+  modelList: Model<Api>[],
 ): Promise<Map<string, AdminModelAccessStatus>> {
   const result = new Map<string, AdminModelAccessStatus>();
-  const byProvider = groupModelsByProvider(models);
+  const byProvider = groupModelsByProvider(modelList);
 
   await Promise.all(
     [...byProvider.entries()].map(async ([provider, providerModels]) => {
-      const providerModelIds = await fetchProviderModelIds(registry, provider);
+      const providerModelIds = await fetchProviderModelIds(models, provider);
       for (const model of providerModels) {
         result.set(modelKey(model.provider, model.id), {
           status: modelIsListed(providerModelIds, model.id) ? "available" : "unverified",
@@ -54,12 +54,12 @@ function groupModelsByProvider(models: Model<Api>[]): Map<string, Model<Api>[]> 
 }
 
 async function fetchProviderModelIds(
-  registry: ModelRegistry,
+  models: Models,
   provider: string,
 ): Promise<Set<string> | undefined> {
   if (provider !== "openai" && provider !== "anthropic") return new Set<string>();
 
-  const apiKey = await registry.getApiKeyForProvider(provider);
+  const apiKey = await getApiKeyForProvider(models, provider);
   if (!apiKey) return new Set<string>();
 
   const cacheKey = `${provider}:${hashApiKey(apiKey)}`;

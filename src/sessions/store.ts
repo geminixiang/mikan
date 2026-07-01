@@ -1,7 +1,8 @@
 import { randomUUID } from "crypto";
 import { existsSync, mkdirSync, rmSync } from "fs";
 import { basename, dirname, join } from "path";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { Session } from "@earendil-works/pi-agent-core";
+import { MikanSessionStorage } from "../harness/session-storage.js";
 import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-guards.js";
 import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 import { isPlatformHistorySession } from "./metadata.js";
@@ -86,18 +87,14 @@ export function createManagedSessionFile(sessionDir: string, cwd: string): strin
 
 /**
  * Open a session file with an explicit cwd, even if the file does not exist yet.
- * This avoids SessionManager.open() falling back to process.cwd() for fresh sessions.
+ * This avoids falling back to process.cwd() for fresh sessions.
  */
-export function openManagedSession(
-  sessionFile: string,
-  sessionDir: string,
-  cwd: string,
-): SessionManager {
+export function openManagedSession(sessionFile: string, sessionDir: string, cwd: string): Session {
   if (shouldRecreatePreinitializedSession(sessionFile)) {
     rmSync(sessionFile, { force: true });
   }
 
-  return SessionManager.open(sessionFile, sessionDir, cwd);
+  return new Session(MikanSessionStorage.open(sessionFile, cwd));
 }
 
 function createSessionFilename(sessionId = randomUUID()): string {

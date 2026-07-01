@@ -1,6 +1,6 @@
 ---
 title: Sessions
-description: How mikan separates platform chat history from pi-coding-agent structured sessions.
+description: How mikan separates platform chat history from its own harness's structured sessions.
 ---
 
 import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
@@ -9,8 +9,8 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
   <Card title="Platform chat history" icon="open-book">
     `log.jsonl` keeps human-readable platform messages used to bootstrap thread or reply context.
   </Card>
-  <Card title="pi structured context" icon="rocket">
-    `sessions/*.jsonl` stores tool results and agent turns so pi-coding-agent can continue work.
+  <Card title="Structured context" icon="rocket">
+    `sessions/*.jsonl` stores tool results and agent turns so mikan's own harness can continue work.
   </Card>
   <Card title="Fixed scope" icon="lock">
     Threads, reply chains, and shared channels map to fixed session files so different conversations
@@ -34,7 +34,7 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
   - **log.jsonl** platform message history
   - sessions/
     - **current** points to the active top-level session
-    - **\*.jsonl** structured pi-coding-agent context, including tool results
+    - **\*.jsonl** structured harness context, including tool results
     - **scope-derived files** fixed session files for thread / reply scopes
 
 </FileTree>

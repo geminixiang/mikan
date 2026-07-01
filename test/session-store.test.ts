@@ -70,16 +70,16 @@ function countSessionHeaders(sessionFile: string): number {
     .filter((entry) => entry.type === "session").length;
 }
 
-function seedManagedSession(
+async function seedManagedSession(
   sessionFile: string,
   sessionDir: string,
   cwd: string,
   text: string,
-): string {
+): Promise<string> {
   createManagedSessionFileAtPath(sessionFile, cwd);
   const sessionManager = openManagedSession(sessionFile, sessionDir, cwd);
-  sessionManager.appendMessage(makeUserMessage(text));
-  sessionManager.appendMessage(makeAssistantMessage(`${text} reply`));
+  await sessionManager.appendMessage(makeUserMessage(text));
+  await sessionManager.appendMessage(makeAssistantMessage(`${text} reply`));
   return sessionFile;
 }
 
@@ -169,10 +169,10 @@ describe("tryResolveThreadSession", () => {
     expect(tryResolveThreadSession(threadFile)).toBeNull();
   });
 
-  test("returns fixed thread file path when a valid session exists", () => {
+  test("returns fixed thread file path when a valid session exists", async () => {
     const sessionDir = getChannelSessionDir(channelDir);
     const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
-    const created = seedManagedSession(threadFile, sessionDir, channelDir, "thread msg");
+    const created = await seedManagedSession(threadFile, sessionDir, channelDir, "thread msg");
     expect(tryResolveThreadSession(threadFile)).toBe(created);
     expect(readFileSync(created, "utf-8")).toContain("thread msg");
   });
@@ -200,13 +200,13 @@ describe("managed session initialization", () => {
     expect(suffix).toMatch(/^[0-9a-f]{8}$/);
   });
 
-  test("creates a channel session with the provided cwd", () => {
+  test("creates a channel session with the provided cwd", async () => {
     const sessionDir = getChannelSessionDir(channelDir);
     const sessionFile = resolveManagedSessionFile(sessionDir, channelDir);
     const sessionManager = openManagedSession(sessionFile, sessionDir, channelDir);
 
-    sessionManager.appendMessage(makeUserMessage("hello"));
-    sessionManager.appendMessage(makeAssistantMessage("hi"));
+    await sessionManager.appendMessage(makeUserMessage("hello"));
+    await sessionManager.appendMessage(makeAssistantMessage("hi"));
 
     const entries = readFileSync(sessionFile, "utf-8")
       .split("\n")
@@ -218,13 +218,13 @@ describe("managed session initialization", () => {
     expect(countSessionHeaders(sessionFile)).toBe(1);
   });
 
-  test("opens a missing managed session file with the provided cwd", () => {
+  test("opens a missing managed session file with the provided cwd", async () => {
     const sessionDir = getChannelSessionDir(channelDir);
     const sessionFile = join(sessionDir, "missing.jsonl");
     const sessionManager = openManagedSession(sessionFile, sessionDir, channelDir);
 
-    sessionManager.appendMessage(makeUserMessage("hello"));
-    sessionManager.appendMessage(makeAssistantMessage("hi"));
+    await sessionManager.appendMessage(makeUserMessage("hello"));
+    await sessionManager.appendMessage(makeAssistantMessage("hi"));
 
     const entries = parseSessionEntries(sessionFile);
     const header = entries.find((entry) => entry.type === "session") as
@@ -261,14 +261,14 @@ describe("managed session initialization", () => {
     expect(readFileSync(liveFile, "utf-8")).not.toContain("platform-history");
   });
 
-  test("creates a fixed-path thread session with the provided cwd", () => {
+  test("creates a fixed-path thread session with the provided cwd", async () => {
     const sessionDir = getChannelSessionDir(channelDir);
     const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
     createManagedSessionFileAtPath(threadFile, channelDir);
     const sessionManager = openManagedSession(threadFile, sessionDir, channelDir);
 
-    sessionManager.appendMessage(makeUserMessage("hello thread"));
-    sessionManager.appendMessage(makeAssistantMessage("thread reply"));
+    await sessionManager.appendMessage(makeUserMessage("hello thread"));
+    await sessionManager.appendMessage(makeAssistantMessage("thread reply"));
 
     const entries = readFileSync(threadFile, "utf-8")
       .split("\n")
@@ -282,43 +282,43 @@ describe("managed session initialization", () => {
 });
 
 describe("fixed thread sessions", () => {
-  test("thread session has a different session ID than channel session", () => {
+  test("thread session has a different session ID than channel session", async () => {
     const sessionDir = getChannelSessionDir(channelDir);
     const channelFile = resolveManagedSessionFile(sessionDir, channelDir);
     const channelSM = openManagedSession(channelFile, sessionDir, channelDir);
-    channelSM.appendMessage(makeUserMessage("hello channel"));
-    channelSM.appendMessage(makeAssistantMessage("hi there"));
-    const channelSessionId = channelSM.getSessionId();
+    await channelSM.appendMessage(makeUserMessage("hello channel"));
+    await channelSM.appendMessage(makeAssistantMessage("hi there"));
+    const channelSessionId = (await channelSM.getMetadata()).id;
 
     const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
     createManagedSessionFileAtPath(threadFile, channelDir);
     const threadSM = openManagedSession(threadFile, sessionDir, channelDir);
-    threadSM.appendMessage(makeUserMessage("hello thread"));
-    threadSM.appendMessage(makeAssistantMessage("thread reply"));
+    await threadSM.appendMessage(makeUserMessage("hello thread"));
+    await threadSM.appendMessage(makeAssistantMessage("thread reply"));
 
-    expect(threadSM.getSessionId()).not.toBe(channelSessionId);
+    expect((await threadSM.getMetadata()).id).not.toBe(channelSessionId);
     expect(readFileSync(threadFile, "utf-8")).not.toContain("hello channel");
   });
 
-  test("second thread access reuses the same fixed thread file", () => {
+  test("second thread access reuses the same fixed thread file", async () => {
     const sessionDir = getChannelSessionDir(channelDir);
     const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
     createManagedSessionFileAtPath(threadFile, channelDir);
     const threadSM = openManagedSession(threadFile, sessionDir, channelDir);
-    const threadSessionId = threadSM.getSessionId();
+    const threadSessionId = (await threadSM.getMetadata()).id;
 
-    threadSM.appendMessage(makeUserMessage("thread msg"));
-    threadSM.appendMessage(makeAssistantMessage("thread reply"));
+    await threadSM.appendMessage(makeUserMessage("thread msg"));
+    await threadSM.appendMessage(makeAssistantMessage("thread reply"));
 
     const existing = tryResolveThreadSession(threadFile);
     expect(existing).toBe(threadFile);
 
     const reopened = openManagedSession(existing!, sessionDir, channelDir);
-    expect(reopened.getSessionId()).toBe(threadSessionId);
+    expect((await reopened.getMetadata()).id).toBe(threadSessionId);
     expect(readFileSync(existing!, "utf-8")).toContain("thread msg");
   });
 
-  test("different threads get independent session IDs", () => {
+  test("different threads get independent session IDs", async () => {
     const sessionDir = getChannelSessionDir(channelDir);
     const channelFile = resolveManagedSessionFile(sessionDir, channelDir);
     const channelSM = openManagedSession(channelFile, sessionDir, channelDir);
@@ -332,19 +332,20 @@ describe("fixed thread sessions", () => {
     const thread2SM = openManagedSession(thread2File, sessionDir, channelDir);
 
     const ids = new Set([
-      channelSM.getSessionId(),
-      thread1SM.getSessionId(),
-      thread2SM.getSessionId(),
+      (await channelSM.getMetadata()).id,
+      (await thread1SM.getMetadata()).id,
+      (await thread2SM.getMetadata()).id,
     ]);
     expect(ids.size).toBe(3);
   });
 
-  test("fresh thread file can be created without a channel source", () => {
+  test("fresh thread file can be created without a channel source", async () => {
     const sessionDir = getChannelSessionDir(channelDir);
     const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
     createManagedSessionFileAtPath(threadFile, channelDir);
     const threadSM = openManagedSession(threadFile, sessionDir, channelDir);
-    const entries = threadSM.getEntries().filter((e: { type: string }) => e.type === "message");
+    const allEntries = await threadSM.getEntries();
+    const entries = allEntries.filter((e) => e.type === "message");
     expect(entries.length).toBe(0);
   });
 });
@@ -355,7 +356,7 @@ describe("top-level session rotation", () => {
     const oldFile = createManagedSessionFile(sessionDir, channelDir);
     rewriteSessionTimestamp(oldFile, "2026-01-05T12:00:00.000Z");
     const oldSession = openManagedSession(oldFile, sessionDir, channelDir);
-    oldSession.appendMessage(makeUserMessage("stale active context"));
+    await oldSession.appendMessage(makeUserMessage("stale active context"));
 
     appendLogMessage({
       ts: "1771027200.000000",
@@ -421,7 +422,7 @@ describe("top-level session rotation", () => {
   test("does not rotate thread sessions", async () => {
     const sessionDir = getChannelSessionDir(channelDir);
     const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
-    seedManagedSession(threadFile, sessionDir, channelDir, "thread context");
+    await seedManagedSession(threadFile, sessionDir, channelDir, "thread context");
     rewriteSessionTimestamp(threadFile, "2026-01-05T12:00:00.000Z");
 
     const manager = new AgentMemoryFileManager({ now: () => new Date("2026-03-01T12:00:00.000Z") });
@@ -509,15 +510,15 @@ describe("top-level session rotation", () => {
 });
 
 describe("session-scoped /new reset", () => {
-  test("channel /new rotates channel current pointer and keeps thread session intact", () => {
+  test("channel /new rotates channel current pointer and keeps thread session intact", async () => {
     const sessionDir = getChannelSessionDir(channelDir);
     const channelFile = createManagedSessionFile(sessionDir, channelDir);
     const originalChannel = openManagedSession(channelFile, sessionDir, channelDir);
-    originalChannel.appendMessage(makeUserMessage("channel"));
-    originalChannel.appendMessage(makeAssistantMessage("channel reply"));
+    await originalChannel.appendMessage(makeUserMessage("channel"));
+    await originalChannel.appendMessage(makeAssistantMessage("channel reply"));
 
     const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
-    seedManagedSession(threadFile, sessionDir, channelDir, "thread");
+    await seedManagedSession(threadFile, sessionDir, channelDir, "thread");
 
     const newChannelFile = createManagedSessionFile(sessionDir, channelDir);
 
@@ -527,17 +528,17 @@ describe("session-scoped /new reset", () => {
     expect(readFileSync(threadFile, "utf-8")).toContain("thread");
   });
 
-  test("thread /new resets the same fixed file and keeps channel plus sibling thread intact", () => {
+  test("thread /new resets the same fixed file and keeps channel plus sibling thread intact", async () => {
     const sessionDir = getChannelSessionDir(channelDir);
     const channelFile = createManagedSessionFile(sessionDir, channelDir);
     const channelSM = openManagedSession(channelFile, sessionDir, channelDir);
-    channelSM.appendMessage(makeUserMessage("channel"));
-    channelSM.appendMessage(makeAssistantMessage("channel reply"));
+    await channelSM.appendMessage(makeUserMessage("channel"));
+    await channelSM.appendMessage(makeAssistantMessage("channel reply"));
 
     const thread1File = getThreadSessionFile(channelDir, "C123:1000.0001");
     const thread2File = getThreadSessionFile(channelDir, "C123:1000.0002");
-    seedManagedSession(thread1File, sessionDir, channelDir, "thread1");
-    seedManagedSession(thread2File, sessionDir, channelDir, "thread2");
+    await seedManagedSession(thread1File, sessionDir, channelDir, "thread1");
+    await seedManagedSession(thread2File, sessionDir, channelDir, "thread2");
 
     createManagedSessionFileAtPath(thread1File, channelDir);
 
@@ -552,10 +553,10 @@ describe("session-scoped /new reset", () => {
 });
 
 describe("persistence across restart", () => {
-  test("thread session survives simulated restart via fixed file path", () => {
+  test("thread session survives simulated restart via fixed file path", async () => {
     const sessionDir = getChannelSessionDir(channelDir);
     const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
-    seedManagedSession(threadFile, sessionDir, channelDir, "thread specific");
+    await seedManagedSession(threadFile, sessionDir, channelDir, "thread specific");
 
     expect(tryResolveThreadSession(threadFile)).toBe(threadFile);
     expect(readFileSync(threadFile, "utf-8")).toContain("thread specific");

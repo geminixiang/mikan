@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { UserMessage } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { registerThreadSession } from "../src/sessions/agent-memory-file-manager.js";
 import { createConversationRuntime } from "../src/runtime/conversation-runtime.js";
@@ -52,12 +53,12 @@ function makeRuntime() {
   } as any);
 }
 
-function makeUserMessage(text: string) {
+function makeUserMessage(text: string): UserMessage {
   return {
     role: "user",
     content: [{ type: "text", text }],
     timestamp: 1,
-  } as const;
+  };
 }
 
 describe("ConversationRuntime chat session scope", () => {
@@ -65,7 +66,7 @@ describe("ConversationRuntime chat session scope", () => {
     const sessionDir = getChannelSessionDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
     const channelSession = openManagedSession(channelFile, sessionDir, conversationDir);
-    channelSession.appendMessage(makeUserMessage("channel history should not leak"));
+    await channelSession.appendMessage(makeUserMessage("channel history should not leak"));
 
     const runtime = makeRuntime();
     registerThreadSession({

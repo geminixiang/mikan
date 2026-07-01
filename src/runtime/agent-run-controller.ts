@@ -85,7 +85,7 @@ export class AgentRunController {
         currentMessageId: event.ts,
         conversationKind: event.conversationKind,
       });
-      state.runner.syncChatHistory(event.ts);
+      void state.runner.syncChatHistory(event.ts);
     } catch (err) {
       reportUserFacingError(err, {
         domain: "mikan",

@@ -1,9 +1,8 @@
-import { SessionManager, type SessionEntry } from "@earendil-works/pi-coding-agent";
+import type { AgentMessage, Session, SessionTreeEntry } from "@earendil-works/pi-agent-core";
 import { join } from "path";
 import type { ConversationLogMessage } from "../types.js";
 import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-guards.js";
 import { formatLocalTimestamp } from "../utils/date.js";
-import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 import * as log from "../log.js";
 import { isPlatformHistorySession } from "./metadata.js";
 import {
@@ -25,8 +24,6 @@ const DEFAULT_MAX_TOP_LEVEL_MESSAGES = 200;
 const CHAT_SYNC_CUSTOM_TYPE = "mikan.chat_sync";
 const BIWEEKLY_ROTATION_ANCHOR = new Date(2026, 0, 4); // Sunday
 const BIWEEKLY_MS = 14 * 24 * 60 * 60 * 1000;
-
-type SessionAppendMessage = Parameters<SessionManager["appendMessage"]>[0];
 
 interface LogRecord {
   message: ConversationLogMessage;
@@ -115,7 +112,7 @@ export class AgentMemoryFileManager {
     const sessionDir = getChannelSessionDir(options.conversationDir);
 
     if (!options.sessionKey.includes(":")) {
-      const contextFile = this.resolveTopLevelSessionFile({
+      const contextFile = await this.resolveTopLevelSessionFile({
         conversationDir: options.conversationDir,
         sessionDir,
         cwd,
@@ -125,7 +122,7 @@ export class AgentMemoryFileManager {
       return { sessionDir, contextFile, threadRootMessage: null };
     }
 
-    return this.resolveThreadSessionScope({
+    return await this.resolveThreadSessionScope({
       conversationDir: options.conversationDir,
       sessionDir,
       sessionKey: options.sessionKey,
@@ -134,9 +131,9 @@ export class AgentMemoryFileManager {
     });
   }
 
-  syncSessionManager(options: SyncAgentMemoryFileManagerOptions): void {
+  async syncSessionManager(options: SyncAgentMemoryFileManagerOptions): Promise<void> {
     const records = readConversationLog(options.conversationDir);
-    syncSessionManagerFromLog(
+    await syncSessionManagerFromLog(
       options.sessionManager,
       selectExistingSessionSyncMessages(records, {
         sessionKey: options.sessionKey.includes(":") ? options.sessionKey : null,
@@ -158,18 +155,18 @@ export class AgentMemoryFileManager {
     return createManagedSessionFile(getChannelSessionDir(options.conversationDir), cwd);
   }
 
-  private resolveTopLevelSessionFile(options: {
+  private async resolveTopLevelSessionFile(options: {
     conversationDir: string;
     sessionDir: string;
     cwd: string;
     currentMessageId?: string;
     rotateTopLevelSession: boolean;
-  }): string {
+  }): Promise<string> {
     const records = readConversationLog(options.conversationDir);
     const existing = tryResolveCurrentSession(options.sessionDir);
     if (existing && !isPlatformHistorySession(existing)) {
       if (!options.rotateTopLevelSession || !shouldRotateTopLevelSession(existing, this.now())) {
-        syncSessionFromLog(
+        await syncSessionFromLog(
           existing,
           options.sessionDir,
           options.cwd,
@@ -190,7 +187,7 @@ export class AgentMemoryFileManager {
       now: this.now(),
       excludeMessageId: options.currentMessageId,
     });
-    bootstrapSessionFromLog(
+    await bootstrapSessionFromLog(
       sessionFile,
       options.sessionDir,
       options.cwd,
@@ -207,20 +204,20 @@ export class AgentMemoryFileManager {
     return { recentDays: this.recentDays, maxMessages: this.maxTopLevelMessages, now: this.now() };
   }
 
-  private resolveThreadSessionScope(options: {
+  private async resolveThreadSessionScope(options: {
     conversationDir: string;
     sessionDir: string;
     sessionKey: string;
     cwd: string;
     currentMessageId?: string;
-  }): ResolvedSessionScope {
+  }): Promise<ResolvedSessionScope> {
     const threadFile = getThreadSessionFile(options.conversationDir, options.sessionKey);
     const threadId = extractSessionSuffix(options.sessionKey);
     const records = readConversationLog(options.conversationDir);
     const threadRootMessage = buildThreadRootSeed(findLogRecordById(records, threadId)?.message);
     const existing = tryResolveThreadSession(threadFile);
     if (existing) {
-      syncSessionFromLog(
+      await syncSessionFromLog(
         existing,
         options.sessionDir,
         options.cwd,
@@ -240,7 +237,7 @@ export class AgentMemoryFileManager {
       now: this.now(),
       excludeMessageId: options.currentMessageId,
     });
-    bootstrapSessionFromLog(
+    await bootstrapSessionFromLog(
       threadFile,
       options.sessionDir,
       options.cwd,
@@ -481,23 +478,22 @@ function sortTime(record: LogRecord): number {
   return record.index;
 }
 
-function bootstrapSessionFromLog(
+async function bootstrapSessionFromLog(
   sessionFile: string,
   sessionDir: string,
   cwd: string,
   records: LogRecord[],
   lastMessageId = records.at(-1)?.message.ts,
-): void {
+): Promise<void> {
   if (records.length === 0 && !lastMessageId) return;
 
-  const sessionManager = openManagedSession(sessionFile, sessionDir, cwd);
-  appendLogRecordsToSession(sessionManager, records);
-  sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
+  const session = openManagedSession(sessionFile, sessionDir, cwd);
+  await appendLogRecordsToSession(session, records);
+  await session.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
     source: "log.jsonl",
     messageCount: records.length,
     lastMessageId,
   });
-  forceRewriteSession(sessionManager, sessionFile);
 }
 
 interface HistoryWindow {
@@ -506,29 +502,29 @@ interface HistoryWindow {
   now: Date;
 }
 
-function syncSessionFromLog(
+async function syncSessionFromLog(
   sessionFile: string,
   sessionDir: string,
   cwd: string,
   records: LogRecord[],
   historyWindow: HistoryWindow,
-): void {
+): Promise<void> {
   if (records.length === 0) return;
-  syncSessionManagerFromLog(
+  await syncSessionManagerFromLog(
     openManagedSession(sessionFile, sessionDir, cwd),
     records,
     historyWindow,
   );
 }
 
-function syncSessionManagerFromLog(
-  sessionManager: SessionManager,
+async function syncSessionManagerFromLog(
+  session: Session,
   records: LogRecord[],
   historyWindow: HistoryWindow,
-): void {
+): Promise<void> {
   if (records.length === 0) return;
 
-  const existingEntries = sessionManager.getEntries();
+  const existingEntries = await session.getEntries();
   const lastSyncedMessageId = getLatestChatSyncMessageId(existingEntries);
   const lastSyncedIndex = lastSyncedMessageId
     ? records.findIndex((record) => record.message.ts === lastSyncedMessageId)
@@ -544,32 +540,22 @@ function syncSessionManagerFromLog(
   );
   if (newRecords.length === 0) return;
 
-  appendLogRecordsToSession(sessionManager, newRecords);
-  sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
+  await appendLogRecordsToSession(session, newRecords);
+  await session.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
     source: "log.jsonl",
     messageCount: newRecords.length,
     lastMessageId: syncCandidates.at(-1)?.message.ts,
   });
 }
 
-function appendLogRecordsToSession(sessionManager: SessionManager, records: LogRecord[]): void {
+async function appendLogRecordsToSession(session: Session, records: LogRecord[]): Promise<void> {
   for (const record of records) {
     const message = buildHistorySessionMessage(record.message);
-    if (message) sessionManager.appendMessage(message);
+    if (message) await session.appendMessage(message);
   }
 }
 
-function forceRewriteSession(sessionManager: SessionManager, sessionFile: string): void {
-  const header = sessionManager.getHeader();
-  if (!header) return;
-
-  const content = [header, ...sessionManager.getEntries()]
-    .map((entry) => JSON.stringify(entry))
-    .join("\n");
-  atomicWritePrivateFile(sessionFile, `${content}\n`);
-}
-
-function getLatestChatSyncMessageId(entries: SessionEntry[]): string | undefined {
+function getLatestChatSyncMessageId(entries: SessionTreeEntry[]): string | undefined {
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
     if (entry.type !== "custom" || entry.customType !== CHAT_SYNC_CUSTOM_TYPE) continue;
@@ -579,7 +565,7 @@ function getLatestChatSyncMessageId(entries: SessionEntry[]): string | undefined
   return undefined;
 }
 
-function buildRepresentedMessageCounts(entries: SessionEntry[]): Map<string, number> {
+function buildRepresentedMessageCounts(entries: SessionTreeEntry[]): Map<string, number> {
   const counts = new Map<string, number>();
   for (const entry of entries) {
     const comparable = comparableSessionMessage(entry);
@@ -599,7 +585,7 @@ function consumeRepresentedLogMessage(record: LogRecord, counts: Map<string, num
   return true;
 }
 
-function comparableSessionMessage(entry: SessionEntry): string | null {
+function comparableSessionMessage(entry: SessionTreeEntry): string | null {
   if (entry.type !== "message") return null;
   const role = entry.message.role;
   if (role !== "user" && role !== "assistant") return null;
@@ -615,7 +601,7 @@ function comparableLogMessage(message: ConversationLogMessage): string | null {
   return `${message.isMessagingBot ? "assistant" : "user"}:${normalizeComparableText(text)}`;
 }
 
-function getSessionMessageText(entry: SessionEntry): string {
+function getSessionMessageText(entry: SessionTreeEntry): string {
   if (entry.type !== "message" || !("content" in entry.message)) return "";
   const content = entry.message.content;
   if (typeof content === "string") return content;
@@ -634,7 +620,7 @@ function normalizeComparableText(text: string): string {
     .trim();
 }
 
-function buildHistorySessionMessage(message: ConversationLogMessage): SessionAppendMessage | null {
+function buildHistorySessionMessage(message: ConversationLogMessage): AgentMessage | null {
   const text = message.text?.trim();
   if (!text) return null;
 
@@ -644,7 +630,7 @@ function buildHistorySessionMessage(message: ConversationLogMessage): SessionApp
       role: "user",
       content: [{ type: "text", text: formatHistoryMessage(message) }],
       ...(timestamp !== undefined ? { timestamp } : {}),
-    } as SessionAppendMessage;
+    } as AgentMessage;
   }
 
   return {
@@ -656,7 +642,7 @@ function buildHistorySessionMessage(message: ConversationLogMessage): SessionApp
     usage: zeroUsage(),
     stopReason: "stop",
     ...(timestamp !== undefined ? { timestamp } : {}),
-  } as SessionAppendMessage;
+  } as AgentMessage;
 }
 
 function buildThreadRootSeed(
