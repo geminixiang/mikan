@@ -226,12 +226,27 @@ export function loadGlobalSettings(): AgentConfig {
   return toAgentConfig(loadRawGlobalSettings());
 }
 
+/** Merges two optional nested-object config fields field-by-field, rather than one replacing the other outright. */
+function mergeNestedField<T extends object>(
+  base: T | undefined,
+  override: T | undefined,
+): T | undefined {
+  if (base === undefined && override === undefined) return undefined;
+  return { ...base, ...override } as T;
+}
+
 export function resolveConversationSettings(conversationDir: string): AgentConfig {
   const globalConfig = loadRawGlobalSettings();
   const conversationConfig = normalizeSettingsConfig(
     loadSettingsFile(join(conversationDir, "settings.json")) ?? {},
   );
-  return toAgentConfig({ ...globalConfig, ...conversationConfig });
+  return toAgentConfig({
+    ...globalConfig,
+    ...conversationConfig,
+    slack: mergeNestedField(globalConfig.slack, conversationConfig.slack),
+    retry: mergeNestedField(globalConfig.retry, conversationConfig.retry),
+    compaction: mergeNestedField(globalConfig.compaction, conversationConfig.compaction),
+  });
 }
 
 /**
