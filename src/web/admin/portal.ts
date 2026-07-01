@@ -2308,7 +2308,8 @@ function renderAdminPage(token: AdminToken): string {
       const max = Math.max(1, ...buckets.map((b) => b.total));
       const px = (v) => Math.round((v / max) * 180);
       const legend = '<div class="tl-legend">' +
-        '<span><i class="sw sw-cache"></i>Cache read</span>' +
+        '<span><i class="sw sw-cache-read"></i>Cache read</span>' +
+        '<span><i class="sw sw-cache-write"></i>Cache write</span>' +
         '<span><i class="sw sw-input"></i>Input</span>' +
         '<span><i class="sw sw-output"></i>Output</span>' +
       '</div>';
@@ -2318,7 +2319,8 @@ function renderAdminPage(token: AdminToken): string {
         const inner = b.total > 0
           ? '<span class="tl-seg tl-output" style="height:' + px(b.output) + 'px"></span>' +
             '<span class="tl-seg tl-input" style="height:' + px(b.input) + 'px"></span>' +
-            '<span class="tl-seg tl-cache" style="height:' + px(b.cacheRead + b.cacheWrite) + 'px"></span>'
+            '<span class="tl-seg tl-cache-write" style="height:' + px(b.cacheWrite) + 'px"></span>' +
+            '<span class="tl-seg tl-cache-read" style="height:' + px(b.cacheRead) + 'px"></span>'
           : '<span class="tl-empty"></span>';
         return '<div class="tl-bar">' +
           '<span class="tl-tip">' + escHtml(tip) + '</span>' +
@@ -2731,7 +2733,8 @@ const adminViewStyles = `
   .tl-legend { display: flex; gap: 16px; font-size: 0.73rem; color: var(--muted); margin-bottom: 10px; }
   .tl-legend span { display: inline-flex; align-items: center; gap: 6px; }
   .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
-  .sw-cache { background: rgba(0,0,0,0.18); }
+  .sw-cache-read { background: rgba(0,0,0,0.18); }
+  .sw-cache-write { background: #3b6fb0; }
   .sw-input { background: var(--accent); }
   .sw-output { background: var(--ok-text); }
   .tl-chart {
@@ -2768,7 +2771,8 @@ const adminViewStyles = `
   .tl-seg { display: block; width: 100%; }
   .tl-seg.tl-output { background: var(--ok-text); }
   .tl-seg.tl-input { background: var(--accent); }
-  .tl-seg.tl-cache { background: rgba(0,0,0,0.18); }
+  .tl-seg.tl-cache-write { background: #3b6fb0; }
+  .tl-seg.tl-cache-read { background: rgba(0,0,0,0.18); }
   .tl-empty { display: block; width: 100%; height: 3px; background: var(--border); }
   .tl-axis { display: flex; justify-content: space-between; margin-top: 6px; font-size: 0.7rem; color: var(--subtle); }
 
