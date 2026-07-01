@@ -59,6 +59,8 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private readonly conversationStates = new Map<string, ConversationState>();
   private readonly sessionQueues = new Map<string, Promise<void>>();
   private readonly inFlightRuns = new Set<Promise<void>>();
+  /** Single-flights getOrCreateState() per sessionKey so concurrent callers share one runner instead of racing to build (and silently overwrite) two. */
+  private readonly pendingStateCreation = new Map<string, Promise<ConversationState>>();
   private readonly orchestrator: AgentRunController;
   private readonly chatSessionManager = new AgentMemoryFileManager();
   private isShuttingDown = false;
@@ -221,10 +223,30 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private async getOrCreateState(
     options: CreateSessionSandboxOptions & { currentMessageId?: string },
   ): Promise<ConversationState> {
-    const { conversationId, sessionKey, currentMessageId } = options;
-    const existing = this.conversationStates.get(sessionKey);
+    const existing = this.conversationStates.get(options.sessionKey);
     if (existing?.running) return existing;
 
+    // resolveSessionScope() and createRunner() below both await — without
+    // single-flighting, two concurrent calls for the same sessionKey (e.g.
+    // createSessionSandbox() racing another createSessionSandbox() or an
+    // in-flight handleEvent()) would both pass the check above and each
+    // construct their own SessionManager pointed at the same session file,
+    // risking interleaved/lost JSONL writes and a discarded runner.
+    const pending = this.pendingStateCreation.get(options.sessionKey);
+    if (pending) return pending;
+
+    const creation = this.createState(options).finally(() => {
+      this.pendingStateCreation.delete(options.sessionKey);
+    });
+    this.pendingStateCreation.set(options.sessionKey, creation);
+    return creation;
+  }
+
+  private async createState(
+    options: CreateSessionSandboxOptions & { currentMessageId?: string },
+  ): Promise<ConversationState> {
+    const { conversationId, sessionKey, currentMessageId } = options;
+    const existing = this.conversationStates.get(sessionKey);
     const conversationDir = join(this.options.workingDir, conversationId);
     const runtimeCwd = runtimeCwdForSandbox(
       this.options.sandbox,
