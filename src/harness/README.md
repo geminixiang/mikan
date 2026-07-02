@@ -48,6 +48,7 @@ TUI 打造的完整產品；mikan 只用到其中一小部分，且 chat-bot 的
 | `models.ts` `MikanModels`         | 模型目錄 + auth 解析（含 models.json 自訂供應商）                    | `ModelRegistry`                               |
 | `auth.ts` `FileCredentialStore`   | `~/.mikan/auth.json` 憑證儲存（pi-ai `CredentialStore` 實作）        | `AuthStorage`                                 |
 | `skills.ts`                       | SKILL.md 探索與 system prompt 格式化                                 | `loadSkillsFromDir` / `formatSkillsForPrompt` |
+| `http.ts`                         | 全域 fetch：proxy 支援（`HTTP_PROXY` 等）+ idle timeout              | `http-dispatcher`                             |
 | `settings.ts`                     | compaction / retry 預設值                                            | `SettingsManager`                             |
 | `extensions/`                     | mikan 自有 extension 系統                                            | `DefaultResourceLoader` 的 extension 載入     |
 

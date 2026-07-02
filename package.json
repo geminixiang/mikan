@@ -59,7 +59,8 @@
     "diff": "^9.0.0",
     "discord.js": "^14.26.4",
     "grammy": "^1.44.0",
-    "markdown-it": "^14.2.0"
+    "markdown-it": "^14.2.0",
+    "undici": "^8.5.0"
   },
   "devDependencies": {
     "@astrojs/mdx": "^7.0.0",

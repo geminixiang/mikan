@@ -24,6 +24,7 @@ import {
   loadGlobalSettings,
   MissingGlobalSettingsError,
 } from "./config.js";
+import { configureHttpDispatcher, parseHttpIdleTimeoutMs } from "./harness/index.js";
 import { readEnv, setEnvAliases } from "./utils/env.js";
 import { ensureDirExists, isRecord, readJsonFileIfExists } from "./utils/file-guards.js";
 import {
@@ -185,6 +186,10 @@ try {
 } catch (error) {
   handleStartupError(error);
 }
+
+// Global fetch: proxy support (HTTP_PROXY/HTTPS_PROXY/NO_PROXY) and idle
+// timeouts so a stalled LLM stream errors out instead of hanging a session.
+configureHttpDispatcher(parseHttpIdleTimeoutMs(readEnv("HTTP_IDLE_TIMEOUT")));
 
 // Handle --version
 if (parsedArgs.showVersion) {
