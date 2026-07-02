@@ -2,9 +2,8 @@
  * File-backed credential store for the mikan harness.
  *
  * Implements pi-ai's `CredentialStore` over mikan's `auth.json`
- * (`~/.pi/mikan/auth.json` by default). The file maps provider ids to
- * type-tagged credentials — the same shape pi-ai documents for auth.json —
- * so files written by earlier mikan versions keep working.
+ * (`~/.mikan/auth.json` by default). The file maps provider ids to
+ * type-tagged credentials — the same shape pi-ai documents for auth.json.
  *
  * Writes are atomic (temp file + rename, mode 0600) and serialized per
  * provider within the process. mikan runs as a single process, so no
@@ -20,7 +19,7 @@ import * as log from "../log.js";
 
 /** Default location of mikan's credential file. */
 export function defaultAuthPath(): string {
-  return join(homedir(), ".pi", "mikan", "auth.json");
+  return join(homedir(), ".mikan", "auth.json");
 }
 
 function isCredential(value: unknown): value is Credential {

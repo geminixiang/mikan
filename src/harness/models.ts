@@ -4,8 +4,7 @@
  * Wraps pi-ai's `Models` collection: all built-in providers are registered
  * with credentials resolved through mikan's auth.json, and custom providers
  * or overrides can be added via a `models.json` file
- * (`~/.pi/mikan/models.json` by default, falling back to the pi agent's
- * `~/.pi/agent/models.json` for compatibility with existing setups).
+ * (`~/.mikan/models.json` by default).
  *
  * models.json subset supported by mikan:
  *
@@ -91,9 +90,7 @@ interface ModelsJsonConfig {
 
 /** Default location of mikan's models.json. */
 export function defaultModelsJsonPath(): string {
-  const mikanPath = join(homedir(), ".pi", "mikan", "models.json");
-  if (existsSync(mikanPath)) return mikanPath;
-  return join(homedir(), ".pi", "agent", "models.json");
+  return join(homedir(), ".mikan", "models.json");
 }
 
 function parseModelsJson(path: string): ModelsJsonConfig | undefined {

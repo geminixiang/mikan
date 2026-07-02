@@ -46,7 +46,7 @@ TUI 打造的完整產品；mikan 只用到其中一小部分，且 chat-bot 的
 | `runner.ts` `MikanAgentSession`   | 回合迴圈：持久化、auto-compaction、auto-retry、事件、extension hooks | `AgentSession`                                |
 | `session-store.ts` `SessionStore` | v3 JSONL session tree 的同步讀寫                                     | `SessionManager`                              |
 | `models.ts` `MikanModels`         | 模型目錄 + auth 解析（含 models.json 自訂供應商）                    | `ModelRegistry`                               |
-| `auth.ts` `FileCredentialStore`   | `~/.pi/mikan/auth.json` 憑證儲存（pi-ai `CredentialStore` 實作）     | `AuthStorage`                                 |
+| `auth.ts` `FileCredentialStore`   | `~/.mikan/auth.json` 憑證儲存（pi-ai `CredentialStore` 實作）        | `AuthStorage`                                 |
 | `skills.ts`                       | SKILL.md 探索與 system prompt 格式化                                 | `loadSkillsFromDir` / `formatSkillsForPrompt` |
 | `settings.ts`                     | compaction / retry 預設值                                            | `SettingsManager`                             |
 | `extensions/`                     | mikan 自有 extension 系統                                            | `DefaultResourceLoader` 的 extension 載入     |
@@ -57,10 +57,10 @@ TUI 打造的完整產品；mikan 只用到其中一小部分，且 chat-bot 的
   帶 `id`/`parentId` 的 entries）。entry 形狀與 pi-agent-core 的 `SessionTreeEntry`
   結構相同，因此 pi-agent-core 的 `buildSessionContext` 與 compaction pipeline
   直接在這些 entries 上運作。舊 mikan 寫出的會話檔可無縫重開。
-- **auth.json 格式不變。** pi-ai 的 `Credential` 型別即為現行 auth.json 的形狀；
-  `FileCredentialStore` 直接沿用 `~/.pi/mikan/auth.json`。
-- **models.json 子集。** `MikanModels` 讀 `~/.pi/mikan/models.json`（否則回退
-  `~/.pi/agent/models.json`）：帶 `models` 陣列的供應商成為自訂供應商
+- **auth.json 格式不變，位置改為 `~/.mikan/auth.json`。** pi-ai 的 `Credential`
+  型別即為現行 auth.json 的形狀；檔案內容可直接沿用，但不再讀 `~/.pi` 下的舊路徑。
+- **models.json 子集。** `MikanModels` 讀 `~/.mikan/models.json`：
+  帶 `models` 陣列的供應商成為自訂供應商
   （`api` 支援 anthropic-messages / openai-completions / openai-responses /
   azure-openai-responses / google-generative-ai / mistral-conversations）；
   只帶 `baseUrl`/`compat` 的項目覆寫內建供應商模型。
@@ -70,6 +70,8 @@ TUI 打造的完整產品；mikan 只用到其中一小部分，且 chat-bot 的
 
 ### 與 pi-coding-agent 的行為差異
 
+- 設定與憑證改放 `~/.mikan/`（`auth.json`、`models.json`）；不再讀取
+  `~/.pi/` 下的任何路徑。
 - pi extension（`.pi/extensions`）不再載入；由 mikan extension 系統取代（見下）。
 - prompt template / `/skill:` 指令展開不在 harness 內（mikan 的指令由
   `src/commands/` 處理）。
