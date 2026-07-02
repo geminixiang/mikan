@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { ExtensionRegistry, loadExtensions } from "../src/harness/index.js";
+import { defaultExtensionDirs, ExtensionRegistry, loadExtensions } from "../src/harness/index.js";
 import type { Api, Model } from "@earendil-works/pi-ai";
 
 let dir: string;
@@ -33,6 +33,20 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
+});
+
+describe("defaultExtensionDirs", () => {
+  test("returns host-only global and per-conversation dirs under the state dir", () => {
+    expect(defaultExtensionDirs("C123", "/state")).toEqual([
+      join("/state", "extensions", "global"),
+      join("/state", "extensions", "C123"),
+    ]);
+  });
+
+  test("defaults the state dir to ~/.mikan", () => {
+    const [globalDir] = defaultExtensionDirs("C123");
+    expect(globalDir.endsWith(join(".mikan", "extensions", "global"))).toBe(true);
+  });
 });
 
 describe("loadExtensions", () => {

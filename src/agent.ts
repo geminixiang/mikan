@@ -1,6 +1,7 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
 import {
+  defaultExtensionDirs,
   formatSkillsForPrompt,
   loadExtensions,
   loadSkillsFromDir,
@@ -22,6 +23,7 @@ import type {
 import type { AgentEventPayload } from "./types.js";
 import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import { resolveConversationSettings } from "./config.js";
+import { readEnv } from "./utils/env.js";
 import { ActorExecutionResolver } from "./execution-resolver.js";
 import * as log from "./log.js";
 import { reportUserFacingError } from "./observability/sentry.js";
@@ -498,7 +500,6 @@ function createRunnerExecutionContext(
 
 async function createConfiguredAgentSession(params: {
   conversationId: string;
-  conversationDir: string;
   workspaceDir: string;
   systemPrompt: string;
   model: Model<Api>;
@@ -509,7 +510,6 @@ async function createConfiguredAgentSession(params: {
 }): Promise<ConfiguredAgentSession> {
   const {
     conversationId,
-    conversationDir,
     workspaceDir,
     systemPrompt,
     model,
@@ -519,8 +519,11 @@ async function createConfiguredAgentSession(params: {
     models,
   } = params;
 
+  // Host-only dirs under the state dir: extension code runs in the mikan
+  // process, so it must never load from workspace paths — those are mounted
+  // into sandbox containers and agent-writable (sandbox escape otherwise).
   const extensionsResult = await loadExtensions({
-    dirs: [join(conversationDir, "..", "extensions"), join(conversationDir, "extensions")],
+    dirs: defaultExtensionDirs(conversationId, readEnv("STATE_DIR")),
     context: { conversationId, workspaceDir, model, thinkingLevel },
   });
   for (const err of extensionsResult.errors) {
@@ -1497,7 +1500,6 @@ export async function createRunner(
   const chatSessionManager = new AgentMemoryFileManager();
   const { session } = await createConfiguredAgentSession({
     conversationId,
-    conversationDir,
     workspaceDir,
     systemPrompt,
     model,

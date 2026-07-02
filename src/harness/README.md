@@ -80,12 +80,19 @@ TUI 打造的完整產品；mikan 只用到其中一小部分，且 chat-bot 的
 
 ## Extension 系統 v1
 
-Extension 是 ES module，放在 workspace 或單一會話目錄的 `extensions/` 下：
+Extension 是 ES module，放在 **state dir**（host-only，永不掛進 sandbox）
+的 `extensions/` 下：
 
 ```
-<workspace>/extensions/audit.mjs          # 全域
-<workspace>/<conversation>/extensions/    # 單一會話
+~/.mikan/extensions/global/audit.mjs        # 所有會話
+~/.mikan/extensions/<conversationId>/       # 單一會話
 ```
+
+**安全模型：** extension 程式碼在 mikan 主程序內執行，權限等同 mikan 本體
+（平台 token、vault、host 檔案系統）。安裝 extension 是管理員動作。因此
+extension 目錄絕不能放在 workspace 下 — image 模式會把 workspace/會話目錄
+掛進 sandbox container，sandbox 內寫入的程式碼若被 host 載入即構成逃逸。
+`global` 為保留字，平台的 conversation id 不會取此值。
 
 匯出 `activate`（default 或具名皆可）：
 

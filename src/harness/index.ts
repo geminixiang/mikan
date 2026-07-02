@@ -42,6 +42,7 @@ export {
 } from "./settings.js";
 export { ExtensionRegistry } from "./extensions/registry.js";
 export {
+  defaultExtensionDirs,
   loadExtensions,
   type LoadExtensionsOptions,
   type LoadExtensionsResult,
