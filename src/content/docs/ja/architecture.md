@@ -44,6 +44,7 @@ description: mikan のプラットフォーム接続、セッション、agent�
 ### C. Agent 実行レイヤー
 
 - `src/agent.ts`
+- `src/harness/*`
 - `src/context.ts`
 - `src/tools/*`
 
@@ -51,7 +52,7 @@ description: mikan のプラットフォーム接続、セッション、agent�
 
 - `PiAgentWrapper` を作成する
 - モデル、skills、memory、session context を読み込む
-- ユーザーメッセージを `pi-agent-core` / `pi-coding-agent` に渡す
+- ユーザーメッセージを mikan 自前の agent harness（`src/harness/`、`pi-agent-core` / `pi-ai` の上に構築）に渡し、ターンループ・auto-compaction・auto-retry・extension hooks を実行する
 - tool calls をローカルの `read/bash/edit/write/event/attach` に接続する
 - tool の結果を session に書き戻し、adapter 経由でプラットフォームへ返す
 
