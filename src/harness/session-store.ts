@@ -81,9 +81,10 @@ export function loadSessionFileEntries(filePath: string): SessionFileEntry[] {
   return entries;
 }
 
-export interface SessionStoreOpenOptions {
-  /** Working directory recorded for the session when the header is missing. */
-  cwd?: string;
+/** True when the file exists and holds any non-whitespace content on disk. */
+function hasSessionFileContent(filePath: string): boolean {
+  if (!existsSync(filePath)) return false;
+  return readFileSync(filePath, "utf-8").trim().length > 0;
 }
 
 /**
@@ -123,12 +124,21 @@ export class SessionStore {
   }
 
   /**
-   * Open a session file. The file may be missing or headerless; in that case
-   * the session starts empty and a header is written on the first append.
+   * Open a session file. A missing or empty file starts an empty session
+   * whose header is written on the first append. A file that has content but
+   * no leading session header is treated as corrupted and throws, rather than
+   * being silently overwritten on the next append (which would erase the
+   * existing history). Callers on read paths already wrap this in try/catch.
    * @param cwdOverride Working directory override; defaults to the header cwd.
    */
   static open(path: string, cwdOverride?: string): SessionStore {
     const fileEntries = loadSessionFileEntries(path);
+    if (fileEntries.length === 0 && hasSessionFileContent(path)) {
+      throw new Error(
+        `Session file is corrupted (no valid session header): ${path}. ` +
+          `Refusing to open to avoid overwriting existing content.`,
+      );
+    }
     const header = fileEntries.find(isSessionHeader);
     const cwd = cwdOverride ?? header?.cwd ?? process.cwd();
     return new SessionStore(path, cwd, fileEntries);

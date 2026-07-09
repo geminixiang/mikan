@@ -12,12 +12,7 @@ export {
   parseHttpIdleTimeoutMs,
 } from "./http.js";
 export { MikanModels, defaultModelsJsonPath, type CreateMikanModelsOptions } from "./models.js";
-export {
-  SessionStore,
-  loadSessionFileEntries,
-  parseSessionFileEntries,
-  type SessionStoreOpenOptions,
-} from "./session-store.js";
+export { SessionStore, loadSessionFileEntries, parseSessionFileEntries } from "./session-store.js";
 export {
   MikanAgentSession,
   type CompactionReason,

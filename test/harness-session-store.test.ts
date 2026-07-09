@@ -103,15 +103,27 @@ describe("SessionStore", () => {
     expect(rendered).not.toMatch(/(^|\|)old($|\|)/);
   });
 
-  test("malformed lines are skipped and headerless files read as empty", () => {
+  test("open throws on a file with content but no valid header, instead of silently overwriting", () => {
+    // A file whose header line is corrupted but whose message lines survive
+    // must not be opened as a fresh session: the first append would rewrite
+    // the file and erase the existing history. Surface the corruption instead.
     const file = join(dir, "session.jsonl");
-    writeFileSync(file, 'not json\n{"type":"message"}\n');
-    const store = SessionStore.open(file, "/work");
-    expect(store.getHeader()).toBeNull();
-    expect(store.getEntries()).toHaveLength(0);
+    writeFileSync(file, 'not json\n{"type":"message","content":"kept"}\n');
+    expect(() => SessionStore.open(file, "/work")).toThrow(/corrupted/i);
+    // The original content is left untouched on disk.
+    expect(readFileSync(file, "utf-8")).toContain("kept");
   });
 
-  test("appending to a headerless file materializes the header", () => {
+  test("open treats a whitespace-only file as empty and materializes on append", () => {
+    const file = join(dir, "blank.jsonl");
+    writeFileSync(file, "\n  \n");
+    const store = SessionStore.open(file, "/work");
+    expect(store.getHeader()).toBeNull();
+    store.appendMessage({ role: "user", content: [{ type: "text", text: "hi" }], timestamp: 1 });
+    expect(readLines(file)[0]).toMatchObject({ type: "session", version: 3 });
+  });
+
+  test("appending to a missing (headerless) file materializes the header", () => {
     const file = join(dir, "fresh.jsonl");
     const store = SessionStore.open(file, "/work");
     const sessionId = store.getSessionId();
