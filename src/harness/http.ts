@@ -68,7 +68,10 @@ export function configureHttpDispatcher(timeoutMs: number = DEFAULT_HTTP_IDLE_TI
       ? globalThis.fetch === originalGlobalFetch
       : globalThis.fetch === installedGlobalFetch;
   if (shouldInstallGlobals) {
-    undici.install?.();
+    // `install` swaps global fetch to undici's; it only exists in undici >= 7,
+    // whose types aren't guaranteed here, so access it defensively and no-op
+    // on older undici (runtime behavior unchanged from the original `?.` call).
+    (undici as { install?: () => void }).install?.();
     installedGlobalFetch = globalThis.fetch;
   }
 }
