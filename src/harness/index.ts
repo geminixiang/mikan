@@ -34,8 +34,11 @@ export {
   type SkillDiagnostic,
 } from "./skills.js";
 export {
+  DEFAULT_BUDGET_SETTINGS,
+  DEFAULT_EVENT_BUDGET,
   DEFAULT_RETRY_SETTINGS,
   resolveHarnessSettings,
+  type BudgetSettings,
   type CompactionSettings,
   type HarnessSettings,
   type RetrySettings,

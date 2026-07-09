@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   appendTriggerAttribution,
+  buildTurnInstructions,
   getUnresolvedSandboxPathContext,
   resolveTriggerAttribution,
   translateAttachPathToHost,
@@ -71,6 +72,27 @@ describe("append trigger attribution", () => {
         "https://mikan/session?t=1",
       ),
     ).toBe("Done.\n\n_Triggered by [event: daily] · session: https://mikan/session?t=1_");
+  });
+});
+
+describe("turn instructions", () => {
+  test("empty for a plain interactive turn", () => {
+    expect(buildTurnInstructions(false, undefined, "slack")).toBe("");
+  });
+
+  test("includes attribution with the platform name and trigger", () => {
+    const result = buildTurnInstructions(false, "@david", "slack");
+    expect(result).toContain("## Attribution");
+    expect(result).toContain("final slack response");
+    expect(result).toContain("_Triggered by @david_");
+    expect(result).not.toContain("## Event Trigger Mode");
+  });
+
+  test("includes event-trigger mode for event runs", () => {
+    const result = buildTurnInstructions(true, "[event: daily]", "telegram");
+    expect(result).toContain("## Event Trigger Mode");
+    expect(result).toContain("## Attribution");
+    expect(result).toContain("_Triggered by [event: daily]_");
   });
 });
 

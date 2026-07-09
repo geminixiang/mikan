@@ -1,6 +1,7 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
 import {
+  DEFAULT_EVENT_BUDGET,
   defaultExtensionDirs,
   formatSkillsForPrompt,
   loadExtensions,
@@ -212,8 +213,6 @@ function buildSystemPrompt(
   sandboxConfig: SandboxConfig,
   platform: MessagingInfo,
   skills: MikanSkill[],
-  isEventTrigger = false,
-  triggerAttribution?: string,
 ): string {
   const { workspaceRoot, conversationPath, scratchPath } = buildRuntimePaths(
     workspacePath,
@@ -236,25 +235,11 @@ function buildSystemPrompt(
       : "(no users loaded)";
 
   const envDescription = buildEnvDescription(sandboxType, workspaceRoot);
-  const eventTriggerInstructions = isEventTrigger
-    ? `
-## Event Trigger Mode
-- You are handling a scheduled/background event, not opening a brand new chat with a stranger.
-- Treat the incoming user message as a self-contained task prepared by an earlier run.
-- Complete the task directly. Avoid generic greetings, self-introductions, or boilerplate offers to help.
-- For reminders/follow-ups, prefer a short direct response that sounds like a continuation of prior intent.
-- If the event text includes tone, brevity, or language instructions, follow them literally.
-`
-    : "";
-  const attributionInstructions = triggerAttribution
-    ? `
-## Attribution
-Always end your final ${platform.name} response and any GitHub issue/PR comments or descriptions you write via tools with:
-_Triggered by ${triggerAttribution}_
-
-Do not add this to \`[SILENT]\` responses.
-`
-    : "";
+  // Per-turn instructions (event-trigger mode, attribution) are delivered with
+  // the user message via buildTurnInstructions(), not baked in here, so this
+  // system prompt stays byte-stable across a conversation's turns and keeps the
+  // provider prompt cache warm (a changing system prefix invalidates the cache
+  // for the whole request, including the far larger conversation history).
   const slackBlockKitInstructions =
     platform.name === "slack"
       ? `
@@ -275,7 +260,6 @@ Do not add this to \`[SILENT]\` responses.
 - Scoped/thread sessions use fixed files at \`${conversationPath}/sessions/<scope_id>.jsonl\` (for example \`${conversationPath}/sessions/1777386320.800769.jsonl\`).
 - If a user asks about something that should exist in conversation history but is not found in the current context window, do not answer "I don't know" or "I don't have that". Instead, search the thread session, top-level session, and \`log.jsonl\` before responding.
 - User messages include a \`[in-thread:TS]\` marker when sent from within a platform thread/reply (TS is the thread or parent message identifier). Without this marker, the message is a top-level conversation message.
-${eventTriggerInstructions}
 ${platform.formattingGuide}${slackBlockKitInstructions}
 
 ## Platform IDs
@@ -363,7 +347,6 @@ Format: \`{"date":"...","ts":"...","user":"...","userName":"...","text":"...","i
 The log contains user messages and your final responses (not tool calls/results).
 Use \`log.jsonl\` for quick grep-style history. Use \`${conversationPath}/sessions/\` when you need structured turns, tool outputs, or thread/session lineage.
 ${isContainerLike || isFirecracker ? "Install jq: apt-get install jq" : ""}
-${attributionInstructions}
 \`\`\`bash
 # Recent messages
 tail -30 log.jsonl | jq -c '{date: .date[0:19], user: (.userName // .user), text}'
@@ -390,6 +373,37 @@ ls -1 sessions/
 
 Each tool requires a "label" parameter (shown to user).
 `;
+}
+
+/**
+ * Instructions that vary per turn (event-trigger mode, response attribution).
+ * These are delivered with the user message rather than baked into the system
+ * prompt, so the system prompt stays cache-stable across a conversation's turns
+ * (in a multi-user channel the attribution line alone changes every turn).
+ * Returns an empty string when the turn needs no special framing.
+ */
+export function buildTurnInstructions(
+  isEventTrigger: boolean,
+  triggerAttribution: string | undefined,
+  platformName: string,
+): string {
+  const parts: string[] = [];
+  if (isEventTrigger) {
+    parts.push(`## Event Trigger Mode
+- You are handling a scheduled/background event, not opening a brand new chat with a stranger.
+- Treat the incoming user message as a self-contained task prepared by an earlier run.
+- Complete the task directly. Avoid generic greetings, self-introductions, or boilerplate offers to help.
+- For reminders/follow-ups, prefer a short direct response that sounds like a continuation of prior intent.
+- If the event text includes tone, brevity, or language instructions, follow them literally.`);
+  }
+  if (triggerAttribution) {
+    parts.push(`## Attribution
+Always end your final ${platformName} response and any GitHub issue/PR comments or descriptions you write via tools with:
+_Triggered by ${triggerAttribution}_
+
+Do not add this to \`[SILENT]\` responses.`);
+  }
+  return parts.join("\n\n");
 }
 
 export function getUnresolvedSandboxPathContext(
@@ -1035,8 +1049,6 @@ async function prepareRunContext(params: {
     executor.getSandboxConfig(),
     platform,
     skills,
-    message.id.startsWith("event:"),
-    triggerAttribution,
   );
   session.agent.state.systemPrompt = systemPrompt;
 
@@ -1074,18 +1086,24 @@ async function prepareRunContext(params: {
     pathContext.runtimeWorkspaceRoot,
     pathContext,
   );
+  const turnInstructions = buildTurnInstructions(
+    message.id.startsWith("event:"),
+    triggerAttribution,
+    platform.name,
+  );
+  const finalUserMessage = turnInstructions ? `${turnInstructions}\n\n${userMessage}` : userMessage;
   await writePromptDebugContext(
     conversationDir,
     systemPrompt,
     session,
-    userMessage,
+    finalUserMessage,
     imageAttachments.length,
   );
 
   return {
     sessionConversation,
     runQueue,
-    userMessage,
+    userMessage: finalUserMessage,
     imageAttachments,
     triggerAttribution,
     pathContext,
@@ -1389,6 +1407,20 @@ function attachSessionEventHandlers(params: {
       });
       queue.enqueue(() => responder.respond(text), "retry");
     }
+
+    if (event.type === "budget_exceeded") {
+      log.logWarning(
+        "Run stopped by budget circuit breaker",
+        `${event.reason} (tokens=${event.tokens}, cost=${event.costUsd.toFixed(2)}, calls=${event.llmCalls}, ${event.durationMs}ms)`,
+      );
+      const text = `_Stopped: run budget exceeded (${event.reason})_`;
+      sendAgentEvent({
+        sessionId: agentEventSessionId,
+        actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
+        event: { kind: "diagnostic", text },
+      });
+      queue.enqueue(() => responder.respondDiagnostic(text, { style: "error" }), "budget exceeded");
+    }
   });
 }
 
@@ -1572,10 +1604,13 @@ export async function createRunner(
         event: { kind: "sessionStart" },
       });
 
-      await session.prompt(
-        prepared.userMessage,
-        prepared.imageAttachments.length > 0 ? { images: prepared.imageAttachments } : undefined,
-      );
+      // Autonomous (event/trigger) runs get an explicit resource ceiling since
+      // no human is watching the loop; interactive turns stay human-gated.
+      const isEventRun = message.id.startsWith("event:");
+      await session.prompt(prepared.userMessage, {
+        ...(prepared.imageAttachments.length > 0 ? { images: prepared.imageAttachments } : {}),
+        ...(isEventRun ? { budget: DEFAULT_EVENT_BUDGET } : {}),
+      });
 
       // Wait for queued messages
       await prepared.runQueue.wait();

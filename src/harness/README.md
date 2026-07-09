@@ -23,6 +23,7 @@ TUI 打造的完整產品；mikan 只用到其中一小部分，且 chat-bot 的
 │    · message persistence on message_end                    │
 │    · auto-compaction (threshold + overflow recovery)       │
 │    · auto-retry with exponential backoff                   │
+│    · budget circuit breakers (token/cost/time/call caps)   │
 │    · extension hook dispatch                               │
 │                                                            │
 │  SessionStore (session-store.ts)   MikanModels (models.ts) │
@@ -43,7 +44,7 @@ TUI 打造的完整產品；mikan 只用到其中一小部分，且 chat-bot 的
 
 | 模組                              | 職責                                                                 | 取代的 pi-coding-agent API                    |
 | --------------------------------- | -------------------------------------------------------------------- | --------------------------------------------- |
-| `runner.ts` `MikanAgentSession`   | 回合迴圈：持久化、auto-compaction、auto-retry、事件、extension hooks | `AgentSession`                                |
+| `runner.ts` `MikanAgentSession`   | 回合迴圈：持久化、auto-compaction、auto-retry、預算熔斷、事件、extension hooks | `AgentSession`                                |
 | `session-store.ts` `SessionStore` | v3 JSONL session tree 的同步讀寫                                     | `SessionManager`                              |
 | `models.ts` `MikanModels`         | 模型目錄 + auth 解析（含 models.json 自訂供應商）                    | `ModelRegistry`                               |
 | `auth.ts` `FileCredentialStore`   | `~/.mikan/auth.json` 憑證儲存（pi-ai `CredentialStore` 實作）        | `AuthStorage`                                 |
@@ -66,8 +67,30 @@ TUI 打造的完整產品；mikan 只用到其中一小部分，且 chat-bot 的
   azure-openai-responses / google-generative-ai / mistral-conversations）；
   只帶 `baseUrl`/`compat` 的項目覆寫內建供應商模型。
 - **事件面不變。** `MikanAgentSession` 事件 = pi-agent-core `AgentEvent`
-  passthrough + `compaction_start/_end` + `auto_retry_start/_end`，
-  adapters 的渲染程式不需修改。
+  passthrough + `compaction_start/_end` + `auto_retry_start/_end` +
+  `budget_exceeded`，adapters 的渲染程式不需修改（新增的 `budget_exceeded`
+  是額外事件，舊 handler 忽略即可）。
+
+## 預算熔斷（circuit breakers）
+
+LLM 無法可靠地自己決定何時該停（停機問題），所以失控的 run 必須由外部叫停。
+`settings.ts` 的 `BudgetSettings` 定義單次 `prompt()` 的資源上限（token、成本 USD、
+牆鐘時間、LLM 呼叫次數）；任一項超限就 abort 該 run 並發出 `budget_exceeded` 事件。
+
+- **互動回合**逐則由人把關，預設不設上限（`DEFAULT_BUDGET_SETTINGS = {}`）。
+- **自主 run（event / trigger）** 沒有人盯著迴圈，`agent.ts` 會傳入
+  `DEFAULT_EVENT_BUDGET`（10 分鐘、50 次 LLM 呼叫、2 USD）作為 stop-loss。
+
+上限在每次 assistant `message_end` 時累計檢查（可在回合中途 abort），並在
+`handlePostRun` 擋掉「超限後又被 retry/compaction 續跑」的漏洞。
+
+## Prompt cache 友善
+
+pi-ai 對 Anthropic 會在整段 system prompt 結尾放單一 cache breakpoint——只要
+system prompt 有任何位元變動，整個請求（含最貴的對話歷史）就 cache miss。因此
+`agent.ts` 的 `buildSystemPrompt` 只放**同一會話中穩定**的內容；每回合會變的
+內容（event-trigger 模式、attribution，後者在多人頻道會隨發言者每回合改變）改由
+`buildTurnInstructions()` 隨 user message 遞送，讓 system prompt 位元穩定、cache 保溫。
 
 ### 與 pi-coding-agent 的行為差異
 

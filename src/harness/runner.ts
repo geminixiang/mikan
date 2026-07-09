@@ -39,11 +39,19 @@ import {
 import * as log from "../log.js";
 import type { ExtensionRegistry } from "./extensions/registry.js";
 import type { MikanModels } from "./models.js";
-import { resolveHarnessSettings, type HarnessSettings } from "./settings.js";
+import { resolveHarnessSettings, type BudgetSettings, type HarnessSettings } from "./settings.js";
 import type { SessionStore } from "./session-store.js";
 import type { CompactionEntry } from "./types.js";
 
 export type CompactionReason = "threshold" | "overflow" | "manual";
+
+/** Running resource tally for the current `prompt()` call, matched against the budget. */
+interface RunTally {
+  tokens: number;
+  costUsd: number;
+  llmCalls: number;
+  startedAt: number;
+}
 
 interface CompactionResultSummary {
   summary: string;
@@ -68,7 +76,16 @@ export type HarnessEvent =
       delayMs: number;
       errorMessage: string;
     }
-  | { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string };
+  | { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
+  | {
+      type: "budget_exceeded";
+      /** Which cap was hit, e.g. "cost 2.01 USD > 2 USD limit". */
+      reason: string;
+      tokens: number;
+      costUsd: number;
+      llmCalls: number;
+      durationMs: number;
+    };
 
 export type HarnessEventListener = (event: HarnessEvent) => void | Promise<void>;
 
@@ -117,6 +134,9 @@ export class MikanAgentSession {
   private overflowRecoveryAttempted = false;
   private retryAbortController: AbortController | undefined;
   private compactionAbortController: AbortController | undefined;
+  private tally: RunTally = { tokens: 0, costUsd: 0, llmCalls: 0, startedAt: 0 };
+  private runBudget: BudgetSettings = {};
+  private budgetExceededReason: string | undefined;
 
   constructor(options: MikanAgentSessionOptions) {
     this.models = options.models;
@@ -190,8 +210,15 @@ export class MikanAgentSession {
    * Send a user prompt and run the agent loop to completion, including
    * automatic retries and compaction. Resolves when the turn (and any
    * recovery continuations) settles.
+   *
+   * @param options.budget Per-run resource ceilings that override the session
+   *   defaults. Autonomous (event / trigger) runs should pass a budget so a
+   *   runaway loop is stopped even with no human watching.
    */
-  async prompt(text: string, options?: { images?: ImageContent[] }): Promise<void> {
+  async prompt(
+    text: string,
+    options?: { images?: ImageContent[]; budget?: BudgetSettings },
+  ): Promise<void> {
     if (this.agent.state.isStreaming) {
       throw new Error("Agent is already processing a prompt");
     }
@@ -201,6 +228,9 @@ export class MikanAgentSession {
 
     this.retryAttempt = 0;
     this.overflowRecoveryAttempted = false;
+    this.runBudget = { ...this.settings.budget, ...options?.budget };
+    this.budgetExceededReason = undefined;
+    this.tally = { tokens: 0, costUsd: 0, llmCalls: 0, startedAt: Date.now() };
 
     // A previous turn may have ended over the threshold (for example after an
     // abort); compact before adding new context on top.
@@ -289,13 +319,62 @@ export class MikanAgentSession {
       await this.extensions.emit("message_end", { message });
     }
 
-    if (message.role === "assistant" && message.stopReason !== "error") {
-      this.overflowRecoveryAttempted = false;
-      if (this.retryAttempt > 0) {
-        await this.emit({ type: "auto_retry_end", success: true, attempt: this.retryAttempt });
-        this.retryAttempt = 0;
+    if (message.role === "assistant") {
+      this.recordUsage(message);
+      await this.enforceBudget();
+      if (message.stopReason !== "error") {
+        this.overflowRecoveryAttempted = false;
+        if (this.retryAttempt > 0) {
+          await this.emit({ type: "auto_retry_end", success: true, attempt: this.retryAttempt });
+          this.retryAttempt = 0;
+        }
       }
     }
+  }
+
+  /** Fold one assistant turn's usage into the running per-run tally. */
+  private recordUsage(message: AssistantMessage): void {
+    this.tally.llmCalls += 1;
+    const usage = message.usage;
+    if (!usage) return;
+    this.tally.tokens += usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+    this.tally.costUsd += usage.cost?.total ?? 0;
+  }
+
+  /** Compare the tally against the run budget; abort the run when a cap is exceeded. */
+  private async enforceBudget(): Promise<void> {
+    if (this.budgetExceededReason) return;
+    const reason = this.overBudgetReason();
+    if (!reason) return;
+
+    this.budgetExceededReason = reason;
+    await this.emit({
+      type: "budget_exceeded",
+      reason,
+      tokens: this.tally.tokens,
+      costUsd: this.tally.costUsd,
+      llmCalls: this.tally.llmCalls,
+      durationMs: Date.now() - this.tally.startedAt,
+    });
+    log.logWarning("Run budget exceeded — aborting", reason);
+    this.agent.abort();
+  }
+
+  private overBudgetReason(): string | undefined {
+    const { maxTokens, maxCostUsd, maxDurationMs, maxLlmCalls } = this.runBudget;
+    if (maxLlmCalls !== undefined && this.tally.llmCalls >= maxLlmCalls) {
+      return `${this.tally.llmCalls} LLM calls >= ${maxLlmCalls} limit`;
+    }
+    if (maxTokens !== undefined && this.tally.tokens >= maxTokens) {
+      return `${this.tally.tokens} tokens >= ${maxTokens} limit`;
+    }
+    if (maxCostUsd !== undefined && this.tally.costUsd >= maxCostUsd) {
+      return `cost ${this.tally.costUsd.toFixed(2)} USD >= ${maxCostUsd} USD limit`;
+    }
+    if (maxDurationMs !== undefined && Date.now() - this.tally.startedAt >= maxDurationMs) {
+      return `${Date.now() - this.tally.startedAt}ms >= ${maxDurationMs}ms limit`;
+    }
+    return undefined;
   }
 
   private findLastAssistantMessage(): AssistantMessage | undefined {
@@ -309,6 +388,10 @@ export class MikanAgentSession {
 
   /** Decide what to do after a run settles. Returns true when the agent should continue. */
   private async handlePostRun(): Promise<boolean> {
+    // A run stopped for going over budget must not be retried or compacted back
+    // into another continuation — that would defeat the circuit breaker.
+    if (this.budgetExceededReason) return false;
+
     const lastAssistant = this.findLastAssistantMessage();
     if (!lastAssistant) return false;
 

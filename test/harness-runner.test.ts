@@ -162,6 +162,43 @@ describe("MikanAgentSession", () => {
     expect(JSON.stringify(toolResults)).toContain("blocked by test");
   });
 
+  test("budget circuit breaker aborts a run that exceeds the LLM-call cap", async () => {
+    const { models, faux, model } = createFauxSetup();
+    // Would take two LLM calls (tool call, then final); the cap stops it at one.
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("echo", { text: "ping" })),
+      fauxAssistantMessage("done"),
+    ]);
+
+    const sessionStore = SessionStore.create(join(dir, "session.jsonl"), dir);
+    const session = new MikanAgentSession({
+      systemPrompt: "test",
+      model,
+      thinkingLevel: "off",
+      tools: [echoTool],
+      models,
+      sessionStore,
+    });
+
+    const events: HarnessEvent[] = [];
+    session.subscribe((event) => {
+      events.push(event);
+    });
+
+    await session.prompt("run the tool", { budget: { maxLlmCalls: 1 } });
+
+    const budgetEvent = events.find((event) => event.type === "budget_exceeded");
+    expect(budgetEvent).toBeDefined();
+    if (budgetEvent?.type === "budget_exceeded") {
+      expect(budgetEvent.llmCalls).toBe(1);
+      expect(budgetEvent.reason).toContain("LLM calls");
+    }
+
+    // The cap trips after the first LLM call and aborts the run, so the second
+    // turn produces no output — the "done" response never materializes.
+    expect(JSON.stringify(sessionStore.getEntries())).not.toContain("done");
+  });
+
   test("throws a clear error when provider auth is missing", async () => {
     // Custom provider with no key configured anywhere: auth resolution fails.
     const modelsJsonPath = join(dir, "models.json");
