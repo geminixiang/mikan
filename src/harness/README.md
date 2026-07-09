@@ -42,16 +42,16 @@ TUI 打造的完整產品；mikan 只用到其中一小部分，且 chat-bot 的
 
 ### 模組職責
 
-| 模組                              | 職責                                                                 | 取代的 pi-coding-agent API                    |
-| --------------------------------- | -------------------------------------------------------------------- | --------------------------------------------- |
+| 模組                              | 職責                                                                           | 取代的 pi-coding-agent API                    |
+| --------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------- |
 | `runner.ts` `MikanAgentSession`   | 回合迴圈：持久化、auto-compaction、auto-retry、預算熔斷、事件、extension hooks | `AgentSession`                                |
-| `session-store.ts` `SessionStore` | v3 JSONL session tree 的同步讀寫                                     | `SessionManager`                              |
-| `models.ts` `MikanModels`         | 模型目錄 + auth 解析（含 models.json 自訂供應商）                    | `ModelRegistry`                               |
-| `auth.ts` `FileCredentialStore`   | `~/.mikan/auth.json` 憑證儲存（pi-ai `CredentialStore` 實作）        | `AuthStorage`                                 |
-| `skills.ts`                       | SKILL.md 探索與 system prompt 格式化                                 | `loadSkillsFromDir` / `formatSkillsForPrompt` |
-| `http.ts`                         | 全域 fetch：proxy 支援（`HTTP_PROXY` 等）+ idle timeout              | `http-dispatcher`                             |
-| `settings.ts`                     | compaction / retry 預設值                                            | `SettingsManager`                             |
-| `extensions/`                     | mikan 自有 extension 系統                                            | `DefaultResourceLoader` 的 extension 載入     |
+| `session-store.ts` `SessionStore` | v3 JSONL session tree 的同步讀寫                                               | `SessionManager`                              |
+| `models.ts` `MikanModels`         | 模型目錄 + auth 解析（含 models.json 自訂供應商）                              | `ModelRegistry`                               |
+| `auth.ts` `FileCredentialStore`   | `~/.mikan/auth.json` 憑證儲存（pi-ai `CredentialStore` 實作）                  | `AuthStorage`                                 |
+| `skills.ts`                       | SKILL.md 探索與 system prompt 格式化                                           | `loadSkillsFromDir` / `formatSkillsForPrompt` |
+| `http.ts`                         | 全域 fetch：proxy 支援（`HTTP_PROXY` 等）+ idle timeout                        | `http-dispatcher`                             |
+| `settings.ts`                     | compaction / retry 預設值                                                      | `SettingsManager`                             |
+| `extensions/`                     | mikan 自有 extension 系統                                                      | `DefaultResourceLoader` 的 extension 載入     |
 
 ### 相容性
 
