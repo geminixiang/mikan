@@ -89,6 +89,10 @@ async function routeApiRequest(
       serveSessionUsage(res, services);
       return;
     }
+    if (url.pathname === "/admin/api/conversation-usage") {
+      serveConversationUsage(res, url, services);
+      return;
+    }
     if (url.pathname === "/admin/api/conversation-state") {
       serveConversationState(res, url, services, token);
       return;
@@ -420,6 +424,134 @@ interface AssistantUsageMessage {
 
 function numberOrZero(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+interface UsageBucket {
+  date: string;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+  cost: number;
+}
+
+function localDayKey(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function emptyBucket(date: string): UsageBucket {
+  return { date, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0, cost: 0 };
+}
+
+/** Per-conversation daily token usage over the last N days (N clamped to 1..7). */
+function serveConversationUsage(res: ServerResponse, url: URL, services: AdminServices): void {
+  const workingDir = requireAdminWorkingDir(res, services);
+  if (!workingDir) return;
+
+  const conversationId = url.searchParams.get("conversationId") ?? "";
+  if (!conversationId || !listConversationDirs(workingDir).includes(conversationId)) {
+    jsonRes(res, 400, { error: "Unknown conversationId" });
+    return;
+  }
+
+  const days = 14;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const buckets = new Map<string, UsageBucket>();
+  const order: string[] = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const key = localDayKey(d);
+    order.push(key);
+    buckets.set(key, emptyBucket(key));
+  }
+  const cutoff = new Date(today);
+  cutoff.setDate(today.getDate() - (days - 1));
+
+  const flags = { hasOlder: false };
+  const sessionDir = join(workingDir, conversationId, "sessions");
+  try {
+    for (const entry of readdirSync(sessionDir, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+      accumulateSessionUsageByDay(join(sessionDir, entry.name), cutoff, buckets, flags);
+    }
+  } catch {
+    // No sessions directory yet — return empty buckets.
+  }
+
+  const series = order.map((key) => buckets.get(key) ?? emptyBucket(key));
+  const totals = series.reduce((sum, b) => {
+    sum.input += b.input;
+    sum.output += b.output;
+    sum.cacheRead += b.cacheRead;
+    sum.cacheWrite += b.cacheWrite;
+    sum.total += b.total;
+    sum.cost += b.cost;
+    return sum;
+  }, emptyBucket(""));
+
+  jsonRes(res, 200, {
+    conversationId,
+    label: conversationDisplayLabel(services, conversationId),
+    days,
+    hasOlder: flags.hasOlder,
+    buckets: series,
+    totals: {
+      input: totals.input,
+      output: totals.output,
+      cacheRead: totals.cacheRead,
+      cacheWrite: totals.cacheWrite,
+      total: totals.total,
+      cost: totals.cost,
+    },
+  });
+}
+
+function accumulateSessionUsageByDay(
+  sessionFile: string,
+  cutoff: Date,
+  buckets: Map<string, UsageBucket>,
+  flags: { hasOlder: boolean },
+): void {
+  try {
+    const manager = SessionStore.open(sessionFile);
+    if (!manager.getHeader()) return;
+
+    for (const entry of manager.getEntries()) {
+      if (entry.type !== "message" || entry.message.role !== "assistant") continue;
+      const usage = (entry.message as unknown as AssistantUsageMessage).usage;
+      if (!usage || !entry.timestamp) continue;
+
+      const when = new Date(entry.timestamp);
+      if (Number.isNaN(when.getTime())) continue;
+      if (when < cutoff) {
+        flags.hasOlder = true;
+        continue;
+      }
+
+      const bucket = buckets.get(localDayKey(when));
+      if (!bucket) continue;
+
+      const input = numberOrZero(usage.input);
+      const output = numberOrZero(usage.output);
+      const cacheRead = numberOrZero(usage.cacheRead);
+      const cacheWrite = numberOrZero(usage.cacheWrite);
+      bucket.input += input;
+      bucket.output += output;
+      bucket.cacheRead += cacheRead;
+      bucket.cacheWrite += cacheWrite;
+      bucket.total += input + output + cacheRead + cacheWrite;
+      bucket.cost += numberOrZero(usage.cost?.total);
+    }
+  } catch {
+    // Skip unreadable session files.
+  }
 }
 
 function serveConversationState(
@@ -1500,11 +1632,18 @@ function renderAdminPage(token: AdminToken): string {
         <header class="sect-head">
           <div>
             <p class="eyebrow">Token Usage</p>
-            <h2 class="card-title">Top 20 sessions</h2>
           </div>
-          <button class="refresh-btn" onclick="loadSessionUsage()">↻</button>
+          <button class="refresh-btn" onclick="loadTokenUsage()">↻</button>
         </header>
+        <h2 class="card-subtitle" style="margin-bottom:10px">Top 20 sessions</h3>
         <div id="session-usage-content"><div class="loading-msg">Loading…</div></div>
+        <h2 class="card-subtitle" style="margin:24px 0 10px">Usage timeline</h3>
+        <div class="timeline-controls">
+          <label>Conversation
+            <select id="timeline-conv" onchange="loadUsageTimeline()"></select>
+          </label>
+        </div>
+        <div id="usage-timeline-content"><div class="loading-msg">Loading…</div></div>
       </section>
 
       <section class="card sect">
@@ -2036,7 +2175,7 @@ function renderAdminPage(token: AdminToken): string {
       if (globalLoaded) return;
       globalLoaded = true;
       loadAllConversations();
-      loadSessionUsage();
+      loadTokenUsage();
       loadGlobalSettings();
       loadGlobalSkills();
       loadEvents();
@@ -2093,6 +2232,140 @@ function renderAdminPage(token: AdminToken): string {
 
     function fmtNum(value) {
       return Number(value || 0).toLocaleString('en-US');
+    }
+
+    let timelineConvLoaded = false;
+    let timelineData = null;
+    let timelineFilter = null;
+    async function ensureTimelineConvOptions() {
+      if (timelineConvLoaded) return;
+      const sel = document.getElementById('timeline-conv');
+      const prev = sel.value;
+      const data = await apiGet('/admin/api/conversations');
+      if (!data.conversations.length) {
+        sel.innerHTML = '<option value="">No conversations</option>';
+        timelineConvLoaded = true;
+        return;
+      }
+      const want = prev || defaultConversationId;
+      sel.innerHTML = data.conversations.map((c) =>
+        '<option value="' + escAttr(c.conversationId) + '"' +
+        (c.conversationId === want ? ' selected' : '') + '>' +
+        escHtml(c.label || c.conversationId) + '</option>'
+      ).join('');
+      timelineConvLoaded = true;
+    }
+
+    // Shared refresh for the merged Token Usage section: reloads the session
+    // ranking and re-fetches the conversation list (so new sessions appear),
+    // preserving the currently selected conversation.
+    async function loadTokenUsage() {
+      loadSessionUsage();
+      timelineConvLoaded = false;
+      await loadUsageTimeline();
+    }
+
+    async function loadUsageTimeline() {
+      const container = document.getElementById('usage-timeline-content');
+      try {
+        await ensureTimelineConvOptions();
+        const conv = document.getElementById('timeline-conv').value;
+        if (!conv) {
+          container.innerHTML = '<div class="empty-state">No conversations found</div>';
+          return;
+        }
+        container.innerHTML = '<div class="loading-msg">Loading…</div>';
+        const data = await apiGet('/admin/api/conversation-usage?conversationId=' +
+          encodeURIComponent(conv));
+        timelineData = data;
+        container.innerHTML = renderUsageTimeline(data);
+      } catch (err) {
+        container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
+      }
+    }
+
+    function tlCard(label, value) {
+      return '<div class="tl-card"><div class="tl-card-label">' + label +
+        '</div><div class="tl-card-value">' + value + '</div></div>';
+    }
+
+    const TL_SERIES = [
+      { key: 'cacheRead', seg: 'tl-cache-read', sw: 'sw-cache-read', label: 'Cache read' },
+      { key: 'cacheWrite', seg: 'tl-cache-write', sw: 'sw-cache-write', label: 'Cache write' },
+      { key: 'input', seg: 'tl-input', sw: 'sw-input', label: 'Input' },
+      { key: 'output', seg: 'tl-output', sw: 'sw-output', label: 'Output' },
+    ];
+
+    // Click a legend item to show only that series; click it again for all.
+    function toggleTimelineFilter(key) {
+      timelineFilter = timelineFilter === key ? null : key;
+      if (timelineData) {
+        document.getElementById('usage-timeline-content').innerHTML = renderUsageTimeline(timelineData);
+      }
+    }
+
+    function renderUsageTimeline(data) {
+      const buckets = data.buckets || [];
+      const totals = data.totals || { total: 0, cost: 0, cacheRead: 0 };
+      const cacheHit = totals.total > 0 ? Math.round((totals.cacheRead / totals.total) * 100) : 0;
+      const cards = '<div class="tl-cards">' +
+        tlCard('Total cost', totals.cost > 0 ? '$' + Number(totals.cost).toFixed(4) : '—') +
+        tlCard('Total tokens', fmtNum(totals.total)) +
+        tlCard('Cache hit', cacheHit + '%') +
+      '</div>';
+
+      if (totals.total === 0) {
+        const emptyNote = data.hasOlder
+          ? '<div class="tl-note">No usage in the last 14 days · earlier activity exists</div>'
+          : '<div class="empty-state">No token usage in the last 14 days</div>';
+        return cards + emptyNote;
+      }
+
+      const active = TL_SERIES.find((s) => s.key === timelineFilter) || null;
+      const valueOf = (b) => active ? (b[active.key] || 0) : b.total;
+      const max = Math.max(1, ...buckets.map(valueOf));
+      const px = (v) => Math.round((v / max) * 180);
+
+      const legend = '<div class="tl-legend">' + TL_SERIES.map((s) => {
+        const cls = 'tl-legend-item' +
+          (active && active.key === s.key ? ' active' : (active ? ' dim' : ''));
+        return '<span class="' + cls + '" onclick="toggleTimelineFilter(\\'' + s.key + '\\')">' +
+          '<i class="sw ' + s.sw + '"></i>' + s.label + '</span>';
+      }).join('') + '</div>';
+
+      const bars = buckets.map((b) => {
+        const val = valueOf(b);
+        const tip = active
+          ? b.date + ' · ' + active.label + ': ' + fmtNum(b[active.key] || 0) + ' tokens'
+          : b.date + ' · ' + fmtNum(b.total) + ' tokens' +
+            (b.cost > 0 ? ' · $' + Number(b.cost).toFixed(4) : '');
+        let inner;
+        if (val <= 0) {
+          inner = '<span class="tl-empty"></span>';
+        } else if (active) {
+          inner = '<span class="tl-seg ' + active.seg + '" style="height:' + px(val) + 'px"></span>';
+        } else {
+          inner = '<span class="tl-seg tl-output" style="height:' + px(b.output) + 'px"></span>' +
+            '<span class="tl-seg tl-input" style="height:' + px(b.input) + 'px"></span>' +
+            '<span class="tl-seg tl-cache-write" style="height:' + px(b.cacheWrite) + 'px"></span>' +
+            '<span class="tl-seg tl-cache-read" style="height:' + px(b.cacheRead) + 'px"></span>';
+        }
+        return '<div class="tl-bar">' +
+          '<span class="tl-tip">' + escHtml(tip) + '</span>' +
+          '<div class="tl-fill">' + inner + '</div>' +
+        '</div>';
+      }).join('');
+
+      const axis = buckets.length
+        ? '<div class="tl-axis"><span>' + escHtml(buckets[0].date.slice(5)) +
+          '</span><span>' + escHtml(buckets[buckets.length - 1].date.slice(5)) + '</span></div>'
+        : '';
+      const note = data.hasOlder
+        ? '<div class="tl-note">Showing last 14 days · earlier activity not shown</div>'
+        : '<div class="tl-note">Showing last 14 days</div>';
+      const peak = '<div class="tl-peak" style="bottom:180px"><span class="tl-peak-label">' +
+        fmtNum(max) + ' tokens</span></div>';
+      return cards + legend + '<div class="tl-chart">' + peak + bars + '</div>' + axis + note;
     }
 
     async function loadGlobalSettings() {
@@ -2469,6 +2742,72 @@ const adminViewStyles = `
     text-transform: uppercase; letter-spacing: 0.08em;
   }
   .usage-table code { font-size: 0.72rem; }
+
+  .timeline-controls {
+    display: flex; flex-wrap: wrap; gap: 18px; align-items: center; margin-bottom: 16px;
+  }
+  .timeline-controls label {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 0.76rem; color: var(--muted);
+  }
+  .timeline-controls select {
+    padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px;
+    background: #fff; color: var(--text); font-size: 0.8rem; max-width: 240px;
+  }
+  .tl-note { margin-top: 8px; font-size: 0.72rem; color: var(--subtle); }
+  .tl-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+  .tl-card { background: rgba(0,0,0,0.025); border-radius: 10px; padding: 10px 12px; }
+  .tl-card-label { font-size: 0.73rem; color: var(--muted); margin-bottom: 4px; }
+  .tl-card-value { font-size: 1.35rem; font-weight: 600; color: var(--text); }
+  .tl-legend { display: flex; gap: 16px; font-size: 0.73rem; color: var(--muted); margin-bottom: 10px; }
+  .tl-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .tl-legend-item { cursor: pointer; transition: opacity 100ms; }
+  .tl-legend-item:hover { text-decoration: underline; }
+  .tl-legend-item.active { color: var(--text); font-weight: 600; text-decoration: underline; }
+  .tl-legend-item.dim { opacity: 0.4; }
+  .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  .sw-cache-read { background: rgba(0,0,0,0.18); }
+  .sw-cache-write { background: #3b6fb0; }
+  .sw-input { background: var(--accent); }
+  .sw-output { background: var(--ok-text); }
+  .tl-chart {
+    position: relative;
+    display: flex; align-items: flex-end; gap: 6px;
+    height: 216px; border-bottom: 1px solid var(--border);
+  }
+  .tl-peak {
+    position: absolute; left: 0; right: 0; height: 0;
+    border-top: 1px dashed var(--accent); pointer-events: none;
+  }
+  .tl-peak-label {
+    position: absolute; left: 0; top: -15px;
+    font-size: 0.7rem; color: var(--accent); white-space: nowrap;
+  }
+  .tl-bar {
+    position: relative; flex: 1; min-width: 0; height: 180px;
+    display: flex; flex-direction: column; justify-content: flex-end;
+    border-radius: 6px 6px 0 0; transition: background 80ms ease;
+  }
+  .tl-bar:hover { background: rgba(0,0,0,0.06); }
+  .tl-bar:hover .tl-seg { opacity: 0.55; }
+  .tl-fill {
+    display: flex; flex-direction: column; justify-content: flex-end;
+    border-radius: 3px 3px 0 0; overflow: hidden;
+  }
+  .tl-tip {
+    position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+    margin-bottom: 6px; padding: 5px 9px; border-radius: 6px;
+    background: var(--text); color: #fafafa; font-size: 0.7rem; line-height: 1.35;
+    white-space: nowrap; opacity: 0; pointer-events: none; z-index: 5;
+  }
+  .tl-bar:hover .tl-tip { opacity: 1; }
+  .tl-seg { display: block; width: 100%; }
+  .tl-seg.tl-output { background: var(--ok-text); }
+  .tl-seg.tl-input { background: var(--accent); }
+  .tl-seg.tl-cache-write { background: #3b6fb0; }
+  .tl-seg.tl-cache-read { background: rgba(0,0,0,0.18); }
+  .tl-empty { display: block; width: 100%; height: 3px; background: var(--border); }
+  .tl-axis { display: flex; justify-content: space-between; margin-top: 6px; font-size: 0.7rem; color: var(--subtle); }
 
   .status-pill {
     display: inline-flex; padding: 2px 9px; border-radius: 999px;
