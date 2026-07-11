@@ -11,5 +11,6 @@ export type {
   MessagingInfo,
   PlatformName,
   PlatformNotifier,
+  PlatformReactor,
   RunningSession,
 } from "./types.js";

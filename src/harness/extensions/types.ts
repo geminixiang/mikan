@@ -163,6 +163,13 @@ export interface ExtensionHostServices {
   scheduleStore?: ExtensionScheduleStore;
   /** Post a message to a conversation without an agent run; enables `api.notify`. */
   postMessage?: (conversationId: string, text: string, platform?: string) => Promise<void>;
+  /** Add an emoji reaction to a message; enables `api.react`. */
+  addReaction?: (
+    conversationId: string,
+    messageTs: string,
+    emoji: string,
+    platform?: string,
+  ) => Promise<void>;
   /** Resolve read-only secrets for an extension slug; enables `api.secrets`. */
   resolveSecrets?: (slug: string) => Record<string, string>;
 }
@@ -246,6 +253,13 @@ export interface MikanExtensionApi {
    * Available when the embedder provides platform messaging.
    */
   notify(text: string): Promise<void>;
+  /**
+   * Add an emoji reaction to a message in this conversation. `messageTs` is
+   * the platform message id the extension read from an event; `emoji` is a
+   * short name without colons. Available when the embedder provides reaction
+   * support.
+   */
+  react(messageTs: string, emoji: string): Promise<void>;
 }
 
 export type MikanExtensionActivate = (api: MikanExtensionApi) => void | Promise<void>;

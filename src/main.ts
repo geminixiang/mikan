@@ -7,7 +7,7 @@ import { mkdirSync, statSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { fileURLToPath } from "url";
 import { dirname, join as pathJoin } from "path";
-import type { MessagingBot, PlatformNotifier } from "./adapter.js";
+import type { MessagingBot, PlatformNotifier, PlatformReactor } from "./adapter.js";
 import { DiscordMessagingBot } from "./adapters/discord/bot.js";
 import { TelegramMessagingBot } from "./adapters/telegram/bot.js";
 import { SlackMessagingBot as SlackMessagingBotClass } from "./adapters/slack/bot.js";
@@ -343,23 +343,38 @@ const bots: MessagingBot[] = [];
 const botsByPlatform: Record<string, MessagingBot> = {};
 
 /**
- * Extension `api.notify` backend: post into a conversation without an agent
- * run. Platform resolution mirrors event files — explicit platform, or the
- * sole running platform.
+ * Resolve which platform bot to use: an explicit platform, or the sole
+ * running one. Mirrors event-file platform resolution.
  */
-const platformNotifier: PlatformNotifier = async (conversationId, text, platform) => {
+function resolvePlatformBot(op: string, platform: string | undefined): [string, MessagingBot] {
   const available = Object.keys(botsByPlatform);
   const key = platform?.trim().toLowerCase() || (available.length === 1 ? available[0] : undefined);
   const bot = key ? botsByPlatform[key] : undefined;
   if (!bot) {
     throw new Error(
       platform
-        ? `notify: unknown platform '${platform}' (available: ${available.join(", ") || "none"})`
-        : `notify: multiple platforms active (${available.join(", ")}); specify platform`,
+        ? `${op}: unknown platform '${platform}' (available: ${available.join(", ") || "none"})`
+        : `${op}: multiple platforms active (${available.join(", ")}); specify platform`,
     );
   }
+  return [key!, bot];
+}
+
+/** Extension `api.notify` backend: post into a conversation without a run. */
+const platformNotifier: PlatformNotifier = async (conversationId, text, platform) => {
+  const [key, bot] = resolvePlatformBot("notify", platform);
   await bot.postMessage(conversationId, text);
   log.logInfo(`[notify] posted to ${key}/${conversationId} (${text.length} chars)`);
+};
+
+/** Extension `api.react` backend: add a reaction to a message. */
+const platformReactor: PlatformReactor = async (conversationId, messageTs, emoji, platform) => {
+  const [key, bot] = resolvePlatformBot("react", platform);
+  if (!bot.addReaction) {
+    throw new Error(`react: platform '${key}' does not support reactions`);
+  }
+  await bot.addReaction(conversationId, messageTs, emoji);
+  log.logInfo(`[react] :${emoji}: on ${key}/${conversationId}`);
 };
 
 const handler = createConversationRuntime({
@@ -372,6 +387,7 @@ const handler = createConversationRuntime({
   adminTokenStore,
   portalBaseUrl: portalBaseUrl(),
   platformNotifier,
+  platformReactor,
 });
 
 const sandboxDesc =

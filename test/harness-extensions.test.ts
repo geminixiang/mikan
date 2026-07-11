@@ -310,13 +310,36 @@ describe("loadExtensions v2 api", () => {
     expect(posts).toEqual([{ conversationId: "C123", text: "hello there" }]);
   });
 
-  test("service-less contexts surface informative errors for schedules and notify", async () => {
+  test("api.react adds a reaction to a message in the extension's conversation", async () => {
+    const reactions: Array<{ conversationId: string; messageTs: string; emoji: string }> = [];
+    writeProbeExtension(
+      'export default async function activate(api) { await api.react("1700000000.1", "eyes"); }',
+    );
+
+    const { errors } = await loadExtensions({
+      dirs: [dir],
+      context,
+      services: {
+        addReaction: async (conversationId, messageTs, emoji) => {
+          reactions.push({ conversationId, messageTs, emoji });
+        },
+      },
+    });
+    expect(errors).toHaveLength(0);
+    expect(reactions).toEqual([
+      { conversationId: "C123", messageTs: "1700000000.1", emoji: "eyes" },
+    ]);
+  });
+
+  test("service-less contexts surface informative errors for schedules, notify, react", async () => {
     const probe = writeProbeExtension(
       `export default async function activate(api) {
         const caught = [];
         try { await api.schedules.upsert("x", { type: "one-shot", at: "2026-01-01T00:00:00Z", text: "t" }); }
         catch (err) { caught.push(String(err)); }
         try { await api.notify("x"); }
+        catch (err) { caught.push(String(err)); }
+        try { await api.react("1700000000.1", "eyes"); }
         catch (err) { caught.push(String(err)); }
         report({ caught });
       }`,
@@ -327,6 +350,7 @@ describe("loadExtensions v2 api", () => {
     const { caught } = probe.read() as { caught: string[] };
     expect(caught[0]).toMatch(/schedule store/);
     expect(caught[1]).toMatch(/platform messaging/);
+    expect(caught[2]).toMatch(/reaction support/);
   });
 
   test("skills/ directory contributes inline skills", async () => {

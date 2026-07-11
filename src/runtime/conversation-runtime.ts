@@ -260,6 +260,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
           portalBaseUrl: this.options.portalBaseUrl,
         },
         this.options.platformNotifier,
+        this.options.platformReactor,
       ),
       stopRequested: false,
       lastAccessedAt: Date.now(),

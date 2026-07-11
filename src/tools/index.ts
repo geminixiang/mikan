@@ -7,6 +7,7 @@ import type { Executor, SandboxConfig } from "../sandbox/index.js";
 import { createBashTool } from "./bash.js";
 import { createEditTool } from "./edit.js";
 import { createEventTool, HostEventStore } from "./event.js";
+import { createReactTool } from "./react.js";
 import { createReadTool } from "./read.js";
 import { createSandboxTool } from "./sandbox.js";
 import { createWriteTool } from "./write.js";
@@ -21,6 +22,7 @@ export function createMikanTools(
 ): {
   tools: AgentTool<TSchema>[];
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
+  setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
   setEventContext: (context: {
     platform: string;
     conversationId: string;
@@ -30,6 +32,7 @@ export function createMikanTools(
   setSandboxContext: (context: { conversationId: string; userId: string }) => void;
 } {
   const { tool: attachTool, setUploadFunction } = createAttachTool();
+  const { tool: reactTool, setReactFunction } = createReactTool();
   const { tool: eventTool, setEventContext } = createEventTool(
     HostEventStore.fromWorkspaceDir(workspaceDir),
   );
@@ -45,8 +48,10 @@ export function createMikanTools(
       eventTool,
       sandboxTool,
       attachTool,
+      reactTool,
     ],
     setUploadFunction,
+    setReactFunction,
     setEventContext,
     setSandboxContext,
   };

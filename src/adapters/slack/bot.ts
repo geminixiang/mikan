@@ -232,6 +232,20 @@ export class SlackMessagingBot implements MessagingBot {
     });
   }
 
+  async addReaction(channel: string, messageTs: string, emoji: string): Promise<void> {
+    // Slack reaction names are colon-free short names; strip any wrapping colons.
+    const name = emoji.replace(/^:|:$/g, "");
+    await slackRetry(async () => {
+      try {
+        await this.webClient.reactions.add({ channel, timestamp: messageTs, name });
+      } catch (err) {
+        // Re-reacting with the same emoji is not an error worth surfacing.
+        if ((err as { data?: { error?: string } })?.data?.error === "already_reacted") return;
+        throw err;
+      }
+    });
+  }
+
   async postEphemeral(
     channel: string,
     user: string,

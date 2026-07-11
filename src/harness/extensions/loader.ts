@@ -354,6 +354,12 @@ function buildExtensionApi(params: {
       }
       await services.postMessage(conversationId, text);
     },
+    react: async (messageTs: string, emoji: string) => {
+      if (!services.addReaction) {
+        throw new Error("api.react is unavailable: this context provides no reaction support");
+      }
+      await services.addReaction(conversationId, messageTs, emoji);
+    },
   };
 }
 

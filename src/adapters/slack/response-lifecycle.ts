@@ -441,6 +441,12 @@ export function createSlackResponseContext({
       await slack.uploadFile(channelId, filePath, title, rootTs);
     },
 
+    react: async (emoji: string) => {
+      // React to the triggering message. Event runs have no real message ts.
+      if (eventFilename) return;
+      await slack.addReaction(channelId, event.ts, emoji);
+    },
+
     setWorking: async (working: boolean) => {
       await queueResponseOperation(
         "setWorking",

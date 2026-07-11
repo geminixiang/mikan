@@ -171,6 +171,16 @@ export class DiscordMessagingBot implements MessagingBot {
     await this.updateMessageRaw(channel, ts, text);
   }
 
+  async addReaction(channel: string, messageTs: string, emoji: string): Promise<void> {
+    // Discord uses Unicode emoji directly (e.g. "👀"); accept a bare name too
+    // but Slack-style short names won't resolve, so pass through as-is.
+    await discordRetry(async () => {
+      const ch = await this.fetchTextChannel(channel);
+      const msg = await ch.messages.fetch(messageTs);
+      await msg.react(emoji.replace(/^:|:$/g, ""));
+    });
+  }
+
   enqueueEvent(event: ConversationEvent): boolean {
     const conversationId = event.conversationId;
     const queue = this.getQueue(conversationId);

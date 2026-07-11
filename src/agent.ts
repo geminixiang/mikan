@@ -24,7 +24,7 @@ import type {
   MessagingInfo,
   PlatformName,
 } from "./adapter.js";
-import type { AgentEventPayload, MikanEvent, PlatformNotifier } from "./types.js";
+import type { AgentEventPayload, MikanEvent, PlatformNotifier, PlatformReactor } from "./types.js";
 import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import { resolveConversationSettings } from "./config.js";
 import { readEnv } from "./utils/env.js";
@@ -528,8 +528,9 @@ function buildExtensionHostServices(params: {
   workspaceDir: string;
   vaultManager?: VaultManager;
   platformNotifier?: PlatformNotifier;
+  platformReactor?: PlatformReactor;
 }): ExtensionHostServices {
-  const { workspaceDir, vaultManager, platformNotifier } = params;
+  const { workspaceDir, vaultManager, platformNotifier, platformReactor } = params;
   const eventStore = HostEventStore.fromWorkspaceDir(workspaceDir);
   return {
     stateDir: readEnv("STATE_DIR"),
@@ -547,6 +548,7 @@ function buildExtensionHostServices(params: {
         })),
     },
     ...(platformNotifier ? { postMessage: platformNotifier } : {}),
+    ...(platformReactor ? { addReaction: platformReactor } : {}),
     ...(vaultManager
       ? {
           resolveSecrets: (slug: string) => vaultManager.resolve(`extensions/${slug}`)?.env ?? {},
@@ -578,6 +580,7 @@ async function createConfiguredAgentSession(params: {
   models: MikanModels;
   vaultManager?: VaultManager;
   platformNotifier?: PlatformNotifier;
+  platformReactor?: PlatformReactor;
 }): Promise<ConfiguredAgentSession> {
   const {
     conversationId,
@@ -590,6 +593,7 @@ async function createConfiguredAgentSession(params: {
     models,
     vaultManager,
     platformNotifier,
+    platformReactor,
   } = params;
 
   // Host-only dirs under the state dir: extension code runs in the mikan
@@ -598,7 +602,12 @@ async function createConfiguredAgentSession(params: {
   const extensionsResult = await loadExtensions({
     dirs: defaultExtensionDirs(conversationId, readEnv("STATE_DIR")),
     context: { conversationId, workspaceDir, model, thinkingLevel },
-    services: buildExtensionHostServices({ workspaceDir, vaultManager, platformNotifier }),
+    services: buildExtensionHostServices({
+      workspaceDir,
+      vaultManager,
+      platformNotifier,
+      platformReactor,
+    }),
   });
   for (const err of extensionsResult.errors) {
     log.logWarning(`[${conversationId}] Extension load error: ${err.path}`, err.error);
@@ -1063,6 +1072,7 @@ async function prepareRunContext(params: {
   }) => void;
   setSandboxContext: (context: { conversationId: string; userId: string }) => void;
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
+  setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
   pathContext: RuntimePathContext;
 }): Promise<PreparedRunContext & { pathContext: RuntimePathContext }> {
   const {
@@ -1081,6 +1091,7 @@ async function prepareRunContext(params: {
     setEventContext,
     setSandboxContext,
     setUploadFunction,
+    setReactFunction,
   } = params;
   let pathContext = params.pathContext;
   const sessionConversation = message.sessionKey.split(":")[0];
@@ -1139,6 +1150,11 @@ async function prepareRunContext(params: {
     const hostPath = translateAttachPathToHost(filePath, pathContext);
     await responder.uploadFile(hostPath, title);
   });
+
+  // The react tool is available only when the responder supports reactions
+  // (interactive turns on platforms with reaction support); otherwise unset
+  // so the tool reports it is unavailable rather than silently no-op'ing.
+  setReactFunction(responder.react ? async (emoji: string) => responder.react!(emoji) : null);
 
   resetRunState(
     runState,
@@ -1546,6 +1562,7 @@ export async function createRunner(
     portalBaseUrl?: string;
   },
   platformNotifier?: PlatformNotifier,
+  platformReactor?: PlatformReactor,
 ): Promise<PiAgentWrapper> {
   const agentConfig = resolveConversationSettings(conversationDir);
 
@@ -1561,11 +1578,8 @@ export async function createRunner(
   let pathContext = getUnresolvedSandboxPathContext(sandboxConfig, workspaceBase);
 
   // Create tools (per-runner, with per-runner upload function setter)
-  const { tools, setUploadFunction, setEventContext, setSandboxContext } = createMikanTools(
-    executor,
-    workspaceDir,
-    { sandbox: sandboxConfig, provisioner },
-  );
+  const { tools, setUploadFunction, setReactFunction, setEventContext, setSandboxContext } =
+    createMikanTools(executor, workspaceDir, { sandbox: sandboxConfig, provisioner });
 
   const modelRegistry = MikanModels.create();
   if (modelRegistry.getError()) {
@@ -1617,6 +1631,7 @@ export async function createRunner(
     models: modelRegistry,
     vaultManager,
     platformNotifier,
+    platformReactor,
   });
 
   // Mutable per-run state - event handler references this
@@ -1655,6 +1670,7 @@ export async function createRunner(
         setEventContext,
         setSandboxContext,
         setUploadFunction,
+        setReactFunction,
         pathContext,
       });
       pathContext = prepared.pathContext;

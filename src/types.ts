@@ -41,6 +41,12 @@ export interface ConversationResponder {
   setTyping(isTyping: boolean): Promise<void>;
   setWorking(working: boolean): Promise<void>;
   uploadFile(filePath: string, title?: string): Promise<void>;
+  /**
+   * React to the message that triggered this run with an emoji short name
+   * (no colons). Optional: platforms/contexts without reaction support omit
+   * it, and callers must handle its absence.
+   */
+  react?(emoji: string): Promise<void>;
   deleteResponse(): Promise<void>;
 }
 
@@ -110,6 +116,12 @@ export interface MessagingBot {
   start(): Promise<void>;
   postMessage(channel: string, text: string): Promise<string>;
   updateMessage(channel: string, ts: string, text: string): Promise<void>;
+  /**
+   * Add an emoji reaction to a message. `emoji` is a platform-agnostic short
+   * name without colons (e.g. "eyes", "white_check_mark"). Optional so
+   * adapters adopt it incrementally; callers must handle its absence.
+   */
+  addReaction?(channel: string, messageTs: string, emoji: string): Promise<void>;
   enqueueEvent(event: ConversationEvent): boolean;
   getMessagingInfo(): MessagingInfo;
   postPrivate?(conversationId: string, userId: string, text: string): Promise<void>;
@@ -129,6 +141,17 @@ export interface MessagingBot {
 export type PlatformNotifier = (
   conversationId: string,
   text: string,
+  platform?: string,
+) => Promise<void>;
+
+/**
+ * Add an emoji reaction to a message without triggering an agent run. Backs
+ * extension `api.react`; implemented in main.ts over the platform bots.
+ */
+export type PlatformReactor = (
+  conversationId: string,
+  messageTs: string,
+  emoji: string,
   platform?: string,
 ) => Promise<void>;
 

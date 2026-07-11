@@ -118,6 +118,17 @@ export class TelegramMessagingBot implements MessagingBot {
     return String(result);
   }
 
+  async addReaction(channel: string, messageTs: string, emoji: string): Promise<void> {
+    // Telegram reactions are set via setMessageReaction with a Unicode emoji.
+    // Short names (Slack style) won't resolve; callers should pass an emoji.
+    const name = emoji.replace(/^:|:$/g, "");
+    await telegramRetry(async () => {
+      await this.client.api.setMessageReaction(parseInt(channel), parseInt(messageTs), [
+        { type: "emoji", emoji: name as never },
+      ]);
+    });
+  }
+
   async updateMessage(channel: string, ts: string, text: string): Promise<void> {
     return telegramRetry(async () => {
       try {

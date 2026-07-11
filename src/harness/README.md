@@ -168,6 +168,7 @@ harness 定義 service 介面（`ExtensionHostServices`），由 embedder 注入
 | ---------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
 | `api.schedules.upsert/delete/list` | 具名排程（cron `periodic` / `one-shot`），觸發自主 agent run | event 檔（`<workingDir>/events/ext.<slug>.<conv>.<name>.json`），EventsWatcher 熱載入、跨重啟持久 |
 | `api.notify(text)`                 | 直接發訊到本會話，不經 agent run                             | `main.ts` 的 `PlatformNotifier` → 平台 bot `postMessage`                                          |
+| `api.react(messageTs, emoji)`      | 對某則訊息點 emoji（ts 由 extension 從讀到的事件取得）       | `main.ts` 的 `PlatformReactor` → 平台 bot `addReaction`                                           |
 | `api.paths.dataDir`                | **本會話**的資料目錄（預設，隔離免費；首次存取時建立）       | `conversations/<id>/extension-data/<slug>/`                                                       |
 | `api.paths.sharedDataDir`          | 跨會話共享資料（**明確宣告**的多會話應用；自行分區）         | `global/extension-data/<slug>/`                                                                   |
 | `api.secrets.get/list`             | 唯讀 secrets                                                 | vault：`<stateDir>/vaults/extensions/<slug>/env`                                                  |
