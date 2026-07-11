@@ -25,7 +25,13 @@ import {
   loadGlobalSettings,
   MissingGlobalSettingsError,
 } from "./config.js";
-import { configureHttpDispatcher, parseHttpIdleTimeoutMs } from "./harness/index.js";
+import {
+  configureHttpDispatcher,
+  defaultAuthPath,
+  defaultModelsJsonPath,
+  parseHttpIdleTimeoutMs,
+} from "./harness/index.js";
+import { existsSync, readFileSync } from "fs";
 import { readEnv, setEnvAliases } from "./utils/env.js";
 import { ensureDirExists, isRecord, readJsonFileIfExists } from "./utils/file-guards.js";
 import {
@@ -190,7 +196,8 @@ try {
 
 // Global fetch: proxy support (HTTP_PROXY/HTTPS_PROXY/NO_PROXY) and idle
 // timeouts so a stalled LLM stream errors out instead of hanging a session.
-configureHttpDispatcher(parseHttpIdleTimeoutMs(readEnv("HTTP_IDLE_TIMEOUT")));
+const httpIdleTimeoutMs = parseHttpIdleTimeoutMs(readEnv("HTTP_IDLE_TIMEOUT"));
+configureHttpDispatcher(httpIdleTimeoutMs);
 
 // Handle --version
 if (parsedArgs.showVersion) {
@@ -352,6 +359,7 @@ const platformNotifier: PlatformNotifier = async (conversationId, text, platform
     );
   }
   await bot.postMessage(conversationId, text);
+  log.logInfo(`[notify] posted to ${key}/${conversationId} (${text.length} chars)`);
 };
 
 const handler = createConversationRuntime({
@@ -377,6 +385,42 @@ const sandboxDesc =
           ? `firecracker:${sandbox.vmId}`
           : `cloudflare:${sandbox.sandboxId}`;
 log.logStartup(workingDir, sandboxDesc);
+logHarnessStartupSummary();
+
+/**
+ * One-look confirmation of the harness runtime surface, aimed at upgrade
+ * verification: config moved from ~/.pi to ~/.mikan with no fallback, so a
+ * missing auth.json here is the first thing to check when runs fail.
+ */
+function logHarnessStartupSummary(): void {
+  const proxy =
+    process.env.HTTPS_PROXY ??
+    process.env.https_proxy ??
+    process.env.HTTP_PROXY ??
+    process.env.http_proxy;
+  log.logInfo(
+    `HTTP dispatcher: idle timeout ${httpIdleTimeoutMs}ms${proxy ? `, proxy ${proxy}` : ", no proxy"}`,
+  );
+
+  const authPath = defaultAuthPath();
+  if (existsSync(authPath)) {
+    try {
+      const providers = Object.keys(JSON.parse(readFileSync(authPath, "utf-8")) as object);
+      log.logInfo(`Harness auth: ${authPath} (providers: ${providers.join(", ") || "none"})`);
+    } catch {
+      log.logWarning(`Harness auth: ${authPath} exists but is not valid JSON`);
+    }
+  } else {
+    log.logInfo(`Harness auth: ${authPath} missing — provider keys come from env vars only`);
+  }
+
+  const modelsPath = defaultModelsJsonPath();
+  log.logInfo(
+    existsSync(modelsPath)
+      ? `Harness models.json: ${modelsPath}`
+      : `Harness models.json: none (${modelsPath}) — built-in providers only`,
+  );
+}
 
 if (hasSlack) {
   const slackMessagingBotToken = SLACK_BOT_TOKEN;
