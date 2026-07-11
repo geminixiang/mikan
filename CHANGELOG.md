@@ -9,6 +9,16 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.2]
+
+### Added
+
+- Add `/pi-extensions` to list global and conversation extensions, manifest metadata, and bundled skills without activating modules.
+
+### Tests
+
+- Add coverage for extension inventory discovery and command output.
+
 ## [1.0.0-beta.1]
 
 ### Fixed
