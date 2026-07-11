@@ -1,7 +1,11 @@
 # agent-pm — mikan extension 範例
 
-一個 follow-up 追蹤器：單一 `index.mjs`（約 200 行）、零 npm 依賴
-（儲存用 Node 內建 `node:sqlite`），示範 extension v1 + v2 的完整介面。
+一個 follow-up 追蹤器：TypeScript 單檔 `index.ts`（約 250 行）、零**執行期**
+依賴（儲存用 Node 內建 `node:sqlite`），示範 extension v1 + v2 的完整介面。
+
+型別來自 mikan 套件（dev 依賴），透過 `import type { MikanExtensionApi }
+from "@geminixiang/mikan"` 取得完整補全；由 jiti 載入，無需 build。進入點在
+`package.json` 的 `mikan.extensions` 宣告。
 
 ## 它做什麼
 
@@ -26,16 +30,22 @@
 
 ## 安裝
 
+用 `mikan ext`（會先驗證、裝進正確路徑、印出 slug 與資料位置）：
+
 ```sh
 # 只對單一會話生效（常見裝法）
-cp -r agent-pm ~/.mikan/conversations/<id>/extensions/
+mikan ext install ./agent-pm --conversation <id>
 
 # 或所有會話生效
-cp -r agent-pm ~/.mikan/global/extensions/
+mikan ext install ./agent-pm --global
 ```
 
-新的 harness instance 建立時會重新載入 extension（import 帶 cache-busting），
-編輯後不需重啟整個 mikan。
+裝完在該會話輸入 `/pi-new` 生效。編輯 `index.ts` 後，下一個 harness instance
+會重新載入（jiti 無快取），不需重啟 mikan。
+
+> 若要開發自己的 extension：`npm i -D @geminixiang/mikan` 取得型別，
+> `import type { MikanExtensionApi } from "@geminixiang/mikan"`，
+> 寫 `activate(api: MikanExtensionApi)` 即有完整補全。
 
 ## Secrets（本範例未用到，但可直接取用）
 

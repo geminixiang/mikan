@@ -1,0 +1,13 @@
+{
+  "name": "agent-pm",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@geminixiang/mikan": "*"
+  },
+  "mikan": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

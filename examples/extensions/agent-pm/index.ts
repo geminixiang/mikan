@@ -1,5 +1,5 @@
 /**
- * agent-pm — follow-up tracker as a mikan extension.
+ * agent-pm — follow-up tracker as a mikan extension (TypeScript).
  *
  * Demonstrates the extension surface end to end:
  *   v1  registerTool          `followup` tool the model calls to manage items
@@ -10,17 +10,40 @@
  *   v2  manifest.json         name/version/description
  *   v2  skills/               follow-up-triage SKILL.md, inlined into the prompt
  *
- * Zero npm dependencies: storage is node:sqlite (built into Node >= 22.5).
+ * Written in TypeScript and loaded via jiti — no build step. Types come from
+ * the mikan package (a dev dependency); storage is node:sqlite (Node >= 22.5),
+ * so there are no runtime npm dependencies.
  *
  * Install (one conversation — the common case):
- *   cp -r agent-pm ~/.mikan/conversations/<id>/extensions/
+ *   mikan ext install ./agent-pm --conversation <id>
  * Install (all conversations):
- *   cp -r agent-pm ~/.mikan/global/extensions/
+ *   mikan ext install ./agent-pm --global
  */
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import type { MikanExtensionApi } from "@geminixiang/mikan";
 
-function openDb(dataDir) {
+interface FollowupRow {
+  id: number;
+  conversation_id: string;
+  title: string;
+  note: string | null;
+  due: string | null;
+  status: "open" | "done" | "cancelled";
+  created_at: string;
+  closed_at: string | null;
+}
+
+interface FollowupParams {
+  action: "add" | "list" | "done" | "cancel" | "note" | "remind";
+  title?: string;
+  due?: string;
+  id?: number;
+  note?: string;
+  all?: boolean;
+}
+
+function openDb(dataDir: string): DatabaseSync {
   const db = new DatabaseSync(join(dataDir, "agent-pm.db"));
   db.exec(`
     CREATE TABLE IF NOT EXISTS followups (
@@ -39,11 +62,11 @@ function openDb(dataDir) {
   return db;
 }
 
-function today() {
+function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function formatItem(row) {
+function formatItem(row: FollowupRow): string {
   const due = row.due
     ? row.due < today()
       ? ` (due ${row.due} — OVERDUE)`
@@ -53,7 +76,11 @@ function formatItem(row) {
   return `#${row.id} [${row.status}] ${row.title}${due}${note}`;
 }
 
-/** Plain JSON Schema — no typebox import needed inside an extension. */
+/**
+ * Tool parameters are plain JSON Schema — extensions don't depend on typebox.
+ * registerTool types `parameters` as a typebox `TSchema`, so cast at the call
+ * site; the shape is validated by the agent runtime at call time.
+ */
 const followupSchema = {
   type: "object",
   properties: {
@@ -73,7 +100,7 @@ const followupSchema = {
   required: ["action"],
 };
 
-export default async function activate(api) {
+export default async function activate(api: MikanExtensionApi): Promise<void> {
   // Per-conversation storage (the default): each conversation gets its own
   // db, isolated for free. This is the common install — a follow-up tracker
   // for one channel/DM. If you instead want cross-conversation PM views
@@ -82,13 +109,13 @@ export default async function activate(api) {
   const db = openDb(api.paths.dataDir);
   const conversationId = api.context.conversationId;
 
-  const openItems = () =>
+  const openItems = (): FollowupRow[] =>
     db
       .prepare(
         `SELECT * FROM followups WHERE conversation_id = ? AND status = 'open'
          ORDER BY due IS NULL, due, id`,
       )
-      .all(conversationId);
+      .all(conversationId) as FollowupRow[];
 
   api.registerTool({
     name: "followup",
@@ -96,8 +123,10 @@ export default async function activate(api) {
     description:
       "Track follow-up items for this conversation: things promised, blocked, or to be revisited. " +
       "Add an item whenever the user or you commit to a future action; close it when resolved.",
-    parameters: followupSchema,
-    execute: async (_toolCallId, params) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- plain JSON Schema, see note above
+    parameters: followupSchema as any,
+    execute: async (_toolCallId: string, rawParams: unknown) => {
+      const params = rawParams as FollowupParams;
       switch (params.action) {
         case "add": {
           if (!params.title) throw new Error("add requires title");
@@ -122,11 +151,11 @@ export default async function activate(api) {
         }
         case "list": {
           const rows = params.all
-            ? db
+            ? (db
                 .prepare(
                   `SELECT * FROM followups WHERE conversation_id = ? ORDER BY status = 'open' DESC, due IS NULL, due, id`,
                 )
-                .all(conversationId)
+                .all(conversationId) as FollowupRow[])
             : openItems();
           const text = rows.length === 0 ? "No follow-ups." : rows.map(formatItem).join("\n");
           return { content: [{ type: "text", text }], details: { count: rows.length } };
@@ -151,7 +180,7 @@ export default async function activate(api) {
           if (params.id === undefined || !params.note) throw new Error("note requires id and note");
           const row = db
             .prepare(`SELECT note FROM followups WHERE id = ? AND conversation_id = ?`)
-            .get(params.id, conversationId);
+            .get(params.id, conversationId) as Pick<FollowupRow, "note"> | undefined;
           if (!row) throw new Error(`No follow-up #${params.id} in this conversation`);
           const merged = row.note ? `${row.note}\n${params.note}` : params.note;
           db.prepare(`UPDATE followups SET note = ? WHERE id = ?`).run(merged, params.id);
@@ -173,7 +202,7 @@ export default async function activate(api) {
           };
         }
         default:
-          throw new Error(`Unknown action: ${params.action}`);
+          throw new Error(`Unknown action: ${String(params.action)}`);
       }
     },
   });
@@ -209,7 +238,7 @@ export default async function activate(api) {
   } catch (err) {
     // Outside mikan (or in a context without an event store) the sweep is
     // simply unavailable; the tool and prompt injection still work.
-    api.log(`schedules unavailable, skipping daily sweep: ${err.message}`);
+    api.log(`schedules unavailable, skipping daily sweep: ${(err as Error).message}`);
   }
 
   api.log(`agent-pm ready (${openItems().length} open follow-ups for ${conversationId})`);
