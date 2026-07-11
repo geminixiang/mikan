@@ -37,6 +37,7 @@ Token 会以 `xapp-` 开头。
 - `im:history`
 - `im:read`
 - `im:write`
+- `reactions:write`
 - `users:read`
 
 接着将 app 安装或重新安装到你的 workspace，并把 bot token 储存为 `SLACK_BOT_TOKEN`。
@@ -80,6 +81,9 @@ Token 会以 `xoxb-` 开头。
 - `/pi-session` → session viewer
 - `/pi-model` → 切换此 conversation 的 LLM（`provider/model[:thinking]`，例如 `anthropic/claude-sonnet-4-6:off`）
 - `/pi-auto-reply` → 管理 group/channel auto-reply rules
+- `/pi-sandbox` → 查看或调整此 conversation 的 sandbox
+- `/pi-extensions` → 列出已安装的 extension
+- `/pi-admin` → 打开管理后台
 
 Slash commands 是可选的，因为文字指令在支援的情境中也可使用。请将 `stop` 保留为文字指令（`stop` 或 `/stop`），让 thread-local stop routing 能指向正确的 session。
 

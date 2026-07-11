@@ -37,6 +37,7 @@ Go to **OAuth & Permissions → Scopes → Bot Token Scopes** and add:
 - `im:history`
 - `im:read`
 - `im:write`
+- `reactions:write`
 - `users:read`
 
 Then install or reinstall the app to your workspace and store the bot token as `SLACK_BOT_TOKEN`.
@@ -80,6 +81,9 @@ The example manifest includes common control slash commands:
 - `/pi-session` → session viewer
 - `/pi-model` → switch this conversation's LLM (`provider/model[:thinking]`, for example `anthropic/claude-sonnet-4-6:off`)
 - `/pi-auto-reply` → manage group/channel auto-reply rules
+- `/pi-sandbox` → inspect or tune this conversation's sandbox
+- `/pi-extensions` → list installed extensions
+- `/pi-admin` → open the admin portal
 
 Slash commands are optional because text commands also work in supported contexts. Keep `stop` as a text command (`stop` or `/stop`) so thread-local stop routing can point at the correct session.
 

@@ -70,6 +70,7 @@
     "redirect_urls": ["https://localhost"],
     "scopes": {
       "bot": [
+        "reactions:write",
         "app_mentions:read",
         "assistant:write",
         "channels:history",
