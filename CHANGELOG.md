@@ -9,6 +9,17 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.1]
+
+### Fixed
+
+- Accept `maxOutputTokens` as an alias for `maxTokens` in custom model configuration.
+- Restore npm release automation with compatible Node.js and npm versions.
+
+### Tests
+
+- Add coverage for production-shaped custom model configuration.
+
 ## [1.0.0-beta.0]
 
 ### Added
