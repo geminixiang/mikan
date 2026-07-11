@@ -545,6 +545,19 @@ describe("ExtensionsCommandHandler", () => {
     expect(ctx.responder.responses[0]).toContain(join(stateDir, "extensions", "global"));
   });
 
+  test("warns about an index file at the scope root instead of listing it wrongly", async () => {
+    const convDir = join(stateDir, "extensions", "C123");
+    mkdirSync(convDir, { recursive: true });
+    // Mis-install: extension contents copied into the scope dir itself.
+    writeFileSync(join(convDir, "index.mjs"), "export default function activate() {}\n");
+
+    const ctx = buildContext({ commandText: "/pi-extensions", conversationId: "C123" });
+    expect(await handler.tryHandle(ctx)).toBe(true);
+    const text = ctx.responder.responses[0];
+    expect(text).toContain("位於範圍根目錄");
+    expect(text).toContain("具名子目錄");
+  });
+
   test("lists global and conversation extensions with manifest metadata and skills", async () => {
     // global: directory form with manifest + a bundled skill
     const globalExt = join(stateDir, "extensions", "global", "agent-pm");

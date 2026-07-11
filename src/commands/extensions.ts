@@ -1,4 +1,5 @@
-import { basename } from "node:path";
+import { existsSync } from "node:fs";
+import { basename, join } from "node:path";
 import { defaultExtensionDirs, listInstalledExtensions } from "../harness/index.js";
 import { readEnv } from "../utils/env.js";
 import { matchCommand } from "./parse.js";
@@ -24,7 +25,18 @@ export class ExtensionsCommandHandler implements CommandHandler {
     const dirs = defaultExtensionDirs(context.conversationId, readEnv("STATE_DIR"));
     const installed = listInstalledExtensions(dirs);
 
-    if (installed.length === 0) {
+    // A root-level index file means an extension's contents were copied into
+    // the scope directory itself; the loader skips it (the slug would
+    // degenerate to the scope name). Surface that here, not just in logs.
+    const misinstalled = dirs.filter((dir) =>
+      ["index.mjs", "index.js"].some((file) => existsSync(join(dir, file))),
+    );
+    const misinstallLines = misinstalled.map(
+      (dir) =>
+        `⚠️ \`${dir}/index.mjs\` 位於範圍根目錄，已被忽略 — 請移入具名子目錄（如 \`${dir}/my-ext/\`）。`,
+    );
+
+    if (installed.length === 0 && misinstallLines.length === 0) {
       await replyDiagnosticWithContext(
         context.responder,
         [
@@ -37,11 +49,12 @@ export class ExtensionsCommandHandler implements CommandHandler {
       return true;
     }
 
-    const lines = ["_Extensions_"];
+    const lines = ["_Extensions_", ...misinstallLines];
     for (const info of installed) {
       const scope = basename(info.dir) === "global" ? "global" : "this conversation";
       const version = info.version ? `@${info.version}` : "";
-      lines.push(`• *${info.name}*${version} — ${scope}`);
+      const slug = info.slug !== info.name ? ` (slug: ${info.slug})` : "";
+      lines.push(`• *${info.name}*${version} — ${scope}${slug}`);
       if (info.description) lines.push(`   ${info.description}`);
       if (info.skillNames.length > 0) lines.push(`   skills: ${info.skillNames.join(", ")}`);
     }

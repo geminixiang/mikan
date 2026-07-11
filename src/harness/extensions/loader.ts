@@ -123,6 +123,17 @@ function discoverExtensionEntrypoints(dir: string): string[] {
   const entrypoints: string[] = [];
   for (const name of readdirSync(dir).toSorted()) {
     if (name.startsWith(".")) continue;
+    if (/^index\.(mjs|js)$/.test(name)) {
+      // An index file at the scan root means the extension's contents were
+      // copied into the scope directory itself; the slug would degenerate to
+      // the scope name (e.g. the conversation id), mis-keying its data dir,
+      // secrets, and schedules. Require a named form instead.
+      log.logWarning(
+        `Ignoring extension index file at scope root: ${join(dir, name)}`,
+        "install into a named subdirectory (e.g. extensions/<scope>/my-ext/index.mjs)",
+      );
+      continue;
+    }
     const fullPath = join(dir, name);
     let stats;
     try {

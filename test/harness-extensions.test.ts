@@ -113,6 +113,16 @@ describe("loadExtensions", () => {
     expect(errors).toHaveLength(2);
   });
 
+  test("an index file at the scan root is skipped with no load error", async () => {
+    // Contents copied into the scope dir itself would make the slug
+    // degenerate to the scope name (e.g. the conversation id).
+    writeFileSync(join(dir, "index.mjs"), "export default function activate() {}\n");
+
+    const { extensions, errors } = await loadExtensions({ dirs: [dir], context });
+    expect(extensions).toHaveLength(0);
+    expect(errors).toHaveLength(0);
+  });
+
   test("missing directories are skipped", async () => {
     const { extensions, errors } = await loadExtensions({
       dirs: [join(dir, "missing")],
