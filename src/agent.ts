@@ -806,9 +806,9 @@ export function appendTriggerAttribution(
   if (!triggerAttribution) return text;
   const trimmed = text.trimEnd();
   const legacySuffix = `_Triggered by ${triggerAttribution}_`;
-  const suffix = sessionLink
-    ? `_Triggered by ${triggerAttribution} · session: ${sessionLink}_`
-    : legacySuffix;
+  // Slack mrkdwn italics cannot span a URL — a `_..._` wrapping a link renders
+  // the underscores literally. Keep the session link outside the italic span.
+  const suffix = sessionLink ? `${legacySuffix} · session: ${sessionLink}` : legacySuffix;
   if (trimmed.endsWith(suffix)) return text;
   const body = trimmed.endsWith(legacySuffix)
     ? trimmed.slice(0, -legacySuffix.length).trimEnd()

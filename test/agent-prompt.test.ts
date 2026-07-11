@@ -58,9 +58,9 @@ describe("append trigger attribution", () => {
     expect(appendTriggerAttribution(already, "[event: foo_bar.json]")).toBe(already);
   });
 
-  test("adds session link to event attribution", () => {
+  test("adds session link outside the italic span (Slack italics can't span URLs)", () => {
     expect(appendTriggerAttribution("Done.", "[event: daily]", "https://mikan/session?t=1")).toBe(
-      "Done.\n\n_Triggered by [event: daily] · session: https://mikan/session?t=1_",
+      "Done.\n\n_Triggered by [event: daily]_ · session: https://mikan/session?t=1",
     );
   });
 
@@ -71,7 +71,7 @@ describe("append trigger attribution", () => {
         "[event: daily]",
         "https://mikan/session?t=1",
       ),
-    ).toBe("Done.\n\n_Triggered by [event: daily] · session: https://mikan/session?t=1_");
+    ).toBe("Done.\n\n_Triggered by [event: daily]_ · session: https://mikan/session?t=1");
   });
 });
 
