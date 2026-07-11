@@ -1,6 +1,7 @@
 import { MikanModels } from "../harness/index.js";
 import { AdminCommandHandler } from "./admin.js";
 import { AutoReplyCommandHandler } from "./auto-reply.js";
+import { ExtensionsCommandHandler } from "./extensions.js";
 import { LoginCommandHandler } from "./login.js";
 import { ModelCommandHandler } from "./model.js";
 import { NewCommandHandler } from "./new.js";
@@ -17,6 +18,7 @@ export function defaultCommandHandlers(): CommandHandler[] {
     new AutoReplyCommandHandler(),
     new ModelCommandHandler(modelRegistry),
     new SandboxCommandHandler(),
+    new ExtensionsCommandHandler(),
     new NewCommandHandler(),
   ];
 }

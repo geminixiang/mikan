@@ -30,6 +30,7 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 | `model` / `/model` / `/pi-model provider/model[:thinking]` | 現在の会話で使う LLM を切り替えます。例: `/pi-model anthropic/claude-sonnet-4-6:off`。                                |
 | `auto-reply` / `/pi-auto-reply on\|off\|status`            | 現在の会話におけるグループ / チャンネルでの auto-reply を制御します。                                                 |
 | `stop` / `/stop`                                           | 現在の実行を停止します。Slack では、thread ローカルの stop ルーティングを正確に保つためテキスト指令を使ってください。 |
+| `/pi-extensions`                                           | この会話にインストールされている extension を一覧表示（global／会話スコープ、バージョン、同梱 skills）。              |
 | `/pi-sandbox`                                              | 管理対象 container の CPU / メモリ制限を表示、または一時的に引き上げます。                                            |
 
 <Aside type="tip" title="Slack ネイティブコマンド">

@@ -28,6 +28,7 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 | `model` / `/model` / `/pi-model provider/model[:thinking]` | Switch the LLM for the current conversation, for example `/pi-model anthropic/claude-sonnet-4-6:off`. |
 | `auto-reply` / `/pi-auto-reply on\|off\|status`            | Control auto-reply for the current group / channel.                                                   |
 | `stop` / `/stop`                                           | Stop the current run. On Slack, prefer the text command so thread-local stop routing stays accurate.  |
+| `/pi-extensions`                                           | List extensions installed for this conversation (global + conversation scope, versions, skills).      |
 | `/pi-sandbox`                                              | Show or temporarily boost CPU / memory limits for managed containers.                                 |
 
 <Aside type="tip" title="Slack native commands">

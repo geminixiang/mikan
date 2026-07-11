@@ -58,6 +58,45 @@ export function defaultExtensionDirs(
   return [join(stateDir, "extensions", "global"), join(stateDir, "extensions", conversationId)];
 }
 
+/** Discovery-only view of an installed extension (module is not imported). */
+export interface InstalledExtensionInfo {
+  /** Display name: manifest name, falling back to the slug. */
+  name: string;
+  slug: string;
+  path: string;
+  /** Scan directory the extension was found in. */
+  dir: string;
+  version?: string;
+  description?: string;
+  /** Names of skills shipped in the extension's skills/ directory. */
+  skillNames: string[];
+}
+
+/**
+ * List installed extensions without importing or activating them — safe for
+ * inventory surfaces (commands, portal). Activation side effects (schedule
+ * upserts, tool registration) only happen in {@link loadExtensions}.
+ */
+export function listInstalledExtensions(dirs: string[]): InstalledExtensionInfo[] {
+  const infos: InstalledExtensionInfo[] = [];
+  for (const dir of dirs) {
+    for (const entrypoint of discoverExtensionEntrypoints(dir)) {
+      const slug = extensionSlug(entrypoint);
+      const manifest = readManifest(entrypoint);
+      infos.push({
+        name: manifest.name ?? slug,
+        slug,
+        path: entrypoint,
+        dir,
+        version: manifest.version,
+        description: manifest.description,
+        skillNames: loadExtensionSkills(entrypoint, slug).map((skill) => skill.name),
+      });
+    }
+  }
+  return infos;
+}
+
 export interface LoadExtensionsOptions {
   /** Directories to scan for extensions. Missing directories are skipped. */
   dirs: string[];

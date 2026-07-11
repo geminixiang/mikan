@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingBot, ConversationResponder } from "../src/adapter.js";
 import { AdminCommandHandler } from "../src/commands/admin.js";
 import { AutoReplyCommandHandler } from "../src/commands/auto-reply.js";
+import { ExtensionsCommandHandler } from "../src/commands/extensions.js";
 import { conversationSettingsPath } from "../src/config.js";
 import { dispatchCommand } from "../src/commands/registry.js";
 import { LoginCommandHandler } from "../src/commands/login.js";
@@ -516,6 +517,69 @@ describe("LoginCommandHandler", () => {
 });
 
 // ── SandboxCommandHandler ───────────────────────────────────────────────────
+
+describe("ExtensionsCommandHandler", () => {
+  const handler = new ExtensionsCommandHandler();
+  let stateDir: string;
+
+  beforeEach(() => {
+    stateDir = join(tmpdir(), `cmd-ext-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(stateDir, { recursive: true });
+    process.env.MIKAN_STATE_DIR = stateDir;
+  });
+
+  afterEach(() => {
+    delete process.env.MIKAN_STATE_DIR;
+    rmSync(stateDir, { recursive: true, force: true });
+  });
+
+  test("ignores unrelated commands", async () => {
+    const ctx = buildContext({ commandText: "/pi-sandbox" });
+    expect(await handler.tryHandle(ctx)).toBe(false);
+  });
+
+  test("reports when nothing is installed", async () => {
+    const ctx = buildContext({ commandText: "/pi-extensions", conversationId: "C123" });
+    expect(await handler.tryHandle(ctx)).toBe(true);
+    expect(ctx.responder.responses[0]).toContain("沒有安裝任何 extension");
+    expect(ctx.responder.responses[0]).toContain(join(stateDir, "extensions", "global"));
+  });
+
+  test("lists global and conversation extensions with manifest metadata and skills", async () => {
+    // global: directory form with manifest + a bundled skill
+    const globalExt = join(stateDir, "extensions", "global", "agent-pm");
+    mkdirSync(join(globalExt, "skills", "triage"), { recursive: true });
+    writeFileSync(join(globalExt, "index.mjs"), "export default function activate() {}\n");
+    writeFileSync(
+      join(globalExt, "manifest.json"),
+      JSON.stringify({ name: "agent-pm", version: "0.2.0", description: "follow-ups" }),
+    );
+    writeFileSync(
+      join(globalExt, "skills", "triage", "SKILL.md"),
+      "---\nname: triage\ndescription: d\n---\nbody\n",
+    );
+    // conversation-scoped: bare file form
+    const convDir = join(stateDir, "extensions", "C123");
+    mkdirSync(convDir, { recursive: true });
+    writeFileSync(join(convDir, "audit.mjs"), "export default function activate() {}\n");
+    // side-effect canary: activation must NOT run during listing
+    writeFileSync(
+      join(convDir, "canary.mjs"),
+      `import { writeFileSync } from "node:fs"; export default function activate() { writeFileSync(${JSON.stringify(join(stateDir, "activated"))}, "x"); }\n`,
+    );
+
+    const ctx = buildContext({ commandText: "/pi-extensions", conversationId: "C123" });
+    expect(await handler.tryHandle(ctx)).toBe(true);
+    const text = ctx.responder.responses[0];
+    expect(text).toContain("*agent-pm*@0.2.0 — global");
+    expect(text).toContain("follow-ups");
+    expect(text).toContain("skills: triage");
+    expect(text).toContain("*audit* — this conversation");
+    expect(text).toContain("/pi-new");
+    // discovery-only: the canary's activate must not have executed
+    expect(existsSync(join(stateDir, "activated"))).toBe(false);
+  });
+});
 
 describe("SandboxCommandHandler", () => {
   const handler = new SandboxCommandHandler();

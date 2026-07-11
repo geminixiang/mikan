@@ -42,7 +42,9 @@ export { ExtensionRegistry } from "./extensions/registry.js";
 export {
   defaultExtensionDirs,
   extensionSlug,
+  listInstalledExtensions,
   loadExtensions,
+  type InstalledExtensionInfo,
   type LoadExtensionsOptions,
   type LoadExtensionsResult,
 } from "./extensions/loader.js";

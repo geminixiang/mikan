@@ -27,6 +27,7 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 | `model` / `/model` / `/pi-model provider/model[:thinking]` | 切換目前對話使用的 LLM，例如 `/pi-model anthropic/claude-sonnet-4-6:off`。      |
 | `auto-reply` / `/pi-auto-reply on\|off\|status`            | 控制目前對話在群組 / 頻道中的 auto-reply。                                      |
 | `stop` / `/stop`                                           | 停止目前執行。在 Slack 上，請使用文字指令，確保討論串本地的 stop 路由保持準確。 |
+| `/pi-extensions`                                           | 列出此會話已安裝的 extension（global 與會話範圍、版本、隨附 skills）。          |
 | `/pi-sandbox`                                              | 顯示或暫時提升受管理容器的 CPU / 記憶體限制。                                   |
 
 <Aside type="tip" title="Slack 原生指令">
