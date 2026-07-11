@@ -3,7 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
+  assertStateDirOutsideWorkspace,
+  conversationSettingsPath,
   createGlobalSettingsFile,
+  isPathInside,
   loadGlobalSettings,
   resolveConversationSettings,
   resolveSentryDsn,
@@ -186,7 +189,10 @@ describe("loadGlobalSettings", () => {
     expect(config.provider).toBe("openai");
     expect(config.model).toBe("gpt-4o");
     expect(config.thinkingLevel).toBe("low");
-    expect(JSON.parse(readFileSync(join(conversationDir, "settings.json"), "utf-8"))).toEqual({
+    // Settings are host-authoritative: stored under the state dir, never in
+    // the (sandbox-mounted) conversation dir.
+    expect(existsSync(join(conversationDir, "settings.json"))).toBe(false);
+    expect(JSON.parse(readFileSync(conversationSettingsPath(conversationDir), "utf-8"))).toEqual({
       llm: { provider: "openai", model: "gpt-4o", thinkingLevel: "low" },
     });
   });
@@ -198,7 +204,7 @@ describe("loadGlobalSettings", () => {
 
     const config = resolveConversationSettings(conversationDir);
     expect(config.sandboxImageWorkspaceMount).toBe("full");
-    expect(JSON.parse(readFileSync(join(conversationDir, "settings.json"), "utf-8"))).toEqual({
+    expect(JSON.parse(readFileSync(conversationSettingsPath(conversationDir), "utf-8"))).toEqual({
       sandbox: { image: { workspaceMount: "full" } },
     });
   });
@@ -210,9 +216,64 @@ describe("loadGlobalSettings", () => {
 
     const config = resolveConversationSettings(conversationDir);
     expect(config.slack?.replyMode).toBe("thread");
-    expect(JSON.parse(readFileSync(join(conversationDir, "settings.json"), "utf-8"))).toEqual({
+    expect(JSON.parse(readFileSync(conversationSettingsPath(conversationDir), "utf-8"))).toEqual({
       slack: { replyMode: "thread" },
     });
+  });
+
+  test("migrates a legacy conversation settings.json into the state dir once", () => {
+    createGlobalSettingsFile(stateDir);
+    const conversationDir = join(stateDir, "workspace", "C123");
+    mkdirSync(conversationDir, { recursive: true });
+    const legacyPath = join(conversationDir, "settings.json");
+    writeFileSync(legacyPath, JSON.stringify({ sandbox: { image: { workspaceMount: "full" } } }));
+
+    const config = resolveConversationSettings(conversationDir);
+    expect(config.sandboxImageWorkspaceMount).toBe("full");
+    // Legacy file was moved out of the (sandbox-mounted) conversation dir.
+    expect(existsSync(legacyPath)).toBe(false);
+    expect(existsSync(conversationSettingsPath(conversationDir))).toBe(true);
+  });
+
+  test("a legacy settings.json appearing after migration is never read (sandbox plant)", () => {
+    createGlobalSettingsFile(stateDir);
+    const conversationDir = join(stateDir, "workspace", "C123");
+    mkdirSync(conversationDir, { recursive: true });
+
+    // First access with no legacy file writes the migration marker.
+    // (Global onboard settings default the mount mode to "private".)
+    expect(resolveConversationSettings(conversationDir).sandboxImageWorkspaceMount).toBe("private");
+
+    // An agent inside the sandbox plants a legacy settings.json afterwards,
+    // trying to flip its own mount mode to full. It must stay ignored.
+    writeFileSync(
+      join(conversationDir, "settings.json"),
+      JSON.stringify({ sandbox: { image: { workspaceMount: "full" } } }),
+    );
+    expect(resolveConversationSettings(conversationDir).sandboxImageWorkspaceMount).toBe("private");
+    // And it is not deleted either: only pre-migration files are moved.
+    expect(existsSync(join(conversationDir, "settings.json"))).toBe(true);
+  });
+});
+
+describe("state dir placement guard", () => {
+  test("isPathInside is lexical and slash-aware", () => {
+    expect(isPathInside("/work/state", "/work")).toBe(true);
+    expect(isPathInside("/work", "/work")).toBe(true);
+    expect(isPathInside("/work-state", "/work")).toBe(false);
+    expect(isPathInside("/elsewhere", "/work")).toBe(false);
+  });
+
+  test("throws under sandboxed modes when state dir is inside the working dir", () => {
+    expect(() => assertStateDirOutsideWorkspace("/work/.mikan", "/work", "image")).toThrow(
+      /must not be inside the working directory/,
+    );
+    expect(() => assertStateDirOutsideWorkspace("/work/.mikan", "/work", "container")).toThrow();
+  });
+
+  test("host mode only warns; disjoint paths always pass", () => {
+    expect(() => assertStateDirOutsideWorkspace("/work/.mikan", "/work", "host")).not.toThrow();
+    expect(() => assertStateDirOutsideWorkspace("/home/u/.mikan", "/work", "image")).not.toThrow();
   });
 });
 

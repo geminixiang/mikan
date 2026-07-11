@@ -171,6 +171,9 @@ harness 定義 service 介面（`ExtensionHostServices`），由 embedder 注入
 
 排程的 `text` 是自主 run 的完整任務描述（不繼承對話歷史，需自包含）；
 多平台同時運行時 `notify` / 排程需指明 `platform`，單平台自動推定。
+注意：排程檔落在 events 目錄（sandbox 掛載、agent 可寫），slug 前綴的
+歸屬是**合作性**約定而非安全邊界 — 排程 text 對 agent 可見，勿放 secrets。
+完整的 host/sandbox 路徑邊界地圖見 `src/sandbox/README.md`。
 
 完整範例見 `examples/extensions/agent-pm/`：約 200 行的 follow-up
 追蹤器（sqlite、每日逾期掃描排程、主動提醒、隨附 skill），即 extension

@@ -20,6 +20,7 @@ import { InMemoryLinkTokenStore } from "./web/login/store.js";
 import { InMemorySessionViewTokenStore } from "./web/session-view/store.js";
 import { DockerContainerManager } from "./provisioner.js";
 import {
+  assertStateDirOutsideWorkspace,
   createGlobalSettingsFile,
   loadGlobalSettings,
   MissingGlobalSettingsError,
@@ -237,6 +238,11 @@ const { workingDir, sandbox } = { workingDir: parsedArgs.workingDir, sandbox: pa
 const stateDir = parsedArgs.stateDir ?? join(homedir(), ".mikan");
 setEnvAliases("STATE_DIR", stateDir);
 ensureSecureStateDir(stateDir);
+try {
+  assertStateDirOutsideWorkspace(stateDir, workingDir, sandbox.type);
+} catch (error) {
+  handleStartupError(error);
+}
 
 // Validate platform tokens
 const hasSlack = !!(SLACK_APP_TOKEN && SLACK_BOT_TOKEN);

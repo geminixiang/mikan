@@ -7,6 +7,12 @@ import { reportUserFacingError } from "../observability/sentry.js";
 
 const PRIVATE_DIR_MODE = 0o700;
 const SHARED_VAULT_DIR = "shared";
+/**
+ * Top-level vault namespaces that are not user vaults: `shared/<name>` holds
+ * shared login profiles, `extensions/<slug>` holds extension secrets (read
+ * host-side via the harness `api.secrets`, never mounted into sandboxes).
+ */
+const RESERVED_VAULT_DIRS = new Set([SHARED_VAULT_DIR, "extensions"]);
 
 export function normalizeSharedVaultName(name: string): string | undefined {
   const trimmed = name.trim();
@@ -140,7 +146,7 @@ export class FileVaultManager implements VaultManager {
     if (!existsSync(this.vaultsDir)) return [];
     const keys = new Set<string>();
     for (const entry of readdirSync(this.vaultsDir, { withFileTypes: true })) {
-      if (entry.isDirectory()) keys.add(entry.name);
+      if (entry.isDirectory() && !RESERVED_VAULT_DIRS.has(entry.name)) keys.add(entry.name);
     }
     return Array.from(keys, (key) => this.buildResolved(key));
   }

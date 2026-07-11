@@ -248,7 +248,11 @@ function listConversationDirs(workingDir: string): string[] {
       const dir = join(workingDir, name);
       try {
         const items = readdirSync(dir);
-        return items.some((item) => SETTINGS_FILES.has(item) || item.endsWith(".jsonl"));
+        // Conversation settings migrated to the state dir, so a sessions/
+        // subdir is the primary marker for existing conversation dirs.
+        return items.some(
+          (item) => item === "sessions" || SETTINGS_FILES.has(item) || item.endsWith(".jsonl"),
+        );
       } catch {
         return false;
       }

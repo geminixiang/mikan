@@ -1,6 +1,10 @@
 import { existsSync } from "fs";
 import { join } from "path";
-import { loadGlobalSettings, resolveConversationSettings } from "./config.js";
+import {
+  conversationSettingsPath,
+  loadGlobalSettings,
+  resolveConversationSettings,
+} from "./config.js";
 import { ensureDirExists, isRecord, readJsonFileIfExists } from "./utils/file-guards.js";
 import { DockerContainerManager, type ContainerMount } from "./provisioner.js";
 import { createExecutor, type Executor, type SandboxConfig } from "./sandbox/index.js";
@@ -29,8 +33,7 @@ export function readConversationWorkspaceMountMode(
       "Falling back while resolving conversation workspace mount",
       err instanceof Error ? err.message : String(err),
     );
-    const conversationSettingsPath = join(conversationDir, "settings.json");
-    const raw = readConversationSettingsFallback(conversationSettingsPath);
+    const raw = readConversationSettingsFallback(conversationSettingsPath(conversationDir));
     return raw?.sandbox?.image?.workspaceMount ?? globalDefault;
   }
 }
