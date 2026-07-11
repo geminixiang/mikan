@@ -44,6 +44,8 @@ export {
   extensionSlug,
   listInstalledExtensions,
   loadExtensions,
+  validateExtension,
+  type ExtensionValidation,
   type InstalledExtensionInfo,
   type LoadExtensionsOptions,
   type LoadExtensionsResult,

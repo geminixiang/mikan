@@ -12,18 +12,20 @@
  * under mikan's state dir.
  *
  * Directories are scanned in order; all discovered extensions activate.
- * Accepted layouts:
+ * Accepted layouts (entrypoint may be .mjs/.js/.ts/.mts — loaded via jiti):
  *
- * - `extensions/<name>.mjs` / `extensions/<name>.js`
- * - `extensions/<name>/index.mjs` / `extensions/<name>/index.js`
+ * - `extensions/<name>.<ext>`                     (bare file)
+ * - `extensions/<name>/index.<ext>`               (directory + index)
+ * - `extensions/<name>/package.json`              (mikan.extensions entrypoint;
+ *   may carry npm dependencies in node_modules)
  *
- * Modules are imported with a cache-busting query so edited extensions are
- * picked up when a new harness instance is created for a conversation.
+ * Modules are imported with a fresh jiti instance (no cache) so edited
+ * extensions are picked up when a new harness instance is created.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "fs";
 import { homedir } from "os";
 import { basename, dirname, join } from "path";
-import { pathToFileURL } from "url";
+import { createJiti } from "jiti";
 import type { AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import * as log from "../../log.js";
@@ -42,7 +44,20 @@ import type {
   MikanExtensionModule,
 } from "./types.js";
 
-const EXTENSION_FILE_PATTERN = /\.(mjs|js)$/;
+const EXTENSION_FILE_PATTERN = /\.(mjs|js|ts|mts)$/;
+const INDEX_FILE_PATTERN = /^index\.(mjs|js|ts|mts)$/;
+const INDEX_CANDIDATES = ["index.mjs", "index.js", "index.ts", "index.mts"];
+
+/**
+ * Import an extension entrypoint through jiti so it can be TypeScript and can
+ * use node_modules dependencies, transparently compiling on the fly. A fresh
+ * jiti instance with caching disabled is used per load so edited extensions
+ * are picked up when a new harness instance is created for a conversation.
+ */
+async function importExtensionModule(entrypoint: string): Promise<unknown> {
+  const jiti = createJiti(import.meta.url, { moduleCache: false, fsCache: false });
+  return jiti.import(entrypoint);
+}
 
 /**
  * Canonical host-only extension code directories for a conversation, in load
@@ -83,9 +98,9 @@ export interface InstalledExtensionInfo {
 export function listInstalledExtensions(dirs: string[]): InstalledExtensionInfo[] {
   const infos: InstalledExtensionInfo[] = [];
   for (const dir of dirs) {
-    for (const entrypoint of discoverExtensionEntrypoints(dir)) {
-      const slug = extensionSlug(entrypoint);
-      const manifest = readManifest(entrypoint);
+    for (const { entrypoint, rootDir } of discoverExtensionEntrypoints(dir)) {
+      const slug = slugForRoot(rootDir);
+      const manifest = readManifest(rootDir);
       infos.push({
         name: manifest.name ?? slug,
         slug,
@@ -93,7 +108,7 @@ export function listInstalledExtensions(dirs: string[]): InstalledExtensionInfo[
         dir,
         version: manifest.version,
         description: manifest.description,
-        skillNames: loadExtensionSkills(entrypoint, slug).map((skill) => skill.name),
+        skillNames: loadExtensionSkills(rootDir, slug).map((skill) => skill.name),
       });
     }
   }
@@ -121,12 +136,22 @@ export interface LoadExtensionsResult {
   skills: MikanSkill[];
 }
 
-function discoverExtensionEntrypoints(dir: string): string[] {
+/**
+ * A discovered extension: its entrypoint (module to import) and root dir
+ * (used for slug, manifest.json, and skills/ — which sit at the extension
+ * root, not necessarily next to a nested entrypoint).
+ */
+interface DiscoveredExtension {
+  entrypoint: string;
+  rootDir: string;
+}
+
+function discoverExtensionEntrypoints(dir: string): DiscoveredExtension[] {
   if (!existsSync(dir)) return [];
-  const entrypoints: string[] = [];
+  const found: DiscoveredExtension[] = [];
   for (const name of readdirSync(dir).toSorted()) {
     if (name.startsWith(".")) continue;
-    if (/^index\.(mjs|js)$/.test(name)) {
+    if (INDEX_FILE_PATTERN.test(name)) {
       // An index file at the scan root means the extension's contents were
       // copied into the scope directory itself; the slug would degenerate to
       // the scope name (e.g. the conversation id), mis-keying its data dir,
@@ -145,39 +170,89 @@ function discoverExtensionEntrypoints(dir: string): string[] {
       continue;
     }
     if (stats.isFile() && EXTENSION_FILE_PATTERN.test(name)) {
-      entrypoints.push(fullPath);
+      // Bare-file form: the file is both entrypoint and (its own) root.
+      found.push({ entrypoint: fullPath, rootDir: fullPath });
       continue;
     }
     if (stats.isDirectory()) {
-      for (const candidate of ["index.mjs", "index.js"]) {
-        const indexPath = join(fullPath, candidate);
-        if (existsSync(indexPath)) {
-          entrypoints.push(indexPath);
-          break;
-        }
-      }
+      const entrypoint = resolveDirectoryEntrypoint(fullPath);
+      if (entrypoint) found.push({ entrypoint, rootDir: fullPath });
     }
   }
-  return entrypoints;
+  return found;
 }
 
 /**
- * Filesystem-safe identifier for an extension, derived from its install
- * location (directory name for `<name>/index.mjs`, file basename otherwise).
- * The slug keys the extension's data dir, secrets vault, and schedule
- * ownership — installing the same extension globally and per-conversation
- * shares one slug and therefore one data dir.
+ * Resolve a directory-form extension's entrypoint. A `package.json` with a
+ * `mikan.extensions` array (first entry, relative to the dir) wins — this is
+ * how an extension declares a TypeScript entry and pulls in npm dependencies.
+ * Otherwise fall back to an `index.{mjs,js,ts,mts}` file. Returns undefined
+ * when neither is present.
  */
-export function extensionSlug(entrypoint: string): string {
-  const base = /^index\.(mjs|js)$/.test(basename(entrypoint))
-    ? basename(dirname(entrypoint))
-    : basename(entrypoint).replace(EXTENSION_FILE_PATTERN, "");
+function resolveDirectoryEntrypoint(dir: string): string | undefined {
+  const declared = readMikanManifestEntrypoints(dir)[0];
+  if (declared) {
+    const resolved = join(dir, declared);
+    if (existsSync(resolved)) return resolved;
+    log.logWarning(
+      `Extension package.json declares a missing entrypoint: ${resolved}`,
+      "falling back to an index file",
+    );
+  }
+  for (const candidate of INDEX_CANDIDATES) {
+    const indexPath = join(dir, candidate);
+    if (existsSync(indexPath)) return indexPath;
+  }
+  return undefined;
+}
+
+/** Read the `mikan.extensions` entrypoint list from a directory's package.json. */
+function readMikanManifestEntrypoints(dir: string): string[] {
+  const packageJsonPath = join(dir, "package.json");
+  if (!existsSync(packageJsonPath)) return [];
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
+    const mikan = (parsed as { mikan?: { extensions?: unknown } })?.mikan;
+    const entries = mikan?.extensions;
+    if (!Array.isArray(entries)) return [];
+    return entries.filter((entry): entry is string => typeof entry === "string");
+  } catch (err) {
+    log.logWarning(`Ignoring malformed package.json: ${packageJsonPath}`, String(err));
+    return [];
+  }
+}
+
+function sanitizeSlug(base: string): string {
   const slug = base
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 64);
   return slug || "extension";
+}
+
+/**
+ * Filesystem-safe identifier for an extension, derived from its install
+ * location: the directory name for a directory-form extension, or the file
+ * basename for a bare file. The slug keys the extension's data dir, secrets
+ * vault, and schedule ownership — installing the same extension globally and
+ * per-conversation shares one slug and therefore one shared data dir.
+ */
+export function extensionSlug(entrypoint: string): string {
+  // Bare-file form (rootDir === entrypoint, a *.mjs/.ts file) → file basename.
+  // Directory form → directory name. Detect the directory form structurally:
+  // an entrypoint whose parent holds a package.json or is an index file.
+  if (INDEX_FILE_PATTERN.test(basename(entrypoint))) {
+    return sanitizeSlug(basename(dirname(entrypoint)));
+  }
+  return sanitizeSlug(basename(entrypoint).replace(EXTENSION_FILE_PATTERN, ""));
+}
+
+/** Slug from a discovered extension's root dir (directory or bare file path). */
+function slugForRoot(rootDir: string): string {
+  return EXTENSION_FILE_PATTERN.test(basename(rootDir))
+    ? sanitizeSlug(basename(rootDir).replace(EXTENSION_FILE_PATTERN, ""))
+    : sanitizeSlug(basename(rootDir));
 }
 
 /** Sanitize an extension-chosen schedule name into a filename segment. */
@@ -191,10 +266,11 @@ function scheduleNameSegment(name: string): string {
   return segment;
 }
 
-/** Read `manifest.json` next to a directory-form extension's entrypoint. */
-function readManifest(entrypoint: string): ExtensionManifest {
-  if (!/^index\.(mjs|js)$/.test(basename(entrypoint))) return {};
-  const manifestPath = join(dirname(entrypoint), "manifest.json");
+/** Read `manifest.json` at a directory-form extension's root. */
+function readManifest(rootDir: string): ExtensionManifest {
+  // Bare-file extensions (rootDir is a *.mjs/.ts file) have no manifest.
+  if (EXTENSION_FILE_PATTERN.test(basename(rootDir))) return {};
+  const manifestPath = join(rootDir, "manifest.json");
   if (!existsSync(manifestPath)) return {};
   try {
     const parsed: unknown = JSON.parse(readFileSync(manifestPath, "utf-8"));
@@ -216,9 +292,10 @@ function readManifest(entrypoint: string): ExtensionManifest {
  * Marked inline: extension files live under the host-only state dir, which
  * sandbox containers cannot read, so skill bodies must ride in the prompt.
  */
-function loadExtensionSkills(entrypoint: string, slug: string): MikanSkill[] {
-  if (!/^index\.(mjs|js)$/.test(basename(entrypoint))) return [];
-  const skillsDir = join(dirname(entrypoint), "skills");
+function loadExtensionSkills(rootDir: string, slug: string): MikanSkill[] {
+  // Bare-file extensions (rootDir is a *.mjs/.ts file) ship no skills.
+  if (EXTENSION_FILE_PATTERN.test(basename(rootDir))) return [];
+  const skillsDir = join(rootDir, "skills");
   if (!existsSync(skillsDir)) return [];
   const result = loadSkillsFromDir({ dir: skillsDir, source: `extension:${slug}` });
   for (const diagnostic of result.diagnostics) {
@@ -397,10 +474,9 @@ export async function loadExtensions(
   const services = options.services ?? {};
 
   for (const dir of options.dirs) {
-    for (const entrypoint of discoverExtensionEntrypoints(dir)) {
+    for (const { entrypoint, rootDir } of discoverExtensionEntrypoints(dir)) {
       try {
-        const moduleUrl = `${pathToFileURL(entrypoint).href}?t=${Date.now()}`;
-        const moduleExports: unknown = await import(moduleUrl);
+        const moduleExports: unknown = await importExtensionModule(entrypoint);
         const extension = resolveActivate(moduleExports);
         if (!extension) {
           errors.push({
@@ -409,8 +485,8 @@ export async function loadExtensions(
           });
           continue;
         }
-        const slug = extensionSlug(entrypoint);
-        const manifest = readManifest(entrypoint);
+        const slug = slugForRoot(rootDir);
+        const manifest = readManifest(rootDir);
         const name = manifest.name ?? extension.name ?? slug;
         const api = buildExtensionApi({
           name,
@@ -420,7 +496,7 @@ export async function loadExtensions(
           services,
         });
         await extension.activate(api);
-        const extensionSkills = loadExtensionSkills(entrypoint, slug);
+        const extensionSkills = loadExtensionSkills(rootDir, slug);
         skills.push(...extensionSkills);
         extensions.push({
           name,
@@ -440,4 +516,84 @@ export async function loadExtensions(
   }
 
   return { registry, extensions, errors, skills };
+}
+
+export interface ExtensionValidation {
+  ok: boolean;
+  /** Slug the extension would install as (from the source dir/file name). */
+  slug: string;
+  /** Display name (manifest name, else slug). */
+  name: string;
+  version?: string;
+  description?: string;
+  /** Resolved entrypoint that would be imported. */
+  entrypoint?: string;
+  /** Skill names shipped alongside the extension. */
+  skillNames: string[];
+  errors: string[];
+  warnings: string[];
+}
+
+/**
+ * Validate an extension source path (a directory or a single file) WITHOUT
+ * activating it: resolves the entrypoint (package.json `mikan.extensions`,
+ * index file, or the file itself), imports it, and checks it exports an
+ * `activate` function. Used by `mikan ext install` as a preflight and by
+ * `mikan ext validate`. Importing runs top-level module code but not
+ * `activate`, so there are no schedule/tool side effects.
+ */
+export async function validateExtension(sourcePath: string): Promise<ExtensionValidation> {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const rootDir = sourcePath.replace(/[/\\]+$/, "");
+  const base = basename(rootDir);
+
+  if (INDEX_FILE_PATTERN.test(base)) {
+    warnings.push(
+      "Entry is a bare index file; install into a named directory so the slug is stable.",
+    );
+  }
+
+  let entrypoint: string | undefined;
+  if (!existsSync(rootDir)) {
+    errors.push(`Path does not exist: ${rootDir}`);
+  } else if (statSync(rootDir).isDirectory()) {
+    entrypoint = resolveDirectoryEntrypoint(rootDir);
+    if (!entrypoint) {
+      errors.push(
+        "No entrypoint found: expected package.json with a mikan.extensions entry, or an index.{mjs,js,ts,mts}.",
+      );
+    }
+  } else if (EXTENSION_FILE_PATTERN.test(base)) {
+    entrypoint = rootDir;
+  } else {
+    errors.push(`Not an extension file (expected .mjs/.js/.ts/.mts): ${rootDir}`);
+  }
+
+  const slug = slugForRoot(rootDir);
+  const manifest = readManifest(rootDir);
+  const skillNames = loadExtensionSkills(rootDir, slug).map((skill) => skill.name);
+
+  if (entrypoint) {
+    try {
+      const moduleExports: unknown = await importExtensionModule(entrypoint);
+      if (!resolveActivate(moduleExports)) {
+        errors.push("Module does not export an activate function (default or named).");
+      }
+    } catch (err) {
+      errors.push(`Failed to import: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  return {
+    ok: errors.length === 0,
+    slug,
+    name: manifest.name ?? slug,
+    version: manifest.version,
+    description: manifest.description,
+    entrypoint,
+    skillNames,
+    errors,
+    warnings,
+  };
 }

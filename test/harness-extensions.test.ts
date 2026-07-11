@@ -7,6 +7,7 @@ import {
   extensionSlug,
   ExtensionRegistry,
   loadExtensions,
+  validateExtension,
   type ExtensionSchedulePayload,
   type ExtensionScheduleStore,
 } from "../src/harness/index.js";
@@ -146,6 +147,82 @@ describe("extensionSlug", () => {
 
   test("file-form extensions slug from the file basename", () => {
     expect(extensionSlug("/x/extensions/global/Audit Log.mjs")).toBe("audit-log");
+  });
+});
+
+describe("TypeScript & manifest extensions", () => {
+  test("loads a TypeScript extension via jiti", async () => {
+    const extDir = join(dir, "typed");
+    mkdirSync(extDir, { recursive: true });
+    writeFileSync(
+      join(extDir, "index.ts"),
+      `interface Api { registerTool(t: unknown): void }
+      export default function activate(api: Api): void {
+        api.registerTool({ name: "typed_tool", description: "d", parameters: { type: "object", properties: {} }, execute: async () => ({ content: [] }) });
+      }`,
+    );
+
+    const { registry, extensions, errors } = await loadExtensions({ dirs: [dir], context });
+    expect(errors).toHaveLength(0);
+    expect(extensions[0]?.slug).toBe("typed");
+    expect(registry.getContributedTools().map((tool) => tool.name)).toEqual(["typed_tool"]);
+  });
+
+  test("package.json mikan.extensions declares the entrypoint; slug from dir name", async () => {
+    const extDir = join(dir, "my-ext");
+    mkdirSync(join(extDir, "src"), { recursive: true });
+    writeFileSync(
+      join(extDir, "package.json"),
+      JSON.stringify({ name: "irrelevant-npm-name", mikan: { extensions: ["./src/main.ts"] } }),
+    );
+    writeFileSync(
+      join(extDir, "manifest.json"),
+      JSON.stringify({ name: "My Ext", version: "1.0" }),
+    );
+    writeFileSync(join(extDir, "src", "main.ts"), "export default function activate(): void {}");
+
+    const { extensions, errors } = await loadExtensions({ dirs: [dir], context });
+    expect(errors).toHaveLength(0);
+    // Slug and manifest come from the extension root, not the nested entrypoint.
+    expect(extensions[0]).toMatchObject({ slug: "my-ext", name: "My Ext", version: "1.0" });
+    expect(extensions[0]?.path.endsWith(join("src", "main.ts"))).toBe(true);
+  });
+});
+
+describe("validateExtension", () => {
+  test("passes a well-formed directory extension without activating it", async () => {
+    const extDir = join(dir, "good");
+    mkdirSync(extDir, { recursive: true });
+    // Activation would throw; validate must not call it.
+    writeFileSync(
+      join(extDir, "index.mjs"),
+      'export default function activate() { throw new Error("activated!"); }',
+    );
+    writeFileSync(join(extDir, "manifest.json"), JSON.stringify({ name: "Good", version: "2.0" }));
+
+    const result = await validateExtension(extDir);
+    expect(result.ok).toBe(true);
+    expect(result).toMatchObject({ slug: "good", name: "Good", version: "2.0" });
+    expect(result.entrypoint?.endsWith("index.mjs")).toBe(true);
+  });
+
+  test("fails when there is no activate export", async () => {
+    const extDir = join(dir, "no-activate");
+    mkdirSync(extDir, { recursive: true });
+    writeFileSync(join(extDir, "index.mjs"), "export const nothing = 1;");
+
+    const result = await validateExtension(extDir);
+    expect(result.ok).toBe(false);
+    expect(result.errors.join(" ")).toMatch(/activate function/);
+  });
+
+  test("fails when the path has no entrypoint", async () => {
+    const extDir = join(dir, "empty");
+    mkdirSync(extDir, { recursive: true });
+
+    const result = await validateExtension(extDir);
+    expect(result.ok).toBe(false);
+    expect(result.errors.join(" ")).toMatch(/No entrypoint/);
   });
 });
 

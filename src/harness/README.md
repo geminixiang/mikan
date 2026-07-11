@@ -103,21 +103,50 @@ system prompt 有任何位元變動，整個請求（含最貴的對話歷史）
 
 ## Extension 系統
 
-Extension 是 ES module，放在 **state dir**（host-only，永不掛進 sandbox）
-的 `extensions/` 下：
+Extension 是一個模組（`.mjs` / `.js` / **`.ts`**），放在 **state dir**
+（host-only，永不掛進 sandbox）的 `extensions/` 下：
 
 ```
 ~/.mikan/global/extensions/audit.mjs            # 所有會話（單檔形式）
 ~/.mikan/global/extensions/agent-pm/            # 所有會話（目錄形式）
-  index.mjs                                     #   進入點
+  index.mjs | index.ts                          #   進入點
   manifest.json                                 #   選配：name/version/description
+  package.json                                  #   選配：mikan.extensions + npm 依賴
   skills/<name>/SKILL.md                        #   選配：隨附 skills（自動內嵌）
 ~/.mikan/conversations/<id>/extensions/         # 單一會話
+```
+
+**載入以 jiti**，所以 extension 可直接寫 TypeScript，也可 `npm i` 使用第三方
+套件（附 `node_modules`）。進入點解析順序：`package.json` 的
+`mikan.extensions`（陣列，相對路徑）→ `index.{mjs,js,ts,mts}`。範例：
+
+```json
+{
+  "type": "module",
+  "mikan": { "extensions": ["./src/main.ts"] },
+  "dependencies": { "ms": "2.1.3" }
+}
 ```
 
 `global/` 與 `conversations/<id>/` 是兩個平行 scope，各自底下有 `extensions/`
 （code）與 `extension-data/`（data）。完整佈局與遷移見
 `src/harness/extensions/LAYOUT.md`。
+
+### 用 CLI 安裝
+
+`mikan ext` 子指令（比 `cp` 多了驗證、正確路徑、印出 slug/資料位置）：
+
+```sh
+mikan ext validate <path>                                   # 檢查是否為合法 extension
+mikan ext install <path> --global                           # 裝給所有會話
+mikan ext install <path> --conversation <id>                # 只裝這個會話
+mikan ext list [--conversation <id>]                        # 列出已安裝
+mikan ext remove <slug> (--global | --conversation <id>)    # 移除 code（保留 data）
+```
+
+`install` 會先跑 `validate`（import 但**不** activate，無副作用），失敗即拒裝；
+自動裝進具名子目錄避免 slug 錯位；印出 slug 與 data/secrets 路徑。所有指令
+吃 `--state-dir`（預設 `~/.mikan`）。裝/移除後對話輸入 `/pi-new` 生效。
 
 **安全模型：** extension 程式碼在 mikan 主程序內執行，權限等同 mikan 本體
 （平台 token、vault、host 檔案系統）。安裝 extension 是管理員動作。因此

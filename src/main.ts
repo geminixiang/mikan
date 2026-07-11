@@ -41,6 +41,7 @@ import {
   validateSandbox,
 } from "./sandbox/index.js";
 import { FileVaultManager } from "./vault/index.js";
+import { runExtCommand } from "./cli/ext.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
 import { ChannelStore } from "./store.js";
 import * as Sentry from "@sentry/node";
@@ -185,6 +186,13 @@ function handleStartupError(error: unknown): never {
   }
   console.error(String(error));
   process.exit(1);
+}
+
+// `mikan ext …` manages extensions and exits; handle it before the normal
+// bot-mode argument parsing (which requires a workspace dir and tokens).
+if (process.argv[2] === "ext") {
+  const code = await runExtCommand(process.argv.slice(3));
+  process.exit(code);
 }
 
 let parsedArgs: ParsedArgs;
