@@ -9,6 +9,12 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.3]
+
+### Fixed
+
+- Route `/pi-extensions` through Slack and include it in the bundled app manifests.
+
 ## [1.0.0-beta.2]
 
 ### Added
