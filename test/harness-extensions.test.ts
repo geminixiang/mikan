@@ -43,16 +43,21 @@ afterEach(() => {
 });
 
 describe("defaultExtensionDirs", () => {
-  test("returns host-only global and per-conversation dirs under the state dir", () => {
+  test("returns host-only global then per-conversation code dirs under the state dir", () => {
     expect(defaultExtensionDirs("C123", "/state")).toEqual([
-      join("/state", "extensions", "global"),
-      join("/state", "extensions", "C123"),
+      join("/state", "global", "extensions"),
+      join("/state", "conversations", "C123", "extensions"),
     ]);
+  });
+
+  test("uses the conversation id verbatim (no lowercasing)", () => {
+    const [, convDir] = defaultExtensionDirs("C0AbC123", "/state");
+    expect(convDir).toBe(join("/state", "conversations", "C0AbC123", "extensions"));
   });
 
   test("defaults the state dir to ~/.mikan", () => {
     const [globalDir] = defaultExtensionDirs("C123");
-    expect(globalDir.endsWith(join(".mikan", "extensions", "global"))).toBe(true);
+    expect(globalDir.endsWith(join(".mikan", "global", "extensions"))).toBe(true);
   });
 });
 
@@ -213,9 +218,9 @@ describe("loadExtensions v2 api", () => {
     });
     expect(errors).toHaveLength(0);
     const { dataDir, sharedDataDir } = probe.read() as { dataDir: string; sharedDataDir: string };
-    // Conversation isolation is the default: the safe path gets the short name.
-    expect(dataDir).toBe(join(dir, "state", "extension-data", "probe", "conversations", "C123"));
-    expect(sharedDataDir).toBe(join(dir, "state", "extension-data", "probe", "shared"));
+    // Per-conversation data lives under the conversation; shared under global.
+    expect(dataDir).toBe(join(dir, "state", "conversations", "C123", "extension-data", "probe"));
+    expect(sharedDataDir).toBe(join(dir, "state", "global", "extension-data", "probe"));
     expect(existsSync(dataDir)).toBe(true);
     expect(existsSync(sharedDataDir)).toBe(true);
   });

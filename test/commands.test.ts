@@ -542,11 +542,11 @@ describe("ExtensionsCommandHandler", () => {
     const ctx = buildContext({ commandText: "/pi-extensions", conversationId: "C123" });
     expect(await handler.tryHandle(ctx)).toBe(true);
     expect(ctx.responder.responses[0]).toContain("沒有安裝任何 extension");
-    expect(ctx.responder.responses[0]).toContain(join(stateDir, "extensions", "global"));
+    expect(ctx.responder.responses[0]).toContain(join(stateDir, "global", "extensions"));
   });
 
   test("warns about an index file at the scope root instead of listing it wrongly", async () => {
-    const convDir = join(stateDir, "extensions", "C123");
+    const convDir = join(stateDir, "conversations", "C123", "extensions");
     mkdirSync(convDir, { recursive: true });
     // Mis-install: extension contents copied into the scope dir itself.
     writeFileSync(join(convDir, "index.mjs"), "export default function activate() {}\n");
@@ -560,7 +560,7 @@ describe("ExtensionsCommandHandler", () => {
 
   test("lists global and conversation extensions with manifest metadata and skills", async () => {
     // global: directory form with manifest + a bundled skill
-    const globalExt = join(stateDir, "extensions", "global", "agent-pm");
+    const globalExt = join(stateDir, "global", "extensions", "agent-pm");
     mkdirSync(join(globalExt, "skills", "triage"), { recursive: true });
     writeFileSync(join(globalExt, "index.mjs"), "export default function activate() {}\n");
     writeFileSync(
@@ -572,7 +572,7 @@ describe("ExtensionsCommandHandler", () => {
       "---\nname: triage\ndescription: d\n---\nbody\n",
     );
     // conversation-scoped: bare file form
-    const convDir = join(stateDir, "extensions", "C123");
+    const convDir = join(stateDir, "conversations", "C123", "extensions");
     mkdirSync(convDir, { recursive: true });
     writeFileSync(join(convDir, "audit.mjs"), "export default function activate() {}\n");
     // side-effect canary: activation must NOT run during listing

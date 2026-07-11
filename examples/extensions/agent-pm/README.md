@@ -15,7 +15,7 @@
 - **主動發訊**（v2 `api.notify`）：`remind` action 直接把清單貼進頻道，
   不經過 agent 回覆。
 - **資料目錄**（v2 `api.paths.sharedDataDir`）：sqlite 檔放在
-  `<stateDir>/extension-data/agent-pm/shared/`，host-only、永不進 sandbox。
+  `<stateDir>/global/extension-data/agent-pm/`，host-only、永不進 sandbox。
   用 shared（而非預設的 per-conversation `dataDir`）是**刻意宣告**：
   agent-pm 的終極目標是跨頻道 PM 視圖，因此自行以 `conversation_id`
   欄位分區。單頻道工具應該用 `api.paths.dataDir`，隔離免費。
@@ -28,10 +28,10 @@
 
 ```sh
 # 所有會話生效
-cp -r agent-pm ~/.mikan/extensions/global/
+cp -r agent-pm ~/.mikan/global/extensions/
 
 # 或只對單一會話生效
-cp -r agent-pm ~/.mikan/extensions/<conversationId>/
+cp -r agent-pm ~/.mikan/conversations/<id>/extensions/
 ```
 
 新的 harness instance 建立時會重新載入 extension（import 帶 cache-busting），

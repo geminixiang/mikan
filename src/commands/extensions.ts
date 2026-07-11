@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { defaultExtensionDirs, listInstalledExtensions } from "../harness/index.js";
 import { readEnv } from "../utils/env.js";
 import { matchCommand } from "./parse.js";
@@ -51,7 +51,9 @@ export class ExtensionsCommandHandler implements CommandHandler {
 
     const lines = ["_Extensions_", ...misinstallLines];
     for (const info of installed) {
-      const scope = basename(info.dir) === "global" ? "global" : "this conversation";
+      // info.dir ends in `<scope>/extensions`; the scope is its parent segment
+      // (`global` or a conversation id).
+      const scope = basename(dirname(info.dir)) === "global" ? "global" : "this conversation";
       const version = info.version ? `@${info.version}` : "";
       const slug = info.slug !== info.name ? ` (slug: ${info.slug})` : "";
       lines.push(`• *${info.name}*${version} — ${scope}${slug}`);

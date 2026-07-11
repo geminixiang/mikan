@@ -107,23 +107,27 @@ Extension 是 ES module，放在 **state dir**（host-only，永不掛進 sandbo
 的 `extensions/` 下：
 
 ```
-~/.mikan/extensions/global/audit.mjs        # 所有會話（單檔形式）
-~/.mikan/extensions/global/agent-pm/        # 所有會話（目錄形式）
-  index.mjs                                 #   進入點
-  manifest.json                             #   選配：name/version/description
-  skills/<name>/SKILL.md                    #   選配：隨附 skills（自動內嵌）
-~/.mikan/extensions/<conversationId>/       # 單一會話
+~/.mikan/global/extensions/audit.mjs            # 所有會話（單檔形式）
+~/.mikan/global/extensions/agent-pm/            # 所有會話（目錄形式）
+  index.mjs                                     #   進入點
+  manifest.json                                 #   選配：name/version/description
+  skills/<name>/SKILL.md                        #   選配：隨附 skills（自動內嵌）
+~/.mikan/conversations/<id>/extensions/         # 單一會話
 ```
+
+`global/` 與 `conversations/<id>/` 是兩個平行 scope，各自底下有 `extensions/`
+（code）與 `extension-data/`（data）。完整佈局與遷移見
+`src/harness/extensions/LAYOUT.md`。
 
 **安全模型：** extension 程式碼在 mikan 主程序內執行，權限等同 mikan 本體
 （平台 token、vault、host 檔案系統）。安裝 extension 是管理員動作。因此
 extension 目錄絕不能放在 workspace 下 — image 模式會把 workspace/會話目錄
 掛進 sandbox container，sandbox 內寫入的程式碼若被 host 載入即構成逃逸。
-`global` 為保留字，平台的 conversation id 不會取此值。
+`global` 與 `conversations` 為保留頂層 scope，平台的 conversation id 不會取此值。
 
 **身分（slug）：** 由安裝路徑決定（目錄名或檔名），不隨 manifest 改變 —
-data dir、secrets、排程的歸屬都以 slug 為鍵。同一 extension 裝在 global
-與單一會話會共用同一個 slug（即共用資料）。
+secrets、排程、`sharedDataDir` 的歸屬都以 slug 為鍵。per-conversation 資料
+（`dataDir`）住在會話目錄下、以 slug 命名，隨會話生滅。
 
 匯出 `activate`（default 或具名皆可）：
 
@@ -164,8 +168,8 @@ harness 定義 service 介面（`ExtensionHostServices`），由 embedder 注入
 | ---------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
 | `api.schedules.upsert/delete/list` | 具名排程（cron `periodic` / `one-shot`），觸發自主 agent run | event 檔（`<workingDir>/events/ext.<slug>.<conv>.<name>.json`），EventsWatcher 熱載入、跨重啟持久 |
 | `api.notify(text)`                 | 直接發訊到本會話，不經 agent run                             | `main.ts` 的 `PlatformNotifier` → 平台 bot `postMessage`                                          |
-| `api.paths.dataDir`                | **本會話**的資料目錄（預設，隔離免費；首次存取時建立）       | `<stateDir>/extension-data/<slug>/conversations/<conversationId>/`                                |
-| `api.paths.sharedDataDir`          | 跨會話共享資料（**明確宣告**的多會話應用；自行分區）         | `<stateDir>/extension-data/<slug>/shared/`                                                        |
+| `api.paths.dataDir`                | **本會話**的資料目錄（預設，隔離免費；首次存取時建立）       | `conversations/<id>/extension-data/<slug>/`                                                       |
+| `api.paths.sharedDataDir`          | 跨會話共享資料（**明確宣告**的多會話應用；自行分區）         | `global/extension-data/<slug>/`                                                                   |
 | `api.secrets.get/list`             | 唯讀 secrets                                                 | vault：`<stateDir>/vaults/extensions/<slug>/env`                                                  |
 | `manifest.json`                    | name / version / description（顯示用；slug 不受影響）        | loader 讀取                                                                                       |
 | `skills/<name>/SKILL.md`           | 隨附 skills                                                  | 自動探索，**內嵌**進 system prompt（sandbox 讀不到 host-only 檔案），本地同名 skill 優先          |

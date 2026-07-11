@@ -45,17 +45,20 @@ import type {
 const EXTENSION_FILE_PATTERN = /\.(mjs|js)$/;
 
 /**
- * Canonical host-only extension directories for a conversation:
- * `<stateDir>/extensions/global` (all conversations) and
- * `<stateDir>/extensions/<conversationId>` (that conversation only).
- * `global` is reserved as a scope name; platform conversation ids never
- * take that value.
+ * Canonical host-only extension code directories for a conversation, in load
+ * order: `<stateDir>/global/extensions` (all conversations) then
+ * `<stateDir>/conversations/<conversationId>/extensions` (that conversation
+ * only). `global` and `conversations` are the two sibling scopes; see
+ * `LAYOUT.md`. Conversation ids are used verbatim (see LAYOUT.md § Casing).
  */
 export function defaultExtensionDirs(
   conversationId: string,
   stateDir: string = join(homedir(), ".mikan"),
 ): string[] {
-  return [join(stateDir, "extensions", "global"), join(stateDir, "extensions", conversationId)];
+  return [
+    join(stateDir, "global", "extensions"),
+    join(stateDir, "conversations", conversationId, "extensions"),
+  ];
 }
 
 /** Discovery-only view of an installed extension (module is not imported). */
@@ -302,12 +305,15 @@ function buildExtensionApi(params: {
     context,
     paths: {
       get dataDir(): string {
-        const dir = join(stateDir, "extension-data", slug, "conversations", conversationId);
+        // This conversation's own data, co-located with the conversation's
+        // other host-only assets; removed when the conversation is deleted.
+        const dir = join(stateDir, "conversations", conversationId, "extension-data", slug);
         mkdirSync(dir, { recursive: true });
         return dir;
       },
       get sharedDataDir(): string {
-        const dir = join(stateDir, "extension-data", slug, "shared");
+        // Cross-conversation data under the sibling `global` scope.
+        const dir = join(stateDir, "global", "extension-data", slug);
         mkdirSync(dir, { recursive: true });
         return dir;
       },
