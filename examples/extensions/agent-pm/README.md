@@ -14,11 +14,11 @@
   也會主動追殺逾期項目。
 - **主動發訊**（v2 `api.notify`）：`remind` action 直接把清單貼進頻道，
   不經過 agent 回覆。
-- **資料目錄**（v2 `api.paths.sharedDataDir`）：sqlite 檔放在
-  `<stateDir>/global/extension-data/agent-pm/`，host-only、永不進 sandbox。
-  用 shared（而非預設的 per-conversation `dataDir`）是**刻意宣告**：
-  agent-pm 的終極目標是跨頻道 PM 視圖，因此自行以 `conversation_id`
-  欄位分區。單頻道工具應該用 `api.paths.dataDir`，隔離免費。
+- **資料目錄**（v2 `api.paths.dataDir`，預設）：sqlite 檔放在
+  `<stateDir>/conversations/<id>/extension-data/agent-pm/`，host-only、
+  永不進 sandbox。每個會話一個 db，隔離免費——這是常見裝法（單一頻道/DM
+  的 follow-up 追蹤）。若想要跨頻道 PM 視圖（一張總表涵蓋所有頻道），
+  改用 `api.paths.sharedDataDir` 並靠 `conversation_id` 欄位自行分區。
 - **manifest.json**（v2）：名稱／版本／描述。
 - **skills/**（v2）：`follow-up-triage` SKILL.md 隨 extension 出貨，
   內容直接內嵌進 system prompt（sandbox 讀不到 host-only 路徑，
@@ -27,11 +27,11 @@
 ## 安裝
 
 ```sh
-# 所有會話生效
-cp -r agent-pm ~/.mikan/global/extensions/
-
-# 或只對單一會話生效
+# 只對單一會話生效（常見裝法）
 cp -r agent-pm ~/.mikan/conversations/<id>/extensions/
+
+# 或所有會話生效
+cp -r agent-pm ~/.mikan/global/extensions/
 ```
 
 新的 harness instance 建立時會重新載入 extension（import 帶 cache-busting），

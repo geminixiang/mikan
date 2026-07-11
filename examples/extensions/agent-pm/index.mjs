@@ -4,7 +4,7 @@
  * Demonstrates the extension surface end to end:
  *   v1  registerTool          `followup` tool the model calls to manage items
  *   v1  before_agent_start    open items ride into every turn's system prompt
- *   v2  api.paths.sharedDataDir  sqlite in the extension's shared data dir
+ *   v2  api.paths.dataDir     per-conversation sqlite (isolation for free)
  *   v2  api.schedules         daily overdue sweep as an autonomous agent run
  *   v2  api.notify            immediate out-of-band reminder ("remind" action)
  *   v2  manifest.json         name/version/description
@@ -12,10 +12,10 @@
  *
  * Zero npm dependencies: storage is node:sqlite (built into Node >= 22.5).
  *
+ * Install (one conversation — the common case):
+ *   cp -r agent-pm ~/.mikan/conversations/<id>/extensions/
  * Install (all conversations):
- *   cp -r agent-pm ~/.mikan/extensions/global/
- * Install (one conversation):
- *   cp -r agent-pm ~/.mikan/extensions/<conversationId>/
+ *   cp -r agent-pm ~/.mikan/global/extensions/
  */
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -74,11 +74,12 @@ const followupSchema = {
 };
 
 export default async function activate(api) {
-  // Deliberately multi-conversation: agent-pm's end goal is cross-channel
-  // PM views, so it opts into the shared data dir and keys every row by
-  // conversation_id itself. A single-channel tool would use api.paths.dataDir
-  // (per-conversation, isolation for free) instead.
-  const db = openDb(api.paths.sharedDataDir);
+  // Per-conversation storage (the default): each conversation gets its own
+  // db, isolated for free. This is the common install — a follow-up tracker
+  // for one channel/DM. If you instead want cross-conversation PM views
+  // (one board spanning every channel), switch to api.paths.sharedDataDir
+  // and rely on the conversation_id column below to partition rows.
+  const db = openDb(api.paths.dataDir);
   const conversationId = api.context.conversationId;
 
   const openItems = () =>
