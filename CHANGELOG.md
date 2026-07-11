@@ -9,6 +9,22 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.0]
+
+### Added
+
+- Add mikan's native agent harness with model, authentication, session, compaction, and skill support.
+- Add an extension system for hooks, schedules, notifications, data directories, secrets, and bundled skills, with an agent project manager example.
+- Add per-conversation token usage bar charts to the admin portal.
+
+### Changed
+
+- Replace the pi-coding-agent runtime and session integration with the native harness built on pi-agent-core and pi-ai.
+
+### Tests
+
+- Add coverage for harness authentication, extensions, HTTP helpers, runner, sessions, and skills.
+
 ## [0.5.3] - 2026-06-30
 
 ### Added
