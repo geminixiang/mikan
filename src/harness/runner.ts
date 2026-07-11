@@ -246,7 +246,13 @@ export class MikanAgentSession {
         images: options?.images,
         systemPrompt,
       });
-      if (result?.systemPrompt) {
+      if (result?.systemPrompt && result.systemPrompt !== systemPrompt) {
+        // An extension rewrote the system prompt for this turn. Log the new
+        // size so the diagnostic in agent.ts (which logs the pre-hook prompt)
+        // isn't mistaken for the final prompt sent to the model.
+        log.logInfo(
+          `Extension rewrote system prompt: ${systemPrompt.length} → ${result.systemPrompt.length} chars`,
+        );
         systemPrompt = result.systemPrompt;
         this.agent.state.systemPrompt = systemPrompt;
       }

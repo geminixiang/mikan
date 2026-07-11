@@ -1119,9 +1119,13 @@ async function prepareRunContext(params: {
   // provider prompt caching. If this hash changes between turns of one
   // conversation, something turn-varying leaked into the prompt; if it is
   // stable and cacheRead stays 0, the miss is provider-side (e.g. OpenRouter
-  // routing the model across upstream hosts).
+  // routing the model across upstream hosts). This is the base prompt mikan
+  // builds; a `before_agent_start` extension may still rewrite it per turn
+  // (logged separately by the runner).
   const promptHash = createHash("sha256").update(systemPrompt).digest("hex").slice(0, 8);
-  log.logInfo(`[${conversationId}] System prompt: ${systemPrompt.length} chars, sha ${promptHash}`);
+  log.logInfo(
+    `[${conversationId}] System prompt (base): ${systemPrompt.length} chars, sha ${promptHash}`,
+  );
 
   setEventContext({
     platform: platform.name,
