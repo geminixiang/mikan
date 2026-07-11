@@ -9,6 +9,25 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.6]
+
+### Added
+
+- Add emoji reactions for agents and extensions across Slack, Discord, and Telegram.
+
+### Changed
+
+- Default the agent project manager example to conversation-scoped extension data.
+- Log when extensions rewrite the system prompt and report the resulting size change.
+
+### Fixed
+
+- Render Slack session links outside the triggered-by italic span.
+
+### Tests
+
+- Add coverage for the reaction tool and extension reaction API.
+
 ## [1.0.0-beta.5]
 
 ### Added
