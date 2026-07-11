@@ -103,6 +103,22 @@ describe("formatSkillsForPrompt", () => {
     expect(prompt).not.toContain("hidden");
   });
 
+  test("inline skills embed instructions instead of a file location", () => {
+    const prompt = formatSkillsForPrompt([
+      {
+        name: "triage",
+        description: "Triage follow-ups",
+        content: "Always triage <first>.",
+        filePath: "/state/extensions/global/agent-pm/skills/triage/SKILL.md",
+        baseDir: "/state/extensions/global/agent-pm/skills/triage",
+        source: "extension:agent-pm",
+        inline: true,
+      },
+    ]);
+    expect(prompt).toContain("<instructions>Always triage &lt;first&gt;.</instructions>");
+    expect(prompt).not.toContain("<location>");
+  });
+
   test("returns empty string when no skills are visible", () => {
     expect(formatSkillsForPrompt([])).toBe("");
   });

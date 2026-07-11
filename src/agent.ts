@@ -3,6 +3,8 @@ import { type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
 import {
   DEFAULT_EVENT_BUDGET,
   defaultExtensionDirs,
+  type ExtensionHostServices,
+  type ExtensionSchedulePayload,
   formatSkillsForPrompt,
   loadExtensions,
   loadSkillsFromDir,
@@ -21,7 +23,7 @@ import type {
   MessagingInfo,
   PlatformName,
 } from "./adapter.js";
-import type { AgentEventPayload } from "./types.js";
+import type { AgentEventPayload, MikanEvent, PlatformNotifier } from "./types.js";
 import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import { resolveConversationSettings } from "./config.js";
 import { readEnv } from "./utils/env.js";
@@ -49,6 +51,7 @@ import {
   type ResolvedSessionScope,
   type ThreadRootMessage,
 } from "./sessions/store.js";
+import { HostEventStore } from "./tools/event.js";
 import { createMikanTools } from "./tools/index.js";
 import * as Sentry from "@sentry/node";
 import { formatLocalTimestamp } from "./utils/date.js";
@@ -466,6 +469,8 @@ interface PreparedRunContext {
 
 interface ConfiguredAgentSession {
   session: MikanAgentSession;
+  /** Skills contributed by extensions, merged into each run's system prompt. */
+  extensionSkills: MikanSkill[];
 }
 
 function createRunnerExecutionContext(
@@ -512,6 +517,55 @@ function createRunnerExecutionContext(
   };
 }
 
+/**
+ * Extension host services over mikan's runtime infrastructure: schedules
+ * become event files under `<workspaceDir>/events` (picked up live by
+ * EventsWatcher), secrets come from `vaults/extensions/<slug>/env`, and
+ * notify posts through the platform bots when main.ts provides a notifier.
+ */
+function buildExtensionHostServices(params: {
+  workspaceDir: string;
+  vaultManager?: VaultManager;
+  platformNotifier?: PlatformNotifier;
+}): ExtensionHostServices {
+  const { workspaceDir, vaultManager, platformNotifier } = params;
+  const eventStore = HostEventStore.fromWorkspaceDir(workspaceDir);
+  return {
+    stateDir: readEnv("STATE_DIR"),
+    scheduleStore: {
+      write: async (filename, payload) => {
+        // Event files tolerate a missing platform (single-platform default),
+        // so the harness payload is a valid event payload as written.
+        await eventStore.write(filename, payload as unknown as MikanEvent);
+      },
+      delete: async (filename) => (await eventStore.delete(filename)).deleted,
+      list: async () =>
+        (await eventStore.list()).map((entry) => ({
+          filename: entry.filename,
+          payload: entry.payload as unknown as ExtensionSchedulePayload,
+        })),
+    },
+    ...(platformNotifier ? { postMessage: platformNotifier } : {}),
+    ...(vaultManager
+      ? {
+          resolveSecrets: (slug: string) => vaultManager.resolve(`extensions/${slug}`)?.env ?? {},
+        }
+      : {}),
+  };
+}
+
+/**
+ * Local (workspace/conversation) skills override extension skills on name
+ * collision: an admin's on-disk skill always beats an extension's.
+ */
+function mergeExtensionSkills(local: MikanSkill[], extension: MikanSkill[]): MikanSkill[] {
+  if (extension.length === 0) return local;
+  const byName = new Map<string, MikanSkill>();
+  for (const skill of extension) byName.set(skill.name, skill);
+  for (const skill of local) byName.set(skill.name, skill);
+  return [...byName.values()];
+}
+
 async function createConfiguredAgentSession(params: {
   conversationId: string;
   workspaceDir: string;
@@ -521,6 +575,8 @@ async function createConfiguredAgentSession(params: {
   tools: Awaited<ReturnType<typeof createMikanTools>>["tools"];
   sessionStore: SessionStore;
   models: MikanModels;
+  vaultManager?: VaultManager;
+  platformNotifier?: PlatformNotifier;
 }): Promise<ConfiguredAgentSession> {
   const {
     conversationId,
@@ -531,6 +587,8 @@ async function createConfiguredAgentSession(params: {
     tools,
     sessionStore,
     models,
+    vaultManager,
+    platformNotifier,
   } = params;
 
   // Host-only dirs under the state dir: extension code runs in the mikan
@@ -539,6 +597,7 @@ async function createConfiguredAgentSession(params: {
   const extensionsResult = await loadExtensions({
     dirs: defaultExtensionDirs(conversationId, readEnv("STATE_DIR")),
     context: { conversationId, workspaceDir, model, thinkingLevel },
+    services: buildExtensionHostServices({ workspaceDir, vaultManager, platformNotifier }),
   });
   for (const err of extensionsResult.errors) {
     log.logWarning(`[${conversationId}] Extension load error: ${err.path}`, err.error);
@@ -563,7 +622,7 @@ async function createConfiguredAgentSession(params: {
   if (reloaded > 0) {
     log.logInfo(`[${conversationId}] Reloaded ${reloaded} messages from session context`);
   }
-  return { session };
+  return { session, extensionSkills: extensionsResult.skills };
 }
 
 function createEmptyUsageTotals() {
@@ -994,6 +1053,7 @@ async function prepareRunContext(params: {
   resolveExecutorForRun: RunnerExecutionContext["resolveExecutorForRun"];
   getPathContext: () => RuntimePathContext;
   session: MikanAgentSession;
+  extensionSkills?: MikanSkill[];
   setEventContext: (context: {
     platform: string;
     conversationId: string;
@@ -1038,7 +1098,10 @@ async function prepareRunContext(params: {
   reloadSessionMessages(session, conversationId);
 
   const memory = await getMemory(conversationDir);
-  const skills = loadMikanSkills(conversationDir, pathContext.runtimeWorkspaceRoot);
+  const skills = mergeExtensionSkills(
+    loadMikanSkills(conversationDir, pathContext.runtimeWorkspaceRoot),
+    params.extensionSkills ?? [],
+  );
   const triggerAttribution = resolveTriggerAttribution(message);
   const systemPrompt = buildSystemPrompt(
     pathContext.runtimeWorkspaceRoot,
@@ -1470,6 +1533,7 @@ export async function createRunner(
     tokenStore: SessionViewTokenStoreLike;
     portalBaseUrl?: string;
   },
+  platformNotifier?: PlatformNotifier,
 ): Promise<PiAgentWrapper> {
   const agentConfig = resolveConversationSettings(conversationDir);
 
@@ -1530,7 +1594,7 @@ export async function createRunner(
 
   const sessionUuid = extractSessionUuid(contextFile);
   const chatSessionManager = new AgentMemoryFileManager();
-  const { session } = await createConfiguredAgentSession({
+  const { session, extensionSkills } = await createConfiguredAgentSession({
     conversationId,
     workspaceDir,
     systemPrompt,
@@ -1539,6 +1603,8 @@ export async function createRunner(
     tools,
     sessionStore: sessionManager,
     models: modelRegistry,
+    vaultManager,
+    platformNotifier,
   });
 
   // Mutable per-run state - event handler references this
@@ -1573,6 +1639,7 @@ export async function createRunner(
         resolveExecutorForRun,
         getPathContext,
         session,
+        extensionSkills,
         setEventContext,
         setSandboxContext,
         setUploadFunction,

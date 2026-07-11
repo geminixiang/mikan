@@ -1,0 +1,5 @@
+{
+  "name": "agent-pm",
+  "version": "0.2.0",
+  "description": "Follow-up tracker: sqlite-backed items, daily overdue sweep, proactive reminders"
+}

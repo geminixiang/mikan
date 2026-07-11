@@ -5,6 +5,7 @@ import type {
   ConversationEvent,
   MessagingEventHandler,
   ConversationKind,
+  PlatformNotifier,
 } from "../adapter.js";
 import type { CommandHandler, CommandServices } from "../commands/types.js";
 
@@ -35,6 +36,8 @@ export interface CreateSessionSandboxOptions {
 export interface ConversationRuntimeOptions extends Omit<CommandServices, "runtime"> {
   /** Override the default command handlers (e.g., to add /help, /status). */
   commandHandlers?: readonly CommandHandler[];
+  /** Proactive platform messaging for extensions (`api.notify`). */
+  platformNotifier?: PlatformNotifier;
 }
 
 export interface ConversationRuntime extends MessagingEventHandler {

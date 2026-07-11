@@ -25,6 +25,12 @@ export interface MikanSkill {
   source: string;
   /** Exclude from model-visible skill lists. */
   disableModelInvocation?: boolean;
+  /**
+   * Embed the skill body in the prompt instead of referencing its file path.
+   * Used for skills whose files the agent cannot read at runtime (e.g.
+   * extension skills under the host-only state dir in sandbox modes).
+   */
+  inline?: boolean;
 }
 
 export interface SkillDiagnostic {
@@ -240,7 +246,12 @@ export function formatSkillsForPrompt(skills: MikanSkill[]): string {
     lines.push("  <skill>");
     lines.push(`    <name>${escapeXml(skill.name)}</name>`);
     lines.push(`    <description>${escapeXml(skill.description)}</description>`);
-    lines.push(`    <location>${escapeXml(skill.filePath)}</location>`);
+    if (skill.inline) {
+      // Inline skills carry their body: the agent cannot read their file.
+      lines.push(`    <instructions>${escapeXml(skill.content)}</instructions>`);
+    } else {
+      lines.push(`    <location>${escapeXml(skill.filePath)}</location>`);
+    }
     lines.push("  </skill>");
   }
   lines.push("</available_skills>");

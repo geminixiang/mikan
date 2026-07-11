@@ -41,6 +41,7 @@ export {
 export { ExtensionRegistry } from "./extensions/registry.js";
 export {
   defaultExtensionDirs,
+  extensionSlug,
   loadExtensions,
   type LoadExtensionsOptions,
   type LoadExtensionsResult,
@@ -48,7 +49,13 @@ export {
 export type {
   BeforeAgentStartHookEvent,
   BeforeAgentStartHookResult,
+  ExtensionHostServices,
   ExtensionLoadError,
+  ExtensionManifest,
+  ExtensionScheduleInfo,
+  ExtensionSchedulePayload,
+  ExtensionScheduleSpec,
+  ExtensionScheduleStore,
   LoadedExtension,
   MessageEndHookEvent,
   MikanExtensionActivate,

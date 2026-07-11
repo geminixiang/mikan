@@ -121,6 +121,17 @@ export interface MessagingBot {
   ): Promise<void>;
 }
 
+/**
+ * Post a plain message to a conversation without triggering an agent run.
+ * Backs extension `api.notify`; implemented in main.ts over the platform bots.
+ * `platform` is required only when more than one platform is running.
+ */
+export type PlatformNotifier = (
+  conversationId: string,
+  text: string,
+  platform?: string,
+) => Promise<void>;
+
 /** Normalized platform data and reply hook for one event. */
 export interface ConversationContext {
   message: ConversationMessage;

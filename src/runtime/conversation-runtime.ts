@@ -259,6 +259,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
           tokenStore: this.options.sessionViewTokenStore,
           portalBaseUrl: this.options.portalBaseUrl,
         },
+        this.options.platformNotifier,
       ),
       stopRequested: false,
       lastAccessedAt: Date.now(),

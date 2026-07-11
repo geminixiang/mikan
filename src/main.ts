@@ -7,7 +7,7 @@ import { mkdirSync, statSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { fileURLToPath } from "url";
 import { dirname, join as pathJoin } from "path";
-import type { MessagingBot } from "./adapter.js";
+import type { MessagingBot, PlatformNotifier } from "./adapter.js";
 import { DiscordMessagingBot } from "./adapters/discord/bot.js";
 import { TelegramMessagingBot } from "./adapters/telegram/bot.js";
 import { SlackMessagingBot as SlackMessagingBotClass } from "./adapters/slack/bot.js";
@@ -324,6 +324,30 @@ if (provisioner) {
   await provisioner.stopIdle(IMAGE_IDLE_TIMEOUT_MS);
   setInterval(() => provisioner.stopIdle(IMAGE_IDLE_TIMEOUT_MS), IMAGE_IDLE_TIMEOUT_MS).unref();
 }
+// Declared before the runtime so the notifier closure can capture them;
+// bots register below once their platforms initialize.
+const bots: MessagingBot[] = [];
+const botsByPlatform: Record<string, MessagingBot> = {};
+
+/**
+ * Extension `api.notify` backend: post into a conversation without an agent
+ * run. Platform resolution mirrors event files — explicit platform, or the
+ * sole running platform.
+ */
+const platformNotifier: PlatformNotifier = async (conversationId, text, platform) => {
+  const available = Object.keys(botsByPlatform);
+  const key = platform?.trim().toLowerCase() || (available.length === 1 ? available[0] : undefined);
+  const bot = key ? botsByPlatform[key] : undefined;
+  if (!bot) {
+    throw new Error(
+      platform
+        ? `notify: unknown platform '${platform}' (available: ${available.join(", ") || "none"})`
+        : `notify: multiple platforms active (${available.join(", ")}); specify platform`,
+    );
+  }
+  await bot.postMessage(conversationId, text);
+};
+
 const handler = createConversationRuntime({
   workingDir,
   sandbox,
@@ -333,6 +357,7 @@ const handler = createConversationRuntime({
   sessionViewTokenStore,
   adminTokenStore,
   portalBaseUrl: portalBaseUrl(),
+  platformNotifier,
 });
 
 const sandboxDesc =
@@ -346,9 +371,6 @@ const sandboxDesc =
           ? `firecracker:${sandbox.vmId}`
           : `cloudflare:${sandbox.sandboxId}`;
 log.logStartup(workingDir, sandboxDesc);
-
-const bots: MessagingBot[] = [];
-const botsByPlatform: Record<string, MessagingBot> = {};
 
 if (hasSlack) {
   const slackMessagingBotToken = SLACK_BOT_TOKEN;

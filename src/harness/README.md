@@ -101,13 +101,17 @@ system prompt 有任何位元變動，整個請求（含最貴的對話歷史）
   `src/commands/` 處理）。
 - OAuth 登入流程尚未接線（憑證檔中已有的 OAuth token 仍會被 pi-ai 解析與刷新）。
 
-## Extension 系統 v1
+## Extension 系統
 
 Extension 是 ES module，放在 **state dir**（host-only，永不掛進 sandbox）
 的 `extensions/` 下：
 
 ```
-~/.mikan/extensions/global/audit.mjs        # 所有會話
+~/.mikan/extensions/global/audit.mjs        # 所有會話（單檔形式）
+~/.mikan/extensions/global/agent-pm/        # 所有會話（目錄形式）
+  index.mjs                                 #   進入點
+  manifest.json                             #   選配：name/version/description
+  skills/<name>/SKILL.md                    #   選配：隨附 skills（自動內嵌）
 ~/.mikan/extensions/<conversationId>/       # 單一會話
 ```
 
@@ -116,6 +120,10 @@ Extension 是 ES module，放在 **state dir**（host-only，永不掛進 sandbo
 extension 目錄絕不能放在 workspace 下 — image 模式會把 workspace/會話目錄
 掛進 sandbox container，sandbox 內寫入的程式碼若被 host 載入即構成逃逸。
 `global` 為保留字，平台的 conversation id 不會取此值。
+
+**身分（slug）：** 由安裝路徑決定（目錄名或檔名），不隨 manifest 改變 —
+data dir、secrets、排程的歸屬都以 slug 為鍵。同一 extension 裝在 global
+與單一會話會共用同一個 slug（即共用資料）。
 
 匯出 `activate`（default 或具名皆可）：
 
@@ -144,9 +152,32 @@ export default function activate(api) {
 | `session_compact`    | compaction 寫入後（觀察） | —                                            |
 
 語意：註冊順序執行；有回傳值的 hook 以第一個非 `undefined` 結果為準；handler
-擲錯只記 log，不會中斷回合。v2 計畫：`tool_result` patch、自訂 slash command
-貢獻點、provider 註冊、session entry 貢獻（`appendCustomEntry` 已可由
-`SessionStore` 直接使用）。
+擲錯只記 log，不會中斷回合。
+
+### v2 API：schedules、notify、paths、secrets、manifest、skills
+
+harness 定義 service 介面（`ExtensionHostServices`），由 embedder 注入實作
+（mikan 在 `agent.ts` 組裝）；缺少對應 service 時，該 api 擲出說明性錯誤。
+這讓 harness 保持可獨立內嵌 — 其他宿主可自帶 messaging / 排程實作。
+
+| api                                | 作用                                                         | mikan 的後端                                                                                      |
+| ---------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `api.schedules.upsert/delete/list` | 具名排程（cron `periodic` / `one-shot`），觸發自主 agent run | event 檔（`<workingDir>/events/ext.<slug>.<conv>.<name>.json`），EventsWatcher 熱載入、跨重啟持久 |
+| `api.notify(text)`                 | 直接發訊到本會話，不經 agent run                             | `main.ts` 的 `PlatformNotifier` → 平台 bot `postMessage`                                          |
+| `api.paths.dataDir`                | 每 extension 的 host-only 資料目錄（首次存取時建立）         | `<stateDir>/extension-data/<slug>/`                                                               |
+| `api.secrets.get/list`             | 唯讀 secrets                                                 | vault：`<stateDir>/vaults/extensions/<slug>/env`                                                  |
+| `manifest.json`                    | name / version / description（顯示用；slug 不受影響）        | loader 讀取                                                                                       |
+| `skills/<name>/SKILL.md`           | 隨附 skills                                                  | 自動探索，**內嵌**進 system prompt（sandbox 讀不到 host-only 檔案），本地同名 skill 優先          |
+
+排程的 `text` 是自主 run 的完整任務描述（不繼承對話歷史，需自包含）；
+多平台同時運行時 `notify` / 排程需指明 `platform`，單平台自動推定。
+
+完整範例見 `examples/extensions/agent-pm/`：約 200 行的 follow-up
+追蹤器（sqlite、每日逾期掃描排程、主動提醒、隨附 skill），即 extension
+系統的目標形狀 —— 復用 mikan 的 harness 而非自建整套 agent。
+
+v3 候選：`tool_result` patch、自訂 slash command 貢獻點、provider 註冊、
+install/uninstall 生命週期指令。
 
 ## 測試
 
