@@ -13,6 +13,7 @@ import {
   type MikanSkill,
   type SessionStore,
 } from "./harness/index.js";
+import { createHash } from "crypto";
 import { existsSync, readFileSync } from "fs";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import { join, posix } from "path";
@@ -1114,6 +1115,13 @@ async function prepareRunContext(params: {
     skills,
   );
   session.agent.state.systemPrompt = systemPrompt;
+  // Cache diagnosis: a byte-stable system prompt is the precondition for
+  // provider prompt caching. If this hash changes between turns of one
+  // conversation, something turn-varying leaked into the prompt; if it is
+  // stable and cacheRead stays 0, the miss is provider-side (e.g. OpenRouter
+  // routing the model across upstream hosts).
+  const promptHash = createHash("sha256").update(systemPrompt).digest("hex").slice(0, 8);
+  log.logInfo(`[${conversationId}] System prompt: ${systemPrompt.length} chars, sha ${promptHash}`);
 
   setEventContext({
     platform: platform.name,
