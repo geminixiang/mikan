@@ -50,6 +50,11 @@
         "should_escape": false
       },
       {
+        "command": "/pi-extensions",
+        "description": "list installed extensions",
+        "should_escape": false
+      },
+      {
         "command": "/pi-auto-reply",
         "description": "on | off | status",
         "should_escape": false

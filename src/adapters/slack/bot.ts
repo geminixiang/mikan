@@ -1289,7 +1289,11 @@ export class SlackMessagingBot implements MessagingBot {
         user_id,
         user_name,
       });
-    } else if (command === "/pi-sandbox" || command === "/pi-auto-reply") {
+    } else if (
+      command === "/pi-sandbox" ||
+      command === "/pi-auto-reply" ||
+      command === "/pi-extensions"
+    ) {
       handlerPromise = this.routeSlashModelCommand({
         command,
         text,
