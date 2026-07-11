@@ -146,15 +146,25 @@ npm 欄位，另可用 `mikan.displayName` 覆寫顯示名（npm name 是小寫/
 
 ```sh
 mikan ext validate <path>                                   # 檢查是否為合法 extension
-mikan ext install <path> --global                           # 裝給所有會話
-mikan ext install <path> --conversation <id>                # 只裝這個會話
+mikan ext install <source> --global                         # 裝給所有會話
+mikan ext install <source> --conversation <id>              # 只裝這個會話
 mikan ext list [--conversation <id>]                        # 列出已安裝
 mikan ext remove <slug> (--global | --conversation <id>)    # 移除 code（保留 data）
 ```
 
-`install` 會先跑 `validate`（import 但**不** activate，無副作用），失敗即拒裝；
-自動裝進具名子目錄避免 slug 錯位；印出 slug 與 data/secrets 路徑。所有指令
-吃 `--state-dir`（預設 `~/.mikan`）。裝/移除後對話輸入 `/pi-new` 生效。
+`<source>` 可以是**本地路徑**，或**git URL**（`https://…`、`git@…`、或
+`github:owner/repo`），後者可加 `#subpath` 指向 repo 內的子目錄：
+
+```sh
+# 從 GitHub 直接裝（monorepo 內的子目錄用 # 指定）
+mikan ext install github:geminixiang/mikan#examples/extensions/agent-pm --global
+```
+
+git source 會 shallow clone 到暫存目錄，有 `dependencies` 時跑
+`npm install --omit=dev`，再驗證+複製。`install` 先跑 `validate`（import 但**不**
+activate，無副作用），失敗即拒裝；自動裝進具名子目錄避免 slug 錯位。
+**重裝同名 extension 即更新**（覆蓋 code、保留 data）。所有指令吃 `--state-dir`
+（預設 `~/.mikan`）。裝/移除後對話輸入 `/pi-new` 生效。
 
 **安全模型：** extension 程式碼在 mikan 主程序內執行，權限等同 mikan 本體
 （平台 token、vault、host 檔案系統）。安裝 extension 是管理員動作。因此

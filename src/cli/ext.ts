@@ -1,13 +1,15 @@
 /**
  * `mikan ext` — manage extensions from the CLI.
  *
- *   mikan ext install <path> [--global | --conversation <id>] [--state-dir <dir>]
+ *   mikan ext install <source> [--global | --conversation <id>] [--state-dir <dir>]
  *   mikan ext validate <path>
  *   mikan ext list [--conversation <id>] [--state-dir <dir>]
  *   mikan ext remove <slug> (--global | --conversation <id>) [--state-dir <dir>]
  *
- * Extensions install into the host-only state dir (never the workspace); see
- * src/harness/extensions/LAYOUT.md. Data is left in place on remove.
+ * `<source>` is a local path or a git URL (https://…, git@…, or github:owner/repo)
+ * with an optional `#subpath` for extensions inside a repo. Reinstalling over an
+ * existing extension updates it (data is preserved). Extensions install into the
+ * host-only state dir (never the workspace); see src/harness/extensions/LAYOUT.md.
  */
 import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
@@ -17,6 +19,7 @@ import {
   listInstalledExtensions,
   validateExtension,
 } from "../harness/index.js";
+import { parseGitSource, resolveGitSource } from "./ext-git.js";
 
 interface ExtArgs {
   action?: string;
@@ -60,10 +63,15 @@ function scopeExtensionsDir(args: ExtArgs): string {
 }
 
 const USAGE = `Usage:
-  mikan ext install <path> (--global | --conversation <id>) [--state-dir <dir>]
+  mikan ext install <source> (--global | --conversation <id>) [--state-dir <dir>]
+      <source>: a local path, or a git URL / github:owner/repo with optional #subpath
+      e.g. github:geminixiang/mikan#examples/extensions/agent-pm
+      Reinstalling over an existing extension updates it (data preserved).
   mikan ext validate <path>
   mikan ext list [--conversation <id>] [--state-dir <dir>]
   mikan ext remove <slug> (--global | --conversation <id>) [--state-dir <dir>]`;
+
+function noop(): void {}
 
 export async function runExtCommand(argv: string[]): Promise<number> {
   const args = parseExtArgs(argv);
@@ -98,8 +106,6 @@ async function installAction(args: ExtArgs): Promise<number> {
     console.error("ext install: missing <path>");
     return 1;
   }
-  const source = resolve(args.target);
-
   let destDir: string;
   try {
     destDir = scopeExtensionsDir(args);
@@ -108,6 +114,32 @@ async function installAction(args: ExtArgs): Promise<number> {
     return 1;
   }
 
+  // Resolve the source: a git URL (optionally with #subpath) is cloned to a
+  // temp dir; a local path is used directly.
+  const gitSpec = parseGitSource(args.target);
+  let source: string;
+  let cleanup = noop;
+  if (gitSpec) {
+    try {
+      const resolved = resolveGitSource(gitSpec);
+      source = resolved.dir;
+      cleanup = resolved.cleanup;
+    } catch (err) {
+      console.error(`Failed to fetch ${gitSpec.url}: ${err instanceof Error ? err.message : err}`);
+      return 1;
+    }
+  } else {
+    source = resolve(args.target);
+  }
+
+  try {
+    return await installResolved(args, source, destDir);
+  } finally {
+    cleanup();
+  }
+}
+
+async function installResolved(args: ExtArgs, source: string, destDir: string): Promise<number> {
   const result = await validateExtension(source);
   printValidation(result);
   if (!result.ok) {
@@ -120,10 +152,9 @@ async function installAction(args: ExtArgs): Promise<number> {
   const destName = basename(source);
   const dest = join(destDir, destName);
   mkdirSync(destDir, { recursive: true });
-  if (existsSync(dest)) {
-    console.error(`Already installed at ${dest}. Remove it first or pick a different name.`);
-    return 1;
-  }
+  // Reinstalling over an existing install is how updates work: replace it.
+  const replaced = existsSync(dest);
+  if (replaced) rmSync(dest, { recursive: true, force: true });
   cpSync(source, dest, { recursive: true });
 
   const scopeLabel =
@@ -132,9 +163,10 @@ async function installAction(args: ExtArgs): Promise<number> {
     args.scope === "global"
       ? join(args.stateDir, "global", "extension-data", result.slug)
       : join(args.stateDir, "conversations", args.conversationId!, "extension-data", result.slug);
-  console.log(`\nInstalled ${result.name} (slug: ${result.slug}) for ${scopeLabel}.`);
+  const verb = replaced ? "Reinstalled" : "Installed";
+  console.log(`\n${verb} ${result.name} (slug: ${result.slug}) for ${scopeLabel}.`);
   console.log(`  code: ${dest}`);
-  console.log(`  data: ${dataDir} (created on first use)`);
+  console.log(`  data: ${dataDir} (created on first use, preserved on reinstall)`);
   console.log("Run /pi-new in the conversation to activate.");
   return 0;
 }

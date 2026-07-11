@@ -1,0 +1,94 @@
+/**
+ * Resolve a `mikan ext install` source that points at a git repository into a
+ * local directory: clone it, descend into an optional `#subpath`, and run
+ * `npm install --omit=dev` when the extension declares dependencies. The
+ * caller validates + copies the returned directory, then calls cleanup().
+ */
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+export interface ResolvedGitSource {
+  /** Local directory holding the extension (clone root or a subpath within). */
+  dir: string;
+  /** Remove the temporary clone. */
+  cleanup: () => void;
+}
+
+interface GitSpec {
+  url: string;
+  subpath?: string;
+}
+
+/**
+ * Recognize a git source and split off an optional `#subpath`:
+ *   https://host/owner/repo.git#dir/ext   → { url, subpath }
+ *   git@host:owner/repo.git               → { url }
+ *   github:owner/repo                     → expands to https clone URL
+ * Returns undefined for anything that looks like a local path.
+ */
+export function parseGitSource(source: string): GitSpec | undefined {
+  const [locator, subpath] = splitSubpath(source);
+
+  if (locator.startsWith("github:")) {
+    const repo = locator.slice("github:".length).replace(/\.git$/, "");
+    return { url: `https://github.com/${repo}.git`, subpath };
+  }
+  if (
+    locator.startsWith("https://") ||
+    locator.startsWith("http://") ||
+    locator.startsWith("git://") ||
+    locator.startsWith("ssh://") ||
+    locator.startsWith("file://") ||
+    /^git@[^:]+:/.test(locator)
+  ) {
+    return { url: locator, subpath };
+  }
+  return undefined;
+}
+
+function splitSubpath(source: string): [string, string | undefined] {
+  const hash = source.indexOf("#");
+  if (hash === -1) return [source, undefined];
+  return [source.slice(0, hash), source.slice(hash + 1) || undefined];
+}
+
+/** Clone a git source (shallow) and resolve the extension directory within it. */
+export function resolveGitSource(spec: GitSpec): ResolvedGitSource {
+  const tempRoot = mkdtempSync(join(tmpdir(), "mikan-ext-git-"));
+  const cleanup = () => rmSync(tempRoot, { recursive: true, force: true });
+  try {
+    execFileSync("git", ["clone", "--depth", "1", spec.url, tempRoot], { stdio: "inherit" });
+
+    const dir = spec.subpath ? join(tempRoot, spec.subpath) : tempRoot;
+    if (!existsSync(dir)) {
+      throw new Error(`Subpath not found in repository: ${spec.subpath}`);
+    }
+
+    // Install runtime dependencies only when the extension declares any.
+    if (hasDependencies(dir)) {
+      execFileSync("npm", ["install", "--omit=dev", "--no-audit", "--no-fund"], {
+        cwd: dir,
+        stdio: "inherit",
+      });
+    }
+    return { dir, cleanup };
+  } catch (err) {
+    cleanup();
+    throw err;
+  }
+}
+
+function hasDependencies(dir: string): boolean {
+  const packageJsonPath = join(dir, "package.json");
+  if (!existsSync(packageJsonPath)) return false;
+  try {
+    const pkg = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as {
+      dependencies?: Record<string, string>;
+    };
+    return Boolean(pkg.dependencies && Object.keys(pkg.dependencies).length > 0);
+  } catch {
+    return false;
+  }
+}

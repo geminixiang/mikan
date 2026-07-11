@@ -34,15 +34,18 @@ from "@geminixiang/mikan"` 取得完整補全；由 jiti 載入，無需 build�
 用 `mikan ext`（會先驗證、裝進正確路徑、印出 slug 與資料位置）：
 
 ```sh
-# 只對單一會話生效（常見裝法）
-mikan ext install ./agent-pm --conversation <id>
+# 直接從 GitHub 裝（不必先 clone）— 只對單一會話生效（常見裝法）
+mikan ext install github:geminixiang/mikan#examples/extensions/agent-pm --conversation <id>
 
 # 或所有會話生效
+mikan ext install github:geminixiang/mikan#examples/extensions/agent-pm --global
+
+# 或從本地路徑
 mikan ext install ./agent-pm --global
 ```
 
-裝完在該會話輸入 `/pi-new` 生效。編輯 `index.ts` 後，下一個 harness instance
-會重新載入（jiti 無快取），不需重啟 mikan。
+裝完在該會話輸入 `/pi-new` 生效。要更新就**再裝一次**（覆蓋 code、保留 data）。
+編輯 `index.ts` 後，下一個 harness instance 會重新載入（jiti 無快取），不需重啟。
 
 > 若要開發自己的 extension：`npm i -D @geminixiang/mikan` 取得型別，
 > `import type { MikanExtensionApi } from "@geminixiang/mikan"`，
