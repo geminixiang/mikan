@@ -302,7 +302,12 @@ function buildExtensionApi(params: {
     context,
     paths: {
       get dataDir(): string {
-        const dir = join(stateDir, "extension-data", slug);
+        const dir = join(stateDir, "extension-data", slug, "conversations", conversationId);
+        mkdirSync(dir, { recursive: true });
+        return dir;
+      },
+      get sharedDataDir(): string {
+        const dir = join(stateDir, "extension-data", slug, "shared");
         mkdirSync(dir, { recursive: true });
         return dir;
       },

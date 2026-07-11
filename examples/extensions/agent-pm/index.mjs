@@ -4,7 +4,7 @@
  * Demonstrates the extension surface end to end:
  *   v1  registerTool          `followup` tool the model calls to manage items
  *   v1  before_agent_start    open items ride into every turn's system prompt
- *   v2  api.paths.dataDir     sqlite file in the extension's host-only data dir
+ *   v2  api.paths.sharedDataDir  sqlite in the extension's shared data dir
  *   v2  api.schedules         daily overdue sweep as an autonomous agent run
  *   v2  api.notify            immediate out-of-band reminder ("remind" action)
  *   v2  manifest.json         name/version/description
@@ -74,7 +74,11 @@ const followupSchema = {
 };
 
 export default async function activate(api) {
-  const db = openDb(api.paths.dataDir);
+  // Deliberately multi-conversation: agent-pm's end goal is cross-channel
+  // PM views, so it opts into the shared data dir and keys every row by
+  // conversation_id itself. A single-channel tool would use api.paths.dataDir
+  // (per-conversation, isolation for free) instead.
+  const db = openDb(api.paths.sharedDataDir);
   const conversationId = api.context.conversationId;
 
   const openItems = () =>

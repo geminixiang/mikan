@@ -164,7 +164,8 @@ harness 定義 service 介面（`ExtensionHostServices`），由 embedder 注入
 | ---------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
 | `api.schedules.upsert/delete/list` | 具名排程（cron `periodic` / `one-shot`），觸發自主 agent run | event 檔（`<workingDir>/events/ext.<slug>.<conv>.<name>.json`），EventsWatcher 熱載入、跨重啟持久 |
 | `api.notify(text)`                 | 直接發訊到本會話，不經 agent run                             | `main.ts` 的 `PlatformNotifier` → 平台 bot `postMessage`                                          |
-| `api.paths.dataDir`                | 每 extension 的 host-only 資料目錄（首次存取時建立）         | `<stateDir>/extension-data/<slug>/`                                                               |
+| `api.paths.dataDir`                | **本會話**的資料目錄（預設，隔離免費；首次存取時建立）       | `<stateDir>/extension-data/<slug>/conversations/<conversationId>/`                                |
+| `api.paths.sharedDataDir`          | 跨會話共享資料（**明確宣告**的多會話應用；自行分區）         | `<stateDir>/extension-data/<slug>/shared/`                                                        |
 | `api.secrets.get/list`             | 唯讀 secrets                                                 | vault：`<stateDir>/vaults/extensions/<slug>/env`                                                  |
 | `manifest.json`                    | name / version / description（顯示用；slug 不受影響）        | loader 讀取                                                                                       |
 | `skills/<name>/SKILL.md`           | 隨附 skills                                                  | 自動探索，**內嵌**進 system prompt（sandbox 讀不到 host-only 檔案），本地同名 skill 優先          |
@@ -174,6 +175,34 @@ harness 定義 service 介面（`ExtensionHostServices`），由 embedder 注入
 注意：排程檔落在 events 目錄（sandbox 掛載、agent 可寫），slug 前綴的
 歸屬是**合作性**約定而非安全邊界 — 排程 text 對 agent 可見，勿放 secrets。
 完整的 host/sandbox 路徑邊界地圖見 `src/sandbox/README.md`。
+
+### Extension 開發心法
+
+> **每位分身有自己的房間；要用共用客廳，得明說。**
+
+`activate(api)` 以會話為單位被呼叫 — 每個會話一個實例（分身），自己的
+hooks、工具、`context.conversationId`。整個 API 面上只有**存資料**需要
+開發者選邊，其餘（hooks、tools、schedules、notify、secrets）都已由系統
+綁定正確的範圍：
+
+- **單會話工具**（預設心態）：資料寫 `api.paths.dataDir` — 每會話一個
+  房間，天真的寫法自動獲得隔離。
+- **跨會話應用**（如 agent-pm）：資料寫 `api.paths.sharedDataDir` — 這行
+  程式碼就是宣告「我是多租戶應用」，每筆資料自行以 conversation id 分區、
+  自行處理並發（多個會話的分身同進程共用檔案，用 sqlite/append，別用
+  讀整檔改寫回）。
+
+失敗模式不對稱是這個預設的理由：預設隔離時忘了共享 = 功能不動（大聲、
+無害）；預設共享時忘了過濾 = 資料跨會話外洩（安靜、有害）。
+
+生命週期紀律：
+
+1. **activate 必須冪等** — `/new` 會讓同一會話反覆重新 activate
+   （`schedules.upsert` 的 upsert 語意就是為此）。
+2. **不要 `setInterval`／長駐資源** — 沒有 deactivate；要定時走
+   `api.schedules`。
+3. **code 與 data 分家** — `extensions/` 是 loader 的掃描面（放進去的
+   `.js` 會被當 extension 載入）且升級 = 整目錄替換；狀態一律寫 data dir。
 
 完整範例見 `examples/extensions/agent-pm/`：約 200 行的 follow-up
 追蹤器（sqlite、每日逾期掃描排程、主動提醒、隨附 skill），即 extension

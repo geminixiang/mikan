@@ -24,14 +24,14 @@ belongs to exactly one of three trust classes:
 
 ### Host-only — under the state dir (`~/.mikan`), never mounted
 
-| Path                               | Contents                                                        |
-| ---------------------------------- | --------------------------------------------------------------- |
-| `settings.json`                    | global settings                                                 |
-| `conversations/<id>/settings.json` | conversation settings (model, mount mode, …)                    |
-| `auth.json`, `models.json`         | provider credentials and model catalog                          |
-| `extensions/…`                     | extension **code** (runs in the host process)                   |
-| `extension-data/<slug>/`           | per-extension data dirs                                         |
-| `vaults/…`                         | credentials; `vaults/extensions/<slug>/env` = extension secrets |
+| Path                               | Contents                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------------------- |
+| `settings.json`                    | global settings                                                                       |
+| `conversations/<id>/settings.json` | conversation settings (model, mount mode, …)                                          |
+| `auth.json`, `models.json`         | provider credentials and model catalog                                                |
+| `extensions/…`                     | extension **code** (runs in the host process)                                         |
+| `extension-data/<slug>/`           | extension data: `conversations/<id>/` per conversation (default) + `shared/` (opt-in) |
+| `vaults/…`                         | credentials; `vaults/extensions/<slug>/env` = extension secrets                       |
 
 Rules enforced in code:
 

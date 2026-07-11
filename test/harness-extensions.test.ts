@@ -201,9 +201,9 @@ describe("loadExtensions v2 api", () => {
     expect(extensions[0]?.name).toBe("probe");
   });
 
-  test("api.paths.dataDir creates a per-slug dir under the state dir", async () => {
+  test("api.paths.dataDir is conversation-scoped; sharedDataDir is the explicit opt-in", async () => {
     const probe = writeProbeExtension(
-      "export default function activate(api) { report({ dataDir: api.paths.dataDir }); }",
+      "export default function activate(api) { report({ dataDir: api.paths.dataDir, sharedDataDir: api.paths.sharedDataDir }); }",
     );
 
     const { errors } = await loadExtensions({
@@ -212,9 +212,12 @@ describe("loadExtensions v2 api", () => {
       services: { stateDir: join(dir, "state") },
     });
     expect(errors).toHaveLength(0);
-    const { dataDir } = probe.read() as { dataDir: string };
-    expect(dataDir).toBe(join(dir, "state", "extension-data", "probe"));
+    const { dataDir, sharedDataDir } = probe.read() as { dataDir: string; sharedDataDir: string };
+    // Conversation isolation is the default: the safe path gets the short name.
+    expect(dataDir).toBe(join(dir, "state", "extension-data", "probe", "conversations", "C123"));
+    expect(sharedDataDir).toBe(join(dir, "state", "extension-data", "probe", "shared"));
     expect(existsSync(dataDir)).toBe(true);
+    expect(existsSync(sharedDataDir)).toBe(true);
   });
 
   test("api.secrets reads from the injected resolver, keyed by slug", async () => {

@@ -196,14 +196,29 @@ export interface MikanExtensionApi {
     readonly model: Model<Api>;
     readonly thinkingLevel: ThinkingLevel;
   };
-  /** Host-only filesystem locations owned by this extension. */
+  /**
+   * Host-only filesystem locations owned by this extension, under
+   * `<stateDir>/extension-data/<slug>/`. Never mounted into sandbox
+   * containers. Which one you use is a declaration: `dataDir` for
+   * conversation-scoped state (the safe default — isolation for free),
+   * `sharedDataDir` for deliberately cross-conversation state (you own
+   * tenant partitioning and concurrency).
+   */
   readonly paths: {
     /**
-     * Per-extension data directory under the state dir
-     * (`<stateDir>/extension-data/<slug>`), created on first access.
-     * Host-only: never mounted into sandbox containers.
+     * This conversation's private data directory
+     * (`extension-data/<slug>/conversations/<conversationId>`), created on
+     * first access. Default choice: matches mikan's grain where the
+     * conversation is the isolation boundary.
      */
     readonly dataDir: string;
+    /**
+     * Data shared across all conversations this extension serves
+     * (`extension-data/<slug>/shared`), created on first access. Explicit
+     * opt-in for multi-conversation applications (e.g. a PM tool with
+     * cross-channel views); key rows by conversation id yourself.
+     */
+    readonly sharedDataDir: string;
   };
   /**
    * Read-only secrets from the embedder's vault

@@ -14,8 +14,11 @@
   也會主動追殺逾期項目。
 - **主動發訊**（v2 `api.notify`）：`remind` action 直接把清單貼進頻道，
   不經過 agent 回覆。
-- **資料目錄**（v2 `api.paths.dataDir`）：sqlite 檔放在
-  `<stateDir>/extension-data/agent-pm/`，host-only、永不進 sandbox。
+- **資料目錄**（v2 `api.paths.sharedDataDir`）：sqlite 檔放在
+  `<stateDir>/extension-data/agent-pm/shared/`，host-only、永不進 sandbox。
+  用 shared（而非預設的 per-conversation `dataDir`）是**刻意宣告**：
+  agent-pm 的終極目標是跨頻道 PM 視圖，因此自行以 `conversation_id`
+  欄位分區。單頻道工具應該用 `api.paths.dataDir`，隔離免費。
 - **manifest.json**（v2）：名稱／版本／描述。
 - **skills/**（v2）：`follow-up-triage` SKILL.md 隨 extension 出貨，
   內容直接內嵌進 system prompt（sandbox 讀不到 host-only 路徑，
