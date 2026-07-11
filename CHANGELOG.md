@@ -9,6 +9,22 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.5]
+
+### Added
+
+- Add `api.paths.sharedDataDir` for extension state intentionally shared across conversations.
+- Add an idempotent, dry-run-first script for migrating extension code and data to the new layout.
+
+### Changed
+
+- Store conversation extension code and data under `conversations/<id>/` and global extension assets under `global/`.
+- Make `api.paths.dataDir` conversation-scoped by default to prevent accidental cross-conversation state sharing.
+
+### Tests
+
+- Update extension loader and command coverage for the conversation-scoped layout.
+
 ## [1.0.0-beta.4]
 
 ### Changed
