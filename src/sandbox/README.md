@@ -68,10 +68,13 @@ Consequences to keep in mind:
 - **Extension schedules are agent-visible and agent-tamperable**: they are
   event files in the shared events dir. Ownership prefixes are cooperative,
   not a security boundary — never put secrets in schedule text.
-- **Known gap:** the events dir is global and agent-writable, so a container
-  can write an event targeting _another_ conversation (cross-conversation
-  instruction injection). Fix under consideration: per-conversation events
-  subdirectories with provenance-based trust.
+- **The events dir is a workspace-level scheduling bus — by design.** It is
+  global and agent-writable, so any conversation's agent (or extension, or
+  admin) can schedule runs in _any_ conversation. This is deliberate: one
+  mikan workspace is one trust domain for scheduling, and cross-conversation
+  events are exactly how PM-style workflows post reminders into other
+  channels (e.g. agent-pm). Do not "fix" this by scoping events per
+  conversation.
 - Auto-reply config files live in the conversation dir and are therefore
   agent-toggleable (feature is deprecated).
 
