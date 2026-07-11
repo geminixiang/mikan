@@ -9,6 +9,25 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.7]
+
+### Added
+
+- Add TypeScript and npm-package extensions with `package.json` entrypoints and runtime dependencies.
+- Add `mikan ext install`, `validate`, `list`, and `remove` commands.
+- Add extension installation from Git sources and repository subpaths.
+
+### Changed
+
+- Treat reinstalling an extension as an update while preserving its data directory.
+- Use `package.json` as the primary extension metadata source with `manifest.json` as a fallback.
+- Convert the agent project manager example to TypeScript with a typed extension API.
+- Add the Slack `reactions:write` scope and missing slash commands to the manifests and setup guides.
+
+### Tests
+
+- Add coverage for TypeScript loading, package metadata, extension CLI operations, and Git installation.
+
 ## [1.0.0-beta.6]
 
 ### Added
