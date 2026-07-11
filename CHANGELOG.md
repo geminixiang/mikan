@@ -9,6 +9,20 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.4]
+
+### Changed
+
+- Show an extension's slug in `/pi-extensions` when it differs from the manifest display name.
+
+### Fixed
+
+- Reject extensions installed directly at a scope root and show an actionable warning to use a named subdirectory.
+
+### Tests
+
+- Add coverage for scope-root extension mis-install detection and inventory warnings.
+
 ## [1.0.0-beta.3]
 
 ### Fixed
