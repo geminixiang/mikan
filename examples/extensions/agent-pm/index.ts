@@ -7,7 +7,7 @@
  *   v2  api.paths.dataDir     per-conversation sqlite (isolation for free)
  *   v2  api.schedules         daily overdue sweep as an autonomous agent run
  *   v2  api.notify            immediate out-of-band reminder ("remind" action)
- *   v2  manifest.json         name/version/description
+ *   v2  package.json          entrypoint (mikan.extensions) + name/version/desc
  *   v2  skills/               follow-up-triage SKILL.md, inlined into the prompt
  *
  * Written in TypeScript and loaded via jiti — no build step. Types come from

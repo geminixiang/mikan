@@ -23,7 +23,8 @@ from "@geminixiang/mikan"` 取得完整補全；由 jiti 載入，無需 build�
   永不進 sandbox。每個會話一個 db，隔離免費——這是常見裝法（單一頻道/DM
   的 follow-up 追蹤）。若想要跨頻道 PM 視圖（一張總表涵蓋所有頻道），
   改用 `api.paths.sharedDataDir` 並靠 `conversation_id` 欄位自行分區。
-- **manifest.json**（v2）：名稱／版本／描述。
+- **package.json**（v2）：`mikan.extensions` 宣告進入點，name/version/
+  description 用標準 npm 欄位（單一中繼資料來源）。
 - **skills/**（v2）：`follow-up-triage` SKILL.md 隨 extension 出貨，
   內容直接內嵌進 system prompt（sandbox 讀不到 host-only 路徑，
   所以 extension skills 一律 inline）。
@@ -76,5 +77,5 @@ mikan:  (排程觸發自主 run → followup list → 發現逾期)
 | 主動發訊息到平台           | ✅ v2 `api.notify`                         |
 | 專屬資料目錄               | ✅ v2 `api.paths.dataDir`                  |
 | secrets                    | ✅ v2 `api.secrets`（vault env，唯讀）     |
-| 身分／版本                 | ✅ v2 `manifest.json`                      |
+| 身分／版本                 | ✅ v2 `package.json`（name/version）       |
 | 隨附 skills                | ✅ v2 `skills/` 目錄（SKILL.md，自動內嵌） |

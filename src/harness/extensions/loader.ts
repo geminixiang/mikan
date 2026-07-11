@@ -206,20 +206,42 @@ function resolveDirectoryEntrypoint(dir: string): string | undefined {
   return undefined;
 }
 
-/** Read the `mikan.extensions` entrypoint list from a directory's package.json. */
-function readMikanManifestEntrypoints(dir: string): string[] {
+interface ExtensionPackageJson {
+  name?: string;
+  version?: string;
+  description?: string;
+  mikan?: { extensions?: string[]; displayName?: string };
+}
+
+/** Read and shape a directory's package.json; undefined when absent/malformed. */
+function readPackageJson(dir: string): ExtensionPackageJson | undefined {
   const packageJsonPath = join(dir, "package.json");
-  if (!existsSync(packageJsonPath)) return [];
+  if (!existsSync(packageJsonPath)) return undefined;
   try {
-    const parsed: unknown = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
-    const mikan = (parsed as { mikan?: { extensions?: unknown } })?.mikan;
-    const entries = mikan?.extensions;
-    if (!Array.isArray(entries)) return [];
-    return entries.filter((entry): entry is string => typeof entry === "string");
+    const parsed = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as unknown;
+    if (!parsed || typeof parsed !== "object") return undefined;
+    const record = parsed as Record<string, unknown>;
+    const mikanRaw = record.mikan as { extensions?: unknown; displayName?: unknown } | undefined;
+    return {
+      name: typeof record.name === "string" ? record.name : undefined,
+      version: typeof record.version === "string" ? record.version : undefined,
+      description: typeof record.description === "string" ? record.description : undefined,
+      mikan: {
+        extensions: Array.isArray(mikanRaw?.extensions)
+          ? mikanRaw.extensions.filter((entry): entry is string => typeof entry === "string")
+          : undefined,
+        displayName: typeof mikanRaw?.displayName === "string" ? mikanRaw.displayName : undefined,
+      },
+    };
   } catch (err) {
     log.logWarning(`Ignoring malformed package.json: ${packageJsonPath}`, String(err));
-    return [];
+    return undefined;
   }
+}
+
+/** Read the `mikan.extensions` entrypoint list from a directory's package.json. */
+function readMikanManifestEntrypoints(dir: string): string[] {
+  return readPackageJson(dir)?.mikan?.extensions ?? [];
 }
 
 function sanitizeSlug(base: string): string {
@@ -266,10 +288,27 @@ function scheduleNameSegment(name: string): string {
   return segment;
 }
 
-/** Read `manifest.json` at a directory-form extension's root. */
+/**
+ * Read display metadata (name/version/description) for a directory-form
+ * extension. `package.json` is the primary source — its standard `name`,
+ * `version`, `description`, plus an optional `mikan.displayName` that
+ * overrides the npm name for the user-facing label (npm names are
+ * lowercase/scoped; display names can be arbitrary). A `manifest.json` is a
+ * fallback for extensions that ship no package.json.
+ */
 function readManifest(rootDir: string): ExtensionManifest {
   // Bare-file extensions (rootDir is a *.mjs/.ts file) have no manifest.
   if (EXTENSION_FILE_PATTERN.test(basename(rootDir))) return {};
+
+  const pkg = readPackageJson(rootDir);
+  if (pkg && (pkg.mikan?.displayName ?? pkg.name ?? pkg.version ?? pkg.description)) {
+    return {
+      name: pkg.mikan?.displayName ?? pkg.name,
+      version: pkg.version,
+      description: pkg.description,
+    };
+  }
+
   const manifestPath = join(rootDir, "manifest.json");
   if (!existsSync(manifestPath)) return {};
   try {

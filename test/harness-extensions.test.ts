@@ -168,24 +168,64 @@ describe("TypeScript & manifest extensions", () => {
     expect(registry.getContributedTools().map((tool) => tool.name)).toEqual(["typed_tool"]);
   });
 
-  test("package.json mikan.extensions declares the entrypoint; slug from dir name", async () => {
+  test("package.json declares entrypoint + metadata; slug from dir name", async () => {
     const extDir = join(dir, "my-ext");
     mkdirSync(join(extDir, "src"), { recursive: true });
     writeFileSync(
       join(extDir, "package.json"),
-      JSON.stringify({ name: "irrelevant-npm-name", mikan: { extensions: ["./src/main.ts"] } }),
-    );
-    writeFileSync(
-      join(extDir, "manifest.json"),
-      JSON.stringify({ name: "My Ext", version: "1.0" }),
+      JSON.stringify({
+        name: "my-ext",
+        version: "1.0",
+        description: "a package",
+        mikan: { extensions: ["./src/main.ts"] },
+      }),
     );
     writeFileSync(join(extDir, "src", "main.ts"), "export default function activate(): void {}");
 
     const { extensions, errors } = await loadExtensions({ dirs: [dir], context });
     expect(errors).toHaveLength(0);
-    // Slug and manifest come from the extension root, not the nested entrypoint.
-    expect(extensions[0]).toMatchObject({ slug: "my-ext", name: "My Ext", version: "1.0" });
+    // Metadata comes from package.json; slug from the root dir, not the nested entrypoint.
+    expect(extensions[0]).toMatchObject({
+      slug: "my-ext",
+      name: "my-ext",
+      version: "1.0",
+      description: "a package",
+    });
     expect(extensions[0]?.path.endsWith(join("src", "main.ts"))).toBe(true);
+  });
+
+  test("mikan.displayName overrides the npm name for the label", async () => {
+    const extDir = join(dir, "probe-ext");
+    mkdirSync(extDir, { recursive: true });
+    writeFileSync(
+      join(extDir, "package.json"),
+      JSON.stringify({
+        name: "@scope/probe",
+        version: "2.0",
+        mikan: { displayName: "探針 Probe" },
+      }),
+    );
+    writeFileSync(join(extDir, "index.mjs"), "export default function activate() {}");
+
+    const { extensions } = await loadExtensions({ dirs: [dir], context });
+    expect(extensions[0]).toMatchObject({ slug: "probe-ext", name: "探針 Probe", version: "2.0" });
+  });
+
+  test("manifest.json is a fallback when there is no package.json", async () => {
+    const extDir = join(dir, "legacy");
+    mkdirSync(extDir, { recursive: true });
+    writeFileSync(join(extDir, "index.mjs"), "export default function activate() {}");
+    writeFileSync(
+      join(extDir, "manifest.json"),
+      JSON.stringify({ name: "Legacy", version: "0.9", description: "old style" }),
+    );
+
+    const { extensions } = await loadExtensions({ dirs: [dir], context });
+    expect(extensions[0]).toMatchObject({
+      name: "Legacy",
+      version: "0.9",
+      description: "old style",
+    });
   });
 });
 

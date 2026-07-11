@@ -110,23 +110,31 @@ Extension 是一個模組（`.mjs` / `.js` / **`.ts`**），放在 **state dir**
 ~/.mikan/global/extensions/audit.mjs            # 所有會話（單檔形式）
 ~/.mikan/global/extensions/agent-pm/            # 所有會話（目錄形式）
   index.mjs | index.ts                          #   進入點
-  manifest.json                                 #   選配：name/version/description
-  package.json                                  #   選配：mikan.extensions + npm 依賴
+  package.json                                  #   選配：mikan.extensions + 依賴 + metadata
   skills/<name>/SKILL.md                        #   選配：隨附 skills（自動內嵌）
 ~/.mikan/conversations/<id>/extensions/         # 單一會話
 ```
 
 **載入以 jiti**，所以 extension 可直接寫 TypeScript，也可 `npm i` 使用第三方
-套件（附 `node_modules`）。進入點解析順序：`package.json` 的
-`mikan.extensions`（陣列，相對路徑）→ `index.{mjs,js,ts,mts}`。範例：
+套件（附 `node_modules`）。`package.json` 是單一的中繼資料來源 —— 進入點由
+`mikan.extensions`（陣列，相對路徑）宣告，name/version/description 直接用標準
+npm 欄位，另可用 `mikan.displayName` 覆寫顯示名（npm name 是小寫/scoped，
+顯示名可為任意字串）。範例：
 
 ```json
 {
+  "name": "agent-pm",
+  "version": "0.2.0",
+  "description": "Follow-up tracker",
   "type": "module",
-  "mikan": { "extensions": ["./src/main.ts"] },
+  "mikan": { "extensions": ["./index.ts"], "displayName": "Agent PM" },
   "dependencies": { "ms": "2.1.3" }
 }
 ```
+
+進入點解析順序：`mikan.extensions` → `index.{mjs,js,ts,mts}`。無 `package.json`
+的簡單 extension，可改放 `manifest.json`（`{name,version,description}`）作為
+中繼資料 fallback。
 
 `global/` 與 `conversations/<id>/` 是兩個平行 scope，各自底下有 `extensions/`
 （code）與 `extension-data/`（data）。完整佈局與遷移見
