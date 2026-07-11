@@ -14,3 +14,74 @@ This directory defines sandbox abstractions, concrete sandbox executors, and sha
 - `path-context.ts`: Builds mounted runtime path contexts and translates runtime paths back to host paths.
 - `types.ts`: Defines all sandbox configs, executors, exec results, runtime path contexts, and adapter types.
 - `utils.ts`: Provides simple child-process execution, process-tree killing, and shell escaping.
+
+## Host / sandbox path boundary (image mode)
+
+mikan's primary deployment is `image:*`: the mikan process (LLM calls, session
+persistence, extensions, platform bots) runs on the **host**, while agent tool
+commands execute inside a per-conversation **container**. Everything on disk
+belongs to exactly one of three trust classes:
+
+### Host-only — under the state dir (`~/.mikan`), never mounted
+
+| Path                               | Contents                                                        |
+| ---------------------------------- | --------------------------------------------------------------- |
+| `settings.json`                    | global settings                                                 |
+| `conversations/<id>/settings.json` | conversation settings (model, mount mode, …)                    |
+| `auth.json`, `models.json`         | provider credentials and model catalog                          |
+| `extensions/…`                     | extension **code** (runs in the host process)                   |
+| `extension-data/<slug>/`           | per-extension data dirs                                         |
+| `vaults/…`                         | credentials; `vaults/extensions/<slug>/env` = extension secrets |
+
+Rules enforced in code:
+
+- Extension code loads only from the state dir (`defaultExtensionDirs`);
+  loading from a mounted path would let sandboxed code run on the host.
+- Conversation settings are read from the state dir only. They historically
+  lived at `<conversationDir>/settings.json` — which is bind-mounted rw — so
+  a sandboxed agent could flip its own `sandbox.image.workspaceMount` to
+  "full" and remount the whole workspace. `conversationSettingsPath()`
+  migrates legacy files once and never reads the mounted location again.
+- Startup refuses (fatal under sandboxed modes) a `--state-dir` located
+  inside the working directory (`assertStateDirOutsideWorkspace`).
+- Multi-instance hosts should give each instance its own `--state-dir`;
+  conversation settings, auth, and vaults are keyed per state dir.
+
+### Mounted read-write into the container — agent-writable by design
+
+| Mount (private mode)                                | Purpose                                    |
+| --------------------------------------------------- | ------------------------------------------ |
+| `MEMORY.md` → `/workspace/MEMORY.md`                | agent-maintained global memory             |
+| `skills/` → `/workspace/skills`                     | agent-creatable skills                     |
+| `events/` → `/workspace/events`                     | event files (agent self-scheduling)        |
+| `<conversationId>/` → `/workspace/<conversationId>` | sessions, scratch, per-conversation skills |
+| vault mounts                                        | per-user credential injection              |
+
+Full mode (per-conversation, admin/`/sandbox full`) mounts the entire working
+directory at `/workspace` instead.
+
+Consequences to keep in mind:
+
+- **Session files are agent-writable.** A corrupted session header makes
+  `SessionStore.open` throw instead of silently starting a fresh session
+  (which would erase history on the next append); `/new` recovers.
+- **Extension schedules are agent-visible and agent-tamperable**: they are
+  event files in the shared events dir. Ownership prefixes are cooperative,
+  not a security boundary — never put secrets in schedule text.
+- **The events dir is a workspace-level scheduling bus — by design.** It is
+  global and agent-writable, so any conversation's agent (or extension, or
+  admin) can schedule runs in _any_ conversation. This is deliberate: one
+  mikan workspace is one trust domain for scheduling, and cross-conversation
+  events are exactly how PM-style workflows post reminders into other
+  channels (e.g. agent-pm). Do not "fix" this by scoping events per
+  conversation.
+- Auto-reply config files live in the conversation dir and are therefore
+  agent-toggleable (feature is deprecated).
+
+### Paths in prompts and tool output
+
+The model only ever sees **runtime** paths (`/workspace/…`); the host only
+ever touches **host** paths. `path-context.ts` translates between them
+(skill locations, upload paths). Extension-shipped skills are the exception:
+their files live under the host-only state dir, so their bodies are inlined
+into the system prompt instead of referenced by path.

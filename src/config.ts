@@ -1,11 +1,12 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "@sinclair/typebox";
-import { existsSync, readFileSync, renameSync } from "fs";
+import { existsSync, readFileSync, renameSync, rmSync } from "fs";
 import { homedir } from "os";
-import { dirname, join, resolve } from "path";
+import { basename, dirname, join, resolve } from "path";
 import { readEnv } from "./utils/env.js";
 import { ensureDirExists, readJsonSchemaFileIfExists } from "./utils/file-guards.js";
 import { atomicWritePrivateFile } from "./utils/fs-atomic.js";
+import * as log from "./log.js";
 
 export class MissingGlobalSettingsError extends Error {
   constructor(public readonly settingsPath: string) {
@@ -206,10 +207,56 @@ export function loadGlobalSettings(): AgentConfig {
   return toAgentConfig(loadRawGlobalSettings());
 }
 
+/**
+ * Host-authoritative location of a conversation's settings file:
+ * `<stateDir>/conversations/<conversationId>/settings.json`.
+ *
+ * Conversation settings used to live at `<conversationDir>/settings.json`,
+ * but conversation dirs are bind-mounted read-write into sandbox containers
+ * in image mode — code inside the sandbox could edit its own settings.json
+ * and flip `sandbox.image.workspaceMount` to "full", remounting the entire
+ * workspace into its container (cross-conversation access). Settings are an
+ * administrator surface, so they live under the host-only state dir.
+ *
+ * Migration: on first access per conversation, a legacy
+ * `<conversationDir>/settings.json` is moved here. The new file's existence
+ * (an empty `{}` is written when there is nothing to migrate) is the
+ * migration marker — a legacy file (re)appearing later, e.g. planted from
+ * inside the sandbox, is never read again.
+ */
+export function conversationSettingsPath(conversationDir: string): string {
+  const conversationId = basename(resolve(conversationDir));
+  const hostPath = join(getStateDir(), "conversations", conversationId, "settings.json");
+  if (existsSync(hostPath)) return hostPath;
+
+  ensureDirExists(dirname(hostPath));
+  const legacyPath = join(conversationDir, "settings.json");
+  let content = "{}\n";
+  let migrated = false;
+  if (existsSync(legacyPath)) {
+    try {
+      content = readFileSync(legacyPath, "utf-8");
+      migrated = true;
+    } catch (err) {
+      log.logWarning(`Could not read legacy conversation settings: ${legacyPath}`, String(err));
+    }
+  }
+  atomicWritePrivateFile(hostPath, content);
+  if (migrated) {
+    try {
+      rmSync(legacyPath);
+    } catch (err) {
+      log.logWarning(`Could not remove legacy conversation settings: ${legacyPath}`, String(err));
+    }
+    log.logInfo(`Migrated conversation settings to host-only path: ${hostPath}`);
+  }
+  return hostPath;
+}
+
 export function resolveConversationSettings(conversationDir: string): AgentConfig {
   const globalConfig = loadRawGlobalSettings();
   const conversationConfig = normalizeSettingsConfig(
-    loadSettingsFile(join(conversationDir, "settings.json")) ?? {},
+    loadSettingsFile(conversationSettingsPath(conversationDir)) ?? {},
   );
   return toAgentConfig({ ...globalConfig, ...conversationConfig });
 }
@@ -224,7 +271,7 @@ export function resolveConversationSettings(conversationDir: string): AgentConfi
 export function loadAutoReplyJudgeModel(conversationDir?: string): JudgeModelConfig {
   const global = requireGlobalSettings();
   const local = conversationDir
-    ? (loadSettingsFile(join(conversationDir, "settings.json")) ?? {})
+    ? (loadSettingsFile(conversationSettingsPath(conversationDir)) ?? {})
     : {};
   const merged: SettingsFileConfig["llm"] = { ...global.llm, ...local.llm };
   const judge = { ...global.llm?.autoReply, ...local.llm?.autoReply };
@@ -328,6 +375,42 @@ export function resolveStateDirFromArgv(args = process.argv.slice(2)): string {
   }
 
   return join(homedir(), ".mikan");
+}
+
+/**
+ * True when `child` is `parent` or a path inside it. Purely lexical (no
+ * symlink resolution) — used for configuration sanity checks, not as the
+ * final security boundary.
+ */
+export function isPathInside(child: string, parent: string): boolean {
+  const parentPath = resolve(parent);
+  const childPath = resolve(child);
+  return childPath === parentPath || childPath.startsWith(parentPath + "/");
+}
+
+/**
+ * The state dir (extensions code, extension data, vaults, auth.json) must
+ * never live inside the working dir: conversation opt-in "full" mode mounts
+ * the entire working dir read-write into sandbox containers, and a mounted
+ * state dir would let sandboxed code plant extension modules that the host
+ * process later imports — a sandbox escape. Fatal under sandboxed modes;
+ * host mode has no mounts, so only warn about the bad hygiene.
+ */
+export function assertStateDirOutsideWorkspace(
+  stateDir: string,
+  workingDir: string,
+  sandboxType: string,
+): void {
+  if (!isPathInside(stateDir, workingDir)) return;
+  const message =
+    `--state-dir (${stateDir}) must not be inside the working directory (${workingDir}): ` +
+    `sandbox containers mount the working directory, and a mounted state dir ` +
+    `would expose extensions, vaults, and credentials to sandboxed code.`;
+  if (sandboxType === "host") {
+    log.logWarning("Insecure state dir location", message);
+    return;
+  }
+  throw new Error(message);
 }
 
 export function resolveSentryDsn(): string | undefined {
@@ -458,5 +541,5 @@ export function updateConversationSettings(
   conversationDir: string,
   patch: Partial<AgentConfig>,
 ): void {
-  updateSettingsFile(join(conversationDir, "settings.json"), patch, {});
+  updateSettingsFile(conversationSettingsPath(conversationDir), patch, {});
 }

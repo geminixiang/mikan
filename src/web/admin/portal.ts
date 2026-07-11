@@ -1,8 +1,7 @@
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "fs";
 import type { IncomingMessage, ServerResponse } from "http";
-import { homedir } from "os";
 import { basename, join, resolve as pathResolve, sep as pathSep } from "path";
-import { AuthStorage, ModelRegistry, SessionManager } from "@earendil-works/pi-coding-agent";
+import { MikanModels, SessionStore } from "../../harness/index.js";
 
 import {
   loadConversationAutoReplyConfig,
@@ -249,7 +248,11 @@ function listConversationDirs(workingDir: string): string[] {
       const dir = join(workingDir, name);
       try {
         const items = readdirSync(dir);
-        return items.some((item) => SETTINGS_FILES.has(item) || item.endsWith(".jsonl"));
+        // Conversation settings migrated to the state dir, so a sessions/
+        // subdir is the primary marker for existing conversation dirs.
+        return items.some(
+          (item) => item === "sessions" || SETTINGS_FILES.has(item) || item.endsWith(".jsonl"),
+        );
       } catch {
         return false;
       }
@@ -374,7 +377,7 @@ function readSessionUsage(
   label: string,
 ): SessionUsageRow[] {
   try {
-    const manager = SessionManager.open(sessionFile);
+    const manager = SessionStore.open(sessionFile);
     const header = manager.getHeader();
     if (!header) return [];
 
@@ -521,7 +524,7 @@ function accumulateSessionUsageByDay(
   flags: { hasOlder: boolean },
 ): void {
   try {
-    const manager = SessionManager.open(sessionFile);
+    const manager = SessionStore.open(sessionFile);
     if (!manager.getHeader()) return;
 
     for (const entry of manager.getEntries()) {
@@ -620,8 +623,7 @@ function serveGlobalSettings(res: ServerResponse): void {
 
 async function serveModelsList(res: ServerResponse): Promise<void> {
   try {
-    const authStorage = AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json"));
-    const registry = ModelRegistry.create(authStorage);
+    const registry = MikanModels.create();
     const availableModels = await registry.getAvailable();
     const statuses = await resolveAdminModelAccessStatuses(registry, availableModels);
     const models = availableModels.map((model) => ({

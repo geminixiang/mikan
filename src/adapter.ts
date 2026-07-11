@@ -10,5 +10,6 @@ export type {
   ConversationKind,
   MessagingInfo,
   PlatformName,
+  PlatformNotifier,
   RunningSession,
 } from "./types.js";

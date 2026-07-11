@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingBot, ConversationResponder } from "../src/adapter.js";
 import { AdminCommandHandler } from "../src/commands/admin.js";
 import { AutoReplyCommandHandler } from "../src/commands/auto-reply.js";
+import { conversationSettingsPath } from "../src/config.js";
 import { dispatchCommand } from "../src/commands/registry.js";
 import { LoginCommandHandler } from "../src/commands/login.js";
 import { NewCommandHandler } from "../src/commands/new.js";
@@ -519,6 +520,7 @@ describe("LoginCommandHandler", () => {
 describe("SandboxCommandHandler", () => {
   const handler = new SandboxCommandHandler();
   let workingDir: string;
+  let sandboxStateDir: string;
 
   beforeEach(() => {
     workingDir = join(
@@ -526,9 +528,14 @@ describe("SandboxCommandHandler", () => {
       `cmd-sandbox-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     );
     mkdirSync(workingDir, { recursive: true });
+    // Conversation settings are host-authoritative under the state dir.
+    sandboxStateDir = join(workingDir, "state");
+    mkdirSync(sandboxStateDir, { recursive: true });
+    process.env.MIKAN_STATE_DIR = sandboxStateDir;
   });
 
   afterEach(() => {
+    delete process.env.MIKAN_STATE_DIR;
     rmSync(workingDir, { recursive: true, force: true });
   });
 
@@ -568,9 +575,11 @@ describe("SandboxCommandHandler", () => {
 
     expect(await handler.tryHandle(ctx)).toBe(true);
     const sandboxConfig = JSON.parse(
-      readFileSync(join(workingDir, "C123", "settings.json"), "utf-8"),
+      readFileSync(conversationSettingsPath(join(workingDir, "C123")), "utf-8"),
     ) as { sandbox: { image: { workspaceMount: string } } };
     expect(sandboxConfig.sandbox.image.workspaceMount).toBe("full");
+    // Never written into the (sandbox-mounted) conversation dir.
+    expect(existsSync(join(workingDir, "C123", "settings.json"))).toBe(false);
     expect(ctx.responder.responses[0]).toContain("Workspace mount: full");
   });
 
@@ -592,7 +601,7 @@ describe("SandboxCommandHandler", () => {
 
     expect(await handler.tryHandle(ctx)).toBe(true);
     const sandboxConfig = JSON.parse(
-      readFileSync(join(workingDir, "C123", "settings.json"), "utf-8"),
+      readFileSync(conversationSettingsPath(join(workingDir, "C123")), "utf-8"),
     ) as { sandbox: { image: { workspaceMount: string } } };
     expect(sandboxConfig.sandbox.image.workspaceMount).toBe("private");
     expect(ctx.responder.responses[0]).toContain("Workspace mount: private");

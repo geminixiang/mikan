@@ -1,4 +1,4 @@
-import { SessionManager, type SessionEntry } from "@earendil-works/pi-coding-agent";
+import type { SessionEntry, SessionStore } from "../harness/index.js";
 import { join } from "path";
 import type { ConversationLogMessage } from "../types.js";
 import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-guards.js";
@@ -26,7 +26,7 @@ const CHAT_SYNC_CUSTOM_TYPE = "mikan.chat_sync";
 const BIWEEKLY_ROTATION_ANCHOR = new Date(2026, 0, 4); // Sunday
 const BIWEEKLY_MS = 14 * 24 * 60 * 60 * 1000;
 
-type SessionAppendMessage = Parameters<SessionManager["appendMessage"]>[0];
+type SessionAppendMessage = Parameters<SessionStore["appendMessage"]>[0];
 
 interface LogRecord {
   message: ConversationLogMessage;
@@ -171,7 +171,6 @@ export class AgentMemoryFileManager {
       if (!options.rotateTopLevelSession || !shouldRotateTopLevelSession(existing, this.now())) {
         syncSessionFromLog(
           existing,
-          options.sessionDir,
           options.cwd,
           selectExistingSessionSyncMessages(records, {
             sessionKey: null,
@@ -192,7 +191,6 @@ export class AgentMemoryFileManager {
     });
     bootstrapSessionFromLog(
       sessionFile,
-      options.sessionDir,
       options.cwd,
       bootstrapRecords,
       latestSyncMessageId(records, {
@@ -222,7 +220,6 @@ export class AgentMemoryFileManager {
     if (existing) {
       syncSessionFromLog(
         existing,
-        options.sessionDir,
         options.cwd,
         selectExistingSessionSyncMessages(records, {
           sessionKey: options.sessionKey,
@@ -242,7 +239,6 @@ export class AgentMemoryFileManager {
     });
     bootstrapSessionFromLog(
       threadFile,
-      options.sessionDir,
       options.cwd,
       bootstrapRecords,
       latestSyncMessageId(records, {
@@ -483,14 +479,13 @@ function sortTime(record: LogRecord): number {
 
 function bootstrapSessionFromLog(
   sessionFile: string,
-  sessionDir: string,
   cwd: string,
   records: LogRecord[],
   lastMessageId = records.at(-1)?.message.ts,
 ): void {
   if (records.length === 0 && !lastMessageId) return;
 
-  const sessionManager = openManagedSession(sessionFile, sessionDir, cwd);
+  const sessionManager = openManagedSession(sessionFile, cwd);
   appendLogRecordsToSession(sessionManager, records);
   sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
     source: "log.jsonl",
@@ -508,21 +503,16 @@ interface HistoryWindow {
 
 function syncSessionFromLog(
   sessionFile: string,
-  sessionDir: string,
   cwd: string,
   records: LogRecord[],
   historyWindow: HistoryWindow,
 ): void {
   if (records.length === 0) return;
-  syncSessionManagerFromLog(
-    openManagedSession(sessionFile, sessionDir, cwd),
-    records,
-    historyWindow,
-  );
+  syncSessionManagerFromLog(openManagedSession(sessionFile, cwd), records, historyWindow);
 }
 
 function syncSessionManagerFromLog(
-  sessionManager: SessionManager,
+  sessionManager: SessionStore,
   records: LogRecord[],
   historyWindow: HistoryWindow,
 ): void {
@@ -552,14 +542,14 @@ function syncSessionManagerFromLog(
   });
 }
 
-function appendLogRecordsToSession(sessionManager: SessionManager, records: LogRecord[]): void {
+function appendLogRecordsToSession(sessionManager: SessionStore, records: LogRecord[]): void {
   for (const record of records) {
     const message = buildHistorySessionMessage(record.message);
     if (message) sessionManager.appendMessage(message);
   }
 }
 
-function forceRewriteSession(sessionManager: SessionManager, sessionFile: string): void {
+function forceRewriteSession(sessionManager: SessionStore, sessionFile: string): void {
   const header = sessionManager.getHeader();
   if (!header) return;
 

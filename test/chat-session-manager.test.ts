@@ -1,17 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { SessionStore } from "../src/harness/index.js";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   AgentMemoryFileManager,
   registerThreadSession,
 } from "../src/sessions/agent-memory-file-manager.js";
-import {
-  getChannelSessionDir,
-  getThreadSessionFile,
-  openManagedSession,
-} from "../src/sessions/store.js";
+import { getThreadSessionFile, openManagedSession } from "../src/sessions/store.js";
 
 let conversationDir: string;
 
@@ -36,11 +32,7 @@ function writeLog(entries: object[]): void {
 }
 
 function readContextText(sessionFile: string): string {
-  const session = SessionManager.open(
-    sessionFile,
-    getChannelSessionDir(conversationDir),
-    conversationDir,
-  );
+  const session = SessionStore.open(sessionFile, conversationDir);
   return session
     .buildSessionContext()
     .messages.map((message) =>
@@ -389,11 +381,7 @@ describe("AgentMemoryFileManager", () => {
       cwd: conversationDir,
       currentMessageId: "1000.0003",
     });
-    const session = openManagedSession(
-      firstScope.contextFile,
-      firstScope.sessionDir,
-      conversationDir,
-    );
+    const session = openManagedSession(firstScope.contextFile, conversationDir);
     session.appendMessage({
       role: "user",
       content: [{ type: "text", text: "[2026-05-01 00:00:02+00:00] [alice]: next one is?" }],
@@ -595,7 +583,7 @@ describe("AgentMemoryFileManager", () => {
       currentMessageId: "1000.0003",
     });
 
-    const session = openManagedSession(scope.contextFile, scope.sessionDir, conversationDir);
+    const session = openManagedSession(scope.contextFile, conversationDir);
     session.appendMessage({
       role: "user",
       content: [{ type: "text", text: "[alice]: current message" }],
@@ -669,7 +657,7 @@ describe("AgentMemoryFileManager", () => {
       cwd: conversationDir,
       currentMessageId: "2000.0002",
     });
-    const session = openManagedSession(scope.contextFile, scope.sessionDir, conversationDir);
+    const session = openManagedSession(scope.contextFile, conversationDir);
 
     manager.syncSessionManager({
       conversationDir,

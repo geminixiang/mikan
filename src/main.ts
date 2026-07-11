@@ -7,7 +7,7 @@ import { mkdirSync, statSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { fileURLToPath } from "url";
 import { dirname, join as pathJoin } from "path";
-import type { MessagingBot } from "./adapter.js";
+import type { MessagingBot, PlatformNotifier } from "./adapter.js";
 import { DiscordMessagingBot } from "./adapters/discord/bot.js";
 import { TelegramMessagingBot } from "./adapters/telegram/bot.js";
 import { SlackMessagingBot as SlackMessagingBotClass } from "./adapters/slack/bot.js";
@@ -20,10 +20,18 @@ import { InMemoryLinkTokenStore } from "./web/login/store.js";
 import { InMemorySessionViewTokenStore } from "./web/session-view/store.js";
 import { DockerContainerManager } from "./provisioner.js";
 import {
+  assertStateDirOutsideWorkspace,
   createGlobalSettingsFile,
   loadGlobalSettings,
   MissingGlobalSettingsError,
 } from "./config.js";
+import {
+  configureHttpDispatcher,
+  defaultAuthPath,
+  defaultModelsJsonPath,
+  parseHttpIdleTimeoutMs,
+} from "./harness/index.js";
+import { existsSync, readFileSync } from "fs";
 import { readEnv, setEnvAliases } from "./utils/env.js";
 import { ensureDirExists, isRecord, readJsonFileIfExists } from "./utils/file-guards.js";
 import {
@@ -186,6 +194,11 @@ try {
   handleStartupError(error);
 }
 
+// Global fetch: proxy support (HTTP_PROXY/HTTPS_PROXY/NO_PROXY) and idle
+// timeouts so a stalled LLM stream errors out instead of hanging a session.
+const httpIdleTimeoutMs = parseHttpIdleTimeoutMs(readEnv("HTTP_IDLE_TIMEOUT"));
+configureHttpDispatcher(httpIdleTimeoutMs);
+
 // Handle --version
 if (parsedArgs.showVersion) {
   console.log(getVersion());
@@ -232,6 +245,11 @@ const { workingDir, sandbox } = { workingDir: parsedArgs.workingDir, sandbox: pa
 const stateDir = parsedArgs.stateDir ?? join(homedir(), ".mikan");
 setEnvAliases("STATE_DIR", stateDir);
 ensureSecureStateDir(stateDir);
+try {
+  assertStateDirOutsideWorkspace(stateDir, workingDir, sandbox.type);
+} catch (error) {
+  handleStartupError(error);
+}
 
 // Validate platform tokens
 const hasSlack = !!(SLACK_APP_TOKEN && SLACK_BOT_TOKEN);
@@ -319,6 +337,31 @@ if (provisioner) {
   await provisioner.stopIdle(IMAGE_IDLE_TIMEOUT_MS);
   setInterval(() => provisioner.stopIdle(IMAGE_IDLE_TIMEOUT_MS), IMAGE_IDLE_TIMEOUT_MS).unref();
 }
+// Declared before the runtime so the notifier closure can capture them;
+// bots register below once their platforms initialize.
+const bots: MessagingBot[] = [];
+const botsByPlatform: Record<string, MessagingBot> = {};
+
+/**
+ * Extension `api.notify` backend: post into a conversation without an agent
+ * run. Platform resolution mirrors event files — explicit platform, or the
+ * sole running platform.
+ */
+const platformNotifier: PlatformNotifier = async (conversationId, text, platform) => {
+  const available = Object.keys(botsByPlatform);
+  const key = platform?.trim().toLowerCase() || (available.length === 1 ? available[0] : undefined);
+  const bot = key ? botsByPlatform[key] : undefined;
+  if (!bot) {
+    throw new Error(
+      platform
+        ? `notify: unknown platform '${platform}' (available: ${available.join(", ") || "none"})`
+        : `notify: multiple platforms active (${available.join(", ")}); specify platform`,
+    );
+  }
+  await bot.postMessage(conversationId, text);
+  log.logInfo(`[notify] posted to ${key}/${conversationId} (${text.length} chars)`);
+};
+
 const handler = createConversationRuntime({
   workingDir,
   sandbox,
@@ -328,6 +371,7 @@ const handler = createConversationRuntime({
   sessionViewTokenStore,
   adminTokenStore,
   portalBaseUrl: portalBaseUrl(),
+  platformNotifier,
 });
 
 const sandboxDesc =
@@ -341,9 +385,42 @@ const sandboxDesc =
           ? `firecracker:${sandbox.vmId}`
           : `cloudflare:${sandbox.sandboxId}`;
 log.logStartup(workingDir, sandboxDesc);
+logHarnessStartupSummary();
 
-const bots: MessagingBot[] = [];
-const botsByPlatform: Record<string, MessagingBot> = {};
+/**
+ * One-look confirmation of the harness runtime surface, aimed at upgrade
+ * verification: config moved from ~/.pi to ~/.mikan with no fallback, so a
+ * missing auth.json here is the first thing to check when runs fail.
+ */
+function logHarnessStartupSummary(): void {
+  const proxy =
+    process.env.HTTPS_PROXY ??
+    process.env.https_proxy ??
+    process.env.HTTP_PROXY ??
+    process.env.http_proxy;
+  log.logInfo(
+    `HTTP dispatcher: idle timeout ${httpIdleTimeoutMs}ms${proxy ? `, proxy ${proxy}` : ", no proxy"}`,
+  );
+
+  const authPath = defaultAuthPath();
+  if (existsSync(authPath)) {
+    try {
+      const providers = Object.keys(JSON.parse(readFileSync(authPath, "utf-8")) as object);
+      log.logInfo(`Harness auth: ${authPath} (providers: ${providers.join(", ") || "none"})`);
+    } catch {
+      log.logWarning(`Harness auth: ${authPath} exists but is not valid JSON`);
+    }
+  } else {
+    log.logInfo(`Harness auth: ${authPath} missing — provider keys come from env vars only`);
+  }
+
+  const modelsPath = defaultModelsJsonPath();
+  log.logInfo(
+    existsSync(modelsPath)
+      ? `Harness models.json: ${modelsPath}`
+      : `Harness models.json: none (${modelsPath}) — built-in providers only`,
+  );
+}
 
 if (hasSlack) {
   const slackMessagingBotToken = SLACK_BOT_TOKEN;

@@ -1,0 +1,191 @@
+# mikan agent harness
+
+mikan 自有的 agent harness 層。原先 mikan 依賴 `@earendil-works/pi-coding-agent`
+（`AgentSession`、`SessionManager`、`ModelRegistry`、`AuthStorage`），但那是為單人
+TUI 打造的完整產品；mikan 只用到其中一小部分，且 chat-bot 的多會話、headless、
+多平台場景與 TUI 的假設漸行漸遠。本模組保留 pi-coding-agent 的核心精神
+（append-only session tree、compaction、skills、extension hooks），改為直接站在
+`@earendil-works/pi-agent-core`（agent loop、compaction 演算法、context 建構）與
+`@earendil-works/pi-ai`（providers、models、auth 解析、串流）之上。
+
+## 架構
+
+```
+┌────────────────────────────────────────────────────────────┐
+│ mikan adapters / runtime / commands / web                  │
+└──────────────────────────┬─────────────────────────────────┘
+                           │
+┌──────────────────────────▼─────────────────────────────────┐
+│ src/harness  (this module)                                 │
+│                                                            │
+│  MikanAgentSession (runner.ts)                             │
+│    · prompt / subscribe / abort / reloadFromSession        │
+│    · message persistence on message_end                    │
+│    · auto-compaction (threshold + overflow recovery)       │
+│    · auto-retry with exponential backoff                   │
+│    · budget circuit breakers (token/cost/time/call caps)   │
+│    · extension hook dispatch                               │
+│                                                            │
+│  SessionStore (session-store.ts)   MikanModels (models.ts) │
+│    · v3 JSONL, append-only tree      · pi-ai Models 集合    │
+│    · buildSessionContext             · models.json 自訂供應 │
+│                                      · auth.json 憑證      │
+│  Skills (skills.ts)                FileCredentialStore     │
+│  Extensions (extensions/)          Settings (settings.ts)  │
+└──────────────────────────┬─────────────────────────────────┘
+                           │
+┌──────────────────────────▼─────────────────────────────────┐
+│ pi-agent-core: Agent loop, compaction, buildSessionContext │
+│ pi-ai: providers, Models, auth resolution, streaming       │
+└────────────────────────────────────────────────────────────┘
+```
+
+### 模組職責
+
+| 模組                              | 職責                                                                           | 取代的 pi-coding-agent API                    |
+| --------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------- |
+| `runner.ts` `MikanAgentSession`   | 回合迴圈：持久化、auto-compaction、auto-retry、預算熔斷、事件、extension hooks | `AgentSession`                                |
+| `session-store.ts` `SessionStore` | v3 JSONL session tree 的同步讀寫                                               | `SessionManager`                              |
+| `models.ts` `MikanModels`         | 模型目錄 + auth 解析（含 models.json 自訂供應商）                              | `ModelRegistry`                               |
+| `auth.ts` `FileCredentialStore`   | `~/.mikan/auth.json` 憑證儲存（pi-ai `CredentialStore` 實作）                  | `AuthStorage`                                 |
+| `skills.ts`                       | SKILL.md 探索與 system prompt 格式化                                           | `loadSkillsFromDir` / `formatSkillsForPrompt` |
+| `http.ts`                         | 全域 fetch：proxy 支援（`HTTP_PROXY` 等）+ idle timeout                        | `http-dispatcher`                             |
+| `settings.ts`                     | compaction / retry 預設值                                                      | `SettingsManager`                             |
+| `extensions/`                     | mikan 自有 extension 系統                                                      | `DefaultResourceLoader` 的 extension 載入     |
+
+### 相容性
+
+- **Session 檔案格式不變。** `SessionStore` 讀寫既有 v3 JSONL（`session` header 行 +
+  帶 `id`/`parentId` 的 entries）。entry 形狀與 pi-agent-core 的 `SessionTreeEntry`
+  結構相同，因此 pi-agent-core 的 `buildSessionContext` 與 compaction pipeline
+  直接在這些 entries 上運作。舊 mikan 寫出的會話檔可無縫重開。
+- **auth.json 格式不變，位置改為 `~/.mikan/auth.json`。** pi-ai 的 `Credential`
+  型別即為現行 auth.json 的形狀；檔案內容可直接沿用，但不再讀 `~/.pi` 下的舊路徑。
+- **models.json 子集。** `MikanModels` 讀 `~/.mikan/models.json`：
+  帶 `models` 陣列的供應商成為自訂供應商
+  （`api` 支援 anthropic-messages / openai-completions / openai-responses /
+  azure-openai-responses / google-generative-ai / mistral-conversations）；
+  只帶 `baseUrl`/`compat` 的項目覆寫內建供應商模型。
+- **事件面不變。** `MikanAgentSession` 事件 = pi-agent-core `AgentEvent`
+  passthrough + `compaction_start/_end` + `auto_retry_start/_end` +
+  `budget_exceeded`，adapters 的渲染程式不需修改（新增的 `budget_exceeded`
+  是額外事件，舊 handler 忽略即可）。
+
+## 預算熔斷（circuit breakers）
+
+LLM 無法可靠地自己決定何時該停（停機問題），所以失控的 run 必須由外部叫停。
+`settings.ts` 的 `BudgetSettings` 定義單次 `prompt()` 的資源上限（token、成本 USD、
+牆鐘時間、LLM 呼叫次數）；任一項超限就 abort 該 run 並發出 `budget_exceeded` 事件。
+
+- **互動回合**逐則由人把關，預設不設上限（`DEFAULT_BUDGET_SETTINGS = {}`）。
+- **自主 run（event / trigger）** 沒有人盯著迴圈，`agent.ts` 會傳入
+  `DEFAULT_EVENT_BUDGET`（10 分鐘、50 次 LLM 呼叫、2 USD）作為 stop-loss。
+
+上限在每次 assistant `message_end` 時累計檢查（可在回合中途 abort），並在
+`handlePostRun` 擋掉「超限後又被 retry/compaction 續跑」的漏洞。
+
+## Prompt cache 友善
+
+pi-ai 對 Anthropic 會在整段 system prompt 結尾放單一 cache breakpoint——只要
+system prompt 有任何位元變動，整個請求（含最貴的對話歷史）就 cache miss。因此
+`agent.ts` 的 `buildSystemPrompt` 只放**同一會話中穩定**的內容；每回合會變的
+內容（event-trigger 模式、attribution，後者在多人頻道會隨發言者每回合改變）改由
+`buildTurnInstructions()` 隨 user message 遞送，讓 system prompt 位元穩定、cache 保溫。
+
+### 與 pi-coding-agent 的行為差異
+
+- 設定與憑證改放 `~/.mikan/`（`auth.json`、`models.json`）；不再讀取
+  `~/.pi/` 下的任何路徑。
+- pi extension（`.pi/extensions`）不再載入；由 mikan extension 系統取代（見下）。
+- prompt template / `/skill:` 指令展開不在 harness 內（mikan 的指令由
+  `src/commands/` 處理）。
+- OAuth 登入流程尚未接線（憑證檔中已有的 OAuth token 仍會被 pi-ai 解析與刷新）。
+
+## Extension 系統
+
+Extension 是 ES module，放在 **state dir**（host-only，永不掛進 sandbox）
+的 `extensions/` 下：
+
+```
+~/.mikan/extensions/global/audit.mjs        # 所有會話（單檔形式）
+~/.mikan/extensions/global/agent-pm/        # 所有會話（目錄形式）
+  index.mjs                                 #   進入點
+  manifest.json                             #   選配：name/version/description
+  skills/<name>/SKILL.md                    #   選配：隨附 skills（自動內嵌）
+~/.mikan/extensions/<conversationId>/       # 單一會話
+```
+
+**安全模型：** extension 程式碼在 mikan 主程序內執行，權限等同 mikan 本體
+（平台 token、vault、host 檔案系統）。安裝 extension 是管理員動作。因此
+extension 目錄絕不能放在 workspace 下 — image 模式會把 workspace/會話目錄
+掛進 sandbox container，sandbox 內寫入的程式碼若被 host 載入即構成逃逸。
+`global` 為保留字，平台的 conversation id 不會取此值。
+
+**身分（slug）：** 由安裝路徑決定（目錄名或檔名），不隨 manifest 改變 —
+data dir、secrets、排程的歸屬都以 slug 為鍵。同一 extension 裝在 global
+與單一會話會共用同一個 slug（即共用資料）。
+
+匯出 `activate`（default 或具名皆可）：
+
+```js
+// extensions/audit.mjs
+export default function activate(api) {
+  api.on("tool_call", ({ toolName, args }) => {
+    if (toolName === "bash" && String(args.command).includes("curl")) {
+      return { block: true, reason: "network access is audited" };
+    }
+  });
+  api.registerTool(myCustomTool);
+  api.log("audit extension ready");
+}
+```
+
+### Hooks（v1）
+
+| Hook                 | 時機                      | 回傳值                                       |
+| -------------------- | ------------------------- | -------------------------------------------- |
+| `before_agent_start` | 使用者 prompt 送出前      | `{ systemPrompt? }` 覆寫本回合 system prompt |
+| `tool_call`          | 工具執行前                | `{ block?, reason? }` 阻擋工具               |
+| `tool_result`        | 工具執行後（觀察）        | —                                            |
+| `message_end`        | 每則訊息完成（觀察）      | —                                            |
+| `turn_end`           | 回合結束（觀察）          | —                                            |
+| `session_compact`    | compaction 寫入後（觀察） | —                                            |
+
+語意：註冊順序執行；有回傳值的 hook 以第一個非 `undefined` 結果為準；handler
+擲錯只記 log，不會中斷回合。
+
+### v2 API：schedules、notify、paths、secrets、manifest、skills
+
+harness 定義 service 介面（`ExtensionHostServices`），由 embedder 注入實作
+（mikan 在 `agent.ts` 組裝）；缺少對應 service 時，該 api 擲出說明性錯誤。
+這讓 harness 保持可獨立內嵌 — 其他宿主可自帶 messaging / 排程實作。
+
+| api                                | 作用                                                         | mikan 的後端                                                                                      |
+| ---------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `api.schedules.upsert/delete/list` | 具名排程（cron `periodic` / `one-shot`），觸發自主 agent run | event 檔（`<workingDir>/events/ext.<slug>.<conv>.<name>.json`），EventsWatcher 熱載入、跨重啟持久 |
+| `api.notify(text)`                 | 直接發訊到本會話，不經 agent run                             | `main.ts` 的 `PlatformNotifier` → 平台 bot `postMessage`                                          |
+| `api.paths.dataDir`                | 每 extension 的 host-only 資料目錄（首次存取時建立）         | `<stateDir>/extension-data/<slug>/`                                                               |
+| `api.secrets.get/list`             | 唯讀 secrets                                                 | vault：`<stateDir>/vaults/extensions/<slug>/env`                                                  |
+| `manifest.json`                    | name / version / description（顯示用；slug 不受影響）        | loader 讀取                                                                                       |
+| `skills/<name>/SKILL.md`           | 隨附 skills                                                  | 自動探索，**內嵌**進 system prompt（sandbox 讀不到 host-only 檔案），本地同名 skill 優先          |
+
+排程的 `text` 是自主 run 的完整任務描述（不繼承對話歷史，需自包含）；
+多平台同時運行時 `notify` / 排程需指明 `platform`，單平台自動推定。
+注意：排程檔落在 events 目錄（sandbox 掛載、agent 可寫），slug 前綴的
+歸屬是**合作性**約定而非安全邊界 — 排程 text 對 agent 可見，勿放 secrets。
+完整的 host/sandbox 路徑邊界地圖見 `src/sandbox/README.md`。
+
+完整範例見 `examples/extensions/agent-pm/`：約 200 行的 follow-up
+追蹤器（sqlite、每日逾期掃描排程、主動提醒、隨附 skill），即 extension
+系統的目標形狀 —— 復用 mikan 的 harness 而非自建整套 agent。
+
+v3 候選：`tool_result` patch、自訂 slash command 貢獻點、provider 註冊、
+install/uninstall 生命週期指令。
+
+## 測試
+
+- `test/harness-session-store.test.ts` — v3 格式相容、tree/branch、compaction 展開
+- `test/harness-runner.test.ts` — faux provider 端對端：持久化、工具、hook 阻擋、auth 預檢
+- `test/harness-extensions.test.ts` — loader 與 hook registry
+- `test/harness-skills.test.ts` — SKILL.md 探索與 prompt 格式化
+- `test/harness-auth.test.ts` — auth.json 讀寫

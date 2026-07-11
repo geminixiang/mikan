@@ -1,6 +1,6 @@
 ---
 title: セッション
-description: mikan がプラットフォームのチャット履歴と pi-coding-agent の構造化セッションをどのように分離するか。
+description: mikan がプラットフォームのチャット履歴と agent harness の構造化セッションをどのように分離するか。
 ---
 
 import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
@@ -10,8 +10,8 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
     `log.jsonl` は、人が読めるプラットフォームメッセージを保持し、thread または reply context の
     bootstrap に使います。
   </Card>
-  <Card title="pi 構造化 context" icon="rocket">
-    `sessions/*.jsonl` は tool results と agent turn を保存し、pi-coding-agent
+  <Card title="Harness 構造化 context" icon="rocket">
+    `sessions/*.jsonl` は tool results と agent turn を保存し、mikan の agent harness
     が作業を継続できるようにします。
   </Card>
   <Card title="固定 scope" icon="lock">
@@ -36,7 +36,7 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
   - **log.jsonl** プラットフォームメッセージ履歴
   - sessions/
     - **current** 使用中の top-level session を指します
-    - **\*.jsonl** tool results を含む、構造化 pi-coding-agent context
+    - **\*.jsonl** tool results を含む、構造化 harness session context
     - **scope-derived files** thread / reply scopes の固定 session files
 
 </FileTree>

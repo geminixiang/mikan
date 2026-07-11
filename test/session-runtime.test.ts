@@ -64,7 +64,7 @@ describe("ConversationRuntime chat session scope", () => {
   test("uses a pre-registered empty thread session for Slack event anchors", async () => {
     const sessionDir = getChannelSessionDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
-    const channelSession = openManagedSession(channelFile, sessionDir, conversationDir);
+    const channelSession = openManagedSession(channelFile, conversationDir);
     channelSession.appendMessage(makeUserMessage("channel history should not leak"));
 
     const runtime = makeRuntime();

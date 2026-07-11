@@ -44,6 +44,7 @@ description: 了解 mikan 的平台接入、工作阶段、agent、sandbox、vau
 ### C. Agent 执行层
 
 - `src/agent.ts`
+- `src/harness/*`
 - `src/context.ts`
 - `src/tools/*`
 
@@ -51,7 +52,7 @@ description: 了解 mikan 的平台接入、工作阶段、agent、sandbox、vau
 
 - 建立 `PiAgentWrapper`
 - 载入模型、skills、memory、session context
-- 将使用者讯息送入 `pi-agent-core` / `pi-coding-agent`
+- 将使用者讯息送入 mikan 自有的 agent harness（`src/harness/`，构建于 `pi-agent-core` / `pi-ai` 之上），由它执行回合循环、auto-compaction、auto-retry 与 extension hooks
 - 把 tool calls 接到本地 `read/bash/edit/write/event/attach`
 - 把 tool 结果回写 session，并透过 adapter 回传给平台
 

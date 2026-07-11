@@ -1,21 +1,21 @@
-import { Agent, type ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
 import {
-  AgentSession,
-  AuthStorage,
-  convertToLlm,
-  DefaultResourceLoader,
+  DEFAULT_EVENT_BUDGET,
+  defaultExtensionDirs,
+  type ExtensionHostServices,
+  type ExtensionSchedulePayload,
   formatSkillsForPrompt,
-  getAgentDir,
+  loadExtensions,
   loadSkillsFromDir,
-  ModelRegistry,
-  SessionManager,
-  SettingsManager,
-  type Skill,
-} from "@earendil-works/pi-coding-agent";
+  MikanAgentSession,
+  MikanModels,
+  type MikanSkill,
+  type SessionStore,
+} from "./harness/index.js";
+import { createHash } from "crypto";
 import { existsSync, readFileSync } from "fs";
 import { mkdir, readFile, writeFile } from "fs/promises";
-import { homedir } from "os";
 import { join, posix } from "path";
 import type {
   ConversationMessage,
@@ -24,9 +24,10 @@ import type {
   MessagingInfo,
   PlatformName,
 } from "./adapter.js";
-import type { AgentEventPayload } from "./types.js";
+import type { AgentEventPayload, MikanEvent, PlatformNotifier } from "./types.js";
 import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import { resolveConversationSettings } from "./config.js";
+import { readEnv } from "./utils/env.js";
 import { ActorExecutionResolver } from "./execution-resolver.js";
 import * as log from "./log.js";
 import { reportUserFacingError } from "./observability/sentry.js";
@@ -51,6 +52,7 @@ import {
   type ResolvedSessionScope,
   type ThreadRootMessage,
 } from "./sessions/store.js";
+import { HostEventStore } from "./tools/event.js";
 import { createMikanTools } from "./tools/index.js";
 import * as Sentry from "@sentry/node";
 import { formatLocalTimestamp } from "./utils/date.js";
@@ -115,8 +117,8 @@ async function getMemory(conversationDir: string): Promise<string> {
   return parts.join("\n\n");
 }
 
-function loadMikanSkills(conversationDir: string, workspacePath: string): Skill[] {
-  const skillMap = new Map<string, Skill>();
+function loadMikanSkills(conversationDir: string, workspacePath: string): MikanSkill[] {
+  const skillMap = new Map<string, MikanSkill>();
 
   // conversationDir is the host path (e.g., /Users/.../data/C0A34FL8PMH)
   // hostWorkspacePath is the parent directory on host
@@ -214,9 +216,7 @@ function buildSystemPrompt(
   memory: string,
   sandboxConfig: SandboxConfig,
   platform: MessagingInfo,
-  skills: Skill[],
-  isEventTrigger = false,
-  triggerAttribution?: string,
+  skills: MikanSkill[],
 ): string {
   const { workspaceRoot, conversationPath, scratchPath } = buildRuntimePaths(
     workspacePath,
@@ -239,25 +239,11 @@ function buildSystemPrompt(
       : "(no users loaded)";
 
   const envDescription = buildEnvDescription(sandboxType, workspaceRoot);
-  const eventTriggerInstructions = isEventTrigger
-    ? `
-## Event Trigger Mode
-- You are handling a scheduled/background event, not opening a brand new chat with a stranger.
-- Treat the incoming user message as a self-contained task prepared by an earlier run.
-- Complete the task directly. Avoid generic greetings, self-introductions, or boilerplate offers to help.
-- For reminders/follow-ups, prefer a short direct response that sounds like a continuation of prior intent.
-- If the event text includes tone, brevity, or language instructions, follow them literally.
-`
-    : "";
-  const attributionInstructions = triggerAttribution
-    ? `
-## Attribution
-Always end your final ${platform.name} response and any GitHub issue/PR comments or descriptions you write via tools with:
-_Triggered by ${triggerAttribution}_
-
-Do not add this to \`[SILENT]\` responses.
-`
-    : "";
+  // Per-turn instructions (event-trigger mode, attribution) are delivered with
+  // the user message via buildTurnInstructions(), not baked in here, so this
+  // system prompt stays byte-stable across a conversation's turns and keeps the
+  // provider prompt cache warm (a changing system prefix invalidates the cache
+  // for the whole request, including the far larger conversation history).
   const slackBlockKitInstructions =
     platform.name === "slack"
       ? `
@@ -278,7 +264,6 @@ Do not add this to \`[SILENT]\` responses.
 - Scoped/thread sessions use fixed files at \`${conversationPath}/sessions/<scope_id>.jsonl\` (for example \`${conversationPath}/sessions/1777386320.800769.jsonl\`).
 - If a user asks about something that should exist in conversation history but is not found in the current context window, do not answer "I don't know" or "I don't have that". Instead, search the thread session, top-level session, and \`log.jsonl\` before responding.
 - User messages include a \`[in-thread:TS]\` marker when sent from within a platform thread/reply (TS is the thread or parent message identifier). Without this marker, the message is a top-level conversation message.
-${eventTriggerInstructions}
 ${platform.formattingGuide}${slackBlockKitInstructions}
 
 ## Platform IDs
@@ -366,7 +351,6 @@ Format: \`{"date":"...","ts":"...","user":"...","userName":"...","text":"...","i
 The log contains user messages and your final responses (not tool calls/results).
 Use \`log.jsonl\` for quick grep-style history. Use \`${conversationPath}/sessions/\` when you need structured turns, tool outputs, or thread/session lineage.
 ${isContainerLike || isFirecracker ? "Install jq: apt-get install jq" : ""}
-${attributionInstructions}
 \`\`\`bash
 # Recent messages
 tail -30 log.jsonl | jq -c '{date: .date[0:19], user: (.userName // .user), text}'
@@ -393,6 +377,37 @@ ls -1 sessions/
 
 Each tool requires a "label" parameter (shown to user).
 `;
+}
+
+/**
+ * Instructions that vary per turn (event-trigger mode, response attribution).
+ * These are delivered with the user message rather than baked into the system
+ * prompt, so the system prompt stays cache-stable across a conversation's turns
+ * (in a multi-user channel the attribution line alone changes every turn).
+ * Returns an empty string when the turn needs no special framing.
+ */
+export function buildTurnInstructions(
+  isEventTrigger: boolean,
+  triggerAttribution: string | undefined,
+  platformName: string,
+): string {
+  const parts: string[] = [];
+  if (isEventTrigger) {
+    parts.push(`## Event Trigger Mode
+- You are handling a scheduled/background event, not opening a brand new chat with a stranger.
+- Treat the incoming user message as a self-contained task prepared by an earlier run.
+- Complete the task directly. Avoid generic greetings, self-introductions, or boilerplate offers to help.
+- For reminders/follow-ups, prefer a short direct response that sounds like a continuation of prior intent.
+- If the event text includes tone, brevity, or language instructions, follow them literally.`);
+  }
+  if (triggerAttribution) {
+    parts.push(`## Attribution
+Always end your final ${platformName} response and any GitHub issue/PR comments or descriptions you write via tools with:
+_Triggered by ${triggerAttribution}_
+
+Do not add this to \`[SILENT]\` responses.`);
+  }
+  return parts.join("\n\n");
 }
 
 export function getUnresolvedSandboxPathContext(
@@ -454,8 +469,9 @@ interface PreparedRunContext {
 }
 
 interface ConfiguredAgentSession {
-  agent: Agent;
-  session: AgentSession;
+  session: MikanAgentSession;
+  /** Skills contributed by extensions, merged into each run's system prompt. */
+  extensionSkills: MikanSkill[];
 }
 
 function createRunnerExecutionContext(
@@ -502,88 +518,112 @@ function createRunnerExecutionContext(
   };
 }
 
+/**
+ * Extension host services over mikan's runtime infrastructure: schedules
+ * become event files under `<workspaceDir>/events` (picked up live by
+ * EventsWatcher), secrets come from `vaults/extensions/<slug>/env`, and
+ * notify posts through the platform bots when main.ts provides a notifier.
+ */
+function buildExtensionHostServices(params: {
+  workspaceDir: string;
+  vaultManager?: VaultManager;
+  platformNotifier?: PlatformNotifier;
+}): ExtensionHostServices {
+  const { workspaceDir, vaultManager, platformNotifier } = params;
+  const eventStore = HostEventStore.fromWorkspaceDir(workspaceDir);
+  return {
+    stateDir: readEnv("STATE_DIR"),
+    scheduleStore: {
+      write: async (filename, payload) => {
+        // Event files tolerate a missing platform (single-platform default),
+        // so the harness payload is a valid event payload as written.
+        await eventStore.write(filename, payload as unknown as MikanEvent);
+      },
+      delete: async (filename) => (await eventStore.delete(filename)).deleted,
+      list: async () =>
+        (await eventStore.list()).map((entry) => ({
+          filename: entry.filename,
+          payload: entry.payload as unknown as ExtensionSchedulePayload,
+        })),
+    },
+    ...(platformNotifier ? { postMessage: platformNotifier } : {}),
+    ...(vaultManager
+      ? {
+          resolveSecrets: (slug: string) => vaultManager.resolve(`extensions/${slug}`)?.env ?? {},
+        }
+      : {}),
+  };
+}
+
+/**
+ * Local (workspace/conversation) skills override extension skills on name
+ * collision: an admin's on-disk skill always beats an extension's.
+ */
+function mergeExtensionSkills(local: MikanSkill[], extension: MikanSkill[]): MikanSkill[] {
+  if (extension.length === 0) return local;
+  const byName = new Map<string, MikanSkill>();
+  for (const skill of extension) byName.set(skill.name, skill);
+  for (const skill of local) byName.set(skill.name, skill);
+  return [...byName.values()];
+}
+
 async function createConfiguredAgentSession(params: {
   conversationId: string;
   workspaceDir: string;
-  runtimeWorkspaceRoot: string;
   systemPrompt: string;
   model: Model<Api>;
   thinkingLevel: ThinkingLevel;
   tools: Awaited<ReturnType<typeof createMikanTools>>["tools"];
-  sessionManager: SessionManager;
-  settingsManager: SettingsManager;
-  modelRegistry: ModelRegistry;
+  sessionStore: SessionStore;
+  models: MikanModels;
+  vaultManager?: VaultManager;
+  platformNotifier?: PlatformNotifier;
 }): Promise<ConfiguredAgentSession> {
   const {
     conversationId,
     workspaceDir,
-    runtimeWorkspaceRoot,
     systemPrompt,
     model,
     thinkingLevel,
     tools,
-    sessionManager,
-    settingsManager,
-    modelRegistry,
+    sessionStore,
+    models,
+    vaultManager,
+    platformNotifier,
   } = params;
-  const agent = new Agent({
-    initialState: {
-      systemPrompt,
-      model,
-      thinkingLevel,
-      tools,
-    },
-    convertToLlm,
-    getApiKey: async (provider) => {
-      const key = await modelRegistry.getApiKeyForProvider(provider);
-      if (!key) {
-        throw new Error(
-          `No API key for provider "${provider}". Set the appropriate environment variable or configure via auth.json`,
-        );
-      }
-      return key;
-    },
-  });
 
-  const loadedSession = sessionManager.buildSessionContext();
-  if (loadedSession.messages.length > 0) {
-    agent.state.messages = loadedSession.messages;
+  // Host-only dirs under the state dir: extension code runs in the mikan
+  // process, so it must never load from workspace paths — those are mounted
+  // into sandbox containers and agent-writable (sandbox escape otherwise).
+  const extensionsResult = await loadExtensions({
+    dirs: defaultExtensionDirs(conversationId, readEnv("STATE_DIR")),
+    context: { conversationId, workspaceDir, model, thinkingLevel },
+    services: buildExtensionHostServices({ workspaceDir, vaultManager, platformNotifier }),
+  });
+  for (const err of extensionsResult.errors) {
+    log.logWarning(`[${conversationId}] Extension load error: ${err.path}`, err.error);
+  }
+  if (extensionsResult.extensions.length > 0) {
     log.logInfo(
-      `[${conversationId}] Reloaded ${loadedSession.messages.length} messages from session context`,
+      `[${conversationId}] Loaded ${extensionsResult.extensions.length} extension(s): ${extensionsResult.extensions.map((extension) => extension.name).join(", ")}`,
     );
   }
 
-  const resourceLoader = new DefaultResourceLoader({
-    cwd: workspaceDir,
-    agentDir: getAgentDir(),
+  const session = new MikanAgentSession({
     systemPrompt,
+    model,
+    thinkingLevel,
+    tools,
+    models,
+    sessionStore,
+    extensions: extensionsResult.registry,
   });
-  try {
-    await resourceLoader.reload();
-    const extResult = resourceLoader.getExtensions();
-    if (extResult.errors.length > 0) {
-      for (const err of extResult.errors) {
-        log.logWarning(`[${conversationId}] Extension load error: ${err.path}`, err.error);
-      }
-    }
-    log.logInfo(
-      `[${conversationId}] Loaded ${extResult.extensions.length} extension(s): ${extResult.extensions.map((extension) => extension.path).join(", ")}`,
-    );
-  } catch (error) {
-    log.logWarning(`[${conversationId}] Failed to load resources`, String(error));
-  }
 
-  const baseToolsOverride = Object.fromEntries(tools.map((tool) => [tool.name, tool]));
-  const session = new AgentSession({
-    agent,
-    sessionManager,
-    settingsManager,
-    cwd: runtimeWorkspaceRoot,
-    modelRegistry,
-    resourceLoader,
-    baseToolsOverride,
-  });
-  return { agent, session };
+  const reloaded = session.reloadFromSession();
+  if (reloaded > 0) {
+    log.logInfo(`[${conversationId}] Reloaded ${reloaded} messages from session context`);
+  }
+  return { session, extensionSkills: extensionsResult.skills };
 }
 
 function createEmptyUsageTotals() {
@@ -732,7 +772,7 @@ export function buildPromptPayload(
 async function writePromptDebugContext(
   conversationDir: string,
   systemPrompt: string,
-  session: AgentSession,
+  session: MikanAgentSession,
   userMessage: string,
   imageAttachmentCount: number,
 ): Promise<void> {
@@ -748,7 +788,7 @@ async function writePromptDebugContext(
   );
 }
 
-function getFinalAssistantText(session: AgentSession): string {
+function getFinalAssistantText(session: MikanAgentSession): string {
   const lastAssistant = session.messages.findLast((message) => message.role === "assistant");
   return (
     lastAssistant?.content
@@ -809,7 +849,7 @@ async function replaceResponseWithToolProgress(
 
 async function finalizeRunResponse(
   responder: ConversationResponder,
-  session: AgentSession,
+  session: MikanAgentSession,
   runState: RunnerSessionState,
   options?: {
     triggerAttribution?: string;
@@ -911,7 +951,7 @@ async function finalizeRunResponse(
 }
 
 interface UsageReportContext {
-  session: AgentSession;
+  session: MikanAgentSession;
   runState: RunnerSessionState;
   responder: ConversationResponder;
   platform: MessagingInfo;
@@ -994,15 +1034,10 @@ async function reportUsageSummary(ctx: UsageReportContext): Promise<void> {
   }
 }
 
-function reloadSessionMessages(
-  sessionManager: SessionManager,
-  conversationId: string,
-  agent: Agent,
-): void {
-  const messages = sessionManager.buildSessionContext().messages;
-  if (messages.length > 0) {
-    agent.state.messages = messages;
-    log.logInfo(`[${conversationId}] Reloaded ${messages.length} messages from context`);
+function reloadSessionMessages(session: MikanAgentSession, conversationId: string): void {
+  const reloaded = session.reloadFromSession();
+  if (reloaded > 0) {
+    log.logInfo(`[${conversationId}] Reloaded ${reloaded} messages from context`);
   }
 }
 
@@ -1018,9 +1053,8 @@ async function prepareRunContext(params: {
   executionResolver?: ActorExecutionResolver;
   resolveExecutorForRun: RunnerExecutionContext["resolveExecutorForRun"];
   getPathContext: () => RuntimePathContext;
-  sessionManager: SessionManager;
-  session: AgentSession;
-  agent: Agent;
+  session: MikanAgentSession;
+  extensionSkills?: MikanSkill[];
   setEventContext: (context: {
     platform: string;
     conversationId: string;
@@ -1043,9 +1077,7 @@ async function prepareRunContext(params: {
     executionResolver,
     resolveExecutorForRun,
     getPathContext,
-    sessionManager,
     session,
-    agent,
     setEventContext,
     setSandboxContext,
     setUploadFunction,
@@ -1064,10 +1096,13 @@ async function prepareRunContext(params: {
     pathContext = getPathContext();
   }
 
-  reloadSessionMessages(sessionManager, conversationId, agent);
+  reloadSessionMessages(session, conversationId);
 
   const memory = await getMemory(conversationDir);
-  const skills = loadMikanSkills(conversationDir, pathContext.runtimeWorkspaceRoot);
+  const skills = mergeExtensionSkills(
+    loadMikanSkills(conversationDir, pathContext.runtimeWorkspaceRoot),
+    params.extensionSkills ?? [],
+  );
   const triggerAttribution = resolveTriggerAttribution(message);
   const systemPrompt = buildSystemPrompt(
     pathContext.runtimeWorkspaceRoot,
@@ -1078,10 +1113,15 @@ async function prepareRunContext(params: {
     executor.getSandboxConfig(),
     platform,
     skills,
-    message.id.startsWith("event:"),
-    triggerAttribution,
   );
   session.agent.state.systemPrompt = systemPrompt;
+  // Cache diagnosis: a byte-stable system prompt is the precondition for
+  // provider prompt caching. If this hash changes between turns of one
+  // conversation, something turn-varying leaked into the prompt; if it is
+  // stable and cacheRead stays 0, the miss is provider-side (e.g. OpenRouter
+  // routing the model across upstream hosts).
+  const promptHash = createHash("sha256").update(systemPrompt).digest("hex").slice(0, 8);
+  log.logInfo(`[${conversationId}] System prompt: ${systemPrompt.length} chars, sha ${promptHash}`);
 
   setEventContext({
     platform: platform.name,
@@ -1117,18 +1157,24 @@ async function prepareRunContext(params: {
     pathContext.runtimeWorkspaceRoot,
     pathContext,
   );
+  const turnInstructions = buildTurnInstructions(
+    message.id.startsWith("event:"),
+    triggerAttribution,
+    platform.name,
+  );
+  const finalUserMessage = turnInstructions ? `${turnInstructions}\n\n${userMessage}` : userMessage;
   await writePromptDebugContext(
     conversationDir,
     systemPrompt,
     session,
-    userMessage,
+    finalUserMessage,
     imageAttachments.length,
   );
 
   return {
     sessionConversation,
     runQueue,
-    userMessage,
+    userMessage: finalUserMessage,
     imageAttachments,
     triggerAttribution,
     pathContext,
@@ -1149,7 +1195,7 @@ function sendAgentEvent(payload: {
 
 // ponytail: additive SSE mirror only; keep responder rendering here until another frontend needs the same stream.
 function attachSessionEventHandlers(params: {
-  session: AgentSession;
+  session: MikanAgentSession;
   runState: RunnerSessionState;
   model: Model<Api>;
   agentConfig: ReturnType<typeof resolveConversationSettings>;
@@ -1432,6 +1478,20 @@ function attachSessionEventHandlers(params: {
       });
       queue.enqueue(() => responder.respond(text), "retry");
     }
+
+    if (event.type === "budget_exceeded") {
+      log.logWarning(
+        "Run stopped by budget circuit breaker",
+        `${event.reason} (tokens=${event.tokens}, cost=${event.costUsd.toFixed(2)}, calls=${event.llmCalls}, ${event.durationMs}ms)`,
+      );
+      const text = `_Stopped: run budget exceeded (${event.reason})_`;
+      sendAgentEvent({
+        sessionId: agentEventSessionId,
+        actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
+        event: { kind: "diagnostic", text },
+      });
+      queue.enqueue(() => responder.respondDiagnostic(text, { style: "error" }), "budget exceeded");
+    }
   });
 }
 
@@ -1481,6 +1541,7 @@ export async function createRunner(
     tokenStore: SessionViewTokenStoreLike;
     portalBaseUrl?: string;
   },
+  platformNotifier?: PlatformNotifier,
 ): Promise<PiAgentWrapper> {
   const agentConfig = resolveConversationSettings(conversationDir);
 
@@ -1502,8 +1563,10 @@ export async function createRunner(
     { sandbox: sandboxConfig, provisioner },
   );
 
-  const authStorage = AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json"));
-  const modelRegistry = ModelRegistry.create(authStorage);
+  const modelRegistry = MikanModels.create();
+  if (modelRegistry.getError()) {
+    log.logWarning("models.json load error", modelRegistry.getError()!);
+  }
   const model = resolveConfiguredModel(modelRegistry, agentConfig.provider, agentConfig.model);
 
   // Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
@@ -1530,12 +1593,8 @@ export async function createRunner(
   // use the conversation's current pointer; scoped sessions use fixed files.
   // Platform-specific scope behavior is resolved before runner creation.
   const isThread = sessionKey.includes(":");
-  const { sessionDir, contextFile, threadRootMessage } = sessionScope;
-  const sessionManager = openManagedSession(
-    contextFile,
-    sessionDir,
-    pathContext.runtimeWorkspaceRoot,
-  );
+  const { contextFile, threadRootMessage } = sessionScope;
+  const sessionManager = openManagedSession(contextFile, pathContext.runtimeWorkspaceRoot);
   const threadSessionName = buildThreadSessionName(threadRootMessage);
   if (isThread && threadSessionName && sessionManager.getSessionName() !== threadSessionName) {
     sessionManager.appendSessionInfo(threadSessionName);
@@ -1543,18 +1602,17 @@ export async function createRunner(
 
   const sessionUuid = extractSessionUuid(contextFile);
   const chatSessionManager = new AgentMemoryFileManager();
-  const settingsManager = SettingsManager.inMemory();
-  const { agent, session } = await createConfiguredAgentSession({
+  const { session, extensionSkills } = await createConfiguredAgentSession({
     conversationId,
     workspaceDir,
-    runtimeWorkspaceRoot: pathContext.runtimeWorkspaceRoot,
     systemPrompt,
     model,
     thinkingLevel: agentConfig.thinkingLevel,
     tools,
-    sessionManager,
-    settingsManager,
-    modelRegistry,
+    sessionStore: sessionManager,
+    models: modelRegistry,
+    vaultManager,
+    platformNotifier,
   });
 
   // Mutable per-run state - event handler references this
@@ -1588,9 +1646,8 @@ export async function createRunner(
         executionResolver,
         resolveExecutorForRun,
         getPathContext,
-        sessionManager,
         session,
-        agent,
+        extensionSkills,
         setEventContext,
         setSandboxContext,
         setUploadFunction,
@@ -1622,10 +1679,13 @@ export async function createRunner(
         event: { kind: "sessionStart" },
       });
 
-      await session.prompt(
-        prepared.userMessage,
-        prepared.imageAttachments.length > 0 ? { images: prepared.imageAttachments } : undefined,
-      );
+      // Autonomous (event/trigger) runs get an explicit resource ceiling since
+      // no human is watching the loop; interactive turns stay human-gated.
+      const isEventRun = message.id.startsWith("event:");
+      await session.prompt(prepared.userMessage, {
+        ...(prepared.imageAttachments.length > 0 ? { images: prepared.imageAttachments } : {}),
+        ...(isEventRun ? { budget: DEFAULT_EVENT_BUDGET } : {}),
+      });
 
       // Wait for queued messages
       await prepared.runQueue.wait();

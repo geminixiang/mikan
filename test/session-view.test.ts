@@ -97,7 +97,7 @@ describe("loadSessionViewModel", () => {
   test("maps session entries into a readable timeline", () => {
     const sessionDir = getChannelSessionDir(conversationDir);
     const sessionFile = createManagedSessionFile(sessionDir, conversationDir);
-    const sessionManager = openManagedSession(sessionFile, sessionDir, conversationDir);
+    const sessionManager = openManagedSession(sessionFile, conversationDir);
 
     sessionManager.appendMessage(makeUserMessage("請幫我看一下測試結果"));
     sessionManager.appendMessage(makeAssistantMessage("好的，我正在查看。"));
@@ -125,7 +125,7 @@ describe("loadSessionViewModel", () => {
   test("preserves assistant content block order and bash execution status details", () => {
     const sessionDir = getChannelSessionDir(conversationDir);
     const sessionFile = createManagedSessionFile(sessionDir, conversationDir);
-    const sessionManager = openManagedSession(sessionFile, sessionDir, conversationDir);
+    const sessionManager = openManagedSession(sessionFile, conversationDir);
 
     sessionManager.appendMessage({
       role: "assistant",
@@ -169,7 +169,7 @@ describe("loadSessionViewModel", () => {
   test("keeps channel and thread sessions on separate pages while linking them", () => {
     const sessionDir = getChannelSessionDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
-    const channelSession = openManagedSession(channelFile, sessionDir, conversationDir);
+    const channelSession = openManagedSession(channelFile, conversationDir);
     channelSession.appendMessage({
       ...makeUserMessage("channel root"),
       timestamp: Number("1000.0001") * 1000,
@@ -178,7 +178,7 @@ describe("loadSessionViewModel", () => {
 
     const threadFile = getThreadSessionFile(conversationDir, "D123:1000.0001");
     createManagedSessionFileAtPath(threadFile, conversationDir);
-    const threadSession = openManagedSession(threadFile, sessionDir, conversationDir);
+    const threadSession = openManagedSession(threadFile, conversationDir);
     threadSession.appendMessage({
       ...makeUserMessage("channel root"),
       timestamp: Number("1000.0001") * 1000,
@@ -201,7 +201,7 @@ describe("loadSessionViewModel", () => {
   test("anchors fixed thread links to the root instead of earlier bootstrap context", () => {
     const sessionDir = getChannelSessionDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
-    const channelSession = openManagedSession(channelFile, sessionDir, conversationDir);
+    const channelSession = openManagedSession(channelFile, conversationDir);
     channelSession.appendMessage({ ...makeUserMessage("prior context"), timestamp: 1 });
     channelSession.appendMessage(makeAssistantMessage("prior reply"));
     channelSession.appendMessage({ ...makeUserMessage("thread root"), timestamp: 2 });
@@ -209,7 +209,7 @@ describe("loadSessionViewModel", () => {
 
     const threadFile = getThreadSessionFile(conversationDir, "D123:1000.0001");
     createManagedSessionFileAtPath(threadFile, conversationDir);
-    const threadSession = openManagedSession(threadFile, sessionDir, conversationDir);
+    const threadSession = openManagedSession(threadFile, conversationDir);
     threadSession.appendMessage({ ...makeUserMessage("prior context"), timestamp: 1 });
     threadSession.appendMessage(makeAssistantMessage("prior reply"));
     threadSession.appendMessage({ ...makeUserMessage("thread root"), timestamp: 2 });
@@ -226,7 +226,7 @@ describe("loadSessionViewModel", () => {
   test("anchors non-timestamp thread files by matching the root message", () => {
     const sessionDir = getChannelSessionDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
-    const channelSession = openManagedSession(channelFile, sessionDir, conversationDir);
+    const channelSession = openManagedSession(channelFile, conversationDir);
     channelSession.appendMessage(
       makeUserMessage(
         "[2026-04-28 18:18:59+08:00] [alice]: first\n\n<slack_attachments>\n/tmp/a.txt\n</slack_attachments>",
@@ -236,7 +236,7 @@ describe("loadSessionViewModel", () => {
 
     const threadFile = getThreadSessionFile(conversationDir, "D123:M1");
     createManagedSessionFileAtPath(threadFile, conversationDir);
-    const threadSession = openManagedSession(threadFile, sessionDir, conversationDir);
+    const threadSession = openManagedSession(threadFile, conversationDir);
     threadSession.appendMessage(makeUserMessage("[alice]: first"));
     threadSession.appendMessage(makeAssistantMessage("thread reply"));
 

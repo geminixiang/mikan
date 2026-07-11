@@ -1,10 +1,8 @@
-import { completeSimple } from "@earendil-works/pi-ai/compat";
-import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { join } from "path";
+import { MikanModels } from "./harness/index.js";
 import type { ConversationEvent } from "./adapter.js";
 import { loadAutoReplyJudgeModel, loadConversationAutoReplyConfig } from "./config.js";
 import * as log from "./log.js";
-import { homedir } from "os";
-import { join } from "path";
 import { resolveConfiguredModel } from "./model-registry.js";
 
 const JUDGE_TIMEOUT_MS = 10_000;
@@ -93,16 +91,10 @@ async function judgeAutoReplyWithLlm(input: {
   conversationDir: string;
 }): Promise<boolean> {
   const judgeConfig = loadAutoReplyJudgeModel(input.conversationDir);
-  const modelRegistry = ModelRegistry.create(
-    AuthStorage.create(join(homedir(), ".pi", "mikan", "auth.json")),
-  );
-  const model = resolveConfiguredModel(modelRegistry, judgeConfig.provider, judgeConfig.model);
-  const auth = await modelRegistry.getApiKeyAndHeaders(model);
-  if (!auth.ok) {
-    throw new Error(auth.error);
-  }
+  const models = MikanModels.create();
+  const model = resolveConfiguredModel(models, judgeConfig.provider, judgeConfig.model);
 
-  const answer = await completeSimple(
+  const answer = await models.models.completeSimple(
     model,
     {
       systemPrompt:
@@ -128,8 +120,6 @@ async function judgeAutoReplyWithLlm(input: {
       temperature: 0,
       maxTokens: 4,
       reasoning: "minimal",
-      apiKey: auth.apiKey,
-      headers: auth.headers,
     },
   );
   const text = answer.content

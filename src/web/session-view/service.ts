@@ -1,12 +1,12 @@
 import { basename, dirname, join, resolve } from "path";
 import { existsSync, readdirSync } from "fs";
 import {
-  SessionManager,
+  SessionStore,
   type BranchSummaryEntry as SessionBranchSummaryEntry,
   type CompactionEntry,
   type SessionEntry,
   type SessionMessageEntry,
-} from "@earendil-works/pi-coding-agent";
+} from "../../harness/index.js";
 import {
   getThreadSessionFile,
   resolveChannelSessionFile,
@@ -32,7 +32,7 @@ export function resolveExistingSessionFile(
 
 export function loadSessionViewModel(sessionFile: string): SessionViewModel {
   const resolvedFile = resolve(sessionFile);
-  const sm = SessionManager.open(resolvedFile);
+  const sm = SessionStore.open(resolvedFile);
   const header = sm.getHeader();
   if (!header) throw new Error(`No valid session found: ${sessionFile}`);
 
@@ -98,9 +98,9 @@ export function resolveRequestedSessionFile(
   const candidate = join(dirname(resolvedBase), fileName);
   if (!existsSync(candidate)) return null;
 
-  let sm: SessionManager;
+  let sm: SessionStore;
   try {
-    sm = SessionManager.open(candidate);
+    sm = SessionStore.open(candidate);
   } catch (err) {
     throw new Error(
       `Session file is corrupted: ${candidate}: ${
@@ -129,9 +129,9 @@ function buildSessionRelation(
   kind: "parent" | "thread",
   expectedParent?: string,
 ): SessionViewRelation | null {
-  let sm: SessionManager;
+  let sm: SessionStore;
   try {
-    sm = SessionManager.open(sessionFile);
+    sm = SessionStore.open(sessionFile);
   } catch (err) {
     log.logWarning(
       `Skipping corrupted session file while building ${kind} relation: ${sessionFile}`,
@@ -158,7 +158,7 @@ function buildSessionRelation(
   const threadId = kind === "thread" ? getFixedThreadSessionId(sessionFile) : null;
   const anchorEntryId =
     kind === "thread" && expectedParent
-      ? findThreadAnchorEntryId(SessionManager.open(expectedParent).getEntries(), entries, threadId)
+      ? findThreadAnchorEntryId(SessionStore.open(expectedParent).getEntries(), entries, threadId)
       : undefined;
   return {
     kind,

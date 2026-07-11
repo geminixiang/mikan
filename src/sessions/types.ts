@@ -64,7 +64,7 @@ export interface ResolveChatSessionScopeOptions {
 export interface SyncAgentMemoryFileManagerOptions {
   conversationDir: string;
   sessionKey: string;
-  sessionManager: import("@earendil-works/pi-coding-agent").SessionManager;
+  sessionManager: import("../harness/index.js").SessionStore;
   /** The triggering platform message ID. Excluded from sync to avoid duplicate user turns. */
   currentMessageId?: string;
 }
