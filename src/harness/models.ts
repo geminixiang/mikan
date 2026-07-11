@@ -69,6 +69,8 @@ interface CustomModelConfig {
   cost?: { input: number; output: number; cacheRead: number; cacheWrite: number };
   contextWindow?: number;
   maxTokens?: number;
+  /** Accepted alias for `maxTokens` (used by existing deployments). */
+  maxOutputTokens?: number;
   thinkingLevelMap?: Model<Api>["thinkingLevelMap"];
   headers?: Record<string, string>;
   compat?: unknown;
@@ -147,7 +149,7 @@ function buildCustomProvider(providerName: string, config: CustomProviderConfig)
       input: modelConfig.input ?? ["text"],
       cost: modelConfig.cost ?? DEFAULT_COST,
       contextWindow: modelConfig.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
-      maxTokens: modelConfig.maxTokens ?? DEFAULT_MAX_TOKENS,
+      maxTokens: modelConfig.maxTokens ?? modelConfig.maxOutputTokens ?? DEFAULT_MAX_TOKENS,
     };
     if (modelConfig.thinkingLevelMap) model.thinkingLevelMap = modelConfig.thinkingLevelMap;
     if (modelConfig.headers ?? config.headers) {

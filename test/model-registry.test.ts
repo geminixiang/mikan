@@ -47,6 +47,45 @@ describe("resolveConfiguredModel", () => {
     expect(model.baseUrl).toBe("http://localhost:8080/v1");
   });
 
+  test("maps a production-shaped provider entry field-for-field (maxOutputTokens alias)", () => {
+    // Mirrors the deployed models.json shape: inline apiKey, provider compat,
+    // thinkingLevelMap, and the maxOutputTokens spelling for maxTokens.
+    const registry = withTempRegistry({
+      providers: {
+        "agent-model": {
+          api: "openai-completions",
+          apiKey: "k",
+          baseUrl: "http://10.0.0.1:8080/v1",
+          compat: {
+            supportsDeveloperRole: false,
+            maxTokensField: "max_completion_tokens",
+            supportsStore: false,
+            supportsUsageInStreaming: true,
+          },
+          models: [
+            {
+              id: "chatgpt-gpt-5.5",
+              name: "GPT-5.5",
+              input: ["text", "image"],
+              reasoning: true,
+              thinkingLevelMap: { xhigh: "xhigh", minimal: "low" },
+              contextWindow: 272000,
+              maxOutputTokens: 128000,
+              cost: { input: 5.0, output: 30.0, cacheRead: 0.5, cacheWrite: 0 },
+            },
+          ],
+        },
+      },
+    });
+
+    const model = resolveConfiguredModel(registry, "agent-model", "chatgpt-gpt-5.5");
+    expect(model.maxTokens).toBe(128000);
+    expect(model.contextWindow).toBe(272000);
+    expect(model.thinkingLevelMap).toEqual({ xhigh: "xhigh", minimal: "low" });
+    expect(model.compat).toMatchObject({ maxTokensField: "max_completion_tokens" });
+    expect(model.cost.input).toBe(5.0);
+  });
+
   test("throws a clear error for unknown models", () => {
     const dir = mkdtempSync(join(tmpdir(), "mikan-empty-model-registry-"));
     try {
