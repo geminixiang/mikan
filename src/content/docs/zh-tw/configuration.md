@@ -96,18 +96,18 @@ mikan 會以 `0700` mode 建立不存在的 state directory。既有目錄必須
 | Discord  | `DISCORD_BOT_TOKEN`                                                                                       | —                                      |
 | GitHub   | `GITHUB_APP_ID`, `GITHUB_INSTALLATION_ID`，以及 `GITHUB_APP_PRIVATE_KEY` 或 `GITHUB_APP_PRIVATE_KEY_PATH` | `GITHUB_REPOS`, `GITHUB_POLL_INTERVAL` |
 
-各平台的設定與權限請參閱[平台接入](platform-adapters/)。
+各平台的設定與權限請參閱[平台接入](/zh-tw/platform-adapters/)。
 
 ## CLI 參考
 
-| 指令或選項                                                 | 用途                                                        |
-| ---------------------------------------------------------- | ----------------------------------------------------------- | ------------- | --------------- | ---------------- | ------------------------------- |
-| `mikan --onboard [--state-dir=<dir>]`                      | 建立必要的全域設定檔                                        |
-| `mikan [--state-dir=<dir>] [--sandbox=<mode>] <workspace>` | 啟動已設定的平台 bot                                        |
-| `--sandbox=host                                            | container:<name>                                            | image:<image> | firecracker:... | cloudflare:<id>` | 選擇工具執行模式；預設為 `host` |
-| `mikan --download <channel-id>`                            | 下載 Slack 頻道歷史；需要 `SLACK_BOT_TOKEN`                 |
-| `mikan --version`                                          | 顯示已安裝版本                                              |
-| `mikan ext ...`                                            | 管理 harness extensions；執行 `mikan ext --help` 查看子指令 |
+| 指令或選項                                                                                  | 用途                                                        |
+| ------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `mikan --onboard [--state-dir=<dir>]`                                                       | 建立必要的全域設定檔                                        |
+| `mikan [--state-dir=<dir>] [--sandbox=<mode>] <workspace>`                                  | 啟動已設定的平台 bot                                        |
+| `--sandbox=host \| container:<name> \| image:<image> \| firecracker:... \| cloudflare:<id>` | 選擇工具執行模式；預設為 `host`                             |
+| `mikan --download <channel-id>`                                                             | 下載 Slack 頻道歷史；需要 `SLACK_BOT_TOKEN`                 |
+| `mikan --version`                                                                           | 顯示已安裝版本                                              |
+| `mikan ext ...`                                                                             | 管理 harness extensions；執行 `mikan ext --help` 查看子指令 |
 
 ## 環境變數別名
 

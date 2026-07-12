@@ -96,18 +96,18 @@ mikan 创建缺失的 state directory 时使用 `0700` 模式。现有目录必�
 | Discord  | `DISCORD_BOT_TOKEN`                                                                                       | —                                      |
 | GitHub   | `GITHUB_APP_ID`、`GITHUB_INSTALLATION_ID`，以及 `GITHUB_APP_PRIVATE_KEY` 或 `GITHUB_APP_PRIVATE_KEY_PATH` | `GITHUB_REPOS`、`GITHUB_POLL_INTERVAL` |
 
-有关各平台的设置和权限，请参阅[平台适配器](platform-adapters/)。
+有关各平台的设置和权限，请参阅[平台适配器](/zh-cn/platform-adapters/)。
 
 ## CLI 参考
 
-| 命令或选项                                                 | 用途                                             |
-| ---------------------------------------------------------- | ------------------------------------------------ | ------------- | --------------- | ---------------- | ------------------------------- |
-| `mikan --onboard [--state-dir=<dir>]`                      | 创建必需的全局设置文件                           |
-| `mikan [--state-dir=<dir>] [--sandbox=<mode>] <workspace>` | 启动已配置的平台 bot                             |
-| `--sandbox=host                                            | container:<name>                                 | image:<image> | firecracker:... | cloudflare:<id>` | 选择工具执行模式；默认为 `host` |
-| `mikan --download <channel-id>`                            | 下载 Slack 频道历史记录；需要 `SLACK_BOT_TOKEN`  |
-| `mikan --version`                                          | 输出已安装版本                                   |
-| `mikan ext ...`                                            | 管理框架扩展；运行 `mikan ext --help` 查看子命令 |
+| 命令或选项                                                                                  | 用途                                             |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `mikan --onboard [--state-dir=<dir>]`                                                       | 创建必需的全局设置文件                           |
+| `mikan [--state-dir=<dir>] [--sandbox=<mode>] <workspace>`                                  | 启动已配置的平台 bot                             |
+| `--sandbox=host \| container:<name> \| image:<image> \| firecracker:... \| cloudflare:<id>` | 选择工具执行模式；默认为 `host`                  |
+| `mikan --download <channel-id>`                                                             | 下载 Slack 频道历史记录；需要 `SLACK_BOT_TOKEN`  |
+| `mikan --version`                                                                           | 输出已安装版本                                   |
+| `mikan ext ...`                                                                             | 管理框架扩展；运行 `mikan ext --help` 查看子命令 |
 
 ## 环境变量别名
 

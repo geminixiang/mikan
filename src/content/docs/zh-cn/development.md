@@ -53,4 +53,4 @@ npm run test:e2e          # all configured platforms
 npm run test:e2e:slack    # Slack only
 ```
 
-Slack E2E 需要在专用测试工作区中设置 `SLACK_QA_USER_TOKEN`、`SLACK_QA_CHANNEL_ID` 和 `SLACK_QA_BOT_USER_ID`。设置和安全指南请参阅 [Slack QA 测试计划](slack-qa-test-plan/)。
+Slack E2E 需要在专用测试工作区中设置 `SLACK_QA_USER_TOKEN`、`SLACK_QA_CHANNEL_ID` 和 `SLACK_QA_BOT_USER_ID`。设置和安全指南请参阅 [Slack QA 测试计划](/zh-cn/slack-qa-test-plan/)。

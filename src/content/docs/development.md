@@ -53,4 +53,4 @@ npm run test:e2e          # all configured platforms
 npm run test:e2e:slack    # Slack only
 ```
 
-Slack E2E requires `SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, and `SLACK_QA_BOT_USER_ID` in a dedicated test workspace. See the [Slack QA test plan](slack-qa-test-plan/) for setup and safety guidance.
+Slack E2E requires `SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, and `SLACK_QA_BOT_USER_ID` in a dedicated test workspace. See the [Slack QA test plan](/slack-qa-test-plan/) for setup and safety guidance.

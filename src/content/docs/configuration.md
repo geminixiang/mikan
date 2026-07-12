@@ -96,18 +96,18 @@ At least one complete platform credential set is required for normal bot mode:
 | Discord  | `DISCORD_BOT_TOKEN`                                                                                      | —                                      |
 | GitHub   | `GITHUB_APP_ID`, `GITHUB_INSTALLATION_ID`, and `GITHUB_APP_PRIVATE_KEY` or `GITHUB_APP_PRIVATE_KEY_PATH` | `GITHUB_REPOS`, `GITHUB_POLL_INTERVAL` |
 
-See [Platform adapters](platform-adapters/) for platform-specific setup and permissions.
+See [Platform adapters](/platform-adapters/) for platform-specific setup and permissions.
 
 ## CLI reference
 
-| Command or option                                          | Purpose                                                           |
-| ---------------------------------------------------------- | ----------------------------------------------------------------- | ------------- | --------------- | ---------------- | --------------------------------------------- |
-| `mikan --onboard [--state-dir=<dir>]`                      | Create the required global settings file                          |
-| `mikan [--state-dir=<dir>] [--sandbox=<mode>] <workspace>` | Start configured platform bots                                    |
-| `--sandbox=host                                            | container:<name>                                                  | image:<image> | firecracker:... | cloudflare:<id>` | Select tool execution mode; default is `host` |
-| `mikan --download <channel-id>`                            | Download Slack channel history; requires `SLACK_BOT_TOKEN`        |
-| `mikan --version`                                          | Print the installed version                                       |
-| `mikan ext ...`                                            | Manage harness extensions; run `mikan ext --help` for subcommands |
+| Command or option                                                                           | Purpose                                                           |
+| ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `mikan --onboard [--state-dir=<dir>]`                                                       | Create the required global settings file                          |
+| `mikan [--state-dir=<dir>] [--sandbox=<mode>] <workspace>`                                  | Start configured platform bots                                    |
+| `--sandbox=host \| container:<name> \| image:<image> \| firecracker:... \| cloudflare:<id>` | Select tool execution mode; default is `host`                     |
+| `mikan --download <channel-id>`                                                             | Download Slack channel history; requires `SLACK_BOT_TOKEN`        |
+| `mikan --version`                                                                           | Print the installed version                                       |
+| `mikan ext ...`                                                                             | Manage harness extensions; run `mikan ext --help` for subcommands |
 
 ## Environment variable aliases
 

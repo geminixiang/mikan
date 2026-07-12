@@ -111,4 +111,4 @@ curl http://127.0.0.1:8181/health
 
 `/health` は HTTP process の liveness check にすぎません。platform connections、Docker、sandbox provisioning、LLM providers、event delivery は検証しないため、唯一の readiness signal として使用しないでください。
 
-mode 固有の要件は [GitHub で保守されている PM2 ecosystem file](https://github.com/geminixiang/mikan/blob/main/deploy/pm2/ecosystem.config.cjs) と [Sandbox modes](sandbox/) を参照してください。
+mode 固有の要件は [GitHub で保守されている PM2 ecosystem file](https://github.com/geminixiang/mikan/blob/main/deploy/pm2/ecosystem.config.cjs) と [Sandbox modes](/ja/sandbox/) を参照してください。

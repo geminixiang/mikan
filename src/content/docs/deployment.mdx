@@ -112,4 +112,4 @@ curl http://127.0.0.1:8181/health
 
 `/health` is a liveness check for the HTTP process only. It does not verify platform connections, Docker, sandbox provisioning, LLM providers, or event delivery, so do not use it as the only readiness signal.
 
-See the [maintained PM2 ecosystem file on GitHub](https://github.com/geminixiang/mikan/blob/main/deploy/pm2/ecosystem.config.cjs) and [Sandbox modes](sandbox/) for mode-specific requirements.
+See the [maintained PM2 ecosystem file on GitHub](https://github.com/geminixiang/mikan/blob/main/deploy/pm2/ecosystem.config.cjs) and [Sandbox modes](/sandbox/) for mode-specific requirements.

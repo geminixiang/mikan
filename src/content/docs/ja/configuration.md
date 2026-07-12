@@ -96,18 +96,18 @@ Conversation settings は host-authoritative です。古い `<workspace>/<conve
 | Discord  | `DISCORD_BOT_TOKEN`                                                                                             | —                                      |
 | GitHub   | `GITHUB_APP_ID`, `GITHUB_INSTALLATION_ID`, および `GITHUB_APP_PRIVATE_KEY` または `GITHUB_APP_PRIVATE_KEY_PATH` | `GITHUB_REPOS`, `GITHUB_POLL_INTERVAL` |
 
-プラットフォーム固有のセットアップと権限については [プラットフォーム接続](platform-adapters/) を参照してください。
+プラットフォーム固有のセットアップと権限については [プラットフォーム接続](/ja/platform-adapters/) を参照してください。
 
 ## CLI リファレンス
 
-| コマンドまたはオプション                                   | 用途                                                                |
-| ---------------------------------------------------------- | ------------------------------------------------------------------- | ------------- | --------------- | ---------------- | ------------------------------------------- |
-| `mikan --onboard [--state-dir=<dir>]`                      | 必須のグローバル設定ファイルを作成                                  |
-| `mikan [--state-dir=<dir>] [--sandbox=<mode>] <workspace>` | 設定済みの platform bots を起動                                     |
-| `--sandbox=host                                            | container:<name>                                                    | image:<image> | firecracker:... | cloudflare:<id>` | tool execution mode を選択。既定値は `host` |
-| `mikan --download <channel-id>`                            | Slack channel history をダウンロード。`SLACK_BOT_TOKEN` が必要      |
-| `mikan --version`                                          | インストール済み version を表示                                     |
-| `mikan ext ...`                                            | harness extensions を管理。subcommands は `mikan ext --help` で確認 |
+| コマンドまたはオプション                                                                    | 用途                                                                |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `mikan --onboard [--state-dir=<dir>]`                                                       | 必須のグローバル設定ファイルを作成                                  |
+| `mikan [--state-dir=<dir>] [--sandbox=<mode>] <workspace>`                                  | 設定済みの platform bots を起動                                     |
+| `--sandbox=host \| container:<name> \| image:<image> \| firecracker:... \| cloudflare:<id>` | tool execution mode を選択。既定値は `host`                         |
+| `mikan --download <channel-id>`                                                             | Slack channel history をダウンロード。`SLACK_BOT_TOKEN` が必要      |
+| `mikan --version`                                                                           | インストール済み version を表示                                     |
+| `mikan ext ...`                                                                             | harness extensions を管理。subcommands は `mikan ext --help` で確認 |
 
 ## 環境変数のエイリアス
 
