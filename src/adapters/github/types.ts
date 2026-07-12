@@ -153,3 +153,52 @@ export interface GithubClientOptions {
   baseUrl?: string;
   fetchImpl?: typeof fetch;
 }
+
+// ── Host-side tool contracts (capability pack, not messaging core) ───────────
+
+/** Arguments for the host-side `github_pr` tool. */
+export interface GithubPrRequest {
+  /** Local branch in the conversation's ./repo clone; must match pi/<name>. */
+  branch: string;
+  title: string;
+  body?: string;
+  /** Target branch; defaults to the repository's default branch. */
+  base?: string;
+  draft?: boolean;
+}
+
+export interface GithubPrResult {
+  number: number;
+  url: string;
+  /** True when the branch already had an open PR that this push updated. */
+  updatedExisting?: boolean;
+}
+
+/** Normalized check-run row for the host-side `github_checks` tool. */
+export interface GithubCheckSummary {
+  /** Check-run id; for GitHub Actions checks it is also the job id for log fetch. */
+  id: number;
+  name: string;
+  /** queued | in_progress | completed */
+  status: string;
+  /** success | failure | … ; null while the run is still in progress */
+  conclusion: string | null;
+  url: string | null;
+  /** Slug of the reporting app; "github-actions" checks have fetchable logs. */
+  appSlug: string | null;
+  /** The reporting app's own summary of the run, when it posted one. */
+  outputSummary: string | null;
+}
+
+/**
+ * Host-side GitHub operations for github_* tools. Wired in main.ts over the
+ * GitHub bot; tokens stay host-side. Consumed by `createGithubToolPack`.
+ */
+export interface PlatformGithubOps {
+  /** Push a prepared pi/* branch and open (or update) a pull request. */
+  pushAndCreatePr(conversationId: string, request: GithubPrRequest): Promise<GithubPrResult>;
+  /** CI check runs for a branch, or for the conversation's PR head when omitted. */
+  getChecks(conversationId: string, branch?: string): Promise<GithubCheckSummary[]>;
+  /** Log text of one CI job (an Actions check-run id), tail-truncated. */
+  getJobLog(conversationId: string, jobId: number): Promise<string>;
+}

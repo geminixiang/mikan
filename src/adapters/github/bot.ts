@@ -3,13 +3,11 @@ import { dirname, join } from "path";
 import { Type } from "@sinclair/typebox";
 import type {
   ConversationEvent,
-  GithubCheckSummary,
-  GithubPrRequest,
-  GithubPrResult,
   MessagingBot,
   MessagingEventHandler,
   MessagingInfo,
 } from "../../adapter.js";
+import type { GithubCheckSummary, GithubPrRequest, GithubPrResult } from "./types.js";
 import * as log from "../../log.js";
 import { ensureDirExists, readJsonSchemaFileIfExists } from "../../utils/file-guards.js";
 import { atomicWritePrivateFile } from "../../utils/fs-atomic.js";

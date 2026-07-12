@@ -1,6 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
-import type { GithubPrRequest, GithubPrResult } from "../adapter.js";
+import type { GithubPrRequest, GithubPrResult } from "../adapters/github/types.js";
 
 const githubPrSchema = Type.Object({
   branch: Type.String({

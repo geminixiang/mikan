@@ -1,6 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
-import type { GithubCheckSummary } from "../adapter.js";
+import type { GithubCheckSummary } from "../adapters/github/types.js";
 
 const githubChecksSchema = Type.Object({
   branch: Type.Optional(

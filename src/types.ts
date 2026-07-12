@@ -172,52 +172,6 @@ export type PlatformReactor = (
   platform?: string,
 ) => Promise<void>;
 
-export interface GithubPrRequest {
-  /** Local branch in the conversation's ./repo clone; must match pi/<name>. */
-  branch: string;
-  title: string;
-  body?: string;
-  /** Target branch; defaults to the repository's default branch. */
-  base?: string;
-  draft?: boolean;
-}
-
-export interface GithubPrResult {
-  number: number;
-  url: string;
-  /** True when the branch already had an open PR that this push updated. */
-  updatedExisting?: boolean;
-}
-
-export interface GithubCheckSummary {
-  /** Check-run id; for GitHub Actions checks it is also the job id for log fetch. */
-  id: number;
-  name: string;
-  /** queued | in_progress | completed */
-  status: string;
-  /** success | failure | … ; null while the run is still in progress */
-  conclusion: string | null;
-  url: string | null;
-  /** Slug of the reporting app; "github-actions" checks have fetchable logs. */
-  appSlug: string | null;
-  /** The reporting app's own summary of the run, when it posted one. */
-  outputSummary: string | null;
-}
-
-/**
- * Host-side GitHub operations backing the github_* tools.
- * Assembled in main.ts / adapters/github into a PlatformToolPack so core
- * agent/runtime plumbing stays free of GitHub-specific injection fields.
- */
-export interface PlatformGithubOps {
-  /** Push a prepared pi/* branch and open (or update) a pull request. */
-  pushAndCreatePr(conversationId: string, request: GithubPrRequest): Promise<GithubPrResult>;
-  /** CI check runs for a branch, or for the conversation's PR head when omitted. */
-  getChecks(conversationId: string, branch?: string): Promise<GithubCheckSummary[]>;
-  /** Log text of one CI job (an Actions check-run id), tail-truncated. */
-  getJobLog(conversationId: string, jobId: number): Promise<string>;
-}
-
 /** Normalized platform data and reply hook for one event. */
 export interface ConversationContext {
   message: ConversationMessage;

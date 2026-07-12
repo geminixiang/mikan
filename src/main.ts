@@ -7,15 +7,11 @@ import { mkdirSync, statSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { fileURLToPath } from "url";
 import { dirname, join as pathJoin } from "path";
-import type {
-  MessagingBot,
-  PlatformGithubOps,
-  PlatformNotifier,
-  PlatformReactor,
-} from "./adapter.js";
+import type { MessagingBot, PlatformNotifier, PlatformReactor } from "./adapter.js";
 import { DiscordMessagingBot } from "./adapters/discord/bot.js";
 import { GithubMessagingBot } from "./adapters/github/bot.js";
 import { createGithubToolPack } from "./adapters/github/tool-pack.js";
+import type { PlatformGithubOps } from "./adapters/github/types.js";
 import { TelegramMessagingBot } from "./adapters/telegram/bot.js";
 import { SlackMessagingBot as SlackMessagingBotClass } from "./adapters/slack/bot.js";
 import type { PlatformToolPackFactory } from "./tools/types.js";

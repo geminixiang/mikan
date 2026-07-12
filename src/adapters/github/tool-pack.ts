@@ -1,7 +1,7 @@
-import type { PlatformGithubOps } from "../../adapter.js";
 import { createGithubChecksTool } from "../../tools/github-checks.js";
 import { createGithubPrTool } from "../../tools/github-pr.js";
 import type { PlatformToolPack } from "../../tools/types.js";
+import type { PlatformGithubOps } from "./types.js";
 
 /**
  * GitHub host-side capability pack: github_pr + github_checks.

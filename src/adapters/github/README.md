@@ -20,7 +20,9 @@ GitHub App installation (no webhooks, matching mikan's proactive model — see
   and never persisted).
 - `tool-pack.ts`: `createGithubToolPack` — host-side `github_pr` /
   `github_checks` as a `PlatformToolPack` injected from main, not core tools.
-- `types.ts`: adapter config, event, and GitHub REST payload types.
+- `types.ts`: adapter config, REST payloads, and host tool contracts
+  (`GithubPrRequest`, `PlatformGithubOps`, …) — not re-exported from root
+  `adapter.ts` / `types.ts`.
 
 ## Configuration (env)
 

@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { createGithubToolPack } from "../src/adapters/github/tool-pack.js";
-import type { PlatformGithubOps } from "../src/adapter.js";
+import type { PlatformGithubOps } from "../src/adapters/github/types.js";
 
 function mockOps(): PlatformGithubOps {
   return {
