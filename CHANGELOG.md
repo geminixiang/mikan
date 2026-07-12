@@ -9,6 +9,25 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.12]
+
+### Added
+
+- Let `github_checks` fetch the log tail for a failing GitHub Actions job by job ID.
+
+### Changed
+
+- Require GitHub App Actions read permission for job log inspection.
+
+### Fixed
+
+- Treat skipped and neutral GitHub checks separately from failures in check summaries.
+
+### Tests
+
+- Add coverage for job log retrieval and check conclusion classification.
+- Use collision-resistant temporary directories across parallel tests.
+
 ## [1.0.0-beta.11]
 
 ### Added
