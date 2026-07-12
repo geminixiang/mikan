@@ -9,6 +9,22 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.11]
+
+### Added
+
+- Add a read-only `github_checks` tool for inspecting branch and pull request check runs.
+
+### Changed
+
+- Make `github_pr` idempotent so pushing an existing branch updates its open pull request.
+- Teach the GitHub agent workflow to inspect CI, fix failures, and push updates.
+- Require GitHub App Checks read permission for CI inspection.
+
+### Tests
+
+- Add coverage for GitHub check summaries and existing pull request updates.
+
 ## [1.0.0-beta.10]
 
 ### Fixed
