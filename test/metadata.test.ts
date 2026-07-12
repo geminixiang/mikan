@@ -8,7 +8,7 @@ describe("isPlatformHistorySession", () => {
   let dir: string;
 
   beforeEach(() => {
-    dir = join(tmpdir(), `mikan-test-${Date.now()}`);
+    dir = join(tmpdir(), `mikan-test-${Date.now()}-${Math.random()}`);
     mkdirSync(dir, { recursive: true });
   });
 

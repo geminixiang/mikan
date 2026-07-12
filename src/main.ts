@@ -416,6 +416,8 @@ const platformGithubOps: PlatformGithubOps = {
     requireGithubBot("github_pr").pushAndCreatePr(conversationId, request),
   getChecks: (conversationId, branch) =>
     requireGithubBot("github_checks").getChecks(conversationId, branch),
+  getJobLog: (conversationId, jobId) =>
+    requireGithubBot("github_checks").getJobLog(conversationId, jobId),
 };
 
 const handler = createConversationRuntime({

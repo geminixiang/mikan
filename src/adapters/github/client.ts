@@ -243,6 +243,29 @@ export class GithubClient {
     return data!.check_runs;
   }
 
+  /**
+   * Plaintext log of one Actions job (a check-run id). Needs Actions: Read.
+   * GitHub responds with a redirect to blob storage; fetch follows it and the
+   * Authorization header is dropped cross-origin, which is what we want.
+   */
+  async getJobLog(owner: string, repo: string, jobId: number): Promise<string> {
+    const path = `/repos/${owner}/${repo}/actions/jobs/${jobId}/logs`;
+    const token = await this.getInstallationToken();
+    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "mikan",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!response.ok) {
+      const detail = (await response.text().catch(() => "")).slice(0, 300);
+      throw new GithubApiError(response.status, "GET", path, detail || response.statusText);
+    }
+    return response.text();
+  }
+
   async listInstallationRepositories(): Promise<GithubRepository[]> {
     const data = await this.request<{ repositories: GithubRepository[] }>(
       "GET",

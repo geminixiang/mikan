@@ -21,13 +21,13 @@ describe("ensureDirExists", () => {
   });
 
   test("creates directory recursively", () => {
-    dir = join(tmpdir(), `mikan-test-${Date.now()}`, "a", "b", "c");
+    dir = join(tmpdir(), `mikan-test-${Date.now()}-${Math.random()}`, "a", "b", "c");
     expect(() => ensureDirExists(dir)).not.toThrow();
     expect(existsSync(dir)).toBe(true);
   });
 
   test("does not throw if directory already exists", () => {
-    dir = join(tmpdir(), `mikan-test-${Date.now()}`);
+    dir = join(tmpdir(), `mikan-test-${Date.now()}-${Math.random()}`);
     mkdirSync(dir, { recursive: true });
     expect(() => ensureDirExists(dir)).not.toThrow();
   });
@@ -38,7 +38,7 @@ describe("readTextFileIfExists", () => {
   let filePath: string;
 
   beforeEach(() => {
-    dir = join(tmpdir(), `mikan-test-${Date.now()}`);
+    dir = join(tmpdir(), `mikan-test-${Date.now()}-${Math.random()}`);
     mkdirSync(dir, { recursive: true });
     filePath = join(dir, "test.txt");
   });
@@ -66,7 +66,7 @@ describe("readJsonFileIfExists", () => {
   let filePath: string;
 
   beforeEach(() => {
-    dir = join(tmpdir(), `mikan-test-${Date.now()}`);
+    dir = join(tmpdir(), `mikan-test-${Date.now()}-${Math.random()}`);
     mkdirSync(dir, { recursive: true });
     filePath = join(dir, "config.json");
   });
@@ -123,7 +123,7 @@ describe("readJsonSchemaFileIfExists", () => {
   let filePath: string;
 
   beforeEach(() => {
-    dir = join(tmpdir(), `mikan-test-${Date.now()}`);
+    dir = join(tmpdir(), `mikan-test-${Date.now()}-${Math.random()}`);
     mkdirSync(dir, { recursive: true });
     filePath = join(dir, "schema.json");
   });

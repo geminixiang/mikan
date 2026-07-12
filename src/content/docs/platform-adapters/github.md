@@ -48,9 +48,9 @@ The sandbox never holds credentials; git spans the two sides of the conversation
 - On first contact the repo is shallow-cloned into the conversation dir (`./repo` inside the sandbox) with an ephemeral token scoped to that repo and `contents:read`, passed per git invocation and never written to `.git/config`. PR conversations get the PR head checked out as `pr-<n>`.
 - The agent branches and commits inside the sandbox with plain git (the bot's author identity is preconfigured); pushing from the sandbox fails by design.
 - The `github_pr` tool runs host-side: it mints a `contents:write` + `pull_requests:write` token for that one repo, pushes the agent's `pi/*` branch from the host side of the mount, and opens a pull request (draft supported) as the App; re-invoking it with the same branch pushes new commits to the existing PR. It cannot push the default branch, force-push, or merge — humans review and merge every PR.
-- The `github_checks` tool reads CI check runs for a pushed branch (or the PR head), letting the agent iterate on failures until CI passes. Requires the App permission **Checks: Read**.
+- The `github_checks` tool reads CI check runs for a pushed branch (or the PR head) and can fetch a failing job's log tail, letting the agent diagnose and iterate until CI passes. Requires the App permissions **Checks: Read** and **Actions: Read** (for logs).
 
-This requires the GitHub App to have **Contents: Read & write** and **Checks: Read** in addition to Issues and Pull requests read & write.
+This requires the GitHub App to have **Contents: Read & write**, **Checks: Read**, and **Actions: Read** in addition to Issues and Pull requests read & write.
 
 ## Limitations
 

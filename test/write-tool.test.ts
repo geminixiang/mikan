@@ -14,7 +14,7 @@ describe("createWriteTool", () => {
   let executor: ReturnType<typeof makeExecutor>;
 
   beforeEach(() => {
-    dir = join(tmpdir(), `mikan-test-${Date.now()}`);
+    dir = join(tmpdir(), `mikan-test-${Date.now()}-${Math.random()}`);
     mkdirSync(dir, { recursive: true });
     executor = makeExecutor();
   });

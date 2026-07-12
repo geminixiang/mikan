@@ -773,10 +773,24 @@ export class GithubMessagingBot implements MessagingBot {
     }
     const runs = await githubRetry(() => this.client.listCheckRuns(ref.owner, ref.repo, target));
     return runs.map((run) => ({
+      id: run.id,
       name: run.name,
       status: run.status,
       conclusion: run.conclusion,
       url: run.html_url,
     }));
+  }
+
+  /**
+   * Backs the log mode of `github_checks`: the tail of one CI job's log so
+   * the agent can diagnose a failing check without sandbox credentials.
+   */
+  async getJobLog(conversationId: string, jobId: number): Promise<string> {
+    const ref = parseGithubConversationId(conversationId);
+    const logText = await githubRetry(() => this.client.getJobLog(ref.owner, ref.repo, jobId));
+    const MAX_LOG_CHARS = 20000;
+    return logText.length > MAX_LOG_CHARS
+      ? `…(truncated to the last ${MAX_LOG_CHARS} chars)\n${logText.slice(-MAX_LOG_CHARS)}`
+      : logText;
   }
 }

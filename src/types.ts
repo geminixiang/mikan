@@ -173,6 +173,8 @@ export interface GithubPrResult {
 }
 
 export interface GithubCheckSummary {
+  /** Check-run id; for GitHub Actions checks it is also the job id for log fetch. */
+  id: number;
   name: string;
   /** queued | in_progress | completed */
   status: string;
@@ -192,6 +194,8 @@ export interface PlatformGithubOps {
   pushAndCreatePr(conversationId: string, request: GithubPrRequest): Promise<GithubPrResult>;
   /** CI check runs for a branch, or for the conversation's PR head when omitted. */
   getChecks(conversationId: string, branch?: string): Promise<GithubCheckSummary[]>;
+  /** Log text of one CI job (an Actions check-run id), tail-truncated. */
+  getJobLog(conversationId: string, jobId: number): Promise<string>;
 }
 
 /** Normalized platform data and reply hook for one event. */

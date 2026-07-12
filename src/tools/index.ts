@@ -1,18 +1,13 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { TSchema } from "@sinclair/typebox";
-import type {
-  ConversationKind,
-  GithubPrRequest,
-  GithubPrResult,
-  GithubCheckSummary,
-} from "../adapter.js";
+import type { ConversationKind, GithubPrRequest, GithubPrResult } from "../adapter.js";
 import { createAttachTool } from "../adapters/slack/tools/attach.js";
 import type { DockerContainerManager } from "../provisioner.js";
 import type { Executor, SandboxConfig } from "../sandbox/index.js";
 import { createBashTool } from "./bash.js";
 import { createEditTool } from "./edit.js";
 import { createEventTool, HostEventStore } from "./event.js";
-import { createGithubChecksTool } from "./github-checks.js";
+import { createGithubChecksTool, type GithubChecksFns } from "./github-checks.js";
 import { createGithubPrTool } from "./github-pr.js";
 import { createReactTool } from "./react.js";
 import { createReadTool } from "./read.js";
@@ -31,9 +26,7 @@ export function createMikanTools(
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
   setGithubPrFunction: (fn: ((request: GithubPrRequest) => Promise<GithubPrResult>) | null) => void;
-  setGithubChecksFunction: (
-    fn: ((branch?: string) => Promise<GithubCheckSummary[]>) | null,
-  ) => void;
+  setGithubChecksFunction: (fns: GithubChecksFns | null) => void;
   setEventContext: (context: {
     platform: string;
     conversationId: string;

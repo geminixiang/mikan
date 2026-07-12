@@ -10,44 +10,78 @@ const githubChecksSchema = Type.Object({
         "Omit in a pull-request conversation to read the PR head's checks.",
     }),
   ),
+  job_id: Type.Optional(
+    Type.Number({
+      description:
+        "A check's job id from the summary output — returns that CI job's log " +
+        "(tail) instead of the summary, for diagnosing a failing check.",
+    }),
+  ),
 });
+
+/** Conclusions that mean "this check did not pass and needs attention". */
+const FAILING_CONCLUSIONS = new Set(["failure", "timed_out", "action_required", "cancelled"]);
 
 function formatCheckLine(run: GithubCheckSummary): string {
   const state = run.status === "completed" ? (run.conclusion ?? "unknown") : run.status;
-  const marker = run.conclusion === "success" ? "✓" : run.conclusion ? "✗" : "…";
-  return `${marker} ${run.name}: ${state}${run.url ? ` (${run.url})` : ""}`;
+  const marker =
+    run.conclusion === null
+      ? "…"
+      : FAILING_CONCLUSIONS.has(run.conclusion)
+        ? "✗"
+        : run.conclusion === "success"
+          ? "✓"
+          : "−";
+  return `${marker} ${run.name}: ${state} [job ${run.id}]${run.url ? ` (${run.url})` : ""}`;
+}
+
+export interface GithubChecksFns {
+  getChecks: (branch?: string) => Promise<GithubCheckSummary[]>;
+  getJobLog: (jobId: number) => Promise<string>;
 }
 
 /**
  * The `github_checks` tool reads CI check runs (GitHub Actions and other
- * check-reporting apps) for a branch or the conversation's PR head, so the
- * agent can see whether its pushed changes pass and iterate on failures.
+ * check-reporting apps) for a branch or the conversation's PR head, and can
+ * fetch one job's log tail so the agent can diagnose failures and iterate.
  * Read-only, host-side; wired per run and only for GitHub conversations.
  */
 export function createGithubChecksTool(): {
   tool: AgentTool<typeof githubChecksSchema>;
-  setGithubChecksFunction: (
-    fn: ((branch?: string) => Promise<GithubCheckSummary[]>) | null,
-  ) => void;
+  setGithubChecksFunction: (fns: GithubChecksFns | null) => void;
 } {
-  let checksFn: ((branch?: string) => Promise<GithubCheckSummary[]>) | null = null;
+  let checksFns: GithubChecksFns | null = null;
 
   const tool: AgentTool<typeof githubChecksSchema> = {
     name: "github_checks",
     label: "github_checks",
     description:
       "Read CI status (check runs) for a branch you pushed with github_pr, or for this " +
-      "conversation's pull request when branch is omitted. Use it after opening a PR to " +
-      "verify CI, and re-run it (optionally after waiting) while checks are in progress.",
+      "conversation's pull request when branch is omitted. Pass job_id (from the summary) " +
+      "to fetch that job's log and diagnose a failing check. Re-run while checks are in " +
+      "progress. Only available in GitHub conversations.",
     parameters: githubChecksSchema,
-    execute: async (_toolCallId: string, args: { branch?: string }, signal?: AbortSignal) => {
-      if (!checksFn) {
+    execute: async (
+      _toolCallId: string,
+      args: { branch?: string; job_id?: number },
+      signal?: AbortSignal,
+    ) => {
+      if (!checksFns) {
         throw new Error("github_checks is only available in GitHub conversations.");
       }
       if (signal?.aborted) {
         throw new Error("Operation aborted");
       }
-      const runs = await checksFn(args.branch);
+
+      if (args.job_id !== undefined) {
+        const logText = await checksFns.getJobLog(args.job_id);
+        return {
+          content: [{ type: "text" as const, text: logText || "(empty log)" }],
+          details: undefined,
+        };
+      }
+
+      const runs = await checksFns.getChecks(args.branch);
       if (runs.length === 0) {
         return {
           content: [
@@ -61,7 +95,7 @@ export function createGithubChecksTool(): {
       }
       const completed = runs.filter((run) => run.status === "completed");
       const failing = completed.filter(
-        (run) => run.conclusion !== "success" && run.conclusion !== "neutral",
+        (run) => run.conclusion !== null && FAILING_CONCLUSIONS.has(run.conclusion),
       );
       const summary = `${runs.length} check(s): ${completed.length} completed, ${runs.length - completed.length} running, ${failing.length} failing`;
       return {
@@ -78,8 +112,8 @@ export function createGithubChecksTool(): {
 
   return {
     tool,
-    setGithubChecksFunction: (fn) => {
-      checksFn = fn;
+    setGithubChecksFunction: (fns) => {
+      checksFns = fns;
     },
   };
 }

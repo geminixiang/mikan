@@ -26,7 +26,6 @@ import type {
 } from "./adapter.js";
 import type {
   AgentEventPayload,
-  GithubCheckSummary,
   GithubPrRequest,
   GithubPrResult,
   MikanEvent,
@@ -63,6 +62,7 @@ import {
 } from "./sessions/store.js";
 import { HostEventStore } from "./tools/event.js";
 import { createMikanTools } from "./tools/index.js";
+import type { GithubChecksFns } from "./tools/github-checks.js";
 import * as Sentry from "@sentry/node";
 import { formatLocalTimestamp } from "./utils/date.js";
 import { resolveConfiguredModel } from "./model-registry.js";
@@ -1083,9 +1083,7 @@ async function prepareRunContext(params: {
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
   setGithubPrFunction: (fn: ((request: GithubPrRequest) => Promise<GithubPrResult>) | null) => void;
-  setGithubChecksFunction: (
-    fn: ((branch?: string) => Promise<GithubCheckSummary[]>) | null,
-  ) => void;
+  setGithubChecksFunction: (fns: GithubChecksFns | null) => void;
   platformGithubOps?: PlatformGithubOps;
   pathContext: RuntimePathContext;
 }): Promise<PreparedRunContext & { pathContext: RuntimePathContext }> {
@@ -1178,7 +1176,12 @@ async function prepareRunContext(params: {
     githubOps ? (request) => githubOps.pushAndCreatePr(conversationId, request) : null,
   );
   setGithubChecksFunction(
-    githubOps ? (branch) => githubOps.getChecks(conversationId, branch) : null,
+    githubOps
+      ? {
+          getChecks: (branch) => githubOps.getChecks(conversationId, branch),
+          getJobLog: (jobId) => githubOps.getJobLog(conversationId, jobId),
+        }
+      : null,
   );
 
   resetRunState(

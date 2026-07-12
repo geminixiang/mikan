@@ -97,10 +97,12 @@ export interface GithubPullRequest {
 }
 
 export interface GithubCheckRun {
+  /** Check-run id; for GitHub Actions this doubles as the job id (log fetch). */
+  id: number;
   name: string;
   /** queued | in_progress | completed */
   status: string;
-  /** success | failure | neutral | cancelled | timed_out | action_required | null while running */
+  /** success | failure | neutral | cancelled | skipped | timed_out | action_required | null while running */
   conclusion: string | null;
   html_url: string | null;
 }

@@ -66,10 +66,12 @@ conversation-dir bind mount:
   existing open PR instead of failing. Default-branch pushes, force pushes,
   and merging are impossible by construction — humans review and merge.
 - The `github_checks` tool (read-only, host-side) reports CI check runs for a
-  pushed branch — or the PR head in PR conversations — so the agent can
-  iterate until CI passes.
-- Requires the App to have **Contents: Read & write** and **Checks: Read**
-  (plus the existing Issues / Pull requests read & write).
+  pushed branch — or the PR head in PR conversations — and fetches one job's
+  log tail (`job_id`) so the agent can diagnose failures and iterate until CI
+  passes.
+- Requires the App to have **Contents: Read & write**, **Checks: Read**, and
+  **Actions: Read** for job logs (plus the existing Issues / Pull requests
+  read & write).
 - GitHub conversations are excluded from `sandbox.defaultSharedVault`: that
   ambient credential copy is a membership-trust convenience for closed
   platforms, and a GitHub conversation can be driven by any repo-write

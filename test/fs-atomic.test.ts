@@ -9,7 +9,7 @@ describe("atomicWritePrivateFile", () => {
   let targetPath: string;
 
   beforeEach(() => {
-    dir = join(tmpdir(), `mikan-test-${Date.now()}`);
+    dir = join(tmpdir(), `mikan-test-${Date.now()}-${Math.random()}`);
     mkdirSync(dir, { recursive: true });
     targetPath = join(dir, "test.txt");
   });

@@ -85,7 +85,8 @@ export function createGithubAdapters(
       `preconfigured), then call the github_pr tool to push the branch and open a pull ` +
       `request (draft: true for a draft); calling it again with the same branch pushes new ` +
       `commits to the existing PR. Use github_checks to read CI results for your branch ` +
-      `(or this PR) and iterate until they pass. You cannot push the default branch or ` +
+      `(or this PR) — pass a failing check's job id to read its log — and iterate until ` +
+      `they pass. You cannot push the default branch or ` +
       `merge — humans review and merge every PR.`,
     channels: [],
     users: [],

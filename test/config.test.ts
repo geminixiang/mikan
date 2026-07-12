@@ -20,7 +20,7 @@ describe("loadGlobalSettings", () => {
   let stateDir: string;
 
   beforeEach(() => {
-    stateDir = join(tmpdir(), `mikan-test-${Date.now()}`);
+    stateDir = join(tmpdir(), `mikan-test-${Date.now()}-${Math.random()}`);
     mkdirSync(stateDir, { recursive: true });
     process.env.MIKAN_STATE_DIR = stateDir;
   });
@@ -327,7 +327,7 @@ describe("updateGlobalSettings", () => {
   let stateDir: string;
 
   beforeEach(() => {
-    stateDir = join(tmpdir(), `mikan-test-${Date.now()}`);
+    stateDir = join(tmpdir(), `mikan-test-${Date.now()}-${Math.random()}`);
     mkdirSync(stateDir, { recursive: true });
     process.env.MIKAN_STATE_DIR = stateDir;
   });

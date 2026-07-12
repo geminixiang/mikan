@@ -648,11 +648,15 @@ describe("GithubMessagingBot", () => {
   });
 
   test("getChecks reads a branch's check runs, or the PR head when omitted", async () => {
-    client.listCheckRuns = vi
-      .fn()
-      .mockResolvedValue([
-        { name: "test", status: "completed", conclusion: "success", html_url: "https://ci/1" },
-      ]);
+    client.listCheckRuns = vi.fn().mockResolvedValue([
+      {
+        id: 42,
+        name: "test",
+        status: "completed",
+        conclusion: "success",
+        html_url: "https://ci/1",
+      },
+    ]);
     client.getPullRequest = vi
       .fn()
       .mockResolvedValue({ number: 5, html_url: "u", head: { ref: "feat", sha: "abc123" } });
@@ -660,12 +664,24 @@ describe("GithubMessagingBot", () => {
     await bot.start();
 
     expect(await bot.getChecks(CONVERSATION_ID, "pi/fix-5")).toEqual([
-      { name: "test", status: "completed", conclusion: "success", url: "https://ci/1" },
+      { id: 42, name: "test", status: "completed", conclusion: "success", url: "https://ci/1" },
     ]);
     expect(client.listCheckRuns).toHaveBeenLastCalledWith("octo", "widgets", "pi/fix-5");
 
     await bot.getChecks(CONVERSATION_ID);
     expect(client.listCheckRuns).toHaveBeenLastCalledWith("octo", "widgets", "abc123");
+  });
+
+  test("getJobLog truncates to the tail of huge logs", async () => {
+    client.getJobLog = vi.fn().mockResolvedValue(`${"x".repeat(30000)}TAIL`);
+    const bot = makeBot();
+    await bot.start();
+
+    const logText = await bot.getJobLog(CONVERSATION_ID, 42);
+    expect(client.getJobLog).toHaveBeenCalledWith("octo", "widgets", 42);
+    expect(logText).toContain("truncated to the last 20000 chars");
+    expect(logText.endsWith("TAIL")).toBe(true);
+    expect(logText.length).toBeLessThan(21000);
   });
 
   test("getChecks without a branch demands one when the conversation is a plain issue", async () => {
