@@ -66,3 +66,11 @@ conversation-dir bind mount:
   construction — humans review and merge.
 - Requires the App to have **Contents: Read & write** (plus the existing
   Issues / Pull requests read & write).
+- GitHub conversations are excluded from `sandbox.defaultSharedVault`: that
+  ambient credential copy is a membership-trust convenience for closed
+  platforms, and a GitHub conversation can be driven by any repo-write
+  commenter. See `src/vault/README.md` § Identity model. Admins can still
+  explicitly provision a vault for a specific GitHub conversation.
+- A missing `./repo` is re-attempted on every trigger (no-op once cloned), so
+  a first clone that failed — e.g. App permissions granted later — heals on
+  the next mention.

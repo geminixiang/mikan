@@ -292,6 +292,41 @@ describe("ActorExecutionResolver image mode", () => {
     );
   });
 
+  test("github conversations never inherit the default shared vault", async () => {
+    mkdirSync(join(vaultsDir, "shared", "claw"), { recursive: true });
+    writeFileSync(join(vaultsDir, "shared", "claw", "env"), "GH_TOKEN=ambient\n");
+    writeFileSync(
+      join(tmpDir, "settings.json"),
+      JSON.stringify({
+        llm: { provider: "anthropic", model: "claude-sonnet-4-6", thinkingLevel: "off" },
+        sandbox: { defaultSharedVault: "claw" },
+      }),
+    );
+
+    const mgr = new FileVaultManager(tmpDir);
+    const resolver = new ActorExecutionResolver(
+      { type: "image", image: "ubuntu:24.04" },
+      mgr,
+      undefined,
+      tmpDir,
+    );
+    await resolver.resolve({
+      platform: "github",
+      userId: "alice",
+      conversationId: "GH_octo_widgets_5",
+    });
+
+    // The GitHub conversation's sandbox stays credential-free: no vault is
+    // provisioned from the ambient default.
+    expect(
+      mgr.resolve(DockerContainerManager.sanitizeSegment("GH_octo_widgets_5")),
+    ).toBeUndefined();
+
+    // Same resolver, same default — a Slack conversation still inherits it.
+    await resolver.resolve({ platform: "slack", userId: "U1", conversationId: "D999" });
+    expect(readFileSync(join(vaultsDir, "d999", "env"), "utf-8")).toContain("GH_TOKEN=ambient");
+  });
+
   test("does not copy the default shared vault over an existing image sandbox vault", async () => {
     mkdirSync(join(vaultsDir, "shared", "claw"), { recursive: true });
     mkdirSync(join(vaultsDir, "d123"), { recursive: true });

@@ -81,7 +81,7 @@ export class ActorExecutionResolver {
 
   async resolve(context: ActorContext): Promise<Executor> {
     const vaultKey = resolveActorVaultKey(this.baseConfig, context.userId, context.conversationId);
-    this.ensureDefaultSharedVault(vaultKey);
+    this.ensureDefaultSharedVault(vaultKey, context.platform);
 
     const vault = this.vaultManager.resolve(vaultKey);
     const config = this.resolveSandboxConfig(vaultKey);
@@ -94,7 +94,15 @@ export class ActorExecutionResolver {
     );
   }
 
-  private ensureDefaultSharedVault(vaultKey: string): void {
+  private ensureDefaultSharedVault(vaultKey: string, platform: string): void {
+    // The ambient default vault is a membership-trust convenience: on Slack/
+    // Discord/Telegram only invited members can drive the agent, so handing
+    // every conversation the shared credentials matches who can use them.
+    // GitHub conversations are driven by repo commenters — a wider trust
+    // boundary — so they never inherit ambient credentials. Their sandboxes
+    // stay credential-free (the adapter acts through host-side scoped tokens)
+    // unless an admin explicitly provisions a vault for that conversation.
+    if (platform === "github") return;
     if (this.baseConfig.type !== "image" && this.baseConfig.type !== "cloudflare") return;
     if (this.vaultManager.hasEntry(vaultKey)) return;
 

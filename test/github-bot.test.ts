@@ -276,7 +276,7 @@ describe("GithubMessagingBot", () => {
   });
 
   test("unmentioned comment in a participating conversation triggers", async () => {
-    mkdirSync(join(workingDir, CONVERSATION_ID), { recursive: true });
+    mkdirSync(join(workingDir, CONVERSATION_ID, "repo"), { recursive: true });
     writeFileSync(join(workingDir, CONVERSATION_ID, "log.jsonl"), "{}\n");
     const bot = makeBot();
     await bot.start();
@@ -574,6 +574,23 @@ describe("GithubMessagingBot", () => {
     await bot.poll();
     await settleQueues();
     expect(cloneRepo).not.toHaveBeenCalled();
+  });
+
+  test("a participating conversation with a missing clone retries on the next trigger", async () => {
+    // Simulate a conversation whose first-contact clone failed (log exists,
+    // repo dir does not) — e.g. App permissions were granted only later.
+    mkdirSync(join(workingDir, CONVERSATION_ID), { recursive: true });
+    writeFileSync(join(workingDir, CONVERSATION_ID, "log.jsonl"), "{}\n");
+    client.getIssue.mockResolvedValue(makeIssue({ pull_request: {} }));
+    const bot = makeBot();
+    await bot.start();
+    client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "try again" })]);
+
+    await bot.poll();
+    await settleQueues();
+
+    expect(cloneRepo).toHaveBeenCalledWith(expect.objectContaining({ prNumber: 5 }));
+    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
   });
 
   test("pushAndCreatePr pushes the branch with a write token and opens the PR", async () => {

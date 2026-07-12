@@ -554,14 +554,17 @@ export class GithubMessagingBot implements MessagingBot {
     }
 
     // First contact: log the issue title/body ahead of the comment so the
-    // session history starts with what the thread is about, then clone the
-    // repo into the conversation dir so the agent has the code.
-    if (!participating) {
-      let isPr = item.isPr ?? false;
-      if (item.ts !== GITHUB_ISSUE_BODY_TS) {
-        const issue = await this.logIssueContext(item.ref, conversationId, item.createdAt);
-        isPr = Boolean(issue?.pull_request);
-      }
+    // session history starts with what the thread is about. The clone is
+    // (re)attempted on every trigger while ./repo is missing — a no-op once
+    // it exists — so a failed first clone (e.g. App permissions granted
+    // later) heals on the next mention instead of wedging the conversation.
+    let isPrHint = item.isPr;
+    if (!participating && item.ts !== GITHUB_ISSUE_BODY_TS) {
+      const issue = await this.logIssueContext(item.ref, conversationId, item.createdAt);
+      if (issue) isPrHint = Boolean(issue.pull_request);
+    }
+    if (!existsSync(this.repoDir(conversationId))) {
+      const isPr = isPrHint ?? (await this.fetchIsPr(item.ref));
       await this.ensureRepoClone(item.ref, conversationId, isPr);
     }
 
@@ -637,6 +640,17 @@ export class GithubMessagingBot implements MessagingBot {
 
   private repoDir(conversationId: string): string {
     return join(this.config.workingDir, conversationId, "repo");
+  }
+
+  /** Whether the conversation's issue is a PR, for clone retries where the
+   *  triggering item didn't carry that knowledge. Errs toward plain issue. */
+  private async fetchIsPr(ref: GithubConversationRef): Promise<boolean> {
+    try {
+      const issue = await githubRetry(() => this.client.getIssue(ref.owner, ref.repo, ref.number));
+      return Boolean(issue.pull_request);
+    } catch {
+      return false;
+    }
   }
 
   /**
