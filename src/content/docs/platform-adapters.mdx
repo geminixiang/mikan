@@ -1,6 +1,6 @@
 ---
 title: Platform adapters
-description: How Slack, Discord, and Telegram adapters convert platform events into mikan's shared runtime format.
+description: How Slack, Discord, Telegram, and GitHub adapters convert platform events into mikan's shared runtime format.
 ---
 
 import { Aside, Card, CardGrid, LinkCard, Steps } from "@astrojs/starlight/components";
@@ -82,6 +82,11 @@ sequenceDiagram
   title="Telegram"
   description="Long polling, private/group chat, reply-based sessions, Telegram HTML mode, and photo/document downloads."
   href="platform-adapters/telegram/"
+/>
+<LinkCard
+  title="GitHub"
+  description="GitHub App polling, issue/PR conversations, watermark dedup, and comment-based streaming responses."
+  href="platform-adapters/github/"
 />
 
 ## Boundary with the core runtime

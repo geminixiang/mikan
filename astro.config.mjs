@@ -91,6 +91,11 @@ export default defineConfig({
                   translations: { "zh-TW": "Telegram", "zh-CN": "Telegram", ja: "Telegram" },
                   link: "/platform-adapters/telegram/",
                 },
+                {
+                  label: "GitHub",
+                  translations: { "zh-TW": "GitHub", "zh-CN": "GitHub", ja: "GitHub" },
+                  link: "/platform-adapters/github/",
+                },
               ],
             },
             {

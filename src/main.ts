@@ -9,6 +9,7 @@ import { fileURLToPath } from "url";
 import { dirname, join as pathJoin } from "path";
 import type { MessagingBot, PlatformNotifier, PlatformReactor } from "./adapter.js";
 import { DiscordMessagingBot } from "./adapters/discord/bot.js";
+import { GithubMessagingBot } from "./adapters/github/bot.js";
 import { TelegramMessagingBot } from "./adapters/telegram/bot.js";
 import { SlackMessagingBot as SlackMessagingBotClass } from "./adapters/slack/bot.js";
 import { downloadChannel } from "./download.js";
@@ -69,6 +70,12 @@ const SLACK_APP_TOKEN = readEnv("SLACK_APP_TOKEN");
 const SLACK_BOT_TOKEN = readEnv("SLACK_BOT_TOKEN");
 const TELEGRAM_BOT_TOKEN = readEnv("TELEGRAM_BOT_TOKEN");
 const DISCORD_BOT_TOKEN = readEnv("DISCORD_BOT_TOKEN");
+const GITHUB_APP_ID = readEnv("GITHUB_APP_ID");
+const GITHUB_APP_PRIVATE_KEY = readEnv("GITHUB_APP_PRIVATE_KEY");
+const GITHUB_APP_PRIVATE_KEY_PATH = readEnv("GITHUB_APP_PRIVATE_KEY_PATH");
+const GITHUB_INSTALLATION_ID = readEnv("GITHUB_INSTALLATION_ID");
+const GITHUB_REPOS = readEnv("GITHUB_REPOS");
+const GITHUB_POLL_INTERVAL = readEnv("GITHUB_POLL_INTERVAL");
 const LINK_URL = readEnv("LINK_URL");
 const LINK_PORT_RAW = readEnv("LINK_PORT");
 const LINK_PORT = LINK_PORT_RAW ? parseInt(LINK_PORT_RAW, 10) : LINK_URL ? 8181 : undefined;
@@ -263,13 +270,19 @@ try {
 const hasSlack = !!(SLACK_APP_TOKEN && SLACK_BOT_TOKEN);
 const hasTelegram = !!TELEGRAM_BOT_TOKEN;
 const hasDiscord = !!DISCORD_BOT_TOKEN;
+const hasGithub = !!(
+  GITHUB_APP_ID &&
+  GITHUB_INSTALLATION_ID &&
+  (GITHUB_APP_PRIVATE_KEY || GITHUB_APP_PRIVATE_KEY_PATH)
+);
 
-if (!hasSlack && !hasTelegram && !hasDiscord) {
+if (!hasSlack && !hasTelegram && !hasDiscord && !hasGithub) {
   console.error(
     "No platform tokens found. Set one of:\n" +
       "  Slack:    SLACK_APP_TOKEN + SLACK_BOT_TOKEN\n" +
       "  Telegram: TELEGRAM_BOT_TOKEN\n" +
-      "  Discord:  DISCORD_BOT_TOKEN",
+      "  Discord:  DISCORD_BOT_TOKEN\n" +
+      "  GitHub:   GITHUB_APP_ID + GITHUB_INSTALLATION_ID + GITHUB_APP_PRIVATE_KEY(_PATH)",
   );
   process.exit(1);
 }
@@ -488,6 +501,39 @@ if (hasDiscord) {
   bots.push(discordMessagingBot);
   botsByPlatform.discord = discordMessagingBot;
   log.logInfo("Platform: Discord");
+}
+if (hasGithub) {
+  if (!GITHUB_APP_ID || !GITHUB_INSTALLATION_ID) {
+    throw new Error("GitHub startup requires GITHUB_APP_ID and GITHUB_INSTALLATION_ID");
+  }
+  // Env vars flatten PEM newlines to literal `\n`; a key file avoids that.
+  const githubPrivateKey = GITHUB_APP_PRIVATE_KEY_PATH
+    ? readFileSync(GITHUB_APP_PRIVATE_KEY_PATH, "utf-8")
+    : GITHUB_APP_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  if (!githubPrivateKey) {
+    throw new Error(
+      "GitHub startup requires GITHUB_APP_PRIVATE_KEY or GITHUB_APP_PRIVATE_KEY_PATH",
+    );
+  }
+  const pollIntervalSeconds = GITHUB_POLL_INTERVAL ? parseInt(GITHUB_POLL_INTERVAL, 10) : NaN;
+  const githubMessagingBot = new GithubMessagingBot(handler, {
+    appId: GITHUB_APP_ID,
+    privateKey: githubPrivateKey,
+    installationId: GITHUB_INSTALLATION_ID,
+    repos: GITHUB_REPOS
+      ? GITHUB_REPOS.split(",")
+          .map((repo) => repo.trim())
+          .filter(Boolean)
+      : [],
+    pollIntervalMs:
+      (Number.isFinite(pollIntervalSeconds) && pollIntervalSeconds > 0 ? pollIntervalSeconds : 60) *
+      1000,
+    workingDir,
+    syncStatePath: join(stateDir, "github-sync.json"),
+  });
+  bots.push(githubMessagingBot);
+  botsByPlatform.github = githubMessagingBot;
+  log.logInfo("Platform: GitHub");
 }
 
 if (LINK_PORT) {

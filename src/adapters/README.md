@@ -9,5 +9,6 @@ This directory contains chat platform adapters and shared adapter helpers.
 ## Subdirectories
 
 - `discord/`: Discord bot implementation and Discord response context.
+- `github/`: GitHub App polling bot (one issue/PR = one conversation), REST client, and response context.
 - `slack/`: Slack bot, Slack session/thread rules, and Slack response context.
 - `telegram/`: Telegram bot, Telegram HTML sanitization, and Telegram response context.

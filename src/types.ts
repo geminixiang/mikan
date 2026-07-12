@@ -9,7 +9,7 @@ type ExecFileAsync = typeof execFileAsync;
 
 export type ConversationKind = "direct" | "shared";
 
-export type PlatformName = "slack" | "discord" | "telegram";
+export type PlatformName = "slack" | "discord" | "telegram" | "github";
 
 export interface ConversationMessage {
   id: string;

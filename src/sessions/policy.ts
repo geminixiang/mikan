@@ -33,5 +33,6 @@ export function inferConversationKind(platform: string, conversationId: string):
     return conversationId.startsWith("DM") ? "direct" : "shared";
   }
 
+  // github: issues/PRs are always shared within the repo; there are no DMs.
   return "shared";
 }

@@ -1,7 +1,8 @@
 # GitHub as a messaging adapter (design)
 
-Status: **design only, not implemented.** A fourth platform adapter beside
-Slack / Discord / Telegram, living in `src/adapters/github/`.
+Status: **implemented** (issue/PR conversation comments; review threads still
+open — see `README.md` for configuration and behavior). A fourth platform
+adapter beside Slack / Discord / Telegram, living in `src/adapters/github/`.
 
 ## Core assumption
 
@@ -24,7 +25,7 @@ adapter contract, no new inbound-HTTP surface, no break in the model.
 | mikan concept        | GitHub                                              |
 | -------------------- | --------------------------------------------------- |
 | conversation         | one issue or one PR                                 |
-| `conversationId`     | `gh:<owner>/<repo>#<number>` (verbatim, stable)     |
+| `conversationId`     | `GH_<owner>_<repo>_<number>` (verbatim, stable)     |
 | conversation message | an issue/PR comment (or the issue/PR body itself)   |
 | message `ts`         | the comment id (GitHub node/database id)            |
 | thread               | a PR **review thread** (comments on a diff line)    |
@@ -33,15 +34,31 @@ adapter contract, no new inbound-HTTP surface, no break in the model.
 | user                 | GitHub login                                        |
 | `conversationKind`   | always `shared` (issues/PRs are public within repo) |
 
-`conversationId` uses the `gh:` prefix so it never collides with Slack
-(`C…`/`D…`) or other platforms, and is used verbatim (LAYOUT.md § Casing) —
-GitHub owner/repo are case-preserving-but-insensitive, `#<number>` is stable.
+`conversationId` uses the `GH_` prefix so it never collides with Slack
+(`C…`/`D…`) or other platforms. Owner and repo are **lowercased**: GitHub
+names are case-insensitive, and the id has two spelling sources (the
+`GITHUB_REPOS` env var and API payloads), so unlike Slack's platform-issued
+ids this is a mikan-derived slug — and LAYOUT.md § Casing lowercases derived
+slugs so one issue can never split into two conversation dirs on
+case-sensitive filesystems.
+
+The separator is `_`, not the `gh:<owner>/<repo>#<number>` spelling this
+design first proposed: ids are used verbatim as a single path segment, so `/`
+is out, and conversation dirs are bind-mounted with docker's `-v source:target`
+syntax in image mode, so `:` is out too. `-` is out for a subtler reason:
+owners and repos may both contain `-`, so `GH-foo-bar-baz-42` cannot be parsed
+back to a unique (owner, repo) — two real repos would collide onto one
+conversation. `_` is unambiguous under GitHub's name grammar: owners never
+contain `_` and the trailing number is pure digits, so the first `_` and the
+last `_` are always the real boundaries even when the repo name itself
+contains `_` (see `ids.ts`).
 
 ### Conversation directory
 
-`gh:owner/repo#123` sanitizes to a filesystem-safe conversation dir the same
-way other ids do. One issue/PR → one session tree → one agent memory, exactly
-like a Slack channel. Re-opening the same PR later resumes its session.
+`GH_owner_repo_123` is already a filesystem-safe single path segment and is
+used verbatim as the conversation dir, like every other platform id. One
+issue/PR → one session tree → one agent memory, exactly like a Slack channel.
+Re-opening the same PR later resumes its session.
 
 ## Event source (polling)
 

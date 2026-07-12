@@ -58,10 +58,24 @@ module.exports = {
         SLACK_BOT_TOKEN: "",
         TELEGRAM_BOT_TOKEN: "",
         DISCORD_BOT_TOKEN: "",
+
+        // GitHub adapter (issue/PR conversations): create a GitHub App
+        // (Issues + Pull requests read/write, webhook off), install it,
+        // then point the key path at the downloaded .pem — keep the key
+        // outside any repo. GITHUB_REPOS defaults to every installed repo;
+        // GITHUB_POLL_INTERVAL is in seconds (default 60).
+        GITHUB_APP_ID: "",
+        GITHUB_APP_PRIVATE_KEY_PATH: "",
+        GITHUB_INSTALLATION_ID: "",
+        GITHUB_REPOS: "",
+        GITHUB_POLL_INTERVAL: "",
+
         ANTHROPIC_API_KEY: "",
         OPENAI_API_KEY: "",
         MIKAN_LINK_URL: "",
         MIKAN_LINK_PORT: "",
+        // OAuth app for /login credential linking — unrelated to the
+        // GitHub adapter's App credentials above.
         GITHUB_OAUTH_CLIENT_ID: "",
         GITHUB_OAUTH_CLIENT_SECRET: "",
         GOOGLE_WORKSPACE_CLI_CLIENT_ID: "",
