@@ -263,6 +263,18 @@ export class MikanModels {
     return this.models.getModel(provider, modelId);
   }
 
+  /**
+   * Find a model by provider and id, or throw a user-facing configuration error.
+   * Prefer this at runtime entry points over raw `find` + ad-hoc throws.
+   */
+  resolve(provider: string, modelId: string): Model<Api> {
+    const model = this.find(provider, modelId);
+    if (model) return model;
+    throw new Error(
+      `Unknown model "${provider}/${modelId}". Configure it in pi models.json or choose a registered model.`,
+    );
+  }
+
   /** Models whose provider auth currently resolves (API key, OAuth, or ambient). */
   async getAvailable(): Promise<Model<Api>[]> {
     const byProvider = new Map<string, Model<Api>[]>();

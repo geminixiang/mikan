@@ -9,7 +9,7 @@ import type {
 import { readRawBody } from "../../utils/http-body.js";
 import { escapeHtml } from "../../utils/html.js";
 import * as log from "../../log.js";
-import { renderPortalShell } from "../../portal-shell.js";
+import { renderPortalShell } from "../portal-shell.js";
 import { reportUserFacingError } from "../../observability/sentry.js";
 import { inferConversationKind } from "../../sessions/policy.js";
 import {

@@ -3,7 +3,6 @@ import { MikanModels } from "./harness/index.js";
 import type { ConversationEvent } from "./adapter.js";
 import { loadAutoReplyJudgeModel, loadConversationAutoReplyConfig } from "./config.js";
 import * as log from "./log.js";
-import { resolveConfiguredModel } from "./model-registry.js";
 
 const JUDGE_TIMEOUT_MS = 10_000;
 
@@ -92,7 +91,7 @@ async function judgeAutoReplyWithLlm(input: {
 }): Promise<boolean> {
   const judgeConfig = loadAutoReplyJudgeModel(input.conversationDir);
   const models = MikanModels.create();
-  const model = resolveConfiguredModel(models, judgeConfig.provider, judgeConfig.model);
+  const model = models.resolve(judgeConfig.provider, judgeConfig.model);
 
   const answer = await models.models.completeSimple(
     model,

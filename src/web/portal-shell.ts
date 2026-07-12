@@ -1,5 +1,5 @@
-import { escapeHtml } from "./utils/html.js";
-import { PRODUCT_NAME } from "./platform-messages.js";
+import { escapeHtml } from "../utils/html.js";
+import { PRODUCT_NAME } from "../platform-messages.js";
 
 // ── Shared portal shell ────────────────────────────────────────────────────────
 //
@@ -12,8 +12,8 @@ import { PRODUCT_NAME } from "./platform-messages.js";
 // Sidebar buttons whose target token isn't available are rendered as anchors
 // only when href is provided; otherwise they are buttons in a disabled state.
 
-export type { PortalShellOptions } from "./types.js";
-import type { PortalShellOptions } from "./types.js";
+export type { PortalShellOptions } from "../types.js";
+import type { PortalShellOptions } from "../types.js";
 
 type PortalView = "admin" | "session" | "vault";
 

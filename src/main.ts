@@ -15,7 +15,7 @@ import type { PlatformGithubOps } from "./adapters/github/types.js";
 import { TelegramMessagingBot } from "./adapters/telegram/bot.js";
 import { SlackMessagingBot as SlackMessagingBotClass } from "./adapters/slack/bot.js";
 import type { PlatformToolPackFactory } from "./tools/types.js";
-import { downloadChannel } from "./download.js";
+import { downloadChannel } from "./cli/download.js";
 import { EventsWatcher } from "./events.js";
 import * as log from "./log.js";
 import { startWebServer } from "./web/server.js";

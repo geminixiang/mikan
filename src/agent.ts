@@ -71,7 +71,7 @@ import { createMikanTools } from "./tools/index.js";
 import type { PlatformToolPackFactory } from "./tools/types.js";
 import * as Sentry from "@sentry/node";
 import { formatLocalTimestamp } from "./utils/date.js";
-import { resolveConfiguredModel } from "./model-registry.js";
+
 import { emitAgentEvent } from "./agent-events.js";
 
 export function getUnresolvedSandboxPathContext(
@@ -1630,7 +1630,7 @@ export async function createRunner(
   if (modelRegistry.getError()) {
     log.logWarning("models.json load error", modelRegistry.getError()!);
   }
-  const model = resolveConfiguredModel(modelRegistry, agentConfig.provider, agentConfig.model);
+  const model = modelRegistry.resolve(agentConfig.provider, agentConfig.model);
 
   // Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
   const memory = await getMemory(conversationDir);

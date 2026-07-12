@@ -324,7 +324,7 @@ export interface LogContext {
   sessionId?: string;
 }
 
-// ── portal-shell ──────────────────────────────────────────────────────────────
+// ── portal shell (src/web/portal-shell.ts) ────────────────────────────────────
 
 type PortalView = "admin" | "session" | "vault";
 

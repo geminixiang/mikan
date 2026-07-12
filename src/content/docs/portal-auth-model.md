@@ -120,7 +120,7 @@ Even if a full dashboard is added later, these boundaries should remain:
 | Login / vault portal | `src/web/login/portal.ts`, `src/web/login/store.ts`               |
 | Session view         | `src/web/session-view/portal.ts`, `src/web/session-view/store.ts` |
 | Shared token store   | `src/web/token-store.ts`                                          |
-| Shared portal shell  | `src/portal-shell.ts`                                             |
+| Shared portal shell  | `src/web/portal-shell.ts`                                         |
 
 `startWebServer()` dispatch order:
 

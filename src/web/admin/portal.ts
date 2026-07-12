@@ -14,7 +14,7 @@ import {
 } from "../../config.js";
 import { escapeHtml } from "../../utils/html.js";
 import { readRawBody } from "../../utils/http-body.js";
-import { renderPortalShell } from "../../portal-shell.js";
+import { renderPortalShell } from "../portal-shell.js";
 import { resolveExistingSessionFile } from "../session-view/service.js";
 import { PRODUCT_NAME } from "../../platform-messages.js";
 import { resolveActorVaultKey } from "../../vault/routing.js";

@@ -120,7 +120,7 @@ Session view token は base session file に固定されます。`/session?sessi
 | Login / vault portal | `src/web/login/portal.ts`、`src/web/login/store.ts`               |
 | Session view         | `src/web/session-view/portal.ts`、`src/web/session-view/store.ts` |
 | 共通 token store     | `src/web/token-store.ts`                                          |
-| 共通 portal shell    | `src/portal-shell.ts`                                             |
+| 共通 portal shell    | `src/web/portal-shell.ts`                                         |
 
 `startWebServer()` の dispatch 順序：
 

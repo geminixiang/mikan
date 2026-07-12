@@ -8,13 +8,13 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `agent.ts`: Agent runner — prompt, paths, run lifecycle, and `createRunner` (single module).
 - `config.ts`: Loads, normalizes, and saves global and conversation settings for models, sandbox, auto-reply, and portal URLs.
 - `context.ts`: Finds platform messages by message id from a conversation `log.jsonl` file.
-- `download.ts`: Downloads Slack channel history and prints top-level messages with thread replies.
+
 - `events.ts`: Watches `events/` JSON files and fires immediate, one-shot, and periodic bot events.
 - `execution-resolver.ts`: Resolves the concrete executor and credential injection for an actor, conversation, vault, and sandbox.
 - `index.ts`: Exposes the package public API through barrel exports.
 - `log.ts`: Centralizes CLI log formatting for messages, tools, responses, usage, startup, and backfill.
 - `main.ts`: CLI entrypoint that parses arguments and starts config, sandbox, vault, runtime, portal, events, and platform bots.
-- `portal-shell.ts`: Renders the shared HTML shell, navigation, and CSS for admin/session/vault portals.
+
 - `provisioner.ts`: Manages per-vault Docker image sandbox containers, mounts, resource limits, boosts, and idle shutdown.
 - `store.ts`: Manages channel directories, `log.jsonl` message logging, Slack attachment downloads, and deduplication.
 - `trigger.ts`: Decides whether a message should trigger the agent, including auto-reply rules and LLM judging.

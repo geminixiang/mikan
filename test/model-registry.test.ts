@@ -3,7 +3,6 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { MikanModels } from "../src/harness/index.js";
 import { describe, expect, test } from "vitest";
-import { resolveConfiguredModel } from "../src/model-registry.js";
 
 function withTempRegistry(config: unknown): MikanModels {
   const dir = mkdtempSync(join(tmpdir(), "mikan-model-registry-"));
@@ -14,7 +13,7 @@ function withTempRegistry(config: unknown): MikanModels {
   });
 }
 
-describe("resolveConfiguredModel", () => {
+describe("MikanModels.resolve", () => {
   test("resolves custom models from models.json", () => {
     const registry = withTempRegistry({
       providers: {
@@ -39,7 +38,7 @@ describe("resolveConfiguredModel", () => {
       },
     });
 
-    const model = resolveConfiguredModel(registry, "agent-model", "claude-opus-4-7");
+    const model = registry.resolve("agent-model", "claude-opus-4-7");
 
     expect(model.provider).toBe("agent-model");
     expect(model.id).toBe("claude-opus-4-7");
@@ -78,7 +77,7 @@ describe("resolveConfiguredModel", () => {
       },
     });
 
-    const model = resolveConfiguredModel(registry, "agent-model", "chatgpt-gpt-5.5");
+    const model = registry.resolve("agent-model", "chatgpt-gpt-5.5");
     expect(model.maxTokens).toBe(128000);
     expect(model.contextWindow).toBe(272000);
     expect(model.thinkingLevelMap).toEqual({ xhigh: "xhigh", minimal: "low" });
@@ -94,9 +93,7 @@ describe("resolveConfiguredModel", () => {
         modelsJsonPath: join(dir, "models.json"),
       });
 
-      expect(() => resolveConfiguredModel(registry, "missing", "model")).toThrow(
-        'Unknown model "missing/model"',
-      );
+      expect(() => registry.resolve("missing", "model")).toThrow('Unknown model "missing/model"');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
