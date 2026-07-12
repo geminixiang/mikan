@@ -289,6 +289,7 @@ export class GithubMessagingBot implements MessagingBot {
   getMessagingInfo(): MessagingInfo {
     return {
       name: "github",
+      trustModel: "open-trigger",
       formattingGuide:
         "## GitHub Formatting (GitHub Flavored Markdown)\n" +
         "Standard Markdown plus tables, task lists, and ```suggestion blocks.\n" +
@@ -778,16 +779,40 @@ export class GithubMessagingBot implements MessagingBot {
       status: run.status,
       conclusion: run.conclusion,
       url: run.html_url,
+      appSlug: run.app?.slug ?? null,
+      outputSummary: run.output?.summary?.trim() ? run.output.summary.slice(0, 500) : null,
     }));
   }
 
   /**
    * Backs the log mode of `github_checks`: the tail of one CI job's log so
-   * the agent can diagnose a failing check without sandbox credentials.
+   * the agent can diagnose a failing check without sandbox credentials. Only
+   * GitHub Actions checks have logs on GitHub — external CI apps (e.g. Cloud
+   * Build) keep theirs on their own service, so a 404 here is translated
+   * into guidance instead of a dead end.
    */
   async getJobLog(conversationId: string, jobId: number): Promise<string> {
+    if (!Number.isInteger(jobId) || jobId <= 0) {
+      throw new Error(
+        "job_id must be a positive Actions job id taken from a [job …] entry in the github_checks summary.",
+      );
+    }
     const ref = parseGithubConversationId(conversationId);
-    const logText = await githubRetry(() => this.client.getJobLog(ref.owner, ref.repo, jobId));
+    let logText: string;
+    try {
+      logText = await githubRetry(() => this.client.getJobLog(ref.owner, ref.repo, jobId));
+    } catch (err) {
+      if (err instanceof GithubApiError && err.status === 404) {
+        throw new Error(
+          `No GitHub Actions log for job ${jobId}. Logs are only available for checks reported ` +
+            `by github-actions; external CI (e.g. Cloud Build) keeps logs on its own service — ` +
+            `use that check's summary/url from github_checks, or reproduce the failure locally ` +
+            `in ./repo instead. Do not retry with other ids.`,
+          { cause: err },
+        );
+      }
+      throw err;
+    }
     const MAX_LOG_CHARS = 20000;
     return logText.length > MAX_LOG_CHARS
       ? `…(truncated to the last ${MAX_LOG_CHARS} chars)\n${logText.slice(-MAX_LOG_CHARS)}`

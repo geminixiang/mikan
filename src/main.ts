@@ -15,8 +15,10 @@ import type {
 } from "./adapter.js";
 import { DiscordMessagingBot } from "./adapters/discord/bot.js";
 import { GithubMessagingBot } from "./adapters/github/bot.js";
+import { createGithubToolPack } from "./adapters/github/tool-pack.js";
 import { TelegramMessagingBot } from "./adapters/telegram/bot.js";
 import { SlackMessagingBot as SlackMessagingBotClass } from "./adapters/slack/bot.js";
+import type { PlatformToolPackFactory } from "./tools/types.js";
 import { downloadChannel } from "./download.js";
 import { EventsWatcher } from "./events.js";
 import * as log from "./log.js";
@@ -411,14 +413,24 @@ function requireGithubBot(op: string): GithubMessagingBot {
   }
   return bot;
 }
-const platformGithubOps: PlatformGithubOps = {
-  pushAndCreatePr: (conversationId, request) =>
-    requireGithubBot("github_pr").pushAndCreatePr(conversationId, request),
-  getChecks: (conversationId, branch) =>
-    requireGithubBot("github_checks").getChecks(conversationId, branch),
-  getJobLog: (conversationId, jobId) =>
-    requireGithubBot("github_checks").getJobLog(conversationId, jobId),
-};
+
+/**
+ * Platform capability pack factories — only when the corresponding bot is
+ * configured. Factories, not instances: each runner materializes its own
+ * pack so per-run bind state never crosses conversations.
+ */
+function buildPlatformToolPackFactories(): PlatformToolPackFactory[] {
+  if (!hasGithub) return [];
+  const platformGithubOps: PlatformGithubOps = {
+    pushAndCreatePr: (conversationId, request) =>
+      requireGithubBot("github_pr").pushAndCreatePr(conversationId, request),
+    getChecks: (conversationId, branch) =>
+      requireGithubBot("github_checks").getChecks(conversationId, branch),
+    getJobLog: (conversationId, jobId) =>
+      requireGithubBot("github_checks").getJobLog(conversationId, jobId),
+  };
+  return [() => createGithubToolPack(platformGithubOps)];
+}
 
 const handler = createConversationRuntime({
   workingDir,
@@ -431,7 +443,7 @@ const handler = createConversationRuntime({
   portalBaseUrl: portalBaseUrl(),
   platformNotifier,
   platformReactor,
-  platformGithubOps,
+  platformToolPackFactories: buildPlatformToolPackFactories(),
 });
 
 const sandboxDesc =

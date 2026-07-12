@@ -655,6 +655,8 @@ describe("GithubMessagingBot", () => {
         status: "completed",
         conclusion: "success",
         html_url: "https://ci/1",
+        app: { slug: "github-actions" },
+        output: { title: "ok", summary: "all green" },
       },
     ]);
     client.getPullRequest = vi
@@ -664,7 +666,15 @@ describe("GithubMessagingBot", () => {
     await bot.start();
 
     expect(await bot.getChecks(CONVERSATION_ID, "pi/fix-5")).toEqual([
-      { id: 42, name: "test", status: "completed", conclusion: "success", url: "https://ci/1" },
+      {
+        id: 42,
+        name: "test",
+        status: "completed",
+        conclusion: "success",
+        url: "https://ci/1",
+        appSlug: "github-actions",
+        outputSummary: "all green",
+      },
     ]);
     expect(client.listCheckRuns).toHaveBeenLastCalledWith("octo", "widgets", "pi/fix-5");
 
@@ -682,6 +692,21 @@ describe("GithubMessagingBot", () => {
     expect(logText).toContain("truncated to the last 20000 chars");
     expect(logText.endsWith("TAIL")).toBe(true);
     expect(logText.length).toBeLessThan(21000);
+  });
+
+  test("getJobLog rejects invalid ids and translates 404 into guidance", async () => {
+    const { GithubApiError } = await import("../src/adapters/github/client.js");
+    client.getJobLog = vi
+      .fn()
+      .mockRejectedValue(
+        new GithubApiError(404, "GET", "/repos/octo/widgets/actions/jobs/9/logs", "Not Found"),
+      );
+    const bot = makeBot();
+    await bot.start();
+
+    await expect(bot.getJobLog(CONVERSATION_ID, 0)).rejects.toThrow(/positive Actions job id/);
+    expect(client.getJobLog).not.toHaveBeenCalled();
+    await expect(bot.getJobLog(CONVERSATION_ID, 9)).rejects.toThrow(/Do not retry/);
   });
 
   test("getChecks without a branch demands one when the conversation is a plain issue", async () => {

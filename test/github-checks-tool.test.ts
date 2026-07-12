@@ -20,21 +20,66 @@ describe("github_checks tool", () => {
     setGithubChecksFunction(
       makeFns({
         getChecks: vi.fn().mockResolvedValue([
-          { id: 1, name: "test", status: "completed", conclusion: "success", url: "https://ci/1" },
-          { id: 2, name: "lint", status: "completed", conclusion: "failure", url: "https://ci/2" },
-          { id: 3, name: "dependabot", status: "completed", conclusion: "skipped", url: null },
-          { id: 4, name: "build", status: "in_progress", conclusion: null, url: null },
+          {
+            id: 1,
+            name: "test",
+            status: "completed",
+            conclusion: "success",
+            url: "https://ci/1",
+            appSlug: "github-actions",
+            outputSummary: null,
+          },
+          {
+            id: 2,
+            name: "lint",
+            status: "completed",
+            conclusion: "failure",
+            url: "https://ci/2",
+            appSlug: "github-actions",
+            outputSummary: "2 errors in src/x.py",
+          },
+          {
+            id: 3,
+            name: "dependabot",
+            status: "completed",
+            conclusion: "skipped",
+            url: null,
+            appSlug: "github-actions",
+            outputSummary: null,
+          },
+          {
+            id: 4,
+            name: "cloudbuild (living-bio)",
+            status: "completed",
+            conclusion: "failure",
+            url: "https://cb/4",
+            appSlug: "living-bio",
+            outputSummary: null,
+          },
+          {
+            id: 5,
+            name: "build",
+            status: "in_progress",
+            conclusion: null,
+            url: null,
+            appSlug: "github-actions",
+            outputSummary: null,
+          },
         ]),
       }),
     );
 
     const result = await tool.execute("t1", { branch: "pi/fix-5" });
     const text = (result.content[0] as { text: string }).text;
-    expect(text).toContain("4 check(s): 3 completed, 1 running, 1 failing");
+    expect(text).toContain("5 check(s): 4 completed, 1 running, 2 failing");
     expect(text).toContain("✓ test: success [job 1] (https://ci/1)");
     expect(text).toContain("✗ lint: failure [job 2] (https://ci/2)");
+    expect(text).toContain("↳ 2 errors in src/x.py");
     expect(text).toContain("− dependabot: skipped [job 3]");
-    expect(text).toContain("… build: in_progress [job 4]");
+    expect(text).toContain(
+      "✗ cloudbuild (living-bio): failure [external CI: living-bio — logs not on GitHub] (https://cb/4)",
+    );
+    expect(text).toContain("… build: in_progress [job 5]");
   });
 
   test("passes the branch through and handles empty results", async () => {

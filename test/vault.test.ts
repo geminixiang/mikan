@@ -314,6 +314,7 @@ describe("ActorExecutionResolver image mode", () => {
       platform: "github",
       userId: "alice",
       conversationId: "GH_octo_widgets_5",
+      trustModel: "open-trigger",
     });
 
     // The GitHub conversation's sandbox stays credential-free: no vault is

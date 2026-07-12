@@ -89,6 +89,7 @@ export function createDiscordAdapters(
 
   const platform: MessagingInfo = {
     name: "discord",
+    trustModel: "membership",
     formattingGuide: DISCORD_FORMATTING_GUIDE,
     channels: bot.getAllChannels(),
     users: bot.getAllUsers(),

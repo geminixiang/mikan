@@ -449,6 +449,7 @@ export class SlackMessagingBot implements MessagingBot {
   getMessagingInfo(): MessagingInfo {
     return {
       name: "slack",
+      trustModel: "membership",
       formattingGuide:
         "## Slack Formatting (mrkdwn, NOT Markdown)\nBold: *text*, Italic: _text_, Code: `code`, Block: ```code```, Links: <url|text>\nDo NOT use **double asterisks** or [markdown](links).",
       channels: this.getAllChannels().map((c) => ({ id: c.id, name: c.name })),

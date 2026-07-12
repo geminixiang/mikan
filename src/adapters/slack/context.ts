@@ -39,6 +39,7 @@ export function createSlackAdapters(
 
   const platform: MessagingInfo = {
     name: "slack",
+    trustModel: "membership",
     formattingGuide: SLACK_FORMATTING_GUIDE,
     channels: slack.getAllChannels().map((c) => ({ id: c.id, name: c.name })),
     users: slack

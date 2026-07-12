@@ -11,6 +11,17 @@ export type ConversationKind = "direct" | "shared";
 
 export type PlatformName = "slack" | "discord" | "telegram" | "github";
 
+/**
+ * Who can drive conversations on a platform — gates ambient credential policy.
+ *
+ * - `membership`: only invited workspace/server members (Slack/Discord/Telegram).
+ *   Safe to copy `sandbox.defaultSharedVault` into new conversation vaults.
+ * - `open-trigger`: broader trigger surface (e.g. GitHub repo writers on public
+ *   issues/PRs). Ambient shared vault must not apply; use host-side platform
+ *   identity or an explicitly provisioned vault.
+ */
+export type PlatformTrustModel = "membership" | "open-trigger";
+
 export interface ConversationMessage {
   id: string;
   sessionKey: string;
@@ -55,6 +66,12 @@ export interface MessagingInfo {
   formattingGuide: string;
   channels: { id: string; name: string }[];
   users: { id: string; userName: string; displayName: string }[];
+  /**
+   * Trust boundary for ambient credentials. Defaults to `membership` when
+   * omitted (closed chat platforms). Open-trigger platforms must set this
+   * explicitly so vault policy does not key off platform name strings.
+   */
+  trustModel?: PlatformTrustModel;
   diagnostics?: {
     showUsageSummary?: boolean;
   };
@@ -181,13 +198,16 @@ export interface GithubCheckSummary {
   /** success | failure | … ; null while the run is still in progress */
   conclusion: string | null;
   url: string | null;
+  /** Slug of the reporting app; "github-actions" checks have fetchable logs. */
+  appSlug: string | null;
+  /** The reporting app's own summary of the run, when it posted one. */
+  outputSummary: string | null;
 }
 
 /**
- * Host-side GitHub operations backing the github_* tools; implemented in
- * main.ts over the GitHub bot so tokens stay host-side. One object rather
- * than one callback per capability, so growing the tool surface doesn't grow
- * the injection plumbing.
+ * Host-side GitHub operations backing the github_* tools.
+ * Assembled in main.ts / adapters/github into a PlatformToolPack so core
+ * agent/runtime plumbing stays free of GitHub-specific injection fields.
  */
 export interface PlatformGithubOps {
   /** Push a prepared pi/* branch and open (or update) a pull request. */
@@ -335,6 +355,8 @@ export interface ActorContext {
   platform: string;
   userId: string;
   conversationId: string;
+  /** From MessagingInfo.trustModel; vault policy uses this, not platform name. */
+  trustModel?: PlatformTrustModel;
 }
 
 export type ImageWorkspaceMountMode = "private" | "full";

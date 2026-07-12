@@ -175,6 +175,7 @@ export class TelegramMessagingBot implements MessagingBot {
   getMessagingInfo(): MessagingInfo {
     return {
       name: "telegram",
+      trustModel: "membership",
       formattingGuide:
         '## Telegram Formatting (HTML mode)\nBold: <b>text</b>, Italic: <i>text</i>, Code: <code>code</code>, Pre: <pre>code</pre>\nLinks: <a href="url">text</a>',
       channels: [],

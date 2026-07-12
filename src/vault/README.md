@@ -6,6 +6,7 @@ File-backed credential vault for env secrets, secret files, shared profiles, and
 
 - `index.ts`: Implements `FileVaultManager`, vault key normalisation, env-file parsing, and shared/private vault operations.
 - `routing.ts`: Resolves vault keys from sandbox type, user, conversation, or container name.
+- `policy.ts`: Pure policy for ambient `defaultSharedVault` (trust model × sandbox topology).
 
 ## Identity model (which credentials a conversation gets)
 
@@ -15,14 +16,14 @@ never ambient. Three identity tiers, narrowest first:
 
 1. **Platform bot identity** (e.g. the GitHub App): host-side, per-operation
    scoped tokens that never enter the sandbox. The default for platforms whose
-   trigger surface is wide (GitHub: anyone with repo write).
+   trigger surface is wide (`MessagingInfo.trustModel: "open-trigger"`).
 2. **Shared machine identity** (`sandbox.defaultSharedVault`): broad
    convenience credentials copied into each new conversation's vault. Only
-   appropriate where platform membership already gates who can drive the
-   agent (Slack/Discord/Telegram) — `ActorExecutionResolver` therefore never
-   applies it to GitHub conversations.
+   appropriate for `trustModel: "membership"` (Slack/Discord/Telegram) on
+   isolated sandboxes (`image` / `cloudflare`). Decided by
+   `allowsAmbientDefaultSharedVault` — not by platform name strings.
 3. **Personal identity** (`/pi-login` OAuth): the agent acts as a specific
    person; granted knowingly by that person, scoped to their vault.
 
 An admin can still explicitly provision a vault for any conversation
-(including GitHub ones); only the _ambient default_ is platform-gated.
+(including open-trigger ones); only the _ambient default_ is trust-gated.

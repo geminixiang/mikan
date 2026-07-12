@@ -32,7 +32,18 @@ function formatCheckLine(run: GithubCheckSummary): string {
         : run.conclusion === "success"
           ? "✓"
           : "−";
-  return `${marker} ${run.name}: ${state} [job ${run.id}]${run.url ? ` (${run.url})` : ""}`;
+  // Only GitHub Actions checks have logs fetchable via job_id; external CI
+  // (Cloud Build & co.) keeps logs on its own service, so advertising an id
+  // there would only invite doomed fetches.
+  const handle =
+    run.appSlug === "github-actions"
+      ? `[job ${run.id}]`
+      : `[external CI: ${run.appSlug ?? "unknown"} — logs not on GitHub]`;
+  const line = `${marker} ${run.name}: ${state} ${handle}${run.url ? ` (${run.url})` : ""}`;
+  const failed = run.conclusion !== null && FAILING_CONCLUSIONS.has(run.conclusion);
+  return failed && run.outputSummary
+    ? `${line}\n  ↳ ${run.outputSummary.replace(/\s*\n\s*/g, " ")}`
+    : line;
 }
 
 export interface GithubChecksFns {
@@ -57,9 +68,10 @@ export function createGithubChecksTool(): {
     label: "github_checks",
     description:
       "Read CI status (check runs) for a branch you pushed with github_pr, or for this " +
-      "conversation's pull request when branch is omitted. Pass job_id (from the summary) " +
-      "to fetch that job's log and diagnose a failing check. Re-run while checks are in " +
-      "progress. Only available in GitHub conversations.",
+      "conversation's pull request when branch is omitted. Pass job_id (a [job …] id from " +
+      "the summary — GitHub Actions checks only) to fetch that job's log. External CI " +
+      "checks (e.g. Cloud Build) keep logs on their own service: use their summary/url, or " +
+      "reproduce the failure locally in ./repo. Only available in GitHub conversations.",
     parameters: githubChecksSchema,
     execute: async (
       _toolCallId: string,

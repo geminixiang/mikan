@@ -201,6 +201,7 @@ export class DiscordMessagingBot implements MessagingBot {
   getMessagingInfo(): MessagingInfo {
     return {
       name: "discord",
+      trustModel: "membership",
       formattingGuide:
         "## Discord Formatting (Markdown)\nBold: **text**, Italic: *text*, Code: `code`, Block: ```language\ncode```\nLinks: [text](url)",
       channels: this.getAllChannels(),

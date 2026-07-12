@@ -71,6 +71,7 @@ export function createGithubAdapters(
 
   const platform: MessagingInfo = {
     name: "github",
+    trustModel: "open-trigger",
     formattingGuide:
       `${GITHUB_FORMATTING_GUIDE}\n\n` +
       `## Conversation context\n` +

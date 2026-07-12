@@ -6,10 +6,10 @@ import type {
   MessagingEventHandler,
   ConversationKind,
   PlatformNotifier,
-  PlatformGithubOps,
   PlatformReactor,
 } from "../adapter.js";
 import type { CommandHandler, CommandServices } from "../commands/types.js";
+import type { PlatformToolPackFactory } from "../tools/types.js";
 
 export interface ConversationRuntimeState {
   running: boolean;
@@ -42,8 +42,13 @@ export interface ConversationRuntimeOptions extends Omit<CommandServices, "runti
   platformNotifier?: PlatformNotifier;
   /** Proactive emoji reactions for extensions (`api.react`). */
   platformReactor?: PlatformReactor;
-  /** Host-side GitHub operations for the github_* tools (PR push/create, CI checks). */
-  platformGithubOps?: PlatformGithubOps;
+  /**
+   * Optional platform capability packs (extra tools + per-run bind), as
+   * factories — each runner instantiates its own pack because bind state is
+   * per-runner. Assembled at process start (e.g. GitHub PR/CI pack); core
+   * stays platform-neutral.
+   */
+  platformToolPackFactories?: readonly PlatformToolPackFactory[];
 }
 
 export interface ConversationRuntime extends MessagingEventHandler {

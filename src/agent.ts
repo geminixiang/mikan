@@ -26,12 +26,10 @@ import type {
 } from "./adapter.js";
 import type {
   AgentEventPayload,
-  GithubPrRequest,
-  GithubPrResult,
   MikanEvent,
-  PlatformGithubOps,
   PlatformNotifier,
   PlatformReactor,
+  PlatformTrustModel,
 } from "./types.js";
 import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import { resolveConversationSettings } from "./config.js";
@@ -62,7 +60,7 @@ import {
 } from "./sessions/store.js";
 import { HostEventStore } from "./tools/event.js";
 import { createMikanTools } from "./tools/index.js";
-import type { GithubChecksFns } from "./tools/github-checks.js";
+import type { PlatformToolPackFactory } from "./tools/types.js";
 import * as Sentry from "@sentry/node";
 import { formatLocalTimestamp } from "./utils/date.js";
 import { resolveConfiguredModel } from "./model-registry.js";
@@ -438,6 +436,7 @@ interface RunnerExecutionContext {
     platform: string;
     userId: string;
     conversationId: string;
+    trustModel?: PlatformTrustModel;
   }): Promise<void>;
 }
 
@@ -1082,9 +1081,7 @@ async function prepareRunContext(params: {
   setSandboxContext: (context: { conversationId: string; userId: string }) => void;
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
-  setGithubPrFunction: (fn: ((request: GithubPrRequest) => Promise<GithubPrResult>) | null) => void;
-  setGithubChecksFunction: (fns: GithubChecksFns | null) => void;
-  platformGithubOps?: PlatformGithubOps;
+  bindPlatformToolPacks: (ctx: { conversationId: string; platformName: string }) => void;
   pathContext: RuntimePathContext;
 }): Promise<PreparedRunContext & { pathContext: RuntimePathContext }> {
   const {
@@ -1104,6 +1101,7 @@ async function prepareRunContext(params: {
     setSandboxContext,
     setUploadFunction,
     setReactFunction,
+    bindPlatformToolPacks,
   } = params;
   let pathContext = params.pathContext;
   const sessionConversation = message.sessionKey.split(":")[0];
@@ -1115,6 +1113,7 @@ async function prepareRunContext(params: {
       platform: platform.name,
       userId: message.userId,
       conversationId,
+      trustModel: platform.trustModel,
     });
     pathContext = getPathContext();
   }
@@ -1168,21 +1167,9 @@ async function prepareRunContext(params: {
   // so the tool reports it is unavailable rather than silently no-op'ing.
   setReactFunction(responder.react ? async (emoji: string) => responder.react!(emoji) : null);
 
-  // github_* tools are available only in GitHub conversations with wired
-  // ops; everywhere else they report themselves unavailable.
-  const { platformGithubOps, setGithubPrFunction, setGithubChecksFunction } = params;
-  const githubOps = platform.name === "github" ? platformGithubOps : undefined;
-  setGithubPrFunction(
-    githubOps ? (request) => githubOps.pushAndCreatePr(conversationId, request) : null,
-  );
-  setGithubChecksFunction(
-    githubOps
-      ? {
-          getChecks: (branch) => githubOps.getChecks(conversationId, branch),
-          getJobLog: (jobId) => githubOps.getJobLog(conversationId, jobId),
-        }
-      : null,
-  );
+  // Platform capability packs (e.g. GitHub PR/CI) enable themselves per run;
+  // core does not branch on platform name here.
+  bindPlatformToolPacks({ conversationId, platformName: platform.name });
 
   resetRunState(
     runState,
@@ -1591,7 +1578,7 @@ export async function createRunner(
   },
   platformNotifier?: PlatformNotifier,
   platformReactor?: PlatformReactor,
-  platformGithubOps?: PlatformGithubOps,
+  platformToolPackFactories?: readonly PlatformToolPackFactory[],
 ): Promise<PiAgentWrapper> {
   const agentConfig = resolveConversationSettings(conversationDir);
 
@@ -1611,11 +1598,15 @@ export async function createRunner(
     tools,
     setUploadFunction,
     setReactFunction,
-    setGithubPrFunction,
-    setGithubChecksFunction,
+    bindPlatformToolPacks,
     setEventContext,
     setSandboxContext,
-  } = createMikanTools(executor, workspaceDir, { sandbox: sandboxConfig, provisioner });
+  } = createMikanTools(
+    executor,
+    workspaceDir,
+    { sandbox: sandboxConfig, provisioner },
+    platformToolPackFactories ?? [],
+  );
 
   const modelRegistry = MikanModels.create();
   if (modelRegistry.getError()) {
@@ -1631,6 +1622,7 @@ export async function createRunner(
     formattingGuide: "",
     channels: [],
     users: [],
+    trustModel: "membership",
   };
   const systemPrompt = buildSystemPrompt(
     pathContext.runtimeWorkspaceRoot,
@@ -1707,9 +1699,7 @@ export async function createRunner(
         setSandboxContext,
         setUploadFunction,
         setReactFunction,
-        setGithubPrFunction,
-        setGithubChecksFunction,
-        platformGithubOps,
+        bindPlatformToolPacks,
         pathContext,
       });
       pathContext = prepared.pathContext;

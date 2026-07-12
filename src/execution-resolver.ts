@@ -10,6 +10,7 @@ import { DockerContainerManager, type ContainerMount } from "./provisioner.js";
 import { createExecutor, type Executor, type SandboxConfig } from "./sandbox/index.js";
 import { reportUserFacingError } from "./observability/sentry.js";
 import { normalizeSharedVaultName, type ResolvedVault, type VaultManager } from "./vault/index.js";
+import { allowsAmbientDefaultSharedVault } from "./vault/policy.js";
 import { resolveActorVaultKey } from "./vault/routing.js";
 import * as log from "./log.js";
 
@@ -81,7 +82,7 @@ export class ActorExecutionResolver {
 
   async resolve(context: ActorContext): Promise<Executor> {
     const vaultKey = resolveActorVaultKey(this.baseConfig, context.userId, context.conversationId);
-    this.ensureDefaultSharedVault(vaultKey, context.platform);
+    this.ensureDefaultSharedVault(vaultKey, context.trustModel);
 
     const vault = this.vaultManager.resolve(vaultKey);
     const config = this.resolveSandboxConfig(vaultKey);
@@ -94,16 +95,15 @@ export class ActorExecutionResolver {
     );
   }
 
-  private ensureDefaultSharedVault(vaultKey: string, platform: string): void {
-    // The ambient default vault is a membership-trust convenience: on Slack/
-    // Discord/Telegram only invited members can drive the agent, so handing
-    // every conversation the shared credentials matches who can use them.
-    // GitHub conversations are driven by repo commenters — a wider trust
-    // boundary — so they never inherit ambient credentials. Their sandboxes
-    // stay credential-free (the adapter acts through host-side scoped tokens)
-    // unless an admin explicitly provisions a vault for that conversation.
-    if (platform === "github") return;
-    if (this.baseConfig.type !== "image" && this.baseConfig.type !== "cloudflare") return;
+  private ensureDefaultSharedVault(vaultKey: string, trustModel: ActorContext["trustModel"]): void {
+    if (
+      !allowsAmbientDefaultSharedVault({
+        trustModel,
+        sandboxType: this.baseConfig.type,
+      })
+    ) {
+      return;
+    }
     if (this.vaultManager.hasEntry(vaultKey)) return;
 
     let profile: string | undefined;

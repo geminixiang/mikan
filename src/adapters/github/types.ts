@@ -105,6 +105,10 @@ export interface GithubCheckRun {
   /** success | failure | neutral | cancelled | skipped | timed_out | action_required | null while running */
   conclusion: string | null;
   html_url: string | null;
+  /** The app that reported the check (github-actions vs external CI). */
+  app?: { slug?: string } | null;
+  /** Whatever the reporting app posted about the run. */
+  output?: { title?: string | null; summary?: string | null } | null;
 }
 
 /** Permission subset requestable on a scoped installation token. */

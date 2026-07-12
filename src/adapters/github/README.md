@@ -18,6 +18,8 @@ GitHub App installation (no webhooks, matching mikan's proactive model — see
 - `repo.ts`: host-side git operations — shallow clone into the conversation
   dir and guarded branch push (`pi/*` only, non-force, tokens per-invocation
   and never persisted).
+- `tool-pack.ts`: `createGithubToolPack` — host-side `github_pr` /
+  `github_checks` as a `PlatformToolPack` injected from main, not core tools.
 - `types.ts`: adapter config, event, and GitHub REST payload types.
 
 ## Configuration (env)
@@ -72,11 +74,10 @@ conversation-dir bind mount:
 - Requires the App to have **Contents: Read & write**, **Checks: Read**, and
   **Actions: Read** for job logs (plus the existing Issues / Pull requests
   read & write).
-- GitHub conversations are excluded from `sandbox.defaultSharedVault`: that
-  ambient credential copy is a membership-trust convenience for closed
-  platforms, and a GitHub conversation can be driven by any repo-write
-  commenter. See `src/vault/README.md` § Identity model. Admins can still
-  explicitly provision a vault for a specific GitHub conversation.
+- GitHub sets `MessagingInfo.trustModel: "open-trigger"`, so
+  `sandbox.defaultSharedVault` is never ambient-copied (see
+  `src/vault/policy.ts`). Admins can still explicitly provision a vault for
+  a specific GitHub conversation.
 - A missing `./repo` is re-attempted on every trigger (no-op once cloned), so
   a first clone that failed — e.g. App permissions granted later — heals on
   the next mention.

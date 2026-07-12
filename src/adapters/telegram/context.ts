@@ -83,6 +83,7 @@ export function createTelegramAdapters(
 
   const platform: MessagingInfo = {
     name: "telegram",
+    trustModel: "membership",
     formattingGuide: TELEGRAM_FORMATTING_GUIDE,
     channels: [],
     users: [],
