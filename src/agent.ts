@@ -24,7 +24,15 @@ import type {
   MessagingInfo,
   PlatformName,
 } from "./adapter.js";
-import type { AgentEventPayload, MikanEvent, PlatformNotifier, PlatformReactor } from "./types.js";
+import type {
+  AgentEventPayload,
+  GithubPrRequest,
+  GithubPrResult,
+  MikanEvent,
+  PlatformNotifier,
+  PlatformPrCreator,
+  PlatformReactor,
+} from "./types.js";
 import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import { resolveConversationSettings } from "./config.js";
 import { readEnv } from "./utils/env.js";
@@ -1073,6 +1081,8 @@ async function prepareRunContext(params: {
   setSandboxContext: (context: { conversationId: string; userId: string }) => void;
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
+  setGithubPrFunction: (fn: ((request: GithubPrRequest) => Promise<GithubPrResult>) | null) => void;
+  platformPrCreator?: PlatformPrCreator;
   pathContext: RuntimePathContext;
 }): Promise<PreparedRunContext & { pathContext: RuntimePathContext }> {
   const {
@@ -1155,6 +1165,15 @@ async function prepareRunContext(params: {
   // (interactive turns on platforms with reaction support); otherwise unset
   // so the tool reports it is unavailable rather than silently no-op'ing.
   setReactFunction(responder.react ? async (emoji: string) => responder.react!(emoji) : null);
+
+  // github_pr is available only in GitHub conversations with a wired creator;
+  // everywhere else the tool reports itself unavailable.
+  const { platformPrCreator, setGithubPrFunction } = params;
+  setGithubPrFunction(
+    platform.name === "github" && platformPrCreator
+      ? (request) => platformPrCreator(conversationId, request)
+      : null,
+  );
 
   resetRunState(
     runState,
@@ -1563,6 +1582,7 @@ export async function createRunner(
   },
   platformNotifier?: PlatformNotifier,
   platformReactor?: PlatformReactor,
+  platformPrCreator?: PlatformPrCreator,
 ): Promise<PiAgentWrapper> {
   const agentConfig = resolveConversationSettings(conversationDir);
 
@@ -1578,8 +1598,14 @@ export async function createRunner(
   let pathContext = getUnresolvedSandboxPathContext(sandboxConfig, workspaceBase);
 
   // Create tools (per-runner, with per-runner upload function setter)
-  const { tools, setUploadFunction, setReactFunction, setEventContext, setSandboxContext } =
-    createMikanTools(executor, workspaceDir, { sandbox: sandboxConfig, provisioner });
+  const {
+    tools,
+    setUploadFunction,
+    setReactFunction,
+    setGithubPrFunction,
+    setEventContext,
+    setSandboxContext,
+  } = createMikanTools(executor, workspaceDir, { sandbox: sandboxConfig, provisioner });
 
   const modelRegistry = MikanModels.create();
   if (modelRegistry.getError()) {
@@ -1671,6 +1697,8 @@ export async function createRunner(
         setSandboxContext,
         setUploadFunction,
         setReactFunction,
+        setGithubPrFunction,
+        platformPrCreator,
         pathContext,
       });
       pathContext = prepared.pathContext;

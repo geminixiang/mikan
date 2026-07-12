@@ -15,6 +15,9 @@ GitHub App installation (no webhooks, matching mikan's proactive model — see
   no streaming — the finished response is posted as one comment (per-delta
   edits would churn the API and mark every reply "edited").
 - `ids.ts`: `GH_<owner>_<repo>_<number>` conversation id encode/parse.
+- `repo.ts`: host-side git operations — shallow clone into the conversation
+  dir and guarded branch push (`pi/*` only, non-force, tokens per-invocation
+  and never persisted).
 - `types.ts`: adapter config, event, and GitHub REST payload types.
 
 ## Configuration (env)
@@ -32,7 +35,10 @@ GitHub App installation (no webhooks, matching mikan's proactive model — see
   (`sessionKey === conversationId`); PR review-line threads are not mapped yet.
 - Triggering: a comment triggers only when it @mentions the app slug or the
   bot already participates in that issue (its conversation dir has a
-  `log.jsonl`). A mentioned `stop` stops the running session.
+  `log.jsonl`), and the commenter holds **write permission or better** on the
+  repo — on public repos anyone can comment, so lower levels are ignored
+  entirely (lookup cached 5 min, fails closed, needs only the mandatory
+  Metadata permission). A mentioned `stop` stops the running session.
 - Dedup is a persisted watermark (`<state-dir>/github-sync.json`, atomic
   write): first run records a baseline and emits nothing; after that, comments
   posted while mikan was down replay on restart, and already-handled ids never
@@ -41,3 +47,22 @@ GitHub App installation (no webhooks, matching mikan's proactive model — see
 - First contact via a comment fetches the issue title/body and logs it ahead
   of the comment so the session knows what the thread is about.
 - `uploadFile` posts a pointer comment; the REST API cannot attach files.
+
+## Repo access and pull requests
+
+The sandbox stays credential-free; git happens on both sides of the
+conversation-dir bind mount:
+
+- First contact clones the repo shallowly into `<conversationDir>/repo/`
+  using an ephemeral installation token scoped to that one repo with
+  `contents:read`. The token is passed per git invocation (never written to
+  `.git/config`). PR conversations get the PR head checked out as `pr-<n>`.
+- The agent branches/commits inside the sandbox with plain git (bot identity
+  preconfigured); push fails there by design.
+- The `github_pr` tool runs host-side: it mints a `contents:write` +
+  `pull_requests:write` token for that repo, pushes the agent's `pi/*` branch
+  from the host side of the mount, and opens the PR (draft supported) as the
+  App. Default-branch pushes, force pushes, and merging are impossible by
+  construction — humans review and merge.
+- Requires the App to have **Contents: Read & write** (plus the existing
+  Issues / Pull requests read & write).

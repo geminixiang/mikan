@@ -6,6 +6,7 @@ import type {
   MessagingEventHandler,
   ConversationKind,
   PlatformNotifier,
+  PlatformPrCreator,
   PlatformReactor,
 } from "../adapter.js";
 import type { CommandHandler, CommandServices } from "../commands/types.js";
@@ -41,6 +42,8 @@ export interface ConversationRuntimeOptions extends Omit<CommandServices, "runti
   platformNotifier?: PlatformNotifier;
   /** Proactive emoji reactions for extensions (`api.react`). */
   platformReactor?: PlatformReactor;
+  /** Push + open pull requests from GitHub conversations (`github_pr` tool). */
+  platformPrCreator?: PlatformPrCreator;
 }
 
 export interface ConversationRuntime extends MessagingEventHandler {

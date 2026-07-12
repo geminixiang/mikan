@@ -8,9 +8,12 @@ export type {
   ConversationResponder,
   ChatToolResult,
   ConversationKind,
+  GithubPrRequest,
+  GithubPrResult,
   MessagingInfo,
   PlatformName,
   PlatformNotifier,
+  PlatformPrCreator,
   PlatformReactor,
   RunningSession,
 } from "./types.js";

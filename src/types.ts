@@ -155,6 +155,31 @@ export type PlatformReactor = (
   platform?: string,
 ) => Promise<void>;
 
+export interface GithubPrRequest {
+  /** Local branch in the conversation's ./repo clone; must match pi/<name>. */
+  branch: string;
+  title: string;
+  body?: string;
+  /** Target branch; defaults to the repository's default branch. */
+  base?: string;
+  draft?: boolean;
+}
+
+export interface GithubPrResult {
+  number: number;
+  url: string;
+}
+
+/**
+ * Push a prepared branch from a GitHub conversation's clone and open a pull
+ * request. Backs the `github_pr` tool; implemented in main.ts over the GitHub
+ * bot so tokens stay host-side.
+ */
+export type PlatformPrCreator = (
+  conversationId: string,
+  request: GithubPrRequest,
+) => Promise<GithubPrResult>;
+
 /** Normalized platform data and reply hook for one event. */
 export interface ConversationContext {
   message: ConversationMessage;

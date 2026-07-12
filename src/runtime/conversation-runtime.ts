@@ -261,6 +261,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         },
         this.options.platformNotifier,
         this.options.platformReactor,
+        this.options.platformPrCreator,
       ),
       stopRequested: false,
       lastAccessedAt: Date.now(),

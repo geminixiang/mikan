@@ -69,6 +69,16 @@ describe("createGithubAdapters", () => {
     expect(platform.formattingGuide).toContain("first message");
   });
 
+  test("system prompt explains the repo clone and github_pr workflow", () => {
+    const { platform } = createGithubAdapters(
+      makeEvent(),
+      makeFakeBot() as unknown as GithubMessagingBot,
+    );
+    expect(platform.formattingGuide).toContain("./repo");
+    expect(platform.formattingGuide).toContain("github_pr");
+    expect(platform.formattingGuide).toContain("pi/<name>");
+  });
+
   test("respondDiagnostic posts a separate comment and keeps the response intact", async () => {
     const bot = makeFakeBot();
     const { responder } = createGithubAdapters(makeEvent(), bot as unknown as GithubMessagingBot);

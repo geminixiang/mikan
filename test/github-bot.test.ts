@@ -10,7 +10,17 @@ import {
   GITHUB_ISSUE_BODY_TS,
   parseGithubConversationId,
 } from "../src/adapters/github/ids.js";
+import { cloneRepo, pushBranch } from "../src/adapters/github/repo.js";
 import type { GithubIssue, GithubIssueComment } from "../src/adapters/github/types.js";
+
+vi.mock("../src/adapters/github/repo.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/adapters/github/repo.js")>();
+  return {
+    ...actual,
+    cloneRepo: vi.fn().mockResolvedValue(undefined),
+    pushBranch: vi.fn().mockResolvedValue(undefined),
+  };
+});
 
 function makeHandler(runningKeys: string[] = []): MessagingEventHandler {
   const running = new Set(runningKeys);
@@ -59,6 +69,7 @@ function makeIssue(overrides: Partial<GithubIssue> = {}): GithubIssue {
 
 interface FakeClient {
   getAppSlug: ReturnType<typeof vi.fn>;
+  getUserId: ReturnType<typeof vi.fn>;
   listInstallationRepositories: ReturnType<typeof vi.fn>;
   listIssuesSince: ReturnType<typeof vi.fn>;
   listIssueCommentsSince: ReturnType<typeof vi.fn>;
@@ -68,11 +79,16 @@ interface FakeClient {
   deleteIssueComment: ReturnType<typeof vi.fn>;
   createCommentReaction: ReturnType<typeof vi.fn>;
   createIssueReaction: ReturnType<typeof vi.fn>;
+  createScopedInstallationToken: ReturnType<typeof vi.fn>;
+  getRepository: ReturnType<typeof vi.fn>;
+  createPullRequest: ReturnType<typeof vi.fn>;
+  getCollaboratorPermission: ReturnType<typeof vi.fn>;
 }
 
 function makeFakeClient(): FakeClient {
   return {
     getAppSlug: vi.fn().mockResolvedValue("mikan"),
+    getUserId: vi.fn().mockResolvedValue(999),
     listInstallationRepositories: vi.fn().mockResolvedValue([]),
     listIssuesSince: vi.fn().mockResolvedValue([]),
     listIssueCommentsSince: vi.fn().mockResolvedValue([]),
@@ -82,6 +98,12 @@ function makeFakeClient(): FakeClient {
     deleteIssueComment: vi.fn().mockResolvedValue(undefined),
     createCommentReaction: vi.fn().mockResolvedValue(undefined),
     createIssueReaction: vi.fn().mockResolvedValue(undefined),
+    createScopedInstallationToken: vi.fn().mockResolvedValue("scoped-token"),
+    getRepository: vi.fn().mockResolvedValue({ default_branch: "main" }),
+    getCollaboratorPermission: vi.fn().mockResolvedValue({ permission: "write" }),
+    createPullRequest: vi
+      .fn()
+      .mockResolvedValue({ number: 7, html_url: "https://github.com/octo/widgets/pull/7" }),
   };
 }
 
@@ -136,6 +158,8 @@ describe("GithubMessagingBot", () => {
     mkdirSync(workingDir, { recursive: true });
     client = makeFakeClient();
     handler = makeHandler();
+    vi.mocked(cloneRepo).mockClear();
+    vi.mocked(pushBranch).mockClear();
   });
 
   afterEach(() => {
@@ -439,5 +463,162 @@ describe("GithubMessagingBot", () => {
     await expect(bot.addReaction(CONVERSATION_ID, "9001", "sparkles")).rejects.toThrow(
       /does not support reaction/,
     );
+  });
+
+  test("commenters below the trigger permission are ignored entirely", async () => {
+    client.getCollaboratorPermission.mockResolvedValue({ permission: "read" });
+    const bot = makeBot();
+    await bot.start();
+    client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "@mikan do things" })]);
+
+    await bot.poll();
+    await settleQueues();
+
+    expect(client.getCollaboratorPermission).toHaveBeenCalledWith("octo", "widgets", "alice");
+    expect(handler.handleEvent).not.toHaveBeenCalled();
+    expect(existsSync(join(workingDir, CONVERSATION_ID))).toBe(false);
+  });
+
+  test("custom roles fall back to the stronger legacy permission field", async () => {
+    client.getCollaboratorPermission.mockResolvedValue({
+      permission: "write",
+      role_name: "custom-deployer",
+    });
+    const bot = makeBot();
+    await bot.start();
+    client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "@mikan hi" })]);
+
+    await bot.poll();
+    await settleQueues();
+    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+  });
+
+  test("permission lookups are cached per repo+user", async () => {
+    const bot = makeBot();
+    await bot.start();
+    client.listIssueCommentsSince.mockResolvedValue([
+      makeComment({ id: 1, body: "@mikan one" }),
+      makeComment({ id: 2, body: "@mikan two" }),
+    ]);
+
+    await bot.poll();
+    await settleQueues();
+
+    expect(handler.handleEvent).toHaveBeenCalledTimes(2);
+    expect(client.getCollaboratorPermission).toHaveBeenCalledTimes(1);
+  });
+
+  test("a failed permission lookup denies the trigger (fails closed)", async () => {
+    client.getCollaboratorPermission.mockRejectedValue(new Error("boom"));
+    const bot = makeBot();
+    await bot.start();
+    client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "@mikan hi" })]);
+
+    await bot.poll();
+    await settleQueues();
+    expect(handler.handleEvent).not.toHaveBeenCalled();
+  });
+
+  test("first contact clones the repo with a read-scoped token", async () => {
+    const bot = makeBot();
+    await bot.start();
+    client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "@mikan look" })]);
+
+    await bot.poll();
+    await settleQueues();
+
+    expect(client.createScopedInstallationToken).toHaveBeenCalledWith("widgets", {
+      contents: "read",
+    });
+    expect(cloneRepo).toHaveBeenCalledWith({
+      url: "https://github.com/octo/widgets.git",
+      dir: join(workingDir, CONVERSATION_ID, "repo"),
+      token: "scoped-token",
+      botLogin: "mikan[bot]",
+      botEmail: "999+mikan[bot]@users.noreply.github.com",
+      prNumber: undefined,
+    });
+  });
+
+  test("PR conversations check out the PR head on clone", async () => {
+    const bot = makeBot();
+    await bot.start();
+    client.listIssuesSince.mockResolvedValue([
+      makeIssue({ body: "@mikan review this", pull_request: {} }),
+    ]);
+
+    await bot.poll();
+    await settleQueues();
+
+    expect(cloneRepo).toHaveBeenCalledWith(expect.objectContaining({ prNumber: 5 }));
+  });
+
+  test("ignored comments never mint tokens or clone", async () => {
+    const bot = makeBot();
+    await bot.start();
+    client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "unrelated" })]);
+
+    await bot.poll();
+    await settleQueues();
+
+    expect(client.createScopedInstallationToken).not.toHaveBeenCalled();
+    expect(cloneRepo).not.toHaveBeenCalled();
+  });
+
+  test("an existing clone is not re-cloned on later first-contact paths", async () => {
+    mkdirSync(join(workingDir, CONVERSATION_ID, "repo"), { recursive: true });
+    const bot = makeBot();
+    await bot.start();
+    client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "@mikan again" })]);
+
+    await bot.poll();
+    await settleQueues();
+    expect(cloneRepo).not.toHaveBeenCalled();
+  });
+
+  test("pushAndCreatePr pushes the branch with a write token and opens the PR", async () => {
+    mkdirSync(join(workingDir, CONVERSATION_ID, "repo"), { recursive: true });
+    const bot = makeBot();
+    await bot.start();
+
+    const result = await bot.pushAndCreatePr(CONVERSATION_ID, {
+      branch: "pi/fix-5",
+      title: "Fix the widget",
+      body: "Closes #5",
+      draft: true,
+    });
+
+    expect(client.createScopedInstallationToken).toHaveBeenCalledWith("widgets", {
+      contents: "write",
+      pull_requests: "write",
+    });
+    expect(pushBranch).toHaveBeenCalledWith({
+      dir: join(workingDir, CONVERSATION_ID, "repo"),
+      branch: "pi/fix-5",
+      token: "scoped-token",
+    });
+    expect(client.createPullRequest).toHaveBeenCalledWith("octo", "widgets", {
+      title: "Fix the widget",
+      head: "pi/fix-5",
+      base: "main",
+      body: "Closes #5",
+      draft: true,
+    });
+    expect(result).toEqual({ number: 7, url: "https://github.com/octo/widgets/pull/7" });
+  });
+
+  test("pushAndCreatePr refuses non-pi branches and missing clones", async () => {
+    const bot = makeBot();
+    await bot.start();
+
+    await expect(
+      bot.pushAndCreatePr(CONVERSATION_ID, { branch: "pi/x", title: "t" }),
+    ).rejects.toThrow(/no \.\/repo clone/);
+
+    mkdirSync(join(workingDir, CONVERSATION_ID, "repo"), { recursive: true });
+    await expect(
+      bot.pushAndCreatePr(CONVERSATION_ID, { branch: "main", title: "t" }),
+    ).rejects.toThrow(/not pushable/);
+    expect(pushBranch).not.toHaveBeenCalled();
   });
 });

@@ -3,6 +3,8 @@ import { dirname, join } from "path";
 import { Type } from "@sinclair/typebox";
 import type {
   ConversationEvent,
+  GithubPrRequest,
+  GithubPrResult,
   MessagingBot,
   MessagingEventHandler,
   MessagingInfo,
@@ -23,6 +25,7 @@ import {
 import { processMessageIntake } from "../intake.js";
 import { GithubClient, githubIsRateLimited } from "./client.js";
 import { createGithubAdapters } from "./context.js";
+import { cloneRepo, GITHUB_PUSH_BRANCH_PATTERN, pushBranch } from "./repo.js";
 import {
   buildGithubConversationId,
   GITHUB_ISSUE_BODY_TS,
@@ -58,6 +61,26 @@ const SyncStateSchema = Type.Object({
 const POLL_OVERLAP_MS = 5 * 60 * 1000;
 
 const MAX_SEEN_IDS = 5000;
+
+/** Effective role → rank, for the trigger-permission gate. */
+const PERMISSION_RANK: Record<string, number> = {
+  none: 0,
+  read: 1,
+  triage: 2,
+  write: 3,
+  maintain: 4,
+  admin: 5,
+};
+
+/**
+ * Commenters need write or better to trigger the agent. Fixed, not a config
+ * knob: it guards public repos (anyone can comment there), and the people who
+ * ask an agent to change code are exactly the people with push access.
+ */
+const REQUIRED_TRIGGER_RANK = PERMISSION_RANK.write;
+
+/** Permission lookups are cached this long per repo+user. */
+const PERMISSION_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /** In-memory form of one repo's persisted watermark. */
 interface RepoWatermark {
@@ -98,6 +121,8 @@ interface IncomingItem {
   user: string;
   text: string;
   createdAt: string;
+  /** Known only for issue-body items; comment first-contact resolves it via getIssue. */
+  isPr?: boolean;
 }
 
 // Repo refs are lowercased at every entry point (env config here, the
@@ -137,9 +162,11 @@ export class GithubMessagingBot implements MessagingBot {
   private readonly handler: MessagingEventHandler;
   private readonly config: GithubBotConfig;
   private appSlug: string | null = null;
+  private botEmail: string | null = null;
   private watchedRepos: GithubRepoRef[] = [];
   private queues = new Map<string, MessagingEventQueue>();
   private repoState = new Map<string, RepoWatermark>();
+  private permissionCache = new Map<string, { rank: number; expiresAt: number }>();
   private pollInFlight = false;
 
   constructor(handler: MessagingEventHandler, config: GithubBotConfig, client?: GithubClient) {
@@ -160,6 +187,15 @@ export class GithubMessagingBot implements MessagingBot {
 
   async start(): Promise<void> {
     this.appSlug = await this.client.getAppSlug();
+    // Canonical noreply author email (<user-id>+<login>@users.noreply.github.com)
+    // so the bot's commits link to its avatar/profile; degrade to a plain
+    // noreply spelling when the lookup fails.
+    try {
+      const botUserId = await this.client.getUserId(`${this.appSlug}[bot]`);
+      this.botEmail = `${botUserId}+${this.appSlug}[bot]@users.noreply.github.com`;
+    } catch {
+      this.botEmail = `${this.appSlug}[bot]@users.noreply.github.com`;
+    }
     this.watchedRepos =
       this.config.repos.length > 0
         ? parseRepoList(this.config.repos)
@@ -349,6 +385,7 @@ export class GithubMessagingBot implements MessagingBot {
         user: issue.user.login,
         text: `# ${issue.title}\n\n${issue.body ?? ""}`.trim(),
         createdAt: issue.created_at,
+        isPr: Boolean(issue.pull_request),
       });
     }
 
@@ -435,6 +472,42 @@ export class GithubMessagingBot implements MessagingBot {
     return existsSync(join(this.config.workingDir, conversationId, "log.jsonl"));
   }
 
+  /**
+   * True when `user` holds at least write permission on the repo. Fails
+   * closed: a failed lookup denies the trigger (and logs) rather than
+   * letting an unverified commenter drive the agent.
+   */
+  private async hasTriggerPermission(ref: GithubConversationRef, user: string): Promise<boolean> {
+    const cacheKey = `${ref.owner}/${ref.repo}#${user}`;
+    const cached = this.permissionCache.get(cacheKey);
+    if (cached && Date.now() < cached.expiresAt) {
+      return cached.rank >= REQUIRED_TRIGGER_RANK;
+    }
+    let rank: number;
+    try {
+      const role = await githubRetry(() =>
+        this.client.getCollaboratorPermission(ref.owner, ref.repo, user),
+      );
+      // Custom role_name values are unrankable; the legacy permission field
+      // still carries their closest standard mapping, so take the stronger.
+      rank = Math.max(
+        PERMISSION_RANK[role.role_name ?? ""] ?? 0,
+        PERMISSION_RANK[role.permission] ?? 0,
+      );
+    } catch (err) {
+      log.logWarning(
+        `GitHub: permission lookup failed for ${user} on ${ref.owner}/${ref.repo}; denying trigger`,
+        err instanceof Error ? err.message : String(err),
+      );
+      return false;
+    }
+    this.permissionCache.set(cacheKey, {
+      rank,
+      expiresAt: Date.now() + PERMISSION_CACHE_TTL_MS,
+    });
+    return rank >= REQUIRED_TRIGGER_RANK;
+  }
+
   private async handleIncoming(item: IncomingItem): Promise<void> {
     const conversationId = buildGithubConversationId(item.ref);
     const mentioned = this.isMentioned(item.text);
@@ -443,6 +516,15 @@ export class GithubMessagingBot implements MessagingBot {
     // already participates in. Everything else is ignored without logging so
     // busy repos don't grow conversation dirs for untouched issues.
     if (!mentioned && !participating) return;
+
+    // Permission gate: on public repos anyone can comment, so a mention from
+    // anyone below write permission is ignored entirely (no log, no state).
+    if (!(await this.hasTriggerPermission(item.ref, item.user))) {
+      log.logInfo(
+        `GitHub: ignoring ${conversationId} comment from ${item.user} (below write permission)`,
+      );
+      return;
+    }
 
     const cleanedText = this.stripMention(item.text);
     const sessionKey = resolveChatSessionKey({
@@ -471,10 +553,16 @@ export class GithubMessagingBot implements MessagingBot {
       return;
     }
 
-    // First contact via a comment: log the issue title/body first so the
-    // session history starts with what the thread is about.
-    if (!participating && item.ts !== GITHUB_ISSUE_BODY_TS) {
-      await this.logIssueContext(item.ref, conversationId, item.createdAt);
+    // First contact: log the issue title/body ahead of the comment so the
+    // session history starts with what the thread is about, then clone the
+    // repo into the conversation dir so the agent has the code.
+    if (!participating) {
+      let isPr = item.isPr ?? false;
+      if (item.ts !== GITHUB_ISSUE_BODY_TS) {
+        const issue = await this.logIssueContext(item.ref, conversationId, item.createdAt);
+        isPr = Boolean(issue?.pull_request);
+      }
+      await this.ensureRepoClone(item.ref, conversationId, isPr);
     }
 
     const eventBase: GithubEvent = {
@@ -514,7 +602,7 @@ export class GithubMessagingBot implements MessagingBot {
     ref: GithubConversationRef,
     conversationId: string,
     triggerCreatedAt: string,
-  ): Promise<void> {
+  ): Promise<GithubIssue | null> {
     let issue: GithubIssue;
     try {
       issue = await githubRetry(() => this.client.getIssue(ref.owner, ref.repo, ref.number));
@@ -523,7 +611,7 @@ export class GithubMessagingBot implements MessagingBot {
         `GitHub: could not fetch issue context for ${conversationId}`,
         err instanceof Error ? err.message : String(err),
       );
-      return;
+      return null;
     }
     // Dated just before the triggering comment, NOT issue.created_at: history
     // sync date-sorts entries and drops anything older than its recency
@@ -540,5 +628,86 @@ export class GithubMessagingBot implements MessagingBot {
       attachments: [],
       isMessagingBot: false,
     });
+    return issue;
+  }
+
+  // ==========================================================================
+  // Repo clone + pull requests
+  // ==========================================================================
+
+  private repoDir(conversationId: string): string {
+    return join(this.config.workingDir, conversationId, "repo");
+  }
+
+  /**
+   * Clone the conversation's repo into its dir (bind-mounted into the
+   * sandbox) using an ephemeral contents:read token that never leaves the
+   * host. Non-fatal: a failed clone degrades to the pre-clone experience.
+   */
+  private async ensureRepoClone(
+    ref: GithubConversationRef,
+    conversationId: string,
+    isPr: boolean,
+  ): Promise<void> {
+    const dir = this.repoDir(conversationId);
+    if (existsSync(dir)) return;
+    try {
+      const token = await this.client.createScopedInstallationToken(ref.repo, {
+        contents: "read",
+      });
+      await cloneRepo({
+        url: `https://github.com/${ref.owner}/${ref.repo}.git`,
+        dir,
+        token,
+        botLogin: `${this.appSlug}[bot]`,
+        botEmail: this.botEmail ?? `${this.appSlug}[bot]@users.noreply.github.com`,
+        prNumber: isPr ? ref.number : undefined,
+      });
+      log.logInfo(
+        `[${conversationId}] Cloned ${ref.owner}/${ref.repo}${isPr ? ` and checked out PR #${ref.number} head` : ""}`,
+      );
+    } catch (err) {
+      log.logWarning(
+        `GitHub: repo clone failed for ${conversationId}`,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
+  /**
+   * Backs the `github_pr` tool: push a `pi/*` branch the agent prepared in
+   * the conversation's clone, then open a pull request as the App. The write
+   * token is minted per call, scoped to this one repo, and never enters the
+   * sandbox.
+   */
+  async pushAndCreatePr(conversationId: string, request: GithubPrRequest): Promise<GithubPrResult> {
+    const ref = parseGithubConversationId(conversationId);
+    const dir = this.repoDir(conversationId);
+    if (!existsSync(dir)) {
+      throw new Error("This conversation has no ./repo clone to push from.");
+    }
+    if (!GITHUB_PUSH_BRANCH_PATTERN.test(request.branch)) {
+      throw new Error(
+        `Branch '${request.branch}' is not pushable: name it pi/<something> (e.g. pi/fix-${ref.number}).`,
+      );
+    }
+    const repository = await githubRetry(() => this.client.getRepository(ref.owner, ref.repo));
+    const base = request.base ?? repository.default_branch;
+    const token = await this.client.createScopedInstallationToken(ref.repo, {
+      contents: "write",
+      pull_requests: "write",
+    });
+    await pushBranch({ dir, branch: request.branch, token });
+    const pr = await githubRetry(() =>
+      this.client.createPullRequest(ref.owner, ref.repo, {
+        title: request.title,
+        head: request.branch,
+        base,
+        body: request.body,
+        draft: request.draft,
+      }),
+    );
+    log.logInfo(`[${conversationId}] Opened PR #${pr.number}: ${pr.html_url}`);
+    return { number: pr.number, url: pr.html_url };
   }
 }

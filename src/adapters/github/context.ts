@@ -76,7 +76,15 @@ export function createGithubAdapters(
       `## Conversation context\n` +
       `This conversation IS GitHub issue/PR ${ref.owner}/${ref.repo}#${ref.number}: the ` +
       `first message in the history is its title and body, and the following messages are ` +
-      `its comments. When the user says "this issue", they mean #${ref.number}.`,
+      `its comments. When the user says "this issue", they mean #${ref.number}.\n\n` +
+      `## Repository & pull requests\n` +
+      `The repository is cloned at ./repo — a snapshot from this conversation's first ` +
+      `trigger. If this conversation is a pull request, its head is checked out as branch ` +
+      `pr-${ref.number}. You have no git credentials, so git fetch/push fail by design.\n` +
+      `To ship code changes: branch as pi/<name> inside ./repo, commit (the git author is ` +
+      `preconfigured), then call the github_pr tool to push the branch and open a pull ` +
+      `request (draft: true for a draft). You cannot push the default branch or merge — ` +
+      `humans review and merge every PR.`,
     channels: [],
     users: [],
     diagnostics: {

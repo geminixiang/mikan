@@ -79,6 +79,27 @@ export interface GithubRepository {
   owner: GithubUser;
 }
 
+export interface GithubRepositoryDetails {
+  default_branch: string;
+}
+
+export interface GithubCollaboratorPermission {
+  /** Legacy field: admin | write | read | none (maintain→write, triage→read). */
+  permission: string;
+  /** Granular assigned role (admin/maintain/write/triage/read or a custom role). */
+  role_name?: string;
+}
+
+export interface GithubPullRequest {
+  number: number;
+  html_url: string;
+}
+
+/** Permission subset requestable on a scoped installation token. */
+export type GithubTokenPermissions = Partial<
+  Record<"contents" | "pull_requests" | "issues", "read" | "write">
+>;
+
 export type GithubReactionContent =
   | "+1"
   | "-1"
@@ -88,6 +109,25 @@ export type GithubReactionContent =
   | "hooray"
   | "rocket"
   | "eyes";
+
+export interface CloneRepoOptions {
+  /** HTTPS remote, e.g. https://github.com/owner/repo.git (no credentials). */
+  url: string;
+  /** Destination directory (the conversation dir's `repo/`). */
+  dir: string;
+  /** Ephemeral scoped installation token; used per-invocation, never stored. */
+  token: string;
+  botLogin: string;
+  botEmail: string;
+  /** When the conversation is a PR: fetch and checkout its head as pr-<n>. */
+  prNumber?: number;
+}
+
+export interface PushBranchOptions {
+  dir: string;
+  branch: string;
+  token: string;
+}
 
 export interface GithubClientOptions {
   appId: string;

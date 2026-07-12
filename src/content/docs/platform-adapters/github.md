@@ -35,13 +35,24 @@ A poll loop fetches, per watched repo, issues and issue/PR comments updated sinc
 
 ## Triggering
 
-A comment (or new issue body) triggers a run only when it @mentions the app slug, or the bot already participates in that issue's conversation. Everything else is ignored without creating any state. A mentioned `stop` comment stops the running session.
+A comment (or new issue body) triggers a run only when it @mentions the app slug, or the bot already participates in that issue's conversation. The commenter must also hold **write permission or better** on the repo — on public repos anyone can comment, so mentions from anyone below write are ignored entirely (permission lookups are cached for five minutes and fail closed). Everything else is ignored without creating any state. A mentioned `stop` comment stops the running session.
 
 ## Sessions and replies
 
 The whole issue/PR is one persistent session (`sessionKey === conversationId`); PR review-line threads are not yet mapped to sub-sessions. Responses are GitHub Flavored Markdown, posted as a single comment when the response is finished — no streaming edits, so replies don't churn the API or show as "edited"; long output splits into continuation comments. The system prompt tells the agent which issue/PR the conversation is (owner/repo#number). First contact through a comment logs the issue title/body ahead of it so the session knows what the thread is about.
 
+## Repository access and pull requests
+
+The sandbox never holds credentials; git spans the two sides of the conversation-dir bind mount:
+
+- On first contact the repo is shallow-cloned into the conversation dir (`./repo` inside the sandbox) with an ephemeral token scoped to that repo and `contents:read`, passed per git invocation and never written to `.git/config`. PR conversations get the PR head checked out as `pr-<n>`.
+- The agent branches and commits inside the sandbox with plain git (the bot's author identity is preconfigured); pushing from the sandbox fails by design.
+- The `github_pr` tool runs host-side: it mints a `contents:write` + `pull_requests:write` token for that one repo, pushes the agent's `pi/*` branch from the host side of the mount, and opens a pull request (draft supported) as the App. It cannot push the default branch, force-push, or merge — humans review and merge every PR.
+
+This requires the GitHub App to have **Contents: Read & write** in addition to Issues and Pull requests read & write.
+
 ## Limitations
 
 - File uploads are not supported by the REST API; `uploadFile` posts a pointer comment instead.
 - PR review threads (diff-line comments) are planned but not yet polled.
+- The `./repo` clone is a snapshot from first contact; the sandbox cannot fetch updates.

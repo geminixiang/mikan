@@ -1,10 +1,14 @@
 import { createSign } from "crypto";
 import type {
   GithubClientOptions,
+  GithubCollaboratorPermission,
   GithubIssue,
   GithubIssueComment,
+  GithubPullRequest,
   GithubReactionContent,
   GithubRepository,
+  GithubRepositoryDetails,
+  GithubTokenPermissions,
 } from "./types.js";
 
 export class GithubApiError extends Error {
@@ -139,6 +143,73 @@ export class GithubClient {
       auth: `Bearer ${this.appJwt()}`,
     });
     return app!.slug;
+  }
+
+  /** Database id of a user/bot login (for noreply commit-author emails). */
+  async getUserId(login: string): Promise<number> {
+    const user = await this.request<{ id: number }>("GET", `/users/${encodeURIComponent(login)}`);
+    return user!.id;
+  }
+
+  /**
+   * Mint a one-off installation token narrowed to a single repo and an
+   * explicit permission subset. Used for host-side git operations so the
+   * broad installation identity never leaves this process.
+   */
+  async createScopedInstallationToken(
+    repoName: string,
+    permissions: GithubTokenPermissions,
+  ): Promise<string> {
+    const data = await this.rawRequest<{ token: string }>(
+      "POST",
+      `/app/installations/${this.installationId}/access_tokens`,
+      {
+        auth: `Bearer ${this.appJwt()}`,
+        body: { repositories: [repoName], permissions },
+      },
+    );
+    return data!.token;
+  }
+
+  async getRepository(owner: string, repo: string): Promise<GithubRepositoryDetails> {
+    const details = await this.request<GithubRepositoryDetails>("GET", `/repos/${owner}/${repo}`);
+    return details!;
+  }
+
+  /**
+   * A user's effective role on a repo: granular `role_name` plus the legacy
+   * `permission` field (callers rank whichever is stronger, so custom roles
+   * still resolve via their legacy mapping). Needs only Metadata: Read — the
+   * mandatory App permission. Unknown users resolve to none.
+   */
+  async getCollaboratorPermission(
+    owner: string,
+    repo: string,
+    username: string,
+  ): Promise<GithubCollaboratorPermission> {
+    try {
+      const data = await this.request<GithubCollaboratorPermission>(
+        "GET",
+        `/repos/${owner}/${repo}/collaborators/${encodeURIComponent(username)}/permission`,
+      );
+      return data!;
+    } catch (err) {
+      if (err instanceof GithubApiError && err.status === 404) {
+        return { permission: "none" };
+      }
+      throw err;
+    }
+  }
+
+  async createPullRequest(
+    owner: string,
+    repo: string,
+    params: { title: string; head: string; base: string; body?: string; draft?: boolean },
+  ): Promise<GithubPullRequest> {
+    const pr = await this.request<GithubPullRequest>("POST", `/repos/${owner}/${repo}/pulls`, {
+      body: params,
+    });
+    return pr!;
   }
 
   async listInstallationRepositories(): Promise<GithubRepository[]> {

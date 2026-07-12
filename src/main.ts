@@ -7,7 +7,12 @@ import { mkdirSync, statSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { fileURLToPath } from "url";
 import { dirname, join as pathJoin } from "path";
-import type { MessagingBot, PlatformNotifier, PlatformReactor } from "./adapter.js";
+import type {
+  MessagingBot,
+  PlatformNotifier,
+  PlatformPrCreator,
+  PlatformReactor,
+} from "./adapter.js";
 import { DiscordMessagingBot } from "./adapters/discord/bot.js";
 import { GithubMessagingBot } from "./adapters/github/bot.js";
 import { TelegramMessagingBot } from "./adapters/telegram/bot.js";
@@ -398,6 +403,15 @@ const platformReactor: PlatformReactor = async (conversationId, messageTs, emoji
   log.logInfo(`[react] :${emoji}: on ${key}/${conversationId}`);
 };
 
+/** `github_pr` tool backend: push a prepared branch and open a PR. */
+const platformPrCreator: PlatformPrCreator = async (conversationId, request) => {
+  const bot = botsByPlatform.github as GithubMessagingBot | undefined;
+  if (!bot) {
+    throw new Error("github_pr: the GitHub platform is not running");
+  }
+  return bot.pushAndCreatePr(conversationId, request);
+};
+
 const handler = createConversationRuntime({
   workingDir,
   sandbox,
@@ -409,6 +423,7 @@ const handler = createConversationRuntime({
   portalBaseUrl: portalBaseUrl(),
   platformNotifier,
   platformReactor,
+  platformPrCreator,
 });
 
 const sandboxDesc =
