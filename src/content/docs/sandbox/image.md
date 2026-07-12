@@ -23,18 +23,20 @@ mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 Features:
 
 - mikan creates an isolated vault and container for each conversation
-- each container gets its own Docker bridge network and is isolated from others by default
+- each container gets its own Docker bridge network, separating direct container-to-container networking; outbound network access remains enabled
 - managed containers are created with `--cap-drop=ALL`, `--security-opt=no-new-privileges`, and `--pids-limit=1024`
 - inside the container, only `/workspace/MEMORY.md`, `/workspace/skills`, `/workspace/events`, and the current conversation directory are visible
 - vault env is injected at execution time
 - vault file credentials are automatically bind-mounted into the container according to the target path
-- idle containers are stopped automatically; the next run starts or recreates them as needed
+- idle containers are checked every 10 minutes and stopped after at least 10 minutes of inactivity; depending on scan timing, stopping occurs roughly 10–20 minutes after last tracked use
 
 Vault key selection logic:
 
-1. use the conversation ID directly as the vault key, for example `d123`
-2. that conversation's credentials / mounts / env are written to this vault
-3. the corresponding managed container uses the same key, for example `mikan-sandbox-d123`
+1. normalize the conversation ID to lowercase, replace non-alphanumeric runs with `-`, trim dashes, and use `unknown` if nothing remains
+2. write that conversation's credentials, mounts, and env to the normalized vault key
+3. use the same normalized key for the managed container, for example `mikan-sandbox-d123`
+
+Because normalization can collapse different raw IDs to the same value, avoid manually constructed platform IDs that differ only by punctuation or case.
 
 Suitable for:
 

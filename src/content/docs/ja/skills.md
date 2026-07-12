@@ -27,7 +27,9 @@ mikan は workspace-level skills を先に読み込み、その後 conversation-
             └── run.sh
 ```
 
-各 skill ディレクトリには `SKILL.md` が必要です：
+`SKILL.md` を含むディレクトリは 1 つの skill root として扱われ、再帰的には検索されません。mikan は設定された skills directory の直下にある単独の `.md` files も検出します。
+
+ディレクトリ形式の skill は `SKILL.md` を使います：
 
 ```yaml
 ---
@@ -38,7 +40,7 @@ description: Does something useful
 Usage: {baseDir}/run.sh <args>
 ```
 
-`name` と `description` は必須です。skill ディレクトリ内のファイルを説明で参照する場合は `{baseDir}` を使ってください。mikan がその skill の runtime path に置き換えます。
+`name` と `description` は必須です。skill directory からの相対 path、または上の表に示した runtime から見える絶対 path を使ってください。`{baseDir}` は自動展開されません。
 
 ## どちらのレベルを使うべきか
 

@@ -11,16 +11,17 @@ description: mikan のプラットフォーム接続、セッション、agent�
 
 ### A. プラットフォーム接続レイヤー
 
-プラットフォーム接続レイヤーの詳しい説明は [プラットフォーム接続](platform-adapters.md) を参照してください。各プラットフォームの詳細は [Slack](platform-adapters/slack.md)、[Discord](platform-adapters/discord.md)、[Telegram](platform-adapters/telegram.md) を参照してください。
+共通 adapter contract については [プラットフォーム接続](../platform-adapters/) を参照してください。各プラットフォームの詳細は [Slack](../platform-adapters/slack/)、[Discord](../platform-adapters/discord/)、[Telegram](../platform-adapters/telegram/)、[GitHub](../platform-adapters/github/) を参照してください。
 
 - `src/adapters/slack/*`
 - `src/adapters/telegram/*`
 - `src/adapters/discord/*`
+- `src/adapters/github/*`
 - `src/adapter.ts`
 
 責務:
 
-- Slack / Telegram / Discord のネイティブイベントを受け取る
+- Slack / Telegram / Discord のネイティブイベントを受け取るか、GitHub issues と pull requests を poll する
 - 統一された `ConversationEvent`、`ConversationMessage`、`ConversationResponder` に変換する
 - プラットフォームの規則に従って `sessionKey` を計算する
 - 返信、typing、working、ファイルアップロードなどのプラットフォーム差分を隠蔽する
@@ -45,7 +46,6 @@ description: mikan のプラットフォーム接続、セッション、agent�
 
 - `src/agent.ts`
 - `src/harness/*`
-- `src/context.ts`
 - `src/tools/*`
 
 責務:
@@ -75,7 +75,6 @@ description: mikan のプラットフォーム接続、セッション、agent�
 
 - `src/sessions/store.ts`
 - `src/sessions/agent-memory-file-manager.ts`
-- `src/context.ts`
 - `src/vault/index.ts`
 
 責務:
@@ -105,7 +104,7 @@ description: mikan のプラットフォーム接続、セッション、agent�
 ```mermaid
 sequenceDiagram
   participant U as User
-  participant P as Slack / Telegram / Discord
+  participant P as Slack / Telegram / Discord / GitHub
   participant A as Adapter
   participant M as ConversationRuntime / Orchestrator
   participant S as sessions/store.ts
@@ -136,24 +135,32 @@ sequenceDiagram
 
 ## 4. Session とファイル配置
 
-`mikan` のコンテキストはメモリだけに依存せず、主に workspace ディレクトリに置かれます:
+`mikan` は sandbox から見える作業データを、host-authoritative な設定および認証情報から分離します：
 
 ```text
 <workspace>/
 ├── MEMORY.md                  # workspace レベルの記憶
+├── skills/                    # workspace レベルの skills
 ├── events/                    # スケジュールと外部イベント
 └── <conversationId>/
-    ├── settings.json          # conversation-local overrides
     ├── MEMORY.md              # conversation レベルの記憶
     ├── log.jsonl              # grep 可能な人間可読メッセージ履歴
     ├── attachments/           # プラットフォーム添付ファイルのダウンロード
     ├── scratch/               # 実行中の作業領域
-    ├── skills/                # conversation カスタム skills
+    ├── skills/                # conversation レベルの skills
     └── sessions/
         ├── current            # top-level session pointer
         ├── <timestamp>_<id>.jsonl
         └── <scope_id>.jsonl   # thread / reply scoped sessions
+
+<state-dir>/
+├── settings.json              # 必須のグローバル設定
+├── conversations/
+│   └── <conversationId>/settings.json  # host-only conversation overrides
+└── vaults/<vaultId>/          # credentials
 ```
+
+state directory の既定値は `~/.mikan` です。sandbox から見える workspace paths の外に置く必要があります。
 
 設計上のポイント:
 
@@ -173,10 +180,10 @@ flowchart TD
   Main --> LinkToken["InMemoryLinkTokenStore"]
   Main --> VaultRouting["vault-routing.ts"]
   Main --> WebServer["web/server.ts"]
-  LinkServer --> Browser["Browser Portal"]
+  WebServer --> Browser["Browser Portal"]
   Browser --> OAuth["OAuth provider / API key form"]
-  OAuth --> LinkServer
-  LinkServer --> VaultManager["vault.ts\nwrite env/file into vault"]
+  OAuth --> WebServer
+  WebServer --> VaultManager["vault/index.ts\nwrite env/file into vault"]
   VaultManager --> VaultDir["state-dir/vaults/<vaultId>/"]
   VaultManager --> Resolver["execution-resolver.ts"]
   Resolver --> Sandbox["host / container / image / firecracker / cloudflare"]

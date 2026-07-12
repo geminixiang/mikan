@@ -30,6 +30,7 @@ Token は `xapp-` で始まります。
 - `channels:history`
 - `channels:read`
 - `chat:write`
+- `commands`（以下の任意の slash commands を使う場合のみ必要）
 - `files:read`
 - `files:write`
 - `groups:history`
@@ -50,7 +51,7 @@ Token は `xoxb-` で始まります。
 2. **Home Tab** を有効化する。
 3. **Agents & AI Apps** で **Agent or Assistant** を有効化する。
 
-これにより Slack ネイティブの assistant thread events と working indicators が bot に届きます。
+これにより Slack の assistant UI が有効になります。mikan は `assistant:write` を通じて assistant working status を書き込みます。購読する assistant context events は Slack 互換性のために予約されており、別の agent trigger ではありません。
 
 ## 5. bot events を購読
 
@@ -96,4 +97,4 @@ export SLACK_BOT_TOKEN=xoxb-...
 mikan --state-dir ~/.mikan /path/to/workspace
 ```
 
-Bot は DM で応答し、channel では mention されたときに応答します。Slack thread replies は隔離された thread sessions を使い、thread timestamp を session key の一部にします。
+Bot は DM で応答し、channel では mention されたときに応答します。起動された Slack thread の作業は、thread timestamp を key に含む隔離された session を使います。共有 channel の thread にある通常の mention なしの reply は記録されますが、実行を開始しません。

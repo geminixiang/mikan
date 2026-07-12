@@ -125,11 +125,14 @@ Even if a full dashboard is added later, these boundaries should remain:
 `startWebServer()` dispatch order:
 
 1. `GET /health`
-2. Admin routes
-3. Session view routes
-4. Login / vault routes
-5. `404`
+2. Agent event HTTP routes
+3. Admin routes
+4. Session view routes
+5. Login / vault routes
+6. `404`
 
 The server starts only when `LINK_PORT` / `MIKAN_LINK_PORT` can be parsed as a port. If `LINK_URL` / `MIKAN_LINK_URL` is set but no port is configured, mikan uses the default port `8181`.
 
 Token stores are currently in-memory and `src/main.ts` cleans expired tokens every five minutes. A process restart invalidates all unexpired web tokens.
+
+These URLs are bearer capabilities. Query-string tokens can leak through browser history, screenshots, copied URLs, or proxy logs; share them only with the intended user and never publish them in chat channels or issue trackers.

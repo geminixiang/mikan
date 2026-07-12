@@ -23,18 +23,20 @@ mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 特徴：
 
 - mikan は conversation ごとに独立した vault と container を作成します
-- 各 container は専用の Docker bridge network に接続され、デフォルトでは互いに分離されます
+- 各 container は専用の Docker bridge network に接続され、container 間の直接通信が分離されます。outbound network access は引き続き有効です
 - managed container 作成時は `--cap-drop=ALL`、`--security-opt=no-new-privileges`、`--pids-limit=1024` を付けます
 - container 内から見えるのは `/workspace/MEMORY.md`、`/workspace/skills`、`/workspace/events`、現在の conversation directory だけです
 - vault env は実行時に注入されます
 - vault file credential は target path に従って自動で container へ bind mount されます
-- idle container は自動的に stop され、次に必要になったとき start または recreate されます
+- idle containers は 10 分ごとに確認され、少なくとも 10 分間利用がないと停止します。scan timing により、最後に追跡された利用から約 10〜20 分後に停止します
 
 vault key の選択ロジック：
 
-1. conversation ID をそのまま vault key として使います。例：`d123`
-2. その conversation の credentials / mounts / env はすべてこの vault に書き込まれます
-3. 対応する managed container も同じ key を使います。例：`mikan-sandbox-d123`
+1. conversation ID を lowercase にし、英数字以外の連続部分を `-` に置換して dash を両端から除去します。何も残らない場合は `unknown` を使用します
+2. その conversation の credentials、mounts、env を正規化済み vault key に書き込みます
+3. managed container にも同じ正規化済み key を使います。例：`mikan-sandbox-d123`
+
+正規化により異なる raw IDs が同じ値になる場合があるため、句読点や大文字小文字だけが異なる platform IDs を手動で作成しないでください。
 
 適している用途：
 

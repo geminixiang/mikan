@@ -11,16 +11,17 @@ description: Learn how mikan connects platform adapters, sessions, agent, sandbo
 
 ### A. Platform adapter layer
 
-For the full platform adapter description, see [Platform adapters](platform-adapters.md). For platform details, see [Slack](platform-adapters/slack.md), [Discord](platform-adapters/discord.md), and [Telegram](platform-adapters/telegram.md).
+For the shared adapter contract, see [Platform adapters](../platform-adapters/). Platform details are documented for [Slack](../platform-adapters/slack/), [Discord](../platform-adapters/discord/), [Telegram](../platform-adapters/telegram/), and [GitHub](../platform-adapters/github/).
 
 - `src/adapters/slack/*`
 - `src/adapters/telegram/*`
 - `src/adapters/discord/*`
+- `src/adapters/github/*`
 - `src/adapter.ts`
 
 Responsibilities:
 
-- receive native Slack / Telegram / Discord events
+- receive native Slack / Telegram / Discord events or poll GitHub issues and pull requests
 - convert them to unified `ConversationEvent`, `ConversationMessage`, and `ConversationResponder` values
 - compute `sessionKey` according to platform rules
 - wrap platform differences such as replies, typing, working state, and file upload
@@ -45,7 +46,6 @@ Responsibilities:
 
 - `src/agent.ts`
 - `src/harness/*`
-- `src/context.ts`
 - `src/tools/*`
 
 Responsibilities:
@@ -75,7 +75,6 @@ Responsibilities:
 
 - `src/sessions/store.ts`
 - `src/sessions/agent-memory-file-manager.ts`
-- `src/context.ts`
 - `src/vault/index.ts`
 
 Responsibilities:
@@ -105,7 +104,7 @@ Responsibilities:
 ```mermaid
 sequenceDiagram
   participant U as User
-  participant P as Slack / Telegram / Discord
+  participant P as Slack / Telegram / Discord / GitHub
   participant A as Adapter
   participant M as ConversationRuntime / Orchestrator
   participant S as sessions/store.ts
@@ -136,28 +135,36 @@ sequenceDiagram
 
 ## 4. Sessions and file layout
 
-`mikan` does not keep context only in memory; it mainly lands in the workspace directory:
+`mikan` separates sandbox-visible working data from host-authoritative settings and credentials:
 
 ```text
 <workspace>/
 ├── MEMORY.md                  # workspace-level memory
+├── skills/                    # workspace-level skills
 ├── events/                    # scheduled and external events
 └── <conversationId>/
-    ├── settings.json          # conversation-local overrides
     ├── MEMORY.md              # conversation-level memory
-    ├── log.jsonl              # grep-friendly human-readable message history
+    ├── log.jsonl              # grep-friendly platform message history
     ├── attachments/           # platform attachment downloads
     ├── scratch/               # in-progress working area
-    ├── skills/                # conversation custom skills
+    ├── skills/                # conversation-level skills
     └── sessions/
         ├── current            # top-level session pointer
         ├── <timestamp>_<id>.jsonl
         └── <scope_id>.jsonl   # thread / reply scoped sessions
+
+<state-dir>/
+├── settings.json              # required global settings
+├── conversations/
+│   └── <conversationId>/settings.json  # host-only conversation overrides
+└── vaults/<vaultId>/          # credentials
 ```
+
+The default state directory is `~/.mikan`. It must remain outside sandbox-visible workspace paths.
 
 Design points:
 
-- `log.jsonl` is the platform conversation log: what actually happened in Slack/Discord/Telegram
+- `log.jsonl` is the platform conversation log: what actually happened on the source platform
 - `sessions/*.jsonl` is the LLM working context/log: what mikan gave the LLM and what the LLM/tool did
 - the top-level session uses the `current` pointer, but `current` is not channel history; when missing, recent top-level working context can be rebuilt from `log.jsonl`
 - thread / reply sessions use fixed file names so scoped sessions can be tracked separately
@@ -173,10 +180,10 @@ flowchart TD
   Main --> LinkToken["InMemoryLinkTokenStore"]
   Main --> VaultRouting["vault-routing.ts"]
   Main --> WebServer["web/server.ts"]
-  LinkServer --> Browser["Browser Portal"]
+  WebServer --> Browser["Browser Portal"]
   Browser --> OAuth["OAuth provider / API key form"]
-  OAuth --> LinkServer
-  LinkServer --> VaultManager["vault.ts\nwrite env/file into vault"]
+  OAuth --> WebServer
+  WebServer --> VaultManager["vault/index.ts\nwrite env/file into vault"]
   VaultManager --> VaultDir["state-dir/vaults/<vaultId>/"]
   VaultManager --> Resolver["execution-resolver.ts"]
   Resolver --> Sandbox["host / container / image / firecracker / cloudflare"]

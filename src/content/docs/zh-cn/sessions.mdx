@@ -1,45 +1,47 @@
 ---
 title: 会话
-description: mikan 如何分离平台聊天历史与 agent harness 结构化会话。
+description: mikan 如何将平台聊天历史记录与代理框架的结构化会话分离。
 ---
 
 import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
 
 <CardGrid>
-  <Card title="平台聊天历史" icon="open-book">
-    `log.jsonl` 保留可供人阅读的平台消息，用于 bootstrap thread 或 reply context。
+  <Card title="平台聊天历史记录" icon="open-book">
+    `log.jsonl` 保存便于阅读的平台消息，用于初始化话题或回复上下文。
   </Card>
-  <Card title="Harness 结构化 context" icon="rocket">
-    `sessions/*.jsonl` 保存 tool results 与 agent turn，让 mikan agent harness 可以延续工作。
+  <Card title="框架结构化上下文" icon="rocket">
+    `sessions/*.jsonl` 保存工具结果和代理轮次，使 mikan 代理框架可以继续工作。
   </Card>
-  <Card title="固定 scope" icon="lock">
-    Thread、reply chain 与 shared channel 会映射到固定 session files，避免不同对话互相污染。
+  <Card title="固定范围" icon="lock">
+    话题、回复链和共享频道映射到固定会话文件，避免不同对话相互污染。
   </Card>
 </CardGrid>
 
 ## 平台会话模型
 
-| 平台     | `sessionKey` 规则                                                                 | 备注                                                          |
-| -------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Slack    | top-level / DM：`conversationId`；thread：`conversationId:threadTs`               | thread sessions 是由近期聊天历史 bootstrap 的固定文件         |
-| Discord  | DM：`channelId`；shared top-level：`channelId:messageId`；reply/thread：rooted id | shared channels 中的 replies 会延续 root message session      |
-| Telegram | private：`chatId`；shared top-level：`chatId:messageId`；reply chain：root reply  | 没有原生 thread model；shared sessions 会从 reply chains 推断 |
+| 平台     | `sessionKey` 规则                                                  | 说明                                           |
+| -------- | ------------------------------------------------------------------ | ---------------------------------------------- |
+| Slack    | 顶层 / DM：`conversationId`；话题：`conversationId:threadTs`       | 话题会话是根据近期聊天历史记录初始化的固定文件 |
+| Discord  | DM：`channelId`；共享顶层：`channelId:messageId`；回复/话题：根 ID | 共享频道中的回复延续根消息会话                 |
+| Telegram | 私聊：`chatId`；共享顶层：`chatId:messageId`；回复链：根回复       | 没有原生话题模型；共享会话从回复链推导         |
 
 ## 文件
 
 <FileTree>
 
 - workspace/
-  - **log.jsonl** 平台消息历史
+  - **log.jsonl** 平台消息历史记录
   - sessions/
-    - **current** 指向使用中的 top-level session
-    - **\*.jsonl** 结构化 harness session context，包含 tool results
-    - **scope-derived files** thread / reply scopes 的固定 session files
+    - **current** 指向活动的顶层会话
+    - **\*.jsonl** 结构化框架会话上下文，包括工具结果
+    - **scope-derived files** 话题/回复范围的固定会话文件
 
 </FileTree>
 
-## 重置
+## 初始化、轮换和重置
 
-<Aside type="tip" title="保留可审计记录">
-  在聊天中使用 `new` / `/new` 重置当前会话。除非手动移除，之前的文件会留在磁盘上供检查。
+新的限定范围会话会从过去 14 天内最多 200 条适用的平台消息初始化。顶层会话每两周轮换一次。轮换会更改活动的结构化上下文文件，但不会删除旧的 JSONL 文件。
+
+<Aside type="tip" title="保留审计记录">
+  在聊天中使用 `new` / `/new` 重置当前会话。除非手动删除，否则之前的文件会保留在磁盘上供检查。
 </Aside>

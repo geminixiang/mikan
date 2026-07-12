@@ -18,7 +18,7 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "mikan",
-      description: "Multi-platform AI coding agent for Slack, Telegram, and Discord.",
+      description: "Multi-platform AI coding agent for Slack, Telegram, Discord, and GitHub.",
       locales: {
         root: { label: "English", lang: "en" },
         "zh-tw": { label: "繁體中文", lang: "zh-TW" },

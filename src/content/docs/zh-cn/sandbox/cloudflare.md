@@ -1,6 +1,6 @@
 ---
-title: Cloudflare sandbox
-description: 使用自行部署的 Cloudflare Worker bridge 执行 experimental Cloudflare sandbox。
+title: Cloudflare 沙箱
+description: 通过自行部署的 Cloudflare Worker 桥接器运行实验性 Cloudflare 沙箱。
 ---
 
 ```bash
@@ -12,17 +12,18 @@ mikan --sandbox=cloudflare:mikan-remote /path/to/workspace
 
 特性：
 
-- mikan 会把 remote sandbox id 衍生为 `<base-sandbox-id>-<vault-key>`
-- vault env 会在每次 `exec()` 时通过 bridge 注入
-- vault 选择逻辑和 `image` 类似：使用 conversation ID 生成 platform-scoped vault key
+- 运行时命令默认使用 `/workspace`；可通过 `CLOUDFLARE_SANDBOX_CWD` 覆盖
+- mikan 将远程沙箱 ID 生成为 `<base-sandbox-id>-<vault-key>`
+- vault 环境变量在每次 `exec()` 时通过桥接器注入
+- vault 选择逻辑与 `image` 类似：根据对话 ID 生成平台范围的 vault key
 
 限制：
 
-- 远端 `/workspace` 不会自动 mirror 本地工作目录
-- 因此 `pwd` 会显示 `/workspace`，但 `ls` 可能是空的；这是预期行为，不代表它正在读取你的本机 repo
-- vault file credential 当前不会自动投影到 Cloudflare sandbox
-- 需要自行部署 bridge Worker 与对应 container image
+- 远程 `/workspace` 不会自动镜像本地工作目录
+- 因此 `pwd` 会显示 `/workspace`，但 `ls` 可能为空；这是预期行为，不表示它正在读取本地仓库
+- vault 文件凭证目前不会自动投射到 Cloudflare 沙箱
+- 你必须自行部署桥接 Worker 和对应的容器镜像
 
-可直接使用范例 bridge：
+可以直接使用示例桥接器：
 
-- [examples/cloudflare-sandbox-bridge/README.md](../../examples/cloudflare-sandbox-bridge/README.md)
+- [GitHub 上的 Cloudflare 沙箱桥接示例](https://github.com/geminixiang/mikan/tree/main/examples/cloudflare-sandbox-bridge)

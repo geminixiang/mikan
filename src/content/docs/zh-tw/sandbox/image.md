@@ -23,18 +23,20 @@ mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 特性：
 
 - mikan 會為每個 conversation 建立一個獨立 vault 與 container
-- 每個 container 會綁定自己的 Docker bridge network，彼此預設互相隔離
+- 每個 container 都有自己的 Docker bridge network，隔離直接的 container-to-container networking；outbound network access 仍保持啟用
 - 建立 managed container 時會加上 `--cap-drop=ALL`、`--security-opt=no-new-privileges` 與 `--pids-limit=1024`
 - container 內只會看到 `/workspace/MEMORY.md`、`/workspace/skills`、`/workspace/events` 與當前 conversation 目錄
 - vault env 會在執行時注入
 - vault file credential 會依 target path 自動 bind mount 進 container
-- 閒置 container 會自動 stop；下次需要時再 start 或 recreate
+- 每 10 分鐘檢查一次閒置 containers，至少閒置 10 分鐘後停止；視掃描時間而定，約在最後一次追蹤使用後 10–20 分鐘停止
 
-vault key 選擇邏輯：
+Vault key 選擇邏輯：
 
-1. 直接使用 conversation ID 作為 vault key，例如 `d123`
-2. 該 conversation 的 credentials / mounts / env 都寫入這個 vault
-3. 對應的 managed container 會使用同一個 key，例如 `mikan-sandbox-d123`
+1. 將 conversation ID 正規化為小寫、把連續的非英數字元替換為 `-`、移除首尾 dash；若沒有剩餘內容則使用 `unknown`
+2. 將該 conversation 的 credentials、mounts 與 env 寫入正規化的 vault key
+3. 受管理 container 使用相同的正規化 key，例如 `mikan-sandbox-d123`
+
+由於正規化可能把不同的 raw IDs 合併成相同值，請避免手動建構僅有標點符號或大小寫不同的平台 ID。
 
 適合：
 

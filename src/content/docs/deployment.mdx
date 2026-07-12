@@ -1,64 +1,115 @@
 ---
 title: Deployment
-description: Deploy long-running mikan with PM2, Docker sandbox images, and a state directory.
+description: Run mikan under PM2 with persistent state, managed sandbox images, graceful shutdown, and an optional health endpoint.
 ---
 
 import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
 <CardGrid>
-  <Card title="PM2 daemon" icon="setting">
-    Use the PM2 supervisor to daemonize mikan, restart it after crashes, and start it on boot.
+  <Card title="PM2 supervisor" icon="setting">
+    PM2 daemonizes mikan, restarts it after failures, retains stdout/stderr logs, and can start it
+    on boot.
   </Card>
-  <Card title="Sandbox image" icon="rocket">
-    Pull `ghcr.io/geminixiang/mikan-sandbox:latest`, then let mikan isolate tool execution with the
-    image sandbox.
+  <Card title="Managed image sandbox" icon="rocket">
+    The mikan host process uses Docker to create per-conversation tool containers from the selected
+    sandbox image.
   </Card>
-  <Card title="State directory" icon="lock">
-    Keep the state directory so sessions, vaults, and runtime state survive reloads.
+  <Card title="Persistent state" icon="lock">
+    Keep one host-only state directory for settings, session-independent runtime state, vaults, and
+    GitHub polling watermarks.
   </Card>
 </CardGrid>
 
-## PM2
+## Prerequisites
 
-For long-running deployments, [PM2](https://pm2.keymetrics.io/) is the recommended process supervisor. It daemonizes mikan, restarts it after crashes, and can keep it running after reboots.
+- Node.js `>=22.19.0`
+- at least one complete Slack, Telegram, Discord, or GitHub credential set
+- a persistent workspace directory
+- Docker available to the PM2 user when using `image:*` or `container:*`
+
+The published `mikan-sandbox` image is a tool runtime, not a standalone mikan server image. PM2 runs `mikan` on the host; image mode creates and manages containers through the host Docker daemon.
+
+## PM2 deployment
 
 <Steps>
 
-1. Install mikan and pm2:
+1. Install mikan and PM2:
 
    ```bash
    npm i -g @geminixiang/mikan pm2
    ```
 
-2. Pull the sandbox container/image dependency you want to use:
+2. Create the global settings file in the exact state directory the service will use:
+
+   ```bash
+   mkdir -p /srv/mikan/workspace
+   mikan --onboard --state-dir=/srv/mikan/state
+   ```
+
+   Review `/srv/mikan/state/settings.json`. The directory must be owned by the PM2 process user and
+   must not be world-writable; `chmod 0700 /srv/mikan/state` is recommended.
+
+3. Pull the managed sandbox image:
 
    ```bash
    docker pull ghcr.io/geminixiang/mikan-sandbox:latest
    ```
 
-3. Fetch the ecosystem file, edit args and environment tokens, then start:
+   Do not also start a long-lived container when the selected mode is `image:*`. A pre-existing
+   container is needed only for `container:<name>` mode.
+
+4. Download the ecosystem file:
 
    ```bash
    curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
+   ```
+
+5. Edit `args` to use absolute paths and one sandbox mode:
+
+   ```js
+   args: "--state-dir=/srv/mikan/state --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest /srv/mikan/workspace",
+   ```
+
+   Then set at least one complete platform credential set in PM2's environment. Keep private keys
+   and tokens out of the ecosystem file when possible; load them from your service manager or secret
+   store instead.
+
+6. Start and persist the process:
+
+   ```bash
    pm2 start ecosystem.config.cjs
    pm2 save
    pm2 startup
    ```
 
-4. Run the command printed by `pm2 startup` to enable startup on boot.
+7. Run the command printed by `pm2 startup` to enable boot startup.
 
 </Steps>
+
+Relative workspace paths are resolved from PM2's current working directory. Absolute paths avoid silently opening a different workspace after service migration or reboot.
 
 ## Upgrade
 
 ```bash
-npm i -g @geminixiang/mikan && pm2 reload mikan
+npm i -g @geminixiang/mikan
+pm2 reload mikan
 ```
 
 <Aside type="note" title="Graceful reload">
-  `pm2 reload` sends SIGTERM and waits up to `kill_timeout` before SIGKILL (60s in the included
-  config). mikan's internal graceful shutdown drains in-flight LLM turns during that window, so
-  reloads do not interrupt active conversations.
+  The included PM2 configuration waits up to 60 seconds after SIGTERM before SIGKILL. mikan first
+  drains the conversation runtime, stops the events watcher, and gives Sentry up to five seconds to
+  flush. Runs that exceed the supervisor timeout can still be terminated.
 </Aside>
 
-See all tunables in [`../deploy/pm2/ecosystem.config.cjs`](../deploy/pm2/ecosystem.config.cjs).
+## Health endpoint
+
+The portal server exists only when `LINK_PORT` is set, or when `LINK_URL` causes the default port `8181` to be used:
+
+```bash
+curl http://127.0.0.1:8181/health
+# {"ok":true}
+```
+
+`/health` is a liveness check for the HTTP process only. It does not verify platform connections, Docker, sandbox provisioning, LLM providers, or event delivery, so do not use it as the only readiness signal.
+
+See the [maintained PM2 ecosystem file on GitHub](https://github.com/geminixiang/mikan/blob/main/deploy/pm2/ecosystem.config.cjs) and [Sandbox modes](sandbox/) for mode-specific requirements.

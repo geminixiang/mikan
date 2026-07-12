@@ -1,56 +1,55 @@
 ---
 title: Discord 接入
-description: Discord adapter 的事件接收、session scope、slash commands 與訊息回覆流程。
+description: 設定 Discord gateway intents、權限、sessions、commands、attachments 與回應行為。
 ---
 
-## 主要程式碼
+## 設定
 
-| 檔案                              | 用途                                                                                       |
-| --------------------------------- | ------------------------------------------------------------------------------------------ |
-| `src/adapters/discord/bot.ts`     | Discord bot 主體：message events、slash commands、attachments、channel lookup、回覆送出。  |
-| `src/adapters/discord/context.ts` | 建立 Discord 版 `ConversationResponder`，處理 Markdown、typing indicator、message update。 |
-| `src/adapters/discord/types.ts`   | Discord adapter 專用型別。                                                                 |
+1. 在 [Discord Developer Portal](https://discord.com/developers/applications) 建立 application 與 bot。
+2. 在 **Bot → Privileged Gateway Intents** 下啟用 **Message Content Intent**。mikan 會要求此 intent；沒有它就無法檢查一般訊息文字。
+3. 使用 `bot` 與 `applications.commands` scopes 安裝 app。
+4. 授予 bot 服務頻道所需的存取權：View Channels、Send Messages、Read Message History、Add Reactions、Attach Files、Embed Links 與 Send Messages in Threads。
+5. 設定 token 並啟動 mikan：
 
-## 事件來源
+```bash
+export DISCORD_BOT_TOKEN="..."
+mikan /path/to/workspace
+```
 
-Discord adapter 主要處理：
+Channel permission overrides 仍會生效。成功安裝不保證能存取每個 guild channel 或 private thread。
 
-- `messageCreate`
-- slash commands：`login`、`session`、`new`、`stop`、`model`、`sandbox`
-- DM、guild channel、thread channel 訊息
+## 事件來源與觸發條件
+
+Adapter 處理：
+
+- DM、guild channels 與 Discord thread channels 中的 `messageCreate`
+- slash commands：`login`、`session`、`new`、`stop`、`model` 與 `sandbox`
 - message attachments
 
-DM 會直接觸發 mikan。Guild channel 內通常需要 mention、thread reply，或符合 auto-reply policy。
+DM 會直接觸發。Guild 訊息通常需要 mention、mikan 處理的 reply/thread context，或符合 auto-reply policy。Stop commands 會在一般 trigger gate 前檢查。
 
 ## Session 規則
 
-Discord adapter 使用共同的 `resolveChatSessionKey()` 計算 session：
+mikan 使用 `resolveChatSessionKey()` 隔離共享對話：
 
-| Discord 情境                    | session scope                       |
-| ------------------------------- | ----------------------------------- |
-| DM                              | DM conversation                     |
-| Guild channel top-level message | channel conversation                |
-| Thread channel 或 reply         | scoped session                      |
-| Slash command                   | 以 interaction context 建立 session |
+| 情境                    | Conversation/session identity                                                         |
+| ----------------------- | ------------------------------------------------------------------------------------- |
+| DM                      | conversation 與 session 使用 DM channel ID                                            |
+| Guild top-level message | conversation 使用 channel ID；觸發的訊息以 message ID 設定 scope                      |
+| Discord thread channel  | conversation 使用 parent channel ID；session 為 `<parentChannelId>:<threadChannelId>` |
+| 共享頻道中的 reply      | session 以 referenced/root message ID 設定 scope                                      |
+| Slash command           | 從 interaction 的 channel/thread context 解析                                         |
 
-這讓 Discord thread 與一般 channel 對話不會互相污染 context。
+這可避免不相關的 guild 訊息與 threads 共用 agent context。
 
-## 回覆與格式
+## 回覆與附件
 
-Discord response context 會處理：
+Responder 支援 Discord Markdown、typing indicators、initial replies、incremental message edits、reply targets、reactions 與檔案上傳。長輸出會以 1,900 字元為目標，在 Discord message 限制前切分。
 
-- Discord Markdown。
-- typing indicator。
-- 初次回覆與後續 message update。
-- reply target，也就是回覆到原訊息。
-- 長訊息切割。
+收到的 attachments 會先以安全化檔名下載到對話的 `attachments/` 目錄，再由 event 傳到 runtime。
 
-Slash command 在 guild 中通常使用 ephemeral response；DM 中則直接回覆使用者。
+Guild slash-command acknowledgements 通常是 ephemeral；DM commands 則直接回覆。
 
-## 附件
+## 目前限制
 
-Discord attachments 會下載到 workspace 的 `attachments/`，檔名會先做簡單 sanitize，再傳給 runtime。
-
-## Stop 行為
-
-`stop` / `/stop` 會在 trigger gate 前處理，避免 stop 指令被 auto-reply policy 擋掉。Adapter 會依 session key 與目前 running sessions 找出要停止的 session。
+mikan 不會把 voice、embeds、components、polls 或每種 Discord media/event type 都當成 agent input。Thread/channel visibility 受 app installation 與 channel permissions 限制。

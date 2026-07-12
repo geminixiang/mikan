@@ -30,6 +30,7 @@ Go to **OAuth & Permissions → Scopes → Bot Token Scopes** and add:
 - `channels:history`
 - `channels:read`
 - `chat:write`
+- `commands` (required only when using the optional slash commands below)
 - `files:read`
 - `files:write`
 - `groups:history`
@@ -50,7 +51,7 @@ The token starts with `xoxb-`.
 2. Enable **Home Tab**.
 3. Enable **Agent or Assistant** under **Agents & AI Apps**.
 
-This sends Slack native assistant thread events and working indicators to the bot.
+This enables Slack's assistant UI. mikan writes assistant working status through `assistant:write`; the subscribed assistant context events are reserved for Slack compatibility and are not separate agent triggers.
 
 ## 5. Subscribe to bot events
 
@@ -96,4 +97,4 @@ export SLACK_BOT_TOKEN=xoxb-...
 mikan --state-dir ~/.mikan /path/to/workspace
 ```
 
-The bot responds in DMs and when mentioned in channels. Slack thread replies use isolated thread sessions and include the thread timestamp as part of the session key.
+The bot responds in DMs and when mentioned in channels. Triggered Slack thread work uses an isolated session whose key includes the thread timestamp. An ordinary unmentioned reply in a shared-channel thread is logged but does not start a run.

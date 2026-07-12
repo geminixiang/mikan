@@ -11,16 +11,17 @@ description: 了解 mikan 的平台接入、工作階段、agent、sandbox、vau
 
 ### A. 平台接入層
 
-平台接入層的完整說明請見 [平台接入層](platform-adapters.md)，各平台細節請見 [Slack](platform-adapters/slack.md)、[Discord](platform-adapters/discord.md)、[Telegram](platform-adapters/telegram.md)。
+共用 adapter contract 請見[平台接入](../platform-adapters/)。各平台細節請見 [Slack](../platform-adapters/slack/)、[Discord](../platform-adapters/discord/)、[Telegram](../platform-adapters/telegram/) 與 [GitHub](../platform-adapters/github/)。
 
 - `src/adapters/slack/*`
 - `src/adapters/telegram/*`
 - `src/adapters/discord/*`
+- `src/adapters/github/*`
 - `src/adapter.ts`
 
 職責：
 
-- 接收 Slack / Telegram / Discord 原生事件
+- 接收 Slack / Telegram / Discord 原生事件，或輪詢 GitHub issues 與 pull requests
 - 轉成統一的 `ConversationEvent`、`ConversationMessage`、`ConversationResponder`
 - 依平台規則計算 `sessionKey`
 - 封裝回覆、typing、working、檔案上傳等平台差異
@@ -45,7 +46,6 @@ description: 了解 mikan 的平台接入、工作階段、agent、sandbox、vau
 
 - `src/agent.ts`
 - `src/harness/*`
-- `src/context.ts`
 - `src/tools/*`
 
 職責：
@@ -75,7 +75,6 @@ description: 了解 mikan 的平台接入、工作階段、agent、sandbox、vau
 
 - `src/sessions/store.ts`
 - `src/sessions/agent-memory-file-manager.ts`
-- `src/context.ts`
 - `src/vault/index.ts`
 
 職責：
@@ -105,7 +104,7 @@ description: 了解 mikan 的平台接入、工作階段、agent、sandbox、vau
 ```mermaid
 sequenceDiagram
   participant U as User
-  participant P as Slack / Telegram / Discord
+  participant P as Slack / Telegram / Discord / GitHub
   participant A as Adapter
   participant M as ConversationRuntime / Orchestrator
   participant S as sessions/store.ts
@@ -114,50 +113,58 @@ sequenceDiagram
   participant X as sandbox Executor
   participant W as Workspace / sessions
 
-  U->>P: 發送訊息 / mention / reply
-  P->>A: 平台事件
+  U->>P: send message / mention / reply
+  P->>A: platform event
   A->>M: ConversationEvent + ConversationMessage + ResponseContext
   M->>M: queue event + dispatch commands
   M->>S: resolve session scope
   S-->>M: contextFile + sessionDir
   M->>R: getState() / run()
-  R->>W: 讀取 MEMORY.md / sessions/*.jsonl，必要時查 log.jsonl
-  R->>R: 建立 system prompt / skills / model / session context
-  R->>T: 執行工具
+  R->>W: read MEMORY.md / sessions/*.jsonl, query log.jsonl when needed
+  R->>R: build system prompt / skills / model / session context
+  R->>T: execute tools
   T->>X: read / bash / edit / write / event / attach
   X-->>T: tool result
-  T-->>R: 結果回傳
-  R->>W: 寫入 structured session，adapter 記錄平台 log
+  T-->>R: return result
+  R->>W: write structured session, adapter records platform log
   R-->>M: final response
-  M-->>A: 回覆內容 / 診斷 / 檔案
-  A-->>P: 平台訊息更新
-  P-->>U: 使用者看到回覆
+  M-->>A: response content / diagnostics / files
+  A-->>P: platform message update
+  P-->>U: user sees response
 ```
 
 ## 4. Session 與檔案佈局
 
-`mikan` 的上下文不是只靠記憶體，而是主要落在 workspace 目錄:
+`mikan` 會分開 sandbox 可見的工作資料，以及以 host 為準的設定與憑證：
 
 ```text
 <workspace>/
-├── MEMORY.md                  # workspace 級記憶
-├── events/                    # 排程與外部事件
+├── MEMORY.md                  # workspace-level memory
+├── skills/                    # workspace-level skills
+├── events/                    # scheduled and external events
 └── <conversationId>/
-    ├── settings.json          # conversation-local overrides
-    ├── MEMORY.md              # conversation 級記憶
-    ├── log.jsonl              # 可 grep 的人類可讀訊息歷史
-    ├── attachments/           # 平台附件下載
-    ├── scratch/               # 執行中的工作區
-    ├── skills/                # conversation 自訂 skills
+    ├── MEMORY.md              # conversation-level memory
+    ├── log.jsonl              # grep-friendly platform message history
+    ├── attachments/           # platform attachment downloads
+    ├── scratch/               # in-progress working area
+    ├── skills/                # conversation-level skills
     └── sessions/
         ├── current            # top-level session pointer
         ├── <timestamp>_<id>.jsonl
         └── <scope_id>.jsonl   # thread / reply scoped sessions
+
+<state-dir>/
+├── settings.json              # required global settings
+├── conversations/
+│   └── <conversationId>/settings.json  # host-only conversation overrides
+└── vaults/<vaultId>/          # credentials
 ```
+
+預設 state directory 是 `~/.mikan`。它必須位於 sandbox 可見的 workspace 路徑之外。
 
 設計重點：
 
-- `log.jsonl` 是平台對話紀錄：Slack/Discord/Telegram 實際發生過什麼
+- `log.jsonl` 是平台對話紀錄：來源平台上實際發生過什麼
 - `sessions/*.jsonl` 是 LLM 工作上下文/工作紀錄：mikan 拿什麼給 LLM 看，以及 LLM/tool 做了什麼
 - top-level session 用 `current` 指標，但 `current` 不是 channel history；缺失時可從 `log.jsonl` 重建最近 top-level 工作上下文
 - thread / reply session 用固定檔名，讓 scoped session 可被單獨追蹤
@@ -173,10 +180,10 @@ flowchart TD
   Main --> LinkToken["InMemoryLinkTokenStore"]
   Main --> VaultRouting["vault-routing.ts"]
   Main --> WebServer["web/server.ts"]
-  LinkServer --> Browser["Browser Portal"]
+  WebServer --> Browser["Browser Portal"]
   Browser --> OAuth["OAuth provider / API key form"]
-  OAuth --> LinkServer
-  LinkServer --> VaultManager["vault.ts\nwrite env/file into vault"]
+  OAuth --> WebServer
+  WebServer --> VaultManager["vault/index.ts\nwrite env/file into vault"]
   VaultManager --> VaultDir["state-dir/vaults/<vaultId>/"]
   VaultManager --> Resolver["execution-resolver.ts"]
   Resolver --> Sandbox["host / container / image / firecracker / cloudflare"]

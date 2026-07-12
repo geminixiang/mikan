@@ -23,7 +23,7 @@ The Slack adapter mainly handles:
 - Block Kit actions
 - assistant thread / status APIs
 
-DMs trigger mikan directly. Messages in channels usually require a mention or a matching auto-reply policy.
+DMs trigger mikan directly. Shared-channel messages require a mention, interaction, or matching auto-reply policy. An ordinary unmentioned human reply in a channel thread is logged but does not trigger a run; thread session isolation does not bypass the trigger policy.
 
 ## Session rules
 
@@ -52,8 +52,10 @@ The Slack adapter also supports:
 - top-level or thread reply mode
 - working / assistant status
 - updating existing replies to show streaming progress
-- Block Kit rendering
+- Block Kit rendering for headings, paragraphs, lists, code fences, and tables
 - file uploads
+
+Block Kit output follows Slack limits: sections are split around 3,000 characters, table cells around 2,000 characters, and a message is capped at 50 blocks. Content beyond the block cap is not rendered, so use file output for very large structured results.
 
 ## Attachments
 

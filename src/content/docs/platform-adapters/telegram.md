@@ -1,57 +1,50 @@
 ---
 title: Telegram adapter
-description: Long polling, message updates, typing, file downloads, and session scope for the Telegram adapter.
+description: Configure BotFather privacy, long polling, reply-scoped sessions, commands, files, and HTML responses.
 ---
 
-## Main code
+## Setup
 
-| File                               | Purpose                                                                                       |
-| ---------------------------------- | --------------------------------------------------------------------------------------------- |
-| `src/adapters/telegram/bot.ts`     | Telegram bot core: commands, message handler, attachments, file download, reply sending.      |
-| `src/adapters/telegram/context.ts` | Creates the Telegram `ConversationResponder`; handles HTML mode, typing, and message updates. |
-| `src/adapters/telegram/html.ts`    | Escapes / sanitizes Telegram HTML to avoid sending markup unsupported by Telegram.            |
-| `src/adapters/telegram/types.ts`   | Telegram adapter-specific types.                                                              |
+1. Create a bot with [@BotFather](https://t.me/BotFather) and copy its token.
+2. Decide whether the bot must receive ordinary group messages. BotFather privacy mode normally limits group delivery to commands, mentions, and replies to the bot. Disable privacy mode with `/setprivacy` only when group-wide auto-reply rules require broader intake.
+3. Add the bot to each group and grant only the group/admin permissions needed to read and send messages or files.
+4. Set the token and start mikan:
 
-## Event sources
+```bash
+export TELEGRAM_BOT_TOKEN="..."
+mikan /path/to/workspace
+```
 
-The Telegram adapter mainly handles:
+mikan uses long polling; no public Telegram webhook is required.
 
-- private chat messages
-- group / supergroup messages
-- commands: `/login`, `/session`, `/new`, `/stop`, `/model`
-- reply messages
-- photo / document attachments
+## Event sources and triggers
 
-Private chats trigger mikan directly. Groups require a mention, command, or matching auto-reply policy.
+The adapter handles:
+
+- private, group, and supergroup messages
+- `/login`, `/session`, `/new`, `/stop`, `/model`, and `/sandbox`
+- replies, photos, and documents
+
+Private messages trigger directly. Group messages require a command, mention, reply context, or matching auto-reply policy. Telegram must first deliver the message to the bot; privacy mode can prevent an auto-reply rule from seeing ordinary group traffic.
 
 ## Session rules
 
-Telegram does not have Slack-style `thread_ts`. mikan builds scoped sessions from reply relationships:
+Telegram has no Slack-style `thread_ts`. mikan derives scope from the immediate reply relationship:
 
-| Telegram scenario       | session scope                        |
-| ----------------------- | ------------------------------------ |
-| Private chat            | chat session                         |
-| Group top-level message | group chat session                   |
-| Reply message           | scoped session from the reply target |
+| Scenario                          | Session identity                 |
+| --------------------------------- | -------------------------------- |
+| Private chat                      | chat ID                          |
+| Triggered group top-level message | `<chatId>:<messageId>`           |
+| Reply                             | `<chatId>:<referencedMessageId>` |
 
-This lets different reply chains in the same group keep separate context.
+Nested replies therefore follow the referenced message IDs rather than a platform-provided durable thread root. Telegram forum-topic `message_thread_id` is not currently a separate documented session dimension.
 
-## Replies and formatting
+## Replies and attachments
 
-The Telegram adapter uses HTML parse mode, not Markdown. The adapter tells the agent to use:
+Responses use Telegram HTML mode. Supported formatting includes `<b>`, `<i>`, `<code>`, `<pre>`, and `<a href="...">`. If Telegram rejects generated markup, mikan retries with escaped HTML. The responder also supports typing status, message edits, reply targets, and file uploads.
 
-- bold: `<b>text</b>`
-- italic: `<i>text</i>`
-- code: `<code>code</code>`
-- pre: `<pre>code</pre>`
-- link: `<a href="url">text</a>`
-
-If Telegram reports an HTML parse error, the adapter falls back to escaped HTML before sending again.
-
-## Attachments
-
-The Telegram adapter supports photos and documents. Files are downloaded through the Telegram file API into `attachments/` in the workspace, then passed to the runtime.
+Inbound photos and documents are downloaded through Telegram's file API into the conversation `attachments/` directory. Other media types such as voice, audio, video, stickers, and polls are not handled as equivalent inbound attachments.
 
 ## Stop behavior
 
-`/stop` and the text `stop` are handled before the normal message trigger decision. If the current scoped session is running, it stops that session; otherwise, in groups, it tries to find the single scoped session that is currently running.
+`/stop` and text `stop` are handled before the normal trigger decision. mikan first targets the current scoped session; in a group, it can fall back to the only currently running scoped session when that choice is unambiguous.

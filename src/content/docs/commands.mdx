@@ -1,69 +1,91 @@
 ---
 title: Chat commands
-description: Text commands and slash-command aliases supported by mikan in Slack, Discord, and Telegram.
+description: Text commands and slash-command aliases supported by mikan across chat platforms.
 ---
 
 import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
 <CardGrid>
   <Card title="Login and credentials" icon="lock">
-    `/login` opens a 15-minute link so you can safely store API keys or complete OAuth from a DM.
+    `/login` opens a 15-minute capability link for API keys, OAuth, and shared vault profiles. It is
+    available only in a DM/private conversation.
   </Card>
   <Card title="Sessions" icon="open-book">
-    `session` opens the current session viewer; `new` resets the current conversation and starts a
-    new session.
+    `session` opens the current session viewer; `/new` resets the current DM session while retaining
+    old files for inspection.
   </Card>
-  <Card title="Model and replies" icon="rocket">
-    `model` switches the LLM; `auto-reply` controls automatic reply policy in groups or channels.
+  <Card title="Administration" icon="setting">
+    `/admin` opens the 30-minute admin portal; model, sandbox, reply policy, skills, events, and
+    conversation state can be inspected there.
   </Card>
 </CardGrid>
 
 ## Command quick reference
 
-| Command                                                    | Purpose                                                                                               |
-| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `/login` / `/pi-login`                                     | Open a 15-minute link for storing API keys or running built-in OAuth flows. DM only.                  |
-| `session` / `/session`                                     | Open a web view for the current session. DM only.                                                     |
-| `new` / `/new`                                             | Reset the current session and start over. DM only.                                                    |
-| `model` / `/model` / `/pi-model provider/model[:thinking]` | Switch the LLM for the current conversation, for example `/pi-model anthropic/claude-sonnet-4-6:off`. |
-| `auto-reply` / `/pi-auto-reply on\|off\|status`            | Control auto-reply for the current group / channel.                                                   |
-| `stop` / `/stop`                                           | Stop the current run. On Slack, prefer the text command so thread-local stop routing stays accurate.  |
-| `/pi-extensions`                                           | List extensions installed for this conversation (global + conversation scope, versions, skills).      |
-| `/pi-sandbox`                                              | Show or temporarily boost CPU / memory limits for managed containers.                                 |
+| Command                                            | Purpose and scope                                                                                                   |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `/login` / `/pi-login`                             | Open a 15-minute login/vault link. DM only.                                                                         |
+| `session` / `/session` / `/pi-session`             | Open the current session viewer. DM only.                                                                           |
+| `/new` / `/pi-new`                                 | Reset the current session. DM only.                                                                                 |
+| `/model` / `/pi-model [provider/model[:thinking]]` | Show or switch the current conversation model. Thinking levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`. |
+| `/auto-reply` / `/pi-auto-reply on\|off\|status`   | Control auto-reply in the current group/channel.                                                                    |
+| `stop` / `/stop`                                   | Stop the matching active run. On Slack, prefer text form so thread-local routing stays accurate.                    |
+| `/admin` / `/pi-admin`                             | Open the 30-minute admin portal.                                                                                    |
+| `/extensions` / `/pi-extensions`                   | List global and conversation extensions, versions, and contributed skills.                                          |
+| `/sandbox` / `/pi-sandbox`                         | Show the current managed image sandbox limits and workspace mount mode.                                             |
+| `/pi-sandbox boost`                                | Apply configured boost limits until the managed container stops.                                                    |
+| `/pi-sandbox private\|full`                        | Persist the conversation's image workspace mount mode. `full` exposes the whole workspace.                          |
 
-<Aside type="tip" title="Slack native commands">
-  On Slack, you can register `/pi-login`, `/pi-session`, `/pi-model`, `/pi-auto-reply`, and
-  `/pi-new`.
+<Aside type="note" title="Platform command registration">
+  Native slash commands must also be registered with the platform. Slack's example manifest includes
+  `/pi-login`, `/pi-session`, `/pi-new`, `/pi-model`, `/pi-auto-reply`, `/pi-sandbox`,
+  `/pi-extensions`, and `/pi-admin`. Discord registers its application commands at startup. Telegram
+  uses bot commands handled through long polling.
 </Aside>
 
-## Web session viewer
+## Shared vault commands
 
-The session viewer uses the same link server as login/vault and admin. The current session view can display the timeline; when interactive portal wiring is available, it can also send messages back to that session.
+All vault commands are DM-only:
+
+| Command                       | Effect                                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------------------- |
+| `/login shared list`          | List shared login profiles.                                                                 |
+| `/login shared create <name>` | Open a login link that creates a shared profile.                                            |
+| `/login shared update <name>` | Open a login link that updates a shared profile.                                            |
+| `/login shared delete <name>` | Delete a shared profile.                                                                    |
+| `/login copy <name>`          | Copy a shared profile into the current conversation vault. Matching values are overwritten. |
+
+Shared profiles are operator-managed credentials. Automatic inheritance through `sandbox.defaultSharedVault` is restricted to eligible membership-trust image/Cloudflare conversations; open-trigger surfaces such as GitHub do not inherit it.
+
+## Web portals
+
+The admin, login/vault, and session portals use the same HTTP server. Configure a public base URL for production:
 
 <Steps>
 
-1. Set the public base URL:
+1. Set the externally reachable URL:
 
    ```bash
    export LINK_URL="https://mikan.example.com"
    ```
 
-2. Adjust the port if needed; the default is `8181`:
+2. Optionally select the listen port; when `LINK_URL` exists, the default is `8181`:
 
    ```bash
    export LINK_PORT=8181
    ```
 
-3. For local testing, you can set only `LINK_PORT`; mikan will use `http://localhost:<port>`.
+3. For local-only testing, set only `LINK_PORT`. mikan binds to `127.0.0.1` and returns links under
+   `http://localhost:<port>`.
 
 </Steps>
 
-For the differences between admin, login/vault, and session-view links, see [Portal auth and capability model](portal-auth-model.md).
+Capability URLs are bearer secrets. Do not paste them into shared channels, logs, or issue trackers. Login links expire after 15 minutes and are consumed when credentials are written; admin links last 30 minutes; session links last 24 hours. A process restart invalidates every outstanding link.
+
+See [Portal auth and capability model](portal-auth-model/) for route-level permissions.
 
 ## OAuth flows
 
-Built-in OAuth docs:
-
-- [GitHub](oauth/github.md) <Badge text="OAuth" variant="default" />
-- [Google Workspace](oauth/google-workspace.md) <Badge text="OAuth" variant="default" />
-- [Google Cloud SDK / gcloud](oauth/google-cloud-sdk.md) <Badge text="OAuth" variant="default" />
+- [GitHub](oauth/github/) <Badge text="OAuth" variant="default" />
+- [Google Workspace](oauth/google-workspace/) <Badge text="OAuth" variant="default" />
+- [Google Cloud SDK / gcloud](oauth/google-cloud-sdk/) <Badge text="OAuth" variant="default" />

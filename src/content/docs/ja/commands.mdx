@@ -1,70 +1,91 @@
 ---
 title: チャットコマンド
-description: mikan が Slack、Discord、Telegram で対応するテキストコマンドと slash-command エイリアス。
+description: mikan がチャットプラットフォーム全体で対応するテキストコマンドと slash-command エイリアス。
 ---
 
 import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
 <CardGrid>
   <Card title="ログインと認証情報" icon="lock">
-    `/login` は 15 分間有効なリンクを開き、DM で API keys を安全に保存したり OAuth
-    を完了したりできます。
+    `/login` は API keys、OAuth、共有 vault profiles 用の 15 分間有効な capability link
+    を開きます。DM/private conversation でのみ利用できます。
   </Card>
   <Card title="セッション" icon="open-book">
-    `session` は現在のセッションビューアーを開きます。`new` は現在の会話をリセットして新しい session
-    を開始します。
+    `session` は現在の session viewer を開きます。`/new` は古い files を確認用に残したまま、 現在の
+    DM session をリセットします。
   </Card>
-  <Card title="モデルと返信" icon="rocket">
-    `model` は LLM を切り替えます。`auto-reply` はグループまたはチャンネルでの自動返信 policy
-    を制御します。
+  <Card title="管理" icon="setting">
+    `/admin` は 30 分間有効な admin portal を開きます。model、sandbox、reply
+    policy、skills、events、 conversation state を確認できます。
   </Card>
 </CardGrid>
 
 ## コマンド早見表
 
-| コマンド                                                   | 用途                                                                                                                  |
-| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `/login` / `/pi-login`                                     | API keys の保存、または組み込み OAuth flows の実行に使う 15 分間有効なリンクを開きます。DM のみ。                     |
-| `session` / `/session`                                     | 現在のセッションの Web ビューを開きます。DM のみ。                                                                    |
-| `new` / `/new`                                             | 現在のセッションをリセットして最初から始めます。DM のみ。                                                             |
-| `model` / `/model` / `/pi-model provider/model[:thinking]` | 現在の会話で使う LLM を切り替えます。例: `/pi-model anthropic/claude-sonnet-4-6:off`。                                |
-| `auto-reply` / `/pi-auto-reply on\|off\|status`            | 現在の会話におけるグループ / チャンネルでの auto-reply を制御します。                                                 |
-| `stop` / `/stop`                                           | 現在の実行を停止します。Slack では、thread ローカルの stop ルーティングを正確に保つためテキスト指令を使ってください。 |
-| `/pi-extensions`                                           | この会話にインストールされている extension を一覧表示（global／会話スコープ、バージョン、同梱 skills）。              |
-| `/pi-sandbox`                                              | 管理対象 container の CPU / メモリ制限を表示、または一時的に引き上げます。                                            |
+| コマンド                                           | 用途と scope                                                                                                              |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `/login` / `/pi-login`                             | 15 分間有効な login/vault link を開きます。DM のみ。                                                                      |
+| `session` / `/session` / `/pi-session`             | 現在の session viewer を開きます。DM のみ。                                                                               |
+| `/new` / `/pi-new`                                 | 現在の session をリセットします。DM のみ。                                                                                |
+| `/model` / `/pi-model [provider/model[:thinking]]` | 現在の conversation model を表示または切り替えます。Thinking levels：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`。 |
+| `/auto-reply` / `/pi-auto-reply on\|off\|status`   | 現在の group/channel の auto-reply を制御します。                                                                         |
+| `stop` / `/stop`                                   | 一致する実行中の run を停止します。Slack では thread-local routing を正確に保つため、テキスト形式を優先してください。     |
+| `/admin` / `/pi-admin`                             | 30 分間有効な admin portal を開きます。                                                                                   |
+| `/extensions` / `/pi-extensions`                   | global と conversation extensions、versions、提供される skills を一覧表示します。                                         |
+| `/sandbox` / `/pi-sandbox`                         | 現在の managed image sandbox の制限と workspace mount mode を表示します。                                                 |
+| `/pi-sandbox boost`                                | managed container が停止するまで、設定された boost limits を適用します。                                                  |
+| `/pi-sandbox private\|full`                        | conversation の image workspace mount mode を保存します。`full` は workspace 全体を公開します。                           |
 
-<Aside type="tip" title="Slack ネイティブコマンド">
-  Slack では `/pi-login`、`/pi-session`、`/pi-model`、`/pi-auto-reply`、`/pi-new` を登録できます。
+<Aside type="note" title="プラットフォームへのコマンド登録">
+  Native slash commands はプラットフォームにも登録する必要があります。Slack のサンプル manifest には
+  `/pi-login`、`/pi-session`、`/pi-new`、`/pi-model`、`/pi-auto-reply`、`/pi-sandbox`、
+  `/pi-extensions`、`/pi-admin` が含まれます。Discord は起動時に application commands を登録します。
+  Telegram は long polling で処理する bot commands を使います。
 </Aside>
 
-## Web セッションビューアー
+## 共有 vault コマンド
 
-セッションビューアーは login/vault と admin と同じリンクサーバーを使います。現在のセッションビューではタイムラインを表示できます。インタラクティブな portal wiring が有効な場合は、そのセッションへメッセージを送り返すこともできます。
+すべての vault commands は DM 専用です：
+
+| コマンド                      | 効果                                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------- |
+| `/login shared list`          | 共有 login profiles を一覧表示します。                                                |
+| `/login shared create <name>` | 共有 profile を作成する login link を開きます。                                       |
+| `/login shared update <name>` | 共有 profile を更新する login link を開きます。                                       |
+| `/login shared delete <name>` | 共有 profile を削除します。                                                           |
+| `/login copy <name>`          | 共有 profile を現在の conversation vault にコピーします。一致する値は上書きされます。 |
+
+共有 profiles は operator が管理する credentials です。`sandbox.defaultSharedVault` による自動継承は、対象となる membership-trust image/Cloudflare conversations に限定されます。GitHub のような open-trigger surfaces は継承しません。
+
+## Web portals
+
+admin、login/vault、session portals は同じ HTTP server を使います。本番環境では public base URL を設定します：
 
 <Steps>
 
-1. public base URL を設定します。
+1. 外部から到達可能な URL を設定します：
 
    ```bash
    export LINK_URL="https://mikan.example.com"
    ```
 
-2. 必要に応じて port を調整します。既定値は `8181` です。
+2. 必要に応じて listen port を選択します。`LINK_URL` が存在する場合、既定値は `8181` です：
 
    ```bash
    export LINK_PORT=8181
    ```
 
-3. ローカルテストでは `LINK_PORT` だけを設定できます。mikan は `http://localhost:<port>` を使います。
+3. ローカルのみのテストでは `LINK_PORT` だけを設定します。mikan は `127.0.0.1` に bind し、
+   `http://localhost:<port>` の link を返します。
 
 </Steps>
 
-admin、login/vault、session-view リンクの違いについては、[Portal 認証と capability モデル](portal-auth-model.md)を参照してください。
+Capability URLs は bearer secrets です。共有 channels、logs、issue trackers に貼り付けないでください。Login links は 15 分後に期限切れとなり、credentials の書き込み時に消費されます。admin links は 30 分、session links は 24 時間有効です。process restart ですべての未使用 links が無効になります。
+
+route ごとの権限は [Portal 認証と capability モデル](portal-auth-model/) を参照してください。
 
 ## OAuth flows
 
-組み込み OAuth ドキュメント:
-
-- [GitHub](oauth/github.md) <Badge text="OAuth" variant="default" />
-- [Google Workspace](oauth/google-workspace.md) <Badge text="OAuth" variant="default" />
-- [Google Cloud SDK / gcloud](oauth/google-cloud-sdk.md) <Badge text="OAuth" variant="default" />
+- [GitHub](oauth/github/) <Badge text="OAuth" variant="default" />
+- [Google Workspace](oauth/google-workspace/) <Badge text="OAuth" variant="default" />
+- [Google Cloud SDK / gcloud](oauth/google-cloud-sdk/) <Badge text="OAuth" variant="default" />

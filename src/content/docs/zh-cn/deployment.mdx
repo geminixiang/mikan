@@ -1,62 +1,110 @@
 ---
 title: 部署
-description: 使用 PM2、Docker sandbox image 与 state directory 部署长时间执行的 mikan。
+description: 使用 PM2 运行 mikan，并配置持久状态、管理的沙箱镜像、优雅关闭和可选健康端点。
 ---
 
 import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
 <CardGrid>
-  <Card title="PM2 常驻" icon="setting">
-    使用 PM2 supervisor 让 mikan daemonize、crash restart，并支持开机自动启动。
+  <Card title="PM2 进程管理" icon="setting">
+    PM2 使 mikan 作为守护进程运行，在故障后重启，保留 stdout/stderr 日志，并可在开机时启动。
   </Card>
-  <Card title="Sandbox image" icon="rocket">
-    先拉取 `ghcr.io/geminixiang/mikan-sandbox:latest`，再让 mikan 用 image sandbox 隔离工具执行。
+  <Card title="管理的 image 沙箱" icon="rocket">
+    mikan 主机进程使用 Docker，根据选定的沙箱镜像为每个对话创建工具容器。
   </Card>
-  <Card title="State directory" icon="lock">
-    保留 state directory，让会话、vault 与 runtime 状态在 reload 后继续存在。
+  <Card title="持久状态" icon="lock">
+    使用一个仅主机可见的 state directory 保存设置、独立于会话的运行时状态、vault 和 GitHub
+    轮询水位线。
   </Card>
 </CardGrid>
 
-## PM2
+## 前提条件
 
-长时间执行的部署建议使用 [PM2](https://pm2.keymetrics.io/) 作为进程 supervisor。它会将 mikan daemonize、在 crash 时重新启动，并可在重启后繼续運作。
+- Node.js `>=22.19.0`
+- 至少一套完整的 Slack、Telegram、Discord 或 GitHub 凭证
+- 持久工作区目录
+- 使用 `image:*` 或 `container:*` 时，PM2 用户可以使用 Docker
+
+发布的 `mikan-sandbox` 镜像是工具运行时，不是独立的 mikan 服务器镜像。PM2 在主机上运行 `mikan`；image 模式通过主机 Docker daemon 创建和管理容器。
+
+## PM2 部署
 
 <Steps>
 
-1. 安裝 mikan 与 pm2：
+1. 安装 mikan 和 PM2：
 
    ```bash
    npm i -g @geminixiang/mikan pm2
    ```
 
-2. 下载你要使用的 sandbox container/image 依赖：
+2. 在服务将使用的确切 state directory 中创建全局设置文件：
+
+   ```bash
+   mkdir -p /srv/mikan/workspace
+   mikan --onboard --state-dir=/srv/mikan/state
+   ```
+
+   检查 `/srv/mikan/state/settings.json`。该目录必须归 PM2 进程用户所有，且不能全局可写；
+   建议执行 `chmod 0700 /srv/mikan/state`。
+
+3. 拉取管理的沙箱镜像：
 
    ```bash
    docker pull ghcr.io/geminixiang/mikan-sandbox:latest
    ```
 
-3. 获取 ecosystem file，編辑 args 与环境 token，然后启动：
+   选择 `image:*` 模式时，不要另外启动长期运行的容器。只有 `container:<name>` 模式才需要预先存在的容器。
+
+4. 下载 ecosystem 文件：
 
    ```bash
    curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
+   ```
+
+5. 编辑 `args`，使用绝对路径和一种沙箱模式：
+
+   ```js
+   args: "--state-dir=/srv/mikan/state --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest /srv/mikan/workspace",
+   ```
+
+   然后在 PM2 环境中至少设置一套完整的平台凭证。尽量不要将私钥和 token 放入 ecosystem 文件；
+   请改为从服务管理器或 secret store 加载。
+
+6. 启动并持久保存进程：
+
+   ```bash
    pm2 start ecosystem.config.cjs
    pm2 save
    pm2 startup
    ```
 
-4. 执行 `pm2 startup` 输出的命令，启用开机自动启动。
+7. 运行 `pm2 startup` 输出的命令，启用开机启动。
 
 </Steps>
+
+相对工作区路径从 PM2 的当前工作目录解析。绝对路径可避免服务迁移或重启后无意中打开其他工作区。
 
 ## 升级
 
 ```bash
-npm i -g @geminixiang/mikan && pm2 reload mikan
+npm i -g @geminixiang/mikan
+pm2 reload mikan
 ```
 
-<Aside type="note" title="Graceful reload">
-  `pm2 reload` 会送出 SIGTERM，并在送出 SIGKILL 前最多等待 `kill_timeout`（随附设置中为 60s）。mikan
-  内部的 graceful shutdown 会在这段时间内排空进行中的 LLM turns，因此 reload 不会中断使用中的对话。
+<Aside type="note" title="优雅重新加载">
+  随附的 PM2 配置会在 SIGTERM 后等待最多 60 秒，再发送 SIGKILL。mikan 会先排空对话运行，停止 events
+  watcher， 并给 Sentry 最多五秒钟完成刷新。超过进程管理器超时时间的运行仍可能被终止。
 </Aside>
 
-所有可调整项请見 [`../deploy/pm2/ecosystem.config.cjs`](../deploy/pm2/ecosystem.config.cjs)。
+## 健康端点
+
+Portal 服务器仅在设置 `LINK_PORT` 时存在；如果 `LINK_URL` 使默认端口 `8181` 生效，也会存在：
+
+```bash
+curl http://127.0.0.1:8181/health
+# {"ok":true}
+```
+
+`/health` 仅检查 HTTP 进程是否存活。它不会验证平台连接、Docker、沙箱 provision、LLM 提供商或事件投递，因此不要将其用作唯一的就绪信号。
+
+请参阅 [GitHub 上维护的 PM2 ecosystem 文件](https://github.com/geminixiang/mikan/blob/main/deploy/pm2/ecosystem.config.cjs)和[沙箱模式](sandbox/)了解特定模式的要求。

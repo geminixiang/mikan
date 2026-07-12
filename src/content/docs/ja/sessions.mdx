@@ -41,7 +41,9 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
 
 </FileTree>
 
-## リセット
+## Bootstrap、ローテーション、リセット
+
+新しい scoped session には、過去 14 日間に該当するプラットフォームメッセージが最大 200 件取り込まれます。Top-level session は隔週の境界でローテーションします。ローテーションにより使用中の構造化 context file は変わりますが、古い JSONL files は削除されません。
 
 <Aside type="tip" title="監査可能な記録を保持">
   チャットで `new` / `/new`

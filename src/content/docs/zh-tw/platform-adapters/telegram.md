@@ -1,57 +1,50 @@
 ---
 title: Telegram 接入
-description: Telegram adapter 的 long polling、訊息更新、typing、檔案下載與 session scope。
+description: 設定 BotFather privacy、long polling、reply-scoped sessions、commands、files 與 HTML responses。
 ---
 
-## 主要程式碼
+## 設定
 
-| 檔案                               | 用途                                                                                 |
-| ---------------------------------- | ------------------------------------------------------------------------------------ |
-| `src/adapters/telegram/bot.ts`     | Telegram bot 主體：commands、message handler、attachments、file download、回覆送出。 |
-| `src/adapters/telegram/context.ts` | 建立 Telegram 版 `ConversationResponder`，處理 HTML mode、typing、message update。   |
-| `src/adapters/telegram/html.ts`    | Escape / sanitize Telegram HTML，避免送出 Telegram 不支援的 markup。                 |
-| `src/adapters/telegram/types.ts`   | Telegram adapter 專用型別。                                                          |
+1. 使用 [@BotFather](https://t.me/BotFather) 建立 bot 並複製 token。
+2. 決定 bot 是否必須接收一般群組訊息。BotFather privacy mode 通常會將群組送達限制在 commands、mentions 與給 bot 的 replies。只有 group-wide auto-reply rules 需要接收更多訊息時，才使用 `/setprivacy` 停用 privacy mode。
+3. 將 bot 加入每個群組，且僅授予讀取與傳送訊息或檔案所需的 group/admin permissions。
+4. 設定 token 並啟動 mikan：
 
-## 事件來源
+```bash
+export TELEGRAM_BOT_TOKEN="..."
+mikan /path/to/workspace
+```
 
-Telegram adapter 主要處理：
+mikan 使用 long polling；不需要公開 Telegram webhook。
 
-- private chat 訊息
-- group / supergroup 訊息
-- commands：`/login`、`/session`、`/new`、`/stop`、`/model`
-- reply message
-- photo / document attachments
+## 事件來源與觸發條件
 
-Private chat 會直接觸發 mikan。Group 內需要 mention、command，或符合 auto-reply policy。
+Adapter 處理：
+
+- private、group 與 supergroup 訊息
+- `/login`、`/session`、`/new`、`/stop`、`/model` 與 `/sandbox`
+- replies、photos 與 documents
+
+私人訊息會直接觸發。群組訊息需要 command、mention、reply context 或符合 auto-reply policy。Telegram 必須先將訊息送達 bot；privacy mode 可能讓 auto-reply rule 看不到一般群組流量。
 
 ## Session 規則
 
-Telegram 沒有 Slack 那種 thread_ts。mikan 用 reply 關係建立 scoped session：
+Telegram 沒有 Slack 形式的 `thread_ts`。mikan 從直接 reply 關係推導 scope：
 
-| Telegram 情境           | session scope                       |
-| ----------------------- | ----------------------------------- |
-| Private chat            | chat session                        |
-| Group top-level message | group chat session                  |
-| Reply message           | 以 reply target 建立 scoped session |
+| 情境                           | Session identity                 |
+| ------------------------------ | -------------------------------- |
+| Private chat                   | chat ID                          |
+| 觸發的 group top-level message | `<chatId>:<messageId>`           |
+| Reply                          | `<chatId>:<referencedMessageId>` |
 
-這讓同一個 group 裡的不同 reply chain 可以分開保存 context。
+因此 nested replies 會依 referenced message IDs，而非平台提供的持久 thread root。Telegram forum-topic `message_thread_id` 目前不是個別記錄的 session dimension。
 
-## 回覆與格式
+## 回覆與附件
 
-Telegram adapter 使用 HTML parse mode，不使用 Markdown。Adapter 會提醒 agent 使用：
+回應使用 Telegram HTML mode。支援的格式包括 `<b>`、`<i>`、`<code>`、`<pre>` 與 `<a href="...">`。若 Telegram 拒絕產生的 markup，mikan 會使用 escaped HTML 重試。Responder 也支援 typing status、message edits、reply targets 與檔案上傳。
 
-- bold：`<b>text</b>`
-- italic：`<i>text</i>`
-- code：`<code>code</code>`
-- pre：`<pre>code</pre>`
-- link：`<a href="url">text</a>`
-
-若 Telegram 回報 HTML parse error，adapter 會 fallback 成 escaped HTML 後再送出。
-
-## 附件
-
-Telegram adapter 支援 photo 與 document。檔案會透過 Telegram file API 下載到 workspace 的 `attachments/`，再交給 runtime。
+收到的 photos 與 documents 會透過 Telegram file API 下載到對話的 `attachments/` 目錄。Voice、audio、video、stickers 與 polls 等其他 media types 不會當成同等的 inbound attachments 處理。
 
 ## Stop 行為
 
-`/stop` 與文字 `stop` 會先於一般訊息觸發判斷處理。若目前 scoped session 正在跑，會停止該 session；否則在 group 中會嘗試找到唯一正在執行的 scoped session。
+`/stop` 與文字 `stop` 會在一般 trigger decision 前處理。mikan 會先以目前 scoped session 為目標；在群組中，若只有一個目前執行中的 scoped session 且選擇明確，則可 fallback 至該 session。

@@ -1,56 +1,55 @@
 ---
 title: Discord adapter
-description: Event intake, session scope, slash commands, and message response flow for the Discord adapter.
+description: Configure Discord gateway intents, permissions, sessions, commands, attachments, and response behavior.
 ---
 
-## Main code
+## Setup
 
-| File                              | Purpose                                                                                                |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `src/adapters/discord/bot.ts`     | Discord bot core: message events, slash commands, attachments, channel lookup, reply sending.          |
-| `src/adapters/discord/context.ts` | Creates the Discord `ConversationResponder`; handles Markdown, typing indicators, and message updates. |
-| `src/adapters/discord/types.ts`   | Discord adapter-specific types.                                                                        |
+1. Create an application and bot in the [Discord Developer Portal](https://discord.com/developers/applications).
+2. Under **Bot → Privileged Gateway Intents**, enable **Message Content Intent**. mikan requests this intent and cannot inspect ordinary message text without it.
+3. Install the app with the `bot` and `applications.commands` scopes.
+4. Grant the bot access required by the channels it will serve: View Channels, Send Messages, Read Message History, Add Reactions, Attach Files, Embed Links, and Send Messages in Threads.
+5. Set the token and start mikan:
 
-## Event sources
+```bash
+export DISCORD_BOT_TOKEN="..."
+mikan /path/to/workspace
+```
 
-The Discord adapter mainly handles:
+Channel permission overrides still apply. A successful installation does not guarantee access to every guild channel or private thread.
 
-- `messageCreate`
-- slash commands: `login`, `session`, `new`, `stop`, `model`, `sandbox`
-- DM, guild channel, and thread channel messages
+## Event sources and triggers
+
+The adapter handles:
+
+- `messageCreate` in DMs, guild channels, and Discord thread channels
+- slash commands: `login`, `session`, `new`, `stop`, `model`, and `sandbox`
 - message attachments
 
-DMs trigger mikan directly. Guild channels usually require a mention, thread reply, or matching auto-reply policy.
+DMs trigger directly. Guild messages normally require a mention, a reply/thread context that mikan handles, or a matching auto-reply policy. Stop commands are checked before the normal trigger gate.
 
 ## Session rules
 
-The Discord adapter uses the shared `resolveChatSessionKey()` to compute sessions:
+mikan uses `resolveChatSessionKey()` to isolate shared conversations:
 
-| Discord scenario                | session scope                    |
-| ------------------------------- | -------------------------------- |
-| DM                              | DM conversation                  |
-| Guild channel top-level message | channel conversation             |
-| Thread channel or reply         | scoped session                   |
-| Slash command                   | session from interaction context |
+| Scenario                  | Conversation/session identity                                                             |
+| ------------------------- | ----------------------------------------------------------------------------------------- |
+| DM                        | conversation and session use the DM channel ID                                            |
+| Guild top-level message   | conversation uses the channel ID; a triggered message is scoped by message ID             |
+| Discord thread channel    | conversation uses the parent channel ID; session is `<parentChannelId>:<threadChannelId>` |
+| Reply in a shared channel | session is scoped from the referenced/root message ID                                     |
+| Slash command             | resolved from the interaction's channel/thread context                                    |
 
-This keeps Discord threads and normal channel conversations from contaminating each other's context.
+This prevents unrelated guild messages and threads from sharing agent context.
 
-## Replies and formatting
+## Replies and attachments
 
-The Discord response context handles:
+The responder supports Discord Markdown, typing indicators, initial replies, incremental message edits, reply targets, reactions, and file uploads. Long output is split below Discord's message limit using a 1,900-character target.
 
-- Discord Markdown
-- typing indicators
-- initial replies and later message updates
-- reply targets, meaning replies to the original message
-- long message splitting
+Inbound attachments are downloaded into the conversation's `attachments/` directory with sanitized file names before the event reaches the runtime.
 
-Slash commands in guilds usually use ephemeral responses; in DMs they reply directly to the user.
+Guild slash-command acknowledgements are usually ephemeral; DM commands reply directly.
 
-## Attachments
+## Current boundaries
 
-Discord attachments are downloaded to `attachments/` in the workspace. File names are lightly sanitized before being passed to the runtime.
-
-## Stop behavior
-
-`stop` / `/stop` is handled before the trigger gate, so stop commands are not blocked by auto-reply policy. The adapter uses the session key and current running sessions to find the session to stop.
+mikan does not treat voice, embeds, components, polls, or every Discord media/event type as agent input. Thread/channel visibility is limited by the app installation and channel permissions.

@@ -15,6 +15,15 @@ One GitHub issue or pull request is one mikan conversation. The adapter polls th
 | `src/adapters/github/ids.ts`     | `GH_<owner>_<repo>_<number>` conversation id encode/parse.                                                   |
 | `src/adapters/github/types.ts`   | GitHub adapter-specific types and REST payload shapes.                                                       |
 
+## Create and install the GitHub App
+
+1. Create a GitHub App for the account or organization that owns the target repositories.
+2. Grant repository permissions: **Metadata: Read**, **Contents: Read & write**, **Issues: Read & write**, **Pull requests: Read & write**, **Checks: Read**, and **Actions: Read**. Issues/PR write access covers comments and reactions; Contents/Pull requests write access is used only by the guarded `github_pr` tool.
+3. Install the App on the repositories mikan may poll.
+4. Record the App ID and installation ID, then generate a private key. Keep the PEM outside the workspace and prefer `GITHUB_APP_PRIVATE_KEY_PATH` over an inline secret.
+
+The App slug is the name users mention to trigger first contact.
+
 ## Configuration
 
 | Env var                                                  | Purpose                                                                                |
@@ -27,7 +36,9 @@ One GitHub issue or pull request is one mikan conversation. The adapter polls th
 
 ## Event source
 
-A poll loop fetches, per watched repo, issues and issue/PR comments updated since an incremental cursor, using ETag conditional requests (304 responses are free against the rate limit). Dedup is a persisted watermark at `<state-dir>/github-sync.json` (atomic write):
+A poll loop fetches, per watched repo, issues and issue/PR comments updated since an incremental cursor, using ETag conditional requests (304 responses are free against the rate limit). Each endpoint currently reads one page of up to 100 records; a larger burst between polls can be missed when the cursor advances. Reduce `GITHUB_POLL_INTERVAL` or narrow `GITHUB_REPOS` for busy installations.
+
+Dedup is a persisted watermark at `<state-dir>/github-sync.json` (atomic write):
 
 - The first run records a baseline and emits nothing — history never triggers.
 - Already-handled comment/issue ids never re-trigger, and edits do not re-trigger.
@@ -39,7 +50,7 @@ A comment (or new issue body) triggers a run only when it @mentions the app slug
 
 ## Sessions and replies
 
-The whole issue/PR is one persistent session (`sessionKey === conversationId`); PR review-line threads are not yet mapped to sub-sessions. Responses are GitHub Flavored Markdown, posted as a single comment when the response is finished — no streaming edits, so replies don't churn the API or show as "edited"; long output splits into continuation comments. The system prompt tells the agent which issue/PR the conversation is (owner/repo#number). First contact through a comment logs the issue title/body ahead of it so the session knows what the thread is about.
+The whole issue/PR is one persistent session (`sessionKey === conversationId`); PR review-line threads are not yet mapped to sub-sessions. Responses are GitHub Flavored Markdown, posted after the response is finished — no streaming edits, so replies don't churn the API or show as "edited". Output that exceeds the comment split threshold is posted as continuation comments. The system prompt tells the agent which issue/PR the conversation is (owner/repo#number). First contact through a comment logs the issue title/body ahead of it so the session knows what the thread is about.
 
 ## Repository access and pull requests
 
@@ -50,7 +61,7 @@ The sandbox never holds credentials; git spans the two sides of the conversation
 - The `github_pr` tool runs host-side: it mints a `contents:write` + `pull_requests:write` token for that one repo, pushes the agent's `pi/*` branch from the host side of the mount, and opens a pull request (draft supported) as the App; re-invoking it with the same branch pushes new commits to the existing PR. It cannot push the default branch, force-push, or merge — humans review and merge every PR.
 - The `github_checks` tool reads CI check runs for a pushed branch (or the PR head) and can fetch a failing job's log tail, letting the agent diagnose and iterate until CI passes. Requires the App permissions **Checks: Read** and **Actions: Read** (for logs).
 
-This requires the GitHub App to have **Contents: Read & write**, **Checks: Read**, and **Actions: Read** in addition to Issues and Pull requests read & write.
+These tools use the App permissions listed in the setup section. They cannot bypass branch/default-branch guards enforced by mikan.
 
 ## Limitations
 

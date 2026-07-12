@@ -12,6 +12,7 @@ mikan --sandbox=cloudflare:mikan-remote /path/to/workspace
 
 特徴：
 
+- runtime commands は既定で `/workspace` を使用します。`CLOUDFLARE_SANDBOX_CWD` で上書きできます
 - mikan は remote sandbox id を `<base-sandbox-id>-<vault-key>` に派生させます
 - vault env は各 `exec()` 時に bridge 経由で注入されます
 - vault 選択ロジックは `image` と似ており、conversation ID から platform-scoped vault key を生成します
@@ -25,4 +26,4 @@ mikan --sandbox=cloudflare:mikan-remote /path/to/workspace
 
 サンプル bridge をそのまま使用できます：
 
-- [examples/cloudflare-sandbox-bridge/README.md](../../examples/cloudflare-sandbox-bridge/README.md)
+- [GitHub の Cloudflare sandbox bridge サンプル](https://github.com/geminixiang/mikan/tree/main/examples/cloudflare-sandbox-bridge)

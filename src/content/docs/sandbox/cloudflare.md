@@ -12,6 +12,7 @@ mikan --sandbox=cloudflare:mikan-remote /path/to/workspace
 
 Features:
 
+- runtime commands use `/workspace` by default; override it with `CLOUDFLARE_SANDBOX_CWD`
 - mikan derives the remote sandbox id as `<base-sandbox-id>-<vault-key>`
 - vault env is injected through the bridge on every `exec()`
 - vault selection logic is similar to `image`: a platform-scoped vault key is generated from the conversation ID
@@ -25,4 +26,4 @@ Limitations:
 
 You can use the example bridge directly:
 
-- [examples/cloudflare-sandbox-bridge/README.md](../../examples/cloudflare-sandbox-bridge/README.md)
+- [Cloudflare sandbox bridge example on GitHub](https://github.com/geminixiang/mikan/tree/main/examples/cloudflare-sandbox-bridge)

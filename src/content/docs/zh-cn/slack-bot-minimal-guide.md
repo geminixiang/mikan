@@ -1,35 +1,36 @@
 ---
-title: Slack Bot 最小设定指南
-description: 透过 Socket Mode 执行 mikan 所需的最小 Slack app 权限、事件与 manifest 设定。
+title: Slack Bot 最小设置指南
+description: 通过 Socket Mode 运行 mikan 所需的最小 Slack app 权限、事件和 manifest 设置。
 ---
 
-你也可以使用 `examples/slack-app-manifest.json` 的范例 manifest 建立 app。
+你也可以使用 `examples/slack-app-manifest.json` 中的示例 manifest 创建 app。
 
-## 1. 建立 Slack app
+## 1. 创建 Slack app
 
-1. 开启 <https://api.slack.com/apps>。
-2. 点选 **Create New App**。
+1. 打开 <https://api.slack.com/apps>。
+2. 点击 **Create New App**。
 3. 选择 **From scratch**。
-4. 选择 app 名称，例如 `mikan`，并选取你的 workspace。
+4. 选择 app 名称（例如 `mikan`）和你的工作区。
 
 ## 2. 启用 Socket Mode
 
 1. 前往 **Settings → Socket Mode**。
-2. 开启 **Enable Socket Mode**。
-3. 建立具备 `connections:write` scope 的 app-level token。
-4. 将 token 储存为 `SLACK_APP_TOKEN`。
+2. 打开 **Enable Socket Mode**。
+3. 创建具有 `connections:write` scope 的 app-level token。
+4. 将 token 存储为 `SLACK_APP_TOKEN`。
 
-Token 会以 `xapp-` 开头。
+Token 以 `xapp-` 开头。
 
-## 3. 设定 bot token scopes
+## 3. 配置 bot token scopes
 
-前往 **OAuth & Permissions → Scopes → Bot Token Scopes**，加入：
+前往 **OAuth & Permissions → Scopes → Bot Token Scopes** 并添加：
 
 - `app_mentions:read`
 - `assistant:write`
 - `channels:history`
 - `channels:read`
 - `chat:write`
+- `commands`（仅使用下方可选 slash commands 时需要）
 - `files:read`
 - `files:write`
 - `groups:history`
@@ -40,17 +41,17 @@ Token 会以 `xapp-` 开头。
 - `reactions:write`
 - `users:read`
 
-接着将 app 安装或重新安装到你的 workspace，并把 bot token 储存为 `SLACK_BOT_TOKEN`。
+然后将 app 安装或重新安装到工作区，并将 bot token 存储为 `SLACK_BOT_TOKEN`。
 
-Token 会以 `xoxb-` 开头。
+Token 以 `xoxb-` 开头。
 
-## 4. 启用 App Home 与 Agent 模式
+## 4. 启用 App Home 和 Agent 模式
 
 1. 前往 **Features → App Home**。
 2. 启用 **Home Tab**。
-3. 在 **Agents & AI Apps** 中启用 **Agent or Assistant**。
+3. 在 **Agents & AI Apps** 下启用 **Agent or Assistant**。
 
-这会让 Slack 原生 assistant thread events 与 working indicators 传到 bot。
+这会启用 Slack 的 assistant UI。mikan 通过 `assistant:write` 写入 assistant 工作状态；订阅的 assistant context 事件仅用于 Slack 兼容性，不会单独触发代理。
 
 ## 5. 订阅 bot events
 
@@ -68,26 +69,26 @@ Token 会以 `xoxb-` 开头。
 
 ## 6. 启用 interactivity
 
-前往 **Features → Interactivity & Shortcuts** 并开启 interactivity。
+前往 **Features → Interactivity & Shortcuts** 并启用 interactivity。
 
-若只使用 Socket Mode 进行本机开发，不需要公开 request URL；但某些 app 设定中 Slack 仍可能要求填写。
+如果只使用 Socket Mode 进行本地开发，则不需要公开 request URL，但 Slack 在某些 app 设置中可能仍要求填写。
 
 ## 7. 可选的 slash commands
 
-范例 manifest 包含常用控制用的 slash commands：
+示例 manifest 包含常用控制 slash commands：
 
-- `/pi-login` → login portal
-- `/pi-new` → 开始新的 DM session
-- `/pi-session` → session viewer
-- `/pi-model` → 切换此 conversation 的 LLM（`provider/model[:thinking]`，例如 `anthropic/claude-sonnet-4-6:off`）
-- `/pi-auto-reply` → 管理 group/channel auto-reply rules
-- `/pi-sandbox` → 查看或调整此 conversation 的 sandbox
-- `/pi-extensions` → 列出已安装的 extension
-- `/pi-admin` → 打开管理后台
+- `/pi-login` → 登录 portal
+- `/pi-new` → 开始新的 DM 会话
+- `/pi-session` → 会话查看器
+- `/pi-model` → 切换此对话的 LLM（`provider/model[:thinking]`，例如 `anthropic/claude-sonnet-4-6:off`）
+- `/pi-auto-reply` → 管理群组/频道自动回复规则
+- `/pi-sandbox` → 检查或调整此对话的沙箱
+- `/pi-extensions` → 列出已安装的扩展
+- `/pi-admin` → 打开管理 portal
 
-Slash commands 是可选的，因为文字指令在支援的情境中也可使用。请将 `stop` 保留为文字指令（`stop` 或 `/stop`），让 thread-local stop routing 能指向正确的 session。
+Slash commands 是可选的，因为文本命令也能在支持的上下文中使用。请将 `stop` 保留为文本命令（`stop` 或 `/stop`），以便话题本地的停止路由能够指向正确的会话。
 
-## 8. 执行 mikan
+## 8. 运行 mikan
 
 ```bash
 export SLACK_APP_TOKEN=xapp-...
@@ -96,4 +97,4 @@ export SLACK_BOT_TOKEN=xoxb-...
 mikan --state-dir ~/.mikan /path/to/workspace
 ```
 
-Bot 会在 DM 中回应，也会在 channel 中被 mention 时回应。Slack thread replies 会使用隔离的 thread sessions，并把 thread timestamp 作为 session key 的一部分。
+Bot 会在 DM 中回复，也会在频道中被提及时回复。触发的 Slack 话题工作使用隔离会话，其 key 包含话题时间戳。共享频道话题中普通的未提及回复只会被记录，不会启动运行。

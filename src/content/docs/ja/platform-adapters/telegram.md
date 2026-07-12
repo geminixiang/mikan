@@ -1,57 +1,50 @@
 ---
 title: Telegram 接続
-description: Telegram adapter の long polling、メッセージ更新、typing、ファイルダウンロード、session scope。
+description: BotFather privacy、long polling、reply-scoped sessions、commands、files、HTML responses を設定します。
 ---
 
-## 主要コード
+## セットアップ
 
-| ファイル                           | 用途                                                                                     |
-| ---------------------------------- | ---------------------------------------------------------------------------------------- |
-| `src/adapters/telegram/bot.ts`     | Telegram bot 本体：commands、message handler、attachments、file download、返信送信。     |
-| `src/adapters/telegram/context.ts` | Telegram 版 `ConversationResponder` を作成し、HTML mode、typing、message update を処理。 |
-| `src/adapters/telegram/html.ts`    | Telegram HTML を escape / sanitize し、Telegram が未対応の markup を送らないようにする。 |
-| `src/adapters/telegram/types.ts`   | Telegram adapter 専用型。                                                                |
+1. [@BotFather](https://t.me/BotFather) で bot を作成し、token をコピーします。
+2. bot が通常の group messages を受信する必要があるか判断します。BotFather privacy mode では通常、group での配信は commands、mentions、bot への replies に制限されます。group 全体の auto-reply rules で広範な受信が必要な場合にのみ、`/setprivacy` で privacy mode を無効にしてください。
+3. bot を各 group に追加し、messages または files の読み取りと送信に必要な group/admin permissions だけを付与します。
+4. token を設定し、mikan を起動します：
 
-## イベントソース
+```bash
+export TELEGRAM_BOT_TOKEN="..."
+mikan /path/to/workspace
+```
 
-Telegram adapter は主に次を処理します。
+mikan は long polling を使用します。公開 Telegram webhook は不要です。
 
-- private chat メッセージ
-- group / supergroup メッセージ
-- commands：`/login`、`/session`、`/new`、`/stop`、`/model`
-- reply message
-- photo / document attachments
+## イベントソースと trigger
 
-Private chat は mikan を直接起動します。Group 内では mention、command、または auto-reply policy への一致が必要です。
+Adapter は次を処理します：
+
+- private、group、supergroup messages
+- `/login`、`/session`、`/new`、`/stop`、`/model`、`/sandbox`
+- replies、photos、documents
+
+Private messages は直接起動します。Group messages には command、mention、reply context、または一致する auto-reply policy が必要です。Telegram が最初に message を bot へ配信する必要があります。privacy mode により、auto-reply rule が通常の group traffic を受信できない場合があります。
 
 ## Session ルール
 
-Telegram には Slack のような thread_ts がありません。mikan は reply 関係を使って scoped session を作成します。
+Telegram には Slack 形式の `thread_ts` がありません。mikan は直近の reply 関係から scope を導出します：
 
-| Telegram 状況           | session scope                               |
-| ----------------------- | ------------------------------------------- |
-| Private chat            | chat session                                |
-| Group top-level message | group chat session                          |
-| Reply message           | reply target を基準に scoped session を作成 |
+| 状況                                   | Session identity                 |
+| -------------------------------------- | -------------------------------- |
+| Private chat                           | chat ID                          |
+| Trigger された group top-level message | `<chatId>:<messageId>`           |
+| Reply                                  | `<chatId>:<referencedMessageId>` |
 
-これにより同じ group 内の異なる reply chain が別々に context を保持できます。
+そのため nested replies は、プラットフォームが提供する永続的な thread root ではなく、参照された message IDs に従います。Telegram forum-topic の `message_thread_id` は現在、別の session dimension として文書化されていません。
 
-## 返信と形式
+## 返信と添付ファイル
 
-Telegram adapter は Markdown ではなく HTML parse mode を使います。Adapter は agent に次の使用を促します。
+Responses は Telegram HTML mode を使用します。対応する形式には `<b>`、`<i>`、`<code>`、`<pre>`、`<a href="...">` があります。生成された markup を Telegram が拒否した場合、mikan は escaped HTML で再試行します。Responder は typing status、message edits、reply targets、file uploads もサポートします。
 
-- bold：`<b>text</b>`
-- italic：`<i>text</i>`
-- code：`<code>code</code>`
-- pre：`<pre>code</pre>`
-- link：`<a href="url">text</a>`
-
-Telegram が HTML parse error を返した場合、adapter は escaped HTML に fallback して再送信します。
-
-## 添付ファイル
-
-Telegram adapter は photo と document をサポートします。ファイルは Telegram file API 経由で workspace の `attachments/` にダウンロードされ、runtime に渡されます。
+受信した photos と documents は Telegram file API を通じて conversation の `attachments/` directory にダウンロードされます。voice、audio、video、stickers、polls などの他の media types は、同等の inbound attachments として処理されません。
 
 ## Stop 動作
 
-`/stop` と文字列 `stop` は通常メッセージの trigger 判定より先に処理されます。現在の scoped session が実行中ならその session を停止し、そうでない場合は group 内で唯一実行中の scoped session を探します。
+`/stop` とテキスト `stop` は通常の trigger 判定より先に処理されます。mikan はまず現在の scoped session を対象とし、group では対象が明確な場合に限り、唯一実行中の scoped session へ fallback できます。

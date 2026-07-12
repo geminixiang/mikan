@@ -125,11 +125,14 @@ Session view token は base session file に固定されます。`/session?sessi
 `startWebServer()` の dispatch 順序：
 
 1. `GET /health`
-2. Admin routes
-3. Session view routes
-4. Login / vault routes
-5. `404`
+2. Agent event HTTP routes
+3. Admin routes
+4. Session view routes
+5. Login / vault routes
+6. `404`
 
 Server は `LINK_PORT` / `MIKAN_LINK_PORT` を port として解析できる場合だけ起動します。`LINK_URL` / `MIKAN_LINK_URL` が設定され、port が設定されていない場合、mikan は既定 port `8181` を使います。
 
 Token stores は現在すべて in-memory で、`src/main.ts` により 5 分ごとに期限切れ token が削除されます。Process を再起動すると、まだ期限切れでない web tokens もすべて無効になります。
+
+これらの URLs は bearer capabilities です。query-string tokens は browser history、screenshots、コピーされた URLs、proxy logs から漏洩する可能性があります。意図したユーザーとのみ共有し、chat channels や issue trackers には絶対に公開しないでください。

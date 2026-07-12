@@ -27,7 +27,9 @@ mikan loads workspace-level skills first, then conversation-level skills. If bot
             └── run.sh
 ```
 
-Each skill directory needs a `SKILL.md`:
+A directory containing `SKILL.md` is treated as one skill root and is not searched recursively. mikan also discovers standalone `.md` files directly under a configured skills directory.
+
+A directory-based skill uses `SKILL.md`:
 
 ```yaml
 ---
@@ -38,7 +40,7 @@ description: Does something useful
 Usage: {baseDir}/run.sh <args>
 ```
 
-`name` and `description` are required. To reference files inside the skill directory in the description, use `{baseDir}`; mikan replaces it with that skill's runtime path.
+`name` and `description` are required. Use paths relative to the skill directory, or write the runtime-visible absolute path shown in the table above. `{baseDir}` is not expanded automatically.
 
 ## Which level to use
 

@@ -32,9 +32,9 @@ Credentials are then stored in:
 /secure/mikan-state/vaults/
 ```
 
-The global settings file is at `<state-dir>/settings.json`. Conversation-local settings are at `<working-directory>/<conversationId>/settings.json` and override the global defaults for that conversation.
+The global settings file is at `<state-dir>/settings.json`. Conversation overrides are host-only at `<state-dir>/conversations/<conversationId>/settings.json`. A legacy `<working-directory>/<conversationId>/settings.json` is migrated once, then ignored.
 
-At startup, mikan refuses a `--state-dir` that is world-writable or not owned by the current user, preventing other local users from tampering with settings or vault contents.
+At startup, mikan refuses a `--state-dir` that is world-writable or not owned by the current user. Newly created state/vault directories and credential files use private modes, but an existing group/world-readable state directory is not automatically tightened; use `chmod 0700 <state-dir>`.
 
 ## Vault contents
 
@@ -43,7 +43,7 @@ Each vault is a directory under `vaults/` and may contain:
 - `env` file: environment variables in `KEY=value` form
 - file credentials: for example `gws.json`, `.ssh/config`
 
-mikan infers mount targets from file names/paths, such as `gws.json` → `/root/.config/gws/credentials.json` and `.ssh/` → `/root/.ssh`.
+mikan infers mount targets from file names/paths, such as `gws.json` → `/root/.config/gws/credentials.json` and `.ssh/` → `/root/.ssh`. In image mode these credential mounts are writable from inside the sandbox, so tools may update them; keep backups for credentials whose mutation would matter.
 
 Example:
 

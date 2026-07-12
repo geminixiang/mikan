@@ -16,9 +16,9 @@ description: mikan admin、login 與 session portal 使用的短期 capability t
 簡化來看：
 
 ```text
-/admin   → 改設定、看 workspace、產生其他 link
-/link    → 寫入 vault secrets 或 OAuth credentials
-/session → 看 session；可選擇性送訊息回 session
+/admin   → change settings, view workspace, generate other links
+/link    → write vault secrets or OAuth credentials
+/session → view session; optionally send messages back to the session
 ```
 
 這三個頁面共用同一套 portal 外觀，但不共用同一個 authorization token。
@@ -125,11 +125,14 @@ Session view token 錨定到 base session file。使用 `/session?session=<file.
 `startWebServer()` 的 dispatch 順序是：
 
 1. `GET /health`
-2. Admin routes
-3. Session view routes
-4. Login / vault routes
-5. `404`
+2. Agent event HTTP routes
+3. Admin routes
+4. Session view routes
+5. Login / vault routes
+6. `404`
 
 Server 只有在 `LINK_PORT` / `MIKAN_LINK_PORT` 可解析成 port 時才會啟動。若設定了 `LINK_URL` / `MIKAN_LINK_URL` 但沒有設定 port，mikan 會使用預設 port `8181`。
 
 Token stores 目前都是 in-memory，並由 `src/main.ts` 每五分鐘清理過期 token。Process 重啟會讓尚未過期的 web tokens 全部失效。
+
+這些 URL 是 bearer capabilities。Query-string tokens 可能透過瀏覽器歷史、螢幕截圖、複製的 URL 或 proxy logs 洩漏；請僅與預期使用者分享，且絕不發布到聊天頻道或 issue trackers。

@@ -1,56 +1,55 @@
 ---
 title: Discord 接続
-description: Discord adapter のイベント受信、session scope、slash commands、メッセージ返信フロー。
+description: Discord gateway intents、permissions、sessions、commands、attachments、response behavior を設定します。
 ---
 
-## 主要コード
+## セットアップ
 
-| ファイル                          | 用途                                                                                             |
-| --------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `src/adapters/discord/bot.ts`     | Discord bot 本体：message events、slash commands、attachments、channel lookup、返信送信。        |
-| `src/adapters/discord/context.ts` | Discord 版 `ConversationResponder` を作成し、Markdown、typing indicator、message update を処理。 |
-| `src/adapters/discord/types.ts`   | Discord adapter 専用型。                                                                         |
+1. [Discord Developer Portal](https://discord.com/developers/applications) で application と bot を作成します。
+2. **Bot → Privileged Gateway Intents** で **Message Content Intent** を有効にします。mikan はこの intent を要求し、これがないと通常の message text を調べられません。
+3. `bot` と `applications.commands` scopes を使って app をインストールします。
+4. 対象 channels で必要な権限を bot に付与します：View Channels、Send Messages、Read Message History、Add Reactions、Attach Files、Embed Links、Send Messages in Threads。
+5. token を設定し、mikan を起動します：
 
-## イベントソース
+```bash
+export DISCORD_BOT_TOKEN="..."
+mikan /path/to/workspace
+```
 
-Discord adapter は主に次を処理します。
+Channel permission overrides は引き続き適用されます。インストールに成功しても、すべての guild channels や private threads にアクセスできるとは限りません。
 
-- `messageCreate`
+## イベントソースと trigger
+
+Adapter は次を処理します：
+
+- DMs、guild channels、Discord thread channels の `messageCreate`
 - slash commands：`login`、`session`、`new`、`stop`、`model`、`sandbox`
-- DM、guild channel、thread channel メッセージ
 - message attachments
 
-DM は mikan を直接起動します。Guild channel 内では通常 mention、thread reply、または auto-reply policy への一致が必要です。
+DM は直接起動します。Guild messages には通常、mention、mikan が処理する reply/thread context、または一致する auto-reply policy が必要です。Stop commands は通常の trigger gate より先に確認されます。
 
 ## Session ルール
 
-Discord adapter は共通の `resolveChatSessionKey()` で session を計算します。
+mikan は `resolveChatSessionKey()` を使い、共有 conversations を隔離します：
 
-| Discord 状況                    | session scope                           |
-| ------------------------------- | --------------------------------------- |
-| DM                              | DM conversation                         |
-| Guild channel top-level message | channel conversation                    |
-| Thread channel または reply     | scoped session                          |
-| Slash command                   | interaction context から session を作成 |
+| 状況                    | Conversation/session identity                                                                |
+| ----------------------- | -------------------------------------------------------------------------------------------- |
+| DM                      | conversation と session は DM channel ID を使用                                              |
+| Guild top-level message | conversation は channel ID を使用し、trigger された message は message ID で scope 化        |
+| Discord thread channel  | conversation は parent channel ID を使用し、session は `<parentChannelId>:<threadChannelId>` |
+| 共有 channel 内の reply | session は referenced/root message ID から scope 化                                          |
+| Slash command           | interaction の channel/thread context から解決                                               |
 
-これにより Discord thread と通常の channel 会話が context を混在させません。
+これにより、無関係な guild messages と threads が agent context を共有することを防ぎます。
 
-## 返信と形式
+## 返信と添付ファイル
 
-Discord response context は次を処理します。
+Responder は Discord Markdown、typing indicators、initial replies、incremental message edits、reply targets、reactions、file uploads をサポートします。長い output は 1,900 characters を目安に Discord の message limit 未満へ分割されます。
 
-- Discord Markdown。
-- typing indicator。
-- 初回返信と後続の message update。
-- reply target、つまり元メッセージへの返信。
-- 長文メッセージ分割。
+受信した attachments は event が runtime に届く前に、sanitized file names で conversation の `attachments/` directory にダウンロードされます。
 
-Slash command は guild 内では通常 ephemeral response を使い、DM ではユーザーへ直接返信します。
+Guild slash-command acknowledgements は通常 ephemeral で、DM commands は直接返信します。
 
-## 添付ファイル
+## 現在の境界
 
-Discord attachments は workspace の `attachments/` にダウンロードされます。ファイル名は簡単に sanitize されてから runtime に渡されます。
-
-## Stop 動作
-
-`stop` / `/stop` は trigger gate の前に処理され、stop 指令が auto-reply policy によって遮られないようにします。Adapter は session key と現在の running sessions から停止対象の session を見つけます。
+mikan は voice、embeds、components、polls、またはすべての Discord media/event types を agent input として扱いません。Thread/channel visibility は app installation と channel permissions に制限されます。

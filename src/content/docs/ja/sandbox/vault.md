@@ -26,15 +26,15 @@ state directory のデフォルトは次のとおりです：
 mikan --state-dir=/secure/mikan-state --sandbox=container:mikan-tools /path/to/workspace
 ```
 
-この場合、credential は次に保存されます：
+この場合、credentials は次に保存されます：
 
 ```text
 /secure/mikan-state/vaults/
 ```
 
-グローバル設定ファイルは `<state-dir>/settings.json` にあります。Conversation-local 設定は `<working-directory>/<conversationId>/settings.json` にあり、その conversation のグローバルデフォルトを上書きします。
+グローバル設定ファイルは `<state-dir>/settings.json` にあります。Conversation overrides は host-only の `<state-dir>/conversations/<conversationId>/settings.json` にあります。従来の `<working-directory>/<conversationId>/settings.json` は一度移行され、その後は無視されます。
 
-起動時、mikan は world-writable または現在のユーザー所有でない `--state-dir` の使用を拒否し、ローカルの他ユーザーによる settings や vault 内容の改ざんを防ぎます。
+起動時、mikan は world-writable または現在のユーザー所有でない `--state-dir` の使用を拒否します。新しく作成される state/vault directories と credential files には private modes が使われますが、既存の group/world-readable state directory は自動的には制限されません。`chmod 0700 <state-dir>` を使用してください。
 
 ## Vault の内容
 
@@ -43,7 +43,7 @@ mikan --state-dir=/secure/mikan-state --sandbox=container:mikan-tools /path/to/w
 - `env` file：`KEY=value` 形式の環境変数
 - file credentials：例：`gws.json`、`.ssh/config`
 
-mikan はファイル名/パスから mount target を自動推論します。例：`gws.json` → `/root/.config/gws/credentials.json`、`.ssh/` → `/root/.ssh`。
+mikan はファイル名/パスから mount target を自動推論します。例：`gws.json` → `/root/.config/gws/credentials.json`、`.ssh/` → `/root/.ssh`。image mode では、これらの credential mounts は sandbox 内から書き込み可能なため、tools が更新する場合があります。変更が問題になる credentials は backup を保管してください。
 
 例：
 
@@ -73,19 +73,19 @@ GITHUB_OAUTH_ACCESS_TOKEN=gho_xxx
 
 ## `/login`
 
-ユーザーは DM / private chat で次を実行します：
+DM / private message で次を実行します：
 
 ```text
 /login
 ```
 
-mikan は 15 分間有効な onboarding link を生成します。ユーザーは Web ページで次を保存できます：
+mikan は 15 分間有効な onboarding link を生成します。Web ページで次を保存できます：
 
-- 任意の API key / env var
-- GitHub OAuth credential
-- Google Workspace CLI OAuth credential
+- 任意の API keys / env vars
+- GitHub OAuth credentials
+- Google Workspace CLI OAuth credentials
 
-`/login` は DM / private chat でのみ使用でき、共有チャンネル内の他人が credential onboarding link を取得することを防ぎます。
+`/login` は DM / private messages でのみ使用でき、共有チャンネル内の他人が credential onboarding link を取得することを防ぎます。
 
 ## link server の有効化
 

@@ -27,7 +27,9 @@ mikan 會先載入 workspace-level skills，再載入 conversation-level skills�
             └── run.sh
 ```
 
-每個 skill 目錄都需要一個 `SKILL.md`：
+包含 `SKILL.md` 的目錄會被視為一個 skill root，且不會遞迴搜尋。mikan 也會探索設定的 skills 目錄正下方的獨立 `.md` 檔案。
+
+Directory-based skill 使用 `SKILL.md`：
 
 ```yaml
 ---
@@ -38,7 +40,7 @@ description: Does something useful
 Usage: {baseDir}/run.sh <args>
 ```
 
-`name` 與 `description` 必填。若要在說明中引用 skill 目錄內的檔案，請使用 `{baseDir}`；mikan 會把它換成該 skill 的 runtime path。
+`name` 與 `description` 必填。請使用相對於 skill directory 的路徑，或填寫上表所示、runtime 可見的絕對路徑。`{baseDir}` 不會自動展開。
 
 ## 什麼時候用哪一層
 

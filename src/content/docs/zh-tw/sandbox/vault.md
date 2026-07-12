@@ -32,9 +32,9 @@ mikan --state-dir=/secure/mikan-state --sandbox=container:mikan-tools /path/to/w
 /secure/mikan-state/vaults/
 ```
 
-全域設定檔位於 `<state-dir>/settings.json`。Conversation-local 設定位於 `<working-directory>/<conversationId>/settings.json`，用來覆蓋該 conversation 的全域預設。
+全域設定檔位於 `<state-dir>/settings.json`。Conversation overrides 是僅限 host 的 `<state-dir>/conversations/<conversationId>/settings.json`。舊版 `<working-directory>/<conversationId>/settings.json` 會移轉一次，之後忽略。
 
-啟動時 mikan 會拒絕使用 world-writable 或非目前使用者擁有的 `--state-dir`，避免本機其他使用者竄改 settings 或 vault 內容。
+啟動時，mikan 會拒絕 world-writable 或不由目前使用者擁有的 `--state-dir`。新建立的 state/vault directories 與 credential files 使用 private modes，但既有、group/world-readable 的 state directory 不會自動收緊權限；請執行 `chmod 0700 <state-dir>`。
 
 ## Vault 內容
 
@@ -43,7 +43,7 @@ mikan --state-dir=/secure/mikan-state --sandbox=container:mikan-tools /path/to/w
 - `env` file：`KEY=value` 形式的環境變數
 - file credentials：例如 `gws.json`、`.ssh/config`
 
-mikan 會從檔名/路徑自動推斷 mount target，例如 `gws.json` → `/root/.config/gws/credentials.json`、`.ssh/` → `/root/.ssh`。
+mikan 會從檔名／路徑推斷 mount targets，例如 `gws.json` → `/root/.config/gws/credentials.json` 與 `.ssh/` → `/root/.ssh`。Image 模式下，可從 sandbox 內寫入這些 credential mounts，因此工具可能更新它們；若憑證遭修改會造成影響，請保留備份。
 
 範例：
 

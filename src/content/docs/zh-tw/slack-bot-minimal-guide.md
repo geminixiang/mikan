@@ -30,6 +30,7 @@ Token 會以 `xapp-` 開頭。
 - `channels:history`
 - `channels:read`
 - `chat:write`
+- `commands`（只有使用下方選用的 slash commands 時才需要）
 - `files:read`
 - `files:write`
 - `groups:history`
@@ -50,7 +51,7 @@ Token 會以 `xoxb-` 開頭。
 2. 啟用 **Home Tab**。
 3. 在 **Agents & AI Apps** 中啟用 **Agent or Assistant**。
 
-這會讓 Slack 原生 assistant thread events 與 working indicators 傳到 bot。
+這會啟用 Slack assistant UI。mikan 會透過 `assistant:write` 寫入 assistant working status；訂閱的 assistant context events 是為了與 Slack 相容而保留，並非獨立的 agent triggers。
 
 ## 5. 訂閱 bot events
 
@@ -96,4 +97,4 @@ export SLACK_BOT_TOKEN=xoxb-...
 mikan --state-dir ~/.mikan /path/to/workspace
 ```
 
-Bot 會在 DM 中回應，也會在 channel 中被 mention 時回應。Slack thread replies 會使用隔離的 thread sessions，並把 thread timestamp 作為 session key 的一部分。
+Bot 會在 DM 中回應，也會在 channel 中被 mention 時回應。觸發的 Slack thread 工作會使用隔離的 session，其 key 包含 thread timestamp。共享頻道 thread 中未 mention 的一般回覆會被記錄，但不會開始執行。

@@ -1,67 +1,89 @@
 ---
 title: 聊天命令
-description: mikan 在 Slack、Discord 与 Telegram 中支持的文本命令与 slash-command 别名。
+description: mikan 在各聊天平台支持的文本命令和 slash-command 别名。
 ---
 
 import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
 <CardGrid>
-  <Card title="登录与凭证" icon="lock">
-    `/login` 会开启 15 分钟有效链接，让你在 DM 中安全存储 API keys 或完成 OAuth。
+  <Card title="登录和凭证" icon="lock">
+    `/login` 打开一个有效期 15 分钟的 capability 链接，用于 API key、OAuth 和共享 vault
+    配置文件。它仅在 DM/私聊中可用。
   </Card>
   <Card title="会话" icon="open-book">
-    `session` 开启当前会话查看器；`new` 重置当前对话并开始新的 session。
+    `session` 打开当前会话查看器；`/new` 重置当前 DM 会话，同时保留旧文件供检查。
   </Card>
-  <Card title="模型与回复" icon="rocket">
-    `model` 切换 LLM；`auto-reply` 控制群组或频道中的自动回复 policy。
+  <Card title="管理" icon="setting">
+    `/admin` 打开有效期 30 分钟的管理
+    portal；可以在其中检查模型、沙箱、回复策略、技能、事件和对话状态。
   </Card>
 </CardGrid>
 
 ## 命令速查
 
-| 指令                                                       | 用途                                                                            |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `/login` / `/pi-login`                                     | 开启 15 分钟有效的链接，用于存储 API keys 或执行内置 OAuth flows。仅限 DM。     |
-| `session` / `/session`                                     | 开启当前会话的网页查看。仅限 DM。                                               |
-| `new` / `/new`                                             | 重置当前会话并重新开始。仅限 DM。                                               |
-| `model` / `/model` / `/pi-model provider/model[:thinking]` | 切换当前对话使用的 LLM，例如 `/pi-model anthropic/claude-sonnet-4-6:off`。      |
-| `auto-reply` / `/pi-auto-reply on\|off\|status`            | 控制当前对话在群组 / 频道中的 auto-reply。                                      |
-| `stop` / `/stop`                                           | 停止当前执行。在 Slack 上，请使用文本命令，确保讨论串本地的 stop 路由保持准确。 |
-| `/pi-extensions`                                           | 列出此会话已安装的 extension（global 与会话范围、版本、附带 skills）。          |
-| `/pi-sandbox`                                              | 显示或暂时提升托管容器的 CPU / 内存限制。                                       |
+| 命令                                               | 用途和范围                                                                             |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `/login` / `/pi-login`                             | 打开有效期 15 分钟的登录/vault 链接。仅限 DM。                                         |
+| `session` / `/session` / `/pi-session`             | 打开当前会话查看器。仅限 DM。                                                          |
+| `/new` / `/pi-new`                                 | 重置当前会话。仅限 DM。                                                                |
+| `/model` / `/pi-model [provider/model[:thinking]]` | 显示或切换当前对话模型。思考级别：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`。 |
+| `/auto-reply` / `/pi-auto-reply on\|off\|status`   | 控制当前群组/频道中的自动回复。                                                        |
+| `stop` / `/stop`                                   | 停止匹配的活动运行。在 Slack 上，优先使用文本形式，以保持话题本地路由准确。            |
+| `/admin` / `/pi-admin`                             | 打开有效期 30 分钟的管理 portal。                                                      |
+| `/extensions` / `/pi-extensions`                   | 列出全局和对话扩展、版本及其提供的技能。                                               |
+| `/sandbox` / `/pi-sandbox`                         | 显示当前管理的 image 沙箱限制和工作区挂载模式。                                        |
+| `/pi-sandbox boost`                                | 应用配置的 boost 限制，直到管理的容器停止。                                            |
+| `/pi-sandbox private\|full`                        | 持久保存对话的 image 工作区挂载模式。`full` 会暴露整个工作区。                         |
 
-<Aside type="tip" title="Slack 原生命令">
-  在 Slack 上，你可以注册 `/pi-login`、`/pi-session`、`/pi-model`、`/pi-auto-reply` 与 `/pi-new`。
+<Aside type="note" title="平台注册命令">
+  原生 slash commands 也必须在平台中注册。Slack 示例 manifest 包含 `/pi-login`、`/pi-session`、
+  `/pi-new`、`/pi-model`、`/pi-auto-reply`、`/pi-sandbox`、`/pi-extensions` 和 `/pi-admin`。 Discord
+  在启动时注册 application commands。Telegram 使用通过 long polling 处理的 bot commands。
 </Aside>
 
-## Web 会话查看器
+## 共享 vault 命令
 
-会话查看器使用与 login/vault 和 admin 相同的链接服务器。当前的会话查看可显示时间轴；当交互式 portal wiring 启用时，也能把消息送回该会话。
+所有 vault 命令都仅限 DM：
+
+| 命令                          | 效果                                                   |
+| ----------------------------- | ------------------------------------------------------ |
+| `/login shared list`          | 列出共享登录配置文件。                                 |
+| `/login shared create <name>` | 打开创建共享配置文件的登录链接。                       |
+| `/login shared update <name>` | 打开更新共享配置文件的登录链接。                       |
+| `/login shared delete <name>` | 删除共享配置文件。                                     |
+| `/login copy <name>`          | 将共享配置文件复制到当前对话 vault。匹配的值会被覆盖。 |
+
+共享配置文件是由运维人员管理的凭证。通过 `sandbox.defaultSharedVault` 自动继承仅限符合条件、基于成员身份信任的 image/Cloudflare 对话；GitHub 等开放触发表面不会继承它。
+
+## Web portals
+
+管理、登录/vault 和会话 portal 使用同一个 HTTP 服务器。生产环境请配置公开 base URL：
 
 <Steps>
 
-1. 设置 public base URL：
+1. 设置外部可访问的 URL：
 
    ```bash
    export LINK_URL="https://mikan.example.com"
    ```
 
-2. 视需要调整 port；默认是 `8181`：
+2. 可选设置监听端口；存在 `LINK_URL` 时默认为 `8181`：
 
    ```bash
    export LINK_PORT=8181
    ```
 
-3. 本地测试时可以只设置 `LINK_PORT`；mikan 会使用 `http://localhost:<port>`。
+3. 仅本地测试时，只设置 `LINK_PORT`。mikan 绑定到 `127.0.0.1`，并返回
+   `http://localhost:<port>` 下的链接。
 
 </Steps>
 
-关于 admin、login/vault 与 session-view 链接的差异，请参阅 [Portal 认证与 capability 模型](portal-auth-model.md)。
+Capability URL 是 bearer secret。不要将其粘贴到共享频道、日志或 issue tracker 中。登录链接 15 分钟后过期，并在写入凭证时被使用；管理链接有效期为 30 分钟；会话链接有效期为 24 小时。进程重启会使所有未过期链接失效。
+
+有关路由级权限，请参阅 [Portal 身份验证和 capability 模型](portal-auth-model/)。
 
 ## OAuth flows
 
-内置 OAuth 文件：
-
-- [GitHub](oauth/github.md) <Badge text="OAuth" variant="default" />
-- [Google Workspace](oauth/google-workspace.md) <Badge text="OAuth" variant="default" />
-- [Google Cloud SDK / gcloud](oauth/google-cloud-sdk.md) <Badge text="OAuth" variant="default" />
+- [GitHub](oauth/github/) <Badge text="OAuth" variant="default" />
+- [Google Workspace](oauth/google-workspace/) <Badge text="OAuth" variant="default" />
+- [Google Cloud SDK / gcloud](oauth/google-cloud-sdk/) <Badge text="OAuth" variant="default" />

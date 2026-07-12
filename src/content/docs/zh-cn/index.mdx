@@ -1,17 +1,21 @@
 ---
 title: mikan
-description: 适用于 Slack、Telegram 与 Discord 的多平台 AI 程式代理。
+description: 适用于 Slack、Telegram、Discord 和 GitHub 的多平台 AI 编程代理。
 template: splash
 ---
 
 import Hero from "starlight-theme-mikan/components/Hero.astro";
 
 <Hero
-  eyebrow="AI 程式代理"
+  eyebrow="AI 编程代理"
   title="mikan"
-  tagline="适用于 Slack、Telegram 与 Discord 的多平台 AI 程式代理。它会分离聊天记录、agent 工作阶段与 sandbox 执行。"
+  tagline="适用于 Slack、Telegram、Discord 和 GitHub 的多平台 AI 编程代理。它将平台历史记录、代理会话、凭证和沙箱执行相互隔离。"
   actions={[
-    { text: "开始设定", href: "/zh-cn/configuration/", variant: "primary" },
-    { text: "查看 GitHub", href: "https://github.com/geminixiang/mikan", variant: "secondary" },
+    { text: "开始设置", href: "/zh-cn/configuration/", variant: "primary" },
+    {
+      text: "在 GitHub 上查看",
+      href: "https://github.com/geminixiang/mikan",
+      variant: "secondary",
+    },
   ]}
 />

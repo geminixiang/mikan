@@ -38,7 +38,9 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
 
 </FileTree>
 
-## 重設
+## Bootstrap、rotation 與重設
+
+新的 scoped session 最多會以過去 14 天內、符合條件的 200 則平台訊息初始化。Top-level sessions 每兩週輪替一次。輪替會變更使用中的 structured context file，但不會刪除舊的 JSONL 檔案。
 
 <Aside type="tip" title="保留可稽核紀錄">
   在聊天中使用 `new` / `/new` 重設目前工作階段。除非手動移除，先前的檔案會留在磁碟上供檢查。
