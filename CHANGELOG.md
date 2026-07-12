@@ -9,6 +9,31 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.9]
+
+### Added
+
+- Clone GitHub repositories into conversation workspaces and check out pull request heads.
+- Add a `github_pr` tool that pushes agent changes from `pi/*` branches and opens pull requests.
+
+### Changed
+
+- Require GitHub App Contents read and write permission for repository automation.
+- Post completed GitHub responses as single comments instead of streaming edits.
+
+### Fixed
+
+- Keep GitHub issue context inside the history recency window.
+
+### Security
+
+- Require commenters to have repository write permission or higher before triggering the agent.
+- Keep installation tokens out of sandboxes and restrict agent pushes to non-force `pi/*` branches.
+
+### Tests
+
+- Add coverage for GitHub repository checkout, permission gating, pull request creation, and branch restrictions.
+
 ## [1.0.0-beta.8]
 
 ### Added
