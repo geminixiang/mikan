@@ -1,0 +1,72 @@
+---
+title: クイックスタート
+description: Telegram と host sandbox を使い、約 15 分でボットの最初の返信を受け取るまでをガイドします。
+---
+
+import { Aside, Steps } from "@astrojs/starlight/components";
+
+このガイドでは、約 15 分でボットがメッセージに返信するところまで進めます。token が 1 つで済む Telegram と、Docker の設定が不要な `host` sandbox を使います。最後に、他のプラットフォームや本格的な分離手段へのリンクを示します。
+
+## 前提条件
+
+- Node.js `>=22.19.0`
+- Anthropic API key（または対応する他 provider の key）
+- Telegram アカウント
+
+<Steps>
+
+1. mikan をインストールします：
+
+   ```bash
+   npm i -g @geminixiang/mikan
+   ```
+
+2. LLM API key を設定します。mikan は各 provider の key を `<PROVIDER>_API_KEY` 環境変数から解決するため、既定の `anthropic` provider では次のようにします：
+
+   ```bash
+   export ANTHROPIC_API_KEY="sk-ant-..."
+   ```
+
+   key は `~/.mikan/auth.json` にも保存できますが、始めるには環境変数が最も簡単です。
+
+3. グローバル設定ファイルを作成します：
+
+   ```bash
+   mikan --onboard
+   ```
+
+   これにより、既定 provider を `anthropic` とする `~/.mikan/settings.json` が書き込まれます。別のモデルを使いたい場合は内容を確認してください。全フィールドは[設定](/ja/configuration/)を参照してください。
+
+4. Telegram ボットを作成します。[@BotFather](https://t.me/BotFather) にメッセージを送り、`/newbot` を送信してプロンプトに従い、返された token をコピーします：
+
+   ```bash
+   export TELEGRAM_BOT_TOKEN="123456:ABC-..."
+   ```
+
+5. 空の workspace directory を指定して mikan を起動します：
+
+   ```bash
+   mkdir -p ~/mikan-workspace
+   mikan --sandbox=host ~/mikan-workspace
+   ```
+
+   workspace は agent が会話ごとのファイル（メモリー、添付ファイル、セッションログ、作業領域）を保存する場所です。
+
+6. Telegram でボットとのプライベートチャットを開き、メッセージを送信します。プライベートメッセージは agent を直接トリガーするため、数秒以内に返信が届くはずです。
+
+</Steps>
+
+<Aside type="caution" title="host sandbox はあなたのマシン上で実行されます">
+  `host` mode では、agent
+  のコマンドはあなたの権限であなたのマシン上で直接実行されます。信頼できるマシンで
+  最初に試すのに適した mode です。他の人がボットと会話できるようにする前に、会話ごとに分離された
+  Docker コンテナを提供する管理型の [image sandbox](/ja/sandbox/image/) に切り替えてください。
+</Aside>
+
+## 次のステップ
+
+- **Telegram の代わりに Slack、Discord、GitHub を使う** — 各プラットフォームには固有の認証情報が必要です。[Slack 最小セットアップガイド](/ja/slack-bot-minimal-guide/)、[Discord アダプター](/ja/platform-adapters/discord/)、[GitHub アダプター](/ja/platform-adapters/github/)を参照してください。
+- **本番利用での分離** — ビルド済み sandbox image を pull し、`--sandbox=image:...` で起動します。[Image sandbox](/ja/sandbox/image/) を参照してください。
+- **agent の tools 用の認証情報** — DM で `/login` を入力すると、API key や OAuth 認証情報を保存する vault portal が開きます。[Vault](/ja/sandbox/vault/) を参照してください。
+- **サービスとして実行する** — PM2 のセットアップ、アップグレード、ヘルスチェックは[デプロイ](/ja/deployment/)を参照してください。
+- **すべての設定とコマンド** — [設定](/ja/configuration/)と[チャットコマンド](/ja/commands/)。

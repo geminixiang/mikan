@@ -1,0 +1,71 @@
+---
+title: 快速开始
+description: 使用 Telegram 与 host 沙箱，约 15 分钟从零到收到第一条机器人回复。
+---
+
+import { Aside, Steps } from "@astrojs/starlight/components";
+
+本指南约 15 分钟就能让机器人回复你的消息。示例使用 Telegram（只需要一个 token）和 `host` 沙箱（无需配置 Docker）。最后附上其他平台和正式隔离方案的链接。
+
+## 前置要求
+
+- Node.js `>=22.19.0`
+- 一个 Anthropic API key（或其他受支持 provider 的 key）
+- 一个 Telegram 账号
+
+<Steps>
+
+1. 安装 mikan：
+
+   ```bash
+   npm i -g @geminixiang/mikan
+   ```
+
+2. 提供 LLM API key。mikan 从 `<PROVIDER>_API_KEY` 环境变量解析各 provider 的 key，因此默认的 `anthropic` provider 使用：
+
+   ```bash
+   export ANTHROPIC_API_KEY="sk-ant-..."
+   ```
+
+   Key 也可以存放在 `~/.mikan/auth.json`；起步时用环境变量最简单。
+
+3. 创建全局设置文件：
+
+   ```bash
+   mikan --onboard
+   ```
+
+   这会写入 `~/.mikan/settings.json`，默认 provider 为 `anthropic`。想换用其他模型可先检查该文件；所有字段请参阅[配置](/zh-cn/configuration/)。
+
+4. 创建 Telegram 机器人。给 [@BotFather](https://t.me/BotFather) 发消息，发送 `/newbot`，按提示操作并复制它返回的 token：
+
+   ```bash
+   export TELEGRAM_BOT_TOKEN="123456:ABC-..."
+   ```
+
+5. 用一个空的工作区目录启动 mikan：
+
+   ```bash
+   mkdir -p ~/mikan-workspace
+   mikan --sandbox=host ~/mikan-workspace
+   ```
+
+   工作区是 agent 存放各对话文件的位置：记忆、附件、会话日志和工作区域。
+
+6. 在 Telegram 打开与机器人的私聊并发送一条消息。私聊会直接触发 agent，几秒内应该就能收到回复。
+
+</Steps>
+
+<Aside type="caution" title="host 沙箱直接在你的机器上运行">
+  在 `host` 模式下，agent 的命令会以你的权限直接在你的机器上运行。它适合在受信任的机器上首次尝试。
+  在让其他人与机器人对话之前，请切换到受管理的 [image
+  沙箱](/zh-cn/sandbox/image/)，让每个对话都有独立的 Docker 容器。
+</Aside>
+
+## 下一步
+
+- **改用 Slack、Discord 或 GitHub** — 每个平台需要各自的凭证；参阅 [Slack 最小设置指南](/zh-cn/slack-bot-minimal-guide/)、[Discord 接入层](/zh-cn/platform-adapters/discord/)和 [GitHub 接入层](/zh-cn/platform-adapters/github/)。
+- **正式使用的隔离** — 拉取预构建的沙箱镜像并以 `--sandbox=image:...` 启动；参阅 [Image 沙箱](/zh-cn/sandbox/image/)。
+- **为 agent 工具提供凭证** — 在私聊中输入 `/login` 可打开 vault portal 存放 API key 和 OAuth 凭证；参阅 [Vault](/zh-cn/sandbox/vault/)。
+- **以服务方式运行** — PM2 设置、升级和健康检查参阅[部署](/zh-cn/deployment/)。
+- **完整设置与命令** — [配置](/zh-cn/configuration/)和[聊天命令](/zh-cn/commands/)。

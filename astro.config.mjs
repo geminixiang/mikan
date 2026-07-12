@@ -38,6 +38,11 @@ export default defineConfig({
               link: "/",
             },
             {
+              label: "Quickstart",
+              translations: { "zh-TW": "快速開始", "zh-CN": "快速开始", ja: "クイックスタート" },
+              link: "/quickstart/",
+            },
+            {
               label: "Configuration",
               translations: { "zh-TW": "設定", "zh-CN": "配置", ja: "設定" },
               link: "/configuration/",

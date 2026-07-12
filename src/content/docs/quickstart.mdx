@@ -1,0 +1,72 @@
+---
+title: Quickstart
+description: Go from zero to your first bot reply in about 15 minutes with Telegram and the host sandbox.
+---
+
+import { Aside, Steps } from "@astrojs/starlight/components";
+
+This guide gets a working bot replying to you in about 15 minutes. It uses Telegram because it needs only one token, and the `host` sandbox because it needs no Docker setup. At the end, links point to the other platforms and to proper isolation.
+
+## Prerequisites
+
+- Node.js `>=22.19.0`
+- An Anthropic API key (or a key for another supported provider)
+- A Telegram account
+
+<Steps>
+
+1. Install mikan:
+
+   ```bash
+   npm i -g @geminixiang/mikan
+   ```
+
+2. Provide the LLM API key. mikan resolves the key for a provider from the `<PROVIDER>_API_KEY` environment variable, so for the default `anthropic` provider:
+
+   ```bash
+   export ANTHROPIC_API_KEY="sk-ant-..."
+   ```
+
+   Keys can also be stored in `~/.mikan/auth.json`; the environment variable is the simplest way to start.
+
+3. Create the global settings file:
+
+   ```bash
+   mikan --onboard
+   ```
+
+   This writes `~/.mikan/settings.json` with `anthropic` as the default provider. Review it if you want a different model; see [Configuration](/configuration/) for every field.
+
+4. Create a Telegram bot. Message [@BotFather](https://t.me/BotFather), send `/newbot`, follow the prompts, and copy the token it returns:
+
+   ```bash
+   export TELEGRAM_BOT_TOKEN="123456:ABC-..."
+   ```
+
+5. Start mikan with an empty workspace directory:
+
+   ```bash
+   mkdir -p ~/mikan-workspace
+   mikan --sandbox=host ~/mikan-workspace
+   ```
+
+   The workspace is where the agent keeps per-conversation files: memory, attachments, session logs, and its working area.
+
+6. Open a private chat with your bot on Telegram and send it a message. Private messages trigger the agent directly, so it should reply within a few seconds.
+
+</Steps>
+
+<Aside type="caution" title="Host sandbox runs on your machine">
+  In `host` mode the agent's commands run directly on your machine with your permissions. It is the
+  right mode for a first try on a trusted machine. Before letting other people talk to the bot,
+  switch to the managed [image sandbox](/sandbox/image/), which gives each conversation an isolated
+  Docker container.
+</Aside>
+
+## Where to go next
+
+- **Slack, Discord, or GitHub instead of Telegram** — each platform needs its own credentials; see the [Slack minimal setup guide](/slack-bot-minimal-guide/), [Discord adapter](/platform-adapters/discord/), and [GitHub adapter](/platform-adapters/github/).
+- **Isolation for real use** — pull the prebuilt sandbox image and start with `--sandbox=image:...`; see [Image sandbox](/sandbox/image/).
+- **Credentials for the agent's tools** — `/login` in a DM opens a vault portal for API keys and OAuth; see [Vault](/sandbox/vault/).
+- **Run it as a service** — PM2 setup, upgrades, and health checks are covered in [Deployment](/deployment/).
+- **All settings and commands** — [Configuration](/configuration/) and [Chat commands](/commands/).
