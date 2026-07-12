@@ -9,6 +9,18 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.8]
+
+### Added
+
+- Add a GitHub messaging adapter where each issue or pull request is an independent conversation.
+- Add GitHub App authentication, mention and participation triggers, persisted polling cursors, and downtime replay.
+- Add GitHub adapter deployment configuration and documentation.
+
+### Tests
+
+- Add coverage for GitHub polling, authentication, conversation context, triggers, and responses.
+
 ## [1.0.0-beta.7]
 
 ### Added
