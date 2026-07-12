@@ -1,84 +1,89 @@
-# agent-pm — mikan extension 範例
+# agent-pm — mikan extension example
 
-一個 follow-up 追蹤器：TypeScript 單檔 `index.ts`（約 250 行）、零**執行期**
-依賴（儲存用 Node 內建 `node:sqlite`），示範 extension v1 + v2 的完整介面。
+A follow-up tracker: single-file TypeScript `index.ts` (~250 lines), zero
+**runtime** dependencies (storage uses Node built-in `node:sqlite`), covering
+the full extension v1 + v2 surface.
 
-型別來自 mikan 套件（dev 依賴），透過 `import type { MikanExtensionApi }
-from "@geminixiang/mikan"` 取得完整補全；由 jiti 載入，無需 build。進入點在
-`package.json` 的 `mikan.extensions` 宣告。
+Types come from the mikan package (dev dependency) via
+`import type { MikanExtensionApi } from "@geminixiang/mikan"` for completions;
+loaded by jiti with no build step. Entrypoint is declared in `package.json`
+under `mikan.extensions`.
 
-## 它做什麼
+## What it does
 
-- **`followup` 工具**（`registerTool`）：模型可 `add` / `list` / `done` /
-  `cancel` / `note` / `remind`，管理本會話的待辦追蹤項目。
-- **每回合自動注入**（`before_agent_start` hook）：把未結案項目附加到
-  system prompt，agent 每回合開場就知道有哪些 follow-up、哪些已逾期。
-- **每日逾期掃描**（v2 `api.schedules`）：activate 時登錄 cron 排程，
-  變成 mikan 的 event 檔——每天 09:00 觸發一次自主 agent run，沒人發話
-  也會主動追殺逾期項目。
-- **主動發訊**（v2 `api.notify`）：`remind` action 直接把清單貼進頻道，
-  不經過 agent 回覆。
-- **資料目錄**（v2 `api.paths.dataDir`，預設）：sqlite 檔放在
-  `<stateDir>/conversations/<id>/extension-data/agent-pm/`，host-only、
-  永不進 sandbox。每個會話一個 db，隔離免費——這是常見裝法（單一頻道/DM
-  的 follow-up 追蹤）。若想要跨頻道 PM 視圖（一張總表涵蓋所有頻道），
-  改用 `api.paths.sharedDataDir` 並靠 `conversation_id` 欄位自行分區。
-- **package.json**（v2）：`mikan.extensions` 宣告進入點，name/version/
-  description 用標準 npm 欄位（單一中繼資料來源）。
-- **skills/**（v2）：`follow-up-triage` SKILL.md 隨 extension 出貨，
-  內容直接內嵌進 system prompt（sandbox 讀不到 host-only 路徑，
-  所以 extension skills 一律 inline）。
+- **`followup` tool** (`registerTool`): the model can `add` / `list` / `done` /
+  `cancel` / `note` / `remind` to manage this conversation's tracked items.
+- **Per-turn injection** (`before_agent_start` hook): open items are appended to
+  the system prompt so each turn starts aware of follow-ups and overdue work.
+- **Daily overdue scan** (v2 `api.schedules`): on activate, registers a cron
+  schedule that becomes a mikan event file — every day at 09:00 an autonomous
+  agent run fires even if no one messages, to chase overdue items.
+- **Proactive messaging** (v2 `api.notify`): the `remind` action posts the list
+  to the channel without going through a normal agent reply.
+- **Data directory** (v2 `api.paths.dataDir`, default): sqlite under
+  `<stateDir>/conversations/<id>/extension-data/agent-pm/` — host-only, never
+  in the sandbox. One db per conversation (free isolation) — the usual install
+  for single-channel/DM follow-up tracking. For a cross-channel PM view (one
+  table over all channels), use `api.paths.sharedDataDir` and partition by
+  `conversation_id` yourself.
+- **package.json** (v2): `mikan.extensions` declares the entrypoint;
+  name/version/description use standard npm fields (single metadata source).
+- **skills/** (v2): ships `follow-up-triage` SKILL.md, body inlined into the
+  system prompt (sandbox cannot read host-only paths, so extension skills are
+  always inline).
 
-## 安裝
+## Install
 
-用 `mikan ext`（會先驗證、裝進正確路徑、印出 slug 與資料位置）：
+Use `mikan ext` (validates, installs to the correct path, prints slug and data
+locations):
 
 ```sh
-# 直接從 GitHub 裝（不必先 clone）— 只對單一會話生效（常見裝法）
+# install from GitHub (no local clone) — one conversation (common)
 mikan ext install github:geminixiang/mikan#examples/extensions/agent-pm --conversation <id>
 
-# 或所有會話生效
+# or all conversations
 mikan ext install github:geminixiang/mikan#examples/extensions/agent-pm --global
 
-# 或從本地路徑
+# or from a local path
 mikan ext install ./agent-pm --global
 ```
 
-裝完在該會話輸入 `/pi-new` 生效。要更新就**再裝一次**（覆蓋 code、保留 data）。
-編輯 `index.ts` 後，下一個 harness instance 會重新載入（jiti 無快取），不需重啟。
+After install, send `/pi-new` in that conversation. To update, **install again**
+(replaces code, keeps data). After editing `index.ts`, the next harness
+instance reloads (jiti does not cache); no process restart required.
 
-> 若要開發自己的 extension：`npm i -D @geminixiang/mikan` 取得型別，
-> `import type { MikanExtensionApi } from "@geminixiang/mikan"`，
-> 寫 `activate(api: MikanExtensionApi)` 即有完整補全。
+> To develop your own extension: `npm i -D @geminixiang/mikan` for types,
+> `import type { MikanExtensionApi } from "@geminixiang/mikan"`, then
+> `activate(api: MikanExtensionApi)` for full completions.
 
-## Secrets（本範例未用到，但可直接取用）
+## Secrets (unused in this sample, but available)
 
-若 extension 需要外部服務 token（例如同步到 Linear/GitHub），管理員把
-KEY=VALUE 寫進 `<stateDir>/vaults/extensions/agent-pm/env`，程式內以
-`api.secrets.get("LINEAR_TOKEN")` 讀取（唯讀）。
+If an extension needs third-party tokens (e.g. Linear/GitHub), an admin writes
+KEY=VALUE lines to `<stateDir>/vaults/extensions/agent-pm/env` and code reads
+them with `api.secrets.get("LINEAR_TOKEN")` (read-only).
 
-## 使用情境
+## Example flow
 
 ```
-使用者: 記一下，vendor 報價要在週五前回覆
-agent:  (followup add "回覆 vendor 報價" due=2026-07-10) 好，已加入追蹤。
+user: remember, vendor quote needs a reply by Friday
+agent:  (followup add "reply to vendor quote" due=2026-07-10) noted, tracking it.
 
--- 隔天 09:00，沒有任何人發話 --
+-- next day 09:00, nobody messages --
 
-mikan:  (排程觸發自主 run → followup list → 發現逾期)
-        ⚠️ 「回覆 vendor 報價」已逾期（due 2026-07-10），請更新狀態。
+mikan:  (schedule fires autonomous run → followup list → finds overdue)
+        ⚠️ "reply to vendor quote" is overdue (due 2026-07-10); please update status.
 ```
 
-## Extension API 覆蓋
+## Extension API coverage
 
-| 需求                       | 現況                                       |
-| -------------------------- | ------------------------------------------ |
-| 自訂工具                   | ✅ `registerTool`                          |
-| 每回合注入 context         | ✅ `before_agent_start`                    |
-| 會話範圍                   | ✅ `api.context.conversationId`            |
-| 定時主動提醒（無人發話時） | ✅ v2 `api.schedules`（cron / one-shot）   |
-| 主動發訊息到平台           | ✅ v2 `api.notify`                         |
-| 專屬資料目錄               | ✅ v2 `api.paths.dataDir`                  |
-| secrets                    | ✅ v2 `api.secrets`（vault env，唯讀）     |
-| 身分／版本                 | ✅ v2 `package.json`（name/version）       |
-| 隨附 skills                | ✅ v2 `skills/` 目錄（SKILL.md，自動內嵌） |
+| Need                            | Status                                     |
+| ------------------------------- | ------------------------------------------ |
+| Custom tool                     | ✅ `registerTool`                          |
+| Per-turn context injection      | ✅ `before_agent_start`                    |
+| Conversation scope              | ✅ `api.context.conversationId`            |
+| Timed proactive reminder (idle) | ✅ v2 `api.schedules` (cron / one-shot)    |
+| Post to platform proactively    | ✅ v2 `api.notify`                         |
+| Private data directory          | ✅ v2 `api.paths.dataDir`                  |
+| Secrets                         | ✅ v2 `api.secrets` (vault env, read-only) |
+| Identity / version              | ✅ v2 `package.json` (name/version)        |
+| Bundled skills                  | ✅ v2 `skills/` (SKILL.md, auto-inlined)   |

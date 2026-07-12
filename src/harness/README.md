@@ -1,14 +1,17 @@
 # mikan agent harness
 
-mikan 自有的 agent harness 層。原先 mikan 依賴 `@earendil-works/pi-coding-agent`
-（`AgentSession`、`SessionManager`、`ModelRegistry`、`AuthStorage`），但那是為單人
-TUI 打造的完整產品；mikan 只用到其中一小部分，且 chat-bot 的多會話、headless、
-多平台場景與 TUI 的假設漸行漸遠。本模組保留 pi-coding-agent 的核心精神
-（append-only session tree、compaction、skills、extension hooks），改為直接站在
-`@earendil-works/pi-agent-core`（agent loop、compaction 演算法、context 建構）與
-`@earendil-works/pi-ai`（providers、models、auth 解析、串流）之上。
+mikan's own agent harness layer. mikan previously depended on
+`@earendil-works/pi-coding-agent` (`AgentSession`, `SessionManager`,
+`ModelRegistry`, `AuthStorage`), but that package is a full single-user TUI
+product. mikan only needed a fraction of it, and multi-session, headless,
+multi-platform chat diverged from TUI assumptions. This module keeps the core
+ideas from pi-coding-agent (append-only session tree, compaction, skills,
+extension hooks) while sitting directly on
+`@earendil-works/pi-agent-core` (agent loop, compaction algorithm, context
+build) and `@earendil-works/pi-ai` (providers, models, auth resolution,
+streaming).
 
-## 架構
+## Architecture
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -27,9 +30,9 @@ TUI 打造的完整產品；mikan 只用到其中一小部分，且 chat-bot 的
 │    · extension hook dispatch                               │
 │                                                            │
 │  SessionStore (session-store.ts)   MikanModels (models.ts) │
-│    · v3 JSONL, append-only tree      · pi-ai Models 集合    │
-│    · buildSessionContext             · models.json 自訂供應 │
-│                                      · auth.json 憑證      │
+│    · v3 JSONL, append-only tree      · pi-ai Models set    │
+│    · buildSessionContext             · models.json customs │
+│                                      · auth.json creds     │
 │  Skills (skills.ts)                FileCredentialStore     │
 │  Extensions (extensions/)          Settings (settings.ts)  │
 └──────────────────────────┬─────────────────────────────────┘
@@ -40,86 +43,96 @@ TUI 打造的完整產品；mikan 只用到其中一小部分，且 chat-bot 的
 └────────────────────────────────────────────────────────────┘
 ```
 
-### 模組職責
+### Module responsibilities
 
-| 模組                              | 職責                                                                           | 取代的 pi-coding-agent API                    |
-| --------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------- |
-| `runner.ts` `MikanAgentSession`   | 回合迴圈：持久化、auto-compaction、auto-retry、預算熔斷、事件、extension hooks | `AgentSession`                                |
-| `session-store.ts` `SessionStore` | v3 JSONL session tree 的同步讀寫                                               | `SessionManager`                              |
-| `models.ts` `MikanModels`         | 模型目錄 + auth 解析（含 models.json 自訂供應商）                              | `ModelRegistry`                               |
-| `auth.ts` `FileCredentialStore`   | `~/.mikan/auth.json` 憑證儲存（pi-ai `CredentialStore` 實作）                  | `AuthStorage`                                 |
-| `skills.ts`                       | SKILL.md 探索與 system prompt 格式化                                           | `loadSkillsFromDir` / `formatSkillsForPrompt` |
-| `http.ts`                         | 全域 fetch：proxy 支援（`HTTP_PROXY` 等）+ idle timeout                        | `http-dispatcher`                             |
-| `settings.ts`                     | compaction / retry 預設值                                                      | `SettingsManager`                             |
-| `extensions/`                     | mikan 自有 extension 系統                                                      | `DefaultResourceLoader` 的 extension 載入     |
+| Module                            | Role                                                                                | Replaces (pi-coding-agent)                     |
+| --------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `runner.ts` `MikanAgentSession`   | Turn loop: persistence, auto-compaction, auto-retry, budget breakers, events, hooks | `AgentSession`                                 |
+| `session-store.ts` `SessionStore` | Sync read/write of v3 JSONL session trees                                           | `SessionManager`                               |
+| `models.ts` `MikanModels`         | Model catalog + auth resolution (including models.json custom providers)            | `ModelRegistry`                                |
+| `auth.ts` `FileCredentialStore`   | `~/.mikan/auth.json` credential store (pi-ai `CredentialStore` implementation)      | `AuthStorage`                                  |
+| `skills.ts`                       | SKILL.md discovery and system-prompt formatting                                     | `loadSkillsFromDir` / `formatSkillsForPrompt`  |
+| `http.ts`                         | Global fetch: proxy support (`HTTP_PROXY`, etc.) + idle timeout                     | `http-dispatcher`                              |
+| `settings.ts`                     | Compaction / retry defaults                                                         | `SettingsManager`                              |
+| `extensions/`                     | mikan's extension system                                                            | extension loading from `DefaultResourceLoader` |
 
-### 相容性
+### Compatibility
 
-- **Session 檔案格式不變。** `SessionStore` 讀寫既有 v3 JSONL（`session` header 行 +
-  帶 `id`/`parentId` 的 entries）。entry 形狀與 pi-agent-core 的 `SessionTreeEntry`
-  結構相同，因此 pi-agent-core 的 `buildSessionContext` 與 compaction pipeline
-  直接在這些 entries 上運作。舊 mikan 寫出的會話檔可無縫重開。
-- **auth.json 格式不變，位置改為 `~/.mikan/auth.json`。** pi-ai 的 `Credential`
-  型別即為現行 auth.json 的形狀；檔案內容可直接沿用，但不再讀 `~/.pi` 下的舊路徑。
-- **models.json 子集。** `MikanModels` 讀 `~/.mikan/models.json`：
-  帶 `models` 陣列的供應商成為自訂供應商
-  （`api` 支援 anthropic-messages / openai-completions / openai-responses /
-  azure-openai-responses / google-generative-ai / mistral-conversations）；
-  只帶 `baseUrl`/`compat` 的項目覆寫內建供應商模型。
-- **事件面不變。** `MikanAgentSession` 事件 = pi-agent-core `AgentEvent`
-  passthrough + `compaction_start/_end` + `auto_retry_start/_end` +
-  `budget_exceeded`，adapters 的渲染程式不需修改（新增的 `budget_exceeded`
-  是額外事件，舊 handler 忽略即可）。
+- **Session file format is unchanged.** `SessionStore` reads and writes the
+  existing v3 JSONL (`session` header line + entries with `id`/`parentId`).
+  Entry shape matches pi-agent-core `SessionTreeEntry`, so
+  `buildSessionContext` and the compaction pipeline run on these entries
+  directly. Sessions written by older mikan builds reopen cleanly.
+- **auth.json format is unchanged; path is `~/.mikan/auth.json`.** pi-ai
+  `Credential` is the current auth.json shape; file contents can be reused, but
+  paths under `~/.pi` are no longer read.
+- **models.json subset.** `MikanModels` reads `~/.mikan/models.json`: providers
+  with a `models` array become custom providers (`api` supports
+  anthropic-messages / openai-completions / openai-responses /
+  azure-openai-responses / google-generative-ai / mistral-conversations);
+  entries with only `baseUrl`/`compat` override built-in provider models.
+- **Event surface is unchanged.** `MikanAgentSession` events = pi-agent-core
+  `AgentEvent` passthrough + `compaction_start/_end` + `auto_retry_start/_end` +
+  `budget_exceeded`. Adapter renderers need no change (`budget_exceeded` is
+  additive; old handlers ignore it).
 
-## 預算熔斷（circuit breakers）
+## Budget circuit breakers
 
-LLM 無法可靠地自己決定何時該停（停機問題），所以失控的 run 必須由外部叫停。
-`settings.ts` 的 `BudgetSettings` 定義單次 `prompt()` 的資源上限（token、成本 USD、
-牆鐘時間、LLM 呼叫次數）；任一項超限就 abort 該 run 並發出 `budget_exceeded` 事件。
+LLMs cannot reliably decide when to stop (halting problem), so runaway runs
+must be stopped externally. `BudgetSettings` in `settings.ts` caps a single
+`prompt()` (tokens, cost USD, wall time, LLM call count); any breach aborts the
+run and emits `budget_exceeded`.
 
-- **互動回合**逐則由人把關，預設不設上限（`DEFAULT_BUDGET_SETTINGS = {}`）。
-- **自主 run（event / trigger）** 沒有人盯著迴圈，`agent.ts` 會傳入
-  `DEFAULT_EVENT_BUDGET`（10 分鐘、50 次 LLM 呼叫、2 USD）作為 stop-loss。
+- **Interactive turns** are human-gated; defaults have no caps
+  (`DEFAULT_BUDGET_SETTINGS = {}`).
+- **Autonomous runs (event / trigger)** have no human watching;
+  `agent.ts` / runner wiring passes `DEFAULT_EVENT_BUDGET` (10 minutes, 50 LLM
+  calls, $2) as a stop-loss.
 
-上限在每次 assistant `message_end` 時累計檢查（可在回合中途 abort），並在
-`handlePostRun` 擋掉「超限後又被 retry/compaction 續跑」的漏洞。
+Caps are checked on each assistant `message_end` (mid-turn abort is possible)
+and `handlePostRun` blocks retry/compaction from continuing after a budget trip.
 
-## Prompt cache 友善
+## Prompt-cache friendly design
 
-pi-ai 對 Anthropic 會在整段 system prompt 結尾放單一 cache breakpoint——只要
-system prompt 有任何位元變動，整個請求（含最貴的對話歷史）就 cache miss。因此
-`agent.ts` 的 `buildSystemPrompt` 只放**同一會話中穩定**的內容；每回合會變的
-內容（event-trigger 模式、attribution，後者在多人頻道會隨發言者每回合改變）改由
-`buildTurnInstructions()` 隨 user message 遞送，讓 system prompt 位元穩定、cache 保溫。
+For Anthropic, pi-ai places a single cache breakpoint at the end of the system
+prompt — any byte change to the system prompt cache-misses the whole request
+(including expensive history). So `buildSystemPrompt` only includes content
+**stable within a conversation**; turn-varying content (event-trigger mode,
+attribution — which changes per speaker in multi-user channels) is delivered
+via `buildTurnInstructions()` on the user message so the system prompt stays
+byte-stable and cache-warm.
 
-### 與 pi-coding-agent 的行為差異
+### Behavioral differences from pi-coding-agent
 
-- 設定與憑證改放 `~/.mikan/`（`auth.json`、`models.json`）；不再讀取
-  `~/.pi/` 下的任何路徑。
-- pi extension（`.pi/extensions`）不再載入；由 mikan extension 系統取代（見下）。
-- prompt template / `/skill:` 指令展開不在 harness 內（mikan 的指令由
-  `src/commands/` 處理）。
-- OAuth 登入流程尚未接線（憑證檔中已有的 OAuth token 仍會被 pi-ai 解析與刷新）。
+- Settings and credentials live under `~/.mikan/` (`auth.json`, `models.json`);
+  nothing is read from `~/.pi/`.
+- pi extensions (`.pi/extensions`) are not loaded; mikan's extension system
+  replaces them (below).
+- Prompt templates / `/skill:` expansion are outside the harness (mikan
+  commands live in `src/commands/`).
+- OAuth login is not wired here (OAuth tokens already in the credential file are
+  still resolved and refreshed by pi-ai).
 
-## Extension 系統
+## Extension system
 
-Extension 是一個模組（`.mjs` / `.js` / **`.ts`**），放在 **state dir**
-（host-only，永不掛進 sandbox）的 `extensions/` 下：
+An extension is a module (`.mjs` / `.js` / **`.ts`**) under the **state dir**
+(`extensions/` is host-only and never mounted into the sandbox):
 
 ```
-~/.mikan/global/extensions/audit.mjs            # 所有會話（單檔形式）
-~/.mikan/global/extensions/agent-pm/            # 所有會話（目錄形式）
-  index.mjs | index.ts                          #   進入點
-  package.json                                  #   選配：mikan.extensions + 依賴 + metadata
-  skills/<name>/SKILL.md                        #   選配：隨附 skills（自動內嵌）
-~/.mikan/conversations/<id>/extensions/         # 單一會話
+~/.mikan/global/extensions/audit.mjs            # all conversations (single file)
+~/.mikan/global/extensions/agent-pm/            # all conversations (directory)
+  index.mjs | index.ts                          #   entrypoint
+  package.json                                  #   optional: mikan.extensions + deps + metadata
+  skills/<name>/SKILL.md                        #   optional: bundled skills (inlined)
+~/.mikan/conversations/<id>/extensions/         # one conversation
 ```
 
-**載入以 jiti**，所以 extension 可直接寫 TypeScript，也可 `npm i` 使用第三方
-套件（附 `node_modules`）。`package.json` 是單一的中繼資料來源 —— 進入點由
-`mikan.extensions`（陣列，相對路徑）宣告，name/version/description 直接用標準
-npm 欄位，另可用 `mikan.displayName` 覆寫顯示名（npm name 是小寫/scoped，
-顯示名可為任意字串）。範例：
+**Loading uses jiti**, so extensions can be TypeScript and may `npm i`
+third-party packages (with `node_modules`). `package.json` is the metadata
+source — entrypoints are declared in `mikan.extensions` (array of relative
+paths); name/version/description use standard npm fields; optional
+`mikan.displayName` overrides display name (npm names are lowercase/scoped;
+display names may be free-form). Example:
 
 ```json
 {
@@ -132,51 +145,56 @@ npm 欄位，另可用 `mikan.displayName` 覆寫顯示名（npm name 是小寫/
 }
 ```
 
-進入點解析順序：`mikan.extensions` → `index.{mjs,js,ts,mts}`。無 `package.json`
-的簡單 extension，可改放 `manifest.json`（`{name,version,description}`）作為
-中繼資料 fallback。
+Entrypoint resolution order: `mikan.extensions` → `index.{mjs,js,ts,mts}`.
+Simple extensions without `package.json` may use `manifest.json`
+(`{name,version,description}`) as a metadata fallback.
 
-`global/` 與 `conversations/<id>/` 是兩個平行 scope，各自底下有 `extensions/`
-（code）與 `extension-data/`（data）。完整佈局與遷移見
-`src/harness/extensions/LAYOUT.md`。
+`global/` and `conversations/<id>/` are parallel scopes, each with
+`extensions/` (code) and `extension-data/` (data). Full layout and migration:
+`src/harness/extensions/LAYOUT.md`.
 
-### 用 CLI 安裝
+### Install with CLI
 
-`mikan ext` 子指令（比 `cp` 多了驗證、正確路徑、印出 slug/資料位置）：
+`mikan ext` subcommands (validate, correct paths, print slug/data locations):
 
 ```sh
-mikan ext validate <path>                                   # 檢查是否為合法 extension
-mikan ext install <source> --global                         # 裝給所有會話
-mikan ext install <source> --conversation <id>              # 只裝這個會話
-mikan ext list [--conversation <id>]                        # 列出已安裝
-mikan ext remove <slug> (--global | --conversation <id>)    # 移除 code（保留 data）
+mikan ext validate <path>                                   # check a valid extension
+mikan ext install <source> --global                         # all conversations
+mikan ext install <source> --conversation <id>              # one conversation
+mikan ext list [--conversation <id>]                        # list installed
+mikan ext remove <slug> (--global | --conversation <id>)    # remove code (keep data)
 ```
 
-`<source>` 可以是**本地路徑**，或**git URL**（`https://…`、`git@…`、或
-`github:owner/repo`），後者可加 `#subpath` 指向 repo 內的子目錄：
+`<source>` may be a **local path** or **git URL** (`https://…`, `git@…`, or
+`github:owner/repo`), optionally with `#subpath` into a monorepo:
 
 ```sh
-# 從 GitHub 直接裝（monorepo 內的子目錄用 # 指定）
+# install from GitHub (use # for a monorepo subdirectory)
 mikan ext install github:geminixiang/mikan#examples/extensions/agent-pm --global
 ```
 
-git source 會 shallow clone 到暫存目錄，有 `dependencies` 時跑
-`npm install --omit=dev`，再驗證+複製。`install` 先跑 `validate`（import 但**不**
-activate，無副作用），失敗即拒裝；自動裝進具名子目錄避免 slug 錯位。
-**重裝同名 extension 即更新**（覆蓋 code、保留 data）。所有指令吃 `--state-dir`
-（預設 `~/.mikan`）。裝/移除後對話輸入 `/pi-new` 生效。
+Git sources are shallow-cloned to a temp dir; if `dependencies` exist,
+`npm install --omit=dev` runs, then validate + copy. `install` runs
+`validate` first (import but **does not** activate — no side effects) and
+rejects failures; installs into a named subdirectory to keep slugs stable.
+**Reinstalling the same slug updates** (replace code, keep data). All commands
+accept `--state-dir` (default `~/.mikan`). After install/remove, send
+`/pi-new` in the conversation to activate.
 
-**安全模型：** extension 程式碼在 mikan 主程序內執行，權限等同 mikan 本體
-（平台 token、vault、host 檔案系統）。安裝 extension 是管理員動作。因此
-extension 目錄絕不能放在 workspace 下 — image 模式會把 workspace/會話目錄
-掛進 sandbox container，sandbox 內寫入的程式碼若被 host 載入即構成逃逸。
-`global` 與 `conversations` 為保留頂層 scope，平台的 conversation id 不會取此值。
+**Security model:** extension code runs inside the mikan process with the same
+privileges as mikan (platform tokens, vault, host filesystem). Installing
+extensions is an admin action. Therefore extension directories must never live
+under the workspace — image mode bind-mounts workspace/conversation dirs into
+the sandbox, and sandbox-written code loaded on the host would be an escape.
+`global` and `conversations` are reserved top-level scopes; platform
+conversation ids never take those names.
 
-**身分（slug）：** 由安裝路徑決定（目錄名或檔名），不隨 manifest 改變 —
-secrets、排程、`sharedDataDir` 的歸屬都以 slug 為鍵。per-conversation 資料
-（`dataDir`）住在會話目錄下、以 slug 命名，隨會話生滅。
+**Identity (slug):** determined by install path (directory or file name), not
+by manifest — secrets, schedules, and `sharedDataDir` ownership key on slug.
+Per-conversation data (`dataDir`) lives under the conversation dir, named by
+slug, and is torn down with the conversation.
 
-匯出 `activate`（default 或具名皆可）：
+Export `activate` (default or named):
 
 ```js
 // extensions/audit.mjs
@@ -191,82 +209,87 @@ export default function activate(api) {
 }
 ```
 
-### Hooks（v1）
+### Hooks (v1)
 
-| Hook                 | 時機                      | 回傳值                                       |
-| -------------------- | ------------------------- | -------------------------------------------- |
-| `before_agent_start` | 使用者 prompt 送出前      | `{ systemPrompt? }` 覆寫本回合 system prompt |
-| `tool_call`          | 工具執行前                | `{ block?, reason? }` 阻擋工具               |
-| `tool_result`        | 工具執行後（觀察）        | —                                            |
-| `message_end`        | 每則訊息完成（觀察）      | —                                            |
-| `turn_end`           | 回合結束（觀察）          | —                                            |
-| `session_compact`    | compaction 寫入後（觀察） | —                                            |
+| Hook                 | When                           | Return value                               |
+| -------------------- | ------------------------------ | ------------------------------------------ |
+| `before_agent_start` | Before user prompt is sent     | `{ systemPrompt? }` override for this turn |
+| `tool_call`          | Before tool execution          | `{ block?, reason? }` to block a tool      |
+| `tool_result`        | After tool execution (observe) | —                                          |
+| `message_end`        | After each message completes   | —                                          |
+| `turn_end`           | After the turn ends            | —                                          |
+| `session_compact`    | After compaction is written    | —                                          |
 
-語意：註冊順序執行；有回傳值的 hook 以第一個非 `undefined` 結果為準；handler
-擲錯只記 log，不會中斷回合。
+Semantics: handlers run in registration order; the first non-`undefined` return
+wins for valued hooks; handler errors are logged only and do not abort the turn.
 
-### v2 API：schedules、notify、paths、secrets、manifest、skills
+### v2 API: schedules, notify, paths, secrets, manifest, skills
 
-harness 定義 service 介面（`ExtensionHostServices`），由 embedder 注入實作
-（mikan 在 `agent.ts` 組裝）；缺少對應 service 時，該 api 擲出說明性錯誤。
-這讓 harness 保持可獨立內嵌 — 其他宿主可自帶 messaging / 排程實作。
+The harness defines service interfaces (`ExtensionHostServices`) implemented by
+the embedder (mikan wires them in the agent runner). Missing services throw
+descriptive errors. That keeps the harness embeddable — other hosts can supply
+messaging / scheduling.
 
-| api                                | 作用                                                         | mikan 的後端                                                                                      |
-| ---------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| `api.schedules.upsert/delete/list` | 具名排程（cron `periodic` / `one-shot`），觸發自主 agent run | event 檔（`<workingDir>/events/ext.<slug>.<conv>.<name>.json`），EventsWatcher 熱載入、跨重啟持久 |
-| `api.notify(text)`                 | 直接發訊到本會話，不經 agent run                             | `main.ts` 的 `PlatformNotifier` → 平台 bot `postMessage`                                          |
-| `api.react(messageTs, emoji)`      | 對某則訊息點 emoji（ts 由 extension 從讀到的事件取得）       | `main.ts` 的 `PlatformReactor` → 平台 bot `addReaction`                                           |
-| `api.paths.dataDir`                | **本會話**的資料目錄（預設，隔離免費；首次存取時建立）       | `conversations/<id>/extension-data/<slug>/`                                                       |
-| `api.paths.sharedDataDir`          | 跨會話共享資料（**明確宣告**的多會話應用；自行分區）         | `global/extension-data/<slug>/`                                                                   |
-| `api.secrets.get/list`             | 唯讀 secrets                                                 | vault：`<stateDir>/vaults/extensions/<slug>/env`                                                  |
-| `manifest.json`                    | name / version / description（顯示用；slug 不受影響）        | loader 讀取                                                                                       |
-| `skills/<name>/SKILL.md`           | 隨附 skills                                                  | 自動探索，**內嵌**進 system prompt（sandbox 讀不到 host-only 檔案），本地同名 skill 優先          |
+| api                                | Purpose                                                                  | mikan backend                                                                                   |
+| ---------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `api.schedules.upsert/delete/list` | Named schedules (cron `periodic` / `one-shot`) for autonomous runs       | event files (`<workingDir>/events/ext.<slug>.<conv>.<name>.json`), live via EventsWatcher       |
+| `api.notify(text)`                 | Post to this conversation without an agent run                           | `main.ts` `PlatformNotifier` → bot `postMessage`                                                |
+| `api.react(messageTs, emoji)`      | React to a message (ts from events the extension observed)               | `main.ts` `PlatformReactor` → bot `addReaction`                                                 |
+| `api.paths.dataDir`                | **This conversation's** data dir (default; isolation free; mkdir-on-use) | `conversations/<id>/extension-data/<slug>/`                                                     |
+| `api.paths.sharedDataDir`          | Cross-conversation data (**explicit** multi-tenant apps; self-partition) | `global/extension-data/<slug>/`                                                                 |
+| `api.secrets.get/list`             | Read-only secrets                                                        | vault: `<stateDir>/vaults/extensions/<slug>/env`                                                |
+| `manifest.json`                    | name / version / description (display only; slug unaffected)             | loader reads it                                                                                 |
+| `skills/<name>/SKILL.md`           | Bundled skills                                                           | discovered and **inlined** into system prompt (sandbox cannot read host-only paths); local wins |
 
-排程的 `text` 是自主 run 的完整任務描述（不繼承對話歷史，需自包含）；
-多平台同時運行時 `notify` / 排程需指明 `platform`，單平台自動推定。
-注意：排程檔落在 events 目錄（sandbox 掛載、agent 可寫），slug 前綴的
-歸屬是**合作性**約定而非安全邊界 — 排程 text 對 agent 可見，勿放 secrets。
-完整的 host/sandbox 路徑邊界地圖見 `src/sandbox/README.md`。
+Schedule `text` is a self-contained autonomous task (no conversation history).
+With multiple platforms, `notify` / schedules need an explicit `platform`; a
+single platform is inferred. Schedule files live under the events dir (sandbox
+mounted, agent-writable) — slug prefixes are a **cooperative** convention, not a
+security boundary. Do not put secrets in schedule text. Host/sandbox path map:
+`src/sandbox/README.md`.
 
-### Extension 開發心法
+### Extension development mindset
 
-> **每位分身有自己的房間；要用共用客廳，得明說。**
+> **Each instance gets its own room; shared living room only if you say so.**
 
-`activate(api)` 以會話為單位被呼叫 — 每個會話一個實例（分身），自己的
-hooks、工具、`context.conversationId`。整個 API 面上只有**存資料**需要
-開發者選邊，其餘（hooks、tools、schedules、notify、secrets）都已由系統
-綁定正確的範圍：
+`activate(api)` is called per conversation — one instance (avatar) per
+conversation, with its own hooks, tools, and `context.conversationId`. On the
+whole API surface, only **where to store data** needs an explicit choice;
+everything else (hooks, tools, schedules, notify, secrets) is already scoped:
 
-- **單會話工具**（預設心態）：資料寫 `api.paths.dataDir` — 每會話一個
-  房間，天真的寫法自動獲得隔離。
-- **跨會話應用**（如 agent-pm）：資料寫 `api.paths.sharedDataDir` — 這行
-  程式碼就是宣告「我是多租戶應用」，每筆資料自行以 conversation id 分區、
-  自行處理並發（多個會話的分身同進程共用檔案，用 sqlite/append，別用
-  讀整檔改寫回）。
+- **Single-conversation tools** (default): write to `api.paths.dataDir` — one
+  room per conversation; naive code gets isolation for free.
+- **Cross-conversation apps** (e.g. agent-pm): write to
+  `api.paths.sharedDataDir` — that line declares multi-tenancy; partition by
+  conversation id yourself and handle concurrency (sqlite/append; avoid
+  full-file read-modify-write).
 
-失敗模式不對稱是這個預設的理由：預設隔離時忘了共享 = 功能不動（大聲、
-無害）；預設共享時忘了過濾 = 資料跨會話外洩（安靜、有害）。
+Failure modes are asymmetric on purpose: forgetting to share under isolation =
+feature does not work (loud, safe); forgetting to filter under shared default =
+cross-conversation leaks (quiet, harmful).
 
-生命週期紀律：
+Lifecycle discipline:
 
-1. **activate 必須冪等** — `/new` 會讓同一會話反覆重新 activate
-   （`schedules.upsert` 的 upsert 語意就是為此）。
-2. **不要 `setInterval`／長駐資源** — 沒有 deactivate；要定時走
-   `api.schedules`。
-3. **code 與 data 分家** — `extensions/` 是 loader 的掃描面（放進去的
-   `.js` 會被當 extension 載入）且升級 = 整目錄替換；狀態一律寫 data dir。
+1. **`activate` must be idempotent** — `/new` re-activates the same conversation
+   (`schedules.upsert` is upsert for this reason).
+2. **No `setInterval` / long-lived resources** — there is no deactivate; use
+   `api.schedules` for timers.
+3. **Code and data stay separate** — `extensions/` is the loader scan surface
+   (any `.js` placed there is loaded as an extension) and upgrades replace the
+   whole directory; state always goes to the data dir.
 
-完整範例見 `examples/extensions/agent-pm/`：約 200 行的 follow-up
-追蹤器（sqlite、每日逾期掃描排程、主動提醒、隨附 skill），即 extension
-系統的目標形狀 —— 復用 mikan 的 harness 而非自建整套 agent。
+Full example: `examples/extensions/agent-pm/` (~200-line follow-up tracker with
+sqlite, daily overdue scan schedule, proactive notify, bundled skill) — the
+target shape for extensions: reuse mikan's harness instead of building a second
+agent stack.
 
-v3 候選：`tool_result` patch、自訂 slash command 貢獻點、provider 註冊、
-install/uninstall 生命週期指令。
+v3 candidates: `tool_result` patch, custom slash-command contribution points,
+provider registration, install/uninstall lifecycle hooks.
 
-## 測試
+## Tests
 
-- `test/harness-session-store.test.ts` — v3 格式相容、tree/branch、compaction 展開
-- `test/harness-runner.test.ts` — faux provider 端對端：持久化、工具、hook 阻擋、auth 預檢
-- `test/harness-extensions.test.ts` — loader 與 hook registry
-- `test/harness-skills.test.ts` — SKILL.md 探索與 prompt 格式化
-- `test/harness-auth.test.ts` — auth.json 讀寫
+- `test/harness-session-store.test.ts` — v3 format, tree/branch, compaction expand
+- `test/harness-runner.test.ts` — faux provider e2e: persistence, tools, hook block, auth precheck
+- `test/harness-extensions.test.ts` — loader and hook registry
+- `test/harness-skills.test.ts` — SKILL.md discovery and prompt formatting
+- `test/harness-auth.test.ts` — auth.json read/write
