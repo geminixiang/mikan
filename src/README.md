@@ -5,7 +5,7 @@ This directory is the TypeScript source root for mikan; the entries below descri
 ## Files
 
 - `adapter.ts`: Defines platform-neutral chat messages, bots, response contexts, events, and running-session interfaces.
-- `agent.ts`: Builds the Pi coding agent runner, including prompt, memory, skills, tools, sandbox, vault, and response flow.
+- `agent.ts`: Thin public barrel for the agent runner (`createRunner`, prompt helpers, path translation). Implementation lives in `agent/`.
 - `config.ts`: Loads, normalizes, and saves global and conversation settings for models, sandbox, auto-reply, and portal URLs.
 - `context.ts`: Finds platform messages by message id from a conversation `log.jsonl` file.
 - `download.ts`: Downloads Slack channel history and prints top-level messages with thread replies.
