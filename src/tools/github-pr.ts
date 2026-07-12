@@ -50,7 +50,9 @@ export function createGithubPrTool(): {
         content: [
           {
             type: "text" as const,
-            text: `Opened ${args.draft ? "draft " : ""}PR #${result.number}: ${result.url}`,
+            text: result.updatedExisting
+              ? `Pushed to existing PR #${result.number}: ${result.url}`
+              : `Opened ${args.draft ? "draft " : ""}PR #${result.number}: ${result.url}`,
           },
         ],
         details: undefined,

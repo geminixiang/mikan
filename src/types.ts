@@ -168,17 +168,31 @@ export interface GithubPrRequest {
 export interface GithubPrResult {
   number: number;
   url: string;
+  /** True when the branch already had an open PR that this push updated. */
+  updatedExisting?: boolean;
+}
+
+export interface GithubCheckSummary {
+  name: string;
+  /** queued | in_progress | completed */
+  status: string;
+  /** success | failure | … ; null while the run is still in progress */
+  conclusion: string | null;
+  url: string | null;
 }
 
 /**
- * Push a prepared branch from a GitHub conversation's clone and open a pull
- * request. Backs the `github_pr` tool; implemented in main.ts over the GitHub
- * bot so tokens stay host-side.
+ * Host-side GitHub operations backing the github_* tools; implemented in
+ * main.ts over the GitHub bot so tokens stay host-side. One object rather
+ * than one callback per capability, so growing the tool surface doesn't grow
+ * the injection plumbing.
  */
-export type PlatformPrCreator = (
-  conversationId: string,
-  request: GithubPrRequest,
-) => Promise<GithubPrResult>;
+export interface PlatformGithubOps {
+  /** Push a prepared pi/* branch and open (or update) a pull request. */
+  pushAndCreatePr(conversationId: string, request: GithubPrRequest): Promise<GithubPrResult>;
+  /** CI check runs for a branch, or for the conversation's PR head when omitted. */
+  getChecks(conversationId: string, branch?: string): Promise<GithubCheckSummary[]>;
+}
 
 /** Normalized platform data and reply hook for one event. */
 export interface ConversationContext {

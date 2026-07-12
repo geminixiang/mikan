@@ -9,8 +9,8 @@ import { fileURLToPath } from "url";
 import { dirname, join as pathJoin } from "path";
 import type {
   MessagingBot,
+  PlatformGithubOps,
   PlatformNotifier,
-  PlatformPrCreator,
   PlatformReactor,
 } from "./adapter.js";
 import { DiscordMessagingBot } from "./adapters/discord/bot.js";
@@ -403,13 +403,19 @@ const platformReactor: PlatformReactor = async (conversationId, messageTs, emoji
   log.logInfo(`[react] :${emoji}: on ${key}/${conversationId}`);
 };
 
-/** `github_pr` tool backend: push a prepared branch and open a PR. */
-const platformPrCreator: PlatformPrCreator = async (conversationId, request) => {
+/** github_* tool backends: PR push/create and CI checks, host-side. */
+function requireGithubBot(op: string): GithubMessagingBot {
   const bot = botsByPlatform.github as GithubMessagingBot | undefined;
   if (!bot) {
-    throw new Error("github_pr: the GitHub platform is not running");
+    throw new Error(`${op}: the GitHub platform is not running`);
   }
-  return bot.pushAndCreatePr(conversationId, request);
+  return bot;
+}
+const platformGithubOps: PlatformGithubOps = {
+  pushAndCreatePr: (conversationId, request) =>
+    requireGithubBot("github_pr").pushAndCreatePr(conversationId, request),
+  getChecks: (conversationId, branch) =>
+    requireGithubBot("github_checks").getChecks(conversationId, branch),
 };
 
 const handler = createConversationRuntime({
@@ -423,7 +429,7 @@ const handler = createConversationRuntime({
   portalBaseUrl: portalBaseUrl(),
   platformNotifier,
   platformReactor,
-  platformPrCreator,
+  platformGithubOps,
 });
 
 const sandboxDesc =

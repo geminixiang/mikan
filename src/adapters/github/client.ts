@@ -1,5 +1,6 @@
 import { createSign } from "crypto";
 import type {
+  GithubCheckRun,
   GithubClientOptions,
   GithubCollaboratorPermission,
   GithubIssue,
@@ -210,6 +211,36 @@ export class GithubClient {
       body: params,
     });
     return pr!;
+  }
+
+  async getPullRequest(owner: string, repo: string, number: number): Promise<GithubPullRequest> {
+    const pr = await this.request<GithubPullRequest>(
+      "GET",
+      `/repos/${owner}/${repo}/pulls/${number}`,
+    );
+    return pr!;
+  }
+
+  /** The open PR whose head is `branch`, or null when none exists. */
+  async findOpenPullRequestByBranch(
+    owner: string,
+    repo: string,
+    branch: string,
+  ): Promise<GithubPullRequest | null> {
+    const prs = await this.request<GithubPullRequest[]>(
+      "GET",
+      `/repos/${owner}/${repo}/pulls?state=open&head=${encodeURIComponent(`${owner}:${branch}`)}&per_page=1`,
+    );
+    return prs && prs.length > 0 ? prs[0] : null;
+  }
+
+  /** CI check runs for a ref (branch, tag, or sha). Needs Checks: Read. */
+  async listCheckRuns(owner: string, repo: string, ref: string): Promise<GithubCheckRun[]> {
+    const data = await this.request<{ check_runs: GithubCheckRun[] }>(
+      "GET",
+      `/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}/check-runs?per_page=50`,
+    );
+    return data!.check_runs;
   }
 
   async listInstallationRepositories(): Promise<GithubRepository[]> {

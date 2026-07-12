@@ -62,10 +62,14 @@ conversation-dir bind mount:
 - The `github_pr` tool runs host-side: it mints a `contents:write` +
   `pull_requests:write` token for that repo, pushes the agent's `pi/*` branch
   from the host side of the mount, and opens the PR (draft supported) as the
-  App. Default-branch pushes, force pushes, and merging are impossible by
-  construction — humans review and merge.
-- Requires the App to have **Contents: Read & write** (plus the existing
-  Issues / Pull requests read & write).
+  App. Calling it again with the same branch pushes new commits to the
+  existing open PR instead of failing. Default-branch pushes, force pushes,
+  and merging are impossible by construction — humans review and merge.
+- The `github_checks` tool (read-only, host-side) reports CI check runs for a
+  pushed branch — or the PR head in PR conversations — so the agent can
+  iterate until CI passes.
+- Requires the App to have **Contents: Read & write** and **Checks: Read**
+  (plus the existing Issues / Pull requests read & write).
 - GitHub conversations are excluded from `sandbox.defaultSharedVault`: that
   ambient credential copy is a membership-trust convenience for closed
   platforms, and a GitHub conversation can be driven by any repo-write

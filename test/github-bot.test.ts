@@ -624,6 +624,57 @@ describe("GithubMessagingBot", () => {
     expect(result).toEqual({ number: 7, url: "https://github.com/octo/widgets/pull/7" });
   });
 
+  test("pushAndCreatePr returns the existing open PR when the branch already has one", async () => {
+    mkdirSync(join(workingDir, CONVERSATION_ID, "repo"), { recursive: true });
+    const { GithubApiError } = await import("../src/adapters/github/client.js");
+    client.createPullRequest.mockRejectedValue(
+      new GithubApiError(422, "POST", "/repos/octo/widgets/pulls", "A pull request already exists"),
+    );
+    client.findOpenPullRequestByBranch = vi.fn().mockResolvedValue({
+      number: 7,
+      html_url: "https://github.com/octo/widgets/pull/7",
+    });
+    const bot = makeBot();
+    await bot.start();
+
+    const result = await bot.pushAndCreatePr(CONVERSATION_ID, { branch: "pi/fix-5", title: "t" });
+
+    expect(pushBranch).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      number: 7,
+      url: "https://github.com/octo/widgets/pull/7",
+      updatedExisting: true,
+    });
+  });
+
+  test("getChecks reads a branch's check runs, or the PR head when omitted", async () => {
+    client.listCheckRuns = vi
+      .fn()
+      .mockResolvedValue([
+        { name: "test", status: "completed", conclusion: "success", html_url: "https://ci/1" },
+      ]);
+    client.getPullRequest = vi
+      .fn()
+      .mockResolvedValue({ number: 5, html_url: "u", head: { ref: "feat", sha: "abc123" } });
+    const bot = makeBot();
+    await bot.start();
+
+    expect(await bot.getChecks(CONVERSATION_ID, "pi/fix-5")).toEqual([
+      { name: "test", status: "completed", conclusion: "success", url: "https://ci/1" },
+    ]);
+    expect(client.listCheckRuns).toHaveBeenLastCalledWith("octo", "widgets", "pi/fix-5");
+
+    await bot.getChecks(CONVERSATION_ID);
+    expect(client.listCheckRuns).toHaveBeenLastCalledWith("octo", "widgets", "abc123");
+  });
+
+  test("getChecks without a branch demands one when the conversation is a plain issue", async () => {
+    client.getPullRequest = vi.fn().mockRejectedValue(new Error("404"));
+    const bot = makeBot();
+    await bot.start();
+    await expect(bot.getChecks(CONVERSATION_ID)).rejects.toThrow(/pass the branch/);
+  });
+
   test("pushAndCreatePr refuses non-pi branches and missing clones", async () => {
     const bot = makeBot();
     await bot.start();

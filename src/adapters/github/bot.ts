@@ -3,6 +3,7 @@ import { dirname, join } from "path";
 import { Type } from "@sinclair/typebox";
 import type {
   ConversationEvent,
+  GithubCheckSummary,
   GithubPrRequest,
   GithubPrResult,
   MessagingBot,
@@ -23,7 +24,7 @@ import {
   withRetry,
 } from "../shared.js";
 import { processMessageIntake } from "../intake.js";
-import { GithubClient, githubIsRateLimited } from "./client.js";
+import { GithubApiError, GithubClient, githubIsRateLimited } from "./client.js";
 import { createGithubAdapters } from "./context.js";
 import { cloneRepo, GITHUB_PUSH_BRANCH_PATTERN, pushBranch } from "./repo.js";
 import {
@@ -712,16 +713,70 @@ export class GithubMessagingBot implements MessagingBot {
       pull_requests: "write",
     });
     await pushBranch({ dir, branch: request.branch, token });
-    const pr = await githubRetry(() =>
-      this.client.createPullRequest(ref.owner, ref.repo, {
-        title: request.title,
-        head: request.branch,
-        base,
-        body: request.body,
-        draft: request.draft,
-      }),
-    );
-    log.logInfo(`[${conversationId}] Opened PR #${pr.number}: ${pr.html_url}`);
-    return { number: pr.number, url: pr.html_url };
+    try {
+      const pr = await githubRetry(() =>
+        this.client.createPullRequest(ref.owner, ref.repo, {
+          title: request.title,
+          head: request.branch,
+          base,
+          body: request.body,
+          draft: request.draft,
+        }),
+      );
+      log.logInfo(`[${conversationId}] Opened PR #${pr.number}: ${pr.html_url}`);
+      return { number: pr.number, url: pr.html_url };
+    } catch (err) {
+      // Idempotency: pushing more commits to a branch that already has an
+      // open PR updates that PR; the create call then 422s. Surface the
+      // existing PR instead of failing the fix-CI-push-again loop.
+      if (
+        err instanceof GithubApiError &&
+        err.status === 422 &&
+        /already exists/i.test(err.message)
+      ) {
+        const existing = await this.client.findOpenPullRequestByBranch(
+          ref.owner,
+          ref.repo,
+          request.branch,
+        );
+        if (existing) {
+          log.logInfo(
+            `[${conversationId}] Pushed to existing PR #${existing.number}: ${existing.html_url}`,
+          );
+          return { number: existing.number, url: existing.html_url, updatedExisting: true };
+        }
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Backs the `github_checks` tool: CI check runs for a branch the agent
+   * pushed, or for the conversation's PR head when no branch is given.
+   */
+  async getChecks(conversationId: string, branch?: string): Promise<GithubCheckSummary[]> {
+    const ref = parseGithubConversationId(conversationId);
+    let target = branch;
+    if (!target) {
+      let pr;
+      try {
+        pr = await githubRetry(() => this.client.getPullRequest(ref.owner, ref.repo, ref.number));
+      } catch {
+        pr = null;
+      }
+      if (!pr?.head) {
+        throw new Error(
+          "This conversation is not a pull request — pass the branch whose checks you want.",
+        );
+      }
+      target = pr.head.sha;
+    }
+    const runs = await githubRetry(() => this.client.listCheckRuns(ref.owner, ref.repo, target));
+    return runs.map((run) => ({
+      name: run.name,
+      status: run.status,
+      conclusion: run.conclusion,
+      url: run.html_url,
+    }));
   }
 }

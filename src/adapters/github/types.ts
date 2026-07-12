@@ -93,6 +93,16 @@ export interface GithubCollaboratorPermission {
 export interface GithubPullRequest {
   number: number;
   html_url: string;
+  head?: { ref: string; sha: string };
+}
+
+export interface GithubCheckRun {
+  name: string;
+  /** queued | in_progress | completed */
+  status: string;
+  /** success | failure | neutral | cancelled | timed_out | action_required | null while running */
+  conclusion: string | null;
+  html_url: string | null;
 }
 
 /** Permission subset requestable on a scoped installation token. */

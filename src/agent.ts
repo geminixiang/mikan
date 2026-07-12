@@ -26,11 +26,12 @@ import type {
 } from "./adapter.js";
 import type {
   AgentEventPayload,
+  GithubCheckSummary,
   GithubPrRequest,
   GithubPrResult,
   MikanEvent,
+  PlatformGithubOps,
   PlatformNotifier,
-  PlatformPrCreator,
   PlatformReactor,
 } from "./types.js";
 import type { SessionViewTokenStoreLike } from "./commands/types.js";
@@ -1082,7 +1083,10 @@ async function prepareRunContext(params: {
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
   setGithubPrFunction: (fn: ((request: GithubPrRequest) => Promise<GithubPrResult>) | null) => void;
-  platformPrCreator?: PlatformPrCreator;
+  setGithubChecksFunction: (
+    fn: ((branch?: string) => Promise<GithubCheckSummary[]>) | null,
+  ) => void;
+  platformGithubOps?: PlatformGithubOps;
   pathContext: RuntimePathContext;
 }): Promise<PreparedRunContext & { pathContext: RuntimePathContext }> {
   const {
@@ -1166,13 +1170,15 @@ async function prepareRunContext(params: {
   // so the tool reports it is unavailable rather than silently no-op'ing.
   setReactFunction(responder.react ? async (emoji: string) => responder.react!(emoji) : null);
 
-  // github_pr is available only in GitHub conversations with a wired creator;
-  // everywhere else the tool reports itself unavailable.
-  const { platformPrCreator, setGithubPrFunction } = params;
+  // github_* tools are available only in GitHub conversations with wired
+  // ops; everywhere else they report themselves unavailable.
+  const { platformGithubOps, setGithubPrFunction, setGithubChecksFunction } = params;
+  const githubOps = platform.name === "github" ? platformGithubOps : undefined;
   setGithubPrFunction(
-    platform.name === "github" && platformPrCreator
-      ? (request) => platformPrCreator(conversationId, request)
-      : null,
+    githubOps ? (request) => githubOps.pushAndCreatePr(conversationId, request) : null,
+  );
+  setGithubChecksFunction(
+    githubOps ? (branch) => githubOps.getChecks(conversationId, branch) : null,
   );
 
   resetRunState(
@@ -1582,7 +1588,7 @@ export async function createRunner(
   },
   platformNotifier?: PlatformNotifier,
   platformReactor?: PlatformReactor,
-  platformPrCreator?: PlatformPrCreator,
+  platformGithubOps?: PlatformGithubOps,
 ): Promise<PiAgentWrapper> {
   const agentConfig = resolveConversationSettings(conversationDir);
 
@@ -1603,6 +1609,7 @@ export async function createRunner(
     setUploadFunction,
     setReactFunction,
     setGithubPrFunction,
+    setGithubChecksFunction,
     setEventContext,
     setSandboxContext,
   } = createMikanTools(executor, workspaceDir, { sandbox: sandboxConfig, provisioner });
@@ -1698,7 +1705,8 @@ export async function createRunner(
         setUploadFunction,
         setReactFunction,
         setGithubPrFunction,
-        platformPrCreator,
+        setGithubChecksFunction,
+        platformGithubOps,
         pathContext,
       });
       pathContext = prepared.pathContext;

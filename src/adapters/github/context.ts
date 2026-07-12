@@ -83,8 +83,10 @@ export function createGithubAdapters(
       `pr-${ref.number}. You have no git credentials, so git fetch/push fail by design.\n` +
       `To ship code changes: branch as pi/<name> inside ./repo, commit (the git author is ` +
       `preconfigured), then call the github_pr tool to push the branch and open a pull ` +
-      `request (draft: true for a draft). You cannot push the default branch or merge — ` +
-      `humans review and merge every PR.`,
+      `request (draft: true for a draft); calling it again with the same branch pushes new ` +
+      `commits to the existing PR. Use github_checks to read CI results for your branch ` +
+      `(or this PR) and iterate until they pass. You cannot push the default branch or ` +
+      `merge — humans review and merge every PR.`,
     channels: [],
     users: [],
     diagnostics: {
