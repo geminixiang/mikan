@@ -9,6 +9,21 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.10]
+
+### Fixed
+
+- Retry cloning a GitHub repository on later triggers when the conversation clone is missing.
+
+### Security
+
+- Stop applying the ambient default shared vault to GitHub conversations while preserving explicit conversation vault grants.
+- Document the platform, shared machine, and personal credential trust boundaries.
+
+### Tests
+
+- Add coverage for GitHub clone retries and platform-gated default vault resolution.
+
 ## [1.0.0-beta.9]
 
 ### Added
