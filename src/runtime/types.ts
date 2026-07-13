@@ -9,6 +9,7 @@ import type {
   PlatformReactor,
 } from "../adapter.js";
 import type { CommandHandler, CommandServices } from "../commands/types.js";
+import type { MikanModels } from "../harness/index.js";
 import type { PlatformToolPackFactory } from "../tools/types.js";
 
 export interface ConversationRuntimeState {
@@ -38,6 +39,8 @@ export interface CreateSessionSandboxOptions {
 export interface ConversationRuntimeOptions extends Omit<CommandServices, "runtime"> {
   /** Override the default command handlers (e.g., to add /help, /status). */
   commandHandlers?: readonly CommandHandler[];
+  /** Model registry override; defaults to the process-wide models.json load. */
+  models?: MikanModels;
   /** Proactive platform messaging for extensions (`api.notify`). */
   platformNotifier?: PlatformNotifier;
   /** Proactive emoji reactions for extensions (`api.react`). */

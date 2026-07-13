@@ -2,23 +2,32 @@ import type {
   MessagingBot,
   ConversationContext,
   ConversationEvent,
+  PlatformName,
   RunningSession,
 } from "../adapter.js";
 import { type PiAgentWrapper, createRunner } from "../agent.js";
-import { defaultCommandHandlers } from "../commands/registry.js";
-import type { CommandServices } from "../commands/types.js";
+import { defaultCommandHandlers, dispatchCommand } from "../commands/registry.js";
+import type { CommandHandler, CommandServices } from "../commands/types.js";
+import { isPrivateConversation } from "../commands/utils.js";
 import * as log from "../log.js";
-import { reportUserFacingError } from "../observability/sentry.js";
+import {
+  addLifecycleBreadcrumb,
+  applyRunScope,
+  createRunAttributionAttributes,
+  registerTraceAttribution,
+  reportUserFacingError,
+} from "../observability/sentry.js";
 import {
   AgentMemoryFileManager,
   hasMaterializedChatSession,
+  waitForThreadSessionBootstrap,
 } from "../sessions/agent-memory-file-manager.js";
 import { conversationIdOf, deriveSessionKey } from "../sessions/session-key.js";
-import { formatNothingRunning, formatStopping } from "../platform-messages.js";
-import { AgentRunController, type ConversationRuntimeState } from "./agent-run-controller.js";
+import { formatNothingRunning, formatStopped, formatStopping } from "../platform-messages.js";
 import * as Sentry from "@sentry/node";
 import { join } from "path";
 import { getUnresolvedSandboxPathContext } from "../agent.js";
+import type { ConversationRuntimeState } from "./types.js";
 
 type ConversationState = ConversationRuntimeState;
 
@@ -60,34 +69,14 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private readonly conversationStates = new Map<string, ConversationState>();
   private readonly sessionQueues = new Map<string, Promise<void>>();
   private readonly inFlightRuns = new Set<Promise<void>>();
-  private readonly orchestrator: AgentRunController;
   private readonly chatSessionManager = new AgentMemoryFileManager();
+  private readonly commandServices: CommandServices;
+  private readonly commandHandlers: readonly CommandHandler[];
   private isShuttingDown = false;
 
   constructor(private readonly options: ConversationRuntimeOptions) {
-    const commandServices: CommandServices = { ...options, runtime: this };
-    const commandHandlers = options.commandHandlers ?? defaultCommandHandlers();
-    this.orchestrator = new AgentRunController({
-      workingDir: options.workingDir,
-      commandHandlers,
-      commandServices,
-      isShuttingDown: () => this.isShuttingDown,
-      getState: (sessionKey) => this.conversationStates.get(sessionKey),
-      getOrCreateState: (createOptions) => this.getOrCreateState(createOptions),
-      hasMaterializedSession: ({ conversationDir, sessionKey }) =>
-        hasMaterializedChatSession({ conversationDir, sessionKey }),
-      beforeRunTracked: (runPromise) => {
-        this.inFlightRuns.add(runPromise);
-        Sentry.metrics.gauge("agent.sessions.active", this.inFlightRuns.size);
-      },
-      afterRunTracked: (runPromise) => {
-        this.inFlightRuns.delete(runPromise);
-      },
-      onRunFinished: () => {
-        Sentry.metrics.gauge("agent.sessions.active", this.inFlightRuns.size - 1);
-        this.evictIdleSessions();
-      },
-    });
+    this.commandServices = { ...options, runtime: this };
+    this.commandHandlers = options.commandHandlers ?? defaultCommandHandlers();
   }
 
   isRunning(sessionKey: string): boolean {
@@ -177,7 +166,216 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   }
 
   async runSession({ event, bot, context }: RunSessionOptions): Promise<void> {
-    await this.orchestrator.runSession({ event, bot, context });
+    const conversationId = event.conversationId;
+    if (this.isShuttingDown) {
+      log.logInfo(
+        `[${conversationId}] Rejected event during shutdown: ${event.text.substring(0, 50)}`,
+      );
+      return;
+    }
+
+    const sessionKey = deriveSessionKey(event);
+    const privateConversation = isPrivateConversation(event);
+    const handledCommand = await dispatchCommand(this.commandHandlers, {
+      bot,
+      responder: context.responder,
+      platform: context.platform.name as PlatformName,
+      platformUserId: event.user,
+      conversationId,
+      vaultConversationId: event.vaultConversationId,
+      sessionKey,
+      commandText: event.text,
+      privateConversation,
+      services: this.commandServices,
+    });
+    if (handledCommand) return;
+
+    const conversationDir = join(this.options.workingDir, conversationId);
+    const waitedForParent = await waitForThreadSessionBootstrap({
+      parentSessionKey: conversationId,
+      sessionKey,
+      hasThreadSession: () => hasMaterializedChatSession({ conversationDir, sessionKey }),
+      isParentRunning: () => this.conversationStates.get(conversationId)?.running === true,
+    });
+    if (waitedForParent) {
+      log.logInfo(
+        `[${conversationId}] Delayed thread bootstrap until parent session sealed: ${sessionKey}`,
+      );
+    }
+
+    let state: ConversationState;
+    try {
+      state = await this.getOrCreateState({
+        conversationId,
+        sessionKey,
+        currentMessageId: event.ts,
+        conversationKind: event.conversationKind,
+      });
+      state.runner.syncChatHistory(event.ts);
+    } catch (err) {
+      reportUserFacingError(err, {
+        domain: "mikan",
+        surface: "session_setup",
+        operation: "get_or_create_state",
+        severity: "error",
+        platform: context.platform.name,
+        context: {
+          conversationId,
+          sessionKey,
+          messageId: context.message.id,
+          threadTs: context.message.threadTs,
+          attachmentCount: context.message.attachments?.length ?? 0,
+        },
+      });
+      throw err;
+    }
+
+    state.running = true;
+    state.stopRequested = false;
+    state.startedAt = Date.now();
+    state.lastActivityAt = Date.now();
+
+    log.logInfo(`[${conversationId}] Starting run: ${event.text.substring(0, 50)}`);
+
+    const runPromise = (async () => {
+      try {
+        const result = await this.runWithInstrumentation(
+          context,
+          { conversationId, sessionKey, startedAt: state.startedAt },
+          async () => {
+            await context.responder.setTyping(true);
+            await context.responder.setWorking(true);
+            try {
+              return await state.runner.run(context.message, context.responder, context.platform);
+            } finally {
+              await context.responder.setWorking(false);
+            }
+          },
+        );
+
+        if (result?.stopReason === "aborted" && state.stopRequested) {
+          if (state.stopMessageTs) {
+            await bot.updateMessage(conversationId, state.stopMessageTs, formatStopped(bot));
+            state.stopMessageTs = undefined;
+          } else {
+            await bot.postMessage(conversationId, formatStopped(bot));
+          }
+        }
+      } finally {
+        state.running = false;
+        state.lastAccessedAt = Date.now();
+        Sentry.metrics.gauge("agent.sessions.active", this.inFlightRuns.size - 1);
+        this.evictIdleSessions();
+      }
+    })();
+
+    this.inFlightRuns.add(runPromise);
+    Sentry.metrics.gauge("agent.sessions.active", this.inFlightRuns.size);
+    try {
+      await runPromise;
+    } finally {
+      this.inFlightRuns.delete(runPromise);
+    }
+  }
+
+  private async runWithInstrumentation(
+    context: ConversationContext,
+    meta: {
+      conversationId: string;
+      sessionKey: string;
+      startedAt: number;
+    },
+    body: () => Promise<{ stopReason: string; errorMessage?: string }>,
+  ): Promise<{ stopReason: string; errorMessage?: string } | undefined> {
+    const { conversationId, sessionKey, startedAt } = meta;
+    const { message, platform } = context;
+
+    const attribution = createRunAttributionAttributes({
+      conversationId,
+      sessionKey,
+      messageId: message.id,
+      platform: platform.name,
+      userId: message.userId,
+      userName: message.userName,
+      threadTs: message.threadTs,
+    });
+
+    Sentry.metrics.count("agent.run.started", 1, {
+      attributes: attribution,
+    });
+
+    return Sentry.startSpan(
+      { name: "agent.run", op: "agent", attributes: attribution },
+      async (span) =>
+        Sentry.withScope(async (scope) => {
+          registerTraceAttribution(span, attribution);
+          applyRunScope(scope, {
+            conversationId,
+            sessionKey,
+            messageId: message.id,
+            platform: platform.name,
+            userId: message.userId,
+            userName: message.userName,
+            threadTs: message.threadTs,
+          });
+          addLifecycleBreadcrumb("agent.run.started", {
+            channel_id: conversationId,
+            platform: platform.name,
+            has_attachments: (message.attachments?.length ?? 0) > 0,
+          });
+
+          try {
+            const result = await body();
+            const durationMs = Date.now() - startedAt;
+            const completionAttrs = {
+              ...attribution,
+              stop_reason: result.stopReason,
+            };
+            Sentry.metrics.distribution("agent.run.duration", durationMs, {
+              unit: "millisecond",
+              attributes: completionAttrs,
+            });
+            Sentry.metrics.count("agent.run.completed", 1, { attributes: completionAttrs });
+            addLifecycleBreadcrumb("agent.run.completed", {
+              channel_id: conversationId,
+              platform: platform.name,
+              stop_reason: result.stopReason,
+              duration_ms: durationMs,
+            });
+            return result;
+          } catch (err) {
+            scope.setContext("agent_run_error", {
+              conversationId,
+              sessionKey,
+              platform: platform.name,
+              messageId: message.id,
+              threadTs: message.threadTs,
+            });
+            reportUserFacingError(err, {
+              domain: "mikan",
+              surface: "agent_run",
+              operation: "run",
+              severity: "error",
+              platform: platform.name,
+              context: {
+                conversationId,
+                sessionKey,
+                messageId: message.id,
+                threadTs: message.threadTs,
+                attachmentCount: message.attachments?.length ?? 0,
+              },
+            });
+            Sentry.metrics.count("agent.run.errors", 1, {
+              attributes: attribution,
+            });
+            log.logWarning(
+              `[${conversationId}] Run error`,
+              err instanceof Error ? err.message : String(err),
+            );
+            return undefined;
+          }
+        }),
+    );
   }
 
   async createSessionSandbox(options: CreateSessionSandboxOptions): Promise<PiAgentWrapper> {
@@ -263,6 +461,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         platformNotifier: this.options.platformNotifier,
         platformReactor: this.options.platformReactor,
         platformToolPackFactories: this.options.platformToolPackFactories,
+        models: this.options.models,
       }),
       stopRequested: false,
       lastAccessedAt: Date.now(),

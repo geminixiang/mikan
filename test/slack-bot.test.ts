@@ -7,7 +7,7 @@ import { SlackMessagingBot } from "../src/adapters/slack/bot.js";
 import { defaultCommandHandlers } from "../src/commands/registry.js";
 import { createGlobalSettingsFile } from "../src/config.js";
 import type { CommandServices } from "../src/commands/types.js";
-import { AgentRunController } from "../src/runtime/agent-run-controller.js";
+import { createConversationRuntime } from "../src/runtime/conversation-runtime.js";
 import { createManagedSessionFileAtPath, getThreadSessionFile } from "../src/sessions/store.js";
 import type { SandboxConfig } from "../src/sandbox/index.js";
 import type { VaultManager } from "../src/vault/index.js";
@@ -314,20 +314,13 @@ describe("SlackMessagingBot slash commands", () => {
       store: {} as any,
     });
 
-    const orchestrator = new AgentRunController({
-      workingDir,
+    const runtime = createConversationRuntime({
+      ...makeCommandServices(workingDir),
       commandHandlers: defaultCommandHandlers(),
-      commandServices: makeCommandServices(workingDir),
-      isShuttingDown: () => false,
-      getState: () => undefined,
-      getOrCreateState: vi.fn(),
-      beforeRunTracked: vi.fn(),
-      afterRunTracked: vi.fn(),
-      onRunFinished: vi.fn(),
     });
     (handler.handleEvent as any).mockImplementation(
       (event: any, eventMessagingBot: any, context: any) =>
-        orchestrator.runSession({ event, bot: eventMessagingBot, context }),
+        runtime.runSession({ event, bot: eventMessagingBot, context }),
     );
 
     const postEphemeral = vi.fn().mockResolvedValue(undefined);
