@@ -37,10 +37,11 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 | `/pi-sandbox private\|full`                        | Persist the conversation's image workspace mount mode. `full` exposes the whole workspace.                                 |
 
 <Aside type="note" title="Platform command registration">
-  Native slash commands must also be registered with the platform. Slack's example manifest includes
-  `/pi-login`, `/pi-session`, `/pi-new`, `/pi-model`, `/pi-auto-reply`, `/pi-sandbox`,
-  `/pi-extensions`, and `/pi-admin`. Discord registers its application commands at startup. Telegram
-  uses bot commands handled through long polling.
+  Native slash commands must also be registered with the platform. The command inventory lives in
+  `src/commands/manifest.ts`: Discord's application commands and Telegram's command menu are derived
+  from it at startup, and Slack's routing recognizes the manifest's `/pi-*` names. Slack's App
+  manifest (`/pi-login`, `/pi-session`, `/pi-new`, `/pi-model`, `/pi-auto-reply`, `/pi-sandbox`,
+  `/pi-extensions`, `/pi-admin`) must still be updated in the Slack App configuration by hand.
 </Aside>
 
 ## Shared vault commands

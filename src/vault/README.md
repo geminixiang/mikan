@@ -5,7 +5,8 @@ File-backed credential vault for env secrets, secret files, shared profiles, and
 ## Files
 
 - `index.ts`: Implements `FileVaultManager`, vault key normalisation, env-file parsing, and shared/private vault operations.
-- `routing.ts`: Resolves vault keys from sandbox type, user, conversation, or container name.
+- `routing.ts`: Resolves vault keys by delegating to the shared runtime identity (`sandbox/identity.ts` `actorKey`), so vault, container, and cloudflare naming can never diverge.
+- `disabled.ts`: A no-op `VaultManager` used when an embedder constructs the runtime without a vault; reads report empty/disabled, writes throw.
 - `policy.ts`: Pure policy for ambient `defaultSharedVault` (trust model × sandbox topology).
 
 ## Identity model (which credentials a conversation gets)

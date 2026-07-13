@@ -66,7 +66,7 @@ GitHub App installation (no webhooks, matching mikan's proactive model — see
   `log.jsonl`), and the commenter holds **write permission or better** on the
   repo — on public repos anyone can comment, so lower levels are ignored
   entirely (lookup cached 5 min, fails closed, needs only the mandatory
-  Metadata permission). A mentioned `stop` stops the running session.
+  Metadata permission). A mentioned `stop` (or `/stop`) stops the running session — the magic word is recognized by conversation intake with one grammar across platforms.
 - Dedup is a persisted watermark (`<state-dir>/github-sync.json`, atomic
   write): first run records a baseline and emits nothing; after that, comments
   posted while mikan was down replay on restart, and already-handled ids never

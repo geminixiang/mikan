@@ -6,13 +6,15 @@ This directory contains chat command parsers, shared command types, and command 
 
 - `admin.ts`: Parses `/admin` and creates an admin portal login link.
 - `auto-reply.ts`: Handles `/auto-reply` status, enable, and disable actions.
-- `index.ts`: Re-exports command dispatch/types and builds the default command handler list.
+- `extensions.ts`: Handles `/extensions` by listing extensions loaded for the conversation.
 - `login.ts`: Handles `/login` and shared vault/profile commands, then creates login portal links.
+- `manifest.ts`: The single command inventory. Platform adapters derive native registration and routing from it (Slack slash routes, Discord `commands.set`, Telegram menu), handler grammars derive their accepted spellings (`slashForms`), and session-view derives the bare `session` grammar (`commandForms`). Adding a command = one handler file + one manifest entry.
 - `model.ts`: Handles `/model provider/model[:thinking]` to show or switch conversation model settings.
 - `new.ts`: Handles `/new` by resetting the current session in private conversations.
 - `parse.ts`: Provides generic command tokenization and prefix matching.
-- `registry.ts`: Runs command handlers in order and stops after the first successful handler.
+- `registry.ts`: Runs command handlers in order and stops after the first successful handler; builds the default handler list.
 - `sandbox.ts`: Handles `/sandbox` status, boost, and resource-limit queries.
 - `session-view.ts`: Handles `/session` by creating a Session View portal link.
+- `text.ts`: `isCommandText` — command-text recognition derived from the manifest; session resume uses it to keep command messages out of replayed history.
 - `types.ts`: Defines command handler/context/services and token store interfaces.
 - `utils.ts`: Provides command replies, diagnostic formatting, and private-conversation detection.

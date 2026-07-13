@@ -29,7 +29,7 @@ Stack:
   - `runtime/`: conversation/session orchestration.
   - `sessions/`: chat-history sync and persisted session files.
   - `adapters/`: Slack, Discord, Telegram adapters plus shared adapter utilities.
-  - `commands/`: chat command parsing and handlers (`login`, `model`, `new`, `session`, `sandbox`, etc.).
+  - `commands/`: chat command parsing and handlers (`login`, `model`, `new`, `session`, `sandbox`, etc.); `manifest.ts` is the single command inventory that adapters derive registration/routing from.
   - `sandbox/`: host/container/image/firecracker/cloudflare execution backends.
   - `tools/`: agent tool implementations (`read`, `bash`, `edit`, `write`, `event`, `sandbox`).
   - `vault/`: file-backed credential vault and routing.

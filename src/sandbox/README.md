@@ -9,11 +9,12 @@ This directory defines sandbox abstractions, concrete sandbox executors, and sha
 - `errors.ts`: Defines `SandboxError`, which can render user-facing CLI diagnostics.
 - `firecracker.ts`: Implements the Firecracker VM executor by running commands over SSH inside the VM.
 - `host.ts`: Implements the host executor by running commands directly through the local shell.
+- `identity.ts`: Runtime actor identity — `actorKey()` and the single sanitizer naming a conversation's vault dir, docker container/network, and cloudflare sandbox suffix. Consumers take keys; nothing re-derives them.
 - `image.ts`: Parses and validates `image:<image>` sandbox configs, which must later resolve to a concrete container executor.
 - `index.ts`: Registers sandbox adapters and exposes parse, validate, and executor factory helpers.
 - `path-context.ts`: Builds mounted runtime path contexts and translates runtime paths back to host paths.
 - `types.ts`: Defines all sandbox configs, executors, exec results, runtime path contexts, and adapter types.
-- `utils.ts`: Provides simple child-process execution, process-tree killing, and shell escaping.
+- `utils.ts`: Provides simple child-process execution, process-tree killing, shell escaping, and the shared base64-chunked file transport (`execReadFile`/`execWriteFile`) used by every exec-only executor.
 
 ## Host / sandbox path boundary (image mode)
 

@@ -37,10 +37,11 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 | `/pi-sandbox private\|full`                        | conversation の image workspace mount mode を保存します。`full` は workspace 全体を公開します。                                  |
 
 <Aside type="note" title="プラットフォームへのコマンド登録">
-  Native slash commands はプラットフォームにも登録する必要があります。Slack のサンプル manifest には
-  `/pi-login`、`/pi-session`、`/pi-new`、`/pi-model`、`/pi-auto-reply`、`/pi-sandbox`、
-  `/pi-extensions`、`/pi-admin` が含まれます。Discord は起動時に application commands を登録します。
-  Telegram は long polling で処理する bot commands を使います。
+  Native slash commands はプラットフォームにも登録する必要があります。コマンド一覧は
+  `src/commands/manifest.ts` にあり、Discord の application commands と Telegram の command menu は
+  起動時にそこから導出されます。Slack の App manifest（`/pi-login`、`/pi-session`、`/pi-new`、
+  `/pi-model`、`/pi-auto-reply`、`/pi-sandbox`、`/pi-extensions`、`/pi-admin`）は引き続き Slack App
+  設定で手動更新が必要です。
 </Aside>
 
 ## 共有 vault コマンド

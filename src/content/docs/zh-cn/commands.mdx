@@ -36,9 +36,10 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 | `/pi-sandbox private\|full`                        | 持久保存对话的 image 工作区挂载模式。`full` 会暴露整个工作区。                                |
 
 <Aside type="note" title="平台注册命令">
-  原生 slash commands 也必须在平台中注册。Slack 示例 manifest 包含 `/pi-login`、`/pi-session`、
-  `/pi-new`、`/pi-model`、`/pi-auto-reply`、`/pi-sandbox`、`/pi-extensions` 和 `/pi-admin`。 Discord
-  在启动时注册 application commands。Telegram 使用通过 long polling 处理的 bot commands。
+  原生 slash commands 也必须在平台中注册。命令清单位于 `src/commands/manifest.ts`：Discord 的
+  application commands 与 Telegram 的命令菜单在启动时由它派生，Slack 的路由也识别清单中的 `/pi-*`
+  名称。Slack 的 App manifest（`/pi-login`、`/pi-session`、`/pi-new`、`/pi-model`、
+  `/pi-auto-reply`、`/pi-sandbox`、`/pi-extensions`、`/pi-admin`）仍需在 Slack App 配置中手动更新。
 </Aside>
 
 ## 共享 vault 命令

@@ -30,7 +30,8 @@ description: 了解 mikan 的平台接入、工作階段、agent、sandbox、vau
 
 - `src/main.ts`
 - `src/runtime/conversation-runtime.ts`
-- `src/runtime/agent-run-controller.ts`
+- `src/adapters/intake.ts`
+- `src/commands/manifest.ts`
 - `src/sessions/store.ts`
 - `src/sessions/agent-memory-file-manager.ts`
 
@@ -38,7 +39,8 @@ description: 了解 mikan 的平台接入、工作階段、agent、sandbox、vau
 
 - 啟動 CLI、讀取 env / args / `settings.json`
 - 建立 `ConversationRuntime` 作為各平台 bot 的 `MessagingEventHandler`
-- 透過 `AgentRunController` dispatch `/login`、`/session`、`stop`、`new` 等控制命令
+- `stop` 魔法詞由 conversation intake（`src/adapters/intake.ts`）在 trigger policy 與排隊之前辨識
+- `/login`、`/session`、`/new` 等控制命令在 `ConversationRuntime.runSession` 內 dispatch；adapter 註冊與路由所依據的命令清單位於 `src/commands/manifest.ts`
 - 管理 `conversationStates` 與 per-session queue，避免同一 session 重複執行
 - 決定每個 session scope 對應哪個 `PiAgentWrapper`
 

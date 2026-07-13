@@ -88,16 +88,16 @@ For routing, mounts, vault behavior, managed container details, and Firecracker/
 
 ## Chat commands
 
-| Command                                                    | Purpose                                          |
-| ---------------------------------------------------------- | ------------------------------------------------ |
-| `/login` / `/pi-login`                                     | Store API keys or run built-in OAuth flows       |
-| `session` / `/session`                                     | Open a read-only web view of the current session |
-| `new` / `/new`                                             | Reset the current session                        |
-| `model` / `/model` / `/pi-model provider/model[:thinking]` | Switch the LLM for the current conversation      |
-| `auto-reply` / `/pi-auto-reply on\|off\|status`            | Control group/channel auto-reply                 |
-| `stop` / `/stop`                                           | Stop the current run                             |
+| Command                                          | Purpose                                          |
+| ------------------------------------------------ | ------------------------------------------------ |
+| `/login` / `/pi-login`                           | Store API keys or run built-in OAuth flows       |
+| `session` / `/session`                           | Open a read-only web view of the current session |
+| `/new` / `/pi-new`                               | Reset the current session                        |
+| `/model` / `/pi-model provider/model[:thinking]` | Switch the LLM for the current conversation      |
+| `/auto-reply` / `/pi-auto-reply on\|off\|status` | Control group/channel auto-reply                 |
+| `stop` / `/stop`                                 | Stop the current run (works on every platform)   |
 
-See [src/content/docs/commands.md](src/content/docs/commands.md) for command details and web session viewer setup.
+`session` is the only command accepted without a leading slash. See [src/content/docs/commands.mdx](src/content/docs/commands.mdx) for the full command reference and web session viewer setup.
 
 ## Configuration
 

@@ -30,7 +30,8 @@ description: mikan のプラットフォーム接続、セッション、agent�
 
 - `src/main.ts`
 - `src/runtime/conversation-runtime.ts`
-- `src/runtime/agent-run-controller.ts`
+- `src/adapters/intake.ts`
+- `src/commands/manifest.ts`
 - `src/sessions/store.ts`
 - `src/sessions/agent-memory-file-manager.ts`
 
@@ -38,7 +39,8 @@ description: mikan のプラットフォーム接続、セッション、agent�
 
 - CLI を起動し、env / args / `settings.json` を読み込む
 - 各プラットフォーム bot の `MessagingEventHandler` として `ConversationRuntime` を作成する
-- `AgentRunController` を通じて `/login`、`/session`、`stop`、`new` などの制御コマンドを dispatch する
+- `stop` マジックワードは conversation intake（`src/adapters/intake.ts`）が trigger policy とキューイングより先に認識する
+- `/login`、`/session`、`/new` などの制御コマンドは `ConversationRuntime.runSession` 内で dispatch する。アダプターが登録・ルーティングに使うコマンド一覧は `src/commands/manifest.ts` にある
 - `conversationStates` と per-session queue を管理し、同じ session の重複実行を防ぐ
 - 各 session scope に対応する `PiAgentWrapper` を決定する
 

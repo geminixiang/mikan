@@ -30,7 +30,8 @@ Responsibilities:
 
 - `src/main.ts`
 - `src/runtime/conversation-runtime.ts`
-- `src/runtime/agent-run-controller.ts`
+- `src/adapters/intake.ts`
+- `src/commands/manifest.ts`
 - `src/sessions/store.ts`
 - `src/sessions/agent-memory-file-manager.ts`
 
@@ -38,7 +39,8 @@ Responsibilities:
 
 - start the CLI and read env / args / `settings.json`
 - create `ConversationRuntime` as the `MessagingEventHandler` for each platform bot
-- dispatch control commands such as `/login`, `/session`, `stop`, and `new` through `AgentRunController`
+- recognize the `stop` magic word in conversation intake (`src/adapters/intake.ts`) before trigger policy and queueing
+- dispatch control commands such as `/login`, `/session`, and `/new` inside `ConversationRuntime.runSession`; the command inventory that adapters register/route from lives in `src/commands/manifest.ts`
 - manage `conversationStates` and per-session queues to avoid duplicate runs in the same session
 - decide which `PiAgentWrapper` corresponds to each session scope
 

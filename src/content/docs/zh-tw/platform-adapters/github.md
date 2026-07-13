@@ -50,7 +50,7 @@ Poll loop 會使用 ETag conditional requests（304 responses 不計入 rate lim
 
 ## 觸發條件
 
-Comment、inline review comment 或新 issue body 只有在 @mention app slug，或 bot 已參與該 issue 的對話時才會觸發執行。Commenter 也必須具有該 repo 的 **write permission or better**；在 public repos 中任何人都能留言，因此低於 write 的使用者所發 mentions 會完全忽略（permission lookups 快取五分鐘，且失敗時拒絕）。其他內容都會忽略且不建立任何狀態。包含 mention 的 `stop` comment 會停止執行中的 session。
+Comment、inline review comment 或新 issue body 只有在 @mention app slug，或 bot 已參與該 issue 的對話時才會觸發執行。Commenter 也必須具有該 repo 的 **write permission or better**；在 public repos 中任何人都能留言，因此低於 write 的使用者所發 mentions 會完全忽略（permission lookups 快取五分鐘，且失敗時拒絕）。其他內容都會忽略且不建立任何狀態。包含 mention 的 `stop`（或 `/stop`）comment 會停止執行中的 session。
 
 ## Sessions 與回覆
 

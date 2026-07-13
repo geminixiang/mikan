@@ -50,7 +50,7 @@ Dedup is a persisted watermark at `<state-dir>/github-sync.json` (atomic write):
 
 ## Triggering
 
-A comment, inline review comment, or new issue body triggers a run only when it @mentions the app slug, or the bot already participates in that issue's conversation. The commenter must also hold **write permission or better** on the repo — on public repos anyone can comment, so mentions from anyone below write are ignored entirely (permission lookups are cached for five minutes and fail closed). Everything else is ignored without creating any state. A mentioned `stop` comment stops the running session.
+A comment, inline review comment, or new issue body triggers a run only when it @mentions the app slug, or the bot already participates in that issue's conversation. The commenter must also hold **write permission or better** on the repo — on public repos anyone can comment, so mentions from anyone below write are ignored entirely (permission lookups are cached for five minutes and fail closed). Everything else is ignored without creating any state. A mentioned `stop` (or `/stop`) comment stops the running session.
 
 ## Sessions and replies
 

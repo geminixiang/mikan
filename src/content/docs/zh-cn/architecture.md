@@ -30,7 +30,8 @@ description: 了解 mikan 如何连接平台适配器、会话、代理、沙箱
 
 - `src/main.ts`
 - `src/runtime/conversation-runtime.ts`
-- `src/runtime/agent-run-controller.ts`
+- `src/adapters/intake.ts`
+- `src/commands/manifest.ts`
 - `src/sessions/store.ts`
 - `src/sessions/agent-memory-file-manager.ts`
 
@@ -38,7 +39,8 @@ description: 了解 mikan 如何连接平台适配器、会话、代理、沙箱
 
 - 启动 CLI 并读取 env / args / `settings.json`
 - 为每个平台 bot 创建 `ConversationRuntime`，作为 `MessagingEventHandler`
-- 通过 `AgentRunController` 分发 `/login`、`/session`、`stop` 和 `new` 等控制命令
+- `stop` 魔法词由 conversation intake（`src/adapters/intake.ts`）在 trigger policy 和排队之前识别
+- `/login`、`/session`、`/new` 等控制命令在 `ConversationRuntime.runSession` 内分发；适配器注册与路由所依据的命令清单位于 `src/commands/manifest.ts`
 - 管理 `conversationStates` 和按会话队列，避免同一会话重复运行
 - 确定每个会话范围对应哪个 `PiAgentWrapper`
 
