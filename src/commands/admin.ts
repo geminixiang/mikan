@@ -1,8 +1,9 @@
+import { slashForms } from "./manifest.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { formatCommandSummary, replyPrivatelyWithContext } from "./utils.js";
 
-const ADMIN_COMMANDS = ["/admin", "/pi-admin"] as const;
+const ADMIN_COMMANDS = slashForms("admin");
 
 export class AdminCommandHandler implements CommandHandler {
   async tryHandle(context: CommandContext): Promise<boolean> {

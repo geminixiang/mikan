@@ -1,8 +1,9 @@
+import { slashForms } from "./manifest.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 
-const NEW_COMMANDS = ["/new", "/pi-new"] as const;
+const NEW_COMMANDS = slashForms("new");
 
 export class NewCommandHandler implements CommandHandler {
   async tryHandle(context: CommandContext): Promise<boolean> {

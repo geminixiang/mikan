@@ -2,11 +2,12 @@ import { existsSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { defaultExtensionDirs, listInstalledExtensions } from "../harness/index.js";
 import { readEnv } from "../utils/env.js";
+import { slashForms } from "./manifest.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { replyDiagnosticWithContext } from "./utils.js";
 
-const EXTENSIONS_COMMANDS = ["/pi-extensions", "/extensions"] as const;
+const EXTENSIONS_COMMANDS = slashForms("extensions");
 
 /**
  * `/pi-extensions` — inventory of extensions installed for this conversation.

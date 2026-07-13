@@ -19,6 +19,7 @@ import {
   downloadUrlToFile,
   withRetry,
 } from "../shared.js";
+import { telegramCommandMenu } from "../../commands/manifest.js";
 import { processMessageIntake } from "../intake.js";
 import { createTelegramAdapters } from "./context.js";
 import { escapeTelegramHtml } from "./html.js";
@@ -90,14 +91,9 @@ export class TelegramMessagingBot implements MessagingBot {
     this.botUsername = me.username ?? null;
     this.startupTime = Date.now();
 
-    await this.client.api.setMyCommands([
-      { command: "login", description: "Store credentials in your private vault" },
-      { command: "session", description: "Open the current session in the web viewer" },
-      { command: "model", description: "Switch this conversation's LLM model" },
-      { command: "sandbox", description: "Show or boost sandbox limits" },
-      { command: "stop", description: "Stop ongoing conversation" },
-      { command: "new", description: "Reset conversation history and start fresh" },
-    ]);
+    // Menu registration derives from the command manifest; routing is
+    // separate (native handlers below + intake/dispatch for the rest).
+    await this.client.api.setMyCommands(telegramCommandMenu());
 
     this.setupEventHandlers();
 
@@ -404,7 +400,9 @@ export class TelegramMessagingBot implements MessagingBot {
     this.client.command("sandbox", async (ctx) => {
       const mc = ctx.message ? this.extractMessageContext(ctx.message) : null;
       if (!mc) return;
-      const cleanedText = this.cleanText(mc.text).replace(/^\/sandbox(?:@\w+)?/i, "/pi-sandbox");
+      // The sandbox handler's grammar accepts /sandbox directly (manifest
+      // slash forms), so the user's spelling is logged and dispatched as-is.
+      const cleanedText = this.cleanText(mc.text);
       const event: TelegramEvent = {
         type: "command",
         conversationId: mc.chatId,

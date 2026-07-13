@@ -6,7 +6,8 @@ import type { TokenRecord } from "../types.js";
 // ── command ──────────────────────────────────────────────────────────────────
 
 export interface ParsedSessionViewCommand {
-  command: "session" | "/session" | "/pi-session";
+  /** The matched spelling, one of `commandForms("session")`. */
+  command: string;
 }
 
 // ── portal ───────────────────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ import type {
   ConversationKind,
   MessagingInfo,
 } from "../../adapter.js";
+import { COMMAND_MANIFEST, type SlackSlashRoute } from "../../commands/manifest.js";
 import { resolveConversationSettings } from "../../config.js";
 import type { EventsWatcher } from "../../events.js";
 import * as log from "../../log.js";
@@ -908,16 +909,33 @@ export class SlackMessagingBot implements MessagingBot {
     return { event, context };
   }
 
-  private async routeSlashLoginCommand(payload: {
-    command: string;
-    text?: string;
-    channel_id: string;
-    user_id: string;
-    user_name?: string;
-  }): Promise<void> {
+  /**
+   * Generic slash-command route: synthesize the command text per the
+   * manifest's SlackSlashRoute data and dispatch to the handler. `/pi-new`
+   * stays bespoke (routeSlashNewCommand) because it replies in 中文 and calls
+   * handleNewCommand directly.
+   */
+  private async routeSlashCommand(
+    route: SlackSlashRoute,
+    payload: {
+      command: string;
+      text?: string;
+      channel_id: string;
+      user_id: string;
+      user_name?: string;
+      thread_ts?: string;
+    },
+  ): Promise<void> {
     const { event, context } = this.buildSlashCommandEvent(payload, {
-      type: payload.channel_id.startsWith("D") ? "dm" : "private_command",
-      includeText: true,
+      includeText: route.includeText,
+      thread: route.thread,
+      ...(route.privateCommand
+        ? {
+            type: payload.channel_id.startsWith("D")
+              ? ("dm" as const)
+              : ("private_command" as const),
+          }
+        : {}),
     });
     await this.handler.handleEvent(event, this, context);
   }
@@ -961,39 +979,6 @@ export class SlackMessagingBot implements MessagingBot {
       getMessagingInfo: () => this.getMessagingInfo(),
     };
     await this.handler.handleNewCommand(conversationId, conversationId, commandMessagingBot);
-  }
-
-  private async routeSlashModelCommand(payload: {
-    command: string;
-    text?: string;
-    channel_id: string;
-    user_id: string;
-    user_name?: string;
-  }): Promise<void> {
-    const { event, context } = this.buildSlashCommandEvent(payload, { includeText: true });
-    await this.handler.handleEvent(event, this, context);
-  }
-
-  private async routeSlashSessionCommand(payload: {
-    command: string;
-    channel_id: string;
-    user_id: string;
-    user_name?: string;
-    thread_ts?: string;
-  }): Promise<void> {
-    const { event, context } = this.buildSlashCommandEvent(payload, { thread: true });
-    await this.handler.handleEvent(event, this, context);
-  }
-
-  private async routeSlashAdminCommand(payload: {
-    command: string;
-    channel_id: string;
-    user_id: string;
-    user_name?: string;
-    thread_ts?: string;
-  }): Promise<void> {
-    const { event, context } = this.buildSlashCommandEvent(payload, { thread: true });
-    await this.handler.handleEvent(event, this, context);
   }
 
   private setupEventHandlers(): void {
@@ -1225,49 +1210,16 @@ export class SlackMessagingBot implements MessagingBot {
     }
 
     const { command, text, channel_id, user_id, user_name, thread_ts } = payload;
+    const entry = COMMAND_MANIFEST.find((candidate) => candidate.slackCommand === command);
+    if (!entry) return;
 
     let handlerPromise: Promise<void> | null = null;
-    if (command === "/pi-login") {
-      handlerPromise = this.routeSlashLoginCommand({
-        command,
-        text,
-        channel_id,
-        user_id,
-        user_name,
-      });
-    } else if (command === "/pi-new") {
+    if (entry.name === "new") {
       handlerPromise = this.routeSlashNewCommand({ command, channel_id, user_id, user_name });
-    } else if (command === "/pi-session") {
-      handlerPromise = this.routeSlashSessionCommand({
-        command,
-        channel_id,
-        user_id,
-        user_name,
-        thread_ts,
-      });
-    } else if (command === "/pi-model") {
-      handlerPromise = this.routeSlashModelCommand({
+    } else if (entry.slackRoute) {
+      handlerPromise = this.routeSlashCommand(entry.slackRoute, {
         command,
         text,
-        channel_id,
-        user_id,
-        user_name,
-      });
-    } else if (
-      command === "/pi-sandbox" ||
-      command === "/pi-auto-reply" ||
-      command === "/pi-extensions"
-    ) {
-      handlerPromise = this.routeSlashModelCommand({
-        command,
-        text,
-        channel_id,
-        user_id,
-        user_name,
-      });
-    } else if (command === "/pi-admin") {
-      handlerPromise = this.routeSlashAdminCommand({
-        command,
         channel_id,
         user_id,
         user_name,

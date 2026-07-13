@@ -2,13 +2,14 @@ import { join } from "node:path";
 import { updateConversationSettings } from "../config.js";
 import { readConversationWorkspaceMountMode } from "../execution-resolver.js";
 import { resolveActorVaultKey } from "../vault/routing.js";
+import { slashForms } from "./manifest.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler, ParsedSandboxCommand } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 
 export type { ParsedSandboxCommand } from "./types.js";
 
-const SANDBOX_COMMANDS = ["/pi-sandbox", "/sandbox"] as const;
+const SANDBOX_COMMANDS = slashForms("sandbox");
 
 export function parseSandboxCommand(text: string): ParsedSandboxCommand | null {
   const matched = matchCommand(text, SANDBOX_COMMANDS, { stripMention: true });

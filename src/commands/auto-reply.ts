@@ -4,18 +4,14 @@ import {
   loadConversationAutoReplyConfig,
   saveConversationAutoReplyConfig,
 } from "../config.js";
+import { slashForms } from "./manifest.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 
 type AutoReplyAction = { type: "status" } | { type: "on" } | { type: "off" } | { type: "invalid" };
 
-const AUTO_REPLY_COMMANDS = [
-  "/auto-reply",
-  "/autoreply",
-  "/pi-auto-reply",
-  "/pi-autoreply",
-] as const;
+const AUTO_REPLY_COMMANDS = slashForms("auto-reply");
 
 function parseAutoReplyCommand(text: string): AutoReplyAction | null {
   const matched = matchCommand(text, AUTO_REPLY_COMMANDS, { stripMention: true });

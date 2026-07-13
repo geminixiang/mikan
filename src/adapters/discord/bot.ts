@@ -39,6 +39,7 @@ import {
   resolveStopTarget,
   withRetry,
 } from "../shared.js";
+import { COMMAND_MANIFEST } from "../../commands/manifest.js";
 import { processMessageIntake } from "../intake.js";
 import { createDiscordAdapters } from "./context.js";
 
@@ -104,48 +105,26 @@ export class DiscordMessagingBot implements MessagingBot {
         this.loadCachedGuildData();
         this.setupEventHandlers();
         try {
-          await readyClient.application.commands.set([
-            {
-              name: "login",
-              description: "Store credentials in your private vault",
-            },
-            {
-              name: "session",
-              description: "Open the current session in the web viewer",
-            },
-            {
-              name: "new",
-              description: "Reset conversation history and start fresh",
-            },
-            {
-              name: "stop",
-              description: "Stop the current conversation",
-            },
-            {
-              name: "model",
-              description: "Switch this conversation's LLM model",
-              options: [
-                {
-                  name: "model",
-                  description: "provider/model[:thinking], e.g. anthropic/claude-sonnet-4-6:off",
-                  type: ApplicationCommandOptionType.String,
-                  required: false,
-                },
-              ],
-            },
-            {
-              name: "sandbox",
-              description: "Show or temporarily boost this conversation's sandbox limits",
-              options: [
-                {
-                  name: "action",
-                  description: "Use 'boost' to temporarily apply the configured boost limits",
-                  type: ApplicationCommandOptionType.String,
-                  required: false,
-                },
-              ],
-            },
-          ]);
+          // Registration derives from the command manifest; routing below
+          // handles new/stop natively and the rest through one generic path.
+          await readyClient.application.commands.set(
+            COMMAND_MANIFEST.filter((entry) => entry.discord).map((entry) => ({
+              name: entry.name,
+              description: entry.description,
+              ...(entry.arg
+                ? {
+                    options: [
+                      {
+                        name: entry.arg.name,
+                        description: entry.arg.description,
+                        type: ApplicationCommandOptionType.String,
+                        required: entry.arg.required,
+                      },
+                    ],
+                  }
+                : {}),
+            })),
+          );
         } catch (err) {
           log.logWarning(
             "Failed to register Discord slash commands",
@@ -499,16 +478,10 @@ export class DiscordMessagingBot implements MessagingBot {
   private setupEventHandlers(): void {
     this.client.on(Events.InteractionCreate, async (interaction) => {
       if (!interaction.isChatInputCommand()) return;
-      if (
-        interaction.commandName !== "login" &&
-        interaction.commandName !== "session" &&
-        interaction.commandName !== "new" &&
-        interaction.commandName !== "stop" &&
-        interaction.commandName !== "model" &&
-        interaction.commandName !== "sandbox"
-      ) {
-        return;
-      }
+      const manifestEntry = COMMAND_MANIFEST.find(
+        (entry) => entry.discord && entry.name === interaction.commandName,
+      );
+      if (!manifestEntry) return;
 
       const isDM = !interaction.inGuild();
       const { conversationId, threadTs } = this.resolveConversationContext({
@@ -527,15 +500,9 @@ export class DiscordMessagingBot implements MessagingBot {
         persistentTopLevel: true,
         threadTs,
       });
-      const modelOption =
-        interaction.commandName === "model"
-          ? interaction.options.getString("model")?.trim()
-          : undefined;
-      const sandboxAction =
-        interaction.commandName === "sandbox"
-          ? interaction.options.getString("action")?.trim()
-          : undefined;
-      const commandArg = modelOption ?? sandboxAction;
+      const commandArg = manifestEntry.arg
+        ? interaction.options.getString(manifestEntry.arg.name)?.trim()
+        : undefined;
       const commandText = commandArg
         ? `/${interaction.commandName} ${commandArg}`
         : `/${interaction.commandName}`;

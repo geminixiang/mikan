@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler } from "../src/adapter.js";
 import { SlackMessagingBot } from "../src/adapters/slack/bot.js";
 import { defaultCommandHandlers } from "../src/commands/registry.js";
+import { commandManifestEntry } from "../src/commands/manifest.js";
 import { createGlobalSettingsFile } from "../src/config.js";
 import type { CommandServices } from "../src/commands/types.js";
 import { createConversationRuntime } from "../src/runtime/conversation-runtime.js";
@@ -92,7 +93,7 @@ describe("SlackMessagingBot slash commands", () => {
       },
     };
 
-    await (bot as any).routeSlashLoginCommand({
+    await (bot as any).routeSlashCommand(commandManifestEntry("login").slackRoute, {
       command: "/pi-login",
       text: "github",
       channel_id: "C123",
@@ -398,7 +399,7 @@ describe("SlackMessagingBot slash commands", () => {
       ["U123", { id: "U123", userName: "alice", displayName: "Alice" }],
     ]);
 
-    await (bot as any).routeSlashSessionCommand({
+    await (bot as any).routeSlashCommand(commandManifestEntry("session").slackRoute, {
       command: "/pi-session",
       channel_id: "C123",
       user_id: "U123",
@@ -443,7 +444,7 @@ describe("SlackMessagingBot slash commands", () => {
       },
     };
 
-    await (bot as any).routeSlashSessionCommand({
+    await (bot as any).routeSlashCommand(commandManifestEntry("session").slackRoute, {
       command: "/pi-session",
       channel_id: "C123",
       user_id: "U123",

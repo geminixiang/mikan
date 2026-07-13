@@ -1,11 +1,12 @@
 import * as log from "../log.js";
 import { resolveActorVaultKey } from "../vault/routing.js";
 import { sharedVaultKey } from "../vault/index.js";
+import { slashForms } from "./manifest.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler, ParsedLoginCommand } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 
-const LOGIN_COMMANDS = ["/login", "/pi-login"] as const;
+const LOGIN_COMMANDS = slashForms("login");
 
 export function parseLoginCommand(text: string): ParsedLoginCommand | null {
   const matched = matchCommand(text, LOGIN_COMMANDS);

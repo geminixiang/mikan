@@ -3,6 +3,7 @@ import type { ThinkingLevel as PiAiThinkingLevel } from "@earendil-works/pi-ai";
 import type { MikanModels } from "../harness/index.js";
 import { join } from "path";
 import { resolveConversationSettings, updateConversationSettings } from "../config.js";
+import { slashForms } from "./manifest.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler, ParsedModelCommand } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
@@ -19,7 +20,7 @@ const THINKING_LEVELS = new Set<ThinkingLevel>(["off", ...PI_AI_THINKING_LEVELS]
 
 export type { ParsedModelCommand } from "./types.js";
 
-const MODEL_COMMANDS = ["/model", "/pi-model"] as const;
+const MODEL_COMMANDS = slashForms("model");
 
 export function parseModelCommand(text: string): ParsedModelCommand | null {
   const matched = matchCommand(text, MODEL_COMMANDS);
