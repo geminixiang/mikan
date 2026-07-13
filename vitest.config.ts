@@ -1,6 +1,14 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      // Lets examples/ (and tests exercising them) import the public npm
+      // surface by name while running against the in-repo sources.
+      "@geminixiang/mikan": fileURLToPath(new URL("./src/index.ts", import.meta.url)),
+    },
+  },
   test: {
     coverage: {
       provider: "v8",

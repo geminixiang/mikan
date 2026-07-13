@@ -21,7 +21,6 @@ import {
   openManagedSession,
 } from "../src/sessions/store.js";
 import type { SandboxConfig } from "../src/sandbox/index.js";
-import type { VaultManager } from "../src/vault/index.js";
 
 let workingDir: string;
 let conversationDir: string;
@@ -42,26 +41,7 @@ afterEach(() => {
 
 function makeRuntime(models?: MikanModels) {
   const sandbox: SandboxConfig = { type: "host" };
-  return createConversationRuntime({
-    workingDir,
-    sandbox,
-    models,
-    vaultManager: {
-      hasEntry: () => false,
-      resolve: () => undefined,
-      getSandboxConfig: (_uid, base) => base,
-      list: () => [],
-      isEnabled: () => true,
-      upsertEnv: () => {},
-      upsertFile: () => {},
-      listSharedVaults: () => [],
-      deleteSharedVault: () => false,
-      copySharedVaultTo: () => ({ filesCopied: 0, envKeysCopied: 0 }),
-    } as VaultManager,
-    linkTokenStore: { create: () => ({ token: "link" }) },
-    sessionViewTokenStore: { create: () => ({ token: "session" }) },
-    adminTokenStore: { create: () => ({ token: "admin" }) },
-  } as any);
+  return createConversationRuntime({ workingDir, sandbox, models });
 }
 
 function createFauxModels(): { models: MikanModels; faux: ReturnType<typeof fauxProvider> } {

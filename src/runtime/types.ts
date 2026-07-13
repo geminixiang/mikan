@@ -8,9 +8,16 @@ import type {
   PlatformNotifier,
   PlatformReactor,
 } from "../adapter.js";
-import type { CommandHandler, CommandServices } from "../commands/types.js";
+import type {
+  AdminTokenStoreLike,
+  CommandHandler,
+  CommandServices,
+  LinkTokenStoreLike,
+  SessionViewTokenStoreLike,
+} from "../commands/types.js";
 import type { MikanModels } from "../harness/index.js";
 import type { PlatformToolPackFactory } from "../tools/types.js";
+import type { VaultManager } from "../vault/index.js";
 
 export interface ConversationRuntimeState {
   running: boolean;
@@ -30,13 +37,28 @@ export interface RunSessionOptions {
   context: ConversationContext;
 }
 
-export interface CreateSessionSandboxOptions {
+/** Conversation/session identity used to resolve per-session runner state. */
+export interface SessionStateOptions {
   conversationId: string;
   sessionKey: string;
   conversationKind?: ConversationKind;
 }
 
-export interface ConversationRuntimeOptions extends Omit<CommandServices, "runtime"> {
+export interface ConversationRuntimeOptions extends Omit<
+  CommandServices,
+  "runtime" | "vaultManager" | "linkTokenStore" | "sessionViewTokenStore" | "adminTokenStore"
+> {
+  /**
+   * Credential vault for sandboxed conversations. Optional for embedders;
+   * when omitted the runtime uses an inert, disabled vault.
+   */
+  vaultManager?: VaultManager;
+  /** Login-portal token store; omit when no web portal is hosted. */
+  linkTokenStore?: LinkTokenStoreLike;
+  /** Session-viewer token store; omit when no web portal is hosted. */
+  sessionViewTokenStore?: SessionViewTokenStoreLike;
+  /** Admin-portal token store; omit when no web portal is hosted. */
+  adminTokenStore?: AdminTokenStoreLike;
   /** Override the default command handlers (e.g., to add /help, /status). */
   commandHandlers?: readonly CommandHandler[];
   /** Model registry override; defaults to the process-wide models.json load. */
@@ -56,7 +78,6 @@ export interface ConversationRuntimeOptions extends Omit<CommandServices, "runti
 
 export interface ConversationRuntime extends MessagingEventHandler {
   runSession(options: RunSessionOptions): Promise<void>;
-  createSessionSandbox(options: CreateSessionSandboxOptions): Promise<PiAgentWrapper>;
   switchConversationModel(conversationId: string, provider: string, model: string): boolean;
   refreshConversationEnvironment(conversationId: string): boolean;
   shutdown(timeoutMs?: number): Promise<void>;

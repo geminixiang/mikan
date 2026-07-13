@@ -25,7 +25,7 @@ export interface SessionViewTokenStoreLike {
   ): { token: string };
 }
 
-interface AdminTokenStoreLike {
+export interface AdminTokenStoreLike {
   create(args: {
     platform: PlatformName;
     platformUserId: string;

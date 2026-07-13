@@ -441,34 +441,41 @@ boundary。
 - 不選 microsandbox：需求 fit 很高，但 pre-1.0 且跨機 sync 尚未交付，無法作為「比
   Gondolin 更成熟」的答案。
 
-### 更新後建議
+### 選型決定：Gondolin
 
-建議先做兩個有期限的 spike，而不是立即押注單一專案：
+比較完成後，決定繼續採用 **Gondolin/QEMU**。原因不是它比其他候選成熟，而是它已經
+提供最接近 mikan 契約的 VM execution、VFS 與 destination-bound secret primitive，能
+讓 mikan 專注於 worker、lease、workspace generation 與 vault authorization，不必另外
+維護 guest agent、CRI/Kubernetes 或通用 VM cluster platform。
 
-1. **libvirt/QEMU spike**：Linux/KVM 與 macOS/HVF 各跑同一個 curated guest，完成
-   streaming exec、cancel、local workspace、scoped HTTP secret、idle stop 與 resource
-   limit conformance。
-2. **Incus spike**：在兩台 Linux worker 驗證 cluster placement、attached shared
-   workspace、project isolation、worker loss、evacuation 與 mikan fencing。
+Gondolin 官方提供的 pi-coding-agent extension 範例進一步確認以下整合方式可行：
 
-選擇規則：
+- `VM.create()` 搭配 `RealFSProvider`，將 host workspace 投影至 `/workspace`
+- `VM.exec()` 支援 cwd、environment、streaming stdout/stderr 與 `AbortSignal`
+- VM startup 使用 single-flight promise，session shutdown 時呼叫 `vm.close()`
+- host absolute path 可經 escape check 映射為 guest POSIX path
 
-- macOS worker 是正式必要條件：選 **libvirt + QEMU**，接受 mikan 自建 fleet 與小型
-  guest agent。
-- macOS 只需 local development，production worker 可限定 Linux：選 **Incus**，mikan
-  直接使用其 cluster 與 storage primitives。
-- 兩個 spike 都顯示 control-layer 工程成本不合理：保留 **Gondolin**，但將它定位為
-  pinned、replaceable adapter，而非平台核心。
+範例是 integration reference，不是 production implementation。mikan 不應逐一 override
+pi tool，而應在既有 `Executor` 後方加入 `GondolinExecutor`；read/write 直接使用 `vm.fs`
+而不是執行 `cat` 或 base64 shell script。還必須補上：
 
-這三條路都應共用同一個 mikan `WorkerClient`、lease、workspace generation 與 vault
-contract。如此單機與多機切換不依賴底層 engine，也不會讓使用者看到
-`gondolin:*`、`incus:*` 或 `qemu:*` 等 backend-specific sandbox mode。
+- 每個 conversation/vault key 一個 VM，而不是 process 內單一 VM
+- startup failure 後清除 rejected single-flight promise，允許 retry
+- timeout/cancel 後確認 guest process 真正停止；必要時終止並重建 VM
+- secret 使用 Gondolin placeholder 與 destination policy，不把真實值放進 guest env
+- private workspace 使用 mount routing 組合多個 provider
+- curated guest image 明確提供 mikan 所需的 shell、Git 與工具
+- idle stop、resource limit、drift reconciliation 與 worker crash recovery
+
+Gondolin 維持 pinned、replaceable adapter，不讓 backend-specific API 進入 mikan 的公開
+sandbox mode 或持久 state。使用者只看到 `microvm:<profile>`；單機與多機都使用同一個
+`WorkerClient`、lease、workspace generation 與 vault contract。
 
 ## 分階段建議
 
 ### Phase 0：相容性 spike
 
-- 使用固定 Gondolin 版本執行獨立 Node 24 worker。
+- 使用固定版本的 Gondolin/QEMU 執行獨立 Node 24 worker。
 - 驗證硬體加速，測試 Linux x86_64、Linux ARM64 與目前支援的 macOS hardware。
 - 測試 mikan 實際的 `bash`、read、write、edit、package install、Git、cancellation、large
   output、private workspace 與 vault HTTP flow。
@@ -524,9 +531,9 @@ mount 也能通過時，才進入下一階段。
 
 ## 決策
 
-目前不直接決定以 Gondolin 作為唯一 engine。先以 libvirt/QEMU 驗證跨 Linux/macOS 的
-成熟本機管理路徑，再以 Incus 驗證 Linux cluster 是否能顯著減少 mikan 自建 fleet 與
-storage 工作。Gondolin 保留為功能適配基準與 fallback adapter。
+選定 Gondolin/QEMU 作為 `microvm:<profile>` 的第一個 engine。Gondolin 必須固定版本、
+隔離在獨立 worker process，並包在 mikan 自有的 runtime interface 後方；QEMU、Gondolin
+session ID 與 backend-specific configuration 都不成為公開契約。
 
 無論 spike 結果為何，從第一版開始都建立單一 mikan worker protocol，單機也透過它
 執行。第一個遠端版本使用一台 Linux/KVM worker、shared POSIX storage、scoped
@@ -534,8 +541,8 @@ in-memory secret 與嚴格 lease/fencing；只有測量後才加入 worker-local
 
 這個架構適合成長中的團隊，因為由單機擴展到多機時，只需要替換 placement 與
 workspace provider，不需要更換 agent、executor、vault policy 或 sandbox profile。
-責任邊界也很明確：Gondolin 解決本機受控執行，可靠的 distributed state 由 mikan
-負責。
+責任邊界也很明確：Gondolin 解決本機受控執行；可靠的 distributed state、lease、
+workspace generation 與 vault authorization 由 mikan 負責。
 
 ## 第一手來源
 

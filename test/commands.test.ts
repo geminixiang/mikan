@@ -139,7 +139,6 @@ function buildContext(args: BuildContextArgs): CommandContext & {
   const services: CommandServices = {
     workingDir: "/tmp/no-such-working-dir",
     runtime: {
-      createSessionSandbox: vi.fn(),
       forceStop: vi.fn(),
       getRunningSessions: vi.fn().mockReturnValue([]),
       handleEvent: vi.fn(),
@@ -474,7 +473,6 @@ describe("LoginCommandHandler", () => {
         vaultManager,
         provisioner: { remove } as any,
         runtime: {
-          createSessionSandbox: vi.fn(),
           forceStop: vi.fn(),
           getRunningSessions: vi.fn().mockReturnValue([{ sessionKey: "C123:thread-1" }]),
           handleEvent: vi.fn(),

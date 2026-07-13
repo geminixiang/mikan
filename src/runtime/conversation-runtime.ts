@@ -5,7 +5,7 @@ import type {
   PlatformName,
   RunningSession,
 } from "../adapter.js";
-import { type PiAgentWrapper, createRunner } from "../agent.js";
+import { createRunner } from "../agent.js";
 import { defaultCommandHandlers, dispatchCommand } from "../commands/registry.js";
 import type { CommandHandler, CommandServices } from "../commands/types.js";
 import { isPrivateConversation } from "../commands/utils.js";
@@ -27,25 +27,38 @@ import { formatNothingRunning, formatStopped, formatStopping } from "../platform
 import * as Sentry from "@sentry/node";
 import { join } from "path";
 import { getUnresolvedSandboxPathContext } from "../agent.js";
+import { disabledVaultManager } from "../vault/disabled.js";
 import type { ConversationRuntimeState } from "./types.js";
 
 type ConversationState = ConversationRuntimeState;
 
 export type {
-  CreateSessionSandboxOptions,
   RunSessionOptions,
   ConversationRuntime,
   ConversationRuntimeOptions,
 } from "./types.js";
 import type {
-  CreateSessionSandboxOptions,
   RunSessionOptions,
   ConversationRuntime,
   ConversationRuntimeOptions,
+  SessionStateOptions,
 } from "./types.js";
 
 const MAX_SESSIONS = 500;
 const IDLE_TIMEOUT_MS = 3_600_000;
+
+/**
+ * Placeholder token store for embedders that run without the web portal.
+ * Command handlers guard on `portalBaseUrl` before minting tokens, so this
+ * only fires when a portal URL is configured without its backing store.
+ */
+function portalNotConfiguredTokenStore(portal: string): { create: () => never } {
+  return {
+    create: () => {
+      throw new Error(`${portal} portal not configured`);
+    },
+  };
+}
 
 function runtimeCwdForSandbox(
   sandbox: ConversationRuntimeOptions["sandbox"],
@@ -75,7 +88,15 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private isShuttingDown = false;
 
   constructor(private readonly options: ConversationRuntimeOptions) {
-    this.commandServices = { ...options, runtime: this };
+    this.commandServices = {
+      ...options,
+      vaultManager: options.vaultManager ?? disabledVaultManager,
+      linkTokenStore: options.linkTokenStore ?? portalNotConfiguredTokenStore("Login"),
+      sessionViewTokenStore:
+        options.sessionViewTokenStore ?? portalNotConfiguredTokenStore("Session viewer"),
+      adminTokenStore: options.adminTokenStore ?? portalNotConfiguredTokenStore("Admin"),
+      runtime: this,
+    };
     this.commandHandlers = options.commandHandlers ?? defaultCommandHandlers();
   }
 
@@ -378,11 +399,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     );
   }
 
-  async createSessionSandbox(options: CreateSessionSandboxOptions): Promise<PiAgentWrapper> {
-    const state = await this.getOrCreateState(options);
-    return state.runner;
-  }
-
   switchConversationModel(conversationId: string, _provider: string, _model: string): boolean {
     return this.clearConversationStates(
       conversationId,
@@ -418,7 +434,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   }
 
   private async getOrCreateState(
-    options: CreateSessionSandboxOptions & { currentMessageId?: string },
+    options: SessionStateOptions & { currentMessageId?: string },
   ): Promise<ConversationState> {
     const { conversationId, sessionKey, currentMessageId } = options;
     const existing = this.conversationStates.get(sessionKey);
@@ -454,10 +470,12 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         sessionScope,
         vaultManager: this.options.vaultManager,
         provisioner: this.options.provisioner,
-        sessionView: {
-          tokenStore: this.options.sessionViewTokenStore,
-          portalBaseUrl: this.options.portalBaseUrl,
-        },
+        sessionView: this.options.sessionViewTokenStore
+          ? {
+              tokenStore: this.options.sessionViewTokenStore,
+              portalBaseUrl: this.options.portalBaseUrl,
+            }
+          : undefined,
         platformNotifier: this.options.platformNotifier,
         platformReactor: this.options.platformReactor,
         platformToolPackFactories: this.options.platformToolPackFactories,

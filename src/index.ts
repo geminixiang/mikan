@@ -7,7 +7,6 @@ export * from "./sessions/policy.js";
 export * from "./sessions/store.js";
 export {
   createConversationRuntime,
-  type CreateSessionSandboxOptions,
   type RunSessionOptions,
   type ConversationRuntime,
   type ConversationRuntimeOptions,
