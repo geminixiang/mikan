@@ -9,6 +9,39 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.14]
+
+### Added
+
+- Add GitHub inline review-thread intake and a `github_review_reply` tool.
+- Add `github_sync`, `github_read`, and `github_issue` tools for repository refresh and issue or pull request operations.
+- Add host-side Cloud Build log retrieval using GCP ADC or Workload Identity Federation.
+- Add a minimal embedder example that runs without portal services.
+
+### Changed
+
+- Update eligible GitHub pull request head branches in place instead of opening duplicate pull requests.
+- Drive platform command registration and routing from a shared command manifest.
+- Use one cross-platform stop grammar, including `/stop` in GitHub conversations.
+- Route sandbox file reads and writes through executors with staged, shell-safe transport.
+- Keep sandbox settings nested through configuration resolution and updates.
+
+### Fixed
+
+- Preserve raw session keys when using Slack's Force Stop button.
+- Spill large bash output into the runtime workspace so sandboxed agents can read it.
+- Keep malformed event files visible in the admin portal for deletion.
+- Unify platform formatting guidance across adapter and conversation contexts.
+
+### Security
+
+- Keep Cloud Build credentials host-side and outside agent sandboxes.
+- Centralize runtime identity and sandbox path sanitization.
+
+### Tests
+
+- Add coverage for GitHub tool operations, review threads, Cloud Build logs, executor file transport, command manifests, runtime embedding, and session serialization.
+
 ## [1.0.0-beta.13]
 
 ### Added
