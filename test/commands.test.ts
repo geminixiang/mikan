@@ -8,7 +8,7 @@ import { AutoReplyCommandHandler } from "../src/commands/auto-reply.js";
 import { ExtensionsCommandHandler } from "../src/commands/extensions.js";
 import { conversationSettingsPath } from "../src/config.js";
 import { dispatchCommand } from "../src/commands/registry.js";
-import { LoginCommandHandler } from "../src/commands/login.js";
+import { LoginCommandHandler, parseLoginCommand } from "../src/commands/login.js";
 import { NewCommandHandler } from "../src/commands/new.js";
 import { SandboxCommandHandler } from "../src/commands/sandbox.js";
 import { SessionViewCommandHandler } from "../src/commands/session-view.js";
@@ -320,6 +320,31 @@ describe("AutoReplyCommandHandler", () => {
 
 describe("LoginCommandHandler", () => {
   const handler = new LoginCommandHandler();
+
+  test("parses login commands only", () => {
+    expect(parseLoginCommand("/login")).toEqual({ action: "setup" });
+    expect(parseLoginCommand("login")).toBeNull();
+    expect(parseLoginCommand("/login github_oauth")).toEqual({ action: "setup" });
+    expect(parseLoginCommand("/pi-login github")).toEqual({ action: "setup" });
+    expect(parseLoginCommand("/pi-login shared create gliaclaw")).toEqual({
+      action: "shared_create",
+      name: "gliaclaw",
+    });
+    expect(parseLoginCommand("/pi-login shared update gliaclaw")).toEqual({
+      action: "shared_update",
+      name: "gliaclaw",
+    });
+    expect(parseLoginCommand("/pi-login shared delete gliaclaw")).toEqual({
+      action: "shared_delete",
+      name: "gliaclaw",
+    });
+    expect(parseLoginCommand("/pi-login shared list")).toEqual({ action: "shared_list" });
+    expect(parseLoginCommand("/pi-login copy gliaclaw")).toEqual({
+      action: "copy_shared",
+      name: "gliaclaw",
+    });
+    expect(parseLoginCommand("help")).toBeNull();
+  });
 
   test("declines unrelated commands", async () => {
     const ctx = buildContext({ commandText: "hello" });

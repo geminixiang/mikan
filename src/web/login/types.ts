@@ -29,12 +29,6 @@ export interface OAuthService {
   fileOutput?: OAuthAuthorizedUserFileOutput;
 }
 
-export type ParsedLoginCommand =
-  | { action: "setup" }
-  | { action: "shared_create" | "shared_update" | "shared_delete"; name: string }
-  | { action: "shared_list" }
-  | { action: "copy_shared"; name: string };
-
 export interface LinkToken extends TokenRecord {
   platform: PlatformName;
   platformUserId: string;

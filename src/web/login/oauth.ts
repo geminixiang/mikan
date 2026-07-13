@@ -1,10 +1,9 @@
-import { matchCommand } from "../../commands/parse.js";
 import { readEnv } from "../../utils/env.js";
 import { isRecord, parseJsonValue } from "../../utils/file-guards.js";
 import * as log from "../../log.js";
 
-export type { LoginCredentialKind, OAuthService, ParsedLoginCommand } from "./types.js";
-import type { OAuthService, ParsedLoginCommand } from "./types.js";
+export type { LoginCredentialKind, OAuthService } from "./types.js";
+import type { OAuthService } from "./types.js";
 
 const DEFAULT_GOOGLE_WORKSPACE_CLI_SCOPES = [
   "https://www.googleapis.com/auth/drive",
@@ -275,39 +274,4 @@ export function resolveOAuthService(input: string): OAuthService | undefined {
   return getOAuthServices().find(
     (service) => service.id === normalized || service.aliases.includes(normalized),
   );
-}
-
-const LOGIN_COMMANDS = ["/login", "/pi-login"] as const;
-
-export function parseLoginCommand(text: string): ParsedLoginCommand | null {
-  const matched = matchCommand(text, LOGIN_COMMANDS);
-  if (!matched) return null;
-
-  const [subcommand, operation, name, ...extra] = matched.args;
-
-  if (!subcommand) return { action: "setup" };
-
-  if (subcommand.toLowerCase() === "shared") {
-    const op = operation?.toLowerCase();
-    if (op === "list" && !name && extra.length === 0) {
-      return { action: "shared_list" };
-    }
-    if ((op === "create" || op === "update" || op === "delete") && !!name && extra.length === 0) {
-      return {
-        action: `shared_${op}` as "shared_create" | "shared_update" | "shared_delete",
-        name,
-      };
-    }
-    return null;
-  }
-
-  if (subcommand.toLowerCase() === "copy" && operation && !name && extra.length === 0) {
-    return { action: "copy_shared", name: operation };
-  }
-
-  // Backward-compatible: older `/pi-login gh` / `/pi-login gws` forms opened the
-  // generic login page and let the portal handle provider choice.
-  if (!operation && extra.length === 0) return { action: "setup" };
-
-  return null;
 }

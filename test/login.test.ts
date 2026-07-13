@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import {
-  getOAuthServices,
-  parseLoginCommand,
-  resolveOAuthService,
-} from "../src/web/login/oauth.js";
+import { getOAuthServices, resolveOAuthService } from "../src/web/login/oauth.js";
 import * as log from "../src/log.js";
 
 const originalOAuthServicesJson = process.env.OAUTH_SERVICES_JSON;
@@ -17,32 +13,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("login command parsing", () => {
-  test("parseLoginCommand recognizes login commands only", () => {
-    expect(parseLoginCommand("/login")).toEqual({ action: "setup" });
-    expect(parseLoginCommand("login")).toBeNull();
-    expect(parseLoginCommand("/login github_oauth")).toEqual({ action: "setup" });
-    expect(parseLoginCommand("/pi-login github")).toEqual({ action: "setup" });
-    expect(parseLoginCommand("/pi-login shared create gliaclaw")).toEqual({
-      action: "shared_create",
-      name: "gliaclaw",
-    });
-    expect(parseLoginCommand("/pi-login shared update gliaclaw")).toEqual({
-      action: "shared_update",
-      name: "gliaclaw",
-    });
-    expect(parseLoginCommand("/pi-login shared delete gliaclaw")).toEqual({
-      action: "shared_delete",
-      name: "gliaclaw",
-    });
-    expect(parseLoginCommand("/pi-login shared list")).toEqual({ action: "shared_list" });
-    expect(parseLoginCommand("/pi-login copy gliaclaw")).toEqual({
-      action: "copy_shared",
-      name: "gliaclaw",
-    });
-    expect(parseLoginCommand("help")).toBeNull();
-  });
-
+describe("OAuth services", () => {
   test("resolveOAuthService returns known services and aliases", () => {
     expect(resolveOAuthService("github")?.id).toBe("github");
     expect(resolveOAuthService("github_oauth")?.id).toBe("github");

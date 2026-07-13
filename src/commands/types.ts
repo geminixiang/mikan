@@ -80,3 +80,9 @@ export interface ParsedModelCommand {
 export interface ParsedSandboxCommand {
   action?: "boost" | "private" | "full";
 }
+
+export type ParsedLoginCommand =
+  | { action: "setup" }
+  | { action: "shared_create" | "shared_update" | "shared_delete"; name: string }
+  | { action: "shared_list" }
+  | { action: "copy_shared"; name: string };
