@@ -1,5 +1,5 @@
 import type { ConversationEvent } from "../../adapter.js";
-import type { GcpTokenProvider } from "../../gcp/auth.js";
+import type { GcpTokenProvider } from "./gcp-auth.js";
 
 export interface GithubEvent extends ConversationEvent {
   type: "message" | "issue";

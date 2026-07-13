@@ -1,4 +1,4 @@
-import type { GcpTokenProvider } from "../../gcp/auth.js";
+import type { GcpTokenProvider } from "./gcp-auth.js";
 
 /**
  * Host-side Cloud Build log retrieval for `github_checks`. Cloud Build's

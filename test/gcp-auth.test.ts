@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { GcpAuthError, GcpTokenProvider } from "../src/gcp/auth.js";
+import { GcpAuthError, GcpTokenProvider } from "../src/adapters/github/gcp-auth.js";
 
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const PRIVATE_KEY_PEM = privateKey.export({ type: "pkcs1", format: "pem" }).toString();

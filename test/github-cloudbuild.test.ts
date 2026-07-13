@@ -5,7 +5,7 @@ import {
   isCloudBuildId,
   projectFromDetailsUrl,
 } from "../src/adapters/github/cloudbuild.js";
-import type { GcpTokenProvider } from "../src/gcp/auth.js";
+import type { GcpTokenProvider } from "../src/adapters/github/gcp-auth.js";
 
 const BUILD_ID = "12345678-1234-1234-1234-123456789abc";
 

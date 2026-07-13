@@ -8,8 +8,9 @@ import type { PlatformToolPack } from "../../tools/types.js";
 import type { PlatformGithubOps } from "./types.js";
 
 /**
- * GitHub host-side capability pack: github_pr, github_checks,
- * github_review_reply.
+ * GitHub host-side capability pack — one tool per module under `tools/`:
+ * github_pr, github_checks, github_review_reply, github_sync, github_read,
+ * github_issue.
  *
  * These tools never run in the sandbox; they call PlatformGithubOps which
  * mints short-lived installation tokens on the host. The pack is only

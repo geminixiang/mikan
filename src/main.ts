@@ -12,7 +12,7 @@ import { DiscordMessagingBot } from "./adapters/discord/bot.js";
 import { GithubMessagingBot } from "./adapters/github/bot.js";
 import { createGithubToolPack } from "./adapters/github/tool-pack.js";
 import type { PlatformGithubOps } from "./adapters/github/types.js";
-import { GcpTokenProvider } from "./gcp/auth.js";
+import { GcpTokenProvider } from "./adapters/github/gcp-auth.js";
 import { TelegramMessagingBot } from "./adapters/telegram/bot.js";
 import { SlackMessagingBot as SlackMessagingBotClass } from "./adapters/slack/bot.js";
 import type { PlatformToolPackFactory } from "./tools/types.js";

@@ -12,7 +12,7 @@ import {
 } from "../src/adapters/github/ids.js";
 import { cloneRepo, pushBranch, syncRepo } from "../src/adapters/github/repo.js";
 import { fetchCloudBuildLog } from "../src/adapters/github/cloudbuild.js";
-import type { GcpTokenProvider } from "../src/gcp/auth.js";
+import type { GcpTokenProvider } from "../src/adapters/github/gcp-auth.js";
 import type {
   GithubIssue,
   GithubIssueComment,

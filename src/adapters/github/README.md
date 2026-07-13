@@ -12,7 +12,10 @@ GitHub App installation (no webhooks, matching mikan's proactive model — see
 - `client.ts`: minimal GitHub REST client authenticated as a GitHub App
   (RS256 app JWT → cached installation tokens).
 - `cloudbuild.ts`: Cloud Build log retrieval for `github_checks` (builds.get →
-  GCS log object) using host-side GCP ADC from `src/gcp/auth.ts`.
+  GCS log object) using host-side GCP ADC from `gcp-auth.ts`.
+- `gcp-auth.ts`: minimal GCP ADC token provider (WIF `external_account` STS
+  exchange, service-account key, gcloud user ADC) — no google-auth-library
+  dependency; lives here because Cloud Build logs are its only consumer.
 - `context.ts`: per-event `ConversationMessage` / `ConversationResponder`;
   no streaming — the finished response is posted as one comment (per-delta
   edits would churn the API and mark every reply "edited").
