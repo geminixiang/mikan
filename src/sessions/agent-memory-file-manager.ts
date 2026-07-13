@@ -2,7 +2,8 @@ import type { SessionEntry, SessionStore } from "../harness/index.js";
 import { join } from "path";
 import type { ConversationLogMessage } from "../types.js";
 import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-guards.js";
-import { formatLocalTimestamp } from "../utils/date.js";
+import { isCommandText } from "../commands/text.js";
+import { formatHistoryLine, stripHistoryLinePrefix } from "./history-line.js";
 import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 import * as log from "../log.js";
 import { isPlatformHistorySession } from "./metadata.js";
@@ -441,13 +442,7 @@ function isRenderableConversationMessage(
 }
 
 function isChatCommandMessage(message: ConversationLogMessage): boolean {
-  const text = message.text?.trim() ?? "";
-  return (
-    !message.isMessagingBot &&
-    /^\/(?:pi-[\w-]+|login|session|new|stop|model|sandbox|admin|auto-reply)(?:@\w+)?(?:\s|$)/i.test(
-      text,
-    )
-  );
+  return !message.isMessagingBot && isCommandText(message.text ?? "");
 }
 
 function dedupeAndSortRecords(records: LogRecord[]): LogRecord[] {
@@ -616,14 +611,7 @@ function getSessionMessageText(entry: SessionEntry): string {
     .join("\n");
 }
 
-function normalizeComparableText(text: string): string {
-  return text
-    .replace(
-      /^\[[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}\]\s+\[[^\]]+\](?:\s+\[in-thread:[^\]]+\])?:\s*/,
-      "",
-    )
-    .trim();
-}
+const normalizeComparableText = stripHistoryLinePrefix;
 
 function buildHistorySessionMessage(message: ConversationLogMessage): SessionAppendMessage | null {
   const text = message.text?.trim();
@@ -678,10 +666,11 @@ function parseMessageTimestamp(message: ConversationLogMessage): number | undefi
 }
 
 function formatHistoryMessage(message: ConversationLogMessage): string {
-  const text = message.text?.trim() ?? "";
-  const userLabel = message.userName || message.user || "unknown";
-  const timestamp = message.date ? formatLocalTimestamp(new Date(message.date)) : null;
-  return timestamp ? `[${timestamp}] [${userLabel}]: ${text}` : `[${userLabel}]: ${text}`;
+  return formatHistoryLine({
+    date: message.date ? new Date(message.date) : undefined,
+    userName: message.userName || message.user,
+    text: message.text?.trim() ?? "",
+  });
 }
 
 function zeroUsage(): object {

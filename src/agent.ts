@@ -60,6 +60,7 @@ import {
 } from "./observability/sentry.js";
 import type { VaultManager } from "./vault/index.js";
 import { AgentMemoryFileManager } from "./sessions/agent-memory-file-manager.js";
+import { formatHistoryLine } from "./sessions/history-line.js";
 import { conversationIdOf, isThreadSessionKey } from "./sessions/session-key.js";
 import {
   extractSessionUuid,
@@ -71,7 +72,6 @@ import { HostEventStore } from "./tools/event.js";
 import { createMikanTools } from "./tools/index.js";
 import type { PlatformToolPackFactory } from "./tools/types.js";
 import * as Sentry from "@sentry/node";
-import { formatLocalTimestamp } from "./utils/date.js";
 
 import { emitAgentEvent } from "./agent-events.js";
 
@@ -116,9 +116,12 @@ function getImageMimeType(filename: string): string | undefined {
 }
 
 function formatTimestampedUserMessage(message: ConversationMessage): string {
-  const timestamp = formatLocalTimestamp(new Date())!;
-  const threadContext = message.threadTs ? ` [in-thread:${message.threadTs}]` : "";
-  return `[${timestamp}] [${message.userName || "unknown"}]${threadContext}: ${message.text}`;
+  return formatHistoryLine({
+    date: new Date(),
+    userName: message.userName,
+    threadTs: message.threadTs,
+    text: message.text,
+  });
 }
 
 function collectMessageAttachments(
