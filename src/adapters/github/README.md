@@ -8,18 +8,25 @@ GitHub App installation (no webhooks, matching mikan's proactive model — see
 
 - `bot.ts`: `GithubMessagingBot` — MessagingBot implementation plus the poll
   loop (incremental `since` cursors, ETag conditional requests, mention /
-  participation triggering).
+  participation triggering) and the host-side backends for all github\_\* tools.
 - `client.ts`: minimal GitHub REST client authenticated as a GitHub App
   (RS256 app JWT → cached installation tokens).
+- `cloudbuild.ts`: Cloud Build log retrieval for `github_checks` (builds.get →
+  GCS log object) using host-side GCP ADC from `src/gcp/auth.ts`.
 - `context.ts`: per-event `ConversationMessage` / `ConversationResponder`;
   no streaming — the finished response is posted as one comment (per-delta
   edits would churn the API and mark every reply "edited").
-- `ids.ts`: `GH_<owner>_<repo>_<number>` conversation id encode/parse.
+- `ids.ts`: `GH_<owner>_<repo>_<number>` conversation id encode/parse, plus
+  the `rc-<id>` message ts for inline review comments.
 - `repo.ts`: host-side git operations — shallow clone into the conversation
-  dir and guarded branch push (`pi/*` only, non-force, tokens per-invocation
-  and never persisted).
-- `tool-pack.ts`: `createGithubToolPack` — host-side `github_pr` /
-  `github_checks` as a `PlatformToolPack` injected from main, not core tools.
+  dir, guarded branch push (`pi/*` only, non-force, tokens per-invocation and
+  never persisted), and work-preserving sync (`github_sync`).
+- `tool-pack.ts`: `createGithubToolPack` — the host-side tools under
+  `tools/` as a `PlatformToolPack` injected from main, not core tools.
+- `tools/`: one module per agent-facing tool — `pr.ts` (`github_pr`),
+  `checks.ts` (`github_checks`), `review-reply.ts` (`github_review_reply`),
+  `sync.ts` (`github_sync`), `read.ts` (`github_read`), `issue.ts`
+  (`github_issue`).
 - `types.ts`: adapter config, REST payloads, and host tool contracts
   (`GithubPrRequest`, `PlatformGithubOps`, …) — not re-exported from root
   `adapter.ts` / `types.ts`.
@@ -32,11 +39,25 @@ GitHub App installation (no webhooks, matching mikan's proactive model — see
 - `GITHUB_REPOS` — optional comma-separated `owner/repo` list; defaults to
   every repository the installation can access.
 - `GITHUB_POLL_INTERVAL` — optional poll interval in seconds (default 60).
+- `GOOGLE_APPLICATION_CREDENTIALS` — optional path to a GCP ADC JSON (a
+  Workload Identity Federation `external_account` file, a service-account
+  key, or gcloud user ADC). When set, `github_checks` can fetch Cloud Build
+  logs; credentials stay host-side, the sandbox never sees them. The ADC
+  principal needs `roles/cloudbuild.builds.viewer` on the project and
+  `roles/storage.objectViewer` on the logs bucket.
+- `GOOGLE_CLOUD_PROJECT` — optional fallback project when a Cloud Build
+  check's `details_url` does not name one.
 
 ## Behavior notes
 
 - Session scope: the whole issue/PR is one persistent session
-  (`sessionKey === conversationId`); PR review-line threads are not mapped yet.
+  (`sessionKey === conversationId`). Inline PR review comments are polled
+  (`/pulls/comments`) and injected into the same flat session as messages
+  tagged `[PR review comment rc-<id> on <path>:<line>]` with the diff hunk
+  and (for replies) the thread's earlier turns; the agent answers in-thread
+  with `github_review_reply`. A review whose summary body alone mentions the
+  bot (zero inline comments) does not trigger — there is no repo-wide
+  "reviews since" endpoint; the reviewer can post a normal comment instead.
 - Triggering: a comment triggers only when it @mentions the app slug or the
   bot already participates in that issue (its conversation dir has a
   `log.jsonl`), and the commenter holds **write permission or better** on the
@@ -60,7 +81,10 @@ conversation-dir bind mount:
 - First contact clones the repo shallowly into `<conversationDir>/repo/`
   using an ephemeral installation token scoped to that one repo with
   `contents:read`. The token is passed per git invocation (never written to
-  `.git/config`). PR conversations get the PR head checked out as `pr-<n>`.
+  `.git/config`). PR conversations get the PR head checked out under its
+  real branch name (resolved via the API; fork PRs and failed lookups fall
+  back to `pr-<n>`) — so a PR whose head is a `pi/*` branch can be updated
+  in place: commit on it and `github_pr` pushes back to the same PR.
 - The agent branches/commits inside the sandbox with plain git (bot identity
   preconfigured); push fails there by design.
 - The `github_pr` tool runs host-side: it mints a `contents:write` +
@@ -70,9 +94,24 @@ conversation-dir bind mount:
   existing open PR instead of failing. Default-branch pushes, force pushes,
   and merging are impossible by construction — humans review and merge.
 - The `github_checks` tool (read-only, host-side) reports CI check runs for a
-  pushed branch — or the PR head in PR conversations — and fetches one job's
-  log tail (`job_id`) so the agent can diagnose failures and iterate until CI
-  passes.
+  pushed branch — or the PR head in PR conversations — and fetches one run's
+  log tail: `job_id` for GitHub Actions, `build_id` for Cloud Build when the
+  host has GCP credentials (see Configuration). Other external CI degrades to
+  guidance text.
+- The `github_sync` tool refreshes the `./repo` snapshot from origin (PR head,
+  base branch, or a named branch) with an ephemeral `contents:read` token. It
+  only moves the checkout when that provably cannot lose agent work (clean
+  tree, no agent commits — force-pushed heads still sync); otherwise it is
+  fetch-only and reports so the agent can merge/rebase FETCH_HEAD itself.
+- The `github_review_reply` tool answers inside one inline review thread
+  (`comment_id` from an `rc-<id>` message); normal responses post as plain PR
+  comments.
+- The `github_read` tool reads what the clone cannot show: PR metadata/diff
+  stats, changed files, review state with open thread rc- ids, issue metadata,
+  recent comments, and a filtered issue/PR listing. Same-repo by construction.
+- The `github_issue` tool manages labels, assignees, and close/reopen on any
+  issue of the conversation's repo (triage); lock/delete/transfer are not in
+  the action set at all.
 - Requires the App to have **Contents: Read & write**, **Checks: Read**, and
   **Actions: Read** for job logs (plus the existing Issues / Pull requests
   read & write).

@@ -6,9 +6,12 @@ import type {
   GithubIssue,
   GithubIssueComment,
   GithubPullRequest,
+  GithubPullRequestFile,
+  GithubPullRequestReview,
   GithubReactionContent,
   GithubRepository,
   GithubRepositoryDetails,
+  GithubReviewComment,
   GithubTokenPermissions,
 } from "./types.js";
 
@@ -221,6 +224,66 @@ export class GithubClient {
     return pr!;
   }
 
+  /** Changed files of one PR (first 100; enough for triage-level reads). */
+  async listPullRequestFiles(
+    owner: string,
+    repo: string,
+    number: number,
+  ): Promise<GithubPullRequestFile[]> {
+    const files = await this.request<GithubPullRequestFile[]>(
+      "GET",
+      `/repos/${owner}/${repo}/pulls/${number}/files?per_page=100`,
+    );
+    return files!;
+  }
+
+  /** Submitted reviews of one PR (approvals, change requests, comments). */
+  async listPullRequestReviews(
+    owner: string,
+    repo: string,
+    number: number,
+  ): Promise<GithubPullRequestReview[]> {
+    const reviews = await this.request<GithubPullRequestReview[]>(
+      "GET",
+      `/repos/${owner}/${repo}/pulls/${number}/reviews?per_page=100`,
+    );
+    return reviews!;
+  }
+
+  /** Recent comments of one issue/PR conversation, oldest first. */
+  async listIssueComments(
+    owner: string,
+    repo: string,
+    number: number,
+  ): Promise<GithubIssueComment[]> {
+    const comments = await this.request<GithubIssueComment[]>(
+      "GET",
+      `/repos/${owner}/${repo}/issues/${number}/comments?per_page=30`,
+    );
+    return comments!;
+  }
+
+  /** Issues/PRs of a repo filtered for triage-style listing. */
+  async listIssues(
+    owner: string,
+    repo: string,
+    filters: { state?: string; labels?: string; creator?: string } = {},
+  ): Promise<GithubIssue[]> {
+    const params = new URLSearchParams({
+      state: filters.state ?? "open",
+      sort: "updated",
+      direction: "desc",
+      per_page: "30",
+    });
+    if (filters.labels) params.set("labels", filters.labels);
+    if (filters.creator) params.set("creator", filters.creator);
+    const issues = await this.request<GithubIssue[]>(
+      "GET",
+      `/repos/${owner}/${repo}/issues?${params}`,
+    );
+    return issues!;
+  }
+
   /** The open PR whose head is `branch`, or null when none exists. */
   async findOpenPullRequestByBranch(
     owner: string,
@@ -292,6 +355,36 @@ export class GithubClient {
     );
   }
 
+  /**
+   * All inline PR review comments in a repo updated at or after `since`,
+   * oldest first. Same shape and caveats as listIssueCommentsSince (one page,
+   * ETag 304 → null); review comments live in their own id space.
+   */
+  async listPullReviewCommentsSince(
+    owner: string,
+    repo: string,
+    since: string,
+  ): Promise<GithubReviewComment[] | null> {
+    return this.request<GithubReviewComment[]>(
+      "GET",
+      `/repos/${owner}/${repo}/pulls/comments?sort=updated&direction=asc&since=${encodeURIComponent(since)}&per_page=100`,
+      { conditional: true },
+    );
+  }
+
+  /** All review comments on one PR (for reconstructing a thread's history). */
+  async listPullReviewComments(
+    owner: string,
+    repo: string,
+    number: number,
+  ): Promise<GithubReviewComment[]> {
+    const comments = await this.request<GithubReviewComment[]>(
+      "GET",
+      `/repos/${owner}/${repo}/pulls/${number}/comments?per_page=100`,
+    );
+    return comments!;
+  }
+
   /** Issues and PRs updated at or after `since` (GitHub lists PRs as issues). */
   async listIssuesSince(owner: string, repo: string, since: string): Promise<GithubIssue[] | null> {
     return this.request<GithubIssue[]>(
@@ -307,6 +400,63 @@ export class GithubClient {
       `/repos/${owner}/${repo}/issues/${number}`,
     );
     return issue!;
+  }
+
+  async addIssueLabels(
+    owner: string,
+    repo: string,
+    number: number,
+    labels: string[],
+  ): Promise<void> {
+    await this.request("POST", `/repos/${owner}/${repo}/issues/${number}/labels`, {
+      body: { labels },
+    });
+  }
+
+  async removeIssueLabel(
+    owner: string,
+    repo: string,
+    number: number,
+    label: string,
+  ): Promise<void> {
+    await this.request(
+      "DELETE",
+      `/repos/${owner}/${repo}/issues/${number}/labels/${encodeURIComponent(label)}`,
+    );
+  }
+
+  async addIssueAssignees(
+    owner: string,
+    repo: string,
+    number: number,
+    assignees: string[],
+  ): Promise<void> {
+    await this.request("POST", `/repos/${owner}/${repo}/issues/${number}/assignees`, {
+      body: { assignees },
+    });
+  }
+
+  async removeIssueAssignees(
+    owner: string,
+    repo: string,
+    number: number,
+    assignees: string[],
+  ): Promise<void> {
+    await this.request("DELETE", `/repos/${owner}/${repo}/issues/${number}/assignees`, {
+      body: { assignees },
+    });
+  }
+
+  async updateIssueState(
+    owner: string,
+    repo: string,
+    number: number,
+    state: "open" | "closed",
+    stateReason?: string,
+  ): Promise<void> {
+    await this.request("PATCH", `/repos/${owner}/${repo}/issues/${number}`, {
+      body: { state, ...(stateReason ? { state_reason: stateReason } : {}) },
+    });
   }
 
   async createIssueComment(
@@ -345,6 +495,36 @@ export class GithubClient {
     content: GithubReactionContent,
   ): Promise<void> {
     await this.request("POST", `/repos/${owner}/${repo}/issues/comments/${commentId}/reactions`, {
+      body: { content },
+    });
+  }
+
+  /**
+   * Reply inside one review thread. GitHub 404s when `commentId` is not a
+   * review comment on PR `number` — server-side same-PR validation for free.
+   */
+  async replyToReviewComment(
+    owner: string,
+    repo: string,
+    number: number,
+    commentId: number,
+    body: string,
+  ): Promise<GithubReviewComment> {
+    const comment = await this.request<GithubReviewComment>(
+      "POST",
+      `/repos/${owner}/${repo}/pulls/${number}/comments/${commentId}/replies`,
+      { body: { body } },
+    );
+    return comment!;
+  }
+
+  async createReviewCommentReaction(
+    owner: string,
+    repo: string,
+    commentId: number,
+    content: GithubReactionContent,
+  ): Promise<void> {
+    await this.request("POST", `/repos/${owner}/${repo}/pulls/comments/${commentId}/reactions`, {
       body: { content },
     });
   }

@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { createGithubPrTool } from "../src/tools/github-pr.js";
+import { createGithubPrTool } from "../src/adapters/github/tools/pr.js";
 
 describe("github_pr tool", () => {
   test("reports itself unavailable outside GitHub conversations", async () => {

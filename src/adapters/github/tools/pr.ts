@@ -1,11 +1,13 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
-import type { GithubPrRequest, GithubPrResult } from "../adapters/github/types.js";
+import type { GithubPrRequest, GithubPrResult } from "../types.js";
 
 const githubPrSchema = Type.Object({
   branch: Type.String({
     description:
-      'Local branch inside ./repo to push. Must be named pi/<something> (e.g. "pi/fix-42"); the default branch is never pushable.',
+      'Local branch inside ./repo to push. Must be named pi/<something> (e.g. "pi/fix-42"); ' +
+      "the default branch is never pushable. To update this conversation's own PR, pass its " +
+      "checked-out pi/* head branch.",
   }),
   title: Type.String({ description: "Pull request title." }),
   body: Type.Optional(Type.String({ description: "Pull request description (Markdown)." })),
@@ -35,8 +37,10 @@ export function createGithubPrTool(): {
     label: "github_pr",
     description:
       "Push a pi/<name> branch you committed inside ./repo and open a GitHub pull request " +
-      "(or draft) for it. Only available in GitHub issue/PR conversations. You cannot push " +
-      "to the default branch and you cannot merge — humans review and merge the PR.",
+      "(or draft) for it. Pushing a branch that already has an open PR — including this " +
+      "conversation's own PR head — updates that PR instead of opening a new one. Only " +
+      "available in GitHub issue/PR conversations. You cannot push to the default branch " +
+      "and you cannot merge — humans review and merge the PR.",
     parameters: githubPrSchema,
     execute: async (_toolCallId: string, args: GithubPrArgs, signal?: AbortSignal) => {
       if (!prFn) {

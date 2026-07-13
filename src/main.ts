@@ -12,6 +12,7 @@ import { DiscordMessagingBot } from "./adapters/discord/bot.js";
 import { GithubMessagingBot } from "./adapters/github/bot.js";
 import { createGithubToolPack } from "./adapters/github/tool-pack.js";
 import type { PlatformGithubOps } from "./adapters/github/types.js";
+import { GcpTokenProvider } from "./gcp/auth.js";
 import { TelegramMessagingBot } from "./adapters/telegram/bot.js";
 import { SlackMessagingBot as SlackMessagingBotClass } from "./adapters/slack/bot.js";
 import type { PlatformToolPackFactory } from "./tools/types.js";
@@ -79,6 +80,8 @@ const GITHUB_APP_PRIVATE_KEY_PATH = readEnv("GITHUB_APP_PRIVATE_KEY_PATH");
 const GITHUB_INSTALLATION_ID = readEnv("GITHUB_INSTALLATION_ID");
 const GITHUB_REPOS = readEnv("GITHUB_REPOS");
 const GITHUB_POLL_INTERVAL = readEnv("GITHUB_POLL_INTERVAL");
+const GOOGLE_APPLICATION_CREDENTIALS = readEnv("GOOGLE_APPLICATION_CREDENTIALS");
+const GOOGLE_CLOUD_PROJECT = readEnv("GOOGLE_CLOUD_PROJECT");
 const LINK_URL = readEnv("LINK_URL");
 const LINK_PORT_RAW = readEnv("LINK_PORT");
 const LINK_PORT = LINK_PORT_RAW ? parseInt(LINK_PORT_RAW, 10) : LINK_URL ? 8181 : undefined;
@@ -424,6 +427,16 @@ function buildPlatformToolPackFactories(): PlatformToolPackFactory[] {
       requireGithubBot("github_checks").getChecks(conversationId, branch),
     getJobLog: (conversationId, jobId) =>
       requireGithubBot("github_checks").getJobLog(conversationId, jobId),
+    getBuildLog: (conversationId, buildId) =>
+      requireGithubBot("github_checks").getBuildLog(conversationId, buildId),
+    replyToReviewThread: (conversationId, commentId, body) =>
+      requireGithubBot("github_review_reply").replyToReviewThread(conversationId, commentId, body),
+    syncRepo: (conversationId, branch) =>
+      requireGithubBot("github_sync").syncRepo(conversationId, branch),
+    readGithub: (conversationId, request) =>
+      requireGithubBot("github_read").readGithub(conversationId, request),
+    manageIssue: (conversationId, request) =>
+      requireGithubBot("github_issue").manageIssue(conversationId, request),
   };
   return [() => createGithubToolPack(platformGithubOps)];
 }
@@ -561,10 +574,23 @@ if (hasGithub) {
       1000,
     workingDir,
     syncStatePath: join(stateDir, "github-sync.json"),
+    // Host-side GCP creds (e.g. a WIF external_account file) unlock Cloud
+    // Build logs in github_checks; without them external CI degrades to
+    // guidance text. Credentials never enter the sandbox.
+    cloudBuild: GOOGLE_APPLICATION_CREDENTIALS
+      ? {
+          tokenProvider: new GcpTokenProvider({
+            credentialsPath: GOOGLE_APPLICATION_CREDENTIALS,
+          }),
+          projectFallback: GOOGLE_CLOUD_PROJECT,
+        }
+      : undefined,
   });
   bots.push(githubMessagingBot);
   botsByPlatform.github = githubMessagingBot;
-  log.logInfo("Platform: GitHub");
+  log.logInfo(
+    `Platform: GitHub${GOOGLE_APPLICATION_CREDENTIALS ? " (Cloud Build logs enabled)" : ""}`,
+  );
 }
 
 if (LINK_PORT) {

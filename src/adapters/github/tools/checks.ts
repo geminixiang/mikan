@@ -1,6 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
-import type { GithubCheckSummary } from "../adapters/github/types.js";
+import type { GithubCheckSummary } from "../types.js";
 
 const githubChecksSchema = Type.Object({
   branch: Type.Optional(
@@ -13,8 +13,15 @@ const githubChecksSchema = Type.Object({
   job_id: Type.Optional(
     Type.Number({
       description:
-        "A check's job id from the summary output — returns that CI job's log " +
-        "(tail) instead of the summary, for diagnosing a failing check.",
+        "A [job …] id from the summary output (GitHub Actions checks) — returns that " +
+        "CI job's log (tail) instead of the summary, for diagnosing a failing check.",
+    }),
+  ),
+  build_id: Type.Optional(
+    Type.String({
+      description:
+        "A [build …] uuid from the summary output (Cloud Build checks) — returns that " +
+        "build's log (tail) instead of the summary. Mutually exclusive with job_id.",
     }),
   ),
 });
@@ -32,13 +39,15 @@ function formatCheckLine(run: GithubCheckSummary): string {
         : run.conclusion === "success"
           ? "✓"
           : "−";
-  // Only GitHub Actions checks have logs fetchable via job_id; external CI
-  // (Cloud Build & co.) keeps logs on its own service, so advertising an id
-  // there would only invite doomed fetches.
+  // GitHub Actions logs fetch via job_id; Cloud Build logs via build_id when
+  // the host has GCP credentials. Other external CI keeps logs on its own
+  // service, so advertising an id there would only invite doomed fetches.
   const handle =
     run.appSlug === "github-actions"
       ? `[job ${run.id}]`
-      : `[external CI: ${run.appSlug ?? "unknown"} — logs not on GitHub]`;
+      : run.buildLogAvailable && run.externalId
+        ? `[build ${run.externalId}]`
+        : `[external CI: ${run.appSlug ?? "unknown"} — logs not on GitHub]`;
   const line = `${marker} ${run.name}: ${state} ${handle}${run.url ? ` (${run.url})` : ""}`;
   const failed = run.conclusion !== null && FAILING_CONCLUSIONS.has(run.conclusion);
   return failed && run.outputSummary
@@ -49,6 +58,7 @@ function formatCheckLine(run: GithubCheckSummary): string {
 export interface GithubChecksFns {
   getChecks: (branch?: string) => Promise<GithubCheckSummary[]>;
   getJobLog: (jobId: number) => Promise<string>;
+  getBuildLog: (buildId: string) => Promise<string>;
 }
 
 /**
@@ -68,14 +78,15 @@ export function createGithubChecksTool(): {
     label: "github_checks",
     description:
       "Read CI status (check runs) for a branch you pushed with github_pr, or for this " +
-      "conversation's pull request when branch is omitted. Pass job_id (a [job …] id from " +
-      "the summary — GitHub Actions checks only) to fetch that job's log. External CI " +
-      "checks (e.g. Cloud Build) keep logs on their own service: use their summary/url, or " +
-      "reproduce the failure locally in ./repo. Only available in GitHub conversations.",
+      "conversation's pull request when branch is omitted. Pass job_id (a [job …] id, " +
+      "GitHub Actions) or build_id (a [build …] uuid, Cloud Build) from the summary to " +
+      "fetch that run's log. Other external CI checks keep logs on their own service: use " +
+      "their summary/url, or reproduce the failure locally in ./repo. Only available in " +
+      "GitHub conversations.",
     parameters: githubChecksSchema,
     execute: async (
       _toolCallId: string,
-      args: { branch?: string; job_id?: number },
+      args: { branch?: string; job_id?: number; build_id?: string },
       signal?: AbortSignal,
     ) => {
       if (!checksFns) {
@@ -84,9 +95,20 @@ export function createGithubChecksTool(): {
       if (signal?.aborted) {
         throw new Error("Operation aborted");
       }
+      if (args.job_id !== undefined && args.build_id !== undefined) {
+        throw new Error("Pass either job_id or build_id, not both.");
+      }
 
       if (args.job_id !== undefined) {
         const logText = await checksFns.getJobLog(args.job_id);
+        return {
+          content: [{ type: "text" as const, text: logText || "(empty log)" }],
+          details: undefined,
+        };
+      }
+
+      if (args.build_id !== undefined) {
+        const logText = await checksFns.getBuildLog(args.build_id);
         return {
           content: [{ type: "text" as const, text: logText || "(empty log)" }],
           details: undefined,

@@ -105,6 +105,45 @@ describe("GithubClient conditional requests", () => {
   });
 });
 
+describe("GithubClient review comments", () => {
+  test("listPullReviewCommentsSince polls /pulls/comments conditionally", async () => {
+    const calls: string[] = [];
+    let first = true;
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL) => {
+      if (String(url).includes("/access_tokens")) return tokenResponse();
+      calls.push(String(url));
+      if (first) {
+        first = false;
+        return jsonResponse([{ id: 8001 }], { headers: { etag: 'W/"rc"' } });
+      }
+      return new Response(null, { status: 304 });
+    });
+
+    const client = makeClient(fetchImpl as unknown as typeof fetch);
+    const since = "2026-01-01T00:00:00Z";
+    expect(await client.listPullReviewCommentsSince("o", "r", since)).toEqual([{ id: 8001 }]);
+    expect(await client.listPullReviewCommentsSince("o", "r", since)).toBeNull();
+    expect(calls[0]).toContain("/repos/o/r/pulls/comments?sort=updated&direction=asc&since=");
+  });
+
+  test("listPullReviewComments and createReviewCommentReaction hit the pulls endpoints", async () => {
+    const calls: { url: string; method?: string }[] = [];
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url).includes("/access_tokens")) return tokenResponse();
+      calls.push({ url: String(url), method: init?.method });
+      return jsonResponse([]);
+    });
+
+    const client = makeClient(fetchImpl as unknown as typeof fetch);
+    await client.listPullReviewComments("o", "r", 5);
+    await client.createReviewCommentReaction("o", "r", 8001, "eyes");
+
+    expect(calls[0].url).toContain("/repos/o/r/pulls/5/comments?per_page=100");
+    expect(calls[1]).toMatchObject({ method: "POST" });
+    expect(calls[1].url).toContain("/repos/o/r/pulls/comments/8001/reactions");
+  });
+});
+
 describe("GithubClient errors", () => {
   test("non-2xx responses throw GithubApiError with the status", async () => {
     const fetchImpl = vi.fn(async (url: RequestInfo | URL) => {

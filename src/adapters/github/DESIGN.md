@@ -1,7 +1,7 @@
 # GitHub as a messaging adapter (design)
 
-Status: **implemented** (issue/PR conversation comments; review threads still
-open — see `README.md` for configuration and behavior). A fourth platform
+Status: **implemented** (issue/PR conversation comments and inline PR review
+comments — see `README.md` for configuration and behavior). A fourth platform
 adapter beside Slack / Discord / Telegram, living in `src/adapters/github/`.
 
 ## Core assumption
@@ -22,17 +22,17 @@ adapter contract, no new inbound-HTTP surface, no break in the model.
 
 ## Identity mapping
 
-| mikan concept        | GitHub                                              |
-| -------------------- | --------------------------------------------------- |
-| conversation         | one issue or one PR                                 |
-| `conversationId`     | `GH_<owner>_<repo>_<number>` (verbatim, stable)     |
-| conversation message | an issue/PR comment (or the issue/PR body itself)   |
-| message `ts`         | the comment id (GitHub node/database id)            |
-| thread               | a PR **review thread** (comments on a diff line)    |
-| `postMessage`        | create an issue/PR comment                          |
-| `addReaction`        | add a reaction to a comment (GitHub has reactions)  |
-| user                 | GitHub login                                        |
-| `conversationKind`   | always `shared` (issues/PRs are public within repo) |
+| mikan concept        | GitHub                                                               |
+| -------------------- | -------------------------------------------------------------------- |
+| conversation         | one issue or one PR                                                  |
+| `conversationId`     | `GH_<owner>_<repo>_<number>` (verbatim, stable)                      |
+| conversation message | an issue/PR comment, an inline review comment, or the issue/PR body  |
+| message `ts`         | the comment id; `rc-<id>` for review comments (own id space)         |
+| thread               | a PR **review thread** — flattened into the PR session (see Decided) |
+| `postMessage`        | create an issue/PR comment                                           |
+| `addReaction`        | add a reaction to a comment (GitHub has reactions)                   |
+| user                 | GitHub login                                                         |
+| `conversationKind`   | always `shared` (issues/PRs are public within repo)                  |
 
 `conversationId` uses the `GH_` prefix so it never collides with Slack
 (`C…`/`D…`) or other platforms. Owner and repo are **lowercased**: GitHub
@@ -133,17 +133,27 @@ Both can coexist.
   private key + installation id; the adapter mints short-lived installation
   tokens and refreshes them. `bot` identity in `MessagingInfo` = the app's
   bot user (`<app-name>[bot]`).
+- **Review threads: one PR = one flat session.** Inline review comments are
+  polled from `/pulls/comments` (same watermark discipline, own id space →
+  `rc-<id>` ts) and injected into the PR conversation as messages carrying
+  file:line, the diff hunk, and the thread's earlier turns. No sub-sessions:
+  the agent keeps the full PR context and answers a specific thread with the
+  `github_review_reply` tool. Known limitation: a review whose summary body
+  alone mentions the bot (zero inline comments) does not trigger — there is
+  no repo-wide "reviews since" endpoint and per-PR fan-out is not worth it.
+- **Tool pack, one tool per file under `tools/`**: `github_pr`,
+  `github_checks` (Actions job logs + Cloud Build logs via host-side GCP ADC
+  when configured), `github_review_reply`, `github_sync` (work-preserving
+  clone refresh), `github_read` (metadata the clone lacks), `github_issue`
+  (labels/assignees/state; closed action set). All host-side, wired per run
+  through `PlatformGithubOps`, enabled only for github conversations.
 
 ## Open questions for implementation
 
 1. Rate limits: polling budget, `since` cursors, conditional requests
    (ETag/If-Modified-Since) to stay under the limit on busy repos. The App's
-   higher budget helps but polling still needs to be incremental.
-2. Review threads vs issue comments: map PR review-line threads to mikan
-   threads (thread_ts equivalent) or treat the whole PR as one flat thread
-   initially.
-3. Message shape: how much of a comment (body, diff hunk, review state) maps
+   higher budget helps but polling still needs to be incremental. (Current:
+   3 conditional requests per repo per tick; 304s are free.)
+2. Message shape: how much of a comment (body, diff hunk, review state) maps
    into `ConversationMessage`, and how the agent's reply renders (Markdown is
    native to GitHub, so no Block Kit translation needed).
-4. Which installation events to poll: issue comments, PR comments, PR review
-   comments — start with issue + PR comments, add review threads later.

@@ -7,7 +7,14 @@ import type {
   MessagingEventHandler,
   MessagingInfo,
 } from "../../adapter.js";
-import type { GithubCheckSummary, GithubPrRequest, GithubPrResult } from "./types.js";
+import type {
+  GithubCheckSummary,
+  GithubIssueRequest,
+  GithubPrRequest,
+  GithubPrResult,
+  GithubReadRequest,
+  GithubReadResult,
+} from "./types.js";
 import * as log from "../../log.js";
 import { ensureDirExists, readJsonSchemaFileIfExists } from "../../utils/file-guards.js";
 import { atomicWritePrivateFile } from "../../utils/fs-atomic.js";
@@ -23,12 +30,21 @@ import {
 } from "../shared.js";
 import { processMessageIntake } from "../intake.js";
 import { GithubApiError, GithubClient, githubIsRateLimited } from "./client.js";
+import {
+  CLOUD_BUILD_APP_SLUG,
+  CloudBuildLogUnavailableError,
+  fetchCloudBuildLog,
+  isCloudBuildId,
+  projectFromDetailsUrl,
+} from "./cloudbuild.js";
 import { createGithubAdapters } from "./context.js";
-import { cloneRepo, GITHUB_PUSH_BRANCH_PATTERN, pushBranch } from "./repo.js";
+import { cloneRepo, GITHUB_PUSH_BRANCH_PATTERN, pushBranch, syncRepo } from "./repo.js";
 import {
   buildGithubConversationId,
   GITHUB_ISSUE_BODY_TS,
+  githubReviewCommentTs,
   parseGithubConversationId,
+  parseReviewCommentTs,
 } from "./ids.js";
 import type {
   GithubBotConfig,
@@ -48,6 +64,9 @@ const SyncStateSchema = Type.Object({
       cursor: Type.String(),
       seenComments: Type.Array(Type.Number()),
       seenIssues: Type.Array(Type.Number()),
+      // Optional: state files written before review-comment polling must keep
+      // loading — a schema failure re-baselines and silently drops dedup state.
+      seenReviewComments: Type.Optional(Type.Array(Type.Number())),
     }),
   ),
 });
@@ -87,6 +106,7 @@ interface RepoWatermark {
   cursor: string;
   seenComments: Set<number>;
   seenIssues: Set<number>;
+  seenReviewComments: Set<number>;
 }
 
 const githubRetry = <T>(fn: () => Promise<T>): Promise<T> =>
@@ -115,13 +135,21 @@ const GITHUB_REACTIONS: Record<string, GithubReactionContent> = {
 
 interface IncomingItem {
   ref: GithubConversationRef;
-  /** Comment id, or GITHUB_ISSUE_BODY_TS for the issue/PR body itself. */
+  /** Comment id, rc-<id> for review comments, or GITHUB_ISSUE_BODY_TS for the body. */
   ts: string;
   user: string;
   text: string;
   createdAt: string;
   /** Known only for issue-body items; comment first-contact resolves it via getIssue. */
   isPr?: boolean;
+  /** Present for inline PR review comments: the diff anchor to inject as context. */
+  review?: {
+    commentId: number;
+    path: string;
+    line: number | null;
+    diffHunk: string;
+    inReplyToId?: number;
+  };
 }
 
 // Repo refs are lowercased at every entry point (env config here, the
@@ -156,6 +184,20 @@ function issueNumberFromUrl(issueUrl: string): number {
   return Number(match[1]);
 }
 
+/** PR number from a review comment's `pull_request_url` (…/repos/o/r/pulls/42). */
+function prNumberFromUrl(pullRequestUrl: string): number {
+  const match = /\/pulls\/(\d+)$/.exec(pullRequestUrl);
+  if (!match) {
+    throw new Error(`Cannot parse PR number from ${pullRequestUrl}`);
+  }
+  return Number(match[1]);
+}
+
+/** Keep the tail: a review comment anchors to the hunk's final lines. */
+const MAX_DIFF_HUNK_CHARS = 1500;
+const MAX_THREAD_TURNS = 10;
+const MAX_THREAD_TURN_CHARS = 500;
+
 export class GithubMessagingBot implements MessagingBot {
   private readonly client: GithubClient;
   private readonly handler: MessagingEventHandler;
@@ -166,6 +208,8 @@ export class GithubMessagingBot implements MessagingBot {
   private queues = new Map<string, MessagingEventQueue>();
   private repoState = new Map<string, RepoWatermark>();
   private permissionCache = new Map<string, { rank: number; expiresAt: number }>();
+  /** Cloud Build ids seen in getChecks summaries → their GCP project. */
+  private buildRef = new Map<string, { project: string }>();
   private pollInFlight = false;
 
   constructor(handler: MessagingEventHandler, config: GithubBotConfig, client?: GithubClient) {
@@ -221,8 +265,15 @@ export class GithubMessagingBot implements MessagingBot {
               cursor: saved.cursor,
               seenComments: new Set(saved.seenComments),
               seenIssues: new Set(saved.seenIssues),
+              seenReviewComments: new Set(saved.seenReviewComments ?? []),
             }
-          : { baseline: now, cursor: now, seenComments: new Set(), seenIssues: new Set() },
+          : {
+              baseline: now,
+              cursor: now,
+              seenComments: new Set(),
+              seenIssues: new Set(),
+              seenReviewComments: new Set(),
+            },
       );
     }
     this.persistSyncState();
@@ -260,11 +311,21 @@ export class GithubMessagingBot implements MessagingBot {
         `GitHub does not support reaction '${emoji}' (supported: ${Object.keys(GITHUB_REACTIONS).join(", ")})`,
       );
     }
-    await githubRetry(() =>
-      messageTs === GITHUB_ISSUE_BODY_TS
-        ? this.client.createIssueReaction(ref.owner, ref.repo, ref.number, content)
-        : this.client.createCommentReaction(ref.owner, ref.repo, Number(messageTs), content),
-    );
+    const reviewCommentId = parseReviewCommentTs(messageTs);
+    await githubRetry(() => {
+      if (messageTs === GITHUB_ISSUE_BODY_TS) {
+        return this.client.createIssueReaction(ref.owner, ref.repo, ref.number, content);
+      }
+      if (reviewCommentId !== null) {
+        return this.client.createReviewCommentReaction(
+          ref.owner,
+          ref.repo,
+          reviewCommentId,
+          content,
+        );
+      }
+      return this.client.createCommentReaction(ref.owner, ref.repo, Number(messageTs), content);
+    });
   }
 
   enqueueEvent(event: ConversationEvent): boolean {
@@ -408,8 +469,42 @@ export class GithubMessagingBot implements MessagingBot {
       });
     }
 
+    // Inline PR review comments live in their own endpoint and id space; the
+    // same watermark discipline applies. The bot's own thread replies (the
+    // github_review_reply tool) re-surface here and are dropped as Bot-authored.
+    const reviewComments =
+      (await this.client.listPullReviewCommentsSince(repo.owner, repo.repo, since)) ?? [];
+    for (const comment of reviewComments) {
+      if (comment.updated_at > state.cursor) {
+        state.cursor = comment.updated_at;
+        changed = true;
+      }
+      if (comment.created_at < state.baseline || state.seenReviewComments.has(comment.id)) {
+        continue;
+      }
+      state.seenReviewComments.add(comment.id);
+      changed = true;
+      if (comment.user.type === "Bot") continue;
+      await this.handleIncoming({
+        ref: { ...repo, number: prNumberFromUrl(comment.pull_request_url) },
+        ts: githubReviewCommentTs(comment.id),
+        user: comment.user.login,
+        text: comment.body,
+        createdAt: comment.created_at,
+        isPr: true,
+        review: {
+          commentId: comment.id,
+          path: comment.path,
+          line: comment.line,
+          diffHunk: comment.diff_hunk,
+          inReplyToId: comment.in_reply_to_id,
+        },
+      });
+    }
+
     pruneSeen(state.seenComments);
     pruneSeen(state.seenIssues);
+    pruneSeen(state.seenReviewComments);
     return changed;
   }
 
@@ -443,6 +538,7 @@ export class GithubMessagingBot implements MessagingBot {
         cursor: watermark.cursor,
         seenComments: [...watermark.seenComments],
         seenIssues: [...watermark.seenIssues],
+        seenReviewComments: [...watermark.seenReviewComments],
       };
     }
     ensureDirExists(dirname(this.config.syncStatePath));
@@ -561,12 +657,18 @@ export class GithubMessagingBot implements MessagingBot {
     let isPrHint = item.isPr;
     if (!participating && item.ts !== GITHUB_ISSUE_BODY_TS) {
       const issue = await this.logIssueContext(item.ref, conversationId, item.createdAt);
-      if (issue) isPrHint = Boolean(issue.pull_request);
+      // Only comments arrive without the PR-ness hint; review comments carry
+      // isPr: true (they only exist on PRs) and that knowledge is authoritative.
+      if (issue && isPrHint === undefined) isPrHint = Boolean(issue.pull_request);
     }
     if (!existsSync(this.repoDir(conversationId))) {
       const isPr = isPrHint ?? (await this.fetchIsPr(item.ref));
       await this.ensureRepoClone(item.ref, conversationId, isPr);
     }
+
+    const messageText = item.review
+      ? await this.formatReviewMessage(item, cleanedText)
+      : cleanedText;
 
     const eventBase: GithubEvent = {
       type: item.ts === GITHUB_ISSUE_BODY_TS ? "issue" : "message",
@@ -576,7 +678,7 @@ export class GithubMessagingBot implements MessagingBot {
       sessionKey,
       user: item.user,
       userName: item.user,
-      text: cleanedText,
+      text: messageText,
     };
 
     await processMessageIntake({
@@ -588,7 +690,7 @@ export class GithubMessagingBot implements MessagingBot {
         ts: item.ts,
         user: item.user,
         userName: item.user,
-        text: cleanedText,
+        text: messageText,
         isMessagingBot: false,
       },
       log: (entry) => this.logToFile(conversationId, entry),
@@ -599,6 +701,68 @@ export class GithubMessagingBot implements MessagingBot {
       bot: this,
       createContext: (event) => createGithubAdapters(event, this),
     });
+  }
+
+  /**
+   * Decorates an inline review comment with its diff anchor and (for replies)
+   * the thread's earlier turns, so the agent knows which code the feedback is
+   * about without hunting through the PR. The rc-<id> in the header is what
+   * github_review_reply takes to answer in-thread.
+   */
+  private async formatReviewMessage(item: IncomingItem, cleanedText: string): Promise<string> {
+    const review = item.review!;
+    const location = review.line !== null ? `${review.path}:${review.line}` : review.path;
+    const parts = [`[PR review comment ${githubReviewCommentTs(review.commentId)} on ${location}]`];
+    if (review.diffHunk) {
+      const hunk =
+        review.diffHunk.length > MAX_DIFF_HUNK_CHARS
+          ? `…${review.diffHunk.slice(-MAX_DIFF_HUNK_CHARS)}`
+          : review.diffHunk;
+      parts.push(`\`\`\`diff\n${hunk}\n\`\`\``);
+    }
+    if (review.inReplyToId !== undefined) {
+      const turns = await this.reviewThreadContext(item.ref, review.inReplyToId, review.commentId);
+      if (turns.length > 0) {
+        parts.push(`Thread so far:\n${turns.join("\n")}`);
+      }
+    }
+    parts.push(cleanedText);
+    return parts.join("\n");
+  }
+
+  /**
+   * Earlier turns of one review thread (root + replies before the trigger),
+   * newest-truncated. Fail-soft: context is a nicety, the trigger is not.
+   */
+  private async reviewThreadContext(
+    ref: GithubConversationRef,
+    rootId: number,
+    beforeId: number,
+  ): Promise<string[]> {
+    try {
+      const all = await githubRetry(() =>
+        this.client.listPullReviewComments(ref.owner, ref.repo, ref.number),
+      );
+      return all
+        .filter(
+          (comment) =>
+            (comment.id === rootId || comment.in_reply_to_id === rootId) && comment.id < beforeId,
+        )
+        .slice(-MAX_THREAD_TURNS)
+        .map((comment) => {
+          const body =
+            comment.body.length > MAX_THREAD_TURN_CHARS
+              ? `${comment.body.slice(0, MAX_THREAD_TURN_CHARS)}…`
+              : comment.body;
+          return `@${comment.user.login}: ${body}`;
+        });
+    } catch (err) {
+      log.logWarning(
+        `GitHub: could not fetch review thread context for ${ref.owner}/${ref.repo}#${ref.number}`,
+        err instanceof Error ? err.message : String(err),
+      );
+      return [];
+    }
   }
 
   private async logIssueContext(
@@ -654,6 +818,26 @@ export class GithubMessagingBot implements MessagingBot {
   }
 
   /**
+   * The PR's head branch name when it lives in this repo — that is the name
+   * the local checkout should carry, so committing on it and calling
+   * github_pr pushes back to the PR itself instead of opening a new one.
+   * Fork heads (unpushable with the repo-scoped token) and failed lookups
+   * return undefined; callers then fall back to the synthetic pr-<n>.
+   */
+  private async fetchPrHeadBranch(ref: GithubConversationRef): Promise<string | undefined> {
+    try {
+      const pr = await githubRetry(() =>
+        this.client.getPullRequest(ref.owner, ref.repo, ref.number),
+      );
+      const sameRepo =
+        pr.head?.repo?.full_name?.toLowerCase() === `${ref.owner}/${ref.repo}`.toLowerCase();
+      return sameRepo ? pr.head?.ref : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * Clone the conversation's repo into its dir (bind-mounted into the
    * sandbox) using an ephemeral contents:read token that never leaves the
    * host. Non-fatal: a failed clone degrades to the pre-clone experience.
@@ -669,6 +853,7 @@ export class GithubMessagingBot implements MessagingBot {
       const token = await this.client.createScopedInstallationToken(ref.repo, {
         contents: "read",
       });
+      const prHeadBranch = isPr ? await this.fetchPrHeadBranch(ref) : undefined;
       await cloneRepo({
         url: `https://github.com/${ref.owner}/${ref.repo}.git`,
         dir,
@@ -676,9 +861,10 @@ export class GithubMessagingBot implements MessagingBot {
         botLogin: `${this.appSlug}[bot]`,
         botEmail: this.botEmail ?? `${this.appSlug}[bot]@users.noreply.github.com`,
         prNumber: isPr ? ref.number : undefined,
+        prHeadBranch,
       });
       log.logInfo(
-        `[${conversationId}] Cloned ${ref.owner}/${ref.repo}${isPr ? ` and checked out PR #${ref.number} head` : ""}`,
+        `[${conversationId}] Cloned ${ref.owner}/${ref.repo}${isPr ? ` and checked out PR #${ref.number} head as ${prHeadBranch ?? `pr-${ref.number}`}` : ""}`,
       );
     } catch (err) {
       log.logWarning(
@@ -771,15 +957,306 @@ export class GithubMessagingBot implements MessagingBot {
       target = pr.head.sha;
     }
     const runs = await githubRetry(() => this.client.listCheckRuns(ref.owner, ref.repo, target));
-    return runs.map((run) => ({
-      id: run.id,
-      name: run.name,
-      status: run.status,
-      conclusion: run.conclusion,
-      url: run.html_url,
-      appSlug: run.app?.slug ?? null,
-      outputSummary: run.output?.summary?.trim() ? run.output.summary.slice(0, 500) : null,
-    }));
+    return runs.map((run) => {
+      const externalId = run.external_id?.trim() || null;
+      let buildLogAvailable = false;
+      // Cloud Build runs carry their build UUID in external_id and the GCP
+      // project in details_url. Remember project-by-build so getBuildLog only
+      // serves builds the agent actually saw on this repo's checks.
+      if (
+        this.config.cloudBuild &&
+        run.app?.slug === CLOUD_BUILD_APP_SLUG &&
+        externalId &&
+        isCloudBuildId(externalId)
+      ) {
+        const project =
+          projectFromDetailsUrl(run.details_url) ?? this.config.cloudBuild.projectFallback;
+        if (project) {
+          this.rememberBuild(externalId, project);
+          buildLogAvailable = true;
+        }
+      }
+      return {
+        id: run.id,
+        name: run.name,
+        status: run.status,
+        conclusion: run.conclusion,
+        url: run.html_url,
+        appSlug: run.app?.slug ?? null,
+        outputSummary: run.output?.summary?.trim() ? run.output.summary.slice(0, 500) : null,
+        externalId,
+        buildLogAvailable,
+      };
+    });
+  }
+
+  private rememberBuild(buildId: string, project: string): void {
+    // Insertion-ordered Map as a small LRU: re-insert on touch, prune oldest.
+    this.buildRef.delete(buildId);
+    this.buildRef.set(buildId, { project });
+    if (this.buildRef.size > 200) {
+      const oldest = this.buildRef.keys().next().value;
+      if (oldest !== undefined) this.buildRef.delete(oldest);
+    }
+  }
+
+  /**
+   * Backs the Cloud Build log mode of `github_checks`. GCP credentials stay
+   * host-side (ADC via GOOGLE_APPLICATION_CREDENTIALS — e.g. a Workload
+   * Identity Federation external_account file); the build must have appeared
+   * in a github_checks summary first, which is also where its project is
+   * learned. Unreadable logs degrade to the console url, never a dead end.
+   */
+  async getBuildLog(conversationId: string, buildId: string): Promise<string> {
+    if (!this.config.cloudBuild) {
+      throw new Error(
+        "Cloud Build log access is not configured on this host (no GCP credentials).",
+      );
+    }
+    const known = this.buildRef.get(buildId);
+    if (!known) {
+      throw new Error(
+        `Unknown build id ${buildId}: run github_checks first and take a [build …] id from ` +
+          `the summary.`,
+      );
+    }
+    let logText: string;
+    try {
+      logText = await fetchCloudBuildLog({
+        tokenProvider: this.config.cloudBuild.tokenProvider,
+        project: known.project,
+        buildId,
+      });
+    } catch (err) {
+      if (err instanceof CloudBuildLogUnavailableError) {
+        throw new Error(
+          `${err.message}${err.consoleUrl ? ` Console: ${err.consoleUrl}` : ""} Use the check's ` +
+            `summary/url from github_checks, or reproduce the failure locally in ./repo.`,
+          { cause: err },
+        );
+      }
+      throw err;
+    }
+    const MAX_LOG_CHARS = 20000;
+    return logText.length > MAX_LOG_CHARS
+      ? `…(truncated to the last ${MAX_LOG_CHARS} chars)\n${logText.slice(-MAX_LOG_CHARS)}`
+      : logText;
+  }
+
+  /**
+   * Backs the `github_sync` tool: refresh the conversation's ./repo clone
+   * from origin with an ephemeral read token. Fetch-only when moving the
+   * checkout could lose agent work; the formatted report tells the agent
+   * what happened and what to do next.
+   */
+  async syncRepo(conversationId: string, branch?: string): Promise<string> {
+    const ref = parseGithubConversationId(conversationId);
+    const dir = this.repoDir(conversationId);
+    if (!existsSync(dir)) {
+      throw new Error("This conversation has no ./repo clone to sync.");
+    }
+    const token = await this.client.createScopedInstallationToken(ref.repo, {
+      contents: "read",
+    });
+    let prNumber: number | undefined;
+    let prHeadBranch: string | undefined;
+    let defaultBranch: string | undefined;
+    if (!branch) {
+      if (await this.fetchIsPr(ref)) {
+        prNumber = ref.number;
+        prHeadBranch = await this.fetchPrHeadBranch(ref);
+      } else {
+        const repository = await githubRetry(() => this.client.getRepository(ref.owner, ref.repo));
+        defaultBranch = repository.default_branch;
+      }
+    }
+    const result = await syncRepo({ dir, token, branch, prNumber, prHeadBranch, defaultBranch });
+
+    if (result.updatedCheckout) {
+      return `Updated ./repo: branch ${result.target} is now at ${result.fetchedSha.slice(0, 12)}.`;
+    }
+    const reasons: string[] = [];
+    if (result.currentBranch !== result.target) {
+      reasons.push(`the checkout is on '${result.currentBranch}', not '${result.target}'`);
+    }
+    if (result.dirty) {
+      reasons.push("the working tree has uncommitted changes");
+    }
+    if (result.localCommits > 0) {
+      reasons.push(`'${result.target}' has ${result.localCommits} local commit(s) not on origin`);
+    }
+    return (
+      `Fetched ${result.target} to FETCH_HEAD (${result.fetchedSha.slice(0, 12)}) but left the ` +
+      `checkout alone: ${reasons.join("; ")}. Merge or rebase FETCH_HEAD yourself ` +
+      `(e.g. git merge FETCH_HEAD), or commit your work to a pi/* branch first.`
+    );
+  }
+
+  /**
+   * Backs the `github_read` tool: PR/issue metadata the ./repo clone cannot
+   * provide (diff stats, review state, other issues in the repo). Owner/repo
+   * always come from the conversation id, so reads never leave this repo.
+   */
+  async readGithub(conversationId: string, request: GithubReadRequest): Promise<GithubReadResult> {
+    const ref = parseGithubConversationId(conversationId);
+    const number = request.number ?? ref.number;
+    switch (request.action) {
+      case "pr": {
+        const pr = await githubRetry(() => this.client.getPullRequest(ref.owner, ref.repo, number));
+        return { kind: "pr", pr };
+      }
+      case "pr_files": {
+        const files = await githubRetry(() =>
+          this.client.listPullRequestFiles(ref.owner, ref.repo, number),
+        );
+        return { kind: "pr_files", files };
+      }
+      case "pr_reviews": {
+        const [reviews, threads] = await Promise.all([
+          githubRetry(() => this.client.listPullRequestReviews(ref.owner, ref.repo, number)),
+          githubRetry(() => this.client.listPullReviewComments(ref.owner, ref.repo, number)),
+        ]);
+        return { kind: "pr_reviews", reviews, threads };
+      }
+      case "issue": {
+        const issue = await githubRetry(() => this.client.getIssue(ref.owner, ref.repo, number));
+        return { kind: "issue", issue };
+      }
+      case "comments": {
+        const comments = await githubRetry(() =>
+          this.client.listIssueComments(ref.owner, ref.repo, number),
+        );
+        return { kind: "comments", comments };
+      }
+      case "list": {
+        const issues = await githubRetry(() =>
+          this.client.listIssues(ref.owner, ref.repo, {
+            state: request.state,
+            labels: request.labels,
+            creator: request.creator,
+          }),
+        );
+        return { kind: "list", issues };
+      }
+      default:
+        throw new Error(`Unknown github_read action: ${String(request.action)}`);
+    }
+  }
+
+  /**
+   * Backs the `github_issue` tool: labels, assignees, and open/closed state
+   * on any issue of this conversation's repo (triage). Same-repo by
+   * construction — owner/repo come from the conversation id; the action enum
+   * is closed, so lock/delete/transfer cannot be expressed at all.
+   */
+  async manageIssue(conversationId: string, request: GithubIssueRequest): Promise<string> {
+    const ref = parseGithubConversationId(conversationId);
+    const number = request.number ?? ref.number;
+    try {
+      switch (request.action) {
+        case "add_labels": {
+          if (!request.labels?.length) {
+            throw new Error("add_labels requires a non-empty labels array.");
+          }
+          await githubRetry(() =>
+            this.client.addIssueLabels(ref.owner, ref.repo, number, request.labels!),
+          );
+          return `Added label(s) ${request.labels.join(", ")} to #${number}.`;
+        }
+        case "remove_label": {
+          if (!request.label) {
+            throw new Error("remove_label requires a label name.");
+          }
+          await githubRetry(() =>
+            this.client.removeIssueLabel(ref.owner, ref.repo, number, request.label!),
+          );
+          return `Removed label ${request.label} from #${number}.`;
+        }
+        case "add_assignees": {
+          if (!request.assignees?.length) {
+            throw new Error("add_assignees requires a non-empty assignees array.");
+          }
+          await githubRetry(() =>
+            this.client.addIssueAssignees(ref.owner, ref.repo, number, request.assignees!),
+          );
+          return `Assigned ${request.assignees.map((login) => `@${login}`).join(", ")} to #${number}.`;
+        }
+        case "remove_assignees": {
+          if (!request.assignees?.length) {
+            throw new Error("remove_assignees requires a non-empty assignees array.");
+          }
+          await githubRetry(() =>
+            this.client.removeIssueAssignees(ref.owner, ref.repo, number, request.assignees!),
+          );
+          return `Unassigned ${request.assignees.map((login) => `@${login}`).join(", ")} from #${number}.`;
+        }
+        case "close": {
+          await githubRetry(() =>
+            this.client.updateIssueState(
+              ref.owner,
+              ref.repo,
+              number,
+              "closed",
+              request.state_reason,
+            ),
+          );
+          return `Closed #${number}${request.state_reason ? ` as ${request.state_reason}` : ""}.`;
+        }
+        case "reopen": {
+          await githubRetry(() =>
+            this.client.updateIssueState(ref.owner, ref.repo, number, "open"),
+          );
+          return `Reopened #${number}.`;
+        }
+        default:
+          throw new Error(`Unknown github_issue action: ${String(request.action)}`);
+      }
+    } catch (err) {
+      if (err instanceof GithubApiError && err.status === 404) {
+        throw new Error(`Issue #${number} not found in ${ref.owner}/${ref.repo}.`, { cause: err });
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Backs the `github_review_reply` tool: answer inside one inline review
+   * thread of this conversation's PR. The comment id comes from an
+   * `[PR review comment rc-<id> …]` message; GitHub validates it belongs to
+   * this PR (404 otherwise, translated into agent-actionable guidance).
+   */
+  async replyToReviewThread(
+    conversationId: string,
+    commentId: number,
+    body: string,
+  ): Promise<{ url: string }> {
+    if (!Number.isInteger(commentId) || commentId <= 0) {
+      throw new Error(
+        "comment_id must be the numeric id from an [PR review comment rc-<id> …] message.",
+      );
+    }
+    const ref = parseGithubConversationId(conversationId);
+    const text =
+      body.length > GITHUB_MAX_COMMENT_LENGTH
+        ? `${body.slice(0, GITHUB_MAX_COMMENT_LENGTH)}\n…(truncated)`
+        : body;
+    try {
+      const reply = await githubRetry(() =>
+        this.client.replyToReviewComment(ref.owner, ref.repo, ref.number, commentId, text),
+      );
+      return {
+        url: `https://github.com/${ref.owner}/${ref.repo}/pull/${ref.number}#discussion_r${reply.id}`,
+      };
+    } catch (err) {
+      if (err instanceof GithubApiError && err.status === 404) {
+        throw new Error(
+          `Comment ${commentId} is not a review comment on this PR. Take the id from an ` +
+            `[PR review comment rc-<id> …] message in this conversation; do not guess ids.`,
+          { cause: err },
+        );
+      }
+      throw err;
+    }
   }
 
   /**

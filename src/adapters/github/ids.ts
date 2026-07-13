@@ -41,3 +41,19 @@ export function parseGithubConversationId(conversationId: string): GithubConvers
 
 /** Message ts used for the issue/PR body itself (comments use their comment id). */
 export const GITHUB_ISSUE_BODY_TS = "issue";
+
+/**
+ * Message ts for an inline PR review comment: `rc-<id>`. Review-comment ids
+ * live in a different id space than issue-comment ids, and several endpoints
+ * (reactions, edits) differ by family — the prefix makes routing a review id
+ * to an issue-comment endpoint structurally impossible.
+ */
+export function githubReviewCommentTs(commentId: number): string {
+  return `rc-${commentId}`;
+}
+
+/** The review-comment id inside an `rc-<id>` ts, or null for other ts kinds. */
+export function parseReviewCommentTs(ts: string): number | null {
+  const match = /^rc-(\d+)$/.exec(ts);
+  return match ? Number(match[1]) : null;
+}
