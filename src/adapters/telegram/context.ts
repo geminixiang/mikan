@@ -6,7 +6,7 @@ import type {
 } from "../../adapter.js";
 import * as log from "../../log.js";
 import { createChatResponseErrorReporter, formatToolArgs, splitText } from "../shared.js";
-import { BufferedResponseStream } from "../streaming.js";
+import { BufferedResponseStream, OrderedResponseOperations } from "../streaming.js";
 import { sanitizeTelegramHtml } from "./html.js";
 import type { TelegramMessagingBot, TelegramEvent } from "./bot.js";
 
@@ -55,7 +55,7 @@ export function createTelegramAdapters(
 } {
   let messageId: number | null = null;
   let accumulatedText = "";
-  let updatePromise = Promise.resolve();
+  const responseOperations = new OrderedResponseOperations();
   let typingInterval: ReturnType<typeof setInterval> | null = null;
   let typingFailureWarned = false;
 
@@ -135,20 +135,12 @@ export function createTelegramAdapters(
     },
   });
 
-  const queueTelegramSend = async (
+  const queueTelegramSend = (
     label: string,
     work: () => Promise<void>,
     report: (err: unknown) => void,
-  ): Promise<void> => {
-    updatePromise = updatePromise.then(async () => {
-      try {
-        await work();
-      } catch (err) {
-        await notifyError(bot, chatId, label, err, () => report(err));
-      }
-    });
-    await updatePromise;
-  };
+  ): Promise<void> =>
+    responseOperations.run(work, (err) => notifyError(bot, chatId, label, err, () => report(err)));
 
   const responder: ConversationResponder = {
     respond: async (text: string) => {
@@ -271,7 +263,7 @@ export function createTelegramAdapters(
     },
 
     deleteResponse: async () => {
-      updatePromise = updatePromise.then(async () => {
+      await responseOperations.run(async () => {
         if (messageId !== null) {
           try {
             await bot.deleteMessageRaw(chatId, messageId);
@@ -281,7 +273,6 @@ export function createTelegramAdapters(
           messageId = null;
         }
       });
-      await updatePromise;
     },
   };
 

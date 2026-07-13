@@ -6,7 +6,7 @@ import {
   splitText,
   type ChatResponseErrorOperation,
 } from "../shared.js";
-import { BufferedResponseStream } from "../streaming.js";
+import { BufferedResponseStream, OrderedResponseOperations } from "../streaming.js";
 import { buildMrkdwnContextBlock, type SlackMessagingBot, type SlackEvent } from "./bot.js";
 import type { SlackAdapterSessionPlan } from "./types.js";
 
@@ -101,7 +101,7 @@ export function createSlackResponseContext({
   let streamActive = false;
   let streamUnavailable = false;
   let streamedText = "";
-  let updatePromise = Promise.resolve();
+  const responseOperations = new OrderedResponseOperations();
 
   const channelId = event.channel;
   const conversationId = event.conversationId;
@@ -276,22 +276,16 @@ export function createSlackResponseContext({
     },
   });
 
-  const queueResponseOperation = async (
+  const queueResponseOperation = (
     label: string,
     operation: ChatResponseErrorOperation,
     work: () => Promise<void>,
     context: (err: unknown) => Record<string, unknown>,
-  ): Promise<void> => {
-    updatePromise = updatePromise.then(async () => {
-      try {
-        await work();
-      } catch (err) {
-        log.logWarning(`Slack ${label} error`, err instanceof Error ? err.message : String(err));
-        reportResponseError(err, operation, context(err));
-      }
+  ): Promise<void> =>
+    responseOperations.run(work, (err) => {
+      log.logWarning(`Slack ${label} error`, err instanceof Error ? err.message : String(err));
+      reportResponseError(err, operation, context(err));
     });
-    await updatePromise;
-  };
 
   const responder: ConversationResponder = {
     respond: async (text: string) => {
@@ -478,7 +472,7 @@ export function createSlackResponseContext({
     },
 
     deleteResponse: async () => {
-      updatePromise = updatePromise.then(async () => {
+      await responseOperations.run(async () => {
         // Clear assistant status first
         if (rootTs) {
           try {
@@ -503,7 +497,6 @@ export function createSlackResponseContext({
           messageTs = null;
         }
       });
-      await updatePromise;
     },
   };
 

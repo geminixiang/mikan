@@ -12,6 +12,7 @@ import {
   splitText,
   type ChatResponseErrorOperation,
 } from "../shared.js";
+import { OrderedResponseOperations } from "../streaming.js";
 import {
   formatGithubContinuation,
   GITHUB_MAX_COMMENT_LENGTH,
@@ -45,7 +46,7 @@ export function createGithubAdapters(
 } {
   let commentId: number | null = null;
   let accumulatedText = "";
-  let updatePromise = Promise.resolve();
+  const responseOperations = new OrderedResponseOperations();
 
   const conversationId = event.conversationId;
   const ref = parseGithubConversationId(conversationId);
@@ -137,21 +138,16 @@ export function createGithubAdapters(
     }
   }
 
-  async function queueGithubResponse(
+  function queueGithubResponse(
     label: string,
     operation: ChatResponseErrorOperation,
     work: () => Promise<void>,
     extra: () => Record<string, unknown>,
   ): Promise<void> {
-    updatePromise = updatePromise.then(async () => {
-      try {
-        await work();
-      } catch (err) {
-        log.logWarning(`GitHub ${label} error`, err instanceof Error ? err.message : String(err));
-        reportResponseError(err, operation, extra());
-      }
+    return responseOperations.run(work, (err) => {
+      log.logWarning(`GitHub ${label} error`, err instanceof Error ? err.message : String(err));
+      reportResponseError(err, operation, extra());
     });
-    await updatePromise;
   }
 
   // No appendResponseDelta/finishResponse: GitHub gets the finished response
@@ -241,7 +237,7 @@ export function createGithubAdapters(
     },
 
     deleteResponse: async () => {
-      updatePromise = updatePromise.then(async () => {
+      await responseOperations.run(async () => {
         if (commentId !== null) {
           try {
             await bot.deleteComment(ref, commentId);
@@ -251,7 +247,6 @@ export function createGithubAdapters(
           commentId = null;
         }
       });
-      await updatePromise;
     },
   };
 

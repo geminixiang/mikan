@@ -1,6 +1,17 @@
 export type { BufferedResponseStreamOptions, BufferedResponseStreamSink } from "./types.js";
 import type { BufferedResponseStreamOptions, BufferedResponseStreamSink } from "./types.js";
 
+export class OrderedResponseOperations {
+  private tail = Promise.resolve();
+
+  run(work: () => Promise<void>, onError?: (err: unknown) => Promise<void> | void): Promise<void> {
+    const operation = this.tail.then(work);
+    const handled = onError ? operation.catch(onError) : operation;
+    this.tail = handled.catch(() => undefined);
+    return handled;
+  }
+}
+
 export class BufferedResponseStream {
   private readonly minFlushIntervalMs: number;
   private readonly minFlushChars: number;

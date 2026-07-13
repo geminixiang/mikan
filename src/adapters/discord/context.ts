@@ -12,7 +12,7 @@ import {
   splitText,
   type ChatResponseErrorOperation,
 } from "../shared.js";
-import { BufferedResponseStream } from "../streaming.js";
+import { BufferedResponseStream, OrderedResponseOperations } from "../streaming.js";
 import type { DiscordMessagingBot, DiscordEvent } from "./bot.js";
 
 const DISCORD_FORMATTING_GUIDE = `## Discord Formatting (Markdown)
@@ -52,7 +52,7 @@ export function createDiscordAdapters(
   let accumulatedText = "";
   let isWorking = true;
   const workingIndicator = " ...";
-  let updatePromise = Promise.resolve();
+  const responseOperations = new OrderedResponseOperations();
   let typingInterval: ReturnType<typeof setInterval> | null = null;
   let typingFailureWarned = false;
 
@@ -158,21 +158,16 @@ export function createDiscordAdapters(
     },
   });
 
-  async function queueDiscordResponse(
+  function queueDiscordResponse(
     label: string,
     operation: ChatResponseErrorOperation,
     work: () => Promise<void>,
     report: (err: unknown) => Record<string, unknown>,
   ): Promise<void> {
-    updatePromise = updatePromise.then(async () => {
-      try {
-        await work();
-      } catch (err) {
-        log.logWarning(`Discord ${label} error`, err instanceof Error ? err.message : String(err));
-        reportResponseError(err, operation, report(err));
-      }
+    return responseOperations.run(work, (err) => {
+      log.logWarning(`Discord ${label} error`, err instanceof Error ? err.message : String(err));
+      reportResponseError(err, operation, report(err));
     });
-    await updatePromise;
   }
 
   const responder: ConversationResponder = {
@@ -281,8 +276,10 @@ export function createDiscordAdapters(
     },
 
     setWorking: async (working: boolean) => {
-      updatePromise = updatePromise.then(async () => {
-        try {
+      await queueDiscordResponse(
+        "setWorking",
+        "set_working",
+        async () => {
           isWorking = working;
           if (!working) stopTyping();
           if (messageId !== null) {
@@ -293,15 +290,9 @@ export function createDiscordAdapters(
             );
             await bot.updateMessageRaw(channelId, messageId, displayText);
           }
-        } catch (err) {
-          log.logWarning(
-            "Discord setWorking error",
-            err instanceof Error ? err.message : String(err),
-          );
-          reportResponseError(err, "set_working", { working });
-        }
-      });
-      await updatePromise;
+        },
+        () => ({ working }),
+      );
     },
 
     uploadFile: async (filePath: string, title?: string) => {
@@ -309,7 +300,7 @@ export function createDiscordAdapters(
     },
 
     deleteResponse: async () => {
-      updatePromise = updatePromise.then(async () => {
+      await responseOperations.run(async () => {
         stopTyping();
         if (messageId !== null) {
           try {
@@ -320,7 +311,6 @@ export function createDiscordAdapters(
           messageId = null;
         }
       });
-      await updatePromise;
     },
   };
 
