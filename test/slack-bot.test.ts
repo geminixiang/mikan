@@ -1825,3 +1825,71 @@ describe("SlackMessagingBot attachments", () => {
     });
   });
 });
+
+describe("SlackMessagingBot force-stop block action", () => {
+  let workingDir: string;
+
+  beforeEach(() => {
+    workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-forcestop-"));
+    process.env.MIKAN_STATE_DIR = workingDir;
+    createGlobalSettingsFile(workingDir);
+  });
+
+  afterEach(() => {
+    delete process.env.MIKAN_STATE_DIR;
+    if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
+  });
+
+  function makeForceStopBot(handler: MessagingEventHandler) {
+    const bot = new SlackMessagingBot(handler, {
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      workingDir,
+      store: {} as any,
+    });
+    (bot as any).webClient = {
+      chat: { postMessage: vi.fn().mockResolvedValue({ ts: "9000.0001" }) },
+      views: { publish: vi.fn().mockResolvedValue(undefined) },
+    };
+    return bot;
+  }
+
+  test("session keys with underscored conversation ids survive via the button value", async () => {
+    const handler = makeHandler();
+    const bot = makeForceStopBot(handler);
+    const sessionKey = "GH_owner_repo_42:1000.0001";
+
+    await (bot as any).handleBlockAction({
+      body: {
+        actions: [
+          {
+            // action_id carries the (lossy) sanitized copy; value is authoritative.
+            action_id: `force_stop_${sessionKey.replace(/:/g, "_")}`,
+            value: sessionKey,
+          },
+        ],
+        user: { id: "U123" },
+        container: {},
+      },
+      ack: vi.fn(),
+    });
+
+    expect(handler.forceStop).toHaveBeenCalledWith(sessionKey);
+  });
+
+  test("legacy buttons without a value fall back to action_id decoding", async () => {
+    const handler = makeHandler();
+    const bot = makeForceStopBot(handler);
+
+    await (bot as any).handleBlockAction({
+      body: {
+        actions: [{ action_id: "force_stop_C123_1000.0001" }],
+        user: { id: "U123" },
+        container: { channel_id: "C123" },
+      },
+      ack: vi.fn(),
+    });
+
+    expect(handler.forceStop).toHaveBeenCalledWith("C123:1000.0001");
+  });
+});

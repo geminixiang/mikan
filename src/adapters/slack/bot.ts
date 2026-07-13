@@ -698,7 +698,14 @@ export class SlackMessagingBot implements MessagingBot {
               {
                 type: "button",
                 text: { type: "plain_text", text: "Force Stop", emoji: true },
+                // The raw session key travels in `value` (Slack returns it
+                // verbatim); the action_id only routes and must be unique per
+                // view, so it carries a sanitized copy of the key. Never
+                // decode the key from the action_id — the `:`↔`_` rewrite is
+                // irreversible for conversation ids that contain `_` (GitHub's
+                // GH_owner_repo_number do, by design).
                 action_id: `force_stop_${session.sessionKey.replace(/:/g, "_")}`,
+                value: session.sessionKey,
                 style: "danger",
               },
             ],
@@ -1271,7 +1278,11 @@ export class SlackMessagingBot implements MessagingBot {
     }
 
     ack();
-    const sessionKey = action.action_id.replace("force_stop_", "").replace(/_/g, ":");
+    // Prefer the verbatim key from `value`; the action_id fallback only
+    // serves buttons rendered before `value` existed and misdecodes session
+    // keys whose conversation id contains "_".
+    const sessionKey =
+      action.value ?? action.action_id.replace("force_stop_", "").replace(/_/g, ":");
     const userId = body.user?.id;
     const channelId = body.container?.channel_id || conversationIdOf(sessionKey);
 
