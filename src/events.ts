@@ -43,6 +43,21 @@ const EventFileSchema = Type.Object({
 
 type EventFileData = Static<typeof EventFileSchema>;
 
+/**
+ * Resolve an event file's conversation id, honoring the legacy `channelId`
+ * alias. This is the single owner of the alias; consumers reading event files
+ * (EventsWatcher, HostEventStore) must normalize through it instead of
+ * re-implementing the fallback.
+ */
+export function resolveEventConversationId(data: {
+  conversationId?: unknown;
+  channelId?: unknown;
+}): string | undefined {
+  if (typeof data.conversationId === "string") return data.conversationId;
+  if (typeof data.channelId === "string") return data.channelId;
+  return undefined;
+}
+
 import type { PeriodicEventInfo } from "./types.js";
 
 const DEBOUNCE_MS = 100;
@@ -297,12 +312,7 @@ export class EventsWatcher {
         ? `Expected top-level JSON object in ${filename}`
         : `Malformed event file ${filename}: ${detail}`,
     );
-    const conversationId =
-      typeof data.conversationId === "string"
-        ? data.conversationId
-        : typeof data.channelId === "string"
-          ? data.channelId
-          : undefined;
+    const conversationId = resolveEventConversationId(data);
     const type = typeof data.type === "string" ? data.type : undefined;
     const text = typeof data.text === "string" ? data.text : undefined;
 

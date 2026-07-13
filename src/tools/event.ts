@@ -3,6 +3,7 @@ import { basename, join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import type { ConversationKind } from "../adapter.js";
+import { resolveEventConversationId } from "../events.js";
 import * as log from "../log.js";
 import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 
@@ -101,16 +102,36 @@ export class HostEventStore implements EventStore {
   }
 
   async list(): Promise<
-    Array<{ filename: string; payload: EventPayload; size: number; mtimeMs: number }>
+    Array<{ filename: string; payload: EventPayload | null; size: number; mtimeMs: number }>
   > {
     await mkdir(this.eventsDir, { recursive: true });
     const entries = await readdir(this.eventsDir, { withFileTypes: true });
     const events = await Promise.all(
       entries
         .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
-        .map(async (entry) => this.read(entry.name)),
+        .map(async (entry) => {
+          try {
+            return await this.read(entry.name);
+          } catch {
+            // Keep unparseable files visible (payload: null) so consumers can
+            // surface and delete them; skip files that vanished mid-listing.
+            try {
+              const fileStat = await stat(join(this.eventsDir, entry.name));
+              return {
+                filename: entry.name,
+                payload: null,
+                size: fileStat.size,
+                mtimeMs: fileStat.mtimeMs,
+              };
+            } catch {
+              return null;
+            }
+          }
+        }),
     );
-    return events.toSorted((a, b) => a.filename.localeCompare(b.filename));
+    return events
+      .filter((event) => event !== null)
+      .toSorted((a, b) => a.filename.localeCompare(b.filename));
   }
 
   async read(
@@ -119,10 +140,17 @@ export class HostEventStore implements EventStore {
     const safeFilename = validateEventFilename(filename);
     const filePath = join(this.eventsDir, safeFilename);
     const [raw, fileStat] = await Promise.all([readFile(filePath, "utf-8"), stat(filePath)]);
-    const parsed = JSON.parse(raw) as EventPayload;
+    const parsed = JSON.parse(raw) as EventPayload & { channelId?: string };
+    // Normalize the legacy `channelId` alias so consumers always see
+    // `conversationId` (alias resolution is owned by src/events.ts).
+    const conversationId = resolveEventConversationId(parsed);
+    const payload: EventPayload =
+      conversationId !== undefined && parsed.conversationId !== conversationId
+        ? { ...parsed, conversationId }
+        : parsed;
     return {
       filename: safeFilename,
-      payload: parsed,
+      payload,
       size: fileStat.size,
       mtimeMs: fileStat.mtimeMs,
     };
@@ -184,7 +212,7 @@ export function createEventTool(eventStore: EventStore): {
         const scopedEvents =
           params.scope === "all"
             ? events
-            : events.filter((event) => event.payload.conversationId === conversationId);
+            : events.filter((event) => event.payload?.conversationId === conversationId);
         return {
           content: [
             {

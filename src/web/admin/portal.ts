@@ -1,7 +1,8 @@
-import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import type { IncomingMessage, ServerResponse } from "http";
 import { basename, join, resolve as pathResolve, sep as pathSep } from "path";
-import { MikanModels, SessionStore } from "../../harness/index.js";
+import { MikanModels, parseFrontmatter, SessionStore } from "../../harness/index.js";
+import type { EventStore } from "../../tools/types.js";
 
 import {
   loadConversationAutoReplyConfig,
@@ -123,7 +124,7 @@ async function routeApiRequest(
       return;
     }
     if (url.pathname === "/admin/api/events") {
-      serveEventsList(res, services);
+      await serveEventsList(res, services);
       return;
     }
     if (url.pathname === "/admin/api/events/file") {
@@ -131,7 +132,7 @@ async function routeApiRequest(
       return;
     }
     if (url.pathname === "/admin/api/conversations/events") {
-      serveConversationEventsList(res, url, services, token);
+      await serveConversationEventsList(res, url, services, token);
       return;
     }
     jsonRes(res, 404, { error: "Not found" });
@@ -177,7 +178,7 @@ async function routeApiRequest(
     return;
   }
   if (url.pathname === "/admin/api/conversations/events/delete") {
-    serveConversationEventDelete(res, body, services, token);
+    await serveConversationEventDelete(res, body, services, token);
     return;
   }
   if (url.pathname === "/admin/api/settings/model") {
@@ -1218,36 +1219,29 @@ interface SkillEntry {
   directory: string;
 }
 
-function parseSkillFrontmatter(filePath: string): { name?: string; description?: string } {
+/**
+ * Read skill metadata via the harness frontmatter parser (the owning module).
+ * The portal historically accepted frontmatter keys case-insensitively, so
+ * the lookup — not the parser — preserves that leniency.
+ */
+function readSkillMeta(filePath: string): { name?: string; description?: string } {
   let text: string;
   try {
     text = readFileSync(filePath, "utf-8");
   } catch {
     return {};
   }
-  if (!text.startsWith("---")) return {};
-  const end = text.indexOf("\n---", 3);
-  if (end < 0) return {};
-  const block = text.slice(3, end);
+  const { values } = parseFrontmatter(text);
   const out: { name?: string; description?: string } = {};
-  for (const line of block.split("\n")) {
-    const colon = line.indexOf(":");
-    if (colon < 0) continue;
-    const key = line.slice(0, colon).trim().toLowerCase();
-    let value = line.slice(colon + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    if (key === "name") out.name = value;
-    if (key === "description") out.description = value;
+  for (const [key, value] of Object.entries(values)) {
+    const normalized = key.toLowerCase();
+    if (normalized === "name") out.name = value;
+    if (normalized === "description") out.description = value;
   }
   return out;
 }
 
-function readSkillsFromDir(skillsDir: string, source: SkillEntry["source"]): SkillEntry[] {
+export function readSkillsFromDir(skillsDir: string, source: SkillEntry["source"]): SkillEntry[] {
   if (!existsSync(skillsDir)) return [];
   const out: SkillEntry[] = [];
   let entries;
@@ -1260,7 +1254,7 @@ function readSkillsFromDir(skillsDir: string, source: SkillEntry["source"]): Ski
     if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
     const skillMd = join(skillsDir, entry.name, "SKILL.md");
     if (!existsSync(skillMd)) continue;
-    const meta = parseSkillFrontmatter(skillMd);
+    const meta = readSkillMeta(skillMd);
     out.push({
       name: meta.name ?? entry.name,
       description: meta.description ?? "",
@@ -1343,7 +1337,7 @@ function serveSkillFile(
 
 const EVENTS_FILE_MAX_BYTES = 64 * 1024;
 
-interface EventSummary {
+export interface EventSummary {
   name: string;
   size: number;
   mtimeMs: number;
@@ -1356,77 +1350,73 @@ interface EventSummary {
   timezone: string | null;
 }
 
-function listAllEvents(workingDir: string): EventSummary[] {
-  const dir = join(workingDir, "events");
-  if (!existsSync(dir)) return [];
-  let entries;
-  try {
-    entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  return entries
-    .filter((e) => e.isFile() && e.name.endsWith(".json"))
-    .map((e): EventSummary | null => {
-      const filePath = join(dir, e.name);
-      let stats;
-      try {
-        stats = statSync(filePath);
-      } catch {
-        return null;
-      }
-      let parsed: unknown = null;
-      try {
-        parsed = JSON.parse(readFileSync(filePath, "utf-8"));
-      } catch {
-        // Keep entry; just omit parsed fields.
-      }
-      const meta = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
-      // events.ts accepts `channelId` as a legacy alias for `conversationId`.
-      const conversationId =
-        typeof meta.conversationId === "string"
-          ? meta.conversationId
-          : typeof meta.channelId === "string"
-            ? meta.channelId
-            : null;
-      return {
-        name: e.name,
-        size: stats.size,
-        mtimeMs: stats.mtimeMs,
-        type: typeof meta.type === "string" ? meta.type : null,
-        platform: typeof meta.platform === "string" ? meta.platform : null,
-        conversationId,
-        text: typeof meta.text === "string" ? meta.text : null,
-        at: typeof meta.at === "string" ? meta.at : null,
-        schedule: typeof meta.schedule === "string" ? meta.schedule : null,
-        timezone: typeof meta.timezone === "string" ? meta.timezone : null,
-      };
-    })
-    .filter((e): e is EventSummary => e !== null)
-    .toSorted((a, b) => a.name.localeCompare(b.name));
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
 }
 
-function serveEventsList(res: ServerResponse, services: AdminServices): void {
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
-  jsonRes(res, 200, { events: listAllEvents(workingDir) });
+/**
+ * List events through the owning store (which normalizes the legacy
+ * `channelId` alias and keeps unparseable files visible with a null payload).
+ * Store payloads are unvalidated JSON, so field access stays defensive.
+ */
+export async function listAllEvents(store: EventStore): Promise<EventSummary[]> {
+  const entries = await store.list();
+  return entries.map((entry) => {
+    const payload = entry.payload as {
+      type?: unknown;
+      platform?: unknown;
+      conversationId?: unknown;
+      text?: unknown;
+      at?: unknown;
+      schedule?: unknown;
+      timezone?: unknown;
+    } | null;
+    return {
+      name: entry.filename,
+      size: entry.size,
+      mtimeMs: entry.mtimeMs,
+      type: stringOrNull(payload?.type),
+      platform: stringOrNull(payload?.platform),
+      conversationId: stringOrNull(payload?.conversationId),
+      text: stringOrNull(payload?.text),
+      at: stringOrNull(payload?.at),
+      schedule: stringOrNull(payload?.schedule),
+      timezone: stringOrNull(payload?.timezone),
+    };
+  });
+}
+
+function requireAdminEventStore(res: ServerResponse, services: AdminServices): EventStore | null {
+  if (!services.eventStore) {
+    jsonRes(res, 503, { error: "Working directory not available" });
+    return null;
+  }
+  return services.eventStore;
+}
+
+async function serveEventsList(res: ServerResponse, services: AdminServices): Promise<void> {
+  const store = requireAdminEventStore(res, services);
+  if (!store) return;
+  jsonRes(res, 200, { events: await listAllEvents(store) });
 }
 
 /** Per-conversation listing — filter all events by conversationId match. */
-function serveConversationEventsList(
+async function serveConversationEventsList(
   res: ServerResponse,
   url: URL,
   services: AdminServices,
   token: AdminToken,
-): void {
+): Promise<void> {
   const scope = resolveConversationFromQuery(url, token);
   if (scope.error) {
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
-  const events = listAllEvents(workingDir).filter((e) => e.conversationId === scope.conversationId);
+  const store = requireAdminEventStore(res, services);
+  if (!store) return;
+  const events = (await listAllEvents(store)).filter(
+    (e) => e.conversationId === scope.conversationId,
+  );
   jsonRes(res, 200, { conversationId: scope.conversationId, events });
 }
 
@@ -1465,12 +1455,12 @@ function serveEventsFile(res: ServerResponse, url: URL, services: AdminServices)
 }
 
 /** Delete a single event file scoped to the caller's conversation. */
-function serveConversationEventDelete(
+async function serveConversationEventDelete(
   res: ServerResponse,
   body: Record<string, unknown>,
   services: AdminServices,
   token: AdminToken,
-): void {
+): Promise<void> {
   const scope = resolveTargetConversation(body, token);
   if (scope.error) {
     jsonRes(res, 403, { error: scope.error });
@@ -1481,35 +1471,22 @@ function serveConversationEventDelete(
     jsonRes(res, 400, { error: "Invalid name" });
     return;
   }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
-  const filePath = join(workingDir, "events", name);
-  let raw: string;
+  const store = requireAdminEventStore(res, services);
+  if (!store) return;
+  let payload: { conversationId?: string } | null;
   try {
-    raw = readFileSync(filePath, "utf-8");
+    payload = (await store.read(name)).payload;
   } catch {
     jsonRes(res, 404, { error: "Event not found" });
     return;
   }
-  let parsed: Record<string, unknown> = {};
-  try {
-    const j = JSON.parse(raw);
-    if (j && typeof j === "object") parsed = j as Record<string, unknown>;
-  } catch {
-    // Malformed events cannot be associated with a conversation below.
-  }
-  const eventConvId =
-    typeof parsed.conversationId === "string"
-      ? parsed.conversationId
-      : typeof parsed.channelId === "string"
-        ? parsed.channelId
-        : null;
-  if (eventConvId !== scope.conversationId) {
+  // The store normalizes the legacy `channelId` alias into `conversationId`.
+  if (payload?.conversationId !== scope.conversationId) {
     jsonRes(res, 403, { error: "Event does not belong to this conversation." });
     return;
   }
   try {
-    rmSync(filePath, { force: true });
+    await store.delete(name);
     jsonRes(res, 200, { ok: true });
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });

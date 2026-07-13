@@ -1024,10 +1024,12 @@ function buildExtensionHostServices(params: {
       },
       delete: async (filename) => (await eventStore.delete(filename)).deleted,
       list: async () =>
-        (await eventStore.list()).map((entry) => ({
-          filename: entry.filename,
-          payload: entry.payload as unknown as ExtensionSchedulePayload,
-        })),
+        (await eventStore.list())
+          .filter((entry) => entry.payload !== null)
+          .map((entry) => ({
+            filename: entry.filename,
+            payload: entry.payload as unknown as ExtensionSchedulePayload,
+          })),
     },
     ...(platformNotifier ? { postMessage: platformNotifier } : {}),
     ...(platformReactor ? { addReaction: platformReactor } : {}),

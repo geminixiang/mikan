@@ -3,6 +3,7 @@ import type { MessagingBot, PlatformName } from "../adapter.js";
 import { resolveLinkBaseUrl } from "../config.js";
 import * as log from "../log.js";
 import type { SandboxConfig } from "../sandbox/index.js";
+import { HostEventStore } from "../tools/event.js";
 import type { VaultManager } from "../vault/index.js";
 import { handleAdminRequest, type AdminRuntimeBridge } from "./admin/portal.js";
 import type { InMemoryAdminTokenStore } from "./admin/store.js";
@@ -40,6 +41,12 @@ export function startWebServer(options: StartWebServerOptions): Server {
     options.notify,
   );
 
+  // Constructed once at server start; the admin portal consumes the owning
+  // event store's interface instead of re-parsing event files off disk.
+  const adminEventStore = options.adminOptions?.workingDir
+    ? HostEventStore.fromWorkspaceDir(options.adminOptions.workingDir)
+    : undefined;
+
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     try {
       const url = new URL(req.url ?? "/", requestBaseUrl(req));
@@ -62,6 +69,7 @@ export function startWebServer(options: StartWebServerOptions): Server {
           adminTokenStore: adminOptions.adminTokenStore,
           portalBaseUrl: resolveLinkBaseUrl() ?? undefined,
           workingDir: adminOptions.workingDir,
+          eventStore: adminEventStore,
           runtime: adminOptions.runtime,
           sandbox: adminOptions.sandbox,
           botsByPlatform: adminOptions.botsByPlatform,

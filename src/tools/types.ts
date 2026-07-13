@@ -38,7 +38,14 @@ export type EventPayload = MikanEvent;
 
 export interface EventStore {
   write(filename: string, payload: MikanEvent): Promise<{ path: string; size: number }>;
-  list(): Promise<Array<{ filename: string; payload: MikanEvent; size: number; mtimeMs: number }>>;
+  /**
+   * List all event files. Entries whose JSON cannot be parsed are kept with a
+   * `null` payload so consumers (e.g. the admin portal) can still surface and
+   * delete them; files that disappear mid-listing are skipped.
+   */
+  list(): Promise<
+    Array<{ filename: string; payload: MikanEvent | null; size: number; mtimeMs: number }>
+  >;
   read(
     filename: string,
   ): Promise<{ filename: string; payload: MikanEvent; size: number; mtimeMs: number }>;
