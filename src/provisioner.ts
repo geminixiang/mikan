@@ -1,4 +1,5 @@
 import { execFile } from "child_process";
+import { sanitizeIdentitySegment } from "./sandbox/identity.js";
 import { createHash } from "crypto";
 import { readFileSync, statSync } from "fs";
 import { promisify } from "util";
@@ -73,11 +74,7 @@ export class DockerContainerManager {
   }
 
   static sanitizeSegment(value: string): string {
-    const sanitized = value
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-    return sanitized || "unknown";
+    return sanitizeIdentitySegment(value);
   }
 
   static containerName(containerKey: string): string {

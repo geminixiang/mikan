@@ -2,6 +2,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } f
 import { dirname, isAbsolute, join, normalize, sep } from "path";
 import { readTextFileIfExists } from "../utils/file-guards.js";
 import type { SandboxConfig } from "../sandbox/index.js";
+import { scopeCloudflareSandboxId } from "../sandbox/identity.js";
 import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 import { reportUserFacingError } from "../observability/sentry.js";
 
@@ -23,15 +24,6 @@ export function normalizeSharedVaultName(name: string): string | undefined {
 export function sharedVaultKey(name: string): string | undefined {
   const normalized = normalizeSharedVaultName(name);
   return normalized ? `${SHARED_VAULT_DIR}/${normalized}` : undefined;
-}
-
-function sanitizeCloudflareSandboxId(value: string): string {
-  return (
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9-]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "unknown"
-  );
 }
 
 export type { ResolvedVault, VaultManager } from "./types.js";
@@ -136,7 +128,7 @@ export class FileVaultManager implements VaultManager {
     if (baseConfig.type === "cloudflare") {
       return {
         type: "cloudflare",
-        sandboxId: `${baseConfig.sandboxId}-${sanitizeCloudflareSandboxId(userId)}`,
+        sandboxId: scopeCloudflareSandboxId(baseConfig.sandboxId, userId),
       };
     }
     return baseConfig;
