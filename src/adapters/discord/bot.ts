@@ -661,21 +661,12 @@ export class DiscordMessagingBot implements MessagingBot {
         text: cleanedText,
       };
 
-      // Handle stop before trigger gate — "stop" should never be auto-reply judged.
-      if (cleanedText.toLowerCase() === "stop" || cleanedText.toLowerCase() === "/stop") {
-        const stopTarget = this.resolveStopTarget(conversationId, sessionKey);
-        if (stopTarget) {
-          await this.handler.handleStop(stopTarget, conversationId, this);
-        } else if (!isAutoReplyCandidate) {
-          await this.postMessage(conversationId, formatNothingRunning("discord"));
-        }
-        return;
-      }
-
       await processMessageIntake({
         eventBase,
         workingDir: this.workingDir,
         isAutoReplyCandidate,
+        magicWord: { addressed: !isAutoReplyCandidate, scopeFallback: "top-level" },
+        busyPolicy: "queue",
         logEntryBase: {
           date: msg.createdAt.toISOString(),
           ts: msgId,

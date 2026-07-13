@@ -19,12 +19,10 @@ import * as log from "../../log.js";
 import { ensureDirExists, readJsonSchemaFileIfExists } from "../../utils/file-guards.js";
 import { atomicWritePrivateFile } from "../../utils/fs-atomic.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
-import { formatNothingRunning } from "../../platform-messages.js";
 import {
   appendBotResponseLog,
   appendChannelLog,
   MessagingEventQueue,
-  resolveStopTarget,
   splitText,
   withRetry,
 } from "../shared.js";
@@ -630,42 +628,6 @@ export class GithubMessagingBot implements MessagingBot {
       persistentTopLevel: true,
     });
 
-    if (/^stop$/i.test(cleanedText)) {
-      this.logToFile(conversationId, {
-        date: item.createdAt,
-        ts: item.ts,
-        user: item.user,
-        userName: item.user,
-        text: cleanedText,
-        attachments: [],
-        isMessagingBot: false,
-      });
-      const stopTarget = resolveStopTarget({ handler: this.handler, conversationId, sessionKey });
-      if (stopTarget) {
-        await this.handler.handleStop(stopTarget, conversationId, this);
-      } else if (mentioned) {
-        await this.postMessage(conversationId, formatNothingRunning("github"));
-      }
-      return;
-    }
-
-    // First contact: log the issue title/body ahead of the comment so the
-    // session history starts with what the thread is about. The clone is
-    // (re)attempted on every trigger while ./repo is missing — a no-op once
-    // it exists — so a failed first clone (e.g. App permissions granted
-    // later) heals on the next mention instead of wedging the conversation.
-    let isPrHint = item.isPr;
-    if (!participating && item.ts !== GITHUB_ISSUE_BODY_TS) {
-      const issue = await this.logIssueContext(item.ref, conversationId, item.createdAt);
-      // Only comments arrive without the PR-ness hint; review comments carry
-      // isPr: true (they only exist on PRs) and that knowledge is authoritative.
-      if (issue && isPrHint === undefined) isPrHint = Boolean(issue.pull_request);
-    }
-    if (!existsSync(this.repoDir(conversationId))) {
-      const isPr = isPrHint ?? (await this.fetchIsPr(item.ref));
-      await this.ensureRepoClone(item.ref, conversationId, isPr);
-    }
-
     const messageText = item.review
       ? await this.formatReviewMessage(item, cleanedText)
       : cleanedText;
@@ -685,6 +647,9 @@ export class GithubMessagingBot implements MessagingBot {
       eventBase,
       workingDir: this.config.workingDir,
       isAutoReplyCandidate: false,
+      // Match on the user-typed text, not the review-decorated messageText.
+      magicWord: { text: cleanedText, addressed: mentioned, scopeFallback: "never" },
+      busyPolicy: "queue",
       logEntryBase: {
         date: item.createdAt,
         ts: item.ts,
@@ -694,13 +659,44 @@ export class GithubMessagingBot implements MessagingBot {
         isMessagingBot: false,
       },
       log: (entry) => this.logToFile(conversationId, entry),
-      processAttachments: async () => [],
+      // GitHub has no attachments; the prep hook is used to lay down the
+      // issue context and repo clone only for messages that will dispatch,
+      // and before the comment itself is logged.
+      processAttachments: async () => {
+        await this.prepareConversation(item, conversationId, participating);
+        return [];
+      },
       queueKey: conversationId,
       enqueue: (queueKey, work) => this.getQueue(queueKey).enqueue(work),
       handler: this.handler,
       bot: this,
       createContext: (event) => createGithubAdapters(event, this),
     });
+  }
+
+  /**
+   * First contact: log the issue title/body ahead of the comment so the
+   * session history starts with what the thread is about. The clone is
+   * (re)attempted on every trigger while ./repo is missing — a no-op once
+   * it exists — so a failed first clone (e.g. App permissions granted
+   * later) heals on the next mention instead of wedging the conversation.
+   */
+  private async prepareConversation(
+    item: IncomingItem,
+    conversationId: string,
+    participating: boolean,
+  ): Promise<void> {
+    let isPrHint = item.isPr;
+    if (!participating && item.ts !== GITHUB_ISSUE_BODY_TS) {
+      const issue = await this.logIssueContext(item.ref, conversationId, item.createdAt);
+      // Only comments arrive without the PR-ness hint; review comments carry
+      // isPr: true (they only exist on PRs) and that knowledge is authoritative.
+      if (issue && isPrHint === undefined) isPrHint = Boolean(issue.pull_request);
+    }
+    if (!existsSync(this.repoDir(conversationId))) {
+      const isPr = isPrHint ?? (await this.fetchIsPr(item.ref));
+      await this.ensureRepoClone(item.ref, conversationId, isPr);
+    }
   }
 
   /**

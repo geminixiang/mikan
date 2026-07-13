@@ -154,19 +154,6 @@ describe("TelegramMessagingBot stop handling", () => {
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
 
-  test("resolveStopTarget falls back to the only running session in a shared chat", () => {
-    const handler = makeHandlerWithRunningKeys(["999:50"]);
-    const bot = new TelegramMessagingBot(handler, { token: "T", workingDir });
-
-    const target = (bot as any).resolveStopTarget({
-      chatId: "999",
-      chatType: "group",
-      sessionKey: "999:60",
-    });
-
-    expect(target).toBe("999:50");
-  });
-
   test("bare stop in a group can stop the agent without an @mention", async () => {
     const handler = makeHandlerWithRunningKeys(["999:50"]);
     const bot = new TelegramMessagingBot(handler, { token: "T", workingDir });

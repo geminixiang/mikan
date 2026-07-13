@@ -5,7 +5,8 @@ import type {
   ConversationEvent,
   MessagingEventHandler,
 } from "../src/adapter.js";
-import { processMessageIntake } from "../src/adapters/intake.js";
+import { matchMagicWord, processMessageIntake } from "../src/adapters/intake.js";
+import type { MagicWordIntakeOptions, MessageIntakeOptions } from "../src/adapters/types.js";
 
 function makeEvent(overrides: Partial<ConversationEvent> = {}): ConversationEvent {
   return {
@@ -19,10 +20,13 @@ function makeEvent(overrides: Partial<ConversationEvent> = {}): ConversationEven
   };
 }
 
-function makeHandler(): MessagingEventHandler {
+function makeHandler(runningKeys: string[] = []): MessagingEventHandler {
+  const running = new Set(runningKeys);
   return {
-    isRunning: vi.fn().mockReturnValue(false),
-    getRunningSessions: vi.fn().mockReturnValue([]),
+    isRunning: vi.fn((key: string) => running.has(key)),
+    getRunningSessions: vi
+      .fn()
+      .mockReturnValue([...running].map((sessionKey) => ({ sessionKey, startedAt: 1 }))),
     handleEvent: vi.fn().mockResolvedValue(undefined),
     handleStop: vi.fn().mockResolvedValue(undefined),
     forceStop: vi.fn(),
@@ -30,33 +34,260 @@ function makeHandler(): MessagingEventHandler {
   };
 }
 
-const bot = {} as MessagingBot;
+function makeBot(): MessagingBot & { postMessage: ReturnType<typeof vi.fn> } {
+  return {
+    postMessage: vi.fn().mockResolvedValue("TS1"),
+    getMessagingInfo: () => ({ name: "slack" }),
+  } as unknown as MessagingBot & { postMessage: ReturnType<typeof vi.fn> };
+}
+
 const context = {} as ConversationContext;
+
+function makeOptions(
+  overrides: Partial<MessageIntakeOptions<ConversationEvent>> = {},
+): MessageIntakeOptions<ConversationEvent> {
+  return {
+    eventBase: makeEvent(),
+    workingDir: undefined,
+    isAutoReplyCandidate: false,
+    magicWord: { addressed: true, scopeFallback: "top-level" },
+    busyPolicy: "queue",
+    logEntryBase: {},
+    processAttachments: vi.fn().mockResolvedValue([]),
+    queueKey: "C1",
+    enqueue: vi.fn(),
+    handler: makeHandler(),
+    bot: makeBot(),
+    createContext: vi.fn().mockReturnValue(context),
+    ...overrides,
+  };
+}
+
+describe("matchMagicWord", () => {
+  test.each(["stop", "/stop", "Stop", "STOP", " stop ", "/stop@mikan_bot", "stop@mikan_bot"])(
+    "recognizes %j as the stop magic word",
+    (text) => {
+      expect(matchMagicWord(text)).toBe("stop");
+    },
+  );
+
+  test.each(["stop it", "please stop", "restop", "//stop", "stopping", ""])(
+    "does not match %j",
+    (text) => {
+      expect(matchMagicWord(text)).toBeNull();
+    },
+  );
+});
+
+describe("processMessageIntake magic word", () => {
+  test("stops the running session directly, logs, and never queues", async () => {
+    const handler = makeHandler(["C1:T1"]);
+    const log = vi.fn();
+    const enqueue = vi.fn();
+    const options = makeOptions({
+      eventBase: makeEvent({ text: "stop", sessionKey: "C1:T1" }),
+      handler,
+      log,
+      enqueue,
+      logEntryBase: { text: "stop" },
+    });
+
+    const outcome = await processMessageIntake(options);
+
+    expect(outcome).toBe("magic-word");
+    expect(handler.handleStop).toHaveBeenCalledWith("C1:T1", "C1", options.bot);
+    expect(log).toHaveBeenCalledWith({ text: "stop", attachments: [] });
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(handler.handleEvent).not.toHaveBeenCalled();
+    expect(options.processAttachments).not.toHaveBeenCalled();
+  });
+
+  test("magic word bypasses the trigger gate for auto-reply candidates", async () => {
+    const handler = makeHandler(["C1"]);
+    const options = makeOptions({
+      eventBase: makeEvent({ text: "/stop", sessionKey: "C1" }),
+      isAutoReplyCandidate: true,
+      magicWord: { addressed: false, scopeFallback: "top-level" },
+      handler,
+    });
+
+    expect(await processMessageIntake(options)).toBe("magic-word");
+    expect(handler.handleStop).toHaveBeenCalledWith("C1", "C1", options.bot);
+  });
+
+  test("matches the dedicated magicWord.text when the event text is decorated", async () => {
+    const handler = makeHandler(["C1"]);
+    const options = makeOptions({
+      eventBase: makeEvent({ text: "[PR review comment rc-9 on a.ts:3]\n> diff\n\nstop" }),
+      magicWord: { text: "stop", addressed: true, scopeFallback: "never" },
+      handler,
+    });
+
+    expect(await processMessageIntake(options)).toBe("magic-word");
+    expect(handler.handleStop).toHaveBeenCalled();
+  });
+
+  test("falls back from a not-running thread session to the running conversation session", async () => {
+    const handler = makeHandler(["C1"]);
+    const options = makeOptions({
+      eventBase: makeEvent({ text: "stop", sessionKey: "C1:T1" }),
+      handler,
+    });
+
+    await processMessageIntake(options);
+
+    expect(handler.handleStop).toHaveBeenCalledWith("C1", "C1", options.bot);
+  });
+
+  test("replies 'Nothing running' only when the message addressed the bot", async () => {
+    const addressedOptions = makeOptions({
+      eventBase: makeEvent({ text: "stop", sessionKey: "C1" }),
+    });
+    await processMessageIntake(addressedOptions);
+    expect(addressedOptions.bot.postMessage).toHaveBeenCalledWith("C1", expect.any(String));
+
+    const unaddressedOptions = makeOptions({
+      eventBase: makeEvent({ text: "stop", sessionKey: "C1" }),
+      magicWord: { addressed: false, scopeFallback: "top-level" },
+    });
+    await processMessageIntake(unaddressedOptions);
+    expect(unaddressedOptions.bot.postMessage).not.toHaveBeenCalled();
+  });
+
+  describe("scope fallback", () => {
+    const scoped = (
+      scopeFallback: MagicWordIntakeOptions["scopeFallback"],
+      sessionKey: string | undefined,
+      runningKeys: string[],
+    ) => {
+      const handler = makeHandler(runningKeys);
+      return {
+        handler,
+        run: () =>
+          processMessageIntake(
+            makeOptions({
+              eventBase: makeEvent({ text: "stop", sessionKey }),
+              magicWord: { addressed: true, scopeFallback },
+              handler,
+            }),
+          ),
+      };
+    };
+
+    test("top-level: a conversation-session stop widens to the only running scoped session", async () => {
+      const { handler, run } = scoped("top-level", "C1", ["C1:T1"]);
+      await run();
+      expect(handler.handleStop).toHaveBeenCalledWith("C1:T1", "C1", expect.anything());
+    });
+
+    test("top-level: an undefined session key also widens", async () => {
+      const { handler, run } = scoped("top-level", undefined, ["C1:T1"]);
+      await run();
+      expect(handler.handleStop).toHaveBeenCalledWith("C1:T1", "C1", expect.anything());
+    });
+
+    test("top-level: a thread-session stop does not widen", async () => {
+      const { handler, run } = scoped("top-level", "C1:T2", ["C1:T1"]);
+      await run();
+      expect(handler.handleStop).not.toHaveBeenCalled();
+    });
+
+    test("top-level: ambiguous scoped sessions never widen", async () => {
+      const { handler, run } = scoped("top-level", "C1", ["C1:T1", "C1:T2"]);
+      await run();
+      expect(handler.handleStop).not.toHaveBeenCalled();
+    });
+
+    test("always: a thread-session stop widens to the only running scoped session", async () => {
+      const { handler, run } = scoped("always", "C1:T2", ["C1:T1"]);
+      await run();
+      expect(handler.handleStop).toHaveBeenCalledWith("C1:T1", "C1", expect.anything());
+    });
+
+    test("never: only exact session or conversation matches stop", async () => {
+      const { handler, run } = scoped("never", "C1", ["C1:T1"]);
+      await run();
+      expect(handler.handleStop).not.toHaveBeenCalled();
+    });
+
+    test("a running direct target always wins over widening", async () => {
+      const { handler, run } = scoped("always", "C1:T1", ["C1", "C1:T1"]);
+      await run();
+      expect(handler.handleStop).toHaveBeenCalledWith("C1:T1", "C1", expect.anything());
+    });
+  });
+});
+
+describe("processMessageIntake busy policy", () => {
+  test("reject: bounces with 'Already working' when the session is running", async () => {
+    const handler = makeHandler(["C1"]);
+    const enqueue = vi.fn();
+    const log = vi.fn();
+    const options = makeOptions({
+      eventBase: makeEvent({ sessionKey: "C1" }),
+      busyPolicy: "reject",
+      handler,
+      enqueue,
+      log,
+      logEntryBase: { text: "hello" },
+    });
+
+    const outcome = await processMessageIntake(options);
+
+    expect(outcome).toBe("rejected-busy");
+    expect(options.bot.postMessage).toHaveBeenCalledWith("C1", expect.stringContaining("/stop"));
+    expect(enqueue).not.toHaveBeenCalled();
+    // The rejected message is still logged (with its prepared attachments).
+    expect(log).toHaveBeenCalledWith({ text: "hello", attachments: [] });
+  });
+
+  test("reject: enqueues normally when the session is idle", async () => {
+    const enqueue = vi.fn();
+    const options = makeOptions({
+      eventBase: makeEvent({ sessionKey: "C1" }),
+      busyPolicy: "reject",
+      enqueue,
+    });
+
+    expect(await processMessageIntake(options)).toBe("enqueued");
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(options.bot.postMessage).not.toHaveBeenCalled();
+  });
+
+  test("queue: lines the message up even while the session is running", async () => {
+    const handler = makeHandler(["C1"]);
+    const enqueue = vi.fn();
+    const options = makeOptions({
+      eventBase: makeEvent({ sessionKey: "C1" }),
+      busyPolicy: "queue",
+      handler,
+      enqueue,
+    });
+
+    expect(await processMessageIntake(options)).toBe("enqueued");
+    expect(enqueue).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("processMessageIntake", () => {
   test("logs non-triggered auto-reply candidates without queueing", async () => {
     const handler = makeHandler();
     const log = vi.fn();
     const enqueue = vi.fn();
-    const onNotTriggered = vi.fn();
 
-    await processMessageIntake({
-      eventBase: makeEvent(),
-      workingDir: undefined,
-      isAutoReplyCandidate: true,
-      logEntryBase: { text: "hello" },
-      log,
-      processAttachments: vi.fn().mockResolvedValue([{ name: "a.txt", localPath: "C1/a.txt" }]),
-      queueKey: "C1",
-      enqueue,
-      handler,
-      bot,
-      createContext: vi.fn().mockReturnValue(context),
-      onNotTriggered,
-    });
+    const outcome = await processMessageIntake(
+      makeOptions({
+        isAutoReplyCandidate: true,
+        logEntryBase: { text: "hello" },
+        log,
+        processAttachments: vi.fn().mockResolvedValue([{ name: "a.txt", localPath: "C1/a.txt" }]),
+        enqueue,
+        handler,
+      }),
+    );
 
+    expect(outcome).toBe("not-triggered");
     expect(log).toHaveBeenCalledWith({ text: "hello", attachments: [] });
-    expect(onNotTriggered).toHaveBeenCalledTimes(1);
     expect(enqueue).not.toHaveBeenCalled();
     expect(handler.handleEvent).not.toHaveBeenCalled();
   });
@@ -67,21 +298,21 @@ describe("processMessageIntake", () => {
     const attachments = [{ name: "a.txt", localPath: "C1/a.txt" }];
     const log = vi.fn();
     const createContext = vi.fn().mockReturnValue(context);
+    const bot = makeBot();
 
-    await processMessageIntake({
-      eventBase: makeEvent(),
-      workingDir: undefined,
-      isAutoReplyCandidate: false,
-      logEntryBase: { text: "hello" },
-      log,
-      processAttachments: vi.fn().mockResolvedValue(attachments),
-      queueKey: "C1",
-      enqueue: (_queueKey, queuedWork) => work.push(queuedWork),
-      handler,
-      bot,
-      createContext,
-    });
+    const outcome = await processMessageIntake(
+      makeOptions({
+        logEntryBase: { text: "hello" },
+        log,
+        processAttachments: vi.fn().mockResolvedValue(attachments),
+        enqueue: (_queueKey, queuedWork) => work.push(queuedWork),
+        handler,
+        bot,
+        createContext,
+      }),
+    );
 
+    expect(outcome).toBe("enqueued");
     expect(log).toHaveBeenCalledWith({ text: "hello", attachments });
     expect(work).toHaveLength(1);
     expect(handler.handleEvent).not.toHaveBeenCalled();
@@ -101,20 +332,16 @@ describe("processMessageIntake", () => {
     const work: Array<() => Promise<void>> = [];
     const processAttachments = vi.fn().mockResolvedValue([]);
 
-    await processMessageIntake({
-      eventBase: makeEvent(),
-      workingDir: undefined,
-      isAutoReplyCandidate: false,
-      logEntryBase: {},
-      processAttachments,
-      queueKey: "C1",
-      enqueue: (_queueKey, queuedWork) => work.push(queuedWork),
-      handler,
-      bot,
-      createContext: vi.fn().mockReturnValue(context),
-      deferAttachmentsUntilRun: true,
-    });
+    const outcome = await processMessageIntake(
+      makeOptions({
+        processAttachments,
+        enqueue: (_queueKey, queuedWork) => work.push(queuedWork),
+        handler,
+        deferAttachmentsUntilRun: true,
+      }),
+    );
 
+    expect(outcome).toBe("enqueued");
     expect(work).toHaveLength(1);
     expect(processAttachments).not.toHaveBeenCalled();
 
@@ -124,52 +351,35 @@ describe("processMessageIntake", () => {
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
   });
 
-  test.each([false, true])(
-    "stops before dispatch when the gate rejects (deferred: %s)",
-    async (deferred) => {
-      const handler = makeHandler();
-      const work: Array<() => Promise<void>> = [];
-      const beforeEnqueue = vi.fn().mockReturnValue(false);
+  test("deferred busy rejection happens inside the queued work", async () => {
+    const handler = makeHandler(["C1"]);
+    const work: Array<() => Promise<void>> = [];
+    const options = makeOptions({
+      eventBase: makeEvent({ sessionKey: "C1" }),
+      busyPolicy: "reject",
+      enqueue: (_queueKey, queuedWork) => work.push(queuedWork),
+      handler,
+      deferAttachmentsUntilRun: true,
+    });
 
-      await processMessageIntake({
-        eventBase: makeEvent(),
-        workingDir: undefined,
-        isAutoReplyCandidate: false,
-        logEntryBase: {},
-        processAttachments: vi.fn().mockResolvedValue([]),
-        queueKey: "C1",
-        enqueue: (_queueKey, queuedWork) => work.push(queuedWork),
-        handler,
-        bot,
-        createContext: vi.fn().mockReturnValue(context),
-        beforeEnqueue,
-        deferAttachmentsUntilRun: deferred,
-      });
+    expect(await processMessageIntake(options)).toBe("enqueued");
 
-      if (deferred) await work[0]!();
+    await work[0]!();
 
-      expect(beforeEnqueue).toHaveBeenCalledTimes(1);
-      expect(handler.handleEvent).not.toHaveBeenCalled();
-      expect(work).toHaveLength(deferred ? 1 : 0);
-    },
-  );
+    expect(handler.handleEvent).not.toHaveBeenCalled();
+    expect(options.bot.postMessage).toHaveBeenCalledWith("C1", expect.stringContaining("/stop"));
+  });
 
   test.each([false, true])("propagates attachment failures (deferred: %s)", async (deferred) => {
     const failure = new Error("attachment failed");
     const work: Array<() => Promise<void>> = [];
-    const intake = processMessageIntake({
-      eventBase: makeEvent(),
-      workingDir: undefined,
-      isAutoReplyCandidate: false,
-      logEntryBase: {},
-      processAttachments: vi.fn().mockRejectedValue(failure),
-      queueKey: "C1",
-      enqueue: (_queueKey, queuedWork) => work.push(queuedWork),
-      handler: makeHandler(),
-      bot,
-      createContext: vi.fn().mockReturnValue(context),
-      deferAttachmentsUntilRun: deferred,
-    });
+    const intake = processMessageIntake(
+      makeOptions({
+        processAttachments: vi.fn().mockRejectedValue(failure),
+        enqueue: (_queueKey, queuedWork) => work.push(queuedWork),
+        deferAttachmentsUntilRun: deferred,
+      }),
+    );
 
     if (deferred) {
       await intake;

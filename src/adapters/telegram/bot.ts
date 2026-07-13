@@ -12,14 +12,11 @@ import type {
 import type { TelegramEvent } from "./types.js";
 import * as log from "../../log.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
-import { formatAlreadyWorking, formatNothingRunning } from "../../platform-messages.js";
 import {
   appendBotResponseLog,
   appendChannelLog,
   MessagingEventQueue,
   downloadUrlToFile,
-  resolveOnlyScopedStopTarget,
-  resolveStopTarget,
   withRetry,
 } from "../shared.js";
 import { processMessageIntake } from "../intake.js";
@@ -393,33 +390,10 @@ export class TelegramMessagingBot implements MessagingBot {
     return text.replace(new RegExp(`@${this.botUsername}`, "gi"), "").trim();
   }
 
-  private isStopText(text: string): boolean {
-    return /^\/?stop(?:@\w+)?$/i.test(text.trim());
-  }
-
-  private resolveStopTarget(mc: MessageContext): string | null {
-    const directTarget = resolveStopTarget({
-      handler: this.handler,
-      conversationId: mc.chatId,
-      sessionKey: mc.sessionKey,
-    });
-    if (directTarget) return directTarget;
-    return resolveOnlyScopedStopTarget(this.handler, mc.chatId);
-  }
-
   private setupEventHandlers(): void {
     // --- Slash commands (registered before catch-all so grammY intercepts them) ---
-
-    this.client.command("stop", async (ctx) => {
-      const mc = ctx.message ? this.extractMessageContext(ctx.message) : null;
-      if (!mc) return;
-      const stopTarget = this.resolveStopTarget(mc);
-      if (stopTarget) {
-        await this.handler.handleStop(stopTarget, mc.chatId, this);
-      } else {
-        await this.postMessage(mc.chatId, formatNothingRunning("telegram"));
-      }
-    });
+    // `/stop` is deliberately NOT registered here: it is a magic word owned by
+    // conversation intake, so the catch-all below must receive it.
 
     this.client.command("new", async (ctx) => {
       const mc = ctx.message ? this.extractMessageContext(ctx.message) : null;
@@ -465,27 +439,6 @@ export class TelegramMessagingBot implements MessagingBot {
 
       const cleanedText = this.cleanText(mc.text);
       const addressedToMessagingBot = this.isAddressedToMessagingBot(mc.text, mc.chatType);
-
-      if (this.isStopText(cleanedText)) {
-        this.logToFile(mc.chatId, {
-          date: new Date(mc.msg.date * 1000).toISOString(),
-          ts: mc.msgId,
-          user: mc.userId,
-          userName: mc.userName,
-          text: cleanedText,
-          attachments: [],
-          isMessagingBot: false,
-        });
-
-        const stopTarget = this.resolveStopTarget(mc);
-        if (stopTarget) {
-          await this.handler.handleStop(stopTarget, mc.chatId, this);
-        } else if (addressedToMessagingBot || mc.chatType === "private") {
-          await this.postMessage(mc.chatId, formatNothingRunning("telegram"));
-        }
-        return;
-      }
-
       const isAutoReplyCandidate = mc.chatType !== "private" && !addressedToMessagingBot;
 
       const eventBase: TelegramEvent = {
@@ -504,6 +457,11 @@ export class TelegramMessagingBot implements MessagingBot {
         eventBase,
         workingDir: this.workingDir,
         isAutoReplyCandidate,
+        magicWord: {
+          addressed: addressedToMessagingBot || mc.chatType === "private",
+          scopeFallback: "always",
+        },
+        busyPolicy: "reject",
         logEntryBase: {
           date: new Date(mc.msg.date * 1000).toISOString(),
           ts: mc.msgId,
@@ -520,11 +478,6 @@ export class TelegramMessagingBot implements MessagingBot {
         handler: this.handler,
         bot: this,
         createContext: (event) => createTelegramAdapters(event, this),
-        beforeEnqueue: async () => {
-          if (!this.handler.isRunning(mc.sessionKey)) return true;
-          await this.postMessage(mc.chatId, formatAlreadyWorking("telegram", "/stop"));
-          return false;
-        },
       });
     });
   }

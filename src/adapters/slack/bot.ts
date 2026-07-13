@@ -26,13 +26,11 @@ import type {
   SlackEvent,
   SlackUser,
 } from "./types.js";
-import { PRODUCT_NAME, formatForceStopped, formatNothingRunning } from "../../platform-messages.js";
+import { PRODUCT_NAME, formatForceStopped } from "../../platform-messages.js";
 import {
   appendBotResponseLog,
   appendChannelLog,
   MessagingEventQueue,
-  resolveOnlyScopedStopTarget,
-  resolveStopTarget,
   withRetry,
 } from "../shared.js";
 import { processMessageIntake } from "../intake.js";
@@ -579,12 +577,19 @@ export class SlackMessagingBot implements MessagingBot {
     attachmentsPromise: Promise<Attachment[]>;
     queueKey: string;
     isAutoReplyCandidate: boolean;
-    onNotTriggered?: () => void;
+    addressed: boolean;
   }): void {
-    void processMessageIntake({
+    const absorbAttachmentFailure = () => {
+      void options.attachmentsPromise.catch((err) => {
+        log.logWarning("Failed to log Slack message", String(err));
+      });
+    };
+    processMessageIntake({
       eventBase: options.event as unknown as ConversationEvent,
       workingDir: this.workingDir,
       isAutoReplyCandidate: options.isAutoReplyCandidate,
+      magicWord: { addressed: options.addressed, scopeFallback: "top-level" },
+      busyPolicy: "queue",
       logEntryBase: {},
       processAttachments: () => options.attachmentsPromise,
       queueKey: options.queueKey,
@@ -592,9 +597,18 @@ export class SlackMessagingBot implements MessagingBot {
       handler: this.handler,
       bot: this,
       createContext: (event) => this.createContext(event as SlackEvent),
-      onNotTriggered: options.onNotTriggered,
       deferAttachmentsUntilRun: true,
-    });
+    }).then(
+      (outcome) => {
+        // Slack logs eagerly via logUserMessage; when intake does not enqueue,
+        // nothing awaits the attachment download, so absorb its failure here.
+        if (outcome !== "enqueued") absorbAttachmentFailure();
+      },
+      (err) => {
+        log.logWarning("Slack message intake failed", String(err));
+        absorbAttachmentFailure();
+      },
+    );
   }
 
   private buildHomeView(): { type: "home"; blocks: KnownBlock[] } {
@@ -751,22 +765,6 @@ export class SlackMessagingBot implements MessagingBot {
     );
 
     return { type: "home", blocks: blocks as KnownBlock[] };
-  }
-
-  private resolveStopTarget(channelId: string, threadTs?: string): string | null {
-    const directTarget = resolveStopTarget({
-      handler: this.handler,
-      conversationId: channelId,
-      sessionKey: resolveSlackSessionKey(channelId, threadTs),
-    });
-    if (directTarget) return directTarget;
-    if (threadTs) return null;
-    return resolveOnlyScopedStopTarget(this.handler, channelId);
-  }
-
-  private isStopText(text: string): boolean {
-    const normalized = text.trim().toLowerCase();
-    return normalized === "stop" || normalized === "/stop";
   }
 
   private createCommandAdapters(
@@ -1068,26 +1066,12 @@ export class SlackMessagingBot implements MessagingBot {
       return;
     }
 
-    // Check for stop command - execute immediately, don't queue!
-    if (this.isStopText(slackEvent.text)) {
-      const stopTarget = this.resolveStopTarget(e.channel, e.thread_ts);
-      if (stopTarget) {
-        this.handler.handleStop(stopTarget, e.channel, this);
-      } else {
-        this.postMessage(e.channel, formatNothingRunning("slack"));
-      }
-      void attachmentsPromise.catch((err) => {
-        log.logWarning("Failed to log Slack message", String(err));
-      });
-      ack();
-      return;
-    }
-
     this.processSlackMessageIntake({
       event: slackEvent,
       attachmentsPromise,
       queueKey: this.resolveQueueKey(e.channel, sessionKey),
       isAutoReplyCandidate: false,
+      addressed: true,
     });
 
     ack();
@@ -1190,14 +1174,7 @@ export class SlackMessagingBot implements MessagingBot {
       return;
     }
 
-    // Stop command for DM only (app_mention handles shared-channel "@mikan stop").
-    if (isDM && this.isStopText(slackEvent.text)) {
-      const stopTarget = this.resolveStopTarget(e.channel, e.thread_ts);
-      if (stopTarget) {
-        this.handler.handleStop(stopTarget, e.channel, this);
-      } else {
-        this.postMessage(e.channel, formatNothingRunning("slack"));
-      }
+    if (!isDM && isThreadReply) {
       void attachmentsPromise.catch((err) => {
         log.logWarning("Failed to log Slack message", String(err));
       });
@@ -1205,49 +1182,20 @@ export class SlackMessagingBot implements MessagingBot {
       return;
     }
 
-    const enqueueTriggered = () => {
-      const activeSessionKey =
-        slackEvent.sessionKey ?? resolveSlackSessionKey(e.channel, e.thread_ts);
-      // Auto-reply top-level channel messages start with no sessionKey because
-      // they are only candidates until the policy allows them. Once triggered,
-      // persist the resolved key on the event; otherwise the runtime fallback
-      // treats the message ts as a thread session (`channel:ts`) instead of the
-      // persistent top-level channel session.
-      slackEvent.sessionKey = activeSessionKey;
-      this.processSlackMessageIntake({
-        event: slackEvent,
-        attachmentsPromise,
-        queueKey: this.resolveQueueKey(e.channel, activeSessionKey),
-        isAutoReplyCandidate: false,
-      });
-    };
-
-    const logOnly = () => {
-      void attachmentsPromise.catch((err) => {
-        log.logWarning("Failed to log Slack message", String(err));
-      });
-    };
-
-    if (isDM) {
-      enqueueTriggered();
-      ack();
-      return;
-    }
-
-    if (isThreadReply) {
-      logOnly();
-      ack();
-      return;
-    }
-
-    const activeSessionKey = resolveSlackSessionKey(e.channel, e.thread_ts);
+    const activeSessionKey =
+      slackEvent.sessionKey ?? resolveSlackSessionKey(e.channel, e.thread_ts);
+    // Auto-reply top-level channel messages start with no sessionKey because
+    // they are only candidates until the policy allows them. Persist the
+    // resolved key on the event; otherwise the runtime fallback treats the
+    // message ts as a thread session (`channel:ts`) instead of the persistent
+    // top-level channel session.
     slackEvent.sessionKey = activeSessionKey;
     this.processSlackMessageIntake({
       event: slackEvent,
       attachmentsPromise,
       queueKey: this.resolveQueueKey(e.channel, activeSessionKey),
-      isAutoReplyCandidate: true,
-      onNotTriggered: logOnly,
+      isAutoReplyCandidate: !isDM,
+      addressed: isDM,
     });
 
     ack();
