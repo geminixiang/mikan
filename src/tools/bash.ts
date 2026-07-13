@@ -1,7 +1,4 @@
 import { randomBytes } from "node:crypto";
-import { createWriteStream } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import type { Executor } from "../sandbox/index.js";
@@ -14,11 +11,13 @@ import {
 } from "./truncate.js";
 
 /**
- * Generate a unique temp file path for bash output
+ * Spill path for oversized bash output, inside the runtime workspace so the
+ * model can actually read the file it is pointed at (a host tmpdir path is a
+ * dead pointer inside sandbox containers — see src/sandbox/README.md).
  */
-function getTempFilePath(): string {
+function getSpillPath(runtimeWorkspaceRoot: string): string {
   const id = randomBytes(8).toString("hex");
-  return join(tmpdir(), `mikan-bash-${id}.log`);
+  return `${runtimeWorkspaceRoot.replace(/\/+$/, "")}/.mikan/bash-output/${id}.log`;
 }
 
 const bashSchema = Type.Object({
@@ -36,7 +35,10 @@ interface BashToolDetails {
   fullOutputPath?: string;
 }
 
-export function createBashTool(executor: Executor): AgentTool<typeof bashSchema> {
+export function createBashTool(
+  executor: Executor,
+  options?: { hostWorkspaceRoot?: string },
+): AgentTool<typeof bashSchema> {
   return {
     name: "bash",
     label: "bash",
@@ -47,9 +49,7 @@ export function createBashTool(executor: Executor): AgentTool<typeof bashSchema>
       { command, timeout }: { label: string; command: string; timeout?: number },
       signal?: AbortSignal,
     ) => {
-      // Track output for potential temp file writing
       let tempFilePath: string | undefined;
-      let tempFileStream: ReturnType<typeof createWriteStream> | undefined;
 
       const result = await executor.exec(command, { timeout, signal });
       let output = "";
@@ -61,12 +61,20 @@ export function createBashTool(executor: Executor): AgentTool<typeof bashSchema>
 
       const totalBytes = Buffer.byteLength(output, "utf-8");
 
-      // Write to temp file if output exceeds limit
+      // Spill the full output into the runtime workspace when it exceeds the
+      // limit; the executor owns transport, so the advertised path is valid
+      // where the model's follow-up read/bash actually runs.
       if (totalBytes > DEFAULT_MAX_BYTES) {
-        tempFilePath = getTempFilePath();
-        tempFileStream = createWriteStream(tempFilePath);
-        tempFileStream.write(output);
-        tempFileStream.end();
+        const runtimeRoot = executor.getPathContext(
+          options?.hostWorkspaceRoot ?? process.cwd(),
+        ).runtimeWorkspaceRoot;
+        const spillPath = getSpillPath(runtimeRoot);
+        try {
+          await executor.writeFile(spillPath, output, { signal });
+          tempFilePath = spillPath;
+        } catch {
+          tempFilePath = undefined;
+        }
       }
 
       // Apply tail truncation
@@ -85,17 +93,20 @@ export function createBashTool(executor: Executor): AgentTool<typeof bashSchema>
         // Build actionable notice
         const startLine = truncation.totalLines - truncation.outputLines + 1;
         const endLine = truncation.totalLines;
+        const fullOutputNote = tempFilePath
+          ? ` Full output: ${tempFilePath}`
+          : " Full output unavailable (spill failed).";
 
         if (truncation.lastLinePartial) {
           // Edge case: last line alone > 50KB
           const lastLineSize = formatSize(
             Buffer.byteLength(output.split("\n").pop() || "", "utf-8"),
           );
-          outputText += `\n\n[Showing last ${formatSize(truncation.outputBytes)} of line ${endLine} (line is ${lastLineSize}). Full output: ${tempFilePath}]`;
+          outputText += `\n\n[Showing last ${formatSize(truncation.outputBytes)} of line ${endLine} (line is ${lastLineSize}).${fullOutputNote}]`;
         } else if (truncation.truncatedBy === "lines") {
-          outputText += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines}. Full output: ${tempFilePath}]`;
+          outputText += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines}.${fullOutputNote}]`;
         } else {
-          outputText += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Full output: ${tempFilePath}]`;
+          outputText += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(DEFAULT_MAX_BYTES)} limit).${fullOutputNote}]`;
         }
       }
 

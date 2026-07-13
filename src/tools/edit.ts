@@ -2,7 +2,6 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import * as Diff from "diff";
 import type { Executor } from "../sandbox/index.js";
-import { shellEscape } from "../sandbox/utils.js";
 
 /**
  * Generate a unified diff string with line numbers and context
@@ -108,13 +107,17 @@ export function createEditTool(executor: Executor): AgentTool<typeof editSchema>
       { path, oldText, newText }: { label: string; path: string; oldText: string; newText: string },
       signal?: AbortSignal,
     ) => {
-      // Read the file
-      const readResult = await executor.exec(`cat ${shellEscape(path)}`, { signal });
-      if (readResult.code !== 0) {
-        throw new Error(readResult.stderr || `File not found: ${path}`);
+      let content: string;
+      try {
+        content = await executor.readFile(path, { signal });
+      } catch (err) {
+        throw new Error(
+          err instanceof Error && err.message ? err.message : `File not found: ${path}`,
+          {
+            cause: err,
+          },
+        );
       }
-
-      const content = readResult.stdout;
 
       // Check if old text exists
       if (!content.includes(oldText)) {
@@ -144,15 +147,7 @@ export function createEditTool(executor: Executor): AgentTool<typeof editSchema>
       }
 
       // Write the file back
-      const writeResult = await executor.exec(
-        `printf '%s' ${shellEscape(newContent)} > ${shellEscape(path)}`,
-        {
-          signal,
-        },
-      );
-      if (writeResult.code !== 0) {
-        throw new Error(writeResult.stderr || `Failed to write file: ${path}`);
-      }
+      await executor.writeFile(path, newContent, { signal });
 
       return {
         content: [

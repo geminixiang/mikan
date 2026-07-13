@@ -1,290 +1,482 @@
 ---
 title: MicroVM sandbox migration research
-description: Research notes for moving mikan's managed image sandbox contract to Gondolin/QEMU-style microVMs.
+description: Feasibility research for moving mikan's managed image sandbox to a local-to-fleet Gondolin/QEMU architecture.
 ---
 
 Generated: 2026-07-13
 
-## Question
+## Feasibility verdict
 
-mikan's strongest sandbox mode today is `image:<image>`, which is implemented as
-mikan-managed Docker containers. The target direction is to reduce the supported
-sandbox matrix and move the important `image:*` contract to a smaller set of
-specialized microVM-based runtimes, with at least:
+**Conditional go.** mikan can support a single-machine to multi-machine microVM
+sandbox architecture on reliable foundations, provided that the product is a
+specialized agent sandbox rather than a drop-in replacement for arbitrary Docker
+images.
 
-- single-machine deployment
-- multi-machine deployment
-- Linux and macOS support
-- vault secret injection
-- workspace projection equivalent to the current private/full workspace modes
+The dependable lower layers already exist:
 
-## Current mikan contract to preserve
+- QEMU provides the VM boundary and hardware acceleration through KVM on Linux
+  and HVF on macOS. QEMU treats hardware-accelerated virtualization as its
+  security-supported isolation use case; TCG is not a production security or
+  performance fallback. ([QEMU accelerators](https://www.qemu.org/docs/master/system/introduction.html),
+  [QEMU security model](https://www.qemu.org/docs/master/system/security.html))
+- Gondolin already supplies the local agent-sandbox control plane mikan would
+  otherwise have to build over QEMU: VM lifecycle, command execution, VFS,
+  mediated networking, secret placeholders, and disk checkpoints.
+  ([Gondolin architecture](https://earendil-works.github.io/gondolin/architecture/),
+  [VM API](https://earendil-works.github.io/gondolin/sdk-vm/))
+- Git, shared POSIX storage, and an external Vault implementation are mature
+  building blocks for workspace and secret delivery when used with explicit
+  ownership rules. They do not provide mikan's scheduling semantics by
+  themselves.
 
-The important behavior is not the `image:*` parser itself. `src/sandbox/image.ts`
-only parses and validates a Docker image name. The real contract is split across
-`src/execution-resolver.ts`, `src/provisioner.ts`, `src/sandbox/container.ts`,
-`src/vault/index.ts`, and the `/pi-sandbox` command/tool.
+The missing distributed layer is substantial but bounded. mikan must build a
+worker daemon, worker authentication, durable leases, placement, reconciliation,
+workspace preparation/finalization, scoped secret delivery, resource enforcement,
+and operational telemetry. Gondolin is local-first and does not provide any of
+those fleet functions.
 
-`image:*` currently means:
+This should therefore proceed only behind a mikan-owned worker/runtime interface.
+Do not make Gondolin's API, local session registry, or QEMU process identity part
+of mikan's persisted public contract.
 
-- one conversation vault key maps to one managed runtime
-- vault key normalization is shared with the managed container name
-- mikan creates, starts, stops, recreates, and reconciles runtimes
-- each runtime gets an isolated Docker bridge network
-- the private workspace mode exposes only `MEMORY.md`, `skills/`, `events/`,
-  and the current conversation directory at `/workspace`
-- the full workspace mode exposes the whole host workspace at `/workspace`
-- vault env is injected at command execution time
-- vault file credentials are projected into the runtime as writable mounts
-- CPU/memory defaults, boost limits, and temporary per-conversation limit
-  overrides are supported
-- idle managed runtimes are stopped
-- container drift is detected from bind mounts, mount fingerprints, and network
-  mode, then repaired by recreation
+## Current mikan contract
 
-The existing user-facing documentation says the same thing: `image:<image>` is
-the only current mode that combines mikan-managed lifecycle, automatic workspace
-mounts, automatic vault file projection, private workspace mode, idle stopping,
-and resource limit controls.
+The behavior to preserve is not the `image:*` parser. The managed contract is
+implemented across `src/execution-resolver.ts`, `src/provisioner.ts`,
+`src/sandbox/container.ts`, `src/vault/index.ts`, and the sandbox command/tool.
 
-## External findings
+`image:*` currently provides:
 
-### Gondolin/QEMU is the best first target
+- one conversation vault key mapped to one managed runtime
+- create, start, stop, recreate, reconcile, and idle-stop lifecycle management
+- private and full workspace modes mounted at `/workspace`
+- vault environment injection at command execution time
+- writable vault file credential projection
+- per-runtime network isolation
+- CPU/memory defaults, temporary overrides, and boost controls
+- drift detection and recreation when mounts or network configuration change
 
-[Gondolin](https://github.com/earendil-works/gondolin) is explicitly an agent
-sandbox: local Linux microVMs with host-side filesystem and network policy
-control. Its architecture is a TypeScript/Node host library plus CLI, a minimal
-Linux guest, and a VM backend, with QEMU as the default backend and `libkrun` as
-experimental. The host controls VM lifecycle, command execution, VFS providers,
-network mediation, and guest asset download/cache.
+The migration can preserve the user-visible lifecycle and `/workspace` concepts.
+It cannot preserve arbitrary OCI image compatibility, unrestricted Docker-style
+networking, writable secret mounts, and dynamic resource changes without either
+changing their semantics or building significant additional machinery.
 
-This matches mikan better than raw QEMU or raw Firecracker because mikan already
-has a TypeScript host control plane and needs host-mediated exec, filesystem,
-network, and secrets rather than only a VM process.
+## Foundation assessment
 
-[Gondolin's README](https://github.com/earendil-works/gondolin) and
-[backend matrix](https://earendil-works.github.io/gondolin/backends/) state that
-Linux and macOS are supported, with QEMU as the recommended/default backend.
-[QEMU's official documentation](https://www.qemu.org/docs/master/system/introduction.html)
-lists KVM for Linux and Hypervisor Framework for macOS, which gives Gondolin a
-credible cross-platform baseline. TCG exists as a fallback, but it is much
-slower and should not be treated as a production path.
+| Component                | Assessment                                            | Safe reliance                                                                                | mikan responsibility                                                                        |
+| ------------------------ | ----------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| QEMU with KVM/HVF        | Mature foundation                                     | VM process, hardware boundary, virtio devices, Linux/macOS acceleration                      | Pin supported QEMU versions and reject TCG for untrusted production workloads               |
+| Gondolin QEMU backend    | Promising integration foundation, still early         | Local VM create/exec/close, VFS, network mediation, secret placeholders, qcow2 checkpoints   | Version pinning, compatibility tests, lifecycle reconciliation, fleet control               |
+| Gondolin VFS             | Useful but younger than QEMU                          | Explicit host paths, memory/real/read-only/shadow providers                                  | Workspace policy, concurrency, remote materialization, performance testing                  |
+| Gondolin secrets         | Strong for HTTP header credentials                    | Real secret remains in trusted host process and is substituted only for allowed destinations | Deliver scoped values to the worker, define allowed hosts, handle non-HTTP/file credentials |
+| Gondolin checkpoints     | Useful optimization, not durable runtime migration    | Disk-only qcow2 checkpoint and resume against matching guest assets                          | Store/transfer checkpoint plus asset build identity; recreate processes after failure       |
+| Linux cgroup v2          | Mature Linux resource-control foundation              | CPU, memory, and I/O enforcement around the worker/QEMU process                              | Create per-sandbox cgroups and collect usage/termination reasons                            |
+| Git/worktrees            | Mature source workspace foundation                    | Worker-local repository cache and isolated working trees                                     | Preserve uncommitted/non-Git data and publish results safely                                |
+| NFS/shared POSIX storage | Mature deployment option with limited cache coherence | Avoid bulk workspace transfer and keep a stable logical path                                 | Enforce one writer, fencing, lock discipline, and recovery after worker loss                |
+| Vault response wrapping  | Mature optional secret handoff primitive              | Short-lived, single-use delivery token instead of the secret in transit                      | Policy, worker identity, unwrap validation, renewal, revocation, audit                      |
 
-### Firecracker is not the cross-platform core
+Primary-source qualifications behind this table:
 
-[Firecracker](https://github.com/firecracker-microvm/firecracker) is a strong
-Linux microVM VMM for multi-tenant serverless/container workloads, and its README
-states that it uses Linux KVM. Its tested platform list is Linux host oriented.
-It is attractive for Linux fleets, but it would force mikan to own far more of
-the lifecycle, workspace, secret, and network policy surface itself. It also does
-not satisfy macOS support as a single core backend.
+- Gondolin calls itself an early project. Its current published package is
+  `0.12.0`, and the package requires Node `>=23.6.0`, while mikan currently
+  supports Node `>=22.19.0`. A separate worker process running Node 24 avoids
+  forcing an immediate mikan host runtime upgrade.
+  ([Gondolin docs](https://earendil-works.github.io/gondolin/),
+  [package.json](https://github.com/earendil-works/gondolin/blob/main/host/package.json),
+  [releases](https://github.com/earendil-works/gondolin/releases))
+- Gondolin says ARM64 is its most-tested runtime path. Its repository CI builds
+  both guest architectures, but this is not evidence of a long production track
+  record across every Linux/macOS and QEMU combination.
+  ([Gondolin README](https://github.com/earendil-works/gondolin),
+  [Gondolin CI](https://github.com/earendil-works/gondolin/blob/main/.github/workflows/ci.yml))
+- Gondolin's VFS vendors and patches a snapshot of Node's VFS implementation.
+  That is a useful implementation, but mikan must test real repository semantics
+  such as symlinks, permissions, rename, watchers, package managers, and large
+  trees before treating it as bind-mount equivalent.
+  ([VFS implementation note](https://earendil-works.github.io/gondolin/vfs/))
+- Gondolin explicitly states that it has no complete denial-of-service resource
+  governance. Linux cgroup v2 supplies hard memory and CPU/I/O controls outside
+  Gondolin; there is no equivalent cross-platform foundation established by the
+  Gondolin documentation for macOS.
+  ([Gondolin security design](https://earendil-works.github.io/gondolin/security/),
+  [Linux cgroup v2](https://docs.kernel.org/admin-guide/cgroup-v2.html))
+- NFSv4.1 does not provide general distributed cache coherence. Concurrent
+  writers must coordinate with locks/share reservations, so a mikan lease cannot
+  be treated as optional metadata when workers share a workspace.
+  ([RFC 8881, section 10](https://www.rfc-editor.org/rfc/rfc8881.html#section-10))
 
-Firecracker should be considered only as a later Linux-only fleet backend if
-mikan wants to invest in a separate production worker architecture.
+## `image:*` parity
 
-### Gondolin's filesystem model is a better workspace primitive than bind mounts
+| Existing behavior                      | Gondolin/QEMU capability                                                              | Verdict                                                                 |
+| -------------------------------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Per-conversation managed runtime       | Stable VM session UUID and create/exec/close APIs                                     | Yes; mikan owns conversation mapping and reconciliation                 |
+| Command execution and streaming        | Buffered/streamed output, PTY, cancellation, bounded backpressure                     | Yes                                                                     |
+| Local private/full workspace           | `RealFSProvider`, `ReadonlyProvider`, `ShadowProvider`, mount routing                 | Yes, after semantic and performance tests                               |
+| Remote workspace                       | No fleet workspace transport                                                          | No; mikan must provide it                                               |
+| HTTP API secrets                       | Destination-scoped host substitution using guest placeholders                         | Yes, with safer semantics than guest env injection                      |
+| File and non-HTTP credentials          | Explicit VFS projection or mapped TCP/SSH exceptions                                  | Partial; values enter the guest and need an opt-in compatibility policy |
+| Static CPU/memory at VM creation       | `sandbox.cpus` and `sandbox.memory`                                                   | Yes                                                                     |
+| Dynamic boost/temporary limits         | No documented Gondolin runtime resize contract; no complete DoS governance            | No direct parity; recreate or enforce externally                        |
+| Idle stop                              | Fast disposable VM lifecycle                                                          | Yes; mikan owns timers and policy                                       |
+| Docker bridge/general outbound network | Mediated HTTP/TLS, explicit SSH and mapped TCP, no generic NAT                        | Intentional incompatibility                                             |
+| Arbitrary Docker/OCI image             | Alpine image builder; optional OCI rootfs source is not arbitrary container execution | No                                                                      |
+| Live migration/failover                | Disk-only checkpoint; no RAM/process snapshot                                         | No; failover means re-provision and restart                             |
+| Multi-machine scheduling               | Local sessions and Unix sockets only                                                  | No; mikan must provide it                                               |
 
-[Gondolin VFS providers](https://earendil-works.github.io/gondolin/vfs/) expose
-guest paths through host-side providers such as `RealFSProvider`,
-`ReadonlyProvider`, `MemoryProvider`, and `ShadowProvider`. The guest sees normal
-POSIX paths while host code decides what each path means.
+Gondolin's documented limitations also include no HTTP/2, HTTP/3, QUIC, WebRTC,
+or generic UDP in the default network model, and an Alpine-only image builder.
+These are product constraints, not minor migration bugs.
+([Gondolin limitations](https://earendil-works.github.io/gondolin/limitations/),
+[custom images](https://earendil-works.github.io/gondolin/custom-images/))
 
-This is a strong match for mikan's private workspace mode:
+## Recommended architecture
 
-- `/workspace/MEMORY.md` can map to the host file
-- `/workspace/skills` can map to the host skills directory
-- `/workspace/events` can map to the host events directory
-- `/workspace/<conversationId>` can map to the current conversation directory
-- full mode can map the whole workspace through `RealFSProvider`
-- sensitive workspace files can be hidden or made read-only with a policy wrapper
+Single-machine and multi-machine deployments should use the same control path:
 
-The major design improvement over Docker bind mounts is that mikan can express
-workspace policy in host code instead of by recreating containers when bind
-mounts change.
+```text
+mikan host
+  -> SandboxScheduler
+  -> WorkerClient
+  -> local Unix socket or remote mTLS
+  -> mikan-worker
+  -> Gondolin
+  -> QEMU/KVM or QEMU/HVF
+```
 
-### Secret handling should change shape
+The single-machine deployment runs `mikan host` and `mikan-worker` on the same
+machine. The multi-machine deployment changes worker discovery and the workspace
+provider, not the sandbox execution contract. Keeping the worker as a separate
+process also isolates Gondolin's Node version and QEMU process management from
+the chat/control process.
 
-Gondolin's preferred model is not to put real secrets into guest env. Its
-[secrets documentation](https://earendil-works.github.io/gondolin/secrets/)
-describes placeholder env values: the guest sees placeholders, and the host
-substitutes real secret values only into allowed outbound HTTP(S) destinations.
-The same docs explicitly warn not to pass real secrets via `VM.env` or mount host
-secret files into the guest.
+### Control-plane ownership
 
-This is safer than the current `image:*` behavior for HTTP API tokens, but it is
-not a drop-in replacement for all vault file credentials. For mikan:
+The mikan host remains authoritative for:
 
-- env tokens used in HTTP headers should migrate to Gondolin host-side secret
-  placeholders
-- file credentials such as `.ssh`, `.kube`, `gws.json`, and `gcloud-adc.json`
-  need a compatibility decision
-- some file credentials can be projected through a policy VFS mount, but that is
-  less safe than host-mediated per-destination substitution
-- SSH and non-HTTP credentials should use Gondolin's explicit SSH egress or
-  mapped TCP exception paths where possible
+- conversation/session routing
+- vault policy and secret authorization
+- worker registry and health
+- sandbox profiles and image build IDs
+- lease allocation and fencing epochs
+- run queue and idempotency records
+- workspace generation and finalization state
 
-This implies the migration should split the vault model into:
+The requested topology has one authoritative mikan host and multiple workers.
+It does not require distributed consensus because the host is the sole scheduler.
+Host high availability would be a separate project requiring a shared durable
+store and leader election.
 
-- `networkSecret`: host-held, guest placeholder, scoped to allowed hosts
-- `fileCredential`: explicit projected file/directory, audited and opt-in
-- `plainEnv`: compatibility-only, discouraged for secrets
+### Worker ownership
 
-### Network compatibility is the main behavioral risk
+Each worker owns only local execution concerns:
 
-[Gondolin's network access docs](https://earendil-works.github.io/gondolin/sdk-network/)
-say the default network stack mediates HTTP and TLS traffic, blocks arbitrary
-non-HTTP/TLS TCP unless explicit SSH or mapped TCP rules are configured, and
-does not provide generic NAT.
+- validate its identity and the signed/scoped lease
+- prepare a worker-local workspace path
+- start and supervise Gondolin/QEMU
+- execute commands and stream output
+- apply network and VFS policy
+- hold lease-scoped secret values in memory
+- enforce local resource limits
+- report health, capacity, usage, and exit reasons
+- finalize workspace results and remove ephemeral state
 
-That is good for preventing secret exfiltration and internal network access, but
-it is not Docker-equivalent. The
-[limitations page](https://earendil-works.github.io/gondolin/limitations/) lists
-current gaps including no HTTP/2, no HTTP/3, no QUIC, no WebRTC, and no generic
-UDP in the default network model.
+Gondolin's own session registry is local metadata under its cache directory and
+supports local attach/list workflows. It is not the fleet source of truth.
+([Gondolin VM sessions](https://earendil-works.github.io/gondolin/sdk-vm/))
 
-mikan should not sell this as "Docker image mode but more isolated". It is a
-more opinionated agent sandbox. That fits the user's desired direction, but the
-docs and config must make the policy visible.
+### Minimal worker protocol
 
-### Image/package compatibility is a migration cost
+Keep the protocol specialized:
 
-The current `image:<image>` accepts arbitrary Docker image names. Gondolin
-currently uses guest asset manifests and its
-[custom image flow](https://earendil-works.github.io/gondolin/custom-images/)
-builds Alpine-based guest images. Its limitations page says adding extra system
-packages generally requires building a custom image and that the image builder
-currently supports Alpine.
+- `lease`: reserve a sandbox profile and workspace generation
+- `exec`: execute under a lease with a request ID
+- `status`: report sandbox and workspace state
+- `stop`: stop the VM but retain explicitly durable workspace state
+- `release`: finalize or discard workspace state and revoke secrets
+- `health`: advertise capacity, OS, architecture, accelerator, profiles, and
+  cached guest asset build IDs
 
-This means the migration cannot preserve arbitrary OCI image compatibility
-without extra work. The better product shape is a curated mikan guest image plus
-a small custom-image story, not a generic Docker replacement.
+Every mutating request needs an idempotency key. Every lease needs a monotonically
+increasing fencing epoch. A worker must reject stale epochs so a partitioned old
+worker cannot continue writing after the host has reassigned the conversation.
+The practical execution guarantee is at-least-once: mikan cannot promise
+exactly-once shell side effects across worker or network failure.
 
-## Recommended sandbox set
+### Scheduling and lifecycle
 
-The long-term supported set should be small:
+Use sticky placement while a conversation is active:
 
-| Mode                                                 | Keep?                                              | Purpose                                      |
-| ---------------------------------------------------- | -------------------------------------------------- | -------------------------------------------- |
-| `host`                                               | yes                                                | trusted local development and debugging      |
-| `microvm:<image-or-profile>` backed by Gondolin/QEMU | yes                                                | main production/dev sandbox                  |
-| `image:<image>`                                      | transitional                                       | compatibility while migrating users          |
-| `container:<name>`                                   | likely remove or hide                              | legacy/self-managed Docker compatibility     |
-| `firecracker:*`                                      | remove from general support                        | too self-managed and Linux-only for the core |
-| `cloudflare:*`                                       | keep only as external bridge experiment, or remove | no workspace/file projection parity today    |
+1. Select a healthy worker matching OS/architecture/profile and free capacity.
+2. Create a durable lease containing worker ID, sandbox ID, workspace generation,
+   profile/image build ID, fencing epoch, and expiry.
+3. Renew it through worker heartbeats while the VM is active.
+4. Stop the VM after the idle timeout but retain only workspace state declared
+   durable by the selected provider.
+5. On worker loss, expire the lease, increment the fencing epoch, prepare the
+   latest committed workspace generation elsewhere, and create a new VM.
 
-Naming suggestion: do not expose `qemu:*` as the main user-facing mode. Expose a
-mikan concept such as `microvm:<profile>` or `gondolin:<profile>`, and keep QEMU
-as the default backend detail. If `libkrun` is later useful, it can be selected
-inside the same mode by a config field without expanding the public sandbox
-matrix.
+Disk checkpoints are optional cold-start caches, not lease authority. Gondolin
+checkpoints stop the source VM, exclude tmpfs and VFS-mounted workspace state,
+and require matching guest assets by build ID to resume.
+([Gondolin snapshots](https://earendil-works.github.io/gondolin/snapshots/),
+[lifecycle guidance](https://earendil-works.github.io/gondolin/workloads/))
 
-## Single-machine design
+## Workspace architecture options
 
-For a single mikan instance:
+The worker must always receive a local directory to pass to Gondolin's
+`RealFSProvider`. A `WorkspaceProvider` boundary should implement conceptually:
+prepare a generation on a worker, expose its local path, then finalize or abort
+that generation. This is the main switch between deployment sizes.
 
-1. Add a `ManagedSandboxRuntime` interface that owns provision, exec, status,
-   resource limit status, boost, stop, remove, reconcile, and idle stop.
-2. Move Docker-specific lifecycle code behind a Docker implementation of that
-   interface.
-3. Implement a Gondolin/QEMU runtime with one VM per conversation vault key.
-4. Keep `/workspace` and path context semantics identical to `image:*`.
-5. Build VFS mounts from the same private/full workspace resolution code.
-6. Map vault env to Gondolin secret placeholders by default.
-7. Add explicit compatibility projection for selected vault files.
-8. Keep the existing `Executor` shape so `bash`, `read`, `write`, and `edit`
-   tools do not need a broad rewrite.
+### Option A: local path
 
-The first milestone should target command execution plus private workspace plus
-placeholder env secrets. Resource limits and file credential projection can come
-next because they require sharper policy choices.
+Use the existing host workspace directly when host and worker share a machine.
+This gives the lowest startup cost and preserves current behavior. It is phase 1,
+not a remote-worker solution.
 
-## Multi-machine design
+### Option B: shared filesystem
 
-Gondolin is local-first; it does not provide a fleet scheduler. A multi-machine
-mikan deployment should make mikan own the worker layer instead of stretching
-Gondolin into one.
+Mount the same NFS or managed POSIX filesystem on every worker. This avoids
+copying the workspace during startup and is the simplest first remote deployment.
+The guest still sees only the directory and policy exposed through Gondolin VFS.
 
-Recommended shape:
+Required constraints:
 
-- one control-plane mikan process owns chat adapters, session routing, auth
-  portal, and queueing
-- N sandbox workers run on Linux or macOS hosts
-- each worker can run Gondolin locally and advertises capacity, OS, architecture,
-  image/profile support, and health
-- conversations are sticky-routed to one worker while their VM is warm
-- worker state is disposable except cached guest assets and running VM snapshots
-- workspace material is synchronized intentionally, not by assuming a shared
-  filesystem
-- vault material is delivered to workers as encrypted scoped bundles or fetched
-  from a central vault service at execution time
+- exactly one active writable lease per conversation workspace
+- fencing before reassignment after a worker partition or crash
+- no assumption of general cache coherence between workers
+- explicit atomic markers/generations for completed turns
+- benchmark package installs and large source trees because each guest VFS call
+  reaches Gondolin on the worker and may then reach network storage
 
-For workspace sync, prefer one of these two explicit models:
+This is the recommended first multi-machine workspace model because it keeps
+single-to-multi migration operationally small. It is not the final high-scale
+model.
 
-- Git/worktree model: worker checks out the repo or workspace ref, then writes
-  conversation outputs back through a controlled patch/artifact path.
-- Shared storage model: workers mount the same workspace storage, but mikan still
-  applies VFS policy per conversation.
+### Option C: worker-local Git cache and worktree
 
-Avoid making mikan a universal sandbox platform. A worker protocol only needs
-provision/exec/stop/status/logs and a small set of resource/secret/workspace
-descriptors.
+Maintain a bare/object cache per worker and create a worktree for each lease.
+Git worktrees share repository objects while retaining separate `HEAD` and index
+state; partial clone can reduce initial transfer and fetch missing objects on
+demand. ([Git worktree](https://git-scm.com/docs/git-worktree.html),
+[partial clone](https://git-scm.com/docs/partial-clone))
 
-## Open decisions
+This gives fast local I/O and scales better than shared storage for source-heavy
+workloads. It does not preserve arbitrary workspace semantics by itself:
+untracked files, ignored build output, local-only repositories, conversation
+artifacts, and uncommitted host changes need a separate snapshot/artifact channel.
+Use this only after the product defines which workspace state is authoritative.
 
-- Should vault file credentials remain writable from inside the sandbox?
-- Which vault files are allowed in the Gondolin backend by default?
-- Should network egress default to deny-all except a curated allowlist, or match
-  Docker's broader outbound access during migration?
-- How much Docker image compatibility is actually required, given the stated
-  goal to specialize rather than generalize?
-- Should `image:*` continue to exist as an alias that means "managed sandbox",
-  or should it remain Docker-specific during deprecation?
-- Is multi-machine deployment allowed to require a central state/vault service,
-  or must it work with only filesystem rsync/scp primitives?
+### Option D: content-addressed workspace generations
 
-## Recommendation
+Create a manifest of paths, metadata, and content digests; upload missing blobs;
+materialize a generation on the selected worker; atomically publish a new
+generation after execution. This supports non-Git workspaces and incremental
+transfer, but mikan must build integrity verification, garbage collection,
+conflict policy, symlink/permission semantics, interrupted upload recovery, and
+artifact size limits.
 
-Build the next core sandbox as `microvm` backed by Gondolin/QEMU. Treat it as the
-successor to `image:*`, not as another peer in the already-too-wide sandbox
-matrix.
+This is a later optimization, not a prerequisite for the first multi-worker
+release.
 
-Preserve the `image:*` contract where it matters:
+### Rejected default: remote VFS back to the host
 
-- per-conversation runtime
-- per-conversation vault
-- `/workspace` path semantics
-- private/full workspace modes
-- host-managed lifecycle
-- resource status and boost UX
+Gondolin permits custom JavaScript VFS providers, so a worker could proxy every
+filesystem operation to the mikan host. Do not make this the default. Gondolin's
+guest-to-provider path already uses FUSE/RPC and caps individual RPC payloads;
+adding host-to-worker network latency to every filesystem operation creates a
+fragile, chatty distributed filesystem.
+([Gondolin VFS](https://earendil-works.github.io/gondolin/vfs/),
+[security design](https://earendil-works.github.io/gondolin/security/))
 
-Intentionally change the secret model:
+## Vault and secret delivery
 
-- prefer host-held placeholders and destination-scoped substitution
-- make file credential projection explicit and audited
-- document that arbitrary network protocols are not Docker-compatible by default
+The remote worker is part of the trusted computing base. Gondolin's guarantee is
+that a real HTTP secret stays in the trusted host process and never enters the
+guest; in a fleet, that trusted host process runs on the worker.
+([Gondolin secrets](https://earendil-works.github.io/gondolin/secrets/),
+[security model](https://earendil-works.github.io/gondolin/security/))
 
-Keep Firecracker out of the default path. It is valuable for a future Linux-only
-fleet backend, but choosing it now would either break macOS support or force
-mikan to maintain a second sandbox stack.
+Recommended flow:
 
-## Sources
+1. The mikan host authorizes secret names and destination hosts for a lease.
+2. It sends the worker a short-lived, single-use encrypted/wrapped bundle over
+   authenticated transport, never the complete conversation vault.
+3. The worker validates lease ID, fencing epoch, expiry, and intended secret
+   paths before unwrapping.
+4. It keeps real values in memory and gives Gondolin only placeholder mappings
+   plus destination policy.
+5. Lease release, expiry, or reassignment removes the mappings and revokes any
+   renewable credentials.
 
-- mikan current implementation: `src/execution-resolver.ts`,
-  `src/provisioner.ts`, `src/sandbox/container.ts`, `src/sandbox/image.ts`,
-  `src/vault/index.ts`, `src/vault/routing.ts`, `src/commands/sandbox.ts`,
-  `src/tools/sandbox.ts`
-- mikan current docs: `src/content/docs/sandbox.mdx`,
-  `src/content/docs/sandbox/image.md`, `src/content/docs/sandbox/vault.md`,
-  `src/sandbox/README.md`
-- [Gondolin README](https://github.com/earendil-works/gondolin)
-- [Gondolin architecture overview](https://earendil-works.github.io/gondolin/architecture/)
-- [Gondolin VM backends](https://earendil-works.github.io/gondolin/backends/)
-- [Gondolin SDK: VM control](https://earendil-works.github.io/gondolin/sdk-vm/)
-- [Gondolin SDK: network access](https://earendil-works.github.io/gondolin/sdk-network/)
-- [Gondolin VFS providers](https://earendil-works.github.io/gondolin/vfs/)
-- [Gondolin secrets handling](https://earendil-works.github.io/gondolin/secrets/)
-- [Gondolin limitations](https://earendil-works.github.io/gondolin/limitations/)
-- [Gondolin custom images](https://earendil-works.github.io/gondolin/custom-images/)
-- [QEMU system emulation introduction](https://www.qemu.org/docs/master/system/introduction.html)
-- [QEMU invocation reference](https://www.qemu.org/docs/master/system/invocation.html)
-- [Firecracker README](https://github.com/firecracker-microvm/firecracker)
+HashiCorp Vault response wrapping is a reliable optional implementation: its
+token is single-use, separately expiring, and supports lookup of creation path
+before unwrap. If mikan retains its file-backed vault, mikan must implement the
+equivalent scoped envelope and audit semantics itself.
+([Vault response wrapping](https://developer.hashicorp.com/vault/docs/concepts/response-wrapping))
+
+File credentials are a compatibility exception. Project only explicitly allowed
+files into a lease-specific scratch provider, prefer read-only access, never
+mount the whole vault, and wipe the scratch state on release. Once a real secret
+file enters the guest, Gondolin's non-exposure guarantee no longer applies.
+
+## Platform support policy
+
+### Linux
+
+Linux with KVM should be the production worker baseline. Worker VMs must expose
+`/dev/kvm`; a cloud VM without nested virtualization or KVM passthrough will fall
+back to TCG or fail. The worker readiness check must verify the active
+accelerator, not merely that QEMU is installed. Apply cgroup v2 limits to each
+QEMU process for resource enforcement.
+
+### macOS
+
+macOS with HVF is a valid local-development and small-worker target. Gondolin
+aims to keep guest-visible behavior aligned with Linux and documents both Apple
+Silicon and supported Intel Macs. ([Gondolin QEMU backend](https://earendil-works.github.io/gondolin/qemu/))
+
+Do not claim identical production resource isolation initially. Gondolin itself
+does not provide complete resource governance, and the researched foundations do
+not supply a cgroup-v2-equivalent contract on macOS. Qualify macOS production
+support through the same conformance, load, failure, and security tests rather
+than assuming QEMU backend parity implies operational parity.
+
+## Main risks and controls
+
+| Risk                                               | Consequence                                            | Required control                                                               |
+| -------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| Gondolin remains pre-1.0 and explicitly early      | API or behavior changes                                | Pin exact version, wrap it, maintain Linux/macOS contract tests                |
+| mikan Node version is below Gondolin's requirement | In-process integration cannot run on supported minimum | Separate Node 24 worker or explicitly raise mikan's minimum                    |
+| Worker partition after reassignment                | Two VMs write the same workspace                       | Lease expiry plus fencing epoch enforced by worker and workspace finalizer     |
+| Shared filesystem cache/lock assumptions           | Stale reads or conflicting writes                      | Single writer, generation markers, filesystem-specific failure tests           |
+| Retried `exec` after lost response                 | Duplicate shell side effects                           | Request IDs and result journal; document at-least-once semantics               |
+| Worker compromise                                  | Exposure of lease-scoped host secrets/workspace        | Least-privilege workers, short-lived bundles, allowlists, no full vault copy   |
+| Guest gets file credentials                        | Secret can be read and exfiltrated                     | Explicit compatibility policy, narrow egress, short-lived credentials, cleanup |
+| QEMU/Gondolin DoS gap                              | Host resource exhaustion                               | Linux cgroups, capacity admission, output/disk/time limits, worker watchdog    |
+| Guest asset drift                                  | Checkpoint cannot resume or behavior changes           | Content/build IDs, signed or checksum-verified image promotion, staged rollout |
+| Network incompatibility                            | Tools requiring HTTP/2, UDP, or arbitrary TCP fail     | Curated supported tool/profile list and conformance tests                      |
+| VFS semantic/performance differences               | Package managers, watchers, or large trees regress     | Real-workload benchmarks and repository operation test suite                   |
+
+## Phased recommendation
+
+### Phase 0: compatibility spike
+
+- Run a separate Node 24 worker using a pinned Gondolin release.
+- Test Linux x86_64, Linux ARM64, and current supported macOS hardware with
+  hardware acceleration verified.
+- Exercise mikan's actual `bash`, read, write, edit, package install, Git,
+  cancellation, large output, private workspace, and vault HTTP flows.
+- Benchmark VM cold start, warm exec, VFS operations, and a representative
+  package install; kill QEMU and the worker during writes.
+- Produce a curated guest image and verify its manifest/checksums.
+
+Exit only if the required mikan workflows pass without generic NAT, arbitrary
+Docker images, or unsafe secret-file mounts.
+
+### Phase 1: single machine through the worker protocol
+
+- Route all new `microvm` execution through `WorkerClient`, even locally.
+- Run `mikan-worker` over a Unix socket on the same machine.
+- Use `local-path` workspace preparation and mikan-host-authorized scoped secrets.
+- Implement lifecycle reconciliation, idle stop, request IDs, profiles, and
+  worker readiness checks.
+- Keep `image:*` as a transitional Docker fallback.
+
+This phase creates the single-to-multi seam before any distributed storage is
+introduced.
+
+### Phase 2: one remote Linux worker
+
+- Add authenticated remote transport, heartbeats, durable leases, fencing, and
+  capacity reporting.
+- Start with shared POSIX storage so workspace startup does not require bulk
+  transfer.
+- Deliver only lease-scoped secret bundles; apply Linux cgroup limits.
+- Test host restart, worker restart, partition, storage interruption, expired
+  secret, duplicate request, and stale lease behavior.
+
+### Phase 3: multiple Linux workers
+
+- Add sticky placement, queueing, draining, image/profile rollout, and
+  reconciliation across workers.
+- Keep one writable worker per conversation workspace.
+- Add Git/worktree caching for source repositories if shared-storage latency is
+  measured to be a problem.
+- Treat failover as VM recreation from committed workspace state, not live
+  migration.
+
+### Phase 4: qualify macOS workers and advanced workspace sync
+
+- Run the same conformance and failure suite on macOS/HVF.
+- Define lower or best-effort resource guarantees where OS controls differ.
+- Add content-addressed workspace generations only if non-Git remote workloads
+  justify the maintenance cost.
+
+### Phase 5: narrow the supported sandbox set
+
+- Make `microvm:<profile>` the managed default.
+- Keep `host` for trusted local use.
+- Deprecate `image:*` after workload, secret, workspace, and operational parity
+  is demonstrated for the curated profiles.
+- Do not expose `qemu:*` as a user-facing mode; QEMU is a backend detail.
+- Do not add Firecracker to the default matrix. It is Linux/KVM-only and would
+  create a second control stack. ([Firecracker repository](https://github.com/firecracker-microvm/firecracker))
+
+## Decision
+
+Use Gondolin/QEMU as the local sandbox engine, with QEMU as the mature isolation
+foundation and Gondolin as a pinned, replaceable adapter. Build one mikan worker
+protocol and run it locally from the first release. For the first remote version,
+use one Linux/KVM worker plus shared POSIX storage, scoped in-memory secrets, and
+strict leases/fencing. Add worker-local Git caching only after measurement.
+
+The architecture is feasible and friendly to growing teams because moving from
+one machine to several changes placement and workspace providers, not the agent,
+executor, vault policy, or sandbox profile. The hard boundary is clear: Gondolin
+solves local controlled execution; mikan must own reliable distributed state.
+
+## Primary sources
+
+### mikan
+
+- `src/execution-resolver.ts`
+- `src/provisioner.ts`
+- `src/sandbox/container.ts`
+- `src/sandbox/image.ts`
+- `src/vault/index.ts`
+- `src/vault/routing.ts`
+- `src/commands/sandbox.ts`
+- `src/tools/sandbox.ts`
+- `src/content/docs/sandbox.mdx`
+- `src/content/docs/sandbox/image.md`
+- `src/content/docs/sandbox/vault.md`
+
+### Gondolin
+
+- [Repository and README](https://github.com/earendil-works/gondolin)
+- [Published releases](https://github.com/earendil-works/gondolin/releases)
+- [Host package metadata](https://github.com/earendil-works/gondolin/blob/main/host/package.json)
+- [CI workflow](https://github.com/earendil-works/gondolin/blob/main/.github/workflows/ci.yml)
+- [Architecture](https://earendil-works.github.io/gondolin/architecture/)
+- [Security design](https://earendil-works.github.io/gondolin/security/)
+- [QEMU backend](https://earendil-works.github.io/gondolin/qemu/)
+- [Backend capability matrix](https://earendil-works.github.io/gondolin/backends/)
+- [VM lifecycle and execution](https://earendil-works.github.io/gondolin/sdk-vm/)
+- [VFS providers](https://earendil-works.github.io/gondolin/vfs/)
+- [Secret handling](https://earendil-works.github.io/gondolin/secrets/)
+- [Snapshots](https://earendil-works.github.io/gondolin/snapshots/)
+- [Workload lifecycle](https://earendil-works.github.io/gondolin/workloads/)
+- [Custom images](https://earendil-works.github.io/gondolin/custom-images/)
+- [Current limitations](https://earendil-works.github.io/gondolin/limitations/)
+
+### Platform, workspace, and secrets
+
+- [QEMU virtualization accelerators](https://www.qemu.org/docs/master/system/introduction.html)
+- [QEMU security model](https://www.qemu.org/docs/master/system/security.html)
+- [Linux cgroup v2](https://docs.kernel.org/admin-guide/cgroup-v2.html)
+- [NFSv4.1 protocol and caching](https://www.rfc-editor.org/rfc/rfc8881.html#section-10)
+- [Git worktree](https://git-scm.com/docs/git-worktree.html)
+- [Git partial clone](https://git-scm.com/docs/partial-clone)
+- [Vault response wrapping](https://developer.hashicorp.com/vault/docs/concepts/response-wrapping)
+- [Firecracker repository](https://github.com/firecracker-microvm/firecracker)

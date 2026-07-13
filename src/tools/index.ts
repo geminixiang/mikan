@@ -49,7 +49,7 @@ export function createMikanTools(
   return {
     tools: [
       createReadTool(executor),
-      createBashTool(executor),
+      createBashTool(executor, { hostWorkspaceRoot: workspaceDir }),
       createEditTool(executor),
       createWriteTool(executor),
       eventTool,

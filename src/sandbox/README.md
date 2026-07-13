@@ -85,3 +85,13 @@ ever touches **host** paths. `path-context.ts` translates between them
 (skill locations, upload paths). Extension-shipped skills are the exception:
 their files live under the host-only state dir, so their bodies are inlined
 into the system prompt instead of referenced by path.
+
+### File transport
+
+`Executor.readFile`/`writeFile` own file content transport: the host
+executor uses the filesystem directly; every exec-only executor (docker,
+ssh, HTTP) shares the base64-chunked implementation in `utils.ts`, so file
+contents never pass through shell argv, survive every quoting layer, stay
+under per-argument ARG_MAX, and are staged + renamed so an aborted write
+never truncates the target. Tools (write/edit, bash output spill) must use
+these instead of composing `printf`/`cat` shell strings.

@@ -9,7 +9,7 @@ import type {
 } from "./types.js";
 import { SandboxError } from "./errors.js";
 import { HostExecutor } from "./host.js";
-import { execSimple, killProcessTree, shellEscape } from "./utils.js";
+import { execReadFile, execWriteFile, execSimple, killProcessTree, shellEscape } from "./utils.js";
 
 function parseFirecrackerSandboxArg(value: string): FirecrackerSandboxConfig | undefined {
   if (!value.startsWith("firecracker:")) {
@@ -200,6 +200,14 @@ export class FirecrackerExecutor implements Executor {
         resolve({ stdout, stderr, code: code ?? 0 });
       });
     });
+  }
+
+  readFile(path: string, options?: ExecOptions): Promise<string> {
+    return execReadFile(this, path, options);
+  }
+
+  writeFile(path: string, content: string, options?: ExecOptions): Promise<void> {
+    return execWriteFile(this, path, content, options);
   }
 
   getWorkspacePath(_hostPath: string): string {

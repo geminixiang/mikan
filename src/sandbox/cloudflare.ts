@@ -6,6 +6,7 @@ import type {
   RuntimePathContext,
   SandboxAdapter,
 } from "./types.js";
+import { execReadFile, execWriteFile } from "./utils.js";
 import { readEnv } from "../utils/env.js";
 import { SandboxError } from "./errors.js";
 
@@ -141,6 +142,14 @@ export class CloudflareSandboxExecutor implements Executor {
         options.signal.removeEventListener("abort", onAbort);
       }
     }
+  }
+
+  readFile(path: string, options?: ExecOptions): Promise<string> {
+    return execReadFile(this, path, options);
+  }
+
+  writeFile(path: string, content: string, options?: ExecOptions): Promise<void> {
+    return execWriteFile(this, path, content, options);
   }
 
   getWorkspacePath(_hostPath: string): string {

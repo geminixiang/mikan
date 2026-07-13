@@ -1,4 +1,6 @@
 import { spawn } from "child_process";
+import { mkdir, readFile, rename, writeFile } from "fs/promises";
+import { dirname } from "path";
 import type {
   ExecOptions,
   ExecResult,
@@ -89,6 +91,17 @@ export class HostExecutor implements Executor {
         resolve({ stdout, stderr, code: code ?? 0 });
       });
     });
+  }
+
+  async readFile(path: string): Promise<string> {
+    return readFile(path, "utf-8");
+  }
+
+  async writeFile(path: string, content: string): Promise<void> {
+    await mkdir(dirname(path), { recursive: true });
+    const stage = `${path}.mikan-stage`;
+    await writeFile(stage, content, "utf-8");
+    await rename(stage, path);
   }
 
   getWorkspacePath(hostPath: string): string {

@@ -10,7 +10,7 @@ import type {
   SandboxAdapter,
 } from "./types.js";
 import { SandboxError } from "./errors.js";
-import { execSimple, shellEscape } from "./utils.js";
+import { execReadFile, execSimple, execWriteFile, shellEscape } from "./utils.js";
 import { HostExecutor } from "./host.js";
 import { createMountedRuntimePathContext } from "./path-context.js";
 
@@ -113,6 +113,14 @@ export class ContainerExecutor implements Executor {
     } finally {
       temp?.cleanup();
     }
+  }
+
+  readFile(path: string, options?: ExecOptions): Promise<string> {
+    return execReadFile(this, path, options);
+  }
+
+  writeFile(path: string, content: string, options?: ExecOptions): Promise<void> {
+    return execWriteFile(this, path, content, options);
   }
 
   getWorkspacePath(_hostPath: string): string {

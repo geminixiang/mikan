@@ -969,6 +969,12 @@ function createRunnerExecutionContext(
     exec(command, options) {
       return activeExecutor.exec(command, options);
     },
+    readFile(path, options) {
+      return activeExecutor.readFile(path, options);
+    },
+    writeFile(path, content, options) {
+      return activeExecutor.writeFile(path, content, options);
+    },
     getWorkspacePath(hostPath) {
       return activeExecutor.getWorkspacePath(hostPath);
     },

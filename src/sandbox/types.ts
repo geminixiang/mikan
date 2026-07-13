@@ -39,6 +39,20 @@ export interface Executor {
   exec(command: string, options?: ExecOptions): Promise<ExecResult>;
 
   /**
+   * Read a runtime file as UTF-8 text. The executor owns the transport, so
+   * file contents never pass through shell argv or extra shell parse layers.
+   */
+  readFile(path: string, options?: ExecOptions): Promise<string>;
+
+  /**
+   * Write a runtime file, creating parent directories and replacing via a
+   * staging file so an aborted write never truncates the target. Like
+   * readFile, transport is the executor's concern — content must survive
+   * arbitrary quoting and ARG_MAX limits.
+   */
+  writeFile(path: string, content: string, options?: ExecOptions): Promise<void>;
+
+  /**
    * Get the workspace path prefix for this executor.
    * Host: returns the actual path.
    * Container/Firecracker: returns /workspace.
