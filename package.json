@@ -66,6 +66,7 @@
   "devDependencies": {
     "@astrojs/mdx": "^7.0.0",
     "@astrojs/starlight": "^0.41.0",
+    "@geminixiang/mikan-starlight-theme": "github:geminixiang/mikan-starlight-theme",
     "@slack/types": "^2.21.1",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^26.0.1",
@@ -78,7 +79,6 @@
     "oxlint": "^1.71.0",
     "remark-gfm": "^4.0.1",
     "shx": "^0.4.0",
-    "starlight-theme-mikan": "github:geminixiang/mikan-starlight-theme",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   },

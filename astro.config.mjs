@@ -1,6 +1,6 @@
 import mdx from "@astrojs/mdx";
 import starlight from "@astrojs/starlight";
-import mikanTheme, { mikanAgentMarkdown, mikanCodeTheme } from "starlight-theme-mikan";
+import mikanTheme, { mikanAgentMarkdown, mikanCodeTheme } from "@geminixiang/mikan-starlight-theme";
 import { defineConfig } from "astro/config";
 import remarkGfm from "remark-gfm";
 
@@ -245,20 +245,12 @@ export default defineConfig({
         },
       ],
       plugins: [
-        mikanTheme(),
-        {
-          name: "mikan-footer-credit",
-          hooks: {
-            "config:setup"({ config, updateConfig }) {
-              updateConfig({
-                components: {
-                  ...config.components,
-                  Footer: "./src/components/Footer.astro",
-                },
-              });
-            },
+        mikanTheme({
+          footerCredit: {
+            label: "Built with Pi",
+            href: "https://pi.dev/",
           },
-        },
+        }),
         mikanAgentMarkdown(),
       ],
     }),
