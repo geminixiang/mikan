@@ -9,6 +9,32 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.13]
+
+### Added
+
+- Add the `max` thinking level to commands, configuration, and the admin portal.
+- Add quickstart and extension development guides across all supported locales.
+
+### Changed
+
+- Update pi agent dependencies to 0.80.6.
+- Load platform-specific tool packs only for their configured adapters.
+- Improve `github_checks` output and guidance for external CI providers.
+- Synchronize configuration, platform, sandbox, session, skill, event, portal, and deployment documentation across locales.
+
+### Fixed
+
+- Fix broken CLI tables and dead documentation links across locales.
+
+### Security
+
+- Derive ambient shared-vault access from each platform's declared trust model and sandbox topology.
+
+### Tests
+
+- Add coverage for platform tool-pack isolation, external CI checks, and vault trust policy.
+
 ## [1.0.0-beta.12]
 
 ### Added
