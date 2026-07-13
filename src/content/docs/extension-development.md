@@ -1,0 +1,256 @@
+---
+title: Extension development and installation
+description: Build, validate, install, update, and operate host-side mikan extensions safely.
+---
+
+import { Steps } from "@astrojs/starlight/components";
+
+mikan extensions add hooks, agent tools, schedules, proactive messages, reactions, secrets, and bundled skills without changing mikan itself. They are different from [skills](skills/): a skill is prompt content, while an extension is executable code loaded into the mikan host process.
+
+:::caution[Extensions are trusted host code]
+An extension runs with the same operating-system privileges as mikan and can access host files, platform tokens, and network resources. Install only reviewed code. Extension code belongs under the host-only state directory, never in the sandbox-mounted workspace.
+:::
+
+## Quickstart
+
+<Steps>
+
+1. **Create a minimal extension**
+
+   Create a directory outside the mikan workspace:
+
+   ```text
+   hello-mikan/
+   ├── index.ts
+   └── package.json
+   ```
+
+   Use mikan as a development dependency for TypeScript types:
+
+   ```json
+   {
+     "name": "hello-mikan",
+     "version": "0.1.0",
+     "private": true,
+     "type": "module",
+     "devDependencies": {
+       "@geminixiang/mikan": "*"
+     },
+     "mikan": {
+       "extensions": ["./index.ts"]
+     }
+   }
+   ```
+
+   Install development dependencies without lifecycle scripts:
+
+   ```bash
+   cd hello-mikan
+   npm install --ignore-scripts
+   ```
+
+   Add `index.ts`:
+
+   ```ts
+   import type { MikanExtensionApi } from "@geminixiang/mikan";
+
+   export default function activate(api: MikanExtensionApi): void {
+     api.log(`hello-mikan active for ${api.context.conversationId}`);
+
+     api.on("before_agent_start", (event) => ({
+       systemPrompt: `${event.systemPrompt}\n\nAlways end the final answer with: 🍊`,
+     }));
+   }
+   ```
+
+   `activate(api)` is called once for each conversation harness instance. TypeScript, MTS, ESM JavaScript, and MJS entrypoints are loaded directly through jiti; no build step is required.
+
+2. **Validate without activating**
+
+   ```bash
+   mikan ext validate ./hello-mikan
+   ```
+
+   Validation resolves the entrypoint, imports the module, and verifies that it exports a default or named `activate` function. Importing executes top-level module code, but does not call `activate`; keep top-level code side-effect free.
+
+   Accepted layouts:
+
+   ```text
+   extensions/audit.mjs
+   extensions/audit/index.ts
+   extensions/audit/package.json  # mikan.extensions points to the entrypoint
+   ```
+
+   Directory entrypoint fallback names are `index.mjs`, `index.js`, `index.ts`, and `index.mts`. `package.json` is the preferred source for name, version, description, entrypoint, and dependencies.
+
+3. **Install the extension**
+
+   Choose exactly one scope:
+
+   ```bash
+   # One conversation: safer default for conversation-specific behavior
+   mikan ext install ./hello-mikan --conversation <conversationId>
+
+   # Every conversation
+   mikan ext install ./hello-mikan --global
+   ```
+
+   Use the same state directory as the running mikan instance when it is not `~/.mikan`:
+
+   ```bash
+   mikan ext install ./hello-mikan \
+     --conversation <conversationId> \
+     --state-dir=/srv/mikan/state
+   ```
+
+   Installation locations:
+
+   | Scope        | Code path                                                       | Default data path                                                   |
+   | ------------ | --------------------------------------------------------------- | ------------------------------------------------------------------- |
+   | Global       | `<state-dir>/global/extensions/<slug>/`                         | `<state-dir>/conversations/<conversationId>/extension-data/<slug>/` |
+   | Conversation | `<state-dir>/conversations/<conversationId>/extensions/<slug>/` | `<state-dir>/conversations/<conversationId>/extension-data/<slug>/` |
+
+   Global installation controls where code is available. `api.paths.dataDir` remains isolated per conversation even for a global extension.
+
+4. **Activate the extension**
+
+   After installation, send `/pi-new` in each affected conversation. A new harness instance discovers and activates the extension; restarting the whole mikan process is unnecessary.
+
+</Steps>
+
+## 4. Install from Git
+
+Supported sources include HTTPS Git URLs, SSH Git URLs, and the GitHub shorthand. Append `#subpath` when the extension is inside a larger repository:
+
+```bash
+mikan ext install \
+  github:geminixiang/mikan#examples/extensions/agent-pm \
+  --conversation <conversationId>
+```
+
+`mikan ext install` validates and copies code; it does **not** run `npm install`. Prefer Node built-ins and zero runtime dependencies. If runtime packages are required, install them in a reviewed local extension directory before local installation, and verify the copied extension contains the required `node_modules`.
+
+## 5. Extension API
+
+### Hooks
+
+```ts
+api.on("tool_call", ({ toolName, args }) => {
+  if (toolName === "bash" && JSON.stringify(args).includes("rm -rf")) {
+    return { block: true, reason: "Blocked by extension policy" };
+  }
+});
+```
+
+| Hook                 | Use                                           |
+| -------------------- | --------------------------------------------- |
+| `before_agent_start` | Replace or append to the turn's system prompt |
+| `tool_call`          | Observe or block a tool call before execution |
+| `tool_result`        | Observe tool output                           |
+| `message_end`        | Observe one completed agent message           |
+| `turn_end`           | Observe the completed turn                    |
+| `session_compact`    | Observe session compaction and its reason     |
+
+Hooks run in registration order. For hooks that return a result, the first non-`undefined` result wins. Hook errors are logged and skipped rather than crashing the run.
+
+### Custom tools
+
+Register an `AgentTool` with `api.registerTool(tool)`. Use TypeBox-compatible parameter schemas and return standard text/image tool content. See the complete [`agent-pm` example](https://github.com/geminixiang/mikan/tree/main/examples/extensions/agent-pm) for a typed tool implementation.
+
+### Context and storage
+
+| API                       | Meaning                                                                               |
+| ------------------------- | ------------------------------------------------------------------------------------- |
+| `api.context`             | Conversation ID, workspace directory, model, and thinking level                       |
+| `api.paths.dataDir`       | Private data for this extension and conversation; use by default                      |
+| `api.paths.sharedDataDir` | Cross-conversation data; partition by conversation ID and handle concurrency yourself |
+| `api.log(message)`        | Extension-scoped structured log entry                                                 |
+
+Never store state inside the installed code directory: reinstall replaces code, while extension data is intentionally preserved.
+
+### Secrets
+
+An administrator writes `KEY=value` lines to:
+
+```text
+<state-dir>/vaults/extensions/<slug>/env
+```
+
+Read them without exposing values:
+
+```ts
+const token = api.secrets.get("LINEAR_TOKEN");
+const availableNames = api.secrets.list();
+```
+
+Secrets are read-only through the extension API. Do not log them or place them in tool descriptions, prompts, schedule text, or returned content.
+
+### Schedules, notifications, and reactions
+
+```ts
+await api.schedules.upsert("daily-check", {
+  type: "periodic",
+  schedule: "0 9 * * 1-5",
+  timezone: "Asia/Taipei",
+  text: "Check overdue work. Report only actionable items.",
+});
+
+await api.notify("The scheduled check is ready.");
+await api.react(messageTs, "white_check_mark");
+```
+
+Schedules create mikan event files and trigger autonomous runs without inheriting conversation history, so `text` must be self-contained. Specify `platform` when more than one platform is running and inference is ambiguous. Do not put secrets in schedule text.
+
+### Bundled skills
+
+Place skills under the extension directory:
+
+```text
+hello-mikan/
+├── index.ts
+├── package.json
+└── skills/
+    └── hello-guide/
+        └── SKILL.md
+```
+
+Extension skills are discovered automatically and inlined into the system prompt because host-only extension paths are not mounted into the sandbox. A conversation skill with the same name takes precedence.
+
+## 6. Lifecycle rules
+
+1. Make `activate` idempotent. `/pi-new` can activate the extension again; `schedules.upsert` is safe for this pattern.
+2. Do not create `setInterval`, servers, watchers, or other long-lived resources. There is currently no deactivate hook; use `api.schedules` for timers.
+3. Default to `api.paths.dataDir`. Use `sharedDataDir` only for deliberate multi-conversation behavior.
+4. Keep top-level imports and initialization safe because validation imports the module.
+5. Treat extension output and tool parameters as trust boundaries; validate untrusted input.
+
+## 7. Update, inspect, and remove
+
+```bash
+# Reinstall updates code and preserves extension data
+mikan ext install ./hello-mikan --conversation <conversationId>
+
+# Global extensions only
+mikan ext list
+
+# Global plus one conversation's extensions
+mikan ext list --conversation <conversationId>
+
+# Remove code; data remains on disk
+mikan ext remove hello-mikan --conversation <conversationId>
+```
+
+Send `/pi-new` after update or removal. In chat, `/pi-extensions` lists the extensions visible to the current conversation.
+
+## Troubleshooting
+
+| Symptom                                | Check                                                                                     |
+| -------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `No entrypoint found`                  | Add `mikan.extensions` to `package.json` or an `index.{mjs,js,ts,mts}` file               |
+| `does not export an activate function` | Export `default function activate(...)` or named `activate`                               |
+| Installed but not active               | Confirm `--state-dir` and conversation ID, then send `/pi-new`                            |
+| Import/module error                    | Install runtime dependencies before local installation; Git installation does not run npm |
+| Schedule/notify/react unavailable      | Confirm the running platform/context provides that host service                           |
+| Wrong extension identity/data path     | The slug comes from the installed file/directory name, not editable metadata              |
+
+Start from [`examples/extensions/agent-pm`](https://github.com/geminixiang/mikan/tree/main/examples/extensions/agent-pm) when you need tools, SQLite persistence, schedules, proactive messaging, or bundled skills together.

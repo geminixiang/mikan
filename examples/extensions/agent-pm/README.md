@@ -1,8 +1,13 @@
 # agent-pm — mikan extension example
 
-A follow-up tracker: single-file TypeScript `index.ts` (~250 lines), zero
-**runtime** dependencies (storage uses Node built-in `node:sqlite`), covering
-the full extension v1 + v2 surface.
+A follow-up tracker implemented as a single TypeScript `index.ts` with zero
+**runtime** dependencies. Storage uses the Node built-in `node:sqlite`; the
+example requires the same Node.js `>=22.19.0` baseline as mikan.
+
+It demonstrates the extension features needed by a realistic stateful tool:
+custom tools, hooks, per-conversation data, schedules, proactive messages,
+metadata, and bundled skills. It is not an exhaustive example of every hook or
+`api.react`.
 
 Types come from the mikan package (dev dependency) via
 `import type { MikanExtensionApi } from "@geminixiang/mikan"` for completions;
@@ -15,20 +20,20 @@ under `mikan.extensions`.
   `cancel` / `note` / `remind` to manage this conversation's tracked items.
 - **Per-turn injection** (`before_agent_start` hook): open items are appended to
   the system prompt so each turn starts aware of follow-ups and overdue work.
-- **Daily overdue scan** (v2 `api.schedules`): on activate, registers a cron
+- **Daily overdue scan** (`api.schedules`): on activate, registers a cron
   schedule that becomes a mikan event file — every day at 09:00 an autonomous
   agent run fires even if no one messages, to chase overdue items.
-- **Proactive messaging** (v2 `api.notify`): the `remind` action posts the list
+- **Proactive messaging** (`api.notify`): the `remind` action posts the list
   to the channel without going through a normal agent reply.
-- **Data directory** (v2 `api.paths.dataDir`, default): sqlite under
+- **Data directory** (`api.paths.dataDir`, default): SQLite under
   `<stateDir>/conversations/<id>/extension-data/agent-pm/` — host-only, never
   in the sandbox. One db per conversation (free isolation) — the usual install
   for single-channel/DM follow-up tracking. For a cross-channel PM view (one
   table over all channels), use `api.paths.sharedDataDir` and partition by
   `conversation_id` yourself.
-- **package.json** (v2): `mikan.extensions` declares the entrypoint;
+- **package.json**: `mikan.extensions` declares the entrypoint;
   name/version/description use standard npm fields (single metadata source).
-- **skills/** (v2): ships `follow-up-triage` SKILL.md, body inlined into the
+- **skills/**: ships `follow-up-triage` SKILL.md, body inlined into the
   system prompt (sandbox cannot read host-only paths, so extension skills are
   always inline).
 
@@ -48,19 +53,27 @@ mikan ext install github:geminixiang/mikan#examples/extensions/agent-pm --global
 mikan ext install ./agent-pm --global
 ```
 
-After install, send `/pi-new` in that conversation. To update, **install again**
-(replaces code, keeps data). After editing `index.ts`, the next harness
-instance reloads (jiti does not cache); no process restart required.
+After installation, send `/pi-new` in each affected conversation. Installation
+copies the source into the host-only state directory, so editing the original
+checkout does not update the installed copy. Re-run the same `mikan ext install`
+command to replace code while preserving extension data, then send `/pi-new`.
+No mikan process restart is required because each new harness instance loads
+extensions through jiti without a module cache.
 
-> To develop your own extension: `npm i -D @geminixiang/mikan` for types,
-> `import type { MikanExtensionApi } from "@geminixiang/mikan"`, then
-> `activate(api: MikanExtensionApi)` for full completions.
+Use the same `--state-dir` as the running mikan instance when it is not the
+default `~/.mikan`.
+
+> To develop your own extension, install mikan for types with
+> `npm install --save-dev --ignore-scripts @geminixiang/mikan`, import
+> `MikanExtensionApi`, then implement `activate(api: MikanExtensionApi)`.
 
 ## Secrets (unused in this sample, but available)
 
-If an extension needs third-party tokens (e.g. Linear/GitHub), an admin writes
-KEY=VALUE lines to `<stateDir>/vaults/extensions/agent-pm/env` and code reads
-them with `api.secrets.get("LINEAR_TOKEN")` (read-only).
+If an extension needs third-party tokens (for example Linear or GitHub), an
+administrator writes `KEY=value` lines to
+`<stateDir>/vaults/extensions/agent-pm/env`. Extension code reads them through
+`api.secrets.get("LINEAR_TOKEN")`; it cannot update them through this API.
+Secrets are keyed by the installed slug (`agent-pm`), not the display name.
 
 ## Example flow
 
@@ -76,14 +89,16 @@ mikan:  (schedule fires autonomous run → followup list → finds overdue)
 
 ## Extension API coverage
 
-| Need                            | Status                                     |
-| ------------------------------- | ------------------------------------------ |
-| Custom tool                     | ✅ `registerTool`                          |
-| Per-turn context injection      | ✅ `before_agent_start`                    |
-| Conversation scope              | ✅ `api.context.conversationId`            |
-| Timed proactive reminder (idle) | ✅ v2 `api.schedules` (cron / one-shot)    |
-| Post to platform proactively    | ✅ v2 `api.notify`                         |
-| Private data directory          | ✅ v2 `api.paths.dataDir`                  |
-| Secrets                         | ✅ v2 `api.secrets` (vault env, read-only) |
-| Identity / version              | ✅ v2 `package.json` (name/version)        |
-| Bundled skills                  | ✅ v2 `skills/` (SKILL.md, auto-inlined)   |
+| Need                            | Status                                    |
+| ------------------------------- | ----------------------------------------- |
+| Custom tool                     | ✅ `registerTool`                         |
+| Per-turn context injection      | ✅ `before_agent_start`                   |
+| Conversation scope              | ✅ `api.context.conversationId`           |
+| Timed proactive reminder (idle) | ✅ `api.schedules` (cron / one-shot)      |
+| Post to platform proactively    | ✅ `api.notify`                           |
+| Private data directory          | ✅ `api.paths.dataDir`                    |
+| Secrets                         | Available through `api.secrets`; not used |
+| Identity / version              | ✅ `package.json` (name/version)          |
+| Bundled skills                  | ✅ `skills/` (`SKILL.md`, auto-inlined)   |
+| Reactions                       | Available through `api.react`; not used   |
+| Other lifecycle/tool hooks      | Available; not demonstrated               |

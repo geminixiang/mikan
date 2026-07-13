@@ -1,0 +1,256 @@
+---
+title: 扩展开发与安装
+description: 安全地构建、验证、安装、更新和运行宿主端 mikan 扩展。
+---
+
+import { Steps } from "@astrojs/starlight/components";
+
+mikan 扩展无需修改 mikan 本身，即可添加钩子、智能体工具、定时任务、主动消息、回应、密钥和捆绑技能。扩展不同于[技能](skills/)：技能是提示词内容，而扩展是加载到 mikan 宿主进程中的可执行代码。
+
+:::caution[扩展是受信任的宿主代码]
+扩展以与 mikan 相同的操作系统权限运行，可以访问宿主文件、平台令牌和网络资源。请仅安装经过审查的代码。扩展代码应放在仅供宿主使用的状态目录下，绝不能放在挂载到沙箱的工作区中。
+:::
+
+## 快速开始
+
+<Steps>
+
+1. **创建最小扩展**
+
+   在 mikan 工作区之外创建一个目录：
+
+   ```text
+   hello-mikan/
+   ├── index.ts
+   └── package.json
+   ```
+
+   将 mikan 用作开发依赖，以获取 TypeScript 类型：
+
+   ```json
+   {
+     "name": "hello-mikan",
+     "version": "0.1.0",
+     "private": true,
+     "type": "module",
+     "devDependencies": {
+       "@geminixiang/mikan": "*"
+     },
+     "mikan": {
+       "extensions": ["./index.ts"]
+     }
+   }
+   ```
+
+   安装开发依赖，但不运行生命周期脚本：
+
+   ```bash
+   cd hello-mikan
+   npm install --ignore-scripts
+   ```
+
+   添加 `index.ts`：
+
+   ```ts
+   import type { MikanExtensionApi } from "@geminixiang/mikan";
+
+   export default function activate(api: MikanExtensionApi): void {
+     api.log(`hello-mikan active for ${api.context.conversationId}`);
+
+     api.on("before_agent_start", (event) => ({
+       systemPrompt: `${event.systemPrompt}\n\nAlways end the final answer with: 🍊`,
+     }));
+   }
+   ```
+
+   每个对话工具框架实例都会调用一次 `activate(api)`。TypeScript、MTS、ESM JavaScript 和 MJS 入口点会通过 jiti 直接加载，无需构建步骤。
+
+2. **验证但不激活**
+
+   ```bash
+   mikan ext validate ./hello-mikan
+   ```
+
+   验证过程会解析入口点、导入模块，并确认模块导出了默认或具名的 `activate` 函数。导入会执行模块顶层代码，但不会调用 `activate`；请确保顶层代码没有副作用。
+
+   支持的布局：
+
+   ```text
+   extensions/audit.mjs
+   extensions/audit/index.ts
+   extensions/audit/package.json  # mikan.extensions points to the entrypoint
+   ```
+
+   目录入口点的回退文件名为 `index.mjs`、`index.js`、`index.ts` 和 `index.mts`。`package.json` 是名称、版本、描述、入口点和依赖项的首选来源。
+
+3. **安装扩展**
+
+   请只选择一种作用域：
+
+   ```bash
+   # One conversation: safer default for conversation-specific behavior
+   mikan ext install ./hello-mikan --conversation <conversationId>
+
+   # Every conversation
+   mikan ext install ./hello-mikan --global
+   ```
+
+   如果运行中的 mikan 实例使用的状态目录不是 `~/.mikan`，请指定与其实例相同的状态目录：
+
+   ```bash
+   mikan ext install ./hello-mikan \
+     --conversation <conversationId> \
+     --state-dir=/srv/mikan/state
+   ```
+
+   安装位置：
+
+   | 作用域 | 代码路径                                                        | 默认数据路径                                                        |
+   | ------ | --------------------------------------------------------------- | ------------------------------------------------------------------- |
+   | 全局   | `<state-dir>/global/extensions/<slug>/`                         | `<state-dir>/conversations/<conversationId>/extension-data/<slug>/` |
+   | 对话   | `<state-dir>/conversations/<conversationId>/extensions/<slug>/` | `<state-dir>/conversations/<conversationId>/extension-data/<slug>/` |
+
+   全局安装控制代码的可用范围。即使是全局扩展，`api.paths.dataDir` 仍按对话隔离。
+
+4. **激活扩展**
+
+   安装后，在每个受影响的对话中发送 `/pi-new`。新的工具框架实例会发现并激活扩展，无需重启整个 mikan 进程。
+
+</Steps>
+
+## 4. 从 Git 安装
+
+支持的来源包括 HTTPS Git URL、SSH Git URL 和 GitHub 简写形式。当扩展位于较大的仓库内时，请附加 `#subpath`：
+
+```bash
+mikan ext install \
+  github:geminixiang/mikan#examples/extensions/agent-pm \
+  --conversation <conversationId>
+```
+
+`mikan ext install` 会验证并复制代码；它**不会**运行 `npm install`。应优先使用 Node 内置模块，并避免运行时依赖。如果确实需要运行时软件包，请先在经过审查的本地扩展目录中安装它们，再执行本地安装，并确认复制后的扩展包含所需的 `node_modules`。
+
+## 5. 扩展 API
+
+### 钩子
+
+```ts
+api.on("tool_call", ({ toolName, args }) => {
+  if (toolName === "bash" && JSON.stringify(args).includes("rm -rf")) {
+    return { block: true, reason: "Blocked by extension policy" };
+  }
+});
+```
+
+| 钩子                 | 用途                         |
+| -------------------- | ---------------------------- |
+| `before_agent_start` | 替换或追加本轮的系统提示词   |
+| `tool_call`          | 在工具调用执行前观察或阻止它 |
+| `tool_result`        | 观察工具输出                 |
+| `message_end`        | 观察一条已完成的智能体消息   |
+| `turn_end`           | 观察已完成的轮次             |
+| `session_compact`    | 观察会话压缩及其原因         |
+
+钩子按注册顺序运行。对于会返回结果的钩子，以第一个非 `undefined` 的结果为准。钩子错误会被记录并跳过，而不会导致运行崩溃。
+
+### 自定义工具
+
+使用 `api.registerTool(tool)` 注册 `AgentTool`。使用兼容 TypeBox 的参数模式，并返回标准的文本/图像工具内容。如需类型完备的工具实现，请参阅完整的 [`agent-pm` 示例](https://github.com/geminixiang/mikan/tree/main/examples/extensions/agent-pm)。
+
+### 上下文与存储
+
+| API                       | 含义                                       |
+| ------------------------- | ------------------------------------------ |
+| `api.context`             | 对话 ID、工作区目录、模型和思考级别        |
+| `api.paths.dataDir`       | 此扩展和对话的私有数据；默认使用此目录     |
+| `api.paths.sharedDataDir` | 跨对话数据；需自行按对话 ID 分区并处理并发 |
+| `api.log(message)`        | 扩展专属的结构化日志条目                   |
+
+绝不要在已安装的代码目录中存储状态：重新安装会替换代码，而扩展数据会特意保留。
+
+### 密钥
+
+管理员将 `KEY=value` 行写入：
+
+```text
+<state-dir>/vaults/extensions/<slug>/env
+```
+
+读取密钥时不要暴露其值：
+
+```ts
+const token = api.secrets.get("LINEAR_TOKEN");
+const availableNames = api.secrets.list();
+```
+
+通过扩展 API 只能读取密钥。请勿记录密钥，也不要将其放入工具描述、提示词、定时任务文本或返回内容中。
+
+### 定时任务、通知和回应
+
+```ts
+await api.schedules.upsert("daily-check", {
+  type: "periodic",
+  schedule: "0 9 * * 1-5",
+  timezone: "Asia/Taipei",
+  text: "Check overdue work. Report only actionable items.",
+});
+
+await api.notify("The scheduled check is ready.");
+await api.react(messageTs, "white_check_mark");
+```
+
+定时任务会创建 mikan 事件文件，并在不继承对话历史记录的情况下触发自主运行，因此 `text` 必须自成一体。如果同时运行多个平台且无法明确推断平台，请指定 `platform`。不要在定时任务文本中放入密钥。
+
+### 捆绑技能
+
+将技能放在扩展目录下：
+
+```text
+hello-mikan/
+├── index.ts
+├── package.json
+└── skills/
+    └── hello-guide/
+        └── SKILL.md
+```
+
+扩展技能会被自动发现并内联到系统提示词中，因为仅供宿主使用的扩展路径不会挂载到沙箱。名称相同的对话技能优先。
+
+## 6. 生命周期规则
+
+1. 确保 `activate` 是幂等的。`/pi-new` 可能会再次激活扩展；`schedules.upsert` 可以安全地用于此模式。
+2. 不要创建 `setInterval`、服务器、监视器或其他长期存续的资源。目前没有停用钩子；请使用 `api.schedules` 实现定时器。
+3. 默认使用 `api.paths.dataDir`。仅在有意实现跨对话行为时使用 `sharedDataDir`。
+4. 确保顶层导入和初始化安全，因为验证过程会导入模块。
+5. 将扩展输出和工具参数视为信任边界；验证不受信任的输入。
+
+## 7. 更新、检查和移除
+
+```bash
+# Reinstall updates code and preserves extension data
+mikan ext install ./hello-mikan --conversation <conversationId>
+
+# Global extensions only
+mikan ext list
+
+# Global plus one conversation's extensions
+mikan ext list --conversation <conversationId>
+
+# Remove code; data remains on disk
+mikan ext remove hello-mikan --conversation <conversationId>
+```
+
+更新或移除后发送 `/pi-new`。在聊天中，`/pi-extensions` 会列出当前对话可见的扩展。
+
+## 故障排除
+
+| 症状                                   | 检查项                                                                           |
+| -------------------------------------- | -------------------------------------------------------------------------------- |
+| `No entrypoint found`                  | 将 `mikan.extensions` 添加到 `package.json`，或添加 `index.{mjs,js,ts,mts}` 文件 |
+| `does not export an activate function` | 导出 `default function activate(...)` 或具名的 `activate`                        |
+| 已安装但未激活                         | 确认 `--state-dir` 和对话 ID，然后发送 `/pi-new`                                 |
+| 导入/模块错误                          | 在本地安装前安装运行时依赖；Git 安装不会运行 npm                                 |
+| 定时任务/通知/回应不可用               | 确认运行中的平台/上下文提供了相应的宿主服务                                      |
+| 扩展标识/数据路径错误                  | slug 来自已安装文件/目录的名称，而非可编辑的元数据                               |
+
+如果需要同时使用工具、SQLite 持久化、定时任务、主动消息或捆绑技能，请从 [`examples/extensions/agent-pm`](https://github.com/geminixiang/mikan/tree/main/examples/extensions/agent-pm) 开始。

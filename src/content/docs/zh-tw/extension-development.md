@@ -1,0 +1,245 @@
+---
+title: 擴充功能開發與安裝
+description: 安全地建置、驗證、安裝、更新及運作主機端 mikan 擴充功能。
+---
+
+import { Steps } from "@astrojs/starlight/components";
+
+mikan 擴充功能無須修改 mikan 本身，即可加入鉤子、代理工具、排程、主動訊息、反應、祕密資訊及隨附技能。它們與[技能](skills/)不同：技能是提示詞內容，而擴充功能則是載入 mikan 主機程序的可執行程式碼。
+
+:::caution[擴充功能是受信任的主機程式碼]
+擴充功能以與 mikan 相同的作業系統權限執行，並可存取主機檔案、平台權杖及網路資源。只安裝經過審查的程式碼。擴充功能程式碼應放在僅限主機存取的狀態目錄下，絕不可放在掛載至沙箱的工作區中。
+:::
+
+## 快速開始
+
+<Steps>
+
+1. ### 建立最小擴充功能
+
+   在 mikan 工作區外建立一個目錄：
+
+   ```text
+   hello-mikan/
+   ├── index.ts
+   └── package.json
+   ```
+
+   將 mikan 作為開發相依套件，以使用 TypeScript 型別：
+
+   ```json
+   {
+     "name": "hello-mikan",
+     "version": "0.1.0",
+     "private": true,
+     "type": "module",
+     "devDependencies": {
+       "@geminixiang/mikan": "*"
+     },
+     "mikan": {
+       "extensions": ["./index.ts"]
+     }
+   }
+   ```
+
+   安裝開發相依套件，但不執行生命週期指令碼：
+
+   ```bash
+   cd hello-mikan
+   npm install --ignore-scripts
+   ```
+
+   加入 `index.ts`：
+
+   ```ts
+   import type { MikanExtensionApi } from "@geminixiang/mikan";
+
+   export default function activate(api: MikanExtensionApi): void {
+     api.log(`hello-mikan active for ${api.context.conversationId}`);
+
+     api.on("before_agent_start", (event) => ({
+       systemPrompt: `${event.systemPrompt}\n\nAlways end the final answer with: 🍊`,
+     }));
+   }
+   ```
+
+   每個對話執行框架實例都會呼叫一次 `activate(api)`。TypeScript、MTS、ESM JavaScript 與 MJS 進入點會透過 jiti 直接載入，不需要建置步驟。
+
+2. ### 驗證但不啟用
+
+   ```bash
+   mikan ext validate ./hello-mikan
+   ```
+
+   驗證程序會解析進入點、匯入模組，並確認其匯出預設或具名的 `activate` 函式。匯入會執行頂層模組程式碼，但不會呼叫 `activate`；請確保頂層程式碼沒有副作用。
+
+   可接受的配置：
+
+   ```text
+   extensions/audit.mjs
+   extensions/audit/index.ts
+   extensions/audit/package.json  # mikan.extensions points to the entrypoint
+   ```
+
+   目錄進入點的備援名稱為 `index.mjs`、`index.js`、`index.ts` 與 `index.mts`。`package.json` 是名稱、版本、描述、進入點及相依套件的首選來源。
+
+3. ### 安裝
+
+   請恰好選擇一種範圍：
+
+   ```bash
+   # One conversation: safer default for conversation-specific behavior
+   mikan ext install ./hello-mikan --conversation <conversationId>
+
+   # Every conversation
+   mikan ext install ./hello-mikan --global
+   ```
+
+   若執行中的 mikan 實例使用的狀態目錄不是 `~/.mikan`，請使用與該實例相同的狀態目錄：
+
+   ```bash
+   mikan ext install ./hello-mikan \
+     --conversation <conversationId> \
+     --state-dir=/srv/mikan/state
+   ```
+
+   安裝位置：
+
+   | 範圍 | 程式碼路徑                                                      | 預設資料路徑                                                        |
+   | ---- | --------------------------------------------------------------- | ------------------------------------------------------------------- |
+   | 全域 | `<state-dir>/global/extensions/<slug>/`                         | `<state-dir>/conversations/<conversationId>/extension-data/<slug>/` |
+   | 對話 | `<state-dir>/conversations/<conversationId>/extensions/<slug>/` | `<state-dir>/conversations/<conversationId>/extension-data/<slug>/` |
+
+   全域安裝控制程式碼可供使用的位置。即使是全域擴充功能，`api.paths.dataDir` 仍會依對話隔離。
+
+4. ### 啟用
+
+   安裝後，在每個受影響的對話中傳送 `/pi-new`。新的執行框架實例會探索並啟用擴充功能；不需要重新啟動整個 mikan 程序。
+
+</Steps>
+
+## 從 Git 安裝
+
+支援的來源包括 HTTPS Git URL、SSH Git URL 及 GitHub 簡寫。若擴充功能位於較大型的儲存庫中，請附加 `#subpath`：
+
+```bash
+mikan ext install \
+  github:geminixiang/mikan#examples/extensions/agent-pm \
+  --conversation <conversationId>
+```
+
+`mikan ext install` 會驗證並複製程式碼；它**不會**執行 `npm install`。請優先使用 Node 內建功能，並避免執行階段相依套件。若需要執行階段套件，請先在經過審查的本機擴充功能目錄中安裝，再從本機安裝擴充功能，並確認複製後的擴充功能包含所需的 `node_modules`。
+
+## 擴充功能 API
+
+### 鉤子
+
+```ts
+api.on("tool_call", ({ toolName, args }) => {
+  if (toolName === "bash" && JSON.stringify(args).includes("rm -rf")) {
+    return { block: true, reason: "Blocked by extension policy" };
+  }
+});
+```
+
+| 鉤子                 | 用途                         |
+| -------------------- | ---------------------------- |
+| `before_agent_start` | 取代或附加該回合的系統提示詞 |
+| `tool_call`          | 在執行前觀察或封鎖工具呼叫   |
+| `tool_result`        | 觀察工具輸出                 |
+| `message_end`        | 觀察一則已完成的代理訊息     |
+| `turn_end`           | 觀察已完成的回合             |
+| `session_compact`    | 觀察工作階段壓縮及其原因     |
+
+鉤子依註冊順序執行。對於會回傳結果的鉤子，以第一個非 `undefined` 的結果為準。鉤子錯誤會被記錄並略過，而不會導致執行作業當機。
+
+### 自訂工具
+
+使用 `api.registerTool(tool)` 註冊 `AgentTool`。請使用與 TypeBox 相容的參數結構描述，並回傳標準的文字／影像工具內容。如需具備型別的工具實作，請參閱完整的 [`agent-pm` 範例](https://github.com/geminixiang/mikan/tree/main/examples/extensions/agent-pm)。
+
+### 上下文與儲存空間
+
+| API                       | 意義                                           |
+| ------------------------- | ---------------------------------------------- |
+| `api.context`             | 對話 ID、工作區目錄、模型及思考層級            |
+| `api.paths.dataDir`       | 此擴充功能與對話的私有資料；預設使用此路徑     |
+| `api.paths.sharedDataDir` | 跨對話資料；請自行依對話 ID 分區並處理並行存取 |
+| `api.log(message)`        | 擴充功能範圍的結構化日誌項目                   |
+
+絕不要將狀態儲存在已安裝的程式碼目錄中：重新安裝會取代程式碼，而擴充功能資料則會刻意保留。
+
+### 祕密資訊
+
+管理員會將 `KEY=value` 格式的各行寫入：
+
+```text
+<state-dir>/vaults/extensions/<slug>/env
+```
+
+讀取時不要暴露其值：
+
+```ts
+const token = api.secrets.get("LINEAR_TOKEN");
+const availableNames = api.secrets.list();
+```
+
+透過擴充功能 API 只能讀取祕密資訊。請勿將其記錄至日誌，或放入工具描述、提示詞、排程文字或回傳內容中。
+
+### 排程、通知與反應
+
+```ts
+await api.schedules.upsert("daily-check", {
+  type: "periodic",
+  schedule: "0 9 * * 1-5",
+  timezone: "Asia/Taipei",
+  text: "Check overdue work. Report only actionable items.",
+});
+
+await api.notify("The scheduled check is ready.");
+await api.react(messageTs, "white_check_mark");
+```
+
+排程會建立 mikan 事件檔案，並觸發不繼承對話歷史的自主執行，因此 `text` 必須內容完備。若執行多個平台且無法明確推斷，請指定 `platform`。請勿在排程文字中放入祕密資訊。
+
+### 隨附技能
+
+將技能放在擴充功能目錄下：
+
+```text
+hello-mikan/
+├── index.ts
+├── package.json
+└── skills/
+    └── hello-guide/
+        └── SKILL.md
+```
+
+系統會自動探索擴充功能技能，並將其內嵌至系統提示詞，因為僅限主機存取的擴充功能路徑不會掛載至沙箱。相同名稱的對話技能具有優先權。
+
+## 生命週期規則
+
+1. 讓 `activate` 具備冪等性。`/pi-new` 可能再次啟用擴充功能；`schedules.upsert` 可安全用於此模式。
+2. 請勿建立 `setInterval`、伺服器、監看器或其他長期存續的資源。目前沒有停用鉤子；請使用 `api.schedules` 作為計時器。
+3. 預設使用 `api.paths.dataDir`。只有在刻意實作多對話行為時才使用 `sharedDataDir`。
+4. 頂層匯入與初始化必須安全，因為驗證程序會匯入模組。
+5. 將擴充功能輸出與工具參數視為信任邊界；驗證不受信任的輸入。
+
+## 更新、檢查與移除
+
+```bash
+# Reinstall updates code and preserves extension data
+mikan ext install ./hello-mikan --conversation <conversationId>
+
+# Global extensions only
+mikan ext list
+
+# Global plus one conversation's extensions
+mikan ext list --conversation <conversationId>
+
+# Remove code; data remains on disk
+mikan ext remove hello-mikan --conversation <conversationId>
+```
+
+更新或移除後請傳送 `/pi-new`。在聊天中，`/pi-extensions` 會列出目前對話可見的擴充功能。
+
+## 疑難排解

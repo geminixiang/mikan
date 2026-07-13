@@ -173,6 +173,15 @@ export default defineConfig({
               translations: { "zh-TW": "技能", "zh-CN": "技能", ja: "スキル" },
               link: "/skills/",
             },
+            {
+              label: "Extension Development",
+              translations: {
+                "zh-TW": "Extension 開發與安裝",
+                "zh-CN": "Extension 开发与安装",
+                ja: "Extension の開発とインストール",
+              },
+              link: "/extension-development/",
+            },
           ],
         },
         {
