@@ -15,11 +15,6 @@ import {
 import { BufferedResponseStream, OrderedResponseOperations } from "../streaming.js";
 import type { DiscordMessagingBot, DiscordEvent } from "./bot.js";
 
-const DISCORD_FORMATTING_GUIDE = `## Discord Formatting (Markdown)
-Bold: **text**, Italic: *text*, Code: \`code\`, Block: \`\`\`language\ncode\`\`\`
-Links: [text](url), Spoiler: ||text||
-Keep messages under 2000 characters. Use code blocks for code.`;
-
 // Discord hard limit is 2000 chars; 1900 leaves headroom for working indicator.
 const MAX_LENGTH = 1900;
 
@@ -87,16 +82,8 @@ export function createDiscordAdapters(
     threadTs: event.thread_ts,
   };
 
-  const platform: MessagingInfo = {
-    name: "discord",
-    trustModel: "membership",
-    formattingGuide: DISCORD_FORMATTING_GUIDE,
-    channels: bot.getAllChannels(),
-    users: bot.getAllUsers(),
-    diagnostics: {
-      showUsageSummary: false,
-    },
-  };
+  // The bot's getMessagingInfo() is the single authority for platform info.
+  const platform: MessagingInfo = bot.getMessagingInfo();
 
   async function postDiagnosticMessage(text: string): Promise<string> {
     stopTyping();

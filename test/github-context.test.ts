@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import type { GithubMessagingBot } from "../src/adapters/github/bot.js";
+import { GithubMessagingBot } from "../src/adapters/github/bot.js";
 import { createGithubAdapters } from "../src/adapters/github/context.js";
 import type { GithubEvent } from "../src/adapters/github/types.js";
 
@@ -23,6 +23,7 @@ function makeFakeBot() {
     deleteComment: vi.fn().mockResolvedValue(undefined),
     addReaction: vi.fn().mockResolvedValue(undefined),
     logBotResponse: vi.fn(),
+    getMessagingInfo: GithubMessagingBot.prototype.getMessagingInfo,
   };
 }
 

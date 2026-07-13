@@ -174,7 +174,7 @@ export class TelegramMessagingBot implements MessagingBot {
       name: "telegram",
       trustModel: "membership",
       formattingGuide:
-        '## Telegram Formatting (HTML mode)\nBold: <b>text</b>, Italic: <i>text</i>, Code: <code>code</code>, Pre: <pre>code</pre>\nLinks: <a href="url">text</a>',
+        '## Telegram Formatting (HTML mode)\nBold: <b>text</b>, Italic: <i>text</i>, Code: <code>code</code>, Pre: <pre>code</pre>\nLinks: <a href="url">text</a>\nDo NOT use Markdown asterisks or backtick syntax.\nDo NOT use <table> tags — they are unsupported. Use <pre> with ASCII art for tables instead.',
       channels: [],
       users: [],
     };

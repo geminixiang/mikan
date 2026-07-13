@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
-import type { SlackMessagingBot, SlackEvent } from "../src/adapters/slack/bot.js";
+import { SlackMessagingBot } from "../src/adapters/slack/bot.js";
+import type { SlackEvent } from "../src/adapters/slack/bot.js";
 import { createSlackAdapters } from "../src/adapters/slack/context.js";
 
 // ============================================================================
@@ -25,6 +26,7 @@ function makeSlackMessagingBot(overrides: Partial<SlackMessagingBot> = {}): Slac
     getChannel: vi.fn().mockReturnValue(undefined),
     enqueueEvent: vi.fn().mockReturnValue(true),
     logToFile: vi.fn(),
+    getMessagingInfo: SlackMessagingBot.prototype.getMessagingInfo,
     ...overrides,
   } as unknown as SlackMessagingBot;
 }

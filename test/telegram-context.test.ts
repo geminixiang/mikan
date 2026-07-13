@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
-import type { TelegramMessagingBot, TelegramEvent } from "../src/adapters/telegram/bot.js";
+import { TelegramMessagingBot } from "../src/adapters/telegram/bot.js";
+import type { TelegramEvent } from "../src/adapters/telegram/bot.js";
 import { createTelegramAdapters } from "../src/adapters/telegram/context.js";
 
 // ============================================================================
@@ -21,9 +22,7 @@ function makeTelegramMessagingBot(
     start: vi.fn(),
     postMessage: vi.fn().mockResolvedValue("1001"),
     enqueueEvent: vi.fn().mockReturnValue(true),
-    getMessagingInfo: vi
-      .fn()
-      .mockReturnValue({ name: "telegram", formattingGuide: "", channels: [], users: [] }),
+    getMessagingInfo: TelegramMessagingBot.prototype.getMessagingInfo,
     ...overrides,
   } as unknown as TelegramMessagingBot;
 }

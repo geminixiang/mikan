@@ -349,8 +349,8 @@ export class GithubMessagingBot implements MessagingBot {
       trustModel: "open-trigger",
       formattingGuide:
         "## GitHub Formatting (GitHub Flavored Markdown)\n" +
-        "Standard Markdown plus tables, task lists, and ```suggestion blocks.\n" +
-        "Reference issues/PRs as #123 and users as @login.",
+        "Standard Markdown plus tables, task lists, fenced code blocks, and ```suggestion blocks.\n" +
+        "Reference issues/PRs as #123 and users as @login (mentions notify people — use sparingly).",
       channels: [],
       users: [],
     };

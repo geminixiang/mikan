@@ -203,7 +203,7 @@ export class DiscordMessagingBot implements MessagingBot {
       name: "discord",
       trustModel: "membership",
       formattingGuide:
-        "## Discord Formatting (Markdown)\nBold: **text**, Italic: *text*, Code: `code`, Block: ```language\ncode```\nLinks: [text](url)",
+        "## Discord Formatting (Markdown)\nBold: **text**, Italic: *text*, Code: `code`, Block: ```language\ncode```\nLinks: [text](url), Spoiler: ||text||\nKeep messages under 2000 characters. Use code blocks for code.",
       channels: this.getAllChannels(),
       users: this.getAllUsers(),
       diagnostics: {

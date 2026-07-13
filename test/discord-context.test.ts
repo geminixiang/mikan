@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
-import type { DiscordMessagingBot, DiscordEvent } from "../src/adapters/discord/bot.js";
+import { DiscordMessagingBot } from "../src/adapters/discord/bot.js";
+import type { DiscordEvent } from "../src/adapters/discord/bot.js";
 import { createDiscordAdapters } from "../src/adapters/discord/context.js";
 
 // ============================================================================
@@ -24,9 +25,7 @@ function makeDiscordMessagingBot(
     postMessage: vi.fn().mockResolvedValue("MSG001"),
     updateMessage: vi.fn().mockResolvedValue(undefined),
     enqueueEvent: vi.fn().mockReturnValue(true),
-    getMessagingInfo: vi
-      .fn()
-      .mockReturnValue({ name: "discord", formattingGuide: "", channels: [], users: [] }),
+    getMessagingInfo: DiscordMessagingBot.prototype.getMessagingInfo,
     ...overrides,
   } as unknown as DiscordMessagingBot;
 }

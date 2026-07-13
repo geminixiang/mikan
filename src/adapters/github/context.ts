@@ -21,10 +21,6 @@ import {
 import { parseGithubConversationId } from "./ids.js";
 import type { GithubEvent } from "./types.js";
 
-const GITHUB_FORMATTING_GUIDE = `## GitHub Formatting (GitHub Flavored Markdown)
-Standard Markdown plus tables, task lists, and fenced code blocks.
-Reference issues/PRs as #123 and users as @login (mentions notify people — use sparingly).`;
-
 function formatToolResult(result: ChatToolResult): string {
   const argsFormatted = formatToolArgs(result.args);
   const duration = (result.durationMs / 1000).toFixed(1);
@@ -70,11 +66,13 @@ export function createGithubAdapters(
     threadTs: event.thread_ts,
   };
 
+  // The bot's getMessagingInfo() is the single authority for platform info;
+  // the conversation-scoped context below is an explicit append, not a fork.
+  const baseInfo = bot.getMessagingInfo();
   const platform: MessagingInfo = {
-    name: "github",
-    trustModel: "open-trigger",
+    ...baseInfo,
     formattingGuide:
-      `${GITHUB_FORMATTING_GUIDE}\n\n` +
+      `${baseInfo.formattingGuide}\n\n` +
       `## Conversation context\n` +
       `This conversation IS GitHub issue/PR ${ref.owner}/${ref.repo}#${ref.number}: the ` +
       `first message in the history is its title and body, and the following messages are ` +
@@ -102,8 +100,6 @@ export function createGithubAdapters(
       `github_read looks up PR/issue metadata this clone cannot show (diff stats, changed ` +
       `files, review state, other issues in this repo); github_issue manages labels, ` +
       `assignees, and close/reopen for triage.`,
-    channels: [],
-    users: [],
     diagnostics: {
       showUsageSummary: false,
     },

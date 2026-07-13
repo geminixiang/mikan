@@ -11,12 +11,6 @@ import { deriveSessionKey } from "../../sessions/session-key.js";
 import { sanitizeTelegramHtml } from "./html.js";
 import type { TelegramMessagingBot, TelegramEvent } from "./bot.js";
 
-const TELEGRAM_FORMATTING_GUIDE = `## Telegram Formatting (HTML mode)
-Bold: <b>text</b>, Italic: <i>text</i>, Code: <code>code</code>, Pre: <pre>code</pre>
-Links: <a href="url">text</a>
-Do NOT use Markdown asterisks or backtick syntax.
-Do NOT use <table> tags — they are unsupported. Use <pre> with ASCII art for tables instead.`;
-
 // Telegram message length limit is 4096 chars; 3800 leaves headroom for HTML escapes.
 const MAX_LENGTH = 3800;
 
@@ -82,13 +76,8 @@ export function createTelegramAdapters(
     threadTs: event.thread_ts,
   };
 
-  const platform: MessagingInfo = {
-    name: "telegram",
-    trustModel: "membership",
-    formattingGuide: TELEGRAM_FORMATTING_GUIDE,
-    channels: [],
-    users: [],
-  };
+  // The bot's getMessagingInfo() is the single authority for platform info.
+  const platform: MessagingInfo = bot.getMessagingInfo();
 
   async function sendContinuation(text: string): Promise<void> {
     await bot.postMessageRaw(chatId, text);

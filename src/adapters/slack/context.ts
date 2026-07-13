@@ -5,10 +5,6 @@ import { planSlackAdapterSession } from "./session.js";
 export type { SlackAdapterOptions } from "./types.js";
 import type { SlackAdapterOptions } from "./types.js";
 
-const SLACK_FORMATTING_GUIDE = `## Slack Formatting (mrkdwn, NOT Markdown)
-Bold: *text*, Italic: _text_, Code: \`code\`, Block: \`\`\`code\`\`\`, Links: <url|text>
-Do NOT use **double asterisks** or [markdown](links).`;
-
 export function createSlackAdapters(
   event: SlackEvent,
   slack: SlackMessagingBot,
@@ -37,18 +33,9 @@ export function createSlackAdapters(
     threadTs: event.thread_ts,
   };
 
-  const platform: MessagingInfo = {
-    name: "slack",
-    trustModel: "membership",
-    formattingGuide: SLACK_FORMATTING_GUIDE,
-    channels: slack.getAllChannels().map((c) => ({ id: c.id, name: c.name })),
-    users: slack
-      .getAllUsers()
-      .map((u) => ({ id: u.id, userName: u.userName, displayName: u.displayName })),
-    diagnostics: {
-      showUsageSummary: true,
-    },
-  };
+  // The bot's getMessagingInfo() is the single authority for platform info;
+  // context factories compose from it instead of maintaining a second copy.
+  const platform: MessagingInfo = slack.getMessagingInfo();
 
   const responder = createSlackResponseContext({
     event,
