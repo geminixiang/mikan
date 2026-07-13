@@ -21,19 +21,19 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 
 ## 指令速查
 
-| 指令                                               | 用途與範圍                                                                                      |
-| -------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `/login` / `/pi-login`                             | 開啟 15 分鐘有效的 login/vault 連結。僅限 DM。                                                  |
-| `session` / `/session` / `/pi-session`             | 開啟目前的工作階段檢視器。僅限 DM。                                                             |
-| `/new` / `/pi-new`                                 | 重設目前工作階段。僅限 DM。                                                                     |
-| `/model` / `/pi-model [provider/model[:thinking]]` | 顯示或切換目前對話的模型。Thinking levels：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`。 |
-| `/auto-reply` / `/pi-auto-reply on\|off\|status`   | 控制目前群組／頻道中的 auto-reply。                                                             |
-| `stop` / `/stop`                                   | 停止相符的執行中工作。在 Slack 上建議使用文字形式，讓 thread-local routing 保持準確。           |
-| `/admin` / `/pi-admin`                             | 開啟 30 分鐘有效的管理 portal。                                                                 |
-| `/extensions` / `/pi-extensions`                   | 列出全域與對話 extensions、版本及其提供的 skills。                                              |
-| `/sandbox` / `/pi-sandbox`                         | 顯示目前受管理 image sandbox 的限制與 workspace mount 模式。                                    |
-| `/pi-sandbox boost`                                | 套用設定的 boost 限制，直到受管理 container 停止。                                              |
-| `/pi-sandbox private\|full`                        | 保存對話的 image workspace mount 模式。`full` 會公開整個 workspace。                            |
+| 指令                                               | 用途與範圍                                                                                             |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `/login` / `/pi-login`                             | 開啟 15 分鐘有效的 login/vault 連結。僅限 DM。                                                         |
+| `session` / `/session` / `/pi-session`             | 開啟目前的工作階段檢視器。僅限 DM。                                                                    |
+| `/new` / `/pi-new`                                 | 重設目前工作階段。僅限 DM。                                                                            |
+| `/model` / `/pi-model [provider/model[:thinking]]` | 顯示或切換目前對話的模型。Thinking levels：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。 |
+| `/auto-reply` / `/pi-auto-reply on\|off\|status`   | 控制目前群組／頻道中的 auto-reply。                                                                    |
+| `stop` / `/stop`                                   | 停止相符的執行中工作。在 Slack 上建議使用文字形式，讓 thread-local routing 保持準確。                  |
+| `/admin` / `/pi-admin`                             | 開啟 30 分鐘有效的管理 portal。                                                                        |
+| `/extensions` / `/pi-extensions`                   | 列出全域與對話 extensions、版本及其提供的 skills。                                                     |
+| `/sandbox` / `/pi-sandbox`                         | 顯示目前受管理 image sandbox 的限制與 workspace mount 模式。                                           |
+| `/pi-sandbox boost`                                | 套用設定的 boost 限制，直到受管理 container 停止。                                                     |
+| `/pi-sandbox private\|full`                        | 保存對話的 image workspace mount 模式。`full` 會公開整個 workspace。                                   |
 
 <Aside type="note" title="平台指令註冊">
   原生 slash commands 也必須向平台註冊。Slack 範例 manifest 包含 `/pi-login`、`/pi-session`、

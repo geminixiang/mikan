@@ -71,7 +71,7 @@ Conversation settings は host-authoritative です。古い `<workspace>/<conve
 | ------------------------------ | ------------------- | --------------------------------------------------------------------------------------------------- |
 | `llm.provider`                 | `anthropic`         | メイン AI provider                                                                                  |
 | `llm.model`                    | `claude-sonnet-4-6` | メイン model 名                                                                                     |
-| `llm.thinkingLevel`            | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` のいずれか                                       |
+| `llm.thinkingLevel`            | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max` のいずれか                                |
 | `llm.autoReply.provider`       | `anthropic`         | auto-reply rules の評価に使う任意の model provider                                                  |
 | `llm.autoReply.model`          | `claude-haiku-4-5`  | auto-reply rules の評価に使う任意の model                                                           |
 | `sentry.dsn`                   | 未設定              | Sentry DSN。機密性の高い prompt と tool の内容はマスクされます                                      |

@@ -15,10 +15,10 @@ describe("model command parsing", () => {
   });
 
   test("parses provider/model:thinking shorthand", () => {
-    expect(parseModelCommand("/pi-model anthropic/claude-sonnet-4-6:off")).toEqual({
-      provider: "anthropic",
-      model: "claude-sonnet-4-6",
-      thinkingLevel: "off",
+    expect(parseModelCommand("/pi-model openai/gpt-5.6:max")).toEqual({
+      provider: "openai",
+      model: "gpt-5.6",
+      thinkingLevel: "max",
     });
   });
 

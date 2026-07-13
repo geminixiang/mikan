@@ -13,6 +13,7 @@ const PI_AI_THINKING_LEVELS = [
   "medium",
   "high",
   "xhigh",
+  "max",
 ] satisfies PiAiThinkingLevel[];
 const THINKING_LEVELS = new Set<ThinkingLevel>(["off", ...PI_AI_THINKING_LEVELS]);
 

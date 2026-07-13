@@ -71,7 +71,7 @@ mikan 创建缺失的 state directory 时使用 `0700` 模式。现有目录必�
 | ------------------------------ | ------------------- | ---------------------------------------------------------------------- |
 | `llm.provider`                 | `anthropic`         | 主 AI 提供商                                                           |
 | `llm.model`                    | `claude-sonnet-4-6` | 主模型名称                                                             |
-| `llm.thinkingLevel`            | `off`               | `off`、`minimal`、`low`、`medium`、`high` 或 `xhigh`                   |
+| `llm.thinkingLevel`            | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`            |
 | `llm.autoReply.provider`       | `anthropic`         | 用于评估自动回复规则的可选模型提供商                                   |
 | `llm.autoReply.model`          | `claude-haiku-4-5`  | 用于评估自动回复规则的可选模型                                         |
 | `sentry.dsn`                   | 未设置              | Sentry DSN；敏感提示词和工具内容会被编辑隐藏                           |

@@ -22,19 +22,19 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 
 ## Command quick reference
 
-| Command                                            | Purpose and scope                                                                                                   |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `/login` / `/pi-login`                             | Open a 15-minute login/vault link. DM only.                                                                         |
-| `session` / `/session` / `/pi-session`             | Open the current session viewer. DM only.                                                                           |
-| `/new` / `/pi-new`                                 | Reset the current session. DM only.                                                                                 |
-| `/model` / `/pi-model [provider/model[:thinking]]` | Show or switch the current conversation model. Thinking levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`. |
-| `/auto-reply` / `/pi-auto-reply on\|off\|status`   | Control auto-reply in the current group/channel.                                                                    |
-| `stop` / `/stop`                                   | Stop the matching active run. On Slack, prefer text form so thread-local routing stays accurate.                    |
-| `/admin` / `/pi-admin`                             | Open the 30-minute admin portal.                                                                                    |
-| `/extensions` / `/pi-extensions`                   | List global and conversation extensions, versions, and contributed skills.                                          |
-| `/sandbox` / `/pi-sandbox`                         | Show the current managed image sandbox limits and workspace mount mode.                                             |
-| `/pi-sandbox boost`                                | Apply configured boost limits until the managed container stops.                                                    |
-| `/pi-sandbox private\|full`                        | Persist the conversation's image workspace mount mode. `full` exposes the whole workspace.                          |
+| Command                                            | Purpose and scope                                                                                                          |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `/login` / `/pi-login`                             | Open a 15-minute login/vault link. DM only.                                                                                |
+| `session` / `/session` / `/pi-session`             | Open the current session viewer. DM only.                                                                                  |
+| `/new` / `/pi-new`                                 | Reset the current session. DM only.                                                                                        |
+| `/model` / `/pi-model [provider/model[:thinking]]` | Show or switch the current conversation model. Thinking levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. |
+| `/auto-reply` / `/pi-auto-reply on\|off\|status`   | Control auto-reply in the current group/channel.                                                                           |
+| `stop` / `/stop`                                   | Stop the matching active run. On Slack, prefer text form so thread-local routing stays accurate.                           |
+| `/admin` / `/pi-admin`                             | Open the 30-minute admin portal.                                                                                           |
+| `/extensions` / `/pi-extensions`                   | List global and conversation extensions, versions, and contributed skills.                                                 |
+| `/sandbox` / `/pi-sandbox`                         | Show the current managed image sandbox limits and workspace mount mode.                                                    |
+| `/pi-sandbox boost`                                | Apply configured boost limits until the managed container stops.                                                           |
+| `/pi-sandbox private\|full`                        | Persist the conversation's image workspace mount mode. `full` exposes the whole workspace.                                 |
 
 <Aside type="note" title="Platform command registration">
   Native slash commands must also be registered with the platform. Slack's example manifest includes

@@ -642,7 +642,7 @@ async function serveModelsList(res: ServerResponse): Promise<void> {
   }
 }
 
-const VALID_THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
+const VALID_THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
 function serveConversationModelUpdate(
   res: ServerResponse,
@@ -1833,7 +1833,7 @@ function renderAdminPage(token: AdminToken): string {
     }
 
     function renderSettings(data) {
-      const thinking = ['off','minimal','low','medium','high','xhigh'];
+      const thinking = ['off','minimal','low','medium','high','xhigh','max'];
       const thinkingOpts = thinking.map((t) =>
         '<option value="' + t + '"' + (data.thinkingLevel === t ? ' selected' : '') + '>' + t + '</option>'
       ).join('');
@@ -2385,7 +2385,7 @@ function renderAdminPage(token: AdminToken): string {
     }
 
     function renderGlobalSettings(data) {
-      const thinking = ['off','minimal','low','medium','high','xhigh'];
+      const thinking = ['off','minimal','low','medium','high','xhigh','max'];
       const thinkingOpts = thinking.map((t) =>
         '<option value="' + t + '"' + (data.thinkingLevel === t ? ' selected' : '') + '>' + t + '</option>'
       ).join('');

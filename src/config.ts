@@ -58,6 +58,7 @@ const SettingsFileSchema = Type.Object({
           Type.Literal("medium"),
           Type.Literal("high"),
           Type.Literal("xhigh"),
+          Type.Literal("max"),
         ]),
       ),
       autoReply: Type.Optional(

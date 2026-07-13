@@ -48,8 +48,8 @@
     "docs:preview": "astro preview"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.80.2",
-    "@earendil-works/pi-ai": "^0.80.2",
+    "@earendil-works/pi-agent-core": "^0.80.6",
+    "@earendil-works/pi-ai": "^0.80.6",
     "@sentry/node": "^10.60.0",
     "@sinclair/typebox": "^0.34.49",
     "@slack/socket-mode": "^2.0.7",

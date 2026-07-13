@@ -71,7 +71,7 @@ mikan 會以 `0700` mode 建立不存在的 state directory。既有目錄必須
 | ------------------------------ | ------------------- | ------------------------------------------------------------------- |
 | `llm.provider`                 | `anthropic`         | 主要 AI 供應商                                                      |
 | `llm.model`                    | `claude-sonnet-4-6` | 主要模型名稱                                                        |
-| `llm.thinkingLevel`            | `off`               | `off`、`minimal`、`low`、`medium`、`high` 或 `xhigh`                |
+| `llm.thinkingLevel`            | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`         |
 | `llm.autoReply.provider`       | `anthropic`         | 用來評估 auto-reply 規則的選用模型供應商                            |
 | `llm.autoReply.model`          | `claude-haiku-4-5`  | 用來評估 auto-reply 規則的選用模型                                  |
 | `sentry.dsn`                   | 未設定              | Sentry DSN；敏感的 prompt 與 tool 內容會被遮蔽                      |

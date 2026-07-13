@@ -22,19 +22,19 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 
 ## コマンド早見表
 
-| コマンド                                           | 用途と scope                                                                                                              |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `/login` / `/pi-login`                             | 15 分間有効な login/vault link を開きます。DM のみ。                                                                      |
-| `session` / `/session` / `/pi-session`             | 現在の session viewer を開きます。DM のみ。                                                                               |
-| `/new` / `/pi-new`                                 | 現在の session をリセットします。DM のみ。                                                                                |
-| `/model` / `/pi-model [provider/model[:thinking]]` | 現在の conversation model を表示または切り替えます。Thinking levels：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`。 |
-| `/auto-reply` / `/pi-auto-reply on\|off\|status`   | 現在の group/channel の auto-reply を制御します。                                                                         |
-| `stop` / `/stop`                                   | 一致する実行中の run を停止します。Slack では thread-local routing を正確に保つため、テキスト形式を優先してください。     |
-| `/admin` / `/pi-admin`                             | 30 分間有効な admin portal を開きます。                                                                                   |
-| `/extensions` / `/pi-extensions`                   | global と conversation extensions、versions、提供される skills を一覧表示します。                                         |
-| `/sandbox` / `/pi-sandbox`                         | 現在の managed image sandbox の制限と workspace mount mode を表示します。                                                 |
-| `/pi-sandbox boost`                                | managed container が停止するまで、設定された boost limits を適用します。                                                  |
-| `/pi-sandbox private\|full`                        | conversation の image workspace mount mode を保存します。`full` は workspace 全体を公開します。                           |
+| コマンド                                           | 用途と scope                                                                                                                     |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `/login` / `/pi-login`                             | 15 分間有効な login/vault link を開きます。DM のみ。                                                                             |
+| `session` / `/session` / `/pi-session`             | 現在の session viewer を開きます。DM のみ。                                                                                      |
+| `/new` / `/pi-new`                                 | 現在の session をリセットします。DM のみ。                                                                                       |
+| `/model` / `/pi-model [provider/model[:thinking]]` | 現在の conversation model を表示または切り替えます。Thinking levels：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。 |
+| `/auto-reply` / `/pi-auto-reply on\|off\|status`   | 現在の group/channel の auto-reply を制御します。                                                                                |
+| `stop` / `/stop`                                   | 一致する実行中の run を停止します。Slack では thread-local routing を正確に保つため、テキスト形式を優先してください。            |
+| `/admin` / `/pi-admin`                             | 30 分間有効な admin portal を開きます。                                                                                          |
+| `/extensions` / `/pi-extensions`                   | global と conversation extensions、versions、提供される skills を一覧表示します。                                                |
+| `/sandbox` / `/pi-sandbox`                         | 現在の managed image sandbox の制限と workspace mount mode を表示します。                                                        |
+| `/pi-sandbox boost`                                | managed container が停止するまで、設定された boost limits を適用します。                                                         |
+| `/pi-sandbox private\|full`                        | conversation の image workspace mount mode を保存します。`full` は workspace 全体を公開します。                                  |
 
 <Aside type="note" title="プラットフォームへのコマンド登録">
   Native slash commands はプラットフォームにも登録する必要があります。Slack のサンプル manifest には

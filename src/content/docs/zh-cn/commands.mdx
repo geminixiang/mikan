@@ -21,19 +21,19 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 
 ## 命令速查
 
-| 命令                                               | 用途和范围                                                                             |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `/login` / `/pi-login`                             | 打开有效期 15 分钟的登录/vault 链接。仅限 DM。                                         |
-| `session` / `/session` / `/pi-session`             | 打开当前会话查看器。仅限 DM。                                                          |
-| `/new` / `/pi-new`                                 | 重置当前会话。仅限 DM。                                                                |
-| `/model` / `/pi-model [provider/model[:thinking]]` | 显示或切换当前对话模型。思考级别：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`。 |
-| `/auto-reply` / `/pi-auto-reply on\|off\|status`   | 控制当前群组/频道中的自动回复。                                                        |
-| `stop` / `/stop`                                   | 停止匹配的活动运行。在 Slack 上，优先使用文本形式，以保持话题本地路由准确。            |
-| `/admin` / `/pi-admin`                             | 打开有效期 30 分钟的管理 portal。                                                      |
-| `/extensions` / `/pi-extensions`                   | 列出全局和对话扩展、版本及其提供的技能。                                               |
-| `/sandbox` / `/pi-sandbox`                         | 显示当前管理的 image 沙箱限制和工作区挂载模式。                                        |
-| `/pi-sandbox boost`                                | 应用配置的 boost 限制，直到管理的容器停止。                                            |
-| `/pi-sandbox private\|full`                        | 持久保存对话的 image 工作区挂载模式。`full` 会暴露整个工作区。                         |
+| 命令                                               | 用途和范围                                                                                    |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `/login` / `/pi-login`                             | 打开有效期 15 分钟的登录/vault 链接。仅限 DM。                                                |
+| `session` / `/session` / `/pi-session`             | 打开当前会话查看器。仅限 DM。                                                                 |
+| `/new` / `/pi-new`                                 | 重置当前会话。仅限 DM。                                                                       |
+| `/model` / `/pi-model [provider/model[:thinking]]` | 显示或切换当前对话模型。思考级别：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。 |
+| `/auto-reply` / `/pi-auto-reply on\|off\|status`   | 控制当前群组/频道中的自动回复。                                                               |
+| `stop` / `/stop`                                   | 停止匹配的活动运行。在 Slack 上，优先使用文本形式，以保持话题本地路由准确。                   |
+| `/admin` / `/pi-admin`                             | 打开有效期 30 分钟的管理 portal。                                                             |
+| `/extensions` / `/pi-extensions`                   | 列出全局和对话扩展、版本及其提供的技能。                                                      |
+| `/sandbox` / `/pi-sandbox`                         | 显示当前管理的 image 沙箱限制和工作区挂载模式。                                               |
+| `/pi-sandbox boost`                                | 应用配置的 boost 限制，直到管理的容器停止。                                                   |
+| `/pi-sandbox private\|full`                        | 持久保存对话的 image 工作区挂载模式。`full` 会暴露整个工作区。                                |
 
 <Aside type="note" title="平台注册命令">
   原生 slash commands 也必须在平台中注册。Slack 示例 manifest 包含 `/pi-login`、`/pi-session`、
