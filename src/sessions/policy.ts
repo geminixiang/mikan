@@ -1,4 +1,5 @@
 import type { ConversationKind } from "../adapter.js";
+import { assertConversationId, makeThreadSessionKey } from "./session-key.js";
 export type { ResolveSessionKeyOptions } from "./types.js";
 import type { ResolveSessionKeyOptions } from "./types.js";
 
@@ -12,12 +13,12 @@ export function resolveChatSessionKey(options: ResolveSessionKeyOptions): string
     threadTs,
   } = options;
   if (conversationKind === "direct" && (!threadTs || !scopeDirectThreads)) {
-    return conversationId;
+    return assertConversationId(conversationId);
   }
   if (!threadTs && persistentTopLevel) {
-    return conversationId;
+    return assertConversationId(conversationId);
   }
-  return `${conversationId}:${threadTs || messageId}`;
+  return makeThreadSessionKey(conversationId, threadTs || messageId);
 }
 
 export function inferConversationKind(platform: string, conversationId: string): ConversationKind {

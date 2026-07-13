@@ -60,6 +60,7 @@ import {
 } from "./observability/sentry.js";
 import type { VaultManager } from "./vault/index.js";
 import { AgentMemoryFileManager } from "./sessions/agent-memory-file-manager.js";
+import { conversationIdOf, isThreadSessionKey } from "./sessions/session-key.js";
 import {
   extractSessionUuid,
   openManagedSession,
@@ -1148,7 +1149,7 @@ async function prepareRunContext(params: {
     bindPlatformToolPacks,
   } = params;
   let pathContext = params.pathContext;
-  const sessionConversation = message.sessionKey.split(":")[0];
+  const sessionConversation = conversationIdOf(message.sessionKey);
 
   await mkdir(join(conversationDir, "scratch"), { recursive: true });
 
@@ -1656,7 +1657,7 @@ export async function createRunner(
   // Create session manager and settings manager. Top-level/private sessions
   // use the conversation's current pointer; scoped sessions use fixed files.
   // Platform-specific scope behavior is resolved before runner creation.
-  const isThread = sessionKey.includes(":");
+  const isThread = isThreadSessionKey(sessionKey);
   const { contextFile, threadRootMessage } = sessionScope;
   const sessionManager = openManagedSession(contextFile, pathContext.runtimeWorkspaceRoot);
   const threadSessionName = buildThreadSessionName(threadRootMessage);

@@ -39,6 +39,7 @@ import {
   hasMaterializedChatSession,
   registerThreadSession,
 } from "../../sessions/agent-memory-file-manager.js";
+import { conversationIdOf } from "../../sessions/session-key.js";
 import {
   isSlackThreadSessionKey,
   planSlackAdapterSession,
@@ -652,7 +653,7 @@ export class SlackMessagingBot implements MessagingBot {
       const STUCK_THRESHOLD_MS = 10 * 60 * 1000;
 
       for (const session of runningSessions) {
-        const channelId = session.sessionKey.split(":")[0];
+        const channelId = conversationIdOf(session.sessionKey);
         const channel = this.channels.get(channelId);
         const channelName = channel ? `#${channel.name}` : channelId;
         const elapsed = Math.floor((Date.now() - session.startedAt) / 60000);
@@ -1320,7 +1321,7 @@ export class SlackMessagingBot implements MessagingBot {
     ack();
     const sessionKey = action.action_id.replace("force_stop_", "").replace(/_/g, ":");
     const userId = body.user?.id;
-    const channelId = body.container?.channel_id || sessionKey.split(":")[0];
+    const channelId = body.container?.channel_id || conversationIdOf(sessionKey);
 
     log.logInfo(`[Force Stop] User ${userId} requested force stop for ${sessionKey}`);
 

@@ -13,6 +13,7 @@ import {
   AgentMemoryFileManager,
   hasMaterializedChatSession,
 } from "../sessions/agent-memory-file-manager.js";
+import { conversationIdOf, deriveSessionKey } from "../sessions/session-key.js";
 import { formatNothingRunning, formatStopping } from "../platform-messages.js";
 import { AgentRunController, type ConversationRuntimeState } from "./agent-run-controller.js";
 import * as Sentry from "@sentry/node";
@@ -162,7 +163,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     bot: MessagingBot,
     context: ConversationContext,
   ): Promise<void> {
-    const sessionKey = event.sessionKey ?? `${event.conversationId}:${event.thread_ts ?? event.ts}`;
+    const sessionKey = deriveSessionKey(event);
     const previous = this.sessionQueues.get(sessionKey) ?? Promise.resolve();
     const next = previous.catch(() => {}).then(() => this.runSession({ event, bot, context }));
     this.sessionQueues.set(sessionKey, next);
@@ -199,7 +200,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   }
 
   private isConversationSession(sessionKey: string, conversationId: string): boolean {
-    return sessionKey === conversationId || sessionKey.startsWith(`${conversationId}:`);
+    return conversationIdOf(sessionKey) === conversationId;
   }
 
   private clearConversationStates(conversationId: string, message: string): boolean {

@@ -1,5 +1,10 @@
 import type { ConversationKind } from "../../adapter.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
+import {
+  conversationIdOf,
+  makeThreadSessionKey,
+  threadSuffixOf,
+} from "../../sessions/session-key.js";
 export type { SlackAdapterSessionPlan, SlackEventAnchorRunPlan, SlackSessionRef } from "./types.js";
 import type { SlackAdapterSessionPlan, SlackEventAnchorRunPlan, SlackSessionRef } from "./types.js";
 
@@ -11,19 +16,15 @@ interface SlackSessionEventLike {
 }
 
 export function formatSlackSessionKey(ref: SlackSessionRef): string {
-  return ref.kind === "channel" ? ref.channelId : `${ref.channelId}:${ref.threadTs}`;
+  return ref.kind === "channel" ? ref.channelId : makeThreadSessionKey(ref.channelId, ref.threadTs);
 }
 
 export function parseSlackSessionKey(sessionKey: string): SlackSessionRef {
-  const separator = sessionKey.indexOf(":");
-  if (separator === -1) {
+  const threadTs = threadSuffixOf(sessionKey);
+  if (threadTs === null) {
     return { kind: "channel", channelId: sessionKey };
   }
-  return {
-    kind: "thread",
-    channelId: sessionKey.slice(0, separator),
-    threadTs: sessionKey.slice(separator + 1),
-  };
+  return { kind: "thread", channelId: conversationIdOf(sessionKey), threadTs };
 }
 
 export function isSlackThreadSessionKey(sessionKey: string): boolean {

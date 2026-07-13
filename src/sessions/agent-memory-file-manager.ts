@@ -6,6 +6,7 @@ import { formatLocalTimestamp } from "../utils/date.js";
 import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 import * as log from "../log.js";
 import { isPlatformHistorySession } from "./metadata.js";
+import { isThreadSessionKey } from "./session-key.js";
 import {
   createManagedSessionFile,
   createManagedSessionFileAtPath,
@@ -53,7 +54,7 @@ import type {
 } from "./types.js";
 
 export function hasMaterializedChatSession(options: HasMaterializedSessionOptions): boolean {
-  if (!options.sessionKey.includes(":")) {
+  if (!isThreadSessionKey(options.sessionKey)) {
     return resolveChannelSessionFile(options.conversationDir) !== null;
   }
   return (
@@ -63,7 +64,7 @@ export function hasMaterializedChatSession(options: HasMaterializedSessionOption
 }
 
 export function registerThreadSession(options: RegisterThreadSessionOptions): string | null {
-  if (!options.sessionKey.includes(":")) return null;
+  if (!isThreadSessionKey(options.sessionKey)) return null;
 
   const threadFile = getThreadSessionFile(options.conversationDir, options.sessionKey);
   return (
@@ -84,7 +85,7 @@ export async function waitForThreadSessionBootstrap(
     pollMs = 100,
   } = options;
 
-  if (!sessionKey.includes(":")) return false;
+  if (!isThreadSessionKey(sessionKey)) return false;
   if (sessionKey === parentSessionKey) return false;
   if (hasThreadSession()) return false;
 
@@ -114,7 +115,7 @@ export class AgentMemoryFileManager {
     const cwd = options.cwd ?? options.conversationDir;
     const sessionDir = getChannelSessionDir(options.conversationDir);
 
-    if (!options.sessionKey.includes(":")) {
+    if (!isThreadSessionKey(options.sessionKey)) {
       const contextFile = this.resolveTopLevelSessionFile({
         conversationDir: options.conversationDir,
         sessionDir,
@@ -139,7 +140,7 @@ export class AgentMemoryFileManager {
     syncSessionManagerFromLog(
       options.sessionManager,
       selectExistingSessionSyncMessages(records, {
-        sessionKey: options.sessionKey.includes(":") ? options.sessionKey : null,
+        sessionKey: isThreadSessionKey(options.sessionKey) ? options.sessionKey : null,
         excludeMessageId: options.currentMessageId,
       }),
       this.historyWindow(),
@@ -148,7 +149,7 @@ export class AgentMemoryFileManager {
 
   resetSession(options: ResetChatSessionOptions): string {
     const cwd = options.cwd ?? options.conversationDir;
-    if (options.sessionKey.includes(":")) {
+    if (isThreadSessionKey(options.sessionKey)) {
       return createManagedSessionFileAtPath(
         getThreadSessionFile(options.conversationDir, options.sessionKey),
         cwd,

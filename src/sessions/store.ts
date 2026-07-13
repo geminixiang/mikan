@@ -5,6 +5,7 @@ import { SessionStore } from "../harness/index.js";
 import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-guards.js";
 import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 import { isPlatformHistorySession } from "./metadata.js";
+import { threadSuffixOf } from "./session-key.js";
 export type { ResolvedSessionScope, ThreadRootMessage } from "./types.js";
 
 /**
@@ -50,8 +51,7 @@ export function extractSessionUuid(sessionFile: string): string {
  * "channelId:threadId" → "threadId", "channelId" → "channelId"
  */
 export function extractSessionSuffix(sessionKey: string): string {
-  const parts = sessionKey.split(":");
-  return parts.length > 1 ? parts[parts.length - 1] : sessionKey;
+  return threadSuffixOf(sessionKey) ?? sessionKey;
 }
 
 /**

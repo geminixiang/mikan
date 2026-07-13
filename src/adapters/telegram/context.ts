@@ -7,6 +7,7 @@ import type {
 import * as log from "../../log.js";
 import { createChatResponseErrorReporter, formatToolArgs, splitText } from "../shared.js";
 import { BufferedResponseStream, OrderedResponseOperations } from "../streaming.js";
+import { deriveSessionKey } from "../../sessions/session-key.js";
 import { sanitizeTelegramHtml } from "./html.js";
 import type { TelegramMessagingBot, TelegramEvent } from "./bot.js";
 
@@ -72,7 +73,7 @@ export function createTelegramAdapters(
 
   const message: ConversationMessage = {
     id: event.ts,
-    sessionKey: event.sessionKey ?? `${conversationId}:${event.thread_ts ?? event.ts}`,
+    sessionKey: deriveSessionKey(event),
     conversationKind: event.conversationKind,
     userId: event.user,
     userName: event.userName,

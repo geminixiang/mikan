@@ -13,6 +13,7 @@ import {
   tryResolveThreadSession,
 } from "../../sessions/store.js";
 import { isPlatformHistorySession } from "../../sessions/metadata.js";
+import { isThreadSessionKey } from "../../sessions/session-key.js";
 import * as log from "../../log.js";
 
 export type { SessionViewItem, SessionViewRelation, SessionViewModel } from "./types.js";
@@ -24,7 +25,7 @@ export function resolveExistingSessionFile(
   sessionKey: string,
 ): string | null {
   const conversationDir = join(workingDir, conversationId);
-  if (sessionKey.includes(":")) {
+  if (isThreadSessionKey(sessionKey)) {
     return tryResolveThreadSession(getThreadSessionFile(conversationDir, sessionKey));
   }
   return resolveChannelSessionFile(conversationDir);

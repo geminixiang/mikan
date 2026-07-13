@@ -12,6 +12,7 @@ import * as log from "../../log.js";
 import { renderPortalShell } from "../portal-shell.js";
 import { reportUserFacingError } from "../../observability/sentry.js";
 import { inferConversationKind } from "../../sessions/policy.js";
+import { isThreadSessionKey, threadSuffixOf } from "../../sessions/session-key.js";
 import {
   loadSessionViewModel,
   resolveRequestedSessionFile,
@@ -657,8 +658,8 @@ async function handleSessionMessageRequest(
     text,
     attachments: [],
     sessionKey: activeSessionKey,
-    ...(activeSessionKey.includes(":")
-      ? { thread_ts: activeSessionKey.split(":").slice(1).join(":") }
+    ...(isThreadSessionKey(activeSessionKey)
+      ? { thread_ts: threadSuffixOf(activeSessionKey)! }
       : {}),
   };
   const context: ConversationContext = {

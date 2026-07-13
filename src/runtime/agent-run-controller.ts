@@ -1,5 +1,6 @@
 import type { ConversationContext, ConversationKind, PlatformName } from "../adapter.js";
 import { waitForThreadSessionBootstrap } from "../sessions/agent-memory-file-manager.js";
+import { deriveSessionKey } from "../sessions/session-key.js";
 import { dispatchCommand } from "../commands/registry.js";
 import type { CommandHandler, CommandServices } from "../commands/types.js";
 import { isPrivateConversation } from "../commands/utils.js";
@@ -48,7 +49,7 @@ export class AgentRunController {
       return;
     }
 
-    const sessionKey = event.sessionKey ?? `${conversationId}:${event.thread_ts ?? event.ts}`;
+    const sessionKey = deriveSessionKey(event);
     const privateConversation = isPrivateConversation(event);
     const handledCommand = await dispatchCommand(this.options.commandHandlers, {
       bot,
