@@ -142,16 +142,47 @@ api.on("tool_call", ({ toolName, args }) => {
 });
 ```
 
-| 钩子                 | 用途                         |
-| -------------------- | ---------------------------- |
-| `before_agent_start` | 替换或追加本轮的系统提示词   |
-| `tool_call`          | 在工具调用执行前观察或阻止它 |
-| `tool_result`        | 观察工具输出                 |
-| `message_end`        | 观察一条已完成的智能体消息   |
-| `turn_end`           | 观察已完成的轮次             |
-| `session_compact`    | 观察会话压缩及其原因         |
+| 钩子                 | 用途                                   |
+| -------------------- | -------------------------------------- |
+| `before_agent_start` | 改写系统提示词或用户提示词，或拦截本轮 |
+| `tool_call`          | 在工具调用执行前观察或阻止它           |
+| `tool_result`        | 观察或改写工具输出（例如脱敏、截断）   |
+| `message_end`        | 观察一条已完成的智能体消息             |
+| `turn_end`           | 观察已完成的轮次                       |
+| `session_compact`    | 观察会话压缩及其原因                   |
 
-钩子按注册顺序运行。对于会返回结果的钩子，以第一个非 `undefined` 的结果为准。钩子错误会被记录并跳过，而不会导致运行崩溃。
+钩子按注册顺序运行。结果的合成语义因钩子而异：`tool_call` 以第一个非 `undefined` 的结果为准；`before_agent_start` 与 `tool_result` 采用链式（chaining）——每个处理器看到的是前面处理器改写后的事件，且任一 `before_agent_start` 处理器返回的 `block` 都会生效，与注册顺序无关。钩子错误会被记录并跳过，而不会导致运行崩溃。
+
+#### 运行来源（origin）
+
+钩子事件带有可选的 `origin`，描述本次运行的平台来源：`kind`（`"interactive"` 或 `"event"`）、`platform`，交互式运行还包含 `messageTs`、`userId`、`userName`、`threadTs` 与已下载的 `attachments`。可用于 per-user 策略，并把 `origin.messageTs` 传给 `api.react` 对触发消息添加表情回应：
+
+```ts
+api.on("before_agent_start", async ({ origin }) => {
+  if (origin?.kind === "interactive" && origin.userId && !allowlist.has(origin.userId)) {
+    return { block: true, reason: "not authorized for this bot" };
+  }
+  if (origin?.messageTs) await api.react(origin.messageTs, "eyes");
+});
+```
+
+由计划任务触发的自主运行没有触发消息，身份字段均未设置——请务必做 null 检查。
+
+#### 拦截本轮
+
+`before_agent_start` 返回 `{ block: true, reason }` 会在模型被调用前终止本轮。用户消息不会进入对话记录或会话存储，平台上会以诊断消息显示 `reason`。
+
+#### 改写工具结果
+
+`tool_result` 返回 `{ content }`（和/或 `{ isError }`）可替换模型——以及持久化会话——看到的内容。这是从工具输出中脱敏的机制：
+
+```ts
+api.on("tool_result", ({ content }) => ({
+  content: content.map((part) =>
+    part.type === "text" ? { ...part, text: part.text.replaceAll(SECRET, "***") } : part,
+  ),
+}));
+```
 
 ### 自定义工具
 

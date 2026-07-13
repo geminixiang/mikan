@@ -19,6 +19,7 @@ import {
   MikanAgentSession,
   MikanModels,
   type MikanSkill,
+  type RunOrigin,
   type SessionStore,
 } from "./harness/index.js";
 import { createHash } from "crypto";
@@ -1779,10 +1780,40 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
       // Autonomous (event/trigger) runs get an explicit resource ceiling since
       // no human is watching the loop; interactive turns stay human-gated.
       const isEventRun = message.id.startsWith("event:");
-      await session.prompt(prepared.userMessage, {
+      // Event runs have no triggering platform message, so identity fields
+      // stay unset and extensions must null-check them.
+      const origin: RunOrigin = isEventRun
+        ? { kind: "event", platform: platform.name }
+        : {
+            kind: "interactive",
+            platform: platform.name,
+            messageTs: message.id,
+            userId: message.userId,
+            userName: message.userName,
+            threadTs: message.threadTs,
+            attachments: message.attachments,
+          };
+      const outcome = await session.prompt(prepared.userMessage, {
+        origin,
         ...(prepared.imageAttachments.length > 0 ? { images: prepared.imageAttachments } : {}),
         ...(isEventRun ? { budget: DEFAULT_EVENT_BUDGET } : {}),
       });
+
+      if (outcome?.blocked) {
+        const text = outcome.reason
+          ? `_Turn blocked by an extension: ${outcome.reason}_`
+          : "_Turn blocked by an extension._";
+        sendAgentEvent({
+          sessionId: sessionUuid,
+          actorName: formatAgentActorName(message.userName, prepared.sessionConversation),
+          event: { kind: "diagnostic", text },
+        });
+        await responder.respondDiagnostic(text, { style: "muted" });
+        runState.responder = null;
+        runState.logCtx = null;
+        runState.queue = null;
+        return { stopReason: "blocked" };
+      }
 
       // Wait for queued messages
       await prepared.runQueue.wait();

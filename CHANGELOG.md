@@ -9,6 +9,16 @@ any release.
 
 ## [Unreleased]
 
+### Added
+
+- Pass a `RunOrigin` (platform, triggering message id, user identity, attachments) to extension hook events, making `api.react` and per-user extension policy usable.
+- Let `before_agent_start` extensions rewrite the user prompt or block the turn before the model runs; blocked turns leave no trace in the transcript or session store.
+- Let `tool_result` extensions rewrite tool output (content and error flag) before the model and the session store see it, enabling secret redaction and output truncation.
+
+### Changed
+
+- Dispatch `before_agent_start` and `tool_result` hooks with chaining semantics (each handler sees earlier handlers' rewrites; any `block` wins) instead of first-result-wins.
+
 ## [1.0.0-beta.14]
 
 ### Added

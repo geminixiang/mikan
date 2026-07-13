@@ -513,3 +513,106 @@ describe("ExtensionRegistry", () => {
     expect(result).toEqual({ block: false });
   });
 });
+
+describe("ExtensionRegistry.emitBeforeAgentStart", () => {
+  const event = { prompt: "hi", systemPrompt: "base" };
+
+  test("returns undefined when no handler changes anything", async () => {
+    const registry = new ExtensionRegistry();
+    registry.register("observer", "before_agent_start", () => undefined);
+
+    expect(await registry.emitBeforeAgentStart({ ...event })).toBeUndefined();
+  });
+
+  test("systemPrompt and prompt rewrites chain across handlers", async () => {
+    const registry = new ExtensionRegistry();
+    registry.register("first", "before_agent_start", ({ systemPrompt }) => ({
+      systemPrompt: `${systemPrompt}+A`,
+    }));
+    registry.register("second", "before_agent_start", ({ systemPrompt, prompt }) => ({
+      systemPrompt: `${systemPrompt}+B`,
+      prompt: `${prompt}!`,
+    }));
+
+    const result = await registry.emitBeforeAgentStart({ ...event });
+    // The second handler saw the first handler's rewrite, not the original.
+    expect(result).toEqual({ systemPrompt: "base+A+B", prompt: "hi!" });
+  });
+
+  test("a block from any handler wins regardless of registration order", async () => {
+    const registry = new ExtensionRegistry();
+    registry.register("enricher", "before_agent_start", () => ({ systemPrompt: "rewritten" }));
+    registry.register("policy", "before_agent_start", () => ({
+      block: true,
+      reason: "quota exhausted",
+    }));
+
+    const result = await registry.emitBeforeAgentStart({ ...event });
+    expect(result?.block).toBe(true);
+    expect(result?.reason).toBe("quota exhausted");
+  });
+
+  test("the first block's reason is kept", async () => {
+    const registry = new ExtensionRegistry();
+    registry.register("a", "before_agent_start", () => ({ block: true, reason: "first" }));
+    registry.register("b", "before_agent_start", () => ({ block: true, reason: "second" }));
+
+    const result = await registry.emitBeforeAgentStart({ ...event });
+    expect(result).toEqual({ block: true, reason: "first" });
+  });
+
+  test("handler errors are isolated and later handlers still run", async () => {
+    const registry = new ExtensionRegistry();
+    registry.register("bad", "before_agent_start", () => {
+      throw new Error("broken");
+    });
+    registry.register("good", "before_agent_start", () => ({ block: true }));
+
+    const result = await registry.emitBeforeAgentStart({ ...event });
+    expect(result?.block).toBe(true);
+  });
+});
+
+describe("ExtensionRegistry.emitToolResult", () => {
+  const event = {
+    toolCallId: "t1",
+    toolName: "bash",
+    args: {},
+    content: [{ type: "text" as const, text: "token=s3cret" }],
+    isError: false,
+  };
+
+  test("returns undefined when no handler changes anything", async () => {
+    const registry = new ExtensionRegistry();
+    registry.register("observer", "tool_result", () => undefined);
+
+    expect(await registry.emitToolResult({ ...event })).toBeUndefined();
+  });
+
+  test("content rewrites chain so redaction sees upstream rewrites", async () => {
+    const registry = new ExtensionRegistry();
+    registry.register("annotate", "tool_result", ({ content }) => ({
+      content: [...content, { type: "text" as const, text: "note: token=s3cret" }],
+    }));
+    registry.register("redact", "tool_result", ({ content }) => ({
+      content: content.map((part) =>
+        part.type === "text" ? { ...part, text: part.text.replaceAll("s3cret", "***") } : part,
+      ),
+    }));
+
+    const result = await registry.emitToolResult({ ...event });
+    // The redactor processed the annotator's output, so both parts are clean.
+    expect(result?.content).toEqual([
+      { type: "text", text: "token=***" },
+      { type: "text", text: "note: token=***" },
+    ]);
+  });
+
+  test("isError can be overridden independently of content", async () => {
+    const registry = new ExtensionRegistry();
+    registry.register("flagger", "tool_result", () => ({ isError: true }));
+
+    const result = await registry.emitToolResult({ ...event });
+    expect(result).toEqual({ isError: true });
+  });
+});

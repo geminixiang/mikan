@@ -17,8 +17,10 @@
  * }
  * ```
  *
- * Hooks run in registration order. For hooks with results, the first
- * non-undefined result wins (v1 semantics; later versions may merge).
+ * Hooks run in registration order. Result semantics are per hook:
+ * `tool_call` keeps v1's first-non-undefined-wins; `before_agent_start` and
+ * `tool_result` chain — each handler sees the event as rewritten by earlier
+ * handlers, and for `before_agent_start` a `block` from any handler wins.
  * Hook errors are logged and never crash a run.
  */
 import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
@@ -26,21 +28,48 @@ import type { Api, ImageContent, Model, TextContent } from "@earendil-works/pi-a
 import type { MikanSkill } from "../skills.js";
 import type { CompactionEntry } from "../types.js";
 
+/**
+ * Platform provenance of the run a hook event belongs to. Interactive runs
+ * carry the triggering message's identity (usable with `api.react` and for
+ * per-user policy); autonomous runs (schedules/events) have no triggering
+ * platform message, so only `kind` and `platform` are set.
+ */
+export interface RunOrigin {
+  kind: "interactive" | "event";
+  /** Platform adapter name serving this run (e.g. "slack"). */
+  platform?: string;
+  /** Platform message id of the triggering message; pass to `api.react`. */
+  messageTs?: string;
+  userId?: string;
+  userName?: string;
+  threadTs?: string;
+  /** Attachments already downloaded to host paths (extensions run on host). */
+  attachments?: { name: string; localPath: string }[];
+}
+
 export interface BeforeAgentStartHookEvent {
   prompt: string;
   images?: ImageContent[];
   systemPrompt: string;
+  origin?: RunOrigin;
 }
 
 export interface BeforeAgentStartHookResult {
   /** Replace the system prompt for this turn. */
   systemPrompt?: string;
+  /** Rewrite the user prompt for this turn. */
+  prompt?: string;
+  /** Block the turn entirely; the model is never called and nothing persists. */
+  block?: boolean;
+  /** Shown to the user when the turn is blocked. */
+  reason?: string;
 }
 
 export interface ToolCallHookEvent {
   toolCallId: string;
   toolName: string;
   args: unknown;
+  origin?: RunOrigin;
 }
 
 export interface ToolCallHookResult {
@@ -55,14 +84,24 @@ export interface ToolResultHookEvent {
   args: unknown;
   content: (TextContent | ImageContent)[];
   isError: boolean;
+  origin?: RunOrigin;
+}
+
+export interface ToolResultHookResult {
+  /** Replace the tool result content sent back to the model (e.g. redaction). */
+  content?: (TextContent | ImageContent)[];
+  /** Override the tool result error flag. */
+  isError?: boolean;
 }
 
 export interface MessageEndHookEvent {
   message: AgentMessage;
+  origin?: RunOrigin;
 }
 
 export interface TurnEndHookEvent {
   messages: AgentMessage[];
+  origin?: RunOrigin;
 }
 
 export interface SessionCompactHookEvent {
@@ -82,7 +121,9 @@ export interface MikanHookMap {
   tool_call: (
     event: ToolCallHookEvent,
   ) => ToolCallHookResult | undefined | void | Promise<ToolCallHookResult | undefined | void>;
-  tool_result: (event: ToolResultHookEvent) => void | Promise<void>;
+  tool_result: (
+    event: ToolResultHookEvent,
+  ) => ToolResultHookResult | undefined | void | Promise<ToolResultHookResult | undefined | void>;
   message_end: (event: MessageEndHookEvent) => void | Promise<void>;
   turn_end: (event: TurnEndHookEvent) => void | Promise<void>;
   session_compact: (event: SessionCompactHookEvent) => void | Promise<void>;

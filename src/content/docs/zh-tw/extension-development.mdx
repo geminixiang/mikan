@@ -142,16 +142,47 @@ api.on("tool_call", ({ toolName, args }) => {
 });
 ```
 
-| 鉤子                 | 用途                         |
-| -------------------- | ---------------------------- |
-| `before_agent_start` | 取代或附加該回合的系統提示詞 |
-| `tool_call`          | 在執行前觀察或封鎖工具呼叫   |
-| `tool_result`        | 觀察工具輸出                 |
-| `message_end`        | 觀察一則已完成的代理訊息     |
-| `turn_end`           | 觀察已完成的回合             |
-| `session_compact`    | 觀察工作階段壓縮及其原因     |
+| 鉤子                 | 用途                                       |
+| -------------------- | ------------------------------------------ |
+| `before_agent_start` | 改寫系統提示詞或使用者提示詞，或擋下該回合 |
+| `tool_call`          | 在執行前觀察或封鎖工具呼叫                 |
+| `tool_result`        | 觀察或改寫工具輸出（例如遮蔽機密、截斷）   |
+| `message_end`        | 觀察一則已完成的代理訊息                   |
+| `turn_end`           | 觀察已完成的回合                           |
+| `session_compact`    | 觀察工作階段壓縮及其原因                   |
 
-鉤子依註冊順序執行。對於會回傳結果的鉤子，以第一個非 `undefined` 的結果為準。鉤子錯誤會被記錄並略過，而不會導致執行作業當機。
+鉤子依註冊順序執行。結果的合成語意依鉤子而異：`tool_call` 以第一個非 `undefined` 的結果為準；`before_agent_start` 與 `tool_result` 採串接（chaining）——每個處理常式看到的是前面處理常式改寫後的事件，且任一 `before_agent_start` 處理常式回傳的 `block` 都會生效，與註冊順序無關。鉤子錯誤會被記錄並略過，而不會導致執行作業當機。
+
+#### 執行來源（origin）
+
+鉤子事件帶有選用的 `origin`，描述這次執行的平台來源：`kind`（`"interactive"` 或 `"event"`）、`platform`，互動式執行還有 `messageTs`、`userId`、`userName`、`threadTs` 與已下載的 `attachments`。可用於 per-user 政策，並把 `origin.messageTs` 傳給 `api.react` 對觸發訊息加上表情反應：
+
+```ts
+api.on("before_agent_start", async ({ origin }) => {
+  if (origin?.kind === "interactive" && origin.userId && !allowlist.has(origin.userId)) {
+    return { block: true, reason: "not authorized for this bot" };
+  }
+  if (origin?.messageTs) await api.react(origin.messageTs, "eyes");
+});
+```
+
+排程觸發的自主執行沒有觸發訊息，身分欄位皆為未設定——請務必做 null 檢查。
+
+#### 擋下回合
+
+`before_agent_start` 回傳 `{ block: true, reason }` 會在模型被呼叫前終止該回合。使用者訊息不會進入逐字稿或工作階段儲存，平台上會以診斷訊息顯示 `reason`。
+
+#### 改寫工具結果
+
+`tool_result` 回傳 `{ content }`（及／或 `{ isError }`）可取代模型——以及持久化的工作階段——看到的內容。這是從工具輸出中遮蔽機密的機制：
+
+```ts
+api.on("tool_result", ({ content }) => ({
+  content: content.map((part) =>
+    part.type === "text" ? { ...part, text: part.text.replaceAll(SECRET, "***") } : part,
+  ),
+}));
+```
 
 ### 自訂工具
 

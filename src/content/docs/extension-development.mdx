@@ -142,16 +142,47 @@ api.on("tool_call", ({ toolName, args }) => {
 });
 ```
 
-| Hook                 | Use                                           |
-| -------------------- | --------------------------------------------- |
-| `before_agent_start` | Replace or append to the turn's system prompt |
-| `tool_call`          | Observe or block a tool call before execution |
-| `tool_result`        | Observe tool output                           |
-| `message_end`        | Observe one completed agent message           |
-| `turn_end`           | Observe the completed turn                    |
-| `session_compact`    | Observe session compaction and its reason     |
+| Hook                 | Use                                                         |
+| -------------------- | ----------------------------------------------------------- |
+| `before_agent_start` | Rewrite the system prompt or user prompt, or block the turn |
+| `tool_call`          | Observe or block a tool call before execution               |
+| `tool_result`        | Observe or rewrite tool output (e.g. redaction, truncation) |
+| `message_end`        | Observe one completed agent message                         |
+| `turn_end`           | Observe the completed turn                                  |
+| `session_compact`    | Observe session compaction and its reason                   |
 
-Hooks run in registration order. For hooks that return a result, the first non-`undefined` result wins. Hook errors are logged and skipped rather than crashing the run.
+Hooks run in registration order. Result semantics are per hook: `tool_call` returns the first non-`undefined` result; `before_agent_start` and `tool_result` chain — each handler sees the event as rewritten by earlier handlers, and a `block` from any `before_agent_start` handler wins regardless of registration order. Hook errors are logged and skipped rather than crashing the run.
+
+#### Run origin
+
+Hook events carry an optional `origin` with the run's platform provenance: `kind` (`"interactive"` or `"event"`), `platform`, and — for interactive runs — `messageTs`, `userId`, `userName`, `threadTs`, and downloaded `attachments`. Use it for per-user policy, and pass `origin.messageTs` to `api.react` to react to the triggering message:
+
+```ts
+api.on("before_agent_start", async ({ origin }) => {
+  if (origin?.kind === "interactive" && origin.userId && !allowlist.has(origin.userId)) {
+    return { block: true, reason: "not authorized for this bot" };
+  }
+  if (origin?.messageTs) await api.react(origin.messageTs, "eyes");
+});
+```
+
+Autonomous runs fired by schedules have no triggering platform message, so identity fields are unset — always null-check them.
+
+#### Blocking a turn
+
+Returning `{ block: true, reason }` from `before_agent_start` stops the turn before the model is called. The user message never enters the transcript or the session store, and the platform shows `reason` as a diagnostic message.
+
+#### Rewriting tool results
+
+Return `{ content }` (and/or `{ isError }`) from `tool_result` to replace what the model — and the persisted session — sees. This is the mechanism for redacting secrets from tool output:
+
+```ts
+api.on("tool_result", ({ content }) => ({
+  content: content.map((part) =>
+    part.type === "text" ? { ...part, text: part.text.replaceAll(SECRET, "***") } : part,
+  ),
+}));
+```
 
 ### Custom tools
 

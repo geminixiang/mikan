@@ -38,6 +38,7 @@ import {
 } from "@earendil-works/pi-ai";
 import * as log from "../log.js";
 import type { ExtensionRegistry } from "./extensions/registry.js";
+import type { RunOrigin } from "./extensions/types.js";
 import type { MikanModels } from "./models.js";
 import { resolveHarnessSettings, type BudgetSettings, type HarnessSettings } from "./settings.js";
 import type { SessionStore } from "./session-store.js";
@@ -89,6 +90,12 @@ export type HarnessEvent =
 
 export type HarnessEventListener = (event: HarnessEvent) => void | Promise<void>;
 
+/** Outcome of a `prompt()` call that an extension blocked before the model ran. */
+export interface PromptBlockedOutcome {
+  blocked: true;
+  reason?: string;
+}
+
 // Transient provider failures worth retrying: overload/rate-limit responses,
 // 5xx statuses, and network/stream interruptions.
 const RETRYABLE_ERROR_PATTERN =
@@ -137,6 +144,7 @@ export class MikanAgentSession {
   private tally: RunTally = { tokens: 0, costUsd: 0, llmCalls: 0, startedAt: 0 };
   private runBudget: BudgetSettings = {};
   private budgetExceededReason: string | undefined;
+  private runOrigin: RunOrigin | undefined;
 
   constructor(options: MikanAgentSessionOptions) {
     this.models = options.models;
@@ -161,20 +169,23 @@ export class MikanAgentSession {
           toolCallId: toolCall.id,
           toolName: toolCall.name,
           args,
+          origin: this.runOrigin,
         });
         return result ?? undefined;
       },
       afterToolCall: async ({ toolCall, args, result, isError }) => {
-        if (this.extensions?.hasHandlers("tool_result")) {
-          await this.extensions.emit("tool_result", {
-            toolCallId: toolCall.id,
-            toolName: toolCall.name,
-            args,
-            content: result.content,
-            isError,
-          });
-        }
-        return undefined;
+        if (!this.extensions?.hasHandlers("tool_result")) return undefined;
+        // Chained extension rewrites (redaction, truncation) become a
+        // pi-agent-core AfterToolCallResult override; undefined keeps the
+        // executed result untouched.
+        return this.extensions.emitToolResult({
+          toolCallId: toolCall.id,
+          toolName: toolCall.name,
+          args,
+          content: result.content,
+          isError,
+          origin: this.runOrigin,
+        });
       },
     });
 
@@ -209,16 +220,19 @@ export class MikanAgentSession {
   /**
    * Send a user prompt and run the agent loop to completion, including
    * automatic retries and compaction. Resolves when the turn (and any
-   * recovery continuations) settles.
+   * recovery continuations) settles. Returns a blocked outcome when a
+   * `before_agent_start` extension blocked the turn — the model was never
+   * called and nothing was persisted.
    *
    * @param options.budget Per-run resource ceilings that override the session
    *   defaults. Autonomous (event / trigger) runs should pass a budget so a
    *   runaway loop is stopped even with no human watching.
+   * @param options.origin Platform provenance forwarded to extension hooks.
    */
   async prompt(
     text: string,
-    options?: { images?: ImageContent[]; budget?: BudgetSettings },
-  ): Promise<void> {
+    options?: { images?: ImageContent[]; budget?: BudgetSettings; origin?: RunOrigin },
+  ): Promise<PromptBlockedOutcome | undefined> {
     if (this.agent.state.isStreaming) {
       throw new Error("Agent is already processing a prompt");
     }
@@ -231,6 +245,7 @@ export class MikanAgentSession {
     this.runBudget = { ...this.settings.budget, ...options?.budget };
     this.budgetExceededReason = undefined;
     this.tally = { tokens: 0, costUsd: 0, llmCalls: 0, startedAt: Date.now() };
+    this.runOrigin = options?.origin;
 
     // A previous turn may have ended over the threshold (for example after an
     // abort); compact before adding new context on top.
@@ -239,13 +254,27 @@ export class MikanAgentSession {
       await this.checkThresholdCompaction(lastAssistant);
     }
 
+    let promptText = text;
     let systemPrompt = this.agent.state.systemPrompt;
     if (this.extensions?.hasHandlers("before_agent_start")) {
-      const result = await this.extensions.emit("before_agent_start", {
-        prompt: text,
+      const result = await this.extensions.emitBeforeAgentStart({
+        prompt: promptText,
         images: options?.images,
         systemPrompt,
+        origin: this.runOrigin,
       });
+      if (result?.block) {
+        // Blocked before agent.prompt(): the user message never enters the
+        // transcript or session store, so the blocked turn leaves no trace.
+        log.logInfo(`Extension blocked turn${result.reason ? `: ${result.reason}` : ""}`);
+        return { blocked: true, reason: result.reason };
+      }
+      if (result?.prompt !== undefined && result.prompt !== promptText) {
+        log.logInfo(
+          `Extension rewrote user prompt: ${promptText.length} → ${result.prompt.length} chars`,
+        );
+        promptText = result.prompt;
+      }
       if (result?.systemPrompt && result.systemPrompt !== systemPrompt) {
         // An extension rewrote the system prompt for this turn. Log the new
         // size so the diagnostic in agent.ts (which logs the pre-hook prompt)
@@ -260,7 +289,7 @@ export class MikanAgentSession {
 
     const userMessage: AgentMessage = {
       role: "user",
-      content: [{ type: "text", text }, ...(options?.images ?? [])],
+      content: [{ type: "text", text: promptText }, ...(options?.images ?? [])],
       timestamp: Date.now(),
     };
 
@@ -270,8 +299,12 @@ export class MikanAgentSession {
     }
 
     if (this.extensions?.hasHandlers("turn_end")) {
-      await this.extensions.emit("turn_end", { messages: this.agent.state.messages });
+      await this.extensions.emit("turn_end", {
+        messages: this.agent.state.messages,
+        origin: this.runOrigin,
+      });
     }
+    return undefined;
   }
 
   /** Abort the active run, pending retry backoff, and in-flight compaction. */
@@ -322,7 +355,7 @@ export class MikanAgentSession {
     }
 
     if (this.extensions?.hasHandlers("message_end")) {
-      await this.extensions.emit("message_end", { message });
+      await this.extensions.emit("message_end", { message, origin: this.runOrigin });
     }
 
     if (message.role === "assistant") {

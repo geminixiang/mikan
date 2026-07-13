@@ -140,16 +140,47 @@ api.on("tool_call", ({ toolName, args }) => {
 });
 ```
 
-| フック               | 用途                                             |
-| -------------------- | ------------------------------------------------ |
-| `before_agent_start` | ターンのシステムプロンプトを置換、または追記する |
-| `tool_call`          | 実行前にツール呼び出しを監視、またはブロックする |
-| `tool_result`        | ツールの出力を監視する                           |
-| `message_end`        | 完了した一つのエージェントメッセージを監視する   |
-| `turn_end`           | 完了したターンを監視する                         |
-| `session_compact`    | セッションのコンパクションとその理由を監視する   |
+| フック               | 用途                                                             |
+| -------------------- | ---------------------------------------------------------------- |
+| `before_agent_start` | システム／ユーザープロンプトの書き換え、またはターンのブロック   |
+| `tool_call`          | 実行前にツール呼び出しを監視、またはブロックする                 |
+| `tool_result`        | ツール出力の監視または書き換え（機密のマスキング、切り詰めなど） |
+| `message_end`        | 完了した一つのエージェントメッセージを監視する                   |
+| `turn_end`           | 完了したターンを監視する                                         |
+| `session_compact`    | セッションのコンパクションとその理由を監視する                   |
 
-フックは登録順に実行されます。結果を返すフックでは、最初の `undefined` でない結果が採用されます。フックのエラーはログに記録され、実行をクラッシュさせることなくスキップされます。
+フックは登録順に実行されます。結果のマージ方法はフックごとに異なります。`tool_call` は最初の `undefined` でない結果が採用されます。`before_agent_start` と `tool_result` はチェーンされ、各ハンドラーは前のハンドラーによる書き換え後のイベントを受け取ります。また、いずれかの `before_agent_start` ハンドラーが返した `block` は登録順に関係なく有効です。フックのエラーはログに記録され、実行をクラッシュさせることなくスキップされます。
+
+#### 実行元（origin）
+
+フックイベントには、実行のプラットフォーム上の出所を表すオプションの `origin` が含まれます。`kind`（`"interactive"` または `"event"`）と `platform`、インタラクティブな実行ではさらに `messageTs`、`userId`、`userName`、`threadTs`、ダウンロード済みの `attachments` を持ちます。ユーザー単位のポリシーに利用でき、`origin.messageTs` を `api.react` に渡すとトリガーとなったメッセージにリアクションできます:
+
+```ts
+api.on("before_agent_start", async ({ origin }) => {
+  if (origin?.kind === "interactive" && origin.userId && !allowlist.has(origin.userId)) {
+    return { block: true, reason: "not authorized for this bot" };
+  }
+  if (origin?.messageTs) await api.react(origin.messageTs, "eyes");
+});
+```
+
+スケジュールから起動される自律実行にはトリガーメッセージがないため、ID 系のフィールドは未設定です。必ず null チェックしてください。
+
+#### ターンのブロック
+
+`before_agent_start` から `{ block: true, reason }` を返すと、モデルが呼び出される前にターンが終了します。ユーザーメッセージはトランスクリプトにもセッションストアにも残らず、プラットフォーム上には `reason` が診断メッセージとして表示されます。
+
+#### ツール結果の書き換え
+
+`tool_result` から `{ content }`（および/または `{ isError }`）を返すと、モデル—および永続化されるセッション—が受け取る内容を置き換えられます。ツール出力から機密をマスキングする仕組みです:
+
+```ts
+api.on("tool_result", ({ content }) => ({
+  content: content.map((part) =>
+    part.type === "text" ? { ...part, text: part.text.replaceAll(SECRET, "***") } : part,
+  ),
+}));
+```
 
 ### カスタムツール
 
