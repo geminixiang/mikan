@@ -15,4 +15,7 @@ workspace/
 .mikan/
 vaults/*/
 
+# Claude Code subagent scratch state
+.pi-subagents/
+
 ecosystem.config.cjs
