@@ -317,13 +317,14 @@ const startupConfig = (() => {
     handleStartupError(error);
   }
 })();
+const sandboxSettings = startupConfig.sandbox;
 const sandboxLimits =
-  startupConfig.sandboxCpus || startupConfig.sandboxMemory
-    ? { cpus: startupConfig.sandboxCpus, memory: startupConfig.sandboxMemory }
+  sandboxSettings?.cpus || sandboxSettings?.memory
+    ? { cpus: sandboxSettings?.cpus, memory: sandboxSettings?.memory }
     : undefined;
 const sandboxBoostLimits =
-  startupConfig.sandboxBoostCpus || startupConfig.sandboxBoostMemory
-    ? { cpus: startupConfig.sandboxBoostCpus, memory: startupConfig.sandboxBoostMemory }
+  sandboxSettings?.boost?.cpus || sandboxSettings?.boost?.memory
+    ? { cpus: sandboxSettings?.boost?.cpus, memory: sandboxSettings?.boost?.memory }
     : undefined;
 
 const provisioner =

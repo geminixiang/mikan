@@ -214,17 +214,20 @@ export interface PiAgentWrapper {
 
 // ── config ────────────────────────────────────────────────────────────────────
 
+export interface SandboxSettings {
+  cpus?: string;
+  memory?: string;
+  boost?: { cpus?: string; memory?: string };
+  image?: { workspaceMount?: "private" | "full" };
+  defaultSharedVault?: string;
+}
+
 export interface AgentConfig {
   provider: string;
   model: string;
   thinkingLevel: ThinkingLevel;
   sentryDsn?: string;
-  sandboxCpus?: string;
-  sandboxMemory?: string;
-  sandboxBoostCpus?: string;
-  sandboxBoostMemory?: string;
-  sandboxImageWorkspaceMount?: "private" | "full";
-  defaultSharedVault?: string;
+  sandbox?: SandboxSettings;
   slack?: {
     replyMode?: "top-level" | "thread";
   };

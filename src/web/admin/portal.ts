@@ -11,6 +11,7 @@ import {
   updateConversationSettings,
   updateGlobalSettings,
   type AgentConfig,
+  type SandboxSettings,
 } from "../../config.js";
 import { escapeHtml } from "../../utils/html.js";
 import { readRawBody } from "../../utils/http-body.js";
@@ -587,8 +588,8 @@ function serveConversationState(
     globalProvider: globalConfig.provider,
     globalModel: globalConfig.model,
     globalThinkingLevel: globalConfig.thinkingLevel,
-    sandboxImageWorkspaceMount: conversationConfig.sandboxImageWorkspaceMount ?? null,
-    globalSandboxImageWorkspaceMount: globalConfig.sandboxImageWorkspaceMount ?? null,
+    sandboxImageWorkspaceMount: conversationConfig.sandbox?.image?.workspaceMount ?? null,
+    globalSandboxImageWorkspaceMount: globalConfig.sandbox?.image?.workspaceMount ?? null,
     autoReplyEnabled: autoReply.enabled,
     autoReplyRules: autoReply.rules,
     slack: {
@@ -606,12 +607,12 @@ function serveGlobalSettings(res: ServerResponse): void {
       provider: config.provider,
       model: config.model,
       thinkingLevel: config.thinkingLevel,
-      sandboxCpus: config.sandboxCpus ?? null,
-      sandboxMemory: config.sandboxMemory ?? null,
-      sandboxBoostCpus: config.sandboxBoostCpus ?? null,
-      sandboxBoostMemory: config.sandboxBoostMemory ?? null,
-      sandboxImageWorkspaceMount: config.sandboxImageWorkspaceMount ?? null,
-      defaultSharedVault: config.defaultSharedVault ?? null,
+      sandboxCpus: config.sandbox?.cpus ?? null,
+      sandboxMemory: config.sandbox?.memory ?? null,
+      sandboxBoostCpus: config.sandbox?.boost?.cpus ?? null,
+      sandboxBoostMemory: config.sandbox?.boost?.memory ?? null,
+      sandboxImageWorkspaceMount: config.sandbox?.image?.workspaceMount ?? null,
+      defaultSharedVault: config.sandbox?.defaultSharedVault ?? null,
       slack: {
         replyMode: config.slack?.replyMode ?? "top-level",
       },
@@ -710,7 +711,7 @@ function serveConversationSandboxUpdate(
   if (!workingDir) return;
   const dir = join(workingDir, scope.conversationId);
   try {
-    updateConversationSettings(dir, { sandboxImageWorkspaceMount: workspaceMount });
+    updateConversationSettings(dir, { sandbox: { image: { workspaceMount } } });
     jsonRes(res, 200, { ok: true });
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
@@ -928,12 +929,19 @@ function serveGlobalSandboxUpdate(res: ServerResponse, body: Record<string, unkn
   const workspaceMount = body.workspaceMount;
   const validMount = workspaceMount === "private" || workspaceMount === "full";
 
-  const update: Partial<AgentConfig> = {};
-  if (cpus) update.sandboxCpus = cpus;
-  if (memory) update.sandboxMemory = memory;
-  if (boostCpus) update.sandboxBoostCpus = boostCpus;
-  if (boostMemory) update.sandboxBoostMemory = boostMemory;
-  if (validMount) update.sandboxImageWorkspaceMount = workspaceMount as "private" | "full";
+  const update: SandboxSettings = {
+    ...(cpus ? { cpus } : {}),
+    ...(memory ? { memory } : {}),
+    ...(boostCpus || boostMemory
+      ? {
+          boost: {
+            ...(boostCpus ? { cpus: boostCpus } : {}),
+            ...(boostMemory ? { memory: boostMemory } : {}),
+          },
+        }
+      : {}),
+    ...(validMount ? { image: { workspaceMount: workspaceMount as "private" | "full" } } : {}),
+  };
 
   if (Object.keys(update).length === 0) {
     jsonRes(res, 400, { error: "No valid sandbox fields provided" });
@@ -941,7 +949,7 @@ function serveGlobalSandboxUpdate(res: ServerResponse, body: Record<string, unkn
   }
 
   try {
-    updateGlobalSettings(update);
+    updateGlobalSettings({ sandbox: update });
     jsonRes(res, 200, { ok: true });
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });

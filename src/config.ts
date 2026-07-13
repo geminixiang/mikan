@@ -15,8 +15,8 @@ export class MissingGlobalSettingsError extends Error {
   }
 }
 
-export type { AgentConfig, AutoReplyConfig, JudgeModelConfig } from "./types.js";
-import type { AgentConfig, AutoReplyConfig, JudgeModelConfig } from "./types.js";
+export type { AgentConfig, AutoReplyConfig, JudgeModelConfig, SandboxSettings } from "./types.js";
+import type { AgentConfig, AutoReplyConfig, JudgeModelConfig, SandboxSettings } from "./types.js";
 
 const ONBOARD_SETTINGS: SettingsFileConfig = {
   llm: {
@@ -128,21 +128,45 @@ function normalizeSettingsConfig(config: SettingsFileConfig): Partial<AgentConfi
     ...(config.llm?.model !== undefined ? { model: config.llm.model } : {}),
     ...(config.llm?.thinkingLevel !== undefined ? { thinkingLevel: config.llm.thinkingLevel } : {}),
     ...(config.sentry?.dsn !== undefined ? { sentryDsn: config.sentry.dsn } : {}),
-    ...(config.sandbox?.cpus !== undefined ? { sandboxCpus: config.sandbox.cpus } : {}),
-    ...(config.sandbox?.memory !== undefined ? { sandboxMemory: config.sandbox.memory } : {}),
-    ...(config.sandbox?.boost?.cpus !== undefined
-      ? { sandboxBoostCpus: config.sandbox.boost.cpus }
-      : {}),
-    ...(config.sandbox?.boost?.memory !== undefined
-      ? { sandboxBoostMemory: config.sandbox.boost.memory }
-      : {}),
-    ...(config.sandbox?.image?.workspaceMount !== undefined
-      ? { sandboxImageWorkspaceMount: config.sandbox.image.workspaceMount }
-      : {}),
-    ...(config.sandbox?.defaultSharedVault?.trim()
-      ? { defaultSharedVault: config.sandbox.defaultSharedVault.trim() }
-      : {}),
+    ...(config.sandbox !== undefined ? { sandbox: normalizeSandboxSettings(config.sandbox) } : {}),
     ...(config.slack !== undefined ? { slack: config.slack } : {}),
+  };
+}
+
+/**
+ * File shape → in-memory shape for the sandbox group. An empty or
+ * whitespace-only `defaultSharedVault` means "no default" and is dropped;
+ * non-empty values are trimmed. Everything else passes through as-is.
+ */
+function normalizeSandboxSettings(sandbox: SandboxSettings): SandboxSettings {
+  const defaultSharedVault = sandbox.defaultSharedVault?.trim();
+  return {
+    ...(sandbox.cpus !== undefined ? { cpus: sandbox.cpus } : {}),
+    ...(sandbox.memory !== undefined ? { memory: sandbox.memory } : {}),
+    ...(sandbox.boost !== undefined ? { boost: sandbox.boost } : {}),
+    ...(sandbox.image !== undefined ? { image: sandbox.image } : {}),
+    ...(defaultSharedVault ? { defaultSharedVault } : {}),
+  };
+}
+
+/**
+ * Merge two sandbox settings groups. The merge invariant is LEAF-LEVEL:
+ * an override that only sets `sandbox.memory` keeps the base `sandbox.cpus`,
+ * and an override that only sets `boost.memory` keeps the base `boost.cpus`
+ * (same for `image`). This mirrors how the fields merged when they were
+ * flat top-level keys; a group-level spread would silently drop base leaves.
+ */
+function mergeSandboxSettings(
+  base: SandboxSettings | undefined,
+  override: SandboxSettings | undefined,
+): SandboxSettings | undefined {
+  if (!base) return override;
+  if (!override) return base;
+  return {
+    ...base,
+    ...override,
+    ...(base.boost || override.boost ? { boost: { ...base.boost, ...override.boost } } : {}),
+    ...(base.image || override.image ? { image: { ...base.image, ...override.image } } : {}),
   };
 }
 
@@ -177,12 +201,7 @@ function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
   const model = requireString(fromFile.model, "llm.model");
   const thinkingLevel = requireThinkingLevel(fromFile.thinkingLevel);
   const sentryDsn = fromFile.sentryDsn ?? process.env.SENTRY_DSN;
-  const sandboxCpus = fromFile.sandboxCpus;
-  const sandboxMemory = fromFile.sandboxMemory;
-  const sandboxBoostCpus = fromFile.sandboxBoostCpus;
-  const sandboxBoostMemory = fromFile.sandboxBoostMemory;
-  const sandboxImageWorkspaceMount = fromFile.sandboxImageWorkspaceMount;
-  const defaultSharedVault = fromFile.defaultSharedVault;
+  const sandbox = fromFile.sandbox;
   const slack = fromFile.slack;
 
   return {
@@ -190,12 +209,7 @@ function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
     model,
     thinkingLevel,
     sentryDsn,
-    sandboxCpus,
-    sandboxMemory,
-    sandboxBoostCpus,
-    sandboxBoostMemory,
-    sandboxImageWorkspaceMount,
-    defaultSharedVault,
+    sandbox,
     slack,
   };
 }
@@ -259,7 +273,14 @@ export function resolveConversationSettings(conversationDir: string): AgentConfi
   const conversationConfig = normalizeSettingsConfig(
     loadSettingsFile(conversationSettingsPath(conversationDir)) ?? {},
   );
-  return toAgentConfig({ ...globalConfig, ...conversationConfig });
+  // The sandbox group merges at the leaf level (see mergeSandboxSettings):
+  // a conversation that only sets sandbox.memory keeps the global sandbox.cpus.
+  const sandbox = mergeSandboxSettings(globalConfig.sandbox, conversationConfig.sandbox);
+  return toAgentConfig({
+    ...globalConfig,
+    ...conversationConfig,
+    ...(sandbox ? { sandbox } : {}),
+  });
 }
 
 /**
@@ -474,33 +495,10 @@ function patchSettingsConfig(
       ...existing.sentry,
       ...(config.sentryDsn !== undefined ? { dsn: config.sentryDsn } : {}),
     },
-    sandbox: {
-      ...existing.sandbox,
-      ...(config.sandboxCpus !== undefined ? { cpus: config.sandboxCpus } : {}),
-      ...(config.sandboxMemory !== undefined ? { memory: config.sandboxMemory } : {}),
-      ...(config.sandboxBoostCpus !== undefined || config.sandboxBoostMemory !== undefined
-        ? {
-            boost: {
-              ...existing.sandbox?.boost,
-              ...(config.sandboxBoostCpus !== undefined ? { cpus: config.sandboxBoostCpus } : {}),
-              ...(config.sandboxBoostMemory !== undefined
-                ? { memory: config.sandboxBoostMemory }
-                : {}),
-            },
-          }
-        : {}),
-      ...(config.sandboxImageWorkspaceMount !== undefined
-        ? {
-            image: {
-              ...existing.sandbox?.image,
-              workspaceMount: config.sandboxImageWorkspaceMount,
-            },
-          }
-        : {}),
-      ...(config.defaultSharedVault !== undefined
-        ? { defaultSharedVault: config.defaultSharedVault }
-        : {}),
-    },
+    // Leaf-level merge: a patch that only sets sandbox.boost.memory keeps the
+    // existing boost.cpus (and every other existing leaf). compactSettingsConfig
+    // drops the group entirely when it ends up with no defined values.
+    sandbox: mergeSandboxSettings(existing.sandbox, config.sandbox) ?? {},
     slack: {
       ...existing.slack,
       ...config.slack,

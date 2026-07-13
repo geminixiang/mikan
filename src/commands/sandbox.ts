@@ -43,7 +43,7 @@ export class SandboxCommandHandler implements CommandHandler {
 
     if (parsed.action === "private" || parsed.action === "full") {
       updateConversationSettings(join(context.services.workingDir, context.conversationId), {
-        sandboxImageWorkspaceMount: parsed.action,
+        sandbox: { image: { workspaceMount: parsed.action } },
       });
       await replyDiagnosticWithContext(
         context.responder,

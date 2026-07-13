@@ -43,12 +43,12 @@ describe("loadGlobalSettings", () => {
     expect(config.provider).toBe("anthropic");
     expect(config.model).toBe("claude-sonnet-4-6");
     expect(config.thinkingLevel).toBe("off");
-    expect(config.sandboxCpus).toBe("0.5");
-    expect(config.sandboxMemory).toBe("1g");
-    expect(config.sandboxBoostCpus).toBe("2");
-    expect(config.sandboxBoostMemory).toBe("4g");
-    expect(config.sandboxImageWorkspaceMount).toBe("private");
-    expect(config.defaultSharedVault).toBeUndefined();
+    expect(config.sandbox?.cpus).toBe("0.5");
+    expect(config.sandbox?.memory).toBe("1g");
+    expect(config.sandbox?.boost?.cpus).toBe("2");
+    expect(config.sandbox?.boost?.memory).toBe("4g");
+    expect(config.sandbox?.image?.workspaceMount).toBe("private");
+    expect(config.sandbox?.defaultSharedVault).toBeUndefined();
     expect(JSON.parse(readFileSync(settingsPath, "utf-8")).sandbox.defaultSharedVault).toBe("");
   });
 
@@ -65,21 +65,22 @@ describe("loadGlobalSettings", () => {
     expect(config.sentryDsn).toBe("https://examplePublicKey@o0.ingest.sentry.io/0");
   });
 
-  test("reads sandboxCpus, sandboxMemory, and sandbox boost from settings.json", () => {
+  test("reads sandbox cpus, memory, and boost from settings.json", () => {
     updateGlobalSettings({
-      sandboxCpus: "0.5",
-      sandboxMemory: "512m",
-      sandboxBoostCpus: "2",
-      sandboxBoostMemory: "4g",
+      sandbox: {
+        cpus: "0.5",
+        memory: "512m",
+        boost: { cpus: "2", memory: "4g" },
+      },
     });
     const config = loadGlobalSettings();
-    expect(config.sandboxCpus).toBe("0.5");
-    expect(config.sandboxMemory).toBe("512m");
-    expect(config.sandboxBoostCpus).toBe("2");
-    expect(config.sandboxBoostMemory).toBe("4g");
+    expect(config.sandbox?.cpus).toBe("0.5");
+    expect(config.sandbox?.memory).toBe("512m");
+    expect(config.sandbox?.boost?.cpus).toBe("2");
+    expect(config.sandbox?.boost?.memory).toBe("4g");
   });
 
-  test("sandboxCpus and sandboxMemory are undefined when omitted from settings", () => {
+  test("sandbox cpus and memory are undefined when omitted from settings", () => {
     writeFileSync(
       join(stateDir, "settings.json"),
       JSON.stringify({
@@ -88,10 +89,10 @@ describe("loadGlobalSettings", () => {
       "utf-8",
     );
     const config = loadGlobalSettings();
-    expect(config.sandboxCpus).toBeUndefined();
-    expect(config.sandboxMemory).toBeUndefined();
-    expect(config.sandboxBoostCpus).toBeUndefined();
-    expect(config.sandboxBoostMemory).toBeUndefined();
+    expect(config.sandbox?.cpus).toBeUndefined();
+    expect(config.sandbox?.memory).toBeUndefined();
+    expect(config.sandbox?.boost?.cpus).toBeUndefined();
+    expect(config.sandbox?.boost?.memory).toBeUndefined();
   });
 
   test("provider and model come from settings.json, not env vars", () => {
@@ -200,13 +201,30 @@ describe("loadGlobalSettings", () => {
   test("conversation sandbox config overrides global image workspace mount", () => {
     createGlobalSettingsFile(stateDir);
     const conversationDir = join(stateDir, "workspace", "C123");
-    updateConversationSettings(conversationDir, { sandboxImageWorkspaceMount: "full" });
+    updateConversationSettings(conversationDir, { sandbox: { image: { workspaceMount: "full" } } });
 
     const config = resolveConversationSettings(conversationDir);
-    expect(config.sandboxImageWorkspaceMount).toBe("full");
+    expect(config.sandbox?.image?.workspaceMount).toBe("full");
     expect(JSON.parse(readFileSync(conversationSettingsPath(conversationDir), "utf-8"))).toEqual({
       sandbox: { image: { workspaceMount: "full" } },
     });
+  });
+
+  test("sandbox settings merge at the leaf level across global and conversation", () => {
+    createGlobalSettingsFile(stateDir);
+    updateGlobalSettings({ sandbox: { cpus: "1", boost: { cpus: "4" } } });
+    const conversationDir = join(stateDir, "workspace", "C123");
+    updateConversationSettings(conversationDir, {
+      sandbox: { memory: "2g", boost: { memory: "8g" } },
+    });
+
+    const config = resolveConversationSettings(conversationDir);
+    // Global sandbox.cpus survives a conversation that only sets sandbox.memory.
+    expect(config.sandbox?.cpus).toBe("1");
+    expect(config.sandbox?.memory).toBe("2g");
+    // Same invariant one level down: boost merges per leaf too.
+    expect(config.sandbox?.boost?.cpus).toBe("4");
+    expect(config.sandbox?.boost?.memory).toBe("8g");
   });
 
   test("conversation slack config overrides global reply mode", () => {
@@ -229,7 +247,7 @@ describe("loadGlobalSettings", () => {
     writeFileSync(legacyPath, JSON.stringify({ sandbox: { image: { workspaceMount: "full" } } }));
 
     const config = resolveConversationSettings(conversationDir);
-    expect(config.sandboxImageWorkspaceMount).toBe("full");
+    expect(config.sandbox?.image?.workspaceMount).toBe("full");
     // Legacy file was moved out of the (sandbox-mounted) conversation dir.
     expect(existsSync(legacyPath)).toBe(false);
     expect(existsSync(conversationSettingsPath(conversationDir))).toBe(true);
@@ -242,7 +260,9 @@ describe("loadGlobalSettings", () => {
 
     // First access with no legacy file writes the migration marker.
     // (Global onboard settings default the mount mode to "private".)
-    expect(resolveConversationSettings(conversationDir).sandboxImageWorkspaceMount).toBe("private");
+    expect(resolveConversationSettings(conversationDir).sandbox?.image?.workspaceMount).toBe(
+      "private",
+    );
 
     // An agent inside the sandbox plants a legacy settings.json afterwards,
     // trying to flip its own mount mode to full. It must stay ignored.
@@ -250,7 +270,9 @@ describe("loadGlobalSettings", () => {
       join(conversationDir, "settings.json"),
       JSON.stringify({ sandbox: { image: { workspaceMount: "full" } } }),
     );
-    expect(resolveConversationSettings(conversationDir).sandboxImageWorkspaceMount).toBe("private");
+    expect(resolveConversationSettings(conversationDir).sandbox?.image?.workspaceMount).toBe(
+      "private",
+    );
     // And it is not deleted either: only pre-migration files are moved.
     expect(existsSync(join(conversationDir, "settings.json"))).toBe(true);
   });
@@ -392,11 +414,13 @@ describe("updateGlobalSettings", () => {
   });
 
   test("saves global workspace mount and shared vault settings", () => {
-    updateGlobalSettings({ sandboxImageWorkspaceMount: "full", defaultSharedVault: "shared-team" });
+    updateGlobalSettings({
+      sandbox: { image: { workspaceMount: "full" }, defaultSharedVault: "shared-team" },
+    });
 
     const config = loadGlobalSettings();
-    expect(config.sandboxImageWorkspaceMount).toBe("full");
-    expect(config.defaultSharedVault).toBe("shared-team");
+    expect(config.sandbox?.image?.workspaceMount).toBe("full");
+    expect(config.sandbox?.defaultSharedVault).toBe("shared-team");
     expect(
       JSON.parse(readFileSync(join(stateDir, "settings.json"), "utf-8")).sandbox,
     ).toMatchObject({

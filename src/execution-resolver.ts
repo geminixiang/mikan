@@ -28,7 +28,9 @@ export function readConversationWorkspaceMountMode(
 
   const conversationDir = join(workspaceDir, conversationId);
   try {
-    return resolveConversationSettings(conversationDir).sandboxImageWorkspaceMount ?? globalDefault;
+    return (
+      resolveConversationSettings(conversationDir).sandbox?.image?.workspaceMount ?? globalDefault
+    );
   } catch (err) {
     log.logWarning(
       "Falling back while resolving conversation workspace mount",
@@ -41,7 +43,7 @@ export function readConversationWorkspaceMountMode(
 
 function readGlobalWorkspaceMountMode(): ImageWorkspaceMountMode {
   try {
-    return loadGlobalSettings().sandboxImageWorkspaceMount ?? "private";
+    return loadGlobalSettings().sandbox?.image?.workspaceMount ?? "private";
   } catch (err) {
     log.logWarning(
       "Using default workspace mount because global settings could not be read",
@@ -108,7 +110,7 @@ export class ActorExecutionResolver {
 
     let profile: string | undefined;
     try {
-      profile = loadGlobalSettings().defaultSharedVault;
+      profile = loadGlobalSettings().sandbox?.defaultSharedVault;
     } catch {
       return;
     }
