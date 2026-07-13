@@ -247,23 +247,23 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
     const state: ConversationState = {
       running: false,
-      runner: await createRunner(
-        this.options.sandbox,
+      runner: await createRunner({
+        sandboxConfig: this.options.sandbox,
         sessionKey,
         conversationId,
         conversationDir,
-        this.options.workingDir,
+        workspaceDir: this.options.workingDir,
         sessionScope,
-        this.options.vaultManager,
-        this.options.provisioner,
-        {
+        vaultManager: this.options.vaultManager,
+        provisioner: this.options.provisioner,
+        sessionView: {
           tokenStore: this.options.sessionViewTokenStore,
           portalBaseUrl: this.options.portalBaseUrl,
         },
-        this.options.platformNotifier,
-        this.options.platformReactor,
-        this.options.platformToolPackFactories,
-      ),
+        platformNotifier: this.options.platformNotifier,
+        platformReactor: this.options.platformReactor,
+        platformToolPackFactories: this.options.platformToolPackFactories,
+      }),
       stopRequested: false,
       lastAccessedAt: Date.now(),
       sessionFile: sessionScope.contextFile,

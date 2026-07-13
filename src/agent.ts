@@ -1575,6 +1575,26 @@ function attachSessionEventHandlers(params: {
   });
 }
 
+export interface CreateRunnerOptions {
+  sandboxConfig: SandboxConfig;
+  sessionKey: string;
+  conversationId: string;
+  conversationDir: string;
+  workspaceDir: string;
+  sessionScope: ResolvedSessionScope;
+  vaultManager?: VaultManager;
+  provisioner?: DockerContainerManager;
+  sessionView?: {
+    tokenStore: SessionViewTokenStoreLike;
+    portalBaseUrl?: string;
+  };
+  platformNotifier?: PlatformNotifier;
+  platformReactor?: PlatformReactor;
+  platformToolPackFactories?: readonly PlatformToolPackFactory[];
+  /** Model registry override; defaults to the process-wide models.json load. */
+  models?: MikanModels;
+}
+
 /**
  * Create a new PiAgentWrapper for a channel.
  * Sets up the session and subscribes to events once.
@@ -1582,23 +1602,21 @@ function attachSessionEventHandlers(params: {
  * Runner caching is handled by the caller (channelStates in main.ts).
  * This is a stateless factory function.
  */
-export async function createRunner(
-  sandboxConfig: SandboxConfig,
-  sessionKey: string,
-  conversationId: string,
-  conversationDir: string,
-  workspaceDir: string,
-  sessionScope: ResolvedSessionScope,
-  vaultManager?: VaultManager,
-  provisioner?: DockerContainerManager,
-  sessionView?: {
-    tokenStore: SessionViewTokenStoreLike;
-    portalBaseUrl?: string;
-  },
-  platformNotifier?: PlatformNotifier,
-  platformReactor?: PlatformReactor,
-  platformToolPackFactories?: readonly PlatformToolPackFactory[],
-): Promise<PiAgentWrapper> {
+export async function createRunner(options: CreateRunnerOptions): Promise<PiAgentWrapper> {
+  const {
+    sandboxConfig,
+    sessionKey,
+    conversationId,
+    conversationDir,
+    workspaceDir,
+    sessionScope,
+    vaultManager,
+    provisioner,
+    sessionView,
+    platformNotifier,
+    platformReactor,
+    platformToolPackFactories,
+  } = options;
   const agentConfig = resolveConversationSettings(conversationDir);
 
   const workspaceBase = join(conversationDir, "..");
@@ -1627,7 +1645,7 @@ export async function createRunner(
     platformToolPackFactories ?? [],
   );
 
-  const modelRegistry = MikanModels.create();
+  const modelRegistry = options.models ?? MikanModels.create();
   if (modelRegistry.getError()) {
     log.logWarning("models.json load error", modelRegistry.getError()!);
   }
