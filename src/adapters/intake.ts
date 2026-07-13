@@ -22,30 +22,27 @@ export async function processMessageIntake<TEvent extends ConversationEvent>(
     return;
   }
 
+  function prepareEvent(attachments: unknown[]): TEvent {
+    const event = { ...options.eventBase, attachments } as TEvent;
+    options.log?.({ ...options.logEntryBase, attachments });
+    return event;
+  }
+
+  function dispatch(event: TEvent): Promise<void> {
+    const context = options.createContext(event);
+    return options.handler.handleEvent(event, options.bot, context);
+  }
+
   if (options.deferAttachmentsUntilRun) {
     options.enqueue(options.queueKey, async () => {
-      const attachments = await options.processAttachments();
-      const event = { ...options.eventBase, attachments } as TEvent;
-      options.log?.({ ...options.logEntryBase, attachments });
-      if (options.beforeEnqueue && !(await options.beforeEnqueue(event))) {
-        return;
-      }
-      const context = options.createContext(event);
-      return options.handler.handleEvent(event, options.bot, context);
+      const event = prepareEvent(await options.processAttachments());
+      if (options.beforeEnqueue && !(await options.beforeEnqueue(event))) return;
+      return dispatch(event);
     });
     return;
   }
 
-  const attachments = await options.processAttachments();
-  const event = { ...options.eventBase, attachments } as TEvent;
-  options.log?.({ ...options.logEntryBase, attachments });
-
-  if (options.beforeEnqueue && !(await options.beforeEnqueue(event))) {
-    return;
-  }
-
-  options.enqueue(options.queueKey, () => {
-    const context = options.createContext(event);
-    return options.handler.handleEvent(event, options.bot, context);
-  });
+  const event = prepareEvent(await options.processAttachments());
+  if (options.beforeEnqueue && !(await options.beforeEnqueue(event))) return;
+  options.enqueue(options.queueKey, () => dispatch(event));
 }

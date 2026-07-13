@@ -123,4 +123,59 @@ describe("processMessageIntake", () => {
     expect(processAttachments).toHaveBeenCalledTimes(1);
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
   });
+
+  test.each([false, true])(
+    "stops before dispatch when the gate rejects (deferred: %s)",
+    async (deferred) => {
+      const handler = makeHandler();
+      const work: Array<() => Promise<void>> = [];
+      const beforeEnqueue = vi.fn().mockReturnValue(false);
+
+      await processMessageIntake({
+        eventBase: makeEvent(),
+        workingDir: undefined,
+        isAutoReplyCandidate: false,
+        logEntryBase: {},
+        processAttachments: vi.fn().mockResolvedValue([]),
+        queueKey: "C1",
+        enqueue: (_queueKey, queuedWork) => work.push(queuedWork),
+        handler,
+        bot,
+        createContext: vi.fn().mockReturnValue(context),
+        beforeEnqueue,
+        deferAttachmentsUntilRun: deferred,
+      });
+
+      if (deferred) await work[0]!();
+
+      expect(beforeEnqueue).toHaveBeenCalledTimes(1);
+      expect(handler.handleEvent).not.toHaveBeenCalled();
+      expect(work).toHaveLength(deferred ? 1 : 0);
+    },
+  );
+
+  test.each([false, true])("propagates attachment failures (deferred: %s)", async (deferred) => {
+    const failure = new Error("attachment failed");
+    const work: Array<() => Promise<void>> = [];
+    const intake = processMessageIntake({
+      eventBase: makeEvent(),
+      workingDir: undefined,
+      isAutoReplyCandidate: false,
+      logEntryBase: {},
+      processAttachments: vi.fn().mockRejectedValue(failure),
+      queueKey: "C1",
+      enqueue: (_queueKey, queuedWork) => work.push(queuedWork),
+      handler: makeHandler(),
+      bot,
+      createContext: vi.fn().mockReturnValue(context),
+      deferAttachmentsUntilRun: deferred,
+    });
+
+    if (deferred) {
+      await intake;
+      await expect(work[0]!()).rejects.toBe(failure);
+    } else {
+      await expect(intake).rejects.toBe(failure);
+    }
+  });
 });
