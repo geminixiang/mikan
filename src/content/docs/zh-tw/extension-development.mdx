@@ -142,20 +142,82 @@ api.on("tool_call", ({ toolName, args }) => {
 });
 ```
 
-| 鉤子                 | 用途                         |
-| -------------------- | ---------------------------- |
-| `before_agent_start` | 取代或附加該回合的系統提示詞 |
-| `tool_call`          | 在執行前觀察或封鎖工具呼叫   |
-| `tool_result`        | 觀察工具輸出                 |
-| `message_end`        | 觀察一則已完成的代理訊息     |
-| `turn_end`           | 觀察已完成的回合             |
-| `session_compact`    | 觀察工作階段壓縮及其原因     |
+| 鉤子                 | 用途                                       |
+| -------------------- | ------------------------------------------ |
+| `before_agent_start` | 改寫系統提示詞或使用者提示詞，或擋下該回合 |
+| `tool_call`          | 在執行前觀察或封鎖工具呼叫                 |
+| `tool_result`        | 觀察或改寫工具輸出（例如遮蔽機密、截斷）   |
+| `message_end`        | 觀察一則已完成的代理訊息                   |
+| `turn_end`           | 觀察已完成的回合                           |
+| `session_compact`    | 觀察工作階段壓縮及其原因                   |
+| `agent_error`        | 觀察以錯誤收場的回合                       |
+| `budget_exceeded`    | 觀察執行預算斷路器觸發                     |
 
-鉤子依註冊順序執行。對於會回傳結果的鉤子，以第一個非 `undefined` 的結果為準。鉤子錯誤會被記錄並略過，而不會導致執行作業當機。
+鉤子依註冊順序執行。結果的合成語意依鉤子而異：`tool_call` 以第一個非 `undefined` 的結果為準；`before_agent_start` 與 `tool_result` 採串接（chaining）——每個處理常式看到的是前面處理常式改寫後的事件，且任一 `before_agent_start` 處理常式回傳的 `block` 都會生效，與註冊順序無關。鉤子錯誤會被記錄並略過，而不會導致執行作業當機。
+
+#### 執行來源（origin）
+
+鉤子事件帶有選用的 `origin`，描述這次執行的平台來源：`kind`（`"interactive"` 或 `"event"`）、`platform`，互動式執行還有 `messageTs`、`userId`、`userName`、`threadTs` 與已下載的 `attachments`。可用於 per-user 政策，並把 `origin.messageTs` 傳給 `api.react` 對觸發訊息加上表情反應：
+
+```ts
+api.on("before_agent_start", async ({ origin }) => {
+  if (origin?.kind === "interactive" && origin.userId && !allowlist.has(origin.userId)) {
+    return { block: true, reason: "not authorized for this bot" };
+  }
+  if (origin?.messageTs) await api.react(origin.messageTs, "eyes");
+});
+```
+
+排程觸發的自主執行沒有觸發訊息，身分欄位皆為未設定——請務必做 null 檢查。
+
+#### 擋下回合
+
+`before_agent_start` 回傳 `{ block: true, reason }` 會在模型被呼叫前終止該回合。使用者訊息不會進入逐字稿或工作階段儲存，平台上會以診斷訊息顯示 `reason`。
+
+#### 改寫工具結果
+
+`tool_result` 回傳 `{ content }`（及／或 `{ isError }`）可取代模型——以及持久化的工作階段——看到的內容。這是從工具輸出中遮蔽機密的機制：
+
+```ts
+api.on("tool_result", ({ content }) => ({
+  content: content.map((part) =>
+    part.type === "text" ? { ...part, text: part.text.replaceAll(SECRET, "***") } : part,
+  ),
+}));
+```
 
 ### 自訂工具
 
 使用 `api.registerTool(tool)` 註冊 `AgentTool`。請使用與 TypeBox 相容的參數結構描述，並回傳標準的文字／影像工具內容。如需具備型別的工具實作，請參閱完整的 [`agent-pm` 範例](https://github.com/geminixiang/mikan/tree/main/examples/extensions/agent-pm)。
+
+### 自訂指令
+
+`api.registerCommand` 貢獻一個確定性分派的聊天指令——不經過模型、不耗 token、不寫入工作階段：
+
+```ts
+api.registerCommand({
+  name: "pm",
+  description: "Show the follow-up board",
+  handler: async ({ args, userId, respond }) => {
+    await respond(renderBoard(args));
+  },
+});
+```
+
+使用者以 `/pm list` 呼叫。名稱比對不分大小寫；內建指令（`/pi-*`、`/login` 等）永遠優先於擴充功能指令，同名指令以先註冊者為準。沒有對應指令的斜線文字仍會作為一般提示詞交給代理。處理常式的錯誤會回報在對話中並記錄至日誌，絕不會讓 mikan 當機。
+
+### 生命週期與釋放
+
+Harness 實例會在 `/pi-new`、閒置回收與工作階段輪替時被丟棄。請透過 `activate` 回傳釋放函式、或以 `api.onDispose` 註冊，來釋放資源（資料庫連線、監看器）：
+
+```ts
+export default function activate(api: MikanExtensionApi) {
+  const db = openDb(api.paths.dataDir);
+  api.onDispose(() => db.close());
+}
+```
+
+釋放函式依註冊順序反向執行；錯誤會記錄至日誌且不會向外拋出。
 
 ### 上下文與儲存空間
 
@@ -185,7 +247,7 @@ const availableNames = api.secrets.list();
 
 透過擴充功能 API 只能讀取祕密資訊。請勿將其記錄至日誌，或放入工具描述、提示詞、排程文字或回傳內容中。
 
-### 排程、通知與反應
+### 排程、觸發執行、通知、反應與檔案上傳
 
 ```ts
 await api.schedules.upsert("daily-check", {
@@ -195,11 +257,14 @@ await api.schedules.upsert("daily-check", {
   text: "Check overdue work. Report only actionable items.",
 });
 
+await api.triggerRun("Check the failed deploy and summarize the cause.");
 await api.notify("The scheduled check is ready.");
+await api.notify("Cross-post", { conversationId: "C0OTHER" });
 await api.react(messageTs, "white_check_mark");
+await api.uploadFile("/path/on/host/report.pdf", "Weekly report");
 ```
 
-排程會建立 mikan 事件檔案，並觸發不繼承對話歷史的自主執行，因此 `text` 必須內容完備。若執行多個平台且無法明確推斷，請指定 `platform`。請勿在排程文字中放入祕密資訊。
+排程會建立 mikan 事件檔案，並觸發不繼承對話歷史的自主執行，因此 `text` 必須內容完備；`api.triggerRun` 會立即觸發一次這樣的執行（例如回應外部事件）。若執行多個平台且無法明確推斷，請指定 `platform`。請勿在排程文字中放入祕密資訊。`api.notify` 預設發到擴充功能自己的對話，可傳入 `conversationId` 供跨對話應用使用；`api.uploadFile` 會在支援上傳的平台上把 host 端檔案送進對話。
 
 ### 隨附技能
 
@@ -219,7 +284,7 @@ hello-mikan/
 ## 生命週期規則
 
 1. 讓 `activate` 具備冪等性。`/pi-new` 可能再次啟用擴充功能；`schedules.upsert` 可安全用於此模式。
-2. 請勿建立 `setInterval`、伺服器、監看器或其他長期存續的資源。目前沒有停用鉤子；請使用 `api.schedules` 作為計時器。
+2. 長期存續的資源（資料庫連線、監看器）請在釋放函式中釋放（`api.onDispose` 或 `activate` 的回傳值）。計時器優先使用 `api.schedules` 而非 `setInterval`——排程能跨重啟存活，行程內計時器不能。
 3. 預設使用 `api.paths.dataDir`。只有在刻意實作多對話行為時才使用 `sharedDataDir`。
 4. 頂層匯入與初始化必須安全，因為驗證程序會匯入模組。
 5. 將擴充功能輸出與工具參數視為信任邊界；驗證不受信任的輸入。

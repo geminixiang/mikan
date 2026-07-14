@@ -19,6 +19,7 @@ export {
   type HarnessEvent,
   type HarnessEventListener,
   type MikanAgentSessionOptions,
+  type PromptBlockedOutcome,
 } from "./runner.js";
 export {
   formatSkillsForPrompt,
@@ -51,8 +52,13 @@ export {
   type LoadExtensionsResult,
 } from "./extensions/loader.js";
 export type {
+  AgentErrorHookEvent,
   BeforeAgentStartHookEvent,
   BeforeAgentStartHookResult,
+  BudgetExceededHookEvent,
+  ExtensionCommand,
+  ExtensionCommandContext,
+  ExtensionDisposer,
   ExtensionHostServices,
   ExtensionLoadError,
   ExtensionManifest,
@@ -67,10 +73,12 @@ export type {
   MikanExtensionModule,
   MikanHookMap,
   MikanHookName,
+  RunOrigin,
   SessionCompactHookEvent,
   ToolCallHookEvent,
   ToolCallHookResult,
   ToolResultHookEvent,
+  ToolResultHookResult,
   TurnEndHookEvent,
 } from "./extensions/types.js";
 export {

@@ -7,7 +7,12 @@ import { mkdirSync, statSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { fileURLToPath } from "url";
 import { dirname, join as pathJoin } from "path";
-import type { MessagingBot, PlatformNotifier, PlatformReactor } from "./adapter.js";
+import type {
+  MessagingBot,
+  PlatformNotifier,
+  PlatformReactor,
+  PlatformUploader,
+} from "./adapter.js";
 import { DiscordMessagingBot } from "./adapters/discord/bot.js";
 import { GithubMessagingBot } from "./adapters/github/bot.js";
 import { createGithubToolPack } from "./adapters/github/tool-pack.js";
@@ -405,6 +410,16 @@ const platformReactor: PlatformReactor = async (conversationId, messageTs, emoji
   log.logInfo(`[react] :${emoji}: on ${key}/${conversationId}`);
 };
 
+/** Extension `api.uploadFile` backend: send a host file into a conversation. */
+const platformUploader: PlatformUploader = async (conversationId, filePath, title, platform) => {
+  const [key, bot] = resolvePlatformBot("upload", platform);
+  if (!bot.uploadFile) {
+    throw new Error(`upload: platform '${key}' does not support file uploads`);
+  }
+  await bot.uploadFile(conversationId, filePath, title);
+  log.logInfo(`[upload] ${filePath} to ${key}/${conversationId}`);
+};
+
 /** github_* tool backends: PR push/create and CI checks, host-side. */
 function requireGithubBot(op: string): GithubMessagingBot {
   const bot = botsByPlatform.github as GithubMessagingBot | undefined;
@@ -453,6 +468,7 @@ const handler = createConversationRuntime({
   portalBaseUrl: portalBaseUrl(),
   platformNotifier,
   platformReactor,
+  platformUploader,
   platformToolPackFactories: buildPlatformToolPackFactories(),
 });
 

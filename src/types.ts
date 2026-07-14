@@ -139,6 +139,12 @@ export interface MessagingBot {
    * adapters adopt it incrementally; callers must handle its absence.
    */
   addReaction?(channel: string, messageTs: string, emoji: string): Promise<void>;
+  /**
+   * Upload a host-side file into a conversation. Optional so adapters adopt
+   * it incrementally; callers must handle its absence. Existing adapter
+   * implementations (Slack/Discord/Telegram) already match this shape.
+   */
+  uploadFile?(channel: string, filePath: string, title?: string): Promise<void>;
   enqueueEvent(event: ConversationEvent): boolean;
   getMessagingInfo(): MessagingInfo;
   postPrivate?(conversationId: string, userId: string, text: string): Promise<void>;
@@ -169,6 +175,18 @@ export type PlatformReactor = (
   conversationId: string,
   messageTs: string,
   emoji: string,
+  platform?: string,
+) => Promise<void>;
+
+/**
+ * Upload a host-side file into a conversation without triggering an agent
+ * run. Backs extension `api.uploadFile`; implemented in main.ts over the
+ * platform bots. `platform` is required only when more than one is running.
+ */
+export type PlatformUploader = (
+  conversationId: string,
+  filePath: string,
+  title?: string,
   platform?: string,
 ) => Promise<void>;
 
@@ -210,6 +228,16 @@ export interface PiAgentWrapper {
   ): Promise<{ stopReason: string; errorMessage?: string }>;
   abort(): void;
   getCurrentStep(): { toolName?: string; label?: string } | undefined;
+  /**
+   * Dispatch a leading-slash message to an extension-registered command.
+   * Returns true when a command consumed the message (no agent run follows).
+   */
+  tryExtensionCommand(
+    message: ConversationMessage,
+    responder: ConversationResponder,
+  ): Promise<boolean>;
+  /** Run extension disposers. Call once when this wrapper is discarded. */
+  dispose(): Promise<void>;
 }
 
 // ── config ────────────────────────────────────────────────────────────────────

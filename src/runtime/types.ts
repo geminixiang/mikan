@@ -7,6 +7,7 @@ import type {
   ConversationKind,
   PlatformNotifier,
   PlatformReactor,
+  PlatformUploader,
 } from "../adapter.js";
 import type {
   AdminTokenStoreLike,
@@ -67,6 +68,8 @@ export interface ConversationRuntimeOptions extends Omit<
   platformNotifier?: PlatformNotifier;
   /** Proactive emoji reactions for extensions (`api.react`). */
   platformReactor?: PlatformReactor;
+  /** Proactive file uploads for extensions (`api.uploadFile`). */
+  platformUploader?: PlatformUploader;
   /**
    * Optional platform capability packs (extra tools + per-run bind), as
    * factories — each runner instantiates its own pack because bind state is

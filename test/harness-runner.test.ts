@@ -162,6 +162,184 @@ describe("MikanAgentSession", () => {
     expect(JSON.stringify(toolResults)).toContain("blocked by test");
   });
 
+  test("a before_agent_start block stops the turn before the model runs", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([fauxAssistantMessage("should never be produced")]);
+
+    const extensions = new ExtensionRegistry();
+    extensions.register("policy", "before_agent_start", () => ({
+      block: true,
+      reason: "user not allowed",
+    }));
+
+    const sessionStore = SessionStore.create(join(dir, "session.jsonl"), dir);
+    const session = new MikanAgentSession({
+      systemPrompt: "test",
+      model,
+      thinkingLevel: "off",
+      tools: [],
+      models,
+      sessionStore,
+      extensions,
+    });
+
+    const outcome = await session.prompt("do something");
+    expect(outcome).toEqual({ blocked: true, reason: "user not allowed" });
+    // The model was never called and the blocked turn left no trace.
+    expect(session.messages).toHaveLength(0);
+    expect(sessionStore.getEntries().filter((entry) => entry.type === "message")).toHaveLength(0);
+  });
+
+  test("before_agent_start can rewrite the user prompt and sees the run origin", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([fauxAssistantMessage("ok")]);
+
+    const seenOrigins: unknown[] = [];
+    const extensions = new ExtensionRegistry();
+    extensions.register("rewriter", "before_agent_start", ({ prompt, origin }) => {
+      seenOrigins.push(origin);
+      return { prompt: `${prompt} [enriched]` };
+    });
+
+    const sessionStore = SessionStore.create(join(dir, "session.jsonl"), dir);
+    const session = new MikanAgentSession({
+      systemPrompt: "test",
+      model,
+      thinkingLevel: "off",
+      tools: [],
+      models,
+      sessionStore,
+      extensions,
+    });
+
+    const outcome = await session.prompt("original ask", {
+      origin: {
+        kind: "interactive",
+        platform: "slack",
+        messageTs: "1700000000.1",
+        userId: "U1",
+        userName: "kai",
+      },
+    });
+    expect(outcome).toBeUndefined();
+    expect(seenOrigins).toEqual([
+      {
+        kind: "interactive",
+        platform: "slack",
+        messageTs: "1700000000.1",
+        userId: "U1",
+        userName: "kai",
+      },
+    ]);
+
+    // The rewritten prompt is what entered the transcript and the store.
+    const userMessage = session.messages.find((message) => message.role === "user");
+    expect(JSON.stringify(userMessage)).toContain("original ask [enriched]");
+    expect(JSON.stringify(sessionStore.getEntries())).toContain("original ask [enriched]");
+  });
+
+  test("tool_result hooks rewrite tool output before the model and the store see it", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("echo", { text: "token=s3cret" })),
+      fauxAssistantMessage("done"),
+    ]);
+
+    const originKinds: unknown[] = [];
+    const extensions = new ExtensionRegistry();
+    extensions.register("redactor", "tool_result", ({ content, origin }) => {
+      originKinds.push(origin?.kind);
+      return {
+        content: content.map((part) =>
+          part.type === "text" ? { ...part, text: part.text.replaceAll("s3cret", "***") } : part,
+        ),
+      };
+    });
+
+    const sessionStore = SessionStore.create(join(dir, "session.jsonl"), dir);
+    const session = new MikanAgentSession({
+      systemPrompt: "test",
+      model,
+      thinkingLevel: "off",
+      tools: [echoTool],
+      models,
+      sessionStore,
+      extensions,
+    });
+
+    await session.prompt("run the tool", { origin: { kind: "event", platform: "slack" } });
+
+    expect(originKinds).toEqual(["event"]);
+    const persisted = JSON.stringify(
+      sessionStore
+        .getEntries()
+        .filter(
+          (entry) =>
+            entry.type === "message" &&
+            (entry as { message: { role: string } }).message.role === "toolResult",
+        ),
+    );
+    expect(persisted).toContain("echo: token=***");
+    expect(persisted).not.toContain("s3cret");
+  });
+
+  test("agent_error hook fires once when a turn settles on a non-retryable error", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([
+      fauxAssistantMessage("", { stopReason: "error", errorMessage: "invalid api key" }),
+    ]);
+
+    const errorsSeen: Array<{ errorMessage: string; originKind?: string }> = [];
+    const extensions = new ExtensionRegistry();
+    extensions.register("monitor", "agent_error", ({ errorMessage, origin }) => {
+      errorsSeen.push({ errorMessage, originKind: origin?.kind });
+    });
+
+    const session = new MikanAgentSession({
+      systemPrompt: "test",
+      model,
+      thinkingLevel: "off",
+      tools: [],
+      models,
+      sessionStore: SessionStore.create(join(dir, "session.jsonl"), dir),
+      extensions,
+    });
+
+    await session.prompt("hi", { origin: { kind: "interactive", platform: "slack" } });
+
+    expect(errorsSeen).toEqual([{ errorMessage: "invalid api key", originKind: "interactive" }]);
+  });
+
+  test("budget_exceeded hook fires when the circuit breaker trips", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("echo", { text: "ping" })),
+      fauxAssistantMessage("done"),
+    ]);
+
+    const tripped: Array<{ reason: string; llmCalls: number }> = [];
+    const extensions = new ExtensionRegistry();
+    extensions.register("monitor", "budget_exceeded", ({ reason, llmCalls }) => {
+      tripped.push({ reason, llmCalls });
+    });
+
+    const session = new MikanAgentSession({
+      systemPrompt: "test",
+      model,
+      thinkingLevel: "off",
+      tools: [echoTool],
+      models,
+      sessionStore: SessionStore.create(join(dir, "session.jsonl"), dir),
+      extensions,
+    });
+
+    await session.prompt("run the tool", { budget: { maxLlmCalls: 1 } });
+
+    expect(tripped).toHaveLength(1);
+    expect(tripped[0].llmCalls).toBe(1);
+    expect(tripped[0].reason).toContain("LLM calls");
+  });
+
   test("budget circuit breaker aborts a run that exceeds the LLM-call cap", async () => {
     const { models, faux, model } = createFauxSetup();
     // Would take two LLM calls (tool call, then final); the cap stops it at one.

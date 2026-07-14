@@ -17,8 +17,10 @@
  * }
  * ```
  *
- * Hooks run in registration order. For hooks with results, the first
- * non-undefined result wins (v1 semantics; later versions may merge).
+ * Hooks run in registration order. Result semantics are per hook:
+ * `tool_call` keeps v1's first-non-undefined-wins; `before_agent_start` and
+ * `tool_result` chain — each handler sees the event as rewritten by earlier
+ * handlers, and for `before_agent_start` a `block` from any handler wins.
  * Hook errors are logged and never crash a run.
  */
 import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
@@ -26,21 +28,48 @@ import type { Api, ImageContent, Model, TextContent } from "@earendil-works/pi-a
 import type { MikanSkill } from "../skills.js";
 import type { CompactionEntry } from "../types.js";
 
+/**
+ * Platform provenance of the run a hook event belongs to. Interactive runs
+ * carry the triggering message's identity (usable with `api.react` and for
+ * per-user policy); autonomous runs (schedules/events) have no triggering
+ * platform message, so only `kind` and `platform` are set.
+ */
+export interface RunOrigin {
+  kind: "interactive" | "event";
+  /** Platform adapter name serving this run (e.g. "slack"). */
+  platform?: string;
+  /** Platform message id of the triggering message; pass to `api.react`. */
+  messageTs?: string;
+  userId?: string;
+  userName?: string;
+  threadTs?: string;
+  /** Attachments already downloaded to host paths (extensions run on host). */
+  attachments?: { name: string; localPath: string }[];
+}
+
 export interface BeforeAgentStartHookEvent {
   prompt: string;
   images?: ImageContent[];
   systemPrompt: string;
+  origin?: RunOrigin;
 }
 
 export interface BeforeAgentStartHookResult {
   /** Replace the system prompt for this turn. */
   systemPrompt?: string;
+  /** Rewrite the user prompt for this turn. */
+  prompt?: string;
+  /** Block the turn entirely; the model is never called and nothing persists. */
+  block?: boolean;
+  /** Shown to the user when the turn is blocked. */
+  reason?: string;
 }
 
 export interface ToolCallHookEvent {
   toolCallId: string;
   toolName: string;
   args: unknown;
+  origin?: RunOrigin;
 }
 
 export interface ToolCallHookResult {
@@ -55,19 +84,46 @@ export interface ToolResultHookEvent {
   args: unknown;
   content: (TextContent | ImageContent)[];
   isError: boolean;
+  origin?: RunOrigin;
+}
+
+export interface ToolResultHookResult {
+  /** Replace the tool result content sent back to the model (e.g. redaction). */
+  content?: (TextContent | ImageContent)[];
+  /** Override the tool result error flag. */
+  isError?: boolean;
 }
 
 export interface MessageEndHookEvent {
   message: AgentMessage;
+  origin?: RunOrigin;
 }
 
 export interface TurnEndHookEvent {
   messages: AgentMessage[];
+  origin?: RunOrigin;
 }
 
 export interface SessionCompactHookEvent {
   entry: CompactionEntry;
   reason: "threshold" | "overflow" | "manual";
+}
+
+/** A turn settled with an error after retries were exhausted (or none applied). */
+export interface AgentErrorHookEvent {
+  errorMessage: string;
+  origin?: RunOrigin;
+}
+
+/** The run budget circuit breaker tripped and the run was aborted. */
+export interface BudgetExceededHookEvent {
+  /** Which cap was hit, e.g. "cost 2.01 USD >= 2 USD limit". */
+  reason: string;
+  tokens: number;
+  costUsd: number;
+  llmCalls: number;
+  durationMs: number;
+  origin?: RunOrigin;
 }
 
 /** Map of hook names to handler signatures. */
@@ -82,10 +138,14 @@ export interface MikanHookMap {
   tool_call: (
     event: ToolCallHookEvent,
   ) => ToolCallHookResult | undefined | void | Promise<ToolCallHookResult | undefined | void>;
-  tool_result: (event: ToolResultHookEvent) => void | Promise<void>;
+  tool_result: (
+    event: ToolResultHookEvent,
+  ) => ToolResultHookResult | undefined | void | Promise<ToolResultHookResult | undefined | void>;
   message_end: (event: MessageEndHookEvent) => void | Promise<void>;
   turn_end: (event: TurnEndHookEvent) => void | Promise<void>;
   session_compact: (event: SessionCompactHookEvent) => void | Promise<void>;
+  agent_error: (event: AgentErrorHookEvent) => void | Promise<void>;
+  budget_exceeded: (event: BudgetExceededHookEvent) => void | Promise<void>;
 }
 
 export type MikanHookName = keyof MikanHookMap;
@@ -125,16 +185,46 @@ export interface ExtensionScheduleInfo {
 /**
  * Event-file payload the harness hands to the embedder's schedule store.
  * Mirrors mikan's event-file shape; `platform` may be omitted when the
- * embedder runs a single platform.
+ * embedder runs a single platform. `immediate` backs `api.triggerRun` —
+ * the event fires as soon as the embedder's watcher picks it up.
  */
 export interface ExtensionSchedulePayload {
-  type: "one-shot" | "periodic";
+  type: "one-shot" | "periodic" | "immediate";
   conversationId: string;
   text: string;
   platform?: string;
   at?: string;
   schedule?: string;
   timezone?: string;
+}
+
+// ── v3: commands and lifecycle ───────────────────────────────────────────────
+
+/** Cleanup callback run when the harness instance owning the extension is discarded. */
+export type ExtensionDisposer = () => void | Promise<void>;
+
+/** Context handed to an extension command handler for one invocation. */
+export interface ExtensionCommandContext {
+  /** Text after the command name, trimmed ("" when none). */
+  args: string;
+  conversationId: string;
+  userId?: string;
+  userName?: string;
+  /** Reply in the conversation the command was sent from. */
+  respond(text: string): Promise<void>;
+}
+
+/**
+ * A chat command contributed by an extension (`/name args…`). Dispatched
+ * deterministically by the embedder — no model call, no session entry.
+ * Built-in commands always win over extension commands of the same name.
+ */
+export interface ExtensionCommand {
+  /** Command name without the leading slash; `[a-z0-9_-]+`, case-insensitive match. */
+  name: string;
+  /** One-line description for inventory surfaces. */
+  description?: string;
+  handler: (context: ExtensionCommandContext) => void | Promise<void>;
 }
 
 // ── v2: embedder-injected services ───────────────────────────────────────────
@@ -170,6 +260,13 @@ export interface ExtensionHostServices {
     emoji: string,
     platform?: string,
   ) => Promise<void>;
+  /** Upload a host file into a conversation; enables `api.uploadFile`. */
+  uploadFile?: (
+    conversationId: string,
+    filePath: string,
+    title?: string,
+    platform?: string,
+  ) => Promise<void>;
   /** Resolve read-only secrets for an extension slug; enables `api.secrets`. */
   resolveSecrets?: (slug: string) => Record<string, string>;
 }
@@ -194,6 +291,17 @@ export interface MikanExtensionApi {
   on<T extends MikanHookName>(hook: T, handler: MikanHookMap[T]): void;
   /** Contribute an additional agent tool. */
   registerTool(tool: AgentTool): void;
+  /**
+   * Contribute a chat command (`/name`). Dispatched without a model call;
+   * built-in commands and earlier registrations of the same name win.
+   */
+  registerCommand(command: ExtensionCommand): void;
+  /**
+   * Register cleanup to run when this harness instance is discarded
+   * (`/pi-new`, session eviction, shutdown). Alternative to returning a
+   * disposer from `activate`. Disposers run in reverse registration order.
+   */
+  onDispose(disposer: ExtensionDisposer): void;
   /** Extension-scoped logging that lands in mikan's structured log. */
   log(message: string): void;
   /** Context about the conversation this harness instance serves. */
@@ -249,20 +357,35 @@ export interface MikanExtensionApi {
     list(): Promise<ExtensionScheduleInfo[]>;
   };
   /**
-   * Post text into this conversation without triggering an agent run.
-   * Available when the embedder provides platform messaging.
+   * Post text into a conversation without triggering an agent run. Defaults
+   * to this conversation; pass `conversationId` to post elsewhere (pairs
+   * with `sharedDataDir` for cross-conversation applications). Available
+   * when the embedder provides platform messaging.
    */
-  notify(text: string): Promise<void>;
+  notify(text: string, options?: { conversationId?: string }): Promise<void>;
   /**
    * Add an emoji reaction to a message in this conversation. `messageTs` is
-   * the platform message id the extension read from an event; `emoji` is a
-   * short name without colons. Available when the embedder provides reaction
-   * support.
+   * the platform message id the extension read from an event (see
+   * `RunOrigin.messageTs`); `emoji` is a short name without colons.
+   * Available when the embedder provides reaction support.
    */
   react(messageTs: string, emoji: string): Promise<void>;
+  /**
+   * Upload a host-side file into this conversation without an agent run.
+   * Available when the embedder provides file uploads for the platform.
+   */
+  uploadFile(filePath: string, title?: string): Promise<void>;
+  /**
+   * Fire an autonomous agent run in this conversation as soon as possible.
+   * Like a schedule, the run does not inherit conversation history — write
+   * `text` self-contained. Backed by the embedder's schedule store.
+   */
+  triggerRun(text: string): Promise<void>;
 }
 
-export type MikanExtensionActivate = (api: MikanExtensionApi) => void | Promise<void>;
+export type MikanExtensionActivate = (
+  api: MikanExtensionApi,
+) => void | ExtensionDisposer | Promise<void | ExtensionDisposer>;
 
 export interface MikanExtensionModule {
   name?: string;
