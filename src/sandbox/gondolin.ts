@@ -1,4 +1,5 @@
 import type { VM as GondolinVM } from "@earendil-works/gondolin";
+import { createHash } from "node:crypto";
 import { dirname } from "node:path";
 import * as log from "../log.js";
 import type { ResourceLimits, SandboxLimitStatus, SandboxResourceController } from "../types.js";
@@ -19,15 +20,26 @@ type VM = GondolinVM;
 
 interface GondolinSession {
   vm: Promise<VM>;
+  fingerprint: string;
   resourceKey?: string;
   activeOperations: number;
   lastUsed: number;
   idleWaiters: Array<() => void>;
 }
 
+interface GondolinDesiredRuntime {
+  image: string;
+  imageIdentity: string;
+  mounts: Array<{ source: string; target: string }>;
+  limits?: ResourceLimits;
+}
+
 const MINIMUM_NODE_VERSION = [23, 6, 0] as const;
 const MIKAN_IMAGE = "mikan-sandbox:latest";
 const sessions = new Map<string, GondolinSession>();
+const transitions = new Map<string, Promise<void>>();
+let activeShutdowns = 0;
+let shutdownGeneration = 0;
 
 class GondolinResourceManager implements SandboxResourceController {
   private defaultLimits?: ResourceLimits;
@@ -112,22 +124,46 @@ async function validateGondolinSandbox(): Promise<void> {
   console.log("  Gondolin microVM enabled. Profile: default");
 }
 
-async function createVM(config: GondolinSandboxConfig): Promise<VM> {
-  const limits = config.resourceKey
-    ? gondolinResources.getLimitStatus(config.resourceKey).limits
-    : undefined;
+async function resolveDesiredRuntime(
+  config: GondolinSandboxConfig,
+): Promise<GondolinDesiredRuntime> {
+  const image = config.image ?? MIKAN_IMAGE;
+  const { ensureImageSelector } = (await import("@earendil-works/gondolin")) as GondolinModule;
+  const resolvedImage = await ensureImageSelector(image);
+  return {
+    image: resolvedImage.assetDir,
+    imageIdentity: resolvedImage.buildId ?? resolvedImage.assetDir,
+    mounts: (
+      config.mounts ?? [{ source: config.workspacePath ?? process.cwd(), target: "/workspace" }]
+    ).toSorted((left, right) => left.target.localeCompare(right.target)),
+    limits: config.resourceKey
+      ? gondolinResources.getLimitStatus(config.resourceKey).limits
+      : undefined,
+  };
+}
+
+function runtimeFingerprint(desired: GondolinDesiredRuntime): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        image: desired.imageIdentity,
+        mounts: desired.mounts,
+        limits: desired.limits,
+      }),
+    )
+    .digest("hex");
+}
+
+async function createVM(desired: GondolinDesiredRuntime): Promise<VM> {
   const { RealFSProvider, VM } = (await import("@earendil-works/gondolin")) as GondolinModule;
-  const mounts = config.mounts ?? [
-    { source: config.workspacePath ?? process.cwd(), target: "/workspace" },
-  ];
   return VM.create({
-    sandbox: { imagePath: MIKAN_IMAGE },
+    sandbox: { imagePath: desired.image },
     env: { TZ: "Asia/Taipei" },
-    cpus: gondolinCpuCount(limits?.cpus),
-    memory: limits?.memory,
+    cpus: gondolinCpuCount(desired.limits?.cpus),
+    memory: desired.limits?.memory,
     vfs: {
       mounts: Object.fromEntries(
-        mounts.map(({ source, target }) => [target, new RealFSProvider(source)]),
+        desired.mounts.map(({ source, target }) => [target, new RealFSProvider(source)]),
       ),
     },
   });
@@ -143,24 +179,87 @@ function gondolinCpuCount(cpus: string | undefined): number | undefined {
   return Math.ceil(parsed);
 }
 
-function getSession(key: string, config: GondolinSandboxConfig): GondolinSession {
-  const existing = sessions.get(key);
-  if (existing) return existing;
-
+function createSession(
+  key: string,
+  config: GondolinSandboxConfig,
+  desired: GondolinDesiredRuntime,
+  fingerprint: string,
+): GondolinSession {
   let session: GondolinSession;
-  const vm = createVM(config).catch((error) => {
+  const vm = createVM(desired).catch((error) => {
     if (sessions.get(key) === session) sessions.delete(key);
     throw error;
   });
   session = {
     vm,
+    fingerprint,
     resourceKey: config.resourceKey,
     activeOperations: 0,
     lastUsed: Date.now(),
     idleWaiters: [],
   };
-  sessions.set(key, session);
   return session;
+}
+
+async function acquireSession(
+  key: string,
+  config: GondolinSandboxConfig,
+  generation = shutdownGeneration,
+): Promise<GondolinSession> {
+  if (activeShutdowns > 0 || generation !== shutdownGeneration) {
+    throw new SandboxError("Error: Gondolin runtime is shutting down");
+  }
+
+  const pending = transitions.get(key);
+  if (pending) {
+    await pending;
+    return acquireSession(key, config, generation);
+  }
+
+  const desired = await resolveDesiredRuntime(config);
+  if (activeShutdowns > 0 || generation !== shutdownGeneration) {
+    throw new SandboxError("Error: Gondolin runtime is shutting down");
+  }
+  const concurrentTransition = transitions.get(key);
+  if (concurrentTransition) {
+    await concurrentTransition;
+    return acquireSession(key, config, generation);
+  }
+
+  const fingerprint = runtimeFingerprint(desired);
+  const existing = sessions.get(key);
+  if (existing?.fingerprint === fingerprint) {
+    existing.activeOperations += 1;
+    return existing;
+  }
+
+  const transition = replaceSession(key, config, desired, fingerprint, existing);
+  transitions.set(key, transition);
+  try {
+    await transition;
+  } finally {
+    if (transitions.get(key) === transition) transitions.delete(key);
+  }
+  return acquireSession(key, config, generation);
+}
+
+async function replaceSession(
+  key: string,
+  config: GondolinSandboxConfig,
+  desired: GondolinDesiredRuntime,
+  fingerprint: string,
+  existing: GondolinSession | undefined,
+): Promise<void> {
+  if (existing) {
+    await closeSession(key, existing, {
+      waitForActiveOperations: true,
+      resetResources: false,
+      throwOnError: true,
+    });
+  }
+  const replacement = createSession(key, config, desired, fingerprint);
+  sessions.set(key, replacement);
+  await replacement.vm;
 }
 
 async function withVM<T>(
@@ -168,8 +267,7 @@ async function withVM<T>(
   config: GondolinSandboxConfig,
   operation: (vm: VM) => Promise<T>,
 ): Promise<T> {
-  const session = getSession(key, config);
-  session.activeOperations += 1;
+  const session = await acquireSession(key, config);
   try {
     return await operation(await session.vm);
   } finally {
@@ -189,21 +287,29 @@ function waitForIdle(session: GondolinSession): Promise<void> {
 async function closeSession(
   key: string,
   session: GondolinSession,
-  waitForActiveOperations = false,
+  options: {
+    waitForActiveOperations?: boolean;
+    resetResources?: boolean;
+    throwOnError?: boolean;
+  } = {},
 ): Promise<void> {
   if (sessions.get(key) !== session) return;
   sessions.delete(key);
   try {
-    if (waitForActiveOperations) await waitForIdle(session);
+    if (options.waitForActiveOperations) await waitForIdle(session);
     const vm = await session.vm;
     await vm.close();
     if (
+      options.resetResources !== false &&
       session.resourceKey &&
       !Array.from(sessions.values()).some(({ resourceKey }) => resourceKey === session.resourceKey)
     ) {
       gondolinResources.clear(session.resourceKey);
     }
   } catch (error) {
+    session.fingerprint = "";
+    sessions.set(key, session);
+    if (options.throwOnError) throw error;
     log.logWarning(
       `Failed to close Gondolin session '${key}'`,
       error instanceof Error ? error.message : String(error),
@@ -219,8 +325,19 @@ export async function stopIdleGondolinVms(maxIdleMs: number, now = Date.now()): 
 }
 
 export async function closeAllGondolinVms(): Promise<void> {
-  const current = Array.from(sessions.entries());
-  await Promise.all(current.map(([key, session]) => closeSession(key, session, true)));
+  shutdownGeneration += 1;
+  activeShutdowns += 1;
+  try {
+    await Promise.allSettled(transitions.values());
+    const current = Array.from(sessions.entries());
+    await Promise.all(
+      current.map(([key, session]) =>
+        closeSession(key, session, { waitForActiveOperations: true }),
+      ),
+    );
+  } finally {
+    activeShutdowns -= 1;
+  }
 }
 
 function executionSignal(options?: ExecOptions): AbortSignal | undefined {
@@ -245,15 +362,8 @@ export class GondolinExecutor implements Executor {
     this.instanceId = config.instanceId ?? this.workspacePath;
   }
 
-  private get sessionKey(): string {
-    const limits = this.config.resourceKey
-      ? gondolinResources.getLimitStatus(this.config.resourceKey).limits
-      : undefined;
-    return `${this.instanceId}:${JSON.stringify(limits)}`;
-  }
-
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
-    return withVM(this.sessionKey, this.config, async (vm) => {
+    return withVM(this.instanceId, this.config, async (vm) => {
       const result = await vm.exec(withRuntimeBootstrap(command, this.env), {
         cwd: "/workspace",
         env: this.env,
@@ -264,11 +374,11 @@ export class GondolinExecutor implements Executor {
   }
 
   async readFile(path: string): Promise<string> {
-    return withVM(this.sessionKey, this.config, (vm) => vm.fs.readFile(path, { encoding: "utf8" }));
+    return withVM(this.instanceId, this.config, (vm) => vm.fs.readFile(path, { encoding: "utf8" }));
   }
 
   async writeFile(path: string, content: string): Promise<void> {
-    return withVM(this.sessionKey, this.config, async (vm) => {
+    return withVM(this.instanceId, this.config, async (vm) => {
       const stage = `${path}.mikan-stage`;
       await vm.fs.mkdir(dirname(path), { recursive: true });
       await vm.fs.writeFile(stage, content);

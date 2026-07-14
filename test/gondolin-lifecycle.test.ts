@@ -1,9 +1,17 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-const gondolin = vi.hoisted(() => ({ create: vi.fn(), RealFSProvider: vi.fn() }));
+const gondolin = vi.hoisted(() => ({
+  create: vi.fn(),
+  RealFSProvider: vi.fn(),
+  ensureImageSelector: vi.fn(async (selector: string) => ({
+    assetDir: `/images/${selector}`,
+    buildId: selector,
+  })),
+}));
 
 vi.mock("@earendil-works/gondolin", () => ({
   RealFSProvider: gondolin.RealFSProvider,
+  ensureImageSelector: gondolin.ensureImageSelector,
   VM: { create: gondolin.create },
 }));
 
@@ -42,6 +50,7 @@ describe("Gondolin lifecycle", () => {
   beforeEach(() => {
     gondolin.create.mockReset();
     gondolin.RealFSProvider.mockReset();
+    gondolin.ensureImageSelector.mockClear();
     gondolinResources.configure();
     Object.defineProperty(process.versions, "node", { value: "24.0.0", configurable: true });
   });
@@ -67,6 +76,22 @@ describe("Gondolin lifecycle", () => {
     expect(second.exec).toHaveBeenCalledOnce();
   });
 
+  test("keeps an idle VM tracked when close fails", async () => {
+    const first = createVm();
+    first.close.mockRejectedValueOnce(new Error("close failed"));
+    const second = createVm();
+    gondolin.create.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    const executor = createExecutor("idle-close-failure");
+
+    await executor.exec("pwd");
+    await stopIdleGondolinVms(0, Date.now() + 1);
+    expect(first.close).toHaveBeenCalledOnce();
+
+    await executor.exec("pwd");
+    expect(first.close).toHaveBeenCalledTimes(2);
+    expect(gondolin.create).toHaveBeenCalledTimes(2);
+  });
+
   test("creates providers for each configured workspace mount", async () => {
     const vm = createVm();
     gondolin.create.mockResolvedValue(vm);
@@ -83,11 +108,11 @@ describe("Gondolin lifecycle", () => {
     await executor.exec("pwd");
 
     expect(gondolin.RealFSProvider).toHaveBeenCalledTimes(2);
-    expect(gondolin.RealFSProvider).toHaveBeenNthCalledWith(1, "/host/MEMORY.md");
-    expect(gondolin.RealFSProvider).toHaveBeenNthCalledWith(2, "/host/C123");
+    expect(gondolin.RealFSProvider).toHaveBeenNthCalledWith(1, "/host/C123");
+    expect(gondolin.RealFSProvider).toHaveBeenNthCalledWith(2, "/host/MEMORY.md");
     expect(Object.keys(gondolin.create.mock.calls[0][0].vfs.mounts)).toEqual([
-      "/workspace/MEMORY.md",
       "/workspace/C123",
+      "/workspace/MEMORY.md",
     ]);
   });
 
@@ -137,6 +162,7 @@ describe("Gondolin lifecycle", () => {
 
     await gondolinResources.boost("c123");
     await executor.exec("pwd");
+    expect(first.close).toHaveBeenCalledOnce();
     expect(gondolin.create).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({ cpus: 2, memory: "2g" }),
@@ -188,6 +214,101 @@ describe("Gondolin lifecycle", () => {
     expect(vm.close).toHaveBeenCalledOnce();
   });
 
+  test("waits for active work before recreating a drifted runtime", async () => {
+    let finish!: (result: { stdout: string; stderr: string; exitCode: number }) => void;
+    const first = createVm();
+    first.exec.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const second = createVm();
+    gondolin.create.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    const original = new GondolinExecutor({
+      type: "gondolin",
+      profile: "default",
+      instanceId: "mount-drift",
+      mounts: [{ source: "/host/C123", target: "/workspace/C123" }],
+    });
+    const changed = new GondolinExecutor({
+      type: "gondolin",
+      profile: "default",
+      instanceId: "mount-drift",
+      mounts: [{ source: "/host", target: "/workspace" }],
+    });
+
+    const active = original.exec("sleep 1");
+    await vi.waitFor(() => expect(first.exec).toHaveBeenCalledOnce());
+    const replacement = changed.exec("pwd");
+    await Promise.resolve();
+    expect(gondolin.create).toHaveBeenCalledTimes(1);
+    expect(first.close).not.toHaveBeenCalled();
+
+    finish({ stdout: "", stderr: "", exitCode: 0 });
+    await active;
+    await replacement;
+    expect(first.close).toHaveBeenCalledOnce();
+    expect(gondolin.create).toHaveBeenCalledTimes(2);
+    expect(second.exec).toHaveBeenCalledOnce();
+  });
+
+  test("recreates once when the image identity changes", async () => {
+    const first = createVm();
+    const second = createVm();
+    gondolin.create.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    const original = new GondolinExecutor({
+      type: "gondolin",
+      profile: "default",
+      instanceId: "image-drift",
+      image: "mikan-sandbox:first",
+      workspacePath: "/workspace-host",
+    });
+    const changed = new GondolinExecutor({
+      type: "gondolin",
+      profile: "default",
+      instanceId: "image-drift",
+      image: "mikan-sandbox:second",
+      workspacePath: "/workspace-host",
+    });
+
+    await original.exec("pwd");
+    await changed.exec("pwd");
+    await changed.exec("pwd");
+
+    expect(first.close).toHaveBeenCalledOnce();
+    expect(gondolin.create).toHaveBeenCalledTimes(2);
+    expect(gondolin.ensureImageSelector).toHaveBeenCalledWith("mikan-sandbox:second");
+  });
+
+  test("keeps a stale session tracked when drift cleanup fails", async () => {
+    const first = createVm();
+    first.close.mockRejectedValueOnce(new Error("close failed"));
+    const second = createVm();
+    gondolin.create.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    const original = new GondolinExecutor({
+      type: "gondolin",
+      profile: "default",
+      instanceId: "close-failure",
+      image: "mikan-sandbox:first",
+      workspacePath: "/workspace-host",
+    });
+    const changed = new GondolinExecutor({
+      type: "gondolin",
+      profile: "default",
+      instanceId: "close-failure",
+      image: "mikan-sandbox:second",
+      workspacePath: "/workspace-host",
+    });
+
+    await original.exec("pwd");
+    await expect(changed.exec("pwd")).rejects.toThrow("close failed");
+    expect(gondolin.create).toHaveBeenCalledTimes(1);
+
+    await changed.exec("pwd");
+    expect(first.close).toHaveBeenCalledTimes(2);
+    expect(gondolin.create).toHaveBeenCalledTimes(2);
+  });
+
   test("recreates a session after VM startup fails", async () => {
     const vm = createVm();
     gondolin.create.mockRejectedValueOnce(new Error("boot failed")).mockResolvedValueOnce(vm);
@@ -225,10 +346,30 @@ describe("Gondolin lifecycle", () => {
     await vi.waitFor(() => expect(vm.exec).toHaveBeenCalledOnce());
     const closing = closeAllGondolinVms();
     expect(vm.close).not.toHaveBeenCalled();
+    await expect(createExecutor("late").exec("pwd")).rejects.toThrow(
+      "Error: Gondolin runtime is shutting down",
+    );
 
     finish({ stdout: "", stderr: "", exitCode: 0 });
     await execution;
     await closing;
     expect(vm.close).toHaveBeenCalledOnce();
+  });
+
+  test("rejects an acquisition that was resolving during shutdown", async () => {
+    let finishResolve!: (image: { assetDir: string; buildId: string }) => void;
+    gondolin.ensureImageSelector.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishResolve = resolve;
+      }),
+    );
+    const execution = createExecutor("resolving").exec("pwd");
+    await vi.waitFor(() => expect(gondolin.ensureImageSelector).toHaveBeenCalledOnce());
+
+    await closeAllGondolinVms();
+    finishResolve({ assetDir: "/images/mikan", buildId: "mikan" });
+
+    await expect(execution).rejects.toThrow("Error: Gondolin runtime is shutting down");
+    expect(gondolin.create).not.toHaveBeenCalled();
   });
 });

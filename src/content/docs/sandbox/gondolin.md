@@ -24,7 +24,7 @@ Each conversation gets a process-local VM. The default `private` workspace mode 
 
 ## Preview limitations
 
-CPU/memory defaults, temporary limits from the agent `sandbox` tool, and `/pi-sandbox boost` use the same settings and conversation scope as `image:*`. Changing limits recreates the VM on the next operation, and temporary limits reset after its sessions close. Gondolin exposes whole vCPUs, so fractional CPU values are rounded up; strict fractional quotas require host cgroup enforcement.
+CPU/memory defaults, temporary limits from the agent `sandbox` tool, and `/pi-sandbox boost` use the same settings and conversation scope as `image:*`. Before each operation, mikan fingerprints the resolved image build, mounts, and effective limits. When that desired configuration changes, mikan waits for active work, closes the stale VM, and creates one replacement. Temporary limits reset after its session closes. Gondolin exposes whole vCPUs, so fractional CPU values are rounded up; strict fractional quotas require host cgroup enforcement.
 
 This local slice has no durable lease, worker process, or remote execution. Idle VMs close after 10 minutes and are recreated on the next operation. `image:*` remains available and is still the recommended managed mode until the remaining controls are implemented.
 
