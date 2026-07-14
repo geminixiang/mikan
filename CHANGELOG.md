@@ -9,6 +9,26 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.16]
+
+### Added
+
+- Add a preview `microvm:default` sandbox backed by Gondolin and QEMU.
+- Add a curated microVM guest image build with Node.js, Python, uv, Git, ripgrep, fd, jq, SSH, and build tools.
+- Manage one process-local microVM per conversation with idle shutdown and recreation on demand.
+
+### Changed
+
+- Broaden the coverage gate across all source modules.
+
+### Fixed
+
+- Keep top-level Slack file uploads out of threads.
+
+### Tests
+
+- Add coverage for microVM execution and lifecycle, events, logging, disabled vaults, channel storage, and core file and shell tools.
+
 ## [1.0.0-beta.15]
 
 ### Added
