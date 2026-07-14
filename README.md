@@ -51,19 +51,45 @@ npm install && npm run build
 
 ## Quick Start
 
-All platforms share the same CLI:
+Run mikan under [PM2](https://pm2.keymetrics.io/) so it stays up, restarts after failures, and starts on boot:
+
+```bash
+npm i -g @geminixiang/mikan pm2
+
+# One-time setup: create the state directory and settings
+mikan --onboard --state-dir=~/.mikan
+
+# Grab the maintained ecosystem file, then edit `args` and `env`
+curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
+
+pm2 start ecosystem.config.cjs
+pm2 save
+pm2 startup   # run the printed command to enable boot autostart
+```
+
+In `ecosystem.config.cjs`, point `args` at your state dir, sandbox mode, and working directory:
+
+```js
+args: "--state-dir=/srv/mikan/state --sandbox=host /srv/mikan/workspace",
+```
+
+Then set the platform tokens you need in `env`; you can run multiple platforms at once:
+
+```js
+env: {
+  SLACK_APP_TOKEN: "xapp-...",
+  SLACK_BOT_TOKEN: "xoxb-...",
+  TELEGRAM_BOT_TOKEN: "123456:ABC-...",
+  DISCORD_BOT_TOKEN: "MTI...",
+},
+```
+
+Tail logs with `pm2 logs mikan`; upgrade with `npm i -g @geminixiang/mikan && pm2 reload mikan`. See [the deployment guide](src/content/docs/deployment.mdx) for sandbox images, graceful shutdown, and the health endpoint.
+
+For a one-off foreground run, the same CLI works directly:
 
 ```bash
 mikan [--state-dir=~/.mikan] [--sandbox=<mode>] <working-directory>
-```
-
-Set the platform tokens you need; you can run multiple platforms at once:
-
-```bash
-export SLACK_APP_TOKEN=xapp-...
-export SLACK_BOT_TOKEN=xoxb-...
-export TELEGRAM_BOT_TOKEN=123456:ABC-...
-export DISCORD_BOT_TOKEN=MTI...
 ```
 
 ## Platforms
