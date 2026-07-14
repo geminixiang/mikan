@@ -1,9 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import {
-  createSessionFrameParser,
-  encodeSessionMessage,
-  gondolinRemote,
-} from "../src/sandbox/gondolin-remote.js";
+import { createSessionFrameParser, encodeSessionMessage } from "../src/sandbox/gondolin-remote.js";
+import { gondolinFleet } from "../src/sandbox/gondolin-fleet.js";
+import { GondolinPlacementStore } from "../src/sandbox/gondolin-placement.js";
 import {
   GondolinExecutor,
   disconnectAllGondolinRuntimes,
@@ -47,6 +45,9 @@ class FakeDaemon {
   ): Promise<{ status: number; json: Record<string, unknown> }> => {
     const call = { method, path, body: body as Record<string, unknown>, headers };
     this.calls.push(call);
+    if (method === "GET" && path === "/v1/health") {
+      return { status: 200, json: { activeRuntimes: this.runtime ? 1 : 0 } };
+    }
     if (method === "POST" && path === "/v1/leases") {
       const instanceId = call.body?.instanceId as string;
       const epoch = (this.epochs.get(instanceId) ?? 0) + 1;
@@ -169,7 +170,9 @@ describe("Gondolin remote transport", () => {
   beforeEach(() => {
     daemon = new FakeDaemon();
     gondolinResources.configure();
-    gondolinRemote.configure(
+    const placements = new GondolinPlacementStore();
+    placements.configure();
+    gondolinFleet.configure(
       {
         url: "https://worker.test:8433",
         certFile: "/unused.pem",
@@ -177,7 +180,14 @@ describe("Gondolin remote transport", () => {
         workspaceRoot: "/srv/workspace",
         imageSelector: "mikan-sandbox:latest",
       },
-      { request: daemon.request, tunnel: daemon.tunnel, leaseTtlSeconds: 300 },
+      {
+        placements,
+        connectionOverrides: {
+          request: daemon.request,
+          tunnel: daemon.tunnel,
+          leaseTtlSeconds: 300,
+        },
+      },
     );
     // remote profile must not require the gondolin Node floor on the host
     Object.defineProperty(process.versions, "node", { value: "22.19.0", configurable: true });
@@ -185,7 +195,7 @@ describe("Gondolin remote transport", () => {
 
   afterEach(async () => {
     await disconnectAllGondolinRuntimes();
-    gondolinRemote.configure();
+    gondolinFleet.configure();
     if (nodeVersion) Object.defineProperty(process.versions, "node", nodeVersion);
     vi.restoreAllMocks();
   });

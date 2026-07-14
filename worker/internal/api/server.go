@@ -210,6 +210,12 @@ func (s *Server) handleEnsureRuntime(w http.ResponseWriter, r *http.Request) {
 		}
 		vmCPUs = int(math.Ceil(fraction))
 	}
+	heartbeatStaleMs := request.HeartbeatStaleMs
+	if heartbeatStaleMs == 0 {
+		// If this daemon dies for good, its janitor stops touching the
+		// heartbeat and orphaned VM hosts shut themselves down.
+		heartbeatStaleMs = (45 * time.Minute).Milliseconds()
+	}
 	config := workerruntime.WorkerConfig{
 		InstanceID:       request.InstanceID,
 		ImageSelector:    request.ImageSelector,
@@ -217,7 +223,7 @@ func (s *Server) handleEnsureRuntime(w http.ResponseWriter, r *http.Request) {
 		CPUs:             vmCPUs,
 		Memory:           request.Memory,
 		Fingerprint:      request.Fingerprint,
-		HeartbeatStaleMs: request.HeartbeatStaleMs,
+		HeartbeatStaleMs: heartbeatStaleMs,
 	}
 	ensured, err := s.Runtimes.Ensure(config, request.CPUs, epoch)
 	if err != nil {

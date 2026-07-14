@@ -57,7 +57,8 @@ import {
   sweepUnadoptedGondolinWorkers,
 } from "./sandbox/gondolin.js";
 import { gondolinInventory } from "./sandbox/gondolin-inventory.js";
-import { gondolinRemote } from "./sandbox/gondolin-remote.js";
+import { gondolinFleet } from "./sandbox/gondolin-fleet.js";
+import { gondolinPlacements } from "./sandbox/gondolin-placement.js";
 import { FileVaultManager } from "./vault/index.js";
 import { runExtCommand } from "./cli/ext.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
@@ -353,7 +354,8 @@ const provisioner =
 if (sandbox.type === "gondolin") {
   gondolinResources.configure(sandboxLimits, sandboxBoostLimits);
   gondolinInventory.configure(join(stateDir, "gondolin-runtimes"));
-  gondolinRemote.configure(sandboxSettings?.gondolin?.remote);
+  gondolinPlacements.configure(join(stateDir, "gondolin-placement.json"));
+  gondolinFleet.configure(sandboxSettings?.gondolin?.remote);
 }
 const resourceController =
   sandbox.type === "image"
@@ -396,7 +398,13 @@ if (provisioner) {
   ).unref();
 }
 
-if (sandbox.type === "gondolin") {
+if (sandbox.type === "gondolin" && sandbox.profile === "remote") {
+  await gondolinFleet.reconcile();
+  setInterval(() => {
+    void stopIdleGondolinVms(MANAGED_SANDBOX_IDLE_TIMEOUT_MS);
+    void gondolinFleet.reconcile();
+  }, MANAGED_SANDBOX_IDLE_TIMEOUT_MS).unref();
+} else if (sandbox.type === "gondolin") {
   gondolinInventory.touchHeartbeat();
   await gondolinInventory.reconcile();
   setInterval(() => {

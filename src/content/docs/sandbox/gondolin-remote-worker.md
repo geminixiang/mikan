@@ -4,10 +4,10 @@ description: mTLS worker daemon protocol for running gondolin runtimes on a remo
 ---
 
 `mikan-worker` is a Go daemon that hosts Gondolin runtimes on a (typically Linux/KVM)
-worker machine for a mikan host running elsewhere. It implements the Phase 2 slice of
+worker machine for a mikan host running elsewhere. It implements the Phase 2–3 slices of
 the [migration research](./gondolin-migration-research/): authenticated transport,
-heartbeat, durable leases with fencing epochs, and capacity reporting. One authoritative
-mikan host talks to one worker; placement across a fleet is a later phase.
+heartbeat, durable leases with fencing epochs, capacity reporting, and multi-worker
+placement. One authoritative mikan host schedules across one or more workers.
 
 The daemon supervises the same detached Node worker processes
 (`dist/sandbox/gondolin-worker-main.js`) that local `gondolin:default` uses, so runtime
@@ -95,7 +95,7 @@ mikan polls this as the worker heartbeat.
 ## mikan configuration
 
 ```jsonc
-// settings.json
+// settings.json — single worker (a fleet of one)
 {
   "sandbox": {
     "gondolin": {
@@ -112,9 +112,54 @@ mikan polls this as the worker heartbeat.
 }
 ```
 
+```jsonc
+// settings.json — multi-worker fleet; per-worker fields fall back to the inline ones
+{
+  "sandbox": {
+    "gondolin": {
+      "remote": {
+        "caFile": "/etc/mikan/worker-ca.pem",
+        "certFile": "/etc/mikan/client.pem",
+        "keyFile": "/etc/mikan/client-key.pem",
+        "workspaceRoot": "/srv/mikan-workspace",
+        "imageSelector": "mikan-sandbox:latest",
+        "queueWaitSeconds": 60,
+        "workers": [
+          { "name": "linux-1", "url": "https://worker-1.internal:8433", "maxRuntimes": 24 },
+          { "name": "linux-2", "url": "https://worker-2.internal:8433", "maxRuntimes": 24 },
+          { "name": "old-box", "url": "https://worker-0.internal:8433", "draining": true },
+        ],
+      },
+    },
+  },
+}
+```
+
 Start mikan with `--sandbox=gondolin:remote`. The workspace directory mikan is given
-must be the mikan-host mount of the same shared filesystem the worker sees at
-`workspaceRoot`. Image assets live on the worker (build them there with
+must be the mikan-host mount of the same shared filesystem every worker sees at its
+`workspaceRoot`. Image assets live on the workers (build them there with
 `npm run gondolin:image:build`); the runtime fingerprint uses the image selector, so
-retagging `mikan-sandbox:latest` on the worker is picked up on the next runtime
+retagging `mikan-sandbox:latest` on a worker is picked up on the next runtime
 recreation rather than detected as drift.
+
+## Fleet placement
+
+mikan is the fleet's only scheduler. Each conversation is **sticky**: its first
+runtime placement (least-loaded reachable worker with a free `maxRuntimes` slot,
+skipping `draining` ones) is persisted in `gondolin-placement.json` under the state
+dir, and every later runtime for that conversation goes to the same worker. When all
+workers are at capacity, new conversations queue up to `queueWaitSeconds` for a slot.
+
+A worker's `name` is its placement identity — keep it stable across URL or
+certificate changes. Marking a worker `draining: true` stops new placements while
+existing conversations finish out and disappear through the normal idle stop;
+reconciliation and idle sweeps then leave the worker empty, ready to retire.
+
+**Failover is fenced by lease expiry.** If a placed worker is unreachable, mikan
+refuses to move the conversation until the worker-side lease has provably expired
+(measured on mikan's own clock from the last grant or renewal). Only then can a new
+worker take over the shared workspace — the unreachable daemon's janitor has already
+stopped the old runtime, so the single-writer rule holds even through a network
+partition. Runtimes found on a worker that placement says belongs to another (a
+superseded placement) are stopped by the periodic fleet reconciliation; runtimes with
+no placement record at all are adopted instead.

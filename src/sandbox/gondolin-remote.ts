@@ -2,20 +2,22 @@ import { readFileSync } from "node:fs";
 import { request as httpsRequest } from "node:https";
 import { relative, isAbsolute, join } from "node:path";
 import * as log from "../log.js";
-import type { GondolinRemoteSettings } from "../types.js";
+import type { GondolinRemoteWorkerSettings } from "../types.js";
 import { SandboxError } from "./errors.js";
 import {
   GondolinRuntimeGoneError,
   execOverSessionConnect,
   type GondolinRuntimeHandle,
   type GondolinRuntimeSpec,
-  type GondolinRuntimeTransport,
   type SessionClient,
   type SessionClientCallbacks,
 } from "./gondolin-worker-client.js";
 import type { ExecResult } from "./types.js";
 
 const LEASE_TTL_SECONDS = 300;
+const REQUEST_TIMEOUT_MS = 15_000;
+/** VM boot happens inside this request; the daemon's own handshake cap is 2 min. */
+const ENSURE_TIMEOUT_MS = 150_000;
 
 interface RemoteLease {
   leaseId: string;
@@ -28,7 +30,10 @@ interface RemoteResponse {
   json: Record<string, unknown>;
 }
 
-interface GondolinRemoteOverrides {
+/** A request that never reached the daemon (network/TLS/timeout failure). */
+export class GondolinWorkerUnreachableError extends Error {}
+
+export interface GondolinRemoteOverrides {
   request?: (
     method: string,
     path: string,
@@ -41,6 +46,9 @@ interface GondolinRemoteOverrides {
     callbacks: SessionClientCallbacks,
   ) => SessionClient | Promise<SessionClient>;
   leaseTtlSeconds?: number;
+  requestTimeoutMs?: number;
+  /** Reports lease grants/renewals so the fleet can persist fencing watermarks. */
+  onLeaseActivity?: (instanceId: string, expiresAtMs: number) => void;
 }
 
 /** Parses the daemon-to-client session framing: u8 type + u32be length + payload. */
@@ -78,35 +86,29 @@ export function encodeSessionMessage(message: object): Buffer {
 }
 
 /**
- * Runs Gondolin runtimes on a remote mikan-worker daemon over mutual TLS.
- * Every runtime operation happens under a fenced lease on the instance id;
- * commands travel through one upgraded tunnel each, so abort semantics match
- * the local transport exactly.
+ * One mikan-worker daemon as seen from mikan: mTLS requests, per-instance
+ * fenced leases with heartbeat renewal, and per-command upgraded tunnels.
+ * Commands travel through one tunnel each, so abort semantics match the local
+ * transport exactly.
  */
-class GondolinRemoteClient implements GondolinRuntimeTransport {
-  private settings?: GondolinRemoteSettings;
-  private requestImpl?: GondolinRemoteOverrides["request"];
-  private tunnelImpl?: GondolinRemoteOverrides["tunnel"];
-  private leaseTtlSeconds = LEASE_TTL_SECONDS;
+export class GondolinRemoteConnection {
   private readonly leases = new Map<string, RemoteLease>();
+  private readonly leaseTtlSeconds: number;
+  private readonly requestTimeoutMs: number;
   private tls?: { ca?: Buffer; cert: Buffer; key: Buffer };
 
-  configure(settings?: GondolinRemoteSettings, overrides?: GondolinRemoteOverrides): void {
-    this.settings = settings;
-    this.requestImpl = overrides?.request;
-    this.tunnelImpl = overrides?.tunnel;
-    this.leaseTtlSeconds = overrides?.leaseTtlSeconds ?? LEASE_TTL_SECONDS;
-    this.tls = undefined;
+  constructor(
+    private readonly settings: GondolinRemoteWorkerSettings,
+    private readonly overrides: GondolinRemoteOverrides = {},
+  ) {
+    this.leaseTtlSeconds = overrides.leaseTtlSeconds ?? LEASE_TTL_SECONDS;
+    this.requestTimeoutMs = overrides.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
+  }
+
+  /** Drop lease timers and caches (does not touch the daemon). */
+  dispose(): void {
     for (const lease of this.leases.values()) clearInterval(lease.renewTimer);
     this.leases.clear();
-  }
-
-  isConfigured(): boolean {
-    return this.settings !== undefined || this.requestImpl !== undefined;
-  }
-
-  imageSelector(): string | undefined {
-    return this.settings?.imageSelector;
   }
 
   async health(): Promise<Record<string, unknown>> {
@@ -131,10 +133,13 @@ class GondolinRemoteClient implements GondolinRuntimeTransport {
     const idempotencyKey = `${instanceId}:${spec.fingerprint}:${Date.now()}`;
     for (let attempt = 0; ; attempt += 1) {
       const lease = await this.leaseFor(instanceId);
-      const response = await this.request("POST", "/v1/runtimes", body, {
-        ...this.leaseHeaders(lease),
-        "Idempotency-Key": idempotencyKey,
-      });
+      const response = await this.request(
+        "POST",
+        "/v1/runtimes",
+        body,
+        { ...this.leaseHeaders(lease), "Idempotency-Key": idempotencyKey },
+        ENSURE_TIMEOUT_MS,
+      );
       if (response.status === 200) {
         return {
           sessionId: response.json.sessionId as string,
@@ -179,6 +184,16 @@ class GondolinRemoteClient implements GondolinRuntimeTransport {
     }
   }
 
+  /** Live runtimes hosted by this worker (fleet reconciliation). */
+  async listRuntimes(): Promise<Array<{ sessionId: string; instanceId: string }>> {
+    const response = await this.request("GET", "/v1/runtimes");
+    if (response.status !== 200) return [];
+    const runtimes = response.json.runtimes;
+    return Array.isArray(runtimes)
+      ? (runtimes as Array<{ sessionId: string; instanceId: string }>)
+      : [];
+  }
+
   async exec(
     handle: GondolinRuntimeHandle,
     command: string,
@@ -203,7 +218,7 @@ class GondolinRemoteClient implements GondolinRuntimeTransport {
   }
 
   private translateMounts(spec: GondolinRuntimeSpec): Array<{ source: string; target: string }> {
-    const root = this.settings?.workspaceRoot;
+    const root = this.settings.workspaceRoot;
     if (!root || !spec.workspacePath) return spec.mounts;
     const translated: Array<{ source: string; target: string }> = [];
     for (const mount of spec.mounts) {
@@ -238,6 +253,7 @@ class GondolinRemoteClient implements GondolinRuntimeTransport {
     };
     lease.renewTimer.unref?.();
     this.leases.set(instanceId, lease);
+    this.reportLeaseActivity(instanceId);
     return lease;
   }
 
@@ -248,13 +264,20 @@ class GondolinRemoteClient implements GondolinRuntimeTransport {
       const response = await this.request("POST", `/v1/leases/${lease.leaseId}/renew`, {
         ttlSeconds: this.leaseTtlSeconds,
       });
-      if (response.status !== 200) this.dropLease(instanceId);
+      if (response.status === 200) this.reportLeaseActivity(instanceId);
+      else this.dropLease(instanceId);
     } catch (err) {
       log.logWarning(
         `Failed to renew remote worker lease for '${instanceId}'`,
         err instanceof Error ? err.message : String(err),
       );
     }
+  }
+
+  private reportLeaseActivity(instanceId: string): void {
+    // fencing watermark by mikan's own clock: the worker-side lease cannot
+    // outlive this moment plus its ttl, no matter whose clock is skewed
+    this.overrides.onLeaseActivity?.(instanceId, Date.now() + this.leaseTtlSeconds * 1000);
   }
 
   private releaseLease(instanceId: string): void {
@@ -280,10 +303,10 @@ class GondolinRemoteClient implements GondolinRuntimeTransport {
     path: string,
     body?: object,
     headers?: Record<string, string>,
+    timeoutMs = this.requestTimeoutMs,
   ): Promise<RemoteResponse> {
-    if (this.requestImpl) return this.requestImpl(method, path, body, headers);
-    const settings = this.requireSettings();
-    const url = new URL(path, settings.url);
+    if (this.overrides.request) return this.overrides.request(method, path, body, headers);
+    const url = new URL(path, this.settings.url);
     const payload = body === undefined ? undefined : Buffer.from(JSON.stringify(body));
     return new Promise((resolve, reject) => {
       const request = httpsRequest(
@@ -292,6 +315,7 @@ class GondolinRemoteClient implements GondolinRuntimeTransport {
           host: url.hostname,
           port: url.port,
           path: url.pathname + url.search,
+          signal: AbortSignal.timeout(timeoutMs),
           headers: {
             ...(payload
               ? { "Content-Type": "application/json", "Content-Length": payload.length }
@@ -317,7 +341,9 @@ class GondolinRemoteClient implements GondolinRuntimeTransport {
           });
         },
       );
-      request.on("error", reject);
+      request.on("error", (error: Error) =>
+        reject(new GondolinWorkerUnreachableError(error.message)),
+      );
       if (payload) request.write(payload);
       request.end();
     });
@@ -329,15 +355,15 @@ class GondolinRemoteClient implements GondolinRuntimeTransport {
     headers: Record<string, string>,
     callbacks: SessionClientCallbacks,
   ): SessionClient | Promise<SessionClient> {
-    if (this.tunnelImpl) return this.tunnelImpl(path, headers, callbacks);
-    const settings = this.requireSettings();
-    const url = new URL(path, settings.url);
+    if (this.overrides.tunnel) return this.overrides.tunnel(path, headers, callbacks);
+    const url = new URL(path, this.settings.url);
     return new Promise((resolve, reject) => {
       const request = httpsRequest({
         method: "GET",
         host: url.hostname,
         port: url.port,
         path: url.pathname,
+        signal: AbortSignal.timeout(this.requestTimeoutMs),
         headers: { ...headers, Connection: "Upgrade", Upgrade: "gondolin-session" },
         ...this.tlsOptions(),
       });
@@ -387,23 +413,16 @@ class GondolinRemoteClient implements GondolinRuntimeTransport {
 
   private tlsOptions(): { ca?: Buffer; cert: Buffer; key: Buffer } {
     if (this.tls) return this.tls;
-    const settings = this.requireSettings();
+    if (!this.settings.certFile || !this.settings.keyFile) {
+      throw new SandboxError(
+        `Error: gondolin remote worker '${this.settings.name ?? this.settings.url}' needs certFile and keyFile`,
+      );
+    }
     this.tls = {
-      ...(settings.caFile ? { ca: readFileSync(settings.caFile) } : {}),
-      cert: readFileSync(settings.certFile),
-      key: readFileSync(settings.keyFile),
+      ...(this.settings.caFile ? { ca: readFileSync(this.settings.caFile) } : {}),
+      cert: readFileSync(this.settings.certFile),
+      key: readFileSync(this.settings.keyFile),
     };
     return this.tls;
   }
-
-  private requireSettings(): GondolinRemoteSettings {
-    if (!this.settings) {
-      throw new SandboxError(
-        "Error: gondolin:remote requires sandbox.gondolin.remote settings (url, certFile, keyFile)",
-      );
-    }
-    return this.settings;
-  }
 }
-
-export const gondolinRemote = new GondolinRemoteClient();

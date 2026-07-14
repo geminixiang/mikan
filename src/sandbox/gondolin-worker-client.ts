@@ -15,6 +15,8 @@ export interface GondolinRuntimeHandle {
   socketPath: string;
   workerPid: number;
   fingerprint: string;
+  /** Fleet identity of the worker hosting the runtime (remote transport). */
+  workerName?: string;
 }
 
 /**
@@ -35,11 +37,11 @@ export interface GondolinRuntimeSpec {
   workspacePath?: string;
 }
 
-/** One way of running Gondolin runtimes: in local workers or on a remote daemon. */
+/** One way of running Gondolin runtimes: in local workers or on a remote fleet. */
 export interface GondolinRuntimeTransport {
   ensure(instanceId: string, spec: GondolinRuntimeSpec): Promise<GondolinRuntimeHandle>;
   stop(
-    handle: Pick<GondolinRuntimeHandle, "workerPid" | "sessionId" | "instanceId">,
+    handle: Pick<GondolinRuntimeHandle, "workerPid" | "sessionId" | "instanceId" | "workerName">,
   ): Promise<void>;
   exec(
     handle: GondolinRuntimeHandle,

@@ -10,7 +10,7 @@ import {
   type GondolinRuntimeHandle,
   type GondolinRuntimeTransport,
 } from "./gondolin-worker-client.js";
-import { gondolinRemote } from "./gondolin-remote.js";
+import { gondolinFleet } from "./gondolin-fleet.js";
 import { createMountedRuntimePathContext } from "./path-context.js";
 import { withRuntimeBootstrap } from "./container.js";
 import { execReadFile, execWriteFile } from "./utils.js";
@@ -129,7 +129,7 @@ function assertSupportedNodeVersion(): void {
 
 async function validateGondolinSandbox(config?: GondolinSandboxConfig): Promise<void> {
   if (config?.profile === "remote") {
-    if (!gondolinRemote.isConfigured()) {
+    if (!gondolinFleet.isConfigured()) {
       throw new SandboxError(
         "Error: gondolin:remote requires sandbox.gondolin.remote settings (url, certFile, keyFile)",
       );
@@ -142,7 +142,7 @@ async function validateGondolinSandbox(config?: GondolinSandboxConfig): Promise<
 }
 
 function transportFor(config: GondolinSandboxConfig): GondolinRuntimeTransport {
-  return config.profile === "remote" ? gondolinRemote : gondolinWorkers;
+  return config.profile === "remote" ? gondolinFleet : gondolinWorkers;
 }
 
 async function resolveDesiredRuntime(
@@ -152,7 +152,7 @@ async function resolveDesiredRuntime(
   let imageIdentity: string;
   if (config.profile === "remote") {
     // image assets live on the worker host; the selector is the identity
-    image = gondolinRemote.imageSelector() ?? config.image ?? MIKAN_IMAGE;
+    image = gondolinFleet.imageSelector() ?? config.image ?? MIKAN_IMAGE;
     imageIdentity = image;
   } else {
     const selector = config.image ?? MIKAN_IMAGE;

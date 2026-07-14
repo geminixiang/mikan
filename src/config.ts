@@ -100,12 +100,28 @@ const SettingsFileSchema = Type.Object({
         Type.Object({
           remote: Type.Optional(
             Type.Object({
-              url: Type.String(),
+              url: Type.Optional(Type.String()),
               caFile: Type.Optional(Type.String()),
-              certFile: Type.String(),
-              keyFile: Type.String(),
+              certFile: Type.Optional(Type.String()),
+              keyFile: Type.Optional(Type.String()),
               workspaceRoot: Type.Optional(Type.String()),
+              maxRuntimes: Type.Optional(Type.Number()),
               imageSelector: Type.Optional(Type.String()),
+              queueWaitSeconds: Type.Optional(Type.Number()),
+              workers: Type.Optional(
+                Type.Array(
+                  Type.Object({
+                    name: Type.Optional(Type.String()),
+                    url: Type.String(),
+                    caFile: Type.Optional(Type.String()),
+                    certFile: Type.Optional(Type.String()),
+                    keyFile: Type.Optional(Type.String()),
+                    workspaceRoot: Type.Optional(Type.String()),
+                    maxRuntimes: Type.Optional(Type.Number()),
+                    draining: Type.Optional(Type.Boolean()),
+                  }),
+                ),
+              ),
             }),
           ),
         }),

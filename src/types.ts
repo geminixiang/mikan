@@ -242,18 +242,38 @@ export interface PiAgentWrapper {
 
 // ── config ────────────────────────────────────────────────────────────────────
 
-export interface GondolinRemoteSettings {
+export interface GondolinRemoteWorkerSettings {
+  /** Stable placement identity; defaults to the URL. */
+  name?: string;
   /** Base URL of the mikan-worker daemon, e.g. https://worker.internal:8433 */
   url: string;
   /** CA bundle that signs the daemon's server certificate. */
   caFile?: string;
-  /** Client certificate + key presented to the daemon (mTLS). */
-  certFile: string;
-  keyFile: string;
+  /** Client certificate + key presented to the daemon (mTLS); falls back to the fleet-level pair. */
+  certFile?: string;
+  keyFile?: string;
   /** Worker-side path of the shared workspace filesystem. */
   workspaceRoot?: string;
-  /** Guest image selector resolved on the worker. */
+  /** Admission cap for new placements (existing runtimes always count). */
+  maxRuntimes?: number;
+  /** Drained workers accept no new placements; existing ones finish out. */
+  draining?: boolean;
+}
+
+export interface GondolinRemoteSettings {
+  /** Single-worker form: connection fields inline (a fleet of one). */
+  url?: string;
+  caFile?: string;
+  certFile?: string;
+  keyFile?: string;
+  workspaceRoot?: string;
+  maxRuntimes?: number;
+  /** Fleet form: several workers; per-worker fields fall back to the inline ones. */
+  workers?: GondolinRemoteWorkerSettings[];
+  /** Guest image selector resolved on the workers. */
   imageSelector?: string;
+  /** How long a new conversation waits for capacity before failing. */
+  queueWaitSeconds?: number;
 }
 
 export interface SandboxSettings {
