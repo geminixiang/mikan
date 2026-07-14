@@ -115,7 +115,15 @@ describe("createExecutor", () => {
   });
 
   test("creates a microvm executor without starting Gondolin", () => {
-    expect(createExecutor({ type: "microvm", profile: "default" })).toBeInstanceOf(MicrovmExecutor);
+    const nodeVersion = Object.getOwnPropertyDescriptor(process.versions, "node");
+    Object.defineProperty(process.versions, "node", { value: "24.0.0", configurable: true });
+    try {
+      expect(createExecutor({ type: "microvm", profile: "default" })).toBeInstanceOf(
+        MicrovmExecutor,
+      );
+    } finally {
+      if (nodeVersion) Object.defineProperty(process.versions, "node", nodeVersion);
+    }
   });
 
   test("creates firecracker executor", () => {

@@ -32,12 +32,16 @@ function createExecutor(instanceId: string): MicrovmExecutor {
 }
 
 describe("microVM lifecycle", () => {
+  const nodeVersion = Object.getOwnPropertyDescriptor(process.versions, "node");
+
   beforeEach(() => {
     gondolin.create.mockReset();
+    Object.defineProperty(process.versions, "node", { value: "24.0.0", configurable: true });
   });
 
   afterEach(async () => {
     await closeAllMicrovms();
+    if (nodeVersion) Object.defineProperty(process.versions, "node", nodeVersion);
     vi.restoreAllMocks();
   });
 
