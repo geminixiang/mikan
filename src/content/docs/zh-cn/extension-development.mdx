@@ -192,7 +192,7 @@ api.on("tool_result", ({ content }) => ({
 
 ### 自定义命令
 
-`api.registerCommand` 贡献一个确定性分发的聊天命令——不经过模型、不耗 token、不写入会话：
+`api.registerCommand` 贡献一个确定性分发的聊天命令——不经过模型、不耗 token、不写入代理会话（触发命令的消息仍会同步到聊天记录）：
 
 ```ts
 api.registerCommand({

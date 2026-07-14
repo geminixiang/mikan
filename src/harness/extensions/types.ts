@@ -216,7 +216,8 @@ export interface ExtensionCommandContext {
 
 /**
  * A chat command contributed by an extension (`/name args…`). Dispatched
- * deterministically by the embedder — no model call, no session entry.
+ * deterministically by the embedder — no model call, no agent-session entry
+ * (the triggering message still syncs to chat history).
  * Built-in commands always win over extension commands of the same name.
  */
 export interface ExtensionCommand {

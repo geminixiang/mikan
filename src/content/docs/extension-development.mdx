@@ -192,7 +192,7 @@ Register an `AgentTool` with `api.registerTool(tool)`. Use TypeBox-compatible pa
 
 ### Custom commands
 
-`api.registerCommand` contributes a chat command dispatched deterministically — no model call, no tokens, no session entry:
+`api.registerCommand` contributes a chat command dispatched deterministically — no model call, no tokens, no agent-session entry (the triggering message still appears in chat history):
 
 ```ts
 api.registerCommand({

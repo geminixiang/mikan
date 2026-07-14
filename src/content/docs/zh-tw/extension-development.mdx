@@ -192,7 +192,7 @@ api.on("tool_result", ({ content }) => ({
 
 ### 自訂指令
 
-`api.registerCommand` 貢獻一個確定性分派的聊天指令——不經過模型、不耗 token、不寫入工作階段：
+`api.registerCommand` 貢獻一個確定性分派的聊天指令——不經過模型、不耗 token、不寫入代理工作階段（觸發指令的訊息仍會同步至聊天記錄）：
 
 ```ts
 api.registerCommand({
