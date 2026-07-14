@@ -173,6 +173,21 @@ describe("FileVaultManager", () => {
     ]);
   });
 
+  test("infers the gws OAuth client mount so token refresh works in guests", () => {
+    const mgr = new FileVaultManager(tmpDir);
+    mgr.upsertFile("U123", "gws.json", "{}", "/root/.config/gws/credentials.json");
+    mgr.upsertFile("U123", "gws-client.json", "{}", "/root/.config/gws/client_secret.json");
+
+    expect(mgr.resolve("U123")?.mounts).toEqual(
+      expect.arrayContaining([
+        {
+          source: join(vaultsDir, "U123", "gws-client.json"),
+          target: "/root/.config/gws/client_secret.json",
+        },
+      ]),
+    );
+  });
+
   test("upsertFile atomically replaces existing mounted credential files", () => {
     const mgr = new FileVaultManager(tmpDir);
     mgr.upsertFile("U123", "gws.json", "old", "/root/.config/gws/credentials.json");

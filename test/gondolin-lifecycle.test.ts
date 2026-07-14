@@ -378,6 +378,51 @@ describe("Gondolin lifecycle", () => {
     expect(spawns[1].mounts).toEqual([{ source: "/host", target: "/workspace" }]);
   });
 
+  test("recreates the runtime when a projected credential rotates on the host", async () => {
+    const credential = join(dir, "gws.json");
+    writeFileSync(credential, '{"refresh_token":"old"}');
+    const executor = new GondolinExecutor({
+      type: "gondolin",
+      profile: "default",
+      instanceId: "credential-drift",
+      workspacePath: "/workspace-host",
+      mounts: [
+        { source: "/workspace-host", target: "/workspace" },
+        { source: credential, target: "/root/.config/gws/credentials.json" },
+      ],
+    });
+
+    await executor.exec("pwd");
+    await executor.exec("pwd");
+    expect(spawns).toHaveLength(1);
+
+    writeFileSync(credential, '{"refresh_token":"fresh"}'); // host re-login
+    const first = Array.from(workers.values())[0];
+    await executor.exec("pwd");
+
+    expect(signals).toContainEqual({ pid: first.pid, signal: "SIGTERM" });
+    expect(spawns).toHaveLength(2);
+  });
+
+  test("guest writes to workspace files do not drift the runtime", async () => {
+    const memory = join(dir, "MEMORY.md");
+    writeFileSync(memory, "v1");
+    const executor = new GondolinExecutor({
+      type: "gondolin",
+      profile: "default",
+      instanceId: "memory-no-drift",
+      workspacePath: "/workspace-host",
+      mounts: [{ source: memory, target: "/workspace/MEMORY.md" }],
+    });
+
+    await executor.exec("pwd");
+    writeFileSync(memory, "v2 synced back from the guest");
+    await executor.exec("pwd");
+
+    expect(spawns).toHaveLength(1);
+    expect(signals).toHaveLength(0);
+  });
+
   test("applies limits and recreates the worker when boosted", async () => {
     gondolinResources.configure({ cpus: "0.5", memory: "512m" }, { cpus: "2", memory: "2g" });
     const executor = new GondolinExecutor({

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFileSync, statSync } from "node:fs";
 import * as log from "../log.js";
 import type { ResourceLimits, SandboxLimitStatus, SandboxResourceController } from "../types.js";
 import { SandboxError } from "./errors.js";
@@ -39,6 +40,8 @@ interface GondolinDesiredRuntime {
   image: string;
   imageIdentity: string;
   mounts: Array<{ source: string; target: string }>;
+  /** Content identity of projected credential files (rotation → drift). */
+  credentialIdentity: Record<string, string>;
   limits?: ResourceLimits;
 }
 
@@ -161,16 +164,44 @@ async function resolveDesiredRuntime(
     image = resolvedImage.assetDir;
     imageIdentity = resolvedImage.buildId ?? resolvedImage.assetDir;
   }
+  const mounts = (
+    config.mounts ?? [{ source: config.workspacePath ?? process.cwd(), target: "/workspace" }]
+  ).toSorted((left, right) => left.target.localeCompare(right.target));
   return {
     image,
     imageIdentity,
-    mounts: (
-      config.mounts ?? [{ source: config.workspacePath ?? process.cwd(), target: "/workspace" }]
-    ).toSorted((left, right) => left.target.localeCompare(right.target)),
+    mounts,
+    credentialIdentity: credentialIdentity(mounts),
     limits: config.resourceKey
       ? gondolinResources.getLimitStatus(config.resourceKey).limits
       : undefined,
   };
+}
+
+/**
+ * Content hashes of credential file mounts (files projected outside
+ * /workspace). Rotating a credential on the host changes the fingerprint, so
+ * the next command recreates the runtime with a fresh projection instead of
+ * serving the stale copy for the rest of the VM's life. Workspace files are
+ * excluded: the guest writes them back, which would drift the runtime it runs
+ * in.
+ */
+function credentialIdentity(
+  mounts: Array<{ source: string; target: string }>,
+): Record<string, string> {
+  const identity: Record<string, string> = {};
+  for (const mount of mounts) {
+    if (mount.target.startsWith("/workspace/") || mount.target === "/workspace") continue;
+    try {
+      if (!statSync(mount.source).isFile()) continue;
+      identity[mount.target] = createHash("sha256")
+        .update(readFileSync(mount.source))
+        .digest("hex");
+    } catch {
+      // missing source: the worker skips it too, so it has no runtime identity
+    }
+  }
+  return identity;
 }
 
 function runtimeFingerprint(desired: GondolinDesiredRuntime): string {
@@ -179,6 +210,7 @@ function runtimeFingerprint(desired: GondolinDesiredRuntime): string {
       JSON.stringify({
         image: desired.imageIdentity,
         mounts: desired.mounts,
+        credentials: desired.credentialIdentity,
         limits: desired.limits,
       }),
     )

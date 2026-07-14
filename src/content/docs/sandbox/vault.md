@@ -43,7 +43,7 @@ Each vault is a directory under `vaults/` and may contain:
 - `env` file: environment variables in `KEY=value` form
 - file credentials: for example `gws.json`, `.ssh/config`
 
-mikan infers mount targets from file names/paths, such as `gws.json` → `/root/.config/gws/credentials.json` and `.ssh/` → `/root/.ssh`. In image mode these credential mounts are writable from inside the sandbox, so tools may update them; keep backups for credentials whose mutation would matter.
+mikan infers mount targets from file names/paths, such as `gws.json` → `/root/.config/gws/credentials.json`, `gws-client.json` → `/root/.config/gws/client_secret.json` (the OAuth client config `gws` needs to refresh or re-issue tokens inside the sandbox), and `.ssh/` → `/root/.ssh`. In image mode these credential mounts are writable from inside the sandbox, so tools may update them; keep backups for credentials whose mutation would matter.
 
 Example:
 
