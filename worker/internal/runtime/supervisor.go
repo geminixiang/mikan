@@ -42,12 +42,12 @@ type WorkerConfig struct {
 }
 
 type handshake struct {
-	Ready     bool   `json:"ready"`
-	Error     string `json:"error"`
-	SessionID string `json:"sessionId"`
+	Ready      bool   `json:"ready"`
+	Error      string `json:"error"`
+	SessionID  string `json:"sessionId"`
 	SocketPath string `json:"socketPath"`
-	WorkerPid int    `json:"workerPid"`
-	RunnerPid int    `json:"runnerPid"`
+	WorkerPid  int    `json:"workerPid"`
+	RunnerPid  int    `json:"runnerPid"`
 }
 
 type inventoryRecord struct {
@@ -76,15 +76,15 @@ type Placer func(pid int, sessionID string, cpus string, memory string) error
 
 // Supervisor spawns, rediscovers, and stops runtime host processes.
 type Supervisor struct {
-	mu                 sync.Mutex
-	nodeBin            string
-	workerEntry        string
-	inventoryDir       string
-	handshakeTimeout   time.Duration
-	stopWait           time.Duration
-	place              Placer
-	log                *slog.Logger
-	runtimes           map[string]*Runtime // by session id
+	mu               sync.Mutex
+	nodeBin          string
+	workerEntry      string
+	inventoryDir     string
+	handshakeTimeout time.Duration
+	stopWait         time.Duration
+	place            Placer
+	log              *slog.Logger
+	runtimes         map[string]*Runtime // by session id
 }
 
 // Options configures a Supervisor.

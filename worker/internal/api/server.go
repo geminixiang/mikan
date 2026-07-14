@@ -49,8 +49,8 @@ type Server struct {
 }
 
 type replayEntry struct {
-	status  int
-	body    []byte
+	status   int
+	body     []byte
 	storedAt time.Time
 }
 
@@ -167,13 +167,13 @@ func (s *Server) handleReleaseLease(w http.ResponseWriter, r *http.Request) {
 }
 
 type ensureRuntimeRequest struct {
-	InstanceID       string                 `json:"instanceId"`
-	ImageSelector    string                 `json:"imageSelector"`
-	Mounts           []workerruntime.Mount  `json:"mounts"`
-	CPUs             string                 `json:"cpus"`
-	Memory           string                 `json:"memory"`
-	Fingerprint      string                 `json:"fingerprint"`
-	HeartbeatStaleMs int64                  `json:"heartbeatStaleMs"`
+	InstanceID       string                `json:"instanceId"`
+	ImageSelector    string                `json:"imageSelector"`
+	Mounts           []workerruntime.Mount `json:"mounts"`
+	CPUs             string                `json:"cpus"`
+	Memory           string                `json:"memory"`
+	Fingerprint      string                `json:"fingerprint"`
+	HeartbeatStaleMs int64                 `json:"heartbeatStaleMs"`
 }
 
 func (s *Server) handleEnsureRuntime(w http.ResponseWriter, r *http.Request) {
