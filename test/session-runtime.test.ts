@@ -168,6 +168,26 @@ describe("ConversationRuntime handleEvent", () => {
       expect.anything(),
     );
   });
+
+  test("model switch disposes cached runners so extension disposers run", async () => {
+    const { models, faux } = createFauxModels();
+    const runtime = makeRuntime(models);
+    faux.setResponses([() => fauxAssistantMessage("done")]);
+
+    const { event, context } = makeEventAndContext("3000.1");
+    await runtime.handleEvent(event, bot, context);
+
+    // Reaches the private state map: disposal happens on the cached runner,
+    // before any public API can observe it.
+    const state = (runtime as any).conversationStates.get("C123");
+    expect(state).toBeDefined();
+    const dispose = vi.fn().mockResolvedValue(undefined);
+    state.runner.dispose = dispose;
+
+    expect(runtime.switchConversationModel("C123", "faux", "faux-2")).toBe(true);
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(runtime.isRunning("C123")).toBe(false);
+  });
 });
 
 function makeUserMessage(text: string) {

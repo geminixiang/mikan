@@ -437,7 +437,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
     for (const sessionKey of Array.from(this.conversationStates.keys())) {
       if (this.isConversationSession(sessionKey, conversationId)) {
-        this.conversationStates.delete(sessionKey);
+        this.discardState(sessionKey);
       }
     }
     log.logInfo(message);
