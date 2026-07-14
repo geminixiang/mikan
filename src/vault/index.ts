@@ -4,7 +4,6 @@ import { readTextFileIfExists } from "../utils/file-guards.js";
 import type { SandboxConfig } from "../sandbox/index.js";
 import { scopeCloudflareSandboxId } from "../sandbox/identity.js";
 import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
-import { reportUserFacingError } from "../observability/sentry.js";
 
 const PRIVATE_DIR_MODE = 0o700;
 const SHARED_VAULT_DIR = "shared";
@@ -181,22 +180,8 @@ export class FileVaultManager implements VaultManager {
     const dir = join(this.vaultsDir, key);
     const mounts = inferMountsFromDir(dir);
 
-    let env: Record<string, string> = {};
     const envContent = readTextFileIfExists(join(dir, "env"));
-    if (envContent !== undefined) {
-      try {
-        env = parseEnvFile(envContent);
-      } catch (err) {
-        console.error(`vault: failed to parse env file for "${key}":`, err);
-        reportUserFacingError(err, {
-          domain: "sandbox",
-          surface: "vault_injection",
-          operation: "parse_env",
-          severity: "warning",
-          context: { vaultKey: key, fatal: false },
-        });
-      }
-    }
+    const env = envContent === undefined ? {} : parseEnvFile(envContent);
 
     return {
       userId: key,

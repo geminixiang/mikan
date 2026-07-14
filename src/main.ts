@@ -370,9 +370,6 @@ if (provisioner) {
   await provisioner.stopIdle(IMAGE_IDLE_TIMEOUT_MS);
   setInterval(() => provisioner.stopIdle(IMAGE_IDLE_TIMEOUT_MS), IMAGE_IDLE_TIMEOUT_MS).unref();
 }
-// Declared before the runtime so the notifier closure can capture them;
-// bots register below once their platforms initialize.
-const bots: MessagingBot[] = [];
 const botsByPlatform: Record<string, MessagingBot> = {};
 
 /**
@@ -533,7 +530,6 @@ if (hasSlack) {
     workingDir,
     store: sharedStore,
   });
-  bots.push(slackMessagingBot);
   botsByPlatform.slack = slackMessagingBot;
   log.logInfo("Platform: Slack");
 }
@@ -546,7 +542,6 @@ if (hasTelegram) {
     token: telegramToken,
     workingDir,
   });
-  bots.push(telegramMessagingBot);
   botsByPlatform.telegram = telegramMessagingBot;
   log.logInfo("Platform: Telegram");
 }
@@ -559,7 +554,6 @@ if (hasDiscord) {
     token: discordToken,
     workingDir,
   });
-  bots.push(discordMessagingBot);
   botsByPlatform.discord = discordMessagingBot;
   log.logInfo("Platform: Discord");
 }
@@ -603,7 +597,6 @@ if (hasGithub) {
         }
       : undefined,
   });
-  bots.push(githubMessagingBot);
   botsByPlatform.github = githubMessagingBot;
   log.logInfo(
     `Platform: GitHub${GOOGLE_APPLICATION_CREDENTIALS ? " (Cloud Build logs enabled)" : ""}`,
@@ -646,7 +639,7 @@ process.on("SIGTERM", shutdown);
 
 // Start all bots
 await Promise.all(
-  bots.map((bot) =>
+  Object.values(botsByPlatform).map((bot) =>
     bot.start().catch((err) => {
       log.logWarning("Failed to start bot", err instanceof Error ? err.message : String(err));
       process.exit(1);

@@ -4,7 +4,6 @@ import type { ConversationLogMessage } from "../types.js";
 import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-guards.js";
 import { isCommandText } from "../commands/text.js";
 import { formatHistoryLine, stripHistoryLinePrefix } from "./history-line.js";
-import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 import * as log from "../log.js";
 import { isPlatformHistorySession } from "./metadata.js";
 import { isThreadSessionKey } from "./session-key.js";
@@ -488,7 +487,6 @@ function bootstrapSessionFromLog(
     messageCount: records.length,
     lastMessageId,
   });
-  forceRewriteSession(sessionManager, sessionFile);
 }
 
 interface HistoryWindow {
@@ -543,16 +541,6 @@ function appendLogRecordsToSession(sessionManager: SessionStore, records: LogRec
     const message = buildHistorySessionMessage(record.message);
     if (message) sessionManager.appendMessage(message);
   }
-}
-
-function forceRewriteSession(sessionManager: SessionStore, sessionFile: string): void {
-  const header = sessionManager.getHeader();
-  if (!header) return;
-
-  const content = [header, ...sessionManager.getEntries()]
-    .map((entry) => JSON.stringify(entry))
-    .join("\n");
-  atomicWritePrivateFile(sessionFile, `${content}\n`);
 }
 
 function getLatestChatSyncMessageId(entries: SessionEntry[]): string | undefined {

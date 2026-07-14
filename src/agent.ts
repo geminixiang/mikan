@@ -26,7 +26,7 @@ import {
 } from "./harness/index.js";
 import { createHash } from "crypto";
 import { existsSync, readFileSync } from "fs";
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { mkdir, readFile } from "fs/promises";
 import { join, posix } from "path";
 import type {
   ConversationKind,
@@ -179,25 +179,6 @@ export function buildPromptPayload(
   }
 
   return { userMessage, imageAttachments };
-}
-
-async function writePromptDebugContext(
-  conversationDir: string,
-  systemPrompt: string,
-  session: MikanAgentSession,
-  userMessage: string,
-  imageAttachmentCount: number,
-): Promise<void> {
-  const debugContext = {
-    systemPrompt,
-    messages: session.messages,
-    newUserMessage: userMessage,
-    imageAttachmentCount,
-  };
-  await writeFile(
-    join(conversationDir, "last_prompt.jsonl"),
-    JSON.stringify(debugContext, null, 2),
-  );
 }
 
 async function getMemory(conversationDir: string): Promise<string> {
@@ -1273,14 +1254,6 @@ async function prepareRunContext(params: {
     platform.name,
   );
   const finalUserMessage = turnInstructions ? `${turnInstructions}\n\n${userMessage}` : userMessage;
-  await writePromptDebugContext(
-    conversationDir,
-    systemPrompt,
-    session,
-    finalUserMessage,
-    imageAttachments.length,
-  );
-
   return {
     sessionConversation,
     runQueue,
