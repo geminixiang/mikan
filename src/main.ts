@@ -51,6 +51,7 @@ import {
   validateSandbox,
 } from "./sandbox/index.js";
 import { closeAllGondolinVms, gondolinResources, stopIdleGondolinVms } from "./sandbox/gondolin.js";
+import { gondolinInventory } from "./sandbox/gondolin-inventory.js";
 import { FileVaultManager } from "./vault/index.js";
 import { runExtCommand } from "./cli/ext.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
@@ -345,6 +346,7 @@ const provisioner =
     : undefined;
 if (sandbox.type === "gondolin") {
   gondolinResources.configure(sandboxLimits, sandboxBoostLimits);
+  gondolinInventory.configure(join(stateDir, "gondolin-runtimes"));
 }
 const resourceController =
   sandbox.type === "image"
@@ -388,6 +390,7 @@ if (provisioner) {
 }
 
 if (sandbox.type === "gondolin") {
+  await gondolinInventory.reconcile();
   setInterval(
     () => void stopIdleGondolinVms(MANAGED_SANDBOX_IDLE_TIMEOUT_MS),
     MANAGED_SANDBOX_IDLE_TIMEOUT_MS,

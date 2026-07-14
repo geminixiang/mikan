@@ -21,9 +21,15 @@ import {
   gondolinResources,
   stopIdleGondolinVms,
 } from "../src/sandbox/gondolin.js";
+import { gondolinInventory } from "../src/sandbox/gondolin-inventory.js";
+
+let vmCount = 0;
 
 function createVm() {
+  vmCount += 1;
   return {
+    id: `vm-${vmCount}`,
+    getHostPid: vi.fn().mockReturnValue(null),
     close: vi.fn().mockResolvedValue(undefined),
     exec: vi.fn().mockResolvedValue({ stdout: "ok", stderr: "", exitCode: 0 }),
     fs: {
@@ -52,6 +58,7 @@ describe("Gondolin lifecycle", () => {
     gondolin.RealFSProvider.mockReset();
     gondolin.ensureImageSelector.mockClear();
     gondolinResources.configure();
+    vmCount = 0;
     Object.defineProperty(process.versions, "node", { value: "24.0.0", configurable: true });
   });
 
@@ -114,6 +121,53 @@ describe("Gondolin lifecycle", () => {
       "/workspace/C123",
       "/workspace/MEMORY.md",
     ]);
+  });
+
+  test("labels the session and tracks it in the runtime inventory", async () => {
+    const vm = createVm();
+    vm.getHostPid.mockReturnValue(777);
+    gondolin.create.mockResolvedValue(vm);
+    const record = vi.spyOn(gondolinInventory, "record");
+    const release = vi.spyOn(gondolinInventory, "release");
+    const executor = createExecutor("inventory");
+
+    await executor.exec("pwd");
+    expect(gondolin.create).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionLabel: "mikan:inventory" }),
+    );
+    expect(record).toHaveBeenCalledWith({
+      sessionId: vm.id,
+      instanceId: "inventory",
+      runnerPid: 777,
+    });
+
+    await stopIdleGondolinVms(0, Date.now() + 1);
+    expect(release).toHaveBeenCalledWith(vm.id);
+  });
+
+  test("serializes an idle close with a concurrent acquire", async () => {
+    let finishClose!: () => void;
+    const first = createVm();
+    first.close.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishClose = resolve;
+      }),
+    );
+    const second = createVm();
+    gondolin.create.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    const executor = createExecutor("serialized");
+
+    await executor.exec("pwd");
+    const closing = stopIdleGondolinVms(0, Date.now() + 1);
+    const execution = executor.exec("pwd");
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(gondolin.create).toHaveBeenCalledTimes(1);
+
+    finishClose();
+    await closing;
+    await execution;
+    expect(gondolin.create).toHaveBeenCalledTimes(2);
+    expect(second.exec).toHaveBeenCalledOnce();
   });
 
   test("injects vault env into commands", async () => {

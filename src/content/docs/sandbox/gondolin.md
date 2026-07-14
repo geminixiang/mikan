@@ -26,6 +26,8 @@ Each conversation gets a process-local VM. The default `private` workspace mode 
 
 CPU/memory defaults, temporary limits from the agent `sandbox` tool, and `/pi-sandbox boost` use the same settings and conversation scope as `image:*`. Before each operation, mikan fingerprints the resolved image build, mounts, and effective limits. When that desired configuration changes, mikan waits for active work, closes the stale VM, and creates one replacement. Temporary limits reset after its session closes. Gondolin exposes whole vCPUs, so fractional CPU values are rounded up; strict fractional quotas require host cgroup enforcement.
 
-This local slice has no durable lease, worker process, or remote execution. Idle VMs close after 10 minutes and are recreated on the next operation. `image:*` remains available and is still the recommended managed mode until the remaining controls are implemented.
+mikan keeps a durable record of every VM it launches under the state dir (`gondolin-runtimes/`) and reconciles that inventory at startup: VM runner processes orphaned by a mikan process that died without cleanup are verified and stopped, stale records are dropped, and Gondolin's own session registry is collected. Reconciliation is idempotent and skips runtimes owned by another live mikan process. Idle VMs close after 10 minutes and are recreated on the next operation.
+
+This local slice has no worker process or remote execution, and a VM does not survive a mikan restart. `image:*` remains available and is still the recommended managed mode until the remaining controls are implemented.
 
 Gondolin's network model is controlled HTTP/TLS rather than Docker-style generic NAT. See [MicroVM migration research](./gondolin-migration-research/) for the compatibility and migration plan.

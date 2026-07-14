@@ -8,6 +8,8 @@ This directory defines sandbox abstractions, concrete sandbox executors, and sha
 - `container.ts`: Implements the Docker container executor, `docker exec` command construction, secure env files, and runtime bootstrap.
 - `errors.ts`: Defines `SandboxError`, which can render user-facing CLI diagnostics.
 - `firecracker.ts`: Implements the Firecracker VM executor by running commands over SSH inside the VM.
+- `gondolin-inventory.ts`: Persists a per-VM runtime record under the state dir and reconciles the inventory at startup — stopping VM runners orphaned by a crashed mikan process and dropping stale records.
+- `gondolin.ts`: Implements the Gondolin microVM executor: per-conversation VM sessions, desired-runtime fingerprinting and drift recreation, resource limits, and idle/shutdown lifecycle.
 - `host.ts`: Implements the host executor by running commands directly through the local shell.
 - `identity.ts`: Runtime actor identity — `actorKey()` and the single sanitizer naming a conversation's vault dir, docker container/network, and cloudflare sandbox suffix. Consumers take keys; nothing re-derives them.
 - `image.ts`: Parses and validates `image:<image>` sandbox configs, which must later resolve to a concrete container executor.

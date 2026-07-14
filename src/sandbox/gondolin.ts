@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import * as log from "../log.js";
 import type { ResourceLimits, SandboxLimitStatus, SandboxResourceController } from "../types.js";
 import { SandboxError } from "./errors.js";
+import { gondolinInventory } from "./gondolin-inventory.js";
 import { createMountedRuntimePathContext } from "./path-context.js";
 import { withRuntimeBootstrap } from "./container.js";
 import type {
@@ -154,11 +155,12 @@ function runtimeFingerprint(desired: GondolinDesiredRuntime): string {
     .digest("hex");
 }
 
-async function createVM(desired: GondolinDesiredRuntime): Promise<VM> {
+async function createVM(key: string, desired: GondolinDesiredRuntime): Promise<VM> {
   const { RealFSProvider, VM } = (await import("@earendil-works/gondolin")) as GondolinModule;
   return VM.create({
     sandbox: { imagePath: desired.image },
     env: { TZ: "Asia/Taipei" },
+    sessionLabel: `mikan:${key}`,
     cpus: gondolinCpuCount(desired.limits?.cpus),
     memory: desired.limits?.memory,
     vfs: {
@@ -186,7 +188,7 @@ function createSession(
   fingerprint: string,
 ): GondolinSession {
   let session: GondolinSession;
-  const vm = createVM(desired).catch((error) => {
+  const vm = createVM(key, desired).catch((error) => {
     if (sessions.get(key) === session) sessions.delete(key);
     throw error;
   });
@@ -259,7 +261,8 @@ async function replaceSession(
   }
   const replacement = createSession(key, config, desired, fingerprint);
   sessions.set(key, replacement);
-  await replacement.vm;
+  const vm = await replacement.vm;
+  gondolinInventory.record({ sessionId: vm.id, instanceId: key, runnerPid: vm.getHostPid() });
 }
 
 async function withVM<T>(
@@ -269,7 +272,12 @@ async function withVM<T>(
 ): Promise<T> {
   const session = await acquireSession(key, config);
   try {
-    return await operation(await session.vm);
+    const vm = await session.vm;
+    try {
+      return await operation(vm);
+    } finally {
+      gondolinInventory.refresh(vm.id, vm.getHostPid());
+    }
   } finally {
     session.activeOperations -= 1;
     session.lastUsed = Date.now();
@@ -299,6 +307,7 @@ async function closeSession(
     if (options.waitForActiveOperations) await waitForIdle(session);
     const vm = await session.vm;
     await vm.close();
+    gondolinInventory.release(vm.id);
     if (
       options.resetResources !== false &&
       session.resourceKey &&
@@ -308,7 +317,10 @@ async function closeSession(
     }
   } catch (error) {
     session.fingerprint = "";
-    sessions.set(key, session);
+    // Re-track for a retried close, unless a replacement already claimed the
+    // key — then the failed VM stays alive until process exit or the next
+    // startup reconcile, and clobbering the replacement would leak it too.
+    if (!sessions.has(key)) sessions.set(key, session);
     if (options.throwOnError) throw error;
     log.logWarning(
       `Failed to close Gondolin session '${key}'`,
@@ -319,9 +331,22 @@ async function closeSession(
 
 export async function stopIdleGondolinVms(maxIdleMs: number, now = Date.now()): Promise<void> {
   const idle = Array.from(sessions.entries()).filter(
-    ([, session]) => session.activeOperations === 0 && now - session.lastUsed >= maxIdleMs,
+    ([key, session]) =>
+      !transitions.has(key) &&
+      session.activeOperations === 0 &&
+      now - session.lastUsed >= maxIdleMs,
   );
-  await Promise.all(idle.map(([key, session]) => closeSession(key, session)));
+  await Promise.all(
+    idle.map(([key, session]) => {
+      // Register the close as a transition so a concurrent acquire waits for
+      // it instead of racing the shared session slot.
+      const transition = closeSession(key, session).finally(() => {
+        if (transitions.get(key) === transition) transitions.delete(key);
+      });
+      transitions.set(key, transition);
+      return transition;
+    }),
+  );
 }
 
 export async function closeAllGondolinVms(): Promise<void> {
