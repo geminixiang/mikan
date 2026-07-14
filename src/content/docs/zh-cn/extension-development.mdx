@@ -150,6 +150,8 @@ api.on("tool_call", ({ toolName, args }) => {
 | `message_end`        | 观察一条已完成的智能体消息             |
 | `turn_end`           | 观察已完成的轮次                       |
 | `session_compact`    | 观察会话压缩及其原因                   |
+| `agent_error`        | 观察以错误收场的轮次                   |
+| `budget_exceeded`    | 观察运行预算断路器触发                 |
 
 钩子按注册顺序运行。结果的合成语义因钩子而异：`tool_call` 以第一个非 `undefined` 的结果为准；`before_agent_start` 与 `tool_result` 采用链式（chaining）——每个处理器看到的是前面处理器改写后的事件，且任一 `before_agent_start` 处理器返回的 `block` 都会生效，与注册顺序无关。钩子错误会被记录并跳过，而不会导致运行崩溃。
 
@@ -188,6 +190,35 @@ api.on("tool_result", ({ content }) => ({
 
 使用 `api.registerTool(tool)` 注册 `AgentTool`。使用兼容 TypeBox 的参数模式，并返回标准的文本/图像工具内容。如需类型完备的工具实现，请参阅完整的 [`agent-pm` 示例](https://github.com/geminixiang/mikan/tree/main/examples/extensions/agent-pm)。
 
+### 自定义命令
+
+`api.registerCommand` 贡献一个确定性分发的聊天命令——不经过模型、不耗 token、不写入会话：
+
+```ts
+api.registerCommand({
+  name: "pm",
+  description: "Show the follow-up board",
+  handler: async ({ args, userId, respond }) => {
+    await respond(renderBoard(args));
+  },
+});
+```
+
+用户以 `/pm list` 调用。名称匹配不区分大小写；内置命令（`/pi-*`、`/login` 等）永远优先于扩展命令，同名命令以先注册者为准。没有匹配命令的斜杠文本仍会作为普通提示词交给智能体。处理器的错误会回报在对话中并记录日志，绝不会让 mikan 崩溃。
+
+### 生命周期与释放
+
+Harness 实例会在 `/pi-new`、闲置回收与会话轮换时被丢弃。请通过 `activate` 返回释放函数、或用 `api.onDispose` 注册，来释放资源（数据库连接、监视器）：
+
+```ts
+export default function activate(api: MikanExtensionApi) {
+  const db = openDb(api.paths.dataDir);
+  api.onDispose(() => db.close());
+}
+```
+
+释放函数按注册顺序反向执行；错误会记录日志且不会向外抛出。
+
 ### 上下文与存储
 
 | API                       | 含义                                       |
@@ -216,7 +247,7 @@ const availableNames = api.secrets.list();
 
 通过扩展 API 只能读取密钥。请勿记录密钥，也不要将其放入工具描述、提示词、定时任务文本或返回内容中。
 
-### 定时任务、通知和回应
+### 定时任务、触发运行、通知、回应与文件上传
 
 ```ts
 await api.schedules.upsert("daily-check", {
@@ -226,11 +257,14 @@ await api.schedules.upsert("daily-check", {
   text: "Check overdue work. Report only actionable items.",
 });
 
+await api.triggerRun("Check the failed deploy and summarize the cause.");
 await api.notify("The scheduled check is ready.");
+await api.notify("Cross-post", { conversationId: "C0OTHER" });
 await api.react(messageTs, "white_check_mark");
+await api.uploadFile("/path/on/host/report.pdf", "Weekly report");
 ```
 
-定时任务会创建 mikan 事件文件，并在不继承对话历史记录的情况下触发自主运行，因此 `text` 必须自成一体。如果同时运行多个平台且无法明确推断平台，请指定 `platform`。不要在定时任务文本中放入密钥。
+定时任务会创建 mikan 事件文件，并在不继承对话历史记录的情况下触发自主运行，因此 `text` 必须自成一体；`api.triggerRun` 会立即触发一次这样的运行（例如响应外部事件）。如果同时运行多个平台且无法明确推断平台，请指定 `platform`。不要在定时任务文本中放入密钥。`api.notify` 默认发到扩展自己的对话，可传入 `conversationId` 供跨对话应用使用；`api.uploadFile` 会在支持上传的平台上把宿主端文件发进对话。
 
 ### 捆绑技能
 
@@ -250,7 +284,7 @@ hello-mikan/
 ## 6. 生命周期规则
 
 1. 确保 `activate` 是幂等的。`/pi-new` 可能会再次激活扩展；`schedules.upsert` 可以安全地用于此模式。
-2. 不要创建 `setInterval`、服务器、监视器或其他长期存续的资源。目前没有停用钩子；请使用 `api.schedules` 实现定时器。
+2. 长期存续的资源（数据库连接、监视器）请在释放函数中释放（`api.onDispose` 或 `activate` 的返回值）。定时器优先使用 `api.schedules` 而非 `setInterval`——计划任务能跨重启存活，进程内定时器不能。
 3. 默认使用 `api.paths.dataDir`。仅在有意实现跨对话行为时使用 `sharedDataDir`。
 4. 确保顶层导入和初始化安全，因为验证过程会导入模块。
 5. 将扩展输出和工具参数视为信任边界；验证不受信任的输入。

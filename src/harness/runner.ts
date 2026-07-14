@@ -298,6 +298,16 @@ export class MikanAgentSession {
       await this.agent.continue();
     }
 
+    // The turn settled on an error (retries exhausted or not retryable):
+    // give monitoring extensions the final failure, once per turn.
+    const settled = this.findLastAssistantMessage();
+    if (settled?.stopReason === "error" && this.extensions?.hasHandlers("agent_error")) {
+      await this.extensions.emit("agent_error", {
+        errorMessage: settled.errorMessage || "Unknown error",
+        origin: this.runOrigin,
+      });
+    }
+
     if (this.extensions?.hasHandlers("turn_end")) {
       await this.extensions.emit("turn_end", {
         messages: this.agent.state.messages,
@@ -395,6 +405,16 @@ export class MikanAgentSession {
       llmCalls: this.tally.llmCalls,
       durationMs: Date.now() - this.tally.startedAt,
     });
+    if (this.extensions?.hasHandlers("budget_exceeded")) {
+      await this.extensions.emit("budget_exceeded", {
+        reason,
+        tokens: this.tally.tokens,
+        costUsd: this.tally.costUsd,
+        llmCalls: this.tally.llmCalls,
+        durationMs: Date.now() - this.tally.startedAt,
+        origin: this.runOrigin,
+      });
+    }
     log.logWarning("Run budget exceeded — aborting", reason);
     this.agent.abort();
   }

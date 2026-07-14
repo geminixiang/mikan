@@ -148,6 +148,8 @@ api.on("tool_call", ({ toolName, args }) => {
 | `message_end`        | 完了した一つのエージェントメッセージを監視する                   |
 | `turn_end`           | 完了したターンを監視する                                         |
 | `session_compact`    | セッションのコンパクションとその理由を監視する                   |
+| `agent_error`        | エラーで終わったターンを監視する                                 |
+| `budget_exceeded`    | 実行バジェットのサーキットブレーカー発動を監視する               |
 
 フックは登録順に実行されます。結果のマージ方法はフックごとに異なります。`tool_call` は最初の `undefined` でない結果が採用されます。`before_agent_start` と `tool_result` はチェーンされ、各ハンドラーは前のハンドラーによる書き換え後のイベントを受け取ります。また、いずれかの `before_agent_start` ハンドラーが返した `block` は登録順に関係なく有効です。フックのエラーはログに記録され、実行をクラッシュさせることなくスキップされます。
 
@@ -186,6 +188,35 @@ api.on("tool_result", ({ content }) => ({
 
 `api.registerTool(tool)` で `AgentTool` を登録します。TypeBox 互換のパラメータスキーマを使用し、標準のテキスト／画像ツールコンテンツを返してください。型付けされたツール実装については、完全な [`agent-pm` の例](https://github.com/geminixiang/mikan/tree/main/examples/extensions/agent-pm)を参照してください。
 
+### カスタムコマンド
+
+`api.registerCommand` は決定的にディスパッチされるチャットコマンドを提供します——モデル呼び出しなし、トークン消費なし、セッション書き込みなし:
+
+```ts
+api.registerCommand({
+  name: "pm",
+  description: "Show the follow-up board",
+  handler: async ({ args, userId, respond }) => {
+    await respond(renderBoard(args));
+  },
+});
+```
+
+ユーザーは `/pm list` として呼び出します。名前の照合は大文字小文字を区別しません。組み込みコマンド（`/pi-*`、`/login` など）は常に拡張機能コマンドより優先され、同名コマンドは先に登録されたものが有効です。どのコマンドにも一致しないスラッシュ付きテキストは、通常のプロンプトとしてエージェントに渡されます。ハンドラーのエラーは会話に報告されログに記録され、mikan をクラッシュさせることはありません。
+
+### ライフサイクルと破棄
+
+ハーネスインスタンスは `/pi-new`、アイドル回収、セッションローテーションで破棄されます。リソース（データベースハンドル、ウォッチャー）は `activate` からディスポーザーを返すか、`api.onDispose` で登録して解放してください:
+
+```ts
+export default function activate(api: MikanExtensionApi) {
+  const db = openDb(api.paths.dataDir);
+  api.onDispose(() => db.close());
+}
+```
+
+ディスポーザーは登録の逆順に実行されます。エラーはログに記録され、外へは伝播しません。
+
 ### コンテキストとストレージ
 
 | API                       | 意味                                                           |
@@ -214,7 +245,7 @@ const availableNames = api.secrets.list();
 
 拡張機能 API を通じてシークレットにアクセスできるのは読み取り専用です。シークレットをログに記録したり、ツールの説明、プロンプト、スケジュールテキスト、返却コンテンツに含めたりしないでください。
 
-### スケジュール、通知、リアクション
+### スケジュール、実行トリガー、通知、リアクション、ファイルアップロード
 
 ```ts
 await api.schedules.upsert("daily-check", {
@@ -224,11 +255,14 @@ await api.schedules.upsert("daily-check", {
   text: "Check overdue work. Report only actionable items.",
 });
 
+await api.triggerRun("Check the failed deploy and summarize the cause.");
 await api.notify("The scheduled check is ready.");
+await api.notify("Cross-post", { conversationId: "C0OTHER" });
 await api.react(messageTs, "white_check_mark");
+await api.uploadFile("/path/on/host/report.pdf", "Weekly report");
 ```
 
-スケジュールは mikan のイベントファイルを作成し、会話履歴を引き継がずに自律実行を開始するため、`text` は自己完結していなければなりません。複数のプラットフォームが実行中で推論が曖昧な場合は、`platform` を指定してください。スケジュールテキストにシークレットを含めないでください。
+スケジュールは mikan のイベントファイルを作成し、会話履歴を引き継がずに自律実行を開始するため、`text` は自己完結していなければなりません。`api.triggerRun` はそのような実行を即座に発火します（外部イベントへの応答など）。複数のプラットフォームが実行中で推論が曖昧な場合は、`platform` を指定してください。スケジュールテキストにシークレットを含めないでください。`api.notify` はデフォルトで拡張機能自身の会話に投稿し、会話をまたぐアプリケーション向けに明示的な `conversationId` を受け取ります。`api.uploadFile` はアップロード対応プラットフォームでホスト側のファイルを会話に送信します。
 
 ### 同梱スキル
 
@@ -248,7 +282,7 @@ hello-mikan/
 ## 6. ライフサイクルのルール
 
 1. `activate` を冪等にしてください。`/pi-new` によって拡張機能が再度有効化される場合があります。このパターンでは `schedules.upsert` を安全に使用できます。
-2. `setInterval`、サーバー、ウォッチャー、その他の長時間存続するリソースを作成しないでください。現在は無効化フックがないため、タイマーには `api.schedules` を使用してください。
+2. 長時間存続するリソース（データベースハンドル、ウォッチャー）はディスポーザー（`api.onDispose` または `activate` の戻り値）で解放してください。タイマーには `setInterval` ではなく `api.schedules` を優先してください——スケジュールは再起動をまたいで存続しますが、プロセス内タイマーは存続しません。
 3. デフォルトでは `api.paths.dataDir` を使用してください。意図的に複数の会話にまたがる動作をさせる場合にのみ `sharedDataDir` を使用してください。
 4. 検証時にモジュールがインポートされるため、トップレベルのインポートと初期化を安全に保ってください。
 5. 拡張機能の出力とツールパラメータを信頼境界として扱い、信頼できない入力を検証してください。

@@ -283,6 +283,63 @@ describe("MikanAgentSession", () => {
     expect(persisted).not.toContain("s3cret");
   });
 
+  test("agent_error hook fires once when a turn settles on a non-retryable error", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([
+      fauxAssistantMessage("", { stopReason: "error", errorMessage: "invalid api key" }),
+    ]);
+
+    const errorsSeen: Array<{ errorMessage: string; originKind?: string }> = [];
+    const extensions = new ExtensionRegistry();
+    extensions.register("monitor", "agent_error", ({ errorMessage, origin }) => {
+      errorsSeen.push({ errorMessage, originKind: origin?.kind });
+    });
+
+    const session = new MikanAgentSession({
+      systemPrompt: "test",
+      model,
+      thinkingLevel: "off",
+      tools: [],
+      models,
+      sessionStore: SessionStore.create(join(dir, "session.jsonl"), dir),
+      extensions,
+    });
+
+    await session.prompt("hi", { origin: { kind: "interactive", platform: "slack" } });
+
+    expect(errorsSeen).toEqual([{ errorMessage: "invalid api key", originKind: "interactive" }]);
+  });
+
+  test("budget_exceeded hook fires when the circuit breaker trips", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("echo", { text: "ping" })),
+      fauxAssistantMessage("done"),
+    ]);
+
+    const tripped: Array<{ reason: string; llmCalls: number }> = [];
+    const extensions = new ExtensionRegistry();
+    extensions.register("monitor", "budget_exceeded", ({ reason, llmCalls }) => {
+      tripped.push({ reason, llmCalls });
+    });
+
+    const session = new MikanAgentSession({
+      systemPrompt: "test",
+      model,
+      thinkingLevel: "off",
+      tools: [echoTool],
+      models,
+      sessionStore: SessionStore.create(join(dir, "session.jsonl"), dir),
+      extensions,
+    });
+
+    await session.prompt("run the tool", { budget: { maxLlmCalls: 1 } });
+
+    expect(tripped).toHaveLength(1);
+    expect(tripped[0].llmCalls).toBe(1);
+    expect(tripped[0].reason).toContain("LLM calls");
+  });
+
   test("budget circuit breaker aborts a run that exceeds the LLM-call cap", async () => {
     const { models, faux, model } = createFauxSetup();
     // Would take two LLM calls (tool call, then final); the cap stops it at one.

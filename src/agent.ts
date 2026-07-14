@@ -12,6 +12,7 @@ import {
   DEFAULT_EVENT_BUDGET,
   defaultExtensionDirs,
   type ExtensionHostServices,
+  type ExtensionRegistry,
   type ExtensionSchedulePayload,
   formatSkillsForPrompt,
   loadExtensions,
@@ -39,6 +40,7 @@ import type {
   PlatformNotifier,
   PlatformReactor,
   PlatformTrustModel,
+  PlatformUploader,
 } from "./types.js";
 import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import { resolveConversationSettings } from "./config.js";
@@ -949,6 +951,10 @@ interface ConfiguredAgentSession {
   session: MikanAgentSession;
   /** Skills contributed by extensions, merged into each run's system prompt. */
   extensionSkills: MikanSkill[];
+  /** Registry backing extension command dispatch for this harness instance. */
+  extensionRegistry: ExtensionRegistry;
+  /** Runs extension disposers; call once when the runner is discarded. */
+  disposeExtensions: () => Promise<void>;
 }
 
 function createRunnerExecutionContext(
@@ -1012,8 +1018,10 @@ function buildExtensionHostServices(params: {
   vaultManager?: VaultManager;
   platformNotifier?: PlatformNotifier;
   platformReactor?: PlatformReactor;
+  platformUploader?: PlatformUploader;
 }): ExtensionHostServices {
-  const { workspaceDir, vaultManager, platformNotifier, platformReactor } = params;
+  const { workspaceDir, vaultManager, platformNotifier, platformReactor, platformUploader } =
+    params;
   const eventStore = HostEventStore.fromWorkspaceDir(workspaceDir);
   return {
     stateDir: readEnv("STATE_DIR"),
@@ -1034,6 +1042,7 @@ function buildExtensionHostServices(params: {
     },
     ...(platformNotifier ? { postMessage: platformNotifier } : {}),
     ...(platformReactor ? { addReaction: platformReactor } : {}),
+    ...(platformUploader ? { uploadFile: platformUploader } : {}),
     ...(vaultManager
       ? {
           resolveSecrets: (slug: string) => vaultManager.resolve(`extensions/${slug}`)?.env ?? {},
@@ -1054,6 +1063,7 @@ async function createConfiguredAgentSession(params: {
   vaultManager?: VaultManager;
   platformNotifier?: PlatformNotifier;
   platformReactor?: PlatformReactor;
+  platformUploader?: PlatformUploader;
 }): Promise<ConfiguredAgentSession> {
   const {
     conversationId,
@@ -1067,6 +1077,7 @@ async function createConfiguredAgentSession(params: {
     vaultManager,
     platformNotifier,
     platformReactor,
+    platformUploader,
   } = params;
 
   // Host-only dirs under the state dir: extension code runs in the mikan
@@ -1080,6 +1091,7 @@ async function createConfiguredAgentSession(params: {
       vaultManager,
       platformNotifier,
       platformReactor,
+      platformUploader,
     }),
   });
   for (const err of extensionsResult.errors) {
@@ -1105,7 +1117,12 @@ async function createConfiguredAgentSession(params: {
   if (reloaded > 0) {
     log.logInfo(`[${conversationId}] Reloaded ${reloaded} messages from session context`);
   }
-  return { session, extensionSkills: extensionsResult.skills };
+  return {
+    session,
+    extensionSkills: extensionsResult.skills,
+    extensionRegistry: extensionsResult.registry,
+    disposeExtensions: extensionsResult.dispose,
+  };
 }
 
 function reloadSessionMessages(session: MikanAgentSession, conversationId: string): void {
@@ -1602,6 +1619,7 @@ export interface CreateRunnerOptions {
   };
   platformNotifier?: PlatformNotifier;
   platformReactor?: PlatformReactor;
+  platformUploader?: PlatformUploader;
   platformToolPackFactories?: readonly PlatformToolPackFactory[];
   /** Model registry override; defaults to the process-wide models.json load. */
   models?: MikanModels;
@@ -1627,6 +1645,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     sessionView,
     platformNotifier,
     platformReactor,
+    platformUploader,
     platformToolPackFactories,
   } = options;
   const agentConfig = resolveConversationSettings(conversationDir);
@@ -1697,19 +1716,21 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
 
   const sessionUuid = extractSessionUuid(contextFile);
   const chatSessionManager = new AgentMemoryFileManager();
-  const { session, extensionSkills } = await createConfiguredAgentSession({
-    conversationId,
-    workspaceDir,
-    systemPrompt,
-    model,
-    thinkingLevel: agentConfig.thinkingLevel,
-    tools,
-    sessionStore: sessionManager,
-    models: modelRegistry,
-    vaultManager,
-    platformNotifier,
-    platformReactor,
-  });
+  const { session, extensionSkills, extensionRegistry, disposeExtensions } =
+    await createConfiguredAgentSession({
+      conversationId,
+      workspaceDir,
+      systemPrompt,
+      model,
+      thinkingLevel: agentConfig.thinkingLevel,
+      tools,
+      sessionStore: sessionManager,
+      models: modelRegistry,
+      vaultManager,
+      platformNotifier,
+      platformReactor,
+      platformUploader,
+    });
 
   // Mutable per-run state - event handler references this
   const runState = createRunState();
@@ -1873,6 +1894,25 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
 
     abort(): void {
       session.abort();
+    },
+
+    async tryExtensionCommand(
+      message: ConversationMessage,
+      responder: ConversationResponder,
+    ): Promise<boolean> {
+      const match = /^\/([a-z0-9_-]+)(?:\s+([\s\S]*))?$/i.exec(message.text.trim());
+      if (!match) return false;
+      return extensionRegistry.dispatchCommand(match[1], {
+        args: match[2]?.trim() ?? "",
+        conversationId,
+        userId: message.userId,
+        userName: message.userName,
+        respond: (text: string) => responder.respond(text),
+      });
+    },
+
+    async dispose(): Promise<void> {
+      await disposeExtensions();
     },
 
     getCurrentStep(): { toolName?: string; label?: string } | undefined {

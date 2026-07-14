@@ -162,7 +162,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     );
     this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
 
-    this.conversationStates.delete(sessionKey);
+    this.discardState(sessionKey);
 
     log.logInfo(`[${conversationId}] Session reset: ${sessionKey}`);
     await bot.postMessage(conversationId, "Conversation reset. Send a new message to start fresh.");
@@ -233,6 +233,17 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         conversationKind: event.conversationKind,
       });
       state.runner.syncChatHistory(event.ts);
+
+      // Extension-contributed commands: deterministic dispatch, no agent run.
+      // Built-in commands already had their chance above, so extensions can
+      // never shadow them; unmatched slash text falls through to the agent.
+      if (event.text.trim().startsWith("/")) {
+        const handled = await state.runner.tryExtensionCommand(context.message, context.responder);
+        if (handled) {
+          state.lastAccessedAt = Date.now();
+          return;
+        }
+      }
     } catch (err) {
       reportUserFacingError(err, {
         domain: "mikan",
@@ -459,6 +470,10 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       return existing;
     }
 
+    // A stale state (rotated session file) is being replaced: release the old
+    // runner's extension resources before the new one takes the slot.
+    if (existing) this.discardState(sessionKey);
+
     const state: ConversationState = {
       running: false,
       runner: await createRunner({
@@ -478,6 +493,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
           : undefined,
         platformNotifier: this.options.platformNotifier,
         platformReactor: this.options.platformReactor,
+        platformUploader: this.options.platformUploader,
         platformToolPackFactories: this.options.platformToolPackFactories,
         models: this.options.models,
       }),
@@ -512,12 +528,28 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     }
   }
 
+  /**
+   * Remove a session state and release its resources: fire-and-forget the
+   * runner's extension disposers so a slow disposer never stalls the caller.
+   */
+  private discardState(sessionKey: string): void {
+    const state = this.conversationStates.get(sessionKey);
+    if (!state) return;
+    this.conversationStates.delete(sessionKey);
+    state.runner.dispose().catch((err: unknown) => {
+      log.logWarning(
+        `Runner dispose failed: ${sessionKey}`,
+        err instanceof Error ? err.message : String(err),
+      );
+    });
+  }
+
   private evictIdleSessions(): void {
     const now = Date.now();
 
     for (const [key, state] of this.conversationStates) {
       if (!state.running && now - state.lastAccessedAt > IDLE_TIMEOUT_MS) {
-        this.conversationStates.delete(key);
+        this.discardState(key);
       }
     }
 
@@ -533,7 +565,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
       const toEvict = this.conversationStates.size - MAX_SESSIONS;
       for (let i = 0; i < toEvict && i < idleSessions.length; i++) {
-        this.conversationStates.delete(idleSessions[i].key);
+        this.discardState(idleSessions[i].key);
       }
     }
   }

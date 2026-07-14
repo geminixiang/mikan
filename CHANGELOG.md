@@ -11,6 +11,10 @@ any release.
 
 ### Added
 
+- Add extension chat commands via `api.registerCommand`: deterministic `/name` dispatch with no model call; built-ins and first registrations win.
+- Add an extension disposal lifecycle (`api.onDispose` or an `activate` return value), run when a harness instance is discarded (`/pi-new`, idle eviction, session rotation).
+- Add `api.triggerRun(text)` to fire an immediate autonomous agent run, `api.uploadFile(path, title)` for proactive file uploads, and an explicit `conversationId` option on `api.notify` for cross-conversation posting.
+- Add `agent_error` and `budget_exceeded` extension hooks so monitoring extensions see failed turns and tripped run budgets.
 - Pass a `RunOrigin` (platform, triggering message id, user identity, attachments) to extension hook events, making `api.react` and per-user extension policy usable.
 - Let `before_agent_start` extensions rewrite the user prompt or block the turn before the model runs; blocked turns leave no trace in the transcript or session store.
 - Let `tool_result` extensions rewrite tool output (content and error flag) before the model and the session store see it, enabling secret redaction and output truncation.

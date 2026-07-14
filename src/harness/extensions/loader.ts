@@ -32,6 +32,8 @@ import * as log from "../../log.js";
 import { loadSkillsFromDir, type MikanSkill } from "../skills.js";
 import { ExtensionRegistry } from "./registry.js";
 import type {
+  ExtensionCommand,
+  ExtensionDisposer,
   ExtensionHostServices,
   ExtensionLoadError,
   ExtensionManifest,
@@ -134,6 +136,12 @@ export interface LoadExtensionsResult {
   errors: ExtensionLoadError[];
   /** Skills contributed by extensions (inline: bodies ride in the prompt). */
   skills: MikanSkill[];
+  /**
+   * Run extension disposers (from `api.onDispose` and `activate` return
+   * values). Call when the harness instance owning these extensions is
+   * discarded. Idempotent; disposer errors are logged, never thrown.
+   */
+  dispose(): Promise<void>;
 }
 
 /**
@@ -417,6 +425,8 @@ function buildExtensionApi(params: {
   return {
     on: (hook, handler) => registry.register(name, hook, handler),
     registerTool: (tool: AgentTool) => registry.registerTool(tool),
+    registerCommand: (command: ExtensionCommand) => registry.registerCommand(name, command),
+    onDispose: (disposer: ExtensionDisposer) => registry.registerDisposer(name, disposer),
     log: (message: string) => log.logInfo(`[extension:${name}] ${message}`),
     context,
     paths: {
@@ -464,11 +474,11 @@ function buildExtensionApi(params: {
         return infos;
       },
     },
-    notify: async (text: string) => {
+    notify: async (text: string, options?: { conversationId?: string }) => {
       if (!services.postMessage) {
         throw new Error("api.notify is unavailable: this context provides no platform messaging");
       }
-      await services.postMessage(conversationId, text);
+      await services.postMessage(options?.conversationId ?? conversationId, text);
     },
     react: async (messageTs: string, emoji: string) => {
       if (!services.addReaction) {
@@ -476,8 +486,25 @@ function buildExtensionApi(params: {
       }
       await services.addReaction(conversationId, messageTs, emoji);
     },
+    uploadFile: async (filePath: string, title?: string) => {
+      if (!services.uploadFile) {
+        throw new Error("api.uploadFile is unavailable: this context provides no file uploads");
+      }
+      await services.uploadFile(conversationId, filePath, title);
+    },
+    triggerRun: async (text: string) => {
+      const store = requireScheduleStore();
+      // Distinct "extrun." namespace: run files must never surface in
+      // api.schedules.list(), whose ownership filter is the "ext." prefix.
+      // The embedder's watcher fires and deletes the file immediately.
+      const filename = `extrun.${slug}.${scheduleNameSegment(conversationId)}.${Date.now()}-${runCounter++}${SCHEDULE_FILE_SUFFIX}`;
+      await store.write(filename, { type: "immediate", conversationId, text });
+    },
   };
 }
+
+/** Monotonic suffix so rapid triggerRun calls in one process never collide. */
+let runCounter = 0;
 
 function resolveActivate(moduleExports: unknown): MikanExtensionModule | undefined {
   if (!moduleExports || typeof moduleExports !== "object") return undefined;
@@ -534,7 +561,8 @@ export async function loadExtensions(
           context: options.context,
           services,
         });
-        await extension.activate(api);
+        const disposer = await extension.activate(api);
+        if (typeof disposer === "function") registry.registerDisposer(name, disposer);
         const extensionSkills = loadExtensionSkills(rootDir, slug);
         skills.push(...extensionSkills);
         extensions.push({
@@ -554,7 +582,7 @@ export async function loadExtensions(
     }
   }
 
-  return { registry, extensions, errors, skills };
+  return { registry, extensions, errors, skills, dispose: () => registry.dispose() };
 }
 
 export interface ExtensionValidation {

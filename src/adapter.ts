@@ -12,5 +12,6 @@ export type {
   PlatformName,
   PlatformNotifier,
   PlatformReactor,
+  PlatformUploader,
   RunningSession,
 } from "./types.js";

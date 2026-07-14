@@ -52,8 +52,13 @@ export {
   type LoadExtensionsResult,
 } from "./extensions/loader.js";
 export type {
+  AgentErrorHookEvent,
   BeforeAgentStartHookEvent,
   BeforeAgentStartHookResult,
+  BudgetExceededHookEvent,
+  ExtensionCommand,
+  ExtensionCommandContext,
+  ExtensionDisposer,
   ExtensionHostServices,
   ExtensionLoadError,
   ExtensionManifest,

@@ -150,6 +150,8 @@ api.on("tool_call", ({ toolName, args }) => {
 | `message_end`        | Observe one completed agent message                         |
 | `turn_end`           | Observe the completed turn                                  |
 | `session_compact`    | Observe session compaction and its reason                   |
+| `agent_error`        | Observe a turn that settled on an error                     |
+| `budget_exceeded`    | Observe the run budget circuit breaker tripping             |
 
 Hooks run in registration order. Result semantics are per hook: `tool_call` returns the first non-`undefined` result; `before_agent_start` and `tool_result` chain — each handler sees the event as rewritten by earlier handlers, and a `block` from any `before_agent_start` handler wins regardless of registration order. Hook errors are logged and skipped rather than crashing the run.
 
@@ -188,6 +190,35 @@ api.on("tool_result", ({ content }) => ({
 
 Register an `AgentTool` with `api.registerTool(tool)`. Use TypeBox-compatible parameter schemas and return standard text/image tool content. See the complete [`agent-pm` example](https://github.com/geminixiang/mikan/tree/main/examples/extensions/agent-pm) for a typed tool implementation.
 
+### Custom commands
+
+`api.registerCommand` contributes a chat command dispatched deterministically — no model call, no tokens, no session entry:
+
+```ts
+api.registerCommand({
+  name: "pm",
+  description: "Show the follow-up board",
+  handler: async ({ args, userId, respond }) => {
+    await respond(renderBoard(args));
+  },
+});
+```
+
+Users invoke it as `/pm list`. Matching is case-insensitive; built-in commands (`/pi-*`, `/login`, …) always win over extension commands, and the first registration of a name wins across extensions. Slash text that matches no command still goes to the agent as a normal prompt. A handler error is reported in the conversation and logged; it never crashes mikan.
+
+### Lifecycle and disposal
+
+A harness instance is discarded on `/pi-new`, idle eviction, and session rotation. Release resources (database handles, watchers) by returning a disposer from `activate` or registering one with `api.onDispose`:
+
+```ts
+export default function activate(api: MikanExtensionApi) {
+  const db = openDb(api.paths.dataDir);
+  api.onDispose(() => db.close());
+}
+```
+
+Disposers run in reverse registration order; errors are logged and never propagate.
+
 ### Context and storage
 
 | API                       | Meaning                                                                               |
@@ -216,7 +247,7 @@ const availableNames = api.secrets.list();
 
 Secrets are read-only through the extension API. Do not log them or place them in tool descriptions, prompts, schedule text, or returned content.
 
-### Schedules, notifications, and reactions
+### Schedules, runs, notifications, reactions, and uploads
 
 ```ts
 await api.schedules.upsert("daily-check", {
@@ -226,11 +257,14 @@ await api.schedules.upsert("daily-check", {
   text: "Check overdue work. Report only actionable items.",
 });
 
+await api.triggerRun("Check the failed deploy and summarize the cause.");
 await api.notify("The scheduled check is ready.");
+await api.notify("Cross-post", { conversationId: "C0OTHER" });
 await api.react(messageTs, "white_check_mark");
+await api.uploadFile("/path/on/host/report.pdf", "Weekly report");
 ```
 
-Schedules create mikan event files and trigger autonomous runs without inheriting conversation history, so `text` must be self-contained. Specify `platform` when more than one platform is running and inference is ambiguous. Do not put secrets in schedule text.
+Schedules create mikan event files and trigger autonomous runs without inheriting conversation history, so `text` must be self-contained; `api.triggerRun` fires such a run immediately (e.g. in response to an external event). Specify `platform` when more than one platform is running and inference is ambiguous. Do not put secrets in schedule text. `api.notify` defaults to the extension's conversation and accepts an explicit `conversationId` for cross-conversation applications; `api.uploadFile` sends a host-side file into the conversation on platforms with upload support.
 
 ### Bundled skills
 
@@ -250,7 +284,7 @@ Extension skills are discovered automatically and inlined into the system prompt
 ## 6. Lifecycle rules
 
 1. Make `activate` idempotent. `/pi-new` can activate the extension again; `schedules.upsert` is safe for this pattern.
-2. Do not create `setInterval`, servers, watchers, or other long-lived resources. There is currently no deactivate hook; use `api.schedules` for timers.
+2. Release long-lived resources (database handles, watchers) in a disposer (`api.onDispose` or the `activate` return value). Prefer `api.schedules` over `setInterval` for timers — schedules survive restarts, in-process timers do not.
 3. Default to `api.paths.dataDir`. Use `sharedDataDir` only for deliberate multi-conversation behavior.
 4. Keep top-level imports and initialization safe because validation imports the module.
 5. Treat extension output and tool parameters as trust boundaries; validate untrusted input.

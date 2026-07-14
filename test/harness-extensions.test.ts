@@ -448,7 +448,7 @@ describe("loadExtensions v2 api", () => {
     ]);
   });
 
-  test("service-less contexts surface informative errors for schedules, notify, react", async () => {
+  test("service-less contexts surface informative errors for schedules, notify, react, upload", async () => {
     const probe = writeProbeExtension(
       `export default async function activate(api) {
         const caught = [];
@@ -457,6 +457,10 @@ describe("loadExtensions v2 api", () => {
         try { await api.notify("x"); }
         catch (err) { caught.push(String(err)); }
         try { await api.react("1700000000.1", "eyes"); }
+        catch (err) { caught.push(String(err)); }
+        try { await api.uploadFile("/tmp/report.txt"); }
+        catch (err) { caught.push(String(err)); }
+        try { await api.triggerRun("go"); }
         catch (err) { caught.push(String(err)); }
         report({ caught });
       }`,
@@ -468,6 +472,170 @@ describe("loadExtensions v2 api", () => {
     expect(caught[0]).toMatch(/schedule store/);
     expect(caught[1]).toMatch(/platform messaging/);
     expect(caught[2]).toMatch(/reaction support/);
+    expect(caught[3]).toMatch(/file uploads/);
+    expect(caught[4]).toMatch(/schedule store/);
+  });
+
+  test("api.notify can target another conversation explicitly", async () => {
+    const posts: Array<{ conversationId: string; text: string }> = [];
+    writeProbeExtension(
+      `export default async function activate(api) {
+        await api.notify("here");
+        await api.notify("there", { conversationId: "C999" });
+      }`,
+    );
+
+    const { errors } = await loadExtensions({
+      dirs: [dir],
+      context,
+      services: {
+        postMessage: async (conversationId, text) => {
+          posts.push({ conversationId, text });
+        },
+      },
+    });
+    expect(errors).toHaveLength(0);
+    expect(posts).toEqual([
+      { conversationId: "C123", text: "here" },
+      { conversationId: "C999", text: "there" },
+    ]);
+  });
+
+  test("api.uploadFile sends a host file into the extension's conversation", async () => {
+    const uploads: Array<{ conversationId: string; filePath: string; title?: string }> = [];
+    writeProbeExtension(
+      'export default async function activate(api) { await api.uploadFile("/tmp/report.pdf", "Weekly"); }',
+    );
+
+    const { errors } = await loadExtensions({
+      dirs: [dir],
+      context,
+      services: {
+        uploadFile: async (conversationId, filePath, title) => {
+          uploads.push({ conversationId, filePath, title });
+        },
+      },
+    });
+    expect(errors).toHaveLength(0);
+    expect(uploads).toEqual([
+      { conversationId: "C123", filePath: "/tmp/report.pdf", title: "Weekly" },
+    ]);
+  });
+
+  test("api.triggerRun writes an immediate event outside the schedules namespace", async () => {
+    const { files, store } = createFakeScheduleStore();
+    const probe = writeProbeExtension(
+      `export default async function activate(api) {
+        await api.triggerRun("check the deploy now");
+        const listed = await api.schedules.list();
+        report({ scheduleNames: listed.map((info) => info.name) });
+      }`,
+    );
+
+    const { errors } = await loadExtensions({
+      dirs: [dir],
+      context,
+      services: { scheduleStore: store },
+    });
+    expect(errors).toHaveLength(0);
+
+    const runFiles = [...files.keys()].filter((name) => name.startsWith("extrun.probe.c123."));
+    expect(runFiles).toHaveLength(1);
+    expect(files.get(runFiles[0])).toEqual({
+      type: "immediate",
+      conversationId: "C123",
+      text: "check the deploy now",
+    });
+    // Run files must not leak into the extension's schedule inventory.
+    expect(probe.read()).toEqual({ scheduleNames: [] });
+  });
+
+  test("disposers from onDispose and the activate return value run LIFO on dispose", async () => {
+    const probe = writeProbeExtension(
+      `const order = [];
+      export default function activate(api) {
+        api.onDispose(() => { order.push("onDispose"); report({ order }); });
+        return () => { order.push("returned"); };
+      }`,
+    );
+
+    const result = await loadExtensions({ dirs: [dir], context });
+    expect(result.errors).toHaveLength(0);
+    await result.dispose();
+    // The activate-returned disposer registered last, so it runs first.
+    expect(probe.read()).toEqual({ order: ["returned", "onDispose"] });
+  });
+
+  test("api.registerCommand dispatches with args and user identity", async () => {
+    writeProbeExtension(
+      `export default function activate(api) {
+        api.registerCommand({
+          name: "PM",
+          description: "follow-up board",
+          handler: async ({ args, userId, respond }) => {
+            await respond("pm(" + args + ") for " + userId);
+          },
+        });
+      }`,
+    );
+
+    const { registry, errors } = await loadExtensions({ dirs: [dir], context });
+    expect(errors).toHaveLength(0);
+    expect(registry.getCommands().map((command) => command.name)).toEqual(["PM"]);
+
+    const replies: string[] = [];
+    // Matching is case-insensitive: /pm reaches the command registered as PM.
+    const handled = await registry.dispatchCommand("pm", {
+      args: "list open",
+      conversationId: "C123",
+      userId: "U1",
+      respond: async (text) => {
+        replies.push(text);
+      },
+    });
+    expect(handled).toBe(true);
+    expect(replies).toEqual(["pm(list open) for U1"]);
+
+    const unknown = await registry.dispatchCommand("nope", {
+      args: "",
+      conversationId: "C123",
+      respond: async () => {},
+    });
+    expect(unknown).toBe(false);
+  });
+
+  test("a failing command handler is consumed and reports the failure", async () => {
+    writeProbeExtension(
+      `export default function activate(api) {
+        api.registerCommand({ name: "boom", handler: () => { throw new Error("kaput"); } });
+      }`,
+    );
+
+    const { registry, errors } = await loadExtensions({ dirs: [dir], context });
+    expect(errors).toHaveLength(0);
+
+    const replies: string[] = [];
+    const handled = await registry.dispatchCommand("boom", {
+      args: "",
+      conversationId: "C123",
+      respond: async (text) => {
+        replies.push(text);
+      },
+    });
+    expect(handled).toBe(true);
+    expect(replies[0]).toMatch(/\/boom failed: kaput/);
+  });
+
+  test("an invalid command name fails that extension's activation", async () => {
+    writeProbeExtension(
+      `export default function activate(api) {
+        api.registerCommand({ name: "no spaces", handler: () => {} });
+      }`,
+    );
+
+    const { extensions, errors } = await loadExtensions({ dirs: [dir], context });
+    expect(extensions).toHaveLength(0);
+    expect(errors[0]?.error).toMatch(/Invalid extension command name/);
   });
 
   test("skills/ directory contributes inline skills", async () => {
@@ -511,6 +679,47 @@ describe("ExtensionRegistry", () => {
 
     const result = await registry.emit("tool_call", { toolCallId: "t", toolName: "x", args: {} });
     expect(result).toEqual({ block: false });
+  });
+
+  test("duplicate command names keep the first registration", async () => {
+    const registry = new ExtensionRegistry();
+    const replies: string[] = [];
+    registry.registerCommand("ext-a", {
+      name: "pm",
+      handler: async ({ respond }) => respond("from a"),
+    });
+    registry.registerCommand("ext-b", {
+      name: "PM",
+      handler: async ({ respond }) => respond("from b"),
+    });
+
+    await registry.dispatchCommand("pm", {
+      args: "",
+      conversationId: "C1",
+      respond: async (text) => {
+        replies.push(text);
+      },
+    });
+    expect(replies).toEqual(["from a"]);
+  });
+
+  test("dispose is idempotent and isolates disposer failures", async () => {
+    const registry = new ExtensionRegistry();
+    const ran: string[] = [];
+    registry.registerDisposer("bad", () => {
+      ran.push("bad");
+      throw new Error("broken disposer");
+    });
+    registry.registerDisposer("good", () => {
+      ran.push("good");
+    });
+
+    await registry.dispose();
+    // LIFO order, and the bad disposer's error does not stop the run.
+    expect(ran).toEqual(["good", "bad"]);
+
+    await registry.dispose();
+    expect(ran).toEqual(["good", "bad"]);
   });
 });
 

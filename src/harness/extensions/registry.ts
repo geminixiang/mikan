@@ -10,11 +10,16 @@ import * as log from "../../log.js";
 import type {
   BeforeAgentStartHookEvent,
   BeforeAgentStartHookResult,
+  ExtensionCommand,
+  ExtensionCommandContext,
+  ExtensionDisposer,
   MikanHookMap,
   MikanHookName,
   ToolResultHookEvent,
   ToolResultHookResult,
 } from "./types.js";
+
+const COMMAND_NAME_PATTERN = /^[a-z0-9_-]+$/i;
 
 type HookHandlers = {
   [T in MikanHookName]: Array<{ owner: string; handler: MikanHookMap[T] }>;
@@ -28,8 +33,12 @@ export class ExtensionRegistry {
     message_end: [],
     turn_end: [],
     session_compact: [],
+    agent_error: [],
+    budget_exceeded: [],
   };
   private tools: AgentTool[] = [];
+  private commands = new Map<string, { owner: string; command: ExtensionCommand }>();
+  private disposers: Array<{ owner: string; disposer: ExtensionDisposer }> = [];
 
   register<T extends MikanHookName>(owner: string, hook: T, handler: MikanHookMap[T]): void {
     this.handlers[hook].push({ owner, handler });
@@ -39,8 +48,80 @@ export class ExtensionRegistry {
     this.tools.push(tool);
   }
 
+  /**
+   * Register an extension command. Invalid names throw (surfaces as an
+   * activation error for that extension); a duplicate name is logged and
+   * ignored so the first registration wins, mirroring hook isolation.
+   */
+  registerCommand(owner: string, command: ExtensionCommand): void {
+    if (!COMMAND_NAME_PATTERN.test(command.name)) {
+      throw new Error(`Invalid extension command name: ${JSON.stringify(command.name)}`);
+    }
+    const key = command.name.toLowerCase();
+    const existing = this.commands.get(key);
+    if (existing) {
+      log.logWarning(
+        `Extension command "/${command.name}" already registered by ${existing.owner}`,
+        `ignoring registration from ${owner}`,
+      );
+      return;
+    }
+    this.commands.set(key, { owner, command });
+  }
+
+  registerDisposer(owner: string, disposer: ExtensionDisposer): void {
+    this.disposers.push({ owner, disposer });
+  }
+
   getContributedTools(): AgentTool[] {
     return [...this.tools];
+  }
+
+  /** Registered commands, for inventory surfaces. */
+  getCommands(): ExtensionCommand[] {
+    return [...this.commands.values()].map((entry) => entry.command);
+  }
+
+  /**
+   * Run the handler for `/name`, if an extension registered it. Returns true
+   * when a matching command exists — including when its handler threw (the
+   * command was consumed; the error is logged and reported to the user).
+   */
+  async dispatchCommand(name: string, context: ExtensionCommandContext): Promise<boolean> {
+    const entry = this.commands.get(name.toLowerCase());
+    if (!entry) return false;
+    try {
+      await entry.command.handler(context);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.logWarning(`Extension command "/${entry.command.name}" failed (${entry.owner})`, message);
+      try {
+        await context.respond(`Command /${entry.command.name} failed: ${message}`);
+      } catch {
+        // The reply channel itself failed; the log line above is the record.
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Run all registered disposers in reverse registration order (LIFO).
+   * Disposer errors are logged and never propagate. Idempotent: disposers
+   * run once and the list is cleared.
+   */
+  async dispose(): Promise<void> {
+    const disposers = this.disposers;
+    this.disposers = [];
+    for (const { owner, disposer } of disposers.toReversed()) {
+      try {
+        await disposer();
+      } catch (err) {
+        log.logWarning(
+          `Extension disposer failed (${owner})`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    }
   }
 
   hasHandlers(hook: MikanHookName): boolean {
