@@ -4,6 +4,13 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingBot, ConversationEvent } from "../src/adapter.js";
 import { EventsWatcher } from "../src/events.js";
+import { reportUserFacingError } from "../src/observability/sentry.js";
+
+vi.mock("../src/observability/sentry.js", () => ({
+  reportUserFacingError: vi.fn(),
+}));
+
+const mockReportUserFacingError = vi.mocked(reportUserFacingError);
 
 function makeMessagingBot(platform: string) {
   const enqueueEvent = vi.fn<(event: ConversationEvent) => boolean>().mockReturnValue(true);
@@ -256,5 +263,305 @@ describe("EventsWatcher platform routing", () => {
       ].join("\n"),
       ts: "event:deploy-reminder",
     });
+  });
+});
+
+describe("EventsWatcher scheduling", () => {
+  let tmpDir: string;
+  let eventsDir: string;
+
+  beforeEach(() => {
+    tmpDir = join(tmpdir(), `mikan-events-sched-${Date.now()}-${Math.random()}`);
+    eventsDir = join(tmpDir, "events");
+    mkdirSync(eventsDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("deletes a one-shot event scheduled in the past without executing", () => {
+    const { bot, enqueueEvent } = makeMessagingBot("slack");
+    const watcher = new EventsWatcher(eventsDir, { slack: bot }) as any;
+    const filename = "past.json";
+    const filePath = join(eventsDir, filename);
+    writeFileSync(filePath, "{}");
+
+    watcher.handleOneShot(filename, {
+      type: "one-shot",
+      platform: "slack",
+      conversationId: "D1",
+      conversationKind: "direct",
+      text: "too late",
+      at: new Date(Date.now() - 60_000).toISOString(),
+    });
+
+    expect(watcher.timers.has(filename)).toBe(false);
+    expect(existsSync(filePath)).toBe(false);
+    expect(enqueueEvent).not.toHaveBeenCalled();
+  });
+
+  test("stores a timer for a one-shot event scheduled in the future", () => {
+    const { bot } = makeMessagingBot("slack");
+    const watcher = new EventsWatcher(eventsDir, { slack: bot }) as any;
+    const filename = "future.json";
+
+    watcher.handleOneShot(filename, {
+      type: "one-shot",
+      platform: "slack",
+      conversationId: "D1",
+      conversationKind: "direct",
+      text: "later",
+      at: new Date(Date.now() + 60_000).toISOString(),
+    });
+
+    expect(watcher.timers.has(filename)).toBe(true);
+    watcher.stop();
+    expect(watcher.timers.has(filename)).toBe(false);
+  });
+
+  test("schedules a periodic event and exposes it via getPeriodicEvents", () => {
+    const { bot } = makeMessagingBot("slack");
+    const watcher = new EventsWatcher(eventsDir, { slack: bot }) as any;
+    const filename = "daily.json";
+    writeFileSync(
+      join(eventsDir, filename),
+      JSON.stringify({
+        type: "periodic",
+        platform: "slack",
+        conversationId: "C1",
+        conversationKind: "shared",
+        text: "standup",
+        schedule: "0 9 * * *",
+        timezone: "UTC",
+      }),
+    );
+
+    watcher.handlePeriodic(filename, {
+      type: "periodic",
+      platform: "slack",
+      conversationId: "C1",
+      conversationKind: "shared",
+      text: "standup",
+      schedule: "0 9 * * *",
+      timezone: "UTC",
+    });
+
+    expect(watcher.crons.has(filename)).toBe(true);
+
+    const infos = watcher.getPeriodicEvents();
+    expect(infos).toHaveLength(1);
+    expect(infos[0]).toMatchObject({
+      filename,
+      platform: "slack",
+      conversationId: "C1",
+      schedule: "0 9 * * *",
+      timezone: "UTC",
+    });
+    expect(infos[0].nextRun).toEqual(expect.any(String));
+
+    watcher.stop();
+    expect(watcher.crons.has(filename)).toBe(false);
+  });
+
+  test("deletes a periodic event with an invalid cron schedule", () => {
+    const { bot } = makeMessagingBot("slack");
+    const watcher = new EventsWatcher(eventsDir, { slack: bot }) as any;
+    const filename = "broken.json";
+    const filePath = join(eventsDir, filename);
+    writeFileSync(filePath, "{}");
+
+    watcher.handlePeriodic(filename, {
+      type: "periodic",
+      platform: "slack",
+      conversationId: "C1",
+      conversationKind: "shared",
+      text: "oops",
+      schedule: "not a cron",
+      timezone: "UTC",
+    });
+
+    expect(watcher.crons.has(filename)).toBe(false);
+    expect(existsSync(filePath)).toBe(false);
+  });
+
+  test("deletes a stale immediate event created before startup", () => {
+    const filename = "stale.json";
+    const filePath = join(eventsDir, filename);
+    // Write the file first so its mtime precedes the watcher's start time.
+    writeFileSync(filePath, "{}");
+
+    const { bot, enqueueEvent } = makeMessagingBot("slack");
+    const watcher = new EventsWatcher(eventsDir, { slack: bot }) as any;
+
+    watcher.handleImmediate(filename, {
+      type: "immediate",
+      platform: "slack",
+      conversationId: "D1",
+      conversationKind: "direct",
+      text: "old news",
+    });
+
+    expect(existsSync(filePath)).toBe(false);
+    expect(enqueueEvent).not.toHaveBeenCalled();
+  });
+
+  test("executes a fresh immediate event created after startup", () => {
+    const { bot, enqueueEvent } = makeMessagingBot("slack");
+    const watcher = new EventsWatcher(eventsDir, { slack: bot }) as any;
+    // Pin startup before the file's mtime so the event reads as fresh regardless
+    // of filesystem timestamp granularity.
+    watcher.startTime = 0;
+
+    const filename = "fresh.json";
+    const filePath = join(eventsDir, filename);
+    writeFileSync(filePath, "{}");
+
+    watcher.handleImmediate(filename, {
+      type: "immediate",
+      platform: "slack",
+      conversationId: "D1",
+      conversationKind: "direct",
+      text: "breaking",
+    });
+
+    expect(enqueueEvent).toHaveBeenCalledTimes(1);
+    // Immediate events are deleted after a successful enqueue.
+    expect(existsSync(filePath)).toBe(false);
+  });
+});
+
+describe("EventsWatcher delivery failures", () => {
+  let tmpDir: string;
+  let eventsDir: string;
+
+  beforeEach(() => {
+    mockReportUserFacingError.mockClear();
+    tmpDir = join(tmpdir(), `mikan-events-fail-${Date.now()}-${Math.random()}`);
+    eventsDir = join(tmpDir, "events");
+    mkdirSync(eventsDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("reports a delivery failure when no bot is configured for the platform", () => {
+    const { bot } = makeMessagingBot("slack");
+    const watcher = new EventsWatcher(eventsDir, { slack: bot }) as any;
+
+    watcher.execute("orphan.json", {
+      type: "immediate",
+      platform: "discord",
+      conversationId: "C1",
+      conversationKind: "shared",
+      text: "nobody home",
+    });
+
+    expect(mockReportUserFacingError).toHaveBeenCalledTimes(1);
+    const [, options] = mockReportUserFacingError.mock.calls[0];
+    expect(options).toMatchObject({
+      domain: "events",
+      surface: "event_delivery",
+      platform: "discord",
+      context: expect.objectContaining({ failure: "missing_bot", filename: "orphan.json" }),
+    });
+  });
+
+  test("reports a delivery failure when the bot queue is full", () => {
+    const { bot, enqueueEvent } = makeMessagingBot("slack");
+    enqueueEvent.mockReturnValue(false);
+    const watcher = new EventsWatcher(eventsDir, { slack: bot }) as any;
+
+    const filename = "full.json";
+    const filePath = join(eventsDir, filename);
+    writeFileSync(filePath, "{}");
+
+    watcher.execute(filename, {
+      type: "one-shot",
+      platform: "slack",
+      conversationId: "D1",
+      conversationKind: "direct",
+      text: "dropped",
+      at: new Date().toISOString(),
+    });
+
+    expect(mockReportUserFacingError).toHaveBeenCalledTimes(1);
+    const [, options] = mockReportUserFacingError.mock.calls[0];
+    expect(options.context).toMatchObject({ failure: "queue_full", filename });
+    // One-shot events are removed even when discarded.
+    expect(existsSync(filePath)).toBe(false);
+  });
+
+  test("keeps periodic events on disk when the queue is full", () => {
+    const { bot, enqueueEvent } = makeMessagingBot("slack");
+    enqueueEvent.mockReturnValue(false);
+    const watcher = new EventsWatcher(eventsDir, { slack: bot }) as any;
+
+    const filename = "periodic-full.json";
+    const filePath = join(eventsDir, filename);
+    writeFileSync(filePath, "{}");
+
+    watcher.execute(
+      filename,
+      {
+        type: "periodic",
+        platform: "slack",
+        conversationId: "C1",
+        conversationKind: "shared",
+        text: "recurring",
+        schedule: "0 9 * * *",
+        timezone: "UTC",
+      },
+      false,
+    );
+
+    expect(mockReportUserFacingError).toHaveBeenCalledTimes(1);
+    // Periodic events must survive a transient queue-full so the next tick can retry.
+    expect(existsSync(filePath)).toBe(true);
+  });
+});
+
+describe("EventsWatcher prompt building", () => {
+  const eventsDir = join(tmpdir(), "mikan-events-prompt");
+  const { bot } = makeMessagingBot("slack");
+  const watcher = new EventsWatcher(eventsDir, { slack: bot }) as any;
+
+  test("builds a reminder prompt for one-shot events", () => {
+    const prompt = watcher.buildEventPrompt({
+      type: "one-shot",
+      platform: "slack",
+      conversationId: "D1",
+      conversationKind: "direct",
+      text: "call the dentist",
+      at: new Date().toISOString(),
+    });
+    expect(prompt).toContain("Reminder: call the dentist");
+    expect(prompt).toContain("deliver the following reminder");
+  });
+
+  test("builds a recurring-task prompt with a silent-reply hint for periodic events", () => {
+    const prompt = watcher.buildEventPrompt({
+      type: "periodic",
+      platform: "slack",
+      conversationId: "C1",
+      conversationKind: "shared",
+      text: "post the standup summary",
+      schedule: "0 9 * * *",
+      timezone: "UTC",
+    });
+    expect(prompt).toContain("Task: post the standup summary");
+    expect(prompt).toContain("[SILENT]");
+  });
+
+  test("builds an event prompt for immediate events", () => {
+    const prompt = watcher.buildEventPrompt({
+      type: "immediate",
+      platform: "slack",
+      conversationId: "D1",
+      conversationKind: "direct",
+      text: "deploy finished",
+    });
+    expect(prompt).toContain("Event: deploy finished");
   });
 });
