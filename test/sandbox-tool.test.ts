@@ -9,7 +9,7 @@ describe("createSandboxTool", () => {
     });
     const { tool, setSandboxContext } = createSandboxTool({
       sandbox: { type: "image", image: "ubuntu:24.04" },
-      provisioner: {
+      resourceController: {
         getLimitStatus: vi.fn(),
         setLimits,
       },
@@ -36,7 +36,7 @@ describe("createSandboxTool", () => {
     });
     const { tool, setSandboxContext } = createSandboxTool({
       sandbox: { type: "image", image: "ubuntu:24.04" },
-      provisioner: {
+      resourceController: {
         getLimitStatus,
         setLimits: vi.fn(),
       },
@@ -52,10 +52,29 @@ describe("createSandboxTool", () => {
     });
   });
 
+  test("sets limits for the current Gondolin conversation", async () => {
+    const setLimits = vi.fn().mockResolvedValue({
+      limits: { cpus: "2", memory: "4g" },
+      boosted: false,
+    });
+    const { tool, setSandboxContext } = createSandboxTool({
+      sandbox: { type: "gondolin", profile: "default" },
+      resourceController: {
+        getLimitStatus: vi.fn(),
+        setLimits,
+      },
+    });
+
+    setSandboxContext({ conversationId: "C123", userId: "U123" });
+    await tool.execute("tool-call", { action: "set", cpus: "2", memory: "4g" });
+
+    expect(setLimits).toHaveBeenCalledWith("c123", { cpus: "2", memory: "4g" });
+  });
+
   test("rejects set without limits", async () => {
     const { tool, setSandboxContext } = createSandboxTool({
       sandbox: { type: "image", image: "ubuntu:24.04" },
-      provisioner: {
+      resourceController: {
         getLimitStatus: vi.fn(),
         setLimits: vi.fn(),
       },

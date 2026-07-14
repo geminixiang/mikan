@@ -42,6 +42,7 @@ import type {
   PlatformReactor,
   PlatformTrustModel,
   PlatformUploader,
+  SandboxResourceController,
 } from "./types.js";
 import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import { resolveConversationSettings } from "./config.js";
@@ -1593,6 +1594,7 @@ export interface CreateRunnerOptions {
   sessionScope: ResolvedSessionScope;
   vaultManager?: VaultManager;
   provisioner?: DockerContainerManager;
+  resourceController?: SandboxResourceController;
   sessionView?: {
     tokenStore: SessionViewTokenStoreLike;
     portalBaseUrl?: string;
@@ -1622,6 +1624,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     sessionScope,
     vaultManager,
     provisioner,
+    resourceController,
     sessionView,
     platformNotifier,
     platformReactor,
@@ -1658,7 +1661,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   } = createMikanTools(
     executor,
     workspaceDir,
-    { sandbox: sandboxConfig, provisioner },
+    { sandbox: sandboxConfig, resourceController: resourceController ?? provisioner },
     platformToolPackFactories ?? [],
     {
       model,

@@ -1,6 +1,7 @@
 import type { VM as GondolinVM } from "@earendil-works/gondolin";
 import { dirname } from "node:path";
 import * as log from "../log.js";
+import type { ResourceLimits, SandboxLimitStatus, SandboxResourceController } from "../types.js";
 import { SandboxError } from "./errors.js";
 import { createMountedRuntimePathContext } from "./path-context.js";
 import { withRuntimeBootstrap } from "./container.js";
@@ -18,6 +19,7 @@ type VM = GondolinVM;
 
 interface GondolinSession {
   vm: Promise<VM>;
+  resourceKey?: string;
   activeOperations: number;
   lastUsed: number;
   idleWaiters: Array<() => void>;
@@ -26,6 +28,60 @@ interface GondolinSession {
 const MINIMUM_NODE_VERSION = [23, 6, 0] as const;
 const MIKAN_IMAGE = "mikan-sandbox:latest";
 const sessions = new Map<string, GondolinSession>();
+
+class GondolinResourceManager implements SandboxResourceController {
+  private defaultLimits?: ResourceLimits;
+  private boostLimits?: ResourceLimits;
+  private readonly boostedKeys = new Set<string>();
+  private readonly overrideLimits = new Map<string, ResourceLimits>();
+
+  configure(defaultLimits?: ResourceLimits, boostLimits?: ResourceLimits): void {
+    this.defaultLimits = defaultLimits;
+    this.boostLimits = boostLimits;
+    this.boostedKeys.clear();
+    this.overrideLimits.clear();
+  }
+
+  async boost(key: string): Promise<SandboxLimitStatus> {
+    if (this.boostLimits?.cpus || this.boostLimits?.memory) {
+      this.overrideLimits.delete(key);
+      this.boostedKeys.add(key);
+    }
+    return this.getLimitStatus(key);
+  }
+
+  async setLimits(key: string, limits: ResourceLimits): Promise<SandboxLimitStatus> {
+    this.boostedKeys.delete(key);
+    this.overrideLimits.set(key, { ...this.defaultLimits, ...limits });
+    return this.getLimitStatus(key);
+  }
+
+  getLimitStatus(key: string): SandboxLimitStatus {
+    return { limits: this.effectiveLimits(key), boosted: this.boostedKeys.has(key) };
+  }
+
+  getDefaultLimits(): ResourceLimits | undefined {
+    return this.defaultLimits;
+  }
+
+  getBoostLimits(): ResourceLimits | undefined {
+    return this.boostLimits;
+  }
+
+  clear(key: string): void {
+    this.boostedKeys.delete(key);
+    this.overrideLimits.delete(key);
+  }
+
+  private effectiveLimits(key: string): ResourceLimits | undefined {
+    const override = this.overrideLimits.get(key);
+    if (override) return override;
+    if (!this.boostedKeys.has(key)) return this.defaultLimits;
+    return { ...this.defaultLimits, ...this.boostLimits };
+  }
+}
+
+export const gondolinResources = new GondolinResourceManager();
 
 function parseGondolinSandboxArg(value: string): GondolinSandboxConfig | undefined {
   if (!value.startsWith("gondolin:")) return undefined;
@@ -57,6 +113,9 @@ async function validateGondolinSandbox(): Promise<void> {
 }
 
 async function createVM(config: GondolinSandboxConfig): Promise<VM> {
+  const limits = config.resourceKey
+    ? gondolinResources.getLimitStatus(config.resourceKey).limits
+    : undefined;
   const { RealFSProvider, VM } = (await import("@earendil-works/gondolin")) as GondolinModule;
   const mounts = config.mounts ?? [
     { source: config.workspacePath ?? process.cwd(), target: "/workspace" },
@@ -64,12 +123,24 @@ async function createVM(config: GondolinSandboxConfig): Promise<VM> {
   return VM.create({
     sandbox: { imagePath: MIKAN_IMAGE },
     env: { TZ: "Asia/Taipei" },
+    cpus: gondolinCpuCount(limits?.cpus),
+    memory: limits?.memory,
     vfs: {
       mounts: Object.fromEntries(
         mounts.map(({ source, target }) => [target, new RealFSProvider(source)]),
       ),
     },
   });
+}
+
+function gondolinCpuCount(cpus: string | undefined): number | undefined {
+  if (cpus === undefined) return undefined;
+  const parsed = Number(cpus);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new SandboxError(`Error: invalid Gondolin CPU limit '${cpus}'`);
+  }
+  // ponytail: Gondolin exposes whole vCPUs; add host cgroup quotas if fractional enforcement matters.
+  return Math.ceil(parsed);
 }
 
 function getSession(key: string, config: GondolinSandboxConfig): GondolinSession {
@@ -81,7 +152,13 @@ function getSession(key: string, config: GondolinSandboxConfig): GondolinSession
     if (sessions.get(key) === session) sessions.delete(key);
     throw error;
   });
-  session = { vm, activeOperations: 0, lastUsed: Date.now(), idleWaiters: [] };
+  session = {
+    vm,
+    resourceKey: config.resourceKey,
+    activeOperations: 0,
+    lastUsed: Date.now(),
+    idleWaiters: [],
+  };
   sessions.set(key, session);
   return session;
 }
@@ -120,6 +197,12 @@ async function closeSession(
     if (waitForActiveOperations) await waitForIdle(session);
     const vm = await session.vm;
     await vm.close();
+    if (
+      session.resourceKey &&
+      !Array.from(sessions.values()).some(({ resourceKey }) => resourceKey === session.resourceKey)
+    ) {
+      gondolinResources.clear(session.resourceKey);
+    }
   } catch (error) {
     log.logWarning(
       `Failed to close Gondolin session '${key}'`,
@@ -151,7 +234,7 @@ function executionSignal(options?: ExecOptions): AbortSignal | undefined {
 
 export class GondolinExecutor implements Executor {
   private readonly workspacePath: string;
-  private readonly sessionKey: string;
+  private readonly instanceId: string;
 
   constructor(
     private readonly config: GondolinSandboxConfig,
@@ -159,7 +242,14 @@ export class GondolinExecutor implements Executor {
   ) {
     assertSupportedNodeVersion();
     this.workspacePath = config.workspacePath ?? process.cwd();
-    this.sessionKey = config.instanceId ?? this.workspacePath;
+    this.instanceId = config.instanceId ?? this.workspacePath;
+  }
+
+  private get sessionKey(): string {
+    const limits = this.config.resourceKey
+      ? gondolinResources.getLimitStatus(this.config.resourceKey).limits
+      : undefined;
+    return `${this.instanceId}:${JSON.stringify(limits)}`;
   }
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {

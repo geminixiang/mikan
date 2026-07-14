@@ -10,6 +10,7 @@ vi.mock("@earendil-works/gondolin", () => ({
 import {
   GondolinExecutor,
   closeAllGondolinVms,
+  gondolinResources,
   stopIdleGondolinVms,
 } from "../src/sandbox/gondolin.js";
 
@@ -41,6 +42,7 @@ describe("Gondolin lifecycle", () => {
   beforeEach(() => {
     gondolin.create.mockReset();
     gondolin.RealFSProvider.mockReset();
+    gondolinResources.configure();
     Object.defineProperty(process.versions, "node", { value: "24.0.0", configurable: true });
   });
 
@@ -112,6 +114,56 @@ describe("Gondolin lifecycle", () => {
         signal: undefined,
       },
     );
+  });
+
+  test("applies limits and recreates the VM when boosted", async () => {
+    const first = createVm();
+    const second = createVm();
+    gondolin.create.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    gondolinResources.configure({ cpus: "0.5", memory: "512m" }, { cpus: "2", memory: "2g" });
+    const executor = new GondolinExecutor({
+      type: "gondolin",
+      profile: "default",
+      instanceId: "limits",
+      resourceKey: "c123",
+      workspacePath: "/workspace-host",
+    });
+
+    await executor.exec("pwd");
+    expect(gondolin.create).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ cpus: 1, memory: "512m" }),
+    );
+
+    await gondolinResources.boost("c123");
+    await executor.exec("pwd");
+    expect(gondolin.create).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ cpus: 2, memory: "2g" }),
+    );
+    expect(gondolinResources.getLimitStatus("c123").boosted).toBe(true);
+
+    await closeAllGondolinVms();
+    expect(gondolinResources.getLimitStatus("c123")).toEqual({
+      limits: { cpus: "0.5", memory: "512m" },
+      boosted: false,
+    });
+  });
+
+  test("rejects an invalid CPU limit before creating a VM", async () => {
+    gondolinResources.configure({ cpus: "invalid" });
+    const executor = new GondolinExecutor({
+      type: "gondolin",
+      profile: "default",
+      instanceId: "invalid-limits",
+      resourceKey: "c123",
+      workspacePath: "/workspace-host",
+    });
+
+    await expect(executor.exec("pwd")).rejects.toThrow(
+      "Error: invalid Gondolin CPU limit 'invalid'",
+    );
+    expect(gondolin.create).not.toHaveBeenCalled();
   });
 
   test("does not close a VM while an operation is active", async () => {

@@ -1,7 +1,7 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
-import type { DockerContainerManager, ResourceLimits } from "../provisioner.js";
 import type { SandboxConfig } from "../sandbox/index.js";
+import type { ResourceLimits, SandboxResourceController } from "../types.js";
 import { resolveActorVaultKey } from "../vault/routing.js";
 
 const sandboxSchema = Type.Object({
@@ -10,7 +10,7 @@ const sandboxSchema = Type.Object({
   }),
   cpus: Type.Optional(
     Type.String({
-      description: "Docker CPU limit for action=set, for example '0.5', '1', or '2'.",
+      description: "CPU limit for action=set, for example '0.5', '1', or '2'.",
     }),
   ),
   memory: Type.Optional(
@@ -33,7 +33,7 @@ interface SandboxToolContext {
 
 interface SandboxToolController {
   sandbox: SandboxConfig;
-  provisioner?: Pick<DockerContainerManager, "getLimitStatus" | "setLimits">;
+  resourceController?: Pick<SandboxResourceController, "getLimitStatus" | "setLimits">;
 }
 
 export function createSandboxTool(controller: SandboxToolController): {
@@ -46,7 +46,7 @@ export function createSandboxTool(controller: SandboxToolController): {
     name: "sandbox",
     label: "sandbox",
     description:
-      "Inspect or temporarily set CPU/memory limits for the current managed image sandbox. Limits apply to this conversation's sandbox container and are cleared when the container stops.",
+      "Inspect or temporarily set CPU/memory limits for the current managed sandbox. Limits apply to this conversation's runtime and are cleared when it stops.",
     parameters: sandboxSchema,
     execute: async (_toolCallId: string, params: SandboxToolParams, signal?: AbortSignal) => {
       if (signal?.aborted) {
@@ -55,8 +55,11 @@ export function createSandboxTool(controller: SandboxToolController): {
       if (!sandboxContext) {
         throw new Error("Sandbox context not configured");
       }
-      if (controller.sandbox.type !== "image" || !controller.provisioner) {
-        throw new Error("The sandbox tool only supports image:* managed sandboxes");
+      if (
+        (controller.sandbox.type !== "image" && controller.sandbox.type !== "gondolin") ||
+        !controller.resourceController
+      ) {
+        throw new Error("The sandbox tool only supports image:* and gondolin:* managed sandboxes");
       }
 
       const containerKey = resolveActorVaultKey(
@@ -67,13 +70,13 @@ export function createSandboxTool(controller: SandboxToolController): {
 
       if (params.action === "set") {
         const limits = normalizeLimits(params);
-        const status = await controller.provisioner.setLimits(containerKey, limits);
+        const status = await controller.resourceController.setLimits(containerKey, limits);
         return textResult(
-          `Updated sandbox limits for ${containerKey}: ${formatLimits(status.limits)}. These temporary limits are cleared when the sandbox container stops.`,
+          `Updated sandbox limits for ${containerKey}: ${formatLimits(status.limits)}. These temporary limits are cleared when the sandbox runtime stops.`,
         );
       }
 
-      const status = controller.provisioner.getLimitStatus(containerKey);
+      const status = controller.resourceController.getLimitStatus(containerKey);
       return textResult(
         `Sandbox limits for ${containerKey}: ${formatLimits(status.limits)}${status.boosted ? " (boosted)" : ""}.`,
       );

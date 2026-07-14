@@ -50,7 +50,7 @@ import {
   type SandboxConfig,
   validateSandbox,
 } from "./sandbox/index.js";
-import { closeAllGondolinVms, stopIdleGondolinVms } from "./sandbox/gondolin.js";
+import { closeAllGondolinVms, gondolinResources, stopIdleGondolinVms } from "./sandbox/gondolin.js";
 import { FileVaultManager } from "./vault/index.js";
 import { runExtCommand } from "./cli/ext.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
@@ -310,7 +310,10 @@ if (vaultManager.isEnabled()) {
   console.log(
     sandbox.type === "container"
       ? "  Vault system enabled. Container vault active."
-      : sandbox.type === "image" || sandbox.type === "firecracker" || sandbox.type === "cloudflare"
+      : sandbox.type === "image" ||
+          sandbox.type === "gondolin" ||
+          sandbox.type === "firecracker" ||
+          sandbox.type === "cloudflare"
         ? "  Vault system enabled. Conversation-scoped credential routing active."
         : "  Vault system enabled. Host mode will not inject vault env.",
   );
@@ -340,6 +343,15 @@ const provisioner =
         boostLimits: sandboxBoostLimits,
       })
     : undefined;
+if (sandbox.type === "gondolin") {
+  gondolinResources.configure(sandboxLimits, sandboxBoostLimits);
+}
+const resourceController =
+  sandbox.type === "image"
+    ? provisioner
+    : sandbox.type === "gondolin"
+      ? gondolinResources
+      : undefined;
 
 if (sandbox.type === "image" || sandbox.type === "gondolin") {
   ensureDirExists(join(workingDir, "skills"));
@@ -470,6 +482,7 @@ const handler = createConversationRuntime({
   sandbox,
   vaultManager,
   provisioner,
+  resourceController,
   linkTokenStore,
   sessionViewTokenStore,
   adminTokenStore,

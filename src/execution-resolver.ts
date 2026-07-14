@@ -135,6 +135,7 @@ export class ActorExecutionResolver {
         workspacePath: this.hostWorkspacePath,
         mounts,
         instanceId: `${vaultKey}:${mountSignature}`,
+        resourceKey: vaultKey,
       };
     }
     if (this.baseConfig.type !== "image") {

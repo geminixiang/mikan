@@ -3,8 +3,8 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import type { TSchema } from "@sinclair/typebox";
 import type { ConversationKind } from "../adapter.js";
 import { createAttachTool } from "../adapters/slack/tools/attach.js";
-import type { DockerContainerManager } from "../provisioner.js";
 import type { Executor, SandboxConfig } from "../sandbox/index.js";
+import type { SandboxResourceController } from "../types.js";
 import { createBashTool } from "./bash.js";
 import { createEditTool } from "./edit.js";
 import { createEventTool, HostEventStore } from "./event.js";
@@ -20,7 +20,7 @@ export function createMikanTools(
   workspaceDir: string,
   sandboxController?: {
     sandbox: SandboxConfig;
-    provisioner?: Pick<DockerContainerManager, "getLimitStatus" | "setLimits">;
+    resourceController?: Pick<SandboxResourceController, "getLimitStatus" | "setLimits">;
   },
   /** Platform capability pack factories (e.g. GitHub PR/CI); instantiated
    *  here so each runner owns its packs' bind state. Not core tools. */

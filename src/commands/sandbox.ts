@@ -27,10 +27,15 @@ export class SandboxCommandHandler implements CommandHandler {
     const parsed = parseSandboxCommand(context.commandText);
     if (!parsed) return false;
 
-    if (context.services.sandbox.type !== "image" || !context.services.provisioner) {
+    if (
+      (context.services.sandbox.type !== "image" && context.services.sandbox.type !== "gondolin") ||
+      !context.services.resourceController
+    ) {
       await replyDiagnosticWithContext(
         context.responder,
-        formatCommandSummary("Sandbox", ["`/pi-sandbox` 目前只支援 `image:*` managed sandbox。"]),
+        formatCommandSummary("Sandbox", [
+          "`/pi-sandbox` 目前只支援 `image:*` 與 `gondolin:*` managed sandbox。",
+        ]),
         { style: "muted" },
       );
       return true;
@@ -54,8 +59,8 @@ export class SandboxCommandHandler implements CommandHandler {
             : "已將此 conversation 的 sandbox 設為 private workspace mode。",
           `Workspace mount: ${parsed.action}`,
           parsed.action === "full"
-            ? "之後這個 container 會把整個 host workspace 掛到 /workspace。"
-            : "之後這個 container 只會掛載 private workspace 檔案與當前 conversation 目錄。",
+            ? "之後這個 runtime 會把整個 host workspace 掛到 /workspace。"
+            : "之後這個 runtime 只會掛載 private workspace 檔案與當前 conversation 目錄。",
         ]),
         { style: "muted" },
       );
@@ -63,7 +68,7 @@ export class SandboxCommandHandler implements CommandHandler {
     }
 
     if (parsed.action === "boost") {
-      const boostLimits = context.services.provisioner.getBoostLimits();
+      const boostLimits = context.services.resourceController.getBoostLimits();
       if (!boostLimits?.cpus && !boostLimits?.memory) {
         await replyDiagnosticWithContext(
           context.responder,
@@ -76,22 +81,22 @@ export class SandboxCommandHandler implements CommandHandler {
         return true;
       }
 
-      const status = await context.services.provisioner.boost(containerKey);
+      const status = await context.services.resourceController.boost(containerKey);
       await replyDiagnosticWithContext(
         context.responder,
         formatCommandSummary("Sandbox Boost", [
           "已暫時提升此 conversation 的 sandbox 規格。",
           `Current: ${formatLimits(status.limits)}`,
-          "boost 會在此 sandbox container 關閉後結束。",
+          "boost 會在此 sandbox runtime 關閉後結束。",
         ]),
         { style: "muted" },
       );
       return true;
     }
 
-    const status = context.services.provisioner.getLimitStatus(containerKey);
-    const defaultLimits = context.services.provisioner.getDefaultLimits();
-    const boostLimits = context.services.provisioner.getBoostLimits();
+    const status = context.services.resourceController.getLimitStatus(containerKey);
+    const defaultLimits = context.services.resourceController.getDefaultLimits();
+    const boostLimits = context.services.resourceController.getBoostLimits();
     const workspaceMount = readConversationWorkspaceMountMode(
       context.services.workingDir,
       context.conversationId,

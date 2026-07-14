@@ -395,6 +395,14 @@ export interface SandboxLimitStatus {
   boosted: boolean;
 }
 
+export interface SandboxResourceController {
+  boost(key: string): Promise<SandboxLimitStatus>;
+  setLimits(key: string, limits: ResourceLimits): Promise<SandboxLimitStatus>;
+  getLimitStatus(key: string): SandboxLimitStatus;
+  getDefaultLimits(): ResourceLimits | undefined;
+  getBoostLimits(): ResourceLimits | undefined;
+}
+
 export interface ProvisionOptions {
   containerName?: string;
   mounts?: ContainerMount[];

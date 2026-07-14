@@ -646,7 +646,7 @@ describe("SandboxCommandHandler", () => {
       services: {
         workingDir,
         sandbox: { type: "image", image: "ubuntu:24.04" },
-        provisioner: {
+        resourceController: {
           getLimitStatus: () => ({ limits: { cpus: "0.5", memory: "1g" }, boosted: false }),
           getDefaultLimits: () => ({ cpus: "0.5", memory: "1g" }),
           getBoostLimits: () => ({ cpus: "2", memory: "4g" }),
@@ -665,7 +665,7 @@ describe("SandboxCommandHandler", () => {
       services: {
         workingDir,
         sandbox: { type: "image", image: "ubuntu:24.04" },
-        provisioner: {
+        resourceController: {
           getLimitStatus: () => ({ limits: undefined, boosted: false }),
           getDefaultLimits: () => undefined,
           getBoostLimits: () => undefined,
@@ -691,7 +691,7 @@ describe("SandboxCommandHandler", () => {
       services: {
         workingDir,
         sandbox: { type: "image", image: "ubuntu:24.04" },
-        provisioner: {
+        resourceController: {
           getLimitStatus: () => ({ limits: undefined, boosted: false }),
           getDefaultLimits: () => undefined,
           getBoostLimits: () => undefined,
@@ -705,6 +705,29 @@ describe("SandboxCommandHandler", () => {
     ) as { sandbox: { image: { workspaceMount: string } } };
     expect(sandboxConfig.sandbox.image.workspaceMount).toBe("private");
     expect(ctx.responder.responses[0]).toContain("Workspace mount: private");
+  });
+
+  test("boosts a Gondolin conversation", async () => {
+    const boost = vi.fn().mockResolvedValue({
+      limits: { cpus: "2", memory: "4g" },
+      boosted: true,
+    });
+    const ctx = buildContext({
+      commandText: "/pi-sandbox boost",
+      conversationId: "C123",
+      services: {
+        workingDir,
+        sandbox: { type: "gondolin", profile: "default" },
+        resourceController: {
+          boost,
+          getBoostLimits: () => ({ cpus: "2", memory: "4g" }),
+        } as any,
+      },
+    });
+
+    expect(await handler.tryHandle(ctx)).toBe(true);
+    expect(boost).toHaveBeenCalledWith("c123");
+    expect(ctx.responder.responses[0]).toContain("CPU 2 / Memory 4g");
   });
 });
 

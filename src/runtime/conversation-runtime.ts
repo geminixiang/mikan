@@ -90,6 +90,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   constructor(private readonly options: ConversationRuntimeOptions) {
     this.commandServices = {
       ...options,
+      resourceController: options.resourceController ?? options.provisioner,
       vaultManager: options.vaultManager ?? disabledVaultManager,
       linkTokenStore: options.linkTokenStore ?? portalNotConfiguredTokenStore("Login"),
       sessionViewTokenStore:
@@ -485,6 +486,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         sessionScope,
         vaultManager: this.options.vaultManager,
         provisioner: this.options.provisioner,
+        resourceController: this.options.resourceController,
         sessionView: this.options.sessionViewTokenStore
           ? {
               tokenStore: this.options.sessionViewTokenStore,

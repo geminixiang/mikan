@@ -27,6 +27,7 @@ export interface GondolinSandboxConfig {
   workspacePath?: string;
   mounts?: Array<{ source: string; target: string }>;
   instanceId?: string;
+  resourceKey?: string;
 }
 
 export interface FirecrackerSandboxConfig {
