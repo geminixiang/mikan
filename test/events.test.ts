@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -388,8 +388,9 @@ describe("EventsWatcher scheduling", () => {
   test("deletes a stale immediate event created before startup", () => {
     const filename = "stale.json";
     const filePath = join(eventsDir, filename);
-    // Write the file first so its mtime precedes the watcher's start time.
     writeFileSync(filePath, "{}");
+    const staleTime = new Date(Date.now() - 1000);
+    utimesSync(filePath, staleTime, staleTime);
 
     const { bot, enqueueEvent } = makeMessagingBot("slack");
     const watcher = new EventsWatcher(eventsDir, { slack: bot }) as any;
