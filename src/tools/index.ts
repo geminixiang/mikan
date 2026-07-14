@@ -1,4 +1,5 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { TSchema } from "@sinclair/typebox";
 import type { ConversationKind } from "../adapter.js";
 import { createAttachTool } from "../adapters/slack/tools/attach.js";
@@ -7,6 +8,7 @@ import type { Executor, SandboxConfig } from "../sandbox/index.js";
 import { createBashTool } from "./bash.js";
 import { createEditTool } from "./edit.js";
 import { createEventTool, HostEventStore } from "./event.js";
+import { createGenerateImageTool } from "./generate-image.js";
 import { createReactTool } from "./react.js";
 import { createReadTool } from "./read.js";
 import { createSandboxTool } from "./sandbox.js";
@@ -23,6 +25,10 @@ export function createMikanTools(
   /** Platform capability pack factories (e.g. GitHub PR/CI); instantiated
    *  here so each runner owns its packs' bind state. Not core tools. */
   platformToolPackFactories: readonly PlatformToolPackFactory[] = [],
+  imageGeneration?: {
+    model: Model<Api>;
+    getApiKey: () => Promise<string | undefined>;
+  },
 ): {
   tools: AgentTool<TSchema>[];
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
@@ -37,6 +43,9 @@ export function createMikanTools(
   setSandboxContext: (context: { conversationId: string; userId: string }) => void;
 } {
   const { tool: attachTool, setUploadFunction } = createAttachTool();
+  const imageTool = imageGeneration
+    ? createGenerateImageTool({ ...imageGeneration, workspaceDir })
+    : undefined;
   const { tool: reactTool, setReactFunction } = createReactTool();
   const { tool: eventTool, setEventContext } = createEventTool(
     HostEventStore.fromWorkspaceDir(workspaceDir),
@@ -55,10 +64,14 @@ export function createMikanTools(
       eventTool,
       sandboxTool,
       attachTool,
+      ...(imageTool ? [imageTool.tool] : []),
       reactTool,
       ...packTools,
     ],
-    setUploadFunction,
+    setUploadFunction: (fn) => {
+      setUploadFunction(fn);
+      imageTool?.setUploadFunction(fn);
+    },
     setReactFunction,
     bindPlatformToolPacks: (ctx) => {
       for (const pack of platformToolPacks) {

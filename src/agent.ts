@@ -1635,6 +1635,12 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     );
   let pathContext = getUnresolvedSandboxPathContext(sandboxConfig, workspaceBase);
 
+  const modelRegistry = options.models ?? MikanModels.create();
+  if (modelRegistry.getError()) {
+    log.logWarning("models.json load error", modelRegistry.getError()!);
+  }
+  const model = modelRegistry.resolve(agentConfig.provider, agentConfig.model);
+
   // Create tools (per-runner, with per-runner upload function setter)
   const {
     tools,
@@ -1648,13 +1654,11 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     workspaceDir,
     { sandbox: sandboxConfig, provisioner },
     platformToolPackFactories ?? [],
+    {
+      model,
+      getApiKey: () => modelRegistry.getApiKeyForProvider(model.provider),
+    },
   );
-
-  const modelRegistry = options.models ?? MikanModels.create();
-  if (modelRegistry.getError()) {
-    log.logWarning("models.json load error", modelRegistry.getError()!);
-  }
-  const model = modelRegistry.resolve(agentConfig.provider, agentConfig.model);
 
   // Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
   const memory = await getMemory(conversationDir);
