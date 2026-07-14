@@ -341,7 +341,7 @@ const provisioner =
       })
     : undefined;
 
-if (sandbox.type === "image") {
+if (sandbox.type === "image" || sandbox.type === "gondolin") {
   ensureDirExists(join(workingDir, "skills"));
   ensureDirExists(join(workingDir, "events"));
   try {

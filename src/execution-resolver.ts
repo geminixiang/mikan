@@ -88,7 +88,7 @@ export class ActorExecutionResolver {
     this.ensureDefaultSharedVault(vaultKey, context.trustModel);
 
     const vault = this.vaultManager.resolve(vaultKey);
-    const config = this.resolveSandboxConfig(vaultKey);
+    const config = this.resolveSandboxConfig(vaultKey, context.conversationId);
     const env =
       config.type !== "host" &&
       config.type !== "gondolin" &&
@@ -125,13 +125,15 @@ export class ActorExecutionResolver {
     this.vaultManager.copySharedVaultTo(profile, vaultKey);
   }
 
-  private resolveSandboxConfig(vaultKey: string): SandboxConfig {
+  private resolveSandboxConfig(vaultKey: string, conversationId: string): SandboxConfig {
     const config = this.vaultManager.getSandboxConfig(vaultKey, this.baseConfig);
     if (this.baseConfig.type === "gondolin" && config.type === "gondolin") {
+      const workspaceMounts = this.buildWorkspaceMounts(conversationId);
       return {
         ...config,
         workspacePath: this.hostWorkspacePath,
-        instanceId: vaultKey,
+        workspaceMounts,
+        instanceId: `${vaultKey}:${workspaceMounts.length === 1 ? "full" : "private"}`,
       };
     }
     if (this.baseConfig.type !== "image") {
@@ -194,7 +196,7 @@ export class ActorExecutionResolver {
 
   private resolveMounts(conversationId: string, vault?: ResolvedVault): ContainerMount[] {
     const mountsByTarget = new Map<string, ContainerMount>();
-    for (const mount of this.buildImageSandboxMounts(conversationId)) {
+    for (const mount of this.buildWorkspaceMounts(conversationId)) {
       mountsByTarget.set(mount.target, mount);
     }
     for (const mount of vault?.mounts ?? []) {
@@ -218,7 +220,7 @@ export class ActorExecutionResolver {
     return [...mountsByTarget.values()];
   }
 
-  private buildImageSandboxMounts(conversationId: string): ContainerMount[] {
+  private buildWorkspaceMounts(conversationId: string): ContainerMount[] {
     if (!this.workspaceDir) {
       return [];
     }

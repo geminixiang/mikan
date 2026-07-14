@@ -28,7 +28,7 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 | `host`                                                      | host machine              | not injected        | can store, but unused at run time | Best for local development; does not put vault env into the host process                                 |
 | `container:<name>`                                          | existing Docker container | injected            | `container-<name>`                | one container one vault; multiple people sharing one container also share its vault                      |
 | `image:<image>`                                             | Docker managed by mikan   | injected            | generated conversation vault      | Current recommended isolation mode; `1 conversation = 1 vault = 1 container`                             |
-| `gondolin:default`                                          | local Gondolin/QEMU VM    | not yet supported   | generated conversation vault      | Preview; mounts the current workspace at `/workspace`; requires Node.js >=23.6 and QEMU                  |
+| `gondolin:default`                                          | local Gondolin/QEMU VM    | not yet supported   | generated conversation vault      | Preview; supports private/full workspace mounts; requires Node.js >=23.6 and QEMU                        |
 | `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM            | injected            | generated conversation vault      | Very early alpha; you must start the VM and mount workspace at `/workspace`; not recommended yet         |
 | `cloudflare:<sandbox-id>`                                   | Cloudflare Worker         | injected            | generated conversation vault      | Experimental; requires your own `@cloudflare/sandbox` bridge; host workspace is not synced automatically |
 
@@ -77,7 +77,7 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 | per-conversation vault env                   | ❌             | ❌                     | ✅              | ❌                 | ✅              | ✅                |
 | automatic vault file projection / bind mount | ❌             | ❌                     | ✅              | ❌                 | ❌              | ❌                |
 | automatic workspace mount                    | host           | self-managed           | ✅              | ✅                 | self-managed    | ❌                |
-| private workspace mount mode                 | not applicable | ❌                     | ✅              | ❌                 | ❌              | ❌                |
+| private workspace mount mode                 | not applicable | ❌                     | ✅              | ✅                 | ❌              | ❌                |
 | idle auto-stop / recreate                    | not applicable | ❌                     | ✅              | ❌                 | ❌              | ❌                |
 | default CPU / memory limits                  | ❌             | ❌                     | ✅              | ❌                 | ❌              | ❌                |
 | `/pi-sandbox boost`                          | ❌             | ❌                     | ✅              | ❌                 | ❌              | ❌                |

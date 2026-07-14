@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-const gondolin = vi.hoisted(() => ({ create: vi.fn() }));
+const gondolin = vi.hoisted(() => ({ create: vi.fn(), RealFSProvider: vi.fn() }));
 
 vi.mock("@earendil-works/gondolin", () => ({
-  RealFSProvider: vi.fn(),
+  RealFSProvider: gondolin.RealFSProvider,
   VM: { create: gondolin.create },
 }));
 
@@ -40,6 +40,7 @@ describe("Gondolin lifecycle", () => {
 
   beforeEach(() => {
     gondolin.create.mockReset();
+    gondolin.RealFSProvider.mockReset();
     Object.defineProperty(process.versions, "node", { value: "24.0.0", configurable: true });
   });
 
@@ -62,6 +63,30 @@ describe("Gondolin lifecycle", () => {
     await executor.exec("pwd");
     expect(gondolin.create).toHaveBeenCalledTimes(2);
     expect(second.exec).toHaveBeenCalledOnce();
+  });
+
+  test("creates providers for each configured workspace mount", async () => {
+    const vm = createVm();
+    gondolin.create.mockResolvedValue(vm);
+    const executor = new GondolinExecutor({
+      type: "gondolin",
+      profile: "default",
+      instanceId: "mounts",
+      workspaceMounts: [
+        { source: "/host/MEMORY.md", target: "/workspace/MEMORY.md" },
+        { source: "/host/C123", target: "/workspace/C123" },
+      ],
+    });
+
+    await executor.exec("pwd");
+
+    expect(gondolin.RealFSProvider).toHaveBeenCalledTimes(2);
+    expect(gondolin.RealFSProvider).toHaveBeenNthCalledWith(1, "/host/MEMORY.md");
+    expect(gondolin.RealFSProvider).toHaveBeenNthCalledWith(2, "/host/C123");
+    expect(Object.keys(gondolin.create.mock.calls[0][0].vfs.mounts)).toEqual([
+      "/workspace/MEMORY.md",
+      "/workspace/C123",
+    ]);
   });
 
   test("does not close a VM while an operation is active", async () => {

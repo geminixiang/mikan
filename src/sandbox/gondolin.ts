@@ -55,21 +55,28 @@ async function validateGondolinSandbox(): Promise<void> {
   console.log("  Gondolin microVM enabled. Profile: default");
 }
 
-async function createVM(workspacePath: string): Promise<VM> {
+async function createVM(config: GondolinSandboxConfig): Promise<VM> {
   const { RealFSProvider, VM } = (await import("@earendil-works/gondolin")) as GondolinModule;
+  const mounts = config.workspaceMounts ?? [
+    { source: config.workspacePath ?? process.cwd(), target: "/workspace" },
+  ];
   return VM.create({
     sandbox: { imagePath: MIKAN_IMAGE },
     env: { TZ: "Asia/Taipei" },
-    vfs: { mounts: { "/workspace": new RealFSProvider(workspacePath) } },
+    vfs: {
+      mounts: Object.fromEntries(
+        mounts.map(({ source, target }) => [target, new RealFSProvider(source)]),
+      ),
+    },
   });
 }
 
-function getSession(key: string, workspacePath: string): GondolinSession {
+function getSession(key: string, config: GondolinSandboxConfig): GondolinSession {
   const existing = sessions.get(key);
   if (existing) return existing;
 
   let session: GondolinSession;
-  const vm = createVM(workspacePath).catch((error) => {
+  const vm = createVM(config).catch((error) => {
     if (sessions.get(key) === session) sessions.delete(key);
     throw error;
   });
@@ -80,10 +87,10 @@ function getSession(key: string, workspacePath: string): GondolinSession {
 
 async function withVM<T>(
   key: string,
-  workspacePath: string,
+  config: GondolinSandboxConfig,
   operation: (vm: VM) => Promise<T>,
 ): Promise<T> {
-  const session = getSession(key, workspacePath);
+  const session = getSession(key, config);
   session.activeOperations += 1;
   try {
     return await operation(await session.vm);
@@ -152,7 +159,7 @@ export class GondolinExecutor implements Executor {
   }
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
-    return withVM(this.sessionKey, this.workspacePath, async (vm) => {
+    return withVM(this.sessionKey, this.config, async (vm) => {
       const result = await vm.exec(command, {
         cwd: "/workspace",
         signal: executionSignal(options),
@@ -162,13 +169,11 @@ export class GondolinExecutor implements Executor {
   }
 
   async readFile(path: string): Promise<string> {
-    return withVM(this.sessionKey, this.workspacePath, (vm) =>
-      vm.fs.readFile(path, { encoding: "utf8" }),
-    );
+    return withVM(this.sessionKey, this.config, (vm) => vm.fs.readFile(path, { encoding: "utf8" }));
   }
 
   async writeFile(path: string, content: string): Promise<void> {
-    return withVM(this.sessionKey, this.workspacePath, async (vm) => {
+    return withVM(this.sessionKey, this.config, async (vm) => {
       const stage = `${path}.mikan-stage`;
       await vm.fs.mkdir(dirname(path), { recursive: true });
       await vm.fs.writeFile(stage, content);

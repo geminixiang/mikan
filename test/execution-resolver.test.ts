@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createGlobalSettingsFile } from "../src/config.js";
-import { readConversationWorkspaceMountMode } from "../src/execution-resolver.js";
+import {
+  ActorExecutionResolver,
+  readConversationWorkspaceMountMode,
+} from "../src/execution-resolver.js";
+import { FileVaultManager } from "../src/vault/index.js";
 
 describe("readConversationWorkspaceMountMode", () => {
   let stateDir: string;
@@ -49,5 +53,61 @@ describe("readConversationWorkspaceMountMode", () => {
     writeFileSync(join(conversationDir, "settings.json"), "{ invalid json }", "utf-8");
 
     expect(readConversationWorkspaceMountMode(workspaceDir, "C123")).toBe("private");
+  });
+
+  test("resolves private Gondolin workspace mounts", async () => {
+    createGlobalSettingsFile(stateDir);
+    const resolver = new ActorExecutionResolver(
+      { type: "gondolin", profile: "default" },
+      new FileVaultManager(stateDir),
+      undefined,
+      workspaceDir,
+      workspaceDir,
+    );
+
+    const executor = await resolver.resolve({
+      platform: "slack",
+      userId: "U123",
+      conversationId: "C123",
+    });
+
+    expect(executor.getSandboxConfig()).toMatchObject({
+      type: "gondolin",
+      workspaceMounts: [
+        { source: join(workspaceDir, "MEMORY.md"), target: "/workspace/MEMORY.md" },
+        { source: join(workspaceDir, "skills"), target: "/workspace/skills" },
+        { source: join(workspaceDir, "events"), target: "/workspace/events" },
+        { source: join(workspaceDir, "C123"), target: "/workspace/C123" },
+      ],
+    });
+    expect(existsSync(join(workspaceDir, "C123"))).toBe(true);
+  });
+
+  test("resolves the full Gondolin workspace mount", async () => {
+    createGlobalSettingsFile(stateDir);
+    const conversationDir = join(workspaceDir, "C123");
+    mkdirSync(conversationDir, { recursive: true });
+    writeFileSync(
+      join(conversationDir, "settings.json"),
+      JSON.stringify({ sandbox: { image: { workspaceMount: "full" } } }),
+    );
+    const resolver = new ActorExecutionResolver(
+      { type: "gondolin", profile: "default" },
+      new FileVaultManager(stateDir),
+      undefined,
+      workspaceDir,
+      workspaceDir,
+    );
+
+    const executor = await resolver.resolve({
+      platform: "slack",
+      userId: "U123",
+      conversationId: "C123",
+    });
+
+    expect(executor.getSandboxConfig()).toMatchObject({
+      type: "gondolin",
+      workspaceMounts: [{ source: workspaceDir, target: "/workspace" }],
+    });
   });
 });
