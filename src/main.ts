@@ -57,6 +57,7 @@ import {
   sweepUnadoptedGondolinWorkers,
 } from "./sandbox/gondolin.js";
 import { gondolinInventory } from "./sandbox/gondolin-inventory.js";
+import { gondolinRemote } from "./sandbox/gondolin-remote.js";
 import { FileVaultManager } from "./vault/index.js";
 import { runExtCommand } from "./cli/ext.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
@@ -352,6 +353,7 @@ const provisioner =
 if (sandbox.type === "gondolin") {
   gondolinResources.configure(sandboxLimits, sandboxBoostLimits);
   gondolinInventory.configure(join(stateDir, "gondolin-runtimes"));
+  gondolinRemote.configure(sandboxSettings?.gondolin?.remote);
 }
 const resourceController =
   sandbox.type === "image"

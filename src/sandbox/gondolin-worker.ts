@@ -14,7 +14,10 @@ export interface GondolinWorkerConfig {
   /** mikan session key the runtime belongs to. */
   instanceId: string;
   /** Resolved guest image asset directory. */
-  image: string;
+  image?: string;
+  /** Image selector resolved inside the worker (remote workers, where the
+   * spawning host has no image store). Ignored when `image` is set. */
+  imageSelector?: string;
   mounts: Array<{ source: string; target: string }>;
   cpus?: number;
   memory?: string;
@@ -84,9 +87,14 @@ export async function runGondolinWorker(
     deps.loadGondolin ?? (() => import("@earendil-works/gondolin") as Promise<GondolinModule>);
 
   gondolinInventory.configure(config.inventoryDir);
-  const { VM, RealFSProvider, findSession } = await loadGondolin();
+  const { VM, RealFSProvider, findSession, ensureImageSelector } = await loadGondolin();
+  let imagePath = config.image;
+  if (!imagePath) {
+    if (!config.imageSelector) throw new Error("worker config needs image or imageSelector");
+    imagePath = (await ensureImageSelector(config.imageSelector)).assetDir;
+  }
   const vm = await VM.create({
-    sandbox: { imagePath: config.image },
+    sandbox: { imagePath },
     env: { TZ: "Asia/Taipei" },
     sessionLabel: `mikan:${config.instanceId}`,
     cpus: config.cpus,

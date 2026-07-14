@@ -242,11 +242,26 @@ export interface PiAgentWrapper {
 
 // ── config ────────────────────────────────────────────────────────────────────
 
+export interface GondolinRemoteSettings {
+  /** Base URL of the mikan-worker daemon, e.g. https://worker.internal:8433 */
+  url: string;
+  /** CA bundle that signs the daemon's server certificate. */
+  caFile?: string;
+  /** Client certificate + key presented to the daemon (mTLS). */
+  certFile: string;
+  keyFile: string;
+  /** Worker-side path of the shared workspace filesystem. */
+  workspaceRoot?: string;
+  /** Guest image selector resolved on the worker. */
+  imageSelector?: string;
+}
+
 export interface SandboxSettings {
   cpus?: string;
   memory?: string;
   boost?: { cpus?: string; memory?: string };
   image?: { workspaceMount?: "private" | "full" };
+  gondolin?: { remote?: GondolinRemoteSettings };
   defaultSharedVault?: string;
 }
 

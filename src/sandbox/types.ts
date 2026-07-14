@@ -22,7 +22,7 @@ export interface ImageSandboxConfig {
 
 export interface GondolinSandboxConfig {
   type: "gondolin";
-  profile: "default";
+  profile: "default" | "remote";
   /** Local-only runtime details supplied after actor/workspace resolution. */
   image?: string;
   workspacePath?: string;

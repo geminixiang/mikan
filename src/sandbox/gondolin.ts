@@ -1,6 +1,4 @@
 import { createHash } from "node:crypto";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import * as log from "../log.js";
 import type { ResourceLimits, SandboxLimitStatus, SandboxResourceController } from "../types.js";
 import { SandboxError } from "./errors.js";
@@ -10,8 +8,9 @@ import {
   GondolinRuntimeInterruptedError,
   gondolinWorkers,
   type GondolinRuntimeHandle,
+  type GondolinRuntimeTransport,
 } from "./gondolin-worker-client.js";
-import type { GondolinWorkerConfig } from "./gondolin-worker.js";
+import { gondolinRemote } from "./gondolin-remote.js";
 import { createMountedRuntimePathContext } from "./path-context.js";
 import { withRuntimeBootstrap } from "./container.js";
 import { execReadFile, execWriteFile } from "./utils.js";
@@ -28,6 +27,7 @@ type GondolinModule = typeof import("@earendil-works/gondolin");
 
 interface GondolinSession {
   runtime: Promise<GondolinRuntimeHandle>;
+  transport: GondolinRuntimeTransport;
   fingerprint: string;
   resourceKey?: string;
   activeOperations: number;
@@ -44,8 +44,6 @@ interface GondolinDesiredRuntime {
 
 const MINIMUM_NODE_VERSION = [23, 6, 0] as const;
 const MIKAN_IMAGE = "mikan-sandbox:latest";
-/** Workers self-stop once no mikan has refreshed the heartbeat for this long. */
-const WORKER_HEARTBEAT_STALE_MS = 45 * 60 * 1000;
 const sessions = new Map<string, GondolinSession>();
 const transitions = new Map<string, Promise<void>>();
 let activeShutdowns = 0;
@@ -112,9 +110,9 @@ function parseGondolinSandboxArg(value: string): GondolinSandboxConfig | undefin
   if (!profile) {
     throw new SandboxError("Error: gondolin sandbox requires a profile (e.g., gondolin:default)");
   }
-  if (profile !== "default") {
+  if (profile !== "default" && profile !== "remote") {
     throw new SandboxError(
-      `Error: unsupported gondolin profile '${profile}'. Use 'gondolin:default'`,
+      `Error: unsupported gondolin profile '${profile}'. Use 'gondolin:default' or 'gondolin:remote'`,
     );
   }
   return { type: "gondolin", profile };
@@ -129,20 +127,43 @@ function assertSupportedNodeVersion(): void {
   }
 }
 
-async function validateGondolinSandbox(): Promise<void> {
+async function validateGondolinSandbox(config?: GondolinSandboxConfig): Promise<void> {
+  if (config?.profile === "remote") {
+    if (!gondolinRemote.isConfigured()) {
+      throw new SandboxError(
+        "Error: gondolin:remote requires sandbox.gondolin.remote settings (url, certFile, keyFile)",
+      );
+    }
+    console.log("  Gondolin microVM enabled. Profile: remote");
+    return;
+  }
   assertSupportedNodeVersion();
   console.log("  Gondolin microVM enabled. Profile: default");
+}
+
+function transportFor(config: GondolinSandboxConfig): GondolinRuntimeTransport {
+  return config.profile === "remote" ? gondolinRemote : gondolinWorkers;
 }
 
 async function resolveDesiredRuntime(
   config: GondolinSandboxConfig,
 ): Promise<GondolinDesiredRuntime> {
-  const image = config.image ?? MIKAN_IMAGE;
-  const { ensureImageSelector } = (await import("@earendil-works/gondolin")) as GondolinModule;
-  const resolvedImage = await ensureImageSelector(image);
+  let image: string;
+  let imageIdentity: string;
+  if (config.profile === "remote") {
+    // image assets live on the worker host; the selector is the identity
+    image = gondolinRemote.imageSelector() ?? config.image ?? MIKAN_IMAGE;
+    imageIdentity = image;
+  } else {
+    const selector = config.image ?? MIKAN_IMAGE;
+    const { ensureImageSelector } = (await import("@earendil-works/gondolin")) as GondolinModule;
+    const resolvedImage = await ensureImageSelector(selector);
+    image = resolvedImage.assetDir;
+    imageIdentity = resolvedImage.buildId ?? resolvedImage.assetDir;
+  }
   return {
-    image: resolvedImage.assetDir,
-    imageIdentity: resolvedImage.buildId ?? resolvedImage.assetDir,
+    image,
+    imageIdentity,
     mounts: (
       config.mounts ?? [{ source: config.workspacePath ?? process.cwd(), target: "/workspace" }]
     ).toSorted((left, right) => left.target.localeCompare(right.target)),
@@ -174,42 +195,31 @@ function gondolinCpuCount(cpus: string | undefined): number | undefined {
   return Math.ceil(parsed);
 }
 
-async function createRuntime(
-  key: string,
-  desired: GondolinDesiredRuntime,
-  fingerprint: string,
-): Promise<GondolinRuntimeHandle> {
-  const adopted = await gondolinWorkers.adopt(key, fingerprint);
-  if (adopted) {
-    log.logInfo(`Adopted Gondolin runtime for '${key}' (worker ${adopted.workerPid})`);
-    return adopted;
-  }
-  const workerConfig: GondolinWorkerConfig = {
-    instanceId: key,
-    image: desired.image,
-    mounts: desired.mounts,
-    cpus: gondolinCpuCount(desired.limits?.cpus),
-    memory: desired.limits?.memory,
-    fingerprint,
-    inventoryDir: gondolinInventory.directory() ?? join(homedir(), ".mikan", "gondolin-runtimes"),
-    heartbeatStaleMs: WORKER_HEARTBEAT_STALE_MS,
-  };
-  return gondolinWorkers.spawn(workerConfig);
-}
-
 function createSession(
   key: string,
   config: GondolinSandboxConfig,
   desired: GondolinDesiredRuntime,
   fingerprint: string,
 ): GondolinSession {
+  const transport = transportFor(config);
   let session: GondolinSession;
-  const runtime = createRuntime(key, desired, fingerprint).catch((error) => {
-    if (sessions.get(key) === session) sessions.delete(key);
-    throw error;
-  });
+  const runtime = transport
+    .ensure(key, {
+      image: desired.image,
+      mounts: desired.mounts,
+      cpus: desired.limits?.cpus,
+      vmCpus: gondolinCpuCount(desired.limits?.cpus),
+      memory: desired.limits?.memory,
+      fingerprint,
+      workspacePath: config.workspacePath,
+    })
+    .catch((error) => {
+      if (sessions.get(key) === session) sessions.delete(key);
+      throw error;
+    });
   session = {
     runtime,
+    transport,
     fingerprint,
     resourceKey: config.resourceKey,
     activeOperations: 0,
@@ -300,7 +310,7 @@ async function withRuntime<T>(
     } catch (error) {
       const gone = error instanceof GondolinRuntimeGoneError;
       const interrupted = error instanceof GondolinRuntimeInterruptedError;
-      if (gone || (interrupted && handle && !gondolinWorkers.isWorkerAlive(handle))) {
+      if (gone || (interrupted && handle && !(await session.transport.isRuntimeAlive(handle)))) {
         discardDeadSession(key, session);
       }
       // Nothing reached a gone runtime, so recreating and retrying is safe;
@@ -342,7 +352,7 @@ async function closeSession(
   try {
     if (options.waitForActiveOperations) await waitForIdle(session);
     const handle = await session.runtime;
-    if (options.stopRuntime !== false) await gondolinWorkers.stop(handle);
+    if (options.stopRuntime !== false) await session.transport.stop(handle);
     if (
       options.resetResources !== false &&
       session.resourceKey &&
@@ -438,14 +448,16 @@ export class GondolinExecutor implements Executor {
     private readonly config: GondolinSandboxConfig,
     private readonly env?: Record<string, string>,
   ) {
-    assertSupportedNodeVersion();
+    // remote runtimes never load gondolin in this process, so the mikan host
+    // may stay on the supported Node floor
+    if (config.profile !== "remote") assertSupportedNodeVersion();
     this.workspacePath = config.workspacePath ?? process.cwd();
     this.instanceId = config.instanceId ?? this.workspacePath;
   }
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
     return withRuntime(this.instanceId, this.config, (handle) =>
-      gondolinWorkers.exec(handle, withRuntimeBootstrap(command, this.env), {
+      transportFor(this.config).exec(handle, withRuntimeBootstrap(command, this.env), {
         env: this.env,
         signal: executionSignal(options),
       }),

@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { SandboxError } from "./errors.js";
@@ -9,9 +11,42 @@ import type { ExecResult } from "./types.js";
 /** A live worker-hosted runtime as seen from mikan. */
 export interface GondolinRuntimeHandle {
   sessionId: string;
+  instanceId: string;
   socketPath: string;
   workerPid: number;
   fingerprint: string;
+}
+
+/**
+ * What a runtime should look like, resolved by the executor layer. `image` is
+ * a local asset directory for the local transport and an image selector for
+ * the remote one (resolved on the worker host).
+ */
+export interface GondolinRuntimeSpec {
+  image: string;
+  mounts: Array<{ source: string; target: string }>;
+  /** Raw fractional CPU limit (cgroup enforcement on remote Linux workers). */
+  cpus?: string;
+  /** Whole vCPUs given to the VM. */
+  vmCpus?: number;
+  memory?: string;
+  fingerprint: string;
+  /** mikan-host workspace root, for remote mount prefix translation. */
+  workspacePath?: string;
+}
+
+/** One way of running Gondolin runtimes: in local workers or on a remote daemon. */
+export interface GondolinRuntimeTransport {
+  ensure(instanceId: string, spec: GondolinRuntimeSpec): Promise<GondolinRuntimeHandle>;
+  stop(
+    handle: Pick<GondolinRuntimeHandle, "workerPid" | "sessionId" | "instanceId">,
+  ): Promise<void>;
+  exec(
+    handle: GondolinRuntimeHandle,
+    command: string,
+    options?: { env?: Record<string, string>; signal?: AbortSignal },
+  ): Promise<ExecResult>;
+  isRuntimeAlive(handle: GondolinRuntimeHandle): Promise<boolean>;
 }
 
 /**
@@ -33,7 +68,7 @@ interface WorkerProcessLike {
   unref(): void;
 }
 
-interface SessionClientCallbacks {
+export interface SessionClientCallbacks {
   onJson: (message: {
     type: string;
     id?: number;
@@ -45,7 +80,7 @@ interface SessionClientCallbacks {
   onClose: (error?: Error) => void;
 }
 
-interface SessionClient {
+export interface SessionClient {
   send(message: object): void;
   close(): void;
 }
@@ -75,7 +110,101 @@ function abortError(): Error {
   return new Error("Error: command aborted");
 }
 
-class GondolinWorkerClient {
+/**
+ * Run one command through a fresh session connection — the shared state
+ * machine for both transports. Closing the connection (abort, timeout, or the
+ * far side dying) kills the in-flight guest process.
+ */
+export async function execOverSessionConnect(
+  connect: (callbacks: SessionClientCallbacks) => SessionClient | Promise<SessionClient>,
+  command: string,
+  options: { env?: Record<string, string>; signal?: AbortSignal } = {},
+): Promise<ExecResult> {
+  if (options.signal?.aborted) throw abortError();
+  return await new Promise<ExecResult>((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+    let received = false;
+    let settled = false;
+    let client: SessionClient | undefined;
+    const settle = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      options.signal?.removeEventListener("abort", onAbort);
+      fn();
+    };
+    const onAbort = (): void =>
+      settle(() => {
+        client?.close();
+        reject(abortError());
+      });
+    const callbacks: SessionClientCallbacks = {
+      onJson: (message) => {
+        received = true;
+        if (message.type === "exec_response" && message.id === 1) {
+          settle(() => {
+            client?.close();
+            resolve({
+              stdout,
+              stderr,
+              code: typeof message.exit_code === "number" ? message.exit_code : 1,
+            });
+          });
+        } else if (message.type === "error") {
+          settle(() => {
+            client?.close();
+            reject(new Error(`Error: Gondolin exec failed (${message.code}): ${message.message}`));
+          });
+        }
+      },
+      onBinary: (frame) => {
+        received = true;
+        const tag = frame.readUInt8(0);
+        const data = frame.subarray(5).toString("utf8");
+        if (tag === 1) stdout += data;
+        else stderr += data;
+      },
+      onClose: (error) => {
+        settle(() => {
+          const detail = error?.message ?? "connection closed before the command finished";
+          const code = (error as NodeJS.ErrnoException | undefined)?.code;
+          if (!received && (code === "ENOENT" || code === "ECONNREFUSED")) {
+            reject(new GondolinRuntimeGoneError(detail));
+          } else {
+            reject(new GondolinRuntimeInterruptedError(detail));
+          }
+        });
+      },
+    };
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+    Promise.resolve(connect(callbacks))
+      .then((created) => {
+        client = created;
+        if (settled) {
+          created.close();
+          return;
+        }
+        created.send({
+          type: "exec",
+          id: 1,
+          cmd: "/bin/sh",
+          argv: ["-c", command],
+          env: Object.entries(options.env ?? {}).map(([key, value]) => `${key}=${value}`),
+          cwd: "/workspace",
+        });
+      })
+      .catch((err: unknown) =>
+        settle(() =>
+          reject(new GondolinRuntimeGoneError(err instanceof Error ? err.message : String(err))),
+        ),
+      );
+  });
+}
+
+/** Workers self-stop once no mikan has refreshed the heartbeat for this long. */
+const WORKER_HEARTBEAT_STALE_MS = 45 * 60 * 1000;
+
+class GondolinWorkerClient implements GondolinRuntimeTransport {
   private spawnProcess = defaultSpawnProcess;
   private connectImpl: (
     socketPath: string,
@@ -96,6 +225,27 @@ class GondolinWorkerClient {
     this.stopPollIntervalMs = overrides?.stopPollIntervalMs ?? 100;
   }
 
+  /** Adopt a surviving local worker or spawn a fresh one for the spec. */
+  async ensure(instanceId: string, spec: GondolinRuntimeSpec): Promise<GondolinRuntimeHandle> {
+    const adopted = await this.adopt(instanceId, spec.fingerprint);
+    if (adopted) return adopted;
+    return this.spawn({
+      instanceId,
+      image: spec.image,
+      mounts: spec.mounts,
+      cpus: spec.vmCpus,
+      memory: spec.memory,
+      fingerprint: spec.fingerprint,
+      inventoryDir: gondolinInventory.directory() ?? join(homedir(), ".mikan", "gondolin-runtimes"),
+      heartbeatStaleMs: WORKER_HEARTBEAT_STALE_MS,
+    });
+  }
+
+  /** Whether the runtime's worker process is still alive. */
+  async isRuntimeAlive(handle: GondolinRuntimeHandle): Promise<boolean> {
+    return this.isPidAlive(handle.workerPid);
+  }
+
   /** Spawn a detached worker for the config and wait for its ready handshake. */
   async spawn(config: GondolinWorkerConfig): Promise<GondolinRuntimeHandle> {
     const entry = fileURLToPath(new URL("./gondolin-worker-main.js", import.meta.url));
@@ -111,6 +261,7 @@ class GondolinWorkerClient {
     child.unref();
     return {
       sessionId: handshake.sessionId,
+      instanceId: config.instanceId,
       socketPath: handshake.socketPath,
       workerPid: handshake.workerPid ?? (child.pid as number),
       fingerprint: config.fingerprint,
@@ -129,6 +280,7 @@ class GondolinWorkerClient {
     if (!record?.socketPath) return undefined;
     const handle: GondolinRuntimeHandle = {
       sessionId: record.sessionId,
+      instanceId,
       socketPath: record.socketPath,
       workerPid: record.ownerPid,
       fingerprint: record.fingerprint ?? "",
@@ -176,87 +328,11 @@ class GondolinWorkerClient {
     command: string,
     options: { env?: Record<string, string>; signal?: AbortSignal } = {},
   ): Promise<ExecResult> {
-    if (options.signal?.aborted) throw abortError();
-    return await new Promise<ExecResult>((resolve, reject) => {
-      let stdout = "";
-      let stderr = "";
-      let received = false;
-      let settled = false;
-      let client: SessionClient | undefined;
-      const settle = (fn: () => void): void => {
-        if (settled) return;
-        settled = true;
-        options.signal?.removeEventListener("abort", onAbort);
-        fn();
-      };
-      const onAbort = (): void =>
-        settle(() => {
-          client?.close();
-          reject(abortError());
-        });
-      const callbacks: SessionClientCallbacks = {
-        onJson: (message) => {
-          received = true;
-          if (message.type === "exec_response" && message.id === 1) {
-            settle(() => {
-              client?.close();
-              resolve({
-                stdout,
-                stderr,
-                code: typeof message.exit_code === "number" ? message.exit_code : 1,
-              });
-            });
-          } else if (message.type === "error") {
-            settle(() => {
-              client?.close();
-              reject(
-                new Error(`Error: Gondolin exec failed (${message.code}): ${message.message}`),
-              );
-            });
-          }
-        },
-        onBinary: (frame) => {
-          received = true;
-          const tag = frame.readUInt8(0);
-          const data = frame.subarray(5).toString("utf8");
-          if (tag === 1) stdout += data;
-          else stderr += data;
-        },
-        onClose: (error) => {
-          settle(() => {
-            const detail = error?.message ?? "connection closed before the command finished";
-            const code = (error as NodeJS.ErrnoException | undefined)?.code;
-            if (!received && (code === "ENOENT" || code === "ECONNREFUSED")) {
-              reject(new GondolinRuntimeGoneError(detail));
-            } else {
-              reject(new GondolinRuntimeInterruptedError(detail));
-            }
-          });
-        },
-      };
-      options.signal?.addEventListener("abort", onAbort, { once: true });
-      Promise.resolve(this.connectImpl(handle.socketPath, callbacks))
-        .then((created) => {
-          client = created;
-          if (settled) {
-            created.close();
-            return;
-          }
-          created.send({
-            type: "exec",
-            id: 1,
-            cmd: "/bin/sh",
-            argv: ["-c", command],
-            env: Object.entries(options.env ?? {}).map(([key, value]) => `${key}=${value}`),
-            cwd: "/workspace",
-          });
-        })
-        .catch((err: unknown) =>
-          settle(() =>
-            reject(new GondolinRuntimeGoneError(err instanceof Error ? err.message : String(err))),
-          ),
-        );
-    });
+    return execOverSessionConnect(
+      (callbacks) => this.connectImpl(handle.socketPath, callbacks),
+      command,
+      options,
+    );
   }
 
   private signal(pid: number, signal: NodeJS.Signals): void {

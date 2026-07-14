@@ -96,6 +96,20 @@ const SettingsFileSchema = Type.Object({
           ),
         }),
       ),
+      gondolin: Type.Optional(
+        Type.Object({
+          remote: Type.Optional(
+            Type.Object({
+              url: Type.String(),
+              caFile: Type.Optional(Type.String()),
+              certFile: Type.String(),
+              keyFile: Type.String(),
+              workspaceRoot: Type.Optional(Type.String()),
+              imageSelector: Type.Optional(Type.String()),
+            }),
+          ),
+        }),
+      ),
       defaultSharedVault: Type.Optional(Type.String()),
     }),
   ),
@@ -145,6 +159,7 @@ function normalizeSandboxSettings(sandbox: SandboxSettings): SandboxSettings {
     ...(sandbox.memory !== undefined ? { memory: sandbox.memory } : {}),
     ...(sandbox.boost !== undefined ? { boost: sandbox.boost } : {}),
     ...(sandbox.image !== undefined ? { image: sandbox.image } : {}),
+    ...(sandbox.gondolin !== undefined ? { gondolin: sandbox.gondolin } : {}),
     ...(defaultSharedVault ? { defaultSharedVault } : {}),
   };
 }
@@ -167,6 +182,11 @@ function mergeSandboxSettings(
     ...override,
     ...(base.boost || override.boost ? { boost: { ...base.boost, ...override.boost } } : {}),
     ...(base.image || override.image ? { image: { ...base.image, ...override.image } } : {}),
+    // `remote` is one connection description; merging two halves of it would
+    // pair a URL with the wrong certificates, so the override wins wholesale.
+    ...(base.gondolin || override.gondolin
+      ? { gondolin: { ...base.gondolin, ...override.gondolin } }
+      : {}),
   };
 }
 
