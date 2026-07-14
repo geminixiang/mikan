@@ -1,4 +1,4 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "ignorePatterns": ["**/.claude/**"]
+  "ignorePatterns": ["**/.claude/**", "**/.pi/remote-pi/**"]
 }
