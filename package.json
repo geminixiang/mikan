@@ -43,7 +43,7 @@
     "test:e2e": "vitest --run --config vitest.e2e.config.ts",
     "test:e2e:slack": "vitest --run --config vitest.e2e.config.ts e2e/slack",
     "test:e2e:slack:coverage": "vitest --run --coverage --coverage.reportsDirectory=.workspace/coverage --config vitest.e2e.config.ts e2e/slack",
-    "microvm:image:build": "sh scripts/build-microvm-image.sh",
+    "gondolin:image:build": "sh scripts/build-gondolin-image.sh",
     "docs:dev": "astro dev",
     "docs:build": "astro build",
     "docs:preview": "astro preview"

@@ -1,9 +1,9 @@
 ---
-title: MicroVM sandbox
+title: Gondolin sandbox
 description: Run mikan tools in a local Gondolin/QEMU microVM.
 ---
 
-`microvm:default` is a preview of the managed sandbox intended to replace `image:*` after its lifecycle, vault, workspace, and resource controls reach parity.
+`gondolin:default` is a preview of the managed sandbox intended to replace `image:*` after its lifecycle, vault, workspace, and resource controls reach parity.
 
 ## Requirements
 
@@ -14,8 +14,8 @@ description: Run mikan tools in a local Gondolin/QEMU microVM.
 Build mikan's curated guest image once, then start mikan:
 
 ```bash
-npm run microvm:image:build
-mikan --sandbox=microvm:default /path/to/workspace
+npm run gondolin:image:build
+mikan --sandbox=gondolin:default /path/to/workspace
 ```
 
 The image provides the core development environment from `docker/mikan-sandbox.Dockerfile`: Bash, build tools, Node.js/npm, Python/pip, uv, Git, ripgrep, fd, jq, SSH client, and common shell utilities. Its build configuration lives at `docker/gondolin-mikan-sandbox.json`; Gondolin verifies the generated asset manifest when importing it as `mikan-sandbox:latest`.
@@ -26,4 +26,4 @@ Each conversation gets a process-local VM, and the current host workspace is mou
 
 This local slice deliberately does not inject vault environment variables or vault files. It also has no private workspace mode, resource limits, boost, durable lease, worker process, or remote execution. Idle VMs close after 10 minutes and are recreated on the next operation. `image:*` remains available and is still the recommended managed mode until the remaining controls are implemented.
 
-Gondolin's network model is controlled HTTP/TLS rather than Docker-style generic NAT. See [MicroVM migration research](./microvm-migration-research/) for the compatibility and migration plan.
+Gondolin's network model is controlled HTTP/TLS rather than Docker-style generic NAT. See [MicroVM migration research](./gondolin-migration-research/) for the compatibility and migration plan.

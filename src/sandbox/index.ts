@@ -3,7 +3,7 @@ import { FirecrackerExecutor, firecrackerSandboxAdapter } from "./firecracker.js
 import { CloudflareSandboxExecutor, cloudflareSandboxAdapter } from "./cloudflare.js";
 import { HostExecutor, hostSandboxAdapter } from "./host.js";
 import { imageSandboxAdapter } from "./image.js";
-import { MicrovmExecutor, microvmSandboxAdapter } from "./microvm.js";
+import { GondolinExecutor, gondolinSandboxAdapter } from "./gondolin.js";
 import { SandboxError } from "./errors.js";
 import type { Executor, SandboxAdapter, SandboxConfig } from "./types.js";
 
@@ -21,7 +21,7 @@ export {
   ContainerExecutor,
   FirecrackerExecutor,
   HostExecutor,
-  MicrovmExecutor,
+  GondolinExecutor,
 };
 export { SandboxError } from "./errors.js";
 
@@ -29,7 +29,7 @@ const sandboxAdapters = [
   hostSandboxAdapter,
   containerSandboxAdapter,
   imageSandboxAdapter,
-  microvmSandboxAdapter,
+  gondolinSandboxAdapter,
   firecrackerSandboxAdapter,
   cloudflareSandboxAdapter,
 ] as const;
@@ -56,7 +56,7 @@ export function parseSandboxArg(value: string): SandboxConfig {
   }
 
   throw new SandboxError(
-    `Error: Invalid sandbox type '${value}'. Use 'host', 'container:<container-name>', 'image:<image-name>', 'microvm:default', 'firecracker:<vm-id>:<host-path>', or 'cloudflare:<sandbox-id>'`,
+    `Error: Invalid sandbox type '${value}'. Use 'host', 'container:<container-name>', 'image:<image-name>', 'gondolin:default', 'firecracker:<vm-id>:<host-path>', or 'cloudflare:<sandbox-id>'`,
   );
 }
 

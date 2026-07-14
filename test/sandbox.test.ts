@@ -4,7 +4,7 @@ import {
   ContainerExecutor,
   FirecrackerExecutor,
   HostExecutor,
-  MicrovmExecutor,
+  GondolinExecutor,
   SandboxError,
   createExecutor,
   parseSandboxArg,
@@ -33,16 +33,16 @@ describe("parseSandboxArg", () => {
     });
   });
 
-  test("parses the default microvm profile", () => {
-    expect(parseSandboxArg("microvm:default")).toEqual({
-      type: "microvm",
+  test("parses the default gondolin profile", () => {
+    expect(parseSandboxArg("gondolin:default")).toEqual({
+      type: "gondolin",
       profile: "default",
     });
   });
 
-  test("rejects unsupported microvm profiles", () => {
-    expect(() => parseSandboxArg("microvm:custom")).toThrow(
-      "Error: unsupported microvm profile 'custom'. Use 'microvm:default'",
+  test("rejects unsupported gondolin profiles", () => {
+    expect(() => parseSandboxArg("gondolin:custom")).toThrow(
+      "Error: unsupported gondolin profile 'custom'. Use 'gondolin:default'",
     );
   });
 
@@ -114,12 +114,12 @@ describe("createExecutor", () => {
     );
   });
 
-  test("creates a microvm executor without starting Gondolin", () => {
+  test("creates a gondolin executor without starting Gondolin", () => {
     const nodeVersion = Object.getOwnPropertyDescriptor(process.versions, "node");
     Object.defineProperty(process.versions, "node", { value: "24.0.0", configurable: true });
     try {
-      expect(createExecutor({ type: "microvm", profile: "default" })).toBeInstanceOf(
-        MicrovmExecutor,
+      expect(createExecutor({ type: "gondolin", profile: "default" })).toBeInstanceOf(
+        GondolinExecutor,
       );
     } finally {
       if (nodeVersion) Object.defineProperty(process.versions, "node", nodeVersion);

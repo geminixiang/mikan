@@ -2,7 +2,7 @@ export type SandboxConfig =
   | HostSandboxConfig
   | ContainerSandboxConfig
   | ImageSandboxConfig
-  | MicrovmSandboxConfig
+  | GondolinSandboxConfig
   | FirecrackerSandboxConfig
   | CloudflareSandboxConfig;
 
@@ -20,8 +20,8 @@ export interface ImageSandboxConfig {
   image: string;
 }
 
-export interface MicrovmSandboxConfig {
-  type: "microvm";
+export interface GondolinSandboxConfig {
+  type: "gondolin";
   profile: "default";
   /** Local-only runtime details supplied after actor/workspace resolution. */
   workspacePath?: string;

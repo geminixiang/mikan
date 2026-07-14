@@ -7,7 +7,11 @@ vi.mock("@earendil-works/gondolin", () => ({
   VM: { create: gondolin.create },
 }));
 
-import { MicrovmExecutor, closeAllMicrovms, stopIdleMicrovms } from "../src/sandbox/microvm.js";
+import {
+  GondolinExecutor,
+  closeAllGondolinVms,
+  stopIdleGondolinVms,
+} from "../src/sandbox/gondolin.js";
 
 function createVm() {
   return {
@@ -22,16 +26,16 @@ function createVm() {
   };
 }
 
-function createExecutor(instanceId: string): MicrovmExecutor {
-  return new MicrovmExecutor({
-    type: "microvm",
+function createExecutor(instanceId: string): GondolinExecutor {
+  return new GondolinExecutor({
+    type: "gondolin",
     profile: "default",
     instanceId,
     workspacePath: "/workspace-host",
   });
 }
 
-describe("microVM lifecycle", () => {
+describe("Gondolin lifecycle", () => {
   const nodeVersion = Object.getOwnPropertyDescriptor(process.versions, "node");
 
   beforeEach(() => {
@@ -40,7 +44,7 @@ describe("microVM lifecycle", () => {
   });
 
   afterEach(async () => {
-    await closeAllMicrovms();
+    await closeAllGondolinVms();
     if (nodeVersion) Object.defineProperty(process.versions, "node", nodeVersion);
     vi.restoreAllMocks();
   });
@@ -52,7 +56,7 @@ describe("microVM lifecycle", () => {
     const executor = createExecutor("idle");
 
     await executor.exec("pwd");
-    await stopIdleMicrovms(0, Date.now() + 1);
+    await stopIdleGondolinVms(0, Date.now() + 1);
     expect(first.close).toHaveBeenCalledOnce();
 
     await executor.exec("pwd");
@@ -73,12 +77,12 @@ describe("microVM lifecycle", () => {
 
     const execution = executor.exec("sleep 1");
     await vi.waitFor(() => expect(vm.exec).toHaveBeenCalledOnce());
-    await stopIdleMicrovms(0, Date.now() + 1);
+    await stopIdleGondolinVms(0, Date.now() + 1);
     expect(vm.close).not.toHaveBeenCalled();
 
     finish({ stdout: "", stderr: "", exitCode: 0 });
     await execution;
-    await stopIdleMicrovms(0, Date.now() + 1);
+    await stopIdleGondolinVms(0, Date.now() + 1);
     expect(vm.close).toHaveBeenCalledOnce();
   });
 
@@ -99,7 +103,7 @@ describe("microVM lifecycle", () => {
 
     await createExecutor("one").exec("pwd");
     await createExecutor("two").exec("pwd");
-    await closeAllMicrovms();
+    await closeAllGondolinVms();
 
     expect(first.close).toHaveBeenCalledOnce();
     expect(second.close).toHaveBeenCalledOnce();
@@ -117,7 +121,7 @@ describe("microVM lifecycle", () => {
 
     const execution = createExecutor("shutdown-active").exec("sleep 1");
     await vi.waitFor(() => expect(vm.exec).toHaveBeenCalledOnce());
-    const closing = closeAllMicrovms();
+    const closing = closeAllGondolinVms();
     expect(vm.close).not.toHaveBeenCalled();
 
     finish({ stdout: "", stderr: "", exitCode: 0 });

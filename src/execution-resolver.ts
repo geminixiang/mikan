@@ -91,7 +91,7 @@ export class ActorExecutionResolver {
     const config = this.resolveSandboxConfig(vaultKey);
     const env =
       config.type !== "host" &&
-      config.type !== "microvm" &&
+      config.type !== "gondolin" &&
       vault &&
       Object.keys(vault.env).length > 0
         ? vault.env
@@ -127,7 +127,7 @@ export class ActorExecutionResolver {
 
   private resolveSandboxConfig(vaultKey: string): SandboxConfig {
     const config = this.vaultManager.getSandboxConfig(vaultKey, this.baseConfig);
-    if (this.baseConfig.type === "microvm" && config.type === "microvm") {
+    if (this.baseConfig.type === "gondolin" && config.type === "gondolin") {
       return {
         ...config,
         workspacePath: this.hostWorkspacePath,

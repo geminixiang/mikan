@@ -13,7 +13,7 @@ any release.
 
 ### Added
 
-- Add a preview `microvm:default` sandbox backed by Gondolin and QEMU.
+- Add a preview `gondolin:default` sandbox backed by Gondolin and QEMU.
 - Add a curated microVM guest image build with Node.js, Python, uv, Git, ripgrep, fd, jq, SSH, and build tools.
 - Manage one process-local microVM per conversation with idle shutdown and recreation on demand.
 

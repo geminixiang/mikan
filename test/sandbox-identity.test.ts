@@ -18,7 +18,7 @@ describe("runtime identity", () => {
   test("actorKey is per-conversation for managed sandboxes", () => {
     const ids = { userId: "U1", conversationId: "GH_o_r_5" };
     expect(actorKey({ type: "image", image: "ubuntu" }, ids)).toBe("gh-o-r-5");
-    expect(actorKey({ type: "microvm", profile: "default" }, ids)).toBe("gh-o-r-5");
+    expect(actorKey({ type: "gondolin", profile: "default" }, ids)).toBe("gh-o-r-5");
     expect(actorKey({ type: "cloudflare", sandboxId: "base" }, ids)).toBe("gh-o-r-5");
     expect(actorKey({ type: "firecracker", vmId: "vm", hostPath: "/w" }, ids)).toBe("gh-o-r-5");
   });

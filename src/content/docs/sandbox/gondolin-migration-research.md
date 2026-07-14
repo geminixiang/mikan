@@ -468,7 +468,7 @@ pi tool，而應在既有 `Executor` 後方加入 `GondolinExecutor`；read/writ
 - idle stop、resource limit、drift reconciliation 與 worker crash recovery
 
 Gondolin 維持 pinned、replaceable adapter，不讓 backend-specific API 進入 mikan 的公開
-sandbox mode 或持久 state。使用者只看到 `microvm:<profile>`；單機與多機都使用同一個
+sandbox mode 或持久 state。使用者只看到 `gondolin:<profile>`；單機與多機都使用同一個
 `WorkerClient`、lease、workspace generation 與 vault contract。
 
 ## 分階段建議
@@ -488,7 +488,7 @@ mount 也能通過時，才進入下一階段。
 
 ### Phase 1：單機也經過 worker protocol
 
-- 即使在本機，所有新的 `microvm` execution 都經過 `WorkerClient`。
+- 即使在本機，所有新的 `gondolin` execution 都經過 `WorkerClient`。
 - 同一台機器透過 Unix socket 執行 `mikan-worker`。
 - 使用 `local-path` workspace preparation 與經 mikan host 授權的 scoped secret。
 - 實作 lifecycle reconciliation、idle stop、request ID、profile 與 worker readiness check。
@@ -521,7 +521,7 @@ mount 也能通過時，才進入下一階段。
 
 ### Phase 5：縮減支援的 sandbox 集合
 
-- 將 `microvm:<profile>` 設為預設受管模式。
+- 將 `gondolin:<profile>` 設為預設受管模式。
 - 保留 `host` 供可信本機使用。
 - Curated profile 證明 workload、secret、workspace 與維運功能足夠後，deprecated
   `image:*`。
@@ -531,7 +531,7 @@ mount 也能通過時，才進入下一階段。
 
 ## 決策
 
-選定 Gondolin/QEMU 作為 `microvm:<profile>` 的第一個 engine。Gondolin 必須固定版本、
+選定 Gondolin/QEMU 作為 `gondolin:<profile>` 的第一個 engine。Gondolin 必須固定版本、
 隔離在獨立 worker process，並包在 mikan 自有的 runtime interface 後方；QEMU、Gondolin
 session ID 與 backend-specific configuration 都不成為公開契約。
 

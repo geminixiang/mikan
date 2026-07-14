@@ -50,7 +50,7 @@ import {
   type SandboxConfig,
   validateSandbox,
 } from "./sandbox/index.js";
-import { closeAllMicrovms, stopIdleMicrovms } from "./sandbox/microvm.js";
+import { closeAllGondolinVms, stopIdleGondolinVms } from "./sandbox/gondolin.js";
 import { FileVaultManager } from "./vault/index.js";
 import { runExtCommand } from "./cli/ext.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
@@ -375,9 +375,9 @@ if (provisioner) {
   ).unref();
 }
 
-if (sandbox.type === "microvm") {
+if (sandbox.type === "gondolin") {
   setInterval(
-    () => void stopIdleMicrovms(MANAGED_SANDBOX_IDLE_TIMEOUT_MS),
+    () => void stopIdleGondolinVms(MANAGED_SANDBOX_IDLE_TIMEOUT_MS),
     MANAGED_SANDBOX_IDLE_TIMEOUT_MS,
   ).unref();
 }
@@ -487,8 +487,8 @@ const sandboxDesc =
       ? `container:${sandbox.container}`
       : sandbox.type === "image"
         ? `image:${sandbox.image}`
-        : sandbox.type === "microvm"
-          ? `microvm:${sandbox.profile}`
+        : sandbox.type === "gondolin"
+          ? `gondolin:${sandbox.profile}`
           : sandbox.type === "firecracker"
             ? `firecracker:${sandbox.vmId}`
             : `cloudflare:${sandbox.sandboxId}`;
@@ -643,7 +643,7 @@ eventsWatcher.start();
 async function shutdown(): Promise<void> {
   await handler.shutdown();
   eventsWatcher.stop();
-  await closeAllMicrovms();
+  await closeAllGondolinVms();
   await Sentry.close(5000);
   process.exit(0);
 }
