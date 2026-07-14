@@ -20,6 +20,7 @@ import {
   MikanAgentSession,
   MikanModels,
   type MikanSkill,
+  parseCommandInput,
   type RunOrigin,
   type SessionStore,
 } from "./harness/index.js";
@@ -1900,10 +1901,10 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
       message: ConversationMessage,
       responder: ConversationResponder,
     ): Promise<boolean> {
-      const match = /^\/([a-z0-9_-]+)(?:\s+([\s\S]*))?$/i.exec(message.text.trim());
-      if (!match) return false;
-      return extensionRegistry.dispatchCommand(match[1], {
-        args: match[2]?.trim() ?? "",
+      const parsed = parseCommandInput(message.text);
+      if (!parsed) return false;
+      return extensionRegistry.dispatchCommand(parsed.name, {
+        args: parsed.args,
         conversationId,
         userId: message.userId,
         userName: message.userName,

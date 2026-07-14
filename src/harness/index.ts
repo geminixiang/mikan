@@ -39,7 +39,7 @@ export {
   type HarnessSettings,
   type RetrySettings,
 } from "./settings.js";
-export { ExtensionRegistry } from "./extensions/registry.js";
+export { ExtensionRegistry, parseCommandInput } from "./extensions/registry.js";
 export {
   defaultExtensionDirs,
   extensionSlug,

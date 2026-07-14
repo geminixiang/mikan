@@ -21,6 +21,16 @@ import type {
 
 const COMMAND_NAME_PATTERN = /^[a-z0-9_-]+$/i;
 
+/**
+ * Parse `/name args…` slash-command text. Returns undefined when the text is
+ * not a slash command with a valid name (`COMMAND_NAME_PATTERN`).
+ */
+export function parseCommandInput(text: string): { name: string; args: string } | undefined {
+  const match = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(text.trim());
+  if (!match || !COMMAND_NAME_PATTERN.test(match[1])) return undefined;
+  return { name: match[1], args: match[2]?.trim() ?? "" };
+}
+
 type HookHandlers = {
   [T in MikanHookName]: Array<{ owner: string; handler: MikanHookMap[T] }>;
 };
