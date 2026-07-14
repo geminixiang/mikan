@@ -663,6 +663,16 @@ describe("thread_ts boundary values", () => {
     expect(bot.setAssistantStatus).toHaveBeenCalledWith("C001", "1000.0001", "Thinking");
   });
 
+  test("uploadFile for a top-level request stays top-level", async () => {
+    const bot = makeSlackMessagingBot({
+      uploadFile: vi.fn().mockResolvedValue(undefined),
+    });
+    const event = makeEvent({ ts: "1000.0001", thread_ts: undefined });
+    const { responder } = createSlackAdapters(event, bot);
+    await responder.uploadFile("/path/to/file.txt", "test");
+    expect(bot.uploadFile).toHaveBeenCalledWith("C001", "/path/to/file.txt", "test", undefined);
+  });
+
   test("uploadFile in thread should use correct rootTs", async () => {
     const bot = makeSlackMessagingBot({
       uploadFile: vi.fn().mockResolvedValue(undefined),

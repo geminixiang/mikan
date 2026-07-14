@@ -432,7 +432,7 @@ export function createSlackResponseContext({
     },
 
     uploadFile: async (filePath: string, title?: string) => {
-      await slack.uploadFile(channelId, filePath, title, rootTs);
+      await slack.uploadFile(channelId, filePath, title, replyInThread ? rootTs : undefined);
     },
 
     react: async (emoji: string) => {
