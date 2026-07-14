@@ -24,6 +24,6 @@ Each conversation gets a process-local VM, and the current host workspace is mou
 
 ## Preview limitations
 
-This first local slice deliberately does not inject vault environment variables or vault files. It also has no private workspace mode, resource limits, boost, idle stop, durable lease, worker process, or remote execution. `image:*` remains available and is still the recommended managed mode until those controls are implemented.
+This local slice deliberately does not inject vault environment variables or vault files. It also has no private workspace mode, resource limits, boost, durable lease, worker process, or remote execution. Idle VMs close after 10 minutes and are recreated on the next operation. `image:*` remains available and is still the recommended managed mode until the remaining controls are implemented.
 
 Gondolin's network model is controlled HTTP/TLS rather than Docker-style generic NAT. See [MicroVM migration research](./microvm-migration-research/) for the compatibility and migration plan.

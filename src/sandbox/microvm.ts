@@ -1,5 +1,6 @@
 import type { VM as GondolinVM } from "@earendil-works/gondolin";
 import { dirname } from "node:path";
+import * as log from "../log.js";
 import { SandboxError } from "./errors.js";
 import { createMountedRuntimePathContext } from "./path-context.js";
 import type {
@@ -14,9 +15,16 @@ import type {
 type GondolinModule = typeof import("@earendil-works/gondolin");
 type VM = GondolinVM;
 
+interface MicrovmSession {
+  vm: Promise<VM>;
+  activeOperations: number;
+  lastUsed: number;
+  idleWaiters: Array<() => void>;
+}
+
 const MINIMUM_NODE_VERSION = [23, 6, 0] as const;
 const MIKAN_IMAGE = "mikan-sandbox:latest";
-const sessions = new Map<string, Promise<VM>>();
+const sessions = new Map<string, MicrovmSession>();
 
 function parseMicrovmSandboxArg(value: string): MicrovmSandboxConfig | undefined {
   if (!value.startsWith("microvm:")) return undefined;
@@ -56,16 +64,72 @@ async function createVM(workspacePath: string): Promise<VM> {
   });
 }
 
-function getVM(key: string, workspacePath: string): Promise<VM> {
+function getSession(key: string, workspacePath: string): MicrovmSession {
   const existing = sessions.get(key);
   if (existing) return existing;
 
-  const pending = createVM(workspacePath).catch((error) => {
-    sessions.delete(key);
+  let session: MicrovmSession;
+  const vm = createVM(workspacePath).catch((error) => {
+    if (sessions.get(key) === session) sessions.delete(key);
     throw error;
   });
-  sessions.set(key, pending);
-  return pending;
+  session = { vm, activeOperations: 0, lastUsed: Date.now(), idleWaiters: [] };
+  sessions.set(key, session);
+  return session;
+}
+
+async function withVM<T>(
+  key: string,
+  workspacePath: string,
+  operation: (vm: VM) => Promise<T>,
+): Promise<T> {
+  const session = getSession(key, workspacePath);
+  session.activeOperations += 1;
+  try {
+    return await operation(await session.vm);
+  } finally {
+    session.activeOperations -= 1;
+    session.lastUsed = Date.now();
+    if (session.activeOperations === 0) {
+      for (const resolve of session.idleWaiters.splice(0)) resolve();
+    }
+  }
+}
+
+function waitForIdle(session: MicrovmSession): Promise<void> {
+  if (session.activeOperations === 0) return Promise.resolve();
+  return new Promise((resolve) => session.idleWaiters.push(resolve));
+}
+
+async function closeSession(
+  key: string,
+  session: MicrovmSession,
+  waitForActiveOperations = false,
+): Promise<void> {
+  if (sessions.get(key) !== session) return;
+  sessions.delete(key);
+  try {
+    if (waitForActiveOperations) await waitForIdle(session);
+    const vm = await session.vm;
+    await vm.close();
+  } catch (error) {
+    log.logWarning(
+      `Failed to close microVM session '${key}'`,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
+
+export async function stopIdleMicrovms(maxIdleMs: number, now = Date.now()): Promise<void> {
+  const idle = Array.from(sessions.entries()).filter(
+    ([, session]) => session.activeOperations === 0 && now - session.lastUsed >= maxIdleMs,
+  );
+  await Promise.all(idle.map(([key, session]) => closeSession(key, session)));
+}
+
+export async function closeAllMicrovms(): Promise<void> {
+  const current = Array.from(sessions.entries());
+  await Promise.all(current.map(([key, session]) => closeSession(key, session, true)));
 }
 
 function executionSignal(options?: ExecOptions): AbortSignal | undefined {
@@ -88,25 +152,28 @@ export class MicrovmExecutor implements Executor {
   }
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
-    const vm = await getVM(this.sessionKey, this.workspacePath);
-    const result = await vm.exec(command, {
-      cwd: "/workspace",
-      signal: executionSignal(options),
+    return withVM(this.sessionKey, this.workspacePath, async (vm) => {
+      const result = await vm.exec(command, {
+        cwd: "/workspace",
+        signal: executionSignal(options),
+      });
+      return { stdout: result.stdout, stderr: result.stderr, code: result.exitCode };
     });
-    return { stdout: result.stdout, stderr: result.stderr, code: result.exitCode };
   }
 
   async readFile(path: string): Promise<string> {
-    const vm = await getVM(this.sessionKey, this.workspacePath);
-    return vm.fs.readFile(path, { encoding: "utf8" });
+    return withVM(this.sessionKey, this.workspacePath, (vm) =>
+      vm.fs.readFile(path, { encoding: "utf8" }),
+    );
   }
 
   async writeFile(path: string, content: string): Promise<void> {
-    const vm = await getVM(this.sessionKey, this.workspacePath);
-    const stage = `${path}.mikan-stage`;
-    await vm.fs.mkdir(dirname(path), { recursive: true });
-    await vm.fs.writeFile(stage, content);
-    await vm.fs.rename(stage, path);
+    return withVM(this.sessionKey, this.workspacePath, async (vm) => {
+      const stage = `${path}.mikan-stage`;
+      await vm.fs.mkdir(dirname(path), { recursive: true });
+      await vm.fs.writeFile(stage, content);
+      await vm.fs.rename(stage, path);
+    });
   }
 
   getWorkspacePath(): string {

@@ -50,6 +50,7 @@ import {
   type SandboxConfig,
   validateSandbox,
 } from "./sandbox/index.js";
+import { closeAllMicrovms, stopIdleMicrovms } from "./sandbox/microvm.js";
 import { FileVaultManager } from "./vault/index.js";
 import { runExtCommand } from "./cli/ext.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
@@ -362,13 +363,23 @@ function portalBaseUrl(): string | undefined {
   if (LINK_PORT) return `http://localhost:${LINK_PORT}`;
   return undefined;
 }
-/** Idle timeout for managed image containers (10 minutes) */
-const IMAGE_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+/** Idle timeout for managed sandboxes (10 minutes) */
+const MANAGED_SANDBOX_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
 if (provisioner) {
   await provisioner.reconcile();
-  await provisioner.stopIdle(IMAGE_IDLE_TIMEOUT_MS);
-  setInterval(() => provisioner.stopIdle(IMAGE_IDLE_TIMEOUT_MS), IMAGE_IDLE_TIMEOUT_MS).unref();
+  await provisioner.stopIdle(MANAGED_SANDBOX_IDLE_TIMEOUT_MS);
+  setInterval(
+    () => provisioner.stopIdle(MANAGED_SANDBOX_IDLE_TIMEOUT_MS),
+    MANAGED_SANDBOX_IDLE_TIMEOUT_MS,
+  ).unref();
+}
+
+if (sandbox.type === "microvm") {
+  setInterval(
+    () => void stopIdleMicrovms(MANAGED_SANDBOX_IDLE_TIMEOUT_MS),
+    MANAGED_SANDBOX_IDLE_TIMEOUT_MS,
+  ).unref();
 }
 const botsByPlatform: Record<string, MessagingBot> = {};
 
@@ -632,6 +643,7 @@ eventsWatcher.start();
 async function shutdown(): Promise<void> {
   await handler.shutdown();
   eventsWatcher.stop();
+  await closeAllMicrovms();
   await Sentry.close(5000);
   process.exit(0);
 }
