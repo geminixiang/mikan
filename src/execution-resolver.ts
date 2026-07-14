@@ -80,6 +80,7 @@ export class ActorExecutionResolver {
     private vaultManager: VaultManager,
     private provisioner?: DockerContainerManager,
     private workspaceDir?: string,
+    private hostWorkspacePath?: string,
   ) {}
 
   async resolve(context: ActorContext): Promise<Executor> {
@@ -89,7 +90,12 @@ export class ActorExecutionResolver {
     const vault = this.vaultManager.resolve(vaultKey);
     const config = this.resolveSandboxConfig(vaultKey);
     const env =
-      config.type !== "host" && vault && Object.keys(vault.env).length > 0 ? vault.env : undefined;
+      config.type !== "host" &&
+      config.type !== "microvm" &&
+      vault &&
+      Object.keys(vault.env).length > 0
+        ? vault.env
+        : undefined;
     return createExecutor(
       config,
       env,
@@ -121,6 +127,13 @@ export class ActorExecutionResolver {
 
   private resolveSandboxConfig(vaultKey: string): SandboxConfig {
     const config = this.vaultManager.getSandboxConfig(vaultKey, this.baseConfig);
+    if (this.baseConfig.type === "microvm" && config.type === "microvm") {
+      return {
+        ...config,
+        workspacePath: this.hostWorkspacePath,
+        instanceId: vaultKey,
+      };
+    }
     if (this.baseConfig.type !== "image") {
       return config;
     }

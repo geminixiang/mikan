@@ -1,6 +1,6 @@
 ---
 title: Sandbox
-description: Compare mikan's supported host, container, image, Firecracker, and Cloudflare sandbox modes.
+description: Compare mikan's supported host, container, image, microVM, Firecracker, and Cloudflare sandbox modes.
 ---
 
 import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
@@ -12,8 +12,8 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
   <Card title="Mainline isolation" icon="rocket">
     `image:<image>` lets mikan manage lifecycle, workspace mounts, vault env, and resource limits.
   </Card>
-  <Card title="Experimental modes" icon="moon">
-    `firecracker:*` and `cloudflare:*` are reserved for scenarios where you manage the runtime or bridge yourself.
+  <Card title="MicroVM preview" icon="moon">
+    `microvm:default` runs a local Gondolin/QEMU VM and is the planned successor to managed `image:*` sandboxes.
   </Card>
 </CardGrid>
 
@@ -28,6 +28,7 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 | `host`                                                      | host machine              | not injected        | can store, but unused at run time | Best for local development; does not put vault env into the host process                                 |
 | `container:<name>`                                          | existing Docker container | injected            | `container-<name>`                | one container one vault; multiple people sharing one container also share its vault                      |
 | `image:<image>`                                             | Docker managed by mikan   | injected            | generated conversation vault      | Current recommended isolation mode; `1 conversation = 1 vault = 1 container`                             |
+| `microvm:default`                                           | local Gondolin/QEMU VM    | not yet supported   | generated conversation vault      | Preview; mounts the current workspace at `/workspace`; requires Node.js >=23.6 and QEMU                  |
 | `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM            | injected            | generated conversation vault      | Very early alpha; you must start the VM and mount workspace at `/workspace`; not recommended yet         |
 | `cloudflare:<sandbox-id>`                                   | Cloudflare Worker         | injected            | generated conversation vault      | Experimental; requires your own `@cloudflare/sandbox` bridge; host workspace is not synced automatically |
 
@@ -49,6 +50,11 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
   href="image/"
 />
 <LinkCard
+  title="MicroVM sandbox"
+  description="Try the local Gondolin/QEMU preview intended to replace image sandboxes."
+  href="microvm/"
+/>
+<LinkCard
   title="Firecracker sandbox"
   description="Connect to a Firecracker VM that you start yourself."
   href="firecracker/"
@@ -63,17 +69,17 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 `image:<image>` <Badge text="recommended" variant="success" /> is the primary developed and recommended sandbox mode today; the other modes are kept for local development, compatibility, or experiments, and some capabilities will not be filled in.
 
-| Capability                                   | `host`         | `container:<name>`     | `image:<image>` | `firecracker:*` | `cloudflare:*`    |
-| -------------------------------------------- | -------------- | ---------------------- | --------------- | --------------- | ----------------- |
-| command execution                            | ✅             | ✅                     | ✅              | ✅              | ✅                |
-| mikan-managed runtime lifecycle              | not applicable | ❌                     | ✅              | ❌              | ❌                |
-| per-conversation container / runtime         | ❌             | ❌                     | ✅              | self-managed    | bridge-derived id |
-| per-conversation vault env                   | ❌             | ❌                     | ✅              | ✅              | ✅                |
-| automatic vault file projection / bind mount | ❌             | ❌                     | ✅              | ❌              | ❌                |
-| automatic workspace mount                    | host           | self-managed           | ✅              | self-managed    | ❌                |
-| private workspace mount mode                 | not applicable | ❌                     | ✅              | ❌              | ❌                |
-| idle auto-stop / recreate                    | not applicable | ❌                     | ✅              | ❌              | ❌                |
-| default CPU / memory limits                  | ❌             | ❌                     | ✅              | ❌              | ❌                |
-| `/pi-sandbox boost`                          | ❌             | ❌                     | ✅              | ❌              | ❌                |
-| agent `sandbox` tool sets limits             | ❌             | ❌                     | ✅              | ❌              | ❌                |
-| recommendation level                         | local dev      | legacy / compatibility | mainline        | alpha           | experimental      |
+| Capability                                   | `host`         | `container:<name>`     | `image:<image>` | `microvm:default` | `firecracker:*` | `cloudflare:*`    |
+| -------------------------------------------- | -------------- | ---------------------- | --------------- | ----------------- | --------------- | ----------------- |
+| command execution                            | ✅             | ✅                     | ✅              | ✅                | ✅              | ✅                |
+| mikan-managed runtime lifecycle              | not applicable | ❌                     | ✅              | process lifetime  | ❌              | ❌                |
+| per-conversation container / runtime         | ❌             | ❌                     | ✅              | ✅                | self-managed    | bridge-derived id |
+| per-conversation vault env                   | ❌             | ❌                     | ✅              | ❌                | ✅              | ✅                |
+| automatic vault file projection / bind mount | ❌             | ❌                     | ✅              | ❌                | ❌              | ❌                |
+| automatic workspace mount                    | host           | self-managed           | ✅              | ✅                | self-managed    | ❌                |
+| private workspace mount mode                 | not applicable | ❌                     | ✅              | ❌                | ❌              | ❌                |
+| idle auto-stop / recreate                    | not applicable | ❌                     | ✅              | ❌                | ❌              | ❌                |
+| default CPU / memory limits                  | ❌             | ❌                     | ✅              | ❌                | ❌              | ❌                |
+| `/pi-sandbox boost`                          | ❌             | ❌                     | ✅              | ❌                | ❌              | ❌                |
+| agent `sandbox` tool sets limits             | ❌             | ❌                     | ✅              | ❌                | ❌              | ❌                |
+| recommendation level                         | local dev      | legacy / compatibility | mainline        | preview           | alpha           | experimental      |

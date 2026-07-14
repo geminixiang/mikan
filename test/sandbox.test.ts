@@ -4,6 +4,7 @@ import {
   ContainerExecutor,
   FirecrackerExecutor,
   HostExecutor,
+  MicrovmExecutor,
   SandboxError,
   createExecutor,
   parseSandboxArg,
@@ -30,6 +31,19 @@ describe("parseSandboxArg", () => {
       type: "image",
       image: "ubuntu:24.04",
     });
+  });
+
+  test("parses the default microvm profile", () => {
+    expect(parseSandboxArg("microvm:default")).toEqual({
+      type: "microvm",
+      profile: "default",
+    });
+  });
+
+  test("rejects unsupported microvm profiles", () => {
+    expect(() => parseSandboxArg("microvm:custom")).toThrow(
+      "Error: unsupported microvm profile 'custom'. Use 'microvm:default'",
+    );
   });
 
   test("parses firecracker sandbox with defaults", () => {
@@ -98,6 +112,10 @@ describe("createExecutor", () => {
     expect(() => createExecutor({ type: "image", image: "ubuntu:24.04" })).toThrowError(
       SandboxError,
     );
+  });
+
+  test("creates a microvm executor without starting Gondolin", () => {
+    expect(createExecutor({ type: "microvm", profile: "default" })).toBeInstanceOf(MicrovmExecutor);
   });
 
   test("creates firecracker executor", () => {

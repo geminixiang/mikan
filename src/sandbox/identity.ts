@@ -17,7 +17,7 @@ export function sanitizeIdentitySegment(value: string): string {
 
 /**
  * The actor key for a sandbox config: per-conversation for managed sandboxes
- * (image/cloudflare/firecracker), the fixed container name for a shared
+ * (image/microvm/cloudflare/firecracker), the fixed container name for a shared
  * container, and the platform user id on the host.
  */
 export function actorKey(
@@ -29,6 +29,7 @@ export function actorKey(
   }
   if (
     baseConfig.type === "image" ||
+    baseConfig.type === "microvm" ||
     baseConfig.type === "cloudflare" ||
     baseConfig.type === "firecracker"
   ) {

@@ -476,9 +476,11 @@ const sandboxDesc =
       ? `container:${sandbox.container}`
       : sandbox.type === "image"
         ? `image:${sandbox.image}`
-        : sandbox.type === "firecracker"
-          ? `firecracker:${sandbox.vmId}`
-          : `cloudflare:${sandbox.sandboxId}`;
+        : sandbox.type === "microvm"
+          ? `microvm:${sandbox.profile}`
+          : sandbox.type === "firecracker"
+            ? `firecracker:${sandbox.vmId}`
+            : `cloudflare:${sandbox.sandboxId}`;
 log.logStartup(workingDir, sandboxDesc);
 logHarnessStartupSummary();
 

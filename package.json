@@ -43,11 +43,13 @@
     "test:e2e": "vitest --run --config vitest.e2e.config.ts",
     "test:e2e:slack": "vitest --run --config vitest.e2e.config.ts e2e/slack",
     "test:e2e:slack:coverage": "vitest --run --coverage --coverage.reportsDirectory=.workspace/coverage --config vitest.e2e.config.ts e2e/slack",
+    "microvm:image:build": "sh scripts/build-microvm-image.sh",
     "docs:dev": "astro dev",
     "docs:build": "astro build",
     "docs:preview": "astro preview"
   },
   "dependencies": {
+    "@earendil-works/gondolin": "0.12.0",
     "@earendil-works/pi-agent-core": "^0.80.6",
     "@earendil-works/pi-ai": "^0.80.6",
     "@sentry/node": "^10.60.0",

@@ -948,7 +948,13 @@ function createRunnerExecutionContext(
 ): RunnerExecutionContext {
   const executionResolver =
     vaultManager && sandboxConfig.type !== "host"
-      ? new ActorExecutionResolver(sandboxConfig, vaultManager, provisioner, workspaceDir)
+      ? new ActorExecutionResolver(
+          sandboxConfig,
+          vaultManager,
+          provisioner,
+          workspaceDir,
+          hostWorkspacePath,
+        )
       : undefined;
 
   // activeExecutor is replaced at the start of each run() call when executionResolver
