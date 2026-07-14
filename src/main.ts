@@ -50,7 +50,12 @@ import {
   type SandboxConfig,
   validateSandbox,
 } from "./sandbox/index.js";
-import { closeAllGondolinVms, gondolinResources, stopIdleGondolinVms } from "./sandbox/gondolin.js";
+import {
+  disconnectAllGondolinRuntimes,
+  gondolinResources,
+  stopIdleGondolinVms,
+  sweepUnadoptedGondolinWorkers,
+} from "./sandbox/gondolin.js";
 import { gondolinInventory } from "./sandbox/gondolin-inventory.js";
 import { FileVaultManager } from "./vault/index.js";
 import { runExtCommand } from "./cli/ext.js";
@@ -390,11 +395,13 @@ if (provisioner) {
 }
 
 if (sandbox.type === "gondolin") {
+  gondolinInventory.touchHeartbeat();
   await gondolinInventory.reconcile();
-  setInterval(
-    () => void stopIdleGondolinVms(MANAGED_SANDBOX_IDLE_TIMEOUT_MS),
-    MANAGED_SANDBOX_IDLE_TIMEOUT_MS,
-  ).unref();
+  setInterval(() => {
+    gondolinInventory.touchHeartbeat();
+    void stopIdleGondolinVms(MANAGED_SANDBOX_IDLE_TIMEOUT_MS);
+    void sweepUnadoptedGondolinWorkers();
+  }, MANAGED_SANDBOX_IDLE_TIMEOUT_MS).unref();
 }
 const botsByPlatform: Record<string, MessagingBot> = {};
 
@@ -659,7 +666,7 @@ eventsWatcher.start();
 async function shutdown(): Promise<void> {
   await handler.shutdown();
   eventsWatcher.stop();
-  await closeAllGondolinVms();
+  await disconnectAllGondolinRuntimes();
   await Sentry.close(5000);
   process.exit(0);
 }

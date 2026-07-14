@@ -8,8 +8,11 @@ This directory defines sandbox abstractions, concrete sandbox executors, and sha
 - `container.ts`: Implements the Docker container executor, `docker exec` command construction, secure env files, and runtime bootstrap.
 - `errors.ts`: Defines `SandboxError`, which can render user-facing CLI diagnostics.
 - `firecracker.ts`: Implements the Firecracker VM executor by running commands over SSH inside the VM.
-- `gondolin-inventory.ts`: Persists a per-VM runtime record under the state dir and reconciles the inventory at startup — stopping VM runners orphaned by a crashed mikan process and dropping stale records.
-- `gondolin.ts`: Implements the Gondolin microVM executor: per-conversation VM sessions, desired-runtime fingerprinting and drift recreation, resource limits, and idle/shutdown lifecycle.
+- `gondolin-inventory.ts`: Persists per-runtime records (written by workers) under the state dir, reconciles them at startup, finds adoptable surviving runtimes, and maintains the mikan heartbeat workers watch.
+- `gondolin-worker-client.ts`: mikan's side of the worker boundary — spawns detached workers, adopts survivors by record, runs commands over one session-IPC connection each (abort = disconnect), and stops workers.
+- `gondolin-worker-main.ts`: Entry point of the detached worker process (thin wrapper over `gondolin-worker.ts`).
+- `gondolin-worker.ts`: Worker-side runtime: boots one Gondolin VM, records it in the inventory, announces readiness, and shuts down when the VM runner dies, on SIGTERM, or when the mikan heartbeat goes stale.
+- `gondolin.ts`: Implements the Gondolin microVM executor: per-conversation worker-hosted runtimes, desired-runtime fingerprinting and drift recreation, resource limits, idle/sweep lifecycle, and crash recovery.
 - `host.ts`: Implements the host executor by running commands directly through the local shell.
 - `identity.ts`: Runtime actor identity — `actorKey()` and the single sanitizer naming a conversation's vault dir, docker container/network, and cloudflare sandbox suffix. Consumers take keys; nothing re-derives them.
 - `image.ts`: Parses and validates `image:<image>` sandbox configs, which must later resolve to a concrete container executor.

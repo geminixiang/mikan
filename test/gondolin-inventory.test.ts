@@ -150,6 +150,69 @@ describe("Gondolin runtime inventory", () => {
     expect(gcSessions).toHaveBeenCalledTimes(2);
   });
 
+  test("findAdoptable returns the newest live worker record and reaps dead ones", async () => {
+    const dead = writeRecord({
+      sessionId: "dead-worker",
+      ownerPid: OWNER_DEAD,
+      socketPath: "/sessions/dead.sock",
+      fingerprint: "fp",
+    });
+    writeRecord({
+      sessionId: "older",
+      ownerPid: OWNER_ALIVE,
+      socketPath: "/sessions/older.sock",
+      fingerprint: "fp",
+      createdAt: "2026-07-14T00:00:00.000Z",
+    });
+    writeRecord({
+      sessionId: "newer",
+      ownerPid: OWNER_ALIVE,
+      socketPath: "/sessions/newer.sock",
+      fingerprint: "fp",
+      createdAt: "2026-07-14T01:00:00.000Z",
+    });
+    writeRecord({ sessionId: "other-key", instanceId: "c2", ownerPid: OWNER_ALIVE });
+
+    const adoptable = await gondolinInventory.findAdoptable("c1");
+
+    expect(adoptable?.sessionId).toBe("newer");
+    expect(existsSync(dead)).toBe(false);
+  });
+
+  test("listWorkerRecords only lists live worker-owned records", () => {
+    writeRecord({
+      sessionId: "live-worker",
+      ownerPid: OWNER_ALIVE,
+      socketPath: "/sessions/live.sock",
+    });
+    writeRecord({ sessionId: "dead-worker", ownerPid: OWNER_DEAD, socketPath: "/s.sock" });
+    writeRecord({ sessionId: "in-process", ownerPid: OWNER_ALIVE });
+
+    const records = gondolinInventory.listWorkerRecords();
+
+    expect(records.map((record) => record.sessionId)).toEqual(["live-worker"]);
+  });
+
+  test("reapSession reaps only when the owner is gone", async () => {
+    alivePids.add(RUNNER);
+    const dead = writeRecord({ sessionId: "dead-owner", ownerPid: OWNER_DEAD });
+    const live = writeRecord({ sessionId: "live-owner", ownerPid: OWNER_ALIVE });
+
+    await gondolinInventory.reapSession("dead-owner");
+    await gondolinInventory.reapSession("live-owner");
+
+    expect(existsSync(dead)).toBe(false);
+    expect(existsSync(live)).toBe(true);
+    expect(signals).toEqual([{ pid: RUNNER, signal: "SIGTERM" }]);
+  });
+
+  test("touchHeartbeat writes the heartbeat file", () => {
+    gondolinInventory.touchHeartbeat();
+    const heartbeat = gondolinInventory.heartbeatPath();
+    expect(heartbeat).toBe(join(dir, "heartbeat"));
+    expect(existsSync(heartbeat as string)).toBe(true);
+  });
+
   test("stays inert while unconfigured", async () => {
     gondolinInventory.configure();
     gondolinInventory.record({ sessionId: "s1", instanceId: "c1", runnerPid: 1 });

@@ -1,12 +1,20 @@
-import type { VM as GondolinVM } from "@earendil-works/gondolin";
 import { createHash } from "node:crypto";
-import { dirname } from "node:path";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import * as log from "../log.js";
 import type { ResourceLimits, SandboxLimitStatus, SandboxResourceController } from "../types.js";
 import { SandboxError } from "./errors.js";
 import { gondolinInventory } from "./gondolin-inventory.js";
+import {
+  GondolinRuntimeGoneError,
+  GondolinRuntimeInterruptedError,
+  gondolinWorkers,
+  type GondolinRuntimeHandle,
+} from "./gondolin-worker-client.js";
+import type { GondolinWorkerConfig } from "./gondolin-worker.js";
 import { createMountedRuntimePathContext } from "./path-context.js";
 import { withRuntimeBootstrap } from "./container.js";
+import { execReadFile, execWriteFile } from "./utils.js";
 import type {
   ExecOptions,
   ExecResult,
@@ -17,10 +25,9 @@ import type {
 } from "./types.js";
 
 type GondolinModule = typeof import("@earendil-works/gondolin");
-type VM = GondolinVM;
 
 interface GondolinSession {
-  vm: Promise<VM>;
+  runtime: Promise<GondolinRuntimeHandle>;
   fingerprint: string;
   resourceKey?: string;
   activeOperations: number;
@@ -37,6 +44,8 @@ interface GondolinDesiredRuntime {
 
 const MINIMUM_NODE_VERSION = [23, 6, 0] as const;
 const MIKAN_IMAGE = "mikan-sandbox:latest";
+/** Workers self-stop once no mikan has refreshed the heartbeat for this long. */
+const WORKER_HEARTBEAT_STALE_MS = 45 * 60 * 1000;
 const sessions = new Map<string, GondolinSession>();
 const transitions = new Map<string, Promise<void>>();
 let activeShutdowns = 0;
@@ -155,22 +164,6 @@ function runtimeFingerprint(desired: GondolinDesiredRuntime): string {
     .digest("hex");
 }
 
-async function createVM(key: string, desired: GondolinDesiredRuntime): Promise<VM> {
-  const { RealFSProvider, VM } = (await import("@earendil-works/gondolin")) as GondolinModule;
-  return VM.create({
-    sandbox: { imagePath: desired.image },
-    env: { TZ: "Asia/Taipei" },
-    sessionLabel: `mikan:${key}`,
-    cpus: gondolinCpuCount(desired.limits?.cpus),
-    memory: desired.limits?.memory,
-    vfs: {
-      mounts: Object.fromEntries(
-        desired.mounts.map(({ source, target }) => [target, new RealFSProvider(source)]),
-      ),
-    },
-  });
-}
-
 function gondolinCpuCount(cpus: string | undefined): number | undefined {
   if (cpus === undefined) return undefined;
   const parsed = Number(cpus);
@@ -181,6 +174,29 @@ function gondolinCpuCount(cpus: string | undefined): number | undefined {
   return Math.ceil(parsed);
 }
 
+async function createRuntime(
+  key: string,
+  desired: GondolinDesiredRuntime,
+  fingerprint: string,
+): Promise<GondolinRuntimeHandle> {
+  const adopted = await gondolinWorkers.adopt(key, fingerprint);
+  if (adopted) {
+    log.logInfo(`Adopted Gondolin runtime for '${key}' (worker ${adopted.workerPid})`);
+    return adopted;
+  }
+  const workerConfig: GondolinWorkerConfig = {
+    instanceId: key,
+    image: desired.image,
+    mounts: desired.mounts,
+    cpus: gondolinCpuCount(desired.limits?.cpus),
+    memory: desired.limits?.memory,
+    fingerprint,
+    inventoryDir: gondolinInventory.directory() ?? join(homedir(), ".mikan", "gondolin-runtimes"),
+    heartbeatStaleMs: WORKER_HEARTBEAT_STALE_MS,
+  };
+  return gondolinWorkers.spawn(workerConfig);
+}
+
 function createSession(
   key: string,
   config: GondolinSandboxConfig,
@@ -188,12 +204,12 @@ function createSession(
   fingerprint: string,
 ): GondolinSession {
   let session: GondolinSession;
-  const vm = createVM(key, desired).catch((error) => {
+  const runtime = createRuntime(key, desired, fingerprint).catch((error) => {
     if (sessions.get(key) === session) sessions.delete(key);
     throw error;
   });
   session = {
-    vm,
+    runtime,
     fingerprint,
     resourceKey: config.resourceKey,
     activeOperations: 0,
@@ -261,28 +277,47 @@ async function replaceSession(
   }
   const replacement = createSession(key, config, desired, fingerprint);
   sessions.set(key, replacement);
-  const vm = await replacement.vm;
-  gondolinInventory.record({ sessionId: vm.id, instanceId: key, runnerPid: vm.getHostPid() });
+  await replacement.runtime;
 }
 
-async function withVM<T>(
+function discardDeadSession(key: string, session: GondolinSession): void {
+  if (sessions.get(key) !== session) return;
+  sessions.delete(key);
+  log.logWarning(`Gondolin runtime for '${key}' died; the session will be recreated`);
+}
+
+async function withRuntime<T>(
   key: string,
   config: GondolinSandboxConfig,
-  operation: (vm: VM) => Promise<T>,
+  operation: (handle: GondolinRuntimeHandle) => Promise<T>,
 ): Promise<T> {
-  const session = await acquireSession(key, config);
-  try {
-    const vm = await session.vm;
+  for (let attempt = 0; ; attempt += 1) {
+    const session = await acquireSession(key, config);
+    let handle: GondolinRuntimeHandle | undefined;
     try {
-      return await operation(vm);
+      handle = await session.runtime;
+      return await operation(handle);
+    } catch (error) {
+      const gone = error instanceof GondolinRuntimeGoneError;
+      const interrupted = error instanceof GondolinRuntimeInterruptedError;
+      if (gone || (interrupted && handle && !gondolinWorkers.isWorkerAlive(handle))) {
+        discardDeadSession(key, session);
+      }
+      // Nothing reached a gone runtime, so recreating and retrying is safe;
+      // an interrupted command may have side effects and must surface.
+      if (gone && attempt === 0) continue;
+      if (gone || interrupted) {
+        throw new SandboxError(
+          `Error: Gondolin runtime for '${key}' died (${(error as Error).message}); it is recreated on the next command`,
+        );
+      }
+      throw error;
     } finally {
-      gondolinInventory.refresh(vm.id, vm.getHostPid());
-    }
-  } finally {
-    session.activeOperations -= 1;
-    session.lastUsed = Date.now();
-    if (session.activeOperations === 0) {
-      for (const resolve of session.idleWaiters.splice(0)) resolve();
+      session.activeOperations -= 1;
+      session.lastUsed = Date.now();
+      if (session.activeOperations === 0) {
+        for (const resolve of session.idleWaiters.splice(0)) resolve();
+      }
     }
   }
 }
@@ -299,15 +334,15 @@ async function closeSession(
     waitForActiveOperations?: boolean;
     resetResources?: boolean;
     throwOnError?: boolean;
+    stopRuntime?: boolean;
   } = {},
 ): Promise<void> {
   if (sessions.get(key) !== session) return;
   sessions.delete(key);
   try {
     if (options.waitForActiveOperations) await waitForIdle(session);
-    const vm = await session.vm;
-    await vm.close();
-    gondolinInventory.release(vm.id);
+    const handle = await session.runtime;
+    if (options.stopRuntime !== false) await gondolinWorkers.stop(handle);
     if (
       options.resetResources !== false &&
       session.resourceKey &&
@@ -318,8 +353,8 @@ async function closeSession(
   } catch (error) {
     session.fingerprint = "";
     // Re-track for a retried close, unless a replacement already claimed the
-    // key — then the failed VM stays alive until process exit or the next
-    // startup reconcile, and clobbering the replacement would leak it too.
+    // key — then the failed runtime stays for the reconcile paths and
+    // clobbering the replacement would leak it too.
     if (!sessions.has(key)) sessions.set(key, session);
     if (options.throwOnError) throw error;
     log.logWarning(
@@ -349,7 +384,28 @@ export async function stopIdleGondolinVms(maxIdleMs: number, now = Date.now()): 
   );
 }
 
-export async function closeAllGondolinVms(): Promise<void> {
+/**
+ * Stop workers surviving from a previous mikan that no conversation has
+ * adopted — without this, a runtime whose conversation went quiet before the
+ * restart would idle forever (its worker only self-stops when every mikan is
+ * gone, and the in-memory idle sweep only tracks acquired sessions).
+ */
+export async function sweepUnadoptedGondolinWorkers(): Promise<void> {
+  for (const record of gondolinInventory.listWorkerRecords()) {
+    if (sessions.has(record.instanceId) || transitions.has(record.instanceId)) continue;
+    log.logInfo(
+      `Stopping unadopted Gondolin worker ${record.ownerPid} (instance '${record.instanceId}')`,
+    );
+    await gondolinWorkers.stop({ workerPid: record.ownerPid, sessionId: record.sessionId });
+  }
+}
+
+/**
+ * Forget every session without stopping the workers: runtimes deliberately
+ * outlive the mikan process so the next one adopts them instead of paying a
+ * VM boot per conversation on every deploy.
+ */
+export async function disconnectAllGondolinRuntimes(): Promise<void> {
   shutdownGeneration += 1;
   activeShutdowns += 1;
   try {
@@ -357,7 +413,7 @@ export async function closeAllGondolinVms(): Promise<void> {
     const current = Array.from(sessions.entries());
     await Promise.all(
       current.map(([key, session]) =>
-        closeSession(key, session, { waitForActiveOperations: true }),
+        closeSession(key, session, { waitForActiveOperations: true, stopRuntime: false }),
       ),
     );
   } finally {
@@ -388,27 +444,20 @@ export class GondolinExecutor implements Executor {
   }
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
-    return withVM(this.instanceId, this.config, async (vm) => {
-      const result = await vm.exec(withRuntimeBootstrap(command, this.env), {
-        cwd: "/workspace",
+    return withRuntime(this.instanceId, this.config, (handle) =>
+      gondolinWorkers.exec(handle, withRuntimeBootstrap(command, this.env), {
         env: this.env,
         signal: executionSignal(options),
-      });
-      return { stdout: result.stdout, stderr: result.stderr, code: result.exitCode };
-    });
+      }),
+    );
   }
 
   async readFile(path: string): Promise<string> {
-    return withVM(this.instanceId, this.config, (vm) => vm.fs.readFile(path, { encoding: "utf8" }));
+    return execReadFile(this, path);
   }
 
   async writeFile(path: string, content: string): Promise<void> {
-    return withVM(this.instanceId, this.config, async (vm) => {
-      const stage = `${path}.mikan-stage`;
-      await vm.fs.mkdir(dirname(path), { recursive: true });
-      await vm.fs.writeFile(stage, content);
-      await vm.fs.rename(stage, path);
-    });
+    return execWriteFile(this, path, content);
   }
 
   getWorkspacePath(): string {
