@@ -9,8 +9,11 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.15]
+
 ### Added
 
+- Add native image generation with automatic upload through the active model provider.
 - Add extension chat commands via `api.registerCommand`: deterministic `/name` dispatch with no model call; built-ins and first registrations win.
 - Add an extension disposal lifecycle (`api.onDispose` or an `activate` return value), run when a harness instance is discarded (`/pi-new`, idle eviction, session rotation).
 - Add `api.triggerRun(text)` to fire an immediate autonomous agent run, `api.uploadFile(path, title)` for proactive file uploads, and an explicit `conversationId` option on `api.notify` for cross-conversation posting.
@@ -22,6 +25,14 @@ any release.
 ### Changed
 
 - Dispatch `before_agent_start` and `tool_result` hooks with chaining semantics (each handler sees earlier handlers' rewrites; any `block` wins) instead of first-result-wins.
+
+### Fixed
+
+- Dispose cached runners when models switch or environment credentials refresh.
+
+### Tests
+
+- Add coverage for image generation, extension lifecycle and hook rewrites, and runner disposal.
 
 ## [1.0.0-beta.14]
 
