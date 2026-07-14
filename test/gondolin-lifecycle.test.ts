@@ -237,7 +237,7 @@ describe("Gondolin lifecycle", () => {
       connect,
       kill,
       handshakeTimeoutMs: 1000,
-      stopWaitMs: 50,
+      stopWaitMs: 2000,
       stopPollIntervalMs: 1,
     });
     Object.defineProperty(process.versions, "node", { value: "24.0.0", configurable: true });
@@ -343,7 +343,8 @@ describe("Gondolin lifecycle", () => {
 
     const closing = stopIdleGondolinVms(0, Date.now() + 1);
     const execution = executor.exec("pwd");
-    await vi.waitFor(() => expect(signals).toContainEqual({ pid: worker.pid, signal: "SIGTERM" }));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(signals).toContainEqual({ pid: worker.pid, signal: "SIGTERM" });
     expect(spawns).toHaveLength(1);
 
     lingerOnSigterm = false;

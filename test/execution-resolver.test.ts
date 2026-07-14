@@ -10,6 +10,8 @@ import {
 import { FileVaultManager } from "../src/vault/index.js";
 
 describe("readConversationWorkspaceMountMode", () => {
+  // the Gondolin executor asserts Node >=23.6, but CI also runs the 22.19.0 floor
+  const nodeVersion = Object.getOwnPropertyDescriptor(process.versions, "node");
   let stateDir: string;
   let workspaceDir: string;
 
@@ -18,10 +20,12 @@ describe("readConversationWorkspaceMountMode", () => {
     workspaceDir = join(stateDir, "workspace");
     mkdirSync(workspaceDir, { recursive: true });
     process.env.MIKAN_STATE_DIR = stateDir;
+    Object.defineProperty(process.versions, "node", { value: "24.0.0", configurable: true });
   });
 
   afterEach(() => {
     delete process.env.MIKAN_STATE_DIR;
+    if (nodeVersion) Object.defineProperty(process.versions, "node", nodeVersion);
     if (existsSync(stateDir)) {
       rmSync(stateDir, { recursive: true, force: true });
     }
