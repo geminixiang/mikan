@@ -31,10 +31,10 @@ export default defineConfig({
       thresholds: {
         // Global ratchet: set just below current actuals so coverage can only
         // move up. Raise these as under-tested areas gain tests.
-        statements: 72,
-        branches: 62,
-        functions: 72,
-        lines: 73,
+        statements: 75,
+        branches: 65,
+        functions: 75,
+        lines: 77,
         // Files that already meet a high bar stay held to it.
         "src/{commands/auto-reply,commands/utils,sessions/metadata,tools/event,tools/truncate,tools/write}.ts":
           {
@@ -44,6 +44,12 @@ export default defineConfig({
             lines: 95,
           },
         "src/utils/{date,env,file-guards,fs-atomic,html}.ts": {
+          statements: 95,
+          branches: 90,
+          functions: 95,
+          lines: 95,
+        },
+        "src/log.ts": {
           statements: 95,
           branches: 90,
           functions: 95,
