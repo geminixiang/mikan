@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -6,11 +6,25 @@ import { runGondolinWorker, type GondolinWorkerConfig } from "../src/sandbox/gon
 import { gondolinInventory } from "../src/sandbox/gondolin-inventory.js";
 
 function createFakeVm() {
+  const guestFiles = new Map<string, Buffer>();
   return {
     id: "vm-1",
+    guestFiles,
     start: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined),
     getHostPid: vi.fn().mockReturnValue(777),
+    exec: vi.fn().mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 }),
+    fs: {
+      mkdir: vi.fn().mockResolvedValue(undefined),
+      writeFile: vi.fn(async (path: string, data: Buffer) => {
+        guestFiles.set(path, Buffer.from(data));
+      }),
+      readFile: vi.fn(async (path: string) => {
+        const content = guestFiles.get(path);
+        if (!content) throw new Error("ENOENT");
+        return content;
+      }),
+    },
   };
 }
 
@@ -147,5 +161,73 @@ describe("Gondolin worker runtime", () => {
 
     await vi.waitFor(() => expect(exitCodes).toEqual([0]), { timeout: 2000 });
     expect(vm.close).toHaveBeenCalledOnce();
+  });
+
+  test("projects file mounts into the guest instead of VFS-mounting them", async () => {
+    const workspace = join(dir, "ws");
+    mkdirSync(join(workspace, "C123"), { recursive: true });
+    writeFileSync(join(workspace, "MEMORY.md"), "remember me");
+    const credential = join(dir, "credentials.json");
+    writeFileSync(credential, "{token}");
+
+    await run({
+      mounts: [
+        { source: join(workspace, "MEMORY.md"), target: "/workspace/MEMORY.md" },
+        { source: join(workspace, "C123"), target: "/workspace/C123" },
+        { source: credential, target: "/root/.config/gws/credentials.json" },
+      ],
+    });
+
+    // only the directory reaches the VFS — file targets cannot guest-bind
+    const options = created[0] as { vfs: { mounts: Record<string, unknown> } };
+    expect(Object.keys(options.vfs.mounts)).toEqual(["/workspace/C123"]);
+
+    expect(vm.guestFiles.get("/workspace/MEMORY.md")?.toString()).toBe("remember me");
+    expect(vm.guestFiles.get("/root/.config/gws/credentials.json")?.toString()).toBe("{token}");
+    // credential is projected owner-only and never synced back
+    expect(vm.exec).toHaveBeenCalledWith("chmod 600 '/root/.config/gws/credentials.json'");
+    expect(vm.exec).toHaveBeenCalledTimes(1);
+  });
+
+  test("syncs workspace file edits back to the host", async () => {
+    const workspace = join(dir, "ws");
+    mkdirSync(workspace, { recursive: true });
+    const memory = join(workspace, "MEMORY.md");
+    writeFileSync(memory, "v1");
+
+    await run({ mounts: [{ source: memory, target: "/workspace/MEMORY.md" }] });
+
+    vm.guestFiles.set("/workspace/MEMORY.md", Buffer.from("v2 from guest"));
+    await vi.waitFor(() => expect(readFileSync(memory, "utf8")).toBe("v2 from guest"));
+  });
+
+  test("makes a final sync during shutdown", async () => {
+    const workspace = join(dir, "ws");
+    mkdirSync(workspace, { recursive: true });
+    const memory = join(workspace, "MEMORY.md");
+    writeFileSync(memory, "v1");
+    await runGondolinWorker(
+      config({ mounts: [{ source: memory, target: "/workspace/MEMORY.md" }] }),
+      {
+        loadGondolin,
+        announce: (line) => announced.push(line),
+        exit: (code) => exitCodes.push(code),
+        pollIntervalMs: 60_000, // periodic sync never fires; shutdown must
+      },
+    );
+
+    vm.guestFiles.set("/workspace/MEMORY.md", Buffer.from("final state"));
+    process.emit("SIGTERM");
+    await vi.waitFor(() => expect(exitCodes).toEqual([0]));
+    expect(readFileSync(memory, "utf8")).toBe("final state");
+  });
+
+  test("closes the VM when boot fails after create", async () => {
+    vm.start.mockRejectedValueOnce(new Error("boot wedged"));
+
+    await expect(run()).rejects.toThrow("boot wedged");
+    expect(vm.close).toHaveBeenCalledOnce();
+    process.emit("SIGTERM"); // satisfy the afterEach exit wait
+    exitCodes.push(0);
   });
 });

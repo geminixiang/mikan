@@ -1,6 +1,8 @@
-import { chmodSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { chmodSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { gondolinInventory } from "./gondolin-inventory.js";
+import { shellEscape } from "./utils.js";
 
 type GondolinModule = typeof import("@earendil-works/gondolin");
 
@@ -49,6 +51,28 @@ interface GondolinWorkerDeps {
   pollIntervalMs?: number;
 }
 
+/**
+ * A single-file mount handled outside the VFS: Gondolin's guest prepares every
+ * VFS mount point with `mkdir -p`, so a file target can never bind (the guest
+ * ends up bind-mounting a file onto a directory and the VM refuses to start).
+ * Files are copied in after boot instead; the ones under /workspace sync guest
+ * edits back to the host so agent-maintained files like MEMORY.md persist.
+ */
+interface FileProjection {
+  source: string;
+  target: string;
+  syncBack: boolean;
+  lastHash: string;
+}
+
+function sha256(data: Buffer): string {
+  return createHash("sha256").update(data).digest("hex");
+}
+
+function warn(message: string): void {
+  process.stderr.write(`[gondolin-worker] ${message}\n`);
+}
+
 function heartbeatFresh(path: string, since: number, staleMs: number): boolean {
   let mtimeMs = 0;
   try {
@@ -68,6 +92,33 @@ function restrictSocketAccess(socketPath: string): void {
   } catch {
     // best-effort hardening
   }
+}
+
+function partitionMounts(mounts: GondolinWorkerConfig["mounts"]): {
+  directories: GondolinWorkerConfig["mounts"];
+  files: FileProjection[];
+} {
+  const directories: GondolinWorkerConfig["mounts"] = [];
+  const files: FileProjection[] = [];
+  for (const mount of mounts) {
+    let isDirectory: boolean;
+    try {
+      isDirectory = statSync(mount.source).isDirectory();
+    } catch {
+      warn(`skipping missing mount source ${mount.source}`);
+      continue;
+    }
+    if (isDirectory) {
+      directories.push(mount);
+    } else {
+      files.push({
+        ...mount,
+        syncBack: mount.target.startsWith("/workspace/"),
+        lastHash: "",
+      });
+    }
+  }
+  return { directories, files };
 }
 
 /**
@@ -93,6 +144,7 @@ export async function runGondolinWorker(
     if (!config.imageSelector) throw new Error("worker config needs image or imageSelector");
     imagePath = (await ensureImageSelector(config.imageSelector)).assetDir;
   }
+  const { directories, files } = partitionMounts(config.mounts);
   const vm = await VM.create({
     sandbox: { imagePath },
     env: { TZ: "Asia/Taipei" },
@@ -101,15 +153,21 @@ export async function runGondolinWorker(
     memory: config.memory,
     vfs: {
       mounts: Object.fromEntries(
-        config.mounts.map(({ source, target }) => [target, new RealFSProvider(source)]),
+        directories.map(({ source, target }) => [target, new RealFSProvider(source)]),
       ),
     },
   });
-  await vm.start();
-  const session = await findSession(vm.id);
-  if (!session) {
-    await vm.close();
-    throw new Error(`Gondolin session '${vm.id}' did not register`);
+
+  let session: Awaited<ReturnType<typeof findSession>>;
+  try {
+    await vm.start();
+    await projectFiles(vm, files);
+    session = await findSession(vm.id);
+    if (!session) throw new Error(`Gondolin session '${vm.id}' did not register`);
+  } catch (error) {
+    // never leave a half-booted runner (and its overlay disk) behind
+    await vm.close().catch(() => {});
+    throw error;
   }
   restrictSocketAccess(session.socketPath);
   gondolinInventory.record({
@@ -122,10 +180,41 @@ export async function runGondolinWorker(
 
   const startedAt = Date.now();
   let closing = false;
+  let syncing = false;
+  const syncProjections = async (): Promise<void> => {
+    if (syncing) return;
+    syncing = true;
+    try {
+      for (const projection of files) {
+        if (!projection.syncBack) continue;
+        try {
+          const data = await vm.fs.readFile(projection.target);
+          const content = Buffer.isBuffer(data) ? data : Buffer.from(String(data));
+          const hash = sha256(content);
+          if (hash === projection.lastHash) continue;
+          // atomic host write: a crash mid-sync must not truncate the file
+          const staged = `${projection.source}.mikan-sync`;
+          writeFileSync(staged, content);
+          renameSync(staged, projection.source);
+          projection.lastHash = hash;
+        } catch {
+          // guest file missing or read raced a writer; next tick retries
+        }
+      }
+    } finally {
+      syncing = false;
+    }
+  };
+
   const shutdown = async (code: number): Promise<void> => {
     if (closing) return;
     closing = true;
     clearInterval(watchdog);
+    try {
+      await syncProjections();
+    } catch {
+      // best effort; the periodic sync already captured earlier edits
+    }
     try {
       await vm.close();
     } catch {
@@ -144,6 +233,7 @@ export async function runGondolinWorker(
       return;
     }
     gondolinInventory.refresh(vm.id, runnerPid);
+    void syncProjections();
     const heartbeat = gondolinInventory.heartbeatPath();
     if (
       config.heartbeatStaleMs > 0 &&
@@ -166,4 +256,27 @@ export async function runGondolinWorker(
       runnerPid: vm.getHostPid(),
     } satisfies GondolinWorkerHandshake),
   );
+}
+
+/** Copy file mounts into the guest; credentials get user-only permissions. */
+async function projectFiles(
+  vm: {
+    fs: {
+      mkdir: (path: string, options?: { recursive?: boolean }) => Promise<void>;
+      writeFile: (path: string, data: Buffer) => Promise<void>;
+    };
+    exec: (command: string) => PromiseLike<unknown>;
+  },
+  files: FileProjection[],
+): Promise<void> {
+  for (const projection of files) {
+    const content = readFileSync(projection.source);
+    await vm.fs.mkdir(dirname(projection.target), { recursive: true });
+    await vm.fs.writeFile(projection.target, content);
+    if (!projection.syncBack) {
+      // credential projection: no write-back, keep it owner-only
+      await vm.exec(`chmod 600 ${shellEscape(projection.target)}`);
+    }
+    projection.lastHash = sha256(content);
+  }
 }
