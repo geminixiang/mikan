@@ -1,5 +1,6 @@
 import { existsSync } from "fs";
 import { join } from "path";
+import { createHash } from "crypto";
 import {
   conversationSettingsPath,
   loadGlobalSettings,
@@ -88,14 +89,9 @@ export class ActorExecutionResolver {
     this.ensureDefaultSharedVault(vaultKey, context.trustModel);
 
     const vault = this.vaultManager.resolve(vaultKey);
-    const config = this.resolveSandboxConfig(vaultKey, context.conversationId);
+    const config = this.resolveSandboxConfig(vaultKey, context.conversationId, vault);
     const env =
-      config.type !== "host" &&
-      config.type !== "gondolin" &&
-      vault &&
-      Object.keys(vault.env).length > 0
-        ? vault.env
-        : undefined;
+      config.type !== "host" && vault && Object.keys(vault.env).length > 0 ? vault.env : undefined;
     return createExecutor(
       config,
       env,
@@ -125,15 +121,20 @@ export class ActorExecutionResolver {
     this.vaultManager.copySharedVaultTo(profile, vaultKey);
   }
 
-  private resolveSandboxConfig(vaultKey: string, conversationId: string): SandboxConfig {
+  private resolveSandboxConfig(
+    vaultKey: string,
+    conversationId: string,
+    vault?: ResolvedVault,
+  ): SandboxConfig {
     const config = this.vaultManager.getSandboxConfig(vaultKey, this.baseConfig);
     if (this.baseConfig.type === "gondolin" && config.type === "gondolin") {
-      const workspaceMounts = this.buildWorkspaceMounts(conversationId);
+      const mounts = this.resolveMounts(conversationId, vault);
+      const mountSignature = createHash("sha256").update(JSON.stringify(mounts)).digest("hex");
       return {
         ...config,
         workspacePath: this.hostWorkspacePath,
-        workspaceMounts,
-        instanceId: `${vaultKey}:${workspaceMounts.length === 1 ? "full" : "private"}`,
+        mounts,
+        instanceId: `${vaultKey}:${mountSignature}`,
       };
     }
     if (this.baseConfig.type !== "image") {
@@ -207,7 +208,7 @@ export class ActorExecutionResolver {
           operation: "resolve_mounts",
           severity: "warning",
           context: {
-            sandboxType: "image",
+            sandboxType: this.baseConfig.type,
             conversationId,
             target: mount.target,
             hasVault: Boolean(vault),

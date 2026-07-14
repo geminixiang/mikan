@@ -71,7 +71,7 @@ function buildContainerExecCommand(
   return `docker exec ${envPart}-w /workspace ${container} sh -c ${shellEscape(command)}`;
 }
 
-function withRuntimeBootstrap(command: string, env?: Record<string, string>): string {
+export function withRuntimeBootstrap(command: string, env?: Record<string, string>): string {
   if (!hasGitHubToken(env)) {
     return command;
   }

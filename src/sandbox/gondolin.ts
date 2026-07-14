@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import * as log from "../log.js";
 import { SandboxError } from "./errors.js";
 import { createMountedRuntimePathContext } from "./path-context.js";
+import { withRuntimeBootstrap } from "./container.js";
 import type {
   ExecOptions,
   ExecResult,
@@ -57,7 +58,7 @@ async function validateGondolinSandbox(): Promise<void> {
 
 async function createVM(config: GondolinSandboxConfig): Promise<VM> {
   const { RealFSProvider, VM } = (await import("@earendil-works/gondolin")) as GondolinModule;
-  const mounts = config.workspaceMounts ?? [
+  const mounts = config.mounts ?? [
     { source: config.workspacePath ?? process.cwd(), target: "/workspace" },
   ];
   return VM.create({
@@ -152,7 +153,10 @@ export class GondolinExecutor implements Executor {
   private readonly workspacePath: string;
   private readonly sessionKey: string;
 
-  constructor(private readonly config: GondolinSandboxConfig) {
+  constructor(
+    private readonly config: GondolinSandboxConfig,
+    private readonly env?: Record<string, string>,
+  ) {
     assertSupportedNodeVersion();
     this.workspacePath = config.workspacePath ?? process.cwd();
     this.sessionKey = config.instanceId ?? this.workspacePath;
@@ -160,8 +164,9 @@ export class GondolinExecutor implements Executor {
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
     return withVM(this.sessionKey, this.config, async (vm) => {
-      const result = await vm.exec(command, {
+      const result = await vm.exec(withRuntimeBootstrap(command, this.env), {
         cwd: "/workspace",
+        env: this.env,
         signal: executionSignal(options),
       });
       return { stdout: result.stdout, stderr: result.stderr, code: result.exitCode };
@@ -198,5 +203,5 @@ export const gondolinSandboxAdapter: SandboxAdapter<GondolinSandboxConfig> = {
   type: "gondolin",
   parse: parseGondolinSandboxArg,
   validate: validateGondolinSandbox,
-  createExecutor: (config) => new GondolinExecutor(config),
+  createExecutor: (config, env) => new GondolinExecutor(config, env),
 };

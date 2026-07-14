@@ -72,7 +72,7 @@ describe("Gondolin lifecycle", () => {
       type: "gondolin",
       profile: "default",
       instanceId: "mounts",
-      workspaceMounts: [
+      mounts: [
         { source: "/host/MEMORY.md", target: "/workspace/MEMORY.md" },
         { source: "/host/C123", target: "/workspace/C123" },
       ],
@@ -87,6 +87,31 @@ describe("Gondolin lifecycle", () => {
       "/workspace/MEMORY.md",
       "/workspace/C123",
     ]);
+  });
+
+  test("injects vault env into commands", async () => {
+    const vm = createVm();
+    gondolin.create.mockResolvedValue(vm);
+    const executor = new GondolinExecutor(
+      {
+        type: "gondolin",
+        profile: "default",
+        instanceId: "env",
+        workspacePath: "/workspace-host",
+      },
+      { GH_TOKEN: "secret" },
+    );
+
+    await executor.exec("git fetch");
+
+    expect(vm.exec).toHaveBeenCalledWith(
+      "if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then gh auth setup-git >/dev/null 2>&1 || true; fi\ngit fetch",
+      {
+        cwd: "/workspace",
+        env: { GH_TOKEN: "secret" },
+        signal: undefined,
+      },
+    );
   });
 
   test("does not close a VM while an operation is active", async () => {

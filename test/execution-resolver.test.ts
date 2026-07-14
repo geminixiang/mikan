@@ -73,7 +73,7 @@ describe("readConversationWorkspaceMountMode", () => {
 
     expect(executor.getSandboxConfig()).toMatchObject({
       type: "gondolin",
-      workspaceMounts: [
+      mounts: [
         { source: join(workspaceDir, "MEMORY.md"), target: "/workspace/MEMORY.md" },
         { source: join(workspaceDir, "skills"), target: "/workspace/skills" },
         { source: join(workspaceDir, "events"), target: "/workspace/events" },
@@ -107,7 +107,30 @@ describe("readConversationWorkspaceMountMode", () => {
 
     expect(executor.getSandboxConfig()).toMatchObject({
       type: "gondolin",
-      workspaceMounts: [{ source: workspaceDir, target: "/workspace" }],
+      mounts: [{ source: workspaceDir, target: "/workspace" }],
+    });
+  });
+
+  test("adds Gondolin vault files to the workspace mounts", async () => {
+    createGlobalSettingsFile(stateDir);
+    const sshDir = join(stateDir, "vaults", "c123", ".ssh");
+    mkdirSync(sshDir, { recursive: true });
+    const resolver = new ActorExecutionResolver(
+      { type: "gondolin", profile: "default" },
+      new FileVaultManager(stateDir),
+      undefined,
+      workspaceDir,
+      workspaceDir,
+    );
+
+    const executor = await resolver.resolve({
+      platform: "slack",
+      userId: "U123",
+      conversationId: "C123",
+    });
+
+    expect(executor.getSandboxConfig()).toMatchObject({
+      mounts: expect.arrayContaining([{ source: sshDir, target: "/root/.ssh" }]),
     });
   });
 });
