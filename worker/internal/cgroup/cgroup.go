@@ -16,23 +16,52 @@ import (
 
 const cgroupRoot = "/sys/fs/cgroup"
 
-// ErrUnsupported reports a host without cgroup v2.
-var ErrUnsupported = errors.New("cgroup v2 unavailable on this host")
+// ErrUnsupported reports a host without cgroup v2 (or no delegated cgroup).
+var ErrUnsupported = errors.New("cgroup v2 unavailable or not delegated to this process")
 
-// Place moves pid into a fresh cgroup under mikan-worker/<name> with the
-// given limits. cpus is a decimal like "0.5"; memory a size like "512m".
-func Place(pid int, name string, cpus string, memory string) error {
+// base is the cgroup this process itself lives in — new runtime cgroups are
+// created BELOW it, not at the cgroup root, so an unprivileged worker started
+// with systemd `Delegate=yes` can manage its own subtree. Falls back to the
+// root only when running privileged.
+func base() (string, error) {
 	if runtime.GOOS != "linux" {
-		return ErrUnsupported
+		return "", ErrUnsupported
 	}
 	if _, err := os.Stat(filepath.Join(cgroupRoot, "cgroup.controllers")); err != nil {
-		return ErrUnsupported
+		return "", ErrUnsupported
 	}
-	dir := filepath.Join(cgroupRoot, "mikan-worker", name)
+	own, err := os.ReadFile("/proc/self/cgroup")
+	if err != nil {
+		return "", ErrUnsupported
+	}
+	// cgroup v2 line is "0::/system.slice/mikan-worker.service"
+	relative := ""
+	for _, line := range strings.Split(strings.TrimSpace(string(own)), "\n") {
+		if rest, ok := strings.CutPrefix(line, "0::"); ok {
+			relative = rest
+			break
+		}
+	}
+	dir := filepath.Join(cgroupRoot, relative, "mikan-worker")
+	// writability of the delegated subtree is what actually matters
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", ErrUnsupported
+	}
+	return dir, nil
+}
+
+// Place moves pid into a fresh cgroup under <own-cgroup>/mikan-worker/<name>
+// with the given limits. cpus is a decimal like "0.5"; memory a size like "512m".
+func Place(pid int, name string, cpus string, memory string) error {
+	root, err := base()
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(root, name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create cgroup: %w", err)
 	}
-	if err := enableControllers(); err != nil {
+	if err := enableControllers(root); err != nil {
 		return err
 	}
 	if cpus != "" {
@@ -57,11 +86,15 @@ func Place(pid int, name string, cpus string, memory string) error {
 
 // Remove deletes the runtime's cgroup once its processes are gone.
 func Remove(name string) {
-	_ = os.Remove(filepath.Join(cgroupRoot, "mikan-worker", name))
+	root, err := base()
+	if err != nil {
+		return
+	}
+	_ = os.Remove(filepath.Join(root, name))
 }
 
-func enableControllers() error {
-	control := filepath.Join(cgroupRoot, "mikan-worker", "cgroup.subtree_control")
+func enableControllers(root string) error {
+	control := filepath.Join(root, "cgroup.subtree_control")
 	if err := os.WriteFile(control, []byte("+cpu +memory"), 0o644); err != nil {
 		return fmt.Errorf("enable cpu/memory controllers: %w", err)
 	}

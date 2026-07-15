@@ -208,9 +208,10 @@ func runJoin(args []string) {
 	configPath := filepath.Join(*dir, "config.json")
 	fmt.Printf("Joined %s as %q. Credentials written to %s\n\n", host, *name, *dir)
 	fmt.Printf("Start the worker with:\n  mikan-worker connect --config %s\n\n", configPath)
-	fmt.Printf("Or install it as a service (systemd):\n")
+	fmt.Printf("Or install it as a service (systemd). Delegate=yes lets the\n")
+	fmt.Printf("unprivileged worker manage its own cgroup subtree for CPU/memory limits:\n\n")
 	fmt.Printf("  [Unit]\n  Description=mikan gondolin worker\n  After=network-online.target\n\n")
-	fmt.Printf("  [Service]\n  ExecStart=%s connect --config %s\n  Restart=always\n  RestartSec=5\n\n", executablePath(), configPath)
+	fmt.Printf("  [Service]\n  ExecStart=%s connect --config %s\n  Restart=always\n  RestartSec=5\n  Delegate=yes\n\n", executablePath(), configPath)
 	fmt.Printf("  [Install]\n  WantedBy=multi-user.target\n")
 }
 
