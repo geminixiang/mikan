@@ -53,17 +53,19 @@ install_binary() {
   trap 'rm -rf "$tmp"' EXIT
 
   say "› downloading $asset ($tag)"
-  if ! curl -fsSL -o "$tmp/mikan-worker" "$base/$asset"; then
+  # keep the release asset name so the checksum line matches
+  if ! curl -fsSL -o "$tmp/$asset" "$base/$asset"; then
     return 1
   fi
-  if curl -fsSL -o "$tmp/sums" "$base/mikan-worker_${tag}_SHA256SUMS.txt" 2>/dev/null; then
+  if command -v sha256sum >/dev/null 2>&1 &&
+    curl -fsSL -o "$tmp/sums" "$base/mikan-worker_${tag}_SHA256SUMS.txt" 2>/dev/null; then
     say "› verifying checksum"
-    ( cd "$tmp" && grep " $asset\$" sums | sha256sum -c - >/dev/null 2>&1 ) \
+    ( cd "$tmp" && grep "  $asset\$" sums | sha256sum -c - >/dev/null 2>&1 ) \
       || die "checksum verification failed for $asset"
   else
-    say "› warning: no SHA256SUMS.txt in the release; skipping checksum"
+    say "› warning: no checksum available; skipping verification"
   fi
-  install_to "$tmp/mikan-worker"
+  install_to "$tmp/$asset"
 }
 
 build_from_source() {
