@@ -34,14 +34,16 @@ detect_platform() {
   printf '%s_%s' "$os" "$arch"
 }
 
-resolve_tag() {
+resolve_tags() {
   if [ "$version" != "latest" ]; then
-    printf '%s' "$version"
+    printf '%s\n' "$version"
     return
   fi
-  # follow the redirect from /releases/latest to read the tag
-  curl -fsSLI -o /dev/null -w '%{url_effective}' \
-    "https://github.com/$repo/releases/latest" 2>/dev/null | sed 's#.*/tag/##'
+  # /releases/latest skips prereleases entirely and mikan ships beta
+  # releases, so list the newest releases (prereleases included) via the API
+  # and let the caller take the first one that actually carries a binary.
+  curl -fsSL "https://api.github.com/repos/$repo/releases?per_page=10" 2>/dev/null |
+    grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/'
 }
 
 install_binary() {
@@ -104,9 +106,12 @@ if [ -n "$script_dir" ] && [ -f "$script_dir/../worker/go.mod" ]; then
   say "› source build unavailable, trying the release binary"
 fi
 
-tag="$(resolve_tag)"
-[ -n "$tag" ] || die "could not resolve a release tag"
-if install_binary "$platform" "$tag"; then
-  exit 0
-fi
-die "no mikan-worker binary for $platform in release $tag (cut a release with the worker CD, or run this from a checkout with Go installed)"
+tags="$(resolve_tags)"
+[ -n "$tags" ] || die "could not resolve a release tag"
+for tag in $tags; do
+  if install_binary "$platform" "$tag"; then
+    exit 0
+  fi
+  say "› no binary for $platform in release $tag, trying the next one"
+done
+die "no mikan-worker binary for $platform in the recent releases (cut a release with the worker CD, or run this from a checkout with Go installed)"
