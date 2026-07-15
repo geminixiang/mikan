@@ -113,6 +113,14 @@ function abortError(): Error {
 }
 
 /**
+ * A command may quietly work for a long time, but a session that produces no
+ * frame at all for this long is indistinguishable from one wedged on dead
+ * storage (a hung NFS mount under the workspace blocks guest I/O forever) —
+ * kill it and say so instead of hanging the run.
+ */
+const EXEC_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+
+/**
  * Run one command through a fresh session connection — the shared state
  * machine for both transports. Closing the connection (abort, timeout, or the
  * far side dying) kills the in-flight guest process.
@@ -120,18 +128,21 @@ function abortError(): Error {
 export async function execOverSessionConnect(
   connect: (callbacks: SessionClientCallbacks) => SessionClient | Promise<SessionClient>,
   command: string,
-  options: { env?: Record<string, string>; signal?: AbortSignal } = {},
+  options: { env?: Record<string, string>; signal?: AbortSignal; idleTimeoutMs?: number } = {},
 ): Promise<ExecResult> {
   if (options.signal?.aborted) throw abortError();
+  const idleTimeoutMs = options.idleTimeoutMs ?? EXEC_IDLE_TIMEOUT_MS;
   return await new Promise<ExecResult>((resolve, reject) => {
     let stdout = "";
     let stderr = "";
     let received = false;
     let settled = false;
     let client: SessionClient | undefined;
+    let idleTimer: NodeJS.Timeout | undefined;
     const settle = (fn: () => void): void => {
       if (settled) return;
       settled = true;
+      clearTimeout(idleTimer);
       options.signal?.removeEventListener("abort", onAbort);
       fn();
     };
@@ -140,9 +151,27 @@ export async function execOverSessionConnect(
         client?.close();
         reject(abortError());
       });
+    const onIdle = (): void =>
+      settle(() => {
+        client?.close();
+        reject(
+          new GondolinRuntimeInterruptedError(
+            `no session activity for ${Math.round(idleTimeoutMs / 1000)}s — killed the command ` +
+              `(guest I/O hangs when the workspace sits on a dead mount; check the worker's workspace health)`,
+          ),
+        );
+      });
+    const armIdleTimer = (): void => {
+      if (idleTimeoutMs <= 0 || settled) return;
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(onIdle, idleTimeoutMs);
+      idleTimer.unref?.();
+    };
+    armIdleTimer();
     const callbacks: SessionClientCallbacks = {
       onJson: (message) => {
         received = true;
+        armIdleTimer();
         if (message.type === "exec_response" && message.id === 1) {
           settle(() => {
             client?.close();
@@ -161,6 +190,7 @@ export async function execOverSessionConnect(
       },
       onBinary: (frame) => {
         received = true;
+        armIdleTimer();
         const tag = frame.readUInt8(0);
         const data = frame.subarray(5).toString("utf8");
         if (tag === 1) stdout += data;

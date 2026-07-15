@@ -43,7 +43,9 @@ type Server struct {
 	Runtimes      *workerruntime.Supervisor
 	WorkspaceRoot string
 	InventoryDir  string
-	Log           *slog.Logger
+	// Workspace, when set, reports shared-workspace usability in /v1/health.
+	Workspace *WorkspaceProbe
+	Log       *slog.Logger
 
 	mu       sync.Mutex
 	replayed map[string]replayEntry
@@ -108,7 +110,7 @@ func (s *Server) touchHeartbeat() {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
+	body := map[string]any{
 		"protocolVersion": ProtocolVersion,
 		"os":              runtime.GOOS,
 		"arch":            runtime.GOARCH,
@@ -116,7 +118,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"cpus":            runtime.NumCPU(),
 		"memoryBytes":     TotalMemoryBytes(),
 		"activeRuntimes":  s.Runtimes.Count(),
-	})
+	}
+	if workspaceError := s.Workspace.Cached(); workspaceError != "" {
+		body["workspaceError"] = workspaceError
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 type acquireLeaseRequest struct {
@@ -204,6 +210,12 @@ func (s *Server) handleEnsureRuntime(w http.ResponseWriter, r *http.Request) {
 	}
 	if request.ImageSelector == "" || request.Fingerprint == "" {
 		writeError(w, http.StatusBadRequest, "invalid_request", "imageSelector and fingerprint are required")
+		return
+	}
+	// Refuse to spawn (or adopt) a runtime whose workspace sits on a dead
+	// mount: its VM would hang on the first guest I/O with no way to cancel.
+	if message := s.Workspace.Status(); message != "" {
+		writeError(w, http.StatusServiceUnavailable, "workspace_unusable", message)
 		return
 	}
 	if err := s.validateMounts(request.Mounts); err != nil {

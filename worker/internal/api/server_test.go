@@ -109,6 +109,26 @@ func (w *testWorld) ensureRuntime(t *testing.T, fingerprint string, headers map[
 	return recorder, runtime
 }
 
+func TestEnsureRefusedWhenWorkspaceUnusable(t *testing.T) {
+	world := newTestWorld(t, "/nonexistent.sock")
+	world.server.Workspace = NewWorkspaceProbe("/nonexistent/mikan-workspace", time.Second, time.Minute)
+	world.acquireLease(t)
+
+	response, _ := world.ensureRuntime(t, "fp-1", nil)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 for an unusable workspace, got %d %s", response.Code, response.Body)
+	}
+	if !strings.Contains(response.Body.String(), "workspace_unusable") {
+		t.Errorf("body should carry workspace_unusable: %s", response.Body)
+	}
+
+	// /v1/health reports the same diagnosis for placement decisions
+	health := world.request(t, "GET", "/v1/health", nil, false)
+	if !strings.Contains(health.Body.String(), "workspaceError") {
+		t.Errorf("health should report workspaceError: %s", health.Body)
+	}
+}
+
 func TestRuntimeLifecycleUnderLease(t *testing.T) {
 	world := newTestWorld(t, "/nonexistent.sock")
 

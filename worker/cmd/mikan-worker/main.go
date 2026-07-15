@@ -102,6 +102,7 @@ func buildDaemon(flags daemonFlags, logger *slog.Logger) *api.Server {
 		Runtimes:      supervisor,
 		WorkspaceRoot: *flags.workspaceRoot,
 		InventoryDir:  inventoryDir,
+		Workspace:     api.NewWorkspaceProbe(*flags.workspaceRoot, 2*time.Second, time.Minute),
 		Log:           logger,
 	}
 	stop := make(chan struct{})
@@ -289,6 +290,7 @@ func runConnect(args []string) {
 		Server:      server,
 		Name:        *name,
 		MaxRuntimes: *maxRuntimes,
+		Workspace:   server.Workspace,
 		Log:         logger,
 	}
 	logger.Info("mikan-worker dialing home", "gateway", address, "name", *name)

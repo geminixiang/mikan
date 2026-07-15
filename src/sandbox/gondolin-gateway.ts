@@ -29,6 +29,8 @@ interface GondolinWorkerRegistration {
   maxRuntimes?: number;
   protocolVersion?: number;
   runtimes?: Array<{ sessionId: string; instanceId: string }>;
+  /** Non-empty when the worker's shared workspace failed its usability probe. */
+  workspaceError?: string;
 }
 
 interface ControlFrame extends GondolinWorkerRegistration {
@@ -49,6 +51,7 @@ interface RegisteredWorker {
   connectedAt: number;
   lastSeen: number;
   activeRuntimes: number;
+  workspaceError?: string;
   pendingRpc: Map<number, { resolve: (frame: ControlFrame) => void; timer: NodeJS.Timeout }>;
   nextRpcId: number;
 }
@@ -140,12 +143,14 @@ class GondolinWorkerGateway {
     name: string;
     connected: boolean;
     activeRuntimes: number;
+    workspaceError?: string;
     info: GondolinWorkerRegistration;
   }> {
     return Array.from(this.workers.values()).map((worker) => ({
       name: worker.info.name,
       connected: !worker.socket.destroyed,
       activeRuntimes: worker.activeRuntimes,
+      workspaceError: worker.workspaceError,
       info: worker.info,
     }));
   }
@@ -294,6 +299,7 @@ class GondolinWorkerGateway {
           },
         ),
     );
+    this.applyWorkspaceHealth(worker, registration.workspaceError);
     // a worker that reconnected may carry runtimes whose placements moved
     void gondolinFleet.reconcile();
 
@@ -316,6 +322,8 @@ class GondolinWorkerGateway {
       if (typeof frame.activeRuntimes === "number") {
         worker.activeRuntimes = frame.activeRuntimes;
       }
+      // omitted on healthy pings (Go omitempty), so absence means recovered
+      this.applyWorkspaceHealth(worker, frame.workspaceError);
       socket.write(encodeControlFrame({ type: "pong" }));
       return;
     }
@@ -326,6 +334,29 @@ class GondolinWorkerGateway {
       clearTimeout(pending.timer);
       pending.resolve(frame);
     }
+  }
+
+  /**
+   * Track shared-workspace health from register/ping frames and push it into
+   * the fleet, logging only the transitions. A worker whose NFS mount died
+   * keeps its control channel alive — this is what turns that silent state
+   * into refused placements and fail-fast execs.
+   */
+  private applyWorkspaceHealth(worker: RegisteredWorker, error: string | undefined): void {
+    const next = error || undefined;
+    if (next === worker.workspaceError) {
+      gondolinFleet.setWorkspaceHealth(worker.info.name, next); // attach may have reset it
+      return;
+    }
+    if (next) {
+      log.logWarning(
+        `Gondolin worker '${worker.info.name}' workspace is unusable: ${next} — new placements disabled until it recovers`,
+      );
+    } else {
+      log.logInfo(`Gondolin worker '${worker.info.name}' workspace recovered`);
+    }
+    worker.workspaceError = next;
+    gondolinFleet.setWorkspaceHealth(worker.info.name, next);
   }
 
   /** RPC to a worker over its control channel (the reverse of HTTPS requests). */

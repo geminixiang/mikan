@@ -50,6 +50,9 @@ type Frame struct {
 	Nonce           string                  `json:"nonce,omitempty"`
 	SessionID       string                  `json:"sessionId,omitempty"`
 	Message         string                  `json:"message,omitempty"`
+	// WorkspaceError is non-empty when the shared workspace root failed its
+	// usability probe (register and ping frames).
+	WorkspaceError string `json:"workspaceError,omitempty"`
 	// join exchange
 	Token string `json:"token,omitempty"`
 	CSR   string `json:"csr,omitempty"`
@@ -93,6 +96,12 @@ func ReadFrame(r io.Reader) (Frame, error) {
 	return frame, nil
 }
 
+// WorkspaceHealth reports shared-workspace usability for control frames.
+type WorkspaceHealth interface {
+	Status() string // fresh result, bounded wait — for registration
+	Cached() string // last known result, never blocks — for heartbeats
+}
+
 // Client maintains the dial-home relationship with one mikan host.
 type Client struct {
 	// Dial opens one authenticated stream to the host (control or dial-back).
@@ -102,7 +111,10 @@ type Client struct {
 	Name   string
 	// MaxRuntimes advertises the admission cap the host should apply.
 	MaxRuntimes int
-	Log         *slog.Logger
+	// Workspace, when set, stamps register and ping frames with the shared
+	// workspace root's health so the host can gate placement on it.
+	Workspace WorkspaceHealth
+	Log       *slog.Logger
 
 	PingInterval time.Duration
 	// ReconnectMin/Max bound the exponential backoff between attempts.
@@ -190,7 +202,12 @@ func (c *Client) session(stop <-chan struct{}) error {
 		case err := <-readErr:
 			return err
 		case <-ping.C:
-			if err := WriteFrame(writes, Frame{Type: "ping", ActiveRuntimes: c.Server.Runtimes.Count()}); err != nil {
+			frame := Frame{
+				Type:           "ping",
+				ActiveRuntimes: c.Server.Runtimes.Count(),
+				WorkspaceError: c.workspaceCached(),
+			}
+			if err := WriteFrame(writes, frame); err != nil {
 				return err
 			}
 		case frame := <-frames:
@@ -220,7 +237,22 @@ func (c *Client) registerFrame() Frame {
 		MaxRuntimes:     c.MaxRuntimes,
 		ProtocolVersion: api.ProtocolVersion,
 		Runtimes:        c.Server.Runtimes.List(""),
+		WorkspaceError:  c.workspaceStatus(),
 	}
+}
+
+func (c *Client) workspaceStatus() string {
+	if c.Workspace == nil {
+		return ""
+	}
+	return c.Workspace.Status()
+}
+
+func (c *Client) workspaceCached() string {
+	if c.Workspace == nil {
+		return ""
+	}
+	return c.Workspace.Cached()
 }
 
 // serveRPC synthesizes the frame into the daemon's regular HTTP handler, so

@@ -57,6 +57,7 @@ class FakeDialhomeWorker extends EventEmitter {
   runtime?: { sessionId: string; instanceId: string; fingerprint: string };
   nextSession = 0;
   execResponse = { stdout: "ok", code: 0 };
+  workspaceError?: string;
 
   constructor(
     readonly port: number,
@@ -80,6 +81,7 @@ class FakeDialhomeWorker extends EventEmitter {
             maxRuntimes: 4,
             protocolVersion: 1,
             runtimes: this.surviving,
+            ...(this.workspaceError ? { workspaceError: this.workspaceError } : {}),
           }),
         );
         resolve();
@@ -213,6 +215,12 @@ class FakeDialhomeWorker extends EventEmitter {
         }
       }
     });
+  }
+
+  sendPing(fields: { workspaceError?: string } = {}): void {
+    this.control.write(
+      encodeFrame({ type: "ping", activeRuntimes: this.runtime ? 1 : 0, ...fields }),
+    );
   }
 
   close(): void {
@@ -368,6 +376,38 @@ describe("Gondolin worker gateway", () => {
       const again = await gondolinFleet.ensure("c1", SPEC);
       expect(again.workerName).toBe(first.workerName);
     }
+  });
+
+  test("registering with a workspace error disables placement with the diagnosis", async () => {
+    const worker = new FakeDialhomeWorker(port, "nfs-dead");
+    worker.workspaceError = "workspace root /mnt/mikan-workspace is not responding";
+    workers.push(worker);
+    await worker.connect();
+    await vi.waitFor(() =>
+      expect(gondolinGateway.list().some((entry) => entry.name === "nfs-dead")).toBe(true),
+    );
+
+    await expect(gondolinFleet.ensure("c1", SPEC)).rejects.toThrow(
+      /degraded: 'nfs-dead': workspace root \/mnt\/mikan-workspace is not responding/,
+    );
+    const [entry] = gondolinGateway.list();
+    expect(entry.workspaceError).toContain("not responding");
+  });
+
+  test("pings toggle workspace health while the worker stays connected", async () => {
+    const worker = await joinWorker("linux-1");
+    const handle = await gondolinFleet.ensure("c1", SPEC);
+
+    worker.sendPing({ workspaceError: "workspace root /mnt/x is not responding" });
+    await vi.waitFor(() =>
+      expect(gondolinGateway.list()[0].workspaceError).toContain("not responding"),
+    );
+    await expect(gondolinFleet.exec(handle, "pwd")).rejects.toThrow(/unusable shared workspace/);
+
+    worker.sendPing({}); // healthy pings omit the field — recovery
+    await vi.waitFor(() => expect(gondolinGateway.list()[0].workspaceError).toBeUndefined());
+    const result = await gondolinFleet.exec(handle, "echo hi");
+    expect(result.code).toBe(0);
   });
 });
 

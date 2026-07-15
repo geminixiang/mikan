@@ -40,6 +40,8 @@ interface FleetWorker {
   name: string;
   settings: GondolinRemoteWorkerSettings;
   connection: GondolinWorkerConnection;
+  /** Non-empty when the worker's shared workspace failed its usability probe. */
+  workspaceError?: string;
 }
 
 interface GondolinFleetOverrides {
@@ -153,6 +155,18 @@ class GondolinFleetClient implements GondolinRuntimeTransport {
   }
 
   /**
+   * Record a worker's shared-workspace health (the gateway pushes this from
+   * register and ping frames). A degraded worker keeps its runtimes and its
+   * connection, but new placements skip it and runtime operations fail fast
+   * with the probe's diagnosis instead of hanging on a dead mount.
+   */
+  setWorkspaceHealth(name: string, error?: string): void {
+    const worker = this.workers.get(name);
+    if (!worker) return;
+    worker.workspaceError = error || undefined;
+  }
+
+  /**
    * Detach a dial-home worker (disconnect). Placements survive: their lease
    * watermarks keep fencing failover until expiry, exactly as for an
    * unreachable static worker.
@@ -244,6 +258,8 @@ class GondolinFleetClient implements GondolinRuntimeTransport {
   ): Promise<ExecResult> {
     const worker = this.workerFor(handle.workerName);
     if (!worker) throw new GondolinRuntimeGoneError("worker is no longer configured");
+    this.assertWorkspaceUsable(worker);
+    log.logInfo(`Gondolin execution '${handle.instanceId}' routed to worker '${worker.name}'`);
     return worker.connection.exec(handle, command, options);
   }
 
@@ -301,9 +317,24 @@ class GondolinFleetClient implements GondolinRuntimeTransport {
     instanceId: string,
     spec: GondolinRuntimeSpec,
   ): Promise<GondolinRuntimeHandle> {
+    this.assertWorkspaceUsable(worker);
     const handle = await worker.connection.ensure(instanceId, spec);
     this.placements.set(instanceId, worker.name, this.now() + this.leaseTtlMs);
     return { ...handle, workerName: worker.name };
+  }
+
+  /**
+   * Fail fast — with the probe's diagnosis — instead of dispatching work that
+   * would hang on a dead shared-workspace mount. Deliberately NOT a
+   * GondolinWorkerUnreachableError: a broken mount must not trigger failover,
+   * because the workspace is shared and likely broken for every worker.
+   */
+  private assertWorkspaceUsable(worker: FleetWorker): void {
+    if (!worker.workspaceError) return;
+    throw new SandboxError(
+      `Error: Gondolin worker '${worker.name}' has an unusable shared workspace: ` +
+        `${worker.workspaceError} (fix the mount on the worker; health refreshes with its next heartbeat)`,
+    );
   }
 
   private assertFailoverAllowed(
@@ -330,19 +361,34 @@ class GondolinFleetClient implements GondolinRuntimeTransport {
       let reachable = 0;
       let draining = 0;
       let full = 0;
+      const degraded: string[] = [];
       for (const worker of this.workers.values()) {
         if (worker.settings.draining) {
           draining += 1;
           continue;
         }
+        if (worker.workspaceError) {
+          degraded.push(`'${worker.name}': ${worker.workspaceError}`);
+          continue;
+        }
         let active: number;
+        let workspaceError: string | undefined;
         try {
           const health = await worker.connection.health();
           active = typeof health.activeRuntimes === "number" ? health.activeRuntimes : 0;
+          workspaceError =
+            typeof health.workspaceError === "string" && health.workspaceError
+              ? health.workspaceError
+              : undefined;
         } catch {
           continue;
         }
         reachable += 1;
+        if (workspaceError) {
+          // static workers report probe results via /v1/health only
+          degraded.push(`'${worker.name}': ${workspaceError}`);
+          continue;
+        }
         const cap = worker.settings.maxRuntimes;
         if (cap !== undefined && active >= cap) {
           full += 1;
@@ -352,11 +398,14 @@ class GondolinFleetClient implements GondolinRuntimeTransport {
         if (!best || load < best.load) best = { worker, load };
       }
       if (best) return best.worker;
-      if (reachable === 0 && draining === 0) {
+      if (reachable === 0 && draining === 0 && degraded.length === 0) {
         throw new SandboxError("Error: no gondolin remote worker is reachable");
       }
       if (full === 0) {
-        throw new SandboxError("Error: every gondolin remote worker is draining or unreachable");
+        const detail = degraded.length > 0 ? ` — degraded: ${degraded.join("; ")}` : "";
+        throw new SandboxError(
+          `Error: every gondolin remote worker is draining, degraded, or unreachable${detail}`,
+        );
       }
       if (this.now() >= deadline) {
         throw new SandboxError(

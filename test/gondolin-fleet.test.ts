@@ -1,7 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import * as log from "../src/log.js";
 import { gondolinFleet, type GondolinWorkerConnection } from "../src/sandbox/gondolin-fleet.js";
 import { GondolinPlacementStore } from "../src/sandbox/gondolin-placement.js";
 import { GondolinWorkerUnreachableError } from "../src/sandbox/gondolin-remote.js";
@@ -36,9 +37,14 @@ class FakeWorker implements GondolinWorkerConnection {
     if (!this.reachable) throw new GondolinWorkerUnreachableError(`${this.name} unreachable`);
   }
 
+  workspaceError?: string;
+
   async health(): Promise<Record<string, unknown>> {
     this.assertReachable();
-    return { activeRuntimes: this.runtimes.size };
+    return {
+      activeRuntimes: this.runtimes.size,
+      ...(this.workspaceError ? { workspaceError: this.workspaceError } : {}),
+    };
   }
 
   async ensure(instanceId: string, _spec: GondolinRuntimeSpec): Promise<GondolinRuntimeHandle> {
@@ -189,6 +195,45 @@ describe("Gondolin fleet", () => {
     await expect(gondolinFleet.ensure("c1", SPEC)).rejects.toThrow("draining");
   });
 
+  test("a degraded workspace excludes the worker from new placements", async () => {
+    configureFleet([{ name: "a" }, { name: "b" }]);
+    gondolinFleet.setWorkspaceHealth("a", "workspace root /mnt/x is not responding");
+
+    const placed = await gondolinFleet.ensure("c1", SPEC);
+    expect(placed.workerName).toBe("b");
+  });
+
+  test("every workspace degraded fails placement with the probe diagnosis", async () => {
+    configureFleet([{ name: "a" }]);
+    gondolinFleet.setWorkspaceHealth("a", "workspace root /mnt/x is not responding");
+
+    await expect(gondolinFleet.ensure("c1", SPEC)).rejects.toThrow(
+      /degraded: 'a': workspace root \/mnt\/x is not responding/,
+    );
+  });
+
+  test("exec and ensure fail fast on a degraded worker instead of hanging", async () => {
+    configureFleet([{ name: "a" }]);
+    const handle = await gondolinFleet.ensure("c1", SPEC);
+
+    gondolinFleet.setWorkspaceHealth("a", "workspace root /mnt/x is not responding");
+    await expect(gondolinFleet.exec(handle, "pwd")).rejects.toThrow(/unusable shared workspace/);
+    await expect(gondolinFleet.ensure("c1", SPEC)).rejects.toThrow(/unusable shared workspace/);
+    // a broken shared mount must not trigger failover
+    expect(placements.get("c1")?.worker).toBe("a");
+
+    gondolinFleet.setWorkspaceHealth("a", undefined);
+    await expect(gondolinFleet.exec(handle, "pwd")).resolves.toMatchObject({ code: 0 });
+  });
+
+  test("a workspaceError in /v1/health also excludes static workers", async () => {
+    configureFleet([{ name: "a" }, { name: "b" }]);
+    workers.get("a")!.workspaceError = "workspace root /mnt/x is unusable: stale file handle";
+
+    const placed = await gondolinFleet.ensure("c1", SPEC);
+    expect(placed.workerName).toBe("b");
+  });
+
   test("failover waits for the lease watermark, then moves the conversation", async () => {
     configureFleet([{ name: "a" }, { name: "b" }]);
     const placed = await gondolinFleet.ensure("c1", SPEC);
@@ -225,16 +270,21 @@ describe("Gondolin fleet", () => {
     await expect(gondolinFleet.ensure("c2", SPEC)).rejects.toThrow("at capacity");
   });
 
-  test("exec and stop route by the handle's worker", async () => {
+  test("exec logs and routes by the handle's worker", async () => {
+    const logSpy = vi.spyOn(log, "logInfo").mockImplementation(() => {});
     configureFleet([{ name: "a" }, { name: "b" }]);
     const first = await gondolinFleet.ensure("c1", SPEC);
 
     const result = await gondolinFleet.exec(first, "hostname");
     expect(result.stdout.trim()).toBe(first.workerName);
+    expect(logSpy).toHaveBeenCalledWith(
+      `Gondolin execution 'c1' routed to worker '${first.workerName}'`,
+    );
 
     await gondolinFleet.stop(first);
     expect(placements.get("c1")).toBeUndefined();
     expect(workers.get(first.workerName as string)?.stopped).toContain("c1");
+    logSpy.mockRestore();
   });
 
   test("reconcile stops strays and adopts unplaced runtimes", async () => {
