@@ -242,6 +242,7 @@ describe("Gondolin worker gateway", () => {
         certFile: "/unused.pem",
         keyFile: "/unused-key.pem",
         clientCaFile: "/unused-ca.pem",
+        workspaceRoot: "/srv/workspace",
         workers: { drained: { draining: true } },
       },
       {
@@ -384,7 +385,7 @@ describe("Gondolin worker gateway join + authorization", () => {
       { placements: new GondolinPlacementStore(), queuePollMs: 5 },
     );
     gondolinGateway.configure(
-      { port: 0 }, // no cert settings: exercises auto-init via the join service
+      { port: 0, workspaceRoot: "/srv/workspace" }, // no cert settings: exercises auto-init via the join service
       {
         createServer: (onConnection) => createServer(onConnection) as Server,
         isAuthorized: () => authorized,

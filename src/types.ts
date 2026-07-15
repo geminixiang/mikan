@@ -274,7 +274,12 @@ export interface GondolinGatewaySettings {
   clientCaFile?: string;
   /** SANs for the auto-issued server certificate (defaults to os.hostname). */
   hostnames?: string[];
-  /** Worker-side path of the shared workspace filesystem. */
+  /**
+   * Worker-side path of the shared workspace filesystem. Required in practice:
+   * mount sources are translated to it, and without it every runtime is
+   * rejected with "escapes the workspace root". gondolinGateway.start()
+   * enforces it at boot; typed optional to match the settings schema.
+   */
   workspaceRoot?: string;
   /** Per-worker host-side overrides, keyed by worker name. */
   workers?: Record<string, { maxRuntimes?: number; draining?: boolean }>;

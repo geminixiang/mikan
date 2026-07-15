@@ -158,6 +158,14 @@ class GondolinWorkerGateway {
   async start(): Promise<void> {
     if (!this.settings || this.server) return;
     const settings = this.settings;
+    if (!settings.workspaceRoot) {
+      // dial-home workers inherit workspaceRoot from here; without it every
+      // runtime is rejected with "escapes the workspace root"
+      throw new Error(
+        "gondolin gateway requires workspaceRoot (the worker-side shared workspace path); " +
+          "set sandbox.gondolin.remote.gateway.workspaceRoot",
+      );
+    }
     let material: { certFile: string; keyFile: string; clientCaFile: string };
     if (settings.certFile && settings.keyFile && settings.clientCaFile) {
       material = {

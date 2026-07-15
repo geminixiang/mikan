@@ -153,6 +153,15 @@ export function assertRemoteConfigured(): void {
       "Error: gondolin:remote requires sandbox.gondolin.remote settings (workers[]/url, or gateway for dial-home workers)",
     );
   }
+  // Without a workspaceRoot, mount sources cannot be translated to the worker's
+  // filesystem and every runtime is rejected with "escapes the workspace root".
+  const missing = gondolinFleet.workersMissingWorkspaceRoot();
+  if (missing.length > 0) {
+    throw new SandboxError(
+      `Error: gondolin:remote worker(s) [${missing.join(", ")}] have no workspaceRoot; ` +
+        `set sandbox.gondolin.remote.workspaceRoot (or gateway.workspaceRoot) to the worker-side shared workspace path`,
+    );
+  }
 }
 
 function transportFor(config: GondolinSandboxConfig): GondolinRuntimeTransport {

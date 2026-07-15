@@ -123,6 +123,13 @@ class GondolinFleetClient implements GondolinRuntimeTransport {
     return this.workers.size > 0;
   }
 
+  /** Names of statically-configured workers with no workspaceRoot (startup guard). */
+  workersMissingWorkspaceRoot(): string[] {
+    return Array.from(this.workers.values())
+      .filter((worker) => !worker.settings.workspaceRoot)
+      .map((worker) => worker.name);
+  }
+
   /**
    * Attach a dial-home worker at runtime (the gateway calls this when a
    * worker registers). The factory receives the fleet's connection overrides

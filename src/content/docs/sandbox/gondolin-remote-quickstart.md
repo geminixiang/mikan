@@ -36,7 +36,9 @@ free.
 ### 1. Configure mikan for the gateway
 
 In your mikan state dir's `settings.json`, enable the worker gateway. Omit the
-certificate fields and mikan provisions its own CA on first start:
+certificate fields and mikan provisions its own CA on first start. `workspaceRoot`
+is **required** — it is the worker-side path mount sources are translated to; without
+it every runtime is rejected with "escapes the workspace root":
 
 ```jsonc
 {
@@ -44,12 +46,20 @@ certificate fields and mikan provisions its own CA on first start:
     "gondolin": {
       "remote": {
         "imageSelector": "mikan-sandbox:latest",
-        "gateway": { "port": 8433, "hostnames": ["127.0.0.1"] },
+        "gateway": {
+          "port": 8433,
+          "hostnames": ["127.0.0.1"],
+          "workspaceRoot": "/home/you/mikan-workspace", // worker-side path
+        },
       },
     },
   },
 }
 ```
+
+The worker-side `workspaceRoot` and its subdirectories (the conversation dirs,
+`MEMORY.md`, `skills`, `events`) must exist on the worker — mounts point at real
+paths there. Create it before connecting; on shared storage this happens once.
 
 Start mikan against a workspace, in remote mode:
 
@@ -110,7 +120,17 @@ Same steps, with the worker on a second host. Three differences:
   it, and use that address in the join command.
 - **Worker prerequisites.** The worker machine needs Node ≥ 23.6, QEMU with KVM, the
   mikan `dist/`, and the built guest image (`npm run gondolin:image:build` there). The
-  `--worker-entry` path is on the worker.
+  `--worker-entry` path is on the worker. `scripts/init-mikan-worker-host.sh` installs
+  the system packages (including `e2fsprogs` and `lz4`, which the image build needs) and
+  the worker binary on Debian/Ubuntu:
+
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/geminixiang/mikan/main/scripts/init-mikan-worker-host.sh | sudo -E bash
+  ```
+
+  On a cloud VM, hardware virtualization must be enabled (e.g. GCP
+  `--enable-nested-virtualization` on an N2/N2D/C2/C3 type — E2 does not support it);
+  confirm with `ls /dev/kvm`.
 
 Install the worker binary on the second machine with:
 
