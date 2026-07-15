@@ -122,6 +122,24 @@ const SettingsFileSchema = Type.Object({
                   }),
                 ),
               ),
+              gateway: Type.Optional(
+                Type.Object({
+                  port: Type.Number(),
+                  certFile: Type.String(),
+                  keyFile: Type.String(),
+                  clientCaFile: Type.String(),
+                  workspaceRoot: Type.Optional(Type.String()),
+                  workers: Type.Optional(
+                    Type.Record(
+                      Type.String(),
+                      Type.Object({
+                        maxRuntimes: Type.Optional(Type.Number()),
+                        draining: Type.Optional(Type.Boolean()),
+                      }),
+                    ),
+                  ),
+                }),
+              ),
             }),
           ),
         }),

@@ -10,6 +10,7 @@ This directory defines sandbox abstractions, concrete sandbox executors, and sha
 - `firecracker.ts`: Implements the Firecracker VM executor by running commands over SSH inside the VM.
 - `gondolin-inventory.ts`: Persists per-runtime records (written by workers) under the state dir, reconciles them at startup, finds adoptable surviving runtimes, and maintains the mikan heartbeat workers watch.
 - `gondolin-fleet.ts`: Multi-worker scheduler for `gondolin:remote` — sticky placement by capacity, draining, bounded queue-wait, lease-watermark-fenced failover, and stray-runtime reconciliation across mikan-worker daemons.
+- `gondolin-gateway.ts`: Host side of dial-home workers — one mTLS listener accepting worker control channels (register/heartbeat/RPC) and per-command dial-back tunnels; keeps the connected-worker registry and attaches each worker to the fleet.
 - `gondolin-placement.ts`: Durable conversation→worker placement table with the lease-expiry watermark failover fencing respects.
 - `gondolin-remote.ts`: Per-worker connection — fenced leases with heartbeat renewal, mTLS requests, and per-command upgraded tunnels to a `worker/` mikan-worker daemon.
 - `gondolin-worker-client.ts`: mikan's side of the worker boundary — the local transport (spawn/adopt/stop detached workers) plus the exec-over-session state machine and transport interface shared with the remote path.

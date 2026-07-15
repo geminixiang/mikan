@@ -111,9 +111,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"protocolVersion": ProtocolVersion,
 		"os":              runtime.GOOS,
 		"arch":            runtime.GOARCH,
-		"accelerator":     accelerator(),
+		"accelerator":     Accelerator(),
 		"cpus":            runtime.NumCPU(),
-		"memoryBytes":     totalMemoryBytes(),
+		"memoryBytes":     TotalMemoryBytes(),
 		"activeRuntimes":  s.Runtimes.Count(),
 	})
 }
@@ -403,7 +403,7 @@ func ttlFrom(seconds int) time.Duration {
 	return ttl
 }
 
-func accelerator() string {
+func Accelerator() string {
 	switch runtime.GOOS {
 	case "linux":
 		if _, err := os.Stat("/dev/kvm"); err == nil {
@@ -417,7 +417,7 @@ func accelerator() string {
 	}
 }
 
-func totalMemoryBytes() int64 {
+func TotalMemoryBytes() int64 {
 	if runtime.GOOS == "linux" {
 		raw, err := os.ReadFile("/proc/meminfo")
 		if err == nil {

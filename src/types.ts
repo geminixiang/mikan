@@ -260,6 +260,20 @@ export interface GondolinRemoteWorkerSettings {
   draining?: boolean;
 }
 
+export interface GondolinGatewaySettings {
+  /** Port the worker gateway listens on for dial-home workers. */
+  port: number;
+  /** Gateway server certificate + key (PEM). */
+  certFile: string;
+  keyFile: string;
+  /** CA bundle that signs allowed worker client certificates. */
+  clientCaFile: string;
+  /** Worker-side path of the shared workspace filesystem. */
+  workspaceRoot?: string;
+  /** Per-worker host-side overrides, keyed by worker name. */
+  workers?: Record<string, { maxRuntimes?: number; draining?: boolean }>;
+}
+
 export interface GondolinRemoteSettings {
   /** Single-worker form: connection fields inline (a fleet of one). */
   url?: string;
@@ -270,6 +284,8 @@ export interface GondolinRemoteSettings {
   maxRuntimes?: number;
   /** Fleet form: several workers; per-worker fields fall back to the inline ones. */
   workers?: GondolinRemoteWorkerSettings[];
+  /** Dial-home form: listen for workers that connect to mikan instead. */
+  gateway?: GondolinGatewaySettings;
   /** Guest image selector resolved on the workers. */
   imageSelector?: string;
   /** How long a new conversation waits for capacity before failing. */

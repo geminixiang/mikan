@@ -58,6 +58,7 @@ import {
 } from "./sandbox/gondolin.js";
 import { gondolinInventory } from "./sandbox/gondolin-inventory.js";
 import { gondolinFleet } from "./sandbox/gondolin-fleet.js";
+import { gondolinGateway } from "./sandbox/gondolin-gateway.js";
 import { gondolinPlacements } from "./sandbox/gondolin-placement.js";
 import { FileVaultManager } from "./vault/index.js";
 import { runExtCommand } from "./cli/ext.js";
@@ -356,6 +357,7 @@ if (sandbox.type === "gondolin") {
   gondolinInventory.configure(join(stateDir, "gondolin-runtimes"));
   gondolinPlacements.configure(join(stateDir, "gondolin-placement.json"));
   gondolinFleet.configure(sandboxSettings?.gondolin?.remote);
+  gondolinGateway.configure(sandboxSettings?.gondolin?.remote?.gateway);
 }
 const resourceController =
   sandbox.type === "image"
@@ -399,6 +401,7 @@ if (provisioner) {
 }
 
 if (sandbox.type === "gondolin" && sandbox.profile === "remote") {
+  gondolinGateway.start();
   await gondolinFleet.reconcile();
   setInterval(() => {
     void stopIdleGondolinVms(MANAGED_SANDBOX_IDLE_TIMEOUT_MS);

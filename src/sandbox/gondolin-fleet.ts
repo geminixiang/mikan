@@ -77,6 +77,7 @@ function normalizeWorkers(settings: GondolinRemoteSettings): GondolinRemoteWorke
 class GondolinFleetClient implements GondolinRuntimeTransport {
   private settings?: GondolinRemoteSettings;
   private workers = new Map<string, FleetWorker>();
+  private connectionOverrides: GondolinRemoteOverrides = {};
   private placements: GondolinPlacementStore = gondolinPlacements;
   private leaseTtlMs = LEASE_TTL_SECONDS * 1000;
   private queueWaitMs = QUEUE_WAIT_SECONDS * 1000;
@@ -93,6 +94,7 @@ class GondolinFleetClient implements GondolinRuntimeTransport {
     this.now = overrides?.now ?? Date.now;
     this.sleep = overrides?.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.queuePollMs = overrides?.queuePollMs ?? QUEUE_POLL_MS;
+    this.connectionOverrides = overrides?.connectionOverrides ?? {};
     this.leaseTtlMs = (overrides?.connectionOverrides?.leaseTtlSeconds ?? LEASE_TTL_SECONDS) * 1000;
     this.queueWaitMs = (settings?.queueWaitSeconds ?? QUEUE_WAIT_SECONDS) * 1000;
     if (!settings) return;
@@ -119,6 +121,40 @@ class GondolinFleetClient implements GondolinRuntimeTransport {
 
   isConfigured(): boolean {
     return this.workers.size > 0;
+  }
+
+  /**
+   * Attach a dial-home worker at runtime (the gateway calls this when a
+   * worker registers). The factory receives the fleet's connection overrides
+   * plus the lease-watermark callback, mirroring configure()'s wiring.
+   */
+  attachWorker(
+    settings: GondolinRemoteWorkerSettings,
+    createConnection: (overrides: GondolinRemoteOverrides) => GondolinWorkerConnection,
+  ): void {
+    const name = settings.name ?? settings.url;
+    this.workers.get(name)?.connection.dispose();
+    const connection = createConnection({
+      ...this.connectionOverrides,
+      onLeaseActivity: (instanceId, expiresAtMs) => {
+        if (this.placements.get(instanceId)?.worker === name) {
+          this.placements.touch(instanceId, expiresAtMs);
+        }
+      },
+    });
+    this.workers.set(name, { name, settings: { ...settings, name }, connection });
+  }
+
+  /**
+   * Detach a dial-home worker (disconnect). Placements survive: their lease
+   * watermarks keep fencing failover until expiry, exactly as for an
+   * unreachable static worker.
+   */
+  detachWorker(name: string): void {
+    const worker = this.workers.get(name);
+    if (!worker) return;
+    worker.connection.dispose();
+    this.workers.delete(name);
   }
 
   imageSelector(): string | undefined {

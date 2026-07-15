@@ -12,6 +12,7 @@ import {
   type GondolinRuntimeTransport,
 } from "./gondolin-worker-client.js";
 import { gondolinFleet } from "./gondolin-fleet.js";
+import { gondolinGateway } from "./gondolin-gateway.js";
 import { createMountedRuntimePathContext } from "./path-context.js";
 import { withRuntimeBootstrap } from "./container.js";
 import { execReadFile, execWriteFile } from "./utils.js";
@@ -132,9 +133,9 @@ function assertSupportedNodeVersion(): void {
 
 async function validateGondolinSandbox(config?: GondolinSandboxConfig): Promise<void> {
   if (config?.profile === "remote") {
-    if (!gondolinFleet.isConfigured()) {
+    if (!gondolinFleet.isConfigured() && !gondolinGateway.isConfigured()) {
       throw new SandboxError(
-        "Error: gondolin:remote requires sandbox.gondolin.remote settings (url, certFile, keyFile)",
+        "Error: gondolin:remote requires sandbox.gondolin.remote settings (workers[]/url, or gateway for dial-home workers)",
       );
     }
     console.log("  Gondolin microVM enabled. Profile: remote");
