@@ -28,10 +28,19 @@ import (
 	workerruntime "github.com/geminixiang/mikan/worker/internal/runtime"
 )
 
+// version is stamped by the release build via -ldflags "-X main.version=…".
+var version = "dev"
+
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "connect" {
-		runConnect(os.Args[2:])
-		return
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "connect":
+			runConnect(os.Args[2:])
+			return
+		case "version", "--version", "-v":
+			fmt.Println(version)
+			return
+		}
 	}
 	runServe(os.Args[1:])
 }

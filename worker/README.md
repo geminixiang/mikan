@@ -13,7 +13,20 @@ mTLS/HTTP stack in the standard library (zero third-party dependencies), and
 `CGO_ENABLED=0` static binaries that cross-compile from any dev machine to
 `linux/amd64` and `linux/arm64` workers.
 
-## Build
+## Install
+
+Prebuilt static binaries (linux/amd64, linux/arm64, darwin/arm64, darwin/amd64)
+are attached to every [GitHub release](https://github.com/geminixiang/mikan/releases),
+with a `SHA256SUMS.txt`:
+
+```bash
+curl -fsSLO https://github.com/geminixiang/mikan/releases/latest/download/mikan-worker_<tag>_linux_amd64
+sha256sum -c --ignore-missing mikan-worker_<tag>_SHA256SUMS.txt
+install -m 0755 mikan-worker_<tag>_linux_amd64 /usr/local/bin/mikan-worker
+mikan-worker version
+```
+
+## Build from source
 
 ```bash
 cd worker
