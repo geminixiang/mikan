@@ -9,6 +9,36 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.18]
+
+### Added
+
+- Add an idempotent Debian and Ubuntu worker-host initialization script.
+- Add persistent `mikan-worker` installation as a delegated systemd service.
+- Add NFS export detection with OS-specific setup guidance for `gondolin:remote` workspaces.
+- Ship host-side vault credential files securely to remote workers without placing them in the shared workspace.
+- Add bounded shared-workspace health probes and worker degradation reporting.
+
+### Changed
+
+- Require each Gondolin remote gateway and static worker to declare its shared `workspaceRoot`.
+- Exclude workers with unhealthy shared workspaces from new placements and restore them after a healthy heartbeat.
+
+### Fixed
+
+- Fail remote execution with actionable diagnostics instead of hanging on dead shared-workspace mounts.
+- Create runtime cgroups beneath the worker's delegated cgroup and report missing `Delegate=yes` configuration.
+- Verify downloaded worker binaries against the matching release checksum filename.
+- Validate `gondolin:remote` only after gateway and worker transports are configured.
+
+### Security
+
+- Materialize remote credential files as owner-only, read-only runtime files outside shared workspaces.
+
+### Tests
+
+- Add coverage for worker host services, cgroup delegation, workspace health, credential delivery, NFS advice, remote validation, and idle execution deadlines.
+
 ## [1.0.0-beta.17]
 
 ### Added
