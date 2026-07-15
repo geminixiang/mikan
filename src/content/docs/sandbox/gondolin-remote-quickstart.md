@@ -110,10 +110,36 @@ under `/workspace` appear in `~/mikan-workspace` and vice-versa.
 Same steps, with the worker on a second host. Three differences:
 
 - **Shared workspace.** `gondolin:remote` does not copy workspace files — both machines
-  must see the same filesystem at their `workspaceRoot` (NFS or another shared POSIX
-  mount). Point mikan's working directory and the worker's `--workspace-root` at the two
-  mounts of that one filesystem. Vault credential _files_ are the exception: they are
-  projected into the guest per runtime, not shared.
+  must see the same filesystem at their `workspaceRoot`, so a guest's writes reach the
+  host and vice-versa. The simplest setup is to NFS-export the workspace from the mikan
+  host itself; mikan detects this at startup and, if the workspace is not exported,
+  prints the exact commands for your OS (it never modifies system files). Vault
+  credential _files_ are the exception — they are shipped to the worker as content and
+  projected into the guest per runtime, so they do **not** need shared storage.
+
+  Export from the host (once, by hand):
+
+  ```bash
+  # macOS host
+  echo "$(pwd)/mikan-workspace -network 100.64.0.0 -mask 255.192.0.0 -mapall=$(id -u):$(id -g)" | sudo tee -a /etc/exports
+  sudo nfsd enable && sudo nfsd start
+
+  # Linux host
+  echo "$(pwd)/mikan-workspace 100.64.0.0/10(rw,sync,no_subtree_check,all_squash,anonuid=$(id -u),anongid=$(id -g))" | sudo tee -a /etc/exports
+  sudo exportfs -ra && sudo systemctl enable --now nfs-server
+  ```
+
+  Mount it on each worker over tailscale, and point `--workspace-root` at the mount:
+
+  ```bash
+  sudo mount -t nfs -o vers=3,resvport,nolock <host-tailscale-ip>:<host-workspace-path> /mnt/mikan-workspace
+  # then join/connect with --workspace-root /mnt/mikan-workspace
+  ```
+
+  `100.64.0.0/10` is the tailscale range; the `mapall`/`all_squash` mapping makes worker
+  writes owned by you on the host. Any other shared POSIX mount (managed NFS, GCS-fuse)
+  works too — the requirement is one filesystem visible at both `workspaceRoot`s.
+
 - **Reachable gateway.** The worker dials the host, so the host's gateway port must be
   reachable from the worker; the worker needs nothing inbound. Put the host's real
   hostname/IP in `gateway.hostnames` so the auto-issued server certificate is valid for
