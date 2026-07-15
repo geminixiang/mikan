@@ -19,11 +19,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/geminixiang/mikan/worker/internal/api"
 	"github.com/geminixiang/mikan/worker/internal/cgroup"
 	"github.com/geminixiang/mikan/worker/internal/dialhome"
+	"github.com/geminixiang/mikan/worker/internal/join"
 	"github.com/geminixiang/mikan/worker/internal/lease"
 	workerruntime "github.com/geminixiang/mikan/worker/internal/runtime"
 )
@@ -36,6 +38,9 @@ func main() {
 		switch os.Args[1] {
 		case "connect":
 			runConnect(os.Args[2:])
+			return
+		case "join":
+			runJoin(os.Args[2:])
 			return
 		case "version", "--version", "-v":
 			fmt.Println(version)
@@ -143,30 +148,114 @@ func runServe(args []string) {
 	}
 }
 
-func runConnect(args []string) {
-	flags := flag.NewFlagSet("mikan-worker connect", flag.ExitOnError)
-	host := flags.String("host", "", "mikan worker gateway URL, e.g. https://mikan.internal:8433")
-	name := flags.String("name", defaultWorkerName(), "stable worker name (placement identity)")
-	certFile := flags.String("cert", "", "client certificate presented to the gateway (PEM)")
-	keyFile := flags.String("key", "", "client private key (PEM)")
-	caFile := flags.String("ca", "", "CA bundle that signs the gateway's server certificate (PEM)")
-	maxRuntimes := flags.Int("max-runtimes", runtime.NumCPU(), "advertised admission cap for new placements")
-	daemon := addDaemonFlags(flags)
-	_ = flags.Parse(args)
-
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	if *host == "" || *certFile == "" || *keyFile == "" || *caFile == "" {
-		fatal(logger, "host, cert, key, and ca are required")
-	}
-	gateway, err := url.Parse(*host)
+// gatewayAddress resolves a gateway URL into host:port and the TLS ServerName.
+func gatewayAddress(logger *slog.Logger, raw string) (string, string) {
+	gateway, err := url.Parse(raw)
 	if err != nil || gateway.Hostname() == "" {
-		fatal(logger, fmt.Sprintf("invalid gateway URL %q", *host))
+		fatal(logger, fmt.Sprintf("invalid gateway URL %q", raw))
 	}
 	port := gateway.Port()
 	if port == "" {
 		port = "8433"
 	}
-	address := net.JoinHostPort(gateway.Hostname(), port)
+	return net.JoinHostPort(gateway.Hostname(), port), gateway.Hostname()
+}
+
+func runJoin(args []string) {
+	flags := flag.NewFlagSet("mikan-worker join", flag.ExitOnError)
+	token := flags.String("token", "", "one-time join token from `mikan --worker-token`")
+	caPin := flags.String("ca-pin", "", "expected gateway CA fingerprint (sha256:…)")
+	name := flags.String("name", defaultWorkerName(), "stable worker name (placement identity)")
+	dir := flags.String("dir", "/etc/mikan-worker", "directory for credentials and config.json")
+	maxRuntimes := flags.Int("max-runtimes", runtime.NumCPU(), "advertised admission cap for new placements")
+	daemon := addDaemonFlags(flags)
+	// support `join <url> --flags`: stdlib flag stops at the first positional
+	var host string
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		host = args[0]
+		args = args[1:]
+	}
+	_ = flags.Parse(args)
+	if host == "" {
+		host = flags.Arg(0)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	if host == "" || *token == "" || *caPin == "" {
+		fatal(logger, "usage: mikan-worker join https://mikan:8433 --token <t> --ca-pin sha256:<hex> [flags]")
+	}
+	address, serverName := gatewayAddress(logger, host)
+
+	err := join.Run(join.Options{
+		Address:    address,
+		ServerName: serverName,
+		Token:      *token,
+		CAPin:      *caPin,
+		Name:       *name,
+		Dir:        *dir,
+		Config: join.Config{
+			Host:          host,
+			MaxRuntimes:   *maxRuntimes,
+			StateDir:      *daemon.stateDir,
+			WorkerEntry:   *daemon.workerEntry,
+			NodeBin:       *daemon.nodeBin,
+			WorkspaceRoot: *daemon.workspaceRoot,
+		},
+	})
+	if err != nil {
+		fatal(logger, err.Error())
+	}
+	configPath := filepath.Join(*dir, "config.json")
+	fmt.Printf("Joined %s as %q. Credentials written to %s\n\n", host, *name, *dir)
+	fmt.Printf("Start the worker with:\n  mikan-worker connect --config %s\n\n", configPath)
+	fmt.Printf("Or install it as a service (systemd):\n")
+	fmt.Printf("  [Unit]\n  Description=mikan gondolin worker\n  After=network-online.target\n\n")
+	fmt.Printf("  [Service]\n  ExecStart=%s connect --config %s\n  Restart=always\n  RestartSec=5\n\n", executablePath(), configPath)
+	fmt.Printf("  [Install]\n  WantedBy=multi-user.target\n")
+}
+
+func runConnect(args []string) {
+	flags := flag.NewFlagSet("mikan-worker connect", flag.ExitOnError)
+	configPath := flags.String("config", "", "config.json written by `mikan-worker join`")
+	host := flags.String("host", "", "mikan worker gateway URL, e.g. https://mikan.internal:8433")
+	name := flags.String("name", "", "stable worker name (placement identity)")
+	certFile := flags.String("cert", "", "client certificate presented to the gateway (PEM)")
+	keyFile := flags.String("key", "", "client private key (PEM)")
+	caFile := flags.String("ca", "", "CA bundle that signs the gateway's server certificate (PEM)")
+	maxRuntimes := flags.Int("max-runtimes", 0, "advertised admission cap for new placements")
+	daemon := addDaemonFlags(flags)
+	_ = flags.Parse(args)
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	if *configPath != "" {
+		config, err := join.LoadConfig(*configPath)
+		if err != nil {
+			fatal(logger, fmt.Sprintf("load config: %v", err))
+		}
+		// flags explicitly set on the command line override the config file
+		applyIfUnset(flags, "host", host, config.Host)
+		applyIfUnset(flags, "name", name, config.Name)
+		applyIfUnset(flags, "cert", certFile, config.CertFile)
+		applyIfUnset(flags, "key", keyFile, config.KeyFile)
+		applyIfUnset(flags, "ca", caFile, config.CAFile)
+		if !wasSet(flags, "max-runtimes") && config.MaxRuntimes > 0 {
+			*maxRuntimes = config.MaxRuntimes
+		}
+		applyIfUnset(flags, "state-dir", daemon.stateDir, config.StateDir)
+		applyIfUnset(flags, "worker-entry", daemon.workerEntry, config.WorkerEntry)
+		applyIfUnset(flags, "node", daemon.nodeBin, config.NodeBin)
+		applyIfUnset(flags, "workspace-root", daemon.workspaceRoot, config.WorkspaceRoot)
+	}
+	if *name == "" {
+		*name = defaultWorkerName()
+	}
+	if *maxRuntimes <= 0 {
+		*maxRuntimes = runtime.NumCPU()
+	}
+	if *host == "" || *certFile == "" || *keyFile == "" || *caFile == "" {
+		fatal(logger, "host, cert, key, and ca are required (or pass --config)")
+	}
+	address, serverName := gatewayAddress(logger, *host)
 
 	certificate, err := tls.LoadX509KeyPair(*certFile, *keyFile)
 	if err != nil {
@@ -184,7 +273,7 @@ func runConnect(args []string) {
 		MinVersion:   tls.VersionTLS13,
 		Certificates: []tls.Certificate{certificate},
 		RootCAs:      roots,
-		ServerName:   gateway.Hostname(),
+		ServerName:   serverName,
 	}
 
 	server := buildDaemon(daemon, logger)
@@ -207,6 +296,30 @@ func defaultWorkerName() string {
 		return "worker"
 	}
 	return hostname
+}
+
+func executablePath() string {
+	path, err := os.Executable()
+	if err != nil {
+		return "/usr/local/bin/mikan-worker"
+	}
+	return path
+}
+
+func wasSet(flags *flag.FlagSet, name string) bool {
+	set := false
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			set = true
+		}
+	})
+	return set
+}
+
+func applyIfUnset(flags *flag.FlagSet, name string, target *string, value string) {
+	if !wasSet(flags, name) && value != "" {
+		*target = value
+	}
 }
 
 func fatal(logger *slog.Logger, message string) {

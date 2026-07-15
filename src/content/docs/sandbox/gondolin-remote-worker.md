@@ -35,15 +35,16 @@ mikan-worker --listen :8433 \
 
 **Dial-home mode** — the worker dials mikan's worker gateway (GitHub-Actions-runner
 topology; NAT-friendly, nothing inbound on the worker, no per-worker URL in mikan's
-settings):
+settings). A worker joins with a one-time token instead of hand-provisioned
+certificates (see **Joining a worker** below), then connects from the config the join
+wrote:
 
 ```
-mikan-worker connect --host https://mikan.internal:8433 \
-  --name linux-1 --max-runtimes 24 \
-  --cert client.pem --key client-key.pem --ca gateway-ca.pem \
-  --state-dir /var/lib/mikan-worker \
-  --worker-entry /opt/mikan/dist/sandbox/gondolin-worker-main.js \
-  --workspace-root /srv/mikan-workspace
+mikan-worker join https://mikan.internal:8433 \
+  --token <token> --ca-pin sha256:<hex> --name linux-1 \
+  --workspace-root /srv/mikan-workspace \
+  --worker-entry /opt/mikan/dist/sandbox/gondolin-worker-main.js
+mikan-worker connect --config /etc/mikan-worker/config.json
 ```
 
 The worker keeps one outbound control connection (register + heartbeat + the same
@@ -69,6 +70,36 @@ logs the join and reconciles placements. mikan enables the gateway with:
 Dial-home workers advertise their own `--max-runtimes`; host-side `gateway.workers`
 entries override capacity or mark a worker draining. Static `workers[]` and the
 gateway can be used together.
+
+## Joining a worker
+
+Omit the certificate fields from the gateway config and mikan provisions its own on
+first start: a private worker CA plus a gateway server certificate signed by it, both
+under the state dir (`gondolin-gateway/`). Workers then enroll with a one-time token
+instead of manually copied certificates — the same pattern as a GitHub Actions runner
+or `kubeadm join`.
+
+On the mikan host, mint a token:
+
+```
+mikan --worker-token --state-dir /path/to/state
+```
+
+It prints a single-use token (15-minute expiry), the CA pin, and a ready-to-run join
+command. On the worker machine, run that command. `mikan-worker join`:
+
+1. generates an EC keypair locally — the private key never leaves the worker;
+2. dials the gateway and presents the token with a certificate signing request;
+3. verifies the returned CA against `--ca-pin` **and** re-checks the gateway's own
+   server certificate against that CA before trusting anything — a man-in-the-middle
+   would need a CA matching the pin;
+4. writes `client.pem`, `client-key.pem`, `ca.pem`, and `config.json` (mode `600`) to
+   `--dir` (default `/etc/mikan-worker`), and prints a systemd unit.
+
+The token is single-use and the private key is worker-local, so the only secret that
+crosses the wire is a short-lived enrollment token, never a long-lived credential.
+After joining, `mikan-worker connect --config …` runs from those files; command-line
+flags override the config when both are present.
 
 ## Leases and fencing
 

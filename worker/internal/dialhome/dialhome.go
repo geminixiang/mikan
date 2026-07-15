@@ -50,6 +50,11 @@ type Frame struct {
 	Nonce           string                  `json:"nonce,omitempty"`
 	SessionID       string                  `json:"sessionId,omitempty"`
 	Message         string                  `json:"message,omitempty"`
+	// join exchange
+	Token string `json:"token,omitempty"`
+	CSR   string `json:"csr,omitempty"`
+	Cert  string `json:"cert,omitempty"`
+	CA    string `json:"ca,omitempty"`
 }
 
 // WriteFrame encodes one frame onto a stream.

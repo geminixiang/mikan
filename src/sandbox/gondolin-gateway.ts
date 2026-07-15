@@ -1,10 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { Server, Socket } from "node:net";
-import { createServer as createTlsServer } from "node:tls";
+import { hostname } from "node:os";
+import { TLSSocket, createServer as createTlsServer } from "node:tls";
 import * as log from "../log.js";
 import type { GondolinGatewaySettings } from "../types.js";
 import { gondolinFleet } from "./gondolin-fleet.js";
+import { gondolinJoin } from "./gondolin-join.js";
 import {
   GondolinRemoteConnection,
   GondolinWorkerUnreachableError,
@@ -36,6 +38,9 @@ interface ControlFrame extends GondolinWorkerRegistration {
   body?: unknown;
   nonce?: string;
   activeRuntimes?: number;
+  /** join exchange */
+  token?: string;
+  csr?: string;
 }
 
 interface RegisteredWorker {
@@ -92,9 +97,15 @@ function encodeControlFrame(frame: object): Buffer {
 interface GatewayOverrides {
   /** Server factory (tests substitute a plain net.Server). */
   createServer?: (onConnection: (socket: Socket) => void) => Server;
+  /** mTLS verification result for a socket (tests substitute outcomes). */
+  isAuthorized?: (socket: Socket) => boolean;
   leaseTtlSeconds?: number;
   rpcTimeoutMs?: number;
   tunnelTimeoutMs?: number;
+}
+
+function defaultIsAuthorized(socket: Socket): boolean {
+  return socket instanceof TLSSocket && socket.authorized;
 }
 
 /**
@@ -139,24 +150,44 @@ class GondolinWorkerGateway {
     }));
   }
 
-  start(): void {
+  /**
+   * Start the listener. Without explicit certificate settings the gateway
+   * provisions its own: a private worker CA plus a server certificate signed
+   * by it (required for join's CA pinning to also authenticate the host).
+   */
+  async start(): Promise<void> {
     if (!this.settings || this.server) return;
+    const settings = this.settings;
+    let material: { certFile: string; keyFile: string; clientCaFile: string };
+    if (settings.certFile && settings.keyFile && settings.clientCaFile) {
+      material = {
+        certFile: settings.certFile,
+        keyFile: settings.keyFile,
+        clientCaFile: settings.clientCaFile,
+      };
+    } else {
+      if (!gondolinJoin.isConfigured()) {
+        throw new Error("gondolin gateway auto-init requires the join service to be configured");
+      }
+      const issued = await gondolinJoin.ensureServerCert(settings.hostnames ?? [hostname()]);
+      material = { ...issued, clientCaFile: gondolinJoin.paths().caFile };
+    }
     const factory =
       this.overrides.createServer ??
-      ((onConnection: (socket: Socket) => void) => {
-        const settings = this.settings as GondolinGatewaySettings;
-        return createTlsServer(
+      ((onConnection: (socket: Socket) => void) =>
+        createTlsServer(
           {
-            cert: readFileSync(settings.certFile),
-            key: readFileSync(settings.keyFile),
-            ca: readFileSync(settings.clientCaFile),
+            cert: readFileSync(material.certFile),
+            key: readFileSync(material.keyFile),
+            ca: readFileSync(material.clientCaFile),
             requestCert: true,
-            rejectUnauthorized: true,
+            // unauthenticated connections may only send a join frame; the
+            // per-frame authorization gate enforces that below
+            rejectUnauthorized: false,
             minVersion: "TLSv1.3",
           },
           onConnection,
-        );
-      });
+        ));
     this.server = factory((socket) => this.handleConnection(socket));
     this.server.listen(this.settings.port, () => {
       log.logInfo(`Gondolin worker gateway listening on :${this.settings?.port}`);
@@ -179,10 +210,16 @@ class GondolinWorkerGateway {
   private handleConnection(socket: Socket): void {
     socket.setNoDelay(true);
     let routed = false;
+    const authorized = (this.overrides.isAuthorized ?? defaultIsAuthorized)(socket);
     const reader = createControlFrameReader((frame, leftover) => {
       if (!routed) {
         routed = true;
-        if (frame.type === "register" && frame.name) {
+        if (frame.type === "join") {
+          void this.handleJoin(socket, frame);
+        } else if (!authorized) {
+          // everything except join requires a CA-signed client certificate
+          socket.destroy();
+        } else if (frame.type === "register" && frame.name) {
           this.acceptControlChannel(socket, frame, reader);
         } else if (frame.type === "tunnel" && frame.nonce) {
           reader.stop();
@@ -376,6 +413,37 @@ class GondolinWorkerGateway {
       });
       worker.socket.write(encodeControlFrame({ type: "open-tunnel", nonce, sessionId, headers }));
     });
+  }
+
+  /**
+   * One-time token → CA-signed client certificate. The only operation an
+   * unauthenticated connection may perform; the connection closes after the
+   * response either way.
+   */
+  private async handleJoin(socket: Socket, frame: ControlFrame): Promise<void> {
+    const refuse = (message: string): void => {
+      log.logWarning(`Gondolin worker join refused: ${message}`);
+      socket.end(encodeControlFrame({ type: "join-error", message }));
+    };
+    if (!gondolinJoin.isConfigured()) {
+      refuse("join is not enabled on this gateway");
+      return;
+    }
+    if (!frame.token || !frame.csr || !frame.name) {
+      refuse("join requires token, csr, and name");
+      return;
+    }
+    if (!gondolinJoin.consumeToken(frame.token)) {
+      refuse(`invalid or expired join token (worker '${frame.name}')`);
+      return;
+    }
+    try {
+      const signed = await gondolinJoin.signCsr(frame.csr);
+      log.logInfo(`Gondolin worker '${frame.name}' joined: client certificate issued`);
+      socket.end(encodeControlFrame({ type: "join-ok", cert: signed.certPem, ca: signed.caPem }));
+    } catch (err) {
+      refuse(`certificate issuance failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   private acceptTunnel(socket: Socket, nonce: string, leftover: Buffer): void {

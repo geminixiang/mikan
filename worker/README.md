@@ -53,10 +53,29 @@ mikan-worker \
 `--workspace-root` restricts mount sources and must be the worker-side mount of
 the same shared POSIX filesystem the mikan host uses as its workspace.
 
+## Dial-home mode
+
+For NAT'd workers, `mikan-worker connect` dials mikan's gateway instead of listening.
+Enroll with a one-time token (mint it on the host with `mikan --worker-token`):
+
+```bash
+mikan-worker join https://mikan.internal:8433 \
+  --token <token> --ca-pin sha256:<hex> --name linux-1 \
+  --workspace-root /srv/mikan-workspace \
+  --worker-entry /opt/mikan/dist/sandbox/gondolin-worker-main.js
+mikan-worker connect --config /etc/mikan-worker/config.json
+```
+
+`join` generates a local keypair, exchanges the token for a CA-signed client
+certificate over a pinned connection, and writes credentials + config + a systemd unit
+hint. See `src/content/docs/sandbox/gondolin-remote-worker.md` for the full protocol.
+
 ## Layout
 
-- `cmd/mikan-worker` — flags, mTLS listener wiring
+- `cmd/mikan-worker` — flags, mode dispatch (serve / connect / join), mTLS wiring
 - `internal/api` — protocol handlers, lease authorization, session tunnel, janitor
+- `internal/dialhome` — outbound control channel, RPC-over-frames, dial-back tunnels
+- `internal/join` — one-time-token enrollment: keygen, CSR, CA pinning, config write
 - `internal/lease` — durable fenced leases (`leases.json`)
 - `internal/runtime` — Node worker supervision, handshake, inventory rediscovery
 - `internal/cgroup` — best-effort cgroup v2 CPU/memory confinement on Linux

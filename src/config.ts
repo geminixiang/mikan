@@ -125,9 +125,10 @@ const SettingsFileSchema = Type.Object({
               gateway: Type.Optional(
                 Type.Object({
                   port: Type.Number(),
-                  certFile: Type.String(),
-                  keyFile: Type.String(),
-                  clientCaFile: Type.String(),
+                  certFile: Type.Optional(Type.String()),
+                  keyFile: Type.Optional(Type.String()),
+                  clientCaFile: Type.Optional(Type.String()),
+                  hostnames: Type.Optional(Type.Array(Type.String())),
                   workspaceRoot: Type.Optional(Type.String()),
                   workers: Type.Optional(
                     Type.Record(

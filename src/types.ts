@@ -263,11 +263,17 @@ export interface GondolinRemoteWorkerSettings {
 export interface GondolinGatewaySettings {
   /** Port the worker gateway listens on for dial-home workers. */
   port: number;
-  /** Gateway server certificate + key (PEM). */
-  certFile: string;
-  keyFile: string;
-  /** CA bundle that signs allowed worker client certificates. */
-  clientCaFile: string;
+  /**
+   * Gateway server certificate + key and the CA that signs worker client
+   * certificates. Omit all three to let the gateway provision its own CA and
+   * server certificate under the state dir (required for `--worker-token`
+   * joins).
+   */
+  certFile?: string;
+  keyFile?: string;
+  clientCaFile?: string;
+  /** SANs for the auto-issued server certificate (defaults to os.hostname). */
+  hostnames?: string[];
   /** Worker-side path of the shared workspace filesystem. */
   workspaceRoot?: string;
   /** Per-worker host-side overrides, keyed by worker name. */

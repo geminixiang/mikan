@@ -1,11 +1,14 @@
+import { execFileSync } from "node:child_process";
+import { X509Certificate } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer, connect, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { gondolinFleet } from "../src/sandbox/gondolin-fleet.js";
 import { gondolinGateway } from "../src/sandbox/gondolin-gateway.js";
+import { gondolinJoin } from "../src/sandbox/gondolin-join.js";
 import { GondolinPlacementStore } from "../src/sandbox/gondolin-placement.js";
 import type { GondolinRuntimeSpec } from "../src/sandbox/gondolin-worker-client.js";
 
@@ -20,6 +23,27 @@ function encodeFrame(frame: object): Buffer {
   const header = Buffer.alloc(4);
   header.writeUInt32BE(payload.length, 0);
   return Buffer.concat([header, payload]);
+}
+
+function makeCsr(): string {
+  const csrDir = mkdtempSync(join(tmpdir(), "csr-"));
+  execFileSync("openssl", [
+    "req",
+    "-newkey",
+    "ec",
+    "-pkeyopt",
+    "ec_paramgen_curve:P-256",
+    "-keyout",
+    join(csrDir, "key.pem"),
+    "-out",
+    join(csrDir, "worker.csr"),
+    "-nodes",
+    "-subj",
+    "/CN=joiner",
+  ]);
+  const csr = readFileSync(join(csrDir, "worker.csr"), "utf8");
+  rmSync(csrDir, { recursive: true, force: true });
+  return csr;
 }
 
 /** A scripted dial-home worker speaking the wire protocol over TCP. */
@@ -221,11 +245,12 @@ describe("Gondolin worker gateway", () => {
       {
         // plain TCP for tests; production wraps the same handler in mTLS
         createServer: (onConnection) => createServer(onConnection) as Server,
+        isAuthorized: () => true,
         rpcTimeoutMs: 2000,
         tunnelTimeoutMs: 2000,
       },
     );
-    gondolinGateway.start();
+    await gondolinGateway.start();
     await vi.waitFor(() => {
       const address = (gondolinGateway as unknown as { server?: Server }).server?.address();
       if (typeof address !== "object" || address === null) throw new Error("not listening");
@@ -340,5 +365,89 @@ describe("Gondolin worker gateway", () => {
       const again = await gondolinFleet.ensure("c1", SPEC);
       expect(again.workerName).toBe(first.workerName);
     }
+  });
+});
+
+describe("Gondolin worker gateway join + authorization", () => {
+  let dir: string;
+  let port: number;
+  let authorized: boolean;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), "gondolin-gateway-join-"));
+    authorized = true;
+    gondolinJoin.configure(join(dir, "gateway"), { tokenTtlSeconds: 60 });
+    gondolinFleet.configure(
+      { imageSelector: "mikan-sandbox:latest", workers: [] },
+      { placements: new GondolinPlacementStore(), queuePollMs: 5 },
+    );
+    gondolinGateway.configure(
+      { port: 0 }, // no cert settings: exercises auto-init via the join service
+      {
+        createServer: (onConnection) => createServer(onConnection) as Server,
+        isAuthorized: () => authorized,
+        rpcTimeoutMs: 2000,
+      },
+    );
+    await gondolinGateway.start();
+    await vi.waitFor(() => {
+      const address = (gondolinGateway as unknown as { server?: Server }).server?.address();
+      if (typeof address !== "object" || address === null) throw new Error("not listening");
+      port = address.port;
+    });
+  });
+
+  afterEach(() => {
+    gondolinGateway.configure();
+    gondolinFleet.configure();
+    gondolinJoin.configure();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function exchange(frame: object): Promise<Record<string, unknown>> {
+    return new Promise((resolve, reject) => {
+      const socket = connect(port, "127.0.0.1", () => socket.write(encodeFrame(frame)));
+      let buffer = Buffer.alloc(0);
+      socket.on("data", (chunk) => {
+        buffer = Buffer.concat([buffer, chunk]);
+        if (buffer.length < 4) return;
+        const length = buffer.readUInt32BE(0);
+        if (buffer.length < 4 + length) return;
+        resolve(JSON.parse(buffer.subarray(4, 4 + length).toString()));
+        socket.destroy();
+      });
+      socket.on("close", () => reject(new Error("closed without response")));
+      socket.on("error", reject);
+    });
+  }
+
+  test("a valid token gets a CA-signed certificate; reuse is refused", async () => {
+    const minted = await gondolinJoin.mintToken();
+    const csr = makeCsr();
+
+    authorized = false; // join must work without a client certificate
+    const response = await exchange({ type: "join", token: minted.token, name: "joiner", csr });
+    expect(response.type).toBe("join-ok");
+
+    const certificate = new X509Certificate(response.cert as string);
+    const ca = new X509Certificate(response.ca as string);
+    expect(certificate.subject).toContain("CN=joiner");
+    expect(certificate.checkIssued(ca)).toBe(true);
+    expect(`sha256:${ca.fingerprint256.replaceAll(":", "").toLowerCase()}`).toBe(
+      minted.fingerprint,
+    );
+
+    const replay = await exchange({ type: "join", token: minted.token, name: "joiner-2", csr });
+    expect(replay.type).toBe("join-error");
+  });
+
+  test("unauthorized connections cannot register or tunnel", async () => {
+    authorized = false;
+    await expect(exchange({ type: "register", name: "sneaky", maxRuntimes: 1 })).rejects.toThrow(
+      "closed without response",
+    );
+    await expect(exchange({ type: "tunnel", nonce: "x" })).rejects.toThrow(
+      "closed without response",
+    );
   });
 });

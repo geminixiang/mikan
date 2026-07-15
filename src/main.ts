@@ -59,6 +59,7 @@ import {
 import { gondolinInventory } from "./sandbox/gondolin-inventory.js";
 import { gondolinFleet } from "./sandbox/gondolin-fleet.js";
 import { gondolinGateway } from "./sandbox/gondolin-gateway.js";
+import { gondolinJoin } from "./sandbox/gondolin-join.js";
 import { gondolinPlacements } from "./sandbox/gondolin-placement.js";
 import { FileVaultManager } from "./vault/index.js";
 import { runExtCommand } from "./cli/ext.js";
@@ -108,6 +109,7 @@ interface ParsedArgs {
   downloadChannel?: string;
   showOnboard?: boolean;
   showVersion?: boolean;
+  mintWorkerToken?: boolean;
 }
 
 function parseArgs(): ParsedArgs {
@@ -118,6 +120,7 @@ function parseArgs(): ParsedArgs {
   let downloadChannelId: string | undefined;
   let showOnboard = false;
   let showVersion = false;
+  let mintWorkerToken = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -125,6 +128,8 @@ function parseArgs(): ParsedArgs {
       showVersion = true;
     } else if (arg === "--onboard") {
       showOnboard = true;
+    } else if (arg === "--worker-token") {
+      mintWorkerToken = true;
     } else if (arg.startsWith("--sandbox=")) {
       sandbox = parseSandboxArg(arg.slice("--sandbox=".length));
     } else if (arg === "--sandbox") {
@@ -149,6 +154,7 @@ function parseArgs(): ParsedArgs {
     downloadChannel: downloadChannelId,
     showOnboard,
     showVersion,
+    mintWorkerToken,
   };
 }
 
@@ -239,6 +245,40 @@ configureHttpDispatcher(httpIdleTimeoutMs);
 if (parsedArgs.showVersion) {
   console.log(getVersion());
   process.exit(0);
+}
+
+// Handle --worker-token: mint a one-time join token for a dial-home worker
+if (parsedArgs.mintWorkerToken) {
+  const stateDir = parsedArgs.stateDir ?? join(homedir(), ".mikan");
+  setEnvAliases("STATE_DIR", stateDir);
+  ensureSecureStateDir(stateDir);
+  gondolinJoin.configure(join(stateDir, "gondolin-gateway"));
+  try {
+    let gatewayPort = 8433;
+    let gatewayHost: string | undefined;
+    try {
+      const gateway = loadGlobalSettings().sandbox?.gondolin?.remote?.gateway;
+      if (gateway) {
+        gatewayPort = gateway.port;
+        gatewayHost = gateway.hostnames?.[0];
+      }
+    } catch {
+      // settings are optional for minting; the CA lives in the state dir
+    }
+    const minted = await gondolinJoin.mintToken();
+    const host = gatewayHost ?? "<mikan-host>";
+    console.log("Worker join token (single use, expires in 15 minutes):");
+    console.log("");
+    console.log(`  mikan-worker join https://${host}:${gatewayPort} \\`);
+    console.log(`    --token ${minted.token} \\`);
+    console.log(`    --ca-pin ${minted.fingerprint} \\`);
+    console.log(`    --name <worker-name> --workspace-root <shared-workspace-path> \\`);
+    console.log(`    --worker-entry /opt/mikan/dist/sandbox/gondolin-worker-main.js`);
+    process.exit(0);
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
 }
 
 // Handle --onboard mode
@@ -357,6 +397,7 @@ if (sandbox.type === "gondolin") {
   gondolinInventory.configure(join(stateDir, "gondolin-runtimes"));
   gondolinPlacements.configure(join(stateDir, "gondolin-placement.json"));
   gondolinFleet.configure(sandboxSettings?.gondolin?.remote);
+  gondolinJoin.configure(join(stateDir, "gondolin-gateway"));
   gondolinGateway.configure(sandboxSettings?.gondolin?.remote?.gateway);
 }
 const resourceController =
@@ -401,7 +442,7 @@ if (provisioner) {
 }
 
 if (sandbox.type === "gondolin" && sandbox.profile === "remote") {
-  gondolinGateway.start();
+  await gondolinGateway.start();
   await gondolinFleet.reconcile();
   setInterval(() => {
     void stopIdleGondolinVms(MANAGED_SANDBOX_IDLE_TIMEOUT_MS);
