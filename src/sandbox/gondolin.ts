@@ -133,16 +133,26 @@ function assertSupportedNodeVersion(): void {
 
 async function validateGondolinSandbox(config?: GondolinSandboxConfig): Promise<void> {
   if (config?.profile === "remote") {
-    if (!gondolinFleet.isConfigured() && !gondolinGateway.isConfigured()) {
-      throw new SandboxError(
-        "Error: gondolin:remote requires sandbox.gondolin.remote settings (workers[]/url, or gateway for dial-home workers)",
-      );
-    }
+    // The remote transports are configured from settings later in startup, so
+    // "is a worker source configured?" is checked there (assertRemoteConfigured),
+    // not here where nothing has been wired yet.
     console.log("  Gondolin microVM enabled. Profile: remote");
     return;
   }
   assertSupportedNodeVersion();
   console.log("  Gondolin microVM enabled. Profile: default");
+}
+
+/**
+ * Fail fast when `gondolin:remote` is selected but no worker source is
+ * configured. Call after the fleet and gateway have been configured.
+ */
+export function assertRemoteConfigured(): void {
+  if (!gondolinFleet.isConfigured() && !gondolinGateway.isConfigured()) {
+    throw new SandboxError(
+      "Error: gondolin:remote requires sandbox.gondolin.remote settings (workers[]/url, or gateway for dial-home workers)",
+    );
+  }
 }
 
 function transportFor(config: GondolinSandboxConfig): GondolinRuntimeTransport {

@@ -51,6 +51,7 @@ import {
   validateSandbox,
 } from "./sandbox/index.js";
 import {
+  assertRemoteConfigured,
   disconnectAllGondolinRuntimes,
   gondolinResources,
   stopIdleGondolinVms,
@@ -399,6 +400,13 @@ if (sandbox.type === "gondolin") {
   gondolinFleet.configure(sandboxSettings?.gondolin?.remote);
   gondolinJoin.configure(join(stateDir, "gondolin-gateway"));
   gondolinGateway.configure(sandboxSettings?.gondolin?.remote?.gateway);
+  if (sandbox.profile === "remote") {
+    try {
+      assertRemoteConfigured();
+    } catch (error) {
+      handleStartupError(error);
+    }
+  }
 }
 const resourceController =
   sandbox.type === "image"
