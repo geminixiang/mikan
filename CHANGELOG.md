@@ -9,6 +9,35 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.17]
+
+### Added
+
+- Add `gondolin:remote` for scheduling sandbox runtimes across a fleet of Linux/KVM workers.
+- Add a standalone `mikan-worker` daemon with mutual TLS, fenced leases, crash recovery, capacity-aware placement, draining, and sticky conversation assignment.
+- Add dial-home worker enrollment through one-time join tokens and a mikan-hosted gateway.
+- Add private workspace projection, vault injection, resource limits, lifecycle reconciliation, and drift recovery to Gondolin runtimes.
+- Add worker installation, enrollment, operations, and remote quickstart documentation with a one-command end-to-end smoke test.
+- Publish `mikan-worker` binaries and checksums with GitHub releases.
+
+### Changed
+
+- Rename the preview sandbox mode from `microvm:default` to `gondolin:default` and the image build command to `npm run gondolin:image:build`.
+
+### Fixed
+
+- Project mounted files correctly into Gondolin guests.
+- Refresh rotated credentials when Gondolin runtimes are recreated.
+
+### Security
+
+- Authenticate remote workers with mutual TLS and fence stale workers through expiring leases.
+- Keep enrollment tokens one-time and store worker credentials privately.
+
+### Tests
+
+- Add coverage for Gondolin lifecycle, workspace isolation, vaults, resource controls, fleet scheduling, gateways, enrollment, workers, leases, and remote execution.
+
 ## [1.0.0-beta.16]
 
 ### Added
