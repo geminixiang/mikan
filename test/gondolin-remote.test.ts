@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createSessionFrameParser, encodeSessionMessage } from "../src/sandbox/gondolin-remote.js";
 import { gondolinFleet } from "../src/sandbox/gondolin-fleet.js";
@@ -211,10 +214,48 @@ describe("Gondolin remote transport", () => {
     expect(ensure?.body).toMatchObject({
       instanceId: "remote-basic",
       imageSelector: "mikan-sandbox:latest",
-      // workspace mounts translate to the worker-side root; vault file mounts
-      // outside the shared workspace are dropped
+      // workspace mounts translate to the worker-side root; the directory-shaped
+      // vault mount outside the shared workspace has no payload transport and is
+      // dropped (needs shared storage)
       mounts: [{ source: "/srv/workspace/C123", target: "/workspace/C123" }],
     });
+  });
+
+  test("ships vault credential files as content, separate from workspace mounts", async () => {
+    const credDir = mkdtempSync(join(tmpdir(), "remote-cred-"));
+    const credFile = join(credDir, "gws.json");
+    writeFileSync(credFile, '{"token":"secret"}');
+    try {
+      const executor = new GondolinExecutor({
+        type: "gondolin",
+        profile: "remote",
+        instanceId: "remote-cred",
+        workspacePath: "/host/workspace",
+        mounts: [
+          { source: "/host/workspace/C123", target: "/workspace/C123" },
+          { source: credFile, target: "/root/.config/gws/credentials.json" },
+        ],
+      });
+
+      await executor.exec("pwd");
+
+      const ensure = daemon.calls.find((call) => call.path === "/v1/runtimes");
+      // workspace mount translated; credential shipped as content, not a mount
+      expect(ensure?.body?.mounts).toEqual([
+        { source: "/srv/workspace/C123", target: "/workspace/C123" },
+      ]);
+      const credentialFiles = ensure?.body?.credentialFiles as Array<{
+        target: string;
+        contentBase64: string;
+      }>;
+      expect(credentialFiles).toHaveLength(1);
+      expect(credentialFiles[0].target).toBe("/root/.config/gws/credentials.json");
+      expect(Buffer.from(credentialFiles[0].contentBase64, "base64").toString()).toBe(
+        '{"token":"secret"}',
+      );
+    } finally {
+      rmSync(credDir, { recursive: true, force: true });
+    }
   });
 
   test("sends vault env per command through the tunnel", async () => {

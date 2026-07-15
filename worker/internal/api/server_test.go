@@ -3,6 +3,7 @@ package api
 import (
 	"bufio"
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -278,5 +279,52 @@ func TestSessionTunnelSplicesBytes(t *testing.T) {
 	}
 	if string(echoed) != "HELLO TUNNEL" {
 		t.Fatalf("tunnel echoed %q", echoed)
+	}
+}
+
+func TestMaterializeCredentials(t *testing.T) {
+	dir := t.TempDir()
+	server := &Server{InventoryDir: filepath.Join(dir, "inventory")}
+
+	// no credentials → no mounts, no dir
+	mounts, err := server.materializeCredentials("c1", nil)
+	if err != nil || mounts != nil {
+		t.Fatalf("empty credentials: %v %v", mounts, err)
+	}
+
+	files := []credentialFile{
+		{Target: "/root/.config/gws/credentials.json", ContentBase64: base64.StdEncoding.EncodeToString([]byte("{token}"))},
+	}
+	mounts, err = server.materializeCredentials("c1", files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mounts) != 1 || mounts[0].Target != "/root/.config/gws/credentials.json" {
+		t.Fatalf("unexpected mounts: %+v", mounts)
+	}
+	// the shipped content landed owner-only, outside any workspace
+	content, err := os.ReadFile(mounts[0].Source)
+	if err != nil || string(content) != "{token}" {
+		t.Fatalf("credential content: %q %v", content, err)
+	}
+	info, _ := os.Stat(mounts[0].Source)
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("credential mode %o, want 600", info.Mode().Perm())
+	}
+	if strings.Contains(mounts[0].Source, "workspace") {
+		t.Fatalf("credential leaked into a workspace path: %s", mounts[0].Source)
+	}
+
+	// re-materializing replaces (rotation): different content, same slot
+	files[0].ContentBase64 = base64.StdEncoding.EncodeToString([]byte("{rotated}"))
+	mounts, _ = server.materializeCredentials("c1", files)
+	content, _ = os.ReadFile(mounts[0].Source)
+	if string(content) != "{rotated}" {
+		t.Fatalf("rotation not applied: %q", content)
+	}
+
+	// a relative target is rejected
+	if _, err := server.materializeCredentials("c1", []credentialFile{{Target: "rel/path", ContentBase64: "Zm9v"}}); err == nil {
+		t.Fatal("expected rejection of relative credential target")
 	}
 }

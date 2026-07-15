@@ -3,6 +3,7 @@
 package api
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -170,10 +171,18 @@ type ensureRuntimeRequest struct {
 	InstanceID       string                `json:"instanceId"`
 	ImageSelector    string                `json:"imageSelector"`
 	Mounts           []workerruntime.Mount `json:"mounts"`
+	CredentialFiles  []credentialFile      `json:"credentialFiles"`
 	CPUs             string                `json:"cpus"`
 	Memory           string                `json:"memory"`
 	Fingerprint      string                `json:"fingerprint"`
 	HeartbeatStaleMs int64                 `json:"heartbeatStaleMs"`
+}
+
+// credentialFile is a vault credential shipped by content (not a shared-fs
+// mount): the mikan host decides what to inject, independent of the workspace.
+type credentialFile struct {
+	Target        string `json:"target"`
+	ContentBase64 string `json:"contentBase64"`
 }
 
 func (s *Server) handleEnsureRuntime(w http.ResponseWriter, r *http.Request) {
@@ -201,6 +210,14 @@ func (s *Server) handleEnsureRuntime(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_mounts", err.Error())
 		return
 	}
+	// Land shipped vault credentials as worker-local files and mount them by
+	// path — the guest sees them exactly like a local file mount, without the
+	// credential ever touching the shared workspace.
+	credentialMounts, err := s.materializeCredentials(request.InstanceID, request.CredentialFiles)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_credentials", err.Error())
+		return
+	}
 	vmCPUs := 0
 	if request.CPUs != "" {
 		fraction, err := strconv.ParseFloat(request.CPUs, 64)
@@ -219,7 +236,7 @@ func (s *Server) handleEnsureRuntime(w http.ResponseWriter, r *http.Request) {
 	config := workerruntime.WorkerConfig{
 		InstanceID:       request.InstanceID,
 		ImageSelector:    request.ImageSelector,
-		Mounts:           request.Mounts,
+		Mounts:           append(request.Mounts, credentialMounts...),
 		CPUs:             vmCPUs,
 		Memory:           request.Memory,
 		Fingerprint:      request.Fingerprint,
@@ -269,6 +286,8 @@ func (s *Server) handleStopRuntime(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "runtime_error", err.Error())
 		return
 	}
+	// the shipped credentials died with the runtime
+	_ = os.RemoveAll(filepath.Join(s.credentialsDir(), entry.InstanceID))
 	writeJSON(w, http.StatusOK, map[string]any{"stopped": true})
 }
 
@@ -355,6 +374,45 @@ func (s *Server) authorizeLease(w http.ResponseWriter, r *http.Request, instance
 		writeError(w, http.StatusUnauthorized, "unknown_lease", "lease is not current for this instance")
 	}
 	return 0, false
+}
+
+// credentialsDir is where shipped vault credentials land, beside the runtime
+// inventory but never inside the workspace.
+func (s *Server) credentialsDir() string {
+	return filepath.Join(filepath.Dir(s.InventoryDir), "credentials")
+}
+
+// materializeCredentials writes each shipped credential to a per-instance,
+// owner-only file and returns it as a plain file mount for the guest.
+func (s *Server) materializeCredentials(
+	instanceID string,
+	files []credentialFile,
+) ([]workerruntime.Mount, error) {
+	if len(files) == 0 {
+		return nil, nil
+	}
+	dir := filepath.Join(s.credentialsDir(), instanceID)
+	// fresh each ensure: a rotated credential replaces the old file
+	_ = os.RemoveAll(dir)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, fmt.Errorf("create credential dir: %w", err)
+	}
+	mounts := make([]workerruntime.Mount, 0, len(files))
+	for i, file := range files {
+		if !filepath.IsAbs(file.Target) {
+			return nil, fmt.Errorf("credential target must be absolute: %s", file.Target)
+		}
+		content, err := base64.StdEncoding.DecodeString(file.ContentBase64)
+		if err != nil {
+			return nil, fmt.Errorf("decode credential for %s: %w", file.Target, err)
+		}
+		local := filepath.Join(dir, fmt.Sprintf("cred-%d-%s", i, filepath.Base(file.Target)))
+		if err := os.WriteFile(local, content, 0o600); err != nil {
+			return nil, fmt.Errorf("write credential %s: %w", file.Target, err)
+		}
+		mounts = append(mounts, workerruntime.Mount{Source: local, Target: file.Target})
+	}
+	return mounts, nil
 }
 
 func (s *Server) validateMounts(mounts []workerruntime.Mount) error {

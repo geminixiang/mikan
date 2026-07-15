@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { request as httpsRequest } from "node:https";
 import { relative, isAbsolute, join } from "node:path";
 import * as log from "../log.js";
@@ -122,10 +122,12 @@ export class GondolinRemoteConnection {
   }
 
   async ensure(instanceId: string, spec: GondolinRuntimeSpec): Promise<GondolinRuntimeHandle> {
+    const { mounts, credentialFiles } = this.translateMounts(spec);
     const body = {
       instanceId,
       imageSelector: spec.image,
-      mounts: this.translateMounts(spec),
+      mounts,
+      credentialFiles,
       cpus: spec.cpus ?? "",
       memory: spec.memory ?? "",
       fingerprint: spec.fingerprint,
@@ -217,21 +219,47 @@ export class GondolinRemoteConnection {
     );
   }
 
-  private translateMounts(spec: GondolinRuntimeSpec): Array<{ source: string; target: string }> {
+  /**
+   * Split mounts for the remote worker:
+   * - sources under the mikan-host workspace are translated to the worker's
+   *   shared `workspaceRoot` (shared POSIX storage), and
+   * - sources outside it that are files (vault credentials, which live in the
+   *   host state dir, not the shared workspace) are read and shipped as
+   *   content payloads for the worker to project into the guest.
+   * A non-file source outside the workspace has nowhere to go and is dropped.
+   */
+  private translateMounts(spec: GondolinRuntimeSpec): {
+    mounts: Array<{ source: string; target: string }>;
+    credentialFiles: Array<{ target: string; contentBase64: string }>;
+  } {
     const root = this.settings.workspaceRoot;
-    if (!root || !spec.workspacePath) return spec.mounts;
-    const translated: Array<{ source: string; target: string }> = [];
+    if (!root || !spec.workspacePath) {
+      return { mounts: spec.mounts, credentialFiles: [] };
+    }
+    const mounts: Array<{ source: string; target: string }> = [];
+    const credentialFiles: Array<{ target: string; contentBase64: string }> = [];
     for (const mount of spec.mounts) {
       const suffix = relative(spec.workspacePath, mount.source);
-      if (suffix.startsWith("..") || isAbsolute(suffix)) {
-        log.logWarning(
-          `Skipping mount outside the shared workspace for remote runtime: ${mount.source}`,
-        );
+      if (!suffix.startsWith("..") && !isAbsolute(suffix)) {
+        mounts.push({ source: join(root, suffix), target: mount.target });
         continue;
       }
-      translated.push({ source: join(root, suffix), target: mount.target });
+      try {
+        if (!statSync(mount.source).isFile()) {
+          log.logWarning(
+            `Skipping directory mount outside the shared workspace for remote runtime: ${mount.source}`,
+          );
+          continue;
+        }
+        credentialFiles.push({
+          target: mount.target,
+          contentBase64: readFileSync(mount.source).toString("base64"),
+        });
+      } catch {
+        // missing source: skip, matching the local worker's behavior
+      }
     }
-    return translated;
+    return { mounts, credentialFiles };
   }
 
   private async leaseFor(instanceId: string): Promise<RemoteLease> {
