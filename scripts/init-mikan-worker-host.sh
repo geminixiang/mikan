@@ -83,6 +83,6 @@ Remaining (as the worker user, not root):
          --workspace-root ~/mikan-workspace \
          --worker-entry "$(pwd)/mikan/dist/sandbox/gondolin-worker-main.js"
        mkdir -p ~/mikan-workspace
-  3. Connect:
-       mikan-worker connect --config ~/mikan-worker/config.json
+  3. Install and start the persistent worker service:
+       sudo mikan-worker install-service --config ~/mikan-worker/config.json
 DONE

@@ -94,10 +94,13 @@ mikan-worker join https://127.0.0.1:8433 \
   --workspace-root ~/mikan-workspace \
   --worker-entry "$(pwd)/dist/sandbox/gondolin-worker-main.js"
 
-mikan-worker connect --config /etc/mikan-worker/config.json
+sudo mikan-worker install-service --config ~/mikan-worker/config.json
 ```
 
-mikan logs `Gondolin worker joined: dev-worker (…)`.
+The join token is only used for initial enrollment. The installed service starts now
+and reconnects after either machine restarts without minting another token. For
+foreground debugging, use `mikan-worker connect --config ~/mikan-worker/config.json`
+instead. mikan logs `Gondolin worker joined: dev-worker (…)`.
 
 ### 4. Run something
 

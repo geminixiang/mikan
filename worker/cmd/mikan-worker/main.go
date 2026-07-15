@@ -42,6 +42,9 @@ func main() {
 		case "join":
 			runJoin(os.Args[2:])
 			return
+		case "install-service":
+			runInstallService(os.Args[2:])
+			return
 		case "version", "--version", "-v":
 			fmt.Println(version)
 			return
@@ -166,7 +169,7 @@ func runJoin(args []string) {
 	token := flags.String("token", "", "one-time join token from `mikan --worker-token`")
 	caPin := flags.String("ca-pin", "", "expected gateway CA fingerprint (sha256:…)")
 	name := flags.String("name", defaultWorkerName(), "stable worker name (placement identity)")
-	dir := flags.String("dir", "/etc/mikan-worker", "directory for credentials and config.json")
+	dir := flags.String("dir", defaultWorkerDir(), "directory for credentials and config.json")
 	maxRuntimes := flags.Int("max-runtimes", runtime.NumCPU(), "advertised admission cap for new placements")
 	daemon := addDaemonFlags(flags)
 	// support `join <url> --flags`: stdlib flag stops at the first positional
@@ -184,15 +187,19 @@ func runJoin(args []string) {
 	if host == "" || *token == "" || *caPin == "" {
 		fatal(logger, "usage: mikan-worker join https://mikan:8433 --token <t> --ca-pin sha256:<hex> [flags]")
 	}
+	absoluteDir, err := filepath.Abs(*dir)
+	if err != nil {
+		fatal(logger, fmt.Sprintf("resolve credential directory: %v", err))
+	}
 	address, serverName := gatewayAddress(logger, host)
 
-	err := join.Run(join.Options{
+	err = join.Run(join.Options{
 		Address:    address,
 		ServerName: serverName,
 		Token:      *token,
 		CAPin:      *caPin,
 		Name:       *name,
-		Dir:        *dir,
+		Dir:        absoluteDir,
 		Config: join.Config{
 			Host:          host,
 			MaxRuntimes:   *maxRuntimes,
@@ -205,19 +212,16 @@ func runJoin(args []string) {
 	if err != nil {
 		fatal(logger, err.Error())
 	}
-	configPath := filepath.Join(*dir, "config.json")
-	fmt.Printf("Joined %s as %q. Credentials written to %s\n\n", host, *name, *dir)
-	fmt.Printf("Start the worker with:\n  mikan-worker connect --config %s\n\n", configPath)
-	fmt.Printf("Or install it as a service (systemd). Delegate=yes lets the\n")
-	fmt.Printf("unprivileged worker manage its own cgroup subtree for CPU/memory limits:\n\n")
-	fmt.Printf("  [Unit]\n  Description=mikan gondolin worker\n  After=network-online.target\n\n")
-	fmt.Printf("  [Service]\n  ExecStart=%s connect --config %s\n  Restart=always\n  RestartSec=5\n  Delegate=yes\n\n", executablePath(), configPath)
-	fmt.Printf("  [Install]\n  WantedBy=multi-user.target\n")
+	configPath := filepath.Join(absoluteDir, "config.json")
+	fmt.Printf("Joined %s as %q. Credentials written to %s\n\n", host, *name, absoluteDir)
+	fmt.Printf("Install and start the worker as a persistent systemd service:\n")
+	fmt.Printf("  sudo %s install-service --config %s\n\n", executablePath(), configPath)
+	fmt.Printf("Or run it in the foreground:\n  mikan-worker connect --config %s\n", configPath)
 }
 
 func runConnect(args []string) {
 	flags := flag.NewFlagSet("mikan-worker connect", flag.ExitOnError)
-	configPath := flags.String("config", "", "config.json written by `mikan-worker join`")
+	configPath := flags.String("config", "", "path to config.json created by mikan-worker join")
 	host := flags.String("host", "", "mikan worker gateway URL, e.g. https://mikan.internal:8433")
 	name := flags.String("name", "", "stable worker name (placement identity)")
 	certFile := flags.String("cert", "", "client certificate presented to the gateway (PEM)")
@@ -297,6 +301,14 @@ func defaultWorkerName() string {
 		return "worker"
 	}
 	return hostname
+}
+
+func defaultWorkerDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return "mikan-worker"
+	}
+	return filepath.Join(home, "mikan-worker")
 }
 
 func executablePath() string {

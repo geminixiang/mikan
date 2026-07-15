@@ -63,12 +63,14 @@ mikan-worker join https://mikan.internal:8433 \
   --token <token> --ca-pin sha256:<hex> --name linux-1 \
   --workspace-root /srv/mikan-workspace \
   --worker-entry /opt/mikan/dist/sandbox/gondolin-worker-main.js
-mikan-worker connect --config /etc/mikan-worker/config.json
+sudo mikan-worker install-service --config ~/mikan-worker/config.json
 ```
 
 `join` generates a local keypair, exchanges the token for a CA-signed client
-certificate over a pinned connection, and writes credentials + config + a systemd unit
-hint. See `src/content/docs/sandbox/gondolin-remote-worker.md` for the full protocol.
+certificate over a pinned connection, and writes persistent credentials + config.
+`install-service` installs and starts an idempotent systemd service, so later host or
+worker restarts do not require another token. See
+`src/content/docs/sandbox/gondolin-remote-worker.md` for the full protocol.
 
 ## Layout
 

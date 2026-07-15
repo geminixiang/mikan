@@ -44,7 +44,7 @@ mikan-worker join https://mikan.internal:8433 \
   --token <token> --ca-pin sha256:<hex> --name linux-1 \
   --workspace-root /srv/mikan-workspace \
   --worker-entry /opt/mikan/dist/sandbox/gondolin-worker-main.js
-mikan-worker connect --config /etc/mikan-worker/config.json
+sudo mikan-worker install-service --config ~/mikan-worker/config.json
 ```
 
 The worker keeps one outbound control connection (register + heartbeat + the same
@@ -94,12 +94,20 @@ command. On the worker machine, run that command. `mikan-worker join`:
    server certificate against that CA before trusting anything — a man-in-the-middle
    would need a CA matching the pin;
 4. writes `client.pem`, `client-key.pem`, `ca.pem`, and `config.json` (mode `600`) to
-   `--dir` (default `/etc/mikan-worker`), and prints a systemd unit.
+   `--dir` (default `~/mikan-worker`), and prints the service installation command.
 
 The token is single-use and the private key is worker-local, so the only secret that
 crosses the wire is a short-lived enrollment token, never a long-lived credential.
-After joining, `mikan-worker connect --config …` runs from those files; command-line
-flags override the config when both are present.
+After joining, install the persistent worker service once:
+
+```bash
+sudo mikan-worker install-service --config ~/mikan-worker/config.json
+```
+
+The service starts immediately, reconnects automatically, and survives worker and
+mikan host restarts without another token. `mikan-worker connect --config …` remains
+available for foreground/debug use; command-line flags override the config when both
+are present.
 
 ## Leases and fencing
 
