@@ -6,6 +6,7 @@ import type {
   SubagentRunResult,
 } from "../src/harness/types.js";
 import { createSubagentTool } from "../src/tools/subagent.js";
+import { SubagentSlotPool } from "../src/tools/subagent-slots.js";
 
 type RunSubagent = <TOutputSchema extends TSchema | undefined = undefined>(
   request: SubagentRunRequest<TOutputSchema>,
@@ -26,6 +27,40 @@ function completedRun(output: unknown): RunSubagent {
 }
 
 describe("subagent tool", () => {
+  test("a shared slot pool bounds fan-out across tool instances", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const runSubagent = (async (request: SubagentRunRequest) => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      active--;
+      return {
+        runId: request.task,
+        status: "completed",
+        output: "ok",
+        text: "ok",
+        model: { provider: "test", id: "model" },
+        turns: 1,
+        tokens: 1,
+        costUsd: 0,
+        durationMs: 10,
+      } as const;
+    }) as RunSubagent;
+
+    // Two conversations' tool instances draw from ONE process-wide account:
+    // each could run 2 concurrently on its own, but the shared ceiling is 2.
+    const shared = new SubagentSlotPool(2);
+    const toolA = createSubagentTool(runSubagent, shared);
+    const toolB = createSubagentTool(runSubagent, shared);
+    const params = { tasks: [{ task: "one" }, { task: "two" }] };
+
+    await Promise.all([toolA.execute("a", params), toolB.execute("b", params)]);
+
+    expect(maxActive).toBe(2);
+    expect(shared.inFlight).toBe(0);
+  });
+
   test("runs a bounded DAG in concurrent topological waves", async () => {
     let active = 0;
     let maxActive = 0;

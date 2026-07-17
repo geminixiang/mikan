@@ -73,7 +73,17 @@ import {
   type ThreadRootMessage,
 } from "./sessions/store.js";
 import { HostEventStore } from "./tools/event.js";
-import { createMikanTools, createSubagentTool } from "./tools/index.js";
+import {
+  createMikanTools,
+  createSubagentTool,
+  DEFAULT_GLOBAL_SUBAGENT_SLOTS,
+  SubagentSlotPool,
+} from "./tools/index.js";
+
+// One process-wide fan-out account: per-conversation queues serialize runs,
+// but each run can fan out up to the per-run cap — without this shared
+// ceiling, N busy conversations hold N × cap live subagent sessions.
+const globalSubagentSlots = new SubagentSlotPool(DEFAULT_GLOBAL_SUBAGENT_SLOTS);
 import type { PlatformToolPackFactory } from "./tools/types.js";
 import * as Sentry from "@sentry/node";
 
@@ -1145,19 +1155,21 @@ async function createConfiguredAgentSession(params: {
     );
   }
 
-  const subagentTool = createSubagentTool((request) =>
-    runSubagent({
-      request,
-      defaultModel: model,
-      thinkingLevel,
-      models,
-      workspaceDir,
-      availableTools: [...tools, ...contributedTools],
-      // `session` is the const below: the tool only executes inside that
-      // session's own prompt loop, and the temporal dead zone turns any
-      // earlier call into a loud error instead of a silently dropped fold.
-      onUsage: (usage) => session.foldExternalUsage(usage),
-    }),
+  const subagentTool = createSubagentTool(
+    (request) =>
+      runSubagent({
+        request,
+        defaultModel: model,
+        thinkingLevel,
+        models,
+        workspaceDir,
+        availableTools: [...tools, ...contributedTools],
+        // `session` is the const below: the tool only executes inside that
+        // session's own prompt loop, and the temporal dead zone turns any
+        // earlier call into a loud error instead of a silently dropped fold.
+        onUsage: (usage) => session.foldExternalUsage(usage),
+      }),
+    globalSubagentSlots,
   );
 
   const session = new MikanAgentSession({

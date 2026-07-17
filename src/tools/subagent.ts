@@ -6,6 +6,7 @@ import type {
   SubagentRunResult,
   SubagentRunStatus,
 } from "../harness/types.js";
+import { unboundedSlotPool, type SubagentSlotPool } from "./subagent-slots.js";
 
 const MAX_DAG_NODES = 8;
 const MAX_DAG_EDGES = 16;
@@ -333,12 +334,17 @@ function planRequest(
   return buildRequest({ ...item.task, input }, shared, signal);
 }
 
-/** One executor for every mode: wave barriers, a bounded slot pool inside each wave. */
+/**
+ * One executor for every mode: wave barriers, a bounded slot pool inside
+ * each wave, and one global slot per actual subagent launch — the seam where
+ * both the per-run cap and the process-wide ceiling are enforced.
+ */
 async function runWaves(
   plan: Plan,
   shared: SharedParams,
   runSubagent: RunSubagent,
   progress: SubagentProgressTracker,
+  globalSlots: SubagentSlotPool,
   signal?: AbortSignal,
 ): Promise<PlanOutcome[]> {
   const outcomes = new Map<string, PlanOutcome>();
@@ -356,8 +362,14 @@ async function runWaves(
         progress.update(item.id, "skipped");
         return;
       }
-      progress.update(item.id, "running");
-      const result = await runSubagent(planRequest(item, shared, outcomes, signal));
+      const release = await globalSlots.acquire();
+      let result: SubagentRunResult<unknown>;
+      try {
+        progress.update(item.id, "running");
+        result = await runSubagent(planRequest(item, shared, outcomes, signal));
+      } finally {
+        release();
+      }
       outcomes.set(item.id, { id: item.id, ...result });
       progress.update(item.id, result.status);
     });
@@ -365,8 +377,15 @@ async function runWaves(
   return plan.items.map((item) => outcomes.get(item.id)!);
 }
 
-/** Create the normal agent's bounded subagent delegation and DAG tool. */
-export function createSubagentTool(runSubagent: RunSubagent): AgentTool<typeof subagentSchema> {
+/**
+ * Create the normal agent's bounded subagent delegation and DAG tool.
+ * `globalSlots` is the process-wide fan-out account shared across every
+ * conversation's tool instance; omitted, fan-out is bounded per run only.
+ */
+export function createSubagentTool(
+  runSubagent: RunSubagent,
+  globalSlots: SubagentSlotPool = unboundedSlotPool(),
+): AgentTool<typeof subagentSchema> {
   return {
     name: "subagent",
     label: "Subagent",
@@ -387,7 +406,7 @@ export function createSubagentTool(runSubagent: RunSubagent): AgentTool<typeof s
         onUpdate,
       );
       progress.emit();
-      const ordered = await runWaves(plan, params, runSubagent, progress, signal);
+      const ordered = await runWaves(plan, params, runSubagent, progress, globalSlots, signal);
 
       switch (plan.mode) {
         case "dag":
