@@ -1,18 +1,7 @@
-import type {
-  ConversationMessage,
-  ConversationResponder,
-  ChatToolResult,
-  MessagingInfo,
-} from "../../adapter.js";
-import * as log from "../../log.js";
+import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../../adapter.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
-import {
-  createChatResponseErrorReporter,
-  formatToolArgs,
-  splitText,
-  type ChatResponseErrorOperation,
-} from "../shared.js";
-import { BufferedResponseStream, OrderedResponseOperations } from "../streaming.js";
+import { createBufferedResponder, formatMarkdownToolResult } from "../buffered-responder.js";
+import { createChatResponseErrorReporter } from "../shared.js";
 import type { DiscordMessagingBot, DiscordEvent } from "./bot.js";
 
 // Discord hard limit is 2000 chars; 1900 leaves headroom for working indicator.
@@ -24,17 +13,6 @@ function isDiscordMessageReference(id: string | undefined): id is string {
   return typeof id === "string" && id !== "" && !id.startsWith("event:");
 }
 
-function formatToolResult(result: ChatToolResult): string {
-  const argsFormatted = formatToolArgs(result.args);
-  const duration = (result.durationMs / 1000).toFixed(1);
-  let text = `**${result.isError ? "Error" : "Done"} ${result.toolName}**`;
-  if (result.label) text += `: ${result.label}`;
-  text += ` (${duration}s)\n`;
-  if (argsFormatted) text += `\`\`\`\n${argsFormatted}\n\`\`\`\n`;
-  text += `**Result:**\n\`\`\`\n${result.result}\n\`\`\``;
-  return text;
-}
-
 export function createDiscordAdapters(
   event: DiscordEvent,
   bot: DiscordMessagingBot,
@@ -43,21 +21,6 @@ export function createDiscordAdapters(
   responder: ConversationResponder;
   platform: MessagingInfo;
 } {
-  let messageId: string | null = null;
-  let accumulatedText = "";
-  let isWorking = true;
-  const workingIndicator = " ...";
-  const responseOperations = new OrderedResponseOperations();
-  let typingInterval: ReturnType<typeof setInterval> | null = null;
-  let typingFailureWarned = false;
-
-  function stopTyping(): void {
-    if (typingInterval !== null) {
-      clearInterval(typingInterval);
-      typingInterval = null;
-    }
-  }
-
   const conversationId = event.conversationId;
   const channelId = conversationId;
   const threadTargetId = isDiscordMessageReference(event.thread_ts) ? event.thread_ts : undefined;
@@ -85,19 +48,7 @@ export function createDiscordAdapters(
   // The bot's getMessagingInfo() is the single authority for platform info.
   const platform: MessagingInfo = bot.getMessagingInfo();
 
-  async function postDiagnosticMessage(text: string): Promise<string> {
-    stopTyping();
-    if (threadTargetId) {
-      return bot.postInThread(channelId, threadTargetId, text);
-    }
-    if (replyTargetId) {
-      return bot.postReply(channelId, replyTargetId, text);
-    }
-    if (messageId !== null) {
-      return bot.postReply(channelId, messageId, text);
-    }
-    return bot.postMessage(channelId, text);
-  }
+  let currentResponseId: string | null = null;
 
   const reportResponseError = createChatResponseErrorReporter(() => ({
     platform: "discord",
@@ -105,201 +56,51 @@ export function createDiscordAdapters(
     channelId,
     messageId: message.id,
     sessionKey: message.sessionKey,
-    responseMessageId: messageId,
+    responseMessageId: currentResponseId,
     threadTs: threadTargetId,
     replyTargetId,
     conversationKind: message.conversationKind,
   }));
 
-  async function postOrUpdateResponse(displayText: string): Promise<void> {
-    if (messageId !== null) {
-      await bot.updateMessageRaw(channelId, messageId, displayText);
-      return;
-    }
-    stopTyping();
-    if (threadTargetId) {
-      messageId = await bot.postInThread(channelId, threadTargetId, displayText);
-    } else if (replyTargetId) {
-      messageId = await bot.postReply(channelId, replyTargetId, displayText);
-    } else {
-      messageId = await bot.postMessage(channelId, displayText);
-    }
+  function postFirst(text: string): Promise<string> {
+    if (threadTargetId) return bot.postInThread(channelId, threadTargetId, text);
+    if (replyTargetId) return bot.postReply(channelId, replyTargetId, text);
+    return bot.postMessage(channelId, text);
   }
 
-  async function postSplitResponse(text: string): Promise<void> {
-    const [displayText, ...extraParts] = splitText(text, MAX_LENGTH, formatDiscordContinuation);
-    await postOrUpdateResponse(displayText);
-    for (const part of extraParts) {
-      await postDiagnosticMessage(part);
-    }
-  }
-
-  const stream = new BufferedResponseStream({
-    flush: async (text) => {
-      await postSplitResponse(isWorking ? text + workingIndicator : text);
+  const { responder } = createBufferedResponder({
+    label: "Discord",
+    maxLength: MAX_LENGTH,
+    formatContinuation: formatDiscordContinuation,
+    errorPrefix: "*Error:* ",
+    workingIndicator: " ...",
+    streaming: true,
+    typing: {
+      // Send immediately and repeat every 8s (Discord clears indicator after ~10s)
+      send: () => bot.sendTyping(channelId),
+      intervalMs: 8000,
+      stopOnSend: true,
     },
-    finish: async (text) => {
-      isWorking = false;
-      stopTyping();
-      await postSplitResponse(text);
+    formatToolResult: formatMarkdownToolResult,
+    reportError: reportResponseError,
+    post: async (text) => {
+      currentResponseId = await postFirst(text);
+      return currentResponseId;
     },
+    update: (id, text) => bot.updateMessageRaw(channelId, id, text),
+    postExtra: (text, responseId) => {
+      if (threadTargetId) return bot.postInThread(channelId, threadTargetId, text);
+      if (replyTargetId) return bot.postReply(channelId, replyTargetId, text);
+      if (responseId !== null) return bot.postReply(channelId, responseId, text);
+      return bot.postMessage(channelId, text);
+    },
+    delete: async (id) => {
+      await bot.deleteMessageRaw(channelId, id);
+      currentResponseId = null;
+    },
+    logBotResponse: (text, id) => bot.logBotResponse(channelId, text, id),
+    uploadFile: (filePath, title) => bot.uploadFile(channelId, filePath, title),
   });
-
-  function queueDiscordResponse(
-    label: string,
-    operation: ChatResponseErrorOperation,
-    work: () => Promise<void>,
-    report: (err: unknown) => Record<string, unknown>,
-  ): Promise<void> {
-    return responseOperations.run(work, (err) => {
-      log.logWarning(`Discord ${label} error`, err instanceof Error ? err.message : String(err));
-      reportResponseError(err, operation, report(err));
-    });
-  }
-
-  const responder: ConversationResponder = {
-    respond: async (text: string) => {
-      await queueDiscordResponse(
-        "respond",
-        "respond",
-        async () => {
-          accumulatedText = accumulatedText ? `${accumulatedText}\n${text}` : text;
-          stream.setText(accumulatedText);
-          await postSplitResponse(isWorking ? accumulatedText + workingIndicator : accumulatedText);
-          if (messageId !== null) {
-            bot.logBotResponse(channelId, text, messageId);
-          }
-        },
-        () => ({
-          phase: messageId ? "update" : "initial_post",
-          textLength: text.length,
-          accumulatedLength: accumulatedText.length,
-        }),
-      );
-    },
-
-    appendResponseDelta: async (delta: string) => {
-      await queueDiscordResponse(
-        "appendResponseDelta",
-        "respond",
-        async () => {
-          await stream.append(delta);
-          accumulatedText = stream.getText();
-          if (messageId !== null) {
-            bot.logBotResponse(channelId, delta, messageId);
-          }
-        },
-        () => ({ textLength: delta.length, accumulatedLength: stream.getText().length }),
-      );
-    },
-
-    finishResponse: async (finalText?: string) => {
-      await queueDiscordResponse(
-        "finishResponse",
-        "set_working",
-        async () => {
-          await stream.finish(finalText);
-          accumulatedText = stream.getText();
-        },
-        () => ({ finalTextLength: finalText?.length }),
-      );
-    },
-
-    replaceResponse: async (text: string) => {
-      await queueDiscordResponse(
-        "replaceResponse",
-        "replace_response",
-        async () => {
-          accumulatedText = text;
-          stream.setText(accumulatedText);
-          await postSplitResponse(accumulatedText);
-        },
-        () => ({
-          textLength: text.length,
-          hadExistingResponse: Boolean(messageId),
-        }),
-      );
-    },
-
-    respondDiagnostic: async (text: string, options?: { style?: "muted" | "error" }) => {
-      await queueDiscordResponse(
-        "respondDiagnostic",
-        "respond_diagnostic",
-        async () => {
-          const prefix = options?.style === "error" ? "*Error:* " : "";
-          for (const part of splitText(`${prefix}${text}`, MAX_LENGTH, formatDiscordContinuation)) {
-            await postDiagnosticMessage(part);
-          }
-        },
-        () => ({
-          textLength: text.length,
-          style: options?.style,
-        }),
-      );
-    },
-
-    respondToolResult: async (result: ChatToolResult) => {
-      await responder.respondDiagnostic(formatToolResult(result));
-    },
-
-    setTyping: async (isTyping: boolean) => {
-      const onTypingError = (err: unknown): void => {
-        if (typingFailureWarned) return;
-        typingFailureWarned = true;
-        log.logWarning(
-          "Discord sendTyping failed (further occurrences suppressed for this session)",
-          err instanceof Error ? err.message : String(err),
-        );
-      };
-      if (isTyping && typingInterval === null) {
-        // Send immediately and repeat every 8s (Discord clears indicator after ~10s)
-        bot.sendTyping(channelId).catch(onTypingError);
-        typingInterval = setInterval(() => {
-          bot.sendTyping(channelId).catch(onTypingError);
-        }, 8000);
-      } else if (!isTyping) {
-        stopTyping();
-      }
-    },
-
-    setWorking: async (working: boolean) => {
-      await queueDiscordResponse(
-        "setWorking",
-        "set_working",
-        async () => {
-          isWorking = working;
-          if (!working) stopTyping();
-          if (messageId !== null) {
-            const [displayText] = splitText(
-              isWorking ? accumulatedText + workingIndicator : accumulatedText,
-              MAX_LENGTH,
-              formatDiscordContinuation,
-            );
-            await bot.updateMessageRaw(channelId, messageId, displayText);
-          }
-        },
-        () => ({ working }),
-      );
-    },
-
-    uploadFile: async (filePath: string, title?: string) => {
-      await bot.uploadFile(channelId, filePath, title);
-    },
-
-    deleteResponse: async () => {
-      await responseOperations.run(async () => {
-        stopTyping();
-        if (messageId !== null) {
-          try {
-            await bot.deleteMessageRaw(channelId, messageId);
-          } catch {
-            // Ignore errors
-          }
-          messageId = null;
-        }
-      });
-    },
-  };
 
   return { message, responder, platform };
 }

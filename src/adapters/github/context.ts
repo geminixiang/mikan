@@ -1,33 +1,11 @@
-import type {
-  ChatToolResult,
-  ConversationMessage,
-  ConversationResponder,
-  MessagingInfo,
-} from "../../adapter.js";
-import * as log from "../../log.js";
+import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../../adapter.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
-import {
-  createChatResponseErrorReporter,
-  formatToolArgs,
-  splitText,
-  type ChatResponseErrorOperation,
-} from "../shared.js";
-import { OrderedResponseOperations } from "../streaming.js";
+import { createBufferedResponder, formatMarkdownToolResult } from "../buffered-responder.js";
+import { createChatResponseErrorReporter } from "../shared.js";
 import { formatGithubContinuation, type GithubMessagingBot } from "./bot.js";
 import { GITHUB_MAX_COMMENT_LENGTH } from "./client.js";
 import { parseGithubConversationId } from "./ids.js";
 import type { GithubEvent } from "./types.js";
-
-function formatToolResult(result: ChatToolResult): string {
-  const argsFormatted = formatToolArgs(result.args);
-  const duration = (result.durationMs / 1000).toFixed(1);
-  let text = `**${result.isError ? "Error" : "Done"} ${result.toolName}**`;
-  if (result.label) text += `: ${result.label}`;
-  text += ` (${duration}s)\n`;
-  if (argsFormatted) text += `\`\`\`\n${argsFormatted}\n\`\`\`\n`;
-  text += `**Result:**\n\`\`\`\n${result.result}\n\`\`\``;
-  return text;
-}
 
 export function createGithubAdapters(
   event: GithubEvent,
@@ -37,10 +15,6 @@ export function createGithubAdapters(
   responder: ConversationResponder;
   platform: MessagingInfo;
 } {
-  let commentId: number | null = null;
-  let accumulatedText = "";
-  const responseOperations = new OrderedResponseOperations();
-
   const conversationId = event.conversationId;
   const ref = parseGithubConversationId(conversationId);
 
@@ -102,146 +76,46 @@ export function createGithubAdapters(
     },
   };
 
+  let currentResponseId: string | null = null;
+
   const reportResponseError = createChatResponseErrorReporter(() => ({
     platform: "github",
     conversationId,
     messageId: message.id,
     sessionKey: message.sessionKey,
-    responseMessageId: commentId,
+    responseMessageId: currentResponseId === null ? null : Number(currentResponseId),
     conversationKind: message.conversationKind,
   }));
 
-  async function postOrUpdateResponse(displayText: string): Promise<void> {
-    if (commentId !== null) {
-      await bot.updateMessage(conversationId, String(commentId), displayText);
-    } else {
-      commentId = await bot.postComment(ref, displayText);
-    }
-  }
-
-  async function postSplitResponse(text: string): Promise<void> {
-    const [displayText, ...extraParts] = splitText(
-      text,
-      GITHUB_MAX_COMMENT_LENGTH,
-      formatGithubContinuation,
-    );
-    await postOrUpdateResponse(displayText);
-    for (const part of extraParts) {
-      await bot.postComment(ref, part);
-    }
-  }
-
-  function queueGithubResponse(
-    label: string,
-    operation: ChatResponseErrorOperation,
-    work: () => Promise<void>,
-    extra: () => Record<string, unknown>,
-  ): Promise<void> {
-    return responseOperations.run(work, (err) => {
-      log.logWarning(`GitHub ${label} error`, err instanceof Error ? err.message : String(err));
-      reportResponseError(err, operation, extra());
-    });
-  }
-
-  // No appendResponseDelta/finishResponse: GitHub gets the finished response
-  // in one comment. Streaming would edit the comment on every flush — API
-  // churn and "edited" noise for readers who refresh rather than watch typing.
-  const responder: ConversationResponder = {
-    respond: async (text: string) => {
-      await queueGithubResponse(
-        "respond",
-        "respond",
-        async () => {
-          accumulatedText = accumulatedText ? `${accumulatedText}\n${text}` : text;
-          await postSplitResponse(accumulatedText);
-          if (commentId !== null) {
-            bot.logBotResponse(conversationId, text, String(commentId));
-          }
-        },
-        () => ({
-          phase: commentId ? "update" : "initial_post",
-          textLength: text.length,
-          accumulatedLength: accumulatedText.length,
-        }),
-      );
+  // streaming: false — GitHub gets the finished response in one comment.
+  // Streaming would edit the comment on every flush: API churn and "edited"
+  // noise for readers who refresh rather than watch typing. There is also no
+  // typing indicator or working suffix; progress shows through comment edits.
+  const { responder } = createBufferedResponder({
+    label: "GitHub",
+    maxLength: GITHUB_MAX_COMMENT_LENGTH,
+    formatContinuation: formatGithubContinuation,
+    errorPrefix: "**Error:** ",
+    streaming: false,
+    formatToolResult: formatMarkdownToolResult,
+    reportError: reportResponseError,
+    post: async (text) => {
+      currentResponseId = String(await bot.postComment(ref, text));
+      return currentResponseId;
     },
-
-    replaceResponse: async (text: string) => {
-      await queueGithubResponse(
-        "replaceResponse",
-        "replace_response",
-        async () => {
-          accumulatedText = text;
-          await postSplitResponse(accumulatedText);
-        },
-        () => ({
-          textLength: text.length,
-          hadExistingResponse: Boolean(commentId),
-        }),
-      );
+    update: (id, text) => bot.updateMessage(conversationId, id, text),
+    postExtra: (text) => bot.postComment(ref, text),
+    delete: async (id) => {
+      await bot.deleteComment(ref, Number(id));
+      currentResponseId = null;
     },
-
-    respondDiagnostic: async (text: string, options?: { style?: "muted" | "error" }) => {
-      await queueGithubResponse(
-        "respondDiagnostic",
-        "respond_diagnostic",
-        async () => {
-          const prefix = options?.style === "error" ? "**Error:** " : "";
-          for (const part of splitText(
-            `${prefix}${text}`,
-            GITHUB_MAX_COMMENT_LENGTH,
-            formatGithubContinuation,
-          )) {
-            await bot.postComment(ref, part);
-          }
-        },
-        () => ({ textLength: text.length, style: options?.style }),
-      );
-    },
-
-    respondToolResult: async (result: ChatToolResult) => {
-      await responder.respondDiagnostic(formatToolResult(result));
-    },
-
-    // GitHub has no typing indicator; progress shows through comment edits.
-    setTyping: async () => {},
-
-    setWorking: async () => {},
-
-    uploadFile: async (filePath: string, title?: string) => {
-      // The REST API cannot attach files to comments (uploads are a browser
-      // feature); leave a pointer instead of failing the run.
-      const name = title ?? filePath;
-      await queueGithubResponse(
-        "uploadFile",
-        "respond_diagnostic",
-        async () => {
-          await bot.postComment(
-            ref,
-            `*(file \`${name}\` was produced, but the GitHub adapter cannot attach files to comments)*`,
-          );
-        },
-        () => ({ filePath }),
-      );
-    },
-
-    react: async (emoji: string) => {
-      await bot.addReaction(conversationId, event.ts, emoji);
-    },
-
-    deleteResponse: async () => {
-      await responseOperations.run(async () => {
-        if (commentId !== null) {
-          try {
-            await bot.deleteComment(ref, commentId);
-          } catch {
-            // Ignore errors
-          }
-          commentId = null;
-        }
-      });
-    },
-  };
+    logBotResponse: (text, id) => bot.logBotResponse(conversationId, text, id),
+    // The REST API cannot attach files to comments (uploads are a browser
+    // feature); leave a pointer instead of failing the run.
+    uploadFallbackNote: (name) =>
+      `*(file \`${name}\` was produced, but the GitHub adapter cannot attach files to comments)*`,
+    react: (emoji) => bot.addReaction(conversationId, event.ts, emoji),
+  });
 
   return { message, responder, platform };
 }
