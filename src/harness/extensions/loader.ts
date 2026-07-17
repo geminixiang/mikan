@@ -24,7 +24,7 @@
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "fs";
 import { homedir } from "os";
-import { basename, dirname, join } from "path";
+import { basename, join } from "path";
 import { createJiti } from "jiti";
 import type { AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
@@ -102,7 +102,7 @@ export function listInstalledExtensions(dirs: string[]): InstalledExtensionInfo[
   const infos: InstalledExtensionInfo[] = [];
   for (const dir of dirs) {
     for (const { entrypoint, rootDir } of discoverExtensionEntrypoints(dir)) {
-      const slug = slugForRoot(rootDir);
+      const slug = extensionSlug(rootDir);
       const manifest = readManifest(rootDir);
       infos.push({
         name: manifest.name ?? slug,
@@ -253,34 +253,30 @@ function readMikanManifestEntrypoints(dir: string): string[] {
   return readPackageJson(dir)?.mikan?.extensions ?? [];
 }
 
-function sanitizeSlug(base: string): string {
-  const slug = base
+/** The one filesystem-safe segment sanitizer for extension identity and schedule names. */
+function sanitizeSegment(value: string): string {
+  return value
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 64);
-  return slug || "extension";
+}
+
+function sanitizeSlug(base: string): string {
+  return sanitizeSegment(base) || "extension";
 }
 
 /**
- * Filesystem-safe identifier for an extension, derived from its install
- * location: the directory name for a directory-form extension, or the file
- * basename for a bare file. The slug keys the extension's data dir, secrets
- * vault, and schedule ownership — installing the same extension globally and
- * per-conversation shares one slug and therefore one shared data dir.
+ * Filesystem-safe identifier for an extension, derived from its root (the
+ * install directory, or the file path for a bare-file extension). The slug
+ * keys the extension's data dir, secrets vault, and schedule ownership —
+ * installing the same extension globally and per-conversation shares one
+ * slug and therefore one shared data dir. This is the only slug derivation:
+ * a second one keyed off a different input (e.g. the entrypoint, which for
+ * package.json-form extensions can live under dist/) would silently split an
+ * extension's identity.
  */
-export function extensionSlug(entrypoint: string): string {
-  // Bare-file form (rootDir === entrypoint, a *.mjs/.ts file) → file basename.
-  // Directory form → directory name. Detect the directory form structurally:
-  // an entrypoint whose parent holds a package.json or is an index file.
-  if (INDEX_FILE_PATTERN.test(basename(entrypoint))) {
-    return sanitizeSlug(basename(dirname(entrypoint)));
-  }
-  return sanitizeSlug(basename(entrypoint).replace(EXTENSION_FILE_PATTERN, ""));
-}
-
-/** Slug from a discovered extension's root dir (directory or bare file path). */
-function slugForRoot(rootDir: string): string {
+export function extensionSlug(rootDir: string): string {
   return EXTENSION_FILE_PATTERN.test(basename(rootDir))
     ? sanitizeSlug(basename(rootDir).replace(EXTENSION_FILE_PATTERN, ""))
     : sanitizeSlug(basename(rootDir));
@@ -288,11 +284,7 @@ function slugForRoot(rootDir: string): string {
 
 /** Sanitize an extension-chosen schedule name into a filename segment. */
 function scheduleNameSegment(name: string): string {
-  const segment = name
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64);
+  const segment = sanitizeSegment(name);
   if (!segment) throw new Error(`Invalid schedule name: ${JSON.stringify(name)}`);
   return segment;
 }
@@ -553,7 +545,7 @@ export async function loadExtensions(
           });
           continue;
         }
-        const slug = slugForRoot(rootDir);
+        const slug = extensionSlug(rootDir);
         const manifest = readManifest(rootDir);
         const name = manifest.name ?? extension.name ?? slug;
         const api = buildExtensionApi({
@@ -639,7 +631,7 @@ export async function validateExtension(sourcePath: string): Promise<ExtensionVa
     errors.push(`Not an extension file (expected .mjs/.js/.ts/.mts): ${rootDir}`);
   }
 
-  const slug = slugForRoot(rootDir);
+  const slug = extensionSlug(rootDir);
   const manifest = readManifest(rootDir);
   const skillNames = loadExtensionSkills(rootDir, slug).map((skill) => skill.name);
 

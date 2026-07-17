@@ -140,9 +140,12 @@ describe("loadExtensions", () => {
 });
 
 describe("extensionSlug", () => {
-  test("directory-form extensions slug from the directory name", () => {
-    expect(extensionSlug("/x/extensions/global/Agent PM/index.mjs")).toBe("agent-pm");
-    expect(extensionSlug("/x/extensions/global/agent-pm/index.js")).toBe("agent-pm");
+  test("directory-form extensions slug from the root directory name", () => {
+    expect(extensionSlug("/x/extensions/global/Agent PM")).toBe("agent-pm");
+    expect(extensionSlug("/x/extensions/global/agent-pm")).toBe("agent-pm");
+    // A package.json-form extension's entrypoint may live under dist/; the
+    // slug keys off the root, so nesting never splits the identity.
+    expect(extensionSlug("/x/extensions/global/agent-pm")).not.toBe("dist");
   });
 
   test("file-form extensions slug from the file basename", () => {
