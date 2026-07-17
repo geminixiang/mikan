@@ -377,6 +377,42 @@ describe("MikanAgentSession", () => {
     expect(JSON.stringify(sessionStore.getEntries())).not.toContain("done");
   });
 
+  test("recordExternalUsage folds delegated spend into stats and budget enforcement", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("delegate", {})),
+      fauxAssistantMessage("done"),
+    ]);
+
+    let session: MikanAgentSession;
+    const delegateTool: AgentTool = {
+      name: "delegate",
+      description: "Simulate a subagent run recording its spend on the parent",
+      parameters: { type: "object", properties: {} },
+      execute: async () => {
+        session.recordExternalUsage({ tokens: 5000, costUsd: 1.25 });
+        return { content: [{ type: "text", text: "delegated" }] };
+      },
+    } as unknown as AgentTool;
+    session = new MikanAgentSession({
+      systemPrompt: "test",
+      model,
+      thinkingLevel: "off",
+      tools: [delegateTool],
+      models,
+      sessionStore: SessionStore.create(join(dir, "session.jsonl"), dir),
+    });
+
+    await session.prompt("delegate work", { budget: { maxCostUsd: 1 } });
+
+    const stats = session.getLastRunStats();
+    expect(stats.tokens).toBeGreaterThanOrEqual(5000);
+    expect(stats.costUsd).toBeGreaterThanOrEqual(1.25);
+    // The delegated spend crosses the cost cap, so enforcement trips at the
+    // next assistant message instead of staying invisible to the budget.
+    expect(stats.budgetExceededReason).toContain("cost");
+  });
+
   test("a final response at the LLM-call cap completes without tripping the budget", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([fauxAssistantMessage("done in one")]);

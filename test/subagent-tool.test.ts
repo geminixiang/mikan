@@ -218,6 +218,36 @@ describe("subagent tool", () => {
     });
   });
 
+  test("caps a tasks batch at four concurrent subagents", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const runSubagent = (async (request: SubagentRunRequest) => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      active--;
+      return {
+        runId: request.task,
+        status: "completed",
+        output: request.task,
+        text: request.task,
+        model: { provider: "test", id: "model" },
+        turns: 1,
+        tokens: 1,
+        costUsd: 0,
+        durationMs: 10,
+      } as const;
+    }) as RunSubagent;
+    const tool = createSubagentTool(runSubagent);
+
+    const result = await tool.execute("parallel-cap", {
+      tasks: Array.from({ length: 6 }, (_, index) => ({ task: `job ${index + 1}` })),
+    });
+
+    expect(maxActive).toBe(4);
+    expect((result.content[0] as { type: "text"; text: string }).text).toContain("[6] job 6");
+  });
+
   test("returns a completed subagent result to the main agent", async () => {
     const runSubagent = vi.fn(completedRun("focused answer"));
     const tool = createSubagentTool(runSubagent);

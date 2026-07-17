@@ -5,11 +5,11 @@ import type { SubagentRunOutput, SubagentRunRequest, SubagentRunResult } from ".
 const MAX_DAG_NODES = 8;
 const MAX_DAG_EDGES = 16;
 const MAX_DAG_DEPTH = 4;
-const MAX_DAG_CONCURRENCY = 4;
+const MAX_CONCURRENT_SUBAGENTS = 4;
 const MAX_DEPENDENCY_OUTPUT_CHARS = 4000;
 
 const taskProperties = {
-  task: Type.String({ description: "Self-contained task for a fresh subagent." }),
+  task: Type.String({ minLength: 1, description: "Self-contained task for a fresh subagent." }),
   label: Type.Optional(
     Type.String({ maxLength: 64, description: "Short progress label for this subagent." }),
   ),
@@ -68,7 +68,11 @@ const subagentSchema = Type.Union([
     dag: Type.Object({
       nodes: Type.Array(dagNodeSchema, { minItems: 1, maxItems: MAX_DAG_NODES }),
       maxConcurrency: Type.Optional(
-        Type.Integer({ minimum: 1, maximum: MAX_DAG_CONCURRENCY, default: MAX_DAG_CONCURRENCY }),
+        Type.Integer({
+          minimum: 1,
+          maximum: MAX_CONCURRENT_SUBAGENTS,
+          default: MAX_CONCURRENT_SUBAGENTS,
+        }),
       ),
     }),
     ...sharedProperties,
@@ -214,12 +218,31 @@ function buildDagWaves(nodes: DagNode[]): DagNode[][] {
   return waves;
 }
 
+/** Run `worker` over every item with at most `limit` in flight. */
+async function forEachConcurrent<T>(
+  items: readonly T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<void>,
+): Promise<void> {
+  let cursor = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (cursor < items.length) {
+        const index = cursor++;
+        await worker(items[index], index);
+      }
+    }),
+  );
+}
+
 function dependencyOutput(outcome: DagNodeOutcome): unknown {
   if (outcome.status !== "completed") return undefined;
   const value = outcome.output;
   const serialized = typeof value === "string" ? value : JSON.stringify(value);
   if (serialized === undefined) return null;
   if (serialized.length <= MAX_DEPENDENCY_OUTPUT_CHARS) return value;
+  // Oversized structured output becomes a marked string — the shape is lost,
+  // which the tool description warns downstream consumers about.
   return `${serialized.slice(0, MAX_DEPENDENCY_OUTPUT_CHARS)}\n[truncated]`;
 }
 
@@ -248,32 +271,27 @@ async function runDag(
   signal?: AbortSignal,
 ): Promise<{ waves: string[][]; results: DagNodeOutcome[] }> {
   const waves = buildDagWaves(nodes);
-  const concurrency = Math.max(1, Math.min(MAX_DAG_CONCURRENCY, Math.floor(maxConcurrency)));
+  const concurrency = Math.max(1, Math.min(MAX_CONCURRENT_SUBAGENTS, Math.floor(maxConcurrency)));
   const outcomes = new Map<string, DagNodeOutcome>();
   for (const wave of waves) {
-    for (let offset = 0; offset < wave.length; offset += concurrency) {
-      const chunk = wave.slice(offset, offset + concurrency);
-      for (const node of chunk) progress.update(node.id, "running");
-      await Promise.all(
-        chunk.map(async (node) => {
-          const failedDependency = (node.dependsOn ?? []).find(
-            (id) => outcomes.get(id)?.status !== "completed",
-          );
-          if (failedDependency) {
-            outcomes.set(node.id, {
-              id: node.id,
-              status: "skipped",
-              error: `Dependency ${failedDependency} did not complete`,
-            });
-            progress.update(node.id, "skipped");
-            return;
-          }
-          const result = await runSubagent(dagRequest(node, shared, outcomes, signal));
-          outcomes.set(node.id, { id: node.id, ...result });
-          progress.update(node.id, resultProgressStatus(result));
-        }),
+    await forEachConcurrent(wave, concurrency, async (node) => {
+      const failedDependency = (node.dependsOn ?? []).find(
+        (id) => outcomes.get(id)?.status !== "completed",
       );
-    }
+      if (failedDependency) {
+        outcomes.set(node.id, {
+          id: node.id,
+          status: "skipped",
+          error: `Dependency ${failedDependency} did not complete`,
+        });
+        progress.update(node.id, "skipped");
+        return;
+      }
+      progress.update(node.id, "running");
+      const result = await runSubagent(dagRequest(node, shared, outcomes, signal));
+      outcomes.set(node.id, { id: node.id, ...result });
+      progress.update(node.id, resultProgressStatus(result));
+    });
   }
   return {
     waves: waves.map((wave) => wave.map((node) => node.id)),
@@ -292,7 +310,7 @@ export function createSubagentTool(runSubagent: RunSubagent): AgentTool<typeof s
     name: "subagent",
     label: "Subagent",
     description:
-      "Run fresh isolated subagents. Use task for one subagent, tasks for independent concurrent work, or dag.nodes for a bounded dependency graph. DAG limits: 8 nodes, 16 edges, depth 4, concurrency 4; failed dependencies skip descendants. Subagents have no history or tools unless explicitly provided; nested subagents are not allowed.",
+      "Run fresh isolated subagents. Use task for one subagent, tasks for independent concurrent work, or dag.nodes for a bounded dependency graph. At most 4 subagents run concurrently. DAG limits: 8 nodes, 16 edges, depth 4; failed dependencies skip descendants, and dependency outputs larger than 4000 characters reach downstream nodes as a truncated string. Subagents have no history or tools unless explicitly provided; nested subagents are not allowed.",
     parameters: subagentSchema,
     execute: async (
       _toolCallId: string,
@@ -312,7 +330,7 @@ export function createSubagentTool(runSubagent: RunSubagent): AgentTool<typeof s
         progress.emit();
         const result = await runDag(
           params.dag.nodes,
-          params.dag.maxConcurrency ?? MAX_DAG_CONCURRENCY,
+          params.dag.maxConcurrency ?? MAX_CONCURRENT_SUBAGENTS,
           params,
           runSubagent,
           progress,
@@ -340,15 +358,16 @@ export function createSubagentTool(runSubagent: RunSubagent): AgentTool<typeof s
           onUpdate,
         );
         progress.emit();
-        const results = await Promise.all(
-          params.tasks.map(async (task, index) => {
-            const id = String(index);
-            progress.update(id, "running");
-            const result = await runSubagent(buildRequest(task, params, signal));
-            progress.update(id, resultProgressStatus(result));
-            return result;
-          }),
-        );
+        const results: SubagentRunResult<unknown>[] = Array.from({
+          length: params.tasks.length,
+        });
+        await forEachConcurrent(params.tasks, MAX_CONCURRENT_SUBAGENTS, async (task, index) => {
+          const id = String(index);
+          progress.update(id, "running");
+          const result = await runSubagent(buildRequest(task, params, signal));
+          progress.update(id, resultProgressStatus(result));
+          results[index] = result;
+        });
         return {
           content: [
             {

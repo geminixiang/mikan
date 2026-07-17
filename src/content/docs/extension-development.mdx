@@ -231,6 +231,8 @@ if (result.status === "completed") {
 
 Subagents receive no conversation history and no tools by default. Requested tool names must already be available to the parent runner; unknown tools fail before the subagent starts. Subagent runs cannot recursively call `api.subagent.run`. When `outputSchema` is present, the final response must be exact JSON matching the TypeBox schema — mikan does not extract JSON from prose or Markdown fences.
 
+`api.subagent.run` never rejects: every failure — including request validation, an unknown tool name, or an attempted nested run — resolves to a result with a terminal status and an `error` message, so callers handle one shape.
+
 Runs default to 8 model turns, 2 minutes, and USD 0.50 unless the request supplies lower or higher limits.
 
 Results include a run ID, terminal status, raw final text, model identity, turns, tokens, cost, duration, and an optional validated `output`. Terminal statuses are `completed`, `failed`, `cancelled`, `timeout`, `budget_exceeded`, and `invalid_output`.

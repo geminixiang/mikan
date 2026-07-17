@@ -220,6 +220,18 @@ export class MikanAgentSession {
     };
   }
 
+  /**
+   * Fold spend incurred outside this session's own LLM calls — e.g. subagent
+   * runs launched by a tool during the current prompt — into the run tally so
+   * `getLastRunStats` reports it and budget enforcement sees it at the next
+   * assistant message. Counts tokens and cost only; external runs are not this
+   * session's turns.
+   */
+  recordExternalUsage(usage: { tokens?: number; costUsd?: number }): void {
+    this.tally.tokens += usage.tokens ?? 0;
+    this.tally.costUsd += usage.costUsd ?? 0;
+  }
+
   subscribe(listener: HarnessEventListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

@@ -238,7 +238,9 @@ export interface SubagentApi {
   /**
    * Run one fresh subagent and return its result to the extension. The
    * subagent has no conversation history, receives no tools by default, and
-   * cannot recursively start another subagent run.
+   * cannot recursively start another subagent run. Never rejects: every
+   * failure, including request validation, resolves to a result with a
+   * terminal status.
    */
   run<TOutputSchema extends TSchema | undefined = undefined>(
     request: SubagentRunRequest<TOutputSchema>,

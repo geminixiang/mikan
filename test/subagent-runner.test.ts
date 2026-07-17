@@ -270,34 +270,85 @@ describe("runSubagent", () => {
     expect(result.text).toBeUndefined();
   });
 
-  test("rejects unknown requested tools before starting the subagent", async () => {
+  test("reports unknown requested tools as a failed result without starting the subagent", async () => {
     const { models, model } = createFauxSetup();
 
-    await expect(
-      runSubagent({
-        request: { task: "Use a missing tool", tools: ["missing"] },
-        defaultModel: model,
-        thinkingLevel: "off",
-        models,
-        workspaceDir: dir,
-        availableTools: [],
-      }),
-    ).rejects.toThrow("Unknown or unavailable subagent tool: missing");
+    const result = await runSubagent({
+      request: { task: "Use a missing tool", tools: ["missing"] },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [],
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      error: "Unknown or unavailable subagent tool: missing",
+      turns: 0,
+    });
   });
 
-  test("rejects invalid subagent budgets before starting the subagent", async () => {
+  test("reports invalid subagent budgets as a failed result without starting the subagent", async () => {
     const { models, model } = createFauxSetup();
 
-    await expect(
+    const result = await runSubagent({
+      request: { task: "Invalid budget", budget: { maxTurns: 0 } },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [],
+    });
+
+    expect(result).toMatchObject({ status: "failed", turns: 0 });
+    expect(result.error).toContain("budget.maxTurns must be a positive integer");
+  });
+
+  test("reports an empty final response as failed instead of completed", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([fauxAssistantMessage("")]);
+
+    const result = await runSubagent({
+      request: { task: "Say something" },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [],
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      error: "Subagent produced no text output",
+    });
+  });
+
+  test("a task failing validation cannot orphan batch siblings", async () => {
+    // The second task is whitespace-only, which fails request validation. As a
+    // failed result (not a rejection) it must not tear down the Promise chain
+    // that the first task's live run hangs on.
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([fauxAssistantMessage("sibling done")]);
+    const tool = createSubagentTool((request) =>
       runSubagent({
-        request: { task: "Invalid budget", budget: { maxTurns: 0 } },
+        request,
         defaultModel: model,
         thinkingLevel: "off",
         models,
         workspaceDir: dir,
         availableTools: [],
       }),
-    ).rejects.toThrow("budget.maxTurns must be a positive integer");
+    );
+
+    const result = await tool.execute("batch", {
+      tasks: [{ task: "Do the real work" }, { task: "   " }],
+    });
+
+    const text = (result.content[0] as { type: "text"; text: string }).text;
+    expect(text).toContain("[1] sibling done");
+    expect(text).toContain("[2] Subagent failed");
+    expect(text).toContain("non-empty task");
   });
 
   test("prevents a subagent tool from recursively starting another subagent", async () => {
@@ -312,18 +363,15 @@ describe("runSubagent", () => {
       description: "Attempt a nested subagent run",
       parameters: Type.Object({}),
       execute: async () => {
-        try {
-          await runSubagent({
-            request: { task: "inner" },
-            defaultModel: model,
-            thinkingLevel: "off",
-            models,
-            workspaceDir: dir,
-            availableTools: [],
-          });
-        } catch (err) {
-          nestedError = err instanceof Error ? err.message : String(err);
-        }
+        const nested = await runSubagent({
+          request: { task: "inner" },
+          defaultModel: model,
+          thinkingLevel: "off",
+          models,
+          workspaceDir: dir,
+          availableTools: [],
+        });
+        if (nested.status === "failed") nestedError = nested.error ?? "";
         return { content: [{ type: "text", text: nestedError }] };
       },
     };

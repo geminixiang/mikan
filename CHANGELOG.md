@@ -9,6 +9,16 @@ any release.
 
 ## [Unreleased]
 
+### Added
+
+- Fold each subagent's tokens and cost into the parent run's tally (`MikanAgentSession.recordExternalUsage`), so delegated spend counts against the parent run's budget instead of staying invisible to it.
+
+### Changed
+
+- Subagent runs never reject: request validation failures (unknown tools, invalid budgets, empty tasks, nested runs) now resolve to `failed` results, so one bad request in a `tasks`/`dag` batch can no longer orphan in-flight sibling subagents.
+- Cap parallel `tasks[]` batches at 4 concurrent subagents (the same limit as DAG mode) and run DAG waves through a slot pool instead of chunk barriers.
+- Report a subagent final response with no text as `failed` instead of `completed` with empty output.
+
 ## [1.0.0-beta.20]
 
 ### Fixed

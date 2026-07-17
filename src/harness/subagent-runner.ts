@@ -7,7 +7,12 @@ import { Value } from "@sinclair/typebox/value";
 import type { MikanModels } from "./models.js";
 import { MikanAgentSession } from "./runner.js";
 import { SessionStore } from "./session-store.js";
-import type { SubagentRunOutput, SubagentRunRequest, SubagentRunResult } from "./types.js";
+import type {
+  SubagentModelSpec,
+  SubagentRunOutput,
+  SubagentRunRequest,
+  SubagentRunResult,
+} from "./types.js";
 
 const subagentRunDepth = new AsyncLocalStorage<number>();
 const DEFAULT_SYSTEM_PROMPT =
@@ -52,6 +57,10 @@ function schemaOptions(node: Record<string, unknown>): Record<string, unknown> {
  * without it. Hydrate plain JSON Schema into real TypeBox schema nodes so
  * validation runs instead of throwing; schemas built with TypeBox already
  * carry Kind and pass through untouched.
+ *
+ * Unsupported keywords ($ref, not, patternProperties, if/then/else) degrade to
+ * a permissive Unknown — fail-open by design: outputSchema is advisory output
+ * validation, not a security boundary.
  */
 function hydrateSchema(schema: unknown): TSchema {
   if (isRecord(schema) && Kind in schema) return schema as TSchema;
@@ -203,47 +212,59 @@ function assistantText(message: AssistantMessage | undefined): string {
     .join("");
 }
 
-/** Execute one non-recursive, fresh subagent run for an extension. */
+/**
+ * Execute one non-recursive, fresh subagent run for an extension. Never
+ * rejects: every failure — including request validation — is a result with a
+ * terminal status, so batch callers (`tasks` / `dag`) can never orphan
+ * in-flight sibling runs on one bad request.
+ */
 export async function runSubagent<TOutputSchema extends TSchema | undefined = undefined>(
   options: RunSubagentOptions<TOutputSchema>,
 ): Promise<SubagentRunResult<SubagentRunOutput<TOutputSchema>>> {
-  if ((subagentRunDepth.getStore() ?? 0) >= 1) {
-    throw new Error("Nested api.subagent.run calls are not allowed");
-  }
-
   const { request } = options;
   const runId = randomUUID();
   const startedAt = Date.now();
-  const model = request.model
-    ? options.models.resolve(request.model.provider, request.model.id)
-    : options.defaultModel;
-  const modelSpec = { provider: model.provider, id: model.id };
-  const tools = selectTools(request.tools, options.availableTools);
-  const task = formatTask(request.task, request.input);
-  const budget = resolveBudget(request.budget);
-  const session = new MikanAgentSession({
-    systemPrompt: buildSystemPrompt(request.systemPrompt, request.outputSchema),
-    model,
-    thinkingLevel: options.thinkingLevel,
-    tools,
-    models: options.models,
-    sessionStore: SessionStore.inMemory(options.workspaceDir),
-    settings: { compaction: { enabled: false } },
-  });
-
+  let modelSpec: SubagentModelSpec = request.model ?? {
+    provider: options.defaultModel.provider,
+    id: options.defaultModel.id,
+  };
+  let sessionRef: MikanAgentSession | undefined;
   let terminalSignal: "cancelled" | "timeout" | undefined;
+  let timeout: NodeJS.Timeout | undefined;
   const abort = (reason: "cancelled" | "timeout") => {
     if (terminalSignal) return;
     terminalSignal = reason;
-    session.abort();
+    sessionRef?.abort();
   };
   const onAbort = () => abort("cancelled");
-  request.signal?.addEventListener("abort", onAbort, { once: true });
-  if (request.signal?.aborted) abort("cancelled");
-  const timeout = setTimeout(() => abort("timeout"), budget.maxDurationMs);
-  timeout?.unref();
 
   try {
+    if ((subagentRunDepth.getStore() ?? 0) >= 1) {
+      throw new Error("Nested api.subagent.run calls are not allowed");
+    }
+    const model = request.model
+      ? options.models.resolve(request.model.provider, request.model.id)
+      : options.defaultModel;
+    modelSpec = { provider: model.provider, id: model.id };
+    const tools = selectTools(request.tools, options.availableTools);
+    const task = formatTask(request.task, request.input);
+    const budget = resolveBudget(request.budget);
+    const session = new MikanAgentSession({
+      systemPrompt: buildSystemPrompt(request.systemPrompt, request.outputSchema),
+      model,
+      thinkingLevel: options.thinkingLevel,
+      tools,
+      models: options.models,
+      sessionStore: SessionStore.inMemory(options.workspaceDir),
+      settings: { compaction: { enabled: false } },
+    });
+    sessionRef = session;
+
+    request.signal?.addEventListener("abort", onAbort, { once: true });
+    if (request.signal?.aborted) abort("cancelled");
+    timeout = setTimeout(() => abort("timeout"), budget.maxDurationMs);
+    timeout.unref();
+
     if (!terminalSignal) {
       await subagentRunDepth.run(1, () =>
         session.prompt(task, {
@@ -310,25 +331,28 @@ export async function runSubagent<TOutputSchema extends TSchema | undefined = un
       };
     }
 
+    if (!text) {
+      return { ...base, status: "failed", error: "Subagent produced no text output" };
+    }
     return {
       ...base,
       status: "completed",
       output: text as SubagentRunOutput<TOutputSchema>,
     };
   } catch (err) {
-    const stats = session.getLastRunStats();
+    const stats = sessionRef?.getLastRunStats();
     return {
       runId,
       status: terminalSignal ?? "failed",
       model: modelSpec,
-      turns: stats.llmCalls,
-      tokens: stats.tokens,
-      costUsd: stats.costUsd,
+      turns: stats?.llmCalls ?? 0,
+      tokens: stats?.tokens ?? 0,
+      costUsd: stats?.costUsd ?? 0,
       durationMs: Date.now() - startedAt,
       error: err instanceof Error ? err.message : String(err),
     };
   } finally {
-    clearTimeout(timeout);
+    if (timeout) clearTimeout(timeout);
     request.signal?.removeEventListener("abort", onAbort);
   }
 }
