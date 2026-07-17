@@ -9,11 +9,10 @@ import {
   loadGlobalSettings,
   resolveConversationSettings,
   saveConversationAutoReplyConfig,
-  updateConversationSettings,
-  updateGlobalSettings,
   type AgentConfig,
   type SandboxSettings,
 } from "../../config.js";
+import { applyConversationSettings, applyGlobalSettings } from "../../settings-mutation.js";
 import { escapeHtml } from "../../utils/html.js";
 import { readRawBody } from "../../utils/http-body.js";
 import { renderPortalShell } from "../portal-shell.js";
@@ -182,15 +181,15 @@ async function routeApiRequest(
     return;
   }
   if (url.pathname === "/admin/api/settings/model") {
-    serveGlobalModelUpdate(res, body);
+    serveGlobalModelUpdate(res, body, services);
     return;
   }
   if (url.pathname === "/admin/api/settings/sandbox") {
-    serveGlobalSandboxUpdate(res, body);
+    serveGlobalSandboxUpdate(res, body, services);
     return;
   }
   if (url.pathname === "/admin/api/settings/slack") {
-    serveGlobalSlackUpdate(res, body);
+    serveGlobalSlackUpdate(res, body, services);
     return;
   }
   jsonRes(res, 404, { error: "Not found" });
@@ -670,23 +669,20 @@ function serveConversationModelUpdate(
   }
   const workingDir = requireAdminWorkingDir(res, services);
   if (!workingDir) return;
-  const dir = join(workingDir, scope.conversationId);
 
   try {
-    updateConversationSettings(dir, {
+    const result = applyConversationSettings(services.runtime, workingDir, scope.conversationId, {
       provider,
       model,
       ...(thinkingLevel ? { thinkingLevel } : {}),
     });
-    let runtimeSwitched: boolean | null = null;
-    if (services.runtime) {
-      runtimeSwitched = services.runtime.switchConversationModel(
-        scope.conversationId,
-        provider,
-        model,
-      );
+    if (!result.ok) {
+      jsonRes(res, 409, {
+        error: "Conversation has a running job; retry after it finishes (or /stop it).",
+      });
+      return;
     }
-    jsonRes(res, 200, { ok: true, runtimeSwitched });
+    jsonRes(res, 200, { ok: true, runtimeSwitched: result.runtimeSwitched });
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
   }
@@ -710,9 +706,10 @@ function serveConversationSandboxUpdate(
   }
   const workingDir = requireAdminWorkingDir(res, services);
   if (!workingDir) return;
-  const dir = join(workingDir, scope.conversationId);
   try {
-    updateConversationSettings(dir, { sandbox: { image: { workspaceMount } } });
+    applyConversationSettings(services.runtime, workingDir, scope.conversationId, {
+      sandbox: { image: { workspaceMount } },
+    });
     jsonRes(res, 200, { ok: true });
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
@@ -737,9 +734,10 @@ function serveConversationSlackUpdate(
   }
   const workingDir = requireAdminWorkingDir(res, services);
   if (!workingDir) return;
-  const dir = join(workingDir, scope.conversationId);
   try {
-    updateConversationSettings(dir, { slack: { replyMode } });
+    applyConversationSettings(services.runtime, workingDir, scope.conversationId, {
+      slack: { replyMode },
+    });
     jsonRes(res, 200, { ok: true });
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
@@ -885,7 +883,11 @@ function serveConversationLoginLink(
   }
 }
 
-function serveGlobalModelUpdate(res: ServerResponse, body: Record<string, unknown>): void {
+function serveGlobalModelUpdate(
+  res: ServerResponse,
+  body: Record<string, unknown>,
+  services: AdminServices,
+): void {
   const provider = typeof body.provider === "string" ? body.provider.trim() : "";
   const model = typeof body.model === "string" ? body.model.trim() : "";
   const thinkingLevel =
@@ -899,18 +901,22 @@ function serveGlobalModelUpdate(res: ServerResponse, body: Record<string, unknow
   }
 
   try {
-    updateGlobalSettings({
+    const result = applyGlobalSettings(services.runtime, {
       provider,
       model,
       ...(thinkingLevel ? { thinkingLevel } : {}),
     });
-    jsonRes(res, 200, { ok: true });
+    jsonRes(res, 200, { ok: true, staleConversations: result.staleConversations });
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
   }
 }
 
-function serveGlobalSlackUpdate(res: ServerResponse, body: Record<string, unknown>): void {
+function serveGlobalSlackUpdate(
+  res: ServerResponse,
+  body: Record<string, unknown>,
+  services: AdminServices,
+): void {
   const replyMode = body.replyMode;
   if (replyMode !== "top-level" && replyMode !== "thread") {
     jsonRes(res, 400, { error: "replyMode must be 'top-level' or 'thread'" });
@@ -918,14 +924,18 @@ function serveGlobalSlackUpdate(res: ServerResponse, body: Record<string, unknow
   }
 
   try {
-    updateGlobalSettings({ slack: { replyMode } });
+    applyGlobalSettings(services.runtime, { slack: { replyMode } });
     jsonRes(res, 200, { ok: true });
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
   }
 }
 
-function serveGlobalSandboxUpdate(res: ServerResponse, body: Record<string, unknown>): void {
+function serveGlobalSandboxUpdate(
+  res: ServerResponse,
+  body: Record<string, unknown>,
+  services: AdminServices,
+): void {
   const cpus = typeof body.cpus === "string" ? body.cpus.trim() : "";
   const memory = typeof body.memory === "string" ? body.memory.trim() : "";
   const boostCpus = typeof body.boostCpus === "string" ? body.boostCpus.trim() : "";
@@ -953,7 +963,7 @@ function serveGlobalSandboxUpdate(res: ServerResponse, body: Record<string, unkn
   }
 
   try {
-    updateGlobalSettings({ sandbox: update });
+    applyGlobalSettings(services.runtime, { sandbox: update });
     jsonRes(res, 200, { ok: true });
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
@@ -1878,9 +1888,7 @@ function renderAdminPage(token: AdminToken): string {
           conversationId: activeConversationId, provider, model, thinkingLevel,
         });
         result.style.display = 'block'; result.className = 'inline-result ok';
-        result.textContent = data.runtimeSwitched === false
-          ? 'Saved — running session pinned; new model applies on next start.'
-          : 'Saved ✓';
+        result.textContent = 'Saved ✓';
       } catch (err) {
         result.style.display = 'block'; result.className = 'inline-result err';
         result.textContent = err.message;

@@ -1,6 +1,5 @@
-import { join } from "node:path";
-import { updateConversationSettings } from "../config.js";
 import { readConversationWorkspaceMountMode } from "../execution-resolver.js";
+import { applyConversationSettings } from "../settings-mutation.js";
 import { actorKey } from "../sandbox/identity.js";
 import { slashForms } from "./manifest.js";
 import { matchCommand } from "./parse.js";
@@ -47,9 +46,14 @@ export class SandboxCommandHandler implements CommandHandler {
     });
 
     if (parsed.action === "private" || parsed.action === "full") {
-      updateConversationSettings(join(context.services.workingDir, context.conversationId), {
-        sandbox: { image: { workspaceMount: parsed.action } },
-      });
+      applyConversationSettings(
+        context.services.runtime,
+        context.services.workingDir,
+        context.conversationId,
+        {
+          sandbox: { image: { workspaceMount: parsed.action } },
+        },
+      );
       await replyDiagnosticWithContext(
         context.responder,
         formatCommandSummary("Sandbox Workspace", [

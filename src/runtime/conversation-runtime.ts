@@ -425,6 +425,21 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     );
   }
 
+  refreshAllConversations(): { busy: string[] } {
+    const conversationIds = new Set(
+      Array.from(this.conversationStates.keys(), (sessionKey) => conversationIdOf(sessionKey)),
+    );
+    const busy: string[] = [];
+    for (const conversationId of conversationIds) {
+      const cleared = this.clearConversationStates(
+        conversationId,
+        `[${conversationId}] Global settings changed; cleared cached session runners`,
+      );
+      if (!cleared) busy.push(conversationId);
+    }
+    return { busy };
+  }
+
   private isConversationSession(sessionKey: string, conversationId: string): boolean {
     return conversationIdOf(sessionKey) === conversationId;
   }

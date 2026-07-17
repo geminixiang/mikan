@@ -2,7 +2,8 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ThinkingLevel as PiAiThinkingLevel } from "@earendil-works/pi-ai";
 import type { MikanModels } from "../harness/index.js";
 import { join } from "path";
-import { resolveConversationSettings, updateConversationSettings } from "../config.js";
+import { resolveConversationSettings } from "../config.js";
+import { applyConversationSettings } from "../settings-mutation.js";
 import { slashForms } from "./manifest.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler, ParsedModelCommand } from "./types.js";
@@ -115,12 +116,17 @@ export class ModelCommandHandler implements CommandHandler {
       return true;
     }
 
-    const switched = context.services.runtime.switchConversationModel(
+    const result = applyConversationSettings(
+      context.services.runtime,
+      context.services.workingDir,
       context.conversationId,
-      parsed.provider,
-      parsed.model,
+      {
+        provider: parsed.provider,
+        model: parsed.model,
+        ...(parsed.thinkingLevel ? { thinkingLevel: parsed.thinkingLevel } : {}),
+      },
     );
-    if (!switched) {
+    if (!result.ok) {
       await replyDiagnosticWithContext(
         context.responder,
         formatCommandSummary("Model", [
@@ -130,12 +136,6 @@ export class ModelCommandHandler implements CommandHandler {
       );
       return true;
     }
-
-    updateConversationSettings(conversationDir, {
-      provider: parsed.provider,
-      model: parsed.model,
-      ...(parsed.thinkingLevel ? { thinkingLevel: parsed.thinkingLevel } : {}),
-    });
 
     await replyDiagnosticWithContext(
       context.responder,
