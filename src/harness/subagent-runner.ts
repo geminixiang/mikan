@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
-import type { TSchema } from "@sinclair/typebox";
+import { Kind, Type, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import type { MikanModels } from "./models.js";
 import { MikanAgentSession } from "./runner.js";
@@ -17,6 +17,103 @@ const DEFAULT_SUBAGENT_BUDGET = {
   maxCostUsd: 0.5,
   maxDurationMs: 2 * 60 * 1000,
 } as const;
+
+const SCHEMA_STRUCTURAL_KEYS = new Set([
+  "type",
+  "properties",
+  "required",
+  "items",
+  "enum",
+  "const",
+  "anyOf",
+  "oneOf",
+  "allOf",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function schemaOptions(node: Record<string, unknown>): Record<string, unknown> {
+  const options: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(node)) {
+    if (!SCHEMA_STRUCTURAL_KEYS.has(key)) options[key] = value;
+  }
+  if (isRecord(options.additionalProperties)) {
+    options.additionalProperties = hydrateSchema(options.additionalProperties);
+  }
+  return options;
+}
+
+/**
+ * outputSchema arrives over the subagent tool as plain JSON (tool-call
+ * arguments never carry TypeBox's Kind symbol), but Value.Check dispatches
+ * purely on schema[Kind] and throws ValueCheckUnknownTypeError for anything
+ * without it. Hydrate plain JSON Schema into real TypeBox schema nodes so
+ * validation runs instead of throwing; schemas built with TypeBox already
+ * carry Kind and pass through untouched.
+ */
+function hydrateSchema(schema: unknown): TSchema {
+  if (isRecord(schema) && Kind in schema) return schema as TSchema;
+  if (!isRecord(schema)) return Type.Unknown();
+
+  if (Array.isArray(schema.enum)) {
+    const literals = schema.enum.filter(
+      (value): value is string | number | boolean =>
+        typeof value === "string" || typeof value === "number" || typeof value === "boolean",
+    );
+    return literals.length > 0
+      ? Type.Union(literals.map((value) => Type.Literal(value)))
+      : Type.Unknown();
+  }
+  if ("const" in schema) {
+    const value = schema.const;
+    return typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+      ? Type.Literal(value)
+      : Type.Unknown();
+  }
+  if (Array.isArray(schema.anyOf)) return Type.Union(schema.anyOf.map(hydrateSchema));
+  if (Array.isArray(schema.oneOf)) return Type.Union(schema.oneOf.map(hydrateSchema));
+  if (Array.isArray(schema.allOf)) return Type.Intersect(schema.allOf.map(hydrateSchema));
+
+  const type = Array.isArray(schema.type)
+    ? schema.type
+    : (schema.type ?? (schema.properties ? "object" : schema.items ? "array" : undefined));
+  if (Array.isArray(type)) {
+    return Type.Union(type.map((variant) => hydrateSchema({ ...schema, type: variant })));
+  }
+
+  const options = schemaOptions(schema);
+  switch (type) {
+    case "object": {
+      const properties = isRecord(schema.properties) ? schema.properties : {};
+      const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+      const props: Record<string, TSchema> = {};
+      for (const [key, value] of Object.entries(properties)) {
+        const hydrated = hydrateSchema(value);
+        props[key] = required.has(key) ? hydrated : Type.Optional(hydrated);
+      }
+      return Type.Object(props, options);
+    }
+    case "array":
+      return Type.Array(
+        schema.items !== undefined ? hydrateSchema(schema.items) : Type.Unknown(),
+        options,
+      );
+    case "string":
+      return Type.String(options);
+    case "number":
+      return Type.Number(options);
+    case "integer":
+      return Type.Integer(options);
+    case "boolean":
+      return Type.Boolean(options);
+    case "null":
+      return Type.Null(options);
+    default:
+      return Type.Unknown(options);
+  }
+}
 
 interface RunSubagentOptions<TOutputSchema extends TSchema | undefined = undefined> {
   request: SubagentRunRequest<TOutputSchema>;
@@ -199,7 +296,7 @@ export async function runSubagent<TOutputSchema extends TSchema | undefined = un
       } catch {
         return { ...base, status: "invalid_output", error: "Subagent output is not valid JSON" };
       }
-      if (!Value.Check(request.outputSchema, parsed)) {
+      if (!Value.Check(hydrateSchema(request.outputSchema), parsed)) {
         return {
           ...base,
           status: "invalid_output",

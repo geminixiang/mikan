@@ -9,6 +9,10 @@ any release.
 
 ## [Unreleased]
 
+### Fixed
+
+- Validate subagent `outputSchema` correctly when it arrives as plain JSON Schema (the only form tool calls can carry), instead of throwing `ValueCheckUnknownTypeError` because it lacks TypeBox's `Kind` metadata.
+
 ## [1.0.0-beta.19]
 
 ### Added
