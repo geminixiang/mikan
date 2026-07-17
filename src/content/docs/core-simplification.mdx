@@ -1,0 +1,190 @@
+---
+title: Core simplification
+description: Evidence-based plan to reduce mikan's public surface and internal coupling without changing behavior.
+---
+
+This audit uses the boundaries in [Core interface reference](/core-interfaces/). The goal is not to minimize file count; it is to make the core explainable as a small set of stable contracts and move optional policy behind them.
+
+## Target core
+
+The smallest coherent mikan core is:
+
+1. one normalized conversation input and one response port;
+2. one runtime that serializes a session and owns runner lifecycle;
+3. one harness interface for a model turn;
+4. one session store and one platform log store, intentionally separate;
+5. one executor interface for all tool I/O;
+6. one credential-resolution seam;
+7. registries for optional platform, command, tool, extension, and sandbox capabilities.
+
+Web portals, particular chat SDKs, Docker provisioning, Gondolin fleet management, Firecracker, Cloudflare, and GitHub-specific tools are products or plugins around this core.
+
+## Findings
+
+| Priority | Finding | Evidence | Simplification |
+| --- | --- | --- | --- |
+| P0 | The npm boundary is wider than the supported product boundary | `src/index.ts` uses `export * from "./harness/index.js"`; package metadata has no `exports` map | Declare explicit root exports and subpaths; stop publishing internal helpers accidentally |
+| P0 | Platform input has two overlapping canonical shapes | `ConversationEvent` and `ConversationMessage` repeat id/session/kind/user/text/attachments/thread fields and are passed together | Introduce one `ConversationInput` envelope; derive compatibility views during migration |
+| P0 | `MessagingBot` has too many reasons to change | lifecycle, output, upload/reaction, private diagnostics, event queue, and metadata are one interface | Split normalized platform port from optional capabilities; keep one adapter object that composes them |
+| P1 | Sandbox extensibility is only nominal | `SandboxAdapter` is exported, but a closed array in `sandbox/index.ts` owns parsing/creation | Add a registry or make adapters internal; move experimental backends out of the default core assembly |
+| P1 | Runtime construction leaks command implementation details | `ConversationRuntimeOptions` is an `Omit<CommandServices, ...>` and reconstructs command services internally | Define explicit runtime dependencies, then build `CommandServices` in a command adapter |
+| P1 | Commands still have two inventories | The manifest owns platform registration while the registry owns handlers; adding a command requires both | A `CommandDefinition` should contain manifest metadata and a handler factory/reference |
+| P1 | The harness is both a public SDK and an internal engine | Root exports session parsing, credentials, settings, loader, event schema, hooks, and runner details together | Publish `./extension`, `./runtime`, and optionally `./harness` subpaths with separate stability policies |
+| P2 | Optional runtime products are compiled into the central CLI | Platform SDKs, portals, six sandbox modes, and Gondolin fleet code are assembled in `main.ts` | Make `main.ts` a composition root over registries; lazy/optional product modules become replaceable |
+| P2 | Several capability interfaces use optional methods | `MessagingBot` and `ConversationResponder` grow by adding `?` methods | Use named capability objects (`reactions`, `uploads`, `streaming`) so absence and requirements are explicit |
+| P2 | HTTP route contracts are manually dispatched and mostly untyped | `web/server.ts` and portal modules branch on method/path; payload types are local | Keep the UI API internal, but centralize route descriptors and request/response schemas where payloads cross modules |
+
+## What should not be simplified away
+
+Some apparent duplication protects important semantics:
+
+- Keep `log.jsonl` separate from agent session JSONL. They record different truths and support recovery.
+- Keep host paths separate from runtime paths. Collapsing them breaks container/remote execution and can expose host-only data.
+- Keep model-provider credentials separate from sandbox vault credentials.
+- Keep per-session queues. Global serialization would waste concurrency; no serialization would corrupt conversation order.
+- Keep platform trust policy explicit. Inferring credential safety from platform names is unsafe.
+- Keep executor-owned file transport. Replacing it with shell snippets reintroduces quoting, size, and partial-write failures.
+- Keep extension code host-only and sandbox workspace data separate.
+
+## Proposed interfaces
+
+### One normalized input
+
+```ts
+interface ConversationInput {
+  platform: MessagingInfo;
+  conversation: {
+    id: string;
+    kind: ConversationKind;
+    vaultId?: string;
+  };
+  message: {
+    id: string;
+    parentId?: string;
+    sessionKey?: string;
+    actor: { id: string; name?: string };
+    text: string;
+    attachments: readonly Attachment[];
+  };
+  respond: ConversationResponder;
+}
+```
+
+The runtime derives `ConversationEvent` and `ConversationMessage` only for old call sites. Once adapters and tests use the envelope, delete both compatibility shapes.
+
+### Composed platform capabilities
+
+```ts
+interface PlatformPort {
+  readonly info: MessagingInfo;
+  lifecycle: { start(): Promise<void>; stop(): Promise<void> };
+  messages: PlatformMessages;
+  capabilities?: {
+    reactions?: PlatformReactions;
+    uploads?: PlatformUploads;
+    privateMessages?: PlatformPrivateMessages;
+  };
+}
+```
+
+This removes feature detection by arbitrary method name and lets commands/extensions request the exact capability they need.
+
+### Explicit runtime dependencies
+
+```ts
+interface ConversationRuntimeOptions {
+  workingDir: string;
+  sandbox: SandboxConfig;
+  createRunner: RunnerFactory;
+  commands?: readonly CommandDefinition[];
+  vault?: VaultResolver;
+  resources?: SandboxResourceController;
+  portals?: PortalServices;
+  platformCapabilities?: PlatformCapabilities;
+  platformToolPacks?: readonly PlatformToolPackFactory[];
+}
+```
+
+The runtime should not inherit its constructor shape from another subsystem's service bag.
+
+### Honest sandbox registry
+
+```ts
+interface SandboxRegistry {
+  register<T extends SandboxConfig>(adapter: SandboxAdapter<T>): void;
+  parse(value: string): SandboxConfig;
+  validate(config: SandboxConfig): Promise<void>;
+  createExecutor(config: SandboxConfig, context: ExecutorContext): Promise<Executor>;
+}
+```
+
+The default CLI registers stable backends. Gondolin, Firecracker, and Cloudflare can be registered by optional product modules without changing tool or runtime code.
+
+## Migration sequence
+
+### Phase 1 — enforce the package boundary
+
+1. Add a package `exports` map for `.`, `./extension`, and `./runtime`.
+2. Replace the root `export *` with an explicit list.
+3. Add API-extractor-style snapshot tests using emitted declarations or a checked symbol list.
+4. Mark currently exported-but-unsupported symbols deprecated for one release before removal.
+
+This is first because every internal refactor is harder after consumers depend on accidental exports.
+
+### Phase 2 — unify platform input
+
+1. Add `ConversationInput` and an adapter from it to the current runtime call.
+2. Convert one platform adapter and its tests at a time.
+3. Change `handleEvent(event, bot, context)` to `handle(input)`.
+4. Delete duplicated fields and compatibility adapters after all platforms migrate.
+
+This should remove consistency bugs around `ts` versus `message.id`, `thread_ts` versus `threadTs`, and event `user` versus message `userId`.
+
+### Phase 3 — compose capabilities
+
+1. Extract message, reaction, upload, and private-message ports from `MessagingBot`.
+2. Adapt existing bots without changing their SDK code.
+3. Pass narrow capabilities to commands, extensions, events, and admin instead of the whole bot.
+4. Retire `ChatAdapter` if no independent caller remains.
+
+### Phase 4 — simplify runtime construction and commands
+
+1. Replace the `Omit<CommandServices, ...>` inheritance with explicit runtime options.
+2. Make portal services one optional object rather than three token-store fields plus a URL.
+3. Join command metadata and handler registration into `CommandDefinition`.
+4. Generate platform registration, parsing inventory, and handler order from that definition list.
+
+### Phase 5 — separate optional execution products
+
+1. Introduce `SandboxRegistry` while preserving the existing default functions as wrappers.
+2. Register host/container/image as the default distribution.
+3. Register Gondolin, Firecracker, and Cloudflare from optional composition modules.
+4. Move fleet/gateway/join/worker APIs behind a Gondolin package or subpath only after integration tests cover the wire boundary.
+
+### Phase 6 — reduce the composition root
+
+`main.ts` should parse CLI configuration, instantiate registries/services, start selected products, and coordinate shutdown. Platform SDK initialization and backend-specific policy should remain in their modules. A useful completion criterion is that the composition root reads like configuration, not business logic.
+
+## Acceptance criteria
+
+The simplification is complete when:
+
+- a new platform implements one normalized input adapter plus declared output capabilities;
+- a new sandbox registers one adapter without editing a core switch or array;
+- runtime construction does not mention individual portal token-store types;
+- adding a command changes one definition and one handler implementation, not several platform inventories;
+- the root npm declaration surface contains only documented symbols;
+- persisted session/event/config formats and trust/path invariants remain compatible;
+- existing unit tests, build, lint, and `knip` pass after each phase.
+
+## Recommended first pull request
+
+Keep the first implementation PR behavior-neutral:
+
+1. add the package `exports` map with compatibility subpaths;
+2. replace duplicate root type re-exports with explicit exports;
+3. add a public API snapshot test;
+4. introduce `ConversationInput` plus conversion helpers, but migrate only one adapter;
+5. record deprecations without deleting functionality.
+
+Do not combine this with removing a sandbox backend or changing persisted formats. Those changes have different rollback and operational risks.
