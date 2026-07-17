@@ -54,7 +54,12 @@ func newTestWorld(t *testing.T, socketPath string) *testWorld {
 		HandshakeTimeout: 5 * time.Second,
 		StopWait:         2 * time.Second,
 	})
-	server := &Server{Leases: leases, Runtimes: supervisor, InventoryDir: filepath.Join(dir, "inventory")}
+	server := &Server{
+		Leases:         leases,
+		Runtimes:       supervisor,
+		InventoryDir:   filepath.Join(dir, "inventory"),
+		CredentialsDir: filepath.Join(dir, "credentials"),
+	}
 	return &testWorld{server: server, handler: server.Handler(), instance: "c1"}
 }
 
@@ -304,7 +309,10 @@ func TestSessionTunnelSplicesBytes(t *testing.T) {
 
 func TestMaterializeCredentials(t *testing.T) {
 	dir := t.TempDir()
-	server := &Server{InventoryDir: filepath.Join(dir, "inventory")}
+	server := &Server{
+		InventoryDir:   filepath.Join(dir, "inventory"),
+		CredentialsDir: filepath.Join(dir, "credentials"),
+	}
 
 	// no credentials → no mounts, no dir
 	mounts, err := server.materializeCredentials("c1", nil)

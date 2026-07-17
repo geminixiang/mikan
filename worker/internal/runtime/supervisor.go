@@ -71,8 +71,19 @@ type Runtime struct {
 	Adopted     bool   `json:"adopted"`
 }
 
-// Placer confines a spawned worker's process tree (cgroups on Linux).
-type Placer func(pid int, sessionID string, cpus string, memory string) error
+// Confiner confines a spawned worker's process tree (cgroups on Linux) and
+// releases the confinement when the runtime stops. Both sides of the seam
+// are best-effort; a Place without a matching Release leaks an empty cgroup
+// directory per runtime, so the supervisor releases on every Stop.
+type Confiner interface {
+	Place(pid int, sessionID string, cpus string, memory string) error
+	Release(sessionID string)
+}
+
+type noopConfiner struct{}
+
+func (noopConfiner) Place(int, string, string, string) error { return nil }
+func (noopConfiner) Release(string)                          {}
 
 // Supervisor spawns, rediscovers, and stops runtime host processes.
 type Supervisor struct {
@@ -82,7 +93,7 @@ type Supervisor struct {
 	inventoryDir     string
 	handshakeTimeout time.Duration
 	stopWait         time.Duration
-	place            Placer
+	confine          Confiner
 	log              *slog.Logger
 	runtimes         map[string]*Runtime // by session id
 }
@@ -94,7 +105,7 @@ type Options struct {
 	InventoryDir     string
 	HandshakeTimeout time.Duration
 	StopWait         time.Duration
-	Place            Placer
+	Confine          Confiner
 	Log              *slog.Logger
 }
 
@@ -109,8 +120,8 @@ func NewSupervisor(options Options) *Supervisor {
 	if options.Log == nil {
 		options.Log = slog.Default()
 	}
-	if options.Place == nil {
-		options.Place = func(int, string, string, string) error { return nil }
+	if options.Confine == nil {
+		options.Confine = noopConfiner{}
 	}
 	supervisor := &Supervisor{
 		nodeBin:          options.NodeBin,
@@ -118,7 +129,7 @@ func NewSupervisor(options Options) *Supervisor {
 		inventoryDir:     options.InventoryDir,
 		handshakeTimeout: options.HandshakeTimeout,
 		stopWait:         options.StopWait,
-		place:            options.Place,
+		confine:          options.Confine,
 		log:              options.Log,
 		runtimes:         make(map[string]*Runtime),
 	}
@@ -208,6 +219,7 @@ func (s *Supervisor) Stop(sessionID string) error {
 		}
 	}
 	s.reapLeftovers(entry)
+	s.confine.Release(entry.SessionID)
 	return nil
 }
 
@@ -240,7 +252,7 @@ func (s *Supervisor) spawn(config WorkerConfig, cgroupCPUs string, epoch uint64)
 		_ = syscall.Kill(cmd.Process.Pid, syscall.SIGKILL)
 		return nil, err
 	}
-	if err := s.place(cmd.Process.Pid, shake.SessionID, cgroupCPUs, config.Memory); err != nil {
+	if err := s.confine.Place(cmd.Process.Pid, shake.SessionID, cgroupCPUs, config.Memory); err != nil {
 		s.log.Warn("cgroup placement failed", "sessionId", shake.SessionID, "error", err)
 	}
 
@@ -303,9 +315,12 @@ func (s *Supervisor) rediscover() {
 		return
 	}
 	for _, file := range entries {
-		if !strings.HasSuffix(file.Name(), ".json") || file.Name() == "leases.json" {
+		if !strings.HasSuffix(file.Name(), ".json") {
 			continue
 		}
+		// No filename allowlist beyond .json: anything that is not an
+		// inventory record (wrong shape, no sessionId) fails the parse
+		// checks below, so foreign files in the dir are skipped by content.
 		raw, err := os.ReadFile(filepath.Join(s.inventoryDir, file.Name()))
 		if err != nil {
 			continue

@@ -28,7 +28,23 @@ import (
 	"github.com/geminixiang/mikan/worker/internal/join"
 	"github.com/geminixiang/mikan/worker/internal/lease"
 	workerruntime "github.com/geminixiang/mikan/worker/internal/runtime"
+	"github.com/geminixiang/mikan/worker/internal/statedir"
 )
+
+// cgroupConfiner adapts the cgroup package to the supervisor's Confiner
+// seam: placement on hosts without cgroup v2 degrades to unconfined, and
+// stopping a runtime reclaims its cgroup directory.
+type cgroupConfiner struct{}
+
+func (cgroupConfiner) Place(pid int, sessionID string, cpus string, memory string) error {
+	err := cgroup.Place(pid, sessionID, cpus, memory)
+	if err == cgroup.ErrUnsupported {
+		return nil
+	}
+	return err
+}
+
+func (cgroupConfiner) Release(sessionID string) { cgroup.Remove(sessionID) }
 
 // version is stamped by the release build via -ldflags "-X main.version=…".
 var version = "dev"
@@ -76,34 +92,29 @@ func buildDaemon(flags daemonFlags, logger *slog.Logger) *api.Server {
 	if *flags.workerEntry == "" {
 		fatal(logger, "worker-entry is required")
 	}
-	inventoryDir := filepath.Join(*flags.stateDir, "gondolin-runtimes")
-	if err := os.MkdirAll(inventoryDir, 0o700); err != nil {
+	state := statedir.New(*flags.stateDir)
+	if err := os.MkdirAll(state.RuntimeInventory(), 0o700); err != nil {
 		fatal(logger, fmt.Sprintf("create state dir: %v", err))
 	}
-	leases, err := lease.NewManager(*flags.stateDir)
+	leases, err := lease.NewManager(state.Root)
 	if err != nil {
 		fatal(logger, err.Error())
 	}
 	supervisor := workerruntime.NewSupervisor(workerruntime.Options{
 		NodeBin:      *flags.nodeBin,
 		WorkerEntry:  *flags.workerEntry,
-		InventoryDir: inventoryDir,
-		Place: func(pid int, sessionID string, cpus string, memory string) error {
-			err := cgroup.Place(pid, sessionID, cpus, memory)
-			if err == cgroup.ErrUnsupported {
-				return nil
-			}
-			return err
-		},
-		Log: logger,
+		InventoryDir: state.RuntimeInventory(),
+		Confine:      cgroupConfiner{},
+		Log:          logger,
 	})
 	server := &api.Server{
-		Leases:        leases,
-		Runtimes:      supervisor,
-		WorkspaceRoot: *flags.workspaceRoot,
-		InventoryDir:  inventoryDir,
-		Workspace:     api.NewWorkspaceProbe(*flags.workspaceRoot, 2*time.Second, time.Minute),
-		Log:           logger,
+		Leases:         leases,
+		Runtimes:       supervisor,
+		WorkspaceRoot:  *flags.workspaceRoot,
+		InventoryDir:   state.RuntimeInventory(),
+		CredentialsDir: state.Credentials(),
+		Workspace:      api.NewWorkspaceProbe(*flags.workspaceRoot, 2*time.Second, time.Minute),
+		Log:            logger,
 	}
 	stop := make(chan struct{})
 	go server.Janitor(15*time.Second, stop)

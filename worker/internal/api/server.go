@@ -43,6 +43,9 @@ type Server struct {
 	Runtimes      *workerruntime.Supervisor
 	WorkspaceRoot string
 	InventoryDir  string
+	// CredentialsDir is where shipped vault credentials land (statedir owns
+	// the layout); beside the runtime inventory, never inside the workspace.
+	CredentialsDir string
 	// Workspace, when set, reports shared-workspace usability in /v1/health.
 	Workspace *WorkspaceProbe
 	Log       *slog.Logger
@@ -388,10 +391,8 @@ func (s *Server) authorizeLease(w http.ResponseWriter, r *http.Request, instance
 	return 0, false
 }
 
-// credentialsDir is where shipped vault credentials land, beside the runtime
-// inventory but never inside the workspace.
 func (s *Server) credentialsDir() string {
-	return filepath.Join(filepath.Dir(s.InventoryDir), "credentials")
+	return s.CredentialsDir
 }
 
 // materializeCredentials writes each shipped credential to a per-instance,
