@@ -53,6 +53,13 @@ abort-by-disconnect semantics are identical in both modes. On every reconnect it
 re-registers with its machine info and the runtimes that survived the gap, and mikan
 logs the join and reconciles placements. mikan enables the gateway with:
 
+The control connection is hardened for NAT and stateful firewalls: the worker sends
+an application heartbeat every 15 seconds, requires a pong within 10 seconds, and
+reconnects a half-open connection with exponential backoff plus jitter. Backoff resets
+after a minute-long healthy session. TCP keepalives provide an independent fallback,
+but application heartbeats are authoritative because some middleboxes silently drop
+idle mappings without closing either endpoint.
+
 ```jsonc
 "sandbox": { "gondolin": { "remote": {
   "imageSelector": "mikan-sandbox:latest",
