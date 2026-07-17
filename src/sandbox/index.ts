@@ -6,6 +6,7 @@ import { imageSandboxAdapter } from "./image.js";
 import { GondolinExecutor, gondolinSandboxAdapter } from "./gondolin.js";
 import { SandboxError } from "./errors.js";
 import { createMountedRuntimePathContext } from "./path-context.js";
+export { configureGondolinRuntime, type GondolinBootstrapOptions } from "./gondolin-bootstrap.js";
 import type { Executor, RuntimePathContext, SandboxAdapter, SandboxConfig } from "./types.js";
 
 export type {

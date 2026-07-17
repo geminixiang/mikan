@@ -51,18 +51,17 @@ import {
   validateSandbox,
 } from "./sandbox/index.js";
 import {
-  assertRemoteConfigured,
   disconnectAllGondolinRuntimes,
   gondolinResources,
   stopIdleGondolinVms,
   sweepUnadoptedGondolinWorkers,
 } from "./sandbox/gondolin.js";
+import { configureGondolinRuntime } from "./sandbox/gondolin-bootstrap.js";
 import { gondolinInventory } from "./sandbox/gondolin-inventory.js";
 import { gondolinFleet } from "./sandbox/gondolin-fleet.js";
 import { gondolinGateway } from "./sandbox/gondolin-gateway.js";
 import { gondolinJoin } from "./sandbox/gondolin-join.js";
 import { checkWorkspaceExported } from "./sandbox/gondolin-nfs-advisory.js";
-import { gondolinPlacements } from "./sandbox/gondolin-placement.js";
 import { FileVaultManager } from "./vault/index.js";
 import { runExtCommand } from "./cli/ext.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
@@ -395,18 +394,16 @@ const provisioner =
       })
     : undefined;
 if (sandbox.type === "gondolin") {
-  gondolinResources.configure(sandboxLimits, sandboxBoostLimits);
-  gondolinInventory.configure(join(stateDir, "gondolin-runtimes"));
-  gondolinPlacements.configure(join(stateDir, "gondolin-placement.json"));
-  gondolinFleet.configure(sandboxSettings?.gondolin?.remote);
-  gondolinJoin.configure(join(stateDir, "gondolin-gateway"));
-  gondolinGateway.configure(sandboxSettings?.gondolin?.remote?.gateway);
-  if (sandbox.profile === "remote") {
-    try {
-      assertRemoteConfigured();
-    } catch (error) {
-      handleStartupError(error);
-    }
+  try {
+    configureGondolinRuntime({
+      stateDir,
+      limits: sandboxLimits,
+      boostLimits: sandboxBoostLimits,
+      remote: sandboxSettings?.gondolin?.remote,
+      requireRemote: sandbox.profile === "remote",
+    });
+  } catch (error) {
+    handleStartupError(error);
   }
 }
 const resourceController =
