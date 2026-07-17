@@ -13,11 +13,8 @@ import {
   type ChatResponseErrorOperation,
 } from "../shared.js";
 import { OrderedResponseOperations } from "../streaming.js";
-import {
-  formatGithubContinuation,
-  GITHUB_MAX_COMMENT_LENGTH,
-  type GithubMessagingBot,
-} from "./bot.js";
+import { formatGithubContinuation, type GithubMessagingBot } from "./bot.js";
+import { GITHUB_MAX_COMMENT_LENGTH } from "./client.js";
 import { parseGithubConversationId } from "./ids.js";
 import type { GithubEvent } from "./types.js";
 

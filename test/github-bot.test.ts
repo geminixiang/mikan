@@ -694,7 +694,7 @@ describe("GithubMessagingBot", () => {
     const bot = makeBot();
     await bot.start();
 
-    const result = await bot.pushAndCreatePr(CONVERSATION_ID, {
+    const result = await bot.ops.pushAndCreatePr(CONVERSATION_ID, {
       branch: "pi/fix-5",
       title: "Fix the widget",
       body: "Closes #5",
@@ -733,7 +733,10 @@ describe("GithubMessagingBot", () => {
     const bot = makeBot();
     await bot.start();
 
-    const result = await bot.pushAndCreatePr(CONVERSATION_ID, { branch: "pi/fix-5", title: "t" });
+    const result = await bot.ops.pushAndCreatePr(CONVERSATION_ID, {
+      branch: "pi/fix-5",
+      title: "t",
+    });
 
     expect(pushBranch).toHaveBeenCalledTimes(1);
     expect(result).toEqual({
@@ -761,7 +764,7 @@ describe("GithubMessagingBot", () => {
     const bot = makeBot();
     await bot.start();
 
-    expect(await bot.getChecks(CONVERSATION_ID, "pi/fix-5")).toEqual([
+    expect(await bot.ops.getChecks(CONVERSATION_ID, "pi/fix-5")).toEqual([
       {
         id: 42,
         name: "test",
@@ -776,7 +779,7 @@ describe("GithubMessagingBot", () => {
     ]);
     expect(client.listCheckRuns).toHaveBeenLastCalledWith("octo", "widgets", "pi/fix-5");
 
-    await bot.getChecks(CONVERSATION_ID);
+    await bot.ops.getChecks(CONVERSATION_ID);
     expect(client.listCheckRuns).toHaveBeenLastCalledWith("octo", "widgets", "abc123");
   });
 
@@ -799,28 +802,28 @@ describe("GithubMessagingBot", () => {
     // Without GCP creds the run is external CI as before.
     const plainBot = makeBot();
     await plainBot.start();
-    const [plainRun] = await plainBot.getChecks(CONVERSATION_ID, "pi/x");
+    const [plainRun] = await plainBot.ops.getChecks(CONVERSATION_ID, "pi/x");
     expect(plainRun.externalId).toBe(BUILD_ID);
     expect(plainRun.buildLogAvailable).toBe(false);
 
     // With creds and a project in details_url the log is advertised.
     const bot = makeBot({ cloudBuild: { tokenProvider } });
     await bot.start();
-    const [run] = await bot.getChecks(CONVERSATION_ID, "pi/x");
+    const [run] = await bot.ops.getChecks(CONVERSATION_ID, "pi/x");
     expect(run.buildLogAvailable).toBe(true);
 
     // No project anywhere → not advertised (fallback would fix it).
     client.listCheckRuns = vi
       .fn()
       .mockResolvedValue([{ ...cloudBuildRun, details_url: "https://console/no-project" }]);
-    const [noProject] = await bot.getChecks(CONVERSATION_ID, "pi/x");
+    const [noProject] = await bot.ops.getChecks(CONVERSATION_ID, "pi/x");
     expect(noProject.buildLogAvailable).toBe(false);
 
     const fallbackBot = makeBot({
       cloudBuild: { tokenProvider, projectFallback: "fallback-project" },
     });
     await fallbackBot.start();
-    const [viaFallback] = await fallbackBot.getChecks(CONVERSATION_ID, "pi/x");
+    const [viaFallback] = await fallbackBot.ops.getChecks(CONVERSATION_ID, "pi/x");
     expect(viaFallback.buildLogAvailable).toBe(true);
   });
 
@@ -844,14 +847,14 @@ describe("GithubMessagingBot", () => {
     await bot.start();
 
     // Not seen yet → guidance to run the summary first.
-    await expect(bot.getBuildLog(CONVERSATION_ID, BUILD_ID)).rejects.toThrow(
+    await expect(bot.ops.getBuildLog(CONVERSATION_ID, BUILD_ID)).rejects.toThrow(
       /run github_checks first/,
     );
 
-    await bot.getChecks(CONVERSATION_ID, "pi/x");
+    await bot.ops.getChecks(CONVERSATION_ID, "pi/x");
     vi.mocked(fetchCloudBuildLog).mockResolvedValue(`${"x".repeat(30000)}TAIL`);
 
-    const logText = await bot.getBuildLog(CONVERSATION_ID, BUILD_ID);
+    const logText = await bot.ops.getBuildLog(CONVERSATION_ID, BUILD_ID);
     expect(fetchCloudBuildLog).toHaveBeenCalledWith({
       tokenProvider,
       project: "123",
@@ -865,7 +868,7 @@ describe("GithubMessagingBot", () => {
     const bot = makeBot();
     await bot.start();
     await expect(
-      bot.getBuildLog(CONVERSATION_ID, "12345678-1234-1234-1234-123456789abc"),
+      bot.ops.getBuildLog(CONVERSATION_ID, "12345678-1234-1234-1234-123456789abc"),
     ).rejects.toThrow(/not configured on this host/);
   });
 
@@ -874,7 +877,7 @@ describe("GithubMessagingBot", () => {
     const bot = makeBot();
     await bot.start();
 
-    const logText = await bot.getJobLog(CONVERSATION_ID, 42);
+    const logText = await bot.ops.getJobLog(CONVERSATION_ID, 42);
     expect(client.getJobLog).toHaveBeenCalledWith("octo", "widgets", 42);
     expect(logText).toContain("truncated to the last 20000 chars");
     expect(logText.endsWith("TAIL")).toBe(true);
@@ -891,16 +894,16 @@ describe("GithubMessagingBot", () => {
     const bot = makeBot();
     await bot.start();
 
-    await expect(bot.getJobLog(CONVERSATION_ID, 0)).rejects.toThrow(/positive Actions job id/);
+    await expect(bot.ops.getJobLog(CONVERSATION_ID, 0)).rejects.toThrow(/positive Actions job id/);
     expect(client.getJobLog).not.toHaveBeenCalled();
-    await expect(bot.getJobLog(CONVERSATION_ID, 9)).rejects.toThrow(/Do not retry/);
+    await expect(bot.ops.getJobLog(CONVERSATION_ID, 9)).rejects.toThrow(/Do not retry/);
   });
 
   test("getChecks without a branch demands one when the conversation is a plain issue", async () => {
     client.getPullRequest = vi.fn().mockRejectedValue(new Error("404"));
     const bot = makeBot();
     await bot.start();
-    await expect(bot.getChecks(CONVERSATION_ID)).rejects.toThrow(/pass the branch/);
+    await expect(bot.ops.getChecks(CONVERSATION_ID)).rejects.toThrow(/pass the branch/);
   });
 
   test("mentioned review comment triggers with diff anchor context and rc- ts", async () => {
@@ -1042,12 +1045,12 @@ describe("GithubMessagingBot", () => {
     const bot = makeBot();
     await bot.start();
 
-    await expect(bot.syncRepo(CONVERSATION_ID)).rejects.toThrow(/no \.\/repo clone/);
+    await expect(bot.ops.syncRepo(CONVERSATION_ID)).rejects.toThrow(/no \.\/repo clone/);
 
     mkdirSync(join(workingDir, CONVERSATION_ID, "repo"), { recursive: true });
     client.getIssue.mockResolvedValue(makeIssue({ pull_request: {} }));
 
-    const report = await bot.syncRepo(CONVERSATION_ID);
+    const report = await bot.ops.syncRepo(CONVERSATION_ID);
 
     expect(client.createScopedInstallationToken).toHaveBeenCalledWith("widgets", {
       contents: "read",
@@ -1078,7 +1081,7 @@ describe("GithubMessagingBot", () => {
     const bot = makeBot();
     await bot.start();
 
-    const report = await bot.syncRepo(CONVERSATION_ID);
+    const report = await bot.ops.syncRepo(CONVERSATION_ID);
 
     expect(syncRepo).toHaveBeenCalledWith(
       expect.objectContaining({ defaultBranch: "main", prNumber: undefined }),
@@ -1095,14 +1098,14 @@ describe("GithubMessagingBot", () => {
     const bot = makeBot();
     await bot.start();
 
-    const prResult = await bot.readGithub(CONVERSATION_ID, { action: "pr" });
+    const prResult = await bot.ops.readGithub(CONVERSATION_ID, { action: "pr" });
     expect(client.getPullRequest).toHaveBeenCalledWith("octo", "widgets", 5);
     expect(prResult).toEqual({ kind: "pr", pr: { number: 5, html_url: "u" } });
 
-    await bot.readGithub(CONVERSATION_ID, { action: "pr_files", number: 12 });
+    await bot.ops.readGithub(CONVERSATION_ID, { action: "pr_files", number: 12 });
     expect(client.listPullRequestFiles).toHaveBeenCalledWith("octo", "widgets", 12);
 
-    await bot.readGithub(CONVERSATION_ID, { action: "list", labels: "bug", state: "all" });
+    await bot.ops.readGithub(CONVERSATION_ID, { action: "list", labels: "bug", state: "all" });
     expect(client.listIssues).toHaveBeenCalledWith("octo", "widgets", {
       state: "all",
       labels: "bug",
@@ -1119,7 +1122,7 @@ describe("GithubMessagingBot", () => {
     const bot = makeBot();
     await bot.start();
 
-    const result = await bot.readGithub(CONVERSATION_ID, { action: "pr_reviews" });
+    const result = await bot.ops.readGithub(CONVERSATION_ID, { action: "pr_reviews" });
 
     expect(client.listPullRequestReviews).toHaveBeenCalledWith("octo", "widgets", 5);
     expect(client.listPullReviewComments).toHaveBeenCalledWith("octo", "widgets", 5);
@@ -1135,19 +1138,22 @@ describe("GithubMessagingBot", () => {
     const bot = makeBot();
     await bot.start();
 
-    await bot.manageIssue(CONVERSATION_ID, { action: "add_labels", labels: ["bug", "p1"] });
+    await bot.ops.manageIssue(CONVERSATION_ID, { action: "add_labels", labels: ["bug", "p1"] });
     expect(client.addIssueLabels).toHaveBeenCalledWith("octo", "widgets", 5, ["bug", "p1"]);
 
-    await bot.manageIssue(CONVERSATION_ID, { action: "remove_label", number: 9, label: "p1" });
+    await bot.ops.manageIssue(CONVERSATION_ID, { action: "remove_label", number: 9, label: "p1" });
     expect(client.removeIssueLabel).toHaveBeenCalledWith("octo", "widgets", 9, "p1");
 
-    await bot.manageIssue(CONVERSATION_ID, { action: "add_assignees", assignees: ["alice"] });
+    await bot.ops.manageIssue(CONVERSATION_ID, { action: "add_assignees", assignees: ["alice"] });
     expect(client.addIssueAssignees).toHaveBeenCalledWith("octo", "widgets", 5, ["alice"]);
 
-    await bot.manageIssue(CONVERSATION_ID, { action: "remove_assignees", assignees: ["alice"] });
+    await bot.ops.manageIssue(CONVERSATION_ID, {
+      action: "remove_assignees",
+      assignees: ["alice"],
+    });
     expect(client.removeIssueAssignees).toHaveBeenCalledWith("octo", "widgets", 5, ["alice"]);
 
-    const closed = await bot.manageIssue(CONVERSATION_ID, {
+    const closed = await bot.ops.manageIssue(CONVERSATION_ID, {
       action: "close",
       state_reason: "not_planned",
     });
@@ -1160,7 +1166,7 @@ describe("GithubMessagingBot", () => {
     );
     expect(closed).toContain("not_planned");
 
-    await bot.manageIssue(CONVERSATION_ID, { action: "reopen" });
+    await bot.ops.manageIssue(CONVERSATION_ID, { action: "reopen" });
     expect(client.updateIssueState).toHaveBeenLastCalledWith("octo", "widgets", 5, "open");
   });
 
@@ -1173,14 +1179,14 @@ describe("GithubMessagingBot", () => {
     const bot = makeBot();
     await bot.start();
 
-    await expect(bot.manageIssue(CONVERSATION_ID, { action: "add_labels" })).rejects.toThrow(
+    await expect(bot.ops.manageIssue(CONVERSATION_ID, { action: "add_labels" })).rejects.toThrow(
       /requires a non-empty labels array/,
     );
-    await expect(bot.manageIssue(CONVERSATION_ID, { action: "remove_label" })).rejects.toThrow(
+    await expect(bot.ops.manageIssue(CONVERSATION_ID, { action: "remove_label" })).rejects.toThrow(
       /requires a label name/,
     );
     await expect(
-      bot.manageIssue(CONVERSATION_ID, { action: "close", number: 9999 }),
+      bot.ops.manageIssue(CONVERSATION_ID, { action: "close", number: 9999 }),
     ).rejects.toThrow(/Issue #9999 not found in octo\/widgets/);
   });
 
@@ -1189,7 +1195,7 @@ describe("GithubMessagingBot", () => {
     const bot = makeBot();
     await bot.start();
 
-    const result = await bot.replyToReviewThread(CONVERSATION_ID, 8001, "done");
+    const result = await bot.ops.replyToReviewThread(CONVERSATION_ID, 8001, "done");
 
     expect(client.replyToReviewComment).toHaveBeenCalledWith("octo", "widgets", 5, 8001, "done");
     expect(result.url).toBe("https://github.com/octo/widgets/pull/5#discussion_r9002");
@@ -1203,11 +1209,11 @@ describe("GithubMessagingBot", () => {
     const bot = makeBot();
     await bot.start();
 
-    await expect(bot.replyToReviewThread(CONVERSATION_ID, 0, "x")).rejects.toThrow(
+    await expect(bot.ops.replyToReviewThread(CONVERSATION_ID, 0, "x")).rejects.toThrow(
       /numeric id from an \[PR review comment/,
     );
     expect(client.replyToReviewComment).not.toHaveBeenCalled();
-    await expect(bot.replyToReviewThread(CONVERSATION_ID, 123, "x")).rejects.toThrow(
+    await expect(bot.ops.replyToReviewThread(CONVERSATION_ID, 123, "x")).rejects.toThrow(
       /not a review comment on this PR/,
     );
   });
@@ -1231,12 +1237,12 @@ describe("GithubMessagingBot", () => {
     await bot.start();
 
     await expect(
-      bot.pushAndCreatePr(CONVERSATION_ID, { branch: "pi/x", title: "t" }),
+      bot.ops.pushAndCreatePr(CONVERSATION_ID, { branch: "pi/x", title: "t" }),
     ).rejects.toThrow(/no \.\/repo clone/);
 
     mkdirSync(join(workingDir, CONVERSATION_ID, "repo"), { recursive: true });
     await expect(
-      bot.pushAndCreatePr(CONVERSATION_ID, { branch: "main", title: "t" }),
+      bot.ops.pushAndCreatePr(CONVERSATION_ID, { branch: "main", title: "t" }),
     ).rejects.toThrow(/not pushable/);
     expect(pushBranch).not.toHaveBeenCalled();
   });

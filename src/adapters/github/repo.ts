@@ -1,4 +1,5 @@
 import { execFile } from "child_process";
+import { join } from "path";
 import { promisify } from "util";
 import type {
   CloneRepoOptions,
@@ -17,6 +18,11 @@ const GIT_TIMEOUT_MS = 120_000;
  * only ever produce reviewable branches, never touch mainline directly.
  */
 export const GITHUB_PUSH_BRANCH_PATTERN = /^pi\/[A-Za-z0-9._][A-Za-z0-9._/-]*$/;
+
+/** The conversation's clone location (bind-mounted into the sandbox as ./repo). */
+export function conversationRepoDir(workingDir: string, conversationId: string): string {
+  return join(workingDir, conversationId, "repo");
+}
 
 /**
  * Pass the ephemeral token as a per-invocation header, never in the remote

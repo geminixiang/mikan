@@ -1,4 +1,5 @@
 import { createSign } from "crypto";
+import { withRetry } from "../shared.js";
 import type {
   GithubCheckRun,
   GithubClientOptions,
@@ -35,6 +36,13 @@ export function githubIsRateLimited(err: Error): boolean {
   if (!(err instanceof GithubApiError)) return false;
   return err.status === 429 || (err.status === 403 && /rate limit/i.test(err.message));
 }
+
+/** Standard retry wrapper for GitHub API calls: backs off on rate limits. */
+export const githubRetry = <T>(fn: () => Promise<T>): Promise<T> =>
+  withRetry(fn, { isRateLimited: githubIsRateLimited });
+
+/** GitHub comment bodies cap at 65536 chars; leave headroom for markup. */
+export const GITHUB_MAX_COMMENT_LENGTH = 60000;
 
 function base64Url(data: string | Buffer): string {
   return (typeof data === "string" ? Buffer.from(data) : data).toString("base64url");

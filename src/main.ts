@@ -532,21 +532,25 @@ function buildPlatformToolPackFactories(): PlatformToolPackFactory[] {
   if (!hasGithub) return [];
   const platformGithubOps: PlatformGithubOps = {
     pushAndCreatePr: (conversationId, request) =>
-      requireGithubBot("github_pr").pushAndCreatePr(conversationId, request),
+      requireGithubBot("github_pr").ops.pushAndCreatePr(conversationId, request),
     getChecks: (conversationId, branch) =>
-      requireGithubBot("github_checks").getChecks(conversationId, branch),
+      requireGithubBot("github_checks").ops.getChecks(conversationId, branch),
     getJobLog: (conversationId, jobId) =>
-      requireGithubBot("github_checks").getJobLog(conversationId, jobId),
+      requireGithubBot("github_checks").ops.getJobLog(conversationId, jobId),
     getBuildLog: (conversationId, buildId) =>
-      requireGithubBot("github_checks").getBuildLog(conversationId, buildId),
+      requireGithubBot("github_checks").ops.getBuildLog(conversationId, buildId),
     replyToReviewThread: (conversationId, commentId, body) =>
-      requireGithubBot("github_review_reply").replyToReviewThread(conversationId, commentId, body),
+      requireGithubBot("github_review_reply").ops.replyToReviewThread(
+        conversationId,
+        commentId,
+        body,
+      ),
     syncRepo: (conversationId, branch) =>
-      requireGithubBot("github_sync").syncRepo(conversationId, branch),
+      requireGithubBot("github_sync").ops.syncRepo(conversationId, branch),
     readGithub: (conversationId, request) =>
-      requireGithubBot("github_read").readGithub(conversationId, request),
+      requireGithubBot("github_read").ops.readGithub(conversationId, request),
     manageIssue: (conversationId, request) =>
-      requireGithubBot("github_issue").manageIssue(conversationId, request),
+      requireGithubBot("github_issue").ops.manageIssue(conversationId, request),
   };
   return [() => createGithubToolPack(platformGithubOps)];
 }

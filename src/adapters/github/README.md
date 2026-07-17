@@ -8,7 +8,10 @@ GitHub App installation (no webhooks, matching mikan's proactive model — see
 
 - `bot.ts`: `GithubMessagingBot` — MessagingBot implementation plus the poll
   loop (incremental `since` cursors, ETag conditional requests, mention /
-  participation triggering) and the host-side backends for all github\_\* tools.
+  participation triggering). Exposes `ops` for the tool backends.
+- `github-ops.ts`: `GithubOps` — the host-side backends for all github\_\*
+  tools (`PlatformGithubOps`), standalone from the poll loop: built from the
+  API client, the working dir, and optional Cloud Build access.
 - `client.ts`: minimal GitHub REST client authenticated as a GitHub App
   (RS256 app JWT → cached installation tokens).
 - `cloudbuild.ts`: Cloud Build log retrieval for `github_checks` (builds.get →
