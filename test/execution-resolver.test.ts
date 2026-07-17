@@ -137,4 +137,26 @@ describe("readConversationWorkspaceMountMode", () => {
       mounts: expect.arrayContaining([{ source: sshDir, target: "/root/.ssh" }]),
     });
   });
+
+  test("derives per-actor cloudflare sandbox ids", async () => {
+    createGlobalSettingsFile(stateDir);
+    const resolver = new ActorExecutionResolver(
+      { type: "cloudflare", sandboxId: "mikan-remote" },
+      new FileVaultManager(stateDir),
+      undefined,
+      workspaceDir,
+      workspaceDir,
+    );
+
+    const executor = await resolver.resolve({
+      platform: "slack",
+      userId: "alice",
+      conversationId: "C123",
+    });
+
+    expect(executor.getSandboxConfig()).toEqual({
+      type: "cloudflare",
+      sandboxId: "mikan-remote-c123",
+    });
+  });
 });

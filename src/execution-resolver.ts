@@ -1,4 +1,3 @@
-import { existsSync } from "fs";
 import { join } from "path";
 import {
   conversationSettingsPath,
@@ -9,9 +8,11 @@ import { ensureDirExists, isRecord, readJsonFileIfExists } from "./utils/file-gu
 import { DockerContainerManager, type ContainerMount } from "./provisioner.js";
 import { createExecutor, type Executor, type SandboxConfig } from "./sandbox/index.js";
 import { reportUserFacingError } from "./observability/sentry.js";
-import { normalizeSharedVaultName, type ResolvedVault, type VaultManager } from "./vault/index.js";
+import { normalizeSharedVaultName, type VaultManager } from "./vault/index.js";
+import { resolveVaultInjection, type VaultInjection } from "./vault/injection.js";
 import { allowsAmbientDefaultSharedVault } from "./vault/policy.js";
-import { actorKey } from "./sandbox/identity.js";
+import { actorKey, scopeCloudflareSandboxId } from "./sandbox/identity.js";
+import type { ResolvedVaultMount } from "./vault/types.js";
 import * as log from "./log.js";
 
 export type { ActorContext, ImageWorkspaceMountMode } from "./types.js";
@@ -91,13 +92,19 @@ export class ActorExecutionResolver {
     this.ensureDefaultSharedVault(vaultKey, context.trustModel);
 
     const vault = this.vaultManager.resolve(vaultKey);
-    const config = this.resolveSandboxConfig(vaultKey, context.conversationId, vault);
-    const env =
-      config.type !== "host" && vault && Object.keys(vault.env).length > 0 ? vault.env : undefined;
+    // The vault decides what it contributes (env, validated credential
+    // mounts); this resolver only composes that with workspace layout and
+    // per-actor config shaping.
+    const injection = resolveVaultInjection({
+      vault,
+      sandboxType: this.baseConfig.type,
+      conversationId: context.conversationId,
+    });
+    const config = this.resolveSandboxConfig(vaultKey, context.conversationId, injection);
     return createExecutor(
       config,
-      env,
-      this.buildEnsureReadyCallback(vaultKey, context.conversationId, config, vault),
+      injection.env,
+      this.buildEnsureReadyCallback(vaultKey, context.conversationId, config, injection),
     );
   }
 
@@ -126,25 +133,25 @@ export class ActorExecutionResolver {
   private resolveSandboxConfig(
     vaultKey: string,
     conversationId: string,
-    vault?: ResolvedVault,
+    injection: VaultInjection,
   ): SandboxConfig {
-    const config = this.vaultManager.getSandboxConfig(vaultKey, this.baseConfig);
-    if (this.baseConfig.type === "gondolin" && config.type === "gondolin") {
-      const mounts = this.resolveMounts(conversationId, vault);
+    if (this.baseConfig.type === "cloudflare") {
       return {
-        ...config,
+        type: "cloudflare",
+        sandboxId: scopeCloudflareSandboxId(this.baseConfig.sandboxId, vaultKey),
+      };
+    }
+    if (this.baseConfig.type === "gondolin") {
+      return {
+        ...this.baseConfig,
         workspacePath: this.hostWorkspacePath,
-        mounts,
+        mounts: this.resolveMounts(conversationId, injection.mounts),
         instanceId: vaultKey,
         resourceKey: vaultKey,
       };
     }
     if (this.baseConfig.type !== "image") {
-      return config;
-    }
-
-    if (config.type === "container") {
-      return config;
+      return this.baseConfig;
     }
 
     return {
@@ -157,7 +164,7 @@ export class ActorExecutionResolver {
     vaultKey: string,
     conversationId: string,
     config: SandboxConfig,
-    vault?: ResolvedVault,
+    injection: VaultInjection,
   ): (() => Promise<void>) | undefined {
     if (this.baseConfig.type !== "image" || config.type !== "container") {
       return undefined;
@@ -169,7 +176,7 @@ export class ActorExecutionResolver {
       try {
         actual = await this.provisioner?.provision(vaultKey, {
           containerName: expected,
-          mounts: this.resolveMounts(conversationId, vault),
+          mounts: this.resolveMounts(conversationId, injection.mounts),
           conversationId,
         });
       } catch (err) {
@@ -184,7 +191,7 @@ export class ActorExecutionResolver {
             conversationId,
             vaultKey,
             expectedContainer: expected,
-            hasVault: Boolean(vault),
+            hasVault: Boolean(injection.env || injection.mounts.length > 0),
           },
         });
         throw err;
@@ -197,27 +204,16 @@ export class ActorExecutionResolver {
     };
   }
 
-  private resolveMounts(conversationId: string, vault?: ResolvedVault): ContainerMount[] {
+  /** Workspace layout overlaid by the vault's (already validated) credential mounts. */
+  private resolveMounts(
+    conversationId: string,
+    vaultMounts: ResolvedVaultMount[],
+  ): ContainerMount[] {
     const mountsByTarget = new Map<string, ContainerMount>();
     for (const mount of this.buildWorkspaceMounts(conversationId)) {
       mountsByTarget.set(mount.target, mount);
     }
-    for (const mount of vault?.mounts ?? []) {
-      if (!existsSync(mount.source)) {
-        reportUserFacingError(new Error("Vault mount source is missing"), {
-          domain: "sandbox",
-          surface: "vault_injection",
-          operation: "resolve_mounts",
-          severity: "warning",
-          context: {
-            sandboxType: this.baseConfig.type,
-            conversationId,
-            target: mount.target,
-            hasVault: Boolean(vault),
-          },
-        });
-        continue;
-      }
+    for (const mount of vaultMounts) {
       mountsByTarget.set(mount.target, { source: mount.source, target: mount.target });
     }
     return [...mountsByTarget.values()];

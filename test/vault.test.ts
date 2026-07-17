@@ -195,35 +195,6 @@ describe("FileVaultManager", () => {
     expect(readFileSync(credentialPath, "utf-8")).toBe("new");
     expect(mode(credentialPath) & 0o077).toBe(0);
   });
-
-  test("derives per-vault cloudflare sandbox ids", () => {
-    const mgr = new FileVaultManager(tmpDir);
-    expect(
-      mgr.getSandboxConfig("alice", { type: "cloudflare", sandboxId: "mikan-remote" }),
-    ).toEqual({
-      type: "cloudflare",
-      sandboxId: "mikan-remote-alice",
-    });
-  });
-
-  test("does not alter non-cloudflare base sandbox configs", () => {
-    const mgr = new FileVaultManager(tmpDir);
-    expect(mgr.getSandboxConfig("U123", { type: "image", image: "ubuntu:24.04" })).toEqual({
-      type: "image",
-      image: "ubuntu:24.04",
-    });
-    expect(
-      mgr.getSandboxConfig("U123", {
-        type: "firecracker",
-        vmId: "base-vm",
-        hostPath: "/host/workspace",
-      }),
-    ).toEqual({
-      type: "firecracker",
-      vmId: "base-vm",
-      hostPath: "/host/workspace",
-    });
-  });
 });
 
 describe("ActorExecutionResolver image mode", () => {

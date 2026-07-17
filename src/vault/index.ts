@@ -1,8 +1,6 @@
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "fs";
 import { dirname, isAbsolute, join, normalize, sep } from "path";
 import { readTextFileIfExists } from "../utils/file-guards.js";
-import type { SandboxConfig } from "../sandbox/index.js";
-import { scopeCloudflareSandboxId } from "../sandbox/identity.js";
 import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 
 const PRIVATE_DIR_MODE = 0o700;
@@ -121,16 +119,6 @@ export class FileVaultManager implements VaultManager {
     const dir = join(this.vaultsDir, userId);
     if (!existsSync(dir)) return undefined;
     return this.buildResolved(userId);
-  }
-
-  getSandboxConfig(userId: string, baseConfig: SandboxConfig): SandboxConfig {
-    if (baseConfig.type === "cloudflare") {
-      return {
-        type: "cloudflare",
-        sandboxId: scopeCloudflareSandboxId(baseConfig.sandboxId, userId),
-      };
-    }
-    return baseConfig;
   }
 
   list(): ResolvedVault[] {

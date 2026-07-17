@@ -64,7 +64,6 @@ function fakeVaultManager(): VaultManager & { entries: Set<string> } {
     entries,
     hasEntry: (key) => entries.has(key),
     resolve: () => undefined,
-    getSandboxConfig: (_uid, base) => base,
     list: () => [],
     isEnabled: () => true,
     upsertEnv: (key) => {
@@ -509,7 +508,6 @@ describe("LoginCommandHandler", () => {
           entries,
           hasEntry: (key: string) => entries.has(key),
           resolve: () => undefined,
-          getSandboxConfig: (_uid: string, base: SandboxConfig) => base,
           list: () => [],
           isEnabled: () => true,
           upsertEnv: (key: string) => {

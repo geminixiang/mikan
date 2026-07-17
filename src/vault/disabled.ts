@@ -1,4 +1,3 @@
-import type { SandboxConfig } from "../sandbox/index.js";
 import type { VaultManager } from "./types.js";
 
 /**
@@ -11,7 +10,6 @@ export const disabledVaultManager: VaultManager = {
   isEnabled: () => false,
   hasEntry: () => false,
   resolve: () => undefined,
-  getSandboxConfig: (_userId: string, baseConfig: SandboxConfig) => baseConfig,
   list: () => [],
   listSharedVaults: () => [],
   deleteSharedVault: () => false,
