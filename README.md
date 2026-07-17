@@ -62,7 +62,11 @@ npm i -g @geminixiang/mikan pm2
 # One-time setup: create the state directory and settings
 mikan --onboard --state-dir=~/.mikan
 
-# Grab the maintained ecosystem file, then edit `args` and `env`
+# Secrets live in ~/.mikan/mikan.env (0600), outside any repo tree
+curl -o ~/.mikan/mikan.env https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/mikan.env.example
+chmod 600 ~/.mikan/mikan.env   # then fill in your tokens
+
+# Grab the maintained ecosystem file (supervision only), edit `args`
 curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
 
 pm2 start ecosystem.config.cjs
@@ -70,21 +74,19 @@ pm2 save
 pm2 startup   # run the printed command to enable boot autostart
 ```
 
-In `ecosystem.config.cjs`, point `args` at your state dir, sandbox mode, and working directory:
+Each file has one job: `settings.json` holds behavior (model, sandbox limits, reply modes — the Admin surface), `~/.mikan/mikan.env` holds secrets and platform tokens, and `ecosystem.config.cjs` holds process supervision only. In `ecosystem.config.cjs`, point `args` at your state dir, sandbox mode, and working directory (`mikan --help` documents the flags):
 
 ```js
 args: "--state-dir=/srv/mikan/state --sandbox=host /srv/mikan/workspace",
 ```
 
-Then set the platform tokens you need in `env`; you can run multiple platforms at once:
+Set the platform tokens you need in `~/.mikan/mikan.env`; you can run multiple platforms at once. `mikan env` prints the full inventory and what is currently set:
 
-```js
-env: {
-  SLACK_APP_TOKEN: "xapp-...",
-  SLACK_BOT_TOKEN: "xoxb-...",
-  TELEGRAM_BOT_TOKEN: "123456:ABC-...",
-  DISCORD_BOT_TOKEN: "MTI...",
-},
+```bash
+SLACK_APP_TOKEN=xapp-...
+SLACK_BOT_TOKEN=xoxb-...
+TELEGRAM_BOT_TOKEN=123456:ABC-...
+DISCORD_BOT_TOKEN=MTI...
 ```
 
 Tail logs with `pm2 logs mikan`; upgrade with `npm i -g @geminixiang/mikan && pm2 reload mikan`. See [the deployment guide](src/content/docs/deployment.mdx) for sandbox images, graceful shutdown, and the health endpoint.

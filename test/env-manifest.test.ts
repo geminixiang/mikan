@@ -66,14 +66,24 @@ describe("derived surfaces", () => {
     expect(report).not.toContain("xapp-super-secret");
   });
 
-  test("the pm2 deploy template covers every deploy-facing var", () => {
+  test("the deploy env-file example covers every deploy-facing var", () => {
+    const example = readFileSync(
+      join(process.cwd(), "deploy", "pm2", "mikan.env.example"),
+      "utf-8",
+    );
+    const missing = manifestVarNames({ deployOnly: true }).filter(
+      (name) => !example.includes(`${name}=`) && !example.includes(`MIKAN_${name}=`),
+    );
+    expect(missing).toEqual([]);
+  });
+
+  test("the pm2 template holds no inline secrets, only the env-file loader", () => {
     const template = readFileSync(
       join(process.cwd(), "deploy", "pm2", "ecosystem.config.cjs"),
       "utf-8",
     );
-    const missing = manifestVarNames({ deployOnly: true }).filter(
-      (name) => !template.includes(name) && !template.includes(`MIKAN_${name}`),
-    );
-    expect(missing).toEqual([]);
+    expect(template).toContain("mikan.env");
+    // No env block enumerating tokens inline — that's the env file's job.
+    expect(template).not.toMatch(/SLACK_APP_TOKEN|ANTHROPIC_API_KEY/);
   });
 });

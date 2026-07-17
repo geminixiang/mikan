@@ -1,45 +1,81 @@
-// PM2 ecosystem file for mikan.
+// PM2 ecosystem file for mikan — process supervision only.
+//
+// Configuration lives elsewhere, on purpose:
+//   - behavior (model, sandbox limits, reply modes): <state-dir>/settings.json
+//     (create with `mikan --onboard`, edit via the Admin portal or the file)
+//   - secrets and platform tokens: ~/.mikan/mikan.env (0600, outside any
+//     repo tree) — this file loads it below. Start from the annotated
+//     example: deploy/pm2/mikan.env.example. Run `mikan env` to see the
+//     full inventory and what is currently set.
+//   - CLI flags (`args` below): run `mikan --help` for the reference.
 //
 // Quick start:
 //
 //   # 1. Install mikan + pm2
 //   npm i -g @geminixiang/mikan pm2
 //
-//   # 2. Pull and start the sandbox container (long-lived, mikan execs into it)
-//   docker pull ghcr.io/geminixiang/mikan-sandbox:latest
-//   docker run -d --name rd-sandbox --restart unless-stopped \
-//     ghcr.io/geminixiang/mikan-sandbox:latest
+//   # 2. One-time setup: settings + secrets
+//   mikan --onboard
+//   curl -o ~/.mikan/mikan.env https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/mikan.env.example
+//   chmod 600 ~/.mikan/mikan.env   # then fill in your tokens
 //
-//   # 3. Grab this ecosystem file, edit `args` + `env`, then start
+//   # 3. (image sandbox) pull the sandbox image
+//   docker pull ghcr.io/geminixiang/mikan-sandbox:latest
+//
+//   # 4. Grab this file, edit `args`, then start
 //   curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
 //   pm2 start ecosystem.config.cjs
 //   pm2 save
 //   pm2 startup    # run the printed command to enable boot autostart
 //
-// Reload after upgrading mikan:
+// Reload after upgrading mikan (or after editing mikan.env):
 //   npm i -g @geminixiang/mikan && pm2 reload mikan
 //
 // Logs:
 //   pm2 logs mikan         # tail combined logs
-//   pm2 logs mikan --lines 200
-//
-// Args reference (see `mikan --help` equivalent in src/main.ts):
-//   <working-directory>           required positional, the git repo mikan operates on
-//   --state-dir=<dir>             defaults to ~/.mikan (where settings.json + vaults live)
-//   --sandbox=<spec>              one of:
-//                                   container:<existing-container-name>   (recommended)
-//                                   image:<image-name>                    (mikan-managed per-user)
-//                                   host
-//                                   firecracker:<vm-id>:<host-path>
-//                                   cloudflare:<sandbox-id>
 //
 // Notes:
 // - kill_timeout is 60s to give mikan's internal graceful shutdown
 //   (handler.shutdown defaults to 30s) room to drain in-flight LLM
 //   turns before pm2 sends SIGKILL.
-// - The sandbox container should be started with `--restart unless-stopped`
-//   so it comes back on reboot before mikan (which pm2 startup also brings
-//   up) tries to exec into it. Docker's daemon starts before pm2's unit.
+// - A `container:` sandbox should be started with `--restart unless-stopped`
+//   so it comes back on reboot before mikan tries to exec into it.
+
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+/**
+ * Minimal KEY=value env-file loader (no dotenv dependency): blank lines and
+ * `#` comments skipped, surrounding single/double quotes stripped. Returning
+ * {} when the file is missing lets `pm2 start` fail later with mikan's own
+ * "no platform tokens" message, which names the vars to set.
+ */
+function loadEnvFile(file) {
+  let text;
+  try {
+    text = fs.readFileSync(file, "utf-8");
+  } catch {
+    return {};
+  }
+  const env = {};
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq <= 0) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    env[key] = value;
+  }
+  return env;
+}
 
 module.exports = {
   apps: [
@@ -47,48 +83,11 @@ module.exports = {
       name: "mikan",
       script: "mikan",
 
-      // EDIT ME: working dir + sandbox to match your setup.
+      // EDIT ME: sandbox mode + working directory (see `mikan --help`).
       args: "--sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest ./workspace",
 
-      // EDIT ME: uncomment what you need. Prefer loading secrets from
-      // a sourced env file or pm2's --env-file rather than committing
-      // them here.
-      env: {
-        SLACK_APP_TOKEN: "",
-        SLACK_BOT_TOKEN: "",
-        TELEGRAM_BOT_TOKEN: "",
-        DISCORD_BOT_TOKEN: "",
-
-        // GitHub adapter (issue/PR conversations): create a GitHub App
-        // (Issues + Pull requests read/write, webhook off), install it,
-        // then point the key path at the downloaded .pem — keep the key
-        // outside any repo. GITHUB_REPOS defaults to every installed repo;
-        // GITHUB_POLL_INTERVAL is in seconds (default 60).
-        GITHUB_APP_ID: "",
-        GITHUB_APP_PRIVATE_KEY_PATH: "",
-        GITHUB_INSTALLATION_ID: "",
-        GITHUB_REPOS: "",
-        GITHUB_POLL_INTERVAL: "",
-        // Host-side GCP credentials (e.g. a WIF external_account file)
-        // unlock Cloud Build logs in github_checks.
-        GOOGLE_APPLICATION_CREDENTIALS: "",
-        GOOGLE_CLOUD_PROJECT: "",
-
-        ANTHROPIC_API_KEY: "",
-        OPENAI_API_KEY: "",
-        MIKAN_LINK_URL: "",
-        MIKAN_LINK_PORT: "",
-        // OAuth app for /login credential linking — unrelated to the
-        // GitHub adapter's App credentials above.
-        GITHUB_OAUTH_CLIENT_ID: "",
-        GITHUB_OAUTH_CLIENT_SECRET: "",
-        GOOGLE_WORKSPACE_CLI_CLIENT_ID: "",
-        GOOGLE_WORKSPACE_CLI_CLIENT_SECRET: "",
-        MIKAN_CLOUDFLARE_SANDBOX_URL: "",
-        MIKAN_CLOUDFLARE_SANDBOX_TOKEN: "",
-        // Settings.json sentry.dsn wins over this env fallback.
-        SENTRY_DSN: "",
-      },
+      // Secrets and tokens come from the env file, never from this file.
+      env: loadEnvFile(path.join(os.homedir(), ".mikan", "mikan.env")),
 
       // Graceful shutdown: SIGTERM, then wait up to 60s before SIGKILL.
       kill_timeout: 60000,

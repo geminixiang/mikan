@@ -111,6 +111,12 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
         secret: true,
         doc: "Google Workspace OAuth secret",
       },
+      { name: "GOOGLE_CLOUD_SDK_CLIENT_ID", doc: "Google Cloud SDK OAuth client for /login" },
+      {
+        name: "GOOGLE_CLOUD_SDK_CLIENT_SECRET",
+        secret: true,
+        doc: "Google Cloud SDK OAuth secret",
+      },
     ],
   },
   {
