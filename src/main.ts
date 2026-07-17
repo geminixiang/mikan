@@ -224,7 +224,7 @@ function handleStartupError(error: unknown): never {
 }
 
 // `mikan ext …` manages extensions and exits; handle it before the normal
-// bot-mode argument parsing (which requires a workspace dir and tokens).
+// bot-mode argument parsing (which requires platform tokens).
 if (process.argv[2] === "ext") {
   const code = await runExtCommand(process.argv.slice(3));
   process.exit(code);
@@ -290,7 +290,9 @@ if (parsedArgs.showOnboard) {
   try {
     const settingsPath = createGlobalSettingsFile(stateDir);
     console.log(`Created global settings at ${settingsPath}`);
-    console.log("Review the file, then start mikan with your working directory.");
+    console.log(
+      `Review the file, then start mikan (workspace defaults to ${join(stateDir, "workspace")}).`,
+    );
     process.exit(0);
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));
@@ -308,20 +310,15 @@ if (parsedArgs.downloadChannel) {
   process.exit(0);
 }
 
-// Normal bot mode - require working dir
-if (!parsedArgs.workingDir) {
-  console.error(
-    "Usage: mikan [--state-dir=<dir>] [--sandbox=host|container:<name>|image:<image>|firecracker:<vm-id>:<host-path>|cloudflare:<sandbox-id>] <working-directory>",
-  );
-  console.error("       mikan --onboard [--state-dir=<dir>]");
-  console.error("       mikan --download <channel-id>");
-  process.exit(1);
-}
-
-const { workingDir, sandbox } = { workingDir: parsedArgs.workingDir, sandbox: parsedArgs.sandbox };
+// Normal bot mode - working dir is optional and defaults under the state dir
+const sandbox = parsedArgs.sandbox;
 const stateDir = parsedArgs.stateDir ?? join(homedir(), ".mikan");
+const workingDir = parsedArgs.workingDir ?? join(stateDir, "workspace");
 setEnvAliases("STATE_DIR", stateDir);
 ensureSecureStateDir(stateDir);
+if (!parsedArgs.workingDir) {
+  ensureDirExists(workingDir);
+}
 try {
   assertStateDirOutsideWorkspace(stateDir, workingDir, sandbox.type);
 } catch (error) {

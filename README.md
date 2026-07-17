@@ -89,8 +89,10 @@ Tail logs with `pm2 logs mikan`; upgrade with `npm i -g @geminixiang/mikan && pm
 For a one-off foreground run, the same CLI works directly:
 
 ```bash
-mikan [--state-dir=~/.mikan] [--sandbox=<mode>] <working-directory>
+mikan [--state-dir=~/.mikan] [--sandbox=<mode>] [<working-directory>]
 ```
+
+The working directory is optional: it defaults to `<state-dir>/workspace` (so `~/.mikan/workspace` with the default state dir) and is created on first run.
 
 ## Platforms
 
