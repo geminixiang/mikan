@@ -55,14 +55,7 @@ export interface GondolinRuntimeTransport {
   isRuntimeAlive(handle: GondolinRuntimeHandle): Promise<boolean>;
 }
 
-/**
- * The runtime is gone and the command never reached it (the session socket
- * refused the connection) — safe to recreate the runtime and retry.
- */
-export class GondolinRuntimeGoneError extends Error {}
-
-/** The runtime died with the command in flight — not safe to retry blindly. */
-export class GondolinRuntimeInterruptedError extends Error {}
+import { GondolinRuntimeGoneError, GondolinRuntimeInterruptedError } from "./gondolin-recovery.js";
 
 interface WorkerProcessLike {
   pid?: number;

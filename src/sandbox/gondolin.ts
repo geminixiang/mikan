@@ -4,9 +4,8 @@ import * as log from "../log.js";
 import type { ResourceLimits, SandboxLimitStatus, SandboxResourceController } from "../types.js";
 import { SandboxError } from "./errors.js";
 import { gondolinInventory } from "./gondolin-inventory.js";
+import { isRuntimeGone, isRuntimeInterrupted } from "./gondolin-recovery.js";
 import {
-  GondolinRuntimeGoneError,
-  GondolinRuntimeInterruptedError,
   gondolinWorkers,
   type GondolinRuntimeHandle,
   type GondolinRuntimeTransport,
@@ -360,8 +359,8 @@ async function withRuntime<T>(
       handle = await session.runtime;
       return await operation(handle);
     } catch (error) {
-      const gone = error instanceof GondolinRuntimeGoneError;
-      const interrupted = error instanceof GondolinRuntimeInterruptedError;
+      const gone = isRuntimeGone(error);
+      const interrupted = isRuntimeInterrupted(error);
       if (gone || (interrupted && handle && !(await session.transport.isRuntimeAlive(handle)))) {
         discardDeadSession(key, session);
       }

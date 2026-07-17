@@ -7,11 +7,11 @@ import {
   GondolinWorkerUnreachableError,
   type GondolinRemoteOverrides,
 } from "./gondolin-remote.js";
-import {
-  GondolinRuntimeGoneError,
-  type GondolinRuntimeHandle,
-  type GondolinRuntimeSpec,
-  type GondolinRuntimeTransport,
+import { GondolinRuntimeGoneError } from "./gondolin-recovery.js";
+import type {
+  GondolinRuntimeHandle,
+  GondolinRuntimeSpec,
+  GondolinRuntimeTransport,
 } from "./gondolin-worker-client.js";
 import type { ExecResult } from "./types.js";
 

@@ -11,8 +11,8 @@ import {
   type GondolinEnsureRuntimeRequest,
   type GondolinRemoteRuntime,
 } from "./gondolin-contract.js";
+import { GondolinRuntimeGoneError, isLeaseFencedStatus } from "./gondolin-recovery.js";
 import {
-  GondolinRuntimeGoneError,
   execOverSessionConnect,
   type GondolinRuntimeHandle,
   type GondolinRuntimeSpec,
@@ -128,7 +128,7 @@ export class GondolinRemoteConnection {
           fingerprint: spec.fingerprint,
         };
       }
-      if ((response.status === 409 || response.status === 410) && attempt === 0) {
+      if (isLeaseFencedStatus(response.status) && attempt === 0) {
         this.dropLease(instanceId);
         continue;
       }
@@ -148,7 +148,7 @@ export class GondolinRemoteConnection {
       undefined,
       this.leaseHeaders(lease),
     );
-    if (response.status === 409 || response.status === 410) {
+    if (isLeaseFencedStatus(response.status)) {
       this.dropLease(handle.instanceId);
     }
     this.releaseLease(handle.instanceId);
@@ -399,7 +399,7 @@ export class GondolinRemoteConnection {
         });
       });
       request.on("response", (response) => {
-        if (response.statusCode === 409 || response.statusCode === 410) {
+        if (isLeaseFencedStatus(response.statusCode)) {
           this.dropLease(instanceId);
         }
         const error = new Error(
