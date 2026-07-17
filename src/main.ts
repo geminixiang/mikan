@@ -2,9 +2,8 @@
 
 import "./observability/instrument.js";
 
-import { join, resolve } from "path";
+import { join } from "path";
 import { mkdirSync, statSync, writeFileSync } from "fs";
-import { homedir } from "os";
 import { fileURLToPath } from "url";
 import { dirname, join as pathJoin } from "path";
 import type {
@@ -44,12 +43,8 @@ import {
 import { existsSync, readFileSync } from "fs";
 import { readEnv, setEnvAliases } from "./utils/env.js";
 import { ensureDirExists, isRecord, readJsonFileIfExists } from "./utils/file-guards.js";
-import {
-  SandboxError,
-  parseSandboxArg,
-  type SandboxConfig,
-  validateSandbox,
-} from "./sandbox/index.js";
+import { SandboxError, validateSandbox } from "./sandbox/index.js";
+import { helpText, resolveBoot, type BootPlan } from "./cli/boot.js";
 import {
   disconnectAllGondolinRuntimes,
   gondolinResources,
@@ -102,62 +97,6 @@ const GOOGLE_CLOUD_PROJECT = readEnv("GOOGLE_CLOUD_PROJECT");
 const LINK_URL = readEnv("LINK_URL");
 const LINK_PORT_RAW = readEnv("LINK_PORT");
 const LINK_PORT = LINK_PORT_RAW ? parseInt(LINK_PORT_RAW, 10) : LINK_URL ? 8181 : undefined;
-
-interface ParsedArgs {
-  workingDir?: string;
-  stateDir?: string;
-  sandbox: SandboxConfig;
-  downloadChannel?: string;
-  showOnboard?: boolean;
-  showVersion?: boolean;
-  mintWorkerToken?: boolean;
-}
-
-function parseArgs(): ParsedArgs {
-  const args = process.argv.slice(2);
-  let sandbox: SandboxConfig = { type: "host" };
-  let workingDir: string | undefined;
-  let stateDirArg: string | undefined;
-  let downloadChannelId: string | undefined;
-  let showOnboard = false;
-  let showVersion = false;
-  let mintWorkerToken = false;
-
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === "--version" || arg === "-v" || arg === "-V") {
-      showVersion = true;
-    } else if (arg === "--onboard") {
-      showOnboard = true;
-    } else if (arg === "--worker-token") {
-      mintWorkerToken = true;
-    } else if (arg.startsWith("--sandbox=")) {
-      sandbox = parseSandboxArg(arg.slice("--sandbox=".length));
-    } else if (arg === "--sandbox") {
-      sandbox = parseSandboxArg(args[++i] || "");
-    } else if (arg.startsWith("--state-dir=")) {
-      stateDirArg = arg.slice("--state-dir=".length);
-    } else if (arg === "--state-dir") {
-      stateDirArg = args[++i];
-    } else if (arg.startsWith("--download=")) {
-      downloadChannelId = arg.slice("--download=".length);
-    } else if (arg === "--download") {
-      downloadChannelId = args[++i];
-    } else if (!arg.startsWith("-")) {
-      workingDir = arg;
-    }
-  }
-
-  return {
-    workingDir: workingDir ? resolve(workingDir) : undefined,
-    stateDir: stateDirArg ? resolve(stateDirArg) : undefined,
-    sandbox,
-    downloadChannel: downloadChannelId,
-    showOnboard,
-    showVersion,
-    mintWorkerToken,
-  };
-}
 
 const WORLD_WRITABLE_MODE = 0o002;
 
@@ -223,18 +162,18 @@ function handleStartupError(error: unknown): never {
   process.exit(1);
 }
 
-// `mikan ext …` manages extensions and exits; handle it before the normal
-// bot-mode argument parsing (which requires platform tokens).
-if (process.argv[2] === "ext") {
-  const code = await runExtCommand(process.argv.slice(3));
-  process.exit(code);
-}
-
-let parsedArgs: ParsedArgs;
+let plan: BootPlan;
 try {
-  parsedArgs = parseArgs();
+  plan = resolveBoot();
 } catch (error) {
   handleStartupError(error);
+}
+
+// `mikan ext …` manages extensions and exits; handle it before the normal
+// bot-mode startup (which requires platform tokens).
+if (plan.mode === "ext") {
+  const code = await runExtCommand(plan.extArgs ?? []);
+  process.exit(code);
 }
 
 // Global fetch: proxy support (HTTP_PROXY/HTTPS_PROXY/NO_PROXY) and idle
@@ -242,15 +181,19 @@ try {
 const httpIdleTimeoutMs = parseHttpIdleTimeoutMs(readEnv("HTTP_IDLE_TIMEOUT"));
 configureHttpDispatcher(httpIdleTimeoutMs);
 
-// Handle --version
-if (parsedArgs.showVersion) {
+if (plan.mode === "help") {
+  console.log(helpText());
+  process.exit(0);
+}
+
+if (plan.mode === "version") {
   console.log(getVersion());
   process.exit(0);
 }
 
 // Handle --worker-token: mint a one-time join token for a dial-home worker
-if (parsedArgs.mintWorkerToken) {
-  const stateDir = parsedArgs.stateDir ?? join(homedir(), ".mikan");
+if (plan.mode === "worker-token") {
+  const stateDir = plan.stateDir;
   setEnvAliases("STATE_DIR", stateDir);
   ensureSecureStateDir(stateDir);
   gondolinJoin.configure(join(stateDir, "gondolin-gateway"));
@@ -283,8 +226,8 @@ if (parsedArgs.mintWorkerToken) {
 }
 
 // Handle --onboard mode
-if (parsedArgs.showOnboard) {
-  const stateDir = parsedArgs.stateDir ?? join(homedir(), ".mikan");
+if (plan.mode === "onboard") {
+  const stateDir = plan.stateDir;
   setEnvAliases("STATE_DIR", stateDir);
   ensureSecureStateDir(stateDir);
   try {
@@ -301,22 +244,22 @@ if (parsedArgs.showOnboard) {
 }
 
 // Handle --download mode (Slack only)
-if (parsedArgs.downloadChannel) {
+if (plan.mode === "download" && plan.downloadChannel) {
   if (!SLACK_BOT_TOKEN) {
     console.error("Missing env: SLACK_BOT_TOKEN");
     process.exit(1);
   }
-  await downloadChannel(parsedArgs.downloadChannel, SLACK_BOT_TOKEN);
+  await downloadChannel(plan.downloadChannel, SLACK_BOT_TOKEN);
   process.exit(0);
 }
 
 // Normal bot mode - working dir is optional and defaults under the state dir
-const sandbox = parsedArgs.sandbox;
-const stateDir = parsedArgs.stateDir ?? join(homedir(), ".mikan");
-const workingDir = parsedArgs.workingDir ?? join(stateDir, "workspace");
+const sandbox = plan.sandbox;
+const stateDir = plan.stateDir;
+const workingDir = plan.workingDir;
 setEnvAliases("STATE_DIR", stateDir);
 ensureSecureStateDir(stateDir);
-if (!parsedArgs.workingDir) {
+if (!plan.workingDirExplicit) {
   ensureDirExists(workingDir);
 }
 try {

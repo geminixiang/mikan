@@ -411,49 +411,6 @@ export function saveConversationAutoReplyConfig(
   atomicWritePrivateFile(targetPath, config.rules.join("\n"));
 }
 
-export function resolveWorkspaceDirFromArgv(args = process.argv.slice(2)): string | undefined {
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-
-    if (arg === "--sandbox" || arg === "--download" || arg === "--state-dir") {
-      i += 1;
-      continue;
-    }
-
-    if (arg === "--version" || arg === "-v" || arg === "-V" || arg === "--onboard") {
-      continue;
-    }
-
-    if (
-      arg.startsWith("--sandbox=") ||
-      arg.startsWith("--download=") ||
-      arg.startsWith("--state-dir=")
-    ) {
-      continue;
-    }
-
-    if (!arg.startsWith("-")) {
-      return arg;
-    }
-  }
-
-  return undefined;
-}
-
-export function resolveStateDirFromArgv(args = process.argv.slice(2)): string {
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg.startsWith("--state-dir=")) {
-      return resolve(arg.slice("--state-dir=".length));
-    }
-    if (arg === "--state-dir") {
-      return resolve(args[++i] || "");
-    }
-  }
-
-  return join(homedir(), ".mikan");
-}
-
 /**
  * True when `child` is `parent` or a path inside it. Purely lexical (no
  * symlink resolution) — used for configuration sanity checks, not as the

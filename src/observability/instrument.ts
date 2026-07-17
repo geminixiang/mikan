@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/node";
-import { resolveSentryDsn, resolveStateDirFromArgv } from "../config.js";
+import { resolveStateDirFromArgv } from "../cli/arg-grammar.js";
+import { resolveSentryDsn } from "../config.js";
 import { setEnvAliases } from "../utils/env.js";
 import { createSentryInitOptions } from "./sentry.js";
 

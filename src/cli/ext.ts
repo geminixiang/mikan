@@ -12,13 +12,13 @@
  * host-only state dir (never the workspace); see src/harness/extensions/LAYOUT.md.
  */
 import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
-import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import {
   defaultExtensionDirs,
   listInstalledExtensions,
   validateExtension,
 } from "../harness/index.js";
+import { defaultStateDir, takeValueFlag } from "./arg-grammar.js";
 import { parseGitSource, resolveGitSource } from "./ext-git.js";
 
 interface ExtArgs {
@@ -30,23 +30,23 @@ interface ExtArgs {
 }
 
 function parseExtArgs(argv: string[]): ExtArgs {
-  let stateDir = join(homedir(), ".mikan");
+  let stateDir = defaultStateDir();
   let scope: ExtArgs["scope"];
   let conversationId: string | undefined;
   const positional: string[] = [];
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+    let taken;
     if (arg === "--global") scope = "global";
-    else if (arg === "--conversation") {
+    else if ((taken = takeValueFlag(argv, i, "--conversation"))) {
       scope = "conversation";
-      conversationId = argv[++i];
-    } else if (arg.startsWith("--conversation=")) {
-      scope = "conversation";
-      conversationId = arg.slice("--conversation=".length);
-    } else if (arg === "--state-dir") stateDir = resolve(argv[++i] ?? "");
-    else if (arg.startsWith("--state-dir=")) stateDir = resolve(arg.slice("--state-dir=".length));
-    else positional.push(arg);
+      conversationId = taken.value || undefined;
+      i = taken.lastIndex;
+    } else if ((taken = takeValueFlag(argv, i, "--state-dir"))) {
+      stateDir = resolve(taken.value);
+      i = taken.lastIndex;
+    } else positional.push(arg);
   }
 
   return { action: positional[0], target: positional[1], stateDir, scope, conversationId };

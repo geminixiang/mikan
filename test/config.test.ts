@@ -10,8 +10,6 @@ import {
   loadGlobalSettings,
   resolveConversationSettings,
   resolveSentryDsn,
-  resolveStateDirFromArgv,
-  resolveWorkspaceDirFromArgv,
   updateConversationSettings,
   updateGlobalSettings,
 } from "../src/config.js";
@@ -296,25 +294,6 @@ describe("state dir placement guard", () => {
   test("host mode only warns; disjoint paths always pass", () => {
     expect(() => assertStateDirOutsideWorkspace("/work/.mikan", "/work", "host")).not.toThrow();
     expect(() => assertStateDirOutsideWorkspace("/home/u/.mikan", "/work", "image")).not.toThrow();
-  });
-});
-
-describe("argv config resolution", () => {
-  test("returns the positional workspace dir", () => {
-    expect(resolveWorkspaceDirFromArgv(["--sandbox=host", "/tmp/mikan"])).toBe("/tmp/mikan");
-  });
-
-  test("skips flag values before resolving workspace dir", () => {
-    expect(resolveWorkspaceDirFromArgv(["--sandbox", "host", "/tmp/mikan"])).toBe("/tmp/mikan");
-  });
-
-  test("ignores download mode channel ids", () => {
-    expect(resolveWorkspaceDirFromArgv(["--download", "C123"])).toBeUndefined();
-  });
-
-  test("resolves explicit state-dir from argv", () => {
-    expect(resolveStateDirFromArgv(["--state-dir", "/tmp/state", "/tmp/mikan"])).toBe("/tmp/state");
-    expect(resolveStateDirFromArgv(["--state-dir=/tmp/state", "/tmp/mikan"])).toBe("/tmp/state");
   });
 });
 
