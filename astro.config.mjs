@@ -69,6 +69,24 @@ export default defineConfig({
               link: "/architecture/",
             },
             {
+              label: "Core Interfaces",
+              translations: {
+                "zh-TW": "核心介面",
+                "zh-CN": "核心接口",
+                ja: "コアインターフェース",
+              },
+              link: "/core-interfaces/",
+            },
+            {
+              label: "Core Simplification",
+              translations: {
+                "zh-TW": "核心簡化",
+                "zh-CN": "核心简化",
+                ja: "コア簡素化",
+              },
+              link: "/core-simplification/",
+            },
+            {
               label: "Platform Adapters",
               translations: {
                 "zh-TW": "平台接入層",
