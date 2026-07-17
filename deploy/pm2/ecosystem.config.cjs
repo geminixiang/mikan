@@ -69,6 +69,10 @@ module.exports = {
         GITHUB_INSTALLATION_ID: "",
         GITHUB_REPOS: "",
         GITHUB_POLL_INTERVAL: "",
+        // Host-side GCP credentials (e.g. a WIF external_account file)
+        // unlock Cloud Build logs in github_checks.
+        GOOGLE_APPLICATION_CREDENTIALS: "",
+        GOOGLE_CLOUD_PROJECT: "",
 
         ANTHROPIC_API_KEY: "",
         OPENAI_API_KEY: "",
@@ -82,6 +86,8 @@ module.exports = {
         GOOGLE_WORKSPACE_CLI_CLIENT_SECRET: "",
         MIKAN_CLOUDFLARE_SANDBOX_URL: "",
         MIKAN_CLOUDFLARE_SANDBOX_TOKEN: "",
+        // Settings.json sentry.dsn wins over this env fallback.
+        SENTRY_DSN: "",
       },
 
       // Graceful shutdown: SIGTERM, then wait up to 60s before SIGKILL.

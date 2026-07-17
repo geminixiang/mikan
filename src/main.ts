@@ -46,6 +46,7 @@ import { readEnv, setEnvAliases } from "./utils/env.js";
 import { ensureDirExists, isRecord, readJsonFileIfExists } from "./utils/file-guards.js";
 import { SandboxError, validateSandbox } from "./sandbox/index.js";
 import { helpText, resolveBoot, type BootPlan } from "./cli/boot.js";
+import { envReport, noPlatformsMessage, platformIsActive } from "./env-manifest.js";
 import {
   disconnectAllGondolinRuntimes,
   gondolinResources,
@@ -189,6 +190,11 @@ if (plan.mode === "help") {
   process.exit(0);
 }
 
+if (plan.mode === "env") {
+  console.log(envReport());
+  process.exit(0);
+}
+
 if (plan.mode === "version") {
   console.log(getVersion());
   process.exit(0);
@@ -271,24 +277,14 @@ try {
   handleStartupError(error);
 }
 
-// Validate platform tokens
-const hasSlack = !!(SLACK_APP_TOKEN && SLACK_BOT_TOKEN);
-const hasTelegram = !!TELEGRAM_BOT_TOKEN;
-const hasDiscord = !!DISCORD_BOT_TOKEN;
-const hasGithub = !!(
-  GITHUB_APP_ID &&
-  GITHUB_INSTALLATION_ID &&
-  (GITHUB_APP_PRIVATE_KEY || GITHUB_APP_PRIVATE_KEY_PATH)
-);
+// Validate platform tokens — activation rules live in the env manifest.
+const hasSlack = platformIsActive("slack");
+const hasTelegram = platformIsActive("telegram");
+const hasDiscord = platformIsActive("discord");
+const hasGithub = platformIsActive("github");
 
 if (!hasSlack && !hasTelegram && !hasDiscord && !hasGithub) {
-  console.error(
-    "No platform tokens found. Set one of:\n" +
-      "  Slack:    SLACK_APP_TOKEN + SLACK_BOT_TOKEN\n" +
-      "  Telegram: TELEGRAM_BOT_TOKEN\n" +
-      "  Discord:  DISCORD_BOT_TOKEN\n" +
-      "  GitHub:   GITHUB_APP_ID + GITHUB_INSTALLATION_ID + GITHUB_APP_PRIVATE_KEY(_PATH)",
-  );
+  console.error(noPlatformsMessage());
   process.exit(1);
 }
 

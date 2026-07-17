@@ -8,11 +8,12 @@
  * `help`, `version`, `worker-token`, `onboard`, `download`, `run`.
  */
 import { join, resolve } from "path";
+import { envSummaryLines } from "../env-manifest.js";
 import { parseSandboxArg, type SandboxConfig } from "../sandbox/index.js";
 import { defaultStateDir, resolveStateDir, takeValueFlag } from "./arg-grammar.js";
 
 export interface BootPlan {
-  mode: "ext" | "help" | "version" | "worker-token" | "onboard" | "download" | "run";
+  mode: "ext" | "env" | "help" | "version" | "worker-token" | "onboard" | "download" | "run";
   /** argv after `ext`, handed to runExtCommand. Only set for mode "ext". */
   extArgs?: string[];
   stateDir: string;
@@ -25,10 +26,10 @@ export interface BootPlan {
 }
 
 export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
-  if (args[0] === "ext") {
+  if (args[0] === "ext" || args[0] === "env") {
     return {
-      mode: "ext",
-      extArgs: args.slice(1),
+      mode: args[0],
+      ...(args[0] === "ext" ? { extArgs: args.slice(1) } : {}),
       stateDir: defaultStateDir(),
       workingDir: join(defaultStateDir(), "workspace"),
       workingDirExplicit: false,
@@ -101,6 +102,8 @@ Usage:
       Start the daemon. The working directory defaults to <state-dir>/workspace.
   mikan ext <install|validate|list|remove> …
       Manage extensions (run \`mikan ext\` for details).
+  mikan env
+      Show the full environment-variable inventory and what is currently set.
 
 Options:
   --state-dir <dir>      State directory (settings.json, vaults, extensions).
@@ -120,8 +123,6 @@ Options:
   --help, -h             Show this help.
 
 Environment (platform tokens select which chat adapters start):
-  Slack:    SLACK_APP_TOKEN + SLACK_BOT_TOKEN
-  Telegram: TELEGRAM_BOT_TOKEN
-  Discord:  DISCORD_BOT_TOKEN
-  GitHub:   GITHUB_APP_ID + GITHUB_INSTALLATION_ID + GITHUB_APP_PRIVATE_KEY(_PATH)`;
+${envSummaryLines().join("\n")}
+Run \`mikan env\` for the full inventory.`;
 }

@@ -85,6 +85,10 @@ describe("resolveBoot", () => {
     expect(plan.mode).toBe("ext");
     expect(plan.extArgs).toEqual(["install", "--sandbox=not-a-real-spec"]);
   });
+
+  test("env subcommand selects env mode", () => {
+    expect(resolveBoot(["env"]).mode).toBe("env");
+  });
 });
 
 describe("helpText", () => {
