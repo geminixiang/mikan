@@ -7,12 +7,12 @@ This page documents mikan's **architectural interfaces**: the contracts that cro
 
 ## Stability levels
 
-| Level | Meaning | Compatibility expectation |
-| --- | --- | --- |
-| Public | Imported by npm consumers or extension authors | Preserve or version deliberately |
-| Host integration | Used to embed the runtime or add a platform/runtime backend | Preserve while the integration exists |
-| Wire / persisted | Stored on disk or sent across a process/network boundary | Migrate explicitly; readers should tolerate supported older forms |
-| Internal | Connects modules inside the mikan CLI | May change with coordinated call sites and tests |
+| Level            | Meaning                                                     | Compatibility expectation                                         |
+| ---------------- | ----------------------------------------------------------- | ----------------------------------------------------------------- |
+| Public           | Imported by npm consumers or extension authors              | Preserve or version deliberately                                  |
+| Host integration | Used to embed the runtime or add a platform/runtime backend | Preserve while the integration exists                             |
+| Wire / persisted | Stored on disk or sent across a process/network boundary    | Migrate explicitly; readers should tolerate supported older forms |
+| Internal         | Connects modules inside the mikan CLI                       | May change with coordinated call sites and tests                  |
 
 The package currently exposes more symbols than this policy intends because `src/index.ts` re-exports the entire harness. Treat the table below as the intended contract; see [Core simplification](/core-simplification/) for the migration.
 
@@ -39,14 +39,14 @@ The npm entry point is `@geminixiang/mikan`, implemented by `src/index.ts`.
 
 ### Supported entry-point groups
 
-| Group | Main symbols | Consumer |
-| --- | --- | --- |
-| Runtime embedding | `createConversationRuntime`, `ConversationRuntime`, `ConversationRuntimeOptions` | A host that supplies platform and execution dependencies |
-| Platform contract | `MessagingBot`, `ConversationEvent`, `ConversationContext`, `ConversationResponder`, `MessagingInfo` | Platform adapters and embedders |
-| Commands | `CommandHandler`, `CommandContext`, `CommandServices`, `dispatchCommand` | Hosts adding deterministic commands |
-| Execution | `Executor`, `SandboxConfig`, `SandboxAdapter`, `createExecutor`, `parseSandboxArg`, `validateSandbox` | Runtime backends and hosts |
-| Extensions | `MikanExtensionApi`, hook/event types, subagent types | Trusted extension authors |
-| Harness embedding | `MikanAgentSession`, `SessionStore`, `MikanModels`, settings and event-format functions | Advanced embedders; not ordinary bot integrations |
+| Group             | Main symbols                                                                                          | Consumer                                                 |
+| ----------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Runtime embedding | `createConversationRuntime`, `ConversationRuntime`, `ConversationRuntimeOptions`                      | A host that supplies platform and execution dependencies |
+| Platform contract | `MessagingBot`, `ConversationEvent`, `ConversationContext`, `ConversationResponder`, `MessagingInfo`  | Platform adapters and embedders                          |
+| Commands          | `CommandHandler`, `CommandContext`, `CommandServices`, `dispatchCommand`                              | Hosts adding deterministic commands                      |
+| Execution         | `Executor`, `SandboxConfig`, `SandboxAdapter`, `createExecutor`, `parseSandboxArg`, `validateSandbox` | Runtime backends and hosts                               |
+| Extensions        | `MikanExtensionApi`, hook/event types, subagent types                                                 | Trusted extension authors                                |
+| Harness embedding | `MikanAgentSession`, `SessionStore`, `MikanModels`, settings and event-format functions               | Advanced embedders; not ordinary bot integrations        |
 
 Importing a source path under `src/` or a generated path under `dist/` is unsupported. Only paths declared by package exports should be considered public. At present the package has no explicit `exports` map, so this is a documentation constraint rather than an enforced one.
 
@@ -58,17 +58,17 @@ Source: `src/types.ts` (re-exported by `src/adapter.ts`).
 
 The platform-neutral trigger delivered to `MessagingEventHandler`.
 
-| Field | Contract |
-| --- | --- |
-| `conversationId` | Raw platform conversation/channel identifier; must not contain `:` because session keys reserve it |
-| `conversationKind` | `direct` or `shared`; affects session and credential policy |
-| `ts` | Triggering platform message identifier |
-| `thread_ts` | Optional parent/root platform message identifier |
-| `user` | Platform user identifier |
-| `text` | Text after platform mention removal |
-| `attachments` | Files already downloaded to host paths |
-| `sessionKey` | Optional platform-selected override; otherwise derived by session policy |
-| `vaultConversationId` | Optional alternate identity used only for credential routing |
+| Field                 | Contract                                                                                           |
+| --------------------- | -------------------------------------------------------------------------------------------------- |
+| `conversationId`      | Raw platform conversation/channel identifier; must not contain `:` because session keys reserve it |
+| `conversationKind`    | `direct` or `shared`; affects session and credential policy                                        |
+| `ts`                  | Triggering platform message identifier                                                             |
+| `thread_ts`           | Optional parent/root platform message identifier                                                   |
+| `user`                | Platform user identifier                                                                           |
+| `text`                | Text after platform mention removal                                                                |
+| `attachments`         | Files already downloaded to host paths                                                             |
+| `sessionKey`          | Optional platform-selected override; otherwise derived by session policy                           |
+| `vaultConversationId` | Optional alternate identity used only for credential routing                                       |
 
 ### `ConversationContext`
 
@@ -111,22 +111,22 @@ Source: `src/runtime/types.ts` and `src/runtime/conversation-runtime.ts`.
 
 ### Input methods
 
-| Method | Semantics |
-| --- | --- |
-| `handleEvent(event, bot, context)` | Serialize by derived session key, then dispatch a command or agent run |
-| `runSession(options)` | Execute one already-serialized unit; intended for controlled host use |
-| `handleStop(...)` / `forceStop(...)` | Cooperative/user-visible stop versus immediate internal stop |
-| `handleNewCommand(...)` | Abort, reset persisted session state, and discard the cached runner |
+| Method                               | Semantics                                                              |
+| ------------------------------------ | ---------------------------------------------------------------------- |
+| `handleEvent(event, bot, context)`   | Serialize by derived session key, then dispatch a command or agent run |
+| `runSession(options)`                | Execute one already-serialized unit; intended for controlled host use  |
+| `handleStop(...)` / `forceStop(...)` | Cooperative/user-visible stop versus immediate internal stop           |
+| `handleNewCommand(...)`              | Abort, reset persisted session state, and discard the cached runner    |
 
 ### Control and inspection
 
-| Method | Semantics |
-| --- | --- |
-| `isRunning(sessionKey)` | Current in-process run state |
-| `getRunningSessions()` | Snapshot for admin/observability surfaces |
-| `switchConversationModel(...)` | Update a cached runner; returns whether one existed |
-| `refreshConversationEnvironment(...)` | Re-resolve a cached runner environment |
-| `shutdown(timeoutMs?)` | Reject new work, stop runners, and wait for in-flight work up to the deadline |
+| Method                                | Semantics                                                                     |
+| ------------------------------------- | ----------------------------------------------------------------------------- |
+| `isRunning(sessionKey)`               | Current in-process run state                                                  |
+| `getRunningSessions()`                | Snapshot for admin/observability surfaces                                     |
+| `switchConversationModel(...)`        | Update a cached runner; returns whether one existed                           |
+| `refreshConversationEnvironment(...)` | Re-resolve a cached runner environment                                        |
+| `shutdown(timeoutMs?)`                | Reject new work, stop runners, and wait for in-flight work up to the deadline |
 
 `ConversationRuntimeOptions` supplies workspace/configuration fields, sandbox/resource services, optional portal token stores, optional commands, model registry, proactive platform operations, and platform tool-pack factories. Missing vault and portal stores degrade to disabled implementations; setting a portal URL without its store is an error when used.
 
@@ -170,18 +170,18 @@ An extension is trusted host code exporting `activate(api)`. It is activated per
 
 ### `MikanExtensionApi`
 
-| Surface | Contract |
-| --- | --- |
-| `on` | Register ordered hooks for prompt, tool, message, compaction, error, and budget events |
-| `registerTool` | Add a `pi-agent-core` tool to this runner |
-| `registerCommand` | Add deterministic `/name` handling after built-ins |
-| `onDispose` | Release resources on reset, eviction, or shutdown; LIFO order |
-| `context` | Read-only conversation/workspace/model identity |
-| `paths` | Conversation-private and explicitly shared host-only data directories |
-| `secrets` | Read-only extension secrets by name |
-| `schedules` / `triggerRun` | Persist or fire autonomous event-file runs |
-| `subagent.run` | Fresh isolated run with explicit tools, schema, and budget |
-| `notify` / `react` / `uploadFile` | Optional host platform capabilities |
+| Surface                           | Contract                                                                               |
+| --------------------------------- | -------------------------------------------------------------------------------------- |
+| `on`                              | Register ordered hooks for prompt, tool, message, compaction, error, and budget events |
+| `registerTool`                    | Add a `pi-agent-core` tool to this runner                                              |
+| `registerCommand`                 | Add deterministic `/name` handling after built-ins                                     |
+| `onDispose`                       | Release resources on reset, eviction, or shutdown; LIFO order                          |
+| `context`                         | Read-only conversation/workspace/model identity                                        |
+| `paths`                           | Conversation-private and explicitly shared host-only data directories                  |
+| `secrets`                         | Read-only extension secrets by name                                                    |
+| `schedules` / `triggerRun`        | Persist or fire autonomous event-file runs                                             |
+| `subagent.run`                    | Fresh isolated run with explicit tools, schema, and budget                             |
+| `notify` / `react` / `uploadFile` | Optional host platform capabilities                                                    |
 
 Hook errors are logged and skipped. `before_agent_start` and `tool_result` rewrites chain; `tool_call` uses the first non-undefined result. A blocked pre-start hook prevents the model call and session persistence.
 
@@ -207,14 +207,14 @@ The discriminated union currently supports `host`, `container`, `image`, `gondol
 
 This is the stable execution boundary and the most important sandbox contract:
 
-| Operation | Requirement |
-| --- | --- |
-| `exec` | Return stdout, stderr, and exit code; honor timeout/abort where supported |
-| `readFile` / `readFileBase64` | Transport content without adding shell parsing layers |
-| `writeFile` | Stage and replace so an aborted write cannot truncate the target |
-| `getWorkspacePath` | Map a host workspace root to the runtime-visible root |
-| `getPathContext` | Declare host/runtime path semantics and optional reverse mapping |
-| `getSandboxConfig` | Return the concrete configuration in use |
+| Operation                     | Requirement                                                               |
+| ----------------------------- | ------------------------------------------------------------------------- |
+| `exec`                        | Return stdout, stderr, and exit code; honor timeout/abort where supported |
+| `readFile` / `readFileBase64` | Transport content without adding shell parsing layers                     |
+| `writeFile`                   | Stage and replace so an aborted write cannot truncate the target          |
+| `getWorkspacePath`            | Map a host workspace root to the runtime-visible root                     |
+| `getPathContext`              | Declare host/runtime path semantics and optional reverse mapping          |
+| `getSandboxConfig`            | Return the concrete configuration in use                                  |
 
 Remote/exec-only implementations share base64-chunked file transport. Tool implementations must call executor file methods instead of building `cat`, `printf`, or quoting protocols.
 
@@ -245,9 +245,9 @@ Sources: `src/sessions/*`, `src/store.ts`, and `src/sandbox/identity.ts`.
 
 There are two intentional records:
 
-| Record | Purpose |
-| --- | --- |
-| `<conversation>/log.jsonl` | Platform truth: user/bot messages and attachments |
+| Record                            | Purpose                                                             |
+| --------------------------------- | ------------------------------------------------------------------- |
+| `<conversation>/log.jsonl`        | Platform truth: user/bot messages and attachments                   |
 | `<conversation>/sessions/*.jsonl` | Agent truth: prompts, model/tool messages, branches, and compaction |
 
 Do not merge them. Chat history can rebuild a missing top-level agent session, while agent sessions contain data that never appeared on the platform.
@@ -264,7 +264,7 @@ Source: `src/harness/event-format.ts`.
 
 ```ts
 type EventFilePayload =
-  | { type: "immediate"; conversationId: string; text: string; /* common optional fields */ }
+  | { type: "immediate"; conversationId: string; text: string /* common optional fields */ }
   | { type: "one-shot"; conversationId: string; text: string; at: string }
   | { type: "periodic"; conversationId: string; text: string; schedule: string; timezone: string };
 ```
@@ -275,19 +275,19 @@ The bus is shared and agent-writable by design. Ownership prefixes are cooperati
 
 ## 12. Persisted filesystem interface
 
-| Path | Owner | Visibility / compatibility |
-| --- | --- | --- |
-| `<state-dir>/settings.json` | config | Host-only global settings |
-| `<state-dir>/conversations/<id>/settings.json` | config/admin | Host-only conversation overrides |
-| `<state-dir>/auth.json` | harness credential store | Host-only model-provider credentials |
-| `<state-dir>/models.json` | harness model catalog | Host-only custom providers/models |
-| `<state-dir>/vaults/**` | vault/login | Host-only secrets and mount files |
-| `<state-dir>/{global,conversations}/**/extensions` | extension loader | Trusted host code |
-| `<workspace>/MEMORY.md` | agent/user | Sandbox-visible durable memory |
-| `<workspace>/skills/**/SKILL.md` | skills | Sandbox-visible prompt instructions |
-| `<workspace>/events/*.json` | event store/watcher | Shared scheduling wire format |
-| `<workspace>/<id>/log.jsonl` | platform store | Append-only platform history |
-| `<workspace>/<id>/sessions/*.jsonl` | session store | Versioned append-only agent history |
+| Path                                               | Owner                    | Visibility / compatibility           |
+| -------------------------------------------------- | ------------------------ | ------------------------------------ |
+| `<state-dir>/settings.json`                        | config                   | Host-only global settings            |
+| `<state-dir>/conversations/<id>/settings.json`     | config/admin             | Host-only conversation overrides     |
+| `<state-dir>/auth.json`                            | harness credential store | Host-only model-provider credentials |
+| `<state-dir>/models.json`                          | harness model catalog    | Host-only custom providers/models    |
+| `<state-dir>/vaults/**`                            | vault/login              | Host-only secrets and mount files    |
+| `<state-dir>/{global,conversations}/**/extensions` | extension loader         | Trusted host code                    |
+| `<workspace>/MEMORY.md`                            | agent/user               | Sandbox-visible durable memory       |
+| `<workspace>/skills/**/SKILL.md`                   | skills                   | Sandbox-visible prompt instructions  |
+| `<workspace>/events/*.json`                        | event store/watcher      | Shared scheduling wire format        |
+| `<workspace>/<id>/log.jsonl`                       | platform store           | Append-only platform history         |
+| `<workspace>/<id>/sessions/*.jsonl`                | session store            | Versioned append-only agent history  |
 
 The state directory must not be inside the sandbox-visible workspace. Important state files use atomic private writes; append-only logs use append semantics.
 
@@ -295,13 +295,13 @@ The state directory must not be inside the sandbox-visible workspace. Important 
 
 Source: `src/web/server.ts` and portal modules. These routes support mikan's bundled UI; they are not a general public REST API.
 
-| Surface | Routes | Authentication model |
-| --- | --- | --- |
-| Health | `GET /health` | None; returns `{ "ok": true }` |
-| Login | `GET /link`, `POST /api/link/complete`, `POST /api/oauth/start`, `GET /oauth/callback` | Short-lived link token plus OAuth state |
-| Session viewer | `GET /session`, `GET /session/stream`, optional `POST /session/message` | Session-view token |
-| Admin | `GET /admin`, `/admin/api/*` | Admin token |
-| Agent events | `GET /api/agent-events/stream` | Deployment-controlled event stream |
+| Surface        | Routes                                                                                 | Authentication model                    |
+| -------------- | -------------------------------------------------------------------------------------- | --------------------------------------- |
+| Health         | `GET /health`                                                                          | None; returns `{ "ok": true }`          |
+| Login          | `GET /link`, `POST /api/link/complete`, `POST /api/oauth/start`, `GET /oauth/callback` | Short-lived link token plus OAuth state |
+| Session viewer | `GET /session`, `GET /session/stream`, optional `POST /session/message`                | Session-view token                      |
+| Admin          | `GET /admin`, `/admin/api/*`                                                           | Admin token                             |
+| Agent events   | `GET /api/agent-events/stream`                                                         | Deployment-controlled event stream      |
 
 Admin endpoints cover conversation inventory/state/usage, global and conversation settings, models, workspace files, skills, events, platform configuration, and login/session links. Route payloads are internal UI contracts and may evolve together with the bundled frontend.
 
