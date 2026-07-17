@@ -1,6 +1,11 @@
 import type { AgentTool, AgentToolUpdateCallback } from "@earendil-works/pi-agent-core";
 import { Type, type Static, type TSchema } from "@sinclair/typebox";
-import type { SubagentRunOutput, SubagentRunRequest, SubagentRunResult } from "../harness/types.js";
+import type {
+  SubagentRunOutput,
+  SubagentRunRequest,
+  SubagentRunResult,
+  SubagentRunStatus,
+} from "../harness/types.js";
 
 const MAX_DAG_NODES = 8;
 const MAX_DAG_EDGES = 16;
@@ -86,16 +91,52 @@ type SharedParams = Pick<SubagentParams, "model" | "tools" | "outputSchema" | "b
 type RunSubagent = <TOutputSchema extends TSchema | undefined = undefined>(
   request: SubagentRunRequest<TOutputSchema>,
 ) => Promise<SubagentRunResult<SubagentRunOutput<TOutputSchema>>>;
-type DagNodeOutcome =
+
+type PlanMode = "single" | "parallel" | "dag";
+
+/** One planned subagent run; single and tasks modes are plans with no edges. */
+interface PlanItem {
+  id: string;
+  label: string;
+  task: SubagentTask;
+  dependsOn: string[];
+}
+
+interface Plan {
+  mode: PlanMode;
+  items: PlanItem[];
+  waves: PlanItem[][];
+  concurrency: number;
+}
+
+type PlanOutcome =
   | ({ id: string } & SubagentRunResult<unknown>)
   | { id: string; status: "skipped"; error: string };
-type SubagentProgressStatus = "pending" | "running" | "completed" | "failed" | "skipped";
+
+/**
+ * Progress statuses extend run statuses with the pre- and non-run states, so
+ * a new run status is surfaced verbatim (and the marker map below fails to
+ * compile until it covers it) instead of silently collapsing.
+ */
+type SubagentProgressStatus = SubagentRunStatus | "pending" | "running" | "skipped";
+
+const STATUS_MARKER = {
+  pending: "○",
+  running: "●",
+  completed: "✓",
+  failed: "✗",
+  cancelled: "✗",
+  timeout: "✗",
+  budget_exceeded: "✗",
+  invalid_output: "✗",
+  skipped: "⊘",
+} satisfies Record<SubagentProgressStatus, string>;
 
 class SubagentProgressTracker {
   private readonly states = new Map<string, SubagentProgressStatus>();
 
   constructor(
-    private readonly mode: "single" | "parallel" | "dag",
+    private readonly mode: PlanMode,
     private readonly items: Array<{ id: string; label: string }>,
     private readonly onUpdate?: AgentToolUpdateCallback,
   ) {
@@ -111,22 +152,15 @@ class SubagentProgressTracker {
     if (!this.onUpdate) return;
     const nodes = this.items.map((item) => ({
       ...item,
-      status: this.states.get(item.id) ?? "pending",
+      status: this.states.get(item.id) ?? ("pending" as SubagentProgressStatus),
     }));
-    const settled = nodes.filter((node) =>
-      ["completed", "failed", "skipped"].includes(node.status),
+    const settled = nodes.filter(
+      (node) => node.status !== "pending" && node.status !== "running",
     ).length;
-    const marker = {
-      pending: "○",
-      running: "●",
-      completed: "✓",
-      failed: "✗",
-      skipped: "⊘",
-    } satisfies Record<SubagentProgressStatus, string>;
     const modeLabel = this.mode === "dag" ? "DAG" : this.mode === "parallel" ? "parallel" : "run";
     const progressLabel = [
       `Subagent ${modeLabel} ${settled}/${nodes.length}`,
-      ...nodes.map((node) => `${marker[node.status]} ${node.label}`),
+      ...nodes.map((node) => `${STATUS_MARKER[node.status]} ${node.label}`),
     ].join(" · ");
     this.onUpdate({
       content: [],
@@ -139,15 +173,17 @@ function taskLabel(task: SubagentTask, fallback: string): string {
   return task.label?.trim() || task.task.trim().slice(0, 48) || fallback;
 }
 
-function resultProgressStatus(result: SubagentRunResult<unknown>): SubagentProgressStatus {
-  return result.status === "completed" ? "completed" : "failed";
-}
-
-function formatResult(result: SubagentRunResult<unknown>): string {
-  if (result.status !== "completed") {
-    return `Subagent ${result.status}${result.error ? `: ${result.error}` : ""}`;
+function formatOutcome(outcome: {
+  status: SubagentProgressStatus;
+  output?: unknown;
+  error?: string;
+}): string {
+  if (outcome.status !== "completed") {
+    return `Subagent ${outcome.status}${outcome.error ? `: ${outcome.error}` : ""}`;
   }
-  return typeof result.output === "string" ? result.output : JSON.stringify(result.output, null, 2);
+  return typeof outcome.output === "string"
+    ? outcome.output
+    : JSON.stringify(outcome.output, null, 2);
 }
 
 function buildRequest(
@@ -218,6 +254,40 @@ function buildDagWaves(nodes: DagNode[]): DagNode[][] {
   return waves;
 }
 
+function itemForNode(node: DagNode): PlanItem {
+  return {
+    id: node.id,
+    label: node.label?.trim() || node.id,
+    task: node,
+    dependsOn: node.dependsOn ?? [],
+  };
+}
+
+/** Normalize every tool mode into one plan: nodes, waves, concurrency. */
+function buildPlan(params: SubagentParams): Plan {
+  if ("dag" in params) {
+    const waves = buildDagWaves(params.dag.nodes).map((wave) => wave.map(itemForNode));
+    const requested = params.dag.maxConcurrency ?? MAX_CONCURRENT_SUBAGENTS;
+    return {
+      mode: "dag",
+      items: params.dag.nodes.map(itemForNode),
+      waves,
+      concurrency: Math.max(1, Math.min(MAX_CONCURRENT_SUBAGENTS, Math.floor(requested))),
+    };
+  }
+  if ("tasks" in params) {
+    const items = params.tasks.map((task, index) => ({
+      id: String(index),
+      label: taskLabel(task, String(index + 1)),
+      task,
+      dependsOn: [],
+    }));
+    return { mode: "parallel", items, waves: [items], concurrency: MAX_CONCURRENT_SUBAGENTS };
+  }
+  const item = { id: "0", label: taskLabel(params, "subagent"), task: params, dependsOn: [] };
+  return { mode: "single", items: [item], waves: [[item]], concurrency: 1 };
+}
+
 /** Run `worker` over every item with at most `limit` in flight. */
 async function forEachConcurrent<T>(
   items: readonly T[],
@@ -235,7 +305,7 @@ async function forEachConcurrent<T>(
   );
 }
 
-function dependencyOutput(outcome: DagNodeOutcome): unknown {
+function dependencyOutput(outcome: PlanOutcome): unknown {
   if (outcome.status !== "completed") return undefined;
   const value = outcome.output;
   const serialized = typeof value === "string" ? value : JSON.stringify(value);
@@ -246,62 +316,53 @@ function dependencyOutput(outcome: DagNodeOutcome): unknown {
   return `${serialized.slice(0, MAX_DEPENDENCY_OUTPUT_CHARS)}\n[truncated]`;
 }
 
-function dagRequest(
-  node: DagNode,
+function planRequest(
+  item: PlanItem,
   shared: SharedParams,
-  outcomes: Map<string, DagNodeOutcome>,
+  outcomes: Map<string, PlanOutcome>,
   signal?: AbortSignal,
 ): SubagentRunRequest<TSchema | undefined> {
+  if (item.dependsOn.length === 0) return buildRequest(item.task, shared, signal);
   const dependencies = Object.fromEntries(
-    (node.dependsOn ?? []).map((id) => [id, dependencyOutput(outcomes.get(id)!)]),
+    item.dependsOn.map((id) => [id, dependencyOutput(outcomes.get(id)!)]),
   );
-  const input =
-    node.dependsOn && node.dependsOn.length > 0
-      ? { ...(node.input !== undefined ? { input: node.input } : {}), dependencies }
-      : node.input;
-  return buildRequest({ ...node, ...(input !== undefined ? { input } : {}) }, shared, signal);
+  const input = {
+    ...(item.task.input !== undefined ? { input: item.task.input } : {}),
+    dependencies,
+  };
+  return buildRequest({ ...item.task, input }, shared, signal);
 }
 
-async function runDag(
-  nodes: DagNode[],
-  maxConcurrency: number,
+/** One executor for every mode: wave barriers, a bounded slot pool inside each wave. */
+async function runWaves(
+  plan: Plan,
   shared: SharedParams,
   runSubagent: RunSubagent,
   progress: SubagentProgressTracker,
   signal?: AbortSignal,
-): Promise<{ waves: string[][]; results: DagNodeOutcome[] }> {
-  const waves = buildDagWaves(nodes);
-  const concurrency = Math.max(1, Math.min(MAX_CONCURRENT_SUBAGENTS, Math.floor(maxConcurrency)));
-  const outcomes = new Map<string, DagNodeOutcome>();
-  for (const wave of waves) {
-    await forEachConcurrent(wave, concurrency, async (node) => {
-      const failedDependency = (node.dependsOn ?? []).find(
+): Promise<PlanOutcome[]> {
+  const outcomes = new Map<string, PlanOutcome>();
+  for (const wave of plan.waves) {
+    await forEachConcurrent(wave, plan.concurrency, async (item) => {
+      const failedDependency = item.dependsOn.find(
         (id) => outcomes.get(id)?.status !== "completed",
       );
       if (failedDependency) {
-        outcomes.set(node.id, {
-          id: node.id,
+        outcomes.set(item.id, {
+          id: item.id,
           status: "skipped",
           error: `Dependency ${failedDependency} did not complete`,
         });
-        progress.update(node.id, "skipped");
+        progress.update(item.id, "skipped");
         return;
       }
-      progress.update(node.id, "running");
-      const result = await runSubagent(dagRequest(node, shared, outcomes, signal));
-      outcomes.set(node.id, { id: node.id, ...result });
-      progress.update(node.id, resultProgressStatus(result));
+      progress.update(item.id, "running");
+      const result = await runSubagent(planRequest(item, shared, outcomes, signal));
+      outcomes.set(item.id, { id: item.id, ...result });
+      progress.update(item.id, result.status);
     });
   }
-  return {
-    waves: waves.map((wave) => wave.map((node) => node.id)),
-    results: nodes.map((node) => outcomes.get(node.id)!),
-  };
-}
-
-function formatDagOutcome(outcome: DagNodeOutcome): string {
-  if (outcome.status === "skipped") return `Subagent skipped: ${outcome.error}`;
-  return formatResult(outcome);
+  return plan.items.map((item) => outcomes.get(item.id)!);
 }
 
 /** Create the normal agent's bounded subagent delegation and DAG tool. */
@@ -310,7 +371,8 @@ export function createSubagentTool(runSubagent: RunSubagent): AgentTool<typeof s
     name: "subagent",
     label: "Subagent",
     description:
-      "Run fresh isolated subagents. Use task for one subagent, tasks for independent concurrent work, or dag.nodes for a bounded dependency graph. At most 4 subagents run concurrently. DAG limits: 8 nodes, 16 edges, depth 4; failed dependencies skip descendants, and dependency outputs larger than 4000 characters reach downstream nodes as a truncated string. Subagents have no history or tools unless explicitly provided; nested subagents are not allowed.",
+      `Run fresh isolated subagents. Use task for one subagent, tasks for independent concurrent work, or dag.nodes for a bounded dependency graph. At most ${MAX_CONCURRENT_SUBAGENTS} subagents run concurrently. DAG limits: ${MAX_DAG_NODES} nodes, ${MAX_DAG_EDGES} edges, depth ${MAX_DAG_DEPTH}; failed dependencies skip descendants, and dependency outputs larger than ${MAX_DEPENDENCY_OUTPUT_CHARS} characters reach downstream nodes as a truncated string. ` +
+      "Subagents have no history or tools unless explicitly provided; nested subagents are not allowed.",
     parameters: subagentSchema,
     execute: async (
       _toolCallId: string,
@@ -318,81 +380,54 @@ export function createSubagentTool(runSubagent: RunSubagent): AgentTool<typeof s
       signal?: AbortSignal,
       onUpdate?: AgentToolUpdateCallback,
     ) => {
-      if ("dag" in params) {
-        const progress = new SubagentProgressTracker(
-          "dag",
-          params.dag.nodes.map((node) => ({
-            id: node.id,
-            label: node.label?.trim() || node.id,
-          })),
-          onUpdate,
-        );
-        progress.emit();
-        const result = await runDag(
-          params.dag.nodes,
-          params.dag.maxConcurrency ?? MAX_CONCURRENT_SUBAGENTS,
-          params,
-          runSubagent,
-          progress,
-          signal,
-        );
-        return {
-          content: [
-            {
-              type: "text",
-              text: result.results
-                .map((outcome) => `[${outcome.id}] ${formatDagOutcome(outcome)}`)
-                .join("\n\n"),
-            },
-          ],
-          details: { mode: "dag", ...result },
-        };
-      }
-      if ("tasks" in params) {
-        const progress = new SubagentProgressTracker(
-          "parallel",
-          params.tasks.map((task, index) => ({
-            id: String(index),
-            label: taskLabel(task, String(index + 1)),
-          })),
-          onUpdate,
-        );
-        progress.emit();
-        const results: SubagentRunResult<unknown>[] = Array.from({
-          length: params.tasks.length,
-        });
-        await forEachConcurrent(params.tasks, MAX_CONCURRENT_SUBAGENTS, async (task, index) => {
-          const id = String(index);
-          progress.update(id, "running");
-          const result = await runSubagent(buildRequest(task, params, signal));
-          progress.update(id, resultProgressStatus(result));
-          results[index] = result;
-        });
-        return {
-          content: [
-            {
-              type: "text",
-              text: results
-                .map((result, index) => `[${index + 1}] ${formatResult(result)}`)
-                .join("\n\n"),
-            },
-          ],
-          details: { mode: "parallel", results },
-        };
-      }
-
+      const plan = buildPlan(params);
       const progress = new SubagentProgressTracker(
-        "single",
-        [{ id: "0", label: taskLabel(params, "subagent") }],
+        plan.mode,
+        plan.items.map(({ id, label }) => ({ id, label })),
         onUpdate,
       );
-      progress.update("0", "running");
-      const result = await runSubagent(buildRequest(params, params, signal));
-      progress.update("0", resultProgressStatus(result));
-      return {
-        content: [{ type: "text", text: formatResult(result) }],
-        details: result,
-      };
+      progress.emit();
+      const ordered = await runWaves(plan, params, runSubagent, progress, signal);
+
+      switch (plan.mode) {
+        case "dag":
+          return {
+            content: [
+              {
+                type: "text",
+                text: ordered
+                  .map((outcome) => `[${outcome.id}] ${formatOutcome(outcome)}`)
+                  .join("\n\n"),
+              },
+            ],
+            details: {
+              mode: "dag",
+              waves: plan.waves.map((wave) => wave.map((item) => item.id)),
+              results: ordered,
+            },
+          };
+        case "parallel": {
+          const results = ordered.map(({ id: _id, ...result }) => result);
+          return {
+            content: [
+              {
+                type: "text",
+                text: results
+                  .map((result, index) => `[${index + 1}] ${formatOutcome(result)}`)
+                  .join("\n\n"),
+              },
+            ],
+            details: { mode: "parallel", results },
+          };
+        }
+        case "single": {
+          const { id: _id, ...result } = ordered[0];
+          return {
+            content: [{ type: "text", text: formatOutcome(result) }],
+            details: result,
+          };
+        }
+      }
     },
   };
 }
