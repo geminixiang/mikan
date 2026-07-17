@@ -9,6 +9,9 @@
 
 A multi-platform AI coding agent for Slack, Telegram, and Discord.
 
+> [!WARNING]
+> **Pre-1.0 status** — the overall framework stabilizes at 1.0.0. Until then, releases may change settings and on-disk data formats without migrations: upgrading between pre-1.0 versions can require resetting or manually adjusting existing state and workspace data.
+
 ## Architecture
 
 mikan keeps the chat record, agent session, and execution runtime separate:
