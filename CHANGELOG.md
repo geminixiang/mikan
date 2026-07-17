@@ -9,6 +9,8 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.19]
+
 ### Added
 
 - Add fresh in-memory subagents for the main agent and extensions, with explicit tools, budgets, structured output, parallel batches, and bounded DAG orchestration.
@@ -17,6 +19,11 @@ any release.
 ### Changed
 
 - Let final responses at the LLM-call cap complete without tripping the run budget when no continuation is required.
+
+### Fixed
+
+- Install worker binaries from the newest GitHub release that contains a matching asset, including prereleases.
+- Restore generic Google Workspace CLI credential mounts in sandbox vaults.
 
 ### Tests
 
