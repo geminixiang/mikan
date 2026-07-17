@@ -10,7 +10,7 @@ import {
   type Model,
   type MutableModels,
 } from "@earendil-works/pi-ai";
-import { Type } from "@sinclair/typebox";
+import { Type, type TSchema } from "@sinclair/typebox";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { runSubagent } from "../src/harness/subagent-runner.js";
 import { MikanAgentSession, MikanModels, SessionStore } from "../src/harness/index.js";
@@ -133,6 +133,63 @@ describe("runSubagent", () => {
 
     expect(result.status).toBe("completed");
     expect(result.output).toEqual({ quality: "low_content", stuck: false });
+  });
+
+  test("validates structured output against a plain JSON Schema object", async () => {
+    // Tool-call arguments arrive as plain JSON: TypeBox's Kind symbol never
+    // survives the wire, so outputSchema here has no [Kind] metadata.
+    const plainSchema = JSON.parse(
+      JSON.stringify(
+        Type.Object({
+          quality: Type.Union([Type.Literal("substantive"), Type.Literal("low_content")]),
+          stuck: Type.Boolean(),
+        }),
+      ),
+    );
+
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([fauxAssistantMessage('{"quality":"substantive","stuck":true}')]);
+
+    const result = await runSubagent({
+      request: {
+        task: "Classify the reply",
+        outputSchema: plainSchema,
+        budget: { maxTurns: 1 },
+      },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [],
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.output).toEqual({ quality: "substantive", stuck: true });
+  });
+
+  test("rejects output that fails a plain JSON Schema instead of throwing", async () => {
+    const plainSchema = {
+      type: "object",
+      properties: { ok: { type: "boolean" } },
+      required: ["ok"],
+    } as unknown as TSchema;
+
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([fauxAssistantMessage('{"ok":"not-a-boolean"}')]);
+
+    const result = await runSubagent({
+      request: { task: "Return the result", outputSchema: plainSchema, budget: { maxTurns: 1 } },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [],
+    });
+
+    expect(result).toMatchObject({
+      status: "invalid_output",
+      error: "Subagent output does not match the requested schema",
+    });
   });
 
   test("reports invalid structured output without guessing JSON", async () => {
