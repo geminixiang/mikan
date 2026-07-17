@@ -1115,24 +1115,6 @@ async function createConfiguredAgentSession(params: {
   // Host-only dirs under the state dir: extension code runs in the mikan
   // process, so it must never load from workspace paths — those are mounted
   // into sandbox containers and agent-writable (sandbox escape otherwise).
-  let contributedTools: ReturnType<ExtensionRegistry["getContributedTools"]> = [];
-  // Assigned once the session exists below; the subagent tool only executes
-  // during that session's own prompt runs. Folding each subagent's spend into
-  // the parent tally keeps delegated cost visible to the parent run's budget.
-  let parentSession: MikanAgentSession | undefined;
-  const subagentTool = createSubagentTool(async (request) => {
-    const result = await runSubagent({
-      request,
-      defaultModel: model,
-      thinkingLevel,
-      models,
-      workspaceDir,
-      availableTools: [...tools, ...contributedTools],
-    });
-    parentSession?.recordExternalUsage({ tokens: result.tokens, costUsd: result.costUsd });
-    return result;
-  });
-
   const extensionsResult = await loadExtensions({
     dirs: defaultExtensionDirs(conversationId, readEnv("STATE_DIR")),
     context: { conversationId, workspaceDir, model, thinkingLevel },
@@ -1153,7 +1135,7 @@ async function createConfiguredAgentSession(params: {
         }),
     }),
   });
-  contributedTools = extensionsResult.registry.getContributedTools();
+  const contributedTools = extensionsResult.registry.getContributedTools();
   for (const err of extensionsResult.errors) {
     log.logWarning(`[${conversationId}] Extension load error: ${err.path}`, err.error);
   }
@@ -1162,6 +1144,21 @@ async function createConfiguredAgentSession(params: {
       `[${conversationId}] Loaded ${extensionsResult.extensions.length} extension(s): ${extensionsResult.extensions.map((extension) => extension.name).join(", ")}`,
     );
   }
+
+  const subagentTool = createSubagentTool((request) =>
+    runSubagent({
+      request,
+      defaultModel: model,
+      thinkingLevel,
+      models,
+      workspaceDir,
+      availableTools: [...tools, ...contributedTools],
+      // `session` is the const below: the tool only executes inside that
+      // session's own prompt loop, and the temporal dead zone turns any
+      // earlier call into a loud error instead of a silently dropped fold.
+      onUsage: (usage) => session.foldExternalUsage(usage),
+    }),
+  );
 
   const session = new MikanAgentSession({
     systemPrompt,
@@ -1172,7 +1169,6 @@ async function createConfiguredAgentSession(params: {
     sessionStore,
     extensions: extensionsResult.registry,
   });
-  parentSession = session;
 
   const reloaded = session.reloadFromSession();
   if (reloaded > 0) {

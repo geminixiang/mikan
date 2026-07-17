@@ -4,6 +4,7 @@ import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { Kind, Type, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
+import * as log from "../log.js";
 import type { MikanModels } from "./models.js";
 import { MikanAgentSession } from "./runner.js";
 import { SessionStore } from "./session-store.js";
@@ -131,6 +132,14 @@ interface RunSubagentOptions<TOutputSchema extends TSchema | undefined = undefin
   models: MikanModels;
   workspaceDir: string;
   availableTools: AgentTool[];
+  /**
+   * The one seam through which a run's spend reaches its initiator (e.g. the
+   * parent session's budget). Called exactly once per run with the final
+   * totals — on every terminal path, including never-reject failures —
+   * before the result is returned. Errors thrown here are logged and
+   * swallowed to preserve the never-reject contract.
+   */
+  onUsage?: (usage: { tokens: number; costUsd: number }) => void | Promise<void>;
 }
 
 function resolveBudget(budget: RunSubagentOptions["request"]["budget"]) {
@@ -213,12 +222,25 @@ function assistantText(message: AssistantMessage | undefined): string {
 }
 
 /**
- * Execute one non-recursive, fresh subagent run for an extension. Never
- * rejects: every failure — including request validation — is a result with a
- * terminal status, so batch callers (`tasks` / `dag`) can never orphan
- * in-flight sibling runs on one bad request.
+ * Execute one non-recursive, fresh subagent run. Never rejects: every
+ * failure — including request validation — is a result with a terminal
+ * status, so batch callers (`tasks` / `dag`) can never orphan in-flight
+ * sibling runs on one bad request. The run's spend is reported through
+ * `onUsage` before the result is returned.
  */
 export async function runSubagent<TOutputSchema extends TSchema | undefined = undefined>(
+  options: RunSubagentOptions<TOutputSchema>,
+): Promise<SubagentRunResult<SubagentRunOutput<TOutputSchema>>> {
+  const result = await executeSubagentRun(options);
+  try {
+    await options.onUsage?.({ tokens: result.tokens, costUsd: result.costUsd });
+  } catch (err) {
+    log.logWarning("Subagent onUsage listener failed", String(err));
+  }
+  return result;
+}
+
+async function executeSubagentRun<TOutputSchema extends TSchema | undefined = undefined>(
   options: RunSubagentOptions<TOutputSchema>,
 ): Promise<SubagentRunResult<SubagentRunOutput<TOutputSchema>>> {
   const { request } = options;

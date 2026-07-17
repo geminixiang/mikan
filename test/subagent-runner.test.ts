@@ -388,4 +388,60 @@ describe("runSubagent", () => {
     expect(result.status).toBe("completed");
     expect(nestedError).toBe("Nested api.subagent.run calls are not allowed");
   });
+
+  test("reports spend through onUsage exactly once, including never-reject failures", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([fauxAssistantMessage("spent")]);
+
+    const usageCalls: Array<{ tokens: number; costUsd: number }> = [];
+    const result = await runSubagent({
+      request: { task: "Do focused work" },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [],
+      onUsage: (usage) => {
+        usageCalls.push(usage);
+      },
+    });
+    expect(result.status).toBe("completed");
+    expect(usageCalls).toEqual([{ tokens: result.tokens, costUsd: result.costUsd }]);
+
+    // A run that fails before the session even starts still reports once.
+    const failureCalls: Array<{ tokens: number; costUsd: number }> = [];
+    const failure = await runSubagent({
+      request: { task: "Do focused work", tools: ["missing-tool"] },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [],
+      onUsage: (usage) => {
+        failureCalls.push(usage);
+      },
+    });
+    expect(failure.status).toBe("failed");
+    expect(failureCalls).toEqual([{ tokens: failure.tokens, costUsd: failure.costUsd }]);
+  });
+
+  test("a throwing onUsage listener does not break the never-reject contract", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([fauxAssistantMessage("still fine")]);
+
+    const result = await runSubagent({
+      request: { task: "Do focused work" },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [],
+      onUsage: () => {
+        throw new Error("listener boom");
+      },
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.output).toBe("still fine");
+  });
 });

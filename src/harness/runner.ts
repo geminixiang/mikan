@@ -222,14 +222,18 @@ export class MikanAgentSession {
 
   /**
    * Fold spend incurred outside this session's own LLM calls — e.g. subagent
-   * runs launched by a tool during the current prompt — into the run tally so
-   * `getLastRunStats` reports it and budget enforcement sees it at the next
-   * assistant message. Counts tokens and cost only; external runs are not this
-   * session's turns.
+   * runs launched by a tool during the current prompt — into the run tally
+   * and enforce the run budget at the fold itself: a fold that lands over a
+   * resource ceiling aborts the run now instead of waiting for a next
+   * assistant message that may never come (and would be paid for). Counts
+   * tokens and cost only; external runs are not this session's turns.
    */
-  recordExternalUsage(usage: { tokens?: number; costUsd?: number }): void {
+  async foldExternalUsage(usage: { tokens?: number; costUsd?: number }): Promise<void> {
     this.tally.tokens += usage.tokens ?? 0;
     this.tally.costUsd += usage.costUsd ?? 0;
+    if (this.budgetExceededReason || !this.agent.state.isStreaming) return;
+    const reason = this.resourceOverBudgetReason();
+    if (reason) await this.exceedBudget(reason);
   }
 
   subscribe(listener: HarnessEventListener): () => void {
@@ -424,7 +428,11 @@ export class MikanAgentSession {
     if (this.budgetExceededReason) return;
     const reason = this.overBudgetReason(message);
     if (!reason) return;
+    await this.exceedBudget(reason);
+  }
 
+  /** Mark the run over budget, notify listeners and extensions, abort the agent. */
+  private async exceedBudget(reason: string): Promise<void> {
     this.budgetExceededReason = reason;
     await this.emit({
       type: "budget_exceeded",
@@ -449,12 +457,18 @@ export class MikanAgentSession {
   }
 
   private overBudgetReason(message: AssistantMessage): string | undefined {
-    const { maxTokens, maxCostUsd, maxDurationMs, maxLlmCalls } = this.runBudget;
+    const { maxLlmCalls } = this.runBudget;
     const needsAnotherCall =
       message.stopReason === "error" || message.content.some((part) => part.type === "toolCall");
     if (needsAnotherCall && maxLlmCalls !== undefined && this.tally.llmCalls >= maxLlmCalls) {
       return `${this.tally.llmCalls} LLM calls >= ${maxLlmCalls} limit`;
     }
+    return this.resourceOverBudgetReason();
+  }
+
+  /** The message-independent budget checks, shared with external-spend folds. */
+  private resourceOverBudgetReason(): string | undefined {
+    const { maxTokens, maxCostUsd, maxDurationMs } = this.runBudget;
     if (maxTokens !== undefined && this.tally.tokens >= maxTokens) {
       return `${this.tally.tokens} tokens >= ${maxTokens} limit`;
     }

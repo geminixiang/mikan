@@ -377,7 +377,7 @@ describe("MikanAgentSession", () => {
     expect(JSON.stringify(sessionStore.getEntries())).not.toContain("done");
   });
 
-  test("recordExternalUsage folds delegated spend into stats and budget enforcement", async () => {
+  test("foldExternalUsage folds delegated spend and enforces the budget at the fold", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([
       fauxAssistantMessage(fauxToolCall("delegate", {})),
@@ -387,10 +387,10 @@ describe("MikanAgentSession", () => {
     let session: MikanAgentSession;
     const delegateTool: AgentTool = {
       name: "delegate",
-      description: "Simulate a subagent run recording its spend on the parent",
+      description: "Simulate a subagent run folding its spend into the parent",
       parameters: { type: "object", properties: {} },
       execute: async () => {
-        session.recordExternalUsage({ tokens: 5000, costUsd: 1.25 });
+        await session.foldExternalUsage({ tokens: 5000, costUsd: 1.25 });
         return { content: [{ type: "text", text: "delegated" }] };
       },
     } as unknown as AgentTool;
@@ -403,14 +403,21 @@ describe("MikanAgentSession", () => {
       sessionStore: SessionStore.create(join(dir, "session.jsonl"), dir),
     });
 
+    const events: HarnessEvent[] = [];
+    session.subscribe((event) => {
+      events.push(event);
+    });
+
     await session.prompt("delegate work", { budget: { maxCostUsd: 1 } });
 
     const stats = session.getLastRunStats();
     expect(stats.tokens).toBeGreaterThanOrEqual(5000);
     expect(stats.costUsd).toBeGreaterThanOrEqual(1.25);
-    // The delegated spend crosses the cost cap, so enforcement trips at the
-    // next assistant message instead of staying invisible to the budget.
     expect(stats.budgetExceededReason).toContain("cost");
+    expect(events.some((event) => event.type === "budget_exceeded")).toBe(true);
+    // Enforcement happens at the fold itself: the run aborts before paying
+    // for another parent LLM call, so the second response never materializes.
+    expect(JSON.stringify(session.messages)).not.toContain("done");
   });
 
   test("a final response at the LLM-call cap completes without tripping the budget", async () => {
