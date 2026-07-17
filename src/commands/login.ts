@@ -1,5 +1,5 @@
 import * as log from "../log.js";
-import { resolveActorVaultKey } from "../vault/routing.js";
+import { actorKey } from "../sandbox/identity.js";
 import { sharedVaultKey } from "../vault/index.js";
 import { slashForms } from "./manifest.js";
 import { matchCommand } from "./parse.js";
@@ -38,11 +38,10 @@ export function parseLoginCommand(text: string): ParsedLoginCommand | null {
 
 function ensureLoginVault(context: CommandContext): string {
   const { services, platformUserId, conversationId, vaultConversationId } = context;
-  return resolveActorVaultKey(
-    services.sandbox,
-    platformUserId,
-    vaultConversationId ?? conversationId,
-  );
+  return actorKey(services.sandbox, {
+    userId: platformUserId,
+    conversationId: vaultConversationId ?? conversationId,
+  });
 }
 
 async function replyVault(context: CommandContext, lines: string[]): Promise<void> {

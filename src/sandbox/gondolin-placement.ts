@@ -60,14 +60,6 @@ export class GondolinPlacementStore {
     return this.table.get(instanceId);
   }
 
-  list(): GondolinPlacementRecord[] {
-    return Array.from(this.table.values());
-  }
-
-  countByWorker(worker: string): number {
-    return this.list().filter((record) => record.worker === worker).length;
-  }
-
   set(instanceId: string, worker: string, leaseExpiresAt: number): void {
     this.table.set(instanceId, { instanceId, worker, leaseExpiresAt, updatedAt: Date.now() });
     this.persist();

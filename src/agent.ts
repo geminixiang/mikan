@@ -51,11 +51,11 @@ import * as log from "./log.js";
 import type { DockerContainerManager } from "./provisioner.js";
 import {
   createExecutor,
+  getUnresolvedSandboxPathContext,
   type Executor,
   type RuntimePathContext,
   type SandboxConfig,
 } from "./sandbox/index.js";
-import { createMountedRuntimePathContext } from "./sandbox/path-context.js";
 import {
   addLifecycleBreadcrumb,
   metricAttributes,
@@ -88,17 +88,6 @@ import type { PlatformToolPackFactory } from "./tools/types.js";
 import * as Sentry from "@sentry/node";
 
 import { emitAgentEvent } from "./agent-events.js";
-
-export function getUnresolvedSandboxPathContext(
-  sandboxConfig: SandboxConfig,
-  hostWorkspaceRoot: string,
-): RuntimePathContext {
-  if (sandboxConfig.type === "image") {
-    return createMountedRuntimePathContext(hostWorkspaceRoot, "/workspace");
-  }
-
-  return createExecutor(sandboxConfig).getPathContext(hostWorkspaceRoot);
-}
 
 export function translateRuntimePathToHost(
   runtimePath: string,

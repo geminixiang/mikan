@@ -2,11 +2,11 @@ import { describe, expect, test } from "vitest";
 import {
   appendTriggerAttribution,
   buildTurnInstructions,
-  getUnresolvedSandboxPathContext,
   resolveTriggerAttribution,
   translateAttachPathToHost,
   translateRuntimePathToHost,
 } from "../src/agent.js";
+import { getUnresolvedSandboxPathContext } from "../src/sandbox/index.js";
 
 describe("trigger attribution", () => {
   test("uses event filename from event prompt marker", () => {

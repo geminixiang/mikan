@@ -2,7 +2,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import type { SandboxConfig } from "../sandbox/index.js";
 import type { ResourceLimits, SandboxResourceController } from "../types.js";
-import { resolveActorVaultKey } from "../vault/routing.js";
+import { actorKey } from "../sandbox/identity.js";
 
 const sandboxSchema = Type.Object({
   action: Type.Union([Type.Literal("status"), Type.Literal("set")], {
@@ -62,11 +62,10 @@ export function createSandboxTool(controller: SandboxToolController): {
         throw new Error("The sandbox tool only supports image:* and gondolin:* managed sandboxes");
       }
 
-      const containerKey = resolveActorVaultKey(
-        controller.sandbox,
-        sandboxContext.userId,
-        sandboxContext.conversationId,
-      );
+      const containerKey = actorKey(controller.sandbox, {
+        userId: sandboxContext.userId,
+        conversationId: sandboxContext.conversationId,
+      });
 
       if (params.action === "set") {
         const limits = normalizeLimits(params);

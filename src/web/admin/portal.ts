@@ -19,7 +19,7 @@ import { readRawBody } from "../../utils/http-body.js";
 import { renderPortalShell } from "../portal-shell.js";
 import { resolveExistingSessionFile } from "../session-view/service.js";
 import { PRODUCT_NAME } from "../../platform-messages.js";
-import { resolveActorVaultKey } from "../../vault/routing.js";
+import { actorKey } from "../../sandbox/identity.js";
 import { sharedVaultKey } from "../../vault/index.js";
 import { modelKey, resolveAdminModelAccessStatuses } from "./provider-models.js";
 import type { AdminToken } from "./store.js";
@@ -861,7 +861,10 @@ function serveConversationLoginLink(
     vaultId = key;
   } else {
     try {
-      vaultId = resolveActorVaultKey(services.sandbox, token.platformUserId, scope.conversationId);
+      vaultId = actorKey(services.sandbox, {
+        userId: token.platformUserId,
+        conversationId: scope.conversationId,
+      });
     } catch (err) {
       jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
       return;

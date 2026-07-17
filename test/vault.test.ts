@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ActorExecutionResolver } from "../src/execution-resolver.js";
 import { DockerContainerManager } from "../src/provisioner.js";
 import { HostExecutor } from "../src/sandbox/index.js";
-import { resolveActorVaultKey } from "../src/vault/routing.js";
+import { actorKey } from "../src/sandbox/identity.js";
 import { FileVaultManager, parseEnvFile, sharedVaultKey } from "../src/vault/index.js";
 
 function mode(path: string): number {
@@ -373,7 +373,7 @@ describe("ActorExecutionResolver image mode", () => {
   test("login and execution use the same generated vault key in image mode", async () => {
     const mgr = new FileVaultManager(tmpDir);
     const baseConfig = { type: "image", image: "ubuntu:24.04" } as const;
-    const vaultKey = resolveActorVaultKey(baseConfig, "U123", "D123");
+    const vaultKey = actorKey(baseConfig, { userId: "U123", conversationId: "D123" });
 
     const resolver = new ActorExecutionResolver(baseConfig, mgr, undefined, tmpDir);
     const executor = await resolver.resolve({

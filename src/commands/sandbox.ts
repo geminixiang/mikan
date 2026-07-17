@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { updateConversationSettings } from "../config.js";
 import { readConversationWorkspaceMountMode } from "../execution-resolver.js";
-import { resolveActorVaultKey } from "../vault/routing.js";
+import { actorKey } from "../sandbox/identity.js";
 import { slashForms } from "./manifest.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler, ParsedSandboxCommand } from "./types.js";
@@ -41,11 +41,10 @@ export class SandboxCommandHandler implements CommandHandler {
       return true;
     }
 
-    const containerKey = resolveActorVaultKey(
-      context.services.sandbox,
-      context.platformUserId,
-      context.conversationId,
-    );
+    const containerKey = actorKey(context.services.sandbox, {
+      userId: context.platformUserId,
+      conversationId: context.conversationId,
+    });
 
     if (parsed.action === "private" || parsed.action === "full") {
       updateConversationSettings(join(context.services.workingDir, context.conversationId), {

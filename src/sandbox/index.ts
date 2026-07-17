@@ -5,7 +5,8 @@ import { HostExecutor, hostSandboxAdapter } from "./host.js";
 import { imageSandboxAdapter } from "./image.js";
 import { GondolinExecutor, gondolinSandboxAdapter } from "./gondolin.js";
 import { SandboxError } from "./errors.js";
-import type { Executor, SandboxAdapter, SandboxConfig } from "./types.js";
+import { createMountedRuntimePathContext } from "./path-context.js";
+import type { Executor, RuntimePathContext, SandboxAdapter, SandboxConfig } from "./types.js";
 
 export type {
   CloudflareSandboxConfig,
@@ -85,4 +86,21 @@ export function createExecutor(
     throw new SandboxError("Error: image sandbox must resolve to a concrete container executor");
   }
   return adapter.createExecutor(config, env, ensureReady);
+}
+
+/**
+ * The runtime path context for a sandbox config before an actor-specific
+ * executor is resolved. `image` configs are unresolved by nature (the actor
+ * decides the concrete container), but their mount layout is fixed, so path
+ * mapping is known without resolving.
+ */
+export function getUnresolvedSandboxPathContext(
+  sandboxConfig: SandboxConfig,
+  hostWorkspaceRoot: string,
+): RuntimePathContext {
+  if (sandboxConfig.type === "image") {
+    return createMountedRuntimePathContext(hostWorkspaceRoot, "/workspace");
+  }
+
+  return createExecutor(sandboxConfig).getPathContext(hostWorkspaceRoot);
 }

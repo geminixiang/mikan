@@ -5,7 +5,6 @@ import {
   scopeCloudflareSandboxId,
 } from "../src/sandbox/identity.js";
 import { DockerContainerManager } from "../src/provisioner.js";
-import { resolveActorVaultKey } from "../src/vault/routing.js";
 
 describe("runtime identity", () => {
   test("one sanitizer: collapses runs, strips edges, lowercases", () => {
@@ -32,7 +31,6 @@ describe("runtime identity", () => {
   test("every consumer derives the same key", () => {
     const config = { type: "image", image: "ubuntu" } as const;
     const key = actorKey(config, { userId: "U1", conversationId: "C-123" });
-    expect(resolveActorVaultKey(config, "U1", "C-123")).toBe(key);
     expect(DockerContainerManager.sanitizeSegment("C-123")).toBe(key);
   });
 

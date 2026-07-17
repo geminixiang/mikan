@@ -346,10 +346,6 @@ class GondolinWorkerClient implements GondolinRuntimeTransport {
   }
 
   /** Whether the worker process behind a handle is still alive. */
-  isWorkerAlive(handle: Pick<GondolinRuntimeHandle, "workerPid">): boolean {
-    return this.isPidAlive(handle.workerPid);
-  }
-
   /**
    * Run one command over a dedicated session IPC connection. Aborting (or the
    * caller's timeout signal firing) destroys the connection, which kills the

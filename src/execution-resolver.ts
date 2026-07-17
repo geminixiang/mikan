@@ -11,7 +11,7 @@ import { createExecutor, type Executor, type SandboxConfig } from "./sandbox/ind
 import { reportUserFacingError } from "./observability/sentry.js";
 import { normalizeSharedVaultName, type ResolvedVault, type VaultManager } from "./vault/index.js";
 import { allowsAmbientDefaultSharedVault } from "./vault/policy.js";
-import { resolveActorVaultKey } from "./vault/routing.js";
+import { actorKey } from "./sandbox/identity.js";
 import * as log from "./log.js";
 
 export type { ActorContext, ImageWorkspaceMountMode } from "./types.js";
@@ -84,7 +84,10 @@ export class ActorExecutionResolver {
   ) {}
 
   async resolve(context: ActorContext): Promise<Executor> {
-    const vaultKey = resolveActorVaultKey(this.baseConfig, context.userId, context.conversationId);
+    const vaultKey = actorKey(this.baseConfig, {
+      userId: context.userId,
+      conversationId: context.conversationId,
+    });
     this.ensureDefaultSharedVault(vaultKey, context.trustModel);
 
     const vault = this.vaultManager.resolve(vaultKey);

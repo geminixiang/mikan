@@ -26,7 +26,7 @@ import { conversationIdOf, deriveSessionKey } from "../sessions/session-key.js";
 import { formatNothingRunning, formatStopped, formatStopping } from "../platform-messages.js";
 import * as Sentry from "@sentry/node";
 import { join } from "path";
-import { getUnresolvedSandboxPathContext } from "../agent.js";
+import { getUnresolvedSandboxPathContext } from "../sandbox/index.js";
 import { disabledVaultManager } from "../vault/disabled.js";
 import type { ConversationRuntimeState } from "./types.js";
 
