@@ -1350,38 +1350,26 @@ export interface EventSummary {
   timezone: string | null;
 }
 
-function stringOrNull(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
-}
-
 /**
- * List events through the owning store (which normalizes the legacy
- * `channelId` alias and keeps unparseable files visible with a null payload).
- * Store payloads are unvalidated JSON, so field access stays defensive.
+ * List events through the owning store, whose payloads are validated by the
+ * event-format module (files that fail validation stay visible with a null
+ * payload so operators can delete them).
  */
 export async function listAllEvents(store: EventStore): Promise<EventSummary[]> {
   const entries = await store.list();
   return entries.map((entry) => {
-    const payload = entry.payload as {
-      type?: unknown;
-      platform?: unknown;
-      conversationId?: unknown;
-      text?: unknown;
-      at?: unknown;
-      schedule?: unknown;
-      timezone?: unknown;
-    } | null;
+    const payload = entry.payload;
     return {
       name: entry.filename,
       size: entry.size,
       mtimeMs: entry.mtimeMs,
-      type: stringOrNull(payload?.type),
-      platform: stringOrNull(payload?.platform),
-      conversationId: stringOrNull(payload?.conversationId),
-      text: stringOrNull(payload?.text),
-      at: stringOrNull(payload?.at),
-      schedule: stringOrNull(payload?.schedule),
-      timezone: stringOrNull(payload?.timezone),
+      type: payload?.type ?? null,
+      platform: payload?.platform ?? null,
+      conversationId: payload?.conversationId ?? null,
+      text: payload?.text ?? null,
+      at: payload?.type === "one-shot" ? payload.at : null,
+      schedule: payload?.type === "periodic" ? payload.schedule : null,
+      timezone: payload?.type === "periodic" ? payload.timezone : null,
     };
   });
 }

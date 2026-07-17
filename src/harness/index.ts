@@ -39,6 +39,18 @@ export {
   type HarnessSettings,
   type RetrySettings,
 } from "./settings.js";
+export {
+  buildEventPayload,
+  EventTypeSchema,
+  parseEventPayload,
+  type EventConversationKind,
+  type EventFilePayload,
+  type EventPayloadInput,
+  type EventType,
+  type ImmediateEventPayload,
+  type OneShotEventPayload,
+  type PeriodicEventPayload,
+} from "./event-format.js";
 export { ExtensionRegistry, parseCommandInput } from "./extensions/registry.js";
 export {
   defaultExtensionDirs,

@@ -1,4 +1,3 @@
-import { Type, type Static } from "@sinclair/typebox";
 import { Cron } from "croner";
 import {
   existsSync,
@@ -12,7 +11,8 @@ import {
 import { readFile } from "fs/promises";
 import { join } from "path";
 import type { MessagingBot, ConversationEvent, ConversationKind } from "./adapter.js";
-import { ensureDirExists, parseJsonSchemaValue } from "./utils/file-guards.js";
+import { parseEventPayload } from "./harness/event-format.js";
+import { ensureDirExists } from "./utils/file-guards.js";
 import * as log from "./log.js";
 import { reportUserFacingError } from "./observability/sentry.js";
 import { inferConversationKind } from "./sessions/policy.js";
@@ -25,38 +25,6 @@ export type {
   PeriodicEventInfo,
 } from "./types.js";
 import type { ImmediateEvent, MikanEvent, OneShotEvent, PeriodicEvent } from "./types.js";
-
-const EventFileSchema = Type.Object({
-  type: Type.Optional(
-    Type.Union([Type.Literal("immediate"), Type.Literal("one-shot"), Type.Literal("periodic")]),
-  ),
-  platform: Type.Optional(Type.String()),
-  conversationId: Type.Optional(Type.String()),
-  channelId: Type.Optional(Type.String()),
-  conversationKind: Type.Optional(Type.Union([Type.Literal("direct"), Type.Literal("shared")])),
-  userId: Type.Optional(Type.String()),
-  text: Type.Optional(Type.String()),
-  at: Type.Optional(Type.String()),
-  schedule: Type.Optional(Type.String()),
-  timezone: Type.Optional(Type.String()),
-});
-
-type EventFileData = Static<typeof EventFileSchema>;
-
-/**
- * Resolve an event file's conversation id, honoring the legacy `channelId`
- * alias. This is the single owner of the alias; consumers reading event files
- * (EventsWatcher, HostEventStore) must normalize through it instead of
- * re-implementing the fallback.
- */
-export function resolveEventConversationId(data: {
-  conversationId?: unknown;
-  channelId?: unknown;
-}): string | undefined {
-  if (typeof data.conversationId === "string") return data.conversationId;
-  if (typeof data.channelId === "string") return data.channelId;
-  return undefined;
-}
 
 import type { PeriodicEventInfo } from "./types.js";
 
@@ -306,73 +274,18 @@ export class EventsWatcher {
     }
   }
 
-  private parseEvent(content: string, filename: string): MikanEvent | null {
-    const data: EventFileData = parseJsonSchemaValue(content, EventFileSchema, (detail) =>
-      detail === "unexpected JSON shape"
-        ? `Expected top-level JSON object in ${filename}`
-        : `Malformed event file ${filename}: ${detail}`,
-    );
-    const conversationId = resolveEventConversationId(data);
-    const type = typeof data.type === "string" ? data.type : undefined;
-    const text = typeof data.text === "string" ? data.text : undefined;
-
-    if (!type || !conversationId || !text) {
-      throw new Error(`Missing required fields (type, conversationId, text) in ${filename}`);
-    }
-
-    const platform = this.resolvePlatform(data.platform, filename);
+  private parseEvent(content: string, filename: string): MikanEvent {
+    // Format validation (shape, per-type fields, channelId alias) is owned by
+    // the event-format module; this watcher only resolves what needs runtime
+    // context: the target platform and the conversation kind.
+    const payload = parseEventPayload(content, filename);
+    const platform = this.resolvePlatform(payload.platform, filename);
     const conversationKind = this.resolveConversationKind(
       platform,
-      conversationId,
-      data.conversationKind,
+      payload.conversationId,
+      payload.conversationKind,
     );
-    const userId = typeof data.userId === "string" ? data.userId : undefined;
-    switch (type) {
-      case "immediate":
-        return {
-          type: "immediate",
-          platform,
-          conversationId,
-          conversationKind,
-          userId,
-          text,
-        };
-
-      case "one-shot":
-        if (typeof data.at !== "string" || data.at.length === 0) {
-          throw new Error(`Missing 'at' field for one-shot event in ${filename}`);
-        }
-        return {
-          type: "one-shot",
-          platform,
-          conversationId,
-          conversationKind,
-          userId,
-          text,
-          at: data.at,
-        };
-
-      case "periodic":
-        if (typeof data.schedule !== "string" || data.schedule.length === 0) {
-          throw new Error(`Missing 'schedule' field for periodic event in ${filename}`);
-        }
-        if (typeof data.timezone !== "string" || data.timezone.length === 0) {
-          throw new Error(`Missing 'timezone' field for periodic event in ${filename}`);
-        }
-        return {
-          type: "periodic",
-          platform,
-          conversationId,
-          conversationKind,
-          userId,
-          text,
-          schedule: data.schedule,
-          timezone: data.timezone,
-        };
-
-      default:
-        throw new Error(`Unknown event type '${type}' in ${filename}`);
-    }
+    return { ...payload, platform, conversationKind };
   }
 
   private resolvePlatform(platformValue: unknown, filename: string): string {

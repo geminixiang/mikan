@@ -29,6 +29,7 @@ import { createJiti } from "jiti";
 import type { AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import * as log from "../../log.js";
+import { buildEventPayload } from "../event-format.js";
 import { loadSkillsFromDir, type MikanSkill } from "../skills.js";
 import { ExtensionRegistry } from "./registry.js";
 import type {
@@ -362,42 +363,35 @@ function payloadFromSpec(
   spec: ExtensionScheduleSpec,
   conversationId: string,
 ): ExtensionSchedulePayload {
-  if (spec.type === "periodic") {
-    if (!spec.schedule || !spec.timezone) {
-      throw new Error("periodic schedule requires schedule and timezone");
-    }
-    return {
-      type: "periodic",
-      conversationId,
-      text: spec.text,
-      schedule: spec.schedule,
-      timezone: spec.timezone,
-      ...(spec.platform ? { platform: spec.platform } : {}),
-    };
-  }
-  if (!spec.at) throw new Error("one-shot schedule requires at");
-  return {
-    type: "one-shot",
+  // Per-type validation (schedule/timezone for periodic, at for one-shot)
+  // is owned by the event-format builder.
+  return buildEventPayload({
+    type: spec.type,
     conversationId,
     text: spec.text,
-    at: spec.at,
     ...(spec.platform ? { platform: spec.platform } : {}),
-  };
+    ...(spec.type === "periodic"
+      ? { schedule: spec.schedule, timezone: spec.timezone }
+      : { at: spec.at }),
+  });
 }
 
 function specFromPayload(payload: ExtensionSchedulePayload): ExtensionScheduleSpec {
   if (payload.type === "periodic") {
     return {
       type: "periodic",
-      schedule: payload.schedule ?? "",
-      timezone: payload.timezone ?? "",
+      schedule: payload.schedule,
+      timezone: payload.timezone,
       text: payload.text,
       ...(payload.platform ? { platform: payload.platform } : {}),
     };
   }
+  // `immediate` payloads never appear under the schedules namespace (they
+  // live under "extrun."); tolerate them as an empty one-shot rather than
+  // widening the spec union.
   return {
     type: "one-shot",
-    at: payload.at ?? "",
+    at: payload.type === "one-shot" ? payload.at : "",
     text: payload.text,
     ...(payload.platform ? { platform: payload.platform } : {}),
   };

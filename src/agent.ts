@@ -13,7 +13,6 @@ import {
   defaultExtensionDirs,
   type ExtensionHostServices,
   type ExtensionRegistry,
-  type ExtensionSchedulePayload,
   formatSkillsForPrompt,
   loadExtensions,
   loadSkillsFromDir,
@@ -38,7 +37,6 @@ import type {
 } from "./adapter.js";
 import type {
   AgentEventPayload,
-  MikanEvent,
   PlatformNotifier,
   PlatformReactor,
   PlatformTrustModel,
@@ -1065,18 +1063,13 @@ function buildExtensionHostServices(params: {
     stateDir: readEnv("STATE_DIR"),
     scheduleStore: {
       write: async (filename, payload) => {
-        // Event files tolerate a missing platform (single-platform default),
-        // so the harness payload is a valid event payload as written.
-        await eventStore.write(filename, payload as unknown as MikanEvent);
+        await eventStore.write(filename, payload);
       },
       delete: async (filename) => (await eventStore.delete(filename)).deleted,
       list: async () =>
-        (await eventStore.list())
-          .filter((entry) => entry.payload !== null)
-          .map((entry) => ({
-            filename: entry.filename,
-            payload: entry.payload as unknown as ExtensionSchedulePayload,
-          })),
+        (await eventStore.list()).flatMap((entry) =>
+          entry.payload ? [{ filename: entry.filename, payload: entry.payload }] : [],
+        ),
     },
     ...(platformNotifier ? { postMessage: platformNotifier } : {}),
     ...(platformReactor ? { addReaction: platformReactor } : {}),

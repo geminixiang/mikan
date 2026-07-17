@@ -1,6 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { TSchema } from "@sinclair/typebox";
-import type { MikanEvent } from "../types.js";
+import type { EventFilePayload } from "../harness/event-format.js";
 
 // ── platform tool packs ───────────────────────────────────────────────────────
 
@@ -34,22 +34,23 @@ export type PlatformToolPackFactory = () => PlatformToolPack;
 
 // ── event tool ───────────────────────────────────────────────────────────────
 
-export type EventPayload = MikanEvent;
+export type EventPayload = EventFilePayload;
 
 export interface EventStore {
-  write(filename: string, payload: MikanEvent): Promise<{ path: string; size: number }>;
+  write(filename: string, payload: EventFilePayload): Promise<{ path: string; size: number }>;
   /**
-   * List all event files. Entries whose JSON cannot be parsed are kept with a
-   * `null` payload so consumers (e.g. the admin portal) can still surface and
-   * delete them; files that disappear mid-listing are skipped.
+   * List all event files. Entries whose JSON cannot be parsed or fail format
+   * validation are kept with a `null` payload so consumers (e.g. the admin
+   * portal) can still surface and delete them; files that disappear
+   * mid-listing are skipped.
    */
   list(): Promise<
-    Array<{ filename: string; payload: MikanEvent | null; size: number; mtimeMs: number }>
+    Array<{ filename: string; payload: EventFilePayload | null; size: number; mtimeMs: number }>
   >;
   read(
     filename: string,
-  ): Promise<{ filename: string; payload: MikanEvent; size: number; mtimeMs: number }>;
-  update(filename: string, payload: MikanEvent): Promise<{ path: string; size: number }>;
+  ): Promise<{ filename: string; payload: EventFilePayload; size: number; mtimeMs: number }>;
+  update(filename: string, payload: EventFilePayload): Promise<{ path: string; size: number }>;
   delete(filename: string): Promise<{ deleted: boolean }>;
 }
 

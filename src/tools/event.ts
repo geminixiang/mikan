@@ -3,7 +3,7 @@ import { basename, join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import type { ConversationKind } from "../adapter.js";
-import { resolveEventConversationId } from "../events.js";
+import { buildEventPayload, EventTypeSchema, parseEventPayload } from "../harness/event-format.js";
 import * as log from "../log.js";
 import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 
@@ -36,9 +36,7 @@ const eventSchema = Type.Object({
       description: "Brief description of the event you're scheduling (shown to user)",
     }),
   ),
-  type: Type.Optional(
-    Type.Union([Type.Literal("immediate"), Type.Literal("one-shot"), Type.Literal("periodic")]),
-  ),
+  type: Type.Optional(EventTypeSchema),
   text: Type.Optional(
     Type.String({
       description:
@@ -140,14 +138,10 @@ export class HostEventStore implements EventStore {
     const safeFilename = validateEventFilename(filename);
     const filePath = join(this.eventsDir, safeFilename);
     const [raw, fileStat] = await Promise.all([readFile(filePath, "utf-8"), stat(filePath)]);
-    const parsed = JSON.parse(raw) as EventPayload & { channelId?: string };
-    // Normalize the legacy `channelId` alias so consumers always see
-    // `conversationId` (alias resolution is owned by src/events.ts).
-    const conversationId = resolveEventConversationId(parsed);
-    const payload: EventPayload =
-      conversationId !== undefined && parsed.conversationId !== conversationId
-        ? { ...parsed, conversationId }
-        : parsed;
+    // Validation (shape, per-type fields, channelId alias) is owned by the
+    // event-format module; files that fail it surface as payload:null in
+    // list() and as errors here.
+    const payload = parseEventPayload(raw, safeFilename);
     return {
       filename: safeFilename,
       payload,
@@ -250,7 +244,7 @@ export function createEventTool(eventStore: EventStore): {
         };
       }
 
-      const payload = buildEventPayload(params, eventContext);
+      const payload = buildToolEventPayload(params, eventContext);
       const filename =
         action === "update"
           ? requireFilename(params)
@@ -291,7 +285,7 @@ export function createEventTool(eventStore: EventStore): {
   };
 }
 
-function buildEventPayload(params: EventToolParams, context: EventToolContext): EventPayload {
+function buildToolEventPayload(params: EventToolParams, context: EventToolContext): EventPayload {
   if (!params.type) {
     throw new Error("`type` is required for create and update actions");
   }
@@ -299,52 +293,30 @@ function buildEventPayload(params: EventToolParams, context: EventToolContext): 
     throw new Error("`text` is required for create and update actions");
   }
 
-  const base = {
+  // Per-type field rules live in the event-format module. No sessionKey or
+  // threadTs in the payload: reminders should fire as top-level messages,
+  // not buried in old threads.
+  const payload = buildEventPayload({
+    type: params.type,
     platform: context.platform,
     conversationId: context.conversationId,
     conversationKind: context.conversationKind,
     userId: context.userId,
     text: params.text,
-  };
-
-  if (params.type === "immediate") {
-    return {
-      ...base,
-      type: "immediate",
-    };
-  }
-
-  if (params.type === "one-shot") {
-    if (!params.at) {
-      throw new Error("`at` is required for one-shot events");
-    }
-
-    const atTime = new Date(params.at).getTime();
-    if (Number.isNaN(atTime)) {
-      throw new Error("`at` must be a valid ISO 8601 timestamp with UTC offset");
-    }
-    if (atTime <= Date.now()) {
-      throw new Error(
-        `\`at\` must be in the future; got ${params.at} (now=${new Date().toISOString()}). Check the timezone offset.`,
-      );
-    }
-
-    // No sessionKey or threadTs: reminders should fire as top-level messages, not buried in old threads
-    return { ...base, type: "one-shot", at: params.at };
-  }
-
-  if (!params.schedule) {
-    throw new Error("`schedule` is required for periodic events");
-  }
-  if (!params.timezone) {
-    throw new Error("`timezone` is required for periodic events");
-  }
-  return {
-    ...base,
-    type: "periodic",
+    at: params.at,
     schedule: params.schedule,
     timezone: params.timezone,
-  };
+  });
+
+  // Tool-side write policy, not format knowledge: a reminder in the past
+  // would be deleted unfired by the watcher, so reject it here.
+  if (payload.type === "one-shot" && new Date(payload.at).getTime() <= Date.now()) {
+    throw new Error(
+      `\`at\` must be in the future; got ${payload.at} (now=${new Date().toISOString()}). Check the timezone offset.`,
+    );
+  }
+
+  return payload;
 }
 
 function formatEventWriteResult(
@@ -354,13 +326,16 @@ function formatEventWriteResult(
 ): string {
   const scheduledVerb = action === "update" ? "Updated" : "Scheduled";
   const immediateVerb = action === "update" ? "Updated" : "Queued";
+  const target = payload.platform
+    ? `${payload.platform}/${payload.conversationId}`
+    : payload.conversationId;
   switch (payload.type) {
     case "periodic":
-      return `${scheduledVerb} periodic event ${filename} for ${payload.platform}/${payload.conversationId} (${payload.schedule} ${payload.timezone})`;
+      return `${scheduledVerb} periodic event ${filename} for ${target} (${payload.schedule} ${payload.timezone})`;
     case "one-shot":
-      return `${scheduledVerb} one-shot event ${filename} for ${payload.platform}/${payload.conversationId} at ${payload.at}`;
+      return `${scheduledVerb} one-shot event ${filename} for ${target} at ${payload.at}`;
     case "immediate":
-      return `${immediateVerb} immediate event ${filename} for ${payload.platform}/${payload.conversationId}`;
+      return `${immediateVerb} immediate event ${filename} for ${target}`;
   }
 }
 

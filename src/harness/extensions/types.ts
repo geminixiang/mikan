@@ -26,6 +26,7 @@
 import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, ImageContent, Model, TextContent } from "@earendil-works/pi-ai";
 import type { TSchema } from "@sinclair/typebox";
+import type { EventFilePayload } from "../event-format.js";
 import type { MikanSkill } from "../skills.js";
 import type {
   SubagentRunOutput,
@@ -189,20 +190,13 @@ export interface ExtensionScheduleInfo {
 }
 
 /**
- * Event-file payload the harness hands to the embedder's schedule store.
- * Mirrors mikan's event-file shape; `platform` may be omitted when the
- * embedder runs a single platform. `immediate` backs `api.triggerRun` —
- * the event fires as soon as the embedder's watcher picks it up.
+ * Event-file payload the harness hands to the embedder's schedule store —
+ * the canonical event-file shape owned by the event-format module.
+ * `platform` may be omitted when the embedder runs a single platform.
+ * `immediate` backs `api.triggerRun` — the event fires as soon as the
+ * embedder's watcher picks it up.
  */
-export interface ExtensionSchedulePayload {
-  type: "one-shot" | "periodic" | "immediate";
-  conversationId: string;
-  text: string;
-  platform?: string;
-  at?: string;
-  schedule?: string;
-  timezone?: string;
-}
+export type ExtensionSchedulePayload = EventFilePayload;
 
 // ── v3: commands and lifecycle ───────────────────────────────────────────────
 

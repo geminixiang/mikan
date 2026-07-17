@@ -9,3 +9,4 @@
 - **Admin**: The complete operator-facing configuration surface. Detailed or infrequent settings belong in Admin rather than slash commands.
 - **Platform Adapter**: Slack, Discord, or Telegram code that translates platform SDK events into mikan conversation events and provides platform-specific response operations.
 - **Session key**: The conversation-scoped runtime identity used to serialize and resume work for a direct message, shared channel, or thread.
+- **Scheduled event**: A JSON file in the workspace `events/` directory (the workspace scheduling bus) that triggers an autonomous agent run — immediate, one-shot (`at`), or periodic (`schedule` + `timezone`). The event-format module (`src/harness/event-format.ts`) is the single owner of the file format: schema, payload union, parser, builder, and per-type field rules. Every reader and writer (the events watcher, the `event` tool, the extension schedule API) goes through it.

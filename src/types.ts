@@ -1,6 +1,11 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import type {
+  ImmediateEventPayload,
+  OneShotEventPayload,
+  PeriodicEventPayload,
+} from "./harness/event-format.js";
 
 const execFileAsync = promisify(execFile);
 type ExecFileAsync = typeof execFileAsync;
@@ -352,36 +357,21 @@ export interface ConversationLogMessage {
 }
 
 // ── events ────────────────────────────────────────────────────────────────────
+// The wire format (payload union, schema, parser, builder) is owned by
+// src/harness/event-format.ts. These are the *resolved* runtime shapes: the
+// EventsWatcher fills in the platform default and infers the conversation
+// kind before an event reaches a bot.
 
-export interface ImmediateEvent {
-  type: "immediate";
+interface ResolvedEventFields {
   platform: string;
-  conversationId: string;
   conversationKind: ConversationKind;
-  userId?: string;
-  text: string;
 }
 
-export interface OneShotEvent {
-  type: "one-shot";
-  platform: string;
-  conversationId: string;
-  conversationKind: ConversationKind;
-  userId?: string;
-  text: string;
-  at: string;
-}
+export type ImmediateEvent = ImmediateEventPayload & ResolvedEventFields;
 
-export interface PeriodicEvent {
-  type: "periodic";
-  platform: string;
-  conversationId: string;
-  conversationKind: ConversationKind;
-  userId?: string;
-  text: string;
-  schedule: string;
-  timezone: string;
-}
+export type OneShotEvent = OneShotEventPayload & ResolvedEventFields;
+
+export type PeriodicEvent = PeriodicEventPayload & ResolvedEventFields;
 
 export type MikanEvent = ImmediateEvent | OneShotEvent | PeriodicEvent;
 
