@@ -1,7 +1,7 @@
 import { readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import * as log from "../log.js";
-import { ensureDirExists, isRecord, readJsonFileIfExists } from "../utils/file-guards.js";
+import { ensureDirExists, readJsonFileIfExists } from "../utils/file-guards.js";
 import { execSimple } from "./utils.js";
 
 /**
@@ -10,21 +10,10 @@ import { execSimple } from "./utils.js";
  * hosting it — so a crash that skips every exit hook still leaves enough
  * behind to adopt the runtime back or stop its orphaned VM runner.
  */
-export interface GondolinRuntimeRecord {
-  /** Gondolin session id (`vm.id`); also names the record file. */
-  sessionId: string;
-  /** mikan session key (vault key) the runtime was created for. */
-  instanceId: string;
-  /** Process that owns the runtime (the worker process). */
-  ownerPid: number;
-  /** Host pid of the active VM runner process (QEMU/krun), if started. */
-  runnerPid: number | null;
-  createdAt: string;
-  /** Session IPC socket for adopting the runtime from a new mikan process. */
-  socketPath?: string;
-  /** Desired-runtime fingerprint the VM was created from. */
-  fingerprint?: string;
-}
+// The record is a wire contract shape shared with the Go daemon's
+// rediscovery; its single home is gondolin-contract.ts.
+export type { GondolinRuntimeRecord } from "./gondolin-contract.js";
+import { isGondolinRuntimeRecord, type GondolinRuntimeRecord } from "./gondolin-contract.js";
 
 interface GondolinInventoryOverrides {
   execFile?: (cmd: string, args: string[]) => Promise<string>;
@@ -32,20 +21,6 @@ interface GondolinInventoryOverrides {
   gcSessions?: () => Promise<number>;
   killWaitMs?: number;
   killPollIntervalMs?: number;
-}
-
-function isGondolinRuntimeRecord(value: unknown): value is GondolinRuntimeRecord {
-  return (
-    isRecord(value) &&
-    typeof value.sessionId === "string" &&
-    value.sessionId.length > 0 &&
-    typeof value.instanceId === "string" &&
-    typeof value.ownerPid === "number" &&
-    (value.runnerPid === null || typeof value.runnerPid === "number") &&
-    typeof value.createdAt === "string" &&
-    (value.socketPath === undefined || typeof value.socketPath === "string") &&
-    (value.fingerprint === undefined || typeof value.fingerprint === "string")
-  );
 }
 
 async function defaultGcSessions(): Promise<number> {

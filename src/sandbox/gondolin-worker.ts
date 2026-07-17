@@ -6,43 +6,11 @@ import { shellEscape } from "./utils.js";
 
 type GondolinModule = typeof import("@earendil-works/gondolin");
 
-/**
- * Everything a worker process needs to host one Gondolin VM. Serialized as a
- * single JSON argv entry — it must stay free of secrets (vault env travels
- * per-exec over the session IPC socket, never through the worker command
- * line).
- */
-export interface GondolinWorkerConfig {
-  /** mikan session key the runtime belongs to. */
-  instanceId: string;
-  /** Resolved guest image asset directory. */
-  image?: string;
-  /** Image selector resolved inside the worker (remote workers, where the
-   * spawning host has no image store). Ignored when `image` is set. */
-  imageSelector?: string;
-  mounts: Array<{ source: string; target: string }>;
-  cpus?: number;
-  memory?: string;
-  /** Desired-runtime fingerprint recorded for adoption checks. */
-  fingerprint: string;
-  /** Runtime inventory directory (shared with the spawning mikan). */
-  inventoryDir: string;
-  /**
-   * Self-stop when the mikan heartbeat file is older than this — no mikan is
-   * left to adopt the runtime. 0 disables the check.
-   */
-  heartbeatStaleMs: number;
-}
-
-/** First stdout line of a worker, consumed by the spawning mikan. */
-export interface GondolinWorkerHandshake {
-  ready: boolean;
-  error?: string;
-  sessionId?: string;
-  socketPath?: string;
-  workerPid?: number;
-  runnerPid?: number | null;
-}
+// The argv config and handshake are wire contract shapes shared with the Go
+// daemon; their single home is gondolin-contract.ts (re-exported here for
+// the worker entrypoint and spawners).
+export type { GondolinWorkerConfig, GondolinWorkerHandshake } from "./gondolin-contract.js";
+import type { GondolinWorkerConfig, GondolinWorkerHandshake } from "./gondolin-contract.js";
 
 interface GondolinWorkerDeps {
   loadGondolin?: () => Promise<GondolinModule>;

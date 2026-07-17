@@ -55,6 +55,7 @@ type inventoryRecord struct {
 	InstanceID  string `json:"instanceId"`
 	OwnerPid    int    `json:"ownerPid"`
 	RunnerPid   int    `json:"runnerPid"`
+	CreatedAt   string `json:"createdAt"`
 	SocketPath  string `json:"socketPath"`
 	Fingerprint string `json:"fingerprint"`
 }

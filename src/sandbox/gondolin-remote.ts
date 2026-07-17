@@ -5,6 +5,13 @@ import * as log from "../log.js";
 import type { GondolinRemoteWorkerSettings } from "../types.js";
 import { SandboxError } from "./errors.js";
 import {
+  createSessionFrameParser,
+  encodeSessionMessage,
+  type GondolinCredentialFile,
+  type GondolinEnsureRuntimeRequest,
+  type GondolinRemoteRuntime,
+} from "./gondolin-contract.js";
+import {
   GondolinRuntimeGoneError,
   execOverSessionConnect,
   type GondolinRuntimeHandle,
@@ -51,39 +58,9 @@ export interface GondolinRemoteOverrides {
   onLeaseActivity?: (instanceId: string, expiresAtMs: number) => void;
 }
 
-/** Parses the daemon-to-client session framing: u8 type + u32be length + payload. */
-export function createSessionFrameParser(
-  callbacks: SessionClientCallbacks,
-): (chunk: Buffer) => void {
-  let buffer = Buffer.alloc(0);
-  return (chunk: Buffer) => {
-    buffer = Buffer.concat([buffer, chunk]);
-    while (buffer.length >= 5) {
-      const type = buffer.readUInt8(0);
-      const length = buffer.readUInt32BE(1);
-      if (buffer.length < 5 + length) return;
-      const payload = buffer.subarray(5, 5 + length);
-      buffer = buffer.subarray(5 + length);
-      if (type === 1) {
-        callbacks.onBinary(Buffer.from(payload));
-        continue;
-      }
-      try {
-        callbacks.onJson(JSON.parse(payload.toString("utf8")));
-      } catch {
-        // ignore malformed frames
-      }
-    }
-  };
-}
-
-/** Encodes a client-to-daemon session message: u32be length + JSON. */
-export function encodeSessionMessage(message: object): Buffer {
-  const payload = Buffer.from(JSON.stringify(message));
-  const header = Buffer.alloc(4);
-  header.writeUInt32BE(payload.length, 0);
-  return Buffer.concat([header, payload]);
-}
+// The framing lives with the rest of the wire contract; re-exported here for
+// existing importers.
+export { createSessionFrameParser, encodeSessionMessage };
 
 /**
  * One mikan-worker daemon as seen from mikan: mTLS requests, per-instance
@@ -123,7 +100,7 @@ export class GondolinRemoteConnection {
 
   async ensure(instanceId: string, spec: GondolinRuntimeSpec): Promise<GondolinRuntimeHandle> {
     const { mounts, credentialFiles } = this.translateMounts(spec);
-    const body = {
+    const body: GondolinEnsureRuntimeRequest = {
       instanceId,
       imageSelector: spec.image,
       mounts,
@@ -143,11 +120,12 @@ export class GondolinRemoteConnection {
         ENSURE_TIMEOUT_MS,
       );
       if (response.status === 200) {
+        const runtime = response.json as Partial<GondolinRemoteRuntime>;
         return {
-          sessionId: response.json.sessionId as string,
+          sessionId: runtime.sessionId ?? "",
           instanceId,
           socketPath: "",
-          workerPid: (response.json.workerPid as number) ?? 0,
+          workerPid: runtime.workerPid ?? 0,
           fingerprint: spec.fingerprint,
         };
       }
@@ -230,14 +208,14 @@ export class GondolinRemoteConnection {
    */
   private translateMounts(spec: GondolinRuntimeSpec): {
     mounts: Array<{ source: string; target: string }>;
-    credentialFiles: Array<{ target: string; contentBase64: string }>;
+    credentialFiles: GondolinCredentialFile[];
   } {
     const root = this.settings.workspaceRoot;
     if (!root || !spec.workspacePath) {
       return { mounts: spec.mounts, credentialFiles: [] };
     }
     const mounts: Array<{ source: string; target: string }> = [];
-    const credentialFiles: Array<{ target: string; contentBase64: string }> = [];
+    const credentialFiles: GondolinCredentialFile[] = [];
     for (const mount of spec.mounts) {
       const suffix = relative(spec.workspacePath, mount.source);
       if (!suffix.startsWith("..") && !isAbsolute(suffix)) {

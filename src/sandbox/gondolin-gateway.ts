@@ -7,12 +7,8 @@ import * as log from "../log.js";
 import type { GondolinGatewaySettings } from "../types.js";
 import { gondolinFleet } from "./gondolin-fleet.js";
 import { gondolinJoin } from "./gondolin-join.js";
-import {
-  GondolinRemoteConnection,
-  GondolinWorkerUnreachableError,
-  createSessionFrameParser,
-  encodeSessionMessage,
-} from "./gondolin-remote.js";
+import { createSessionFrameParser, encodeSessionMessage } from "./gondolin-contract.js";
+import { GondolinRemoteConnection, GondolinWorkerUnreachableError } from "./gondolin-remote.js";
 import type { SessionClient, SessionClientCallbacks } from "./gondolin-worker-client.js";
 
 const RPC_TIMEOUT_MS = 150_000;
