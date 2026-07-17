@@ -52,7 +52,14 @@ interface RegisteredWorker {
   lastSeen: number;
   activeRuntimes: number;
   workspaceError?: string;
-  pendingRpc: Map<number, { resolve: (frame: ControlFrame) => void; timer: NodeJS.Timeout }>;
+  pendingRpc: Map<
+    number,
+    {
+      resolve: (frame: ControlFrame) => void;
+      reject: (error: Error) => void;
+      timer: NodeJS.Timeout;
+    }
+  >;
   nextRpcId: number;
 }
 
@@ -210,7 +217,7 @@ class GondolinWorkerGateway {
   stop(): void {
     for (const worker of this.workers.values()) {
       worker.socket.destroy();
-      for (const pending of worker.pendingRpc.values()) clearTimeout(pending.timer);
+      this.rejectPendingRpc(worker, "gateway stopped");
     }
     this.workers.clear();
     for (const pending of this.pendingTunnels.values()) clearTimeout(pending.timer);
@@ -222,6 +229,7 @@ class GondolinWorkerGateway {
   /** Routes one inbound connection by its first frame: control or tunnel. */
   private handleConnection(socket: Socket): void {
     socket.setNoDelay(true);
+    socket.setKeepAlive(true, 30_000);
     let routed = false;
     const authorized = (this.overrides.isAuthorized ?? defaultIsAuthorized)(socket);
     const reader = createControlFrameReader((frame, leftover) => {
@@ -304,10 +312,9 @@ class GondolinWorkerGateway {
     void gondolinFleet.reconcile();
 
     socket.on("close", () => {
+      this.rejectPendingRpc(worker, `worker '${name}' disconnected`);
       const current = this.workers.get(name);
       if (current !== worker) return; // superseded
-      for (const pending of worker.pendingRpc.values()) clearTimeout(pending.timer);
-      worker.pendingRpc.clear();
       log.logWarning(`Gondolin worker disconnected: ${name} (placements fence until lease expiry)`);
       gondolinFleet.detachWorker(name);
       this.workers.delete(name);
@@ -386,6 +393,7 @@ class GondolinWorkerGateway {
       timer.unref?.();
       worker.pendingRpc.set(id, {
         timer,
+        reject,
         resolve: (frame) =>
           resolve({
             status: frame.status ?? 0,
@@ -394,6 +402,14 @@ class GondolinWorkerGateway {
       });
       worker.socket.write(encodeControlFrame({ type: "request", id, method, path, body, headers }));
     });
+  }
+
+  private rejectPendingRpc(worker: RegisteredWorker, reason: string): void {
+    for (const pending of worker.pendingRpc.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new GondolinWorkerUnreachableError(reason));
+    }
+    worker.pendingRpc.clear();
   }
 
   /** Ask the worker to dial back a data connection for one session tunnel. */

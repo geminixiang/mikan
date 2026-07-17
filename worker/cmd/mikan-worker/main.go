@@ -296,7 +296,16 @@ func runConnect(args []string) {
 	server := buildDaemon(daemon, logger)
 	client := &dialhome.Client{
 		Dial: func() (net.Conn, error) {
-			return tls.DialWithDialer(&net.Dialer{Timeout: 10 * time.Second}, "tcp", address, tlsConfig)
+			return tls.DialWithDialer(&net.Dialer{
+				Timeout:   10 * time.Second,
+				KeepAlive: 30 * time.Second,
+				KeepAliveConfig: net.KeepAliveConfig{
+					Enable:   true,
+					Idle:     30 * time.Second,
+					Interval: 10 * time.Second,
+					Count:    3,
+				},
+			}, "tcp", address, tlsConfig)
 		},
 		Server:      server,
 		Name:        *name,

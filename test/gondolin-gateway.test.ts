@@ -58,6 +58,7 @@ class FakeDialhomeWorker extends EventEmitter {
   nextSession = 0;
   execResponse = { stdout: "ok", code: 0 };
   workspaceError?: string;
+  respondToRequests = true;
 
   constructor(
     readonly port: number,
@@ -116,8 +117,10 @@ class FakeDialhomeWorker extends EventEmitter {
         path: frame.path as string,
         body: frame.body,
       });
-      const { status, body } = this.serve(frame);
-      this.control.write(encodeFrame({ type: "response", id: frame.id, status, body }));
+      if (this.respondToRequests) {
+        const { status, body } = this.serve(frame);
+        this.control.write(encodeFrame({ type: "response", id: frame.id, status, body }));
+      }
     } else if (frame.type === "open-tunnel") {
       this.emit("open-tunnel", frame);
       if (this.runtime?.sessionId === frame.sessionId) {
@@ -346,6 +349,24 @@ describe("Gondolin worker gateway", () => {
 
     const again = await gondolinFleet.ensure("c1", SPEC);
     expect(again.workerName).toBe("linux-1");
+  });
+
+  test("disconnect rejects an in-flight RPC instead of leaving it pending", async () => {
+    const worker = await joinWorker("linux-1");
+    worker.respondToRequests = false;
+
+    const pending = gondolinFleet.ensure("c1", SPEC);
+    await vi.waitFor(() => expect(worker.requests.length).toBeGreaterThan(0));
+    worker.close();
+
+    let timeout: NodeJS.Timeout | undefined;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timeout = setTimeout(() => reject(new Error("in-flight RPC remained pending")), 500);
+    });
+    await expect(Promise.race([pending, deadline])).rejects.toThrow(
+      "no gondolin remote worker is reachable",
+    );
+    clearTimeout(timeout);
   });
 
   test("a new registration under the same name supersedes the old connection", async () => {

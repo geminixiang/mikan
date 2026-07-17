@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"runtime"
@@ -117,9 +118,19 @@ type Client struct {
 	Log       *slog.Logger
 
 	PingInterval time.Duration
+	// PongTimeout bounds how long a ping may remain unacknowledged before the
+	// control channel is treated as half-open and reconnected.
+	PongTimeout time.Duration
 	// ReconnectMin/Max bound the exponential backoff between attempts.
 	ReconnectMin time.Duration
 	ReconnectMax time.Duration
+	// ReconnectResetAfter resets accumulated backoff after a session stayed
+	// healthy for this long. ReconnectJitter is the fractional random spread
+	// applied to waits so a gateway restart does not synchronize the fleet.
+	ReconnectResetAfter time.Duration
+	ReconnectJitter     float64
+	// RandomFloat is overridden by tests. Production uses math/rand/v2.
+	RandomFloat func() float64
 
 	// handler is built once: Server.Handler() resets idempotency state.
 	handler http.Handler
@@ -135,11 +146,23 @@ func (c *Client) Run(stop <-chan struct{}) {
 	if c.PingInterval == 0 {
 		c.PingInterval = 15 * time.Second
 	}
+	if c.PongTimeout == 0 {
+		c.PongTimeout = 10 * time.Second
+	}
 	if c.ReconnectMin == 0 {
 		c.ReconnectMin = time.Second
 	}
 	if c.ReconnectMax == 0 {
 		c.ReconnectMax = 30 * time.Second
+	}
+	if c.ReconnectResetAfter == 0 {
+		c.ReconnectResetAfter = time.Minute
+	}
+	if c.ReconnectJitter == 0 {
+		c.ReconnectJitter = 0.2
+	}
+	if c.RandomFloat == nil {
+		c.RandomFloat = rand.Float64
 	}
 	c.handler = c.Server.Handler()
 	backoff := c.ReconnectMin
@@ -149,15 +172,20 @@ func (c *Client) Run(stop <-chan struct{}) {
 			return
 		default:
 		}
+		started := time.Now()
 		err := c.session(stop)
 		if err == nil {
 			return // stop requested during a healthy session
 		}
-		c.Log.Warn("dial-home session ended; reconnecting", "error", err, "backoff", backoff)
+		if time.Since(started) >= c.ReconnectResetAfter {
+			backoff = c.ReconnectMin
+		}
+		delay := jitterDelay(backoff, c.ReconnectJitter, c.RandomFloat())
+		c.Log.Warn("dial-home session ended; reconnecting", "error", err, "backoff", delay)
 		select {
 		case <-stop:
 			return
-		case <-time.After(backoff):
+		case <-time.After(delay):
 		}
 		backoff *= 2
 		if backoff > c.ReconnectMax {
@@ -182,26 +210,55 @@ func (c *Client) session(stop <-chan struct{}) error {
 
 	frames := make(chan Frame)
 	readErr := make(chan error, 1)
+	readerDone := make(chan struct{})
+	defer close(readerDone)
 	go func() {
 		for {
 			frame, err := ReadFrame(conn)
 			if err != nil {
-				readErr <- err
+				select {
+				case readErr <- err:
+				case <-readerDone:
+				}
 				return
 			}
-			frames <- frame
+			select {
+			case frames <- frame:
+			case <-readerDone:
+				return
+			}
 		}
 	}()
 
 	ping := time.NewTicker(c.PingInterval)
 	defer ping.Stop()
+	var pongTimer *time.Timer
+	var pongTimeout <-chan time.Time
+	stopPongTimer := func() {
+		if pongTimer != nil && !pongTimer.Stop() {
+			select {
+			case <-pongTimer.C:
+			default:
+			}
+		}
+		pongTimeout = nil
+	}
+	defer stopPongTimer()
 	for {
 		select {
 		case <-stop:
 			return nil
 		case err := <-readErr:
 			return err
+		case <-pongTimeout:
+			return fmt.Errorf("gateway pong timeout after %s", c.PongTimeout)
 		case <-ping.C:
+			// Only one ping may be outstanding. The timeout owns liveness until
+			// its matching pong arrives, preventing traffic from masking a
+			// one-way or half-open control channel.
+			if pongTimeout != nil {
+				continue
+			}
 			frame := Frame{
 				Type:           "ping",
 				ActiveRuntimes: c.Server.Runtimes.Count(),
@@ -210,6 +267,8 @@ func (c *Client) session(stop <-chan struct{}) error {
 			if err := WriteFrame(writes, frame); err != nil {
 				return err
 			}
+			pongTimer = time.NewTimer(c.PongTimeout)
+			pongTimeout = pongTimer.C
 		case frame := <-frames:
 			switch frame.Type {
 			case "request":
@@ -217,12 +276,23 @@ func (c *Client) session(stop <-chan struct{}) error {
 			case "open-tunnel":
 				go c.dialBackTunnel(frame)
 			case "pong":
-				// host acknowledged; lastSeen is host-side state
+				stopPongTimer()
 			default:
 				c.Log.Warn("unknown control frame", "type", frame.Type)
 			}
 		}
 	}
+}
+
+func jitterDelay(base time.Duration, fraction, randomFloat float64) time.Duration {
+	if fraction <= 0 {
+		return base
+	}
+	if fraction > 1 {
+		fraction = 1
+	}
+	factor := 1 + ((randomFloat * 2) - 1) * fraction
+	return time.Duration(float64(base) * factor)
 }
 
 func (c *Client) registerFrame() Frame {

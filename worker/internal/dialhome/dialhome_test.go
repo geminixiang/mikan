@@ -256,3 +256,93 @@ func TestReconnectsAndReregisters(t *testing.T) {
 		t.Fatalf("expected re-register, got %+v", register)
 	}
 }
+
+func TestMissingPongReconnectsHalfOpenControlChannel(t *testing.T) {
+	server := newTestServer(t, "/nonexistent.sock")
+	gateway := &fakeGateway{conns: make(chan net.Conn, 8)}
+	client := &Client{
+		Dial:         gateway.dial,
+		Server:       server,
+		Name:         "test-worker",
+		PingInterval: 10 * time.Millisecond,
+		PongTimeout:  15 * time.Millisecond,
+		ReconnectMin: time.Millisecond,
+		ReconnectMax: time.Millisecond,
+	}
+	stop := make(chan struct{})
+	go client.Run(stop)
+	t.Cleanup(func() { close(stop) })
+
+	first := awaitConn(t, gateway)
+	if _, err := ReadFrame(first); err != nil { // register
+		t.Fatal(err)
+	}
+	ping, err := ReadFrame(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ping.Type != "ping" {
+		t.Fatalf("expected ping, got %+v", ping)
+	}
+
+	second := awaitConn(t, gateway)
+	register, err := ReadFrame(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if register.Type != "register" {
+		t.Fatalf("expected re-register after pong timeout, got %+v", register)
+	}
+}
+
+func TestPongKeepsControlChannelAlive(t *testing.T) {
+	server := newTestServer(t, "/nonexistent.sock")
+	gateway := &fakeGateway{conns: make(chan net.Conn, 8)}
+	client := &Client{
+		Dial:         gateway.dial,
+		Server:       server,
+		Name:         "test-worker",
+		PingInterval: 10 * time.Millisecond,
+		PongTimeout:  30 * time.Millisecond,
+		ReconnectMin: time.Millisecond,
+		ReconnectMax: time.Millisecond,
+	}
+	stop := make(chan struct{})
+	go client.Run(stop)
+	t.Cleanup(func() { close(stop) })
+
+	control := awaitConn(t, gateway)
+	if _, err := ReadFrame(control); err != nil { // register
+		t.Fatal(err)
+	}
+	for range 3 {
+		ping, err := ReadFrame(control)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ping.Type != "ping" {
+			t.Fatalf("expected ping, got %+v", ping)
+		}
+		if err := WriteFrame(control, Frame{Type: "pong"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	select {
+	case <-gateway.conns:
+		t.Fatal("client reconnected despite acknowledged pings")
+	case <-time.After(15 * time.Millisecond):
+	}
+}
+
+func TestJitterDelay(t *testing.T) {
+	base := 10 * time.Second
+	if got := jitterDelay(base, 0.2, 0); got != 8*time.Second {
+		t.Fatalf("low jitter = %s", got)
+	}
+	if got := jitterDelay(base, 0.2, 0.5); got != base {
+		t.Fatalf("mid jitter = %s", got)
+	}
+	if got := jitterDelay(base, 0.2, 1); got != 12*time.Second {
+		t.Fatalf("high jitter = %s", got)
+	}
+}
