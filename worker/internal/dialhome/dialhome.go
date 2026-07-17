@@ -291,7 +291,7 @@ func jitterDelay(base time.Duration, fraction, randomFloat float64) time.Duratio
 	if fraction > 1 {
 		fraction = 1
 	}
-	factor := 1 + ((randomFloat * 2) - 1) * fraction
+	factor := 1 + ((randomFloat*2)-1)*fraction
 	return time.Duration(float64(base) * factor)
 }
 
