@@ -33,7 +33,7 @@ description: 了解 mikan 的平台接入、工作階段、agent、sandbox、vau
 - `src/adapters/intake.ts`
 - `src/commands/manifest.ts`
 - `src/sessions/store.ts`
-- `src/sessions/agent-memory-file-manager.ts`
+- `src/sessions/chat-history-sync.ts`
 
 職責：
 
@@ -76,7 +76,7 @@ description: 了解 mikan 的平台接入、工作階段、agent、sandbox、vau
 ### E. 狀態與持久化層
 
 - `src/sessions/store.ts`
-- `src/sessions/agent-memory-file-manager.ts`
+- `src/sessions/chat-history-sync.ts`
 - `src/vault/index.ts`
 
 職責：

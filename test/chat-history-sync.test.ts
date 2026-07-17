@@ -3,10 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionStore } from "../src/harness/index.js";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import {
-  AgentMemoryFileManager,
-  registerThreadSession,
-} from "../src/sessions/agent-memory-file-manager.js";
+import { ChatHistorySync, registerThreadSession } from "../src/sessions/chat-history-sync.js";
 import { getThreadSessionFile, openManagedSession } from "../src/sessions/store.js";
 
 let conversationDir: string;
@@ -54,7 +51,7 @@ function countJsonlEntries(
     .filter(predicate).length;
 }
 
-describe("AgentMemoryFileManager", () => {
+describe("ChatHistorySync", () => {
   test("bootstraps a top-level session from recent log history and excludes current message", async () => {
     writeLog([
       {
@@ -90,7 +87,7 @@ describe("AgentMemoryFileManager", () => {
       },
     ]);
 
-    const manager = new AgentMemoryFileManager({
+    const manager = new ChatHistorySync({
       recentDays: 7,
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
@@ -143,7 +140,7 @@ describe("AgentMemoryFileManager", () => {
       },
     ]);
 
-    const manager = new AgentMemoryFileManager({
+    const manager = new ChatHistorySync({
       recentDays: 7,
       maxTopLevelMessages: 2,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
@@ -198,7 +195,7 @@ describe("AgentMemoryFileManager", () => {
       },
     ]);
 
-    const manager = new AgentMemoryFileManager({
+    const manager = new ChatHistorySync({
       recentDays: 7,
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:01:03.000Z"),
@@ -280,7 +277,7 @@ describe("AgentMemoryFileManager", () => {
       },
     ]);
 
-    const manager = new AgentMemoryFileManager({
+    const manager = new ChatHistorySync({
       recentDays: 7,
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:07.000Z"),
@@ -370,7 +367,7 @@ describe("AgentMemoryFileManager", () => {
     ];
     writeLog(logEntries.slice(0, 3));
 
-    const manager = new AgentMemoryFileManager({
+    const manager = new ChatHistorySync({
       recentDays: 7,
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:08.000Z"),
@@ -437,7 +434,7 @@ describe("AgentMemoryFileManager", () => {
       },
     ]);
 
-    const manager = new AgentMemoryFileManager({
+    const manager = new ChatHistorySync({
       recentDays: 7,
       maxTopLevelMessages: 2,
       now: () => new Date("2026-05-01T00:00:04.000Z"),
@@ -509,7 +506,7 @@ describe("AgentMemoryFileManager", () => {
       },
     ]);
 
-    const manager = new AgentMemoryFileManager({
+    const manager = new ChatHistorySync({
       recentDays: 7,
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
@@ -571,7 +568,7 @@ describe("AgentMemoryFileManager", () => {
       },
     ]);
 
-    const manager = new AgentMemoryFileManager({
+    const manager = new ChatHistorySync({
       recentDays: 7,
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
@@ -646,7 +643,7 @@ describe("AgentMemoryFileManager", () => {
       },
     ]);
 
-    const manager = new AgentMemoryFileManager({
+    const manager = new ChatHistorySync({
       recentDays: 7,
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
@@ -659,13 +656,16 @@ describe("AgentMemoryFileManager", () => {
     });
     const session = openManagedSession(scope.contextFile, conversationDir);
 
-    manager.syncSessionManager({
+    const report = manager.syncSessionManager({
       conversationDir,
       sessionKey: "C123:2000.0001",
       sessionManager: session,
       currentMessageId: "2000.0002",
     });
 
+    // Nothing new to sync: the report says so through the interface, and the
+    // bootstrap's single watermark entry is the only one on disk.
+    expect(report).toEqual({ appended: 0 });
     expect(
       countJsonlEntries(
         scope.contextFile,
@@ -688,7 +688,7 @@ describe("AgentMemoryFileManager", () => {
 
     registerThreadSession({ conversationDir, sessionKey: "C123:2000.0001", cwd: conversationDir });
 
-    const manager = new AgentMemoryFileManager();
+    const manager = new ChatHistorySync();
     const scope = await manager.resolveSessionScope({
       conversationDir,
       sessionKey: "C123:2000.0001",

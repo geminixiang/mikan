@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
-import { AgentMemoryFileManager } from "../src/sessions/agent-memory-file-manager.js";
+import { ChatHistorySync } from "../src/sessions/chat-history-sync.js";
 import {
   createManagedSessionFile,
   createManagedSessionFileAtPath,
@@ -365,7 +365,7 @@ describe("top-level session rotation", () => {
       text: "recent bootstrap context",
     });
 
-    const manager = new AgentMemoryFileManager({ now: () => new Date("2026-03-01T12:00:00.000Z") });
+    const manager = new ChatHistorySync({ now: () => new Date("2026-03-01T12:00:00.000Z") });
     const scope = await manager.resolveSessionScope({
       conversationDir: channelDir,
       sessionKey: "C123",
@@ -386,7 +386,7 @@ describe("top-level session rotation", () => {
     const currentFile = createManagedSessionFile(sessionDir, channelDir);
     rewriteSessionTimestamp(currentFile, "2026-02-23T12:00:00.000Z");
 
-    const manager = new AgentMemoryFileManager({ now: () => new Date("2026-02-28T12:00:00.000Z") });
+    const manager = new ChatHistorySync({ now: () => new Date("2026-02-28T12:00:00.000Z") });
     const scope = await manager.resolveSessionScope({
       conversationDir: channelDir,
       sessionKey: "C123",
@@ -403,7 +403,7 @@ describe("top-level session rotation", () => {
     const currentFile = createManagedSessionFile(sessionDir, channelDir);
     rewriteSessionTimestamp(currentFile, "2026-01-05T12:00:00.000Z");
 
-    const manager = new AgentMemoryFileManager({ now: () => new Date("2026-03-01T12:00:00.000Z") });
+    const manager = new ChatHistorySync({ now: () => new Date("2026-03-01T12:00:00.000Z") });
     const scope = await manager.resolveSessionScope({
       conversationDir: channelDir,
       sessionKey: "C123",
@@ -421,7 +421,7 @@ describe("top-level session rotation", () => {
     seedManagedSession(threadFile, sessionDir, channelDir, "thread context");
     rewriteSessionTimestamp(threadFile, "2026-01-05T12:00:00.000Z");
 
-    const manager = new AgentMemoryFileManager({ now: () => new Date("2026-03-01T12:00:00.000Z") });
+    const manager = new ChatHistorySync({ now: () => new Date("2026-03-01T12:00:00.000Z") });
     const scope = await manager.resolveSessionScope({
       conversationDir: channelDir,
       sessionKey: "C123:1000.0001",
@@ -434,7 +434,7 @@ describe("top-level session rotation", () => {
   });
 
   test("keeps old top-level context out of thread sessions after bootstrap", async () => {
-    const manager = new AgentMemoryFileManager({ now: () => new Date("2026-03-01T12:00:00.000Z") });
+    const manager = new ChatHistorySync({ now: () => new Date("2026-03-01T12:00:00.000Z") });
     appendLogMessage({
       ts: "1770163200.000000",
       date: "2026-02-04T00:00:00.000Z",
@@ -480,7 +480,7 @@ describe("top-level session rotation", () => {
       text: "old log only",
     });
 
-    const manager = new AgentMemoryFileManager({ now: () => new Date("2026-03-01T12:00:00.000Z") });
+    const manager = new ChatHistorySync({ now: () => new Date("2026-03-01T12:00:00.000Z") });
     const rotated = await manager.resolveSessionScope({
       conversationDir: channelDir,
       sessionKey: "C123",

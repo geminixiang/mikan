@@ -43,9 +43,9 @@ export interface ResolvedSessionScope {
   threadRootMessage: ThreadRootMessage | null;
 }
 
-// ── chat session manager ─────────────────────────────────────────────────────
+// ── chat history sync ────────────────────────────────────────────────────────
 
-export interface AgentMemoryFileManagerOptions {
+export interface ChatHistorySyncOptions {
   recentDays?: number;
   maxTopLevelMessages?: number;
   now?: () => Date;
@@ -61,7 +61,7 @@ export interface ResolveChatSessionScopeOptions {
   rotateTopLevelSession?: boolean;
 }
 
-export interface SyncAgentMemoryFileManagerOptions {
+export interface SyncChatSessionOptions {
   conversationDir: string;
   sessionKey: string;
   sessionManager: import("../harness/index.js").SessionStore;

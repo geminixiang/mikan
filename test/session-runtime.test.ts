@@ -12,7 +12,7 @@ import type {
   MessagingInfo,
 } from "../src/adapter.js";
 import { MikanModels } from "../src/harness/index.js";
-import { registerThreadSession } from "../src/sessions/agent-memory-file-manager.js";
+import { registerThreadSession } from "../src/sessions/chat-history-sync.js";
 import { createConversationRuntime } from "../src/runtime/conversation-runtime.js";
 import {
   createManagedSessionFile,

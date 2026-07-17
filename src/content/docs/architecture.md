@@ -33,7 +33,7 @@ Responsibilities:
 - `src/adapters/intake.ts`
 - `src/commands/manifest.ts`
 - `src/sessions/store.ts`
-- `src/sessions/agent-memory-file-manager.ts`
+- `src/sessions/chat-history-sync.ts`
 
 Responsibilities:
 
@@ -76,7 +76,7 @@ Responsibilities:
 ### E. State and persistence layer
 
 - `src/sessions/store.ts`
-- `src/sessions/agent-memory-file-manager.ts`
+- `src/sessions/chat-history-sync.ts`
 - `src/vault/index.ts`
 
 Responsibilities:

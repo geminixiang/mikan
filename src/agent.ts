@@ -63,7 +63,7 @@ import {
   updateActiveSpanAttribution,
 } from "./observability/sentry.js";
 import type { VaultManager } from "./vault/index.js";
-import { AgentMemoryFileManager } from "./sessions/agent-memory-file-manager.js";
+import { ChatHistorySync } from "./sessions/chat-history-sync.js";
 import { formatHistoryLine } from "./sessions/history-line.js";
 import { conversationIdOf, isThreadSessionKey } from "./sessions/session-key.js";
 import {
@@ -1777,7 +1777,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   }
 
   const sessionUuid = extractSessionUuid(contextFile);
-  const chatSessionManager = new AgentMemoryFileManager();
+  const chatSessionManager = new ChatHistorySync();
   const { session, extensionSkills, extensionRegistry, disposeExtensions } =
     await createConfiguredAgentSession({
       conversationId,

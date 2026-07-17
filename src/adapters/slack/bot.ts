@@ -39,7 +39,7 @@ import { createSlackAdapters } from "./context.js";
 import {
   hasMaterializedChatSession,
   registerThreadSession,
-} from "../../sessions/agent-memory-file-manager.js";
+} from "../../sessions/chat-history-sync.js";
 import { conversationIdOf } from "../../sessions/session-key.js";
 import {
   isSlackThreadSessionKey,

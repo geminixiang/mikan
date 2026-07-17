@@ -33,7 +33,7 @@ description: 了解 mikan 如何连接平台适配器、会话、代理、沙箱
 - `src/adapters/intake.ts`
 - `src/commands/manifest.ts`
 - `src/sessions/store.ts`
-- `src/sessions/agent-memory-file-manager.ts`
+- `src/sessions/chat-history-sync.ts`
 
 职责：
 
@@ -76,7 +76,7 @@ description: 了解 mikan 如何连接平台适配器、会话、代理、沙箱
 ### E. 状态和持久化层
 
 - `src/sessions/store.ts`
-- `src/sessions/agent-memory-file-manager.ts`
+- `src/sessions/chat-history-sync.ts`
 - `src/vault/index.ts`
 
 职责：

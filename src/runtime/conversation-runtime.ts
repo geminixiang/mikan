@@ -18,10 +18,10 @@ import {
   reportUserFacingError,
 } from "../observability/sentry.js";
 import {
-  AgentMemoryFileManager,
+  ChatHistorySync,
   hasMaterializedChatSession,
   waitForThreadSessionBootstrap,
-} from "../sessions/agent-memory-file-manager.js";
+} from "../sessions/chat-history-sync.js";
 import { conversationIdOf, deriveSessionKey } from "../sessions/session-key.js";
 import { formatNothingRunning, formatStopped, formatStopping } from "../platform-messages.js";
 import * as Sentry from "@sentry/node";
@@ -82,7 +82,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private readonly conversationStates = new Map<string, ConversationState>();
   private readonly sessionQueues = new Map<string, Promise<void>>();
   private readonly inFlightRuns = new Set<Promise<void>>();
-  private readonly chatSessionManager = new AgentMemoryFileManager();
+  private readonly chatSessionManager = new ChatHistorySync();
   private readonly commandServices: CommandServices;
   private readonly commandHandlers: readonly CommandHandler[];
   private isShuttingDown = false;

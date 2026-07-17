@@ -33,7 +33,7 @@ description: mikan のプラットフォーム接続、セッション、agent�
 - `src/adapters/intake.ts`
 - `src/commands/manifest.ts`
 - `src/sessions/store.ts`
-- `src/sessions/agent-memory-file-manager.ts`
+- `src/sessions/chat-history-sync.ts`
 
 責務:
 
@@ -76,7 +76,7 @@ description: mikan のプラットフォーム接続、セッション、agent�
 ### E. 状態と永続化レイヤー
 
 - `src/sessions/store.ts`
-- `src/sessions/agent-memory-file-manager.ts`
+- `src/sessions/chat-history-sync.ts`
 - `src/vault/index.ts`
 
 責務:

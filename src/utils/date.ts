@@ -3,7 +3,7 @@
  * Returns null when the date is invalid (non-finite time value).
  *
  * This format is used both when writing user messages (agent.ts) and when
- * reading history back into sessions (agent-memory-file-manager.ts). Keeping it
+ * reading history back into sessions (chat-history-sync.ts). Keeping it
  * in one place ensures normalizeComparableText's regex stays valid.
  */
 export function formatLocalTimestamp(date: Date): string | null {

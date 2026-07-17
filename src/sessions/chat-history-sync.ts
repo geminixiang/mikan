@@ -1,11 +1,11 @@
 import type { SessionEntry, SessionStore } from "../harness/index.js";
-import { join } from "path";
 import type { ConversationLogMessage } from "../types.js";
-import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-guards.js";
+import { isRecord } from "../utils/file-guards.js";
 import { isCommandText } from "../commands/text.js";
+import { readConversationLog, type LogRecord } from "./conversation-log.js";
 import { formatHistoryLine, stripHistoryLinePrefix } from "./history-line.js";
-import * as log from "../log.js";
 import { isPlatformHistorySession } from "./metadata.js";
+import { shouldRotateTopLevelSession } from "./rotation.js";
 import { isThreadSessionKey } from "./session-key.js";
 import {
   createManagedSessionFile,
@@ -24,34 +24,35 @@ import {
 const DEFAULT_RECENT_DAYS = 14;
 const DEFAULT_MAX_TOP_LEVEL_MESSAGES = 200;
 const CHAT_SYNC_CUSTOM_TYPE = "mikan.chat_sync";
-const BIWEEKLY_ROTATION_ANCHOR = new Date(2026, 0, 4); // Sunday
-const BIWEEKLY_MS = 14 * 24 * 60 * 60 * 1000;
 
 type SessionAppendMessage = Parameters<SessionStore["appendMessage"]>[0];
 
-interface LogRecord {
-  message: ConversationLogMessage;
-  index: number;
-}
-
 export type {
-  AgentMemoryFileManagerOptions,
+  ChatHistorySyncOptions,
   HasMaterializedSessionOptions,
   RegisterThreadSessionOptions,
   ResetChatSessionOptions,
   ResolveChatSessionScopeOptions,
-  SyncAgentMemoryFileManagerOptions,
+  SyncChatSessionOptions,
   ThreadBootstrapWaitOptions,
 } from "./types.js";
 import type {
-  AgentMemoryFileManagerOptions,
+  ChatHistorySyncOptions,
   HasMaterializedSessionOptions,
   RegisterThreadSessionOptions,
   ResetChatSessionOptions,
   ResolveChatSessionScopeOptions,
-  SyncAgentMemoryFileManagerOptions,
+  SyncChatSessionOptions,
   ThreadBootstrapWaitOptions,
 } from "./types.js";
+
+/** What one sync pass actually did — the inspectable result of a sync. */
+export interface ChatSyncReport {
+  /** Log messages appended to the session in this pass. */
+  appended: number;
+  /** The log message id recorded as the new sync watermark. */
+  lastMessageId?: string;
+}
 
 export function hasMaterializedChatSession(options: HasMaterializedSessionOptions): boolean {
   if (!isThreadSessionKey(options.sessionKey)) {
@@ -98,12 +99,18 @@ export async function waitForThreadSessionBootstrap(
   return waited;
 }
 
-export class AgentMemoryFileManager {
+/**
+ * Syncs the platform chat transcript (log.jsonl) into managed session files:
+ * resolves which session file a message belongs to (top-level vs thread,
+ * with biweekly rotation), bootstraps new sessions from recent history, and
+ * incrementally appends log messages the session does not yet represent.
+ */
+export class ChatHistorySync {
   private readonly recentDays: number;
   private readonly maxTopLevelMessages: number;
   private readonly now: () => Date;
 
-  constructor(options: AgentMemoryFileManagerOptions = {}) {
+  constructor(options: ChatHistorySyncOptions = {}) {
     this.recentDays = options.recentDays ?? DEFAULT_RECENT_DAYS;
     this.maxTopLevelMessages = options.maxTopLevelMessages ?? DEFAULT_MAX_TOP_LEVEL_MESSAGES;
     this.now = options.now ?? (() => new Date());
@@ -135,9 +142,9 @@ export class AgentMemoryFileManager {
     });
   }
 
-  syncSessionManager(options: SyncAgentMemoryFileManagerOptions): void {
+  syncSessionManager(options: SyncChatSessionOptions): ChatSyncReport {
     const records = readConversationLog(options.conversationDir);
-    syncSessionManagerFromLog(
+    return syncSessionManagerFromLog(
       options.sessionManager,
       selectExistingSessionSyncMessages(records, {
         sessionKey: isThreadSessionKey(options.sessionKey) ? options.sessionKey : null,
@@ -250,92 +257,6 @@ export class AgentMemoryFileManager {
 
     return { sessionDir: options.sessionDir, contextFile: threadFile, threadRootMessage };
   }
-}
-
-function shouldRotateTopLevelSession(sessionFile: string, now: Date): boolean {
-  const timestamp = readSessionTimestamp(sessionFile);
-  return timestamp !== null && biweeklyBucket(timestamp) !== biweeklyBucket(now);
-}
-
-function readSessionTimestamp(sessionFile: string): Date | null {
-  const raw = readTextFileIfExists(sessionFile);
-  if (raw === undefined) return null;
-  const firstLine = raw.split("\n").find((line) => line.trim());
-  if (!firstLine) return null;
-  try {
-    const header = parseJsonValue(
-      firstLine,
-      (value): value is { timestamp?: unknown } => isRecord(value),
-      (detail) => (detail === "unexpected JSON shape" ? "expected a JSON object" : detail),
-    );
-    if (typeof header.timestamp !== "string") return null;
-    const date = new Date(header.timestamp);
-    return Number.isFinite(date.getTime()) ? date : null;
-  } catch {
-    return null;
-  }
-}
-
-function biweeklyBucket(date: Date): number {
-  const weekStart = sundayStart(date).getTime();
-  const anchor = sundayStart(BIWEEKLY_ROTATION_ANCHOR).getTime();
-  return Math.floor((weekStart - anchor) / BIWEEKLY_MS);
-}
-
-function sundayStart(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate() - date.getDay());
-}
-
-function readConversationLog(conversationDir: string): LogRecord[] {
-  const logFile = join(conversationDir, "log.jsonl");
-  const raw = readTextFileIfExists(logFile);
-  if (raw === undefined) return [];
-
-  const lines = raw.trim().split("\n").filter(Boolean);
-  const records: LogRecord[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    try {
-      const message = parseJsonValue(
-        lines[i],
-        (value): value is ConversationLogMessage => isRecord(value),
-        (detail) => (detail === "unexpected JSON shape" ? "expected a JSON object" : detail),
-      );
-      records.push({ message, index: i });
-    } catch (err) {
-      log.logWarning(
-        `Skipping malformed log entry at ${logFile}:${i + 1}`,
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-  }
-  return coalesceMessagingBotLogChunks(records);
-}
-
-function coalesceMessagingBotLogChunks(records: LogRecord[]): LogRecord[] {
-  const coalesced: LogRecord[] = [];
-  for (const record of records) {
-    const previous = coalesced.at(-1);
-    if (previous && canCoalesceMessagingBotLogChunk(previous.message, record.message)) {
-      previous.message.text = `${previous.message.text ?? ""}${record.message.text ?? ""}`;
-      continue;
-    }
-    coalesced.push({ ...record, message: { ...record.message } });
-  }
-  return coalesced;
-}
-
-function canCoalesceMessagingBotLogChunk(
-  previous: ConversationLogMessage,
-  current: ConversationLogMessage,
-): boolean {
-  return (
-    previous.isMessagingBot === true &&
-    current.isMessagingBot === true &&
-    !!previous.ts &&
-    previous.ts === current.ts &&
-    previous.threadTs === current.threadTs &&
-    previous.user === current.user
-  );
 }
 
 function findLogRecordById(records: LogRecord[], messageId: string): LogRecord | undefined {
@@ -500,40 +421,45 @@ function syncSessionFromLog(
   cwd: string,
   records: LogRecord[],
   historyWindow: HistoryWindow,
-): void {
-  if (records.length === 0) return;
-  syncSessionManagerFromLog(openManagedSession(sessionFile, cwd), records, historyWindow);
+): ChatSyncReport {
+  if (records.length === 0) return { appended: 0 };
+  return syncSessionManagerFromLog(openManagedSession(sessionFile, cwd), records, historyWindow);
 }
 
 function syncSessionManagerFromLog(
   sessionManager: SessionStore,
   records: LogRecord[],
   historyWindow: HistoryWindow,
-): void {
-  if (records.length === 0) return;
+): ChatSyncReport {
+  if (records.length === 0) return { appended: 0 };
 
   const existingEntries = sessionManager.getEntries();
   const lastSyncedMessageId = getLatestChatSyncMessageId(existingEntries);
   const lastSyncedIndex = lastSyncedMessageId
     ? records.findIndex((record) => record.message.ts === lastSyncedMessageId)
     : -1;
-  if (lastSyncedMessageId && lastSyncedIndex === -1) return;
+  if (lastSyncedMessageId && lastSyncedIndex === -1) return { appended: 0 };
 
   const syncCandidates = selectRecentMessages(records.slice(lastSyncedIndex + 1), historyWindow);
-  if (syncCandidates.length === 0) return;
+  if (syncCandidates.length === 0) return { appended: 0 };
 
   const represented = buildRepresentedMessageCounts(existingEntries);
   const newRecords = syncCandidates.filter(
     (record) => !consumeRepresentedLogMessage(record, represented),
   );
-  if (newRecords.length === 0) return;
+  if (newRecords.length === 0) return { appended: 0 };
 
+  const lastMessageId = syncCandidates.at(-1)?.message.ts;
   appendLogRecordsToSession(sessionManager, newRecords);
   sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
     source: "log.jsonl",
     messageCount: newRecords.length,
-    lastMessageId: syncCandidates.at(-1)?.message.ts,
+    lastMessageId,
   });
+  return {
+    appended: newRecords.length,
+    ...(lastMessageId !== undefined ? { lastMessageId } : {}),
+  };
 }
 
 function appendLogRecordsToSession(sessionManager: SessionStore, records: LogRecord[]): void {
