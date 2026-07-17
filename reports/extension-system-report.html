@@ -1,0 +1,1661 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>mikan Extension System — 現況、介入點與第一階段演進</title>
+    <style>
+      :root {
+        --ink: #172033;
+        --muted: #627089;
+        --line: #d7deea;
+        --surface: #ffffff;
+        --surface-2: #f5f7fb;
+        --surface-3: #edf2f9;
+        --blue: #2563eb;
+        --blue-soft: #eaf1ff;
+        --green: #16805b;
+        --green-soft: #e8f7f1;
+        --amber: #a15c00;
+        --amber-soft: #fff5dc;
+        --red: #d62828;
+        --red-dark: #a81616;
+        --red-soft: #fff0f0;
+        --purple: #6d48c7;
+        --purple-soft: #f1edff;
+        --shadow: 0 14px 40px rgba(36, 49, 77, 0.08);
+        --radius: 18px;
+        --radius-sm: 11px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+        background: #eef2f8;
+      }
+
+      body {
+        margin: 0;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 8% -3%, rgba(37, 99, 235, 0.13), transparent 29rem),
+          radial-gradient(circle at 96% 1%, rgba(214, 40, 40, 0.08), transparent 25rem), #eef2f8;
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        line-height: 1.65;
+      }
+
+      a {
+        color: inherit;
+      }
+      code,
+      pre {
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      }
+
+      .page {
+        width: min(1240px, calc(100% - 32px));
+        margin: 28px auto 72px;
+      }
+
+      .hero {
+        position: relative;
+        overflow: hidden;
+        padding: clamp(28px, 5vw, 62px);
+        color: white;
+        background:
+          linear-gradient(135deg, rgba(21, 32, 57, 0.98), rgba(31, 51, 91, 0.96)), #172033;
+        border-radius: 26px;
+        box-shadow: var(--shadow);
+      }
+
+      .hero::after {
+        content: "";
+        position: absolute;
+        width: 360px;
+        height: 360px;
+        right: -130px;
+        top: -180px;
+        border: 68px solid rgba(255, 255, 255, 0.06);
+        border-radius: 50%;
+      }
+
+      .eyebrow {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 5px 10px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 999px;
+        color: rgba(255, 255, 255, 0.86);
+        background: rgba(255, 255, 255, 0.08);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+      }
+
+      .badge .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #65d9ad;
+      }
+
+      .hero h1 {
+        max-width: 880px;
+        margin: 0;
+        font-size: clamp(32px, 5vw, 60px);
+        line-height: 1.08;
+        letter-spacing: -0.04em;
+      }
+
+      .hero p {
+        max-width: 820px;
+        margin: 20px 0 0;
+        color: rgba(255, 255, 255, 0.76);
+        font-size: clamp(16px, 2vw, 20px);
+      }
+
+      .hero .red-note {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        margin-top: 24px;
+        padding: 9px 13px;
+        border: 1px solid rgba(255, 130, 130, 0.55);
+        border-radius: 10px;
+        color: #ffd2d2;
+        background: rgba(214, 40, 40, 0.18);
+        font-weight: 750;
+        font-size: 14px;
+      }
+
+      nav {
+        position: sticky;
+        z-index: 20;
+        top: 12px;
+        display: flex;
+        gap: 7px;
+        margin: 16px 0 28px;
+        padding: 10px;
+        overflow-x: auto;
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid rgba(215, 222, 234, 0.9);
+        border-radius: 14px;
+        box-shadow: 0 8px 24px rgba(36, 49, 77, 0.07);
+        backdrop-filter: blur(16px);
+      }
+
+      nav a {
+        flex: 0 0 auto;
+        padding: 7px 11px;
+        color: var(--muted);
+        border-radius: 8px;
+        text-decoration: none;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      nav a:hover {
+        color: var(--blue);
+        background: var(--blue-soft);
+      }
+
+      section {
+        scroll-margin-top: 78px;
+        margin: 28px 0;
+        padding: clamp(22px, 4vw, 38px);
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+      }
+
+      .section-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 18px;
+        margin-bottom: 24px;
+      }
+
+      h2 {
+        margin: 0;
+        font-size: clamp(24px, 3vw, 34px);
+        line-height: 1.18;
+        letter-spacing: -0.025em;
+      }
+
+      h3 {
+        margin: 0 0 8px;
+        font-size: 18px;
+        line-height: 1.3;
+      }
+
+      h4 {
+        margin: 0 0 6px;
+        font-size: 15px;
+      }
+      p {
+        margin: 0 0 12px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+
+      .kicker {
+        display: inline-block;
+        margin-bottom: 7px;
+        color: var(--blue);
+        font-size: 12px;
+        font-weight: 850;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .kicker.red {
+        color: var(--red);
+      }
+
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 9px;
+        align-items: center;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .swatch {
+        width: 10px;
+        height: 10px;
+        border-radius: 3px;
+      }
+      .swatch.current {
+        background: var(--blue);
+      }
+      .swatch.hook {
+        background: var(--green);
+      }
+      .swatch.future {
+        background: var(--red);
+      }
+      .swatch.host {
+        background: var(--purple);
+      }
+
+      .summary-grid,
+      .api-grid,
+      .future-grid,
+      .scope-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .summary-card,
+      .api-card,
+      .scope-card {
+        min-width: 0;
+        padding: 18px;
+        background: var(--surface-2);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+      }
+
+      .summary-card strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 26px;
+        letter-spacing: -0.03em;
+      }
+
+      .summary-card p,
+      .api-card p,
+      .scope-card p {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .callout {
+        margin-top: 18px;
+        padding: 16px 18px;
+        border-left: 4px solid var(--amber);
+        color: #633f06;
+        background: var(--amber-soft);
+        border-radius: 0 10px 10px 0;
+      }
+
+      .callout.red {
+        border-left-color: var(--red);
+        color: var(--red-dark);
+        background: var(--red-soft);
+      }
+
+      .diagram-wrap {
+        padding: 20px;
+        overflow-x: auto;
+        background:
+          linear-gradient(rgba(37, 99, 235, 0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(37, 99, 235, 0.035) 1px, transparent 1px), #fbfcff;
+        background-size: 22px 22px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+      }
+
+      .flow {
+        min-width: 980px;
+        display: grid;
+        grid-template-columns: repeat(7, minmax(118px, 1fr));
+        gap: 12px 18px;
+        align-items: stretch;
+      }
+
+      .lane-label {
+        grid-column: 1 / -1;
+        padding: 3px 0 0;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 850;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .flow-node {
+        position: relative;
+        min-height: 86px;
+        padding: 12px;
+        color: #163266;
+        background: var(--blue-soft);
+        border: 1px solid #aac5f8;
+        border-radius: 11px;
+        font-size: 12px;
+      }
+
+      .flow-node::after {
+        content: "→";
+        position: absolute;
+        right: -17px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #8593aa;
+        font-size: 18px;
+        font-weight: 900;
+      }
+
+      .flow-node.end::after,
+      .flow-node.no-arrow::after {
+        content: none;
+      }
+
+      .flow-node strong {
+        display: block;
+        margin-bottom: 5px;
+        font-size: 13px;
+      }
+      .flow-node small {
+        display: block;
+        color: #516b98;
+        line-height: 1.45;
+      }
+
+      .flow-node.hook {
+        color: #0c5d42;
+        background: var(--green-soft);
+        border-color: #8bd0b7;
+      }
+
+      .flow-node.hook small {
+        color: #397864;
+      }
+
+      .flow-node.host {
+        color: #54339d;
+        background: var(--purple-soft);
+        border-color: #bfaeea;
+      }
+
+      .flow-node.future {
+        color: var(--red-dark);
+        background: var(--red-soft);
+        border: 2px solid var(--red);
+        box-shadow: 0 0 0 4px rgba(214, 40, 40, 0.07);
+      }
+
+      .flow-node.future small {
+        color: #9d4545;
+      }
+
+      .flow-node .tag {
+        display: inline-block;
+        margin-top: 6px;
+        padding: 2px 6px;
+        border-radius: 999px;
+        color: white;
+        background: var(--red);
+        font-size: 9px;
+        font-weight: 850;
+        letter-spacing: 0.05em;
+      }
+
+      .span-2 {
+        grid-column: span 2;
+      }
+      .span-3 {
+        grid-column: span 3;
+      }
+      .at-2 {
+        grid-column-start: 2;
+      }
+      .at-3 {
+        grid-column-start: 3;
+      }
+      .at-4 {
+        grid-column-start: 4;
+      }
+      .at-5 {
+        grid-column-start: 5;
+      }
+
+      .intervention-list {
+        display: grid;
+        grid-template-columns: 42px minmax(170px, 0.75fr) 1.7fr;
+        gap: 0;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+
+      .intervention-list > div {
+        padding: 14px;
+        border-bottom: 1px solid var(--line);
+        background: white;
+      }
+
+      .intervention-list > div:nth-last-child(-n + 3) {
+        border-bottom: 0;
+      }
+      .intervention-list .step {
+        color: var(--blue);
+        font-weight: 900;
+        background: var(--surface-2);
+      }
+      .intervention-list .phase {
+        font-weight: 800;
+      }
+      .intervention-list .detail {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .hook-pill,
+      .api-pill {
+        display: inline-block;
+        margin: 3px 5px 3px 0;
+        padding: 3px 7px;
+        border-radius: 7px;
+        font-family: "SFMono-Regular", Consolas, monospace;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .hook-pill {
+        color: #0b6848;
+        background: var(--green-soft);
+        border: 1px solid #9fd7c2;
+      }
+      .api-pill {
+        color: #214f9b;
+        background: var(--blue-soft);
+        border: 1px solid #b6ccf3;
+      }
+      .api-pill.red {
+        color: var(--red-dark);
+        background: var(--red-soft);
+        border-color: #f0a3a3;
+      }
+
+      .api-card h3 code {
+        color: var(--blue);
+        font-size: 0.92em;
+      }
+      .api-card ul,
+      .future-card ul {
+        margin: 10px 0 0;
+        padding-left: 18px;
+      }
+      .api-card li,
+      .future-card li {
+        margin: 4px 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .future-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .future-card {
+        position: relative;
+        padding: 20px;
+        overflow: hidden;
+        background: linear-gradient(135deg, #fff, var(--red-soft));
+        border: 2px solid var(--red);
+        border-radius: 14px;
+        box-shadow: 0 10px 28px rgba(214, 40, 40, 0.08);
+      }
+
+      .future-card::before {
+        content: "PHASE 1";
+        position: absolute;
+        right: -31px;
+        top: 17px;
+        width: 118px;
+        padding: 3px 0;
+        transform: rotate(42deg);
+        color: white;
+        background: var(--red);
+        text-align: center;
+        font-size: 9px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+      }
+
+      .future-card h3 {
+        padding-right: 44px;
+        color: var(--red-dark);
+      }
+      .future-card p {
+        color: #724444;
+        font-size: 14px;
+      }
+
+      pre {
+        margin: 14px 0 0;
+        padding: 15px;
+        overflow-x: auto;
+        color: #dbe8ff;
+        background: #19243a;
+        border-radius: 10px;
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .red-code {
+        color: #ff9a9a;
+      }
+      .blue-code {
+        color: #8fbcff;
+      }
+      .green-code {
+        color: #8ae0bd;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        font-size: 13px;
+      }
+
+      th,
+      td {
+        padding: 12px 13px;
+        text-align: left;
+        vertical-align: top;
+        border-bottom: 1px solid var(--line);
+      }
+
+      th {
+        color: #43516a;
+        background: var(--surface-3);
+        font-size: 12px;
+      }
+      tr:last-child td {
+        border-bottom: 0;
+      }
+      td code {
+        color: #315da8;
+        font-size: 12px;
+      }
+      tr.phase-one td {
+        color: #732b2b;
+        background: #fff7f7;
+      }
+      tr.phase-one td:first-child {
+        border-left: 4px solid var(--red);
+      }
+
+      .status {
+        display: inline-flex;
+        padding: 3px 7px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 850;
+        white-space: nowrap;
+      }
+
+      .status.now {
+        color: #0d6548;
+        background: var(--green-soft);
+      }
+      .status.partial {
+        color: #895109;
+        background: var(--amber-soft);
+      }
+      .status.missing {
+        color: var(--red-dark);
+        background: var(--red-soft);
+      }
+
+      .security-strip {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 13px;
+        padding: 18px;
+        color: #4d3c08;
+        background: #fff9e9;
+        border: 1px solid #ead38a;
+        border-radius: 12px;
+      }
+
+      .security-strip .icon {
+        font-size: 25px;
+      }
+
+      .source-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px 18px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .source-list li {
+        min-width: 0;
+        padding: 9px 11px;
+        color: var(--muted);
+        background: var(--surface-2);
+        border-radius: 8px;
+        font-size: 12px;
+      }
+
+      .source-list code {
+        color: #315da8;
+        overflow-wrap: anywhere;
+      }
+
+      footer {
+        padding: 18px 4px;
+        color: var(--muted);
+        text-align: center;
+        font-size: 12px;
+      }
+
+      @media (max-width: 900px) {
+        .summary-grid,
+        .api-grid,
+        .scope-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+        .future-grid {
+          grid-template-columns: 1fr;
+        }
+        .section-head {
+          display: block;
+        }
+        .section-head .legend {
+          margin-top: 12px;
+        }
+        .source-list {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 620px) {
+        .page {
+          width: min(100% - 18px, 1240px);
+          margin-top: 9px;
+        }
+        .hero {
+          border-radius: 18px;
+        }
+        section {
+          padding: 18px;
+        }
+        .summary-grid,
+        .api-grid,
+        .scope-grid {
+          grid-template-columns: 1fr;
+        }
+        .intervention-list {
+          grid-template-columns: 34px 1fr;
+        }
+        .intervention-list .detail {
+          grid-column: 1 / -1;
+          padding-left: 48px;
+        }
+        .intervention-list > div:nth-last-child(-n + 3) {
+          border-bottom: 1px solid var(--line);
+        }
+        .intervention-list > div:last-child {
+          border-bottom: 0;
+        }
+        th,
+        td {
+          padding: 9px;
+        }
+      }
+
+      @media print {
+        html,
+        body {
+          background: white;
+        }
+        .page {
+          width: 100%;
+          margin: 0;
+        }
+        nav {
+          display: none;
+        }
+        section,
+        .hero {
+          box-shadow: none;
+          break-inside: avoid;
+        }
+        .diagram-wrap {
+          overflow: visible;
+        }
+        .flow {
+          min-width: 0;
+          transform: scale(0.78);
+          transform-origin: top left;
+          width: 128%;
+          margin-bottom: -10%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <div class="eyebrow">
+          <span class="badge"
+            ><span class="dot"></span> Base source: b0364b7 + current working tree</span
+          >
+          <span class="badge">Extension system v3 surface</span>
+          <span class="badge">Host-trusted modules</span>
+        </div>
+        <h1>mikan Extension System<br />現況、介入點與第一階段演進</h1>
+        <p>
+          這份報告描述 extension 從安裝、conversation runtime 建立、agent turn、tool
+          execution、schedule 到 dispose 的完整路徑，以及 extension 在每個階段能使用的 API。
+        </p>
+        <div class="red-note">紅色框線與紅色節點＝第一階段建議新增，但目前尚不存在的能力</div>
+      </header>
+
+      <nav aria-label="報告章節">
+        <a href="#summary">摘要</a>
+        <a href="#current-flow">現況流程</a>
+        <a href="#intervention">介入階段</a>
+        <a href="#api">現有 API</a>
+        <a href="#scope">Scope 與安全</a>
+        <a href="#phase-one">第一階段新增</a>
+        <a href="#target-flow">目標流程</a>
+        <a href="#matrix">能力矩陣</a>
+        <a href="#sources">來源</a>
+      </nav>
+
+      <section id="summary">
+        <div class="section-head">
+          <div>
+            <span class="kicker">Executive summary</span>
+            <h2>目前是一個 conversation-scoped agent extension system</h2>
+          </div>
+        </div>
+
+        <div class="summary-grid">
+          <article class="summary-card">
+            <strong>8</strong>
+            <h3>Agent lifecycle hooks</h3>
+            <p>可改寫 prompt、攔截工具、處理結果，以及觀察 turn、compaction、error 與 budget。</p>
+          </article>
+          <article class="summary-card">
+            <strong>3</strong>
+            <h3>Contribution points</h3>
+            <p>可註冊 agent tool、deterministic chat command，以及 bundled skill。</p>
+          </article>
+          <article class="summary-card">
+            <strong>1× conversation</strong>
+            <h3>Activation scope</h3>
+            <p>
+              每個 conversation/session runner 建立時重新載入並 activate；目前沒有 application
+              singleton。
+            </p>
+          </article>
+          <article class="summary-card">
+            <strong>Host process</strong>
+            <h3>Trust model</h3>
+            <p>Extension 擁有 host 權限，不在 agent sandbox 中執行，因此安裝必須是管理員操作。</p>
+          </article>
+          <article class="summary-card">
+            <strong>Event file</strong>
+            <h3>Schedule transport</h3>
+            <p>
+              現有 schedule 會寫入 event file，最後啟動 autonomous agent run，不是直接執行 handler。
+            </p>
+          </article>
+          <article class="summary-card">
+            <strong>Text first</strong>
+            <h3>Platform effects</h3>
+            <p>目前可 notify、react、upload；notify 只接收文字且不回傳 message receipt。</p>
+          </article>
+        </div>
+
+        <div class="callout">
+          <strong>核心判斷：</strong>現有系統很適合 prompt policy、tool
+          augmentation、audit/redaction 和 conversation-local state；但缺少跨 conversation
+          singleton、deterministic background execution、isolated subagent operation，以及可追蹤的
+          rich messaging。
+        </div>
+      </section>
+
+      <section id="current-flow">
+        <div class="section-head">
+          <div>
+            <span class="kicker">Current architecture</span>
+            <h2>現有 Extension 載入與執行流程</h2>
+            <p class="muted">
+              藍色是 mikan runtime，綠色是 extension 可介入點，紫色是 host services。
+            </p>
+          </div>
+          <div class="legend">
+            <span><i class="swatch current"></i>Current runtime</span>
+            <span><i class="swatch hook"></i>Extension intervention</span>
+            <span><i class="swatch host"></i>Host service</span>
+          </div>
+        </div>
+
+        <div class="diagram-wrap" role="img" aria-label="現有 extension lifecycle 流程圖">
+          <div class="flow">
+            <div class="lane-label">Install / discovery</div>
+            <div class="flow-node">
+              <strong>mikan ext install</strong
+              ><small>validate import、copy source、保留 extension data</small>
+            </div>
+            <div class="flow-node">
+              <strong>Host-only dirs</strong
+              ><small>global/extensions + conversation/extensions</small>
+            </div>
+            <div class="flow-node">
+              <strong>Discover entrypoint</strong><small>package.json 或 index.mjs/js/ts/mts</small>
+            </div>
+            <div class="flow-node end">
+              <strong>Wait for runner</strong><small>安裝後透過 /pi-new 或新 session 生效</small>
+            </div>
+
+            <div class="lane-label">Conversation/session creation</div>
+            <div class="flow-node">
+              <strong>Incoming message</strong><small>Slack / Discord / Telegram adapter</small>
+            </div>
+            <div class="flow-node">
+              <strong>ConversationRuntime</strong><small>取得或建立 session state</small>
+            </div>
+            <div class="flow-node">
+              <strong>Create agent session</strong
+              ><small>models、tools、session store、platform services</small>
+            </div>
+            <div class="flow-node hook">
+              <strong>loadExtensions()</strong
+              ><small>每個 conversation runner 掃描、import、activate</small>
+            </div>
+            <div class="flow-node hook">
+              <strong>activate(api)</strong><small>註冊 hooks、tools、commands、disposers</small>
+            </div>
+            <div class="flow-node">
+              <strong>ExtensionRegistry</strong><small>合併 contributed capabilities</small>
+            </div>
+            <div class="flow-node end">
+              <strong>MikanAgentSession</strong><small>extension tools 加入 agent tool set</small>
+            </div>
+
+            <div class="lane-label">Interactive or event-triggered agent turn</div>
+            <div class="flow-node">
+              <strong>Prompt/event</strong><small>interactive origin 或 event origin</small>
+            </div>
+            <div class="flow-node hook">
+              <strong>before_agent_start</strong><small>改寫 prompt/system prompt，或 block</small>
+            </div>
+            <div class="flow-node">
+              <strong>Model loop</strong><small>pi-agent-core Agent 執行</small>
+            </div>
+            <div class="flow-node hook">
+              <strong>tool_call</strong><small>工具執行前可 block</small>
+            </div>
+            <div class="flow-node">
+              <strong>Tool execution</strong><small>built-in + contributed tools</small>
+            </div>
+            <div class="flow-node hook">
+              <strong>tool_result</strong><small>改寫 content / isError</small>
+            </div>
+            <div class="flow-node hook end">
+              <strong>message_end / turn_end</strong
+              ><small>觀察 assistant message 與 settled turn</small>
+            </div>
+
+            <div class="lane-label">Side paths</div>
+            <div class="flow-node hook">
+              <strong>Extension command</strong
+              ><small>/name args，built-in command 優先，不進 model</small>
+            </div>
+            <div class="flow-node host">
+              <strong>notify / react</strong><small>直接呼叫 platform bot</small>
+            </div>
+            <div class="flow-node host">
+              <strong>uploadFile</strong><small>host file 上傳至 conversation</small>
+            </div>
+            <div class="flow-node hook">
+              <strong>session_compact</strong><small>compaction 完成後通知</small>
+            </div>
+            <div class="flow-node hook">
+              <strong>agent_error</strong><small>retry exhausted 後通知</small>
+            </div>
+            <div class="flow-node hook">
+              <strong>budget_exceeded</strong><small>run circuit breaker 觸發</small>
+            </div>
+            <div class="flow-node hook end">
+              <strong>dispose</strong
+              ><small>/pi-new、idle eviction、state discard 時 LIFO cleanup</small>
+            </div>
+
+            <div class="lane-label">Existing schedule path</div>
+            <div class="flow-node hook">
+              <strong>schedules.upsert</strong><small>extension 註冊 periodic / one-shot</small>
+            </div>
+            <div class="flow-node host">
+              <strong>Event file</strong><small>寫入 workspace events directory</small>
+            </div>
+            <div class="flow-node">
+              <strong>EventsWatcher</strong><small>cron/one-shot 到期後 enqueue</small>
+            </div>
+            <div class="flow-node">
+              <strong>Platform bot queue</strong><small>建立 ConversationEvent</small>
+            </div>
+            <div class="flow-node">
+              <strong>ConversationRuntime</strong><small>進入一般 conversation run</small>
+            </div>
+            <div class="flow-node">
+              <strong>Agent prompt</strong><small>「Handle recurring task…」</small>
+            </div>
+            <div class="flow-node end">
+              <strong>Model decides effects</strong><small>不是 deterministic callback</small>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="intervention">
+        <div class="section-head">
+          <div>
+            <span class="kicker">Intervention timeline</span>
+            <h2>Extension 在什麼階段可以介入</h2>
+          </div>
+        </div>
+
+        <div class="intervention-list">
+          <div class="step">01</div>
+          <div class="phase">Module import</div>
+          <div class="detail">
+            Entrypoint 被 jiti import；top-level code 已執行，但安裝驗證不會呼叫
+            <span class="api-pill">activate</span>。Module 本身位於 host-only state dir。
+          </div>
+          <div class="step">02</div>
+          <div class="phase">Activation</div>
+          <div class="detail">
+            <span class="api-pill">activate(api)</span> 每個 conversation runner 呼叫一次，可註冊
+            hook、tool、command、disposer，並建立 conversation/shared state。
+          </div>
+          <div class="step">03</div>
+          <div class="phase">Command dispatch</div>
+          <div class="detail">
+            Built-in slash command 未命中後，ExtensionRegistry 可執行
+            <span class="api-pill">registerCommand</span> handler；不呼叫模型，也不寫入 agent
+            session。
+          </div>
+          <div class="step">04</div>
+          <div class="phase">Before model</div>
+          <div class="detail">
+            <span class="hook-pill">before_agent_start</span> 可改寫 system prompt/user prompt
+            或阻擋整個 turn；blocked turn 不會進 transcript。
+          </div>
+          <div class="step">05</div>
+          <div class="phase">Before tool</div>
+          <div class="detail">
+            <span class="hook-pill">tool_call</span> 可依 tool name、args、origin 決定是否阻擋；v1
+            語意為 first non-undefined wins。
+          </div>
+          <div class="step">06</div>
+          <div class="phase">After tool</div>
+          <div class="detail">
+            <span class="hook-pill">tool_result</span> 可串接改寫 tool content 與 error flag，適合
+            redaction、truncation、policy normalization。
+          </div>
+          <div class="step">07</div>
+          <div class="phase">During agent output</div>
+          <div class="detail">
+            <span class="hook-pill">message_end</span> 在每則 agent message 完成後收到事件；<span
+              class="hook-pill"
+              >turn_end</span
+            >
+            在整個 turn settled 後收到新增訊息。
+          </div>
+          <div class="step">08</div>
+          <div class="phase">Recovery/control</div>
+          <div class="detail">
+            <span class="hook-pill">session_compact</span>、<span class="hook-pill"
+              >agent_error</span
+            >、<span class="hook-pill">budget_exceeded</span> 可觀察 compaction、terminal error 與
+            budget circuit breaker。
+          </div>
+          <div class="step">09</div>
+          <div class="phase">Out-of-band effects</div>
+          <div class="detail">
+            Extension 可在任何 handler 中呼叫 <span class="api-pill">notify</span>、<span
+              class="api-pill"
+              >react</span
+            >、<span class="api-pill">uploadFile</span> 或
+            <span class="api-pill">triggerRun</span>。
+          </div>
+          <div class="step">10</div>
+          <div class="phase">Disposal</div>
+          <div class="detail">
+            <span class="api-pill">onDispose</span> 與 activate 回傳的 disposer 以 LIFO
+            執行；錯誤會被記錄但不向外傳播。
+          </div>
+        </div>
+      </section>
+
+      <section id="api">
+        <div class="section-head">
+          <div>
+            <span class="kicker">Current API inventory</span>
+            <h2>現有 Extension API 能處理什麼</h2>
+          </div>
+        </div>
+
+        <div class="api-grid">
+          <article class="api-card">
+            <h3><code>api.on()</code></h3>
+            <p>註冊 agent lifecycle hooks，取得 interactive/event origin。</p>
+            <ul>
+              <li>Prompt policy</li>
+              <li>Tool guardrail</li>
+              <li>Result redaction</li>
+              <li>Turn/error observability</li>
+            </ul>
+          </article>
+          <article class="api-card">
+            <h3><code>registerTool()</code></h3>
+            <p>把新的 typed AgentTool 加入該 conversation 的 agent tool set。</p>
+            <ul>
+              <li>Domain CRUD</li>
+              <li>External API action</li>
+              <li>Host-side computation</li>
+            </ul>
+          </article>
+          <article class="api-card">
+            <h3><code>registerCommand()</code></h3>
+            <p>處理 deterministic <code>/name args</code> chat command，不啟動 agent。</p>
+            <ul>
+              <li>快速查詢</li>
+              <li>設定切換</li>
+              <li>管理操作</li>
+            </ul>
+          </article>
+          <article class="api-card">
+            <h3><code>api.context</code></h3>
+            <p>提供 conversation ID、workspace dir、目前 model 與 thinking level。</p>
+            <ul>
+              <li>Conversation routing</li>
+              <li>Model-aware policy</li>
+              <li>Workspace-aware integration</li>
+            </ul>
+          </article>
+          <article class="api-card">
+            <h3><code>api.paths</code></h3>
+            <p>取得 host-only data directory；平台只提供路徑，不管理 schema。</p>
+            <ul>
+              <li><code>dataDir</code>：conversation private</li>
+              <li><code>sharedDataDir</code>：cross-conversation</li>
+            </ul>
+          </article>
+          <article class="api-card">
+            <h3><code>api.secrets</code></h3>
+            <p>依 extension slug 讀取管理員 provision 的 secret；Extension 無法寫入。</p>
+            <ul>
+              <li><code>get(key)</code></li>
+              <li><code>list()</code> 只列名稱</li>
+            </ul>
+          </article>
+          <article class="api-card">
+            <h3><code>api.schedules</code></h3>
+            <p>管理 periodic / one-shot agent-run schedule，持久化為 event file。</p>
+            <ul>
+              <li>upsert</li>
+              <li>delete</li>
+              <li>list</li>
+              <li>cron + timezone</li>
+            </ul>
+          </article>
+          <article class="api-card">
+            <h3><code>notify / react / uploadFile</code></h3>
+            <p>透過 embedder 提供的平台 bot 直接產生 side effect。</p>
+            <ul>
+              <li>Text notification</li>
+              <li>Emoji reaction</li>
+              <li>Host file upload</li>
+            </ul>
+          </article>
+          <article class="api-card" style="border-color: var(--red)">
+            <h3><code>api.subagent.run()</code> <span class="status missing">NEW</span></h3>
+            <p>
+              啟動 fresh、isolated、non-recursive subagent；同一個 core runner 也提供一般主 agent
+              的內建
+              <code>subagent</code> tool。
+            </p>
+            <ul>
+              <li>Explicit tool allowlist；預設無 tools</li>
+              <li>Turn/token/cost/duration budget</li>
+              <li>Optional TypeBox structured output</li>
+              <li>Run ID、status、usage metadata</li>
+              <li>主 agent tool 支援 bounded DAG：8 nodes / 16 edges / depth 4 / concurrency 4</li>
+              <li>
+                Node progress 透過
+                <code>tool_execution_update → replaceResponse</code> 同步到三個平台
+              </li>
+            </ul>
+          </article>
+          <article class="api-card">
+            <h3><code>triggerRun()</code></h3>
+            <p>
+              建立 immediate event file，盡快啟動不繼承 conversation history 的 autonomous agent
+              run。
+            </p>
+            <ul>
+              <li>Self-contained task text</li>
+              <li>由 model 決定後續行為</li>
+            </ul>
+          </article>
+          <article class="api-card">
+            <h3><code>api.log()</code></h3>
+            <p>寫入帶有 extension name prefix 的 mikan structured log surface。</p>
+            <ul>
+              <li>目前只接受文字</li>
+              <li>沒有 extension span/metric API</li>
+            </ul>
+          </article>
+          <article class="api-card">
+            <h3><code>onDispose()</code></h3>
+            <p>註冊 runner 被丟棄時的 cleanup；多個 disposer 反向執行。</p>
+            <ul>
+              <li>關閉 DB</li>
+              <li>移除 listener</li>
+              <li>釋放 host resource</li>
+            </ul>
+          </article>
+          <article class="api-card">
+            <h3><code>skills/</code></h3>
+            <p>
+              Extension 可附帶 SKILL.md；內容會 inline 進 prompt，因為 extension dir 不掛入
+              sandbox。
+            </p>
+            <ul>
+              <li>Extension-specific guidance</li>
+              <li>隨 package 安裝</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section id="scope">
+        <div class="section-head">
+          <div>
+            <span class="kicker">Scope & trust</span>
+            <h2>Conversation scope、共享資料與安全邊界</h2>
+          </div>
+        </div>
+
+        <div class="scope-grid">
+          <article class="scope-card">
+            <h3>Global code ≠ singleton instance</h3>
+            <p>
+              安裝於 <code>global/extensions</code> 代表所有 conversations 都會載入，但每個 runner
+              仍各自 activate 一次。
+            </p>
+          </article>
+          <article class="scope-card">
+            <h3>Conversation data</h3>
+            <p>
+              <code>dataDir</code> 位於該 conversation 下，刪除 conversation
+              時一起消失，是預設安全選擇。
+            </p>
+          </article>
+          <article class="scope-card">
+            <h3>Shared data</h3>
+            <p>
+              <code>sharedDataDir</code> 是顯式 cross-conversation opt-in；tenant partition 與
+              concurrency 由 extension 負責。
+            </p>
+          </article>
+          <article class="scope-card">
+            <h3>Host-only execution</h3>
+            <p>
+              Extension 直接在 mikan process 執行，可使用 Node filesystem/network/process 能力，不受
+              agent sandbox 限制。
+            </p>
+          </article>
+          <article class="scope-card">
+            <h3>Optional host services</h3>
+            <p>
+              Schedule、message、reaction、upload、secret resolver 由 embedder 注入；缺少時 API
+              會丟出 informative error。
+            </p>
+          </article>
+          <article class="scope-card">
+            <h3>Cooperative schedule ownership</h3>
+            <p>
+              Schedule filename prefix 用於辨識 ownership，但 events directory 對同一 workspace
+              trust domain 內的 agent 可寫。
+            </p>
+          </article>
+        </div>
+
+        <div class="security-strip" style="margin-top: 18px">
+          <div class="icon">⚠</div>
+          <div>
+            <strong>Extension 不是 sandbox。</strong> Module import 與 activate 都發生在 host
+            process；extension 可接觸 host filesystem，並可能透過注入服務使用 platform token 與
+            vault secret，因此只能從 host-controlled state directory 載入經審核的程式碼。
+          </div>
+        </div>
+      </section>
+
+      <section id="phase-one">
+        <div class="section-head">
+          <div>
+            <span class="kicker red">Phase 1 additions</span>
+            <h2>第一階段要新增的六項能力</h2>
+            <p class="muted">
+              以下全部用紅色標示；<code>api.subagent.run</code> 已在目前 working tree
+              實作，其餘仍是第一階段提案。
+            </p>
+          </div>
+          <div class="legend">
+            <span><i class="swatch future"></i>Phase-one addition</span>
+          </div>
+        </div>
+
+        <div class="future-grid">
+          <article class="future-card">
+            <h3>1. <code>activateApplication</code></h3>
+            <p>
+              讓 extension installation 在整個 mikan runtime 中只 activate 一次，安全承載跨
+              conversation 的 shared state、event subscription 與 task registration。
+            </p>
+            <ul>
+              <li>與現有 conversation <code>activate</code> 並存</li>
+              <li>明確 startup/shutdown ownership</li>
+              <li>避免 global extension 重複註冊背景工作</li>
+            </ul>
+            <pre><span class="red-code">export async function activateApplication(api) {</span>
+  // once per installed application
+  return () =&gt; closeResources();
+<span class="red-code">}</span></pre>
+          </article>
+
+          <article class="future-card">
+            <h3>2. <code>api.tasks</code></h3>
+            <p>
+              註冊不經 agent/model 決策的 deterministic background handler，具
+              schedule、retry、timeout、concurrency 與 run history。
+            </p>
+            <ul>
+              <li>與 agentic <code>api.schedules</code> 分離</li>
+              <li>at-least-once，不宣稱 exactly-once</li>
+              <li>支援 cron、manual run、pause、rerun</li>
+            </ul>
+            <pre><span class="red-code">api.tasks.register({</span>
+  name: "daily-report",
+  trigger: { cron: "0 9 * * *", timezone: "Asia/Taipei" },
+  retry: { attempts: 3 },
+  concurrency: "skip",
+  handler: async ({ runId, signal }) =&gt; { /* deterministic */ },
+<span class="red-code">});</span></pre>
+          </article>
+
+          <article class="future-card">
+            <h3>
+              3. <code>api.subagent.run</code> <span class="status missing">IMPLEMENTED</span>
+            </h3>
+            <p>
+              以通用 <code>SubagentRunner</code> 啟動 fresh isolated subagent，同時支援主 agent 的
+              <code>subagent</code> tool（平行 <code>tasks[]</code>）與 extension
+              <code>api.subagent.run</code>。
+            </p>
+            <ul>
+              <li>預設無 conversation history、無 tools</li>
+              <li>支援 explicit tools、budget、cancel 與 TypeBox output schema</li>
+              <li>回傳 run ID、status、model/token/cost/duration metadata</li>
+            </ul>
+            <pre><span class="red-code">const result = await api.subagent.run({</span>
+  task: "Classify this project update",
+  input,
+  tools: [],
+  outputSchema: ResultSchema,
+  budget: { maxTurns: 1, maxCostUsd: 0.05 },
+<span class="red-code">});</span></pre>
+          </article>
+
+          <article class="future-card">
+            <h3>4. <code>api.messages</code></h3>
+            <p>
+              把現有 <code>notify</code> 深化成可發送、更新、thread reply、DM 並回傳 message receipt
+              的跨平台 message interface。
+            </p>
+            <ul>
+              <li>保留 text fallback</li>
+              <li>支援 stable destination address</li>
+              <li>receipt 可供 audit 與 retry 判斷</li>
+            </ul>
+            <pre><span class="red-code">const receipt = await api.messages.send({</span>
+  to: { conversationId, platform },
+  threadId,
+  content: { text },
+  idempotencyKey,
+<span class="red-code">});</span></pre>
+          </article>
+
+          <article class="future-card">
+            <h3>5. Capability negotiation</h3>
+            <p>
+              讓 extension 查詢 platform/embedder 是否支援 history、directory、actions 或 rich
+              messages，不把 Slack-specific surface 強塞給所有平台。
+            </p>
+            <ul>
+              <li>Optional、versioned capabilities</li>
+              <li>Runtime feature detection</li>
+              <li>支援 graceful degradation</li>
+            </ul>
+            <pre><span class="red-code">const history = api.capabilities.get("messages.history.v1");</span>
+if (history) {
+  for await (const message of history.list(query)) { /* ... */ }
+}</pre>
+          </article>
+
+          <article class="future-card">
+            <h3>6. Permission declaration</h3>
+            <p>
+              讓 extension 在安裝或 activation 前宣告需要的敏感能力，由管理員審核 message
+              access、model usage、background execution 與 secrets。
+            </p>
+            <ul>
+              <li>Manifest-time review</li>
+              <li>Capability 與 permission 對應</li>
+              <li>缺少權限時明確拒絕，不默默降級</li>
+            </ul>
+            <pre>{
+  "mikan": {
+    <span class="red-code">"permissions": ["tasks", "model", "messages:send"]</span>
+  }
+}</pre>
+          </article>
+        </div>
+      </section>
+
+      <section id="target-flow">
+        <div class="section-head">
+          <div>
+            <span class="kicker red">Target architecture</span>
+            <h2>第一階段完成後的雙軌流程</h2>
+            <p class="muted">
+              Conversation agent lane 保持相容；新增 application/task lane，避免所有背景工作都繞進
+              agent loop。
+            </p>
+          </div>
+          <div class="legend">
+            <span><i class="swatch future"></i>New phase-1 surface</span>
+          </div>
+        </div>
+
+        <div class="diagram-wrap" role="img" aria-label="第一階段完成後的 extension 流程圖">
+          <div class="flow">
+            <div class="lane-label">Install-time gate — new</div>
+            <div class="flow-node future span-2">
+              <strong>Permission declaration</strong
+              ><small>Manifest 宣告 tasks/model/messages 等敏感能力</small
+              ><span class="tag">NEW</span>
+            </div>
+            <div class="flow-node future span-2">
+              <strong>Capability negotiation</strong
+              ><small>驗證 embedder/platform 可提供哪些 optional surfaces</small
+              ><span class="tag">NEW</span>
+            </div>
+            <div class="flow-node">
+              <strong>Install / validate</strong><small>現有 source validation</small>
+            </div>
+            <div class="flow-node end">
+              <strong>Approved package</strong><small>進入 host-only state dir</small>
+            </div>
+
+            <div class="lane-label">Application lane — new deterministic path</div>
+            <div class="flow-node">
+              <strong>mikan startup</strong><small>建立 shared host services</small>
+            </div>
+            <div class="flow-node future">
+              <strong>activateApplication</strong><small>一次性 application lifecycle</small
+              ><span class="tag">NEW</span>
+            </div>
+            <div class="flow-node future">
+              <strong>api.tasks.register</strong><small>cron/manual/event task handlers</small
+              ><span class="tag">NEW</span>
+            </div>
+            <div class="flow-node future">
+              <strong>Task runtime</strong><small>retry、timeout、concurrency、run record</small
+              ><span class="tag">NEW</span>
+            </div>
+            <div class="flow-node future">
+              <strong>agents.run</strong><small>isolated subagent；可選 structured output</small
+              ><span class="tag">NEW</span>
+            </div>
+            <div class="flow-node future">
+              <strong>api.messages</strong><small>send/DM/thread/update + receipt</small
+              ><span class="tag">NEW</span>
+            </div>
+            <div class="flow-node end">
+              <strong>Platform effect</strong><small>adapter delivery + audit metadata</small>
+            </div>
+
+            <div class="lane-label">Conversation lane — existing and backward-compatible</div>
+            <div class="flow-node">
+              <strong>Incoming message</strong><small>Platform adapter</small>
+            </div>
+            <div class="flow-node">
+              <strong>ConversationRuntime</strong><small>session ownership</small>
+            </div>
+            <div class="flow-node hook">
+              <strong>activate(api)</strong><small>per-conversation hooks/tools/commands</small>
+            </div>
+            <div class="flow-node hook">
+              <strong>before_agent_start</strong><small>prompt policy</small>
+            </div>
+            <div class="flow-node"><strong>Agent loop</strong><small>model + tools</small></div>
+            <div class="flow-node hook">
+              <strong>tool/message hooks</strong><small>guard、rewrite、observe</small>
+            </div>
+            <div class="flow-node end">
+              <strong>Conversation response</strong><small>existing responder lifecycle</small>
+            </div>
+
+            <div class="lane-label">Shared capability access</div>
+            <div class="flow-node future at-2 span-2 no-arrow">
+              <strong>api.capabilities</strong
+              ><small>history/directory/actions/rich message optional providers</small
+              ><span class="tag">NEW</span>
+            </div>
+            <div class="flow-node host at-5 span-2 end">
+              <strong>Platform adapters</strong
+              ><small>Slack / Discord / Telegram 實際 capability adapters</small>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout red">
+          <strong>設計限制：</strong>第一階段不加入 managed ORM、durable workflow state
+          machine、GitHub/Calendar core ports 或 extension Admin framework；這些應先留在 extension
+          package / extension-kit，避免 Agent-PM overfit。
+        </div>
+      </section>
+
+      <section id="matrix">
+        <div class="section-head">
+          <div>
+            <span class="kicker">Capability matrix</span>
+            <h2>現況與第一階段差異</h2>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>需求</th>
+              <th>目前</th>
+              <th>目前介面</th>
+              <th>第一階段方向</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Conversation prompt/tool policy</td>
+              <td><span class="status now">完整</span></td>
+              <td><code>api.on</code></td>
+              <td>保持相容</td>
+            </tr>
+            <tr>
+              <td>Custom agent tool</td>
+              <td><span class="status now">完整</span></td>
+              <td><code>registerTool</code></td>
+              <td>保持相容</td>
+            </tr>
+            <tr>
+              <td>Deterministic slash command</td>
+              <td><span class="status now">可用</span></td>
+              <td><code>registerCommand</code></td>
+              <td>保持相容；仍不是 native Slack command registration</td>
+            </tr>
+            <tr>
+              <td>Conversation/private/shared files</td>
+              <td><span class="status now">可用</span></td>
+              <td><code>api.paths</code></td>
+              <td>不在第一階段加入 ORM/DB manager</td>
+            </tr>
+            <tr>
+              <td>Secrets</td>
+              <td><span class="status now">Read-only</span></td>
+              <td><code>api.secrets</code></td>
+              <td>納入 permission review</td>
+            </tr>
+            <tr>
+              <td>Agentic recurring run</td>
+              <td><span class="status now">可用</span></td>
+              <td><code>api.schedules</code></td>
+              <td>保留，與 tasks 明確區分</td>
+            </tr>
+            <tr class="phase-one">
+              <td>Application singleton lifecycle</td>
+              <td><span class="status missing">缺少</span></td>
+              <td>無；global code 仍 per-conversation activate</td>
+              <td><code>activateApplication</code></td>
+            </tr>
+            <tr class="phase-one">
+              <td>Deterministic background execution</td>
+              <td><span class="status missing">缺少</span></td>
+              <td>只有 autonomous agent event</td>
+              <td><code>api.tasks</code></td>
+            </tr>
+            <tr class="phase-one">
+              <td>Isolated subagent operation</td>
+              <td><span class="status good">已新增</span></td>
+              <td>fresh context、explicit tools、budgets、structured output</td>
+              <td><code>api.subagent.run</code></td>
+            </tr>
+            <tr class="phase-one">
+              <td>Message receipt / thread / DM / update</td>
+              <td><span class="status partial">部分</span></td>
+              <td><code>notify(text)</code> + react/upload</td>
+              <td><code>api.messages</code></td>
+            </tr>
+            <tr class="phase-one">
+              <td>Optional platform feature discovery</td>
+              <td><span class="status partial">Host-side only</span></td>
+              <td>API 不暴露 capability negotiation</td>
+              <td><code>api.capabilities.get()</code></td>
+            </tr>
+            <tr class="phase-one">
+              <td>Install-time sensitive access review</td>
+              <td><span class="status missing">缺少</span></td>
+              <td>Extension 全部視為 host-trusted</td>
+              <td>Manifest permission declaration</td>
+            </tr>
+            <tr>
+              <td>Inbound message/history/directory</td>
+              <td><span class="status missing">未暴露</span></td>
+              <td>部分 adapter 內部已有</td>
+              <td>未來以 optional versioned capability 提供</td>
+            </tr>
+            <tr>
+              <td>Extension Admin UI</td>
+              <td><span class="status missing">缺少</span></td>
+              <td>無 contribution point</td>
+              <td>不在第一階段</td>
+            </tr>
+            <tr>
+              <td>Provider-specific GitHub/Calendar clients</td>
+              <td><span class="status missing">非 core</span></td>
+              <td>Extension 可自行使用 npm/fetch</td>
+              <td>維持 integration package 層</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="sources">
+        <div class="section-head">
+          <div>
+            <span class="kicker">Primary sources</span>
+            <h2>報告依據</h2>
+            <p class="muted">內容依 mikan source snapshot <code>b0364b7</code> 整理。</p>
+          </div>
+        </div>
+        <ul class="source-list">
+          <li>
+            <code>src/harness/extensions/types.ts</code> — public extension types、hooks、services
+          </li>
+          <li>
+            <code>src/harness/extensions/loader.ts</code> — discovery、activation、API
+            implementation
+          </li>
+          <li>
+            <code>src/harness/extensions/registry.ts</code> — hook/tool/command/disposer dispatch
+          </li>
+          <li><code>src/harness/runner.ts</code> — agent lifecycle 與 hook interception</li>
+          <li><code>src/agent.ts</code> — host service injection 與 per-conversation loading</li>
+          <li>
+            <code>src/runtime/conversation-runtime.ts</code> — command dispatch、state
+            lifecycle、eviction
+          </li>
+          <li><code>src/events.ts</code> — event-file scheduling 與 autonomous run delivery</li>
+          <li><code>src/main.ts</code> — platform notifier/reactor/uploader adapters</li>
+          <li>
+            <code>src/harness/README.md</code> — extension packaging、scope、development model
+          </li>
+          <li><code>src/harness/extensions/LAYOUT.md</code> — code/data/secrets/schedule layout</li>
+          <li><code>examples/extensions/agent-pm/</code> — current stateful extension example</li>
+          <li><code>test/harness-extensions.test.ts</code> — API contract and lifecycle tests</li>
+        </ul>
+      </section>
+
+      <footer>
+        mikan Extension System technical report · Single-file HTML · Current surfaces are
+        blue/green; proposed phase-one surfaces are red.
+      </footer>
+    </main>
+  </body>
+</html>

@@ -16,6 +16,7 @@ import type {
   SessionInfoEntry,
   SessionTreeEntry,
 } from "@earendil-works/pi-agent-core";
+import type { Static, TSchema } from "@sinclair/typebox";
 
 export type {
   BranchSummaryEntry,
@@ -33,6 +34,76 @@ export type SessionMessageEntry = MessageEntry;
 export type SessionEntry = SessionTreeEntry;
 
 export const CURRENT_SESSION_VERSION = 3;
+
+export interface SubagentModelSpec {
+  provider: string;
+  id: string;
+}
+
+export interface SubagentRunBudget {
+  /** Maximum assistant/model calls in the subagent run. */
+  maxTurns?: number;
+  /** Maximum cumulative input/output/cache tokens. */
+  maxTokens?: number;
+  /** Maximum provider cost in USD. */
+  maxCostUsd?: number;
+  /** Maximum wall-clock duration. */
+  maxDurationMs?: number;
+}
+
+export type SubagentRunStatus =
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "timeout"
+  | "budget_exceeded"
+  | "invalid_output";
+
+/** A fresh, isolated subagent run. */
+export interface SubagentRunRequest<TOutputSchema extends TSchema | undefined = undefined> {
+  task: string;
+  systemPrompt?: string;
+  /** JSON-serializable input appended to the task. */
+  input?: unknown;
+  /** Defaults to the parent runner's configured model. */
+  model?: SubagentModelSpec;
+  /** Tool names explicitly granted to the subagent. Defaults to no tools. */
+  tools?: string[];
+  /** When present, the final response must be JSON matching this schema. */
+  outputSchema?: TOutputSchema;
+  budget?: SubagentRunBudget;
+  signal?: AbortSignal;
+}
+
+export type SubagentRunOutput<TSchemaOrUndefined extends TSchema | undefined> =
+  TSchemaOrUndefined extends TSchema ? Static<TSchemaOrUndefined> : string;
+
+interface SubagentRunMetadata {
+  runId: string;
+  /** Raw final assistant text, including when structured validation failed. */
+  text?: string;
+  model: SubagentModelSpec;
+  turns: number;
+  tokens: number;
+  costUsd: number;
+  durationMs: number;
+}
+
+interface SubagentRunCompletedResult<TOutput> extends SubagentRunMetadata {
+  status: "completed";
+  output: TOutput;
+  error?: never;
+}
+
+interface SubagentRunIncompleteResult extends SubagentRunMetadata {
+  status: Exclude<SubagentRunStatus, "completed">;
+  output?: never;
+  error?: string;
+}
+
+export type SubagentRunResult<TOutput = string> =
+  | SubagentRunCompletedResult<TOutput>
+  | SubagentRunIncompleteResult;
 
 /**
  * First line of every session file. `cwd` records where the session was

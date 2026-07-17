@@ -25,8 +25,14 @@
  */
 import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, ImageContent, Model, TextContent } from "@earendil-works/pi-ai";
+import type { TSchema } from "@sinclair/typebox";
 import type { MikanSkill } from "../skills.js";
-import type { CompactionEntry } from "../types.js";
+import type {
+  SubagentRunOutput,
+  SubagentRunRequest,
+  SubagentRunResult,
+  CompactionEntry,
+} from "../types.js";
 
 /**
  * Platform provenance of the run a hook event belongs to. Interactive runs
@@ -228,6 +234,17 @@ export interface ExtensionCommand {
   handler: (context: ExtensionCommandContext) => void | Promise<void>;
 }
 
+export interface SubagentApi {
+  /**
+   * Run one fresh subagent and return its result to the extension. The
+   * subagent has no conversation history, receives no tools by default, and
+   * cannot recursively start another subagent run.
+   */
+  run<TOutputSchema extends TSchema | undefined = undefined>(
+    request: SubagentRunRequest<TOutputSchema>,
+  ): Promise<SubagentRunResult<SubagentRunOutput<TOutputSchema>>>;
+}
+
 // ── v2: embedder-injected services ───────────────────────────────────────────
 
 /**
@@ -270,6 +287,11 @@ export interface ExtensionHostServices {
   ) => Promise<void>;
   /** Resolve read-only secrets for an extension slug; enables `api.secrets`. */
   resolveSecrets?: (slug: string) => Record<string, string>;
+  /** Run a fresh isolated subagent; enables `api.subagent`. */
+  runSubagent?: <TOutputSchema extends TSchema | undefined = undefined>(
+    request: SubagentRunRequest<TOutputSchema>,
+    contributedTools: AgentTool[],
+  ) => Promise<SubagentRunResult<SubagentRunOutput<TOutputSchema>>>;
 }
 
 // ── v2: manifest ─────────────────────────────────────────────────────────────
@@ -357,6 +379,8 @@ export interface MikanExtensionApi {
     /** Schedules owned by this extension in this conversation. */
     list(): Promise<ExtensionScheduleInfo[]>;
   };
+  /** Fresh isolated subagent runs. */
+  readonly subagent: SubagentApi;
   /**
    * Post text into a conversation without triggering an agent run. Defaults
    * to this conversation; pass `conversationId` to post elsewhere (pairs

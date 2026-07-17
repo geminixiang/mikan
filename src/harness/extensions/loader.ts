@@ -474,6 +474,14 @@ function buildExtensionApi(params: {
         return infos;
       },
     },
+    subagent: {
+      run: async (request) => {
+        if (!services.runSubagent) {
+          throw new Error("api.subagent is unavailable: this context provides no subagent runner");
+        }
+        return services.runSubagent(request, registry.getContributedTools());
+      },
+    },
     notify: async (text: string, options?: { conversationId?: string }) => {
       if (!services.postMessage) {
         throw new Error("api.notify is unavailable: this context provides no platform messaging");

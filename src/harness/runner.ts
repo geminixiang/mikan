@@ -203,6 +203,23 @@ export class MikanAgentSession {
     return this.agent.state.model;
   }
 
+  /** Resource totals and terminal budget state from the most recent prompt. */
+  getLastRunStats(): Readonly<{
+    tokens: number;
+    costUsd: number;
+    llmCalls: number;
+    durationMs: number;
+    budgetExceededReason?: string;
+  }> {
+    return {
+      tokens: this.tally.tokens,
+      costUsd: this.tally.costUsd,
+      llmCalls: this.tally.llmCalls,
+      durationMs: this.tally.startedAt > 0 ? Date.now() - this.tally.startedAt : 0,
+      ...(this.budgetExceededReason ? { budgetExceededReason: this.budgetExceededReason } : {}),
+    };
+  }
+
   subscribe(listener: HarnessEventListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -370,7 +387,7 @@ export class MikanAgentSession {
 
     if (message.role === "assistant") {
       this.recordUsage(message);
-      await this.enforceBudget();
+      await this.enforceBudget(message);
       if (message.stopReason !== "error") {
         this.overflowRecoveryAttempted = false;
         if (this.retryAttempt > 0) {
@@ -391,9 +408,9 @@ export class MikanAgentSession {
   }
 
   /** Compare the tally against the run budget; abort the run when a cap is exceeded. */
-  private async enforceBudget(): Promise<void> {
+  private async enforceBudget(message: AssistantMessage): Promise<void> {
     if (this.budgetExceededReason) return;
-    const reason = this.overBudgetReason();
+    const reason = this.overBudgetReason(message);
     if (!reason) return;
 
     this.budgetExceededReason = reason;
@@ -419,9 +436,11 @@ export class MikanAgentSession {
     this.agent.abort();
   }
 
-  private overBudgetReason(): string | undefined {
+  private overBudgetReason(message: AssistantMessage): string | undefined {
     const { maxTokens, maxCostUsd, maxDurationMs, maxLlmCalls } = this.runBudget;
-    if (maxLlmCalls !== undefined && this.tally.llmCalls >= maxLlmCalls) {
+    const needsAnotherCall =
+      message.stopReason === "error" || message.content.some((part) => part.type === "toolCall");
+    if (needsAnotherCall && maxLlmCalls !== undefined && this.tally.llmCalls >= maxLlmCalls) {
       return `${this.tally.llmCalls} LLM calls >= ${maxLlmCalls} limit`;
     }
     if (maxTokens !== undefined && this.tally.tokens >= maxTokens) {

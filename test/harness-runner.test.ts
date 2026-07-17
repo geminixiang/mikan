@@ -377,6 +377,26 @@ describe("MikanAgentSession", () => {
     expect(JSON.stringify(sessionStore.getEntries())).not.toContain("done");
   });
 
+  test("a final response at the LLM-call cap completes without tripping the budget", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([fauxAssistantMessage("done in one")]);
+
+    const session = new MikanAgentSession({
+      systemPrompt: "test",
+      model,
+      thinkingLevel: "off",
+      tools: [],
+      models,
+      sessionStore: SessionStore.create(join(dir, "session.jsonl"), dir),
+    });
+
+    await session.prompt("answer directly", { budget: { maxLlmCalls: 1 } });
+
+    expect(session.getLastRunStats()).toMatchObject({ llmCalls: 1 });
+    expect(session.getLastRunStats().budgetExceededReason).toBeUndefined();
+    expect(JSON.stringify(session.messages)).toContain("done in one");
+  });
+
   test("throws a clear error when provider auth is missing", async () => {
     // Custom provider with no key configured anywhere: auth resolution fails.
     const modelsJsonPath = join(dir, "models.json");

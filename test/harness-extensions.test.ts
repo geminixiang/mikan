@@ -522,6 +522,60 @@ describe("loadExtensions v2 api", () => {
     ]);
   });
 
+  test("api.subagent.run delegates to the host runner with contributed tools", async () => {
+    const contributedToolNames: string[][] = [];
+    const probe = writeProbeExtension(
+      `export default async function activate(api) {
+        api.registerTool({
+          name: "extension_probe",
+          description: "probe",
+          parameters: { type: "object", properties: {} },
+          execute: async () => ({ content: [] }),
+        });
+        const result = await api.subagent.run({ task: "inspect the probe", tools: ["extension_probe"] });
+        report({ status: result.status, runId: result.runId });
+      }`,
+    );
+
+    const { errors } = await loadExtensions({
+      dirs: [dir],
+      context,
+      services: {
+        runSubagent: async (_request, contributedTools) => {
+          contributedToolNames.push(contributedTools.map((tool) => tool.name));
+          return {
+            runId: "subagent-1",
+            status: "failed",
+            model: { provider: "test", id: "test-model" },
+            turns: 1,
+            tokens: 10,
+            costUsd: 0,
+            durationMs: 5,
+            error: "fake subagent failure",
+          };
+        },
+      },
+    });
+
+    expect(errors).toHaveLength(0);
+    expect(contributedToolNames).toEqual([["extension_probe"]]);
+    expect(probe.read()).toEqual({ status: "failed", runId: "subagent-1" });
+  });
+
+  test("api.subagent.run reports an unavailable host runner clearly", async () => {
+    writeProbeExtension(
+      `export default async function activate(api) {
+        await api.subagent.run({ task: "cannot run" });
+      }`,
+    );
+
+    const { extensions, errors } = await loadExtensions({ dirs: [dir], context });
+
+    expect(extensions).toHaveLength(0);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.error).toContain("api.subagent is unavailable");
+  });
+
   test("api.triggerRun writes an immediate event outside the schedules namespace", async () => {
     const { files, store } = createFakeScheduleStore();
     const probe = writeProbeExtension(

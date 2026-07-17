@@ -22,6 +22,20 @@ function readLines(file: string): Array<Record<string, unknown>> {
 }
 
 describe("SessionStore", () => {
+  test("inMemory keeps entries without creating a session file", () => {
+    const store = SessionStore.inMemory("/work");
+    store.appendMessage({
+      role: "user",
+      content: [{ type: "text", text: "ephemeral" }],
+      timestamp: 1,
+    });
+
+    expect(store.getSessionFile()).toBeUndefined();
+    expect(store.isPersisted()).toBe(false);
+    expect(store.getEntries()).toHaveLength(1);
+    expect(store.buildSessionContext().messages).toHaveLength(1);
+  });
+
   test("create writes a v3 header and appends persist as JSONL lines", () => {
     const file = join(dir, "session.jsonl");
     const store = SessionStore.create(file, "/work");

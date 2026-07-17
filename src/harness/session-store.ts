@@ -95,7 +95,7 @@ function hasSessionFileContent(filePath: string): boolean {
  * without a valid header gets its header materialized on the first append.
  */
 export class SessionStore {
-  private readonly sessionFile: string;
+  private readonly sessionFile: string | null;
   private readonly cwd: string;
   private readonly sessionId: string;
   private header: SessionHeader | null;
@@ -104,8 +104,8 @@ export class SessionStore {
   private byId = new Map<string, SessionEntry>();
   private leafId: string | null = null;
 
-  private constructor(sessionFile: string, cwd: string, fileEntries: SessionFileEntry[]) {
-    this.sessionFile = resolve(sessionFile);
+  private constructor(sessionFile: string | null, cwd: string, fileEntries: SessionFileEntry[]) {
+    this.sessionFile = sessionFile === null ? null : resolve(sessionFile);
     this.header = fileEntries.length > 0 && isSessionHeader(fileEntries[0]) ? fileEntries[0] : null;
     this.headerOnDisk = this.header !== null;
     this.sessionId = this.header?.id ?? randomUUID();
@@ -157,8 +157,17 @@ export class SessionStore {
     return new SessionStore(path, cwd, [header]);
   }
 
-  getSessionFile(): string {
-    return this.sessionFile;
+  /** Create an ephemeral session that never writes a session file. */
+  static inMemory(cwd = process.cwd()): SessionStore {
+    return new SessionStore(null, cwd, []);
+  }
+
+  getSessionFile(): string | undefined {
+    return this.sessionFile ?? undefined;
+  }
+
+  isPersisted(): boolean {
+    return this.sessionFile !== null;
   }
 
   getCwd(): string {
@@ -279,6 +288,7 @@ export class SessionStore {
   }
 
   private persist(entry: SessionEntry): void {
+    if (this.sessionFile === null) return;
     if (!this.headerOnDisk) {
       this.header ??= {
         type: "session",

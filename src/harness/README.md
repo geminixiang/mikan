@@ -223,23 +223,28 @@ export default function activate(api) {
 Semantics: handlers run in registration order; the first non-`undefined` return
 wins for valued hooks; handler errors are logged only and do not abort the turn.
 
-### v2 API: schedules, notify, paths, secrets, manifest, skills
+### Host-backed API: subagents, schedules, notify, paths, secrets, manifest, skills
 
 The harness defines service interfaces (`ExtensionHostServices`) implemented by
 the embedder (mikan wires them in the agent runner). Missing services throw
 descriptive errors. That keeps the harness embeddable — other hosts can supply
 messaging / scheduling.
 
-| api                                | Purpose                                                                  | mikan backend                                                                                   |
-| ---------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| `api.schedules.upsert/delete/list` | Named schedules (cron `periodic` / `one-shot`) for autonomous runs       | event files (`<workingDir>/events/ext.<slug>.<conv>.<name>.json`), live via EventsWatcher       |
-| `api.notify(text)`                 | Post to this conversation without an agent run                           | `main.ts` `PlatformNotifier` → bot `postMessage`                                                |
-| `api.react(messageTs, emoji)`      | React to a message (ts from events the extension observed)               | `main.ts` `PlatformReactor` → bot `addReaction`                                                 |
-| `api.paths.dataDir`                | **This conversation's** data dir (default; isolation free; mkdir-on-use) | `conversations/<id>/extension-data/<slug>/`                                                     |
-| `api.paths.sharedDataDir`          | Cross-conversation data (**explicit** multi-tenant apps; self-partition) | `global/extension-data/<slug>/`                                                                 |
-| `api.secrets.get/list`             | Read-only secrets                                                        | vault: `<stateDir>/vaults/extensions/<slug>/env`                                                |
-| `manifest.json`                    | name / version / description (display only; slug unaffected)             | loader reads it                                                                                 |
-| `skills/<name>/SKILL.md`           | Bundled skills                                                           | discovered and **inlined** into system prompt (sandbox cannot read host-only paths); local wins |
+| api                                | Purpose                                                                    | mikan backend                                                                                   |
+| ---------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `api.subagent.run`                 | Fresh isolated subagent run; optional tools, budget, and structured output | in-process `MikanAgentSession` with `SessionStore.inMemory()`                                   |
+| `api.schedules.upsert/delete/list` | Named schedules (cron `periodic` / `one-shot`) for autonomous runs         | event files (`<workingDir>/events/ext.<slug>.<conv>.<name>.json`), live via EventsWatcher       |
+| `api.notify(text)`                 | Post to this conversation without an agent run                             | `main.ts` `PlatformNotifier` → bot `postMessage`                                                |
+| `api.react(messageTs, emoji)`      | React to a message (ts from events the extension observed)                 | `main.ts` `PlatformReactor` → bot `addReaction`                                                 |
+| `api.paths.dataDir`                | **This conversation's** data dir (default; isolation free; mkdir-on-use)   | `conversations/<id>/extension-data/<slug>/`                                                     |
+| `api.paths.sharedDataDir`          | Cross-conversation data (**explicit** multi-tenant apps; self-partition)   | `global/extension-data/<slug>/`                                                                 |
+| `api.secrets.get/list`             | Read-only secrets                                                          | vault: `<stateDir>/vaults/extensions/<slug>/env`                                                |
+| `manifest.json`                    | name / version / description (display only; slug unaffected)               | loader reads it                                                                                 |
+| `skills/<name>/SKILL.md`           | Bundled skills                                                             | discovered and **inlined** into system prompt (sandbox cannot read host-only paths); local wins |
+
+The same core subagent runner backs both extension `api.subagent.run` and the normal agent's built-in `subagent` tool. Both use a fresh in-memory session, explicit tool grants, bounded execution, and the same non-recursion guard. The normal tool supports one `task`, up to eight independent parallel `tasks[]`, or a bounded in-memory `dag` (8 nodes, 16 edges, depth 4, concurrency 4). DAG dependency outputs become structured input for downstream nodes; a failed dependency skips its descendants while independent branches continue.
+
+The normal tool emits node-level state through `AgentTool.onUpdate`. The parent runner debounces `tool_execution_update` events for 500ms and sends a compact status label through `ConversationResponder.replaceResponse`, so Slack, Discord, and Telegram share the same progress path without exposing subagent reasoning.
 
 Schedule `text` is a self-contained autonomous task (no conversation history).
 With multiple platforms, `notify` / schedules need an explicit `platform`; a

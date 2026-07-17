@@ -24,6 +24,7 @@ import {
   type RunOrigin,
   type SessionStore,
 } from "./harness/index.js";
+import { runSubagent } from "./harness/subagent-runner.js";
 import { createHash } from "crypto";
 import { existsSync, readFileSync } from "fs";
 import { mkdir, readFile } from "fs/promises";
@@ -74,7 +75,7 @@ import {
   type ThreadRootMessage,
 } from "./sessions/store.js";
 import { HostEventStore } from "./tools/event.js";
-import { createMikanTools } from "./tools/index.js";
+import { createMikanTools, createSubagentTool } from "./tools/index.js";
 import type { PlatformToolPackFactory } from "./tools/types.js";
 import * as Sentry from "@sentry/node";
 
@@ -550,6 +551,7 @@ interface RunnerSessionState {
   } | null;
   pendingTools: Map<string, { toolName: string; args: unknown; startTime: number }>;
   toolProgress: Map<string, { label: string; status: "running" | "done" | "error" }>;
+  toolProgressTimer: ReturnType<typeof setTimeout> | undefined;
   totalUsage: {
     input: number;
     output: number;
@@ -582,6 +584,7 @@ function createRunState(): RunnerSessionState {
     queue: null,
     pendingTools: new Map<string, { toolName: string; args: unknown; startTime: number }>(),
     toolProgress: new Map<string, { label: string; status: "running" | "done" | "error" }>(),
+    toolProgressTimer: undefined,
     totalUsage: createEmptyUsageTotals(),
     llmCallCount: 0,
     stopReason: "stop",
@@ -609,6 +612,8 @@ function resetRunState(
   };
   runState.pendingTools.clear();
   runState.toolProgress.clear();
+  if (runState.toolProgressTimer) clearTimeout(runState.toolProgressTimer);
+  runState.toolProgressTimer = undefined;
   runState.totalUsage = createEmptyUsageTotals();
   runState.llmCallCount = 0;
   runState.stopReason = "stop";
@@ -688,6 +693,43 @@ async function replaceResponseWithToolProgress(
 ): Promise<void> {
   const progress = formatToolProgress(runState);
   if (progress) await responder.replaceResponse(progress);
+}
+
+const TOOL_PROGRESS_DEBOUNCE_MS = 500;
+
+function scheduleToolProgressUpdate(
+  responder: ConversationResponder,
+  runState: RunnerSessionState,
+): void {
+  if (runState.toolProgressTimer) return;
+  runState.toolProgressTimer = setTimeout(() => {
+    runState.toolProgressTimer = undefined;
+    runState.queue?.enqueue(
+      () => replaceResponseWithToolProgress(responder, runState),
+      "tool progress update",
+    );
+  }, TOOL_PROGRESS_DEBOUNCE_MS);
+  runState.toolProgressTimer.unref();
+}
+
+function flushToolProgressUpdate(
+  responder: ConversationResponder,
+  runState: RunnerSessionState,
+): void {
+  if (runState.toolProgressTimer) clearTimeout(runState.toolProgressTimer);
+  runState.toolProgressTimer = undefined;
+  runState.queue?.enqueue(
+    () => replaceResponseWithToolProgress(responder, runState),
+    "tool progress update",
+  );
+}
+
+function extractToolProgressLabel(partialResult: unknown): string | undefined {
+  if (!partialResult || typeof partialResult !== "object") return undefined;
+  const details = (partialResult as { details?: unknown }).details;
+  if (!details || typeof details !== "object") return undefined;
+  const label = (details as { progressLabel?: unknown }).progressLabel;
+  return typeof label === "string" && label.trim() ? label.trim().slice(0, 1000) : undefined;
 }
 
 async function finalizeRunResponse(
@@ -1008,9 +1050,16 @@ function buildExtensionHostServices(params: {
   platformNotifier?: PlatformNotifier;
   platformReactor?: PlatformReactor;
   platformUploader?: PlatformUploader;
+  runSubagentService?: ExtensionHostServices["runSubagent"];
 }): ExtensionHostServices {
-  const { workspaceDir, vaultManager, platformNotifier, platformReactor, platformUploader } =
-    params;
+  const {
+    workspaceDir,
+    vaultManager,
+    platformNotifier,
+    platformReactor,
+    platformUploader,
+    runSubagentService,
+  } = params;
   const eventStore = HostEventStore.fromWorkspaceDir(workspaceDir);
   return {
     stateDir: readEnv("STATE_DIR"),
@@ -1032,6 +1081,7 @@ function buildExtensionHostServices(params: {
     ...(platformNotifier ? { postMessage: platformNotifier } : {}),
     ...(platformReactor ? { addReaction: platformReactor } : {}),
     ...(platformUploader ? { uploadFile: platformUploader } : {}),
+    ...(runSubagentService ? { runSubagent: runSubagentService } : {}),
     ...(vaultManager
       ? {
           resolveSecrets: (slug: string) => vaultManager.resolve(`extensions/${slug}`)?.env ?? {},
@@ -1072,6 +1122,18 @@ async function createConfiguredAgentSession(params: {
   // Host-only dirs under the state dir: extension code runs in the mikan
   // process, so it must never load from workspace paths — those are mounted
   // into sandbox containers and agent-writable (sandbox escape otherwise).
+  let contributedTools: ReturnType<ExtensionRegistry["getContributedTools"]> = [];
+  const subagentTool = createSubagentTool((request) =>
+    runSubagent({
+      request,
+      defaultModel: model,
+      thinkingLevel,
+      models,
+      workspaceDir,
+      availableTools: [...tools, ...contributedTools],
+    }),
+  );
+
   const extensionsResult = await loadExtensions({
     dirs: defaultExtensionDirs(conversationId, readEnv("STATE_DIR")),
     context: { conversationId, workspaceDir, model, thinkingLevel },
@@ -1081,8 +1143,18 @@ async function createConfiguredAgentSession(params: {
       platformNotifier,
       platformReactor,
       platformUploader,
+      runSubagentService: (request, extensionTools) =>
+        runSubagent({
+          request,
+          defaultModel: model,
+          thinkingLevel,
+          models,
+          workspaceDir,
+          availableTools: [...tools, ...extensionTools],
+        }),
     }),
   });
+  contributedTools = extensionsResult.registry.getContributedTools();
   for (const err of extensionsResult.errors) {
     log.logWarning(`[${conversationId}] Extension load error: ${err.path}`, err.error);
   }
@@ -1096,7 +1168,7 @@ async function createConfiguredAgentSession(params: {
     systemPrompt,
     model,
     thinkingLevel,
-    tools,
+    tools: [...tools, subagentTool],
     models,
     sessionStore,
     extensions: extensionsResult.registry,
@@ -1334,6 +1406,16 @@ function attachSessionEventHandlers(params: {
       return;
     }
 
+    if (event.type === "tool_execution_update") {
+      const label = extractToolProgressLabel(event.partialResult);
+      const progress = runState.toolProgress.get(event.toolCallId);
+      if (label && progress) {
+        progress.label = label;
+        scheduleToolProgressUpdate(responder, runState);
+      }
+      return;
+    }
+
     if (event.type === "tool_execution_end") {
       const resultStr = extractToolResultText(event.result);
       const pending = pendingTools.get(event.toolCallId);
@@ -1344,10 +1426,7 @@ function attachSessionEventHandlers(params: {
       });
       const progress = runState.toolProgress.get(event.toolCallId);
       if (progress) progress.status = event.isError ? "error" : "done";
-      queue.enqueue(
-        () => replaceResponseWithToolProgress(responder, runState),
-        "tool progress update",
-      );
+      flushToolProgressUpdate(responder, runState);
       pendingTools.delete(event.toolCallId);
       const durationMs = pending ? Date.now() - pending.startTime : 0;
 

@@ -56,6 +56,7 @@ export type {
   BeforeAgentStartHookEvent,
   BeforeAgentStartHookResult,
   BudgetExceededHookEvent,
+  SubagentApi,
   ExtensionCommand,
   ExtensionCommandContext,
   ExtensionDisposer,
@@ -82,6 +83,12 @@ export type {
   TurnEndHookEvent,
 } from "./extensions/types.js";
 export {
+  type SubagentModelSpec,
+  type SubagentRunBudget,
+  type SubagentRunOutput,
+  type SubagentRunRequest,
+  type SubagentRunResult,
+  type SubagentRunStatus,
   CURRENT_SESSION_VERSION,
   type BranchSummaryEntry,
   type CompactionEntry,

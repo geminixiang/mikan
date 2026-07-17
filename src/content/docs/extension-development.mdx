@@ -206,6 +206,37 @@ api.registerCommand({
 
 Users invoke it as `/pm list`. Matching is case-insensitive; built-in commands (`/pi-*`, `/login`, …) always win over extension commands, and the first registration of a name wins across extensions. Slash text that matches no command still goes to the agent as a normal prompt. A handler error is reported in the conversation and logged; it never crashes mikan.
 
+### Isolated subagents
+
+`api.subagent.run` starts one fresh subagent and returns its result to the extension without posting to the conversation or adding to conversation history:
+
+```ts
+import { Type } from "@sinclair/typebox";
+
+const result = await api.subagent.run({
+  task: "Classify this project update.",
+  input: { text: "Still investigating; no ETA yet." },
+  tools: [],
+  outputSchema: Type.Object({
+    quality: Type.Union([Type.Literal("substantive"), Type.Literal("low_content")]),
+    stuck: Type.Boolean(),
+  }),
+  budget: { maxTurns: 1, maxCostUsd: 0.02, maxDurationMs: 30_000 },
+});
+
+if (result.status === "completed") {
+  api.log(`quality=${result.output.quality}`);
+}
+```
+
+Subagents receive no conversation history and no tools by default. Requested tool names must already be available to the parent runner; unknown tools fail before the subagent starts. Subagent runs cannot recursively call `api.subagent.run`. When `outputSchema` is present, the final response must be exact JSON matching the TypeBox schema — mikan does not extract JSON from prose or Markdown fences.
+
+Runs default to 8 model turns, 2 minutes, and USD 0.50 unless the request supplies lower or higher limits.
+
+Results include a run ID, terminal status, raw final text, model identity, turns, tokens, cost, duration, and an optional validated `output`. Terminal statuses are `completed`, `failed`, `cancelled`, `timeout`, `budget_exceeded`, and `invalid_output`.
+
+Subagent transcripts use an in-memory `SessionStore` and never create a session file or enter the conversation session store. They are discarded with the subagent runtime.
+
 ### Lifecycle and disposal
 
 A harness instance is discarded on `/pi-new`, idle eviction, and session rotation. Release resources (database handles, watchers) by returning a disposer from `activate` or registering one with `api.onDispose`:

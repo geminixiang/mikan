@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { MutableModels } from "@earendil-works/pi-ai";
 import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../src/adapter.js";
 import { createRunner } from "../src/agent.js";
@@ -106,6 +106,33 @@ const platform: MessagingInfo = {
 };
 
 describe("PiAgentWrapper.run", () => {
+  test("surfaces subagent batch progress through the platform-neutral responder", async () => {
+    const { runner, faux } = await createTestRunner();
+    faux.setResponses([
+      fauxAssistantMessage(
+        fauxToolCall("subagent", {
+          tasks: [
+            { label: "first", task: "first task" },
+            { label: "second", task: "second task" },
+          ],
+        }),
+      ),
+      fauxAssistantMessage("first result"),
+      fauxAssistantMessage("second result"),
+      fauxAssistantMessage("parent complete"),
+    ]);
+    const responder = makeResponder();
+
+    await runner.run(makeMessage({ text: "delegate twice" }), responder, platform);
+
+    const replacements = responder.replaceResponse.mock.calls.map((call) => String(call[0]));
+    expect(replacements.some((text) => text.includes("Subagent parallel 2/2"))).toBe(true);
+    expect(replacements.some((text) => text.includes("✓ first") && text.includes("✓ second"))).toBe(
+      true,
+    );
+    expect(replacements.at(-1)).toContain("parent complete");
+  });
+
   test("replaces the placeholder with the final assistant text", async () => {
     const { runner, faux } = await createTestRunner();
     faux.setResponses([fauxAssistantMessage("hello from the agent")]);

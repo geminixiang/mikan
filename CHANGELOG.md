@@ -9,6 +9,19 @@ any release.
 
 ## [Unreleased]
 
+### Added
+
+- Add fresh in-memory subagents for the main agent and extensions, with explicit tools, budgets, structured output, parallel batches, and bounded DAG orchestration.
+- Stream debounced subagent node progress through the shared Slack, Discord, and Telegram response lifecycle.
+
+### Changed
+
+- Let final responses at the LLM-call cap complete without tripping the run budget when no continuation is required.
+
+### Tests
+
+- Add coverage for subagent isolation, recursion guards, budgets, structured output, parallel execution, DAG validation and dependency flow, and platform-neutral progress rendering.
+
 ## [1.0.0-beta.18]
 
 ### Added

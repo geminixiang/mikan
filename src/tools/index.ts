@@ -15,6 +15,8 @@ import { createSandboxTool } from "./sandbox.js";
 import type { PlatformToolPackFactory } from "./types.js";
 import { createWriteTool } from "./write.js";
 
+export { createSubagentTool } from "./subagent.js";
+
 export function createMikanTools(
   executor: Executor,
   workspaceDir: string,
