@@ -1,5 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
+import { defineHostFnTool } from "./host-fn-tool.js";
 
 const reactSchema = Type.Object({
   emoji: Type.String({
@@ -17,33 +18,20 @@ export function createReactTool(): {
   tool: AgentTool<typeof reactSchema>;
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
 } {
-  let reactFn: ((emoji: string) => Promise<void>) | null = null;
-
-  const tool: AgentTool<typeof reactSchema> = {
+  const { tool, setFn } = defineHostFnTool<(emoji: string) => Promise<void>, typeof reactSchema>({
     name: "react",
-    label: "react",
     description:
       "Add an emoji reaction to the message you are responding to. Useful for a lightweight acknowledgement (e.g. eyes to show you saw a request, white_check_mark when done) instead of a full reply.",
     parameters: reactSchema,
-    execute: async (_toolCallId: string, { emoji }: { emoji: string }, signal?: AbortSignal) => {
-      if (!reactFn) {
-        throw new Error("Reactions are not supported in this conversation.");
-      }
-      if (signal?.aborted) {
-        throw new Error("Operation aborted");
-      }
+    unavailable: "Reactions are not supported in this conversation.",
+    run: async (reactFn, { emoji }) => {
       await reactFn(emoji);
       return {
         content: [{ type: "text" as const, text: `Reacted with :${emoji.replace(/^:|:$/g, "")}:` }],
         details: undefined,
       };
     },
-  };
+  });
 
-  return {
-    tool,
-    setReactFunction: (fn) => {
-      reactFn = fn;
-    },
-  };
+  return { tool, setReactFunction: setFn };
 }

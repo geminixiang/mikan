@@ -97,6 +97,10 @@ export class HostExecutor implements Executor {
     return readFile(path, "utf-8");
   }
 
+  async readFileBase64(path: string): Promise<string> {
+    return (await readFile(path)).toString("base64");
+  }
+
   async writeFile(path: string, content: string): Promise<void> {
     await mkdir(dirname(path), { recursive: true });
     const stage = `${path}.mikan-stage`;

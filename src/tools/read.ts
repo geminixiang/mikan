@@ -3,7 +3,6 @@ import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { extname } from "path";
 import type { Executor } from "../sandbox/index.js";
-import { shellEscape } from "../sandbox/utils.js";
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
@@ -63,12 +62,8 @@ export function createReadTool(executor: Executor): AgentTool<typeof readSchema>
       const mimeType = isImageFile(path);
 
       if (mimeType) {
-        // Read as image (binary) - use base64
-        const result = await executor.exec(`base64 < ${shellEscape(path)}`, { signal });
-        if (result.code !== 0) {
-          throw new Error(result.stderr || `Failed to read file: ${path}`);
-        }
-        const base64 = result.stdout.replace(/\s/g, ""); // Remove whitespace from base64
+        // Binary content rides the executor's own transport, never shell argv.
+        const base64 = await executor.readFileBase64(path, { signal });
 
         return {
           content: [
@@ -79,12 +74,10 @@ export function createReadTool(executor: Executor): AgentTool<typeof readSchema>
         };
       }
 
-      // Get total line count first
-      const countResult = await executor.exec(`wc -l < ${shellEscape(path)}`, { signal });
-      if (countResult.code !== 0) {
-        throw new Error(countResult.stderr || `Failed to read file: ${path}`);
-      }
-      const totalFileLines = Number.parseInt(countResult.stdout.trim(), 10) + 1; // wc -l counts newlines, not lines
+      // One transport read; line selection is plain code, not shell strings.
+      const fileText = await executor.readFile(path, { signal });
+      const fileLines = fileText.split("\n");
+      const totalFileLines = fileLines.length;
 
       // Apply offset if specified (1-indexed)
       const startLine = offset ? Math.max(1, offset) : 1;
@@ -95,20 +88,7 @@ export function createReadTool(executor: Executor): AgentTool<typeof readSchema>
         throw new Error(`Offset ${offset} is beyond end of file (${totalFileLines} lines total)`);
       }
 
-      // Read content with offset
-      let cmd: string;
-      if (startLine === 1) {
-        cmd = `cat ${shellEscape(path)}`;
-      } else {
-        cmd = `tail -n +${startLine} ${shellEscape(path)}`;
-      }
-
-      const result = await executor.exec(cmd, { signal });
-      if (result.code !== 0) {
-        throw new Error(result.stderr || `Failed to read file: ${path}`);
-      }
-
-      let selectedContent = result.stdout;
+      let selectedContent = startLine === 1 ? fileText : fileLines.slice(startLine - 1).join("\n");
       let userLimitedLines: number | undefined;
 
       // Apply user limit if specified

@@ -1,5 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
+import { defineHostFnTool } from "../../../tools/host-fn-tool.js";
 import type { GithubIssueRequest } from "../types.js";
 
 const githubIssueSchema = Type.Object({
@@ -46,36 +47,23 @@ export function createGithubIssueTool(): {
   tool: AgentTool<typeof githubIssueSchema>;
   setGithubIssueFunction: (fn: GithubIssueFn | null) => void;
 } {
-  let issueFn: GithubIssueFn | null = null;
-
-  const tool: AgentTool<typeof githubIssueSchema> = {
+  const { tool, setFn } = defineHostFnTool<GithubIssueFn, typeof githubIssueSchema>({
     name: "github_issue",
-    label: "github_issue",
     description:
       "Manage issues in this repo: add/remove labels, add/remove assignees, close " +
       "(optionally with state_reason) or reopen. number defaults to this conversation's " +
       "issue; any issue number in this repo works for triage. Only available in GitHub " +
       "conversations.",
     parameters: githubIssueSchema,
-    execute: async (_toolCallId: string, args: GithubIssueRequest, signal?: AbortSignal) => {
-      if (!issueFn) {
-        throw new Error("github_issue is only available in GitHub conversations.");
-      }
-      if (signal?.aborted) {
-        throw new Error("Operation aborted");
-      }
-      const report = await issueFn(args);
+    unavailable: "github_issue is only available in GitHub conversations.",
+    run: async (issueFn, args) => {
+      const report = await issueFn(args as GithubIssueRequest);
       return {
         content: [{ type: "text" as const, text: report }],
         details: undefined,
       };
     },
-  };
+  });
 
-  return {
-    tool,
-    setGithubIssueFunction: (fn) => {
-      issueFn = fn;
-    },
-  };
+  return { tool, setGithubIssueFunction: setFn };
 }

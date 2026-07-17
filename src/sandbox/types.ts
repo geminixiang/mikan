@@ -57,6 +57,12 @@ export interface Executor {
   readFile(path: string, options?: ExecOptions): Promise<string>;
 
   /**
+   * Read a runtime file as base64 (for binary content, e.g. images). Same
+   * transport ownership as readFile.
+   */
+  readFileBase64(path: string, options?: ExecOptions): Promise<string>;
+
+  /**
    * Write a runtime file, creating parent directories and replacing via a
    * staging file so an aborted write never truncates the target. Like
    * readFile, transport is the executor's concern — content must survive

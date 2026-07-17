@@ -15,7 +15,7 @@ import { gondolinFleet } from "./gondolin-fleet.js";
 import { gondolinGateway } from "./gondolin-gateway.js";
 import { createMountedRuntimePathContext } from "./path-context.js";
 import { withRuntimeBootstrap } from "./container.js";
-import { execReadFile, execWriteFile } from "./utils.js";
+import { execReadFile, execReadFileBase64, execWriteFile } from "./utils.js";
 import type {
   ExecOptions,
   ExecResult,
@@ -518,6 +518,10 @@ export class GondolinExecutor implements Executor {
 
   async readFile(path: string): Promise<string> {
     return execReadFile(this, path);
+  }
+
+  async readFileBase64(path: string): Promise<string> {
+    return execReadFileBase64(this, path);
   }
 
   async writeFile(path: string, content: string): Promise<void> {

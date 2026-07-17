@@ -1010,6 +1010,9 @@ function createRunnerExecutionContext(
     readFile(path, options) {
       return activeExecutor.readFile(path, options);
     },
+    readFileBase64(path, options) {
+      return activeExecutor.readFileBase64(path, options);
+    },
     writeFile(path, content, options) {
       return activeExecutor.writeFile(path, content, options);
     },

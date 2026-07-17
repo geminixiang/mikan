@@ -1,5 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
+import { defineHostFnTool } from "../../../tools/host-fn-tool.js";
 import type { GithubCheckSummary } from "../types.js";
 
 const githubChecksSchema = Type.Object({
@@ -71,11 +72,8 @@ export function createGithubChecksTool(): {
   tool: AgentTool<typeof githubChecksSchema>;
   setGithubChecksFunction: (fns: GithubChecksFns | null) => void;
 } {
-  let checksFns: GithubChecksFns | null = null;
-
-  const tool: AgentTool<typeof githubChecksSchema> = {
+  const { tool, setFn } = defineHostFnTool<GithubChecksFns, typeof githubChecksSchema>({
     name: "github_checks",
-    label: "github_checks",
     description:
       "Read CI status (check runs) for a branch you pushed with github_pr, or for this " +
       "conversation's pull request when branch is omitted. Pass job_id (a [job …] id, " +
@@ -84,17 +82,8 @@ export function createGithubChecksTool(): {
       "their summary/url, or reproduce the failure locally in ./repo. Only available in " +
       "GitHub conversations.",
     parameters: githubChecksSchema,
-    execute: async (
-      _toolCallId: string,
-      args: { branch?: string; job_id?: number; build_id?: string },
-      signal?: AbortSignal,
-    ) => {
-      if (!checksFns) {
-        throw new Error("github_checks is only available in GitHub conversations.");
-      }
-      if (signal?.aborted) {
-        throw new Error("Operation aborted");
-      }
+    unavailable: "github_checks is only available in GitHub conversations.",
+    run: async (checksFns, args) => {
       if (args.job_id !== undefined && args.build_id !== undefined) {
         throw new Error("Pass either job_id or build_id, not both.");
       }
@@ -142,12 +131,7 @@ export function createGithubChecksTool(): {
         details: undefined,
       };
     },
-  };
+  });
 
-  return {
-    tool,
-    setGithubChecksFunction: (fns) => {
-      checksFns = fns;
-    },
-  };
+  return { tool, setGithubChecksFunction: setFn };
 }

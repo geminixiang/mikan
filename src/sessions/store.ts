@@ -116,16 +116,10 @@ export function createManagedSessionFileAtPath(sessionFile: string, cwd: string)
 }
 
 function writeSessionHeader(sessionFile: string, cwd: string, sessionId = randomUUID()): void {
-  const sessionDir = dirname(sessionFile);
-  mkdirSync(sessionDir, { recursive: true });
-  const header = {
-    type: "session",
-    version: 3,
-    id: sessionId,
-    timestamp: new Date().toISOString(),
-    cwd,
-  };
-  atomicWritePrivateFile(sessionFile, `${JSON.stringify(header)}\n`);
+  mkdirSync(dirname(sessionFile), { recursive: true });
+  // The header format (and its version) is owned by the harness store; this
+  // layer only decides the path and the id.
+  SessionStore.create(sessionFile, cwd, { id: sessionId });
 }
 
 /**

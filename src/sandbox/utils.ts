@@ -65,7 +65,7 @@ interface ExecLike<TOptions> {
   exec(command: string, options?: TOptions): Promise<ExecLikeResult>;
 }
 
-export async function execReadFile<TOptions>(
+export async function execReadFileBase64<TOptions>(
   executor: ExecLike<TOptions>,
   path: string,
   options?: TOptions,
@@ -74,7 +74,15 @@ export async function execReadFile<TOptions>(
   if (result.code !== 0) {
     throw new Error(result.stderr.trim() || `Failed to read file: ${path}`);
   }
-  return Buffer.from(result.stdout.replace(/\s+/g, ""), "base64").toString("utf-8");
+  return result.stdout.replace(/\s+/g, "");
+}
+
+export async function execReadFile<TOptions>(
+  executor: ExecLike<TOptions>,
+  path: string,
+  options?: TOptions,
+): Promise<string> {
+  return Buffer.from(await execReadFileBase64(executor, path, options), "base64").toString("utf-8");
 }
 
 export async function execWriteFile<TOptions>(

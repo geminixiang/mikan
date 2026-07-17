@@ -1,5 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
+import { defineHostFnTool } from "../../../tools/host-fn-tool.js";
 import type { GithubPrRequest, GithubPrResult } from "../types.js";
 
 const githubPrSchema = Type.Object({
@@ -30,11 +31,11 @@ export function createGithubPrTool(): {
   tool: AgentTool<typeof githubPrSchema>;
   setGithubPrFunction: (fn: ((request: GithubPrRequest) => Promise<GithubPrResult>) | null) => void;
 } {
-  let prFn: ((request: GithubPrRequest) => Promise<GithubPrResult>) | null = null;
-
-  const tool: AgentTool<typeof githubPrSchema> = {
+  const { tool, setFn } = defineHostFnTool<
+    (request: GithubPrRequest) => Promise<GithubPrResult>,
+    typeof githubPrSchema
+  >({
     name: "github_pr",
-    label: "github_pr",
     description:
       "Push a pi/<name> branch you committed inside ./repo and open a GitHub pull request " +
       "(or draft) for it. Pushing a branch that already has an open PR — including this " +
@@ -42,13 +43,8 @@ export function createGithubPrTool(): {
       "available in GitHub issue/PR conversations. You cannot push to the default branch " +
       "and you cannot merge — humans review and merge the PR.",
     parameters: githubPrSchema,
-    execute: async (_toolCallId: string, args: GithubPrArgs, signal?: AbortSignal) => {
-      if (!prFn) {
-        throw new Error("github_pr is only available in GitHub conversations.");
-      }
-      if (signal?.aborted) {
-        throw new Error("Operation aborted");
-      }
+    unavailable: "github_pr is only available in GitHub conversations.",
+    run: async (prFn, args: GithubPrArgs) => {
       const result = await prFn(args);
       return {
         content: [
@@ -62,12 +58,7 @@ export function createGithubPrTool(): {
         details: undefined,
       };
     },
-  };
+  });
 
-  return {
-    tool,
-    setGithubPrFunction: (fn) => {
-      prFn = fn;
-    },
-  };
+  return { tool, setGithubPrFunction: setFn };
 }

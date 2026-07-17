@@ -1,5 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
+import { defineHostFnTool } from "../../../tools/host-fn-tool.js";
 import type { GithubReadRequest, GithubReadResult } from "../types.js";
 
 const githubReadSchema = Type.Object({
@@ -144,36 +145,23 @@ export function createGithubReadTool(): {
   tool: AgentTool<typeof githubReadSchema>;
   setGithubReadFunction: (fn: GithubReadFn | null) => void;
 } {
-  let readFn: GithubReadFn | null = null;
-
-  const tool: AgentTool<typeof githubReadSchema> = {
+  const { tool, setFn } = defineHostFnTool<GithubReadFn, typeof githubReadSchema>({
     name: "github_read",
-    label: "github_read",
     description:
       "Read GitHub metadata for this repo: PR state/diff stats (pr), changed files " +
       "(pr_files), reviews and open inline threads (pr_reviews), issue metadata (issue), " +
       "recent comments (comments), or a filtered issue/PR listing (list). number defaults " +
       "to this conversation's issue/PR. Only available in GitHub conversations.",
     parameters: githubReadSchema,
-    execute: async (_toolCallId: string, args: GithubReadRequest, signal?: AbortSignal) => {
-      if (!readFn) {
-        throw new Error("github_read is only available in GitHub conversations.");
-      }
-      if (signal?.aborted) {
-        throw new Error("Operation aborted");
-      }
-      const result = await readFn(args);
+    unavailable: "github_read is only available in GitHub conversations.",
+    run: async (readFn, args) => {
+      const result = await readFn(args as GithubReadRequest);
       return {
         content: [{ type: "text" as const, text: formatResult(result) }],
         details: undefined,
       };
     },
-  };
+  });
 
-  return {
-    tool,
-    setGithubReadFunction: (fn) => {
-      readFn = fn;
-    },
-  };
+  return { tool, setGithubReadFunction: setFn };
 }

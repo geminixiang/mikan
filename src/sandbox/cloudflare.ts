@@ -6,7 +6,7 @@ import type {
   RuntimePathContext,
   SandboxAdapter,
 } from "./types.js";
-import { execReadFile, execWriteFile } from "./utils.js";
+import { execReadFile, execReadFileBase64, execWriteFile } from "./utils.js";
 import { readEnv } from "../utils/env.js";
 import { SandboxError } from "./errors.js";
 
@@ -146,6 +146,10 @@ export class CloudflareSandboxExecutor implements Executor {
 
   readFile(path: string, options?: ExecOptions): Promise<string> {
     return execReadFile(this, path, options);
+  }
+
+  readFileBase64(path: string, options?: ExecOptions): Promise<string> {
+    return execReadFileBase64(this, path, options);
   }
 
   writeFile(path: string, content: string, options?: ExecOptions): Promise<void> {

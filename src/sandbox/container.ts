@@ -10,7 +10,13 @@ import type {
   SandboxAdapter,
 } from "./types.js";
 import { SandboxError } from "./errors.js";
-import { execReadFile, execSimple, execWriteFile, shellEscape } from "./utils.js";
+import {
+  execReadFile,
+  execReadFileBase64,
+  execSimple,
+  execWriteFile,
+  shellEscape,
+} from "./utils.js";
 import { HostExecutor } from "./host.js";
 import { createMountedRuntimePathContext } from "./path-context.js";
 
@@ -117,6 +123,10 @@ export class ContainerExecutor implements Executor {
 
   readFile(path: string, options?: ExecOptions): Promise<string> {
     return execReadFile(this, path, options);
+  }
+
+  readFileBase64(path: string, options?: ExecOptions): Promise<string> {
+    return execReadFileBase64(this, path, options);
   }
 
   writeFile(path: string, content: string, options?: ExecOptions): Promise<void> {
