@@ -1,8 +1,8 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "@sinclair/typebox";
 import { existsSync, readFileSync, renameSync, rmSync } from "fs";
-import { homedir } from "os";
 import { basename, dirname, join, resolve } from "path";
+import { effectiveStateDir } from "./cli/arg-grammar.js";
 import { readEnv } from "./utils/env.js";
 import { ensureDirExists, readJsonSchemaFileIfExists } from "./utils/file-guards.js";
 import { atomicWritePrivateFile } from "./utils/fs-atomic.js";
@@ -167,8 +167,7 @@ function loadSettingsFile(settingsPath: string): SettingsFileConfig | undefined 
 }
 
 function getStateDir(): string {
-  const raw = readEnv("STATE_DIR");
-  return raw ? resolve(raw) : join(homedir(), ".mikan");
+  return effectiveStateDir();
 }
 
 function normalizeSettingsConfig(config: SettingsFileConfig): Partial<AgentConfig> {
@@ -255,7 +254,7 @@ function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
   const provider = requireString(fromFile.provider, "llm.provider");
   const model = requireString(fromFile.model, "llm.model");
   const thinkingLevel = requireThinkingLevel(fromFile.thinkingLevel);
-  const sentryDsn = fromFile.sentryDsn ?? process.env.SENTRY_DSN;
+  const sentryDsn = sentryDsnFrom(fromFile.sentryDsn);
   const sandbox = fromFile.sandbox;
   const slack = fromFile.slack;
 
@@ -447,13 +446,14 @@ export function assertStateDirOutsideWorkspace(
   throw new Error(message);
 }
 
+/** Settings-file DSN wins over SENTRY_DSN env — the rule lives only here. */
+function sentryDsnFrom(fromFile: string | undefined): string | undefined {
+  return fromFile || readEnv("SENTRY_DSN");
+}
+
 export function resolveSentryDsn(): string | undefined {
   const fromFile = normalizeSettingsConfig(loadSettingsFile(getSettingsPath()) ?? {});
-  if (fromFile.sentryDsn) {
-    return fromFile.sentryDsn;
-  }
-
-  return process.env.SENTRY_DSN;
+  return sentryDsnFrom(fromFile.sentryDsn);
 }
 
 export function createGlobalSettingsFile(stateDir: string): string {

@@ -18,7 +18,7 @@ import {
   listInstalledExtensions,
   validateExtension,
 } from "../harness/index.js";
-import { defaultStateDir, takeValueFlag } from "./arg-grammar.js";
+import { resolveStateDir, takeValueFlag } from "./arg-grammar.js";
 import { parseGitSource, resolveGitSource } from "./ext-git.js";
 
 interface ExtArgs {
@@ -30,7 +30,8 @@ interface ExtArgs {
 }
 
 function parseExtArgs(argv: string[]): ExtArgs {
-  let stateDir = defaultStateDir();
+  // Shares the daemon's state-dir precedence: --state-dir > env > ~/.mikan.
+  const stateDir = resolveStateDir(argv);
   let scope: ExtArgs["scope"];
   let conversationId: string | undefined;
   const positional: string[] = [];
@@ -44,8 +45,7 @@ function parseExtArgs(argv: string[]): ExtArgs {
       conversationId = taken.value || undefined;
       i = taken.lastIndex;
     } else if ((taken = takeValueFlag(argv, i, "--state-dir"))) {
-      stateDir = resolve(taken.value);
-      i = taken.lastIndex;
+      i = taken.lastIndex; // value already folded in by resolveStateDir
     } else positional.push(arg);
   }
 

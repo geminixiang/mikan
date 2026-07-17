@@ -9,7 +9,7 @@
  */
 import { join, resolve } from "path";
 import { parseSandboxArg, type SandboxConfig } from "../sandbox/index.js";
-import { defaultStateDir, takeValueFlag } from "./arg-grammar.js";
+import { defaultStateDir, resolveStateDir, takeValueFlag } from "./arg-grammar.js";
 
 export interface BootPlan {
   mode: "ext" | "help" | "version" | "worker-token" | "onboard" | "download" | "run";
@@ -38,7 +38,6 @@ export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
 
   let sandbox: SandboxConfig = { type: "host" };
   let workingDirArg: string | undefined;
-  let stateDirArg: string | undefined;
   let downloadChannel: string | undefined;
   let help = false;
   let version = false;
@@ -60,7 +59,8 @@ export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
       sandbox = parseSandboxArg(taken.value);
       i = taken.lastIndex;
     } else if ((taken = takeValueFlag(args, i, "--state-dir"))) {
-      stateDirArg = taken.value;
+      // Consumed here so its value never reads as the positional working
+      // dir; the value itself is resolved by resolveStateDir below.
       i = taken.lastIndex;
     } else if ((taken = takeValueFlag(args, i, "--download"))) {
       downloadChannel = taken.value;
@@ -72,7 +72,7 @@ export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
     }
   }
 
-  const stateDir = stateDirArg ? resolve(stateDirArg) : defaultStateDir();
+  const stateDir = resolveStateDir(args);
   return {
     mode: help
       ? "help"

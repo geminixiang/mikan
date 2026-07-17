@@ -33,6 +33,7 @@ import {
   createGlobalSettingsFile,
   loadGlobalSettings,
   MissingGlobalSettingsError,
+  resolveLinkBaseUrl,
 } from "./config.js";
 import {
   configureHttpDispatcher,
@@ -94,9 +95,11 @@ const GITHUB_REPOS = readEnv("GITHUB_REPOS");
 const GITHUB_POLL_INTERVAL = readEnv("GITHUB_POLL_INTERVAL");
 const GOOGLE_APPLICATION_CREDENTIALS = readEnv("GOOGLE_APPLICATION_CREDENTIALS");
 const GOOGLE_CLOUD_PROJECT = readEnv("GOOGLE_CLOUD_PROJECT");
-const LINK_URL = readEnv("LINK_URL");
+// Externally-visible base URL of the link/OAuth server; the env read and
+// trailing-slash normalization live in config.resolveLinkBaseUrl.
+const LINK_BASE_URL = resolveLinkBaseUrl();
 const LINK_PORT_RAW = readEnv("LINK_PORT");
-const LINK_PORT = LINK_PORT_RAW ? parseInt(LINK_PORT_RAW, 10) : LINK_URL ? 8181 : undefined;
+const LINK_PORT = LINK_PORT_RAW ? parseInt(LINK_PORT_RAW, 10) : LINK_BASE_URL ? 8181 : undefined;
 
 const WORLD_WRITABLE_MODE = 0o002;
 
@@ -371,7 +374,7 @@ setInterval(() => sessionViewTokenStore.purge(), 5 * 60 * 1000).unref();
 setInterval(() => adminTokenStore.purge(), 5 * 60 * 1000).unref();
 
 function portalBaseUrl(): string | undefined {
-  if (LINK_URL) return LINK_URL.replace(/\/+$/, "");
+  if (LINK_BASE_URL) return LINK_BASE_URL;
   if (LINK_PORT) return `http://localhost:${LINK_PORT}`;
   return undefined;
 }

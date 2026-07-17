@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { addAgentEventStreamClient } from "../../agent-events.js";
+import { readEnv } from "../../utils/env.js";
 
 export function handleAgentEventsRequest(
   req: IncomingMessage,
@@ -10,7 +11,7 @@ export function handleAgentEventsRequest(
     return false;
   }
 
-  const expectedToken = process.env.MIKAN_AGENT_EVENTS_TOKEN;
+  const expectedToken = readEnv("AGENT_EVENTS_TOKEN");
   const auth = req.headers.authorization ?? "";
   const queryToken = url.searchParams.get("token") ?? "";
   if (expectedToken && auth !== `Bearer ${expectedToken}` && queryToken !== expectedToken) {

@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, test } from "vitest";
-import { defaultStateDir, resolveStateDirFromArgv, takeValueFlag } from "../src/cli/arg-grammar.js";
+import { defaultStateDir, resolveStateDir, takeValueFlag } from "../src/cli/arg-grammar.js";
 import { resolveBoot, helpText } from "../src/cli/boot.js";
 
 const HOME_STATE = join(homedir(), ".mikan");
@@ -116,14 +116,42 @@ describe("arg-grammar", () => {
     expect(takeValueFlag(["--x"], 0, "--x")).toEqual({ value: "", lastIndex: 1 });
   });
 
-  test("resolveStateDirFromArgv matches the full parser's answer", () => {
+  test("resolveStateDir matches the full parser's answer", () => {
     for (const args of [
       ["--state-dir", "/tmp/state", "/tmp/mikan"],
       ["--state-dir=/tmp/state", "/tmp/mikan"],
       ["/tmp/mikan"],
       [],
     ]) {
-      expect(resolveStateDirFromArgv(args)).toBe(resolveBoot(args).stateDir);
+      expect(resolveStateDir(args)).toBe(resolveBoot(args).stateDir);
+    }
+  });
+
+  test("state-dir precedence: flag > env > default", () => {
+    expect(resolveStateDir(["--state-dir=/tmp/flag"], "/tmp/env")).toBe(resolve("/tmp/flag"));
+    expect(resolveStateDir([], "/tmp/env")).toBe(resolve("/tmp/env"));
+    expect(resolveStateDir([], undefined)).toBe(defaultStateDir());
+  });
+
+  test("last --state-dir flag wins, matching the historical parsers", () => {
+    expect(resolveStateDir(["--state-dir=/tmp/a", "--state-dir=/tmp/b"], undefined)).toBe(
+      resolve("/tmp/b"),
+    );
+  });
+
+  test("boot plan honors STATE_DIR env when no flag is given", () => {
+    const prev = { state: process.env.STATE_DIR, mikan: process.env.MIKAN_STATE_DIR };
+    process.env.STATE_DIR = "/tmp/env-state";
+    delete process.env.MIKAN_STATE_DIR;
+    try {
+      expect(resolveBoot([]).stateDir).toBe(resolve("/tmp/env-state"));
+      expect(resolveBoot(["--state-dir=/tmp/flag-state"]).stateDir).toBe(
+        resolve("/tmp/flag-state"),
+      );
+    } finally {
+      if (prev.state === undefined) delete process.env.STATE_DIR;
+      else process.env.STATE_DIR = prev.state;
+      if (prev.mikan !== undefined) process.env.MIKAN_STATE_DIR = prev.mikan;
     }
   });
 });

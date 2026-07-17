@@ -45,7 +45,7 @@ import type {
 } from "./types.js";
 import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import { resolveConversationSettings } from "./config.js";
-import { readEnv } from "./utils/env.js";
+import { effectiveStateDir } from "./cli/arg-grammar.js";
 import { ActorExecutionResolver } from "./execution-resolver.js";
 import * as log from "./log.js";
 import type { DockerContainerManager } from "./provisioner.js";
@@ -1062,7 +1062,7 @@ function buildExtensionHostServices(params: {
   } = params;
   const eventStore = HostEventStore.fromWorkspaceDir(workspaceDir);
   return {
-    stateDir: readEnv("STATE_DIR"),
+    stateDir: effectiveStateDir(),
     scheduleStore: {
       write: async (filename, payload) => {
         await eventStore.write(filename, payload);
@@ -1118,7 +1118,7 @@ async function createConfiguredAgentSession(params: {
   // process, so it must never load from workspace paths — those are mounted
   // into sandbox containers and agent-writable (sandbox escape otherwise).
   const extensionsResult = await loadExtensions({
-    dirs: defaultExtensionDirs(conversationId, readEnv("STATE_DIR")),
+    dirs: defaultExtensionDirs(conversationId, effectiveStateDir()),
     context: { conversationId, workspaceDir, model, thinkingLevel },
     services: buildExtensionHostServices({
       workspaceDir,

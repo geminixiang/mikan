@@ -1,5 +1,6 @@
 import type { Breadcrumb, ErrorEvent, Event, EventHint, Scope } from "@sentry/node";
 import * as Sentry from "@sentry/node";
+import { readEnv } from "../utils/env.js";
 
 const REDACTED = "[REDACTED]";
 const REDACTED_PATH = "[REDACTED_PATH]";
@@ -81,8 +82,8 @@ const traceAttribution = new Map<string, TraceAttributionEntry>();
 export function createSentryInitOptions(dsn?: string) {
   return {
     dsn,
-    environment: process.env.SENTRY_ENVIRONMENT ?? "production",
-    enabled: Boolean(dsn) && process.env.SENTRY_ENABLED !== "false",
+    environment: readEnv("SENTRY_ENVIRONMENT") ?? "production",
+    enabled: Boolean(dsn) && readEnv("SENTRY_ENABLED") !== "false",
     sendDefaultPii: false,
     tracesSampleRate: 1.0,
     includeLocalVariables: false,

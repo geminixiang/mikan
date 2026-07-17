@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { defaultExtensionDirs, listInstalledExtensions } from "../harness/index.js";
-import { readEnv } from "../utils/env.js";
+import { effectiveStateDir } from "../cli/arg-grammar.js";
 import { slashForms } from "./manifest.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler } from "./types.js";
@@ -23,7 +23,7 @@ export class ExtensionsCommandHandler implements CommandHandler {
     const matched = matchCommand(context.commandText, EXTENSIONS_COMMANDS, { stripMention: true });
     if (!matched) return false;
 
-    const dirs = defaultExtensionDirs(context.conversationId, readEnv("STATE_DIR"));
+    const dirs = defaultExtensionDirs(context.conversationId, effectiveStateDir());
     const installed = listInstalledExtensions(dirs);
 
     // A root-level index file means an extension's contents were copied into
