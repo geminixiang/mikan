@@ -8,11 +8,15 @@ import { gondolinInventory, type GondolinRuntimeRecord } from "./gondolin-invent
 import type { GondolinWorkerConfig, GondolinWorkerHandshake } from "./gondolin-worker.js";
 import type { ExecResult } from "./types.js";
 
-/** A live worker-hosted runtime as seen from mikan. */
+/**
+ * A live worker-hosted runtime as seen from mikan: identity plus fleet
+ * routing only. Transport-private connection details (the local worker's
+ * session socket, the remote worker's lease/tunnel) stay inside the owning
+ * transport — a handle never carries another transport's address fields.
+ */
 export interface GondolinRuntimeHandle {
   sessionId: string;
   instanceId: string;
-  socketPath: string;
   workerPid: number;
   fingerprint: string;
   /** Fleet identity of the worker hosting the runtime (remote transport). */
@@ -237,6 +241,8 @@ export async function execOverSessionConnect(
 const WORKER_HEARTBEAT_STALE_MS = 45 * 60 * 1000;
 
 class GondolinWorkerClient implements GondolinRuntimeTransport {
+  /** Session IPC socket per runtime — transport-private, never on the handle. */
+  private readonly socketPaths = new Map<string, string>();
   private spawnProcess = defaultSpawnProcess;
   private connectImpl: (
     socketPath: string,
@@ -291,10 +297,10 @@ class GondolinWorkerClient implements GondolinRuntimeTransport {
     child.stdout?.destroy();
     child.stderr?.destroy();
     child.unref();
+    this.socketPaths.set(handshake.sessionId, handshake.socketPath);
     return {
       sessionId: handshake.sessionId,
       instanceId: config.instanceId,
-      socketPath: handshake.socketPath,
       workerPid: handshake.workerPid ?? (child.pid as number),
       fingerprint: config.fingerprint,
     };
@@ -310,10 +316,10 @@ class GondolinWorkerClient implements GondolinRuntimeTransport {
     const record: GondolinRuntimeRecord | undefined =
       await gondolinInventory.findAdoptable(instanceId);
     if (!record?.socketPath) return undefined;
+    this.socketPaths.set(record.sessionId, record.socketPath);
     const handle: GondolinRuntimeHandle = {
       sessionId: record.sessionId,
       instanceId,
-      socketPath: record.socketPath,
       workerPid: record.ownerPid,
       fingerprint: record.fingerprint ?? "",
     };
@@ -335,6 +341,7 @@ class GondolinWorkerClient implements GondolinRuntimeTransport {
    * SIGKILL and reap its leftovers if it will not die.
    */
   async stop(handle: Pick<GondolinRuntimeHandle, "workerPid" | "sessionId">): Promise<void> {
+    this.socketPaths.delete(handle.sessionId);
     if (this.isPidAlive(handle.workerPid)) {
       this.signal(handle.workerPid, "SIGTERM");
       if (!(await this.waitForExit(handle.workerPid, this.stopWaitMs))) {
@@ -356,8 +363,14 @@ class GondolinWorkerClient implements GondolinRuntimeTransport {
     command: string,
     options: { env?: Record<string, string>; signal?: AbortSignal } = {},
   ): Promise<ExecResult> {
+    const socketPath = this.socketPaths.get(handle.sessionId);
+    if (!socketPath) {
+      // the socket was registered at ensure/adopt; a missing entry means this
+      // process no longer owns the runtime — recreate the session cleanly
+      throw new GondolinRuntimeGoneError("no session socket known for this runtime");
+    }
     return execOverSessionConnect(
-      (callbacks) => this.connectImpl(handle.socketPath, callbacks),
+      (callbacks) => this.connectImpl(socketPath, callbacks),
       command,
       options,
     );

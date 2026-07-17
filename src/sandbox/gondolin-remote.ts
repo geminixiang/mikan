@@ -124,7 +124,6 @@ export class GondolinRemoteConnection {
         return {
           sessionId: runtime.sessionId ?? "",
           instanceId,
-          socketPath: "",
           workerPid: runtime.workerPid ?? 0,
           fingerprint: spec.fingerprint,
         };

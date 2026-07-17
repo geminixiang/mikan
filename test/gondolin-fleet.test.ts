@@ -59,7 +59,6 @@ class FakeWorker implements GondolinWorkerConnection {
     return {
       sessionId: runtime.sessionId,
       instanceId,
-      socketPath: "",
       workerPid: 1,
       fingerprint: _spec.fingerprint,
     };
