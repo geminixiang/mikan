@@ -1097,7 +1097,14 @@ export class SlackMessagingBot implements MessagingBot {
       return;
     }
 
-    const isExternalMessagingBotMessage = !!e.bot_id || e.subtype === "bot_message";
+    // API posts made with a user token carry the posting app's bot_id/app_id
+    // alongside the human `user` — bot_id alone does not make the author a
+    // bot. Only treat the message as bot-authored when the author is not a
+    // known human user (bot users have is_bot=true; unknown authors stay on
+    // the conservative bot path so loop protection holds).
+    const authorIsKnownHuman = !!e.user && this.users.get(e.user)?.isBot === false;
+    const isExternalMessagingBotMessage =
+      e.subtype === "bot_message" || (!!e.bot_id && !authorIsKnownHuman);
     if (isExternalMessagingBotMessage) {
       if (e.subtype !== undefined && e.subtype !== "bot_message" && e.subtype !== "file_share") {
         ack();
@@ -1629,7 +1636,13 @@ export class SlackMessagingBot implements MessagingBot {
     do {
       const result = await this.webClient.users.list({ limit: 200, cursor });
       const members = result.members as
-        | Array<{ id?: string; name?: string; real_name?: string; deleted?: boolean }>
+        | Array<{
+            id?: string;
+            name?: string;
+            real_name?: string;
+            deleted?: boolean;
+            is_bot?: boolean;
+          }>
         | undefined;
       if (members) {
         for (const u of members) {
@@ -1638,6 +1651,7 @@ export class SlackMessagingBot implements MessagingBot {
               id: u.id,
               userName: u.name,
               displayName: u.real_name || u.name,
+              isBot: !!u.is_bot,
             });
           }
         }
