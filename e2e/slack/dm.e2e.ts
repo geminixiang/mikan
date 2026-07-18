@@ -5,12 +5,14 @@ import {
   openDmChannel,
   postMessage,
   summarizeMessage,
-  waitForRecentBotReply,
+  waitForBotReply,
 } from "./helpers/slack.js";
 
 const ctx = loadContextOrSkip();
 
-describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack DM", () => {
+// Opt-in via SLACK_QA_DM_E2E=1: the live QA Slack App must deliver
+// `message.im` events for these to pass (see helpers/env.ts).
+describe.skipIf(!ctx || !ctx.env.mikanBotUserId || !ctx.env.dmEnabled)("Slack DM", () => {
   if (!ctx || !ctx.env.mikanBotUserId) return;
   const { client, env } = ctx;
   const botUserId = ctx.env.mikanBotUserId;
@@ -19,17 +21,13 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack DM", () => {
     const dmChannel = await openDmChannel(client, botUserId);
     const token = `QA_DM_${Date.now()}`;
     const startedAt = nowSeconds();
-    const messageTs = await postMessage(
-      client,
-      dmChannel,
-      `DM e2e：請直接回覆這個 token：${token}`,
-    );
-    const reply = await waitForRecentBotReply({
+    const rootTs = await postMessage(client, dmChannel, `DM e2e：請直接回覆這個 token：${token}`);
+    const reply = await waitForBotReply({
       client,
       channel: dmChannel,
       botUserId,
+      rootTs,
       startedAt,
-      afterTs: messageTs,
       timeoutMs: Math.max(env.timeoutMs, 45_000),
       pollMs: env.pollMs,
       textIncludes: token,
@@ -47,28 +45,29 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack DM", () => {
       dmChannel,
       `請記住這個 token：${token}。現在只需回覆 OK，不要重複 token。`,
     );
-    const firstReply = await waitForRecentBotReply({
+    const firstReply = await waitForBotReply({
       client,
       channel: dmChannel,
       botUserId,
+      rootTs: firstTs,
       startedAt: firstStartedAt,
-      afterTs: firstTs,
       timeoutMs: Math.max(env.timeoutMs, 45_000),
       pollMs: env.pollMs,
     });
     expect(firstReply, "no reply to the first DM turn").not.toBeNull();
 
+    const followupStartedAt = nowSeconds();
     const followupTs = await postMessage(
       client,
       dmChannel,
       "請只回覆我上一則訊息要你記住的 token，不要加其他文字。",
     );
-    const reply = await waitForRecentBotReply({
+    const reply = await waitForBotReply({
       client,
       channel: dmChannel,
       botUserId,
-      startedAt: firstStartedAt,
-      afterTs: followupTs,
+      rootTs: followupTs,
+      startedAt: followupStartedAt,
       timeoutMs: Math.max(env.timeoutMs, 45_000),
       pollMs: env.pollMs,
       textIncludes: token,

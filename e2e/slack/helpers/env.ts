@@ -10,6 +10,12 @@ export interface SlackE2eEnv {
   channel: string;
   mikanBotUserId: string | undefined;
   streamingBotToken: string | undefined;
+  /**
+   * Opt-in for DM scenarios (S-017/S-018). Requires the live Slack App to
+   * deliver `message.im` events (subscription + `im:history` bot scope, per
+   * `examples/slack-app-manifest.e2e.json`); the QA app does not yet.
+   */
+  dmEnabled: boolean;
   timeoutMs: number;
   pollMs: number;
   eventsDir: string;
@@ -25,6 +31,7 @@ export function readSlackE2eEnv(): SlackE2eEnv {
     channel,
     mikanBotUserId: env.SLACK_QA_BOT_USER_ID || undefined,
     streamingBotToken: env.SLACK_BOT_TOKEN || undefined,
+    dmEnabled: env.SLACK_QA_DM_E2E === "1",
     timeoutMs: Number(env.SLACK_QA_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS),
     pollMs: Number(env.SLACK_QA_POLL_MS ?? DEFAULT_POLL_MS),
     eventsDir: env.SLACK_QA_EVENTS_DIR ?? join(REPO_ROOT, ".workspace/mikan-workspace/events"),

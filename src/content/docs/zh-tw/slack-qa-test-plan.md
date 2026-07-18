@@ -69,8 +69,8 @@ npm run test:e2e:slack
 - mikan small text-file upload handling。
 - 多檔案上傳處理。
 - 圖片上傳處理。
-- 不需 mention 的 DM 回覆。
-- DM 多輪上下文保留。
+- 不需 mention 的 DM 回覆（opt-in：`SLACK_QA_DM_E2E=1`，live App 需投遞 `message.im`）。
+- DM 多輪上下文保留（opt-in：`SLACK_QA_DM_E2E=1`）。
 - Thread session 隔離。
 - Busy-queue 排隊訊息送達。
 - bot-to-bot loop observation。
