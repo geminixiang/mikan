@@ -1,6 +1,6 @@
 ---
 title: Sandbox
-description: 比較 mikan 支援的 host、container、image、Firecracker 與 Cloudflare sandbox 模式。
+description: 比較 mikan 支援的 host、container、image、microVM、Firecracker 與 Cloudflare sandbox 模式。
 ---
 
 import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
@@ -12,8 +12,8 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
   <Card title="主線隔離" icon="rocket">
     `image:<image>` 由 mikan 管理 lifecycle、workspace mount、vault env 與資源限制。
   </Card>
-  <Card title="實驗模式" icon="moon">
-    `firecracker:*` 與 `cloudflare:*` 保留給自行管理 runtime 或 bridge 的場景。
+  <Card title="Gondolin 預覽" icon="moon">
+    `gondolin:default` 會啟動本機 Gondolin/QEMU VM，是規劃中用來接替 mikan 管理的 `image:*` sandbox 的模式。
   </Card>
 </CardGrid>
 
@@ -23,13 +23,15 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 ## 支援模式
 
-| 模式                                                        | 執行位置              | Vault env injection | Vault key 語意               | 備註                                                                               |
-| ----------------------------------------------------------- | --------------------- | ------------------- | ---------------------------- | ---------------------------------------------------------------------------------- |
-| `host`                                                      | 宿主機                | 不注入              | 可存，但執行時不用           | 最適合本機開發；不把 vault env 放進 host process                                   |
-| `container:<name>`                                          | 既有 Docker container | 注入                | `container-<name>`           | one container one vault；多人共用同一 container 就共用該 vault                     |
-| `image:<image>`                                             | mikan 管理的 Docker   | 注入                | generated conversation vault | 目前最推薦的隔離模式；`1 conversation = 1 vault = 1 container`                     |
-| `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM        | 注入                | generated conversation vault | Alpha 超早期；VM 需自行啟動，workspace 需在 VM 內掛到 `/workspace`，目前不建議使用 |
-| `cloudflare:<sandbox-id>`                                   | Cloudflare Worker     | 注入                | generated conversation vault | Experimental；需自行部署 `@cloudflare/sandbox` bridge，host workspace 不會自動同步 |
+| 模式                                                        | 執行位置                     | Vault env injection | Vault key 語意               | 備註                                                                               |
+| ----------------------------------------------------------- | ---------------------------- | ------------------- | ---------------------------- | ---------------------------------------------------------------------------------- |
+| `host`                                                      | 宿主機                       | 不注入              | 可存，但執行時不用           | 最適合本機開發；不把 vault env 放進 host process                                   |
+| `container:<name>`                                          | 既有 Docker container        | 注入                | `container-<name>`           | one container one vault；多人共用同一 container 就共用該 vault                     |
+| `image:<image>`                                             | mikan 管理的 Docker          | 注入                | generated conversation vault | 目前最推薦的隔離模式；`1 conversation = 1 vault = 1 container`                     |
+| `gondolin:default`                                          | 本機 Gondolin/QEMU VM        | 注入                | generated conversation vault | 預覽；支援 private/full workspace mount；需要 Node.js >=23.6 與 QEMU               |
+| `gondolin:remote`                                           | 遠端 worker 上的 Gondolin VM | 注入                | generated conversation vault | 預覽；帶 fenced lease 的 mTLS `mikan-worker` daemon；workspace 放在共享 POSIX 儲存 |
+| `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM               | 注入                | generated conversation vault | Alpha 超早期；VM 需自行啟動，workspace 需在 VM 內掛到 `/workspace`，目前不建議使用 |
+| `cloudflare:<sandbox-id>`                                   | Cloudflare Worker            | 注入                | generated conversation vault | Experimental；需自行部署 `@cloudflare/sandbox` bridge，host workspace 不會自動同步 |
 
 ## 各模式文件
 
@@ -43,6 +45,11 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
   title="Image sandbox"
   description="由 mikan 管理 per-conversation container 與資源限制。"
   href="image/"
+/>
+<LinkCard
+  title="Gondolin sandbox"
+  description="試用預計取代 image sandbox 的本機 Gondolin/QEMU 預覽模式。"
+  href="gondolin/"
 />
 <LinkCard
   title="Firecracker sandbox"
@@ -59,17 +66,17 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 `image:<image>` <Badge text="推薦" variant="success" /> 是目前主要開發與推薦的 sandbox 模式；其他模式保留為本機開發、相容、或實驗用途，部分能力不會補齊。
 
-| 能力                                 | `host`   | `container:<name>` | `image:<image>` | `firecracker:*` | `cloudflare:*` |
-| ------------------------------------ | -------- | ------------------ | --------------- | --------------- | -------------- |
-| command 執行                         | ✅       | ✅                 | ✅              | ✅              | ✅             |
-| mikan 管理 runtime lifecycle         | 不適用   | ❌                 | ✅              | ❌              | ❌             |
-| per-conversation container / runtime | ❌       | ❌                 | ✅              | 需自行管理      | bridge 衍生 id |
-| per-conversation vault env           | ❌       | ❌                 | ✅              | ✅              | ✅             |
-| vault file 自動投影 / bind mount     | ❌       | ❌                 | ✅              | ❌              | ❌             |
-| workspace 自動掛載                   | host     | 需自行掛載         | ✅              | 需自行掛載      | ❌             |
-| private workspace mount mode         | 不適用   | ❌                 | ✅              | ❌              | ❌             |
-| idle auto-stop / recreate            | 不適用   | ❌                 | ✅              | ❌              | ❌             |
-| CPU / memory default limits          | ❌       | ❌                 | ✅              | ❌              | ❌             |
-| `/pi-sandbox boost`                  | ❌       | ❌                 | ✅              | ❌              | ❌             |
-| agent `sandbox` tool 設定 limits     | ❌       | ❌                 | ✅              | ❌              | ❌             |
-| 推薦程度                             | 本機開發 | legacy / 相容      | 主線            | alpha           | experimental   |
+| 能力                                 | `host`   | `container:<name>` | `image:<image>` | `gondolin:default` | `firecracker:*` | `cloudflare:*` |
+| ------------------------------------ | -------- | ------------------ | --------------- | ------------------ | --------------- | -------------- |
+| command 執行                         | ✅       | ✅                 | ✅              | ✅                 | ✅              | ✅             |
+| mikan 管理 runtime lifecycle         | 不適用   | ❌                 | ✅              | ✅ worker 託管     | ❌              | ❌             |
+| per-conversation container / runtime | ❌       | ❌                 | ✅              | ✅                 | 需自行管理      | bridge 衍生 id |
+| per-conversation vault env           | ❌       | ❌                 | ✅              | ✅                 | ✅              | ✅             |
+| vault file 自動投影 / bind mount     | ❌       | ❌                 | ✅              | ✅                 | ❌              | ❌             |
+| workspace 自動掛載                   | host     | 需自行掛載         | ✅              | ✅                 | 需自行掛載      | ❌             |
+| private workspace mount mode         | 不適用   | ❌                 | ✅              | ✅                 | ❌              | ❌             |
+| idle auto-stop / recreate            | 不適用   | ❌                 | ✅              | ✅                 | ❌              | ❌             |
+| CPU / memory default limits          | ❌       | ❌                 | ✅              | ✅                 | ❌              | ❌             |
+| `/pi-sandbox boost`                  | ❌       | ❌                 | ✅              | ✅                 | ❌              | ❌             |
+| agent `sandbox` tool 設定 limits     | ❌       | ❌                 | ✅              | ✅                 | ❌              | ❌             |
+| 推薦程度                             | 本機開發 | legacy / 相容      | 主線            | 預覽               | alpha           | experimental   |

@@ -43,14 +43,13 @@ This guide gets a working bot replying to you in about 15 minutes. It uses Teleg
    export TELEGRAM_BOT_TOKEN="123456:ABC-..."
    ```
 
-5. Start mikan with an empty workspace directory:
+5. Start mikan:
 
    ```bash
-   mkdir -p ~/mikan-workspace
-   mikan --sandbox=host ~/mikan-workspace
+   mikan --sandbox=host
    ```
 
-   The workspace is where the agent keeps per-conversation files: memory, attachments, session logs, and its working area.
+   The working directory defaults to `~/.mikan/workspace` and is created automatically; pass a path (`mikan --sandbox=host ~/mikan-workspace`) to use a different one. The workspace is where the agent keeps per-conversation files: memory, attachments, session logs, and its working area.
 
 6. Open a private chat with your bot on Telegram and send it a message. Private messages trigger the agent directly, so it should reply within a few seconds.
 

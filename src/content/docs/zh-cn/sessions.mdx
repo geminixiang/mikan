@@ -25,6 +25,10 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
 | Discord  | DM：`channelId`；共享顶层：`channelId:messageId`；回复/话题：根 ID | 共享频道中的回复延续根消息会话                 |
 | Telegram | 私聊：`chatId`；共享顶层：`chatId:messageId`；回复链：根回复       | 没有原生话题模型；共享会话从回复链推导         |
 
+## 会话身份安全
+
+一个会话密钥始终只属于一个对话。平台适配器可以提供带范围的密钥，但对话接收层和运行时会拒绝其对话前缀与传入对话不符的密钥。对话身份和范围后缀也会在影响会话存储之前拒绝路径分隔符、控制字符以及特殊的 `.` / `..` 段。话题会话文件保留其现有名称和持久化行为；会话模块另外会拒绝符号链接会话目标，并确保派生路径始终位于该对话的 `sessions/` 目录内。
+
 ## 文件
 
 <FileTree>

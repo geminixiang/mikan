@@ -22,7 +22,7 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
 - Node.js `>=22.19.0`
 - 至少一組完整的 Slack、Telegram、Discord 或 GitHub 憑證
-- 持久化 workspace directory
+- 持久化 state directory（預設為 `~/.mikan`）；working directory 預設為 `<state-dir>/workspace`
 - 使用 `image:*` 或 `container:*` 時，PM2 使用者必須可使用 Docker
 
 發布的 `mikan-sandbox` image 是工具 runtime，不是可獨立運作的 mikan server image。PM2 在 host 上執行 `mikan`；image 模式透過 host Docker daemon 建立並管理 containers。
@@ -47,7 +47,19 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
    檢查 `/srv/mikan/state/settings.json`。目錄必須由 PM2 process user 擁有且不得為
    world-writable；建議執行 `chmod 0700 /srv/mikan/state`。
 
-3. 拉取受管理 sandbox image：
+3. 建立 secrets 檔案。所有平台 token、provider key 及其他 secret 都放在
+   `~/.mikan/mikan.env`——mode 為 `0600`，且位於任何 repo tree 之外——ecosystem file 會在
+   啟動時載入它。絕不要把 secret 放進 ecosystem file 或 PM2 自己的環境：
+
+   ```bash
+   curl -o ~/.mikan/mikan.env https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/mikan.env.example
+   chmod 600 ~/.mikan/mikan.env
+   ```
+
+   至少填入一組完整的平台憑證，外加一組 LLM provider key。執行 `mikan env` 可查看完整、帶
+   註解的清單，以及目前已設定的項目。
+
+4. 拉取受管理 sandbox image：
 
    ```bash
    docker pull ghcr.io/geminixiang/mikan-sandbox:latest
@@ -56,22 +68,26 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
    選擇 `image:*` 模式時，不要另外啟動長期運作的 container。只有 `container:<name>`
    模式才需要預先存在的 container。
 
-4. 下載 ecosystem file：
+5. 下載 ecosystem file：
 
    ```bash
    curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
    ```
 
-5. 編輯 `args`，使用絕對路徑及一種 sandbox 模式：
+   這個 ecosystem file 只負責 supervision：process 名稱、restart policy、graceful-shutdown
+   timeout，以及 `mikan.env` loader。行為（model、sandbox 限制、reply mode）仍留在
+   `<state-dir>/settings.json`。
+
+6. 編輯 `args`，使用絕對路徑及一種 sandbox 模式（執行 `mikan --help` 查看旗標參考）：
 
    ```js
    args: "--state-dir=/srv/mikan/state --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest /srv/mikan/workspace",
    ```
 
-   接著在 PM2 環境中設定至少一組完整的平台憑證。盡可能不要把 private keys 與 tokens
-   放進 ecosystem file；改由 service manager 或 secret store 載入。
+   working-directory 引數是選用的；若省略，mikan 會使用 `<state-dir>/workspace`，並在首次啟動
+   時建立它。
 
-6. 啟動並保存程序：
+7. 啟動並保存程序：
 
    ```bash
    pm2 start ecosystem.config.cjs
@@ -79,7 +95,7 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
    pm2 startup
    ```
 
-7. 執行 `pm2 startup` 印出的指令，啟用開機自動啟動。
+8. 執行 `pm2 startup` 印出的指令，啟用開機自動啟動。
 
 </Steps>
 
@@ -90,6 +106,12 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 ```bash
 npm i -g @geminixiang/mikan
 pm2 reload mikan
+```
+
+編輯 `~/.mikan/mikan.env` 之後，請透過 ecosystem file 重新載入，讓環境重新讀取：
+
+```bash
+pm2 reload ecosystem.config.cjs
 ```
 
 <Aside type="note" title="Graceful reload">

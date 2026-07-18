@@ -43,14 +43,13 @@ import { Aside, Steps } from "@astrojs/starlight/components";
    export TELEGRAM_BOT_TOKEN="123456:ABC-..."
    ```
 
-5. 以一個空的 workspace 目錄啟動 mikan：
+5. 啟動 mikan：
 
    ```bash
-   mkdir -p ~/mikan-workspace
-   mikan --sandbox=host ~/mikan-workspace
+   mikan --sandbox=host
    ```
 
-   workspace 是 agent 存放各對話檔案的位置：記憶、附件、工作階段記錄與工作區。
+   working directory 預設為 `~/.mikan/workspace`，並會自動建立；傳入路徑（`mikan --sandbox=host ~/mikan-workspace`）即可改用其他位置。workspace 是 agent 存放各對話檔案的位置：記憶、附件、工作階段記錄與工作區。
 
 6. 在 Telegram 開啟與機器人的私訊並傳送訊息。私訊會直接觸發 agent，幾秒內應該就會收到回覆。
 

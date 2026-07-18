@@ -206,6 +206,41 @@ api.registerCommand({
 
 用户以 `/pm list` 调用。名称匹配不区分大小写；内置命令（`/pi-*`、`/login` 等）永远优先于扩展命令，同名命令以先注册者为准。没有匹配命令的斜杠文本仍会作为普通提示词交给智能体。处理器的错误会回报在对话中并记录日志，绝不会让 mikan 崩溃。
 
+### 隔离的子智能体
+
+`api.subagent.run` 启动一个全新的子智能体，并将其结果返回给扩展，既不会发布到对话，也不会加入对话历史记录：
+
+```ts
+import { Type } from "@sinclair/typebox";
+
+const result = await api.subagent.run({
+  task: "Classify this project update.",
+  input: { text: "Still investigating; no ETA yet." },
+  tools: [],
+  outputSchema: Type.Object({
+    quality: Type.Union([Type.Literal("substantive"), Type.Literal("low_content")]),
+    stuck: Type.Boolean(),
+  }),
+  budget: { maxTurns: 1, maxCostUsd: 0.02, maxDurationMs: 30_000 },
+});
+
+if (result.status === "completed") {
+  api.log(`quality=${result.output.quality}`);
+}
+```
+
+子智能体默认不接收任何对话历史记录，也不接收任何工具。请求的工具名称必须已对父级 runner 可用；未知工具会在子智能体启动前失败。子智能体运行不能递归调用 `api.subagent.run`。当存在 `outputSchema` 时，最终响应必须是与该 TypeBox schema 完全匹配的 JSON——mikan 不会从散文或 Markdown 代码块中提取 JSON。
+
+运行可以通过 `parentContext: { mode: "normalized", recentTurns }` 选择接入活动父运行的上下文：host 会将最近 `recentTurns` 个用户轮次（1–8，默认 3）及其助手回复——以及紧接其前的最新 compaction summary（若有）——快照为一个规范化文本块，并前置到任务中。该快照是只读的参考资料；它不授予任何工具，也不给子智能体提供任何写入父会话的途径。
+
+`api.subagent.run` 永远不会 reject：每一种失败——包括请求校验、未知工具名称或尝试嵌套运行——都会 resolve 为一个带有终态状态和 `error` 消息的结果，因此调用方只需处理一种形态。
+
+除非请求提供了更低或更高的上限，否则每次运行默认为 8 个模型轮次、2 分钟以及 USD 0.50。
+
+结果包含运行 ID、终态状态、原始最终文本、模型身份、轮次、token、成本、耗时以及一个可选的经过校验的 `output`。终态状态为 `completed`、`failed`、`cancelled`、`timeout`、`budget_exceeded` 与 `invalid_output`。
+
+子智能体的对话记录使用内存中的 `SessionStore`，绝不会创建会话文件，也不会进入对话会话存储。它们会随子智能体运行时一起被丢弃。
+
 ### 生命周期与释放
 
 Harness 实例会在 `/pi-new`、闲置回收与会话轮换时被丢弃。请通过 `activate` 返回释放函数、或用 `api.onDispose` 注册，来释放资源（数据库连接、监视器）：

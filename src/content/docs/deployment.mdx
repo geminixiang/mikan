@@ -24,7 +24,7 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
 - Node.js `>=22.19.0`
 - at least one complete Slack, Telegram, Discord, or GitHub credential set
-- a persistent workspace directory
+- a persistent state directory (default `~/.mikan`); the working directory defaults to `<state-dir>/workspace`
 - Docker available to the PM2 user when using `image:*` or `container:*`
 
 The published `mikan-sandbox` image is a tool runtime, not a standalone mikan server image. PM2 runs `mikan` on the host; image mode creates and manages containers through the host Docker daemon.
@@ -49,7 +49,19 @@ The published `mikan-sandbox` image is a tool runtime, not a standalone mikan se
    Review `/srv/mikan/state/settings.json`. The directory must be owned by the PM2 process user and
    must not be world-writable; `chmod 0700 /srv/mikan/state` is recommended.
 
-3. Pull the managed sandbox image:
+3. Create the secrets file. All platform tokens, provider keys, and other secrets live in
+   `~/.mikan/mikan.env` — mode `0600`, outside any repo tree — and the ecosystem file loads it at
+   start. Never put secrets in the ecosystem file or PM2's own environment:
+
+   ```bash
+   curl -o ~/.mikan/mikan.env https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/mikan.env.example
+   chmod 600 ~/.mikan/mikan.env
+   ```
+
+   Fill in at least one complete platform credential set plus an LLM provider key. Run `mikan env`
+   to see the full annotated inventory and what is currently set.
+
+4. Pull the managed sandbox image:
 
    ```bash
    docker pull ghcr.io/geminixiang/mikan-sandbox:latest
@@ -58,23 +70,27 @@ The published `mikan-sandbox` image is a tool runtime, not a standalone mikan se
    Do not also start a long-lived container when the selected mode is `image:*`. A pre-existing
    container is needed only for `container:<name>` mode.
 
-4. Download the ecosystem file:
+5. Download the ecosystem file:
 
    ```bash
    curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
    ```
 
-5. Edit `args` to use absolute paths and one sandbox mode:
+   The ecosystem file is supervision-only: process name, restart policy, graceful-shutdown timeout,
+   and the `mikan.env` loader. Behavior (model, sandbox limits, reply modes) stays in
+   `<state-dir>/settings.json`.
+
+6. Edit `args` to use absolute paths and one sandbox mode (run `mikan --help` for the flag
+   reference):
 
    ```js
    args: "--state-dir=/srv/mikan/state --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest /srv/mikan/workspace",
    ```
 
-   Then set at least one complete platform credential set in PM2's environment. Keep private keys
-   and tokens out of the ecosystem file when possible; load them from your service manager or secret
-   store instead.
+   The working-directory argument is optional; without it mikan uses `<state-dir>/workspace` and
+   creates it on first start.
 
-6. Start and persist the process:
+7. Start and persist the process:
 
    ```bash
    pm2 start ecosystem.config.cjs
@@ -82,7 +98,7 @@ The published `mikan-sandbox` image is a tool runtime, not a standalone mikan se
    pm2 startup
    ```
 
-7. Run the command printed by `pm2 startup` to enable boot startup.
+8. Run the command printed by `pm2 startup` to enable boot startup.
 
 </Steps>
 
@@ -93,6 +109,13 @@ Relative workspace paths are resolved from PM2's current working directory. Abso
 ```bash
 npm i -g @geminixiang/mikan
 pm2 reload mikan
+```
+
+After editing `~/.mikan/mikan.env`, reload through the ecosystem file so the environment is
+re-read:
+
+```bash
+pm2 reload ecosystem.config.cjs
 ```
 
 <Aside type="note" title="Graceful reload">

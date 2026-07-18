@@ -28,6 +28,10 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
 | Discord          | DM: `channelId`; shared top-level: `channelId:messageId`; reply/thread: rooted id | shared channels の replies は root message session を継続します                        |
 | Telegram         | private: `chatId`; shared top-level: `chatId:messageId`; reply chain: root reply  | ネイティブ thread model はありません。shared sessions は reply chains から推測されます |
 
+## セッション識別子の安全性
+
+session key は常にちょうど 1 つの会話に属します。プラットフォームアダプターは scoped key を提供できますが、会話の intake と runtime は、その会話 prefix が受信中の会話と異なる key を拒否します。会話の識別子と scoped suffix は、session storage に影響を与える前に、path separators、制御文字、特殊な `.` / `..` セグメントも拒否します。Thread session files は既存の名前と永続化の挙動を保持します。加えて sessions module は、symlink の session target を拒否し、導出された paths がその会話の `sessions/` ディレクトリ内に留まることを保証します。
+
 ## ファイル
 
 <FileTree>

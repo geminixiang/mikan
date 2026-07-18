@@ -204,6 +204,41 @@ api.registerCommand({
 
 ユーザーは `/pm list` として呼び出します。名前の照合は大文字小文字を区別しません。組み込みコマンド（`/pi-*`、`/login` など）は常に拡張機能コマンドより優先され、同名コマンドは先に登録されたものが有効です。どのコマンドにも一致しないスラッシュ付きテキストは、通常のプロンプトとしてエージェントに渡されます。ハンドラーのエラーは会話に報告されログに記録され、mikan をクラッシュさせることはありません。
 
+### 隔離されたサブエージェント
+
+`api.subagent.run` は、新しいサブエージェントを 1 つ起動し、その結果を拡張機能に返します。会話への投稿も会話履歴への追加も行いません:
+
+```ts
+import { Type } from "@sinclair/typebox";
+
+const result = await api.subagent.run({
+  task: "Classify this project update.",
+  input: { text: "Still investigating; no ETA yet." },
+  tools: [],
+  outputSchema: Type.Object({
+    quality: Type.Union([Type.Literal("substantive"), Type.Literal("low_content")]),
+    stuck: Type.Boolean(),
+  }),
+  budget: { maxTurns: 1, maxCostUsd: 0.02, maxDurationMs: 30_000 },
+});
+
+if (result.status === "completed") {
+  api.log(`quality=${result.output.quality}`);
+}
+```
+
+サブエージェントは、会話履歴を受け取らず、既定では tools も受け取りません。要求される tool 名は、親ランナーですでに利用可能である必要があります。未知の tool はサブエージェントの起動前に失敗します。サブエージェントの実行は `api.subagent.run` を再帰的に呼び出すことはできません。`outputSchema` が指定されている場合、最終レスポンスは TypeBox スキーマに正確に一致する JSON でなければなりません。mikan は散文や Markdown のフェンスから JSON を抽出しません。
+
+実行は `parentContext: { mode: "normalized", recentTurns }` で、アクティブな親の実行からの context をオプトインできます。host は直近の `recentTurns` 回のユーザーターン（1〜8、既定は 3）とそれに対応する assistant の返信を——それらの前に compaction summary がある場合はそれも含めて——スナップショットし、正規化されたテキストブロックとして task の先頭に付加します。このスナップショットは読み取り専用の参照資料です。tools を付与することはなく、サブエージェントが親の session に書き込む手段も与えません。
+
+`api.subagent.run` は決して reject しません。あらゆる失敗——リクエストの検証、未知の tool 名、ネストされた実行の試みを含む——は、終端ステータスと `error` メッセージを持つ結果に解決されるため、呼び出し側は 1 つの形だけを扱えばよくなります。
+
+実行は、リクエストがより低いまたはより高い上限を指定しない限り、既定でモデルターン 8 回、2 分、USD 0.50 になります。
+
+結果には、実行 ID、終端ステータス、生の最終テキスト、モデル識別子、ターン数、トークン、コスト、所要時間、および任意の検証済み `output` が含まれます。終端ステータスは `completed`、`failed`、`cancelled`、`timeout`、`budget_exceeded`、`invalid_output` です。
+
+サブエージェントのトランスクリプトは、インメモリの `SessionStore` を使用し、session file を作成することも、会話の session store に入ることもありません。これらはサブエージェントの runtime とともに破棄されます。
+
 ### ライフサイクルと破棄
 
 ハーネスインスタンスは `/pi-new`、アイドル回収、セッションローテーションで破棄されます。リソース（データベースハンドル、ウォッチャー）は `activate` からディスポーザーを返すか、`api.onDispose` で登録して解放してください:

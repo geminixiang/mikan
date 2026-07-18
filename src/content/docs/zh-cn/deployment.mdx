@@ -22,7 +22,7 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
 - Node.js `>=22.19.0`
 - 至少一套完整的 Slack、Telegram、Discord 或 GitHub 凭证
-- 持久工作区目录
+- 持久 state directory（默认 `~/.mikan`）；工作目录默认为 `<state-dir>/workspace`
 - 使用 `image:*` 或 `container:*` 时，PM2 用户可以使用 Docker
 
 发布的 `mikan-sandbox` 镜像是工具运行时，不是独立的 mikan 服务器镜像。PM2 在主机上运行 `mikan`；image 模式通过主机 Docker daemon 创建和管理容器。
@@ -47,7 +47,19 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
    检查 `/srv/mikan/state/settings.json`。该目录必须归 PM2 进程用户所有，且不能全局可写；
    建议执行 `chmod 0700 /srv/mikan/state`。
 
-3. 拉取管理的沙箱镜像：
+3. 创建 secrets 文件。所有平台 token、provider key 及其他 secret 都存放在
+   `~/.mikan/mikan.env`——权限 `0600`、位于任何 repo 树之外——ecosystem 文件会在启动时加载它。
+   切勿把 secret 放进 ecosystem 文件或 PM2 自身的环境中：
+
+   ```bash
+   curl -o ~/.mikan/mikan.env https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/mikan.env.example
+   chmod 600 ~/.mikan/mikan.env
+   ```
+
+   至少填入一套完整的平台凭证以及一个 LLM provider key。运行 `mikan env`
+   可查看完整的带注释清单及当前的设置状态。
+
+4. 拉取管理的沙箱镜像：
 
    ```bash
    docker pull ghcr.io/geminixiang/mikan-sandbox:latest
@@ -55,22 +67,24 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
    选择 `image:*` 模式时，不要另外启动长期运行的容器。只有 `container:<name>` 模式才需要预先存在的容器。
 
-4. 下载 ecosystem 文件：
+5. 下载 ecosystem 文件：
 
    ```bash
    curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
    ```
 
-5. 编辑 `args`，使用绝对路径和一种沙箱模式：
+   ecosystem 文件仅用于进程监管：进程名称、重启策略、优雅关闭超时以及 `mikan.env` 加载器。
+   行为（模型、沙箱限制、回复模式）仍保留在 `<state-dir>/settings.json` 中。
+
+6. 编辑 `args`，使用绝对路径和一种沙箱模式（运行 `mikan --help` 查看参数参考）：
 
    ```js
    args: "--state-dir=/srv/mikan/state --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest /srv/mikan/workspace",
    ```
 
-   然后在 PM2 环境中至少设置一套完整的平台凭证。尽量不要将私钥和 token 放入 ecosystem 文件；
-   请改为从服务管理器或 secret store 加载。
+   工作目录参数是可选的；不提供时 mikan 会使用 `<state-dir>/workspace` 并在首次启动时创建它。
 
-6. 启动并持久保存进程：
+7. 启动并持久保存进程：
 
    ```bash
    pm2 start ecosystem.config.cjs
@@ -78,7 +92,7 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
    pm2 startup
    ```
 
-7. 运行 `pm2 startup` 输出的命令，启用开机启动。
+8. 运行 `pm2 startup` 输出的命令，启用开机启动。
 
 </Steps>
 
@@ -89,6 +103,12 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 ```bash
 npm i -g @geminixiang/mikan
 pm2 reload mikan
+```
+
+编辑 `~/.mikan/mikan.env` 之后，请通过 ecosystem 文件重新加载，以便重新读取环境：
+
+```bash
+pm2 reload ecosystem.config.cjs
 ```
 
 <Aside type="note" title="优雅重新加载">

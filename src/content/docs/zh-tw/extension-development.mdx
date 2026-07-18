@@ -206,6 +206,41 @@ api.registerCommand({
 
 使用者以 `/pm list` 呼叫。名稱比對不分大小寫；內建指令（`/pi-*`、`/login` 等）永遠優先於擴充功能指令，同名指令以先註冊者為準。沒有對應指令的斜線文字仍會作為一般提示詞交給代理。處理常式的錯誤會回報在對話中並記錄至日誌，絕不會讓 mikan 當機。
 
+### 隔離的子代理（subagent）
+
+`api.subagent.run` 會啟動一個全新的子代理，並把結果回傳給擴充功能，不會貼到對話中，也不會加進對話歷史：
+
+```ts
+import { Type } from "@sinclair/typebox";
+
+const result = await api.subagent.run({
+  task: "Classify this project update.",
+  input: { text: "Still investigating; no ETA yet." },
+  tools: [],
+  outputSchema: Type.Object({
+    quality: Type.Union([Type.Literal("substantive"), Type.Literal("low_content")]),
+    stuck: Type.Boolean(),
+  }),
+  budget: { maxTurns: 1, maxCostUsd: 0.02, maxDurationMs: 30_000 },
+});
+
+if (result.status === "completed") {
+  api.log(`quality=${result.output.quality}`);
+}
+```
+
+子代理不會收到對話歷史，預設也沒有任何工具。所要求的工具名稱必須是 parent runner 已經具備的；未知工具會在子代理啟動前就失敗。子代理執行不能遞迴呼叫 `api.subagent.run`。當有帶入 `outputSchema` 時，最終回應必須是符合該 TypeBox schema 的精確 JSON——mikan 不會從散文或 Markdown fence 中抽取 JSON。
+
+執行時可以用 `parentContext: { mode: "normalized", recentTurns }` 選擇性帶入進行中 parent run 的 context：host 會把最近 `recentTurns` 個 user turn（1–8，預設 3）連同其 assistant 回覆——若前面有最新的 compaction summary 也一併——快照成一個正規化文字區塊，前置到任務前。這份快照是唯讀的參考資料；它不會授予任何工具，也不會讓子代理有任何辦法寫入 parent session。
+
+`api.subagent.run` 絕不會 reject：任何失敗——包含請求驗證、未知工具名稱或嘗試巢狀執行——都會 resolve 成一個帶有終止狀態與 `error` 訊息的結果，讓呼叫端只需處理單一種形狀。
+
+除非請求提供更低或更高的上限，否則每次執行預設為 8 個 model turn、2 分鐘與 USD 0.50。
+
+結果包含 run ID、終止狀態、原始最終文字、模型身分、turn 數、token、成本、耗時，以及選用且經驗證的 `output`。終止狀態有 `completed`、`failed`、`cancelled`、`timeout`、`budget_exceeded` 與 `invalid_output`。
+
+子代理逐字稿使用 in-memory 的 `SessionStore`，絕不會建立 session file，也不會進入對話的 session store。它們會隨子代理 runtime 一起被丟棄。
+
 ### 生命週期與釋放
 
 Harness 實例會在 `/pi-new`、閒置回收與工作階段輪替時被丟棄。請透過 `activate` 回傳釋放函式、或以 `api.onDispose` 註冊，來釋放資源（資料庫連線、監看器）：
@@ -308,3 +343,14 @@ mikan ext remove hello-mikan --conversation <conversationId>
 更新或移除後請傳送 `/pi-new`。在聊天中，`/pi-extensions` 會列出目前對話可見的擴充功能。
 
 ## 疑難排解
+
+| 症狀                                   | 檢查                                                                             |
+| -------------------------------------- | -------------------------------------------------------------------------------- |
+| `No entrypoint found`                  | 在 `package.json` 中加入 `mikan.extensions`，或提供 `index.{mjs,js,ts,mts}` 檔案 |
+| `does not export an activate function` | 匯出 `default function activate(...)` 或具名的 `activate`                        |
+| 已安裝但未啟用                         | 確認 `--state-dir` 與對話 ID，然後傳送 `/pi-new`                                 |
+| Import/module error                    | 本機安裝前先安裝執行階段相依套件；Git 安裝不會執行 npm                           |
+| Schedule/notify/react unavailable      | 確認執行中的平台/context 有提供該 host 服務                                      |
+| 擴充功能身分/資料路徑錯誤              | slug 來自已安裝的檔案/目錄名稱，而非可編輯的 metadata                            |
+
+當你需要同時具備工具、SQLite 持久化、排程、主動訊息或隨附技能時，請從 [`examples/extensions/agent-pm`](https://github.com/geminixiang/mikan/tree/main/examples/extensions/agent-pm) 開始。

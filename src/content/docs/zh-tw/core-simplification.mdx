@@ -1,0 +1,190 @@
+---
+title: 核心簡化
+description: 以證據為本的計畫，在不改變行為的前提下縮減 mikan 的 public 表面與內部耦合。
+---
+
+本次審視採用[核心介面](/zh-tw/core-interfaces/)中的邊界。目標不是把檔案數量降到最少；而是讓核心能以一小組穩定契約解釋清楚，並把選用政策移到它們之後。
+
+## 目標核心
+
+最小且一致的 mikan 核心是：
+
+1. 一個正規化的對話輸入與一個 response port；
+2. 一個序列化 session 並擁有 runner lifecycle 的 runtime；
+3. 一個負責 model turn 的 harness 介面；
+4. 一個 session store 與一個平台 log store，刻意分開；
+5. 一個供所有工具 I/O 使用的 executor 介面；
+6. 一個憑證解析 seam；
+7. 供選用的 platform、command、tool、extension 與 sandbox 能力使用的 registry。
+
+Web portal、特定聊天 SDK、Docker 佈建、Gondolin fleet 管理、Firecracker、Cloudflare 與 GitHub 專屬工具，都是圍繞此核心的產品或外掛。
+
+## 發現
+
+| 優先度 | 發現                                 | 證據                                                                                                                | 簡化                                                                                      |
+| ------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| P0     | npm 邊界比受支援的產品邊界更寬       | `src/index.ts` 使用 `export * from "./harness/index.js"`；套件 metadata 沒有 `exports` map                          | 宣告明確的 root export 與 subpath；停止意外發布內部 helper                                |
+| P0     | 平台輸入有兩種重疊的正規形狀         | `ConversationEvent` 與 `ConversationMessage` 重複了 id/session/kind/user/text/attachments/thread 欄位，並被一起傳遞 | 引入單一的 `ConversationInput` envelope；在 migration 期間衍生相容視圖                    |
+| P0     | `MessagingBot` 有太多變更理由        | lifecycle、output、upload/reaction、private diagnostics、event queue 與 metadata 都在同一個介面裡                   | 把正規化的平台 port 與選用能力拆開；保留一個組合它們的 adapter 物件                       |
+| P1     | Sandbox 的可擴充性只是名義上的       | `SandboxAdapter` 已匯出，但 `sandbox/index.ts` 內的封閉陣列擁有 parsing/creation                                    | 加入 registry，或讓 adapter 內部化；把實驗性 backend 移出預設核心組裝                     |
+| P1     | Runtime 建構洩漏了指令的實作細節     | `ConversationRuntimeOptions` 是 `Omit<CommandServices, ...>`，並在內部重建 command service                          | 定義明確的 runtime 相依，再於 command adapter 中建構 `CommandServices`                    |
+| P1     | 指令仍有兩份清單                     | manifest 擁有平台註冊，而 registry 擁有 handler；新增一個指令需要同時改兩者                                         | `CommandDefinition` 應同時包含 manifest metadata 與 handler factory/reference             |
+| P1     | Harness 同時是 public SDK 與內部引擎 | root 把 session parsing、credentials、settings、loader、event schema、hook 與 runner 細節一起匯出                   | 發布 `./extension`、`./runtime`，以及選擇性的 `./harness` subpath，並各有獨立的穩定度政策 |
+| P2     | 選用的 runtime 產品被編進中央 CLI    | 平台 SDK、portal、六種 sandbox 模式與 Gondolin fleet 程式碼都組裝在 `main.ts` 裡                                    | 讓 `main.ts` 成為 registry 之上的 composition root；lazy/選用的產品模組變得可替換         |
+| P2     | 多個能力介面使用選用方法             | `MessagingBot` 與 `ConversationResponder` 靠新增 `?` 方法而成長                                                     | 使用具名的能力物件（`reactions`、`uploads`、`streaming`），讓「缺席」與「需求」都變得明確 |
+| P2     | HTTP 路由契約靠手動分派且大多未定型  | `web/server.ts` 與 portal 模組依 method/path 分支；payload 型別是區域性的                                           | 保持 UI API 內部化，但在 payload 跨模組之處集中路由描述符與 request/response schema       |
+
+## 不應被簡化掉的東西
+
+有些看似重複的地方其實保護著重要語意：
+
+- 讓 `log.jsonl` 與 agent session JSONL 分開。它們記錄不同的真實，並支援復原。
+- 讓 host path 與 runtime path 分開。合併它們會破壞 container/remote 執行，並可能暴露僅限 host 的資料。
+- 讓 model-provider 憑證與 sandbox vault 憑證分開。
+- 保留 per-session queue。全域序列化會浪費並行；不序列化則會破壞對話順序。
+- 讓平台信任政策保持明確。從平台名稱推斷憑證安全性是不安全的。
+- 保留由 executor 擁有的檔案傳輸。用 shell 片段取代它會重新引入 quoting、size 與 partial-write 的失敗。
+- 讓擴充功能程式碼僅限 host，並與 sandbox workspace 資料分開。
+
+## 提議的介面
+
+### 一個正規化輸入
+
+```ts
+interface ConversationInput {
+  platform: MessagingInfo;
+  conversation: {
+    id: string;
+    kind: ConversationKind;
+    vaultId?: string;
+  };
+  message: {
+    id: string;
+    parentId?: string;
+    sessionKey?: string;
+    actor: { id: string; name?: string };
+    text: string;
+    attachments: readonly Attachment[];
+  };
+  respond: ConversationResponder;
+}
+```
+
+runtime 只為舊呼叫端衍生 `ConversationEvent` 與 `ConversationMessage`。一旦 adapter 與測試都使用此 envelope，就刪除這兩種相容形狀。
+
+### 組合式的平台能力
+
+```ts
+interface PlatformPort {
+  readonly info: MessagingInfo;
+  lifecycle: { start(): Promise<void>; stop(): Promise<void> };
+  messages: PlatformMessages;
+  capabilities?: {
+    reactions?: PlatformReactions;
+    uploads?: PlatformUploads;
+    privateMessages?: PlatformPrivateMessages;
+  };
+}
+```
+
+這移除了依任意方法名稱做的 feature detection，並讓 command/extension 得以請求它們確切需要的能力。
+
+### 明確的 runtime 相依
+
+```ts
+interface ConversationRuntimeOptions {
+  workingDir: string;
+  sandbox: SandboxConfig;
+  createRunner: RunnerFactory;
+  commands?: readonly CommandDefinition[];
+  vault?: VaultResolver;
+  resources?: SandboxResourceController;
+  portals?: PortalServices;
+  platformCapabilities?: PlatformCapabilities;
+  platformToolPacks?: readonly PlatformToolPackFactory[];
+}
+```
+
+runtime 不應從另一個子系統的 service bag 繼承其 constructor 形狀。
+
+### 誠實的 sandbox registry
+
+```ts
+interface SandboxRegistry {
+  register<T extends SandboxConfig>(adapter: SandboxAdapter<T>): void;
+  parse(value: string): SandboxConfig;
+  validate(config: SandboxConfig): Promise<void>;
+  createExecutor(config: SandboxConfig, context: ExecutorContext): Promise<Executor>;
+}
+```
+
+預設 CLI 註冊穩定的 backend。Gondolin、Firecracker 與 Cloudflare 可由選用的產品模組註冊，而不需更動 tool 或 runtime 程式碼。
+
+## Migration 順序
+
+### Phase 1 — 強制執行套件邊界
+
+1. 為 `.`、`./extension` 與 `./runtime` 加入套件 `exports` map。
+2. 以明確清單取代 root 的 `export *`。
+3. 使用 emit 出的 declaration 或一份檢查過的符號清單，加入 API-extractor 式的 snapshot 測試。
+4. 把目前已匯出但不受支援的符號標為 deprecated，於移除前先維持一個 release。
+
+之所以放在最前面，是因為一旦消費者依賴了意外的匯出，之後每次內部重構都會更難。
+
+### Phase 2 — 統一平台輸入
+
+1. 加入 `ConversationInput`，以及從它到目前 runtime 呼叫的 adapter。
+2. 一次轉換一個平台 adapter 及其測試。
+3. 把 `handleEvent(event, bot, context)` 改為 `handle(input)`。
+4. 在所有平台都遷移後，刪除重複欄位與相容 adapter。
+
+這應能消除環繞 `ts` 對 `message.id`、`thread_ts` 對 `threadTs`、以及 event `user` 對 message `userId` 的一致性 bug。
+
+### Phase 3 — 組合能力
+
+1. 從 `MessagingBot` 抽出 message、reaction、upload 與 private-message port。
+2. 在不改動 SDK 程式碼的情況下調整既有 bot。
+3. 把窄化的能力傳給 command、extension、event 與 admin，而非整個 bot。
+4. 若不再有獨立呼叫端，退役 `ChatAdapter`。
+
+### Phase 4 — 簡化 runtime 建構與指令
+
+1. 以明確的 runtime option 取代 `Omit<CommandServices, ...>` 繼承。
+2. 讓 portal service 成為一個選用物件，而非三個 token-store 欄位加一個 URL。
+3. 把指令 metadata 與 handler 註冊併入 `CommandDefinition`。
+4. 從該 definition 清單產生平台註冊、parsing 清單與 handler 順序。
+
+### Phase 5 — 分離選用的執行產品
+
+1. 引入 `SandboxRegistry`，同時保留既有預設函式作為 wrapper。
+2. 把 host/container/image 註冊為預設 distribution。
+3. 從選用的組合模組註冊 Gondolin、Firecracker 與 Cloudflare。
+4. 只有在整合測試涵蓋了 wire 邊界之後，才把 fleet/gateway/join/worker API 移到 Gondolin 套件或 subpath 之後。
+
+### Phase 6 — 縮小 composition root
+
+`main.ts` 應解析 CLI 設定、實例化 registry/service、啟動所選產品，並協調 shutdown。平台 SDK 初始化與 backend 專屬政策應留在各自模組中。一個有用的完成準則是：composition root 讀起來像設定，而非商業邏輯。
+
+## 驗收準則
+
+當滿足以下條件時，簡化即完成：
+
+- 新增平台時，只需實作一個正規化輸入 adapter 加上宣告的輸出能力；
+- 新增 sandbox 時，只需註冊一個 adapter，不需編輯核心 switch 或陣列；
+- runtime 建構不再提及個別的 portal token-store 型別；
+- 新增指令時，只改動一個 definition 與一個 handler 實作，而非數個平台清單；
+- root 的 npm 宣告表面只包含有文件記載的符號；
+- 持久化的 session/event/config 格式與 trust/path 不變式保持相容；
+- 每個 phase 之後，既有的單元測試、build、lint 與 `knip` 都通過。
+
+## 建議的第一個 pull request
+
+讓第一個實作 PR 保持行為中立：
+
+1. 加入含相容 subpath 的套件 `exports` map；
+2. 以明確的匯出取代重複的 root type re-export；
+3. 加入一份 public API snapshot 測試；
+4. 引入 `ConversationInput` 加上轉換 helper，但只遷移一個 adapter；
+5. 記錄 deprecation，但不刪除功能。
+
+不要把這個 PR 與移除某個 sandbox backend 或變更持久化格式合併。那些變更有不同的 rollback 與營運風險。

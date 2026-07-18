@@ -24,7 +24,7 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
 - Node.js `>=22.19.0`
 - 少なくとも 1 組の完全な Slack、Telegram、Discord、または GitHub credentials
-- 永続的な workspace directory
+- 永続的な state directory（既定は `~/.mikan`）。working directory の既定値は `<state-dir>/workspace`
 - `image:*` または `container:*` 使用時に PM2 user が利用できる Docker
 
 公開されている `mikan-sandbox` image は tool runtime であり、standalone mikan server image ではありません。PM2 は host 上で `mikan` を実行し、image mode は host Docker daemon を通じて containers を作成、管理します。
@@ -49,7 +49,19 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
    `/srv/mikan/state/settings.json` を確認してください。directory は PM2 process user が所有し、
    world-writable でない必要があります。`chmod 0700 /srv/mikan/state` を推奨します。
 
-3. managed sandbox image を pull します：
+3. secrets file を作成します。すべての platform tokens、provider keys、その他の secrets は
+   `~/.mikan/mikan.env`（mode `0600`、いかなる repo tree の外側）に置き、ecosystem file が起動時に
+   読み込みます。secrets を ecosystem file や PM2 自身の環境に置かないでください：
+
+   ```bash
+   curl -o ~/.mikan/mikan.env https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/mikan.env.example
+   chmod 600 ~/.mikan/mikan.env
+   ```
+
+   少なくとも 1 組の完全な platform credential set と 1 つの LLM provider key を記入します。完全な
+   注釈付きインベントリと現在設定されている内容を確認するには `mikan env` を実行します。
+
+4. managed sandbox image を pull します：
 
    ```bash
    docker pull ghcr.io/geminixiang/mikan-sandbox:latest
@@ -58,22 +70,27 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
    選択した mode が `image:*` の場合、長時間稼働する container を別途起動しないでください。既存の
    container が必要なのは `container:<name>` mode だけです。
 
-4. ecosystem file をダウンロードします：
+5. ecosystem file をダウンロードします：
 
    ```bash
    curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
    ```
 
-5. `args` を編集し、絶対 paths と 1 つの sandbox mode を指定します：
+   ecosystem file は supervision 専用です：process 名、restart policy、graceful-shutdown timeout、
+   および `mikan.env` の loader です。挙動（model、sandbox limits、reply modes）は
+   `<state-dir>/settings.json` に残ります。
+
+6. `args` を編集し、絶対 paths と 1 つの sandbox mode を指定します（flag の一覧は `mikan --help`
+   を実行してください）：
 
    ```js
    args: "--state-dir=/srv/mikan/state --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest /srv/mikan/workspace",
    ```
 
-   次に、PM2 の環境に少なくとも 1 組の完全な platform credentials を設定します。可能なら private keys
-   と tokens は ecosystem file に含めず、service manager または secret store から読み込んでください。
+   working-directory 引数は任意です。指定しない場合、mikan は `<state-dir>/workspace` を使用し、
+   初回起動時に作成します。
 
-6. process を起動し、永続化します：
+7. process を起動し、永続化します：
 
    ```bash
    pm2 start ecosystem.config.cjs
@@ -81,7 +98,7 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
    pm2 startup
    ```
 
-7. `pm2 startup` が出力したコマンドを実行し、boot 時の自動起動を有効にします。
+8. `pm2 startup` が出力したコマンドを実行し、boot 時の自動起動を有効にします。
 
 </Steps>
 
@@ -92,6 +109,13 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 ```bash
 npm i -g @geminixiang/mikan
 pm2 reload mikan
+```
+
+`~/.mikan/mikan.env` を編集した後は、環境が再読み込みされるように ecosystem file 経由で reload
+します：
+
+```bash
+pm2 reload ecosystem.config.cjs
 ```
 
 <Aside type="note" title="Graceful reload">

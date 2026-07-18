@@ -1,0 +1,190 @@
+---
+title: 核心简化
+description: 一份基于证据的方案，在不改变行为的前提下缩减 mikan 的公开表面与内部耦合。
+---
+
+本审计使用[核心接口](/zh-cn/core-interfaces/)中的边界。目标不是最小化文件数量；而是让核心可以被解释为一小组稳定契约，并将可选策略移到它们之后。
+
+## 目标核心
+
+最小且连贯的 mikan 核心是：
+
+1. 一个规范化的对话输入和一个响应端口；
+2. 一个串行化会话并拥有 runner 生命周期的运行时；
+3. 一个用于模型轮次的框架接口；
+4. 一个会话 store 和一个平台日志 store，有意保持分离；
+5. 一个用于所有工具 I/O 的 executor 接口；
+6. 一个凭证解析缝隙；
+7. 用于可选平台、命令、工具、扩展和沙箱能力的注册表。
+
+Web portal、特定的聊天 SDK、Docker provisioning、Gondolin fleet 管理、Firecracker、Cloudflare 以及 GitHub 专用工具，都是围绕这个核心的产品或插件。
+
+## 发现
+
+| 优先级 | 发现                                | 证据                                                                                                                | 简化方案                                                                             |
+| ------ | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| P0     | npm 边界比受支持的产品边界更宽      | `src/index.ts` 使用 `export * from "./harness/index.js"`；包元数据没有 `exports` 映射                               | 声明显式的根 exports 和 subpath；停止意外发布内部辅助函数                            |
+| P0     | 平台输入有两种重叠的规范形态        | `ConversationEvent` 和 `ConversationMessage` 重复了 id/session/kind/user/text/attachments/thread 字段，并被一起传递 | 引入一个 `ConversationInput` 信封；在迁移期间派生兼容视图                            |
+| P0     | `MessagingBot` 有太多变更理由       | 生命周期、输出、上传/reaction、私密诊断、事件队列和元数据都是一个接口                                               | 将规范化的平台端口与可选能力拆分；保留一个组合它们的适配器对象                       |
+| P1     | 沙箱可扩展性只是名义上的            | `SandboxAdapter` 已导出，但 `sandbox/index.ts` 中一个封闭数组拥有解析/创建                                          | 添加注册表或让适配器变为内部；把实验性后端移出默认核心组装                           |
+| P1     | 运行时构造泄露了命令实现细节        | `ConversationRuntimeOptions` 是 `Omit<CommandServices, ...>`，并在内部重建 command service                          | 定义显式的运行时依赖，然后在命令适配器中构建 `CommandServices`                       |
+| P1     | 命令仍有两份清单                    | manifest 拥有平台注册，而 registry 拥有处理器；添加命令需要两者                                                     | 一个 `CommandDefinition` 应包含 manifest 元数据和一个处理器工厂/引用                 |
+| P1     | 框架既是公开 SDK 又是内部引擎       | 根 exports 将会话解析、凭证、设置、loader、事件 schema、hook 和 runner 细节一同导出                                 | 发布 `./extension`、`./runtime` 及可选的 `./harness` subpath，各自有独立的稳定性策略 |
+| P2     | 可选的运行时产品被编译进中央 CLI    | 平台 SDK、portal、六种沙箱模式和 Gondolin fleet 代码在 `main.ts` 中组装                                             | 让 `main.ts` 成为注册表之上的组装根；惰性/可选的产品模块变得可替换                   |
+| P2     | 多个能力接口使用可选方法            | `MessagingBot` 和 `ConversationResponder` 通过添加 `?` 方法而增长                                                   | 使用命名的能力对象（`reactions`、`uploads`、`streaming`），使缺失和需求都显式化      |
+| P2     | HTTP 路由契约是手动分发且大多无类型 | `web/server.ts` 和 portal 模块按 method/path 分支；payload 类型是局部的                                             | 保持 UI API 内部化，但在 payload 跨模块处集中路由描述符和请求/响应 schema            |
+
+## 不应被简化掉的部分
+
+某些表面上的重复保护着重要语义：
+
+- 让 `log.jsonl` 与代理会话 JSONL 分离。它们记录不同的真相并支持恢复。
+- 让主机路径与运行时路径分离。合并它们会破坏容器/远程执行，并可能暴露仅主机数据。
+- 让模型 provider 凭证与沙箱 vault 凭证分离。
+- 保留 per-session 队列。全局串行化会浪费并发；没有串行化会破坏对话顺序。
+- 让平台信任策略保持显式。从平台名称推断凭证安全性是不安全的。
+- 保留 executor 拥有的文件传输。用 shell 片段替代它会重新引入引用、大小和部分写入的故障。
+- 让扩展代码保持仅主机，并与沙箱工作区数据分离。
+
+## 提议的接口
+
+### 一个规范化输入
+
+```ts
+interface ConversationInput {
+  platform: MessagingInfo;
+  conversation: {
+    id: string;
+    kind: ConversationKind;
+    vaultId?: string;
+  };
+  message: {
+    id: string;
+    parentId?: string;
+    sessionKey?: string;
+    actor: { id: string; name?: string };
+    text: string;
+    attachments: readonly Attachment[];
+  };
+  respond: ConversationResponder;
+}
+```
+
+运行时仅为旧的调用点派生 `ConversationEvent` 和 `ConversationMessage`。一旦适配器和测试使用该信封，就删除两个兼容形态。
+
+### 组合式平台能力
+
+```ts
+interface PlatformPort {
+  readonly info: MessagingInfo;
+  lifecycle: { start(): Promise<void>; stop(): Promise<void> };
+  messages: PlatformMessages;
+  capabilities?: {
+    reactions?: PlatformReactions;
+    uploads?: PlatformUploads;
+    privateMessages?: PlatformPrivateMessages;
+  };
+}
+```
+
+这消除了按任意方法名进行的特性检测，并让命令/扩展能请求它们所需的确切能力。
+
+### 显式的运行时依赖
+
+```ts
+interface ConversationRuntimeOptions {
+  workingDir: string;
+  sandbox: SandboxConfig;
+  createRunner: RunnerFactory;
+  commands?: readonly CommandDefinition[];
+  vault?: VaultResolver;
+  resources?: SandboxResourceController;
+  portals?: PortalServices;
+  platformCapabilities?: PlatformCapabilities;
+  platformToolPacks?: readonly PlatformToolPackFactory[];
+}
+```
+
+运行时不应从另一个子系统的服务包中继承其构造函数形态。
+
+### 诚实的沙箱注册表
+
+```ts
+interface SandboxRegistry {
+  register<T extends SandboxConfig>(adapter: SandboxAdapter<T>): void;
+  parse(value: string): SandboxConfig;
+  validate(config: SandboxConfig): Promise<void>;
+  createExecutor(config: SandboxConfig, context: ExecutorContext): Promise<Executor>;
+}
+```
+
+默认 CLI 注册稳定的后端。Gondolin、Firecracker 和 Cloudflare 可以由可选的产品模块注册，而无需更改工具或运行时代码。
+
+## 迁移顺序
+
+### 阶段 1 — 强制包边界
+
+1. 为 `.`、`./extension` 和 `./runtime` 添加包 `exports` 映射。
+2. 用显式列表替换根 `export *`。
+3. 使用发出的声明或核对过的符号列表，添加 API-extractor 风格的快照测试。
+4. 在移除之前，将当前已导出但不受支持的符号标记为一个发布周期的 deprecated。
+
+之所以放在最先，是因为一旦使用方依赖上意外导出，每次内部重构都会更难。
+
+### 阶段 2 — 统一平台输入
+
+1. 添加 `ConversationInput` 及一个从它到当前运行时调用的适配器。
+2. 一次转换一个平台适配器及其测试。
+3. 将 `handleEvent(event, bot, context)` 改为 `handle(input)`。
+4. 在所有平台迁移后删除重复字段和兼容适配器。
+
+这应能消除围绕 `ts` 与 `message.id`、`thread_ts` 与 `threadTs`、以及事件 `user` 与消息 `userId` 的一致性 bug。
+
+### 阶段 3 — 组合能力
+
+1. 从 `MessagingBot` 提取 message、reaction、upload 和 private-message 端口。
+2. 在不更改 SDK 代码的情况下适配现有 bot。
+3. 将窄能力传给命令、扩展、事件和 admin，而非整个 bot。
+4. 如果不再有独立调用方，则淘汰 `ChatAdapter`。
+
+### 阶段 4 — 简化运行时构造与命令
+
+1. 用显式的运行时选项替换 `Omit<CommandServices, ...>` 继承。
+2. 让 portal 服务成为一个可选对象，而非三个 token-store 字段加一个 URL。
+3. 将命令元数据和处理器注册合并进 `CommandDefinition`。
+4. 从该定义列表生成平台注册、解析清单和处理器顺序。
+
+### 阶段 5 — 分离可选的执行产品
+
+1. 引入 `SandboxRegistry`，同时将现有的默认函数保留为包装器。
+2. 将 host/container/image 注册为默认发行版。
+3. 从可选的组装模块注册 Gondolin、Firecracker 和 Cloudflare。
+4. 只有在集成测试覆盖 wire 边界之后，才将 fleet/gateway/join/worker API 移到 Gondolin 包或 subpath 之后。
+
+### 阶段 6 — 缩减组装根
+
+`main.ts` 应解析 CLI 配置、实例化注册表/服务、启动选定的产品并协调关闭。平台 SDK 初始化和后端专用策略应保留在它们自己的模块中。一个有用的完成标准是：组装根读起来像配置，而非业务逻辑。
+
+## 验收标准
+
+当满足以下条件时，简化即完成：
+
+- 一个新平台实现一个规范化输入适配器加上声明的输出能力；
+- 一个新沙箱注册一个适配器，无需编辑核心的 switch 或数组；
+- 运行时构造不提及各个 portal token-store 类型；
+- 添加一个命令只更改一个定义和一个处理器实现，而非多份平台清单；
+- 根 npm 声明表面只包含有文档记录的符号；
+- 持久化的 session/event/config 格式以及 trust/path 不变式保持兼容；
+- 每个阶段之后，现有的单元测试、build、lint 和 `knip` 都通过。
+
+## 推荐的首个 pull request
+
+保持首个实现 PR 行为中立：
+
+1. 添加带兼容 subpath 的包 `exports` 映射；
+2. 用显式 export 替换重复的根类型 re-export；
+3. 添加一个公开 API 快照测试；
+4. 引入 `ConversationInput` 及转换辅助函数，但只迁移一个适配器；
+5. 记录 deprecation 而不删除功能。
+
+不要将此与移除某个沙箱后端或更改持久化格式合并。那些更改有不同的回滚和运维风险。

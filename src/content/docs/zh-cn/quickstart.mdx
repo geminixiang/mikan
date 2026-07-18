@@ -43,14 +43,13 @@ import { Aside, Steps } from "@astrojs/starlight/components";
    export TELEGRAM_BOT_TOKEN="123456:ABC-..."
    ```
 
-5. 用一个空的工作区目录启动 mikan：
+5. 启动 mikan：
 
    ```bash
-   mkdir -p ~/mikan-workspace
-   mikan --sandbox=host ~/mikan-workspace
+   mikan --sandbox=host
    ```
 
-   工作区是 agent 存放各对话文件的位置：记忆、附件、会话日志和工作区域。
+   工作目录默认为 `~/.mikan/workspace` 并会自动创建；传入路径（`mikan --sandbox=host ~/mikan-workspace`）可使用其他目录。工作区是 agent 存放各对话文件的位置：记忆、附件、会话日志和工作区域。
 
 6. 在 Telegram 打开与机器人的私聊并发送一条消息。私聊会直接触发 agent，几秒内应该就能收到回复。
 

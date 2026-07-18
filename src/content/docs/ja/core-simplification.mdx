@@ -1,0 +1,190 @@
+---
+title: コア簡素化
+description: 挙動を変えずに mikan の public 面と内部結合を減らすための、根拠に基づく計画。
+---
+
+この監査は [コアインターフェース](/core-interfaces/) の境界を用います。目標はファイル数を最小化することではありません。core を小さな安定した契約の集合として説明可能にし、任意のポリシーをその背後に移すことです。
+
+## 目標とする core
+
+最小限で一貫した mikan の core は次のとおりです:
+
+1. 1 つの正規化された conversation input と 1 つの response port；
+2. session を直列化し runner lifecycle を所有する 1 つの runtime；
+3. 1 つの model turn のための 1 つの harness インターフェース；
+4. 意図的に分離された 1 つの session store と 1 つの platform log store；
+5. すべての tool I/O のための 1 つの executor インターフェース；
+6. 1 つの credential-resolution の seam；
+7. 任意の platform、command、tool、extension、sandbox の機能のための registries。
+
+Web portals、特定の chat SDKs、Docker provisioning、Gondolin fleet management、Firecracker、Cloudflare、GitHub 固有の tools は、この core を取り巻く製品または plugin です。
+
+## 発見事項
+
+| 優先度 | 発見事項                                                        | 根拠                                                                                                                                  | 簡素化                                                                                                                         |
+| ------ | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| P0     | npm 境界が、サポートされる製品境界より広い                      | `src/index.ts` は `export * from "./harness/index.js"` を使う。パッケージメタデータに `exports` map がない                            | 明示的な root exports と subpaths を宣言し、内部ヘルパーを誤って publish するのをやめる                                        |
+| P0     | Platform input に重複する正規の形が 2 つある                    | `ConversationEvent` と `ConversationMessage` が id/session/kind/user/text/attachments/thread の各フィールドを繰り返し、一緒に渡される | 1 つの `ConversationInput` envelope を導入し、移行の間は互換ビューを導出する                                                   |
+| P0     | `MessagingBot` に変更理由が多すぎる                             | lifecycle、output、upload/reaction、private diagnostics、event queue、metadata が 1 つのインターフェースになっている                  | 正規化された platform port を任意の機能から分離し、それらを合成する 1 つの adapter オブジェクトを保つ                          |
+| P1     | Sandbox の拡張性が名目上のものにすぎない                        | `SandboxAdapter` は export されているが、`sandbox/index.ts` の閉じた配列が parsing/creation を所有している                            | registry を追加するか adapter を internal にする。実験的な backends を default core assembly の外へ移す                        |
+| P1     | Runtime 構築が command 実装の詳細を漏らしている                 | `ConversationRuntimeOptions` は `Omit<CommandServices, ...>` であり、内部で command services を再構築している                         | 明示的な runtime 依存を定義し、command adapter で `CommandServices` を構築する                                                 |
+| P1     | Commands にまだ 2 つのインベントリがある                        | manifest が platform registration を所有し、registry が handlers を所有する。command の追加には両方が必要                             | `CommandDefinition` が manifest メタデータと handler factory/reference を含むべき                                              |
+| P1     | harness が public SDK であり内部エンジンでもある                | root が session parsing、credentials、settings、loader、event schema、hooks、runner の詳細を一緒に export している                    | `./extension`、`./runtime`、任意で `./harness` の subpaths を、別々の安定性ポリシーとともに publish する                       |
+| P2     | 任意の runtime 製品が中央 CLI にコンパイルされている            | Platform SDKs、portals、6 つの sandbox modes、Gondolin fleet code が `main.ts` に組み立てられている                                   | `main.ts` を registries 上の composition root にする。lazy/optional な product modules を差し替え可能にする                    |
+| P2     | いくつかの capability インターフェースが任意メソッドを使う      | `MessagingBot` と `ConversationResponder` が `?` メソッドの追加で成長する                                                             | 名前付き capability オブジェクト（`reactions`、`uploads`、`streaming`）を使い、不在と要件を明示的にする                        |
+| P2     | HTTP route の契約が手動で dispatch され、ほぼ型付けされていない | `web/server.ts` と portal modules が method/path で分岐する。payload types がローカル                                                 | UI API は internal のままにしつつ、payload がモジュールをまたぐ箇所で route descriptors と request/response schemas を集約する |
+
+## 簡素化してはならないもの
+
+一見の重複の中には、重要なセマンティクスを守るものがあります:
+
+- `log.jsonl` を agent session JSONL から分離して保つ。これらは異なる真実を記録し、リカバリを支える。
+- host paths を runtime paths から分離して保つ。これらを統合すると container/remote 実行が壊れ、host-only のデータを露出し得る。
+- model-provider credentials を sandbox vault credentials から分離して保つ。
+- per-session queues を保つ。グローバルな直列化は並行性を無駄にし、直列化なしは conversation の順序を破壊する。
+- platform trust policy を明示的に保つ。platform 名から credential の安全性を推測するのは危険。
+- executor が所有する file transport を保つ。これを shell snippets に置き換えると、quoting、サイズ、partial-write の失敗が再び入り込む。
+- extension code を host-only に、sandbox workspace data を分離して保つ。
+
+## 提案するインターフェース
+
+### 1 つの正規化された input
+
+```ts
+interface ConversationInput {
+  platform: MessagingInfo;
+  conversation: {
+    id: string;
+    kind: ConversationKind;
+    vaultId?: string;
+  };
+  message: {
+    id: string;
+    parentId?: string;
+    sessionKey?: string;
+    actor: { id: string; name?: string };
+    text: string;
+    attachments: readonly Attachment[];
+  };
+  respond: ConversationResponder;
+}
+```
+
+runtime は、古い call sites のためだけに `ConversationEvent` と `ConversationMessage` を導出します。adapters と tests が envelope を使うようになったら、両方の互換形を削除します。
+
+### 合成された platform capabilities
+
+```ts
+interface PlatformPort {
+  readonly info: MessagingInfo;
+  lifecycle: { start(): Promise<void>; stop(): Promise<void> };
+  messages: PlatformMessages;
+  capabilities?: {
+    reactions?: PlatformReactions;
+    uploads?: PlatformUploads;
+    privateMessages?: PlatformPrivateMessages;
+  };
+}
+```
+
+これにより、任意のメソッド名による feature detection がなくなり、commands/extensions が必要とする正確な機能を要求できるようになります。
+
+### 明示的な runtime 依存
+
+```ts
+interface ConversationRuntimeOptions {
+  workingDir: string;
+  sandbox: SandboxConfig;
+  createRunner: RunnerFactory;
+  commands?: readonly CommandDefinition[];
+  vault?: VaultResolver;
+  resources?: SandboxResourceController;
+  portals?: PortalServices;
+  platformCapabilities?: PlatformCapabilities;
+  platformToolPacks?: readonly PlatformToolPackFactory[];
+}
+```
+
+runtime は、別のサブシステムの service bag からコンストラクタの形を継承すべきではありません。
+
+### 正直な sandbox registry
+
+```ts
+interface SandboxRegistry {
+  register<T extends SandboxConfig>(adapter: SandboxAdapter<T>): void;
+  parse(value: string): SandboxConfig;
+  validate(config: SandboxConfig): Promise<void>;
+  createExecutor(config: SandboxConfig, context: ExecutorContext): Promise<Executor>;
+}
+```
+
+default の CLI は安定した backends を登録します。Gondolin、Firecracker、Cloudflare は、tool や runtime のコードを変えずに任意の product modules によって登録できます。
+
+## 移行シーケンス
+
+### Phase 1 — パッケージ境界を強制する
+
+1. `.`、`./extension`、`./runtime` のためのパッケージ `exports` map を追加する。
+2. root の `export *` を明示的なリストに置き換える。
+3. 生成された宣言またはチェック済みのシンボルリストを用いて、API-extractor 風のスナップショットテストを追加する。
+4. 現在 export されているがサポートされないシンボルを、削除前に 1 リリースの間 deprecated としてマークする。
+
+これを最初に行うのは、consumers が偶発的な exports に依存した後では、あらゆる内部リファクタリングが難しくなるためです。
+
+### Phase 2 — platform input を統一する
+
+1. `ConversationInput` と、それから現在の runtime 呼び出しへの adapter を追加する。
+2. 1 つの platform adapter とそのテストを一度に 1 つずつ変換する。
+3. `handleEvent(event, bot, context)` を `handle(input)` に変更する。
+4. すべての platforms が移行した後、重複フィールドと互換 adapter を削除する。
+
+これにより、`ts` と `message.id`、`thread_ts` と `threadTs`、event の `user` と message の `userId` をめぐる一貫性のバグが取り除かれるはずです。
+
+### Phase 3 — capabilities を合成する
+
+1. `MessagingBot` から message、reaction、upload、private-message の各 port を抽出する。
+2. 既存の bots を、その SDK コードを変えずに適応させる。
+3. bot 全体ではなく、狭い capabilities を commands、extensions、events、admin に渡す。
+4. 独立した呼び出し側が残っていなければ `ChatAdapter` を廃止する。
+
+### Phase 4 — runtime 構築と commands を簡素化する
+
+1. `Omit<CommandServices, ...>` の継承を、明示的な runtime options に置き換える。
+2. portal services を、3 つの token-store フィールドと 1 つの URL ではなく、1 つの任意オブジェクトにする。
+3. command メタデータと handler 登録を `CommandDefinition` に統合する。
+4. platform 登録、parsing インベントリ、handler 順序を、その definition リストから生成する。
+
+### Phase 5 — 任意の execution 製品を分離する
+
+1. 既存の default 関数を wrapper として保ちつつ `SandboxRegistry` を導入する。
+2. host/container/image を default の distribution として登録する。
+3. Gondolin、Firecracker、Cloudflare を任意の composition modules から登録する。
+4. wire 境界を integration tests がカバーした後にのみ、fleet/gateway/join/worker API を Gondolin パッケージまたは subpath の背後に移す。
+
+### Phase 6 — composition root を縮小する
+
+`main.ts` は、CLI 設定をパースし、registries/services をインスタンス化し、選択された製品を起動し、shutdown を調整すべきです。Platform SDK の初期化と backend 固有のポリシーは、それぞれのモジュールに残すべきです。有用な完了基準は、composition root がビジネスロジックではなく設定のように読めることです。
+
+## 受け入れ基準
+
+簡素化が完了するのは、次のときです:
+
+- 新しい platform が、1 つの正規化された input adapter と宣言された output capabilities を実装する；
+- 新しい sandbox が、core の switch や配列を編集せずに 1 つの adapter を登録する；
+- runtime 構築が、個々の portal token-store 型に言及しない；
+- command の追加が、複数の platform インベントリではなく、1 つの definition と 1 つの handler 実装を変更する；
+- root の npm 宣言面が、ドキュメント化されたシンボルのみを含む；
+- 永続化された session/event/config 形式と trust/path の不変条件が、互換のまま保たれる；
+- 各 phase の後で、既存のユニットテスト、build、lint、`knip` がパスする。
+
+## 推奨される最初の pull request
+
+最初の実装 PR は挙動中立に保ちます:
+
+1. 互換 subpaths を持つパッケージ `exports` map を追加する；
+2. 重複する root 型 re-exports を明示的な exports に置き換える；
+3. public API のスナップショットテストを追加する；
+4. `ConversationInput` と変換ヘルパーを導入するが、移行するのは 1 つの adapter だけにする；
+5. 機能を削除せずに deprecation を記録する。
+
+これを、sandbox backend の削除や永続化形式の変更と組み合わせないでください。それらの変更は、rollback と運用上のリスクが異なります。
