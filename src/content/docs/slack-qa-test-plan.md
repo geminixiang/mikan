@@ -65,14 +65,21 @@ Each scenario has its own `*.e2e.ts` file. When required env vars (`SLACK_QA_USE
 - mikan thread reply routing
 - mikan short task completion
 - mikan stop command acknowledgement
+- idle stop ("Nothing running") acknowledgement
 - mikan small text-file upload handling
+- multi-file upload handling
+- image upload handling
+- DM reply without mention
+- DM multi-turn context retention
+- thread session isolation
+- busy-queue follow-up delivery
 - bot-to-bot loop observation
 - one-shot event delivery
 - no-mention false-reply check
 
 Local E2E needs only four variables: `SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, `SLACK_QA_BOT_USER_ID`, and `SLACK_BOT_TOKEN`. The event directory is derived from the current workspace.
 
-The QA user token must be able to post messages, read channel history/replies, and upload files for S-009 in the test channel. The E2E manifest in `examples/slack-app-manifest.e2e.json` includes these required user scopes; the normal `examples/slack-app-manifest.json` does not.
+The QA user token must be able to post messages, read channel history/replies, and upload files for S-009 in the test channel. For the DM scenarios it must also authenticate as a human user (`auth.test` without `bot_id`): mikan deliberately does not reply to DMs from bots, so a bot-flavored token makes S-017/S-018 fail fast with a misconfiguration error. The E2E manifest in `examples/slack-app-manifest.e2e.json` includes these required user scopes; the normal `examples/slack-app-manifest.json` does not.
 
 ### GitHub Actions
 
@@ -80,7 +87,7 @@ Workflow `.github/workflows/slack-e2e.yml` runs the same smoke test manually thr
 
 Required repository secrets:
 
-- `ANTHROPIC_API_KEY`
+- `OPENROUTER_API_KEY`
 - `SLACK_APP_TOKEN`
 - `SLACK_BOT_TOKEN`
 - `SLACK_QA_USER_TOKEN`

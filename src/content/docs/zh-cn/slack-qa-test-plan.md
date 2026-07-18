@@ -65,14 +65,21 @@ npm run test:e2e:slack
 - mikan thread reply routing。
 - mikan short task completion。
 - mikan stop command acknowledgement。
+- Idle stop（"Nothing running"）acknowledgement。
 - mikan small text-file upload handling。
+- 多文件上传处理。
+- 图片上传处理。
+- 不需 mention 的 DM 回复。
+- DM 多轮上下文保留。
+- Thread session 隔离。
+- Busy-queue 排队消息送达。
 - bot-to-bot loop observation。
 - one-shot event delivery。
 - No-mention false-reply check。
 
 本机 E2E 只需要四个变数：`SLACK_QA_USER_TOKEN`、`SLACK_QA_CHANNEL_ID`、`SLACK_QA_BOT_USER_ID` 与 `SLACK_BOT_TOKEN`。Event directory 会从目前 workspace 推导。
 
-QA user token 必须能在测试 channel 发文、读取 channel history/replies，并为 S-009 上传档案。`examples/slack-app-manifest.e2e.json` 的 E2E manifest 包含这些必要 user scopes；一般的 `examples/slack-app-manifest.json` 不包含。
+QA user token 必须能在测试 channel 发文、读取 channel history/replies，并为 S-009 上传档案。DM scenario 另外要求 token 是人类使用者身分（`auth.test` 不带 `bot_id`）：mikan 依设计不回复来自 bot 的 DM，bot 身分的 token 会让 S-017/S-018 直接以设定错误 fail fast。`examples/slack-app-manifest.e2e.json` 的 E2E manifest 包含这些必要 user scopes；一般的 `examples/slack-app-manifest.json` 不包含。
 
 ### GitHub Actions
 
@@ -80,7 +87,7 @@ Workflow `.github/workflows/slack-e2e.yml` 会透过 **Actions → Slack E2E →
 
 必要 repository secrets：
 
-- `ANTHROPIC_API_KEY`
+- `OPENROUTER_API_KEY`
 - `SLACK_APP_TOKEN`
 - `SLACK_BOT_TOKEN`
 - `SLACK_QA_USER_TOKEN`

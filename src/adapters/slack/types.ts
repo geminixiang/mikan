@@ -21,6 +21,8 @@ export interface SlackUser {
   id: string;
   userName: string;
   displayName: string;
+  /** From users.list is_bot; absent when the entry predates the flag. */
+  isBot?: boolean;
 }
 
 export interface SlackChannel {

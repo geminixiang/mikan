@@ -1,30 +1,41 @@
 import { describe, expect, it } from "vitest";
 import { loadContextOrSkip } from "./helpers/client.js";
-import { nowSeconds, postMessage, uploadTextFile, waitForRecentBotReply } from "./helpers/slack.js";
+import {
+  nowSeconds,
+  postMessage,
+  summarizeMessage,
+  uploadFiles,
+  waitForRecentBotReply,
+} from "./helpers/slack.js";
+
+// Valid 1x1 orange PNG (8-bit RGB), generated offline and verified with `file`.
+const PNG_1X1 = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP438AAAAQBAYDFKhhdAAAAAElFTkSuQmCC",
+  "base64",
+);
 
 const ctx = loadContextOrSkip();
 
-describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack file upload", () => {
+describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack image upload", () => {
   if (!ctx || !ctx.env.mikanBotUserId) return;
   const { client, env } = ctx;
   const botUserId = ctx.env.mikanBotUserId;
 
-  it("S-009 mikan summarizes uploaded file and echoes token", async () => {
-    const token = `QA_FILE_${Date.now()}`;
+  it("S-022 mikan handles an image upload without crashing", async () => {
+    const token = `QA_IMG_${Date.now()}`;
     const startedAt = nowSeconds();
-    await uploadTextFile(
+    await uploadFiles(
       client,
       env.channel,
-      `mikan-slack-e2e-${token}.txt`,
-      `Slack E2E file content. Token: ${token}\n請摘要這個檔案並原樣包含 token。\n`,
-      `<@${botUserId}> 請摘要這個小文字檔，並在回覆中原樣包含 token ${token}`,
+      [{ filename: `mikan-slack-e2e-image-${token}.png`, content: PNG_1X1 }],
+      `<@${botUserId}> 這是一張測試圖片。無論你能否讀取圖片內容，請在回覆中原樣包含 token ${token}`,
     );
     let reply = await waitForRecentBotReply({
       client,
       channel: env.channel,
       botUserId,
       startedAt,
-      timeoutMs: Math.max(env.timeoutMs, 45_000),
+      timeoutMs: Math.max(env.timeoutMs, 60_000),
       pollMs: env.pollMs,
       textIncludes: token,
     });
@@ -46,6 +57,7 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack file upload", () => {
         textIncludes: token,
       });
     }
-    expect(reply, `no file summary reply containing ${token}`).not.toBeNull();
+    expect(reply, `no image-upload reply containing ${token}`).not.toBeNull();
+    console.log(`image reply ts=${reply!.ts}: ${summarizeMessage(reply!)}`);
   }, 180_000);
 });
