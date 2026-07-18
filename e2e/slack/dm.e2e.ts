@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { loadContextOrSkip } from "./helpers/client.js";
 import {
   nowSeconds,
@@ -14,6 +14,21 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack DM", () => {
   if (!ctx || !ctx.env.mikanBotUserId) return;
   const { client, env } = ctx;
   const botUserId = ctx.env.mikanBotUserId;
+
+  // mikan ignores DMs from bots by design (loop protection), so these
+  // scenarios only make sense when the QA token belongs to a human user.
+  // Fail fast with the misconfiguration instead of timing out on a reply
+  // that can never come.
+  beforeAll(async () => {
+    const auth = await client.auth.test();
+    if (typeof auth.bot_id === "string" && auth.bot_id.length > 0) {
+      throw new Error(
+        `SLACK_QA_USER_TOKEN authenticates as bot ${auth.bot_id} (${String(auth.user)}). ` +
+          "DM scenarios need a human User OAuth Token (xoxp-, auth.test without bot_id); " +
+          "mikan deliberately does not reply to DMs from bots.",
+      );
+    }
+  });
 
   it("S-017 mikan replies to a DM without mention", async () => {
     const dmChannel = await openDmChannel(client, botUserId);
