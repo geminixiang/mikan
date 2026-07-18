@@ -69,8 +69,8 @@ npm run test:e2e:slack
 - mikan small text-file upload handling。
 - 複数ファイルアップロード処理。
 - 画像アップロード処理。
-- mention 不要の DM 応答（opt-in：`SLACK_QA_DM_E2E=1`、live App が `message.im` を配信する必要あり）。
-- DM のマルチターン文脈保持（opt-in：`SLACK_QA_DM_E2E=1`）。
+- mention 不要の DM 応答。
+- DM のマルチターン文脈保持。
 - Thread session の分離。
 - Busy-queue のキュー済みメッセージ配信。
 - bot-to-bot loop observation。

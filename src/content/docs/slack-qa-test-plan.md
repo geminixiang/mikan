@@ -69,8 +69,8 @@ Each scenario has its own `*.e2e.ts` file. When required env vars (`SLACK_QA_USE
 - mikan small text-file upload handling
 - multi-file upload handling
 - image upload handling
-- DM reply without mention (opt-in: `SLACK_QA_DM_E2E=1`, requires live `message.im` delivery)
-- DM multi-turn context retention (opt-in: `SLACK_QA_DM_E2E=1`)
+- DM reply without mention
+- DM multi-turn context retention
 - thread session isolation
 - busy-queue follow-up delivery
 - bot-to-bot loop observation

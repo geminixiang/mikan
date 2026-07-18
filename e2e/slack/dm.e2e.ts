@@ -10,9 +10,7 @@ import {
 
 const ctx = loadContextOrSkip();
 
-// Opt-in via SLACK_QA_DM_E2E=1: the live QA Slack App must deliver
-// `message.im` events for these to pass (see helpers/env.ts).
-describe.skipIf(!ctx || !ctx.env.mikanBotUserId || !ctx.env.dmEnabled)("Slack DM", () => {
+describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack DM", () => {
   if (!ctx || !ctx.env.mikanBotUserId) return;
   const { client, env } = ctx;
   const botUserId = ctx.env.mikanBotUserId;

@@ -49,6 +49,10 @@ jobs:
             wait "$MIKAN_PID" 2>/dev/null || true
             echo "----- mikan log -----"
             cat "$LOG_FILE" || true
+            # Which conversations produced history distinguishes "event never
+            # delivered" (no dir) from "delivered but not triggered" (dir, no run).
+            echo "----- workspace conversations -----"
+            find "$WORKING_DIR" -maxdepth 2 2>/dev/null | head -80 || true
             [ "$exit_code" -eq 0 ] && rm -rf "$WORKSPACE_TMP" || true
           }
           trap cleanup EXIT
