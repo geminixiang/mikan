@@ -11,7 +11,32 @@
  * asserted here at every derivation instead of being assumed everywhere.
  */
 
+/** Characters that can change host path structure or make identity logs ambiguous. */
+const PATH_SEPARATOR_PATTERN = /[\\/]/;
+
+function containsControlCharacter(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0)!;
+    if (codePoint <= 0x1f || codePoint === 0x7f) return true;
+  }
+  return false;
+}
+
+function assertSafeIdentityPart(value: string, label: string): string {
+  if (!value || value === "." || value === "..") {
+    throw new Error(`${label} must be a non-empty identity segment (got ${JSON.stringify(value)})`);
+  }
+  if (PATH_SEPARATOR_PATTERN.test(value)) {
+    throw new Error(`${label} must not contain path separators (got ${JSON.stringify(value)})`);
+  }
+  if (containsControlCharacter(value)) {
+    throw new Error(`${label} must not contain control characters (got ${JSON.stringify(value)})`);
+  }
+  return value;
+}
+
 export function assertConversationId(conversationId: string): string {
+  assertSafeIdentityPart(conversationId, "Conversation id");
   if (conversationId.includes(":")) {
     throw new Error(
       `Conversation id must not contain ":" (got ${JSON.stringify(conversationId)}); ` +
@@ -21,9 +46,37 @@ export function assertConversationId(conversationId: string): string {
   return conversationId;
 }
 
+/** Validate the opaque scoped suffix without changing its platform value. */
+export function assertSessionSuffix(suffix: string): string {
+  return assertSafeIdentityPart(suffix, "Session suffix");
+}
+
 /** Build a scoped thread session key. */
 export function makeThreadSessionKey(conversationId: string, suffix: string): string {
-  return `${assertConversationId(conversationId)}:${suffix}`;
+  return `${assertConversationId(conversationId)}:${assertSessionSuffix(suffix)}`;
+}
+
+/**
+ * Validate that a platform-computed session key belongs to its conversation.
+ * The key may be the bare conversation id or one of that conversation's
+ * scoped keys; callers must not be able to select another conversation's
+ * runtime/cache entry.
+ */
+export function assertSessionKeyBelongsToConversation(
+  sessionKey: string,
+  conversationId: string,
+): string {
+  const expectedConversationId = assertConversationId(conversationId);
+  const actualConversationId = conversationIdOf(sessionKey);
+  if (actualConversationId !== expectedConversationId) {
+    throw new Error(
+      `Session key ${JSON.stringify(sessionKey)} does not belong to conversation ` +
+        JSON.stringify(conversationId),
+    );
+  }
+  const suffix = threadSuffixOf(sessionKey);
+  if (suffix !== null) assertSessionSuffix(suffix);
+  return sessionKey;
 }
 
 /**
@@ -36,9 +89,10 @@ export function deriveSessionKey(event: {
   thread_ts?: string;
   ts: string;
 }): string {
-  return (
-    event.sessionKey ?? makeThreadSessionKey(event.conversationId, event.thread_ts ?? event.ts)
-  );
+  if (event.sessionKey !== undefined) {
+    return assertSessionKeyBelongsToConversation(event.sessionKey, event.conversationId);
+  }
+  return makeThreadSessionKey(event.conversationId, event.thread_ts ?? event.ts);
 }
 
 export function isThreadSessionKey(sessionKey: string): boolean {

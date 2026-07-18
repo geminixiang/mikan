@@ -1,11 +1,11 @@
 import { randomUUID } from "crypto";
-import { existsSync, mkdirSync, rmSync } from "fs";
-import { basename, dirname, join } from "path";
+import { lstatSync, mkdirSync, rmSync } from "fs";
+import { basename, dirname, join, relative, resolve, sep } from "path";
 import { SessionStore } from "../harness/index.js";
 import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-guards.js";
 import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 import { isPlatformHistorySession } from "./metadata.js";
-import { threadSuffixOf } from "./session-key.js";
+import { assertSessionSuffix, threadSuffixOf } from "./session-key.js";
 export type { ResolvedSessionScope, ThreadRootMessage } from "./types.js";
 
 /**
@@ -51,7 +51,22 @@ export function extractSessionUuid(sessionFile: string): string {
  * "channelId:threadId" → "threadId", "channelId" → "channelId"
  */
 export function extractSessionSuffix(sessionKey: string): string {
-  return threadSuffixOf(sessionKey) ?? sessionKey;
+  return assertSessionSuffix(threadSuffixOf(sessionKey) ?? sessionKey);
+}
+
+/**
+ * Resolve one child path and prove it remains inside its owning directory.
+ * Identity validation is the first guard; containment is defense in depth for
+ * every session path derived from platform-controlled values.
+ */
+function resolveChildPath(root: string, child: string): string {
+  const resolvedRoot = resolve(root);
+  const resolvedChild = resolve(resolvedRoot, child);
+  const relation = relative(resolvedRoot, resolvedChild);
+  if (!relation || relation === ".." || relation.startsWith(`..${sep}`)) {
+    throw new Error(`Session path escapes its owning directory: ${JSON.stringify(child)}`);
+  }
+  return resolvedChild;
 }
 
 /**
@@ -126,7 +141,16 @@ function writeSessionHeader(sessionFile: string, cwd: string, sessionId = random
  * Returns the fixed session file path for a Slack thread.
  */
 export function getThreadSessionFile(channelDir: string, sessionKey: string): string {
-  return join(getChannelSessionDir(channelDir), `${extractSessionSuffix(sessionKey)}.jsonl`);
+  const sessionDir = getChannelSessionDir(channelDir);
+  return resolveChildPath(sessionDir, `${extractSessionSuffix(sessionKey)}.jsonl`);
+}
+
+function isRegularSessionFile(sessionFile: string): boolean {
+  try {
+    return lstatSync(sessionFile).isFile();
+  } catch {
+    return false;
+  }
 }
 
 function hasSessionHeader(sessionFile: string): boolean {
@@ -174,7 +198,11 @@ function getCurrentSessionPath(sessionDir: string): string | null {
   const pointerFile = join(sessionDir, "current");
   const filename = readTextFileIfExists(pointerFile)?.trim();
   if (!filename) return null;
-  return join(sessionDir, filename);
+  try {
+    return resolveChildPath(sessionDir, filename);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -183,7 +211,7 @@ function getCurrentSessionPath(sessionDir: string): string | null {
  */
 export function tryResolveCurrentSession(sessionDir: string): string | null {
   const fullPath = getCurrentSessionPath(sessionDir);
-  if (fullPath && existsSync(fullPath) && hasSessionHeader(fullPath)) return fullPath;
+  if (fullPath && isRegularSessionFile(fullPath) && hasSessionHeader(fullPath)) return fullPath;
   return null;
 }
 
@@ -192,7 +220,7 @@ export function tryResolveCurrentSession(sessionDir: string): string | null {
  * Returns the file path if found, or null if no valid thread session exists yet.
  */
 export function tryResolveThreadSession(sessionFile: string): string | null {
-  return existsSync(sessionFile) && hasSessionHeader(sessionFile) ? sessionFile : null;
+  return isRegularSessionFile(sessionFile) && hasSessionHeader(sessionFile) ? sessionFile : null;
 }
 
 /**

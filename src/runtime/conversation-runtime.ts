@@ -22,7 +22,11 @@ import {
   hasMaterializedChatSession,
   waitForThreadSessionBootstrap,
 } from "../sessions/chat-history-sync.js";
-import { conversationIdOf, deriveSessionKey } from "../sessions/session-key.js";
+import {
+  assertSessionKeyBelongsToConversation,
+  conversationIdOf,
+  deriveSessionKey,
+} from "../sessions/session-key.js";
 import { formatNothingRunning, formatStopped, formatStopping } from "../platform-messages.js";
 import * as Sentry from "@sentry/node";
 import { join } from "path";
@@ -123,6 +127,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   }
 
   async handleStop(sessionKey: string, conversationId: string, bot: MessagingBot): Promise<void> {
+    assertSessionKeyBelongsToConversation(sessionKey, conversationId);
     const state = this.conversationStates.get(sessionKey);
     if (state?.running) {
       state.stopRequested = true;
@@ -149,6 +154,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     conversationId: string,
     bot: MessagingBot,
   ): Promise<void> {
+    assertSessionKeyBelongsToConversation(sessionKey, conversationId);
     const state = this.conversationStates.get(sessionKey);
     if (state?.running) {
       state.stopRequested = true;

@@ -63,6 +63,34 @@ function makeOptions(
   };
 }
 
+describe("processMessageIntake identity", () => {
+  test("rejects an explicit session key owned by another conversation before queueing", async () => {
+    const enqueue = vi.fn();
+    await expect(
+      processMessageIntake(
+        makeOptions({
+          eventBase: makeEvent({ conversationId: "C1", sessionKey: "C2:thread-1" }),
+          enqueue,
+        }),
+      ),
+    ).rejects.toThrow(/does not belong/);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  test("rejects a path-dangerous conversation identity before queueing", async () => {
+    const enqueue = vi.fn();
+    await expect(
+      processMessageIntake(
+        makeOptions({
+          eventBase: makeEvent({ conversationId: "../other" }),
+          enqueue,
+        }),
+      ),
+    ).rejects.toThrow(/path separators/);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+});
+
 describe("matchMagicWord", () => {
   test.each(["stop", "/stop", "Stop", "STOP", " stop ", "/stop@mikan_bot", "stop@mikan_bot"])(
     "recognizes %j as the stop magic word",

@@ -1,3 +1,7 @@
+import {
+  assertSessionKeyBelongsToConversation,
+  assertConversationId,
+} from "../sessions/session-key.js";
 import type { ConversationEvent } from "../adapter.js";
 import { formatAlreadyWorking, formatNothingRunning } from "../platform-messages.js";
 import { evaluateAutoReplyPolicy } from "../trigger.js";
@@ -28,6 +32,13 @@ export function matchMagicWord(text: string): "stop" | null {
 export async function processMessageIntake<TEvent extends ConversationEvent>(
   options: MessageIntakeOptions<TEvent>,
 ): Promise<MessageIntakeOutcome> {
+  assertConversationId(options.eventBase.conversationId);
+  if (options.eventBase.sessionKey !== undefined) {
+    assertSessionKeyBelongsToConversation(
+      options.eventBase.sessionKey,
+      options.eventBase.conversationId,
+    );
+  }
   if (matchMagicWord(options.magicWord.text ?? options.eventBase.text) === "stop") {
     options.log?.({ ...options.logEntryBase, attachments: [] });
     await handleStopMagicWord(options);

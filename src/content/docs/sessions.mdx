@@ -27,6 +27,10 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
 | Discord  | DM: `channelId`; shared top-level: `channelId:messageId`; reply/thread: rooted id | replies in shared channels continue the root message session           |
 | Telegram | private: `chatId`; shared top-level: `chatId:messageId`; reply chain: root reply  | no native thread model; shared sessions are inferred from reply chains |
 
+## Session identity safety
+
+A session key always belongs to exactly one conversation. Platform adapters may supply a scoped key, but conversation intake and the runtime reject a key whose conversation prefix differs from the incoming conversation. Conversation identities and scoped suffixes also reject path separators, control characters, and the special `.` / `..` segments before they can influence session storage. Thread session files keep their existing names and persistence behavior; the sessions module additionally rejects symlink session targets and proves derived paths remain inside the conversation's `sessions/` directory.
+
 ## Files
 
 <FileTree>

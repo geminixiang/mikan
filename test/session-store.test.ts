@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -136,6 +136,13 @@ describe("getThreadSessionFile", () => {
       join(channelDir, "sessions", "1000.0001.jsonl"),
     );
   });
+
+  test.each(["C123:../other", "C123:foo/bar", String.raw`C123:foo\bar`, "C123:bad\u0000id"])(
+    "rejects path-dangerous thread session key %j",
+    (sessionKey) => {
+      expect(() => getThreadSessionFile(channelDir, sessionKey)).toThrow();
+    },
+  );
 });
 
 describe("resolveSessionFile", () => {
@@ -144,6 +151,27 @@ describe("resolveSessionFile", () => {
     const file = resolveSessionFile(sessionDir);
     expect(existsSync(file)).toBe(true);
     expect(file).toContain(join(channelDir, "sessions"));
+  });
+
+  test("ignores a current pointer that escapes the session directory", () => {
+    const sessionDir = getChannelSessionDir(channelDir);
+    mkdirSync(sessionDir, { recursive: true });
+    const outside = join(channelDir, "outside.jsonl");
+    createManagedSessionFileAtPath(outside, channelDir);
+    writeFileSync(join(sessionDir, "current"), "../outside.jsonl");
+
+    expect(tryResolveCurrentSession(sessionDir)).toBeNull();
+  });
+
+  test("ignores a current pointer whose target is a symlink", () => {
+    const sessionDir = getChannelSessionDir(channelDir);
+    mkdirSync(sessionDir, { recursive: true });
+    const outside = join(channelDir, "outside.jsonl");
+    createManagedSessionFileAtPath(outside, channelDir);
+    symlinkSync(outside, join(sessionDir, "linked.jsonl"));
+    writeFileSync(join(sessionDir, "current"), "linked.jsonl");
+
+    expect(tryResolveCurrentSession(sessionDir)).toBeNull();
   });
 
   test("returns existing current session file on second call", () => {
@@ -166,6 +194,17 @@ describe("tryResolveThreadSession", () => {
     const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
     mkdirSync(sessionDir, { recursive: true });
     writeFileSync(threadFile, "", "utf-8");
+    expect(tryResolveThreadSession(threadFile)).toBeNull();
+  });
+
+  test("rejects a thread file symlink that targets another directory", () => {
+    const sessionDir = getChannelSessionDir(channelDir);
+    mkdirSync(sessionDir, { recursive: true });
+    const outside = join(channelDir, "outside-thread.jsonl");
+    createManagedSessionFileAtPath(outside, channelDir);
+    const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
+    symlinkSync(outside, threadFile);
+
     expect(tryResolveThreadSession(threadFile)).toBeNull();
   });
 
