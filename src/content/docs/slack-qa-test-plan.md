@@ -87,7 +87,7 @@ Workflow `.github/workflows/slack-e2e.yml` runs the same smoke test manually thr
 
 Required repository secrets:
 
-- `ANTHROPIC_API_KEY`
+- `OPENROUTER_API_KEY`
 - `SLACK_APP_TOKEN`
 - `SLACK_BOT_TOKEN`
 - `SLACK_QA_USER_TOKEN`

@@ -87,7 +87,7 @@ Workflow `.github/workflows/slack-e2e.yml` は **Actions → Slack E2E → Run w
 
 必要な repository secrets：
 
-- `ANTHROPIC_API_KEY`
+- `OPENROUTER_API_KEY`
 - `SLACK_APP_TOKEN`
 - `SLACK_BOT_TOKEN`
 - `SLACK_QA_USER_TOKEN`

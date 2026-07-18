@@ -24,7 +24,7 @@ jobs:
 
       - name: Run Slack E2E
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           SLACK_APP_TOKEN: ${{ secrets.SLACK_APP_TOKEN }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_QA_USER_TOKEN: ${{ secrets.SLACK_QA_USER_TOKEN }}
@@ -40,6 +40,16 @@ jobs:
           mkdir -p "$WORKING_DIR"
 
           node dist/main.js --onboard --state-dir "$STATE_DIR"
+          # E2E runs on OpenRouter; onboard defaults to Anthropic, so point
+          # both the main model and the auto-reply judge at deepseek.
+          node -e '
+            const fs = require("fs");
+            const p = process.argv[1];
+            const s = JSON.parse(fs.readFileSync(p, "utf8"));
+            const model = { provider: "openrouter", model: "deepseek/deepseek-v4-flash" };
+            s.llm = { ...s.llm, ...model, autoReply: { ...model } };
+            fs.writeFileSync(p, JSON.stringify(s, null, 2));
+          ' "$STATE_DIR/settings.json"
           node dist/main.js --state-dir "$STATE_DIR" "$WORKING_DIR" >"$LOG_FILE" 2>&1 &
           MIKAN_PID=$!
 
