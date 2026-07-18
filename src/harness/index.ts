@@ -96,11 +96,13 @@ export type {
 } from "./extensions/types.js";
 export {
   type SubagentModelSpec,
+  type SubagentParentContext,
   type SubagentRunBudget,
   type SubagentRunOutput,
   type SubagentRunRequest,
   type SubagentRunResult,
   type SubagentRunStatus,
+  type SubagentUsage,
   CURRENT_SESSION_VERSION,
   type BranchSummaryEntry,
   type CompactionEntry,

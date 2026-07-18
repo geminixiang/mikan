@@ -1117,6 +1117,7 @@ async function createConfiguredAgentSession(params: {
   // Host-only dirs under the state dir: extension code runs in the mikan
   // process, so it must never load from workspace paths — those are mounted
   // into sandbox containers and agent-writable (sandbox escape otherwise).
+  let session: MikanAgentSession | undefined;
   const extensionsResult = await loadExtensions({
     dirs: defaultExtensionDirs(conversationId, effectiveStateDir()),
     context: { conversationId, workspaceDir, model, thinkingLevel },
@@ -1126,15 +1127,24 @@ async function createConfiguredAgentSession(params: {
       platformNotifier,
       platformReactor,
       platformUploader,
-      runSubagentService: (request, extensionTools) =>
-        runSubagent({
+      runSubagentService: (request, extensionTools) => {
+        const activeParent = session?.isActiveRun ? session : undefined;
+        return runSubagent({
           request,
           defaultModel: model,
           thinkingLevel,
           models,
           workspaceDir,
           availableTools: [...tools, ...extensionTools],
-        }),
+          slots: globalSubagentSlots,
+          ...(activeParent
+            ? {
+                parentMessages: [...activeParent.messages],
+                onUsage: (usage) => activeParent.foldExternalUsage(usage),
+              }
+            : {}),
+        });
+      },
     }),
   });
   const contributedTools = extensionsResult.registry.getContributedTools();
@@ -1147,24 +1157,21 @@ async function createConfiguredAgentSession(params: {
     );
   }
 
-  const subagentTool = createSubagentTool(
-    (request) =>
-      runSubagent({
-        request,
-        defaultModel: model,
-        thinkingLevel,
-        models,
-        workspaceDir,
-        availableTools: [...tools, ...contributedTools],
-        // `session` is the const below: the tool only executes inside that
-        // session's own prompt loop, and the temporal dead zone turns any
-        // earlier call into a loud error instead of a silently dropped fold.
-        onUsage: (usage) => session.foldExternalUsage(usage),
-      }),
-    globalSubagentSlots,
+  const subagentTool = createSubagentTool((request) =>
+    runSubagent({
+      request,
+      defaultModel: model,
+      thinkingLevel,
+      models,
+      workspaceDir,
+      availableTools: [...tools, ...contributedTools],
+      slots: globalSubagentSlots,
+      parentMessages: [...session!.messages],
+      onUsage: (usage) => session!.foldExternalUsage(usage),
+    }),
   );
 
-  const session = new MikanAgentSession({
+  session = new MikanAgentSession({
     systemPrompt,
     model,
     thinkingLevel,
@@ -1174,12 +1181,13 @@ async function createConfiguredAgentSession(params: {
     extensions: extensionsResult.registry,
   });
 
-  const reloaded = session.reloadFromSession();
+  const activeSession = session;
+  const reloaded = activeSession.reloadFromSession();
   if (reloaded > 0) {
     log.logInfo(`[${conversationId}] Reloaded ${reloaded} messages from session context`);
   }
   return {
-    session,
+    session: activeSession,
     extensionSkills: extensionsResult.skills,
     extensionRegistry: extensionsResult.registry,
     disposeExtensions: extensionsResult.dispose,

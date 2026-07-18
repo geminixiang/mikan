@@ -6,7 +6,6 @@ import type {
   SubagentRunResult,
   SubagentRunStatus,
 } from "../harness/types.js";
-import { unboundedSlotPool, type SubagentSlotPool } from "./subagent-slots.js";
 
 const MAX_DAG_NODES = 8;
 const MAX_DAG_EDGES = 16;
@@ -28,6 +27,12 @@ const taskProperties = {
 };
 
 const sharedProperties = {
+  parentContext: Type.Optional(
+    Type.Object({
+      mode: Type.Literal("normalized"),
+      recentTurns: Type.Optional(Type.Integer({ minimum: 1, maximum: 8, default: 3 })),
+    }),
+  ),
   model: Type.Optional(Type.Object({ provider: Type.String(), id: Type.String() })),
   tools: Type.Optional(
     Type.Array(Type.String(), {
@@ -88,7 +93,10 @@ const subagentSchema = Type.Union([
 type SubagentParams = Static<typeof subagentSchema>;
 type SubagentTask = Static<typeof subagentTaskSchema>;
 type DagNode = Static<typeof dagNodeSchema>;
-type SharedParams = Pick<SubagentParams, "model" | "tools" | "outputSchema" | "budget">;
+type SharedParams = Pick<
+  SubagentParams,
+  "parentContext" | "model" | "tools" | "outputSchema" | "budget"
+>;
 type RunSubagent = <TOutputSchema extends TSchema | undefined = undefined>(
   request: SubagentRunRequest<TOutputSchema>,
 ) => Promise<SubagentRunResult<SubagentRunOutput<TOutputSchema>>>;
@@ -197,6 +205,7 @@ function buildRequest(
     task: task.task,
     ...(task.systemPrompt ? { systemPrompt: task.systemPrompt } : {}),
     ...(task.input !== undefined ? { input: task.input } : {}),
+    ...(shared.parentContext ? { parentContext: shared.parentContext } : {}),
     ...(shared.model ? { model: shared.model } : {}),
     ...(shared.tools ? { tools: shared.tools } : {}),
     ...(outputSchema ? { outputSchema } : {}),
@@ -335,16 +344,14 @@ function planRequest(
 }
 
 /**
- * One executor for every mode: wave barriers, a bounded slot pool inside
- * each wave, and one global slot per actual subagent launch — the seam where
- * both the per-run cap and the process-wide ceiling are enforced.
+ * One executor for every mode: wave barriers and a per-invocation concurrency
+ * bound. Process-wide slots are acquired by the shared runner seam.
  */
 async function runWaves(
   plan: Plan,
   shared: SharedParams,
   runSubagent: RunSubagent,
   progress: SubagentProgressTracker,
-  globalSlots: SubagentSlotPool,
   signal?: AbortSignal,
 ): Promise<PlanOutcome[]> {
   const outcomes = new Map<string, PlanOutcome>();
@@ -362,14 +369,9 @@ async function runWaves(
         progress.update(item.id, "skipped");
         return;
       }
-      const release = await globalSlots.acquire();
       let result: SubagentRunResult<unknown>;
-      try {
-        progress.update(item.id, "running");
-        result = await runSubagent(planRequest(item, shared, outcomes, signal));
-      } finally {
-        release();
-      }
+      progress.update(item.id, "running");
+      result = await runSubagent(planRequest(item, shared, outcomes, signal));
       outcomes.set(item.id, { id: item.id, ...result });
       progress.update(item.id, result.status);
     });
@@ -382,16 +384,13 @@ async function runWaves(
  * `globalSlots` is the process-wide fan-out account shared across every
  * conversation's tool instance; omitted, fan-out is bounded per run only.
  */
-export function createSubagentTool(
-  runSubagent: RunSubagent,
-  globalSlots: SubagentSlotPool = unboundedSlotPool(),
-): AgentTool<typeof subagentSchema> {
+export function createSubagentTool(runSubagent: RunSubagent): AgentTool<typeof subagentSchema> {
   return {
     name: "subagent",
     label: "Subagent",
     description:
       `Run fresh isolated subagents. Use task for one subagent, tasks for independent concurrent work, or dag.nodes for a bounded dependency graph. At most ${MAX_CONCURRENT_SUBAGENTS} subagents run concurrently. DAG limits: ${MAX_DAG_NODES} nodes, ${MAX_DAG_EDGES} edges, depth ${MAX_DAG_DEPTH}; failed dependencies skip descendants, and dependency outputs larger than ${MAX_DEPENDENCY_OUTPUT_CHARS} characters reach downstream nodes as a truncated string. ` +
-      "Subagents have no history or tools unless explicitly provided; nested subagents are not allowed.",
+      "Subagents are fresh by default; parentContext.mode=normalized can include a sanitized reference snapshot of the active parent run. They have no tools unless explicitly provided; nested subagents are not allowed.",
     parameters: subagentSchema,
     execute: async (
       _toolCallId: string,
@@ -406,7 +405,7 @@ export function createSubagentTool(
         onUpdate,
       );
       progress.emit();
-      const ordered = await runWaves(plan, params, runSubagent, progress, globalSlots, signal);
+      const ordered = await runWaves(plan, params, runSubagent, progress, signal);
 
       switch (plan.mode) {
         case "dag":

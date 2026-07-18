@@ -141,6 +141,7 @@ export class MikanAgentSession {
   private overflowRecoveryAttempted = false;
   private retryAbortController: AbortController | undefined;
   private compactionAbortController: AbortController | undefined;
+  private runActive = false;
   private tally: RunTally = { tokens: 0, costUsd: 0, llmCalls: 0, startedAt: 0 };
   private runBudget: BudgetSettings = {};
   private budgetExceededReason: string | undefined;
@@ -203,6 +204,11 @@ export class MikanAgentSession {
     return this.agent.state.model;
   }
 
+  /** Whether this session currently owns a prompt, including pre-model hooks. */
+  get isActiveRun(): boolean {
+    return this.runActive;
+  }
+
   /** Resource totals and terminal budget state from the most recent prompt. */
   getLastRunStats(): Readonly<{
     tokens: number;
@@ -231,7 +237,7 @@ export class MikanAgentSession {
   async foldExternalUsage(usage: { tokens?: number; costUsd?: number }): Promise<void> {
     this.tally.tokens += usage.tokens ?? 0;
     this.tally.costUsd += usage.costUsd ?? 0;
-    if (this.budgetExceededReason || !this.agent.state.isStreaming) return;
+    if (this.budgetExceededReason || !this.runActive) return;
     const reason = this.resourceOverBudgetReason();
     if (reason) await this.exceedBudget(reason);
   }
@@ -266,10 +272,21 @@ export class MikanAgentSession {
     text: string,
     options?: { images?: ImageContent[]; budget?: BudgetSettings; origin?: RunOrigin },
   ): Promise<PromptBlockedOutcome | undefined> {
-    if (this.agent.state.isStreaming) {
+    if (this.runActive) {
       throw new Error("Agent is already processing a prompt");
     }
+    this.runActive = true;
+    try {
+      return await this.runPrompt(text, options);
+    } finally {
+      this.runActive = false;
+    }
+  }
 
+  private async runPrompt(
+    text: string,
+    options?: { images?: ImageContent[]; budget?: BudgetSettings; origin?: RunOrigin },
+  ): Promise<PromptBlockedOutcome | undefined> {
     const model = this.agent.state.model;
     await this.ensureAuthConfigured(model);
 
