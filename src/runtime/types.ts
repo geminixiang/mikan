@@ -20,6 +20,12 @@ import type { MikanModels } from "../harness/index.js";
 import type { PlatformToolPackFactory } from "../tools/types.js";
 import type { VaultManager } from "../vault/index.js";
 
+export interface SessionLifecycleOptions {
+  maxSessions?: number;
+  idleTimeoutMs?: number;
+  now?: () => number;
+}
+
 export interface ConversationRuntimeState {
   running: boolean;
   runner: PiAgentWrapper;

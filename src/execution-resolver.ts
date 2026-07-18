@@ -1,81 +1,33 @@
-import { join } from "path";
-import {
-  conversationSettingsPath,
-  loadGlobalSettings,
-  resolveConversationSettings,
-} from "./config.js";
-import { ensureDirExists, isRecord, readJsonFileIfExists } from "./utils/file-guards.js";
+import { posix } from "node:path";
+import { loadGlobalSettings } from "./config.js";
 import { DockerContainerManager, type ContainerMount } from "./provisioner.js";
-import { createExecutor, type Executor, type SandboxConfig } from "./sandbox/index.js";
+import {
+  createExecutor,
+  getSandboxCredentialCapabilities,
+  type Executor,
+  type SandboxConfig,
+} from "./sandbox/index.js";
 import { reportUserFacingError } from "./observability/sentry.js";
 import { normalizeSharedVaultName, type VaultManager } from "./vault/index.js";
-import { resolveVaultInjection, type VaultInjection } from "./vault/injection.js";
+import { resolveVaultInjection } from "./vault/injection.js";
 import { allowsAmbientDefaultSharedVault } from "./vault/policy.js";
-import { actorKey, scopeCloudflareSandboxId } from "./sandbox/identity.js";
-import type { ResolvedVaultMount } from "./vault/types.js";
-import * as log from "./log.js";
+import {
+  credentialAuthorizationKey,
+  legacyExactCredentialAuthorizationKey,
+  runtimeResourceKey,
+  scopeCloudflareSandboxId,
+} from "./sandbox/identity.js";
+import {
+  resolveWorkspaceProjection,
+  readWorkspaceProjectionMode,
+} from "./workspace-projection/index.js";
 
-export type { ActorContext, ImageWorkspaceMountMode } from "./types.js";
-import type { ActorContext, ImageWorkspaceMountMode } from "./types.js";
+export type { ActorContext } from "./types.js";
+import type { ActorContext, ExecutionPlan } from "./types.js";
 
-export function readConversationWorkspaceMountMode(
-  workspaceDir: string | undefined,
-  conversationId: string,
-): ImageWorkspaceMountMode {
-  const globalDefault = readGlobalWorkspaceMountMode();
-  if (!workspaceDir) {
-    return globalDefault;
-  }
-
-  const conversationDir = join(workspaceDir, conversationId);
-  try {
-    return (
-      resolveConversationSettings(conversationDir).sandbox?.image?.workspaceMount ?? globalDefault
-    );
-  } catch (err) {
-    log.logWarning(
-      "Falling back while resolving conversation workspace mount",
-      err instanceof Error ? err.message : String(err),
-    );
-    const raw = readConversationSettingsFallback(conversationSettingsPath(conversationDir));
-    return raw?.sandbox?.image?.workspaceMount ?? globalDefault;
-  }
-}
-
-function readGlobalWorkspaceMountMode(): ImageWorkspaceMountMode {
-  try {
-    return loadGlobalSettings().sandbox?.image?.workspaceMount ?? "private";
-  } catch (err) {
-    log.logWarning(
-      "Using default workspace mount because global settings could not be read",
-      err instanceof Error ? err.message : String(err),
-    );
-    return "private";
-  }
-}
-
-function readConversationSettingsFallback(
-  settingsPath: string,
-): { sandbox?: { image?: { workspaceMount?: ImageWorkspaceMountMode } } } | undefined {
-  try {
-    return readJsonFileIfExists(
-      settingsPath,
-      (value): value is { sandbox?: { image?: { workspaceMount?: ImageWorkspaceMountMode } } } =>
-        isRecord(value),
-      () => "Ignoring malformed conversation settings file while resolving workspace mount",
-    );
-  } catch (err) {
-    log.logWarning(
-      "Ignoring malformed conversation settings fallback while resolving workspace mount",
-      err instanceof Error ? err.message : String(err),
-    );
-    return undefined;
-  }
-}
+export const readConversationWorkspaceMountMode = readWorkspaceProjectionMode;
 
 export class ActorExecutionResolver {
-  private readonly ensuredConversationDirs = new Set<string>();
-
   constructor(
     private baseConfig: SandboxConfig,
     private vaultManager: VaultManager,
@@ -85,39 +37,53 @@ export class ActorExecutionResolver {
   ) {}
 
   async resolve(context: ActorContext): Promise<Executor> {
-    const vaultKey = actorKey(this.baseConfig, {
-      userId: context.userId,
-      conversationId: context.conversationId,
-    });
-    this.ensureDefaultSharedVault(vaultKey, context.trustModel);
-
-    const vault = this.vaultManager.resolve(vaultKey);
-    // The vault decides what it contributes (env, validated credential
-    // mounts); this resolver only composes that with workspace layout and
-    // per-actor config shaping.
-    const injection = resolveVaultInjection({
-      vault,
-      sandboxType: this.baseConfig.type,
-      conversationId: context.conversationId,
-    });
-    const config = this.resolveSandboxConfig(vaultKey, context.conversationId, injection);
+    const plan = this.resolvePlan(context);
     return createExecutor(
-      config,
-      injection.env,
-      this.buildEnsureReadyCallback(vaultKey, context.conversationId, config, injection),
+      plan.sandboxConfig,
+      plan.env,
+      this.buildEnsureReadyCallback(plan, context.conversationId),
     );
   }
 
-  private ensureDefaultSharedVault(vaultKey: string, trustModel: ActorContext["trustModel"]): void {
+  private resolvePlan(context: ActorContext): ExecutionPlan {
+    const ids = { userId: context.userId, conversationId: context.conversationId };
+    const credentialKey = credentialAuthorizationKey(this.baseConfig, ids);
+    const legacyCredentialKey = legacyExactCredentialAuthorizationKey(this.baseConfig, ids);
+    const resourceKey = runtimeResourceKey(this.baseConfig, ids);
+    this.ensureDefaultSharedVault(credentialKey, legacyCredentialKey, context.trustModel);
+
+    const vault =
+      this.vaultManager.resolve(credentialKey) ??
+      (legacyCredentialKey ? this.vaultManager.resolve(legacyCredentialKey) : undefined);
+    const capabilities = getSandboxCredentialCapabilities(this.baseConfig.type);
+    const injection = resolveVaultInjection({
+      vault,
+      capabilities,
+      sandboxType: this.baseConfig.type,
+      conversationId: context.conversationId,
+    });
+    const mounts = this.resolveMounts(context.conversationId, injection.mounts);
+    return {
+      credentialKey,
+      resourceKey,
+      sandboxConfig: this.resolveSandboxConfig(resourceKey, mounts),
+      env: injection.env,
+      mounts,
+    };
+  }
+
+  private ensureDefaultSharedVault(
+    credentialKey: string,
+    legacyCredentialKey: string | undefined,
+    trustModel: ActorContext["trustModel"],
+  ): void {
+    if (!allowsAmbientDefaultSharedVault({ trustModel, sandboxType: this.baseConfig.type })) return;
     if (
-      !allowsAmbientDefaultSharedVault({
-        trustModel,
-        sandboxType: this.baseConfig.type,
-      })
+      this.vaultManager.hasEntry(credentialKey) ||
+      (legacyCredentialKey && this.vaultManager.hasEntry(legacyCredentialKey))
     ) {
       return;
     }
-    if (this.vaultManager.hasEntry(vaultKey)) return;
 
     let profile: string | undefined;
     try {
@@ -126,57 +92,47 @@ export class ActorExecutionResolver {
       return;
     }
     if (!profile || normalizeSharedVaultName(profile) !== profile) return;
-
-    this.vaultManager.copySharedVaultTo(profile, vaultKey);
+    this.vaultManager.copySharedVaultTo(profile, credentialKey);
   }
 
-  private resolveSandboxConfig(
-    vaultKey: string,
-    conversationId: string,
-    injection: VaultInjection,
-  ): SandboxConfig {
+  private resolveSandboxConfig(resourceKey: string, mounts: ContainerMount[]): SandboxConfig {
     if (this.baseConfig.type === "cloudflare") {
       return {
         type: "cloudflare",
-        sandboxId: scopeCloudflareSandboxId(this.baseConfig.sandboxId, vaultKey),
+        sandboxId: scopeCloudflareSandboxId(this.baseConfig.sandboxId, resourceKey),
       };
     }
     if (this.baseConfig.type === "gondolin") {
       return {
         ...this.baseConfig,
         workspacePath: this.hostWorkspacePath,
-        mounts: this.resolveMounts(conversationId, injection.mounts),
-        instanceId: vaultKey,
-        resourceKey: vaultKey,
+        mounts,
+        instanceId: resourceKey,
+        resourceKey,
       };
     }
-    if (this.baseConfig.type !== "image") {
-      return this.baseConfig;
-    }
-
+    if (this.baseConfig.type !== "image") return this.baseConfig;
     return {
       type: "container",
-      container: DockerContainerManager.containerName(vaultKey),
+      container: DockerContainerManager.containerName(resourceKey),
     };
   }
 
   private buildEnsureReadyCallback(
-    vaultKey: string,
+    plan: ExecutionPlan,
     conversationId: string,
-    config: SandboxConfig,
-    injection: VaultInjection,
   ): (() => Promise<void>) | undefined {
-    if (this.baseConfig.type !== "image" || config.type !== "container") {
+    if (this.baseConfig.type !== "image" || plan.sandboxConfig.type !== "container") {
       return undefined;
     }
 
     return async () => {
-      const expected = config.container || DockerContainerManager.containerName(vaultKey);
+      const expected = plan.sandboxConfig.type === "container" ? plan.sandboxConfig.container : "";
       let actual: string | undefined;
       try {
-        actual = await this.provisioner?.provision(vaultKey, {
+        actual = await this.provisioner?.provision(plan.resourceKey, {
           containerName: expected,
-          mounts: this.resolveMounts(conversationId, injection.mounts),
+          mounts: plan.mounts,
           conversationId,
         });
       } catch (err) {
@@ -187,58 +143,56 @@ export class ActorExecutionResolver {
           severity: "error",
           context: {
             sandboxType: "image",
-            resolvedSandboxType: config.type,
             conversationId,
-            vaultKey,
+            credentialKey: plan.credentialKey,
+            resourceKey: plan.resourceKey,
             expectedContainer: expected,
-            hasVault: Boolean(injection.env || injection.mounts.length > 0),
+            hasVault: Boolean(plan.env || plan.mounts.length > 0),
           },
         });
         throw err;
       }
       if (actual && actual !== expected) {
         throw new Error(
-          `Provisioner returned container "${actual}" for container key "${vaultKey}", expected "${expected}"`,
+          `Provisioner returned container "${actual}" for resource key "${plan.resourceKey}", expected "${expected}"`,
         );
       }
     };
   }
 
-  /** Workspace layout overlaid by the vault's (already validated) credential mounts. */
-  private resolveMounts(
-    conversationId: string,
-    vaultMounts: ResolvedVaultMount[],
-  ): ContainerMount[] {
-    const mountsByTarget = new Map<string, ContainerMount>();
-    for (const mount of this.buildWorkspaceMounts(conversationId)) {
-      mountsByTarget.set(mount.target, mount);
+  private resolveMounts(conversationId: string, vaultMounts: ContainerMount[]): ContainerMount[] {
+    const workspaceMounts = resolveWorkspaceProjection(this.workspaceDir, conversationId).mounts;
+    for (let index = 0; index < vaultMounts.length; index += 1) {
+      const vaultMount = vaultMounts[index];
+      const workspaceCollision = workspaceMounts.find((workspaceMount) =>
+        targetsOverlap(workspaceMount.target, vaultMount.target),
+      );
+      if (workspaceCollision) {
+        throw new Error(
+          `Vault mount target "${vaultMount.target}" overlaps protected workspace target "${workspaceCollision.target}"`,
+        );
+      }
+
+      const vaultCollision = vaultMounts
+        .slice(0, index)
+        .find((other) => targetsOverlap(other.target, vaultMount.target));
+      if (vaultCollision) {
+        throw new Error(
+          `Vault mount target "${vaultMount.target}" overlaps vault target "${vaultCollision.target}"`,
+        );
+      }
     }
-    for (const mount of vaultMounts) {
-      mountsByTarget.set(mount.target, { source: mount.source, target: mount.target });
-    }
-    return [...mountsByTarget.values()];
+    return [...workspaceMounts, ...vaultMounts];
   }
+}
 
-  private buildWorkspaceMounts(conversationId: string): ContainerMount[] {
-    if (!this.workspaceDir) {
-      return [];
-    }
+function targetsOverlap(left: string, right: string): boolean {
+  const a = normalizeMountTarget(left);
+  const b = normalizeMountTarget(right);
+  return a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+}
 
-    if (readConversationWorkspaceMountMode(this.workspaceDir, conversationId) === "full") {
-      return [{ source: this.workspaceDir, target: "/workspace" }];
-    }
-
-    const conversationDir = join(this.workspaceDir, conversationId);
-    if (!this.ensuredConversationDirs.has(conversationId)) {
-      ensureDirExists(conversationDir);
-      this.ensuredConversationDirs.add(conversationId);
-    }
-
-    return [
-      { source: join(this.workspaceDir, "MEMORY.md"), target: "/workspace/MEMORY.md" },
-      { source: join(this.workspaceDir, "skills"), target: "/workspace/skills" },
-      { source: join(this.workspaceDir, "events"), target: "/workspace/events" },
-      { source: conversationDir, target: `/workspace/${conversationId}` },
-    ];
-  }
+function normalizeMountTarget(value: string): string {
+  const normalized = posix.normalize(value);
+  return normalized.replace(/\/+$/, "") || "/";
 }

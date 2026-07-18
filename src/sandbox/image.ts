@@ -25,6 +25,7 @@ async function validateImageSandbox(config: ImageSandboxConfig): Promise<void> {
 
 export const imageSandboxAdapter: SandboxAdapter<ImageSandboxConfig> = {
   type: "image",
+  credentials: { env: true, fileMounts: true },
   parse: parseImageSandboxArg,
   validate: validateImageSandbox,
 };

@@ -24,7 +24,6 @@ import {
 } from "../sessions/chat-history-sync.js";
 import {
   assertSessionKeyBelongsToConversation,
-  conversationIdOf,
   deriveSessionKey,
 } from "../sessions/session-key.js";
 import { formatNothingRunning, formatStopped, formatStopping } from "../platform-messages.js";
@@ -33,6 +32,7 @@ import { join } from "path";
 import { getUnresolvedSandboxPathContext } from "../sandbox/index.js";
 import { disabledVaultManager } from "../vault/disabled.js";
 import type { ConversationRuntimeState } from "./types.js";
+import { SessionLifecycle } from "./session-lifecycle.js";
 
 type ConversationState = ConversationRuntimeState;
 
@@ -47,9 +47,6 @@ import type {
   ConversationRuntimeOptions,
   SessionStateOptions,
 } from "./types.js";
-
-const MAX_SESSIONS = 500;
-const IDLE_TIMEOUT_MS = 3_600_000;
 
 /**
  * Placeholder token store for embedders that run without the web portal.
@@ -83,8 +80,7 @@ export function createConversationRuntime(
 }
 
 class ConversationRuntimeImpl implements ConversationRuntime {
-  private readonly conversationStates = new Map<string, ConversationState>();
-  private readonly sessionQueues = new Map<string, Promise<void>>();
+  private readonly sessions = new SessionLifecycle();
   private readonly inFlightRuns = new Set<Promise<void>>();
   private readonly chatSessionManager = new ChatHistorySync();
   private readonly commandServices: CommandServices;
@@ -106,14 +102,14 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   }
 
   isRunning(sessionKey: string): boolean {
-    const state = this.conversationStates.get(sessionKey);
+    const state = this.sessions.get(sessionKey);
     return !!state?.running;
   }
 
   getRunningSessions(): RunningSession[] {
     const sessions: RunningSession[] = [];
-    for (const [sessionKey, state] of this.conversationStates) {
-      if (state.running && state.startedAt) {
+    for (const [sessionKey, state] of this.sessions.runningStates()) {
+      if (state.startedAt) {
         const currentStep = state.runner.getCurrentStep();
         sessions.push({
           sessionKey,
@@ -128,7 +124,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
   async handleStop(sessionKey: string, conversationId: string, bot: MessagingBot): Promise<void> {
     assertSessionKeyBelongsToConversation(sessionKey, conversationId);
-    const state = this.conversationStates.get(sessionKey);
+    const state = this.sessions.get(sessionKey);
     if (state?.running) {
       state.stopRequested = true;
       state.runner.abort();
@@ -140,7 +136,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   }
 
   forceStop(sessionKey: string): void {
-    const state = this.conversationStates.get(sessionKey);
+    const state = this.sessions.get(sessionKey);
     if (state?.running) {
       log.logInfo(`[Force Stop] Force stopping session: ${sessionKey}`);
       state.stopRequested = true;
@@ -155,7 +151,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     bot: MessagingBot,
   ): Promise<void> {
     assertSessionKeyBelongsToConversation(sessionKey, conversationId);
-    const state = this.conversationStates.get(sessionKey);
+    const state = this.sessions.get(sessionKey);
     if (state?.running) {
       state.stopRequested = true;
       state.runner.abort();
@@ -169,7 +165,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     );
     this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
 
-    this.discardState(sessionKey);
+    this.sessions.discard(sessionKey);
 
     log.logInfo(`[${conversationId}] Session reset: ${sessionKey}`);
     await bot.postMessage(conversationId, "Conversation reset. Send a new message to start fresh.");
@@ -181,16 +177,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     context: ConversationContext,
   ): Promise<void> {
     const sessionKey = deriveSessionKey(event);
-    const previous = this.sessionQueues.get(sessionKey) ?? Promise.resolve();
-    const next = previous.catch(() => {}).then(() => this.runSession({ event, bot, context }));
-    this.sessionQueues.set(sessionKey, next);
-    try {
-      await next;
-    } finally {
-      if (this.sessionQueues.get(sessionKey) === next) {
-        this.sessionQueues.delete(sessionKey);
-      }
-    }
+    await this.sessions.enqueue(sessionKey, () => this.runSession({ event, bot, context }));
   }
 
   async runSession({ event, bot, context }: RunSessionOptions): Promise<void> {
@@ -223,7 +210,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       parentSessionKey: conversationId,
       sessionKey,
       hasThreadSession: () => hasMaterializedChatSession({ conversationDir, sessionKey }),
-      isParentRunning: () => this.conversationStates.get(conversationId)?.running === true,
+      isParentRunning: () => this.sessions.get(conversationId)?.running === true,
     });
     if (waitedForParent) {
       log.logInfo(
@@ -304,7 +291,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         state.running = false;
         state.lastAccessedAt = Date.now();
         Sentry.metrics.gauge("agent.sessions.active", this.inFlightRuns.size - 1);
-        this.evictIdleSessions();
+        this.sessions.evictIdle();
       }
     })();
 
@@ -432,11 +419,8 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   }
 
   refreshAllConversations(): { busy: string[] } {
-    const conversationIds = new Set(
-      Array.from(this.conversationStates.keys(), (sessionKey) => conversationIdOf(sessionKey)),
-    );
     const busy: string[] = [];
-    for (const conversationId of conversationIds) {
+    for (const conversationId of this.sessions.conversationIds()) {
       const cleared = this.clearConversationStates(
         conversationId,
         `[${conversationId}] Global settings changed; cleared cached session runners`,
@@ -446,31 +430,17 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     return { busy };
   }
 
-  private isConversationSession(sessionKey: string, conversationId: string): boolean {
-    return conversationIdOf(sessionKey) === conversationId;
-  }
-
   private clearConversationStates(conversationId: string, message: string): boolean {
-    for (const [sessionKey, state] of this.conversationStates) {
-      if (this.isConversationSession(sessionKey, conversationId) && state.running) {
-        return false;
-      }
-    }
-
-    for (const sessionKey of Array.from(this.conversationStates.keys())) {
-      if (this.isConversationSession(sessionKey, conversationId)) {
-        this.discardState(sessionKey);
-      }
-    }
-    log.logInfo(message);
-    return true;
+    const cleared = this.sessions.clearConversation(conversationId);
+    if (cleared) log.logInfo(message);
+    return cleared;
   }
 
   private async getOrCreateState(
     options: SessionStateOptions & { currentMessageId?: string },
   ): Promise<ConversationState> {
     const { conversationId, sessionKey, currentMessageId } = options;
-    const existing = this.conversationStates.get(sessionKey);
+    const existing = this.sessions.get(sessionKey);
     if (existing?.running) return existing;
 
     const conversationDir = join(this.options.workingDir, conversationId);
@@ -494,7 +464,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
     // A stale state (rotated session file) is being replaced: release the old
     // runner's extension resources before the new one takes the slot.
-    if (existing) this.discardState(sessionKey);
+    if (existing) this.sessions.discard(sessionKey);
 
     const state: ConversationState = {
       running: false,
@@ -525,7 +495,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       sessionFile: sessionScope.contextFile,
       startedAt: 0,
     };
-    this.conversationStates.set(sessionKey, state);
+    this.sessions.set(sessionKey, state);
     return state;
   }
 
@@ -548,48 +518,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         severity: "warning",
         context: { inFlightRuns: this.inFlightRuns.size, timeoutMs },
       });
-    }
-  }
-
-  /**
-   * Remove a session state and release its resources: fire-and-forget the
-   * runner's extension disposers so a slow disposer never stalls the caller.
-   */
-  private discardState(sessionKey: string): void {
-    const state = this.conversationStates.get(sessionKey);
-    if (!state) return;
-    this.conversationStates.delete(sessionKey);
-    state.runner.dispose().catch((err: unknown) => {
-      log.logWarning(
-        `Runner dispose failed: ${sessionKey}`,
-        err instanceof Error ? err.message : String(err),
-      );
-    });
-  }
-
-  private evictIdleSessions(): void {
-    const now = Date.now();
-
-    for (const [key, state] of this.conversationStates) {
-      if (!state.running && now - state.lastAccessedAt > IDLE_TIMEOUT_MS) {
-        this.discardState(key);
-      }
-    }
-
-    if (this.conversationStates.size > MAX_SESSIONS) {
-      const idleSessions: Array<{ key: string; lastAccessedAt: number }> = [];
-      for (const [key, state] of this.conversationStates) {
-        if (!state.running) {
-          idleSessions.push({ key, lastAccessedAt: state.lastAccessedAt });
-        }
-      }
-
-      idleSessions.sort((a, b) => a.lastAccessedAt - b.lastAccessedAt);
-
-      const toEvict = this.conversationStates.size - MAX_SESSIONS;
-      for (let i = 0; i < toEvict && i < idleSessions.length; i++) {
-        this.discardState(idleSessions[i].key);
-      }
     }
   }
 }

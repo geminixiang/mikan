@@ -1,12 +1,35 @@
+import { createHash } from "node:crypto";
 import type { SandboxConfig } from "./types.js";
 
-/**
- * Runtime actor identity: the one key that names a conversation's vault dir,
- * docker container and network, and cloudflare sandbox suffix. Everything
- * that needs such a name consumes actorKey(); nothing may re-derive or
- * re-sanitize it — two sanitizers with divergent outputs used to make a
- * container/vault mismatch a silent wrong-identity bug rather than an error.
- */
+const IDENTITY_HASH_LENGTH = 12;
+
+export function credentialAuthorizationKey(
+  baseConfig: SandboxConfig,
+  ids: { userId: string; conversationId: string },
+): string {
+  if (baseConfig.type === "host") return identityKey("user", ids.userId);
+  if (baseConfig.type === "container") return identityKey("container", baseConfig.container);
+  return identityKey("conversation", ids.conversationId);
+}
+
+export function legacyExactCredentialAuthorizationKey(
+  baseConfig: SandboxConfig,
+  ids: { userId: string; conversationId: string },
+): string | undefined {
+  if (baseConfig.type === "host") return ids.userId;
+  if (baseConfig.type === "container") return `container-${baseConfig.container}`;
+  return undefined;
+}
+
+export function runtimeResourceKey(
+  baseConfig: SandboxConfig,
+  ids: { userId: string; conversationId: string },
+): string {
+  if (baseConfig.type === "container") return identityKey("container", baseConfig.container);
+  if (baseConfig.type === "host") return identityKey("user", ids.userId);
+  return identityKey("conversation", ids.conversationId);
+}
+
 export function sanitizeIdentitySegment(value: string): string {
   const sanitized = value
     .toLowerCase()
@@ -15,30 +38,15 @@ export function sanitizeIdentitySegment(value: string): string {
   return sanitized || "unknown";
 }
 
-/**
- * The actor key for a sandbox config: per-conversation for managed sandboxes
- * (image/gondolin/cloudflare/firecracker), the fixed container name for a shared
- * container, and the platform user id on the host.
- */
-export function actorKey(
-  baseConfig: SandboxConfig,
-  ids: { userId: string; conversationId: string },
-): string {
-  if (baseConfig.type === "container") {
-    return `container-${baseConfig.container}`;
-  }
-  if (
-    baseConfig.type === "image" ||
-    baseConfig.type === "gondolin" ||
-    baseConfig.type === "cloudflare" ||
-    baseConfig.type === "firecracker"
-  ) {
-    return sanitizeIdentitySegment(ids.conversationId);
-  }
-  return ids.userId;
+export function scopeCloudflareSandboxId(baseId: string, resourceKey: string): string {
+  return `${baseId}-${resourceKey}`;
 }
 
-/** Scope a base cloudflare sandbox id to one actor key. */
-export function scopeCloudflareSandboxId(baseId: string, actorVaultKey: string): string {
-  return `${baseId}-${sanitizeIdentitySegment(actorVaultKey)}`;
+function identityKey(kind: "user" | "conversation" | "container", value: string): string {
+  const readable = sanitizeIdentitySegment(value).slice(0, 40).replace(/-+$/g, "") || "unknown";
+  const hash = createHash("sha256")
+    .update(`${kind}\0${value}`)
+    .digest("hex")
+    .slice(0, IDENTITY_HASH_LENGTH);
+  return `${readable}-${hash}`;
 }

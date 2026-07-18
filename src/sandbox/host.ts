@@ -123,6 +123,7 @@ export class HostExecutor implements Executor {
 
 export const hostSandboxAdapter: SandboxAdapter<HostSandboxConfig> = {
   type: "host",
+  credentials: { env: false, fileMounts: false },
   parse: parseHostSandboxArg,
   createExecutor: () => new HostExecutor(),
 };

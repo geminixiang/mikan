@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ActorExecutionResolver } from "../src/execution-resolver.js";
 import { DockerContainerManager } from "../src/provisioner.js";
 import { HostExecutor } from "../src/sandbox/index.js";
-import { actorKey } from "../src/sandbox/identity.js";
+import { credentialAuthorizationKey } from "../src/sandbox/identity.js";
 import { FileVaultManager, parseEnvFile, sharedVaultKey } from "../src/vault/index.js";
 
 function mode(path: string): number {
@@ -238,7 +238,7 @@ describe("ActorExecutionResolver image mode", () => {
 
     expect(executor.getSandboxConfig()).toEqual({
       type: "container",
-      container: "mikan-sandbox-d123",
+      container: "mikan-sandbox-d123-e8bafaeb6008",
     });
     expect(mgr.resolve(DockerContainerManager.sanitizeSegment("D123"))).toBeUndefined();
   });
@@ -268,9 +268,9 @@ describe("ActorExecutionResolver image mode", () => {
 
     expect(executor.getSandboxConfig()).toEqual({
       type: "container",
-      container: "mikan-sandbox-d123",
+      container: "mikan-sandbox-d123-e8bafaeb6008",
     });
-    expect(readFileSync(join(vaultsDir, "d123", "env"), "utf-8")).toContain(
+    expect(readFileSync(join(vaultsDir, "d123-e8bafaeb6008", "env"), "utf-8")).toContain(
       "ANTHROPIC_API_KEY=sk-test",
     );
   });
@@ -308,14 +308,20 @@ describe("ActorExecutionResolver image mode", () => {
 
     // Same resolver, same default — a Slack conversation still inherits it.
     await resolver.resolve({ platform: "slack", userId: "U1", conversationId: "D999" });
-    expect(readFileSync(join(vaultsDir, "d999", "env"), "utf-8")).toContain("GH_TOKEN=ambient");
+    expect(readFileSync(join(vaultsDir, "d999-d4639b84b5c8", "env"), "utf-8")).toContain(
+      "GH_TOKEN=ambient",
+    );
   });
 
   test("does not copy the default shared vault over an existing image sandbox vault", async () => {
+    const vaultKey = credentialAuthorizationKey(
+      { type: "image", image: "ubuntu:24.04" },
+      { userId: "U123", conversationId: "D123" },
+    );
     mkdirSync(join(vaultsDir, "shared", "claw"), { recursive: true });
-    mkdirSync(join(vaultsDir, "d123"), { recursive: true });
+    mkdirSync(join(vaultsDir, vaultKey), { recursive: true });
     writeFileSync(join(vaultsDir, "shared", "claw", "env"), "A=shared\n");
-    writeFileSync(join(vaultsDir, "d123", "env"), "A=existing\n");
+    writeFileSync(join(vaultsDir, vaultKey, "env"), "A=existing\n");
     writeFileSync(
       join(tmpDir, "settings.json"),
       JSON.stringify({
@@ -336,7 +342,7 @@ describe("ActorExecutionResolver image mode", () => {
       conversationId: "D123",
     });
 
-    expect(parseEnvFile(readFileSync(join(vaultsDir, "d123", "env"), "utf-8"))).toEqual({
+    expect(parseEnvFile(readFileSync(join(vaultsDir, vaultKey, "env"), "utf-8"))).toEqual({
       A: "existing",
     });
   });
@@ -344,7 +350,10 @@ describe("ActorExecutionResolver image mode", () => {
   test("login and execution use the same generated vault key in image mode", async () => {
     const mgr = new FileVaultManager(tmpDir);
     const baseConfig = { type: "image", image: "ubuntu:24.04" } as const;
-    const vaultKey = actorKey(baseConfig, { userId: "U123", conversationId: "D123" });
+    const vaultKey = credentialAuthorizationKey(baseConfig, {
+      userId: "U123",
+      conversationId: "D123",
+    });
 
     const resolver = new ActorExecutionResolver(baseConfig, mgr, undefined, tmpDir);
     const executor = await resolver.resolve({
@@ -353,10 +362,10 @@ describe("ActorExecutionResolver image mode", () => {
       conversationId: "D123",
     });
 
-    expect(vaultKey).toBe("d123");
+    expect(vaultKey).toBe("d123-e8bafaeb6008");
     expect(executor.getSandboxConfig()).toEqual({
       type: "container",
-      container: "mikan-sandbox-d123",
+      container: "mikan-sandbox-d123-e8bafaeb6008",
     });
   });
 
@@ -375,17 +384,21 @@ describe("ActorExecutionResolver image mode", () => {
 
     expect(executor.getSandboxConfig()).toEqual({
       type: "cloudflare",
-      sandboxId: "mikan-remote-d123",
+      sandboxId: "mikan-remote-d123-e8bafaeb6008",
     });
     expect(mgr.resolve(DockerContainerManager.sanitizeSegment("D123"))).toBeUndefined();
   });
 
   test("provisions per-conversation container with inferred vault mounts", async () => {
-    const userDir = join(vaultsDir, "d123");
+    const vaultKey = credentialAuthorizationKey(
+      { type: "image", image: "ubuntu:24.04" },
+      { userId: "U123", conversationId: "D123" },
+    );
+    const userDir = join(vaultsDir, vaultKey);
     mkdirSync(join(userDir, ".ssh"), { recursive: true });
 
     const mgr = new FileVaultManager(tmpDir);
-    const provision = vi.fn().mockResolvedValue("mikan-sandbox-d123");
+    const provision = vi.fn().mockResolvedValue("mikan-sandbox-d123-e8bafaeb6008");
     const exec = vi
       .spyOn(HostExecutor.prototype, "exec")
       .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
@@ -403,19 +416,19 @@ describe("ActorExecutionResolver image mode", () => {
     });
     await executor.exec("pwd");
 
-    expect(provision).toHaveBeenCalledWith("d123", {
-      containerName: "mikan-sandbox-d123",
+    expect(provision).toHaveBeenCalledWith("d123-e8bafaeb6008", {
+      containerName: "mikan-sandbox-d123-e8bafaeb6008",
       conversationId: "D123",
       mounts: [
         { source: join(tmpDir, "MEMORY.md"), target: "/workspace/MEMORY.md" },
         { source: join(tmpDir, "skills"), target: "/workspace/skills" },
         { source: join(tmpDir, "events"), target: "/workspace/events" },
         { source: join(tmpDir, "D123"), target: "/workspace/D123" },
-        { source: join(vaultsDir, "d123", ".ssh"), target: "/root/.ssh" },
+        { source: join(vaultsDir, vaultKey, ".ssh"), target: "/root/.ssh" },
       ],
     });
     expect(exec).toHaveBeenCalledWith(
-      "docker exec -w /workspace mikan-sandbox-d123 sh -c 'pwd'",
+      "docker exec -w /workspace mikan-sandbox-d123-e8bafaeb6008 sh -c 'pwd'",
       undefined,
     );
   });
@@ -428,7 +441,7 @@ describe("ActorExecutionResolver image mode", () => {
     );
 
     const mgr = new FileVaultManager(tmpDir);
-    const provision = vi.fn().mockResolvedValue("mikan-sandbox-d123");
+    const provision = vi.fn().mockResolvedValue("mikan-sandbox-d123-e8bafaeb6008");
     const exec = vi
       .spyOn(HostExecutor.prototype, "exec")
       .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
@@ -446,13 +459,13 @@ describe("ActorExecutionResolver image mode", () => {
     });
     await executor.exec("pwd");
 
-    expect(provision).toHaveBeenCalledWith("d123", {
-      containerName: "mikan-sandbox-d123",
+    expect(provision).toHaveBeenCalledWith("d123-e8bafaeb6008", {
+      containerName: "mikan-sandbox-d123-e8bafaeb6008",
       conversationId: "D123",
       mounts: [{ source: tmpDir, target: "/workspace" }],
     });
     expect(exec).toHaveBeenCalledWith(
-      "docker exec -w /workspace mikan-sandbox-d123 sh -c 'pwd'",
+      "docker exec -w /workspace mikan-sandbox-d123-e8bafaeb6008 sh -c 'pwd'",
       undefined,
     );
   });

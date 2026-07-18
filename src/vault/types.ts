@@ -15,6 +15,11 @@ export interface ResolvedVault {
   env: Record<string, string>;
 }
 
+export interface VaultInjection {
+  env?: Record<string, string>;
+  mounts: ResolvedVaultMount[];
+}
+
 export interface VaultManager {
   /** Return true when a vault directory exists for this exact key. */
   hasEntry(key: string): boolean;

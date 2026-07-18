@@ -18,7 +18,7 @@ import { readRawBody } from "../../utils/http-body.js";
 import { renderPortalShell } from "../portal-shell.js";
 import { resolveExistingSessionFile } from "../session-view/service.js";
 import { PRODUCT_NAME } from "../../platform-messages.js";
-import { actorKey } from "../../sandbox/identity.js";
+import { credentialAuthorizationKey } from "../../sandbox/identity.js";
 import { sharedVaultKey } from "../../vault/index.js";
 import { modelKey, resolveAdminModelAccessStatuses } from "./provider-models.js";
 import type { AdminToken } from "./store.js";
@@ -859,7 +859,7 @@ function serveConversationLoginLink(
     vaultId = key;
   } else {
     try {
-      vaultId = actorKey(services.sandbox, {
+      vaultId = credentialAuthorizationKey(services.sandbox, {
         userId: token.platformUserId,
         conversationId: scope.conversationId,
       });

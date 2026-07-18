@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { credentialAuthorizationKey } from "../src/sandbox/identity.js";
 import { createGlobalSettingsFile } from "../src/config.js";
 import {
   ActorExecutionResolver,
@@ -57,6 +58,24 @@ describe("readConversationWorkspaceMountMode", () => {
     writeFileSync(join(conversationDir, "settings.json"), "{ invalid json }", "utf-8");
 
     expect(readConversationWorkspaceMountMode(workspaceDir, "C123")).toBe("private");
+  });
+
+  test("rejects path-bearing conversation ids before reading or creating directories", () => {
+    createGlobalSettingsFile(stateDir);
+
+    for (const conversationId of [
+      "",
+      ".",
+      "..",
+      "../events",
+      "/tmp/escape",
+      "nested/id",
+      "nested\\id",
+    ]) {
+      expect(() => readConversationWorkspaceMountMode(workspaceDir, conversationId)).toThrow(
+        /safe path segment/,
+      );
+    }
   });
 
   test("resolves private Gondolin workspace mounts", async () => {
@@ -117,7 +136,11 @@ describe("readConversationWorkspaceMountMode", () => {
 
   test("adds Gondolin vault files to the workspace mounts", async () => {
     createGlobalSettingsFile(stateDir);
-    const sshDir = join(stateDir, "vaults", "c123", ".ssh");
+    const credentialKey = credentialAuthorizationKey(
+      { type: "gondolin", profile: "default" },
+      { userId: "U123", conversationId: "C123" },
+    );
+    const sshDir = join(stateDir, "vaults", credentialKey, ".ssh");
     mkdirSync(sshDir, { recursive: true });
     const resolver = new ActorExecutionResolver(
       { type: "gondolin", profile: "default" },
@@ -138,6 +161,147 @@ describe("readConversationWorkspaceMountMode", () => {
     });
   });
 
+  test("recreates a deleted private conversation directory on the next projection", async () => {
+    createGlobalSettingsFile(stateDir);
+    const resolver = new ActorExecutionResolver(
+      { type: "gondolin", profile: "default" },
+      new FileVaultManager(stateDir),
+      undefined,
+      workspaceDir,
+      workspaceDir,
+    );
+    const context = { platform: "slack", userId: "U123", conversationId: "C123" } as const;
+
+    await resolver.resolve(context);
+    rmSync(join(workspaceDir, "C123"), { recursive: true });
+    await resolver.resolve(context);
+
+    expect(existsSync(join(workspaceDir, "C123"))).toBe(true);
+  });
+
+  test("fails closed when a vault file mount overlaps the Workspace projection", async () => {
+    createGlobalSettingsFile(stateDir);
+    const source = join(stateDir, "secret");
+    writeFileSync(source, "value");
+    const vault = {
+      hasEntry: () => true,
+      resolve: () => ({
+        userId: "key",
+        displayName: "key",
+        dir: stateDir,
+        env: {},
+        mounts: [{ source, target: "/workspace/skills/../events/secret" }],
+      }),
+    } as unknown as FileVaultManager;
+    const resolver = new ActorExecutionResolver(
+      { type: "gondolin", profile: "default" },
+      vault,
+      undefined,
+      workspaceDir,
+      workspaceDir,
+    );
+
+    await expect(
+      resolver.resolve({ platform: "slack", userId: "U123", conversationId: "C123" }),
+    ).rejects.toThrow(/overlaps protected workspace target/);
+  });
+
+  test("does not resolve ambiguous legacy credential keys", async () => {
+    createGlobalSettingsFile(stateDir);
+    const resolvedKeys: string[] = [];
+    const vault = {
+      hasEntry: () => false,
+      resolve: (key: string) => {
+        resolvedKeys.push(key);
+        return undefined;
+      },
+    } as unknown as FileVaultManager;
+    const resolver = new ActorExecutionResolver(
+      { type: "gondolin", profile: "default" },
+      vault,
+      undefined,
+      workspaceDir,
+      workspaceDir,
+    );
+
+    await resolver.resolve({ platform: "slack", userId: "U123", conversationId: "A_B" });
+    await resolver.resolve({ platform: "slack", userId: "U123", conversationId: "A-B" });
+
+    expect(resolvedKeys).toHaveLength(2);
+    expect(resolvedKeys[0]).not.toBe(resolvedKeys[1]);
+    expect(resolvedKeys).not.toContain("a-b");
+  });
+
+  test("resolves exact legacy host credentials without enabling lossy managed fallback", async () => {
+    createGlobalSettingsFile(stateDir);
+    const resolvedKeys: string[] = [];
+    const vault = {
+      hasEntry: () => true,
+      resolve: (key: string) => {
+        resolvedKeys.push(key);
+        return undefined;
+      },
+    } as unknown as FileVaultManager;
+    const resolver = new ActorExecutionResolver({ type: "host" }, vault, undefined, workspaceDir);
+
+    await resolver.resolve({ platform: "slack", userId: "U123", conversationId: "C123" });
+
+    expect(resolvedKeys).toEqual([expect.stringMatching(/^u123-[a-f0-9]{12}$/), "U123"]);
+  });
+
+  test("fails closed when vault file mounts overlap each other", async () => {
+    createGlobalSettingsFile(stateDir);
+    const firstSource = join(stateDir, "first-secret");
+    const secondSource = join(stateDir, "second-secret");
+    writeFileSync(firstSource, "first");
+    writeFileSync(secondSource, "second");
+    const vault = {
+      hasEntry: () => true,
+      resolve: () => ({
+        userId: "key",
+        displayName: "key",
+        dir: stateDir,
+        env: {},
+        mounts: [
+          { source: firstSource, target: "/root/.config" },
+          { source: secondSource, target: "/root/.config/gh" },
+        ],
+      }),
+    } as unknown as FileVaultManager;
+    const resolver = new ActorExecutionResolver(
+      { type: "gondolin", profile: "default" },
+      vault,
+      undefined,
+      workspaceDir,
+      workspaceDir,
+    );
+
+    await expect(
+      resolver.resolve({ platform: "slack", userId: "U123", conversationId: "C123" }),
+    ).rejects.toThrow(/overlaps vault target/);
+  });
+
+  test("fails closed when an adapter cannot mount vault files", async () => {
+    createGlobalSettingsFile(stateDir);
+    const vault = new FileVaultManager(stateDir);
+    const key = credentialAuthorizationKey(
+      { type: "cloudflare", sandboxId: "base" },
+      { userId: "U123", conversationId: "C123" },
+    );
+    vault.upsertFile(key, "secret", "value");
+    const resolver = new ActorExecutionResolver(
+      { type: "cloudflare", sandboxId: "base" },
+      vault,
+      undefined,
+      workspaceDir,
+      workspaceDir,
+    );
+
+    await expect(
+      resolver.resolve({ platform: "slack", userId: "U123", conversationId: "C123" }),
+    ).rejects.toThrow(/does not support vault file mounts/);
+  });
+
   test("derives per-actor cloudflare sandbox ids", async () => {
     createGlobalSettingsFile(stateDir);
     const resolver = new ActorExecutionResolver(
@@ -156,7 +320,7 @@ describe("readConversationWorkspaceMountMode", () => {
 
     expect(executor.getSandboxConfig()).toEqual({
       type: "cloudflare",
-      sandboxId: "mikan-remote-c123",
+      sandboxId: expect.stringMatching(/^mikan-remote-c123-[a-f0-9]{12}$/),
     });
   });
 });

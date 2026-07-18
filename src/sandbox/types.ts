@@ -108,8 +108,14 @@ export interface ExecResult {
   code: number;
 }
 
+export interface SandboxCredentialCapabilities {
+  env: boolean;
+  fileMounts: boolean;
+}
+
 export interface SandboxAdapter<TConfig extends SandboxConfig = SandboxConfig> {
   type: TConfig["type"];
+  credentials: SandboxCredentialCapabilities;
   parse(value: string): TConfig | undefined;
   validate?(config: TConfig): Promise<void>;
   createExecutor?(

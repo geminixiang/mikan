@@ -467,6 +467,14 @@ export interface DockerContainerManagerOptions {
   execFileImpl?: ExecFileAsync;
 }
 
+export interface ExecutionPlan {
+  credentialKey: string;
+  resourceKey: string;
+  sandboxConfig: import("./sandbox/types.js").SandboxConfig;
+  env?: Record<string, string>;
+  mounts: ContainerMount[];
+}
+
 // ── store ─────────────────────────────────────────────────────────────────────
 
 export interface Attachment {

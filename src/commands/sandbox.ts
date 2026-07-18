@@ -1,6 +1,6 @@
 import { readConversationWorkspaceMountMode } from "../execution-resolver.js";
 import { applyConversationSettings } from "../settings-mutation.js";
-import { actorKey } from "../sandbox/identity.js";
+import { runtimeResourceKey } from "../sandbox/identity.js";
 import { slashForms } from "./manifest.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler, ParsedSandboxCommand } from "./types.js";
@@ -40,7 +40,7 @@ export class SandboxCommandHandler implements CommandHandler {
       return true;
     }
 
-    const containerKey = actorKey(context.services.sandbox, {
+    const containerKey = runtimeResourceKey(context.services.sandbox, {
       userId: context.platformUserId,
       conversationId: context.conversationId,
     });

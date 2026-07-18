@@ -148,6 +148,7 @@ export class ContainerExecutor implements Executor {
 
 export const containerSandboxAdapter: SandboxAdapter<ContainerSandboxConfig> = {
   type: "container",
+  credentials: { env: true, fileMounts: false },
   parse: parseContainerSandboxArg,
   validate: validateContainerSandbox,
   createExecutor: (config, env, ensureReady) =>

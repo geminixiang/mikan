@@ -389,7 +389,7 @@ describe("LoginCommandHandler", () => {
         platform: "slack",
         platformUserId: "U123",
         conversationId: "C123",
-        vaultId: "U123",
+        vaultId: "u123-774767d55773",
         providerId: "",
       },
     ]);
@@ -454,9 +454,9 @@ describe("LoginCommandHandler", () => {
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(vaultManager.copySharedVaultTo).toHaveBeenCalledWith("gliaclaw", "c123");
+    expect(vaultManager.copySharedVaultTo).toHaveBeenCalledWith("gliaclaw", "c123-588a5f4edc2e");
     expect(ctx.services.runtime?.refreshConversationEnvironment).toHaveBeenCalledWith("C123");
-    expect(remove).toHaveBeenCalledWith("c123");
+    expect(remove).toHaveBeenCalledWith("c123-588a5f4edc2e");
     expect(ctx.responder.responses[0]).toContain("Copied shared login profile `gliaclaw`");
     expect(ctx.responder.responses[0]).toContain("will be recreated with the copied env");
   });
@@ -529,7 +529,7 @@ describe("LoginCommandHandler", () => {
         platform: "slack",
         platformUserId: "U123",
         conversationId: "D123",
-        vaultId: "c123",
+        vaultId: "c123-588a5f4edc2e",
         providerId: "",
       },
     ]);
@@ -724,7 +724,7 @@ describe("SandboxCommandHandler", () => {
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(boost).toHaveBeenCalledWith("c123");
+    expect(boost).toHaveBeenCalledWith("c123-588a5f4edc2e");
     expect(ctx.responder.responses[0]).toContain("CPU 2 / Memory 4g");
   });
 });

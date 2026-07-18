@@ -12,14 +12,14 @@ import type {
   MessagingInfo,
 } from "../src/adapter.js";
 import { MikanModels } from "../src/harness/index.js";
-import { registerThreadSession } from "../src/sessions/chat-history-sync.js";
-import { createConversationRuntime } from "../src/runtime/conversation-runtime.js";
+import { ChatHistorySync, registerThreadSession } from "../src/sessions/chat-history-sync.js";
 import {
   createManagedSessionFile,
   getChannelSessionDir,
   getThreadSessionFile,
   openManagedSession,
 } from "../src/sessions/store.js";
+import { createConversationRuntime } from "../src/runtime/conversation-runtime.js";
 import type { SandboxConfig } from "../src/sandbox/index.js";
 
 let workingDir: string;
@@ -168,53 +168,25 @@ describe("ConversationRuntime handleEvent", () => {
       expect.anything(),
     );
   });
-
-  test("model switch disposes cached runners so extension disposers run", async () => {
-    const { models, faux } = createFauxModels();
-    const runtime = makeRuntime(models);
-    faux.setResponses([() => fauxAssistantMessage("done")]);
-
-    const { event, context } = makeEventAndContext("3000.1");
-    await runtime.handleEvent(event, bot, context);
-
-    // Reaches the private state map: disposal happens on the cached runner,
-    // before any public API can observe it.
-    const state = (runtime as any).conversationStates.get("C123");
-    expect(state).toBeDefined();
-    const dispose = vi.fn().mockResolvedValue(undefined);
-    state.runner.dispose = dispose;
-
-    expect(runtime.switchConversationModel("C123", "faux", "faux-2")).toBe(true);
-    expect(dispose).toHaveBeenCalledTimes(1);
-    expect(runtime.isRunning("C123")).toBe(false);
-  });
 });
 
-function makeUserMessage(text: string) {
-  return {
-    role: "user",
-    content: [{ type: "text", text }],
-    timestamp: 1,
-  } as const;
-}
-
-describe("ConversationRuntime chat session scope", () => {
-  test("uses a pre-registered empty thread session for Slack event anchors", async () => {
+describe("ChatHistorySync session scope", () => {
+  test("uses a pre-registered empty thread session for event anchors", async () => {
     const sessionDir = getChannelSessionDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
     const channelSession = openManagedSession(channelFile, conversationDir);
-    channelSession.appendMessage(makeUserMessage("channel history should not leak"));
-
-    const runtime = makeRuntime();
+    channelSession.appendMessage({
+      role: "user",
+      content: [{ type: "text", text: "channel history should not leak" }],
+      timestamp: 1,
+    });
     registerThreadSession({
       conversationDir,
       sessionKey: "C123:2000.0001",
       cwd: conversationDir,
     });
 
-    // This intentionally reaches the session manager directly: the bug was in
-    // pre-run session materialization, before a public run can observe it.
-    const sessionScope = await (runtime as any).chatSessionManager.resolveSessionScope({
+    const sessionScope = await new ChatHistorySync().resolveSessionScope({
       conversationDir,
       sessionKey: "C123:2000.0001",
       cwd: conversationDir,

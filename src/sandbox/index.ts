@@ -43,6 +43,14 @@ export function getSandboxAdapters(): readonly [...typeof sandboxAdapters] {
   return sandboxAdapters;
 }
 
+export function getSandboxCredentialCapabilities(
+  type: SandboxConfig["type"],
+): SandboxAdapter["credentials"] {
+  const adapter = sandboxAdapterByType.get(type);
+  if (!adapter) throw new SandboxError(`Error: Unsupported sandbox type '${type}'`);
+  return adapter.credentials;
+}
+
 export function parseSandboxArg(value: string): SandboxConfig {
   for (const adapter of sandboxAdapters) {
     const config = adapter.parse(value);

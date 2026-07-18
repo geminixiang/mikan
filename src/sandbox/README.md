@@ -19,7 +19,7 @@ This directory defines sandbox abstractions, concrete sandbox executors, and sha
 - `gondolin-worker.ts`: Worker-side runtime: boots one Gondolin VM, records it in the inventory, announces readiness, and shuts down when the VM runner dies, on SIGTERM, or when the mikan heartbeat goes stale.
 - `gondolin.ts`: Implements the Gondolin microVM executor: per-conversation worker-hosted runtimes, desired-runtime fingerprinting and drift recreation, resource limits, idle/sweep lifecycle, and crash recovery.
 - `host.ts`: Implements the host executor by running commands directly through the local shell.
-- `identity.ts`: Runtime actor identity — `actorKey()` and the single sanitizer naming a conversation's vault dir, docker container/network, and cloudflare sandbox suffix. Consumers take keys; nothing re-derives them.
+- `identity.ts`: Separately derives collision-safe credential authorization keys and runtime resource keys.
 - `image.ts`: Parses and validates `image:<image>` sandbox configs, which must later resolve to a concrete container executor.
 - `index.ts`: Registers sandbox adapters and exposes parse, validate, and executor factory helpers.
 - `path-context.ts`: Builds mounted runtime path contexts and translates runtime paths back to host paths.

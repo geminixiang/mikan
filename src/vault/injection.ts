@@ -1,27 +1,20 @@
 import { existsSync } from "fs";
 import { reportUserFacingError } from "../observability/sentry.js";
-import type { SandboxConfig } from "../sandbox/types.js";
-import type { ResolvedVault, ResolvedVaultMount } from "./types.js";
+import type { SandboxConfig, SandboxCredentialCapabilities } from "../sandbox/types.js";
+import type { ResolvedVault, ResolvedVaultMount, VaultInjection } from "./types.js";
 
-/**
- * What an actor's vault contributes to one sandbox execution. This is the
- * vault side of credential injection — the execution resolver composes it
- * with its own workspace layout and per-actor config shaping, without
- * knowing what a vault mount means or when vault env may flow.
- */
-export interface VaultInjection {
-  /** Per-exec env; absent for host sandboxes (no isolation) and empty vaults. */
-  env?: Record<string, string>;
-  /** Credential mounts whose sources exist; missing sources are reported and skipped. */
-  mounts: ResolvedVaultMount[];
-}
+export type { VaultInjection } from "./types.js";
 
 export function resolveVaultInjection(options: {
   vault: ResolvedVault | undefined;
+  capabilities: SandboxCredentialCapabilities;
   sandboxType: SandboxConfig["type"];
   conversationId: string;
 }): VaultInjection {
-  const { vault, sandboxType, conversationId } = options;
+  const { vault, capabilities, sandboxType, conversationId } = options;
+  if (vault && vault.mounts.length > 0 && !capabilities.fileMounts) {
+    throw new Error(`Sandbox type "${sandboxType}" does not support vault file mounts`);
+  }
 
   const mounts: ResolvedVaultMount[] = [];
   for (const mount of vault?.mounts ?? []) {
@@ -44,6 +37,6 @@ export function resolveVaultInjection(options: {
   }
 
   const env =
-    sandboxType !== "host" && vault && Object.keys(vault.env).length > 0 ? vault.env : undefined;
+    capabilities.env && vault && Object.keys(vault.env).length > 0 ? vault.env : undefined;
   return { ...(env ? { env } : {}), mounts };
 }
