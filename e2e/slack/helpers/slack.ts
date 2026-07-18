@@ -57,6 +57,38 @@ export async function uploadTextFile(
   if (!res.ok) throw new Error(`files.uploadV2 failed: ${res.error ?? "unknown"}`);
 }
 
+export interface FileUploadSpec {
+  filename: string;
+  content: string | Buffer;
+}
+
+export async function uploadFiles(
+  client: WebClient,
+  channel: string,
+  files: FileUploadSpec[],
+  initialComment: string,
+): Promise<void> {
+  const res = await client.files.uploadV2({
+    channel_id: channel,
+    initial_comment: initialComment,
+    file_uploads: files.map((spec) => ({
+      file: Buffer.isBuffer(spec.content) ? spec.content : Buffer.from(spec.content),
+      filename: spec.filename,
+      title: spec.filename,
+    })),
+  });
+  if (!res.ok) throw new Error(`files.uploadV2 failed: ${res.error ?? "unknown"}`);
+}
+
+export async function openDmChannel(client: WebClient, userId: string): Promise<string> {
+  const res = await client.conversations.open({ users: userId });
+  const channelId = res.channel?.id;
+  if (!res.ok || !channelId) {
+    throw new Error(`conversations.open failed: ${res.error ?? "missing channel id"}`);
+  }
+  return channelId;
+}
+
 export async function fetchThreadMessages(
   client: WebClient,
   channel: string,
@@ -187,6 +219,8 @@ export interface WaitForRecentBotReplyOptions {
   startedAt: number;
   timeoutMs: number;
   pollMs: number;
+  /** Slack ts lower bound: only messages with ts strictly greater match (no local-clock skew). */
+  afterTs?: string;
   textIncludes?: string;
   textMatches?: RegExp;
 }
@@ -194,8 +228,17 @@ export interface WaitForRecentBotReplyOptions {
 export async function waitForRecentBotReply(
   opts: WaitForRecentBotReplyOptions,
 ): Promise<SlackMessage | null> {
-  const { client, channel, botUserId, startedAt, timeoutMs, pollMs, textIncludes, textMatches } =
-    opts;
+  const {
+    client,
+    channel,
+    botUserId,
+    startedAt,
+    timeoutMs,
+    pollMs,
+    afterTs,
+    textIncludes,
+    textMatches,
+  } = opts;
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const recentMessages = await fetchRecentMessages(client, channel, startedAt).catch(
@@ -203,6 +246,7 @@ export async function waitForRecentBotReply(
     );
     const reply = recentMessages
       .filter((message) => isTargetBotMessage(message, botUserId))
+      .filter((message) => !afterTs || Number(message.ts) > Number(afterTs))
       .find((message) => {
         const text = messageText(message);
         if (textIncludes && !text.includes(textIncludes)) return false;

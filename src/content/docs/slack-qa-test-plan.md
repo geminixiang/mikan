@@ -65,7 +65,14 @@ Each scenario has its own `*.e2e.ts` file. When required env vars (`SLACK_QA_USE
 - mikan thread reply routing
 - mikan short task completion
 - mikan stop command acknowledgement
+- idle stop ("Nothing running") acknowledgement
 - mikan small text-file upload handling
+- multi-file upload handling
+- image upload handling
+- DM reply without mention
+- DM multi-turn context retention
+- thread session isolation
+- busy-queue follow-up delivery
 - bot-to-bot loop observation
 - one-shot event delivery
 - no-mention false-reply check

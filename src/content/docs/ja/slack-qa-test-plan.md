@@ -65,7 +65,14 @@ npm run test:e2e:slack
 - mikan thread reply routing。
 - mikan short task completion。
 - mikan stop command acknowledgement。
+- Idle stop（"Nothing running"）acknowledgement。
 - mikan small text-file upload handling。
+- 複数ファイルアップロード処理。
+- 画像アップロード処理。
+- mention 不要の DM 応答。
+- DM のマルチターン文脈保持。
+- Thread session の分離。
+- Busy-queue のキュー済みメッセージ配信。
 - bot-to-bot loop observation。
 - one-shot event delivery。
 - No-mention false-reply check。
