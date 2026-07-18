@@ -9,15 +9,39 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.21]
+
 ### Added
 
 - Fold each subagent's tokens and cost into the parent run's tally (`MikanAgentSession.recordExternalUsage`), so delegated spend counts against the parent run's budget instead of staying invisible to it.
+- Add a process-wide subagent fan-out ceiling shared across conversations.
+- Add `mikan --help` and a generated `mikan env` inventory from the daemon environment manifest.
+- Make the working-directory argument optional, defaulting to `<state-dir>/workspace`.
+- Add a public Gondolin runtime bootstrap seam for embedders.
 
 ### Changed
 
 - Subagent runs never reject: request validation failures (unknown tools, invalid budgets, empty tasks, nested runs) now resolve to `failed` results, so one bad request in a `tasks`/`dag` batch can no longer orphan in-flight sibling subagents.
 - Cap parallel `tasks[]` batches at 4 concurrent subagents (the same limit as DAG mode) and run DAG waves through a slot pool instead of chunk barriers.
 - Report a subagent final response with no text as `failed` instead of `completed` with empty output.
+- Enforce parent budgets immediately when subagent usage is folded into the parent run.
+- Apply one state-directory precedence rule across boot, extensions, Sentry, and runtime readers.
+- Refuse model and sandbox settings updates while a conversation is busy, and invalidate affected cached runners consistently.
+- Drive PM2 environment configuration from `~/.mikan/mikan.env` instead of inline secrets.
+
+### Fixed
+
+- Harden Gondolin dial-home reconnects after transport failures and stale sessions.
+- Reject invalid one-shot event timestamps consistently across all event writers.
+- Apply global model settings to idle conversations and report busy conversations as stale.
+
+### Security
+
+- Keep PM2 secrets in an owner-only file outside repository trees and make the PM2 template supervision-only.
+
+### Tests
+
+- Add coverage for subagent accounting and concurrency, CLI and environment manifests, settings mutation, Gondolin reconnects and contracts, event formatting, and worker state layout.
 
 ## [1.0.0-beta.20]
 
