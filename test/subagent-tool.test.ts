@@ -27,6 +27,78 @@ function completedRun(output: unknown): RunSubagent {
 }
 
 describe("subagent tool", () => {
+  test("supports abortable FIFO slot handoff and idempotent release", async () => {
+    const pool = new SubagentSlotPool(1);
+    const first = await pool.acquire();
+    const aborted = new AbortController();
+    aborted.abort();
+    await expect(pool.acquire(aborted.signal)).rejects.toMatchObject({ name: "AbortError" });
+
+    const queuedAbort = new AbortController();
+    const cancelled = pool.acquire(queuedAbort.signal);
+    const order: string[] = [];
+    const second = pool.acquire().then((release) => {
+      order.push("second");
+      return release;
+    });
+    const third = pool.acquire().then((release) => {
+      order.push("third");
+      return release;
+    });
+    queuedAbort.abort();
+    await expect(cancelled).rejects.toMatchObject({ name: "AbortError" });
+
+    first();
+    first();
+    const secondRelease = await second;
+    expect(order).toEqual(["second"]);
+    expect(pool.inFlight).toBe(1);
+    secondRelease();
+    const thirdRelease = await third;
+    expect(order).toEqual(["second", "third"]);
+    thirdRelease();
+    thirdRelease();
+    expect(pool.inFlight).toBe(0);
+  });
+
+  test("cancels while queued without launching a subagent", async () => {
+    const pool = new SubagentSlotPool(1);
+    const release = await pool.acquire();
+    const controller = new AbortController();
+    const runSubagent = vi.fn(completedRun("should not run"));
+    const tool = createSubagentTool(runSubagent);
+    const bounded = (request: SubagentRunRequest) =>
+      (async () => {
+        let slot: (() => void) | undefined;
+        try {
+          slot = await pool.acquire(request.signal);
+        } catch {
+          return {
+            runId: "cancelled",
+            status: "cancelled",
+            model: { provider: "test", id: "model" },
+            turns: 0,
+            tokens: 0,
+            costUsd: 0,
+            durationMs: 0,
+          } as const;
+        }
+        try {
+          return await runSubagent(request);
+        } finally {
+          slot();
+        }
+      })() as ReturnType<RunSubagent>;
+    const boundedTool = createSubagentTool(bounded as RunSubagent);
+    const pending = boundedTool.execute("queued", { task: "queued" }, controller.signal);
+    controller.abort();
+    const result = await pending;
+    release();
+    expect(result.details).toMatchObject({ status: "cancelled" });
+    expect(runSubagent).not.toHaveBeenCalled();
+    expect(tool.name).toBe("subagent");
+  });
+
   test("a shared slot pool bounds fan-out across tool instances", async () => {
     let active = 0;
     let maxActive = 0;
@@ -51,8 +123,16 @@ describe("subagent tool", () => {
     // Two conversations' tool instances draw from ONE process-wide account:
     // each could run 2 concurrently on its own, but the shared ceiling is 2.
     const shared = new SubagentSlotPool(2);
-    const toolA = createSubagentTool(runSubagent, shared);
-    const toolB = createSubagentTool(runSubagent, shared);
+    const bounded = (async (request: SubagentRunRequest) => {
+      const release = await shared.acquire(request.signal);
+      try {
+        return await runSubagent(request);
+      } finally {
+        release();
+      }
+    }) as RunSubagent;
+    const toolA = createSubagentTool(bounded);
+    const toolB = createSubagentTool(bounded);
     const params = { tasks: [{ task: "one" }, { task: "two" }] };
 
     await Promise.all([toolA.execute("a", params), toolB.execute("b", params)]);

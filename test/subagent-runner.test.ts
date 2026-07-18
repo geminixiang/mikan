@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import {
   fauxAssistantMessage,
   fauxProvider,
@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { runSubagent } from "../src/harness/subagent-runner.js";
 import { MikanAgentSession, MikanModels, SessionStore } from "../src/harness/index.js";
 import { createSubagentTool } from "../src/tools/subagent.js";
+import { SubagentSlotPool } from "../src/tools/subagent-slots.js";
 
 let dir: string;
 
@@ -84,6 +85,147 @@ describe("runSubagent", () => {
     const persisted = JSON.stringify(sessionStore.getEntries());
     expect(persisted).toContain("delegated result");
     expect(persisted).toContain("parent complete");
+  });
+
+  test("returns cancelled while queued without making a model call", async () => {
+    const { models, faux, model } = createFauxSetup();
+    const slots = new SubagentSlotPool(1);
+    const release = await slots.acquire();
+    const controller = new AbortController();
+    const pending = runSubagent({
+      request: { task: "Never launch", signal: controller.signal },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [],
+      slots,
+    });
+    controller.abort();
+    const result = await pending;
+    release();
+    expect(result.status).toBe("cancelled");
+    expect(faux.state.callCount).toBe(0);
+    expect(slots.inFlight).toBe(0);
+  });
+
+  test("defaults to fresh context and validates normalized recentTurns", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([fauxAssistantMessage("fresh")]);
+    const parentMessages: AgentMessage[] = [
+      { role: "user", content: [{ type: "text", text: "parent secret" }], timestamp: 1 },
+    ];
+    await runSubagent({
+      request: { task: "Fresh task" },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [],
+      parentMessages,
+    });
+    expect(faux.state.callCount).toBe(1);
+
+    const invalid = await runSubagent({
+      request: { task: "Invalid", parentContext: { mode: "normalized", recentTurns: 9 } },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [],
+      parentMessages,
+    });
+    expect(invalid).toMatchObject({ status: "failed", error: expect.stringContaining("1 to 8") });
+    expect(faux.state.callCount).toBe(1);
+  });
+
+  test("normalizes textual parent turns, reuses summary, and excludes noise", async () => {
+    const { models, faux, model } = createFauxSetup();
+    let prompt = "";
+    faux.setResponses([
+      (context) => {
+        prompt = JSON.stringify(context.messages);
+        return fauxAssistantMessage("normalized");
+      },
+    ]);
+    const parentMessages = [
+      { role: "compactionSummary", summary: "existing summary", timestamp: 1 },
+      { role: "user", content: [{ type: "text", text: "old turn" }], timestamp: 2 },
+      { role: "assistant", content: [{ type: "text", text: "old answer" }], timestamp: 3 },
+      { role: "user", content: [{ type: "text", text: "recent turn" }], timestamp: 4 },
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "private reasoning" },
+          { type: "text", text: "recent answer" },
+          { type: "toolCall", id: "x", name: "echo", arguments: { secret: true } },
+        ],
+        api: "faux",
+        provider: "faux",
+        model: model.id,
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "stop",
+        timestamp: 5,
+      },
+    ] as AgentMessage[];
+    const result = await runSubagent({
+      request: { task: "Use context", parentContext: { mode: "normalized", recentTurns: 1 } },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [],
+      parentMessages,
+    });
+    expect(result.status).toBe("completed");
+    expect(prompt).toContain("existing summary");
+    expect(prompt).toContain("recent turn");
+    expect(prompt).toContain("recent answer");
+    expect(prompt).not.toContain("old turn");
+    expect(prompt).not.toContain("private reasoning");
+    expect(prompt).not.toContain("secret");
+    expect(faux.state.callCount).toBe(1);
+  });
+
+  test("uses omitted marker without a summary and falls back to fresh without a parent", async () => {
+    const { models, faux, model } = createFauxSetup();
+    const prompts: string[] = [];
+    faux.setResponses([
+      (context) => {
+        prompts.push(JSON.stringify(context.messages));
+        return fauxAssistantMessage("one");
+      },
+      (context) => {
+        prompts.push(JSON.stringify(context.messages));
+        return fauxAssistantMessage("two");
+      },
+    ]);
+    const common = {
+      defaultModel: model,
+      thinkingLevel: "off" as const,
+      models,
+      workspaceDir: dir,
+      availableTools: [],
+    };
+    await runSubagent({
+      ...common,
+      request: { task: "With parent", parentContext: { mode: "normalized" } },
+      parentMessages: [{ role: "user", content: [{ type: "text", text: "parent" }], timestamp: 1 }],
+    });
+    await runSubagent({
+      ...common,
+      request: { task: "No parent", parentContext: { mode: "normalized" } },
+    });
+    expect(prompts[0]).toContain("Earlier parent context omitted");
+    expect(prompts[1]).not.toContain("parent_reference_context");
+    expect(faux.state.callCount).toBe(2);
   });
 
   test("runs with fresh context and returns final text plus usage", async () => {

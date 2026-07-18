@@ -59,9 +59,22 @@ export type SubagentRunStatus =
   | "budget_exceeded"
   | "invalid_output";
 
+export interface SubagentParentContext {
+  mode: "normalized";
+  /** Number of recent user/assistant turns to include. Defaults to 3. */
+  recentTurns?: number;
+}
+
+export interface SubagentUsage {
+  tokens: number;
+  costUsd: number;
+}
+
 /** A fresh, isolated subagent run. */
 export interface SubagentRunRequest<TOutputSchema extends TSchema | undefined = undefined> {
   task: string;
+  /** Opt in to a normalized textual snapshot of the active parent run. Defaults to fresh. */
+  parentContext?: SubagentParentContext;
   systemPrompt?: string;
   /** JSON-serializable input appended to the task. */
   input?: unknown;

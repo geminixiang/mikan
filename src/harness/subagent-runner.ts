@@ -13,7 +13,9 @@ import type {
   SubagentRunOutput,
   SubagentRunRequest,
   SubagentRunResult,
+  SubagentUsage,
 } from "./types.js";
+import { unboundedSlotPool, type SubagentSlotPool } from "../tools/subagent-slots.js";
 
 const subagentRunDepth = new AsyncLocalStorage<number>();
 const DEFAULT_SYSTEM_PROMPT =
@@ -132,14 +134,12 @@ interface RunSubagentOptions<TOutputSchema extends TSchema | undefined = undefin
   models: MikanModels;
   workspaceDir: string;
   availableTools: AgentTool[];
-  /**
-   * The one seam through which a run's spend reaches its initiator (e.g. the
-   * parent session's budget). Called exactly once per run with the final
-   * totals — on every terminal path, including never-reject failures —
-   * before the result is returned. Errors thrown here are logged and
-   * swallowed to preserve the never-reject contract.
-   */
-  onUsage?: (usage: { tokens: number; costUsd: number }) => void | Promise<void>;
+  /** Process-wide launch pool shared by tool and extension invocations. */
+  slots?: SubagentSlotPool;
+  /** Host-snapshotted parent transcript; never sourced from the public request. */
+  parentMessages?: AgentMessage[];
+  /** Usage attribution snapshotted when this invocation begins. */
+  onUsage?: (usage: SubagentUsage) => void | Promise<void>;
 }
 
 function resolveBudget(budget: RunSubagentOptions["request"]["budget"]) {
@@ -175,23 +175,79 @@ function selectTools(requested: string[] | undefined, available: AgentTool[]): A
   return selected;
 }
 
-function formatTask(task: string, input: unknown): string {
+function formatTask(task: string, input: unknown, parentContext?: string): string {
   const trimmed = task.trim();
   if (!trimmed) throw new Error("api.subagent.run requires a non-empty task");
-  if (input === undefined) return trimmed;
-  let serialized: string | undefined;
-  try {
-    serialized = JSON.stringify(input, null, 2);
-  } catch (err) {
-    throw new Error(
-      `api.subagent.run input must be JSON-serializable: ${err instanceof Error ? err.message : String(err)}`,
-      { cause: err },
-    );
+  let formatted = trimmed;
+  if (input !== undefined) {
+    let serialized: string | undefined;
+    try {
+      serialized = JSON.stringify(input, null, 2);
+    } catch (err) {
+      throw new Error(
+        `api.subagent.run input must be JSON-serializable: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err },
+      );
+    }
+    if (serialized === undefined)
+      throw new Error("api.subagent.run input must be JSON-serializable");
+    formatted = `${trimmed}\n\nInput:\n${serialized}`;
   }
-  if (serialized === undefined) {
-    throw new Error("api.subagent.run input must be JSON-serializable");
+  return parentContext ? `${parentContext}\n\n${formatted}` : formatted;
+}
+
+function messageText(message: AgentMessage): string {
+  if (message.role === "compactionSummary" || message.role === "branchSummary") {
+    return message.summary;
   }
-  return `${trimmed}\n\nInput:\n${serialized}`;
+  if (!("content" in message)) return "";
+  if (typeof message.content === "string") return message.content;
+  if (!Array.isArray(message.content)) return "";
+  return message.content
+    .filter(
+      (part): part is { type: "text"; text: string } =>
+        typeof part === "object" && part !== null && part.type === "text",
+    )
+    .map((part) => part.text)
+    .join("");
+}
+
+function normalizedParentContext(
+  request: SubagentRunRequest<TSchema | undefined>,
+  messages: AgentMessage[] | undefined,
+): string | undefined {
+  if (!request.parentContext || !messages) return undefined;
+  const recentTurns = request.parentContext.recentTurns ?? 3;
+  if (!Number.isInteger(recentTurns) || recentTurns < 1 || recentTurns > 8) {
+    throw new Error("api.subagent.run parentContext.recentTurns must be an integer from 1 to 8");
+  }
+  const conversation = messages.filter(
+    (message) => (message.role === "user" || message.role === "assistant") && messageText(message),
+  );
+  let first = conversation.length;
+  let users = 0;
+  while (first > 0 && users < recentTurns) {
+    first -= 1;
+    if (conversation[first].role === "user") users += 1;
+  }
+  const recent = conversation.slice(first);
+  const recentStart = recent[0] ? messages.indexOf(recent[0]) : messages.length;
+  let summary: AgentMessage | undefined;
+  for (let index = recentStart - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (message.role === "compactionSummary" || message.role === "branchSummary") {
+      summary = message;
+      break;
+    }
+  }
+  return [
+    "<parent_reference_context>",
+    summary ? `Earlier summary: ${messageText(summary)}` : "[Earlier parent context omitted]",
+    ...recent.map(
+      (message) => `${message.role === "user" ? "User" : "Assistant"}: ${messageText(message)}`,
+    ),
+    "</parent_reference_context>",
+  ].join("\n");
 }
 
 function buildSystemPrompt(base: string | undefined, outputSchema: TSchema | undefined): string {
@@ -231,13 +287,44 @@ function assistantText(message: AssistantMessage | undefined): string {
 export async function runSubagent<TOutputSchema extends TSchema | undefined = undefined>(
   options: RunSubagentOptions<TOutputSchema>,
 ): Promise<SubagentRunResult<SubagentRunOutput<TOutputSchema>>> {
-  const result = await executeSubagentRun(options);
+  const result = await executeBoundedSubagentRun(options);
   try {
     await options.onUsage?.({ tokens: result.tokens, costUsd: result.costUsd });
   } catch (err) {
     log.logWarning("Subagent onUsage listener failed", String(err));
   }
   return result;
+}
+
+async function executeBoundedSubagentRun<TOutputSchema extends TSchema | undefined = undefined>(
+  options: RunSubagentOptions<TOutputSchema>,
+): Promise<SubagentRunResult<SubagentRunOutput<TOutputSchema>>> {
+  const startedAt = Date.now();
+  let release: (() => void) | undefined;
+  try {
+    release = await (options.slots ?? unboundedSlotPool()).acquire(options.request.signal);
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      return {
+        runId: randomUUID(),
+        status: "cancelled",
+        model: options.request.model ?? {
+          provider: options.defaultModel.provider,
+          id: options.defaultModel.id,
+        },
+        turns: 0,
+        tokens: 0,
+        costUsd: 0,
+        durationMs: Date.now() - startedAt,
+      };
+    }
+    throw err;
+  }
+  try {
+    return await executeSubagentRun(options);
+  } finally {
+    release();
+  }
 }
 
 async function executeSubagentRun<TOutputSchema extends TSchema | undefined = undefined>(
@@ -269,7 +356,11 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
       : options.defaultModel;
     modelSpec = { provider: model.provider, id: model.id };
     const tools = selectTools(request.tools, options.availableTools);
-    const task = formatTask(request.task, request.input);
+    const task = formatTask(
+      request.task,
+      request.input,
+      normalizedParentContext(request, options.parentMessages),
+    );
     const budget = resolveBudget(request.budget);
     const session = new MikanAgentSession({
       systemPrompt: buildSystemPrompt(request.systemPrompt, request.outputSchema),

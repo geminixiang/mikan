@@ -390,6 +390,7 @@ describe("MikanAgentSession", () => {
       description: "Simulate a subagent run folding its spend into the parent",
       parameters: { type: "object", properties: {} },
       execute: async () => {
+        expect(session.isActiveRun).toBe(true);
         await session.foldExternalUsage({ tokens: 5000, costUsd: 1.25 });
         return { content: [{ type: "text", text: "delegated" }] };
       },
@@ -410,6 +411,7 @@ describe("MikanAgentSession", () => {
 
     await session.prompt("delegate work", { budget: { maxCostUsd: 1 } });
 
+    expect(session.isActiveRun).toBe(false);
     const stats = session.getLastRunStats();
     expect(stats.tokens).toBeGreaterThanOrEqual(5000);
     expect(stats.costUsd).toBeGreaterThanOrEqual(1.25);
