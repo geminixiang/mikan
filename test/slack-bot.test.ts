@@ -1522,6 +1522,70 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     expect(handler.handleEvent).not.toHaveBeenCalled();
   });
 
+  test("DM message without channel_type still routes as a direct message", async () => {
+    const handler = makeHandler();
+
+    const bot = new SlackMessagingBot(handler, {
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      workingDir,
+      store: {} as any,
+    });
+
+    let messageHandler:
+      | ((payload: {
+          event: {
+            text?: string;
+            channel: string;
+            user?: string;
+            ts: string;
+            channel_type?: string;
+          };
+          ack: () => void;
+        }) => void)
+      | undefined;
+
+    (bot as any).startupTs = "0";
+    (bot as any).botUserId = "B123";
+    (bot as any).logUserMessage = vi.fn().mockReturnValue([]);
+    (bot as any).postMessage = vi.fn().mockResolvedValue("3000.0001");
+    (bot as any).socketClient = {
+      on: vi.fn((event: string, fn: unknown) => {
+        if (event === "message") messageHandler = fn as typeof messageHandler;
+      }),
+    };
+
+    (bot as any).setupEventHandlers();
+
+    const queue = (bot as any).getQueue("D999");
+    queue.processing = true;
+    const ack = vi.fn();
+
+    messageHandler?.({
+      event: {
+        text: "dm without channel_type",
+        channel: "D999",
+        user: "U123",
+        ts: "2001.0001",
+      },
+      ack,
+    });
+
+    expect(ack).toHaveBeenCalled();
+    expect(queue.size()).toBe(1);
+
+    queue.processing = false;
+    await queue.processNext();
+
+    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
+      conversationId: "D999",
+      conversationKind: "direct",
+      sessionKey: "D999",
+      text: "dm without channel_type",
+    });
+  });
+
   test("DM thread follow-up messages are queued on the thread session key once the thread session exists", async () => {
     const handler = makeHandler();
     vi.mocked(handler.isRunning).mockImplementation(

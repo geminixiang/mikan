@@ -1127,7 +1127,11 @@ export class SlackMessagingBot implements MessagingBot {
       return;
     }
 
-    const isDM = e.channel_type === "im";
+    // message.im normally carries channel_type "im", but fall back to the
+    // D-prefix convention (used by handleAppMention and session keys) so a
+    // missing channel_type cannot silently demote a DM to an auto-reply
+    // candidate that never triggers.
+    const isDM = e.channel_type === "im" || e.channel.startsWith("D");
     const conversationKind: ConversationKind = isDM ? "direct" : "shared";
     const isMessagingBotMention = e.text?.includes(`<@${this.botUserId}>`);
 
