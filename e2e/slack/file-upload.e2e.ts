@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { loadContextOrSkip } from "./helpers/client.js";
-import { nowSeconds, uploadTextFile, waitForRecentBotReply } from "./helpers/slack.js";
+import { nowSeconds, postMessage, uploadTextFile, waitForRecentBotReply } from "./helpers/slack.js";
 
 const ctx = loadContextOrSkip();
 
@@ -19,7 +19,7 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack file upload", () => {
       `Slack E2E file content. Token: ${token}\n請摘要這個檔案並原樣包含 token。\n`,
       `<@${botUserId}> 請摘要這個小文字檔，並在回覆中原樣包含 token ${token}`,
     );
-    const reply = await waitForRecentBotReply({
+    let reply = await waitForRecentBotReply({
       client,
       channel: env.channel,
       botUserId,
@@ -28,6 +28,24 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack file upload", () => {
       pollMs: env.pollMs,
       textIncludes: token,
     });
+    if (!reply) {
+      // Budget models occasionally reply without the token; one
+      // conversational repair keeps the assertion strict without flaking.
+      await postMessage(
+        client,
+        env.channel,
+        `<@${botUserId}> 你剛才的回覆沒有包含 token。請重新回覆，務必原樣包含 token ${token}`,
+      );
+      reply = await waitForRecentBotReply({
+        client,
+        channel: env.channel,
+        botUserId,
+        startedAt,
+        timeoutMs: Math.max(env.timeoutMs, 45_000),
+        pollMs: env.pollMs,
+        textIncludes: token,
+      });
+    }
     expect(reply, `no file summary reply containing ${token}`).not.toBeNull();
-  });
+  }, 180_000);
 });

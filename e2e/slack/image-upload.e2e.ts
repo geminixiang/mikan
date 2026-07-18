@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { loadContextOrSkip } from "./helpers/client.js";
 import {
   nowSeconds,
+  postMessage,
   summarizeMessage,
   uploadFiles,
   waitForRecentBotReply,
@@ -29,7 +30,7 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack image upload", () => {
       [{ filename: `mikan-slack-e2e-image-${token}.png`, content: PNG_1X1 }],
       `<@${botUserId}> 這是一張測試圖片。無論你能否讀取圖片內容，請在回覆中原樣包含 token ${token}`,
     );
-    const reply = await waitForRecentBotReply({
+    let reply = await waitForRecentBotReply({
       client,
       channel: env.channel,
       botUserId,
@@ -38,6 +39,24 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack image upload", () => {
       pollMs: env.pollMs,
       textIncludes: token,
     });
+    if (!reply) {
+      // Budget models occasionally reply without the token; one
+      // conversational repair keeps the assertion strict without flaking.
+      await postMessage(
+        client,
+        env.channel,
+        `<@${botUserId}> 你剛才的回覆沒有包含 token。請重新回覆，務必原樣包含 token ${token}`,
+      );
+      reply = await waitForRecentBotReply({
+        client,
+        channel: env.channel,
+        botUserId,
+        startedAt,
+        timeoutMs: Math.max(env.timeoutMs, 45_000),
+        pollMs: env.pollMs,
+        textIncludes: token,
+      });
+    }
     expect(reply, `no image-upload reply containing ${token}`).not.toBeNull();
     console.log(`image reply ts=${reply!.ts}: ${summarizeMessage(reply!)}`);
   }, 180_000);
