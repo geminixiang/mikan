@@ -5,13 +5,121 @@ template: splash
 ---
 
 import Hero from "@geminixiang/mikan-starlight-theme/components/Hero.astro";
+import PlatformStrip from "@geminixiang/mikan-starlight-theme/components/PlatformStrip.astro";
+import Features from "@geminixiang/mikan-starlight-theme/components/Features.astro";
+import ArchBand from "@geminixiang/mikan-starlight-theme/components/ArchBand.astro";
+import CodeDemo from "@geminixiang/mikan-starlight-theme/components/CodeDemo.astro";
+import CTA from "@geminixiang/mikan-starlight-theme/components/CTA.astro";
 
 <Hero
-  eyebrow="AI coding agent"
-  title="mikan"
-  tagline="A multi-platform AI coding agent for Slack, Telegram, Discord, and GitHub. It separates platform history, agent sessions, credentials, and sandbox execution."
+  eyebrow="AI coding agent · pre-1.0"
+  title="One agent, every chat."
+  tagline="mikan is an AI coding agent that lives in Slack, Telegram, Discord, and GitHub — and keeps the chat record, its own session, the sandbox it runs in, and your credentials each in their own place."
   actions={[
     { text: "Get started", href: "/quickstart/", variant: "primary" },
     { text: "View on GitHub", href: "https://github.com/geminixiang/mikan", variant: "secondary" },
+  ]}
+/>
+
+<PlatformStrip
+  label="Runs where your team already talks"
+  items={["Slack", "Telegram", "Discord", "GitHub"]}
+/>
+
+<Features
+  items={[
+    {
+      icon: "comment",
+      title: "Multi-platform",
+      body: "One agent across Slack, Telegram, Discord, and GitHub. Mention it in a channel or DM it directly.",
+    },
+    {
+      icon: "random",
+      title: "Concurrent sessions",
+      body: "Slack threads, Discord replies, and Telegram reply chains each run as an independent session.",
+    },
+    {
+      icon: "rocket",
+      title: "Sandbox execution",
+      body: "Run tool commands on the host, in a shared or per-user container, or a Firecracker microVM.",
+    },
+    {
+      icon: "lock",
+      title: "Credential vaults",
+      body: "Store keys with /login. mikan injects them as env and mounted files only at run time.",
+    },
+    {
+      icon: "document",
+      title: "Persistent memory",
+      body: "Workspace- and channel-level MEMORY.md the agent reads and writes as it works.",
+    },
+    {
+      icon: "puzzle",
+      title: "Skills & events",
+      body: "Drop CLI tools into skills/, and schedule one-shot or recurring work with JSON events.",
+    },
+  ]}
+/>
+
+<ArchBand
+  eyebrow="Separation of concerns"
+  title="Four layers on one path — kept apart on purpose."
+  tagline="Most agents fuse the transcript, the model loop, and the shell into a single process. mikan keeps them on one path but separate, so each can be inspected, swapped, or locked down on its own."
+  lanes={[
+    {
+      name: "Chat record",
+      verb: "feeds",
+      body: "The platform-facing history — log.jsonl, attachments, and conversation files.",
+    },
+    {
+      name: "Agent session",
+      verb: "drives",
+      body: "Structured turns with compaction and retry, persisted under sessions/.",
+    },
+    {
+      name: "Sandbox",
+      verb: "unlocks",
+      body: "Where tool commands actually run: host, container, image, or microVM.",
+    },
+    {
+      name: "Vault",
+      body: "Runtime credentials as env vars and mounted secret files — never at rest in the repo.",
+    },
+  ]}
+/>
+
+<CodeDemo
+  eyebrow="How it works"
+  title="Install it. Point it at a chat. Go."
+  steps={[
+    {
+      title: "Install",
+      body: "One npm install, supervised by PM2 so it restarts on failure and starts on boot.",
+    },
+    {
+      title: "Connect",
+      body: "Set a bot token per platform in mikan.env — run as many platforms at once as you like.",
+    },
+    {
+      title: "Talk to it",
+      body: "@mention it in a channel or send a DM. Each thread becomes its own agent session.",
+    },
+  ]}
+  terminalTitle="~/.mikan"
+  lines={[
+    "$ npm i -g @geminixiang/mikan pm2",
+    "$ mikan --onboard --state-dir=~/.mikan",
+    "# add SLACK_BOT_TOKEN + friends to ~/.mikan/mikan.env",
+    "$ pm2 start ecosystem.config.cjs",
+    "  mikan online — Slack, Telegram, Discord, GitHub",
+  ]}
+/>
+
+<CTA
+  title="Put an agent in your team's chat."
+  body="Free and MIT-licensed. Bring your own model provider and deploy in minutes."
+  actions={[
+    { text: "Get started", href: "/quickstart/", variant: "primary" },
+    { text: "Read the architecture", href: "/architecture/", variant: "secondary" },
   ]}
 />
