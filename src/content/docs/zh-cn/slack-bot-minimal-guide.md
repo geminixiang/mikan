@@ -90,11 +90,15 @@ Slash commands 是可选的，因为文本命令也能在支持的上下文中�
 
 ## 8. 运行 mikan
 
+mikan 需要先完成一次全局 settings 文件与 LLM provider key 的设置——`mikan --onboard` 加上 `export ANTHROPIC_API_KEY=...`；参阅[快速开始](/zh-cn/quickstart/)——然后：
+
 ```bash
 export SLACK_APP_TOKEN=xapp-...
 export SLACK_BOT_TOKEN=xoxb-...
 
-mikan --state-dir ~/.mikan /path/to/workspace
+mikan
 ```
+
+state directory 默认为 `~/.mikan`，working directory 默认为 `<state-dir>/workspace`；可用 `--state-dir=<dir>` 或路径参数更改。`mikan --help` 列出所有标志，`mikan env` 显示当前已设置的变量。
 
 Bot 会在 DM 中回复，也会在频道中被提及时回复。触发的 Slack 话题工作使用隔离会话，其 key 包含话题时间戳。共享频道话题中普通的未提及回复只会被记录，不会启动运行。

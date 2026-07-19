@@ -90,11 +90,15 @@ Slash commands are optional because text commands also work in supported context
 
 ## 8. Run mikan
 
+mikan needs its global settings file and an LLM provider key once — `mikan --onboard` and `export ANTHROPIC_API_KEY=...`; see [Quickstart](/quickstart/) — then:
+
 ```bash
 export SLACK_APP_TOKEN=xapp-...
 export SLACK_BOT_TOKEN=xoxb-...
 
-mikan --state-dir ~/.mikan /path/to/workspace
+mikan
 ```
+
+The state directory defaults to `~/.mikan` and the working directory to `<state-dir>/workspace`; pass `--state-dir=<dir>` or a path argument to change them. `mikan --help` lists all flags, and `mikan env` shows which variables are currently set.
 
 The bot responds in DMs and when mentioned in channels. Triggered Slack thread work uses an isolated session whose key includes the thread timestamp. An ordinary unmentioned reply in a shared-channel thread is logged but does not start a run.

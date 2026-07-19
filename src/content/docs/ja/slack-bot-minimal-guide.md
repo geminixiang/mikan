@@ -90,11 +90,15 @@ Slash commands は任意です。対応する状況ではテキスト指令も�
 
 ## 8. mikan を実行
 
+mikan は最初に一度、グローバル settings ファイルと LLM provider key のセットアップが必要です——`mikan --onboard` と `export ANTHROPIC_API_KEY=...`。[クイックスタート](/ja/quickstart/)を参照してください。その後：
+
 ```bash
 export SLACK_APP_TOKEN=xapp-...
 export SLACK_BOT_TOKEN=xoxb-...
 
-mikan --state-dir ~/.mikan /path/to/workspace
+mikan
 ```
+
+state directory は既定で `~/.mikan`、working directory は既定で `<state-dir>/workspace` になります。`--state-dir=<dir>` またはパス引数で変更できます。`mikan --help` はすべてのフラグを、`mikan env` は現在設定されている変数を表示します。
 
 Bot は DM で応答し、channel では mention されたときに応答します。起動された Slack thread の作業は、thread timestamp を key に含む隔離された session を使います。共有 channel の thread にある通常の mention なしの reply は記録されますが、実行を開始しません。

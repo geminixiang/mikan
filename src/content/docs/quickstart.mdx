@@ -51,6 +51,8 @@ This guide gets a working bot replying to you in about 15 minutes. It uses Teleg
 
    The working directory defaults to `~/.mikan/workspace` and is created automatically; pass a path (`mikan --sandbox=host ~/mikan-workspace`) to use a different one. The workspace is where the agent keeps per-conversation files: memory, attachments, session logs, and its working area.
 
+   If startup fails, run `mikan env`: it prints every variable mikan reads, grouped by platform and feature, with the current status of each. A missing platform token makes mikan exit with a message naming the variables to set; `mikan --help` lists all flags.
+
 6. Open a private chat with your bot on Telegram and send it a message. Private messages trigger the agent directly, so it should reply within a few seconds.
 
 </Steps>

@@ -51,6 +51,8 @@ import { Aside, Steps } from "@astrojs/starlight/components";
 
    working directory は既定で `~/.mikan/workspace` になり、自動的に作成されます。別の場所を使うにはパスを渡します（`mikan --sandbox=host ~/mikan-workspace`）。workspace は agent が会話ごとのファイル（メモリー、添付ファイル、セッションログ、作業領域）を保存する場所です。
 
+   起動に失敗した場合は `mikan env` を実行してください。mikan が読み取るすべての変数を、プラットフォームと機能ごとにグループ化し、それぞれの現在の状態とともに表示します。プラットフォームの token が欠けていると、mikan は設定すべき変数名を示すメッセージを出して終了します。`mikan --help` はすべてのフラグを一覧表示します。
+
 6. Telegram でボットとのプライベートチャットを開き、メッセージを送信します。プライベートメッセージは agent を直接トリガーするため、数秒以内に返信が届くはずです。
 
 </Steps>
