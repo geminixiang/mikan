@@ -106,10 +106,5 @@
   },
   "engines": {
     "node": ">=22.19.0"
-  },
-  "knip": {
-    "ignoreBinaries": [
-      "taskkill"
-    ]
   }
 }
