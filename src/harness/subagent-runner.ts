@@ -20,10 +20,10 @@ import { unboundedSlotPool, type SubagentSlotPool } from "../tools/subagent-slot
 const subagentRunDepth = new AsyncLocalStorage<number>();
 const DEFAULT_SYSTEM_PROMPT =
   "You are a focused subagent. Complete only the assigned task and return the result directly.";
-const DEFAULT_SUBAGENT_BUDGET = {
-  maxTurns: 8,
-  maxCostUsd: 0.5,
-  maxDurationMs: 2 * 60 * 1000,
+export const DEFAULT_SUBAGENT_BUDGET = {
+  maxTurns: 100,
+  maxCostUsd: 10,
+  maxDurationMs: 10 * 60 * 1000,
 } as const;
 
 const SCHEMA_STRUCTURAL_KEYS = new Set([
@@ -404,7 +404,15 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
       ...(text ? { text } : {}),
     };
 
-    if (terminalSignal) return { ...base, status: terminalSignal };
+    if (terminalSignal) {
+      return {
+        ...base,
+        status: terminalSignal,
+        ...(terminalSignal === "timeout"
+          ? { error: `Subagent exceeded its ${budget.maxDurationMs}ms duration limit` }
+          : {}),
+      };
+    }
     if (stats.budgetExceededReason) {
       return {
         ...base,

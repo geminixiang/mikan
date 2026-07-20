@@ -12,7 +12,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { Type, type TSchema } from "@sinclair/typebox";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { runSubagent } from "../src/harness/subagent-runner.js";
+import { DEFAULT_SUBAGENT_BUDGET, runSubagent } from "../src/harness/subagent-runner.js";
 import { MikanAgentSession, MikanModels, SessionStore } from "../src/harness/index.js";
 import { createSubagentTool } from "../src/tools/subagent.js";
 import { SubagentSlotPool } from "../src/tools/subagent-slots.js";
@@ -53,6 +53,14 @@ const echoTool: AgentTool = {
 };
 
 describe("runSubagent", () => {
+  test("uses the expanded default limits", () => {
+    expect(DEFAULT_SUBAGENT_BUDGET).toEqual({
+      maxTurns: 100,
+      maxCostUsd: 10,
+      maxDurationMs: 10 * 60 * 1000,
+    });
+  });
+
   test("backs the normal agent's subagent tool", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([
