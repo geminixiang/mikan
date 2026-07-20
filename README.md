@@ -93,7 +93,7 @@ Tail logs with `pm2 logs mikan`; upgrade with `npm i -g @geminixiang/mikan && pm
 
 ### Kubernetes with Helm
 
-The supported Kubernetes deployment interface is the [mikan Helm chart](deploy/helm/mikan/README.md). It includes profiles for GKE Standard, Linux amd64 k3s, and Colima. GKE is the fully validated Agent Sandbox + Kata + Filestore path; k3s requires user-installed Kata and RWX storage, while Colima defaults to host execution rather than claiming unverified Kata isolation.
+The supported Kubernetes deployment interface is the [mikan Helm chart](deploy/helm/mikan/README.md). Follow the complete quickstart for [GKE Standard](deploy/helm/mikan/docs/quickstart-gke.md), [Linux amd64 k3s](deploy/helm/mikan/docs/quickstart-k3s.md), or [Colima](deploy/helm/mikan/docs/quickstart-colima.md). GKE is the fully validated Agent Sandbox + Kata + Filestore path; k3s requires user-installed Kata and RWX storage, while Colima defaults to host execution rather than claiming unverified Kata isolation.
 
 For a one-off foreground run, the same CLI works directly:
 

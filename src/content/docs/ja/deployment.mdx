@@ -31,7 +31,7 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
 ## Kubernetes デプロイ
 
-Kubernetes では [mikan Helm chart](https://github.com/geminixiang/mikan/tree/main/deploy/helm/mikan) を使用してください。Chart は GKE Standard、Linux k3s、Colima profiles を提供し、Kata、Agent Sandbox CRDs、RWX storage などの cluster prerequisites と Helm が管理する application resources を分けて説明します。
+Kubernetes では [mikan Helm chart](https://github.com/geminixiang/mikan/tree/main/deploy/helm/mikan) を使用し、[GKE Standard](https://github.com/geminixiang/mikan/blob/main/deploy/helm/mikan/docs/quickstart-gke.md)、[Linux amd64 k3s](https://github.com/geminixiang/mikan/blob/main/deploy/helm/mikan/docs/quickstart-k3s.md)、または [Colima](https://github.com/geminixiang/mikan/blob/main/deploy/helm/mikan/docs/quickstart-colima.md) の完全な quickstart に従ってください。Chart は Kata、Agent Sandbox CRDs、RWX storage などの cluster prerequisites と Helm が管理する resources を分離します。
 
 ## PM2 デプロイ
 

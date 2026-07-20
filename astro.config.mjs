@@ -161,7 +161,7 @@ export default defineConfig({
                         "zh-CN": "Agent Sandbox + Kata",
                         ja: "Agent Sandbox + Kata",
                       },
-                      link: "/sandbox/",
+                      link: "/sandbox/agent-sandbox/",
                     },
                     {
                       label: "Cloudflare",

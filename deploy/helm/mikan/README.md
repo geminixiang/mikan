@@ -4,6 +4,18 @@ This is the supported Kubernetes deployment interface for mikan. One chart
 covers GKE Standard, Linux amd64 k3s, and Colima without silently weakening
 sandbox isolation.
 
+## Step-by-step quickstarts
+
+Choose one path and follow it from Step 1 through cleanup:
+
+- [GKE Standard](docs/quickstart-gke.md) — fully validated Kata + Filestore + Agent Sandbox path.
+- [Linux amd64 k3s](docs/quickstart-k3s.md) — requires an existing KVM-capable k3s host, Kata, and RWX provisioner; not yet hardware E2E validated by this project.
+- [Colima](docs/quickstart-colima.md) — local host-mode deployment without claiming Kata isolation.
+
+Each quickstart includes prerequisites, expected results, smoke tests,
+troubleshooting, and cleanup. The sections below summarize the profiles and
+values rather than replacing those procedures.
+
 ## Support matrix
 
 | Environment     | mikan     | Agent Sandbox                 | Kata                    | Workspace storage        |

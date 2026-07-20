@@ -5,11 +5,18 @@ chart="${1:-deploy/helm/mikan}"
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
 
+for quickstart in quickstart-gke.md quickstart-k3s.md quickstart-colima.md; do
+  test -s "$chart/docs/$quickstart"
+done
+for profile in values-gke.yaml values-k3s.yaml values-colima.yaml values-router.yaml; do
+  test -s "$chart/$profile"
+done
+
 helm lint "$chart" --set validation.clusterPrerequisites=false
 helm template default "$chart" --set validation.clusterPrerequisites=false > "$work_dir/default.yaml"
 helm template colima "$chart" -f "$chart/values-colima.yaml" \
   --set validation.clusterPrerequisites=false > "$work_dir/colima.yaml"
-helm template gke "$chart" -f "$chart/values-gke.yaml" \
+helm template mikan "$chart" -f "$chart/values-gke.yaml" \
   --set validation.clusterPrerequisites=false \
   --set storage.workspace.gkeFilestore.network=ci-vpc > "$work_dir/gke.yaml"
 helm template k3s "$chart" -f "$chart/values-k3s.yaml" \
@@ -42,6 +49,10 @@ grep -q 'kind: SandboxTemplate' "$work_dir/k3s.yaml"
 grep -q 'kind: NetworkPolicy' "$work_dir/router.yaml"
 ! grep -q 'kind: ClusterRole' "$work_dir/router.yaml"
 grep -q 'ghcr.io/geminixiang/mikan@sha256:aaaaaaaa' "$work_dir/digest.yaml"
+grep -q 'name: mikan-mikan-filestore-rwx' "$work_dir/gke.yaml"
+grep -q 'deployment/mikan-mikan' "$chart/docs/quickstart-gke.md"
+grep -q 'mikan-mikan-workspace' "$chart/docs/quickstart-gke.md"
+grep -q 'deployment/mikan-mikan' "$chart/docs/quickstart-colima.md"
 
 if helm template invalid "$chart" -f "$chart/values-gke.yaml" \
   --set validation.clusterPrerequisites=false >/dev/null 2>&1; then
