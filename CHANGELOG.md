@@ -9,6 +9,32 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.22]
+
+### Added
+
+- Let subagents opt into a normalized reference snapshot of the active parent conversation with `parentContext`, while keeping fresh isolated context as the default.
+
+### Changed
+
+- Raise default subagent limits from 8 to 100 turns, $0.50 to $10, and 2 to 10 minutes; return concrete budget or timeout reasons.
+- Apply the process-wide subagent concurrency ceiling to both tool- and extension-initiated runs, with cancellation while queued and usage attribution only to the active parent run.
+- Use collision-safe hashed keys for credential authorization and runtime resources. Exact legacy host and shared-container credentials remain readable, but users of ambiguous legacy managed-sandbox keys may need to run `/login` again.
+- Reject unsupported vault file mounts and mounts that overlap workspace or other credential targets.
+- Extract workspace projection and session lifecycle responsibilities into focused modules without intended runtime behavior changes.
+
+### Fixed
+
+- Reject session keys belonging to another conversation and unsafe conversation or thread identifiers.
+- Prevent session pointers and thread files from escaping their owning directory or resolving through symlinks.
+- Process Slack messages posted by known human users through user tokens even when Slack includes the posting app's `bot_id`; bot-authored messages remain ignored.
+- Clearly report subagent budget exhaustion instead of returning a generic incomplete status.
+
+### Tests
+
+- Add Slack E2E coverage for DMs, idle stop, thread isolation, busy queues, images, and multi-file uploads.
+- Add unit coverage for session identity and path safety, collision-safe sandbox identities, vault mount policy, session lifecycle, normalized subagent context, shared slots, cancellation, and budget reporting.
+
 ## [1.0.0-beta.21]
 
 ### Added
