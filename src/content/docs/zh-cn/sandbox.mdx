@@ -30,7 +30,7 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 ## Agent Sandbox deployment
 
-mikan and Agent Sandbox run in the same Kubernetes cluster and mount one RWX workspace PVC. The mikan control plane uses the normal container runtime; only Sandbox pods use `kata-qemu`. See [`deploy/kubernetes/README.md`](https://github.com/geminixiang/mikan/blob/main/deploy/kubernetes/README.md).
+mikan and Agent Sandbox run in the same Kubernetes cluster and mount one RWX workspace PVC. The mikan control plane uses the normal container runtime; only Sandbox pods use `kata-qemu`. See [`deploy/helm/mikan/README.md`](https://github.com/geminixiang/mikan/blob/main/deploy/helm/mikan/README.md).
 
 The dedicated runtime image includes Playwright Chromium, Xvfb, and ffmpeg for browser automation, screen capture, and software video processing.
 

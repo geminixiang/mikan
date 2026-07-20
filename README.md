@@ -21,7 +21,7 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 - **Chat / conversation data** is the platform-facing record: `log.jsonl`, attachments, and conversation files.
 - **Session orchestration** turns platform events into agent runs, handles top-level/thread scopes, and persists structured context under `sessions/*.jsonl`.
 - **mikan agent harness** (`src/harness/`, built on pi-agent-core and pi-ai) runs the model loop, session persistence, compaction, and calls mikan tools.
-- **Sandbox runtime** is where tool commands execute: host, Docker container/image, Firecracker, or Cloudflare bridge.
+- **Sandbox runtime** is where tool commands execute: host, Docker container/image, Kubernetes Agent Sandbox with Kata, or Cloudflare bridge.
 - **Vault** provides runtime credentials as env vars and mounted secret files.
 
 ## Features
@@ -90,6 +90,10 @@ DISCORD_BOT_TOKEN=MTI...
 ```
 
 Tail logs with `pm2 logs mikan`; upgrade with `npm i -g @geminixiang/mikan && pm2 reload mikan`. See [the deployment guide](src/content/docs/deployment.mdx) for sandbox images, graceful shutdown, and the health endpoint.
+
+### Kubernetes with Helm
+
+The supported Kubernetes deployment interface is the [mikan Helm chart](deploy/helm/mikan/README.md). It includes profiles for GKE Standard, Linux amd64 k3s, and Colima. GKE is the fully validated Agent Sandbox + Kata + Filestore path; k3s requires user-installed Kata and RWX storage, while Colima defaults to host execution rather than claiming unverified Kata isolation.
 
 For a one-off foreground run, the same CLI works directly:
 

@@ -1,0 +1,9 @@
+apiVersion: v2
+name: mikan
+description: Multi-platform AI coding agent with optional Kubernetes Agent Sandbox isolation
+type: application
+version: 0.1.0
+appVersion: "1.0.0-beta.22"
+home: https://github.com/geminixiang/mikan
+sources:
+  - https://github.com/geminixiang/mikan

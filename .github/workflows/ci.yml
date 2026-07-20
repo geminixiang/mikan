@@ -36,3 +36,19 @@ jobs:
 
       - name: Test with coverage check
         run: npm run test:coverage:check
+
+  helm:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+
+      - uses: azure/setup-kubectl@v4
+
+      - name: Validate chart profiles
+        run: scripts/check-helm-chart.sh
+
+      - name: Build pinned router image
+        run: docker build --file docker/agent-sandbox-router/Dockerfile docker/agent-sandbox-router

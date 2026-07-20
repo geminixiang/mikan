@@ -10,4 +10,4 @@ This directory defines sandbox abstractions, concrete executors, and shared tran
 - `path-context.ts`: Host/runtime workspace mapping.
 - `utils.ts`: Shared shell and file-transport helpers.
 
-Agent Sandbox mode runs mikan and Sandbox pods in one Kubernetes cluster with a shared RWX workspace PVC. Only Sandbox pods use `kata-qemu`; mikan remains on the normal cluster runtime. See `deploy/kubernetes/README.md`.
+Agent Sandbox mode runs mikan and Sandbox pods in one Kubernetes cluster with a shared RWX workspace PVC. Only Sandbox pods use `kata-qemu`; mikan remains on the normal cluster runtime. See `deploy/helm/mikan/README.md`.

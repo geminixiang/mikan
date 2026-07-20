@@ -1,0 +1,14 @@
+# Linux k3s profile. Supply an existing RWX StorageClass and install Kata first.
+mikan:
+  sandbox:
+    mode: agent-sandbox
+agentSandbox:
+  enabled: true
+  runtimeClassName: kata-qemu
+storage:
+  workspace:
+    accessModes:
+      - ReadWriteMany
+    storageClassName: ""
+    gkeFilestore:
+      createStorageClass: false
