@@ -69,7 +69,6 @@ description: 了解 mikan 的平台接入、工作階段、agent、sandbox、vau
 - 統一抽象 `Executor`
 - sandbox runtime 分成兩類：
   - shared: `host` / `container:<name>`，同一個 host 或指定 container 共用
-  - isolated: `image:<image>` / `firecracker:*` / `cloudflare:*`，依 actor/conversation/vault 路由到隔離的執行環境
 - 透過 `ActorExecutionResolver` 依 user/conversation/vault 決定實際 executor
 - 在 `image` 模式下自動建立與回收 Docker container，並把 `image:<image>` 解析成 concrete `container:<name>` executor
 
@@ -188,7 +187,6 @@ flowchart TD
   WebServer --> VaultManager["vault/index.ts\nwrite env/file into vault"]
   VaultManager --> VaultDir["state-dir/vaults/<vaultId>/"]
   VaultManager --> Resolver["execution-resolver.ts"]
-  Resolver --> Sandbox["host / container / image / firecracker / cloudflare"]
 ```
 
 重點：
@@ -196,7 +194,6 @@ flowchart TD
 - 憑證不直接進 workspace
 - vault 存在 `--state-dir`
 - 執行時才由 conversation vault 路由到對應 sandbox
-- `image` / `firecracker` / `cloudflare` 模式使用 per-actor/per-conversation vault routing；`container:<name>` 使用 shared container vault；`host` 不注入 vault env
 
 ## 6. Events 與一般對話的差異
 

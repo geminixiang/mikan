@@ -109,13 +109,13 @@ Slack threads, Discord replies/threads, and Telegram reply chains are mapped to 
 
 ## Sandbox
 
-| Mode                         | Description                                                            |
-| ---------------------------- | ---------------------------------------------------------------------- |
-| `host` (default)             | Run on host; no vault env injection                                    |
-| `container:<name>`           | Run in an existing shared container; uses vault key `container-<name>` |
-| `image:<image>`              | Auto-provision one Docker container per resolved vault/user            |
-| `firecracker:<vm-id>:<path>` | Firecracker microVM (alpha; not recommended)                           |
-| `cloudflare:<sandbox-id>`    | Cloudflare Worker bridge (experimental; no auto workspace sync)        |
+| Mode                        | Description                                                            |
+| --------------------------- | ---------------------------------------------------------------------- |
+| `host` (default)            | Run on host; no vault env injection                                    |
+| `container:<name>`          | Run in an existing shared container; uses vault key `container-<name>` |
+| `image:<image>`             | Auto-provision one Docker container per resolved vault/user            |
+| `agent-sandbox:<warm-pool>` | Kubernetes Agent Sandbox with required Kata microVM isolation          |
+| `cloudflare:<sandbox-id>`   | Cloudflare Worker bridge (experimental; no auto workspace sync)        |
 
 For routing, mounts, vault behavior, managed container details, and Firecracker/Cloudflare notes, see [src/content/docs/sandbox.md](src/content/docs/sandbox.md).
 

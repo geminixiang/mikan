@@ -96,53 +96,13 @@ const SettingsFileSchema = Type.Object({
           ),
         }),
       ),
-      gondolin: Type.Optional(
+      agentSandbox: Type.Optional(
         Type.Object({
-          remote: Type.Optional(
-            Type.Object({
-              url: Type.Optional(Type.String()),
-              caFile: Type.Optional(Type.String()),
-              certFile: Type.Optional(Type.String()),
-              keyFile: Type.Optional(Type.String()),
-              workspaceRoot: Type.Optional(Type.String()),
-              maxRuntimes: Type.Optional(Type.Number()),
-              imageSelector: Type.Optional(Type.String()),
-              queueWaitSeconds: Type.Optional(Type.Number()),
-              workers: Type.Optional(
-                Type.Array(
-                  Type.Object({
-                    name: Type.Optional(Type.String()),
-                    url: Type.String(),
-                    caFile: Type.Optional(Type.String()),
-                    certFile: Type.Optional(Type.String()),
-                    keyFile: Type.Optional(Type.String()),
-                    workspaceRoot: Type.Optional(Type.String()),
-                    maxRuntimes: Type.Optional(Type.Number()),
-                    draining: Type.Optional(Type.Boolean()),
-                  }),
-                ),
-              ),
-              gateway: Type.Optional(
-                Type.Object({
-                  port: Type.Number(),
-                  certFile: Type.Optional(Type.String()),
-                  keyFile: Type.Optional(Type.String()),
-                  clientCaFile: Type.Optional(Type.String()),
-                  hostnames: Type.Optional(Type.Array(Type.String())),
-                  workspaceRoot: Type.Optional(Type.String()),
-                  workers: Type.Optional(
-                    Type.Record(
-                      Type.String(),
-                      Type.Object({
-                        maxRuntimes: Type.Optional(Type.Number()),
-                        draining: Type.Optional(Type.Boolean()),
-                      }),
-                    ),
-                  ),
-                }),
-              ),
-            }),
-          ),
+          namespace: Type.String(),
+          runtimeClassName: Type.String(),
+          apiUrl: Type.Optional(Type.String()),
+          routerNamespace: Type.Optional(Type.String()),
+          sandboxReadyTimeout: Type.Optional(Type.Number()),
         }),
       ),
       defaultSharedVault: Type.Optional(Type.String()),
@@ -193,7 +153,7 @@ function normalizeSandboxSettings(sandbox: SandboxSettings): SandboxSettings {
     ...(sandbox.memory !== undefined ? { memory: sandbox.memory } : {}),
     ...(sandbox.boost !== undefined ? { boost: sandbox.boost } : {}),
     ...(sandbox.image !== undefined ? { image: sandbox.image } : {}),
-    ...(sandbox.gondolin !== undefined ? { gondolin: sandbox.gondolin } : {}),
+    ...(sandbox.agentSandbox !== undefined ? { agentSandbox: sandbox.agentSandbox } : {}),
     ...(defaultSharedVault ? { defaultSharedVault } : {}),
   };
 }
@@ -216,11 +176,11 @@ function mergeSandboxSettings(
     ...override,
     ...(base.boost || override.boost ? { boost: { ...base.boost, ...override.boost } } : {}),
     ...(base.image || override.image ? { image: { ...base.image, ...override.image } } : {}),
-    // `remote` is one connection description; merging two halves of it would
-    // pair a URL with the wrong certificates, so the override wins wholesale.
-    ...(base.gondolin || override.gondolin
-      ? { gondolin: { ...base.gondolin, ...override.gondolin } }
-      : {}),
+    ...(override.agentSandbox
+      ? { agentSandbox: override.agentSandbox }
+      : base.agentSandbox
+        ? { agentSandbox: base.agentSandbox }
+        : {}),
   };
 }
 

@@ -1,82 +1,52 @@
 ---
 title: Sandbox
-description: 比较 mikan 支持的 host、container、image、microVM、Firecracker 与 Cloudflare sandbox 模式。
 ---
 
 import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
 
 <CardGrid>
-  <Card title="本地开发" icon="setting">
-    `host` 最少设置、不注入 vault env，适合只在可信任机器上开发。
+  <Card title="Local development" icon="setting">
+    `host` has the least setup and does not inject vault credentials.
   </Card>
-  <Card title="主线隔离" icon="rocket">
-    `image:<image>` 由 mikan 管理 lifecycle、workspace mount、vault env 与资源限制。
-  </Card>
-  <Card title="Gondolin 预览" icon="moon">
-    `gondolin:default` 运行本地 Gondolin/QEMU VM，是托管 `image:*` sandbox 的计划继任者。
+  <Card title="MicroVM isolation" icon="rocket">
+    `agent-sandbox:<warm-pool>` runs workloads with Kubernetes Agent Sandbox and required Kata isolation.
   </Card>
 </CardGrid>
 
-<Aside type="caution" title="模式名称">
-  `docker:*` 不是可用模式；请改用 `container:*` 或 `image:*`。
+<Aside type="caution" title="Kata is required">
+  mikan accepts only the configured `kata-qemu` RuntimeClass and verifies every allocated Sandbox
+  pod before execution.
 </Aside>
 
-## 支持模式
+## Supported modes
 
-| 模式                                                        | 执行位置                     | Vault env injection | Vault key 语义               | 备注                                                                               |
-| ----------------------------------------------------------- | ---------------------------- | ------------------- | ---------------------------- | ---------------------------------------------------------------------------------- |
-| `host`                                                      | 宿主机                       | 不注入              | 可存，但执行时不用           | 最适合本地开发；不把 vault env 放进 host process                                   |
-| `container:<name>`                                          | 现有 Docker container        | 注入                | `container-<name>`           | one container one vault；多人共享同一 container 就共享该 vault                     |
-| `image:<image>`                                             | mikan 管理的 Docker          | 注入                | generated conversation vault | 当前最推荐的隔离模式；`1 conversation = 1 vault = 1 container`                     |
-| `gondolin:default`                                          | 本地 Gondolin/QEMU VM        | 注入                | generated conversation vault | 预览；支持 private/full workspace mount；需要 Node.js >=23.6 与 QEMU               |
-| `gondolin:remote`                                           | 远端 worker 上的 Gondolin VM | 注入                | generated conversation vault | 预览；带 fenced lease 的 mTLS `mikan-worker` daemon；workspace 位于共享 POSIX 存储 |
-| `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM               | 注入                | generated conversation vault | Alpha 超早期；VM 需自行启动，workspace 需在 VM 内挂到 `/workspace`，当前不建议使用 |
-| `cloudflare:<sandbox-id>`                                   | Cloudflare Worker            | 注入                | generated conversation vault | Experimental；需自行部署 `@cloudflare/sandbox` bridge，host workspace 不会自动同步 |
+| Mode                        | Runtime                           | Workspace                   | Notes                               |
+| --------------------------- | --------------------------------- | --------------------------- | ----------------------------------- |
+| `host`                      | mikan host                        | host path                   | Trusted local development           |
+| `container:<name>`          | existing Docker container         | user-managed mount          | Compatibility mode                  |
+| `image:<image>`             | mikan-managed Docker              | mikan-managed mount         | Local managed isolation             |
+| `agent-sandbox:<warm-pool>` | Agent Sandbox pod in Kata microVM | shared RWX `/workspace` PVC | Recommended production microVM mode |
+| `cloudflare:<sandbox-id>`   | Cloudflare bridge                 | remote filesystem           | Experimental                        |
 
-## 各模式文档
+## Agent Sandbox deployment
 
-<LinkCard title="Host sandbox" description="直接在宿主机执行工具；最适合本地开发。" href="host/" />
+mikan and Agent Sandbox run in the same Kubernetes cluster and mount one RWX workspace PVC. The mikan control plane uses the normal container runtime; only Sandbox pods use `kata-qemu`. See [`deploy/kubernetes/README.md`](https://github.com/geminixiang/mikan/blob/main/deploy/kubernetes/README.md).
+
+The dedicated runtime image includes Playwright Chromium, Xvfb, and ffmpeg for browser automation, screen capture, and software video processing.
+
+## Per-mode docs
+
+<LinkCard title="Host sandbox" description="Run tools directly on the host." href="host/" />
 <LinkCard
   title="Container sandbox"
-  description="连到现有 Docker container，沿用使用者管理的 lifecycle。"
+  description="Connect to an existing Docker container."
   href="container/"
 />
-<LinkCard
-  title="Image sandbox"
-  description="由 mikan 管理 per-conversation container 与资源限制。"
-  href="image/"
-/>
-<LinkCard
-  title="Gondolin sandbox"
-  description="试用旨在取代 image sandbox 的本地 Gondolin/QEMU 预览。"
-  href="gondolin/"
-/>
-<LinkCard
-  title="Firecracker sandbox"
-  description="连到自行启动的 Firecracker VM。"
-  href="firecracker/"
-/>
+<LinkCard title="Image sandbox" description="Use mikan-managed Docker containers." href="image/" />
 <LinkCard
   title="Cloudflare sandbox"
-  description="通过 Cloudflare Worker bridge 执行工具。"
+  description="Run tools through a Cloudflare Worker bridge."
   href="cloudflare/"
 />
 
-## 能力差异
-
-`image:<image>` <Badge text="推荐" variant="success" /> 是当前主要开发与推荐的 sandbox 模式；其他模式保留为本地开发、兼容、或实验用途，部分能力不会补齐。
-
-| 能力                                 | `host`   | `container:<name>` | `image:<image>` | `gondolin:default` | `firecracker:*` | `cloudflare:*` |
-| ------------------------------------ | -------- | ------------------ | --------------- | ------------------ | --------------- | -------------- |
-| command 执行                         | ✅       | ✅                 | ✅              | ✅                 | ✅              | ✅             |
-| mikan 管理 runtime lifecycle         | 不适用   | ❌                 | ✅              | ✅ worker 托管     | ❌              | ❌             |
-| per-conversation container / runtime | ❌       | ❌                 | ✅              | ✅                 | 需自行管理      | bridge 衍生 id |
-| per-conversation vault env           | ❌       | ❌                 | ✅              | ✅                 | ✅              | ✅             |
-| vault file 自动投影 / bind mount     | ❌       | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| workspace 自动挂载                   | host     | 需自行挂载         | ✅              | ✅                 | 需自行挂载      | ❌             |
-| private workspace mount mode         | 不适用   | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| idle auto-stop / recreate            | 不适用   | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| CPU / memory default limits          | ❌       | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| `/pi-sandbox boost`                  | ❌       | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| agent `sandbox` tool 设置 limits     | ❌       | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| 推荐程度                             | 本地开发 | legacy / 兼容      | 主线            | preview            | alpha           | experimental   |
+`agent-sandbox:<warm-pool>` <Badge text="microVM" variant="success" /> is configured through `sandbox.agentSandbox` in `settings.json`.

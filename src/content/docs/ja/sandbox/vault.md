@@ -68,7 +68,6 @@ GITHUB_OAUTH_ACCESS_TOKEN=gho_xxx
 | `host`             | 注入しない          | 投影しない                 | credentials は保存できるが host commands へ注入しない |
 | `container:<name>` | 注入する            | 投影しない                 | `container-<name>`                                    |
 | `image:<image>`    | 注入する            | 自動投影                   | generated conversation vault。通常は conversation ID  |
-| `firecracker:*`    | 注入する            | 投影しない                 | generated conversation vault                          |
 | `cloudflare:*`     | 注入する            | 投影しない                 | generated platform-scoped conversation vault          |
 
 ## `/login`

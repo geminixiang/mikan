@@ -67,21 +67,18 @@ mikan 创建缺失的 state directory 时使用 `0700` 模式。现有目录必�
 
 以下值由初始化生成。解析后的全局配置中必须包含 `llm.provider`、`llm.model` 和 `llm.thinkingLevel`；其他字段可以省略。
 
-| 字段                           | 初始化值            | 说明                                                                                     |
-| ------------------------------ | ------------------- | ---------------------------------------------------------------------------------------- |
-| `llm.provider`                 | `anthropic`         | 主 AI 提供商                                                                             |
-| `llm.model`                    | `claude-sonnet-4-6` | 主模型名称                                                                               |
-| `llm.thinkingLevel`            | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`                              |
-| `llm.autoReply.provider`       | `anthropic`         | 用于评估自动回复规则的可选模型提供商                                                     |
-| `llm.autoReply.model`          | `claude-haiku-4-5`  | 用于评估自动回复规则的可选模型                                                           |
-| `sentry.dsn`                   | 未设置              | Sentry DSN；敏感提示词和工具内容会被编辑隐藏                                             |
-| `sandbox.cpus`                 | `0.5`               | mikan 管理的 image/Gondolin runtime CPU 限制；Gondolin 会把小数值向上取整为整数 vCPU     |
-| `sandbox.memory`               | `1g`                | mikan 管理的 image/Gondolin runtime 内存限制                                             |
-| `sandbox.boost.cpus`           | `2`                 | `/pi-sandbox boost` 应用的临时 CPU 限制                                                  |
-| `sandbox.boost.memory`         | `4g`                | `/pi-sandbox boost` 应用的临时内存限制                                                   |
-| `sandbox.image.workspaceMount` | `private`           | 对于 image/Gondolin sandbox，`private` 暴露共享支持文件及当前对话；`full` 暴露完整工作区 |
-| `sandbox.defaultSharedVault`   | 空                  | 复制到符合条件、基于成员身份信任的 image/Cloudflare 对话中的共享 vault                   |
-| `slack.replyMode`              | `top-level`         | Slack 回复模式：`top-level` 或 `thread`                                                  |
+| 字段                         | 初始化值            | 说明                                                                   |
+| ---------------------------- | ------------------- | ---------------------------------------------------------------------- |
+| `llm.provider`               | `anthropic`         | 主 AI 提供商                                                           |
+| `llm.model`                  | `claude-sonnet-4-6` | 主模型名称                                                             |
+| `llm.thinkingLevel`          | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`            |
+| `llm.autoReply.provider`     | `anthropic`         | 用于评估自动回复规则的可选模型提供商                                   |
+| `llm.autoReply.model`        | `claude-haiku-4-5`  | 用于评估自动回复规则的可选模型                                         |
+| `sentry.dsn`                 | 未设置              | Sentry DSN；敏感提示词和工具内容会被编辑隐藏                           |
+| `sandbox.boost.cpus`         | `2`                 | `/pi-sandbox boost` 应用的临时 CPU 限制                                |
+| `sandbox.boost.memory`       | `4g`                | `/pi-sandbox boost` 应用的临时内存限制                                 |
+| `sandbox.defaultSharedVault` | 空                  | 复制到符合条件、基于成员身份信任的 image/Cloudflare 对话中的共享 vault |
+| `slack.replyMode`            | `top-level`         | Slack 回复模式：`top-level` 或 `thread`                                |
 
 `/pi-model` 写入部分对话覆盖。`/pi-sandbox private|full` 更新对话的工作区挂载模式。自动回复的启用状态和规则文本由 `/pi-auto-reply` 及对话的 `auto-reply` 标记文件管理，不由 JSON 设置字段管理。
 
@@ -100,17 +97,15 @@ mikan 创建缺失的 state directory 时使用 `0700` 模式。现有目录必�
 
 ## CLI 参考
 
-| 命令或选项                                                                                                                         | 用途                                                         |
-| ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `mikan --onboard [--state-dir=<dir>]`                                                                                              | 创建必需的全局设置文件                                       |
-| `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]`                                                                 | 启动已配置的平台 bot；工作目录默认为 `<state-dir>/workspace` |
-| `--sandbox=host \| container:<name> \| image:<image> \| gondolin:default \| gondolin:remote \| firecracker:... \| cloudflare:<id>` | 选择工具执行模式；默认为 `host`                              |
-| `mikan env`                                                                                                                        | 显示完整的环境变量清单及当前的设置状态                       |
-| `mikan --worker-token`                                                                                                             | 生成一个一次性的 gondolin worker 加入令牌                    |
-| `mikan --download <channel-id>`                                                                                                    | 下载 Slack 频道历史记录；需要 `SLACK_BOT_TOKEN`              |
-| `mikan --version`                                                                                                                  | 输出已安装版本                                               |
-| `mikan --help`                                                                                                                     | 显示 CLI 用法与平台令牌摘要                                  |
-| `mikan ext ...`                                                                                                                    | 管理框架扩展；运行 `mikan ext` 查看子命令                    |
+| 命令或选项                                                         | 用途                                                         |
+| ------------------------------------------------------------------ | ------------------------------------------------------------ |
+| `mikan --onboard [--state-dir=<dir>]`                              | 创建必需的全局设置文件                                       |
+| `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]` | 启动已配置的平台 bot；工作目录默认为 `<state-dir>/workspace` |
+| `mikan env`                                                        | 显示完整的环境变量清单及当前的设置状态                       |
+| `mikan --download <channel-id>`                                    | 下载 Slack 频道历史记录；需要 `SLACK_BOT_TOKEN`              |
+| `mikan --version`                                                  | 输出已安装版本                                               |
+| `mikan --help`                                                     | 显示 CLI 用法与平台令牌摘要                                  |
+| `mikan ext ...`                                                    | 管理框架扩展；运行 `mikan ext` 查看子命令                    |
 
 ## 环境变量别名
 

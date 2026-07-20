@@ -32,7 +32,7 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `observability/`: Sentry initialization, error reporting helpers, and startup instrumentation.
 - `web/`: Web portals — admin, login/OAuth, and session view.
 - `runtime/`: Conversation and session runtime orchestration.
-- `sandbox/`: Host/container/image/gondolin/firecracker/cloudflare sandbox abstractions and executors.
+- `sandbox/`: Host/container/image/agent-sandbox/cloudflare sandbox abstractions and executors.
 - `sessions/`: Chat-history synchronization, session file management, and session policy.
 - `tools/`: Agent tools such as read, bash, edit, write, event, and sandbox.
 - `utils/`: Low-level utilities — environment variable reading, atomic file writes, safe JSON/text helpers, and HTML escaping.

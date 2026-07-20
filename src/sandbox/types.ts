@@ -2,8 +2,7 @@ export type SandboxConfig =
   | HostSandboxConfig
   | ContainerSandboxConfig
   | ImageSandboxConfig
-  | GondolinSandboxConfig
-  | FirecrackerSandboxConfig
+  | AgentSandboxConfig
   | CloudflareSandboxConfig;
 
 export interface HostSandboxConfig {
@@ -20,23 +19,19 @@ export interface ImageSandboxConfig {
   image: string;
 }
 
-export interface GondolinSandboxConfig {
-  type: "gondolin";
-  profile: "default" | "remote";
-  /** Local-only runtime details supplied after actor/workspace resolution. */
-  image?: string;
-  workspacePath?: string;
-  mounts?: Array<{ source: string; target: string }>;
-  instanceId?: string;
-  resourceKey?: string;
+export interface AgentSandboxConfig {
+  type: "agent-sandbox";
+  warmpool: string;
+  resourceKey: string;
+  mounts: Array<{ source: string; target: string }>;
 }
 
-export interface FirecrackerSandboxConfig {
-  type: "firecracker";
-  vmId: string;
-  hostPath: string;
-  sshUser?: string;
-  sshPort?: number;
+export interface AgentSandboxRuntimeOptions {
+  namespace: string;
+  runtimeClassName: string;
+  apiUrl?: string;
+  routerNamespace?: string;
+  sandboxReadyTimeout?: number;
 }
 
 export interface CloudflareSandboxConfig {

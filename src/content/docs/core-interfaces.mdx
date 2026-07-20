@@ -201,8 +201,6 @@ Sources: `src/sandbox/types.ts` and `src/sandbox/index.ts`.
 
 ### `SandboxConfig`
 
-The discriminated union currently supports `host`, `container`, `image`, `gondolin`, `firecracker`, and `cloudflare`. Parsing syntax and maturity are documented under [Sandbox](/sandbox/).
-
 ### `Executor`
 
 This is the stable execution boundary and the most important sandbox contract:
@@ -305,13 +303,7 @@ Source: `src/web/server.ts` and portal modules. These routes support mikan's bun
 
 Admin endpoints cover conversation inventory/state/usage, global and conversation settings, models, workspace files, skills, events, platform configuration, and login/session links. Route payloads are internal UI contracts and may evolve together with the bundled frontend.
 
-## 14. Gondolin process boundary
-
-The Gondolin worker/gateway path is a distinct wire protocol, not an in-process sandbox implementation. Its contracts live in `gondolin-contract.ts`, `gondolin-worker-client.ts`, gateway/join modules, inventory, placement, and fleet code.
-
 The stable concepts are runtime spec and handle identity, worker registration/heartbeat, leased placement, exec sessions, file transport, and runtime lifecycle. Lease watermarks fence stale workers during failover. Wire changes must be versioned or deployed compatibly across controller, gateway, and workers.
-
-For the detailed deployment contract, see [Gondolin remote worker](/sandbox/gondolin-remote-worker/).
 
 ## Contract checklist
 

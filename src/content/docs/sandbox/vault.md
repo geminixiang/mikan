@@ -68,7 +68,6 @@ GITHUB_OAUTH_ACCESS_TOKEN=gho_xxx
 | `host`             | not injected        | not projected              | credentials can be stored, but not injected into host commands |
 | `container:<name>` | injected            | not projected              | `container-<name>`                                             |
 | `image:<image>`    | injected            | automatically projected    | generated conversation vault, usually the conversation ID      |
-| `firecracker:*`    | injected            | not projected              | generated conversation vault                                   |
 | `cloudflare:*`     | injected            | not projected              | generated platform-scoped conversation vault                   |
 
 ## `/login`

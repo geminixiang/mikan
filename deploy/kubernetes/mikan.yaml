@@ -1,0 +1,186 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mikan
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mikan
+  namespace: mikan
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mikan-agent-sandbox
+  namespace: mikan
+rules:
+  - apiGroups: ["extensions.agents.x-k8s.io"]
+    resources: ["sandboxclaims"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: ["agents.x-k8s.io"]
+    resources: ["sandboxes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mikan-agent-sandbox
+  namespace: mikan
+subjects:
+  - kind: ServiceAccount
+    name: mikan
+    namespace: mikan
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mikan-agent-sandbox
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: agent-sandbox-rwx
+provisioner: filestore.csi.storage.gke.io
+parameters:
+  tier: standard
+  # Must be the GKE cluster VPC. Omitting this defaults to the "default" VPC,
+  # which leaves nodes unable to reach the Filestore NFS endpoint.
+  network: agent-sandbox
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mikan-workspace
+  namespace: mikan
+spec:
+  accessModes: ["ReadWriteMany"]
+  storageClassName: agent-sandbox-rwx
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mikan-settings
+  namespace: mikan
+data:
+  settings.json: |
+    {
+      "llm": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-6",
+        "thinkingLevel": "off"
+      },
+      "sandbox": {
+        "agentSandbox": {
+          "namespace": "mikan",
+          "runtimeClassName": "kata-qemu",
+          "apiUrl": "http://sandbox-router-svc.agent-sandbox-system.svc:8080",
+          "routerNamespace": "agent-sandbox-system",
+          "sandboxReadyTimeout": 300
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mikan
+  namespace: mikan
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mikan
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mikan
+    spec:
+      serviceAccountName: mikan
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        - name: prepare-volume-ownership
+          image: busybox:1.37.0
+          command: ["sh", "-c", "chown 1000:1000 /var/lib/mikan /workspace"]
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: state
+              mountPath: /var/lib/mikan
+      containers:
+        - name: mikan
+          image: asia-east1-docker.pkg.dev/glab-384109/glab/mikan@sha256:043eea45915771f98adbee70a6f1c65143eed14ba777ff4206f267fff596bc68
+          args:
+            - --state-dir=/var/lib/mikan
+            - --sandbox=agent-sandbox:mikan-kata
+            - /workspace
+          envFrom:
+            - secretRef:
+                name: mikan-env
+          startupProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - test -w /var/lib/mikan && test -w /workspace && kill -0 1
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "kill -0 1"]
+            periodSeconds: 5
+            failureThreshold: 2
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: state
+              mountPath: /var/lib/mikan
+            - name: settings
+              mountPath: /var/lib/mikan/settings.json
+              subPath: settings.json
+              readOnly: true
+            - name: harness-auth
+              mountPath: /home/node/.mikan/auth.json
+              subPath: auth.json
+              readOnly: true
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: mikan-workspace
+        - name: state
+          persistentVolumeClaim:
+            claimName: mikan-state
+        - name: settings
+          configMap:
+            name: mikan-settings
+        - name: harness-auth
+          secret:
+            secretName: mikan-harness-auth
+            defaultMode: 0444
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mikan-state
+  namespace: mikan
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 10Gi

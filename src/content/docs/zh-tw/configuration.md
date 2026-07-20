@@ -67,21 +67,18 @@ mikan 會以 `0700` mode 建立不存在的 state directory。既有目錄必須
 
 以下是 onboarding 產生的值。解析後的全域設定必須包含 `llm.provider`、`llm.model` 與 `llm.thinkingLevel`；其他欄位可省略。
 
-| 欄位                           | Onboarding 值       | 說明                                                                                           |
-| ------------------------------ | ------------------- | ---------------------------------------------------------------------------------------------- |
-| `llm.provider`                 | `anthropic`         | 主要 AI 供應商                                                                                 |
-| `llm.model`                    | `claude-sonnet-4-6` | 主要模型名稱                                                                                   |
-| `llm.thinkingLevel`            | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`                                    |
-| `llm.autoReply.provider`       | `anthropic`         | 用來評估 auto-reply 規則的選用模型供應商                                                       |
-| `llm.autoReply.model`          | `claude-haiku-4-5`  | 用來評估 auto-reply 規則的選用模型                                                             |
-| `sentry.dsn`                   | 未設定              | Sentry DSN；敏感的 prompt 與 tool 內容會被遮蔽                                                 |
-| `sandbox.cpus`                 | `0.5`               | mikan 管理的 image/Gondolin runtime CPU 限制；Gondolin 會將小數值進位為整數 vCPU               |
-| `sandbox.memory`               | `1g`                | mikan 管理的 image/Gondolin runtime 記憶體限制                                                 |
-| `sandbox.boost.cpus`           | `2`                 | `/pi-sandbox boost` 套用的暫時 CPU 限制                                                        |
-| `sandbox.boost.memory`         | `4g`                | `/pi-sandbox boost` 套用的暫時記憶體限制                                                       |
-| `sandbox.image.workspaceMount` | `private`           | 對 image/Gondolin sandbox，`private` 會公開共用支援檔案與目前對話；`full` 會公開完整 workspace |
-| `sandbox.defaultSharedVault`   | 空白                | 複製到符合資格之 membership-trust image/Cloudflare 對話的共享 vault                            |
-| `slack.replyMode`              | `top-level`         | Slack 回應模式：`top-level` 或 `thread`                                                        |
+| 欄位                         | Onboarding 值       | 說明                                                                |
+| ---------------------------- | ------------------- | ------------------------------------------------------------------- |
+| `llm.provider`               | `anthropic`         | 主要 AI 供應商                                                      |
+| `llm.model`                  | `claude-sonnet-4-6` | 主要模型名稱                                                        |
+| `llm.thinkingLevel`          | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`         |
+| `llm.autoReply.provider`     | `anthropic`         | 用來評估 auto-reply 規則的選用模型供應商                            |
+| `llm.autoReply.model`        | `claude-haiku-4-5`  | 用來評估 auto-reply 規則的選用模型                                  |
+| `sentry.dsn`                 | 未設定              | Sentry DSN；敏感的 prompt 與 tool 內容會被遮蔽                      |
+| `sandbox.boost.cpus`         | `2`                 | `/pi-sandbox boost` 套用的暫時 CPU 限制                             |
+| `sandbox.boost.memory`       | `4g`                | `/pi-sandbox boost` 套用的暫時記憶體限制                            |
+| `sandbox.defaultSharedVault` | 空白                | 複製到符合資格之 membership-trust image/Cloudflare 對話的共享 vault |
+| `slack.replyMode`            | `top-level`         | Slack 回應模式：`top-level` 或 `thread`                             |
 
 `/pi-model` 會寫入部分對話覆寫。`/pi-sandbox private|full` 會更新對話的 workspace mount 模式。Auto-reply 是否啟用及其規則文字由 `/pi-auto-reply` 與對話的 `auto-reply` marker file 管理，而非 JSON 設定欄位。
 
@@ -100,17 +97,15 @@ mikan 會以 `0700` mode 建立不存在的 state directory。既有目錄必須
 
 ## CLI 參考
 
-| 指令或選項                                                                                                                         | 用途                                                                   |
-| ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `mikan --onboard [--state-dir=<dir>]`                                                                                              | 建立必要的全域設定檔                                                   |
-| `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]`                                                                 | 啟動已設定的平台 bot；working directory 預設為 `<state-dir>/workspace` |
-| `--sandbox=host \| container:<name> \| image:<image> \| gondolin:default \| gondolin:remote \| firecracker:... \| cloudflare:<id>` | 選擇工具執行模式；預設為 `host`                                        |
-| `mikan env`                                                                                                                        | 顯示完整的環境變數清單，以及目前已設定的項目                           |
-| `mikan --worker-token`                                                                                                             | 產生一次性的 gondolin worker join token                                |
-| `mikan --download <channel-id>`                                                                                                    | 下載 Slack 頻道歷史；需要 `SLACK_BOT_TOKEN`                            |
-| `mikan --version`                                                                                                                  | 顯示已安裝版本                                                         |
-| `mikan --help`                                                                                                                     | 顯示 CLI 用法與平台 token 摘要                                         |
-| `mikan ext ...`                                                                                                                    | 管理 harness extensions；執行 `mikan ext` 查看子指令                   |
+| 指令或選項                                                         | 用途                                                                   |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| `mikan --onboard [--state-dir=<dir>]`                              | 建立必要的全域設定檔                                                   |
+| `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]` | 啟動已設定的平台 bot；working directory 預設為 `<state-dir>/workspace` |
+| `mikan env`                                                        | 顯示完整的環境變數清單，以及目前已設定的項目                           |
+| `mikan --download <channel-id>`                                    | 下載 Slack 頻道歷史；需要 `SLACK_BOT_TOKEN`                            |
+| `mikan --version`                                                  | 顯示已安裝版本                                                         |
+| `mikan --help`                                                     | 顯示 CLI 用法與平台 token 摘要                                         |
+| `mikan ext ...`                                                    | 管理 harness extensions；執行 `mikan ext` 查看子指令                   |
 
 ## 環境變數別名
 

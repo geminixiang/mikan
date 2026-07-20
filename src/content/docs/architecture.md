@@ -69,7 +69,6 @@ Responsibilities:
 - provide a unified `Executor` abstraction
 - split sandbox runtimes into two categories:
   - shared: `host` / `container:<name>`, where the same host or named container is shared
-  - isolated: `image:<image>` / `firecracker:*` / `cloudflare:*`, routed by actor/conversation/vault to isolated execution environments
 - use `ActorExecutionResolver` to decide the actual executor by user/conversation/vault
 - in `image` mode, automatically create and recycle Docker containers, resolving `image:<image>` to a concrete `container:<name>` executor
 
@@ -188,7 +187,6 @@ flowchart TD
   WebServer --> VaultManager["vault/index.ts\nwrite env/file into vault"]
   VaultManager --> VaultDir["state-dir/vaults/<vaultId>/"]
   VaultManager --> Resolver["execution-resolver.ts"]
-  Resolver --> Sandbox["host / container / image / firecracker / cloudflare"]
 ```
 
 Key points:
@@ -196,7 +194,6 @@ Key points:
 - credentials do not go directly into the workspace
 - vaults live in `--state-dir`
 - at execution time, the conversation vault is routed to the corresponding sandbox
-- `image` / `firecracker` / `cloudflare` modes use per-actor/per-conversation vault routing; `container:<name>` uses a shared container vault; `host` does not inject vault env
 
 ## 6. Differences between events and normal chats
 

@@ -60,10 +60,9 @@ describe("resolveBoot", () => {
     expect(() => resolveBoot(["--sandbox=bogus:nope"])).toThrow();
   });
 
-  test("mode priority: help > version > worker-token > onboard > download > run", () => {
+  test("mode priority: help > version > onboard > download > run", () => {
     expect(resolveBoot(["--version", "--help"]).mode).toBe("help");
     expect(resolveBoot(["--onboard", "--version"]).mode).toBe("version");
-    expect(resolveBoot(["--onboard", "--worker-token"]).mode).toBe("worker-token");
     expect(resolveBoot(["--download=C1", "--onboard"]).mode).toBe("onboard");
     expect(resolveBoot(["--download=C1"]).mode).toBe("download");
   });
@@ -98,7 +97,6 @@ describe("helpText", () => {
       "--state-dir",
       "--sandbox",
       "--onboard",
-      "--worker-token",
       "--download",
       "--version",
       "--help",

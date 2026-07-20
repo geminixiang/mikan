@@ -1,0 +1,18 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file=docker/mikan.Dockerfile
+      - --tag=${_REGISTRY}/mikan:${_TAG}
+      - .
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file=docker/agent-sandbox-runtime/Dockerfile
+      - --tag=${_REGISTRY}/mikan-agent-sandbox-runtime:${_TAG}
+      - docker/agent-sandbox-runtime
+images:
+  - ${_REGISTRY}/mikan:${_TAG}
+  - ${_REGISTRY}/mikan-agent-sandbox-runtime:${_TAG}
+options:
+  machineType: E2_HIGHCPU_8
