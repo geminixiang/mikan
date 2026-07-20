@@ -1,0 +1,6 @@
+repository=https://github.com/kubernetes-sigs/agent-sandbox
+commit=44382bf3134db8a7b44bf6a04cc7026b69dba17c
+source_path=clients/typescript/agentic-sandbox-client
+upstream_sha256=5434919e2a8c373e8d807ec612bff8b8c558e920285f1be28e2f446316f6ca43
+packaging_patch=omit optional OpenTelemetry SDK peers; mikan sets enableTracing=false
+sha256=ad95868b85192ded441390a8e781c13ec0d06bc71729648acc1514912759291b

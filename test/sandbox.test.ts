@@ -2,9 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   CloudflareSandboxExecutor,
   ContainerExecutor,
-  FirecrackerExecutor,
   HostExecutor,
-  GondolinExecutor,
   SandboxError,
   createExecutor,
   parseSandboxArg,
@@ -33,37 +31,17 @@ describe("parseSandboxArg", () => {
     });
   });
 
-  test("parses the default gondolin profile", () => {
-    expect(parseSandboxArg("gondolin:default")).toEqual({
-      type: "gondolin",
-      profile: "default",
+  test("parses agent sandbox warm pool", () => {
+    expect(parseSandboxArg("agent-sandbox:mikan-kata")).toEqual({
+      type: "agent-sandbox",
+      warmpool: "mikan-kata",
+      resourceKey: "default",
+      mounts: [],
     });
   });
 
-  test("rejects unsupported gondolin profiles", () => {
-    expect(() => parseSandboxArg("gondolin:custom")).toThrow(
-      "Error: unsupported gondolin profile 'custom'. Use 'gondolin:default'",
-    );
-  });
-
-  test("parses firecracker sandbox with defaults", () => {
-    expect(parseSandboxArg("firecracker:172.16.0.2:/home/user/workspace")).toEqual({
-      type: "firecracker",
-      vmId: "172.16.0.2",
-      hostPath: "/home/user/workspace",
-      sshUser: "root",
-      sshPort: 22,
-    });
-  });
-
-  test("parses firecracker sandbox with custom SSH user and port", () => {
-    expect(parseSandboxArg("firecracker:vm1:/srv/workspace:ubuntu:2222")).toEqual({
-      type: "firecracker",
-      vmId: "vm1",
-      hostPath: "/srv/workspace",
-      sshUser: "ubuntu",
-      sshPort: 2222,
-    });
+  test("rejects an empty agent sandbox warm pool", () => {
+    expect(() => parseSandboxArg("agent-sandbox:")).toThrowError(SandboxError);
   });
 
   test("parses cloudflare sandbox", () => {
@@ -71,15 +49,6 @@ describe("parseSandboxArg", () => {
       type: "cloudflare",
       sandboxId: "slack-u123",
     });
-  });
-
-  test("rejects invalid firecracker SSH port", () => {
-    expect(() => parseSandboxArg("firecracker:vm1:/srv/workspace:root:99999")).toThrowError(
-      SandboxError,
-    );
-    expect(() => parseSandboxArg("firecracker:vm1:/srv/workspace:root:99999")).toThrow(
-      "Error: invalid SSH port",
-    );
   });
 
   test("rejects unsupported sandbox type", () => {
@@ -114,26 +83,14 @@ describe("createExecutor", () => {
     );
   });
 
-  test("creates a gondolin executor without starting Gondolin", () => {
-    const nodeVersion = Object.getOwnPropertyDescriptor(process.versions, "node");
-    Object.defineProperty(process.versions, "node", { value: "24.0.0", configurable: true });
-    try {
-      expect(createExecutor({ type: "gondolin", profile: "default" })).toBeInstanceOf(
-        GondolinExecutor,
-      );
-    } finally {
-      if (nodeVersion) Object.defineProperty(process.versions, "node", nodeVersion);
-    }
-  });
-
-  test("creates firecracker executor", () => {
-    expect(
-      createExecutor({
-        type: "firecracker",
-        vmId: "172.16.0.2",
-        hostPath: "/home/user/workspace",
-      }),
-    ).toBeInstanceOf(FirecrackerExecutor);
+  test("creates agent sandbox executor without connecting", () => {
+    const executor = createExecutor({
+      type: "agent-sandbox",
+      warmpool: "mikan-kata",
+      resourceKey: "conversation-1",
+      mounts: [],
+    });
+    expect(executor.getSandboxConfig().type).toBe("agent-sandbox");
   });
 
   test("creates cloudflare executor", () => {
@@ -165,49 +122,6 @@ describe("ContainerExecutor", () => {
     expect(dockerCommand).toContain("mikan-sandbox sh -c");
     expect(dockerCommand).toContain("gh auth setup-git");
     expect(dockerCommand).toContain("git clone https://github.com/livingbio/skills.git");
-  });
-});
-
-describe("FirecrackerExecutor", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  test("uses /workspace as the guest workspace path", () => {
-    const executor = new FirecrackerExecutor("172.16.0.2", "/home/user/workspace");
-    expect(executor.getWorkspacePath("/home/user/workspace")).toBe("/workspace");
-  });
-
-  test("executes commands through SSH with the default port", async () => {
-    const exec = vi
-      .spyOn(HostExecutor.prototype, "exec")
-      .mockResolvedValue({ stdout: "ok\n", stderr: "", code: 0 });
-    const executor = new FirecrackerExecutor("172.16.0.2", "/home/user/workspace");
-
-    await expect(executor.exec("echo 'hello'")).resolves.toEqual({
-      stdout: "ok\n",
-      stderr: "",
-      code: 0,
-    });
-
-    expect(exec).toHaveBeenCalledWith(
-      "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@172.16.0.2 sh -c 'echo '\\''hello'\\'''",
-      undefined,
-    );
-  });
-
-  test("executes commands through SSH with a custom user and port", async () => {
-    const exec = vi
-      .spyOn(HostExecutor.prototype, "exec")
-      .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
-    const executor = new FirecrackerExecutor("vm1", "/srv/workspace", "ubuntu", 2222);
-
-    await executor.exec("pwd", { timeout: 5 });
-
-    expect(exec).toHaveBeenCalledWith(
-      "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -p 2222 ubuntu@vm1 sh -c 'pwd'",
-      { timeout: 5 },
-    );
   });
 });
 

@@ -201,8 +201,6 @@ Core tools は、runner が供給する executor と host services を使いま�
 
 ### `SandboxConfig`
 
-この discriminated union は現在、`host`、`container`、`image`、`gondolin`、`firecracker`、`cloudflare` をサポートします。パース構文と成熟度は [Sandbox](/sandbox/) の下に記載されています。
-
 ### `Executor`
 
 これは安定した実行境界であり、最も重要な sandbox 契約です:
@@ -305,13 +303,7 @@ state directory は sandbox から見える workspace 内に置いてはなり�
 
 Admin endpoints は、conversation のインベントリ/状態/使用状況、グローバルおよび conversation の settings、models、workspace files、skills、events、platform 設定、login/session links をカバーします。ルートの payload は内部の UI 契約であり、同梱 frontend とともに進化し得ます。
 
-## 14. Gondolin プロセス境界
-
-Gondolin の worker/gateway パスは、in-process の sandbox 実装ではなく、独立した wire protocol です。その契約は `gondolin-contract.ts`、`gondolin-worker-client.ts`、gateway/join modules、inventory、placement、fleet code に存在します。
-
 安定した概念は、runtime spec と handle identity、worker registration/heartbeat、leased placement、exec sessions、file transport、runtime lifecycle です。Lease watermarks は failover の間、古い workers を fence します。Wire の変更は、controller、gateway、workers の間でバージョン管理するか、互換にデプロイしなければなりません。
-
-詳細なデプロイ契約については [Gondolin remote worker](/sandbox/gondolin-remote-worker/) を参照してください。
 
 ## 契約チェックリスト
 

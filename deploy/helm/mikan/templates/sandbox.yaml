@@ -1,0 +1,53 @@
+{{- if and .Values.mikan.enabled .Values.agentSandbox.enabled }}
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
+metadata:
+  name: {{ include "mikan.sandboxTemplateName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "mikan.labels" . | nindent 4 }}
+spec:
+  # Required by the pinned direct-api client/router DNS fallback.
+  service: {{ .Values.agentSandbox.service }}
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "mikan.name" . }}-agent-sandbox
+    spec:
+      runtimeClassName: {{ .Values.agentSandbox.runtimeClassName }}
+      containers:
+        - name: runtime
+          image: {{ include "mikan.image" (dict "root" . "image" .Values.agentSandbox.runtimeImage) }}
+          imagePullPolicy: {{ .Values.agentSandbox.runtimeImage.pullPolicy }}
+          ports:
+            - name: sandbox-api
+              containerPort: 8888
+          readinessProbe:
+            httpGet:
+              path: /
+              port: sandbox-api
+            periodSeconds: 1
+            failureThreshold: 60
+          resources:
+            {{- toYaml .Values.agentSandbox.resources | nindent 12 }}
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: {{ include "mikan.workspaceClaim" . }}
+      restartPolicy: Never
+---
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxWarmPool
+metadata:
+  name: {{ include "mikan.sandboxTemplateName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "mikan.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.agentSandbox.warmPool.replicas }}
+  sandboxTemplateRef:
+    name: {{ include "mikan.sandboxTemplateName" . }}
+{{- end }}

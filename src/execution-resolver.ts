@@ -33,7 +33,6 @@ export class ActorExecutionResolver {
     private vaultManager: VaultManager,
     private provisioner?: DockerContainerManager,
     private workspaceDir?: string,
-    private hostWorkspacePath?: string,
   ) {}
 
   async resolve(context: ActorContext): Promise<Executor> {
@@ -66,7 +65,10 @@ export class ActorExecutionResolver {
     return {
       credentialKey,
       resourceKey,
-      sandboxConfig: this.resolveSandboxConfig(resourceKey, mounts),
+      sandboxConfig: this.resolveSandboxConfig(
+        resourceKey,
+        this.baseConfig.type === "agent-sandbox" ? injection.mounts : mounts,
+      ),
       env: injection.env,
       mounts,
     };
@@ -102,13 +104,11 @@ export class ActorExecutionResolver {
         sandboxId: scopeCloudflareSandboxId(this.baseConfig.sandboxId, resourceKey),
       };
     }
-    if (this.baseConfig.type === "gondolin") {
+    if (this.baseConfig.type === "agent-sandbox") {
       return {
         ...this.baseConfig,
-        workspacePath: this.hostWorkspacePath,
-        mounts,
-        instanceId: resourceKey,
         resourceKey,
+        mounts,
       };
     }
     if (this.baseConfig.type !== "image") return this.baseConfig;

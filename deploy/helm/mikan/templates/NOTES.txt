@@ -1,0 +1,15 @@
+{{- if .Values.router.enabled }}
+Sandbox router installed at:
+  http://sandbox-router-svc.{{ .Release.Namespace }}.svc:8080
+Allowed mikan namespace:
+  {{ .Values.router.clientNamespace }}
+{{- end }}
+{{- if .Values.mikan.enabled }}
+mikan is configured with sandbox mode: {{ .Values.mikan.sandbox.mode }}
+
+Check the deployment:
+  kubectl -n {{ .Release.Namespace }} get deployment,pods,pvc
+{{- if .Values.agentSandbox.enabled }}
+  kubectl -n {{ .Release.Namespace }} get sandboxtemplates,sandboxwarmpools,sandboxclaims,sandboxes
+{{- end }}
+{{- end }}

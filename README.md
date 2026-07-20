@@ -21,7 +21,7 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 - **Chat / conversation data** is the platform-facing record: `log.jsonl`, attachments, and conversation files.
 - **Session orchestration** turns platform events into agent runs, handles top-level/thread scopes, and persists structured context under `sessions/*.jsonl`.
 - **mikan agent harness** (`src/harness/`, built on pi-agent-core and pi-ai) runs the model loop, session persistence, compaction, and calls mikan tools.
-- **Sandbox runtime** is where tool commands execute: host, Docker container/image, Firecracker, or Cloudflare bridge.
+- **Sandbox runtime** is where tool commands execute: host, Docker container/image, Kubernetes Agent Sandbox with Kata, or Cloudflare bridge.
 - **Vault** provides runtime credentials as env vars and mounted secret files.
 
 ## Features
@@ -91,6 +91,10 @@ DISCORD_BOT_TOKEN=MTI...
 
 Tail logs with `pm2 logs mikan`; upgrade with `npm i -g @geminixiang/mikan && pm2 reload mikan`. See [the deployment guide](src/content/docs/deployment.mdx) for sandbox images, graceful shutdown, and the health endpoint.
 
+### Kubernetes with Helm
+
+The supported Kubernetes deployment interface is the [mikan Helm chart](deploy/helm/mikan/README.md). Follow the complete quickstart for [GKE Standard](deploy/helm/mikan/docs/quickstart-gke.md), [Linux amd64 k3s](deploy/helm/mikan/docs/quickstart-k3s.md), or [Colima](deploy/helm/mikan/docs/quickstart-colima.md). GKE is the fully validated Agent Sandbox + Kata + Filestore path; k3s requires user-installed Kata and RWX storage, while Colima defaults to host execution rather than claiming unverified Kata isolation.
+
 For a one-off foreground run, the same CLI works directly:
 
 ```bash
@@ -109,13 +113,13 @@ Slack threads, Discord replies/threads, and Telegram reply chains are mapped to 
 
 ## Sandbox
 
-| Mode                         | Description                                                            |
-| ---------------------------- | ---------------------------------------------------------------------- |
-| `host` (default)             | Run on host; no vault env injection                                    |
-| `container:<name>`           | Run in an existing shared container; uses vault key `container-<name>` |
-| `image:<image>`              | Auto-provision one Docker container per resolved vault/user            |
-| `firecracker:<vm-id>:<path>` | Firecracker microVM (alpha; not recommended)                           |
-| `cloudflare:<sandbox-id>`    | Cloudflare Worker bridge (experimental; no auto workspace sync)        |
+| Mode                        | Description                                                            |
+| --------------------------- | ---------------------------------------------------------------------- |
+| `host` (default)            | Run on host; no vault env injection                                    |
+| `container:<name>`          | Run in an existing shared container; uses vault key `container-<name>` |
+| `image:<image>`             | Auto-provision one Docker container per resolved vault/user            |
+| `agent-sandbox:<warm-pool>` | Kubernetes Agent Sandbox with required Kata microVM isolation          |
+| `cloudflare:<sandbox-id>`   | Cloudflare Worker bridge (experimental; no auto workspace sync)        |
 
 For routing, mounts, vault behavior, managed container details, and Firecracker/Cloudflare notes, see [src/content/docs/sandbox.md](src/content/docs/sandbox.md).
 

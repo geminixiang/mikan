@@ -1,0 +1,9 @@
+# Install as a separate release in agent-sandbox-system.
+mikan:
+  enabled: false
+agentSandbox:
+  enabled: false
+router:
+  enabled: true
+validation:
+  clusterPrerequisites: false

@@ -29,6 +29,10 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
 The published `mikan-sandbox` image is a tool runtime, not a standalone mikan server image. PM2 runs `mikan` on the host; image mode creates and manages containers through the host Docker daemon.
 
+## Kubernetes deployment
+
+Use the [mikan Helm chart](https://github.com/geminixiang/mikan/tree/main/deploy/helm/mikan) for Kubernetes, then follow the complete quickstart for [GKE Standard](https://github.com/geminixiang/mikan/blob/main/deploy/helm/mikan/docs/quickstart-gke.md), [Linux amd64 k3s](https://github.com/geminixiang/mikan/blob/main/deploy/helm/mikan/docs/quickstart-k3s.md), or [Colima](https://github.com/geminixiang/mikan/blob/main/deploy/helm/mikan/docs/quickstart-colima.md). The chart keeps cluster prerequisites such as Kata, Agent Sandbox CRDs, and RWX storage separate from Helm-managed resources.
+
 ## PM2 deployment
 
 <Steps>

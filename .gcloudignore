@@ -1,0 +1,14 @@
+.git
+.claude
+.pi
+.workspace
+dist
+site-dist
+node_modules
+test
+e2e
+worker
+src/content/docs
+examples
+coverage
+*.log

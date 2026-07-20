@@ -41,35 +41,3 @@ jobs:
           else
             npm publish --provenance --access public
           fi
-
-  worker-binaries:
-    if: github.event_name == 'release'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.25"
-          cache: false
-
-      - name: Build mikan-worker release binaries
-        working-directory: worker
-        run: |
-          TAG="${{ github.event.release.tag_name }}"
-          mkdir -p dist
-          for target in linux/amd64 linux/arm64 darwin/arm64 darwin/amd64; do
-            os="${target%/*}"; arch="${target#*/}"
-            GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
-              go build -trimpath -ldflags "-s -w -X main.version=$TAG" \
-              -o "dist/mikan-worker_${TAG}_${os}_${arch}" ./cmd/mikan-worker
-          done
-          (cd dist && sha256sum mikan-worker_* > "mikan-worker_${TAG}_SHA256SUMS.txt")
-
-      - name: Upload binaries to the release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" worker/dist/* --clobber

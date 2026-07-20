@@ -9,6 +9,29 @@ any release.
 
 ## [Unreleased]
 
+### Added
+
+- Add Kubernetes Agent Sandbox execution with mandatory `kata-qemu` isolation, a pinned TypeScript client, managed idle cleanup, and shared workspace support.
+- Add a Helm chart with GKE Standard, Linux k3s, Colima, and router-only profiles; GKE supports Filestore CSI on an explicitly configured VPC.
+- Publish mikan, the Agent Sandbox runtime, and the pinned router source build to GHCR through a release-aware image workflow.
+
+### Changed
+
+- Replace Gondolin and Firecracker sandbox modes with `agent-sandbox:<warm-pool>`.
+- Make Helm the supported Kubernetes deployment interface; the default and Colima profiles use host execution, while GKE and k3s profiles require Kata and RWX storage.
+
+### Removed
+
+- Remove the standalone `mikan-worker`, remote worker fleet, dial-home gateway, Gondolin runtime, Firecracker executor, worker CI, and worker release binaries. Existing Gondolin deployments must move to the Agent Sandbox Helm deployment; no automatic deployment or state migration is provided.
+
+### Security
+
+- Require Kata rather than silently falling back to runc, restrict the optional router to the configured mikan namespace with a NetworkPolicy, and keep generated PVCs by default on Helm uninstall.
+
+### Tests
+
+- Add Agent Sandbox unit coverage, Helm profile assertions, pinned router image builds, and full GKE validation covering Kata, Filestore RWX, browser recording, aborts, recovery, Slack, and LLM tool execution.
+
 ## [1.0.0-beta.22]
 
 ### Added

@@ -1,0 +1,66 @@
+{{- if .Values.storage.workspace.gkeFilestore.createStorageClass }}
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ include "mikan.workspaceStorageClass" . }}
+  {{- if .Values.storage.retainClaims }}
+  annotations:
+    helm.sh/resource-policy: keep
+  {{- end }}
+  labels:
+    {{- include "mikan.labels" . | nindent 4 }}
+provisioner: filestore.csi.storage.gke.io
+parameters:
+  tier: {{ .Values.storage.workspace.gkeFilestore.tier | quote }}
+  network: {{ required "GKE Filestore network is required" .Values.storage.workspace.gkeFilestore.network | quote }}
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+---
+{{- end }}
+{{- if and .Values.mikan.enabled .Values.storage.workspace.create (not .Values.storage.workspace.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "mikan.workspaceClaim" . }}
+  namespace: {{ .Release.Namespace }}
+  {{- if .Values.storage.retainClaims }}
+  annotations:
+    helm.sh/resource-policy: keep
+  {{- end }}
+  labels:
+    {{- include "mikan.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.storage.workspace.accessModes | nindent 4 }}
+  {{- $workspaceStorageClass := include "mikan.workspaceStorageClass" . }}
+  {{- if $workspaceStorageClass }}
+  storageClassName: {{ $workspaceStorageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.workspace.size }}
+---
+{{- end }}
+{{- if and .Values.mikan.enabled .Values.storage.state.create (not .Values.storage.state.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "mikan.stateClaim" . }}
+  namespace: {{ .Release.Namespace }}
+  {{- if .Values.storage.retainClaims }}
+  annotations:
+    helm.sh/resource-policy: keep
+  {{- end }}
+  labels:
+    {{- include "mikan.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.storage.state.accessModes | nindent 4 }}
+  {{- with .Values.storage.state.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.state.size }}
+{{- end }}

@@ -26,14 +26,18 @@ export type {
 } from "./adapter.js";
 export {
   SandboxError,
-  configureGondolinRuntime,
+  configureAgentSandboxRuntime,
   createExecutor,
   getSandboxAdapters,
   parseSandboxArg,
+  shutdownAgentSandboxes,
+  stopIdleAgentSandboxes,
   validateSandbox,
-  type GondolinBootstrapOptions,
 } from "./sandbox/index.js";
+export type { AgentConfig, AgentSandboxSettings, SandboxSettings } from "./types.js";
 export type {
+  AgentSandboxConfig,
+  AgentSandboxRuntimeOptions,
   CloudflareSandboxConfig,
   ExecOptions,
   ExecResult,

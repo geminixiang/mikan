@@ -6,8 +6,6 @@ sidebar:
   label: Google Workspace CLI
 ---
 
-> 注意：mikan は Google の authorized_user JSON を vault に保存し、ターゲットパス（target path）のメタデータを保持します。`image` サンドボックスは、この種の vault ファイルをコンテナ内のターゲットパスへ自動的に投影（プロジェクション）します。現行の `container` / `firecracker` ランタイムは、依然として自動的なファイルのプロジェクションを行いません。
-
 ## 1. Google OAuth クライアントの作成
 
 Google Cloud Console に移動します：
@@ -87,4 +85,3 @@ mikan から返されたリンクを開き、Google Workspace CLI OAuth を選�
 
 - mikan は Web OAuth コールバックを使用するため、Google OAuth クライアントはデスクトップアプリではなく、`Web application` である必要があります。
 - Google から `refresh_token` が返されない場合は、既存の同意（consent）を取り消してから再度 `/login` を行ってください。mikan は `access_type=offline` および `prompt=consent` を要求しますが、既存の承認があるために Google がリフレッシュトークンを省略することがあります。
-- `gws.json` を `/root/.config/gws/credentials.json` に自動的に表示させるには、`image` サンドボックスを使用してください。`container` / `firecracker` は、現時点ではファイル認証情報のメタデータ（file credential metadata）を保存するのみで、自動投影は行いません。

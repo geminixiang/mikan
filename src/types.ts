@@ -247,65 +247,12 @@ export interface PiAgentWrapper {
 
 // ── config ────────────────────────────────────────────────────────────────────
 
-export interface GondolinRemoteWorkerSettings {
-  /** Stable placement identity; defaults to the URL. */
-  name?: string;
-  /** Base URL of the mikan-worker daemon, e.g. https://worker.internal:8433 */
-  url: string;
-  /** CA bundle that signs the daemon's server certificate. */
-  caFile?: string;
-  /** Client certificate + key presented to the daemon (mTLS); falls back to the fleet-level pair. */
-  certFile?: string;
-  keyFile?: string;
-  /** Worker-side path of the shared workspace filesystem. */
-  workspaceRoot?: string;
-  /** Admission cap for new placements (existing runtimes always count). */
-  maxRuntimes?: number;
-  /** Drained workers accept no new placements; existing ones finish out. */
-  draining?: boolean;
-}
-
-export interface GondolinGatewaySettings {
-  /** Port the worker gateway listens on for dial-home workers. */
-  port: number;
-  /**
-   * Gateway server certificate + key and the CA that signs worker client
-   * certificates. Omit all three to let the gateway provision its own CA and
-   * server certificate under the state dir (required for `--worker-token`
-   * joins).
-   */
-  certFile?: string;
-  keyFile?: string;
-  clientCaFile?: string;
-  /** SANs for the auto-issued server certificate (defaults to os.hostname). */
-  hostnames?: string[];
-  /**
-   * Worker-side path of the shared workspace filesystem. Required in practice:
-   * mount sources are translated to it, and without it every runtime is
-   * rejected with "escapes the workspace root". gondolinGateway.start()
-   * enforces it at boot; typed optional to match the settings schema.
-   */
-  workspaceRoot?: string;
-  /** Per-worker host-side overrides, keyed by worker name. */
-  workers?: Record<string, { maxRuntimes?: number; draining?: boolean }>;
-}
-
-export interface GondolinRemoteSettings {
-  /** Single-worker form: connection fields inline (a fleet of one). */
-  url?: string;
-  caFile?: string;
-  certFile?: string;
-  keyFile?: string;
-  workspaceRoot?: string;
-  maxRuntimes?: number;
-  /** Fleet form: several workers; per-worker fields fall back to the inline ones. */
-  workers?: GondolinRemoteWorkerSettings[];
-  /** Dial-home form: listen for workers that connect to mikan instead. */
-  gateway?: GondolinGatewaySettings;
-  /** Guest image selector resolved on the workers. */
-  imageSelector?: string;
-  /** How long a new conversation waits for capacity before failing. */
-  queueWaitSeconds?: number;
+export interface AgentSandboxSettings {
+  namespace: string;
+  runtimeClassName: string;
+  apiUrl?: string;
+  routerNamespace?: string;
+  sandboxReadyTimeout?: number;
 }
 
 export interface SandboxSettings {
@@ -313,7 +260,7 @@ export interface SandboxSettings {
   memory?: string;
   boost?: { cpus?: string; memory?: string };
   image?: { workspaceMount?: "private" | "full" };
-  gondolin?: { remote?: GondolinRemoteSettings };
+  agentSandbox?: AgentSandboxSettings;
   defaultSharedVault?: string;
 }
 

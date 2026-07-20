@@ -6,8 +6,6 @@ sidebar:
   label: Google Workspace CLI
 ---
 
-> 注意：mikan 會把 Google authorized_user JSON 存進 vault，並保存 target path metadata。`image` sandbox 會把這類 vault file 自動投影到 container 內的 target path；現有 `container` / `firecracker` runtime 仍不會自動做 file projection。
-
 ## 1. 建立 Google OAuth Client
 
 到 Google Cloud Console：
@@ -87,4 +85,3 @@ mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 
 - mikan 使用 web OAuth callback，因此 Google OAuth client 必須是 `Web application`，不是 desktop app。
 - 如果 Google 沒有回傳 `refresh_token`，請撤銷既有 consent 後重新 `/login`。mikan 會要求 `access_type=offline` 與 `prompt=consent`，但 Google 仍可能因既有授權而省略 refresh token。
-- 若要讓 `gws.json` 自動出現在 `/root/.config/gws/credentials.json`，請使用 `image` sandbox。`container` / `firecracker` 目前仍只會保存 file credential metadata，不會自動投影。

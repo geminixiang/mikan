@@ -52,7 +52,7 @@ mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 或：
 
 ```bash
-mikan --sandbox=firecracker:192.168.1.100:/path/to/workspace /path/to/workspace
+
 ```
 
 ## 4. 使用 `/login`
@@ -71,8 +71,6 @@ mikan --sandbox=firecracker:192.168.1.100:/path/to/workspace /path/to/workspace
 GITHUB_OAUTH_ACCESS_TOKEN
 GH_TOKEN
 ```
-
-在 `container` / `image` / `firecracker` sandbox 中，後續工具執行會注入這些 env。
 
 ## Scopes
 

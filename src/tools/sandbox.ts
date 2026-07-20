@@ -55,11 +55,8 @@ export function createSandboxTool(controller: SandboxToolController): {
       if (!sandboxContext) {
         throw new Error("Sandbox context not configured");
       }
-      if (
-        (controller.sandbox.type !== "image" && controller.sandbox.type !== "gondolin") ||
-        !controller.resourceController
-      ) {
-        throw new Error("The sandbox tool only supports image:* and gondolin:* managed sandboxes");
+      if (controller.sandbox.type !== "image" || !controller.resourceController) {
+        throw new Error("The sandbox tool only supports image:* managed sandboxes");
       }
 
       const containerKey = runtimeResourceKey(controller.sandbox, {

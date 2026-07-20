@@ -1,9 +1,0 @@
-{
-  "sessionId": "sess-0f3a",
-  "instanceId": "gh-owner-repo-42",
-  "fingerprint": "fp-1234abcd",
-  "workerPid": 4242,
-  "runnerPid": 4243,
-  "epoch": 7,
-  "adopted": true
-}

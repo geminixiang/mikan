@@ -715,7 +715,7 @@ describe("SandboxCommandHandler", () => {
       conversationId: "C123",
       services: {
         workingDir,
-        sandbox: { type: "gondolin", profile: "default" },
+        sandbox: { type: "image", image: "test" },
         resourceController: {
           boost,
           getBoostLimits: () => ({ cpus: "2", memory: "4g" }),
