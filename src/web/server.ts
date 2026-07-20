@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { MessagingBot, PlatformName } from "../adapter.js";
 import { resolveLinkBaseUrl } from "../config.js";
 import * as log from "../log.js";
-import type { SandboxConfig } from "../sandbox/index.js";
+import type { GondolinFleetDiagnostics, SandboxConfig } from "../sandbox/index.js";
 import { HostEventStore } from "../tools/event.js";
 import type { VaultManager } from "../vault/index.js";
 import { handleAdminRequest, type AdminRuntimeBridge } from "./admin/portal.js";
@@ -28,8 +28,10 @@ interface StartWebServerOptions {
   adminOptions?: {
     adminTokenStore: InMemoryAdminTokenStore;
     workingDir?: string;
+    conversationStorageScoped?: boolean;
     runtime?: AdminRuntimeBridge;
     sandbox?: SandboxConfig;
+    gondolinDiagnostics?: () => Promise<GondolinFleetDiagnostics>;
     botsByPlatform?: Partial<Record<PlatformName, MessagingBot>>;
   };
 }
@@ -69,9 +71,11 @@ export function startWebServer(options: StartWebServerOptions): Server {
           adminTokenStore: adminOptions.adminTokenStore,
           portalBaseUrl: resolveLinkBaseUrl() ?? undefined,
           workingDir: adminOptions.workingDir,
+          conversationStorageScoped: adminOptions.conversationStorageScoped,
           eventStore: adminEventStore,
           runtime: adminOptions.runtime,
           sandbox: adminOptions.sandbox,
+          gondolinDiagnostics: adminOptions.gondolinDiagnostics,
           botsByPlatform: adminOptions.botsByPlatform,
         }))
       ) {

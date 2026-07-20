@@ -1,8 +1,10 @@
 import { spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
+import type { GondolinNetworkPolicy } from "../types.js";
 import { SandboxError } from "./errors.js";
 import { gondolinInventory, type GondolinRuntimeRecord } from "./gondolin-inventory.js";
 import type { GondolinWorkerConfig, GondolinWorkerHandshake } from "./gondolin-worker.js";
@@ -37,6 +39,7 @@ export interface GondolinRuntimeSpec {
   vmCpus?: number;
   memory?: string;
   fingerprint: string;
+  network?: GondolinNetworkPolicy;
   /** mikan-host workspace root, for remote mount prefix translation. */
   workspacePath?: string;
 }
@@ -105,8 +108,8 @@ async function defaultConnect(
   return connectToSession(socketPath, callbacks);
 }
 
-function abortError(): Error {
-  return new Error("Error: command aborted");
+function abortError(): GondolinRuntimeInterruptedError {
+  return new GondolinRuntimeInterruptedError("Error: command aborted");
 }
 
 /**
@@ -116,23 +119,34 @@ function abortError(): Error {
  * kill it and say so instead of hanging the run.
  */
 const EXEC_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+const EXEC_OUTPUT_LIMIT_BYTES = 64 * 1024 * 1024;
 
 /**
  * Run one command through a fresh session connection — the shared state
- * machine for both transports. Closing the connection (abort, timeout, or the
- * far side dying) kills the in-flight guest process.
+ * machine for both transports. Closing the connection interrupts response
+ * routing but does not prove an admitted guest process exited; callers must
+ * fence the runtime after any interrupted result.
  */
 export async function execOverSessionConnect(
   connect: (callbacks: SessionClientCallbacks) => SessionClient | Promise<SessionClient>,
   command: string,
-  options: { env?: Record<string, string>; signal?: AbortSignal; idleTimeoutMs?: number } = {},
+  options: {
+    env?: Record<string, string>;
+    signal?: AbortSignal;
+    idleTimeoutMs?: number;
+    outputLimitBytes?: number;
+  } = {},
 ): Promise<ExecResult> {
   if (options.signal?.aborted) throw abortError();
   const idleTimeoutMs = options.idleTimeoutMs ?? EXEC_IDLE_TIMEOUT_MS;
+  const outputLimitBytes = options.outputLimitBytes ?? EXEC_OUTPUT_LIMIT_BYTES;
   return await new Promise<ExecResult>((resolve, reject) => {
     let stdout = "";
     let stderr = "";
+    const stdoutDecoder = new StringDecoder("utf8");
+    const stderrDecoder = new StringDecoder("utf8");
     let received = false;
+    let outputBytes = 0;
     let settled = false;
     let client: SessionClient | undefined;
     let idleTimer: NodeJS.Timeout | undefined;
@@ -172,6 +186,8 @@ export async function execOverSessionConnect(
         if (message.type === "exec_response" && message.id === 1) {
           settle(() => {
             client?.close();
+            stdout += stdoutDecoder.end();
+            stderr += stderrDecoder.end();
             resolve({
               stdout,
               stderr,
@@ -189,9 +205,29 @@ export async function execOverSessionConnect(
         received = true;
         armIdleTimer();
         const tag = frame.readUInt8(0);
-        const data = frame.subarray(5).toString("utf8");
-        if (tag === 1) stdout += data;
-        else stderr += data;
+        const id = frame.readUInt32BE(1);
+        if (id !== 1) {
+          settle(() => {
+            client?.close();
+            reject(new GondolinRuntimeInterruptedError(`unexpected session output id ${id}`));
+          });
+          return;
+        }
+        const data = frame.subarray(5);
+        outputBytes += data.length;
+        if (outputLimitBytes > 0 && outputBytes > outputLimitBytes) {
+          settle(() => {
+            client?.close();
+            reject(
+              new GondolinRuntimeInterruptedError(
+                `session output exceeded ${outputLimitBytes} bytes — killed the command`,
+              ),
+            );
+          });
+          return;
+        }
+        if (tag === 1) stdout += stdoutDecoder.write(data);
+        else stderr += stderrDecoder.write(data);
       },
       onClose: (error) => {
         settle(() => {
@@ -267,6 +303,7 @@ class GondolinWorkerClient implements GondolinRuntimeTransport {
       cpus: spec.vmCpus,
       memory: spec.memory,
       fingerprint: spec.fingerprint,
+      network: spec.network,
       inventoryDir: gondolinInventory.directory() ?? join(homedir(), ".mikan", "gondolin-runtimes"),
       heartbeatStaleMs: WORKER_HEARTBEAT_STALE_MS,
     });

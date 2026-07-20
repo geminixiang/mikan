@@ -20,11 +20,17 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/geminixiang/mikan/worker/internal/dialhome"
 )
+
+var workerNamePattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$`)
+
+// ValidWorkerName reports whether name is safe as a certificate CN and placement identity.
+func ValidWorkerName(name string) bool { return workerNamePattern.MatchString(name) }
 
 // Config is what join writes and `connect --config` reads.
 type Config struct {
@@ -78,6 +84,15 @@ type Options struct {
 // anything is persisted — a man-in-the-middle would need a CA matching the
 // pin.
 func Run(options Options) error {
+	if !ValidWorkerName(options.Name) {
+		return errors.New("worker name must be 1-128 letters, numbers, dots, underscores, or hyphens")
+	}
+	configPath := filepath.Join(options.Dir, "config.json")
+	if _, err := os.Stat(configPath); err == nil {
+		return fmt.Errorf("%s already exists; use a new --dir so credential rotation is atomic", configPath)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect %s: %w", configPath, err)
+	}
 	if options.DialTimeout == 0 {
 		options.DialTimeout = 10 * time.Second
 	}
@@ -183,7 +198,40 @@ func Run(options Options) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(options.Dir, "config.json"), append(raw, '\n'), 0o600)
+	return atomicWritePrivate(configPath, append(raw, '\n'))
+}
+
+func atomicWritePrivate(path string, content []byte) error {
+	suffix := make([]byte, 8)
+	if _, err := rand.Read(suffix); err != nil {
+		return fmt.Errorf("generate temporary file name: %w", err)
+	}
+	staged := fmt.Sprintf("%s.%s.tmp", path, hex.EncodeToString(suffix))
+	file, err := os.OpenFile(staged, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	removeStaged := true
+	defer func() {
+		_ = file.Close()
+		if removeStaged {
+			_ = os.Remove(staged)
+		}
+	}()
+	if _, err := file.Write(content); err != nil {
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(staged, path); err != nil {
+		return err
+	}
+	removeStaged = false
+	return nil
 }
 
 func normalizePin(pin string) (string, error) {

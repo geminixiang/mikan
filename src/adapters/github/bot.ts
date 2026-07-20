@@ -11,6 +11,8 @@ import * as log from "../../log.js";
 import { ensureDirExists, readJsonSchemaFileIfExists } from "../../utils/file-guards.js";
 import { atomicWritePrivateFile } from "../../utils/fs-atomic.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
+import { scopeSessionIdentity } from "../../sessions/session-key.js";
+import type { ConversationStorageManager } from "../../sessions/conversation-storage-manager.js";
 import {
   appendBotResponseLog,
   appendChannelLog,
@@ -179,6 +181,7 @@ export class GithubMessagingBot implements MessagingBot {
   private readonly client: GithubClient;
   private readonly handler: MessagingEventHandler;
   private readonly config: GithubBotConfig;
+  private readonly storageManager?: ConversationStorageManager;
   /** Host-side backend for the github_* tool pack; standalone from polling. */
   readonly ops: GithubOps;
   private appSlug: string | null = null;
@@ -189,9 +192,15 @@ export class GithubMessagingBot implements MessagingBot {
   private permissionCache = new Map<string, { rank: number; expiresAt: number }>();
   private pollInFlight = false;
 
-  constructor(handler: MessagingEventHandler, config: GithubBotConfig, client?: GithubClient) {
+  constructor(
+    handler: MessagingEventHandler,
+    config: GithubBotConfig,
+    client?: GithubClient,
+    storageManager?: ConversationStorageManager,
+  ) {
     this.handler = handler;
     this.config = config;
+    this.storageManager = storageManager;
     this.client =
       client ??
       new GithubClient({
@@ -202,6 +211,7 @@ export class GithubMessagingBot implements MessagingBot {
     this.ops = new GithubOps(this.client, {
       workingDir: config.workingDir,
       cloudBuild: config.cloudBuild,
+      storageManager,
     });
   }
 
@@ -311,7 +321,8 @@ export class GithubMessagingBot implements MessagingBot {
 
   enqueueEvent(event: ConversationEvent): boolean {
     const conversationId = event.conversationId;
-    const queue = this.getQueue(conversationId);
+    const queueKey = this.storageManager?.storageKey("github", conversationId) ?? conversationId;
+    const queue = this.getQueue(queueKey);
     if (queue.size() >= 5) {
       log.logWarning(
         `Event queue full for ${conversationId}, discarding: ${event.text.substring(0, 50)}`,
@@ -319,9 +330,23 @@ export class GithubMessagingBot implements MessagingBot {
       return false;
     }
     log.logInfo(`Enqueueing event for ${conversationId}: ${event.text.substring(0, 50)}`);
-    queue.enqueue(() => {
-      const context = createGithubAdapters(event as GithubEvent, this);
-      return this.handler.handleEvent(event, this, context);
+    queue.enqueue(async () => {
+      const storage = await this.storageManager?.resolve("github", conversationId);
+      const platformSessionKey = event.sessionKey ?? conversationId;
+      const scopedEvent = storage
+        ? {
+            ...event,
+            storageKey: storage.storageKey,
+            conversationDir: storage.conversationDir,
+            runtimeSessionKey: scopeSessionIdentity(
+              platformSessionKey,
+              conversationId,
+              storage.storageKey,
+            ).runtimeSessionKey,
+          }
+        : event;
+      const context = createGithubAdapters(scopedEvent as GithubEvent, this);
+      return this.handler.handleEvent(scopedEvent, this, context);
     });
     return true;
   }
@@ -355,11 +380,15 @@ export class GithubMessagingBot implements MessagingBot {
   }
 
   logToFile(conversationId: string, entry: object): void {
-    appendChannelLog(this.config.workingDir, conversationId, entry);
+    const storageId =
+      this.storageManager?.requireResolved("github", conversationId).storageKey ?? conversationId;
+    appendChannelLog(this.config.workingDir, storageId, entry);
   }
 
   logBotResponse(conversationId: string, text: string, ts: string): void {
-    appendBotResponseLog(this.config.workingDir, conversationId, text, ts);
+    const storageId =
+      this.storageManager?.requireResolved("github", conversationId).storageKey ?? conversationId;
+    appendBotResponseLog(this.config.workingDir, storageId, text, ts);
   }
 
   // ==========================================================================
@@ -555,7 +584,8 @@ export class GithubMessagingBot implements MessagingBot {
   }
 
   private isParticipating(conversationId: string): boolean {
-    return existsSync(join(this.config.workingDir, conversationId, "log.jsonl"));
+    const storageId = this.storageManager?.storageKey("github", conversationId) ?? conversationId;
+    return existsSync(join(this.config.workingDir, storageId, "log.jsonl"));
   }
 
   /**
@@ -663,6 +693,9 @@ export class GithubMessagingBot implements MessagingBot {
       handler: this.handler,
       bot: this,
       createContext: (event) => createGithubAdapters(event, this),
+      resolveStorage: this.storageManager
+        ? () => this.storageManager!.resolve("github", conversationId)
+        : undefined,
     });
   }
 
@@ -685,7 +718,9 @@ export class GithubMessagingBot implements MessagingBot {
       // isPr: true (they only exist on PRs) and that knowledge is authoritative.
       if (issue && isPrHint === undefined) isPrHint = Boolean(issue.pull_request);
     }
-    if (!existsSync(conversationRepoDir(this.config.workingDir, conversationId))) {
+    const storageId =
+      this.storageManager?.requireResolved("github", conversationId).storageKey ?? conversationId;
+    if (!existsSync(conversationRepoDir(this.config.workingDir, storageId))) {
       const isPr = isPrHint ?? (await fetchIsPr(this.client, item.ref));
       await this.ensureRepoClone(item.ref, conversationId, isPr);
     }
@@ -800,7 +835,9 @@ export class GithubMessagingBot implements MessagingBot {
     conversationId: string,
     isPr: boolean,
   ): Promise<void> {
-    const dir = conversationRepoDir(this.config.workingDir, conversationId);
+    const storageId =
+      this.storageManager?.requireResolved("github", conversationId).storageKey ?? conversationId;
+    const dir = conversationRepoDir(this.config.workingDir, storageId);
     if (existsSync(dir)) return;
     try {
       const token = await this.client.createScopedInstallationToken(ref.repo, {

@@ -59,6 +59,8 @@ class FakeDialhomeWorker extends EventEmitter {
   execResponse = { stdout: "ok", code: 0 };
   workspaceError?: string;
   respondToRequests = true;
+  respondToTunnels = true;
+  respondToExec = true;
 
   constructor(
     readonly port: number,
@@ -80,7 +82,7 @@ class FakeDialhomeWorker extends EventEmitter {
             accelerator: "kvm",
             cpus: 8,
             maxRuntimes: 4,
-            protocolVersion: 1,
+            protocolVersion: 2,
             runtimes: this.surviving,
             ...(this.workspaceError ? { workspaceError: this.workspaceError } : {}),
           }),
@@ -123,8 +125,12 @@ class FakeDialhomeWorker extends EventEmitter {
       }
     } else if (frame.type === "open-tunnel") {
       this.emit("open-tunnel", frame);
-      if (this.runtime?.sessionId === frame.sessionId) {
+      if (this.respondToTunnels && this.runtime?.sessionId === frame.sessionId) {
         this.dialBackTunnel(frame.nonce as string);
+      } else if (this.respondToTunnels) {
+        this.control.write(
+          encodeFrame({ type: "tunnel-error", nonce: frame.nonce, message: "runtime unavailable" }),
+        );
       }
     }
   }
@@ -140,7 +146,14 @@ class FakeDialhomeWorker extends EventEmitter {
   } {
     const { method, path, body } = frame;
     if (method === "GET" && path === "/v1/health") {
-      return { status: 200, body: { activeRuntimes: this.runtime ? 1 : 0 } };
+      return {
+        status: 200,
+        body: {
+          protocolVersion: 2,
+          serverTime: new Date().toISOString(),
+          activeRuntimes: this.runtime ? 1 : 0,
+        },
+      };
     }
     if (method === "POST" && path === "/v1/leases") {
       const instanceId = body?.instanceId as string;
@@ -148,10 +161,30 @@ class FakeDialhomeWorker extends EventEmitter {
       this.epochs.set(instanceId, epoch);
       const id = `lease-${instanceId}-${epoch}`;
       this.leases.set(id, { instanceId, epoch });
-      return { status: 200, body: { id, epoch, instanceId } };
+      return {
+        status: 200,
+        body: {
+          id,
+          epoch,
+          instanceId,
+          expiresAt: new Date(Date.now() + 300_000).toISOString(),
+          serverTime: new Date().toISOString(),
+        },
+      };
     }
     if (method === "POST" && path?.endsWith("/renew")) {
-      return { status: 200, body: {} };
+      const id = path.split("/")[3];
+      const active = this.leases.get(id);
+      if (!active) return { status: 404, body: {} };
+      return {
+        status: 200,
+        body: {
+          id,
+          ...active,
+          expiresAt: new Date(Date.now() + 300_000).toISOString(),
+          serverTime: new Date().toISOString(),
+        },
+      };
     }
     if (method === "DELETE" && path?.startsWith("/v1/leases/")) {
       return { status: 200, body: {} };
@@ -193,7 +226,7 @@ class FakeDialhomeWorker extends EventEmitter {
         if (buffer.length < 4 + length) return;
         const message = JSON.parse(buffer.subarray(4, 4 + length).toString());
         buffer = buffer.subarray(4 + length);
-        if (message.type === "exec") {
+        if (message.type === "exec" && this.respondToExec) {
           // binary stdout frame then exec_response, per the session protocol
           const stdout = Buffer.from(this.execResponse.stdout);
           const binary = Buffer.alloc(5 + 5 + stdout.length);
@@ -236,12 +269,14 @@ describe("Gondolin worker gateway", () => {
   let placements: GondolinPlacementStore;
   let port: number;
   let workers: FakeDialhomeWorker[];
+  let activateCertificate: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), "gondolin-gateway-"));
     placements = new GondolinPlacementStore();
     placements.configure(join(dir, "placement.json"));
     workers = [];
+    activateCertificate = vi.fn(() => true);
 
     gondolinFleet.configure(
       { imageSelector: "mikan-sandbox:latest", queueWaitSeconds: 1, workers: [] },
@@ -260,8 +295,11 @@ describe("Gondolin worker gateway", () => {
         // plain TCP for tests; production wraps the same handler in mTLS
         createServer: (onConnection) => createServer(onConnection) as Server,
         isAuthorized: () => true,
+        isWorkerNameAuthorized: () => true,
+        activateWorkerCertificate: activateCertificate,
         rpcTimeoutMs: 2000,
         tunnelTimeoutMs: 2000,
+        preambleTimeoutMs: 50,
       },
     );
     await gondolinGateway.start();
@@ -292,6 +330,117 @@ describe("Gondolin worker gateway", () => {
     return worker;
   }
 
+  test("closes connections that never send a preamble", async () => {
+    const socket = connect(port, "127.0.0.1");
+    await new Promise<void>((resolve, reject) => {
+      socket.on("close", () => resolve());
+      socket.on("error", reject);
+    });
+    expect(gondolinGateway.list()).toEqual([]);
+  });
+
+  test("rejects workers with a missing or incompatible protocol version", async () => {
+    for (const protocolVersion of [undefined, 3]) {
+      const socket = connect(port, "127.0.0.1", () => {
+        socket.write(
+          encodeFrame({
+            type: "register",
+            name: `incompatible-${String(protocolVersion)}`,
+            protocolVersion,
+          }),
+        );
+      });
+      const response = await new Promise<Record<string, unknown>>((resolve, reject) => {
+        let buffer = Buffer.alloc(0);
+        socket.on("data", (chunk) => {
+          buffer = Buffer.concat([buffer, chunk]);
+          if (buffer.length < 4 || buffer.length < 4 + buffer.readUInt32BE(0)) return;
+          resolve(JSON.parse(buffer.subarray(4, 4 + buffer.readUInt32BE(0)).toString()));
+        });
+        socket.on("error", reject);
+      });
+      expect(response.type).toBe("register-error");
+      socket.destroy();
+    }
+    expect(gondolinGateway.list()).toEqual([]);
+    expect(activateCertificate).not.toHaveBeenCalled();
+  });
+
+  test("accepts protocol v1 workers during a host-first rolling upgrade", async () => {
+    const worker = new FakeDialhomeWorker(port, "rolling-v1");
+    workers.push(worker);
+    worker.connect = () =>
+      new Promise((resolve) => {
+        worker.control = connect(port, "127.0.0.1", () => {
+          worker.control.write(
+            encodeFrame({
+              type: "register",
+              name: "rolling-v1",
+              protocolVersion: 1,
+              maxRuntimes: 1,
+            }),
+          );
+          resolve();
+        });
+      });
+
+    await worker.connect();
+    await vi.waitFor(() =>
+      expect(gondolinGateway.list().some((entry) => entry.name === "rolling-v1")).toBe(true),
+    );
+  });
+
+  test("rejects workers with invalid advertised capacity", async () => {
+    const socket = connect(port, "127.0.0.1", () => {
+      socket.write(
+        encodeFrame({ type: "register", name: "bad-cap", protocolVersion: 2, maxRuntimes: 0 }),
+      );
+    });
+    const response = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      let buffer = Buffer.alloc(0);
+      socket.on("data", (chunk) => {
+        buffer = Buffer.concat([buffer, chunk]);
+        if (buffer.length < 4 || buffer.length < 4 + buffer.readUInt32BE(0)) return;
+        resolve(JSON.parse(buffer.subarray(4, 4 + buffer.readUInt32BE(0)).toString()));
+      });
+      socket.on("error", reject);
+    });
+    expect(response).toMatchObject({ type: "register-error", message: expect.any(String) });
+    socket.destroy();
+    expect(gondolinGateway.list()).toEqual([]);
+    expect(activateCertificate).not.toHaveBeenCalled();
+  });
+
+  test("rejects oversized preamble frames before buffering their payload", async () => {
+    const socket = connect(port, "127.0.0.1", () => {
+      const header = Buffer.alloc(4);
+      header.writeUInt32BE((1 << 20) + 1);
+      socket.write(header);
+    });
+    await new Promise<void>((resolve, reject) => {
+      socket.on("close", () => resolve());
+      socket.on("error", reject);
+    });
+    expect(gondolinGateway.list()).toEqual([]);
+  });
+
+  test("rejects malformed or structurally invalid control frames", async () => {
+    for (const payload of [Buffer.from("not-json"), Buffer.from("null"), Buffer.from("{}")]) {
+      const socket = connect(port, "127.0.0.1", () => {
+        const header = Buffer.alloc(4);
+        header.writeUInt32BE(payload.length);
+        socket.write(
+          Buffer.concat([header, payload, encodeFrame({ type: "register", name: "x" })]),
+        );
+      });
+      await new Promise<void>((resolve, reject) => {
+        socket.on("close", () => resolve());
+        socket.on("error", reject);
+      });
+    }
+    expect(gondolinGateway.list()).toEqual([]);
+  });
+
   test("a registering worker joins the fleet and serves a full command", async () => {
     const worker = await joinWorker("linux-1");
 
@@ -312,6 +461,17 @@ describe("Gondolin worker gateway", () => {
     worker.on("open-tunnel", (frame) => tunnelFrames.push(frame));
     await gondolinFleet.exec(handle, "echo again");
     expect(tunnelFrames[0].headers?.["X-Mikan-Lease"]).toMatch(/^lease-/);
+  });
+
+  test("disconnects a registered worker whose control channel goes idle", async () => {
+    (
+      gondolinGateway as unknown as { overrides: { controlIdleTimeoutMs?: number } }
+    ).overrides.controlIdleTimeoutMs = 50;
+    await joinWorker("linux-1");
+    await vi.waitFor(() => expect(gondolinGateway.list()).toHaveLength(0), { timeout: 1000 });
+    await expect(gondolinFleet.ensure("c1", SPEC)).rejects.toThrow(
+      "no gondolin remote worker is reachable",
+    );
   });
 
   test("registration info is logged into the registry", async () => {
@@ -367,6 +527,93 @@ describe("Gondolin worker gateway", () => {
       "no gondolin remote worker is reachable",
     );
     clearTimeout(timeout);
+  });
+
+  test("worker tunnel refusal reaches the caller immediately", async () => {
+    const worker = await joinWorker("linux-1");
+    const handle = await gondolinFleet.ensure("c1", SPEC);
+    worker.runtime = undefined;
+
+    let timeout: NodeJS.Timeout | undefined;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timeout = setTimeout(() => reject(new Error("tunnel refusal was not forwarded")), 500);
+    });
+    await expect(Promise.race([gondolinFleet.exec(handle, "echo hi"), deadline])).rejects.toThrow(
+      "runtime unavailable",
+    );
+    clearTimeout(timeout);
+  });
+
+  test("disconnect rejects a pending tunnel immediately", async () => {
+    const worker = await joinWorker("linux-1");
+    const handle = await gondolinFleet.ensure("c1", SPEC);
+    worker.respondToTunnels = false;
+
+    const pending = gondolinFleet.exec(handle, "echo hi");
+    await new Promise<void>((resolve) => worker.once("open-tunnel", () => resolve()));
+    worker.close();
+
+    let timeout: NodeJS.Timeout | undefined;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timeout = setTimeout(() => reject(new Error("pending tunnel remained open")), 500);
+    });
+    await expect(Promise.race([pending, deadline])).rejects.toThrow("disconnected");
+    clearTimeout(timeout);
+  });
+
+  test("a tunnel can only be completed by its requested worker", async () => {
+    const worker = await joinWorker("linux-1");
+    const handle = await gondolinFleet.ensure("c1", SPEC);
+    worker.respondToTunnels = false;
+
+    let request: { nonce?: string } | undefined;
+    const pending = gondolinFleet.exec(handle, "echo hi");
+    await new Promise<void>((resolve) =>
+      worker.once("open-tunnel", (frame) => {
+        request = frame;
+        resolve();
+      }),
+    );
+
+    const impostor = connect(port, "127.0.0.1", () => {
+      impostor.write(encodeFrame({ type: "tunnel", nonce: request?.nonce, name: "linux-2" }));
+    });
+    await new Promise<void>((resolve) => impostor.once("close", () => resolve()));
+
+    worker.respondToTunnels = true;
+    (worker as unknown as { dialBackTunnel: (nonce: string) => void }).dialBackTunnel(
+      request?.nonce as string,
+    );
+    await expect(pending).resolves.toEqual({ stdout: "ok", stderr: "", code: 0 });
+  });
+
+  test("stopping the gateway interrupts active command tunnels", async () => {
+    const worker = await joinWorker("linux-1");
+    const handle = await gondolinFleet.ensure("c1", SPEC);
+    worker.respondToExec = false;
+    const command = gondolinFleet.exec(handle, "sleep 60");
+    await new Promise<void>((resolve) => worker.once("open-tunnel", () => resolve()));
+    await vi.waitFor(() =>
+      expect(
+        (gondolinGateway as unknown as { activeTunnels: Set<Socket> }).activeTunnels.size,
+      ).toBe(1),
+    );
+
+    gondolinGateway.stop();
+
+    await expect(command).rejects.toThrow(/connection closed/);
+    expect((gondolinGateway as unknown as { activeTunnels: Set<Socket> }).activeTunnels.size).toBe(
+      0,
+    );
+  });
+
+  test("stopping the gateway detaches its workers from the fleet", async () => {
+    await joinWorker("linux-1");
+    gondolinGateway.stop();
+
+    await expect(gondolinFleet.ensure("after-stop", SPEC)).rejects.toThrow(
+      "no gondolin remote worker is reachable",
+    );
   });
 
   test("a new registration under the same name supersedes the old connection", async () => {
@@ -450,6 +697,7 @@ describe("Gondolin worker gateway join + authorization", () => {
       {
         createServer: (onConnection) => createServer(onConnection) as Server,
         isAuthorized: () => authorized,
+        isWorkerNameAuthorized: (_socket, workerName) => workerName === "joiner",
         rpcTimeoutMs: 2000,
       },
     );
@@ -503,6 +751,41 @@ describe("Gondolin worker gateway join + authorization", () => {
 
     const replay = await exchange({ type: "join", token: minted.token, name: "joiner-2", csr });
     expect(replay.type).toBe("join-error");
+  });
+
+  test("an invalid CSR does not consume the one-time token", async () => {
+    const minted = await gondolinJoin.mintToken();
+    authorized = false;
+
+    const refused = await exchange({
+      type: "join",
+      token: minted.token,
+      name: "different-name",
+      csr: makeCsr(),
+    });
+    expect(refused.type).toBe("join-error");
+    expect(refused.message).toContain("common name must match");
+
+    const accepted = await exchange({
+      type: "join",
+      token: minted.token,
+      name: "joiner",
+      csr: makeCsr(),
+    });
+    expect(accepted.type).toBe("join-ok");
+  });
+
+  test("authorized certificates receive an explicit identity refusal", async () => {
+    authorized = true;
+    const response = await exchange({
+      type: "register",
+      name: "other-worker",
+      protocolVersion: 2,
+    });
+    expect(response).toMatchObject({
+      type: "register-error",
+      message: "certificate is not active for this worker identity",
+    });
   });
 
   test("unauthorized connections cannot register or tunnel", async () => {

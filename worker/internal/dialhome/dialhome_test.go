@@ -21,6 +21,38 @@ echo "{\"ready\":true,\"sessionId\":\"sess-$$\",\"socketPath\":\"$MIKAN_TEST_SOC
 exec sleep 60
 `
 
+type shortWriter struct {
+	bytes.Buffer
+	limit int
+}
+
+func (w *shortWriter) Write(payload []byte) (int, error) {
+	if len(payload) > w.limit {
+		payload = payload[:w.limit]
+	}
+	return w.Buffer.Write(payload)
+}
+
+func TestWriteFrameHandlesShortWrites(t *testing.T) {
+	writer := &shortWriter{limit: 2}
+	want := Frame{Type: "ping", Name: "worker-1"}
+	if err := WriteFrame(writer, want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadFrame(&writer.Buffer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Type != want.Type || got.Name != want.Name {
+		t.Fatalf("frame = %+v", got)
+	}
+
+	oversized := Frame{Type: "request", Body: bytes.Repeat([]byte("x"), maxFrameBytes+1)}
+	if err := WriteFrame(&bytes.Buffer{}, oversized); err == nil {
+		t.Fatal("oversized outbound frame was accepted")
+	}
+}
+
 // fakeGateway hands the client pre-connected pipe ends and keeps the server
 // ends for the test to drive.
 type fakeGateway struct {
@@ -107,6 +139,13 @@ func rpc(t *testing.T, conn net.Conn, id int64, method, path string, body any, h
 	}
 }
 
+func acknowledgeRegistration(t *testing.T, conn net.Conn) {
+	t.Helper()
+	if err := WriteFrame(conn, Frame{Type: "register-ok"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRegisterAndRPC(t *testing.T) {
 	server := newTestServer(t, "/nonexistent.sock")
 	gateway, _ := startClient(t, server)
@@ -119,6 +158,7 @@ func TestRegisterAndRPC(t *testing.T) {
 	if register.Type != "register" || register.Name != "test-worker" || register.MaxRuntimes != 4 {
 		t.Fatalf("unexpected register frame: %+v", register)
 	}
+	acknowledgeRegistration(t, control)
 
 	health := rpc(t, control, 1, "GET", "/v1/health", nil, nil)
 	if health.Status != http.StatusOK || !bytes.Contains(health.Body, []byte("activeRuntimes")) {
@@ -184,6 +224,7 @@ func TestDialBackTunnelSplicesAndEnforcesLease(t *testing.T) {
 	if _, err := ReadFrame(control); err != nil { // register
 		t.Fatal(err)
 	}
+	acknowledgeRegistration(t, control)
 
 	leaseResponse := rpc(t, control, 1, "POST", "/v1/leases", map[string]any{"instanceId": "c1"}, nil)
 	var granted lease.Lease
@@ -203,14 +244,21 @@ func TestDialBackTunnelSplicesAndEnforcesLease(t *testing.T) {
 		t.Fatalf("no runtime: %s", ensure.Body)
 	}
 
-	// tunnel without lease headers is refused: no dial-back arrives
+	// tunnel without lease headers is refused immediately on the control channel
 	if err := WriteFrame(control, Frame{Type: "open-tunnel", Nonce: "n0", SessionID: runtime.SessionID}); err != nil {
 		t.Fatal(err)
+	}
+	refused, err := ReadFrame(control)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refused.Type != "tunnel-error" || refused.Nonce != "n0" || refused.Message == "" {
+		t.Fatalf("unexpected tunnel refusal: %+v", refused)
 	}
 	select {
 	case <-gateway.conns:
 		t.Fatal("unauthorized tunnel was opened")
-	case <-time.After(200 * time.Millisecond):
+	case <-time.After(50 * time.Millisecond):
 	}
 
 	// authorized tunnel splices to the session socket
@@ -245,6 +293,7 @@ func TestReconnectsAndReregisters(t *testing.T) {
 	if _, err := ReadFrame(first); err != nil {
 		t.Fatal(err)
 	}
+	acknowledgeRegistration(t, first)
 	first.Close() // gateway drops the control channel
 
 	second := awaitConn(t, gateway)
@@ -254,6 +303,69 @@ func TestReconnectsAndReregisters(t *testing.T) {
 	}
 	if register.Type != "register" {
 		t.Fatalf("expected re-register, got %+v", register)
+	}
+	acknowledgeRegistration(t, second)
+}
+
+func TestMissingRegistrationAckReconnects(t *testing.T) {
+	server := newTestServer(t, "/nonexistent.sock")
+	gateway := &fakeGateway{conns: make(chan net.Conn, 8)}
+	client := &Client{
+		Dial:            gateway.dial,
+		Server:          server,
+		Name:            "test-worker",
+		RegisterTimeout: 15 * time.Millisecond,
+		ReconnectMin:    time.Millisecond,
+		ReconnectMax:    time.Millisecond,
+	}
+	stop := make(chan struct{})
+	go client.Run(stop)
+	t.Cleanup(func() { close(stop) })
+
+	first := awaitConn(t, gateway)
+	if _, err := ReadFrame(first); err != nil {
+		t.Fatal(err)
+	}
+	second := awaitConn(t, gateway)
+	register, err := ReadFrame(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if register.Type != "register" {
+		t.Fatalf("expected retry after missing acknowledgement, got %+v", register)
+	}
+}
+
+func TestRegistrationRefusalReconnectsWithoutStartingHeartbeat(t *testing.T) {
+	server := newTestServer(t, "/nonexistent.sock")
+	gateway := &fakeGateway{conns: make(chan net.Conn, 8)}
+	client := &Client{
+		Dial:            gateway.dial,
+		Server:          server,
+		Name:            "test-worker",
+		PingInterval:    time.Millisecond,
+		RegisterTimeout: 50 * time.Millisecond,
+		ReconnectMin:    time.Millisecond,
+		ReconnectMax:    time.Millisecond,
+	}
+	stop := make(chan struct{})
+	go client.Run(stop)
+	t.Cleanup(func() { close(stop) })
+
+	first := awaitConn(t, gateway)
+	if _, err := ReadFrame(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFrame(first, Frame{Type: "register-error", Message: "certificate revoked"}); err != nil {
+		t.Fatal(err)
+	}
+	second := awaitConn(t, gateway)
+	register, err := ReadFrame(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if register.Type != "register" {
+		t.Fatalf("expected registration retry, got %+v", register)
 	}
 }
 
@@ -277,6 +389,7 @@ func TestMissingPongReconnectsHalfOpenControlChannel(t *testing.T) {
 	if _, err := ReadFrame(first); err != nil { // register
 		t.Fatal(err)
 	}
+	acknowledgeRegistration(t, first)
 	ping, err := ReadFrame(first)
 	if err != nil {
 		t.Fatal(err)
@@ -293,6 +406,7 @@ func TestMissingPongReconnectsHalfOpenControlChannel(t *testing.T) {
 	if register.Type != "register" {
 		t.Fatalf("expected re-register after pong timeout, got %+v", register)
 	}
+	acknowledgeRegistration(t, second)
 }
 
 func TestPongKeepsControlChannelAlive(t *testing.T) {
@@ -315,6 +429,7 @@ func TestPongKeepsControlChannelAlive(t *testing.T) {
 	if _, err := ReadFrame(control); err != nil { // register
 		t.Fatal(err)
 	}
+	acknowledgeRegistration(t, control)
 	for range 3 {
 		ping, err := ReadFrame(control)
 		if err != nil {

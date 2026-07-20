@@ -22,6 +22,7 @@ vi.mock("@earendil-works/gondolin", () => ({
 
 import {
   GondolinExecutor,
+  configureGondolinNetworkPolicy,
   disconnectAllGondolinRuntimes,
   gondolinResources,
   stopIdleGondolinVms,
@@ -225,6 +226,7 @@ describe("Gondolin lifecycle", () => {
     lingerOnSigterm = false;
     gondolin.ensureImageSelector.mockClear();
     gondolinResources.configure();
+    configureGondolinNetworkPolicy();
     gondolinInventory.configure(dir, {
       kill,
       execFile: async () => "node gondolin-worker\n",
@@ -378,6 +380,44 @@ describe("Gondolin lifecycle", () => {
     expect(spawns[1].mounts).toEqual([{ source: "/host", target: "/workspace" }]);
   });
 
+  test("recreates the runtime when the egress policy changes", async () => {
+    const executor = createExecutor("network-drift");
+    configureGondolinNetworkPolicy({
+      blockInternalRanges: true,
+      allowedHosts: [" API.GITHUB.COM "],
+    });
+    await executor.exec("pwd");
+    const first = Array.from(workers.values())[0];
+
+    configureGondolinNetworkPolicy({
+      blockInternalRanges: true,
+      allowedHosts: ["api.github.com", "example.com"],
+    });
+    await executor.exec("pwd");
+
+    expect(signals).toContainEqual({ pid: first.pid, signal: "SIGTERM" });
+    expect(spawns).toHaveLength(2);
+    expect(spawns[1].network).toEqual({
+      blockInternalRanges: true,
+      allowedHosts: ["api.github.com", "example.com"],
+    });
+  });
+
+  test("equivalent reordered egress policy does not recreate the runtime", async () => {
+    const executor = createExecutor("network-stable");
+    configureGondolinNetworkPolicy({ allowedHosts: ["example.com", "api.github.com"] });
+    await executor.exec("pwd");
+
+    configureGondolinNetworkPolicy({ allowedHosts: [" API.GITHUB.COM ", "EXAMPLE.COM"] });
+    await executor.exec("pwd");
+
+    expect(spawns).toHaveLength(1);
+    expect(spawns[0].network).toEqual({
+      allowedHosts: ["api.github.com", "example.com"],
+      blockInternalRanges: false,
+    });
+  });
+
   test("recreates the runtime when a projected credential rotates on the host", async () => {
     const credential = join(dir, "gws.json");
     writeFileSync(credential, '{"refresh_token":"old"}');
@@ -473,7 +513,7 @@ describe("Gondolin lifecycle", () => {
     expect(existsSync(recordPathFor(worker))).toBe(false);
   });
 
-  test("surfaces an interrupted command without dropping a live runtime", async () => {
+  test("surfaces an interrupted command, fences its runtime, and respawns next time", async () => {
     const executor = createExecutor("interrupted");
     await executor.exec("warm up");
     const worker = Array.from(workers.values())[0];
@@ -484,12 +524,42 @@ describe("Gondolin lifecycle", () => {
     worker.execs[1].drop();
     await expect(execution).rejects.toThrow("died");
 
+    const oldPid = worker.pid;
     await (async () => {
       worker.autoRespond = true;
       const result = await executor.exec("pwd");
       expect(result.code).toBe(0);
     })();
+    expect(signals).toContainEqual({ pid: oldPid, signal: "SIGTERM" });
+    expect(spawns).toHaveLength(2);
+  });
+
+  test("blocks replacement until interrupted runtime fencing completes", async () => {
+    const executor = createExecutor("interrupt-barrier");
+    await executor.exec("warm up");
+    const worker = Array.from(workers.values())[0];
+    worker.autoRespond = false;
+    lingerOnSigterm = true;
+
+    const interrupted = executor.exec("long write");
+    await vi.waitFor(() => expect(worker.execs).toHaveLength(2));
+    worker.execs[1].drop();
+    const replacement = executor.exec("next command");
+    await vi.waitFor(() => expect(signals).toContainEqual({ pid: worker.pid, signal: "SIGTERM" }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
     expect(spawns).toHaveLength(1);
+
+    alivePids.delete(worker.pid);
+    await expect(interrupted).rejects.toThrow("died");
+    const nextWorker = await vi.waitFor(() => {
+      expect(spawns).toHaveLength(2);
+      return Array.from(workers.values()).at(-1) as FakeWorker;
+    });
+    nextWorker.autoRespond = true;
+    // connect occurred while autoRespond was still false; complete it directly.
+    await vi.waitFor(() => expect(nextWorker.execs).toHaveLength(1));
+    nextWorker.execs[0].respond(0);
+    await expect(replacement).resolves.toMatchObject({ code: 0 });
   });
 
   test("aborts a command via the execution timeout", async () => {
@@ -498,8 +568,9 @@ describe("Gondolin lifecycle", () => {
     const worker = Array.from(workers.values())[0];
     worker.autoRespond = false;
 
-    await expect(executor.exec("sleep 500", { timeout: 0.05 })).rejects.toThrow("aborted");
+    await expect(executor.exec("sleep 500", { timeout: 0.05 })).rejects.toThrow("died");
     expect(worker.execs).toHaveLength(2);
+    expect(signals).toContainEqual({ pid: worker.pid, signal: "SIGTERM" });
   });
 
   test("adopts a surviving worker after a mikan restart", async () => {

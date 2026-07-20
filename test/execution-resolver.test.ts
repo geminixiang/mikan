@@ -9,6 +9,7 @@ import {
   readConversationWorkspaceMountMode,
 } from "../src/execution-resolver.js";
 import { FileVaultManager } from "../src/vault/index.js";
+import { conversationStorageScope } from "../src/sessions/conversation-storage-scope.js";
 
 describe("readConversationWorkspaceMountMode", () => {
   // the Gondolin executor asserts Node >=23.6, but CI also runs the 22.19.0 floor
@@ -76,6 +77,46 @@ describe("readConversationWorkspaceMountMode", () => {
         /safe path segment/,
       );
     }
+  });
+
+  test("scoped identity isolates same-wire-id Gondolin resources and mounts", async () => {
+    createGlobalSettingsFile(stateDir);
+    const resolver = new ActorExecutionResolver(
+      { type: "gondolin", profile: "default" },
+      new FileVaultManager(stateDir),
+      undefined,
+      workspaceDir,
+      workspaceDir,
+    );
+    const discord = conversationStorageScope("discord", "123");
+    const telegram = conversationStorageScope("telegram", "123");
+
+    const [discordExecutor, telegramExecutor] = await Promise.all([
+      resolver.resolve({ platform: "discord", userId: "U1", conversationId: discord.storageKey }),
+      resolver.resolve({ platform: "telegram", userId: "U1", conversationId: telegram.storageKey }),
+    ]);
+    const discordConfig = discordExecutor.getSandboxConfig();
+    const telegramConfig = telegramExecutor.getSandboxConfig();
+
+    expect(discordConfig).toMatchObject({
+      instanceId: expect.any(String),
+      mounts: expect.arrayContaining([
+        {
+          source: join(workspaceDir, discord.storageKey),
+          target: `/workspace/${discord.storageKey}`,
+        },
+      ]),
+    });
+    expect(telegramConfig).toMatchObject({
+      instanceId: expect.any(String),
+      mounts: expect.arrayContaining([
+        {
+          source: join(workspaceDir, telegram.storageKey),
+          target: `/workspace/${telegram.storageKey}`,
+        },
+      ]),
+    });
+    expect(discordConfig).not.toMatchObject({ instanceId: telegramConfig.instanceId });
   });
 
   test("resolves private Gondolin workspace mounts", async () => {

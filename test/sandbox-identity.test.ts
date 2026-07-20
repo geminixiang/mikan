@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  assertGondolinRemotePlatformIsolation,
   credentialAuthorizationKey,
   legacyExactCredentialAuthorizationKey,
   runtimeResourceKey,
@@ -10,6 +11,31 @@ import {
 const image = { type: "image", image: "ubuntu" } as const;
 
 describe("sandbox identity", () => {
+  test("fails closed for Discord and Telegram gondolin:remote ID overlap", () => {
+    expect(() =>
+      assertGondolinRemotePlatformIsolation({ type: "gondolin", profile: "remote" }, [
+        "telegram",
+        "discord",
+      ]),
+    ).toThrow("cannot run Discord and Telegram together");
+    expect(() =>
+      assertGondolinRemotePlatformIsolation({ type: "gondolin", profile: "remote" }, [
+        "slack",
+        "github",
+      ]),
+    ).not.toThrow();
+    expect(() =>
+      assertGondolinRemotePlatformIsolation(
+        { type: "gondolin", profile: "remote" },
+        ["telegram", "discord"],
+        true,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertGondolinRemotePlatformIsolation(image, ["telegram", "discord"]),
+    ).not.toThrow();
+  });
+
   test("keeps readable segments while adding collision-safe identity", () => {
     const first = runtimeResourceKey(image, { userId: "U1", conversationId: "A/B" });
     const second = runtimeResourceKey(image, { userId: "U1", conversationId: "A-B" });

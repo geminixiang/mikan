@@ -12,8 +12,8 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
   <Card title="Mainline isolation" icon="rocket">
     `image:<image>` lets mikan manage lifecycle, workspace mounts, vault env, and resource limits.
   </Card>
-  <Card title="Gondolin preview" icon="moon">
-    `gondolin:default` runs a local Gondolin/QEMU VM and is the planned successor to managed `image:*` sandboxes.
+  <Card title="Distributed Gondolin preview" icon="moon">
+    `gondolin:remote` runs Gondolin/QEMU VMs across authenticated workers; `image:*` remains the single-machine managed mode.
   </Card>
 </CardGrid>
 
@@ -28,8 +28,8 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 | `host`                                                      | host machine                   | not injected        | can store, but unused at run time | Best for local development; does not put vault env into the host process                                 |
 | `container:<name>`                                          | existing Docker container      | injected            | `container-<name>`                | one container one vault; multiple people sharing one container also share its vault                      |
 | `image:<image>`                                             | Docker managed by mikan        | injected            | generated conversation vault      | Current recommended isolation mode; `1 conversation = 1 vault = 1 container`                             |
-| `gondolin:default`                                          | local Gondolin/QEMU VM         | injected            | generated conversation vault      | Preview; supports private/full workspace mounts; requires Node.js >=23.6 and QEMU                        |
-| `gondolin:remote`                                           | Gondolin VM on a remote worker | injected            | generated conversation vault      | Preview; mTLS `mikan-worker` daemon with fenced leases; workspace on shared POSIX storage                |
+| `gondolin:default`                                          | local Gondolin/QEMU VM         | injected            | generated conversation vault      | Local development/diagnostics profile; requires Node.js >=23.6 and QEMU                                  |
+| `gondolin:remote`                                           | Gondolin VM on a remote worker | injected            | generated conversation vault      | Distributed preview; mTLS workers, fenced leases, shared-POSIX workspace transport                       |
 | `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM                 | injected            | generated conversation vault      | Very early alpha; you must start the VM and mount workspace at `/workspace`; not recommended yet         |
 | `cloudflare:<sandbox-id>`                                   | Cloudflare Worker              | injected            | generated conversation vault      | Experimental; requires your own `@cloudflare/sandbox` bridge; host workspace is not synced automatically |
 
@@ -52,7 +52,7 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 />
 <LinkCard
   title="Gondolin sandbox"
-  description="Try the local Gondolin/QEMU preview intended to replace image sandboxes."
+  description="Run the distributed Gondolin worker preview; the local profile is retained for development and diagnostics."
   href="gondolin/"
 />
 <LinkCard

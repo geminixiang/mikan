@@ -13,7 +13,16 @@ import { parseSandboxArg, type SandboxConfig } from "../sandbox/index.js";
 import { defaultStateDir, resolveStateDir, takeValueFlag } from "./arg-grammar.js";
 
 export interface BootPlan {
-  mode: "ext" | "env" | "help" | "version" | "worker-token" | "onboard" | "download" | "run";
+  mode:
+    | "ext"
+    | "env"
+    | "help"
+    | "version"
+    | "worker-token"
+    | "migrate-conversation-storage"
+    | "onboard"
+    | "download"
+    | "run";
   /** argv after `ext`, handed to runExtCommand. Only set for mode "ext". */
   extArgs?: string[];
   stateDir: string;
@@ -23,6 +32,8 @@ export interface BootPlan {
   workingDirExplicit: boolean;
   sandbox: SandboxConfig;
   downloadChannel?: string;
+  workerName?: string;
+  conversationStorageManifest?: string;
 }
 
 export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
@@ -44,6 +55,8 @@ export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
   let version = false;
   let onboard = false;
   let workerToken = false;
+  let conversationStorageManifest: string | undefined;
+  let workerName: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -56,6 +69,12 @@ export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
       onboard = true;
     } else if (arg === "--worker-token") {
       workerToken = true;
+    } else if ((taken = takeValueFlag(args, i, "--migrate-conversation-storage"))) {
+      conversationStorageManifest = taken.value;
+      i = taken.lastIndex;
+    } else if ((taken = takeValueFlag(args, i, "--worker-name"))) {
+      workerName = taken.value;
+      i = taken.lastIndex;
     } else if ((taken = takeValueFlag(args, i, "--sandbox"))) {
       sandbox = parseSandboxArg(taken.value);
       i = taken.lastIndex;
@@ -81,16 +100,20 @@ export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
         ? "version"
         : workerToken
           ? "worker-token"
-          : onboard
-            ? "onboard"
-            : downloadChannel
-              ? "download"
-              : "run",
+          : conversationStorageManifest
+            ? "migrate-conversation-storage"
+            : onboard
+              ? "onboard"
+              : downloadChannel
+                ? "download"
+                : "run",
     stateDir,
     workingDir: workingDirArg ? resolve(workingDirArg) : join(stateDir, "workspace"),
     workingDirExplicit: workingDirArg !== undefined,
     sandbox,
     downloadChannel,
+    workerName,
+    conversationStorageManifest,
   };
 }
 
@@ -118,6 +141,13 @@ Options:
                          Default: host
   --onboard              Create <state-dir>/settings.json from a template, then exit.
   --worker-token         Mint a one-time gondolin worker join token, then exit.
+  --worker-name <name>   Scope --worker-token to an existing identity for rotation.
+  --migrate-conversation-storage <manifest>
+                         Claim explicitly owned legacy conversation directories and exit.
+                         Manifest: {"version":1,"complete":true,"owners":{"<id>":"discord"}}
+                         gondolin:remote requires every enrolled worker connected and
+                         strictly fences old runtime authority before workspace/vault migration.
+                         Scoped normal startup supports Slack/Discord/Telegram/GitHub and Admin.
   --download <channel>   Dump a Slack channel's history (Slack only), then exit.
   --version, -v          Print the version.
   --help, -h             Show this help.

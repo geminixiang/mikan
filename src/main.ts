@@ -21,7 +21,9 @@ import { TelegramMessagingBot } from "./adapters/telegram/bot.js";
 import { SlackMessagingBot as SlackMessagingBotClass } from "./adapters/slack/bot.js";
 import type { PlatformToolPackFactory } from "./tools/types.js";
 import { downloadChannel } from "./cli/download.js";
+import { runConversationStorageMigration } from "./cli/migrate-conversation-storage.js";
 import { EventsWatcher } from "./events.js";
+import { shutdownRuntime } from "./runtime/shutdown.js";
 import * as log from "./log.js";
 import { startWebServer } from "./web/server.js";
 import { InMemoryAdminTokenStore } from "./web/admin/store.js";
@@ -32,6 +34,7 @@ import {
   assertStateDirOutsideWorkspace,
   createGlobalSettingsFile,
   loadGlobalSettings,
+  loadSandboxSettings,
   MissingGlobalSettingsError,
   resolveLinkBaseUrl,
 } from "./config.js";
@@ -59,8 +62,12 @@ import { gondolinFleet } from "./sandbox/gondolin-fleet.js";
 import { gondolinGateway } from "./sandbox/gondolin-gateway.js";
 import { gondolinJoin } from "./sandbox/gondolin-join.js";
 import { checkWorkspaceExported } from "./sandbox/gondolin-nfs-advisory.js";
+import { acquireGondolinCoordinatorLock } from "./sandbox/gondolin-coordinator-lock.js";
 import { FileVaultManager } from "./vault/index.js";
 import { runExtCommand } from "./cli/ext.js";
+import { ConversationStorageManager } from "./sessions/conversation-storage-manager.js";
+import { readConversationStorageCompletion } from "./sessions/conversation-storage-migration.js";
+import { assertConversationStorageStartup } from "./sessions/conversation-storage-startup.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
 import { ChannelStore } from "./store.js";
 import * as Sentry from "@sentry/node";
@@ -218,14 +225,16 @@ if (plan.mode === "worker-token") {
     } catch {
       // settings are optional for minting; the CA lives in the state dir
     }
-    const minted = await gondolinJoin.mintToken();
+    const minted = await gondolinJoin.mintToken(plan.workerName);
     const host = gatewayHost ?? "<mikan-host>";
     console.log("Worker join token (single use, expires in 15 minutes):");
     console.log("");
     console.log(`  mikan-worker join https://${host}:${gatewayPort} \\`);
     console.log(`    --token ${minted.token} \\`);
     console.log(`    --ca-pin ${minted.fingerprint} \\`);
-    console.log(`    --name <worker-name> --workspace-root <shared-workspace-path> \\`);
+    console.log(
+      `    --name ${plan.workerName ?? "<worker-name>"} --workspace-root <shared-workspace-path> \\`,
+    );
     console.log(`    --worker-entry /opt/mikan/dist/sandbox/gondolin-worker-main.js`);
     process.exit(0);
   } catch (err) {
@@ -283,10 +292,33 @@ const hasTelegram = platformIsActive("telegram");
 const hasDiscord = platformIsActive("discord");
 const hasGithub = platformIsActive("github");
 
-if (!hasSlack && !hasTelegram && !hasDiscord && !hasGithub) {
+if (plan.mode === "run" && !hasSlack && !hasTelegram && !hasDiscord && !hasGithub) {
   console.error(noPlatformsMessage());
   process.exit(1);
 }
+
+const activePlatforms = [
+  ...(hasSlack ? (["slack"] as const) : []),
+  ...(hasDiscord ? (["discord"] as const) : []),
+  ...(hasTelegram ? (["telegram"] as const) : []),
+  ...(hasGithub ? (["github"] as const) : []),
+];
+const storageCompletion =
+  plan.mode === "run"
+    ? readConversationStorageCompletion({ stateDir, workspaceRoot: workingDir })
+    : undefined;
+try {
+  assertConversationStorageStartup({
+    sandbox,
+    activePlatforms,
+    completion: storageCompletion,
+  });
+} catch (error) {
+  handleStartupError(error);
+}
+const conversationStorage = storageCompletion
+  ? new ConversationStorageManager({ workspaceRoot: workingDir, activePlatforms })
+  : undefined;
 
 try {
   await validateSandbox(sandbox);
@@ -310,7 +342,9 @@ if (vaultManager.isEnabled()) {
 
 const startupConfig = (() => {
   try {
-    return loadGlobalSettings();
+    return plan.mode === "migrate-conversation-storage"
+      ? { sandbox: loadSandboxSettings() }
+      : loadGlobalSettings();
   } catch (error) {
     handleStartupError(error);
   }
@@ -332,16 +366,22 @@ const provisioner =
         boostLimits: sandboxBoostLimits,
       })
     : undefined;
+let releaseGondolinCoordinator = (): void => {};
 if (sandbox.type === "gondolin") {
   try {
+    if (sandbox.profile === "remote") {
+      releaseGondolinCoordinator = acquireGondolinCoordinatorLock(stateDir);
+    }
     configureGondolinRuntime({
       stateDir,
       limits: sandboxLimits,
       boostLimits: sandboxBoostLimits,
+      network: sandboxSettings?.gondolin?.network,
       remote: sandboxSettings?.gondolin?.remote,
       requireRemote: sandbox.profile === "remote",
     });
   } catch (error) {
+    releaseGondolinCoordinator();
     handleStartupError(error);
   }
 }
@@ -351,6 +391,39 @@ const resourceController =
     : sandbox.type === "gondolin"
       ? gondolinResources
       : undefined;
+
+if (plan.mode === "migrate-conversation-storage") {
+  const manifestPath = plan.conversationStorageManifest;
+  if (!manifestPath) handleStartupError(new Error("Missing conversation storage manifest path"));
+  let gatewayStarted = false;
+  try {
+    if (sandbox.type === "gondolin" && sandbox.profile === "remote") {
+      await gondolinGateway.start();
+      gatewayStarted = true;
+      await gondolinFleet.waitForExpectedWorkers();
+      await gondolinFleet.reconcile();
+    }
+    const results = await runConversationStorageMigration({
+      manifestPath,
+      workspaceRoot: workingDir,
+      stateDir,
+      sandbox,
+    });
+    for (const result of results) {
+      console.log(
+        `${result.platform}/${result.conversationId} -> ${result.storageKey} (${result.migratedLegacy ? "migrated" : "already scoped"})`,
+      );
+    }
+    console.log(`Conversation storage migration complete: ${results.length} conversation(s)`);
+  } catch (error) {
+    if (gatewayStarted) gondolinGateway.stop();
+    releaseGondolinCoordinator();
+    handleStartupError(error);
+  }
+  if (gatewayStarted) gondolinGateway.stop();
+  releaseGondolinCoordinator();
+  process.exit(0);
+}
 
 if (sandbox.type === "image" || sandbox.type === "gondolin") {
   ensureDirExists(join(workingDir, "skills"));
@@ -391,8 +464,19 @@ if (sandbox.type === "gondolin" && sandbox.profile === "remote") {
   await gondolinGateway.start();
   await gondolinFleet.reconcile();
   setInterval(() => {
-    void stopIdleGondolinVms(MANAGED_SANDBOX_IDLE_TIMEOUT_MS);
-    void gondolinFleet.reconcile();
+    void Promise.allSettled([
+      stopIdleGondolinVms(MANAGED_SANDBOX_IDLE_TIMEOUT_MS),
+      gondolinFleet.reconcile(),
+    ]).then((results) => {
+      for (const result of results) {
+        if (result.status === "rejected") {
+          log.logWarning(
+            "Periodic Gondolin remote maintenance failed",
+            result.reason instanceof Error ? result.reason.message : String(result.reason),
+          );
+        }
+      }
+    });
   }, MANAGED_SANDBOX_IDLE_TIMEOUT_MS).unref();
 } else if (sandbox.type === "gondolin") {
   gondolinInventory.touchHeartbeat();
@@ -426,6 +510,9 @@ function resolvePlatformBot(op: string, platform: string | undefined): [string, 
 /** Extension `api.notify` backend: post into a conversation without a run. */
 const platformNotifier: PlatformNotifier = async (conversationId, text, platform) => {
   const [key, bot] = resolvePlatformBot("notify", platform);
+  if (conversationStorage && (key === "discord" || key === "telegram")) {
+    await conversationStorage.resolve(key, conversationId);
+  }
   await bot.postMessage(conversationId, text);
   log.logInfo(`[notify] posted to ${key}/${conversationId} (${text.length} chars)`);
 };
@@ -443,6 +530,9 @@ const platformReactor: PlatformReactor = async (conversationId, messageTs, emoji
 /** Extension `api.uploadFile` backend: send a host file into a conversation. */
 const platformUploader: PlatformUploader = async (conversationId, filePath, title, platform) => {
   const [key, bot] = resolvePlatformBot("upload", platform);
+  if (conversationStorage && (key === "discord" || key === "telegram")) {
+    await conversationStorage.resolve(key, conversationId);
+  }
   if (!bot.uploadFile) {
     throw new Error(`upload: platform '${key}' does not support file uploads`);
   }
@@ -569,6 +659,7 @@ if (hasSlack) {
     botToken: slackMessagingBotToken,
     workingDir,
     store: sharedStore,
+    storageManager: conversationStorage,
   });
   botsByPlatform.slack = slackMessagingBot;
   log.logInfo("Platform: Slack");
@@ -581,6 +672,7 @@ if (hasTelegram) {
   const telegramMessagingBot = new TelegramMessagingBot(handler, {
     token: telegramToken,
     workingDir,
+    storageManager: conversationStorage,
   });
   botsByPlatform.telegram = telegramMessagingBot;
   log.logInfo("Platform: Telegram");
@@ -593,6 +685,7 @@ if (hasDiscord) {
   const discordMessagingBot = new DiscordMessagingBot(handler, {
     token: discordToken,
     workingDir,
+    storageManager: conversationStorage,
   });
   botsByPlatform.discord = discordMessagingBot;
   log.logInfo("Platform: Discord");
@@ -611,32 +704,38 @@ if (hasGithub) {
     );
   }
   const pollIntervalSeconds = GITHUB_POLL_INTERVAL ? parseInt(GITHUB_POLL_INTERVAL, 10) : NaN;
-  const githubMessagingBot = new GithubMessagingBot(handler, {
-    appId: GITHUB_APP_ID,
-    privateKey: githubPrivateKey,
-    installationId: GITHUB_INSTALLATION_ID,
-    repos: GITHUB_REPOS
-      ? GITHUB_REPOS.split(",")
-          .map((repo) => repo.trim())
-          .filter(Boolean)
-      : [],
-    pollIntervalMs:
-      (Number.isFinite(pollIntervalSeconds) && pollIntervalSeconds > 0 ? pollIntervalSeconds : 60) *
-      1000,
-    workingDir,
-    syncStatePath: join(stateDir, "github-sync.json"),
-    // Host-side GCP creds (e.g. a WIF external_account file) unlock Cloud
-    // Build logs in github_checks; without them external CI degrades to
-    // guidance text. Credentials never enter the sandbox.
-    cloudBuild: GOOGLE_APPLICATION_CREDENTIALS
-      ? {
-          tokenProvider: new GcpTokenProvider({
-            credentialsPath: GOOGLE_APPLICATION_CREDENTIALS,
-          }),
-          projectFallback: GOOGLE_CLOUD_PROJECT,
-        }
-      : undefined,
-  });
+  const githubMessagingBot = new GithubMessagingBot(
+    handler,
+    {
+      appId: GITHUB_APP_ID,
+      privateKey: githubPrivateKey,
+      installationId: GITHUB_INSTALLATION_ID,
+      repos: GITHUB_REPOS
+        ? GITHUB_REPOS.split(",")
+            .map((repo) => repo.trim())
+            .filter(Boolean)
+        : [],
+      pollIntervalMs:
+        (Number.isFinite(pollIntervalSeconds) && pollIntervalSeconds > 0
+          ? pollIntervalSeconds
+          : 60) * 1000,
+      workingDir,
+      syncStatePath: join(stateDir, "github-sync.json"),
+      // Host-side GCP creds (e.g. a WIF external_account file) unlock Cloud
+      // Build logs in github_checks; without them external CI degrades to
+      // guidance text. Credentials never enter the sandbox.
+      cloudBuild: GOOGLE_APPLICATION_CREDENTIALS
+        ? {
+            tokenProvider: new GcpTokenProvider({
+              credentialsPath: GOOGLE_APPLICATION_CREDENTIALS,
+            }),
+            projectFallback: GOOGLE_CLOUD_PROJECT,
+          }
+        : undefined,
+    },
+    undefined,
+    conversationStorage,
+  );
   botsByPlatform.github = githubMessagingBot;
   log.logInfo(
     `Platform: GitHub${GOOGLE_APPLICATION_CREDENTIALS ? " (Cloud Build logs enabled)" : ""}`,
@@ -654,7 +753,17 @@ if (LINK_PORT) {
     },
     sessionViewTokenStore,
     sessionViewInteractive: { handler, botsByPlatform },
-    adminOptions: { adminTokenStore, workingDir, runtime: handler, sandbox, botsByPlatform },
+    adminOptions: {
+      adminTokenStore,
+      workingDir,
+      conversationStorageScoped: storageCompletion !== undefined,
+      runtime: handler,
+      sandbox,
+      ...(sandbox.type === "gondolin" && sandbox.profile === "remote"
+        ? { gondolinDiagnostics: () => gondolinFleet.diagnostics() }
+        : {}),
+      botsByPlatform,
+    },
   });
 }
 
@@ -668,11 +777,14 @@ eventsWatcher.start();
 
 // Handle shutdown
 async function shutdown(): Promise<void> {
-  await handler.shutdown();
-  eventsWatcher.stop();
-  await disconnectAllGondolinRuntimes();
-  await Sentry.close(5000);
-  process.exit(0);
+  await shutdownRuntime({
+    shutdownHandler: () => handler.shutdown(),
+    stopEvents: () => eventsWatcher.stop(),
+    disconnectGondolinRuntimes: disconnectAllGondolinRuntimes,
+    flushTelemetry: () => Sentry.close(5000),
+    releaseGondolinCoordinator,
+    exit: (code) => process.exit(code),
+  });
 }
 
 process.on("SIGINT", shutdown);

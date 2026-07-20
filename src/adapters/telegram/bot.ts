@@ -21,6 +21,8 @@ import {
 } from "../shared.js";
 import { telegramCommandMenu } from "../../commands/manifest.js";
 import { processMessageIntake } from "../intake.js";
+import type { ConversationStorageManager } from "../../sessions/conversation-storage-manager.js";
+import { scopeSessionIdentity } from "../../sessions/session-key.js";
 import { createTelegramAdapters } from "./context.js";
 import { escapeTelegramHtml } from "./html.js";
 
@@ -71,8 +73,14 @@ export class TelegramMessagingBot implements MessagingBot {
   private queues = new Map<string, MessagingEventQueue>();
   private startupTime: number = 0;
 
-  constructor(handler: MessagingEventHandler, config: { token: string; workingDir: string }) {
+  private readonly storageManager?: ConversationStorageManager;
+
+  constructor(
+    handler: MessagingEventHandler,
+    config: { token: string; workingDir: string; storageManager?: ConversationStorageManager },
+  ) {
     this.handler = handler;
+    this.storageManager = config.storageManager;
     this.botToken = config.token;
     this.workingDir = config.workingDir;
     this.client = new GrammyMessagingBot(config.token);
@@ -150,7 +158,8 @@ export class TelegramMessagingBot implements MessagingBot {
 
   enqueueEvent(event: ConversationEvent): boolean {
     const conversationId = event.conversationId;
-    const queue = this.getQueue(conversationId);
+    const queueKey = this.storageManager?.storageKey("telegram", conversationId) ?? conversationId;
+    const queue = this.getQueue(queueKey);
     if (queue.size() >= 5) {
       log.logWarning(
         `Event queue full for ${conversationId}, discarding: ${event.text.substring(0, 50)}`,
@@ -158,9 +167,23 @@ export class TelegramMessagingBot implements MessagingBot {
       return false;
     }
     log.logInfo(`Enqueueing event for ${conversationId}: ${event.text.substring(0, 50)}`);
-    queue.enqueue(() => {
-      const context = createTelegramAdapters(event as TelegramEvent, this);
-      return this.handler.handleEvent(event, this, context);
+    queue.enqueue(async () => {
+      const storage = await this.storageManager?.resolve("telegram", conversationId);
+      const platformSessionKey = event.sessionKey ?? conversationId;
+      const scopedEvent = storage
+        ? {
+            ...event,
+            storageKey: storage.storageKey,
+            conversationDir: storage.conversationDir,
+            runtimeSessionKey: scopeSessionIdentity(
+              platformSessionKey,
+              conversationId,
+              storage.storageKey,
+            ).runtimeSessionKey,
+          }
+        : event;
+      const context = createTelegramAdapters(scopedEvent as TelegramEvent, this);
+      return this.handler.handleEvent(scopedEvent, this, context);
     });
     return true;
   }
@@ -243,11 +266,15 @@ export class TelegramMessagingBot implements MessagingBot {
   }
 
   logToFile(channel: string, entry: object): void {
-    appendChannelLog(this.workingDir, channel, entry);
+    const storageId =
+      this.storageManager?.requireResolved("telegram", channel).storageKey ?? channel;
+    appendChannelLog(this.workingDir, storageId, entry);
   }
 
   logBotResponse(channel: string, text: string, ts: string): void {
-    appendBotResponseLog(this.workingDir, channel, text, ts);
+    const storageId =
+      this.storageManager?.requireResolved("telegram", channel).storageKey ?? channel;
+    appendBotResponseLog(this.workingDir, storageId, text, ts);
   }
 
   /**
@@ -259,6 +286,7 @@ export class TelegramMessagingBot implements MessagingBot {
     chatId: string,
     message: Message,
   ): Promise<{ name: string; localPath: string }[]> {
+    const storageId = this.storageManager?.requireResolved("telegram", chatId).storageKey ?? chatId;
     const downloads: Array<Promise<{ name: string; localPath: string } | null>> = [];
 
     // Handle photos (take the largest size for best quality)
@@ -267,7 +295,9 @@ export class TelegramMessagingBot implements MessagingBot {
       const photo = photos[photos.length - 1]; // Largest photo
       const fileId = photo.file_id;
 
-      downloads.push(this.processTelegramFile(chatId, fileId, `photo_${message.message_id}.jpg`));
+      downloads.push(
+        this.processTelegramFile(storageId, fileId, `photo_${message.message_id}.jpg`),
+      );
     }
 
     // Handle documents
@@ -276,7 +306,7 @@ export class TelegramMessagingBot implements MessagingBot {
       const fileId = doc.file_id;
       const fileName = doc.file_name ?? `document_${message.message_id}`;
 
-      downloads.push(this.processTelegramFile(chatId, fileId, fileName));
+      downloads.push(this.processTelegramFile(storageId, fileId, fileName));
     }
 
     const attachments = await Promise.all(downloads);
@@ -394,7 +424,19 @@ export class TelegramMessagingBot implements MessagingBot {
     this.client.command("new", async (ctx) => {
       const mc = ctx.message ? this.extractMessageContext(ctx.message) : null;
       if (!mc) return;
-      await this.handler.handleNewCommand(mc.sessionKey, mc.chatId, this);
+      const storage = await this.storageManager?.resolve("telegram", mc.chatId);
+      const runtimeSessionKey = storage
+        ? scopeSessionIdentity(mc.sessionKey, mc.chatId, storage.storageKey).runtimeSessionKey
+        : mc.sessionKey;
+      if (storage) {
+        await this.handler.handleNewCommand(runtimeSessionKey, mc.chatId, this, {
+          platformSessionKey: mc.sessionKey,
+          storageKey: storage.storageKey,
+          conversationDir: storage.conversationDir,
+        });
+      } else {
+        await this.handler.handleNewCommand(runtimeSessionKey, mc.chatId, this);
+      }
     });
 
     this.client.command("sandbox", async (ctx) => {
@@ -403,6 +445,10 @@ export class TelegramMessagingBot implements MessagingBot {
       // The sandbox handler's grammar accepts /sandbox directly (manifest
       // slash forms), so the user's spelling is logged and dispatched as-is.
       const cleanedText = this.cleanText(mc.text);
+      const storage = await this.storageManager?.resolve("telegram", mc.chatId);
+      const runtimeSessionKey = storage
+        ? scopeSessionIdentity(mc.sessionKey, mc.chatId, storage.storageKey).runtimeSessionKey
+        : mc.sessionKey;
       const event: TelegramEvent = {
         type: "command",
         conversationId: mc.chatId,
@@ -410,6 +456,13 @@ export class TelegramMessagingBot implements MessagingBot {
         ts: mc.msgId,
         thread_ts: mc.threadTs,
         sessionKey: mc.sessionKey,
+        ...(storage
+          ? {
+              storageKey: storage.storageKey,
+              conversationDir: storage.conversationDir,
+              runtimeSessionKey,
+            }
+          : {}),
         user: mc.userId,
         userName: mc.userName,
         text: cleanedText,
@@ -469,6 +522,9 @@ export class TelegramMessagingBot implements MessagingBot {
           text: cleanedText,
           isMessagingBot: false,
         },
+        resolveStorage: this.storageManager
+          ? () => this.storageManager!.resolve("telegram", mc.chatId)
+          : undefined,
         log: (entry) => this.logToFile(mc.chatId, entry),
         processAttachments: () => this.processAttachments(mc.chatId, mc.msg),
         queueKey: mc.sessionKey,

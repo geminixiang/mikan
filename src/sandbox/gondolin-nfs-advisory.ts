@@ -82,9 +82,15 @@ function setupLines(os: NodeJS.Platform, workspaceDir: string, gatewayHostname?:
     "    Then on each worker (over tailscale), mount it and point --workspace-root at it:",
     `    sudo mount -t nfs -o vers=3,resvport,nolock ${hostHint}:${workspaceDir} /mnt/mikan-workspace`,
     "",
-    "    100.64.0.0/10 is the tailscale range; -mapall/all_squash makes worker",
+    "    This NFS recipe is only for low-latency machines in the same LAN/VPC.",
+    "    Do not run mutable NFS across WAN or relayed tailscale paths; use a",
+    "    managed same-region POSIX service, or keep gondolin:remote in preview",
+    "    until generation sync is implemented for cross-WAN workspace transport.",
+    "",
+    "    100.64.0.0/10 is the tailscale address range; -mapall/all_squash makes worker",
     "    writes owned by you on the host. Skip this only if you already share the",
-    "    workspace another way (existing NFS, GCS-fuse, etc.).",
+    "    workspace through a same-region POSIX filesystem whose rename and locking",
+    "    semantics you have validated for agent workloads.",
     "",
   );
   return lines;

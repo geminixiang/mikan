@@ -77,7 +77,8 @@ export class ModelCommandHandler implements CommandHandler {
     const parsed = parseModelCommand(context.commandText);
     if (!parsed) return false;
 
-    const conversationDir = join(context.services.workingDir, context.conversationId);
+    const conversationDir =
+      context.storage?.conversationDir ?? join(context.services.workingDir, context.conversationId);
     if (!parsed.provider || !parsed.model) {
       const current = resolveConversationSettings(conversationDir);
       await replyDiagnosticWithContext(
@@ -118,8 +119,10 @@ export class ModelCommandHandler implements CommandHandler {
 
     const result = applyConversationSettings(
       context.services.runtime,
-      context.services.workingDir,
-      context.conversationId,
+      {
+        key: context.storage?.key ?? context.conversationId,
+        conversationDir,
+      },
       {
         provider: parsed.provider,
         model: parsed.model,

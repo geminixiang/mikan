@@ -309,7 +309,7 @@ export function resolveTriggerAttribution(
 
 function buildSystemPrompt(
   workspacePath: string,
-  conversationId: string,
+  workspaceConversationId: string,
   conversationKind: ConversationKind,
   currentUserId: string | undefined,
   memory: string,
@@ -319,7 +319,7 @@ function buildSystemPrompt(
 ): string {
   const { workspaceRoot, conversationPath, scratchPath } = buildRuntimePaths(
     workspacePath,
-    conversationId,
+    workspaceConversationId,
   );
   const sandboxType = sandboxConfig.type;
   const isContainerLike = sandboxType === "container" || sandboxType === "image";
@@ -381,7 +381,7 @@ ${envDescription}
 ${workspaceRoot}/
 ├── MEMORY.md                    # Global memory (all conversations)
 ├── skills/                      # Global CLI tools you create
-└── ${conversationId}/           # This conversation
+└── ${workspaceConversationId}/           # This conversation
     ├── MEMORY.md                # Conversation-specific memory
     ├── log.jsonl                # Human-readable message history (no tool results)
     ├── sessions/                # Structured session history used for context reconstruction
@@ -1206,6 +1206,7 @@ async function prepareRunContext(params: {
   responder: ConversationResponder;
   platform: MessagingInfo;
   conversationId: string;
+  storageKey: string;
   conversationDir: string;
   sessionUuid: string;
   runState: RunnerSessionState;
@@ -1232,6 +1233,7 @@ async function prepareRunContext(params: {
     responder,
     platform,
     conversationId,
+    storageKey,
     conversationDir,
     sessionUuid,
     runState,
@@ -1255,7 +1257,7 @@ async function prepareRunContext(params: {
     await resolveExecutorForRun({
       platform: platform.name,
       userId: message.userId,
-      conversationId,
+      conversationId: storageKey,
       trustModel: platform.trustModel,
     });
     pathContext = getPathContext();
@@ -1271,7 +1273,7 @@ async function prepareRunContext(params: {
   const triggerAttribution = resolveTriggerAttribution(message);
   const systemPrompt = buildSystemPrompt(
     pathContext.runtimeWorkspaceRoot,
-    conversationId,
+    storageKey,
     message.conversationKind,
     message.userId,
     memory,
@@ -1675,7 +1677,10 @@ function attachSessionEventHandlers(params: {
 export interface CreateRunnerOptions {
   sandboxConfig: SandboxConfig;
   sessionKey: string;
+  /** Raw platform conversation address used in prompts, tools, and responses. */
   conversationId: string;
+  /** Platform-namespaced identity used for vault/runtime/container ownership. */
+  storageKey?: string;
   conversationDir: string;
   workspaceDir: string;
   sessionScope: ResolvedSessionScope;
@@ -1706,6 +1711,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     sandboxConfig,
     sessionKey,
     conversationId,
+    storageKey = conversationId,
     conversationDir,
     workspaceDir,
     sessionScope,
@@ -1768,7 +1774,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   };
   const systemPrompt = buildSystemPrompt(
     pathContext.runtimeWorkspaceRoot,
-    conversationId,
+    storageKey,
     "shared",
     undefined,
     memory,
@@ -1830,6 +1836,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
         responder,
         platform,
         conversationId,
+        storageKey,
         conversationDir,
         sessionUuid,
         runState,

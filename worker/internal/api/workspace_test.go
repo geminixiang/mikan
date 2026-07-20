@@ -15,6 +15,22 @@ func TestWorkspaceProbeHealthyRoot(t *testing.T) {
 	}
 }
 
+func TestWorkspaceProbeRejectsHighLatencyMount(t *testing.T) {
+	probe := NewWorkspaceProbe("/mnt/wan", time.Second, time.Minute)
+	current := time.Now()
+	probe.now = func() time.Time { return current }
+	probe.latencyLimit = 100 * time.Millisecond
+	probe.probe = func(string) error {
+		current = current.Add(101 * time.Millisecond)
+		return nil
+	}
+
+	status := probe.Status()
+	if !strings.Contains(status, "too slow") || !strings.Contains(status, "cross-WAN") {
+		t.Fatalf("slow mount should be rejected with deployment guidance, got %q", status)
+	}
+}
+
 func TestWorkspaceProbeMissingRoot(t *testing.T) {
 	probe := NewWorkspaceProbe("/nonexistent/mikan-workspace", time.Second, time.Minute)
 	status := probe.Status()

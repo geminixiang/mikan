@@ -17,6 +17,9 @@ interface GondolinWorkerDeps {
   announce?: (line: string) => void;
   exit?: (code: number) => void;
   pollIntervalMs?: number;
+  fencingCloseTimeoutMs?: number;
+  killRunner?: (pid: number) => boolean;
+  monotonicNow?: () => number;
 }
 
 /**
@@ -41,14 +44,22 @@ function warn(message: string): void {
   process.stderr.write(`[gondolin-worker] ${message}\n`);
 }
 
-function heartbeatFresh(path: string, since: number, staleMs: number): boolean {
-  let mtimeMs = 0;
+function heartbeatFresh(
+  path: string,
+  tracker: { signature?: string; observedAt: number },
+  staleMs: number,
+  monotonicNow: () => number,
+): boolean {
   try {
-    mtimeMs = statSync(path).mtimeMs;
+    const signature = readFileSync(path, "utf8");
+    if (signature !== tracker.signature) {
+      tracker.signature = signature;
+      tracker.observedAt = monotonicNow();
+    }
   } catch {
-    // no heartbeat yet — fall back to worker start time
+    // no heartbeat yet — the local monotonic start remains authoritative
   }
-  return Date.now() - Math.max(mtimeMs, since) <= staleMs;
+  return monotonicNow() - tracker.observedAt <= staleMs;
 }
 
 function restrictSocketAccess(socketPath: string): void {
@@ -102,19 +113,33 @@ export async function runGondolinWorker(
   const announce = deps.announce ?? ((line: string) => process.stdout.write(line + "\n"));
   const exit = deps.exit ?? ((code: number) => process.exit(code));
   const pollIntervalMs = deps.pollIntervalMs ?? 2000;
+  const fencingCloseTimeoutMs = deps.fencingCloseTimeoutMs ?? 10_000;
+  const killRunner =
+    deps.killRunner ??
+    ((pid: number): boolean => {
+      try {
+        process.kill(pid, "SIGKILL");
+        return true;
+      } catch {
+        return true; // already gone
+      }
+    });
   const loadGondolin =
     deps.loadGondolin ?? (() => import("@earendil-works/gondolin") as Promise<GondolinModule>);
 
   gondolinInventory.configure(config.inventoryDir);
-  const { VM, RealFSProvider, findSession, ensureImageSelector } = await loadGondolin();
+  const { VM, RealFSProvider, createHttpHooks, findSession, ensureImageSelector } =
+    await loadGondolin();
   let imagePath = config.image;
   if (!imagePath) {
     if (!config.imageSelector) throw new Error("worker config needs image or imageSelector");
     imagePath = (await ensureImageSelector(config.imageSelector)).assetDir;
   }
   const { directories, files } = partitionMounts(config.mounts);
+  const network = config.network ? createHttpHooks(config.network) : undefined;
   const vm = await VM.create({
     sandbox: { imagePath },
+    ...(network ? { httpHooks: network.httpHooks } : {}),
     env: { TZ: "Asia/Taipei" },
     sessionLabel: `mikan:${config.instanceId}`,
     cpus: config.cpus,
@@ -146,17 +171,23 @@ export async function runGondolinWorker(
     fingerprint: config.fingerprint,
   });
 
-  const startedAt = Date.now();
+  const monotonicNow = deps.monotonicNow ?? performance.now.bind(performance);
+  const heartbeatTracker = { observedAt: monotonicNow() };
   let closing = false;
-  let syncing = false;
-  const syncProjections = async (): Promise<void> => {
-    if (syncing) return;
-    syncing = true;
-    try {
+  let syncGeneration = 0;
+  let syncTask: Promise<void> | undefined;
+  const syncProjections = (allowClosing = false): Promise<void> => {
+    if (syncTask) return syncTask;
+    if (closing && !allowClosing) return Promise.resolve();
+    const generation = syncGeneration;
+    syncTask = (async () => {
       for (const projection of files) {
-        if (!projection.syncBack) continue;
+        if (!projection.syncBack || generation !== syncGeneration) continue;
         try {
           const data = await vm.fs.readFile(projection.target);
+          // A fencing shutdown may have closed the VM while this read was in
+          // flight. Never publish its stale result into the host workspace.
+          if (generation !== syncGeneration) return;
           const content = Buffer.isBuffer(data) ? data : Buffer.from(String(data));
           const hash = sha256(content);
           if (hash === projection.lastHash) continue;
@@ -169,24 +200,60 @@ export async function runGondolinWorker(
           // guest file missing or read raced a writer; next tick retries
         }
       }
-    } finally {
-      syncing = false;
-    }
+    })().finally(() => {
+      syncTask = undefined;
+    });
+    return syncTask;
   };
 
-  const shutdown = async (code: number): Promise<void> => {
+  const shutdown = async (
+    code: number,
+    options: { syncBeforeClose?: boolean; fence?: boolean } = {},
+  ): Promise<void> => {
     if (closing) return;
     closing = true;
     clearInterval(watchdog);
-    try {
-      await syncProjections();
-    } catch {
-      // best effort; the periodic sync already captured earlier edits
+    if (options.fence) syncGeneration += 1;
+    if (options.syncBeforeClose !== false) {
+      try {
+        await syncProjections(true);
+      } catch {
+        // best effort; the periodic sync already captured earlier edits
+      }
     }
+    let fencingFailure = false;
     try {
-      await vm.close();
+      const close = Promise.resolve(vm.close());
+      if (options.fence) {
+        let timedOut = false;
+        let timeout: NodeJS.Timeout | undefined;
+        await Promise.race([
+          close,
+          new Promise<void>((resolve) => {
+            timeout = setTimeout(() => {
+              timedOut = true;
+              resolve();
+            }, fencingCloseTimeoutMs);
+            timeout.unref?.();
+          }),
+        ]);
+        clearTimeout(timeout);
+        if (timedOut) {
+          const runnerPid = vm.getHostPid();
+          if (runnerPid !== null && !killRunner(runnerPid)) fencingFailure = true;
+          void close.catch(() => {});
+        }
+      } else {
+        await close;
+      }
     } catch {
       // the runner may already be gone
+    }
+    if (fencingFailure) {
+      // Keep the inventory record so the daemon's verified orphan reaper can
+      // retry. Never claim a clean fence when PID identity was ambiguous.
+      exit(1);
+      return;
     }
     gondolinInventory.release(vm.id);
     exit(code);
@@ -206,14 +273,18 @@ export async function runGondolinWorker(
     if (
       config.heartbeatStaleMs > 0 &&
       heartbeat &&
-      !heartbeatFresh(heartbeat, startedAt, config.heartbeatStaleMs)
+      !heartbeatFresh(heartbeat, heartbeatTracker, config.heartbeatStaleMs, monotonicNow)
     ) {
-      void shutdown(0);
+      // Fencing must not wait on write-back to a dead network mount. Closing
+      // the VM is the single-writer safety action; periodic sync may have
+      // captured earlier file edits, but availability cannot outrank fencing.
+      void shutdown(0, { syncBeforeClose: false, fence: true });
     }
   }, pollIntervalMs);
 
   process.on("SIGTERM", () => void shutdown(0));
   process.on("SIGINT", () => void shutdown(0));
+  process.on("SIGUSR2", () => void shutdown(0, { syncBeforeClose: false, fence: true }));
 
   announce(
     JSON.stringify({

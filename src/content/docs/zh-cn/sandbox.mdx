@@ -12,8 +12,8 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
   <Card title="主线隔离" icon="rocket">
     `image:<image>` 由 mikan 管理 lifecycle、workspace mount、vault env 与资源限制。
   </Card>
-  <Card title="Gondolin 预览" icon="moon">
-    `gondolin:default` 运行本地 Gondolin/QEMU VM，是托管 `image:*` sandbox 的计划继任者。
+  <Card title="分布式 Gondolin 预览" icon="moon">
+    `gondolin:remote` 在经过身份验证的 workers 间运行 Gondolin/QEMU VM；`image:*` 继续负责单机 managed sandbox。
   </Card>
 </CardGrid>
 
@@ -48,7 +48,7 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 />
 <LinkCard
   title="Gondolin sandbox"
-  description="试用旨在取代 image sandbox 的本地 Gondolin/QEMU 预览。"
+  description="试用分布式 Gondolin worker 预览；本地 profile 保留用于开发与诊断。"
   href="gondolin/"
 />
 <LinkCard

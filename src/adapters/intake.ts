@@ -1,8 +1,11 @@
 import {
   assertSessionKeyBelongsToConversation,
   assertConversationId,
+  deriveSessionKey,
+  scopeSessionIdentity,
 } from "../sessions/session-key.js";
 import type { ConversationEvent } from "../adapter.js";
+import type { ResolvedConversationStorage } from "../sessions/types.js";
 import { formatAlreadyWorking, formatNothingRunning } from "../platform-messages.js";
 import { evaluateAutoReplyPolicy } from "../trigger.js";
 import { resolveOnlyScopedStopTarget, resolveStopTarget } from "./shared.js";
@@ -32,41 +35,64 @@ export function matchMagicWord(text: string): "stop" | null {
 export async function processMessageIntake<TEvent extends ConversationEvent>(
   options: MessageIntakeOptions<TEvent>,
 ): Promise<MessageIntakeOutcome> {
-  assertConversationId(options.eventBase.conversationId);
+  const conversationId = assertConversationId(options.eventBase.conversationId);
   if (options.eventBase.sessionKey !== undefined) {
-    assertSessionKeyBelongsToConversation(
-      options.eventBase.sessionKey,
-      options.eventBase.conversationId,
-    );
+    assertSessionKeyBelongsToConversation(options.eventBase.sessionKey, conversationId);
   }
-  if (matchMagicWord(options.magicWord.text ?? options.eventBase.text) === "stop") {
-    options.log?.({ ...options.logEntryBase, attachments: [] });
-    await handleStopMagicWord(options);
+  assertSessionKeyBelongsToConversation(options.queueKey, conversationId);
+
+  const storage = options.resolveStorage ? await options.resolveStorage() : undefined;
+  const platformSessionKey = deriveSessionKey(options.eventBase);
+  const runtimeSessionKey = storage
+    ? scopeSessionIdentity(platformSessionKey, conversationId, storage.storageKey).runtimeSessionKey
+    : platformSessionKey;
+  const runtimeQueueKey = storage
+    ? scopeSessionIdentity(options.queueKey, conversationId, storage.storageKey).runtimeSessionKey
+    : options.queueKey;
+  const eventBase = {
+    ...options.eventBase,
+    ...(storage
+      ? {
+          storageKey: storage.storageKey,
+          conversationDir: storage.conversationDir,
+          runtimeSessionKey,
+        }
+      : {}),
+  } as TEvent;
+
+  function logEntry(entry: Record<string, unknown>): void {
+    if (storage) options.log?.(entry, storage);
+    else options.log?.(entry);
+  }
+
+  if (matchMagicWord(options.magicWord.text ?? eventBase.text) === "stop") {
+    logEntry({ ...options.logEntryBase, attachments: [] });
+    await handleStopMagicWord(options, runtimeSessionKey, platformSessionKey, storage);
     return "magic-word";
   }
 
   const triggerResult = options.isAutoReplyCandidate
-    ? await evaluateAutoReplyPolicy({ event: options.eventBase, workingDir: options.workingDir })
+    ? await evaluateAutoReplyPolicy({
+        event: eventBase,
+        workingDir: options.workingDir,
+        conversationDir: storage?.conversationDir,
+      })
     : ({ trigger: true, reason: "addressed" } as const);
 
   if (!triggerResult.trigger) {
-    options.log?.({ ...options.logEntryBase, attachments: [] });
+    logEntry({ ...options.logEntryBase, attachments: [] });
     return "not-triggered";
   }
 
   function prepareEvent(attachments: unknown[]): TEvent {
-    const event = { ...options.eventBase, attachments } as TEvent;
-    options.log?.({ ...options.logEntryBase, attachments });
+    const event = { ...eventBase, attachments } as TEvent;
+    logEntry({ ...options.logEntryBase, attachments });
     return event;
   }
 
   async function rejectedWhileBusy(): Promise<boolean> {
-    const sessionKey = options.eventBase.sessionKey ?? options.eventBase.conversationId;
-    if (!options.handler.isRunning(sessionKey)) return false;
-    await options.bot.postMessage(
-      options.eventBase.conversationId,
-      formatAlreadyWorking(options.bot, "/stop"),
-    );
+    if (!options.handler.isRunning(runtimeSessionKey)) return false;
+    await options.bot.postMessage(conversationId, formatAlreadyWorking(options.bot, "/stop"));
     return true;
   }
 
@@ -78,17 +104,17 @@ export async function processMessageIntake<TEvent extends ConversationEvent>(
   if (options.deferAttachmentsUntilRun) {
     // Busy rejection happens inside the queued work here, so the outcome is
     // already "enqueued" by the time it is evaluated.
-    options.enqueue(options.queueKey, async () => {
-      const event = prepareEvent(await options.processAttachments());
+    options.enqueue(runtimeQueueKey, async () => {
+      const event = prepareEvent(await options.processAttachments(storage));
       if (options.busyPolicy === "reject" && (await rejectedWhileBusy())) return;
       return dispatch(event);
     });
     return "enqueued";
   }
 
-  const event = prepareEvent(await options.processAttachments());
+  const event = prepareEvent(await options.processAttachments(storage));
   if (options.busyPolicy === "reject" && (await rejectedWhileBusy())) return "rejected-busy";
-  options.enqueue(options.queueKey, () => dispatch(event));
+  options.enqueue(runtimeQueueKey, () => dispatch(event));
   return "enqueued";
 }
 
@@ -99,21 +125,44 @@ export async function processMessageIntake<TEvent extends ConversationEvent>(
  */
 async function handleStopMagicWord<TEvent extends ConversationEvent>(
   options: MessageIntakeOptions<TEvent>,
+  runtimeSessionKey: string,
+  platformSessionKey: string,
+  storage?: ResolvedConversationStorage,
 ): Promise<void> {
   const { handler, bot, eventBase, magicWord } = options;
   const conversationId = eventBase.conversationId;
-  const sessionKey = eventBase.sessionKey;
+  const runtimeConversationId = conversationIdOfRuntimeKey(runtimeSessionKey);
 
-  let target = resolveStopTarget({ handler, conversationId, sessionKey });
-  if (!target && widensToScopedSession(magicWord.scopeFallback, sessionKey, conversationId)) {
-    target = resolveOnlyScopedStopTarget(handler, conversationId);
+  let target = resolveStopTarget({
+    handler,
+    conversationId: runtimeConversationId,
+    sessionKey: runtimeSessionKey,
+  });
+  if (
+    !target &&
+    widensToScopedSession(magicWord.scopeFallback, eventBase.sessionKey, conversationId)
+  ) {
+    target = resolveOnlyScopedStopTarget(handler, runtimeConversationId);
   }
 
   if (target) {
-    await handler.handleStop(target, conversationId, bot);
+    if (storage) {
+      await handler.handleStop(target, conversationId, bot, {
+        platformSessionKey,
+        storageKey: storage.storageKey,
+        conversationDir: storage.conversationDir,
+      });
+    } else {
+      await handler.handleStop(target, conversationId, bot);
+    }
   } else if (magicWord.addressed) {
     await bot.postMessage(conversationId, formatNothingRunning(bot));
   }
+}
+
+function conversationIdOfRuntimeKey(runtimeSessionKey: string): string {
+  const separator = runtimeSessionKey.indexOf(":");
+  return separator === -1 ? runtimeSessionKey : runtimeSessionKey.slice(0, separator);
 }
 
 function widensToScopedSession(

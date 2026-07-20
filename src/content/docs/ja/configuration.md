@@ -106,7 +106,8 @@ Conversation settings は host-authoritative です。古い `<workspace>/<conve
 | `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]`                                                                 | 設定済みの platform bots を起動。working directory の既定値は `<state-dir>/workspace` |
 | `--sandbox=host \| container:<name> \| image:<image> \| gondolin:default \| gondolin:remote \| firecracker:... \| cloudflare:<id>` | tool execution mode を選択。既定値は `host`                                           |
 | `mikan env`                                                                                                                        | 環境変数の完全なインベントリと、現在設定されている内容を表示                          |
-| `mikan --worker-token`                                                                                                             | 一度きりの gondolin worker join token を発行                                          |
+| `mikan --worker-token`                                                                                                             | Gondolin worker の初回参加用 one-time token を発行                                    |
+| `mikan --worker-token --worker-name <name>`                                                                                        | 既存 worker identity のローテーション用に名前を限定した token を発行                  |
 | `mikan --download <channel-id>`                                                                                                    | Slack channel history をダウンロード。`SLACK_BOT_TOKEN` が必要                        |
 | `mikan --version`                                                                                                                  | インストール済み version を表示                                                       |
 | `mikan --help`                                                                                                                     | CLI の使い方と platform-token のサマリーを表示                                        |

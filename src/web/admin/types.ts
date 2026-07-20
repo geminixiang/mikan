@@ -1,6 +1,7 @@
 import type { MessagingBot, PlatformName, RunningSession } from "../../adapter.js";
 import type { LinkTokenStoreLike } from "../../commands/types.js";
-import type { SandboxConfig } from "../../sandbox/index.js";
+import type { GondolinFleetDiagnostics, SandboxConfig } from "../../sandbox/index.js";
+import type { ConversationStorageCatalogEntry } from "../../sessions/types.js";
 import type { EventStore } from "../../tools/types.js";
 import type { VaultManager } from "../../vault/index.js";
 import type { InMemorySessionViewTokenStore } from "../session-view/store.js";
@@ -13,6 +14,10 @@ export interface AdminRuntimeBridge {
   refreshAllConversations(): { busy: string[] };
 }
 
+export interface AdminConversationScope extends ConversationStorageCatalogEntry {
+  scopeKey: string;
+}
+
 export interface AdminServices {
   vaultManager: VaultManager;
   linkTokenStore: LinkTokenStoreLike;
@@ -20,10 +25,13 @@ export interface AdminServices {
   adminTokenStore: InMemoryAdminTokenStore;
   portalBaseUrl?: string;
   workingDir?: string;
+  /** Read conversation directories through durable platform-scoped claims. */
+  conversationStorageScoped?: boolean;
   /** Events read/delete go through the owning store, not raw disk parsing. */
   eventStore?: EventStore;
   sandbox?: SandboxConfig;
   runtime?: AdminRuntimeBridge;
+  gondolinDiagnostics?: () => Promise<GondolinFleetDiagnostics>;
   botsByPlatform?: Partial<Record<PlatformName, MessagingBot>>;
 }
 

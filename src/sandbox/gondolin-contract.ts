@@ -16,6 +16,12 @@ import { isRecord } from "../utils/file-guards.js";
  * on the authenticated ensure request.
  */
 
+const GondolinNetworkPolicySchema = Type.Object({
+  allowedHosts: Type.Optional(Type.Array(Type.String())),
+  allowedInternalHosts: Type.Optional(Type.Array(Type.String())),
+  blockInternalRanges: Type.Optional(Type.Boolean()),
+});
+
 const GondolinMountSchema = Type.Object({
   source: Type.String(),
   target: Type.String(),
@@ -39,6 +45,7 @@ export const GondolinWorkerConfigSchema = Type.Object({
   memory: Type.Optional(Type.String()),
   /** Desired-runtime fingerprint recorded for adoption checks. */
   fingerprint: Type.String(),
+  network: Type.Optional(GondolinNetworkPolicySchema),
   /** Runtime inventory directory (shared with the spawning mikan). */
   inventoryDir: Type.String(),
   /** Self-stop when the mikan heartbeat file is older than this. 0 disables. */
@@ -113,7 +120,8 @@ export const GondolinEnsureRuntimeRequestSchema = Type.Object({
   cpus: Type.String(),
   memory: Type.String(),
   fingerprint: Type.String(),
-  /** Accepted by the daemon; the TS client currently leaves it unset (0). */
+  network: Type.Optional(GondolinNetworkPolicySchema),
+  /** Runtime watchdog: half the lease TTL, so a daemon crash cannot leave an unfenced VM alive. */
   heartbeatStaleMs: Type.Optional(Type.Number()),
 });
 
@@ -162,35 +170,72 @@ export interface SessionFrameCallbacks {
   onBinary: (frame: Buffer) => void;
 }
 
+const MAX_SESSION_FRAME_BYTES = 8 << 20;
+
 /** Parses the daemon-to-client session framing: u8 type + u32be length + payload. */
 export function createSessionFrameParser(
   callbacks: SessionFrameCallbacks,
 ): (chunk: Buffer) => void {
   let buffer = Buffer.alloc(0);
+  let failed = false;
+  const fail = (message: string): void => {
+    failed = true;
+    buffer = Buffer.alloc(0);
+    callbacks.onJson({ type: "error", code: "PROTOCOL_ERROR", message });
+  };
   return (chunk: Buffer) => {
+    if (failed) return;
     buffer = Buffer.concat([buffer, chunk]);
     while (buffer.length >= 5) {
       const type = buffer.readUInt8(0);
       const length = buffer.readUInt32BE(1);
+      if (length > MAX_SESSION_FRAME_BYTES) {
+        fail(`session frame exceeds ${MAX_SESSION_FRAME_BYTES} bytes`);
+        return;
+      }
       if (buffer.length < 5 + length) return;
       const payload = buffer.subarray(5, 5 + length);
       buffer = buffer.subarray(5 + length);
       if (type === 1) {
+        if (payload.length < 5) {
+          fail("truncated session binary frame");
+          return;
+        }
+        const streamTag = payload.readUInt8(0);
+        if (streamTag !== 1 && streamTag !== 2) {
+          fail(`unknown session output stream ${streamTag}`);
+          return;
+        }
         callbacks.onBinary(Buffer.from(payload));
         continue;
       }
+      if (type !== 0) {
+        fail(`unknown session frame type ${type}`);
+        return;
+      }
       try {
-        callbacks.onJson(JSON.parse(payload.toString("utf8")));
+        const parsed: unknown = JSON.parse(payload.toString("utf8"));
+        if (!isRecord(parsed) || typeof parsed.type !== "string") {
+          fail("invalid session JSON frame");
+          return;
+        }
+        callbacks.onJson(parsed as Parameters<SessionFrameCallbacks["onJson"]>[0]);
       } catch {
-        // ignore malformed frames
+        fail("malformed session JSON frame");
+        return;
       }
     }
   };
 }
 
+const MAX_ENCODED_MESSAGE_BYTES = 8 << 20;
+
 /** Encodes a client-to-daemon session message: u32be length + JSON. */
 export function encodeSessionMessage(message: object): Buffer {
   const payload = Buffer.from(JSON.stringify(message));
+  if (payload.length > MAX_ENCODED_MESSAGE_BYTES) {
+    throw new Error(`encoded message exceeds ${MAX_ENCODED_MESSAGE_BYTES} bytes`);
+  }
   const header = Buffer.alloc(4);
   header.writeUInt32BE(payload.length, 0);
   return Buffer.concat([header, payload]);

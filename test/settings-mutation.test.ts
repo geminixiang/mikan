@@ -28,10 +28,14 @@ function conversationSettingsFile(conversationId: string): string {
 describe("applyConversationSettings", () => {
   test("llm change clears cached runners, then writes", () => {
     const runtime = { switchConversationModel: vi.fn().mockReturnValue(true) };
-    const result = applyConversationSettings(runtime, workingDir, "C1", {
-      provider: "anthropic",
-      model: "claude-sonnet-4-6",
-    });
+    const result = applyConversationSettings(
+      runtime,
+      { key: "C1", conversationDir: join(workingDir, "C1") },
+      {
+        provider: "anthropic",
+        model: "claude-sonnet-4-6",
+      },
+    );
     expect(result).toEqual({ ok: true, runtimeSwitched: true });
     expect(runtime.switchConversationModel).toHaveBeenCalledWith(
       "C1",
@@ -44,19 +48,27 @@ describe("applyConversationSettings", () => {
 
   test("busy conversation refuses: no write, disk and cache stay agreed", () => {
     const runtime = { switchConversationModel: vi.fn().mockReturnValue(false) };
-    const result = applyConversationSettings(runtime, workingDir, "C1", {
-      provider: "anthropic",
-      model: "claude-sonnet-4-6",
-    });
+    const result = applyConversationSettings(
+      runtime,
+      { key: "C1", conversationDir: join(workingDir, "C1") },
+      {
+        provider: "anthropic",
+        model: "claude-sonnet-4-6",
+      },
+    );
     expect(result).toEqual({ ok: false, reason: "busy" });
     expect(existsSync(conversationSettingsFile("C1"))).toBe(false);
   });
 
   test("non-llm patch writes without touching runners", () => {
     const runtime = { switchConversationModel: vi.fn().mockReturnValue(false) };
-    const result = applyConversationSettings(runtime, workingDir, "C1", {
-      sandbox: { image: { workspaceMount: "full" } },
-    });
+    const result = applyConversationSettings(
+      runtime,
+      { key: "C1", conversationDir: join(workingDir, "C1") },
+      {
+        sandbox: { image: { workspaceMount: "full" } },
+      },
+    );
     expect(result).toEqual({ ok: true, runtimeSwitched: null });
     expect(runtime.switchConversationModel).not.toHaveBeenCalled();
     const written = JSON.parse(readFileSync(conversationSettingsFile("C1"), "utf-8"));
@@ -64,10 +76,14 @@ describe("applyConversationSettings", () => {
   });
 
   test("no runtime (portal without bridge): writes, reports null", () => {
-    const result = applyConversationSettings(undefined, workingDir, "C1", {
-      provider: "anthropic",
-      model: "claude-haiku-4-5",
-    });
+    const result = applyConversationSettings(
+      undefined,
+      { key: "C1", conversationDir: join(workingDir, "C1") },
+      {
+        provider: "anthropic",
+        model: "claude-haiku-4-5",
+      },
+    );
     expect(result).toEqual({ ok: true, runtimeSwitched: null });
     expect(existsSync(conversationSettingsFile("C1"))).toBe(true);
   });

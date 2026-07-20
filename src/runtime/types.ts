@@ -20,6 +20,23 @@ import type { MikanModels } from "../harness/index.js";
 import type { PlatformToolPackFactory } from "../tools/types.js";
 import type { VaultManager } from "../vault/index.js";
 
+export interface RuntimeSessionIdentity {
+  conversationId: string;
+  platformSessionKey: string;
+  runtimeSessionKey: string;
+  storageKey: string;
+  conversationDir: string;
+}
+
+export interface RuntimeShutdownOptions {
+  shutdownHandler: () => Promise<void>;
+  stopEvents: () => void;
+  disconnectGondolinRuntimes: () => Promise<void>;
+  flushTelemetry: () => Promise<unknown>;
+  releaseGondolinCoordinator: () => void;
+  exit: (code: number) => void;
+}
+
 export interface SessionLifecycleOptions {
   maxSessions?: number;
   idleTimeoutMs?: number;
@@ -46,7 +63,15 @@ export interface RunSessionOptions {
 
 /** Conversation/session identity used to resolve per-session runner state. */
 export interface SessionStateOptions {
+  /** Raw platform conversation address used for logs and platform replies. */
   conversationId: string;
+  /** Existing persisted session key with the raw conversation prefix. */
+  platformSessionKey: string;
+  /** Storage-scoped key used only for process queues and runner state. */
+  runtimeSessionKey: string;
+  /** Platform-namespaced child identity under the workspace root. */
+  storageKey: string;
+  conversationDir: string;
   sessionKey: string;
   conversationKind?: ConversationKind;
 }

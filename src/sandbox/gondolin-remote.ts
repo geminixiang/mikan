@@ -21,8 +21,27 @@ import {
 } from "./gondolin-worker-client.js";
 import type { ExecResult } from "./types.js";
 
+/** Wire compatibility shared by static and dial-home remote worker transports. */
+export const GONDOLIN_REMOTE_PROTOCOL_VERSION = 2;
+export const GONDOLIN_MIN_REMOTE_PROTOCOL_VERSION = 1;
+
+function isCompatibleProtocolVersion(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= GONDOLIN_MIN_REMOTE_PROTOCOL_VERSION &&
+    value <= GONDOLIN_REMOTE_PROTOCOL_VERSION
+  );
+}
+
 const LEASE_TTL_SECONDS = 300;
+/** Covers the daemon's 15s lease janitor plus runtime watchdog scheduling jitter. */
+export const GONDOLIN_FENCING_GRACE_SECONDS = 45;
 const REQUEST_TIMEOUT_MS = 15_000;
+const LEASE_ACQUIRE_TIMEOUT_MS = 30_000;
+const MAX_CLOCK_SKEW_MS = 5_000;
+const MAX_CLOCK_UNCERTAINTY_MS = 2_500;
+const MAX_RESPONSE_BYTES = 1 << 20;
 /** VM boot happens inside this request; the daemon's own handshake cap is 2 min. */
 const ENSURE_TIMEOUT_MS = 150_000;
 
@@ -40,6 +59,16 @@ interface RemoteResponse {
 /** A request that never reached the daemon (network/TLS/timeout failure). */
 export class GondolinWorkerUnreachableError extends Error {}
 
+export class GondolinClockSkewError extends SandboxError {
+  constructor(
+    readonly clockSkewMs: number,
+    readonly clockUncertaintyMs: number,
+    message = `Error: gondolin remote worker clock differs by approximately ${clockSkewMs}ms; synchronize host clocks`,
+  ) {
+    super(message);
+  }
+}
+
 export interface GondolinRemoteOverrides {
   request?: (
     method: string,
@@ -52,8 +81,11 @@ export interface GondolinRemoteOverrides {
     headers: Record<string, string>,
     callbacks: SessionClientCallbacks,
   ) => SessionClient | Promise<SessionClient>;
+  httpsRequest?: typeof httpsRequest;
   leaseTtlSeconds?: number;
   requestTimeoutMs?: number;
+  now?: () => number;
+  monotonicNow?: () => number;
   /** Reports lease grants/renewals so the fleet can persist fencing watermarks. */
   onLeaseActivity?: (instanceId: string, expiresAtMs: number) => void;
 }
@@ -72,6 +104,8 @@ export class GondolinRemoteConnection {
   private readonly leases = new Map<string, RemoteLease>();
   private readonly leaseTtlSeconds: number;
   private readonly requestTimeoutMs: number;
+  private protocolVerified = false;
+  private protocolVersion?: number;
   private tls?: { ca?: Buffer; cert: Buffer; key: Buffer };
 
   constructor(
@@ -82,6 +116,39 @@ export class GondolinRemoteConnection {
     this.requestTimeoutMs = overrides.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
   }
 
+  private validateClockSample(
+    serverTime: unknown,
+    startedAt: number,
+    startedMonotonic: number,
+    monotonicNow: () => number,
+    required: boolean,
+  ): { clockSkewMs: number; clockUncertaintyMs: number } | undefined {
+    if (typeof serverTime !== "string" || !Number.isFinite(Date.parse(serverTime))) {
+      if (required) {
+        throw new SandboxError("Error: gondolin remote worker returned an invalid server time");
+      }
+      return undefined;
+    }
+    const elapsedMs = monotonicNow() - startedMonotonic;
+    const midpoint = startedAt + elapsedMs / 2;
+    const clockSkewMs = Date.parse(serverTime) - midpoint;
+    const clockUncertaintyMs = elapsedMs / 2;
+    if (clockUncertaintyMs > MAX_CLOCK_UNCERTAINTY_MS) {
+      throw new GondolinClockSkewError(
+        Math.round(clockSkewMs),
+        Math.round(clockUncertaintyMs),
+        `Error: gondolin remote worker health round trip is too slow to verify clock safety (${Math.round(elapsedMs)}ms)`,
+      );
+    }
+    if (Math.max(0, Math.abs(clockSkewMs) - clockUncertaintyMs) > MAX_CLOCK_SKEW_MS) {
+      throw new GondolinClockSkewError(Math.round(clockSkewMs), Math.round(clockUncertaintyMs));
+    }
+    return {
+      clockSkewMs: Math.round(clockSkewMs),
+      clockUncertaintyMs: Math.round(clockUncertaintyMs),
+    };
+  }
+
   /** Drop lease timers and caches (does not touch the daemon). */
   dispose(): void {
     for (const lease of this.leases.values()) clearInterval(lease.renewTimer);
@@ -89,16 +156,42 @@ export class GondolinRemoteConnection {
   }
 
   async health(): Promise<Record<string, unknown>> {
+    const now = this.overrides.now ?? Date.now;
+    const monotonicNow = this.overrides.monotonicNow ?? performance.now.bind(performance);
+    const startedAt = now();
+    const startedMonotonic = monotonicNow();
     const response = await this.request("GET", "/v1/health");
     if (response.status !== 200) {
       throw new SandboxError(
         `Error: gondolin remote worker health check failed (${response.status})`,
       );
     }
+    if (!isCompatibleProtocolVersion(response.json.protocolVersion)) {
+      throw new SandboxError(
+        `Error: incompatible gondolin remote worker protocol ` +
+          `(supported ${GONDOLIN_MIN_REMOTE_PROTOCOL_VERSION}-${GONDOLIN_REMOTE_PROTOCOL_VERSION}, got ${String(response.json.protocolVersion ?? "missing")})`,
+      );
+    }
+    const sample = this.validateClockSample(
+      response.json.serverTime,
+      startedAt,
+      startedMonotonic,
+      monotonicNow,
+      response.json.protocolVersion >= 2,
+    );
+    if (sample) Object.assign(response.json, sample);
+    this.protocolVerified = true;
+    this.protocolVersion = response.json.protocolVersion;
     return response.json;
   }
 
   async ensure(instanceId: string, spec: GondolinRuntimeSpec): Promise<GondolinRuntimeHandle> {
+    if (!this.protocolVerified) await this.health();
+    if (spec.network && (this.protocolVersion ?? 0) < 2) {
+      throw new SandboxError(
+        "Error: Gondolin network policy requires remote worker protocol 2 or newer",
+      );
+    }
     const { mounts, credentialFiles } = this.translateMounts(spec);
     const body: GondolinEnsureRuntimeRequest = {
       instanceId,
@@ -108,6 +201,11 @@ export class GondolinRemoteConnection {
       cpus: spec.cpus ?? "",
       memory: spec.memory ?? "",
       fingerprint: spec.fingerprint,
+      network: spec.network,
+      // A detached runtime must stop if its supervising daemon disappears.
+      // Keep the threshold above the daemon's 15s heartbeat period while
+      // still fencing it before host failover becomes eligible.
+      heartbeatStaleMs: Math.max((this.leaseTtlSeconds * 1000) / 2, 30_000),
     };
     const idempotencyKey = `${instanceId}:${spec.fingerprint}:${Date.now()}`;
     for (let attempt = 0; ; attempt += 1) {
@@ -121,10 +219,17 @@ export class GondolinRemoteConnection {
       );
       if (response.status === 200) {
         const runtime = response.json as Partial<GondolinRemoteRuntime>;
+        if (
+          typeof runtime.sessionId !== "string" ||
+          runtime.sessionId.length === 0 ||
+          typeof runtime.workerPid !== "number"
+        ) {
+          throw new SandboxError("Error: remote worker returned an invalid runtime response");
+        }
         return {
-          sessionId: runtime.sessionId ?? "",
+          sessionId: runtime.sessionId,
           instanceId,
-          workerPid: runtime.workerPid ?? 0,
+          workerPid: runtime.workerPid,
           fingerprint: spec.fingerprint,
         };
       }
@@ -150,6 +255,12 @@ export class GondolinRemoteConnection {
     );
     if (isLeaseFencedStatus(response.status)) {
       this.dropLease(handle.instanceId);
+      throw new GondolinRuntimeGoneError(`runtime stop was lease-fenced (${response.status})`);
+    }
+    if (response.status !== 200) {
+      throw new GondolinWorkerUnreachableError(
+        `remote worker refused runtime stop (${response.status}): ${String(response.json.message ?? "")}`,
+      );
     }
     this.releaseLease(handle.instanceId);
   }
@@ -242,23 +353,55 @@ export class GondolinRemoteConnection {
   private async leaseFor(instanceId: string): Promise<RemoteLease> {
     const cached = this.leases.get(instanceId);
     if (cached) return cached;
-    const response = await this.request("POST", "/v1/leases", {
-      instanceId,
-      ttlSeconds: this.leaseTtlSeconds,
-    });
+    // Write-ahead the maximum lifetime before the worker can grant a lease.
+    // A host crash after grant but before response must not expose an older
+    // failover watermark from durable placement state.
+    this.reportLeaseActivity(instanceId);
+    const now = this.overrides.now ?? Date.now;
+    const monotonicNow = this.overrides.monotonicNow ?? performance.now.bind(performance);
+    const startedAt = now();
+    const startedMonotonic = monotonicNow();
+    const response = await this.request(
+      "POST",
+      "/v1/leases",
+      {
+        instanceId,
+        ttlSeconds: this.leaseTtlSeconds,
+      },
+      undefined,
+      LEASE_ACQUIRE_TIMEOUT_MS,
+    );
     if (response.status !== 200) {
       throw new SandboxError(
         `Error: remote worker refused lease (${response.status}): ${String(response.json.message ?? "")}`,
       );
     }
+    if (
+      typeof response.json.id !== "string" ||
+      response.json.id.length === 0 ||
+      typeof response.json.epoch !== "number" ||
+      !Number.isSafeInteger(response.json.epoch) ||
+      response.json.epoch < 1 ||
+      response.json.instanceId !== instanceId ||
+      typeof response.json.expiresAt !== "string" ||
+      !Number.isFinite(Date.parse(response.json.expiresAt))
+    ) {
+      throw new SandboxError("Error: remote worker returned an invalid lease response");
+    }
+    this.validateClockSample(
+      response.json.serverTime,
+      startedAt,
+      startedMonotonic,
+      monotonicNow,
+      (this.protocolVersion ?? 0) >= 2,
+    );
     const lease: RemoteLease = {
-      leaseId: response.json.id as string,
-      epoch: response.json.epoch as number,
+      leaseId: response.json.id,
+      epoch: response.json.epoch,
       renewTimer: setInterval(() => void this.renew(instanceId), (this.leaseTtlSeconds * 1000) / 3),
     };
     lease.renewTimer.unref?.();
     this.leases.set(instanceId, lease);
-    this.reportLeaseActivity(instanceId);
     return lease;
   }
 
@@ -266,12 +409,40 @@ export class GondolinRemoteConnection {
     const lease = this.leases.get(instanceId);
     if (!lease) return;
     try {
+      const now = this.overrides.now ?? Date.now;
+      const monotonicNow = this.overrides.monotonicNow ?? performance.now.bind(performance);
+      const startedAt = now();
+      const startedMonotonic = monotonicNow();
+      // Write-ahead fence: persist the longest possible renewed lifetime on
+      // the host before asking the worker to extend its lease. If persistence
+      // fails, do not renew; a conservative watermark is always safe.
+      this.reportLeaseActivity(instanceId);
       const response = await this.request("POST", `/v1/leases/${lease.leaseId}/renew`, {
         ttlSeconds: this.leaseTtlSeconds,
       });
-      if (response.status === 200) this.reportLeaseActivity(instanceId);
-      else this.dropLease(instanceId);
+      if (response.status !== 200) {
+        this.dropLease(instanceId);
+        return;
+      }
+      if (
+        typeof response.json.id !== "string" ||
+        response.json.id !== lease.leaseId ||
+        response.json.epoch !== lease.epoch ||
+        response.json.instanceId !== instanceId ||
+        typeof response.json.expiresAt !== "string" ||
+        !Number.isFinite(Date.parse(response.json.expiresAt))
+      ) {
+        throw new SandboxError("Error: remote worker returned an invalid lease renewal response");
+      }
+      this.validateClockSample(
+        response.json.serverTime,
+        startedAt,
+        startedMonotonic,
+        monotonicNow,
+        (this.protocolVersion ?? 0) >= 2,
+      );
     } catch (err) {
+      this.dropLease(instanceId);
       log.logWarning(
         `Failed to renew remote worker lease for '${instanceId}'`,
         err instanceof Error ? err.message : String(err),
@@ -282,7 +453,10 @@ export class GondolinRemoteConnection {
   private reportLeaseActivity(instanceId: string): void {
     // fencing watermark by mikan's own clock: the worker-side lease cannot
     // outlive this moment plus its ttl, no matter whose clock is skewed
-    this.overrides.onLeaseActivity?.(instanceId, Date.now() + this.leaseTtlSeconds * 1000);
+    this.overrides.onLeaseActivity?.(
+      instanceId,
+      Date.now() + (this.leaseTtlSeconds + GONDOLIN_FENCING_GRACE_SECONDS) * 1000,
+    );
   }
 
   private releaseLease(instanceId: string): void {
@@ -331,11 +505,29 @@ export class GondolinRemoteConnection {
         },
         (response) => {
           let raw = "";
+          let bytes = 0;
+          let failed = false;
           response.setEncoding("utf8");
           response.on("data", (chunk: string) => {
+            if (failed) return;
+            bytes += Buffer.byteLength(chunk);
+            if (bytes > MAX_RESPONSE_BYTES) {
+              failed = true;
+              response.destroy(
+                new GondolinWorkerUnreachableError(
+                  `remote worker response exceeds ${MAX_RESPONSE_BYTES} bytes`,
+                ),
+              );
+              return;
+            }
             raw += chunk;
           });
+          response.on("error", (error: Error) => {
+            if (!failed) reject(new GondolinWorkerUnreachableError(error.message));
+            else reject(error);
+          });
           response.on("end", () => {
+            if (failed) return;
             let json: Record<string, unknown> = {};
             try {
               json = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
@@ -363,17 +555,22 @@ export class GondolinRemoteConnection {
     if (this.overrides.tunnel) return this.overrides.tunnel(path, headers, callbacks);
     const url = new URL(path, this.settings.url);
     return new Promise((resolve, reject) => {
-      const request = httpsRequest({
+      const request = (this.overrides.httpsRequest ?? httpsRequest)({
         method: "GET",
         host: url.hostname,
         port: url.port,
         path: url.pathname,
-        signal: AbortSignal.timeout(this.requestTimeoutMs),
         headers: { ...headers, Connection: "Upgrade", Upgrade: "gondolin-session" },
         ...this.tlsOptions(),
       });
+      const handshakeTimer = setTimeout(() => {
+        request.destroy(new Error(`tunnel handshake timed out after ${this.requestTimeoutMs}ms`));
+      }, this.requestTimeoutMs);
+      handshakeTimer.unref?.();
       request.on("upgrade", (_response, socket) => {
+        clearTimeout(handshakeTimer);
         socket.setNoDelay(true);
+        socket.setKeepAlive(true, 30_000);
         let closed = false;
         const parse = createSessionFrameParser(callbacks);
         socket.on("data", parse);
@@ -399,6 +596,7 @@ export class GondolinRemoteConnection {
         });
       });
       request.on("response", (response) => {
+        clearTimeout(handshakeTimer);
         if (isLeaseFencedStatus(response.statusCode)) {
           this.dropLease(instanceId);
         }
@@ -409,6 +607,7 @@ export class GondolinRemoteConnection {
         reject(error);
       });
       request.on("error", (error: NodeJS.ErrnoException) => {
+        clearTimeout(handshakeTimer);
         error.code ??= "ECONNREFUSED";
         reject(error);
       });

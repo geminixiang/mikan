@@ -10,6 +10,7 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -96,6 +97,10 @@ func buildDaemon(flags daemonFlags, logger *slog.Logger) *api.Server {
 	if err := os.MkdirAll(state.RuntimeInventory(), 0o700); err != nil {
 		fatal(logger, fmt.Sprintf("create state dir: %v", err))
 	}
+	stateLock, err := statedir.AcquireDaemonLock(state.Root)
+	if err != nil {
+		fatal(logger, err.Error())
+	}
 	leases, err := lease.NewManager(state.Root)
 	if err != nil {
 		fatal(logger, err.Error())
@@ -115,7 +120,9 @@ func buildDaemon(flags daemonFlags, logger *slog.Logger) *api.Server {
 		CredentialsDir: state.Credentials(),
 		Workspace:      api.NewWorkspaceProbe(*flags.workspaceRoot, 2*time.Second, time.Minute),
 		Log:            logger,
+		StateLock:      stateLock,
 	}
+	server.RequireHostActivityHeartbeat()
 	stop := make(chan struct{})
 	go server.Janitor(15*time.Second, stop)
 	return server
@@ -127,12 +134,13 @@ func runServe(args []string) {
 	certFile := flags.String("cert", "", "server certificate (PEM)")
 	keyFile := flags.String("key", "", "server private key (PEM)")
 	clientCAFile := flags.String("client-ca", "", "CA bundle that signs allowed client certificates (PEM)")
+	clientCN := flags.String("client-cn", "", "required Common Name of the authorized mikan host certificate")
 	daemon := addDaemonFlags(flags)
 	_ = flags.Parse(args)
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	if *certFile == "" || *keyFile == "" || *clientCAFile == "" {
-		fatal(logger, "cert, key, and client-ca are required")
+	if *certFile == "" || *keyFile == "" || *clientCAFile == "" || *clientCN == "" {
+		fatal(logger, "cert, key, client-ca, and client-cn are required")
 	}
 	server := buildDaemon(daemon, logger)
 
@@ -149,17 +157,31 @@ func runServe(args []string) {
 		Addr:              *listen,
 		Handler:           server.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
-		TLSConfig: &tls.Config{
-			MinVersion: tls.VersionTLS13,
-			ClientAuth: tls.RequireAndVerifyClientCert,
-			ClientCAs:  clientCAs,
-			// The session tunnel hijacks connections, which requires HTTP/1.1.
-			NextProtos: []string{"http/1.1"},
-		},
+		TLSConfig:         newStaticServerTLSConfig(clientCAs, *clientCN),
 	}
 	logger.Info("mikan-worker listening", "addr", *listen, "inventoryDir", server.InventoryDir)
 	if err := httpServer.ListenAndServeTLS(*certFile, *keyFile); err != nil {
 		fatal(logger, err.Error())
+	}
+}
+
+func newStaticServerTLSConfig(clientCAs *x509.CertPool, clientCN string) *tls.Config {
+	return &tls.Config{
+		MinVersion: tls.VersionTLS13,
+		ClientAuth: tls.RequireAndVerifyClientCert,
+		ClientCAs:  clientCAs,
+		VerifyConnection: func(state tls.ConnectionState) error {
+			if len(state.VerifiedChains) == 0 || len(state.VerifiedChains[0]) == 0 {
+				return errors.New("verified client certificate is missing")
+			}
+			actual := state.VerifiedChains[0][0].Subject.CommonName
+			if actual != clientCN {
+				return fmt.Errorf("client certificate CN %q is not authorized", actual)
+			}
+			return nil
+		},
+		// The session tunnel hijacks connections, which requires HTTP/1.1.
+		NextProtos: []string{"http/1.1"},
 	}
 }
 
@@ -265,6 +287,9 @@ func runConnect(args []string) {
 	}
 	if *name == "" {
 		*name = defaultWorkerName()
+	}
+	if !join.ValidWorkerName(*name) {
+		fatal(logger, "worker name must be 1-128 letters, numbers, dots, underscores, or hyphens")
 	}
 	if *maxRuntimes <= 0 {
 		*maxRuntimes = runtime.NumCPU()

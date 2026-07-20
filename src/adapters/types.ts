@@ -4,6 +4,7 @@ import type {
   ConversationEvent,
   MessagingEventHandler,
 } from "../adapter.js";
+import type { ResolvedConversationStorage } from "../sessions/types.js";
 
 export type ChatResponseErrorOperation =
   | "respond"
@@ -95,8 +96,10 @@ export interface MessageIntakeOptions<TEvent extends ConversationEvent> {
    */
   busyPolicy: "queue" | "reject";
   logEntryBase: Record<string, unknown>;
-  log?: (entry: Record<string, unknown>) => void;
-  processAttachments: () => Promise<unknown[]>;
+  /** Resolve/migrate storage before policy, attachments, logging, queueing, or dispatch. */
+  resolveStorage?: () => Promise<ResolvedConversationStorage>;
+  log?: (entry: Record<string, unknown>, storage?: ResolvedConversationStorage) => void;
+  processAttachments: (storage?: ResolvedConversationStorage) => Promise<unknown[]>;
   queueKey: string;
   enqueue: (queueKey: string, work: () => Promise<void>) => void;
   handler: MessagingEventHandler;

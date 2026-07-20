@@ -60,10 +60,13 @@ describe("resolveBoot", () => {
     expect(() => resolveBoot(["--sandbox=bogus:nope"])).toThrow();
   });
 
-  test("mode priority: help > version > worker-token > onboard > download > run", () => {
+  test("mode priority: help > version > worker-token > migration > onboard > download > run", () => {
     expect(resolveBoot(["--version", "--help"]).mode).toBe("help");
     expect(resolveBoot(["--onboard", "--version"]).mode).toBe("version");
     expect(resolveBoot(["--onboard", "--worker-token"]).mode).toBe("worker-token");
+    expect(
+      resolveBoot(["--onboard", "--migrate-conversation-storage", "/tmp/owners.json"]).mode,
+    ).toBe("migrate-conversation-storage");
     expect(resolveBoot(["--download=C1", "--onboard"]).mode).toBe("onboard");
     expect(resolveBoot(["--download=C1"]).mode).toBe("download");
   });
@@ -74,6 +77,24 @@ describe("resolveBoot", () => {
 
   test.each([["--help"], ["-h"]])("%s selects help mode", (flag) => {
     expect(resolveBoot([flag]).mode).toBe("help");
+  });
+
+  test("worker rotation scope is parsed without becoming the working directory", () => {
+    const plan = resolveBoot(["--worker-token", "--worker-name", "linux-1"]);
+    expect(plan.mode).toBe("worker-token");
+    expect(plan.workerName).toBe("linux-1");
+    expect(plan.workingDirExplicit).toBe(false);
+  });
+
+  test("conversation storage migration manifest is parsed without becoming working dir", () => {
+    const plan = resolveBoot([
+      "--migrate-conversation-storage",
+      "/tmp/owners.json",
+      "/tmp/workspace",
+    ]);
+    expect(plan.mode).toBe("migrate-conversation-storage");
+    expect(plan.conversationStorageManifest).toBe("/tmp/owners.json");
+    expect(plan.workingDir).toBe(resolve("/tmp/workspace"));
   });
 
   test("unknown flags are an error, not silently ignored", () => {
@@ -99,6 +120,8 @@ describe("helpText", () => {
       "--sandbox",
       "--onboard",
       "--worker-token",
+      "--worker-name",
+      "--migrate-conversation-storage",
       "--download",
       "--version",
       "--help",

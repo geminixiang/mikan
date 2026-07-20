@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { readConversationWorkspaceMountMode } from "../execution-resolver.js";
 import { applyConversationSettings } from "../settings-mutation.js";
 import { runtimeResourceKey } from "../sandbox/identity.js";
@@ -40,16 +41,18 @@ export class SandboxCommandHandler implements CommandHandler {
       return true;
     }
 
+    const storageKey = context.storage?.key ?? context.conversationId;
+    const conversationDir =
+      context.storage?.conversationDir ?? join(context.services.workingDir, context.conversationId);
     const containerKey = runtimeResourceKey(context.services.sandbox, {
       userId: context.platformUserId,
-      conversationId: context.conversationId,
+      conversationId: storageKey,
     });
 
     if (parsed.action === "private" || parsed.action === "full") {
       applyConversationSettings(
         context.services.runtime,
-        context.services.workingDir,
-        context.conversationId,
+        { key: storageKey, conversationDir },
         {
           sandbox: { image: { workspaceMount: parsed.action } },
         },
@@ -102,7 +105,7 @@ export class SandboxCommandHandler implements CommandHandler {
     const boostLimits = context.services.resourceController.getBoostLimits();
     const workspaceMount = readConversationWorkspaceMountMode(
       context.services.workingDir,
-      context.conversationId,
+      storageKey,
     );
     await replyDiagnosticWithContext(
       context.responder,

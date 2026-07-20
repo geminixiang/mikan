@@ -1,5 +1,19 @@
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "fs";
+import {
+  chmodSync,
+  closeSync,
+  copyFileSync,
+  existsSync,
+  fsyncSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+} from "fs";
 import { dirname, isAbsolute, join, normalize, sep } from "path";
+import { constants } from "node:fs";
+import { platform } from "node:os";
 import { readTextFileIfExists } from "../utils/file-guards.js";
 import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 
@@ -162,7 +176,42 @@ export class FileVaultManager implements VaultManager {
     atomicWritePrivateFile(filePath, content);
   }
 
+  migrateKey(sourceKey: string, targetKey: string): boolean {
+    const source = this.vaultPath(sourceKey);
+    const target = this.vaultPath(targetKey);
+    const sourceExists = this.assertVaultDirectoryOrMissing(source);
+    const targetExists = this.assertVaultDirectoryOrMissing(target);
+    if (sourceExists && targetExists) {
+      throw new Error(`Vault migration conflict: both ${sourceKey} and ${targetKey} exist`);
+    }
+    if (!sourceExists) return false;
+    ensurePrivateDir(this.vaultsDir);
+    renameSync(source, target);
+    syncDirectory(this.vaultsDir);
+    return true;
+  }
+
   // ── private ────────────────────────────────────────────────────────────────
+
+  private vaultPath(key: string): string {
+    if (!key || key.includes("/") || key.includes("\\") || key === "." || key === "..") {
+      throw new Error(`Invalid vault key: ${JSON.stringify(key)}`);
+    }
+    return join(this.vaultsDir, key);
+  }
+
+  private assertVaultDirectoryOrMissing(path: string): boolean {
+    try {
+      const stat = lstatSync(path);
+      if (!stat.isDirectory() || stat.isSymbolicLink()) {
+        throw new Error(`Vault path must be a real directory: ${path}`);
+      }
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
+    }
+  }
 
   private buildResolved(key: string): ResolvedVault {
     const dir = join(this.vaultsDir, key);
@@ -178,6 +227,16 @@ export class FileVaultManager implements VaultManager {
       mounts,
       env,
     };
+  }
+}
+
+function syncDirectory(path: string): void {
+  if (platform() === "win32") return;
+  const fd = openSync(path, constants.O_RDONLY);
+  try {
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
   }
 }
 

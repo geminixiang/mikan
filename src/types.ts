@@ -128,6 +128,12 @@ export interface ConversationEvent {
   attachments?: { name: string; localPath: string }[];
   /** Platform-computed session key; overrides default conversationId:thread_ts computation */
   sessionKey?: string;
+  /** Platform-namespaced durable storage identity, resolved before intake side effects. */
+  storageKey?: string;
+  /** Host directory containing this conversation's logs, sessions, settings, and workspace files. */
+  conversationDir?: string;
+  /** Storage-scoped process key used for queue, runner, stop, and runtime ownership. */
+  runtimeSessionKey?: string;
 }
 
 /**
@@ -204,9 +210,19 @@ export interface ConversationContext {
 
 export interface RunningSession {
   sessionKey: string;
+  /** Raw platform conversation address when the runtime uses a scoped key. */
+  conversationId?: string;
+  /** Raw persisted session key when the runtime uses a scoped key. */
+  platformSessionKey?: string;
   startedAt: number;
   lastActivityAt?: number;
   currentTool?: string;
+}
+
+export interface RuntimeConversationScope {
+  platformSessionKey: string;
+  storageKey: string;
+  conversationDir: string;
 }
 
 export interface MessagingEventHandler {
@@ -217,9 +233,19 @@ export interface MessagingEventHandler {
     bot: MessagingBot,
     context: ConversationContext,
   ): Promise<void>;
-  handleStop(sessionKey: string, conversationId: string, bot: MessagingBot): Promise<void>;
+  handleStop(
+    sessionKey: string,
+    conversationId: string,
+    bot: MessagingBot,
+    storage?: RuntimeConversationScope,
+  ): Promise<void>;
   forceStop(sessionKey: string): void;
-  handleNewCommand(sessionKey: string, conversationId: string, bot: MessagingBot): Promise<void>;
+  handleNewCommand(
+    sessionKey: string,
+    conversationId: string,
+    bot: MessagingBot,
+    storage?: RuntimeConversationScope,
+  ): Promise<void>;
 }
 
 // ── agent ─────────────────────────────────────────────────────────────────────
@@ -246,6 +272,15 @@ export interface PiAgentWrapper {
 }
 
 // ── config ────────────────────────────────────────────────────────────────────
+
+export interface GondolinNetworkPolicy {
+  /** HTTP(S) host patterns; omitted allows all, an empty list denies all. */
+  allowedHosts?: string[];
+  /** Host patterns explicitly allowed to resolve to internal address ranges. */
+  allowedInternalHosts?: string[];
+  /** Deny private, loopback, link-local, and metadata ranges after DNS resolution (default false). */
+  blockInternalRanges?: boolean;
+}
 
 export interface GondolinRemoteWorkerSettings {
   /** Stable placement identity; defaults to the URL. */
@@ -313,7 +348,7 @@ export interface SandboxSettings {
   memory?: string;
   boost?: { cpus?: string; memory?: string };
   image?: { workspaceMount?: "private" | "full" };
-  gondolin?: { remote?: GondolinRemoteSettings };
+  gondolin?: { network?: GondolinNetworkPolicy; remote?: GondolinRemoteSettings };
   defaultSharedVault?: string;
 }
 

@@ -3,7 +3,11 @@
 package api
 
 import (
+	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/geminixiang/mikan/worker/internal/lease"
@@ -25,7 +30,7 @@ import (
 )
 
 // ProtocolVersion is bumped on incompatible wire changes.
-const ProtocolVersion = 1
+const ProtocolVersion = 2
 
 const (
 	leaseHeader = "X-Mikan-Lease"
@@ -49,9 +54,20 @@ type Server struct {
 	// Workspace, when set, reports shared-workspace usability in /v1/health.
 	Workspace *WorkspaceProbe
 	Log       *slog.Logger
+	// StateLock keeps the process-scoped state-directory advisory lock alive.
+	StateLock *os.File
 
 	mu       sync.Mutex
 	replayed map[string]replayEntry
+
+	tunnelMu sync.Mutex
+	tunnels  map[*activeTunnel]struct{}
+
+	dialhomeHeartbeat atomic.Bool
+	controlConnected  atomic.Bool
+	heartbeatSeq      atomic.Uint64
+	heartbeatOnce     sync.Once
+	heartbeatBootID   string
 }
 
 type replayEntry struct {
@@ -60,12 +76,19 @@ type replayEntry struct {
 	storedAt time.Time
 }
 
+type activeTunnel struct {
+	instanceID  string
+	epoch       uint64
+	connections []net.Conn
+}
+
 // Handler builds the protocol mux.
 func (s *Server) Handler() http.Handler {
 	if s.Log == nil {
 		s.Log = slog.Default()
 	}
 	s.replayed = make(map[string]replayEntry)
+	s.tunnels = make(map[*activeTunnel]struct{})
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/health", s.handleHealth)
 	mux.HandleFunc("POST /v1/leases", s.handleAcquireLease)
@@ -79,6 +102,25 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
+// RequireHostActivityHeartbeat disables unconditional watchdog refresh. Dial-home
+// sessions call SetControlConnected; static mode refreshes on lease activity.
+func (s *Server) RequireHostActivityHeartbeat() {
+	s.dialhomeHeartbeat.Store(true)
+	s.controlConnected.Store(false)
+}
+
+// SetControlConnected updates dial-home admission liveness.
+func (s *Server) SetControlConnected(connected bool) {
+	s.controlConnected.Store(connected)
+	if connected && s.dialhomeHeartbeat.Load() {
+		s.touchHeartbeat()
+	}
+}
+
+func (s *Server) heartbeatAllowed() bool {
+	return !s.dialhomeHeartbeat.Load() || s.controlConnected.Load()
+}
+
 // Janitor fences runtimes of expired leases and keeps the worker-side
 // heartbeat fresh so Node workers know a supervisor is still around.
 func (s *Server) Janitor(interval time.Duration, stop <-chan struct{}) {
@@ -90,12 +132,19 @@ func (s *Server) Janitor(interval time.Duration, stop <-chan struct{}) {
 			return
 		case <-ticker.C:
 			for _, expired := range s.Leases.Expired() {
+				s.CloseTunnelsThroughEpoch(expired.InstanceID, expired.Epoch)
 				if len(s.Runtimes.List(expired.InstanceID)) > 0 {
-					s.Log.Info("fencing runtimes of expired lease", "instanceId", expired.InstanceID)
-					s.Runtimes.StopInstance(expired.InstanceID)
+					s.Log.Info("fencing runtimes of expired lease", "instanceId", expired.InstanceID, "epoch", expired.Epoch)
+					if err := s.Runtimes.StopInstanceThroughEpoch(expired.InstanceID, expired.Epoch); err != nil {
+						s.Log.Error("failed to fence runtimes of expired lease", "instanceId", expired.InstanceID, "epoch", expired.Epoch, "error", err)
+					} else {
+						s.removeCredentialEpochsThrough(expired.InstanceID, expired.Epoch)
+					}
 				}
 			}
-			s.touchHeartbeat()
+			if s.heartbeatAllowed() {
+				s.touchHeartbeat()
+			}
 			s.pruneReplayed()
 		}
 	}
@@ -107,14 +156,31 @@ func (s *Server) touchHeartbeat() {
 	}
 	_ = os.MkdirAll(s.InventoryDir, 0o700)
 	path := filepath.Join(s.InventoryDir, "heartbeat")
-	if err := os.WriteFile(path, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
-		s.Log.Warn("failed to touch heartbeat", "error", err)
+	s.heartbeatOnce.Do(func() {
+		value := make([]byte, 16)
+		if _, err := rand.Read(value); err != nil {
+			s.heartbeatBootID = fmt.Sprintf("%d-%d", os.Getpid(), time.Now().UnixNano())
+			return
+		}
+		s.heartbeatBootID = hex.EncodeToString(value)
+	})
+	sequence := s.heartbeatSeq.Add(1)
+	staged := fmt.Sprintf("%s.%d.%d.tmp", path, os.Getpid(), sequence)
+	content := fmt.Sprintf("%s:%d\n", s.heartbeatBootID, sequence)
+	if err := os.WriteFile(staged, []byte(content), 0o600); err != nil {
+		s.Log.Warn("failed to stage heartbeat", "error", err)
+		return
+	}
+	if err := os.Rename(staged, path); err != nil {
+		_ = os.Remove(staged)
+		s.Log.Warn("failed to publish heartbeat", "error", err)
 	}
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	body := map[string]any{
 		"protocolVersion": ProtocolVersion,
+		"serverTime":      time.Now().UTC().Format(time.RFC3339Nano),
 		"os":              runtime.GOOS,
 		"arch":            runtime.GOARCH,
 		"accelerator":     Accelerator(),
@@ -133,6 +199,16 @@ type acquireLeaseRequest struct {
 	TTLSeconds int    `json:"ttlSeconds"`
 }
 
+func writeLeaseGrant(w http.ResponseWriter, granted *lease.Lease) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":         granted.ID,
+		"instanceId": granted.InstanceID,
+		"epoch":      granted.Epoch,
+		"expiresAt":  granted.ExpiresAt,
+		"serverTime": time.Now().UTC().Format(time.RFC3339Nano),
+	})
+}
+
 func (s *Server) handleAcquireLease(w http.ResponseWriter, r *http.Request) {
 	var request acquireLeaseRequest
 	if !readJSON(w, r, &request) {
@@ -143,12 +219,25 @@ func (s *Server) handleAcquireLease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	granted, err := s.Leases.Acquire(request.InstanceID, ttlFrom(request.TTLSeconds))
+	if granted != nil {
+		// The durable epoch supersedes prior write authority. Close old tunnels
+		// and stop their VM before publishing the grant (or reporting uncertain
+		// durability): socket EOF alone does not cancel a command already sent
+		// into Gondolin's guest control plane.
+		s.CloseTunnelsThroughEpoch(granted.InstanceID, granted.Epoch-1)
+		if stopErr := s.Runtimes.StopInstanceThroughEpoch(granted.InstanceID, granted.Epoch-1); stopErr != nil {
+			writeError(w, http.StatusInternalServerError, "fence_error", stopErr.Error())
+			return
+		}
+		s.removeCredentialEpochsThrough(granted.InstanceID, granted.Epoch-1)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "lease_error", err.Error())
 		return
 	}
+	s.touchHeartbeat()
 	s.Log.Info("lease acquired", "instanceId", granted.InstanceID, "epoch", granted.Epoch)
-	writeJSON(w, http.StatusOK, granted)
+	writeLeaseGrant(w, granted)
 }
 
 type renewLeaseRequest struct {
@@ -165,15 +254,31 @@ func (s *Server) handleRenewLease(w http.ResponseWriter, r *http.Request) {
 		writeLeaseError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, renewed)
+	s.touchHeartbeat()
+	writeLeaseGrant(w, renewed)
 }
 
 func (s *Server) handleReleaseLease(w http.ResponseWriter, r *http.Request) {
-	if err := s.Leases.Release(r.PathValue("id")); err != nil {
+	released, err := s.Leases.Release(r.PathValue("id"))
+	if released != nil {
+		s.CloseTunnelsThroughEpoch(released.InstanceID, released.Epoch)
+		if stopErr := s.Runtimes.StopInstanceThroughEpoch(released.InstanceID, released.Epoch); stopErr != nil {
+			writeError(w, http.StatusInternalServerError, "fence_error", stopErr.Error())
+			return
+		}
+		s.removeCredentialEpochsThrough(released.InstanceID, released.Epoch)
+	}
+	if err != nil {
 		writeLeaseError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"released": true})
+}
+
+type networkPolicy struct {
+	AllowedHosts         []string `json:"allowedHosts,omitempty"`
+	AllowedInternalHosts []string `json:"allowedInternalHosts,omitempty"`
+	BlockInternalRanges  *bool    `json:"blockInternalRanges,omitempty"`
 }
 
 type ensureRuntimeRequest struct {
@@ -184,6 +289,7 @@ type ensureRuntimeRequest struct {
 	CPUs             string                `json:"cpus"`
 	Memory           string                `json:"memory"`
 	Fingerprint      string                `json:"fingerprint"`
+	Network          *networkPolicy        `json:"network,omitempty"`
 	HeartbeatStaleMs int64                 `json:"heartbeatStaleMs"`
 }
 
@@ -203,8 +309,11 @@ func (s *Server) handleEnsureRuntime(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	leaseID := r.Header.Get(leaseHeader)
+	replayKey := ""
 	if key := r.Header.Get("Idempotency-Key"); key != "" {
-		if entry, found := s.replay(key); found {
+		replayKey = fmt.Sprintf("%s:%s:%d", key, leaseID, epoch)
+		if entry, found := s.replay(replayKey); found {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(entry.status)
 			_, _ = w.Write(entry.body)
@@ -221,14 +330,19 @@ func (s *Server) handleEnsureRuntime(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "workspace_unusable", message)
 		return
 	}
-	if err := s.validateMounts(request.Mounts); err != nil {
+	canonicalMounts, err := s.canonicalizeMounts(request.Mounts)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_mounts", err.Error())
 		return
 	}
 	// Land shipped vault credentials as worker-local files and mount them by
 	// path — the guest sees them exactly like a local file mount, without the
 	// credential ever touching the shared workspace.
-	credentialMounts, err := s.materializeCredentials(request.InstanceID, request.CredentialFiles)
+	credentialMounts, credentialIdentity, err := s.materializeCredentials(
+		request.InstanceID,
+		epoch,
+		request.CredentialFiles,
+	)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_credentials", err.Error())
 		return
@@ -248,23 +362,46 @@ func (s *Server) handleEnsureRuntime(w http.ResponseWriter, r *http.Request) {
 		// heartbeat and orphaned VM hosts shut themselves down.
 		heartbeatStaleMs = (45 * time.Minute).Milliseconds()
 	}
+	// The janitor refreshes the heartbeat every 15s in the daemon. Reject
+	// thresholds too close to that cadence: scheduler pauses or modest I/O
+	// jitter would otherwise kill healthy VMs repeatedly.
+	if heartbeatStaleMs < (30 * time.Second).Milliseconds() {
+		writeError(w, http.StatusBadRequest, "invalid_request", "heartbeatStaleMs must be at least 30000")
+		return
+	}
 	config := workerruntime.WorkerConfig{
-		InstanceID:       request.InstanceID,
-		ImageSelector:    request.ImageSelector,
-		Mounts:           append(request.Mounts, credentialMounts...),
-		CPUs:             vmCPUs,
-		Memory:           request.Memory,
-		Fingerprint:      request.Fingerprint,
+		InstanceID:    request.InstanceID,
+		ImageSelector: request.ImageSelector,
+		Mounts:        append(canonicalMounts, credentialMounts...),
+		CPUs:          vmCPUs,
+		Memory:        request.Memory,
+		Fingerprint:   effectiveRuntimeFingerprint(request.Fingerprint, credentialIdentity),
+		Network: func() *workerruntime.NetworkPolicy {
+			if request.Network == nil {
+				return nil
+			}
+			return &workerruntime.NetworkPolicy{
+				AllowedHosts:         request.Network.AllowedHosts,
+				AllowedInternalHosts: request.Network.AllowedInternalHosts,
+				BlockInternalRanges:  request.Network.BlockInternalRanges,
+			}
+		}(),
 		HeartbeatStaleMs: heartbeatStaleMs,
 	}
-	ensured, err := s.Runtimes.Ensure(config, request.CPUs, epoch)
+	ensured, err := s.Runtimes.Ensure(config, request.CPUs, epoch, func() error {
+		return s.Leases.Validate(request.InstanceID, leaseID, epoch)
+	})
 	if err != nil {
+		if errors.Is(err, lease.ErrExpired) || errors.Is(err, lease.ErrUnknownLease) || errors.Is(err, lease.ErrStaleEpoch) {
+			writeLeaseError(w, err)
+			return
+		}
 		writeError(w, http.StatusBadGateway, "runtime_error", err.Error())
 		return
 	}
 	body, _ := json.Marshal(ensured)
-	if key := r.Header.Get("Idempotency-Key"); key != "" {
-		s.remember(key, http.StatusOK, body)
+	if replayKey != "" {
+		s.remember(replayKey, http.StatusOK, body)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -302,7 +439,7 @@ func (s *Server) handleStopRuntime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// the shipped credentials died with the runtime
-	_ = os.RemoveAll(filepath.Join(s.credentialsDir(), entry.InstanceID))
+	s.removeCredentialEpochsThrough(entry.InstanceID, entry.Epoch)
 	writeJSON(w, http.StatusOK, map[string]any{"stopped": true})
 }
 
@@ -316,7 +453,8 @@ func (s *Server) handleSessionTunnel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "runtime not found")
 		return
 	}
-	if _, ok := s.authorizeLease(w, r, entry.InstanceID); !ok {
+	epoch, ok := s.authorizeLease(w, r, entry.InstanceID)
+	if !ok {
 		return
 	}
 	backend, err := net.DialTimeout("unix", entry.SocketPath, 5*time.Second)
@@ -336,6 +474,12 @@ func (s *Server) handleSessionTunnel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "tunnel_error", err.Error())
 		return
 	}
+	if err := s.RegisterTunnel(entry.InstanceID, r.Header.Get(leaseHeader), epoch, client, backend); err != nil {
+		client.Close()
+		backend.Close()
+		return
+	}
+	defer s.UnregisterTunnel(client)
 	response := "HTTP/1.1 101 Switching Protocols\r\nUpgrade: gondolin-session\r\nConnection: Upgrade\r\n\r\n"
 	if _, err := buffered.WriteString(response); err != nil {
 		client.Close()
@@ -369,6 +513,57 @@ func splice(client net.Conn, backend net.Conn) {
 	<-done
 }
 
+// RegisterTunnel atomically revalidates a grant and tracks both sides of an
+// upgraded session. Acquire/release fencing takes the same registry lock, so a
+// stale tunnel cannot slip in between validation and supersession.
+func (s *Server) RegisterTunnel(
+	instanceID string,
+	leaseID string,
+	epoch uint64,
+	connections ...net.Conn,
+) error {
+	s.tunnelMu.Lock()
+	defer s.tunnelMu.Unlock()
+	if err := s.Leases.Validate(instanceID, leaseID, epoch); err != nil {
+		return err
+	}
+	if s.tunnels == nil {
+		s.tunnels = make(map[*activeTunnel]struct{})
+	}
+	s.tunnels[&activeTunnel{instanceID: instanceID, epoch: epoch, connections: connections}] = struct{}{}
+	return nil
+}
+
+// UnregisterTunnel removes the tunnel containing connection after splice exits.
+func (s *Server) UnregisterTunnel(connection net.Conn) {
+	s.tunnelMu.Lock()
+	defer s.tunnelMu.Unlock()
+	for tunnel := range s.tunnels {
+		for _, candidate := range tunnel.connections {
+			if candidate == connection {
+				delete(s.tunnels, tunnel)
+				return
+			}
+		}
+	}
+}
+
+// CloseTunnelsThroughEpoch synchronously revokes old write channels before a
+// replacement lease is returned or an expired runtime is fenced.
+func (s *Server) CloseTunnelsThroughEpoch(instanceID string, maxEpoch uint64) {
+	s.tunnelMu.Lock()
+	defer s.tunnelMu.Unlock()
+	for tunnel := range s.tunnels {
+		if tunnel.instanceID != instanceID || tunnel.epoch > maxEpoch {
+			continue
+		}
+		delete(s.tunnels, tunnel)
+		for _, connection := range tunnel.connections {
+			_ = connection.Close()
+		}
+	}
+}
+
 // authorizeLease validates the fencing headers against an instance id.
 func (s *Server) authorizeLease(w http.ResponseWriter, r *http.Request, instanceID string) (uint64, bool) {
 	leaseID := r.Header.Get(leaseHeader)
@@ -391,53 +586,176 @@ func (s *Server) authorizeLease(w http.ResponseWriter, r *http.Request, instance
 	return 0, false
 }
 
+func (s *Server) credentialDir(instanceID string) string {
+	key := fmt.Sprintf("%x", sha256.Sum256([]byte(instanceID)))
+	return filepath.Join(s.credentialsDir(), key)
+}
+
+func (s *Server) credentialEpochDir(instanceID string, epoch uint64) string {
+	return filepath.Join(s.credentialDir(instanceID), strconv.FormatUint(epoch, 10))
+}
+
 func (s *Server) credentialsDir() string {
 	return s.CredentialsDir
 }
 
-// materializeCredentials writes each shipped credential to a per-instance,
-// owner-only file and returns it as a plain file mount for the guest.
-func (s *Server) materializeCredentials(
-	instanceID string,
-	files []credentialFile,
-) ([]workerruntime.Mount, error) {
-	if len(files) == 0 {
-		return nil, nil
+func effectiveRuntimeFingerprint(requestFingerprint string, credentialIdentity string) string {
+	if credentialIdentity == "" {
+		return requestFingerprint
 	}
-	dir := filepath.Join(s.credentialsDir(), instanceID)
-	// fresh each ensure: a rotated credential replaces the old file
-	_ = os.RemoveAll(dir)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, fmt.Errorf("create credential dir: %w", err)
-	}
-	mounts := make([]workerruntime.Mount, 0, len(files))
-	for i, file := range files {
-		if !filepath.IsAbs(file.Target) {
-			return nil, fmt.Errorf("credential target must be absolute: %s", file.Target)
-		}
-		content, err := base64.StdEncoding.DecodeString(file.ContentBase64)
-		if err != nil {
-			return nil, fmt.Errorf("decode credential for %s: %w", file.Target, err)
-		}
-		local := filepath.Join(dir, fmt.Sprintf("cred-%d-%s", i, filepath.Base(file.Target)))
-		if err := os.WriteFile(local, content, 0o600); err != nil {
-			return nil, fmt.Errorf("write credential %s: %w", file.Target, err)
-		}
-		mounts = append(mounts, workerruntime.Mount{Source: local, Target: file.Target})
-	}
-	return mounts, nil
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(requestFingerprint+"\x00"+credentialIdentity)))
 }
 
-func (s *Server) validateMounts(mounts []workerruntime.Mount) error {
-	for _, mount := range mounts {
-		if !filepath.IsAbs(mount.Source) || !filepath.IsAbs(mount.Target) {
-			return fmt.Errorf("mount paths must be absolute: %s -> %s", mount.Source, mount.Target)
+// materializeCredentials publishes immutable files under a content-scoped
+// generation. A failed or concurrent replacement cannot truncate credentials
+// still backing a live runtime.
+func (s *Server) materializeCredentials(
+	instanceID string,
+	epoch uint64,
+	files []credentialFile,
+) ([]workerruntime.Mount, string, error) {
+	if len(files) == 0 {
+		return nil, "", nil
+	}
+	parent := s.credentialEpochDir(instanceID, epoch)
+	digest := sha256.New()
+	for _, file := range files {
+		_, _ = digest.Write([]byte(file.Target))
+		_, _ = digest.Write([]byte{0})
+		_, _ = digest.Write([]byte(file.ContentBase64))
+		_, _ = digest.Write([]byte{0})
+	}
+	credentialIdentity := fmt.Sprintf("%x", digest.Sum(nil))
+	dir := filepath.Join(parent, credentialIdentity)
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return nil, "", fmt.Errorf("create credential directory: %w", err)
+	}
+	staged, err := os.MkdirTemp(parent, ".staged-")
+	if err != nil {
+		return nil, "", fmt.Errorf("stage credential generation: %w", err)
+	}
+	removeStaged := true
+	defer func() {
+		if removeStaged {
+			_ = os.RemoveAll(staged)
 		}
-		if s.WorkspaceRoot != "" && !strings.HasPrefix(filepath.Clean(mount.Source)+"/", filepath.Clean(s.WorkspaceRoot)+"/") {
-			return fmt.Errorf("mount source %s escapes the workspace root", mount.Source)
+	}()
+	mounts := make([]workerruntime.Mount, 0, len(files))
+	targets := make(map[string]struct{}, len(files))
+	for i, file := range files {
+		if !filepath.IsAbs(file.Target) {
+			return nil, "", fmt.Errorf("credential target must be absolute: %s", file.Target)
+		}
+		target := filepath.Clean(file.Target)
+		if target == "/workspace" || strings.HasPrefix(target, "/workspace/") {
+			return nil, "", fmt.Errorf("credential target must be outside /workspace: %s", file.Target)
+		}
+		if _, duplicate := targets[target]; duplicate {
+			return nil, "", fmt.Errorf("duplicate credential target: %s", file.Target)
+		}
+		targets[target] = struct{}{}
+		content, err := base64.StdEncoding.DecodeString(file.ContentBase64)
+		if err != nil {
+			return nil, "", fmt.Errorf("decode credential for %s: %w", file.Target, err)
+		}
+		name := fmt.Sprintf("cred-%d-%s", i, filepath.Base(file.Target))
+		if err := os.WriteFile(filepath.Join(staged, name), content, 0o600); err != nil {
+			return nil, "", fmt.Errorf("write credential %s: %w", file.Target, err)
+		}
+		mounts = append(mounts, workerruntime.Mount{Source: filepath.Join(dir, name), Target: target})
+	}
+	if err := os.Rename(staged, dir); err != nil {
+		if _, statErr := os.Stat(dir); statErr != nil {
+			return nil, "", fmt.Errorf("publish credential generation: %w", err)
+		}
+		if err := validateCredentialGeneration(staged, dir); err != nil {
+			return nil, "", fmt.Errorf("validate existing credential generation: %w", err)
+		}
+	} else {
+		removeStaged = false
+	}
+	return mounts, credentialIdentity, nil
+}
+
+func validateCredentialGeneration(expectedDir string, actualDir string) error {
+	expected, err := os.ReadDir(expectedDir)
+	if err != nil {
+		return err
+	}
+	actual, err := os.ReadDir(actualDir)
+	if err != nil {
+		return err
+	}
+	if len(expected) != len(actual) {
+		return errors.New("credential file count differs")
+	}
+	for _, expectedEntry := range expected {
+		if !expectedEntry.Type().IsRegular() {
+			return fmt.Errorf("staged credential %s is not a regular file", expectedEntry.Name())
+		}
+		actualPath := filepath.Join(actualDir, expectedEntry.Name())
+		info, err := os.Lstat(actualPath)
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 {
+			return fmt.Errorf("credential %s is missing, non-regular, or not mode 0600", expectedEntry.Name())
+		}
+		expectedContent, err := os.ReadFile(filepath.Join(expectedDir, expectedEntry.Name()))
+		if err != nil {
+			return err
+		}
+		actualContent, err := os.ReadFile(actualPath)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(expectedContent, actualContent) {
+			return fmt.Errorf("credential %s content differs", expectedEntry.Name())
 		}
 	}
 	return nil
+}
+
+func (s *Server) removeCredentialEpochsThrough(instanceID string, maxEpoch uint64) {
+	root := s.credentialDir(instanceID)
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		epoch, err := strconv.ParseUint(entry.Name(), 10, 64)
+		if err == nil && epoch <= maxEpoch {
+			_ = os.RemoveAll(filepath.Join(root, entry.Name()))
+		}
+	}
+}
+
+func (s *Server) canonicalizeMounts(mounts []workerruntime.Mount) ([]workerruntime.Mount, error) {
+	var resolvedRoot string
+	if s.WorkspaceRoot != "" {
+		var err error
+		resolvedRoot, err = filepath.EvalSymlinks(s.WorkspaceRoot)
+		if err != nil {
+			return nil, fmt.Errorf("resolve workspace root %s: %w", s.WorkspaceRoot, err)
+		}
+		resolvedRoot = filepath.Clean(resolvedRoot)
+	}
+	canonical := make([]workerruntime.Mount, 0, len(mounts))
+	for _, mount := range mounts {
+		if !filepath.IsAbs(mount.Source) || !filepath.IsAbs(mount.Target) {
+			return nil, fmt.Errorf("mount paths must be absolute: %s -> %s", mount.Source, mount.Target)
+		}
+		resolvedSource, err := filepath.EvalSymlinks(mount.Source)
+		if err != nil {
+			return nil, fmt.Errorf("resolve mount source %s: %w", mount.Source, err)
+		}
+		resolvedSource = filepath.Clean(resolvedSource)
+		if resolvedRoot != "" {
+			relative, err := filepath.Rel(resolvedRoot, resolvedSource)
+			if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+				return nil, fmt.Errorf("mount source %s escapes the workspace root", mount.Source)
+			}
+		}
+		canonical = append(canonical, workerruntime.Mount{Source: resolvedSource, Target: mount.Target})
+	}
+	return canonical, nil
 }
 
 func (s *Server) replay(key string) (replayEntry, bool) {
@@ -530,6 +848,8 @@ func writeLeaseError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, lease.ErrExpired):
 		writeError(w, http.StatusGone, "lease_expired", err.Error())
+	case errors.Is(err, lease.ErrStaleEpoch):
+		writeError(w, http.StatusConflict, "stale_epoch", err.Error())
 	case errors.Is(err, lease.ErrUnknownLease):
 		writeError(w, http.StatusNotFound, "unknown_lease", err.Error())
 	default:

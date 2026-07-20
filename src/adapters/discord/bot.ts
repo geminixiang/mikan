@@ -41,6 +41,8 @@ import {
 } from "../shared.js";
 import { COMMAND_MANIFEST } from "../../commands/manifest.js";
 import { processMessageIntake } from "../intake.js";
+import type { ConversationStorageManager } from "../../sessions/conversation-storage-manager.js";
+import { scopeSessionIdentity } from "../../sessions/session-key.js";
 import { createDiscordAdapters } from "./context.js";
 
 // discord.js: DiscordAPIError exposes `.status` (HTTP status) and a `.code`.
@@ -76,8 +78,14 @@ export class DiscordMessagingBot implements MessagingBot {
   private channels = new Map<string, { id: string; name: string }>();
   private users = new Map<string, { id: string; userName: string; displayName: string }>();
 
-  constructor(handler: MessagingEventHandler, config: { token: string; workingDir: string }) {
+  private readonly storageManager?: ConversationStorageManager;
+
+  constructor(
+    handler: MessagingEventHandler,
+    config: { token: string; workingDir: string; storageManager?: ConversationStorageManager },
+  ) {
     this.handler = handler;
+    this.storageManager = config.storageManager;
     this.token = config.token;
     this.workingDir = config.workingDir;
     this.client = new Client({
@@ -162,7 +170,8 @@ export class DiscordMessagingBot implements MessagingBot {
 
   enqueueEvent(event: ConversationEvent): boolean {
     const conversationId = event.conversationId;
-    const queue = this.getQueue(conversationId);
+    const queueKey = this.storageManager?.storageKey("discord", conversationId) ?? conversationId;
+    const queue = this.getQueue(queueKey);
     if (queue.size() >= 5) {
       log.logWarning(
         `Event queue full for ${conversationId}, discarding: ${event.text.substring(0, 50)}`,
@@ -170,9 +179,23 @@ export class DiscordMessagingBot implements MessagingBot {
       return false;
     }
     log.logInfo(`Enqueueing event for ${conversationId}: ${event.text.substring(0, 50)}`);
-    queue.enqueue(() => {
-      const context = createDiscordAdapters(event as DiscordEvent, this);
-      return this.handler.handleEvent(event, this, context);
+    queue.enqueue(async () => {
+      const storage = await this.storageManager?.resolve("discord", conversationId);
+      const platformSessionKey = event.sessionKey ?? conversationId;
+      const scopedEvent = storage
+        ? {
+            ...event,
+            storageKey: storage.storageKey,
+            conversationDir: storage.conversationDir,
+            runtimeSessionKey: scopeSessionIdentity(
+              platformSessionKey,
+              conversationId,
+              storage.storageKey,
+            ).runtimeSessionKey,
+          }
+        : event;
+      const context = createDiscordAdapters(scopedEvent as DiscordEvent, this);
+      return this.handler.handleEvent(scopedEvent, this, context);
     });
     return true;
   }
@@ -277,11 +300,15 @@ export class DiscordMessagingBot implements MessagingBot {
   }
 
   logToFile(channelId: string, entry: object): void {
-    appendChannelLog(this.workingDir, channelId, entry);
+    const storageId =
+      this.storageManager?.requireResolved("discord", channelId).storageKey ?? channelId;
+    appendChannelLog(this.workingDir, storageId, entry);
   }
 
   logBotResponse(channelId: string, text: string, ts: string): void {
-    appendBotResponseLog(this.workingDir, channelId, text, ts);
+    const storageId =
+      this.storageManager?.requireResolved("discord", channelId).storageKey ?? channelId;
+    appendBotResponseLog(this.workingDir, storageId, text, ts);
   }
 
   /**
@@ -293,6 +320,8 @@ export class DiscordMessagingBot implements MessagingBot {
     attachments: Collection<string, Attachment>,
     _messageId: string,
   ): Promise<{ name: string; localPath: string }[]> {
+    const storageId =
+      this.storageManager?.requireResolved("discord", channelId).storageKey ?? channelId;
     const downloads: Array<Promise<{ name: string; localPath: string } | null>> = [];
 
     // Discord attachments Collection - iterate over values
@@ -305,8 +334,8 @@ export class DiscordMessagingBot implements MessagingBot {
       const ts = Date.now();
       const sanitizedName = attachment.name.replace(/[^a-zA-Z0-9._-]/g, "_");
       const filename = `${ts}_${sanitizedName}`;
-      const localPath = `${channelId}/attachments/${filename}`;
-      const fullDir = join(this.workingDir, channelId, "attachments");
+      const localPath = `${storageId}/attachments/${filename}`;
+      const fullDir = join(this.workingDir, storageId, "attachments");
       const result = {
         name: attachment.name,
         localPath,
@@ -506,6 +535,10 @@ export class DiscordMessagingBot implements MessagingBot {
       const commandText = commandArg
         ? `/${interaction.commandName} ${commandArg}`
         : `/${interaction.commandName}`;
+      const storage = await this.storageManager?.resolve("discord", conversationId);
+      const runtimeSessionKey = storage
+        ? scopeSessionIdentity(sessionKey, conversationId, storage.storageKey).runtimeSessionKey
+        : sessionKey;
 
       this.logToFile(conversationId, {
         date: new Date(interaction.createdTimestamp).toISOString(),
@@ -526,15 +559,34 @@ export class DiscordMessagingBot implements MessagingBot {
       );
       try {
         if (interaction.commandName === "new") {
-          await this.handler.handleNewCommand(sessionKey, conversationId, this);
+          if (storage) {
+            await this.handler.handleNewCommand(runtimeSessionKey, conversationId, this, {
+              platformSessionKey: sessionKey,
+              storageKey: storage.storageKey,
+              conversationDir: storage.conversationDir,
+            });
+          } else {
+            await this.handler.handleNewCommand(runtimeSessionKey, conversationId, this);
+          }
           await context.responder.respond("Started a new conversation.");
           return;
         }
 
         if (interaction.commandName === "stop") {
-          const stopTarget = this.resolveStopTarget(conversationId, sessionKey);
+          const stopTarget = this.resolveStopTarget(
+            storage?.storageKey ?? conversationId,
+            runtimeSessionKey,
+          );
           if (stopTarget) {
-            await this.handler.handleStop(stopTarget, conversationId, this);
+            if (storage) {
+              await this.handler.handleStop(stopTarget, conversationId, this, {
+                platformSessionKey: sessionKey,
+                storageKey: storage.storageKey,
+                conversationDir: storage.conversationDir,
+              });
+            } else {
+              await this.handler.handleStop(stopTarget, conversationId, this);
+            }
             await context.responder.respond("Stopped the current conversation.");
           } else {
             await context.responder.respond(formatNothingRunning("discord"));
@@ -549,6 +601,13 @@ export class DiscordMessagingBot implements MessagingBot {
           ts: interaction.id,
           thread_ts: threadTs,
           sessionKey,
+          ...(storage
+            ? {
+                storageKey: storage.storageKey,
+                conversationDir: storage.conversationDir,
+                runtimeSessionKey,
+              }
+            : {}),
           user: interaction.user.id,
           text: commandText,
           attachments: [],
@@ -643,6 +702,9 @@ export class DiscordMessagingBot implements MessagingBot {
           text: cleanedText,
           isMessagingBot: false,
         },
+        resolveStorage: this.storageManager
+          ? () => this.storageManager!.resolve("discord", conversationId)
+          : undefined,
         log: (entry) => this.logToFile(conversationId, entry),
         processAttachments: () => this.processAttachments(conversationId, msg.attachments, msgId),
         queueKey: sessionKey,

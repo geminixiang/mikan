@@ -106,7 +106,8 @@ mikan 會以 `0700` mode 建立不存在的 state directory。既有目錄必須
 | `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]`                                                                 | 啟動已設定的平台 bot；working directory 預設為 `<state-dir>/workspace` |
 | `--sandbox=host \| container:<name> \| image:<image> \| gondolin:default \| gondolin:remote \| firecracker:... \| cloudflare:<id>` | 選擇工具執行模式；預設為 `host`                                        |
 | `mikan env`                                                                                                                        | 顯示完整的環境變數清單，以及目前已設定的項目                           |
-| `mikan --worker-token`                                                                                                             | 產生一次性的 gondolin worker join token                                |
+| `mikan --worker-token`                                                                                                             | 產生初次加入 Gondolin worker 的一次性 token                            |
+| `mikan --worker-token --worker-name <name>`                                                                                        | 產生綁定名稱、可輪替既有 worker 身份的 token                           |
 | `mikan --download <channel-id>`                                                                                                    | 下載 Slack 頻道歷史；需要 `SLACK_BOT_TOKEN`                            |
 | `mikan --version`                                                                                                                  | 顯示已安裝版本                                                         |
 | `mikan --help`                                                                                                                     | 顯示 CLI 用法與平台 token 摘要                                         |

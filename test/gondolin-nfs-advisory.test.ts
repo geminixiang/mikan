@@ -49,6 +49,13 @@ describe("gondolin:remote NFS advisory", () => {
     expect(out).toContain("mount -t nfs");
   });
 
+  test("labels the NFS recipe as same-LAN/VPC only", () => {
+    const out = capture({ os: "linux", run: () => "" });
+    expect(out).toContain("same LAN/VPC");
+    expect(out).toContain("Do not run mutable NFS across WAN");
+    expect(out).toContain("generation sync");
+  });
+
   test("treats a missing NFS tool as not exported (prints setup)", () => {
     const out = capture({
       os: "darwin",

@@ -7,6 +7,7 @@ import {
   deriveSessionKey,
   isThreadSessionKey,
   makeThreadSessionKey,
+  scopeSessionIdentity,
   threadSuffixOf,
 } from "../src/sessions/session-key.js";
 
@@ -76,6 +77,27 @@ describe("session-key grammar", () => {
     test("rejects a session belonging to another conversation", () => {
       expect(() => assertSessionKeyBelongsToConversation("C2:thread-1", "C1")).toThrow(
         /does not belong/,
+      );
+    });
+  });
+
+  describe("storage scope mapping", () => {
+    test("replaces only the conversation prefix for runtime isolation", () => {
+      expect(scopeSessionIdentity("123:thread-9", "123", "discord-123-deadbeef")).toEqual({
+        platformSessionKey: "123:thread-9",
+        runtimeSessionKey: "discord-123-deadbeef:thread-9",
+        suffix: "thread-9",
+      });
+      expect(scopeSessionIdentity("123", "123", "discord-123-deadbeef")).toEqual({
+        platformSessionKey: "123",
+        runtimeSessionKey: "discord-123-deadbeef",
+        suffix: null,
+      });
+    });
+
+    test("rejects a platform key belonging to another wire conversation", () => {
+      expect(() => scopeSessionIdentity("456:t1", "123", "discord-123-deadbeef")).toThrow(
+        "does not belong",
       );
     });
   });

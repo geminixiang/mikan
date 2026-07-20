@@ -9,6 +9,8 @@ import { commandManifestEntry } from "../src/commands/manifest.js";
 import { createGlobalSettingsFile } from "../src/config.js";
 import type { CommandServices } from "../src/commands/types.js";
 import { createConversationRuntime } from "../src/runtime/conversation-runtime.js";
+import { ConversationStorageManager } from "../src/sessions/conversation-storage-manager.js";
+import { conversationStorageScope } from "../src/sessions/conversation-storage-scope.js";
 import { createManagedSessionFileAtPath, getThreadSessionFile } from "../src/sessions/store.js";
 import type { SandboxConfig } from "../src/sandbox/index.js";
 import type { VaultManager } from "../src/vault/index.js";
@@ -64,6 +66,172 @@ describe("SlackMessagingBot slash commands", () => {
   afterEach(() => {
     delete process.env.MIKAN_STATE_DIR;
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
+  });
+
+  test("App Home maps scoped runtime sessions back to Slack channels", () => {
+    const runtimeKey = conversationStorageScope("slack", "C123").storageKey;
+    const handler = makeHandler();
+    vi.mocked(handler.getRunningSessions).mockReturnValue([
+      {
+        sessionKey: runtimeKey,
+        conversationId: "C123",
+        platformSessionKey: "C123",
+        startedAt: Date.now() - 11 * 60 * 1000,
+        lastActivityAt: Date.now() - 11 * 60 * 1000,
+      },
+    ]);
+    const bot = new SlackMessagingBot(handler, {
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      workingDir,
+      store: {} as any,
+    });
+    (bot as any).channels = new Map([["C123", { id: "C123", name: "engineering" }]]);
+
+    const view = (bot as any).buildHomeView();
+    const serialized = JSON.stringify(view);
+    expect(serialized).toContain("#engineering");
+    expect(serialized).toContain(`"value":"${runtimeKey}"`);
+  });
+
+  test("scopes Slack slash-command logs and runtime metadata", async () => {
+    const handler = makeHandler();
+    const storageManager = new ConversationStorageManager({
+      workspaceRoot: workingDir,
+      activePlatforms: ["slack", "discord"],
+    });
+    const bot = new SlackMessagingBot(handler, {
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      workingDir,
+      store: {} as any,
+      storageManager,
+    });
+    (bot as any).webClient = {
+      chat: {
+        postEphemeral: vi.fn().mockResolvedValue(undefined),
+        postMessage: vi.fn().mockResolvedValue({ ts: "2000.0001" }),
+      },
+    };
+
+    await (bot as any).routeSlashCommand(commandManifestEntry("login").slackRoute, {
+      command: "/pi-login",
+      text: "github",
+      channel_id: "C123",
+      user_id: "U123",
+      user_name: "alice",
+    });
+
+    const scope = conversationStorageScope("slack", "C123");
+    const [event] = vi.mocked(handler.handleEvent).mock.calls[0];
+    expect(event).toMatchObject({
+      conversationId: "C123",
+      storageKey: scope.storageKey,
+      conversationDir: join(workingDir, scope.storageKey),
+      runtimeSessionKey: expect.stringContaining(scope.storageKey),
+    });
+    expect(existsSync(join(workingDir, scope.storageKey, "log.jsonl"))).toBe(true);
+    expect(existsSync(join(workingDir, "C123"))).toBe(false);
+  });
+
+  test("scopes Slack socket mention intake without a raw-path race", async () => {
+    const handler = makeHandler();
+    const storageManager = new ConversationStorageManager({
+      workspaceRoot: workingDir,
+      activePlatforms: ["slack", "discord"],
+    });
+    const bot = new SlackMessagingBot(handler, {
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      workingDir,
+      store: { processAttachments: vi.fn().mockResolvedValue([]) } as any,
+      storageManager,
+    });
+    (bot as any).botUserId = "UBOT";
+    const ack = vi.fn();
+
+    (bot as any).handleAppMention({
+      event: {
+        text: "<@UBOT> inspect this",
+        channel: "C123",
+        user: "U123",
+        ts: "1000.0001",
+      },
+      ack,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(ack).toHaveBeenCalledOnce();
+    const scope = conversationStorageScope("slack", "C123");
+    expect(vi.mocked(handler.handleEvent).mock.calls[0][0]).toMatchObject({
+      conversationId: "C123",
+      storageKey: scope.storageKey,
+      runtimeSessionKey: expect.stringContaining(scope.storageKey),
+    });
+    expect(existsSync(join(workingDir, scope.storageKey, "log.jsonl"))).toBe(true);
+    expect(existsSync(join(workingDir, "C123"))).toBe(false);
+  });
+
+  test("scopes Slack attachment storage and autonomous event runtime metadata", async () => {
+    const handler = makeHandler();
+    const storageManager = new ConversationStorageManager({
+      workspaceRoot: workingDir,
+      activePlatforms: ["slack", "telegram"],
+    });
+    const processAttachments = vi
+      .fn()
+      .mockResolvedValue([{ original: "proof.txt", localPath: "scoped/attachments/proof.txt" }]);
+    const bot = new SlackMessagingBot(handler, {
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      workingDir,
+      store: { processAttachments } as any,
+      storageManager,
+    });
+    (bot as any).webClient = {
+      chat: { postMessage: vi.fn().mockResolvedValue({ ts: "2000.0001" }) },
+    };
+
+    await (bot as any).logUserMessage({
+      type: "mention",
+      conversationId: "C123",
+      conversationKind: "shared",
+      channel: "C123",
+      ts: "1000.0001",
+      user: "U123",
+      text: "attachment",
+      files: [{ name: "proof.txt", url_private: "https://files.example/proof.txt" }],
+      sessionKey: "C123",
+    });
+    expect(processAttachments).toHaveBeenCalledWith(
+      conversationStorageScope("slack", "C123").storageKey,
+      expect.any(Array),
+      "1000.0001",
+    );
+
+    expect(
+      bot.enqueueEvent({
+        type: "immediate",
+        conversationId: "C123",
+        conversationKind: "shared",
+        ts: "event-1",
+        user: "system",
+        text: "scheduled task",
+        attachments: [],
+      }),
+    ).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const event = vi.mocked(handler.handleEvent).mock.calls.at(-1)?.[0];
+    expect(event).toMatchObject({
+      conversationId: "C123",
+      storageKey: conversationStorageScope("slack", "C123").storageKey,
+      runtimeSessionKey: expect.stringContaining(
+        conversationStorageScope("slack", "C123").storageKey,
+      ),
+    });
   });
 
   test("/pi-login in a shared channel responds ephemerally without opening a DM", async () => {

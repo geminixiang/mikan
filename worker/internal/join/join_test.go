@@ -135,6 +135,25 @@ func startFakeGateway(t *testing.T, ca *testCA, serverCert tls.Certificate) stri
 	return listener.Addr().String()
 }
 
+func TestRejectsInvalidWorkerNameBeforeDial(t *testing.T) {
+	err := Run(Options{Name: "bad worker", CAPin: "sha256:" + strings.Repeat("0", 64)})
+	if err == nil || !strings.Contains(err.Error(), "worker name must be") {
+		t.Fatalf("invalid name error = %v", err)
+	}
+}
+
+func TestRejectsExistingCredentialDirectoryBeforeDial(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(configPath, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := Run(Options{Name: "worker-1", Dir: dir, CAPin: "sha256:" + strings.Repeat("0", 64)})
+	if err == nil || !strings.Contains(err.Error(), "use a new --dir") {
+		t.Fatalf("existing credentials error = %v", err)
+	}
+}
+
 func TestJoinWritesCredentialsAndConfig(t *testing.T) {
 	ca := newTestCA(t, "mikan-worker-ca")
 	address := startFakeGateway(t, ca, ca.issueServer(t))

@@ -1,3 +1,5 @@
+import type { ConversationSessionIdentity } from "./types.js";
+
 /**
  * The session-key grammar. A session key is the conversation-scoped runtime
  * identity used to serialize and resume work (see CONTEXT.md):
@@ -93,6 +95,21 @@ export function deriveSessionKey(event: {
     return assertSessionKeyBelongsToConversation(event.sessionKey, event.conversationId);
   }
   return makeThreadSessionKey(event.conversationId, event.thread_ts ?? event.ts);
+}
+
+export function scopeSessionIdentity(
+  platformSessionKey: string,
+  conversationId: string,
+  storageKey: string,
+): ConversationSessionIdentity {
+  assertSessionKeyBelongsToConversation(platformSessionKey, conversationId);
+  assertConversationId(storageKey);
+  const suffix = threadSuffixOf(platformSessionKey);
+  return {
+    platformSessionKey,
+    runtimeSessionKey: suffix === null ? storageKey : makeThreadSessionKey(storageKey, suffix),
+    suffix,
+  };
 }
 
 export function isThreadSessionKey(sessionKey: string): boolean {

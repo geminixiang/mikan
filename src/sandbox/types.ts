@@ -20,6 +20,38 @@ export interface ImageSandboxConfig {
   image: string;
 }
 
+export interface GondolinPlacementRecord {
+  instanceId: string;
+  worker: string;
+  /** Runtime identity currently owning this placement; absent on legacy records. */
+  sessionId?: string;
+  leaseExpiresAt: number;
+  updatedAt: number;
+}
+
+export interface GondolinFleetDiagnostics {
+  workers: Array<{
+    name: string;
+    reachable: boolean;
+    activeRuntimes?: number;
+    maxRuntimes?: number;
+    draining: boolean;
+    workspaceError?: string;
+    protocolVersion?: number;
+    certificateExpiresAt?: string;
+    expiresWithin30Days?: boolean;
+    clockSkewMs?: number;
+    clockUncertaintyMs?: number;
+  }>;
+  placements: Array<{
+    instanceId: string;
+    worker: string;
+    sessionId?: string;
+    fenceExpiresAt: string;
+    fenceRemainingMs: number;
+  }>;
+}
+
 export interface GondolinSandboxConfig {
   type: "gondolin";
   profile: "default" | "remote";

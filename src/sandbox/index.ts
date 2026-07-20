@@ -14,6 +14,7 @@ export type {
   ExecOptions,
   ExecResult,
   Executor,
+  GondolinFleetDiagnostics,
   RuntimePathContext,
   SandboxAdapter,
   SandboxConfig,

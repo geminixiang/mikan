@@ -25,13 +25,15 @@ import {
 import {
   assertSessionKeyBelongsToConversation,
   deriveSessionKey,
+  scopeSessionIdentity,
 } from "../sessions/session-key.js";
+import { conversationStorageScope } from "../sessions/conversation-storage-scope.js";
 import { formatNothingRunning, formatStopped, formatStopping } from "../platform-messages.js";
 import * as Sentry from "@sentry/node";
 import { join } from "path";
 import { getUnresolvedSandboxPathContext } from "../sandbox/index.js";
 import { disabledVaultManager } from "../vault/disabled.js";
-import type { ConversationRuntimeState } from "./types.js";
+import type { ConversationRuntimeState, RuntimeSessionIdentity } from "./types.js";
 import { SessionLifecycle } from "./session-lifecycle.js";
 
 type ConversationState = ConversationRuntimeState;
@@ -73,6 +75,55 @@ function runtimeCwdForSandbox(
   return `${runtimeWorkspaceRoot.replace(/\/+$/, "")}/${conversationId}`;
 }
 
+function resolveEventStorageIdentity(
+  event: ConversationEvent,
+  platform: string,
+  workingDir: string,
+): {
+  platformSessionKey: string;
+  runtimeSessionKey: string;
+  storageKey: string;
+  conversationDir: string;
+} {
+  const platformSessionKey = deriveSessionKey(event);
+  const metadata = [event.storageKey, event.conversationDir, event.runtimeSessionKey];
+  const present = metadata.filter((value) => value !== undefined).length;
+  if (present === 0) {
+    return {
+      platformSessionKey,
+      runtimeSessionKey: platformSessionKey,
+      storageKey: event.conversationId,
+      conversationDir: join(workingDir, event.conversationId),
+    };
+  }
+  if (present !== metadata.length) {
+    throw new Error("Conversation storage identity metadata must be complete");
+  }
+
+  const scope = conversationStorageScope(platform as PlatformName, event.conversationId);
+  const expectedDir = join(workingDir, scope.storageKey);
+  const expectedRuntimeKey = scopeSessionIdentity(
+    platformSessionKey,
+    event.conversationId,
+    scope.storageKey,
+  ).runtimeSessionKey;
+  if (
+    event.storageKey !== scope.storageKey ||
+    event.conversationDir !== expectedDir ||
+    event.runtimeSessionKey !== expectedRuntimeKey
+  ) {
+    throw new Error(
+      `Conversation storage identity does not match ${platform}/${event.conversationId}`,
+    );
+  }
+  return {
+    platformSessionKey,
+    runtimeSessionKey: expectedRuntimeKey,
+    storageKey: scope.storageKey,
+    conversationDir: expectedDir,
+  };
+}
+
 export function createConversationRuntime(
   options: ConversationRuntimeOptions,
 ): ConversationRuntime {
@@ -83,6 +134,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private readonly sessions = new SessionLifecycle();
   private readonly inFlightRuns = new Set<Promise<void>>();
   private readonly chatSessionManager = new ChatHistorySync();
+  private readonly sessionIdentities = new Map<string, RuntimeSessionIdentity>();
   private readonly commandServices: CommandServices;
   private readonly commandHandlers: readonly CommandHandler[];
   private isShuttingDown = false;
@@ -111,8 +163,15 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     for (const [sessionKey, state] of this.sessions.runningStates()) {
       if (state.startedAt) {
         const currentStep = state.runner.getCurrentStep();
+        const identity = this.sessionIdentities.get(sessionKey);
         sessions.push({
           sessionKey,
+          ...(identity
+            ? {
+                conversationId: identity.conversationId,
+                platformSessionKey: identity.platformSessionKey,
+              }
+            : {}),
           startedAt: state.startedAt,
           lastActivityAt: state.lastActivityAt,
           currentTool: currentStep?.label || currentStep?.toolName,
@@ -122,8 +181,17 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     return sessions;
   }
 
-  async handleStop(sessionKey: string, conversationId: string, bot: MessagingBot): Promise<void> {
-    assertSessionKeyBelongsToConversation(sessionKey, conversationId);
+  async handleStop(
+    sessionKey: string,
+    conversationId: string,
+    bot: MessagingBot,
+    storage?: {
+      platformSessionKey: string;
+      storageKey: string;
+      conversationDir: string;
+    },
+  ): Promise<void> {
+    this.resolveLifecycleIdentity(sessionKey, conversationId, storage);
     const state = this.sessions.get(sessionKey);
     if (state?.running) {
       state.stopRequested = true;
@@ -149,26 +217,83 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     sessionKey: string,
     conversationId: string,
     bot: MessagingBot,
+    storage?: {
+      platformSessionKey: string;
+      storageKey: string;
+      conversationDir: string;
+    },
   ): Promise<void> {
-    assertSessionKeyBelongsToConversation(sessionKey, conversationId);
+    const identity = this.resolveLifecycleIdentity(sessionKey, conversationId, storage);
     const state = this.sessions.get(sessionKey);
     if (state?.running) {
       state.stopRequested = true;
       state.runner.abort();
     }
 
-    const conversationDir = join(this.options.workingDir, conversationId);
+    const conversationDir =
+      identity?.conversationDir ?? join(this.options.workingDir, conversationId);
+    const storageKey = identity?.storageKey ?? conversationId;
+    const platformSessionKey = identity?.platformSessionKey ?? sessionKey;
     const runtimeCwd = runtimeCwdForSandbox(
       this.options.sandbox,
       this.options.workingDir,
-      conversationId,
+      storageKey,
     );
-    this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
+    this.chatSessionManager.resetSession({
+      conversationDir,
+      sessionKey: platformSessionKey,
+      cwd: runtimeCwd,
+    });
 
     this.sessions.discard(sessionKey);
+    this.sessionIdentities.delete(sessionKey);
 
     log.logInfo(`[${conversationId}] Session reset: ${sessionKey}`);
     await bot.postMessage(conversationId, "Conversation reset. Send a new message to start fresh.");
+  }
+
+  private resolveLifecycleIdentity(
+    sessionKey: string,
+    conversationId: string,
+    storage?: {
+      platformSessionKey: string;
+      storageKey: string;
+      conversationDir: string;
+    },
+  ): RuntimeSessionIdentity | undefined {
+    const registered = this.sessionIdentities.get(sessionKey);
+    if (registered) {
+      if (registered.conversationId !== conversationId) {
+        throw new Error(
+          `Runtime session ${JSON.stringify(sessionKey)} does not belong to conversation ${JSON.stringify(conversationId)}`,
+        );
+      }
+      return registered;
+    }
+    if (storage) {
+      const expected = scopeSessionIdentity(
+        storage.platformSessionKey,
+        conversationId,
+        storage.storageKey,
+      ).runtimeSessionKey;
+      if (
+        expected !== sessionKey ||
+        storage.conversationDir !== join(this.options.workingDir, storage.storageKey)
+      ) {
+        throw new Error(`Runtime session ${JSON.stringify(sessionKey)} has invalid storage scope`);
+      }
+      const identity: RuntimeSessionIdentity = {
+        conversationId,
+        platformSessionKey: storage.platformSessionKey,
+        runtimeSessionKey: sessionKey,
+        storageKey: storage.storageKey,
+        conversationDir: storage.conversationDir,
+      };
+      this.sessionIdentities.set(sessionKey, identity);
+      return identity;
+    }
+    assertSessionKeyBelongsToConversation(sessionKey, conversationId);
+    return undefined;
   }
 
   async handleEvent(
@@ -176,8 +301,12 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     bot: MessagingBot,
     context: ConversationContext,
   ): Promise<void> {
-    const sessionKey = deriveSessionKey(event);
-    await this.sessions.enqueue(sessionKey, () => this.runSession({ event, bot, context }));
+    const { runtimeSessionKey } = resolveEventStorageIdentity(
+      event,
+      context.platform.name,
+      this.options.workingDir,
+    );
+    await this.sessions.enqueue(runtimeSessionKey, () => this.runSession({ event, bot, context }));
   }
 
   async runSession({ event, bot, context }: RunSessionOptions): Promise<void> {
@@ -189,7 +318,15 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       return;
     }
 
-    const sessionKey = deriveSessionKey(event);
+    const { platformSessionKey, runtimeSessionKey, storageKey, conversationDir } =
+      resolveEventStorageIdentity(event, context.platform.name, this.options.workingDir);
+    this.sessionIdentities.set(runtimeSessionKey, {
+      conversationId,
+      platformSessionKey,
+      runtimeSessionKey,
+      storageKey,
+      conversationDir,
+    });
     const privateConversation = isPrivateConversation(event);
     const handledCommand = await dispatchCommand(this.commandHandlers, {
       bot,
@@ -198,23 +335,33 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       platformUserId: event.user,
       conversationId,
       vaultConversationId: event.vaultConversationId,
-      sessionKey,
+      sessionKey: runtimeSessionKey,
+      ...(event.storageKey
+        ? {
+            storage: {
+              key: storageKey,
+              conversationDir,
+              platformSessionKey,
+            },
+          }
+        : {}),
       commandText: event.text,
       privateConversation,
       services: this.commandServices,
     });
     if (handledCommand) return;
 
-    const conversationDir = join(this.options.workingDir, conversationId);
     const waitedForParent = await waitForThreadSessionBootstrap({
-      parentSessionKey: conversationId,
-      sessionKey,
-      hasThreadSession: () => hasMaterializedChatSession({ conversationDir, sessionKey }),
-      isParentRunning: () => this.sessions.get(conversationId)?.running === true,
+      parentSessionKey: event.storageKey ? storageKey : conversationId,
+      sessionKey: platformSessionKey,
+      hasThreadSession: () =>
+        hasMaterializedChatSession({ conversationDir, sessionKey: platformSessionKey }),
+      isParentRunning: () =>
+        this.sessions.get(event.storageKey ? storageKey : conversationId)?.running === true,
     });
     if (waitedForParent) {
       log.logInfo(
-        `[${conversationId}] Delayed thread bootstrap until parent session sealed: ${sessionKey}`,
+        `[${conversationId}] Delayed thread bootstrap until parent session sealed: ${platformSessionKey}`,
       );
     }
 
@@ -222,7 +369,11 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     try {
       state = await this.getOrCreateState({
         conversationId,
-        sessionKey,
+        platformSessionKey,
+        runtimeSessionKey,
+        storageKey,
+        conversationDir,
+        sessionKey: runtimeSessionKey,
         currentMessageId: event.ts,
         conversationKind: event.conversationKind,
       });
@@ -247,7 +398,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         platform: context.platform.name,
         context: {
           conversationId,
-          sessionKey,
+          sessionKey: platformSessionKey,
           messageId: context.message.id,
           threadTs: context.message.threadTs,
           attachmentCount: context.message.attachments?.length ?? 0,
@@ -267,7 +418,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       try {
         const result = await this.runWithInstrumentation(
           context,
-          { conversationId, sessionKey, startedAt: state.startedAt },
+          { conversationId, sessionKey: runtimeSessionKey, startedAt: state.startedAt },
           async () => {
             await context.responder.setTyping(true);
             await context.responder.setWorking(true);
@@ -439,22 +590,29 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private async getOrCreateState(
     options: SessionStateOptions & { currentMessageId?: string },
   ): Promise<ConversationState> {
-    const { conversationId, sessionKey, currentMessageId } = options;
-    const existing = this.sessions.get(sessionKey);
+    const {
+      conversationId,
+      platformSessionKey,
+      runtimeSessionKey,
+      storageKey,
+      conversationDir,
+      currentMessageId,
+    } = options;
+    const existing = this.sessions.get(runtimeSessionKey);
     if (existing?.running) return existing;
 
-    const conversationDir = join(this.options.workingDir, conversationId);
     const runtimeCwd = runtimeCwdForSandbox(
       this.options.sandbox,
       this.options.workingDir,
-      conversationId,
+      storageKey,
     );
     const sessionScope = await this.chatSessionManager.resolveSessionScope({
       conversationDir,
-      sessionKey,
+      sessionKey: platformSessionKey,
       cwd: runtimeCwd,
       currentMessageId,
-      rotateTopLevelSession: options.conversationKind === "shared" && sessionKey === conversationId,
+      rotateTopLevelSession:
+        options.conversationKind === "shared" && platformSessionKey === conversationId,
     });
 
     if (existing && existing.sessionFile === sessionScope.contextFile) {
@@ -464,14 +622,15 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
     // A stale state (rotated session file) is being replaced: release the old
     // runner's extension resources before the new one takes the slot.
-    if (existing) this.sessions.discard(sessionKey);
+    if (existing) this.sessions.discard(runtimeSessionKey);
 
     const state: ConversationState = {
       running: false,
       runner: await createRunner({
         sandboxConfig: this.options.sandbox,
-        sessionKey,
+        sessionKey: platformSessionKey,
         conversationId,
+        storageKey,
         conversationDir,
         workspaceDir: this.options.workingDir,
         sessionScope,
@@ -495,7 +654,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       sessionFile: sessionScope.contextFile,
       startedAt: 0,
     };
-    this.sessions.set(sessionKey, state);
+    this.sessions.set(runtimeSessionKey, state);
     return state;
   }
 

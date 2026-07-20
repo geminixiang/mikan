@@ -1,7 +1,24 @@
 import { createHash } from "node:crypto";
 import type { SandboxConfig } from "./types.js";
+import { SandboxError } from "./errors.js";
 
 const IDENTITY_HASH_LENGTH = 12;
+
+export function assertGondolinRemotePlatformIsolation(
+  baseConfig: SandboxConfig,
+  activePlatforms: string[],
+  conversationStorageNamespaced = false,
+): void {
+  if (baseConfig.type !== "gondolin" || baseConfig.profile !== "remote") return;
+  const active = new Set(activePlatforms.map((platform) => platform.trim()).filter(Boolean));
+  if (!active.has("discord") || !active.has("telegram") || conversationStorageNamespaced) return;
+  throw new SandboxError(
+    "Error: gondolin:remote cannot run Discord and Telegram together because their numeric conversation IDs and workspace directories are not yet platform-namespaced",
+    [
+      "Run separate coordinators with separate state/workspace roots for Discord and Telegram, or use image:* until the conversation-storage migration is complete.",
+    ],
+  );
+}
 
 export function credentialAuthorizationKey(
   baseConfig: SandboxConfig,

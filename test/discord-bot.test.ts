@@ -5,6 +5,8 @@ import { Collection } from "discord.js";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler } from "../src/adapter.js";
 import { DiscordMessagingBot } from "../src/adapters/discord/bot.js";
+import { ConversationStorageManager } from "../src/sessions/conversation-storage-manager.js";
+import { conversationStorageScope } from "../src/sessions/conversation-storage-scope.js";
 
 function makeHandler(): MessagingEventHandler {
   return {
@@ -120,6 +122,75 @@ describe("DiscordMessagingBot message routing", () => {
 
   afterEach(() => {
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
+  });
+
+  test("scoped mode resolves storage before logging and dispatch", async () => {
+    const handler = makeHandler();
+    const storageManager = new ConversationStorageManager({
+      workspaceRoot: workingDir,
+      activePlatforms: ["discord"],
+    });
+    const bot = new DiscordMessagingBot(handler, {
+      token: "TEST_TOKEN",
+      workingDir,
+      storageManager,
+    });
+    const messageHandler = installMessageHandler(bot);
+
+    await messageHandler(makeDiscordMessage({ channelId: "123", id: "M1" }));
+    await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalled());
+
+    const scope = conversationStorageScope("discord", "123");
+    const event = vi.mocked(handler.handleEvent).mock.calls[0][0];
+    expect(event).toMatchObject({
+      conversationId: "123",
+      sessionKey: "123",
+      storageKey: scope.storageKey,
+      conversationDir: join(workingDir, scope.storageKey),
+      runtimeSessionKey: scope.storageKey,
+    });
+    expect(existsSync(join(workingDir, scope.storageKey, "log.jsonl"))).toBe(true);
+    expect(existsSync(join(workingDir, "123"))).toBe(false);
+  });
+
+  test("scoped slash commands use runtime keys while keeping wire replies", async () => {
+    const handler = makeHandler();
+    const storageManager = new ConversationStorageManager({
+      workspaceRoot: workingDir,
+      activePlatforms: ["discord"],
+    });
+    const bot = new DiscordMessagingBot(handler, {
+      token: "TEST_TOKEN",
+      workingDir,
+      storageManager,
+    });
+    const interactionHandler = installInteractionHandler(bot);
+    const reply = vi.fn().mockResolvedValue(undefined);
+
+    await interactionHandler({
+      isChatInputCommand: () => true,
+      commandName: "new",
+      channelId: "123",
+      inGuild: () => false,
+      channel: { isThread: () => false },
+      id: "I1",
+      createdTimestamp: Date.now(),
+      user: { id: "U1", username: "alice" },
+      replied: false,
+      deferred: false,
+      reply,
+      followUp: vi.fn(),
+      editReply: vi.fn(),
+    });
+
+    const scope = conversationStorageScope("discord", "123");
+    expect(handler.handleNewCommand).toHaveBeenCalledWith(scope.storageKey, "123", bot, {
+      platformSessionKey: "123",
+      storageKey: scope.storageKey,
+      conversationDir: join(workingDir, scope.storageKey),
+    });
+    expect(existsSync(join(workingDir, scope.storageKey, "log.jsonl"))).toBe(true);
+    expect(existsSync(join(workingDir, "123"))).toBe(false);
   });
 
   test("uses a persistent session key for DMs", async () => {

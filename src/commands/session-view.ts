@@ -34,6 +34,7 @@ export class SessionViewCommandHandler implements CommandHandler {
       context.services.workingDir,
       context.conversationId,
       context.sessionKey,
+      context.storage?.conversationDir,
     );
     if (!sessionFile) {
       await replyPrivatelyWithContext(

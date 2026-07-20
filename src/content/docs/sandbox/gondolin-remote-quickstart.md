@@ -7,6 +7,14 @@ This walks you from nothing to a working `gondolin:remote` sandbox: mikan on one
 side, a worker that dials home on the other, a real VM opened on demand, and data
 moving between them. Start with the one-command smoke test, then the manual walkthrough.
 
+For repeated create/exec/stop coverage after the fault-injection path, set a positive
+cycle count. Each cycle concurrently places two conversations, requires one runtime on
+each worker, verifies independent workspace round-trips, and stops both runtimes:
+
+```bash
+MIKAN_SMOKE_SOAK_CYCLES=10 scripts/smoke-test-remote-worker.sh
+```
+
 The protocol and settings reference lives in
 [the remote worker page](../gondolin-remote-worker/).
 
@@ -22,10 +30,14 @@ scripts/smoke-test-remote-worker.sh
 ```
 
 It auto-provisions the gateway CA, enrols a worker with a one-time token, opens a
-sandbox, runs a command in the guest, and verifies a file written inside the guest
-lands on the host filesystem — the whole `gondolin:remote` path on one machine. A green
-`✓ gondolin:remote is working on this machine` means comms, sandbox lifecycle, and data
-transfer are all healthy.
+sandbox, runs a command in the guest, verifies bidirectional workspace data, and
+restarts the worker daemon and gateway independently. Each post-restart lease fences
+the old VM before recreating it, including a delayed-write command that must not reach
+the workspace after gateway reconnect. It then kills the placed worker and proves that
+the old detached runtime stops before fenced failover moves the conversation to the
+second worker. A green `✓ gondolin:remote is working on this machine` means
+authentication, reconnect, epoch-fenced runtime recreation, fenced two-worker failover,
+sandbox lifecycle, and data transfer are healthy on that machine.
 
 ## Manual walkthrough (two terminals, one machine)
 
@@ -110,7 +122,52 @@ under `/workspace` appear in `~/mikan-workspace` and vice-versa.
 
 ## Two machines
 
-Same steps, with the worker on a second host. Three differences:
+Before enrollment, run the non-destructive preflight from the mikan host. It only
+connects to SSH targets explicitly supplied on the command line; it does not discover,
+install, restart, or partition anything:
+
+```bash
+MIKAN_GATEWAY_HOST=mikan.internal \
+MIKAN_WORKSPACE_ROOT=/srv/mikan-workspace \
+MIKAN_WORKER_WORKSPACE_ROOT=/srv/mikan-workspace \
+MIKAN_WORKER_ENTRY=/opt/mikan/dist/sandbox/gondolin-worker-main.js \
+scripts/preflight-gondolin-fleet.sh worker-a worker-b
+```
+
+The preflight fails unless the targets report distinct boot/machine identities, usable
+KVM/HVF and QEMU, Node >= 23.6, `mikan-worker`, the runtime entry, gateway TCP
+reachability, a canonical shared workspace, mutable-write latency <= 500 ms, and
+bidirectional visibility of host/worker marker files. It writes a timestamped evidence
+log. Passing this only establishes prerequisites; it does **not** replace the fault and
+soak sequence below.
+
+For the distributed promotion gate, enrol **two workers on two distinct machines**, not
+two daemon processes on one machine. Give each worker a unique `--name` and local
+`--state-dir`, but mount the same workspace path on both. Each daemon exclusively locks
+its state directory, so accidentally sharing one state directory fails fast.
+
+Capture the authenticated Admin diagnostics before each fault and verify both workers
+report `reachable: true`, protocol version 2, acceptable `clockSkewMs`/
+`clockUncertaintyMs`, distinct names, and no `workspaceError`. Then run one long-lived
+conversation through this sequence:
+
+1. stop and restart its worker service; verify the next lease gets a higher epoch,
+   stops the surviving old-epoch VM, recreates it, and retains the workspace marker;
+2. stop and restart the gateway; verify both workers reconnect and the session remains
+   usable;
+3. partition the placed worker from the gateway while leaving shared storage mounted;
+   verify no replacement appears before the reported fence expires;
+4. verify the old runtime process exits, then verify placement moves to the other
+   physical worker and the workspace marker remains intact;
+5. break and restore the shared mount, verifying placement is rejected while degraded
+   and resumes only after a successful mutable probe;
+6. run repeated concurrent create/exec/write/stop cycles and retain worker, gateway,
+   storage-latency, lease-renewal, and disconnect logs as promotion evidence.
+
+Do not shorten the fence or manually kill the old VM to make this pass; the evidence is
+specifically that watchdog and lease fencing close the split-brain window.
+
+Same steps as the local walkthrough, with these deployment differences:
 
 - **Shared workspace.** `gondolin:remote` does not copy workspace files — both machines
   must see the same filesystem at their `workspaceRoot`, so a guest's writes reach the
@@ -132,21 +189,34 @@ Same steps, with the worker on a second host. Three differences:
   sudo exportfs -ra && sudo systemctl enable --now nfs-server
   ```
 
-  Mount it on each worker over tailscale, and point `--workspace-root` at the mount:
+  Mount it on each worker over tailscale, and point `--workspace-root` at the mount.
+  The worker runs a bounded mutable filesystem probe before placement and marks mounts
+  degraded when that probe hangs or exceeds 500 ms; this is a safety ceiling, not a
+  promise that latency near the ceiling will perform well:
 
   ```bash
   sudo mount -t nfs -o vers=3,resvport,nolock <host-tailscale-ip>:<host-workspace-path> /mnt/mikan-workspace
   # then join/connect with --workspace-root /mnt/mikan-workspace
   ```
 
-  `100.64.0.0/10` is the tailscale range; the `mapall`/`all_squash` mapping makes worker
-  writes owned by you on the host. Any other shared POSIX mount (managed NFS, GCS-fuse)
-  works too — the requirement is one filesystem visible at both `workspaceRoot`s.
+  `100.64.0.0/10` is the tailscale address range; the `mapall`/`all_squash`
+  mapping makes worker writes owned by you on the host. This recipe is only for
+  low-latency machines in the same LAN/VPC. Do not put mutable NFS across WAN or a
+  relayed Tailscale path: use same-region managed POSIX storage, or keep the deployment
+  in preview until generation sync is implemented. The [workspace transport
+  research](../gondolin-workspace-transport-research/) explains that open design.
+  Other same-region shared POSIX mounts can work, but object/FUSE filesystems must be
+  validated against agent write/rename/locking behavior rather than assumed compatible.
 
 - **Reachable gateway.** The worker dials the host, so the host's gateway port must be
   reachable from the worker; the worker needs nothing inbound. Put the host's real
   hostname/IP in `gateway.hostnames` so the auto-issued server certificate is valid for
   it, and use that address in the join command.
+- **Clock discipline.** Lease fences persist wall-clock deadlines so they survive host
+  restarts. Keep mikan and worker hosts on a monitored NTP/chrony source and alert on
+  large forward clock steps; a forward jump can consume safety time. The runtime
+  watchdog and 45-second grace protect normal skew/jitter and bounded hard-close time,
+  not arbitrarily incorrect clocks or a storage server that ignores fencing tokens.
 - **Worker prerequisites.** The worker machine needs Node ≥ 23.6, QEMU with KVM, the
   mikan `dist/`, and the built guest image (`npm run gondolin:image:build` there). The
   `--worker-entry` path is on the worker. `scripts/init-mikan-worker-host.sh` installs

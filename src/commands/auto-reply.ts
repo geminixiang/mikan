@@ -72,7 +72,8 @@ export class AutoReplyCommandHandler implements CommandHandler {
       return true;
     }
 
-    const conversationDir = join(context.services.workingDir, context.conversationId);
+    const conversationDir =
+      context.storage?.conversationDir ?? join(context.services.workingDir, context.conversationId);
     const current = loadConversationAutoReplyConfig(conversationDir);
     const next = applyAction(current, action);
     if (action.type === "on" || (action.type === "off" && current.enabled)) {

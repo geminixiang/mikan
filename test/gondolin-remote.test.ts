@@ -1,12 +1,21 @@
+import { EventEmitter } from "node:events";
+import type { ClientRequest } from "node:http";
+import type { RequestOptions } from "node:https";
+import { Socket } from "node:net";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createSessionFrameParser, encodeSessionMessage } from "../src/sandbox/gondolin-remote.js";
 import { gondolinFleet } from "../src/sandbox/gondolin-fleet.js";
+import {
+  GONDOLIN_REMOTE_PROTOCOL_VERSION,
+  GondolinRemoteConnection,
+} from "../src/sandbox/gondolin-remote.js";
 import { GondolinPlacementStore } from "../src/sandbox/gondolin-placement.js";
 import {
   GondolinExecutor,
+  configureGondolinNetworkPolicy,
   disconnectAllGondolinRuntimes,
   gondolinResources,
   stopIdleGondolinVms,
@@ -39,6 +48,11 @@ class FakeDaemon {
   execs: FakeExec[] = [];
   nextSession = 0;
   refuseTunnel = 0;
+  refuseStop = 0;
+  invalidEnsureResponse = false;
+  invalidLeaseResponse = false;
+  failRenew = false;
+  invalidRenewResponse = false;
 
   request = async (
     method: string,
@@ -49,7 +63,14 @@ class FakeDaemon {
     const call = { method, path, body: body as Record<string, unknown>, headers };
     this.calls.push(call);
     if (method === "GET" && path === "/v1/health") {
-      return { status: 200, json: { activeRuntimes: this.runtime ? 1 : 0 } };
+      return {
+        status: 200,
+        json: {
+          protocolVersion: GONDOLIN_REMOTE_PROTOCOL_VERSION,
+          serverTime: new Date().toISOString(),
+          activeRuntimes: this.runtime ? 1 : 0,
+        },
+      };
     }
     if (method === "POST" && path === "/v1/leases") {
       const instanceId = call.body?.instanceId as string;
@@ -57,11 +78,38 @@ class FakeDaemon {
       this.epochs.set(instanceId, epoch);
       const id = `lease-${instanceId}-${epoch}`;
       this.leases.set(id, { instanceId, epoch });
-      return { status: 200, json: { id, epoch, instanceId } };
+      return this.invalidLeaseResponse
+        ? { status: 200, json: {} }
+        : {
+            status: 200,
+            json: {
+              id,
+              epoch,
+              instanceId,
+              expiresAt: new Date(Date.now() + 300_000).toISOString(),
+              serverTime: new Date().toISOString(),
+            },
+          };
     }
     if (method === "POST" && path.endsWith("/renew")) {
+      if (this.failRenew) throw new Error("renew transport failed");
       const id = path.split("/")[3];
-      return this.leases.has(id) ? { status: 200, json: {} } : { status: 404, json: {} };
+      const activeLease = this.leases.get(id);
+      if (this.invalidRenewResponse && activeLease) {
+        return { status: 200, json: { id, epoch: activeLease.epoch } };
+      }
+      return activeLease
+        ? {
+            status: 200,
+            json: {
+              id,
+              epoch: activeLease.epoch,
+              instanceId: activeLease.instanceId,
+              expiresAt: new Date(Date.now() + 300_000).toISOString(),
+              serverTime: new Date().toISOString(),
+            },
+          }
+        : { status: 404, json: {} };
     }
     if (method === "DELETE" && path.startsWith("/v1/leases/")) {
       this.leases.delete(path.split("/")[3]);
@@ -78,7 +126,9 @@ class FakeDaemon {
       };
       return {
         status: 200,
-        json: { sessionId: this.runtime.sessionId, workerPid: 7000 + this.nextSession },
+        json: this.invalidEnsureResponse
+          ? {}
+          : { sessionId: this.runtime.sessionId, workerPid: 7000 + this.nextSession },
       };
     }
     if (method === "GET" && path.startsWith("/v1/runtimes/")) {
@@ -88,6 +138,10 @@ class FakeDaemon {
         : { status: 404, json: {} };
     }
     if (method === "DELETE" && path.startsWith("/v1/runtimes/")) {
+      if (this.refuseStop > 0) {
+        this.refuseStop -= 1;
+        return { status: 500, json: { message: "stop failed" } };
+      }
       this.runtime = undefined;
       return { status: 200, json: { stopped: true } };
     }
@@ -198,9 +252,236 @@ describe("Gondolin remote transport", () => {
 
   afterEach(async () => {
     await disconnectAllGondolinRuntimes();
+    configureGondolinNetworkPolicy();
     gondolinFleet.configure();
     if (nodeVersion) Object.defineProperty(process.versions, "node", nodeVersion);
     vi.restoreAllMocks();
+  });
+
+  test("static tunnel handshake timeout is cleared after upgrade", async () => {
+    const request = new EventEmitter() as EventEmitter & {
+      end: ReturnType<typeof vi.fn>;
+      destroy: ReturnType<typeof vi.fn>;
+    };
+    request.end = vi.fn();
+    request.destroy = vi.fn();
+    const socket = new Socket();
+    const tlsDir = mkdtempSync(join(tmpdir(), "gondolin-static-tls-"));
+    const certFile = join(tlsDir, "cert.pem");
+    const keyFile = join(tlsDir, "key.pem");
+    writeFileSync(certFile, "test");
+    writeFileSync(keyFile, "test");
+    const connection = new GondolinRemoteConnection(
+      { name: "static", url: "https://worker.test:8433", certFile, keyFile },
+      {
+        requestTimeoutMs: 20,
+        httpsRequest: ((_options: string | URL | RequestOptions) =>
+          request as unknown as ClientRequest) as typeof import("node:https").request,
+      },
+    );
+    const callbacks: SessionClientCallbacks = {
+      onJson: () => {},
+      onBinary: () => {},
+      onClose: () => {},
+    };
+    const pending = (
+      connection as unknown as {
+        openTunnel: (
+          instanceId: string,
+          path: string,
+          headers: Record<string, string>,
+          callbacks: SessionClientCallbacks,
+        ) => Promise<SessionClient>;
+      }
+    ).openTunnel("c1", "/v1/runtimes/s1/session", {}, callbacks);
+
+    request.emit("upgrade", {}, socket);
+    const client = await pending;
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    expect(request.destroy).not.toHaveBeenCalled();
+    client.close();
+    rmSync(tlsDir, { recursive: true, force: true });
+  });
+
+  test("static tunnel handshake timeout destroys a connection that never upgrades", async () => {
+    const tlsDir = mkdtempSync(join(tmpdir(), "gondolin-static-timeout-"));
+    const certFile = join(tlsDir, "cert.pem");
+    const keyFile = join(tlsDir, "key.pem");
+    writeFileSync(certFile, "test");
+    writeFileSync(keyFile, "test");
+    const request = new EventEmitter() as EventEmitter & {
+      end: ReturnType<typeof vi.fn>;
+      destroy: ReturnType<typeof vi.fn>;
+    };
+    request.end = vi.fn();
+    request.destroy = vi.fn((error: Error) => request.emit("error", error));
+    const connection = new GondolinRemoteConnection(
+      { name: "static", url: "https://worker.test:8433", certFile, keyFile },
+      {
+        requestTimeoutMs: 20,
+        httpsRequest: (() =>
+          request as unknown as ClientRequest) as typeof import("node:https").request,
+      },
+    );
+    const pending = (
+      connection as unknown as {
+        openTunnel: (
+          instanceId: string,
+          path: string,
+          headers: Record<string, string>,
+          callbacks: SessionClientCallbacks,
+        ) => Promise<SessionClient>;
+      }
+    ).openTunnel(
+      "c1",
+      "/v1/runtimes/s1/session",
+      {},
+      {
+        onJson: () => {},
+        onBinary: () => {},
+        onClose: () => {},
+      },
+    );
+
+    await expect(pending).rejects.toThrow("tunnel handshake timed out");
+    expect(request.destroy).toHaveBeenCalledOnce();
+    rmSync(tlsDir, { recursive: true, force: true });
+  });
+
+  test("rejects an incompatible static worker protocol during health check", async () => {
+    const connection = new GondolinRemoteConnection(
+      { name: "old", url: "https://worker.test:8433" },
+      {
+        request: async () => ({
+          status: 200,
+          json: { protocolVersion: GONDOLIN_REMOTE_PROTOCOL_VERSION + 1 },
+        }),
+      },
+    );
+
+    await expect(connection.health()).rejects.toThrow(
+      `supported 1-${GONDOLIN_REMOTE_PROTOCOL_VERSION}, got ${GONDOLIN_REMOTE_PROTOCOL_VERSION + 1}`,
+    );
+  });
+
+  test("rejects protocol-v2 workers with unsafe clock skew", async () => {
+    const connection = new GondolinRemoteConnection(
+      { name: "skewed", url: "https://worker.test:8433" },
+      {
+        request: async () => ({
+          status: 200,
+          json: {
+            protocolVersion: GONDOLIN_REMOTE_PROTOCOL_VERSION,
+            serverTime: new Date(Date.now() + 60_000).toISOString(),
+          },
+        }),
+      },
+    );
+
+    await expect(connection.health()).rejects.toThrow("synchronize host clocks");
+  });
+
+  test("rejects health samples whose RTT cannot establish clock safety", async () => {
+    let monotonic = 0;
+    const connection = new GondolinRemoteConnection(
+      { name: "slow", url: "https://worker.test:8433" },
+      {
+        now: () => 1_000_000,
+        monotonicNow: () => {
+          const value = monotonic;
+          monotonic += 6_000;
+          return value;
+        },
+        request: async () => ({
+          status: 200,
+          json: {
+            protocolVersion: GONDOLIN_REMOTE_PROTOCOL_VERSION,
+            serverTime: new Date(1_003_000).toISOString(),
+          },
+        }),
+      },
+    );
+
+    await expect(connection.health()).rejects.toThrow("too slow to verify clock safety");
+  });
+
+  test("rejects protocol-v2 workers without a valid server time", async () => {
+    const connection = new GondolinRemoteConnection(
+      { name: "missing-clock", url: "https://worker.test:8433" },
+      {
+        request: async () => ({
+          status: 200,
+          json: { protocolVersion: GONDOLIN_REMOTE_PROTOCOL_VERSION },
+        }),
+      },
+    );
+
+    await expect(connection.health()).rejects.toThrow("invalid server time");
+  });
+
+  test("accepts the previous static worker protocol during rolling upgrades", async () => {
+    const connection = new GondolinRemoteConnection(
+      { name: "rolling", url: "https://worker.test:8433" },
+      { request: async () => ({ status: 200, json: { protocolVersion: 1 } }) },
+    );
+
+    await expect(connection.health()).resolves.toMatchObject({ protocolVersion: 1 });
+  });
+
+  test("does not silently send network policy to a protocol-v1 worker", async () => {
+    let ensured = false;
+    const connection = new GondolinRemoteConnection(
+      { name: "rolling", url: "https://worker.test:8433" },
+      {
+        request: async (method, path) => {
+          if (method === "GET" && path === "/v1/health") {
+            return { status: 200, json: { protocolVersion: 1 } };
+          }
+          ensured = true;
+          return { status: 500, json: {} };
+        },
+      },
+    );
+
+    await expect(
+      connection.ensure("c1", {
+        image: "mikan-sandbox:latest",
+        mounts: [],
+        fingerprint: "fp",
+        network: { blockInternalRanges: true },
+      }),
+    ).rejects.toThrow("network policy requires remote worker protocol 2");
+    expect(ensured).toBe(false);
+  });
+
+  test("ensure verifies protocol compatibility even without a fleet health pass", async () => {
+    let ensured = false;
+    const connection = new GondolinRemoteConnection(
+      { name: "old", url: "https://worker.test:8433" },
+      {
+        request: async (method, path) => {
+          if (method === "GET" && path === "/v1/health") {
+            return {
+              status: 200,
+              json: { protocolVersion: GONDOLIN_REMOTE_PROTOCOL_VERSION + 1 },
+            };
+          }
+          ensured = true;
+          return { status: 500, json: {} };
+        },
+      },
+    );
+
+    await expect(
+      connection.ensure("c1", {
+        image: "mikan-sandbox:latest",
+        mounts: [],
+        fingerprint: "fp",
+        workspacePath: "/host/workspace",
+      }),
+    ).rejects.toThrow("incompatible gondolin remote worker protocol");
+    expect(ensured).toBe(false);
   });
 
   test("acquires a lease and ensures the runtime with translated mounts", async () => {
@@ -214,11 +495,105 @@ describe("Gondolin remote transport", () => {
     expect(ensure?.body).toMatchObject({
       instanceId: "remote-basic",
       imageSelector: "mikan-sandbox:latest",
+      heartbeatStaleMs: 150_000,
       // workspace mounts translate to the worker-side root; the directory-shaped
       // vault mount outside the shared workspace has no payload transport and is
       // dropped (needs shared storage)
       mounts: [{ source: "/srv/workspace/C123", target: "/workspace/C123" }],
     });
+  });
+
+  test("ships an explicit egress policy to remote runtimes", async () => {
+    configureGondolinNetworkPolicy({
+      blockInternalRanges: true,
+      allowedHosts: [" API.GitHub.com "],
+      allowedInternalHosts: [],
+    });
+    const executor = createRemoteExecutor("remote-network-policy");
+
+    await executor.exec("true");
+
+    const ensure = daemon.calls.find((call) => call.path === "/v1/runtimes");
+    expect(ensure?.body?.network).toEqual({
+      blockInternalRanges: true,
+      allowedHosts: ["api.github.com"],
+      allowedInternalHosts: [],
+    });
+  });
+
+  test("rejects duplicate or empty egress host patterns at configuration", () => {
+    expect(() =>
+      configureGondolinNetworkPolicy({ allowedHosts: ["API.github.com", "api.github.com"] }),
+    ).toThrow("duplicate host patterns");
+    expect(() =>
+      configureGondolinNetworkPolicy({
+        blockInternalRanges: true,
+        allowedInternalHosts: [" "],
+      }),
+    ).toThrow("empty host pattern");
+    expect(() =>
+      configureGondolinNetworkPolicy({ allowedInternalHosts: ["internal.test"] }),
+    ).toThrow("requires blockInternalRanges: true");
+  });
+
+  test("rejects an invalid successful lease response", async () => {
+    daemon.invalidLeaseResponse = true;
+    const executor = createRemoteExecutor("invalid-lease");
+
+    await expect(executor.exec("pwd")).rejects.toThrow("invalid lease response");
+  });
+
+  test("rejects an invalid successful runtime response", async () => {
+    daemon.invalidEnsureResponse = true;
+    const executor = createRemoteExecutor("invalid-runtime");
+
+    await expect(executor.exec("pwd")).rejects.toThrow("invalid runtime response");
+  });
+
+  test("a failed lease renewal stops retrying and forces fresh authorization", async () => {
+    vi.useFakeTimers();
+    const executor = createRemoteExecutor("renew-failure");
+    await executor.exec("initial");
+    daemon.failRenew = true;
+
+    await vi.advanceTimersByTimeAsync(100_000);
+    const renewCalls = daemon.calls.filter((call) => call.path.endsWith("/renew"));
+    expect(renewCalls).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(daemon.calls.filter((call) => call.path.endsWith("/renew"))).toHaveLength(1);
+    const acquireCount = daemon.calls.filter(
+      (call) => call.method === "POST" && call.path === "/v1/leases",
+    ).length;
+    await expect(executor.exec("after-failure")).resolves.toMatchObject({ code: 0 });
+    expect(
+      daemon.calls.filter((call) => call.method === "POST" && call.path === "/v1/leases"),
+    ).toHaveLength(acquireCount + 1);
+    vi.useRealTimers();
+  });
+
+  test("a malformed lease renewal also stops retrying", async () => {
+    vi.useFakeTimers();
+    const executor = createRemoteExecutor("renew-malformed");
+    await executor.exec("initial");
+    daemon.invalidRenewResponse = true;
+
+    await vi.advanceTimersByTimeAsync(100_000);
+    await vi.advanceTimersByTimeAsync(300_000);
+
+    expect(daemon.calls.filter((call) => call.path.endsWith("/renew"))).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
+  test("a failed remote stop keeps the placement and lease fence", async () => {
+    const executor = createRemoteExecutor("stop-failure");
+    await executor.exec("pwd");
+    daemon.refuseStop = 1;
+
+    await stopIdleGondolinVms(0, Date.now() + 1);
+
+    expect(daemon.runtime?.instanceId).toBe("stop-failure");
+    expect(daemon.leases.size).toBe(1);
   });
 
   test("ships vault credential files as content, separate from workspace mounts", async () => {
@@ -318,14 +693,53 @@ describe("session frame codec", () => {
     frame.writeUInt8(0, 0);
     frame.writeUInt32BE(jsonPayload.length, 1);
     jsonPayload.copy(frame, 5);
-    const binaryFrame = Buffer.concat([Buffer.from([1, 0, 0, 0, 3]), Buffer.from("abc")]);
+    const binaryPayload = Buffer.concat([Buffer.from([1, 0, 0, 0, 1]), Buffer.from("abc")]);
+    const binaryHeader = Buffer.alloc(5);
+    binaryHeader.writeUInt8(1, 0);
+    binaryHeader.writeUInt32BE(binaryPayload.length, 1);
+    const binaryFrame = Buffer.concat([binaryHeader, binaryPayload]);
     const stream = Buffer.concat([frame, binaryFrame]);
 
     for (const byte of stream) parse(Buffer.from([byte]));
 
     expect(json).toEqual([{ type: "exec_response", id: 1 }]);
     expect(binary).toHaveLength(1);
-    expect(binary[0].toString()).toBe("abc");
+    expect(binary[0].subarray(5).toString()).toBe("abc");
+  });
+
+  test("fails closed on oversized, unknown, and malformed frames", () => {
+    for (const frame of [
+      (() => {
+        const header = Buffer.alloc(5);
+        header.writeUInt8(0, 0);
+        header.writeUInt32BE((8 << 20) + 1, 1);
+        return header;
+      })(),
+      Buffer.from([2, 0, 0, 0, 0]),
+      Buffer.concat([Buffer.from([0, 0, 0, 0, 1]), Buffer.from("{")]),
+      Buffer.concat([Buffer.from([0, 0, 0, 0, 4]), Buffer.from("null")]),
+      Buffer.concat([Buffer.from([0, 0, 0, 0, 2]), Buffer.from("{}")]),
+      Buffer.from([1, 0, 0, 0, 0]),
+      Buffer.from([1, 0, 0, 0, 5, 3, 0, 0, 0, 1]),
+    ]) {
+      const messages: Array<{ type: string; code?: string }> = [];
+      const parse = createSessionFrameParser({
+        onJson: (message) => messages.push(message),
+        onBinary: () => {},
+      });
+
+      parse(frame);
+      parse(Buffer.concat([Buffer.from([1, 0, 0, 0, 2]), Buffer.from("ok")]));
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatchObject({ type: "error", code: "PROTOCOL_ERROR" });
+    }
+  });
+
+  test("rejects oversized outbound messages", () => {
+    expect(() => encodeSessionMessage({ data: "x".repeat((8 << 20) + 1) })).toThrow(
+      "encoded message exceeds",
+    );
   });
 
   test("encodes client messages with a length prefix", () => {

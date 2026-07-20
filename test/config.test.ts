@@ -8,6 +8,7 @@ import {
   createGlobalSettingsFile,
   isPathInside,
   loadGlobalSettings,
+  loadSandboxSettings,
   resolveConversationSettings,
   resolveSentryDsn,
   updateConversationSettings,
@@ -48,6 +49,14 @@ describe("loadGlobalSettings", () => {
     expect(config.sandbox?.image?.workspaceMount).toBe("private");
     expect(config.sandbox?.defaultSharedVault).toBeUndefined();
     expect(JSON.parse(readFileSync(settingsPath, "utf-8")).sandbox.defaultSharedVault).toBe("");
+  });
+
+  test("loads sandbox settings without requiring agent model fields", () => {
+    writeFileSync(
+      join(stateDir, "settings.json"),
+      JSON.stringify({ sandbox: { cpus: "2", memory: "4g" } }),
+    );
+    expect(loadSandboxSettings()).toMatchObject({ cpus: "2", memory: "4g" });
   });
 
   test("reads provider and model from settings.json", () => {

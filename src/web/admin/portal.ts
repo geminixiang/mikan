@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import type { IncomingMessage, ServerResponse } from "http";
 import { basename, join, resolve as pathResolve, sep as pathSep } from "path";
 import { MikanModels, parseFrontmatter, SessionStore } from "../../harness/index.js";
+import type { PlatformName } from "../../adapter.js";
 import type { EventStore } from "../../tools/types.js";
 
 import {
@@ -19,12 +20,14 @@ import { renderPortalShell } from "../portal-shell.js";
 import { resolveExistingSessionFile } from "../session-view/service.js";
 import { PRODUCT_NAME } from "../../platform-messages.js";
 import { credentialAuthorizationKey } from "../../sandbox/identity.js";
+import { listConversationStorage } from "../../sessions/conversation-storage-catalog.js";
 import { sharedVaultKey } from "../../vault/index.js";
+import { parseAdminConversationScopeKey, withAdminScopeKey } from "./conversation-scope.js";
 import { modelKey, resolveAdminModelAccessStatuses } from "./provider-models.js";
 import type { AdminToken } from "./store.js";
 
 export type { AdminRuntimeBridge, AdminServices } from "./types.js";
-import type { AdminServices } from "./types.js";
+import type { AdminConversationScope, AdminServices } from "./types.js";
 
 // ── Handler ────────────────────────────────────────────────────────────────────
 
@@ -52,7 +55,7 @@ export async function handleAdminRequest(
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
     });
-    res.end(renderAdminPage(token));
+    res.end(renderAdminPage(token, services.conversationStorageScoped === true));
     return true;
   }
 
@@ -91,7 +94,7 @@ async function routeApiRequest(
       return;
     }
     if (url.pathname === "/admin/api/conversation-usage") {
-      serveConversationUsage(res, url, services);
+      serveConversationUsage(res, url, services, token);
       return;
     }
     if (url.pathname === "/admin/api/conversation-state") {
@@ -104,6 +107,18 @@ async function routeApiRequest(
     }
     if (url.pathname === "/admin/api/models") {
       void serveModelsList(res);
+      return;
+    }
+    if (url.pathname === "/admin/api/sandbox/gondolin") {
+      if (!services.gondolinDiagnostics) {
+        jsonRes(res, 404, { error: "Gondolin remote diagnostics are unavailable" });
+        return;
+      }
+      try {
+        jsonRes(res, 200, await services.gondolinDiagnostics());
+      } catch (error) {
+        jsonRes(res, 503, { error: error instanceof Error ? error.message : String(error) });
+      }
       return;
     }
     if (url.pathname === "/admin/api/workspace/tree") {
@@ -209,12 +224,54 @@ function resolveConversationId(
   return { conversationId: requested };
 }
 
+export function resolveAdminConversationScope(
+  requested: string,
+  token: AdminToken,
+  services: AdminServices,
+): { scope?: AdminConversationScope; error?: string } {
+  const workingDir = services.workingDir;
+  if (!workingDir) return { error: "Admin working directory is not configured." };
+  if (services.conversationStorageScoped) {
+    let identity: { platform: PlatformName; conversationId: string };
+    try {
+      identity = requested
+        ? parseAdminConversationScopeKey(requested)
+        : { platform: token.platform, conversationId: token.conversationId };
+    } catch {
+      return { error: "Invalid conversation scope." };
+    }
+    const scope = listAdminConversationScopes(workingDir, services).find(
+      (candidate) =>
+        candidate.platform === identity.platform &&
+        candidate.conversationId === identity.conversationId,
+    );
+    return scope ? { scope } : { error: "Unknown conversation scope." };
+  }
+
+  const resolved = resolveConversationId(requested, token);
+  if (resolved.error) return { error: resolved.error };
+  return {
+    scope: withAdminScopeKey({
+      platform: token.platform,
+      conversationId: resolved.conversationId,
+      storageKey: resolved.conversationId,
+      conversationDir: join(workingDir, resolved.conversationId),
+    }),
+  };
+}
+
 function resolveTargetConversation(
   body: Record<string, unknown>,
   token: AdminToken,
-): { conversationId: string; error?: string } {
-  const requested = typeof body.conversationId === "string" ? body.conversationId.trim() : "";
-  return resolveConversationId(requested, token);
+  services: AdminServices,
+): { scope?: AdminConversationScope; error?: string } {
+  const requested =
+    typeof body.scopeKey === "string"
+      ? body.scopeKey.trim()
+      : typeof body.conversationId === "string"
+        ? body.conversationId.trim()
+        : "";
+  return resolveAdminConversationScope(requested, token, services);
 }
 
 function requireAdminWorkingDir(res: ServerResponse, services: AdminServices): string | null {
@@ -261,8 +318,26 @@ function listConversationDirs(workingDir: string): string[] {
     .toSorted((a, b) => a.localeCompare(b));
 }
 
-function conversationLastActivity(workingDir: string, conversationId: string): number | null {
-  const dir = join(workingDir, conversationId);
+export function listAdminConversationScopes(
+  workingDir: string,
+  services: AdminServices,
+): AdminConversationScope[] {
+  if (services.conversationStorageScoped) {
+    return listConversationStorage({ workspaceRoot: workingDir, scoped: true }).map(
+      withAdminScopeKey,
+    );
+  }
+  return listConversationDirs(workingDir).map((conversationId) => ({
+    platform: "slack",
+    conversationId,
+    storageKey: conversationId,
+    conversationDir: join(workingDir, conversationId),
+    scopeKey: conversationId,
+  }));
+}
+
+function conversationLastActivity(conversationDir: string): number | null {
+  const dir = conversationDir;
   if (!existsSync(dir)) return null;
   let latest = 0;
   const visit = (path: string, depth: number): void => {
@@ -291,32 +366,40 @@ function conversationLastActivity(workingDir: string, conversationId: string): n
   return latest > 0 ? latest : null;
 }
 
-function conversationDisplayLabel(services: AdminServices, conversationId: string): string {
-  for (const [platform, bot] of Object.entries(services.botsByPlatform ?? {})) {
-    const channel = bot?.getMessagingInfo().channels.find((c) => c.id === conversationId);
-    if (channel) return `${platform}:#${channel.name}:${conversationId}`;
-  }
-  return conversationId;
+function conversationDisplayLabel(
+  services: AdminServices,
+  platform: string,
+  conversationId: string,
+): string {
+  const bot = services.botsByPlatform?.[platform as keyof typeof services.botsByPlatform];
+  const channel = bot
+    ?.getMessagingInfo()
+    .channels.find((candidate) => candidate.id === conversationId);
+  if (channel) return `${platform}:#${channel.name}:${conversationId}`;
+  return `${platform}:${conversationId}`;
 }
 
 function serveConversationsList(res: ServerResponse, services: AdminServices): void {
   const workingDir = requireAdminWorkingDir(res, services);
   if (!workingDir) return;
 
-  const ids = listConversationDirs(workingDir);
+  const scopes = listAdminConversationScopes(workingDir, services);
 
   const runningKeys = new Set<string>(
     services.runtime?.getRunningSessions().map((s) => s.sessionKey) ?? [],
   );
 
-  const conversations = ids.map((conversationId) => {
-    const lastActivity = conversationLastActivity(workingDir, conversationId);
+  const conversations = scopes.map((scope) => {
+    const lastActivity = conversationLastActivity(scope.conversationDir);
     const running = Array.from(runningKeys).some(
-      (key) => key === conversationId || key.startsWith(`${conversationId}:`),
+      (key) => key === scope.storageKey || key.startsWith(`${scope.storageKey}:`),
     );
     return {
-      conversationId,
-      label: conversationDisplayLabel(services, conversationId),
+      platform: scope.platform,
+      conversationId: scope.conversationId,
+      scopeKey: scope.scopeKey,
+      storageKey: scope.storageKey,
+      label: conversationDisplayLabel(services, scope.platform, scope.conversationId),
       running,
       lastActivityAt: lastActivity,
     };
@@ -326,7 +409,9 @@ function serveConversationsList(res: ServerResponse, services: AdminServices): v
 }
 
 interface SessionUsageRow {
+  platform: string;
   conversationId: string;
+  scopeKey: string;
   label: string;
   fileName: string;
   sessionId: string;
@@ -343,12 +428,11 @@ function serveSessionUsage(res: ServerResponse, services: AdminServices): void {
   const workingDir = requireAdminWorkingDir(res, services);
   if (!workingDir) return;
 
-  const rows = listConversationDirs(workingDir)
-    .flatMap((conversationId) =>
+  const rows = listAdminConversationScopes(workingDir, services)
+    .flatMap((scope) =>
       listConversationSessionUsage(
-        workingDir,
-        conversationId,
-        conversationDisplayLabel(services, conversationId),
+        scope,
+        conversationDisplayLabel(services, scope.platform, scope.conversationId),
       ),
     )
     .toSorted((a, b) => b.total - a.total)
@@ -358,15 +442,14 @@ function serveSessionUsage(res: ServerResponse, services: AdminServices): void {
 }
 
 function listConversationSessionUsage(
-  workingDir: string,
-  conversationId: string,
+  scope: AdminConversationScope,
   label: string,
 ): SessionUsageRow[] {
-  const sessionDir = join(workingDir, conversationId, "sessions");
+  const sessionDir = join(scope.conversationDir, "sessions");
   try {
     return readdirSync(sessionDir, { withFileTypes: true })
       .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
-      .flatMap((entry) => readSessionUsage(join(sessionDir, entry.name), conversationId, label));
+      .flatMap((entry) => readSessionUsage(join(sessionDir, entry.name), scope, label));
   } catch {
     return [];
   }
@@ -374,7 +457,7 @@ function listConversationSessionUsage(
 
 function readSessionUsage(
   sessionFile: string,
-  conversationId: string,
+  scope: AdminConversationScope,
   label: string,
 ): SessionUsageRow[] {
   try {
@@ -403,7 +486,9 @@ function readSessionUsage(
 
     return [
       {
-        conversationId,
+        platform: scope.platform,
+        conversationId: scope.conversationId,
+        scopeKey: scope.scopeKey,
         label,
         fileName: basename(sessionFile),
         sessionId: header.id,
@@ -453,15 +538,18 @@ function emptyBucket(date: string): UsageBucket {
 }
 
 /** Per-conversation daily token usage over the last N days (N clamped to 1..7). */
-function serveConversationUsage(res: ServerResponse, url: URL, services: AdminServices): void {
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
-
-  const conversationId = url.searchParams.get("conversationId") ?? "";
-  if (!conversationId || !listConversationDirs(workingDir).includes(conversationId)) {
-    jsonRes(res, 400, { error: "Unknown conversationId" });
+function serveConversationUsage(
+  res: ServerResponse,
+  url: URL,
+  services: AdminServices,
+  token: AdminToken,
+): void {
+  const resolved = resolveConversationFromQuery(url, token, services);
+  if (resolved.error || !resolved.scope) {
+    jsonRes(res, 400, { error: resolved.error ?? "Unknown conversation scope." });
     return;
   }
+  const scope = resolved.scope;
 
   const days = 14;
 
@@ -480,7 +568,7 @@ function serveConversationUsage(res: ServerResponse, url: URL, services: AdminSe
   cutoff.setDate(today.getDate() - (days - 1));
 
   const flags = { hasOlder: false };
-  const sessionDir = join(workingDir, conversationId, "sessions");
+  const sessionDir = join(scope.conversationDir, "sessions");
   try {
     for (const entry of readdirSync(sessionDir, { withFileTypes: true })) {
       if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
@@ -502,8 +590,10 @@ function serveConversationUsage(res: ServerResponse, url: URL, services: AdminSe
   }, emptyBucket(""));
 
   jsonRes(res, 200, {
-    conversationId,
-    label: conversationDisplayLabel(services, conversationId),
+    platform: scope.platform,
+    conversationId: scope.conversationId,
+    scopeKey: scope.scopeKey,
+    label: conversationDisplayLabel(services, scope.platform, scope.conversationId),
     days,
     hasOlder: flags.hasOlder,
     buckets: series,
@@ -565,23 +655,21 @@ function serveConversationState(
   services: AdminServices,
   token: AdminToken,
 ): void {
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
-
-  const requested = url.searchParams.get("conversationId")?.trim() ?? "";
-  const conversationId = requested || token.conversationId;
-  if (conversationId.includes("/") || conversationId.includes("..")) {
-    jsonRes(res, 400, { error: "Invalid conversationId" });
+  const resolved = resolveConversationFromQuery(url, token, services);
+  if (resolved.error || !resolved.scope) {
+    jsonRes(res, 400, { error: resolved.error ?? "Unknown conversation scope." });
     return;
   }
-
-  const dir = join(workingDir, conversationId);
+  const scope = resolved.scope;
+  const dir = scope.conversationDir;
   const globalConfig = loadGlobalSettings();
   const conversationConfig = resolveConversationSettings(dir);
   const autoReply = loadConversationAutoReplyConfig(dir);
 
   jsonRes(res, 200, {
-    conversationId,
+    platform: scope.platform,
+    conversationId: scope.conversationId,
+    scopeKey: scope.scopeKey,
     provider: conversationConfig.provider,
     model: conversationConfig.model,
     thinkingLevel: conversationConfig.thinkingLevel,
@@ -662,20 +750,23 @@ function serveConversationModelUpdate(
     jsonRes(res, 400, { error: "Missing provider or model" });
     return;
   }
-  const scope = resolveTargetConversation(body, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
+  const resolved = resolveTargetConversation(body, token, services);
+  if (resolved.error || !resolved.scope) {
+    jsonRes(res, 403, { error: resolved.error ?? "Unknown conversation scope." });
     return;
   }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
+  const scope = resolved.scope;
 
   try {
-    const result = applyConversationSettings(services.runtime, workingDir, scope.conversationId, {
-      provider,
-      model,
-      ...(thinkingLevel ? { thinkingLevel } : {}),
-    });
+    const result = applyConversationSettings(
+      services.runtime,
+      { key: scope.storageKey, conversationDir: scope.conversationDir },
+      {
+        provider,
+        model,
+        ...(thinkingLevel ? { thinkingLevel } : {}),
+      },
+    );
     if (!result.ok) {
       jsonRes(res, 409, {
         error: "Conversation has a running job; retry after it finishes (or /stop it).",
@@ -699,17 +790,20 @@ function serveConversationSandboxUpdate(
     jsonRes(res, 400, { error: "workspaceMount must be 'private' or 'full'" });
     return;
   }
-  const scope = resolveTargetConversation(body, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
+  const resolved = resolveTargetConversation(body, token, services);
+  if (resolved.error || !resolved.scope) {
+    jsonRes(res, 403, { error: resolved.error ?? "Unknown conversation scope." });
     return;
   }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
+  const scope = resolved.scope;
   try {
-    applyConversationSettings(services.runtime, workingDir, scope.conversationId, {
-      sandbox: { image: { workspaceMount } },
-    });
+    applyConversationSettings(
+      services.runtime,
+      { key: scope.storageKey, conversationDir: scope.conversationDir },
+      {
+        sandbox: { image: { workspaceMount } },
+      },
+    );
     jsonRes(res, 200, { ok: true });
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
@@ -727,17 +821,20 @@ function serveConversationSlackUpdate(
     jsonRes(res, 400, { error: "replyMode must be 'top-level' or 'thread'" });
     return;
   }
-  const scope = resolveTargetConversation(body, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
+  const resolved = resolveTargetConversation(body, token, services);
+  if (resolved.error || !resolved.scope) {
+    jsonRes(res, 403, { error: resolved.error ?? "Unknown conversation scope." });
     return;
   }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
+  const scope = resolved.scope;
   try {
-    applyConversationSettings(services.runtime, workingDir, scope.conversationId, {
-      slack: { replyMode },
-    });
+    applyConversationSettings(
+      services.runtime,
+      { key: scope.storageKey, conversationDir: scope.conversationDir },
+      {
+        slack: { replyMode },
+      },
+    );
     jsonRes(res, 200, { ok: true });
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
@@ -759,14 +856,13 @@ function serveConversationAutoReplyUpdate(
     jsonRes(res, 400, { error: "rules must be an array of strings" });
     return;
   }
-  const scope = resolveTargetConversation(body, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
+  const resolved = resolveTargetConversation(body, token, services);
+  if (resolved.error || !resolved.scope) {
+    jsonRes(res, 403, { error: resolved.error ?? "Unknown conversation scope." });
     return;
   }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
-  const dir = join(workingDir, scope.conversationId);
+  const scope = resolved.scope;
+  const dir = scope.conversationDir;
   try {
     const existing = loadConversationAutoReplyConfig(dir);
     saveConversationAutoReplyConfig(dir, {
@@ -785,13 +881,12 @@ function serveConversationSessionLink(
   services: AdminServices,
   token: AdminToken,
 ): void {
-  const scope = resolveTargetConversation(body, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
+  const resolved = resolveTargetConversation(body, token, services);
+  if (resolved.error || !resolved.scope) {
+    jsonRes(res, 403, { error: resolved.error ?? "Unknown conversation scope." });
     return;
   }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
+  const scope = resolved.scope;
   if (!services.sessionViewTokenStore) {
     jsonRes(res, 503, { error: "Session view token store not available" });
     return;
@@ -804,9 +899,10 @@ function serveConversationSessionLink(
   }
 
   const sessionFile = resolveExistingSessionFile(
-    workingDir,
+    services.workingDir!,
     scope.conversationId,
     scope.conversationId,
+    scope.conversationDir,
   );
   if (!sessionFile) {
     jsonRes(res, 404, { error: "No session file found for this conversation" });
@@ -815,7 +911,7 @@ function serveConversationSessionLink(
 
   try {
     const { token: viewToken } = services.sessionViewTokenStore.create(
-      token.platform,
+      scope.platform,
       token.platformUserId,
       scope.conversationId,
       scope.conversationId,
@@ -835,11 +931,12 @@ function serveConversationLoginLink(
   services: AdminServices,
   token: AdminToken,
 ): void {
-  const scope = resolveTargetConversation(body, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
+  const resolved = resolveTargetConversation(body, token, services);
+  if (resolved.error || !resolved.scope) {
+    jsonRes(res, 403, { error: resolved.error ?? "Unknown conversation scope." });
     return;
   }
+  const scope = resolved.scope;
   if (!services.portalBaseUrl) {
     jsonRes(res, 503, { error: "Portal URL not configured." });
     return;
@@ -861,7 +958,7 @@ function serveConversationLoginLink(
     try {
       vaultId = credentialAuthorizationKey(services.sandbox, {
         userId: token.platformUserId,
-        conversationId: scope.conversationId,
+        conversationId: scope.storageKey,
       });
     } catch (err) {
       jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
@@ -870,7 +967,7 @@ function serveConversationLoginLink(
   }
   try {
     const { token: linkToken } = services.linkTokenStore.create(
-      token.platform,
+      scope.platform,
       token.platformUserId,
       scope.conversationId,
       vaultId,
@@ -997,9 +1094,14 @@ function isWorkspacePathAllowed(rel: string): boolean {
 function resolveConversationFromQuery(
   url: URL,
   token: AdminToken,
-): { conversationId: string; error?: string } {
-  const requested = (url.searchParams.get("conversationId") ?? "").trim();
-  return resolveConversationId(requested, token);
+  services: AdminServices,
+): { scope?: AdminConversationScope; error?: string } {
+  const requested = (
+    url.searchParams.get("scopeKey") ??
+    url.searchParams.get("conversationId") ??
+    ""
+  ).trim();
+  return resolveAdminConversationScope(requested, token, services);
 }
 
 interface SafePathResult {
@@ -1096,14 +1198,13 @@ function serveWorkspaceTree(
   services: AdminServices,
   token: AdminToken,
 ): void {
-  const scope = resolveConversationFromQuery(url, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
+  const resolved = resolveConversationFromQuery(url, token, services);
+  if (resolved.error || !resolved.scope) {
+    jsonRes(res, 403, { error: resolved.error ?? "Unknown conversation scope." });
     return;
   }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
-  const convDir = join(workingDir, scope.conversationId);
+  const scope = resolved.scope;
+  const convDir = scope.conversationDir;
   if (!existsSync(convDir)) {
     jsonRes(res, 200, { conversationId: scope.conversationId, tree: null });
     return;
@@ -1197,13 +1298,12 @@ function serveWorkspaceFile(
   services: AdminServices,
   token: AdminToken,
 ): void {
-  const scope = resolveConversationFromQuery(url, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
+  const resolved = resolveConversationFromQuery(url, token, services);
+  if (resolved.error || !resolved.scope) {
+    jsonRes(res, 403, { error: resolved.error ?? "Unknown conversation scope." });
     return;
   }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
+  const scope = resolved.scope;
   const requestedPath = (url.searchParams.get("path") ?? "").trim();
   if (!requestedPath) {
     jsonRes(res, 400, { error: "Missing path" });
@@ -1213,7 +1313,7 @@ function serveWorkspaceFile(
     jsonRes(res, 403, { error: "Workspace path is not exposed" });
     return;
   }
-  const convDir = join(workingDir, scope.conversationId);
+  const convDir = scope.conversationDir;
   const safe = safeJoinUnderRoot(convDir, requestedPath);
   if (safe.error) {
     jsonRes(res, 400, { error: safe.error });
@@ -1285,18 +1385,15 @@ function serveSkillsList(
   services: AdminServices,
   token: AdminToken,
 ): void {
-  const scope = resolveConversationFromQuery(url, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
+  const resolved = resolveConversationFromQuery(url, token, services);
+  if (resolved.error || !resolved.scope) {
+    jsonRes(res, 403, { error: resolved.error ?? "Unknown conversation scope." });
     return;
   }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
+  const scope = resolved.scope;
+  const workingDir = services.workingDir!;
   const global = readSkillsFromDir(join(workingDir, "skills"), "global");
-  const conversation = readSkillsFromDir(
-    join(workingDir, scope.conversationId, "skills"),
-    "conversation",
-  );
+  const conversation = readSkillsFromDir(join(scope.conversationDir, "skills"), "conversation");
   jsonRes(res, 200, {
     conversationId: scope.conversationId,
     skills: [...global, ...conversation],
@@ -1309,13 +1406,13 @@ function serveSkillFile(
   services: AdminServices,
   token: AdminToken,
 ): void {
-  const scope = resolveConversationFromQuery(url, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
+  const resolved = resolveConversationFromQuery(url, token, services);
+  if (resolved.error || !resolved.scope) {
+    jsonRes(res, 403, { error: resolved.error ?? "Unknown conversation scope." });
     return;
   }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
+  const scope = resolved.scope;
+  const workingDir = services.workingDir!;
 
   const source = (url.searchParams.get("source") ?? "").trim();
   const directory = (url.searchParams.get("directory") ?? "").trim();
@@ -1334,9 +1431,7 @@ function serveSkillFile(
   }
 
   const skillsRoot =
-    source === "global"
-      ? join(workingDir, "skills")
-      : join(workingDir, scope.conversationId, "skills");
+    source === "global" ? join(workingDir, "skills") : join(scope.conversationDir, "skills");
   const safe = safeJoinUnderRoot(skillsRoot, join(directory, "SKILL.md"));
   if (safe.error) {
     jsonRes(res, 400, { error: safe.error });
@@ -1408,15 +1503,16 @@ async function serveConversationEventsList(
   services: AdminServices,
   token: AdminToken,
 ): Promise<void> {
-  const scope = resolveConversationFromQuery(url, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
+  const resolved = resolveConversationFromQuery(url, token, services);
+  if (resolved.error || !resolved.scope) {
+    jsonRes(res, 403, { error: resolved.error ?? "Unknown conversation scope." });
     return;
   }
+  const scope = resolved.scope;
   const store = requireAdminEventStore(res, services);
   if (!store) return;
   const events = (await listAllEvents(store)).filter(
-    (e) => e.conversationId === scope.conversationId,
+    (event) => event.platform === scope.platform && event.conversationId === scope.conversationId,
   );
   jsonRes(res, 200, { conversationId: scope.conversationId, events });
 }
@@ -1462,11 +1558,12 @@ async function serveConversationEventDelete(
   services: AdminServices,
   token: AdminToken,
 ): Promise<void> {
-  const scope = resolveTargetConversation(body, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
+  const resolved = resolveTargetConversation(body, token, services);
+  if (resolved.error || !resolved.scope) {
+    jsonRes(res, 403, { error: resolved.error ?? "Unknown conversation scope." });
     return;
   }
+  const scope = resolved.scope;
   const name = typeof body.name === "string" ? body.name.trim() : "";
   if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
     jsonRes(res, 400, { error: "Invalid name" });
@@ -1474,7 +1571,7 @@ async function serveConversationEventDelete(
   }
   const store = requireAdminEventStore(res, services);
   if (!store) return;
-  let payload: { conversationId?: string } | null;
+  let payload: { platform?: string; conversationId?: string } | null;
   try {
     payload = (await store.read(name)).payload;
   } catch {
@@ -1482,7 +1579,7 @@ async function serveConversationEventDelete(
     return;
   }
   // The store normalizes the legacy `channelId` alias into `conversationId`.
-  if (payload?.conversationId !== scope.conversationId) {
+  if (payload?.platform !== scope.platform || payload.conversationId !== scope.conversationId) {
     jsonRes(res, 403, { error: "Event does not belong to this conversation." });
     return;
   }
@@ -1523,7 +1620,7 @@ const esc = escapeHtml;
 
 // ── HTML ───────────────────────────────────────────────────────────────────────
 
-function renderAdminPage(token: AdminToken): string {
+function renderAdminPage(token: AdminToken, scopedStorage: boolean): string {
   const userLabel = token.platformUserName ?? token.platformUserId;
   const body = `<nav class="tab-nav" role="tablist" aria-label="Admin sections">
       <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="panel-conversation" data-tab="conversation">Conversation</button>
@@ -1672,7 +1769,9 @@ function renderAdminPage(token: AdminToken): string {
 
   const script = `
     const adminToken = ${JSON.stringify(token.token)};
-    const defaultConversationId = ${JSON.stringify(token.conversationId)};
+    const defaultConversationId = ${JSON.stringify(
+      scopedStorage ? `${token.platform}:${token.conversationId}` : token.conversationId,
+    )};
     let activeConversationId = defaultConversationId;
     let availableModels = [];
     let modelsLoaded = false;
@@ -1783,7 +1882,7 @@ function renderAdminPage(token: AdminToken): string {
         sel.innerHTML = data.conversations.map((c) => {
           const label = (c.label || c.conversationId) + (c.running ? ' (running)' : '');
           const selected = c.conversationId === defaultConversationId ? ' selected' : '';
-          return '<option value="' + escAttr(c.conversationId) + '"' + selected + '>' + escHtml(label) + '</option>';
+          return '<option value="' + escAttr(c.scopeKey || c.conversationId) + '"' + selected + '>' + escHtml(label) + '</option>';
         }).join('');
         sel.addEventListener('change', () => setActiveConversation(sel.value));
       } catch (err) {
@@ -1811,7 +1910,7 @@ function renderAdminPage(token: AdminToken): string {
       container.innerHTML = '<div class="loading-msg">Loading…</div>';
       if (!modelsLoaded) await loadModels();
       try {
-        const data = await apiGet('/admin/api/conversation-state?conversationId=' + encodeURIComponent(activeConversationId));
+        const data = await apiGet('/admin/api/conversation-state?scopeKey=' + encodeURIComponent(activeConversationId));
         container.innerHTML = renderSettings(data);
       } catch (err) {
         container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
@@ -1885,7 +1984,7 @@ function renderAdminPage(token: AdminToken): string {
       btn.disabled = true; btn.textContent = 'Saving…'; result.style.display = 'none';
       try {
         const data = await apiPost('/admin/api/conversations/model', {
-          conversationId: activeConversationId, provider, model, thinkingLevel,
+          scopeKey: activeConversationId, provider, model, thinkingLevel,
         });
         result.style.display = 'block'; result.className = 'inline-result ok';
         result.textContent = 'Saved ✓';
@@ -1904,7 +2003,7 @@ function renderAdminPage(token: AdminToken): string {
       btn.disabled = true; btn.textContent = 'Saving…'; result.style.display = 'none';
       try {
         await apiPost('/admin/api/conversations/auto-reply', {
-          conversationId: activeConversationId, enabled, rules,
+          scopeKey: activeConversationId, enabled, rules,
         });
         result.style.display = 'block'; result.className = 'inline-result ok'; result.textContent = 'Saved ✓';
       } catch (err) {
@@ -1920,7 +2019,7 @@ function renderAdminPage(token: AdminToken): string {
       btn.disabled = true; btn.textContent = 'Saving…'; result.style.display = 'none';
       try {
         await apiPost('/admin/api/conversations/sandbox', {
-          conversationId: activeConversationId, workspaceMount,
+          scopeKey: activeConversationId, workspaceMount,
         });
         result.style.display = 'block'; result.className = 'inline-result ok'; result.textContent = 'Saved ✓';
       } catch (err) {
@@ -1936,7 +2035,7 @@ function renderAdminPage(token: AdminToken): string {
       btn.disabled = true; btn.textContent = 'Saving…'; result.style.display = 'none';
       try {
         await apiPost('/admin/api/conversations/slack', {
-          conversationId: activeConversationId, replyMode,
+          scopeKey: activeConversationId, replyMode,
         });
         result.style.display = 'block'; result.className = 'inline-result ok'; result.textContent = 'Saved ✓';
       } catch (err) {
@@ -1954,7 +2053,7 @@ function renderAdminPage(token: AdminToken): string {
       treeEl.innerHTML = '<div class="loading-msg">Loading…</div>';
       previewEl.innerHTML = '<div class="placeholder-msg">Click a file to preview</div>';
       try {
-        const data = await apiGet('/admin/api/workspace/tree?conversationId=' + encodeURIComponent(activeConversationId));
+        const data = await apiGet('/admin/api/workspace/tree?scopeKey=' + encodeURIComponent(activeConversationId));
         if (!data.tree) {
           treeEl.innerHTML = '<div class="empty-state">No files</div>';
           return;
@@ -1994,7 +2093,7 @@ function renderAdminPage(token: AdminToken): string {
       const previewEl = document.getElementById('workspace-preview');
       previewEl.innerHTML = '<div class="loading-msg">Loading ' + escHtml(path) + '…</div>';
       try {
-        const data = await apiGet('/admin/api/workspace/file?conversationId=' + encodeURIComponent(activeConversationId) + '&path=' + encodeURIComponent(path));
+        const data = await apiGet('/admin/api/workspace/file?scopeKey=' + encodeURIComponent(activeConversationId) + '&path=' + encodeURIComponent(path));
         renderPreviewFileResult(previewEl, path, data);
       } catch (err) {
         previewEl.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
@@ -2009,7 +2108,7 @@ function renderAdminPage(token: AdminToken): string {
       container.innerHTML = '<div class="loading-msg">Loading…</div>';
       if (previewEl) previewEl.innerHTML = '<div class="placeholder-msg">Click a skill to preview SKILL.md</div>';
       try {
-        const data = await apiGet('/admin/api/skills?conversationId=' + encodeURIComponent(activeConversationId));
+        const data = await apiGet('/admin/api/skills?scopeKey=' + encodeURIComponent(activeConversationId));
         if (data.skills.length === 0) {
           container.innerHTML = '<div class="empty-state">No skills available</div>';
           return;
@@ -2035,7 +2134,7 @@ function renderAdminPage(token: AdminToken): string {
       }
       previewEl.innerHTML = '<div class="loading-msg">Loading ' + escHtml(name || directory) + '…</div>';
       try {
-        const data = await apiGet('/admin/api/skills/file?conversationId=' + encodeURIComponent(activeConversationId) + '&source=' + encodeURIComponent(source) + '&directory=' + encodeURIComponent(directory));
+        const data = await apiGet('/admin/api/skills/file?scopeKey=' + encodeURIComponent(activeConversationId) + '&source=' + encodeURIComponent(source) + '&directory=' + encodeURIComponent(directory));
         renderPreviewFileResult(previewEl, source + '/' + directory + '/SKILL.md', data);
       } catch (err) {
         previewEl.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
@@ -2056,7 +2155,7 @@ function renderAdminPage(token: AdminToken): string {
       if (silent) { frame.removeAttribute('src'); frame.style.display = 'none'; result.style.display = 'none'; return; }
       result.style.display = 'block'; result.className = 'link-result loading'; result.textContent = 'Generating link…';
       try {
-        const data = await apiPost('/admin/api/conversations/login-link', { conversationId: activeConversationId });
+        const data = await apiPost('/admin/api/conversations/login-link', { scopeKey: activeConversationId });
         result.className = 'link-result ok';
         result.innerHTML =
           '<span class="link-vault">vault: <code>' + escHtml(data.vaultId) + '</code></span>' +
@@ -2077,7 +2176,7 @@ function renderAdminPage(token: AdminToken): string {
       if (silent) { frame.removeAttribute('src'); frame.style.display = 'none'; result.style.display = 'none'; return; }
       result.style.display = 'block'; result.className = 'link-result loading'; result.textContent = 'Generating link…';
       try {
-        const data = await apiPost('/admin/api/conversations/session-link', { conversationId: activeConversationId });
+        const data = await apiPost('/admin/api/conversations/session-link', { scopeKey: activeConversationId });
         result.className = 'link-result ok';
         result.innerHTML =
           '<a href="' + escAttr(data.url) + '" target="_blank" rel="noopener">' + escHtml(data.url) + '</a>' +
@@ -2096,7 +2195,7 @@ function renderAdminPage(token: AdminToken): string {
       if (!container) return;
       container.innerHTML = '<div class="loading-msg">Loading…</div>';
       try {
-        const data = await apiGet('/admin/api/conversations/events?conversationId=' + encodeURIComponent(activeConversationId));
+        const data = await apiGet('/admin/api/conversations/events?scopeKey=' + encodeURIComponent(activeConversationId));
         if (data.events.length === 0) {
           container.innerHTML = '<div class="empty-state">沒有關聯此對話的 event</div>';
           return;
@@ -2147,7 +2246,7 @@ function renderAdminPage(token: AdminToken): string {
       btn.disabled = true; btn.textContent = 'Deleting…';
       try {
         await apiPost('/admin/api/conversations/events/delete', {
-          conversationId: activeConversationId, name,
+          scopeKey: activeConversationId, name,
         });
         await loadConversationEvents();
       } catch (err) {
@@ -2180,7 +2279,7 @@ function renderAdminPage(token: AdminToken): string {
         }
         container.innerHTML = '<div class="conv-list">' + data.conversations.map((c) => {
           const last = c.lastActivityAt ? new Date(c.lastActivityAt).toLocaleString() : '—';
-          return '<button class="conv-row-btn" onclick="setActiveConversation(\\'' + escAttr(c.conversationId) + '\\'); switchTab(\\'conversation\\');">' +
+          return '<button class="conv-row-btn" onclick="setActiveConversation(\\'' + escAttr(c.scopeKey || c.conversationId) + '\\'); switchTab(\\'conversation\\');">' +
             '<span class="conv-id">' + escHtml(c.label || c.conversationId) + '</span>' +
             (c.running ? '<span class="status-pill running">running</span>' : '') +
             '<span class="conv-last">' + escHtml(last) + '</span>' +
@@ -2237,8 +2336,8 @@ function renderAdminPage(token: AdminToken): string {
       }
       const want = prev || defaultConversationId;
       sel.innerHTML = data.conversations.map((c) =>
-        '<option value="' + escAttr(c.conversationId) + '"' +
-        (c.conversationId === want ? ' selected' : '') + '>' +
+        '<option value="' + escAttr(c.scopeKey || c.conversationId) + '"' +
+        ((c.scopeKey || c.conversationId) === want ? ' selected' : '') + '>' +
         escHtml(c.label || c.conversationId) + '</option>'
       ).join('');
       timelineConvLoaded = true;
@@ -2468,7 +2567,7 @@ function renderAdminPage(token: AdminToken): string {
       container.innerHTML = '<div class="loading-msg">Loading…</div>';
       try {
         // Reuse skills endpoint scoped to a conversation that doesn't have any of its own; the global half is what we want.
-        const data = await apiGet('/admin/api/skills?conversationId=' + encodeURIComponent(activeConversationId));
+        const data = await apiGet('/admin/api/skills?scopeKey=' + encodeURIComponent(activeConversationId));
         const globals = data.skills.filter((s) => s.source === 'global');
         if (globals.length === 0) {
           container.innerHTML = '<div class="empty-state">No global skills</div>';

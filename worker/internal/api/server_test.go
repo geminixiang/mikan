@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -53,6 +54,7 @@ func newTestWorld(t *testing.T, socketPath string) *testWorld {
 		InventoryDir:     filepath.Join(dir, "inventory"),
 		HandshakeTimeout: 5 * time.Second,
 		StopWait:         2 * time.Second,
+		VerifyWorkerPID:  func(int) (bool, error) { return true, nil },
 	})
 	server := &Server{
 		Leases:         leases,
@@ -114,6 +116,144 @@ func (w *testWorld) ensureRuntime(t *testing.T, fingerprint string, headers map[
 	return recorder, runtime
 }
 
+func TestAcquireSupersedesAndClosesOldEpochTunnel(t *testing.T) {
+	world := newTestWorld(t, "/nonexistent.sock")
+	world.acquireLease(t)
+	client, peer := net.Pipe()
+	backend, backendPeer := net.Pipe()
+	defer peer.Close()
+	defer backendPeer.Close()
+	if err := world.server.RegisterTunnel(world.instance, world.leaseID, world.epoch, client, backend); err != nil {
+		t.Fatal(err)
+	}
+
+	response := world.request(t, "POST", "/v1/leases", map[string]any{
+		"instanceId": world.instance,
+	}, false)
+	if response.Code != http.StatusOK {
+		t.Fatalf("replacement lease: %d %s", response.Code, response.Body)
+	}
+	_ = peer.SetReadDeadline(time.Now().Add(time.Second))
+	if _, err := peer.Read(make([]byte, 1)); err == nil {
+		t.Fatal("superseded epoch tunnel remained open")
+	}
+}
+
+func TestTunnelRegistrationRevalidatesLeaseAfterSupersession(t *testing.T) {
+	world := newTestWorld(t, "/nonexistent.sock")
+	world.acquireLease(t)
+	oldID, oldEpoch := world.leaseID, world.epoch
+	world.acquireLease(t)
+	client, peer := net.Pipe()
+	defer client.Close()
+	defer peer.Close()
+
+	if err := world.server.RegisterTunnel(world.instance, oldID, oldEpoch, client); !errors.Is(err, lease.ErrStaleEpoch) {
+		t.Fatalf("stale tunnel registered after supersession: %v", err)
+	}
+	if err := world.server.RegisterTunnel(world.instance, world.leaseID, world.epoch, client); err != nil {
+		t.Fatalf("current tunnel rejected: %v", err)
+	}
+	world.server.CloseTunnelsThroughEpoch(world.instance, oldEpoch)
+	world.server.tunnelMu.Lock()
+	remaining := len(world.server.tunnels)
+	world.server.tunnelMu.Unlock()
+	if remaining != 1 {
+		t.Fatalf("stale fence removed newer tunnel: %d remain", remaining)
+	}
+	world.server.CloseTunnelsThroughEpoch(world.instance, world.epoch)
+}
+
+func TestReleaseClosesCurrentEpochTunnel(t *testing.T) {
+	world := newTestWorld(t, "/nonexistent.sock")
+	world.acquireLease(t)
+	client, peer := net.Pipe()
+	defer peer.Close()
+	if err := world.server.RegisterTunnel(world.instance, world.leaseID, world.epoch, client); err != nil {
+		t.Fatal(err)
+	}
+
+	response := world.request(t, "DELETE", "/v1/leases/"+world.leaseID, nil, false)
+	if response.Code != http.StatusOK {
+		t.Fatalf("release lease: %d %s", response.Code, response.Body)
+	}
+	_ = peer.SetReadDeadline(time.Now().Add(time.Second))
+	if _, err := peer.Read(make([]byte, 1)); err == nil {
+		t.Fatal("released lease tunnel remained open")
+	}
+}
+
+func TestReleaseStopsCurrentEpochRuntime(t *testing.T) {
+	world := newTestWorld(t, "/nonexistent.sock")
+	world.acquireLease(t)
+	response, runtime := world.ensureRuntime(t, "fp-1", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("ensure runtime: %d %s", response.Code, response.Body)
+	}
+
+	response = world.request(t, "DELETE", "/v1/leases/"+world.leaseID, nil, false)
+	if response.Code != http.StatusOK {
+		t.Fatalf("release lease: %d %s", response.Code, response.Body)
+	}
+	if _, err := world.server.Runtimes.Get(runtime.SessionID); !errors.Is(err, workerruntime.ErrNotFound) {
+		t.Fatalf("released epoch runtime remained live: %v", err)
+	}
+}
+
+func TestCredentialDirectoryCannotEscapeState(t *testing.T) {
+	root := t.TempDir()
+	server := &Server{CredentialsDir: root}
+	path := server.credentialDir("../../outside")
+	relative, err := filepath.Rel(root, path)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		t.Fatalf("credential directory escaped root: %s", path)
+	}
+	if strings.Contains(path, "outside") {
+		t.Fatalf("credential directory leaked raw instance id: %s", path)
+	}
+}
+
+func TestValidateMountsRejectsSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	link := filepath.Join(root, "escape")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{WorkspaceRoot: root}
+
+	if _, err := server.canonicalizeMounts([]workerruntime.Mount{{Source: link, Target: "/workspace"}}); err == nil || !strings.Contains(err.Error(), "escapes") {
+		t.Fatalf("symlink escape accepted: %v", err)
+	}
+	inside := filepath.Join(root, "inside")
+	if err := os.Mkdir(inside, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := server.canonicalizeMounts([]workerruntime.Mount{{Source: inside, Target: "/workspace"}})
+	if err != nil {
+		t.Fatalf("valid mount rejected: %v", err)
+	}
+	resolvedInside, err := filepath.EvalSymlinks(inside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(canonical) != 1 || canonical[0].Source != resolvedInside {
+		t.Fatalf("mount source was not canonicalized: %+v", canonical)
+	}
+
+	alias := filepath.Join(root, "alias")
+	if err := os.Symlink(inside, alias); err != nil {
+		t.Fatal(err)
+	}
+	canonical, err = server.canonicalizeMounts([]workerruntime.Mount{{Source: alias, Target: "/workspace"}})
+	if err != nil {
+		t.Fatalf("in-root symlink rejected: %v", err)
+	}
+	if canonical[0].Source != resolvedInside {
+		t.Fatalf("runtime retained mutable symlink source: %+v", canonical)
+	}
+}
+
 func TestEnsureRefusedWhenWorkspaceUnusable(t *testing.T) {
 	world := newTestWorld(t, "/nonexistent.sock")
 	world.server.Workspace = NewWorkspaceProbe("/nonexistent/mikan-workspace", time.Second, time.Minute)
@@ -131,6 +271,63 @@ func TestEnsureRefusedWhenWorkspaceUnusable(t *testing.T) {
 	health := world.request(t, "GET", "/v1/health", nil, false)
 	if !strings.Contains(health.Body.String(), "workspaceError") {
 		t.Errorf("health should report workspaceError: %s", health.Body)
+	}
+}
+
+func TestEnsureRejectsUnsafeHeartbeatThreshold(t *testing.T) {
+	world := newTestWorld(t, "/nonexistent.sock")
+	world.acquireLease(t)
+
+	response := world.request(t, "POST", "/v1/runtimes", map[string]any{
+		"instanceId":       world.instance,
+		"imageSelector":    "mikan-sandbox:latest",
+		"fingerprint":      "fp-1",
+		"heartbeatStaleMs": 29_999,
+	}, true)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "at least 30000") {
+		t.Fatalf("unsafe heartbeat threshold: %d %s", response.Code, response.Body)
+	}
+}
+
+func TestDialhomeHeartbeatRequiresAdmittedControlSession(t *testing.T) {
+	world := newTestWorld(t, "/nonexistent.sock")
+	world.server.RequireHostActivityHeartbeat()
+	stop := make(chan struct{})
+	go world.server.Janitor(5*time.Millisecond, stop)
+	defer close(stop)
+	heartbeat := filepath.Join(world.server.InventoryDir, "heartbeat")
+
+	time.Sleep(20 * time.Millisecond)
+	if _, err := os.Stat(heartbeat); !os.IsNotExist(err) {
+		t.Fatalf("heartbeat refreshed before admission: %v", err)
+	}
+
+	world.server.SetControlConnected(true)
+	if _, err := os.Stat(heartbeat); err != nil {
+		t.Fatalf("heartbeat not refreshed immediately after admission: %v", err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		if _, err := os.Stat(heartbeat); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("heartbeat not refreshed after admission")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	before, err := os.ReadFile(heartbeat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	world.server.SetControlConnected(false)
+	time.Sleep(20 * time.Millisecond)
+	after, err := os.ReadFile(heartbeat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, before) {
+		t.Fatal("heartbeat continued after control disconnect")
 	}
 }
 
@@ -203,6 +400,22 @@ func TestIdempotencyKeyReplaysEnsure(t *testing.T) {
 	}
 	if count := world.server.Runtimes.Count(); count != 1 {
 		t.Fatalf("expected a single runtime, got %d", count)
+	}
+}
+
+func TestIdempotencyKeyIsScopedToLeaseEpoch(t *testing.T) {
+	world := newTestWorld(t, "/nonexistent.sock")
+	world.acquireLease(t)
+
+	_, first := world.ensureRuntime(t, "fp-1", map[string]string{"Idempotency-Key": "same"})
+	world.acquireLease(t)
+	response, rebound := world.ensureRuntime(t, "fp-1", map[string]string{"Idempotency-Key": "same"})
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("ensure under replacement lease: %d %s", response.Code, response.Body)
+	}
+	if rebound.SessionID == first.SessionID || rebound.Adopted || rebound.Epoch != world.epoch {
+		t.Fatalf("replacement epoch did not recreate runtime safely: first=%+v rebound=%+v", first, rebound)
 	}
 }
 
@@ -307,6 +520,45 @@ func TestSessionTunnelSplicesBytes(t *testing.T) {
 	}
 }
 
+func TestEffectiveRuntimeFingerprintIncludesCredentialContent(t *testing.T) {
+	plain := effectiveRuntimeFingerprint("request", "")
+	first := effectiveRuntimeFingerprint("request", "credentials-a")
+	second := effectiveRuntimeFingerprint("request", "credentials-b")
+	if plain != "request" || first == second || first == plain {
+		t.Fatalf("credential identity did not affect runtime fingerprint: %q %q %q", plain, first, second)
+	}
+}
+
+func TestCredentialContentDriftRecreatesRuntimeEvenWithSameHostFingerprint(t *testing.T) {
+	world := newTestWorld(t, "/nonexistent.sock")
+	world.acquireLease(t)
+	ensure := func(content string) workerruntime.Runtime {
+		response := world.request(t, "POST", "/v1/runtimes", map[string]any{
+			"instanceId":    world.instance,
+			"imageSelector": "mikan-sandbox:latest",
+			"fingerprint":   "host-fingerprint",
+			"credentialFiles": []map[string]string{{
+				"target":        "/root/.secret",
+				"contentBase64": base64.StdEncoding.EncodeToString([]byte(content)),
+			}},
+		}, true)
+		if response.Code != http.StatusOK {
+			t.Fatalf("ensure credential runtime: %d %s", response.Code, response.Body)
+		}
+		var runtime workerruntime.Runtime
+		if err := json.Unmarshal(response.Body.Bytes(), &runtime); err != nil {
+			t.Fatal(err)
+		}
+		return runtime
+	}
+
+	first := ensure("old")
+	second := ensure("new")
+	if second.SessionID == first.SessionID || second.Fingerprint == first.Fingerprint {
+		t.Fatalf("credential drift reused runtime: first=%+v second=%+v", first, second)
+	}
+}
+
 func TestMaterializeCredentials(t *testing.T) {
 	dir := t.TempDir()
 	server := &Server{
@@ -315,17 +567,20 @@ func TestMaterializeCredentials(t *testing.T) {
 	}
 
 	// no credentials → no mounts, no dir
-	mounts, err := server.materializeCredentials("c1", nil)
-	if err != nil || mounts != nil {
+	mounts, generation, err := server.materializeCredentials("c1", 1, nil)
+	if err != nil || mounts != nil || generation != "" {
 		t.Fatalf("empty credentials: %v %v", mounts, err)
 	}
 
 	files := []credentialFile{
 		{Target: "/root/.config/gws/credentials.json", ContentBase64: base64.StdEncoding.EncodeToString([]byte("{token}"))},
 	}
-	mounts, err = server.materializeCredentials("c1", files)
+	mounts, generation, err = server.materializeCredentials("c1", 1, files)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if generation == "" {
+		t.Fatal("credential generation was not published")
 	}
 	if len(mounts) != 1 || mounts[0].Target != "/root/.config/gws/credentials.json" {
 		t.Fatalf("unexpected mounts: %+v", mounts)
@@ -343,16 +598,47 @@ func TestMaterializeCredentials(t *testing.T) {
 		t.Fatalf("credential leaked into a workspace path: %s", mounts[0].Source)
 	}
 
-	// re-materializing replaces (rotation): different content, same slot
+	// Rotation publishes a different immutable generation without mutating
+	// files that may still back the previous runtime.
+	oldSource := mounts[0].Source
 	files[0].ContentBase64 = base64.StdEncoding.EncodeToString([]byte("{rotated}"))
-	mounts, _ = server.materializeCredentials("c1", files)
+	mounts, _, err = server.materializeCredentials("c1", 2, files)
+	if err != nil {
+		t.Fatal(err)
+	}
 	content, _ = os.ReadFile(mounts[0].Source)
-	if string(content) != "{rotated}" {
-		t.Fatalf("rotation not applied: %q", content)
+	if string(content) != "{rotated}" || mounts[0].Source == oldSource {
+		t.Fatalf("rotation did not create a new generation: %q %+v", content, mounts)
+	}
+	oldContent, _ := os.ReadFile(oldSource)
+	if string(oldContent) != "{token}" {
+		t.Fatalf("rotation mutated live generation: %q", oldContent)
+	}
+	if err := os.WriteFile(mounts[0].Source, []byte("corrupt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := server.materializeCredentials("c1", 2, files); err == nil || !strings.Contains(err.Error(), "content differs") {
+		t.Fatalf("corrupt immutable generation was accepted: %v", err)
+	}
+	server.removeCredentialEpochsThrough("c1", 1)
+	if _, err := os.Stat(oldSource); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("old credential epoch survived cleanup: %v", err)
+	}
+	if _, err := os.Stat(mounts[0].Source); err != nil {
+		t.Fatalf("new credential epoch was removed by stale cleanup: %v", err)
 	}
 
-	// a relative target is rejected
-	if _, err := server.materializeCredentials("c1", []credentialFile{{Target: "rel/path", ContentBase64: "Zm9v"}}); err == nil {
+	// relative, workspace, and duplicate targets are rejected
+	if _, _, err := server.materializeCredentials("c1", 3, []credentialFile{{Target: "rel/path", ContentBase64: "Zm9v"}}); err == nil {
 		t.Fatal("expected rejection of relative credential target")
+	}
+	if _, _, err := server.materializeCredentials("c1", 3, []credentialFile{{Target: "/workspace/secret", ContentBase64: "Zm9v"}}); err == nil {
+		t.Fatal("expected rejection of shared-workspace credential target")
+	}
+	if _, _, err := server.materializeCredentials("c1", 3, []credentialFile{
+		{Target: "/root/secret", ContentBase64: "b25l"},
+		{Target: "/root/secret", ContentBase64: "dHdv"},
+	}); err == nil {
+		t.Fatal("expected rejection of duplicate credential target")
 	}
 }

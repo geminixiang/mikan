@@ -40,7 +40,9 @@ import {
   hasMaterializedChatSession,
   registerThreadSession,
 } from "../../sessions/chat-history-sync.js";
-import { conversationIdOf } from "../../sessions/session-key.js";
+import { conversationIdOf, scopeSessionIdentity } from "../../sessions/session-key.js";
+import type { ConversationStorageManager } from "../../sessions/conversation-storage-manager.js";
+import type { ResolvedConversationStorage } from "../../sessions/types.js";
 import {
   isSlackThreadSessionKey,
   planSlackAdapterSession,
@@ -132,6 +134,7 @@ export class SlackMessagingBot implements MessagingBot {
   private handler: MessagingEventHandler;
   private workingDir: string;
   private store: ChannelStore;
+  private readonly storageManager?: ConversationStorageManager;
   private botUserId: string | null = null;
   private botId: string | null = null;
   private teamId: string | null = null;
@@ -143,21 +146,61 @@ export class SlackMessagingBot implements MessagingBot {
   private queues = new Map<string, MessagingEventQueue>();
   private eventsWatcher: EventsWatcher | null = null;
 
+  private storageId(conversationId: string): string {
+    return (
+      this.storageManager?.requireResolved("slack", conversationId).storageKey ?? conversationId
+    );
+  }
+
+  private storageKey(conversationId: string): string {
+    return this.storageManager?.storageKey("slack", conversationId) ?? conversationId;
+  }
+
+  private async resolveStorage(
+    conversationId: string,
+  ): Promise<ResolvedConversationStorage | undefined> {
+    return this.storageManager?.resolve("slack", conversationId);
+  }
+
+  private scopeEvent(event: ConversationEvent): ConversationEvent {
+    if (!this.storageManager) return event;
+    const storage = this.storageManager.requireResolved("slack", event.conversationId);
+    const platformSessionKey = event.sessionKey ?? event.conversationId;
+    return {
+      ...event,
+      storageKey: storage.storageKey,
+      conversationDir: storage.conversationDir,
+      runtimeSessionKey: scopeSessionIdentity(
+        platformSessionKey,
+        event.conversationId,
+        storage.storageKey,
+      ).runtimeSessionKey,
+    };
+  }
+
   private createContext(event: SlackEvent): ConversationContext {
+    const conversationDir =
+      this.storageManager?.requireResolved("slack", event.conversationId).conversationDir ??
+      join(this.workingDir, event.conversationId);
     return createSlackAdapters(event, this, {
-      replyMode:
-        resolveConversationSettings(join(this.workingDir, event.conversationId)).slack?.replyMode ??
-        "top-level",
+      replyMode: resolveConversationSettings(conversationDir).slack?.replyMode ?? "top-level",
     });
   }
 
   constructor(
     handler: MessagingEventHandler,
-    config: { appToken: string; botToken: string; workingDir: string; store: ChannelStore },
+    config: {
+      appToken: string;
+      botToken: string;
+      workingDir: string;
+      store: ChannelStore;
+      storageManager?: ConversationStorageManager;
+    },
   ) {
     this.handler = handler;
     this.workingDir = config.workingDir;
     this.store = config.store;
+    this.storageManager = config.storageManager;
     this.socketClient = new SocketModeClient({
       appToken: config.appToken,
       // Default 5s is too tight: brief event-loop stalls (e.g. backfill, sync fs)
@@ -430,7 +473,7 @@ export class SlackMessagingBot implements MessagingBot {
   }
 
   logToFile(channel: string, entry: object): void {
-    appendChannelLog(this.workingDir, channel, entry);
+    appendChannelLog(this.workingDir, this.storageId(channel), entry);
   }
 
   logBotResponse(
@@ -440,7 +483,7 @@ export class SlackMessagingBot implements MessagingBot {
     threadTs?: string,
     slackBlocks?: object[],
   ): void {
-    appendBotResponseLog(this.workingDir, channel, text, ts, threadTs, {
+    appendBotResponseLog(this.workingDir, this.storageId(channel), text, ts, threadTs, {
       platform: "slack",
       ...(slackBlocks ? { slackBlocks } : {}),
     });
@@ -474,7 +517,8 @@ export class SlackMessagingBot implements MessagingBot {
    */
   enqueueEvent(event: ConversationEvent): boolean {
     const conversationId = event.conversationId;
-    const queue = this.getQueue(conversationId);
+    const queueKey = this.storageManager?.storageKey("slack", conversationId) ?? conversationId;
+    const queue = this.getQueue(queueKey);
     if (queue.size() >= 5) {
       log.logWarning(
         `Event queue full for ${conversationId}, discarding: ${event.text.substring(0, 50)}`,
@@ -483,6 +527,7 @@ export class SlackMessagingBot implements MessagingBot {
     }
     log.logInfo(`Enqueueing event for ${conversationId}: ${event.text.substring(0, 50)}`);
     queue.enqueue(async () => {
+      const storage = await this.storageManager?.resolve("slack", conversationId);
       let anchorTs: string | undefined;
       if (!event.thread_ts) {
         try {
@@ -512,14 +557,18 @@ export class SlackMessagingBot implements MessagingBot {
       const eventForRun = eventPlan.event;
       if (eventPlan.initialMessageTs && eventForRun.sessionKey) {
         registerThreadSession({
-          conversationDir: join(this.workingDir, conversationId),
+          conversationDir: storage?.conversationDir ?? join(this.workingDir, conversationId),
           sessionKey: eventForRun.sessionKey,
         });
       }
 
-      const runQueueKey = planSlackAdapterSession(eventForRun, {
+      const platformRunQueueKey = planSlackAdapterSession(eventForRun, {
         initialMessageTs: eventPlan.initialMessageTs,
       }).sessionKey;
+      const runQueueKey = storage
+        ? scopeSessionIdentity(platformRunQueueKey, conversationId, storage.storageKey)
+            .runtimeSessionKey
+        : platformRunQueueKey;
       this.getQueue(runQueueKey).enqueue(async () => {
         const slackEvent: SlackEvent = {
           type: eventForRun.type as SlackEvent["type"],
@@ -536,13 +585,26 @@ export class SlackMessagingBot implements MessagingBot {
           })),
           sessionKey: eventForRun.sessionKey,
         };
+        const scopedEvent = storage
+          ? {
+              ...eventForRun,
+              storageKey: storage.storageKey,
+              conversationDir: storage.conversationDir,
+              runtimeSessionKey: scopeSessionIdentity(
+                eventForRun.sessionKey ?? conversationId,
+                conversationId,
+                storage.storageKey,
+              ).runtimeSessionKey,
+            }
+          : eventForRun;
         const context = createSlackAdapters(slackEvent, this, {
           initialMessageTs: eventPlan.initialMessageTs,
           replyMode:
-            resolveConversationSettings(join(this.workingDir, eventForRun.conversationId)).slack
-              ?.replyMode ?? "top-level",
+            resolveConversationSettings(
+              storage?.conversationDir ?? join(this.workingDir, conversationId),
+            ).slack?.replyMode ?? "top-level",
         });
-        return this.handler.handleEvent(eventForRun, this, context);
+        return this.handler.handleEvent(scopedEvent, this, context);
       });
     });
     return true;
@@ -561,15 +623,33 @@ export class SlackMessagingBot implements MessagingBot {
     return queue;
   }
 
-  private resolveQueueKey(conversationId: string, sessionKey: string): string {
+  private resolvePlatformQueueKey(conversationId: string, sessionKey: string): string {
     if (!isSlackThreadSessionKey(sessionKey)) return sessionKey;
-    if (this.handler.isRunning(sessionKey)) return sessionKey;
+    const runtimeSessionKey = this.storageManager
+      ? scopeSessionIdentity(
+          sessionKey,
+          conversationId,
+          this.storageManager.storageKey("slack", conversationId),
+        ).runtimeSessionKey
+      : sessionKey;
+    if (this.handler.isRunning(runtimeSessionKey)) return sessionKey;
     return this.hasKnownThreadSession(conversationId, sessionKey) ? sessionKey : conversationId;
+  }
+
+  private resolveQueueKey(conversationId: string, sessionKey: string): string {
+    const platformQueueKey = this.resolvePlatformQueueKey(conversationId, sessionKey);
+    return this.storageManager
+      ? scopeSessionIdentity(
+          platformQueueKey,
+          conversationId,
+          this.storageManager.storageKey("slack", conversationId),
+        ).runtimeSessionKey
+      : platformQueueKey;
   }
 
   private hasKnownThreadSession(conversationId: string, sessionKey: string): boolean {
     return hasMaterializedChatSession({
-      conversationDir: join(this.workingDir, conversationId),
+      conversationDir: join(this.workingDir, this.storageKey(conversationId)),
       sessionKey,
     });
   }
@@ -600,6 +680,9 @@ export class SlackMessagingBot implements MessagingBot {
       bot: this,
       createContext: (event) => this.createContext(event as SlackEvent),
       deferAttachmentsUntilRun: true,
+      resolveStorage: this.storageManager
+        ? () => this.storageManager!.resolve("slack", options.event.conversationId)
+        : undefined,
     }).then(
       (outcome) => {
         // Slack logs eagerly via logUserMessage; when intake does not enqueue,
@@ -654,7 +737,7 @@ export class SlackMessagingBot implements MessagingBot {
       const STUCK_THRESHOLD_MS = 10 * 60 * 1000;
 
       for (const session of runningSessions) {
-        const channelId = conversationIdOf(session.sessionKey);
+        const channelId = session.conversationId ?? conversationIdOf(session.sessionKey);
         const channel = this.channels.get(channelId);
         const channelName = channel ? `#${channel.name}` : channelId;
         const elapsed = Math.floor((Date.now() - session.startedAt) / 60000);
@@ -933,6 +1016,7 @@ export class SlackMessagingBot implements MessagingBot {
       thread_ts?: string;
     },
   ): Promise<void> {
+    await this.resolveStorage(payload.channel_id);
     const { event, context } = this.buildSlashCommandEvent(payload, {
       includeText: route.includeText,
       thread: route.thread,
@@ -944,7 +1028,7 @@ export class SlackMessagingBot implements MessagingBot {
           }
         : {}),
     });
-    await this.handler.handleEvent(event, this, context);
+    await this.handler.handleEvent(this.scopeEvent(event), this, context);
   }
 
   private async routeSlashNewCommand(payload: {
@@ -954,6 +1038,7 @@ export class SlackMessagingBot implements MessagingBot {
     user_name?: string;
   }): Promise<void> {
     const conversationId = payload.channel_id;
+    await this.resolveStorage(conversationId);
     if (!conversationId.startsWith("D")) {
       await this.postEphemeral(
         conversationId,
@@ -985,7 +1070,19 @@ export class SlackMessagingBot implements MessagingBot {
       enqueueEvent: (event: ConversationEvent) => this.enqueueEvent(event),
       getMessagingInfo: () => this.getMessagingInfo(),
     };
-    await this.handler.handleNewCommand(conversationId, conversationId, commandMessagingBot);
+    const storage = await this.resolveStorage(conversationId);
+    const runtimeSessionKey = storage
+      ? scopeSessionIdentity(conversationId, conversationId, storage.storageKey).runtimeSessionKey
+      : conversationId;
+    if (storage) {
+      await this.handler.handleNewCommand(runtimeSessionKey, conversationId, commandMessagingBot, {
+        platformSessionKey: conversationId,
+        storageKey: storage.storageKey,
+        conversationDir: storage.conversationDir,
+      });
+    } else {
+      await this.handler.handleNewCommand(runtimeSessionKey, conversationId, commandMessagingBot);
+    }
   }
 
   private setupEventHandlers(): void {
@@ -1062,7 +1159,7 @@ export class SlackMessagingBot implements MessagingBot {
     this.processSlackMessageIntake({
       event: slackEvent,
       attachmentsPromise,
-      queueKey: this.resolveQueueKey(e.channel, sessionKey),
+      queueKey: this.resolvePlatformQueueKey(e.channel, sessionKey),
       isAutoReplyCandidate: false,
       addressed: true,
     });
@@ -1197,7 +1294,7 @@ export class SlackMessagingBot implements MessagingBot {
     this.processSlackMessageIntake({
       event: slackEvent,
       attachmentsPromise,
-      queueKey: this.resolveQueueKey(e.channel, activeSessionKey),
+      queueKey: this.resolvePlatformQueueKey(e.channel, activeSessionKey),
       isAutoReplyCandidate: !isDM,
       addressed: isDM,
     });
@@ -1284,7 +1381,9 @@ export class SlackMessagingBot implements MessagingBot {
 
     if (!action.action_id?.startsWith("force_stop_")) {
       ack();
-      this.handleSlackInteraction(body, action);
+      void this.handleSlackInteraction(body, action).catch((err) => {
+        log.logWarning("Slack interaction storage resolution failed", String(err));
+      });
       return;
     }
 
@@ -1295,7 +1394,11 @@ export class SlackMessagingBot implements MessagingBot {
     const sessionKey =
       action.value ?? action.action_id.replace("force_stop_", "").replace(/_/g, ":");
     const userId = body.user?.id;
-    const channelId = body.container?.channel_id || conversationIdOf(sessionKey);
+    const runtimeSession = this.handler
+      .getRunningSessions()
+      .find((session) => session.sessionKey === sessionKey);
+    const channelId =
+      body.container?.channel_id ?? runtimeSession?.conversationId ?? conversationIdOf(sessionKey);
 
     log.logInfo(`[Force Stop] User ${userId} requested force stop for ${sessionKey}`);
 
@@ -1318,11 +1421,15 @@ export class SlackMessagingBot implements MessagingBot {
     }
   }
 
-  private handleSlackInteraction(body: SlackBlockActionBody, action: SlackBlockAction): void {
+  private async handleSlackInteraction(
+    body: SlackBlockActionBody,
+    action: SlackBlockAction,
+  ): Promise<void> {
     const container = body.container ?? {};
     const channelId = container.channel_id;
     const userId = body.user?.id;
     if (!channelId || !userId) return;
+    await this.resolveStorage(channelId);
 
     const selectedOption = action.selected_option;
     const selectedOptions = Array.isArray(action.selected_options)
@@ -1390,7 +1497,7 @@ export class SlackMessagingBot implements MessagingBot {
         attachments: [],
         sessionKey,
       };
-      return this.handler.handleEvent(event, this, this.createContext(slackEvent));
+      return this.handler.handleEvent(this.scopeEvent(event), this, this.createContext(slackEvent));
     });
   }
 
@@ -1398,12 +1505,14 @@ export class SlackMessagingBot implements MessagingBot {
    * Log a user message to log.jsonl after attachments are ready.
    */
   private async logUserMessage(event: SlackEvent): Promise<Attachment[]> {
+    await this.resolveStorage(event.channel);
+    const storageId = this.storageId(event.channel);
     const user = this.users.get(event.user);
     let attachments: Attachment[] = [];
     let attachmentError: unknown;
     if (event.files) {
       try {
-        attachments = await this.store.processAttachments(event.channel, event.files, event.ts);
+        attachments = await this.store.processAttachments(storageId, event.files, event.ts);
       } catch (err) {
         attachmentError = err;
       }
@@ -1439,8 +1548,10 @@ export class SlackMessagingBot implements MessagingBot {
     attachments?: unknown[];
     files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
   }): Promise<Attachment[]> {
+    await this.resolveStorage(event.channel);
+    const storageId = this.storageId(event.channel);
     const attachments = event.files
-      ? await this.store.processAttachments(event.channel, event.files, event.ts)
+      ? await this.store.processAttachments(storageId, event.files, event.ts)
       : [];
     const botName =
       event.username ?? event.bot_profile?.name ?? event.bot_profile?.real_name ?? event.bot_id;
@@ -1466,7 +1577,8 @@ export class SlackMessagingBot implements MessagingBot {
   // ==========================================================================
 
   private async getExistingTimestamps(channelId: string): Promise<Set<string>> {
-    const logPath = join(this.workingDir, channelId, "log.jsonl");
+    await this.resolveStorage(channelId);
+    const logPath = join(this.workingDir, this.storageId(channelId), "log.jsonl");
     const timestamps = new Set<string>();
     if (!existsSync(logPath)) return timestamps;
 
@@ -1573,8 +1685,9 @@ export class SlackMessagingBot implements MessagingBot {
 
       const user = this.users.get(msg.user!);
       const text = this.stripOwnMention(msg.text);
+      const storageId = this.storageId(channelId);
       const attachments = msg.files
-        ? await this.store.processAttachments(channelId, msg.files, msg.ts!)
+        ? await this.store.processAttachments(storageId, msg.files, msg.ts!)
         : [];
 
       this.logToFile(channelId, {
@@ -1599,7 +1712,7 @@ export class SlackMessagingBot implements MessagingBot {
     // Only backfill channels that already have a log.jsonl (mikan has interacted with them before)
     const channelsToBackfill: Array<[string, SlackChannel]> = [];
     for (const [channelId, channel] of this.channels) {
-      const logPath = join(this.workingDir, channelId, "log.jsonl");
+      const logPath = join(this.workingDir, this.storageKey(channelId), "log.jsonl");
       if (existsSync(logPath)) {
         channelsToBackfill.push([channelId, channel]);
       }

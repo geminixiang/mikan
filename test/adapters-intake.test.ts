@@ -355,6 +355,92 @@ describe("processMessageIntake", () => {
     );
   });
 
+  test("resolves scoped storage before every intake side effect", async () => {
+    const order: string[] = [];
+    const handler = makeHandler();
+    const queued: Array<() => Promise<void>> = [];
+    const options = makeOptions({
+      eventBase: makeEvent({ sessionKey: "C1:T1" }),
+      queueKey: "C1:T1",
+      resolveStorage: vi.fn(async () => {
+        order.push("resolve");
+        return {
+          platform: "slack",
+          conversationId: "C1",
+          storageKey: "slack-c1-deadbeef",
+          conversationDir: "/workspace/slack-c1-deadbeef",
+          migratedLegacy: false,
+        };
+      }),
+      processAttachments: vi.fn(async (storage) => {
+        order.push(`attachments:${storage?.storageKey}`);
+        return [];
+      }),
+      log: vi.fn((_entry, storage) => {
+        order.push(`log:${storage?.storageKey}`);
+      }),
+      enqueue: (queueKey, work) => {
+        order.push(`queue:${queueKey}`);
+        queued.push(work);
+      },
+      createContext: vi.fn((event) => {
+        order.push(`context:${event.runtimeSessionKey}`);
+        return context;
+      }),
+      handler,
+    });
+
+    expect(await processMessageIntake(options)).toBe("enqueued");
+    expect(order).toEqual([
+      "resolve",
+      "attachments:slack-c1-deadbeef",
+      "log:slack-c1-deadbeef",
+      "queue:slack-c1-deadbeef:T1",
+    ]);
+
+    await queued[0]!();
+    expect(order.at(-1)).toBe("context:slack-c1-deadbeef:T1");
+    expect(handler.handleEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: "C1",
+        sessionKey: "C1:T1",
+        storageKey: "slack-c1-deadbeef",
+        conversationDir: "/workspace/slack-c1-deadbeef",
+        runtimeSessionKey: "slack-c1-deadbeef:T1",
+      }),
+      options.bot,
+      context,
+    );
+  });
+
+  test("storage-aware stop targets scoped runtime but replies through raw wire id", async () => {
+    const handler = makeHandler(["telegram-123-deadbeef:T1"]);
+    const options = makeOptions({
+      eventBase: makeEvent({ conversationId: "123", sessionKey: "123:T1", text: "stop" }),
+      queueKey: "123:T1",
+      resolveStorage: async () => ({
+        platform: "telegram",
+        conversationId: "123",
+        storageKey: "telegram-123-deadbeef",
+        conversationDir: "/workspace/telegram-123-deadbeef",
+        migratedLegacy: false,
+      }),
+      handler,
+    });
+
+    expect(await processMessageIntake(options)).toBe("magic-word");
+    expect(handler.handleStop).toHaveBeenCalledWith(
+      "telegram-123-deadbeef:T1",
+      "123",
+      options.bot,
+      {
+        platformSessionKey: "123:T1",
+        storageKey: "telegram-123-deadbeef",
+        conversationDir: "/workspace/telegram-123-deadbeef",
+      },
+    );
+  });
+
   test("can defer attachment work until the queued run starts", async () => {
     const handler = makeHandler();
     const work: Array<() => Promise<void>> = [];

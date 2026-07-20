@@ -1,5 +1,6 @@
 import { existsSync } from "fs";
 import * as log from "../../log.js";
+import type { ConversationStorageManager } from "../../sessions/conversation-storage-manager.js";
 import { GithubApiError, GithubClient, GITHUB_MAX_COMMENT_LENGTH, githubRetry } from "./client.js";
 import {
   CLOUD_BUILD_APP_SLUG,
@@ -82,11 +83,15 @@ export class GithubOps implements PlatformGithubOps {
     private readonly config: {
       workingDir: string;
       cloudBuild?: GithubBotConfig["cloudBuild"];
+      storageManager?: ConversationStorageManager;
     },
   ) {}
 
   private repoDir(conversationId: string): string {
-    return conversationRepoDir(this.config.workingDir, conversationId);
+    const storageId =
+      this.config.storageManager?.requireResolved("github", conversationId).storageKey ??
+      conversationId;
+    return conversationRepoDir(this.config.workingDir, storageId);
   }
 
   /**

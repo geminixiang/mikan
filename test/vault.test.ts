@@ -145,6 +145,19 @@ describe("FileVaultManager", () => {
     );
   });
 
+  test("atomically migrates a vault key and rejects conflicting authorities", () => {
+    const mgr = new FileVaultManager(tmpDir);
+    mgr.upsertEnv("legacy-key", { TOKEN: "secret" });
+
+    expect(mgr.migrateKey("legacy-key", "scoped-key")).toBe(true);
+    expect(mgr.resolve("legacy-key")).toBeUndefined();
+    expect(mgr.resolve("scoped-key")?.env).toEqual({ TOKEN: "secret" });
+    expect(mgr.migrateKey("legacy-key", "scoped-key")).toBe(false);
+
+    mgr.upsertEnv("legacy-key", { TOKEN: "old" });
+    expect(() => mgr.migrateKey("legacy-key", "scoped-key")).toThrow("Vault migration conflict");
+  });
+
   test("lists and deletes shared vaults", () => {
     mkdirSync(join(vaultsDir, "shared", "gliaclaw"), { recursive: true });
     mkdirSync(join(vaultsDir, "shared", "another"), { recursive: true });

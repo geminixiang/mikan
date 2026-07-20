@@ -1,6 +1,10 @@
 import { join } from "node:path";
-import type { GondolinRemoteSettings, ResourceLimits } from "../types.js";
-import { assertRemoteConfigured, gondolinResources } from "./gondolin.js";
+import type { GondolinNetworkPolicy, GondolinRemoteSettings, ResourceLimits } from "../types.js";
+import {
+  assertRemoteConfigured,
+  configureGondolinNetworkPolicy,
+  gondolinResources,
+} from "./gondolin.js";
 import { gondolinFleet } from "./gondolin-fleet.js";
 import { gondolinGateway } from "./gondolin-gateway.js";
 import { gondolinInventory } from "./gondolin-inventory.js";
@@ -14,6 +18,8 @@ export interface GondolinBootstrapOptions {
   limits?: ResourceLimits;
   /** Boosted limits applied while a runtime holds a boost. */
   boostLimits?: ResourceLimits;
+  /** Guest HTTP(S) egress policy; omitted preserves Gondolin's existing behavior. */
+  network?: GondolinNetworkPolicy;
   /** Remote fleet settings (workers, gateway); omit for local-only gondolin. */
   remote?: GondolinRemoteSettings;
   /**
@@ -33,10 +39,13 @@ export interface GondolinBootstrapOptions {
  */
 export function configureGondolinRuntime(options: GondolinBootstrapOptions): void {
   gondolinResources.configure(options.limits, options.boostLimits);
+  configureGondolinNetworkPolicy(options.network);
   gondolinInventory.configure(join(options.stateDir, "gondolin-runtimes"));
   gondolinPlacements.configure(join(options.stateDir, "gondolin-placement.json"));
-  gondolinFleet.configure(options.remote);
   gondolinJoin.configure(join(options.stateDir, "gondolin-gateway"));
+  gondolinFleet.configure(options.remote, {
+    expectedWorkerNames: () => gondolinJoin.enrolledWorkerNames(),
+  });
   gondolinGateway.configure(options.remote?.gateway);
   if (options.requireRemote) {
     assertRemoteConfigured();

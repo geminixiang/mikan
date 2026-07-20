@@ -67,13 +67,26 @@ func WriteFrame(w io.Writer, frame Frame) error {
 	if err != nil {
 		return err
 	}
+	if len(payload) > maxFrameBytes {
+		return fmt.Errorf("frame too large: %d bytes", len(payload))
+	}
 	header := make([]byte, 4)
 	binary.BigEndian.PutUint32(header, uint32(len(payload)))
-	if _, err := w.Write(header); err != nil {
-		return err
+	return writeAll(w, append(header, payload...))
+}
+
+func writeAll(w io.Writer, payload []byte) error {
+	for len(payload) > 0 {
+		written, err := w.Write(payload)
+		if err != nil {
+			return err
+		}
+		if written <= 0 {
+			return io.ErrShortWrite
+		}
+		payload = payload[written:]
 	}
-	_, err = w.Write(payload)
-	return err
+	return nil
 }
 
 // ReadFrame decodes one frame from a stream.
@@ -118,6 +131,8 @@ type Client struct {
 	Log       *slog.Logger
 
 	PingInterval time.Duration
+	// RegisterTimeout bounds the explicit gateway admission handshake.
+	RegisterTimeout time.Duration
 	// PongTimeout bounds how long a ping may remain unacknowledged before the
 	// control channel is treated as half-open and reconnected.
 	PongTimeout time.Duration
@@ -145,6 +160,9 @@ func (c *Client) Run(stop <-chan struct{}) {
 	}
 	if c.PingInterval == 0 {
 		c.PingInterval = 15 * time.Second
+	}
+	if c.RegisterTimeout == 0 {
+		c.RegisterTimeout = 15 * time.Second
 	}
 	if c.PongTimeout == 0 {
 		c.PongTimeout = 10 * time.Second
@@ -196,6 +214,7 @@ func (c *Client) Run(stop <-chan struct{}) {
 
 // session runs one control-channel lifetime. Returns nil only when stop fired.
 func (c *Client) session(stop <-chan struct{}) error {
+	c.Server.SetControlConnected(false)
 	conn, err := c.Dial()
 	if err != nil {
 		return fmt.Errorf("dial control: %w", err)
@@ -206,6 +225,24 @@ func (c *Client) session(stop <-chan struct{}) error {
 	if err := WriteFrame(writes, c.registerFrame()); err != nil {
 		return fmt.Errorf("register: %w", err)
 	}
+	if err := conn.SetReadDeadline(time.Now().Add(c.RegisterTimeout)); err != nil {
+		return fmt.Errorf("set registration deadline: %w", err)
+	}
+	ack, err := ReadFrame(conn)
+	if err != nil {
+		return fmt.Errorf("registration acknowledgement: %w", err)
+	}
+	if err := conn.SetReadDeadline(time.Time{}); err != nil {
+		return fmt.Errorf("clear registration deadline: %w", err)
+	}
+	if ack.Type == "register-error" {
+		return fmt.Errorf("gateway refused registration: %s", ack.Message)
+	}
+	if ack.Type != "register-ok" {
+		return fmt.Errorf("unexpected registration acknowledgement %q", ack.Type)
+	}
+	c.Server.SetControlConnected(true)
+	defer c.Server.SetControlConnected(false)
 	c.Log.Info("registered with mikan host", "name", c.Name, "runtimes", c.Server.Runtimes.Count())
 
 	frames := make(chan Frame)
@@ -274,7 +311,7 @@ func (c *Client) session(stop <-chan struct{}) error {
 			case "request":
 				go c.serveRPC(writes, frame)
 			case "open-tunnel":
-				go c.dialBackTunnel(frame)
+				go c.dialBackTunnel(writes, frame)
 			case "pong":
 				stopPongTimer()
 			default:
@@ -349,43 +386,62 @@ func (c *Client) serveRPC(writes *syncWriter, frame Frame) {
 // dialBackTunnel opens the per-command data connection and splices it onto
 // the runtime's session socket — the host-side abort-by-disconnect semantics
 // pass through unchanged.
-func (c *Client) dialBackTunnel(frame Frame) {
+func (c *Client) dialBackTunnel(writes *syncWriter, frame Frame) {
+	refuse := func(err error) {
+		c.Log.Warn("tunnel refused", "sessionId", frame.SessionID, "error", err)
+		_ = WriteFrame(writes, Frame{Type: "tunnel-error", Nonce: frame.Nonce, Message: err.Error()})
+	}
 	entry, err := c.Server.Runtimes.Get(frame.SessionID)
 	if err != nil {
-		c.Log.Warn("tunnel for unknown runtime", "sessionId", frame.SessionID)
+		refuse(fmt.Errorf("unknown runtime %q: %w", frame.SessionID, err))
 		return
 	}
-	if err := c.authorizeTunnel(entry, frame.Headers); err != nil {
-		c.Log.Warn("tunnel refused", "sessionId", frame.SessionID, "error", err)
+	leaseID, epoch, err := c.authorizeTunnel(entry, frame.Headers)
+	if err != nil {
+		refuse(err)
 		return
 	}
 	conn, err := c.Dial()
 	if err != nil {
-		c.Log.Warn("dial-back failed", "error", err)
+		refuse(fmt.Errorf("dial back: %w", err))
 		return
 	}
 	if err := WriteFrame(conn, Frame{Type: "tunnel", Nonce: frame.Nonce, Name: c.Name}); err != nil {
 		conn.Close()
+		refuse(fmt.Errorf("write tunnel preamble: %w", err))
 		return
 	}
 	backend, err := net.DialTimeout("unix", entry.SocketPath, 5*time.Second)
 	if err != nil {
 		conn.Close()
-		c.Log.Warn("session socket unreachable", "sessionId", frame.SessionID, "error", err)
+		refuse(fmt.Errorf("session socket unreachable: %w", err))
 		return
 	}
+	if err := c.Server.RegisterTunnel(entry.InstanceID, leaseID, epoch, conn, backend); err != nil {
+		conn.Close()
+		backend.Close()
+		refuse(err)
+		return
+	}
+	defer c.Server.UnregisterTunnel(conn)
 	splice(conn, backend)
 }
 
 // authorizeTunnel enforces the same lease fencing the listen mode applies to
 // its session endpoint.
-func (c *Client) authorizeTunnel(entry *workerruntime.Runtime, headers map[string]string) error {
+func (c *Client) authorizeTunnel(
+	entry *workerruntime.Runtime,
+	headers map[string]string,
+) (string, uint64, error) {
 	leaseID := headers["X-Mikan-Lease"]
 	epoch, err := strconv.ParseUint(headers["X-Mikan-Epoch"], 10, 64)
 	if leaseID == "" || err != nil {
-		return errors.New("missing lease headers")
+		return "", 0, errors.New("missing lease headers")
 	}
-	return c.Server.Leases.Validate(entry.InstanceID, leaseID, epoch)
+	if err := c.Server.Leases.Validate(entry.InstanceID, leaseID, epoch); err != nil {
+		return "", 0, err
+	}
+	return leaseID, epoch, nil
 }
 
 func splice(a net.Conn, b net.Conn) {
@@ -412,7 +468,10 @@ type syncWriter struct {
 func (w *syncWriter) Write(payload []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.conn.Write(payload)
+	if err := writeAll(w.conn, payload); err != nil {
+		return 0, err
+	}
+	return len(payload), nil
 }
 
 type responseRecorder struct {

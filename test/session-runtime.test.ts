@@ -20,6 +20,7 @@ import {
   openManagedSession,
 } from "../src/sessions/store.js";
 import { createConversationRuntime } from "../src/runtime/conversation-runtime.js";
+import { conversationStorageScope } from "../src/sessions/conversation-storage-scope.js";
 import type { SandboxConfig } from "../src/sandbox/index.js";
 
 let workingDir: string;
@@ -167,6 +168,90 @@ describe("ConversationRuntime handleEvent", () => {
       expect.stringContaining("second"),
       expect.anything(),
     );
+  });
+});
+
+describe("ConversationRuntime scoped storage", () => {
+  test("isolates identical wire ids across platform runtime and session state", async () => {
+    const { models, faux } = createFauxModels();
+    const runtime = makeRuntime(models);
+    faux.setResponses([
+      () => fauxAssistantMessage("discord response"),
+      () => fauxAssistantMessage("telegram response"),
+    ]);
+
+    async function runPlatform(platformName: "discord" | "telegram"): Promise<string> {
+      const scope = conversationStorageScope(platformName, "123");
+      const scopedConversationDir = join(workingDir, scope.storageKey);
+      const event: ConversationEvent = {
+        type: "message",
+        conversationId: "123",
+        conversationKind: "shared",
+        ts: `${platformName}-1`,
+        user: "U1",
+        text: platformName,
+        sessionKey: "123",
+        storageKey: scope.storageKey,
+        conversationDir: scopedConversationDir,
+        runtimeSessionKey: scope.storageKey,
+      };
+      const context: ConversationContext = {
+        message: {
+          id: event.ts,
+          sessionKey: "123",
+          conversationKind: "shared",
+          userId: "U1",
+          text: platformName,
+          attachments: [],
+        },
+        responder: makeResponder(),
+        platform: { ...testPlatform, name: platformName },
+      };
+      await runtime.handleEvent(event, bot, context);
+      return scopedConversationDir;
+    }
+
+    const discordDir = await runPlatform("discord");
+    const telegramDir = await runPlatform("telegram");
+
+    expect(discordDir).not.toBe(telegramDir);
+    expect(existsSync(join(discordDir, "sessions", "current"))).toBe(true);
+    expect(existsSync(join(telegramDir, "sessions", "current"))).toBe(true);
+  });
+
+  test("rejects forged scoped metadata before creating conversation storage", async () => {
+    const { models } = createFauxModels();
+    const runtime = makeRuntime(models);
+    const forgedDir = join(workingDir, "telegram-123-forged");
+    const event: ConversationEvent = {
+      type: "message",
+      conversationId: "123",
+      conversationKind: "shared",
+      ts: "M1",
+      user: "U1",
+      text: "hello",
+      sessionKey: "123",
+      storageKey: "telegram-123-forged",
+      conversationDir: forgedDir,
+      runtimeSessionKey: "telegram-123-forged",
+    };
+    const context: ConversationContext = {
+      message: {
+        id: "M1",
+        sessionKey: "123",
+        conversationKind: "shared",
+        userId: "U1",
+        text: "hello",
+        attachments: [],
+      },
+      responder: makeResponder(),
+      platform: { ...testPlatform, name: "discord" },
+    };
+
+    await expect(runtime.handleEvent(event, bot, context)).rejects.toThrow(
+      "Conversation storage identity does not match discord/123",
+    );
+    expect(existsSync(forgedDir)).toBe(false);
   });
 });
 

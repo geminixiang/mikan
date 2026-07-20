@@ -1,4 +1,12 @@
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -47,6 +55,7 @@ describe("Gondolin worker runtime", () => {
       RealFSProvider: class {
         constructor(public source: string) {}
       },
+      createHttpHooks: vi.fn((policy: object) => ({ httpHooks: { policy } })),
       findSession: vi.fn(async (id: string) => ({
         id,
         pid: process.pid,
@@ -83,7 +92,7 @@ describe("Gondolin worker runtime", () => {
     created = [];
     announced = [];
     exitCodes = [];
-    for (const signal of ["SIGTERM", "SIGINT"] as const) {
+    for (const signal of ["SIGTERM", "SIGINT", "SIGUSR2"] as const) {
       signalSnapshot.set(signal, process.listeners(signal) as NodeJS.SignalsListener[]);
     }
   });
@@ -128,6 +137,26 @@ describe("Gondolin worker runtime", () => {
     expect(record.socketPath).toContain("vm-1.sock");
   });
 
+  test("applies an explicitly configured HTTP egress policy", async () => {
+    await run({
+      network: {
+        blockInternalRanges: true,
+        allowedHosts: ["api.github.com"],
+        allowedInternalHosts: [],
+      },
+    });
+
+    expect(created[0]).toMatchObject({
+      httpHooks: {
+        policy: {
+          blockInternalRanges: true,
+          allowedHosts: ["api.github.com"],
+          allowedInternalHosts: [],
+        },
+      },
+    });
+  });
+
   test("shuts down cleanly on SIGTERM", async () => {
     await run();
 
@@ -161,6 +190,78 @@ describe("Gondolin worker runtime", () => {
 
     await vi.waitFor(() => expect(exitCodes).toEqual([0]), { timeout: 2000 });
     expect(vm.close).toHaveBeenCalledOnce();
+  });
+
+  test("future heartbeat mtime cannot bypass monotonic fencing", async () => {
+    const heartbeat = join(dir, "heartbeat");
+    writeFileSync(heartbeat, "fixed-sequence\n");
+    const future = new Date(Date.now() + 24 * 3600 * 1000);
+    utimesSync(heartbeat, future, future);
+
+    await run({ heartbeatStaleMs: 40 });
+
+    await vi.waitFor(() => expect(exitCodes).toEqual([0]), { timeout: 2000 });
+  });
+
+  test("heartbeat fencing closes the VM without waiting for blocked write-back", async () => {
+    const workspace = join(dir, "ws");
+    mkdirSync(workspace, { recursive: true });
+    const memory = join(workspace, "MEMORY.md");
+    writeFileSync(memory, "host");
+    let releaseRead!: () => void;
+    const blockedRead = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    vm.fs.readFile.mockImplementation(async () => {
+      await blockedRead;
+      return Buffer.from("guest");
+    });
+
+    await run({
+      heartbeatStaleMs: 40,
+      mounts: [{ source: memory, target: "/workspace/MEMORY.md" }],
+    });
+
+    await vi.waitFor(() => expect(vm.close).toHaveBeenCalledOnce(), { timeout: 2000 });
+    expect(exitCodes).toEqual([0]);
+    releaseRead();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(readFileSync(memory, "utf8")).toBe("host");
+  });
+
+  test("heartbeat fencing hard-kills a runner when graceful VM close hangs", async () => {
+    const never = new Promise<void>(() => {});
+    vm.close.mockReturnValue(never);
+    const killRunner = vi.fn().mockReturnValue(true);
+
+    await runGondolinWorker(config({ heartbeatStaleMs: 40 }), {
+      loadGondolin,
+      announce: (line) => announced.push(line),
+      exit: (code) => exitCodes.push(code),
+      pollIntervalMs: 10,
+      fencingCloseTimeoutMs: 20,
+      killRunner,
+    });
+
+    await vi.waitFor(() => expect(killRunner).toHaveBeenCalledWith(777), { timeout: 2000 });
+    expect(exitCodes).toEqual([0]);
+  });
+
+  test("heartbeat fencing preserves inventory when runner identity is ambiguous", async () => {
+    vm.close.mockReturnValue(new Promise<void>(() => {}));
+    const killRunner = vi.fn().mockReturnValue(false);
+
+    await runGondolinWorker(config({ heartbeatStaleMs: 40 }), {
+      loadGondolin,
+      announce: (line) => announced.push(line),
+      exit: (code) => exitCodes.push(code),
+      pollIntervalMs: 10,
+      fencingCloseTimeoutMs: 20,
+      killRunner,
+    });
+
+    await vi.waitFor(() => expect(exitCodes).toEqual([1]), { timeout: 2000 });
+    expect(existsSync(join(dir, "vm-1.json"))).toBe(true);
   });
 
   test("projects file mounts into the guest instead of VFS-mounting them", async () => {
@@ -220,6 +321,28 @@ describe("Gondolin worker runtime", () => {
     process.emit("SIGTERM");
     await vi.waitFor(() => expect(exitCodes).toEqual([0]));
     expect(readFileSync(memory, "utf8")).toBe("final state");
+  });
+
+  test("fencing signal skips stale final file projection", async () => {
+    const workspace = join(dir, "ws");
+    mkdirSync(workspace, { recursive: true });
+    const memory = join(workspace, "MEMORY.md");
+    writeFileSync(memory, "host-authoritative");
+    await runGondolinWorker(
+      config({ mounts: [{ source: memory, target: "/workspace/MEMORY.md" }] }),
+      {
+        loadGondolin,
+        announce: (line) => announced.push(line),
+        exit: (code) => exitCodes.push(code),
+        pollIntervalMs: 60_000,
+      },
+    );
+    vm.guestFiles.set("/workspace/MEMORY.md", Buffer.from("stale-guest"));
+
+    process.emit("SIGUSR2");
+
+    await vi.waitFor(() => expect(exitCodes).toEqual([0]));
+    expect(readFileSync(memory, "utf8")).toBe("host-authoritative");
   });
 
   test("closes the VM when boot fails after create", async () => {

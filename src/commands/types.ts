@@ -1,5 +1,10 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { MessagingBot, ConversationContext, PlatformName } from "../adapter.js";
+import type {
+  MessagingBot,
+  ConversationContext,
+  PlatformName,
+  RuntimeConversationScope,
+} from "../adapter.js";
 import type { DockerContainerManager } from "../provisioner.js";
 import type { SandboxConfig } from "../sandbox/index.js";
 import type { SandboxResourceController } from "../types.js";
@@ -36,7 +41,12 @@ export interface AdminTokenStoreLike {
 }
 
 interface CommandRuntimeBridge {
-  handleNewCommand(sessionKey: string, conversationId: string, bot: MessagingBot): Promise<void>;
+  handleNewCommand(
+    sessionKey: string,
+    conversationId: string,
+    bot: MessagingBot,
+    storage?: RuntimeConversationScope,
+  ): Promise<void>;
   switchConversationModel(conversationId: string, provider: string, model: string): boolean;
   refreshConversationEnvironment(conversationId: string): boolean;
 }
@@ -62,6 +72,11 @@ export interface CommandContext {
   conversationId: string;
   vaultConversationId?: string;
   sessionKey: string;
+  storage?: {
+    key: string;
+    conversationDir: string;
+    platformSessionKey: string;
+  };
   commandText: string;
   privateConversation: boolean;
   services: CommandServices;

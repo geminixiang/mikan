@@ -9,6 +9,37 @@ any release.
 
 ## [Unreleased]
 
+### Changed
+
+- Define `image:*` as the single-machine managed sandbox and `gondolin:remote` as the distributed sandbox direction; retain `gondolin:default` for development and diagnostics.
+- Define and begin activating the conversation-storage migration contract: wire platform IDs remain platform-only addresses, while persisted and runtime-owned resources use a platform-namespaced storage scope. Add an explicit `--migrate-conversation-storage <manifest>` operator command that atomically claims whole legacy directories, strictly fences every enrolled Gondolin worker and legacy placement before publication, migrates conversation vault authority, and writes a workspace-bound completion record only after all items succeed. Slack, Discord, Telegram, and GitHub now support scoped logs, attachments, commands, autonomous events, queues, sessions, settings, vaults, runtime/resource keys, repository clones, and Admin portal operations when that record is present; ambiguous ownership, corrupt claims/identities, disconnected enrolled workers, and vault conflicts fail closed.
+- Add a `gondolin:remote` startup guard against concurrently active Discord and Telegram until raw numeric conversation workspace/session IDs receive a platform-namespaced storage migration, preventing overlapping IDs from sharing one runtime lease and workspace authority without blocking platform combinations whose current ID domains are distinct.
+- Add a crash-recoverable host-side Gondolin coordinator lock so a second local `gondolin:remote` process cannot mutate the same placement/identity state; dead owners from the same verified OS boot are reclaimed atomically, while unreadable, cross-boot, or cross-machine owners fail closed.
+- Add an explicit two-machine Gondolin preflight that requires operator-supplied SSH targets and records distinct machine identities, virtualization/runtime prerequisites, gateway reachability, canonical shared-workspace visibility, and mutable-write latency without claiming to replace the partition/soak promotion gate.
+- Add authenticated Admin diagnostics for Gondolin worker reachability, capacity, workspace degradation, certificate expiry/30-day rotation warnings, placements, and remaining fence windows without exposing transport secrets.
+- Restrict the current shared-POSIX/NFS workspace guidance to low-latency LAN/VPC deployments while the cross-WAN persistence model remains open; canonicalize worker mount sources after containment validation so detached runtimes never reuse mutable symlink aliases.
+
+### Fixed
+
+- Fence Gondolin failover through daemon crashes by exclusively locking each worker state directory, giving detached runtimes a monotonic, atomic boot-nonce/sequence watchdog, binding heartbeat refresh to admitted host activity, delaying replacement placement until lease expiry plus a safety grace, invalidating in-flight file projection reads and skipping final sync on epoch-fencing shutdowns, strictly validating runtime inventory plus the full worker-entry process identity before rediscovery, and reaping a known QEMU runner even if its inventory disappeared during forced shutdown without signaling a reused PID.
+- Close lease-expiry lifecycle races: measure active grants with a monotonic worker clock and expire them across daemon restart while retaining their fencing epochs; synchronously close old-epoch tunnels and stop their VM before returning a replacement grant or completing release/expiry fencing; recreate a runtime after any interrupted command because Gondolin transport EOF cannot prove the admitted guest process stopped, and serialize that fencing before concurrent replacement; continuously revalidate leases during slow runtime startup, scope idempotency replay to the lease epoch, make stale janitor snapshots stop only runtimes through their expired epoch, and kill the complete pre-handshake VM process group on aborted startup.
+- Serialize per-conversation fleet lifecycle and reconciliation on both host and worker, reserve admission slots atomically across concurrent conversations without serializing VM boots, persist runtime session identity in placements, prevent stale handles from deleting replacement placements, and stop remote runtimes whose durable placement authority is missing rather than adopting them.
+- Make placement and lease mutations transactional and fail closed, with write-ahead worker/lease watermarks that preserve fencing across host crashes and storage failures; fsync both private staged files and parent-directory renames before treating those atomic state updates as durable, reject semantically invalid placement/lease snapshots, preserve active in-memory fences when a placement reconfigure fails, and use ready markers so deleted authority files cannot silently reset placement or lease epochs.
+- Reject incompatible worker protocols, malformed or oversized control/session frames, invalid successful lease/runtime responses, and failed runtime stops without dropping the placement fence.
+- Make dial-home reconnect, heartbeat timeout, tunnel refusal, gateway shutdown, worker restart, active-command cleanup, and the acknowledged protocol-v2 registration handshake deterministic instead of waiting for transport timeouts or reporting rejected workers as registered; retain host-first rolling compatibility with protocol-v1 workers.
+- Stop lease-renew retries after the first uncertain failure so repeated failed requests cannot extend the host fencing watermark forever; require identity/epoch/time validation on every protocol-v2 lease grant and renewal.
+- Reject protocol-v2 workers whose measured clock offset exceeds the lease-safety threshold, and report clock skew plus request uncertainty through authenticated diagnostics.
+
+### Security
+
+- Add an explicit Gondolin HTTP(S) egress policy shared by local and remote runtimes, with host allowlists, internal-host exceptions, and DNS-rebinding-safe private/link-local/metadata range blocking; omit it to preserve existing network behavior.
+- Bind dial-home registration and tunnel identities to the worker certificate CN and a durable per-worker active certificate fingerprint, make same-name re-enrollment atomically revoke the superseded certificate after replacement registration, issue client-only worker certificates, require an explicit authorized host CN in static listen mode, validate CSR/name identity before consuming join tokens, keep placement and identity state owner-only through atomic writes, and stage shipped credentials in immutable lease-epoch/content generations so concurrent or failed replacement cannot mutate files backing a live VM.
+
+### Tests
+
+- Expand the real Gondolin smoke gate to two workers, worker certificate rotation/replay rejection, worker and gateway restarts, epoch-fenced runtime recreation with stale delayed-write rejection, old-runtime watchdog exit, fenced failover, shared-workspace continuity, and optional concurrent create/exec/stop soak cycles.
+- Add protocol, concurrency, stale-handle, identity, framing, durable-fencing, admission, diagnostics, and workspace-latency regressions across TypeScript and Go; run the Go worker suite under the race detector in CI.
+
 ## [1.0.0-beta.21]
 
 ### Added

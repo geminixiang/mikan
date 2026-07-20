@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler } from "../src/adapter.js";
 import { TelegramMessagingBot } from "../src/adapters/telegram/bot.js";
+import { ConversationStorageManager } from "../src/sessions/conversation-storage-manager.js";
+import { conversationStorageScope } from "../src/sessions/conversation-storage-scope.js";
 
 function makeHandler(): MessagingEventHandler {
   return {
@@ -199,6 +201,33 @@ describe("TelegramMessagingBot message logging", () => {
 
   afterEach(() => {
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
+  });
+
+  test("scoped mode isolates logs and runtime keys from the raw chat id", async () => {
+    const handler = makeHandler();
+    const storageManager = new ConversationStorageManager({
+      workspaceRoot: workingDir,
+      activePlatforms: ["telegram"],
+    });
+    const bot = new TelegramMessagingBot(handler, {
+      token: "T",
+      workingDir,
+      storageManager,
+    });
+    const messageHandler = installMessageHandler(bot);
+
+    await messageHandler({ message: makeMessage({ chat: { id: 123, type: "private" } }) });
+    await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalled());
+
+    const scope = conversationStorageScope("telegram", "123");
+    expect(vi.mocked(handler.handleEvent).mock.calls[0][0]).toMatchObject({
+      conversationId: "123",
+      storageKey: scope.storageKey,
+      conversationDir: join(workingDir, scope.storageKey),
+      runtimeSessionKey: scope.storageKey,
+    });
+    expect(existsSync(join(workingDir, scope.storageKey, "log.jsonl"))).toBe(true);
+    expect(existsSync(join(workingDir, "123"))).toBe(false);
   });
 
   test("logs threadTs for shared chat replies", async () => {

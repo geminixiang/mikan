@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import * as log from "../log.js";
-import type { ResourceLimits, SandboxLimitStatus, SandboxResourceController } from "../types.js";
+import type {
+  GondolinNetworkPolicy,
+  ResourceLimits,
+  SandboxLimitStatus,
+  SandboxResourceController,
+} from "../types.js";
 import { SandboxError } from "./errors.js";
 import { gondolinInventory } from "./gondolin-inventory.js";
 import { isRuntimeGone, isRuntimeInterrupted } from "./gondolin-recovery.js";
@@ -39,6 +44,7 @@ interface GondolinSession {
 interface GondolinDesiredRuntime {
   image: string;
   imageIdentity: string;
+  network?: GondolinNetworkPolicy;
   mounts: Array<{ source: string; target: string }>;
   /** Content identity of projected credential files (rotation → drift). */
   credentialIdentity: Record<string, string>;
@@ -51,6 +57,46 @@ const sessions = new Map<string, GondolinSession>();
 const transitions = new Map<string, Promise<void>>();
 let activeShutdowns = 0;
 let shutdownGeneration = 0;
+let networkPolicy: GondolinNetworkPolicy | undefined;
+
+function normalizeHostPatterns(
+  patterns: string[] | undefined,
+  field: string,
+): string[] | undefined {
+  if (patterns === undefined) return undefined;
+  const normalized = patterns.map((pattern) => pattern.trim().toLowerCase());
+  if (normalized.some((pattern) => pattern.length === 0)) {
+    throw new SandboxError(`Error: Gondolin ${field} cannot contain an empty host pattern`);
+  }
+  if (new Set(normalized).size !== normalized.length) {
+    throw new SandboxError(`Error: Gondolin ${field} contains duplicate host patterns`);
+  }
+  return normalized.toSorted();
+}
+
+export function configureGondolinNetworkPolicy(policy?: GondolinNetworkPolicy): void {
+  if (policy?.allowedInternalHosts?.length && policy.blockInternalRanges !== true) {
+    throw new SandboxError(
+      "Error: Gondolin allowedInternalHosts requires blockInternalRanges: true",
+    );
+  }
+  networkPolicy = policy
+    ? {
+        ...(policy.allowedHosts
+          ? { allowedHosts: normalizeHostPatterns(policy.allowedHosts, "allowedHosts") }
+          : {}),
+        ...(policy.allowedInternalHosts
+          ? {
+              allowedInternalHosts: normalizeHostPatterns(
+                policy.allowedInternalHosts,
+                "allowedInternalHosts",
+              ),
+            }
+          : {}),
+        blockInternalRanges: policy.blockInternalRanges ?? false,
+      }
+    : undefined;
+}
 
 class GondolinResourceManager implements SandboxResourceController {
   private defaultLimits?: ResourceLimits;
@@ -189,6 +235,7 @@ async function resolveDesiredRuntime(
   return {
     image,
     imageIdentity,
+    network: networkPolicy,
     mounts,
     credentialIdentity: credentialIdentity(mounts),
     limits: config.resourceKey
@@ -231,6 +278,7 @@ function runtimeFingerprint(desired: GondolinDesiredRuntime): string {
         mounts: desired.mounts,
         credentials: desired.credentialIdentity,
         limits: desired.limits,
+        network: desired.network,
       }),
     )
     .digest("hex");
@@ -262,6 +310,7 @@ function createSession(
       vmCpus: gondolinCpuCount(desired.limits?.cpus),
       memory: desired.limits?.memory,
       fingerprint,
+      network: desired.network,
       workspacePath: config.workspacePath,
     })
     .catch((error) => {
@@ -347,6 +396,23 @@ function discardDeadSession(key: string, session: GondolinSession): void {
   log.logWarning(`Gondolin runtime for '${key}' died; the session will be recreated`);
 }
 
+async function fenceInterruptedSession(key: string, session: GondolinSession): Promise<void> {
+  const pending = transitions.get(key);
+  if (pending) {
+    await pending;
+    return;
+  }
+  if (sessions.get(key) !== session) return;
+  const transition = closeSession(key, session, {
+    resetResources: false,
+    throwOnError: true,
+  }).finally(() => {
+    if (transitions.get(key) === transition) transitions.delete(key);
+  });
+  transitions.set(key, transition);
+  await transition;
+}
+
 async function withRuntime<T>(
   key: string,
   config: GondolinSandboxConfig,
@@ -361,8 +427,19 @@ async function withRuntime<T>(
     } catch (error) {
       const gone = isRuntimeGone(error);
       const interrupted = isRuntimeInterrupted(error);
-      if (gone || (interrupted && handle && !(await session.transport.isRuntimeAlive(handle)))) {
+      if (gone) {
         discardDeadSession(key, session);
+      } else if (interrupted && handle) {
+        // Gondolin session disconnect only drops response routing; it does not
+        // prove an already-admitted guest process stopped. Fence the complete
+        // runtime before permitting another command to share its workspace.
+        try {
+          await fenceInterruptedSession(key, session);
+        } catch (stopError) {
+          throw new SandboxError(
+            `Error: Gondolin command for '${key}' was interrupted and its runtime could not be fenced (${stopError instanceof Error ? stopError.message : String(stopError)})`,
+          );
+        }
       }
       // Nothing reached a gone runtime, so recreating and retrying is safe;
       // an interrupted command may have side effects and must surface.

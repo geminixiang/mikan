@@ -4,15 +4,25 @@ import type { Server, Socket } from "node:net";
 import { hostname } from "node:os";
 import { TLSSocket, createServer as createTlsServer } from "node:tls";
 import * as log from "../log.js";
+import { isRecord } from "../utils/file-guards.js";
 import type { GondolinGatewaySettings } from "../types.js";
 import { gondolinFleet } from "./gondolin-fleet.js";
 import { gondolinJoin } from "./gondolin-join.js";
 import { createSessionFrameParser, encodeSessionMessage } from "./gondolin-contract.js";
-import { GondolinRemoteConnection, GondolinWorkerUnreachableError } from "./gondolin-remote.js";
+import {
+  GONDOLIN_MIN_REMOTE_PROTOCOL_VERSION,
+  GONDOLIN_REMOTE_PROTOCOL_VERSION,
+  GondolinRemoteConnection,
+  GondolinWorkerUnreachableError,
+} from "./gondolin-remote.js";
 import type { SessionClient, SessionClientCallbacks } from "./gondolin-worker-client.js";
 
 const RPC_TIMEOUT_MS = 150_000;
 const TUNNEL_TIMEOUT_MS = 15_000;
+const PREAMBLE_TIMEOUT_MS = 10_000;
+const CONTROL_IDLE_TIMEOUT_MS = 45_000;
+const MAX_PREAMBLE_FRAME_BYTES = 1 << 20;
+const MAX_CONTROL_FRAME_BYTES = 8 << 20;
 
 /** What a worker announces when it dials home (mirrors the Go register frame). */
 interface GondolinWorkerRegistration {
@@ -35,6 +45,7 @@ interface ControlFrame extends GondolinWorkerRegistration {
   status?: number;
   body?: unknown;
   nonce?: string;
+  message?: string;
   activeRuntimes?: number;
   /** join exchange */
   token?: string;
@@ -48,6 +59,7 @@ interface RegisteredWorker {
   lastSeen: number;
   activeRuntimes: number;
   workspaceError?: string;
+  certificateExpiresAt?: number;
   pendingRpc: Map<
     number,
     {
@@ -57,6 +69,7 @@ interface RegisteredWorker {
     }
   >;
   nextRpcId: number;
+  idleTimer: NodeJS.Timeout;
 }
 
 /**
@@ -64,7 +77,11 @@ interface RegisteredWorker {
  * bytes after the point where the consumer stops parsing (a tunnel connection
  * switches protocols after its preamble frame).
  */
-function createControlFrameReader(onFrame: (frame: ControlFrame, leftover: Buffer) => void): {
+function createControlFrameReader(
+  onFrame: (frame: ControlFrame, leftover: Buffer) => void,
+  onInvalid: () => void,
+  maxFrameBytes: () => number = () => MAX_CONTROL_FRAME_BYTES,
+): {
   push: (chunk: Buffer) => void;
   stop: () => void;
 } {
@@ -78,14 +95,26 @@ function createControlFrameReader(onFrame: (frame: ControlFrame, leftover: Buffe
         // onFrame may call stop() synchronously (a tunnel switching protocols)
         if (stopped || buffer.length < 4) return;
         const length = buffer.readUInt32BE(0);
+        if (length > maxFrameBytes()) {
+          stopped = true;
+          buffer = Buffer.alloc(0);
+          onInvalid();
+          return;
+        }
         if (buffer.length < 4 + length) return;
         const payload = buffer.subarray(4, 4 + length);
         buffer = buffer.subarray(4 + length);
         let frame: ControlFrame;
         try {
-          frame = JSON.parse(payload.toString("utf8")) as ControlFrame;
+          const parsed: unknown = JSON.parse(payload.toString("utf8"));
+          if (!isRecord(parsed) || typeof parsed.type !== "string")
+            throw new Error("invalid frame");
+          frame = parsed as unknown as ControlFrame;
         } catch {
-          continue; // skip malformed frames
+          stopped = true;
+          buffer = Buffer.alloc(0);
+          onInvalid();
+          return;
         }
         onFrame(frame, buffer);
       }
@@ -97,7 +126,11 @@ function createControlFrameReader(onFrame: (frame: ControlFrame, leftover: Buffe
 }
 
 function encodeControlFrame(frame: object): Buffer {
-  return encodeSessionMessage(frame);
+  const encoded = encodeSessionMessage(frame);
+  if (encoded.length - 4 > MAX_CONTROL_FRAME_BYTES) {
+    throw new Error(`control frame exceeds ${MAX_CONTROL_FRAME_BYTES} bytes`);
+  }
+  return encoded;
 }
 
 interface GatewayOverrides {
@@ -105,13 +138,69 @@ interface GatewayOverrides {
   createServer?: (onConnection: (socket: Socket) => void) => Server;
   /** mTLS verification result for a socket (tests substitute outcomes). */
   isAuthorized?: (socket: Socket) => boolean;
+  /** Bind the claimed worker name to its authenticated certificate identity. */
+  isWorkerNameAuthorized?: (
+    socket: Socket,
+    workerName: string,
+    purpose: "register" | "tunnel",
+  ) => boolean;
+  activateWorkerCertificate?: (socket: Socket, workerName: string) => boolean;
   leaseTtlSeconds?: number;
   rpcTimeoutMs?: number;
   tunnelTimeoutMs?: number;
+  preambleTimeoutMs?: number;
+  controlIdleTimeoutMs?: number;
 }
 
 function defaultIsAuthorized(socket: Socket): boolean {
   return socket instanceof TLSSocket && socket.authorized;
+}
+
+function defaultIsWorkerNameAuthorized(
+  socket: Socket,
+  workerName: string,
+  purpose: "register" | "tunnel",
+): boolean {
+  if (!(socket instanceof TLSSocket)) return false;
+  const certificate = socket.getPeerCertificate();
+  if (certificate.subject?.CN !== workerName || typeof certificate.fingerprint256 !== "string") {
+    return false;
+  }
+  if (purpose === "register") {
+    if (gondolinJoin.isIssuedWorkerCertificate(workerName, certificate.fingerprint256)) return true;
+    return false;
+  }
+  return gondolinJoin.isActiveWorkerCertificate(workerName, certificate.fingerprint256);
+}
+
+function adoptLegacyWorkerCertificate(socket: Socket, workerName: string): boolean {
+  if (!(socket instanceof TLSSocket)) return true;
+  const fingerprint = socket.getPeerCertificate().fingerprint256;
+  if (typeof fingerprint !== "string") return false;
+  try {
+    return gondolinJoin.adoptLegacyWorkerCertificate(workerName, fingerprint);
+  } catch (error) {
+    log.logWarning(
+      `Gondolin legacy worker '${workerName}' identity adoption failed`,
+      error instanceof Error ? error.message : String(error),
+    );
+    return false;
+  }
+}
+
+function activateWorkerCertificate(socket: Socket, workerName: string): boolean {
+  if (!(socket instanceof TLSSocket)) return true; // test servers inject authorization
+  const fingerprint = socket.getPeerCertificate().fingerprint256;
+  if (typeof fingerprint !== "string") return false;
+  try {
+    return gondolinJoin.activateWorkerCertificate(workerName, fingerprint);
+  } catch (error) {
+    log.logWarning(
+      `Gondolin worker '${workerName}' certificate activation failed`,
+      error instanceof Error ? error.message : String(error),
+    );
+    return false;
+  }
 }
 
 /**
@@ -126,9 +215,15 @@ class GondolinWorkerGateway {
   private overrides: GatewayOverrides = {};
   private server?: Server;
   private readonly workers = new Map<string, RegisteredWorker>();
+  private readonly activeTunnels = new Set<Socket>();
   private readonly pendingTunnels = new Map<
     string,
-    { resolve: (value: { socket: Socket; leftover: Buffer }) => void; timer: NodeJS.Timeout }
+    {
+      workerName: string;
+      resolve: (value: { socket: Socket; leftover: Buffer }) => void;
+      reject: (error: Error) => void;
+      timer: NodeJS.Timeout;
+    }
   >();
 
   configure(settings?: GondolinGatewaySettings, overrides?: GatewayOverrides): void {
@@ -145,15 +240,25 @@ class GondolinWorkerGateway {
   list(): Array<{
     name: string;
     connected: boolean;
+    connectedAt: number;
     activeRuntimes: number;
     workspaceError?: string;
+    certificateExpiresAt?: string;
+    expiresWithin30Days?: boolean;
     info: GondolinWorkerRegistration;
   }> {
     return Array.from(this.workers.values()).map((worker) => ({
       name: worker.info.name,
       connected: !worker.socket.destroyed,
+      connectedAt: worker.connectedAt,
       activeRuntimes: worker.activeRuntimes,
       workspaceError: worker.workspaceError,
+      ...(worker.certificateExpiresAt !== undefined
+        ? {
+            certificateExpiresAt: new Date(worker.certificateExpiresAt).toISOString(),
+            expiresWithin30Days: worker.certificateExpiresAt - Date.now() <= 30 * 24 * 3600 * 1000,
+          }
+        : {}),
       info: worker.info,
     }));
   }
@@ -214,10 +319,12 @@ class GondolinWorkerGateway {
     for (const worker of this.workers.values()) {
       worker.socket.destroy();
       this.rejectPendingRpc(worker, "gateway stopped");
+      gondolinFleet.detachWorker(worker.info.name);
     }
     this.workers.clear();
-    for (const pending of this.pendingTunnels.values()) clearTimeout(pending.timer);
-    this.pendingTunnels.clear();
+    this.rejectPendingTunnels(undefined, "gateway stopped");
+    for (const socket of this.activeTunnels) socket.destroy();
+    this.activeTunnels.clear();
     this.server?.close();
     this.server = undefined;
   }
@@ -226,31 +333,67 @@ class GondolinWorkerGateway {
   private handleConnection(socket: Socket): void {
     socket.setNoDelay(true);
     socket.setKeepAlive(true, 30_000);
+    const preambleTimer = setTimeout(
+      () => socket.destroy(),
+      this.overrides.preambleTimeoutMs ?? PREAMBLE_TIMEOUT_MS,
+    );
+    preambleTimer.unref?.();
+    const clearPreambleTimer = (): void => clearTimeout(preambleTimer);
+    socket.once("close", clearPreambleTimer);
     let routed = false;
     const authorized = (this.overrides.isAuthorized ?? defaultIsAuthorized)(socket);
-    const reader = createControlFrameReader((frame, leftover) => {
-      if (!routed) {
-        routed = true;
-        if (frame.type === "join") {
-          void this.handleJoin(socket, frame);
-        } else if (!authorized) {
-          // everything except join requires a CA-signed client certificate
-          socket.destroy();
-        } else if (frame.type === "register" && frame.name) {
-          this.acceptControlChannel(socket, frame, reader);
-        } else if (frame.type === "tunnel" && frame.nonce) {
-          reader.stop();
-          socket.removeAllListeners("data");
-          this.acceptTunnel(socket, frame.nonce, leftover);
-        } else {
-          socket.destroy();
+    const workerNameAuthorized = (workerName: string, purpose: "register" | "tunnel"): boolean =>
+      (this.overrides.isWorkerNameAuthorized ?? defaultIsWorkerNameAuthorized)(
+        socket,
+        workerName,
+        purpose,
+      );
+    const reader = createControlFrameReader(
+      (frame, leftover) => {
+        if (!routed) {
+          routed = true;
+          clearPreambleTimer();
+          if (frame.type === "join") {
+            void this.handleJoin(socket, frame);
+          } else if (!authorized) {
+            // everything except join requires a CA-signed client certificate
+            socket.destroy();
+          } else if (frame.type === "register" && frame.name) {
+            const identityAuthorized =
+              workerNameAuthorized(frame.name, "register") ||
+              (frame.protocolVersion === 1 && adoptLegacyWorkerCertificate(socket, frame.name));
+            if (!identityAuthorized) {
+              this.refuseRegistration(socket, "certificate is not active for this worker identity");
+              return;
+            }
+            this.acceptControlChannel(socket, frame, reader);
+          } else if (
+            frame.type === "tunnel" &&
+            frame.nonce &&
+            frame.name &&
+            workerNameAuthorized(frame.name, "tunnel")
+          ) {
+            reader.stop();
+            socket.removeAllListeners("data");
+            this.acceptTunnel(socket, frame.nonce, frame.name, leftover);
+          } else {
+            socket.destroy();
+          }
+          return;
         }
-        return;
-      }
-      this.handleControlFrame(socket, frame);
-    });
+        this.handleControlFrame(socket, frame);
+      },
+      () => socket.destroy(),
+      () => (routed ? MAX_CONTROL_FRAME_BYTES : MAX_PREAMBLE_FRAME_BYTES),
+    );
     socket.on("data", (chunk: Buffer) => reader.push(chunk));
     socket.on("error", () => socket.destroy());
+  }
+
+  private refuseRegistration(socket: Socket, message: string): void {
+    log.logWarning(`Gondolin worker registration refused: ${message}`);
+    socket.end(encodeControlFrame({ type: "register-error", message }));
+    socket.destroySoon();
   }
 
   private acceptControlChannel(
@@ -259,21 +402,68 @@ class GondolinWorkerGateway {
     _reader: { stop: () => void },
   ): void {
     const name = registration.name as string;
+    if (
+      typeof registration.protocolVersion !== "number" ||
+      !Number.isInteger(registration.protocolVersion) ||
+      registration.protocolVersion < GONDOLIN_MIN_REMOTE_PROTOCOL_VERSION ||
+      registration.protocolVersion > GONDOLIN_REMOTE_PROTOCOL_VERSION
+    ) {
+      log.logWarning(
+        `Gondolin worker '${name}' rejected: incompatible protocol ` +
+          `(supported ${GONDOLIN_MIN_REMOTE_PROTOCOL_VERSION}-${GONDOLIN_REMOTE_PROTOCOL_VERSION}, got ${registration.protocolVersion ?? "missing"})`,
+      );
+      this.refuseRegistration(
+        socket,
+        `incompatible protocol (supported ${GONDOLIN_MIN_REMOTE_PROTOCOL_VERSION}-${GONDOLIN_REMOTE_PROTOCOL_VERSION}, got ${registration.protocolVersion ?? "missing"})`,
+      );
+      return;
+    }
+    if (
+      registration.maxRuntimes !== undefined &&
+      (!Number.isSafeInteger(registration.maxRuntimes) || registration.maxRuntimes < 1)
+    ) {
+      log.logWarning(`Gondolin worker '${name}' rejected: maxRuntimes must be a positive integer`);
+      this.refuseRegistration(socket, "maxRuntimes must be a positive integer");
+      return;
+    }
+    if (!(this.overrides.activateWorkerCertificate ?? activateWorkerCertificate)(socket, name)) {
+      this.refuseRegistration(socket, "certificate identity activation failed");
+      return;
+    }
     const previous = this.workers.get(name);
     if (previous && !previous.socket.destroyed) {
       log.logInfo(`Gondolin worker '${name}' re-registered; superseding previous connection`);
+      this.rejectPendingTunnels(name, `worker '${name}' re-registered`);
       previous.socket.destroy();
     }
+    const peerCertificate = socket instanceof TLSSocket ? socket.getPeerCertificate() : undefined;
+    const certificateExpiresAt = peerCertificate?.valid_to
+      ? Date.parse(peerCertificate.valid_to)
+      : Number.NaN;
     const worker: RegisteredWorker = {
       info: registration,
       socket,
       connectedAt: Date.now(),
       lastSeen: Date.now(),
       activeRuntimes: registration.runtimes?.length ?? 0,
+      ...(Number.isFinite(certificateExpiresAt) ? { certificateExpiresAt } : {}),
       pendingRpc: new Map(),
       nextRpcId: 1,
+      idleTimer: setTimeout(() => {}, 0),
     };
+    clearTimeout(worker.idleTimer);
+    worker.idleTimer = this.armControlIdleTimer(worker);
     this.workers.set(name, worker);
+    socket.on("close", () => {
+      clearTimeout(worker.idleTimer);
+      this.rejectPendingRpc(worker, `worker '${name}' disconnected`);
+      const current = this.workers.get(name);
+      if (current !== worker) return; // superseded or rejected before acknowledgement
+      log.logWarning(`Gondolin worker disconnected: ${name} (placements remain fenced)`);
+      this.rejectPendingTunnels(name, `worker '${name}' disconnected`);
+      gondolinFleet.detachWorker(name);
+      this.workers.delete(name);
+    });
     const surviving = registration.runtimes?.length ?? 0;
     log.logInfo(
       `Gondolin worker joined: ${name} (${registration.os}/${registration.arch}, ` +
@@ -282,38 +472,51 @@ class GondolinWorkerGateway {
     );
 
     const overrides = this.settings?.workers?.[name];
-    gondolinFleet.attachWorker(
-      {
-        name,
-        url: `dialhome://${name}`,
-        workspaceRoot: this.settings?.workspaceRoot,
-        maxRuntimes: overrides?.maxRuntimes ?? registration.maxRuntimes,
-        draining: overrides?.draining,
-      },
-      (connectionOverrides) =>
-        new GondolinRemoteConnection(
-          { name, url: `dialhome://${name}`, workspaceRoot: this.settings?.workspaceRoot },
-          {
-            ...connectionOverrides,
-            ...(this.overrides.leaseTtlSeconds !== undefined
-              ? { leaseTtlSeconds: this.overrides.leaseTtlSeconds }
-              : {}),
-            request: (method, path, body, headers) => this.rpc(name, method, path, body, headers),
-            tunnel: (path, headers, callbacks) => this.openTunnel(name, path, headers, callbacks),
-          },
-        ),
-    );
-    this.applyWorkspaceHealth(worker, registration.workspaceError);
-    // a worker that reconnected may carry runtimes whose placements moved
-    void gondolinFleet.reconcile();
-
-    socket.on("close", () => {
-      this.rejectPendingRpc(worker, `worker '${name}' disconnected`);
-      const current = this.workers.get(name);
-      if (current !== worker) return; // superseded
-      log.logWarning(`Gondolin worker disconnected: ${name} (placements fence until lease expiry)`);
-      gondolinFleet.detachWorker(name);
+    try {
+      gondolinFleet.attachWorker(
+        {
+          name,
+          url: `dialhome://${name}`,
+          workspaceRoot: this.settings?.workspaceRoot,
+          maxRuntimes: overrides?.maxRuntimes ?? registration.maxRuntimes,
+          draining: overrides?.draining,
+        },
+        (connectionOverrides) =>
+          new GondolinRemoteConnection(
+            { name, url: `dialhome://${name}`, workspaceRoot: this.settings?.workspaceRoot },
+            {
+              ...connectionOverrides,
+              ...(this.overrides.leaseTtlSeconds !== undefined
+                ? { leaseTtlSeconds: this.overrides.leaseTtlSeconds }
+                : {}),
+              request: (method, path, body, headers) => this.rpc(name, method, path, body, headers),
+              tunnel: (path, headers, callbacks) => this.openTunnel(name, path, headers, callbacks),
+            },
+          ),
+      );
+    } catch (error) {
+      clearTimeout(worker.idleTimer);
       this.workers.delete(name);
+      log.logWarning(
+        `Gondolin worker '${name}' rejected`,
+        error instanceof Error ? error.message : String(error),
+      );
+      this.refuseRegistration(socket, error instanceof Error ? error.message : String(error));
+      return;
+    }
+    if (registration.protocolVersion >= 2) {
+      socket.write(encodeControlFrame({ type: "register-ok" }));
+    }
+    this.applyWorkspaceHealth(worker, registration.workspaceError);
+    if (worker.certificateExpiresAt !== undefined) {
+      gondolinFleet.updateWorkerCertificateExpiry(name, worker.certificateExpiresAt);
+    }
+    // a worker that reconnected may carry runtimes whose placements moved
+    void gondolinFleet.reconcile().catch((error: unknown) => {
+      log.logWarning(
+        `Gondolin fleet reconciliation after '${name}' registration failed`,
+        error instanceof Error ? error.message : String(error),
+      );
     });
   }
 
@@ -321,6 +524,8 @@ class GondolinWorkerGateway {
     const worker = this.workerBySocket(socket);
     if (!worker) return;
     worker.lastSeen = Date.now();
+    clearTimeout(worker.idleTimer);
+    worker.idleTimer = this.armControlIdleTimer(worker);
     if (frame.type === "ping") {
       if (typeof frame.activeRuntimes === "number") {
         worker.activeRuntimes = frame.activeRuntimes;
@@ -330,6 +535,18 @@ class GondolinWorkerGateway {
       socket.write(encodeControlFrame({ type: "pong" }));
       return;
     }
+    if (frame.type === "tunnel-error" && frame.nonce) {
+      const pending = this.pendingTunnels.get(frame.nonce);
+      if (!pending || pending.workerName !== worker.info.name) return;
+      this.pendingTunnels.delete(frame.nonce);
+      clearTimeout(pending.timer);
+      const error = new Error(
+        frame.message || `worker '${worker.info.name}' refused the tunnel`,
+      ) as NodeJS.ErrnoException;
+      error.code = "ECONNREFUSED";
+      pending.reject(error);
+      return;
+    }
     if (frame.type === "response" && typeof frame.id === "number") {
       const pending = worker.pendingRpc.get(frame.id);
       if (!pending) return;
@@ -337,6 +554,16 @@ class GondolinWorkerGateway {
       clearTimeout(pending.timer);
       pending.resolve(frame);
     }
+  }
+
+  private armControlIdleTimer(worker: RegisteredWorker): NodeJS.Timeout {
+    const timer = setTimeout(() => {
+      if (this.workers.get(worker.info.name) !== worker) return;
+      log.logWarning(`Gondolin worker '${worker.info.name}' heartbeat timed out`);
+      worker.socket.destroy();
+    }, this.overrides.controlIdleTimeoutMs ?? CONTROL_IDLE_TIMEOUT_MS);
+    timer.unref?.();
+    return timer;
   }
 
   /**
@@ -378,6 +605,10 @@ class GondolinWorkerGateway {
     }
     const id = worker.nextRpcId++;
     return new Promise((resolve, reject) => {
+      const timeoutMs =
+        method === "GET" && path === "/v1/health"
+          ? Math.min(this.overrides.rpcTimeoutMs ?? RPC_TIMEOUT_MS, 15_000)
+          : (this.overrides.rpcTimeoutMs ?? RPC_TIMEOUT_MS);
       const timer = setTimeout(() => {
         worker.pendingRpc.delete(id);
         reject(
@@ -385,7 +616,7 @@ class GondolinWorkerGateway {
             `RPC to worker '${name}' timed out (${method} ${path})`,
           ),
         );
-      }, this.overrides.rpcTimeoutMs ?? RPC_TIMEOUT_MS);
+      }, timeoutMs);
       timer.unref?.();
       worker.pendingRpc.set(id, {
         timer,
@@ -434,18 +665,23 @@ class GondolinWorkerGateway {
       }, this.overrides.tunnelTimeoutMs ?? TUNNEL_TIMEOUT_MS);
       timer.unref?.();
       this.pendingTunnels.set(nonce, {
+        workerName: name,
         timer,
+        reject,
         resolve: ({ socket, leftover }) => {
+          this.activeTunnels.add(socket);
           let closed = false;
           const parse = createSessionFrameParser(callbacks);
           if (leftover.length > 0) parse(leftover);
           socket.on("data", parse);
           socket.on("error", (error: Error) => {
+            this.activeTunnels.delete(socket);
             if (closed) return;
             closed = true;
             callbacks.onClose(error);
           });
           socket.on("close", () => {
+            this.activeTunnels.delete(socket);
             if (closed) return;
             closed = true;
             callbacks.onClose();
@@ -457,6 +693,7 @@ class GondolinWorkerGateway {
             close: () => {
               if (closed) return;
               closed = true;
+              this.activeTunnels.delete(socket);
               socket.destroy();
             },
           });
@@ -484,12 +721,31 @@ class GondolinWorkerGateway {
       refuse("join requires token, csr, and name");
       return;
     }
-    if (!gondolinJoin.consumeToken(frame.token)) {
+    if (!gondolinJoin.validateToken(frame.token, frame.name)) {
       refuse(`invalid or expired join token (worker '${frame.name}')`);
       return;
     }
     try {
-      const signed = await gondolinJoin.signCsr(frame.csr);
+      await gondolinJoin.validateWorkerCsr(frame.csr, frame.name);
+    } catch (err) {
+      refuse(`invalid worker identity: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    let consumed = false;
+    try {
+      consumed = gondolinJoin.consumeToken(frame.token, frame.name);
+    } catch (error) {
+      refuse(
+        `join token state unavailable: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return;
+    }
+    if (!consumed) {
+      refuse(`invalid or expired join token (worker '${frame.name}')`);
+      return;
+    }
+    try {
+      const signed = await gondolinJoin.signCsr(frame.csr, frame.name);
       log.logInfo(`Gondolin worker '${frame.name}' joined: client certificate issued`);
       socket.end(encodeControlFrame({ type: "join-ok", cert: signed.certPem, ca: signed.caPem }));
     } catch (err) {
@@ -497,15 +753,26 @@ class GondolinWorkerGateway {
     }
   }
 
-  private acceptTunnel(socket: Socket, nonce: string, leftover: Buffer): void {
+  private acceptTunnel(socket: Socket, nonce: string, workerName: string, leftover: Buffer): void {
     const pending = this.pendingTunnels.get(nonce);
-    if (!pending) {
+    if (!pending || pending.workerName !== workerName) {
       socket.destroy();
       return;
     }
     this.pendingTunnels.delete(nonce);
     clearTimeout(pending.timer);
     pending.resolve({ socket, leftover: Buffer.from(leftover) });
+  }
+
+  private rejectPendingTunnels(workerName: string | undefined, reason: string): void {
+    for (const [nonce, pending] of this.pendingTunnels) {
+      if (workerName !== undefined && pending.workerName !== workerName) continue;
+      this.pendingTunnels.delete(nonce);
+      clearTimeout(pending.timer);
+      const error = new Error(reason) as NodeJS.ErrnoException;
+      error.code = "ECONNREFUSED";
+      pending.reject(error);
+    }
   }
 
   private workerBySocket(socket: Socket): RegisteredWorker | undefined {

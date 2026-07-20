@@ -14,4 +14,5 @@ export type {
   PlatformReactor,
   PlatformUploader,
   RunningSession,
+  RuntimeConversationScope,
 } from "./types.js";

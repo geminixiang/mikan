@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+const defaultWorkspaceLatencyLimit = 500 * time.Millisecond
+
 // WorkspaceProbe reports whether the shared workspace root is actually usable.
 // A worker whose NFS mount died still registers and pings happily — only a
 // filesystem operation exposes the dead mount, and on a hard mount that
@@ -15,9 +17,10 @@ import (
 // probe timeout, and an abandoned probe is reported as "not responding" until
 // it eventually returns.
 type WorkspaceProbe struct {
-	root    string
-	timeout time.Duration
-	ttl     time.Duration
+	root         string
+	timeout      time.Duration
+	ttl          time.Duration
+	latencyLimit time.Duration
 
 	probe func(root string) error // injectable for tests
 	now   func() time.Time
@@ -35,11 +38,12 @@ type WorkspaceProbe struct {
 // next call re-probes.
 func NewWorkspaceProbe(root string, timeout, ttl time.Duration) *WorkspaceProbe {
 	return &WorkspaceProbe{
-		root:    root,
-		timeout: timeout,
-		ttl:     ttl,
-		probe:   probeWorkspaceOnce,
-		now:     time.Now,
+		root:         root,
+		timeout:      timeout,
+		ttl:          ttl,
+		latencyLimit: defaultWorkspaceLatencyLimit,
+		probe:        probeWorkspaceOnce,
+		now:          time.Now,
 	}
 }
 
@@ -78,8 +82,13 @@ func (p *WorkspaceProbe) status(wait bool) string {
 	done := make(chan string, 1)
 	go func() {
 		message := ""
+		probeStarted := p.now()
 		if err := p.probe(p.root); err != nil {
 			message = fmt.Sprintf("workspace root %s is unusable: %v", p.root, err)
+		} else if elapsed := p.now().Sub(probeStarted); elapsed > p.latencyLimit {
+			message = fmt.Sprintf(
+				"workspace root %s is too slow: mutable probe took %s (limit %s; cross-WAN or relayed mount?)",
+				p.root, elapsed.Round(time.Millisecond), p.latencyLimit)
 		}
 		p.mu.Lock()
 		p.inFlight = false

@@ -1,10 +1,12 @@
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { InMemoryAdminTokenStore } from "../src/web/admin/store.js";
+import { resolveConversationStorage } from "../src/sessions/conversation-storage.js";
 import { startWebServer } from "../src/web/server.js";
+import { HostEventStore } from "../src/tools/event.js";
 import { InMemoryLinkTokenStore } from "../src/web/login/store.js";
 import { FileVaultManager } from "../src/vault/index.js";
 
@@ -115,6 +117,155 @@ describe("link server", () => {
     expect(html).not.toContain("ghp-secret-value");
   });
 
+  test("scoped Admin keeps identical Discord and Telegram conversations separate", async () => {
+    const root = join(tmpdir(), `mikan-admin-scoped-${Date.now()}-${Math.random()}`);
+    const stateDir = join(root, "state");
+    const workspaceDir = join(root, "workspace");
+    dirs.push(root);
+    mkdirSync(stateDir, { recursive: true });
+    mkdirSync(workspaceDir, { recursive: true });
+    process.env.MIKAN_STATE_DIR = stateDir;
+    writeFileSync(
+      join(stateDir, "settings.json"),
+      JSON.stringify({
+        llm: { provider: "anthropic", model: "claude-test", thinkingLevel: "off" },
+      }),
+    );
+    const [discord, telegram] = await Promise.all([
+      resolveConversationStorage({
+        workspaceRoot: workspaceDir,
+        platform: "discord",
+        conversationId: "123",
+        activePlatforms: ["discord", "telegram"],
+      }),
+      resolveConversationStorage({
+        workspaceRoot: workspaceDir,
+        platform: "telegram",
+        conversationId: "123",
+        activePlatforms: ["discord", "telegram"],
+      }),
+    ]);
+    writeFileSync(
+      join(discord.conversationDir, "settings.json"),
+      JSON.stringify({ llm: { model: "discord-model" } }),
+    );
+    writeFileSync(
+      join(telegram.conversationDir, "settings.json"),
+      JSON.stringify({ llm: { model: "telegram-model" } }),
+    );
+
+    const vaultManager = new FileVaultManager(stateDir);
+    const tokenStore = new InMemoryLinkTokenStore();
+    const adminTokenStore = new InMemoryAdminTokenStore();
+    const adminToken = adminTokenStore.create({
+      platform: "discord",
+      platformUserId: "U-admin",
+      conversationId: "123",
+    });
+    const server = startTestWebServer(
+      0,
+      tokenStore,
+      vaultManager,
+      async () => {},
+      undefined,
+      undefined,
+      {
+        adminTokenStore,
+        workingDir: workspaceDir,
+        conversationStorageScoped: true,
+      },
+    );
+    servers.push(server);
+    await waitForListening(server);
+
+    const listResponse = await originalFetch(
+      `${baseUrl(server)}/admin/api/conversations?token=${adminToken.token}`,
+    );
+    const list = (await listResponse.json()) as {
+      conversations: Array<{ scopeKey: string; storageKey: string }>;
+    };
+    expect(list.conversations.map((entry) => entry.scopeKey)).toEqual([
+      "discord:123",
+      "telegram:123",
+    ]);
+    expect(new Set(list.conversations.map((entry) => entry.storageKey)).size).toBe(2);
+
+    const stateResponse = await originalFetch(
+      `${baseUrl(server)}/admin/api/conversation-state?token=${adminToken.token}&scopeKey=telegram%3A123`,
+    );
+    const state = (await stateResponse.json()) as { platform: string; model: string };
+    expect(stateResponse.status).toBe(200);
+    expect(state).toMatchObject({ platform: "telegram", model: "telegram-model" });
+
+    mkdirSync(join(discord.conversationDir, "scratch"));
+    mkdirSync(join(telegram.conversationDir, "scratch"));
+    writeFileSync(join(discord.conversationDir, "scratch", "discord.txt"), "discord-only");
+    writeFileSync(join(telegram.conversationDir, "scratch", "telegram.txt"), "telegram-only");
+    const fileResponse = await originalFetch(
+      `${baseUrl(server)}/admin/api/workspace/file?token=${adminToken.token}&scopeKey=telegram%3A123&path=scratch%2Ftelegram.txt`,
+    );
+    expect(await fileResponse.json()).toMatchObject({ content: "telegram-only" });
+
+    const modelResponse = await originalFetch(
+      `${baseUrl(server)}/admin/api/conversations/model?token=${adminToken.token}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: baseUrl(server) },
+        body: JSON.stringify({
+          token: adminToken.token,
+          scopeKey: "telegram:123",
+          provider: "anthropic",
+          model: "telegram-updated",
+        }),
+      },
+    );
+    expect(modelResponse.status).toBe(200);
+    const refreshed = await originalFetch(
+      `${baseUrl(server)}/admin/api/conversation-state?token=${adminToken.token}&scopeKey=telegram%3A123`,
+    );
+    expect(await refreshed.json()).toMatchObject({ model: "telegram-updated" });
+    const discordState = await originalFetch(
+      `${baseUrl(server)}/admin/api/conversation-state?token=${adminToken.token}&scopeKey=discord%3A123`,
+    );
+    expect(await discordState.json()).toMatchObject({ model: "discord-model" });
+
+    const eventStore = HostEventStore.fromWorkspaceDir(workspaceDir);
+    await eventStore.write("discord-event.json", {
+      type: "immediate",
+      platform: "discord",
+      conversationId: "123",
+      conversationKind: "shared",
+      text: "discord task",
+    });
+    await eventStore.write("telegram-event.json", {
+      type: "immediate",
+      platform: "telegram",
+      conversationId: "123",
+      conversationKind: "shared",
+      text: "telegram task",
+    });
+    const eventsResponse = await originalFetch(
+      `${baseUrl(server)}/admin/api/conversations/events?token=${adminToken.token}&scopeKey=discord%3A123`,
+    );
+    const events = (await eventsResponse.json()) as { events: Array<{ name: string }> };
+    expect(events.events.map((event) => event.name)).toEqual(["discord-event.json"]);
+
+    const deleteResponse = await originalFetch(
+      `${baseUrl(server)}/admin/api/conversations/events/delete`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: baseUrl(server) },
+        body: JSON.stringify({
+          token: adminToken.token,
+          scopeKey: "discord:123",
+          name: "telegram-event.json",
+        }),
+      },
+    );
+    expect(deleteResponse.status).toBe(403);
+    expect((await eventStore.read("telegram-event.json")).payload?.platform).toBe("telegram");
+  });
+
   test("/admin/api/models lists configured models", async () => {
     process.env.ANTHROPIC_API_KEY = "test-anthropic-key";
 
@@ -153,6 +304,49 @@ describe("link server", () => {
 
     expect(response.status).toBe(200);
     expect(body.models.some((model) => model.provider === "anthropic")).toBe(true);
+  });
+
+  test("/admin/api/sandbox/gondolin returns sanitized fleet diagnostics", async () => {
+    const stateDir = join(tmpdir(), `mikan-link-server-${Date.now()}-${Math.random()}`);
+    dirs.push(stateDir);
+    const vaultManager = new FileVaultManager(stateDir);
+    const tokenStore = new InMemoryLinkTokenStore();
+    const adminTokenStore = new InMemoryAdminTokenStore();
+    const adminToken = adminTokenStore.create({
+      platform: "telegram",
+      platformUserId: "U-admin",
+      conversationId: "123",
+    });
+    const diagnostics = {
+      workers: [{ name: "worker-1", reachable: true, activeRuntimes: 1, draining: false }],
+      placements: [
+        {
+          instanceId: "conversation-1",
+          worker: "worker-1",
+          sessionId: "session-1",
+          fenceExpiresAt: "2026-07-19T00:00:00.000Z",
+          fenceRemainingMs: 1000,
+        },
+      ],
+    };
+    const server = startTestWebServer(
+      0,
+      tokenStore,
+      vaultManager,
+      async () => {},
+      undefined,
+      undefined,
+      { adminTokenStore, workingDir: stateDir, gondolinDiagnostics: async () => diagnostics },
+    );
+    servers.push(server);
+    await waitForListening(server);
+
+    const response = await originalFetch(
+      `${baseUrl(server)}/admin/api/sandbox/gondolin?token=${adminToken.token}`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(diagnostics);
   });
 
   test("/api/oauth/start returns an OAuth redirect URL for GitHub", async () => {

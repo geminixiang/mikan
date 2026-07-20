@@ -2,8 +2,15 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
+import { resolveConversationStorage } from "../src/sessions/conversation-storage.js";
 import { HostEventStore } from "../src/tools/event.js";
-import { listAllEvents, readSkillsFromDir } from "../src/web/admin/portal.js";
+import {
+  listAdminConversationScopes,
+  listAllEvents,
+  readSkillsFromDir,
+  resolveAdminConversationScope,
+} from "../src/web/admin/portal.js";
+import type { AdminServices } from "../src/web/admin/types.js";
 
 const tempDirs: string[] = [];
 
@@ -20,6 +27,54 @@ function makeWorkspace(): string {
   tempDirs.push(dir);
   return dir;
 }
+
+describe("admin conversation catalog", () => {
+  test("keeps identical Discord and Telegram ids as distinct admin scopes", async () => {
+    const workspaceDir = makeWorkspace();
+    await Promise.all([
+      resolveConversationStorage({
+        workspaceRoot: workspaceDir,
+        platform: "discord",
+        conversationId: "123",
+        activePlatforms: ["discord", "telegram"],
+      }),
+      resolveConversationStorage({
+        workspaceRoot: workspaceDir,
+        platform: "telegram",
+        conversationId: "123",
+        activePlatforms: ["discord", "telegram"],
+      }),
+    ]);
+
+    const scopes = listAdminConversationScopes(workspaceDir, {
+      conversationStorageScoped: true,
+    } as AdminServices);
+
+    expect(scopes.map(({ scopeKey }) => scopeKey)).toEqual(["discord:123", "telegram:123"]);
+    expect(scopes[0].conversationDir).not.toBe(scopes[1].conversationDir);
+
+    const token = {
+      platform: "discord",
+      conversationId: "123",
+    } as Parameters<typeof resolveAdminConversationScope>[1];
+    expect(
+      resolveAdminConversationScope("telegram:123", token, {
+        workingDir: workspaceDir,
+        conversationStorageScoped: true,
+      } as AdminServices).scope,
+    ).toMatchObject({
+      platform: "telegram",
+      conversationId: "123",
+      scopeKey: "telegram:123",
+    });
+    expect(
+      resolveAdminConversationScope("123", token, {
+        workingDir: workspaceDir,
+        conversationStorageScoped: true,
+      } as AdminServices).error,
+    ).toBe("Invalid conversation scope.");
+  });
+});
 
 describe("admin portal events listing", () => {
   test("lists events through HostEventStore, sorted by filename", async () => {

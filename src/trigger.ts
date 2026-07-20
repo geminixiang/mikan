@@ -29,13 +29,23 @@ export function decideTrigger(
 export async function evaluateAutoReplyPolicy(input: {
   event: ConversationEvent;
   workingDir: string | undefined;
+  /** Pre-resolved scoped directory; preferred over deriving from the wire id. */
+  conversationDir?: string;
   judge?: AutoReplyJudge;
   timeoutMs?: number;
 }): Promise<TriggerResult> {
-  const { event, workingDir, judge = judgeAutoReplyWithLlm, timeoutMs = JUDGE_TIMEOUT_MS } = input;
-  if (!workingDir) return { trigger: false, reason: "auto-reply-unconfigured" };
+  const {
+    event,
+    workingDir,
+    conversationDir: resolvedConversationDir,
+    judge = judgeAutoReplyWithLlm,
+    timeoutMs = JUDGE_TIMEOUT_MS,
+  } = input;
+  if (!workingDir && !resolvedConversationDir) {
+    return { trigger: false, reason: "auto-reply-unconfigured" };
+  }
 
-  const conversationDir = join(workingDir, event.conversationId);
+  const conversationDir = resolvedConversationDir ?? join(workingDir!, event.conversationId);
 
   try {
     const config = loadConversationAutoReplyConfig(conversationDir);

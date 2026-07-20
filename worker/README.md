@@ -45,10 +45,15 @@ a server certificate, and one client certificate per mikan host, then:
 mikan-worker \
   --listen :8433 \
   --cert server.pem --key server-key.pem --client-ca ca.pem \
+  --client-cn mikan-host \
   --state-dir /var/lib/mikan-worker \
   --worker-entry /opt/mikan/dist/sandbox/gondolin-worker-main.js \
   --workspace-root /srv/mikan-workspace
 ```
+
+Use a dedicated client CA for this listen-mode trust domain and set `--client-cn` to
+the Common Name of the mikan host certificate. Do not reuse the dial-home enrollment
+CA.
 
 `--workspace-root` restricts mount sources and must be the worker-side mount of
 the same shared POSIX filesystem the mikan host uses as its workspace.

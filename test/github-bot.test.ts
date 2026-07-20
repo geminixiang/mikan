@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler } from "../src/adapter.js";
+import { ConversationStorageManager } from "../src/sessions/conversation-storage-manager.js";
+import { conversationStorageScope } from "../src/sessions/conversation-storage-scope.js";
 import { GithubMessagingBot } from "../src/adapters/github/bot.js";
 import type { GithubClient } from "../src/adapters/github/client.js";
 import {
@@ -222,6 +224,7 @@ describe("GithubMessagingBot", () => {
       handler?: MessagingEventHandler;
       repos?: string[];
       cloudBuild?: { tokenProvider: GcpTokenProvider; projectFallback?: string };
+      storageManager?: ConversationStorageManager;
     } = {},
   ) {
     return new GithubMessagingBot(
@@ -237,6 +240,7 @@ describe("GithubMessagingBot", () => {
         cloudBuild: overrides.cloudBuild,
       },
       client as unknown as GithubClient,
+      overrides.storageManager,
     );
   }
 
@@ -274,6 +278,40 @@ describe("GithubMessagingBot", () => {
     );
     const [event] = vi.mocked(handler.handleEvent).mock.calls[0];
     expect(event.conversationId).toBe(CONVERSATION_ID);
+  });
+
+  test("scopes GitHub intake logs, repo, queue, and runtime metadata", async () => {
+    const storageManager = new ConversationStorageManager({
+      workspaceRoot: workingDir,
+      activePlatforms: ["github", "discord"],
+    });
+    const bot = makeBot({ storageManager });
+    await bot.start();
+    client.listIssueCommentsSince.mockResolvedValue([
+      makeComment({ body: "@mikan please fix this" }),
+    ]);
+
+    await bot.poll();
+    await settleQueues();
+
+    const scope = conversationStorageScope("github", CONVERSATION_ID);
+    const [event] = vi.mocked(handler.handleEvent).mock.calls[0];
+    expect(event).toMatchObject({
+      conversationId: CONVERSATION_ID,
+      storageKey: scope.storageKey,
+      conversationDir: join(workingDir, scope.storageKey),
+      runtimeSessionKey: expect.stringContaining(scope.storageKey),
+    });
+    expect(existsSync(join(workingDir, scope.storageKey, "log.jsonl"))).toBe(true);
+    expect(existsSync(join(workingDir, CONVERSATION_ID))).toBe(false);
+    expect(cloneRepo).toHaveBeenCalledWith(
+      expect.objectContaining({ dir: join(workingDir, scope.storageKey, "repo") }),
+    );
+    mkdirSync(join(workingDir, scope.storageKey, "repo"));
+    await bot.ops.syncRepo(CONVERSATION_ID, "main");
+    expect(syncRepo).toHaveBeenCalledWith(
+      expect.objectContaining({ dir: join(workingDir, scope.storageKey, "repo") }),
+    );
   });
 
   test("mentioned comment triggers a run with the mention stripped", async () => {

@@ -23,8 +23,9 @@ export function resolveExistingSessionFile(
   workingDir: string,
   conversationId: string,
   sessionKey: string,
+  conversationDirOverride?: string,
 ): string | null {
-  const conversationDir = join(workingDir, conversationId);
+  const conversationDir = conversationDirOverride ?? join(workingDir, conversationId);
   if (isThreadSessionKey(sessionKey)) {
     return tryResolveThreadSession(getThreadSessionFile(conversationDir, sessionKey));
   }

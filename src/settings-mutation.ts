@@ -15,7 +15,6 @@
  *   idle conversation's cached runners; conversations that were busy keep
  *   their old runner until it ends and are reported as stale.
  */
-import { join } from "path";
 import { updateConversationSettings, updateGlobalSettings } from "./config.js";
 import type { AgentConfig } from "./types.js";
 
@@ -39,22 +38,28 @@ function affectsCachedRunner(patch: Partial<AgentConfig>): boolean {
   );
 }
 
+export interface ConversationSettingsIdentity {
+  /** Runtime/cache identity; platform-namespaced in scoped mode. */
+  key: string;
+  /** Host directory whose basename owns the settings file. */
+  conversationDir: string;
+}
+
 export function applyConversationSettings(
   runtime: RunnerCacheControl | undefined,
-  workingDir: string,
-  conversationId: string,
+  identity: ConversationSettingsIdentity,
   patch: Partial<AgentConfig>,
 ): SettingsApplyResult {
   let runtimeSwitched: boolean | null = null;
   if (affectsCachedRunner(patch) && runtime) {
     // Clear-or-refuse before writing. The clear and the write happen in the
     // same synchronous tick, so no runner can be created in between.
-    if (!runtime.switchConversationModel(conversationId, patch.provider ?? "", patch.model ?? "")) {
+    if (!runtime.switchConversationModel(identity.key, patch.provider ?? "", patch.model ?? "")) {
       return { ok: false, reason: "busy" };
     }
     runtimeSwitched = true;
   }
-  updateConversationSettings(join(workingDir, conversationId), patch);
+  updateConversationSettings(identity.conversationDir, patch);
   return { ok: true, runtimeSwitched };
 }
 

@@ -98,6 +98,13 @@ const SettingsFileSchema = Type.Object({
       ),
       gondolin: Type.Optional(
         Type.Object({
+          network: Type.Optional(
+            Type.Object({
+              allowedHosts: Type.Optional(Type.Array(Type.String())),
+              allowedInternalHosts: Type.Optional(Type.Array(Type.String())),
+              blockInternalRanges: Type.Optional(Type.Boolean()),
+            }),
+          ),
           remote: Type.Optional(
             Type.Object({
               url: Type.Optional(Type.String()),
@@ -270,6 +277,10 @@ function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
 
 function loadRawGlobalSettings(): Partial<AgentConfig> {
   return normalizeSettingsConfig(requireGlobalSettings());
+}
+
+export function loadSandboxSettings(): SandboxSettings | undefined {
+  return normalizeSettingsConfig(requireGlobalSettings()).sandbox;
 }
 
 export function loadGlobalSettings(): AgentConfig {
