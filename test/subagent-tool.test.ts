@@ -398,6 +398,30 @@ describe("subagent tool", () => {
     });
   });
 
+  test("reports budget exhaustion and its concrete reason to the main agent", async () => {
+    const runSubagent = (async () => ({
+      runId: "subagent-budget",
+      status: "budget_exceeded",
+      model: { provider: "test", id: "model" },
+      turns: 100,
+      tokens: 1_000,
+      costUsd: 1.25,
+      durationMs: 1_000,
+      error: "LLM calls 100 >= 100 limit",
+    })) as RunSubagent;
+    const tool = createSubagentTool(runSubagent);
+
+    const result = await tool.execute("call-budget", { task: "Keep working" });
+
+    expect(result.content).toEqual([
+      {
+        type: "text",
+        text: "Subagent stopped: budget limit exceeded (LLM calls 100 >= 100 limit)",
+      },
+    ]);
+    expect(result.details).toMatchObject({ status: "budget_exceeded" });
+  });
+
   test("forwards cancellation and reports incomplete status", async () => {
     const controller = new AbortController();
     const runSubagent = (async (request: SubagentRunRequest) => {

@@ -187,6 +187,9 @@ function formatOutcome(outcome: {
   output?: unknown;
   error?: string;
 }): string {
+  if (outcome.status === "budget_exceeded") {
+    return `Subagent stopped: budget limit exceeded${outcome.error ? ` (${outcome.error})` : ""}`;
+  }
   if (outcome.status !== "completed") {
     return `Subagent ${outcome.status}${outcome.error ? `: ${outcome.error}` : ""}`;
   }
