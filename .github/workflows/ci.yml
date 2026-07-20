@@ -45,8 +45,6 @@ jobs:
 
       - uses: azure/setup-helm@v4
 
-      - uses: azure/setup-kubectl@v4
-
       - name: Validate chart profiles
         run: scripts/check-helm-chart.sh
 

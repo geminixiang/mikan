@@ -24,8 +24,16 @@ helm template digest "$chart" \
   > "$work_dir/digest.yaml"
 
 for manifest in "$work_dir"/*.yaml; do
-  kubectl apply --dry-run=client -f "$manifest" >/dev/null
+  test -s "$manifest"
 done
+
+# Custom resources still require API discovery even with --dry-run=client.
+# Developers can opt into this extra check when a suitable cluster is active.
+if [[ "${HELM_KUBECTL_DRY_RUN:-0}" == "1" ]]; then
+  for manifest in "$work_dir"/*.yaml; do
+    kubectl apply --dry-run=client -f "$manifest" >/dev/null
+  done
+fi
 
 ! grep -qE '^kind: (SandboxTemplate|Role)$' "$work_dir/default.yaml"
 ! grep -qE '^kind: (SandboxTemplate|Role)$' "$work_dir/colima.yaml"
