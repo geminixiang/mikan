@@ -108,22 +108,26 @@ export class DiscordMessagingBot implements MessagingBot {
           // Registration derives from the command manifest; routing below
           // handles new/stop natively and the rest through one generic path.
           await readyClient.application.commands.set(
-            COMMAND_MANIFEST.filter((entry) => entry.discord).map((entry) => ({
-              name: entry.name,
-              description: entry.description,
-              ...(entry.arg
-                ? {
-                    options: [
-                      {
-                        name: entry.arg.name,
-                        description: entry.arg.description,
-                        type: ApplicationCommandOptionType.String,
-                        required: entry.arg.required,
-                      },
-                    ],
-                  }
-                : {}),
-            })),
+            COMMAND_MANIFEST.filter((entry) => entry.discord).map((entry) =>
+              Object.assign(
+                {
+                  name: entry.name,
+                  description: entry.description,
+                },
+                entry.arg
+                  ? {
+                      options: [
+                        {
+                          name: entry.arg.name,
+                          description: entry.arg.description,
+                          type: ApplicationCommandOptionType.String as const,
+                          required: entry.arg.required,
+                        },
+                      ],
+                    }
+                  : {},
+              ),
+            ),
           );
         } catch (err) {
           log.logWarning(

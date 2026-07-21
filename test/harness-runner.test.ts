@@ -117,6 +117,35 @@ describe("MikanAgentSession", () => {
     expect(roles).toEqual(["user", "assistant", "toolResult", "assistant"]);
   });
 
+  test("preserves the complete usage breakdown across assistant turns", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("echo", { text: "ping" })),
+      fauxAssistantMessage("done"),
+    ]);
+
+    const session = new MikanAgentSession({
+      systemPrompt: "test",
+      model,
+      thinkingLevel: "off",
+      tools: [echoTool],
+      models,
+      sessionStore: SessionStore.create(join(dir, "usage.jsonl"), dir),
+    });
+    session.agent.sessionId = "usage-breakdown";
+
+    await session.prompt("run the tool");
+
+    const stats = session.getLastRunStats();
+    expect(stats.usage.cacheRead).toBeGreaterThan(0);
+    expect(stats.usage.cacheWrite).toBeGreaterThan(0);
+    expect(stats.usage.totalTokens).toBe(
+      stats.usage.input + stats.usage.output + stats.usage.cacheRead + stats.usage.cacheWrite,
+    );
+    expect(stats.tokens).toBe(stats.usage.totalTokens);
+    expect(stats.costUsd).toBe(stats.usage.cost.total);
+  });
+
   test("extension tool_call hooks can block tools", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([
@@ -391,7 +420,22 @@ describe("MikanAgentSession", () => {
       parameters: { type: "object", properties: {} },
       execute: async () => {
         expect(session.isActiveRun).toBe(true);
-        await session.foldExternalUsage({ tokens: 5000, costUsd: 1.25 });
+        await session.foldExternalUsage({
+          input: 1000,
+          output: 500,
+          cacheRead: 3000,
+          cacheWrite: 500,
+          cacheWrite1h: 200,
+          reasoning: 100,
+          totalTokens: 5000,
+          cost: {
+            input: 0.25,
+            output: 0.5,
+            cacheRead: 0.25,
+            cacheWrite: 0.25,
+            total: 1.25,
+          },
+        });
         return { content: [{ type: "text", text: "delegated" }] };
       },
     } as unknown as AgentTool;
@@ -415,6 +459,14 @@ describe("MikanAgentSession", () => {
     const stats = session.getLastRunStats();
     expect(stats.tokens).toBeGreaterThanOrEqual(5000);
     expect(stats.costUsd).toBeGreaterThanOrEqual(1.25);
+    expect(stats.usage).toMatchObject({
+      cacheRead: expect.any(Number),
+      cacheWrite: expect.any(Number),
+      cacheWrite1h: 200,
+      reasoning: 100,
+    });
+    expect(stats.usage.cacheRead).toBeGreaterThanOrEqual(3000);
+    expect(stats.usage.cacheWrite).toBeGreaterThanOrEqual(500);
     expect(stats.budgetExceededReason).toContain("cost");
     expect(events.some((event) => event.type === "budget_exceeded")).toBe(true);
     // Enforcement happens at the fold itself: the run aborts before paying

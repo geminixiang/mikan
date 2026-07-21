@@ -16,6 +16,7 @@ import type {
   SessionInfoEntry,
   SessionTreeEntry,
 } from "@earendil-works/pi-agent-core";
+import type { Usage } from "@earendil-works/pi-ai";
 import type { Static, TSchema } from "@sinclair/typebox";
 
 export type {
@@ -65,10 +66,8 @@ export interface SubagentParentContext {
   recentTurns?: number;
 }
 
-export interface SubagentUsage {
-  tokens: number;
-  costUsd: number;
-}
+/** Aggregated model usage across every assistant turn in a subagent run. */
+export type SubagentUsage = Usage;
 
 /** A fresh, isolated subagent run. */
 export interface SubagentRunRequest<TOutputSchema extends TSchema | undefined = undefined> {
@@ -97,7 +96,11 @@ interface SubagentRunMetadata {
   text?: string;
   model: SubagentModelSpec;
   turns: number;
+  /** Full token and cost breakdown across the run. */
+  usage: SubagentUsage;
+  /** Aggregate token count; equivalent to `usage.totalTokens`. */
   tokens: number;
+  /** Aggregate provider cost; equivalent to `usage.cost.total`. */
   costUsd: number;
   durationMs: number;
 }
