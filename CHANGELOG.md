@@ -9,6 +9,17 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.24]
+
+### Fixed
+
+- Bundle the vendored Agent Sandbox SDK in the npm package so global installs no longer fail on a missing repository-local tarball.
+- Reuse mikan's direct Kubernetes client dependency as an SDK peer instead of recursively bundling a duplicate dependency tree, keeping the published tarball under 1 MiB.
+
+### Tests
+
+- Add a pack-install smoke test that imports the bundled SDK, runs the packed CLI, enforces a 2 MiB size ceiling, and gates both CI and npm publishing.
+
 ## [1.0.0-beta.23]
 
 ### Added
