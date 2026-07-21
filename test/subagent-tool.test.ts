@@ -4,6 +4,7 @@ import type {
   SubagentRunOutput,
   SubagentRunRequest,
   SubagentRunResult,
+  SubagentUsage,
 } from "../src/harness/types.js";
 import { createSubagentTool } from "../src/tools/subagent.js";
 import { SubagentSlotPool } from "../src/tools/subagent-slots.js";
@@ -11,6 +12,23 @@ import { SubagentSlotPool } from "../src/tools/subagent-slots.js";
 type RunSubagent = <TOutputSchema extends TSchema | undefined = undefined>(
   request: SubagentRunRequest<TOutputSchema>,
 ) => Promise<SubagentRunResult<SubagentRunOutput<TOutputSchema>>>;
+
+function testUsage(tokens: number, costUsd = 0): SubagentUsage {
+  return {
+    input: tokens,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: tokens,
+    cost: {
+      input: costUsd,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      total: costUsd,
+    },
+  };
+}
 
 function completedRun(output: unknown): RunSubagent {
   return (async () => ({
@@ -20,6 +38,7 @@ function completedRun(output: unknown): RunSubagent {
     text: typeof output === "string" ? output : JSON.stringify(output),
     model: { provider: "test", id: "model" },
     turns: 1,
+    usage: testUsage(10),
     tokens: 10,
     costUsd: 0,
     durationMs: 5,
@@ -78,6 +97,7 @@ describe("subagent tool", () => {
             status: "cancelled",
             model: { provider: "test", id: "model" },
             turns: 0,
+            usage: testUsage(0),
             tokens: 0,
             costUsd: 0,
             durationMs: 0,
@@ -114,6 +134,7 @@ describe("subagent tool", () => {
         text: "ok",
         model: { provider: "test", id: "model" },
         turns: 1,
+        usage: testUsage(1),
         tokens: 1,
         costUsd: 0,
         durationMs: 10,
@@ -162,6 +183,7 @@ describe("subagent tool", () => {
         text: output,
         model: { provider: "test", id: "model" },
         turns: 1,
+        usage: testUsage(1),
         tokens: 1,
         costUsd: 0,
         durationMs: 10,
@@ -245,6 +267,7 @@ describe("subagent tool", () => {
           status: "failed",
           model: { provider: "test", id: "model" },
           turns: 1,
+          usage: testUsage(1),
           tokens: 1,
           costUsd: 0,
           durationMs: 1,
@@ -258,6 +281,7 @@ describe("subagent tool", () => {
         text: "ok",
         model: { provider: "test", id: "model" },
         turns: 1,
+        usage: testUsage(1),
         tokens: 1,
         costUsd: 0,
         durationMs: 1,
@@ -298,6 +322,7 @@ describe("subagent tool", () => {
         text: request.task,
         model: { provider: "test", id: "model" },
         turns: 1,
+        usage: testUsage(1),
         tokens: 1,
         costUsd: 0,
         durationMs: 10,
@@ -348,6 +373,7 @@ describe("subagent tool", () => {
         text: request.task,
         model: { provider: "test", id: "model" },
         turns: 1,
+        usage: testUsage(1),
         tokens: 1,
         costUsd: 0,
         durationMs: 10,
@@ -404,6 +430,7 @@ describe("subagent tool", () => {
       status: "budget_exceeded",
       model: { provider: "test", id: "model" },
       turns: 100,
+      usage: testUsage(1_000, 1.25),
       tokens: 1_000,
       costUsd: 1.25,
       durationMs: 1_000,
@@ -431,6 +458,7 @@ describe("subagent tool", () => {
         status: "cancelled",
         model: { provider: "test", id: "model" },
         turns: 0,
+        usage: testUsage(0),
         tokens: 0,
         costUsd: 0,
         durationMs: 1,

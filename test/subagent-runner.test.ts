@@ -13,7 +13,12 @@ import {
 import { Type, type TSchema } from "@sinclair/typebox";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { DEFAULT_SUBAGENT_BUDGET, runSubagent } from "../src/harness/subagent-runner.js";
-import { MikanAgentSession, MikanModels, SessionStore } from "../src/harness/index.js";
+import {
+  MikanAgentSession,
+  MikanModels,
+  SessionStore,
+  type SubagentUsage,
+} from "../src/harness/index.js";
 import { createSubagentTool } from "../src/tools/subagent.js";
 import { SubagentSlotPool } from "../src/tools/subagent-slots.js";
 
@@ -258,6 +263,22 @@ describe("runSubagent", () => {
     });
     expect(result.runId).toBeTruthy();
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
+    expect(result.usage).toMatchObject({
+      input: expect.any(Number),
+      output: expect.any(Number),
+      cacheRead: expect.any(Number),
+      cacheWrite: expect.any(Number),
+      totalTokens: expect.any(Number),
+      cost: {
+        input: expect.any(Number),
+        output: expect.any(Number),
+        cacheRead: expect.any(Number),
+        cacheWrite: expect.any(Number),
+        total: expect.any(Number),
+      },
+    });
+    expect(result.tokens).toBe(result.usage.totalTokens);
+    expect(result.costUsd).toBe(result.usage.cost.total);
   });
 
   test("validates structured output against a TypeBox schema", async () => {
@@ -543,7 +564,7 @@ describe("runSubagent", () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([fauxAssistantMessage("spent")]);
 
-    const usageCalls: Array<{ tokens: number; costUsd: number }> = [];
+    const usageCalls: SubagentUsage[] = [];
     const result = await runSubagent({
       request: { task: "Do focused work" },
       defaultModel: model,
@@ -556,10 +577,10 @@ describe("runSubagent", () => {
       },
     });
     expect(result.status).toBe("completed");
-    expect(usageCalls).toEqual([{ tokens: result.tokens, costUsd: result.costUsd }]);
+    expect(usageCalls).toEqual([result.usage]);
 
     // A run that fails before the session even starts still reports once.
-    const failureCalls: Array<{ tokens: number; costUsd: number }> = [];
+    const failureCalls: SubagentUsage[] = [];
     const failure = await runSubagent({
       request: { task: "Do focused work", tools: ["missing-tool"] },
       defaultModel: model,
@@ -572,7 +593,7 @@ describe("runSubagent", () => {
       },
     });
     expect(failure.status).toBe("failed");
-    expect(failureCalls).toEqual([{ tokens: failure.tokens, costUsd: failure.costUsd }]);
+    expect(failureCalls).toEqual([failure.usage]);
   });
 
   test("a throwing onUsage listener does not break the never-reject contract", async () => {

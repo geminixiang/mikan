@@ -42,14 +42,14 @@ import type { RunOrigin } from "./extensions/types.js";
 import type { MikanModels } from "./models.js";
 import { resolveHarnessSettings, type BudgetSettings, type HarnessSettings } from "./settings.js";
 import type { SessionStore } from "./session-store.js";
-import type { CompactionEntry } from "./types.js";
+import type { CompactionEntry, SubagentUsage } from "./types.js";
+import { addSubagentUsage, copySubagentUsage, createEmptySubagentUsage } from "./usage.js";
 
 export type CompactionReason = "threshold" | "overflow" | "manual";
 
 /** Running resource tally for the current `prompt()` call, matched against the budget. */
 interface RunTally {
-  tokens: number;
-  costUsd: number;
+  usage: SubagentUsage;
   llmCalls: number;
   startedAt: number;
 }
@@ -142,7 +142,11 @@ export class MikanAgentSession {
   private retryAbortController: AbortController | undefined;
   private compactionAbortController: AbortController | undefined;
   private runActive = false;
-  private tally: RunTally = { tokens: 0, costUsd: 0, llmCalls: 0, startedAt: 0 };
+  private tally: RunTally = {
+    usage: createEmptySubagentUsage(),
+    llmCalls: 0,
+    startedAt: 0,
+  };
   private runBudget: BudgetSettings = {};
   private budgetExceededReason: string | undefined;
   private runOrigin: RunOrigin | undefined;
@@ -211,6 +215,7 @@ export class MikanAgentSession {
 
   /** Resource totals and terminal budget state from the most recent prompt. */
   getLastRunStats(): Readonly<{
+    usage: SubagentUsage;
     tokens: number;
     costUsd: number;
     llmCalls: number;
@@ -218,8 +223,9 @@ export class MikanAgentSession {
     budgetExceededReason?: string;
   }> {
     return {
-      tokens: this.tally.tokens,
-      costUsd: this.tally.costUsd,
+      usage: copySubagentUsage(this.tally.usage),
+      tokens: this.tally.usage.totalTokens,
+      costUsd: this.tally.usage.cost.total,
       llmCalls: this.tally.llmCalls,
       durationMs: this.tally.startedAt > 0 ? Date.now() - this.tally.startedAt : 0,
       ...(this.budgetExceededReason ? { budgetExceededReason: this.budgetExceededReason } : {}),
@@ -231,12 +237,11 @@ export class MikanAgentSession {
    * runs launched by a tool during the current prompt — into the run tally
    * and enforce the run budget at the fold itself: a fold that lands over a
    * resource ceiling aborts the run now instead of waiting for a next
-   * assistant message that may never come (and would be paid for). Counts
-   * tokens and cost only; external runs are not this session's turns.
+   * assistant message that may never come (and would be paid for). Complete
+   * usage is folded; external runs are not this session's turns.
    */
-  async foldExternalUsage(usage: { tokens?: number; costUsd?: number }): Promise<void> {
-    this.tally.tokens += usage.tokens ?? 0;
-    this.tally.costUsd += usage.costUsd ?? 0;
+  async foldExternalUsage(usage: SubagentUsage): Promise<void> {
+    addSubagentUsage(this.tally.usage, usage);
     if (this.budgetExceededReason || !this.runActive) return;
     const reason = this.resourceOverBudgetReason();
     if (reason) await this.exceedBudget(reason);
@@ -294,7 +299,11 @@ export class MikanAgentSession {
     this.overflowRecoveryAttempted = false;
     this.runBudget = { ...this.settings.budget, ...options?.budget };
     this.budgetExceededReason = undefined;
-    this.tally = { tokens: 0, costUsd: 0, llmCalls: 0, startedAt: Date.now() };
+    this.tally = {
+      usage: createEmptySubagentUsage(),
+      llmCalls: 0,
+      startedAt: Date.now(),
+    };
     this.runOrigin = options?.origin;
 
     // A previous turn may have ended over the threshold (for example after an
@@ -436,8 +445,7 @@ export class MikanAgentSession {
     this.tally.llmCalls += 1;
     const usage = message.usage;
     if (!usage) return;
-    this.tally.tokens += usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
-    this.tally.costUsd += usage.cost?.total ?? 0;
+    addSubagentUsage(this.tally.usage, usage);
   }
 
   /** Compare the tally against the run budget; abort the run when a cap is exceeded. */
@@ -454,16 +462,16 @@ export class MikanAgentSession {
     await this.emit({
       type: "budget_exceeded",
       reason,
-      tokens: this.tally.tokens,
-      costUsd: this.tally.costUsd,
+      tokens: this.tally.usage.totalTokens,
+      costUsd: this.tally.usage.cost.total,
       llmCalls: this.tally.llmCalls,
       durationMs: Date.now() - this.tally.startedAt,
     });
     if (this.extensions?.hasHandlers("budget_exceeded")) {
       await this.extensions.emit("budget_exceeded", {
         reason,
-        tokens: this.tally.tokens,
-        costUsd: this.tally.costUsd,
+        tokens: this.tally.usage.totalTokens,
+        costUsd: this.tally.usage.cost.total,
         llmCalls: this.tally.llmCalls,
         durationMs: Date.now() - this.tally.startedAt,
         origin: this.runOrigin,
@@ -486,11 +494,11 @@ export class MikanAgentSession {
   /** The message-independent budget checks, shared with external-spend folds. */
   private resourceOverBudgetReason(): string | undefined {
     const { maxTokens, maxCostUsd, maxDurationMs } = this.runBudget;
-    if (maxTokens !== undefined && this.tally.tokens >= maxTokens) {
-      return `${this.tally.tokens} tokens >= ${maxTokens} limit`;
+    if (maxTokens !== undefined && this.tally.usage.totalTokens >= maxTokens) {
+      return `${this.tally.usage.totalTokens} tokens >= ${maxTokens} limit`;
     }
-    if (maxCostUsd !== undefined && this.tally.costUsd >= maxCostUsd) {
-      return `cost ${this.tally.costUsd.toFixed(2)} USD >= ${maxCostUsd} USD limit`;
+    if (maxCostUsd !== undefined && this.tally.usage.cost.total >= maxCostUsd) {
+      return `cost ${this.tally.usage.cost.total.toFixed(2)} USD >= ${maxCostUsd} USD limit`;
     }
     if (maxDurationMs !== undefined && Date.now() - this.tally.startedAt >= maxDurationMs) {
       return `${Date.now() - this.tally.startedAt}ms >= ${maxDurationMs}ms limit`;

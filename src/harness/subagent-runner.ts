@@ -15,6 +15,7 @@ import type {
   SubagentRunResult,
   SubagentUsage,
 } from "./types.js";
+import { copySubagentUsage, createEmptySubagentUsage } from "./usage.js";
 import { unboundedSlotPool, type SubagentSlotPool } from "../tools/subagent-slots.js";
 
 const subagentRunDepth = new AsyncLocalStorage<number>();
@@ -289,7 +290,7 @@ export async function runSubagent<TOutputSchema extends TSchema | undefined = un
 ): Promise<SubagentRunResult<SubagentRunOutput<TOutputSchema>>> {
   const result = await executeBoundedSubagentRun(options);
   try {
-    await options.onUsage?.({ tokens: result.tokens, costUsd: result.costUsd });
+    await options.onUsage?.(copySubagentUsage(result.usage));
   } catch (err) {
     log.logWarning("Subagent onUsage listener failed", String(err));
   }
@@ -305,6 +306,7 @@ async function executeBoundedSubagentRun<TOutputSchema extends TSchema | undefin
     release = await (options.slots ?? unboundedSlotPool()).acquire(options.request.signal);
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
+      const usage = createEmptySubagentUsage();
       return {
         runId: randomUUID(),
         status: "cancelled",
@@ -313,8 +315,9 @@ async function executeBoundedSubagentRun<TOutputSchema extends TSchema | undefin
           id: options.defaultModel.id,
         },
         turns: 0,
-        tokens: 0,
-        costUsd: 0,
+        usage,
+        tokens: usage.totalTokens,
+        costUsd: usage.cost.total,
         durationMs: Date.now() - startedAt,
       };
     }
@@ -398,8 +401,9 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
       runId,
       model: modelSpec,
       turns: stats.llmCalls,
-      tokens: stats.tokens,
-      costUsd: stats.costUsd,
+      usage: stats.usage,
+      tokens: stats.usage.totalTokens,
+      costUsd: stats.usage.cost.total,
       durationMs: Date.now() - startedAt,
       ...(text ? { text } : {}),
     };
@@ -462,13 +466,15 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
     };
   } catch (err) {
     const stats = sessionRef?.getLastRunStats();
+    const usage = stats?.usage ?? createEmptySubagentUsage();
     return {
       runId,
       status: terminalSignal ?? "failed",
       model: modelSpec,
       turns: stats?.llmCalls ?? 0,
-      tokens: stats?.tokens ?? 0,
-      costUsd: stats?.costUsd ?? 0,
+      usage,
+      tokens: usage.totalTokens,
+      costUsd: usage.cost.total,
       durationMs: Date.now() - startedAt,
       error: err instanceof Error ? err.message : String(err),
     };
