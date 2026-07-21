@@ -68,6 +68,7 @@ GITHUB_OAUTH_ACCESS_TOKEN=gho_xxx
 | `host`             | 不注入              | 不投影                     | 可存 credentials，但不注入 host commands             |
 | `container:<name>` | 注入                | 不投影                     | `container-<name>`                                   |
 | `image:<image>`    | 注入                | 自動投影                   | generated conversation vault，通常是 conversation ID |
+| `firecracker:*`    | 注入                | 不投影                     | generated conversation vault                         |
 | `cloudflare:*`     | 注入                | 不投影                     | generated platform-scoped conversation vault         |
 
 ## `/login`

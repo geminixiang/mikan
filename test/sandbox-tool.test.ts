@@ -58,7 +58,7 @@ describe("createSandboxTool", () => {
       boosted: false,
     });
     const { tool, setSandboxContext } = createSandboxTool({
-      sandbox: { type: "image", image: "test" },
+      sandbox: { type: "gondolin", profile: "default" },
       resourceController: {
         getLimitStatus: vi.fn(),
         setLimits,

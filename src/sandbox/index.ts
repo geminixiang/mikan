@@ -1,20 +1,15 @@
-import { AgentSandboxExecutor, agentSandboxAdapter } from "./agent-sandbox.js";
-import { CloudflareSandboxExecutor, cloudflareSandboxAdapter } from "./cloudflare.js";
 import { ContainerExecutor, containerSandboxAdapter } from "./container.js";
+import { FirecrackerExecutor, firecrackerSandboxAdapter } from "./firecracker.js";
+import { CloudflareSandboxExecutor, cloudflareSandboxAdapter } from "./cloudflare.js";
 import { HostExecutor, hostSandboxAdapter } from "./host.js";
 import { imageSandboxAdapter } from "./image.js";
+import { GondolinExecutor, gondolinSandboxAdapter } from "./gondolin.js";
 import { SandboxError } from "./errors.js";
 import { createMountedRuntimePathContext } from "./path-context.js";
-export {
-  configureAgentSandboxRuntime,
-  shutdownAgentSandboxes,
-  stopIdleAgentSandboxes,
-} from "./agent-sandbox.js";
+export { configureGondolinRuntime, type GondolinBootstrapOptions } from "./gondolin-bootstrap.js";
 import type { Executor, RuntimePathContext, SandboxAdapter, SandboxConfig } from "./types.js";
 
 export type {
-  AgentSandboxConfig,
-  AgentSandboxRuntimeOptions,
   CloudflareSandboxConfig,
   ExecOptions,
   ExecResult,
@@ -23,14 +18,21 @@ export type {
   SandboxAdapter,
   SandboxConfig,
 } from "./types.js";
-export { AgentSandboxExecutor, CloudflareSandboxExecutor, ContainerExecutor, HostExecutor };
+export {
+  CloudflareSandboxExecutor,
+  ContainerExecutor,
+  FirecrackerExecutor,
+  HostExecutor,
+  GondolinExecutor,
+};
 export { SandboxError } from "./errors.js";
 
 const sandboxAdapters = [
   hostSandboxAdapter,
   containerSandboxAdapter,
   imageSandboxAdapter,
-  agentSandboxAdapter,
+  gondolinSandboxAdapter,
+  firecrackerSandboxAdapter,
   cloudflareSandboxAdapter,
 ] as const;
 const sandboxAdapterByType = new Map(
@@ -64,7 +66,7 @@ export function parseSandboxArg(value: string): SandboxConfig {
   }
 
   throw new SandboxError(
-    `Error: Invalid sandbox type '${value}'. Use 'host', 'container:<container-name>', 'image:<image-name>', 'agent-sandbox:<warm-pool>', or 'cloudflare:<sandbox-id>'`,
+    `Error: Invalid sandbox type '${value}'. Use 'host', 'container:<container-name>', 'image:<image-name>', 'gondolin:default', 'firecracker:<vm-id>:<host-path>', or 'cloudflare:<sandbox-id>'`,
   );
 }
 
@@ -105,7 +107,7 @@ export function getUnresolvedSandboxPathContext(
   sandboxConfig: SandboxConfig,
   hostWorkspaceRoot: string,
 ): RuntimePathContext {
-  if (sandboxConfig.type === "image" || sandboxConfig.type === "agent-sandbox") {
+  if (sandboxConfig.type === "image") {
     return createMountedRuntimePathContext(hostWorkspaceRoot, "/workspace");
   }
 

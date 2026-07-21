@@ -1,0 +1,11 @@
+{
+  "instanceId": "gh-owner-repo-42",
+  "image": "/var/lib/mikan/images/base",
+  "imageSelector": "base",
+  "mounts": [{ "source": "/srv/mikan-workspace/gh-owner-repo-42", "target": "/workspace" }],
+  "cpus": 2,
+  "memory": "2g",
+  "fingerprint": "fp-1234abcd",
+  "inventoryDir": "/var/lib/mikan-worker/gondolin-runtimes",
+  "heartbeatStaleMs": 90000
+}

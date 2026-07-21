@@ -26,10 +26,15 @@ export class SandboxCommandHandler implements CommandHandler {
     const parsed = parseSandboxCommand(context.commandText);
     if (!parsed) return false;
 
-    if (context.services.sandbox.type !== "image" || !context.services.resourceController) {
+    if (
+      (context.services.sandbox.type !== "image" && context.services.sandbox.type !== "gondolin") ||
+      !context.services.resourceController
+    ) {
       await replyDiagnosticWithContext(
         context.responder,
-        formatCommandSummary("Sandbox", ["`/pi-sandbox` 目前只支援 `image:*` managed sandbox。"]),
+        formatCommandSummary("Sandbox", [
+          "`/pi-sandbox` 目前只支援 `image:*` 與 `gondolin:*` managed sandbox。",
+        ]),
         { style: "muted" },
       );
       return true;

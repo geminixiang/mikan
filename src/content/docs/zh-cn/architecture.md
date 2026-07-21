@@ -69,6 +69,7 @@ description: 了解 mikan 如何连接平台适配器、会话、代理、沙箱
 - 提供统一的 `Executor` 抽象
 - 将沙箱运行时分为两类：
   - 共享：`host` / `container:<name>`，共享同一主机或命名容器
+  - 隔离：`image:<image>` / `firecracker:*` / `cloudflare:*`，按参与者/对话/vault 路由到隔离执行环境
 - 使用 `ActorExecutionResolver` 按用户/对话/vault 确定实际 executor
 - 在 `image` 模式下自动创建和回收 Docker 容器，将 `image:<image>` 解析为具体的 `container:<name>` executor
 
@@ -187,6 +188,7 @@ flowchart TD
   WebServer --> VaultManager["vault/index.ts\nwrite env/file into vault"]
   VaultManager --> VaultDir["state-dir/vaults/<vaultId>/"]
   VaultManager --> Resolver["execution-resolver.ts"]
+  Resolver --> Sandbox["host / container / image / firecracker / cloudflare"]
 ```
 
 要点：
@@ -194,6 +196,7 @@ flowchart TD
 - 凭证不会直接进入工作区
 - vault 位于 `--state-dir`
 - 执行时，对话 vault 会路由到相应沙箱
+- `image` / `firecracker` / `cloudflare` 模式使用按参与者/对话的 vault 路由；`container:<name>` 使用共享容器 vault；`host` 不注入 vault 环境变量
 
 ## 6. 事件与普通聊天的区别
 

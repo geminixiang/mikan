@@ -67,18 +67,21 @@ Conversation settings は host-authoritative です。古い `<workspace>/<conve
 
 以下の値は onboarding によって生成されます。解決後のグローバル設定では `llm.provider`、`llm.model`、`llm.thinkingLevel` が必須で、その他のフィールドは省略できます。
 
-| フィールド                   | Onboarding の値     | 説明                                                                                |
-| ---------------------------- | ------------------- | ----------------------------------------------------------------------------------- |
-| `llm.provider`               | `anthropic`         | メイン AI provider                                                                  |
-| `llm.model`                  | `claude-sonnet-4-6` | メイン model 名                                                                     |
-| `llm.thinkingLevel`          | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max` のいずれか                |
-| `llm.autoReply.provider`     | `anthropic`         | auto-reply rules の評価に使う任意の model provider                                  |
-| `llm.autoReply.model`        | `claude-haiku-4-5`  | auto-reply rules の評価に使う任意の model                                           |
-| `sentry.dsn`                 | 未設定              | Sentry DSN。機密性の高い prompt と tool の内容はマスクされます                      |
-| `sandbox.boost.cpus`         | `2`                 | `/pi-sandbox boost` が適用する一時的な CPU 制限                                     |
-| `sandbox.boost.memory`       | `4g`                | `/pi-sandbox boost` が適用する一時的なメモリ制限                                    |
-| `sandbox.defaultSharedVault` | 空                  | 対象となる membership-trust image/Cloudflare conversations にコピーされる共有 vault |
-| `slack.replyMode`            | `top-level`         | Slack 応答モード：`top-level` または `thread`                                       |
+| フィールド                     | Onboarding の値     | 説明                                                                                                                             |
+| ------------------------------ | ------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `llm.provider`                 | `anthropic`         | メイン AI provider                                                                                                               |
+| `llm.model`                    | `claude-sonnet-4-6` | メイン model 名                                                                                                                  |
+| `llm.thinkingLevel`            | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max` のいずれか                                                             |
+| `llm.autoReply.provider`       | `anthropic`         | auto-reply rules の評価に使う任意の model provider                                                                               |
+| `llm.autoReply.model`          | `claude-haiku-4-5`  | auto-reply rules の評価に使う任意の model                                                                                        |
+| `sentry.dsn`                   | 未設定              | Sentry DSN。機密性の高い prompt と tool の内容はマスクされます                                                                   |
+| `sandbox.cpus`                 | `0.5`               | mikan 管理の image/Gondolin runtimes の CPU 制限。Gondolin は小数値を整数 vCPU に切り上げます                                    |
+| `sandbox.memory`               | `1g`                | mikan 管理の image/Gondolin runtimes のメモリ制限                                                                                |
+| `sandbox.boost.cpus`           | `2`                 | `/pi-sandbox boost` が適用する一時的な CPU 制限                                                                                  |
+| `sandbox.boost.memory`         | `4g`                | `/pi-sandbox boost` が適用する一時的なメモリ制限                                                                                 |
+| `sandbox.image.workspaceMount` | `private`           | image/Gondolin sandbox では、`private` は共有 support files と現在の conversation を公開し、`full` は workspace 全体を公開します |
+| `sandbox.defaultSharedVault`   | 空                  | 対象となる membership-trust image/Cloudflare conversations にコピーされる共有 vault                                              |
+| `slack.replyMode`              | `top-level`         | Slack 応答モード：`top-level` または `thread`                                                                                    |
 
 `/pi-model` は conversation の部分的な上書きを書き込みます。`/pi-sandbox private|full` は conversation の workspace mount mode を更新します。Auto-reply の有効化と rule text は JSON settings fields ではなく、`/pi-auto-reply` と conversation の `auto-reply` marker file で管理されます。
 
@@ -97,15 +100,17 @@ Conversation settings は host-authoritative です。古い `<workspace>/<conve
 
 ## CLI リファレンス
 
-| コマンドまたはオプション                                           | 用途                                                                                  |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
-| `mikan --onboard [--state-dir=<dir>]`                              | 必須のグローバル設定ファイルを作成                                                    |
-| `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]` | 設定済みの platform bots を起動。working directory の既定値は `<state-dir>/workspace` |
-| `mikan env`                                                        | 環境変数の完全なインベントリと、現在設定されている内容を表示                          |
-| `mikan --download <channel-id>`                                    | Slack channel history をダウンロード。`SLACK_BOT_TOKEN` が必要                        |
-| `mikan --version`                                                  | インストール済み version を表示                                                       |
-| `mikan --help`                                                     | CLI の使い方と platform-token のサマリーを表示                                        |
-| `mikan ext ...`                                                    | harness extensions を管理。subcommands は `mikan ext` で確認                          |
+| コマンドまたはオプション                                                                                                           | 用途                                                                                  |
+| ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `mikan --onboard [--state-dir=<dir>]`                                                                                              | 必須のグローバル設定ファイルを作成                                                    |
+| `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]`                                                                 | 設定済みの platform bots を起動。working directory の既定値は `<state-dir>/workspace` |
+| `--sandbox=host \| container:<name> \| image:<image> \| gondolin:default \| gondolin:remote \| firecracker:... \| cloudflare:<id>` | tool execution mode を選択。既定値は `host`                                           |
+| `mikan env`                                                                                                                        | 環境変数の完全なインベントリと、現在設定されている内容を表示                          |
+| `mikan --worker-token`                                                                                                             | 一度きりの gondolin worker join token を発行                                          |
+| `mikan --download <channel-id>`                                                                                                    | Slack channel history をダウンロード。`SLACK_BOT_TOKEN` が必要                        |
+| `mikan --version`                                                                                                                  | インストール済み version を表示                                                       |
+| `mikan --help`                                                                                                                     | CLI の使い方と platform-token のサマリーを表示                                        |
+| `mikan ext ...`                                                                                                                    | harness extensions を管理。subcommands は `mikan ext` で確認                          |
 
 ## 環境変数のエイリアス
 

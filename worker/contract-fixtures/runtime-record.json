@@ -1,0 +1,9 @@
+{
+  "sessionId": "sess-0f3a",
+  "instanceId": "gh-owner-repo-42",
+  "ownerPid": 4242,
+  "runnerPid": 4243,
+  "createdAt": "2026-07-18T00:00:00.000Z",
+  "socketPath": "/tmp/gondolin/sess-0f3a.sock",
+  "fingerprint": "fp-1234abcd"
+}

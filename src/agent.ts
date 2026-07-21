@@ -276,12 +276,12 @@ function buildEnvDescription(sandboxType: SandboxConfig["type"], workspaceRoot: 
 - Bash commands start in: ${workspaceRoot}
 - Install tools with the container's package manager
 - Your changes persist across sessions`;
-    case "agent-sandbox":
-      return `You are running inside a Kata-isolated Agent Sandbox microVM.
+    case "firecracker":
+      return `You are running inside a Firecracker microVM.
 - Runtime workspace root: ${workspaceRoot}
-- Bash commands start in: ${workspaceRoot}
-- The workspace is shared with the mikan control plane
-- Your sandbox is released after its idle timeout`;
+- Use cd or absolute paths; project files are under ${workspaceRoot}
+- Install tools with: apt-get install <package> (Debian-based)
+- Your changes persist across sessions`;
     case "cloudflare":
       return `You are running through a Cloudflare Sandbox bridge.
 - Runtime workspace root: ${workspaceRoot}
@@ -322,8 +322,8 @@ function buildSystemPrompt(
     conversationId,
   );
   const sandboxType = sandboxConfig.type;
-  const isContainerLike =
-    sandboxType === "container" || sandboxType === "image" || sandboxType === "agent-sandbox";
+  const isContainerLike = sandboxType === "container" || sandboxType === "image";
+  const isFirecracker = sandboxType === "firecracker";
 
   // Format channel mappings
   const channelMappings =
@@ -449,7 +449,7 @@ Update this file whenever you modify the environment. On fresh container, read i
 Format: \`{"date":"...","ts":"...","user":"...","userName":"...","text":"...","isMessagingBot":false}\`
 The log contains user messages and your final responses (not tool calls/results).
 Use \`log.jsonl\` for quick grep-style history. Use \`${conversationPath}/sessions/\` when you need structured turns, tool outputs, or thread/session lineage.
-${isContainerLike ? "Install jq using the runtime image's package manager." : ""}
+${isContainerLike || isFirecracker ? "Install jq: apt-get install jq" : ""}
 \`\`\`bash
 # Recent messages
 tail -30 log.jsonl | jq -c '{date: .date[0:19], user: (.userName // .user), text}'
@@ -988,7 +988,13 @@ function createRunnerExecutionContext(
 ): RunnerExecutionContext {
   const executionResolver =
     vaultManager && sandboxConfig.type !== "host"
-      ? new ActorExecutionResolver(sandboxConfig, vaultManager, provisioner, workspaceDir)
+      ? new ActorExecutionResolver(
+          sandboxConfig,
+          vaultManager,
+          provisioner,
+          workspaceDir,
+          hostWorkspacePath,
+        )
       : undefined;
 
   // activeExecutor is replaced at the start of each run() call when executionResolver

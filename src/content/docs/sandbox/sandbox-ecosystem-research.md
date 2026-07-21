@@ -5,6 +5,7 @@ description: 對 15 個 agent sandbox 相關開源專案的原始碼調查,萃�
 
 產生日期:2026-07-15
 
+延續 [workspace transport 研究](./gondolin-workspace-transport-research)(issue #88)。本調查對 15 個
 開源專案做 shallow-clone + 原始碼閱讀(非只讀 README),目的是**萃取設計概念**,不預設採用任何
 專案。四個平行軌道:microVM runtimes、fleet orchestration、agent control planes、sandbox SDK/服務層。
 每條結論附 repo 檔案路徑或文件出處;各專案均記錄檢視當日的 commit。
@@ -33,10 +34,12 @@ OpenSandbox(補查,含對一份外部推薦報告的 fact-check)。
    microsandbox(placeholder + DNS pin + SNI + authority 三重綁定防 TOCTOU/domain fronting)、
    boxlite(per-box MITM CA,私鑰只在 host)、CubeSandbox(CubeEgress L7 代理 header injection +
    log 自動 scrub + deny+inject 視為設定錯誤)、OpenSandbox(Credential Vault:egress sidecar
+   in-memory vault + MITM 出站注入,sandbox 只見假值)。這與 Gondolin 的 destination-bound
    placeholder 同構——佐證 mikan vault 的 HTTP credential 走 placeholder、file credential 走
    content 投影的既有分工正確。其中 OpenSandbox 的 `docs/guides/credential-vault.md` 是這個模式
    **規格最完整的一份文件**(binding schema、五種 auth type、scoped substitutions 的逐 surface
    邊界規則、redaction set 涵蓋所有編碼形態),可直接當 mikan 的規格參考書。注意其 sidecar 與
+   app container 共用 network namespace,機密性保證比 Gondolin 的 host-side placeholder 弱一層。
 5. **exec 協定「不可統一」是業界反覆出現的結論。** Cloudflare 的 `SESSION_EXECUTION.md` 給出
    完整理論:前景(狀態持續、暫存檔同步寫入)與背景(FIFO 串流、可 kill)「統一必犧牲其一」;
    AIO Sandbox 同樣分 bash(offset 輪詢)/shell(WebSocket+PTY)雙軌。
@@ -84,6 +87,7 @@ OpenSandbox(補查,含對一份外部推薦報告的 fact-check)。
 | 概念                                                                                                                             | 出處                                                            | 說明                                                                                                  |
 | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | Egress 層 credential injection:secret 永不進 sandbox、log 自動 scrub、deny+inject 視為設定錯誤                                   | CubeSandbox `CubeEgress/lua/*` + `docs/guide/security-proxy.md` | 最完整的 egress-substitution 實作範本                                                                 |
+| Placeholder + DNS pin + SNI + authority 對齊,防 TOCTOU 與 domain fronting                                                        | microsandbox `docs/security/secrets.mdx`                        | Gondolin placeholder 模式的強化細節,驗證規則可借                                                      |
 | Per-sandbox 短效 CA、私鑰只在 host、Debug trait 手動 redact                                                                      | boxlite `net/ca.rs`                                             | MITM 路線的安全衛生清單                                                                               |
 | First-match-wins 宣告式 L7 egress 規則 schema(match/action/inject)                                                               | CubeSandbox                                                     | 網路政策 schema 形狀                                                                                  |
 | Binding schema:match(scheme/host/method/path)× 五種 auth type × scoped substitutions(path/query/header/body 逐 surface 邊界規則) | OpenSandbox `docs/guides/credential-vault.md`                   | vault routing 規則升級的規格參考;「假 env var 起動 CLI、出站邊界注入真值」直接解 private npm/PyPI/git |
@@ -93,18 +97,19 @@ OpenSandbox(補查,含對一份外部推薦報告的 fact-check)。
 
 ### In-guest tooling / exec 協定
 
-| 概念                                                                         | 出處                                                 | 說明                                               |
-| ---------------------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------- |
-| 前景/背景 exec 雙軌不可統一的完整論證                                        | cloudflare `docs/SESSION_EXECUTION.md:15-70,153-160` | mikan bash exec 若要加互動/串流,分兩條路徑而非疊加 |
-| Offset-based 輪詢 exec(`offset`/`stderr_offset` 續傳、可 kill、hard_timeout) | AIO Sandbox `bash.exec`/`bash.output`                | WAN 不穩連線下比長連線串流更耐斷,重連只需帶 offset |
-| 3-byte binary prefix 分離 stdout/stderr 保序                                 | cloudflare `SESSION_EXECUTION.md:71-82`              | 已驗證的簡單方案                                   |
-| `fs.watch` + 50ms 輪詢 hybrid 完成偵測                                       | cloudflare `SESSION_EXECUTION.md:88-98`              | fs.watch 在 tmpfs/overlayfs 漏 rename 事件的已知坑 |
-| FIFO 阻塞讀取做 PID 同步(而非輪詢半寫檔案)                                   | cloudflare `SESSION_EXECUTION.md:133-140`            | 檔案系統 IPC 的競態消除                            |
-| tar 批次上傳解壓 API                                                         | rivet sandbox-agent `/v1/fs/upload-batch`            | skills/vault 靜態內容單向佈署,一個請求勝過逐檔傳輸 |
-| 執行期動態註冊 shutdown hook                                                 | AIO Sandbox `POST /v1/sandbox/hooks`                 | worker draining 時讓 in-guest 邏輯收尾             |
-| 內建 observability(cgroup/process/disk snapshot 匯出)                        | AIO Sandbox `sandbox.observe*`                       | agent 自助 debug/profiling as a service            |
-| Universal event schema + best-effort converter,轉不掉的存 `Unparsed` 不丟    | rivet sandbox-agent `universal-agent-schema`         | 未來 in-guest 支援多種 agent CLI 的正規化範式      |
-| Transport 可抽換(http/ws/rpc)而 API 契約不變                                 | cloudflare `sandbox.ts:1592-1621`                    | worker 通訊協定與介面解耦                          |
+| 概念                                                                         | 出處                                                 | 說明                                                   |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------ |
+| 前景/背景 exec 雙軌不可統一的完整論證                                        | cloudflare `docs/SESSION_EXECUTION.md:15-70,153-160` | mikan bash exec 若要加互動/串流,分兩條路徑而非疊加     |
+| Offset-based 輪詢 exec(`offset`/`stderr_offset` 續傳、可 kill、hard_timeout) | AIO Sandbox `bash.exec`/`bash.output`                | WAN 不穩連線下比長連線串流更耐斷,重連只需帶 offset     |
+| 3-byte binary prefix 分離 stdout/stderr 保序                                 | cloudflare `SESSION_EXECUTION.md:71-82`              | 已驗證的簡單方案                                       |
+| `fs.watch` + 50ms 輪詢 hybrid 完成偵測                                       | cloudflare `SESSION_EXECUTION.md:88-98`              | fs.watch 在 tmpfs/overlayfs 漏 rename 事件的已知坑     |
+| FIFO 阻塞讀取做 PID 同步(而非輪詢半寫檔案)                                   | cloudflare `SESSION_EXECUTION.md:133-140`            | 檔案系統 IPC 的競態消除                                |
+| 檔案 watch 一等 API(create/poll/wait/events/list/stop)                       | AIO Sandbox `file.watch*`                            | gondolin VFS 目前僅 read/write;變更偵測 API 的現成形狀 |
+| tar 批次上傳解壓 API                                                         | rivet sandbox-agent `/v1/fs/upload-batch`            | skills/vault 靜態內容單向佈署,一個請求勝過逐檔傳輸     |
+| 執行期動態註冊 shutdown hook                                                 | AIO Sandbox `POST /v1/sandbox/hooks`                 | worker draining 時讓 in-guest 邏輯收尾                 |
+| 內建 observability(cgroup/process/disk snapshot 匯出)                        | AIO Sandbox `sandbox.observe*`                       | agent 自助 debug/profiling as a service                |
+| Universal event schema + best-effort converter,轉不掉的存 `Unparsed` 不丟    | rivet sandbox-agent `universal-agent-schema`         | 未來 in-guest 支援多種 agent CLI 的正規化範式          |
+| Transport 可抽換(http/ws/rpc)而 API 契約不變                                 | cloudflare `sandbox.ts:1592-1621`                    | worker 通訊協定與介面解耦                              |
 
 ### 對話/執行狀態模型(control plane 層)
 
@@ -119,21 +124,23 @@ OpenSandbox(補查,含對一份外部推薦報告的 fact-check)。
 
 ## 各 repo 一行判定
 
-| Repo                        | 定位/隔離                                              | 成熟度(2026-07)                                    | 對 mikan 的判定                                                                                         |
-| --------------------------- | ------------------------------------------------------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| CubeSandbox                 | Tencent;Cloud Hypervisor + Kata-agent 衍生             | 活躍但年輕(2026-04 開源),Apache-2.0,Linux/KVM only | 概念礦最豐(cubecow/CubeEgress/分發追蹤);節點註冊明文無認證是反面教材                                    |
-| microsandbox                | YC;libkrun,三平台(KVM/HVF/WHP)                         | pre-1.0,日更,Apache-2.0                            | cross-machine sync 仍未出貨——migration research 的觀察維持有效;protocol 協商與 snapshot schema 慣例可借 |
-| arrakis                     | 個人;Cloud Hypervisor                                  | **停滯 13+ 個月**,AGPLv3                           | 只借概念(quiesce 三段式、狀態劃界),不借代碼                                                             |
-| boxlite                     | "SQLite for sandboxing";libkrun + jailer               | 0.9.7 活躍,核心 Apache-2.0 / apps AGPL             | 原生 qcow2 操作與 MITM CA 可借;fleet 層弱一致(local-state-wins)                                         |
-| daytona v0.190.0            | **Docker 容器,非 microVM**;Postgres+Redis+OCI registry | 生產級,AGPLv3                                      | archive=commit+push registry、恢復前驗證、TOPSIS/draining 可借;認證比 mikan 弱                          |
-| k8s agent-sandbox           | isolation-agnostic CRD(RuntimeClass)                   | v1beta1,SIG Apps,Apache-2.0                        | lifecycle API 設計(KEP-694)是最值得借的「命名決策文件」;placement 無可借(交給 kube-scheduler)           |
-| rivet agentos               | V8 isolate/WASM in-process VM                          | 活躍,Apache-2.0                                    | 排程/fencing 不在此 repo;fs-in-SQL-BLOB 對 git workspace 是倒退;只借「狀態結構化」原則                  |
-| rivet sandbox-agent         | in-sandbox Rust daemon(9 種 provider)                  | 0.5.0-rc,活躍,Apache-2.0                           | provider-agnostic in-guest daemon 的典範;持久化哲學與 mikan 相反                                        |
-| vercel/eve                  | filesystem-first durable agent framework               | beta,日更,Apache-2.0                               | 狀態模型詞彙可借;單 agent 單部署與 mikan 多租戶方向不合                                                 |
-| litellm-agent-control-plane | LiteLLM gateway 上的 agent 功能層                      | 活躍,MIT                                           | 「control plane」=API/計費層,無機群調度;locks.rs 是單行程 mutex,不可對映 lease fencing                  |
-| agent-infra/sandbox(AIO)    | Docker(seccomp=unconfined),server 閉源                 | 1.11.0,活躍,Apache-2.0(SDK)                        | API surface 目錄價值高(watch/hook/observability);隔離模型不可借                                         |
-| cloudflare/sandbox-sdk      | Cloudflare Containers + Durable Objects                | Beta,日更,Apache-2.0                               | 本組唯一 server 端可讀原始碼;SESSION_EXECUTION 文件是 exec 協定設計的必讀材料                           |
-| google/sandboxed-api        | C/C++ 函式庫 syscall 沙箱(Sandbox2)                    | 成熟,Apache-2.0                                    | 層級不匹配,參考價值最低(誠實記錄)                                                                       |
+| Repo                        | 定位/隔離                                                                              | 成熟度(2026-07)                                        | 對 mikan 的判定                                                                                                                                                                |
+| --------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| CubeSandbox                 | Tencent;Cloud Hypervisor + Kata-agent 衍生                                             | 活躍但年輕(2026-04 開源),Apache-2.0,Linux/KVM only     | 概念礦最豐(cubecow/CubeEgress/分發追蹤);節點註冊明文無認證是反面教材                                                                                                           |
+| microsandbox                | YC;libkrun,三平台(KVM/HVF/WHP)                                                         | pre-1.0,日更,Apache-2.0                                | cross-machine sync 仍未出貨——migration research 的觀察維持有效;protocol 協商與 snapshot schema 慣例可借                                                                        |
+| arrakis                     | 個人;Cloud Hypervisor                                                                  | **停滯 13+ 個月**,AGPLv3                               | 只借概念(quiesce 三段式、狀態劃界),不借代碼                                                                                                                                    |
+| boxlite                     | "SQLite for sandboxing";libkrun + jailer                                               | 0.9.7 活躍,核心 Apache-2.0 / apps AGPL                 | 原生 qcow2 操作與 MITM CA 可借;fleet 層弱一致(local-state-wins)                                                                                                                |
+| e2b-dev/infra               | Firecracker;Nomad+Consul+Postgres+Redis+ClickHouse                                     | 生產級,Apache-2.0                                      | 儲存三層(本地=快取/共用=LAN 加速/object storage=權威)是最有價值的架構印證                                                                                                      |
+| daytona v0.190.0            | **Docker 容器,非 microVM**;Postgres+Redis+OCI registry                                 | 生產級,AGPLv3                                          | archive=commit+push registry、恢復前驗證、TOPSIS/draining 可借;認證比 mikan 弱                                                                                                 |
+| k8s agent-sandbox           | isolation-agnostic CRD(RuntimeClass)                                                   | v1beta1,SIG Apps,Apache-2.0                            | lifecycle API 設計(KEP-694)是最值得借的「命名決策文件」;placement 無可借(交給 kube-scheduler)                                                                                  |
+| rivet agentos               | V8 isolate/WASM in-process VM                                                          | 活躍,Apache-2.0                                        | 排程/fencing 不在此 repo;fs-in-SQL-BLOB 對 git workspace 是倒退;只借「狀態結構化」原則                                                                                         |
+| rivet sandbox-agent         | in-sandbox Rust daemon(9 種 provider)                                                  | 0.5.0-rc,活躍,Apache-2.0                               | provider-agnostic in-guest daemon 的典範;持久化哲學與 mikan 相反                                                                                                               |
+| vercel/eve                  | filesystem-first durable agent framework                                               | beta,日更,Apache-2.0                                   | 狀態模型詞彙可借;單 agent 單部署與 mikan 多租戶方向不合                                                                                                                        |
+| litellm-agent-control-plane | LiteLLM gateway 上的 agent 功能層                                                      | 活躍,MIT                                               | 「control plane」=API/計費層,無機群調度;locks.rs 是單行程 mutex,不可對映 lease fencing                                                                                         |
+| agent-infra/sandbox(AIO)    | Docker(seccomp=unconfined),server 閉源                                                 | 1.11.0,活躍,Apache-2.0(SDK)                            | API surface 目錄價值高(watch/hook/observability);隔離模型不可借                                                                                                                |
+| cloudflare/sandbox-sdk      | Cloudflare Containers + Durable Objects                                                | Beta,日更,Apache-2.0                                   | 本組唯一 server 端可讀原始碼;SESSION_EXECUTION 文件是 exec 協定設計的必讀材料                                                                                                  |
+| google/sandboxed-api        | C/C++ 函式庫 syscall 沙箱(Sandbox2)                                                    | 成熟,Apache-2.0                                        | 層級不匹配,參考價值最低(誠實記錄)                                                                                                                                              |
+| OpenSandbox                 | Alibaba;Python FastAPI 控制面 + Docker/K8s 雙 runtime;隔離可選 gVisor/Kata/Firecracker | 7 個月 12k stars,commit 極活躍,Apache-2.0,元件獨立發版 | Credential Vault 是 secret-never-enters-guest 的第四次收斂且規格最完整;多機=K8s(無自建 fencing);macOS 只跑控制面(容器靠 Colima);S3 backend 是路線圖非現貨、ossfs 限 Linux host |
 
 ## 建議的後續行動(對映既有 roadmap)
 
@@ -143,14 +150,15 @@ OpenSandbox(補查,含對一份外部推薦報告的 fact-check)。
    慣例(microsandbox);斷線重連的三態判斷介面(cloudflare `checkChanges`)。
 2. **Worker protocol 強化 batch**:protocol generation 協商(microsandbox 模式);狀態欄位改
    spec/status condition 慣例 + KEP-694 checklist;draining 連續確認;requeue-at-expiry。
+3. **Vault 驗證規則補強**:對照 microsandbox 的 DNS pin/SNI/authority 三重綁定,檢視 Gondolin
    placeholder 路徑是否已涵蓋同等防護;CubeEgress 的「deny+inject = 設定錯誤」fail-safe 規則
    直接可抄進 mikan 的 vault routing 驗證。**規格參考書用 OpenSandbox 的 credential-vault.md**:
    binding schema(match + auth type + scoped substitutions)+ redaction 全編碼形態 +
    refuse-to-activate 紀律;private npm/PyPI/git 用「guest 放假 token、出站邊界對 registry host
    注入真值」的配方,比 env var 注入高一個安全等級。
-3. **Exec 協定演進原則**:未來要互動 PTY 或即時串流時走獨立雙軌,不疊加在現有 exec 上
+4. **Exec 協定演進原則**:未來要互動 PTY 或即時串流時走獨立雙軌,不疊加在現有 exec 上
    (cloudflare 論證);WAN 韌性場景評估 offset 輪詢形狀(AIO)。
-4. **不追**:VM memory snapshot 跨機(業界皆未解,mac↔linux 架構不可攜);fs-in-SQL(agentOS
+5. **不追**:VM memory snapshot 跨機(業界皆未解,mac↔linux 架構不可攜);fs-in-SQL(agentOS
    模式對 git workspace 倒退);K8s/Nomad 級外部依賴(與自建方向矛盾)。
 
 ## 方法與出處

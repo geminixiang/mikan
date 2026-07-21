@@ -42,6 +42,7 @@ Suitable for:
 
 - multiple users sharing one mikan instance
 - per-conversation env/file credential isolation
+- better safety than a shared container without going all the way to Firecracker
 
 ## Container resource limits
 

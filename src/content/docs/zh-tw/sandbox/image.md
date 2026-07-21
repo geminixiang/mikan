@@ -42,6 +42,7 @@ Vault key 選擇邏輯：
 
 - 多使用者共用一個 mikan instance
 - 需要 per-conversation env/file credential isolation
+- 想比 shared container 更安全，但又不想直接上 Firecracker
 
 ## 容器資源限制
 

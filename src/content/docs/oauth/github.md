@@ -52,7 +52,7 @@ mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 Or:
 
 ```bash
-
+mikan --sandbox=firecracker:192.168.1.100:/path/to/workspace /path/to/workspace
 ```
 
 ## 4. Use `/login`
@@ -71,6 +71,8 @@ After success, mikan writes the token into the corresponding vault's `env`, incl
 GITHUB_OAUTH_ACCESS_TOKEN
 GH_TOKEN
 ```
+
+In `container` / `image` / `firecracker` sandboxes, these env vars are injected into later tool runs.
 
 ## Scopes
 

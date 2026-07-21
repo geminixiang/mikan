@@ -157,7 +157,7 @@ def main():
         470,
         280,
         "3. Sandbox runtime",
-        ["Executor abstraction", "shared: host / container", "isolated: image / Agent Sandbox + Kata / cloudflare", "runtime workspace mapping"],
+        ["Executor abstraction", "shared: host / container", "isolated: image / firecracker / cloudflare", "runtime workspace mapping"],
         ORANGE,
         ORANGE_BORDER,
     )

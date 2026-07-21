@@ -52,7 +52,7 @@ mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 または：
 
 ```bash
-
+mikan --sandbox=firecracker:192.168.1.100:/path/to/workspace /path/to/workspace
 ```
 
 ## 4. `/login` の使用
@@ -71,6 +71,8 @@ mikan から返されたリンクを開き、GitHub OAuth を選択します。
 GITHUB_OAUTH_ACCESS_TOKEN
 GH_TOKEN
 ```
+
+`container` / `image` / `firecracker` サンドボックスでは、その後のツール実行時にこれらの環境変数が注入されます。
 
 ## スコープ
 

@@ -68,6 +68,7 @@ GITHUB_OAUTH_ACCESS_TOKEN=gho_xxx
 | `host`             | 不注入             | 不投射       | 可以存储凭证，但不会注入主机命令 |
 | `container:<name>` | 注入               | 不投射       | `container-<name>`               |
 | `image:<image>`    | 注入               | 自动投射     | 生成的对话 vault，通常为对话 ID  |
+| `firecracker:*`    | 注入               | 不投射       | 生成的对话 vault                 |
 | `cloudflare:*`     | 注入               | 不投射       | 生成的平台范围对话 vault         |
 
 ## `/login`

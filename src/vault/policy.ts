@@ -10,9 +10,9 @@ import type { SandboxConfig } from "../sandbox/index.js";
  * must not inherit ambient credentials — host-side platform identity or an
  * explicitly provisioned vault only.
  *
- * Topology: isolated sandboxes (`image` / `agent-sandbox` / `cloudflare`)
- * auto-provision per-conversation vaults that receive the copy. `host` and
- * `container` do not use this ambient path.
+ * Topology: only isolated sandboxes (`image` / `cloudflare`) auto-provision
+ * per-conversation vaults that receive the copy. `host` / `container` /
+ * `firecracker` do not use this ambient path.
  */
 export function allowsAmbientDefaultSharedVault(options: {
   trustModel?: PlatformTrustModel;
@@ -20,9 +20,5 @@ export function allowsAmbientDefaultSharedVault(options: {
 }): boolean {
   const trustModel = options.trustModel ?? "membership";
   if (trustModel === "open-trigger") return false;
-  return (
-    options.sandboxType === "image" ||
-    options.sandboxType === "agent-sandbox" ||
-    options.sandboxType === "cloudflare"
-  );
+  return options.sandboxType === "image" || options.sandboxType === "cloudflare";
 }

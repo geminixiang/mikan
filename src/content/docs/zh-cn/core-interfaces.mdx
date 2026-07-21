@@ -201,6 +201,8 @@ Hook 错误会被记录并跳过。`before_agent_start` 和 `tool_result` 的重
 
 ### `SandboxConfig`
 
+该可辨识联合当前支持 `host`、`container`、`image`、`gondolin`、`firecracker` 和 `cloudflare`。解析语法和成熟度记录在 [Sandbox](/zh-cn/sandbox/) 下。
+
 ### `Executor`
 
 这是稳定的执行边界，也是最重要的沙箱契约：
@@ -303,7 +305,13 @@ state directory 不得位于沙箱可见的工作区内部。重要的状态文�
 
 Admin 端点涵盖对话清单/状态/用量、全局与对话设置、模型、工作区文件、skill、事件、平台配置以及 login/session 链接。路由 payload 是内部 UI 契约，可能与捆绑的前端一同演进。
 
+## 14. Gondolin 进程边界
+
+Gondolin worker/gateway 路径是一个独立的 wire 协议，而非进程内的沙箱实现。它的契约位于 `gondolin-contract.ts`、`gondolin-worker-client.ts`、gateway/join 模块、inventory、placement 和 fleet 代码中。
+
 稳定的概念是 runtime spec 和 handle 身份、worker 注册/心跳、租约式 placement、exec 会话、文件传输和运行时生命周期。Lease watermark 在故障转移期间隔离过期的 worker。Wire 变更必须进行版本管理，或在 controller、gateway 和 worker 之间兼容地部署。
+
+有关详细的部署契约，参见 [Gondolin remote worker](/sandbox/gondolin-remote-worker/)。
 
 ## 契约检查清单
 

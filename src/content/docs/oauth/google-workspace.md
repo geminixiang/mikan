@@ -6,6 +6,8 @@ sidebar:
   label: Google Workspace CLI
 ---
 
+> Note: mikan stores the Google authorized_user JSON in the vault and saves target path metadata. The `image` sandbox automatically projects this vault file into the container target path; existing `container` / `firecracker` runtimes still do not automatically project files.
+
 ## 1. Create a Google OAuth Client
 
 In Google Cloud Console, go to:
@@ -85,3 +87,4 @@ The default metadata target path is:
 
 - mikan uses a web OAuth callback, so the Google OAuth client must be `Web application`, not a desktop app.
 - If Google does not return a `refresh_token`, revoke the existing consent and run `/login` again. mikan requests `access_type=offline` and `prompt=consent`, but Google may still omit the refresh token because of existing authorization.
+- To make `gws.json` appear automatically at `/root/.config/gws/credentials.json`, use the `image` sandbox. `container` / `firecracker` currently only save file credential metadata and do not project it automatically.

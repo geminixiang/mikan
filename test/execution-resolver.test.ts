@@ -11,6 +11,8 @@ import {
 import { FileVaultManager } from "../src/vault/index.js";
 
 describe("readConversationWorkspaceMountMode", () => {
+  // the Gondolin executor asserts Node >=23.6, but CI also runs the 22.19.0 floor
+  const nodeVersion = Object.getOwnPropertyDescriptor(process.versions, "node");
   let stateDir: string;
   let workspaceDir: string;
 
@@ -19,10 +21,12 @@ describe("readConversationWorkspaceMountMode", () => {
     workspaceDir = join(stateDir, "workspace");
     mkdirSync(workspaceDir, { recursive: true });
     process.env.MIKAN_STATE_DIR = stateDir;
+    Object.defineProperty(process.versions, "node", { value: "24.0.0", configurable: true });
   });
 
   afterEach(() => {
     delete process.env.MIKAN_STATE_DIR;
+    if (nodeVersion) Object.defineProperty(process.versions, "node", nodeVersion);
     if (existsSync(stateDir)) {
       rmSync(stateDir, { recursive: true, force: true });
     }
@@ -74,12 +78,13 @@ describe("readConversationWorkspaceMountMode", () => {
     }
   });
 
-  test("resolves private Agent Sandbox workspace mounts", async () => {
+  test("resolves private Gondolin workspace mounts", async () => {
     createGlobalSettingsFile(stateDir);
     const resolver = new ActorExecutionResolver(
-      { type: "agent-sandbox", warmpool: "mikan-kata", resourceKey: "default", mounts: [] },
+      { type: "gondolin", profile: "default" },
       new FileVaultManager(stateDir),
       undefined,
+      workspaceDir,
       workspaceDir,
     );
 
@@ -90,13 +95,18 @@ describe("readConversationWorkspaceMountMode", () => {
     });
 
     expect(executor.getSandboxConfig()).toMatchObject({
-      type: "agent-sandbox",
-      mounts: [],
+      type: "gondolin",
+      mounts: [
+        { source: join(workspaceDir, "MEMORY.md"), target: "/workspace/MEMORY.md" },
+        { source: join(workspaceDir, "skills"), target: "/workspace/skills" },
+        { source: join(workspaceDir, "events"), target: "/workspace/events" },
+        { source: join(workspaceDir, "C123"), target: "/workspace/C123" },
+      ],
     });
     expect(existsSync(join(workspaceDir, "C123"))).toBe(true);
   });
 
-  test("resolves the full Agent Sandbox workspace mount", async () => {
+  test("resolves the full Gondolin workspace mount", async () => {
     createGlobalSettingsFile(stateDir);
     const conversationDir = join(workspaceDir, "C123");
     mkdirSync(conversationDir, { recursive: true });
@@ -105,9 +115,10 @@ describe("readConversationWorkspaceMountMode", () => {
       JSON.stringify({ sandbox: { image: { workspaceMount: "full" } } }),
     );
     const resolver = new ActorExecutionResolver(
-      { type: "agent-sandbox", warmpool: "mikan-kata", resourceKey: "default", mounts: [] },
+      { type: "gondolin", profile: "default" },
       new FileVaultManager(stateDir),
       undefined,
+      workspaceDir,
       workspaceDir,
     );
 
@@ -118,23 +129,24 @@ describe("readConversationWorkspaceMountMode", () => {
     });
 
     expect(executor.getSandboxConfig()).toMatchObject({
-      type: "agent-sandbox",
-      mounts: [],
+      type: "gondolin",
+      mounts: [{ source: workspaceDir, target: "/workspace" }],
     });
   });
 
-  test("adds Agent Sandbox vault files to the workspace mounts", async () => {
+  test("adds Gondolin vault files to the workspace mounts", async () => {
     createGlobalSettingsFile(stateDir);
     const credentialKey = credentialAuthorizationKey(
-      { type: "agent-sandbox", warmpool: "mikan-kata", resourceKey: "default", mounts: [] },
+      { type: "gondolin", profile: "default" },
       { userId: "U123", conversationId: "C123" },
     );
     const sshDir = join(stateDir, "vaults", credentialKey, ".ssh");
     mkdirSync(sshDir, { recursive: true });
     const resolver = new ActorExecutionResolver(
-      { type: "agent-sandbox", warmpool: "mikan-kata", resourceKey: "default", mounts: [] },
+      { type: "gondolin", profile: "default" },
       new FileVaultManager(stateDir),
       undefined,
+      workspaceDir,
       workspaceDir,
     );
 
@@ -152,9 +164,10 @@ describe("readConversationWorkspaceMountMode", () => {
   test("recreates a deleted private conversation directory on the next projection", async () => {
     createGlobalSettingsFile(stateDir);
     const resolver = new ActorExecutionResolver(
-      { type: "agent-sandbox", warmpool: "mikan-kata", resourceKey: "default", mounts: [] },
+      { type: "gondolin", profile: "default" },
       new FileVaultManager(stateDir),
       undefined,
+      workspaceDir,
       workspaceDir,
     );
     const context = { platform: "slack", userId: "U123", conversationId: "C123" } as const;
@@ -181,9 +194,10 @@ describe("readConversationWorkspaceMountMode", () => {
       }),
     } as unknown as FileVaultManager;
     const resolver = new ActorExecutionResolver(
-      { type: "agent-sandbox", warmpool: "mikan-kata", resourceKey: "default", mounts: [] },
+      { type: "gondolin", profile: "default" },
       vault,
       undefined,
+      workspaceDir,
       workspaceDir,
     );
 
@@ -203,9 +217,10 @@ describe("readConversationWorkspaceMountMode", () => {
       },
     } as unknown as FileVaultManager;
     const resolver = new ActorExecutionResolver(
-      { type: "agent-sandbox", warmpool: "mikan-kata", resourceKey: "default", mounts: [] },
+      { type: "gondolin", profile: "default" },
       vault,
       undefined,
+      workspaceDir,
       workspaceDir,
     );
 
@@ -254,9 +269,10 @@ describe("readConversationWorkspaceMountMode", () => {
       }),
     } as unknown as FileVaultManager;
     const resolver = new ActorExecutionResolver(
-      { type: "agent-sandbox", warmpool: "mikan-kata", resourceKey: "default", mounts: [] },
+      { type: "gondolin", profile: "default" },
       vault,
       undefined,
+      workspaceDir,
       workspaceDir,
     );
 
@@ -278,6 +294,7 @@ describe("readConversationWorkspaceMountMode", () => {
       vault,
       undefined,
       workspaceDir,
+      workspaceDir,
     );
 
     await expect(
@@ -291,6 +308,7 @@ describe("readConversationWorkspaceMountMode", () => {
       { type: "cloudflare", sandboxId: "mikan-remote" },
       new FileVaultManager(stateDir),
       undefined,
+      workspaceDir,
       workspaceDir,
     );
 

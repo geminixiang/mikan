@@ -27,10 +27,6 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
 发布的 `mikan-sandbox` 镜像是工具运行时，不是独立的 mikan 服务器镜像。PM2 在主机上运行 `mikan`；image 模式通过主机 Docker daemon 创建和管理容器。
 
-## Kubernetes 部署
-
-Kubernetes 请使用 [mikan Helm chart](https://github.com/geminixiang/mikan/tree/main/deploy/helm/mikan)，然后按照 [GKE Standard](https://github.com/geminixiang/mikan/blob/main/deploy/helm/mikan/docs/quickstart-gke.md)、[Linux amd64 k3s](https://github.com/geminixiang/mikan/blob/main/deploy/helm/mikan/docs/quickstart-k3s.md) 或 [Colima](https://github.com/geminixiang/mikan/blob/main/deploy/helm/mikan/docs/quickstart-colima.md) 的完整 quickstart 操作。Chart 将 Kata、Agent Sandbox CRDs、RWX storage 等集群前提条件与 Helm 管理的资源分开。
-
 ## PM2 部署
 
 <Steps>

@@ -6,6 +6,8 @@ sidebar:
   label: Google Cloud SDK
 ---
 
+> 注意：mikan 会把 Google `authorized_user` JSON 存进 vault，并保存 target path metadata。`image` sandbox 会把这类 vault file 自动投影到 container 内的 target path；现有 `container` / `firecracker` runtime 仍不会自动做 file projection。
+
 ## 1. 建立 Google OAuth Client
 
 到 Google Cloud Console：
@@ -78,3 +80,4 @@ mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 
 - mikan 使用 web OAuth callback，因此 Google OAuth client 必须是 `Web application`，不是 desktop app。
 - 如果 Google 没有回传 `refresh_token`，请撤销既有 consent 后重新 `/pi-login`。mikan 会要求 `access_type=offline` 与 `prompt=consent`，但 Google 仍可能因既有授权而省略 refresh token。
+- 若要让 credential file 自动出现在 `/root/.config/gcloud/application_default_credentials.json`，请使用 `image` sandbox。`container` / `firecracker` 目前仍只会保存 file credential metadata，不会自动投影。

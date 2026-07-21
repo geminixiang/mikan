@@ -201,6 +201,8 @@ Hook 錯誤會被記錄並略過。`before_agent_start` 與 `tool_result` 的改
 
 ### `SandboxConfig`
 
+這個 discriminated union 目前支援 `host`、`container`、`image`、`gondolin`、`firecracker` 與 `cloudflare`。解析語法與成熟度記錄在 [Sandbox](/zh-tw/sandbox/)。
+
 ### `Executor`
 
 這是穩定的執行邊界，也是最重要的 sandbox 契約：
@@ -303,7 +305,13 @@ state directory 不得位於 sandbox 可見的 workspace 內。重要的狀態�
 
 Admin endpoint 涵蓋 conversation 清單/狀態/使用量、全域與對話設定、model、workspace 檔案、skill、event、平台設定，以及 login/session link。路由 payload 是內部 UI 契約，可能與隨附前端一起演進。
 
+## 14. Gondolin 行程邊界
+
+Gondolin worker/gateway 路徑是一個獨立的 wire 協定，不是 in-process 的 sandbox 實作。其契約位於 `gondolin-contract.ts`、`gondolin-worker-client.ts`、gateway/join 模組、inventory、placement 與 fleet 程式碼中。
+
 穩定的概念是 runtime spec 與 handle identity、worker registration/heartbeat、leased placement、exec session、file transport 與 runtime lifecycle。Lease watermark 會在 failover 期間 fence 掉過期的 worker。Wire 變更必須跨 controller、gateway 與 worker 做版本管理或相容部署。
+
+詳細的部署契約請參閱 [Gondolin remote worker](/zh-tw/sandbox/gondolin-remote-worker/)。
 
 ## 契約檢查清單
 

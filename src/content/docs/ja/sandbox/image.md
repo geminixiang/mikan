@@ -42,6 +42,7 @@ vault key の選択ロジック：
 
 - 複数ユーザーで 1 つの mikan instance を共有する場合
 - per-conversation の env/file credential isolation が必要な場合
+- shared container より安全にしたいが、Firecracker までは使いたくない場合
 
 ## コンテナリソース制限
 

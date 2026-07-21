@@ -6,6 +6,8 @@ sidebar:
   label: Google Cloud SDK
 ---
 
+> 注意：mikan は Google の `authorized_user` JSON を vault に保存し、target path のメタデータを保持します。`image` sandbox はこの種の vault ファイルをコンテナ内の target path に自動的にプロジェクション（投影）しますが、現在の `container` / `firecracker` ランタイムはまだ自動ファイルプロジェクションに対応していません。
+
 ## 1. Google OAuth クライアントの作成
 
 Google Cloud コンソールに移動します：
@@ -78,3 +80,4 @@ mikan から返信されたリンクを開き、**Google Cloud SDK (gcloud)** �
 
 - mikan は Web OAuth コールバックを使用するため、Google OAuth クライアントはデスクトップ アプリ（desktop app）ではなく、`ウェブ アプリケーション`（Web application）である必要があります。
 - Google から `refresh_token` が返されない場合は、既存の同意（consent）を取り消してから、再度 `/pi-login` を実行してください。mikan は `access_type=offline` と `prompt=consent` を要求しますが、既存の授権があるため、Google がリフレッシュトークンを省略する場合があります。
+- 認証情報ファイルを `/root/.config/gcloud/application_default_credentials.json` に自動的に表示させるには、`image` sandbox を使用してください。`container` / `firecracker` は現在、ファイルの認証情報メタデータを保存するのみで、自動プロジェクションは行いません。
