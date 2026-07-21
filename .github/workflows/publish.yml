@@ -33,6 +33,9 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Verify npm package
+        run: node scripts/check-npm-package.mjs
+
       - name: Publish to npm
         run: |
           VERSION=$(node -p "require('./package.json').version")
