@@ -9,7 +9,7 @@ import { COMMAND_MANIFEST } from "./manifest.js";
  * names (including ones a platform registers but this build no longer
  * handles), independent of the manifest.
  */
-const COMMAND_NAMES = COMMAND_MANIFEST.flatMap((entry) => [entry.name, ...(entry.aliases ?? [])]);
+const COMMAND_NAMES = COMMAND_MANIFEST.flatMap((entry) => [entry.name].concat(entry.aliases ?? []));
 
 const COMMAND_TEXT_PATTERN = new RegExp(
   `^\\/(?:pi-[\\w-]+|${COMMAND_NAMES.join("|")})(?:@\\w+)?(?:\\s|$)`,
