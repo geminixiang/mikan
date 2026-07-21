@@ -7,7 +7,7 @@ readonly SDK_PATH="clients/typescript/agentic-sandbox-client"
 readonly OUTPUT_DIR="vendor/agent-sandbox-sdk"
 readonly OUTPUT_FILE="agentic-sandbox-client-0.1.0.tgz"
 readonly UPSTREAM_SHA256="5434919e2a8c373e8d807ec612bff8b8c558e920285f1be28e2f446316f6ca43"
-readonly EXPECTED_SHA256="ad95868b85192ded441390a8e781c13ec0d06bc71729648acc1514912759291b"
+readonly EXPECTED_SHA256="257142e23ff5cdd677161b7816d394254b28ae028201a19bcc216210cfed6e4e"
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 work_dir="$(mktemp -d)"
@@ -26,6 +26,8 @@ sdk_dir="$work_dir/agent-sandbox-$COMMIT/$SDK_PATH"
   # PR #976 declares optional OpenTelemetry 1.x peers that conflict with
   # mikan's Sentry-provided OpenTelemetry 2.x packages. Mikan disables the
   # SDK's tracing, so omit those optional SDK-only peers from this package.
+  # Mikan already depends on the Kubernetes client directly, so make it a
+  # peer to avoid recursively bundling the same dependency tree.
   node --input-type=module <<'NODE'
 import { readFileSync, writeFileSync } from "node:fs";
 
@@ -39,6 +41,9 @@ for (const name of [
   delete packageJson.peerDependencies[name];
   delete packageJson.peerDependenciesMeta[name];
 }
+packageJson.peerDependencies["@kubernetes/client-node"] =
+  packageJson.dependencies["@kubernetes/client-node"];
+delete packageJson.dependencies["@kubernetes/client-node"];
 writeFileSync("package.json", `${JSON.stringify(packageJson, null, 2)}\n`);
 NODE
   npm pack --ignore-scripts --pack-destination "$work_dir"
@@ -58,7 +63,7 @@ printf '%s\n' \
   "commit=$COMMIT" \
   "source_path=$SDK_PATH" \
   "upstream_sha256=$UPSTREAM_SHA256" \
-  "packaging_patch=omit optional OpenTelemetry SDK peers; mikan sets enableTracing=false" \
+  "packaging_patch=omit optional OpenTelemetry SDK peers; use mikan's Kubernetes client as a peer; mikan sets enableTracing=false" \
   "sha256=$EXPECTED_SHA256" \
   > "$project_root/$OUTPUT_DIR/SOURCE"
 

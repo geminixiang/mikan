@@ -84,6 +84,9 @@
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   },
+  "bundleDependencies": [
+    "agentic-sandbox-client"
+  ],
   "overrides": {
     "@discordjs/rest": {
       "undici": "6.27.0"
