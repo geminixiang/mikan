@@ -9,6 +9,21 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.25]
+
+### Changed
+
+- Temporarily remove the Agent Sandbox runtime, SDK, Kubernetes client, Helm deployment, runtime images, and related release workflow from the npm release.
+- Restore the Gondolin, Gondolin remote-worker, and Firecracker sandbox implementations while Agent Sandbox packaging is redesigned separately.
+
+### Fixed
+
+- Restore global npm installation and CLI startup after the broken Agent Sandbox dependencies in `1.0.0-beta.23` and `1.0.0-beta.24`.
+
+### Tests
+
+- Add a real `npm install -g --prefix` smoke test for the packed tarball, enforce a 2 MiB size ceiling, and gate CI and npm publishing on the result.
+
 ## [1.0.0-beta.24]
 
 ### Fixed
