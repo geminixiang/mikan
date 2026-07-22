@@ -9,6 +9,16 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.26]
+
+### Fixed
+
+- Make the subagent tool schema compatible with OpenAI by exposing an object at the function parameter root.
+
+### Tests
+
+- Add regression coverage for OpenAI-compatible subagent function schemas.
+
 ## [1.0.0-beta.25]
 
 ### Changed
