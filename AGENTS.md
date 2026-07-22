@@ -149,6 +149,7 @@ Stack:
 - Avoid `any` unless there is no practical typed alternative.
 - Check dependency type definitions in `node_modules` instead of guessing external APIs.
 - Use top-level imports; avoid inline/dynamic imports for normal code and type references.
+- Tool parameter schemas exposed to model providers must be object-rooted (`Type.Object` / top-level `type: "object"`). Do not use a top-level `Type.Union`, `anyOf`, or `oneOf`; OpenAI function tools reject schemas whose root is not explicitly an object. Represent alternate invocation modes as optional object properties, then enforce exclusivity and required-mode rules in runtime validation.
 
 ## Verification
 
