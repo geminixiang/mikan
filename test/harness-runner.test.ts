@@ -46,6 +46,15 @@ const echoTool: AgentTool = {
   parameters: { type: "object", properties: { text: { type: "string" } } },
   execute: async (_toolCallId, args) => ({
     content: [{ type: "text", text: `echo: ${(args as { text?: string }).text ?? ""}` }],
+    details: { source: "echo" },
+    usage: {
+      input: 1,
+      output: 2,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 3,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
   }),
 } as unknown as AgentTool;
 
@@ -267,6 +276,124 @@ describe("MikanAgentSession", () => {
     expect(JSON.stringify(sessionStore.getEntries())).toContain("original ask [enriched]");
   });
 
+  test("context hooks rewrite each LLM call without mutating or persisting the transcript", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("echo", { text: "ping" })),
+      fauxAssistantMessage("done"),
+    ]);
+
+    const extensions = new ExtensionRegistry();
+    extensions.register("call-only", "context", ({ messages }) => ({
+      messages: messages.map((message) => {
+        if (message.role !== "user") return message;
+        if (typeof message.content === "string") {
+          return { ...message, content: `${message.content} [call-only]` };
+        }
+        return {
+          ...message,
+          content: message.content.map((part) =>
+            part.type === "text" ? { ...part, text: `${part.text} [call-only]` } : part,
+          ),
+        };
+      }),
+    }));
+
+    const sessionStore = SessionStore.create(join(dir, "session.jsonl"), dir);
+    const session = new MikanAgentSession({
+      systemPrompt: "test",
+      model,
+      thinkingLevel: "off",
+      tools: [echoTool],
+      models,
+      sessionStore,
+      extensions,
+    });
+    const convertedContexts: string[] = [];
+    const convertToLlm = session.agent.convertToLlm;
+    session.agent.convertToLlm = async (messages) => {
+      convertedContexts.push(JSON.stringify(messages));
+      return convertToLlm(messages);
+    };
+
+    await session.prompt("canonical ask");
+
+    expect(convertedContexts).toHaveLength(2);
+    expect(convertedContexts).toEqual([
+      expect.stringContaining("canonical ask [call-only]"),
+      expect.stringContaining("canonical ask [call-only]"),
+    ]);
+    expect(convertedContexts[1]).not.toContain("[call-only] [call-only]");
+    expect(JSON.stringify(session.messages)).toContain("canonical ask");
+    expect(JSON.stringify(session.messages)).not.toContain("[call-only]");
+    expect(JSON.stringify(sessionStore.getEntries())).not.toContain("[call-only]");
+  });
+
+  test("message_end rewrites reach listeners, persistence, and in-memory state exactly once", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([fauxAssistantMessage("original answer")]);
+
+    const extensions = new ExtensionRegistry();
+    extensions.register("rewrite", "message_end", ({ message }) => {
+      if (message.role !== "assistant") return;
+      return {
+        message: {
+          ...message,
+          content: message.content.map((part) =>
+            part.type === "text"
+              ? { ...part, text: part.text.replace("original", "rewritten") }
+              : part,
+          ),
+        },
+      };
+    });
+
+    const sessionStore = SessionStore.create(join(dir, "session.jsonl"), dir);
+    const session = new MikanAgentSession({
+      systemPrompt: "test",
+      model,
+      thinkingLevel: "off",
+      tools: [],
+      models,
+      sessionStore,
+      extensions,
+    });
+    const listenerMessages: string[] = [];
+    const persistedCountsAtListener: number[] = [];
+    session.subscribe((event) => {
+      if (event.type === "message_end" && event.message.role === "assistant") {
+        listenerMessages.push(JSON.stringify(event.message));
+        persistedCountsAtListener.push(
+          sessionStore
+            .getEntries()
+            .filter(
+              (entry) =>
+                entry.type === "message" &&
+                (entry as { message: { role: string } }).message.role === "assistant",
+            ).length,
+        );
+      }
+    });
+
+    await session.prompt("hi");
+
+    expect(listenerMessages).toEqual([expect.stringContaining("rewritten answer")]);
+    expect(persistedCountsAtListener).toEqual([1]);
+    const assistantMessages = session.messages.filter((message) => message.role === "assistant");
+    expect(assistantMessages).toHaveLength(1);
+    expect(JSON.stringify(assistantMessages[0])).toContain("rewritten answer");
+    const persistedAssistants = sessionStore
+      .getEntries()
+      .filter(
+        (entry) =>
+          entry.type === "message" &&
+          (entry as { message: { role: string } }).message.role === "assistant",
+      );
+    expect(persistedAssistants).toHaveLength(1);
+    expect(JSON.stringify(persistedAssistants[0])).toContain("rewritten answer");
+    expect(JSON.stringify(persistedAssistants[0])).not.toContain("original answer");
+  });
+
   test("tool_result hooks rewrite tool output before the model and the store see it", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([
@@ -275,13 +402,19 @@ describe("MikanAgentSession", () => {
     ]);
 
     const originKinds: unknown[] = [];
+    const observedDetails: unknown[] = [];
+    const observedUsage: unknown[] = [];
     const extensions = new ExtensionRegistry();
-    extensions.register("redactor", "tool_result", ({ content, origin }) => {
+    extensions.register("redactor", "tool_result", ({ content, details, origin, usage }) => {
       originKinds.push(origin?.kind);
+      observedDetails.push(details);
+      observedUsage.push(usage);
       return {
         content: content.map((part) =>
           part.type === "text" ? { ...part, text: part.text.replaceAll("s3cret", "***") } : part,
         ),
+        details: { redacted: true },
+        usage: usage ? { ...usage, output: usage.output + 1 } : undefined,
       };
     });
 
@@ -299,6 +432,8 @@ describe("MikanAgentSession", () => {
     await session.prompt("run the tool", { origin: { kind: "event", platform: "slack" } });
 
     expect(originKinds).toEqual(["event"]);
+    expect(observedDetails).toEqual([{ source: "echo" }]);
+    expect(observedUsage).toEqual([expect.objectContaining({ input: 1, output: 2 })]);
     const persisted = JSON.stringify(
       sessionStore
         .getEntries()
@@ -309,6 +444,7 @@ describe("MikanAgentSession", () => {
         ),
     );
     expect(persisted).toContain("echo: token=***");
+    expect(persisted).toContain('"redacted":true');
     expect(persisted).not.toContain("s3cret");
   });
 

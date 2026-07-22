@@ -18,13 +18,13 @@
  * ```
  *
  * Hooks run in registration order. Result semantics are per hook:
- * `tool_call` keeps v1's first-non-undefined-wins; `before_agent_start` and
- * `tool_result` chain — each handler sees the event as rewritten by earlier
- * handlers, and for `before_agent_start` a `block` from any handler wins.
- * Hook errors are logged and never crash a run.
+ * `tool_call` keeps v1's first-non-undefined-wins; `before_agent_start`,
+ * `context`, `message_end`, and `tool_result` chain — each handler sees the
+ * event as rewritten by earlier handlers, and for `before_agent_start` a
+ * `block` from any handler wins. Hook errors are logged and never crash a run.
  */
 import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { Api, ImageContent, Model, TextContent } from "@earendil-works/pi-ai";
+import type { Api, ImageContent, Model, TextContent, Usage } from "@earendil-works/pi-ai";
 import type { TSchema } from "@sinclair/typebox";
 import type { EventFilePayload } from "../event-format.js";
 import type { MikanSkill } from "../skills.js";
@@ -85,25 +85,48 @@ export interface ToolCallHookResult {
   reason?: string;
 }
 
+export interface ContextHookEvent {
+  /** A call-local clone of the transcript about to be sent to the LLM. */
+  messages: AgentMessage[];
+  origin?: RunOrigin;
+}
+
+export interface ContextHookResult {
+  /** Replace the messages sent for this LLM call only. */
+  messages?: AgentMessage[];
+}
+
 export interface ToolResultHookEvent {
   toolCallId: string;
   toolName: string;
   args: unknown;
   content: (TextContent | ImageContent)[];
+  details: unknown;
   isError: boolean;
+  /** Usage from the tool execution itself, if available. */
+  usage?: Usage;
   origin?: RunOrigin;
 }
 
 export interface ToolResultHookResult {
   /** Replace the tool result content sent back to the model (e.g. redaction). */
   content?: (TextContent | ImageContent)[];
+  /** Replace the structured tool result details. */
+  details?: unknown;
   /** Override the tool result error flag. */
   isError?: boolean;
+  /** Replace usage reported by the tool execution. */
+  usage?: Usage;
 }
 
 export interface MessageEndHookEvent {
   message: AgentMessage;
   origin?: RunOrigin;
+}
+
+export interface MessageEndHookResult {
+  /** Replace the finalized message. The replacement must keep the original role. */
+  message?: AgentMessage;
 }
 
 export interface TurnEndHookEvent {
@@ -145,10 +168,15 @@ export interface MikanHookMap {
   tool_call: (
     event: ToolCallHookEvent,
   ) => ToolCallHookResult | undefined | void | Promise<ToolCallHookResult | undefined | void>;
+  context: (
+    event: ContextHookEvent,
+  ) => ContextHookResult | undefined | void | Promise<ContextHookResult | undefined | void>;
   tool_result: (
     event: ToolResultHookEvent,
   ) => ToolResultHookResult | undefined | void | Promise<ToolResultHookResult | undefined | void>;
-  message_end: (event: MessageEndHookEvent) => void | Promise<void>;
+  message_end: (
+    event: MessageEndHookEvent,
+  ) => MessageEndHookResult | undefined | void | Promise<MessageEndHookResult | undefined | void>;
   turn_end: (event: TurnEndHookEvent) => void | Promise<void>;
   session_compact: (event: SessionCompactHookEvent) => void | Promise<void>;
   agent_error: (event: AgentErrorHookEvent) => void | Promise<void>;
