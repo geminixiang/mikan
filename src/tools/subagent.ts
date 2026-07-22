@@ -64,31 +64,36 @@ const dagNodeSchema = Type.Object({
   ...taskProperties,
   dependsOn: Type.Optional(Type.Array(Type.String(), { maxItems: MAX_DAG_NODES })),
 });
-const subagentSchema = Type.Union([
-  Type.Object({ ...taskProperties, ...sharedProperties }),
-  Type.Object({
-    tasks: Type.Array(subagentTaskSchema, {
-      minItems: 1,
-      maxItems: MAX_DAG_NODES,
-      description:
-        "Independent subagent tasks executed concurrently; results preserve input order.",
-    }),
+const subagentSchema = Type.Object(
+  {
+    task: Type.Optional(taskProperties.task),
+    label: taskProperties.label,
+    systemPrompt: taskProperties.systemPrompt,
+    input: taskProperties.input,
+    tasks: Type.Optional(
+      Type.Array(subagentTaskSchema, {
+        minItems: 1,
+        maxItems: MAX_DAG_NODES,
+        description:
+          "Independent subagent tasks executed concurrently; results preserve input order.",
+      }),
+    ),
+    dag: Type.Optional(
+      Type.Object({
+        nodes: Type.Array(dagNodeSchema, { minItems: 1, maxItems: MAX_DAG_NODES }),
+        maxConcurrency: Type.Optional(
+          Type.Integer({
+            minimum: 1,
+            maximum: MAX_CONCURRENT_SUBAGENTS,
+            default: MAX_CONCURRENT_SUBAGENTS,
+          }),
+        ),
+      }),
+    ),
     ...sharedProperties,
-  }),
-  Type.Object({
-    dag: Type.Object({
-      nodes: Type.Array(dagNodeSchema, { minItems: 1, maxItems: MAX_DAG_NODES }),
-      maxConcurrency: Type.Optional(
-        Type.Integer({
-          minimum: 1,
-          maximum: MAX_CONCURRENT_SUBAGENTS,
-          default: MAX_CONCURRENT_SUBAGENTS,
-        }),
-      ),
-    }),
-    ...sharedProperties,
-  }),
-]);
+  },
+  { description: "Provide task, tasks, or dag." },
+);
 
 type SubagentParams = Static<typeof subagentSchema>;
 type SubagentTask = Static<typeof subagentTaskSchema>;
@@ -278,7 +283,7 @@ function itemForNode(node: DagNode): PlanItem {
 
 /** Normalize every tool mode into one plan: nodes, waves, concurrency. */
 function buildPlan(params: SubagentParams): Plan {
-  if ("dag" in params) {
+  if (params.dag !== undefined) {
     const waves = buildDagWaves(params.dag.nodes).map((wave) => wave.map(itemForNode));
     const requested = params.dag.maxConcurrency ?? MAX_CONCURRENT_SUBAGENTS;
     return {
@@ -288,7 +293,7 @@ function buildPlan(params: SubagentParams): Plan {
       concurrency: Math.max(1, Math.min(MAX_CONCURRENT_SUBAGENTS, Math.floor(requested))),
     };
   }
-  if ("tasks" in params) {
+  if (params.tasks !== undefined) {
     const items = params.tasks.map((task, index) => ({
       id: String(index),
       label: taskLabel(task, String(index + 1)),
@@ -297,7 +302,9 @@ function buildPlan(params: SubagentParams): Plan {
     }));
     return { mode: "parallel", items, waves: [items], concurrency: MAX_CONCURRENT_SUBAGENTS };
   }
-  const item = { id: "0", label: taskLabel(params, "subagent"), task: params, dependsOn: [] };
+  if (!params.task) throw new Error("Subagent requires task, tasks, or dag");
+  const task = { ...params, task: params.task };
+  const item = { id: "0", label: taskLabel(task, "subagent"), task, dependsOn: [] };
   return { mode: "single", items: [item], waves: [[item]], concurrency: 1 };
 }
 

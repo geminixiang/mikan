@@ -46,6 +46,12 @@ function completedRun(output: unknown): RunSubagent {
 }
 
 describe("subagent tool", () => {
+  test("exposes an object-rooted function schema for OpenAI", () => {
+    const tool = createSubagentTool(completedRun("ok"));
+
+    expect(tool.parameters.type).toBe("object");
+  });
+
   test("supports abortable FIFO slot handoff and idempotent release", async () => {
     const pool = new SubagentSlotPool(1);
     const first = await pool.acquire();
