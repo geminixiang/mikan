@@ -5,14 +5,17 @@
  * extensions and dispatches events from the harness runner. Handler failures
  * are logged and swallowed so a broken extension cannot take down a run.
  */
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import * as log from "../../log.js";
 import type {
   BeforeAgentStartHookEvent,
   BeforeAgentStartHookResult,
+  ContextHookEvent,
   ExtensionCommand,
   ExtensionCommandContext,
   ExtensionDisposer,
+  MessageEndHookEvent,
+  MessageEndHookResult,
   MikanHookMap,
   MikanHookName,
   ToolResultHookEvent,
@@ -38,6 +41,7 @@ type HookHandlers = {
 export class ExtensionRegistry {
   private handlers: HookHandlers = {
     before_agent_start: [],
+    context: [],
     tool_call: [],
     tool_result: [],
     message_end: [],
@@ -203,11 +207,63 @@ export class ExtensionRegistry {
   }
 
   /**
-   * Dispatch `tool_result` with chaining semantics: each handler sees the
-   * content/isError as rewritten by earlier handlers, so e.g. a redaction
-   * extension processes the output of upstream rewriters instead of the
-   * original. Returns the accumulated override, or undefined when no handler
-   * changed anything.
+   * Dispatch `context` with Pi-compatible chaining semantics. Handlers receive
+   * a call-local clone, so in-place mutations and returned replacements affect
+   * only this LLM call and never the canonical transcript.
+   */
+  async emitContext(event: ContextHookEvent): Promise<AgentMessage[]> {
+    let messages = structuredClone(event.messages);
+    for (const { owner, handler } of this.handlers.context) {
+      try {
+        const result = await handler({ ...event, messages });
+        if (result?.messages) messages = result.messages;
+      } catch (err) {
+        log.logWarning(
+          `Extension hook "context" failed (${owner})`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    }
+    return messages;
+  }
+
+  /**
+   * Dispatch `message_end` with Pi-compatible chaining semantics. Each handler
+   * sees the replacement from the previous handler. Role-changing replacements
+   * are rejected because the agent lifecycle event role cannot be changed.
+   */
+  async emitMessageEnd(event: MessageEndHookEvent): Promise<MessageEndHookResult | undefined> {
+    let message = event.message;
+    let modified = false;
+    for (const { owner, handler } of this.handlers.message_end) {
+      try {
+        const result = await handler({ ...event, message });
+        if (!result?.message) continue;
+        if (result.message.role !== message.role) {
+          log.logWarning(
+            `Extension hook "message_end" failed (${owner})`,
+            "message_end handlers must return a message with the same role",
+          );
+          continue;
+        }
+        message = result.message;
+        modified = true;
+      } catch (err) {
+        log.logWarning(
+          `Extension hook "message_end" failed (${owner})`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    }
+    return modified ? { message } : undefined;
+  }
+
+  /**
+   * Dispatch `tool_result` with chaining semantics: each handler sees content,
+   * details, isError, and usage as rewritten by earlier handlers, so e.g. a
+   * redaction extension processes the output of upstream rewriters instead of
+   * the original. Returns the accumulated override, or undefined when no
+   * handler changed anything.
    */
   async emitToolResult(event: ToolResultHookEvent): Promise<ToolResultHookResult | undefined> {
     const chained: ToolResultHookEvent = { ...event };
@@ -220,9 +276,17 @@ export class ExtensionRegistry {
           merged.content = result.content;
           chained.content = result.content;
         }
+        if (result.details !== undefined) {
+          merged.details = result.details;
+          chained.details = result.details;
+        }
         if (result.isError !== undefined) {
           merged.isError = result.isError;
           chained.isError = result.isError;
+        }
+        if (result.usage !== undefined) {
+          merged.usage = result.usage;
+          chained.usage = result.usage;
         }
       } catch (err) {
         log.logWarning(
@@ -231,6 +295,11 @@ export class ExtensionRegistry {
         );
       }
     }
-    return merged.content !== undefined || merged.isError !== undefined ? merged : undefined;
+    return merged.content !== undefined ||
+      merged.details !== undefined ||
+      merged.isError !== undefined ||
+      merged.usage !== undefined
+      ? merged
+      : undefined;
   }
 }

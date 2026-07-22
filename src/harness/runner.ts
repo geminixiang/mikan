@@ -35,6 +35,7 @@ import {
   type AssistantMessage,
   type ImageContent,
   type Model,
+  type Usage,
 } from "@earendil-works/pi-ai";
 import * as log from "../log.js";
 import type { ExtensionRegistry } from "./extensions/registry.js";
@@ -166,6 +167,10 @@ export class MikanAgentSession {
         tools,
       },
       convertToLlm,
+      transformContext: async (messages) => {
+        if (!this.extensions?.hasHandlers("context")) return messages;
+        return this.extensions.emitContext({ messages, origin: this.runOrigin });
+      },
       streamFn: (model, context, streamOptions) =>
         this.models.models.streamSimple(model, context, streamOptions),
       beforeToolCall: async ({ toolCall, args }) => {
@@ -188,7 +193,9 @@ export class MikanAgentSession {
           toolName: toolCall.name,
           args,
           content: result.content,
+          details: result.details,
           isError,
+          usage: (result as typeof result & { usage?: Usage }).usage,
           origin: this.runOrigin,
         });
       },
@@ -406,10 +413,20 @@ export class MikanAgentSession {
   }
 
   private async handleAgentEvent(event: AgentEvent): Promise<void> {
-    await this.emit(event);
+    if (event.type !== "message_end") {
+      await this.emit(event);
+      return;
+    }
 
-    if (event.type !== "message_end") return;
-    const message = event.message;
+    let message = event.message;
+    if (this.extensions?.hasHandlers("message_end")) {
+      const result = await this.extensions.emitMessageEnd({ message, origin: this.runOrigin });
+      if (result?.message) {
+        const messageIndex = this.agent.state.messages.lastIndexOf(message);
+        if (messageIndex >= 0) this.agent.state.messages[messageIndex] = result.message;
+        message = result.message;
+      }
+    }
 
     if (message.role === "user" || message.role === "assistant" || message.role === "toolResult") {
       this.sessionStore.appendMessage(message);
@@ -423,9 +440,7 @@ export class MikanAgentSession {
       );
     }
 
-    if (this.extensions?.hasHandlers("message_end")) {
-      await this.extensions.emit("message_end", { message, origin: this.runOrigin });
-    }
+    await this.emit({ ...event, message });
 
     if (message.role === "assistant") {
       this.recordUsage(message);

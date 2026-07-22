@@ -11,7 +11,8 @@ import {
   type ExtensionSchedulePayload,
   type ExtensionScheduleStore,
 } from "../src/harness/index.js";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { Api, Model, Usage } from "@earendil-works/pi-ai";
 
 let dir: string;
 
@@ -847,13 +848,83 @@ describe("ExtensionRegistry.emitBeforeAgentStart", () => {
   });
 });
 
+describe("ExtensionRegistry.emitContext", () => {
+  test("chains call-local mutations and replacements without changing the source transcript", async () => {
+    const source: AgentMessage[] = [
+      {
+        role: "user",
+        content: [{ type: "text", text: "canonical" }],
+        timestamp: 1,
+      },
+    ];
+    const registry = new ExtensionRegistry();
+    registry.register("mutator", "context", ({ messages }) => {
+      const message = messages[0];
+      if (message.role === "user" && typeof message.content !== "string") {
+        const part = message.content[0];
+        if (part?.type === "text") part.text += "+mutated";
+      }
+    });
+    registry.register("replacer", "context", ({ messages }) => {
+      const message = messages[0];
+      if (message.role !== "user" || typeof message.content === "string") return;
+      const part = message.content[0];
+      if (part?.type !== "text") return;
+      return {
+        messages: [
+          {
+            ...message,
+            content: [{ ...part, text: `${part.text}+replaced` }],
+          },
+        ],
+      };
+    });
+
+    const result = await registry.emitContext({ messages: source });
+
+    expect(JSON.stringify(result)).toContain("canonical+mutated+replaced");
+    expect(JSON.stringify(source)).toContain("canonical");
+    expect(JSON.stringify(source)).not.toContain("mutated");
+  });
+});
+
+describe("ExtensionRegistry.emitMessageEnd", () => {
+  test("chains same-role message replacements", async () => {
+    const registry = new ExtensionRegistry();
+    registry.register("first", "message_end", ({ message }) => {
+      if (message.role !== "user") return;
+      return { message: { ...message, content: "first" } };
+    });
+    registry.register("second", "message_end", ({ message }) => {
+      if (message.role !== "user") return;
+      return { message: { ...message, content: `${message.content}+second` } };
+    });
+
+    const result = await registry.emitMessageEnd({
+      message: { role: "user", content: "original", timestamp: 1 },
+    });
+
+    expect(result?.message).toMatchObject({ role: "user", content: "first+second" });
+  });
+});
+
 describe("ExtensionRegistry.emitToolResult", () => {
+  const usage: Usage = {
+    input: 1,
+    output: 2,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 3,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
   const event = {
     toolCallId: "t1",
     toolName: "bash",
     args: {},
     content: [{ type: "text" as const, text: "token=s3cret" }],
+    details: { steps: ["original"] },
     isError: false,
+    usage,
   };
 
   test("returns undefined when no handler changes anything", async () => {
@@ -882,11 +953,31 @@ describe("ExtensionRegistry.emitToolResult", () => {
     ]);
   });
 
-  test("isError can be overridden independently of content", async () => {
+  test("details and usage rewrites chain alongside content and isError", async () => {
     const registry = new ExtensionRegistry();
-    registry.register("flagger", "tool_result", () => ({ isError: true }));
+    registry.register("first", "tool_result", ({ details, usage: toolUsage }) => ({
+      details: { steps: [...(details as { steps: string[] }).steps, "first"] },
+      usage: {
+        ...toolUsage!,
+        output: toolUsage!.output + 1,
+        totalTokens: toolUsage!.totalTokens + 1,
+      },
+    }));
+    registry.register("second", "tool_result", ({ details, usage: toolUsage }) => ({
+      details: { steps: [...(details as { steps: string[] }).steps, "second"] },
+      usage: {
+        ...toolUsage!,
+        output: toolUsage!.output + 1,
+        totalTokens: toolUsage!.totalTokens + 1,
+      },
+      isError: true,
+    }));
 
     const result = await registry.emitToolResult({ ...event });
-    expect(result).toEqual({ isError: true });
+    expect(result).toEqual({
+      details: { steps: ["original", "first", "second"] },
+      usage: { ...usage, output: 4, totalTokens: 5 },
+      isError: true,
+    });
   });
 });
