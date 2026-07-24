@@ -21,6 +21,33 @@ function readLines(file: string): Array<Record<string, unknown>> {
     .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
+const validHeader = {
+  type: "session",
+  version: 3,
+  id: "session-1",
+  timestamp: "2026-01-01T00:00:00.000Z",
+  cwd: "/work",
+};
+
+function makeEntry(
+  id: string,
+  parentId: string | null,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    type: "custom",
+    id,
+    parentId,
+    timestamp: "2026-01-01T00:00:01.000Z",
+    customType: "test",
+    ...extra,
+  };
+}
+
+function writeJsonl(file: string, records: Record<string, unknown>[]): void {
+  writeFileSync(file, `${records.map((record) => JSON.stringify(record)).join("\n")}\n`);
+}
+
 describe("SessionStore", () => {
   test("inMemory keeps entries without creating a session file", () => {
     const store = SessionStore.inMemory("/work");
@@ -115,6 +142,119 @@ describe("SessionStore", () => {
     expect(rendered).toContain("summary of old");
     expect(rendered).toContain("recent");
     expect(rendered).not.toMatch(/(^|\|)old($|\|)/);
+  });
+
+  test("recovers a malformed final crash tail without changing the file until append", () => {
+    const file = join(dir, "session.jsonl");
+    writeJsonl(file, [validHeader, makeEntry("root", null)]);
+    writeFileSync(file, `${readFileSync(file, "utf-8")}{"type":"message"`);
+    const original = readFileSync(file, "utf-8");
+
+    const store = SessionStore.open(file);
+    expect(store.getEntries().map(({ id }) => id)).toEqual(["root"]);
+    expect(readFileSync(file, "utf-8")).toBe(original);
+
+    store.appendCustomEntry("after-crash");
+    const lines = readLines(file);
+    expect(lines.map(({ id }) => id).filter(Boolean)).toEqual([
+      "session-1",
+      "root",
+      store.getLeafId(),
+    ]);
+    expect(readFileSync(file, "utf-8")).not.toContain('{"type":"message"');
+  });
+
+  test("rejects malformed JSON before the final non-empty line and preserves the file", () => {
+    const file = join(dir, "session.jsonl");
+    const original = `${JSON.stringify(validHeader)}\n{"type":"custom"\n${JSON.stringify(makeEntry("root", null))}\n`;
+    writeFileSync(file, original);
+
+    expect(() => SessionStore.open(file)).toThrow(/line 2 is not valid JSON/i);
+    expect(readFileSync(file, "utf-8")).toBe(original);
+  });
+
+  test("rejects duplicate entry ids", () => {
+    const file = join(dir, "session.jsonl");
+    writeJsonl(file, [validHeader, makeEntry("same", null), makeEntry("same", null)]);
+    expect(() => SessionStore.open(file)).toThrow(/duplicate entry id same/i);
+  });
+
+  test("rejects missing parent references", () => {
+    const file = join(dir, "session.jsonl");
+    writeJsonl(file, [validHeader, makeEntry("child", "missing")]);
+    expect(() => SessionStore.open(file)).toThrow(/references missing parent missing/i);
+  });
+
+  test("rejects self-parent and multi-entry parent cycles without hanging", () => {
+    const selfFile = join(dir, "self.jsonl");
+    writeJsonl(selfFile, [validHeader, makeEntry("self", "self")]);
+    expect(() => SessionStore.open(selfFile)).toThrow(/own parent/i);
+
+    const cycleFile = join(dir, "cycle.jsonl");
+    writeJsonl(cycleFile, [validHeader, makeEntry("a", "b"), makeEntry("b", "a")]);
+    expect(() => SessionStore.open(cycleFile)).toThrow(/parent cycle/i);
+  });
+
+  test("accepts leaf targets and parents declared earlier, but rejects missing leaf targets", () => {
+    const validFile = join(dir, "valid-leaf.jsonl");
+    writeJsonl(validFile, [
+      validHeader,
+      makeEntry("root", null),
+      makeEntry("leaf-record", "root", { type: "leaf", targetId: "root" }),
+    ]);
+    expect(SessionStore.open(validFile).getLeafId()).toBe("root");
+
+    const invalidFile = join(dir, "invalid-leaf.jsonl");
+    writeJsonl(invalidFile, [
+      validHeader,
+      makeEntry("leaf-record", null, { type: "leaf", targetId: "missing" }),
+    ]);
+    expect(() => SessionStore.open(invalidFile)).toThrow(
+      /leaf leaf-record references missing target/i,
+    );
+  });
+
+  test("rejects compaction references missing from or outside the compaction branch", () => {
+    const missingFile = join(dir, "missing-compaction.jsonl");
+    writeJsonl(missingFile, [
+      validHeader,
+      makeEntry("root", null),
+      makeEntry("compact", "root", {
+        type: "compaction",
+        summary: "summary",
+        firstKeptEntryId: "missing",
+        tokensBefore: 10,
+      }),
+    ]);
+    expect(() => SessionStore.open(missingFile)).toThrow(/references missing first kept entry/i);
+
+    const otherBranchFile = join(dir, "branch-compaction.jsonl");
+    writeJsonl(otherBranchFile, [
+      validHeader,
+      makeEntry("root", null),
+      makeEntry("kept", "root"),
+      makeEntry("other", "root"),
+      makeEntry("compact", "other", {
+        type: "compaction",
+        summary: "summary",
+        firstKeptEntryId: "kept",
+        tokensBefore: 10,
+      }),
+    ]);
+    expect(() => SessionStore.open(otherBranchFile)).toThrow(/is not on its branch/i);
+  });
+
+  test("rejected open cannot append and leaves corrupted bytes unchanged", () => {
+    const file = join(dir, "session.jsonl");
+    writeJsonl(file, [validHeader, makeEntry("child", "missing")]);
+    const original = readFileSync(file, "utf-8");
+    let store: SessionStore | undefined;
+
+    expect(() => {
+      store = SessionStore.open(file);
+    }).toThrow(/corrupted/i);
+    expect(store).toBeUndefined();
+    expect(readFileSync(file, "utf-8")).toBe(original);
   });
 
   test("open throws on a file with content but no valid header, instead of silently overwriting", () => {

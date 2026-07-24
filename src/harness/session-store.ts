@@ -42,7 +42,7 @@ function generateEntryId(byId: Map<string, SessionEntry>): string {
   return randomUUID();
 }
 
-/** Parse JSONL content tolerantly: malformed lines are skipped. */
+/** Parse JSONL content tolerantly for compatibility with existing read-only callers. */
 export function parseSessionFileEntries(content: string): SessionFileEntry[] {
   const entries: SessionFileEntry[] = [];
   for (const line of content.split("\n")) {
@@ -58,7 +58,7 @@ export function parseSessionFileEntries(content: string): SessionFileEntry[] {
         entries.push(parsed as SessionFileEntry);
       }
     } catch {
-      // Skip malformed lines
+      // This compatibility parser is intentionally tolerant. SessionStore.open is not.
     }
   }
   return entries;
@@ -68,23 +68,132 @@ function isSessionHeader(entry: SessionFileEntry): entry is SessionHeader {
   return entry.type === "session" && typeof (entry as SessionHeader).id === "string";
 }
 
-/**
- * Load a session file. Returns no entries when the file is missing or its
- * first parseable line is not a valid session header (mirrors the tolerant
- * read behavior mikan has relied on). Throws only on I/O errors.
- */
-export function loadSessionFileEntries(filePath: string): SessionFileEntry[] {
-  if (!existsSync(filePath)) return [];
-  const entries = parseSessionFileEntries(readFileSync(filePath, "utf-8"));
-  if (entries.length === 0) return entries;
-  if (!isSessionHeader(entries[0])) return [];
-  return entries;
+type LoadedSessionFile = {
+  entries: SessionFileEntry[];
+  discardedCrashTail: boolean;
+};
+
+function corrupted(filePath: string, detail: string): Error {
+  return new Error(
+    `Session file is corrupted (${detail}): ${filePath}. Refusing to open for writing.`,
+  );
 }
 
-/** True when the file exists and holds any non-whitespace content on disk. */
-function hasSessionFileContent(filePath: string): boolean {
-  if (!existsSync(filePath)) return false;
-  return readFileSync(filePath, "utf-8").trim().length > 0;
+function parseSessionLine(line: string, filePath: string, lineNumber: number): SessionFileEntry {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    throw corrupted(filePath, `line ${lineNumber} is not valid JSON`);
+  }
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    typeof (parsed as { type?: unknown }).type !== "string"
+  ) {
+    throw corrupted(filePath, `line ${lineNumber} is not a session object`);
+  }
+  return parsed as SessionFileEntry;
+}
+
+function validateSessionTree(filePath: string, fileEntries: SessionFileEntry[]): void {
+  const records = fileEntries.slice(1);
+  const allIds = new Set<string>();
+  const treeEntries = new Map<string, SessionEntry>();
+
+  for (const [index, record] of records.entries()) {
+    const lineNumber = index + 2;
+    if (isSessionHeader(record)) throw corrupted(filePath, `line ${lineNumber} repeats the header`);
+    const entry = record as SessionEntry;
+    if (typeof entry.id !== "string" || !entry.id) {
+      throw corrupted(filePath, `line ${lineNumber} has no entry id`);
+    }
+    if (allIds.has(entry.id)) throw corrupted(filePath, `duplicate entry id ${entry.id}`);
+    allIds.add(entry.id);
+    if (entry.type !== "leaf") treeEntries.set(entry.id, entry);
+  }
+
+  for (const [index, record] of records.entries()) {
+    const lineNumber = index + 2;
+    const entry = record as SessionEntry;
+    if (entry.parentId !== null && typeof entry.parentId !== "string") {
+      throw corrupted(filePath, `line ${lineNumber} has an invalid parentId`);
+    }
+    if (entry.parentId === entry.id)
+      throw corrupted(filePath, `entry ${entry.id} is its own parent`);
+    if (entry.parentId !== null && !treeEntries.has(entry.parentId)) {
+      throw corrupted(filePath, `entry ${entry.id} references missing parent ${entry.parentId}`);
+    }
+    if (entry.type === "leaf") {
+      if (entry.targetId !== null && typeof entry.targetId !== "string") {
+        throw corrupted(filePath, `leaf ${entry.id} has an invalid target`);
+      }
+      if (entry.targetId !== null && !treeEntries.has(entry.targetId)) {
+        throw corrupted(filePath, `leaf ${entry.id} references missing target ${entry.targetId}`);
+      }
+    }
+  }
+
+  for (const entry of treeEntries.values()) {
+    const seen = new Set<string>();
+    let current: SessionEntry | undefined = entry;
+    while (current) {
+      if (seen.has(current.id))
+        throw corrupted(filePath, `parent cycle includes entry ${current.id}`);
+      seen.add(current.id);
+      current = current.parentId === null ? undefined : treeEntries.get(current.parentId);
+    }
+  }
+
+  for (const entry of treeEntries.values()) {
+    if (entry.type !== "compaction") continue;
+    if (typeof entry.firstKeptEntryId !== "string" || !treeEntries.has(entry.firstKeptEntryId)) {
+      throw corrupted(filePath, `compaction ${entry.id} references missing first kept entry`);
+    }
+    let ancestorId = entry.parentId;
+    while (ancestorId !== null && ancestorId !== entry.firstKeptEntryId) {
+      ancestorId = treeEntries.get(ancestorId)?.parentId ?? null;
+    }
+    if (ancestorId === null) {
+      throw corrupted(
+        filePath,
+        `compaction ${entry.id} first kept entry ${entry.firstKeptEntryId} is not on its branch`,
+      );
+    }
+  }
+}
+
+function loadValidatedSessionFile(filePath: string): LoadedSessionFile {
+  if (!existsSync(filePath)) return { entries: [], discardedCrashTail: false };
+  const nonEmptyLines = readFileSync(filePath, "utf-8")
+    .split("\n")
+    .map((line, index) => ({ text: line.trim(), number: index + 1 }))
+    .filter(({ text }) => text.length > 0);
+  if (nonEmptyLines.length === 0) return { entries: [], discardedCrashTail: false };
+
+  const entries: SessionFileEntry[] = [];
+  let discardedCrashTail = false;
+  for (const [index, line] of nonEmptyLines.entries()) {
+    try {
+      entries.push(parseSessionLine(line.text, filePath, line.number));
+    } catch (error) {
+      if (index !== nonEmptyLines.length - 1 || index === 0) throw error;
+      discardedCrashTail = true;
+    }
+  }
+  if (!isSessionHeader(entries[0]))
+    throw corrupted(filePath, "first non-empty line is not a valid header");
+  validateSessionTree(filePath, entries);
+  return { entries, discardedCrashTail };
+}
+
+/**
+ * Load and validate a session file. Missing and whitespace-only files return
+ * no entries. A malformed final non-empty line is ignored as a crash tail;
+ * all other malformed JSON and invalid tree relationships throw.
+ */
+export function loadSessionFileEntries(filePath: string): SessionFileEntry[] {
+  return loadValidatedSessionFile(filePath).entries;
 }
 
 /**
@@ -100,14 +209,21 @@ export class SessionStore {
   private readonly sessionId: string;
   private header: SessionHeader | null;
   private headerOnDisk: boolean;
+  private rewriteBeforeAppend: boolean;
   private entries: SessionEntry[] = [];
   private byId = new Map<string, SessionEntry>();
   private leafId: string | null = null;
 
-  private constructor(sessionFile: string | null, cwd: string, fileEntries: SessionFileEntry[]) {
+  private constructor(
+    sessionFile: string | null,
+    cwd: string,
+    fileEntries: SessionFileEntry[],
+    rewriteBeforeAppend = false,
+  ) {
     this.sessionFile = sessionFile === null ? null : resolve(sessionFile);
     this.header = fileEntries.length > 0 && isSessionHeader(fileEntries[0]) ? fileEntries[0] : null;
     this.headerOnDisk = this.header !== null;
+    this.rewriteBeforeAppend = rewriteBeforeAppend;
     this.sessionId = this.header?.id ?? randomUUID();
     this.cwd = cwd;
     for (const entry of fileEntries) {
@@ -132,16 +248,10 @@ export class SessionStore {
    * @param cwdOverride Working directory override; defaults to the header cwd.
    */
   static open(path: string, cwdOverride?: string): SessionStore {
-    const fileEntries = loadSessionFileEntries(path);
-    if (fileEntries.length === 0 && hasSessionFileContent(path)) {
-      throw new Error(
-        `Session file is corrupted (no valid session header): ${path}. ` +
-          `Refusing to open to avoid overwriting existing content.`,
-      );
-    }
-    const header = fileEntries.find(isSessionHeader);
+    const loaded = loadValidatedSessionFile(path);
+    const header = loaded.entries.find(isSessionHeader);
     const cwd = cwdOverride ?? header?.cwd ?? process.cwd();
-    return new SessionStore(path, cwd, fileEntries);
+    return new SessionStore(path, cwd, loaded.entries, loaded.discardedCrashTail);
   }
 
   /** Create a new session file with a fresh header, replacing any existing file. */
@@ -289,7 +399,7 @@ export class SessionStore {
 
   private persist(entry: SessionEntry): void {
     if (this.sessionFile === null) return;
-    if (!this.headerOnDisk) {
+    if (!this.headerOnDisk || this.rewriteBeforeAppend) {
       this.header ??= {
         type: "session",
         version: CURRENT_SESSION_VERSION,
@@ -301,6 +411,7 @@ export class SessionStore {
       mkdirSync(dirname(this.sessionFile), { recursive: true });
       atomicWritePrivateFile(this.sessionFile, `${lines.join("\n")}\n`);
       this.headerOnDisk = true;
+      this.rewriteBeforeAppend = false;
       return;
     }
     appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
