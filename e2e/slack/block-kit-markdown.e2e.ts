@@ -5,23 +5,40 @@ import { fetchThreadMessages, postMessage } from "./helpers/slack.js";
 
 const ctx = loadContextOrSkip();
 
-function findMrkdwnText(
+interface RichTextLink {
+  type: string;
+  url?: string;
+  text?: string;
+}
+
+function findRichTextLinks(
   blocks: NonNullable<Awaited<ReturnType<typeof fetchThreadMessages>>[number]["blocks"]>,
-): string[] {
-  return blocks.flatMap((block) => {
-    if (block.type !== "section" || !("text" in block) || block.text?.type !== "mrkdwn") return [];
-    return [block.text.text];
-  });
+): RichTextLink[] {
+  const links: RichTextLink[] = [];
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item);
+      return;
+    }
+    if (!node || typeof node !== "object") return;
+    const record = node as Record<string, unknown>;
+    if (record.type === "link") links.push(record as unknown as RichTextLink);
+    if (Array.isArray(record.elements)) walk(record.elements);
+  };
+  walk(blocks);
+  return links;
 }
 
 describe.skipIf(!ctx)("Slack Block Kit markdown", () => {
   if (!ctx) return;
   const { client, env } = ctx;
 
-  it("S-024 preserves Slack mrkdwn links in canonical Block Kit messages", async () => {
+  it("S-024 renders response-source links as native Slack links", async () => {
     const token = `QA_MRKDWN_LINK_${Date.now()}`;
-    const link = "<https://github.com/livingbio/designers/issues/523|#523>";
-    const source = `${token} ${link}`;
+    const url = "https://github.com/livingbio/designers/issues/523";
+    // Legacy Slack-style link in the response source; the renderer converts it
+    // to GFM, and Slack translates the markdown block into a rich_text link.
+    const source = `${token} <${url}|#523>`;
     let rootTs: string | undefined;
     let messageTs: string | undefined;
 
@@ -45,10 +62,10 @@ describe.skipIf(!ctx)("Slack Block Kit markdown", () => {
         "rendered message missing from canonical Slack thread",
       ).toBeDefined();
 
-      const mrkdwnText = findMrkdwnText(canonicalMessage?.blocks ?? []).join("\n");
-      expect(mrkdwnText).toContain(source);
-      expect(mrkdwnText).not.toContain("issues/523%7C#523");
-      expect(mrkdwnText).not.toContain(`${link.slice(1, -1)}|https://`);
+      const links = findRichTextLinks(canonicalMessage?.blocks ?? []);
+      const link = links.find((candidate) => candidate.url === url);
+      expect(link, `no rich_text link with url ${url} in canonical blocks`).toBeDefined();
+      expect(link?.text).toBe("#523");
     } finally {
       if (messageTs) {
         await client.chat.delete({ channel: env.channel, ts: messageTs }).catch(() => undefined);

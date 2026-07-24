@@ -2,79 +2,46 @@ import MarkdownIt from "markdown-it";
 import type Token from "markdown-it/lib/token.mjs";
 import type { KnownBlock } from "@slack/types";
 
-const markdown = new MarkdownIt({
-  html: false,
-  linkify: true,
-  breaks: true,
-});
+// Parser is used only to locate tables and derive plain-text fallback.
+// Prose is never re-serialized from tokens: it is sliced verbatim from the
+// source and handed to Slack as a native `markdown` block, so Slack owns
+// all prose rendering (same renderer as the markdown_text streaming API).
+const markdown = new MarkdownIt({ html: false });
 
 const MAX_BLOCKS = 50;
-const SECTION_TEXT_LIMIT = 3000;
+// Slack rejects messages whose markdown block text exceeds 12k (msg_too_long).
+const MARKDOWN_TEXT_LIMIT = 12000;
 const FIELD_TEXT_LIMIT = 2000;
 
-function pushSection(blocks: KnownBlock[], text: string): void {
-  const trimmed = text.trim();
-  if (!trimmed) return;
-  for (let i = 0; i < trimmed.length && blocks.length < MAX_BLOCKS; i += SECTION_TEXT_LIMIT) {
-    blocks.push({
-      type: "section",
-      text: { type: "mrkdwn", text: trimmed.slice(i, i + SECTION_TEXT_LIMIT) },
-    } as KnownBlock);
-  }
+// Legacy Slack-style links (<url|label>) predate the standard-GFM response
+// source contract; system producers may still emit them.
+const LEGACY_MRKDWN_LINK_PATTERN = /<(https?:\/\/[^<>|\s]+)\|([^<>\n]+)>/g;
+
+function convertLegacyMrkdwnLinks(source: string): string {
+  return source.replace(LEGACY_MRKDWN_LINK_PATTERN, "[$2]($1)");
 }
 
-function renderInline(tokens: Token[] | null | undefined): string {
+function normalizeMarkdownTables(source: string): string {
+  return source
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) return line;
+      if (!/^[|+\-:\s]+$/.test(trimmed) || !trimmed.includes("+")) return line;
+      return line.replaceAll("+", "|");
+    })
+    .join("\n");
+}
+
+function inlinePlainText(tokens: Token[] | null | undefined): string {
   if (!tokens) return "";
   let text = "";
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i];
-    const linkText = tokens[i + 1];
-    const linkClose = tokens[i + 2];
-    if (
-      token.type === "link_open" &&
-      token.markup === "autolink" &&
-      linkText?.type === "text" &&
-      linkText.content.includes("|") &&
-      linkClose?.type === "link_close"
-    ) {
-      text += `<${linkText.content}>`;
-      i += 2;
-    } else if (token.type === "text" || token.type === "code_inline") text += token.content;
+  for (const token of tokens) {
+    if (token.type === "text" || token.type === "code_inline") text += token.content;
     else if (token.type === "softbreak" || token.type === "hardbreak") text += "\n";
-    else if (token.type === "strong_open") text += "*";
-    else if (token.type === "strong_close") text += "*";
-    else if (token.type === "em_open") text += "_";
-    else if (token.type === "em_close") text += "_";
-    else if (token.type === "link_open") {
-      const href = token.attrGet("href");
-      if (href) text += `<${href}|`;
-    } else if (token.type === "link_close") {
-      text += ">";
-    } else if (token.children) {
-      text += renderInline(token.children);
-    }
+    else if (token.children) text += inlinePlainText(token.children);
   }
   return text;
-}
-
-function collectInlineUntil(
-  tokens: Token[],
-  index: number,
-  endType: string,
-): { text: string; next: number } {
-  let text = "";
-  let i = index;
-  for (; i < tokens.length && tokens[i].type !== endType; i++) {
-    const token = tokens[i];
-    if (token.type === "inline") text += renderInline(token.children) || token.content;
-    else if (token.type === "fence" || token.type === "code_block")
-      text += `\n\`\`\`\n${token.content}\n\`\`\``;
-  }
-  return { text, next: i };
-}
-
-function isTableAt(tokens: Token[], index: number): boolean {
-  return tokens[index]?.type === "table_open";
 }
 
 function buildTableBlock(headers: string[], rows: string[][]): KnownBlock {
@@ -92,11 +59,16 @@ function buildTableBlock(headers: string[], rows: string[][]): KnownBlock {
   } as KnownBlock;
 }
 
-function parseTable(
-  tokens: Token[],
-  index: number,
-): { blocks: KnownBlock[]; fallback: string; next: number } | null {
-  if (!isTableAt(tokens, index)) return null;
+interface ParsedTable {
+  block: KnownBlock;
+  fallback: string;
+  startLine: number;
+  endLine: number;
+}
+
+function parseTable(tokens: Token[], index: number): { table: ParsedTable; next: number } | null {
+  const open = tokens[index];
+  if (open?.type !== "table_open" || !open.map) return null;
 
   const headers: string[] = [];
   const rows: string[][] = [];
@@ -114,121 +86,96 @@ function parseTable(
       else rows.push(currentRow);
       currentRow = null;
     } else if (token.type === "inline" && currentRow) {
-      currentRow.push(renderInline(token.children) || token.content);
+      currentRow.push(inlinePlainText(token.children) || token.content);
     }
   }
 
   if (!headers.length || !rows.length) return null;
 
   const fallback = [headers.join(" | "), ...rows.map((row) => row.join(" | "))].join("\n");
-  return { blocks: [buildTableBlock(headers, rows)], fallback, next: i };
+  const endLine = tokens[i]?.map?.[1] ?? open.map[1];
+  return {
+    table: {
+      block: buildTableBlock(headers, rows),
+      fallback,
+      startLine: open.map[0],
+      endLine,
+    },
+    next: i,
+  };
 }
 
-function normalizeMarkdownTables(source: string): string {
-  return source
-    .split("\n")
-    .map((line) => {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) return line;
-      if (!/^[|+\-:\s]+$/.test(trimmed) || !trimmed.includes("+")) return line;
-      return line.replaceAll("+", "|");
-    })
-    .join("\n");
-}
-
-const SLACK_MRKDWN_LINK_PATTERN = /<https?:\/\/[^<>|\s]+\|[^<>\n]+>/g;
-
-function protectSlackMrkdwnLinks(source: string): { source: string; links: string[] } {
-  const links: string[] = [];
-  const protectedSource = source.replace(SLACK_MRKDWN_LINK_PATTERN, (link) => {
-    const index = links.push(link) - 1;
-    return `MIKANSLACKLINK${index}PLACEHOLDER`;
-  });
-  return { source: protectedSource, links };
-}
-
-function restoreSlackMrkdwnLinks(text: string, links: string[]): string {
-  return text.replace(/MIKANSLACKLINK(\d+)PLACEHOLDER/g, (placeholder, indexText: string) => {
-    return links[Number(indexText)] ?? placeholder;
-  });
-}
-
-function restoreBlockLinks(block: KnownBlock, links: string[]): KnownBlock {
-  if (block.type === "section" && block.text?.type === "mrkdwn") {
-    block.text.text = restoreSlackMrkdwnLinks(block.text.text, links);
-  } else if (block.type === "table") {
-    for (const row of block.rows) {
-      for (const cell of row) {
-        if ("text" in cell && typeof cell.text === "string") {
-          cell.text = restoreSlackMrkdwnLinks(cell.text, links);
-        }
-      }
-    }
+/** Split prose into chunks under the markdown block limit, preferring
+ *  paragraph boundaries, then line boundaries, then a hard slice. */
+function splitProse(text: string): string[] {
+  if (text.length <= MARKDOWN_TEXT_LIMIT) return [text];
+  const chunks: string[] = [];
+  let rest = text;
+  while (rest.length > MARKDOWN_TEXT_LIMIT) {
+    const window = rest.slice(0, MARKDOWN_TEXT_LIMIT);
+    let cut = window.lastIndexOf("\n\n");
+    if (cut <= 0) cut = window.lastIndexOf("\n");
+    if (cut <= 0) cut = MARKDOWN_TEXT_LIMIT;
+    chunks.push(rest.slice(0, cut));
+    rest = rest.slice(cut);
   }
-  return block;
+  if (rest.trim()) chunks.push(rest);
+  return chunks;
+}
+
+function pushMarkdown(blocks: KnownBlock[], prose: string): void {
+  const trimmed = prose.trim();
+  if (!trimmed) return;
+  for (const chunk of splitProse(trimmed)) {
+    if (blocks.length >= MAX_BLOCKS) return;
+    const text = chunk.trim();
+    if (text) blocks.push({ type: "markdown", text } as KnownBlock);
+  }
+}
+
+function plainTextFallback(tokens: Token[]): string {
+  const parts: string[] = [];
+  for (const token of tokens) {
+    if (token.type === "inline") parts.push(inlinePlainText(token.children) || token.content);
+    else if (token.type === "fence" || token.type === "code_block")
+      parts.push(token.content.trimEnd());
+  }
+  return parts.filter(Boolean).join("\n");
 }
 
 export function renderSlackBlocks(source: string): { text: string; blocks: KnownBlock[] } {
-  const protectedSource = protectSlackMrkdwnLinks(normalizeMarkdownTables(source));
-  const tokens = markdown.parse(protectedSource.source, {});
-  const blocks: KnownBlock[] = [];
-  const fallback: string[] = [];
+  const normalized = normalizeMarkdownTables(convertLegacyMrkdwnLinks(source));
+  const tokens = markdown.parse(normalized, {});
+  const lines = normalized.split("\n");
 
-  for (let i = 0; i < tokens.length && blocks.length < MAX_BLOCKS; i++) {
-    const token = tokens[i];
-
-    const table = parseTable(tokens, i);
-    if (table) {
-      blocks.push(...table.blocks.slice(0, MAX_BLOCKS - blocks.length));
-      fallback.push(table.fallback);
-      i = table.next;
-      continue;
-    }
-
-    if (token.type === "heading_open") {
-      const collected = collectInlineUntil(tokens, i + 1, "heading_close");
-      const text = `*${collected.text}*`;
-      pushSection(blocks, text);
-      fallback.push(collected.text);
-      i = collected.next;
-      continue;
-    }
-
-    if (token.type === "paragraph_open") {
-      const collected = collectInlineUntil(tokens, i + 1, "paragraph_close");
-      pushSection(blocks, collected.text);
-      fallback.push(collected.text);
-      i = collected.next;
-      continue;
-    }
-
-    if (token.type === "bullet_list_open" || token.type === "ordered_list_open") {
-      const lines: string[] = [];
-      let item = 1;
-      for (i += 1; i < tokens.length && !tokens[i].type.endsWith("list_close"); i++) {
-        if (tokens[i].type !== "inline") continue;
-        const marker = token.type === "ordered_list_open" ? `${item++}.` : "•";
-        lines.push(`${marker} ${renderInline(tokens[i].children) || tokens[i].content}`);
-      }
-      const text = lines.join("\n");
-      pushSection(blocks, text);
-      fallback.push(text);
-      continue;
-    }
-
-    if (token.type === "fence" || token.type === "code_block") {
-      const text = `\`\`\`\n${token.content}\n\`\`\``;
-      pushSection(blocks, text);
-      fallback.push(token.content);
+  const tables: ParsedTable[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const parsed = parseTable(tokens, i);
+    if (parsed) {
+      tables.push(parsed.table);
+      i = parsed.next;
     }
   }
 
-  if (!blocks.length) pushSection(blocks, protectedSource.source);
+  const blocks: KnownBlock[] = [];
+  const fallback: string[] = [];
+  let cursor = 0;
+  for (const table of tables) {
+    const prose = lines.slice(cursor, table.startLine).join("\n");
+    pushMarkdown(blocks, prose);
+    if (prose.trim()) fallback.push(plainTextFallback(markdown.parse(prose, {})));
+    if (blocks.length < MAX_BLOCKS) {
+      blocks.push(table.block);
+      fallback.push(table.fallback);
+    }
+    cursor = table.endLine;
+  }
+  const trailingProse = lines.slice(cursor).join("\n");
+  pushMarkdown(blocks, trailingProse);
+  if (trailingProse.trim()) fallback.push(plainTextFallback(markdown.parse(trailingProse, {})));
+
   return {
-    text: restoreSlackMrkdwnLinks(
-      fallback.join("\n\n") || protectedSource.source,
-      protectedSource.links,
-    ),
-    blocks: blocks.map((block) => restoreBlockLinks(block, protectedSource.links)),
+    text: fallback.filter(Boolean).join("\n\n") || normalized,
+    blocks,
   };
 }

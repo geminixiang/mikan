@@ -166,10 +166,7 @@ describe("SlackMessagingBot slash commands", () => {
       channel: "D123",
       text: "Conversation reset. Send a new message to start fresh.",
       blocks: [
-        {
-          type: "section",
-          text: { type: "mrkdwn", text: "Conversation reset. Send a new message to start fresh." },
-        },
+        { type: "markdown", text: "Conversation reset. Send a new message to start fresh." },
       ],
     });
   });
@@ -1071,7 +1068,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     expect(existsSync(getThreadSessionFile(join(workingDir, "C123"), "C123:2000.0001"))).toBe(true);
   });
 
-  test("postInThread wraps text in Block Kit fallback", async () => {
+  test("postInThread wraps text in a markdown block", async () => {
     const bot = new SlackMessagingBot(makeHandler(), {
       appToken: "xapp-test",
       botToken: "xoxb-test",
@@ -1087,7 +1084,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       channel: "C123",
       thread_ts: "1000.0001",
       text: "x".repeat(600),
-      blocks: [{ type: "section", text: { type: "mrkdwn", text: "x".repeat(600) } }],
+      blocks: [{ type: "markdown", text: "x".repeat(600) }],
     });
   });
 
