@@ -13,6 +13,10 @@ const RESET_SUCCESS = "Conversation reset. Send a new message to start fresh.";
 const RESET_FAILURE = /Could not preserve memory|current conversation was not reset/i;
 const ctx = loadContextOrSkip();
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 async function waitForResetResult(
   channel: string,
   botUserId: string,
@@ -61,16 +65,17 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
   it("S-024 /new preserves durable memory but discards transient context", async () => {
     const dmChannel = await openDmChannel(client, botUserId);
     const nonce = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const durable = `QA_DURABLE_${nonce}`;
-    const transient = `QA_TRANSIENT_${nonce}`;
+    const projectCodename = `Mikan-Orbit-${nonce}`;
+    const scratchNonce = `scratch-${nonce}`;
 
     const setupStartedAt = nowSeconds();
     const setupTs = await postMessage(
       client,
       dmChannel,
-      `記住以下語意：DURABLE token ${durable} 是穩定、長期的使用者偏好／事實，必須在 /new 後保留。` +
-        `TRANSIENT token ${transient} 只是目前 session 的暫存草稿，不得寫入 MEMORY.md，也不得在 reset 後保留。` +
-        "請只簡短回覆 OK。",
+      `這個對話所屬專案的長期代號是 ${projectCodename}。這是精確且持久的專案偏好，` +
+        "在 /new 後仍必須使用；請將完整代號保存在此對話的 MEMORY.md，而非全域 MEMORY.md。" +
+        `目前草稿的暫時註記是 ${scratchNonce}，只供這個 session 使用，不得寫入任何 MEMORY.md，` +
+        "也不得在 reset 後保留。請只簡短回覆 OK。",
     );
     const setupReply = await waitForBotReply({
       client,
@@ -98,10 +103,11 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
     expect(resetResult?.success, `reset failed: ${resetResult?.text ?? "no result"}`).toBe(true);
     expect(resetResult?.text.trim()).toBe(RESET_SUCCESS);
 
-    const expected = `DURABLE=${durable}; TRANSIENT=UNKNOWN`;
+    const expected = `CODENAME=${projectCodename}; SCRATCH=UNKNOWN`;
+    const exactExpected = new RegExp(`^${escapeRegExp(expected)}$`);
     const probe =
-      "從已保存的長期記憶找出先前的 DURABLE token，並說明暫存 TRANSIENT token 是否已知。" +
-      `整個回覆必須嚴格為：${expected.replace(durable, "<durable-token>")}`;
+      "請從此對話已保存的長期記憶找出專案代號，並判斷先前草稿的暫時註記是否已知。" +
+      "整個回覆必須嚴格為：CODENAME=<已保存的完整專案代號>; SCRATCH=UNKNOWN";
     const probeStartedAt = nowSeconds();
     const probeTs = await postMessage(client, dmChannel, probe);
     let probeReply = await waitForBotReply({
@@ -112,17 +118,17 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
       startedAt: probeStartedAt,
       timeoutMs: Math.max(env.timeoutMs, 45_000),
       pollMs: env.pollMs,
+      textMatches: exactExpected,
     });
-    expect(probeReply, "no reply to the post-reset memory probe").not.toBeNull();
-    expect(probeReply?.text ?? "", "transient token leaked after reset").not.toContain(transient);
 
-    if ((probeReply?.text ?? "").trim() !== expected) {
+    if (!probeReply) {
       const retryStartedAt = nowSeconds();
       const retryTs = await postMessage(
         client,
         dmChannel,
-        "格式不正確。請再從長期記憶取得 DURABLE token；不要猜測或輸出任何暫存 token。" +
-          "只回覆 `DURABLE=<durable-token>; TRANSIENT=UNKNOWN`，不要加其他文字或 Markdown。",
+        "請修正格式並從此對話的長期記憶取得專案代號。" +
+          "只回覆 CODENAME=<已保存的完整專案代號>; SCRATCH=UNKNOWN，" +
+          "不要猜測、輸出暫時註記、加入其他文字或使用 Markdown。",
       );
       probeReply = await waitForBotReply({
         client,
@@ -132,13 +138,15 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
         startedAt: retryStartedAt,
         timeoutMs: Math.max(env.timeoutMs, 45_000),
         pollMs: env.pollMs,
+        textMatches: exactExpected,
       });
-      expect(probeReply, "no reply to the post-reset format repair").not.toBeNull();
-      expect(probeReply?.text ?? "", "transient token leaked after reset repair").not.toContain(
-        transient,
-      );
+      expect(
+        probeReply,
+        `no exact post-reset reply after format repair: ${expected}`,
+      ).not.toBeNull();
     }
 
+    expect(probeReply?.text ?? "", "scratch nonce leaked after reset").not.toContain(scratchNonce);
     expect((probeReply?.text ?? "").trim()).toBe(expected);
     console.log(`new-session probe ts=${probeReply!.ts}: ${summarizeMessage(probeReply!)}`);
   }, 300_000);

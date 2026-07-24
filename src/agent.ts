@@ -1353,9 +1353,10 @@ async function prepareRunContext(params: {
 
 const MEMORY_MAINTENANCE_PROMPT = `Before this conversation is reset, preserve only durable information worth carrying into future conversations.
 Review the existing transcript and update the appropriate MEMORY.md files using the available tools:
-- Global MEMORY.md: stable user preferences, reusable facts, and project-wide information.
-- Conversation MEMORY.md: durable decisions and ongoing work specific to this conversation.
-Deduplicate against existing memory. Do not preserve transient discussion, tool noise, secrets, or speculative details. If there is nothing new worth preserving, make no changes. Do no unrelated work.`;
+- Global MEMORY.md: stable user preferences, reusable facts, and project-wide information that truly applies across conversations.
+- Conversation MEMORY.md: durable decisions, preferences, facts, and ongoing work specific to this conversation. Prefer this file for conversation-specific context.
+Preserve the concrete values and details needed to resume the work; do not replace them with abstract categories, summaries of retention rules, or statements that merely say a kind of information is durable. An explicit user statement that a fact, preference, or decision should persist is strong evidence that its exact content is worth preserving.
+Deduplicate against existing memory. Do not preserve transient discussion, tool noise, secrets, speculative details, or test scaffolding. If there is nothing new worth preserving, make no changes. Do no unrelated work.`;
 
 const MEMORY_MAINTENANCE_BUDGET = {
   maxDurationMs: 2 * 60 * 1000,

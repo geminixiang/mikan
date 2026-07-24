@@ -6,7 +6,7 @@ import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-work
 import type { MutableModels } from "@earendil-works/pi-ai";
 import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../src/adapter.js";
 import { createRunner } from "../src/agent.js";
-import { MikanModels } from "../src/harness/index.js";
+import { MikanAgentSession, MikanModels } from "../src/harness/index.js";
 import { createManagedSessionFile, getChannelSessionDir } from "../src/sessions/store.js";
 
 /**
@@ -31,6 +31,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   delete process.env.MIKAN_STATE_DIR;
   rmSync(dir, { recursive: true, force: true });
 });
@@ -198,8 +199,10 @@ describe("PiAgentWrapper.run", () => {
   });
 
   test("hidden memory maintenance sees the old transcript and writes memory", async () => {
+    const promptSpy = vi.spyOn(MikanAgentSession.prototype, "prompt");
     const { runner, faux } = await createTestRunner();
     const memoryPath = join(dir, "workspace", "C1", "MEMORY.md");
+    const setupResponder = makeResponder();
     let maintenancePrompt = "";
     faux.setResponses([
       fauxAssistantMessage("recorded old turn"),
@@ -219,9 +222,10 @@ describe("PiAgentWrapper.run", () => {
     ]);
     await runner.run(
       makeMessage({ text: "durable launch decision: use a staged rollout" }),
-      makeResponder(),
+      setupResponder,
       platform,
     );
+    const visibleCallsBeforeMaintenance = setupResponder.replaceResponse.mock.calls.length;
 
     const result = await runner.maintainMemory(
       makeMessage({ id: "memory:C1", conversationKind: "direct", text: "/new" }),
@@ -230,6 +234,12 @@ describe("PiAgentWrapper.run", () => {
 
     expect(result).toEqual({ stopReason: "stop", errorMessage: undefined });
     expect(maintenancePrompt).toContain("preserve only durable information");
+    expect(maintenancePrompt).toContain("Preserve the concrete values and details needed");
+    expect(maintenancePrompt).toContain("exact content is worth preserving");
+    expect(promptSpy.mock.calls.at(-1)?.[1]).toMatchObject({
+      budget: { maxDurationMs: 120_000, maxLlmCalls: 5, maxCostUsd: 0.25 },
+    });
+    expect(setupResponder.replaceResponse).toHaveBeenCalledTimes(visibleCallsBeforeMaintenance);
     expect(readFileSync(memoryPath, "utf-8")).toBe("Launch decision: use the staged rollout.");
   });
 
