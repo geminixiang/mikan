@@ -394,6 +394,80 @@ describe("MikanAgentSession", () => {
     expect(JSON.stringify(persistedAssistants[0])).not.toContain("original answer");
   });
 
+  test("message_end replacements keep the live assistant identity through tool execution and turn_end", async () => {
+    const { models, faux, model } = createFauxSetup();
+    const originalToolMessage = fauxAssistantMessage(fauxToolCall("echo", { text: "original" }));
+    faux.setResponses([originalToolMessage, fauxAssistantMessage("done")]);
+
+    const executedArguments: unknown[] = [];
+    const recordingEchoTool: AgentTool = {
+      ...echoTool,
+      execute: async (_toolCallId, args) => {
+        executedArguments.push(args);
+        return { content: [{ type: "text", text: "recorded" }], details: {} };
+      },
+    } as unknown as AgentTool;
+    let liveToolMessage: unknown;
+    const extensions = new ExtensionRegistry();
+    extensions.register("rewrite", "message_end", ({ message }) => {
+      if (
+        message.role !== "assistant" ||
+        !message.content.some((part) => part.type === "toolCall")
+      ) {
+        return;
+      }
+      liveToolMessage = message;
+      message.errorMessage = "stale optional property";
+      const replacement = {
+        ...message,
+        content: message.content.map((part) =>
+          part.type === "toolCall"
+            ? { ...part, arguments: { text: "rewritten" } }
+            : part,
+        ),
+      };
+      delete replacement.errorMessage;
+      return { message: replacement };
+    });
+
+    const session = new MikanAgentSession({
+      systemPrompt: "test",
+      model,
+      thinkingLevel: "off",
+      tools: [recordingEchoTool],
+      models,
+      sessionStore: SessionStore.create(join(dir, "identity.jsonl"), dir),
+      extensions,
+    });
+    let messageEndMessage: unknown;
+    let turnEndMessage: unknown;
+    session.subscribe((event) => {
+      if (
+        event.type === "message_end" &&
+        event.message.role === "assistant" &&
+        event.message.content.some((part) => part.type === "toolCall")
+      ) {
+        messageEndMessage = event.message;
+      }
+      if (
+        event.type === "turn_end" &&
+        event.message.content.some((part) => part.type === "toolCall")
+      ) {
+        turnEndMessage = event.message;
+      }
+    });
+
+    await session.prompt("run the tool");
+
+    expect(executedArguments).toEqual([{ text: "rewritten" }]);
+    expect(messageEndMessage).toBe(liveToolMessage);
+    expect(turnEndMessage).toBe(liveToolMessage);
+    expect(turnEndMessage).toBe(messageEndMessage);
+    expect(liveToolMessage).not.toHaveProperty("errorMessage");
+    expect(JSON.stringify(turnEndMessage)).toContain('"text":"rewritten"');
+    expect(JSON.stringify(turnEndMessage)).not.toContain('"text":"original"');
+  });
+
   test("tool_result hooks rewrite tool output before the model and the store see it", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([

@@ -422,9 +422,10 @@ export class MikanAgentSession {
     if (this.extensions?.hasHandlers("message_end")) {
       const result = await this.extensions.emitMessageEnd({ message, origin: this.runOrigin });
       if (result?.message) {
-        const messageIndex = this.agent.state.messages.lastIndexOf(message);
-        if (messageIndex >= 0) this.agent.state.messages[messageIndex] = result.message;
-        message = result.message;
+        for (const key of Object.keys(message)) {
+          delete (message as unknown as Record<string, unknown>)[key];
+        }
+        Object.assign(message, result.message);
       }
     }
 
