@@ -1,6 +1,6 @@
 import * as log from "../log.js";
-import type { GondolinRemoteSettings, GondolinRemoteWorkerSettings } from "../types.js";
 import { SandboxError } from "./errors.js";
+import type { ExecResult, GondolinRemoteSettings, GondolinRemoteWorkerSettings } from "./types.js";
 import { gondolinPlacements, type GondolinPlacementStore } from "./gondolin-placement.js";
 import {
   GondolinRemoteConnection,
@@ -13,7 +13,6 @@ import type {
   GondolinRuntimeSpec,
   GondolinRuntimeTransport,
 } from "./gondolin-worker-client.js";
-import type { ExecResult } from "./types.js";
 
 const LEASE_TTL_SECONDS = 300;
 const QUEUE_WAIT_SECONDS = 60;

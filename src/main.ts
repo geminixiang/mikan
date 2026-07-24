@@ -55,10 +55,6 @@ import {
 } from "./sandbox/gondolin.js";
 import { configureGondolinRuntime } from "./sandbox/gondolin-bootstrap.js";
 import { gondolinInventory } from "./sandbox/gondolin-inventory.js";
-import { gondolinFleet } from "./sandbox/gondolin-fleet.js";
-import { gondolinGateway } from "./sandbox/gondolin-gateway.js";
-import { gondolinJoin } from "./sandbox/gondolin-join.js";
-import { checkWorkspaceExported } from "./sandbox/gondolin-nfs-advisory.js";
 import { FileVaultManager } from "./vault/index.js";
 import { runExtCommand } from "./cli/ext.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
@@ -200,40 +196,6 @@ if (plan.mode === "version") {
   process.exit(0);
 }
 
-// Handle --worker-token: mint a one-time join token for a dial-home worker
-if (plan.mode === "worker-token") {
-  const stateDir = plan.stateDir;
-  setEnvAliases("STATE_DIR", stateDir);
-  ensureSecureStateDir(stateDir);
-  gondolinJoin.configure(join(stateDir, "gondolin-gateway"));
-  try {
-    let gatewayPort = 8433;
-    let gatewayHost: string | undefined;
-    try {
-      const gateway = loadGlobalSettings().sandbox?.gondolin?.remote?.gateway;
-      if (gateway) {
-        gatewayPort = gateway.port;
-        gatewayHost = gateway.hostnames?.[0];
-      }
-    } catch {
-      // settings are optional for minting; the CA lives in the state dir
-    }
-    const minted = await gondolinJoin.mintToken();
-    const host = gatewayHost ?? "<mikan-host>";
-    console.log("Worker join token (single use, expires in 15 minutes):");
-    console.log("");
-    console.log(`  mikan-worker join https://${host}:${gatewayPort} \\`);
-    console.log(`    --token ${minted.token} \\`);
-    console.log(`    --ca-pin ${minted.fingerprint} \\`);
-    console.log(`    --name <worker-name> --workspace-root <shared-workspace-path> \\`);
-    console.log(`    --worker-entry /opt/mikan/dist/sandbox/gondolin-worker-main.js`);
-    process.exit(0);
-  } catch (err) {
-    console.error(err instanceof Error ? err.message : String(err));
-    process.exit(1);
-  }
-}
-
 // Handle --onboard mode
 if (plan.mode === "onboard") {
   const stateDir = plan.stateDir;
@@ -338,8 +300,6 @@ if (sandbox.type === "gondolin") {
       stateDir,
       limits: sandboxLimits,
       boostLimits: sandboxBoostLimits,
-      remote: sandboxSettings?.gondolin?.remote,
-      requireRemote: sandbox.profile === "remote",
     });
   } catch (error) {
     handleStartupError(error);
@@ -386,15 +346,7 @@ if (provisioner) {
   ).unref();
 }
 
-if (sandbox.type === "gondolin" && sandbox.profile === "remote") {
-  checkWorkspaceExported(workingDir, sandboxSettings?.gondolin?.remote?.gateway?.hostnames?.[0]);
-  await gondolinGateway.start();
-  await gondolinFleet.reconcile();
-  setInterval(() => {
-    void stopIdleGondolinVms(MANAGED_SANDBOX_IDLE_TIMEOUT_MS);
-    void gondolinFleet.reconcile();
-  }, MANAGED_SANDBOX_IDLE_TIMEOUT_MS).unref();
-} else if (sandbox.type === "gondolin") {
+if (sandbox.type === "gondolin") {
   gondolinInventory.touchHeartbeat();
   await gondolinInventory.reconcile();
   setInterval(() => {

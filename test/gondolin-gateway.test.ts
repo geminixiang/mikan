@@ -6,8 +6,6 @@ import { createServer, connect, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { validateSandbox } from "../src/sandbox/index.js";
-import { assertRemoteConfigured } from "../src/sandbox/gondolin.js";
 import { gondolinFleet } from "../src/sandbox/gondolin-fleet.js";
 import { gondolinGateway } from "../src/sandbox/gondolin-gateway.js";
 import { gondolinJoin } from "../src/sandbox/gondolin-join.js";
@@ -513,29 +511,5 @@ describe("Gondolin worker gateway join + authorization", () => {
     await expect(exchange({ type: "tunnel", nonce: "x" })).rejects.toThrow(
       "closed without response",
     );
-  });
-});
-
-describe("gondolin:remote startup validation ordering", () => {
-  afterEach(() => {
-    gondolinFleet.configure();
-    gondolinGateway.configure();
-  });
-
-  test("validate does not require configuration (it runs before configure)", async () => {
-    gondolinFleet.configure();
-    gondolinGateway.configure();
-    // main.ts calls validateSandbox before the transports are configured, so
-    // this must not throw despite nothing being wired yet
-    await expect(validateSandbox({ type: "gondolin", profile: "remote" })).resolves.toBeUndefined();
-  });
-
-  test("assertRemoteConfigured guards after configure — gateway alone suffices", () => {
-    gondolinFleet.configure();
-    gondolinGateway.configure();
-    expect(() => assertRemoteConfigured()).toThrow("requires sandbox.gondolin.remote settings");
-
-    gondolinGateway.configure({ port: 0, certFile: "a", keyFile: "b", clientCaFile: "c" });
-    expect(() => assertRemoteConfigured()).not.toThrow();
   });
 });

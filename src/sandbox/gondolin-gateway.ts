@@ -4,7 +4,7 @@ import type { Server, Socket } from "node:net";
 import { hostname } from "node:os";
 import { TLSSocket, createServer as createTlsServer } from "node:tls";
 import * as log from "../log.js";
-import type { GondolinGatewaySettings } from "../types.js";
+import type { GondolinGatewaySettings } from "./types.js";
 import { gondolinFleet } from "./gondolin-fleet.js";
 import { gondolinJoin } from "./gondolin-join.js";
 import { createSessionFrameParser, encodeSessionMessage } from "./gondolin-contract.js";

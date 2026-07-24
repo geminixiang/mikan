@@ -60,10 +60,9 @@ describe("resolveBoot", () => {
     expect(() => resolveBoot(["--sandbox=bogus:nope"])).toThrow();
   });
 
-  test("mode priority: help > version > worker-token > onboard > download > run", () => {
+  test("mode priority: help > version > onboard > download > run", () => {
     expect(resolveBoot(["--version", "--help"]).mode).toBe("help");
     expect(resolveBoot(["--onboard", "--version"]).mode).toBe("version");
-    expect(resolveBoot(["--onboard", "--worker-token"]).mode).toBe("worker-token");
     expect(resolveBoot(["--download=C1", "--onboard"]).mode).toBe("onboard");
     expect(resolveBoot(["--download=C1"]).mode).toBe("download");
   });
@@ -78,6 +77,10 @@ describe("resolveBoot", () => {
 
   test("unknown flags are an error, not silently ignored", () => {
     expect(() => resolveBoot(["--sandox=host"])).toThrow(/Unknown flag: --sandox=host/);
+  });
+
+  test("removed --worker-token flag is rejected", () => {
+    expect(() => resolveBoot(["--worker-token"])).toThrow(/Unknown flag: --worker-token/);
   });
 
   test("ext short-circuits before flag parsing", () => {
@@ -98,13 +101,14 @@ describe("helpText", () => {
       "--state-dir",
       "--sandbox",
       "--onboard",
-      "--worker-token",
       "--download",
       "--version",
       "--help",
     ]) {
       expect(help).toContain(flag);
     }
+    expect(help).not.toContain("--worker-token");
+    expect(help).not.toContain("gondolin:remote");
   });
 });
 

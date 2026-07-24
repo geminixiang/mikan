@@ -5,7 +5,7 @@
  * process; main.ts just executes the plan.
  *
  * Modes, highest priority first: `ext` (own grammar, never flag-parsed here),
- * `help`, `version`, `worker-token`, `onboard`, `download`, `run`.
+ * `help`, `version`, `onboard`, `download`, `run`.
  */
 import { join, resolve } from "path";
 import { envSummaryLines } from "../env-manifest.js";
@@ -13,7 +13,7 @@ import { parseSandboxArg, type SandboxConfig } from "../sandbox/index.js";
 import { defaultStateDir, resolveStateDir, takeValueFlag } from "./arg-grammar.js";
 
 export interface BootPlan {
-  mode: "ext" | "env" | "help" | "version" | "worker-token" | "onboard" | "download" | "run";
+  mode: "ext" | "env" | "help" | "version" | "onboard" | "download" | "run";
   /** argv after `ext`, handed to runExtCommand. Only set for mode "ext". */
   extArgs?: string[];
   stateDir: string;
@@ -43,7 +43,6 @@ export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
   let help = false;
   let version = false;
   let onboard = false;
-  let workerToken = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -54,8 +53,6 @@ export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
       version = true;
     } else if (arg === "--onboard") {
       onboard = true;
-    } else if (arg === "--worker-token") {
-      workerToken = true;
     } else if ((taken = takeValueFlag(args, i, "--sandbox"))) {
       sandbox = parseSandboxArg(taken.value);
       i = taken.lastIndex;
@@ -79,13 +76,11 @@ export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
       ? "help"
       : version
         ? "version"
-        : workerToken
-          ? "worker-token"
-          : onboard
-            ? "onboard"
-            : downloadChannel
-              ? "download"
-              : "run",
+        : onboard
+          ? "onboard"
+          : downloadChannel
+            ? "download"
+            : "run",
     stateDir,
     workingDir: workingDirArg ? resolve(workingDirArg) : join(stateDir, "workspace"),
     workingDirExplicit: workingDirArg !== undefined,
@@ -112,12 +107,11 @@ Options:
                            host
                            container:<existing-container-name>
                            image:<image[:tag]>
-                           gondolin:default | gondolin:remote
+                           gondolin:default
                            firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]
                            cloudflare:<sandbox-id>
                          Default: host
   --onboard              Create <state-dir>/settings.json from a template, then exit.
-  --worker-token         Mint a one-time gondolin worker join token, then exit.
   --download <channel>   Dump a Slack channel's history (Slack only), then exit.
   --version, -v          Print the version.
   --help, -h             Show this help.

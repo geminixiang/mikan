@@ -2,7 +2,7 @@ import { readFileSync, statSync } from "node:fs";
 import { request as httpsRequest } from "node:https";
 import { relative, isAbsolute, join } from "node:path";
 import * as log from "../log.js";
-import type { GondolinRemoteWorkerSettings } from "../types.js";
+import type { GondolinRemoteWorkerSettings } from "./types.js";
 import { SandboxError } from "./errors.js";
 import {
   createSessionFrameParser,
@@ -57,10 +57,6 @@ export interface GondolinRemoteOverrides {
   /** Reports lease grants/renewals so the fleet can persist fencing watermarks. */
   onLeaseActivity?: (instanceId: string, expiresAtMs: number) => void;
 }
-
-// The framing lives with the rest of the wire contract; re-exported here for
-// existing importers.
-export { createSessionFrameParser, encodeSessionMessage };
 
 /**
  * One mikan-worker daemon as seen from mikan: mTLS requests, per-instance

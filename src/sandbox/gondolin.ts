@@ -10,8 +10,6 @@ import {
   type GondolinRuntimeHandle,
   type GondolinRuntimeTransport,
 } from "./gondolin-worker-client.js";
-import { gondolinFleet } from "./gondolin-fleet.js";
-import { gondolinGateway } from "./gondolin-gateway.js";
 import { createMountedRuntimePathContext } from "./path-context.js";
 import { withRuntimeBootstrap } from "./container.js";
 import { execReadFile, execReadFileBase64, execWriteFile } from "./utils.js";
@@ -113,9 +111,9 @@ function parseGondolinSandboxArg(value: string): GondolinSandboxConfig | undefin
   if (!profile) {
     throw new SandboxError("Error: gondolin sandbox requires a profile (e.g., gondolin:default)");
   }
-  if (profile !== "default" && profile !== "remote") {
+  if (profile !== "default") {
     throw new SandboxError(
-      `Error: unsupported gondolin profile '${profile}'. Use 'gondolin:default' or 'gondolin:remote'`,
+      `Error: unsupported gondolin profile '${profile}'. Use 'gondolin:default'`,
     );
   }
   return { type: "gondolin", profile };
@@ -130,59 +128,23 @@ function assertSupportedNodeVersion(): void {
   }
 }
 
-async function validateGondolinSandbox(config?: GondolinSandboxConfig): Promise<void> {
-  if (config?.profile === "remote") {
-    // The remote transports are configured from settings later in startup, so
-    // "is a worker source configured?" is checked there (assertRemoteConfigured),
-    // not here where nothing has been wired yet.
-    console.log("  Gondolin microVM enabled. Profile: remote");
-    return;
-  }
+async function validateGondolinSandbox(): Promise<void> {
   assertSupportedNodeVersion();
   console.log("  Gondolin microVM enabled. Profile: default");
 }
 
-/**
- * Fail fast when `gondolin:remote` is selected but no worker source is
- * configured. Call after the fleet and gateway have been configured.
- */
-export function assertRemoteConfigured(): void {
-  if (!gondolinFleet.isConfigured() && !gondolinGateway.isConfigured()) {
-    throw new SandboxError(
-      "Error: gondolin:remote requires sandbox.gondolin.remote settings (workers[]/url, or gateway for dial-home workers)",
-    );
-  }
-  // Without a workspaceRoot, mount sources cannot be translated to the worker's
-  // filesystem and every runtime is rejected with "escapes the workspace root".
-  const missing = gondolinFleet.workersMissingWorkspaceRoot();
-  if (missing.length > 0) {
-    throw new SandboxError(
-      `Error: gondolin:remote worker(s) [${missing.join(", ")}] have no workspaceRoot; ` +
-        `set sandbox.gondolin.remote.workspaceRoot (or gateway.workspaceRoot) to the worker-side shared workspace path`,
-    );
-  }
-}
-
-function transportFor(config: GondolinSandboxConfig): GondolinRuntimeTransport {
-  return config.profile === "remote" ? gondolinFleet : gondolinWorkers;
+function transportFor(): GondolinRuntimeTransport {
+  return gondolinWorkers;
 }
 
 async function resolveDesiredRuntime(
   config: GondolinSandboxConfig,
 ): Promise<GondolinDesiredRuntime> {
-  let image: string;
-  let imageIdentity: string;
-  if (config.profile === "remote") {
-    // image assets live on the worker host; the selector is the identity
-    image = gondolinFleet.imageSelector() ?? config.image ?? MIKAN_IMAGE;
-    imageIdentity = image;
-  } else {
-    const selector = config.image ?? MIKAN_IMAGE;
-    const { ensureImageSelector } = (await import("@earendil-works/gondolin")) as GondolinModule;
-    const resolvedImage = await ensureImageSelector(selector);
-    image = resolvedImage.assetDir;
-    imageIdentity = resolvedImage.buildId ?? resolvedImage.assetDir;
-  }
+  const selector = config.image ?? MIKAN_IMAGE;
+  const { ensureImageSelector } = (await import("@earendil-works/gondolin")) as GondolinModule;
+  const resolvedImage = await ensureImageSelector(selector);
+  const image = resolvedImage.assetDir;
+  const imageIdentity = resolvedImage.buildId ?? resolvedImage.assetDir;
   const mounts = (
     config.mounts ?? [{ source: config.workspacePath ?? process.cwd(), target: "/workspace" }]
   ).toSorted((left, right) => left.target.localeCompare(right.target));
@@ -252,7 +214,7 @@ function createSession(
   desired: GondolinDesiredRuntime,
   fingerprint: string,
 ): GondolinSession {
-  const transport = transportFor(config);
+  const transport = transportFor();
   let session: GondolinSession;
   const runtime = transport
     .ensure(key, {
@@ -499,16 +461,14 @@ export class GondolinExecutor implements Executor {
     private readonly config: GondolinSandboxConfig,
     private readonly env?: Record<string, string>,
   ) {
-    // remote runtimes never load gondolin in this process, so the mikan host
-    // may stay on the supported Node floor
-    if (config.profile !== "remote") assertSupportedNodeVersion();
+    assertSupportedNodeVersion();
     this.workspacePath = config.workspacePath ?? process.cwd();
     this.instanceId = config.instanceId ?? this.workspacePath;
   }
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
     return withRuntime(this.instanceId, this.config, (handle) =>
-      transportFor(this.config).exec(handle, withRuntimeBootstrap(command, this.env), {
+      transportFor().exec(handle, withRuntimeBootstrap(command, this.env), {
         env: this.env,
         signal: executionSignal(options),
       }),

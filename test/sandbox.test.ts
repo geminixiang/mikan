@@ -40,6 +40,12 @@ describe("parseSandboxArg", () => {
     });
   });
 
+  test("rejects the removed remote gondolin profile", () => {
+    expect(() => parseSandboxArg("gondolin:remote")).toThrow(
+      "Error: unsupported gondolin profile 'remote'. Use 'gondolin:default'",
+    );
+  });
+
   test("rejects unsupported gondolin profiles", () => {
     expect(() => parseSandboxArg("gondolin:custom")).toThrow(
       "Error: unsupported gondolin profile 'custom'. Use 'gondolin:default'",

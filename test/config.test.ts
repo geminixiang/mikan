@@ -34,6 +34,20 @@ describe("loadGlobalSettings", () => {
     expect(() => loadGlobalSettings()).toThrow(/Missing global settings file/);
   });
 
+  test("rejects removed Gondolin remote settings with an actionable migration", () => {
+    writeFileSync(
+      join(stateDir, "settings.json"),
+      JSON.stringify({
+        llm: { provider: "anthropic", model: "claude-sonnet-4-6", thinkingLevel: "off" },
+        sandbox: { gondolin: { remote: { url: "https://worker.internal:8433" } } },
+      }),
+    );
+
+    expect(() => loadGlobalSettings()).toThrow(
+      "sandbox.gondolin.remote is no longer supported; use gondolin:default and remove the remote setting",
+    );
+  });
+
   test("creates onboard settings", () => {
     const settingsPath = createGlobalSettingsFile(stateDir);
     expect(settingsPath).toBe(join(stateDir, "settings.json"));
