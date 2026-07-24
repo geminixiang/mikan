@@ -483,6 +483,30 @@ describe("text accumulation", () => {
     expect(fallbackText).not.toContain("END");
   });
 
+  test("replaceResponse keeps long-message continuations in the existing thread", async () => {
+    const tooLongError = new Error("An API error occurred: msg_too_long") as Error & {
+      data?: { error: string };
+    };
+    tooLongError.data = { error: "msg_too_long" };
+    const bot = makeSlackMessagingBot({
+      postInThread: vi
+        .fn()
+        .mockRejectedValueOnce(tooLongError)
+        .mockResolvedValueOnce("BOT_MSG")
+        .mockResolvedValueOnce("CONTINUATION"),
+    });
+    const event = makeEvent({ thread_ts: "ROOT" });
+    const { responder } = createSlackAdapters(event, bot);
+
+    await responder.replaceResponse(`${"x".repeat(6000)}END`);
+
+    expect(bot.postInThread).toHaveBeenLastCalledWith(
+      "C001",
+      "ROOT",
+      expect.stringContaining("END"),
+    );
+  });
+
   test("respond falls back to short text when Slack says msg_too_long", async () => {
     const tooLongError = new Error("An API error occurred: msg_too_long") as Error & {
       data?: { error: string };
