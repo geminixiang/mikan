@@ -45,6 +45,7 @@ export function createSandboxTool(controller: SandboxToolController): {
   const tool: AgentTool<typeof sandboxSchema> = {
     name: "sandbox",
     label: "sandbox",
+    executionMode: "sequential",
     description:
       "Inspect or temporarily set CPU/memory limits for the current managed sandbox. Limits apply to this conversation's runtime and are cleared when it stops.",
     parameters: sandboxSchema,

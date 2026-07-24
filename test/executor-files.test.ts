@@ -89,6 +89,10 @@ describe.each([
 describe("edit tool through the executor file transport", () => {
   let dir: string;
 
+  test("serializes read-modify-write edits", () => {
+    expect(createEditTool(host).executionMode).toBe("sequential");
+  });
+
   beforeEach(() => {
     dir = join(tmpdir(), `mikan-edit-transport-${Date.now()}-${Math.random()}`);
     mkdirSync(dir, { recursive: true });

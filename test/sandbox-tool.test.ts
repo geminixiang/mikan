@@ -2,6 +2,14 @@ import { describe, expect, test, vi } from "vitest";
 import { createSandboxTool } from "../src/tools/sandbox.js";
 
 describe("createSandboxTool", () => {
+  test("serializes state-changing limit operations", () => {
+    const { tool } = createSandboxTool({
+      sandbox: { type: "image", image: "ubuntu:24.04" },
+    });
+
+    expect(tool.executionMode).toBe("sequential");
+  });
+
   test("sets limits for the current image sandbox conversation", async () => {
     const setLimits = vi.fn().mockResolvedValue({
       limits: { cpus: "2", memory: "4g" },

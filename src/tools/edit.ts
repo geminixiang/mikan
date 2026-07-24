@@ -99,6 +99,7 @@ export function createEditTool(executor: Executor): AgentTool<typeof editSchema>
   return {
     name: "edit",
     label: "edit",
+    executionMode: "sequential",
     description:
       "Edit a file by replacing exact text. The oldText must match exactly (including whitespace). Use this for precise, surgical edits.",
     parameters: editSchema,

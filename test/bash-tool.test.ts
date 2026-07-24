@@ -27,6 +27,10 @@ describe("createBashTool", () => {
     if (existsSync(dir)) rmSync(dir, { recursive: true });
   });
 
+  test("serializes command execution", () => {
+    expect(createBashTool(new HostExecutor()).executionMode).toBe("sequential");
+  });
+
   test("returns stdout of a successful command", async () => {
     const tool = createBashTool(new HostExecutor());
     const result = await tool.execute("1", { label: "echo", command: "echo hello" });

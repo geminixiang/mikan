@@ -18,6 +18,10 @@ describe("createReadTool", () => {
   let dir: string;
   const tool = createReadTool(new HostExecutor());
 
+  test("keeps read-only operations parallelizable", () => {
+    expect(tool.executionMode).toBeUndefined();
+  });
+
   beforeEach(() => {
     dir = join(tmpdir(), `mikan-read-test-${Date.now()}-${Math.random()}`);
     mkdirSync(dir, { recursive: true });

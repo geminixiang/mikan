@@ -17,6 +17,10 @@ describe("createWriteTool", () => {
     if (existsSync(dir)) rmSync(dir, { recursive: true });
   });
 
+  test("serializes file writes", () => {
+    expect(createWriteTool(new HostExecutor()).executionMode).toBe("sequential");
+  });
+
   test("writes content exactly, creating parent directories", async () => {
     const tool = createWriteTool(new HostExecutor());
     const path = join(dir, "nested", "deep", "test.txt");

@@ -12,6 +12,7 @@ export function createWriteTool(executor: Executor): AgentTool<typeof writeSchem
   return {
     name: "write",
     label: "write",
+    executionMode: "sequential",
     description:
       "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
     parameters: writeSchema,
