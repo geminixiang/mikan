@@ -119,7 +119,7 @@ describe("renderSlackBlocks", () => {
 
   test("preserves Slack mrkdwn links from agent responses", () => {
     const rendered = renderSlackBlocks(
-      "• [電商 / Virtual Try-on] 夢展望 <https://github.com/livingbio/designers/issues/523|#523> / <https://example.com/video|video>",
+      "• Example item <https://example.com/issues/123|#123> / <https://example.com/video|video>",
     );
 
     expect(rendered.blocks).toEqual([
@@ -127,10 +127,41 @@ describe("renderSlackBlocks", () => {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: "• [電商 / Virtual Try-on] 夢展望 <https://github.com/livingbio/designers/issues/523|#523> / <https://example.com/video|video>",
+          text: "• Example item <https://example.com/issues/123|#123> / <https://example.com/video|video>",
         },
       },
     ]);
+  });
+
+  test("preserves spaced mrkdwn link labels in a structured response", () => {
+    const source = `Updated configuration:
+
+- \`example/project\` *checks closed items only*
+- Open items are excluded
+- Exclude automated requests
+- Compare against <https://example.com/issues/456#comment-789|Existing Portfolio> first
+- Format each candidate as:
+
+\`\`\`text
+• [category] description <issue URL|#number> / <video URL|video>
+\`\`\`
+
+_Triggered by @requester_`;
+
+    const rendered = renderSlackBlocks(source);
+    const renderedText = rendered.blocks
+      .flatMap((block) => {
+        if (block.type === "section" && block.text?.type === "mrkdwn") return block.text.text;
+        return [];
+      })
+      .join("\n");
+
+    const expectedLink = "<https://example.com/issues/456#comment-789|Existing Portfolio>";
+    expect(rendered.text).toContain(expectedLink);
+    expect(renderedText).toContain(expectedLink);
+    expect(renderedText).not.toContain("%7C");
+    expect(renderedText).not.toContain("Existing> Portfolio>");
+    expect(renderedText).toContain("_Triggered by @requester_");
   });
 
   test("keeps bullets as Slack mrkdwn sections", () => {

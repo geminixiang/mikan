@@ -136,8 +136,41 @@ function normalizeMarkdownTables(source: string): string {
     .join("\n");
 }
 
+const SLACK_MRKDWN_LINK_PATTERN = /<https?:\/\/[^<>|\s]+\|[^<>\n]+>/g;
+
+function protectSlackMrkdwnLinks(source: string): { source: string; links: string[] } {
+  const links: string[] = [];
+  const protectedSource = source.replace(SLACK_MRKDWN_LINK_PATTERN, (link) => {
+    const index = links.push(link) - 1;
+    return `MIKANSLACKLINK${index}PLACEHOLDER`;
+  });
+  return { source: protectedSource, links };
+}
+
+function restoreSlackMrkdwnLinks(text: string, links: string[]): string {
+  return text.replace(/MIKANSLACKLINK(\d+)PLACEHOLDER/g, (placeholder, indexText: string) => {
+    return links[Number(indexText)] ?? placeholder;
+  });
+}
+
+function restoreBlockLinks(block: KnownBlock, links: string[]): KnownBlock {
+  if (block.type === "section" && block.text?.type === "mrkdwn") {
+    block.text.text = restoreSlackMrkdwnLinks(block.text.text, links);
+  } else if (block.type === "table") {
+    for (const row of block.rows) {
+      for (const cell of row) {
+        if ("text" in cell && typeof cell.text === "string") {
+          cell.text = restoreSlackMrkdwnLinks(cell.text, links);
+        }
+      }
+    }
+  }
+  return block;
+}
+
 export function renderSlackBlocks(source: string): { text: string; blocks: KnownBlock[] } {
-  const tokens = markdown.parse(normalizeMarkdownTables(source), {});
+  const protectedSource = protectSlackMrkdwnLinks(normalizeMarkdownTables(source));
+  const tokens = markdown.parse(protectedSource.source, {});
   const blocks: KnownBlock[] = [];
   const fallback: string[] = [];
 
@@ -190,6 +223,12 @@ export function renderSlackBlocks(source: string): { text: string; blocks: Known
     }
   }
 
-  if (!blocks.length) pushSection(blocks, source);
-  return { text: fallback.join("\n\n") || source, blocks };
+  if (!blocks.length) pushSection(blocks, protectedSource.source);
+  return {
+    text: restoreSlackMrkdwnLinks(
+      fallback.join("\n\n") || protectedSource.source,
+      protectedSource.links,
+    ),
+    blocks: blocks.map((block) => restoreBlockLinks(block, protectedSource.links)),
+  };
 }
