@@ -35,6 +35,7 @@ import {
   type AssistantMessage,
   type ImageContent,
   type Model,
+  type Models,
   type Usage,
 } from "@earendil-works/pi-ai";
 import * as log from "../log.js";
@@ -461,7 +462,7 @@ export class MikanAgentSession {
     }
   }
 
-  /** Fold one assistant turn's usage into the running per-run tally. */
+  /** Fold one assistant completion's usage into the running per-run tally. */
   private recordUsage(message: AssistantMessage): void {
     this.tally.llmCalls += 1;
     const usage = message.usage;
@@ -479,6 +480,7 @@ export class MikanAgentSession {
 
   /** Mark the run over budget, notify listeners and extensions, abort the agent. */
   private async exceedBudget(reason: string): Promise<void> {
+    if (this.budgetExceededReason) return;
     this.budgetExceededReason = reason;
     await this.emit({
       type: "budget_exceeded",
@@ -607,7 +609,7 @@ export class MikanAgentSession {
       const result = getOrThrow(
         await compact(
           preparation,
-          this.models.models,
+          this.createCompactionModels(),
           this.agent.state.model,
           undefined,
           signal,
@@ -649,6 +651,7 @@ export class MikanAgentSession {
         aborted: false,
       });
 
+      if (this.budgetExceededReason) return false;
       if (willRetry) {
         this.dropTrailingErrorMessage();
         return true;
@@ -673,6 +676,37 @@ export class MikanAgentSession {
     } finally {
       this.compactionAbortController = undefined;
     }
+  }
+
+  /**
+   * Compaction can make one completion, or two when its cut splits a turn.
+   * Intercept only those opaque upstream calls so each returned assistant
+   * message is tallied exactly once. A call at maxLlmCalls is not started;
+   * the cap is otherwise enforced before any post-compaction continuation.
+   */
+  private createCompactionModels(): Models {
+    const models = this.models.models;
+    return new Proxy(models, {
+      get: (target, property) => {
+        if (property === "completeSimple") {
+          return async (...args: Parameters<Models["completeSimple"]>) => {
+            const maxLlmCalls = this.runBudget.maxLlmCalls;
+            if (maxLlmCalls !== undefined && this.tally.llmCalls >= maxLlmCalls) {
+              await this.exceedBudget(`${this.tally.llmCalls} LLM calls >= ${maxLlmCalls} limit`);
+              throw new Error("Compaction LLM-call budget exhausted");
+            }
+
+            const message = await target.completeSimple(...args);
+            this.recordUsage(message);
+            const reason = this.resourceOverBudgetReason();
+            if (reason) await this.exceedBudget(reason);
+            return message;
+          };
+        }
+        const value: unknown = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
   }
 
   private isRetryableError(message: AssistantMessage): boolean {

@@ -780,6 +780,102 @@ describe("MikanAgentSession", () => {
     expect(JSON.stringify(session.messages)).not.toContain("done");
   });
 
+  test("counts compaction completion usage in run stats", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([fauxAssistantMessage("initial"), fauxAssistantMessage("compacted history")]);
+
+    const session = new MikanAgentSession({
+      systemPrompt: "test",
+      model: { ...model, contextWindow: 15 },
+      thinkingLevel: "off",
+      tools: [],
+      models,
+      sessionStore: SessionStore.create(join(dir, "compaction-usage.jsonl"), dir),
+      settings: { compaction: { reserveTokens: 5, keepRecentTokens: 1 } },
+    });
+
+    await session.prompt("history to compact");
+
+    expect(session.getLastRunStats().llmCalls).toBe(2);
+    expect(session.getLastRunStats().tokens).toBeGreaterThan(11);
+    expect(faux.state.callCount).toBe(2);
+  });
+
+  test("compaction usage can trip the token budget", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([fauxAssistantMessage("initial"), fauxAssistantMessage("compacted history")]);
+
+    const session = new MikanAgentSession({
+      systemPrompt: "test",
+      model: { ...model, contextWindow: 15 },
+      thinkingLevel: "off",
+      tools: [],
+      models,
+      sessionStore: SessionStore.create(join(dir, "compaction-budget.jsonl"), dir),
+      settings: { compaction: { reserveTokens: 5, keepRecentTokens: 1 } },
+    });
+
+    await session.prompt("history to compact", { budget: { maxTokens: 20 } });
+
+    expect(session.getLastRunStats().llmCalls).toBe(2);
+    expect(session.getLastRunStats().tokens).toBeGreaterThanOrEqual(20);
+    expect(session.getLastRunStats().budgetExceededReason).toContain("tokens");
+  });
+
+  test("overflow recovery does not retry after compaction exceeds the token budget", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([
+      fauxAssistantMessage("", {
+        stopReason: "error",
+        errorMessage: "context length exceeded",
+      }),
+      fauxAssistantMessage("compacted history"),
+      fauxAssistantMessage("retry must not run"),
+    ]);
+
+    const session = new MikanAgentSession({
+      systemPrompt: "test",
+      model: { ...model, contextWindow: 100 },
+      thinkingLevel: "off",
+      tools: [],
+      models,
+      sessionStore: SessionStore.create(join(dir, "overflow-budget.jsonl"), dir),
+      settings: { compaction: { reserveTokens: 50, keepRecentTokens: 1 } },
+    });
+
+    await session.prompt("history to compact", { budget: { maxTokens: 20 } });
+
+    expect(session.getLastRunStats().llmCalls).toBe(2);
+    expect(session.getLastRunStats().tokens).toBeGreaterThanOrEqual(20);
+    expect(session.getLastRunStats().budgetExceededReason).toContain("tokens");
+    expect(faux.state.callCount).toBe(2);
+    expect(JSON.stringify(session.messages)).not.toContain("retry must not run");
+  });
+
+  test("a compaction completion does not start at the LLM-call cap", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([
+      fauxAssistantMessage("initial"),
+      fauxAssistantMessage("compaction must not run"),
+    ]);
+
+    const session = new MikanAgentSession({
+      systemPrompt: "test",
+      model: { ...model, contextWindow: 15 },
+      thinkingLevel: "off",
+      tools: [],
+      models,
+      sessionStore: SessionStore.create(join(dir, "compaction-call-cap.jsonl"), dir),
+      settings: { compaction: { reserveTokens: 5, keepRecentTokens: 1 } },
+    });
+
+    await session.prompt("history to compact", { budget: { maxLlmCalls: 1 } });
+
+    expect(session.getLastRunStats()).toMatchObject({ llmCalls: 1 });
+    expect(session.getLastRunStats().budgetExceededReason).toContain("LLM calls");
+    expect(faux.state.callCount).toBe(1);
+  });
+
   test("a final response at the LLM-call cap completes without tripping the budget", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([fauxAssistantMessage("done in one")]);
