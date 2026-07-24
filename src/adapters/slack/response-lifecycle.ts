@@ -8,12 +8,12 @@ import {
 } from "../shared.js";
 import { BufferedResponseStream, OrderedResponseOperations } from "../streaming.js";
 import { buildMrkdwnContextBlock, type SlackMessagingBot, type SlackEvent } from "./bot.js";
+import { SlackProgressiveRender, WORKING_INDICATOR } from "./progressive-render.js";
 import type { SlackAdapterSessionPlan } from "./types.js";
 
 const MAX_MAIN_LENGTH = 35000; // Best-effort streaming cap; final responses use Slack error-driven fallback.
 const MAX_THREAD_LENGTH = 20000;
 const FALLBACK_MAIN_LENGTH = 3000;
-const WORKING_INDICATOR = " ...";
 const TRUNCATION_NOTE_INCREMENTAL =
   "\n\n_(message truncated, ask me to elaborate on specific parts)_";
 
@@ -84,7 +84,6 @@ export function createSlackResponseContext({
   replyMode: "top-level" | "thread";
   message: ConversationMessage;
 }): ConversationResponder {
-  let messageTs: string | null = sessionPlan.initialMessageTs ?? null;
   let assistantStatusFailureWarned = false;
   const onAssistantStatusError = (label: string, err: unknown): void => {
     if (assistantStatusFailureWarned) return;
@@ -98,9 +97,6 @@ export function createSlackResponseContext({
   let accumulatedText = "";
   let isWorking = true;
   let mainResponseLogged = false;
-  let streamActive = false;
-  let streamUnavailable = false;
-  let streamedText = "";
   let resetStreamOnNextDelta = false;
   const responseOperations = new OrderedResponseOperations();
 
@@ -114,23 +110,25 @@ export function createSlackResponseContext({
   const replyInThread = Boolean(rootTs && (isThreaded || replyMode === "thread"));
 
   /**
-   * Post the first visible reply.
-   * Default Slack behavior is now top-level channel replies.
-   * If the triggering message is already inside a thread, stay in that thread.
+   * The progressive renderer owns the response message: whether it renders via
+   * native markdown_text streaming (thread replies) or markdown-block updates,
+   * and the switch between them. Default Slack behavior is top-level channel
+   * replies; if the triggering message is already inside a thread, stay there.
    */
-  const postFirstMessage = async (text: string): Promise<string> => {
-    if (replyInThread && rootTs) {
-      return slack.postInThread(channelId, rootTs, text);
-    }
-    return slack.postMessage(channelId, text);
-  };
+  const progressive = new SlackProgressiveRender(slack, {
+    channelId,
+    rootTs,
+    replyInThread,
+    recipientUserId: event.user,
+    initialMessageTs: sessionPlan.initialMessageTs ?? null,
+  });
 
   const postDiagnosticDirect = async (
     text: string,
     options?: { style?: "muted" | "error" },
     anchorTs?: string,
   ): Promise<void> => {
-    const threadAnchor = anchorTs ?? messageTs ?? rootTs;
+    const threadAnchor = anchorTs ?? progressive.messageTs ?? rootTs;
     if (!threadAnchor) return;
 
     for (const part of splitText(text, MAX_THREAD_LENGTH, formatSlackContinuation)) {
@@ -153,85 +151,25 @@ export function createSlackResponseContext({
     channelId,
     messageId: message.id,
     sessionKey: message.sessionKey,
-    responseMessageId: messageTs,
+    responseMessageId: progressive.messageTs,
     threadTs: rootTs,
     conversationKind: message.conversationKind,
     isThreaded,
   }));
 
-  const postOrUpdateMain = async (body: string, handleMsgTooLong = true): Promise<void> => {
-    const writeMain = async (text: string): Promise<string | void> => {
-      if (messageTs) {
-        await slack.updateMessage(channelId, messageTs, text);
-        return;
-      }
-      if (replyInThread && rootTs) {
-        messageTs = await slack.postInThread(channelId, rootTs, text);
-        return messageTs;
-      }
-      messageTs = await postFirstMessage(text);
-      return messageTs;
-    };
-
+  /** Run a progressive render, downgrading msg_too_long to the truncation
+   *  fallback (halving prefix + overflow note) via the renderer's raw write. */
+  const renderWithTooLongFallback = async (render: () => Promise<void>): Promise<void> => {
     try {
-      await writeMain(body);
+      await render();
     } catch (err) {
-      if (!handleMsgTooLong || !isSlackMsgTooLong(err)) throw err;
-      const fallback = await postSlackTextWithFallback(writeMain, body);
+      if (!isSlackMsgTooLong(err)) throw err;
+      const fallback = await postSlackTextWithFallback(
+        (text) => progressive.write(text),
+        accumulatedText,
+      );
       accumulatedText = fallback.text;
       stream.setText(accumulatedText);
-    }
-  };
-
-  const abandonActiveStream = async (): Promise<void> => {
-    if (!streamActive || !messageTs) return;
-    const failedStreamTs = messageTs;
-    streamActive = false;
-    streamedText = "";
-    await slack.stopMessageStream(channelId, failedStreamTs).catch(() => undefined);
-    if (messageTs === failedStreamTs) messageTs = null;
-  };
-
-  const startOrAppendStream = async (text: string, displayText: string): Promise<void> => {
-    if (streamUnavailable) {
-      await postOrUpdateMain(displayText);
-      return;
-    }
-
-    try {
-      if (messageTs) {
-        if (!streamActive) {
-          await postOrUpdateMain(displayText);
-          return;
-        }
-        if (!text.startsWith(streamedText)) {
-          await abandonActiveStream();
-          await postOrUpdateMain(displayText);
-          return;
-        }
-        const delta = text.slice(streamedText.length);
-        if (delta) {
-          await slack.appendMessageStream(channelId, messageTs, delta);
-          streamedText = text;
-        }
-        return;
-      }
-      if (!replyInThread || !rootTs) {
-        streamUnavailable = true;
-        await postOrUpdateMain(displayText);
-        return;
-      }
-      messageTs = await slack.startMessageStream(channelId, text, rootTs, event.user);
-      streamActive = true;
-      streamedText = text;
-    } catch (err) {
-      streamUnavailable = true;
-      log.logWarning(
-        "Slack streaming unavailable; falling back to chat.update",
-        err instanceof Error ? err.message : String(err),
-      );
-      await abandonActiveStream();
-      await postOrUpdateMain(displayText);
     }
   };
 
@@ -245,40 +183,12 @@ export function createSlackResponseContext({
           TRUNCATION_NOTE_INCREMENTAL;
         stream.setText(accumulatedText);
       }
-      const displayText = isWorking ? accumulatedText + WORKING_INDICATOR : accumulatedText;
-      await startOrAppendStream(text, displayText);
+      await renderWithTooLongFallback(() => progressive.delta(accumulatedText, isWorking));
     },
     finish: async (text) => {
       accumulatedText = text;
       isWorking = false;
-      if (streamActive && messageTs) {
-        try {
-          if (!accumulatedText.startsWith(streamedText)) {
-            await abandonActiveStream();
-            await postOrUpdateMain(accumulatedText);
-            return;
-          }
-          const delta = accumulatedText.slice(streamedText.length);
-          if (delta) {
-            await slack.appendMessageStream(channelId, messageTs, delta);
-            streamedText = accumulatedText;
-          }
-          await slack.stopMessageStream(channelId, messageTs);
-          streamActive = false;
-          streamedText = "";
-          return;
-        } catch (err) {
-          streamUnavailable = true;
-          log.logWarning(
-            "Slack streaming unavailable; falling back to chat.update",
-            err instanceof Error ? err.message : String(err),
-          );
-          await abandonActiveStream();
-        }
-      }
-      if (messageTs || accumulatedText) {
-        await postOrUpdateMain(accumulatedText);
-      }
+      await renderWithTooLongFallback(() => progressive.finish(accumulatedText));
     },
   });
 
@@ -311,11 +221,10 @@ export function createSlackResponseContext({
           }
 
           stream.setText(accumulatedText);
-          const displayText = isWorking ? accumulatedText + WORKING_INDICATOR : accumulatedText;
-          await startOrAppendStream(text, displayText);
+          await renderWithTooLongFallback(() => progressive.delta(accumulatedText, isWorking));
         },
         () => ({
-          phase: messageTs ? "update" : "initial_post",
+          phase: progressive.messageTs ? "update" : "initial_post",
           textLength: text.length,
           accumulatedLength: accumulatedText.length,
         }),
@@ -344,11 +253,11 @@ export function createSlackResponseContext({
         async () => {
           await stream.finish(finalText);
           accumulatedText = stream.getText();
-          if (messageTs && accumulatedText.trim() && !mainResponseLogged) {
+          if (progressive.messageTs && accumulatedText.trim() && !mainResponseLogged) {
             slack.logBotResponse(
               channelId,
               accumulatedText,
-              messageTs,
+              progressive.messageTs,
               replyInThread ? rootTs : undefined,
             );
             mainResponseLogged = true;
@@ -379,22 +288,14 @@ export function createSlackResponseContext({
           accumulatedText = text;
           stream.setText(accumulatedText);
           resetStreamOnNextDelta = true;
-          const displayText = isWorking ? accumulatedText + WORKING_INDICATOR : accumulatedText;
 
           try {
-            if (streamActive && messageTs) {
-              await slack.stopMessageStream(channelId, messageTs);
-              streamActive = false;
-              streamedText = "";
-            }
-            await postOrUpdateMain(displayText, false);
+            await progressive.replace(accumulatedText, isWorking);
           } catch (err) {
             if (!isSlackMsgTooLong(err)) throw err;
             const link = resolveOverflowLink();
             const fallback = await postSlackTextWithFallback(
-              async (body) => {
-                await postOrUpdateMain(body);
-              },
+              (body) => progressive.write(body),
               text,
               link,
             );
@@ -404,14 +305,14 @@ export function createSlackResponseContext({
               await postDiagnosticDirect(
                 `_(continued from truncated message)_\n\n${continuation}`,
                 undefined,
-                replyInThread ? rootTs : (messageTs ?? rootTs),
+                replyInThread ? rootTs : (progressive.messageTs ?? rootTs),
               );
             }
           }
         },
         () => ({
           textLength: text.length,
-          hadExistingResponse: Boolean(messageTs),
+          hadExistingResponse: Boolean(progressive.messageTs),
         }),
       );
     },
@@ -435,7 +336,7 @@ export function createSlackResponseContext({
     },
 
     setTyping: async (isTyping: boolean) => {
-      if (isTyping && !messageTs && rootTs) {
+      if (isTyping && !progressive.messageTs && rootTs) {
         try {
           const statusText = eventFilename ? `Starting event: ${eventFilename}` : "Thinking";
           await slack.setAssistantStatus(channelId, rootTs, statusText);
@@ -462,16 +363,8 @@ export function createSlackResponseContext({
         "set_working",
         async () => {
           isWorking = working;
-          if (messageTs) {
-            const displayText = isWorking ? accumulatedText + WORKING_INDICATOR : accumulatedText;
-            const updates: Promise<void>[] =
-              streamActive && !isWorking
-                ? [
-                    slack.stopMessageStream(channelId, messageTs).then(() => {
-                      streamActive = false;
-                    }),
-                  ]
-                : [slack.updateMessage(channelId, messageTs, displayText)];
+          if (progressive.messageTs) {
+            const updates: Promise<void>[] = [progressive.setWorking(accumulatedText, working)];
             if (!working && rootTs) {
               updates.push(
                 slack
@@ -507,9 +400,9 @@ export function createSlackResponseContext({
         }
         threadMessageTs.length = 0;
         // Then delete main message
-        if (messageTs) {
-          await slack.deleteMessage(channelId, messageTs);
-          messageTs = null;
+        if (progressive.messageTs) {
+          await slack.deleteMessage(channelId, progressive.messageTs);
+          progressive.clearMessage();
         }
       });
     },
