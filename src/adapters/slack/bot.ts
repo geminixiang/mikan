@@ -451,7 +451,7 @@ export class SlackMessagingBot implements MessagingBot {
       name: "slack",
       trustModel: "membership",
       formattingGuide:
-        "## Slack Formatting (mrkdwn, NOT Markdown)\nBold: *text*, Italic: _text_, Code: `code`, Block: ```code```, Links: <url|text>\nDo NOT use **double asterisks** or [markdown](links).",
+        "## Slack Formatting\nWrite standard Markdown/GFM: **bold**, _italic_, ~~strike~~, `code`, fenced code blocks, [links](url), lists, and pipe tables (rendered as native Slack tables).\nDo NOT use Slack mrkdwn syntax like *single-asterisk bold* or <url|label> links.",
       channels: this.getAllChannels().map((c) => ({ id: c.id, name: c.name })),
       users: this.getAllUsers().map((u) => ({
         id: u.id,

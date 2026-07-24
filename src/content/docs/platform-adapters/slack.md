@@ -39,13 +39,7 @@ This lets channel conversations and thread conversations keep separate session c
 
 ## Replies and formatting
 
-Slack uses mrkdwn, not regular Markdown. The adapter's platform formatting guide tells the agent to use:
-
-- bold: `*text*`
-- italic: `_text_`
-- code: `` `code` ``
-- block: three backticks
-- link: `<url|text>`
+The agent writes standard Markdown/GFM (the platform-neutral response source). The adapter renders it through Slack's native `markdown` block, so Slack itself translates the Markdown — bold, italic, strikethrough, inline and fenced code, links, nested lists, and blockquotes — into rich text. Legacy Slack-style `<url|label>` links are converted to `[label](url)` before rendering. Markdown pipe tables render as native Slack table blocks.
 
 The Slack adapter also supports:
 
@@ -55,7 +49,7 @@ The Slack adapter also supports:
 - Block Kit rendering for headings, paragraphs, lists, code fences, and tables
 - file uploads
 
-Block Kit output follows Slack limits: sections are split around 3,000 characters, table cells around 2,000 characters, and a message is capped at 50 blocks. Content beyond the block cap is not rendered, so use file output for very large structured results.
+Block Kit output follows Slack limits: prose is split into `markdown` blocks of at most 12,000 characters at paragraph boundaries, table cells are truncated around 2,000 characters, and a message is capped at 50 blocks. Use file output for very large structured results.
 
 ## Attachments
 

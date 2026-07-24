@@ -347,8 +347,8 @@ function buildSystemPrompt(
     platform.name === "slack"
       ? `
 ## Slack Rendering
-- The Slack adapter renders responses with Block Kit automatically. Answer normally using Slack mrkdwn.
-- Do not emit markdown pipe tables; Slack does not render them as tables. Prefer short sections or bullet lists.
+- The Slack adapter renders responses natively from standard Markdown. Answer in normal Markdown/GFM.
+- Markdown pipe tables are rendered as native Slack tables.
 `
       : "";
 
