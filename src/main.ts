@@ -19,6 +19,7 @@ import type { PlatformGithubOps } from "./adapters/github/types.js";
 import { GcpTokenProvider } from "./adapters/github/gcp-auth.js";
 import { TelegramMessagingBot } from "./adapters/telegram/bot.js";
 import { SlackMessagingBot as SlackMessagingBotClass } from "./adapters/slack/bot.js";
+import { createSlackToolPack, type PlatformSlackOps } from "./adapters/slack/tool-pack.js";
 import type { PlatformToolPackFactory } from "./tools/types.js";
 import { downloadChannel } from "./cli/download.js";
 import { EventsWatcher } from "./events.js";
@@ -411,13 +412,37 @@ function requireGithubBot(op: string): GithubMessagingBot {
   return bot;
 }
 
+/** slack_* tool backends: Block Kit posting/updating, host-side. */
+function requireSlackBot(op: string): SlackMessagingBotClass {
+  const bot = botsByPlatform.slack as SlackMessagingBotClass | undefined;
+  if (!bot) {
+    throw new Error(`${op}: the Slack platform is not running`);
+  }
+  return bot;
+}
+
 /**
  * Platform capability pack factories — only when the corresponding bot is
  * configured. Factories, not instances: each runner materializes its own
  * pack so per-run bind state never crosses conversations.
  */
 function buildPlatformToolPackFactories(): PlatformToolPackFactory[] {
-  if (!hasGithub) return [];
+  const factories: PlatformToolPackFactory[] = [];
+  if (hasSlack) {
+    const platformSlackOps: PlatformSlackOps = {
+      postBlocks: async (conversationId, { text, blocks, threadTs }) => {
+        const bot = requireSlackBot("slack_blockkit");
+        const ts = threadTs
+          ? await bot.postInThreadBlocks(conversationId, threadTs, text, blocks)
+          : await bot.postMessageBlocks(conversationId, text, blocks);
+        return { ts };
+      },
+      updateBlocks: (conversationId, { ts, text, blocks }) =>
+        requireSlackBot("slack_blockkit").updateMessageBlocks(conversationId, ts, text, blocks),
+    };
+    factories.push(() => createSlackToolPack(platformSlackOps));
+  }
+  if (!hasGithub) return factories;
   const platformGithubOps: PlatformGithubOps = {
     pushAndCreatePr: (conversationId, request) =>
       requireGithubBot("github_pr").ops.pushAndCreatePr(conversationId, request),
@@ -440,7 +465,8 @@ function buildPlatformToolPackFactories(): PlatformToolPackFactory[] {
     manageIssue: (conversationId, request) =>
       requireGithubBot("github_issue").ops.manageIssue(conversationId, request),
   };
-  return [() => createGithubToolPack(platformGithubOps)];
+  factories.push(() => createGithubToolPack(platformGithubOps));
+  return factories;
 }
 
 const handler = createConversationRuntime({

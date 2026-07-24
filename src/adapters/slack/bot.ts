@@ -288,6 +288,17 @@ export class SlackMessagingBot implements MessagingBot {
     });
   }
 
+  async updateMessageBlocks(
+    channel: string,
+    ts: string,
+    text: string,
+    blocks: object[],
+  ): Promise<void> {
+    return slackRetry(async () => {
+      await this.webClient.chat.update({ channel, ts, text, blocks: blocks as KnownBlock[] });
+    });
+  }
+
   async postPrivate(conversationId: string, userId: string, text: string): Promise<void> {
     await this.postEphemeral(conversationId, userId, text);
   }

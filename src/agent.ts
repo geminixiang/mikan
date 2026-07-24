@@ -349,6 +349,7 @@ function buildSystemPrompt(
 ## Slack Rendering
 - The Slack adapter renders responses natively from standard Markdown. Answer in normal Markdown/GFM.
 - Markdown pipe tables are rendered as native Slack tables.
+- For interactive elements (buttons, select menus), use the slack_blockkit tool; user interactions arrive as "[Slack action] <action_id>: <value>" messages.
 `
       : "";
 
