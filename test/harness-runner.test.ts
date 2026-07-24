@@ -517,9 +517,7 @@ describe("MikanAgentSession", () => {
       const replacement = {
         ...message,
         content: message.content.map((part) =>
-          part.type === "toolCall"
-            ? { ...part, arguments: { text: "rewritten" } }
-            : part,
+          part.type === "toolCall" ? { ...part, arguments: { text: "rewritten" } } : part,
         ),
       };
       delete replacement.errorMessage;
