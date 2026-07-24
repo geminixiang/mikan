@@ -18,5 +18,7 @@ vaults/*/
 # Claude Code subagent scratch state
 .pi-subagents/
 .pi/remote-pi/
+.pi/subagent-schedules/
+.pi/subagents.json
 
 ecosystem.config.cjs
