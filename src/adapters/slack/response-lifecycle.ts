@@ -127,8 +127,9 @@ export function createSlackResponseContext({
   const postDiagnosticDirect = async (
     text: string,
     options?: { style?: "muted" | "error" },
+    anchorTs?: string,
   ): Promise<void> => {
-    const threadAnchor = messageTs ?? rootTs;
+    const threadAnchor = anchorTs ?? messageTs ?? rootTs;
     if (!threadAnchor) return;
 
     for (const part of splitText(text, MAX_THREAD_LENGTH, formatSlackContinuation)) {
@@ -390,7 +391,11 @@ export function createSlackResponseContext({
             accumulatedText = fallback.text;
             const continuation = text.slice(fallback.prefixLength).trimStart();
             if (continuation) {
-              await postDiagnosticDirect(`_(continued from truncated message)_\n\n${continuation}`);
+              await postDiagnosticDirect(
+                `_(continued from truncated message)_\n\n${continuation}`,
+                undefined,
+                replyInThread ? rootTs : (messageTs ?? rootTs),
+              );
             }
           }
         },
