@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { MutableModels } from "@earendil-works/pi-ai";
 import type {
   MessagingBot,
@@ -123,7 +123,26 @@ function makeEventAndContext(ts: string): {
 const bot = {
   postMessage: vi.fn().mockResolvedValue("TS"),
   updateMessage: vi.fn().mockResolvedValue(undefined),
+  getMessagingInfo: vi.fn().mockReturnValue(testPlatform),
 } as unknown as MessagingBot;
+
+function newCommandArgs(responder = makeResponder()) {
+  return [
+    "C123",
+    "C123",
+    bot,
+    {
+      id: "memory:C123",
+      sessionKey: "C123",
+      conversationKind: "direct" as const,
+      userId: "U1",
+      userName: "alice",
+      text: "/new",
+    },
+    responder,
+    testPlatform,
+  ] as const;
+}
 
 describe("ConversationRuntime handleEvent", () => {
   test("two events on one session key run serially, not concurrently", async () => {
@@ -176,7 +195,9 @@ describe("ConversationRuntime handleEvent", () => {
 
 describe("ConversationRuntime lifecycle", () => {
   test("new dispatched inside the session queue does not deadlock", async () => {
-    const runtime = makeRuntime();
+    const { models, faux } = createFauxModels();
+    faux.setResponses([fauxAssistantMessage("memory preserved")]);
+    const runtime = makeRuntime(models);
     const originalSession = createManagedSessionFile(
       getChannelSessionDir(conversationDir),
       conversationDir,
@@ -204,6 +225,7 @@ describe("ConversationRuntime lifecycle", () => {
     const runSettlement = new Promise<void>((resolve) => (settle = resolve));
     const runner = {
       abort: vi.fn(),
+      maintainMemory: vi.fn().mockResolvedValue({ stopReason: "stop" }),
       dispose: vi.fn().mockResolvedValue(undefined),
     } as unknown as PiAgentWrapper;
     const state: ConversationRuntimeState = {
@@ -222,7 +244,7 @@ describe("ConversationRuntime lifecycle", () => {
     ).sessions;
     sessions.set("C123", state);
 
-    const reset = runtime.handleNewCommand("C123", "C123", bot);
+    const reset = runtime.handleNewCommand(...newCommandArgs());
     await vi.waitFor(() => expect(runner.abort).toHaveBeenCalledOnce());
 
     expect(resolveChannelSessionFile(conversationDir)).toBe(originalSession);
@@ -269,14 +291,119 @@ describe("ConversationRuntime lifecycle", () => {
     expect(runtime.isRunning("C123")).toBe(false);
   });
 
-  test("new resets an idle session immediately", async () => {
+  test("memory maintenance sees old history and can persist MEMORY.md before reset", async () => {
+    const { models, faux } = createFauxModels();
+    const memoryPath = join(conversationDir, "MEMORY.md");
+    faux.setResponses([
+      (context) => {
+        expect(JSON.stringify(context.messages)).toContain("old durable decision");
+        return fauxAssistantMessage(
+          fauxToolCall("write", {
+            label: "preserve memory",
+            path: memoryPath,
+            content: "durable decision",
+          }),
+        );
+      },
+      fauxAssistantMessage("done"),
+    ]);
+    const runtime = makeRuntime(models);
+    const originalSession = createManagedSessionFile(
+      getChannelSessionDir(conversationDir),
+      conversationDir,
+    );
+    openManagedSession(originalSession, conversationDir).appendMessage({
+      role: "user",
+      content: [{ type: "text", text: "old durable decision" }],
+      timestamp: 1,
+    });
+
+    await runtime.handleNewCommand(...newCommandArgs());
+
+    expect(readFileSync(memoryPath, "utf-8")).toBe("durable decision");
+    const freshSession = resolveChannelSessionFile(conversationDir);
+    expect(freshSession).not.toBe(originalSession);
+    expect(readFileSync(freshSession, "utf-8")).not.toContain("old durable decision");
+  });
+
+  test("memory failure leaves the current session intact", async () => {
     const runtime = makeRuntime();
     const originalSession = createManagedSessionFile(
       getChannelSessionDir(conversationDir),
       conversationDir,
     );
+    const responder = makeResponder();
+    const runner = {
+      maintainMemory: vi.fn().mockResolvedValue({
+        stopReason: "error",
+        errorMessage: "provider unavailable",
+      }),
+      dispose: vi.fn().mockResolvedValue(undefined),
+    } as unknown as PiAgentWrapper;
+    const state: ConversationRuntimeState = {
+      running: false,
+      runner,
+      stopRequested: false,
+      lastAccessedAt: Date.now(),
+      sessionFile: originalSession,
+      startedAt: 0,
+    };
+    const sessions = (
+      runtime as unknown as {
+        sessions: { set(sessionKey: string, state: ConversationRuntimeState): void };
+      }
+    ).sessions;
+    sessions.set("C123", state);
 
-    await runtime.handleNewCommand("C123", "C123", bot);
+    await runtime.handleNewCommand(...newCommandArgs(responder));
+
+    expect(resolveChannelSessionFile(conversationDir)).toBe(originalSession);
+    expect(responder.respondDiagnostic).toHaveBeenCalledWith(
+      expect.stringContaining("was not reset"),
+      { style: "error" },
+    );
+    expect(bot.postMessage).not.toHaveBeenCalled();
+  });
+
+  test("reset boundary survives recreation without disabling later incremental sync", async () => {
+    writeFileSync(
+      join(conversationDir, "log.jsonl"),
+      [
+        JSON.stringify({ date: new Date().toISOString(), ts: "1", user: "U1", text: "old" }),
+        JSON.stringify({
+          date: new Date().toISOString(),
+          ts: "2",
+          text: "old reply",
+          isMessagingBot: true,
+        }),
+      ].join("\n") + "\n",
+    );
+    const sync = new ChatHistorySync();
+    sync.resetSession({ conversationDir, sessionKey: "C123" });
+
+    const freshFile = resolveChannelSessionFile(conversationDir);
+    await sync.resolveSessionScope({ conversationDir, sessionKey: "C123" });
+    expect(readFileSync(freshFile, "utf-8")).not.toContain('"text":"old"');
+
+    writeFileSync(
+      join(conversationDir, "log.jsonl"),
+      JSON.stringify({ date: new Date().toISOString(), ts: "3", user: "U1", text: "new" }) + "\n",
+      { flag: "a" },
+    );
+    await sync.resolveSessionScope({ conversationDir, sessionKey: "C123" });
+    expect(readFileSync(freshFile, "utf-8")).toContain("new");
+  });
+
+  test("new resets an idle session immediately", async () => {
+    const { models, faux } = createFauxModels();
+    faux.setResponses([fauxAssistantMessage("memory preserved")]);
+    const runtime = makeRuntime(models);
+    const originalSession = createManagedSessionFile(
+      getChannelSessionDir(conversationDir),
+      conversationDir,
+    );
+
+    await runtime.handleNewCommand(...newCommandArgs());
 
     expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
     expect(bot.postMessage).toHaveBeenCalledWith(

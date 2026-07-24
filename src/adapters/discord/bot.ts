@@ -530,8 +530,18 @@ export class DiscordMessagingBot implements MessagingBot {
       );
       try {
         if (interaction.commandName === "new") {
-          await this.handler.handleNewCommand(sessionKey, conversationId, this);
-          await context.responder.respond("Started a new conversation.");
+          const event: ConversationEvent = {
+            type: "dm",
+            conversationId,
+            conversationKind: isDM ? "direct" : "shared",
+            ts: interaction.id,
+            thread_ts: threadTs,
+            sessionKey,
+            user: interaction.user.id,
+            text: commandText,
+            attachments: [],
+          };
+          await this.handler.handleEvent(event, this, context);
           return;
         }
 

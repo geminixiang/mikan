@@ -156,14 +156,24 @@ export class ChatHistorySync {
 
   resetSession(options: ResetChatSessionOptions): string {
     const cwd = options.cwd ?? options.conversationDir;
-    if (isThreadSessionKey(options.sessionKey)) {
-      return createManagedSessionFileAtPath(
-        getThreadSessionFile(options.conversationDir, options.sessionKey),
-        cwd,
-      );
+    const sessionFile = isThreadSessionKey(options.sessionKey)
+      ? createManagedSessionFileAtPath(
+          getThreadSessionFile(options.conversationDir, options.sessionKey),
+          cwd,
+        )
+      : createManagedSessionFile(getChannelSessionDir(options.conversationDir), cwd);
+    const records = readConversationLog(options.conversationDir);
+    const lastMessageId = latestSyncMessageId(records, {
+      sessionKey: isThreadSessionKey(options.sessionKey) ? options.sessionKey : null,
+    });
+    if (lastMessageId) {
+      openManagedSession(sessionFile, cwd).appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
+        source: "log.jsonl",
+        messageCount: 0,
+        lastMessageId,
+      });
     }
-
-    return createManagedSessionFile(getChannelSessionDir(options.conversationDir), cwd);
+    return sessionFile;
   }
 
   private resolveTopLevelSessionFile(options: {

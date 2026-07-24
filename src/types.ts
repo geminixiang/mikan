@@ -219,7 +219,14 @@ export interface MessagingEventHandler {
   ): Promise<void>;
   handleStop(sessionKey: string, conversationId: string, bot: MessagingBot): Promise<void>;
   forceStop(sessionKey: string): void;
-  handleNewCommand(sessionKey: string, conversationId: string, bot: MessagingBot): Promise<void>;
+  handleNewCommand(
+    sessionKey: string,
+    conversationId: string,
+    bot: MessagingBot,
+    message: ConversationMessage,
+    responder: ConversationResponder,
+    platform: MessagingInfo,
+  ): Promise<void>;
 }
 
 // ── agent ─────────────────────────────────────────────────────────────────────
@@ -229,6 +236,11 @@ export interface PiAgentWrapper {
   run(
     message: ConversationMessage,
     responder: ConversationResponder,
+    platform: MessagingInfo,
+  ): Promise<{ stopReason: string; errorMessage?: string }>;
+  /** Run a hidden maintenance turn against the current session before resetting it. */
+  maintainMemory(
+    message: ConversationMessage,
     platform: MessagingInfo,
   ): Promise<{ stopReason: string; errorMessage?: string }>;
   abort(): void;

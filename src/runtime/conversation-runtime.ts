@@ -148,13 +148,43 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     sessionKey: string,
     conversationId: string,
     bot: MessagingBot,
+    message: ConversationContext["message"],
+    responder: ConversationContext["responder"],
+    platform: ConversationContext["platform"],
   ): Promise<void> {
     assertSessionKeyBelongsToConversation(sessionKey, conversationId);
-    const state = this.sessions.get(sessionKey);
-    if (state?.running) {
-      state.stopRequested = true;
-      state.runner.abort();
-      await state.runSettlement;
+    const activeState = this.sessions.get(sessionKey);
+    if (activeState?.running) {
+      activeState.stopRequested = true;
+      activeState.runner.abort();
+      await activeState.runSettlement;
+    }
+
+    const state = await this.getOrCreateState({
+      conversationId,
+      sessionKey,
+      conversationKind: message.conversationKind,
+    });
+    await responder.setWorking(true);
+    let result: { stopReason: string; errorMessage?: string };
+    try {
+      result = await state.runner.maintainMemory(message, platform);
+    } catch (err) {
+      await responder.respondDiagnostic(
+        `Could not preserve memory, so the current conversation was not reset. ${err instanceof Error ? err.message : String(err)}`,
+        { style: "error" },
+      );
+      return;
+    } finally {
+      await responder.setWorking(false);
+    }
+    if (result.stopReason === "error" || result.stopReason === "blocked") {
+      const detail = result.errorMessage ? ` ${result.errorMessage}` : "";
+      await responder.respondDiagnostic(
+        `Could not preserve memory, so the current conversation was not reset.${detail}`,
+        { style: "error" },
+      );
+      return;
     }
 
     await this.resetSession(sessionKey, conversationId, bot);
@@ -204,6 +234,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       responder: context.responder,
       platform: context.platform.name as PlatformName,
       platformUserId: event.user,
+      platformUserName: context.message.userName,
       conversationId,
       vaultConversationId: event.vaultConversationId,
       sessionKey,

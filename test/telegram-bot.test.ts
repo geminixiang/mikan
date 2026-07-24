@@ -42,6 +42,23 @@ function makeMessage(overrides: Record<string, any> = {}) {
   };
 }
 
+function installCommandHandler(
+  bot: TelegramMessagingBot,
+  command: string,
+): (ctx: { message: any }) => Promise<void> {
+  let commandHandler: ((ctx: { message: any }) => Promise<void>) | undefined;
+  (bot as any).botUsername = "mikan_bot";
+  (bot as any).client = {
+    command: vi.fn((name: string, handlerFn: (ctx: { message: any }) => Promise<void>) => {
+      if (name === command) commandHandler = handlerFn;
+    }),
+    on: vi.fn(),
+  };
+  (bot as any).setupEventHandlers();
+  if (!commandHandler) throw new Error(`${command} handler not installed`);
+  return commandHandler;
+}
+
 function installMessageHandler(
   bot: TelegramMessagingBot,
 ): (ctx: { message: any }) => Promise<void> {
@@ -59,6 +76,39 @@ function installMessageHandler(
   if (!messageHandler) throw new Error("message handler not installed");
   return messageHandler;
 }
+
+describe("TelegramMessagingBot /new routing", () => {
+  let workingDir: string;
+
+  beforeEach(() => {
+    workingDir = join(tmpdir(), `mikan-telegram-new-${Date.now()}`);
+    mkdirSync(workingDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
+  });
+
+  test.each([
+    ["private", "direct"],
+    ["group", "shared"],
+  ])("routes %s /new through the command DM gate", async (chatType, conversationKind) => {
+    const handler = makeHandler();
+    const bot = new TelegramMessagingBot(handler, { token: "T", workingDir });
+    const commandHandler = installCommandHandler(bot, "new");
+
+    await commandHandler({
+      message: makeMessage({ chat: { id: 123, type: chatType }, text: "/new" }),
+    });
+
+    expect(handler.handleNewCommand).not.toHaveBeenCalled();
+    expect(handler.handleEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationKind, text: "/new" }),
+      bot,
+      expect.any(Object),
+    );
+  });
+});
 
 describe("TelegramMessagingBot extractMessageContext", () => {
   let workingDir: string;

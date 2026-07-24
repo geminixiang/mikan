@@ -394,7 +394,30 @@ export class TelegramMessagingBot implements MessagingBot {
     this.client.command("new", async (ctx) => {
       const mc = ctx.message ? this.extractMessageContext(ctx.message) : null;
       if (!mc) return;
-      await this.handler.handleNewCommand(mc.sessionKey, mc.chatId, this);
+      const commandText = this.cleanText(mc.text);
+      const event: TelegramEvent = {
+        type: "command",
+        conversationId: mc.chatId,
+        conversationKind: mc.conversationKind,
+        ts: mc.msgId,
+        thread_ts: mc.threadTs,
+        sessionKey: mc.sessionKey,
+        user: mc.userId,
+        userName: mc.userName,
+        text: commandText,
+        attachments: [],
+      };
+      this.logToFile(mc.chatId, {
+        date: new Date(mc.msg.date * 1000).toISOString(),
+        ts: mc.msgId,
+        ...(mc.conversationKind === "shared" && mc.threadTs ? { threadTs: mc.threadTs } : {}),
+        user: mc.userId,
+        userName: mc.userName,
+        text: commandText,
+        attachments: [],
+        isMessagingBot: false,
+      });
+      await this.handler.handleEvent(event, this, createTelegramAdapters(event, this));
     });
 
     this.client.command("sandbox", async (ctx) => {

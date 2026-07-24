@@ -36,6 +36,16 @@ export class NewCommandHandler implements CommandHandler {
       context.sessionKey,
       context.conversationId,
       context.bot,
+      {
+        id: `memory:${context.sessionKey}`,
+        sessionKey: context.sessionKey,
+        conversationKind: "direct",
+        userId: context.platformUserId,
+        userName: context.platformUserName,
+        text: context.commandText,
+      },
+      context.responder,
+      context.bot.getMessagingInfo(),
     );
     return true;
   }

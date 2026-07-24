@@ -985,7 +985,26 @@ export class SlackMessagingBot implements MessagingBot {
       enqueueEvent: (event: ConversationEvent) => this.enqueueEvent(event),
       getMessagingInfo: () => this.getMessagingInfo(),
     };
-    await this.handler.handleNewCommand(conversationId, conversationId, commandMessagingBot);
+    const event: SlackEvent = {
+      type: "dm",
+      conversationId,
+      conversationKind: "direct",
+      channel: conversationId,
+      ts: eventTs,
+      user: payload.user_id,
+      text: payload.command,
+      attachments: [],
+      sessionKey: conversationId,
+    };
+    const context = createSlackAdapters(event, this);
+    await this.handler.handleNewCommand(
+      conversationId,
+      conversationId,
+      commandMessagingBot,
+      context.message,
+      context.responder,
+      context.platform,
+    );
   }
 
   private setupEventHandlers(): void {

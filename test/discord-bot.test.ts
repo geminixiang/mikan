@@ -432,11 +432,43 @@ describe("DiscordMessagingBot message routing", () => {
       editReply: vi.fn(),
     });
 
-    expect(handler.handleNewCommand).toHaveBeenCalledWith("DM1", "DM1", bot);
-    expect(reply).toHaveBeenCalledWith({
-      content: "Started a new conversation.",
-      ephemeral: false,
+    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
+      conversationId: "DM1",
+      conversationKind: "direct",
+      sessionKey: "DM1",
+      text: "/new",
     });
+    expect(reply).not.toHaveBeenCalled();
+  });
+
+  test("/new slash command in a guild routes through the command DM gate", async () => {
+    const handler = makeHandler();
+    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workingDir });
+    const interactionHandler = installInteractionHandler(bot);
+
+    await interactionHandler({
+      isChatInputCommand: () => true,
+      commandName: "new",
+      channelId: "C1",
+      inGuild: () => true,
+      channel: { isThread: () => false },
+      id: "I3-GUILD",
+      createdTimestamp: Date.now(),
+      user: { id: "U1", username: "alice" },
+      replied: false,
+      deferred: false,
+      reply: vi.fn(),
+      followUp: vi.fn(),
+      editReply: vi.fn(),
+    });
+
+    expect(handler.handleNewCommand).not.toHaveBeenCalled();
+    expect(handler.handleEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationKind: "shared", text: "/new" }),
+      bot,
+      expect.any(Object),
+    );
   });
 
   test("/stop slash command targets the thread session and acknowledges", async () => {

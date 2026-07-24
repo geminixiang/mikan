@@ -1351,6 +1351,33 @@ async function prepareRunContext(params: {
   };
 }
 
+const MEMORY_MAINTENANCE_PROMPT = `Before this conversation is reset, preserve only durable information worth carrying into future conversations.
+Review the existing transcript and update the appropriate MEMORY.md files using the available tools:
+- Global MEMORY.md: stable user preferences, reusable facts, and project-wide information.
+- Conversation MEMORY.md: durable decisions and ongoing work specific to this conversation.
+Deduplicate against existing memory. Do not preserve transient discussion, tool noise, secrets, or speculative details. If there is nothing new worth preserving, make no changes. Do no unrelated work.`;
+
+const MEMORY_MAINTENANCE_BUDGET = {
+  maxDurationMs: 2 * 60 * 1000,
+  maxLlmCalls: 5,
+  maxCostUsd: 0.25,
+};
+
+async function noopResponderMethod(): Promise<void> {}
+
+function createNoopResponder(): ConversationResponder {
+  return {
+    respond: noopResponderMethod,
+    replaceResponse: noopResponderMethod,
+    respondDiagnostic: noopResponderMethod,
+    respondToolResult: noopResponderMethod,
+    setTyping: noopResponderMethod,
+    setWorking: noopResponderMethod,
+    uploadFile: noopResponderMethod,
+    deleteResponse: noopResponderMethod,
+  };
+}
+
 function formatAgentActorName(userName: string | undefined, fallback: string): string {
   return userName ? `DM:${userName}` : fallback;
 }
@@ -1964,6 +1991,59 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
       runState.queue = null;
 
       return { stopReason: runState.stopReason, errorMessage: runState.errorMessage };
+    },
+
+    async maintainMemory(
+      message: ConversationMessage,
+      platform: MessagingInfo,
+    ): Promise<{ stopReason: string; errorMessage?: string }> {
+      const responder = createNoopResponder();
+      const prepared = await prepareRunContext({
+        message,
+        responder,
+        platform,
+        conversationId,
+        conversationDir,
+        sessionUuid,
+        runState,
+        executor,
+        executionResolver,
+        resolveExecutorForRun,
+        getPathContext,
+        session,
+        extensionSkills,
+        setEventContext,
+        setSandboxContext,
+        setUploadFunction,
+        setReactFunction,
+        bindPlatformToolPacks,
+        pathContext,
+      });
+      pathContext = prepared.pathContext;
+
+      try {
+        const outcome = await session.prompt(MEMORY_MAINTENANCE_PROMPT, {
+          origin: {
+            kind: "interactive",
+            platform: platform.name,
+            messageTs: message.id,
+            userId: message.userId,
+            userName: message.userName,
+            threadTs: message.threadTs,
+            attachments: message.attachments,
+          },
+          budget: MEMORY_MAINTENANCE_BUDGET,
+        });
+        if (outcome?.blocked) {
+          return { stopReason: "blocked", errorMessage: outcome.reason };
+        }
+        await prepared.runQueue.wait();
+        return { stopReason: runState.stopReason, errorMessage: runState.errorMessage };
+      } finally {
+        runState.responder = null;
+        runState.logCtx = null;
+        runState.queue = null;
+      }
     },
 
     abort(): void {

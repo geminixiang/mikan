@@ -857,6 +857,13 @@ describe("NewCommandHandler", () => {
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(ctx.services.runtime.handleNewCommand).toHaveBeenCalledWith("D123", "D123", ctx.bot);
+    expect(ctx.services.runtime.handleNewCommand).toHaveBeenCalledWith(
+      "D123",
+      "D123",
+      ctx.bot,
+      expect.objectContaining({ sessionKey: "D123", userId: "U123" }),
+      ctx.responder,
+      expect.objectContaining({ name: "slack" }),
+    );
   });
 });

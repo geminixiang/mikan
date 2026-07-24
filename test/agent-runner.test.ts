@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -195,6 +195,42 @@ describe("PiAgentWrapper.run", () => {
     expect(second.errorMessage).toBeUndefined();
     expect(secondResponder.replaceResponse.mock.calls[0]?.[0]).toContain("second run ok");
     expect(secondResponder.respondDiagnostic).not.toHaveBeenCalled();
+  });
+
+  test("hidden memory maintenance sees the old transcript and writes memory", async () => {
+    const { runner, faux } = await createTestRunner();
+    const memoryPath = join(dir, "workspace", "C1", "MEMORY.md");
+    let maintenancePrompt = "";
+    faux.setResponses([
+      fauxAssistantMessage("recorded old turn"),
+      (context) => {
+        const messages = JSON.stringify(context.messages);
+        expect(messages).toContain("durable launch decision");
+        maintenancePrompt = messages;
+        return fauxAssistantMessage(
+          fauxToolCall("write", {
+            label: "preserve memory",
+            path: memoryPath,
+            content: "Launch decision: use the staged rollout.",
+          }),
+        );
+      },
+      fauxAssistantMessage("memory updated"),
+    ]);
+    await runner.run(
+      makeMessage({ text: "durable launch decision: use a staged rollout" }),
+      makeResponder(),
+      platform,
+    );
+
+    const result = await runner.maintainMemory(
+      makeMessage({ id: "memory:C1", conversationKind: "direct", text: "/new" }),
+      platform,
+    );
+
+    expect(result).toEqual({ stopReason: "stop", errorMessage: undefined });
+    expect(maintenancePrompt).toContain("preserve only durable information");
+    expect(readFileSync(memoryPath, "utf-8")).toBe("Launch decision: use the staged rollout.");
   });
 
   test("empty final text leaves the placeholder untouched", async () => {

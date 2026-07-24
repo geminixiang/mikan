@@ -154,7 +154,14 @@ describe("SlackMessagingBot slash commands", () => {
       user_name: "alice",
     });
 
-    expect(handler.handleNewCommand).toHaveBeenCalledWith("D123", "D123", expect.any(Object));
+    expect(handler.handleNewCommand).toHaveBeenCalledWith(
+      "D123",
+      "D123",
+      expect.any(Object),
+      expect.objectContaining({ sessionKey: "D123", userId: "U123" }),
+      expect.any(Object),
+      expect.objectContaining({ name: "slack" }),
+    );
     expect(postMessage).toHaveBeenCalledWith({
       channel: "D123",
       text: "Conversation reset. Send a new message to start fresh.",

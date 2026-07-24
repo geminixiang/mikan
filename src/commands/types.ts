@@ -36,7 +36,14 @@ export interface AdminTokenStoreLike {
 }
 
 interface CommandRuntimeBridge {
-  handleNewCommand(sessionKey: string, conversationId: string, bot: MessagingBot): Promise<void>;
+  handleNewCommand(
+    sessionKey: string,
+    conversationId: string,
+    bot: MessagingBot,
+    message: ConversationContext["message"],
+    responder: ConversationContext["responder"],
+    platform: ConversationContext["platform"],
+  ): Promise<void>;
   switchConversationModel(conversationId: string, provider: string, model: string): boolean;
   refreshConversationEnvironment(conversationId: string): boolean;
 }
@@ -59,6 +66,7 @@ export interface CommandContext {
   responder: ConversationContext["responder"];
   platform: PlatformName;
   platformUserId: string;
+  platformUserName?: string;
   conversationId: string;
   vaultConversationId?: string;
   sessionKey: string;
