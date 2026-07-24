@@ -276,6 +276,102 @@ describe("MikanAgentSession", () => {
     expect(JSON.stringify(sessionStore.getEntries())).toContain("original ask [enriched]");
   });
 
+  test("before_agent_start system prompt rewrites do not accumulate across prompts", async () => {
+    const { models, faux, model } = createFauxSetup();
+    const systemPrompts: string[] = [];
+    faux.setResponses([
+      (context) => {
+        systemPrompts.push(context.systemPrompt);
+        return fauxAssistantMessage("first");
+      },
+      (context) => {
+        systemPrompts.push(context.systemPrompt);
+        return fauxAssistantMessage("second");
+      },
+    ]);
+
+    const extensions = new ExtensionRegistry();
+    extensions.register("append", "before_agent_start", ({ systemPrompt }) => ({
+      systemPrompt: `${systemPrompt}\nrun-only`,
+    }));
+    const session = new MikanAgentSession({
+      systemPrompt: "base",
+      model,
+      thinkingLevel: "off",
+      tools: [],
+      models,
+      sessionStore: SessionStore.create(join(dir, "session.jsonl"), dir),
+      extensions,
+    });
+
+    await session.prompt("first");
+    await session.prompt("second");
+
+    expect(systemPrompts).toEqual(["base\nrun-only", "base\nrun-only"]);
+    expect(session.agent.state.systemPrompt).toBe("base");
+  });
+
+  test("origin-conditional system prompt rewrites do not leak into the next prompt", async () => {
+    const { models, faux, model } = createFauxSetup();
+    const systemPrompts: string[] = [];
+    faux.setResponses([
+      (context) => {
+        systemPrompts.push(context.systemPrompt);
+        return fauxAssistantMessage("event response");
+      },
+      (context) => {
+        systemPrompts.push(context.systemPrompt);
+        return fauxAssistantMessage("interactive response");
+      },
+    ]);
+
+    const extensions = new ExtensionRegistry();
+    extensions.register("event-policy", "before_agent_start", ({ origin, systemPrompt }) =>
+      origin?.kind === "event" ? { systemPrompt: `${systemPrompt}\nevent-only` } : undefined,
+    );
+    const session = new MikanAgentSession({
+      systemPrompt: "base",
+      model,
+      thinkingLevel: "off",
+      tools: [],
+      models,
+      sessionStore: SessionStore.create(join(dir, "session.jsonl"), dir),
+      extensions,
+    });
+
+    await session.prompt("event", { origin: { kind: "event" } });
+    await session.prompt("interactive", { origin: { kind: "interactive" } });
+
+    expect(systemPrompts).toEqual(["base\nevent-only", "base"]);
+  });
+
+  test("restores the base system prompt after a provider failure", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([
+      () => {
+        throw new Error("provider exploded");
+      },
+    ]);
+
+    const extensions = new ExtensionRegistry();
+    extensions.register("rewrite", "before_agent_start", ({ systemPrompt }) => ({
+      systemPrompt: `${systemPrompt}\nrun-only`,
+    }));
+    const session = new MikanAgentSession({
+      systemPrompt: "base",
+      model,
+      thinkingLevel: "off",
+      tools: [],
+      models,
+      sessionStore: SessionStore.create(join(dir, "session.jsonl"), dir),
+      extensions,
+    });
+
+    await session.prompt("fail");
+
+    expect(session.agent.state.systemPrompt).toBe("base");
+  });
+
   test("context hooks rewrite each LLM call without mutating or persisting the transcript", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([
