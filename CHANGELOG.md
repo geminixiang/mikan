@@ -9,6 +9,29 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.27]
+
+### Added
+
+- Preserve concrete long-term memory before `/new` creates a fresh DM session, while keeping transient context and pre-reset platform history out of the new model context.
+
+### Changed
+
+- Serialize workspace-mutating tools and memory-maintenance runs so file updates, resets, and incoming messages have deterministic ordering.
+- Align extension context and message hooks with the active agent lifecycle, including per-run system prompt rewrites that preserve dynamically rebuilt memory, skills, and sandbox context.
+
+### Fixed
+
+- Keep extension-rewritten messages consistent across tool execution, persistence, provider context, and lifecycle events.
+- Account for compaction model usage in run budgets and reject corrupted session trees instead of silently accepting broken history.
+- Wait for active runs before resetting sessions, and prevent old runs from writing after `/new`.
+- Keep long Slack continuations in their thread and preserve mrkdwn links when rendering Block Kit text.
+
+### Tests
+
+- Add real Slack coverage for memory-preserving `/pi-new`, long threaded responses, and Block Kit markdown links.
+- Add regression coverage for harness message identity, dynamic prompts, compaction budgets, session integrity, runtime settlement, and mutation-tool ordering.
+
 ## [1.0.0-beta.26]
 
 ### Fixed
