@@ -1,6 +1,6 @@
 import { SocketModeClient } from "@slack/socket-mode";
 import type { KnownBlock } from "@slack/types";
-import { WebClient } from "@slack/web-api";
+import { WebAPIRateLimitedError, WebClient } from "@slack/web-api";
 import { existsSync, readFileSync } from "fs";
 import { readFile } from "fs/promises";
 import { basename, join } from "path";
@@ -52,9 +52,10 @@ import { renderSlackBlocks } from "./blocks.js";
 
 const SLACK_EVENT_ANCHOR_TEXT = "Working on it...";
 
-// Slack WebClient errors carry either `code: "rate_limited"` (retry-after) or
-// the legacy `data.error === "rate_limited"` / 429 status shape.
+// web-api v8 throws WebAPIRateLimitedError; the duck-typed shapes cover
+// platform `data.error === "rate_limited"` / 429 responses and older callers.
 function slackIsRateLimited(err: Error): boolean {
+  if (err instanceof WebAPIRateLimitedError) return true;
   if ((err as { code?: unknown }).code === "rate_limited") return true;
   const data = (err as { data?: { error?: string; response?: { status?: number } } }).data;
   return data?.error === "rate_limited" || data?.response?.status === 429;
