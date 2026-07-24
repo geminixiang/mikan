@@ -101,6 +101,7 @@ export function createSlackResponseContext({
   let streamActive = false;
   let streamUnavailable = false;
   let streamedText = "";
+  let resetStreamOnNextDelta = false;
   const responseOperations = new OrderedResponseOperations();
 
   const channelId = event.channel;
@@ -198,7 +199,11 @@ export function createSlackResponseContext({
     }
 
     try {
-      if (messageTs && streamActive) {
+      if (messageTs) {
+        if (!streamActive) {
+          await postOrUpdateMain(displayText);
+          return;
+        }
         if (!text.startsWith(streamedText)) {
           await abandonActiveStream();
           await postOrUpdateMain(displayText);
@@ -322,6 +327,10 @@ export function createSlackResponseContext({
         "appendResponseDelta",
         "respond",
         async () => {
+          if (resetStreamOnNextDelta) {
+            stream.setText("");
+            resetStreamOnNextDelta = false;
+          }
           await stream.append(delta);
         },
         () => ({ textLength: delta.length, accumulatedLength: stream.getText().length }),
@@ -369,6 +378,7 @@ export function createSlackResponseContext({
 
           accumulatedText = text;
           stream.setText(accumulatedText);
+          resetStreamOnNextDelta = true;
           const displayText = isWorking ? accumulatedText + WORKING_INDICATOR : accumulatedText;
 
           try {

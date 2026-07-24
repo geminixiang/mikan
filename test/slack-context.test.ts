@@ -180,6 +180,24 @@ describe("respond() — non-threaded", () => {
     expect(bot.logBotResponse).toHaveBeenCalledWith("C001", "final", "MSG1", undefined);
   });
 
+  test("progress replacement keeps the next assistant turn on the same message", async () => {
+    const bot = makeSlackMessagingBot({
+      postMessage: vi.fn().mockResolvedValue("MSG1"),
+      startMessageStream: vi.fn().mockResolvedValue("STREAM1"),
+    });
+    const event = makeEvent({ thread_ts: undefined });
+    const { responder } = createSlackAdapters(event, bot);
+
+    await responder.replaceResponse("✓ recovered context");
+    await responder.appendResponseDelta?.("final answer");
+    await responder.finishResponse?.("final answer");
+
+    expect(bot.postMessage).toHaveBeenCalledTimes(1);
+    expect(bot.startMessageStream).not.toHaveBeenCalled();
+    expect(bot.updateMessage).toHaveBeenCalledWith("C001", "MSG1", "final answer ...");
+    expect(bot.updateMessage).toHaveBeenLastCalledWith("C001", "MSG1", "final answer");
+  });
+
   test("thread reply mode streams top-level inputs in the user message thread", async () => {
     const bot = makeSlackMessagingBot({
       startMessageStream: vi.fn().mockResolvedValue("STREAM1"),
