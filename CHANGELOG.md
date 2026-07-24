@@ -9,9 +9,16 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.28]
+
 ### Removed
 
 - Remove Gondolin remote-worker and fleet support. `sandbox.gondolin.remote`, `gondolin:remote`, and `--worker-token` are no longer supported; use the local `gondolin:default` sandbox instead.
+
+### Fixed
+
+- Preserve Slack mrkdwn links whose labels contain spaces when rendering Block Kit responses.
+- Reuse the existing Slack progress message when streaming the final response, preventing duplicate or partially completed bot messages.
 
 ## [1.0.0-beta.27]
 
