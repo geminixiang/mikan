@@ -469,7 +469,11 @@ export class DiscordMessagingBot implements MessagingBot {
         await respondPrivately(formatted);
       },
       setTyping: async () => {},
-      setWorking: async () => {},
+      setWorking: async (working: boolean) => {
+        if (working && !interaction.replied && !interaction.deferred) {
+          await interaction.deferReply({ ephemeral: shouldUseEphemeral });
+        }
+      },
       uploadFile: async (filePath: string, title?: string) => {
         await this.uploadFile(conversationId, filePath, title);
       },

@@ -82,6 +82,7 @@ export function createConversationRuntime(
 class ConversationRuntimeImpl implements ConversationRuntime {
   private readonly sessions = new SessionLifecycle();
   private readonly inFlightRuns = new Set<Promise<void>>();
+  private readonly memoryMaintenanceSettlements = new Set<Promise<void>>();
   private readonly chatSessionManager = new ChatHistorySync();
   private readonly commandServices: CommandServices;
   private readonly commandHandlers: readonly CommandHandler[];
@@ -155,9 +156,14 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     assertSessionKeyBelongsToConversation(sessionKey, conversationId);
     const activeState = this.sessions.get(sessionKey);
     if (activeState?.running) {
+      const activeSettlement = activeState.runSettlement;
+      if (activeSettlement && this.memoryMaintenanceSettlements.has(activeSettlement)) {
+        await activeSettlement;
+        return;
+      }
       activeState.stopRequested = true;
       activeState.runner.abort();
-      await activeState.runSettlement;
+      await activeSettlement;
     }
 
     const state = await this.getOrCreateState({
@@ -165,29 +171,71 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       sessionKey,
       conversationKind: message.conversationKind,
     });
-    await responder.setWorking(true);
-    let result: { stopReason: string; errorMessage?: string };
-    try {
-      result = await state.runner.maintainMemory(message, platform);
-    } catch (err) {
-      await responder.respondDiagnostic(
-        `Could not preserve memory, so the current conversation was not reset. ${err instanceof Error ? err.message : String(err)}`,
-        { style: "error" },
-      );
-      return;
-    } finally {
-      await responder.setWorking(false);
+    if (state.running) {
+      const activeSettlement = state.runSettlement;
+      if (activeSettlement && this.memoryMaintenanceSettlements.has(activeSettlement)) {
+        await activeSettlement;
+        return;
+      }
+      state.stopRequested = true;
+      state.runner.abort();
+      await activeSettlement;
+      return this.handleNewCommand(sessionKey, conversationId, bot, message, responder, platform);
     }
-    if (result.stopReason === "error" || result.stopReason === "blocked") {
-      const detail = result.errorMessage ? ` ${result.errorMessage}` : "";
-      await responder.respondDiagnostic(
-        `Could not preserve memory, so the current conversation was not reset.${detail}`,
-        { style: "error" },
-      );
-      return;
-    }
+    state.running = true;
+    state.stopRequested = false;
+    state.startedAt = Date.now();
+    state.lastActivityAt = Date.now();
 
-    await this.resetSession(sessionKey, conversationId, bot);
+    const maintenanceSettlement = Promise.resolve().then(async () => {
+      let working = false;
+      try {
+        await responder.setWorking(true);
+        working = true;
+        let result: { stopReason: string; errorMessage?: string };
+        try {
+          result = await state.runner.maintainMemory(message, platform);
+        } catch (err) {
+          await responder.respondDiagnostic(
+            `Could not preserve memory, so the current conversation was not reset. ${err instanceof Error ? err.message : String(err)}`,
+            { style: "error" },
+          );
+          return;
+        }
+        if (result.stopReason === "error" || result.stopReason === "blocked") {
+          const detail = result.errorMessage ? ` ${result.errorMessage}` : "";
+          await responder.respondDiagnostic(
+            `Could not preserve memory, so the current conversation was not reset.${detail}`,
+            { style: "error" },
+          );
+          return;
+        }
+
+        await responder.setWorking(false);
+        working = false;
+        await this.resetSession(sessionKey, conversationId, bot);
+      } finally {
+        try {
+          if (working) await responder.setWorking(false);
+        } finally {
+          state.running = false;
+          state.startedAt = 0;
+          state.lastAccessedAt = Date.now();
+        }
+      }
+    });
+
+    state.runSettlement = maintenanceSettlement;
+    this.memoryMaintenanceSettlements.add(maintenanceSettlement);
+    this.inFlightRuns.add(maintenanceSettlement);
+    try {
+      await maintenanceSettlement;
+    } finally {
+      this.memoryMaintenanceSettlements.delete(maintenanceSettlement);
+      this.inFlightRuns.delete(maintenanceSettlement);
+      if (state.runSettlement === maintenanceSettlement) state.runSettlement = undefined;
+      this.sessions.evictIdle();
+    }
   }
 
   private async resetSession(
@@ -243,6 +291,9 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       services: this.commandServices,
     });
     if (handledCommand) return;
+
+    const activeSettlement = this.sessions.get(sessionKey)?.runSettlement;
+    if (activeSettlement) await activeSettlement;
 
     const conversationDir = join(this.options.workingDir, conversationId);
     const waitedForParent = await waitForThreadSessionBootstrap({

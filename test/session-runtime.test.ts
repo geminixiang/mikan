@@ -291,6 +291,111 @@ describe("ConversationRuntime lifecycle", () => {
     expect(runtime.isRunning("C123")).toBe(false);
   });
 
+  test("normal work waits for direct memory maintenance and its reset boundary", async () => {
+    const { models, faux } = createFauxModels();
+    faux.setResponses([fauxAssistantMessage("after reset")]);
+    const runtime = makeRuntime(models);
+    const originalSession = createManagedSessionFile(
+      getChannelSessionDir(conversationDir),
+      conversationDir,
+    );
+    let releaseMaintenance!: () => void;
+    const maintenanceGate = new Promise<void>((resolve) => (releaseMaintenance = resolve));
+    const runner = {
+      maintainMemory: vi.fn(async () => {
+        await maintenanceGate;
+        return { stopReason: "stop" };
+      }),
+      run: vi.fn().mockResolvedValue({ stopReason: "stop" }),
+      abort: vi.fn(),
+      dispose: vi.fn().mockResolvedValue(undefined),
+      getCurrentStep: vi.fn(),
+    } as unknown as PiAgentWrapper;
+    const state: ConversationRuntimeState = {
+      running: false,
+      runner,
+      stopRequested: false,
+      lastAccessedAt: Date.now(),
+      sessionFile: originalSession,
+      startedAt: 0,
+    };
+    const sessions = (
+      runtime as unknown as {
+        sessions: { set(sessionKey: string, state: ConversationRuntimeState): void };
+      }
+    ).sessions;
+    sessions.set("C123", state);
+
+    const maintenance = runtime.handleNewCommand(...newCommandArgs());
+    await vi.waitFor(() => expect(runner.maintainMemory).toHaveBeenCalledOnce());
+    expect(runtime.isRunning("C123")).toBe(true);
+    expect(runtime.getRunningSessions()).toEqual([expect.objectContaining({ sessionKey: "C123" })]);
+
+    const { event, context } = makeEventAndContext("2");
+    const normalWork = runtime.handleEvent(event, bot, context);
+    await Promise.resolve();
+    expect(runner.run).not.toHaveBeenCalled();
+    expect(runner.dispose).not.toHaveBeenCalled();
+
+    releaseMaintenance();
+    await maintenance;
+    await normalWork;
+
+    expect(runner.run).not.toHaveBeenCalled();
+    expect(runner.dispose).toHaveBeenCalledOnce();
+    expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
+    expect(runtime.isRunning("C123")).toBe(false);
+  });
+
+  test("maintenance failure clears active state and keeps the runner reusable", async () => {
+    const runtime = makeRuntime();
+    const originalSession = createManagedSessionFile(
+      getChannelSessionDir(conversationDir),
+      conversationDir,
+    );
+    let rejectMaintenance!: (reason: Error) => void;
+    const maintenanceGate = new Promise<never>((_resolve, reject) => {
+      rejectMaintenance = reject;
+    });
+    const runner = {
+      maintainMemory: vi.fn(() => maintenanceGate),
+      run: vi.fn().mockResolvedValue({ stopReason: "stop" }),
+      syncChatHistory: vi.fn(),
+      tryExtensionCommand: vi.fn().mockResolvedValue(false),
+      abort: vi.fn(),
+      dispose: vi.fn().mockResolvedValue(undefined),
+      getCurrentStep: vi.fn(),
+    } as unknown as PiAgentWrapper;
+    const state: ConversationRuntimeState = {
+      running: false,
+      runner,
+      stopRequested: false,
+      lastAccessedAt: Date.now(),
+      sessionFile: originalSession,
+      startedAt: 0,
+    };
+    const sessions = (
+      runtime as unknown as {
+        sessions: { set(sessionKey: string, state: ConversationRuntimeState): void };
+      }
+    ).sessions;
+    sessions.set("C123", state);
+
+    const maintenance = runtime.handleNewCommand(...newCommandArgs());
+    await vi.waitFor(() => expect(runtime.isRunning("C123")).toBe(true));
+    rejectMaintenance(new Error("maintenance failed"));
+    await maintenance;
+
+    expect(runtime.isRunning("C123")).toBe(false);
+    expect(state.runSettlement).toBeUndefined();
+    expect(state.startedAt).toBe(0);
+    expect(resolveChannelSessionFile(conversationDir)).toBe(originalSession);
+
+    const { event, context } = makeEventAndContext("3");
+    await runtime.handleEvent(event, bot, context);
+    expect(runner.run).toHaveBeenCalledOnce();
+  });
+
   test("memory maintenance sees old history and can persist MEMORY.md before reset", async () => {
     const { models, faux } = createFauxModels();
     const memoryPath = join(conversationDir, "MEMORY.md");
