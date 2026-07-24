@@ -307,11 +307,7 @@ Admin endpoints cover conversation inventory/state/usage, global and conversatio
 
 ## 14. Gondolin process boundary
 
-The Gondolin worker/gateway path is a distinct wire protocol, not an in-process sandbox implementation. Its contracts live in `gondolin-contract.ts`, `gondolin-worker-client.ts`, gateway/join modules, inventory, placement, and fleet code.
-
-The stable concepts are runtime spec and handle identity, worker registration/heartbeat, leased placement, exec sessions, file transport, and runtime lifecycle. Lease watermarks fence stale workers during failover. Wire changes must be versioned or deployed compatibly across controller, gateway, and workers.
-
-For the detailed deployment contract, see [Gondolin remote worker](/sandbox/gondolin-remote-worker/).
+`gondolin:default` uses a detached Node worker on the same host. The worker process and its persisted runtime inventory form an internal lifecycle boundary used for restart recovery; there is no network worker protocol or remote placement contract.
 
 ## Contract checklist
 

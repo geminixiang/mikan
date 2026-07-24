@@ -3,6 +3,8 @@ title: MicroVM sandbox 遷移研究
 description: 將 mikan 受管 image sandbox 遷移至可由單機擴展到多機的 Gondolin/QEMU 架構之可行性研究。
 ---
 
+> **Archived research:** This document records an earlier distributed Gondolin design investigation. Remote workers and fleets are no longer supported; current Gondolin operation is local-only via `gondolin:default`.
+
 產生日期：2026-07-13
 
 ## 可行性結論

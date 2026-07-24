@@ -100,17 +100,16 @@ mikan 创建缺失的 state directory 时使用 `0700` 模式。现有目录必�
 
 ## CLI 参考
 
-| 命令或选项                                                                                                                         | 用途                                                         |
-| ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `mikan --onboard [--state-dir=<dir>]`                                                                                              | 创建必需的全局设置文件                                       |
-| `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]`                                                                 | 启动已配置的平台 bot；工作目录默认为 `<state-dir>/workspace` |
-| `--sandbox=host \| container:<name> \| image:<image> \| gondolin:default \| gondolin:remote \| firecracker:... \| cloudflare:<id>` | 选择工具执行模式；默认为 `host`                              |
-| `mikan env`                                                                                                                        | 显示完整的环境变量清单及当前的设置状态                       |
-| `mikan --worker-token`                                                                                                             | 生成一个一次性的 gondolin worker 加入令牌                    |
-| `mikan --download <channel-id>`                                                                                                    | 下载 Slack 频道历史记录；需要 `SLACK_BOT_TOKEN`              |
-| `mikan --version`                                                                                                                  | 输出已安装版本                                               |
-| `mikan --help`                                                                                                                     | 显示 CLI 用法与平台令牌摘要                                  |
-| `mikan ext ...`                                                                                                                    | 管理框架扩展；运行 `mikan ext` 查看子命令                    |
+| 命令或选项                                                                                                      | 用途                                                         |
+| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `mikan --onboard [--state-dir=<dir>]`                                                                           | 创建必需的全局设置文件                                       |
+| `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]`                                              | 启动已配置的平台 bot；工作目录默认为 `<state-dir>/workspace` |
+| `--sandbox=host \| container:<name> \| image:<image> \| gondolin:default \| firecracker:... \| cloudflare:<id>` | 选择工具执行模式；默认为 `host`                              |
+| `mikan env`                                                                                                     | 显示完整的环境变量清单及当前的设置状态                       |
+| `mikan --download <channel-id>`                                                                                 | 下载 Slack 频道历史记录；需要 `SLACK_BOT_TOKEN`              |
+| `mikan --version`                                                                                               | 输出已安装版本                                               |
+| `mikan --help`                                                                                                  | 显示 CLI 用法与平台令牌摘要                                  |
+| `mikan ext ...`                                                                                                 | 管理框架扩展；运行 `mikan ext` 查看子命令                    |
 
 ## 环境变量别名
 

@@ -6,7 +6,7 @@
 
 Project: **mikan** (`@geminixiang/mikan`)
 
-mikan is a multi-platform AI coding agent for Slack, Telegram, and Discord. It stores chat logs and session state, runs mikan's own agent harness (`src/harness/`, built on `pi-agent-core` and `pi-ai`), and executes tools in host, Docker, Firecracker, or Cloudflare sandbox modes.
+mikan is a multi-platform AI coding agent for Slack, Telegram, and Discord. It stores chat logs and session state, runs mikan's own agent harness (`src/harness/`, built on `pi-agent-core` and `pi-ai`), and executes tools in host, Docker, local Gondolin, Firecracker, or Cloudflare sandbox modes.
 
 Stack:
 

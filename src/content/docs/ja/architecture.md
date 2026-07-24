@@ -69,7 +69,7 @@ description: mikan のプラットフォーム接続、セッション、agent�
 - `Executor` を統一的に抽象化する
 - sandbox runtime は 2 種類に分かれる:
   - shared: `host` / `container:<name>`。同じ host または指定 container を共有する
-  - isolated: `image:<image>` / `firecracker:*` / `cloudflare:*`。actor/conversation/vault に応じて隔離された実行環境へルーティングする
+  - isolated: `image:<image>` / `gondolin:default` / `firecracker:*` / `cloudflare:*`。actor/conversation/vault に応じて隔離された実行環境へルーティングする
 - `ActorExecutionResolver` により user/conversation/vault から実際の executor を決定する
 - `image` モードでは Docker container を自動作成・回収し、`image:<image>` を concrete な `container:<name>` executor に解決する
 
@@ -188,7 +188,7 @@ flowchart TD
   WebServer --> VaultManager["vault/index.ts\nwrite env/file into vault"]
   VaultManager --> VaultDir["state-dir/vaults/<vaultId>/"]
   VaultManager --> Resolver["execution-resolver.ts"]
-  Resolver --> Sandbox["host / container / image / firecracker / cloudflare"]
+  Resolver --> Sandbox["host / container / image / gondolin / firecracker / cloudflare"]
 ```
 
 ポイント:
@@ -196,7 +196,7 @@ flowchart TD
 - 認証情報は workspace に直接入りません
 - vault は `--state-dir` に保存されます
 - 実行時にだけ conversation vault から対応する sandbox へルーティングされます
-- `image` / `firecracker` / `cloudflare` モードは per-actor/per-conversation vault routing を使います。`container:<name>` は shared container vault を使い、`host` は vault env を注入しません
+- `image` / `gondolin` / `firecracker` / `cloudflare` モードは per-actor/per-conversation vault routing を使います。`container:<name>` は shared container vault を使い、`host` は vault env を注入しません
 
 ## 6. Events と通常会話の違い
 

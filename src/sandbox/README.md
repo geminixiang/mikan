@@ -9,12 +9,7 @@ This directory defines sandbox abstractions, concrete sandbox executors, and sha
 - `errors.ts`: Defines `SandboxError`, which can render user-facing CLI diagnostics.
 - `firecracker.ts`: Implements the Firecracker VM executor by running commands over SSH inside the VM.
 - `gondolin-inventory.ts`: Persists per-runtime records (written by workers) under the state dir, reconciles them at startup, finds adoptable surviving runtimes, and maintains the mikan heartbeat workers watch.
-- `gondolin-fleet.ts`: Multi-worker scheduler for `gondolin:remote` — sticky placement by capacity, draining, bounded queue-wait, lease-watermark-fenced failover, and stray-runtime reconciliation across mikan-worker daemons.
-- `gondolin-gateway.ts`: Host side of dial-home workers — one mTLS listener accepting worker control channels (register/heartbeat/RPC), per-command dial-back tunnels, and unauthenticated join frames; keeps the connected-worker registry and attaches each worker to the fleet.
-- `gondolin-join.ts`: Certificate authority and one-time-token authority for dial-home enrollment — auto-provisions the worker CA + gateway server cert, mints single-use hashed tokens, and signs worker CSRs.
-- `gondolin-placement.ts`: Durable conversation→worker placement table with the lease-expiry watermark failover fencing respects.
-- `gondolin-remote.ts`: Per-worker connection — fenced leases with heartbeat renewal, mTLS requests, and per-command upgraded tunnels to a `worker/` mikan-worker daemon.
-- `gondolin-worker-client.ts`: mikan's side of the worker boundary — the local transport (spawn/adopt/stop detached workers) plus the exec-over-session state machine and transport interface shared with the remote path.
+- `gondolin-worker-client.ts`: mikan's side of the local worker boundary — spawn/adopt/stop of detached workers plus the exec-over-session state machine.
 - `gondolin-worker-main.ts`: Entry point of the detached worker process (thin wrapper over `gondolin-worker.ts`).
 - `gondolin-worker.ts`: Worker-side runtime: boots one Gondolin VM, records it in the inventory, announces readiness, and shuts down when the VM runner dies, on SIGTERM, or when the mikan heartbeat goes stale.
 - `gondolin.ts`: Implements the Gondolin microVM executor: per-conversation worker-hosted runtimes, desired-runtime fingerprinting and drift recreation, resource limits, idle/sweep lifecycle, and crash recovery.

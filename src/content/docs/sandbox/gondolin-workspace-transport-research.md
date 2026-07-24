@@ -3,6 +3,8 @@ title: Workspace transport 研究:NFS 之後的路
 description: gondolin:remote 多機 workspace 傳輸的替代方案研究——generation sync、fencing 與 stale-writeback 防護、業界平台先例。
 ---
 
+> **Archived research:** This document records historical research for the removed remote Gondolin design. Its deployment guidance is not supported; use local `gondolin:default`.
+
 產生日期:2026-07-15
 
 本研究由三條平行軌道對 primary sources(RFC、man page、官方文件、論文原文、原始碼)查證合成;

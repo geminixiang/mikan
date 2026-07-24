@@ -23,15 +23,14 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 ## 支持模式
 
-| 模式                                                        | 执行位置                     | Vault env injection | Vault key 语义               | 备注                                                                               |
-| ----------------------------------------------------------- | ---------------------------- | ------------------- | ---------------------------- | ---------------------------------------------------------------------------------- |
-| `host`                                                      | 宿主机                       | 不注入              | 可存，但执行时不用           | 最适合本地开发；不把 vault env 放进 host process                                   |
-| `container:<name>`                                          | 现有 Docker container        | 注入                | `container-<name>`           | one container one vault；多人共享同一 container 就共享该 vault                     |
-| `image:<image>`                                             | mikan 管理的 Docker          | 注入                | generated conversation vault | 当前最推荐的隔离模式；`1 conversation = 1 vault = 1 container`                     |
-| `gondolin:default`                                          | 本地 Gondolin/QEMU VM        | 注入                | generated conversation vault | 预览；支持 private/full workspace mount；需要 Node.js >=23.6 与 QEMU               |
-| `gondolin:remote`                                           | 远端 worker 上的 Gondolin VM | 注入                | generated conversation vault | 预览；带 fenced lease 的 mTLS `mikan-worker` daemon；workspace 位于共享 POSIX 存储 |
-| `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM               | 注入                | generated conversation vault | Alpha 超早期；VM 需自行启动，workspace 需在 VM 内挂到 `/workspace`，当前不建议使用 |
-| `cloudflare:<sandbox-id>`                                   | Cloudflare Worker            | 注入                | generated conversation vault | Experimental；需自行部署 `@cloudflare/sandbox` bridge，host workspace 不会自动同步 |
+| 模式                                                        | 执行位置              | Vault env injection | Vault key 语义               | 备注                                                                               |
+| ----------------------------------------------------------- | --------------------- | ------------------- | ---------------------------- | ---------------------------------------------------------------------------------- |
+| `host`                                                      | 宿主机                | 不注入              | 可存，但执行时不用           | 最适合本地开发；不把 vault env 放进 host process                                   |
+| `container:<name>`                                          | 现有 Docker container | 注入                | `container-<name>`           | one container one vault；多人共享同一 container 就共享该 vault                     |
+| `image:<image>`                                             | mikan 管理的 Docker   | 注入                | generated conversation vault | 当前最推荐的隔离模式；`1 conversation = 1 vault = 1 container`                     |
+| `gondolin:default`                                          | 本地 Gondolin/QEMU VM | 注入                | generated conversation vault | 预览；支持 private/full workspace mount；需要 Node.js >=23.6 与 QEMU               |
+| `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM        | 注入                | generated conversation vault | Alpha 超早期；VM 需自行启动，workspace 需在 VM 内挂到 `/workspace`，当前不建议使用 |
+| `cloudflare:<sandbox-id>`                                   | Cloudflare Worker     | 注入                | generated conversation vault | Experimental；需自行部署 `@cloudflare/sandbox` bridge，host workspace 不会自动同步 |
 
 ## 各模式文档
 

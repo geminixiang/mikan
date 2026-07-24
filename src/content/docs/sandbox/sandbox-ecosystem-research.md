@@ -3,6 +3,8 @@ title: Agent sandbox 生態系調查:15 個開源專案的設計概念
 description: 對 15 個 agent sandbox 相關開源專案的原始碼調查,萃取 workspace transport、worker protocol、fleet、vault、in-guest tooling 的可借設計概念。
 ---
 
+> **Archived research:** This survey informed an earlier remote sandbox design. References to fleets, leases, and dial-home workers are historical; current Gondolin operation is local-only via `gondolin:default`.
+
 產生日期:2026-07-15
 
 延續 [workspace transport 研究](./gondolin-workspace-transport-research)(issue #88)。本調查對 15 個

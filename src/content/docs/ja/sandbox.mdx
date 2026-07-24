@@ -23,15 +23,14 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 ## 対応モード
 
-| モード                                                      | 実行場所                         | Vault env injection | Vault key の意味             | 備考                                                                                                                       |
-| ----------------------------------------------------------- | -------------------------------- | ------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `host`                                                      | ホストマシン                     | 注入しない          | 保存は可能だが実行時は未使用 | ローカル開発に最適。vault env を host process に入れません                                                                 |
-| `container:<name>`                                          | 既存 Docker container            | 注入                | `container-<name>`           | one container one vault。複数人が同じ container を共有すると、その vault も共有します                                      |
-| `image:<image>`                                             | mikan 管理の Docker              | 注入                | generated conversation vault | 現在もっとも推奨される隔離モード。`1 conversation = 1 vault = 1 container`                                                 |
-| `gondolin:default`                                          | ローカルの Gondolin/QEMU VM      | 注入                | generated conversation vault | プレビュー。private / full の workspace mount に対応。Node.js >=23.6 と QEMU が必要                                        |
-| `gondolin:remote`                                           | リモート worker 上の Gondolin VM | 注入                | generated conversation vault | プレビュー。fenced lease を持つ mTLS の `mikan-worker` daemon。workspace は共有 POSIX storage 上                           |
-| `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM                   | 注入                | generated conversation vault | Alpha のかなり初期段階。VM は自分で起動し、workspace は VM 内の `/workspace` に mount する必要があります。現時点では非推奨 |
-| `cloudflare:<sandbox-id>`                                   | Cloudflare Worker                | 注入                | generated conversation vault | Experimental。`@cloudflare/sandbox` bridge を自分でデプロイする必要があり、host workspace は自動同期されません             |
+| モード                                                      | 実行場所                    | Vault env injection | Vault key の意味             | 備考                                                                                                                       |
+| ----------------------------------------------------------- | --------------------------- | ------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `host`                                                      | ホストマシン                | 注入しない          | 保存は可能だが実行時は未使用 | ローカル開発に最適。vault env を host process に入れません                                                                 |
+| `container:<name>`                                          | 既存 Docker container       | 注入                | `container-<name>`           | one container one vault。複数人が同じ container を共有すると、その vault も共有します                                      |
+| `image:<image>`                                             | mikan 管理の Docker         | 注入                | generated conversation vault | 現在もっとも推奨される隔離モード。`1 conversation = 1 vault = 1 container`                                                 |
+| `gondolin:default`                                          | ローカルの Gondolin/QEMU VM | 注入                | generated conversation vault | プレビュー。private / full の workspace mount に対応。Node.js >=23.6 と QEMU が必要                                        |
+| `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM              | 注入                | generated conversation vault | Alpha のかなり初期段階。VM は自分で起動し、workspace は VM 内の `/workspace` に mount する必要があります。現時点では非推奨 |
+| `cloudflare:<sandbox-id>`                                   | Cloudflare Worker           | 注入                | generated conversation vault | Experimental。`@cloudflare/sandbox` bridge を自分でデプロイする必要があり、host workspace は自動同期されません             |
 
 ## 各モードのドキュメント
 

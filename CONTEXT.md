@@ -14,9 +14,8 @@
 
 ## Workspace & storage
 
-- **Workspace**: One mikan deployment's shared agent world — its memory, skills, scheduled events, and conversations, as a single logical entity. A workspace is one trust domain: everything inside it may see and schedule everything else. _Avoid_: using bare "workspace" for any specific filesystem path — always name the vantage (host / runtime / worker workspace root).
+- **Workspace**: One mikan deployment's shared agent world — its memory, skills, scheduled events, and conversations, as a single logical entity. A workspace is one trust domain: everything inside it may see and schedule everything else. _Avoid_: using bare "workspace" for any specific filesystem path — distinguish the host workspace root from the runtime workspace root.
 - **Workspace projection**: The explicit mapping from the host workspace root into a sandbox runtime. `private` projects shared workspace memory, skills, events, and one conversation directory; `full` projects the entire Workspace. Both modes remain inside the single Workspace trust domain and are not tenant isolation.
 - **Host workspace root**: The directory on the mikan host machine that stores the workspace.
 - **Runtime workspace root**: The path at which the workspace appears inside a conversation's sandbox runtime (today `/workspace`). The model only ever sees runtime paths.
-- **Worker workspace root**: The path at which a remote worker machine mounts the shared workspace storage in order to serve the same workspace.
 - **State dir**: mikan's host-only private storage (settings, credentials, extension code and data). Not part of the workspace and never mounted into a runtime — the host/sandbox trust boundary runs exactly between state dir and workspace.

@@ -9,6 +9,10 @@ any release.
 
 ## [Unreleased]
 
+### Removed
+
+- Remove Gondolin remote-worker and fleet support. `sandbox.gondolin.remote`, `gondolin:remote`, and `--worker-token` are no longer supported; use the local `gondolin:default` sandbox instead.
+
 ## [1.0.0-beta.27]
 
 ### Added

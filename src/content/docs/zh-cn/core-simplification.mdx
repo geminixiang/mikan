@@ -17,7 +17,7 @@ description: 一份基于证据的方案，在不改变行为的前提下缩减 
 6. 一个凭证解析缝隙；
 7. 用于可选平台、命令、工具、扩展和沙箱能力的注册表。
 
-Web portal、特定的聊天 SDK、Docker provisioning、Gondolin fleet 管理、Firecracker、Cloudflare 以及 GitHub 专用工具，都是围绕这个核心的产品或插件。
+Web portal、特定的聊天 SDK、Docker provisioning、Gondolin runtime 管理、Firecracker、Cloudflare 以及 GitHub 专用工具，都是围绕这个核心的产品或插件。
 
 ## 发现
 
@@ -30,7 +30,7 @@ Web portal、特定的聊天 SDK、Docker provisioning、Gondolin fleet 管理�
 | P1     | 运行时构造泄露了命令实现细节        | `ConversationRuntimeOptions` 是 `Omit<CommandServices, ...>`，并在内部重建 command service                          | 定义显式的运行时依赖，然后在命令适配器中构建 `CommandServices`                       |
 | P1     | 命令仍有两份清单                    | manifest 拥有平台注册，而 registry 拥有处理器；添加命令需要两者                                                     | 一个 `CommandDefinition` 应包含 manifest 元数据和一个处理器工厂/引用                 |
 | P1     | 框架既是公开 SDK 又是内部引擎       | 根 exports 将会话解析、凭证、设置、loader、事件 schema、hook 和 runner 细节一同导出                                 | 发布 `./extension`、`./runtime` 及可选的 `./harness` subpath，各自有独立的稳定性策略 |
-| P2     | 可选的运行时产品被编译进中央 CLI    | 平台 SDK、portal、六种沙箱模式和 Gondolin fleet 代码在 `main.ts` 中组装                                             | 让 `main.ts` 成为注册表之上的组装根；惰性/可选的产品模块变得可替换                   |
+| P2     | 可选的运行时产品被编译进中央 CLI    | 平台 SDK、portal、六种沙箱模式和 Gondolin runtime 代码在 `main.ts` 中组装                                           | 让 `main.ts` 成为注册表之上的组装根；惰性/可选的产品模块变得可替换                   |
 | P2     | 多个能力接口使用可选方法            | `MessagingBot` 和 `ConversationResponder` 通过添加 `?` 方法而增长                                                   | 使用命名的能力对象（`reactions`、`uploads`、`streaming`），使缺失和需求都显式化      |
 | P2     | HTTP 路由契约是手动分发且大多无类型 | `web/server.ts` 和 portal 模块按 method/path 分支；payload 类型是局部的                                             | 保持 UI API 内部化，但在 payload 跨模块处集中路由描述符和请求/响应 schema            |
 
@@ -159,7 +159,6 @@ interface SandboxRegistry {
 1. 引入 `SandboxRegistry`，同时将现有的默认函数保留为包装器。
 2. 将 host/container/image 注册为默认发行版。
 3. 从可选的组装模块注册 Gondolin、Firecracker 和 Cloudflare。
-4. 只有在集成测试覆盖 wire 边界之后，才将 fleet/gateway/join/worker API 移到 Gondolin 包或 subpath 之后。
 
 ### 阶段 6 — 缩减组装根
 

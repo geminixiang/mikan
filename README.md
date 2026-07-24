@@ -21,7 +21,7 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 - **Chat / conversation data** is the platform-facing record: `log.jsonl`, attachments, and conversation files.
 - **Session orchestration** turns platform events into agent runs, handles top-level/thread scopes, and persists structured context under `sessions/*.jsonl`.
 - **mikan agent harness** (`src/harness/`, built on pi-agent-core and pi-ai) runs the model loop, session persistence, compaction, and calls mikan tools.
-- **Sandbox runtime** is where tool commands execute: host, Docker container/image, Firecracker, or Cloudflare bridge.
+- **Sandbox runtime** is where tool commands execute: host, Docker container/image, local Gondolin microVM, Firecracker, or Cloudflare bridge.
 - **Vault** provides runtime credentials as env vars and mounted secret files.
 
 ## Features

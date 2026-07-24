@@ -17,7 +17,7 @@ The smallest coherent mikan core is:
 6. one credential-resolution seam;
 7. registries for optional platform, command, tool, extension, and sandbox capabilities.
 
-Web portals, particular chat SDKs, Docker provisioning, Gondolin fleet management, Firecracker, Cloudflare, and GitHub-specific tools are products or plugins around this core.
+Web portals, particular chat SDKs, Docker provisioning, Gondolin runtime management, Firecracker, Cloudflare, and GitHub-specific tools are products or plugins around this core.
 
 ## Findings
 
@@ -30,7 +30,7 @@ Web portals, particular chat SDKs, Docker provisioning, Gondolin fleet managemen
 | P1       | Runtime construction leaks command implementation details       | `ConversationRuntimeOptions` is an `Omit<CommandServices, ...>` and reconstructs command services internally                     | Define explicit runtime dependencies, then build `CommandServices` in a command adapter                              |
 | P1       | Commands still have two inventories                             | The manifest owns platform registration while the registry owns handlers; adding a command requires both                         | A `CommandDefinition` should contain manifest metadata and a handler factory/reference                               |
 | P1       | The harness is both a public SDK and an internal engine         | Root exports session parsing, credentials, settings, loader, event schema, hooks, and runner details together                    | Publish `./extension`, `./runtime`, and optionally `./harness` subpaths with separate stability policies             |
-| P2       | Optional runtime products are compiled into the central CLI     | Platform SDKs, portals, six sandbox modes, and Gondolin fleet code are assembled in `main.ts`                                    | Make `main.ts` a composition root over registries; lazy/optional product modules become replaceable                  |
+| P2       | Optional runtime products are compiled into the central CLI     | Platform SDKs, portals, six sandbox modes, and Gondolin runtime code are assembled in `main.ts`                                  | Make `main.ts` a composition root over registries; lazy/optional product modules become replaceable                  |
 | P2       | Several capability interfaces use optional methods              | `MessagingBot` and `ConversationResponder` grow by adding `?` methods                                                            | Use named capability objects (`reactions`, `uploads`, `streaming`) so absence and requirements are explicit          |
 | P2       | HTTP route contracts are manually dispatched and mostly untyped | `web/server.ts` and portal modules branch on method/path; payload types are local                                                | Keep the UI API internal, but centralize route descriptors and request/response schemas where payloads cross modules |
 
@@ -159,7 +159,6 @@ This should remove consistency bugs around `ts` versus `message.id`, `thread_ts`
 1. Introduce `SandboxRegistry` while preserving the existing default functions as wrappers.
 2. Register host/container/image as the default distribution.
 3. Register Gondolin, Firecracker, and Cloudflare from optional composition modules.
-4. Move fleet/gateway/join/worker APIs behind a Gondolin package or subpath only after integration tests cover the wire boundary.
 
 ### Phase 6 — reduce the composition root
 

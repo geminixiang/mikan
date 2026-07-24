@@ -307,11 +307,7 @@ Admin endpoint 涵蓋 conversation 清單/狀態/使用量、全域與對話設�
 
 ## 14. Gondolin 行程邊界
 
-Gondolin worker/gateway 路徑是一個獨立的 wire 協定，不是 in-process 的 sandbox 實作。其契約位於 `gondolin-contract.ts`、`gondolin-worker-client.ts`、gateway/join 模組、inventory、placement 與 fleet 程式碼中。
-
-穩定的概念是 runtime spec 與 handle identity、worker registration/heartbeat、leased placement、exec session、file transport 與 runtime lifecycle。Lease watermark 會在 failover 期間 fence 掉過期的 worker。Wire 變更必須跨 controller、gateway 與 worker 做版本管理或相容部署。
-
-詳細的部署契約請參閱 [Gondolin remote worker](/zh-tw/sandbox/gondolin-remote-worker/)。
+`gondolin:default` 使用同一台 host 上的 detached Node worker。worker process 與持久化 runtime inventory 是用於重新啟動復原的內部 lifecycle 邊界；不存在 network worker protocol 或遠端 placement contract。
 
 ## 契約檢查清單
 

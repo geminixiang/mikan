@@ -100,17 +100,16 @@ See [Platform adapters](/platform-adapters/) for platform-specific setup and per
 
 ## CLI reference
 
-| Command or option                                                                                                                  | Purpose                                                                                   |
-| ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `mikan --onboard [--state-dir=<dir>]`                                                                                              | Create the required global settings file                                                  |
-| `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]`                                                                 | Start configured platform bots; the working directory defaults to `<state-dir>/workspace` |
-| `--sandbox=host \| container:<name> \| image:<image> \| gondolin:default \| gondolin:remote \| firecracker:... \| cloudflare:<id>` | Select tool execution mode; default is `host`                                             |
-| `mikan env`                                                                                                                        | Show the full environment-variable inventory and what is currently set                    |
-| `mikan --worker-token`                                                                                                             | Mint a one-time gondolin worker join token                                                |
-| `mikan --download <channel-id>`                                                                                                    | Download Slack channel history; requires `SLACK_BOT_TOKEN`                                |
-| `mikan --version`                                                                                                                  | Print the installed version                                                               |
-| `mikan --help`                                                                                                                     | Show CLI usage and the platform-token summary                                             |
-| `mikan ext ...`                                                                                                                    | Manage harness extensions; run `mikan ext` for subcommands                                |
+| Command or option                                                                                               | Purpose                                                                                   |
+| --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `mikan --onboard [--state-dir=<dir>]`                                                                           | Create the required global settings file                                                  |
+| `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]`                                              | Start configured platform bots; the working directory defaults to `<state-dir>/workspace` |
+| `--sandbox=host \| container:<name> \| image:<image> \| gondolin:default \| firecracker:... \| cloudflare:<id>` | Select tool execution mode; default is `host`                                             |
+| `mikan env`                                                                                                     | Show the full environment-variable inventory and what is currently set                    |
+| `mikan --download <channel-id>`                                                                                 | Download Slack channel history; requires `SLACK_BOT_TOKEN`                                |
+| `mikan --version`                                                                                               | Print the installed version                                                               |
+| `mikan --help`                                                                                                  | Show CLI usage and the platform-token summary                                             |
+| `mikan ext ...`                                                                                                 | Manage harness extensions; run `mikan ext` for subcommands                                |
 
 ## Environment variable aliases
 
