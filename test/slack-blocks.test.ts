@@ -117,6 +117,22 @@ describe("renderSlackBlocks", () => {
     ]);
   });
 
+  test("preserves Slack mrkdwn links from agent responses", () => {
+    const rendered = renderSlackBlocks(
+      "• [電商 / Virtual Try-on] 夢展望 <https://github.com/livingbio/designers/issues/523|#523> / <https://example.com/video|video>",
+    );
+
+    expect(rendered.blocks).toEqual([
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "• [電商 / Virtual Try-on] 夢展望 <https://github.com/livingbio/designers/issues/523|#523> / <https://example.com/video|video>",
+        },
+      },
+    ]);
+  });
+
   test("keeps bullets as Slack mrkdwn sections", () => {
     const rendered = renderSlackBlocks("- one\n- two");
     expect(rendered.blocks).toEqual([

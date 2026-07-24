@@ -1,3 +1,4 @@
+import type { KnownBlock } from "@slack/types";
 import type { WebClient } from "@slack/web-api";
 
 export interface SlackMessage {
@@ -6,6 +7,7 @@ export interface SlackMessage {
   user?: string;
   bot_id?: string;
   thread_ts?: string;
+  blocks?: KnownBlock[];
 }
 
 export function nowSeconds(): number {

@@ -26,8 +26,20 @@ function pushSection(blocks: KnownBlock[], text: string): void {
 function renderInline(tokens: Token[] | null | undefined): string {
   if (!tokens) return "";
   let text = "";
-  for (const token of tokens) {
-    if (token.type === "text" || token.type === "code_inline") text += token.content;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    const linkText = tokens[i + 1];
+    const linkClose = tokens[i + 2];
+    if (
+      token.type === "link_open" &&
+      token.markup === "autolink" &&
+      linkText?.type === "text" &&
+      linkText.content.includes("|") &&
+      linkClose?.type === "link_close"
+    ) {
+      text += `<${linkText.content}>`;
+      i += 2;
+    } else if (token.type === "text" || token.type === "code_inline") text += token.content;
     else if (token.type === "softbreak" || token.type === "hardbreak") text += "\n";
     else if (token.type === "strong_open") text += "*";
     else if (token.type === "strong_close") text += "*";
