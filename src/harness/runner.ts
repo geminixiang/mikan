@@ -618,10 +618,17 @@ export class MikanAgentSession {
         await this.emit({ type: "compaction_end", reason, aborted: true });
         return false;
       }
+      // pi 0.82 reserves an absent firstKeptEntryId for keep-nothing
+      // compactions; mikan's session format requires a kept entry on the
+      // branch, and the compaction path used here always produces one.
+      const firstKeptEntryId = result.firstKeptEntryId;
+      if (firstKeptEntryId === undefined) {
+        throw new Error("compaction returned no first kept entry");
+      }
 
       const entryId = this.sessionStore.appendCompaction(
         result.summary,
-        result.firstKeptEntryId,
+        firstKeptEntryId,
         result.tokensBefore,
         result.details,
       );
@@ -643,7 +650,7 @@ export class MikanAgentSession {
         reason,
         result: {
           summary: result.summary,
-          firstKeptEntryId: result.firstKeptEntryId,
+          firstKeptEntryId,
           tokensBefore: result.tokensBefore,
         },
         aborted: false,

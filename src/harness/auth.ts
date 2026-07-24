@@ -13,7 +13,7 @@ import { existsSync, readFileSync } from "fs";
 import { mkdirSync } from "fs";
 import { homedir } from "os";
 import { dirname, join } from "path";
-import type { Credential, CredentialStore } from "@earendil-works/pi-ai";
+import type { Credential, CredentialInfo, CredentialStore } from "@earendil-works/pi-ai";
 import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 import * as log from "../log.js";
 
@@ -72,6 +72,15 @@ export class FileCredentialStore implements CredentialStore {
 
   read(providerId: string): Promise<Credential | undefined> {
     return this.enqueue(async () => this.load()[providerId]);
+  }
+
+  list(): Promise<readonly CredentialInfo[]> {
+    return this.enqueue(async () =>
+      Object.entries(this.load()).map(([providerId, credential]) => ({
+        providerId,
+        type: credential.type,
+      })),
+    );
   }
 
   modify(
