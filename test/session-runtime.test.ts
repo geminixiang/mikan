@@ -18,14 +18,18 @@ import {
   getChannelSessionDir,
   getThreadSessionFile,
   openManagedSession,
+  resolveChannelSessionFile,
 } from "../src/sessions/store.js";
 import { createConversationRuntime } from "../src/runtime/conversation-runtime.js";
+import type { ConversationRuntimeState } from "../src/runtime/types.js";
+import type { PiAgentWrapper } from "../src/types.js";
 import type { SandboxConfig } from "../src/sandbox/index.js";
 
 let workingDir: string;
 let conversationDir: string;
 
 beforeEach(() => {
+  vi.clearAllMocks();
   workingDir = join(
     tmpdir(),
     `mikan-session-runtime-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -166,6 +170,118 @@ describe("ConversationRuntime handleEvent", () => {
     expect(second.context.responder.replaceResponse).toHaveBeenCalledWith(
       expect.stringContaining("second"),
       expect.anything(),
+    );
+  });
+});
+
+describe("ConversationRuntime lifecycle", () => {
+  test("new dispatched inside the session queue does not deadlock", async () => {
+    const runtime = makeRuntime();
+    const originalSession = createManagedSessionFile(
+      getChannelSessionDir(conversationDir),
+      conversationDir,
+    );
+    const { event, context } = makeEventAndContext("1000.25");
+    event.conversationKind = "direct";
+    event.text = "/new";
+    context.message.conversationKind = "direct";
+    context.message.text = "/new";
+
+    await runtime.handleEvent(event, bot, context);
+
+    expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
+    expect(bot.postMessage).toHaveBeenCalledWith(
+      "C123",
+      "Conversation reset. Send a new message to start fresh.",
+    );
+  });
+
+  test("new waits for the active run settlement before resetting and disposing", async () => {
+    const runtime = makeRuntime();
+    const sessionDir = getChannelSessionDir(conversationDir);
+    const originalSession = createManagedSessionFile(sessionDir, conversationDir);
+    let settle!: () => void;
+    const runSettlement = new Promise<void>((resolve) => (settle = resolve));
+    const runner = {
+      abort: vi.fn(),
+      dispose: vi.fn().mockResolvedValue(undefined),
+    } as unknown as PiAgentWrapper;
+    const state: ConversationRuntimeState = {
+      running: true,
+      runSettlement,
+      runner,
+      stopRequested: false,
+      lastAccessedAt: Date.now(),
+      sessionFile: originalSession,
+      startedAt: Date.now(),
+    };
+    const sessions = (
+      runtime as unknown as {
+        sessions: { set(sessionKey: string, state: ConversationRuntimeState): void };
+      }
+    ).sessions;
+    sessions.set("C123", state);
+
+    const reset = runtime.handleNewCommand("C123", "C123", bot);
+    await vi.waitFor(() => expect(runner.abort).toHaveBeenCalledOnce());
+
+    expect(resolveChannelSessionFile(conversationDir)).toBe(originalSession);
+    expect(runner.dispose).not.toHaveBeenCalled();
+    expect(bot.postMessage).not.toHaveBeenCalledWith(
+      "C123",
+      "Conversation reset. Send a new message to start fresh.",
+    );
+
+    state.running = false;
+    settle();
+    await reset;
+
+    expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
+    expect(runner.dispose).toHaveBeenCalledOnce();
+    expect(bot.postMessage).toHaveBeenCalledWith(
+      "C123",
+      "Conversation reset. Send a new message to start fresh.",
+    );
+  });
+
+  test("force stop keeps a session running until its run settles", async () => {
+    const { models, faux } = createFauxModels();
+    const runtime = makeRuntime(models);
+    let started = false;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    faux.setResponses([
+      async () => {
+        started = true;
+        await gate;
+        return fauxAssistantMessage("stopped");
+      },
+    ]);
+    const { event, context } = makeEventAndContext("1000.3");
+    const run = runtime.handleEvent(event, bot, context);
+    await vi.waitFor(() => expect(started).toBe(true));
+
+    runtime.forceStop("C123");
+    expect(runtime.isRunning("C123")).toBe(true);
+
+    release();
+    await run;
+    expect(runtime.isRunning("C123")).toBe(false);
+  });
+
+  test("new resets an idle session immediately", async () => {
+    const runtime = makeRuntime();
+    const originalSession = createManagedSessionFile(
+      getChannelSessionDir(conversationDir),
+      conversationDir,
+    );
+
+    await runtime.handleNewCommand("C123", "C123", bot);
+
+    expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
+    expect(bot.postMessage).toHaveBeenCalledWith(
+      "C123",
+      "Conversation reset. Send a new message to start fresh.",
     );
   });
 });

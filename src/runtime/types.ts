@@ -28,6 +28,8 @@ export interface SessionLifecycleOptions {
 
 export interface ConversationRuntimeState {
   running: boolean;
+  /** Exact settlement of the current run, including post-run response handling. */
+  runSettlement?: Promise<void>;
   runner: PiAgentWrapper;
   stopRequested: boolean;
   stopMessageTs?: string;

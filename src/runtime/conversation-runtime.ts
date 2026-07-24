@@ -141,7 +141,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       log.logInfo(`[Force Stop] Force stopping session: ${sessionKey}`);
       state.stopRequested = true;
       state.runner.abort();
-      state.running = false;
     }
   }
 
@@ -155,8 +154,17 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     if (state?.running) {
       state.stopRequested = true;
       state.runner.abort();
+      await state.runSettlement;
     }
 
+    await this.resetSession(sessionKey, conversationId, bot);
+  }
+
+  private async resetSession(
+    sessionKey: string,
+    conversationId: string,
+    bot: MessagingBot,
+  ): Promise<void> {
     const conversationDir = join(this.options.workingDir, conversationId);
     const runtimeCwd = runtimeCwdForSandbox(
       this.options.sandbox,
@@ -296,11 +304,13 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     })();
 
     this.inFlightRuns.add(runPromise);
+    state.runSettlement = runPromise;
     Sentry.metrics.gauge("agent.sessions.active", this.inFlightRuns.size);
     try {
       await runPromise;
     } finally {
       this.inFlightRuns.delete(runPromise);
+      if (state.runSettlement === runPromise) state.runSettlement = undefined;
     }
   }
 
