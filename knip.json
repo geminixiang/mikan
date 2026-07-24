@@ -1,4 +1,4 @@
 {
   "ignore": ["examples/**", "scripts/**"],
-  "ignoreBinaries": ["gofmt", "taskkill", "openssl"]
+  "ignoreBinaries": ["gofmt", "taskkill"]
 }

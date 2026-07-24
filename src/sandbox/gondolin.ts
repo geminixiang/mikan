@@ -5,11 +5,7 @@ import type { ResourceLimits, SandboxLimitStatus, SandboxResourceController } fr
 import { SandboxError } from "./errors.js";
 import { gondolinInventory } from "./gondolin-inventory.js";
 import { isRuntimeGone, isRuntimeInterrupted } from "./gondolin-recovery.js";
-import {
-  gondolinWorkers,
-  type GondolinRuntimeHandle,
-  type GondolinRuntimeTransport,
-} from "./gondolin-worker-client.js";
+import { gondolinWorkers, type GondolinRuntimeHandle } from "./gondolin-worker-client.js";
 import { createMountedRuntimePathContext } from "./path-context.js";
 import { withRuntimeBootstrap } from "./container.js";
 import { execReadFile, execReadFileBase64, execWriteFile } from "./utils.js";
@@ -26,7 +22,6 @@ type GondolinModule = typeof import("@earendil-works/gondolin");
 
 interface GondolinSession {
   runtime: Promise<GondolinRuntimeHandle>;
-  transport: GondolinRuntimeTransport;
   fingerprint: string;
   resourceKey?: string;
   activeOperations: number;
@@ -133,10 +128,6 @@ async function validateGondolinSandbox(): Promise<void> {
   console.log("  Gondolin microVM enabled. Profile: default");
 }
 
-function transportFor(): GondolinRuntimeTransport {
-  return gondolinWorkers;
-}
-
 async function resolveDesiredRuntime(
   config: GondolinSandboxConfig,
 ): Promise<GondolinDesiredRuntime> {
@@ -214,9 +205,8 @@ function createSession(
   desired: GondolinDesiredRuntime,
   fingerprint: string,
 ): GondolinSession {
-  const transport = transportFor();
   let session: GondolinSession;
-  const runtime = transport
+  const runtime = gondolinWorkers
     .ensure(key, {
       image: desired.image,
       mounts: desired.mounts,
@@ -232,7 +222,6 @@ function createSession(
     });
   session = {
     runtime,
-    transport,
     fingerprint,
     resourceKey: config.resourceKey,
     activeOperations: 0,
@@ -323,7 +312,7 @@ async function withRuntime<T>(
     } catch (error) {
       const gone = isRuntimeGone(error);
       const interrupted = isRuntimeInterrupted(error);
-      if (gone || (interrupted && handle && !(await session.transport.isRuntimeAlive(handle)))) {
+      if (gone || (interrupted && handle && !(await gondolinWorkers.isRuntimeAlive(handle)))) {
         discardDeadSession(key, session);
       }
       // Nothing reached a gone runtime, so recreating and retrying is safe;
@@ -365,7 +354,7 @@ async function closeSession(
   try {
     if (options.waitForActiveOperations) await waitForIdle(session);
     const handle = await session.runtime;
-    if (options.stopRuntime !== false) await session.transport.stop(handle);
+    if (options.stopRuntime !== false) await gondolinWorkers.stop(handle);
     if (
       options.resetResources !== false &&
       session.resourceKey &&
@@ -468,7 +457,7 @@ export class GondolinExecutor implements Executor {
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
     return withRuntime(this.instanceId, this.config, (handle) =>
-      transportFor().exec(handle, withRuntimeBootstrap(command, this.env), {
+      gondolinWorkers.exec(handle, withRuntimeBootstrap(command, this.env), {
         env: this.env,
         signal: executionSignal(options),
       }),

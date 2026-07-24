@@ -20,40 +20,6 @@ export interface ImageSandboxConfig {
   image: string;
 }
 
-export interface GondolinRemoteWorkerSettings {
-  name?: string;
-  url: string;
-  caFile?: string;
-  certFile?: string;
-  keyFile?: string;
-  workspaceRoot?: string;
-  maxRuntimes?: number;
-  draining?: boolean;
-}
-
-export interface GondolinGatewaySettings {
-  port: number;
-  certFile?: string;
-  keyFile?: string;
-  clientCaFile?: string;
-  hostnames?: string[];
-  workspaceRoot?: string;
-  workers?: Record<string, { maxRuntimes?: number; draining?: boolean }>;
-}
-
-export interface GondolinRemoteSettings {
-  url?: string;
-  caFile?: string;
-  certFile?: string;
-  keyFile?: string;
-  workspaceRoot?: string;
-  maxRuntimes?: number;
-  workers?: GondolinRemoteWorkerSettings[];
-  gateway?: GondolinGatewaySettings;
-  imageSelector?: string;
-  queueWaitSeconds?: number;
-}
-
 export interface GondolinSandboxConfig {
   type: "gondolin";
   profile: "default";

@@ -2,18 +2,10 @@ import { Type, type Static } from "@sinclair/typebox";
 import { isRecord } from "../utils/file-guards.js";
 
 /**
- * Single home for every wire shape that crosses the mikan ⇄ gondolin-worker
- * boundary. The Go daemon mirrors these shapes by hand
- * (worker/internal/runtime/supervisor.go, worker/internal/api/server.go,
- * worker/internal/lease/lease.go); the shared fixtures under
- * `worker/contract-fixtures/` pin both sides — the TS test
- * (test/gondolin-contract.test.ts) checks each fixture against the schemas
- * here, and the Go contract tests round-trip the same files through the Go
- * structs. Add a field on one side only and one of those tests fails.
- *
- * Secrets never travel through these shapes: vault env rides per-exec over
- * the session IPC socket, and credential files are shipped by content only
- * on the authenticated ensure request.
+ * Single home for the wire shapes shared by mikan's local Gondolin client and
+ * detached worker process. The runtime inventory is also mirrored by the Go
+ * daemon for rediscovery; shared fixtures under `worker/contract-fixtures/`
+ * pin those shared shapes.
  */
 
 const GondolinMountSchema = Type.Object({
@@ -23,16 +15,14 @@ const GondolinMountSchema = Type.Object({
 
 /**
  * Everything a worker process needs to host one Gondolin VM. Serialized as a
- * single JSON argv entry by both spawners (the local TS worker client and
- * the Go daemon's supervisor).
+ * single JSON argv entry by the local TS worker client.
  */
 export const GondolinWorkerConfigSchema = Type.Object({
   /** mikan session key the runtime belongs to. */
   instanceId: Type.String(),
   /** Resolved guest image asset directory. */
   image: Type.Optional(Type.String()),
-  /** Image selector resolved inside the worker (remote workers, where the
-   * spawning host has no image store). Ignored when `image` is set. */
+  /** Optional image selector resolved inside the worker when no image path is supplied. */
   imageSelector: Type.Optional(Type.String()),
   mounts: Type.Array(GondolinMountSchema),
   cpus: Type.Optional(Type.Number()),
@@ -93,105 +83,4 @@ export function isGondolinRuntimeRecord(value: unknown): value is GondolinRuntim
     (value.socketPath === undefined || typeof value.socketPath === "string") &&
     (value.fingerprint === undefined || typeof value.fingerprint === "string")
   );
-}
-
-/** A vault credential shipped by content on the ensure request (never a shared-fs mount). */
-const GondolinCredentialFileSchema = Type.Object({
-  target: Type.String(),
-  contentBase64: Type.String(),
-});
-
-export type GondolinCredentialFile = Static<typeof GondolinCredentialFileSchema>;
-
-/** POST /v1/runtimes body sent to the remote worker daemon. */
-export const GondolinEnsureRuntimeRequestSchema = Type.Object({
-  instanceId: Type.String(),
-  imageSelector: Type.String(),
-  mounts: Type.Array(GondolinMountSchema),
-  credentialFiles: Type.Array(GondolinCredentialFileSchema),
-  /** Fractional cgroup CPU limit as a string; "" when unset. */
-  cpus: Type.String(),
-  memory: Type.String(),
-  fingerprint: Type.String(),
-  /** Accepted by the daemon; the TS client currently leaves it unset (0). */
-  heartbeatStaleMs: Type.Optional(Type.Number()),
-});
-
-export type GondolinEnsureRuntimeRequest = Static<typeof GondolinEnsureRuntimeRequestSchema>;
-
-/**
- * One runtime as reported by the daemon (ensure response, GET, and the
- * elements of the list response). The daemon's socketPath never crosses the
- * wire — sessions reach the runtime through the tunnel, not the socket.
- */
-export const GondolinRemoteRuntimeSchema = Type.Object({
-  sessionId: Type.String(),
-  instanceId: Type.String(),
-  fingerprint: Type.String(),
-  workerPid: Type.Number(),
-  runnerPid: Type.Number(),
-  epoch: Type.Number(),
-  adopted: Type.Boolean(),
-});
-
-export type GondolinRemoteRuntime = Static<typeof GondolinRemoteRuntimeSchema>;
-
-/** POST /v1/leases response: a fenced, epoch-monotonic per-instance lease. */
-export const GondolinLeaseGrantSchema = Type.Object({
-  id: Type.String(),
-  instanceId: Type.String(),
-  epoch: Type.Number(),
-  /** RFC 3339 timestamp (Go time.Time marshalling). */
-  expiresAt: Type.String(),
-});
-
-// ── session tunnel framing ────────────────────────────────────────────────────
-// The session protocol itself is TS⇄TS (worker session server ⇄ client); the
-// Go daemon splices it byte-for-byte through the upgraded tunnel. The framing
-// still lives here because it is part of the boundary a transport must carry.
-
-/** Structural shape of the JSON messages on the session protocol. */
-export interface SessionFrameCallbacks {
-  onJson: (message: {
-    type: string;
-    id?: number;
-    exit_code?: number | null;
-    code?: string;
-    message?: string;
-  }) => void;
-  onBinary: (frame: Buffer) => void;
-}
-
-/** Parses the daemon-to-client session framing: u8 type + u32be length + payload. */
-export function createSessionFrameParser(
-  callbacks: SessionFrameCallbacks,
-): (chunk: Buffer) => void {
-  let buffer = Buffer.alloc(0);
-  return (chunk: Buffer) => {
-    buffer = Buffer.concat([buffer, chunk]);
-    while (buffer.length >= 5) {
-      const type = buffer.readUInt8(0);
-      const length = buffer.readUInt32BE(1);
-      if (buffer.length < 5 + length) return;
-      const payload = buffer.subarray(5, 5 + length);
-      buffer = buffer.subarray(5 + length);
-      if (type === 1) {
-        callbacks.onBinary(Buffer.from(payload));
-        continue;
-      }
-      try {
-        callbacks.onJson(JSON.parse(payload.toString("utf8")));
-      } catch {
-        // ignore malformed frames
-      }
-    }
-  };
-}
-
-/** Encodes a client-to-daemon session message: u32be length + JSON. */
-export function encodeSessionMessage(message: object): Buffer {
-  const payload = Buffer.from(JSON.stringify(message));
-  const header = Buffer.alloc(4);
-  header.writeUInt32BE(payload.length, 0);
-  return Buffer.concat([header, payload]);
 }

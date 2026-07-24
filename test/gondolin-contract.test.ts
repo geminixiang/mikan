@@ -4,9 +4,6 @@ import type { TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { describe, expect, test } from "vitest";
 import {
-  GondolinEnsureRuntimeRequestSchema,
-  GondolinLeaseGrantSchema,
-  GondolinRemoteRuntimeSchema,
   GondolinRuntimeRecordSchema,
   GondolinWorkerConfigSchema,
   GondolinWorkerHandshakeSchema,
@@ -35,12 +32,6 @@ const CASES: Array<{ fixture: string; schema: ObjectSchema }> = [
   { fixture: "worker-config.json", schema: GondolinWorkerConfigSchema as ObjectSchema },
   { fixture: "worker-handshake.json", schema: GondolinWorkerHandshakeSchema as ObjectSchema },
   { fixture: "runtime-record.json", schema: GondolinRuntimeRecordSchema as ObjectSchema },
-  {
-    fixture: "ensure-runtime-request.json",
-    schema: GondolinEnsureRuntimeRequestSchema as ObjectSchema,
-  },
-  { fixture: "runtime.json", schema: GondolinRemoteRuntimeSchema as ObjectSchema },
-  { fixture: "lease-grant.json", schema: GondolinLeaseGrantSchema as ObjectSchema },
 ];
 
 describe("gondolin wire contract", () => {

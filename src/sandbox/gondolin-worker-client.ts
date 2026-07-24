@@ -8,51 +8,23 @@ import { gondolinInventory, type GondolinRuntimeRecord } from "./gondolin-invent
 import type { GondolinWorkerConfig, GondolinWorkerHandshake } from "./gondolin-worker.js";
 import type { ExecResult } from "./types.js";
 
-/**
- * A live worker-hosted runtime as seen from mikan: identity plus fleet
- * routing only. Transport-private connection details (the local worker's
- * session socket, the remote worker's lease/tunnel) stay inside the owning
- * transport — a handle never carries another transport's address fields.
- */
+/** A live detached worker-hosted runtime as seen from mikan. */
 export interface GondolinRuntimeHandle {
   sessionId: string;
   instanceId: string;
   workerPid: number;
   fingerprint: string;
-  /** Fleet identity of the worker hosting the runtime (remote transport). */
-  workerName?: string;
 }
 
-/**
- * What a runtime should look like, resolved by the executor layer. `image` is
- * a local asset directory for the local transport and an image selector for
- * the remote one (resolved on the worker host).
- */
-export interface GondolinRuntimeSpec {
+/** Desired configuration for a local Gondolin runtime. */
+interface GondolinRuntimeSpec {
   image: string;
   mounts: Array<{ source: string; target: string }>;
-  /** Raw fractional CPU limit (cgroup enforcement on remote Linux workers). */
   cpus?: string;
-  /** Whole vCPUs given to the VM. */
   vmCpus?: number;
   memory?: string;
   fingerprint: string;
-  /** mikan-host workspace root, for remote mount prefix translation. */
   workspacePath?: string;
-}
-
-/** One way of running Gondolin runtimes: in local workers or on a remote fleet. */
-export interface GondolinRuntimeTransport {
-  ensure(instanceId: string, spec: GondolinRuntimeSpec): Promise<GondolinRuntimeHandle>;
-  stop(
-    handle: Pick<GondolinRuntimeHandle, "workerPid" | "sessionId" | "instanceId" | "workerName">,
-  ): Promise<void>;
-  exec(
-    handle: GondolinRuntimeHandle,
-    command: string,
-    options?: { env?: Record<string, string>; signal?: AbortSignal },
-  ): Promise<ExecResult>;
-  isRuntimeAlive(handle: GondolinRuntimeHandle): Promise<boolean>;
 }
 
 import { GondolinRuntimeGoneError, GondolinRuntimeInterruptedError } from "./gondolin-recovery.js";
@@ -112,15 +84,15 @@ function abortError(): Error {
 /**
  * A command may quietly work for a long time, but a session that produces no
  * frame at all for this long is indistinguishable from one wedged on dead
- * storage (a hung NFS mount under the workspace blocks guest I/O forever) —
- * kill it and say so instead of hanging the run.
+ * storage (for example, blocked guest workspace I/O) — kill it and say so
+ * instead of hanging the run.
  */
 const EXEC_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
 /**
- * Run one command through a fresh session connection — the shared state
- * machine for both transports. Closing the connection (abort, timeout, or the
- * far side dying) kills the in-flight guest process.
+ * Run one command through a fresh local worker session connection. Closing
+ * the connection (abort, timeout, or the far side dying) kills the in-flight
+ * guest process.
  */
 export async function execOverSessionConnect(
   connect: (callbacks: SessionClientCallbacks) => SessionClient | Promise<SessionClient>,
@@ -233,8 +205,8 @@ export async function execOverSessionConnect(
 /** Workers self-stop once no mikan has refreshed the heartbeat for this long. */
 const WORKER_HEARTBEAT_STALE_MS = 45 * 60 * 1000;
 
-class GondolinWorkerClient implements GondolinRuntimeTransport {
-  /** Session IPC socket per runtime — transport-private, never on the handle. */
+class GondolinWorkerClient {
+  /** Session IPC socket per runtime, kept out of the public handle. */
   private readonly socketPaths = new Map<string, string>();
   private spawnProcess = defaultSpawnProcess;
   private connectImpl: (
@@ -345,7 +317,6 @@ class GondolinWorkerClient implements GondolinRuntimeTransport {
     await gondolinInventory.reapSession(handle.sessionId);
   }
 
-  /** Whether the worker process behind a handle is still alive. */
   /**
    * Run one command over a dedicated session IPC connection. Aborting (or the
    * caller's timeout signal firing) destroys the connection, which kills the
