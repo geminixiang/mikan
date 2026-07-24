@@ -276,7 +276,7 @@ describe("MikanAgentSession", () => {
     expect(JSON.stringify(sessionStore.getEntries())).toContain("original ask [enriched]");
   });
 
-  test("before_agent_start system prompt rewrites do not accumulate across prompts", async () => {
+  test("system prompt rewrites use and restore each prompt's dynamic base", async () => {
     const { models, faux, model } = createFauxSetup();
     const systemPrompts: string[] = [];
     faux.setResponses([
@@ -295,7 +295,7 @@ describe("MikanAgentSession", () => {
       systemPrompt: `${systemPrompt}\nrun-only`,
     }));
     const session = new MikanAgentSession({
-      systemPrompt: "base",
+      systemPrompt: "initial",
       model,
       thinkingLevel: "off",
       tools: [],
@@ -304,11 +304,15 @@ describe("MikanAgentSession", () => {
       extensions,
     });
 
+    session.agent.state.systemPrompt = "memory-v1";
     await session.prompt("first");
-    await session.prompt("second");
+    expect(session.agent.state.systemPrompt).toBe("memory-v1");
 
-    expect(systemPrompts).toEqual(["base\nrun-only", "base\nrun-only"]);
-    expect(session.agent.state.systemPrompt).toBe("base");
+    session.agent.state.systemPrompt = "memory-v2";
+    await session.prompt("second");
+    expect(session.agent.state.systemPrompt).toBe("memory-v2");
+
+    expect(systemPrompts).toEqual(["memory-v1\nrun-only", "memory-v2\nrun-only"]);
   });
 
   test("origin-conditional system prompt rewrites do not leak into the next prompt", async () => {

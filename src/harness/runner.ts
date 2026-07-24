@@ -138,7 +138,6 @@ export class MikanAgentSession {
   private readonly models: MikanModels;
   private readonly settings: HarnessSettings;
   private readonly extensions: ExtensionRegistry | undefined;
-  private readonly baseSystemPrompt: string;
   private listeners = new Set<HarnessEventListener>();
   private retryAttempt = 0;
   private overflowRecoveryAttempted = false;
@@ -159,7 +158,6 @@ export class MikanAgentSession {
     this.sessionStore = options.sessionStore;
     this.settings = resolveHarnessSettings(options.settings);
     this.extensions = options.extensions;
-    this.baseSystemPrompt = options.systemPrompt;
 
     const tools = [...options.tools, ...(options.extensions?.getContributedTools() ?? [])];
     this.agent = new Agent({
@@ -291,18 +289,18 @@ export class MikanAgentSession {
       throw new Error("Agent is already processing a prompt");
     }
     this.runActive = true;
-    const previousSystemPrompt = this.agent.state.systemPrompt;
-    this.agent.state.systemPrompt = this.baseSystemPrompt;
+    const runSystemPrompt = this.agent.state.systemPrompt;
     try {
-      return await this.runPrompt(text, options);
+      return await this.runPrompt(text, runSystemPrompt, options);
     } finally {
-      this.agent.state.systemPrompt = previousSystemPrompt;
+      this.agent.state.systemPrompt = runSystemPrompt;
       this.runActive = false;
     }
   }
 
   private async runPrompt(
     text: string,
+    runSystemPrompt: string,
     options?: { images?: ImageContent[]; budget?: BudgetSettings; origin?: RunOrigin },
   ): Promise<PromptBlockedOutcome | undefined> {
     const model = this.agent.state.model;
@@ -327,7 +325,7 @@ export class MikanAgentSession {
     }
 
     let promptText = text;
-    let systemPrompt = this.baseSystemPrompt;
+    let systemPrompt = runSystemPrompt;
     if (this.extensions?.hasHandlers("before_agent_start")) {
       const result = await this.extensions.emitBeforeAgentStart({
         prompt: promptText,
