@@ -31,6 +31,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import * as log from "../../log.js";
 import { buildEventPayload } from "../event-format.js";
 import { loadSkillsFromDir, type MikanSkill } from "../skills.js";
+import { namespaceActionIds } from "./blockkit.js";
 import { ExtensionRegistry } from "./registry.js";
 import type {
   ExtensionCommand,
@@ -473,6 +474,32 @@ function buildExtensionApi(params: {
         throw new Error("api.notify is unavailable: this context provides no platform messaging");
       }
       await services.postMessage(options?.conversationId ?? conversationId, text);
+    },
+    blockkit: {
+      post: async (message) => {
+        if (!services.postBlocks) {
+          throw new Error(
+            "api.blockkit is unavailable: this context provides no Block Kit messaging",
+          );
+        }
+        return services.postBlocks(conversationId, {
+          text: message.text,
+          blocks: namespaceActionIds(message.blocks, slug),
+          threadTs: message.threadTs,
+        });
+      },
+      update: async (messageTs, message) => {
+        if (!services.updateBlocks) {
+          throw new Error(
+            "api.blockkit is unavailable: this context provides no Block Kit messaging",
+          );
+        }
+        await services.updateBlocks(conversationId, messageTs, {
+          text: message.text,
+          blocks: namespaceActionIds(message.blocks, slug),
+        });
+      },
+      onAction: (actionId, handler) => registry.registerAction(slug, actionId, handler),
     },
     react: async (messageTs: string, emoji: string) => {
       if (!services.addReaction) {

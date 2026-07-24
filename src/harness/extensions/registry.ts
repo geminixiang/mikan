@@ -11,6 +11,8 @@ import type {
   BeforeAgentStartHookEvent,
   BeforeAgentStartHookResult,
   ContextHookEvent,
+  ExtensionBlockAction,
+  ExtensionBlockActionHandler,
   ExtensionCommand,
   ExtensionCommandContext,
   ExtensionDisposer,
@@ -52,6 +54,8 @@ export class ExtensionRegistry {
   };
   private tools: AgentTool[] = [];
   private commands = new Map<string, { owner: string; command: ExtensionCommand }>();
+  /** Block action handlers keyed `<slug>\n<actionId>` (slug scopes, so no cross-extension dups). */
+  private actions = new Map<string, { owner: string; handler: ExtensionBlockActionHandler }>();
   private disposers: Array<{ owner: string; disposer: ExtensionDisposer }> = [];
 
   register<T extends MikanHookName>(owner: string, hook: T, handler: MikanHookMap[T]): void {
@@ -85,6 +89,43 @@ export class ExtensionRegistry {
 
   registerDisposer(owner: string, disposer: ExtensionDisposer): void {
     this.disposers.push({ owner, disposer });
+  }
+
+  /**
+   * Register a block action handler for `actionId` under an extension slug.
+   * A duplicate registration is logged and ignored (first wins), mirroring
+   * command registration.
+   */
+  registerAction(slug: string, actionId: string, handler: ExtensionBlockActionHandler): void {
+    if (!actionId) throw new Error("Extension block action id must be non-empty");
+    const key = `${slug}\n${actionId}`;
+    if (this.actions.has(key)) {
+      log.logWarning(
+        `Extension block action "${actionId}" already registered by ${slug}`,
+        "ignoring duplicate registration",
+      );
+      return;
+    }
+    this.actions.set(key, { owner: slug, handler });
+  }
+
+  /**
+   * Run the handler for an extension-owned block action. Returns true when a
+   * matching handler exists — including when it threw (the action was
+   * consumed; the error is logged, never surfaced to the platform).
+   */
+  async dispatchAction(slug: string, action: ExtensionBlockAction): Promise<boolean> {
+    const entry = this.actions.get(`${slug}\n${action.actionId}`);
+    if (!entry) return false;
+    try {
+      await entry.handler(action);
+    } catch (err) {
+      log.logWarning(
+        `Extension block action "${action.actionId}" failed (${entry.owner})`,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+    return true;
   }
 
   getContributedTools(): AgentTool[] {

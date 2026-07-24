@@ -238,6 +238,11 @@ export interface ExtensionCommandContext {
   conversationId: string;
   userId?: string;
   userName?: string;
+  /**
+   * Platform thread the command was sent from, when threaded. Pass to
+   * `blockkit.post` so interactive messages land in the same thread.
+   */
+  threadTs?: string;
   /** Reply in the conversation the command was sent from. */
   respond(text: string): Promise<void>;
 }
@@ -254,6 +259,36 @@ export interface ExtensionCommand {
   /** One-line description for inventory surfaces. */
   description?: string;
   handler: (context: ExtensionCommandContext) => void | Promise<void>;
+}
+
+// ── blockkit: interactive platform surfaces ──────────────────────────────────
+
+/** One user interaction with an interactive element posted by this extension. */
+export interface ExtensionBlockAction {
+  /** The extension's own action id (the routing namespace is stripped). */
+  actionId: string;
+  /** Button value or single-select selected value. */
+  value?: string;
+  /** Selected option values for multi-selects and checkboxes. */
+  selectedValues?: string[];
+  userId?: string;
+  userName?: string;
+  conversationId: string;
+  /** Platform message id of the interactive message; pass to `blockkit.update`. */
+  messageTs?: string;
+  threadTs?: string;
+}
+
+export type ExtensionBlockActionHandler = (action: ExtensionBlockAction) => void | Promise<void>;
+
+/** Platform-native interactive message content (Slack Block Kit blocks). */
+export interface ExtensionBlockKitMessage {
+  /** Plain-text fallback for notifications and screen readers. */
+  text: string;
+  /** Block Kit blocks. `post` namespaces every action_id with the extension slug. */
+  blocks: object[];
+  /** Post into this platform thread; omit for a top-level message. */
+  threadTs?: string;
 }
 
 export interface SubagentApi {
@@ -295,6 +330,19 @@ export interface ExtensionHostServices {
   scheduleStore?: ExtensionScheduleStore;
   /** Post a message to a conversation without an agent run; enables `api.notify`. */
   postMessage?: (conversationId: string, text: string, platform?: string) => Promise<void>;
+  /** Post an interactive Block Kit message; enables `api.blockkit.post`. */
+  postBlocks?: (
+    conversationId: string,
+    message: { text: string; blocks: object[]; threadTs?: string },
+    platform?: string,
+  ) => Promise<{ ts: string }>;
+  /** Update an interactive Block Kit message; enables `api.blockkit.update`. */
+  updateBlocks?: (
+    conversationId: string,
+    messageTs: string,
+    message: { text: string; blocks: object[] },
+    platform?: string,
+  ) => Promise<void>;
   /** Add an emoji reaction to a message; enables `api.react`. */
   addReaction?: (
     conversationId: string,
@@ -412,6 +460,22 @@ export interface MikanExtensionApi {
    * when the embedder provides platform messaging.
    */
   notify(text: string, options?: { conversationId?: string }): Promise<void>;
+  /**
+   * Interactive platform surfaces (Slack Block Kit). `post` namespaces every
+   * `action_id` in the blocks with this extension's slug; interactions on
+   * those elements are dispatched exclusively to `onAction` handlers — no
+   * agent run, no model call. The extension decides whether to involve the
+   * model afterwards (`triggerRun`). Available when the embedder provides
+   * Block Kit messaging.
+   */
+  readonly blockkit: {
+    /** Post an interactive message into this conversation. Returns its message id. */
+    post(message: ExtensionBlockKitMessage): Promise<{ ts: string }>;
+    /** Replace an interactive message previously posted with `post`. */
+    update(messageTs: string, message: { text: string; blocks: object[] }): Promise<void>;
+    /** Register a handler for interactions on this extension's elements. */
+    onAction(actionId: string, handler: ExtensionBlockActionHandler): void;
+  };
   /**
    * Add an emoji reaction to a message in this conversation. `messageTs` is
    * the platform message id the extension read from an event (see

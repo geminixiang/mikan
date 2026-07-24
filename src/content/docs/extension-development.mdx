@@ -301,6 +301,38 @@ await api.uploadFile("/path/on/host/report.pdf", "Weekly report");
 
 Schedules create mikan event files and trigger autonomous runs without inheriting conversation history, so `text` must be self-contained; `api.triggerRun` fires such a run immediately (e.g. in response to an external event). Specify `platform` when more than one platform is running and inference is ambiguous. Do not put secrets in schedule text. `api.notify` defaults to the extension's conversation and accepts an explicit `conversationId` for cross-conversation applications; `api.uploadFile` sends a host-side file into the conversation on platforms with upload support.
 
+### Interactive messages (Block Kit)
+
+`api.blockkit` posts and updates interactive Slack Block Kit messages — buttons, select menus, custom layouts — and receives their interactions without a model call:
+
+```ts
+const { ts } = await api.blockkit.post({
+  text: "投票:晚餐吃什麼",
+  blocks: [
+    { type: "markdown", text: "**晚餐吃什麼**" },
+    {
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          text: { type: "plain_text", text: "拉麵" },
+          action_id: "vote",
+          value: "ramen",
+        },
+      ],
+    },
+  ],
+  threadTs: ctx.threadTs, // reply in-thread when the command came from a thread
+});
+
+api.blockkit.onAction("vote", async (event) => {
+  // event: { actionId, value, selectedValues, userId, messageTs, threadTs, … }
+  await api.blockkit.update(event.messageTs!, { text: "…", blocks: renderUpdated() });
+});
+```
+
+Every `action_id` in posted blocks is namespaced `ext:<slug>:…`, so interactions on this extension's elements dispatch **exclusively** to its `onAction` handlers — no agent run, no model call, millisecond latency. The extension decides whether the model gets involved afterwards (call `api.triggerRun` from a handler, e.g. after an approval button). After handling an interaction, `update` the message to reflect the outcome — buttons stay clickable otherwise. See `examples/extensions/poll` for a complete poll built this way.
+
 ### Bundled skills
 
 Place skills under the extension directory:
