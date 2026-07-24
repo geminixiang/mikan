@@ -3,9 +3,7 @@ import { isRecord } from "../utils/file-guards.js";
 
 /**
  * Single home for the wire shapes shared by mikan's local Gondolin client and
- * detached worker process. The runtime inventory is also mirrored by the Go
- * daemon for rediscovery; shared fixtures under `worker/contract-fixtures/`
- * pin those shared shapes.
+ * detached worker process.
  */
 
 const GondolinMountSchema = Type.Object({
@@ -51,7 +49,7 @@ export type GondolinWorkerHandshake = Static<typeof GondolinWorkerHandshakeSchem
 
 /**
  * One `<sessionId>.json` inventory record, written by the worker process and
- * read back by the TS inventory and the Go daemon's rediscovery.
+ * read back by the TS inventory.
  */
 export const GondolinRuntimeRecordSchema = Type.Object({
   /** Gondolin session id (`vm.id`); also names the record file. */
