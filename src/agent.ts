@@ -6,7 +6,7 @@
 export type { PiAgentWrapper } from "./types.js";
 import type { PiAgentWrapper } from "./types.js";
 
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
 import {
   DEFAULT_EVENT_BUDGET,
@@ -1401,18 +1401,34 @@ async function prepareRunContext(params: {
   };
 }
 
-const MEMORY_MAINTENANCE_PROMPT = `Before this conversation is reset, preserve only durable information worth carrying into future conversations.
-Review the existing transcript and update the appropriate MEMORY.md files using the available tools:
-- Global MEMORY.md: stable user preferences, reusable facts, and project-wide information that truly applies across conversations.
-- Conversation MEMORY.md: durable decisions, preferences, facts, and ongoing work specific to this conversation. Prefer this file for conversation-specific context.
-Preserve the concrete values and details needed to resume the work; do not replace them with abstract categories, summaries of retention rules, or statements that merely say a kind of information is durable. An explicit user statement that a fact, preference, or decision should persist is strong evidence that its exact content is worth preserving.
-Deduplicate against existing memory. Do not preserve transient discussion, tool noise, secrets, speculative details, or test scaffolding. If there is nothing new worth preserving, make no changes. Do no unrelated work.`;
+const SESSION_DREAM_PROMPT = `Before this conversation is reset or rotated, preserve only durable information worth carrying into future sessions of this same conversation.
+Review the existing transcript and update only the conversation-specific MEMORY.md at {conversationMemoryPath} using the available tools.
+Do not modify the workspace-level global MEMORY.md. Information from one DM or channel must not be promoted into memory shared with other conversations by this maintenance run.
+Preserve durable decisions, preferences, facts, and ongoing work specific to this conversation. Preserve the concrete values and details needed to resume the work; do not replace them with abstract categories, summaries of retention rules, or statements that merely say a kind of information is durable. An explicit user statement that a fact, preference, or decision should persist is strong evidence that its exact content is worth preserving.
+Deduplicate against existing conversation memory. Do not preserve transient discussion, tool noise, secrets, speculative details, or test scaffolding. If there is nothing new worth preserving, make no changes. Do no unrelated work.`;
 
-const MEMORY_MAINTENANCE_BUDGET = {
+const SESSION_DREAM_BUDGET = {
   maxDurationMs: 2 * 60 * 1000,
   maxLlmCalls: 5,
   maxCostUsd: 0.25,
 };
+
+function sessionDreamTools(tools: AgentTool[], conversationMemoryPath: string): AgentTool[] {
+  return tools
+    .filter((tool) => tool.name === "read" || tool.name === "edit" || tool.name === "write")
+    .map((tool) => {
+      if (tool.name === "read") return tool;
+      return Object.assign({}, tool, {
+        execute: async (...args: Parameters<AgentTool["execute"]>) => {
+          const params = args[1] as { path?: unknown };
+          if (params.path !== conversationMemoryPath) {
+            throw new Error(`Session Dream may only modify ${conversationMemoryPath}`);
+          }
+          return tool.execute(...args);
+        },
+      });
+    });
+}
 
 async function noopResponderMethod(): Promise<void> {}
 
@@ -2047,7 +2063,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
       return { stopReason: runState.stopReason, errorMessage: runState.errorMessage };
     },
 
-    async maintainMemory(
+    async dreamSessionMemory(
       message: ConversationMessage,
       platform: MessagingInfo,
     ): Promise<{ stopReason: string; errorMessage?: string }> {
@@ -2076,18 +2092,27 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
       pathContext = prepared.pathContext;
 
       try {
-        const outcome = await session.prompt(MEMORY_MAINTENANCE_PROMPT, {
-          origin: {
-            kind: "interactive",
-            platform: platform.name,
-            messageTs: message.id,
-            userId: message.userId,
-            userName: message.userName,
-            threadTs: message.threadTs,
-            attachments: message.attachments,
+        const conversationMemoryPath = posix.join(
+          prepared.pathContext.runtimeWorkspaceRoot,
+          conversationId,
+          "MEMORY.md",
+        );
+        const outcome = await session.prompt(
+          SESSION_DREAM_PROMPT.replace("{conversationMemoryPath}", conversationMemoryPath),
+          {
+            origin: {
+              kind: "interactive",
+              platform: platform.name,
+              messageTs: message.id,
+              userId: message.userId,
+              userName: message.userName,
+              threadTs: message.threadTs,
+              attachments: message.attachments,
+            },
+            budget: SESSION_DREAM_BUDGET,
+            tools: sessionDreamTools(session.agent.state.tools, conversationMemoryPath),
           },
-          budget: MEMORY_MAINTENANCE_BUDGET,
-        });
+        );
         if (outcome?.blocked) {
           return { stopReason: "blocked", errorMessage: outcome.reason };
         }

@@ -283,17 +283,25 @@ export class MikanAgentSession {
    */
   async prompt(
     text: string,
-    options?: { images?: ImageContent[]; budget?: BudgetSettings; origin?: RunOrigin },
+    options?: {
+      images?: ImageContent[];
+      budget?: BudgetSettings;
+      origin?: RunOrigin;
+      tools?: AgentTool[];
+    },
   ): Promise<PromptBlockedOutcome | undefined> {
     if (this.runActive) {
       throw new Error("Agent is already processing a prompt");
     }
     this.runActive = true;
     const runSystemPrompt = this.agent.state.systemPrompt;
+    const runTools = this.agent.state.tools;
+    if (options?.tools) this.agent.state.tools = options.tools;
     try {
       return await this.runPrompt(text, runSystemPrompt, options);
     } finally {
       this.agent.state.systemPrompt = runSystemPrompt;
+      this.agent.state.tools = runTools;
       this.runActive = false;
     }
   }
@@ -301,7 +309,12 @@ export class MikanAgentSession {
   private async runPrompt(
     text: string,
     runSystemPrompt: string,
-    options?: { images?: ImageContent[]; budget?: BudgetSettings; origin?: RunOrigin },
+    options?: {
+      images?: ImageContent[];
+      budget?: BudgetSettings;
+      origin?: RunOrigin;
+      tools?: AgentTool[];
+    },
   ): Promise<PromptBlockedOutcome | undefined> {
     const model = this.agent.state.model;
     await this.ensureAuthConfigured(model);

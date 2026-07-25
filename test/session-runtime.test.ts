@@ -24,6 +24,7 @@ import { createConversationRuntime } from "../src/runtime/conversation-runtime.j
 import type { ConversationRuntimeState } from "../src/runtime/types.js";
 import type { PiAgentWrapper } from "../src/types.js";
 import type { SandboxConfig } from "../src/sandbox/index.js";
+import { shouldRotateTopLevelSession } from "../src/sessions/rotation.js";
 
 let workingDir: string;
 let conversationDir: string;
@@ -66,6 +67,14 @@ function createFauxModels(): { models: MikanModels; faux: ReturnType<typeof faux
   const faux = fauxProvider();
   (models.models as MutableModels).setProvider(faux.provider);
   return { models, faux };
+}
+
+function rewriteSessionTimestamp(sessionFile: string, timestamp: string): void {
+  const lines = readFileSync(sessionFile, "utf-8").split("\n");
+  const header = JSON.parse(lines[0]) as Record<string, unknown>;
+  header.timestamp = timestamp;
+  lines[0] = JSON.stringify(header);
+  writeFileSync(sessionFile, lines.join("\n"));
 }
 
 function makeResponder(): ConversationResponder {
@@ -225,7 +234,7 @@ describe("ConversationRuntime lifecycle", () => {
     const runSettlement = new Promise<void>((resolve) => (settle = resolve));
     const runner = {
       abort: vi.fn(),
-      maintainMemory: vi.fn().mockResolvedValue({ stopReason: "stop" }),
+      dreamSessionMemory: vi.fn().mockResolvedValue({ stopReason: "stop" }),
       dispose: vi.fn().mockResolvedValue(undefined),
     } as unknown as PiAgentWrapper;
     const state: ConversationRuntimeState = {
@@ -291,7 +300,7 @@ describe("ConversationRuntime lifecycle", () => {
     expect(runtime.isRunning("C123")).toBe(false);
   });
 
-  test("normal work waits for direct memory maintenance and its reset boundary", async () => {
+  test("normal work waits for direct session Dream and its reset boundary", async () => {
     const { models, faux } = createFauxModels();
     faux.setResponses([fauxAssistantMessage("after reset")]);
     const runtime = makeRuntime(models);
@@ -302,7 +311,7 @@ describe("ConversationRuntime lifecycle", () => {
     let releaseMaintenance!: () => void;
     const maintenanceGate = new Promise<void>((resolve) => (releaseMaintenance = resolve));
     const runner = {
-      maintainMemory: vi.fn(async () => {
+      dreamSessionMemory: vi.fn(async () => {
         await maintenanceGate;
         return { stopReason: "stop" };
       }),
@@ -327,7 +336,7 @@ describe("ConversationRuntime lifecycle", () => {
     sessions.set("C123", state);
 
     const maintenance = runtime.handleNewCommand(...newCommandArgs());
-    await vi.waitFor(() => expect(runner.maintainMemory).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(runner.dreamSessionMemory).toHaveBeenCalledOnce());
     expect(runtime.isRunning("C123")).toBe(true);
     expect(runtime.getRunningSessions()).toEqual([expect.objectContaining({ sessionKey: "C123" })]);
 
@@ -347,6 +356,90 @@ describe("ConversationRuntime lifecycle", () => {
     expect(runtime.isRunning("C123")).toBe(false);
   });
 
+  test("preserves memory before automatic biweekly rotation", async () => {
+    const { models, faux } = createFauxModels();
+    const memoryPath = join(conversationDir, "MEMORY.md");
+    faux.setResponses([
+      (context) => {
+        expect(JSON.stringify(context.messages)).toContain("old shared decision");
+        return fauxAssistantMessage(
+          fauxToolCall("write", {
+            label: "preserve memory before rotation",
+            path: memoryPath,
+            content: "shared decision",
+          }),
+        );
+      },
+      fauxAssistantMessage("memory preserved"),
+      fauxAssistantMessage("new session reply"),
+    ]);
+    const runtime = makeRuntime(models);
+    const originalSession = createManagedSessionFile(
+      getChannelSessionDir(conversationDir),
+      conversationDir,
+    );
+    openManagedSession(originalSession, conversationDir).appendMessage({
+      role: "user",
+      content: [{ type: "text", text: "old shared decision" }],
+      timestamp: 1,
+    });
+    rewriteSessionTimestamp(originalSession, "2026-01-05T12:00:00.000Z");
+
+    expect(shouldRotateTopLevelSession(originalSession, new Date())).toBe(true);
+
+    const { event, context } = makeEventAndContext("3");
+    await runtime.handleEvent(event, bot, context);
+
+    expect(context.responder.respondDiagnostic).not.toHaveBeenCalled();
+    expect(readFileSync(memoryPath, "utf-8")).toBe("shared decision");
+    expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
+    expect(readFileSync(resolveChannelSessionFile(conversationDir), "utf-8")).not.toContain(
+      "old shared decision",
+    );
+  });
+
+  test("keeps the old shared session when automatic session Dream fails", async () => {
+    const runtime = makeRuntime();
+    const originalSession = createManagedSessionFile(
+      getChannelSessionDir(conversationDir),
+      conversationDir,
+    );
+    rewriteSessionTimestamp(originalSession, "2026-01-05T12:00:00.000Z");
+    const runner = {
+      dreamSessionMemory: vi.fn().mockResolvedValue({
+        stopReason: "error",
+        errorMessage: "provider unavailable",
+      }),
+      run: vi.fn().mockResolvedValue({ stopReason: "stop" }),
+      syncChatHistory: vi.fn(),
+      tryExtensionCommand: vi.fn().mockResolvedValue(false),
+      abort: vi.fn(),
+      dispose: vi.fn().mockResolvedValue(undefined),
+      getCurrentStep: vi.fn(),
+    } as unknown as PiAgentWrapper;
+    const state: ConversationRuntimeState = {
+      running: false,
+      runner,
+      stopRequested: false,
+      lastAccessedAt: Date.now(),
+      sessionFile: originalSession,
+      startedAt: 0,
+    };
+    const sessions = (
+      runtime as unknown as {
+        sessions: { set(sessionKey: string, state: ConversationRuntimeState): void };
+      }
+    ).sessions;
+    sessions.set("C123", state);
+
+    const { event, context } = makeEventAndContext("3");
+    await runtime.handleEvent(event, bot, context);
+
+    expect(runner.dreamSessionMemory).toHaveBeenCalledOnce();
+    expect(resolveChannelSessionFile(conversationDir)).toBe(originalSession);
+    expect(runner.run).toHaveBeenCalledOnce();
+  });
+
   test("maintenance failure clears active state and keeps the runner reusable", async () => {
     const runtime = makeRuntime();
     const originalSession = createManagedSessionFile(
@@ -358,7 +451,7 @@ describe("ConversationRuntime lifecycle", () => {
       rejectMaintenance = reject;
     });
     const runner = {
-      maintainMemory: vi.fn(() => maintenanceGate),
+      dreamSessionMemory: vi.fn(() => maintenanceGate),
       run: vi.fn().mockResolvedValue({ stopReason: "stop" }),
       syncChatHistory: vi.fn(),
       tryExtensionCommand: vi.fn().mockResolvedValue(false),
@@ -396,7 +489,7 @@ describe("ConversationRuntime lifecycle", () => {
     expect(runner.run).toHaveBeenCalledOnce();
   });
 
-  test("memory maintenance sees old history and can persist MEMORY.md before reset", async () => {
+  test("session Dream sees old history and can persist MEMORY.md before reset", async () => {
     const { models, faux } = createFauxModels();
     const memoryPath = join(conversationDir, "MEMORY.md");
     faux.setResponses([
@@ -439,7 +532,7 @@ describe("ConversationRuntime lifecycle", () => {
     );
     const responder = makeResponder();
     const runner = {
-      maintainMemory: vi.fn().mockResolvedValue({
+      dreamSessionMemory: vi.fn().mockResolvedValue({
         stopReason: "error",
         errorMessage: "provider unavailable",
       }),

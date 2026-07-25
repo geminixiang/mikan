@@ -198,7 +198,7 @@ describe("PiAgentWrapper.run", () => {
     expect(secondResponder.respondDiagnostic).not.toHaveBeenCalled();
   });
 
-  test("hidden memory maintenance sees the old transcript and writes memory", async () => {
+  test("hidden session Dream sees the old transcript and writes memory", async () => {
     const promptSpy = vi.spyOn(MikanAgentSession.prototype, "prompt");
     const { runner, faux } = await createTestRunner();
     const memoryPath = join(dir, "workspace", "C1", "MEMORY.md");
@@ -227,13 +227,15 @@ describe("PiAgentWrapper.run", () => {
     );
     const visibleCallsBeforeMaintenance = setupResponder.replaceResponse.mock.calls.length;
 
-    const result = await runner.maintainMemory(
+    const result = await runner.dreamSessionMemory(
       makeMessage({ id: "memory:C1", conversationKind: "direct", text: "/new" }),
       platform,
     );
 
     expect(result).toEqual({ stopReason: "stop", errorMessage: undefined });
     expect(maintenancePrompt).toContain("preserve only durable information");
+    expect(maintenancePrompt).toContain("update only the conversation-specific MEMORY.md");
+    expect(maintenancePrompt).toContain("Do not modify the workspace-level global MEMORY.md");
     expect(maintenancePrompt).toContain("Preserve the concrete values and details needed");
     expect(maintenancePrompt).toContain("exact content is worth preserving");
     expect(promptSpy.mock.calls.at(-1)?.[1]).toMatchObject({
@@ -241,6 +243,29 @@ describe("PiAgentWrapper.run", () => {
     });
     expect(setupResponder.replaceResponse).toHaveBeenCalledTimes(visibleCallsBeforeMaintenance);
     expect(readFileSync(memoryPath, "utf-8")).toBe("Launch decision: use the staged rollout.");
+  });
+
+  test("session Dream cannot write global memory", async () => {
+    const { runner, faux } = await createTestRunner();
+    const globalMemoryPath = join(dir, "workspace", "MEMORY.md");
+    writeFileSync(globalMemoryPath, "global stays unchanged");
+    faux.setResponses([
+      fauxAssistantMessage(
+        fauxToolCall("write", {
+          label: "incorrectly promote memory",
+          path: globalMemoryPath,
+          content: "should not be written",
+        }),
+      ),
+      fauxAssistantMessage("could not update global memory"),
+    ]);
+
+    await runner.dreamSessionMemory(
+      makeMessage({ id: "memory:C1", conversationKind: "direct", text: "/new" }),
+      platform,
+    );
+
+    expect(readFileSync(globalMemoryPath, "utf-8")).toBe("global stays unchanged");
   });
 
   test("empty final text leaves the placeholder untouched", async () => {

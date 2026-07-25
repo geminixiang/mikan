@@ -11,6 +11,7 @@ any release.
 
 ### Changed
 
+- Preserve durable memory before biweekly shared-channel session rotation, using the same conversation-scoped maintenance path as `/new`; maintenance cannot modify workspace-global `MEMORY.md`, and failures keep the current session active.
 - Gondolin runtimes now run in the mikan process instead of a detached worker process per conversation. Runtimes no longer survive a mikan restart: a restart or deploy starts cold, and the first command for each conversation boots a fresh VM. Shutdown closes every VM so projected files (such as `MEMORY.md`) sync back first.
 - `configureGondolinRuntime` no longer takes `stateDir`; the runtime inventory under `<state-dir>/gondolin-runtimes/` is gone, along with the worker heartbeat.
 

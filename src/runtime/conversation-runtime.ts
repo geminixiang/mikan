@@ -24,6 +24,8 @@ import {
   hasMaterializedChatSession,
   waitForThreadSessionBootstrap,
 } from "../sessions/chat-history-sync.js";
+import { shouldRotateTopLevelSession } from "../sessions/rotation.js";
+import { resolveChannelSessionFile } from "../sessions/store.js";
 import {
   assertSessionKeyBelongsToConversation,
   deriveSessionKey,
@@ -84,7 +86,7 @@ export function createConversationRuntime(
 class ConversationRuntimeImpl implements ConversationRuntime {
   private readonly sessions = new SessionLifecycle();
   private readonly inFlightRuns = new Set<Promise<void>>();
-  private readonly memoryMaintenanceSettlements = new Set<Promise<void>>();
+  private readonly sessionDreamSettlements = new Set<Promise<void>>();
   private readonly chatSessionManager = new ChatHistorySync();
   private readonly commandServices: CommandServices;
   private readonly commandHandlers: readonly CommandHandler[];
@@ -159,7 +161,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     const activeState = this.sessions.get(sessionKey);
     if (activeState?.running) {
       const activeSettlement = activeState.runSettlement;
-      if (activeSettlement && this.memoryMaintenanceSettlements.has(activeSettlement)) {
+      if (activeSettlement && this.sessionDreamSettlements.has(activeSettlement)) {
         await activeSettlement;
         return;
       }
@@ -175,7 +177,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     });
     if (state.running) {
       const activeSettlement = state.runSettlement;
-      if (activeSettlement && this.memoryMaintenanceSettlements.has(activeSettlement)) {
+      if (activeSettlement && this.sessionDreamSettlements.has(activeSettlement)) {
         await activeSettlement;
         return;
       }
@@ -189,22 +191,13 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     state.startedAt = Date.now();
     state.lastActivityAt = Date.now();
 
-    const maintenanceSettlement = Promise.resolve().then(async () => {
+    const dreamSettlement = Promise.resolve().then(async () => {
       let working = false;
       try {
         await responder.setWorking(true);
         working = true;
-        let result: { stopReason: string; errorMessage?: string };
-        try {
-          result = await state.runner.maintainMemory(message, platform);
-        } catch (err) {
-          await responder.respondDiagnostic(
-            `Could not preserve memory, so the current conversation was not reset. ${err instanceof Error ? err.message : String(err)}`,
-            { style: "error" },
-          );
-          return;
-        }
-        if (result.stopReason === "error" || result.stopReason === "blocked") {
+        const result = await this.dreamSessionMemory(state, message, platform);
+        if (!result.success) {
           const detail = result.errorMessage ? ` ${result.errorMessage}` : "";
           await responder.respondDiagnostic(
             `Could not preserve memory, so the current conversation was not reset.${detail}`,
@@ -227,17 +220,68 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       }
     });
 
-    state.runSettlement = maintenanceSettlement;
-    this.memoryMaintenanceSettlements.add(maintenanceSettlement);
-    this.inFlightRuns.add(maintenanceSettlement);
+    state.runSettlement = dreamSettlement;
+    this.sessionDreamSettlements.add(dreamSettlement);
+    this.inFlightRuns.add(dreamSettlement);
     try {
-      await maintenanceSettlement;
+      await dreamSettlement;
     } finally {
-      this.memoryMaintenanceSettlements.delete(maintenanceSettlement);
-      this.inFlightRuns.delete(maintenanceSettlement);
-      if (state.runSettlement === maintenanceSettlement) state.runSettlement = undefined;
+      this.sessionDreamSettlements.delete(dreamSettlement);
+      this.inFlightRuns.delete(dreamSettlement);
+      if (state.runSettlement === dreamSettlement) state.runSettlement = undefined;
       this.sessions.evictIdle();
     }
+  }
+
+  private async dreamSessionMemory(
+    state: ConversationState,
+    message: ConversationContext["message"],
+    platform: ConversationContext["platform"],
+  ): Promise<{ success: boolean; errorMessage?: string }> {
+    try {
+      const result = await state.runner.dreamSessionMemory(message, platform);
+      if (result.stopReason === "error" || result.stopReason === "blocked") {
+        return { success: false, errorMessage: result.errorMessage };
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, errorMessage: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  private async rotateSharedSessionAfterDream(
+    conversationId: string,
+    sessionKey: string,
+    message: ConversationContext["message"],
+    platform: ConversationContext["platform"],
+  ): Promise<void> {
+    if (message.conversationKind !== "shared" || sessionKey !== conversationId) return;
+
+    const conversationDir = join(this.options.workingDir, conversationId);
+    const currentSession = resolveChannelSessionFile(conversationDir);
+    if (!currentSession || !shouldRotateTopLevelSession(currentSession, new Date())) return;
+
+    const state = await this.getOrCreateState({
+      conversationId,
+      sessionKey,
+      conversationKind: message.conversationKind,
+      currentMessageId: message.id,
+    });
+    const result = await this.dreamSessionMemory(state, message, platform);
+    if (!result.success) {
+      const detail = result.errorMessage ? `: ${result.errorMessage}` : "";
+      log.logWarning(`[${conversationId}] Automatic Session Dream failed${detail}`);
+      return;
+    }
+
+    const runtimeCwd = runtimeCwdForSandbox(
+      this.options.sandbox,
+      this.options.workingDir,
+      conversationId,
+    );
+    this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
+    this.sessions.discard(sessionKey);
+    log.logInfo(`[${conversationId}] Session Dream completed; rotated session: ${sessionKey}`);
   }
 
   private async resetSession(
@@ -345,6 +389,13 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         `[${conversationId}] Delayed thread bootstrap until parent session sealed: ${sessionKey}`,
       );
     }
+
+    await this.rotateSharedSessionAfterDream(
+      conversationId,
+      sessionKey,
+      context.message,
+      context.platform,
+    );
 
     let state: ConversationState;
     try {
@@ -584,7 +635,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       sessionKey,
       cwd: runtimeCwd,
       currentMessageId,
-      rotateTopLevelSession: options.conversationKind === "shared" && sessionKey === conversationId,
+      rotateTopLevelSession: false,
     });
 
     if (existing && existing.sessionFile === sessionScope.contextFile) {

@@ -272,8 +272,8 @@ export interface PiAgentWrapper {
     responder: ConversationResponder,
     platform: MessagingInfo,
   ): Promise<{ stopReason: string; errorMessage?: string }>;
-  /** Run a hidden maintenance turn against the current session before resetting it. */
-  maintainMemory(
+  /** Run a hidden Session Dream against the current session before resetting or rotating it. */
+  dreamSessionMemory(
     message: ConversationMessage,
     platform: MessagingInfo,
   ): Promise<{ stopReason: string; errorMessage?: string }>;
