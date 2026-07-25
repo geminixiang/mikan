@@ -14,6 +14,11 @@
 - **Session suffix**: The opaque platform thread, reply-root, or message identity after the session-key separator. It may distinguish scoped sessions but is never a separate conversation identity; path-dangerous values are invalid.
 - **Scheduled event**: A JSON file in the workspace `events/` directory (the workspace scheduling bus) that triggers an autonomous agent run — immediate, one-shot (`at`), or periodic (`schedule` + `timezone`). The event-format module (`src/harness/event-format.ts`) is the single owner of the file format: schema, payload union, parser, builder, and per-type field rules. Every reader and writer (the events watcher, the `event` tool, the extension schedule API) goes through it.
 
+## Execution surfaces
+
+- **Sandbox runtime**: The machine a conversation's tool commands run on — the agent's computer. It receives a workspace projection and keeps it across turns, so what one turn writes the next turn still sees. Every `--sandbox=` mode is one. _Avoid_: treating isolation as the defining property — a persistent workspace is. An execution surface that cannot hold a workspace projection is a task executor, not a sandbox runtime.
+- **Task executor**: An ephemeral, workspace-less execution surface that the agent or an extension calls as a tool — one command in, its output back, nothing kept. Suited to parallel fan-out and dynamic workflows. Never receives a workspace projection, so nothing it writes survives the call.
+
 ## Workspace & storage
 
 - **Workspace**: One mikan deployment's shared agent world — its memory, skills, scheduled events, and conversations, as a single logical entity. A workspace is one trust domain: everything inside it may see and schedule everything else. _Avoid_: using bare "workspace" for any specific filesystem path — distinguish the host workspace root from the runtime workspace root.
