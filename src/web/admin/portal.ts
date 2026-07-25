@@ -13,6 +13,13 @@ import {
   type SandboxSettings,
 } from "../../config.js";
 import { applyConversationSettings, applyGlobalSettings } from "../../settings-mutation.js";
+import { effectiveStateDir } from "../../cli/arg-grammar.js";
+import {
+  addPackage,
+  inspectConversationPackages,
+  refreshPackage,
+  removePackage,
+} from "../../packages/index.js";
 import { escapeHtml } from "../../utils/html.js";
 import { readRawBody } from "../../utils/http-body.js";
 import { renderPortalShell } from "../portal-shell.js";
@@ -122,6 +129,10 @@ async function routeApiRequest(
       serveSkillFile(res, url, services, token);
       return;
     }
+    if (url.pathname === "/admin/api/packages") {
+      await servePackagesList(res, url, services, token);
+      return;
+    }
     if (url.pathname === "/admin/api/events") {
       await serveEventsList(res, services);
       return;
@@ -178,6 +189,10 @@ async function routeApiRequest(
   }
   if (url.pathname === "/admin/api/conversations/events/delete") {
     await serveConversationEventDelete(res, body, services, token);
+    return;
+  }
+  if (url.pathname === "/admin/api/packages/mutate") {
+    servePackageMutation(res, body, services, token);
     return;
   }
   if (url.pathname === "/admin/api/settings/model") {
@@ -1279,6 +1294,90 @@ export function readSkillsFromDir(skillsDir: string, source: SkillEntry["source"
   return out.toSorted((a, b) => a.name.localeCompare(b.name));
 }
 
+/** Inventory of both scopes' declared packages for the selected conversation. */
+async function servePackagesList(
+  res: ServerResponse,
+  url: URL,
+  services: AdminServices,
+  token: AdminToken,
+): Promise<void> {
+  const scope = resolveConversationFromQuery(url, token);
+  if (scope.error) {
+    jsonRes(res, 403, { error: scope.error });
+    return;
+  }
+  const workingDir = requireAdminWorkingDir(res, services);
+  if (!workingDir) return;
+  try {
+    const inventory = await inspectConversationPackages({
+      conversationId: scope.conversationId,
+      stateDir: effectiveStateDir(),
+      conversationDir: join(workingDir, scope.conversationId),
+    });
+    jsonRes(res, 200, { conversationId: scope.conversationId, ...inventory });
+  } catch (err) {
+    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+/**
+ * Add / remove / refresh, in one route because they share validation and all
+ * three answer with the freshly re-read inventory: the panel never has to
+ * guess what the write did.
+ */
+function servePackageMutation(
+  res: ServerResponse,
+  body: Record<string, unknown>,
+  services: AdminServices,
+  token: AdminToken,
+): void {
+  const action = body.action;
+  if (action !== "add" && action !== "remove" && action !== "refresh") {
+    jsonRes(res, 400, { error: "action must be 'add', 'remove', or 'refresh'" });
+    return;
+  }
+  const packageScope = body.scope === "global" ? "global" : "conversation";
+  const source = typeof body.source === "string" ? body.source.trim() : "";
+  if (!source) {
+    jsonRes(res, 400, { error: "source is required" });
+    return;
+  }
+  const scope = resolveTargetConversation(body, token);
+  if (scope.error) {
+    jsonRes(res, 403, { error: scope.error });
+    return;
+  }
+  const workingDir = requireAdminWorkingDir(res, services);
+  if (!workingDir) return;
+
+  const context = {
+    conversationId: scope.conversationId,
+    stateDir: effectiveStateDir(),
+    conversationDir: join(workingDir, scope.conversationId),
+    workingDir,
+    runtime: services.runtime,
+  };
+
+  try {
+    if (action === "add") {
+      const result = addPackage(packageScope, source, context);
+      jsonRes(res, 200, { ok: true, source: result.source, dir: result.dir });
+      return;
+    }
+    if (action === "refresh") {
+      const result = refreshPackage(packageScope, source, context);
+      jsonRes(res, 200, { ok: true, source: result.source, dir: result.dir });
+      return;
+    }
+    const removed = removePackage(packageScope, source, context);
+    jsonRes(res, removed ? 200 : 404, removed ? { ok: true } : { error: "Not declared here." });
+  } catch (err) {
+    // Fetch/validation failures are the admin's problem to fix, not a server
+    // fault: report them as a bad request with git's own message.
+    jsonRes(res, 400, { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
 function serveSkillsList(
   res: ServerResponse,
   url: URL,
@@ -1570,6 +1669,25 @@ function renderAdminPage(token: AdminToken): string {
         </div>
       </section>
 
+      <section class="card sect" id="sect-packages" data-section="packages">
+        <header class="sect-head">
+          <div>
+            <p class="eyebrow">Extensions</p>
+            <h2 class="card-title">此對話的 extension 套件</h2>
+          </div>
+          <button class="refresh-btn" onclick="loadPackages()">↻</button>
+        </header>
+        <div class="pkg-add">
+          <input id="pkg-conv-url" class="pkg-input" type="text" spellcheck="false"
+            placeholder="github:owner/repo 或 https://github.com/owner/repo.git" />
+          <input id="pkg-conv-ref" class="pkg-input pkg-input-ref" type="text" spellcheck="false"
+            placeholder="tag / branch / commit（可留空）" />
+          <button class="primary-action-btn" onclick="addPackage('conversation')">Add</button>
+        </div>
+        <div id="pkg-conv-msg" class="pkg-msg" style="display:none"></div>
+        <div id="pkg-conv-content"><div class="loading-msg">Loading…</div></div>
+      </section>
+
       <section class="card sect" id="sect-vault" data-section="vault">
         <header class="sect-head">
           <div>
@@ -1645,6 +1763,25 @@ function renderAdminPage(token: AdminToken): string {
           <button class="refresh-btn" onclick="loadGlobalSettings()">↻</button>
         </header>
         <div id="global-settings-content"><div class="loading-msg">Loading…</div></div>
+      </section>
+
+      <section class="card sect">
+        <header class="sect-head">
+          <div>
+            <p class="eyebrow">Global Extensions</p>
+            <h2 class="card-title">所有對話都會載入的 extension 套件</h2>
+          </div>
+          <button class="refresh-btn" onclick="loadPackages()">↻</button>
+        </header>
+        <div class="pkg-add">
+          <input id="pkg-global-url" class="pkg-input" type="text" spellcheck="false"
+            placeholder="github:owner/repo 或 https://github.com/owner/repo.git" />
+          <input id="pkg-global-ref" class="pkg-input pkg-input-ref" type="text" spellcheck="false"
+            placeholder="tag / branch / commit（可留空）" />
+          <button class="primary-action-btn" onclick="addPackage('global')">Add</button>
+        </div>
+        <div id="pkg-global-msg" class="pkg-msg" style="display:none"></div>
+        <div id="pkg-global-content"><div class="loading-msg">Loading…</div></div>
       </section>
 
       <section class="card sect">
@@ -1799,6 +1936,7 @@ function renderAdminPage(token: AdminToken): string {
       loadSettings();
       loadWorkspace();
       loadSkills();
+      loadPackages();
       loadConversationEvents();
       openLogin(true);
       openSessionView(true);
@@ -2002,6 +2140,101 @@ function renderAdminPage(token: AdminToken): string {
     }
 
     // ── Skills ───────────────────────────────────────────────────────────────────
+
+    function packageMessage(scope, text, kind) {
+      const el = document.getElementById(scope === 'global' ? 'pkg-global-msg' : 'pkg-conv-msg');
+      if (!text) { el.style.display = 'none'; return; }
+      el.className = 'pkg-msg pkg-msg-' + kind;
+      el.textContent = text;
+      el.style.display = 'block';
+    }
+
+    function renderPackageList(container, rows, scope) {
+      if (rows.length === 0) {
+        container.innerHTML = '<div class="empty-state">尚未加入任何套件</div>';
+        return;
+      }
+      container.innerHTML = '<div class="pkg-list">' + rows.map((p) => {
+        const provides = []
+          .concat(p.extensions.map((s) => 'ext: ' + s))
+          .concat(p.skills.map((s) => 'skill: ' + s));
+        const status = p.error
+          ? '<span class="pkg-badge pkg-badge-err">' + escHtml(p.error) + '</span>'
+          : p.shadowed
+            ? '<span class="pkg-badge pkg-badge-warn">被此對話的同名套件覆蓋，不會載入</span>'
+            : '<span class="pkg-badge pkg-badge-ok">ready</span>';
+        return '<div class="pkg-row">' +
+          '<div class="pkg-row-main">' +
+            '<code class="pkg-source">' + escHtml(p.source) + '</code>' + status +
+          '</div>' +
+          (provides.length > 0
+            ? '<div class="pkg-provides">' + provides.map((t) => '<span class="pkg-chip">' + escHtml(t) + '</span>').join('') + '</div>'
+            : '<div class="pkg-provides pkg-provides-empty">此套件沒有提供 extension 或 skill</div>') +
+          '<div class="pkg-actions">' +
+            '<button class="pkg-btn" data-pkg-action="refresh" data-pkg-scope="' + scope + '" data-pkg-source="' + escAttr(p.source) + '">Update</button>' +
+            '<button class="pkg-btn pkg-btn-danger" data-pkg-action="remove" data-pkg-scope="' + scope + '" data-pkg-source="' + escAttr(p.source) + '">Remove</button>' +
+          '</div>' +
+        '</div>';
+      }).join('') + '</div>';
+    }
+
+    async function loadPackages() {
+      const convEl = document.getElementById('pkg-conv-content');
+      const globalEl = document.getElementById('pkg-global-content');
+      if (convEl) convEl.innerHTML = '<div class="loading-msg">Loading…</div>';
+      if (globalEl) globalEl.innerHTML = '<div class="loading-msg">Loading…</div>';
+      try {
+        const data = await apiGet('/admin/api/packages?conversationId=' + encodeURIComponent(activeConversationId));
+        if (convEl) renderPackageList(convEl, data.conversation, 'conversation');
+        if (globalEl) renderPackageList(globalEl, data.global, 'global');
+      } catch (err) {
+        if (convEl) convEl.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
+        if (globalEl) globalEl.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
+      }
+    }
+
+    async function mutatePackage(scope, action, source) {
+      packageMessage(scope, action === 'remove' ? '移除中…' : '取得中…', 'busy');
+      try {
+        const result = await apiPost('/admin/api/packages/mutate', {
+          action: action,
+          scope: scope,
+          source: source,
+          conversationId: activeConversationId,
+        });
+        packageMessage(
+          scope,
+          action === 'remove'
+            ? '已移除。對話輸入 /pi-new 生效。'
+            : '完成：' + result.source + '（對話輸入 /pi-new 生效）',
+          'ok',
+        );
+        await loadPackages();
+      } catch (err) {
+        // Fetch and validation failures land here, next to the input that
+        // caused them, rather than turning into a silently missing feature.
+        packageMessage(scope, err.message, 'err');
+      }
+    }
+
+    async function addPackage(scope) {
+      const urlEl = document.getElementById(scope === 'global' ? 'pkg-global-url' : 'pkg-conv-url');
+      const refEl = document.getElementById(scope === 'global' ? 'pkg-global-ref' : 'pkg-conv-ref');
+      const url = urlEl.value.trim();
+      const ref = refEl.value.trim();
+      if (!url) { packageMessage(scope, '請填入 git URL', 'err'); return; }
+      // Assembled here so nobody has to hand-write the @ref form, whose
+      // ambiguity with git@host:owner/repo is the one sharp edge in the syntax.
+      await mutatePackage(scope, 'add', ref ? url + '@' + ref : url);
+      urlEl.value = '';
+      refEl.value = '';
+    }
+
+    document.addEventListener('click', (event) => {
+      const btn = event.target.closest('[data-pkg-action]');
+      if (!btn) return;
+      void mutatePackage(btn.dataset.pkgScope, btn.dataset.pkgAction, btn.dataset.pkgSource);
+    });
 
     async function loadSkills() {
       const container = document.getElementById('skills-content');
@@ -2490,6 +2723,7 @@ function renderAdminPage(token: AdminToken): string {
       loadSettings();
       loadWorkspace();
       loadSkills();
+      loadPackages();
       loadConversationEvents();
     });
   `;
@@ -2675,6 +2909,54 @@ const adminViewStyles = `
   .skill-source-global { background: rgba(59,130,246,0.1); color: #1d4ed8; }
   .skill-source-conversation { background: rgba(217,119,6,0.1); color: var(--accent); }
   .skill-desc { color: var(--muted); font-size: 0.82rem; margin-top: 4px; line-height: 1.5; }
+
+  /* ── Packages ───────────────────────────────────────────────────────── */
+
+  .pkg-add { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .pkg-input {
+    flex: 1 1 240px; min-width: 0; padding: 8px 10px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--card);
+    font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 0.8rem; color: var(--text);
+  }
+  .pkg-input-ref { flex: 0 1 200px; }
+  .pkg-msg {
+    padding: 8px 12px; border-radius: 8px; margin-bottom: 12px;
+    font-size: 0.82rem; line-height: 1.5; word-break: break-word;
+  }
+  .pkg-msg-ok { background: rgba(22,163,74,0.1); color: #15803d; }
+  .pkg-msg-err { background: rgba(220,38,38,0.1); color: #b91c1c; }
+  .pkg-msg-busy { background: rgba(0,0,0,0.05); color: var(--muted); }
+  .pkg-list { display: flex; flex-direction: column; gap: 8px; }
+  .pkg-row {
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+    background: rgba(0,0,0,0.02);
+  }
+  .pkg-row-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .pkg-source {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.78rem; color: var(--text); word-break: break-all;
+  }
+  .pkg-badge {
+    padding: 1px 8px; border-radius: 999px; font-size: 0.7rem;
+    font-weight: 600; letter-spacing: 0.03em;
+  }
+  .pkg-badge-ok { background: rgba(22,163,74,0.1); color: #15803d; }
+  .pkg-badge-warn { background: rgba(217,119,6,0.12); color: var(--accent); }
+  .pkg-badge-err { background: rgba(220,38,38,0.1); color: #b91c1c; }
+  .pkg-provides { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .pkg-provides-empty { color: var(--subtle); font-size: 0.78rem; }
+  .pkg-chip {
+    padding: 1px 8px; border-radius: 6px; background: rgba(59,130,246,0.1);
+    color: #1d4ed8; font-size: 0.72rem;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .pkg-actions { margin-top: 8px; display: flex; gap: 8px; }
+  .pkg-btn {
+    padding: 4px 10px; border: 1px solid var(--border); border-radius: 7px;
+    background: var(--card); color: var(--text); font-size: 0.76rem; cursor: pointer;
+  }
+  .pkg-btn:hover { background: rgba(0,0,0,0.05); }
+  .pkg-btn-danger { color: #b91c1c; }
 
   /* ── Events ─────────────────────────────────────────────────────────── */
 

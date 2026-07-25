@@ -20,6 +20,9 @@ vi.mock("@earendil-works/gondolin", () => ({
   RealFSProvider: class {
     constructor(public source: string) {}
   },
+  ReadonlyProvider: class {
+    constructor(public backend: { source: string }) {}
+  },
 }));
 
 import {
@@ -47,7 +50,7 @@ interface VmOptions {
   cpus?: number;
   memory?: string;
   sessionLabel: string;
-  vfs: { mounts: Record<string, { source: string }> };
+  vfs: { mounts: Record<string, { source?: string; constructor: { name: string } }> };
 }
 
 interface FakeVm {
@@ -519,6 +522,55 @@ describe("Gondolin lifecycle", () => {
     expect(vms[0].guestFiles.get("/root/.config/gws/credentials.json")?.toString()).toBe("{token}");
     // the credential is projected owner-only and never synced back
     expect(vms[0].guestExecs).toEqual(["chmod 600 '/root/.config/gws/credentials.json'"]);
+  });
+
+  test("wraps a read-only mount in ReadonlyProvider and leaves the rest writable", async () => {
+    const scoped = join(workspaceHost, "C123");
+    mkdirSync(scoped, { recursive: true });
+    const packageSkills = join(dir, "pkg-skills");
+    mkdirSync(packageSkills, { recursive: true });
+
+    const executor = new GondolinExecutor({
+      type: "gondolin",
+      profile: "default",
+      instanceId: "readonly",
+      workspacePath: workspaceHost,
+      mounts: [
+        { source: scoped, target: "/workspace/C123" },
+        { source: packageSkills, target: "/mikan/packages/example/skills", readOnly: true },
+      ],
+    });
+    await executor.exec("pwd");
+
+    const mounts = vms[0].options.vfs.mounts;
+    expect(mounts["/mikan/packages/example/skills"].constructor.name).toBe("ReadonlyProvider");
+    // The agent's own conversation directory must stay writable.
+    expect(mounts["/workspace/C123"].constructor.name).toBe("RealFSProvider");
+  });
+
+  test("a read-only flag flip recreates the runtime", async () => {
+    const packageSkills = join(dir, "pkg-skills");
+    mkdirSync(packageSkills, { recursive: true });
+    const base = {
+      type: "gondolin" as const,
+      profile: "default" as const,
+      instanceId: "readonly-drift",
+      workspacePath: workspaceHost,
+    };
+    const readOnly = new GondolinExecutor({
+      ...base,
+      mounts: [{ source: packageSkills, target: "/mikan/packages/example/skills", readOnly: true }],
+    });
+    const writable = new GondolinExecutor({
+      ...base,
+      mounts: [{ source: packageSkills, target: "/mikan/packages/example/skills" }],
+    });
+
+    await readOnly.exec("pwd");
+    await writable.exec("pwd");
+
+    expect(vms).toHaveLength(2);
+    expect(vms[0].closed).toBe(true);
   });
 
   test("syncs workspace file edits back to the host while the VM runs", async () => {

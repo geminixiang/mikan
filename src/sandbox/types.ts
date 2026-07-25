@@ -26,7 +26,7 @@ export interface GondolinSandboxConfig {
   /** Local-only runtime details supplied after actor/workspace resolution. */
   image?: string;
   workspacePath?: string;
-  mounts?: Array<{ source: string; target: string }>;
+  mounts?: Array<{ source: string; target: string; readOnly?: boolean }>;
   instanceId?: string;
   resourceKey?: string;
 }

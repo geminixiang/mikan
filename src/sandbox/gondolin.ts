@@ -61,10 +61,18 @@ interface GondolinSession {
   idleWaiters: Array<() => void>;
 }
 
+/** A host directory or file offered to the guest. */
+interface GondolinMount {
+  source: string;
+  target: string;
+  /** Mounted through `ReadonlyProvider`; host-owned content the agent must not edit. */
+  readOnly?: boolean;
+}
+
 interface GondolinDesiredRuntime {
   image: string;
   imageIdentity: string;
-  mounts: Array<{ source: string; target: string }>;
+  mounts: GondolinMount[];
   /** Content identity of projected credential files (rotation → drift). */
   credentialIdentity: Record<string, string>;
   limits?: ResourceLimits;
@@ -227,9 +235,7 @@ async function resolveDesiredRuntime(
  * excluded: the guest writes them back, which would drift the runtime it runs
  * in.
  */
-function credentialIdentity(
-  mounts: Array<{ source: string; target: string }>,
-): Record<string, string> {
+function credentialIdentity(mounts: GondolinMount[]): Record<string, string> {
   const identity: Record<string, string> = {};
   for (const mount of mounts) {
     if (mount.target.startsWith("/workspace/") || mount.target === "/workspace") continue;
@@ -272,11 +278,11 @@ function sha256(data: Buffer): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
-function partitionMounts(mounts: Array<{ source: string; target: string }>): {
-  directories: Array<{ source: string; target: string }>;
+function partitionMounts(mounts: GondolinMount[]): {
+  directories: GondolinMount[];
   files: FileProjection[];
 } {
-  const directories: Array<{ source: string; target: string }> = [];
+  const directories: GondolinMount[] = [];
   const files: FileProjection[] = [];
   for (const mount of mounts) {
     let isDirectory: boolean;
@@ -341,7 +347,7 @@ class GondolinRuntime {
     instanceId: string,
     desired: GondolinDesiredRuntime,
   ): Promise<GondolinRuntime> {
-    const { VM, RealFSProvider, findSession } =
+    const { VM, RealFSProvider, ReadonlyProvider, findSession } =
       (await import("@earendil-works/gondolin")) as GondolinModule;
     const { directories, files } = partitionMounts(desired.mounts);
     const vm = await VM.create({
@@ -352,7 +358,14 @@ class GondolinRuntime {
       memory: desired.limits?.memory,
       vfs: {
         mounts: Object.fromEntries(
-          directories.map(({ source, target }) => [target, new RealFSProvider(source)]),
+          directories.map(({ source, target, readOnly }) => [
+            target,
+            // ReadonlyProvider blocks every write operation on the backing
+            // provider — gondolin's own answer to read-only host directories.
+            readOnly
+              ? new ReadonlyProvider(new RealFSProvider(source))
+              : new RealFSProvider(source),
+          ]),
         ),
       },
     });

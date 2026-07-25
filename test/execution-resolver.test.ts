@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -17,7 +17,10 @@ describe("readConversationWorkspaceMountMode", () => {
   let workspaceDir: string;
 
   beforeEach(() => {
-    stateDir = join(tmpdir(), `mikan-execution-resolver-${Date.now()}`);
+    // mkdtemp, not Date.now(): two tests entering the same millisecond would
+    // otherwise share a state dir, and one's cleanup would race the other's
+    // setup (ENOTEMPTY).
+    stateDir = mkdtempSync(join(tmpdir(), "mikan-execution-resolver-"));
     workspaceDir = join(stateDir, "workspace");
     mkdirSync(workspaceDir, { recursive: true });
     process.env.MIKAN_STATE_DIR = stateDir;

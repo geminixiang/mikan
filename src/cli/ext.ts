@@ -19,6 +19,7 @@ import {
   validateExtension,
 } from "../harness/index.js";
 import { resolveStateDir, takeValueFlag } from "./arg-grammar.js";
+import { runExtDevCommand } from "./ext-dev.js";
 import { parseGitSource, resolveGitSource } from "./ext-git.js";
 
 interface ExtArgs {
@@ -63,6 +64,9 @@ function scopeExtensionsDir(args: ExtArgs): string {
 }
 
 const USAGE = `Usage:
+  mikan ext dev <path> [--workspace <dir>] [--state-dir <dir>]
+      Run an extension in a local stdin/stdout conversation — no Slack, no
+      install. Edit, send /pi-new, test again.
   mikan ext install <source> (--global | --conversation <id>) [--state-dir <dir>]
       <source>: a local path, or a git URL / github:owner/repo with optional #subpath
       e.g. github:geminixiang/mikan#examples/extensions/agent-pm
@@ -77,6 +81,9 @@ export async function runExtCommand(argv: string[]): Promise<number> {
   const args = parseExtArgs(argv);
 
   switch (args.action) {
+    case "dev":
+      // Parsed by the dev command itself: it takes different flags.
+      return runExtDevCommand(argv.slice(1));
     case "validate":
       return validateAction(args);
     case "install":

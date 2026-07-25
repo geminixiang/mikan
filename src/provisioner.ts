@@ -279,7 +279,10 @@ export class DockerContainerManager {
   }
 
   private toBindSpec(mount: ContainerMount): string {
-    return `${mount.source}:${mount.target}`;
+    // The `:ro` suffix is part of the bind spec, so it also flows into
+    // expectedBinds/mountSignature — flipping a mount's writability is drift
+    // and recreates the container rather than leaving a stale writable bind.
+    return `${mount.source}:${mount.target}${mount.readOnly ? ":ro" : ""}`;
   }
 
   private async runContainer(

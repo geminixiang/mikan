@@ -62,6 +62,21 @@ Rules enforced in code:
 Full mode (per-conversation, admin/`/sandbox full`) mounts the entire working
 directory at `/workspace` instead.
 
+### Mounted read-only into the container
+
+| Mount                                                         | Purpose                     |
+| ------------------------------------------------------------- | --------------------------- |
+| `<scope>/git/<repo>/skills` → `/mikan/packages/<slug>/skills` | skills shipped by a package |
+
+Package skills are the one thing the agent can see but not write. The host
+owns those files — the directory is a git checkout that an update replaces
+wholesale — so an agent edit would be silently discarded on the next refresh;
+`ContainerMount.readOnly` makes the filesystem refuse it instead (docker
+`:ro`, gondolin `ReadonlyProvider`). They mount **outside** `/workspace`
+because in full mode `/workspace` is the whole working directory and a
+`/workspace/packages` target would shadow a real `packages/` directory.
+See `src/packages/README.md`.
+
 Consequences to keep in mind:
 
 - **Session files are agent-writable.** A corrupted session header makes
