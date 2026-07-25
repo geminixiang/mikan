@@ -1,4 +1,6 @@
-node_modules/
+# No trailing slash: a `node_modules` symlink (worktrees sometimes get one)
+# is not a directory and would otherwise be committable.
+node_modules
 dist/
 site-dist/
 .astro/
@@ -21,4 +23,6 @@ vaults/*/
 .pi/subagent-schedules/
 .pi/subagents.json
 
-ecosystem.config.cjs
+# Anchored: the deployment template at deploy/pm2/ecosystem.config.cjs is
+# tracked, and an unanchored pattern matches it at every depth.
+/ecosystem.config.cjs
