@@ -42,10 +42,19 @@ session key 一律只屬於單一對話。平台 adapter 可以提供 scoped key
 
 </FileTree>
 
-## Bootstrap、rotation 與重設
+## Bootstrap、rotation、重設與 Session Dream
 
-新的 scoped session 最多會以過去 14 天內、符合條件的 200 則平台訊息初始化。Top-level sessions 每兩週輪替一次。輪替會變更使用中的 structured context file，但不會刪除舊的 JSONL 檔案。
+新的 scoped session 最多會以過去 14 天內、符合條件的 200 則平台訊息初始化。Shared channel 的 top-level session 以每兩週一次的星期日邊界輪替。Rotation 採 lazy 機制而非 cron：跨過邊界後，第一則符合條件的訊息抵達時，mikan 才會檢查目前 session 的 timestamp。
+
+在 `/new` 重設 private conversation 前，或 biweekly shared-channel rotation 切換 active session 前，mikan 會執行一個隱藏的 **Session Dream**。它會檢視舊 structured transcript，只將值得長期保留的決策、偏好、事實與進行中工作寫入該 conversation 的 `MEMORY.md`。Dream 可以讀取 context，但只能修改 conversation-specific memory file；不能修改 workspace-global `MEMORY.md`，也不能把資訊提升到其他 conversation。
+
+```text
+舊 session → Session Dream → conversation/MEMORY.md → 新 session → 目前訊息
+```
+
+若 Session Dream 失敗或被 blocked，mikan 會保留舊 session，不進行 rotation 或 reset。`/new` 會向使用者回報失敗；自動 rotation 則記錄錯誤、在舊 session 處理目前訊息，並可能在之後的訊息再次嘗試。成功 rotation 會變更使用中的 structured context file，但不會刪除舊的 JSONL 檔案。
 
 <Aside type="tip" title="保留可稽核紀錄">
-  在聊天中使用 `new` / `/new` 重設目前工作階段。除非手動移除，先前的檔案會留在磁碟上供檢查。
+  在 private chat 中使用 `new` / `/new`，會先執行 Dream 再重設目前 session。除非手動移除，先前的
+  session files 會留在磁碟上供檢查。
 </Aside>

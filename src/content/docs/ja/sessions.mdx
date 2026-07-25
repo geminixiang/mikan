@@ -45,11 +45,19 @@ session key は常にちょうど 1 つの会話に属します。プラット�
 
 </FileTree>
 
-## Bootstrap、ローテーション、リセット
+## Bootstrap、ローテーション、リセット、Session Dream
 
-新しい scoped session には、過去 14 日間に該当するプラットフォームメッセージが最大 200 件取り込まれます。Top-level session は隔週の境界でローテーションします。ローテーションにより使用中の構造化 context file は変わりますが、古い JSONL files は削除されません。
+新しい scoped session には、過去 14 日間に該当するプラットフォームメッセージが最大 200 件取り込まれます。Shared channel の top-level session は隔週の日曜日の境界でローテーションします。ローテーションは cron ではなく遅延実行です。境界を越えた後、最初の該当メッセージが届いた時点で、mikan が現在の session timestamp を確認します。
+
+`/new` が private conversation をリセットする前、または隔週の shared-channel rotation が active session を切り替える前に、mikan は非表示の **Session Dream** を実行します。Dream は古い structured transcript を確認し、長期的に残す価値のある決定、設定、事実、進行中の作業だけを、その conversation の `MEMORY.md` に保存します。Dream は context を読めますが、変更できるのは conversation-specific memory file だけです。Workspace-global `MEMORY.md` を変更したり、情報を別の conversation へ昇格させたりすることはできません。
+
+```text
+old session → Session Dream → conversation/MEMORY.md → new session → current message
+```
+
+Session Dream が失敗または block された場合、mikan はローテーションやリセットを行わず、古い session を維持します。`/new` はユーザーへ失敗を通知します。自動ローテーションはエラーを記録し、現在のメッセージを古い session で処理して、後続メッセージで再試行することがあります。ローテーションに成功すると使用中の structured context file は変わりますが、古い JSONL files は削除されません。
 
 <Aside type="tip" title="監査可能な記録を保持">
-  チャットで `new` / `/new`
-  を使うと現在のセッションをリセットできます。手動で削除しない限り、以前のファイルは確認用にディスク上へ残ります。
+  Private chat で `new` / `/new` を使うと、現在の session をリセットする前に Dream
+  が実行されます。手動で削除しない限り、以前の session files は確認用にディスク上へ残ります。
 </Aside>

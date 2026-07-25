@@ -44,11 +44,19 @@ A session key always belongs to exactly one conversation. Platform adapters may 
 
 </FileTree>
 
-## Bootstrap, rotation, and reset
+## Bootstrap, rotation, reset, and Session Dream
 
-A new scoped session is seeded from at most 200 applicable platform messages from the previous 14 days. Top-level sessions rotate on a biweekly boundary. Rotation changes the active structured context file; it does not delete older JSONL files.
+A new scoped session is seeded from at most 200 applicable platform messages from the previous 14 days. Shared top-level channel sessions rotate on biweekly Sunday boundaries. Rotation is lazy rather than cron-driven: mikan checks the current session timestamp when the first applicable message arrives after a boundary.
+
+Before `/new` resets a private conversation, or before a biweekly shared-channel rotation changes the active session, mikan runs a hidden **Session Dream**. It reviews the old structured transcript and preserves only durable decisions, preferences, facts, and ongoing work in that conversation's `MEMORY.md`. The Dream can read context but can modify only the conversation-specific memory file; it cannot modify the workspace-global `MEMORY.md` or promote information into other conversations.
+
+```text
+old session → Session Dream → conversation/MEMORY.md → new session → current message
+```
+
+If Session Dream fails or is blocked, mikan keeps the old session active instead of rotating or resetting it. `/new` reports the failure to the user; automatic rotation logs the failure, handles the message in the old session, and may try again on a later message. A successful rotation changes the active structured context file but does not delete older JSONL files.
 
 <Aside type="tip" title="Keep an audit trail">
-  Use `new` / `/new` in chat to reset the current session. Unless you remove them manually, previous
-  files stay on disk for inspection.
+  Use `new` / `/new` in a private chat to Dream and reset the current session. Unless you remove
+  them manually, previous session files stay on disk for inspection.
 </Aside>
