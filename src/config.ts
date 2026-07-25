@@ -105,6 +105,8 @@ const SettingsFileSchema = Type.Object({
       rules: Type.Optional(Type.Array(Type.String())),
     }),
   ),
+  /** Package sources for this scope; see `src/packages`. */
+  packages: Type.Optional(Type.Array(Type.String())),
 });
 
 type SettingsFileConfig = Static<typeof SettingsFileSchema>;
@@ -145,7 +147,21 @@ function normalizeSettingsConfig(config: SettingsFileConfig): Partial<AgentConfi
     ...(config.sentry?.dsn !== undefined ? { sentryDsn: config.sentry.dsn } : {}),
     ...(config.sandbox !== undefined ? { sandbox: normalizeSandboxSettings(config.sandbox) } : {}),
     ...(config.slack !== undefined ? { slack: config.slack } : {}),
+    ...(config.packages !== undefined ? { packages: normalizePackages(config.packages) } : {}),
   };
+}
+
+/** Drop blank entries and duplicates while preserving the author's order. */
+function normalizePackages(packages: string[]): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const entry of packages) {
+    const trimmed = entry.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    normalized.push(trimmed);
+  }
+  return normalized;
 }
 
 /**
@@ -218,6 +234,7 @@ function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
   const sentryDsn = sentryDsnFrom(fromFile.sentryDsn);
   const sandbox = fromFile.sandbox;
   const slack = fromFile.slack;
+  const packages = fromFile.packages;
 
   return {
     provider,
@@ -226,6 +243,7 @@ function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
     sentryDsn,
     sandbox,
     slack,
+    packages,
   };
 }
 
@@ -295,6 +313,13 @@ export function resolveConversationSettings(conversationDir: string): AgentConfi
     ...globalConfig,
     ...conversationConfig,
     ...(sandbox ? { sandbox } : {}),
+    // Packages are additive across scopes, so the spread above would be wrong
+    // twice over: an unset conversation list would read as the global list
+    // (loading every global package a second time under the conversation
+    // scope), and a set one would read as if it had replaced the global list.
+    // Report only this conversation's entries; resolveConversationPackages
+    // combines the scopes.
+    packages: conversationConfig.packages,
   });
 }
 
@@ -449,6 +474,9 @@ function compactSettingsConfig(config: SettingsFileConfig): SettingsFileConfig {
     ...(hasDefinedValue(config.sandbox) ? { sandbox: config.sandbox } : {}),
     ...(hasDefinedValue(config.autoReply) ? { autoReply: config.autoReply } : {}),
     ...(hasDefinedValue(config.slack) ? { slack: config.slack } : {}),
+    // An empty list is meaningful (the admin removed the last package) and
+    // must survive the round trip, so this checks for the key, not for values.
+    ...(config.packages !== undefined ? { packages: config.packages } : {}),
   };
 }
 
@@ -476,6 +504,9 @@ function patchSettingsConfig(
       ...existing.slack,
       ...config.slack,
     },
+    // The package list is replaced wholesale, not merged: the portal edits it
+    // as a list, and a merge would make removal impossible.
+    ...(config.packages !== undefined ? { packages: normalizePackages(config.packages) } : {}),
   };
   return compactSettingsConfig(patched);
 }

@@ -120,8 +120,20 @@ export function listInstalledExtensions(dirs: string[]): InstalledExtensionInfo[
 }
 
 export interface LoadExtensionsOptions {
-  /** Directories to scan for extensions. Missing directories are skipped. */
+  /**
+   * Directories to scan for extensions, in ascending precedence. Missing
+   * directories are skipped. When two directories contribute the same slug,
+   * the later one wins — that is how a conversation-scoped copy of a package
+   * shadows the global one instead of activating alongside it.
+   */
   dirs: string[];
+  /**
+   * Extension roots to load directly, without scanning for children. Each
+   * path is one extension (a directory with an entrypoint, or a bare file).
+   * Highest precedence, after every scanned directory. This is what
+   * `mikan ext dev` points at a working copy.
+   */
+  roots?: string[];
   context: {
     conversationId: string;
     workspaceDir: string;
@@ -154,6 +166,8 @@ export interface LoadExtensionsResult {
 interface DiscoveredExtension {
   entrypoint: string;
   rootDir: string;
+  /** Derived from rootDir; carried here so dedup and activation cannot disagree. */
+  slug: string;
 }
 
 function discoverExtensionEntrypoints(dir: string): DiscoveredExtension[] {
@@ -181,12 +195,14 @@ function discoverExtensionEntrypoints(dir: string): DiscoveredExtension[] {
     }
     if (stats.isFile() && EXTENSION_FILE_PATTERN.test(name)) {
       // Bare-file form: the file is both entrypoint and (its own) root.
-      found.push({ entrypoint: fullPath, rootDir: fullPath });
+      found.push({ entrypoint: fullPath, rootDir: fullPath, slug: extensionSlug(fullPath) });
       continue;
     }
     if (stats.isDirectory()) {
       const entrypoint = resolveDirectoryEntrypoint(fullPath);
-      if (entrypoint) found.push({ entrypoint, rootDir: fullPath });
+      if (entrypoint) {
+        found.push({ entrypoint, rootDir: fullPath, slug: extensionSlug(fullPath) });
+      }
     }
   }
   return found;
@@ -560,50 +576,104 @@ export async function loadExtensions(
   const skills: MikanSkill[] = [];
   const services = options.services ?? {};
 
-  for (const dir of options.dirs) {
-    for (const { entrypoint, rootDir } of discoverExtensionEntrypoints(dir)) {
-      try {
-        const moduleExports: unknown = await importExtensionModule(entrypoint);
-        const extension = resolveActivate(moduleExports);
-        if (!extension) {
-          errors.push({
-            path: entrypoint,
-            error: "extension must export an activate function (default or named)",
-          });
-          continue;
-        }
-        const slug = extensionSlug(rootDir);
-        const manifest = readManifest(rootDir);
-        const name = manifest.name ?? extension.name ?? slug;
-        const api = buildExtensionApi({
-          name,
-          slug,
-          registry,
-          context: options.context,
-          services,
-        });
-        const disposer = await extension.activate(api);
-        if (typeof disposer === "function") registry.registerDisposer(name, disposer);
-        const extensionSkills = loadExtensionSkills(rootDir, slug);
-        skills.push(...extensionSkills);
-        extensions.push({
-          name,
-          path: entrypoint,
-          slug,
-          version: manifest.version,
-          description: manifest.description,
-          skills: extensionSkills,
-        });
-      } catch (err) {
+  for (const { entrypoint, rootDir, slug } of collectExtensions(options)) {
+    try {
+      const moduleExports: unknown = await importExtensionModule(entrypoint);
+      const extension = resolveActivate(moduleExports);
+      if (!extension) {
         errors.push({
           path: entrypoint,
-          error: err instanceof Error ? err.message : String(err),
+          error: "extension must export an activate function (default or named)",
         });
+        continue;
       }
+      const manifest = readManifest(rootDir);
+      const name = manifest.name ?? extension.name ?? slug;
+      const api = buildExtensionApi({
+        name,
+        slug,
+        registry,
+        context: options.context,
+        services,
+      });
+      const disposer = await extension.activate(api);
+      if (typeof disposer === "function") registry.registerDisposer(name, disposer);
+      const extensionSkills = loadExtensionSkills(rootDir, slug);
+      skills.push(...extensionSkills);
+      extensions.push({
+        name,
+        path: entrypoint,
+        slug,
+        version: manifest.version,
+        description: manifest.description,
+        skills: extensionSkills,
+      });
+    } catch (err) {
+      errors.push({
+        path: entrypoint,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
   return { registry, extensions, errors, skills, dispose: () => registry.dispose() };
+}
+
+/**
+ * Everything to activate, in final order, with at most one entry per slug.
+ *
+ * Deduplication happens here rather than at activation time on purpose. The
+ * slug keys an extension's data dir, secrets, and schedules, so activating two
+ * copies of one extension would have them fight over the same state — and the
+ * registry's first-wins rule for commands would silently pick the opposite
+ * copy from the one that ran its hooks. Resolving to a single winner before
+ * anything is imported keeps those decisions consistent.
+ *
+ * Precedence follows scan order, so the narrowest scope wins: global
+ * directories first, then the conversation's, then explicit roots.
+ */
+function collectExtensions(options: LoadExtensionsOptions): DiscoveredExtension[] {
+  const bySlug = new Map<string, DiscoveredExtension>();
+  const candidates = [
+    ...options.dirs.flatMap(discoverExtensionEntrypoints),
+    ...(options.roots ?? []).flatMap(resolveExtensionRoot),
+  ];
+
+  for (const candidate of candidates) {
+    const shadowed = bySlug.get(candidate.slug);
+    if (shadowed && shadowed.rootDir !== candidate.rootDir) {
+      log.logInfo(
+        `Extension "${candidate.slug}" from ${candidate.rootDir} shadows ${shadowed.rootDir}`,
+      );
+    }
+    bySlug.set(candidate.slug, candidate);
+  }
+  return [...bySlug.values()];
+}
+
+/** Resolve one explicit extension root (directory with an entrypoint, or a bare file). */
+function resolveExtensionRoot(rootDir: string): DiscoveredExtension[] {
+  let stats;
+  try {
+    stats = statSync(rootDir);
+  } catch {
+    log.logWarning(`Extension path does not exist: ${rootDir}`);
+    return [];
+  }
+  if (stats.isFile()) {
+    return EXTENSION_FILE_PATTERN.test(basename(rootDir))
+      ? [{ entrypoint: rootDir, rootDir, slug: extensionSlug(rootDir) }]
+      : [];
+  }
+  const entrypoint = resolveDirectoryEntrypoint(rootDir);
+  if (!entrypoint) {
+    log.logWarning(
+      `No extension entrypoint in ${rootDir}`,
+      "expected an index.{mjs,js,ts,mts} or a package.json with mikan.extensions",
+    );
+    return [];
+  }
+  return [{ entrypoint, rootDir, slug: extensionSlug(rootDir) }];
 }
 
 export interface ExtensionValidation {

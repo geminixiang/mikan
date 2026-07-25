@@ -168,6 +168,58 @@ describe("DockerContainerManager", () => {
     expect(execMock).toHaveBeenNthCalledWith(5, "docker", ["stop", "alice-box"]);
   });
 
+  test("a read-only mount gets the :ro bind suffix", async () => {
+    const execMock = vi
+      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .mockRejectedValueOnce(new Error("No such object"))
+      .mockRejectedValueOnce(new Error("No such network"))
+      .mockResolvedValueOnce({ stdout: "network-id\n" })
+      .mockResolvedValueOnce({ stdout: "new-container-id\n" });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
+
+    await manager.provision("alice", {
+      mounts: [
+        {
+          source: "/state/global/git/example/pkg/skills",
+          target: "/mikan/packages/x/skills",
+          readOnly: true,
+        },
+        { source: "/work/C1", target: "/workspace/C1" },
+      ],
+      conversationId: "C1",
+    });
+
+    const runArgs = execMock.mock.calls[3][1];
+    expect(runArgs).toContain("/state/global/git/example/pkg/skills:/mikan/packages/x/skills:ro");
+    // Read-write mounts keep their two-part spec.
+    expect(runArgs).toContain("/work/C1:/workspace/C1");
+  });
+
+  test("flipping an existing mount to read-only is drift, so the container is recreated", async () => {
+    const mounts = [{ source: "/pkg/skills", target: "/mikan/packages/x/skills", readOnly: true }];
+    // A container created before the mount became read-only reports the
+    // two-part bind; the expected spec now carries :ro, so they disagree.
+    const writableBind = JSON.stringify(["/pkg/skills:/mikan/packages/x/skills"]);
+    const execMock = vi
+      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .mockImplementation(async (_file, args) => {
+        if (args[0] === "inspect" && args[2] === "{{.State.Status}}")
+          return { stdout: "running\n" };
+        if (args[0] === "inspect" && args[2] === "{{json .HostConfig.Binds}}") {
+          return { stdout: writableBind };
+        }
+        return { stdout: "id\n" };
+      });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
+
+    await manager.provision("alice", { mounts, conversationId: "C1" });
+
+    const commands = execMock.mock.calls.map((call) => call[1]);
+    expect(commands.some((args) => args[0] === "rm" && args[1] === "-f")).toBe(true);
+    const runArgs = commands.find((args) => args[0] === "run");
+    expect(runArgs).toContain("/pkg/skills:/mikan/packages/x/skills:ro");
+  });
+
   test("creates the network when docker reports '<name> not found'", async () => {
     const execMock = vi
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()

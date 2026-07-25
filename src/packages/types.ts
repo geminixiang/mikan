@@ -1,0 +1,63 @@
+/**
+ * A package source as written by a human: the string stored in `packages[]`
+ * in global or conversation settings, and the string typed into the admin
+ * portal. Parsing it is {@link parseSource}'s job.
+ */
+export type PackageSourceString = string;
+
+/** Scope a package belongs to. `global` spans every conversation. */
+export type PackageScope = "global" | "conversation";
+
+/**
+ * A git source. `ref` is a tag, branch, or commit — absent means "whatever the
+ * remote's default branch points at now", which only moves on an explicit
+ * update. `subpath` addresses a package inside a larger repository.
+ */
+interface GitSource {
+  type: "git";
+  /** Clone URL handed to `git`, after shorthand expansion. */
+  url: string;
+  ref?: string;
+  subpath?: string;
+}
+
+/**
+ * A directory on the mikan host, used by reference — never copied. Editing the
+ * directory is picked up by the next harness instance, which is what makes
+ * host-side development of an extension bearable.
+ */
+interface LocalSource {
+  type: "local";
+  path: string;
+}
+
+export type ParsedSource = GitSource | LocalSource;
+
+/**
+ * Stable identity of a package, independent of version and of the scope it is
+ * installed in. Two sources with the same identity are the same package, so
+ * the conversation scope's copy can shadow the global one.
+ *
+ * Deliberately excludes the ref: `…/repo@v1` in global and `…/repo@v2` in a
+ * conversation are one package pinned two ways, and the conversation wins.
+ */
+export type PackageIdentity = string;
+
+/** Where a materialized package's files live, plus how it got there. */
+export interface MaterializedPackage {
+  source: PackageSourceString;
+  parsed: ParsedSource;
+  identity: PackageIdentity;
+  /**
+   * Directory holding the package's files. For git this is inside the state
+   * dir (a clone, plus `subpath`); for local it is the referenced path itself.
+   */
+  dir: string;
+  scope: PackageScope;
+}
+
+/** A source that failed to materialize, reported back to whoever asked. */
+export interface PackageError {
+  source: PackageSourceString;
+  message: string;
+}

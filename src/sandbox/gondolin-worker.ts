@@ -106,7 +106,8 @@ export async function runGondolinWorker(
     deps.loadGondolin ?? (() => import("@earendil-works/gondolin") as Promise<GondolinModule>);
 
   gondolinInventory.configure(config.inventoryDir);
-  const { VM, RealFSProvider, findSession, ensureImageSelector } = await loadGondolin();
+  const { VM, RealFSProvider, ReadonlyProvider, findSession, ensureImageSelector } =
+    await loadGondolin();
   let imagePath = config.image;
   if (!imagePath) {
     if (!config.imageSelector) throw new Error("worker config needs image or imageSelector");
@@ -121,7 +122,12 @@ export async function runGondolinWorker(
     memory: config.memory,
     vfs: {
       mounts: Object.fromEntries(
-        directories.map(({ source, target }) => [target, new RealFSProvider(source)]),
+        directories.map(({ source, target, readOnly }) => [
+          target,
+          // ReadonlyProvider blocks every write operation on the backing
+          // provider — gondolin's own answer to read-only host directories.
+          readOnly ? new ReadonlyProvider(new RealFSProvider(source)) : new RealFSProvider(source),
+        ]),
       ),
     },
   });
