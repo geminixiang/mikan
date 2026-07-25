@@ -1,6 +1,5 @@
 import { ContainerExecutor, containerSandboxAdapter } from "./container.js";
 import { FirecrackerExecutor, firecrackerSandboxAdapter } from "./firecracker.js";
-import { CloudflareSandboxExecutor, cloudflareSandboxAdapter } from "./cloudflare.js";
 import { HostExecutor, hostSandboxAdapter } from "./host.js";
 import { imageSandboxAdapter } from "./image.js";
 import { GondolinExecutor, gondolinSandboxAdapter } from "./gondolin.js";
@@ -10,7 +9,6 @@ export { configureGondolinRuntime, type GondolinBootstrapOptions } from "./gondo
 import type { Executor, RuntimePathContext, SandboxAdapter, SandboxConfig } from "./types.js";
 
 export type {
-  CloudflareSandboxConfig,
   ExecOptions,
   ExecResult,
   Executor,
@@ -18,13 +16,7 @@ export type {
   SandboxAdapter,
   SandboxConfig,
 } from "./types.js";
-export {
-  CloudflareSandboxExecutor,
-  ContainerExecutor,
-  FirecrackerExecutor,
-  HostExecutor,
-  GondolinExecutor,
-};
+export { ContainerExecutor, FirecrackerExecutor, HostExecutor, GondolinExecutor };
 export { SandboxError } from "./errors.js";
 
 const sandboxAdapters = [
@@ -33,7 +25,6 @@ const sandboxAdapters = [
   imageSandboxAdapter,
   gondolinSandboxAdapter,
   firecrackerSandboxAdapter,
-  cloudflareSandboxAdapter,
 ] as const;
 const sandboxAdapterByType = new Map(
   sandboxAdapters.map((adapter) => [adapter.type, adapter]),
@@ -65,8 +56,18 @@ export function parseSandboxArg(value: string): SandboxConfig {
     );
   }
 
+  if (value.startsWith("cloudflare:")) {
+    throw new SandboxError(
+      `Error: '${value}' is no longer a sandbox mode. Remote execution is a task executor, not the agent's computer: it never held the workspace, so sessions and files did not survive it.`,
+      [
+        "Pick a sandbox mode that holds the workspace: image:<image-name> or gondolin:default.",
+        "The remote bridge is still available to the agent as the remote_task tool; keep CLOUDFLARE_SANDBOX_URL set to enable it.",
+      ],
+    );
+  }
+
   throw new SandboxError(
-    `Error: Invalid sandbox type '${value}'. Use 'host', 'container:<container-name>', 'image:<image-name>', 'gondolin:default', 'firecracker:<vm-id>:<host-path>', or 'cloudflare:<sandbox-id>'`,
+    `Error: Invalid sandbox type '${value}'. Use 'host', 'container:<container-name>', 'image:<image-name>', 'gondolin:default', or 'firecracker:<vm-id>:<host-path>'`,
   );
 }
 
@@ -80,7 +81,7 @@ export async function validateSandbox(config: SandboxConfig): Promise<void> {
 }
 
 /**
- * Create an executor that runs commands on host, in Docker, in a microVM, in a Firecracker VM, or through a Cloudflare sandbox bridge.
+ * Create an executor that runs commands on host, in Docker, in a microVM, or in a Firecracker VM.
  */
 export function createExecutor(
   config: SandboxConfig,

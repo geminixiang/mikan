@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
-  CloudflareSandboxExecutor,
   ContainerExecutor,
   FirecrackerExecutor,
   HostExecutor,
@@ -72,11 +71,9 @@ describe("parseSandboxArg", () => {
     });
   });
 
-  test("parses cloudflare sandbox", () => {
-    expect(parseSandboxArg("cloudflare:slack-u123")).toEqual({
-      type: "cloudflare",
-      sandboxId: "slack-u123",
-    });
+  test("rejects cloudflare with migration guidance", () => {
+    // Remote execution is a task executor, not a sandbox runtime (ADR 0002).
+    expect(() => parseSandboxArg("cloudflare:slack-u123")).toThrow(/no longer a sandbox mode/);
   });
 
   test("rejects invalid firecracker SSH port", () => {
@@ -140,12 +137,6 @@ describe("createExecutor", () => {
         hostPath: "/home/user/workspace",
       }),
     ).toBeInstanceOf(FirecrackerExecutor);
-  });
-
-  test("creates cloudflare executor", () => {
-    expect(createExecutor({ type: "cloudflare", sandboxId: "shared-prefix" })).toBeInstanceOf(
-      CloudflareSandboxExecutor,
-    );
   });
 });
 
@@ -214,57 +205,5 @@ describe("FirecrackerExecutor", () => {
       "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -p 2222 ubuntu@vm1 sh -c 'pwd'",
       { timeout: 5 },
     );
-  });
-});
-
-describe("CloudflareSandboxExecutor", () => {
-  const originalEnv = { ...process.env };
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-    process.env = { ...originalEnv };
-  });
-
-  test("posts exec requests to the bridge", async () => {
-    process.env.MIKAN_CLOUDFLARE_SANDBOX_URL = "https://sandbox.example";
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      text: async () => JSON.stringify({ stdout: "ok\n", stderr: "", code: 0 }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const executor = new CloudflareSandboxExecutor("slack-u123", { API_TOKEN: "secret" });
-    await expect(executor.exec("pwd", { timeout: 5 })).resolves.toEqual({
-      stdout: "ok\n",
-      stderr: "",
-      code: 0,
-    });
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      new URL("/exec", "https://sandbox.example"),
-      expect.objectContaining({
-        method: "POST",
-        headers: expect.objectContaining({ "content-type": "application/json" }),
-      }),
-    );
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
-      sandboxId: "slack-u123",
-      command: "pwd",
-      timeoutSeconds: 5,
-      cwd: "/workspace",
-      env: { API_TOKEN: "secret" },
-    });
-  });
-
-  test("reports the configured Cloudflare runtime cwd as workspace path", () => {
-    process.env.MIKAN_CLOUDFLARE_SANDBOX_CWD = "/remote/workspace";
-    const executor = new CloudflareSandboxExecutor("slack-u123");
-
-    expect(executor.getWorkspacePath("/host/workspace")).toBe("/remote/workspace");
-    expect(executor.getPathContext("/host/workspace")).toMatchObject({
-      hostWorkspaceRoot: "/host/workspace",
-      runtimeWorkspaceRoot: "/remote/workspace",
-    });
-    expect(executor.getPathContext("/host/workspace").runtimeToHostPath).toBeUndefined();
   });
 });

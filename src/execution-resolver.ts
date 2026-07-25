@@ -17,7 +17,6 @@ import {
   credentialAuthorizationKey,
   legacyExactCredentialAuthorizationKey,
   runtimeResourceKey,
-  scopeCloudflareSandboxId,
 } from "./sandbox/identity.js";
 import {
   resolveWorkspaceProjection,
@@ -98,12 +97,6 @@ export class ActorExecutionResolver {
   }
 
   private resolveSandboxConfig(resourceKey: string, mounts: ContainerMount[]): SandboxConfig {
-    if (this.baseConfig.type === "cloudflare") {
-      return {
-        type: "cloudflare",
-        sandboxId: scopeCloudflareSandboxId(this.baseConfig.sandboxId, resourceKey),
-      };
-    }
     if (this.baseConfig.type === "gondolin") {
       return {
         ...this.baseConfig,

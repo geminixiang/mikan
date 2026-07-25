@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Remote execution is a task executor, not a sandbox runtime
@@ -20,4 +20,8 @@ The trust decision in `allowsAmbientDefaultSharedVault` collapses to `image` alo
 
 `Executor` also stops having to answer `getWorkspacePath` / `getPathContext` for something with no workspace.
 
-Not yet implemented. Two questions block it, and neither is answerable from the code: whether a task executor call gets a throwaway sandbox id (true parallelism, cold start each time) or keeps today's per-conversation sticky id (scratch state across calls, which reintroduces the persistence problem this decision rejects), and whether any deployment currently runs `--sandbox=cloudflare:*` and would fail at startup.
+Implemented as the `remote_task` tool. Each call gets a throwaway `mikan-task-<uuid>` sandbox rather than a per-conversation sticky id: sticky ids would carry scratch state between calls, which is the persistence this decision rejects, and would make a conversation's parallel calls collide. The tool is registered only when `CLOUDFLARE_SANDBOX_URL` is set, so a host without a bridge never advertises it.
+
+The task executor receives **no vault credentials**. The conversation vault belongs to the sandbox runtime; a throwaway remote task gets only what its command carries. Sending a user's credentials to a remote third party is not something to enable by default, and nothing in this decision required it.
+
+`--sandbox=cloudflare:*` is rejected at startup with migration guidance, following the `sandbox.gondolin.remote` precedent. Nothing is lost in the move: the mode never mounted the workspace either, so no deployment's sessions or files lived on the remote side.

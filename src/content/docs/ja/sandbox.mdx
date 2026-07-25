@@ -1,6 +1,6 @@
 ---
 title: Sandbox
-description: mikan が対応する host、container、image、microVM、Firecracker、Cloudflare sandbox モードを比較します。
+description: mikan が対応する host、container、image、microVM、Firecracker sandbox モードを比較します。
 ---
 
 import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
@@ -30,7 +30,6 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 | `image:<image>`                                             | mikan 管理の Docker         | 注入                | generated conversation vault | 現在もっとも推奨される隔離モード。`1 conversation = 1 vault = 1 container`                                                 |
 | `gondolin:default`                                          | ローカルの Gondolin/QEMU VM | 注入                | generated conversation vault | プレビュー。private / full の workspace mount に対応。Node.js >=23.6 と QEMU が必要                                        |
 | `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM              | 注入                | generated conversation vault | Alpha のかなり初期段階。VM は自分で起動し、workspace は VM 内の `/workspace` に mount する必要があります。現時点では非推奨 |
-| `cloudflare:<sandbox-id>`                                   | Cloudflare Worker           | 注入                | generated conversation vault | Experimental。`@cloudflare/sandbox` bridge を自分でデプロイする必要があり、host workspace は自動同期されません             |
 
 ## 各モードのドキュメント
 
@@ -59,27 +58,22 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
   description="自分で起動した Firecracker VM に接続します。"
   href="firecracker/"
 />
-<LinkCard
-  title="Cloudflare sandbox"
-  description="Cloudflare Worker bridge 経由でツールを実行します。"
-  href="cloudflare/"
-/>
 
 ## 機能差分
 
 `image:<image>` <Badge text="推奨" variant="success" /> は現在の主要開発および推奨 sandbox モードです。他のモードはローカル開発、互換、または実験用途として残されており、一部機能は補完されません。
 
-| 機能                                 | `host`       | `container:<name>`  | `image:<image>` | `gondolin:default` | `firecracker:*`     | `cloudflare:*` |
-| ------------------------------------ | ------------ | ------------------- | --------------- | ------------------ | ------------------- | -------------- |
-| command 実行                         | ✅           | ✅                  | ✅              | ✅                 | ✅                  | ✅             |
-| mikan 管理の runtime lifecycle       | 対象外       | ❌                  | ✅              | ✅ worker ホスト   | ❌                  | ❌             |
-| per-conversation container / runtime | ❌           | ❌                  | ✅              | ✅                 | 自分で管理          | bridge 派生 id |
-| per-conversation vault env           | ❌           | ❌                  | ✅              | ✅                 | ✅                  | ✅             |
-| vault file 自動投影 / bind mount     | ❌           | ❌                  | ✅              | ✅                 | ❌                  | ❌             |
-| workspace 自動マウント               | host         | 自分で mount が必要 | ✅              | ✅                 | 自分で mount が必要 | ❌             |
-| private workspace mount mode         | 対象外       | ❌                  | ✅              | ✅                 | ❌                  | ❌             |
-| idle auto-stop / recreate            | 対象外       | ❌                  | ✅              | ✅                 | ❌                  | ❌             |
-| CPU / memory default limits          | ❌           | ❌                  | ✅              | ✅                 | ❌                  | ❌             |
-| `/pi-sandbox boost`                  | ❌           | ❌                  | ✅              | ✅                 | ❌                  | ❌             |
-| agent `sandbox` tool 設定 limits     | ❌           | ❌                  | ✅              | ✅                 | ❌                  | ❌             |
-| 推奨度                               | ローカル開発 | legacy / 互換       | 主流            | preview            | alpha               | experimental   |
+| 機能                                 | `host`       | `container:<name>`  | `image:<image>` | `gondolin:default` | `firecracker:*`     |
+| ------------------------------------ | ------------ | ------------------- | --------------- | ------------------ | ------------------- |
+| command 実行                         | ✅           | ✅                  | ✅              | ✅                 | ✅                  |
+| mikan 管理の runtime lifecycle       | 対象外       | ❌                  | ✅              | ✅ worker ホスト   | ❌                  |
+| per-conversation container / runtime | ❌           | ❌                  | ✅              | ✅                 | 自分で管理          |
+| per-conversation vault env           | ❌           | ❌                  | ✅              | ✅                 | ✅                  |
+| vault file 自動投影 / bind mount     | ❌           | ❌                  | ✅              | ✅                 | ❌                  |
+| workspace 自動マウント               | host         | 自分で mount が必要 | ✅              | ✅                 | 自分で mount が必要 |
+| private workspace mount mode         | 対象外       | ❌                  | ✅              | ✅                 | ❌                  |
+| idle auto-stop / recreate            | 対象外       | ❌                  | ✅              | ✅                 | ❌                  |
+| CPU / memory default limits          | ❌           | ❌                  | ✅              | ✅                 | ❌                  |
+| `/pi-sandbox boost`                  | ❌           | ❌                  | ✅              | ✅                 | ❌                  |
+| agent `sandbox` tool 設定 limits     | ❌           | ❌                  | ✅              | ✅                 | ❌                  |
+| 推奨度                               | ローカル開発 | legacy / 互換       | 主流            | preview            | alpha               |

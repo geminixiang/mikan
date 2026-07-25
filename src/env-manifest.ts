@@ -134,16 +134,16 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
   },
   {
     key: "cloudflare",
-    title: "Cloudflare sandbox",
+    title: "Remote task executor",
     kind: "feature",
-    doc: "For --sandbox=cloudflare:<id> via the bridge worker",
+    doc: "Enables the remote_task tool; the bridge worker runs each call in a throwaway sandbox",
     vars: [
       { name: "CLOUDFLARE_SANDBOX_URL", doc: "Bridge worker URL" },
       { name: "CLOUDFLARE_SANDBOX_TOKEN", secret: true, doc: "Bridge worker auth token" },
       {
         name: "CLOUDFLARE_SANDBOX_CWD",
         deploy: false,
-        doc: "Exec cwd inside the sandbox (default /workspace)",
+        doc: "Working directory for a remote task (default /workspace)",
       },
     ],
   },

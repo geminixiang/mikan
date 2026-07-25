@@ -38,10 +38,6 @@ export function sanitizeIdentitySegment(value: string): string {
   return sanitized || "unknown";
 }
 
-export function scopeCloudflareSandboxId(baseId: string, resourceKey: string): string {
-  return `${baseId}-${resourceKey}`;
-}
-
 function identityKey(kind: "user" | "conversation" | "container", value: string): string {
   const readable = sanitizeIdentitySegment(value).slice(0, 40).replace(/-+$/g, "") || "unknown";
   const hash = createHash("sha256")
