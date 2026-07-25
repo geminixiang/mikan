@@ -3,7 +3,7 @@ import {
   execOverSessionConnect,
   type SessionClient,
   type SessionClientCallbacks,
-} from "../src/sandbox/gondolin-worker-client.js";
+} from "../src/sandbox/gondolin.js";
 
 function stdoutFrame(text: string): Buffer {
   const data = Buffer.from(text);

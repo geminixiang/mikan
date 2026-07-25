@@ -50,13 +50,12 @@ import { SandboxError, validateSandbox } from "./sandbox/index.js";
 import { helpText, resolveBoot, type BootPlan } from "./cli/boot.js";
 import { envReport, noPlatformsMessage, platformIsActive } from "./env-manifest.js";
 import {
-  disconnectAllGondolinRuntimes,
+  configureGondolinRuntime,
   gondolinResources,
+  reconcileGondolinRuntimes,
+  stopAllGondolinRuntimes,
   stopIdleGondolinVms,
-  sweepUnadoptedGondolinWorkers,
 } from "./sandbox/gondolin.js";
-import { configureGondolinRuntime } from "./sandbox/gondolin-bootstrap.js";
-import { gondolinInventory } from "./sandbox/gondolin-inventory.js";
 import { FileVaultManager } from "./vault/index.js";
 import { runExtCommand } from "./cli/ext.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
@@ -299,7 +298,6 @@ const provisioner =
 if (sandbox.type === "gondolin") {
   try {
     configureGondolinRuntime({
-      stateDir,
       limits: sandboxLimits,
       boostLimits: sandboxBoostLimits,
     });
@@ -349,13 +347,11 @@ if (provisioner) {
 }
 
 if (sandbox.type === "gondolin") {
-  gondolinInventory.touchHeartbeat();
-  await gondolinInventory.reconcile();
-  setInterval(() => {
-    gondolinInventory.touchHeartbeat();
-    void stopIdleGondolinVms(MANAGED_SANDBOX_IDLE_TIMEOUT_MS);
-    void sweepUnadoptedGondolinWorkers();
-  }, MANAGED_SANDBOX_IDLE_TIMEOUT_MS).unref();
+  await reconcileGondolinRuntimes();
+  setInterval(
+    () => void stopIdleGondolinVms(MANAGED_SANDBOX_IDLE_TIMEOUT_MS),
+    MANAGED_SANDBOX_IDLE_TIMEOUT_MS,
+  ).unref();
 }
 const botsByPlatform: Record<string, MessagingBot> = {};
 
@@ -675,7 +671,7 @@ eventsWatcher.start();
 async function shutdown(): Promise<void> {
   await handler.shutdown();
   eventsWatcher.stop();
-  await disconnectAllGondolinRuntimes();
+  await stopAllGondolinRuntimes();
   await Sentry.close(5000);
   process.exit(0);
 }

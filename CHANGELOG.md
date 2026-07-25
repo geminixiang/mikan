@@ -9,6 +9,11 @@ any release.
 
 ## [Unreleased]
 
+### Changed
+
+- Gondolin runtimes now run in the mikan process instead of a detached worker process per conversation. Runtimes no longer survive a mikan restart: a restart or deploy starts cold, and the first command for each conversation boots a fresh VM. Shutdown closes every VM so projected files (such as `MEMORY.md`) sync back first.
+- `configureGondolinRuntime` no longer takes `stateDir`; the runtime inventory under `<state-dir>/gondolin-runtimes/` is gone, along with the worker heartbeat.
+
 ## [1.0.0-beta.28]
 
 ### Removed

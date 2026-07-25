@@ -1,14 +1,12 @@
 import { createHash } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { chmodSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import * as log from "../log.js";
 import type { ResourceLimits, SandboxLimitStatus, SandboxResourceController } from "../types.js";
-import { SandboxError } from "./errors.js";
-import { gondolinInventory } from "./gondolin-inventory.js";
-import { isRuntimeGone, isRuntimeInterrupted } from "./gondolin-recovery.js";
-import { gondolinWorkers, type GondolinRuntimeHandle } from "./gondolin-worker-client.js";
-import { createMountedRuntimePathContext } from "./path-context.js";
 import { withRuntimeBootstrap } from "./container.js";
-import { execReadFile, execReadFileBase64, execWriteFile } from "./utils.js";
+import { SandboxError } from "./errors.js";
+import { createMountedRuntimePathContext } from "./path-context.js";
+import { execReadFile, execReadFileBase64, execWriteFile, shellEscape } from "./utils.js";
 import type {
   ExecOptions,
   ExecResult,
@@ -18,10 +16,44 @@ import type {
   SandboxAdapter,
 } from "./types.js";
 
+/**
+ * Single-host Gondolin sandbox: one microVM per conversation, created and
+ * owned by this mikan process.
+ *
+ * Commands do not go through `vm.exec()` — aborting that only rejects the
+ * local promise and leaves the guest process running. They go over Gondolin's
+ * session IPC socket instead, one connection per command, so an abort or
+ * timeout closes the connection and kills the command inside the guest.
+ *
+ * Runtimes die with mikan: Gondolin SIGKILLs its VM runners from a
+ * `process.exit` hook, and shutdown closes them explicitly so projected files
+ * sync back first. A `kill -9` of mikan itself skips both and leaks a runner.
+ */
+
 type GondolinModule = typeof import("@earendil-works/gondolin");
+type GondolinVm = InstanceType<GondolinModule["VM"]>;
+
+const MINIMUM_NODE_VERSION = [23, 6, 0] as const;
+const MIKAN_IMAGE = "mikan-sandbox:latest";
+
+/** Write-back cadence for projected `/workspace` files (e.g. MEMORY.md). */
+const PROJECTION_SYNC_INTERVAL_MS = 2000;
+
+/**
+ * A command may quietly work for a long time, but a session that produces no
+ * frame at all for this long is indistinguishable from one wedged on dead
+ * storage (for example, blocked guest workspace I/O) — kill it and say so
+ * instead of hanging the run.
+ */
+const EXEC_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+
+const sessions = new Map<string, GondolinSession>();
+const transitions = new Map<string, Promise<void>>();
+let activeShutdowns = 0;
+let shutdownGeneration = 0;
 
 interface GondolinSession {
-  runtime: Promise<GondolinRuntimeHandle>;
+  runtime: Promise<GondolinRuntime>;
   fingerprint: string;
   resourceKey?: string;
   activeOperations: number;
@@ -29,21 +61,54 @@ interface GondolinSession {
   idleWaiters: Array<() => void>;
 }
 
+/** A host directory or file offered to the guest. */
+interface GondolinMount {
+  source: string;
+  target: string;
+  /** Mounted through `ReadonlyProvider`; host-owned content the agent must not edit. */
+  readOnly?: boolean;
+}
+
 interface GondolinDesiredRuntime {
   image: string;
   imageIdentity: string;
-  mounts: Array<{ source: string; target: string }>;
+  mounts: GondolinMount[];
   /** Content identity of projected credential files (rotation → drift). */
   credentialIdentity: Record<string, string>;
   limits?: ResourceLimits;
 }
 
-const MINIMUM_NODE_VERSION = [23, 6, 0] as const;
-const MIKAN_IMAGE = "mikan-sandbox:latest";
-const sessions = new Map<string, GondolinSession>();
-const transitions = new Map<string, Promise<void>>();
-let activeShutdowns = 0;
-let shutdownGeneration = 0;
+/**
+ * A single-file mount handled outside the VFS: Gondolin's guest prepares every
+ * VFS mount point with `mkdir -p`, so a file target can never bind (the guest
+ * ends up bind-mounting a file onto a directory and the VM refuses to start).
+ * Files are copied in after boot instead; the ones under /workspace sync guest
+ * edits back to the host so agent-maintained files like MEMORY.md persist.
+ */
+interface FileProjection {
+  source: string;
+  target: string;
+  syncBack: boolean;
+  lastHash: string;
+}
+
+/*
+ * Crash-recovery vocabulary.
+ *
+ * - **Gone**: the command never reached the runtime because its session socket
+ *   refused the connection. Recreating the runtime and retrying is safe.
+ * - **Interrupted**: the runtime died or went silent with a command in flight.
+ *   Side effects may have landed, so the failure must surface.
+ */
+
+/**
+ * The runtime is gone and the command never reached it (the session socket
+ * refused the connection) — safe to recreate the runtime and retry.
+ */
+class GondolinRuntimeGoneError extends Error {}
+
+/** The runtime died with the command in flight — not safe to retry blindly. */
+class GondolinRuntimeInterruptedError extends Error {}
 
 class GondolinResourceManager implements SandboxResourceController {
   private defaultLimits?: ResourceLimits;
@@ -98,6 +163,18 @@ class GondolinResourceManager implements SandboxResourceController {
 }
 
 export const gondolinResources = new GondolinResourceManager();
+
+export interface GondolinBootstrapOptions {
+  /** Default per-runtime resource limits. */
+  limits?: ResourceLimits;
+  /** Boosted limits applied while a runtime holds a boost. */
+  boostLimits?: ResourceLimits;
+}
+
+/** Configure the Gondolin resource controller. */
+export function configureGondolinRuntime(options: GondolinBootstrapOptions): void {
+  gondolinResources.configure(options.limits, options.boostLimits);
+}
 
 function parseGondolinSandboxArg(value: string): GondolinSandboxConfig | undefined {
   if (!value.startsWith("gondolin:")) return undefined;
@@ -158,9 +235,7 @@ async function resolveDesiredRuntime(
  * excluded: the guest writes them back, which would drift the runtime it runs
  * in.
  */
-function credentialIdentity(
-  mounts: Array<{ source: string; target: string }>,
-): Record<string, string> {
+function credentialIdentity(mounts: GondolinMount[]): Record<string, string> {
   const identity: Record<string, string> = {};
   for (const mount of mounts) {
     if (mount.target.startsWith("/workspace/") || mount.target === "/workspace") continue;
@@ -170,7 +245,7 @@ function credentialIdentity(
         .update(readFileSync(mount.source))
         .digest("hex");
     } catch {
-      // missing source: the worker skips it too, so it has no runtime identity
+      // missing source: creation skips it too, so it has no runtime identity
     }
   }
   return identity;
@@ -199,6 +274,325 @@ function gondolinCpuCount(cpus: string | undefined): number | undefined {
   return Math.ceil(parsed);
 }
 
+function sha256(data: Buffer): string {
+  return createHash("sha256").update(data).digest("hex");
+}
+
+function partitionMounts(mounts: GondolinMount[]): {
+  directories: GondolinMount[];
+  files: FileProjection[];
+} {
+  const directories: GondolinMount[] = [];
+  const files: FileProjection[] = [];
+  for (const mount of mounts) {
+    let isDirectory: boolean;
+    try {
+      isDirectory = statSync(mount.source).isDirectory();
+    } catch {
+      log.logWarning(`Skipping missing Gondolin mount source ${mount.source}`);
+      continue;
+    }
+    if (isDirectory) {
+      directories.push(mount);
+    } else {
+      files.push({
+        ...mount,
+        syncBack: mount.target.startsWith("/workspace/"),
+        lastHash: "",
+      });
+    }
+  }
+  return { directories, files };
+}
+
+/** Copy file mounts into the guest; credentials get user-only permissions. */
+async function projectFiles(vm: GondolinVm, files: FileProjection[]): Promise<void> {
+  for (const projection of files) {
+    const content = readFileSync(projection.source);
+    await vm.fs.mkdir(dirname(projection.target), { recursive: true });
+    await vm.fs.writeFile(projection.target, content);
+    if (!projection.syncBack) {
+      // credential projection: no write-back, keep it owner-only
+      await vm.exec(`chmod 600 ${shellEscape(projection.target)}`);
+    }
+    projection.lastHash = sha256(content);
+  }
+}
+
+function restrictSocketAccess(socketPath: string): void {
+  // The session socket grants arbitrary exec inside the VM (and through its
+  // mounts, the workspace) — keep it to this user even under a lax umask.
+  try {
+    chmodSync(dirname(socketPath), 0o700);
+    chmodSync(socketPath, 0o600);
+  } catch {
+    // best-effort hardening
+  }
+}
+
+/** One live microVM owned by this process, addressed by its session socket. */
+class GondolinRuntime {
+  private syncTimer?: NodeJS.Timeout;
+  private syncing = false;
+  private closing?: Promise<void>;
+
+  private constructor(
+    private readonly vm: GondolinVm,
+    private readonly socketPath: string,
+    private readonly projections: FileProjection[],
+  ) {}
+
+  /** Boot a VM for the desired configuration and make it command-ready. */
+  static async create(
+    instanceId: string,
+    desired: GondolinDesiredRuntime,
+  ): Promise<GondolinRuntime> {
+    const { VM, RealFSProvider, ReadonlyProvider, findSession } =
+      (await import("@earendil-works/gondolin")) as GondolinModule;
+    const { directories, files } = partitionMounts(desired.mounts);
+    const vm = await VM.create({
+      sandbox: { imagePath: desired.image },
+      env: { TZ: "Asia/Taipei" },
+      sessionLabel: `mikan:${instanceId}`,
+      cpus: gondolinCpuCount(desired.limits?.cpus),
+      memory: desired.limits?.memory,
+      vfs: {
+        mounts: Object.fromEntries(
+          directories.map(({ source, target, readOnly }) => [
+            target,
+            // ReadonlyProvider blocks every write operation on the backing
+            // provider — gondolin's own answer to read-only host directories.
+            readOnly
+              ? new ReadonlyProvider(new RealFSProvider(source))
+              : new RealFSProvider(source),
+          ]),
+        ),
+      },
+    });
+
+    try {
+      await vm.start();
+      await projectFiles(vm, files);
+      const session = await findSession(vm.id);
+      if (!session) throw new Error(`Gondolin session '${vm.id}' did not register`);
+      restrictSocketAccess(session.socketPath);
+      const runtime = new GondolinRuntime(vm, session.socketPath, files);
+      runtime.startProjectionSync();
+      return runtime;
+    } catch (error) {
+      // never leave a half-booted runner (and its overlay disk) behind
+      await vm.close().catch(() => {});
+      throw error;
+    }
+  }
+
+  /**
+   * Run one command over a dedicated session IPC connection. Aborting (or the
+   * caller's timeout signal firing) destroys the connection, which kills the
+   * in-flight guest process.
+   */
+  async exec(
+    command: string,
+    options: { env?: Record<string, string>; signal?: AbortSignal } = {},
+  ): Promise<ExecResult> {
+    return execOverSessionConnect(
+      async (callbacks) => {
+        const { connectToSession } = await import("@earendil-works/gondolin");
+        return connectToSession(this.socketPath, callbacks);
+      },
+      command,
+      options,
+    );
+  }
+
+  /** Whether the VM runner process is still up. */
+  isAlive(): boolean {
+    try {
+      return this.vm.getHostPid() !== null;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Sync projected files back one last time, then shut the VM down. */
+  async close(): Promise<void> {
+    this.closing ??= (async () => {
+      clearInterval(this.syncTimer);
+      try {
+        await this.syncProjections();
+      } catch {
+        // best effort; the periodic sync already captured earlier edits
+      }
+      await this.vm.close();
+    })();
+    return this.closing;
+  }
+
+  private startProjectionSync(): void {
+    if (!this.projections.some((projection) => projection.syncBack)) return;
+    this.syncTimer = setInterval(() => void this.syncProjections(), PROJECTION_SYNC_INTERVAL_MS);
+    this.syncTimer.unref?.();
+  }
+
+  private async syncProjections(): Promise<void> {
+    if (this.syncing) return;
+    this.syncing = true;
+    try {
+      for (const projection of this.projections) {
+        if (!projection.syncBack) continue;
+        try {
+          const data = await this.vm.fs.readFile(projection.target);
+          const content = Buffer.isBuffer(data) ? data : Buffer.from(String(data));
+          const hash = sha256(content);
+          if (hash === projection.lastHash) continue;
+          // atomic host write: a crash mid-sync must not truncate the file
+          const staged = `${projection.source}.mikan-sync`;
+          writeFileSync(staged, content);
+          renameSync(staged, projection.source);
+          projection.lastHash = hash;
+        } catch {
+          // guest file missing or read raced a writer; next tick retries
+        }
+      }
+    } finally {
+      this.syncing = false;
+    }
+  }
+}
+
+export interface SessionClientCallbacks {
+  onJson: (message: {
+    type: string;
+    id?: number;
+    exit_code?: number | null;
+    code?: string;
+    message?: string;
+  }) => void;
+  onBinary: (frame: Buffer) => void;
+  onClose: (error?: Error) => void;
+}
+
+export interface SessionClient {
+  send(message: object): void;
+  close(): void;
+}
+
+function abortError(): Error {
+  return new Error("Error: command aborted");
+}
+
+/**
+ * Run one command through a fresh session connection. Closing the connection
+ * (abort, timeout, or the far side dying) kills the in-flight guest process.
+ */
+export async function execOverSessionConnect(
+  connect: (callbacks: SessionClientCallbacks) => SessionClient | Promise<SessionClient>,
+  command: string,
+  options: { env?: Record<string, string>; signal?: AbortSignal; idleTimeoutMs?: number } = {},
+): Promise<ExecResult> {
+  if (options.signal?.aborted) throw abortError();
+  const idleTimeoutMs = options.idleTimeoutMs ?? EXEC_IDLE_TIMEOUT_MS;
+  return await new Promise<ExecResult>((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+    let received = false;
+    let settled = false;
+    let client: SessionClient | undefined;
+    let idleTimer: NodeJS.Timeout | undefined;
+    const settle = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(idleTimer);
+      options.signal?.removeEventListener("abort", onAbort);
+      fn();
+    };
+    const onAbort = (): void =>
+      settle(() => {
+        client?.close();
+        reject(abortError());
+      });
+    const onIdle = (): void =>
+      settle(() => {
+        client?.close();
+        reject(
+          new GondolinRuntimeInterruptedError(
+            `no session activity for ${Math.round(idleTimeoutMs / 1000)}s — killed the command ` +
+              `(guest I/O hangs when the workspace sits on a dead mount; check the workspace health)`,
+          ),
+        );
+      });
+    const armIdleTimer = (): void => {
+      if (idleTimeoutMs <= 0 || settled) return;
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(onIdle, idleTimeoutMs);
+      idleTimer.unref?.();
+    };
+    armIdleTimer();
+    const callbacks: SessionClientCallbacks = {
+      onJson: (message) => {
+        received = true;
+        armIdleTimer();
+        if (message.type === "exec_response" && message.id === 1) {
+          settle(() => {
+            client?.close();
+            resolve({
+              stdout,
+              stderr,
+              code: typeof message.exit_code === "number" ? message.exit_code : 1,
+            });
+          });
+        } else if (message.type === "error") {
+          settle(() => {
+            client?.close();
+            reject(new Error(`Error: Gondolin exec failed (${message.code}): ${message.message}`));
+          });
+        }
+      },
+      onBinary: (frame) => {
+        received = true;
+        armIdleTimer();
+        const tag = frame.readUInt8(0);
+        const data = frame.subarray(5).toString("utf8");
+        if (tag === 1) stdout += data;
+        else stderr += data;
+      },
+      onClose: (error) => {
+        settle(() => {
+          const detail = error?.message ?? "connection closed before the command finished";
+          const code = (error as NodeJS.ErrnoException | undefined)?.code;
+          if (!received && (code === "ENOENT" || code === "ECONNREFUSED")) {
+            reject(new GondolinRuntimeGoneError(detail));
+          } else {
+            reject(new GondolinRuntimeInterruptedError(detail));
+          }
+        });
+      },
+    };
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+    Promise.resolve(connect(callbacks))
+      .then((created) => {
+        client = created;
+        if (settled) {
+          created.close();
+          return;
+        }
+        created.send({
+          type: "exec",
+          id: 1,
+          cmd: "/bin/sh",
+          argv: ["-c", command],
+          env: Object.entries(options.env ?? {}).map(([key, value]) => `${key}=${value}`),
+          cwd: "/workspace",
+        });
+      })
+      .catch((err: unknown) =>
+        settle(() =>
+          reject(new GondolinRuntimeGoneError(err instanceof Error ? err.message : String(err))),
+        ),
+      );
+  });
+}
+
 function createSession(
   key: string,
   config: GondolinSandboxConfig,
@@ -206,20 +600,10 @@ function createSession(
   fingerprint: string,
 ): GondolinSession {
   let session: GondolinSession;
-  const runtime = gondolinWorkers
-    .ensure(key, {
-      image: desired.image,
-      mounts: desired.mounts,
-      cpus: desired.limits?.cpus,
-      vmCpus: gondolinCpuCount(desired.limits?.cpus),
-      memory: desired.limits?.memory,
-      fingerprint,
-      workspacePath: config.workspacePath,
-    })
-    .catch((error) => {
-      if (sessions.get(key) === session) sessions.delete(key);
-      throw error;
-    });
+  const runtime = GondolinRuntime.create(key, desired).catch((error: unknown) => {
+    if (sessions.get(key) === session) sessions.delete(key);
+    throw error;
+  });
   session = {
     runtime,
     fingerprint,
@@ -301,18 +685,18 @@ function discardDeadSession(key: string, session: GondolinSession): void {
 async function withRuntime<T>(
   key: string,
   config: GondolinSandboxConfig,
-  operation: (handle: GondolinRuntimeHandle) => Promise<T>,
+  operation: (runtime: GondolinRuntime) => Promise<T>,
 ): Promise<T> {
   for (let attempt = 0; ; attempt += 1) {
     const session = await acquireSession(key, config);
-    let handle: GondolinRuntimeHandle | undefined;
+    let runtime: GondolinRuntime | undefined;
     try {
-      handle = await session.runtime;
-      return await operation(handle);
+      runtime = await session.runtime;
+      return await operation(runtime);
     } catch (error) {
-      const gone = isRuntimeGone(error);
-      const interrupted = isRuntimeInterrupted(error);
-      if (gone || (interrupted && handle && !(await gondolinWorkers.isRuntimeAlive(handle)))) {
+      const gone = error instanceof GondolinRuntimeGoneError;
+      const interrupted = error instanceof GondolinRuntimeInterruptedError;
+      if (gone || (interrupted && runtime && !runtime.isAlive())) {
         discardDeadSession(key, session);
       }
       // Nothing reached a gone runtime, so recreating and retrying is safe;
@@ -346,15 +730,14 @@ async function closeSession(
     waitForActiveOperations?: boolean;
     resetResources?: boolean;
     throwOnError?: boolean;
-    stopRuntime?: boolean;
   } = {},
 ): Promise<void> {
   if (sessions.get(key) !== session) return;
   sessions.delete(key);
   try {
     if (options.waitForActiveOperations) await waitForIdle(session);
-    const handle = await session.runtime;
-    if (options.stopRuntime !== false) await gondolinWorkers.stop(handle);
+    const runtime = await session.runtime;
+    await runtime.close();
     if (
       options.resetResources !== false &&
       session.resourceKey &&
@@ -397,27 +780,28 @@ export async function stopIdleGondolinVms(maxIdleMs: number, now = Date.now()): 
 }
 
 /**
- * Stop workers surviving from a previous mikan that no conversation has
- * adopted — without this, a runtime whose conversation went quiet before the
- * restart would idle forever (its worker only self-stops when every mikan is
- * gone, and the in-memory idle sweep only tracks acquired sessions).
+ * Drop Gondolin's registry entries for sessions that no longer answer — socket
+ * files and metadata left behind by a mikan that died without cleanup.
  */
-export async function sweepUnadoptedGondolinWorkers(): Promise<void> {
-  for (const record of gondolinInventory.listWorkerRecords()) {
-    if (sessions.has(record.instanceId) || transitions.has(record.instanceId)) continue;
-    log.logInfo(
-      `Stopping unadopted Gondolin worker ${record.ownerPid} (instance '${record.instanceId}')`,
+export async function reconcileGondolinRuntimes(): Promise<void> {
+  try {
+    const { gcSessions } = (await import("@earendil-works/gondolin")) as GondolinModule;
+    const collected = await gcSessions();
+    log.logInfo(`Reconciled Gondolin sessions (collected=${collected})`);
+  } catch (error) {
+    log.logWarning(
+      "Failed to collect Gondolin session registry",
+      error instanceof Error ? error.message : String(error),
     );
-    await gondolinWorkers.stop({ workerPid: record.ownerPid, sessionId: record.sessionId });
   }
 }
 
 /**
- * Forget every session without stopping the workers: runtimes deliberately
- * outlive the mikan process so the next one adopts them instead of paying a
- * VM boot per conversation on every deploy.
+ * Stop every runtime this process owns. Runtimes do not outlive mikan, so
+ * shutdown must close them: that syncs projected files back to the host and
+ * releases each VM's overlay disk before the process exits.
  */
-export async function disconnectAllGondolinRuntimes(): Promise<void> {
+export async function stopAllGondolinRuntimes(): Promise<void> {
   shutdownGeneration += 1;
   activeShutdowns += 1;
   try {
@@ -425,7 +809,7 @@ export async function disconnectAllGondolinRuntimes(): Promise<void> {
     const current = Array.from(sessions.entries());
     await Promise.all(
       current.map(([key, session]) =>
-        closeSession(key, session, { waitForActiveOperations: true, stopRuntime: false }),
+        closeSession(key, session, { waitForActiveOperations: true }),
       ),
     );
   } finally {
@@ -456,8 +840,8 @@ export class GondolinExecutor implements Executor {
   }
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
-    return withRuntime(this.instanceId, this.config, (handle) =>
-      gondolinWorkers.exec(handle, withRuntimeBootstrap(command, this.env), {
+    return withRuntime(this.instanceId, this.config, (runtime) =>
+      runtime.exec(withRuntimeBootstrap(command, this.env), {
         env: this.env,
         signal: executionSignal(options),
       }),
