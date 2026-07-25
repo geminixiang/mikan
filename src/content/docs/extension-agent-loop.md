@@ -170,13 +170,25 @@ flowchart TD
   compdone -->|yes| llmcall
   dec -->|done| fin
 
-  ov -. session_compact .-> sc[(extension)]
+  ov -. session_compact .-> sc{{"session_compact"}}
   comp -. session_compact .-> sc
-  persist -. budget_exceeded .-> be[(extension)]
+  persist -. budget_exceeded .-> be{{"budget_exceeded"}}
   fin["settle turn"] --> aeh{{"agent_error<br/>(if settled on error)"}}
   aeh --> teh{{"turn_end<br/>(final transcript)"}}
   teh --> done([return])
+
+  %% extension intervention points highlighted
+  class bas,ctx,meh,tcall,tres,sc,be,aeh,teh ext
+  classDef ext fill:#ffe8cc,stroke:#e8590c,stroke-width:2px,color:#7a3200;
+  classDef danger fill:#ffe3e3,stroke:#e03131,color:#7a1212;
+  class blocked danger;
 ```
+
+The amber nodes are the nine extension hook firing points; the rest is the
+loop itself. Within **any** of these handlers (and inside `/name` commands and
+Block Kit `onAction` handlers) the extension holds the full `api` surface from
+§3 — `notify`, `blockkit`, `subagent`, `schedules` / `triggerRun`, `react`,
+`uploadFile`, `secrets`, and `paths`.
 
 ### Hook semantics
 
