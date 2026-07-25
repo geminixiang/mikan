@@ -128,9 +128,55 @@ mikan ext install \
   --conversation <conversationId>
 ```
 
-`mikan ext install` 会验证并复制代码；它**不会**运行 `npm install`。应优先使用 Node 内置模块，并避免运行时依赖。如果确实需要运行时软件包，请先在经过审查的本地扩展目录中安装它们，再执行本地安装，并确认复制后的扩展包含所需的 `node_modules`。
+当 git 来源的 `package.json` 声明了 `dependencies` 时，mikan 会在取得的 clone 中执行 `npm install --omit=dev`。这会在 mikan 宿主机上运行这些依赖的安装脚本，其信任级别与载入扩展本身相同——加入前请先审查该套件。本地路径来源是以引用方式使用、不会替你安装，因此其 `node_modules` 必须事先就绪。
 
-## 5. 扩展 API
+无论哪种情况，都应优先使用 Node 内置模块并避免运行时依赖：每一个依赖都意味着更多以 mikan 权限运行的代码。
+
+## 5. 不用 Slack 工作区也能开发
+
+为了确认 `activate()` 会不会跑，就得先把 mikan 装进真实的 Slack 工作区——这样的第一个小时太糟了。`mikan ext dev` 把同一套 runtime 放到你的终端里：
+
+```bash
+mikan ext dev ./my-extension
+> 帮我建一个午餐投票
+[agent 回复]
+> /pi-new          # 编辑后重新载入
+```
+
+它是跑在生产 runtime 上的 stdin/stdout 对话——同样的套件解析、同样的 loader、同样的命令——只是把平台换成终端，sandbox 设为 `host`（不需要 Docker，不需要拉镜像）。在这里能动的扩展在频道里也能动，因为它被找到和被启用的方式完全没有差别。
+
+你的工作副本会注册成对话范围的 local package。local 来源是**以引用方式**使用、绝不复制，所以循环就是 编辑 → `/pi-new` → 测试，没有重装步骤。每个扩展有各自的 `ext-dev-<name>` 对话，因此可以并行开发两个。
+
+| 参数                | 含义                                        |
+| ------------------- | ------------------------------------------- |
+| `--workspace <dir>` | 对话状态写入位置（默认 `./.mikan-ext-dev`） |
+| `--state-dir <dir>` | 使用独立的 state dir，而非共享的那个        |
+
+## 6. 套件：无需宿主机权限的安装方式
+
+大多数需要启用扩展的人无法 SSH 进 mikan 宿主机。套件就是给他们的路径：在设置中声明一个 git 仓库，由 mikan 去取。
+
+发送 `/pi-admin` 取得 portal 链接，然后使用 **Extensions** 面板（对话范围）或 **Global Extensions** 面板（所有对话）。贴上 git URL，可选填标签／分支／commit，按 Add。
+
+clone 与验证发生在你按下 Add 的当下，而不是之后——拼写错误、私有仓库、不存在的 `#subpath`、或不含扩展的仓库，都会当场在表单上报错。启用仍然发生在下一次 `/pi-new`。
+
+套件仓库有两种布局，mikan 依据实际内容判断：
+
+```
+多个扩展                       单个扩展
+├── extensions/               ├── index.ts
+│   ├── reporter/index.ts     ├── package.json
+│   └── triage/index.ts       └── skills/
+└── skills/
+```
+
+`skills/` 中的技能会以只读方式挂载到 `/mikan/packages/<slug>/skills`，因此不同于扩展自带的技能，它们可以携带 agent 真正会从磁盘读取的脚本与模板。它们的优先级最低：同名的 workspace 或对话技能优先。
+
+范围是叠加的——全局套件在各处载入，对话的套件叠在其上——唯独两者声明同一个仓库时，对话的副本胜出，全局那份会显示为 shadowed。把某个频道固定在 `@v2`、其他人留在 `@v1`，靠的就是这个机制。
+
+目前仅支持 git 来源与宿主机路径；npm 尚未实现。
+
+## 7. 扩展 API
 
 ### 钩子
 
@@ -316,7 +362,7 @@ hello-mikan/
 
 扩展技能会被自动发现并内联到系统提示词中，因为仅供宿主使用的扩展路径不会挂载到沙箱。名称相同的对话技能优先。
 
-## 6. 生命周期规则
+## 8. 生命周期规则
 
 1. 确保 `activate` 是幂等的。`/pi-new` 可能会再次激活扩展；`schedules.upsert` 可以安全地用于此模式。
 2. 长期存续的资源（数据库连接、监视器）请在释放函数中释放（`api.onDispose` 或 `activate` 的返回值）。定时器优先使用 `api.schedules` 而非 `setInterval`——计划任务能跨重启存活，进程内定时器不能。
@@ -324,7 +370,7 @@ hello-mikan/
 4. 确保顶层导入和初始化安全，因为验证过程会导入模块。
 5. 将扩展输出和工具参数视为信任边界；验证不受信任的输入。
 
-## 7. 更新、检查和移除
+## 9. 更新、检查和移除
 
 ```bash
 # Reinstall updates code and preserves extension data
@@ -341,6 +387,8 @@ mikan ext remove hello-mikan --conversation <conversationId>
 ```
 
 更新或移除后发送 `/pi-new`。在聊天中，`/pi-extensions` 会列出当前对话可见的扩展。
+
+套件由管理 portal 管理，而非 CLI。**Update** 会重新取得来源：已固定的 ref 保持不动，未固定的则前进到该分支目前的 tip。以不同 ref 重新加入同一个仓库会移动固定点，而不是产生第二笔纪录。**Remove** 只移除声明，checkout 仍留在磁盘上，因此重新加入不需要网络往返。
 
 ## 故障排除
 

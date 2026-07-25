@@ -128,9 +128,55 @@ mikan ext install \
   --conversation <conversationId>
 ```
 
-`mikan ext install` validates and copies code; it does **not** run `npm install`. Prefer Node built-ins and zero runtime dependencies. If runtime packages are required, install them in a reviewed local extension directory before local installation, and verify the copied extension contains the required `node_modules`.
+When a git source declares `dependencies` in its `package.json`, mikan runs `npm install --omit=dev` in the fetched clone. This executes those dependencies' install scripts on the mikan host, at the same trust level as importing the extension itself — review a package before adding it. Local-path sources are used by reference and are never installed for you, so their `node_modules` must already be present.
 
-## 5. Extension API
+Prefer Node built-ins and zero runtime dependencies regardless: every dependency is more code running with mikan's privileges.
+
+## 5. Develop without a Slack workspace
+
+Installing mikan into a real Slack workspace just to see whether `activate()` runs is a poor first hour. `mikan ext dev` gives you the same runtime in your terminal:
+
+```bash
+mikan ext dev ./my-extension
+> add a poll for lunch
+[agent reply]
+> /pi-new          # reloads after you edit
+```
+
+It is a stdin/stdout conversation on the production runtime — same package resolution, same loader, same commands — with the platform swapped for your terminal and the sandbox set to `host` (no Docker, no image pull). An extension that works here works in a channel, because nothing about how it is found or activated differs.
+
+Your working copy is registered as a conversation-scoped local package. Local sources are used **by reference**, never copied, so the loop is edit → `/pi-new` → test with no reinstall step. Each extension gets its own `ext-dev-<name>` conversation, so two can be developed side by side.
+
+| Flag                | Meaning                                                          |
+| ------------------- | ---------------------------------------------------------------- |
+| `--workspace <dir>` | where conversation state is written (default `./.mikan-ext-dev`) |
+| `--state-dir <dir>` | use an isolated state dir instead of the shared one              |
+
+## 6. Packages: installing without host access
+
+Most people who need an extension enabled cannot SSH into the mikan host. Packages are the path for them: a git repository is declared in settings, and mikan fetches it.
+
+Send `/pi-admin` to get a portal link, then use the **Extensions** panel (conversation scope) or **Global Extensions** panel (every conversation). Paste a git URL, optionally a tag/branch/commit, and press Add.
+
+The clone and validation happen when you press Add, not later — a typo, a private repo, a missing `#subpath`, or a repo with no extension in it fails right there in the form. Activation still happens on the next `/pi-new`.
+
+A package repository is laid out one of two ways, and mikan picks by what it finds:
+
+```
+several extensions            one extension
+├── extensions/               ├── index.ts
+│   ├── reporter/index.ts     ├── package.json
+│   └── triage/index.ts       └── skills/
+└── skills/
+```
+
+Skills shipped in `skills/` mount read-only at `/mikan/packages/<slug>/skills`, so unlike extension-shipped skills they can carry scripts and templates the agent actually reads from disk. They sit at the lowest precedence: a workspace or conversation skill of the same name wins.
+
+Scopes are additive — global packages load everywhere and a conversation's load on top — except when both declare the same repository, in which case the conversation's copy wins and the global one is shown as shadowed. Pinning one channel to `@v2` while everyone else stays on `@v1` works that way.
+
+Only git sources and host paths are supported today; npm is not implemented.
+
+## 7. Extension API
 
 ### Hooks
 
@@ -348,7 +394,7 @@ hello-mikan/
 
 Extension skills are discovered automatically and inlined into the system prompt because host-only extension paths are not mounted into the sandbox. A conversation skill with the same name takes precedence.
 
-## 6. Lifecycle rules
+## 8. Lifecycle rules
 
 1. Make `activate` idempotent. `/pi-new` can activate the extension again; `schedules.upsert` is safe for this pattern.
 2. Release long-lived resources (database handles, watchers) in a disposer (`api.onDispose` or the `activate` return value). Prefer `api.schedules` over `setInterval` for timers — schedules survive restarts, in-process timers do not.
@@ -356,7 +402,7 @@ Extension skills are discovered automatically and inlined into the system prompt
 4. Keep top-level imports and initialization safe because validation imports the module.
 5. Treat extension output and tool parameters as trust boundaries; validate untrusted input.
 
-## 7. Update, inspect, and remove
+## 9. Update, inspect, and remove
 
 ```bash
 # Reinstall updates code and preserves extension data
@@ -373,6 +419,8 @@ mikan ext remove hello-mikan --conversation <conversationId>
 ```
 
 Send `/pi-new` after update or removal. In chat, `/pi-extensions` lists the extensions visible to the current conversation.
+
+Packages are managed from the admin portal rather than the CLI. **Update** re-fetches the source: a pinned ref stays where it is, an unpinned one advances to its branch's current tip. Re-adding the same repository with a different ref moves the pin instead of creating a second entry. **Remove** drops the declaration but keeps the checkout on disk, so re-adding needs no network round trip.
 
 ## Troubleshooting
 
