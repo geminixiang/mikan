@@ -44,7 +44,7 @@ import type { RunOrigin } from "./extensions/types.js";
 import type { MikanModels } from "./models.js";
 import { resolveHarnessSettings, type BudgetSettings, type HarnessSettings } from "./settings.js";
 import type { SessionStore } from "./session-store.js";
-import type { CompactionEntry, SubagentUsage } from "./types.js";
+import type { CompactionEntry, SubagentUsage, SubagentUsageSink } from "./types.js";
 import { addSubagentUsage, copySubagentUsage, createEmptySubagentUsage } from "./usage.js";
 
 export type CompactionReason = "threshold" | "overflow" | "manual";
@@ -248,11 +248,19 @@ export class MikanAgentSession {
    * assistant message that may never come (and would be paid for). Complete
    * usage is folded; external runs are not this session's turns.
    */
+  /** Capture a usage sink bound to the tally owned by the current prompt run. */
+  captureExternalUsageSink(): SubagentUsageSink {
+    const tally = this.tally;
+    return async (usage) => {
+      addSubagentUsage(tally.usage, usage);
+      if (this.tally !== tally || this.budgetExceededReason || !this.runActive) return;
+      const reason = this.resourceOverBudgetReason();
+      if (reason) await this.exceedBudget(reason);
+    };
+  }
+
   async foldExternalUsage(usage: SubagentUsage): Promise<void> {
-    addSubagentUsage(this.tally.usage, usage);
-    if (this.budgetExceededReason || !this.runActive) return;
-    const reason = this.resourceOverBudgetReason();
-    if (reason) await this.exceedBudget(reason);
+    await this.captureExternalUsageSink()(usage);
   }
 
   subscribe(listener: HarnessEventListener): () => void {

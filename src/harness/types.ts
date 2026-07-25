@@ -69,6 +69,9 @@ export interface SubagentParentContext {
 /** Aggregated model usage across every assistant turn in a subagent run. */
 export type SubagentUsage = Usage;
 
+/** Receives usage from a subagent run, including after detached cleanup settles. */
+export type SubagentUsageSink = (usage: SubagentUsage) => void | Promise<void>;
+
 /** A fresh, isolated subagent run. */
 export interface SubagentRunRequest<TOutputSchema extends TSchema | undefined = undefined> {
   task: string;
@@ -103,6 +106,14 @@ interface SubagentRunMetadata {
   /** Aggregate provider cost; equivalent to `usage.cost.total`. */
   costUsd: number;
   durationMs: number;
+  /**
+   * The caller received a terminal result before the underlying run settled.
+   * When true, `usage`, `tokens`, and `costUsd` are provisional snapshots;
+   * final usage is delivered later through the run's bound usage sink. The
+   * global slot remains held until cleanup settles because in-process work
+   * cannot be safely reclaimed without a killable execution boundary.
+   */
+  cleanupPending?: boolean;
 }
 
 interface SubagentRunCompletedResult<TOutput> extends SubagentRunMetadata {

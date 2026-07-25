@@ -14,6 +14,7 @@ import type {
   SubagentRunRequest,
   SubagentRunResult,
   SubagentUsage,
+  SubagentUsageSink,
 } from "./types.js";
 import { copySubagentUsage, createEmptySubagentUsage } from "./usage.js";
 import { unboundedSlotPool, type SubagentSlotPool } from "../tools/subagent-slots.js";
@@ -26,6 +27,9 @@ export const DEFAULT_SUBAGENT_BUDGET = {
   maxCostUsd: 10,
   maxDurationMs: 10 * 60 * 1000,
 } as const;
+
+/** Time allowed for an aborted subagent to settle before detached cleanup. */
+export const SUBAGENT_ABORT_GRACE_MS = 100;
 
 const SCHEMA_STRUCTURAL_KEYS = new Set([
   "type",
@@ -139,8 +143,8 @@ interface RunSubagentOptions<TOutputSchema extends TSchema | undefined = undefin
   slots?: SubagentSlotPool;
   /** Host-snapshotted parent transcript; never sourced from the public request. */
   parentMessages?: AgentMessage[];
-  /** Usage attribution snapshotted when this invocation begins. */
-  onUsage?: (usage: SubagentUsage) => void | Promise<void>;
+  /** Usage attribution sink snapshotted when this invocation begins. */
+  onUsage?: SubagentUsageSink;
 }
 
 function resolveBudget(budget: RunSubagentOptions["request"]["budget"]) {
@@ -282,24 +286,47 @@ function assistantText(message: AssistantMessage | undefined): string {
  * Execute one non-recursive, fresh subagent run. Never rejects: every
  * failure — including request validation — is a result with a terminal
  * status, so batch callers (`tasks` / `dag`) can never orphan in-flight
- * sibling runs on one bad request. The run's spend is reported through
- * `onUsage` before the result is returned.
+ * sibling runs on one bad request. Usage is reported once, after the
+ * underlying run settles; an aborted run may report it from detached cleanup.
  */
 export async function runSubagent<TOutputSchema extends TSchema | undefined = undefined>(
   options: RunSubagentOptions<TOutputSchema>,
 ): Promise<SubagentRunResult<SubagentRunOutput<TOutputSchema>>> {
-  const result = await executeBoundedSubagentRun(options);
+  const execution = await executeBoundedSubagentRun(options);
+  if (execution.cleanup) {
+    void execution.cleanup
+      .then(async (result) => {
+        await reportSubagentUsage(options.onUsage, result.usage);
+      })
+      .catch((err) => {
+        log.logWarning("Subagent detached cleanup failed", String(err));
+      });
+    return execution.result;
+  }
+  await reportSubagentUsage(options.onUsage, execution.result.usage);
+  return execution.result;
+}
+
+async function reportSubagentUsage(
+  onUsage: SubagentUsageSink | undefined,
+  usage: SubagentUsage,
+): Promise<void> {
   try {
-    await options.onUsage?.(copySubagentUsage(result.usage));
+    await onUsage?.(copySubagentUsage(usage));
   } catch (err) {
     log.logWarning("Subagent onUsage listener failed", String(err));
   }
-  return result;
 }
+
+type BoundedSubagentExecution<TOutput> = {
+  result: SubagentRunResult<TOutput>;
+  /** Resolves after an aborted prompt settles and returns its final result. */
+  cleanup?: Promise<SubagentRunResult<TOutput>>;
+};
 
 async function executeBoundedSubagentRun<TOutputSchema extends TSchema | undefined = undefined>(
   options: RunSubagentOptions<TOutputSchema>,
-): Promise<SubagentRunResult<SubagentRunOutput<TOutputSchema>>> {
+): Promise<BoundedSubagentExecution<SubagentRunOutput<TOutputSchema>>> {
   const startedAt = Date.now();
   let release: (() => void) | undefined;
   try {
@@ -308,31 +335,61 @@ async function executeBoundedSubagentRun<TOutputSchema extends TSchema | undefin
     if (err instanceof Error && err.name === "AbortError") {
       const usage = createEmptySubagentUsage();
       return {
-        runId: randomUUID(),
-        status: "cancelled",
-        model: options.request.model ?? {
-          provider: options.defaultModel.provider,
-          id: options.defaultModel.id,
+        result: {
+          runId: randomUUID(),
+          status: "cancelled",
+          model: options.request.model ?? {
+            provider: options.defaultModel.provider,
+            id: options.defaultModel.id,
+          },
+          turns: 0,
+          usage,
+          tokens: usage.totalTokens,
+          costUsd: usage.cost.total,
+          durationMs: Date.now() - startedAt,
         },
-        turns: 0,
-        usage,
-        tokens: usage.totalTokens,
-        costUsd: usage.cost.total,
-        durationMs: Date.now() - startedAt,
       };
     }
     throw err;
   }
+  if (!release) throw new Error("Subagent slot acquisition returned no release handle");
+
   try {
-    return await executeSubagentRun(options);
-  } finally {
-    release();
+    const execution = await executeSubagentRun(options);
+    if (!execution.cleanup) {
+      release();
+      release = undefined;
+      return execution;
+    }
+
+    const cleanup = execution.cleanup;
+    const heldRelease = release;
+    void cleanup
+      .then(
+        () => heldRelease(),
+        (err) => {
+          log.logWarning("Subagent detached cleanup failed", String(err));
+          heldRelease();
+        },
+      )
+      .catch((err) => {
+        log.logWarning("Subagent detached release failed", String(err));
+        heldRelease();
+      });
+    release = undefined;
+    return execution;
+  } catch (err) {
+    release?.();
+    release = undefined;
+    throw err;
   }
 }
 
+function noop(): void {}
+
 async function executeSubagentRun<TOutputSchema extends TSchema | undefined = undefined>(
   options: RunSubagentOptions<TOutputSchema>,
-): Promise<SubagentRunResult<SubagentRunOutput<TOutputSchema>>> {
+): Promise<BoundedSubagentExecution<SubagentRunOutput<TOutputSchema>>> {
   const { request } = options;
   const runId = randomUUID();
   const startedAt = Date.now();
@@ -343,10 +400,15 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
   let sessionRef: MikanAgentSession | undefined;
   let terminalSignal: "cancelled" | "timeout" | undefined;
   let timeout: NodeJS.Timeout | undefined;
+  let notifyAbort: () => void = noop;
+  const abortRequested = new Promise<void>((resolve) => {
+    notifyAbort = resolve;
+  });
   const abort = (reason: "cancelled" | "timeout") => {
     if (terminalSignal) return;
     terminalSignal = reason;
     sessionRef?.abort();
+    notifyAbort();
   };
   const onAbort = () => abort("cancelled");
 
@@ -381,102 +443,158 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
     timeout = setTimeout(() => abort("timeout"), budget.maxDurationMs);
     timeout.unref();
 
-    if (!terminalSignal) {
-      await subagentRunDepth.run(1, () =>
-        session.prompt(task, {
-          budget: {
-            maxLlmCalls: budget.maxTurns,
-            maxTokens: budget.maxTokens,
-            maxCostUsd: budget.maxCostUsd,
-            maxDurationMs: budget.maxDurationMs,
-          },
-        }),
-      );
-    }
-
-    const stats = session.getLastRunStats();
-    const assistant = finalAssistant(session.messages);
-    const text = assistantText(assistant);
-    const base = {
-      runId,
-      model: modelSpec,
-      turns: stats.llmCalls,
-      usage: stats.usage,
-      tokens: stats.usage.totalTokens,
-      costUsd: stats.usage.cost.total,
-      durationMs: Date.now() - startedAt,
-      ...(text ? { text } : {}),
-    };
-
-    if (terminalSignal) {
-      return {
-        ...base,
-        status: terminalSignal,
-        ...(terminalSignal === "timeout"
-          ? { error: `Subagent exceeded its ${budget.maxDurationMs}ms duration limit` }
-          : {}),
+    const buildResult = (
+      cleanupPending = false,
+    ): SubagentRunResult<SubagentRunOutput<TOutputSchema>> => {
+      const stats = session.getLastRunStats();
+      const assistant = finalAssistant(session.messages);
+      const text = assistantText(assistant);
+      const base = {
+        runId,
+        model: modelSpec,
+        turns: stats.llmCalls,
+        usage: stats.usage,
+        tokens: stats.usage.totalTokens,
+        costUsd: stats.usage.cost.total,
+        durationMs: Date.now() - startedAt,
+        ...(text ? { text } : {}),
+        ...(cleanupPending ? { cleanupPending: true as const } : {}),
       };
-    }
-    if (stats.budgetExceededReason) {
-      return {
-        ...base,
-        status: "budget_exceeded",
-        error: stats.budgetExceededReason,
-      };
-    }
-    if (assistant?.stopReason === "error") {
-      return {
-        ...base,
-        status: "failed",
-        error: assistant.errorMessage || "Subagent failed",
-      };
-    }
-    if (!assistant) {
-      return { ...base, status: "failed", error: "Subagent produced no assistant response" };
-    }
 
-    if (request.outputSchema) {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(text);
-      } catch {
-        return { ...base, status: "invalid_output", error: "Subagent output is not valid JSON" };
-      }
-      if (!Value.Check(hydrateSchema(request.outputSchema), parsed)) {
+      if (terminalSignal) {
         return {
           ...base,
-          status: "invalid_output",
-          error: "Subagent output does not match the requested schema",
+          status: terminalSignal,
+          ...(terminalSignal === "timeout"
+            ? { error: `Subagent exceeded its ${budget.maxDurationMs}ms duration limit` }
+            : {}),
         };
+      }
+      if (stats.budgetExceededReason) {
+        return {
+          ...base,
+          status: "budget_exceeded",
+          error: stats.budgetExceededReason,
+        };
+      }
+      if (assistant?.stopReason === "error") {
+        return {
+          ...base,
+          status: "failed",
+          error: assistant.errorMessage || "Subagent failed",
+        };
+      }
+      if (!assistant) {
+        return { ...base, status: "failed", error: "Subagent produced no assistant response" };
+      }
+
+      if (request.outputSchema) {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          return { ...base, status: "invalid_output", error: "Subagent output is not valid JSON" };
+        }
+        if (!Value.Check(hydrateSchema(request.outputSchema), parsed)) {
+          return {
+            ...base,
+            status: "invalid_output",
+            error: "Subagent output does not match the requested schema",
+          };
+        }
+        return {
+          ...base,
+          status: "completed",
+          output: parsed as SubagentRunOutput<TOutputSchema>,
+        };
+      }
+
+      if (!text) {
+        return { ...base, status: "failed", error: "Subagent produced no text output" };
       }
       return {
         ...base,
         status: "completed",
-        output: parsed as SubagentRunOutput<TOutputSchema>,
+        output: text as SubagentRunOutput<TOutputSchema>,
       };
+    };
+    const buildFailureResult = (
+      err: unknown,
+    ): SubagentRunResult<SubagentRunOutput<TOutputSchema>> => {
+      const stats = session.getLastRunStats();
+      const usage = stats.usage;
+      return {
+        runId,
+        status: terminalSignal ?? "failed",
+        model: modelSpec,
+        turns: stats.llmCalls,
+        usage,
+        tokens: usage.totalTokens,
+        costUsd: usage.cost.total,
+        durationMs: Date.now() - startedAt,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    };
+
+    if (!terminalSignal) {
+      const promptOutcome = subagentRunDepth
+        .run(1, () =>
+          session.prompt(task, {
+            budget: {
+              maxLlmCalls: budget.maxTurns,
+              maxTokens: budget.maxTokens,
+              maxCostUsd: budget.maxCostUsd,
+              maxDurationMs: budget.maxDurationMs,
+            },
+          }),
+        )
+        .then(
+          () => ({ ok: true as const }),
+          (error: unknown) => ({ ok: false as const, error }),
+        );
+      const winner = await Promise.race([
+        promptOutcome.then((outcome) => ({ type: "settled" as const, outcome })),
+        abortRequested.then(async () => {
+          let graceTimer: NodeJS.Timeout | undefined;
+          const graceExpired = new Promise<"expired">((resolve) => {
+            graceTimer = setTimeout(() => resolve("expired"), SUBAGENT_ABORT_GRACE_MS);
+          });
+          const graceOutcome = await Promise.race([
+            promptOutcome.then((settledOutcome) => ({
+              type: "settled" as const,
+              outcome: settledOutcome,
+            })),
+            graceExpired.then((value) => ({ type: value as "expired" })),
+          ]);
+          if (graceTimer) clearTimeout(graceTimer);
+          return graceOutcome;
+        }),
+      ]);
+      if (winner.type === "expired") {
+        const cleanup = promptOutcome.then((settledOutcome) =>
+          settledOutcome.ok ? buildResult() : buildFailureResult(settledOutcome.error),
+        );
+        return { result: buildResult(true), cleanup };
+      }
+      if (!winner.outcome.ok) throw winner.outcome.error;
     }
 
-    if (!text) {
-      return { ...base, status: "failed", error: "Subagent produced no text output" };
-    }
-    return {
-      ...base,
-      status: "completed",
-      output: text as SubagentRunOutput<TOutputSchema>,
-    };
+    return { result: buildResult() };
   } catch (err) {
     const stats = sessionRef?.getLastRunStats();
     const usage = stats?.usage ?? createEmptySubagentUsage();
     return {
-      runId,
-      status: terminalSignal ?? "failed",
-      model: modelSpec,
-      turns: stats?.llmCalls ?? 0,
-      usage,
-      tokens: usage.totalTokens,
-      costUsd: usage.cost.total,
-      durationMs: Date.now() - startedAt,
-      error: err instanceof Error ? err.message : String(err),
+      result: {
+        runId,
+        status: terminalSignal ?? "failed",
+        model: modelSpec,
+        turns: stats?.llmCalls ?? 0,
+        usage,
+        tokens: usage.totalTokens,
+        costUsd: usage.cost.total,
+        durationMs: Date.now() - startedAt,
+        error: err instanceof Error ? err.message : String(err),
+      },
     };
   } finally {
     if (timeout) clearTimeout(timeout);

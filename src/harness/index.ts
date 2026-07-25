@@ -110,6 +110,7 @@ export {
   type SubagentRunResult,
   type SubagentRunStatus,
   type SubagentUsage,
+  type SubagentUsageSink,
   CURRENT_SESSION_VERSION,
   type BranchSummaryEntry,
   type CompactionEntry,

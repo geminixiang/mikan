@@ -782,6 +782,73 @@ describe("MikanAgentSession", () => {
     expect(JSON.stringify(session.messages)).not.toContain("done");
   });
 
+  test("a captured external usage sink cannot contaminate a later prompt", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("capture", {})),
+      fauxAssistantMessage("first done"),
+      fauxAssistantMessage(fauxToolCall("hold", {})),
+      fauxAssistantMessage("second done"),
+    ]);
+
+    let session: MikanAgentSession;
+    let firstRunSink: ReturnType<MikanAgentSession["captureExternalUsageSink"]> | undefined;
+    let releaseSecondRun: (() => void) | undefined;
+    let secondRunStarted: (() => void) | undefined;
+    const secondRunGate = new Promise<void>((resolve) => {
+      releaseSecondRun = resolve;
+    });
+    const secondRunReady = new Promise<void>((resolve) => {
+      secondRunStarted = resolve;
+    });
+    const captureTool: AgentTool = {
+      name: "capture",
+      description: "Capture this prompt's external usage sink",
+      parameters: { type: "object", properties: {} },
+      execute: async () => {
+        firstRunSink = session.captureExternalUsageSink();
+        return { content: [{ type: "text", text: "captured" }] };
+      },
+    } as unknown as AgentTool;
+    const holdTool: AgentTool = {
+      name: "hold",
+      description: "Keep the second prompt active",
+      parameters: { type: "object", properties: {} },
+      execute: async () => {
+        secondRunStarted!();
+        await secondRunGate;
+        return { content: [{ type: "text", text: "released" }] };
+      },
+    } as unknown as AgentTool;
+    session = new MikanAgentSession({
+      systemPrompt: "test",
+      model,
+      thinkingLevel: "off",
+      tools: [captureTool, holdTool],
+      models,
+      sessionStore: SessionStore.create(join(dir, "usage-owner.jsonl"), dir),
+    });
+
+    await session.prompt("capture usage ownership");
+    expect(firstRunSink).toBeDefined();
+
+    const secondPrompt = session.prompt("start another run");
+    await secondRunReady;
+    const secondRunTokens = session.getLastRunStats().tokens;
+    await firstRunSink!({
+      input: 5000,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 5000,
+      cost: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0, total: 1 },
+    });
+
+    expect(session.getLastRunStats().tokens).toBe(secondRunTokens);
+    releaseSecondRun!();
+    await secondPrompt;
+  });
+
   test("counts compaction completion usage in run stats", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([fauxAssistantMessage("initial"), fauxAssistantMessage("compacted history")]);

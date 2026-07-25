@@ -1190,7 +1190,7 @@ async function createConfiguredAgentSession(params: {
           ...(activeParent
             ? {
                 parentMessages: [...activeParent.messages],
-                onUsage: (usage) => activeParent.foldExternalUsage(usage),
+                onUsage: activeParent.captureExternalUsageSink(),
               }
             : {}),
         });
@@ -1217,7 +1217,7 @@ async function createConfiguredAgentSession(params: {
       availableTools: [...tools, ...contributedTools],
       slots: globalSubagentSlots,
       parentMessages: [...session!.messages],
-      onUsage: (usage) => session!.foldExternalUsage(usage),
+      onUsage: session!.captureExternalUsageSink(),
     }),
   );
 

@@ -11,8 +11,12 @@ import {
   type MutableModels,
 } from "@earendil-works/pi-ai";
 import { Type, type TSchema } from "@sinclair/typebox";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { DEFAULT_SUBAGENT_BUDGET, runSubagent } from "../src/harness/subagent-runner.js";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import {
+  DEFAULT_SUBAGENT_BUDGET,
+  runSubagent,
+  SUBAGENT_ABORT_GRACE_MS,
+} from "../src/harness/subagent-runner.js";
 import {
   MikanAgentSession,
   MikanModels,
@@ -57,6 +61,14 @@ const echoTool: AgentTool = {
   }),
 };
 
+async function waitFor(condition: () => boolean): Promise<void> {
+  const deadline = Date.now() + 1_000;
+  while (!condition()) {
+    if (Date.now() >= deadline) throw new Error("Timed out waiting for condition");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 describe("runSubagent", () => {
   test("uses the expanded default limits", () => {
     expect(DEFAULT_SUBAGENT_BUDGET).toEqual({
@@ -98,6 +110,130 @@ describe("runSubagent", () => {
     const persisted = JSON.stringify(sessionStore.getEntries());
     expect(persisted).toContain("delegated result");
     expect(persisted).toContain("parent complete");
+  });
+
+  test("returns a bounded timeout while retaining the slot until active cleanup settles", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([fauxAssistantMessage(fauxToolCall("stuck", {}))]);
+    let releaseTool: (() => void) | undefined;
+    const toolGate = new Promise<void>((resolve) => {
+      releaseTool = resolve;
+    });
+    const stuckTool: AgentTool = {
+      name: "stuck",
+      description: "Wait until released",
+      parameters: Type.Object({}),
+      execute: async () => {
+        await toolGate;
+        return { content: [{ type: "text", text: "released" }] };
+      },
+    };
+    const slots = new SubagentSlotPool(1);
+    const usageCalls: SubagentUsage[] = [];
+    const startedAt = Date.now();
+    const result = await runSubagent({
+      request: { task: "Time out", tools: ["stuck"], budget: { maxDurationMs: 20 } },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [stuckTool],
+      slots,
+      onUsage: (usage) => usageCalls.push(usage),
+    });
+
+    expect(Date.now() - startedAt).toBeLessThan(20 + SUBAGENT_ABORT_GRACE_MS + 300);
+    expect(result).toMatchObject({ status: "timeout", cleanupPending: true });
+    expect(slots.inFlight).toBe(1);
+    expect(usageCalls).toHaveLength(0);
+
+    releaseTool!();
+    await waitFor(() => slots.inFlight === 0);
+    expect(usageCalls).toHaveLength(1);
+  });
+
+  test("returns a bounded cancellation while retaining the slot until active cleanup settles", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([fauxAssistantMessage(fauxToolCall("stuck", {}))]);
+    let releaseTool: (() => void) | undefined;
+    const toolGate = new Promise<void>((resolve) => {
+      releaseTool = resolve;
+    });
+    const stuckTool: AgentTool = {
+      name: "stuck",
+      description: "Wait until released",
+      parameters: Type.Object({}),
+      execute: async () => {
+        await toolGate;
+        return { content: [{ type: "text", text: "released" }] };
+      },
+    };
+    const slots = new SubagentSlotPool(1);
+    const controller = new AbortController();
+    const usageCalls: SubagentUsage[] = [];
+    const pending = runSubagent({
+      request: { task: "Cancel", tools: ["stuck"], signal: controller.signal },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [stuckTool],
+      slots,
+      onUsage: (usage) => usageCalls.push(usage),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    controller.abort();
+    const result = await pending;
+
+    expect(result).toMatchObject({ status: "cancelled", cleanupPending: true });
+    expect(slots.inFlight).toBe(1);
+    expect(usageCalls).toHaveLength(0);
+
+    releaseTool!();
+    await waitFor(() => slots.inFlight === 0);
+    expect(usageCalls).toHaveLength(1);
+  });
+
+  test("catches late prompt rejection without releasing usage or the slot twice", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([fauxAssistantMessage(fauxToolCall("stuck", {}))]);
+    let rejectTool: ((error: Error) => void) | undefined;
+    const toolGate = new Promise<void>((_, reject) => {
+      rejectTool = reject;
+    });
+    const stuckTool: AgentTool = {
+      name: "stuck",
+      description: "Reject after the caller has timed out",
+      parameters: Type.Object({}),
+      execute: async () => {
+        await toolGate;
+        return { content: [{ type: "text", text: "unreachable" }] };
+      },
+    };
+    const slots = new SubagentSlotPool(1);
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      const usageCalls: SubagentUsage[] = [];
+      const result = await runSubagent({
+        request: { task: "Reject late", tools: ["stuck"], budget: { maxDurationMs: 20 } },
+        defaultModel: model,
+        thinkingLevel: "off",
+        models,
+        workspaceDir: dir,
+        availableTools: [stuckTool],
+        slots,
+        onUsage: (usage) => usageCalls.push(usage),
+      });
+      expect(result).toMatchObject({ status: "timeout", cleanupPending: true });
+      rejectTool!(new Error("late tool failure"));
+      await waitFor(() => slots.inFlight === 0);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(usageCalls).toHaveLength(1);
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
   });
 
   test("returns cancelled while queued without making a model call", async () => {

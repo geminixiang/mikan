@@ -283,6 +283,13 @@ function itemForNode(node: DagNode): PlanItem {
 
 /** Normalize every tool mode into one plan: nodes, waves, concurrency. */
 function buildPlan(params: SubagentParams): Plan {
+  const modeCount = [params.task, params.tasks, params.dag].filter(
+    (mode) => mode !== undefined,
+  ).length;
+  if (modeCount !== 1) {
+    throw new Error("Subagent requires exactly one of task, tasks, or dag");
+  }
+
   if (params.dag !== undefined) {
     const waves = buildDagWaves(params.dag.nodes).map((wave) => wave.map(itemForNode));
     const requested = params.dag.maxConcurrency ?? MAX_CONCURRENT_SUBAGENTS;

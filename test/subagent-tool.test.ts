@@ -52,6 +52,38 @@ describe("subagent tool", () => {
     expect(tool.parameters.type).toBe("object");
   });
 
+  test("rejects a subagent invocation without a mode", async () => {
+    const runSubagent = vi.fn(completedRun("unused"));
+    const tool = createSubagentTool(runSubagent);
+
+    await expect(tool.execute("missing-mode", {})).rejects.toThrow(
+      "Subagent requires exactly one of task, tasks, or dag",
+    );
+    expect(runSubagent).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ["task + tasks", { task: "one", tasks: [{ task: "two" }] }],
+    ["task + dag", { task: "one", dag: { nodes: [{ id: "two", task: "two" }] } }],
+    ["tasks + dag", { tasks: [{ task: "one" }], dag: { nodes: [{ id: "two", task: "two" }] } }],
+    [
+      "task + tasks + dag",
+      {
+        task: "one",
+        tasks: [{ task: "two" }],
+        dag: { nodes: [{ id: "three", task: "three" }] },
+      },
+    ],
+  ])("rejects invocation with multiple modes (%s)", async (_label, params) => {
+    const runSubagent = vi.fn(completedRun("unused"));
+    const tool = createSubagentTool(runSubagent);
+
+    await expect(tool.execute("multiple-modes", params)).rejects.toThrow(
+      "Subagent requires exactly one of task, tasks, or dag",
+    );
+    expect(runSubagent).not.toHaveBeenCalled();
+  });
+
   test("supports abortable FIFO slot handoff and idempotent release", async () => {
     const pool = new SubagentSlotPool(1);
     const first = await pool.acquire();
