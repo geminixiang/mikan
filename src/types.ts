@@ -6,6 +6,7 @@ import type {
   OneShotEventPayload,
   PeriodicEventPayload,
 } from "./harness/event-format.js";
+import type { ExtensionBlockAction } from "./harness/extensions/types.js";
 
 const execFileAsync = promisify(execFile);
 type ExecFileAsync = typeof execFileAsync;
@@ -195,6 +196,25 @@ export type PlatformUploader = (
   platform?: string,
 ) => Promise<void>;
 
+/**
+ * Post and update interactive Block Kit messages without triggering an agent
+ * run. Backs extension `api.blockkit`; implemented in main.ts over the
+ * platform bots (Slack-only today — other platforms throw).
+ */
+export interface PlatformBlockKit {
+  postBlocks(
+    conversationId: string,
+    message: { text: string; blocks: object[]; threadTs?: string },
+    platform?: string,
+  ): Promise<{ ts: string }>;
+  updateBlocks(
+    conversationId: string,
+    messageTs: string,
+    message: { text: string; blocks: object[] },
+    platform?: string,
+  ): Promise<void>;
+}
+
 /** Normalized platform data and reply hook for one event. */
 export interface ConversationContext {
   message: ConversationMessage;
@@ -227,6 +247,20 @@ export interface MessagingEventHandler {
     responder: ConversationResponder,
     platform: MessagingInfo,
   ): Promise<void>;
+  /**
+   * Dispatch an extension-owned interactive block action (`ext:<slug>:`
+   * namespaced) to its onAction handler — deterministic, no agent run. The
+   * extension decides whether to involve the model (`triggerRun`). Returns
+   * true when an extension consumed the action; namespaced actions never
+   * fall through to the model, so the adapter drops unconsumed ones.
+   */
+  handleExtensionAction(params: {
+    conversationId: string;
+    sessionKey: string;
+    conversationKind: ConversationKind;
+    slug: string;
+    action: ExtensionBlockAction;
+  }): Promise<boolean>;
 }
 
 // ── agent ─────────────────────────────────────────────────────────────────────
@@ -253,6 +287,11 @@ export interface PiAgentWrapper {
     message: ConversationMessage,
     responder: ConversationResponder,
   ): Promise<boolean>;
+  /**
+   * Dispatch an extension-owned interactive block action to its onAction
+   * handler. Returns true when a handler consumed it (no agent run follows).
+   */
+  tryExtensionAction(slug: string, action: ExtensionBlockAction): Promise<boolean>;
   /** Run extension disposers. Call once when this wrapper is discarded. */
   dispose(): Promise<void>;
 }

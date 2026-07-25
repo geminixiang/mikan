@@ -8,6 +8,7 @@ import { fileURLToPath } from "url";
 import { dirname, join as pathJoin } from "path";
 import type {
   MessagingBot,
+  PlatformBlockKit,
   PlatformNotifier,
   PlatformReactor,
   PlatformUploader,
@@ -417,6 +418,31 @@ function requireSlackBot(op: string): SlackMessagingBotClass {
   return bot;
 }
 
+/** Extension `api.blockkit` backend: interactive Block Kit, Slack-only today. */
+const platformBlockKit: PlatformBlockKit = {
+  postBlocks: async (conversationId, message, platform) => {
+    if (platform && platform !== "slack") {
+      throw new Error(`blockkit: platform '${platform}' does not support Block Kit`);
+    }
+    const bot = requireSlackBot("blockkit");
+    const ts = message.threadTs
+      ? await bot.postInThreadBlocks(conversationId, message.threadTs, message.text, message.blocks)
+      : await bot.postMessageBlocks(conversationId, message.text, message.blocks);
+    return { ts };
+  },
+  updateBlocks: async (conversationId, messageTs, message, platform) => {
+    if (platform && platform !== "slack") {
+      throw new Error(`blockkit: platform '${platform}' does not support Block Kit`);
+    }
+    await requireSlackBot("blockkit").updateMessageBlocks(
+      conversationId,
+      messageTs,
+      message.text,
+      message.blocks,
+    );
+  },
+};
+
 /**
  * Platform capability pack factories — only when the corresponding bot is
  * configured. Factories, not instances: each runner materializes its own
@@ -478,6 +504,7 @@ const handler = createConversationRuntime({
   platformNotifier,
   platformReactor,
   platformUploader,
+  platformBlockKit,
   platformToolPackFactories: buildPlatformToolPackFactories(),
 });
 

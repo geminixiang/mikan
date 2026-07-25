@@ -52,6 +52,7 @@ export {
   type PeriodicEventPayload,
 } from "./event-format.js";
 export { ExtensionRegistry, parseCommandInput } from "./extensions/registry.js";
+export { EXT_ACTION_PREFIX, namespaceActionIds, parseExtActionId } from "./extensions/blockkit.js";
 export {
   defaultExtensionDirs,
   extensionSlug,
@@ -71,6 +72,9 @@ export type {
   ContextHookEvent,
   ContextHookResult,
   SubagentApi,
+  ExtensionBlockAction,
+  ExtensionBlockActionHandler,
+  ExtensionBlockKitMessage,
   ExtensionCommand,
   ExtensionCommandContext,
   ExtensionDisposer,

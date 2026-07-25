@@ -5,6 +5,7 @@ import type {
   ConversationEvent,
   MessagingEventHandler,
   ConversationKind,
+  PlatformBlockKit,
   PlatformNotifier,
   PlatformReactor,
   PlatformUploader,
@@ -78,6 +79,8 @@ export interface ConversationRuntimeOptions extends Omit<
   platformReactor?: PlatformReactor;
   /** Proactive file uploads for extensions (`api.uploadFile`). */
   platformUploader?: PlatformUploader;
+  /** Interactive Block Kit posting/updating for extensions (`api.blockkit`). */
+  platformBlockKit?: PlatformBlockKit;
   /**
    * Optional platform capability packs (extra tools + per-run bind), as
    * factories — each runner instantiates its own pack because bind state is

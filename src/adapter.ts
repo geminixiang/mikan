@@ -9,6 +9,7 @@ export type {
   ChatToolResult,
   ConversationKind,
   MessagingInfo,
+  PlatformBlockKit,
   PlatformName,
   PlatformNotifier,
   PlatformReactor,

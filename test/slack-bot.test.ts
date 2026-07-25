@@ -21,6 +21,7 @@ function makeHandler(): MessagingEventHandler {
     handleStop: vi.fn(),
     forceStop: vi.fn(),
     handleNewCommand: vi.fn(),
+    handleExtensionAction: vi.fn().mockResolvedValue(true),
   };
 }
 
@@ -2094,5 +2095,57 @@ describe("SlackMessagingBot force-stop block action", () => {
     });
 
     expect(handler.forceStop).toHaveBeenCalledWith("C123:1000.0001");
+  });
+
+  test("ext-namespaced actions dispatch to the extension handler, never the agent", async () => {
+    const handler = makeHandler();
+    const bot = makeForceStopBot(handler);
+
+    await (bot as any).handleBlockAction({
+      body: {
+        actions: [{ action_id: "ext:poll:vote_1", value: "1" }],
+        user: { id: "U123", username: "alice" },
+        container: { channel_id: "C123", message_ts: "100.1" },
+      },
+      ack: vi.fn(),
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(handler.handleExtensionAction).toHaveBeenCalledWith({
+      conversationId: "C123",
+      sessionKey: "C123",
+      conversationKind: "shared",
+      slug: "poll",
+      action: {
+        actionId: "vote_1",
+        value: "1",
+        selectedValues: undefined,
+        userId: "U123",
+        userName: "alice",
+        conversationId: "C123",
+        messageTs: "100.1",
+        threadTs: undefined,
+      },
+    });
+    expect(handler.handleEvent).not.toHaveBeenCalled();
+  });
+
+  test("unconsumed ext actions are dropped, not routed to the agent", async () => {
+    const handler = makeHandler();
+    (handler.handleExtensionAction as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+    const bot = makeForceStopBot(handler);
+
+    await (bot as any).handleBlockAction({
+      body: {
+        actions: [{ action_id: "ext:gone:click", value: "x" }],
+        user: { id: "U123" },
+        container: { channel_id: "C123" },
+      },
+      ack: vi.fn(),
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(handler.handleExtensionAction).toHaveBeenCalled();
+    expect(handler.handleEvent).not.toHaveBeenCalled();
   });
 });

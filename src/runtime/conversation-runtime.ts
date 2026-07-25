@@ -2,10 +2,12 @@ import type {
   MessagingBot,
   ConversationContext,
   ConversationEvent,
+  ConversationKind,
   PlatformName,
   RunningSession,
 } from "../adapter.js";
 import { createRunner } from "../agent.js";
+import type { ExtensionBlockAction } from "../harness/index.js";
 import { defaultCommandHandlers, dispatchCommand } from "../commands/registry.js";
 import type { CommandHandler, CommandServices } from "../commands/types.js";
 import { isPrivateConversation } from "../commands/utils.js";
@@ -264,6 +266,42 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   ): Promise<void> {
     const sessionKey = deriveSessionKey(event);
     await this.sessions.enqueue(sessionKey, () => this.runSession({ event, bot, context }));
+  }
+
+  /**
+   * Dispatch an extension-owned interactive block action: materialize the
+   * conversation's harness instance (activating its extensions) and run the
+   * matching onAction handler — deterministic, no agent run. Serialized on
+   * the session queue so rapid interactions (votes) never interleave.
+   */
+  async handleExtensionAction(params: {
+    conversationId: string;
+    sessionKey: string;
+    conversationKind: ConversationKind;
+    slug: string;
+    action: ExtensionBlockAction;
+  }): Promise<boolean> {
+    if (this.isShuttingDown) return false;
+    const { conversationId, sessionKey, conversationKind, slug, action } = params;
+    let consumed = false;
+    await this.sessions.enqueue(sessionKey, async () => {
+      try {
+        const state = await this.getOrCreateState({
+          conversationId,
+          sessionKey,
+          currentMessageId: action.messageTs ?? sessionKey,
+          conversationKind,
+        });
+        consumed = await state.runner.tryExtensionAction(slug, action);
+        if (consumed) state.lastAccessedAt = Date.now();
+      } catch (err) {
+        log.logWarning(
+          `[${conversationId}] Extension action dispatch failed (${slug}:${action.actionId})`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    });
+    return consumed;
   }
 
   async runSession({ event, bot, context }: RunSessionOptions): Promise<void> {
@@ -579,6 +617,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         platformNotifier: this.options.platformNotifier,
         platformReactor: this.options.platformReactor,
         platformUploader: this.options.platformUploader,
+        platformBlockKit: this.options.platformBlockKit,
         platformToolPackFactories: this.options.platformToolPackFactories,
         models: this.options.models,
       }),

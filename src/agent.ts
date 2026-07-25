@@ -11,6 +11,7 @@ import { type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
 import {
   DEFAULT_EVENT_BUDGET,
   defaultExtensionDirs,
+  type ExtensionBlockAction,
   type ExtensionHostServices,
   type ExtensionRegistry,
   formatSkillsForPrompt,
@@ -37,6 +38,7 @@ import type {
 } from "./adapter.js";
 import type {
   AgentEventPayload,
+  PlatformBlockKit,
   PlatformNotifier,
   PlatformReactor,
   PlatformTrustModel,
@@ -1051,6 +1053,7 @@ function buildExtensionHostServices(params: {
   platformNotifier?: PlatformNotifier;
   platformReactor?: PlatformReactor;
   platformUploader?: PlatformUploader;
+  platformBlockKit?: PlatformBlockKit;
   runSubagentService?: ExtensionHostServices["runSubagent"];
 }): ExtensionHostServices {
   const {
@@ -1059,6 +1062,7 @@ function buildExtensionHostServices(params: {
     platformNotifier,
     platformReactor,
     platformUploader,
+    platformBlockKit,
     runSubagentService,
   } = params;
   const eventStore = HostEventStore.fromWorkspaceDir(workspaceDir);
@@ -1077,6 +1081,9 @@ function buildExtensionHostServices(params: {
     ...(platformNotifier ? { postMessage: platformNotifier } : {}),
     ...(platformReactor ? { addReaction: platformReactor } : {}),
     ...(platformUploader ? { uploadFile: platformUploader } : {}),
+    ...(platformBlockKit
+      ? { postBlocks: platformBlockKit.postBlocks, updateBlocks: platformBlockKit.updateBlocks }
+      : {}),
     ...(runSubagentService ? { runSubagent: runSubagentService } : {}),
     ...(vaultManager
       ? {
@@ -1099,6 +1106,7 @@ async function createConfiguredAgentSession(params: {
   platformNotifier?: PlatformNotifier;
   platformReactor?: PlatformReactor;
   platformUploader?: PlatformUploader;
+  platformBlockKit?: PlatformBlockKit;
 }): Promise<ConfiguredAgentSession> {
   const {
     conversationId,
@@ -1113,6 +1121,7 @@ async function createConfiguredAgentSession(params: {
     platformNotifier,
     platformReactor,
     platformUploader,
+    platformBlockKit,
   } = params;
 
   // Host-only dirs under the state dir: extension code runs in the mikan
@@ -1128,6 +1137,7 @@ async function createConfiguredAgentSession(params: {
       platformNotifier,
       platformReactor,
       platformUploader,
+      platformBlockKit,
       runSubagentService: (request, extensionTools) => {
         const activeParent = session?.isActiveRun ? session : undefined;
         return runSubagent({
@@ -1718,6 +1728,7 @@ export interface CreateRunnerOptions {
   platformNotifier?: PlatformNotifier;
   platformReactor?: PlatformReactor;
   platformUploader?: PlatformUploader;
+  platformBlockKit?: PlatformBlockKit;
   platformToolPackFactories?: readonly PlatformToolPackFactory[];
   /** Model registry override; defaults to the process-wide models.json load. */
   models?: MikanModels;
@@ -1745,6 +1756,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     platformNotifier,
     platformReactor,
     platformUploader,
+    platformBlockKit,
     platformToolPackFactories,
   } = options;
   const agentConfig = resolveConversationSettings(conversationDir);
@@ -1833,6 +1845,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
       platformNotifier,
       platformReactor,
       platformUploader,
+      platformBlockKit,
     });
 
   // Mutable per-run state - event handler references this
@@ -2063,8 +2076,13 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
         conversationId,
         userId: message.userId,
         userName: message.userName,
+        threadTs: message.threadTs,
         respond: (text: string) => responder.respond(text),
       });
+    },
+
+    async tryExtensionAction(slug: string, action: ExtensionBlockAction): Promise<boolean> {
+      return extensionRegistry.dispatchAction(slug, action);
     },
 
     async dispose(): Promise<void> {
