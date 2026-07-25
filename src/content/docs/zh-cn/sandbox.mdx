@@ -1,6 +1,6 @@
 ---
 title: Sandbox
-description: 比较 mikan 支持的 host、container、image、microVM、Firecracker 与 Cloudflare sandbox 模式。
+description: 比较 mikan 支持的 host、container、image、microVM 与 Firecracker sandbox 模式。
 ---
 
 import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
@@ -30,7 +30,6 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 | `image:<image>`                                             | mikan 管理的 Docker   | 注入                | generated conversation vault | 当前最推荐的隔离模式；`1 conversation = 1 vault = 1 container`                     |
 | `gondolin:default`                                          | 本地 Gondolin/QEMU VM | 注入                | generated conversation vault | 预览；支持 private/full workspace mount；需要 Node.js >=23.6 与 QEMU               |
 | `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM        | 注入                | generated conversation vault | Alpha 超早期；VM 需自行启动，workspace 需在 VM 内挂到 `/workspace`，当前不建议使用 |
-| `cloudflare:<sandbox-id>`                                   | Cloudflare Worker     | 注入                | generated conversation vault | Experimental；需自行部署 `@cloudflare/sandbox` bridge，host workspace 不会自动同步 |
 
 ## 各模式文档
 
@@ -55,27 +54,22 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
   description="连到自行启动的 Firecracker VM。"
   href="firecracker/"
 />
-<LinkCard
-  title="Cloudflare sandbox"
-  description="通过 Cloudflare Worker bridge 执行工具。"
-  href="cloudflare/"
-/>
 
 ## 能力差异
 
 `image:<image>` <Badge text="推荐" variant="success" /> 是当前主要开发与推荐的 sandbox 模式；其他模式保留为本地开发、兼容、或实验用途，部分能力不会补齐。
 
-| 能力                                 | `host`   | `container:<name>` | `image:<image>` | `gondolin:default` | `firecracker:*` | `cloudflare:*` |
-| ------------------------------------ | -------- | ------------------ | --------------- | ------------------ | --------------- | -------------- |
-| command 执行                         | ✅       | ✅                 | ✅              | ✅                 | ✅              | ✅             |
-| mikan 管理 runtime lifecycle         | 不适用   | ❌                 | ✅              | ✅ worker 托管     | ❌              | ❌             |
-| per-conversation container / runtime | ❌       | ❌                 | ✅              | ✅                 | 需自行管理      | bridge 衍生 id |
-| per-conversation vault env           | ❌       | ❌                 | ✅              | ✅                 | ✅              | ✅             |
-| vault file 自动投影 / bind mount     | ❌       | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| workspace 自动挂载                   | host     | 需自行挂载         | ✅              | ✅                 | 需自行挂载      | ❌             |
-| private workspace mount mode         | 不适用   | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| idle auto-stop / recreate            | 不适用   | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| CPU / memory default limits          | ❌       | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| `/pi-sandbox boost`                  | ❌       | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| agent `sandbox` tool 设置 limits     | ❌       | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| 推荐程度                             | 本地开发 | legacy / 兼容      | 主线            | preview            | alpha           | experimental   |
+| 能力                                 | `host`   | `container:<name>` | `image:<image>` | `gondolin:default` | `firecracker:*` |
+| ------------------------------------ | -------- | ------------------ | --------------- | ------------------ | --------------- |
+| command 执行                         | ✅       | ✅                 | ✅              | ✅                 | ✅              |
+| mikan 管理 runtime lifecycle         | 不适用   | ❌                 | ✅              | ✅ worker 托管     | ❌              |
+| per-conversation container / runtime | ❌       | ❌                 | ✅              | ✅                 | 需自行管理      |
+| per-conversation vault env           | ❌       | ❌                 | ✅              | ✅                 | ✅              |
+| vault file 自动投影 / bind mount     | ❌       | ❌                 | ✅              | ✅                 | ❌              |
+| workspace 自动挂载                   | host     | 需自行挂载         | ✅              | ✅                 | 需自行挂载      |
+| private workspace mount mode         | 不适用   | ❌                 | ✅              | ✅                 | ❌              |
+| idle auto-stop / recreate            | 不适用   | ❌                 | ✅              | ✅                 | ❌              |
+| CPU / memory default limits          | ❌       | ❌                 | ✅              | ✅                 | ❌              |
+| `/pi-sandbox boost`                  | ❌       | ❌                 | ✅              | ✅                 | ❌              |
+| agent `sandbox` tool 设置 limits     | ❌       | ❌                 | ✅              | ✅                 | ❌              |
+| 推荐程度                             | 本地开发 | legacy / 兼容      | 主线            | preview            | alpha           |

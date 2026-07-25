@@ -8,12 +8,6 @@ describe("allowsAmbientDefaultSharedVault", () => {
     ).toBe(true);
   });
 
-  test("membership + cloudflare allows ambient copy", () => {
-    expect(
-      allowsAmbientDefaultSharedVault({ trustModel: "membership", sandboxType: "cloudflare" }),
-    ).toBe(true);
-  });
-
   test("defaults omitted trustModel to membership", () => {
     expect(allowsAmbientDefaultSharedVault({ sandboxType: "image" })).toBe(true);
   });
@@ -22,13 +16,13 @@ describe("allowsAmbientDefaultSharedVault", () => {
     expect(
       allowsAmbientDefaultSharedVault({ trustModel: "open-trigger", sandboxType: "image" }),
     ).toBe(false);
-    expect(
-      allowsAmbientDefaultSharedVault({ trustModel: "open-trigger", sandboxType: "cloudflare" }),
-    ).toBe(false);
   });
 
-  test("host / container / firecracker never use ambient copy path", () => {
-    for (const sandboxType of ["host", "container", "firecracker"] as const) {
+  test("image is the only mode that inherits the shared vault", () => {
+    // A trust rule, not a topology rule. gondolin is isolated and
+    // per-conversation exactly like image, and must still be excluded: its
+    // purpose is running code from people the workspace does not trust.
+    for (const sandboxType of ["host", "container", "firecracker", "gondolin"] as const) {
       expect(allowsAmbientDefaultSharedVault({ trustModel: "membership", sandboxType })).toBe(
         false,
       );

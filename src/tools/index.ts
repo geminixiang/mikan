@@ -11,6 +11,7 @@ import { createEventTool, HostEventStore } from "./event.js";
 import { createGenerateImageTool } from "./generate-image.js";
 import { createReactTool } from "./react.js";
 import { createReadTool } from "./read.js";
+import { createRemoteTaskTool, remoteTaskBridgeUrl } from "./remote-task.js";
 import { createSandboxTool } from "./sandbox.js";
 import type { PlatformToolPackFactory } from "./types.js";
 import { createWriteTool } from "./write.js";
@@ -58,6 +59,9 @@ export function createMikanTools(
   );
   const platformToolPacks = platformToolPackFactories.map((createPack) => createPack());
   const packTools = platformToolPacks.flatMap((pack) => pack.tools);
+  // Task executor: offered only when a remote bridge is configured, so the
+  // model is not told about a capability the host cannot fulfil.
+  const remoteTaskTool = remoteTaskBridgeUrl() ? createRemoteTaskTool() : undefined;
   return {
     tools: [
       createReadTool(executor),
@@ -68,6 +72,7 @@ export function createMikanTools(
       sandboxTool,
       attachTool,
       ...(imageTool ? [imageTool.tool] : []),
+      ...(remoteTaskTool ? [remoteTaskTool] : []),
       reactTool,
       ...packTools,
     ],

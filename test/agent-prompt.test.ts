@@ -151,9 +151,11 @@ describe("runtime path context", () => {
     );
   });
 
-  test("cloudflare keeps runtime paths remote and event control plane on host", () => {
+  test("an unmounted runtime keeps runtime paths remote and the event control plane on host", () => {
+    // firecracker reaches its guest over SSH with no host mount, so runtime
+    // paths have no host counterpart to translate back to.
     const pathContext = getUnresolvedSandboxPathContext(
-      { type: "cloudflare", sandboxId: "slack-u123" },
+      { type: "firecracker", vmId: "vm1", hostPath: "/srv/workspace" },
       "/host/workspace",
     );
 

@@ -311,12 +311,6 @@ function buildEnvDescription(sandboxType: SandboxConfig["type"], workspaceRoot: 
 - Use cd or absolute paths; project files are under ${workspaceRoot}
 - Install tools with: apt-get install <package> (Debian-based)
 - Your changes persist across sessions`;
-    case "cloudflare":
-      return `You are running through a Cloudflare Sandbox bridge.
-- Runtime workspace root: ${workspaceRoot}
-- Bash commands start in: ${workspaceRoot}
-- Your commands run in a remote container managed by Cloudflare
-- Important: the remote filesystem is not automatically synced back to the host workspace`;
     default:
       return `You are running directly on the host machine.
 - Runtime workspace root: ${workspaceRoot}

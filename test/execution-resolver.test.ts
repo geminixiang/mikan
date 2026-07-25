@@ -288,12 +288,12 @@ describe("readConversationWorkspaceMountMode", () => {
     createGlobalSettingsFile(stateDir);
     const vault = new FileVaultManager(stateDir);
     const key = credentialAuthorizationKey(
-      { type: "cloudflare", sandboxId: "base" },
+      { type: "firecracker", vmId: "vm1", hostPath: "/srv/workspace" },
       { userId: "U123", conversationId: "C123" },
     );
     vault.upsertFile(key, "secret", "value");
     const resolver = new ActorExecutionResolver(
-      { type: "cloudflare", sandboxId: "base" },
+      { type: "firecracker", vmId: "vm1", hostPath: "/srv/workspace" },
       vault,
       undefined,
       workspaceDir,
@@ -303,27 +303,5 @@ describe("readConversationWorkspaceMountMode", () => {
     await expect(
       resolver.resolve({ platform: "slack", userId: "U123", conversationId: "C123" }),
     ).rejects.toThrow(/does not support vault file mounts/);
-  });
-
-  test("derives per-actor cloudflare sandbox ids", async () => {
-    createGlobalSettingsFile(stateDir);
-    const resolver = new ActorExecutionResolver(
-      { type: "cloudflare", sandboxId: "mikan-remote" },
-      new FileVaultManager(stateDir),
-      undefined,
-      workspaceDir,
-      workspaceDir,
-    );
-
-    const executor = await resolver.resolve({
-      platform: "slack",
-      userId: "alice",
-      conversationId: "C123",
-    });
-
-    expect(executor.getSandboxConfig()).toEqual({
-      type: "cloudflare",
-      sandboxId: expect.stringMatching(/^mikan-remote-c123-[a-f0-9]{12}$/),
-    });
   });
 });

@@ -369,12 +369,9 @@ describe("ActorExecutionResolver image mode", () => {
     });
   });
 
-  test("uses platform-namespaced vault ids for new users in cloudflare mode", async () => {
+  test("uses platform-namespaced vault ids for new users in gondolin mode", async () => {
     const mgr = new FileVaultManager(tmpDir);
-    const resolver = new ActorExecutionResolver(
-      { type: "cloudflare", sandboxId: "mikan-remote" },
-      mgr,
-    );
+    const resolver = new ActorExecutionResolver({ type: "gondolin", profile: "default" }, mgr);
 
     const executor = await resolver.resolve({
       platform: "slack",
@@ -382,9 +379,10 @@ describe("ActorExecutionResolver image mode", () => {
       conversationId: "D123",
     });
 
-    expect(executor.getSandboxConfig()).toEqual({
-      type: "cloudflare",
-      sandboxId: "mikan-remote-d123-e8bafaeb6008",
+    expect(executor.getSandboxConfig()).toMatchObject({
+      type: "gondolin",
+      instanceId: "d123-e8bafaeb6008",
+      resourceKey: "d123-e8bafaeb6008",
     });
     expect(mgr.resolve(DockerContainerManager.sanitizeSegment("D123"))).toBeUndefined();
   });

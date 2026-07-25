@@ -9,6 +9,18 @@ any release.
 
 ## [Unreleased]
 
+### Added
+
+- Add the `remote_task` tool: one command per call in a throwaway remote sandbox, for parallel fan-out work. Registered only when `CLOUDFLARE_SANDBOX_URL` is set. It receives no workspace and no vault credentials.
+
+### Removed
+
+- Remove the `cloudflare:*` sandbox mode (ADR 0002). Remote execution never held the workspace — mounts were resolved and discarded, and vault file projection was unsupported — so it is a task executor, not a sandbox runtime. `--sandbox=cloudflare:*` is now rejected at startup with migration guidance; use `image:*` or `gondolin:default` and keep `CLOUDFLARE_SANDBOX_URL` set for `remote_task`.
+
+### Changed
+
+- `sandbox.defaultSharedVault` is now inherited by `image:*` conversations only. It is a trusted-internal-team convenience, and the previous list of "isolated" sandbox types invited modes whose purpose is running untrusted code.
+
 ### Changed
 
 - Gondolin runtimes now run in the mikan process instead of a detached worker process per conversation. Runtimes no longer survive a mikan restart: a restart or deploy starts cold, and the first command for each conversation boots a fresh VM. Shutdown closes every VM so projected files (such as `MEMORY.md`) sync back first.

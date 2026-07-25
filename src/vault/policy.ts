@@ -10,9 +10,12 @@ import type { SandboxConfig } from "../sandbox/index.js";
  * must not inherit ambient credentials — host-side platform identity or an
  * explicitly provisioned vault only.
  *
- * Topology: only isolated sandboxes (`image` / `cloudflare`) auto-provision
- * per-conversation vaults that receive the copy. `host` / `container` /
- * `firecracker` do not use this ambient path.
+ * Sandbox mode: `image:*` only. This is a trust rule, not a topology rule —
+ * inheriting one shared credential set suits a trusted internal team, which
+ * is what `image:*` deployments are. Do NOT widen this to whichever modes
+ * happen to be isolated and per-conversation: that reasoning is how
+ * `agent-sandbox` was added here in 19845f7, and it would pull in `gondolin`
+ * too, whose whole point is running code from people you do not trust.
  */
 export function allowsAmbientDefaultSharedVault(options: {
   trustModel?: PlatformTrustModel;
@@ -20,5 +23,5 @@ export function allowsAmbientDefaultSharedVault(options: {
 }): boolean {
   const trustModel = options.trustModel ?? "membership";
   if (trustModel === "open-trigger") return false;
-  return options.sandboxType === "image" || options.sandboxType === "cloudflare";
+  return options.sandboxType === "image";
 }

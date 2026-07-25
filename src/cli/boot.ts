@@ -109,7 +109,6 @@ Options:
                            image:<image[:tag]>
                            gondolin:default
                            firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]
-                           cloudflare:<sandbox-id>
                          Default: host
   --onboard              Create <state-dir>/settings.json from a template, then exit.
   --download <channel>   Dump a Slack channel's history (Slack only), then exit.
