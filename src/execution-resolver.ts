@@ -1,4 +1,6 @@
-import { posix } from "node:path";
+import { join, posix } from "node:path";
+import { effectiveStateDir } from "./cli/arg-grammar.js";
+import { conversationPackageSkillMounts } from "./packages/index.js";
 import { loadGlobalSettings } from "./config.js";
 import { DockerContainerManager, type ContainerMount } from "./provisioner.js";
 import {
@@ -162,10 +164,21 @@ export class ActorExecutionResolver {
 
   private resolveMounts(conversationId: string, vaultMounts: ContainerMount[]): ContainerMount[] {
     const workspaceMounts = resolveWorkspaceProjection(this.workspaceDir, conversationId).mounts;
+    // Package skills mount outside /workspace, so they cannot collide with the
+    // workspace projection; they are still checked against vault mounts below,
+    // which are administrator-chosen targets and could be aimed anywhere.
+    const packageMounts = this.workspaceDir
+      ? conversationPackageSkillMounts({
+          conversationId,
+          stateDir: effectiveStateDir(),
+          conversationDir: join(this.workspaceDir, conversationId),
+        })
+      : [];
+    const protectedMounts = [...workspaceMounts, ...packageMounts];
     for (let index = 0; index < vaultMounts.length; index += 1) {
       const vaultMount = vaultMounts[index];
-      const workspaceCollision = workspaceMounts.find((workspaceMount) =>
-        targetsOverlap(workspaceMount.target, vaultMount.target),
+      const workspaceCollision = protectedMounts.find((protectedMount) =>
+        targetsOverlap(protectedMount.target, vaultMount.target),
       );
       if (workspaceCollision) {
         throw new Error(
@@ -182,7 +195,7 @@ export class ActorExecutionResolver {
         );
       }
     }
-    return [...workspaceMounts, ...vaultMounts];
+    return [...protectedMounts, ...vaultMounts];
   }
 }
 

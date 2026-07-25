@@ -10,7 +10,6 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
 import {
   DEFAULT_EVENT_BUDGET,
-  defaultExtensionDirs,
   type ExtensionBlockAction,
   type ExtensionHostServices,
   type ExtensionRegistry,
@@ -28,7 +27,7 @@ import { runSubagent } from "./harness/subagent-runner.js";
 import { createHash } from "crypto";
 import { existsSync, readFileSync } from "fs";
 import { mkdir, readFile } from "fs/promises";
-import { join, posix } from "path";
+import { basename, join, posix } from "path";
 import type {
   ConversationKind,
   ConversationMessage,
@@ -48,6 +47,7 @@ import type {
 import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import { resolveConversationSettings } from "./config.js";
 import { effectiveStateDir } from "./cli/arg-grammar.js";
+import { packageSkillRuntimeDir, resolveConversationPackages } from "./packages/index.js";
 import { ActorExecutionResolver } from "./execution-resolver.js";
 import * as log from "./log.js";
 import type { DockerContainerManager } from "./provisioner.js";
@@ -233,6 +233,33 @@ function loadMikanSkills(conversationDir: string, workspacePath: string): MikanS
     }
     return hostPath;
   };
+
+  // Package skills first: they are the lowest precedence, so a workspace or
+  // conversation skill of the same name below overwrites them. A package can
+  // offer a capability without taking the name away from whoever wants to
+  // replace it locally.
+  //
+  // Unlike extension-shipped skills, these are NOT inlined into the prompt:
+  // conversationPackageSkillMounts exposes them read-only at a runtime path,
+  // so the agent can read the files — including any scripts or templates the
+  // skill ships alongside its SKILL.md, which inlining could never carry.
+  const mounted = workspacePath !== hostWorkspacePath;
+  for (const { slug, dir } of resolveConversationPackages({
+    conversationId: basename(conversationDir),
+    stateDir: effectiveStateDir(),
+    conversationDir,
+  }).skillDirs) {
+    const runtimeDir = packageSkillRuntimeDir(slug);
+    for (const skill of loadSkillsFromDir({ dir, source: `package:${slug}` }).skills) {
+      // In host mode there is no mount, so the host path is already the path
+      // the agent will use.
+      if (mounted) {
+        skill.filePath = runtimeDir + skill.filePath.slice(dir.length);
+        skill.baseDir = runtimeDir + skill.baseDir.slice(dir.length);
+      }
+      skillMap.set(skill.name, skill);
+    }
+  }
 
   // Load workspace-level skills (global)
   const workspaceSkillsDir = join(hostWorkspacePath, "skills");
@@ -1127,9 +1154,21 @@ async function createConfiguredAgentSession(params: {
   // Host-only dirs under the state dir: extension code runs in the mikan
   // process, so it must never load from workspace paths — those are mounted
   // into sandbox containers and agent-writable (sandbox escape otherwise).
+  // resolveConversationPackages only ever returns state-dir paths (and host
+  // paths an administrator named explicitly in settings); it never reaches
+  // the network on this path, so a slow remote cannot delay a reply.
   let session: MikanAgentSession | undefined;
+  const resolvedPackages = resolveConversationPackages({
+    conversationId,
+    stateDir: effectiveStateDir(),
+    conversationDir: join(workspaceDir, conversationId),
+  });
+  for (const error of resolvedPackages.errors) {
+    log.logWarning(`Package unavailable: ${error.source}`, error.message);
+  }
   const extensionsResult = await loadExtensions({
-    dirs: defaultExtensionDirs(conversationId, effectiveStateDir()),
+    dirs: resolvedPackages.extensionDirs,
+    roots: resolvedPackages.extensionRoots,
     context: { conversationId, workspaceDir, model, thinkingLevel },
     services: buildExtensionHostServices({
       workspaceDir,

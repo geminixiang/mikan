@@ -128,7 +128,53 @@ mikan ext install \
   --conversation <conversationId>
 ```
 
-`mikan ext install` 會驗證並複製程式碼；它**不會**執行 `npm install`。請優先使用 Node 內建功能，並避免執行階段相依套件。若需要執行階段套件，請先在經過審查的本機擴充功能目錄中安裝，再從本機安裝擴充功能，並確認複製後的擴充功能包含所需的 `node_modules`。
+當 git 來源的 `package.json` 宣告了 `dependencies` 時，mikan 會在取得的 clone 內執行 `npm install --omit=dev`。這會在 mikan 宿主機上執行那些相依套件的安裝腳本，信任等級與載入擴充功能本身相同——加入之前請先審查該套件。本機路徑來源是以參照方式使用、不會替你安裝，因此其 `node_modules` 必須事先就緒。
+
+無論哪一種情況都請優先使用 Node 內建功能並避免執行階段相依套件：每一個相依套件都代表更多以 mikan 權限執行的程式碼。
+
+## 不用 Slack 工作區也能開發
+
+為了確認 `activate()` 會不會跑，就得先把 mikan 裝進真實的 Slack 工作區——這樣的第一個小時太糟了。`mikan ext dev` 把同一套 runtime 放進你的終端機：
+
+```bash
+mikan ext dev ./my-extension
+> 幫我建一個午餐投票
+[agent 回覆]
+> /pi-new          # 編輯後重新載入
+```
+
+它是跑在正式 runtime 上的 stdin/stdout 對話——同樣的套件解析、同樣的 loader、同樣的指令——只是把平台換成終端機，sandbox 設為 `host`（不需要 Docker，不需要拉 image）。在這裡會動的擴充功能在頻道裡就會動，因為它被找到與被啟用的方式完全沒有差別。
+
+你的工作目錄會被登記成對話範圍的 local package。local 來源是**以參照方式**使用、絕不複製，所以迴圈就是 編輯 → `/pi-new` → 測試，沒有重裝步驟。每個擴充功能有各自的 `ext-dev-<name>` 對話，因此可以並行開發兩個。
+
+| 參數                | 意義                                        |
+| ------------------- | ------------------------------------------- |
+| `--workspace <dir>` | 對話狀態寫入位置（預設 `./.mikan-ext-dev`） |
+| `--state-dir <dir>` | 使用獨立的 state dir，而非共用的那個        |
+
+## 套件：不需要主機權限的安裝方式
+
+大多數需要啟用擴充功能的人無法 SSH 進 mikan 主機。套件就是為他們準備的路徑：在設定中宣告一個 git repository，由 mikan 去取得。
+
+傳送 `/pi-admin` 取得 portal 連結，然後使用 **Extensions** 面板（對話範圍）或 **Global Extensions** 面板（所有對話）。貼上 git URL，可選填 tag／branch／commit，按下 Add。
+
+clone 與驗證發生在你按下 Add 的當下，而不是之後——打錯字、私有 repository、不存在的 `#subpath`、或不含擴充功能的 repository，都會當場在表單上報錯。啟用仍然發生在下一次 `/pi-new`。
+
+套件 repository 有兩種佈局，mikan 依實際內容判斷：
+
+```
+多個擴充功能                   單一擴充功能
+├── extensions/               ├── index.ts
+│   ├── reporter/index.ts     ├── package.json
+│   └── triage/index.ts       └── skills/
+└── skills/
+```
+
+`skills/` 中的 skill 會以唯讀方式掛載到 `/mikan/packages/<slug>/skills`，因此不同於擴充功能自帶的 skill，它們可以攜帶 agent 真的會從磁碟讀取的指令稿與範本。它們的優先序最低：同名的 workspace 或對話 skill 會蓋過它。
+
+範圍是疊加的——全域套件在各處載入，對話的套件疊在其上——唯獨兩者宣告同一個 repository 時，對話的那份勝出，全域那份會顯示為 shadowed。把某個頻道釘在 `@v2`、其他人留在 `@v1`，靠的就是這個機制。
+
+目前僅支援 git 來源與主機路徑；npm 尚未實作。
 
 ## 擴充功能 API
 
@@ -341,6 +387,8 @@ mikan ext remove hello-mikan --conversation <conversationId>
 ```
 
 更新或移除後請傳送 `/pi-new`。在聊天中，`/pi-extensions` 會列出目前對話可見的擴充功能。
+
+套件是由管理 portal 管理，而非 CLI。**Update** 會重新取得來源：已釘住的 ref 保持不動，未釘住的則前進到該分支目前的 tip。以不同 ref 重新加入同一個 repository 會移動釘選點，而不是產生第二筆紀錄。**Remove** 只移除宣告，checkout 仍留在磁碟上，因此重新加入不需要網路往返。
 
 ## 疑難排解
 

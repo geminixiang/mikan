@@ -47,6 +47,9 @@ describe("Gondolin worker runtime", () => {
       RealFSProvider: class {
         constructor(public source: string) {}
       },
+      ReadonlyProvider: class {
+        constructor(public backend: { source: string }) {}
+      },
       findSession: vi.fn(async (id: string) => ({
         id,
         pid: process.pid,
@@ -187,6 +190,29 @@ describe("Gondolin worker runtime", () => {
     // credential is projected owner-only and never synced back
     expect(vm.exec).toHaveBeenCalledWith("chmod 600 '/root/.config/gws/credentials.json'");
     expect(vm.exec).toHaveBeenCalledTimes(1);
+  });
+
+  test("wraps a read-only mount in ReadonlyProvider and leaves the rest writable", async () => {
+    const workspace = join(dir, "ws");
+    mkdirSync(join(workspace, "C123"), { recursive: true });
+    const packageSkills = join(dir, "pkg-skills");
+    mkdirSync(packageSkills, { recursive: true });
+
+    await run({
+      mounts: [
+        { source: join(workspace, "C123"), target: "/workspace/C123" },
+        { source: packageSkills, target: "/mikan/packages/example/skills", readOnly: true },
+      ],
+    });
+
+    const options = created[0] as {
+      vfs: { mounts: Record<string, { constructor: { name: string } }> };
+    };
+    expect(options.vfs.mounts["/mikan/packages/example/skills"].constructor.name).toBe(
+      "ReadonlyProvider",
+    );
+    // The agent's own conversation directory must stay writable.
+    expect(options.vfs.mounts["/workspace/C123"].constructor.name).toBe("RealFSProvider");
   });
 
   test("syncs workspace file edits back to the host", async () => {

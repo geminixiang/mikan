@@ -9,6 +9,8 @@ import { isRecord } from "../utils/file-guards.js";
 const GondolinMountSchema = Type.Object({
   source: Type.String(),
   target: Type.String(),
+  /** Optional so worker processes from an older build still accept the config. */
+  readOnly: Type.Optional(Type.Boolean()),
 });
 
 /**
