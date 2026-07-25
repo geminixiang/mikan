@@ -200,6 +200,15 @@ export default defineConfig({
               },
               link: "/extension-development/",
             },
+            {
+              label: "Extensions & the agent loop",
+              translations: {
+                "zh-TW": "Extension 與 agent loop",
+                "zh-CN": "Extension 与 agent loop",
+                ja: "Extension と agent loop",
+              },
+              link: "/extension-agent-loop/",
+            },
           ],
         },
         {
