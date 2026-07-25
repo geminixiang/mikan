@@ -1,7 +1,7 @@
 ---
 description: Reviews mikan changes for correctness, security, and regressions
 tools: read, grep, find, ls, bash
-model: openai-codex/gpt-5.6-luna
+model: openai-codex/gpt-5.6-terra
 thinking: high
 max_turns: 25
 extensions: none
