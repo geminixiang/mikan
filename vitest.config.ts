@@ -10,6 +10,9 @@ export default defineConfig({
     },
   },
   test: {
+    // Git fixtures must resolve their repo from cwd, never from an ambient
+    // GIT_DIR inherited when the suite runs inside a git hook.
+    setupFiles: ["./test/setup/git-env.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],
