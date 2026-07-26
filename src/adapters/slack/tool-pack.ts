@@ -1,21 +1,7 @@
 import type { PlatformToolPack } from "../../tools/types.js";
 import { createSlackBlockKitTool } from "./tools/blockkit.js";
-
-/**
- * Host-side Slack operations for the Slack tool pack, keyed by conversation.
- * main.ts implements these against the running SlackMessagingBot.
- */
-export interface PlatformSlackOps {
-  postBlocks(
-    conversationId: string,
-    args: { text: string; blocks: object[]; threadTs?: string },
-  ): Promise<{ ts: string }>;
-  updateBlocks(
-    conversationId: string,
-    args: { ts: string; text: string; blocks: object[]; threadTs?: string },
-  ): Promise<void>;
-  ownsBlockKitMessage(conversationId: string, ts: string, threadTs?: string): boolean;
-}
+export type { PlatformSlackOps } from "./types.js";
+import type { PlatformSlackOps } from "./types.js";
 
 /**
  * Slack capability pack: tools that post platform-native surfaces (Block Kit)

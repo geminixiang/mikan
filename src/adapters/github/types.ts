@@ -34,6 +34,19 @@ export interface GithubBotConfig {
   };
 }
 
+export interface GcpTokenProviderOptions {
+  /** Path to the ADC JSON (usually $GOOGLE_APPLICATION_CREDENTIALS). */
+  credentialsPath: string;
+  fetchImpl?: typeof fetch;
+}
+
+export interface CloudBuildLogOptions {
+  tokenProvider: GcpTokenProvider;
+  project: string;
+  buildId: string;
+  fetchImpl?: typeof fetch;
+}
+
 /** Persisted per-repo poll watermark (DESIGN.md § Event source). */
 interface GithubRepoSyncState {
   /** Comments/issues created before this ISO instant never trigger. */
@@ -297,6 +310,12 @@ export interface GithubCheckSummary {
   externalId: string | null;
   /** True when this run's log is fetchable via build_id (Cloud Build + GCP creds). */
   buildLogAvailable?: boolean;
+}
+
+export interface GithubChecksFns {
+  getChecks: (branch?: string) => Promise<GithubCheckSummary[]>;
+  getJobLog: (jobId: number) => Promise<string>;
+  getBuildLog: (buildId: string) => Promise<string>;
 }
 
 /** Arguments for the host-side `github_read` tool. */

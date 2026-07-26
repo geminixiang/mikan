@@ -1,4 +1,5 @@
-import type { GcpTokenProvider } from "./gcp-auth.js";
+export type { CloudBuildLogOptions } from "./types.js";
+import type { CloudBuildLogOptions } from "./types.js";
 
 /**
  * Host-side Cloud Build log retrieval for `github_checks`. Cloud Build's
@@ -31,13 +32,6 @@ export function projectFromDetailsUrl(detailsUrl: string | null | undefined): st
   } catch {
     return null;
   }
-}
-
-export interface CloudBuildLogOptions {
-  tokenProvider: GcpTokenProvider;
-  project: string;
-  buildId: string;
-  fetchImpl?: typeof fetch;
 }
 
 interface CloudBuildBuild {

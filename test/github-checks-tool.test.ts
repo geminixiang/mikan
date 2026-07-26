@@ -1,8 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
-import {
-  createGithubChecksTool,
-  type GithubChecksFns,
-} from "../src/adapters/github/tools/checks.js";
+import { createGithubChecksTool } from "../src/adapters/github/tools/checks.js";
+import type { GithubChecksFns } from "../src/adapters/github/types.js";
 
 function makeFns(overrides: Partial<GithubChecksFns> = {}): GithubChecksFns {
   return {

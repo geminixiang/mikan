@@ -70,3 +70,25 @@ export interface SlackBlockActionBody {
   container?: { channel_id?: string; thread_ts?: string; message_ts?: string };
   user?: { id?: string; username?: string; name?: string };
 }
+
+/**
+ * Host-side Slack operations for the Slack tool pack, keyed by conversation.
+ * main.ts implements these against the running SlackMessagingBot.
+ */
+export interface PlatformSlackOps {
+  postBlocks(
+    conversationId: string,
+    args: { text: string; blocks: object[]; threadTs?: string },
+  ): Promise<{ ts: string }>;
+  updateBlocks(
+    conversationId: string,
+    args: { ts: string; text: string; blocks: object[]; threadTs?: string },
+  ): Promise<void>;
+  ownsBlockKitMessage(conversationId: string, ts: string, threadTs?: string): boolean;
+}
+
+/** Conversation-bound Slack Block Kit operations, provided by the host. */
+export interface SlackBlockKitOps {
+  postBlocks(args: { text: string; blocks: object[]; threadTs?: string }): Promise<{ ts: string }>;
+  updateBlocks(args: { ts: string; text: string; blocks: object[] }): Promise<void>;
+}

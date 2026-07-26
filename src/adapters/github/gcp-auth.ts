@@ -1,5 +1,7 @@
 import { readFileSync } from "fs";
 import { createSign } from "crypto";
+export type { GcpTokenProviderOptions } from "./types.js";
+import type { GcpTokenProviderOptions } from "./types.js";
 
 /**
  * Minimal Google Application Default Credentials provider — enough to mint
@@ -53,12 +55,6 @@ type AdcCredentials =
   | ExternalAccountCredentials
   | ServiceAccountCredentials
   | AuthorizedUserCredentials;
-
-export interface GcpTokenProviderOptions {
-  /** Path to the ADC JSON (usually $GOOGLE_APPLICATION_CREDENTIALS). */
-  credentialsPath: string;
-  fetchImpl?: typeof fetch;
-}
 
 function base64Url(data: string): string {
   return Buffer.from(data).toString("base64url");

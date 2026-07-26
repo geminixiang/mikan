@@ -1,9 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
-import { createSlackToolPack, type PlatformSlackOps } from "../src/adapters/slack/tool-pack.js";
-import {
-  createSlackBlockKitTool,
-  type SlackBlockKitOps,
-} from "../src/adapters/slack/tools/blockkit.js";
+import { createSlackToolPack } from "../src/adapters/slack/tool-pack.js";
+import { createSlackBlockKitTool } from "../src/adapters/slack/tools/blockkit.js";
+import type { PlatformSlackOps, SlackBlockKitOps } from "../src/adapters/slack/types.js";
 
 const BLOCKS = [
   { type: "markdown", text: "Vote:" },

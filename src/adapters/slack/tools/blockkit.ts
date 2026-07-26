@@ -1,11 +1,7 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
-
-/** Conversation-bound Slack Block Kit operations, provided by the host. */
-export interface SlackBlockKitOps {
-  postBlocks(args: { text: string; blocks: object[]; threadTs?: string }): Promise<{ ts: string }>;
-  updateBlocks(args: { ts: string; text: string; blocks: object[] }): Promise<void>;
-}
+export type { SlackBlockKitOps } from "../types.js";
+import type { SlackBlockKitOps } from "../types.js";
 
 /** Slack's own ceilings: 50 blocks per message, and a payload well under 64KB. */
 const MAX_BLOCKS = 50;

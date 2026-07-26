@@ -1,7 +1,8 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { defineHostFnTool } from "../../../tools/host-fn-tool.js";
-import type { GithubCheckSummary } from "../types.js";
+export type { GithubChecksFns } from "../types.js";
+import type { GithubCheckSummary, GithubChecksFns } from "../types.js";
 
 const githubChecksSchema = Type.Object({
   branch: Type.Optional(
@@ -54,12 +55,6 @@ function formatCheckLine(run: GithubCheckSummary): string {
   return failed && run.outputSummary
     ? `${line}\n  ↳ ${run.outputSummary.replace(/\s*\n\s*/g, " ")}`
     : line;
-}
-
-export interface GithubChecksFns {
-  getChecks: (branch?: string) => Promise<GithubCheckSummary[]>;
-  getJobLog: (jobId: number) => Promise<string>;
-  getBuildLog: (buildId: string) => Promise<string>;
 }
 
 /**
