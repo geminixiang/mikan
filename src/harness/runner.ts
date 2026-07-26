@@ -42,12 +42,29 @@ import * as log from "../log.js";
 import type { ExtensionRegistry } from "./extensions/registry.js";
 import type { RunOrigin } from "./extensions/types.js";
 import type { MikanModels } from "./models.js";
-import { resolveHarnessSettings, type BudgetSettings, type HarnessSettings } from "./settings.js";
+import { resolveHarnessSettings } from "./settings.js";
 import type { SessionStore } from "./session-store.js";
-import type { CompactionEntry, SubagentUsage, SubagentUsageSink } from "./types.js";
-import { addSubagentUsage, copySubagentUsage, createEmptySubagentUsage } from "./usage.js";
+import type {
+  BudgetSettings,
+  CompactionEntry,
+  CompactionReason,
+  HarnessEvent,
+  HarnessEventListener,
+  HarnessSettings,
+  MikanAgentSessionOptions,
+  PromptBlockedOutcome,
+  SubagentUsage,
+  SubagentUsageSink,
+} from "./types.js";
 
-export type CompactionReason = "threshold" | "overflow" | "manual";
+export type {
+  CompactionReason,
+  HarnessEvent,
+  HarnessEventListener,
+  MikanAgentSessionOptions,
+  PromptBlockedOutcome,
+} from "./types.js";
+import { addSubagentUsage, copySubagentUsage, createEmptySubagentUsage } from "./usage.js";
 
 /** Running resource tally for the current `prompt()` call, matched against the budget. */
 interface RunTally {
@@ -56,48 +73,6 @@ interface RunTally {
   toolCalls: number;
   toolCallCounts: Record<string, number>;
   startedAt: number;
-}
-
-interface CompactionResultSummary {
-  summary: string;
-  firstKeptEntryId: string;
-  tokensBefore: number;
-}
-
-export type HarnessEvent =
-  | AgentEvent
-  | { type: "compaction_start"; reason: CompactionReason }
-  | {
-      type: "compaction_end";
-      reason: CompactionReason;
-      result?: CompactionResultSummary;
-      aborted: boolean;
-      errorMessage?: string;
-    }
-  | {
-      type: "auto_retry_start";
-      attempt: number;
-      maxAttempts: number;
-      delayMs: number;
-      errorMessage: string;
-    }
-  | { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
-  | {
-      type: "budget_exceeded";
-      /** Which cap was hit, e.g. "cost 2.01 USD > 2 USD limit". */
-      reason: string;
-      tokens: number;
-      costUsd: number;
-      llmCalls: number;
-      durationMs: number;
-    };
-
-export type HarnessEventListener = (event: HarnessEvent) => void | Promise<void>;
-
-/** Outcome of a `prompt()` call that an extension blocked before the model ran. */
-export interface PromptBlockedOutcome {
-  blocked: true;
-  reason?: string;
 }
 
 // Transient provider failures worth retrying: overload/rate-limit responses,
@@ -121,17 +96,6 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
     };
     signal.addEventListener("abort", onAbort, { once: true });
   });
-}
-
-export interface MikanAgentSessionOptions {
-  systemPrompt: string;
-  model: Model<Api>;
-  thinkingLevel: ThinkingLevel;
-  tools: AgentTool[];
-  models: MikanModels;
-  sessionStore: SessionStore;
-  settings?: Parameters<typeof resolveHarnessSettings>[0];
-  extensions?: ExtensionRegistry;
 }
 
 export class MikanAgentSession {

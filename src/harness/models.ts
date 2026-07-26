@@ -45,6 +45,9 @@ import { mistralConversationsApi } from "@earendil-works/pi-ai/api/mistral-conve
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
 import { defaultAuthPath, FileCredentialStore } from "./auth.js";
+import type { CreateMikanModelsOptions } from "./types.js";
+
+export type { CreateMikanModelsOptions } from "./types.js";
 
 const CUSTOM_API_STREAMS: Record<string, () => ProviderStreams> = {
   "anthropic-messages": anthropicMessagesApi,
@@ -201,11 +204,6 @@ function overrideBuiltinProvider(provider: Provider, config: CustomProviderConfi
     ...provider,
     getModels: () => models,
   };
-}
-
-export interface CreateMikanModelsOptions {
-  authPath?: string;
-  modelsJsonPath?: string;
 }
 
 /**
