@@ -159,7 +159,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   ): Promise<void> {
     assertSessionKeyBelongsToConversation(sessionKey, conversationId);
     const activeState = this.sessions.get(sessionKey);
-    if (activeState?.running) {
+    if (activeState?.running || activeState?.runSettlement) {
       const activeSettlement = activeState.runSettlement;
       if (activeSettlement && this.sessionDreamSettlements.has(activeSettlement)) {
         await activeSettlement;
@@ -175,7 +175,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       sessionKey,
       conversationKind: message.conversationKind,
     });
-    if (state.running) {
+    if (state.running || state.runSettlement) {
       const activeSettlement = state.runSettlement;
       if (activeSettlement && this.sessionDreamSettlements.has(activeSettlement)) {
         await activeSettlement;
@@ -186,12 +186,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       await activeSettlement;
       return this.handleNewCommand(sessionKey, conversationId, bot, message, responder, platform);
     }
-    state.running = true;
-    state.stopRequested = false;
-    state.startedAt = Date.now();
-    state.lastActivityAt = Date.now();
-
-    const dreamSettlement = Promise.resolve().then(async () => {
+    const dreamSettlement = this.startSessionDream(state, async () => {
       let working = false;
       try {
         await responder.setWorking(true);
@@ -210,28 +205,50 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         working = false;
         await this.resetSession(sessionKey, conversationId, bot);
       } finally {
-        try {
-          if (working) await responder.setWorking(false);
-        } finally {
-          state.running = false;
-          state.startedAt = 0;
-          state.lastAccessedAt = Date.now();
-        }
+        if (working) await responder.setWorking(false);
       }
     });
-
-    state.runSettlement = dreamSettlement;
-    this.sessionDreamSettlements.add(dreamSettlement);
-    this.inFlightRuns.add(dreamSettlement);
     try {
       await dreamSettlement;
     } finally {
-      this.sessionDreamSettlements.delete(dreamSettlement);
-      this.inFlightRuns.delete(dreamSettlement);
-      if (state.runSettlement === dreamSettlement) state.runSettlement = undefined;
-      this.sessions.onSettlement(sessionKey);
-      this.sessions.evictIdle();
+      this.finishSessionDream(sessionKey, state, dreamSettlement);
     }
+  }
+
+  private startSessionDream(
+    state: ConversationState,
+    dream: () => Promise<void>,
+    markRunning = true,
+  ): Promise<void> {
+    if (markRunning) {
+      state.running = true;
+      state.stopRequested = false;
+      state.startedAt = Date.now();
+      state.lastActivityAt = Date.now();
+    }
+
+    const settlement = Promise.resolve().then(dream);
+    state.runSettlement = settlement;
+    this.sessionDreamSettlements.add(settlement);
+    this.inFlightRuns.add(settlement);
+    return settlement;
+  }
+
+  private finishSessionDream(
+    sessionKey: string,
+    state: ConversationState,
+    settlement: Promise<void>,
+  ): void {
+    this.sessionDreamSettlements.delete(settlement);
+    this.inFlightRuns.delete(settlement);
+    if (state.runSettlement !== settlement) return;
+
+    state.runSettlement = undefined;
+    state.running = false;
+    state.startedAt = 0;
+    state.lastAccessedAt = Date.now();
+    this.sessions.onSettlement(sessionKey);
+    this.sessions.evictIdle();
   }
 
   private async dreamSessionMemory(
@@ -279,21 +296,34 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         conversationKind: message.conversationKind,
         currentMessageId: message.id,
       });
-      const result = await this.dreamSessionMemory(state, message, platform);
-      if (!result.success) {
-        const detail = result.errorMessage ? `: ${result.errorMessage}` : "";
-        log.logWarning(`[${conversationId}] Automatic Session Dream failed${detail}`);
-        return;
-      }
+      const dreamSettlement = this.startSessionDream(
+        state,
+        async () => {
+          const result = await this.dreamSessionMemory(state, message, platform);
+          if (!result.success) {
+            const detail = result.errorMessage ? `: ${result.errorMessage}` : "";
+            log.logWarning(`[${conversationId}] Automatic Session Dream failed${detail}`);
+            return;
+          }
 
-      const runtimeCwd = runtimeCwdForSandbox(
-        this.options.sandbox,
-        this.options.workingDir,
-        conversationId,
+          const runtimeCwd = runtimeCwdForSandbox(
+            this.options.sandbox,
+            this.options.workingDir,
+            conversationId,
+          );
+          this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
+          this.sessions.discard(sessionKey);
+          log.logInfo(
+            `[${conversationId}] Session Dream completed; rotated session: ${sessionKey}`,
+          );
+        },
+        false,
       );
-      this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
-      this.sessions.discard(sessionKey);
-      log.logInfo(`[${conversationId}] Session Dream completed; rotated session: ${sessionKey}`);
+      try {
+        await dreamSettlement;
+      } finally {
+        this.finishSessionDream(sessionKey, state, dreamSettlement);
+      }
     });
   }
 

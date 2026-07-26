@@ -507,6 +507,66 @@ describe("ConversationRuntime lifecycle", () => {
     expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
   });
 
+  test("automatic shared rotation defers refresh until Dream settles", async () => {
+    const { models, faux } = createFauxModels();
+    const runtime = makeRuntime(models);
+    const originalSession = createManagedSessionFile(
+      getChannelSessionDir(conversationDir),
+      conversationDir,
+    );
+    rewriteSessionTimestamp(originalSession, "2026-01-05T12:00:00.000Z");
+
+    let dreamStarted = false;
+    let releaseDream!: () => void;
+    const dreamGate = new Promise<void>((resolve) => (releaseDream = resolve));
+    let runStarted = false;
+    let releaseRun!: () => void;
+    const runGate = new Promise<void>((resolve) => (releaseRun = resolve));
+    faux.setResponses([
+      async () => {
+        dreamStarted = true;
+        await dreamGate;
+        return fauxAssistantMessage("memory preserved");
+      },
+      async () => {
+        runStarted = true;
+        await runGate;
+        return fauxAssistantMessage("reply");
+      },
+    ]);
+
+    const sessions = (
+      runtime as unknown as {
+        sessions: {
+          get(sessionKey: string): ConversationRuntimeState | undefined;
+        };
+      }
+    ).sessions;
+    const { event, context } = makeEventAndContext("6");
+    const done = runtime.handleEvent(event, bot, context);
+    await vi.waitFor(() => expect(dreamStarted).toBe(true));
+
+    const oldState = sessions.get("C123");
+    expect(oldState).toBeDefined();
+    const oldRunner = oldState!.runner;
+    const oldDispose = vi.spyOn(oldRunner, "dispose");
+
+    expect(runtime.refreshAllConversations()).toEqual({ busy: ["C123"] });
+    expect(oldDispose).not.toHaveBeenCalled();
+
+    releaseDream();
+    await vi.waitFor(() => expect(oldDispose).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(runStarted).toBe(true));
+    const newState = sessions.get("C123");
+    expect(newState).toBeDefined();
+    expect(newState!.runner).not.toBe(oldRunner);
+    const newDispose = vi.spyOn(newState!.runner, "dispose");
+
+    releaseRun();
+    await done;
+    expect(newDispose).not.toHaveBeenCalled();
+  });
+
   test("keeps the old shared session when automatic session Dream fails", async () => {
     const runtime = makeRuntime();
     const originalSession = createManagedSessionFile(
