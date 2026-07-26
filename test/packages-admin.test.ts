@@ -114,6 +114,20 @@ describe("addPackage", () => {
     expect(readPackages(globalSettingsFile())).toEqual([source]);
   });
 
+  test("re-adding the same package at a new ref updates the checkout and pin", () => {
+    addPackage("global", `${source}@v1`, context());
+    writeFileSync(join(repo, "marker"), "v2");
+    execFileSync("git", ["add", "-A"], { cwd: repo });
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "two"], {
+      cwd: repo,
+    });
+    execFileSync("git", ["tag", "v2"], { cwd: repo });
+
+    const updated = addPackage("global", `${source}@v2`, context());
+    expect(readFileSync(join(updated.dir, "marker"), "utf-8")).toBe("v2");
+    expect(readPackages(globalSettingsFile())).toEqual([`${source}@v2`]);
+  });
+
   test("adding a second, different package keeps the first", () => {
     const other = mkdtempSync(join(base, "repo2-"));
     writeFileSync(join(other, "index.mjs"), "export function activate() {}");
