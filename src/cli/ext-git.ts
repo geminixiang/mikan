@@ -5,7 +5,7 @@
  * caller validates + copies the returned directory, then calls cleanup().
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { ResolvedGitSource } from "./types.js";
@@ -84,9 +84,15 @@ export function resolveGitSource(spec: GitSpec): ResolvedGitSource {
   try {
     execFileSync("git", ["clone", "--depth", "1", spec.url, tempRoot], { stdio: "inherit" });
 
-    const dir = spec.subpath ? resolveSubpath(tempRoot, spec.subpath) : tempRoot;
-    if (!existsSync(dir)) {
+    const root = realpathSync(tempRoot);
+    const selectedPath = spec.subpath ? resolveSubpath(root, spec.subpath) : root;
+    if (!existsSync(selectedPath)) {
       throw new Error(`Subpath not found in repository: ${spec.subpath}`);
+    }
+    const dir = realpathSync(selectedPath);
+    const relation = relative(root, dir);
+    if (isAbsolute(relation) || relation === ".." || relation.startsWith(`..${sep}`)) {
+      throw new Error(`Subpath escapes repository: ${spec.subpath}`);
     }
 
     // Install runtime dependencies only when the extension declares any.
