@@ -2,12 +2,9 @@ import { join } from "path";
 import * as log from "../log.js";
 import type { ConversationLogMessage } from "../types.js";
 import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-guards.js";
+import type { LogRecord } from "./types.js";
 
-/** One parsed log.jsonl entry with its original line index. */
-export interface LogRecord {
-  message: ConversationLogMessage;
-  index: number;
-}
+export type { LogRecord } from "./types.js";
 
 /**
  * Read a conversation's platform chat log (log.jsonl): skip malformed lines,

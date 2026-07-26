@@ -1,3 +1,5 @@
+import type { ResourceLimits } from "../types.js";
+
 export type SandboxConfig =
   | HostSandboxConfig
   | ContainerSandboxConfig
@@ -29,6 +31,30 @@ export interface GondolinSandboxConfig {
   mounts?: Array<{ source: string; target: string; readOnly?: boolean }>;
   instanceId?: string;
   resourceKey?: string;
+}
+
+export interface GondolinBootstrapOptions {
+  /** Default per-runtime resource limits. */
+  limits?: ResourceLimits;
+  /** Boosted limits applied while a runtime holds a boost. */
+  boostLimits?: ResourceLimits;
+}
+
+export interface SessionClientCallbacks {
+  onJson: (message: {
+    type: string;
+    id?: number;
+    exit_code?: number | null;
+    code?: string;
+    message?: string;
+  }) => void;
+  onBinary: (frame: Buffer) => void;
+  onClose: (error?: Error) => void;
+}
+
+export interface SessionClient {
+  send(message: object): void;
+  close(): void;
 }
 
 export interface FirecrackerSandboxConfig {

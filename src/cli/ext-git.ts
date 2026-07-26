@@ -8,13 +8,9 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ResolvedGitSource } from "./types.js";
 
-export interface ResolvedGitSource {
-  /** Local directory holding the extension (clone root or a subpath within). */
-  dir: string;
-  /** Remove the temporary clone. */
-  cleanup: () => void;
-}
+export type { ResolvedGitSource } from "./types.js";
 
 interface GitSpec {
   url: string;

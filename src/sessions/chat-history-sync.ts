@@ -2,7 +2,7 @@ import type { SessionEntry, SessionStore } from "../harness/index.js";
 import type { ConversationLogMessage } from "../types.js";
 import { isRecord } from "../utils/file-guards.js";
 import { isCommandText } from "../commands/text.js";
-import { readConversationLog, type LogRecord } from "./conversation-log.js";
+import { readConversationLog } from "./conversation-log.js";
 import { formatHistoryLine, stripHistoryLinePrefix } from "./history-line.js";
 import { isPlatformHistorySession } from "./metadata.js";
 import { shouldRotateTopLevelSession } from "./rotation.js";
@@ -35,6 +35,7 @@ export type {
   ResolveChatSessionScopeOptions,
   SyncChatSessionOptions,
   ThreadBootstrapWaitOptions,
+  ChatSyncReport,
 } from "./types.js";
 import type {
   ChatHistorySyncOptions,
@@ -44,15 +45,9 @@ import type {
   ResolveChatSessionScopeOptions,
   SyncChatSessionOptions,
   ThreadBootstrapWaitOptions,
+  ChatSyncReport,
+  LogRecord,
 } from "./types.js";
-
-/** What one sync pass actually did — the inspectable result of a sync. */
-export interface ChatSyncReport {
-  /** Log messages appended to the session in this pass. */
-  appended: number;
-  /** The log message id recorded as the new sync watermark. */
-  lastMessageId?: string;
-}
 
 export function hasMaterializedChatSession(options: HasMaterializedSessionOptions): boolean {
   if (!isThreadSessionKey(options.sessionKey)) {

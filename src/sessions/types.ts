@@ -1,4 +1,5 @@
 import type { ConversationKind } from "../adapter.js";
+import type { ConversationLogMessage } from "../types.js";
 
 // ── session metadata ─────────────────────────────────────────────────────────
 
@@ -43,7 +44,21 @@ export interface ResolvedSessionScope {
   threadRootMessage: ThreadRootMessage | null;
 }
 
+/** One parsed log.jsonl entry with its original line index. */
+export interface LogRecord {
+  message: ConversationLogMessage;
+  index: number;
+}
+
 // ── chat history sync ────────────────────────────────────────────────────────
+
+/** What one sync pass actually did — the inspectable result of a sync. */
+export interface ChatSyncReport {
+  /** Log messages appended to the session in this pass. */
+  appended: number;
+  /** The log message id recorded as the new sync watermark. */
+  lastMessageId?: string;
+}
 
 export interface ChatHistorySyncOptions {
   recentDays?: number;

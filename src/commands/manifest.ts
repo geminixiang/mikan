@@ -14,49 +14,9 @@
  * magic word owned by conversation intake, not a command handler.
  */
 
-interface CommandArgSpec {
-  name: string;
-  description: string;
-  required: boolean;
-}
+import type { CommandManifestEntry, SlackSlashRoute } from "./types.js";
 
-/**
- * Data for the Slack adapter's generic slash route (how the synthesized
- * command event is built). All flags default to false.
- */
-export interface SlackSlashRoute {
-  /** Append the slash payload's free text to the synthesized command text. */
-  includeText?: boolean;
-  /** Scope the event to the invoking thread (thread-scoped session key). */
-  thread?: boolean;
-  /** Outside DMs, mark the event `private_command` so replies stay between the bot and the user. */
-  privateCommand?: boolean;
-}
-
-export interface CommandManifestEntry {
-  /** Canonical name without slash, e.g. "login"; `/login` and `/pi-login` are derived. */
-  name: string;
-  description: string;
-  /** Extra accepted spellings beyond `name` (e.g. "autoreply"); each also gets a `pi-` form. */
-  aliases?: readonly string[];
-  /** Optional single free-text argument for platforms that register typed args. */
-  arg?: CommandArgSpec;
-  /** Accepted without a leading slash. Per CONTEXT.md, only `session`. */
-  bare?: boolean;
-  /**
-   * Routed by conversation intake as a magic word, never by a command
-   * handler. Such an entry exists for platform registration/UI only.
-   */
-  magicWord?: boolean;
-  /** Slack slash-command name, e.g. "/pi-login". Absent = not a Slack slash command. */
-  slackCommand?: string;
-  /** Slack routing data; absent for `new`, whose Slack dispatch is bespoke. */
-  slackRoute?: SlackSlashRoute;
-  /** Registered as a Discord application command. */
-  discord?: boolean;
-  /** Listed in Telegram's command menu; `description` overrides the shared one. */
-  telegramMenu?: { description?: string };
-}
+export type { CommandManifestEntry, SlackSlashRoute } from "./types.js";
 
 /** Entry order is the Telegram command-menu order. */
 export const COMMAND_MANIFEST: readonly CommandManifestEntry[] = [
