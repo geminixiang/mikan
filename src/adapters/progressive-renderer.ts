@@ -4,7 +4,12 @@ import type {
   SubagentProgressSnapshot,
 } from "../adapter.js";
 import * as log from "../log.js";
-import { formatToolArgs, splitText, type ChatResponseErrorOperation } from "./shared.js";
+import {
+  createChatResponseErrorReporter,
+  formatToolArgs,
+  splitText,
+  type ChatResponseErrorOperation,
+} from "./shared.js";
 import type { ProgressiveRendererPlatform } from "./types.js";
 
 export function formatMarkdownToolResult(result: ChatToolResult): string {
@@ -54,6 +59,9 @@ export function createProgressiveRenderer(platform: ProgressiveRendererPlatform)
     extraIds: [],
   };
   const sanitize = platform.sanitize ?? ((text: string) => text);
+  const reportResponseError = createChatResponseErrorReporter(() =>
+    platform.responseErrorContext(state.responseId),
+  );
   const now = Date.now;
 
   function stopTyping(): void {
@@ -223,7 +231,7 @@ export function createProgressiveRenderer(platform: ProgressiveRendererPlatform)
     const handled = operationPromise.catch(async (err) => {
       const message = err instanceof Error ? err.message : String(err);
       log.logWarning(`${platform.label} ${label} error`, message);
-      platform.reportError(err, operation, extra(), state.responseId);
+      reportResponseError(err, operation, extra());
       if (platform.notifySendFailure) {
         try {
           await platform.notifySendFailure(message);

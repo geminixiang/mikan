@@ -1,7 +1,6 @@
 import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../../adapter.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
 import { createProgressiveRenderer, formatMarkdownToolResult } from "../progressive-renderer.js";
-import { createChatResponseErrorReporter } from "../shared.js";
 import { formatGithubContinuation, type GithubMessagingBot } from "./bot.js";
 import { GITHUB_MAX_COMMENT_LENGTH } from "./client.js";
 import { parseGithubConversationId } from "./ids.js";
@@ -87,15 +86,14 @@ export function createGithubAdapters(
     errorPrefix: "**Error:** ",
     formatToolResult: formatMarkdownToolResult,
     logIntermediateResponses: true,
-    reportError: (err, operation, extra, responseId) =>
-      createChatResponseErrorReporter(() => ({
-        platform: "github",
-        conversationId,
-        messageId: message.id,
-        sessionKey: message.sessionKey,
-        responseMessageId: responseId === null ? null : Number(responseId),
-        conversationKind: message.conversationKind,
-      }))(err, operation, extra),
+    responseErrorContext: (responseId) => ({
+      platform: "github",
+      conversationId,
+      messageId: message.id,
+      sessionKey: message.sessionKey,
+      responseMessageId: responseId === null ? null : Number(responseId),
+      conversationKind: message.conversationKind,
+    }),
     post: async (text) => {
       return String(await bot.postComment(ref, text));
     },

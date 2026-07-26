@@ -59,12 +59,12 @@ sequenceDiagram
 
 ## Shared utilities
 
-| File                                   | Purpose                                                                                                                    |
-| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `src/adapter.ts`                       | Exports shared interfaces such as `MessagingBot`, `ConversationEvent`, `ConversationMessage`, and `ConversationResponder`. |
-| `src/adapters/intake.ts`               | Shared message intake flow: trigger, log, attachment, queue, and handler call order.                                       |
-| `src/adapters/shared.ts`               | Shared retry, queue, long message splitting, log, and stop target resolution.                                              |
-| `src/adapters/progressive-renderer.ts` | Owns progressive response buffering, tool progress, finalization, and platform write serialization.                        |
+| File                                   | Purpose                                                                                                                       |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `src/adapter.ts`                       | Exports shared interfaces such as `MessagingBot`, `ConversationEvent`, `ConversationMessage`, and `ConversationResponder`.    |
+| `src/adapters/intake.ts`               | Shared message intake flow: trigger, log, attachment, queue, and handler call order.                                          |
+| `src/adapters/shared.ts`               | Shared retry, queue, long message splitting, log, and stop target resolution.                                                 |
+| `src/adapters/progressive-renderer.ts` | Owns progressive response buffering, tool progress, finalization, platform write serialization, and response-error reporting. |
 
 ## Platform differences
 

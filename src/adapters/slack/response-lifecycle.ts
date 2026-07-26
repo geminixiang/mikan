@@ -1,7 +1,7 @@
 import type { ConversationMessage, ConversationResponder, ChatToolResult } from "../../adapter.js";
 import * as log from "../../log.js";
 import { createProgressiveRenderer } from "../progressive-renderer.js";
-import { createChatResponseErrorReporter, formatToolArgs, splitText } from "../shared.js";
+import { formatToolArgs, splitText } from "../shared.js";
 import { buildMrkdwnContextBlock, type SlackMessagingBot, type SlackEvent } from "./bot.js";
 import { renderSlackBlocks } from "./blocks.js";
 import type { SlackAdapterSessionPlan } from "./types.js";
@@ -106,17 +106,6 @@ export function createSlackResponseContext({
     );
   };
 
-  const reportResponseError = createChatResponseErrorReporter(() => ({
-    platform: "slack",
-    conversationId,
-    channelId,
-    messageId: message.id,
-    sessionKey: message.sessionKey,
-    responseMessageId: null,
-    threadTs: rootTs,
-    conversationKind: message.conversationKind,
-    isThreaded,
-  }));
   const postThreadDiagnostic = async (
     text: string,
     options: { style?: "muted" | "error" } = {},
@@ -173,12 +162,17 @@ export function createSlackResponseContext({
         : undefined,
     needsCanonicalRender,
     formatToolResult: formatSlackToolResult,
-    reportError: (err, operation, extra, responseId) => {
-      reportResponseError(err, operation, {
-        ...extra,
-        responseMessageId: responseId,
-      });
-    },
+    responseErrorContext: (responseId) => ({
+      platform: "slack",
+      conversationId,
+      channelId,
+      messageId: message.id,
+      sessionKey: message.sessionKey,
+      responseMessageId: responseId,
+      threadTs: rootTs,
+      conversationKind: message.conversationKind,
+      isThreaded,
+    }),
     post: (text) =>
       replyInThread && rootTs
         ? slack.postInThread(channelId, rootTs, text)
