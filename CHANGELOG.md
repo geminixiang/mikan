@@ -9,11 +9,33 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.29]
+
+### Added
+
+- Add Git-sourced extension packages with global and conversation scopes, package mount resolution, CLI inspection, and admin portal management.
+- Add native Slack markdown-block responses and the `slack_blockkit` tool for interactive Block Kit messages.
+- Add interactive Block Kit APIs for extensions, with a poll extension example.
+- Add named subagent profiles, built-in workflow specialists, per-profile tool grants, and a bounded Slack progress dashboard.
+- Preserve durable memory with Session Dream before biweekly shared-channel session rotation, using the same conversation-scoped maintenance path as `/new`.
+
 ### Changed
 
-- Preserve durable memory before biweekly shared-channel session rotation, using the same conversation-scoped maintenance path as `/new`; maintenance cannot modify workspace-global `MEMORY.md`, and failures keep the current session active.
-- Gondolin runtimes now run in the mikan process instead of a detached worker process per conversation. Runtimes no longer survive a mikan restart: a restart or deploy starts cold, and the first command for each conversation boots a fresh VM. Shutdown closes every VM so projected files (such as `MEMORY.md`) sync back first.
-- `configureGondolinRuntime` no longer takes `stateDir`; the runtime inventory under `<state-dir>/gondolin-runtimes/` is gone, along with the worker heartbeat.
+- Run Gondolin runtimes inside the mikan process instead of detached workers. Restarts now boot fresh VMs on demand, and shutdown closes every VM so projected files sync back first.
+- Remove Gondolin runtime inventories, worker heartbeats, and the `stateDir` argument from `configureGondolinRuntime`.
+- Render standard GFM response prose as native Slack markdown blocks while keeping progressive response updates behind a single lifecycle.
+
+### Fixed
+
+- Keep the current session active and preserve saved memory when Session Dream cannot finish.
+- Bound subagent cancellation, invocation modes, profile labels, and Block Kit payloads; clamp long labels with an ellipsis instead of rejecting calls.
+- Show the selected subagent profile and its tool grant consistently in progress output.
+- Render the Slack subagent dashboard as a response source rather than escaped mrkdwn.
+- Isolate Git test fixtures from an ambient `GIT_DIR`.
+
+### Tests
+
+- Add coverage for extension packages, extension Block Kit APIs, native Slack rendering, subagent profiles and progress, Session Dream rotation, and in-process Gondolin lifecycle behavior.
 
 ## [1.0.0-beta.28]
 
