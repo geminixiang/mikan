@@ -7,7 +7,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { ResolvedGitSource } from "./types.js";
 
 export type { ResolvedGitSource } from "./types.js";
@@ -47,17 +47,44 @@ export function parseGitSource(source: string): GitSpec | undefined {
 function splitSubpath(source: string): [string, string | undefined] {
   const hash = source.indexOf("#");
   if (hash === -1) return [source, undefined];
-  return [source.slice(0, hash), source.slice(hash + 1) || undefined];
+  const subpath = source.slice(hash + 1).trim();
+  if (!subpath) return [source.slice(0, hash), undefined];
+  assertSafeRelativePath(subpath);
+  return [source.slice(0, hash), subpath];
+}
+
+function assertSafeRelativePath(value: string): void {
+  if (
+    isAbsolute(value) ||
+    value.startsWith("/") ||
+    value.startsWith("\\") ||
+    /^[A-Za-z]:[\\/]/.test(value) ||
+    value.split(/[\\/]/).some((segment) => segment === "..")
+  ) {
+    throw new Error(`#subpath must be a relative path without '..': ${JSON.stringify(value)}`);
+  }
+}
+
+function resolveSubpath(root: string, subpath: string): string {
+  assertSafeRelativePath(subpath);
+  const resolvedRoot = resolve(root);
+  const dir = resolve(resolvedRoot, subpath);
+  const relation = relative(resolvedRoot, dir);
+  if (isAbsolute(relation) || relation === ".." || relation.startsWith(`..${sep}`)) {
+    throw new Error(`Subpath escapes repository: ${subpath}`);
+  }
+  return dir;
 }
 
 /** Clone a git source (shallow) and resolve the extension directory within it. */
 export function resolveGitSource(spec: GitSpec): ResolvedGitSource {
+  if (spec.subpath) assertSafeRelativePath(spec.subpath);
   const tempRoot = mkdtempSync(join(tmpdir(), "mikan-ext-git-"));
   const cleanup = () => rmSync(tempRoot, { recursive: true, force: true });
   try {
     execFileSync("git", ["clone", "--depth", "1", spec.url, tempRoot], { stdio: "inherit" });
 
-    const dir = spec.subpath ? join(tempRoot, spec.subpath) : tempRoot;
+    const dir = spec.subpath ? resolveSubpath(tempRoot, spec.subpath) : tempRoot;
     if (!existsSync(dir)) {
       throw new Error(`Subpath not found in repository: ${spec.subpath}`);
     }
