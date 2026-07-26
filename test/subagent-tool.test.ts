@@ -142,6 +142,32 @@ describe("subagent tool", () => {
     }
   });
 
+  test("clamps a long label instead of rejecting the call", async () => {
+    // A label is a display string the dashboard already truncates. Bounding it
+    // in the schema let a 77-character title reject a whole four-node DAG, and
+    // validation reported that by echoing every node's task text back.
+    const runSubagent = vi.fn(completedRun("ok"));
+    const tool = makeTool(runSubagent);
+    const longLabel =
+      "Execute DAG: clone, analyze risks, propose improvements, final recommendation";
+    let seen: unknown;
+
+    await tool.execute(
+      "long-label",
+      { profile: "explorer", task: "work", label: longLabel },
+      undefined,
+      (update) => {
+        seen = update;
+      },
+    );
+
+    const nodes = (seen as { details: { progress: { nodes: { label: string }[] } } }).details
+      .progress.nodes;
+    expect(longLabel.length).toBeGreaterThan(64);
+    expect(nodes[0].label).toBe(longLabel.slice(0, 64));
+    expect(runSubagent).toHaveBeenCalledOnce();
+  });
+
   test("offers no systemPrompt, tools, or model escape hatch", () => {
     const properties = (
       makeTool(completedRun("ok")).parameters as unknown as {

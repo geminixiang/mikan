@@ -20,8 +20,9 @@ const MAX_DEPENDENCY_OUTPUT_CHARS = 4000;
  * can get wrong is the point. `budget` survives because it can only tighten
  * the profile's defaults, never widen them.
  *
- * `profileNames` is baked into the schema as an enum so an unknown profile is
- * rejected by schema validation rather than costing a wasted turn.
+ * `profileNames` is baked into the schema as an enum to steer the model's
+ * choice. TypeBox does not check `enum` on a string, so an unknown name still
+ * reaches `validatePlanProfiles`, which names the available profiles.
  */
 function buildTaskProperties(profileNames: string[]) {
   return {
@@ -33,9 +34,10 @@ function buildTaskProperties(profileNames: string[]) {
           "Profile this subagent runs under. Required, but a top-level profile covers every task and DAG node that does not set its own.",
       }),
     ),
-    label: Type.Optional(
-      Type.String({ maxLength: 64, description: "Short progress label for this subagent." }),
-    ),
+    // No length bound: a label is a display string, and `taskLabel` clamps it.
+    // Bounding it in the schema only lets a cosmetic field reject a whole DAG,
+    // and validation reports that failure by echoing every node back.
+    label: Type.Optional(Type.String({ description: "Short progress label for this subagent." })),
     input: Type.Optional(
       Type.Unknown({ description: "Optional JSON-serializable structured input for the task." }),
     ),
@@ -210,8 +212,12 @@ class SubagentProgressTracker {
   }
 }
 
+/** Longest label the dashboard renders; longer ones are clamped, never rejected. */
+const MAX_LABEL_CHARS = 64;
+
 function taskLabel(task: SubagentTask, fallback: string): string {
-  return task.label?.trim() || task.task.trim().slice(0, 48) || fallback;
+  const label = task.label?.trim() || task.task.trim().slice(0, 48) || fallback;
+  return label.slice(0, MAX_LABEL_CHARS);
 }
 
 function formatOutcome(outcome: {
@@ -309,7 +315,7 @@ function withDefaultProfile<T extends { profile?: string }>(task: T, fallback?: 
 function itemForNode(node: DagNode, defaultProfile?: string): PlanItem {
   return {
     id: node.id,
-    label: node.label?.trim() || node.id,
+    label: (node.label?.trim() || node.id).slice(0, MAX_LABEL_CHARS),
     task: withDefaultProfile(node, defaultProfile),
     dependsOn: node.dependsOn ?? [],
   };
