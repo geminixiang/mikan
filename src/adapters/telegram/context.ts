@@ -3,11 +3,12 @@ import type {
   ConversationMessage,
   ConversationResponder,
   MessagingInfo,
+  SubagentProgressSnapshot,
 } from "../../adapter.js";
 import { deriveSessionKey } from "../../sessions/session-key.js";
+import { subagentDashboardHeader, subagentDashboardNodeLines } from "../../subagent-progress.js";
 import { createBufferedResponder } from "../buffered-responder.js";
 import { createChatResponseErrorReporter, formatToolArgs } from "../shared.js";
-import { formatSubagentProgressTelegram } from "../subagent-progress.js";
 import { sanitizeTelegramHtml } from "./html.js";
 import type { TelegramMessagingBot, TelegramEvent } from "./bot.js";
 
@@ -15,6 +16,19 @@ import type { TelegramMessagingBot, TelegramEvent } from "./bot.js";
 const MAX_LENGTH = 3800;
 
 const formatTelegramContinuation = (partNum: number): string => `(continued ${partNum})`;
+
+/**
+ * Telegram's pipeline is HTML, not response source Markdown, so its dashboard
+ * conversion lives here with the rest of that debt; content comes from the
+ * snapshot module's text primitives. Labels need no escaping — the responder's
+ * sanitize pass owns that.
+ */
+function formatSubagentProgressTelegram(snapshot: SubagentProgressSnapshot): string {
+  return [
+    `<b>${subagentDashboardHeader(snapshot)}</b>`,
+    ...snapshot.nodes.flatMap(subagentDashboardNodeLines),
+  ].join("\n");
+}
 
 function formatToolResult(result: ChatToolResult): string {
   const argsFormatted = formatToolArgs(result.args);

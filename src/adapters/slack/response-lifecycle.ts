@@ -12,7 +12,7 @@ import {
   type ChatResponseErrorOperation,
 } from "../shared.js";
 import { BufferedResponseStream, OrderedResponseOperations } from "../streaming.js";
-import { formatSubagentProgressMarkdown } from "../subagent-progress.js";
+import { renderSubagentDashboard } from "../../subagent-progress.js";
 import { buildMrkdwnContextBlock, type SlackMessagingBot, type SlackEvent } from "./bot.js";
 import { SlackProgressiveRender, WORKING_INDICATOR } from "./progressive-render.js";
 import type { SlackAdapterSessionPlan } from "./types.js";
@@ -334,7 +334,7 @@ export function createSlackResponseContext({
       subagentDashboardActive = true;
       // The dashboard is response source: renderSlackBlocks converts the
       // Markdown natively, the same as every other response (ADR-0001).
-      const dashboard = formatSubagentProgressMarkdown(progress);
+      const dashboard = renderSubagentDashboard(progress);
       await responder.replaceResponse(finalText ? `${dashboard}\n\n${finalText}` : dashboard);
     },
 

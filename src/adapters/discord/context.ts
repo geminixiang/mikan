@@ -2,7 +2,7 @@ import type { ConversationMessage, ConversationResponder, MessagingInfo } from "
 import { resolveChatSessionKey } from "../../sessions/policy.js";
 import { createBufferedResponder, formatMarkdownToolResult } from "../buffered-responder.js";
 import { createChatResponseErrorReporter } from "../shared.js";
-import { formatSubagentProgressMarkdown } from "../subagent-progress.js";
+import { renderSubagentDashboard } from "../../subagent-progress.js";
 import type { DiscordMessagingBot, DiscordEvent } from "./bot.js";
 
 // Discord hard limit is 2000 chars; 1900 leaves headroom for working indicator.
@@ -76,7 +76,7 @@ export function createDiscordAdapters(
     errorPrefix: "*Error:* ",
     workingIndicator: " ...",
     streaming: true,
-    formatSubagentProgress: formatSubagentProgressMarkdown,
+    formatSubagentProgress: renderSubagentDashboard,
     typing: {
       // Send immediately and repeat every 8s (Discord clears indicator after ~10s)
       send: () => bot.sendTyping(channelId),

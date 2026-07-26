@@ -26,9 +26,11 @@ import {
 import { runSubagent } from "./harness/subagent-runner.js";
 import { loadSubagentProfiles } from "./harness/subagent-profiles.js";
 import {
-  formatSubagentProgressMarkdown,
   mergeSubagentProgress,
-} from "./adapters/subagent-progress.js";
+  parseSubagentProgressSnapshot,
+  renderSubagentDashboard,
+  settleSubagentProgress,
+} from "./subagent-progress.js";
 import { createHash } from "crypto";
 import { existsSync, readFileSync } from "fs";
 import { mkdir, readFile } from "fs/promises";
@@ -39,7 +41,6 @@ import type {
   ConversationResponder,
   MessagingInfo,
   PlatformName,
-  SubagentProgressNode,
   SubagentProgressSnapshot,
 } from "./adapter.js";
 import type {
@@ -742,7 +743,7 @@ function formatToolProgress(runState: RunnerSessionState, includeSubagents = tru
  */
 function formatResponseWithToolProgress(text: string, runState: RunnerSessionState): string {
   const merged = mergeSubagentProgress(runState.completedSubagentProgress);
-  const dashboard = merged ? formatSubagentProgressMarkdown(merged) : "";
+  const dashboard = merged ? renderSubagentDashboard(merged) : "";
   const progress = formatToolProgress(runState, false);
   return [dashboard, progress, text].filter(Boolean).join("\n\n");
 }
@@ -811,77 +812,7 @@ function extractSubagentProgress(partialResult: unknown): SubagentProgressSnapsh
   if (!partialResult || typeof partialResult !== "object") return undefined;
   const details = (partialResult as { details?: unknown }).details;
   if (!details || typeof details !== "object") return undefined;
-  const progress = (details as { progress?: unknown }).progress;
-  if (!progress || typeof progress !== "object") return undefined;
-  const candidate = progress as { mode?: unknown; nodes?: unknown };
-  if (
-    (candidate.mode !== "single" && candidate.mode !== "parallel" && candidate.mode !== "dag") ||
-    !Array.isArray(candidate.nodes)
-  ) {
-    return undefined;
-  }
-  const validStatuses = new Set([
-    "pending",
-    "running",
-    "completed",
-    "failed",
-    "cancelled",
-    "timeout",
-    "budget_exceeded",
-    "invalid_output",
-    "skipped",
-  ]);
-  const nodes = candidate.nodes.flatMap((node) => {
-    if (!node || typeof node !== "object") return [];
-    const item = node as {
-      id?: unknown;
-      label?: unknown;
-      status?: unknown;
-      profile?: unknown;
-      turns?: unknown;
-      toolCalls?: unknown;
-      toolCallCounts?: unknown;
-      tokens?: unknown;
-      costUsd?: unknown;
-      durationMs?: unknown;
-      reason?: unknown;
-      cleanupPending?: unknown;
-    };
-    if (
-      typeof item.id !== "string" ||
-      typeof item.label !== "string" ||
-      typeof item.status !== "string" ||
-      !validStatuses.has(item.status)
-    ) {
-      return [];
-    }
-    return [
-      {
-        id: item.id,
-        label: item.label.slice(0, 64),
-        status: item.status,
-        ...(typeof item.profile === "string" ? { profile: item.profile.slice(0, 64) } : {}),
-        ...(typeof item.turns === "number" ? { turns: item.turns } : {}),
-        ...(typeof item.toolCalls === "number" ? { toolCalls: item.toolCalls } : {}),
-        ...(item.toolCallCounts && typeof item.toolCallCounts === "object"
-          ? {
-              toolCallCounts: Object.fromEntries(
-                Object.entries(item.toolCallCounts).filter(
-                  (entry): entry is [string, number] => typeof entry[1] === "number",
-                ),
-              ),
-            }
-          : {}),
-        ...(typeof item.tokens === "number" ? { tokens: item.tokens } : {}),
-        ...(typeof item.costUsd === "number" ? { costUsd: item.costUsd } : {}),
-        ...(typeof item.durationMs === "number" ? { durationMs: item.durationMs } : {}),
-        ...(typeof item.reason === "string" ? { reason: item.reason.slice(0, 240) } : {}),
-        ...(item.cleanupPending === true ? { cleanupPending: true } : {}),
-      },
-    ];
-  });
-  if (nodes.length !== candidate.nodes.length) return undefined;
-  return { mode: candidate.mode, nodes } as SubagentProgressSnapshot;
+  return parseSubagentProgressSnapshot((details as { progress?: unknown }).progress);
 }
 
 function extractToolProgressLabel(partialResult: unknown): string | undefined {
@@ -1718,21 +1649,10 @@ function attachSessionEventHandlers(params: {
       if (progress) progress.status = event.isError ? "error" : "done";
       const subagentProgress = runState.subagentProgress.get(event.toolCallId);
       if (subagentProgress) {
-        runState.subagentProgress.set(event.toolCallId, {
-          ...subagentProgress,
-          nodes: subagentProgress.nodes.map((node) => {
-            if (node.status !== "running" && node.status !== "pending") return node;
-            // Identity and a terminal status only: a node still unsettled when
-            // the tool ended never reported metrics to carry over.
-            const settled: SubagentProgressNode = {
-              id: node.id,
-              label: node.label,
-              status: event.isError ? "failed" : "completed",
-            };
-            if (node.profile) settled.profile = node.profile;
-            return settled;
-          }),
-        });
+        runState.subagentProgress.set(
+          event.toolCallId,
+          settleSubagentProgress(subagentProgress, event.isError),
+        );
       }
       flushToolProgressUpdate(responder, runState);
       const completedProgress = runState.subagentProgress.get(event.toolCallId);

@@ -15,7 +15,5 @@ export type {
   PlatformReactor,
   PlatformUploader,
   RunningSession,
-  SubagentProgressNode,
   SubagentProgressSnapshot,
-  SubagentProgressStatus,
 } from "./types.js";

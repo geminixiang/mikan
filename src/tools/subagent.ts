@@ -4,7 +4,12 @@ import type { SubagentRunOutput, SubagentRunRequest, SubagentRunResult } from ".
 // Progress statuses extend run statuses with the pre- and non-run states. The
 // dashboard renders the same union, so it is defined once alongside the
 // snapshot the tool emits rather than restated here.
-import type { SubagentProgressStatus } from "../types.js";
+import type { SubagentProgressNode, SubagentProgressStatus } from "../types.js";
+import {
+  boundSubagentProgressNode,
+  clampSubagentLabel,
+  SUBAGENT_STATUS_MARKER,
+} from "../subagent-progress.js";
 
 const MAX_DAG_NODES = 8;
 const MAX_DAG_EDGES = 16;
@@ -149,28 +154,8 @@ type PlanOutcome =
   | ({ id: string } & SubagentRunResult<unknown>)
   | { id: string; status: "skipped"; error: string };
 
-const STATUS_MARKER = {
-  pending: "○",
-  running: "●",
-  completed: "✓",
-  failed: "✗",
-  cancelled: "✗",
-  timeout: "✗",
-  budget_exceeded: "✗",
-  invalid_output: "✗",
-  skipped: "⊘",
-} satisfies Record<SubagentProgressStatus, string>;
-
-interface SubagentProgressMetrics {
-  turns?: number;
-  toolCalls?: number;
-  toolCallCounts?: Record<string, number>;
-  tokens?: number;
-  costUsd?: number;
-  durationMs?: number;
-  reason?: string;
-  cleanupPending?: boolean;
-}
+/** The metrics half of a progress node — derived, not restated. */
+type SubagentProgressMetrics = Omit<SubagentProgressNode, "id" | "label" | "status" | "profile">;
 
 class SubagentProgressTracker {
   private readonly states = new Map<string, SubagentProgressStatus>();
@@ -192,18 +177,20 @@ class SubagentProgressTracker {
 
   emit(): void {
     if (!this.onUpdate) return;
-    const nodes = this.items.map((item) => ({
-      ...item,
-      status: this.states.get(item.id) ?? ("pending" as SubagentProgressStatus),
-      ...this.metrics.get(item.id),
-    }));
+    const nodes = this.items.map((item) =>
+      boundSubagentProgressNode({
+        ...item,
+        status: this.states.get(item.id) ?? ("pending" as SubagentProgressStatus),
+        ...this.metrics.get(item.id),
+      }),
+    );
     const settled = nodes.filter(
       (node) => node.status !== "pending" && node.status !== "running",
     ).length;
     const modeLabel = this.mode === "dag" ? "DAG" : this.mode === "parallel" ? "parallel" : "run";
     const progressLabel = [
       `Subagent ${modeLabel} ${settled}/${nodes.length}`,
-      ...nodes.map((node) => `${STATUS_MARKER[node.status]} ${node.label}`),
+      ...nodes.map((node) => `${SUBAGENT_STATUS_MARKER[node.status]} ${node.label}`),
     ].join(" · ");
     this.onUpdate({
       content: [],
@@ -212,12 +199,8 @@ class SubagentProgressTracker {
   }
 }
 
-/** Longest label the dashboard renders; longer ones are clamped, never rejected. */
-const MAX_LABEL_CHARS = 64;
-
 function taskLabel(task: SubagentTask, fallback: string): string {
-  const label = task.label?.trim() || task.task.trim().slice(0, 48) || fallback;
-  return label.slice(0, MAX_LABEL_CHARS);
+  return clampSubagentLabel(task.label?.trim() || task.task.trim().slice(0, 48) || fallback);
 }
 
 function formatOutcome(outcome: {
@@ -315,7 +298,7 @@ function withDefaultProfile<T extends { profile?: string }>(task: T, fallback?: 
 function itemForNode(node: DagNode, defaultProfile?: string): PlanItem {
   return {
     id: node.id,
-    label: (node.label?.trim() || node.id).slice(0, MAX_LABEL_CHARS),
+    label: clampSubagentLabel(node.label?.trim() || node.id),
     task: withDefaultProfile(node, defaultProfile),
     dependsOn: node.dependsOn ?? [],
   };
