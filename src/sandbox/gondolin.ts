@@ -1,6 +1,15 @@
-import { createHash } from "node:crypto";
-import { chmodSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { createHash, randomBytes } from "node:crypto";
+import {
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 import * as log from "../log.js";
 import type { ResourceLimits, SandboxLimitStatus, SandboxResourceController } from "../types.js";
 import { withRuntimeBootstrap } from "./container.js";
@@ -38,6 +47,8 @@ const MIKAN_IMAGE = "mikan-sandbox:latest";
 
 /** Write-back cadence for projected `/workspace` files (e.g. MEMORY.md). */
 const PROJECTION_SYNC_INTERVAL_MS = 2000;
+const PROJECTION_LOCK_RETRY_MS = 25;
+const PROJECTION_LOCK_STALE_MS = 60_000;
 
 /**
  * A command may quietly work for a long time, but a session that produces no
@@ -89,6 +100,7 @@ interface FileProjection {
   source: string;
   target: string;
   syncBack: boolean;
+  /** Hash of the guest content at the last successful or conflict sync. */
   lastHash: string;
 }
 
@@ -330,6 +342,55 @@ function restrictSocketAccess(socketPath: string): void {
   }
 }
 
+function projectionLockIsStale(lockPath: string): boolean {
+  let ownerKnown = false;
+  let ownerAlive = false;
+  try {
+    const pid = Number(readFileSync(join(lockPath, "owner"), "utf8").trim());
+    if (Number.isInteger(pid) && pid > 0) {
+      ownerKnown = true;
+      try {
+        process.kill(pid, 0);
+        ownerAlive = true;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === "EPERM") ownerAlive = true;
+      }
+    }
+  } catch {
+    // An owner file may not have been written before its process died.
+  }
+  try {
+    const oldEnough = Date.now() - statSync(lockPath).mtimeMs >= PROJECTION_LOCK_STALE_MS;
+    return (ownerKnown && !ownerAlive) || oldEnough;
+  } catch {
+    return false;
+  }
+}
+
+async function withProjectionLock<T>(source: string, operation: () => Promise<T>): Promise<T> {
+  const lockPath = `${source}.mikan-sync.lock`;
+  for (;;) {
+    try {
+      mkdirSync(lockPath, { mode: 0o700 });
+      writeFileSync(join(lockPath, "owner"), `${process.pid}\n`, { mode: 0o600 });
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (projectionLockIsStale(lockPath)) {
+        rmSync(lockPath, { recursive: true, force: true });
+        continue;
+      }
+      await new Promise((resolve) => setTimeout(resolve, PROJECTION_LOCK_RETRY_MS));
+    }
+  }
+  try {
+    return await operation();
+  } finally {
+    rmSync(lockPath, { recursive: true, force: true });
+  }
+}
+
 /** One live microVM owned by this process, addressed by its session socket. */
 class GondolinRuntime {
   private syncTimer?: NodeJS.Timeout;
@@ -445,11 +506,37 @@ class GondolinRuntime {
           const content = Buffer.isBuffer(data) ? data : Buffer.from(String(data));
           const hash = sha256(content);
           if (hash === projection.lastHash) continue;
-          // atomic host write: a crash mid-sync must not truncate the file
-          const staged = `${projection.source}.mikan-sync`;
-          writeFileSync(staged, content);
-          renameSync(staged, projection.source);
-          projection.lastHash = hash;
+          await withProjectionLock(projection.source, async () => {
+            let hostHash: string;
+            try {
+              hostHash = sha256(readFileSync(projection.source));
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+              hostHash = "";
+            }
+            if (hostHash !== projection.lastHash) {
+              const conflict = `${projection.source}.mikan-conflict.${process.pid}.${randomBytes(8).toString("hex")}`;
+              writeFileSync(conflict, content);
+              projection.lastHash = hash;
+              log.logWarning(
+                `Skipped Gondolin projection write-back for '${projection.source}': host content changed; guest content preserved at '${conflict}'`,
+              );
+              return;
+            }
+            // atomic host write: a crash mid-sync must not truncate the file
+            const staged = `${projection.source}.mikan-sync.${process.pid}.${randomBytes(8).toString("hex")}`;
+            try {
+              writeFileSync(staged, content);
+              renameSync(staged, projection.source);
+              projection.lastHash = hash;
+            } finally {
+              try {
+                unlinkSync(staged);
+              } catch {
+                // rename succeeded or the staging write failed
+              }
+            }
+          });
         } catch {
           // guest file missing or read raced a writer; next tick retries
         }
