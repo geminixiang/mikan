@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import type { SubagentProgressSnapshot } from "../src/adapter.js";
 import { TelegramMessagingBot } from "../src/adapters/telegram/bot.js";
 import type { TelegramEvent } from "../src/adapters/telegram/bot.js";
 import { createTelegramAdapters } from "../src/adapters/telegram/context.js";
@@ -38,6 +39,35 @@ function makeEvent(overrides: Partial<TelegramEvent> = {}): TelegramEvent {
     ...overrides,
   };
 }
+
+// ============================================================================
+// subagent progress
+// ============================================================================
+
+describe("replaceSubagentProgress()", () => {
+  test("renders a compact HTML dashboard in the response message", async () => {
+    const bot = makeTelegramMessagingBot();
+    const { responder } = createTelegramAdapters(makeEvent(), bot);
+    const progress: SubagentProgressSnapshot = {
+      mode: "dag",
+      nodes: [
+        { id: "explore", label: "Explore <auth>", status: "completed" },
+        { id: "implement", label: "Implement fix", status: "running" },
+      ],
+    };
+
+    await responder.replaceSubagentProgress?.(progress);
+
+    expect(bot.postMessageRaw).toHaveBeenCalledWith(
+      123456,
+      expect.stringContaining("<b>Subagents · 1/2 · DAG</b>"),
+    );
+    expect(bot.postMessageRaw).toHaveBeenCalledWith(
+      123456,
+      expect.stringContaining("Explore &lt;auth&gt;\n└ Completed"),
+    );
+  });
+});
 
 // ============================================================================
 // Session key derivation

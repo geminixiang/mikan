@@ -1,4 +1,8 @@
-import type { ChatToolResult, ConversationResponder } from "../adapter.js";
+import type {
+  ChatToolResult,
+  ConversationResponder,
+  SubagentProgressSnapshot,
+} from "../adapter.js";
 import * as log from "../log.js";
 import { formatToolArgs, splitText, type ChatResponseErrorOperation } from "./shared.js";
 import { BufferedResponseStream, OrderedResponseOperations } from "./streaming.js";
@@ -29,6 +33,8 @@ export interface BufferedResponderPlatform {
   workingIndicator?: string;
   /** Enable appendResponseDelta/finishResponse over a buffered stream. */
   streaming: boolean;
+  /** Render a live subagent snapshot before it enters the shared response queue. */
+  formatSubagentProgress?: (progress: SubagentProgressSnapshot) => string;
   typing?: {
     send: () => Promise<unknown>;
     intervalMs: number;
@@ -217,6 +223,13 @@ export function createBufferedResponder(platform: BufferedResponderPlatform): {
         }),
       );
     },
+
+    replaceSubagentProgress: platform.formatSubagentProgress
+      ? async (progress: SubagentProgressSnapshot, finalText?: string) => {
+          const dashboard = platform.formatSubagentProgress!(progress);
+          await responder.replaceResponse(finalText ? `${dashboard}\n\n${finalText}` : dashboard);
+        }
+      : undefined,
 
     respondDiagnostic: async (text: string, options?: { style?: "muted" | "error" }) => {
       await run(

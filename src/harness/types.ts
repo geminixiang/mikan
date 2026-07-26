@@ -15,6 +15,7 @@ import type {
   SessionContext,
   SessionInfoEntry,
   SessionTreeEntry,
+  ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
 import type { Static, TSchema } from "@sinclair/typebox";
@@ -39,6 +40,26 @@ export const CURRENT_SESSION_VERSION = 3;
 export interface SubagentModelSpec {
   provider: string;
   id: string;
+}
+
+/**
+ * A curated capability set a subagent can be launched with. Built-ins ship
+ * with the harness; `<workspaceDir>/agents/<name>.md` patches them per
+ * installation. Budget fields are defaults — an explicit `request.budget`
+ * always wins.
+ */
+export interface SubagentProfile {
+  name: string;
+  description: string;
+  systemPrompt: string;
+  tools: string[];
+  requiredTools: string[];
+  model?: SubagentModelSpec;
+  thinkingLevel?: ThinkingLevel;
+  maxTurns?: number;
+  maxTokens?: number;
+  maxCostUsd?: number;
+  maxDurationMs?: number;
 }
 
 export interface SubagentRunBudget {
@@ -75,6 +96,8 @@ export type SubagentUsageSink = (usage: SubagentUsage) => void | Promise<void>;
 /** A fresh, isolated subagent run. */
 export interface SubagentRunRequest<TOutputSchema extends TSchema | undefined = undefined> {
   task: string;
+  /** Named profile: a harness built-in, patched by `<workspaceDir>/agents/<name>.md`. */
+  profile?: string;
   /** Opt in to a normalized textual snapshot of the active parent run. Defaults to fresh. */
   parentContext?: SubagentParentContext;
   systemPrompt?: string;
@@ -84,6 +107,10 @@ export interface SubagentRunRequest<TOutputSchema extends TSchema | undefined = 
   model?: SubagentModelSpec;
   /** Tool names explicitly granted to the subagent. Defaults to no tools. */
   tools?: string[];
+  /** Tool names that must each be invoked at least once before completion. */
+  requiredTools?: string[];
+  /** Per-profile thinking override. */
+  thinkingLevel?: ThinkingLevel;
   /** When present, the final response must be JSON matching this schema. */
   outputSchema?: TOutputSchema;
   budget?: SubagentRunBudget;
@@ -99,6 +126,8 @@ interface SubagentRunMetadata {
   text?: string;
   model: SubagentModelSpec;
   turns: number;
+  toolCalls: number;
+  toolCallCounts: Record<string, number>;
   /** Full token and cost breakdown across the run. */
   usage: SubagentUsage;
   /** Aggregate token count; equivalent to `usage.totalTokens`. */

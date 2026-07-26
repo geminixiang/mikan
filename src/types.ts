@@ -7,6 +7,7 @@ import type {
   PeriodicEventPayload,
 } from "./harness/event-format.js";
 import type { ExtensionBlockAction } from "./harness/extensions/types.js";
+import type { SubagentRunStatus } from "./harness/types.js";
 
 const execFileAsync = promisify(execFile);
 type ExecFileAsync = typeof execFileAsync;
@@ -48,11 +49,39 @@ export interface ChatToolResult {
   durationMs: number;
 }
 
+/**
+ * Derived from the run status rather than restated, so a new terminal status
+ * in the harness reaches the dashboard instead of silently rendering as a
+ * status the marker tables never learned about.
+ */
+export type SubagentProgressStatus = SubagentRunStatus | "pending" | "running" | "skipped";
+
+export interface SubagentProgressNode {
+  id: string;
+  label: string;
+  status: SubagentProgressStatus;
+  turns?: number;
+  toolCalls?: number;
+  toolCallCounts?: Record<string, number>;
+  tokens?: number;
+  costUsd?: number;
+  durationMs?: number;
+  reason?: string;
+  cleanupPending?: boolean;
+}
+
+export interface SubagentProgressSnapshot {
+  mode: "single" | "parallel" | "dag";
+  nodes: SubagentProgressNode[];
+}
+
 export interface ConversationResponder {
   respond(text: string): Promise<void>;
   appendResponseDelta?(delta: string): Promise<void>;
   finishResponse?(finalText?: string): Promise<void>;
   replaceResponse(text: string, options?: { createOverflowLink?: () => string }): Promise<void>;
+  /** Render one live subagent dashboard, optionally followed by the final answer. */
+  replaceSubagentProgress?(progress: SubagentProgressSnapshot, finalText?: string): Promise<void>;
   respondDiagnostic(text: string, options?: { style?: "muted" | "error" }): Promise<void>;
   respondToolResult(result: ChatToolResult): Promise<void>;
   setTyping(isTyping: boolean): Promise<void>;

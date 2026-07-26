@@ -30,6 +30,16 @@ function testUsage(tokens: number, costUsd = 0): SubagentUsage {
   };
 }
 
+const TEST_PROFILES = new Map([["explorer", { description: "Evidence explorer" }]]);
+
+/** Every subagent runs under a profile, so tests default to a single stub one. */
+function makeTool(
+  runSubagent: RunSubagent,
+  profiles: ReadonlyMap<string, { description: string }> = TEST_PROFILES,
+) {
+  return createSubagentTool(runSubagent, profiles);
+}
+
 function completedRun(output: unknown): RunSubagent {
   return (async () => ({
     runId: "subagent-1",
@@ -38,6 +48,8 @@ function completedRun(output: unknown): RunSubagent {
     text: typeof output === "string" ? output : JSON.stringify(output),
     model: { provider: "test", id: "model" },
     turns: 1,
+    toolCalls: 0,
+    toolCallCounts: {},
     usage: testUsage(10),
     tokens: 10,
     costUsd: 0,
@@ -47,14 +59,14 @@ function completedRun(output: unknown): RunSubagent {
 
 describe("subagent tool", () => {
   test("exposes an object-rooted function schema for OpenAI", () => {
-    const tool = createSubagentTool(completedRun("ok"));
+    const tool = makeTool(completedRun("ok"));
 
     expect(tool.parameters.type).toBe("object");
   });
 
   test("rejects a subagent invocation without a mode", async () => {
     const runSubagent = vi.fn(completedRun("unused"));
-    const tool = createSubagentTool(runSubagent);
+    const tool = makeTool(runSubagent);
 
     await expect(tool.execute("missing-mode", {})).rejects.toThrow(
       "Subagent requires exactly one of task, tasks, or dag",
@@ -76,12 +88,77 @@ describe("subagent tool", () => {
     ],
   ])("rejects invocation with multiple modes (%s)", async (_label, params) => {
     const runSubagent = vi.fn(completedRun("unused"));
-    const tool = createSubagentTool(runSubagent);
+    const tool = makeTool(runSubagent);
 
     await expect(tool.execute("multiple-modes", params)).rejects.toThrow(
       "Subagent requires exactly one of task, tasks, or dag",
     );
     expect(runSubagent).not.toHaveBeenCalled();
+  });
+
+  test("requires each DAG node to select an available profile", async () => {
+    const runSubagent = vi.fn(completedRun("unused"));
+    const tool = makeTool(runSubagent);
+
+    await expect(
+      tool.execute("profiles", {
+        dag: { nodes: [{ id: "explore", label: "Explore", task: "Read README" }] },
+      }),
+    ).rejects.toThrow("Subagent Explore must specify a profile (available: explorer)");
+    expect(runSubagent).not.toHaveBeenCalled();
+  });
+
+  test("rejects a profile that is not on the menu", async () => {
+    const runSubagent = vi.fn(completedRun("unused"));
+    const tool = makeTool(runSubagent);
+
+    await expect(
+      tool.execute("unknown", { task: "Read README", profile: "wanderer" }),
+    ).rejects.toThrow("Unknown subagent profile: wanderer (available: explorer)");
+    expect(runSubagent).not.toHaveBeenCalled();
+  });
+
+  test("forwards a selected profile", async () => {
+    const runSubagent = vi.fn(completedRun("verified"));
+    const tool = makeTool(runSubagent);
+
+    await tool.execute("profile", { task: "Read README", profile: "explorer" });
+
+    expect(runSubagent).toHaveBeenCalledWith(expect.objectContaining({ profile: "explorer" }));
+  });
+
+  test("a top-level profile covers every task and DAG node", async () => {
+    const runSubagent = vi.fn(completedRun("verified"));
+    const tool = makeTool(runSubagent);
+
+    await tool.execute("shared-profile", {
+      profile: "explorer",
+      tasks: [{ task: "one" }, { task: "two" }],
+    });
+
+    expect(runSubagent).toHaveBeenCalledTimes(2);
+    for (const [request] of runSubagent.mock.calls) {
+      expect(request).toMatchObject({ profile: "explorer" });
+    }
+  });
+
+  test("offers no systemPrompt, tools, or model escape hatch", () => {
+    const properties = (
+      makeTool(completedRun("ok")).parameters as unknown as {
+        properties: Record<string, unknown>;
+      }
+    ).properties;
+
+    expect(properties.systemPrompt).toBeUndefined();
+    expect(properties.tools).toBeUndefined();
+    expect(properties.model).toBeUndefined();
+    expect(properties.profile).toMatchObject({ enum: ["explorer"] });
+  });
+
+  test("refuses to build a subagent tool with no profiles", () => {
+    expect(() => createSubagentTool(completedRun("ok"), new Map())).toThrow(
+      "requires at least one subagent profile",
+    );
   });
 
   test("supports abortable FIFO slot handoff and idempotent release", async () => {
@@ -123,7 +200,7 @@ describe("subagent tool", () => {
     const release = await pool.acquire();
     const controller = new AbortController();
     const runSubagent = vi.fn(completedRun("should not run"));
-    const tool = createSubagentTool(runSubagent);
+    const tool = makeTool(runSubagent);
     const bounded = (request: SubagentRunRequest) =>
       (async () => {
         let slot: (() => void) | undefined;
@@ -135,6 +212,8 @@ describe("subagent tool", () => {
             status: "cancelled",
             model: { provider: "test", id: "model" },
             turns: 0,
+            toolCalls: 0,
+            toolCallCounts: {},
             usage: testUsage(0),
             tokens: 0,
             costUsd: 0,
@@ -147,8 +226,12 @@ describe("subagent tool", () => {
           slot();
         }
       })() as ReturnType<RunSubagent>;
-    const boundedTool = createSubagentTool(bounded as RunSubagent);
-    const pending = boundedTool.execute("queued", { task: "queued" }, controller.signal);
+    const boundedTool = makeTool(bounded as RunSubagent);
+    const pending = boundedTool.execute(
+      "queued",
+      { profile: "explorer", task: "queued" },
+      controller.signal,
+    );
     controller.abort();
     const result = await pending;
     release();
@@ -172,6 +255,8 @@ describe("subagent tool", () => {
         text: "ok",
         model: { provider: "test", id: "model" },
         turns: 1,
+        toolCalls: 0,
+        toolCallCounts: {},
         usage: testUsage(1),
         tokens: 1,
         costUsd: 0,
@@ -190,9 +275,9 @@ describe("subagent tool", () => {
         release();
       }
     }) as RunSubagent;
-    const toolA = createSubagentTool(bounded);
-    const toolB = createSubagentTool(bounded);
-    const params = { tasks: [{ task: "one" }, { task: "two" }] };
+    const toolA = makeTool(bounded);
+    const toolB = makeTool(bounded);
+    const params = { profile: "explorer", tasks: [{ task: "one" }, { task: "two" }] };
 
     await Promise.all([toolA.execute("a", params), toolB.execute("b", params)]);
 
@@ -221,18 +306,21 @@ describe("subagent tool", () => {
         text: output,
         model: { provider: "test", id: "model" },
         turns: 1,
+        toolCalls: 0,
+        toolCallCounts: {},
         usage: testUsage(1),
         tokens: 1,
         costUsd: 0,
         durationMs: 10,
       } as const;
     }) as RunSubagent;
-    const tool = createSubagentTool(runSubagent);
+    const tool = makeTool(runSubagent);
     const updates: unknown[] = [];
 
     const result = await tool.execute(
       "dag",
       {
+        profile: "explorer",
         dag: {
           nodes: [
             { id: "a", task: "first" },
@@ -262,10 +350,11 @@ describe("subagent tool", () => {
 
   test("rejects cyclic DAGs before starting subagents", async () => {
     const runSubagent = vi.fn(completedRun("unused"));
-    const tool = createSubagentTool(runSubagent);
+    const tool = makeTool(runSubagent);
 
     await expect(
       tool.execute("cycle", {
+        profile: "explorer",
         dag: {
           nodes: [
             { id: "a", task: "a", dependsOn: ["b"] },
@@ -279,10 +368,11 @@ describe("subagent tool", () => {
 
   test("rejects DAGs deeper than four waves", async () => {
     const runSubagent = vi.fn(completedRun("unused"));
-    const tool = createSubagentTool(runSubagent);
+    const tool = makeTool(runSubagent);
 
     await expect(
       tool.execute("deep", {
+        profile: "explorer",
         dag: {
           nodes: [
             { id: "a", task: "a" },
@@ -305,6 +395,8 @@ describe("subagent tool", () => {
           status: "failed",
           model: { provider: "test", id: "model" },
           turns: 1,
+          toolCalls: 0,
+          toolCallCounts: {},
           usage: testUsage(1),
           tokens: 1,
           costUsd: 0,
@@ -319,15 +411,18 @@ describe("subagent tool", () => {
         text: "ok",
         model: { provider: "test", id: "model" },
         turns: 1,
+        toolCalls: 0,
+        toolCallCounts: {},
         usage: testUsage(1),
         tokens: 1,
         costUsd: 0,
         durationMs: 1,
       } as const;
     }) as RunSubagent;
-    const tool = createSubagentTool(runSubagent);
+    const tool = makeTool(runSubagent);
 
     const result = await tool.execute("failure", {
+      profile: "explorer",
       dag: {
         nodes: [
           { id: "root", task: "fail" },
@@ -360,18 +455,21 @@ describe("subagent tool", () => {
         text: request.task,
         model: { provider: "test", id: "model" },
         turns: 1,
+        toolCalls: 0,
+        toolCallCounts: {},
         usage: testUsage(1),
         tokens: 1,
         costUsd: 0,
         durationMs: 10,
       } as const;
     }) as RunSubagent;
-    const tool = createSubagentTool(runSubagent);
+    const tool = makeTool(runSubagent);
     const updates: unknown[] = [];
 
     const result = await tool.execute(
       "parallel",
       {
+        profile: "explorer",
         tasks: [
           { label: "first", task: "first" },
           { label: "second", task: "second" },
@@ -411,15 +509,18 @@ describe("subagent tool", () => {
         text: request.task,
         model: { provider: "test", id: "model" },
         turns: 1,
+        toolCalls: 0,
+        toolCallCounts: {},
         usage: testUsage(1),
         tokens: 1,
         costUsd: 0,
         durationMs: 10,
       } as const;
     }) as RunSubagent;
-    const tool = createSubagentTool(runSubagent);
+    const tool = makeTool(runSubagent);
 
     const result = await tool.execute("parallel-cap", {
+      profile: "explorer",
       tasks: Array.from({ length: 6 }, (_, index) => ({ task: `job ${index + 1}` })),
     });
 
@@ -429,29 +530,32 @@ describe("subagent tool", () => {
 
   test("returns a completed subagent result to the main agent", async () => {
     const runSubagent = vi.fn(completedRun("focused answer"));
-    const tool = createSubagentTool(runSubagent);
+    const tool = makeTool(runSubagent);
 
     const result = await tool.execute("call-1", {
+      profile: "explorer",
       task: "Investigate one question",
-      tools: ["read"],
       budget: { maxTurns: 2 },
     });
 
     expect(runSubagent).toHaveBeenCalledWith(
       expect.objectContaining({
         task: "Investigate one question",
-        tools: ["read"],
+        profile: "explorer",
         budget: { maxTurns: 2 },
       }),
     );
+    // The tool grant is the profile's to make, so nothing reaches the runner.
+    expect(runSubagent.mock.calls[0][0]).not.toHaveProperty("tools");
     expect(result.content).toEqual([{ type: "text", text: "focused answer" }]);
     expect(result.details).toMatchObject({ status: "completed", runId: "subagent-1" });
   });
 
   test("formats structured subagent output as JSON", async () => {
-    const tool = createSubagentTool(completedRun({ quality: "low_content", stuck: false }));
+    const tool = makeTool(completedRun({ quality: "low_content", stuck: false }));
 
     const result = await tool.execute("call-2", {
+      profile: "explorer",
       task: "Classify",
       outputSchema: { type: "object" },
     });
@@ -468,15 +572,17 @@ describe("subagent tool", () => {
       status: "budget_exceeded",
       model: { provider: "test", id: "model" },
       turns: 100,
+      toolCalls: 0,
+      toolCallCounts: {},
       usage: testUsage(1_000, 1.25),
       tokens: 1_000,
       costUsd: 1.25,
       durationMs: 1_000,
       error: "LLM calls 100 >= 100 limit",
     })) as RunSubagent;
-    const tool = createSubagentTool(runSubagent);
+    const tool = makeTool(runSubagent);
 
-    const result = await tool.execute("call-budget", { task: "Keep working" });
+    const result = await tool.execute("call-budget", { profile: "explorer", task: "Keep working" });
 
     expect(result.content).toEqual([
       {
@@ -496,15 +602,21 @@ describe("subagent tool", () => {
         status: "cancelled",
         model: { provider: "test", id: "model" },
         turns: 0,
+        toolCalls: 0,
+        toolCallCounts: {},
         usage: testUsage(0),
         tokens: 0,
         costUsd: 0,
         durationMs: 1,
       } as const;
     }) as RunSubagent;
-    const tool = createSubagentTool(runSubagent);
+    const tool = makeTool(runSubagent);
 
-    const result = await tool.execute("call-3", { task: "Cancel me" }, controller.signal);
+    const result = await tool.execute(
+      "call-3",
+      { profile: "explorer", task: "Cancel me" },
+      controller.signal,
+    );
 
     expect(result.content).toEqual([{ type: "text", text: "Subagent cancelled" }]);
     expect(result.details).toMatchObject({ status: "cancelled" });

@@ -24,6 +24,11 @@ import {
   type SessionStore,
 } from "./harness/index.js";
 import { runSubagent } from "./harness/subagent-runner.js";
+import { loadSubagentProfiles } from "./harness/subagent-profiles.js";
+import {
+  formatSubagentProgressMarkdown,
+  mergeSubagentProgress,
+} from "./adapters/subagent-progress.js";
 import { createHash } from "crypto";
 import { existsSync, readFileSync } from "fs";
 import { mkdir, readFile } from "fs/promises";
@@ -34,6 +39,7 @@ import type {
   ConversationResponder,
   MessagingInfo,
   PlatformName,
+  SubagentProgressSnapshot,
 } from "./adapter.js";
 import type {
   AgentEventPayload,
@@ -578,6 +584,12 @@ interface RunnerSessionState {
   } | null;
   pendingTools: Map<string, { toolName: string; args: unknown; startTime: number }>;
   toolProgress: Map<string, { label: string; status: "running" | "done" | "error" }>;
+  subagentProgress: Map<string, SubagentProgressSnapshot>;
+  completedSubagentProgress: SubagentProgressSnapshot[];
+  subagentToolCalls: Set<string>;
+  subagentProgressShown: boolean;
+  suppressResponseDeltas: boolean;
+  lastSubagentProgressAt: number;
   toolProgressTimer: ReturnType<typeof setTimeout> | undefined;
   totalUsage: {
     input: number;
@@ -611,6 +623,12 @@ function createRunState(): RunnerSessionState {
     queue: null,
     pendingTools: new Map<string, { toolName: string; args: unknown; startTime: number }>(),
     toolProgress: new Map<string, { label: string; status: "running" | "done" | "error" }>(),
+    subagentProgress: new Map<string, SubagentProgressSnapshot>(),
+    completedSubagentProgress: [],
+    subagentToolCalls: new Set<string>(),
+    subagentProgressShown: false,
+    suppressResponseDeltas: false,
+    lastSubagentProgressAt: 0,
     toolProgressTimer: undefined,
     totalUsage: createEmptyUsageTotals(),
     llmCallCount: 0,
@@ -639,6 +657,12 @@ function resetRunState(
   };
   runState.pendingTools.clear();
   runState.toolProgress.clear();
+  runState.subagentProgress.clear();
+  runState.completedSubagentProgress = [];
+  runState.subagentToolCalls.clear();
+  runState.subagentProgressShown = false;
+  runState.suppressResponseDeltas = false;
+  runState.lastSubagentProgressAt = 0;
   if (runState.toolProgressTimer) clearTimeout(runState.toolProgressTimer);
   runState.toolProgressTimer = undefined;
   runState.totalUsage = createEmptyUsageTotals();
@@ -701,41 +725,67 @@ function extractToolLabel(toolName: string, args: unknown): string {
   return label.trim() || toolName;
 }
 
-function formatToolProgress(runState: RunnerSessionState): string {
-  const lines = Array.from(runState.toolProgress.values()).map((item) => {
+function formatToolProgress(runState: RunnerSessionState, includeSubagents = true): string {
+  const lines = Array.from(runState.toolProgress.entries()).flatMap(([toolCallId, item]) => {
+    if (!includeSubagents && runState.subagentToolCalls.has(toolCallId)) return [];
     const marker = item.status === "running" ? "•" : item.status === "error" ? "✗" : "✓";
-    return `${marker} ${item.label}`;
+    return [`${marker} ${item.label}`];
   });
   return lines.join("\n");
 }
 
+/**
+ * The dashboard a responder without `replaceSubagentProgress` gets: the same
+ * merged snapshot, rendered by the same formatter, so both paths show one
+ * dashboard with identical content.
+ */
 function formatResponseWithToolProgress(text: string, runState: RunnerSessionState): string {
-  const progress = formatToolProgress(runState);
-  return progress ? `${progress}\n\n${text}` : text;
+  const merged = mergeSubagentProgress(runState.completedSubagentProgress);
+  const dashboard = merged ? formatSubagentProgressMarkdown(merged) : "";
+  const progress = formatToolProgress(runState, false);
+  return [dashboard, progress, text].filter(Boolean).join("\n\n");
 }
 
 async function replaceResponseWithToolProgress(
   responder: ConversationResponder,
   runState: RunnerSessionState,
+  subagentProgress = mergeSubagentProgress([...runState.subagentProgress.values()]),
 ): Promise<void> {
+  if (subagentProgress && responder.replaceSubagentProgress) {
+    await responder.replaceSubagentProgress(subagentProgress);
+    return;
+  }
   const progress = formatToolProgress(runState);
   if (progress) await responder.replaceResponse(progress);
 }
 
 const TOOL_PROGRESS_DEBOUNCE_MS = 500;
+const SUBAGENT_PROGRESS_THROTTLE_MS = 2000;
+
+function subagentProgressDelay(runState: RunnerSessionState): number {
+  if (!runState.subagentProgressShown) return 0;
+  return Math.max(0, runState.lastSubagentProgressAt + SUBAGENT_PROGRESS_THROTTLE_MS - Date.now());
+}
 
 function scheduleToolProgressUpdate(
   responder: ConversationResponder,
   runState: RunnerSessionState,
 ): void {
   if (runState.toolProgressTimer) return;
+  const subagentProgress = mergeSubagentProgress([...runState.subagentProgress.values()]);
+  const delay = subagentProgress ? subagentProgressDelay(runState) : TOOL_PROGRESS_DEBOUNCE_MS;
   runState.toolProgressTimer = setTimeout(() => {
     runState.toolProgressTimer = undefined;
+    const snapshot = mergeSubagentProgress([...runState.subagentProgress.values()]);
+    if (snapshot) {
+      runState.subagentProgressShown = true;
+      runState.lastSubagentProgressAt = Date.now();
+    }
     runState.queue?.enqueue(
-      () => replaceResponseWithToolProgress(responder, runState),
+      () => replaceResponseWithToolProgress(responder, runState, snapshot),
       "tool progress update",
     );
-  }, TOOL_PROGRESS_DEBOUNCE_MS);
+  }, delay);
   runState.toolProgressTimer.unref();
 }
 
@@ -745,10 +795,90 @@ function flushToolProgressUpdate(
 ): void {
   if (runState.toolProgressTimer) clearTimeout(runState.toolProgressTimer);
   runState.toolProgressTimer = undefined;
+  const subagentProgress = mergeSubagentProgress([...runState.subagentProgress.values()]);
+  if (subagentProgress) {
+    runState.subagentProgressShown = true;
+    runState.lastSubagentProgressAt = Date.now();
+  }
   runState.queue?.enqueue(
-    () => replaceResponseWithToolProgress(responder, runState),
+    () => replaceResponseWithToolProgress(responder, runState, subagentProgress),
     "tool progress update",
   );
+}
+
+function extractSubagentProgress(partialResult: unknown): SubagentProgressSnapshot | undefined {
+  if (!partialResult || typeof partialResult !== "object") return undefined;
+  const details = (partialResult as { details?: unknown }).details;
+  if (!details || typeof details !== "object") return undefined;
+  const progress = (details as { progress?: unknown }).progress;
+  if (!progress || typeof progress !== "object") return undefined;
+  const candidate = progress as { mode?: unknown; nodes?: unknown };
+  if (
+    (candidate.mode !== "single" && candidate.mode !== "parallel" && candidate.mode !== "dag") ||
+    !Array.isArray(candidate.nodes)
+  ) {
+    return undefined;
+  }
+  const validStatuses = new Set([
+    "pending",
+    "running",
+    "completed",
+    "failed",
+    "cancelled",
+    "timeout",
+    "budget_exceeded",
+    "invalid_output",
+    "skipped",
+  ]);
+  const nodes = candidate.nodes.flatMap((node) => {
+    if (!node || typeof node !== "object") return [];
+    const item = node as {
+      id?: unknown;
+      label?: unknown;
+      status?: unknown;
+      turns?: unknown;
+      toolCalls?: unknown;
+      toolCallCounts?: unknown;
+      tokens?: unknown;
+      costUsd?: unknown;
+      durationMs?: unknown;
+      reason?: unknown;
+      cleanupPending?: unknown;
+    };
+    if (
+      typeof item.id !== "string" ||
+      typeof item.label !== "string" ||
+      typeof item.status !== "string" ||
+      !validStatuses.has(item.status)
+    ) {
+      return [];
+    }
+    return [
+      {
+        id: item.id,
+        label: item.label.slice(0, 64),
+        status: item.status,
+        ...(typeof item.turns === "number" ? { turns: item.turns } : {}),
+        ...(typeof item.toolCalls === "number" ? { toolCalls: item.toolCalls } : {}),
+        ...(item.toolCallCounts && typeof item.toolCallCounts === "object"
+          ? {
+              toolCallCounts: Object.fromEntries(
+                Object.entries(item.toolCallCounts).filter(
+                  (entry): entry is [string, number] => typeof entry[1] === "number",
+                ),
+              ),
+            }
+          : {}),
+        ...(typeof item.tokens === "number" ? { tokens: item.tokens } : {}),
+        ...(typeof item.costUsd === "number" ? { costUsd: item.costUsd } : {}),
+        ...(typeof item.durationMs === "number" ? { durationMs: item.durationMs } : {}),
+        ...(typeof item.reason === "string" ? { reason: item.reason.slice(0, 240) } : {}),
+        ...(item.cleanupPending === true ? { cleanupPending: true } : {}),
+      },
+    ];
+  });
+  if (nodes.length !== candidate.nodes.length) return undefined;
+  return { mode: candidate.mode, nodes } as SubagentProgressSnapshot;
 }
 
 function extractToolProgressLabel(partialResult: unknown): string | undefined {
@@ -836,14 +966,19 @@ async function finalizeRunResponse(
   if (!finalText.trim()) return;
 
   try {
-    await responder.replaceResponse(
-      appendTriggerAttribution(
-        formatResponseWithToolProgress(finalText, runState),
-        options?.triggerAttribution,
-        options?.triggerSessionLink,
-      ),
-      { createOverflowLink: options?.createOverflowLink },
+    const finalResponse = appendTriggerAttribution(
+      finalText,
+      options?.triggerAttribution,
+      options?.triggerSessionLink,
     );
+    const finalDashboard = mergeSubagentProgress(runState.completedSubagentProgress);
+    if (finalDashboard && responder.replaceSubagentProgress) {
+      await responder.replaceSubagentProgress(finalDashboard, finalResponse);
+      return;
+    }
+    await responder.replaceResponse(formatResponseWithToolProgress(finalResponse, runState), {
+      createOverflowLink: options?.createOverflowLink,
+    });
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     log.logWarning("Failed to replace message with final text", errMsg);
@@ -1158,6 +1293,17 @@ async function createConfiguredAgentSession(params: {
   // paths an administrator named explicitly in settings); it never reaches
   // the network on this path, so a slow remote cannot delay a reply.
   let session: MikanAgentSession | undefined;
+  const loadedProfiles = loadSubagentProfiles(workspaceDir);
+  for (const diagnostic of loadedProfiles.diagnostics) {
+    log.logWarning(
+      `[${conversationId}] Subagent profile ignored: ${diagnostic.path}`,
+      diagnostic.message,
+    );
+  }
+  // Narrowed to the profiles whose tools actually exist once extensions have
+  // contributed theirs. Both subagent entry points read this at call time, so
+  // they always agree on which profiles are launchable.
+  let runnableSubagentProfiles = loadedProfiles.profiles;
   const resolvedPackages = resolveConversationPackages({
     conversationId,
     stateDir: effectiveStateDir(),
@@ -1186,6 +1332,7 @@ async function createConfiguredAgentSession(params: {
           models,
           workspaceDir,
           availableTools: [...tools, ...extensionTools],
+          profiles: runnableSubagentProfiles,
           slots: globalSubagentSlots,
           ...(activeParent
             ? {
@@ -1198,6 +1345,13 @@ async function createConfiguredAgentSession(params: {
     }),
   });
   const contributedTools = extensionsResult.registry.getContributedTools();
+  const subagentAvailableTools = [...tools, ...contributedTools];
+  const availableToolNames = new Set(subagentAvailableTools.map((tool) => tool.name));
+  runnableSubagentProfiles = new Map(
+    [...loadedProfiles.profiles].filter(([, profile]) =>
+      profile.tools.every((tool) => availableToolNames.has(tool)),
+    ),
+  );
   for (const err of extensionsResult.errors) {
     log.logWarning(`[${conversationId}] Extension load error: ${err.path}`, err.error);
   }
@@ -1207,18 +1361,21 @@ async function createConfiguredAgentSession(params: {
     );
   }
 
-  const subagentTool = createSubagentTool((request) =>
-    runSubagent({
-      request,
-      defaultModel: model,
-      thinkingLevel,
-      models,
-      workspaceDir,
-      availableTools: [...tools, ...contributedTools],
-      slots: globalSubagentSlots,
-      parentMessages: [...session!.messages],
-      onUsage: session!.captureExternalUsageSink(),
-    }),
+  const subagentTool = createSubagentTool(
+    (request) =>
+      runSubagent({
+        request,
+        defaultModel: model,
+        thinkingLevel,
+        models,
+        workspaceDir,
+        availableTools: subagentAvailableTools,
+        profiles: runnableSubagentProfiles,
+        slots: globalSubagentSlots,
+        parentMessages: [...session!.messages],
+        onUsage: session!.captureExternalUsageSink(),
+      }),
+    runnableSubagentProfiles,
   );
 
   session = new MikanAgentSession({
@@ -1495,10 +1652,14 @@ function attachSessionEventHandlers(params: {
         label: extractToolLabel(event.toolName, event.args),
         status: "running",
       });
-      queue.enqueue(
-        () => replaceResponseWithToolProgress(responder, runState),
-        "tool progress update",
-      );
+      if (event.toolName === "subagent") {
+        runState.subagentToolCalls.add(event.toolCallId);
+      } else {
+        queue.enqueue(
+          () => replaceResponseWithToolProgress(responder, runState),
+          "tool progress update",
+        );
+      }
       addLifecycleBreadcrumb("agent.tool.started", {
         tool: event.toolName,
         ...baseAttrs,
@@ -1509,6 +1670,12 @@ function attachSessionEventHandlers(params: {
     }
 
     if (event.type === "tool_execution_update") {
+      const subagentProgress = extractSubagentProgress(event.partialResult);
+      if (subagentProgress) {
+        runState.subagentProgress.set(event.toolCallId, subagentProgress);
+        runState.subagentToolCalls.add(event.toolCallId);
+        runState.suppressResponseDeltas = true;
+      }
       const label = extractToolProgressLabel(event.partialResult);
       const progress = runState.toolProgress.get(event.toolCallId);
       if (label && progress) {
@@ -1528,7 +1695,24 @@ function attachSessionEventHandlers(params: {
       });
       const progress = runState.toolProgress.get(event.toolCallId);
       if (progress) progress.status = event.isError ? "error" : "done";
+      const subagentProgress = runState.subagentProgress.get(event.toolCallId);
+      if (subagentProgress) {
+        runState.subagentProgress.set(event.toolCallId, {
+          ...subagentProgress,
+          nodes: subagentProgress.nodes.map((node) => {
+            if (node.status !== "running" && node.status !== "pending") return node;
+            return {
+              id: node.id,
+              label: node.label,
+              status: event.isError ? "failed" : "completed",
+            };
+          }),
+        });
+      }
       flushToolProgressUpdate(responder, runState);
+      const completedProgress = runState.subagentProgress.get(event.toolCallId);
+      if (completedProgress) runState.completedSubagentProgress.push(completedProgress);
+      runState.subagentProgress.delete(event.toolCallId);
       pendingTools.delete(event.toolCallId);
       const durationMs = pending ? Date.now() - pending.startTime : 0;
 
@@ -1593,7 +1777,7 @@ function attachSessionEventHandlers(params: {
           actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
           event: { kind: "responseDelta", delta: assistantMessageEvent.delta },
         });
-        if (responder.appendResponseDelta) {
+        if (responder.appendResponseDelta && !runState.suppressResponseDeltas) {
           queue.enqueue(async () => {
             await responder.appendResponseDelta?.(assistantMessageEvent.delta ?? "");
           }, "response delta");

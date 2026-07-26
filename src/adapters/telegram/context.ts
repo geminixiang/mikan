@@ -7,6 +7,7 @@ import type {
 import { deriveSessionKey } from "../../sessions/session-key.js";
 import { createBufferedResponder } from "../buffered-responder.js";
 import { createChatResponseErrorReporter, formatToolArgs } from "../shared.js";
+import { formatSubagentProgressTelegram } from "../subagent-progress.js";
 import { sanitizeTelegramHtml } from "./html.js";
 import type { TelegramMessagingBot, TelegramEvent } from "./bot.js";
 
@@ -68,6 +69,7 @@ export function createTelegramAdapters(
     errorPrefix: "Error: ",
     sanitize: sanitizeTelegramHtml,
     streaming: true,
+    formatSubagentProgress: formatSubagentProgressTelegram,
     typing: {
       // Send immediately and repeat every 4s (Telegram clears indicator after ~5s)
       send: () => bot.sendTyping(chatId),

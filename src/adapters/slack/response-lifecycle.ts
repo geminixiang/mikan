@@ -1,4 +1,9 @@
-import type { ConversationMessage, ConversationResponder, ChatToolResult } from "../../adapter.js";
+import type {
+  ConversationMessage,
+  ConversationResponder,
+  ChatToolResult,
+  SubagentProgressSnapshot,
+} from "../../adapter.js";
 import * as log from "../../log.js";
 import {
   createChatResponseErrorReporter,
@@ -7,6 +12,7 @@ import {
   type ChatResponseErrorOperation,
 } from "../shared.js";
 import { BufferedResponseStream, OrderedResponseOperations } from "../streaming.js";
+import { formatSubagentProgressSlack } from "../subagent-progress.js";
 import { buildMrkdwnContextBlock, type SlackMessagingBot, type SlackEvent } from "./bot.js";
 import { SlackProgressiveRender, WORKING_INDICATOR } from "./progressive-render.js";
 import type { SlackAdapterSessionPlan } from "./types.js";
@@ -98,6 +104,7 @@ export function createSlackResponseContext({
   let isWorking = true;
   let mainResponseLogged = false;
   let resetStreamOnNextDelta = false;
+  let subagentDashboardActive = false;
   const responseOperations = new OrderedResponseOperations();
 
   const channelId = event.channel;
@@ -232,6 +239,7 @@ export function createSlackResponseContext({
     },
 
     appendResponseDelta: async (delta: string) => {
+      if (subagentDashboardActive) return;
       await queueResponseOperation(
         "appendResponseDelta",
         "respond",
@@ -247,6 +255,11 @@ export function createSlackResponseContext({
     },
 
     finishResponse: async (finalText?: string) => {
+      if (subagentDashboardActive) return;
+      if (resetStreamOnNextDelta) {
+        if (finalText !== undefined) stream.setText(finalText);
+        return;
+      }
       await queueResponseOperation(
         "finishResponse",
         "set_working",
@@ -315,6 +328,12 @@ export function createSlackResponseContext({
           hadExistingResponse: Boolean(progressive.messageTs),
         }),
       );
+    },
+
+    replaceSubagentProgress: async (progress: SubagentProgressSnapshot, finalText?: string) => {
+      subagentDashboardActive = true;
+      const dashboard = formatSubagentProgressSlack(progress);
+      await responder.replaceResponse(finalText ? `${dashboard}\n\n${finalText}` : dashboard);
     },
 
     respondDiagnostic: async (text: string, options?: { style?: "muted" | "error" }) => {

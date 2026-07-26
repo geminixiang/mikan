@@ -256,7 +256,7 @@ const SETTINGS_FILES = new Set(["settings.json", "auto-reply", "auto-reply.disab
 
 function listConversationDirs(workingDir: string): string[] {
   if (!existsSync(workingDir)) return [];
-  const skip = new Set(["vaults", "skills", "events", "node_modules", ".git"]);
+  const skip = new Set(["vaults", "skills", "events", "agents", "node_modules", ".git"]);
   return readdirSync(workingDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && !entry.name.startsWith(".") && !skip.has(entry.name))
     .map((entry) => entry.name)

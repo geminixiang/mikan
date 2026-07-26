@@ -61,6 +61,21 @@ const echoTool: AgentTool = {
   }),
 };
 
+/** A no-tool profile, so the integration tests exercise the profile path. */
+const THINKER_PROFILES = new Map([
+  [
+    "thinker",
+    {
+      name: "thinker",
+      description: "Reasons over supplied input only",
+      systemPrompt: "Answer from the supplied task text alone.",
+      tools: [],
+      requiredTools: [],
+    },
+  ],
+]);
+const THINKER_MENU = new Map([["thinker", { description: "Reasons over supplied input only" }]]);
+
 async function waitFor(condition: () => boolean): Promise<void> {
   const deadline = Date.now() + 1_000;
   while (!condition()) {
@@ -81,19 +96,22 @@ describe("runSubagent", () => {
   test("backs the normal agent's subagent tool", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([
-      fauxAssistantMessage(fauxToolCall("subagent", { task: "Delegate this" })),
+      fauxAssistantMessage(fauxToolCall("subagent", { task: "Delegate this", profile: "thinker" })),
       fauxAssistantMessage("delegated result"),
       fauxAssistantMessage("parent complete"),
     ]);
-    const subagentTool = createSubagentTool((request) =>
-      runSubagent({
-        request,
-        defaultModel: model,
-        thinkingLevel: "off",
-        models,
-        workspaceDir: dir,
-        availableTools: [],
-      }),
+    const subagentTool = createSubagentTool(
+      (request) =>
+        runSubagent({
+          request,
+          defaultModel: model,
+          thinkingLevel: "off",
+          models,
+          workspaceDir: dir,
+          availableTools: [],
+          profiles: THINKER_PROFILES,
+        }),
+      THINKER_MENU,
     );
     const sessionStore = SessionStore.create(join(dir, "parent.jsonl"), dir);
     const parent = new MikanAgentSession({
@@ -534,7 +552,13 @@ describe("runSubagent", () => {
       availableTools: [echoTool],
     });
 
-    expect(result).toMatchObject({ status: "completed", output: "done", turns: 2 });
+    expect(result).toMatchObject({
+      status: "completed",
+      output: "done",
+      turns: 2,
+      toolCalls: 1,
+      toolCallCounts: { echo: 1 },
+    });
   });
 
   test("stops when the subagent exceeds its turn budget", async () => {
@@ -575,6 +599,73 @@ describe("runSubagent", () => {
 
     expect(result).toMatchObject({ status: "cancelled", turns: 0 });
     expect(result.text).toBeUndefined();
+  });
+
+  test("fails when a profile's required tool was not used", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([fauxAssistantMessage("I read it without tools")]);
+
+    const result = await runSubagent({
+      request: { task: "Read README", profile: "explorer" },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [echoTool],
+      profiles: new Map([
+        [
+          "explorer",
+          {
+            name: "explorer",
+            description: "Evidence explorer",
+            systemPrompt: "Use evidence.",
+            tools: ["echo"],
+            requiredTools: ["echo"],
+          },
+        ],
+      ]),
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      toolCalls: 0,
+      error: "Required tool not used: echo",
+    });
+  });
+
+  test("completes when a profile's required tool was actually invoked", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("echo", { text: "README" })),
+      fauxAssistantMessage("verified"),
+    ]);
+
+    const result = await runSubagent({
+      request: { task: "Read README", profile: "explorer" },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [echoTool],
+      profiles: new Map([
+        [
+          "explorer",
+          {
+            name: "explorer",
+            description: "Evidence explorer",
+            systemPrompt: "Use evidence.",
+            tools: ["echo"],
+            requiredTools: ["echo"],
+          },
+        ],
+      ]),
+    });
+
+    expect(result).toMatchObject({
+      status: "completed",
+      output: "verified",
+      toolCalls: 1,
+    });
   });
 
   test("reports unknown requested tools as a failed result without starting the subagent", async () => {
@@ -637,18 +728,22 @@ describe("runSubagent", () => {
     // that the first task's live run hangs on.
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([fauxAssistantMessage("sibling done")]);
-    const tool = createSubagentTool((request) =>
-      runSubagent({
-        request,
-        defaultModel: model,
-        thinkingLevel: "off",
-        models,
-        workspaceDir: dir,
-        availableTools: [],
-      }),
+    const tool = createSubagentTool(
+      (request) =>
+        runSubagent({
+          request,
+          defaultModel: model,
+          thinkingLevel: "off",
+          models,
+          workspaceDir: dir,
+          availableTools: [],
+          profiles: THINKER_PROFILES,
+        }),
+      THINKER_MENU,
     );
 
     const result = await tool.execute("batch", {
+      profile: "thinker",
       tasks: [{ task: "Do the real work" }, { task: "   " }],
     });
 

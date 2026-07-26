@@ -1,11 +1,10 @@
 import type { AgentTool, AgentToolUpdateCallback } from "@earendil-works/pi-agent-core";
 import { Type, type Static, type TSchema } from "@sinclair/typebox";
-import type {
-  SubagentRunOutput,
-  SubagentRunRequest,
-  SubagentRunResult,
-  SubagentRunStatus,
-} from "../harness/types.js";
+import type { SubagentRunOutput, SubagentRunRequest, SubagentRunResult } from "../harness/types.js";
+// Progress statuses extend run statuses with the pre- and non-run states. The
+// dashboard renders the same union, so it is defined once alongside the
+// snapshot the tool emits rather than restated here.
+import type { SubagentProgressStatus } from "../types.js";
 
 const MAX_DAG_NODES = 8;
 const MAX_DAG_EDGES = 16;
@@ -13,18 +12,35 @@ const MAX_DAG_DEPTH = 4;
 const MAX_CONCURRENT_SUBAGENTS = 4;
 const MAX_DEPENDENCY_OUTPUT_CHARS = 4000;
 
-const taskProperties = {
-  task: Type.String({ minLength: 1, description: "Self-contained task for a fresh subagent." }),
-  label: Type.Optional(
-    Type.String({ maxLength: 64, description: "Short progress label for this subagent." }),
-  ),
-  systemPrompt: Type.Optional(
-    Type.String({ description: "Optional role or behavior instructions for the subagent." }),
-  ),
-  input: Type.Optional(
-    Type.Unknown({ description: "Optional JSON-serializable structured input for the task." }),
-  ),
-};
+/**
+ * Every subagent runs under a named profile: the profile owns the prompt,
+ * tool grant, model and budget defaults. Letting the model assemble those
+ * per call proved unstable, so the schema deliberately exposes no
+ * `systemPrompt`, `tools` or `model` escape hatch — narrowing what the model
+ * can get wrong is the point. `budget` survives because it can only tighten
+ * the profile's defaults, never widen them.
+ *
+ * `profileNames` is baked into the schema as an enum so an unknown profile is
+ * rejected by schema validation rather than costing a wasted turn.
+ */
+function buildTaskProperties(profileNames: string[]) {
+  return {
+    task: Type.String({ minLength: 1, description: "Self-contained task for a fresh subagent." }),
+    profile: Type.Optional(
+      Type.String({
+        enum: profileNames,
+        description:
+          "Profile this subagent runs under. Required, but a top-level profile covers every task and DAG node that does not set its own.",
+      }),
+    ),
+    label: Type.Optional(
+      Type.String({ maxLength: 64, description: "Short progress label for this subagent." }),
+    ),
+    input: Type.Optional(
+      Type.Unknown({ description: "Optional JSON-serializable structured input for the task." }),
+    ),
+  };
+}
 
 const sharedProperties = {
   parentContext: Type.Optional(
@@ -33,75 +49,79 @@ const sharedProperties = {
       recentTurns: Type.Optional(Type.Integer({ minimum: 1, maximum: 8, default: 3 })),
     }),
   ),
-  model: Type.Optional(Type.Object({ provider: Type.String(), id: Type.String() })),
-  tools: Type.Optional(
-    Type.Array(Type.String(), {
-      description: "Tool names explicitly granted to each subagent. Defaults to no tools.",
-    }),
-  ),
   outputSchema: Type.Optional(
     Type.Record(Type.String(), Type.Unknown(), {
       description: "Optional TypeBox/JSON Schema applied to every subagent result.",
     }),
   ),
   budget: Type.Optional(
-    Type.Object({
-      maxTurns: Type.Optional(Type.Integer({ minimum: 1 })),
-      maxTokens: Type.Optional(Type.Integer({ minimum: 1 })),
-      maxCostUsd: Type.Optional(Type.Number({ minimum: 0 })),
-      maxDurationMs: Type.Optional(Type.Integer({ minimum: 1 })),
-    }),
+    Type.Object(
+      {
+        maxTurns: Type.Optional(Type.Integer({ minimum: 1 })),
+        maxTokens: Type.Optional(Type.Integer({ minimum: 1 })),
+        maxCostUsd: Type.Optional(Type.Number({ minimum: 0 })),
+        maxDurationMs: Type.Optional(Type.Integer({ minimum: 1 })),
+      },
+      { description: "Tightens the profile's budget defaults; cannot raise them." },
+    ),
   ),
 };
 
-const subagentTaskSchema = Type.Object(taskProperties);
-const dagNodeSchema = Type.Object({
-  id: Type.String({
-    pattern: "^[A-Za-z0-9_-]+$",
-    maxLength: 64,
-    description: "Unique stable node id used by dependsOn.",
-  }),
-  ...taskProperties,
-  dependsOn: Type.Optional(Type.Array(Type.String(), { maxItems: MAX_DAG_NODES })),
-});
-const subagentSchema = Type.Object(
-  {
-    task: Type.Optional(taskProperties.task),
-    label: taskProperties.label,
-    systemPrompt: taskProperties.systemPrompt,
-    input: taskProperties.input,
-    tasks: Type.Optional(
-      Type.Array(subagentTaskSchema, {
-        minItems: 1,
-        maxItems: MAX_DAG_NODES,
-        description:
-          "Independent subagent tasks executed concurrently; results preserve input order.",
-      }),
-    ),
-    dag: Type.Optional(
-      Type.Object({
-        nodes: Type.Array(dagNodeSchema, { minItems: 1, maxItems: MAX_DAG_NODES }),
-        maxConcurrency: Type.Optional(
-          Type.Integer({
-            minimum: 1,
-            maximum: MAX_CONCURRENT_SUBAGENTS,
-            default: MAX_CONCURRENT_SUBAGENTS,
-          }),
-        ),
-      }),
-    ),
-    ...sharedProperties,
-  },
-  { description: "Provide task, tasks, or dag." },
-);
+/**
+ * The runtime schema varies only in the `profile` enum, so every instance
+ * shares one static type and `subagentSchema` below can stand in for it.
+ */
+function buildSubagentSchema(profileNames: string[]) {
+  const taskProperties = buildTaskProperties(profileNames);
+  return Type.Object(
+    {
+      task: Type.Optional(taskProperties.task),
+      profile: taskProperties.profile,
+      label: taskProperties.label,
+      input: taskProperties.input,
+      tasks: Type.Optional(
+        Type.Array(Type.Object(taskProperties), {
+          minItems: 1,
+          maxItems: MAX_DAG_NODES,
+          description:
+            "Independent subagent tasks executed concurrently; results preserve input order.",
+        }),
+      ),
+      dag: Type.Optional(
+        Type.Object({
+          nodes: Type.Array(
+            Type.Object({
+              id: Type.String({
+                pattern: "^[A-Za-z0-9_-]+$",
+                maxLength: 64,
+                description: "Unique stable node id used by dependsOn.",
+              }),
+              ...taskProperties,
+              dependsOn: Type.Optional(Type.Array(Type.String(), { maxItems: MAX_DAG_NODES })),
+            }),
+            { minItems: 1, maxItems: MAX_DAG_NODES },
+          ),
+          maxConcurrency: Type.Optional(
+            Type.Integer({
+              minimum: 1,
+              maximum: MAX_CONCURRENT_SUBAGENTS,
+              default: MAX_CONCURRENT_SUBAGENTS,
+            }),
+          ),
+        }),
+      ),
+      ...sharedProperties,
+    },
+    { description: "Provide task, tasks, or dag." },
+  );
+}
+
+const subagentSchema = buildSubagentSchema([]);
 
 type SubagentParams = Static<typeof subagentSchema>;
-type SubagentTask = Static<typeof subagentTaskSchema>;
-type DagNode = Static<typeof dagNodeSchema>;
-type SharedParams = Pick<
-  SubagentParams,
-  "parentContext" | "model" | "tools" | "outputSchema" | "budget"
->;
+type SubagentTask = NonNullable<SubagentParams["tasks"]>[number];
+type DagNode = NonNullable<SubagentParams["dag"]>["nodes"][number];
+type SharedParams = Pick<SubagentParams, "parentContext" | "outputSchema" | "budget">;
 type RunSubagent = <TOutputSchema extends TSchema | undefined = undefined>(
   request: SubagentRunRequest<TOutputSchema>,
 ) => Promise<SubagentRunResult<SubagentRunOutput<TOutputSchema>>>;
@@ -127,13 +147,6 @@ type PlanOutcome =
   | ({ id: string } & SubagentRunResult<unknown>)
   | { id: string; status: "skipped"; error: string };
 
-/**
- * Progress statuses extend run statuses with the pre- and non-run states, so
- * a new run status is surfaced verbatim (and the marker map below fails to
- * compile until it covers it) instead of silently collapsing.
- */
-type SubagentProgressStatus = SubagentRunStatus | "pending" | "running" | "skipped";
-
 const STATUS_MARKER = {
   pending: "○",
   running: "●",
@@ -146,8 +159,20 @@ const STATUS_MARKER = {
   skipped: "⊘",
 } satisfies Record<SubagentProgressStatus, string>;
 
+interface SubagentProgressMetrics {
+  turns?: number;
+  toolCalls?: number;
+  toolCallCounts?: Record<string, number>;
+  tokens?: number;
+  costUsd?: number;
+  durationMs?: number;
+  reason?: string;
+  cleanupPending?: boolean;
+}
+
 class SubagentProgressTracker {
   private readonly states = new Map<string, SubagentProgressStatus>();
+  private readonly metrics = new Map<string, SubagentProgressMetrics>();
 
   constructor(
     private readonly mode: PlanMode,
@@ -157,8 +182,9 @@ class SubagentProgressTracker {
     for (const item of items) this.states.set(item.id, "pending");
   }
 
-  update(id: string, status: SubagentProgressStatus): void {
+  update(id: string, status: SubagentProgressStatus, metrics?: SubagentProgressMetrics): void {
     this.states.set(id, status);
+    if (metrics) this.metrics.set(id, metrics);
     this.emit();
   }
 
@@ -167,6 +193,7 @@ class SubagentProgressTracker {
     const nodes = this.items.map((item) => ({
       ...item,
       status: this.states.get(item.id) ?? ("pending" as SubagentProgressStatus),
+      ...this.metrics.get(item.id),
     }));
     const settled = nodes.filter(
       (node) => node.status !== "pending" && node.status !== "running",
@@ -211,11 +238,9 @@ function buildRequest(
   const outputSchema = shared.outputSchema as TSchema | undefined;
   return {
     task: task.task,
-    ...(task.systemPrompt ? { systemPrompt: task.systemPrompt } : {}),
+    ...(task.profile ? { profile: task.profile } : {}),
     ...(task.input !== undefined ? { input: task.input } : {}),
     ...(shared.parentContext ? { parentContext: shared.parentContext } : {}),
-    ...(shared.model ? { model: shared.model } : {}),
-    ...(shared.tools ? { tools: shared.tools } : {}),
     ...(outputSchema ? { outputSchema } : {}),
     ...(shared.budget ? { budget: shared.budget } : {}),
     ...(signal ? { signal } : {}),
@@ -272,11 +297,20 @@ function buildDagWaves(nodes: DagNode[]): DagNode[][] {
   return waves;
 }
 
-function itemForNode(node: DagNode): PlanItem {
+/**
+ * A top-level `profile` is the default for every task and DAG node, like the
+ * other shared params. A fan-out that runs entirely under one profile then
+ * names it once instead of repeating it per node.
+ */
+function withDefaultProfile<T extends { profile?: string }>(task: T, fallback?: string): T {
+  return task.profile || !fallback ? task : { ...task, profile: fallback };
+}
+
+function itemForNode(node: DagNode, defaultProfile?: string): PlanItem {
   return {
     id: node.id,
     label: node.label?.trim() || node.id,
-    task: node,
+    task: withDefaultProfile(node, defaultProfile),
     dependsOn: node.dependsOn ?? [],
   };
 }
@@ -291,11 +325,12 @@ function buildPlan(params: SubagentParams): Plan {
   }
 
   if (params.dag !== undefined) {
-    const waves = buildDagWaves(params.dag.nodes).map((wave) => wave.map(itemForNode));
+    const toItem = (node: DagNode) => itemForNode(node, params.profile);
+    const waves = buildDagWaves(params.dag.nodes).map((wave) => wave.map(toItem));
     const requested = params.dag.maxConcurrency ?? MAX_CONCURRENT_SUBAGENTS;
     return {
       mode: "dag",
-      items: params.dag.nodes.map(itemForNode),
+      items: params.dag.nodes.map(toItem),
       waves,
       concurrency: Math.max(1, Math.min(MAX_CONCURRENT_SUBAGENTS, Math.floor(requested))),
     };
@@ -304,7 +339,7 @@ function buildPlan(params: SubagentParams): Plan {
     const items = params.tasks.map((task, index) => ({
       id: String(index),
       label: taskLabel(task, String(index + 1)),
-      task,
+      task: withDefaultProfile(task, params.profile),
       dependsOn: [],
     }));
     return { mode: "parallel", items, waves: [items], concurrency: MAX_CONCURRENT_SUBAGENTS };
@@ -383,32 +418,69 @@ async function runWaves(
           status: "skipped",
           error: `Dependency ${failedDependency} did not complete`,
         });
-        progress.update(item.id, "skipped");
+        progress.update(item.id, "skipped", {
+          reason: `Dependency ${failedDependency} did not complete`,
+        });
         return;
       }
       let result: SubagentRunResult<unknown>;
       progress.update(item.id, "running");
       result = await runSubagent(planRequest(item, shared, outcomes, signal));
       outcomes.set(item.id, { id: item.id, ...result });
-      progress.update(item.id, result.status);
+      progress.update(item.id, result.status, {
+        turns: result.turns,
+        toolCalls: result.toolCalls,
+        toolCallCounts: result.toolCallCounts,
+        tokens: result.tokens,
+        costUsd: result.costUsd,
+        durationMs: result.durationMs,
+        ...(result.error ? { reason: result.error } : {}),
+        ...(result.cleanupPending ? { cleanupPending: true } : {}),
+      });
     });
   }
   return plan.items.map((item) => outcomes.get(item.id)!);
+}
+
+function validatePlanProfiles(plan: Plan, availableProfiles: ReadonlySet<string>): void {
+  const known = [...availableProfiles].join(", ");
+  for (const item of plan.items) {
+    const profile = item.task.profile;
+    if (!profile) {
+      throw new Error(`Subagent ${item.label} must specify a profile (available: ${known})`);
+    }
+    if (!availableProfiles.has(profile)) {
+      throw new Error(`Unknown subagent profile: ${profile} (available: ${known})`);
+    }
+  }
 }
 
 /**
  * Create the normal agent's bounded subagent delegation and DAG tool.
  * `globalSlots` is the process-wide fan-out account shared across every
  * conversation's tool instance; omitted, fan-out is bounded per run only.
+ *
+ * `profiles` must be non-empty: it is both the model-facing menu and the only
+ * way to grant a subagent any capability at all.
  */
-export function createSubagentTool(runSubagent: RunSubagent): AgentTool<typeof subagentSchema> {
+export function createSubagentTool(
+  runSubagent: RunSubagent,
+  profiles: ReadonlyMap<string, { description: string }>,
+): AgentTool<typeof subagentSchema> {
+  if (profiles.size === 0) {
+    throw new Error("createSubagentTool requires at least one subagent profile");
+  }
+  const profileDescription = [...profiles.entries()]
+    .map(([name, profile]) => `${name}: ${profile.description}`)
+    .join("; ");
   return {
     name: "subagent",
     label: "Subagent",
     description:
       `Run fresh isolated subagents. Use task for one subagent, tasks for independent concurrent work, or dag.nodes for a bounded dependency graph. At most ${MAX_CONCURRENT_SUBAGENTS} subagents run concurrently. DAG limits: ${MAX_DAG_NODES} nodes, ${MAX_DAG_EDGES} edges, depth ${MAX_DAG_DEPTH}; failed dependencies skip descendants, and dependency outputs larger than ${MAX_DEPENDENCY_OUTPUT_CHARS} characters reach downstream nodes as a truncated string. ` +
-      "Subagents are fresh by default; parentContext.mode=normalized can include a sanitized reference snapshot of the active parent run. They have no tools unless explicitly provided; nested subagents are not allowed.",
-    parameters: subagentSchema,
+      "Subagents are fresh by default; parentContext.mode=normalized can include a sanitized reference snapshot of the active parent run. Nested subagents are not allowed. " +
+      `Every task and DAG node must set profile; the profile supplies the prompt, tools, model and budget. Available profiles: ${profileDescription}.`,
+    parameters: buildSubagentSchema([...profiles.keys()]),
     execute: async (
       _toolCallId: string,
       params: SubagentParams,
@@ -416,6 +488,7 @@ export function createSubagentTool(runSubagent: RunSubagent): AgentTool<typeof s
       onUpdate?: AgentToolUpdateCallback,
     ) => {
       const plan = buildPlan(params);
+      validatePlanProfiles(plan, new Set(profiles.keys()));
       const progress = new SubagentProgressTracker(
         plan.mode,
         plan.items.map(({ id, label }) => ({ id, label })),

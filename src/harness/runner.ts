@@ -53,6 +53,8 @@ export type CompactionReason = "threshold" | "overflow" | "manual";
 interface RunTally {
   usage: SubagentUsage;
   llmCalls: number;
+  toolCalls: number;
+  toolCallCounts: Record<string, number>;
   startedAt: number;
 }
 
@@ -147,6 +149,8 @@ export class MikanAgentSession {
   private tally: RunTally = {
     usage: createEmptySubagentUsage(),
     llmCalls: 0,
+    toolCalls: 0,
+    toolCallCounts: {},
     startedAt: 0,
   };
   private runBudget: BudgetSettings = {};
@@ -227,6 +231,8 @@ export class MikanAgentSession {
     tokens: number;
     costUsd: number;
     llmCalls: number;
+    toolCalls: number;
+    toolCallCounts: Record<string, number>;
     durationMs: number;
     budgetExceededReason?: string;
   }> {
@@ -235,6 +241,8 @@ export class MikanAgentSession {
       tokens: this.tally.usage.totalTokens,
       costUsd: this.tally.usage.cost.total,
       llmCalls: this.tally.llmCalls,
+      toolCalls: this.tally.toolCalls,
+      toolCallCounts: { ...this.tally.toolCallCounts },
       durationMs: this.tally.startedAt > 0 ? Date.now() - this.tally.startedAt : 0,
       ...(this.budgetExceededReason ? { budgetExceededReason: this.budgetExceededReason } : {}),
     };
@@ -334,6 +342,8 @@ export class MikanAgentSession {
     this.tally = {
       usage: createEmptySubagentUsage(),
       llmCalls: 0,
+      toolCalls: 0,
+      toolCallCounts: {},
       startedAt: Date.now(),
     };
     this.runOrigin = options?.origin;
@@ -438,6 +448,11 @@ export class MikanAgentSession {
   }
 
   private async handleAgentEvent(event: AgentEvent): Promise<void> {
+    if (event.type === "tool_execution_start") {
+      this.tally.toolCalls += 1;
+      this.tally.toolCallCounts[event.toolName] =
+        (this.tally.toolCallCounts[event.toolName] ?? 0) + 1;
+    }
     if (event.type !== "message_end") {
       await this.emit(event);
       return;

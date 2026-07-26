@@ -6,6 +6,7 @@ import { Kind, Type, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import * as log from "../log.js";
 import type { MikanModels } from "./models.js";
+import type { SubagentProfile } from "./types.js";
 import { MikanAgentSession } from "./runner.js";
 import { SessionStore } from "./session-store.js";
 import type {
@@ -139,6 +140,7 @@ interface RunSubagentOptions<TOutputSchema extends TSchema | undefined = undefin
   models: MikanModels;
   workspaceDir: string;
   availableTools: AgentTool[];
+  profiles?: ReadonlyMap<string, SubagentProfile>;
   /** Process-wide launch pool shared by tool and extension invocations. */
   slots?: SubagentSlotPool;
   /** Host-snapshotted parent transcript; never sourced from the public request. */
@@ -178,6 +180,29 @@ function selectTools(requested: string[] | undefined, available: AgentTool[]): A
     selected.push(tool);
   }
   return selected;
+}
+
+/**
+ * Wrap a tool so the run can prove it was actually reached. Fields are listed
+ * explicitly rather than spread: `AgentTool` is a plain interface, and a
+ * structural copy would silently drop anything added to it later.
+ */
+function witnessToolUse(tool: AgentTool, invoked: Set<string>): AgentTool {
+  return {
+    name: tool.name,
+    label: tool.label,
+    description: tool.description,
+    parameters: tool.parameters,
+    ...(tool.constrainedSampling !== undefined
+      ? { constrainedSampling: tool.constrainedSampling }
+      : {}),
+    ...(tool.prepareArguments ? { prepareArguments: tool.prepareArguments.bind(tool) } : {}),
+    ...(tool.executionMode ? { executionMode: tool.executionMode } : {}),
+    execute: (...args: Parameters<AgentTool["execute"]>) => {
+      invoked.add(tool.name);
+      return tool.execute(...args);
+    },
+  };
 }
 
 function formatTask(task: string, input: unknown, parentContext?: string): string {
@@ -255,8 +280,13 @@ function normalizedParentContext(
   ].join("\n");
 }
 
+const GROUNDING_POLICY = `Evidence policy:
+- Use granted tools for any claim about files, commands, repositories, or external state.
+- Never simulate tool output or claim a tool was used when it was not.
+- If the task requires an unavailable tool, state that you cannot verify it instead of guessing.`;
+
 function buildSystemPrompt(base: string | undefined, outputSchema: TSchema | undefined): string {
-  const prompt = base?.trim() || DEFAULT_SYSTEM_PROMPT;
+  const prompt = [base?.trim() || DEFAULT_SYSTEM_PROMPT, GROUNDING_POLICY].join("\n\n");
   if (!outputSchema) return prompt;
   return [
     prompt,
@@ -343,6 +373,8 @@ async function executeBoundedSubagentRun<TOutputSchema extends TSchema | undefin
             id: options.defaultModel.id,
           },
           turns: 0,
+          toolCalls: 0,
+          toolCallCounts: {},
           usage,
           tokens: usage.totalTokens,
           costUsd: usage.cost.total,
@@ -387,10 +419,50 @@ async function executeBoundedSubagentRun<TOutputSchema extends TSchema | undefin
 
 function noop(): void {}
 
+/**
+ * Expand `request.profile` into the concrete capability set it names. Profile
+ * budgets are defaults only: anything the caller set in `request.budget`
+ * survives, so a profile can never widen a caller-imposed limit.
+ */
+function resolveProfile<TOutputSchema extends TSchema | undefined>(
+  request: SubagentRunRequest<TOutputSchema>,
+  options: RunSubagentOptions<TOutputSchema>,
+): SubagentRunRequest<TOutputSchema> {
+  if (!request.profile) return request;
+  const profile = options.profiles?.get(request.profile);
+  if (!profile) {
+    const known = [...(options.profiles?.keys() ?? [])].join(", ");
+    throw new Error(
+      `Unknown subagent profile: ${request.profile}${known ? ` (available: ${known})` : ""}`,
+    );
+  }
+  if (request.tools || request.model || request.systemPrompt || request.thinkingLevel) {
+    throw new Error(
+      `Subagent profile ${request.profile} cannot be combined with tools, model, systemPrompt, or thinkingLevel`,
+    );
+  }
+  const budget = {
+    ...(profile.maxTurns !== undefined ? { maxTurns: profile.maxTurns } : {}),
+    ...(profile.maxTokens !== undefined ? { maxTokens: profile.maxTokens } : {}),
+    ...(profile.maxCostUsd !== undefined ? { maxCostUsd: profile.maxCostUsd } : {}),
+    ...(profile.maxDurationMs !== undefined ? { maxDurationMs: profile.maxDurationMs } : {}),
+    ...request.budget,
+  };
+  return {
+    ...request,
+    systemPrompt: profile.systemPrompt,
+    tools: profile.tools,
+    requiredTools: profile.requiredTools,
+    ...(profile.model ? { model: profile.model } : {}),
+    ...(profile.thinkingLevel ? { thinkingLevel: profile.thinkingLevel } : {}),
+    ...(Object.keys(budget).length > 0 ? { budget } : {}),
+  };
+}
+
 async function executeSubagentRun<TOutputSchema extends TSchema | undefined = undefined>(
   options: RunSubagentOptions<TOutputSchema>,
 ): Promise<BoundedSubagentExecution<SubagentRunOutput<TOutputSchema>>> {
-  const { request } = options;
+  const request = resolveProfile(options.request, options);
   const runId = randomUUID();
   const startedAt = Date.now();
   let modelSpec: SubagentModelSpec = request.model ?? {
@@ -420,7 +492,17 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
       ? options.models.resolve(request.model.provider, request.model.id)
       : options.defaultModel;
     modelSpec = { provider: model.provider, id: model.id };
-    const tools = selectTools(request.tools, options.availableTools);
+    const invokedTools = new Set<string>();
+    const granted = selectTools(request.tools, options.availableTools);
+    const missingRequiredTools = (request.requiredTools ?? []).filter(
+      (name) => !granted.some((tool) => tool.name === name),
+    );
+    if (missingRequiredTools.length > 0) {
+      throw new Error(
+        `Required subagent tools were not granted: ${missingRequiredTools.join(", ")}`,
+      );
+    }
+    const tools = granted.map((tool) => witnessToolUse(tool, invokedTools));
     const task = formatTask(
       request.task,
       request.input,
@@ -430,7 +512,7 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
     const session = new MikanAgentSession({
       systemPrompt: buildSystemPrompt(request.systemPrompt, request.outputSchema),
       model,
-      thinkingLevel: options.thinkingLevel,
+      thinkingLevel: request.thinkingLevel ?? options.thinkingLevel,
       tools,
       models: options.models,
       sessionStore: SessionStore.inMemory(options.workspaceDir),
@@ -453,6 +535,8 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
         runId,
         model: modelSpec,
         turns: stats.llmCalls,
+        toolCalls: stats.toolCalls,
+        toolCallCounts: stats.toolCallCounts,
         usage: stats.usage,
         tokens: stats.usage.totalTokens,
         costUsd: stats.usage.cost.total,
@@ -475,6 +559,16 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
           ...base,
           status: "budget_exceeded",
           error: stats.budgetExceededReason,
+        };
+      }
+      const unusedRequiredTools = (request.requiredTools ?? []).filter(
+        (name) => !invokedTools.has(name),
+      );
+      if (unusedRequiredTools.length > 0) {
+        return {
+          ...base,
+          status: "failed",
+          error: `Required tool not used: ${unusedRequiredTools.join(", ")}`,
         };
       }
       if (assistant?.stopReason === "error") {
@@ -528,6 +622,8 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
         status: terminalSignal ?? "failed",
         model: modelSpec,
         turns: stats.llmCalls,
+        toolCalls: stats.toolCalls,
+        toolCallCounts: stats.toolCallCounts,
         usage,
         tokens: usage.totalTokens,
         costUsd: usage.cost.total,
@@ -589,6 +685,8 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
         status: terminalSignal ?? "failed",
         model: modelSpec,
         turns: stats?.llmCalls ?? 0,
+        toolCalls: stats?.toolCalls ?? 0,
+        toolCallCounts: stats?.toolCallCounts ?? {},
         usage,
         tokens: usage.totalTokens,
         costUsd: usage.cost.total,

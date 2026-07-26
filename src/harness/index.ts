@@ -30,6 +30,11 @@ export {
   type SkillDiagnostic,
 } from "./skills.js";
 export {
+  loadSubagentProfiles,
+  type LoadSubagentProfilesResult,
+  type SubagentProfileDiagnostic,
+} from "./subagent-profiles.js";
+export {
   DEFAULT_BUDGET_SETTINGS,
   DEFAULT_EVENT_BUDGET,
   DEFAULT_RETRY_SETTINGS,
@@ -103,6 +108,7 @@ export type {
 } from "./extensions/types.js";
 export {
   type SubagentModelSpec,
+  type SubagentProfile,
   type SubagentParentContext,
   type SubagentRunBudget,
   type SubagentRunOutput,

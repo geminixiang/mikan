@@ -315,6 +315,7 @@ const resourceController =
 if (sandbox.type === "image" || sandbox.type === "gondolin") {
   ensureDirExists(join(workingDir, "skills"));
   ensureDirExists(join(workingDir, "events"));
+  ensureDirExists(join(workingDir, "agents"));
   try {
     writeFileSync(join(workingDir, "MEMORY.md"), "", { flag: "wx" });
   } catch (err) {

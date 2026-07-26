@@ -70,12 +70,14 @@ async function createTestRunner() {
 
 function makeResponder(): ConversationResponder & {
   replaceResponse: ReturnType<typeof vi.fn>;
+  replaceSubagentProgress: ReturnType<typeof vi.fn>;
   respondDiagnostic: ReturnType<typeof vi.fn>;
   deleteResponse: ReturnType<typeof vi.fn>;
 } {
   return {
     respond: vi.fn().mockResolvedValue(undefined),
     replaceResponse: vi.fn().mockResolvedValue(undefined),
+    replaceSubagentProgress: vi.fn().mockResolvedValue(undefined),
     respondDiagnostic: vi.fn().mockResolvedValue(undefined),
     respondToolResult: vi.fn().mockResolvedValue(undefined),
     setTyping: vi.fn().mockResolvedValue(undefined),
@@ -113,8 +115,8 @@ describe("PiAgentWrapper.run", () => {
       fauxAssistantMessage(
         fauxToolCall("subagent", {
           tasks: [
-            { label: "first", task: "first task" },
-            { label: "second", task: "second task" },
+            { label: "first", task: "first task", profile: "analysis-only" },
+            { label: "second", task: "second task", profile: "analysis-only" },
           ],
         }),
       ),
@@ -126,12 +128,29 @@ describe("PiAgentWrapper.run", () => {
 
     await runner.run(makeMessage({ text: "delegate twice" }), responder, platform);
 
-    const replacements = responder.replaceResponse.mock.calls.map((call) => String(call[0]));
-    expect(replacements.some((text) => text.includes("Subagent parallel 2/2"))).toBe(true);
-    expect(replacements.some((text) => text.includes("✓ first") && text.includes("✓ second"))).toBe(
-      true,
+    expect(responder.replaceSubagentProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: "parallel",
+        nodes: [
+          expect.objectContaining({ id: "0", label: "first", status: "completed" }),
+          expect.objectContaining({ id: "1", label: "second", status: "completed" }),
+        ],
+      }),
+      expect.stringContaining("parent complete"),
     );
-    expect(replacements.at(-1)).toContain("parent complete");
+    // toContain compares by equality and never evaluates an asymmetric
+    // matcher, so the substring check has to be toContainEqual.
+    const replacements = responder.replaceResponse.mock.calls.map((call) => String(call[0]));
+    expect(replacements).not.toContainEqual(expect.stringContaining("Subagent parallel"));
+    expect(responder.replaceSubagentProgress).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        nodes: expect.arrayContaining([
+          expect.objectContaining({ turns: 1, toolCalls: 0, tokens: expect.any(Number) }),
+        ]),
+      }),
+      expect.stringContaining("parent complete"),
+    );
+    expect(responder.replaceSubagentProgress.mock.calls.length).toBeLessThanOrEqual(3);
   });
 
   test("replaces the placeholder with the final assistant text", async () => {

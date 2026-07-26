@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import type { SubagentProgressSnapshot } from "../src/adapter.js";
 import { DiscordMessagingBot } from "../src/adapters/discord/bot.js";
 import type { DiscordEvent } from "../src/adapters/discord/bot.js";
 import { createDiscordAdapters } from "../src/adapters/discord/context.js";
@@ -41,6 +42,43 @@ function makeEvent(overrides: Partial<DiscordEvent> = {}): DiscordEvent {
     ...overrides,
   };
 }
+
+// ============================================================================
+// subagent progress
+// ============================================================================
+
+describe("replaceSubagentProgress()", () => {
+  test("renders a compact Markdown dashboard in the response message", async () => {
+    const bot = makeDiscordMessagingBot();
+    const { responder } = createDiscordAdapters(makeEvent(), bot);
+    const progress: SubagentProgressSnapshot = {
+      mode: "parallel",
+      nodes: [
+        { id: "explore", label: "Explore *auth*", status: "completed" },
+        { id: "implement", label: "Implement fix", status: "running" },
+        { id: "review", label: "Review diff", status: "pending" },
+      ],
+    };
+
+    await responder.replaceSubagentProgress?.(progress);
+
+    expect(bot.postReply).toHaveBeenCalledWith(
+      "CH001",
+      "MSG001",
+      expect.stringContaining("**Subagents · 1/3 · Parallel**"),
+    );
+    expect(bot.postReply).toHaveBeenCalledWith(
+      "CH001",
+      "MSG001",
+      expect.stringContaining("✓ Explore \\*auth\\*\n└ Completed"),
+    );
+    expect(bot.postReply).toHaveBeenCalledWith(
+      "CH001",
+      "MSG001",
+      expect.stringContaining("● Implement fix\n└ Running"),
+    );
+  });
+});
 
 // ============================================================================
 // Session key derivation
