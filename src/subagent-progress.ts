@@ -19,7 +19,7 @@ export const MAX_SUBAGENT_LABEL_CHARS = 64;
 const MAX_PROFILE_CHARS = 64;
 const MAX_REASON_CHARS = 240;
 
-export const SUBAGENT_STATUS_MARKER = {
+const SUBAGENT_STATUS_MARKER = {
   pending: "○",
   running: "●",
   completed: "✓",

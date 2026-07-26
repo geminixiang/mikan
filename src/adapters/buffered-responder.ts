@@ -33,7 +33,11 @@ export interface BufferedResponderPlatform {
   workingIndicator?: string;
   /** Enable appendResponseDelta/finishResponse over a buffered stream. */
   streaming: boolean;
-  /** Render a live subagent snapshot before it enters the shared response queue. */
+  /**
+   * Convert the subagent dashboard for a pipeline that is not response-source
+   * Markdown (Telegram HTML). Markdown platforms omit this: the harness
+   * composes the Markdown dashboard through replaceResponse.
+   */
   formatSubagentProgress?: (progress: SubagentProgressSnapshot) => string;
   typing?: {
     send: () => Promise<unknown>;

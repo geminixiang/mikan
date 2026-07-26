@@ -727,25 +727,40 @@ function extractToolLabel(toolName: string, args: unknown): string {
   return label.trim() || toolName;
 }
 
-function formatToolProgress(runState: RunnerSessionState, includeSubagents = true): string {
+/** Non-subagent tool activity lines; subagent calls render as the dashboard. */
+function formatToolProgress(runState: RunnerSessionState): string {
   const lines = Array.from(runState.toolProgress.entries()).flatMap(([toolCallId, item]) => {
-    if (!includeSubagents && runState.subagentToolCalls.has(toolCallId)) return [];
+    if (runState.subagentToolCalls.has(toolCallId)) return [];
     const marker = item.status === "running" ? "•" : item.status === "error" ? "✗" : "✓";
     return [`${marker} ${item.label}`];
   });
   return lines.join("\n");
 }
 
-/**
- * The dashboard a responder without `replaceSubagentProgress` gets: the same
- * merged snapshot, rendered by the same formatter, so both paths show one
- * dashboard with identical content.
- */
 function formatResponseWithToolProgress(text: string, runState: RunnerSessionState): string {
-  const merged = mergeSubagentProgress(runState.completedSubagentProgress);
-  const dashboard = merged ? renderSubagentDashboard(merged) : "";
-  const progress = formatToolProgress(runState, false);
-  return [dashboard, progress, text].filter(Boolean).join("\n\n");
+  const progress = formatToolProgress(runState);
+  return [progress, text].filter(Boolean).join("\n\n");
+}
+
+/**
+ * The one dashboard render path. A responder that overrides
+ * `replaceSubagentProgress` converts the snapshot for a pipeline that is not
+ * response-source Markdown (Telegram HTML); every other platform receives the
+ * Markdown dashboard — "dashboard, blank line, answer" — through
+ * `replaceResponse`, the same conversion as any response.
+ */
+async function replaceWithSubagentDashboard(
+  responder: ConversationResponder,
+  snapshot: SubagentProgressSnapshot,
+  finalText?: string,
+  options?: { createOverflowLink?: () => string },
+): Promise<void> {
+  if (responder.replaceSubagentProgress) {
+    await responder.replaceSubagentProgress(snapshot, finalText);
+    return;
+  }
+  const dashboard = renderSubagentDashboard(snapshot);
+  await responder.replaceResponse(finalText ? `${dashboard}\n\n${finalText}` : dashboard, options);
 }
 
 async function replaceResponseWithToolProgress(
@@ -753,8 +768,8 @@ async function replaceResponseWithToolProgress(
   runState: RunnerSessionState,
   subagentProgress = mergeSubagentProgress([...runState.subagentProgress.values()]),
 ): Promise<void> {
-  if (subagentProgress && responder.replaceSubagentProgress) {
-    await responder.replaceSubagentProgress(subagentProgress);
+  if (subagentProgress) {
+    await replaceWithSubagentDashboard(responder, subagentProgress);
     return;
   }
   const progress = formatToolProgress(runState);
@@ -813,14 +828,6 @@ function extractSubagentProgress(partialResult: unknown): SubagentProgressSnapsh
   const details = (partialResult as { details?: unknown }).details;
   if (!details || typeof details !== "object") return undefined;
   return parseSubagentProgressSnapshot((details as { progress?: unknown }).progress);
-}
-
-function extractToolProgressLabel(partialResult: unknown): string | undefined {
-  if (!partialResult || typeof partialResult !== "object") return undefined;
-  const details = (partialResult as { details?: unknown }).details;
-  if (!details || typeof details !== "object") return undefined;
-  const label = (details as { progressLabel?: unknown }).progressLabel;
-  return typeof label === "string" && label.trim() ? label.trim().slice(0, 1000) : undefined;
 }
 
 async function finalizeRunResponse(
@@ -906,8 +913,10 @@ async function finalizeRunResponse(
       options?.triggerSessionLink,
     );
     const finalDashboard = mergeSubagentProgress(runState.completedSubagentProgress);
-    if (finalDashboard && responder.replaceSubagentProgress) {
-      await responder.replaceSubagentProgress(finalDashboard, finalResponse);
+    if (finalDashboard) {
+      await replaceWithSubagentDashboard(responder, finalDashboard, finalResponse, {
+        createOverflowLink: options?.createOverflowLink,
+      });
       return;
     }
     await responder.replaceResponse(formatResponseWithToolProgress(finalResponse, runState), {
@@ -1627,11 +1636,6 @@ function attachSessionEventHandlers(params: {
         runState.subagentProgress.set(event.toolCallId, subagentProgress);
         runState.subagentToolCalls.add(event.toolCallId);
         runState.suppressResponseDeltas = true;
-      }
-      const label = extractToolProgressLabel(event.partialResult);
-      const progress = runState.toolProgress.get(event.toolCallId);
-      if (label && progress) {
-        progress.label = label;
         scheduleToolProgressUpdate(responder, runState);
       }
       return;
@@ -1830,6 +1834,11 @@ function attachSessionEventHandlers(params: {
             actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
             event: { kind: "turnEnd" },
           });
+          // A run that produced a subagent dashboard finalizes through it:
+          // finalizeRunResponse renders "dashboard, blank line, answer", and a
+          // finish here would first overwrite the dashboard with the bare
+          // answer on every platform.
+          if (runState.completedSubagentProgress.length > 0) return;
           if (responder.finishResponse) {
             queue.enqueue(async () => {
               await responder.finishResponse?.(finalText);

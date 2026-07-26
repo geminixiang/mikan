@@ -1,5 +1,4 @@
 import { describe, expect, test, vi } from "vitest";
-import type { SubagentProgressSnapshot } from "../src/adapter.js";
 import { SlackMessagingBot } from "../src/adapters/slack/bot.js";
 import type { SlackEvent } from "../src/adapters/slack/bot.js";
 import { createSlackAdapters } from "../src/adapters/slack/context.js";
@@ -51,67 +50,14 @@ function makeEvent(overrides: Partial<SlackEvent> = {}): SlackEvent {
 // subagent progress
 // ============================================================================
 
-describe("replaceSubagentProgress()", () => {
-  test("renders a structured Slack dashboard through the canonical response", async () => {
+describe("subagent dashboard", () => {
+  test("does not override the harness's response-source dashboard", () => {
     const bot = makeSlackMessagingBot();
     const { responder } = createSlackAdapters(makeEvent(), bot);
-    const progress: SubagentProgressSnapshot = {
-      mode: "parallel",
-      nodes: [
-        {
-          id: "explore",
-          label: "Explore <auth>",
-          status: "completed",
-          profile: "repository-researcher",
-          turns: 2,
-          toolCalls: 3,
-          toolCallCounts: { bash: 2, read: 1 },
-          tokens: 8200,
-          costUsd: 0.0123,
-          durationMs: 4100,
-        },
-        {
-          id: "implement",
-          label: "Implement fix",
-          status: "budget_exceeded",
-          turns: 10,
-          toolCalls: 5,
-          tokens: 21400,
-          costUsd: 0.0456,
-          durationMs: 14300,
-          reason: "10 LLM calls >= 10 limit",
-        },
-      ],
-    };
-
-    await responder.replaceSubagentProgress?.(progress);
-
-    // The dashboard is response source Markdown (ADR-0001): renderSlackBlocks
-    // owns the conversion, so no mrkdwn or entity escaping may appear here.
-    expect(bot.postMessage).toHaveBeenCalledWith(
-      "C001",
-      expect.stringContaining("**Subagents · 2/2 · Parallel · 12 LLM turns · 8 tool calls"),
-    );
-    expect(bot.postMessage).toHaveBeenCalledWith(
-      "C001",
-      expect.stringContaining("✓ Explore \\<auth\\>"),
-    );
-    // The profile sits ahead of the metrics: a node reporting no tool calls is
-    // only readable once you know which profile it ran under.
-    expect(bot.postMessage).toHaveBeenCalledWith(
-      "C001",
-      expect.stringContaining(
-        "└ Completed · repository-researcher · 2 LLM turns · 3 tool calls · bash ×2 · read ×1 · 8.2K tokens",
-      ),
-    );
-    expect(bot.postMessage).toHaveBeenCalledWith(
-      "C001",
-      expect.stringContaining("! Implement fix\n└ Budget exceeded"),
-    );
-    expect(bot.postMessage).toHaveBeenCalledWith(
-      "C001",
-      expect.stringContaining("10 LLM calls >= 10 limit"),
-    );
+    // The harness composes the Markdown dashboard through replaceResponse and
+    // renderSlackBlocks converts it natively (ADR-0001); a Slack-side override
+    // would be a second renderer.
+    expect(responder.replaceSubagentProgress).toBeUndefined();
   });
 });
 
@@ -265,44 +211,6 @@ describe("respond() — non-threaded", () => {
     expect(bot.startMessageStream).not.toHaveBeenCalled();
     expect(bot.updateMessage).toHaveBeenCalledWith("C001", "MSG1", "final answer ...");
     expect(bot.updateMessage).toHaveBeenLastCalledWith("C001", "MSG1", "final answer");
-  });
-
-  test("subagent dashboard suppresses deltas until one canonical final update", async () => {
-    const bot = makeSlackMessagingBot({ postMessage: vi.fn().mockResolvedValue("MSG1") });
-    const { responder } = createSlackAdapters(makeEvent(), bot);
-    const progress: SubagentProgressSnapshot = {
-      mode: "single",
-      nodes: [{ id: "explore", label: "Explore", status: "running" }],
-    };
-
-    await responder.replaceSubagentProgress?.(progress);
-    await responder.appendResponseDelta?.("streamed parent answer");
-    await responder.finishResponse?.("streamed parent answer");
-    await responder.replaceSubagentProgress?.(
-      {
-        mode: "single",
-        nodes: [
-          {
-            id: "explore",
-            label: "Explore",
-            status: "completed",
-            turns: 1,
-            toolCalls: 1,
-            tokens: 100,
-            costUsd: 0,
-            durationMs: 1000,
-          },
-        ],
-      },
-      "final parent answer",
-    );
-
-    const updates = vi.mocked(bot.updateMessage).mock.calls.map((call) => call[2]);
-    // toContainEqual, not toContain: toContain never evaluates an asymmetric
-    // matcher, so a substring assertion written with it always passes.
-    expect(updates).not.toContainEqual(expect.stringContaining("streamed parent answer"));
-    expect(updates.at(-1)).toContain("final parent answer");
-    expect(bot.appendMessageStream).not.toHaveBeenCalled();
   });
 
   test("thread reply mode streams top-level inputs in the user message thread", async () => {

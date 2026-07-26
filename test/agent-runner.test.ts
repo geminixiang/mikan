@@ -153,6 +153,44 @@ describe("PiAgentWrapper.run", () => {
     expect(responder.replaceSubagentProgress.mock.calls.length).toBeLessThanOrEqual(3);
   });
 
+  test("composes the Markdown dashboard through replaceResponse without an override", async () => {
+    const { runner, faux } = await createTestRunner();
+    faux.setResponses([
+      fauxAssistantMessage(
+        fauxToolCall("subagent", {
+          tasks: [
+            { label: "first", task: "first task", profile: "analysis-only" },
+            { label: "second", task: "second task", profile: "analysis-only" },
+          ],
+        }),
+      ),
+      fauxAssistantMessage("first result"),
+      fauxAssistantMessage("second result"),
+      fauxAssistantMessage("parent complete"),
+    ]);
+    const responder = makeResponder() as ConversationResponder & {
+      respond: ReturnType<typeof vi.fn>;
+      replaceResponse: ReturnType<typeof vi.fn>;
+    };
+    delete responder.replaceSubagentProgress;
+
+    await runner.run(makeMessage({ text: "delegate twice" }), responder, platform);
+
+    // "dashboard, blank line, answer" — composed by the harness, converted by
+    // the platform like any response.
+    const finalReplacement = String(responder.replaceResponse.mock.calls.at(-1)?.[0]);
+    expect(finalReplacement).toContain("**Subagents · 2/2 · Parallel");
+    expect(finalReplacement).toContain("✓ first");
+    expect(finalReplacement).toContain("\n\nparent complete");
+    expect(finalReplacement.indexOf("**Subagents")).toBeLessThan(
+      finalReplacement.indexOf("parent complete"),
+    );
+    // The intermediate finish is skipped: nothing may overwrite the dashboard
+    // with the bare answer before the final composition.
+    const bareResponds = responder.respond.mock.calls.map((call) => String(call[0]));
+    expect(bareResponds).not.toContain("parent complete");
+  });
+
   test("replaces the placeholder with the final assistant text", async () => {
     const { runner, faux } = await createTestRunner();
     faux.setResponses([fauxAssistantMessage("hello from the agent")]);

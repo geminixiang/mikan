@@ -82,7 +82,12 @@ export interface ConversationResponder {
   appendResponseDelta?(delta: string): Promise<void>;
   finishResponse?(finalText?: string): Promise<void>;
   replaceResponse(text: string, options?: { createOverflowLink?: () => string }): Promise<void>;
-  /** Render one live subagent dashboard, optionally followed by the final answer. */
+  /**
+   * Override only to convert the subagent dashboard for a pipeline that is
+   * not response-source Markdown (Telegram HTML). Absent, the harness composes
+   * the Markdown dashboard — optionally followed by the final answer — through
+   * `replaceResponse`.
+   */
   replaceSubagentProgress?(progress: SubagentProgressSnapshot, finalText?: string): Promise<void>;
   respondDiagnostic(text: string, options?: { style?: "muted" | "error" }): Promise<void>;
   respondToolResult(result: ChatToolResult): Promise<void>;

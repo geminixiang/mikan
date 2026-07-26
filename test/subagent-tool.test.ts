@@ -377,11 +377,14 @@ describe("subagent tool", () => {
 
     expect(maxActive).toBe(2);
     expect(calls.indexOf("combine")).toBeGreaterThan(calls.indexOf("second"));
-    const finalProgress = (updates.at(-1) as { details: { progressLabel: string } }).details
-      .progressLabel;
-    expect(finalProgress).toContain("Subagent DAG 3/3");
-    expect(finalProgress).toContain("✓ a");
-    expect(finalProgress).toContain("✓ combine");
+    const finalNodes = (
+      updates.at(-1) as { details: { progress: { nodes: { id: string; status: string }[] } } }
+    ).details.progress.nodes;
+    expect(finalNodes.map((node) => [node.id, node.status])).toEqual([
+      ["a", "completed"],
+      ["b", "completed"],
+      ["combine", "completed"],
+    ]);
     expect(result.content).toEqual([{ type: "text", text: "[a] A\n\n[b] B\n\n[combine] AB" }]);
     expect(result.details).toMatchObject({
       mode: "dag",
@@ -522,12 +525,15 @@ describe("subagent tool", () => {
     );
 
     expect(maxActive).toBe(2);
-    const progressLabels = updates.map(
-      (update) => (update as { details: { progressLabel: string } }).details.progressLabel,
-    );
-    expect(progressLabels.at(-1)).toContain("Subagent parallel 2/2");
-    expect(progressLabels.at(-1)).toContain("✓ first");
-    expect(progressLabels.at(-1)).toContain("✓ second");
+    const finalNodes = (
+      updates.at(-1) as {
+        details: { progress: { nodes: { label: string; status: string }[] } };
+      }
+    ).details.progress.nodes;
+    expect(finalNodes.map((node) => [node.label, node.status])).toEqual([
+      ["first", "completed"],
+      ["second", "completed"],
+    ]);
     expect(result.content).toEqual([{ type: "text", text: "[1] first\n\n[2] second" }]);
     expect(result.details).toMatchObject({
       mode: "parallel",

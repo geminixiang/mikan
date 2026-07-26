@@ -5,11 +5,7 @@ import type { SubagentRunOutput, SubagentRunRequest, SubagentRunResult } from ".
 // dashboard renders the same union, so it is defined once alongside the
 // snapshot the tool emits rather than restated here.
 import type { SubagentProgressNode, SubagentProgressStatus } from "../types.js";
-import {
-  boundSubagentProgressNode,
-  clampSubagentLabel,
-  SUBAGENT_STATUS_MARKER,
-} from "../subagent-progress.js";
+import { boundSubagentProgressNode, clampSubagentLabel } from "../subagent-progress.js";
 
 const MAX_DAG_NODES = 8;
 const MAX_DAG_EDGES = 16;
@@ -184,17 +180,9 @@ class SubagentProgressTracker {
         ...this.metrics.get(item.id),
       }),
     );
-    const settled = nodes.filter(
-      (node) => node.status !== "pending" && node.status !== "running",
-    ).length;
-    const modeLabel = this.mode === "dag" ? "DAG" : this.mode === "parallel" ? "parallel" : "run";
-    const progressLabel = [
-      `Subagent ${modeLabel} ${settled}/${nodes.length}`,
-      ...nodes.map((node) => `${SUBAGENT_STATUS_MARKER[node.status]} ${node.label}`),
-    ].join(" · ");
     this.onUpdate({
       content: [],
-      details: { progressLabel, progress: { mode: this.mode, nodes } },
+      details: { progress: { mode: this.mode, nodes } },
     });
   }
 }

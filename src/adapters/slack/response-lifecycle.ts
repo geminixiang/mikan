@@ -1,9 +1,4 @@
-import type {
-  ConversationMessage,
-  ConversationResponder,
-  ChatToolResult,
-  SubagentProgressSnapshot,
-} from "../../adapter.js";
+import type { ConversationMessage, ConversationResponder, ChatToolResult } from "../../adapter.js";
 import * as log from "../../log.js";
 import {
   createChatResponseErrorReporter,
@@ -12,7 +7,6 @@ import {
   type ChatResponseErrorOperation,
 } from "../shared.js";
 import { BufferedResponseStream, OrderedResponseOperations } from "../streaming.js";
-import { renderSubagentDashboard } from "../../subagent-progress.js";
 import { buildMrkdwnContextBlock, type SlackMessagingBot, type SlackEvent } from "./bot.js";
 import { SlackProgressiveRender, WORKING_INDICATOR } from "./progressive-render.js";
 import type { SlackAdapterSessionPlan } from "./types.js";
@@ -104,7 +98,6 @@ export function createSlackResponseContext({
   let isWorking = true;
   let mainResponseLogged = false;
   let resetStreamOnNextDelta = false;
-  let subagentDashboardActive = false;
   const responseOperations = new OrderedResponseOperations();
 
   const channelId = event.channel;
@@ -239,7 +232,6 @@ export function createSlackResponseContext({
     },
 
     appendResponseDelta: async (delta: string) => {
-      if (subagentDashboardActive) return;
       await queueResponseOperation(
         "appendResponseDelta",
         "respond",
@@ -255,7 +247,6 @@ export function createSlackResponseContext({
     },
 
     finishResponse: async (finalText?: string) => {
-      if (subagentDashboardActive) return;
       if (resetStreamOnNextDelta) {
         if (finalText !== undefined) stream.setText(finalText);
         return;
@@ -328,14 +319,6 @@ export function createSlackResponseContext({
           hadExistingResponse: Boolean(progressive.messageTs),
         }),
       );
-    },
-
-    replaceSubagentProgress: async (progress: SubagentProgressSnapshot, finalText?: string) => {
-      subagentDashboardActive = true;
-      // The dashboard is response source: renderSlackBlocks converts the
-      // Markdown natively, the same as every other response (ADR-0001).
-      const dashboard = renderSubagentDashboard(progress);
-      await responder.replaceResponse(finalText ? `${dashboard}\n\n${finalText}` : dashboard);
     },
 
     respondDiagnostic: async (text: string, options?: { style?: "muted" | "error" }) => {
