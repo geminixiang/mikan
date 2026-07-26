@@ -139,7 +139,7 @@ export function sourceIdentity(parsed: ParsedSource): PackageIdentity {
 
 /**
  * Transport-independent `<host>/<path>` of a git URL, lowercased host, no
- * `.git` suffix, no credentials. Also the source of the on-disk clone layout,
+ * `.git` suffix, no credentials. It is the base of the on-disk clone layout,
  * so it must stay free of anything that is not a safe path segment.
  */
 export function gitRepoPath(url: string): string {

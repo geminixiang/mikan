@@ -12,8 +12,9 @@
  * sandboxed code write what the host executes.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { cpSync, existsSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { ensureDirExists, readTextFileIfExists } from "../utils/file-guards.js";
 import * as log from "../log.js";
 import { gitRepoPath, parseSource, sourceIdentity } from "./source.js";
@@ -65,9 +66,22 @@ export function packageScopeDir(
   return join(stateDir, "conversations", conversationId);
 }
 
-/** Where a git package's clone lives: `<scope>/git/<host>/<owner>/<repo>`. */
-export function gitCloneDir(url: string, scopeDir: string): string {
-  return join(scopeDir, "git", ...gitRepoPath(url).split("/"));
+/**
+ * Where a git checkout lives.
+ *
+ * The unpinned checkout keeps the original path for compatibility. Explicit
+ * refs get a sibling keyed by the ref, so two refs can never reset each
+ * other's working tree; subpaths of one ref therefore still share a checkout.
+ */
+export function gitCloneDir(url: string, scopeDir: string, ref?: string): string {
+  const repoPath = gitRepoPath(url).split("/");
+  const repoName = repoPath[repoPath.length - 1];
+  const parent = repoPath.slice(0, -1);
+  const checkoutName =
+    ref === undefined || ref === "HEAD"
+      ? repoName
+      : `${repoName}.mikan-${createHash("sha256").update(ref).digest("hex")}`;
+  return join(scopeDir, "git", ...parent, checkoutName);
 }
 
 /**
@@ -110,24 +124,24 @@ function materializeGit(
   scopeDir: string,
   mode: MaterializeMode,
 ): string {
-  const cloneDir = gitCloneDir(parsed.url, scopeDir);
-  const alreadyCloned = existsSync(join(cloneDir, ".git"));
   const requestedRef = parsed.ref ?? "HEAD";
-  const recordedRef = alreadyCloned
-    ? readTextFileIfExists(join(cloneDir, ".git", MATERIALIZED_REF_FILE))?.trim()
-    : undefined;
-  const canReuse =
-    alreadyCloned &&
-    (mode === "offline" ||
-      (mode === "fetch" &&
-        (recordedRef === requestedRef || (!parsed.ref && recordedRef === undefined))));
+  const cloneDir = gitCloneDir(parsed.url, scopeDir, requestedRef);
+  migrateLegacyCheckout(parsed.url, scopeDir, cloneDir, requestedRef);
+  const alreadyCloned = existsSync(join(cloneDir, ".git"));
+  const markerPath = join(cloneDir, ".git", MATERIALIZED_REF_FILE);
+  const recordedRef = alreadyCloned ? readTextFileIfExists(markerPath)?.trim() : undefined;
+  const canReuse = alreadyCloned && recordedRef === requestedRef && mode !== "refresh";
 
   if (canReuse) {
     return resolveSubpath(cloneDir, parsed);
   }
-  if (!alreadyCloned && mode === "offline") {
+  if (mode === "offline") {
     throw new Error(`Not fetched on this host yet: ${describeRef(parsed)}`);
   }
+
+  // An incomplete checkout must not retain a marker from an earlier attempt:
+  // otherwise a retry could mistake a failed dependency install for success.
+  if (alreadyCloned) rmSync(markerPath, { force: true });
 
   if (!alreadyCloned) {
     // A leftover directory without .git means a previous attempt died partway.
@@ -152,11 +166,35 @@ function materializeGit(
     throw new Error(`Could not fetch ${describeRef(parsed)}: ${gitErrorText(err)}`, { cause: err });
   }
   git(cloneDir, ["checkout", "-q", "--detach", "FETCH_HEAD"]);
-  writeFileSync(join(cloneDir, ".git", MATERIALIZED_REF_FILE), `${requestedRef}\n`);
 
   const dir = resolveSubpath(cloneDir, parsed);
   installDependencies(dir);
+  // This is the completion marker, not merely a fetched-ref marker. Write it
+  // last so a failed npm install is retried by the next materialization.
+  writeFileSync(markerPath, `${requestedRef}\n`);
   return dir;
+}
+
+/**
+ * Before keyed checkout paths existed, every ref used the legacy repo path.
+ * Copy a matching complete checkout on first use of its keyed path so offline
+ * loads keep working; a markerless legacy checkout is deliberately rebuilt by
+ * fetch/refresh instead of being treated as materialized.
+ */
+function migrateLegacyCheckout(
+  url: string,
+  scopeDir: string,
+  cloneDir: string,
+  requestedRef: string,
+): void {
+  const legacyDir = gitCloneDir(url, scopeDir);
+  if (cloneDir === legacyDir || existsSync(cloneDir)) return;
+  const legacyMarker = join(legacyDir, ".git", MATERIALIZED_REF_FILE);
+  if (!existsSync(join(legacyDir, ".git"))) return;
+  if (readTextFileIfExists(legacyMarker)?.trim() !== requestedRef) return;
+
+  ensureDirExists(dirname(cloneDir));
+  cpSync(legacyDir, cloneDir, { recursive: true });
 }
 
 function resolveSubpath(cloneDir: string, parsed: Extract<ParsedSource, { type: "git" }>): string {

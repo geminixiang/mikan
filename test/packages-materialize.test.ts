@@ -1,5 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -54,6 +62,13 @@ describe("materializeSource", () => {
     expect(result.dir.startsWith(join(stateDir, "conversations", "C03045VJJAY", "git"))).toBe(true);
   });
 
+  test("checkout keys share a ref across subpaths and isolate other refs", () => {
+    const scopeDir = join(stateDir, "global");
+    expect(gitCloneDir(source, scopeDir, "v1")).toBe(gitCloneDir(source, scopeDir, "v1"));
+    expect(gitCloneDir(source, scopeDir, "v1")).not.toBe(gitCloneDir(source, scopeDir, "v2"));
+    expect(gitCloneDir(source, scopeDir)).toBe(gitCloneDir(source, scopeDir, "HEAD"));
+  });
+
   test("a #subpath resolves to the directory inside the clone", () => {
     const result = materializeSource(`${source}#extensions/agent-pm`, {
       scope: "global",
@@ -75,9 +90,41 @@ describe("materializeSource", () => {
   });
 
   test("a failed first clone leaves no half-materialized directory behind", () => {
-    const dir = gitCloneDir(source, join(stateDir, "global"));
+    const dir = gitCloneDir(source, join(stateDir, "global"), "v99");
     expect(() => materializeSource(`${source}@v99`, { scope: "global", stateDir })).toThrow();
     expect(existsSync(dir)).toBe(false);
+  });
+
+  test("a failed dependency install is retried before the ref marker is written", () => {
+    const packageJson = join(repo, "package.json");
+    writeFileSync(packageJson, JSON.stringify({ dependencies: { "missing-package": "1.0.0" } }));
+    run(repo, ["add", "package.json"]);
+    run(repo, ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "deps"]);
+
+    const npmDir = join(stateDir, "fake-bin");
+    const callsFile = join(stateDir, "npm-calls");
+    mkdirSync(npmDir, { recursive: true });
+    const fakeNpm = join(npmDir, "npm");
+    writeFileSync(
+      fakeNpm,
+      `#!/bin/sh\ncalls=$(cat "${callsFile}" 2>/dev/null || echo 0)\ncalls=$((calls + 1))\necho "$calls" > "${callsFile}"\n[ "$calls" -ne 1 ]\n`,
+    );
+    chmodSync(fakeNpm, 0o755);
+    const originalPath = process.env.PATH;
+    process.env.PATH = `${npmDir}:${originalPath ?? ""}`;
+    try {
+      expect(() => materializeSource(source, { scope: "global", stateDir })).toThrow(
+        /npm install failed/,
+      );
+      const clone = gitCloneDir(source, join(stateDir, "global"));
+      expect(existsSync(join(clone, ".git", "mikan-ref"))).toBe(false);
+
+      expect(materializeSource(source, { scope: "global", stateDir }).dir).toBe(clone);
+      expect(readFileSync(callsFile, "utf-8").trim()).toBe("2");
+      expect(readFileSync(join(clone, ".git", "mikan-ref"), "utf-8").trim()).toBe("HEAD");
+    } finally {
+      process.env.PATH = originalPath;
+    }
   });
 
   test("re-materializing without refresh does not move the checkout", () => {

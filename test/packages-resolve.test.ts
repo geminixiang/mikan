@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -53,6 +53,29 @@ function gitify(repo: string, tag?: string): string {
     cwd: repo,
   });
   if (tag) execFileSync("git", ["tag", tag], { cwd: repo });
+  return `file://${repo}`;
+}
+
+function makeTwoRefRepo(): string {
+  const repo = mkdtempSync(join(base, "repo-two-refs-"));
+  for (const subpath of ["one", "two"]) {
+    mkdirSync(join(repo, "packages", subpath), { recursive: true });
+    writeFileSync(join(repo, "packages", subpath, "index.mjs"), `${subpath}-v1`);
+  }
+  execFileSync("git", ["init", "-q"], { cwd: repo });
+  execFileSync("git", ["add", "-A"], { cwd: repo });
+  execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "v1"], {
+    cwd: repo,
+  });
+  execFileSync("git", ["tag", "v1"], { cwd: repo });
+  for (const subpath of ["one", "two"]) {
+    writeFileSync(join(repo, "packages", subpath, "index.mjs"), `${subpath}-v2`);
+  }
+  execFileSync("git", ["add", "-A"], { cwd: repo });
+  execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "v2"], {
+    cwd: repo,
+  });
+  execFileSync("git", ["tag", "v2"], { cwd: repo });
   return `file://${repo}`;
 }
 
@@ -139,6 +162,25 @@ describe("the narrower scope wins", () => {
 
     const result = resolve({ fetchMissing: true });
     expect(result.packages).toHaveLength(1);
+  });
+});
+
+describe("ref-keyed checkouts", () => {
+  test("offline resolution keeps two refs and two subpaths isolated", () => {
+    const source = makeTwoRefRepo();
+    globalSettings([`${source}@v1#packages/one`, `${source}@v2#packages/two`]);
+
+    const fetched = resolve({ fetchMissing: true });
+    expect(fetched.packages).toHaveLength(2);
+    expect(new Set(fetched.packages.map((pkg) => pkg.dir)).size).toBe(2);
+
+    rmSync(source.slice("file://".length), { recursive: true, force: true });
+    const offline = resolve();
+    expect(offline.errors).toEqual([]);
+    expect(offline.packages).toHaveLength(2);
+    expect(
+      offline.packages.map((pkg) => readFileSync(join(pkg.dir, "index.mjs"), "utf-8")),
+    ).toEqual(expect.arrayContaining(["one-v1", "two-v2"]));
   });
 });
 
