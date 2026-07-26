@@ -113,4 +113,37 @@ describe("event-format round-trip", () => {
       parseEventPayload(JSON.stringify({ ...input, at: "2027-01-01T09:00:00Z" }), "utc.json"),
     ).toMatchObject({ type: "one-shot", at: "2027-01-01T09:00:00Z" });
   });
+
+  test("build and parse reject invalid calendar, time, and offset components", () => {
+    const input = { type: "one-shot" as const, conversationId: "C1", text: "t" };
+    const invalidTimestamps = [
+      "2027-02-30T09:00:00Z",
+      "2027-01-01T24:00:00Z",
+      "2027-01-01T09:60:00Z",
+      "2027-01-01T09:00:60Z",
+      "2027-01-01T09:00:00+24:00",
+      "2027-01-01T09:00:00+08:60",
+    ];
+
+    for (const at of invalidTimestamps) {
+      expect(() => buildEventPayload({ ...input, at })).toThrow(
+        "`at` must be a valid ISO 8601 timestamp with UTC offset",
+      );
+      expect(() => parseEventPayload(JSON.stringify({ ...input, at }), "invalid.json")).toThrow(
+        /Invalid 'at' field for one-shot event in invalid\.json/,
+      );
+    }
+  });
+
+  test("build and parse accept a valid leap-day timestamp", () => {
+    const payload = buildEventPayload({
+      type: "one-shot",
+      conversationId: "C1",
+      text: "t",
+      at: "2028-02-29T09:00:00.123+08:00",
+    });
+
+    expect(payload.at).toBe("2028-02-29T09:00:00.123+08:00");
+    expect(parseEventPayload(JSON.stringify(payload), "leap-day.json")).toEqual(payload);
+  });
 });
