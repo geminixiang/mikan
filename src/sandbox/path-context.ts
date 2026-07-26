@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { RuntimePathContext } from "./types.js";
 
 export function createMountedRuntimePathContext(
@@ -18,15 +18,29 @@ function translateMountedRuntimePathToHost(
   runtimeWorkspaceRoot: string,
   hostWorkspaceRoot: string,
 ): string {
-  const runtimeRoot = runtimeWorkspaceRoot.replace(/\/+$/, "");
-  if (runtimePath === runtimeRoot) {
-    return hostWorkspaceRoot;
+  if (!isAbsolute(runtimePath)) {
+    return runtimePath;
   }
 
-  const workspacePrefix = `${runtimeRoot}/`;
-  if (runtimePath.startsWith(workspacePrefix)) {
-    return join(hostWorkspaceRoot, runtimePath.slice(workspacePrefix.length));
+  const runtimeRoot = resolve(runtimeWorkspaceRoot);
+  const normalizedRuntimePath = resolve(runtimePath);
+  const runtimeRelativePath = relative(runtimeRoot, normalizedRuntimePath);
+  const escapesRuntimeRoot =
+    runtimeRelativePath === ".." ||
+    runtimeRelativePath.startsWith(`..${sep}`) ||
+    isAbsolute(runtimeRelativePath);
+
+  if (escapesRuntimeRoot) {
+    return runtimePath;
   }
 
-  return runtimePath;
+  const hostRoot = resolve(hostWorkspaceRoot);
+  const hostPath = resolve(hostRoot, runtimeRelativePath);
+  const hostRelativePath = relative(hostRoot, hostPath);
+  const escapesHostRoot =
+    hostRelativePath === ".." ||
+    hostRelativePath.startsWith(`..${sep}`) ||
+    isAbsolute(hostRelativePath);
+
+  return escapesHostRoot ? runtimePath : hostPath;
 }
