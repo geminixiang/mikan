@@ -12,7 +12,7 @@
  * sandboxed code write what the host executes.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, rmSync, statSync } from "node:fs";
+import { existsSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ensureDirExists, readTextFileIfExists } from "../utils/file-guards.js";
 import * as log from "../log.js";
@@ -31,14 +31,16 @@ export type { MaterializeOptions } from "./types.js";
 /** Git operations get a bounded wall clock so a hung remote cannot wedge a save. */
 const GIT_TIMEOUT_MS = 120_000;
 const NPM_TIMEOUT_MS = 300_000;
+const MATERIALIZED_REF_FILE = "mikan-ref";
 
 /**
  * How far materialization may go to produce the package's files.
  *
  * - `offline`: use what is already on disk; never touch the network. This is
  *   what a conversation load uses, so no chat reply can ever wait on a remote.
- * - `fetch`: clone a package that is not on disk yet, but leave an existing
- *   clone where it is. What the portal uses when a source is added.
+ * - `fetch`: clone a package that is not on disk yet, reuse an existing clone
+ *   when it already has the requested ref, or switch it to a new ref. What the
+ *   portal uses when a source is added.
  * - `refresh`: additionally re-fetch an existing clone, resetting and cleaning
  *   it first. What the portal's Update action uses.
  *
@@ -110,8 +112,17 @@ function materializeGit(
 ): string {
   const cloneDir = gitCloneDir(parsed.url, scopeDir);
   const alreadyCloned = existsSync(join(cloneDir, ".git"));
+  const requestedRef = parsed.ref ?? "HEAD";
+  const recordedRef = alreadyCloned
+    ? readTextFileIfExists(join(cloneDir, ".git", MATERIALIZED_REF_FILE))?.trim()
+    : undefined;
+  const canReuse =
+    alreadyCloned &&
+    (mode === "offline" ||
+      (mode === "fetch" &&
+        (recordedRef === requestedRef || (!parsed.ref && recordedRef === undefined))));
 
-  if (alreadyCloned && mode !== "refresh") {
+  if (canReuse) {
     return resolveSubpath(cloneDir, parsed);
   }
   if (!alreadyCloned && mode === "offline") {
@@ -134,14 +145,14 @@ function materializeGit(
 
   // One fetch shape for every kind of ref — tag, branch, or commit sha — and
   // `HEAD` for "whatever the remote's default branch is now".
-  const ref = parsed.ref ?? "HEAD";
   try {
-    git(cloneDir, ["fetch", "--depth", "1", "origin", ref]);
+    git(cloneDir, ["fetch", "--depth", "1", "origin", requestedRef]);
   } catch (err) {
     if (!alreadyCloned) rmSync(cloneDir, { recursive: true, force: true });
     throw new Error(`Could not fetch ${describeRef(parsed)}: ${gitErrorText(err)}`, { cause: err });
   }
   git(cloneDir, ["checkout", "-q", "--detach", "FETCH_HEAD"]);
+  writeFileSync(join(cloneDir, ".git", MATERIALIZED_REF_FILE), `${requestedRef}\n`);
 
   const dir = resolveSubpath(cloneDir, parsed);
   installDependencies(dir);
