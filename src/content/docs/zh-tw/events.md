@@ -36,7 +36,7 @@ harness 一看到檔案就會觸發。適合從外部腳本或 webhook 發送訊
 }
 ```
 
-`at` 必須是含 UTC offset 的 ISO 8601 時間戳記。
+`at` 必須是以 `Z` 或明確的 `±HH:MM` UTC offset 結尾的 ISO 8601 時間戳記。
 
 ### 週期性
 
