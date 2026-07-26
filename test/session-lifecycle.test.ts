@@ -75,4 +75,21 @@ describe("SessionLifecycle", () => {
     expect(lifecycle.get("C3")).toBe(recent);
     expect(lifecycle.get("C4")).toBe(running);
   });
+
+  test("does not evict a session until its run settlement is cleared", () => {
+    const lifecycle = new SessionLifecycle({ maxSessions: 1, idleTimeoutMs: 10, now: () => 100 });
+    const settling = state(0);
+    settling.runSettlement = new Promise<void>(() => {});
+    const idle = state(99);
+    lifecycle.set("settling", settling);
+    lifecycle.set("idle", idle);
+
+    lifecycle.evictIdle();
+    expect(lifecycle.get("settling")).toBe(settling);
+    expect(lifecycle.get("idle")).toBeUndefined();
+
+    settling.runSettlement = undefined;
+    lifecycle.evictIdle();
+    expect(lifecycle.get("settling")).toBeUndefined();
+  });
 });

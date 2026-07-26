@@ -130,7 +130,13 @@ function materializeGit(
   const alreadyCloned = existsSync(join(cloneDir, ".git"));
   const markerPath = join(cloneDir, ".git", MATERIALIZED_REF_FILE);
   const recordedRef = alreadyCloned ? readTextFileIfExists(markerPath)?.trim() : undefined;
-  const canReuse = alreadyCloned && recordedRef === requestedRef && mode !== "refresh";
+  const canReuse =
+    alreadyCloned &&
+    mode !== "refresh" &&
+    (recordedRef === requestedRef ||
+      (mode === "offline" &&
+        recordedRef === undefined &&
+        markerlessCheckoutMatchesRef(cloneDir, requestedRef)));
 
   if (canReuse) {
     return resolveSubpath(cloneDir, parsed);
@@ -178,8 +184,9 @@ function materializeGit(
 /**
  * Before keyed checkout paths existed, every ref used the legacy repo path.
  * Copy a matching complete checkout on first use of its keyed path so offline
- * loads keep working; a markerless legacy checkout is deliberately rebuilt by
- * fetch/refresh instead of being treated as materialized.
+ * loads keep working. Markerless legacy checkouts are accepted only when git
+ * can prove the requested ref is the checked-out commit; a different or
+ * unprovable pinned ref is rebuilt by fetch/refresh instead.
  */
 function migrateLegacyCheckout(
   url: string,
@@ -191,10 +198,57 @@ function migrateLegacyCheckout(
   if (cloneDir === legacyDir || existsSync(cloneDir)) return;
   const legacyMarker = join(legacyDir, ".git", MATERIALIZED_REF_FILE);
   if (!existsSync(join(legacyDir, ".git"))) return;
-  if (readTextFileIfExists(legacyMarker)?.trim() !== requestedRef) return;
+  const recordedRef = readTextFileIfExists(legacyMarker)?.trim();
+  if (recordedRef !== requestedRef) {
+    if (recordedRef !== undefined || !markerlessCheckoutMatchesRef(legacyDir, requestedRef)) {
+      return;
+    }
+  }
 
   ensureDirExists(dirname(cloneDir));
   cpSync(legacyDir, cloneDir, { recursive: true });
+}
+
+/**
+ * Legacy checkouts have no completion marker. Accept them offline only when
+ * the checkout is clean and the local git metadata identifies the requested
+ * commit/ref; never infer a pinned ref from HEAD alone.
+ */
+function markerlessCheckoutMatchesRef(cloneDir: string, requestedRef: string): boolean {
+  let head: string;
+  try {
+    head = git(cloneDir, ["rev-parse", "--verify", "HEAD"]).trim();
+    if (!head || git(cloneDir, ["status", "--porcelain", "--untracked-files=no"]).trim()) {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+
+  if (requestedRef === "HEAD") return true;
+
+  try {
+    if (git(cloneDir, ["rev-parse", "--verify", `${requestedRef}^{commit}`]).trim() === head) {
+      return true;
+    }
+  } catch {
+    // A shallow legacy fetch may retain only FETCH_HEAD, not a local ref.
+  }
+
+  try {
+    if (git(cloneDir, ["symbolic-ref", "--quiet", "--short", "HEAD"]).trim() === requestedRef) {
+      return true;
+    }
+  } catch {
+    // Detached checkouts do not have a symbolic branch.
+  }
+
+  const fetchHead = readTextFileIfExists(join(cloneDir, ".git", "FETCH_HEAD"));
+  if (!fetchHead) return false;
+  return fetchHead.split("\n").some((line) => {
+    const match = /^(\w+)\s+.*(?:branch|tag) '([^']+)'/.exec(line);
+    return match?.[1] === head && match[2] === requestedRef;
+  });
 }
 
 function resolveSubpath(cloneDir: string, parsed: Extract<ParsedSource, { type: "git" }>): string {

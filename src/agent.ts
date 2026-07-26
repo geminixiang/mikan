@@ -32,8 +32,17 @@ import {
   settleSubagentProgress,
 } from "./subagent-progress.js";
 import { createHash } from "crypto";
-import { existsSync, readFileSync, realpathSync } from "fs";
-import { mkdir, readFile } from "fs/promises";
+import {
+  constants,
+  createReadStream,
+  createWriteStream,
+  existsSync,
+  readFileSync,
+  realpathSync,
+} from "fs";
+import { chmod, mkdtemp, mkdir, open, readFile, rm } from "fs/promises";
+import { pipeline } from "stream/promises";
+import { tmpdir } from "os";
 import { basename, isAbsolute, join, posix, relative, resolve, sep } from "path";
 import type {
   ConversationKind,
@@ -157,6 +166,38 @@ export function translateAttachPathToHost(
   }
 
   return hostPath;
+}
+
+/**
+ * Stage a validated host file without reopening its workspace path after
+ * validation. The private temporary directory is outside the agent workspace,
+ * and the source descriptor remains the object copied if the path is replaced.
+ */
+export async function withSecureStagedHostFile(
+  hostPath: string,
+  upload: (stagedPath: string) => Promise<void>,
+): Promise<void> {
+  const source = await open(hostPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+  let stagingDir: string | undefined;
+  try {
+    const sourceStat = await source.stat();
+    if (!sourceStat.isFile()) {
+      throw new Error("Cannot attach files: path is not a regular file");
+    }
+
+    stagingDir = await mkdtemp(join(tmpdir(), "mikan-upload-"));
+    await chmod(stagingDir, 0o700);
+    const stagedPath = join(stagingDir, basename(hostPath));
+    await pipeline(
+      createReadStream(hostPath, { fd: source.fd, autoClose: false }),
+      createWriteStream(stagedPath, { flags: "wx", mode: 0o600 }),
+    );
+    await chmod(stagedPath, 0o600);
+    await upload(stagedPath);
+  } finally {
+    await source.close();
+    if (stagingDir) await rm(stagingDir, { recursive: true, force: true });
+  }
 }
 
 const IMAGE_MIME_TYPES: Record<string, string> = {
@@ -1495,7 +1536,9 @@ async function prepareRunContext(params: {
 
   setUploadFunction(async (filePath: string, title?: string) => {
     const hostPath = translateAttachPathToHost(filePath, pathContext);
-    await responder.uploadFile(hostPath, title);
+    await withSecureStagedHostFile(hostPath, (stagedPath) =>
+      responder.uploadFile(stagedPath, title),
+    );
   });
 
   // The react tool is available only when the responder supports reactions

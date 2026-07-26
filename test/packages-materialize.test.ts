@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import {
   chmodSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -189,6 +190,44 @@ describe("materializeSource", () => {
     rmSync(repo, { recursive: true, force: true });
     const offline = materializeSource(source, { scope: "global", stateDir, mode: "offline" });
     expect(readFileSync(join(offline.dir, "marker"), "utf-8")).toBe("v1");
+  });
+
+  test("offline mode migrates a markerless legacy HEAD checkout", () => {
+    const clone = materializeSource(source, { scope: "global", stateDir }).dir;
+    rmSync(join(clone, ".git", "mikan-ref"));
+    rmSync(repo, { recursive: true, force: true });
+
+    const offline = materializeSource(source, { scope: "global", stateDir, mode: "offline" });
+    expect(readFileSync(join(offline.dir, "marker"), "utf-8")).toBe("v1");
+  });
+
+  test("offline migration accepts a markerless pinned checkout only with ref evidence", () => {
+    const scopeDir = join(stateDir, "global");
+    const pinned = materializeSource(`${source}@v1`, { scope: "global", stateDir }).dir;
+    const legacy = gitCloneDir(source, scopeDir);
+    cpSync(pinned, legacy, { recursive: true });
+    rmSync(join(legacy, ".git", "mikan-ref"));
+    rmSync(repo, { recursive: true, force: true });
+
+    const offline = materializeSource(`${source}@v1`, {
+      scope: "global",
+      stateDir,
+      mode: "offline",
+    });
+    expect(readFileSync(join(offline.dir, "marker"), "utf-8")).toBe("v1");
+  });
+
+  test("offline migration rejects a markerless checkout with different pinned ref", () => {
+    const scopeDir = join(stateDir, "global");
+    const pinned = materializeSource(`${source}@v1`, { scope: "global", stateDir }).dir;
+    const legacy = gitCloneDir(source, scopeDir);
+    cpSync(pinned, legacy, { recursive: true });
+    rmSync(join(legacy, ".git", "mikan-ref"));
+    rmSync(repo, { recursive: true, force: true });
+
+    expect(() =>
+      materializeSource(`${source}@v99`, { scope: "global", stateDir, mode: "offline" }),
+    ).toThrow(/Not fetched on this host yet/);
   });
 });
 

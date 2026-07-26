@@ -523,7 +523,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
           state.running = false;
           state.lastAccessedAt = Date.now();
           Sentry.metrics.gauge("agent.sessions.active", this.inFlightRuns.size - 1);
-          this.sessions.evictIdle();
         }
       })();
 
@@ -536,6 +535,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         this.inFlightRuns.delete(runPromise);
         if (state.runSettlement === runPromise) state.runSettlement = undefined;
         this.sessions.onSettlement(sessionKey);
+        this.sessions.evictIdle();
       }
     } finally {
       releaseConversationWork();
