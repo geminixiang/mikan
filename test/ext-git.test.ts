@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { runExtCommand } from "../src/cli/ext.js";
-import { parseGitSource } from "../src/cli/ext-git.js";
+import { parseGitSource, resolveGitSource } from "../src/cli/ext-git.js";
 
 describe("parseGitSource", () => {
   test("https URL with #subpath", () => {
@@ -30,6 +30,14 @@ describe("parseGitSource", () => {
   test("local paths are not git sources", () => {
     expect(parseGitSource("./agent-pm")).toBeUndefined();
     expect(parseGitSource("/abs/agent-pm")).toBeUndefined();
+  });
+
+  test("rejects unsafe #subpath values", () => {
+    for (const subpath of ["../../outside", "/outside", String.raw`..\outside`]) {
+      expect(() => parseGitSource(`https://github.com/owner/repo.git#${subpath}`)).toThrow(
+        /relative path without '\.\.'/,
+      );
+    }
   });
 });
 
@@ -77,6 +85,14 @@ describe("mikan ext install from git", () => {
     ]);
     expect(code).toBe(0);
     expect(existsSync(join(stateDir, "global", "extensions", "agent-pm", "index.mjs"))).toBe(true);
+  });
+
+  test("resolveGitSource rejects unsafe subpaths", () => {
+    for (const subpath of ["../../outside", "/outside", String.raw`..\outside`]) {
+      expect(() => resolveGitSource({ url: `file://${repo}`, subpath })).toThrow(
+        /relative path without '\.\.'/,
+      );
+    }
   });
 
   test("reinstall over an existing extension updates it (reports Reinstalled)", async () => {
