@@ -257,6 +257,12 @@ describe("PiAgentWrapper.run", () => {
     expect(maintenancePrompt).toContain("Do not modify the workspace-level global MEMORY.md");
     expect(maintenancePrompt).toContain("Preserve the concrete values and details needed");
     expect(maintenancePrompt).toContain("exact content is worth preserving");
+    // The transcript this run reads was written while the agent held its full
+    // tool set, so the narrowed grant has to be stated or the model calls a
+    // tool it no longer holds and spends a turn on the failure.
+    expect(maintenancePrompt).toContain("Your tools this run: read, edit, write.");
+    expect(maintenancePrompt).toContain("including tools used earlier in this transcript");
+    expect(maintenancePrompt).not.toContain("bash");
     expect(promptSpy.mock.calls.at(-1)?.[1]).toMatchObject({
       budget: { maxDurationMs: 120_000, maxLlmCalls: 5, maxCostUsd: 0.25 },
     });

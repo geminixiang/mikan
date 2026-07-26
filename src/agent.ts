@@ -1558,11 +1558,29 @@ async function prepareRunContext(params: {
   };
 }
 
-const SESSION_DREAM_PROMPT = `Before this conversation is reset or rotated, preserve only durable information worth carrying into future sessions of this same conversation.
-Review the existing transcript and update only the conversation-specific MEMORY.md at {conversationMemoryPath} using the available tools.
-Do not modify the workspace-level global MEMORY.md. Information from one DM or channel must not be promoted into memory shared with other conversations by this maintenance run.
-Preserve durable decisions, preferences, facts, and ongoing work specific to this conversation. Preserve the concrete values and details needed to resume the work; do not replace them with abstract categories, summaries of retention rules, or statements that merely say a kind of information is durable. An explicit user statement that a fact, preference, or decision should persist is strong evidence that its exact content is worth preserving.
-Deduplicate against existing conversation memory. Do not preserve transient discussion, tool noise, secrets, speculative details, or test scaffolding. If there is nothing new worth preserving, make no changes. Do no unrelated work.`;
+/**
+ * The dream run reads a transcript in which the agent held its full tool set,
+ * but `sessionDreamTools` has since narrowed it. Left to infer its grant from
+ * the transcript, the model calls a tool it no longer holds and burns one of
+ * its five turns on the failure — so the grant is stated, and derived from the
+ * tools actually handed to the run rather than restated by hand.
+ */
+function sessionDreamPrompt(conversationMemoryPath: string, toolNames: string[]): string {
+  // read/edit/write are core tools, so an empty grant does not arise today;
+  // the fallback only keeps this sentence coherent if that ever changes.
+  const grant =
+    toolNames.length === 0
+      ? "You have no tools in this run and cannot change memory. Say so and stop."
+      : `Your tools this run: ${toolNames.join(", ")}. Nothing else will execute, including tools used earlier in this transcript. ${conversationMemoryPath} is the only path you may write.`;
+  return [
+    "Before this conversation is reset or rotated, preserve only durable information worth carrying into future sessions of this same conversation.",
+    `Review the existing transcript and update only the conversation-specific MEMORY.md at ${conversationMemoryPath}.`,
+    grant,
+    "Do not modify the workspace-level global MEMORY.md. Information from one DM or channel must not be promoted into memory shared with other conversations by this maintenance run.",
+    "Preserve durable decisions, preferences, facts, and ongoing work specific to this conversation. Preserve the concrete values and details needed to resume the work; do not replace them with abstract categories, summaries of retention rules, or statements that merely say a kind of information is durable. An explicit user statement that a fact, preference, or decision should persist is strong evidence that its exact content is worth preserving.",
+    "Deduplicate against existing conversation memory. Do not preserve transient discussion, tool noise, secrets, speculative details, or test scaffolding. If there is nothing new worth preserving, make no changes. Do no unrelated work.",
+  ].join("\n");
+}
 
 const SESSION_DREAM_BUDGET = {
   maxDurationMs: 2 * 60 * 1000,
@@ -2281,8 +2299,12 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
           conversationId,
           "MEMORY.md",
         );
+        const dreamTools = sessionDreamTools(session.agent.state.tools, conversationMemoryPath);
         const outcome = await session.prompt(
-          SESSION_DREAM_PROMPT.replace("{conversationMemoryPath}", conversationMemoryPath),
+          sessionDreamPrompt(
+            conversationMemoryPath,
+            dreamTools.map((tool) => tool.name),
+          ),
           {
             origin: {
               kind: "interactive",
@@ -2294,7 +2316,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
               attachments: message.attachments,
             },
             budget: SESSION_DREAM_BUDGET,
-            tools: sessionDreamTools(session.agent.state.tools, conversationMemoryPath),
+            tools: dreamTools,
           },
         );
         if (outcome?.blocked) {
