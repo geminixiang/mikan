@@ -14,7 +14,7 @@
  * magic word owned by conversation intake, not a command handler.
  */
 
-import type { CommandManifestEntry, SlackSlashRoute } from "./types.js";
+import type { CommandManifestEntry } from "./types.js";
 
 export type { CommandManifestEntry, SlackSlashRoute } from "./types.js";
 

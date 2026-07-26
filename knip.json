@@ -1,3 +1,11 @@
 {
+  "entry": [
+    "src/index.ts",
+    "src/main.ts",
+    "src/cli/download.ts",
+    "src/observability/instrument.ts",
+    "src/harness/index.ts",
+    "src/sandbox/index.ts"
+  ],
   "ignore": ["examples/**", "scripts/**", "deploy/**"]
 }

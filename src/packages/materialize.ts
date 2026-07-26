@@ -18,6 +18,7 @@ import { ensureDirExists, readTextFileIfExists } from "../utils/file-guards.js";
 import * as log from "../log.js";
 import { gitRepoPath, parseSource, sourceIdentity } from "./source.js";
 import type {
+  MaterializeMode,
   MaterializeOptions,
   MaterializedPackage,
   PackageScope,

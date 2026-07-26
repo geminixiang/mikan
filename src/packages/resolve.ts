@@ -30,6 +30,7 @@ import type {
   MaterializedPackage,
   PackageError,
   PackageScope,
+  PackageSkillDir,
   ResolvePackagesOptions,
   ResolvedPackages,
 } from "./types.js";

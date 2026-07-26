@@ -70,7 +70,7 @@ export interface ResolvedPackages {
   errors: PackageError[];
 }
 
-interface PackageSkillDir {
+export interface PackageSkillDir {
   slug: string;
   dir: string;
 }
@@ -82,7 +82,7 @@ export interface ResolvePackagesOptions {
   fetchMissing?: boolean;
 }
 
-type MaterializeMode = "offline" | "fetch" | "refresh";
+export type MaterializeMode = "offline" | "fetch" | "refresh";
 
 export interface MaterializeOptions {
   scope: PackageScope;
@@ -91,7 +91,7 @@ export interface MaterializeOptions {
   mode?: MaterializeMode;
 }
 
-interface PackageStatus {
+export interface PackageStatus {
   source: string;
   scope: PackageScope;
   ready: boolean;

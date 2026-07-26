@@ -59,9 +59,10 @@ export function createProgressiveRenderer(platform: ProgressiveRendererPlatform)
     extraIds: [],
   };
   const sanitize = platform.sanitize ?? ((text: string) => text);
-  const reportResponseError = createChatResponseErrorReporter(() =>
-    platform.responseErrorContext(state.responseId),
-  );
+  const reportResponseError = platform.responseErrorContext
+    ? createChatResponseErrorReporter(() => platform.responseErrorContext!(state.responseId))
+    : (err: unknown, operation: ChatResponseErrorOperation, extra?: Record<string, unknown>) =>
+        platform.reportError?.(err, operation, extra ?? {}, state.responseId);
   const now = Date.now;
 
   function stopTyping(): void {

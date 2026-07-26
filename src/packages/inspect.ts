@@ -13,7 +13,12 @@ import { listInstalledExtensions, loadSkillsFromDir, validateExtension } from ".
 import { loadGlobalSettings, resolveConversationSettings } from "../config.js";
 import { parseSource, sourceIdentity } from "./source.js";
 import { materializeSource } from "./materialize.js";
-import type { PackageInventory, PackageScope, ResolvePackagesOptions } from "./types.js";
+import type {
+  PackageInventory,
+  PackageScope,
+  PackageStatus,
+  ResolvePackagesOptions,
+} from "./types.js";
 
 export type { PackageInventory } from "./types.js";
 

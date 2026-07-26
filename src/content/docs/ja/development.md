@@ -24,7 +24,7 @@ npm test                     # unit/integration tests (Vitest)
 npm run test:coverage        # test coverage report
 npm run lint                 # oxlint
 npm run fmt:check            # oxfmt check; npm run fmt fixes files
-npm run build                # type check + emit dist/
+npm run build                # clean dist/、型チェック、emit
 npm run knip                 # dependency and export usage
 npm run docs:build           # production documentation build
 npm run docs:dev             # local documentation server

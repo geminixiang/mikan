@@ -28,11 +28,7 @@ import type {
   SessionClientCallbacks,
 } from "./types.js";
 
-export type {
-  GondolinBootstrapOptions,
-  SessionClient,
-  SessionClientCallbacks,
-} from "./types.js";
+export type { GondolinBootstrapOptions, SessionClient, SessionClientCallbacks } from "./types.js";
 
 /**
  * Single-host Gondolin sandbox: one microVM per conversation, created and

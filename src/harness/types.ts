@@ -22,7 +22,6 @@ import type {
 } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Usage } from "@earendil-works/pi-ai";
 import type { ExtensionRegistry } from "./extensions/registry.js";
-import type { RunOrigin } from "./extensions/types.js";
 import type { MikanModels } from "./models.js";
 import type { SessionStore } from "./session-store.js";
 import type { Static, TSchema } from "@sinclair/typebox";

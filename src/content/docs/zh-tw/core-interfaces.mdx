@@ -48,7 +48,7 @@ npm 進入點是 `@geminixiang/mikan`，由 `src/index.ts` 實作。
 | Extensions        | `MikanExtensionApi`、hook/event 型別、subagent 型別                                                   | 受信任的擴充功能作者                   |
 | Harness embedding | `MikanAgentSession`、`SessionStore`、`MikanModels`、settings 與 event-format 函式                     | 進階 embedder；不適用於一般 bot 整合   |
 
-匯入 `src/` 下的原始碼路徑或 `dist/` 下的產生路徑並不受支援。只有套件 exports 宣告的路徑才應視為 public。目前套件沒有明確的 `exports` map，因此這是一項文件層級的約束，而非強制執行的約束。
+只有套件 `exports` map 宣告的路徑是 public。匯入其他 `dist/` 產生路徑或 `src/` 原始碼路徑皆不受支援。
 
 ## 2. 平台 intake 與 response 介面
 
@@ -307,7 +307,7 @@ Admin endpoint 涵蓋 conversation 清單/狀態/使用量、全域與對話設�
 
 ## 14. Gondolin 行程邊界
 
-`gondolin:default` 使用同一台 host 上的 detached Node worker。worker process 與持久化 runtime inventory 是用於重新啟動復原的內部 lifecycle 邊界；不存在 network worker protocol 或遠端 placement contract。
+`gondolin:default` 由 mikan process 為每個 conversation 建立並管理一台本機 VM。每個 command 使用獨立的 Gondolin session IPC connection，因此 abort/timeout 會關閉 guest command。runtime 僅存活於 process lifecycle；正常 shutdown 會同步 projection 並關閉 VM，restart 後 cold start。不存在 network worker protocol 或遠端 placement contract。
 
 ## 契約檢查清單
 

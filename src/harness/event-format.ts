@@ -1,11 +1,6 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { parseJsonSchemaValue } from "../utils/file-guards.js";
-import type {
-  EventConversationKind,
-  EventFilePayload,
-  EventPayloadInput,
-  EventType,
-} from "./types.js";
+import type { EventFilePayload, EventPayloadInput } from "./types.js";
 
 export type {
   EventConversationKind,

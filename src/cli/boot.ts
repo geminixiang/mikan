@@ -10,6 +10,7 @@
 import { join, resolve } from "path";
 import { envSummaryLines } from "../env-manifest.js";
 import { parseSandboxArg } from "../sandbox/index.js";
+import type { SandboxConfig } from "../sandbox/types.js";
 import type { BootPlan } from "./types.js";
 import { defaultStateDir, resolveStateDir, takeValueFlag } from "./arg-grammar.js";
 

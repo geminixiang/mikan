@@ -26,9 +26,24 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./harness": {
+      "types": "./dist/harness/index.d.ts",
+      "import": "./dist/harness/index.js"
+    },
+    "./sandbox": {
+      "types": "./dist/sandbox/index.d.ts",
+      "import": "./dist/sandbox/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "scripts": {
     "clean": "shx rm -rf dist",
-    "build": "tsgo -p tsconfig.build.json && shx chmod +x dist/main.js",
+    "build": "npm run clean && tsgo -p tsconfig.build.json && shx chmod +x dist/main.js",
     "dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
     "test": "vitest --run",
     "test:coverage": "vitest --run --coverage",
@@ -38,7 +53,7 @@
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "knip": "knip",
-    "prepublishOnly": "npm run clean && npm run build",
+    "prepublishOnly": "npm run build",
     "prepare": "husky",
     "test:e2e": "vitest --run --config vitest.e2e.config.ts",
     "test:e2e:slack": "vitest --run --config vitest.e2e.config.ts e2e/slack",

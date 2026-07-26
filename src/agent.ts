@@ -77,7 +77,6 @@ import { conversationIdOf, isThreadSessionKey } from "./sessions/session-key.js"
 import {
   extractSessionUuid,
   openManagedSession,
-  type ResolvedSessionScope,
   type ThreadRootMessage,
 } from "./sessions/store.js";
 import { HostEventStore } from "./tools/event.js";

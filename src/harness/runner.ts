@@ -27,7 +27,6 @@ import {
   type AgentMessage,
   type AgentTool,
   type CustomMessage,
-  type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
 import {
   isContextOverflow,

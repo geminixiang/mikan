@@ -27,6 +27,19 @@ export interface AdminServices {
   botsByPlatform?: Partial<Record<PlatformName, MessagingBot>>;
 }
 
+export interface EventSummary {
+  name: string;
+  size: number;
+  mtimeMs: number;
+  type: string | null;
+  platform: string | null;
+  conversationId: string | null;
+  text: string | null;
+  at: string | null;
+  schedule: string | null;
+  timezone: string | null;
+}
+
 export interface AdminToken extends TokenRecord {
   platform: PlatformName;
   platformUserId: string;

@@ -48,7 +48,7 @@ npm のエントリポイントは `@geminixiang/mikan` で、`src/index.ts` に
 | Extensions        | `MikanExtensionApi`、hook/event types、subagent types                                                 | 信頼された extension authors                            |
 | Harness embedding | `MikanAgentSession`、`SessionStore`、`MikanModels`、settings および event-format functions            | 上級の embedders。通常の bot integration ではありません |
 
-`src/` 配下のソースパスや `dist/` 配下の生成パスを import することはサポートされません。パッケージ exports が宣言するパスだけを public とみなすべきです。現時点ではパッケージに明示的な `exports` map がないため、これは強制ではなくドキュメント上の制約です。
+パッケージの `exports` map が宣言するパスだけが public です。それ以外の生成済み `dist/` パスや `src/` ソースパスの import はサポートされません。
 
 ## 2. Platform intake と response のインターフェース
 
@@ -307,7 +307,7 @@ Admin endpoints は、conversation のインベントリ/状態/使用状況、�
 
 ## 14. Gondolin プロセス境界
 
-`gondolin:default` は同じホスト上の detached Node worker を使用します。worker process と永続化された runtime inventory は restart recovery のための内部 lifecycle 境界であり、network worker protocol や remote placement contract はありません。
+`gondolin:default` は mikan process が conversation ごとにローカル VM を作成・所有します。command ごとに独立した Gondolin session IPC connection を使うため、abort/timeout は guest command を終了します。runtime は process lifecycle のみ存続し、通常の shutdown は projection を同期して VM を閉じ、restart 後は cold start します。network worker protocol や remote placement contract はありません。
 
 ## 契約チェックリスト
 

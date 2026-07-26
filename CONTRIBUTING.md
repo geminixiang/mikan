@@ -27,7 +27,7 @@ Set the platform tokens you need before launching — see the [README](README.md
 npm run lint        # oxlint
 npm run fmt:check   # oxfmt (use `npm run fmt` to auto-fix)
 npm test            # unit tests (vitest)
-npm run build       # type check + emit dist/
+npm run build       # clean dist/, then type check + emit
 ```
 
 Husky runs `lint` + `fmt` on staged `*.ts` files via pre-commit; `*.test.ts` changes also trigger the test suite. If hooks block your commit, fix the underlying issue rather than passing `--no-verify`.

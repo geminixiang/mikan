@@ -48,7 +48,7 @@ The npm entry point is `@geminixiang/mikan`, implemented by `src/index.ts`.
 | Extensions        | `MikanExtensionApi`, hook/event types, subagent types                                                 | Trusted extension authors                                |
 | Harness embedding | `MikanAgentSession`, `SessionStore`, `MikanModels`, settings and event-format functions               | Advanced embedders; not ordinary bot integrations        |
 
-Importing a source path under `src/` or a generated path under `dist/` is unsupported. Only paths declared by package exports should be considered public. At present the package has no explicit `exports` map, so this is a documentation constraint rather than an enforced one.
+Only paths declared by the package `exports` map are public. Importing any other generated `dist/` path or a source path under `src/` is unsupported.
 
 ## 2. Platform intake and response interface
 
@@ -307,7 +307,7 @@ Admin endpoints cover conversation inventory/state/usage, global and conversatio
 
 ## 14. Gondolin process boundary
 
-`gondolin:default` uses a detached Node worker on the same host. The worker process and its persisted runtime inventory form an internal lifecycle boundary used for restart recovery; there is no network worker protocol or remote placement contract.
+`gondolin:default` creates and owns one local VM per conversation in the mikan process. Commands use a per-command Gondolin session IPC connection so abort/timeout closes the guest command rather than merely abandoning a host promise. Runtimes are intentionally process-lifetime state: orderly shutdown syncs projected files back and closes the VMs; restart begins cold. There is no network worker protocol or remote placement contract.
 
 ## Contract checklist
 
