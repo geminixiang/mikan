@@ -17,6 +17,7 @@ export class SessionLifecycle {
   private readonly states = new Map<string, ConversationRuntimeState>();
   private readonly queues = new Map<string, Promise<void>>();
   private readonly conversationBarriers = new Map<string, ConversationBarrier>();
+  private readonly pendingConversationClears = new Set<string>();
   private readonly maxSessions: number;
   private readonly idleTimeoutMs: number;
   private readonly now: () => number;
@@ -124,13 +125,41 @@ export class SessionLifecycle {
   }
 
   clearConversation(conversationId: string): boolean {
+    if (this.hasActiveRun(conversationId)) return false;
+    this.pendingConversationClears.delete(conversationId);
+    this.discardConversation(conversationId);
+    return true;
+  }
+
+  deferConversationClear(conversationId: string): void {
+    this.pendingConversationClears.add(conversationId);
+  }
+
+  onSettlement(sessionKey: string): void {
+    const conversationId = conversationIdOf(sessionKey);
+    if (!this.pendingConversationClears.has(conversationId)) return;
+    if (this.hasActiveRun(conversationId)) return;
+
+    this.pendingConversationClears.delete(conversationId);
+    this.discardConversation(conversationId);
+  }
+
+  private hasActiveRun(conversationId: string): boolean {
     for (const [sessionKey, state] of this.states) {
-      if (conversationIdOf(sessionKey) === conversationId && state.running) return false;
+      if (
+        conversationIdOf(sessionKey) === conversationId &&
+        (state.running || state.runSettlement !== undefined)
+      ) {
+        return true;
+      }
     }
+    return false;
+  }
+
+  private discardConversation(conversationId: string): void {
     for (const sessionKey of Array.from(this.states.keys())) {
       if (conversationIdOf(sessionKey) === conversationId) this.discard(sessionKey);
     }
-    return true;
   }
 
   discard(sessionKey: string): void {
@@ -148,12 +177,18 @@ export class SessionLifecycle {
   evictIdle(): void {
     const now = this.now();
     for (const [key, state] of this.states) {
-      if (!state.running && now - state.lastAccessedAt > this.idleTimeoutMs) this.discard(key);
+      if (
+        !state.running &&
+        state.runSettlement === undefined &&
+        now - state.lastAccessedAt > this.idleTimeoutMs
+      ) {
+        this.discard(key);
+      }
     }
     if (this.states.size <= this.maxSessions) return;
 
     const idle = Array.from(this.states.entries())
-      .filter(([, state]) => !state.running)
+      .filter(([, state]) => !state.running && state.runSettlement === undefined)
       .toSorted(([, left], [, right]) => left.lastAccessedAt - right.lastAccessedAt);
     const toEvict = this.states.size - this.maxSessions;
     for (const [key] of idle.slice(0, toEvict)) this.discard(key);

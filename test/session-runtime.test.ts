@@ -218,6 +218,54 @@ describe("ConversationRuntime handleEvent", () => {
 });
 
 describe("ConversationRuntime lifecycle", () => {
+  test("global refresh defers invalidation until the busy conversation settles", async () => {
+    const { models, faux } = createFauxModels();
+    const runtime = makeRuntime(models);
+    let started = false;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    faux.setResponses([
+      async () => {
+        started = true;
+        await gate;
+        return fauxAssistantMessage("first");
+      },
+      fauxAssistantMessage("second"),
+    ]);
+
+    const first = makeEventAndContext("1000.0");
+    const firstDone = runtime.handleEvent(first.event, bot, first.context);
+    await vi.waitFor(() => expect(started).toBe(true));
+
+    const sessions = (
+      runtime as unknown as {
+        sessions: {
+          get(sessionKey: string): ConversationRuntimeState | undefined;
+        };
+      }
+    ).sessions;
+    const oldState = sessions.get("C123");
+    expect(oldState).toBeDefined();
+    const oldRunner = oldState!.runner;
+    const dispose = vi.spyOn(oldRunner, "dispose");
+
+    expect(runtime.refreshAllConversations()).toEqual({ busy: ["C123"] });
+    expect(runtime.refreshAllConversations()).toEqual({ busy: ["C123"] });
+    expect(dispose).not.toHaveBeenCalled();
+
+    release();
+    await firstDone;
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(sessions.get("C123")).toBeUndefined();
+
+    const second = makeEventAndContext("1000.1");
+    await runtime.handleEvent(second.event, bot, second.context);
+
+    const newState = sessions.get("C123");
+    expect(newState).toBeDefined();
+    expect(newState!.runner).not.toBe(oldRunner);
+  });
+
   test("new dispatched inside the session queue does not deadlock", async () => {
     const { models, faux } = createFauxModels();
     faux.setResponses([fauxAssistantMessage("memory preserved")]);
