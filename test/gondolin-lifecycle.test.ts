@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -609,6 +617,64 @@ describe("Gondolin lifecycle", () => {
 
     expect(vms[0].closed).toBe(true);
     expect(readFileSync(memory, "utf8")).toBe("final state");
+  });
+
+  test("preserves a concurrent runtime's projected edit instead of overwriting it", async () => {
+    const memory = join(workspaceHost, "MEMORY.md");
+    writeFileSync(memory, "v1");
+    const legacyStagingPath = `${memory}.mikan-sync`;
+    writeFileSync(legacyStagingPath, "unrelated staging file");
+    const first = new GondolinExecutor({
+      type: "gondolin",
+      profile: "default",
+      instanceId: "projection-first",
+      workspacePath: workspaceHost,
+      mounts: [{ source: memory, target: "/workspace/MEMORY.md" }],
+    });
+    const second = new GondolinExecutor({
+      type: "gondolin",
+      profile: "default",
+      instanceId: "projection-second",
+      workspacePath: workspaceHost,
+      mounts: [{ source: memory, target: "/workspace/MEMORY.md" }],
+    });
+
+    await first.exec("pwd");
+    await second.exec("pwd");
+    vms[0].guestFiles.set("/workspace/MEMORY.md", Buffer.from("first edit"));
+    vms[1].guestFiles.set("/workspace/MEMORY.md", Buffer.from("second edit"));
+
+    await stopIdleGondolinVms(0, Date.now() + 1);
+
+    const contents = ["first edit", "second edit"];
+    expect(contents).toContain(readFileSync(memory, "utf8"));
+    const conflictFiles = readdirSync(workspaceHost).filter((name) =>
+      name.startsWith("MEMORY.md.mikan-conflict."),
+    );
+    expect(conflictFiles).toHaveLength(1);
+    expect(contents).toContain(readFileSync(join(workspaceHost, conflictFiles[0]!), "utf8"));
+    expect(readFileSync(legacyStagingPath, "utf8")).toBe("unrelated staging file");
+  });
+
+  test("recovers from a stale projection lock", async () => {
+    const memory = join(workspaceHost, "MEMORY.md");
+    writeFileSync(memory, "v1");
+    const executor = new GondolinExecutor({
+      type: "gondolin",
+      profile: "default",
+      instanceId: "stale-projection-lock",
+      workspacePath: workspaceHost,
+      mounts: [{ source: memory, target: "/workspace/MEMORY.md" }],
+    });
+    await executor.exec("pwd");
+    vms[0].guestFiles.set("/workspace/MEMORY.md", Buffer.from("v2"));
+
+    const lockPath = `${memory}.mikan-sync.lock`;
+    mkdirSync(lockPath);
+    utimesSync(lockPath, new Date(0), new Date(0));
+    await stopIdleGondolinVms(0, Date.now() + 1);
+
+    expect(readFileSync(memory, "utf8")).toBe("v2");
   });
 
   test("closes every runtime on shutdown", async () => {
