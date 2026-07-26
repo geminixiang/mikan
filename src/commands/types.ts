@@ -129,6 +129,7 @@ export interface ParsedModelCommand {
   provider?: string;
   model?: string;
   thinkingLevel?: ThinkingLevel;
+  error?: "invalid_spec" | "unknown_thinking_level";
 }
 
 export interface ParsedSandboxCommand {

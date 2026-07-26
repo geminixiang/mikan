@@ -3,12 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingBot, ConversationResponder } from "../src/adapter.js";
+import { MikanModels } from "../src/harness/index.js";
 import { AdminCommandHandler } from "../src/commands/admin.js";
 import { AutoReplyCommandHandler } from "../src/commands/auto-reply.js";
 import { ExtensionsCommandHandler } from "../src/commands/extensions.js";
 import { conversationSettingsPath } from "../src/config.js";
 import { dispatchCommand } from "../src/commands/registry.js";
 import { LoginCommandHandler, parseLoginCommand } from "../src/commands/login.js";
+import { ModelCommandHandler } from "../src/commands/model.js";
 import { NewCommandHandler } from "../src/commands/new.js";
 import { SandboxCommandHandler } from "../src/commands/sandbox.js";
 import { SessionViewCommandHandler } from "../src/commands/session-view.js";
@@ -205,6 +207,25 @@ describe("dispatchCommand", () => {
     expect(handled).toBe(true);
     expect(a.tryHandle).toHaveBeenCalledOnce();
     expect(b.tryHandle).toHaveBeenCalledOnce();
+  });
+});
+
+// ── ModelCommandHandler ─────────────────────────────────────────────────────
+
+describe("ModelCommandHandler", () => {
+  const handler = new ModelCommandHandler(MikanModels.create());
+
+  test.each([
+    ["/model foo", "無效的模型參數"],
+    ["/model provider/", "無效的模型參數"],
+    ["/model provider/model:unknown", "未知的 thinking level"],
+  ])("rejects invalid model input: %s", async (commandText, expectedMessage) => {
+    const ctx = buildContext({ commandText });
+
+    expect(await handler.tryHandle(ctx)).toBe(true);
+    expect(ctx.responder.responses[0]).toContain(expectedMessage);
+    expect(ctx.responder.responses[0]).not.toContain("Current:");
+    expect(ctx.responder.responses[0]).not.toContain("Switched:");
   });
 });
 

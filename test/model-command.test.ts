@@ -6,6 +6,10 @@ describe("model command parsing", () => {
     expect(parseModelCommand("model openai/gpt-4o")).toBeNull();
   });
 
+  test("parses a query without arguments", () => {
+    expect(parseModelCommand("/model")).toEqual({});
+  });
+
   test("parses provider/model", () => {
     expect(parseModelCommand("/pi-model openai/gpt-4o")).toEqual({
       provider: "openai",
@@ -22,11 +26,17 @@ describe("model command parsing", () => {
     });
   });
 
-  test("leaves unknown colon suffix as part of the model id", () => {
+  test("rejects a bare argument instead of treating it as a query", () => {
+    expect(parseModelCommand("/model foo")).toEqual({ error: "invalid_spec" });
+  });
+
+  test("rejects an empty model", () => {
+    expect(parseModelCommand("/pi-model provider/")).toEqual({ error: "invalid_spec" });
+  });
+
+  test("rejects an unknown thinking suffix", () => {
     expect(parseModelCommand("/pi-model openrouter/openai/gpt-4o:extended")).toEqual({
-      provider: "openrouter",
-      model: "openai/gpt-4o:extended",
-      thinkingLevel: undefined,
+      error: "unknown_thinking_level",
     });
   });
 });

@@ -31,14 +31,21 @@ export function parseModelCommand(text: string): ParsedModelCommand | null {
     return {};
   }
 
+  if (matched.args.length !== 1) {
+    return { error: "invalid_spec" };
+  }
+
   const spec = matched.args[0];
   const slash = spec.indexOf("/");
   if (slash <= 0 || slash === spec.length - 1) {
-    return {};
+    return { error: "invalid_spec" };
   }
 
   const modelSpec = spec.slice(slash + 1);
   const parsedModel = parseModelThinkingLevel(modelSpec);
+  if (parsedModel.error) {
+    return { error: parsedModel.error };
+  }
 
   return {
     provider: spec.slice(0, slash),
@@ -48,17 +55,21 @@ export function parseModelCommand(text: string): ParsedModelCommand | null {
 }
 
 function parseModelThinkingLevel(modelSpec: string): {
-  model: string;
+  model?: string;
   thinkingLevel?: ThinkingLevel;
+  error?: "invalid_spec" | "unknown_thinking_level";
 } {
   const colon = modelSpec.lastIndexOf(":");
-  if (colon <= 0 || colon === modelSpec.length - 1) {
+  if (colon === 0 || colon === modelSpec.length - 1) {
+    return { error: "invalid_spec" };
+  }
+  if (colon < 0) {
     return { model: modelSpec };
   }
 
   const suffix = modelSpec.slice(colon + 1);
   if (!THINKING_LEVELS.has(suffix as ThinkingLevel)) {
-    return { model: modelSpec };
+    return { error: "unknown_thinking_level" };
   }
 
   return {
@@ -76,6 +87,20 @@ export class ModelCommandHandler implements CommandHandler {
   async tryHandle(context: CommandContext): Promise<boolean> {
     const parsed = parseModelCommand(context.commandText);
     if (!parsed) return false;
+
+    if (parsed.error) {
+      await replyDiagnosticWithContext(
+        context.responder,
+        formatCommandSummary("Model", [
+          parsed.error === "unknown_thinking_level"
+            ? "未知的 thinking level，請使用 `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`。"
+            : "無效的模型參數，請使用 `provider/model[:thinking]`。",
+          "Example: `/pi-model anthropic/claude-sonnet-4-6:off`",
+        ]),
+        { style: "muted" },
+      );
+      return true;
+    }
 
     const conversationDir = join(context.services.workingDir, context.conversationId);
     if (!parsed.provider || !parsed.model) {
