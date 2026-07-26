@@ -32,16 +32,8 @@ import {
   settleSubagentProgress,
 } from "./subagent-progress.js";
 import { createHash } from "crypto";
-import {
-  constants,
-  createReadStream,
-  createWriteStream,
-  existsSync,
-  readFileSync,
-  realpathSync,
-} from "fs";
-import { chmod, mkdtemp, mkdir, open, readFile, rm } from "fs/promises";
-import { pipeline } from "stream/promises";
+import { existsSync, readFileSync, realpathSync } from "fs";
+import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { basename, isAbsolute, join, posix, relative, resolve, sep } from "path";
 import type {
@@ -169,33 +161,42 @@ export function translateAttachPathToHost(
 }
 
 /**
- * Stage a validated host file without reopening its workspace path after
- * validation. The private temporary directory is outside the agent workspace,
- * and the source descriptor remains the object copied if the path is replaced.
+ * Normalize an attachment path using runtime lexical semantics only. The
+ * executor remains the authority for reading the resulting runtime path.
  */
-export async function withSecureStagedHostFile(
-  hostPath: string,
+export function normalizeAttachRuntimePath(filePath: string, runtimeWorkspaceRoot: string): string {
+  if (hasParentTraversal(filePath)) {
+    throw new Error("Cannot attach files: parent-directory traversal is not allowed");
+  }
+
+  const runtimeRoot = posix.resolve(runtimeWorkspaceRoot);
+  const runtimePath = posix.resolve(runtimeRoot, filePath);
+  const runtimeRelativePath = posix.relative(runtimeRoot, runtimePath);
+  if (
+    runtimeRelativePath === ".." ||
+    runtimeRelativePath.startsWith("../") ||
+    posix.isAbsolute(runtimeRelativePath)
+  ) {
+    throw new Error("Cannot attach files: path must be within the runtime workspace");
+  }
+  return runtimePath;
+}
+
+async function withStagedRuntimeFile(
+  executor: Executor,
+  runtimePath: string,
   upload: (stagedPath: string) => Promise<void>,
 ): Promise<void> {
-  const source = await open(hostPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const content = Buffer.from(await executor.readFileBase64(runtimePath), "base64");
   let stagingDir: string | undefined;
   try {
-    const sourceStat = await source.stat();
-    if (!sourceStat.isFile()) {
-      throw new Error("Cannot attach files: path is not a regular file");
-    }
-
     stagingDir = await mkdtemp(join(tmpdir(), "mikan-upload-"));
     await chmod(stagingDir, 0o700);
-    const stagedPath = join(stagingDir, basename(hostPath));
-    await pipeline(
-      createReadStream(hostPath, { fd: source.fd, autoClose: false }),
-      createWriteStream(stagedPath, { flags: "wx", mode: 0o600 }),
-    );
+    const stagedPath = join(stagingDir, basename(runtimePath));
+    await writeFile(stagedPath, content, { mode: 0o600, flag: "wx" });
     await chmod(stagedPath, 0o600);
     await upload(stagedPath);
   } finally {
-    await source.close();
     if (stagingDir) await rm(stagingDir, { recursive: true, force: true });
   }
 }
@@ -1535,8 +1536,8 @@ async function prepareRunContext(params: {
   setSandboxContext({ conversationId, userId: message.userId });
 
   setUploadFunction(async (filePath: string, title?: string) => {
-    const hostPath = translateAttachPathToHost(filePath, pathContext);
-    await withSecureStagedHostFile(hostPath, (stagedPath) =>
+    const runtimePath = normalizeAttachRuntimePath(filePath, pathContext.runtimeWorkspaceRoot);
+    await withStagedRuntimeFile(executor, runtimePath, (stagedPath) =>
       responder.uploadFile(stagedPath, title),
     );
   });

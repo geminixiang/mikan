@@ -1,11 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   buildPromptPayload,
   translateAttachPathToHost,
-  withSecureStagedHostFile,
 } from "../src/agent.js";
 import type { ConversationMessage } from "../src/adapter.js";
 import { createMountedRuntimePathContext } from "../src/sandbox/path-context.js";
@@ -78,29 +77,4 @@ describe("buildPromptPayload", () => {
     );
   });
 
-  test("stages through a private file and removes it after upload", async () => {
-    const filePath = join(workspaceDir, "C123", "attachments", "report.txt");
-    writeFileSync(filePath, "report contents");
-    let stagedPath = "";
-
-    await withSecureStagedHostFile(filePath, async (path) => {
-      stagedPath = path;
-      expect(path).not.toContain(workspaceDir);
-      expect(readFileSync(path, "utf-8")).toBe("report contents");
-    });
-
-    expect(existsSync(stagedPath)).toBe(false);
-  });
-
-  test("does not reopen a workspace path replaced after validation", async () => {
-    const filePath = join(workspaceDir, "C123", "attachments", "report.txt");
-    writeFileSync(filePath, "safe contents");
-    const pathContext = createMountedRuntimePathContext(workspaceDir, "/workspace");
-    const validatedPath = translateAttachPathToHost("C123/attachments/report.txt", pathContext);
-
-    rmSync(filePath);
-    symlinkSync("/etc/passwd", filePath);
-
-    await expect(withSecureStagedHostFile(validatedPath, async () => {})).rejects.toThrow();
-  });
 });
