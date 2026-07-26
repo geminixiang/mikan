@@ -1,7 +1,6 @@
 import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../../adapter.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
 import { createProgressiveRenderer, formatMarkdownToolResult } from "../progressive-renderer.js";
-import { createChatResponseErrorReporter } from "../shared.js";
 import type { DiscordMessagingBot, DiscordEvent } from "./bot.js";
 
 // Discord hard limit is 2000 chars; 1900 leaves headroom for working indicator.
@@ -68,18 +67,17 @@ export function createDiscordAdapters(
       stopOnSend: true,
     },
     formatToolResult: formatMarkdownToolResult,
-    reportError: (err, operation, extra, responseId) =>
-      createChatResponseErrorReporter(() => ({
-        platform: "discord",
-        conversationId,
-        channelId,
-        messageId: message.id,
-        sessionKey: message.sessionKey,
-        responseMessageId: responseId,
-        threadTs: threadTargetId,
-        replyTargetId,
-        conversationKind: message.conversationKind,
-      }))(err, operation, extra),
+    responseErrorContext: (responseId) => ({
+      platform: "discord",
+      conversationId,
+      channelId,
+      messageId: message.id,
+      sessionKey: message.sessionKey,
+      responseMessageId: responseId,
+      threadTs: threadTargetId,
+      replyTargetId,
+      conversationKind: message.conversationKind,
+    }),
     post: async (text) => {
       return postFirst(text);
     },

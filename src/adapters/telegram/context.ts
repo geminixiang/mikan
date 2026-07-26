@@ -8,7 +8,7 @@ import type {
 import { deriveSessionKey } from "../../sessions/session-key.js";
 import { subagentDashboardHeader, subagentDashboardNodeLines } from "../../subagent-progress.js";
 import { createProgressiveRenderer } from "../progressive-renderer.js";
-import { createChatResponseErrorReporter, formatToolArgs } from "../shared.js";
+import { formatToolArgs } from "../shared.js";
 import { sanitizeTelegramHtml } from "./html.js";
 import type { TelegramMessagingBot, TelegramEvent } from "./bot.js";
 
@@ -77,17 +77,16 @@ export function createTelegramAdapters(
       intervalMs: 4000,
     },
     formatToolResult,
-    reportError: (err, operation, extra, responseId) =>
-      createChatResponseErrorReporter(() => ({
-        platform: "telegram",
-        conversationId,
-        chatId,
-        messageId: message.id,
-        sessionKey: message.sessionKey,
-        responseMessageId: responseId,
-        replyToId,
-        conversationKind: message.conversationKind,
-      }))(err, operation, extra),
+    responseErrorContext: (responseId) => ({
+      platform: "telegram",
+      conversationId,
+      chatId,
+      messageId: message.id,
+      sessionKey: message.sessionKey,
+      responseMessageId: responseId,
+      replyToId,
+      conversationKind: message.conversationKind,
+    }),
     notifySendFailure: async (errorMessage) => {
       await bot.postPlainMessage(chatId, `⚠️ 發送失敗：${errorMessage}`);
     },

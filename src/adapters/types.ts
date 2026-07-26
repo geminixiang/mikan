@@ -85,12 +85,10 @@ export interface ProgressiveRendererPlatform {
     stopOnSend?: boolean;
   };
   formatToolResult: (result: ChatToolResult) => string;
-  reportError: (
-    err: unknown,
-    operation: ChatResponseErrorOperation,
-    extra: Record<string, unknown>,
+  /** Stable platform context plus the current response identity for error reporting. */
+  responseErrorContext: (
     responseId: string | null,
-  ) => void;
+  ) => Omit<ChatResponseErrorContext, "operation" | "extra">;
   notifySendFailure?: (errorMessage: string) => Promise<void>;
   post: (text: string) => Promise<string>;
   update: (id: string, text: string) => Promise<void>;

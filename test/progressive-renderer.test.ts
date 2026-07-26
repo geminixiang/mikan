@@ -12,9 +12,20 @@ interface Call {
 function makeRenderer(
   kind: StreamKind,
   initialResponseId?: string,
-  overrides: { post?: (text: string) => Promise<string> } = {},
+  overrides: {
+    post?: (text: string) => Promise<string>;
+    update?: (id: string, text: string) => Promise<void>;
+  } = {},
 ) {
   const calls: Call[] = [];
+  const responseErrorContext = vi.fn((responseId: string | null) => ({
+    platform: kind,
+    conversationId: "conversation",
+    messageId: "message",
+    sessionKey: "session",
+    conversationKind: "shared",
+    responseMessageId: responseId,
+  }));
   let nextId = 1;
   const platform: ProgressiveRendererPlatform = {
     label: kind,
@@ -24,7 +35,7 @@ function makeRenderer(
     errorPrefix: "Error: ",
     workingIndicator: kind === "buffered" ? " ..." : undefined,
     formatToolResult: () => "",
-    reportError: vi.fn(),
+    responseErrorContext,
     post: async (text) => {
       const id = `message-${nextId++}`;
       calls.push({ operation: "post", id, text });
@@ -32,6 +43,7 @@ function makeRenderer(
     },
     update: async (id, text) => {
       calls.push({ operation: "update", id, text });
+      await overrides.update?.(id, text);
     },
     postExtra: async (text, responseId) => {
       calls.push({ operation: "extra", id: responseId ?? undefined, text });
@@ -57,7 +69,7 @@ function makeRenderer(
   };
   return {
     calls,
-    reportError: platform.reportError,
+    responseErrorContext,
     responder: createProgressiveRenderer(platform).responder,
   };
 }
@@ -127,7 +139,7 @@ describe.each<StreamKind>(["buffered", "native"])("Progressive renderer contract
 
 test("reports a transport failure once and recovers without rejecting callers", async () => {
   let attempts = 0;
-  const { responder, calls, reportError } = makeRenderer("buffered", undefined, {
+  const { responder, calls, responseErrorContext } = makeRenderer("buffered", undefined, {
     post: async () => {
       attempts += 1;
       if (attempts === 1) throw new Error("send failed");
@@ -138,7 +150,8 @@ test("reports a transport failure once and recovers without rejecting callers", 
   await expect(responder.respond("first")).resolves.toBeUndefined();
   await expect(responder.respond("second")).resolves.toBeUndefined();
 
-  expect(reportError).toHaveBeenCalledTimes(1);
+  expect(responseErrorContext).toHaveBeenCalledTimes(1);
+  expect(responseErrorContext).toHaveBeenCalledWith(null);
   expect(calls.at(-1)).toMatchObject({ operation: "post", text: "first\nsecond ..." });
 });
 
@@ -148,6 +161,18 @@ test("uses an existing response identity instead of posting a second message", a
   await responder.respond("hello");
 
   expect(calls).toEqual([{ operation: "update", id: "existing", text: "hello ..." }]);
+});
+
+test("reports a failed update with the current response identity", async () => {
+  const { responder, responseErrorContext } = makeRenderer("buffered", "existing", {
+    update: async () => {
+      throw new Error("update failed");
+    },
+  });
+
+  await responder.respond("hello");
+
+  expect(responseErrorContext).toHaveBeenCalledWith("existing");
 });
 
 test("splits buffered output before sending continuation messages", async () => {
