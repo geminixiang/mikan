@@ -48,6 +48,13 @@ const EventFileSchema = Type.Object({
 
 type EventFileData = Static<typeof EventFileSchema>;
 
+const ISO_TIMESTAMP_WITH_OFFSET =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+function isValidIsoTimestampWithOffset(value: string): boolean {
+  return ISO_TIMESTAMP_WITH_OFFSET.test(value) && Number.isFinite(Date.parse(value));
+}
+
 /**
  * Resolve an event file's conversation id, honoring the legacy `channelId`
  * alias. Alias knowledge is private to the format module: consumers always
@@ -96,6 +103,11 @@ export function parseEventPayload(content: string, filename: string): EventFileP
       if (typeof data.at !== "string" || data.at.length === 0) {
         throw new Error(`Missing 'at' field for one-shot event in ${filename}`);
       }
+      if (!isValidIsoTimestampWithOffset(data.at)) {
+        throw new Error(
+          `Invalid 'at' field for one-shot event in ${filename}: expected a valid ISO 8601 timestamp with UTC offset`,
+        );
+      }
       return { type, ...base, at: data.at };
 
     case "periodic":
@@ -131,7 +143,7 @@ export function buildEventPayload(input: EventPayloadInput): EventFilePayload {
       if (!input.at) {
         throw new Error("`at` is required for one-shot events");
       }
-      if (Number.isNaN(new Date(input.at).getTime())) {
+      if (!isValidIsoTimestampWithOffset(input.at)) {
         throw new Error("`at` must be a valid ISO 8601 timestamp with UTC offset");
       }
       return { type: "one-shot", ...base, at: input.at };

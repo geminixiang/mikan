@@ -36,7 +36,7 @@ Trigger once at a specified time. This is useful for reminders and future callba
 }
 ```
 
-`at` must be an ISO 8601 timestamp with a UTC offset.
+`at` must be an ISO 8601 timestamp ending in `Z` or an explicit `±HH:MM` UTC offset.
 
 ### Periodic
 

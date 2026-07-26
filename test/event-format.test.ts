@@ -90,4 +90,27 @@ describe("event-format round-trip", () => {
       }),
     ).toThrow("`timezone` is required for periodic events");
   });
+
+  test("one-shot timestamps require and preserve an explicit UTC designator", () => {
+    const input = { type: "one-shot" as const, conversationId: "C1", text: "t" };
+
+    expect(() => buildEventPayload({ ...input, at: "2027-01-01T09:00:00" })).toThrow(
+      "`at` must be a valid ISO 8601 timestamp with UTC offset",
+    );
+    expect(buildEventPayload({ ...input, at: "2027-01-01T09:00:00Z" })).toMatchObject({
+      type: "one-shot",
+      at: "2027-01-01T09:00:00Z",
+    });
+    expect(buildEventPayload({ ...input, at: "2027-01-01T09:00:00+08:00" })).toMatchObject({
+      type: "one-shot",
+      at: "2027-01-01T09:00:00+08:00",
+    });
+
+    expect(() =>
+      parseEventPayload(JSON.stringify({ ...input, at: "2027-01-01T09:00:00" }), "no-offset.json"),
+    ).toThrow(/Invalid 'at' field for one-shot event in no-offset\.json/);
+    expect(
+      parseEventPayload(JSON.stringify({ ...input, at: "2027-01-01T09:00:00Z" }), "utc.json"),
+    ).toMatchObject({ type: "one-shot", at: "2027-01-01T09:00:00Z" });
+  });
 });
