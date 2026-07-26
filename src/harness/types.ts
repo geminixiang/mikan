@@ -7,6 +7,8 @@
  * always written, so existing conversation history keeps working unchanged.
  */
 import type {
+  AgentEvent,
+  AgentTool,
   BranchSummaryEntry,
   CompactionEntry,
   CustomEntry,
@@ -16,8 +18,13 @@ import type {
   SessionInfoEntry,
   SessionTreeEntry,
   ThinkingLevel,
+  CompactionSettings,
 } from "@earendil-works/pi-agent-core";
-import type { Usage } from "@earendil-works/pi-ai";
+import type { Api, Model, Usage } from "@earendil-works/pi-ai";
+import type { ExtensionRegistry } from "./extensions/registry.js";
+import type { RunOrigin } from "./extensions/types.js";
+import type { MikanModels } from "./models.js";
+import type { SessionStore } from "./session-store.js";
 import type { Static, TSchema } from "@sinclair/typebox";
 
 export type {
@@ -178,3 +185,179 @@ export interface SessionHeader {
 
 /** Raw file line: the header or one session entry. */
 export type SessionFileEntry = SessionHeader | SessionEntry;
+
+export interface CreateMikanModelsOptions {
+  authPath?: string;
+  modelsJsonPath?: string;
+}
+
+export type EventConversationKind = "direct" | "shared";
+
+export type EventType = "immediate" | "one-shot" | "periodic";
+
+interface EventPayloadBase {
+  /** Target platform; may be omitted when only one platform is running. */
+  platform?: string;
+  conversationId: string;
+  conversationKind?: EventConversationKind;
+  userId?: string;
+  /** Self-contained task text; event runs do not inherit conversation history. */
+  text: string;
+}
+
+export interface ImmediateEventPayload extends EventPayloadBase {
+  type: "immediate";
+}
+
+export interface OneShotEventPayload extends EventPayloadBase {
+  type: "one-shot";
+  /** ISO 8601 timestamp with offset. */
+  at: string;
+}
+
+export interface PeriodicEventPayload extends EventPayloadBase {
+  type: "periodic";
+  /** Cron expression (croner syntax). */
+  schedule: string;
+  /** IANA timezone, e.g. "Asia/Taipei". */
+  timezone: string;
+}
+
+/** Wire shape of one event file. */
+export type EventFilePayload = ImmediateEventPayload | OneShotEventPayload | PeriodicEventPayload;
+
+export interface EventPayloadInput {
+  type: EventType;
+  platform?: string;
+  conversationId: string;
+  conversationKind?: EventConversationKind;
+  userId?: string;
+  text: string;
+  at?: string;
+  schedule?: string;
+  timezone?: string;
+}
+
+/** A loaded skill. `baseDir` is the directory containing the skill file. */
+export interface MikanSkill {
+  name: string;
+  description: string;
+  /** Full skill instructions (file content without frontmatter). */
+  content: string;
+  filePath: string;
+  baseDir: string;
+  /** Where the skill was loaded from (e.g. "workspace", "channel"). */
+  source: string;
+  /** Exclude from model-visible skill lists. */
+  disableModelInvocation?: boolean;
+  /**
+   * Embed the skill body in the prompt instead of referencing its file path.
+   * Used for skills whose files the agent cannot read at runtime (e.g.
+   * extension skills under the host-only state dir in sandbox modes).
+   */
+  inline?: boolean;
+}
+
+export interface SkillDiagnostic {
+  type: "warning";
+  message: string;
+  path: string;
+}
+
+export interface LoadSkillsResult {
+  skills: MikanSkill[];
+  diagnostics: SkillDiagnostic[];
+}
+
+export interface RetrySettings {
+  enabled: boolean;
+  maxRetries: number;
+  baseDelayMs: number;
+}
+
+export interface BudgetSettings {
+  /** Max cumulative tokens processed this run (input + output + cache read/write). */
+  maxTokens?: number;
+  /** Max cumulative provider cost (USD) this run. Requires a populated model cost table. */
+  maxCostUsd?: number;
+  /** Max wall-clock duration for the run, in milliseconds. */
+  maxDurationMs?: number;
+  /** Max number of LLM calls (assistant turns) this run. */
+  maxLlmCalls?: number;
+}
+
+export interface HarnessSettings {
+  compaction: CompactionSettings;
+  retry: RetrySettings;
+  budget: BudgetSettings;
+}
+
+export interface SubagentProfileDiagnostic {
+  type: "warning";
+  message: string;
+  path: string;
+}
+
+export interface LoadSubagentProfilesResult {
+  profiles: Map<string, SubagentProfile>;
+  diagnostics: SubagentProfileDiagnostic[];
+}
+
+export type CompactionReason = "threshold" | "overflow" | "manual";
+
+interface CompactionResultSummary {
+  summary: string;
+  firstKeptEntryId: string;
+  tokensBefore: number;
+}
+
+export type HarnessEvent =
+  | AgentEvent
+  | { type: "compaction_start"; reason: CompactionReason }
+  | {
+      type: "compaction_end";
+      reason: CompactionReason;
+      result?: CompactionResultSummary;
+      aborted: boolean;
+      errorMessage?: string;
+    }
+  | {
+      type: "auto_retry_start";
+      attempt: number;
+      maxAttempts: number;
+      delayMs: number;
+      errorMessage: string;
+    }
+  | { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
+  | {
+      type: "budget_exceeded";
+      /** Which cap was hit, e.g. "cost 2.01 USD > 2 USD limit". */
+      reason: string;
+      tokens: number;
+      costUsd: number;
+      llmCalls: number;
+      durationMs: number;
+    };
+
+export type HarnessEventListener = (event: HarnessEvent) => void | Promise<void>;
+
+/** Outcome of a `prompt()` call that an extension blocked before the model ran. */
+export interface PromptBlockedOutcome {
+  blocked: true;
+  reason?: string;
+}
+
+export interface MikanAgentSessionOptions {
+  systemPrompt: string;
+  model: Model<Api>;
+  thinkingLevel: ThinkingLevel;
+  tools: AgentTool[];
+  models: MikanModels;
+  sessionStore: SessionStore;
+  settings?: {
+    compaction?: Partial<CompactionSettings>;
+    retry?: Partial<RetrySettings>;
+    budget?: Partial<BudgetSettings>;
+  };
+  extensions?: ExtensionRegistry;
+}

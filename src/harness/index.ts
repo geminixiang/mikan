@@ -11,51 +11,51 @@ export {
   configureHttpDispatcher,
   parseHttpIdleTimeoutMs,
 } from "./http.js";
-export { MikanModels, defaultModelsJsonPath, type CreateMikanModelsOptions } from "./models.js";
+export { MikanModels, defaultModelsJsonPath } from "./models.js";
+export type { CreateMikanModelsOptions } from "./types.js";
 export { SessionStore, loadSessionFileEntries, parseSessionFileEntries } from "./session-store.js";
 export {
   MikanAgentSession,
-  type CompactionReason,
-  type HarnessEvent,
-  type HarnessEventListener,
-  type MikanAgentSessionOptions,
-  type PromptBlockedOutcome,
 } from "./runner.js";
+export type {
+  CompactionReason,
+  HarnessEvent,
+  HarnessEventListener,
+  MikanAgentSessionOptions,
+  PromptBlockedOutcome,
+} from "./types.js";
 export {
   formatSkillsForPrompt,
   loadSkillsFromDir,
   parseFrontmatter,
-  type LoadSkillsResult,
-  type MikanSkill,
-  type SkillDiagnostic,
 } from "./skills.js";
+export type { LoadSkillsResult, MikanSkill, SkillDiagnostic } from "./types.js";
 export {
   loadSubagentProfiles,
-  type LoadSubagentProfilesResult,
-  type SubagentProfileDiagnostic,
 } from "./subagent-profiles.js";
+export type { LoadSubagentProfilesResult, SubagentProfileDiagnostic } from "./types.js";
 export {
   DEFAULT_BUDGET_SETTINGS,
   DEFAULT_EVENT_BUDGET,
   DEFAULT_RETRY_SETTINGS,
   resolveHarnessSettings,
-  type BudgetSettings,
   type CompactionSettings,
-  type HarnessSettings,
-  type RetrySettings,
 } from "./settings.js";
+export type { BudgetSettings, HarnessSettings, RetrySettings } from "./types.js";
 export {
   buildEventPayload,
   EventTypeSchema,
   parseEventPayload,
-  type EventConversationKind,
-  type EventFilePayload,
-  type EventPayloadInput,
-  type EventType,
-  type ImmediateEventPayload,
-  type OneShotEventPayload,
-  type PeriodicEventPayload,
 } from "./event-format.js";
+export type {
+  EventConversationKind,
+  EventFilePayload,
+  EventPayloadInput,
+  EventType,
+  ImmediateEventPayload,
+  OneShotEventPayload,
+  PeriodicEventPayload,
+} from "./types.js";
 export { ExtensionRegistry, parseCommandInput } from "./extensions/registry.js";
 export { EXT_ACTION_PREFIX, namespaceActionIds, parseExtActionId } from "./extensions/blockkit.js";
 export {
@@ -64,11 +64,13 @@ export {
   listInstalledExtensions,
   loadExtensions,
   validateExtension,
-  type ExtensionValidation,
-  type InstalledExtensionInfo,
-  type LoadExtensionsOptions,
-  type LoadExtensionsResult,
 } from "./extensions/loader.js";
+export type {
+  ExtensionValidation,
+  InstalledExtensionInfo,
+  LoadExtensionsOptions,
+  LoadExtensionsResult,
+} from "./extensions/types.js";
 export type {
   AgentErrorHookEvent,
   BeforeAgentStartHookEvent,

@@ -4,14 +4,10 @@
  */
 import { DEFAULT_COMPACTION_SETTINGS } from "@earendil-works/pi-agent-core";
 import type { CompactionSettings } from "@earendil-works/pi-agent-core";
+import type { BudgetSettings, HarnessSettings, RetrySettings } from "./types.js";
 
 export type { CompactionSettings };
-
-export interface RetrySettings {
-  enabled: boolean;
-  maxRetries: number;
-  baseDelayMs: number;
-}
+export type { BudgetSettings, HarnessSettings, RetrySettings } from "./types.js";
 
 export const DEFAULT_RETRY_SETTINGS: RetrySettings = {
   enabled: true,
@@ -30,17 +26,6 @@ export const DEFAULT_RETRY_SETTINGS: RetrySettings = {
  * so they default to uncapped; autonomous runs (scheduled events, triggers)
  * pass {@link DEFAULT_EVENT_BUDGET}, where nobody is watching the loop.
  */
-export interface BudgetSettings {
-  /** Max cumulative tokens processed this run (input + output + cache read/write). */
-  maxTokens?: number;
-  /** Max cumulative provider cost (USD) this run. Requires a populated model cost table. */
-  maxCostUsd?: number;
-  /** Max wall-clock duration for the run, in milliseconds. */
-  maxDurationMs?: number;
-  /** Max number of LLM calls (assistant turns) this run. */
-  maxLlmCalls?: number;
-}
-
 /** Interactive runs are human-gated per turn — no automatic ceiling by default. */
 export const DEFAULT_BUDGET_SETTINGS: BudgetSettings = {};
 
@@ -53,12 +38,6 @@ export const DEFAULT_EVENT_BUDGET: BudgetSettings = {
   maxLlmCalls: 50,
   maxCostUsd: 2,
 };
-
-export interface HarnessSettings {
-  compaction: CompactionSettings;
-  retry: RetrySettings;
-  budget: BudgetSettings;
-}
 
 export function resolveHarnessSettings(overrides?: {
   compaction?: Partial<CompactionSettings>;

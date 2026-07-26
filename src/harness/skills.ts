@@ -9,40 +9,12 @@
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { basename, dirname, join } from "path";
+import type { LoadSkillsResult, MikanSkill, SkillDiagnostic } from "./types.js";
+
+export type { LoadSkillsResult, MikanSkill, SkillDiagnostic } from "./types.js";
 
 const MAX_NAME_LENGTH = 64;
 const MAX_DESCRIPTION_LENGTH = 1024;
-
-/** A loaded skill. `baseDir` is the directory containing the skill file. */
-export interface MikanSkill {
-  name: string;
-  description: string;
-  /** Full skill instructions (file content without frontmatter). */
-  content: string;
-  filePath: string;
-  baseDir: string;
-  /** Where the skill was loaded from (e.g. "workspace", "channel"). */
-  source: string;
-  /** Exclude from model-visible skill lists. */
-  disableModelInvocation?: boolean;
-  /**
-   * Embed the skill body in the prompt instead of referencing its file path.
-   * Used for skills whose files the agent cannot read at runtime (e.g.
-   * extension skills under the host-only state dir in sandbox modes).
-   */
-  inline?: boolean;
-}
-
-export interface SkillDiagnostic {
-  type: "warning";
-  message: string;
-  path: string;
-}
-
-export interface LoadSkillsResult {
-  skills: MikanSkill[];
-  diagnostics: SkillDiagnostic[];
-}
 
 interface Frontmatter {
   values: Record<string, string>;

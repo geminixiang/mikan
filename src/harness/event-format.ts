@@ -1,5 +1,21 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { parseJsonSchemaValue } from "../utils/file-guards.js";
+import type {
+  EventConversationKind,
+  EventFilePayload,
+  EventPayloadInput,
+  EventType,
+} from "./types.js";
+
+export type {
+  EventConversationKind,
+  EventFilePayload,
+  EventPayloadInput,
+  EventType,
+  ImmediateEventPayload,
+  OneShotEventPayload,
+  PeriodicEventPayload,
+} from "./types.js";
 
 /**
  * Single home for the scheduled-event file format (`events/*.json`, the
@@ -10,50 +26,12 @@ import { parseJsonSchemaValue } from "../utils/file-guards.js";
  * for periodic) live here and nowhere else.
  */
 
-export type EventConversationKind = "direct" | "shared";
-
-export type EventType = "immediate" | "one-shot" | "periodic";
-
 /** Typebox union for the `type` field, shared by the file schema and the event tool's parameters. */
 export const EventTypeSchema = Type.Union([
   Type.Literal("immediate"),
   Type.Literal("one-shot"),
   Type.Literal("periodic"),
 ]);
-
-interface EventPayloadBase {
-  /** Target platform; may be omitted when only one platform is running. */
-  platform?: string;
-  conversationId: string;
-  conversationKind?: EventConversationKind;
-  userId?: string;
-  /** Self-contained task text; event runs do not inherit conversation history. */
-  text: string;
-}
-
-export interface ImmediateEventPayload extends EventPayloadBase {
-  type: "immediate";
-}
-
-export interface OneShotEventPayload extends EventPayloadBase {
-  type: "one-shot";
-  /** ISO 8601 timestamp with offset. */
-  at: string;
-}
-
-export interface PeriodicEventPayload extends EventPayloadBase {
-  type: "periodic";
-  /** Cron expression (croner syntax). */
-  schedule: string;
-  /** IANA timezone, e.g. "Asia/Taipei". */
-  timezone: string;
-}
-
-/**
- * Wire shape of one event file. Platform defaulting and conversation-kind
- * inference happen at read time (EventsWatcher), so both stay optional here.
- */
-export type EventFilePayload = ImmediateEventPayload | OneShotEventPayload | PeriodicEventPayload;
 
 /**
  * Lenient file-reading schema: every field optional so shape problems surface
@@ -134,18 +112,6 @@ export function parseEventPayload(content: string, filename: string): EventFileP
       }
       return { type, ...base, schedule: data.schedule, timezone: data.timezone };
   }
-}
-
-export interface EventPayloadInput {
-  type: EventType;
-  platform?: string;
-  conversationId: string;
-  conversationKind?: EventConversationKind;
-  userId?: string;
-  text: string;
-  at?: string;
-  schedule?: string;
-  timezone?: string;
 }
 
 /**

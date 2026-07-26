@@ -20,7 +20,14 @@
 import { existsSync, readFileSync, readdirSync } from "fs";
 import { basename, join } from "path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { SubagentModelSpec, SubagentProfile } from "./types.js";
+import type {
+  LoadSubagentProfilesResult,
+  SubagentModelSpec,
+  SubagentProfile,
+  SubagentProfileDiagnostic,
+} from "./types.js";
+
+export type { LoadSubagentProfilesResult, SubagentProfileDiagnostic } from "./types.js";
 import { parseFrontmatter } from "./skills.js";
 
 const BUILTIN_PROFILES: SubagentProfile[] = [
@@ -88,17 +95,6 @@ const THINKING_LEVELS = new Set<ThinkingLevel>([
   "high",
   "xhigh",
 ]);
-
-export interface SubagentProfileDiagnostic {
-  type: "warning";
-  message: string;
-  path: string;
-}
-
-export interface LoadSubagentProfilesResult {
-  profiles: Map<string, SubagentProfile>;
-  diagnostics: SubagentProfileDiagnostic[];
-}
 
 /** Parse a comma-separated tool list. The literal `none` is an empty grant. */
 function csv(value: string): string[] {

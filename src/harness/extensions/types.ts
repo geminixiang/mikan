@@ -26,8 +26,8 @@
 import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, ImageContent, Model, TextContent, Usage } from "@earendil-works/pi-ai";
 import type { TSchema } from "@sinclair/typebox";
-import type { EventFilePayload } from "../event-format.js";
-import type { MikanSkill } from "../skills.js";
+import type { EventFilePayload, MikanSkill } from "../types.js";
+import type { ExtensionRegistry } from "./registry.js";
 import type {
   SubagentRunOutput,
   SubagentRunRequest,
@@ -519,4 +519,73 @@ export interface LoadedExtension {
 export interface ExtensionLoadError {
   path: string;
   error: string;
+}
+
+/** Discovery-only view of an installed extension (module is not imported). */
+export interface InstalledExtensionInfo {
+  /** Display name: manifest name, falling back to the slug. */
+  name: string;
+  slug: string;
+  path: string;
+  /** Scan directory the extension was found in. */
+  dir: string;
+  version?: string;
+  description?: string;
+  /** Names of skills shipped in the extension's skills/ directory. */
+  skillNames: string[];
+}
+
+export interface LoadExtensionsOptions {
+  /**
+   * Directories to scan for extensions, in ascending precedence. Missing
+   * directories are skipped. When two directories contribute the same slug,
+   * the later one wins — that is how a conversation-scoped copy of a package
+   * shadows the global one instead of activating alongside it.
+   */
+  dirs: string[];
+  /**
+   * Extension roots to load directly, without scanning for children. Each
+   * path is one extension (a directory with an entrypoint, or a bare file).
+   * Highest precedence, after every scanned directory. This is what
+   * `mikan ext dev` points at a working copy.
+   */
+  roots?: string[];
+  context: {
+    conversationId: string;
+    workspaceDir: string;
+    model: Model<Api>;
+    thinkingLevel: ThinkingLevel;
+  };
+  /** Embedder-provided services backing the v2 api surface. */
+  services?: ExtensionHostServices;
+}
+
+export interface LoadExtensionsResult {
+  registry: ExtensionRegistry;
+  extensions: LoadedExtension[];
+  errors: ExtensionLoadError[];
+  /** Skills contributed by extensions (inline: bodies ride in the prompt). */
+  skills: MikanSkill[];
+  /**
+   * Run extension disposers (from `api.onDispose` and `activate` return
+   * values). Call when the harness instance owning these extensions is
+   * discarded. Idempotent; disposer errors are logged, never thrown.
+   */
+  dispose(): Promise<void>;
+}
+
+export interface ExtensionValidation {
+  ok: boolean;
+  /** Slug the extension would install as (from the source dir/file name). */
+  slug: string;
+  /** Display name (manifest name, else slug). */
+  name: string;
+  version?: string;
+  description?: string;
+  /** Resolved entrypoint that would be imported. */
+  entrypoint?: string;
+  /** Skill names shipped alongside the extension. */
+  skillNames: string[];
+  errors: string[];
+  warnings: string[];
 }
