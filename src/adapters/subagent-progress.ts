@@ -66,14 +66,6 @@ function escapeMarkdown(text: string): string {
   return text.replace(/([\\`*_{}[\]()<>#+\-.!|~])/g, "\\$1");
 }
 
-function escapeSlackMrkdwn(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/([*_`])/g, "\\$1");
-}
-
 function compactNumber(value: number): string {
   return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(
     value,
@@ -137,15 +129,6 @@ function nodeRows(node: SubagentProgressNode, escapeLabel = (label: string) => l
 export function formatSubagentProgressMarkdown(snapshot: SubagentProgressSnapshot): string {
   const header = `**${headerText(snapshot)}**`;
   return [header, ...snapshot.nodes.flatMap((node) => nodeRows(node, escapeMarkdown))].join("\n");
-}
-
-export function formatSubagentProgressSlack(snapshot: SubagentProgressSnapshot): string {
-  const header = `*${headerText(snapshot)}*`;
-  const rows = snapshot.nodes.flatMap((node) => [
-    `${STATUS_MARKER[node.status]} *${escapeSlackMrkdwn(node.label)}*`,
-    `└ ${escapeSlackMrkdwn(detailText(node))}`,
-  ]);
-  return [header, ...rows].join("\n");
 }
 
 export function formatSubagentProgressTelegram(snapshot: SubagentProgressSnapshot): string {

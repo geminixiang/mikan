@@ -86,9 +86,15 @@ describe("replaceSubagentProgress()", () => {
 
     await responder.replaceSubagentProgress?.(progress);
 
+    // The dashboard is response source Markdown (ADR-0001): renderSlackBlocks
+    // owns the conversion, so no mrkdwn or entity escaping may appear here.
     expect(bot.postMessage).toHaveBeenCalledWith(
       "C001",
-      expect.stringContaining("*Subagents · 2/2 · Parallel · 12 LLM turns · 8 tool calls"),
+      expect.stringContaining("**Subagents · 2/2 · Parallel · 12 LLM turns · 8 tool calls"),
+    );
+    expect(bot.postMessage).toHaveBeenCalledWith(
+      "C001",
+      expect.stringContaining("✓ Explore \\<auth\\>"),
     );
     // The profile sits ahead of the metrics: a node reporting no tool calls is
     // only readable once you know which profile it ran under.
@@ -100,11 +106,11 @@ describe("replaceSubagentProgress()", () => {
     );
     expect(bot.postMessage).toHaveBeenCalledWith(
       "C001",
-      expect.stringContaining("! *Implement fix*\n└ Budget exceeded"),
+      expect.stringContaining("! Implement fix\n└ Budget exceeded"),
     );
     expect(bot.postMessage).toHaveBeenCalledWith(
       "C001",
-      expect.stringContaining("10 LLM calls &gt;= 10 limit"),
+      expect.stringContaining("10 LLM calls >= 10 limit"),
     );
   });
 });
