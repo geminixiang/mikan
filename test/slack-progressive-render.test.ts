@@ -68,6 +68,20 @@ describe("closeOpenFences", () => {
 });
 
 describe("SlackProgressiveRender — top-level (block update path)", () => {
+  test("working renders do not post or update a bare indicator", async () => {
+    const { ops, calls } = makeOps();
+    const fresh = new SlackProgressiveRender(ops, TOP_LEVEL);
+    const existing = new SlackProgressiveRender(ops, { ...TOP_LEVEL, initialMessageTs: "MSG" });
+
+    await fresh.delta("\n", true);
+    await fresh.replace(" ", true);
+    await existing.delta("", true);
+    await existing.replace("\n", true);
+    await existing.setWorking(" ", true);
+
+    expect(calls).toEqual([]);
+  });
+
   test("first delta posts, later deltas update the same message", async () => {
     const { ops, calls } = makeOps();
     const render = new SlackProgressiveRender(ops, TOP_LEVEL);
@@ -169,6 +183,20 @@ describe("SlackProgressiveRender — thread (native stream path)", () => {
 
     expect(calls.map((call) => call.op)).toEqual(["postInThread", "updateMessage"]);
     expect(calls[0].text).toBe(`Hello${WORKING_INDICATOR}`);
+  });
+
+  test("whitespace replacement stops an active stream without clearing its message", async () => {
+    const { ops, calls } = makeOps();
+    const render = new SlackProgressiveRender(ops, THREAD);
+
+    await render.delta("old", true);
+    await render.replace(" ", true);
+
+    expect(calls).toEqual([
+      { op: "startStream", text: "old" },
+      { op: "stopStream", ts: "101" },
+    ]);
+    expect(render.messageTs).toBe("101");
   });
 
   test("replace stops the stream but keeps the message identity", async () => {

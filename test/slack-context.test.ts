@@ -431,6 +431,16 @@ describe("setTyping()", () => {
 // ============================================================================
 
 describe("setWorking()", () => {
+  test("setWorking(true) does not replace an existing message with a bare indicator", async () => {
+    const bot = makeSlackMessagingBot();
+    const event = makeEvent({ thread_ts: undefined });
+    const { responder } = createSlackAdapters(event, bot, { initialMessageTs: "MSG" });
+
+    await responder.setWorking(true);
+
+    expect(bot.updateMessage).not.toHaveBeenCalled();
+  });
+
   test("setWorking(false) before first respond omits indicator and still replies top-level", async () => {
     const bot = makeSlackMessagingBot();
     const event = makeEvent({ thread_ts: undefined });

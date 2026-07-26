@@ -131,6 +131,7 @@ export class SlackProgressiveRender {
 
   /** Provisional render of the accumulated text (a flush mid-response). */
   async delta(text: string, working: boolean): Promise<void> {
+    if (working && !text.trim()) return;
     if (this.streamUnavailable) return this.write(this.provisional(text, working));
     if (this.ts && !this.streamActive) return this.write(this.provisional(text, working));
     if (this.ts && this.streamActive && !text.startsWith(this.streamedText)) {
@@ -199,12 +200,13 @@ export class SlackProgressiveRender {
       this.streamActive = false;
       this.streamedText = "";
     }
+    if (working && !text.trim()) return;
     await this.write(this.provisional(text, working));
   }
 
   /** Reflect the working indicator; ends the stream when work stops. */
   async setWorking(text: string, working: boolean): Promise<void> {
-    if (!this.ts) return;
+    if (!this.ts || (working && !text.trim())) return;
     if (this.streamActive && !working) {
       await this.ops.stopMessageStream(this.channelId, this.ts);
       this.streamActive = false;
