@@ -555,3 +555,56 @@ export type AutoReplyJudge = (input: {
   rules: string[];
   conversationDir: string;
 }) => Promise<boolean>;
+
+// ── shared implementation contracts ─────────────────────────────────────────
+
+interface EnvVarSpec {
+  name: string;
+  required?: boolean;
+  secret?: boolean;
+  deploy?: boolean;
+  doc: string;
+}
+
+export interface EnvGroup {
+  key: string;
+  title: string;
+  kind: "platform" | "feature";
+  vars: EnvVarSpec[];
+  anyOf?: readonly string[];
+  doc?: string;
+}
+
+export interface RunnerCacheControl {
+  switchConversationModel(conversationId: string, provider: string, model: string): boolean;
+}
+
+export interface GlobalRunnerCacheControl {
+  refreshAllConversations(): { busy: string[] };
+}
+
+export type SettingsApplyResult =
+  | { ok: true; runtimeSwitched: boolean | null }
+  | { ok: false; reason: "busy" };
+
+export interface CreateRunnerOptions {
+  sandboxConfig: import("./sandbox/types.js").SandboxConfig;
+  sessionKey: string;
+  conversationId: string;
+  conversationDir: string;
+  workspaceDir: string;
+  sessionScope: import("./sessions/types.js").ResolvedSessionScope;
+  vaultManager?: import("./vault/types.js").VaultManager;
+  provisioner?: import("./provisioner.js").DockerContainerManager;
+  resourceController?: SandboxResourceController;
+  sessionView?: {
+    tokenStore: import("./commands/types.js").SessionViewTokenStoreLike;
+    portalBaseUrl?: string;
+  };
+  platformNotifier?: PlatformNotifier;
+  platformReactor?: PlatformReactor;
+  platformUploader?: PlatformUploader;
+  platformBlockKit?: PlatformBlockKit;
+  platformToolPackFactories?: readonly import("./tools/types.js").PlatformToolPackFactory[];
+  models?: import("./harness/models.js").MikanModels;
+}

@@ -17,20 +17,14 @@
  */
 import { join } from "path";
 import { updateConversationSettings, updateGlobalSettings } from "./config.js";
-import type { AgentConfig } from "./types.js";
+import type {
+  AgentConfig,
+  GlobalRunnerCacheControl,
+  RunnerCacheControl,
+  SettingsApplyResult,
+} from "./types.js";
 
-/** The runner-cache slice of the conversation runtime this seam needs. */
-export interface RunnerCacheControl {
-  switchConversationModel(conversationId: string, provider: string, model: string): boolean;
-}
-
-export interface GlobalRunnerCacheControl {
-  refreshAllConversations(): { busy: string[] };
-}
-
-export type SettingsApplyResult =
-  | { ok: true; runtimeSwitched: boolean | null }
-  | { ok: false; reason: "busy" };
+export type { GlobalRunnerCacheControl, RunnerCacheControl, SettingsApplyResult } from "./types.js";
 
 /** True when a patch touches keys a cached session runner bakes in. */
 function affectsCachedRunner(patch: Partial<AgentConfig>): boolean {

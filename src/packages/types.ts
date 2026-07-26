@@ -61,3 +61,59 @@ export interface PackageError {
   source: PackageSourceString;
   message: string;
 }
+
+export interface ResolvedPackages {
+  packages: MaterializedPackage[];
+  extensionDirs: string[];
+  extensionRoots: string[];
+  skillDirs: PackageSkillDir[];
+  errors: PackageError[];
+}
+
+interface PackageSkillDir {
+  slug: string;
+  dir: string;
+}
+
+export interface ResolvePackagesOptions {
+  conversationId: string;
+  stateDir: string;
+  conversationDir: string;
+  fetchMissing?: boolean;
+}
+
+type MaterializeMode = "offline" | "fetch" | "refresh";
+
+export interface MaterializeOptions {
+  scope: PackageScope;
+  conversationId?: string;
+  stateDir: string;
+  mode?: MaterializeMode;
+}
+
+interface PackageStatus {
+  source: string;
+  scope: PackageScope;
+  ready: boolean;
+  error?: string;
+  dir?: string;
+  shadowed?: boolean;
+  extensions: string[];
+  skills: string[];
+}
+
+export interface PackageInventory {
+  global: PackageStatus[];
+  conversation: PackageStatus[];
+}
+
+export interface PackageAdminContext extends ResolvePackagesOptions {
+  workingDir: string;
+  runtime?: import("../types.js").RunnerCacheControl &
+    import("../types.js").GlobalRunnerCacheControl;
+}
+
+export interface PackageWriteResult {
+  source: string;
+  dir: string;
+}

@@ -18,11 +18,14 @@ import { ensureDirExists, readTextFileIfExists } from "../utils/file-guards.js";
 import * as log from "../log.js";
 import { gitRepoPath, parseSource, sourceIdentity } from "./source.js";
 import type {
+  MaterializeOptions,
   MaterializedPackage,
   PackageScope,
   PackageSourceString,
   ParsedSource,
 } from "./types.js";
+
+export type { MaterializeOptions } from "./types.js";
 
 /** Git operations get a bounded wall clock so a hung remote cannot wedge a save. */
 const GIT_TIMEOUT_MS = 120_000;
@@ -42,17 +45,6 @@ const NPM_TIMEOUT_MS = 300_000;
  * create a missing one" is not a state any caller wants, and expressing it
  * should not be possible.
  */
-type MaterializeMode = "offline" | "fetch" | "refresh";
-
-export interface MaterializeOptions {
-  scope: PackageScope;
-  /** Required when scope is "conversation". */
-  conversationId?: string;
-  stateDir: string;
-  /** Defaults to `fetch`. */
-  mode?: MaterializeMode;
-}
-
 /**
  * Root of a scope's host-only assets: `<stateDir>/global` or
  * `<stateDir>/conversations/<id>`. The two are isomorphic by design — both
