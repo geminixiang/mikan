@@ -1,12 +1,11 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ThinkingLevel as PiAiThinkingLevel } from "@earendil-works/pi-ai";
-import type { MikanModels } from "../harness/index.js";
 import { join } from "path";
 import { resolveConversationSettings } from "../config.js";
 import { applyConversationSettings } from "../settings-mutation.js";
 import { slashForms } from "./manifest.js";
 import { matchCommand } from "./parse.js";
-import type { CommandContext, CommandHandler, ParsedModelCommand } from "./types.js";
+import type { CommandContext, CommandHandler, ModelRegistry, ParsedModelCommand } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 
 const PI_AI_THINKING_LEVELS = [
@@ -49,15 +48,16 @@ export function parseModelCommand(text: string): ParsedModelCommand | null {
 
   return {
     provider: spec.slice(0, slash),
-    model: parsedModel.model,
-    thinkingLevel: parsedModel.thinkingLevel,
+    ...parsedModel,
   };
 }
 
 function parseModelThinkingLevel(modelSpec: string): {
   model?: string;
+  modelCandidate?: string;
+  thinkingLevelCandidate?: string;
   thinkingLevel?: ThinkingLevel;
-  error?: "invalid_spec" | "unknown_thinking_level";
+  error?: "invalid_spec";
 } {
   const colon = modelSpec.lastIndexOf(":");
   if (colon === 0 || colon === modelSpec.length - 1) {
@@ -68,13 +68,13 @@ function parseModelThinkingLevel(modelSpec: string): {
   }
 
   const suffix = modelSpec.slice(colon + 1);
-  if (!THINKING_LEVELS.has(suffix as ThinkingLevel)) {
-    return { error: "unknown_thinking_level" };
-  }
-
   return {
     model: modelSpec.slice(0, colon),
-    thinkingLevel: suffix as ThinkingLevel,
+    modelCandidate: modelSpec,
+    thinkingLevelCandidate: suffix,
+    ...(THINKING_LEVELS.has(suffix as ThinkingLevel)
+      ? { thinkingLevel: suffix as ThinkingLevel }
+      : {}),
   };
 }
 
@@ -83,7 +83,7 @@ function formatModelSpec(provider: string, model: string, thinkingLevel?: Thinki
 }
 
 export class ModelCommandHandler implements CommandHandler {
-  constructor(private readonly modelRegistry: MikanModels) {}
+  constructor(private readonly modelRegistry: ModelRegistry) {}
   async tryHandle(context: CommandContext): Promise<boolean> {
     const parsed = parseModelCommand(context.commandText);
     if (!parsed) return false;
@@ -92,9 +92,7 @@ export class ModelCommandHandler implements CommandHandler {
       await replyDiagnosticWithContext(
         context.responder,
         formatCommandSummary("Model", [
-          parsed.error === "unknown_thinking_level"
-            ? "未知的 thinking level，請使用 `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`。"
-            : "無效的模型參數，請使用 `provider/model[:thinking]`。",
+          "無效的模型參數，請使用 `provider/model[:thinking]`。",
           "Example: `/pi-model anthropic/claude-sonnet-4-6:off`",
         ]),
         { style: "muted" },
@@ -118,16 +116,45 @@ export class ModelCommandHandler implements CommandHandler {
       return true;
     }
 
-    if (!this.modelRegistry.find(parsed.provider, parsed.model)) {
+    const exactModelId = parsed.modelCandidate ?? parsed.model;
+    let selectedModelId = exactModelId;
+    let selectedThinkingLevel = parsed.thinkingLevel;
+    let registeredModel = this.modelRegistry.find(parsed.provider, exactModelId);
+
+    if (!registeredModel && parsed.modelCandidate) {
+      if (
+        parsed.thinkingLevelCandidate &&
+        !THINKING_LEVELS.has(parsed.thinkingLevelCandidate as ThinkingLevel)
+      ) {
+        await replyDiagnosticWithContext(
+          context.responder,
+          formatCommandSummary("Model", [
+            "未知的 thinking level，請使用 `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`。",
+            "Example: `/pi-model anthropic/claude-sonnet-4-6:off`",
+          ]),
+          { style: "muted" },
+        );
+        return true;
+      }
+
+      selectedModelId = parsed.model;
+      registeredModel = this.modelRegistry.find(parsed.provider, selectedModelId);
+    }
+
+    if (!registeredModel) {
       await replyDiagnosticWithContext(
         context.responder,
         formatCommandSummary("Model", [
-          `找不到模型：\`${formatModelSpec(parsed.provider, parsed.model, parsed.thinkingLevel)}\``,
+          `找不到模型：\`${formatModelSpec(parsed.provider, selectedModelId, selectedThinkingLevel)}\``,
           "請確認 provider/model 名稱，或先在 pi models.json 註冊自訂模型。",
         ]),
         { style: "muted" },
       );
       return true;
+    }
+
+    if (parsed.modelCandidate && selectedModelId === parsed.modelCandidate) {
+      selectedThinkingLevel = undefined;
     }
 
     if (!context.services.runtime) {
@@ -147,8 +174,8 @@ export class ModelCommandHandler implements CommandHandler {
       context.conversationId,
       {
         provider: parsed.provider,
-        model: parsed.model,
-        ...(parsed.thinkingLevel ? { thinkingLevel: parsed.thinkingLevel } : {}),
+        model: selectedModelId,
+        ...(selectedThinkingLevel ? { thinkingLevel: selectedThinkingLevel } : {}),
       },
     );
     if (!result.ok) {
@@ -165,7 +192,7 @@ export class ModelCommandHandler implements CommandHandler {
     await replyDiagnosticWithContext(
       context.responder,
       formatCommandSummary("Model", [
-        `Switched: \`${formatModelSpec(parsed.provider, parsed.model, parsed.thinkingLevel)}\``,
+        `Switched: \`${formatModelSpec(parsed.provider, selectedModelId, selectedThinkingLevel)}\``,
         "下一則訊息會使用新模型。",
       ]),
       { style: "muted" },

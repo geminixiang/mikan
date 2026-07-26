@@ -1,4 +1,5 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { MessagingBot, ConversationContext, PlatformName } from "../adapter.js";
 import type { DockerContainerManager } from "../provisioner.js";
 import type { SandboxConfig } from "../sandbox/index.js";
@@ -123,13 +124,23 @@ export interface CommandHandler {
   tryHandle(context: CommandContext): Promise<boolean>;
 }
 
+/** Minimal model lookup contract used by the model command. */
+export interface ModelRegistry {
+  find(provider: string, modelId: string): Model<Api> | undefined;
+}
+
 // ── command-specific parsed types ────────────────────────────────────────────
 
 export interface ParsedModelCommand {
   provider?: string;
+  /** Model id without a thinking-level suffix, when one was supplied. */
   model?: string;
+  /** Complete model id candidate, including a possible colon suffix. */
+  modelCandidate?: string;
+  /** Suffix kept for handler-side validation after exact model lookup. */
+  thinkingLevelCandidate?: string;
   thinkingLevel?: ThinkingLevel;
-  error?: "invalid_spec" | "unknown_thinking_level";
+  error?: "invalid_spec";
 }
 
 export interface ParsedSandboxCommand {

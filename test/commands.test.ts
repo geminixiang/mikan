@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -147,6 +147,7 @@ function buildContext(args: BuildContextArgs): CommandContext & {
       handleStop: vi.fn(),
       isRunning: vi.fn().mockReturnValue(false),
       refreshConversationEnvironment: vi.fn().mockReturnValue(true),
+      switchConversationModel: vi.fn().mockReturnValue(true),
       runSession: vi.fn(),
       shutdown: vi.fn(),
     } as any,
@@ -215,10 +216,58 @@ describe("dispatchCommand", () => {
 describe("ModelCommandHandler", () => {
   const handler = new ModelCommandHandler(MikanModels.create());
 
+  test("prefers a registered colon model ID before validating its suffix", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mikan-model-command-test-"));
+    const stateDir = join(dir, "state");
+    mkdirSync(stateDir, { recursive: true });
+    const modelsPath = join(dir, "models.json");
+    writeFileSync(
+      modelsPath,
+      JSON.stringify({
+        providers: {
+          provider: {
+            api: "openai-completions",
+            apiKey: "test",
+            models: [{ id: "model:2026-01" }],
+          },
+        },
+      }),
+    );
+    const previousStateDir = process.env.MIKAN_STATE_DIR;
+    process.env.MIKAN_STATE_DIR = stateDir;
+
+    try {
+      const commandHandler = new ModelCommandHandler(
+        MikanModels.create({
+          authPath: join(dir, "auth.json"),
+          modelsJsonPath: modelsPath,
+        }),
+      );
+      const ctx = buildContext({
+        commandText: "/model provider/model:2026-01",
+        services: { workingDir: dir },
+      });
+
+      expect(await commandHandler.tryHandle(ctx)).toBe(true);
+      expect(ctx.responder.responses[0]).toContain("Switched: `provider/model:2026-01`");
+      expect(ctx.responder.responses[0]).not.toContain("未知的 thinking level");
+      expect(ctx.services.runtime?.switchConversationModel).toHaveBeenCalledWith(
+        "C123",
+        "provider",
+        "model:2026-01",
+      );
+    } finally {
+      if (previousStateDir === undefined) delete process.env.MIKAN_STATE_DIR;
+      else process.env.MIKAN_STATE_DIR = previousStateDir;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test.each([
     ["/model foo", "無效的模型參數"],
     ["/model provider/", "無效的模型參數"],
     ["/model provider/model:unknown", "未知的 thinking level"],
+    ["/model openai/gpt:bogus", "未知的 thinking level"],
   ])("rejects invalid model input: %s", async (commandText, expectedMessage) => {
     const ctx = buildContext({ commandText });
 

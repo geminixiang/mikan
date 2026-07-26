@@ -18,10 +18,12 @@ describe("model command parsing", () => {
     });
   });
 
-  test("parses provider/model:thinking shorthand", () => {
+  test("parses provider/model:thinking shorthand while retaining the full candidate", () => {
     expect(parseModelCommand("/pi-model openai/gpt-5.6:max")).toEqual({
       provider: "openai",
       model: "gpt-5.6",
+      modelCandidate: "gpt-5.6:max",
+      thinkingLevelCandidate: "max",
       thinkingLevel: "max",
     });
   });
@@ -34,9 +36,21 @@ describe("model command parsing", () => {
     expect(parseModelCommand("/pi-model provider/")).toEqual({ error: "invalid_spec" });
   });
 
-  test("rejects an unknown thinking suffix", () => {
+  test("retains an unknown suffix for handler-side validation", () => {
     expect(parseModelCommand("/pi-model openrouter/openai/gpt-4o:extended")).toEqual({
-      error: "unknown_thinking_level",
+      provider: "openrouter",
+      model: "openai/gpt-4o",
+      modelCandidate: "openai/gpt-4o:extended",
+      thinkingLevelCandidate: "extended",
+    });
+  });
+
+  test("retains a colon model ID as the exact candidate", () => {
+    expect(parseModelCommand("/model provider/model:2026-01")).toEqual({
+      provider: "provider",
+      model: "model",
+      modelCandidate: "model:2026-01",
+      thinkingLevelCandidate: "2026-01",
     });
   });
 });
