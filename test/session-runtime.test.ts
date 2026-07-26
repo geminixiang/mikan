@@ -169,6 +169,40 @@ function newCommandArgs(responder = makeResponder()) {
 }
 
 describe("ConversationRuntime handleEvent", () => {
+  test("uses runtime models for the default /model command handler", async () => {
+    const stateDir = join(workingDir, "state");
+    mkdirSync(stateDir, { recursive: true });
+    const modelsJsonPath = join(stateDir, "models.json");
+    writeFileSync(
+      modelsJsonPath,
+      JSON.stringify({
+        providers: {
+          "custom-provider": {
+            api: "openai-completions",
+            apiKey: "test-key",
+            models: [{ id: "custom-model" }],
+          },
+        },
+      }),
+    );
+    process.env.MIKAN_STATE_DIR = stateDir;
+    const models = MikanModels.create({
+      authPath: join(stateDir, "auth.json"),
+      modelsJsonPath,
+    });
+    const runtime = makeRuntime(models);
+    const { event, context } = makeEventAndContext("1000.0");
+    event.text = "/model custom-provider/custom-model";
+    context.message.text = event.text;
+
+    await runtime.handleEvent(event, bot, context);
+
+    expect(context.responder.respondDiagnostic).toHaveBeenCalledWith(
+      expect.stringContaining("Switched: `custom-provider/custom-model`"),
+      { style: "muted" },
+    );
+  });
+
   test("two events on one session key run serially, not concurrently", async () => {
     const { models, faux } = createFauxModels();
     const runtime = makeRuntime(models);

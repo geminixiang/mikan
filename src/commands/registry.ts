@@ -7,10 +7,11 @@ import { ModelCommandHandler } from "./model.js";
 import { NewCommandHandler } from "./new.js";
 import { SandboxCommandHandler } from "./sandbox.js";
 import { SessionViewCommandHandler } from "./session-view.js";
-import type { CommandContext, CommandHandler } from "./types.js";
+import type { CommandContext, CommandHandler, ModelRegistry } from "./types.js";
 
-export function defaultCommandHandlers(): CommandHandler[] {
-  const modelRegistry = MikanModels.create();
+export function defaultCommandHandlers(
+  modelRegistry: ModelRegistry = MikanModels.create(),
+): CommandHandler[] {
   return [
     new AdminCommandHandler(),
     new LoginCommandHandler(),

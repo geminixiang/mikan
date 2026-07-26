@@ -7,6 +7,7 @@ import type {
   RunningSession,
 } from "../adapter.js";
 import { createRunner } from "../agent.js";
+import { MikanModels } from "../harness/index.js";
 import type { ExtensionBlockAction } from "../harness/index.js";
 import { defaultCommandHandlers, dispatchCommand } from "../commands/registry.js";
 import type { CommandHandler, CommandServices } from "../commands/types.js";
@@ -90,9 +91,11 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private readonly chatSessionManager = new ChatHistorySync();
   private readonly commandServices: CommandServices;
   private readonly commandHandlers: readonly CommandHandler[];
+  private readonly resolvedModels: MikanModels;
   private isShuttingDown = false;
 
   constructor(private readonly options: ConversationRuntimeOptions) {
+    this.resolvedModels = options.models ?? MikanModels.create();
     this.commandServices = {
       ...options,
       resourceController: options.resourceController ?? options.provisioner,
@@ -103,7 +106,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       adminTokenStore: options.adminTokenStore ?? portalNotConfiguredTokenStore("Admin"),
       runtime: this,
     };
-    this.commandHandlers = options.commandHandlers ?? defaultCommandHandlers();
+    this.commandHandlers = options.commandHandlers ?? defaultCommandHandlers(this.resolvedModels);
   }
 
   isRunning(sessionKey: string): boolean {
@@ -697,7 +700,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         platformUploader: this.options.platformUploader,
         platformBlockKit: this.options.platformBlockKit,
         platformToolPackFactories: this.options.platformToolPackFactories,
-        models: this.options.models,
+        models: this.resolvedModels,
       }),
       stopRequested: false,
       lastAccessedAt: Date.now(),
