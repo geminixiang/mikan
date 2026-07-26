@@ -442,6 +442,22 @@ async function runWaves(
   return plan.items.map((item) => outcomes.get(item.id)!);
 }
 
+/** What the model needs to choose a profile: what it is, and what it can do. */
+interface SubagentProfileMenuEntry {
+  description: string;
+  tools?: string[];
+}
+
+/**
+ * The tool grant belongs in the menu. A description alone reads as a stylistic
+ * constraint, so a model will pick a no-tool profile for work that needs tools
+ * and then narrate the tool call it could not make.
+ */
+function formatToolGrant(tools: string[] | undefined): string {
+  if (!tools) return "tools unknown";
+  return tools.length === 0 ? "no tools" : `tools: ${tools.join(", ")}`;
+}
+
 function validatePlanProfiles(plan: Plan, availableProfiles: ReadonlySet<string>): void {
   const known = [...availableProfiles].join(", ");
   for (const item of plan.items) {
@@ -465,13 +481,15 @@ function validatePlanProfiles(plan: Plan, availableProfiles: ReadonlySet<string>
  */
 export function createSubagentTool(
   runSubagent: RunSubagent,
-  profiles: ReadonlyMap<string, { description: string }>,
+  profiles: ReadonlyMap<string, SubagentProfileMenuEntry>,
 ): AgentTool<typeof subagentSchema> {
   if (profiles.size === 0) {
     throw new Error("createSubagentTool requires at least one subagent profile");
   }
   const profileDescription = [...profiles.entries()]
-    .map(([name, profile]) => `${name}: ${profile.description}`)
+    .map(
+      ([name, profile]) => `${name} [${formatToolGrant(profile.tools)}] — ${profile.description}`,
+    )
     .join("; ");
   return {
     name: "subagent",

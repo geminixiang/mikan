@@ -601,6 +601,57 @@ describe("runSubagent", () => {
     expect(result.text).toBeUndefined();
   });
 
+  test("tells a subagent with no tools that it has none", async () => {
+    const { models, faux, model } = createFauxSetup();
+    let systemPrompt = "";
+    faux.setResponses([
+      (context) => {
+        systemPrompt = context.systemPrompt ?? "";
+        return fauxAssistantMessage("analysed");
+      },
+    ]);
+
+    await runSubagent({
+      request: { task: "Assess the supplied notes", profile: "thinker" },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [echoTool],
+      profiles: THINKER_PROFILES,
+    });
+
+    // Told to "use granted tools" while holding none, a model narrates a tool
+    // call as prose and hands that text back as its finding.
+    expect(systemPrompt).toContain("You have NO tools in this run");
+    expect(systemPrompt).toContain("Do not emit tool calls or tool-call syntax");
+    expect(systemPrompt).not.toContain("Use them for any claim");
+  });
+
+  test("names the granted tools in the evidence policy", async () => {
+    const { models, faux, model } = createFauxSetup();
+    let systemPrompt = "";
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("echo", { text: "hi" })),
+      (context) => {
+        systemPrompt = context.systemPrompt ?? "";
+        return fauxAssistantMessage("done");
+      },
+    ]);
+
+    await runSubagent({
+      request: { task: "Echo something", tools: ["echo"] },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [echoTool],
+    });
+
+    expect(systemPrompt).toContain("Your tools this run: echo.");
+    expect(systemPrompt).not.toContain("You have NO tools");
+  });
+
   test("fails when a profile's required tool was not used", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([fauxAssistantMessage("I read it without tools")]);

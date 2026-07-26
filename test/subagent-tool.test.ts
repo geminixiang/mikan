@@ -155,6 +155,21 @@ describe("subagent tool", () => {
     expect(properties.profile).toMatchObject({ enum: ["explorer"] });
   });
 
+  test("states each profile's tool grant on the menu", () => {
+    // A description alone reads as a stylistic constraint, so a model picks a
+    // no-tool profile for work that needs tools and narrates the call instead.
+    const tool = createSubagentTool(
+      completedRun("ok"),
+      new Map([
+        ["researcher", { description: "Clones and inspects", tools: ["bash", "read"] }],
+        ["analysis-only", { description: "Analyzes supplied input", tools: [] }],
+      ]),
+    );
+
+    expect(tool.description).toContain("researcher [tools: bash, read] — Clones and inspects");
+    expect(tool.description).toContain("analysis-only [no tools] — Analyzes supplied input");
+  });
+
   test("refuses to build a subagent tool with no profiles", () => {
     expect(() => createSubagentTool(completedRun("ok"), new Map())).toThrow(
       "requires at least one subagent profile",

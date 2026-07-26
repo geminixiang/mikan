@@ -280,13 +280,37 @@ function normalizedParentContext(
   ].join("\n");
 }
 
-const GROUNDING_POLICY = `Evidence policy:
-- Use granted tools for any claim about files, commands, repositories, or external state.
-- Never simulate tool output or claim a tool was used when it was not.
-- If the task requires an unavailable tool, state that you cannot verify it instead of guessing.`;
+/**
+ * The evidence policy has to name the actual grant. Told to "use granted
+ * tools" while holding none, a model will write a tool call as prose and
+ * hand that text back as its answer — which then flows to dependent DAG
+ * nodes as if it were a finding.
+ */
+function groundingPolicy(toolNames: string[]): string {
+  if (toolNames.length === 0) {
+    return [
+      "Evidence policy:",
+      "- You have NO tools in this run. Do not emit tool calls or tool-call syntax; they will not execute.",
+      "- Answer only from the task text and any structured input supplied to you.",
+      "- Never claim to have read a file, run a command, or reached a repository or URL.",
+      "- If the task cannot be done without a tool, say so plainly and stop.",
+    ].join("\n");
+  }
+  return [
+    "Evidence policy:",
+    `- Your tools this run: ${toolNames.join(", ")}. Nothing else will execute.`,
+    "- Use them for any claim about files, commands, repositories, or external state.",
+    "- Never simulate tool output or claim a tool was used when it was not.",
+    "- If the task requires a tool you were not granted, state that you cannot verify it instead of guessing.",
+  ].join("\n");
+}
 
-function buildSystemPrompt(base: string | undefined, outputSchema: TSchema | undefined): string {
-  const prompt = [base?.trim() || DEFAULT_SYSTEM_PROMPT, GROUNDING_POLICY].join("\n\n");
+function buildSystemPrompt(
+  base: string | undefined,
+  outputSchema: TSchema | undefined,
+  toolNames: string[],
+): string {
+  const prompt = [base?.trim() || DEFAULT_SYSTEM_PROMPT, groundingPolicy(toolNames)].join("\n\n");
   if (!outputSchema) return prompt;
   return [
     prompt,
@@ -510,7 +534,11 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
     );
     const budget = resolveBudget(request.budget);
     const session = new MikanAgentSession({
-      systemPrompt: buildSystemPrompt(request.systemPrompt, request.outputSchema),
+      systemPrompt: buildSystemPrompt(
+        request.systemPrompt,
+        request.outputSchema,
+        granted.map((tool) => tool.name),
+      ),
       model,
       thinkingLevel: request.thinkingLevel ?? options.thinkingLevel,
       tools,
