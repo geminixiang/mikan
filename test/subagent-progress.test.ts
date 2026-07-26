@@ -56,6 +56,7 @@ describe("parseSubagentProgressSnapshot", () => {
       ],
     });
     expect(parsed?.nodes[0].label).toHaveLength(MAX_SUBAGENT_LABEL_CHARS);
+    expect(parsed?.nodes[0].label?.endsWith("…")).toBe(true);
     expect(parsed?.nodes[0].profile).toHaveLength(64);
     expect(parsed?.nodes[0].reason).toHaveLength(240);
   });
@@ -65,16 +66,23 @@ describe("boundSubagentProgressNode", () => {
   test("clamps label, profile and reason; leaves metrics alone", () => {
     const bounded = boundSubagentProgressNode({
       id: "0",
-      label: "L".repeat(100),
+      label: "L".repeat(150),
       status: "completed",
       profile: "P".repeat(100),
       reason: "R".repeat(300),
       turns: 7,
     });
-    expect(bounded.label).toBe("L".repeat(MAX_SUBAGENT_LABEL_CHARS));
+    expect(bounded.label).toBe(`${"L".repeat(MAX_SUBAGENT_LABEL_CHARS - 1)}…`);
     expect(bounded.profile).toBe("P".repeat(64));
     expect(bounded.reason).toBe("R".repeat(240));
     expect(bounded.turns).toBe(7);
+  });
+
+  test("leaves a label at the bound untouched — no ellipsis without truncation", () => {
+    const exact = "E".repeat(MAX_SUBAGENT_LABEL_CHARS);
+    expect(boundSubagentProgressNode({ id: "0", label: exact, status: "pending" }).label).toBe(
+      exact,
+    );
   });
 });
 

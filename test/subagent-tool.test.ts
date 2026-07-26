@@ -148,13 +148,21 @@ describe("subagent tool", () => {
     // validation reported that by echoing every node's task text back.
     const runSubagent = vi.fn(completedRun("ok"));
     const tool = makeTool(runSubagent);
-    const longLabel =
+    // 78 chars: the label that once rejected a DAG now fits the bound intact.
+    const titleLabel =
       "Execute DAG: clone, analyze risks, propose improvements, final recommendation";
+    const oversizeLabel = "x".repeat(150);
     let seen: unknown;
 
     await tool.execute(
       "long-label",
-      { profile: "explorer", task: "work", label: longLabel },
+      {
+        profile: "explorer",
+        tasks: [
+          { task: "work", label: titleLabel },
+          { task: "work", label: oversizeLabel },
+        ],
+      },
       undefined,
       (update) => {
         seen = update;
@@ -163,9 +171,10 @@ describe("subagent tool", () => {
 
     const nodes = (seen as { details: { progress: { nodes: { label: string }[] } } }).details
       .progress.nodes;
-    expect(longLabel.length).toBeGreaterThan(64);
-    expect(nodes[0].label).toBe(longLabel.slice(0, 64));
-    expect(runSubagent).toHaveBeenCalledOnce();
+    expect(nodes[0].label).toBe(titleLabel);
+    expect(nodes[1].label).toBe(`${"x".repeat(99)}…`);
+    expect(nodes[1].label).toHaveLength(100);
+    expect(runSubagent).toHaveBeenCalledTimes(2);
   });
 
   test("offers no systemPrompt, tools, or model escape hatch", () => {

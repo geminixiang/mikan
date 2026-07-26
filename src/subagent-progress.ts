@@ -15,7 +15,7 @@ import type {
  */
 
 /** Longest label the dashboard renders; longer ones are clamped, never rejected. */
-export const MAX_SUBAGENT_LABEL_CHARS = 64;
+export const MAX_SUBAGENT_LABEL_CHARS = 100;
 const MAX_PROFILE_CHARS = 64;
 const MAX_REASON_CHARS = 240;
 
@@ -50,8 +50,10 @@ const SUBAGENT_STATUS_LABEL = {
  */
 const VALID_STATUSES: ReadonlySet<string> = new Set(Object.keys(SUBAGENT_STATUS_MARKER));
 
+/** Clamp a label to the display bound, ending a truncation visibly with `…`. */
 export function clampSubagentLabel(label: string): string {
-  return label.slice(0, MAX_SUBAGENT_LABEL_CHARS);
+  if (label.length <= MAX_SUBAGENT_LABEL_CHARS) return label;
+  return `${label.slice(0, MAX_SUBAGENT_LABEL_CHARS - 1)}…`;
 }
 
 /** The display bounds, applied once at construction and again on parse. */
