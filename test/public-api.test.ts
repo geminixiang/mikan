@@ -72,6 +72,16 @@ describe("public package interface", () => {
     expect(Object.keys(publicApi).toSorted()).toEqual(EXPECTED_RUNTIME_EXPORTS);
   });
 
+  test("snapshots the TypeScript declaration surface", () => {
+    const declarations = readFileSync("dist/index.d.ts", "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith("export "))
+      .join("\n");
+    expect(declarations).toMatchSnapshot();
+  });
+
   test("declares enforced root and compatibility entry points", () => {
     const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
       exports?: Record<string, unknown>;

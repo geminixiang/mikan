@@ -1,0 +1,40 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`public package interface > snapshots the TypeScript declaration surface 1`] = `
+"export { defaultCommandHandlers, dispatchCommand } from "./commands/registry.js";
+export type { CommandContext, CommandHandler, CommandServices } from "./commands/types.js";
+export { FileCredentialStore, defaultAuthPath } from "./harness/auth.js";
+export { DEFAULT_HTTP_IDLE_TIMEOUT_MS, configureHttpDispatcher, parseHttpIdleTimeoutMs, } from "./harness/http.js";
+export { MikanModels, defaultModelsJsonPath } from "./harness/models.js";
+export { SessionStore, loadSessionFileEntries, parseSessionFileEntries, } from "./harness/session-store.js";
+export { MikanAgentSession } from "./harness/runner.js";
+export { formatSkillsForPrompt, loadSkillsFromDir, parseFrontmatter } from "./harness/skills.js";
+export { loadSubagentProfiles } from "./harness/subagent-profiles.js";
+export { DEFAULT_BUDGET_SETTINGS, DEFAULT_EVENT_BUDGET, DEFAULT_RETRY_SETTINGS, resolveHarnessSettings, } from "./harness/settings.js";
+export { buildEventPayload, EventTypeSchema, parseEventPayload } from "./harness/event-format.js";
+export { ExtensionRegistry, parseCommandInput } from "./harness/extensions/registry.js";
+export { EXT_ACTION_PREFIX, namespaceActionIds, parseExtActionId, } from "./harness/extensions/blockkit.js";
+export { defaultExtensionDirs, extensionSlug, listInstalledExtensions, loadExtensions, validateExtension, } from "./harness/extensions/loader.js";
+export type { CreateMikanModelsOptions } from "./harness/models.js";
+export type { CompactionReason, HarnessEvent, HarnessEventListener, MikanAgentSessionOptions, PromptBlockedOutcome, } from "./harness/runner.js";
+export type { LoadSkillsResult, MikanSkill, SkillDiagnostic } from "./harness/skills.js";
+export type { LoadSubagentProfilesResult, SubagentProfileDiagnostic, } from "./harness/subagent-profiles.js";
+export type { BudgetSettings, CompactionSettings, HarnessSettings, RetrySettings, } from "./harness/settings.js";
+export type { EventConversationKind, EventFilePayload, EventPayloadInput, EventType, ImmediateEventPayload, OneShotEventPayload, PeriodicEventPayload, } from "./harness/event-format.js";
+export type { ExtensionValidation, InstalledExtensionInfo, LoadExtensionsOptions, LoadExtensionsResult, } from "./harness/extensions/loader.js";
+export type { AgentErrorHookEvent, BeforeAgentStartHookEvent, BeforeAgentStartHookResult, BudgetExceededHookEvent, ContextHookEvent, ContextHookResult, ExtensionBlockAction, ExtensionBlockActionHandler, ExtensionBlockKitMessage, ExtensionCommand, ExtensionCommandContext, ExtensionDisposer, ExtensionHostServices, ExtensionLoadError, ExtensionManifest, ExtensionScheduleInfo, ExtensionSchedulePayload, ExtensionScheduleSpec, ExtensionScheduleStore, LoadedExtension, MessageEndHookEvent, MessageEndHookResult, MikanExtensionActivate, MikanExtensionApi, MikanExtensionModule, MikanHookMap, MikanHookName, RunOrigin, SessionCompactHookEvent, SubagentApi, ToolCallHookEvent, ToolCallHookResult, ToolResultHookEvent, ToolResultHookResult, TurnEndHookEvent, } from "./harness/extensions/types.js";
+export type { BranchSummaryEntry, CompactionEntry, CustomEntry, CustomMessageEntry, SessionContext, SessionEntry, SessionFileEntry, SessionHeader, SessionInfoEntry, SessionMessageEntry, SubagentModelSpec, SubagentParentContext, SubagentProfile, SubagentRunBudget, SubagentRunOutput, SubagentRunRequest, SubagentRunResult, SubagentRunStatus, SubagentUsage, SubagentUsageSink, } from "./harness/types.js";
+export { CURRENT_SESSION_VERSION } from "./harness/types.js";
+export { ChatHistorySync, hasMaterializedChatSession, registerThreadSession, waitForThreadSessionBootstrap, } from "./sessions/chat-history-sync.js";
+export type { ChatHistorySyncOptions, ChatSyncReport, HasMaterializedSessionOptions, RegisterThreadSessionOptions, ResetChatSessionOptions, ResolveChatSessionScopeOptions, SyncChatSessionOptions, ThreadBootstrapWaitOptions, } from "./sessions/chat-history-sync.js";
+export { isPlatformHistorySession } from "./sessions/metadata.js";
+export type { MikanSessionHeader } from "./sessions/metadata.js";
+export { inferConversationKind, resolveChatSessionKey } from "./sessions/policy.js";
+export type { ResolveSessionKeyOptions } from "./sessions/policy.js";
+export { createManagedSessionFile, createManagedSessionFileAtPath, createNewSessionFile, extractSessionSuffix, extractSessionUuid, getChannelSessionDir, getThreadSessionFile, openManagedSession, resolveChannelSessionFile, resolveManagedSessionFile, resolveSessionFile, tryResolveCurrentSession, tryResolveThreadSession, } from "./sessions/store.js";
+export type { ResolvedSessionScope, ThreadRootMessage } from "./sessions/store.js";
+export { createConversationRuntime, type ConversationRuntime, type ConversationRuntimeOptions, type RunSessionOptions, } from "./runtime/conversation-runtime.js";
+export type { ChatAdapter, ChatToolResult, ConversationContext, ConversationEvent, ConversationKind, ConversationMessage, ConversationResponder, MessagingBot, MessagingEventHandler, MessagingInfo, RunningSession, } from "./adapter.js";
+export { SandboxError, configureGondolinRuntime, createExecutor, getSandboxAdapters, parseSandboxArg, validateSandbox, type GondolinBootstrapOptions, } from "./sandbox/index.js";
+export type { CloudflareSandboxConfig, ExecOptions, ExecResult, Executor, SandboxAdapter, SandboxConfig, } from "./sandbox/index.js";"
+`;

@@ -12,7 +12,9 @@ const githubSyncSchema = Type.Object({
   ),
 });
 
-export type GithubSyncFn = (branch?: string) => Promise<string>;
+import type { GithubSyncFn } from "../types.js";
+
+export type { GithubSyncFn } from "../types.js";
 
 /**
  * The `github_sync` tool refreshes the conversation's ./repo clone — a

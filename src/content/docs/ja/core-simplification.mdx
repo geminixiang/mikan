@@ -122,14 +122,13 @@ default の CLI は安定した backends を登録します。Gondolin、Firecra
 
 ## 移行シーケンス
 
-### Phase 1 — パッケージ境界を強制する
+### Phase 1 — パッケージ境界を強制する（完了）
 
-1. `.`、`./extension`、`./runtime` のためのパッケージ `exports` map を追加する。
-2. root の `export *` を明示的なリストに置き換える。
-3. 生成された宣言またはチェック済みのシンボルリストを用いて、API-extractor 風のスナップショットテストを追加する。
-4. 現在 export されているがサポートされないシンボルを、削除前に 1 リリースの間 deprecated としてマークする。
+1. `package.json` は root と互換 `./harness`、`./sandbox` entry point を宣言する。
+2. root entry point は明示的な export list を使い、harness を wildcard export しない。
+3. `test/public-api.test.ts` は runtime export と emit declaration を snapshot し、偶発的な変更を CI で検出する。
 
-これを最初に行うのは、consumers が偶発的な exports に依存した後では、あらゆる内部リファクタリングが難しくなるためです。
+残りの phase は package interface を意図せず広げずに内部を refactor できます。
 
 ### Phase 2 — platform input を統一する
 
@@ -176,14 +175,11 @@ default の CLI は安定した backends を登録します。Gondolin、Firecra
 - 永続化された session/event/config 形式と trust/path の不変条件が、互換のまま保たれる；
 - 各 phase の後で、既存のユニットテスト、build、lint、`knip` がパスする。
 
-## 推奨される最初の pull request
+## 推奨される次の pull request
 
-最初の実装 PR は挙動中立に保ちます:
+Package boundary は完了しました。次の実装 PR は挙動中立に保ちます:
 
-1. 互換 subpaths を持つパッケージ `exports` map を追加する；
-2. 重複する root 型 re-exports を明示的な exports に置き換える；
-3. public API のスナップショットテストを追加する；
-4. `ConversationInput` と変換ヘルパーを導入するが、移行するのは 1 つの adapter だけにする；
-5. 機能を削除せずに deprecation を記録する。
+1. `ConversationInput` と変換 helper を導入するが、移行するのは 1 つの adapter だけにする；
+2. 機能を削除せずに deprecation を記録する。
 
 これを、sandbox backend の削除や永続化形式の変更と組み合わせないでください。それらの変更は、rollback と運用上のリスクが異なります。

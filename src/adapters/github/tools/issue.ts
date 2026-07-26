@@ -1,7 +1,9 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { defineHostFnTool } from "../../../tools/host-fn-tool.js";
-import type { GithubIssueRequest } from "../types.js";
+import type { GithubIssueFn, GithubIssueRequest } from "../types.js";
+
+export type { GithubIssueFn } from "../types.js";
 
 const githubIssueSchema = Type.Object({
   action: Type.Union(
@@ -35,8 +37,6 @@ const githubIssueSchema = Type.Object({
     }),
   ),
 });
-
-export type GithubIssueFn = (request: GithubIssueRequest) => Promise<string>;
 
 /**
  * The `github_issue` tool manages labels, assignees, and open/closed state of

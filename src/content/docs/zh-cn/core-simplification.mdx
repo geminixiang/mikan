@@ -122,14 +122,13 @@ interface SandboxRegistry {
 
 ## 迁移顺序
 
-### 阶段 1 — 强制包边界
+### 阶段 1 — 强制包边界（已完成）
 
-1. 为 `.`、`./extension` 和 `./runtime` 添加包 `exports` 映射。
-2. 用显式列表替换根 `export *`。
-3. 使用发出的声明或核对过的符号列表，添加 API-extractor 风格的快照测试。
-4. 在移除之前，将当前已导出但不受支持的符号标记为一个发布周期的 deprecated。
+1. `package.json` 声明 root 与兼容的 `./harness`、`./sandbox` entry point。
+2. root entry point 使用显式 export 列表，不再 wildcard export harness。
+3. `test/public-api.test.ts` 快照 runtime export 与 emit declaration，意外变更会使 CI 失败。
 
-之所以放在最先，是因为一旦使用方依赖上意外导出，每次内部重构都会更难。
+其余阶段现在可在不意外扩大 package interface 的情况下重构内部。
 
 ### 阶段 2 — 统一平台输入
 
@@ -176,14 +175,11 @@ interface SandboxRegistry {
 - 持久化的 session/event/config 格式以及 trust/path 不变式保持兼容；
 - 每个阶段之后，现有的单元测试、build、lint 和 `knip` 都通过。
 
-## 推荐的首个 pull request
+## 推荐的下一个 pull request
 
-保持首个实现 PR 行为中立：
+Package boundary 已完成。下一个实现 PR 应保持行为中立：
 
-1. 添加带兼容 subpath 的包 `exports` 映射；
-2. 用显式 export 替换重复的根类型 re-export；
-3. 添加一个公开 API 快照测试；
-4. 引入 `ConversationInput` 及转换辅助函数，但只迁移一个适配器；
-5. 记录 deprecation 而不删除功能。
+1. 引入 `ConversationInput` 及转换辅助函数，但只迁移一个适配器；
+2. 记录 deprecation 而不删除功能。
 
 不要将此与移除某个沙箱后端或更改持久化格式合并。那些更改有不同的回滚和运维风险。

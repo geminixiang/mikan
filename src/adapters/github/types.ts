@@ -360,6 +360,14 @@ export interface GithubIssueRequest {
  * Host-side GitHub operations for github_* tools. Wired in main.ts over the
  * GitHub bot; tokens stay host-side. Consumed by `createGithubToolPack`.
  */
+export type GithubSyncFn = (branch?: string) => Promise<string>;
+
+export type GithubReviewReplyFn = (commentId: number, body: string) => Promise<{ url: string }>;
+
+export type GithubReadFn = (request: GithubReadRequest) => Promise<GithubReadResult>;
+
+export type GithubIssueFn = (request: GithubIssueRequest) => Promise<string>;
+
 export interface PlatformGithubOps {
   /** Push a prepared pi/* branch and open (or update) a pull request. */
   pushAndCreatePr(conversationId: string, request: GithubPrRequest): Promise<GithubPrResult>;

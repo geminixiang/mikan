@@ -122,14 +122,13 @@ interface SandboxRegistry {
 
 ## Migration 順序
 
-### Phase 1 — 強制執行套件邊界
+### Phase 1 — 強制執行套件邊界（已完成）
 
-1. 為 `.`、`./extension` 與 `./runtime` 加入套件 `exports` map。
-2. 以明確清單取代 root 的 `export *`。
-3. 使用 emit 出的 declaration 或一份檢查過的符號清單，加入 API-extractor 式的 snapshot 測試。
-4. 把目前已匯出但不受支援的符號標為 deprecated，於移除前先維持一個 release。
+1. `package.json` 宣告 root 與相容的 `./harness`、`./sandbox` entry point。
+2. root entry point 使用明確 export 清單，不再 wildcard export harness。
+3. `test/public-api.test.ts` snapshot runtime export 與 emit declaration，意外變更會讓 CI 失敗。
 
-之所以放在最前面，是因為一旦消費者依賴了意外的匯出，之後每次內部重構都會更難。
+其餘 phase 現在可在不意外擴大 package interface 的情況下重構內部。
 
 ### Phase 2 — 統一平台輸入
 
@@ -176,14 +175,11 @@ interface SandboxRegistry {
 - 持久化的 session/event/config 格式與 trust/path 不變式保持相容；
 - 每個 phase 之後，既有的單元測試、build、lint 與 `knip` 都通過。
 
-## 建議的第一個 pull request
+## 建議的下一個 pull request
 
-讓第一個實作 PR 保持行為中立：
+Package boundary 已完成。下一個實作 PR 應保持行為中立：
 
-1. 加入含相容 subpath 的套件 `exports` map；
-2. 以明確的匯出取代重複的 root type re-export；
-3. 加入一份 public API snapshot 測試；
-4. 引入 `ConversationInput` 加上轉換 helper，但只遷移一個 adapter；
-5. 記錄 deprecation，但不刪除功能。
+1. 引入 `ConversationInput` 與轉換 helper，但只遷移一個 adapter；
+2. 記錄 deprecation，但不刪除功能。
 
 不要把這個 PR 與移除某個 sandbox backend 或變更持久化格式合併。那些變更有不同的 rollback 與營運風險。

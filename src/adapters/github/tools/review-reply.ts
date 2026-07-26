@@ -11,7 +11,9 @@ const githubReviewReplySchema = Type.Object({
   body: Type.String({ description: "Reply text (Markdown)." }),
 });
 
-export type GithubReviewReplyFn = (commentId: number, body: string) => Promise<{ url: string }>;
+import type { GithubReviewReplyFn } from "../types.js";
+
+export type { GithubReviewReplyFn } from "../types.js";
 
 /**
  * The `github_review_reply` tool answers inside one inline PR review thread

@@ -1,7 +1,9 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { defineHostFnTool } from "../../../tools/host-fn-tool.js";
-import type { GithubReadRequest, GithubReadResult } from "../types.js";
+import type { GithubReadFn, GithubReadRequest, GithubReadResult } from "../types.js";
+
+export type { GithubReadFn } from "../types.js";
 
 const githubReadSchema = Type.Object({
   action: Type.Union(
@@ -132,8 +134,6 @@ function formatResult(result: GithubReadResult): string {
     }
   }
 }
-
-export type GithubReadFn = (request: GithubReadRequest) => Promise<GithubReadResult>;
 
 /**
  * The `github_read` tool reads what the ./repo clone cannot show: PR diff
