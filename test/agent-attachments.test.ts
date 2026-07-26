@@ -37,10 +37,11 @@ describe("buildPromptPayload", () => {
     writeFileSync(join(workspaceDir, "C123", "attachments", "image.png"), "png-bytes");
     const pathContext = createMountedRuntimePathContext(workspaceDir, "/workspace");
 
-    const payload = buildPromptPayload(
+    const payload = await buildPromptPayload(
       makeMessage("C123/attachments/image.png"),
       "/workspace",
       pathContext,
+      async () => Buffer.from("png-bytes").toString("base64"),
     );
 
     expect(payload.imageAttachments).toEqual([
@@ -57,7 +58,7 @@ describe("buildPromptPayload", () => {
     writeFileSync(join(workspaceDir, "C123", "attachments", "notes.txt"), "hello");
     const pathContext = createMountedRuntimePathContext(workspaceDir, "/workspace");
 
-    const payload = buildPromptPayload(
+    const payload = await buildPromptPayload(
       makeMessage("C123/attachments/notes.txt"),
       "/workspace",
       pathContext,
@@ -67,13 +68,22 @@ describe("buildPromptPayload", () => {
     expect(payload.userMessage).toContain("/workspace/C123/attachments/notes.txt");
   });
 
-  test("rejects an existing symlink that points outside the host workspace", () => {
+  test("rejects an existing symlink in the attachment path", () => {
     const linkPath = join(workspaceDir, "C123", "attachments", "secret.txt");
     symlinkSync("/etc/passwd", linkPath);
     const pathContext = createMountedRuntimePathContext(workspaceDir, "/workspace");
 
     expect(() => translateAttachPathToHost("C123/attachments/secret.txt", pathContext)).toThrow(
-      "symlink target is outside",
+      "symlink components are not allowed",
+    );
+  });
+
+  test("rejects an intermediate symlink even when it stays inside the workspace", () => {
+    symlinkSync(join(workspaceDir, "C123"), join(workspaceDir, "alias"));
+    const pathContext = createMountedRuntimePathContext(workspaceDir, "/workspace");
+
+    expect(() => translateAttachPathToHost("alias/attachments/image.png", pathContext)).toThrow(
+      "symlink components are not allowed",
     );
   });
 

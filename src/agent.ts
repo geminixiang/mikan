@@ -32,7 +32,7 @@ import {
   settleSubagentProgress,
 } from "./subagent-progress.js";
 import { createHash } from "crypto";
-import { existsSync, readFileSync, realpathSync } from "fs";
+import { existsSync, lstatSync } from "fs";
 import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { basename, isAbsolute, join, posix, relative, resolve, sep } from "path";
@@ -145,15 +145,26 @@ export function translateAttachPathToHost(
     throw new Error("Cannot attach files: path must be within the host workspace");
   }
 
-  // Check existing targets without requiring realpath for files that have not
-  // been created yet. This blocks symlinks in the workspace from exposing an
-  // arbitrary host file while preserving the uploader's normal missing-file
-  // error for paths that do not exist.
+  // Reject symlinks in every existing component. Missing files are left for
+  // the uploader's normal error, but a present attachment must be a regular
+  // non-symlink path all the way from the workspace root.
   if (existsSync(hostPath)) {
-    const realHostRoot = existsSync(hostRoot) ? resolve(realpathSync(hostRoot)) : hostRoot;
-    const realHostPath = resolve(realpathSync(hostPath));
-    if (!isWithinPathRoot(realHostPath, realHostRoot)) {
-      throw new Error("Cannot attach files: symlink target is outside the host workspace");
+    let current = hostRoot;
+    const pathParts = relative(hostRoot, hostPath).split(sep).filter(Boolean);
+    for (const [index, part] of pathParts.entries()) {
+      current = join(current, part);
+      let stat;
+      try {
+        stat = lstatSync(current);
+      } catch {
+        break;
+      }
+      if (stat.isSymbolicLink()) {
+        throw new Error("Cannot attach files: symlink components are not allowed");
+      }
+      if (index === pathParts.length - 1 && !stat.isFile()) {
+        throw new Error("Cannot attach files: path must be a regular file");
+      }
     }
   }
 
@@ -187,7 +198,15 @@ async function withStagedRuntimeFile(
   runtimePath: string,
   upload: (stagedPath: string) => Promise<void>,
 ): Promise<void> {
-  const content = Buffer.from(await executor.readFileBase64(runtimePath), "base64");
+  if (!executor.readFileBase64NoSymlinks) {
+    throw new Error(
+      "Attachments are unavailable: this sandbox cannot guarantee symlink-free path traversal",
+    );
+  }
+  const content = Buffer.from(
+    await executor.readFileBase64NoSymlinks(runtimePath),
+    "base64",
+  );
   let stagingDir: string | undefined;
   try {
     stagingDir = await mkdtemp(join(tmpdir(), "mikan-upload-"));
@@ -222,11 +241,12 @@ function formatTimestampedUserMessage(message: ConversationMessage): string {
   });
 }
 
-function collectMessageAttachments(
+async function collectMessageAttachments(
   message: ConversationMessage,
   workspacePath: string,
   pathContext?: RuntimePathContext,
-): { imageAttachments: ImageContent[]; nonImagePaths: string[] } {
+  readAttachment?: (runtimePath: string) => Promise<string>,
+): Promise<{ imageAttachments: ImageContent[]; nonImagePaths: string[] }> {
   const imageAttachments: ImageContent[] = [];
   const nonImagePaths: string[] = [];
 
@@ -235,12 +255,12 @@ function collectMessageAttachments(
     const hostPath = pathContext?.runtimeToHostPath?.(runtimePath) ?? runtimePath;
     const mimeType = getImageMimeType(attachment.localPath);
 
-    if (mimeType && existsSync(hostPath)) {
+    if (mimeType && existsSync(hostPath) && readAttachment) {
       try {
         imageAttachments.push({
           type: "image",
           mimeType,
-          data: readFileSync(hostPath).toString("base64"),
+          data: await readAttachment(runtimePath),
         });
       } catch {
         nonImagePaths.push(runtimePath);
@@ -253,19 +273,21 @@ function collectMessageAttachments(
   return { imageAttachments, nonImagePaths };
 }
 
-export function buildPromptPayload(
+export async function buildPromptPayload(
   message: ConversationMessage,
   workspacePath: string,
   pathContext?: RuntimePathContext,
-): {
+  readAttachment?: (runtimePath: string) => Promise<string>,
+): Promise<{
   userMessage: string;
   imageAttachments: ImageContent[];
-} {
+}> {
   let userMessage = formatTimestampedUserMessage(message);
-  const { imageAttachments, nonImagePaths } = collectMessageAttachments(
+  const { imageAttachments, nonImagePaths } = await collectMessageAttachments(
     message,
     workspacePath,
     pathContext,
+    readAttachment,
   );
 
   if (nonImagePaths.length > 0) {
@@ -1206,6 +1228,14 @@ function createRunnerExecutionContext(
     readFileBase64(path, options) {
       return activeExecutor.readFileBase64(path, options);
     },
+    readFileBase64NoSymlinks(path, options) {
+      if (!activeExecutor.readFileBase64NoSymlinks) {
+        throw new Error(
+          "Attachments are unavailable: this sandbox cannot guarantee symlink-free path traversal",
+        );
+      }
+      return activeExecutor.readFileBase64NoSymlinks(path, options);
+    },
     writeFile(path, content, options) {
       return activeExecutor.writeFile(path, content, options);
     },
@@ -1571,10 +1601,13 @@ async function prepareRunContext(params: {
   );
   log.logInfo(`Channels: ${platform.channels.length}, Users: ${platform.users.length}`);
 
-  const { userMessage, imageAttachments } = buildPromptPayload(
+  const { userMessage, imageAttachments } = await buildPromptPayload(
     message,
     pathContext.runtimeWorkspaceRoot,
     pathContext,
+    executor.readFileBase64NoSymlinks
+      ? (runtimePath) => executor.readFileBase64NoSymlinks!(runtimePath)
+      : undefined,
   );
   const turnInstructions = buildTurnInstructions(
     message.id.startsWith("event:"),

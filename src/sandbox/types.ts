@@ -89,6 +89,13 @@ export interface Executor {
   readFileBase64(path: string, options?: ExecOptions): Promise<string>;
 
   /**
+   * Read an attachment without following any symlink in the path. Executors
+   * that cannot provide this atomically must omit the capability; attachment
+   * uploads then fail closed.
+   */
+  readFileBase64NoSymlinks?(path: string, options?: ExecOptions): Promise<string>;
+
+  /**
    * Write a runtime file, creating parent directories and replacing via a
    * staging file so an aborted write never truncates the target. Like
    * readFile, transport is the executor's concern — content must survive
