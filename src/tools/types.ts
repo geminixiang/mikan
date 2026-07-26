@@ -8,9 +8,10 @@ import type { EventFilePayload } from "../harness/event-format.js";
  * Per-run context for optional platform-contributed tools (e.g. GitHub PR/CI).
  * Core agent code binds packs without knowing which platform owns them.
  */
-interface PlatformToolRunContext {
+export interface PlatformToolRunContext {
   conversationId: string;
   platformName: string;
+  threadTs?: string;
 }
 
 /**

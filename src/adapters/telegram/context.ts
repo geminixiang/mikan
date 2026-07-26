@@ -77,7 +77,6 @@ export function createTelegramAdapters(
       intervalMs: 4000,
     },
     formatToolResult,
-    logStreamingDeltas: true,
     reportError: (err, operation, extra, responseId) =>
       createChatResponseErrorReporter(() => ({
         platform: "telegram",

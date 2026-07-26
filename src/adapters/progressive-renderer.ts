@@ -261,9 +261,6 @@ export function createProgressiveRenderer(platform: ProgressiveRendererPlatform)
           state.pendingChars = 0;
           state.lastFlushAt = now();
           state.source = await renderDelta(state.source);
-          if (state.responseId !== null && platform.logStreamingDeltas) {
-            platform.logBotResponse?.(delta, state.responseId);
-          }
         }
       },
       () => ({ textLength: delta.length, accumulatedLength: state.source.length }),
@@ -280,7 +277,9 @@ export function createProgressiveRenderer(platform: ProgressiveRendererPlatform)
           state.source = state.source ? `${state.source}\n${sanitized}` : sanitized;
           state.pendingChars = 0;
           state.source = await renderDelta(state.source);
-          if (state.responseId !== null) platform.logBotResponse?.(text, state.responseId);
+          if (state.responseId !== null && platform.logIntermediateResponses) {
+            platform.logBotResponse?.(text, state.responseId);
+          }
         },
         () => ({
           phase: state.responseId ? "update" : "initial_post",

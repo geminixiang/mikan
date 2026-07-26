@@ -7,7 +7,7 @@
 [![npm version](https://img.shields.io/npm/v/@geminixiang/mikan.svg)](https://www.npmjs.com/package/@geminixiang/mikan)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A multi-platform AI coding agent for Slack, Telegram, and Discord.
+A multi-platform AI coding agent for Slack, Telegram, Discord, and GitHub.
 
 > [!WARNING]
 > **Pre-1.0 status** — the overall framework stabilizes at 1.0.0. Until then, releases may change settings and on-disk data formats without migrations: upgrading between pre-1.0 versions can require resetting or manually adjusting existing state and workspace data.
@@ -26,7 +26,7 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 
 ## Features
 
-- **Multi-platform** — Slack, Telegram, Discord adapters
+- **Multi-platform** — Slack, Telegram, Discord, and GitHub adapters
 - **Concurrent conversations** — Slack threads, Discord replies/threads, and Telegram reply chains run as independent sessions
 - **Sandbox execution** — host, shared container, per-user managed container, Firecracker (alpha), or Cloudflare bridge (experimental)
 - **Credential vaults** — `/login` stores credentials under `--state-dir` and injects env into sandbox runs
@@ -105,7 +105,7 @@ The working directory is optional: it defaults to `<state-dir>/workspace` (so `~
 - **Telegram** — create a bot via [@BotFather](https://t.me/BotFather). The bot responds to private messages, `@mention`, and reply chains in groups.
 - **Discord** — create an application in the [Discord Developer Portal](https://discord.com/developers/applications), enable **Message Content Intent**, and invite it with message/file permissions.
 
-Slack threads, Discord replies/threads, and Telegram reply chains are mapped to independent session scopes. See [src/content/docs/sessions.md](src/content/docs/sessions.md).
+Slack threads, Discord replies/threads, and Telegram reply chains are mapped to independent session scopes. See [src/content/docs/sessions.mdx](src/content/docs/sessions.mdx).
 
 ## Sandbox
 
@@ -117,7 +117,7 @@ Slack threads, Discord replies/threads, and Telegram reply chains are mapped to 
 | `firecracker:<vm-id>:<path>` | Firecracker microVM (alpha; not recommended)                           |
 | `cloudflare:<sandbox-id>`    | Cloudflare Worker bridge (experimental; no auto workspace sync)        |
 
-For routing, mounts, vault behavior, managed container details, and Firecracker/Cloudflare notes, see [src/content/docs/sandbox.md](src/content/docs/sandbox.md).
+For routing, mounts, vault behavior, managed container details, and Firecracker/Cloudflare notes, see [src/content/docs/sandbox.mdx](src/content/docs/sandbox.mdx).
 
 ## Chat commands
 
@@ -134,7 +134,7 @@ For routing, mounts, vault behavior, managed container details, and Firecracker/
 
 ## Configuration
 
-mikan reads global settings from `<state-dir>/settings.json`; per-conversation overrides live at `<working-directory>/<conversationId>/settings.json`.
+mikan reads global settings from `<state-dir>/settings.json`; host-only per-conversation overrides live at `<state-dir>/conversations/<conversationId>/settings.json`. Legacy workspace settings are migrated once, then ignored.
 
 ```json
 {
@@ -153,6 +153,9 @@ See [src/content/docs/configuration.md](src/content/docs/configuration.md) for a
 ```text
 <state-dir>/
 ├── settings.json
+├── conversations/
+│   └── <conversation-id>/
+│       └── settings.json
 └── vaults/
 
 <working-directory>/
@@ -172,9 +175,9 @@ See [src/content/docs/configuration.md](src/content/docs/configuration.md) for a
 
 - [Events](src/content/docs/events.md)
 - [Skills](src/content/docs/skills.md)
-- [Deployment](src/content/docs/deployment.md)
+- [Deployment](src/content/docs/deployment.mdx)
 - [Development](src/content/docs/development.md)
-- [Sandbox](src/content/docs/sandbox.md)
+- [Sandbox](src/content/docs/sandbox.mdx)
 
 ## Slack: Download channel history
 

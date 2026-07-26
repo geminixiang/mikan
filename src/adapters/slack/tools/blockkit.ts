@@ -22,13 +22,13 @@ const blockkitSchema = Type.Object({
   thread_ts: Type.Optional(
     Type.String({
       description:
-        "Post into this thread (the TS from the [in-thread:TS] message marker). Omit for a top-level channel message.",
+        "Optional active-thread TS. Posts are always constrained to the current conversation thread.",
     }),
   ),
   update_ts: Type.Optional(
     Type.String({
       description:
-        "Update the existing message with this ts (returned by a previous slack_blockkit call) instead of posting a new one.",
+        "Update a message previously posted by slack_blockkit in this conversation instead of posting a new one.",
     }),
   ),
 });

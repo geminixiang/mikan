@@ -45,8 +45,8 @@ export interface SubagentModelSpec {
 /**
  * A curated capability set a subagent can be launched with. Built-ins ship
  * with the harness; `<workspaceDir>/agents/<name>.md` patches them per
- * installation. Budget fields are defaults — an explicit `request.budget`
- * always wins.
+ * installation. Budget fields are caps — an explicit `request.budget` may
+ * tighten them but never raise them.
  */
 export interface SubagentProfile {
   name: string;

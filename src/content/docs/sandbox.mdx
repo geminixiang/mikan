@@ -72,7 +72,7 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 | Capability                                   | `host`         | `container:<name>`     | `image:<image>` | `gondolin:default` | `firecracker:*` | `cloudflare:*`    |
 | -------------------------------------------- | -------------- | ---------------------- | --------------- | ------------------ | --------------- | ----------------- |
 | command execution                            | ✅             | ✅                     | ✅              | ✅                 | ✅              | ✅                |
-| mikan-managed runtime lifecycle              | not applicable | ❌                     | ✅              | ✅ worker-hosted   | ❌              | ❌                |
+| mikan-managed runtime lifecycle              | not applicable | ❌                     | ✅              | ✅ process-owned   | ❌              | ❌                |
 | per-conversation container / runtime         | ❌             | ❌                     | ✅              | ✅                 | self-managed    | bridge-derived id |
 | per-conversation vault env                   | ❌             | ❌                     | ✅              | ✅                 | ✅              | ✅                |
 | automatic vault file projection / bind mount | ❌             | ❌                     | ✅              | ✅                 | ❌              | ❌                |

@@ -86,6 +86,7 @@ export function createGithubAdapters(
     formatContinuation: formatGithubContinuation,
     errorPrefix: "**Error:** ",
     formatToolResult: formatMarkdownToolResult,
+    logIntermediateResponses: true,
     reportError: (err, operation, extra, responseId) =>
       createChatResponseErrorReporter(() => ({
         platform: "github",

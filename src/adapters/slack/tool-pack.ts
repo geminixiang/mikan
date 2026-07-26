@@ -12,8 +12,9 @@ export interface PlatformSlackOps {
   ): Promise<{ ts: string }>;
   updateBlocks(
     conversationId: string,
-    args: { ts: string; text: string; blocks: object[] },
+    args: { ts: string; text: string; blocks: object[]; threadTs?: string },
   ): Promise<void>;
+  ownsBlockKitMessage(conversationId: string, ts: string, threadTs?: string): boolean;
 }
 
 /**
@@ -24,17 +25,40 @@ export interface PlatformSlackOps {
  */
 export function createSlackToolPack(ops: PlatformSlackOps): PlatformToolPack {
   const { tool: blockkitTool, setSlackBlockKitOps } = createSlackBlockKitTool();
+  const ownedMessageTs = new Set<string>();
+  let boundTarget: string | undefined;
 
   return {
     tools: [blockkitTool],
-    bindRun({ conversationId, platformName }) {
+    bindRun({ conversationId, platformName, threadTs }) {
       if (platformName !== "slack") {
         setSlackBlockKitOps(null);
         return;
       }
+      const target = `${conversationId}:${threadTs ?? "top-level"}`;
+      if (boundTarget !== target) {
+        ownedMessageTs.clear();
+        boundTarget = target;
+      }
       setSlackBlockKitOps({
-        postBlocks: (args) => ops.postBlocks(conversationId, args),
-        updateBlocks: (args) => ops.updateBlocks(conversationId, args),
+        postBlocks: async (args) => {
+          if (args.threadTs !== undefined && args.threadTs !== threadTs) {
+            throw new Error("slack_blockkit cannot post outside the active conversation thread");
+          }
+          const result = await ops.postBlocks(conversationId, { ...args, threadTs });
+          ownedMessageTs.add(result.ts);
+          return result;
+        },
+        updateBlocks: async (args) => {
+          if (
+            !ownedMessageTs.has(args.ts) &&
+            !ops.ownsBlockKitMessage(conversationId, args.ts, threadTs)
+          ) {
+            throw new Error("slack_blockkit can only update messages posted by this tool");
+          }
+          await ops.updateBlocks(conversationId, { ...args, threadTs });
+          ownedMessageTs.add(args.ts);
+        },
       });
     },
   };

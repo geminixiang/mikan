@@ -462,8 +462,7 @@ function noop(): void {}
 
 /**
  * Expand `request.profile` into the concrete capability set it names. Profile
- * budgets are defaults only: anything the caller set in `request.budget`
- * survives, so a profile can never widen a caller-imposed limit.
+ * budgets are caps: a caller can tighten them but never raise them.
  */
 function resolveProfile<TOutputSchema extends TSchema | undefined>(
   request: SubagentRunRequest<TOutputSchema>,
@@ -483,11 +482,29 @@ function resolveProfile<TOutputSchema extends TSchema | undefined>(
     );
   }
   const budget = {
-    ...(profile.maxTurns !== undefined ? { maxTurns: profile.maxTurns } : {}),
-    ...(profile.maxTokens !== undefined ? { maxTokens: profile.maxTokens } : {}),
-    ...(profile.maxCostUsd !== undefined ? { maxCostUsd: profile.maxCostUsd } : {}),
-    ...(profile.maxDurationMs !== undefined ? { maxDurationMs: profile.maxDurationMs } : {}),
     ...request.budget,
+    ...(profile.maxTurns !== undefined
+      ? { maxTurns: Math.min(profile.maxTurns, request.budget?.maxTurns ?? profile.maxTurns) }
+      : {}),
+    ...(profile.maxTokens !== undefined
+      ? { maxTokens: Math.min(profile.maxTokens, request.budget?.maxTokens ?? profile.maxTokens) }
+      : {}),
+    ...(profile.maxCostUsd !== undefined
+      ? {
+          maxCostUsd: Math.min(
+            profile.maxCostUsd,
+            request.budget?.maxCostUsd ?? profile.maxCostUsd,
+          ),
+        }
+      : {}),
+    ...(profile.maxDurationMs !== undefined
+      ? {
+          maxDurationMs: Math.min(
+            profile.maxDurationMs,
+            request.budget?.maxDurationMs ?? profile.maxDurationMs,
+          ),
+        }
+      : {}),
   };
   return {
     ...request,

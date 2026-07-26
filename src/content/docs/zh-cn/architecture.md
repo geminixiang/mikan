@@ -11,7 +11,7 @@ description: 了解 mikan 如何连接平台适配器、会话、代理、沙箱
 
 ### A. 平台适配器层
 
-共享适配器契约请参阅[平台适配器](../platform-adapters/)，各平台详情请参阅 [Slack](../platform-adapters/slack/)、[Discord](../platform-adapters/discord/)、[Telegram](../platform-adapters/telegram/) 和 [GitHub](../platform-adapters/github/)。
+共享适配器契约请参阅[平台适配器](platform-adapters.mdx)，各平台详情请参阅 [Slack](platform-adapters/slack.md)、[Discord](platform-adapters/discord.md)、[Telegram](platform-adapters/telegram.md) 和 [GitHub](platform-adapters/github.md)。
 
 - `src/adapters/slack/*`
 - `src/adapters/telegram/*`

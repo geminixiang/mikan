@@ -1,7 +1,7 @@
 # HKUDS/nanobot 特色研究
 
-> 研究版本：`b0ef759e2ca8647051cab0157854a4b6f741324a`（`pyproject.toml` 版本 0.3.0）  
-> Clone 位置：`/Users/geminixiang/Github/nanobot`  
+> 研究版本：`b0ef759e2ca8647051cab0157854a4b6f741324a`（`pyproject.toml` 版本 0.3.0）
+> Clone 位置：`/Users/geminixiang/Github/nanobot`
 > 本文以 repository 內的原始碼與第一方文件為準；行號皆相對於上述 commit。
 
 ## 結論先講

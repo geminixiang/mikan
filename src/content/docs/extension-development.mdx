@@ -281,7 +281,7 @@ A run can opt in to context from the active parent run with `parentContext: { mo
 
 `api.subagent.run` never rejects: every failure — including request validation, an unknown tool name, or an attempted nested run — resolves to a result with a terminal status and an `error` message, so callers handle one shape.
 
-Runs default to 8 model turns, 2 minutes, and USD 0.50 unless the request supplies lower or higher limits.
+Runs default to 100 model turns, 10 minutes, and USD 10. A named `profile` may impose stricter caps; request budgets can only tighten those caps, never raise them. Built-in profiles can be patched by `<workspaceDir>/agents/<name>.md`, while new profile files must declare their tool grant.
 
 Results include a run ID, terminal status, raw final text, model identity, turns, tokens, cost, duration, and an optional validated `output`. Terminal statuses are `completed`, `failed`, `cancelled`, `timeout`, `budget_exceeded`, and `invalid_output`.
 
@@ -368,12 +368,15 @@ const { ts } = await api.blockkit.post({
       ],
     },
   ],
-  threadTs: ctx.threadTs, // reply in-thread when the command came from a thread
 });
 
 api.blockkit.onAction("vote", async (event) => {
   // event: { actionId, value, selectedValues, userId, messageTs, threadTs, … }
-  await api.blockkit.update(event.messageTs!, { text: "…", blocks: renderUpdated() });
+  if (!event.messageTs) return;
+  await api.blockkit.update(event.messageTs, {
+    text: "Vote recorded",
+    blocks: [{ type: "markdown", text: `✅ ${event.userId} voted for ${event.value}` }],
+  });
 });
 ```
 
@@ -424,13 +427,13 @@ Packages are managed from the admin portal rather than the CLI. **Update** re-fe
 
 ## Troubleshooting
 
-| Symptom                                | Check                                                                                     |
-| -------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `No entrypoint found`                  | Add `mikan.extensions` to `package.json` or an `index.{mjs,js,ts,mts}` file               |
-| `does not export an activate function` | Export `default function activate(...)` or named `activate`                               |
-| Installed but not active               | Confirm `--state-dir` and conversation ID, then send `/pi-new`                            |
-| Import/module error                    | Install runtime dependencies before local installation; Git installation does not run npm |
-| Schedule/notify/react unavailable      | Confirm the running platform/context provides that host service                           |
-| Wrong extension identity/data path     | The slug comes from the installed file/directory name, not editable metadata              |
+| Symptom                                | Check                                                                                                               |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `No entrypoint found`                  | Add `mikan.extensions` to `package.json` or an `index.{mjs,js,ts,mts}` file                                         |
+| `does not export an activate function` | Export `default function activate(...)` or named `activate`                                                         |
+| Installed but not active               | Confirm `--state-dir` and conversation ID, then send `/pi-new`                                                      |
+| Import/module error                    | For local-path sources, install runtime dependencies first; Git sources install declared dependencies automatically |
+| Schedule/notify/react unavailable      | Confirm the running platform/context provides that host service                                                     |
+| Wrong extension identity/data path     | The slug comes from the installed file/directory name, not editable metadata                                        |
 
 Start from [`examples/extensions/agent-pm`](https://github.com/geminixiang/mikan/tree/main/examples/extensions/agent-pm) when you need tools, SQLite persistence, schedules, proactive messaging, or bundled skills together.

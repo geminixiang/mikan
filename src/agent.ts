@@ -94,7 +94,7 @@ import {
 // but each run can fan out up to the per-run cap — without this shared
 // ceiling, N busy conversations hold N × cap live subagent sessions.
 const globalSubagentSlots = new SubagentSlotPool(DEFAULT_GLOBAL_SUBAGENT_SLOTS);
-import type { PlatformToolPackFactory } from "./tools/types.js";
+import type { PlatformToolPackFactory, PlatformToolRunContext } from "./tools/types.js";
 import * as Sentry from "@sentry/node";
 
 import { emitAgentEvent } from "./agent-events.js";
@@ -1374,7 +1374,7 @@ async function prepareRunContext(params: {
   setSandboxContext: (context: { conversationId: string; userId: string }) => void;
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
-  bindPlatformToolPacks: (ctx: { conversationId: string; platformName: string }) => void;
+  bindPlatformToolPacks: (ctx: PlatformToolRunContext) => void;
   pathContext: RuntimePathContext;
 }): Promise<PreparedRunContext & { pathContext: RuntimePathContext }> {
   const {
@@ -1462,7 +1462,11 @@ async function prepareRunContext(params: {
 
   // Platform capability packs (e.g. GitHub PR/CI) enable themselves per run;
   // core does not branch on platform name here.
-  bindPlatformToolPacks({ conversationId, platformName: platform.name });
+  bindPlatformToolPacks({
+    conversationId,
+    platformName: platform.name,
+    threadTs: message.threadTs,
+  });
 
   resetRunState(
     runState,
@@ -1690,6 +1694,9 @@ function attachSessionEventHandlers(params: {
         log.logToolError(logCtx, event.toolName, durationMs, resultStr);
       } else {
         log.logToolSuccess(logCtx, event.toolName, durationMs, resultStr);
+        if (event.toolName === "slack_blockkit") {
+          runState.finalResponseHandledByTool = true;
+        }
       }
 
       return;

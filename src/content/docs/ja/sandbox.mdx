@@ -69,17 +69,17 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 `image:<image>` <Badge text="推奨" variant="success" /> は現在の主要開発および推奨 sandbox モードです。他のモードはローカル開発、互換、または実験用途として残されており、一部機能は補完されません。
 
-| 機能                                 | `host`       | `container:<name>`  | `image:<image>` | `gondolin:default` | `firecracker:*`     | `cloudflare:*` |
-| ------------------------------------ | ------------ | ------------------- | --------------- | ------------------ | ------------------- | -------------- |
-| command 実行                         | ✅           | ✅                  | ✅              | ✅                 | ✅                  | ✅             |
-| mikan 管理の runtime lifecycle       | 対象外       | ❌                  | ✅              | ✅ worker ホスト   | ❌                  | ❌             |
-| per-conversation container / runtime | ❌           | ❌                  | ✅              | ✅                 | 自分で管理          | bridge 派生 id |
-| per-conversation vault env           | ❌           | ❌                  | ✅              | ✅                 | ✅                  | ✅             |
-| vault file 自動投影 / bind mount     | ❌           | ❌                  | ✅              | ✅                 | ❌                  | ❌             |
-| workspace 自動マウント               | host         | 自分で mount が必要 | ✅              | ✅                 | 自分で mount が必要 | ❌             |
-| private workspace mount mode         | 対象外       | ❌                  | ✅              | ✅                 | ❌                  | ❌             |
-| idle auto-stop / recreate            | 対象外       | ❌                  | ✅              | ✅                 | ❌                  | ❌             |
-| CPU / memory default limits          | ❌           | ❌                  | ✅              | ✅                 | ❌                  | ❌             |
-| `/pi-sandbox boost`                  | ❌           | ❌                  | ✅              | ✅                 | ❌                  | ❌             |
-| agent `sandbox` tool 設定 limits     | ❌           | ❌                  | ✅              | ✅                 | ❌                  | ❌             |
-| 推奨度                               | ローカル開発 | legacy / 互換       | 主流            | preview            | alpha               | experimental   |
+| 機能                                 | `host`       | `container:<name>`  | `image:<image>` | `gondolin:default`    | `firecracker:*`     | `cloudflare:*` |
+| ------------------------------------ | ------------ | ------------------- | --------------- | --------------------- | ------------------- | -------------- |
+| command 実行                         | ✅           | ✅                  | ✅              | ✅                    | ✅                  | ✅             |
+| mikan 管理の runtime lifecycle       | 対象外       | ❌                  | ✅              | ✅ mikan process 所有 | ❌                  | ❌             |
+| per-conversation container / runtime | ❌           | ❌                  | ✅              | ✅                    | 自分で管理          | bridge 派生 id |
+| per-conversation vault env           | ❌           | ❌                  | ✅              | ✅                    | ✅                  | ✅             |
+| vault file 自動投影 / bind mount     | ❌           | ❌                  | ✅              | ✅                    | ❌                  | ❌             |
+| workspace 自動マウント               | host         | 自分で mount が必要 | ✅              | ✅                    | 自分で mount が必要 | ❌             |
+| private workspace mount mode         | 対象外       | ❌                  | ✅              | ✅                    | ❌                  | ❌             |
+| idle auto-stop / recreate            | 対象外       | ❌                  | ✅              | ✅                    | ❌                  | ❌             |
+| CPU / memory default limits          | ❌           | ❌                  | ✅              | ✅                    | ❌                  | ❌             |
+| `/pi-sandbox boost`                  | ❌           | ❌                  | ✅              | ✅                    | ❌                  | ❌             |
+| agent `sandbox` tool 設定 limits     | ❌           | ❌                  | ✅              | ✅                    | ❌                  | ❌             |
+| 推奨度                               | ローカル開発 | legacy / 互換       | 主流            | preview               | alpha               | experimental   |

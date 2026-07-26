@@ -68,7 +68,6 @@ export function createDiscordAdapters(
       stopOnSend: true,
     },
     formatToolResult: formatMarkdownToolResult,
-    logStreamingDeltas: true,
     reportError: (err, operation, extra, responseId) =>
       createChatResponseErrorReporter(() => ({
         platform: "discord",

@@ -127,21 +127,95 @@ describe("slack_blockkit tool", () => {
 describe("slack tool pack", () => {
   test("binds conversation-scoped ops for slack runs and disables elsewhere", async () => {
     const postBlocks = vi.fn(async () => ({ ts: "1.1" }));
-    const ops: PlatformSlackOps = { postBlocks, updateBlocks: vi.fn(async () => {}) };
+    const ops: PlatformSlackOps = {
+      postBlocks,
+      updateBlocks: vi.fn(async () => {}),
+      ownsBlockKitMessage: vi.fn(() => false),
+    };
     const pack = createSlackToolPack(ops);
     const tool = pack.tools[0];
 
-    pack.bindRun({ conversationId: "C123", platformName: "slack" });
+    pack.bindRun({ conversationId: "C123", platformName: "slack", threadTs: "10.0" });
     await tool.execute(...executeArgs({ blocks: BLOCKS, text: "t" }));
     expect(postBlocks).toHaveBeenCalledWith("C123", {
       text: "t",
       blocks: BLOCKS,
-      threadTs: undefined,
+      threadTs: "10.0",
     });
 
     pack.bindRun({ conversationId: "D999", platformName: "discord" });
     await expect(tool.execute(...executeArgs({ blocks: BLOCKS, text: "t" }))).rejects.toThrow(
       "only available in Slack conversations",
     );
+  });
+
+  test("rejects posts outside the active thread", async () => {
+    const ops: PlatformSlackOps = {
+      postBlocks: vi.fn(async () => ({ ts: "1.1" })),
+      updateBlocks: vi.fn(async () => {}),
+      ownsBlockKitMessage: vi.fn(() => false),
+    };
+    const pack = createSlackToolPack(ops);
+    const tool = pack.tools[0];
+    pack.bindRun({ conversationId: "C123", platformName: "slack", threadTs: "10.0" });
+
+    await expect(
+      tool.execute(...executeArgs({ blocks: BLOCKS, text: "t", thread_ts: "different-thread" })),
+    ).rejects.toThrow("cannot post outside the active conversation thread");
+    expect(ops.postBlocks).not.toHaveBeenCalled();
+  });
+
+  test("only updates messages posted by the tool in the bound conversation", async () => {
+    const updateBlocks = vi.fn(async () => {});
+    const ops: PlatformSlackOps = {
+      postBlocks: vi.fn(async () => ({ ts: "owned-message" })),
+      updateBlocks,
+      ownsBlockKitMessage: vi.fn(() => false),
+    };
+    const pack = createSlackToolPack(ops);
+    const tool = pack.tools[0];
+    pack.bindRun({ conversationId: "C123", platformName: "slack" });
+
+    await expect(
+      tool.execute(...executeArgs({ blocks: BLOCKS, text: "t", update_ts: "foreign-message" })),
+    ).rejects.toThrow("can only update messages posted by this tool");
+
+    await tool.execute(...executeArgs({ blocks: BLOCKS, text: "t" }));
+    await tool.execute(
+      ...executeArgs({ blocks: BLOCKS, text: "updated", update_ts: "owned-message" }),
+    );
+    expect(updateBlocks).toHaveBeenCalledWith("C123", {
+      ts: "owned-message",
+      text: "updated",
+      blocks: BLOCKS,
+    });
+
+    pack.bindRun({ conversationId: "C123", platformName: "slack", threadTs: "new-thread" });
+    await expect(
+      tool.execute(...executeArgs({ blocks: BLOCKS, text: "t", update_ts: "owned-message" })),
+    ).rejects.toThrow("can only update messages posted by this tool");
+
+    const restoredUpdateBlocks = vi.fn(async () => {});
+    const restoredPack = createSlackToolPack({
+      postBlocks: vi.fn(async () => ({ ts: "new-message" })),
+      updateBlocks: restoredUpdateBlocks,
+      ownsBlockKitMessage: vi.fn(
+        (_conversationId, ts, threadTs) => ts === "owned-message" && threadTs === "original-thread",
+      ),
+    });
+    restoredPack.bindRun({
+      conversationId: "C123",
+      platformName: "slack",
+      threadTs: "original-thread",
+    });
+    await restoredPack.tools[0].execute(
+      ...executeArgs({ blocks: BLOCKS, text: "restored", update_ts: "owned-message" }),
+    );
+    expect(restoredUpdateBlocks).toHaveBeenCalledWith("C123", {
+      ts: "owned-message",
+      text: "restored",
+      blocks: BLOCKS,
+      threadTs: "original-thread",
+    });
   });
 });

@@ -65,17 +65,17 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 `image:<image>` <Badge text="推薦" variant="success" /> 是目前主要開發與推薦的 sandbox 模式；其他模式保留為本機開發、相容、或實驗用途，部分能力不會補齊。
 
-| 能力                                 | `host`   | `container:<name>` | `image:<image>` | `gondolin:default` | `firecracker:*` | `cloudflare:*` |
-| ------------------------------------ | -------- | ------------------ | --------------- | ------------------ | --------------- | -------------- |
-| command 執行                         | ✅       | ✅                 | ✅              | ✅                 | ✅              | ✅             |
-| mikan 管理 runtime lifecycle         | 不適用   | ❌                 | ✅              | ✅ worker 託管     | ❌              | ❌             |
-| per-conversation container / runtime | ❌       | ❌                 | ✅              | ✅                 | 需自行管理      | bridge 衍生 id |
-| per-conversation vault env           | ❌       | ❌                 | ✅              | ✅                 | ✅              | ✅             |
-| vault file 自動投影 / bind mount     | ❌       | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| workspace 自動掛載                   | host     | 需自行掛載         | ✅              | ✅                 | 需自行掛載      | ❌             |
-| private workspace mount mode         | 不適用   | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| idle auto-stop / recreate            | 不適用   | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| CPU / memory default limits          | ❌       | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| `/pi-sandbox boost`                  | ❌       | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| agent `sandbox` tool 設定 limits     | ❌       | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| 推薦程度                             | 本機開發 | legacy / 相容      | 主線            | 預覽               | alpha           | experimental   |
+| 能力                                 | `host`   | `container:<name>` | `image:<image>` | `gondolin:default`    | `firecracker:*` | `cloudflare:*` |
+| ------------------------------------ | -------- | ------------------ | --------------- | --------------------- | --------------- | -------------- |
+| command 執行                         | ✅       | ✅                 | ✅              | ✅                    | ✅              | ✅             |
+| mikan 管理 runtime lifecycle         | 不適用   | ❌                 | ✅              | ✅ mikan process 管理 | ❌              | ❌             |
+| per-conversation container / runtime | ❌       | ❌                 | ✅              | ✅                    | 需自行管理      | bridge 衍生 id |
+| per-conversation vault env           | ❌       | ❌                 | ✅              | ✅                    | ✅              | ✅             |
+| vault file 自動投影 / bind mount     | ❌       | ❌                 | ✅              | ✅                    | ❌              | ❌             |
+| workspace 自動掛載                   | host     | 需自行掛載         | ✅              | ✅                    | 需自行掛載      | ❌             |
+| private workspace mount mode         | 不適用   | ❌                 | ✅              | ✅                    | ❌              | ❌             |
+| idle auto-stop / recreate            | 不適用   | ❌                 | ✅              | ✅                    | ❌              | ❌             |
+| CPU / memory default limits          | ❌       | ❌                 | ✅              | ✅                    | ❌              | ❌             |
+| `/pi-sandbox boost`                  | ❌       | ❌                 | ✅              | ✅                    | ❌              | ❌             |
+| agent `sandbox` tool 設定 limits     | ❌       | ❌                 | ✅              | ✅                    | ❌              | ❌             |
+| 推薦程度                             | 本機開發 | legacy / 相容      | 主線            | 預覽                  | alpha           | experimental   |

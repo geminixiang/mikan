@@ -142,12 +142,17 @@ describe("respond() — non-threaded", () => {
     expect(updateCall[2]).toContain("line2");
   });
 
-  test("calls logBotResponse on successful respond", async () => {
+  test("logs only the canonical response after finalization", async () => {
     const bot = makeTelegramMessagingBot({ postMessageRaw: vi.fn().mockResolvedValue(2001) });
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
-    await responder.respond("hello");
-    expect(bot.logBotResponse).toHaveBeenCalledWith("123456", "hello", "2001");
+
+    await responder.respond("partial");
+    await responder.appendResponseDelta?.(" delta");
+    await responder.finishResponse?.("canonical final");
+
+    expect(bot.logBotResponse).toHaveBeenCalledOnce();
+    expect(bot.logBotResponse).toHaveBeenCalledWith("123456", "canonical final", "2001");
   });
 
   test("escapes unsupported HTML-like tokens but keeps Telegram tags", async () => {

@@ -6,7 +6,7 @@
 
 Project: **mikan** (`@geminixiang/mikan`)
 
-mikan is a multi-platform AI coding agent for Slack, Telegram, and Discord. It stores chat logs and session state, runs mikan's own agent harness (`src/harness/`, built on `pi-agent-core` and `pi-ai`), and executes tools in host, Docker, local Gondolin, Firecracker, or Cloudflare sandbox modes.
+mikan is a multi-platform AI coding agent for Slack, Telegram, Discord, and GitHub. It stores chat logs and session state, runs mikan's own agent harness (`src/harness/`, built on `pi-agent-core` and `pi-ai`), and executes tools in host, Docker, local Gondolin, Firecracker, or Cloudflare sandbox modes.
 
 Stack:
 
@@ -94,12 +94,12 @@ Stack:
 ## WHERE TO LOOK
 
 - **Source map**: `src/README.md` plus per-subdirectory `README.md` files.
-- **Architecture**: `README.md`, `src/content/docs/architecture.md`, `src/content/docs/sessions.md`, `src/content/docs/sandbox.md`.
+- **Architecture**: `README.md`, `src/content/docs/architecture.md`, `src/content/docs/sessions.mdx`, `src/content/docs/sandbox.mdx`.
 - **Commands/user behavior**: `src/content/docs/commands.md`, `src/commands/`.
 - **Platform adapters**: `src/adapters/{slack,discord,telegram}/`.
 - **Slack Block Kit/tools**: `src/adapters/slack/tools/`, `test/slack-block-kit-tool.test.ts`.
 - **Runtime/session logic**: `src/runtime/`, `src/sessions/`, related tests in `test/session-*.test.ts` and `test/*session*.test.ts`.
-- **Sandbox execution**: `src/sandbox/`, `src/execution-resolver.ts`, `src/provisioner.ts`, `src/content/docs/sandbox.md`.
+- **Sandbox execution**: `src/sandbox/`, `src/execution-resolver.ts`, `src/provisioner.ts`, `src/content/docs/sandbox.mdx`.
 - **Vault/login/OAuth**: `src/vault/`, `src/web/login/`, `test/login.test.ts`, `test/oauth-link-server.test.ts`.
 - **Observability**: `src/observability/`, `src/sentry.ts` compatibility export, `test/sentry.test.ts`.
 - **Config**: `src/config.ts`, `src/content/docs/configuration.md`, `test/config.test.ts`.
@@ -112,8 +112,8 @@ Stack:
 - `dist/` is generated from `src/`; edit `src/` and run build instead of modifying `dist/` directly.
 - `npm run build` emits declarations and JS to `dist/` and makes `dist/main.js` executable.
 - `/login` stores credentials under `--state-dir`; avoid logging secrets and validate state-dir safety.
-- Sandbox modes have different credential/mount behavior. Check `src/content/docs/sandbox.md` and `src/sandbox/types.ts` before changing executor logic.
-- Slack/Discord/Telegram adapters map threads/replies to independent session scopes; check `src/content/docs/sessions.md` before changing conversation IDs or session keys.
+- Sandbox modes have different credential/mount behavior. Check `src/content/docs/sandbox.mdx` and `src/sandbox/types.ts` before changing executor logic.
+- Slack/Discord/Telegram adapters map threads/replies to independent session scopes; check `src/content/docs/sessions.mdx` before changing conversation IDs or session keys.
 - Cloudflare AI image input note for related Quro work: send raw base64 strings in `images`, not data URIs, when calling `env.AI.run('openai/gpt-image-2', ...)`.
 
 # Development Rules

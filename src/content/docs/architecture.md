@@ -11,7 +11,7 @@ description: Learn how mikan connects platform adapters, sessions, agent, sandbo
 
 ### A. Platform adapter layer
 
-For the shared adapter contract, see [Platform adapters](../platform-adapters/). Platform details are documented for [Slack](../platform-adapters/slack/), [Discord](../platform-adapters/discord/), [Telegram](../platform-adapters/telegram/), and [GitHub](../platform-adapters/github/).
+For the shared adapter contract, see [Platform adapters](platform-adapters.mdx). Platform details are documented for [Slack](platform-adapters/slack.md), [Discord](platform-adapters/discord.md), [Telegram](platform-adapters/telegram.md), and [GitHub](platform-adapters/github.md).
 
 - `src/adapters/slack/*`
 - `src/adapters/telegram/*`

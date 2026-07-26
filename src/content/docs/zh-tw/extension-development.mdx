@@ -281,7 +281,7 @@ if (result.status === "completed") {
 
 `api.subagent.run` 絕不會 reject：任何失敗——包含請求驗證、未知工具名稱或嘗試巢狀執行——都會 resolve 成一個帶有終止狀態與 `error` 訊息的結果，讓呼叫端只需處理單一種形狀。
 
-除非請求提供更低或更高的上限，否則每次執行預設為 8 個 model turn、2 分鐘與 USD 0.50。
+每次執行預設為 100 個 model turn、10 分鐘與 USD 10。具名 `profile` 可以施加更嚴格的上限；request budget 只能收緊這些上限，不能提高。內建 profile 可由 `<workspaceDir>/agents/<name>.md` 調整；新建 profile file 必須宣告工具授權。
 
 結果包含 run ID、終止狀態、原始最終文字、模型身分、turn 數、token、成本、耗時，以及選用且經驗證的 `output`。終止狀態有 `completed`、`failed`、`cancelled`、`timeout`、`budget_exceeded` 與 `invalid_output`。
 
@@ -347,6 +347,40 @@ await api.uploadFile("/path/on/host/report.pdf", "Weekly report");
 
 排程會建立 mikan 事件檔案，並觸發不繼承對話歷史的自主執行，因此 `text` 必須內容完備；`api.triggerRun` 會立即觸發一次這樣的執行（例如回應外部事件）。若執行多個平台且無法明確推斷，請指定 `platform`。請勿在排程文字中放入祕密資訊。`api.notify` 預設發到擴充功能自己的對話，可傳入 `conversationId` 供跨對話應用使用；`api.uploadFile` 會在支援上傳的平台上把 host 端檔案送進對話。
 
+### 互動式訊息（Block Kit）
+
+`api.blockkit` 可發佈及更新 Slack Block Kit 互動訊息，並在不呼叫 model 的情況下接收操作：
+
+```ts
+const { ts } = await api.blockkit.post({
+  text: "晚餐投票",
+  blocks: [
+    { type: "markdown", text: "**晚餐吃什麼？**" },
+    {
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          text: { type: "plain_text", text: "拉麵" },
+          action_id: "vote",
+          value: "ramen",
+        },
+      ],
+    },
+  ],
+});
+
+api.blockkit.onAction("vote", async (event) => {
+  if (!event.messageTs) return;
+  await api.blockkit.update(event.messageTs, {
+    text: "已記錄投票",
+    blocks: [{ type: "markdown", text: `✅ ${event.userId} 投給 ${event.value}` }],
+  });
+});
+```
+
+發佈時每個 `action_id` 都會加上 `ext:<slug>:…` namespace，因此互動只會交給此 extension 的 `onAction` handler，不會啟動 agent run。處理後應更新訊息以移除或停用按鈕。完整範例見 `examples/extensions/poll`。
+
 ### 隨附技能
 
 將技能放在擴充功能目錄下：
@@ -397,7 +431,7 @@ mikan ext remove hello-mikan --conversation <conversationId>
 | `No entrypoint found`                  | 在 `package.json` 中加入 `mikan.extensions`，或提供 `index.{mjs,js,ts,mts}` 檔案 |
 | `does not export an activate function` | 匯出 `default function activate(...)` 或具名的 `activate`                        |
 | 已安裝但未啟用                         | 確認 `--state-dir` 與對話 ID，然後傳送 `/pi-new`                                 |
-| Import/module error                    | 本機安裝前先安裝執行階段相依套件；Git 安裝不會執行 npm                           |
+| Import/module error                    | 本機路徑來源需預先安裝執行階段相依套件；Git 來源會自動安裝已宣告的相依套件       |
 | Schedule/notify/react unavailable      | 確認執行中的平台/context 有提供該 host 服務                                      |
 | 擴充功能身分/資料路徑錯誤              | slug 來自已安裝的檔案/目錄名稱，而非可編輯的 metadata                            |
 

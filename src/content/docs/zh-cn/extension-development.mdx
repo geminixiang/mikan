@@ -281,7 +281,7 @@ if (result.status === "completed") {
 
 `api.subagent.run` 永远不会 reject：每一种失败——包括请求校验、未知工具名称或尝试嵌套运行——都会 resolve 为一个带有终态状态和 `error` 消息的结果，因此调用方只需处理一种形态。
 
-除非请求提供了更低或更高的上限，否则每次运行默认为 8 个模型轮次、2 分钟以及 USD 0.50。
+每次运行默认为 100 个模型轮次、10 分钟以及 USD 10。命名 `profile` 可以施加更严格的上限；请求中的 budget 只能收紧这些上限，不能提高。内置 profile 可由 `<workspaceDir>/agents/<name>.md` 调整；新建 profile 文件必须声明工具授权。
 
 结果包含运行 ID、终态状态、原始最终文本、模型身份、轮次、token、成本、耗时以及一个可选的经过校验的 `output`。终态状态为 `completed`、`failed`、`cancelled`、`timeout`、`budget_exceeded` 与 `invalid_output`。
 
@@ -347,6 +347,40 @@ await api.uploadFile("/path/on/host/report.pdf", "Weekly report");
 
 定时任务会创建 mikan 事件文件，并在不继承对话历史记录的情况下触发自主运行，因此 `text` 必须自成一体；`api.triggerRun` 会立即触发一次这样的运行（例如响应外部事件）。如果同时运行多个平台且无法明确推断平台，请指定 `platform`。不要在定时任务文本中放入密钥。`api.notify` 默认发到扩展自己的对话，可传入 `conversationId` 供跨对话应用使用；`api.uploadFile` 会在支持上传的平台上把宿主端文件发进对话。
 
+### 交互式消息（Block Kit）
+
+`api.blockkit` 可发布及更新 Slack Block Kit 交互消息，并在不调用模型的情况下接收操作：
+
+```ts
+const { ts } = await api.blockkit.post({
+  text: "晚餐投票",
+  blocks: [
+    { type: "markdown", text: "**晚餐吃什么？**" },
+    {
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          text: { type: "plain_text", text: "拉面" },
+          action_id: "vote",
+          value: "ramen",
+        },
+      ],
+    },
+  ],
+});
+
+api.blockkit.onAction("vote", async (event) => {
+  if (!event.messageTs) return;
+  await api.blockkit.update(event.messageTs, {
+    text: "已记录投票",
+    blocks: [{ type: "markdown", text: `✅ ${event.userId} 投给 ${event.value}` }],
+  });
+});
+```
+
+发布时每个 `action_id` 都会添加 `ext:<slug>:…` namespace，因此交互只交给该 extension 的 `onAction` handler，不会启动 agent run。处理后应更新消息以移除或禁用按钮。完整示例见 `examples/extensions/poll`。
+
 ### 捆绑技能
 
 将技能放在扩展目录下：
@@ -397,7 +431,7 @@ mikan ext remove hello-mikan --conversation <conversationId>
 | `No entrypoint found`                  | 将 `mikan.extensions` 添加到 `package.json`，或添加 `index.{mjs,js,ts,mts}` 文件 |
 | `does not export an activate function` | 导出 `default function activate(...)` 或具名的 `activate`                        |
 | 已安装但未激活                         | 确认 `--state-dir` 和对话 ID，然后发送 `/pi-new`                                 |
-| 导入/模块错误                          | 在本地安装前安装运行时依赖；Git 安装不会运行 npm                                 |
+| 导入/模块错误                          | 本地路径来源需预先安装运行时依赖；Git 来源会自动安装已声明的依赖                 |
 | 定时任务/通知/回应不可用               | 确认运行中的平台/上下文提供了相应的宿主服务                                      |
 | 扩展标识/数据路径错误                  | slug 来自已安装文件/目录的名称，而非可编辑的元数据                               |
 

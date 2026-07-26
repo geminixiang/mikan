@@ -57,12 +57,12 @@ sequenceDiagram
 
 ## 通用工具
 
-| 文件                        | 用途                                                                                                      |
-| --------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `src/adapter.ts`            | 对外导出 `MessagingBot`、`ConversationEvent`、`ConversationMessage`、`ConversationResponder` 等通用接口。 |
-| `src/adapters/intake.ts`    | 共享消息入口流程：trigger、log、attachment、queue、handler 调用顺序。                                     |
-| `src/adapters/shared.ts`    | 共享 retry、queue、长消息切分、log、stop target resolution。                                              |
-| `src/adapters/streaming.ts` | 将 streaming response buffer 后再 flush，避免过于频繁更新平台消息。                                       |
+| 文件                                   | 用途                                                                                                      |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `src/adapter.ts`                       | 对外导出 `MessagingBot`、`ConversationEvent`、`ConversationMessage`、`ConversationResponder` 等通用接口。 |
+| `src/adapters/intake.ts`               | 共享消息入口流程：trigger、log、attachment、queue、handler 调用顺序。                                     |
+| `src/adapters/shared.ts`               | 共享 retry、queue、长消息切分、log、stop target resolution。                                              |
+| `src/adapters/progressive-renderer.ts` | 统一负责渐进式响应缓冲、工具进度、最终输出与平台写入串行化。                                              |
 
 ## 平台差异
 
@@ -83,7 +83,7 @@ sequenceDiagram
 />
 <LinkCard
   title="GitHub"
-  description="GitHub App 轮询、issue/PR 对话、watermark 去重与基于评论的流式响应。"
+  description="GitHub App 轮询、issue/PR 对话、watermark 去重与基于评论的响应。"
   href="/zh-cn/platform-adapters/github/"
 />
 

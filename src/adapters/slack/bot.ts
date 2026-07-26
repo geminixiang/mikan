@@ -28,6 +28,7 @@ import type {
   SlackEvent,
   SlackUser,
 } from "./types.js";
+import { isRecord, readTextFileIfExists } from "../../utils/file-guards.js";
 import { PRODUCT_NAME, formatForceStopped } from "../../platform-messages.js";
 import {
   appendBotResponseLog,
@@ -457,6 +458,26 @@ export class SlackMessagingBot implements MessagingBot {
       platform: "slack",
       ...(slackBlocks ? { slackBlocks } : {}),
     });
+  }
+
+  ownsBlockKitMessage(channel: string, ts: string, threadTs?: string): boolean {
+    const content = readTextFileIfExists(join(this.workingDir, channel, "log.jsonl"));
+    if (content === undefined) return false;
+    for (const line of content.trim().split("\n").toReversed()) {
+      try {
+        const entry: unknown = JSON.parse(line);
+        if (!isRecord(entry) || entry.ts !== ts) continue;
+        return (
+          entry.isMessagingBot === true &&
+          entry.platform === "slack" &&
+          Array.isArray(entry.slackBlocks) &&
+          entry.threadTs === threadTs
+        );
+      } catch {
+        continue;
+      }
+    }
+    return false;
   }
 
   getMessagingInfo(): MessagingInfo {

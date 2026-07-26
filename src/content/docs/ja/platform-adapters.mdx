@@ -59,12 +59,12 @@ sequenceDiagram
 
 ## 共通ユーティリティ
 
-| ファイル                    | 用途                                                                                                                  |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `src/adapter.ts`            | `MessagingBot`、`ConversationEvent`、`ConversationMessage`、`ConversationResponder` などの共通 interface を外部公開。 |
-| `src/adapters/intake.ts`    | 共通メッセージ入口フロー：trigger、log、attachment、queue、handler 呼び出し順。                                       |
-| `src/adapters/shared.ts`    | 共通の retry、queue、長文メッセージ分割、log、stop target resolution。                                                |
-| `src/adapters/streaming.ts` | streaming response を buffer してから flush し、プラットフォームメッセージの更新頻度を抑える。                        |
+| ファイル                               | 用途                                                                                                                  |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `src/adapter.ts`                       | `MessagingBot`、`ConversationEvent`、`ConversationMessage`、`ConversationResponder` などの共通 interface を外部公開。 |
+| `src/adapters/intake.ts`               | 共通メッセージ入口フロー：trigger、log、attachment、queue、handler 呼び出し順。                                       |
+| `src/adapters/shared.ts`               | 共通の retry、queue、長文メッセージ分割、log、stop target resolution。                                                |
+| `src/adapters/progressive-renderer.ts` | progressive response の buffering、tool progress、finalization、platform write の直列化を担う。                       |
 
 ## プラットフォーム差分
 
@@ -85,7 +85,7 @@ sequenceDiagram
 />
 <LinkCard
   title="GitHub"
-  description="GitHub App polling、issue/PR 会話、watermark 重複排除、コメントベースのストリーミング応答。"
+  description="GitHub App polling、issue/PR 会話、watermark 重複排除、コメントベースの応答。"
   href="/ja/platform-adapters/github/"
 />
 

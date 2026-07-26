@@ -1,4 +1,3 @@
 {
-  "ignore": ["examples/**", "scripts/**", "deploy/**"],
-  "ignoreBinaries": ["taskkill"]
+  "ignore": ["examples/**", "scripts/**", "deploy/**"]
 }

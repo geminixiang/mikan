@@ -11,7 +11,7 @@ description: mikan のプラットフォーム接続、セッション、agent�
 
 ### A. プラットフォーム接続レイヤー
 
-共通 adapter contract については [プラットフォーム接続](../platform-adapters/) を参照してください。各プラットフォームの詳細は [Slack](../platform-adapters/slack/)、[Discord](../platform-adapters/discord/)、[Telegram](../platform-adapters/telegram/)、[GitHub](../platform-adapters/github/) を参照してください。
+共通 adapter contract については [プラットフォーム接続](platform-adapters.mdx) を参照してください。各プラットフォームの詳細は [Slack](platform-adapters/slack.md)、[Discord](platform-adapters/discord.md)、[Telegram](platform-adapters/telegram.md)、[GitHub](platform-adapters/github.md) を参照してください。
 
 - `src/adapters/slack/*`
 - `src/adapters/telegram/*`

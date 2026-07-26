@@ -12,7 +12,7 @@ import { createGenerateImageTool } from "./generate-image.js";
 import { createReactTool } from "./react.js";
 import { createReadTool } from "./read.js";
 import { createSandboxTool } from "./sandbox.js";
-import type { PlatformToolPackFactory } from "./types.js";
+import type { PlatformToolPackFactory, PlatformToolRunContext } from "./types.js";
 import { createWriteTool } from "./write.js";
 
 export { createSubagentTool } from "./subagent.js";
@@ -36,7 +36,7 @@ export function createMikanTools(
   tools: AgentTool<TSchema>[];
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
-  bindPlatformToolPacks: (ctx: { conversationId: string; platformName: string }) => void;
+  bindPlatformToolPacks: (ctx: PlatformToolRunContext) => void;
   setEventContext: (context: {
     platform: string;
     conversationId: string;

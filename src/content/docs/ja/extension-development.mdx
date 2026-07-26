@@ -279,7 +279,7 @@ if (result.status === "completed") {
 
 `api.subagent.run` は決して reject しません。あらゆる失敗——リクエストの検証、未知の tool 名、ネストされた実行の試みを含む——は、終端ステータスと `error` メッセージを持つ結果に解決されるため、呼び出し側は 1 つの形だけを扱えばよくなります。
 
-実行は、リクエストがより低いまたはより高い上限を指定しない限り、既定でモデルターン 8 回、2 分、USD 0.50 になります。
+実行の既定値はモデルターン 100 回、10 分、USD 10 です。名前付き `profile` はより厳しい上限を設定でき、request budget はその上限を引き下げることだけができ、引き上げることはできません。組み込み profile は `<workspaceDir>/agents/<name>.md` で調整でき、新しい profile file は tool grant を宣言する必要があります。
 
 結果には、実行 ID、終端ステータス、生の最終テキスト、モデル識別子、ターン数、トークン、コスト、所要時間、および任意の検証済み `output` が含まれます。終端ステータスは `completed`、`failed`、`cancelled`、`timeout`、`budget_exceeded`、`invalid_output` です。
 
@@ -345,6 +345,40 @@ await api.uploadFile("/path/on/host/report.pdf", "Weekly report");
 
 スケジュールは mikan のイベントファイルを作成し、会話履歴を引き継がずに自律実行を開始するため、`text` は自己完結していなければなりません。`api.triggerRun` はそのような実行を即座に発火します（外部イベントへの応答など）。複数のプラットフォームが実行中で推論が曖昧な場合は、`platform` を指定してください。スケジュールテキストにシークレットを含めないでください。`api.notify` はデフォルトで拡張機能自身の会話に投稿し、会話をまたぐアプリケーション向けに明示的な `conversationId` を受け取ります。`api.uploadFile` はアップロード対応プラットフォームでホスト側のファイルを会話に送信します。
 
+### インタラクティブメッセージ（Block Kit）
+
+`api.blockkit` は Slack Block Kit のインタラクティブメッセージを投稿・更新し、model call なしで操作を受け取ります。
+
+```ts
+const { ts } = await api.blockkit.post({
+  text: "夕食の投票",
+  blocks: [
+    { type: "markdown", text: "**夕食は何にしますか？**" },
+    {
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          text: { type: "plain_text", text: "ラーメン" },
+          action_id: "vote",
+          value: "ramen",
+        },
+      ],
+    },
+  ],
+});
+
+api.blockkit.onAction("vote", async (event) => {
+  if (!event.messageTs) return;
+  await api.blockkit.update(event.messageTs, {
+    text: "投票を記録しました",
+    blocks: [{ type: "markdown", text: `✅ ${event.userId} voted for ${event.value}` }],
+  });
+});
+```
+
+投稿時、各 `action_id` には `ext:<slug>:…` namespace が付きます。そのため操作はこの extension の `onAction` handler だけに渡され、agent run は開始されません。処理後は message を更新して button を削除または無効化してください。完全な例は `examples/extensions/poll` にあります。
+
 ### 同梱スキル
 
 拡張機能ディレクトリ内にスキルを配置します。
@@ -390,13 +424,13 @@ mikan ext remove hello-mikan --conversation <conversationId>
 
 ## トラブルシューティング
 
-| 症状                                     | 確認事項                                                                                                |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `No entrypoint found`                    | `package.json` に `mikan.extensions` を追加するか、`index.{mjs,js,ts,mts}` ファイルを追加する           |
-| `does not export an activate function`   | `default function activate(...)` または名前付きの `activate` をエクスポートする                         |
-| インストール済みだが有効でない           | `--state-dir` と会話 ID を確認してから、`/pi-new` を送信する                                            |
-| インポート／モジュールエラー             | ローカルインストールの前にランタイム依存関係をインストールする。Git インストールでは npm は実行されない |
-| schedule/notify/react が利用できない     | 実行中のプラットフォーム／コンテキストがそのホストサービスを提供していることを確認する                  |
-| 拡張機能の識別子／データパスが正しくない | slug は編集可能なメタデータではなく、インストールされたファイル／ディレクトリ名から取得される           |
+| 症状                                     | 確認事項                                                                                                                        |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `No entrypoint found`                    | `package.json` に `mikan.extensions` を追加するか、`index.{mjs,js,ts,mts}` ファイルを追加する                                   |
+| `does not export an activate function`   | `default function activate(...)` または名前付きの `activate` をエクスポートする                                                 |
+| インストール済みだが有効でない           | `--state-dir` と会話 ID を確認してから、`/pi-new` を送信する                                                                    |
+| インポート／モジュールエラー             | ローカルパス source では先に runtime dependencies をインストールする。Git source は宣言済み dependencies を自動インストールする |
+| schedule/notify/react が利用できない     | 実行中のプラットフォーム／コンテキストがそのホストサービスを提供していることを確認する                                          |
+| 拡張機能の識別子／データパスが正しくない | slug は編集可能なメタデータではなく、インストールされたファイル／ディレクトリ名から取得される                                   |
 
 ツール、SQLite 永続化、スケジュール、プロアクティブメッセージ、同梱スキルをまとめて必要とする場合は、[`examples/extensions/agent-pm`](https://github.com/geminixiang/mikan/tree/main/examples/extensions/agent-pm) から始めてください。

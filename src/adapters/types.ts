@@ -70,7 +70,8 @@ export interface ProgressiveRendererPlatform {
   onWorkingChanged?: (working: boolean, responseId: string | null) => Promise<void>;
   setTyping?: (isTyping: boolean, responseId: string | null) => Promise<void>;
   onFinish?: (text: string, responseId: string | null) => void;
-  logStreamingDeltas?: boolean;
+  /** Whether `respond` calls are complete messages that should be logged immediately. */
+  logIntermediateResponses?: boolean;
   /** Whether the platform accepts incremental response deltas. */
   supportsDeltas?: boolean;
   /** Native stream operations, when this reply target supports them. */

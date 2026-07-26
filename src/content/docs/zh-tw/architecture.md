@@ -11,7 +11,7 @@ description: 了解 mikan 的平台接入、工作階段、agent、sandbox、vau
 
 ### A. 平台接入層
 
-共用 adapter contract 請見[平台接入](../platform-adapters/)。各平台細節請見 [Slack](../platform-adapters/slack/)、[Discord](../platform-adapters/discord/)、[Telegram](../platform-adapters/telegram/) 與 [GitHub](../platform-adapters/github/)。
+共用 adapter contract 請見[平台接入](platform-adapters.mdx)。各平台細節請見 [Slack](platform-adapters/slack.md)、[Discord](platform-adapters/discord.md)、[Telegram](platform-adapters/telegram.md) 與 [GitHub](platform-adapters/github.md)。
 
 - `src/adapters/slack/*`
 - `src/adapters/telegram/*`

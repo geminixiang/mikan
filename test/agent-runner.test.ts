@@ -5,9 +5,11 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { MutableModels } from "@earendil-works/pi-ai";
 import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../src/adapter.js";
+import { createSlackToolPack } from "../src/adapters/slack/tool-pack.js";
 import { createRunner } from "../src/agent.js";
 import { MikanAgentSession, MikanModels } from "../src/harness/index.js";
 import { createManagedSessionFile, getChannelSessionDir } from "../src/sessions/store.js";
+import type { PlatformToolPackFactory } from "../src/tools/types.js";
 
 /**
  * Drives PiAgentWrapper.run() end to end with a faux provider: the runner is
@@ -48,7 +50,9 @@ function createFauxModels(): { models: MikanModels; faux: ReturnType<typeof faux
   return { models, faux };
 }
 
-async function createTestRunner() {
+async function createTestRunner(
+  platformToolPackFactories: readonly PlatformToolPackFactory[] = [],
+) {
   const { models, faux } = createFauxModels();
   const workspaceDir = join(dir, "workspace");
   const conversationDir = join(workspaceDir, "C1");
@@ -64,11 +68,13 @@ async function createTestRunner() {
     workspaceDir,
     sessionScope: { sessionDir, contextFile, threadRootMessage: null },
     models,
+    platformToolPackFactories,
   });
   return { runner, faux };
 }
 
 function makeResponder(): ConversationResponder & {
+  respond: ReturnType<typeof vi.fn>;
   replaceResponse: ReturnType<typeof vi.fn>;
   replaceSubagentProgress: ReturnType<typeof vi.fn>;
   respondDiagnostic: ReturnType<typeof vi.fn>;
@@ -329,6 +335,36 @@ describe("PiAgentWrapper.run", () => {
     );
 
     expect(readFileSync(globalMemoryPath, "utf-8")).toBe("global stays unchanged");
+  });
+
+  test("a successful Slack Block Kit call owns the final visible response", async () => {
+    const postBlocks = vi.fn(async () => ({ ts: "block-message" }));
+    const { runner, faux } = await createTestRunner([
+      () =>
+        createSlackToolPack({
+          postBlocks,
+          updateBlocks: vi.fn(async () => {}),
+        }),
+    ]);
+    faux.setResponses([
+      fauxAssistantMessage(
+        fauxToolCall("slack_blockkit", {
+          blocks: [{ type: "section", text: { type: "mrkdwn", text: "Choose" } }],
+          text: "Choose",
+        }),
+      ),
+      fauxAssistantMessage("This text must not be posted after the interactive message."),
+    ]);
+    const responder = makeResponder();
+
+    await runner.run(makeMessage(), responder, { ...platform, name: "slack" });
+
+    expect(postBlocks).toHaveBeenCalledOnce();
+    const visibleText = [
+      ...responder.respond.mock.calls,
+      ...responder.replaceResponse.mock.calls,
+    ].flatMap((call) => call.map(String));
+    expect(visibleText.join("\n")).not.toContain("This text must not be posted");
   });
 
   test("empty final text leaves the placeholder untouched", async () => {

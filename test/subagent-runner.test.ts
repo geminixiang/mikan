@@ -93,6 +93,57 @@ describe("runSubagent", () => {
     });
   });
 
+  test("does not let request budgets raise profile caps", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([fauxAssistantMessage("bounded")]);
+    const promptSpy = vi.spyOn(MikanAgentSession.prototype, "prompt");
+    try {
+      const result = await runSubagent({
+        request: {
+          task: "Stay within the profile",
+          profile: "bounded",
+          budget: {
+            maxTurns: 20,
+            maxTokens: 20_000,
+            maxCostUsd: 20,
+            maxDurationMs: 20_000,
+          },
+        },
+        defaultModel: model,
+        thinkingLevel: "off",
+        models,
+        workspaceDir: dir,
+        availableTools: [],
+        profiles: new Map([
+          [
+            "bounded",
+            {
+              name: "bounded",
+              description: "A bounded profile",
+              systemPrompt: "Stay bounded.",
+              tools: [],
+              requiredTools: [],
+              maxTurns: 2,
+              maxTokens: 2_000,
+              maxCostUsd: 2,
+              maxDurationMs: 2_000,
+            },
+          ],
+        ]),
+      });
+
+      expect(result.status).toBe("completed");
+      expect(promptSpy.mock.calls[0]?.[1]?.budget).toEqual({
+        maxLlmCalls: 2,
+        maxTokens: 2_000,
+        maxCostUsd: 2,
+        maxDurationMs: 2_000,
+      });
+    } finally {
+      promptSpy.mockRestore();
+    }
+  });
+
   test("backs the normal agent's subagent tool", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([
