@@ -5,9 +5,18 @@ import type { ConversationRuntimeState, SessionLifecycleOptions } from "./types.
 const DEFAULT_MAX_SESSIONS = 500;
 const DEFAULT_IDLE_TIMEOUT_MS = 3_600_000;
 
+interface ConversationBarrier {
+  activeWork: number;
+  pendingMaintenance: number;
+  maintenanceTail: Promise<void>;
+  activeWaiters: Array<() => void>;
+  workWaiters: Array<() => void>;
+}
+
 export class SessionLifecycle {
   private readonly states = new Map<string, ConversationRuntimeState>();
   private readonly queues = new Map<string, Promise<void>>();
+  private readonly conversationBarriers = new Map<string, ConversationBarrier>();
   private readonly maxSessions: number;
   private readonly idleTimeoutMs: number;
   private readonly now: () => number;
@@ -35,6 +44,69 @@ export class SessionLifecycle {
     } finally {
       if (this.queues.get(sessionKey) === next) this.queues.delete(sessionKey);
     }
+  }
+
+  async acquireConversationWork(conversationId: string): Promise<() => void> {
+    const barrier = this.getConversationBarrier(conversationId);
+    while (barrier.pendingMaintenance > 0) {
+      await new Promise<void>((resolve) => barrier.workWaiters.push(resolve));
+    }
+
+    barrier.activeWork++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      barrier.activeWork--;
+      if (barrier.activeWork === 0) {
+        const waiters = barrier.activeWaiters.splice(0);
+        for (const resolve of waiters) resolve();
+      }
+    };
+  }
+
+  async runConversationMaintenance<T>(
+    conversationId: string,
+    maintenance: () => Promise<T>,
+  ): Promise<T> {
+    const barrier = this.getConversationBarrier(conversationId);
+    barrier.pendingMaintenance++;
+
+    const previousMaintenance = barrier.maintenanceTail;
+    let finishMaintenance!: () => void;
+    const maintenanceTurn = new Promise<void>((resolve) => (finishMaintenance = resolve));
+    barrier.maintenanceTail = previousMaintenance.then(() => maintenanceTurn);
+
+    await previousMaintenance;
+    if (barrier.activeWork > 0) {
+      await new Promise<void>((resolve) => barrier.activeWaiters.push(resolve));
+    }
+
+    try {
+      return await maintenance();
+    } finally {
+      finishMaintenance();
+      barrier.pendingMaintenance--;
+      if (barrier.pendingMaintenance === 0) {
+        const waiters = barrier.workWaiters.splice(0);
+        for (const resolve of waiters) resolve();
+      }
+    }
+  }
+
+  private getConversationBarrier(conversationId: string): ConversationBarrier {
+    const existing = this.conversationBarriers.get(conversationId);
+    if (existing) return existing;
+
+    const barrier: ConversationBarrier = {
+      activeWork: 0,
+      pendingMaintenance: 0,
+      maintenanceTail: Promise.resolve(),
+      activeWaiters: [],
+      workWaiters: [],
+    };
+    this.conversationBarriers.set(conversationId, barrier);
+    return barrier;
   }
 
   isRunning(sessionKey: string): boolean {

@@ -129,6 +129,21 @@ function makeEventAndContext(ts: string): {
   };
 }
 
+function makeThreadEventAndContext(ts: string): {
+  event: ConversationEvent;
+  context: ConversationContext;
+} {
+  const result = makeEventAndContext(ts);
+  const threadTs = "2000.1";
+  result.event.text = `thread message ${ts}`;
+  result.event.thread_ts = threadTs;
+  result.event.sessionKey = `C123:${threadTs}`;
+  result.context.message.text = result.event.text;
+  result.context.message.threadTs = threadTs;
+  result.context.message.sessionKey = result.event.sessionKey;
+  return result;
+}
+
 const bot = {
   postMessage: vi.fn().mockResolvedValue("TS"),
   updateMessage: vi.fn().mockResolvedValue(undefined),
@@ -396,6 +411,52 @@ describe("ConversationRuntime lifecycle", () => {
     expect(readFileSync(resolveChannelSessionFile(conversationDir), "utf-8")).not.toContain(
       "old shared decision",
     );
+  });
+
+  test("automatic shared rotation blocks thread startup until Dream and rotation finish", async () => {
+    const { models, faux } = createFauxModels();
+    const runtime = makeRuntime(models);
+    const originalSession = createManagedSessionFile(
+      getChannelSessionDir(conversationDir),
+      conversationDir,
+    );
+    rewriteSessionTimestamp(originalSession, "2026-01-05T12:00:00.000Z");
+
+    let dreamStarted = false;
+    let releaseDream!: () => void;
+    const dreamGate = new Promise<void>((resolve) => (releaseDream = resolve));
+    const runStarts: string[] = [];
+    faux.setResponses([
+      async () => {
+        dreamStarted = true;
+        await dreamGate;
+        return fauxAssistantMessage("memory preserved");
+      },
+      (context) => {
+        const messages = JSON.stringify(context.messages);
+        runStarts.push(messages.includes("thread message") ? "thread" : "top-level");
+        expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
+        return fauxAssistantMessage("reply");
+      },
+      fauxAssistantMessage("thread reply"),
+    ]);
+
+    const topLevel = makeEventAndContext("5");
+    const topLevelDone = runtime.handleEvent(topLevel.event, bot, topLevel.context);
+    await vi.waitFor(() => expect(dreamStarted).toBe(true));
+
+    const thread = makeThreadEventAndContext("2000.2");
+    const threadDone = runtime.handleEvent(thread.event, bot, thread.context);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(runStarts).toEqual([]);
+    expect(resolveChannelSessionFile(conversationDir)).toBe(originalSession);
+
+    releaseDream();
+    await Promise.all([topLevelDone, threadDone]);
+
+    expect(runStarts).toContain("thread");
+    expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
   });
 
   test("keeps the old shared session when automatic session Dream fails", async () => {

@@ -268,27 +268,32 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     const currentSession = resolveChannelSessionFile(conversationDir);
     if (!currentSession || !shouldRotateTopLevelSession(currentSession, new Date())) return;
 
-    const state = await this.getOrCreateState({
-      conversationId,
-      sessionKey,
-      conversationKind: message.conversationKind,
-      currentMessageId: message.id,
-    });
-    const result = await this.dreamSessionMemory(state, message, platform);
-    if (!result.success) {
-      const detail = result.errorMessage ? `: ${result.errorMessage}` : "";
-      log.logWarning(`[${conversationId}] Automatic Session Dream failed${detail}`);
-      return;
-    }
+    await this.sessions.runConversationMaintenance(conversationId, async () => {
+      const session = resolveChannelSessionFile(conversationDir);
+      if (!session || !shouldRotateTopLevelSession(session, new Date())) return;
 
-    const runtimeCwd = runtimeCwdForSandbox(
-      this.options.sandbox,
-      this.options.workingDir,
-      conversationId,
-    );
-    this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
-    this.sessions.discard(sessionKey);
-    log.logInfo(`[${conversationId}] Session Dream completed; rotated session: ${sessionKey}`);
+      const state = await this.getOrCreateState({
+        conversationId,
+        sessionKey,
+        conversationKind: message.conversationKind,
+        currentMessageId: message.id,
+      });
+      const result = await this.dreamSessionMemory(state, message, platform);
+      if (!result.success) {
+        const detail = result.errorMessage ? `: ${result.errorMessage}` : "";
+        log.logWarning(`[${conversationId}] Automatic Session Dream failed${detail}`);
+        return;
+      }
+
+      const runtimeCwd = runtimeCwdForSandbox(
+        this.options.sandbox,
+        this.options.workingDir,
+        conversationId,
+      );
+      this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
+      this.sessions.discard(sessionKey);
+      log.logInfo(`[${conversationId}] Session Dream completed; rotated session: ${sessionKey}`);
+    });
   }
 
   private async resetSession(
@@ -384,111 +389,121 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     const activeSettlement = this.sessions.get(sessionKey)?.runSettlement;
     if (activeSettlement) await activeSettlement;
 
-    const conversationDir = join(this.options.workingDir, conversationId);
-    const waitedForParent = await waitForThreadSessionBootstrap({
-      parentSessionKey: conversationId,
-      sessionKey,
-      hasThreadSession: () => hasMaterializedChatSession({ conversationDir, sessionKey }),
-      isParentRunning: () => this.sessions.get(conversationId)?.running === true,
-    });
-    if (waitedForParent) {
-      log.logInfo(
-        `[${conversationId}] Delayed thread bootstrap until parent session sealed: ${sessionKey}`,
+    if (sessionKey === conversationId) {
+      await this.rotateSharedSessionAfterDream(
+        conversationId,
+        sessionKey,
+        context.message,
+        context.platform,
       );
     }
 
-    await this.rotateSharedSessionAfterDream(
-      conversationId,
-      sessionKey,
-      context.message,
-      context.platform,
-    );
-
-    let state: ConversationState;
+    const releaseConversationWork = await this.sessions.acquireConversationWork(conversationId);
     try {
-      state = await this.getOrCreateState({
-        conversationId,
+      const conversationDir = join(this.options.workingDir, conversationId);
+      const waitedForParent = await waitForThreadSessionBootstrap({
+        parentSessionKey: conversationId,
         sessionKey,
-        currentMessageId: event.ts,
-        conversationKind: event.conversationKind,
+        hasThreadSession: () => hasMaterializedChatSession({ conversationDir, sessionKey }),
+        isParentRunning: () => this.sessions.get(conversationId)?.running === true,
       });
-      state.runner.syncChatHistory(event.ts);
-
-      // Extension-contributed commands: deterministic dispatch, no agent run.
-      // Built-in commands already had their chance above, so extensions can
-      // never shadow them; unmatched slash text falls through to the agent.
-      if (event.text.trim().startsWith("/")) {
-        const handled = await state.runner.tryExtensionCommand(context.message, context.responder);
-        if (handled) {
-          state.lastAccessedAt = Date.now();
-          return;
-        }
+      if (waitedForParent) {
+        log.logInfo(
+          `[${conversationId}] Delayed thread bootstrap until parent session sealed: ${sessionKey}`,
+        );
       }
-    } catch (err) {
-      reportUserFacingError(err, {
-        domain: "mikan",
-        surface: "session_setup",
-        operation: "get_or_create_state",
-        severity: "error",
-        platform: context.platform.name,
-        context: {
+
+      let state: ConversationState;
+      try {
+        state = await this.getOrCreateState({
           conversationId,
           sessionKey,
-          messageId: context.message.id,
-          threadTs: context.message.threadTs,
-          attachmentCount: context.message.attachments?.length ?? 0,
-        },
-      });
-      throw err;
-    }
+          currentMessageId: event.ts,
+          conversationKind: event.conversationKind,
+        });
+        state.runner.syncChatHistory(event.ts);
 
-    state.running = true;
-    state.stopRequested = false;
-    state.startedAt = Date.now();
-    state.lastActivityAt = Date.now();
-
-    log.logInfo(`[${conversationId}] Starting run: ${event.text.substring(0, 50)}`);
-
-    const runPromise = (async () => {
-      try {
-        const result = await this.runWithInstrumentation(
-          context,
-          { conversationId, sessionKey, startedAt: state.startedAt },
-          async () => {
-            await context.responder.setTyping(true);
-            await context.responder.setWorking(true);
-            try {
-              return await state.runner.run(context.message, context.responder, context.platform);
-            } finally {
-              await context.responder.setWorking(false);
-            }
-          },
-        );
-
-        if (result?.stopReason === "aborted" && state.stopRequested) {
-          if (state.stopMessageTs) {
-            await bot.updateMessage(conversationId, state.stopMessageTs, formatStopped(bot));
-            state.stopMessageTs = undefined;
-          } else {
-            await bot.postMessage(conversationId, formatStopped(bot));
+        // Extension-contributed commands: deterministic dispatch, no agent run.
+        // Built-in commands already had their chance above, so extensions can
+        // never shadow them; unmatched slash text falls through to the agent.
+        if (event.text.trim().startsWith("/")) {
+          const handled = await state.runner.tryExtensionCommand(
+            context.message,
+            context.responder,
+          );
+          if (handled) {
+            state.lastAccessedAt = Date.now();
+            return;
           }
         }
-      } finally {
-        state.running = false;
-        state.lastAccessedAt = Date.now();
-        Sentry.metrics.gauge("agent.sessions.active", this.inFlightRuns.size - 1);
-        this.sessions.evictIdle();
+      } catch (err) {
+        reportUserFacingError(err, {
+          domain: "mikan",
+          surface: "session_setup",
+          operation: "get_or_create_state",
+          severity: "error",
+          platform: context.platform.name,
+          context: {
+            conversationId,
+            sessionKey,
+            messageId: context.message.id,
+            threadTs: context.message.threadTs,
+            attachmentCount: context.message.attachments?.length ?? 0,
+          },
+        });
+        throw err;
       }
-    })();
 
-    this.inFlightRuns.add(runPromise);
-    state.runSettlement = runPromise;
-    Sentry.metrics.gauge("agent.sessions.active", this.inFlightRuns.size);
-    try {
-      await runPromise;
+      state.running = true;
+      state.stopRequested = false;
+      state.startedAt = Date.now();
+      state.lastActivityAt = Date.now();
+
+      log.logInfo(`[${conversationId}] Starting run: ${event.text.substring(0, 50)}`);
+
+      const runPromise = (async () => {
+        try {
+          const result = await this.runWithInstrumentation(
+            context,
+            { conversationId, sessionKey, startedAt: state.startedAt },
+            async () => {
+              await context.responder.setTyping(true);
+              await context.responder.setWorking(true);
+              try {
+                return await state.runner.run(context.message, context.responder, context.platform);
+              } finally {
+                await context.responder.setWorking(false);
+              }
+            },
+          );
+
+          if (result?.stopReason === "aborted" && state.stopRequested) {
+            if (state.stopMessageTs) {
+              await bot.updateMessage(conversationId, state.stopMessageTs, formatStopped(bot));
+              state.stopMessageTs = undefined;
+            } else {
+              await bot.postMessage(conversationId, formatStopped(bot));
+            }
+          }
+        } finally {
+          state.running = false;
+          state.lastAccessedAt = Date.now();
+          Sentry.metrics.gauge("agent.sessions.active", this.inFlightRuns.size - 1);
+          this.sessions.evictIdle();
+        }
+      })();
+
+      this.inFlightRuns.add(runPromise);
+      state.runSettlement = runPromise;
+      Sentry.metrics.gauge("agent.sessions.active", this.inFlightRuns.size);
+      try {
+        await runPromise;
+      } finally {
+        this.inFlightRuns.delete(runPromise);
+        if (state.runSettlement === runPromise) state.runSettlement = undefined;
+      }
     } finally {
-      this.inFlightRuns.delete(runPromise);
-      if (state.runSettlement === runPromise) state.runSettlement = undefined;
+      releaseConversationWork();
     }
   }
 
