@@ -1,8 +1,8 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { buildPromptPayload } from "../src/agent.js";
+import { buildPromptPayload, translateAttachPathToHost } from "../src/agent.js";
 import type { ConversationMessage } from "../src/adapter.js";
 import { createMountedRuntimePathContext } from "../src/sandbox/path-context.js";
 
@@ -62,5 +62,15 @@ describe("buildPromptPayload", () => {
 
     expect(payload.imageAttachments).toEqual([]);
     expect(payload.userMessage).toContain("/workspace/C123/attachments/notes.txt");
+  });
+
+  test("rejects an existing symlink that points outside the host workspace", () => {
+    const linkPath = join(workspaceDir, "C123", "attachments", "secret.txt");
+    symlinkSync("/etc/passwd", linkPath);
+    const pathContext = createMountedRuntimePathContext(workspaceDir, "/workspace");
+
+    expect(() => translateAttachPathToHost("C123/attachments/secret.txt", pathContext)).toThrow(
+      "symlink target is outside",
+    );
   });
 });

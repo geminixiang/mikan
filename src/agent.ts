@@ -32,9 +32,9 @@ import {
   settleSubagentProgress,
 } from "./subagent-progress.js";
 import { createHash } from "crypto";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, realpathSync } from "fs";
 import { mkdir, readFile } from "fs/promises";
-import { basename, join, posix } from "path";
+import { basename, isAbsolute, join, posix, relative, resolve, sep } from "path";
 import type {
   ConversationKind,
   ConversationMessage,
@@ -103,14 +103,60 @@ export function translateRuntimePathToHost(
   return pathContext.runtimeToHostPath?.(runtimePath) ?? runtimePath;
 }
 
+function isWithinPathRoot(path: string, root: string): boolean {
+  const pathRelative = relative(root, path);
+  return (
+    pathRelative === "" ||
+    (pathRelative !== ".." && !pathRelative.startsWith(`..${sep}`) && !isAbsolute(pathRelative))
+  );
+}
+
+function hasParentTraversal(path: string): boolean {
+  return path.split(/[\\/]/).some((segment) => segment === "..");
+}
+
 export function translateAttachPathToHost(
   filePath: string,
   pathContext: RuntimePathContext,
 ): string {
+  if (!pathContext.runtimeToHostPath) {
+    throw new Error(
+      "Cannot attach files: this sandbox has no host-backed runtime path mapping; attachments are unavailable for remote sandboxes such as Cloudflare or Firecracker",
+    );
+  }
+  if (hasParentTraversal(filePath)) {
+    throw new Error("Cannot attach files: parent-directory traversal is not allowed");
+  }
+
+  const runtimeRoot = resolve(pathContext.runtimeWorkspaceRoot);
   const runtimePath = posix.isAbsolute(filePath)
     ? filePath
     : posix.join(pathContext.runtimeWorkspaceRoot, filePath);
-  return translateRuntimePathToHost(runtimePath, pathContext);
+  const normalizedRuntimePath = resolve(runtimePath);
+  if (!isWithinPathRoot(normalizedRuntimePath, runtimeRoot)) {
+    throw new Error("Cannot attach files: path must be within the runtime workspace");
+  }
+
+  const hostRoot = resolve(pathContext.hostWorkspaceRoot);
+  const translatedPath = pathContext.runtimeToHostPath(runtimePath);
+  const hostPath = resolve(translatedPath);
+  if (!isWithinPathRoot(hostPath, hostRoot)) {
+    throw new Error("Cannot attach files: path must be within the host workspace");
+  }
+
+  // Check existing targets without requiring realpath for files that have not
+  // been created yet. This blocks symlinks in the workspace from exposing an
+  // arbitrary host file while preserving the uploader's normal missing-file
+  // error for paths that do not exist.
+  if (existsSync(hostPath)) {
+    const realHostRoot = existsSync(hostRoot) ? resolve(realpathSync(hostRoot)) : hostRoot;
+    const realHostPath = resolve(realpathSync(hostPath));
+    if (!isWithinPathRoot(realHostPath, realHostRoot)) {
+      throw new Error("Cannot attach files: symlink target is outside the host workspace");
+    }
+  }
+
+  return hostPath;
 }
 
 const IMAGE_MIME_TYPES: Record<string, string> = {

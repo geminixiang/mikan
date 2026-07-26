@@ -151,6 +151,39 @@ describe("runtime path context", () => {
     );
   });
 
+  test("keeps an absolute host attach path inside the host workspace", () => {
+    const pathContext = getUnresolvedSandboxPathContext({ type: "host" }, "/host/workspace");
+
+    expect(translateAttachPathToHost("/host/workspace/report.txt", pathContext)).toBe(
+      "/host/workspace/report.txt",
+    );
+  });
+
+  test("rejects parent traversal in attach paths", () => {
+    const pathContext = getUnresolvedSandboxPathContext(
+      { type: "image", image: "ubuntu:24.04" },
+      "/host/workspace",
+    );
+
+    expect(() => translateAttachPathToHost("../outside.txt", pathContext)).toThrow(
+      "parent-directory traversal",
+    );
+    expect(() => translateAttachPathToHost("/workspace/C123/../outside.txt", pathContext)).toThrow(
+      "parent-directory traversal",
+    );
+  });
+
+  test("rejects absolute host paths outside the runtime workspace", () => {
+    const pathContext = getUnresolvedSandboxPathContext(
+      { type: "image", image: "ubuntu:24.04" },
+      "/host/workspace",
+    );
+
+    expect(() => translateAttachPathToHost("/etc/passwd", pathContext)).toThrow(
+      "runtime workspace",
+    );
+  });
+
   test("cloudflare keeps runtime paths remote and event control plane on host", () => {
     const pathContext = getUnresolvedSandboxPathContext(
       { type: "cloudflare", sandboxId: "slack-u123" },
@@ -164,6 +197,20 @@ describe("runtime path context", () => {
     expect(pathContext.runtimeToHostPath).toBeUndefined();
     expect(translateRuntimePathToHost("/workspace/C123/report.txt", pathContext)).toBe(
       "/workspace/C123/report.txt",
+    );
+    expect(() => translateAttachPathToHost("report.txt", pathContext)).toThrow(
+      "attachments are unavailable",
+    );
+  });
+
+  test("firecracker rejects host uploads explicitly", () => {
+    const pathContext = getUnresolvedSandboxPathContext(
+      { type: "firecracker", vmId: "vm-1", hostPath: "/host/workspace" },
+      "/host/workspace",
+    );
+
+    expect(() => translateAttachPathToHost("report.txt", pathContext)).toThrow(
+      "attachments are unavailable",
     );
   });
 });
