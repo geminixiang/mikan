@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -92,6 +92,25 @@ describe("mikan ext install from git", () => {
       expect(() => resolveGitSource({ url: `file://${repo}`, subpath })).toThrow(
         /relative path without '\.\.'/,
       );
+    }
+  });
+
+  test("resolveGitSource rejects subpaths through symlinks leaving the clone", () => {
+    const outside = mkdtempSync(join(tmpdir(), "mikan-ext-git-outside-"));
+    try {
+      symlinkSync(outside, join(repo, "examples", "outside-link"), "dir");
+      execFileSync("git", ["add", "-A"], { cwd: repo });
+      execFileSync(
+        "git",
+        ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "symlink"],
+        { cwd: repo },
+      );
+
+      expect(() =>
+        resolveGitSource({ url: `file://${repo}`, subpath: "examples/outside-link" }),
+      ).toThrow(/Subpath escapes repository/);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
     }
   });
 
