@@ -83,8 +83,40 @@ describe("FileVaultManager", () => {
     });
   });
 
+  test("rejects traversal keys on read paths", () => {
+    const outsidePath = join(tmpDir, "outside");
+    mkdirSync(outsidePath, { recursive: true });
+    writeFileSync(join(outsidePath, "env"), "TOKEN=outside\n");
+    const mgr = new FileVaultManager(tmpDir);
+
+    for (const key of [
+      ".",
+      "..",
+      "../outside",
+      "/tmp/outside",
+      "nested/../../outside",
+      "nested\\\\outside",
+      "bad\nkey",
+    ]) {
+      expect(mgr.hasEntry(key)).toBe(false);
+      expect(mgr.resolve(key)).toBeUndefined();
+    }
+  });
+
   test("returns undefined for users without a vault directory", () => {
     expect(new FileVaultManager(tmpDir).resolve("UNKNOWN")).toBeUndefined();
+  });
+
+  test("rejects traversal keys on write paths", () => {
+    const mgr = new FileVaultManager(tmpDir);
+
+    expect(() => mgr.upsertEnv("../outside", { TOKEN: "written" })).toThrow(
+      "vault: invalid vault key",
+    );
+    expect(() => mgr.upsertFile("/tmp/outside", "creds.json", "written")).toThrow(
+      "vault: invalid vault key",
+    );
+    expect(existsSync(join(tmpDir, "outside", "env"))).toBe(false);
   });
 
   test("upsertEnv creates private files and merges values", () => {
@@ -121,6 +153,18 @@ describe("FileVaultManager", () => {
     expect(sharedVaultKey("team.prod-1")).toBe("shared/team.prod-1");
     expect(sharedVaultKey("../secret")).toBeUndefined();
     expect(sharedVaultKey("bad/name")).toBeUndefined();
+  });
+
+  test("copySharedVaultTo rejects traversal target keys", () => {
+    const sharedDir = join(vaultsDir, "shared", "gliaclaw");
+    mkdirSync(sharedDir, { recursive: true });
+    writeFileSync(join(sharedDir, "env"), "TOKEN=shared\n");
+    const mgr = new FileVaultManager(tmpDir);
+
+    expect(() => mgr.copySharedVaultTo("gliaclaw", "../outside")).toThrow(
+      "vault: invalid vault key",
+    );
+    expect(existsSync(join(tmpDir, "outside", "env"))).toBe(false);
   });
 
   test("copySharedVaultTo merge-copies shared vault into target with shared values winning", () => {

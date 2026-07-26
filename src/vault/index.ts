@@ -79,6 +79,7 @@ export class FileVaultManager implements VaultManager {
   }
 
   hasEntry(key: string): boolean {
+    if (!isSafeVaultKey(key)) return false;
     return existsSync(join(this.vaultsDir, key));
   }
 
@@ -104,6 +105,7 @@ export class FileVaultManager implements VaultManager {
     name: string,
     targetKey: string,
   ): { filesCopied: number; envKeysCopied: number } {
+    if (!isSafeVaultKey(targetKey)) throw new Error(`vault: invalid vault key: ${targetKey}`);
     const sourceKey = sharedVaultKey(name);
     if (!sourceKey) throw new Error(`vault: invalid shared login name: ${name}`);
     const sourceDir = join(this.vaultsDir, sourceKey);
@@ -116,6 +118,7 @@ export class FileVaultManager implements VaultManager {
   }
 
   resolve(userId: string): ResolvedVault | undefined {
+    if (!isSafeVaultKey(userId)) return undefined;
     const dir = join(this.vaultsDir, userId);
     if (!existsSync(dir)) return undefined;
     return this.buildResolved(userId);
@@ -125,12 +128,19 @@ export class FileVaultManager implements VaultManager {
     if (!existsSync(this.vaultsDir)) return [];
     const keys = new Set<string>();
     for (const entry of readdirSync(this.vaultsDir, { withFileTypes: true })) {
-      if (entry.isDirectory() && !RESERVED_VAULT_DIRS.has(entry.name)) keys.add(entry.name);
+      if (
+        entry.isDirectory() &&
+        !RESERVED_VAULT_DIRS.has(entry.name) &&
+        isSafeVaultKey(entry.name)
+      ) {
+        keys.add(entry.name);
+      }
     }
     return Array.from(keys, (key) => this.buildResolved(key));
   }
 
   upsertEnv(key: string, env: Record<string, string>): void {
+    if (!isSafeVaultKey(key)) throw new Error(`vault: invalid vault key: ${key}`);
     const dir = join(this.vaultsDir, key);
     const envPath = join(dir, "env");
     ensurePrivateDir(this.vaultsDir);
@@ -147,6 +157,7 @@ export class FileVaultManager implements VaultManager {
   }
 
   upsertFile(key: string, relativePath: string, content: string, targetPath?: string): void {
+    if (!isSafeVaultKey(key)) throw new Error(`vault: invalid vault key: ${key}`);
     const normalizedPath = normalizeVaultRelativePath(relativePath);
     if (!normalizedPath || (targetPath !== undefined && !normalizeVaultTargetPath(targetPath))) {
       throw new Error(`vault: invalid relative secret file path for "${key}": ${relativePath}`);
@@ -243,6 +254,24 @@ function copyVaultDir(
   }
 
   return { filesCopied, envKeysCopied };
+}
+
+function isSafeVaultKey(key: unknown): key is string {
+  if (typeof key !== "string" || !key || isAbsolute(key)) return false;
+  if (/^[A-Za-z]:[\\/]/.test(key)) return false;
+
+  return key.split(/[\\/]/).every((segment) => {
+    return (
+      segment !== "" && segment !== "." && segment !== ".." && !hasUnsafeControlCharacter(segment)
+    );
+  });
+}
+
+function hasUnsafeControlCharacter(value: string): boolean {
+  return Array.from(value).some((character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return (code >= 0 && code <= 31) || (code >= 127 && code <= 159);
+  });
 }
 
 function normalizeVaultRelativePath(relativePath: string): string | undefined {
