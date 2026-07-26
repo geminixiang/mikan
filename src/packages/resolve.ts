@@ -26,7 +26,15 @@ import { loadGlobalSettings, resolveConversationSettings } from "../config.js";
 import * as log from "../log.js";
 import { materializeSource, packageScopeDir } from "./materialize.js";
 import { parseSource, sourceIdentity } from "./source.js";
-import type { MaterializedPackage, PackageError, PackageScope } from "./types.js";
+import type {
+  MaterializedPackage,
+  PackageError,
+  PackageScope,
+  ResolvePackagesOptions,
+  ResolvedPackages,
+} from "./types.js";
+
+export type { ResolvePackagesOptions, ResolvedPackages } from "./types.js";
 
 /** Conventional resource directories inside a package, mirroring pi's layout. */
 const EXTENSIONS_SUBDIR = "extensions";
@@ -55,32 +63,6 @@ export function packageSkillRuntimeDir(slug: string): string {
   return `${PACKAGE_RUNTIME_ROOT}/${slug}/${SKILLS_SUBDIR}`;
 }
 
-export interface ResolvedPackages {
-  /** Packages that materialized, in load order: global first, then conversation. */
-  packages: MaterializedPackage[];
-  /**
-   * Directories to scan for extensions, in load order. Includes each scope's
-   * convention directory (`<scope>/extensions`) and every package's
-   * `extensions/` subdirectory.
-   */
-  extensionDirs: string[];
-  /**
-   * Packages that are themselves a single extension, loaded directly rather
-   * than scanned. See {@link packageExtensionTargets}.
-   */
-  extensionRoots: string[];
-  /** Every package `skills/` directory that exists, in load order. */
-  skillDirs: PackageSkillDir[];
-  errors: PackageError[];
-}
-
-interface PackageSkillDir {
-  /** Slug identifying the package; also the mount path segment. */
-  slug: string;
-  /** Host directory holding the package's `SKILL.md` trees. */
-  dir: string;
-}
-
 /**
  * Read-only mounts exposing every resolved package's skills to the sandbox.
  *
@@ -99,18 +81,6 @@ export function conversationPackageSkillMounts(
     target: packageSkillRuntimeDir(slug),
     readOnly: true,
   }));
-}
-
-export interface ResolvePackagesOptions {
-  conversationId: string;
-  stateDir: string;
-  /** Conversation directory, needed to read conversation settings. */
-  conversationDir: string;
-  /**
-   * Materialize sources that are not on disk yet. Off by default: a normal
-   * conversation load must not block on the network. The portal turns it on.
-   */
-  fetchMissing?: boolean;
 }
 
 /**

@@ -9,28 +9,10 @@
  * OAUTH_SERVICES_JSON (data-driven by design) and standard proxy vars
  * (HTTPS_PROXY/HTTP_PROXY/NO_PROXY).
  */
+import type { EnvGroup } from "./types.js";
 import { readEnv } from "./utils/env.js";
 
-interface EnvVarSpec {
-  name: string;
-  /** Required for a platform group to activate. */
-  required?: boolean;
-  secret?: boolean;
-  /** False for niche knobs that the deploy template doesn't enumerate. */
-  deploy?: boolean;
-  doc: string;
-}
-
-export interface EnvGroup {
-  key: string;
-  title: string;
-  /** Platform groups start chat adapters; feature groups are optional. */
-  kind: "platform" | "feature";
-  vars: EnvVarSpec[];
-  /** Additional activation requirement: at least one of these must be set. */
-  anyOf?: readonly string[];
-  doc?: string;
-}
+export type { EnvGroup } from "./types.js";
 
 export const ENV_MANIFEST: readonly EnvGroup[] = [
   {

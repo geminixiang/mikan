@@ -12,25 +12,12 @@
  * up what is on disk. Only the failure reporting moves earlier.
  */
 import { applyConversationSettings, applyGlobalSettings } from "../settings-mutation.js";
-import type { GlobalRunnerCacheControl, RunnerCacheControl } from "../settings-mutation.js";
 import { formatSource, parseSource, sourceIdentity } from "./source.js";
 import { materializeSource } from "./materialize.js";
 import { declaredSources } from "./inspect.js";
-import type { PackageScope } from "./types.js";
-import type { ResolvePackagesOptions } from "./resolve.js";
+import type { PackageAdminContext, PackageScope, PackageWriteResult } from "./types.js";
 
-export interface PackageAdminContext extends ResolvePackagesOptions {
-  /** Working directory holding conversation dirs; needed to write settings. */
-  workingDir: string;
-  runtime?: RunnerCacheControl & GlobalRunnerCacheControl;
-}
-
-export interface PackageWriteResult {
-  /** The canonical source string as persisted. */
-  source: string;
-  /** Host directory the package materialized into. */
-  dir: string;
-}
+export type { PackageAdminContext, PackageWriteResult } from "./types.js";
 
 /**
  * Add a source to a scope, or move an existing one to a new ref. Fetches and

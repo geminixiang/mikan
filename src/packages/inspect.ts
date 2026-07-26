@@ -13,34 +13,9 @@ import { listInstalledExtensions, loadSkillsFromDir, validateExtension } from ".
 import { loadGlobalSettings, resolveConversationSettings } from "../config.js";
 import { parseSource, sourceIdentity } from "./source.js";
 import { materializeSource } from "./materialize.js";
-import type { PackageScope } from "./types.js";
-import type { ResolvePackagesOptions } from "./resolve.js";
+import type { PackageInventory, PackageScope, ResolvePackagesOptions } from "./types.js";
 
-interface PackageStatus {
-  /** The source string exactly as it appears in settings. */
-  source: string;
-  scope: PackageScope;
-  /** Present and usable on this host. */
-  ready: boolean;
-  /** Why it is not ready, phrased for the person who typed the source. */
-  error?: string;
-  /** Host directory holding the package, when materialized. */
-  dir?: string;
-  /**
-   * A global entry superseded by the conversation's own copy of the same
-   * package. It is on disk and valid, but this conversation loads the other.
-   */
-  shadowed?: boolean;
-  /** Extension slugs this package contributes. */
-  extensions: string[];
-  /** Skill names this package contributes. */
-  skills: string[];
-}
-
-export interface PackageInventory {
-  global: PackageStatus[];
-  conversation: PackageStatus[];
-}
+export type { PackageInventory } from "./types.js";
 
 /**
  * Inventory both scopes for one conversation. Never throws and never fetches:

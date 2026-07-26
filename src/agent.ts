@@ -3,8 +3,8 @@
  * Single module — do not split helpers that only this file uses.
  */
 
-export type { PiAgentWrapper } from "./types.js";
-import type { PiAgentWrapper } from "./types.js";
+export type { CreateRunnerOptions, PiAgentWrapper } from "./types.js";
+import type { CreateRunnerOptions, PiAgentWrapper } from "./types.js";
 
 import type { AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
@@ -50,9 +50,7 @@ import type {
   PlatformReactor,
   PlatformTrustModel,
   PlatformUploader,
-  SandboxResourceController,
 } from "./types.js";
-import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import { resolveConversationSettings } from "./config.js";
 import { effectiveStateDir } from "./cli/arg-grammar.js";
 import { packageSkillRuntimeDir, resolveConversationPackages } from "./packages/index.js";
@@ -94,7 +92,7 @@ import {
 // but each run can fan out up to the per-run cap — without this shared
 // ceiling, N busy conversations hold N × cap live subagent sessions.
 const globalSubagentSlots = new SubagentSlotPool(DEFAULT_GLOBAL_SUBAGENT_SLOTS);
-import type { PlatformToolPackFactory, PlatformToolRunContext } from "./tools/types.js";
+import type { PlatformToolRunContext } from "./tools/types.js";
 import * as Sentry from "@sentry/node";
 
 import { emitAgentEvent } from "./agent-events.js";
@@ -1909,29 +1907,6 @@ function attachSessionEventHandlers(params: {
       queue.enqueue(() => responder.respondDiagnostic(text, { style: "error" }), "budget exceeded");
     }
   });
-}
-
-export interface CreateRunnerOptions {
-  sandboxConfig: SandboxConfig;
-  sessionKey: string;
-  conversationId: string;
-  conversationDir: string;
-  workspaceDir: string;
-  sessionScope: ResolvedSessionScope;
-  vaultManager?: VaultManager;
-  provisioner?: DockerContainerManager;
-  resourceController?: SandboxResourceController;
-  sessionView?: {
-    tokenStore: SessionViewTokenStoreLike;
-    portalBaseUrl?: string;
-  };
-  platformNotifier?: PlatformNotifier;
-  platformReactor?: PlatformReactor;
-  platformUploader?: PlatformUploader;
-  platformBlockKit?: PlatformBlockKit;
-  platformToolPackFactories?: readonly PlatformToolPackFactory[];
-  /** Model registry override; defaults to the process-wide models.json load. */
-  models?: MikanModels;
 }
 
 /**
