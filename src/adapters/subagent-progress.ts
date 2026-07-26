@@ -125,7 +125,9 @@ function detailText(node: SubagentProgressNode): string {
     node.durationMs !== undefined ? `${(node.durationMs / 1000).toFixed(1)}s` : undefined,
   ].filter(Boolean);
   const reason = node.cleanupPending ? "Cleanup pending; usage is provisional" : node.reason;
-  return [STATUS_LABEL[node.status], ...metrics, reason].filter(Boolean).join(" · ");
+  // Profile leads the line: when a node reports no tool calls, the profile is
+  // what says whether that was the plan or a bad pick.
+  return [STATUS_LABEL[node.status], node.profile, ...metrics, reason].filter(Boolean).join(" · ");
 }
 
 function nodeRows(node: SubagentProgressNode, escapeLabel = (label: string) => label): string[] {

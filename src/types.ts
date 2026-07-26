@@ -60,6 +60,8 @@ export interface SubagentProgressNode {
   id: string;
   label: string;
   status: SubagentProgressStatus;
+  /** Profile the node ran under; the first thing to check when a run is ungrounded. */
+  profile?: string;
   turns?: number;
   toolCalls?: number;
   toolCallCounts?: Record<string, number>;

@@ -176,7 +176,7 @@ class SubagentProgressTracker {
 
   constructor(
     private readonly mode: PlanMode,
-    private readonly items: Array<{ id: string; label: string }>,
+    private readonly items: Array<{ id: string; label: string; profile?: string }>,
     private readonly onUpdate?: AgentToolUpdateCallback,
   ) {
     for (const item of items) this.states.set(item.id, "pending");
@@ -509,7 +509,7 @@ export function createSubagentTool(
       validatePlanProfiles(plan, new Set(profiles.keys()));
       const progress = new SubagentProgressTracker(
         plan.mode,
-        plan.items.map(({ id, label }) => ({ id, label })),
+        plan.items.map(({ id, label, task }) => ({ id, label, profile: task.profile })),
         onUpdate,
       );
       progress.emit();

@@ -39,6 +39,7 @@ import type {
   ConversationResponder,
   MessagingInfo,
   PlatformName,
+  SubagentProgressNode,
   SubagentProgressSnapshot,
 } from "./adapter.js";
 import type {
@@ -836,6 +837,7 @@ function extractSubagentProgress(partialResult: unknown): SubagentProgressSnapsh
       id?: unknown;
       label?: unknown;
       status?: unknown;
+      profile?: unknown;
       turns?: unknown;
       toolCalls?: unknown;
       toolCallCounts?: unknown;
@@ -858,6 +860,7 @@ function extractSubagentProgress(partialResult: unknown): SubagentProgressSnapsh
         id: item.id,
         label: item.label.slice(0, 64),
         status: item.status,
+        ...(typeof item.profile === "string" ? { profile: item.profile.slice(0, 64) } : {}),
         ...(typeof item.turns === "number" ? { turns: item.turns } : {}),
         ...(typeof item.toolCalls === "number" ? { toolCalls: item.toolCalls } : {}),
         ...(item.toolCallCounts && typeof item.toolCallCounts === "object"
@@ -1719,11 +1722,15 @@ function attachSessionEventHandlers(params: {
           ...subagentProgress,
           nodes: subagentProgress.nodes.map((node) => {
             if (node.status !== "running" && node.status !== "pending") return node;
-            return {
+            // Identity and a terminal status only: a node still unsettled when
+            // the tool ended never reported metrics to carry over.
+            const settled: SubagentProgressNode = {
               id: node.id,
               label: node.label,
               status: event.isError ? "failed" : "completed",
             };
+            if (node.profile) settled.profile = node.profile;
+            return settled;
           }),
         });
       }

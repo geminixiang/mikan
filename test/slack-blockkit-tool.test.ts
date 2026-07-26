@@ -34,6 +34,39 @@ describe("slack_blockkit tool", () => {
     expect((result.content[0] as { text: string }).text).toContain("123.456");
   });
 
+  test("rejects an oversized payload without quoting it back", async () => {
+    // Schema validation reports a failure by embedding the whole argument
+    // object, so an unbounded payload lands in the session twice: once as the
+    // call, once echoed as the result. The complaint has to stay small.
+    const { tool } = createSlackBlockKitTool();
+    const huge = { blocks: [{ type: "markdown", text: "x".repeat(100_000) }], text: "report" };
+
+    expect(() => tool.prepareArguments?.(huge)).toThrow(/over the 64KB limit/);
+    try {
+      tool.prepareArguments?.(huge);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      expect(message.length).toBeLessThan(300);
+      expect(message).not.toContain("xxxx");
+    }
+  });
+
+  test("rejects more blocks than Slack accepts", () => {
+    const { tool } = createSlackBlockKitTool();
+    const blocks = Array.from({ length: 51 }, () => ({ type: "divider" }));
+
+    expect(() => tool.prepareArguments?.({ blocks, text: "t" })).toThrow(
+      "accepts at most 50 blocks, got 51",
+    );
+  });
+
+  test("passes a normal payload through untouched", () => {
+    const { tool } = createSlackBlockKitTool();
+    const args = { blocks: BLOCKS, text: "Vote:" };
+
+    expect(tool.prepareArguments?.(args)).toBe(args);
+  });
+
   test("routes thread_ts to a thread post", async () => {
     const { tool, setSlackBlockKitOps } = createSlackBlockKitTool();
     const ops: SlackBlockKitOps = {

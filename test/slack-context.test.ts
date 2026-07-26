@@ -62,6 +62,7 @@ describe("replaceSubagentProgress()", () => {
           id: "explore",
           label: "Explore <auth>",
           status: "completed",
+          profile: "repository-researcher",
           turns: 2,
           toolCalls: 3,
           toolCallCounts: { bash: 2, read: 1 },
@@ -89,10 +90,12 @@ describe("replaceSubagentProgress()", () => {
       "C001",
       expect.stringContaining("*Subagents · 2/2 · Parallel · 12 LLM turns · 8 tool calls"),
     );
+    // The profile sits ahead of the metrics: a node reporting no tool calls is
+    // only readable once you know which profile it ran under.
     expect(bot.postMessage).toHaveBeenCalledWith(
       "C001",
       expect.stringContaining(
-        "└ Completed · 2 LLM turns · 3 tool calls · bash ×2 · read ×1 · 8.2K tokens",
+        "└ Completed · repository-researcher · 2 LLM turns · 3 tool calls · bash ×2 · read ×1 · 8.2K tokens",
       ),
     );
     expect(bot.postMessage).toHaveBeenCalledWith(
