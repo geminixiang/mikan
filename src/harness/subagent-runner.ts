@@ -320,6 +320,34 @@ function buildSystemPrompt(
   ].join("\n");
 }
 
+type SubagentRunStats = ReturnType<MikanAgentSession["getLastRunStats"]>;
+
+/**
+ * Every SubagentRunResult's metric fields are born here — one derivation from
+ * the session's run stats, so adding a metric is one edit and no terminal
+ * site can drift (the abort branch once shipped without toolCallCounts). The
+ * terminal sites state only what differs: status, error, text.
+ */
+function baseRunResult(
+  runId: string,
+  model: SubagentModelSpec,
+  startedAt: number,
+  stats?: SubagentRunStats,
+) {
+  const usage = stats?.usage ?? createEmptySubagentUsage();
+  return {
+    runId,
+    model,
+    turns: stats?.llmCalls ?? 0,
+    toolCalls: stats?.toolCalls ?? 0,
+    toolCallCounts: stats?.toolCallCounts ?? {},
+    usage,
+    tokens: usage.totalTokens,
+    costUsd: usage.cost.total,
+    durationMs: Date.now() - startedAt,
+  };
+}
+
 function finalAssistant(messages: AgentMessage[]): AssistantMessage | undefined {
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index];
@@ -387,23 +415,12 @@ async function executeBoundedSubagentRun<TOutputSchema extends TSchema | undefin
     release = await (options.slots ?? unboundedSlotPool()).acquire(options.request.signal);
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
-      const usage = createEmptySubagentUsage();
+      const model = options.request.model ?? {
+        provider: options.defaultModel.provider,
+        id: options.defaultModel.id,
+      };
       return {
-        result: {
-          runId: randomUUID(),
-          status: "cancelled",
-          model: options.request.model ?? {
-            provider: options.defaultModel.provider,
-            id: options.defaultModel.id,
-          },
-          turns: 0,
-          toolCalls: 0,
-          toolCallCounts: {},
-          usage,
-          tokens: usage.totalTokens,
-          costUsd: usage.cost.total,
-          durationMs: Date.now() - startedAt,
-        },
+        result: { ...baseRunResult(randomUUID(), model, startedAt), status: "cancelled" },
       };
     }
     throw err;
@@ -560,15 +577,7 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
       const assistant = finalAssistant(session.messages);
       const text = assistantText(assistant);
       const base = {
-        runId,
-        model: modelSpec,
-        turns: stats.llmCalls,
-        toolCalls: stats.toolCalls,
-        toolCallCounts: stats.toolCallCounts,
-        usage: stats.usage,
-        tokens: stats.usage.totalTokens,
-        costUsd: stats.usage.cost.total,
-        durationMs: Date.now() - startedAt,
+        ...baseRunResult(runId, modelSpec, startedAt, stats),
         ...(text ? { text } : {}),
         ...(cleanupPending ? { cleanupPending: true as const } : {}),
       };
@@ -642,23 +651,11 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
     };
     const buildFailureResult = (
       err: unknown,
-    ): SubagentRunResult<SubagentRunOutput<TOutputSchema>> => {
-      const stats = session.getLastRunStats();
-      const usage = stats.usage;
-      return {
-        runId,
-        status: terminalSignal ?? "failed",
-        model: modelSpec,
-        turns: stats.llmCalls,
-        toolCalls: stats.toolCalls,
-        toolCallCounts: stats.toolCallCounts,
-        usage,
-        tokens: usage.totalTokens,
-        costUsd: usage.cost.total,
-        durationMs: Date.now() - startedAt,
-        error: err instanceof Error ? err.message : String(err),
-      };
-    };
+    ): SubagentRunResult<SubagentRunOutput<TOutputSchema>> => ({
+      ...baseRunResult(runId, modelSpec, startedAt, session.getLastRunStats()),
+      status: terminalSignal ?? "failed",
+      error: err instanceof Error ? err.message : String(err),
+    });
 
     if (!terminalSignal) {
       const promptOutcome = subagentRunDepth
@@ -705,20 +702,10 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
 
     return { result: buildResult() };
   } catch (err) {
-    const stats = sessionRef?.getLastRunStats();
-    const usage = stats?.usage ?? createEmptySubagentUsage();
     return {
       result: {
-        runId,
+        ...baseRunResult(runId, modelSpec, startedAt, sessionRef?.getLastRunStats()),
         status: terminalSignal ?? "failed",
-        model: modelSpec,
-        turns: stats?.llmCalls ?? 0,
-        toolCalls: stats?.toolCalls ?? 0,
-        toolCallCounts: stats?.toolCallCounts ?? {},
-        usage,
-        tokens: usage.totalTokens,
-        costUsd: usage.cost.total,
-        durationMs: Date.now() - startedAt,
         error: err instanceof Error ? err.message : String(err),
       },
     };
