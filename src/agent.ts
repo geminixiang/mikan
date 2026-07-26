@@ -2323,7 +2323,13 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
           return { stopReason: "blocked", errorMessage: outcome.reason };
         }
         await prepared.runQueue.wait();
-        return { stopReason: runState.stopReason, errorMessage: runState.errorMessage };
+        // A budget abort carries its reason in the tally, not in errorMessage,
+        // and that reason is the only thing that tells the user why memory was
+        // not preserved.
+        return {
+          stopReason: runState.stopReason,
+          errorMessage: runState.errorMessage ?? session.getLastRunStats().budgetExceededReason,
+        };
       } finally {
         runState.responder = null;
         runState.logCtx = null;

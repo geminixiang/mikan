@@ -39,7 +39,27 @@ const readSchema = Type.Object({
     Type.Number({ description: "Line number to start reading from (1-indexed)" }),
   ),
   limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
+  byteOffset: Type.Optional(
+    Type.Number({
+      description:
+        "Byte offset into the first selected line. Use to page through a line too large to return whole.",
+    }),
+  ),
 });
+
+/**
+ * Trim bytes that would split a multi-byte UTF-8 sequence at the slice end, so
+ * paging through a long line never emits a replacement character at the seam.
+ */
+function trimToCharBoundary(buffer: Buffer): Buffer {
+  for (let back = 1; back <= Math.min(4, buffer.length); back++) {
+    const byte = buffer[buffer.length - back];
+    if ((byte & 0xc0) === 0x80) continue; // continuation byte; keep walking back
+    const needed = byte < 0x80 ? 1 : byte < 0xe0 ? 2 : byte < 0xf0 ? 3 : 4;
+    return back === needed ? buffer : buffer.subarray(0, buffer.length - back);
+  }
+  return buffer;
+}
 
 interface ReadToolDetails {
   truncation?: TruncationResult;
@@ -49,11 +69,22 @@ export function createReadTool(executor: Executor): AgentTool<typeof readSchema>
   return {
     name: "read",
     label: "read",
-    description: `Read the contents of a file. Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Use offset/limit for large files.`,
+    description: `Read the contents of a file. Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Use offset/limit for large files, and byteOffset to page through a single line larger than the byte limit.`,
     parameters: readSchema,
     execute: async (
       _toolCallId: string,
-      { path, offset, limit }: { label: string; path: string; offset?: number; limit?: number },
+      {
+        path,
+        offset,
+        limit,
+        byteOffset,
+      }: {
+        label: string;
+        path: string;
+        offset?: number;
+        limit?: number;
+        byteOffset?: number;
+      },
       signal?: AbortSignal,
     ): Promise<{
       content: (TextContent | ImageContent)[];
@@ -106,11 +137,18 @@ export function createReadTool(executor: Executor): AgentTool<typeof readSchema>
       let details: ReadToolDetails | undefined;
 
       if (truncation.firstLineExceedsLimit) {
-        // First line at offset exceeds 50KB - tell model to use bash
-        const firstLineSize = formatSize(
-          Buffer.byteLength(selectedContent.split("\n")[0], "utf-8"),
-        );
-        outputText = `[Line ${startLineDisplay} is ${firstLineSize}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash: sed -n '${startLineDisplay}p' ${path} | head -c ${DEFAULT_MAX_BYTES}]`;
+        // Serve the line in byte-addressed slices rather than pointing at
+        // another tool: the caller may not hold one (Session Dream grants only
+        // read/edit/write), and a dead end there costs a whole run.
+        const lineBuffer = Buffer.from(selectedContent.split("\n")[0], "utf-8");
+        const start = Math.max(0, Math.min(byteOffset ?? 0, lineBuffer.length));
+        const slice = trimToCharBoundary(lineBuffer.subarray(start, start + DEFAULT_MAX_BYTES));
+        const end = start + slice.length;
+
+        outputText = slice.toString("utf-8");
+        outputText += `\n\n[Line ${startLineDisplay} is ${formatSize(lineBuffer.length)}; showing bytes ${start}-${end}.`;
+        outputText +=
+          end < lineBuffer.length ? ` Use byteOffset=${end} to continue]` : " End of line reached]";
         details = { truncation };
       } else if (truncation.truncated) {
         // Truncation occurred - build actionable notice

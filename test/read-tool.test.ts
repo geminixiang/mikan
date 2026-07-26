@@ -104,14 +104,51 @@ describe("createReadTool", () => {
     expect(textOf(result)).toMatch(/limit\)\. Use offset=\d+ to continue/);
   });
 
-  test("directs the model to bash when a single line exceeds the byte limit", async () => {
+  test("serves a line larger than the byte limit in byte-addressed slices", async () => {
     const path = join(dir, "oneline.txt");
     writeFileSync(path, "a".repeat(60_000));
-    const result = await tool.execute("1", { label: "read", path });
-    const text = textOf(result);
-    expect(text).toContain("exceeds");
-    expect(text).toContain("sed -n '1p'");
-    expect(result.details?.truncation?.firstLineExceedsLimit).toBe(true);
+
+    const first = await tool.execute("1", { label: "read", path });
+    const firstText = textOf(first);
+
+    expect(first.details?.truncation?.firstLineExceedsLimit).toBe(true);
+    expect(firstText).toContain("showing bytes 0-51200");
+    expect(firstText).toContain("Use byteOffset=51200 to continue");
+    expect(firstText.startsWith("a".repeat(51_200))).toBe(true);
+
+    const second = await tool.execute("2", { label: "read", path, byteOffset: 51_200 });
+    const secondText = textOf(second);
+
+    expect(secondText).toContain("showing bytes 51200-60000");
+    expect(secondText).toContain("End of line reached");
+    expect(secondText.startsWith("a".repeat(8_800))).toBe(true);
+  });
+
+  test("never names a tool the caller may not hold", async () => {
+    // Session Dream grants only read/edit/write, so pointing at bash here
+    // costs the run a turn on `Tool bash not found`.
+    const path = join(dir, "oneline.txt");
+    writeFileSync(path, "a".repeat(60_000));
+
+    expect(textOf(await tool.execute("1", { label: "read", path }))).not.toContain("bash");
+  });
+
+  test("pages a multi-byte line without splitting a character", async () => {
+    const path = join(dir, "wide.txt");
+    // 3 bytes per character, so a 51200-byte cut lands mid-character.
+    writeFileSync(path, "字".repeat(20_000));
+
+    const first = textOf(await tool.execute("1", { label: "read", path }));
+    const shown = first.split("\n\n[")[0];
+
+    expect(shown).not.toContain("�");
+    expect(Buffer.byteLength(shown, "utf-8") % 3).toBe(0);
+
+    const resumeAt = Number(first.match(/byteOffset=(\d+)/)?.[1]);
+    const second = textOf(await tool.execute("2", { label: "read", path, byteOffset: resumeAt }));
+
+    expect(second.split("\n\n[")[0]).not.toContain("�");
+    expect(resumeAt).toBe(Buffer.byteLength(shown, "utf-8"));
   });
 
   test("returns images as base64 attachments", async () => {

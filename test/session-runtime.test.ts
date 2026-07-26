@@ -440,6 +440,50 @@ describe("ConversationRuntime lifecycle", () => {
     expect(runner.run).toHaveBeenCalledOnce();
   });
 
+  test("keeps the old shared session when session Dream runs out of budget", async () => {
+    // A budget abort stops with "aborted", not "error". Treated as success it
+    // resets the session and silently discards the memory the dream existed to
+    // write, so anything short of a clean stop has to block the rotation.
+    const runtime = makeRuntime();
+    const originalSession = createManagedSessionFile(
+      getChannelSessionDir(conversationDir),
+      conversationDir,
+    );
+    rewriteSessionTimestamp(originalSession, "2026-01-05T12:00:00.000Z");
+    const runner = {
+      dreamSessionMemory: vi.fn().mockResolvedValue({
+        stopReason: "aborted",
+        errorMessage: "5 LLM calls >= 5 limit",
+      }),
+      run: vi.fn().mockResolvedValue({ stopReason: "stop" }),
+      syncChatHistory: vi.fn(),
+      tryExtensionCommand: vi.fn().mockResolvedValue(false),
+      abort: vi.fn(),
+      dispose: vi.fn().mockResolvedValue(undefined),
+      getCurrentStep: vi.fn(),
+    } as unknown as PiAgentWrapper;
+    const state: ConversationRuntimeState = {
+      running: false,
+      runner,
+      stopRequested: false,
+      lastAccessedAt: Date.now(),
+      sessionFile: originalSession,
+      startedAt: 0,
+    };
+    const sessions = (
+      runtime as unknown as {
+        sessions: { set(sessionKey: string, state: ConversationRuntimeState): void };
+      }
+    ).sessions;
+    sessions.set("C123", state);
+
+    const { event, context } = makeEventAndContext("4");
+    await runtime.handleEvent(event, bot, context);
+
+    expect(runner.dreamSessionMemory).toHaveBeenCalledOnce();
+    expect(resolveChannelSessionFile(conversationDir)).toBe(originalSession);
+  });
+
   test("maintenance failure clears active state and keeps the runner reusable", async () => {
     const runtime = makeRuntime();
     const originalSession = createManagedSessionFile(

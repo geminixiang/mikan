@@ -240,8 +240,15 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   ): Promise<{ success: boolean; errorMessage?: string }> {
     try {
       const result = await state.runner.dreamSessionMemory(message, platform);
-      if (result.stopReason === "error" || result.stopReason === "blocked") {
-        return { success: false, errorMessage: result.errorMessage };
+      // Only a clean stop means the dream finished its work. Everything else —
+      // budget abort, length cutoff, error, blocked — leaves memory unwritten,
+      // and treating it as success resets the session and loses it silently.
+      // Listed as a whitelist so a new stop reason fails safe.
+      if (result.stopReason !== "stop") {
+        return {
+          success: false,
+          errorMessage: result.errorMessage ?? `Session Dream stopped early (${result.stopReason})`,
+        };
       }
       return { success: true };
     } catch (err) {
