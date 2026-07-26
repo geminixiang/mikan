@@ -6,7 +6,7 @@ This directory contains chat platform adapters and shared adapter helpers.
 
 - `intake.ts`: Conversation intake — the shared ingress pipeline every adapter feeds. Owns the ordering `magic word → trigger policy → attachments → log → busy policy → queue → dispatch`, including the single cross-platform magic-word grammar (`matchMagicWord`; `stop` bypasses trigger policy and queueing). Returns an outcome (`magic-word | not-triggered | rejected-busy | enqueued`); adapters state platform policy as data (`magicWord.scopeFallback`, `busyPolicy`), not callbacks.
 - `shared.ts`: Provides platform-shared retry, queueing, long-text splitting, message logging, stop-target resolution, and tool-argument formatting.
-- `streaming.ts`: Buffered response streaming and ordered response operations shared by the response contexts.
+- `progressive-renderer.ts`: The single response state owner. It serializes response operations, accumulates source text, manages working indicators and typing, owns response identity, splits long output, and coordinates buffered or native stream transports. Platform contexts provide only transport and rendering policy.
 
 ## Subdirectories
 

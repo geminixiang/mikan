@@ -1,6 +1,6 @@
 import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../../adapter.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
-import { createBufferedResponder, formatMarkdownToolResult } from "../buffered-responder.js";
+import { createProgressiveRenderer, formatMarkdownToolResult } from "../progressive-renderer.js";
 import { createChatResponseErrorReporter } from "../shared.js";
 import { formatGithubContinuation, type GithubMessagingBot } from "./bot.js";
 import { GITHUB_MAX_COMMENT_LENGTH } from "./client.js";
@@ -76,38 +76,32 @@ export function createGithubAdapters(
     },
   };
 
-  let currentResponseId: string | null = null;
-
-  const reportResponseError = createChatResponseErrorReporter(() => ({
-    platform: "github",
-    conversationId,
-    messageId: message.id,
-    sessionKey: message.sessionKey,
-    responseMessageId: currentResponseId === null ? null : Number(currentResponseId),
-    conversationKind: message.conversationKind,
-  }));
-
   // streaming: false — GitHub gets the finished response in one comment.
   // Streaming would edit the comment on every flush: API churn and "edited"
   // noise for readers who refresh rather than watch typing. There is also no
   // typing indicator or working suffix; progress shows through comment edits.
-  const { responder } = createBufferedResponder({
+  const { responder } = createProgressiveRenderer({
     label: "GitHub",
     maxLength: GITHUB_MAX_COMMENT_LENGTH,
     formatContinuation: formatGithubContinuation,
     errorPrefix: "**Error:** ",
-    streaming: false,
     formatToolResult: formatMarkdownToolResult,
-    reportError: reportResponseError,
+    reportError: (err, operation, extra, responseId) =>
+      createChatResponseErrorReporter(() => ({
+        platform: "github",
+        conversationId,
+        messageId: message.id,
+        sessionKey: message.sessionKey,
+        responseMessageId: responseId === null ? null : Number(responseId),
+        conversationKind: message.conversationKind,
+      }))(err, operation, extra),
     post: async (text) => {
-      currentResponseId = String(await bot.postComment(ref, text));
-      return currentResponseId;
+      return String(await bot.postComment(ref, text));
     },
     update: (id, text) => bot.updateMessage(conversationId, id, text),
-    postExtra: (text) => bot.postComment(ref, text),
+    postExtra: async (text) => bot.postComment(ref, text),
     delete: async (id) => {
       await bot.deleteComment(ref, Number(id));
-      currentResponseId = null;
     },
     logBotResponse: (text, id) => bot.logBotResponse(conversationId, text, id),
     // The REST API cannot attach files to comments (uploads are a browser

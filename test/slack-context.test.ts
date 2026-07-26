@@ -524,6 +524,11 @@ describe("text accumulation", () => {
     expect(fallbackText).toContain("message too long for Slack");
     expect(fallbackText).toContain("<https://portal.example/session?token=abc|open>");
     expect(fallbackText).not.toContain("END");
+    expect(bot.postInThread).toHaveBeenCalledWith(
+      "C001",
+      "BOT_MSG",
+      expect.stringContaining("END"),
+    );
   });
 
   test("replaceResponse keeps long-message continuations in the existing thread", async () => {
@@ -776,6 +781,24 @@ describe("streaming lifecycle", () => {
       expect.stringContaining("world"),
     );
     expect(bot.updateMessage).toHaveBeenLastCalledWith("C001", "T002", "hello final");
+  });
+
+  test("finish re-renders a table without outer pipes canonically", async () => {
+    const bot = makeSlackMessagingBot({
+      startMessageStream: vi.fn().mockResolvedValue("STREAM1"),
+      appendMessageStream: vi.fn().mockResolvedValue(undefined),
+      stopMessageStream: vi.fn().mockResolvedValue(undefined),
+      updateMessage: vi.fn().mockResolvedValue(undefined),
+    });
+    const event = makeEvent({ thread_ts: undefined });
+    const { responder } = createSlackAdapters(event, bot, { replyMode: "thread" });
+    const table = "Name | Count\n---- | -----\nAlice | 2";
+
+    await responder.appendResponseDelta?.("Name");
+    await responder.finishResponse?.(table);
+
+    expect(bot.stopMessageStream).toHaveBeenCalledWith("C001", "STREAM1");
+    expect(bot.updateMessage).toHaveBeenCalledWith("C001", "STREAM1", table);
   });
 
   test("native stream append conflict abandons the stream message before fallback", async () => {

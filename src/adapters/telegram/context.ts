@@ -7,7 +7,7 @@ import type {
 } from "../../adapter.js";
 import { deriveSessionKey } from "../../sessions/session-key.js";
 import { subagentDashboardHeader, subagentDashboardNodeLines } from "../../subagent-progress.js";
-import { createBufferedResponder } from "../buffered-responder.js";
+import { createProgressiveRenderer } from "../progressive-renderer.js";
 import { createChatResponseErrorReporter, formatToolArgs } from "../shared.js";
 import { sanitizeTelegramHtml } from "./html.js";
 import type { TelegramMessagingBot, TelegramEvent } from "./bot.js";
@@ -63,34 +63,32 @@ export function createTelegramAdapters(
   // The bot's getMessagingInfo() is the single authority for platform info.
   const platform: MessagingInfo = bot.getMessagingInfo();
 
-  let currentResponseId: string | null = null;
-
-  const reportResponseError = createChatResponseErrorReporter(() => ({
-    platform: "telegram",
-    conversationId,
-    chatId,
-    messageId: message.id,
-    sessionKey: message.sessionKey,
-    responseMessageId: currentResponseId,
-    replyToId,
-    conversationKind: message.conversationKind,
-  }));
-
-  const { responder } = createBufferedResponder({
+  const { responder } = createProgressiveRenderer({
     label: "Telegram",
     maxLength: MAX_LENGTH,
     formatContinuation: formatTelegramContinuation,
     errorPrefix: "Error: ",
     sanitize: sanitizeTelegramHtml,
-    streaming: true,
     formatSubagentProgress: formatSubagentProgressTelegram,
+    supportsDeltas: true,
     typing: {
       // Send immediately and repeat every 4s (Telegram clears indicator after ~5s)
       send: () => bot.sendTyping(chatId),
       intervalMs: 4000,
     },
     formatToolResult,
-    reportError: reportResponseError,
+    logStreamingDeltas: true,
+    reportError: (err, operation, extra, responseId) =>
+      createChatResponseErrorReporter(() => ({
+        platform: "telegram",
+        conversationId,
+        chatId,
+        messageId: message.id,
+        sessionKey: message.sessionKey,
+        responseMessageId: responseId,
+        replyToId,
+        conversationKind: message.conversationKind,
+      }))(err, operation, extra),
     notifySendFailure: async (errorMessage) => {
       await bot.postPlainMessage(chatId, `⚠️ 發送失敗：${errorMessage}`);
     },
@@ -99,14 +97,12 @@ export function createTelegramAdapters(
         replyToId !== null
           ? await bot.postReply(chatId, replyToId, text)
           : await bot.postMessageRaw(chatId, text);
-      currentResponseId = String(id);
-      return currentResponseId;
+      return String(id);
     },
     update: (id, text) => bot.updateMessage(conversationId, id, text),
-    postExtra: (text) => bot.postMessageRaw(chatId, text),
+    postExtra: async (text) => void (await bot.postMessageRaw(chatId, text)),
     delete: async (id) => {
       await bot.deleteMessageRaw(chatId, Number(id));
-      currentResponseId = null;
     },
     logBotResponse: (text, id) => bot.logBotResponse(conversationId, text, id),
     uploadFile: (filePath, title) => bot.uploadFile(conversationId, filePath, title),

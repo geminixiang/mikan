@@ -1,8 +1,10 @@
 import type {
+  ChatToolResult,
   MessagingBot,
   ConversationContext,
   ConversationEvent,
   MessagingEventHandler,
+  SubagentProgressSnapshot,
 } from "../adapter.js";
 
 export type ChatResponseErrorOperation =
@@ -49,15 +51,69 @@ export interface ResolveStopTargetInput {
   sessionKey?: string;
 }
 
-export interface BufferedResponseStreamOptions {
-  minFlushIntervalMs?: number;
-  minFlushChars?: number;
-  now?: () => number;
+interface ProgressiveStreamTransport {
+  start(text: string): Promise<string>;
+  append(messageId: string, delta: string): Promise<void>;
+  stop(messageId: string): Promise<void>;
 }
 
-export interface BufferedResponseStreamSink {
-  flush(text: string): Promise<void>;
-  finish(text: string): Promise<void>;
+export interface ProgressiveRendererPlatform {
+  label: string;
+  maxLength: number;
+  initialResponseId?: string | null;
+  formatContinuation: (partNum: number) => string;
+  errorPrefix: string;
+  sanitize?: (text: string) => string;
+  workingIndicator?: string;
+  formatProvisional?: (text: string, working: boolean) => string;
+  prepareSource?: (text: string, working: boolean) => string;
+  onWorkingChanged?: (working: boolean, responseId: string | null) => Promise<void>;
+  setTyping?: (isTyping: boolean, responseId: string | null) => Promise<void>;
+  onFinish?: (text: string, responseId: string | null) => void;
+  logStreamingDeltas?: boolean;
+  /** Whether the platform accepts incremental response deltas. */
+  supportsDeltas?: boolean;
+  /** Native stream operations, when this reply target supports them. */
+  stream?: ProgressiveStreamTransport;
+  /** Re-render a finished response when the provisional stream lacked structure. */
+  needsCanonicalRender?: (text: string) => boolean;
+  formatSubagentProgress?: (progress: SubagentProgressSnapshot) => string;
+  typing?: {
+    send: () => Promise<unknown>;
+    intervalMs: number;
+    stopOnSend?: boolean;
+  };
+  formatToolResult: (result: ChatToolResult) => string;
+  reportError: (
+    err: unknown,
+    operation: ChatResponseErrorOperation,
+    extra: Record<string, unknown>,
+    responseId: string | null,
+  ) => void;
+  notifySendFailure?: (errorMessage: string) => Promise<void>;
+  post: (text: string) => Promise<string>;
+  update: (id: string, text: string) => Promise<void>;
+  postExtra: (text: string, responseId: string | null) => Promise<string | number | void>;
+  postDiagnostic?: (
+    text: string,
+    options: { style?: "muted" | "error" },
+    responseId: string | null,
+  ) => Promise<Array<string | number>>;
+  delete?: (id: string) => Promise<void>;
+  deleteExtra?: (id: string | number) => Promise<void>;
+  logBotResponse?: (text: string, id: string) => void;
+  uploadFile?: (filePath: string, title?: string) => Promise<void>;
+  uploadFallbackNote?: (name: string) => string;
+  react?: (emoji: string) => Promise<void>;
+  /** Handle a Slack-style length rejection and return the canonical fallback text. */
+  handleTooLong?: (
+    text: string,
+    operation: "render" | "replace",
+    options: { createOverflowLink?: () => string } | undefined,
+    responseId: string | null,
+    write: (text: string) => Promise<void>,
+    getResponseId: () => string | null,
+  ) => Promise<{ text: string; prefixLength?: number }>;
 }
 
 /** How intake resolved a message. Callers branch on this instead of passing callbacks. */

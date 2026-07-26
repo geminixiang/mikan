@@ -1,6 +1,6 @@
 import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../../adapter.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
-import { createBufferedResponder, formatMarkdownToolResult } from "../buffered-responder.js";
+import { createProgressiveRenderer, formatMarkdownToolResult } from "../progressive-renderer.js";
 import { createChatResponseErrorReporter } from "../shared.js";
 import type { DiscordMessagingBot, DiscordEvent } from "./bot.js";
 
@@ -48,33 +48,19 @@ export function createDiscordAdapters(
   // The bot's getMessagingInfo() is the single authority for platform info.
   const platform: MessagingInfo = bot.getMessagingInfo();
 
-  let currentResponseId: string | null = null;
-
-  const reportResponseError = createChatResponseErrorReporter(() => ({
-    platform: "discord",
-    conversationId,
-    channelId,
-    messageId: message.id,
-    sessionKey: message.sessionKey,
-    responseMessageId: currentResponseId,
-    threadTs: threadTargetId,
-    replyTargetId,
-    conversationKind: message.conversationKind,
-  }));
-
   function postFirst(text: string): Promise<string> {
     if (threadTargetId) return bot.postInThread(channelId, threadTargetId, text);
     if (replyTargetId) return bot.postReply(channelId, replyTargetId, text);
     return bot.postMessage(channelId, text);
   }
 
-  const { responder } = createBufferedResponder({
+  const { responder } = createProgressiveRenderer({
     label: "Discord",
     maxLength: MAX_LENGTH,
     formatContinuation: formatDiscordContinuation,
     errorPrefix: "*Error:* ",
     workingIndicator: " ...",
-    streaming: true,
+    supportsDeltas: true,
     typing: {
       // Send immediately and repeat every 8s (Discord clears indicator after ~10s)
       send: () => bot.sendTyping(channelId),
@@ -82,21 +68,31 @@ export function createDiscordAdapters(
       stopOnSend: true,
     },
     formatToolResult: formatMarkdownToolResult,
-    reportError: reportResponseError,
+    logStreamingDeltas: true,
+    reportError: (err, operation, extra, responseId) =>
+      createChatResponseErrorReporter(() => ({
+        platform: "discord",
+        conversationId,
+        channelId,
+        messageId: message.id,
+        sessionKey: message.sessionKey,
+        responseMessageId: responseId,
+        threadTs: threadTargetId,
+        replyTargetId,
+        conversationKind: message.conversationKind,
+      }))(err, operation, extra),
     post: async (text) => {
-      currentResponseId = await postFirst(text);
-      return currentResponseId;
+      return postFirst(text);
     },
     update: (id, text) => bot.updateMessageRaw(channelId, id, text),
-    postExtra: (text, responseId) => {
-      if (threadTargetId) return bot.postInThread(channelId, threadTargetId, text);
-      if (replyTargetId) return bot.postReply(channelId, replyTargetId, text);
-      if (responseId !== null) return bot.postReply(channelId, responseId, text);
-      return bot.postMessage(channelId, text);
+    postExtra: async (text, responseId) => {
+      if (threadTargetId) return void (await bot.postInThread(channelId, threadTargetId, text));
+      if (replyTargetId) return void (await bot.postReply(channelId, replyTargetId, text));
+      if (responseId !== null) return void (await bot.postReply(channelId, responseId, text));
+      return void (await bot.postMessage(channelId, text));
     },
     delete: async (id) => {
       await bot.deleteMessageRaw(channelId, id);
-      currentResponseId = null;
     },
     logBotResponse: (text, id) => bot.logBotResponse(channelId, text, id),
     uploadFile: (filePath, title) => bot.uploadFile(channelId, filePath, title),
