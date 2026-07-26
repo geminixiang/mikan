@@ -49,10 +49,46 @@ const EventFileSchema = Type.Object({
 type EventFileData = Static<typeof EventFileSchema>;
 
 const ISO_TIMESTAMP_WITH_OFFSET =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/;
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(Z|[+-](\d{2}):(\d{2}))$/;
+
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) {
+    const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+    return leapYear ? 29 : 28;
+  }
+  return month === 4 || month === 6 || month === 9 || month === 11 ? 30 : 31;
+}
 
 function isValidIsoTimestampWithOffset(value: string): boolean {
-  return ISO_TIMESTAMP_WITH_OFFSET.test(value) && Number.isFinite(Date.parse(value));
+  const match = ISO_TIMESTAMP_WITH_OFFSET.exec(value);
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = match[6] === undefined ? 0 : Number(match[6]);
+  const offsetHour = match[8] === undefined ? 0 : Number(match[8]);
+  const offsetMinute = match[9] === undefined ? 0 : Number(match[9]);
+
+  return (
+    month >= 1 &&
+    month <= 12 &&
+    day >= 1 &&
+    day <= daysInMonth(year, month) &&
+    hour >= 0 &&
+    hour <= 23 &&
+    minute >= 0 &&
+    minute <= 59 &&
+    second >= 0 &&
+    second <= 59 &&
+    offsetHour >= 0 &&
+    offsetHour <= 23 &&
+    offsetMinute >= 0 &&
+    offsetMinute <= 59 &&
+    Number.isFinite(Date.parse(value))
+  );
 }
 
 /**
