@@ -30,8 +30,8 @@ import { sharedVaultKey } from "../../vault/index.js";
 import { modelKey, resolveAdminModelAccessStatuses } from "./provider-models.js";
 import type { AdminToken } from "./store.js";
 
-export type { AdminRuntimeBridge, AdminServices } from "./types.js";
-import type { AdminServices } from "./types.js";
+export type { AdminRuntimeBridge, AdminServices, EventSummary } from "./types.js";
+import type { AdminServices, EventSummary } from "./types.js";
 
 // ── Handler ────────────────────────────────────────────────────────────────────
 
@@ -1448,19 +1448,6 @@ function serveSkillFile(
 // ── Events ─────────────────────────────────────────────────────────────────────
 
 const EVENTS_FILE_MAX_BYTES = 64 * 1024;
-
-export interface EventSummary {
-  name: string;
-  size: number;
-  mtimeMs: number;
-  type: string | null;
-  platform: string | null;
-  conversationId: string | null;
-  text: string | null;
-  at: string | null;
-  schedule: string | null;
-  timezone: string | null;
-}
 
 /**
  * List events through the owning store, whose payloads are validated by the

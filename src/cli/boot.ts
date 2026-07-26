@@ -9,21 +9,11 @@
  */
 import { join, resolve } from "path";
 import { envSummaryLines } from "../env-manifest.js";
-import { parseSandboxArg, type SandboxConfig } from "../sandbox/index.js";
+import { parseSandboxArg } from "../sandbox/index.js";
+import type { BootPlan } from "./types.js";
 import { defaultStateDir, resolveStateDir, takeValueFlag } from "./arg-grammar.js";
 
-export interface BootPlan {
-  mode: "ext" | "env" | "help" | "version" | "onboard" | "download" | "run";
-  /** argv after `ext`, handed to runExtCommand. Only set for mode "ext". */
-  extArgs?: string[];
-  stateDir: string;
-  /** Resolved working directory; defaults to `<stateDir>/workspace`. */
-  workingDir: string;
-  /** True when the working directory came from argv (then it is not auto-created). */
-  workingDirExplicit: boolean;
-  sandbox: SandboxConfig;
-  downloadChannel?: string;
-}
+export type { BootPlan } from "./types.js";
 
 export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
   if (args[0] === "ext" || args[0] === "env") {

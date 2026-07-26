@@ -20,9 +20,18 @@ import type {
   ExecOptions,
   ExecResult,
   Executor,
+  GondolinBootstrapOptions,
   GondolinSandboxConfig,
   RuntimePathContext,
   SandboxAdapter,
+  SessionClient,
+  SessionClientCallbacks,
+} from "./types.js";
+
+export type {
+  GondolinBootstrapOptions,
+  SessionClient,
+  SessionClientCallbacks,
 } from "./types.js";
 
 /**
@@ -175,13 +184,6 @@ class GondolinResourceManager implements SandboxResourceController {
 }
 
 export const gondolinResources = new GondolinResourceManager();
-
-export interface GondolinBootstrapOptions {
-  /** Default per-runtime resource limits. */
-  limits?: ResourceLimits;
-  /** Boosted limits applied while a runtime holds a boost. */
-  boostLimits?: ResourceLimits;
-}
 
 /** Configure the Gondolin resource controller. */
 export function configureGondolinRuntime(options: GondolinBootstrapOptions): void {
@@ -545,23 +547,6 @@ class GondolinRuntime {
       this.syncing = false;
     }
   }
-}
-
-export interface SessionClientCallbacks {
-  onJson: (message: {
-    type: string;
-    id?: number;
-    exit_code?: number | null;
-    code?: string;
-    message?: string;
-  }) => void;
-  onBinary: (frame: Buffer) => void;
-  onClose: (error?: Error) => void;
-}
-
-export interface SessionClient {
-  send(message: object): void;
-  close(): void;
 }
 
 function abortError(): Error {
