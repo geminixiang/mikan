@@ -94,7 +94,7 @@ export interface ConversationRuntime extends MessagingEventHandler {
   runSession(options: RunSessionOptions): Promise<void>;
   switchConversationModel(conversationId: string, provider: string, model: string): boolean;
   refreshConversationEnvironment(conversationId: string): boolean;
-  /** Clear every idle conversation's cached runners; report the busy ones. */
+  /** Clear idle runners; defer busy conversation invalidation until settlement. */
   refreshAllConversations(): { busy: string[] };
   shutdown(timeoutMs?: number): Promise<void>;
 }

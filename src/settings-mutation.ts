@@ -13,7 +13,8 @@
  *   time and write without touching runners.
  * - Global changes always write (the Admin default surface), then clear every
  *   idle conversation's cached runners; conversations that were busy keep
- *   their old runner until it ends and are reported as stale.
+ *   their old runner until it settles, are reported as stale, and are cleared
+ *   automatically before their next turn.
  */
 import { join } from "path";
 import { updateConversationSettings, updateGlobalSettings } from "./config.js";

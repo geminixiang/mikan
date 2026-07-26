@@ -229,6 +229,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       this.sessionDreamSettlements.delete(dreamSettlement);
       this.inFlightRuns.delete(dreamSettlement);
       if (state.runSettlement === dreamSettlement) state.runSettlement = undefined;
+      this.sessions.onSettlement(sessionKey);
       this.sessions.evictIdle();
     }
   }
@@ -501,6 +502,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       } finally {
         this.inFlightRuns.delete(runPromise);
         if (state.runSettlement === runPromise) state.runSettlement = undefined;
+        this.sessions.onSettlement(sessionKey);
       }
     } finally {
       releaseConversationWork();
@@ -628,7 +630,10 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         conversationId,
         `[${conversationId}] Global settings changed; cleared cached session runners`,
       );
-      if (!cleared) busy.push(conversationId);
+      if (!cleared) {
+        this.sessions.deferConversationClear(conversationId);
+        busy.push(conversationId);
+      }
     }
     return { busy };
   }
