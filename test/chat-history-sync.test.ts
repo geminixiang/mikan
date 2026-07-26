@@ -1,4 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionStore } from "../src/harness/index.js";
@@ -494,7 +501,7 @@ describe("ChatHistorySync", () => {
     expect(text).toContain("sync2");
   });
 
-  test("does not resync the full log when an existing sync marker is missing", async () => {
+  test("recovers when log rebuild removes the existing sync watermark", async () => {
     writeLog([
       {
         date: "2026-05-01T00:00:00.000Z",
@@ -523,10 +530,22 @@ describe("ChatHistorySync", () => {
         ts: "1000.0003",
         user: "U1",
         userName: "alice",
-        text: "would refill from start",
+        text: "rebuilt history",
         isMessagingBot: false,
       },
     ]);
+    appendFileSync(
+      join(conversationDir, "log.jsonl"),
+      `${JSON.stringify({
+        date: "2026-05-01T00:00:03.000Z",
+        ts: "1000.0004",
+        user: "U1",
+        userName: "alice",
+        text: "after rebuild",
+        isMessagingBot: false,
+      })}\n`,
+      "utf-8",
+    );
 
     const secondScope = await manager.resolveSessionScope({
       conversationDir,
@@ -537,7 +556,9 @@ describe("ChatHistorySync", () => {
     expect(secondScope.contextFile).toBe(firstScope.contextFile);
     const text = readContextText(secondScope.contextFile);
     expect(text).toContain("seed");
-    expect(text).not.toContain("would refill from start");
+    expect(text).toContain("rebuilt history");
+    expect(text).toContain("after rebuild");
+    expect(readFileSync(secondScope.contextFile, "utf-8").match(/\bseed\b/g)).toHaveLength(1);
   });
 
   test("does not duplicate user-only bootstrapped history after the first assistant reply", async () => {

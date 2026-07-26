@@ -443,8 +443,8 @@ function syncSessionManagerFromLog(
   const lastSyncedIndex = lastSyncedMessageId
     ? records.findIndex((record) => record.message.ts === lastSyncedMessageId)
     : -1;
-  if (lastSyncedMessageId && lastSyncedIndex === -1) return { appended: 0 };
-
+  // A truncated or rebuilt log may no longer contain the watermark. Replay the
+  // current bounded history; represented-message matching below prevents duplicates.
   const syncCandidates = selectRecentMessages(records.slice(lastSyncedIndex + 1), historyWindow);
   if (syncCandidates.length === 0) return { appended: 0 };
 
