@@ -31,6 +31,11 @@ describe("loadSubagentProfiles", () => {
     const { profiles, diagnostics } = loadSubagentProfiles(emptyWorkspace());
 
     expect(diagnostics).toEqual([]);
+    expect(profiles.get("worker")).toMatchObject({
+      tools: ["read", "bash", "edit", "write"],
+      requiredTools: ["read", "bash"],
+      maxTurns: 30,
+    });
     expect(profiles.get("software-engineer")).toMatchObject({
       tools: ["read", "bash", "edit", "write"],
       requiredTools: ["read", "bash"],

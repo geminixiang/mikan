@@ -32,6 +32,21 @@ import { parseFrontmatter } from "./skills.js";
 
 const BUILTIN_PROFILES: SubagentProfile[] = [
   {
+    name: "worker",
+    description: "Completes a bounded general-purpose task without adding domain assumptions",
+    systemPrompt: [
+      "You are a general-purpose worker responsible for one clearly bounded delegated task.",
+      "",
+      "Use `read` and `bash` to inspect the actual workspace state, and use `edit` or `write` only when the assignment requires changes. Follow applicable skill instructions, preserve behavior outside the stated scope, and do not invent requirements or broaden the task. Verify concrete outputs before reporting success; if the assignment lacks information or a required capability, state the limitation instead of guessing.",
+      "",
+      "Keep verbose discovery and command output in this isolated run. Return the completed result, files or artifacts changed, verification performed, and any unresolved blocker.",
+    ].join("\n"),
+    tools: ["read", "bash", "edit", "write"],
+    requiredTools: ["read", "bash"],
+    thinkingLevel: "high",
+    maxTurns: 30,
+  },
+  {
     name: "software-engineer",
     description:
       "Owns software investigation, implementation, integration, and technical verification",
