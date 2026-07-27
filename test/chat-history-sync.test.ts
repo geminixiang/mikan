@@ -114,6 +114,117 @@ describe("ChatHistorySync", () => {
     expect(text).not.toContain("current message");
   });
 
+  test("bootstraps only history before the current message when a later message is already queued", async () => {
+    writeLog([
+      {
+        date: "2026-05-01T00:00:00.000Z",
+        ts: "1000.0001",
+        user: "U1",
+        userName: "alice",
+        text: "completed history",
+        isMessagingBot: false,
+      },
+      {
+        date: "2026-05-01T00:00:01.000Z",
+        ts: "1000.0002",
+        user: "U1",
+        userName: "alice",
+        text: "current message",
+        isMessagingBot: false,
+      },
+      {
+        date: "2026-05-01T00:00:02.000Z",
+        ts: "1000.0003",
+        user: "U1",
+        userName: "alice",
+        text: "queued future message",
+        isMessagingBot: false,
+      },
+    ]);
+
+    const scope = await new ChatHistorySync({
+      now: () => new Date("2026-05-01T00:00:03.000Z"),
+    }).resolveSessionScope({
+      conversationDir,
+      sessionKey: "C123",
+      cwd: conversationDir,
+      currentMessageId: "1000.0002",
+    });
+
+    const text = readContextText(scope.contextFile);
+    expect(text).toContain("completed history");
+    expect(text).not.toContain("current message");
+    expect(text).not.toContain("queued future message");
+  });
+
+  test("incremental sync does not append a later queued message before its turn", async () => {
+    writeLog([
+      {
+        date: "2026-05-01T00:00:00.000Z",
+        ts: "1000.0001",
+        user: "U1",
+        userName: "alice",
+        text: "first turn",
+        isMessagingBot: false,
+      },
+    ]);
+    const manager = new ChatHistorySync({
+      now: () => new Date("2026-05-01T00:00:03.000Z"),
+    });
+    const scope = await manager.resolveSessionScope({
+      conversationDir,
+      sessionKey: "C123",
+      cwd: conversationDir,
+      currentMessageId: "1000.0001",
+    });
+
+    writeLog([
+      {
+        date: "2026-05-01T00:00:00.000Z",
+        ts: "1000.0001",
+        user: "U1",
+        userName: "alice",
+        text: "first turn",
+        isMessagingBot: false,
+      },
+      {
+        date: "2026-05-01T00:00:01.000Z",
+        ts: "1000.0002",
+        user: "bot",
+        text: "first answer",
+        isMessagingBot: true,
+      },
+      {
+        date: "2026-05-01T00:00:02.000Z",
+        ts: "1000.0003",
+        user: "U1",
+        userName: "alice",
+        text: "current turn",
+        isMessagingBot: false,
+      },
+      {
+        date: "2026-05-01T00:00:03.000Z",
+        ts: "1000.0004",
+        user: "U1",
+        userName: "alice",
+        text: "queued future turn",
+        isMessagingBot: false,
+      },
+    ]);
+
+    manager.syncSessionManager({
+      conversationDir,
+      sessionKey: "C123",
+      sessionManager: openManagedSession(scope.contextFile, conversationDir),
+      currentMessageId: "1000.0003",
+    });
+
+    const text = readContextText(scope.contextFile);
+    expect(text).toContain("first answer");
+    expect(text).not.toContain("current turn");
+    expect(text).not.toContain("queued future turn");
+  });
+
   test("coalesces streamed bot log chunks before applying top-level history limit", async () => {
     writeLog([
       {

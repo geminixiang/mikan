@@ -281,7 +281,9 @@ function selectRecentTopLevelMessages(
   },
 ): LogRecord[] {
   return selectRecentMessages(
-    records.filter((record) => isTopLevelHistoryMessage(record.message, options.excludeMessageId)),
+    recordsBeforeCurrentMessage(records, options.excludeMessageId).filter((record) =>
+      isTopLevelHistoryMessage(record.message, options.excludeMessageId),
+    ),
     options,
   );
 }
@@ -303,17 +305,18 @@ function selectThreadBootstrapMessages(
     excludeMessageId?: string;
   },
 ): LogRecord[] {
-  const rootRecord = findLogRecordById(records, threadId);
+  const scopedRecords = recordsBeforeCurrentMessage(records, options.excludeMessageId);
+  const rootRecord = findLogRecordById(scopedRecords, threadId);
   const topLevelSource = rootRecord
-    ? records.filter((record) => record.index <= rootRecord.index)
-    : records;
+    ? scopedRecords.filter((record) => record.index <= rootRecord.index)
+    : scopedRecords;
   const topLevelRecords = selectRecentTopLevelMessages(topLevelSource, {
     recentDays: options.recentDays,
     maxMessages: options.maxTopLevelMessages,
     now: options.now,
     excludeMessageId: options.excludeMessageId,
   });
-  const threadRecords = records.filter(
+  const threadRecords = scopedRecords.filter(
     (record) =>
       isRenderableConversationMessage(record.message, options.excludeMessageId) &&
       (record.message.ts === threadId || record.message.threadTs === threadId),
@@ -342,12 +345,24 @@ function selectExistingSessionSyncMessages(
 ): LogRecord[] {
   const threadId = options.sessionKey ? extractSessionSuffix(options.sessionKey) : null;
   return dedupeAndSortRecords(
-    records.filter((record) => {
+    recordsBeforeCurrentMessage(records, options.excludeMessageId).filter((record) => {
       if (!isRenderableConversationMessage(record.message, options.excludeMessageId)) return false;
       if (!threadId) return !record.message.threadTs;
       return record.message.ts === threadId || record.message.threadTs === threadId;
     }),
   );
+}
+
+/**
+ * Slack logs messages before enqueueing them, so a later queued turn may
+ * already be present while the current turn is being prepared. Chat history
+ * must stop at the current record rather than merely removing that one id.
+ */
+function recordsBeforeCurrentMessage(records: LogRecord[], currentMessageId?: string): LogRecord[] {
+  if (!currentMessageId) return records;
+  const currentRecord = findLogRecordById(records, currentMessageId);
+  if (!currentRecord) return records;
+  return records.filter((record) => record.index < currentRecord.index);
 }
 
 function latestSyncMessageId(
