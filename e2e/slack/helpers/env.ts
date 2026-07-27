@@ -13,6 +13,7 @@ export interface SlackE2eEnv {
   timeoutMs: number;
   pollMs: number;
   eventsDir: string;
+  workingDir: string;
   mikanText: string;
 }
 
@@ -28,6 +29,7 @@ export function readSlackE2eEnv(): SlackE2eEnv {
     timeoutMs: Number(env.SLACK_QA_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS),
     pollMs: Number(env.SLACK_QA_POLL_MS ?? DEFAULT_POLL_MS),
     eventsDir: env.SLACK_QA_EVENTS_DIR ?? join(REPO_ROOT, ".workspace/mikan-workspace/events"),
+    workingDir: env.SLACK_QA_WORKING_DIR ?? join(REPO_ROOT, ".workspace/mikan-workspace"),
     mikanText: env.SLACK_QA_BOT_TEXT ?? "hello，請簡短回答。",
   };
 }

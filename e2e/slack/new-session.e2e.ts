@@ -3,7 +3,7 @@ import { loadContextOrSkip } from "./helpers/client.js";
 import {
   nowSeconds,
   openDmChannel,
-  postMessage,
+  postLocallyDeliveredMessage,
   sleep,
   summarizeMessage,
   waitForBotReply,
@@ -65,14 +65,18 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
     const scratchNonce = `scratch-${nonce}`;
 
     const setupStartedAt = nowSeconds();
-    const setupTs = await postMessage(
+    const { ts: setupTs, deliveryMarker: setupMarker } = await postLocallyDeliveredMessage({
       client,
-      dmChannel,
-      `這個對話所屬專案的長期代號是 ${projectCodename}。這是精確且持久的專案偏好，` +
+      channel: dmChannel,
+      workingDir: env.workingDir,
+      text: (deliveryMarker) =>
+        `這個對話所屬專案的長期代號是 ${projectCodename}。這是精確且持久的專案偏好，` +
         "在 /new 後仍必須使用；請將完整代號保存在此對話的 MEMORY.md，而非全域 MEMORY.md。" +
         `目前草稿的暫時註記是 ${scratchNonce}，只供這個 session 使用，不得寫入任何 MEMORY.md，` +
-        "也不得在 reset 後保留。請只簡短回覆 OK。",
-    );
+        `也不得在 reset 後保留。請只簡短回覆 OK，並原樣附上 ${deliveryMarker}。`,
+      timeoutMs: Math.max(env.timeoutMs, 15_000),
+      pollMs: env.pollMs,
+    });
     const setupReply = await waitForBotReply({
       client,
       channel: dmChannel,
@@ -81,13 +85,21 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
       startedAt: setupStartedAt,
       timeoutMs: Math.max(env.timeoutMs, 45_000),
       pollMs: env.pollMs,
+      textIncludes: setupMarker,
     });
     expect(setupReply, "no acknowledgement to the memory setup turn").not.toBeNull();
 
     // Slack does not let this QA Web API client invoke another app's slash command.
     // A literal /pi-new DM is accepted by mikan's normal command parser and reaches
     // the same NewCommandHandler and ConversationRuntime reset path.
-    const resetTs = await postMessage(client, dmChannel, "/pi-new");
+    const { ts: resetTs } = await postLocallyDeliveredMessage({
+      client,
+      channel: dmChannel,
+      workingDir: env.workingDir,
+      text: () => "/pi-new",
+      timeoutMs: Math.max(env.timeoutMs, 15_000),
+      pollMs: env.pollMs,
+    });
     const resetResult = await waitForResetResult(
       dmChannel,
       botUserId,
@@ -104,7 +116,14 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
       "請從此對話已保存的長期記憶找出專案代號，並判斷先前草稿的暫時註記是否已知。" +
       "整個回覆必須嚴格為：CODENAME=<已保存的完整專案代號>; SCRATCH=UNKNOWN";
     const probeStartedAt = nowSeconds();
-    const probeTs = await postMessage(client, dmChannel, probe);
+    const { ts: probeTs } = await postLocallyDeliveredMessage({
+      client,
+      channel: dmChannel,
+      workingDir: env.workingDir,
+      text: () => probe,
+      timeoutMs: Math.max(env.timeoutMs, 15_000),
+      pollMs: env.pollMs,
+    });
     let probeReply = await waitForBotReply({
       client,
       channel: dmChannel,
@@ -118,13 +137,17 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
 
     if (!probeReply) {
       const retryStartedAt = nowSeconds();
-      const retryTs = await postMessage(
+      const { ts: retryTs } = await postLocallyDeliveredMessage({
         client,
-        dmChannel,
-        "請修正格式並從此對話的長期記憶取得專案代號。" +
+        channel: dmChannel,
+        workingDir: env.workingDir,
+        text: () =>
+          "請修正格式並從此對話的長期記憶取得專案代號。" +
           "只回覆 CODENAME=<已保存的完整專案代號>; SCRATCH=UNKNOWN，" +
           "不要猜測、輸出暫時註記、加入其他文字或使用 Markdown。",
-      );
+        timeoutMs: Math.max(env.timeoutMs, 15_000),
+        pollMs: env.pollMs,
+      });
       probeReply = await waitForBotReply({
         client,
         channel: dmChannel,

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { loadContextOrSkip } from "./helpers/client.js";
 import {
   nowSeconds,
+  postLocallyDeliveredMessage,
   postMessage,
   summarizeMessage,
   waitForThreadBotReply,
@@ -29,12 +30,17 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack thread session isolation
     );
 
     const tellAStartedAt = nowSeconds();
-    const tellATs = await postMessage(
+    const { ts: tellATs, deliveryMarker: tellAMarker } = await postLocallyDeliveredMessage({
       client,
-      env.channel,
-      `<@${botUserId}> 請記住這個 token：${tokenA}。現在只需回覆 OK，不要重複 token。`,
-      rootA,
-    );
+      channel: env.channel,
+      workingDir: env.workingDir,
+      threadTs: rootA,
+      text: (deliveryMarker) =>
+        `<@${botUserId}> 請記住這個 token：${tokenA}。` +
+        `現在只需回覆 OK 並原樣附上 ${deliveryMarker}，不要重複 token。`,
+      timeoutMs: Math.max(env.timeoutMs, 15_000),
+      pollMs: env.pollMs,
+    });
     const tellAReply = await waitForThreadBotReply({
       client,
       channel: env.channel,
@@ -44,16 +50,22 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack thread session isolation
       excludeTs: new Set([rootA, tellATs]),
       timeoutMs: Math.max(env.timeoutMs, 45_000),
       pollMs: env.pollMs,
+      textIncludes: tellAMarker,
     });
     expect(tellAReply, "no reply in thread A after storing the token").not.toBeNull();
 
     const tellBStartedAt = nowSeconds();
-    const tellBTs = await postMessage(
+    const { ts: tellBTs, deliveryMarker: tellBMarker } = await postLocallyDeliveredMessage({
       client,
-      env.channel,
-      `<@${botUserId}> 請記住這個 token：${tokenB}。現在只需回覆 OK，不要重複 token。`,
-      rootB,
-    );
+      channel: env.channel,
+      workingDir: env.workingDir,
+      threadTs: rootB,
+      text: (deliveryMarker) =>
+        `<@${botUserId}> 請記住這個 token：${tokenB}。` +
+        `現在只需回覆 OK 並原樣附上 ${deliveryMarker}，不要重複 token。`,
+      timeoutMs: Math.max(env.timeoutMs, 15_000),
+      pollMs: env.pollMs,
+    });
     const tellBReply = await waitForThreadBotReply({
       client,
       channel: env.channel,
@@ -63,16 +75,20 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack thread session isolation
       excludeTs: new Set([rootB, tellBTs]),
       timeoutMs: Math.max(env.timeoutMs, 45_000),
       pollMs: env.pollMs,
+      textIncludes: tellBMarker,
     });
     expect(tellBReply, "no reply in thread B after storing the token").not.toBeNull();
 
     const askAStartedAt = nowSeconds();
-    const askATs = await postMessage(
+    const { ts: askATs } = await postLocallyDeliveredMessage({
       client,
-      env.channel,
-      `<@${botUserId}> 請只回覆我在這個 thread 要你記住的 token，不要加其他文字。`,
-      rootA,
-    );
+      channel: env.channel,
+      workingDir: env.workingDir,
+      threadTs: rootA,
+      text: () => `<@${botUserId}> 請只回覆我在這個 thread 要你記住的 token，不要加其他文字。`,
+      timeoutMs: Math.max(env.timeoutMs, 15_000),
+      pollMs: env.pollMs,
+    });
     const askAReply = await waitForThreadBotReply({
       client,
       channel: env.channel,

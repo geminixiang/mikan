@@ -30,6 +30,7 @@ jobs:
           SLACK_QA_USER_TOKEN: ${{ secrets.SLACK_QA_USER_TOKEN }}
           SLACK_QA_CHANNEL_ID: ${{ secrets.SLACK_QA_CHANNEL_ID || vars.SLACK_QA_CHANNEL_ID }}
           SLACK_QA_BOT_USER_ID: ${{ secrets.SLACK_QA_BOT_USER_ID || vars.SLACK_QA_BOT_USER_ID }}
+          SLACK_QA_WORKING_DIR: ${{ github.workspace }}/.workspace/mikan-workspace
         run: |
           set -euo pipefail
 

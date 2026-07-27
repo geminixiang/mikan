@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { KnownBlock } from "@slack/types";
 import type { WebClient } from "@slack/web-api";
 
@@ -40,6 +42,85 @@ export async function postMessage(
   const res = await client.chat.postMessage({ channel, text, thread_ts: threadTs });
   if (!res.ok || !res.ts) throw new Error(`chat.postMessage failed: ${res.error ?? "missing ts"}`);
   return String(res.ts);
+}
+
+export interface PostLocallyDeliveredMessageOptions {
+  client: WebClient;
+  channel: string;
+  workingDir: string;
+  text: (deliveryMarker: string) => string;
+  threadTs?: string;
+  timeoutMs: number;
+  pollMs: number;
+  maxAttempts?: number;
+}
+
+/**
+ * Socket Mode distributes one event to one connected client. A developer
+ * daemon using the same app can therefore consume a QA event instead of the
+ * GitHub runner. Retry with a unique marker until this runner's log proves it
+ * received the exact Slack message; callers then match the same marker in the
+ * reply so another daemon cannot satisfy the assertion.
+ */
+export async function postLocallyDeliveredMessage(
+  options: PostLocallyDeliveredMessageOptions,
+): Promise<{ ts: string; deliveryMarker: string }> {
+  const maxAttempts = options.maxAttempts ?? 4;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const deliveryMarker = `QA_DELIVERY_${Date.now()}_${attempt}_${Math.random().toString(36).slice(2, 8)}`;
+    const ts = await postMessage(
+      options.client,
+      options.channel,
+      options.text(deliveryMarker),
+      options.threadTs,
+    );
+    if (
+      await waitForLocalLogMessage({
+        workingDir: options.workingDir,
+        channel: options.channel,
+        ts,
+        timeoutMs: options.timeoutMs,
+        pollMs: options.pollMs,
+      })
+    ) {
+      return { ts, deliveryMarker };
+    }
+  }
+  throw new Error(
+    `Slack events repeatedly went to another Socket Mode client instead of this E2E runner (${options.channel})`,
+  );
+}
+
+async function waitForLocalLogMessage(options: {
+  workingDir: string;
+  channel: string;
+  ts: string;
+  timeoutMs: number;
+  pollMs: number;
+}): Promise<boolean> {
+  const deadline = Date.now() + options.timeoutMs;
+  const logPath = join(options.workingDir, options.channel, "log.jsonl");
+  while (Date.now() < deadline) {
+    try {
+      const lines = (await readFile(logPath, "utf-8")).split("\n");
+      if (
+        lines.some((line) => {
+          if (!line) return false;
+          try {
+            return (JSON.parse(line) as { ts?: unknown }).ts === options.ts;
+          } catch {
+            return false;
+          }
+        })
+      ) {
+        return true;
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    await sleep(options.pollMs);
+  }
+  return false;
 }
 
 export async function uploadTextFile(
