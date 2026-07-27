@@ -130,7 +130,10 @@ export class HostExecutor implements Executor {
       for (const [index, part] of parts.entries()) {
         const isFile = index === parts.length - 1;
         const flags = constants.O_RDONLY | constants.O_NOFOLLOW;
-        const next = await open(`/proc/self/fd/${directory.fd}/${part}`, flags | (isFile ? 0 : constants.O_DIRECTORY));
+        const next = await open(
+          `/proc/self/fd/${directory.fd}/${part}`,
+          flags | (isFile ? 0 : constants.O_DIRECTORY),
+        );
         opened.push(next);
         if (isFile) {
           const stat = await next.stat();

@@ -346,6 +346,13 @@ Admin endpoints cover conversation inventory/state/usage, global and conversatio
 
 `gondolin:default` creates and owns one local VM per conversation in the mikan process. Commands use a per-command Gondolin session IPC connection so abort/timeout closes the guest command rather than merely abandoning a host promise. Runtimes are intentionally process-lifetime state: orderly shutdown syncs projected files back and closes the VMs; restart begins cold. There is no network worker protocol or remote placement contract.
 
+### Path, cache, and package safety
+
+- `attach` is fail-closed: paths must stay inside the runtime workspace and are read through the active `Executor`, then staged in a host-private file before the platform uploader receives them. Host paths are never passed through from model input, and remote sandboxes use the same executor transport instead of a host-path fallback.
+- Conversation-scoped cached-runner changes clear idle runners before writing and refuse busy writes. Global LLM changes persist first, mark busy conversations for invalidation, and discard their runners only after all run or Session Dream settlements finish.
+- Package git checkouts are keyed by repository and ref. Different subpaths may share a checkout only when they use the same ref; ref changes rematerialize before settings persist. Git and extension subpaths must remain inside their canonical checkout, including through symlinks.
+- Every vault key is one safe path segment. Reads fail closed, and writes or shared-vault copies reject invalid keys before filesystem access.
+
 ## Contract-test matrix
 
 These suites protect the cross-owner contracts rather than individual helpers. When a seam changes, run every suite in its row together; if a change crosses rows, run the union. A public, persisted, or wire change also requires the full `npm test` run.

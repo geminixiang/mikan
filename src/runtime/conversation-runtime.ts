@@ -7,6 +7,7 @@ import type {
   RunningSession,
 } from "../adapter.js";
 import { createRunner } from "../agent.js";
+import type { PiAgentWrapper } from "../agent.js";
 import { MikanModels } from "../harness/index.js";
 import type { ExtensionBlockAction } from "../harness/index.js";
 import { defaultCommandHandlers, dispatchCommand } from "../commands/registry.js";
@@ -92,6 +93,8 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private readonly commandServices: CommandServices;
   private readonly commandHandlers: readonly CommandHandler[];
   private readonly resolvedModels: MikanModels;
+  private globalRunnerGeneration = 0;
+  private readonly conversationRunnerGenerations = new Map<string, number>();
   private isShuttingDown = false;
 
   constructor(private readonly options: ConversationRuntimeOptions) {
@@ -162,7 +165,10 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   ): Promise<void> {
     assertSessionKeyBelongsToConversation(sessionKey, conversationId);
     const activeState = this.sessions.get(sessionKey);
-    if (activeState?.running || activeState?.runSettlement) {
+    if (
+      activeState?.running ||
+      (activeState?.runSettlement && this.sessionDreamSettlements.has(activeState.runSettlement))
+    ) {
       const activeSettlement = activeState.runSettlement;
       if (activeSettlement && this.sessionDreamSettlements.has(activeSettlement)) {
         await activeSettlement;
@@ -178,7 +184,10 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       sessionKey,
       conversationKind: message.conversationKind,
     });
-    if (state.running || state.runSettlement) {
+    if (
+      state.running ||
+      (state.runSettlement && this.sessionDreamSettlements.has(state.runSettlement))
+    ) {
       const activeSettlement = state.runSettlement;
       if (activeSettlement && this.sessionDreamSettlements.has(activeSettlement)) {
         await activeSettlement;
@@ -643,6 +652,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   }
 
   switchConversationModel(conversationId: string, _provider: string, _model: string): boolean {
+    this.bumpConversationRunnerGeneration(conversationId);
     return this.clearConversationStates(
       conversationId,
       `[${conversationId}] Model switched; cleared cached session runners`,
@@ -650,6 +660,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   }
 
   refreshConversationEnvironment(conversationId: string): boolean {
+    this.bumpConversationRunnerGeneration(conversationId);
     return this.clearConversationStates(
       conversationId,
       `[${conversationId}] Environment refreshed; cleared cached session runners`,
@@ -657,6 +668,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   }
 
   refreshAllConversations(): { busy: string[] } {
+    this.globalRunnerGeneration++;
     const busy: string[] = [];
     for (const conversationId of this.sessions.conversationIds()) {
       const cleared = this.clearConversationStates(
@@ -675,6 +687,52 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     const cleared = this.sessions.clearConversation(conversationId);
     if (cleared) log.logInfo(message);
     return cleared;
+  }
+
+  private bumpConversationRunnerGeneration(conversationId: string): void {
+    this.conversationRunnerGenerations.set(
+      conversationId,
+      (this.conversationRunnerGenerations.get(conversationId) ?? 0) + 1,
+    );
+  }
+
+  private runnerGeneration(conversationId: string): string {
+    return `${this.globalRunnerGeneration}:${this.conversationRunnerGenerations.get(conversationId) ?? 0}`;
+  }
+
+  private async createCurrentRunner(
+    options: SessionStateOptions,
+    conversationDir: string,
+    sessionScope: Awaited<ReturnType<ChatHistorySync["resolveSessionScope"]>>,
+  ): Promise<PiAgentWrapper> {
+    while (true) {
+      const generation = this.runnerGeneration(options.conversationId);
+      const runner = await createRunner({
+        sandboxConfig: this.options.sandbox,
+        sessionKey: options.sessionKey,
+        conversationId: options.conversationId,
+        conversationDir,
+        workspaceDir: this.options.workingDir,
+        sessionScope,
+        vaultManager: this.options.vaultManager,
+        provisioner: this.options.provisioner,
+        resourceController: this.options.resourceController,
+        sessionView: this.options.sessionViewTokenStore
+          ? {
+              tokenStore: this.options.sessionViewTokenStore,
+              portalBaseUrl: this.options.portalBaseUrl,
+            }
+          : undefined,
+        platformNotifier: this.options.platformNotifier,
+        platformReactor: this.options.platformReactor,
+        platformUploader: this.options.platformUploader,
+        platformBlockKit: this.options.platformBlockKit,
+        platformToolPackFactories: this.options.platformToolPackFactories,
+        models: this.resolvedModels,
+      });
+      if (generation === this.runnerGeneration(options.conversationId)) return runner;
+      await runner.dispose();
+    }
   }
 
   private async getOrCreateState(
@@ -709,29 +767,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
     const state: ConversationState = {
       running: false,
-      runner: await createRunner({
-        sandboxConfig: this.options.sandbox,
-        sessionKey,
-        conversationId,
-        conversationDir,
-        workspaceDir: this.options.workingDir,
-        sessionScope,
-        vaultManager: this.options.vaultManager,
-        provisioner: this.options.provisioner,
-        resourceController: this.options.resourceController,
-        sessionView: this.options.sessionViewTokenStore
-          ? {
-              tokenStore: this.options.sessionViewTokenStore,
-              portalBaseUrl: this.options.portalBaseUrl,
-            }
-          : undefined,
-        platformNotifier: this.options.platformNotifier,
-        platformReactor: this.options.platformReactor,
-        platformUploader: this.options.platformUploader,
-        platformBlockKit: this.options.platformBlockKit,
-        platformToolPackFactories: this.options.platformToolPackFactories,
-        models: this.resolvedModels,
-      }),
+      runner: await this.createCurrentRunner(options, conversationDir, sessionScope),
       stopRequested: false,
       lastAccessedAt: Date.now(),
       sessionFile: sessionScope.contextFile,

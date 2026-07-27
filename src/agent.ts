@@ -175,7 +175,7 @@ export function translateAttachPathToHost(
  * Normalize an attachment path using runtime lexical semantics only. The
  * executor remains the authority for reading the resulting runtime path.
  */
-export function normalizeAttachRuntimePath(filePath: string, runtimeWorkspaceRoot: string): string {
+function normalizeAttachRuntimePath(filePath: string, runtimeWorkspaceRoot: string): string {
   if (hasParentTraversal(filePath)) {
     throw new Error("Cannot attach files: parent-directory traversal is not allowed");
   }
@@ -203,10 +203,7 @@ async function withStagedRuntimeFile(
       "Attachments are unavailable: this sandbox cannot guarantee symlink-free path traversal",
     );
   }
-  const content = Buffer.from(
-    await executor.readFileBase64NoSymlinks(runtimePath),
-    "base64",
-  );
+  const content = Buffer.from(await executor.readFileBase64NoSymlinks(runtimePath), "base64");
   let stagingDir: string | undefined;
   try {
     stagingDir = await mkdtemp(join(tmpdir(), "mikan-upload-"));

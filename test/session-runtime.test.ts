@@ -508,19 +508,20 @@ describe("ConversationRuntime lifecycle", () => {
     let releaseDream!: () => void;
     const dreamGate = new Promise<void>((resolve) => (releaseDream = resolve));
     const runStarts: string[] = [];
+    const recordRun = (context: { messages: unknown[] }) => {
+      const messages = JSON.stringify(context.messages);
+      runStarts.push(messages.includes("thread message") ? "thread" : "top-level");
+      expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
+      return fauxAssistantMessage("reply");
+    };
     faux.setResponses([
       async () => {
         dreamStarted = true;
         await dreamGate;
         return fauxAssistantMessage("memory preserved");
       },
-      (context) => {
-        const messages = JSON.stringify(context.messages);
-        runStarts.push(messages.includes("thread message") ? "thread" : "top-level");
-        expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
-        return fauxAssistantMessage("reply");
-      },
-      fauxAssistantMessage("thread reply"),
+      recordRun,
+      recordRun,
     ]);
 
     const topLevel = makeEventAndContext("5");

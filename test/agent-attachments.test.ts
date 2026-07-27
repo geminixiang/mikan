@@ -2,10 +2,7 @@ import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import {
-  buildPromptPayload,
-  translateAttachPathToHost,
-} from "../src/agent.js";
+import { buildPromptPayload, translateAttachPathToHost } from "../src/agent.js";
 import type { ConversationMessage } from "../src/adapter.js";
 import { createMountedRuntimePathContext } from "../src/sandbox/path-context.js";
 
@@ -33,7 +30,7 @@ function makeMessage(localPath: string): ConversationMessage {
 }
 
 describe("buildPromptPayload", () => {
-  test("reads image attachments through runtime-to-host path translation", () => {
+  test("reads image attachments through runtime-to-host path translation", async () => {
     writeFileSync(join(workspaceDir, "C123", "attachments", "image.png"), "png-bytes");
     const pathContext = createMountedRuntimePathContext(workspaceDir, "/workspace");
 
@@ -54,7 +51,7 @@ describe("buildPromptPayload", () => {
     expect(payload.userMessage).not.toContain("<slack_attachments>");
   });
 
-  test("keeps runtime paths in text for non-image attachments", () => {
+  test("keeps runtime paths in text for non-image attachments", async () => {
     writeFileSync(join(workspaceDir, "C123", "attachments", "notes.txt"), "hello");
     const pathContext = createMountedRuntimePathContext(workspaceDir, "/workspace");
 
@@ -80,11 +77,11 @@ describe("buildPromptPayload", () => {
 
   test("rejects an intermediate symlink even when it stays inside the workspace", () => {
     symlinkSync(join(workspaceDir, "C123"), join(workspaceDir, "alias"));
+    writeFileSync(join(workspaceDir, "C123", "attachments", "image.png"), "png-bytes");
     const pathContext = createMountedRuntimePathContext(workspaceDir, "/workspace");
 
     expect(() => translateAttachPathToHost("alias/attachments/image.png", pathContext)).toThrow(
       "symlink components are not allowed",
     );
   });
-
 });
