@@ -7,6 +7,5 @@
     "src/harness/index.ts",
     "src/sandbox/index.ts"
   ],
-  "ignore": ["examples/**", "scripts/**", "deploy/**"],
-  "ignoreBinaries": ["astro"]
+  "ignore": ["examples/**", "scripts/**", "deploy/**"]
 }
