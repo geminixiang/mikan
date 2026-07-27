@@ -180,6 +180,7 @@ export interface SessionHeader {
   timestamp: string;
   cwd: string;
   parentSession?: string;
+  parentSessionId?: string;
   [extra: string]: unknown;
 }
 

@@ -41,12 +41,10 @@ export function loadSessionViewModel(sessionFile: string): SessionViewModel {
   const updatedAt = entries.at(-1)?.timestamp ?? header.timestamp;
   const title = sm.getSessionName() || `Session ${header.id.slice(0, 8)}`;
 
-  const parent = header.parentSession
-    ? buildSessionRelation(resolve(header.parentSession), "parent")
-    : buildInferredThreadParentRelation(resolvedFile);
+  const parent = resolveParentRelation(resolvedFile, header);
   const threads = listRelatedSessionFiles(resolvedFile)
     .filter((candidate) => candidate !== resolvedFile)
-    .map((candidate) => buildSessionRelation(candidate, "thread", resolvedFile))
+    .map((candidate) => buildSessionRelation(candidate, "thread", resolvedFile, header.id))
     .filter((relation): relation is SessionViewRelation => relation !== null)
     .toSorted((a, b) => (a.updatedAt < b.updatedAt ? -1 : a.updatedAt > b.updatedAt ? 1 : 0));
 
@@ -129,6 +127,7 @@ function buildSessionRelation(
   sessionFile: string,
   kind: "parent" | "thread",
   expectedParent?: string,
+  expectedParentId?: string,
 ): SessionViewRelation | null {
   let sm: SessionStore;
   try {
@@ -149,7 +148,13 @@ function buildSessionRelation(
   }
   if (
     kind === "thread" &&
-    !isChildThreadSession(sessionFile, header.parentSession, expectedParent)
+    !isChildThreadSession(
+      sessionFile,
+      header.parentSession,
+      expectedParent,
+      expectedParentId,
+      header.parentSessionId,
+    )
   ) {
     return null;
   }
@@ -173,6 +178,39 @@ function buildSessionRelation(
   };
 }
 
+function resolveParentRelation(
+  sessionFile: string,
+  header: import("../../harness/types.js").SessionHeader,
+): SessionViewRelation | undefined {
+  if (header.parentSession) {
+    const parentPath = resolve(header.parentSession);
+    if (existsSync(parentPath)) {
+      return buildSessionRelation(parentPath, "parent") ?? undefined;
+    }
+    // Path is stale — try UUID fallback before heuristic.
+    if (header.parentSessionId) {
+      const found = findSessionFileById(dirname(sessionFile), header.parentSessionId);
+      if (found) return buildSessionRelation(found, "parent") ?? undefined;
+    }
+  }
+  return buildInferredThreadParentRelation(sessionFile);
+}
+
+function findSessionFileById(sessionDir: string, targetId: string): string | null {
+  if (!existsSync(sessionDir)) return null;
+  for (const name of readdirSync(sessionDir)) {
+    if (!name.endsWith(".jsonl")) continue;
+    try {
+      const filePath = join(sessionDir, name);
+      const sm = SessionStore.open(filePath);
+      if (sm.getHeader()?.id === targetId) return filePath;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 function buildInferredThreadParentRelation(sessionFile: string): SessionViewRelation | undefined {
   if (!getFixedThreadSessionId(sessionFile)) return undefined;
 
@@ -186,15 +224,24 @@ function isChildThreadSession(
   sessionFile: string,
   parentSession: string | undefined,
   expectedParent: string | undefined,
+  expectedParentId?: string,
+  threadParentSessionId?: string,
 ): boolean {
   if (!expectedParent) return false;
 
   if (parentSession) {
     const resolvedParent = resolve(parentSession);
-    return (
+    if (
       resolvedParent === expectedParent ||
       (isPlatformHistorySession(expectedParent) && isPlatformHistorySession(resolvedParent))
-    );
+    ) {
+      return true;
+    }
+    // Path is stale — fall back to UUID comparison.
+    if (expectedParentId && threadParentSessionId) {
+      return threadParentSessionId === expectedParentId;
+    }
+    return false;
   }
 
   if (!getFixedThreadSessionId(sessionFile)) return false;

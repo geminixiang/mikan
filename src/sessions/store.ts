@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { lstatSync, mkdirSync, rmSync } from "fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from "fs";
 import { basename, dirname, join, relative, resolve, sep } from "path";
 import { SessionStore } from "../harness/index.js";
 import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-guards.js";
@@ -125,16 +125,33 @@ function setCurrentPointer(sessionDir: string, sessionFilePath: string): void {
 /**
  * Creates or overwrites a fixed-path session file with a valid session header.
  */
-export function createManagedSessionFileAtPath(sessionFile: string, cwd: string): string {
-  writeSessionHeader(sessionFile, cwd);
+export interface ParentSessionRef {
+  path: string;
+  id: string;
+}
+
+export function createManagedSessionFileAtPath(
+  sessionFile: string,
+  cwd: string,
+  parent?: ParentSessionRef,
+): string {
+  writeSessionHeader(sessionFile, cwd, undefined, parent);
   return sessionFile;
 }
 
-function writeSessionHeader(sessionFile: string, cwd: string, sessionId = randomUUID()): void {
+function writeSessionHeader(
+  sessionFile: string,
+  cwd: string,
+  sessionId = randomUUID(),
+  parent?: ParentSessionRef,
+): void {
   mkdirSync(dirname(sessionFile), { recursive: true });
   // The header format (and its version) is owned by the harness store; this
   // layer only decides the path and the id.
-  SessionStore.create(sessionFile, cwd, { id: sessionId });
+  SessionStore.create(sessionFile, cwd, {
+    id: sessionId,
+    ...(parent ? { parentSession: parent.path, parentSessionId: parent.id } : {}),
+  });
 }
 
 /**
@@ -180,7 +197,11 @@ function shouldRecreatePreinitializedSession(sessionFile: string): boolean {
       .filter(Boolean)
       .map(parseSessionEntry);
 
-    return entries.length === 1 && entries[0]?.type === "session";
+    if (entries.length !== 1 || entries[0]?.type !== "session") return false;
+    // Sessions with lineage metadata are fully initialized — preserve them.
+    const h = entries[0] as { parentSession?: unknown; parentSessionId?: unknown };
+    if (h.parentSession || h.parentSessionId) return false;
+    return true;
   } catch {
     return false;
   }
@@ -229,4 +250,70 @@ export function tryResolveThreadSession(sessionFile: string): string | null {
  */
 export function resolveChannelSessionFile(channelDir: string): string | null {
   return tryResolveCurrentSession(getChannelSessionDir(channelDir));
+}
+
+// Matches timestamped main session filenames; thread sessions use bare threadTs.
+const MAIN_SESSION_FILENAME = /^\d{4}-\d{2}-\d{2}T.+_[0-9a-f]{8}\.jsonl$/i;
+
+/**
+ * Resolve the main session file that was active when a thread was created.
+ * Uses the thread's Slack timestamp to find the main session whose creation
+ * time is the latest one at or before that moment — stable across rotations.
+ * Falls back to resolveChannelSessionFile when threadTs is absent or unparseable.
+ * Returns both path and session UUID so callers can store a UUID-stable reference.
+ */
+export function resolveParentSessionForThread(
+  channelDir: string,
+  threadTs: string | undefined,
+): ParentSessionRef | null {
+  if (threadTs !== undefined) {
+    const threadTimeMs = Number(threadTs) * 1000;
+    if (Number.isFinite(threadTimeMs)) {
+      const best = findMainSessionActiveAtTime(channelDir, threadTimeMs);
+      if (best) return best;
+    }
+  }
+  const path = resolveChannelSessionFile(channelDir);
+  if (!path) return null;
+  const id = readSessionHeaderSummary(path)?.id;
+  return id ? { path, id } : null;
+}
+
+function findMainSessionActiveAtTime(
+  channelDir: string,
+  targetMs: number,
+): ParentSessionRef | null {
+  const sessionDir = getChannelSessionDir(channelDir);
+  if (!existsSync(sessionDir)) return null;
+
+  let best: ParentSessionRef | null = null;
+  let bestCreatedMs = -Infinity;
+
+  for (const name of readdirSync(sessionDir)) {
+    if (!MAIN_SESSION_FILENAME.test(name)) continue;
+    const filePath = join(sessionDir, name);
+    const summary = readSessionHeaderSummary(filePath);
+    if (!summary) continue;
+    if (summary.timestampMs <= targetMs && summary.timestampMs > bestCreatedMs) {
+      bestCreatedMs = summary.timestampMs;
+      best = { path: filePath, id: summary.id };
+    }
+  }
+  return best;
+}
+
+function readSessionHeaderSummary(filePath: string): { id: string; timestampMs: number } | null {
+  try {
+    const raw = readTextFileIfExists(filePath);
+    if (!raw) return null;
+    const firstLine = raw.slice(0, raw.indexOf("\n")).trim();
+    if (!firstLine) return null;
+    const entry = parseSessionEntry(firstLine);
+    const { id, timestamp } = entry as { id?: unknown; timestamp?: unknown };
+    if (typeof id !== "string" || typeof timestamp !== "string") return null;
+    const timestampMs = new Date(timestamp).getTime();
+    return Number.isFinite(timestampMs) ? { id, timestampMs } : null;
+  } catch {
+    return null;
+  }
 }

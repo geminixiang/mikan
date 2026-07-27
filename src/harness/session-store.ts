@@ -255,13 +255,19 @@ export class SessionStore {
   }
 
   /** Create a new session file with a fresh header, replacing any existing file. */
-  static create(path: string, cwd: string, options?: { id?: string }): SessionStore {
+  static create(
+    path: string,
+    cwd: string,
+    options?: { id?: string; parentSession?: string; parentSessionId?: string },
+  ): SessionStore {
     const header: SessionHeader = {
       type: "session",
       version: CURRENT_SESSION_VERSION,
       id: options?.id ?? randomUUID(),
       timestamp: new Date().toISOString(),
       cwd,
+      ...(options?.parentSession ? { parentSession: options.parentSession } : {}),
+      ...(options?.parentSessionId ? { parentSessionId: options.parentSessionId } : {}),
     };
     atomicWritePrivateFile(path, `${JSON.stringify(header)}\n`);
     return new SessionStore(path, cwd, [header]);

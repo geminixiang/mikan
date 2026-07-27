@@ -1,4 +1,5 @@
-import type { SessionEntry, SessionStore } from "../harness/index.js";
+import type { SessionEntry } from "../harness/index.js";
+import { SessionStore } from "../harness/index.js";
 import type { ConversationLogMessage } from "../types.js";
 import { isRecord } from "../utils/file-guards.js";
 import { isCommandText } from "../commands/text.js";
@@ -15,8 +16,10 @@ import {
   getThreadSessionFile,
   openManagedSession,
   resolveChannelSessionFile,
+  resolveParentSessionForThread,
   tryResolveCurrentSession,
   tryResolveThreadSession,
+  type ParentSessionRef,
   type ResolvedSessionScope,
   type ThreadRootMessage,
 } from "./store.js";
@@ -65,7 +68,14 @@ export function registerThreadSession(options: RegisterThreadSessionOptions): st
   const threadFile = getThreadSessionFile(options.conversationDir, options.sessionKey);
   return (
     tryResolveThreadSession(threadFile) ??
-    createManagedSessionFileAtPath(threadFile, options.cwd ?? options.conversationDir)
+    createManagedSessionFileAtPath(
+      threadFile,
+      options.cwd ?? options.conversationDir,
+      resolveParentSessionForThread(
+        options.conversationDir,
+        extractSessionSuffix(options.sessionKey),
+      ) ?? undefined,
+    )
   );
 }
 
@@ -152,10 +162,36 @@ export class ChatHistorySync {
   resetSession(options: ResetChatSessionOptions): string {
     const cwd = options.cwd ?? options.conversationDir;
     const sessionFile = isThreadSessionKey(options.sessionKey)
-      ? createManagedSessionFileAtPath(
-          getThreadSessionFile(options.conversationDir, options.sessionKey),
-          cwd,
-        )
+      ? (() => {
+          const threadFile = getThreadSessionFile(options.conversationDir, options.sessionKey);
+          // Preserve lineage: keep the original parent rather than re-binding to current.
+          let parent: ParentSessionRef | undefined;
+          try {
+            const existingHeader = SessionStore.open(threadFile).getHeader();
+            if (existingHeader?.parentSession) {
+              const parentPath = existingHeader.parentSession;
+              // Prefer stored UUID; for legacy sessions without it, read the parent file.
+              const parentId =
+                existingHeader.parentSessionId ??
+                (() => {
+                  try {
+                    return SessionStore.open(parentPath).getHeader()?.id;
+                  } catch {
+                    return undefined;
+                  }
+                })();
+              if (parentId) parent = { path: parentPath, id: parentId };
+            }
+          } catch {
+            // File missing or corrupted — will be recreated below.
+          }
+          parent ??=
+            resolveParentSessionForThread(
+              options.conversationDir,
+              extractSessionSuffix(options.sessionKey),
+            ) ?? undefined;
+          return createManagedSessionFileAtPath(threadFile, cwd, parent);
+        })()
       : createManagedSessionFile(getChannelSessionDir(options.conversationDir), cwd);
     const records = readConversationLog(options.conversationDir);
     const lastMessageId = latestSyncMessageId(records, {
@@ -242,7 +278,11 @@ export class ChatHistorySync {
       return { sessionDir: options.sessionDir, contextFile: existing, threadRootMessage };
     }
 
-    createManagedSessionFileAtPath(threadFile, options.cwd);
+    createManagedSessionFileAtPath(
+      threadFile,
+      options.cwd,
+      resolveParentSessionForThread(options.conversationDir, threadId) ?? undefined,
+    );
     const bootstrapRecords = selectThreadBootstrapMessages(records, threadId, {
       recentDays: this.recentDays,
       maxTopLevelMessages: this.maxTopLevelMessages,
