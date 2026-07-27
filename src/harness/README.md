@@ -87,7 +87,7 @@ run and emits `budget_exceeded`.
   (`DEFAULT_BUDGET_SETTINGS = {}`).
 - **Autonomous runs (event / trigger)** have no human watching;
   `agent.ts` / runner wiring passes `DEFAULT_EVENT_BUDGET` (10 minutes, 50 LLM
-  calls, $2) as a stop-loss.
+  calls, $10) as a stop-loss.
 
 Caps are checked on each assistant `message_end` (mid-turn abort is possible)
 and `handlePostRun` blocks retry/compaction from continuing after a budget trip.

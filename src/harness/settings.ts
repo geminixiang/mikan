@@ -36,7 +36,7 @@ export const DEFAULT_BUDGET_SETTINGS: BudgetSettings = {};
 export const DEFAULT_EVENT_BUDGET: BudgetSettings = {
   maxDurationMs: 10 * 60 * 1000,
   maxLlmCalls: 50,
-  maxCostUsd: 2,
+  maxCostUsd: 10,
 };
 
 export function resolveHarnessSettings(overrides?: {
