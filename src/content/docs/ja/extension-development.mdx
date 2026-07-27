@@ -279,7 +279,7 @@ if (result.status === "completed") {
 
 `api.subagent.run` は決して reject しません。あらゆる失敗——リクエストの検証、未知の tool 名、ネストされた実行の試みを含む——は、終端ステータスと `error` メッセージを持つ結果に解決されるため、呼び出し側は 1 つの形だけを扱えばよくなります。
 
-実行の既定値はモデルターン 100 回、10 分、USD 10 です。名前付き `profile` はより厳しい上限を設定でき、request budget はその上限を引き下げることだけができ、引き上げることはできません。組み込み profile は `<workspaceDir>/agents/<name>.md` で調整でき、新しい profile file は tool grant を宣言する必要があります。
+実行の既定値はモデルターン 100 回、10 分、USD 10 です。すべての組み込み profile は 100,000 トークンの上限を提供し、request はより大きな `maxTokens` 値を指定してこの上限を引き上げられます。ターン数、コスト、実行時間の request フィールドは profile の上限を厳しくすることしかできません。組み込み profile は `<workspaceDir>/agents/<name>.md` で調整でき、新しい profile file は tool grant を宣言する必要があります。
 
 結果には、実行 ID、終端ステータス、生の最終テキスト、モデル識別子、ターン数、トークン、コスト、所要時間、および任意の検証済み `output` が含まれます。終端ステータスは `completed`、`failed`、`cancelled`、`timeout`、`budget_exceeded`、`invalid_output` です。
 

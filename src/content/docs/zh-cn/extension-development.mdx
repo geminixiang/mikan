@@ -281,7 +281,7 @@ if (result.status === "completed") {
 
 `api.subagent.run` 永远不会 reject：每一种失败——包括请求校验、未知工具名称或尝试嵌套运行——都会 resolve 为一个带有终态状态和 `error` 消息的结果，因此调用方只需处理一种形态。
 
-每次运行默认为 100 个模型轮次、10 分钟以及 USD 10。命名 `profile` 可以施加更严格的上限；请求中的 budget 只能收紧这些上限，不能提高。内置 profile 可由 `<workspaceDir>/agents/<name>.md` 调整；新建 profile 文件必须声明工具授权。
+每次运行默认为 100 个模型轮次、10 分钟以及 USD 10。每个内置 profile 都提供 100,000 个 token 的配额；请求可以通过指定更大的 `maxTokens` 值来提高该配额。请求中的轮次、成本和时长字段只能收紧 profile 上限。内置 profile 可由 `<workspaceDir>/agents/<name>.md` 调整；新建 profile 文件必须声明工具授权。
 
 结果包含运行 ID、终态状态、原始最终文本、模型身份、轮次、token、成本、耗时以及一个可选的经过校验的 `output`。终态状态为 `completed`、`failed`、`cancelled`、`timeout`、`budget_exceeded` 与 `invalid_output`。
 

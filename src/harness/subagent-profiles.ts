@@ -45,6 +45,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     requiredTools: ["read", "bash"],
     thinkingLevel: "high",
     maxTurns: 30,
+    maxTokens: 100_000,
   },
   {
     name: "software-engineer",
@@ -61,6 +62,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     requiredTools: ["read", "bash"],
     thinkingLevel: "high",
     maxTurns: 35,
+    maxTokens: 100_000,
   },
   {
     name: "devops-engineer",
@@ -77,6 +79,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     requiredTools: ["read", "bash", "sandbox"],
     thinkingLevel: "high",
     maxTurns: 40,
+    maxTokens: 100_000,
   },
   {
     name: "data-scientist",
@@ -93,6 +96,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     requiredTools: ["read", "bash"],
     thinkingLevel: "high",
     maxTurns: 35,
+    maxTokens: 100_000,
   },
   {
     name: "account-manager",
@@ -109,6 +113,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     requiredTools: ["read", "bash"],
     thinkingLevel: "high",
     maxTurns: 30,
+    maxTokens: 100_000,
   },
   {
     name: "business-development",
@@ -125,6 +130,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     requiredTools: ["read", "bash"],
     thinkingLevel: "high",
     maxTurns: 30,
+    maxTokens: 100_000,
   },
   {
     name: "creative-producer",
@@ -140,6 +146,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     requiredTools: ["read", "bash", "write"],
     thinkingLevel: "high",
     maxTurns: 40,
+    maxTokens: 100_000,
   },
   {
     name: "ad-operations-specialist",
@@ -156,6 +163,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     requiredTools: ["read", "bash"],
     thinkingLevel: "high",
     maxTurns: 35,
+    maxTokens: 100_000,
   },
   {
     name: "analysis-only",
@@ -169,6 +177,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     requiredTools: [],
     thinkingLevel: "high",
     maxTurns: 20,
+    maxTokens: 100_000,
   },
 ];
 

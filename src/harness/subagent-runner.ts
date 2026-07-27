@@ -461,8 +461,10 @@ async function executeBoundedSubagentRun<TOutputSchema extends TSchema | undefin
 function noop(): void {}
 
 /**
- * Expand `request.profile` into the concrete capability set it names. Profile
- * budgets are caps: a caller can tighten them but never raise them.
+ * Expand `request.profile` into the concrete capability set it names. Most
+ * profile budgets are caps that callers may only tighten. Token budgets are
+ * different: the effective allowance is the larger of the profile default and
+ * the caller's request.
  */
 function resolveProfile<TOutputSchema extends TSchema | undefined>(
   request: SubagentRunRequest<TOutputSchema>,
@@ -486,8 +488,8 @@ function resolveProfile<TOutputSchema extends TSchema | undefined>(
     ...(profile.maxTurns !== undefined
       ? { maxTurns: Math.min(profile.maxTurns, request.budget?.maxTurns ?? profile.maxTurns) }
       : {}),
-    ...(profile.maxTokens !== undefined
-      ? { maxTokens: Math.min(profile.maxTokens, request.budget?.maxTokens ?? profile.maxTokens) }
+    ...(profile.maxTokens !== undefined || request.budget?.maxTokens !== undefined
+      ? { maxTokens: Math.max(profile.maxTokens ?? 0, request.budget?.maxTokens ?? 0) }
       : {}),
     ...(profile.maxCostUsd !== undefined
       ? {

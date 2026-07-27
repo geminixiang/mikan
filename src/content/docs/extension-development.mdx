@@ -281,7 +281,7 @@ A run can opt in to context from the active parent run with `parentContext: { mo
 
 `api.subagent.run` never rejects: every failure — including request validation, an unknown tool name, or an attempted nested run — resolves to a result with a terminal status and an `error` message, so callers handle one shape.
 
-Runs default to 100 model turns, 10 minutes, and USD 10. A named `profile` may impose stricter caps; request budgets can only tighten those caps, never raise them. Built-in profiles can be patched by `<workspaceDir>/agents/<name>.md`, while new profile files must declare their tool grant.
+Runs default to 100 model turns, 10 minutes, and USD 10. Every built-in profile provides a 100,000-token allowance; a request may raise it by specifying a larger `maxTokens` value. Turn, cost, and duration request fields can only tighten profile caps. Built-in profiles can be patched by `<workspaceDir>/agents/<name>.md`, while new profile files must declare their tool grant.
 
 Results include a run ID, terminal status, raw final text, model identity, turns, tokens, cost, duration, and an optional validated `output`. Terminal statuses are `completed`, `failed`, `cancelled`, `timeout`, `budget_exceeded`, and `invalid_output`.
 

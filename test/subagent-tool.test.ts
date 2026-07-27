@@ -180,7 +180,7 @@ describe("subagent tool", () => {
   test("offers no systemPrompt, tools, or model escape hatch", () => {
     const properties = (
       makeTool(completedRun("ok")).parameters as unknown as {
-        properties: Record<string, unknown>;
+        properties: Record<string, { properties?: Record<string, { minimum?: number }> }>;
       }
     ).properties;
 
@@ -188,6 +188,7 @@ describe("subagent tool", () => {
     expect(properties.tools).toBeUndefined();
     expect(properties.model).toBeUndefined();
     expect(properties.profile).toMatchObject({ enum: ["explorer"] });
+    expect(properties.budget.properties?.maxTokens?.minimum).toBe(1);
   });
 
   test("states each profile's tool grant on the menu", () => {

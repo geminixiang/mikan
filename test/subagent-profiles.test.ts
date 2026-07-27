@@ -72,6 +72,9 @@ describe("loadSubagentProfiles", () => {
       maxTurns: 35,
     });
     expect(profiles.get("analysis-only")).toMatchObject({ tools: [], requiredTools: [] });
+    for (const profile of profiles.values()) {
+      expect(profile.maxTokens).toBe(100_000);
+    }
   });
 
   test("built-ins pin no model, so they inherit the session's", () => {
