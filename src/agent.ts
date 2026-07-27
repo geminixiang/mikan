@@ -1610,8 +1610,7 @@ function sessionDreamPrompt(conversationMemoryPath: string, toolNames: string[])
 
 const SESSION_DREAM_BUDGET = {
   maxDurationMs: 2 * 60 * 1000,
-  maxLlmCalls: 5,
-  maxCostUsd: 0.25,
+  maxLlmCalls: 10,
 };
 
 function sessionDreamTools(tools: AgentTool[], conversationMemoryPath: string): AgentTool[] {

@@ -341,7 +341,7 @@ describe("PiAgentWrapper.run", () => {
     expect(maintenancePrompt).toContain("including tools used earlier in this transcript");
     expect(maintenancePrompt).not.toContain("bash");
     expect(promptSpy.mock.calls.at(-1)?.[1]).toMatchObject({
-      budget: { maxDurationMs: 120_000, maxLlmCalls: 5, maxCostUsd: 0.25 },
+      budget: { maxDurationMs: 120_000, maxLlmCalls: 10 },
     });
     expect(setupResponder.replaceResponse).toHaveBeenCalledTimes(visibleCallsBeforeMaintenance);
     expect(readFileSync(memoryPath, "utf-8")).toBe("Launch decision: use the staged rollout.");
