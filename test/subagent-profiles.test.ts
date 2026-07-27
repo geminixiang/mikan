@@ -31,18 +31,40 @@ describe("loadSubagentProfiles", () => {
     const { profiles, diagnostics } = loadSubagentProfiles(emptyWorkspace());
 
     expect(diagnostics).toEqual([]);
-    expect(profiles.get("repository-cloner")).toMatchObject({
-      tools: ["bash"],
-      requiredTools: ["bash"],
-      maxTurns: 5,
+    expect(profiles.get("software-engineer")).toMatchObject({
+      tools: ["read", "bash", "edit", "write"],
+      requiredTools: ["read", "bash"],
+      maxTurns: 35,
     });
-    expect(profiles.get("repository-researcher")).toMatchObject({
-      tools: ["bash", "read"],
-      requiredTools: ["bash", "read"],
+    expect(profiles.get("devops-engineer")).toMatchObject({
+      tools: ["read", "bash", "edit", "write", "event", "sandbox"],
+      requiredTools: ["read", "bash", "sandbox"],
+      maxTurns: 40,
     });
-    expect(profiles.get("repository-explorer")).toMatchObject({
-      tools: ["read", "bash"],
-      requiredTools: ["read"],
+    expect(profiles.get("data-scientist")).toMatchObject({
+      tools: ["read", "bash", "write"],
+      requiredTools: ["read", "bash"],
+      maxTurns: 35,
+    });
+    expect(profiles.get("account-manager")).toMatchObject({
+      tools: ["read", "bash", "write", "event"],
+      requiredTools: ["read", "bash"],
+      maxTurns: 30,
+    });
+    expect(profiles.get("business-development")).toMatchObject({
+      tools: ["read", "bash", "write"],
+      requiredTools: ["read", "bash"],
+      maxTurns: 30,
+    });
+    expect(profiles.get("creative-producer")).toMatchObject({
+      tools: ["read", "bash", "write"],
+      requiredTools: ["read", "bash", "write"],
+      maxTurns: 40,
+    });
+    expect(profiles.get("ad-operations-specialist")).toMatchObject({
+      tools: ["read", "bash", "write"],
+      requiredTools: ["read", "bash"],
+      maxTurns: 35,
     });
     expect(profiles.get("analysis-only")).toMatchObject({ tools: [], requiredTools: [] });
   });
@@ -63,24 +85,24 @@ describe("loadSubagentProfiles", () => {
 
   test("a model-only file patches the built-in without restating it", () => {
     const dir = workspace();
-    writeProfile(dir, "repository-explorer", `---\nmodel: openai-codex/gpt-5.6-luna\n---\n`);
+    writeProfile(dir, "software-engineer", `---\nmodel: openai-codex/gpt-5.6-luna\n---\n`);
 
-    const profile = loadSubagentProfiles(dir).profiles.get("repository-explorer");
+    const profile = loadSubagentProfiles(dir).profiles.get("software-engineer");
 
     expect(profile).toMatchObject({
       model: { provider: "openai-codex", id: "gpt-5.6-luna" },
-      tools: ["read", "bash"],
-      requiredTools: ["read"],
+      tools: ["read", "bash", "edit", "write"],
+      requiredTools: ["read", "bash"],
       thinkingLevel: "high",
     });
-    expect(profile?.systemPrompt).toContain("read-only repository explorer");
+    expect(profile?.systemPrompt).toContain("software engineer");
   });
 
   test("a patch can narrow the built-in's tool grant", () => {
     const dir = workspace();
-    writeProfile(dir, "repository-explorer", `---\ntools: read\nrequired_tools: read\n---\n`);
+    writeProfile(dir, "software-engineer", `---\ntools: read\nrequired_tools: read\n---\n`);
 
-    expect(loadSubagentProfiles(dir).profiles.get("repository-explorer")).toMatchObject({
+    expect(loadSubagentProfiles(dir).profiles.get("software-engineer")).toMatchObject({
       tools: ["read"],
       requiredTools: ["read"],
     });
@@ -121,13 +143,15 @@ describe("loadSubagentProfiles", () => {
 
   test("reports required tools outside the grant and keeps the built-in", () => {
     const dir = workspace();
-    writeProfile(dir, "repository-explorer", `---\ntools: read\nrequired_tools: bash\n---\n`);
+    writeProfile(dir, "software-engineer", `---\ntools: read\nrequired_tools: bash\n---\n`);
 
     const { profiles, diagnostics } = loadSubagentProfiles(dir);
 
     expect(diagnostics).toHaveLength(1);
     expect(diagnostics[0].message).toContain("required_tools must be included in tools: bash");
-    expect(profiles.get("repository-explorer")).toMatchObject({ tools: ["read", "bash"] });
+    expect(profiles.get("software-engineer")).toMatchObject({
+      tools: ["read", "bash", "edit", "write"],
+    });
   });
 
   test("one malformed file never takes the whole workspace down", () => {
@@ -166,7 +190,7 @@ describe("loadSubagentProfiles", () => {
 
   test("reports an unusable budget", () => {
     const dir = workspace();
-    writeProfile(dir, "repository-explorer", `---\nmax_cost_usd: -1\n---\n`);
+    writeProfile(dir, "software-engineer", `---\nmax_cost_usd: -1\n---\n`);
 
     expect(loadSubagentProfiles(dir).diagnostics[0].message).toContain(
       "max_cost_usd must be a non-negative number",
