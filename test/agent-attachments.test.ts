@@ -65,23 +65,22 @@ describe("buildPromptPayload", () => {
     expect(payload.userMessage).toContain("/workspace/C123/attachments/notes.txt");
   });
 
-  test("rejects an existing symlink in the attachment path", () => {
+  test("allows a symlink target after workspace containment validation", () => {
     const linkPath = join(workspaceDir, "C123", "attachments", "secret.txt");
     symlinkSync("/etc/passwd", linkPath);
     const pathContext = createMountedRuntimePathContext(workspaceDir, "/workspace");
 
-    expect(() => translateAttachPathToHost("C123/attachments/secret.txt", pathContext)).toThrow(
-      "symlink components are not allowed",
-    );
+    expect(translateAttachPathToHost("C123/attachments/secret.txt", pathContext)).toBe(linkPath);
   });
 
-  test("rejects an intermediate symlink even when it stays inside the workspace", () => {
-    symlinkSync(join(workspaceDir, "C123"), join(workspaceDir, "alias"));
+  test("allows an intermediate symlink after workspace containment validation", () => {
+    const aliasPath = join(workspaceDir, "alias");
+    symlinkSync(join(workspaceDir, "C123"), aliasPath);
     writeFileSync(join(workspaceDir, "C123", "attachments", "image.png"), "png-bytes");
     const pathContext = createMountedRuntimePathContext(workspaceDir, "/workspace");
 
-    expect(() => translateAttachPathToHost("alias/attachments/image.png", pathContext)).toThrow(
-      "symlink components are not allowed",
+    expect(translateAttachPathToHost("alias/attachments/image.png", pathContext)).toBe(
+      join(aliasPath, "attachments", "image.png"),
     );
   });
 });

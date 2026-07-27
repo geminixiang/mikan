@@ -212,6 +212,39 @@ describe("PiAgentWrapper.run", () => {
     expect(runner.getCurrentStep()).toBeUndefined();
   });
 
+  test("uploads a workspace file through the executor's regular base64 reader", async () => {
+    const { runner, faux } = await createTestRunner();
+    const scratchDir = join(dir, "workspace", "C1", "scratch");
+    const reportPath = join(scratchDir, "report.html");
+    mkdirSync(scratchDir, { recursive: true });
+    writeFileSync(reportPath, "<h1>Report</h1>");
+    faux.setResponses([
+      fauxAssistantMessage(
+        fauxToolCall("attach", {
+          label: "share report",
+          path: reportPath,
+          title: "report.html",
+        }),
+      ),
+      fauxAssistantMessage("attached"),
+    ]);
+    let uploadedContent: string | undefined;
+    const responder = makeResponder();
+    responder.uploadFile = vi.fn(async (stagedPath: string) => {
+      uploadedContent = readFileSync(stagedPath, "utf-8");
+    });
+
+    const result = await runner.run(
+      makeMessage({ text: "attach the report" }),
+      responder,
+      platform,
+    );
+
+    expect(result.stopReason).toBe("stop");
+    expect(responder.uploadFile).toHaveBeenCalledWith(expect.any(String), "report.html");
+    expect(uploadedContent).toBe("<h1>Report</h1>");
+  });
+
   test("[SILENT] responses delete the placeholder instead of replacing it", async () => {
     const { runner, faux } = await createTestRunner();
     faux.setResponses([fauxAssistantMessage("[SILENT]")]);

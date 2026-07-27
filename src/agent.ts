@@ -32,7 +32,7 @@ import {
   settleSubagentProgress,
 } from "./subagent-progress.js";
 import { createHash } from "crypto";
-import { existsSync, lstatSync } from "fs";
+import { existsSync } from "fs";
 import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { basename, isAbsolute, join, posix, relative, resolve, sep } from "path";
@@ -145,29 +145,6 @@ export function translateAttachPathToHost(
     throw new Error("Cannot attach files: path must be within the host workspace");
   }
 
-  // Reject symlinks in every existing component. Missing files are left for
-  // the uploader's normal error, but a present attachment must be a regular
-  // non-symlink path all the way from the workspace root.
-  if (existsSync(hostPath)) {
-    let current = hostRoot;
-    const pathParts = relative(hostRoot, hostPath).split(sep).filter(Boolean);
-    for (const [index, part] of pathParts.entries()) {
-      current = join(current, part);
-      let stat;
-      try {
-        stat = lstatSync(current);
-      } catch {
-        break;
-      }
-      if (stat.isSymbolicLink()) {
-        throw new Error("Cannot attach files: symlink components are not allowed");
-      }
-      if (index === pathParts.length - 1 && !stat.isFile()) {
-        throw new Error("Cannot attach files: path must be a regular file");
-      }
-    }
-  }
-
   return hostPath;
 }
 
@@ -198,12 +175,7 @@ async function withStagedRuntimeFile(
   runtimePath: string,
   upload: (stagedPath: string) => Promise<void>,
 ): Promise<void> {
-  if (!executor.readFileBase64NoSymlinks) {
-    throw new Error(
-      "Attachments are unavailable: this sandbox cannot guarantee symlink-free path traversal",
-    );
-  }
-  const content = Buffer.from(await executor.readFileBase64NoSymlinks(runtimePath), "base64");
+  const content = Buffer.from(await executor.readFileBase64(runtimePath), "base64");
   let stagingDir: string | undefined;
   try {
     stagingDir = await mkdtemp(join(tmpdir(), "mikan-upload-"));
@@ -1225,14 +1197,6 @@ function createRunnerExecutionContext(
     readFileBase64(path, options) {
       return activeExecutor.readFileBase64(path, options);
     },
-    readFileBase64NoSymlinks(path, options) {
-      if (!activeExecutor.readFileBase64NoSymlinks) {
-        throw new Error(
-          "Attachments are unavailable: this sandbox cannot guarantee symlink-free path traversal",
-        );
-      }
-      return activeExecutor.readFileBase64NoSymlinks(path, options);
-    },
     writeFile(path, content, options) {
       return activeExecutor.writeFile(path, content, options);
     },
@@ -1602,9 +1566,7 @@ async function prepareRunContext(params: {
     message,
     pathContext.runtimeWorkspaceRoot,
     pathContext,
-    executor.readFileBase64NoSymlinks
-      ? (runtimePath) => executor.readFileBase64NoSymlinks!(runtimePath)
-      : undefined,
+    (runtimePath) => executor.readFileBase64(runtimePath),
   );
   const turnInstructions = buildTurnInstructions(
     message.id.startsWith("event:"),
