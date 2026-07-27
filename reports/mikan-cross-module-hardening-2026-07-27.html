@@ -1,0 +1,1054 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>mikan 跨模塊介面強化報告</title>
+    <style>
+      :root {
+        --bg: #f5f7fb;
+        --paper: #ffffff;
+        --ink: #162033;
+        --muted: #647087;
+        --line: #dfe5ef;
+        --brand: #7c3aed;
+        --brand-soft: #f1eafe;
+        --green: #0f766e;
+        --green-soft: #e7f7f3;
+        --amber: #a16207;
+        --amber-soft: #fff7dd;
+        --red: #b42318;
+        --red-soft: #fff0ee;
+        --blue: #1d4ed8;
+        --blue-soft: #eaf1ff;
+        --shadow: 0 16px 45px rgba(31, 41, 55, 0.08);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        color: var(--ink);
+        background: var(--bg);
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          "Noto Sans TC",
+          sans-serif;
+        line-height: 1.65;
+      }
+      a {
+        color: var(--brand);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      code,
+      pre {
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      }
+      code {
+        padding: 0.12rem 0.38rem;
+        border-radius: 6px;
+        background: #eef1f6;
+        font-size: 0.9em;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: 260px minmax(0, 1fr);
+        max-width: 1500px;
+        margin: 0 auto;
+      }
+      nav {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        padding: 28px 22px;
+        border-right: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.86);
+        backdrop-filter: blur(14px);
+        overflow: auto;
+      }
+      nav .logo {
+        font-size: 1.4rem;
+        font-weight: 850;
+        letter-spacing: -0.04em;
+      }
+      nav .logo span {
+        color: var(--brand);
+      }
+      nav .meta {
+        margin: 8px 0 24px;
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+      nav a {
+        display: block;
+        padding: 7px 10px;
+        margin: 2px 0;
+        color: #4a556b;
+        border-radius: 8px;
+        font-size: 0.9rem;
+      }
+      nav a:hover {
+        background: var(--brand-soft);
+        color: var(--brand);
+        text-decoration: none;
+      }
+      main {
+        min-width: 0;
+        padding: 42px clamp(24px, 5vw, 76px) 80px;
+      }
+      .hero {
+        padding: clamp(30px, 5vw, 58px);
+        border-radius: 24px;
+        color: white;
+        background:
+          radial-gradient(circle at 84% 10%, rgba(255, 255, 255, 0.25), transparent 28%),
+          linear-gradient(135deg, #22164b, #6d28d9 60%, #8b5cf6);
+        box-shadow: var(--shadow);
+      }
+      .eyebrow {
+        font-size: 0.78rem;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        opacity: 0.8;
+      }
+      h1 {
+        max-width: 900px;
+        margin: 10px 0 14px;
+        font-size: clamp(2.1rem, 5vw, 4.3rem);
+        line-height: 1.02;
+        letter-spacing: -0.055em;
+      }
+      .hero p {
+        max-width: 850px;
+        margin: 0;
+        font-size: 1.08rem;
+        opacity: 0.9;
+      }
+      .hero .commit {
+        display: inline-flex;
+        margin-top: 22px;
+        padding: 8px 12px;
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+        font-family: monospace;
+        font-size: 0.82rem;
+      }
+      section {
+        margin-top: 48px;
+        scroll-margin-top: 24px;
+      }
+      h2 {
+        margin: 0 0 18px;
+        font-size: clamp(1.65rem, 3vw, 2.45rem);
+        letter-spacing: -0.035em;
+      }
+      h3 {
+        margin: 0 0 10px;
+        font-size: 1.15rem;
+      }
+      .lead {
+        max-width: 900px;
+        color: var(--muted);
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(130px, 1fr));
+        gap: 14px;
+        margin-top: 22px;
+      }
+      .stat,
+      .card {
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        box-shadow: 0 4px 16px rgba(31, 41, 55, 0.04);
+      }
+      .stat {
+        padding: 20px;
+      }
+      .stat strong {
+        display: block;
+        font-size: 1.75rem;
+        letter-spacing: -0.04em;
+      }
+      .stat span {
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+      .grid.three {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      .card {
+        padding: 22px;
+      }
+      .card p:last-child,
+      .card ul:last-child {
+        margin-bottom: 0;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 9px;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+      }
+      .badge.green {
+        color: var(--green);
+        background: var(--green-soft);
+      }
+      .badge.blue {
+        color: var(--blue);
+        background: var(--blue-soft);
+      }
+      .badge.amber {
+        color: var(--amber);
+        background: var(--amber-soft);
+      }
+      .badge.red {
+        color: var(--red);
+        background: var(--red-soft);
+      }
+      .owner {
+        border-top: 4px solid var(--brand);
+      }
+      .owner .scope {
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      .change {
+        position: relative;
+        padding-left: 28px;
+      }
+      .change::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0.38rem;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--green);
+        box-shadow: 0 0 0 5px var(--green-soft);
+      }
+      .change + .change {
+        margin-top: 20px;
+      }
+      .change h3 {
+        margin-bottom: 4px;
+      }
+      ul {
+        padding-left: 20px;
+      }
+      li + li {
+        margin-top: 5px;
+      }
+      table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--paper);
+        font-size: 0.9rem;
+      }
+      th,
+      td {
+        padding: 12px 14px;
+        text-align: left;
+        vertical-align: top;
+        border-bottom: 1px solid var(--line);
+      }
+      th {
+        background: #f0f3f9;
+        font-size: 0.78rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      tr:last-child td {
+        border-bottom: 0;
+      }
+      .callout {
+        padding: 18px 20px;
+        border-radius: 14px;
+        border-left: 5px solid var(--brand);
+        background: var(--brand-soft);
+      }
+      .callout.warn {
+        border-color: var(--amber);
+        background: var(--amber-soft);
+      }
+      .callout.danger {
+        border-color: var(--red);
+        background: var(--red-soft);
+      }
+      .evidence {
+        display: grid;
+        gap: 10px;
+      }
+      .check {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        padding: 14px 16px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: white;
+      }
+      .check::before {
+        content: "✓";
+        display: grid;
+        place-items: center;
+        flex: 0 0 24px;
+        height: 24px;
+        border-radius: 50%;
+        color: white;
+        background: var(--green);
+        font-weight: 900;
+      }
+      details {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: white;
+      }
+      details + details {
+        margin-top: 10px;
+      }
+      summary {
+        cursor: pointer;
+        padding: 14px 16px;
+        font-weight: 750;
+      }
+      details > div {
+        padding: 0 16px 16px;
+        color: var(--muted);
+      }
+      .footer {
+        margin-top: 58px;
+        padding-top: 24px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      @media (max-width: 1050px) {
+        .layout {
+          display: block;
+        }
+        nav {
+          position: static;
+          height: auto;
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+        nav .links {
+          display: flex;
+          flex-wrap: wrap;
+        }
+        .stats {
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
+      @media (max-width: 720px) {
+        main {
+          padding: 22px 16px 56px;
+        }
+        .grid,
+        .grid.three {
+          grid-template-columns: 1fr;
+        }
+        .stats {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .hero {
+          border-radius: 18px;
+        }
+        table {
+          display: block;
+          overflow-x: auto;
+        }
+      }
+      @media print {
+        nav {
+          display: none;
+        }
+        .layout {
+          display: block;
+        }
+        main {
+          padding: 0;
+        }
+        .hero {
+          box-shadow: none;
+        }
+        section {
+          break-inside: avoid;
+        }
+        body {
+          background: white;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <nav>
+        <div class="logo">mikan<span>.</span>report</div>
+        <div class="meta">跨模塊介面強化<br />2026-07-27 · beta.29</div>
+        <div class="links">
+          <a href="#summary">執行摘要</a>
+          <a href="#owners">模塊分工</a>
+          <a href="#changes">所有改動</a>
+          <a href="#security">安全模型</a>
+          <a href="#contracts">跨模塊契約</a>
+          <a href="#tests">驗證證據</a>
+          <a href="#files">檔案影響</a>
+          <a href="#followups">重跑審核結果</a>
+        </div>
+      </nav>
+
+      <main>
+        <header class="hero">
+          <div class="eyebrow">Engineering Change Report</div>
+          <h1>mikan 跨模塊介面與安全橋樑強化</h1>
+          <p>
+            本報告依據實際 Git 範圍 <strong>65eaf56..2824d7c</strong> 產生，整理六個 owner
+            模塊的協作結果、37 個變更檔案、跨模塊契約、安全修復、持久化相容性與完整測試證據。
+          </p>
+          <div class="commit">2824d7c · fix(core): harden cross-module runtime contracts</div>
+        </header>
+
+        <section id="summary">
+          <h2>執行摘要</h2>
+          <p class="lead">
+            此次工作的核心不是單點功能，而是讓
+            adapters、runtime、sessions、harness、sandbox、vault、packages 與 web
+            在介面持續變化時，仍有明確的
+            producer／consumer、信任邊界、生命週期、錯誤模式與契約測試。
+          </p>
+          <div class="stats">
+            <div class="stat"><strong>37</strong><span>變更檔案</span></div>
+            <div class="stat"><strong>+1,481</strong><span>新增行</span></div>
+            <div class="stat"><strong>−177</strong><span>刪除行</span></div>
+            <div class="stat"><strong>1,490</strong><span>通過測試</span></div>
+            <div class="stat"><strong>30</strong><span>範圍內 commits</span></div>
+          </div>
+          <div class="callout" style="margin-top: 18px">
+            <strong>最終狀態：</strong>變更已 commit 並推送至
+            <code>origin/main</code>；本地與遠端均指向
+            <code>2824d7c6781230ef0e26a8435710bab74366557b</code>。
+          </div>
+        </section>
+
+        <section id="owners">
+          <h2>六個模塊 owner 分工</h2>
+          <div class="grid three">
+            <article class="card owner">
+              <span class="badge blue">01</span>
+              <h3>平台入口與 Commands</h3>
+              <div class="scope">adapters · trigger · commands · platform messages</div>
+              <p>
+                負責不可信平台事件正規化、命令 inventory、trigger/busy policy、conversation identity
+                與 responder。
+              </p>
+            </article>
+            <article class="card owner">
+              <span class="badge blue">02</span>
+              <h3>Runtime 與 Sessions</h3>
+              <div class="scope">runtime · sessions · store</div>
+              <p>
+                負責每 session queue、conversation barrier、runner
+                cache、Dream、rotation、stop、settlement 與 chat history sync。
+              </p>
+            </article>
+            <article class="card owner">
+              <span class="badge blue">03</span>
+              <h3>Agent／Harness／Tools</h3>
+              <div class="scope">agent · harness · tools · subagents</div>
+              <p>
+                負責 agent run 組裝、tool schemas、extension lifecycle、event format、附件與
+                executor bridge。
+              </p>
+            </article>
+            <article class="card owner">
+              <span class="badge blue">04</span>
+              <h3>Sandbox 與 Workspace</h3>
+              <div class="scope">sandbox · execution resolver · provisioner</div>
+              <p>
+                負責 host/runtime path、executor capabilities、mount projection、credential
+                injection、取消與資源生命週期。
+              </p>
+            </article>
+            <article class="card owner">
+              <span class="badge blue">05</span>
+              <h3>Vault／Web／Security</h3>
+              <div class="scope">vault · web · observability · settings mutation</div>
+              <p>
+                負責 credential key、ambient vault policy、token/CSRF、session viewer、telemetry
+                與設定寫入 seam。
+              </p>
+            </article>
+            <article class="card owner">
+              <span class="badge blue">06</span>
+              <h3>Config／Boot／Packages</h3>
+              <div class="scope">config · main · cli · packages · public exports</div>
+              <p>
+                負責設定 precedence、啟停、host-trusted packages、ref checkout、legacy migration 與
+                public surface。
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="changes">
+          <h2>所有主要改動</h2>
+          <div class="grid">
+            <article class="card">
+              <div class="change">
+                <h3>附件路徑與上傳改為 fail-closed</h3>
+                <p>
+                  模型輸入只能解析至 runtime workspace 內；禁止 <code>..</code>、host absolute
+                  path、越界與 symlink component。真正讀檔改由 active
+                  <code>Executor.readFileBase64NoSymlinks</code> capability
+                  負責；缺能力即拒絕，不再把 runtime path 當 host path。
+                </p>
+              </div>
+              <div class="change">
+                <h3>私密 staging</h3>
+                <p>
+                  附件內容先寫入 workspace 外的 0700 暫存目錄與 0600 檔案，再交給平台
+                  uploader，最後無論成功或失敗都清除。
+                </p>
+              </div>
+              <div class="change">
+                <h3>Host no-symlink transport</h3>
+                <p>
+                  Linux host executor 逐 path component 使用 no-follow descriptor
+                  語意；不支援的平台安全拒絕，而非降級為可競態的 pathname。
+                </p>
+              </div>
+            </article>
+
+            <article class="card">
+              <div class="change">
+                <h3>Runtime cache generation</h3>
+                <p>
+                  新增 global 與 per-conversation runner generation。runner 建構跨越設定變更時，舊
+                  runner 會 dispose 並重新建立，不會被註冊到 session cache。
+                </p>
+              </div>
+              <div class="change">
+                <h3>Busy conversation 延遲失效</h3>
+                <p>
+                  global LLM 設定寫入後，busy conversation 標記 pending clear；等同 conversation
+                  所有 session settlements 完成後再清除 cached runners。
+                </p>
+              </div>
+              <div class="change">
+                <h3>Session Dream lifecycle 統一</h3>
+                <p>
+                  直接與自動 Dream 都納入 <code>runSettlement</code>、in-flight、busy 判斷、清理與
+                  idle eviction，避免執行中被 dispose。
+                </p>
+              </div>
+              <div class="change">
+                <h3>正常 run settlement eviction</h3>
+                <p>
+                  將 idle/max-session eviction 移至清除
+                  <code>runSettlement</code> 之後，避免正常流量長期保留無上限 runner。
+                </p>
+              </div>
+            </article>
+
+            <article class="card">
+              <div class="change">
+                <h3>Session watermark 自動恢復</h3>
+                <p>
+                  若 <code>log.jsonl</code> 截斷或重建後找不到舊 watermark，改為重播 bounded
+                  history，並沿用 represented-message 去重，不再永久停止同步。
+                </p>
+              </div>
+              <div class="change">
+                <h3>Thread／rotation 測試加強</h3>
+                <p>
+                  新增 automatic rotation、thread startup、Dream gate、global refresh 與 session
+                  reset 的競態回歸測試。
+                </p>
+              </div>
+              <div class="change">
+                <h3>Conversation pending clear</h3>
+                <p>
+                  <code>SessionLifecycle</code> 新增 conversation pending clear，只有在所有相關
+                  session 都沒有 running/settlement 時才一次 discard。
+                </p>
+              </div>
+            </article>
+
+            <article class="card">
+              <div class="change">
+                <h3><code>/model</code> 參數契約修復</h3>
+                <p>
+                  <code>/model foo</code>、空 model、多餘參數與未知 thinking suffix
+                  會明確拒絕，不再誤顯示「目前模型」。
+                </p>
+              </div>
+              <div class="change">
+                <h3>Colon model ID 相容</h3>
+                <p>
+                  先查完整自訂 model ID，例如 <code>provider/model:2026-01</code>；只有完整 ID
+                  不存在時才把末尾解析成 thinking shorthand。
+                </p>
+              </div>
+              <div class="change">
+                <h3>Registry 單一來源</h3>
+                <p>
+                  runtime runner 與 default <code>ModelCommandHandler</code> 共用同一
+                  <code>MikanModels</code> instance，避免驗證與實際執行模型目錄漂移。
+                </p>
+              </div>
+            </article>
+
+            <article class="card">
+              <div class="change">
+                <h3>Vault key traversal 防護</h3>
+                <p>
+                  所有 vault read/write/copy target 入口共用 safe-segment validator，拒絕 absolute
+                  path、<code>.</code>、<code>..</code>、slash、backslash 與 control characters。
+                </p>
+              </div>
+              <div class="change">
+                <h3>Sandbox path containment</h3>
+                <p>
+                  <code>RuntimePathContext</code> 以 canonical lexical containment 驗證 runtime 與
+                  host root，避免 sibling-prefix 或 parent traversal 被翻譯成 workspace 外路徑。
+                </p>
+              </div>
+              <div class="change">
+                <h3>Optional capability 明文化</h3>
+                <p>
+                  <code>Executor</code> 新增 no-symlink read capability；介面要求不具安全能力的
+                  adapter 省略或 fail-closed。
+                </p>
+              </div>
+            </article>
+
+            <article class="card">
+              <div class="change">
+                <h3>Package ref checkout 隔離</h3>
+                <p>
+                  同 repo 不同 ref 使用 ref-keyed checkout；同 ref 的不同 subpath 可共用。避免 v1/v2
+                  互相 reset working tree。
+                </p>
+              </div>
+              <div class="change">
+                <h3>完成 marker 與 dependency retry</h3>
+                <p>
+                  <code>mikan-ref</code> 只在 subpath 驗證與 dependency install
+                  成功後寫入；失敗重試不會誤判為已 materialize。
+                </p>
+              </div>
+              <div class="change">
+                <h3>Legacy checkout migration</h3>
+                <p>
+                  markerless 舊 checkout 只有在 Git 能證明 clean HEAD 與指定 ref 一致時才允許
+                  offline reuse；無法證明的 pinned ref 必須重新 fetch。
+                </p>
+              </div>
+              <div class="change">
+                <h3>Git subpath containment</h3>
+                <p>
+                  CLI extension install 拒絕 absolute／<code>..</code> subpath，並以 realpath 確認
+                  symlink 最終位置仍在 clone root 內。
+                </p>
+              </div>
+            </article>
+
+            <article class="card">
+              <div class="change">
+                <h3>One-shot event timestamp</h3>
+                <p>
+                  builder 與 parser 共用 ISO 8601 validator，要求 <code>Z</code> 或
+                  <code>±HH:MM</code>；顯式驗證月份、日數、閏年、時間與 offset，拒絕 Feb 30 的 Date
+                  normalization。
+                </p>
+              </div>
+              <div class="change">
+                <h3>多語文件同步</h3>
+                <p>
+                  英文、日文、繁中、簡中 events 文件均說明 one-shot timestamp 必須帶 UTC offset。
+                </p>
+              </div>
+            </article>
+
+            <article class="card">
+              <div class="change">
+                <h3>核心介面參考</h3>
+                <p>
+                  <code>src/content/docs/core-interfaces.mdx</code> 新增六個 owner
+                  scopes、producer/consumer seams、stability levels、path/cache/package safety 與
+                  contract-test matrix。
+                </p>
+              </div>
+              <div class="change">
+                <h3>變更協議</h3>
+                <p>
+                  未來改 seam 前需分類 Public／Host
+                  integration／Wire-persisted／Internal，並同步驗證
+                  identity、trust、path、concurrency、lifecycle、ordering 與舊資料相容性。
+                </p>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section id="security">
+          <h2>安全影響</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>攻擊面</th>
+                <th>修復前風險</th>
+                <th>現在的保護</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>模型要求附加檔案</td>
+                <td>runtime path 可能被誤當 host path；symlink/TOCTOU 可讀取 workspace 外資料。</td>
+                <td>
+                  runtime lexical containment + executor atomic no-symlink capability + private
+                  staging；無安全能力即拒絕。
+                </td>
+              </tr>
+              <tr>
+                <td>Vault key</td>
+                <td>未驗證 key 可能經 <code>join</code> 逃逸 vault directory。</td>
+                <td>所有入口使用相同 safe path-segment validator。</td>
+              </tr>
+              <tr>
+                <td>Extension git subpath</td>
+                <td>
+                  <code>#../../</code> 或 symlink 可令 npm install／copy 操作 checkout 外路徑。
+                </td>
+                <td>parse-time traversal rejection、resolve containment、realpath containment。</td>
+              </tr>
+              <tr>
+                <td>Package refs</td>
+                <td>
+                  同 repo 不同 ref 共用 checkout，可能載入錯誤版本；失敗 install 仍被視為完成。
+                </td>
+                <td>ref-keyed checkout、完成 marker、legacy evidence-based migration。</td>
+              </tr>
+              <tr>
+                <td>Runner settings</td>
+                <td>busy 或建構中的 runner 可能永久保留舊 global/model 設定。</td>
+                <td>pending invalidation + settlement clear + generation retry。</td>
+              </tr>
+              <tr>
+                <td>Event scheduling</td>
+                <td>無 offset timestamp 依 host timezone 解讀；無效日期被正規化。</td>
+                <td>嚴格且共用的 ISO/calendar validator。</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="callout warn" style="margin-top: 16px">
+            <strong>功能取捨：</strong>Attachment 安全能力目前採 fail-closed。若 executor 尚未實作
+            atomic no-symlink read，attachment／自動圖片上傳會拒絕，而不是用不安全 fallback。
+          </div>
+        </section>
+
+        <section id="contracts">
+          <h2>已確認的跨模塊橋樑</h2>
+          <div class="grid three">
+            <div class="card">
+              <span class="badge green">Verified</span>
+              <h3>平台信任 → Vault</h3>
+              <p>
+                <code>MessagingInfo.trustModel</code> 由 adapter 產生，runtime 傳入 execution
+                resolver，vault policy 決定 ambient credential。GitHub
+                <code>open-trigger</code> 不取得 shared vault。
+              </p>
+            </div>
+            <div class="card">
+              <span class="badge green">Verified</span>
+              <h3>Session identity</h3>
+              <p>
+                <code>sessions/session-key.ts</code> 是唯一 grammar owner；adapter、runtime、session
+                viewer 需使用 derive/assert helpers，不得自行 split <code>:</code>。
+              </p>
+            </div>
+            <div class="card">
+              <span class="badge green">Verified</span>
+              <h3>Settings writer seam</h3>
+              <p>
+                commands/admin 透過 <code>settings-mutation.ts</code>；conversation busy
+                時拒寫，global busy 時 deferred clear，避免 disk/cache 分裂。
+              </p>
+            </div>
+            <div class="card">
+              <span class="badge green">Verified</span>
+              <h3>Runtime → Executor</h3>
+              <p>
+                tools 不自行拼 shell file transport；讀寫經 <code>Executor</code>，路徑語意由
+                <code>RuntimePathContext</code> 與 adapter capabilities 管理。
+              </p>
+            </div>
+            <div class="card">
+              <span class="badge green">Verified</span>
+              <h3>Packages → Runner</h3>
+              <p>
+                package identity、scope precedence、checkout materialization 與 read-only skill
+                mounts 各自有明確 owner，載入失敗不靜默換成錯誤 ref。
+              </p>
+            </div>
+            <div class="card">
+              <span class="badge green">Verified</span>
+              <h3>Event wire format</h3>
+              <p>
+                工具、extension 與 watcher 共用 event builder/parser；legacy alias 只留在 parser
+                內，不洩漏到 consumers。
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section id="tests">
+          <h2>驗證證據</h2>
+          <p class="lead">
+            最終 commit hook 與人工驗證都以實際 worktree 執行；非僅依賴 subagent 摘要。
+          </p>
+          <div class="evidence">
+            <div class="check">
+              <div>
+                <strong><code>npm test</code></strong
+                ><br />110 個 test files、1,490 tests 全部通過。
+              </div>
+            </div>
+            <div class="check">
+              <div>
+                <strong><code>npm run lint</code></strong
+                ><br />Oxlint 通過。
+              </div>
+            </div>
+            <div class="check">
+              <div>
+                <strong><code>npm run fmt:check</code></strong
+                ><br />519 個匹配檔案格式正確。
+              </div>
+            </div>
+            <div class="check">
+              <div>
+                <strong><code>npm run knip</code></strong
+                ><br />未使用 exports/dependencies 檢查通過；曾發現並修正不必要的 exported helper。
+              </div>
+            </div>
+            <div class="check">
+              <div>
+                <strong><code>npm run build</code></strong
+                ><br /><code>tsgo -p tsconfig.build.json</code> 編譯與 dist 產出通過。
+              </div>
+            </div>
+            <div class="check">
+              <div>
+                <strong><code>npm run docs:build</code></strong
+                ><br />Astro 成功建置 145 個頁面並完成 Pagefind index。
+              </div>
+            </div>
+            <div class="check">
+              <div>
+                <strong><code>git diff --check</code></strong
+                ><br />無 whitespace error；commit 後 worktree 乾淨。
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="files">
+          <h2>檔案影響</h2>
+          <div class="stats" style="grid-template-columns: repeat(3, 1fr)">
+            <div class="stat"><strong>18</strong><span>source files</span></div>
+            <div class="stat"><strong>14</strong><span>test files</span></div>
+            <div class="stat"><strong>5</strong><span>documentation files</span></div>
+          </div>
+          <div style="margin-top: 18px">
+            <details open>
+              <summary>Runtime、Agent 與 Sandbox</summary>
+              <div>
+                <code>src/agent.ts</code
+                >、<code>src/runtime/conversation-runtime.ts</code>、<code>src/runtime/session-lifecycle.ts</code>、<code>src/runtime/types.ts</code>、<code>src/sandbox/host.ts</code>、<code>src/sandbox/path-context.ts</code>、<code>src/sandbox/types.ts</code>、<code
+                  >src/settings-mutation.ts</code
+                >
+              </div>
+            </details>
+            <details>
+              <summary>Commands、Events、Sessions、Vault</summary>
+              <div>
+                <code>src/commands/model.ts</code
+                >、<code>src/commands/registry.ts</code>、<code>src/commands/types.ts</code>、<code>src/harness/event-format.ts</code>、<code>src/sessions/chat-history-sync.ts</code>、<code
+                  >src/vault/index.ts</code
+                >
+              </div>
+            </details>
+            <details>
+              <summary>Packages 與 CLI</summary>
+              <div>
+                <code>src/packages/materialize.ts</code
+                >、<code>src/packages/source.ts</code>、<code>src/packages/README.md</code>、<code
+                  >src/cli/ext-git.ts</code
+                >
+              </div>
+            </details>
+            <details>
+              <summary>文件</summary>
+              <div>
+                <code>src/content/docs/core-interfaces.mdx</code> 與四個語系的 events 文件。
+              </div>
+            </details>
+            <details>
+              <summary>測試</summary>
+              <div>
+                新增或擴充 attachment/path、runtime lifecycle、session sync、model command、event
+                format、extension git、packages、vault 共 14 個測試檔案。
+              </div>
+            </details>
+          </div>
+        </section>
+
+        <section id="followups">
+          <h2>指定模型重跑審核：尚待處理事項</h2>
+          <p class="lead">
+            六個 owner 已使用 <code>agent-model/gpt-5.6-sol</code> 重新只讀審核最終
+            worktree。以下是審核新發現、但不包含在此次已推送修復中的項目；應另開後續變更，避免把「已發現」誤寫成「已修復」。
+          </p>
+          <div class="callout danger">
+            <strong>High：</strong><code>state-dir</code> 與 workspace 的 containment 目前以 lexical
+            path 為主；若 state-dir symlink 實際指向 workspace 內，可能繞過 host-only state
+            邊界。建議以 realpath／nearest existing parent 做驗證。
+          </div>
+          <table style="margin-top: 16px">
+            <thead>
+              <tr>
+                <th>優先級</th>
+                <th>待處理項目</th>
+                <th>相關模塊</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="badge amber">Medium</span></td>
+                <td>Telegram menu command 與群組實際 routing 不一致。</td>
+                <td>adapters / commands</td>
+              </tr>
+              <tr>
+                <td><span class="badge amber">Medium</span></td>
+                <td>
+                  Slack App Home 顯示全域 sessions 並可 force-stop，缺少使用者/channel
+                  authorization。
+                </td>
+                <td>Slack / runtime / security</td>
+              </tr>
+              <tr>
+                <td><span class="badge amber">Medium</span></td>
+                <td>Parent runner 尚在 setup 時，thread bootstrap 可能提前判定 parent idle。</td>
+                <td>runtime / sessions</td>
+              </tr>
+              <tr>
+                <td><span class="badge amber">Medium</span></td>
+                <td>
+                  <code>generate_image</code> 在不具 no-symlink capability 的 executor
+                  生成後無法上傳；應隱藏能力或補安全 transport。
+                </td>
+                <td>agent / tools / sandbox</td>
+              </tr>
+              <tr>
+                <td><span class="badge amber">Medium</span></td>
+                <td>
+                  Extension tool 註冊未驗證 object-root schema；activation throw 後缺少 registry
+                  rollback。
+                </td>
+                <td>harness / extensions</td>
+              </tr>
+              <tr>
+                <td><span class="badge amber">Medium</span></td>
+                <td>Container/Firecracker abort 可能只停止 client，remote command 仍持續。</td>
+                <td>sandbox</td>
+              </tr>
+              <tr>
+                <td><span class="badge amber">Medium</span></td>
+                <td>
+                  Protected mounts 彼此未檢查 overlap；macOS host capability method 與 optional
+                  interface 語意不一致。
+                </td>
+                <td>sandbox / workspace</td>
+              </tr>
+              <tr>
+                <td><span class="badge amber">Medium</span></td>
+                <td>Package 設定變更未使 cached runner 失效，package skills 可能保持舊集合。</td>
+                <td>packages / settings / runtime</td>
+              </tr>
+              <tr>
+                <td><span class="badge amber">Medium</span></td>
+                <td>Sentry plain-string Bearer/JWT 尚未完整遮蔽。</td>
+                <td>observability</td>
+              </tr>
+              <tr>
+                <td><span class="badge amber">Medium</span></td>
+                <td>
+                  Package <code>#subpath</code> materializer 尚未像 ext CLI 一樣做 realpath symlink
+                  containment。
+                </td>
+                <td>packages</td>
+              </tr>
+              <tr>
+                <td><span class="badge amber">Medium</span></td>
+                <td>
+                  Shutdown cleanup 非 fail-safe，handler shutdown 失敗可能跳過後續
+                  cleanup，且需防重入。
+                </td>
+                <td>main / lifecycle</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section>
+          <h2>結論</h2>
+          <div class="card">
+            <p>
+              此次變更已把多個原本靠隱含共識維持的接口，轉為<strong
+                >明確型別、fail-closed capability、集中 parser/validator、settlement-aware
+                lifecycle、可遷移 persisted format，以及可執行的 contract tests</strong
+              >。最重要的成果是：當 adapters、runtime、sandbox、vault 或 packages
+              任一方改變時，producer 與 consumer 現在有共同的文件與測試面可以同步驗證。
+            </p>
+            <p>同時，重跑審核揭露的剩餘問題已在本報告中與已完成項目分離，避免將發現誤當成修復。</p>
+          </div>
+        </section>
+
+        <div class="footer">
+          Generated from Git range <code>65eaf56..2824d7c</code> · 2026-07-27 09:44 CST · mikan
+          <code>1.0.0-beta.29</code>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>
