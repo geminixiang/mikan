@@ -33,6 +33,7 @@ import {
   applyRunScope,
   applySpanAttribution,
   createRunAttributionAttributes,
+  createSentryInitOptions,
   metricAttributes,
   registerTraceAttribution,
   reportUserFacingError,
@@ -40,6 +41,18 @@ import {
   sanitizeEvent,
   sanitizeValue,
 } from "../src/observability/sentry.js";
+
+describe("Sentry initialization", () => {
+  test("disables only OpenAI auto-instrumentation", () => {
+    const options = createSentryInitOptions("https://public@example.invalid/1");
+    const integrations = [{ name: "Http" }, { name: "OpenAI" }, { name: "OnUnhandledRejection" }];
+
+    expect(options.integrations(integrations)).toEqual([
+      { name: "Http" },
+      { name: "OnUnhandledRejection" },
+    ]);
+  });
+});
 
 describe("reportUserFacingError", () => {
   beforeEach(() => {

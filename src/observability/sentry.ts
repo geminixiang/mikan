@@ -88,6 +88,13 @@ export function createSentryInitOptions(dsn?: string) {
     tracesSampleRate: 1.0,
     includeLocalVariables: false,
     enableLogs: true,
+    // Sentry's OpenAI APIPromise wrapper leaks a second rejection when an
+    // in-flight request is aborted (for example by an agent budget limit).
+    // Keep all other default integrations until the upstream wrapper handles
+    // both withResponse() branches without an unhandled rejection.
+    integrations(defaultIntegrations: ReturnType<typeof Sentry.getDefaultIntegrations>) {
+      return defaultIntegrations.filter((integration) => integration.name !== "OpenAI");
+    },
     beforeSend(event: ErrorEvent, hint: EventHint): ErrorEvent | null {
       return sanitizeEvent(event, hint);
     },
