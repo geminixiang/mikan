@@ -9,6 +9,34 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.30]
+
+### Added
+
+- Add role-based subagent profiles for software engineering, DevOps, data science, account management, business development, creative production, advertising operations, and bounded general work.
+- Add a generated cross-module hardening report covering module boundaries, coupling, and verification evidence.
+
+### Changed
+
+- Stabilize exported module interfaces and route executor-dependent file staging through the active execution transport.
+- Deepen progressive response rendering and keep Slack E2E turns bound to the runner lifecycle.
+
+### Fixed
+
+- Prevent extension packages, attachment bridges, vault keys, sandbox paths, and event inputs from escaping their intended boundaries.
+- Close runner construction, cached-runner invalidation, Gondolin projection, and automatic Session Dream settlement races.
+- Validate model identifiers, event timezones, package refreshes, and shared-history watermarks consistently.
+- Keep reset history bounded by reset time and exclude queued future turns from session history.
+- Prevent Slack from posting bare working-indicator updates.
+
+### Security
+
+- Harden Git package materialization, extension subpaths, filesystem bridges, and sandbox path validation against traversal and symlink escapes.
+
+### Tests
+
+- Add regression coverage for declaration surfaces, session history boundaries, runtime races, event validation, package materialization, and Slack runner integration.
+
 ## [1.0.0-beta.29]
 
 ### Added
