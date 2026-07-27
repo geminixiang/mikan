@@ -161,13 +161,12 @@ export class ChatHistorySync {
     const lastMessageId = latestSyncMessageId(records, {
       sessionKey: isThreadSessionKey(options.sessionKey) ? options.sessionKey : null,
     });
-    if (lastMessageId) {
-      openManagedSession(sessionFile, cwd).appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
-        source: "log.jsonl",
-        messageCount: 0,
-        lastMessageId,
-      });
-    }
+    openManagedSession(sessionFile, cwd).appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
+      source: "log.jsonl",
+      messageCount: 0,
+      resetAt: this.now().toISOString(),
+      ...(lastMessageId ? { lastMessageId } : {}),
+    });
     return sessionFile;
   }
 
@@ -454,13 +453,20 @@ function syncSessionManagerFromLog(
   if (records.length === 0) return { appended: 0 };
 
   const existingEntries = sessionManager.getEntries();
+  const resetAt = getLatestChatSyncResetAt(existingEntries);
+  const eligibleRecords = resetAt
+    ? records.filter((record) => isAfterReset(record, resetAt))
+    : records;
   const lastSyncedMessageId = getLatestChatSyncMessageId(existingEntries);
   const lastSyncedIndex = lastSyncedMessageId
-    ? records.findIndex((record) => record.message.ts === lastSyncedMessageId)
+    ? eligibleRecords.findIndex((record) => record.message.ts === lastSyncedMessageId)
     : -1;
   // A truncated or rebuilt log may no longer contain the watermark. Replay the
   // current bounded history; represented-message matching below prevents duplicates.
-  const syncCandidates = selectRecentMessages(records.slice(lastSyncedIndex + 1), historyWindow);
+  const syncCandidates = selectRecentMessages(
+    eligibleRecords.slice(lastSyncedIndex + 1),
+    historyWindow,
+  );
   if (syncCandidates.length === 0) return { appended: 0 };
 
   const represented = buildRepresentedMessageCounts(existingEntries);
@@ -487,6 +493,23 @@ function appendLogRecordsToSession(sessionManager: SessionStore, records: LogRec
     const message = buildHistorySessionMessage(record.message);
     if (message) sessionManager.appendMessage(message);
   }
+}
+
+function getLatestChatSyncResetAt(entries: SessionEntry[]): number | undefined {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
+    if (entry.type !== "custom" || entry.customType !== CHAT_SYNC_CUSTOM_TYPE) continue;
+    if (!isRecord(entry.data) || typeof entry.data.resetAt !== "string") continue;
+    const resetAt = new Date(entry.data.resetAt).getTime();
+    if (Number.isFinite(resetAt)) return resetAt;
+  }
+  return undefined;
+}
+
+function isAfterReset(record: LogRecord, resetAt: number): boolean {
+  if (!record.message.date) return false;
+  const messageTime = new Date(record.message.date).getTime();
+  return Number.isFinite(messageTime) && messageTime >= resetAt;
 }
 
 function getLatestChatSyncMessageId(entries: SessionEntry[]): string | undefined {

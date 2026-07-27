@@ -59,6 +59,113 @@ function countJsonlEntries(
 }
 
 describe("ChatHistorySync", () => {
+  test("reset excludes pre-reset messages that are logged late", async () => {
+    writeLog([
+      {
+        date: "2026-05-01T00:00:00.000Z",
+        ts: "1000.0001",
+        user: "U1",
+        text: "already logged old message",
+        isMessagingBot: false,
+      },
+    ]);
+    const manager = new ChatHistorySync({
+      now: () => new Date("2026-05-01T00:00:10.000Z"),
+    });
+    const freshFile = manager.resetSession({ conversationDir, sessionKey: "C123" });
+
+    appendFileSync(
+      join(conversationDir, "log.jsonl"),
+      [
+        JSON.stringify({
+          date: "2026-05-01T00:00:05.000Z",
+          ts: "1000.0002",
+          user: "U1",
+          text: "late pre-reset message",
+          isMessagingBot: false,
+        }),
+        JSON.stringify({
+          date: "2026-05-01T00:00:11.000Z",
+          ts: "1000.0003",
+          user: "U1",
+          text: "new message",
+          isMessagingBot: false,
+        }),
+      ].join("\n") + "\n",
+    );
+
+    await manager.resolveSessionScope({
+      conversationDir,
+      sessionKey: "C123",
+      currentMessageId: "1000.0003",
+    });
+    let text = readContextText(freshFile);
+    expect(text).not.toContain("already logged old message");
+    expect(text).not.toContain("late pre-reset message");
+
+    appendFileSync(
+      join(conversationDir, "log.jsonl"),
+      JSON.stringify({
+        date: "2026-05-01T00:00:12.000Z",
+        ts: "1000.0004",
+        user: "U1",
+        text: "following message",
+        isMessagingBot: false,
+      }) + "\n",
+    );
+    await manager.resolveSessionScope({
+      conversationDir,
+      sessionKey: "C123",
+      currentMessageId: "1000.0004",
+    });
+    text = readContextText(freshFile);
+    expect(text).toContain("new message");
+    expect(text).not.toContain("late pre-reset message");
+  });
+
+  test("reset does not replay late records without a trustworthy event date", async () => {
+    writeLog([]);
+    const manager = new ChatHistorySync({
+      now: () => new Date("2026-05-01T00:00:10.000Z"),
+    });
+    const freshFile = manager.resetSession({ conversationDir, sessionKey: "C123" });
+
+    appendFileSync(
+      join(conversationDir, "log.jsonl"),
+      [
+        JSON.stringify({
+          ts: "opaque-platform-id",
+          user: "U1",
+          text: "undated stale message",
+          isMessagingBot: false,
+        }),
+        JSON.stringify({
+          date: "not-a-date",
+          ts: "999999999999999999",
+          user: "U1",
+          text: "malformed stale message",
+          isMessagingBot: false,
+        }),
+        JSON.stringify({
+          date: "2026-05-01T00:00:11.000Z",
+          ts: "new-platform-id",
+          user: "U1",
+          text: "dated new message",
+          isMessagingBot: false,
+        }),
+      ].join("\n") + "\n",
+    );
+
+    await manager.resolveSessionScope({
+      conversationDir,
+      sessionKey: "C123",
+      currentMessageId: "new-platform-id",
+    });
+    const text = readContextText(freshFile);
+    expect(text).not.toContain("undated stale message");
+    expect(text).not.toContain("malformed stale message");
+  });
+
   test("bootstraps a top-level session from recent log history and excludes current message", async () => {
     writeLog([
       {

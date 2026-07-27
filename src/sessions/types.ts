@@ -70,7 +70,7 @@ export interface ResolveChatSessionScopeOptions {
   conversationDir: string;
   sessionKey: string;
   cwd?: string;
-  /** The triggering platform message ID. Excluded from bootstrap to avoid duplicate user turns. */
+  /** The triggering platform message ID. History is capped before this turn to avoid future queued turns. */
   currentMessageId?: string;
   /** Rotate top-level shared sessions on biweekly Sunday boundaries. */
   rotateTopLevelSession?: boolean;
@@ -80,7 +80,7 @@ export interface SyncChatSessionOptions {
   conversationDir: string;
   sessionKey: string;
   sessionManager: import("../harness/index.js").SessionStore;
-  /** The triggering platform message ID. Excluded from sync to avoid duplicate user turns. */
+  /** The triggering platform message ID. Sync is capped before this turn to avoid future queued turns. */
   currentMessageId?: string;
 }
 
