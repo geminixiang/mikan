@@ -9,6 +9,17 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.32]
+
+### Changed
+
+- Raise the autonomous event and trigger run cost stop-loss from $2 to $10 while retaining the 10-minute and 50-call limits.
+- Allow session memory dreams to make up to 10 LLM calls and remove their fixed cost cap while retaining the two-minute limit.
+
+### Fixed
+
+- Prevent large conversations from becoming permanently unable to reset or rotate when preserving memory necessarily exceeds a fixed cost threshold.
+
 ## [1.0.0-beta.31]
 
 ### Changed
