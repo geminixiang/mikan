@@ -9,6 +9,20 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.33]
+
+### Changed
+
+- Give every built-in subagent profile a 100,000-token allowance and honor larger token budgets requested by the parent model.
+
+### Fixed
+
+- Disable Sentry's faulty OpenAI integration to prevent instrumentation failures in model-provider requests.
+
+### Tests
+
+- Add regression coverage for subagent profile token defaults, model-requested increases, tool schema behavior, and disabled OpenAI instrumentation.
+
 ## [1.0.0-beta.32]
 
 ### Changed
