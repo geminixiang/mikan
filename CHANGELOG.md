@@ -9,6 +9,20 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.31]
+
+### Changed
+
+- Allow attachments to use each sandbox executor's standard file reader while retaining workspace path containment.
+
+### Fixed
+
+- Restore HTML, image, and document uploads from managed sandboxes that cannot provide atomic symlink-free traversal.
+
+### Tests
+
+- Add end-to-end regression coverage for staging and uploading workspace files through the regular executor transport.
+
 ## [1.0.0-beta.30]
 
 ### Added
