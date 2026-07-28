@@ -9,6 +9,34 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.34]
+
+**One-way storage migration.** On first boot this release renames every conversation's workspace directory, credential vault, and host state tree to platform-scoped office keys, journaled with crash recovery. Back up the state dir and workspace before upgrading; earlier versions cannot read the migrated layout, so there is no downgrade. Managed sandbox containers for migrated conversations are recreated, which resets software installed inside them once (a preservation path is planned for a follow-up release).
+
+### Added
+
+- Isolate every conversation as an office keyed by platform and conversation id, ending all cross-platform collisions on shared raw ids: runtime state, workspace files, chat logs, attachments, credential vaults, settings, extension data, and scheduled-event scoping are now platform-scoped.
+- Migrate legacy directories automatically at boot: ownership is verified against each enabled platform's id format, ambiguous or unrecognized directories fail closed as needs-owner, and repositories or build output sitting in a trusted workspace root are skipped in place.
+- Add the `mikan office` CLI: `list` shows the office inventory and pending migrations; `claim` assigns an owner platform to a legacy directory the format check cannot decide.
+- Record every office in a host-only registry at creation, giving Admin and CLI surfaces a durable raw-id ↔ office mapping.
+
+### Changed
+
+- Scope the Admin portal by office: conversation lists show platforms, cross-platform targets name theirs explicitly, and all paths, settings, projections, and vault links resolve from the full office address.
+- Show office-key paths (`/workspace/v1-slack-…`) in agent prompts and workspace listings; transcripts from before the upgrade may reference old paths until the agent re-lists.
+- Breaking for embedders: `createRunner`, `MessagingEventHandler`, settings, package, and extension APIs now carry an `OfficeAddress`.
+
+### Fixed
+
+- Preserve Session Dream memory writes after the migration; the write grant previously derived the memory path from the raw conversation id and would have refused every dream.
+- Stop `mikan ext` from resolving conversation state against the wrong state dir when `--state-dir` differs from the environment default.
+- Keep thread sessions anchored to their main-session lineage via `parentSessionId`.
+
+### Tests
+
+- Add migration-engine coverage for claiming, crash recovery, ambiguity, reappeared directories, vault and state-tree moves, and format verification; rehearsed end-to-end against a production-shaped 327-entry workspace (285 offices migrated in ~2.4s, zero manual claims, checksums identical).
+- Keep state-writing tests out of the developer's real `~/.mikan` with a suite-wide temporary state dir.
+
 ## [1.0.0-beta.33]
 
 ### Changed
