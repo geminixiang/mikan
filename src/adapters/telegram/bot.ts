@@ -24,7 +24,8 @@ import { telegramCommandMenu } from "../../commands/manifest.js";
 import { processMessageIntake } from "../intake.js";
 import { createTelegramAdapters } from "./context.js";
 import { escapeTelegramHtml } from "./html.js";
-import { conversationOfficeDir, createOfficeAddress, officeDirName } from "../../office-address.js";
+import { createOfficeAddress, officeDirName } from "../../office-address.js";
+import { ensureOfficeDir } from "../../office-registry.js";
 
 // grammY surfaces Telegram errors as `GrammyError` with `error_code` mirroring
 // the Bot API. 429 is the rate-limit status; the response also includes
@@ -309,7 +310,7 @@ export class TelegramMessagingBot implements MessagingBot {
       const filename = `${ts}_${sanitizedName}`;
       const address = createOfficeAddress("telegram", chatId);
       const localPath = `${officeDirName(address)}/attachments/${filename}`;
-      const fullDir = join(conversationOfficeDir(this.workingDir, address), "attachments");
+      const fullDir = join(ensureOfficeDir(this.workingDir, address), "attachments");
 
       // Construct download URL
       const downloadUrl = `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`;

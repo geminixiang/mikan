@@ -2,13 +2,23 @@ import { randomBytes } from "node:crypto";
 import { lstatSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import type {
+  OfficeAddress,
   OfficeMigrationPreparation,
   OfficeMigrationRecord,
   OfficeMigrationStatus,
+  OfficeRecord,
   OfficeRegistryState,
   PlatformName,
 } from "./types.js";
-import { officeDir, assertConversationId, assertPlatformName } from "./office-address.js";
+import {
+  officeDir,
+  officeKey,
+  assertConversationId,
+  assertPlatformName,
+  conversationOfficeDir,
+  validateOfficeAddress,
+} from "./office-address.js";
+import { effectiveStateDir } from "./cli/arg-grammar.js";
 import { isRecord, readTextFileIfExists } from "./utils/file-guards.js";
 import { atomicWritePrivateFile } from "./utils/fs-atomic.js";
 
@@ -27,11 +37,14 @@ const REGISTRY_LOCK_TIMEOUT_MS = 5_000;
 const REGISTRY_LOCK_STALE_MS = 60_000;
 
 /**
- * Host-only journal for claiming legacy raw conversation directories.
+ * Host-only office directory and migration journal.
  *
- * This module records migration intent and transitions only. Existing runtime
- * consumers still own their current raw-ID paths until a later migration step
- * switches them to OfficeAddress.
+ * Office records are the durable raw-id ↔ (platform, office) mapping: once
+ * the ADR 0005 layout migration renames workspace dirs to office keys, dir
+ * names stop carrying raw platform ids, and enumeration/legacy-scope lookups
+ * resolve through these records. Migration records track claiming legacy
+ * raw-id directories; existing runtime consumers keep their current layout
+ * until that migration commit lands.
  */
 interface OfficeRegistryOptions {
   writeState?: (path: string, content: string) => void;
@@ -78,9 +91,46 @@ export class OfficeRegistry {
       if (this.state.enabledPlatforms.includes(validPlatform)) return this.state;
 
       const enabledPlatforms = [...this.state.enabledPlatforms, validPlatform].toSorted();
-      this.replaceState(enabledPlatforms, this.state.migrations);
+      this.replaceState(enabledPlatforms, this.state.offices, this.state.migrations);
       return this.state;
     });
+  }
+
+  /**
+   * Record that an office exists. Idempotent: re-recording a known office is
+   * a lock-free cache hit for callers that materialize directories per
+   * message, so this sits safely on hot write paths.
+   */
+  recordOffice(address: OfficeAddress): OfficeRecord {
+    const normalized = validateOfficeAddress(address);
+    const existing = this.findOffice(normalized);
+    if (existing) return existing;
+    return this.withExclusiveLease(() => {
+      const found = this.findOffice(normalized);
+      if (found) return found;
+      const record: OfficeRecord = Object.freeze({
+        platform: normalized.platform,
+        conversationId: normalized.conversationId,
+        recordedAt: new Date().toISOString(),
+      });
+      this.replaceState(
+        this.state.enabledPlatforms,
+        [...this.state.offices, record],
+        this.state.migrations,
+      );
+      return record;
+    });
+  }
+
+  getOffices(): readonly OfficeRecord[] {
+    return this.state.offices;
+  }
+
+  private findOffice(address: OfficeAddress): OfficeRecord | undefined {
+    return this.state.offices.find(
+      (record) =>
+        record.platform === address.platform && record.conversationId === address.conversationId,
+    );
   }
 
   /**
@@ -236,14 +286,15 @@ export class OfficeRegistry {
       : -1;
     if (index === -1) migrations.push(next);
     else migrations[index] = next;
-    this.replaceState(this.state.enabledPlatforms, migrations);
+    this.replaceState(this.state.enabledPlatforms, this.state.offices, migrations);
   }
 
   private replaceState(
     enabledPlatforms: readonly PlatformName[],
+    offices: readonly OfficeRecord[],
     migrations: readonly OfficeMigrationRecord[],
   ): void {
-    const candidate = freezeState({ enabledPlatforms, migrations });
+    const candidate = freezeState({ enabledPlatforms, offices, migrations });
     this.writeState(this.registryPath, `${JSON.stringify(candidate, null, 2)}\n`);
     this.state = candidate;
   }
@@ -266,7 +317,9 @@ export class OfficeRegistry {
   private readState(): OfficeRegistryState {
     assertRegistryFileSafe(this.registryPath);
     const raw = readTextFileIfExists(this.registryPath);
-    if (raw === undefined) return freezeState({ enabledPlatforms: [], migrations: [] });
+    if (raw === undefined) {
+      return freezeState({ enabledPlatforms: [], offices: [], migrations: [] });
+    }
 
     let value: unknown;
     try {
@@ -331,11 +384,13 @@ function migrationTarget(record: OfficeMigrationRecord): string | undefined {
 
 function freezeState(input: {
   enabledPlatforms: readonly PlatformName[];
+  offices: readonly OfficeRecord[];
   migrations: readonly OfficeMigrationRecord[];
 }): OfficeRegistryState {
   return Object.freeze({
     version: REGISTRY_VERSION as 1,
     enabledPlatforms: Object.freeze([...input.enabledPlatforms]),
+    offices: Object.freeze(input.offices.map((record) => Object.freeze({ ...record }))),
     migrations: Object.freeze(input.migrations.map((record) => Object.freeze({ ...record }))),
   });
 }
@@ -356,11 +411,35 @@ function parseState(value: unknown, path: string): OfficeRegistryState {
     throw new Error(`Duplicate enabled platform in ${path}`);
   }
 
+  // Files written before office records existed simply have no offices yet.
+  const offices = (Array.isArray(value.offices) ? value.offices : []).map((entry) =>
+    parseOfficeRecord(entry, path),
+  );
+  if (new Set(offices.map((record) => officeKey(record))).size !== offices.length) {
+    throw new Error(`Duplicate office record in ${path}`);
+  }
+
   const migrations = value.migrations.map((entry) => parseRecord(entry, path, enabledPlatforms));
   if (new Set(migrations.map((record) => record.rawConversationId)).size !== migrations.length) {
     throw new Error(`Duplicate office migration in ${path}`);
   }
-  return freezeState({ enabledPlatforms, migrations });
+  return freezeState({ enabledPlatforms, offices, migrations });
+}
+
+function parseOfficeRecord(value: unknown, path: string): OfficeRecord {
+  if (!isRecord(value)) throw new Error(`Invalid office record in ${path}`);
+  if (
+    typeof value.platform !== "string" ||
+    typeof value.conversationId !== "string" ||
+    typeof value.recordedAt !== "string"
+  ) {
+    throw new Error(`Invalid office record fields in ${path}`);
+  }
+  return Object.freeze({
+    platform: assertPlatformName(value.platform),
+    conversationId: assertConversationId(value.conversationId),
+    recordedAt: value.recordedAt,
+  });
 }
 
 function parseRecord(
@@ -596,6 +675,67 @@ function registryLockIsStale(lockPath: string): boolean {
 
 function sleepSync(milliseconds: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+// ── office materialization ────────────────────────────────────────────────────
+
+/**
+ * Process-wide registries keyed by state dir. Office materialization happens
+ * on hot per-message paths (log appends, attachment writes), so each state
+ * dir keeps one registry instance plus the set of office keys already
+ * recorded; after the first sighting an office costs one Set lookup.
+ */
+const registriesByStateDir = new Map<string, OfficeRegistry>();
+const recordedOfficesByStateDir = new Map<string, Set<string>>();
+
+function registryFor(stateDir: string): OfficeRegistry {
+  const key = resolve(stateDir);
+  const existing = registriesByStateDir.get(key);
+  if (existing) return existing;
+  const registry = new OfficeRegistry(key);
+  registriesByStateDir.set(key, registry);
+  return registry;
+}
+
+/**
+ * Materialize an office working directory: record the office in the registry,
+ * then create the directory. Record-first ordering means a crash can leave a
+ * record without a directory (harmless; recreated on the next message) but
+ * never an anonymous office directory the registry cannot enumerate.
+ *
+ * This is the single creation seam for office dirs; read paths keep using
+ * `conversationOfficeDir` and simply see missing files for unknown offices.
+ */
+export function ensureOfficeDir(workspaceRoot: string, address: OfficeAddress): string {
+  const normalized = validateOfficeAddress(address);
+  const stateKey = resolve(effectiveStateDir());
+  const cached = recordedOfficesByStateDir.get(stateKey) ?? new Set<string>();
+  if (!recordedOfficesByStateDir.has(stateKey)) recordedOfficesByStateDir.set(stateKey, cached);
+
+  const key = officeKey(normalized);
+  if (!cached.has(key)) {
+    registryFor(stateKey).recordOffice(normalized);
+    cached.add(key);
+  }
+
+  const dir = conversationOfficeDir(workspaceRoot, normalized);
+  ensureRegularOfficeDirectory(dir);
+  return dir;
+}
+
+/** mkdir-if-missing with the same fail-closed type guard as projection roots. */
+function ensureRegularOfficeDirectory(dir: string): void {
+  let stats;
+  try {
+    stats = lstatSync(dir);
+  } catch (err) {
+    if (!isErrno(err, "ENOENT")) throw err;
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    return;
+  }
+  if (stats.isSymbolicLink() || !stats.isDirectory()) {
+    throw new Error(`Office directory must be a regular non-symlink directory: ${dir}`);
+  }
 }
 
 function isErrno(error: unknown, code: string): error is NodeJS.ErrnoException {

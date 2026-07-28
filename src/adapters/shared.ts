@@ -11,8 +11,8 @@ import { appendFileSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import { dirname, join } from "path";
 import type { MessagingEventHandler, OfficeAddress } from "../adapter.js";
-import { conversationOfficeDir, sameOffice } from "../office-address.js";
-import { ensureDirExists } from "../utils/file-guards.js";
+import { sameOffice } from "../office-address.js";
+import { ensureOfficeDir } from "../office-registry.js";
 import * as log from "../log.js";
 import { reportUserFacingError } from "../observability/sentry.js";
 export type {
@@ -160,8 +160,7 @@ export function splitText(
  * adapter uses for human-readable message history.
  */
 export function appendChannelLog(workingDir: string, address: OfficeAddress, entry: object): void {
-  const dir = conversationOfficeDir(workingDir, address);
-  ensureDirExists(dir);
+  const dir = ensureOfficeDir(workingDir, address);
   appendFileSync(join(dir, "log.jsonl"), `${JSON.stringify(entry)}\n`);
 }
 

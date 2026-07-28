@@ -2,6 +2,7 @@ import { dirname, join } from "node:path";
 import { lstatSync, mkdirSync, writeFileSync } from "node:fs";
 import { ensureDirExists } from "../utils/file-guards.js";
 import { resolveConversationSettings } from "../config.js";
+import { ensureOfficeDir } from "../office-registry.js";
 import * as log from "../log.js";
 import {
   conversationOfficeDir,
@@ -55,7 +56,7 @@ export function resolveWorkspaceProjection(
   }
 
   assertDirectory(hostWorkspaceRoot, "Host workspace root");
-  ensureDirectoryRoot(conversationDir, "Conversation workspace");
+  ensureOfficeDir(hostWorkspaceRoot, normalized);
   const memoryPath = join(hostWorkspaceRoot, "MEMORY.md");
   const skillsPath = join(hostWorkspaceRoot, "skills");
   const eventsPath = join(hostWorkspaceRoot, "events");

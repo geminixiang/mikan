@@ -24,6 +24,7 @@ import { createGithubAdapters } from "./context.js";
 import { fetchIsPr, fetchPrHeadBranch, GithubOps } from "./github-ops.js";
 import { cloneRepo, conversationRepoDir } from "./repo.js";
 import { conversationOfficeDir, createOfficeAddress } from "../../office-address.js";
+import { ensureOfficeDir } from "../../office-registry.js";
 import {
   buildGithubConversationId,
   GITHUB_ISSUE_BODY_TS,
@@ -819,6 +820,7 @@ export class GithubMessagingBot implements MessagingBot {
     const dir = conversationRepoDir(this.config.workingDir, conversationId);
     if (existsSync(dir)) return;
     try {
+      ensureOfficeDir(this.config.workingDir, createOfficeAddress("github", conversationId));
       const token = await this.client.createScopedInstallationToken(ref.repo, {
         contents: "read",
       });

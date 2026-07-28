@@ -11,6 +11,7 @@ import { withRetry } from "./adapters/shared.js";
 export type { Attachment, ChannelStoreConfig, LoggedMessage } from "./types.js";
 import type { Attachment, ChannelStoreConfig, LoggedMessage } from "./types.js";
 import { conversationOfficeDir, createOfficeAddress, officeDirName } from "./office-address.js";
+import { ensureOfficeDir } from "./office-registry.js";
 
 class AttachmentDownloadHttpError extends Error {
   constructor(
@@ -51,12 +52,7 @@ export class ChannelStore {
    * Get or create the directory for a channel/DM
    */
   getChannelDir(channelId: string): string {
-    const channelDir = conversationOfficeDir(
-      this.workingDir,
-      createOfficeAddress("slack", channelId),
-    );
-    ensureDirExists(channelDir);
-    return channelDir;
+    return ensureOfficeDir(this.workingDir, createOfficeAddress("slack", channelId));
   }
 
   /**
@@ -79,6 +75,9 @@ export class ChannelStore {
     files: Array<{ name?: string; url_private_download?: string; url_private?: string }>,
     timestamp: string,
   ): Promise<Attachment[]> {
+    // Attachment downloads can be the office's first write; materialize (and
+    // register) it before composing office-relative attachment paths.
+    this.getChannelDir(channelId);
     const downloads: Array<Promise<Attachment>> = [];
 
     for (const file of files) {
