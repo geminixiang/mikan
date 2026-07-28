@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { MutableModels } from "@earendil-works/pi-ai";
+import { createOfficeAddress } from "../src/office-address.js";
 import type {
   MessagingBot,
   ConversationContext,
@@ -93,8 +94,10 @@ function makeResponder(): ConversationResponder {
   };
 }
 
+const testAddress = createOfficeAddress("slack", "C123");
+
 const testPlatform: MessagingInfo = {
-  name: "chat",
+  name: "slack",
   formattingGuide: "",
   channels: [],
   users: [],
@@ -106,6 +109,7 @@ function makeEventAndContext(ts: string): {
   context: ConversationContext;
 } {
   const event: ConversationEvent = {
+    address: testAddress,
     type: "message",
     conversationId: "C123",
     conversationKind: "shared",
@@ -117,7 +121,9 @@ function makeEventAndContext(ts: string): {
   return {
     event,
     context: {
+      address: testAddress,
       message: {
+        address: testAddress,
         id: ts,
         sessionKey: "C123",
         conversationKind: "shared",

@@ -418,6 +418,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       bot,
       responder: context.responder,
       platform: context.platform.name as PlatformName,
+      address: event.address,
       platformUserId: event.user,
       platformUserName: context.message.userName,
       conversationId,

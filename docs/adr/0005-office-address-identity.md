@@ -9,10 +9,7 @@ conversation ID. `src/office-address.ts` derives a versioned, filesystem-safe
 `OfficeKey` from both values; the readable part is diagnostic only and the
 SHA-256 digest is the collision-resistant identity component.
 
-The first implementation adds the address module and a host-only registry for
-legacy raw-ID migration. It does **not** switch runtime, session, workspace,
-vault, package, event, or Admin consumers. Legacy migration remains incomplete
-until those consumers are changed together and their upgrade paths are tested.
+The normalized conversation event/message seam now carries `OfficeAddress`, and every production platform or synthetic intake validates the compatibility raw ID against it. Runtime/session maps, filesystem, settings, vault, package, event ownership, and Admin scope still use legacy raw IDs until their coordinated migration commits land.
 
 Platform adapters continue to use raw IDs at their external I/O boundaries.
 The registry never infers a platform from an ID prefix: one enabled platform may

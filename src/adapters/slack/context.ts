@@ -1,4 +1,9 @@
-import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../../adapter.js";
+import {
+  createConversationMessage,
+  type ConversationMessage,
+  type ConversationResponder,
+  type MessagingInfo,
+} from "../../adapter.js";
 import { type SlackMessagingBot, type SlackEvent } from "./bot.js";
 import { createSlackResponseContext } from "./response-lifecycle.js";
 import { planSlackAdapterSession } from "./session.js";
@@ -10,6 +15,7 @@ export function createSlackAdapters(
   slack: SlackMessagingBot,
   adapterOptions: SlackAdapterOptions = {},
 ): {
+  address: import("../../adapter.js").OfficeAddress;
   message: ConversationMessage;
   responder: ConversationResponder;
   platform: MessagingInfo;
@@ -19,7 +25,10 @@ export function createSlackAdapters(
   });
   const user = slack.getUser(event.user);
 
-  const message: ConversationMessage = {
+  const message = createConversationMessage({
+    platform: "slack",
+    conversationId: event.conversationId,
+    address: event.address,
     id: event.ts,
     sessionKey: sessionPlan.sessionKey,
     conversationKind: event.conversationKind,
@@ -31,7 +40,7 @@ export function createSlackAdapters(
       localPath: a.localPath,
     })),
     threadTs: event.thread_ts,
-  };
+  });
 
   // The bot's getMessagingInfo() is the single authority for platform info;
   // context factories compose from it instead of maintaining a second copy.
@@ -45,5 +54,5 @@ export function createSlackAdapters(
     message,
   });
 
-  return { message, responder, platform };
+  return { address: message.address, message, responder, platform };
 }

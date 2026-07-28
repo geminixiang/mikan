@@ -20,6 +20,8 @@ const EXPECTED_RUNTIME_EXPORTS = [
   "buildEventPayload",
   "configureGondolinRuntime",
   "configureHttpDispatcher",
+  "createConversationEvent",
+  "createConversationMessage",
   "createConversationRuntime",
   "createExecutor",
   "createManagedSessionFile",

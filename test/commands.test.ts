@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { createOfficeAddress } from "../src/office-address.js";
 import type { MessagingBot, ConversationResponder } from "../src/adapter.js";
 import { MikanModels } from "../src/harness/index.js";
 import { AdminCommandHandler } from "../src/commands/admin.js";
@@ -163,6 +164,7 @@ function buildContext(args: BuildContextArgs): CommandContext & {
     bot: args.bot ?? fakeMessagingBot(),
     responder,
     platform: args.platform ?? "slack",
+    address: createOfficeAddress(args.platform ?? "slack", args.conversationId ?? "C123"),
     platformUserId: "U123",
     conversationId: args.conversationId ?? "C123",
     vaultConversationId: args.vaultConversationId,

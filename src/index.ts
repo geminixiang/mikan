@@ -175,6 +175,7 @@ export {
   type ConversationRuntimeOptions,
   type RunSessionOptions,
 } from "./runtime/conversation-runtime.js";
+export { createConversationEvent, createConversationMessage } from "./adapter.js";
 export type {
   ChatAdapter,
   ChatToolResult,
@@ -184,6 +185,8 @@ export type {
   ConversationMessage,
   ConversationResponder,
   MessagingBot,
+  OfficeAddress,
+  OfficeKey,
   MessagingEventHandler,
   MessagingInfo,
   RunningSession,

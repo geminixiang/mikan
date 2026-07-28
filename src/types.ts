@@ -66,6 +66,10 @@ export type PlatformTrustModel = "membership" | "open-trigger";
 
 export interface ConversationMessage {
   id: string;
+  /** Canonical identity of the conversation office. */
+  address: OfficeAddress;
+  /** @deprecated Use address.conversationId except at platform I/O seams. */
+  conversationId?: string;
   sessionKey: string;
   conversationKind: ConversationKind;
   userId: string;
@@ -182,7 +186,9 @@ export interface AgentEventEnvelope {
  */
 export interface ConversationEvent {
   type: string;
-  /** Platform-specific raw conversation/channel/chat identifier */
+  /** Canonical identity created by the platform adapter at intake. */
+  address: OfficeAddress;
+  /** @deprecated Raw platform identifier; valid only at adapter I/O seams. */
   conversationId: string;
   /** Optional alternate conversation identity used for vault routing. */
   vaultConversationId?: string;
@@ -288,6 +294,8 @@ export interface PlatformBlockKit {
 
 /** Normalized platform data and reply hook for one event. */
 export interface ConversationContext {
+  /** Canonical identity for the office handling this turn. */
+  address: OfficeAddress;
   message: ConversationMessage;
   responder: ConversationResponder;
   platform: MessagingInfo;

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, test } from "vitest";
+import { createConversationEvent, createConversationMessage } from "../src/adapter.js";
 import {
   assertConversationId,
   assertOfficeKey,
@@ -13,6 +14,43 @@ import {
 } from "../src/office-address.js";
 
 describe("office address", () => {
+  test("normalizes events and messages and rejects mismatched supplied addresses", () => {
+    const slack = createOfficeAddress("slack", "C123");
+    const event = createConversationEvent({
+      platform: "slack",
+      conversationId: "C123",
+      type: "message",
+      conversationKind: "shared",
+      ts: "1",
+      user: "U1",
+      text: "hello",
+    });
+    const message = createConversationMessage({
+      platform: "slack",
+      conversationId: "C123",
+      id: "1",
+      sessionKey: "C123",
+      conversationKind: "shared",
+      userId: "U1",
+      text: "hello",
+    });
+
+    expect(event.address).toEqual(slack);
+    expect(message.address).toEqual(slack);
+    expect(() =>
+      createConversationEvent({
+        platform: "slack",
+        conversationId: "C123",
+        address: createOfficeAddress("discord", "C123"),
+        type: "message",
+        conversationKind: "shared",
+        ts: "1",
+        user: "U1",
+        text: "hello",
+      }),
+    ).toThrow(/address mismatch/);
+  });
+
   test("derives a deterministic versioned key from platform and raw id", () => {
     const address = createOfficeAddress("slack", "C123");
 

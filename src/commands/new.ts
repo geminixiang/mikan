@@ -1,3 +1,4 @@
+import { createConversationMessage } from "../adapter.js";
 import { slashForms } from "./manifest.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler } from "./types.js";
@@ -36,14 +37,17 @@ export class NewCommandHandler implements CommandHandler {
       context.sessionKey,
       context.conversationId,
       context.bot,
-      {
+      createConversationMessage({
+        platform: context.address.platform,
+        conversationId: context.address.conversationId,
+        address: context.address,
         id: `memory:${context.sessionKey}`,
         sessionKey: context.sessionKey,
         conversationKind: "direct",
         userId: context.platformUserId,
         userName: context.platformUserName,
         text: context.commandText,
-      },
+      }),
       context.responder,
       context.bot.getMessagingInfo(),
     );

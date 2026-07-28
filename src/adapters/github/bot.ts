@@ -1,8 +1,9 @@
 import { existsSync } from "fs";
 import { dirname, join } from "path";
 import { Type } from "@sinclair/typebox";
-import type {
-  ConversationEvent,
+import {
+  createConversationEvent,
+  type ConversationEvent,
   MessagingBot,
   MessagingEventHandler,
   MessagingInfo,
@@ -624,7 +625,8 @@ export class GithubMessagingBot implements MessagingBot {
       ? await this.formatReviewMessage(item, cleanedText)
       : cleanedText;
 
-    const eventBase: GithubEvent = {
+    const eventBase = createConversationEvent({
+      platform: "github",
       type: item.ts === GITHUB_ISSUE_BODY_TS ? "issue" : "message",
       conversationId,
       conversationKind: "shared",
@@ -633,7 +635,7 @@ export class GithubMessagingBot implements MessagingBot {
       user: item.user,
       userName: item.user,
       text: messageText,
-    };
+    }) as GithubEvent;
 
     await processMessageIntake({
       eventBase,

@@ -10,7 +10,8 @@ import {
 } from "fs";
 import { readFile } from "fs/promises";
 import { join } from "path";
-import type { MessagingBot, ConversationEvent, ConversationKind } from "./adapter.js";
+import { createConversationEvent } from "./adapter.js";
+import type { MessagingBot, ConversationKind } from "./adapter.js";
 import { parseEventPayload } from "./harness/event-format.js";
 import { ensureDirExists } from "./utils/file-guards.js";
 import * as log from "./log.js";
@@ -401,14 +402,15 @@ export class EventsWatcher {
     }
 
     const eventId = filename.replace(/\.json$/i, "");
-    const botEvent: ConversationEvent = {
+    const botEvent = createConversationEvent({
+      platform: event.platform as import("./adapter.js").PlatformName,
       type: "mention",
       conversationId: event.conversationId,
       conversationKind: event.conversationKind,
       user: event.userId ?? "EVENT",
       text: message,
       ts: `event:${eventId}`,
-    };
+    });
 
     // Enqueue for processing
     const enqueued = bot.enqueueEvent(botEvent);

@@ -2,8 +2,9 @@ import { readFileSync } from "fs";
 import { basename, join } from "path";
 import { Bot as GrammyMessagingBot, InputFile } from "grammy";
 import type { Message } from "grammy/types";
-import type {
-  MessagingBot,
+import {
+  createConversationEvent,
+  type MessagingBot,
   ConversationEvent,
   MessagingEventHandler,
   ConversationKind,
@@ -395,7 +396,8 @@ export class TelegramMessagingBot implements MessagingBot {
       const mc = ctx.message ? this.extractMessageContext(ctx.message) : null;
       if (!mc) return;
       const commandText = this.cleanText(mc.text);
-      const event: TelegramEvent = {
+      const event = createConversationEvent({
+        platform: "telegram",
         type: "command",
         conversationId: mc.chatId,
         conversationKind: mc.conversationKind,
@@ -406,7 +408,7 @@ export class TelegramMessagingBot implements MessagingBot {
         userName: mc.userName,
         text: commandText,
         attachments: [],
-      };
+      }) as TelegramEvent;
       this.logToFile(mc.chatId, {
         date: new Date(mc.msg.date * 1000).toISOString(),
         ts: mc.msgId,
@@ -426,7 +428,8 @@ export class TelegramMessagingBot implements MessagingBot {
       // The sandbox handler's grammar accepts /sandbox directly (manifest
       // slash forms), so the user's spelling is logged and dispatched as-is.
       const cleanedText = this.cleanText(mc.text);
-      const event: TelegramEvent = {
+      const event = createConversationEvent({
+        platform: "telegram",
         type: "command",
         conversationId: mc.chatId,
         conversationKind: mc.conversationKind,
@@ -437,7 +440,7 @@ export class TelegramMessagingBot implements MessagingBot {
         userName: mc.userName,
         text: cleanedText,
         attachments: [],
-      };
+      }) as TelegramEvent;
       this.logToFile(mc.chatId, {
         date: new Date(mc.msg.date * 1000).toISOString(),
         ts: mc.msgId,
@@ -462,7 +465,8 @@ export class TelegramMessagingBot implements MessagingBot {
       const addressedToMessagingBot = this.isAddressedToMessagingBot(mc.text, mc.chatType);
       const isAutoReplyCandidate = mc.chatType !== "private" && !addressedToMessagingBot;
 
-      const eventBase: TelegramEvent = {
+      const eventBase = createConversationEvent({
+        platform: "telegram",
         type: "message",
         conversationId: mc.chatId,
         conversationKind: mc.conversationKind,
@@ -472,7 +476,7 @@ export class TelegramMessagingBot implements MessagingBot {
         user: mc.userId,
         userName: mc.userName,
         text: cleanedText,
-      };
+      }) as TelegramEvent;
 
       await processMessageIntake({
         eventBase,

@@ -4,16 +4,17 @@ import { WebAPIRateLimitedError, WebClient } from "@slack/web-api";
 import { existsSync, readFileSync } from "fs";
 import { readFile } from "fs/promises";
 import { basename, join } from "path";
-import type {
-  MessagingBot,
-  ConversationContext,
-  ConversationEvent,
-  MessagingEventHandler,
-  ConversationMessage,
-  ConversationResponder,
-  ChatToolResult,
-  ConversationKind,
-  MessagingInfo,
+import {
+  createConversationEvent,
+  createConversationMessage,
+  type MessagingBot,
+  type ConversationContext,
+  type ConversationEvent,
+  type MessagingEventHandler,
+  type ConversationResponder,
+  type ChatToolResult,
+  type ConversationKind,
+  type MessagingInfo,
 } from "../../adapter.js";
 import { COMMAND_MANIFEST, type SlackSlashRoute } from "../../commands/manifest.js";
 import { resolveConversationSettings } from "../../config.js";
@@ -555,7 +556,9 @@ export class SlackMessagingBot implements MessagingBot {
         initialMessageTs: eventPlan.initialMessageTs,
       }).sessionKey;
       this.getQueue(runQueueKey).enqueue(async () => {
-        const slackEvent: SlackEvent = {
+        const slackEvent = createConversationEvent({
+          platform: "slack",
+          address: eventForRun.address,
           type: eventForRun.type as SlackEvent["type"],
           conversationId,
           conversationKind: eventForRun.conversationKind,
@@ -564,12 +567,9 @@ export class SlackMessagingBot implements MessagingBot {
           thread_ts: eventForRun.thread_ts,
           user: eventForRun.user,
           text: eventForRun.text,
-          attachments: eventForRun.attachments?.map((attachment) => ({
-            original: attachment.name,
-            localPath: attachment.localPath,
-          })),
+          attachments: eventForRun.attachments,
           sessionKey: eventForRun.sessionKey,
-        };
+        }) as SlackEvent;
         const context = createSlackAdapters(slackEvent, this, {
           initialMessageTs: eventPlan.initialMessageTs,
           replyMode:
@@ -818,7 +818,9 @@ export class SlackMessagingBot implements MessagingBot {
     ts: string,
     options: { ephemeralChannelId?: string; threadTs?: string } = {},
   ): ConversationContext {
-    const message: ConversationMessage = {
+    const message = createConversationMessage({
+      platform: "slack",
+      conversationId,
       id: ts,
       sessionKey: conversationId,
       conversationKind: options.ephemeralChannelId ? "shared" : "direct",
@@ -826,7 +828,7 @@ export class SlackMessagingBot implements MessagingBot {
       userName,
       text,
       attachments: [],
-    };
+    });
 
     const respond = async (responseText: string) => {
       if (options.ephemeralChannelId) {
@@ -886,6 +888,7 @@ export class SlackMessagingBot implements MessagingBot {
     };
 
     return {
+      address: message.address,
       message,
       responder,
       platform: this.getMessagingInfo(),
@@ -926,9 +929,10 @@ export class SlackMessagingBot implements MessagingBot {
       ...(threadTs ? { threadTs } : {}),
     });
 
-    const event: ConversationEvent = {
-      type: options.type ?? (isDirectMessage ? "dm" : "mention"),
+    const event = createConversationEvent({
+      platform: "slack",
       conversationId,
+      type: options.type ?? (isDirectMessage ? "dm" : "mention"),
       conversationKind: isDirectMessage ? "direct" : "shared",
       ts: eventTs,
       user: payload.user_id,
@@ -936,7 +940,7 @@ export class SlackMessagingBot implements MessagingBot {
       attachments: [],
       ...(threadTs ? { thread_ts: threadTs } : {}),
       sessionKey,
-    };
+    });
 
     const context = this.createCommandAdapters(
       conversationId,
@@ -1020,15 +1024,18 @@ export class SlackMessagingBot implements MessagingBot {
       getMessagingInfo: () => this.getMessagingInfo(),
     };
     const event: SlackEvent = {
-      type: "dm",
-      conversationId,
-      conversationKind: "direct",
+      ...createConversationEvent({
+        platform: "slack",
+        conversationId,
+        type: "dm" as const,
+        conversationKind: "direct",
+        ts: eventTs,
+        user: payload.user_id,
+        text: payload.command,
+        attachments: [],
+        sessionKey: conversationId,
+      }),
       channel: conversationId,
-      ts: eventTs,
-      user: payload.user_id,
-      text: payload.command,
-      attachments: [],
-      sessionKey: conversationId,
     };
     const context = createSlackAdapters(event, this);
     await this.handler.handleNewCommand(
@@ -1085,18 +1092,19 @@ export class SlackMessagingBot implements MessagingBot {
     const sessionKey = resolveSlackSessionKey(e.channel, e.thread_ts);
 
     const mentionText = this.stripOwnMention(e.text);
-    const slackEvent: SlackEvent = {
-      type: "mention",
+    const slackEvent = createConversationEvent({
+      platform: "slack",
       conversationId: e.channel,
+      type: "mention" as const,
       conversationKind: "shared",
-      channel: e.channel,
       ts: e.ts,
       thread_ts: e.thread_ts,
       user: e.user,
       text: mentionText || "Please respond to the recent conversation context.",
-      files: e.files,
       sessionKey,
-    };
+      channel: e.channel,
+      files: e.files,
+    }) as SlackEvent;
 
     const attachmentsPromise = this.logUserMessage(slackEvent);
 
@@ -1204,18 +1212,19 @@ export class SlackMessagingBot implements MessagingBot {
     const isThreadReply = !!e.thread_ts;
     const sessionKey = isDM ? resolveSlackSessionKey(e.channel, e.thread_ts) : undefined;
 
-    const slackEvent: SlackEvent = {
-      type: isDM ? "dm" : "mention",
+    const slackEvent = createConversationEvent({
+      platform: "slack",
       conversationId: e.channel,
+      type: (isDM ? "dm" : "mention") as SlackEvent["type"],
       conversationKind,
-      channel: e.channel,
       ts: e.ts,
       thread_ts: e.thread_ts,
       user: e.user,
       text: this.stripOwnMention(e.text),
-      files: e.files,
       sessionKey,
-    };
+      channel: e.channel,
+      files: e.files,
+    }) as SlackEvent;
 
     const attachmentsPromise = this.logUserMessage(slackEvent);
 
@@ -1455,9 +1464,10 @@ export class SlackMessagingBot implements MessagingBot {
       },
     });
 
-    const event: ConversationEvent = {
-      type: "slack_action",
+    const event = createConversationEvent({
+      platform: "slack",
       conversationId: channelId,
+      type: "slack_action",
       conversationKind: channelId.startsWith("D") ? "direct" : "shared",
       ts,
       user: userId,
@@ -1465,20 +1475,24 @@ export class SlackMessagingBot implements MessagingBot {
       attachments: [],
       ...(threadTs ? { thread_ts: threadTs } : {}),
       sessionKey,
-    };
+    });
 
     this.getQueue(this.resolveQueueKey(channelId, sessionKey)).enqueue(async () => {
       const slackEvent: SlackEvent = {
-        type: event.conversationKind === "direct" ? "dm" : "mention",
-        conversationId: channelId,
-        conversationKind: event.conversationKind,
+        ...createConversationEvent({
+          platform: "slack",
+          conversationId: channelId,
+          type: (event.conversationKind === "direct" ? "dm" : "mention") as SlackEvent["type"],
+          conversationKind: event.conversationKind,
+          ts,
+          thread_ts: threadTs,
+          user: userId,
+          text,
+          attachments: [],
+          sessionKey,
+        }),
         channel: channelId,
-        ts,
-        thread_ts: threadTs,
-        user: userId,
-        text,
         attachments: [],
-        sessionKey,
       };
       return this.handler.handleEvent(event, this, this.createContext(slackEvent));
     });

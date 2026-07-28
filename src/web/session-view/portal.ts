@@ -1,9 +1,10 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { basename } from "path";
 import MarkdownIt from "markdown-it";
-import type {
-  ConversationContext,
-  ConversationEvent,
+import {
+  createConversationEvent,
+  createConversationMessage,
+  type ConversationContext,
   ConversationResponder,
 } from "../../adapter.js";
 import { readRawBody } from "../../utils/http-body.js";
@@ -649,7 +650,8 @@ async function handleSessionMessageRequest(
   const responder = createSessionViewResponseContext((event) => {
     sessionViewStreamHub.publish(streamKey, event);
   });
-  const event: ConversationEvent = {
+  const event = createConversationEvent({
+    platform: entry.platform,
     type: "session_view",
     conversationId: entry.conversationId,
     conversationKind,
@@ -661,18 +663,22 @@ async function handleSessionMessageRequest(
     ...(isThreadSessionKey(activeSessionKey)
       ? { thread_ts: threadSuffixOf(activeSessionKey)! }
       : {}),
-  };
+  });
+  const message = createConversationMessage({
+    platform: entry.platform,
+    conversationId: entry.conversationId,
+    id: ts,
+    sessionKey: activeSessionKey,
+    conversationKind,
+    userId: entry.platformUserId,
+    userName: platformUserName,
+    text,
+    attachments: [],
+    threadTs: event.thread_ts,
+  });
   const context: ConversationContext = {
-    message: {
-      id: ts,
-      sessionKey: activeSessionKey,
-      conversationKind,
-      userId: entry.platformUserId,
-      userName: platformUserName,
-      text,
-      attachments: [],
-      threadTs: event.thread_ts,
-    },
+    address: event.address,
+    message,
     responder,
     platform: { ...platformInfo, diagnostics: { showUsageSummary: false } },
   };
