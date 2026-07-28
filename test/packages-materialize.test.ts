@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { gitCloneDir, materializeSource, packageScopeDir } from "../src/packages/index.js";
+import { createOfficeAddress, officeKey } from "../src/office-address.js";
 
 function run(cwd: string, args: string[]): string {
   return execFileSync("git", args, {
@@ -57,10 +58,19 @@ describe("materializeSource", () => {
   test("clones into the conversation scope's git dir", () => {
     const result = materializeSource(source, {
       scope: "conversation",
-      conversationId: "C03045VJJAY",
+      address: createOfficeAddress("slack", "C03045VJJAY"),
       stateDir,
     });
-    expect(result.dir.startsWith(join(stateDir, "conversations", "C03045VJJAY", "git"))).toBe(true);
+    expect(
+      result.dir.startsWith(
+        join(
+          stateDir,
+          "conversations",
+          officeKey(createOfficeAddress("slack", "C03045VJJAY")),
+          "git",
+        ),
+      ),
+    ).toBe(true);
   });
 
   test("checkout keys share a ref across subpaths and isolate other refs", () => {
@@ -234,14 +244,19 @@ describe("materializeSource", () => {
 describe("packageScopeDir", () => {
   test("global and conversation scopes are siblings under the state dir", () => {
     expect(packageScopeDir("global", undefined, "/s")).toBe("/s/global");
-    expect(packageScopeDir("conversation", "C1", "/s")).toBe("/s/conversations/C1");
+    expect(packageScopeDir("conversation", createOfficeAddress("slack", "C1"), "/s")).toBe(
+      `/s/conversations/${officeKey(createOfficeAddress("slack", "C1"))}`,
+    );
   });
 
-  test("a conversation scope needs an id", () => {
-    expect(() => packageScopeDir("conversation", undefined, "/s")).toThrow(/conversation id/);
+  test("a conversation scope needs an office address", () => {
+    expect(() => packageScopeDir("conversation", undefined, "/s")).toThrow(/office address/);
   });
 
-  test("a conversation id that is not a safe path segment is rejected", () => {
-    expect(() => packageScopeDir("conversation", "../escape", "/s")).toThrow(/safe path segment/);
+  test("path-dangerous identities cannot reach the scope dir", () => {
+    // The address factory rejects them before any path is built.
+    expect(() =>
+      packageScopeDir("conversation", createOfficeAddress("slack", "../escape"), "/s"),
+    ).toThrow(/Conversation id/);
   });
 });

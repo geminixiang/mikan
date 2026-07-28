@@ -90,7 +90,7 @@ async function judgeAutoReplyWithLlm(input: {
   conversationDir: string;
 }): Promise<boolean> {
   const judgeConfig = loadAutoReplyJudgeModel({
-    conversationId: input.event.address.conversationId,
+    address: input.event.address,
     conversationDir: input.conversationDir,
   });
   const models = MikanModels.create();

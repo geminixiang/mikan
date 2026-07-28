@@ -53,7 +53,7 @@ export function applyConversationSettings(
     runtimeSwitched = true;
   }
   updateConversationSettings(
-    { conversationId, conversationDir: conversationOfficeDir(workingDir, address) },
+    { address, conversationDir: conversationOfficeDir(workingDir, address) },
     patch,
   );
   return { ok: true, runtimeSwitched };

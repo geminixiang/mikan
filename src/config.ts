@@ -17,6 +17,8 @@ export class MissingGlobalSettingsError extends Error {
 
 export type { AgentConfig, AutoReplyConfig, JudgeModelConfig, SandboxSettings } from "./types.js";
 import type { AgentConfig, AutoReplyConfig, JudgeModelConfig, SandboxSettings } from "./types.js";
+import { officeStateDir } from "./office-address.js";
+import type { OfficeAddress } from "./types.js";
 
 const ONBOARD_SETTINGS: SettingsFileConfig = {
   llm: {
@@ -283,29 +285,14 @@ export function loadGlobalSettings(): AgentConfig {
 }
 
 /**
- * Explicit identity for conversation-settings access. The state-dir key is the
- * raw conversation id (its migration is tracked by ADR 0005); the workspace
- * directory is only the legacy pre-host-migration settings location. Callers
- * name both — the key is never inferred from the directory basename, which
- * the storage migration will rename to the office key.
+ * Explicit identity for conversation-settings access. The state-dir key is
+ * the office key derived from the address; the workspace directory is only
+ * the legacy pre-host-migration settings location. Callers name both — the
+ * key is never inferred from the directory basename.
  */
 export interface ConversationSettingsScope {
-  conversationId: string;
+  address: OfficeAddress;
   conversationDir: string;
-}
-
-function assertSettingsConversationId(conversationId: string): string {
-  if (
-    conversationId.length === 0 ||
-    conversationId === "." ||
-    conversationId === ".." ||
-    conversationId.includes("/") ||
-    conversationId.includes("\\") ||
-    conversationId.includes("\0")
-  ) {
-    throw new Error("Conversation settings id must be a safe path segment");
-  }
-  return conversationId;
 }
 
 /**
@@ -326,8 +313,7 @@ function assertSettingsConversationId(conversationId: string): string {
  * inside the sandbox, is never read again.
  */
 export function conversationSettingsPath(scope: ConversationSettingsScope): string {
-  const conversationId = assertSettingsConversationId(scope.conversationId);
-  const hostPath = join(getStateDir(), "conversations", conversationId, "settings.json");
+  const hostPath = join(officeStateDir(getStateDir(), scope.address), "settings.json");
   if (existsSync(hostPath)) {
     assertSettingsFile(hostPath, "Host conversation settings");
     return hostPath;

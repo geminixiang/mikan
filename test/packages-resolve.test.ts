@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { resolveConversationPackages } from "../src/packages/resolve.js";
+import { createOfficeAddress, officeKey } from "../src/office-address.js";
 
 const CONVERSATION_ID = "C03045VJJAY";
 
@@ -24,7 +25,15 @@ function globalSettings(packages: string[]): void {
 }
 
 function conversationSettings(packages: string[]): void {
-  writeSettings(join(stateDir, "conversations", CONVERSATION_ID, "settings.json"), { packages });
+  writeSettings(
+    join(
+      stateDir,
+      "conversations",
+      officeKey(createOfficeAddress("slack", CONVERSATION_ID)),
+      "settings.json",
+    ),
+    { packages },
+  );
 }
 
 /** A package repo whose extensions live in the `extensions/` collection dir. */
@@ -81,7 +90,7 @@ function makeTwoRefRepo(): string {
 
 function resolve(options?: { fetchMissing?: boolean }) {
   return resolveConversationPackages({
-    conversationId: CONVERSATION_ID,
+    address: createOfficeAddress("slack", CONVERSATION_ID),
     stateDir,
     conversationDir: join(workingDir, CONVERSATION_ID),
     ...options,
@@ -108,7 +117,12 @@ describe("scope convention directories", () => {
     const result = resolve();
     expect(result.extensionDirs).toEqual([
       join(stateDir, "global", "extensions"),
-      join(stateDir, "conversations", CONVERSATION_ID, "extensions"),
+      join(
+        stateDir,
+        "conversations",
+        officeKey(createOfficeAddress("slack", CONVERSATION_ID)),
+        "extensions",
+      ),
     ]);
     expect(result.errors).toEqual([]);
   });
@@ -116,7 +130,14 @@ describe("scope convention directories", () => {
   test("the global convention dir is scanned before the conversation's", () => {
     const dirs = resolve().extensionDirs;
     expect(dirs.indexOf(join(stateDir, "global", "extensions"))).toBeLessThan(
-      dirs.indexOf(join(stateDir, "conversations", CONVERSATION_ID, "extensions")),
+      dirs.indexOf(
+        join(
+          stateDir,
+          "conversations",
+          officeKey(createOfficeAddress("slack", CONVERSATION_ID)),
+          "extensions",
+        ),
+      ),
     );
   });
 });

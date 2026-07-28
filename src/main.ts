@@ -281,7 +281,8 @@ const officeMigration = (() => {
 if (
   officeMigration.unowned.length > 0 ||
   officeMigration.failed.length > 0 ||
-  officeMigration.vaultConflicts.length > 0
+  officeMigration.vaultConflicts.length > 0 ||
+  officeMigration.stateDirConflicts.length > 0
 ) {
   console.error(formatUnmigratedOfficesError(officeMigration));
   process.exit(1);
@@ -294,6 +295,11 @@ if (officeMigration.migrated.length > 0 || officeMigration.recovered.length > 0)
 }
 if (officeMigration.vaultKeysMigrated.length > 0) {
   console.log(`  Vault keys migrated to office keys: ${officeMigration.vaultKeysMigrated.length}.`);
+}
+if (officeMigration.stateDirsMigrated.length > 0) {
+  console.log(
+    `  Host state dirs migrated to office keys: ${officeMigration.stateDirsMigrated.length}.`,
+  );
 }
 
 try {

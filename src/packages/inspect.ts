@@ -55,7 +55,7 @@ export function declaredSources(scope: PackageScope, options: ResolvePackagesOpt
       scope === "global"
         ? loadGlobalSettings()
         : resolveConversationSettings({
-            conversationId: options.conversationId,
+            address: options.address,
             conversationDir: options.conversationDir,
           });
     return settings.packages ?? [];
@@ -91,7 +91,7 @@ async function describe(
   try {
     dir = materializeSource(source, {
       scope,
-      conversationId: options.conversationId,
+      address: options.address,
       stateDir: options.stateDir,
       mode: "offline",
     }).dir;

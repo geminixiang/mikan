@@ -76,7 +76,8 @@ export interface PackageSkillDir {
 }
 
 export interface ResolvePackagesOptions {
-  conversationId: string;
+  /** Office whose packages resolve; state-dir keys derive from it. */
+  address: import("../types.js").OfficeAddress;
   stateDir: string;
   conversationDir: string;
   fetchMissing?: boolean;
@@ -86,7 +87,7 @@ export type MaterializeMode = "offline" | "fetch" | "refresh";
 
 export interface MaterializeOptions {
   scope: PackageScope;
-  conversationId?: string;
+  address?: import("../types.js").OfficeAddress;
   stateDir: string;
   mode?: MaterializeMode;
 }

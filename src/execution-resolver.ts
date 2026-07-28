@@ -185,7 +185,7 @@ export class ActorExecutionResolver {
     // which are administrator-chosen targets and could be aimed anywhere.
     const packageMounts = this.workspaceDir
       ? conversationPackageSkillMounts({
-          conversationId: address.conversationId,
+          address,
           stateDir: effectiveStateDir(),
           conversationDir: conversationOfficeDir(this.workspaceDir, address),
         })

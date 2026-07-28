@@ -23,7 +23,7 @@ export class ExtensionsCommandHandler implements CommandHandler {
     const matched = matchCommand(context.commandText, EXTENSIONS_COMMANDS, { stripMention: true });
     if (!matched) return false;
 
-    const dirs = defaultExtensionDirs(context.conversationId, effectiveStateDir());
+    const dirs = defaultExtensionDirs(context.address, effectiveStateDir());
     const installed = listInstalledExtensions(dirs);
 
     // A root-level index file means an extension's contents were copied into

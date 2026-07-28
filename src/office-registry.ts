@@ -731,9 +731,12 @@ export function ensureOfficeDir(workspaceRoot: string, address: OfficeAddress): 
  * genuinely ambiguous, and an unknown id has no office to resolve — both
  * fail loudly rather than guessing a directory.
  */
-export function resolveOwnedOfficeAddress(rawConversationId: string): OfficeAddress {
+export function resolveOwnedOfficeAddress(
+  rawConversationId: string,
+  stateDir: string = effectiveStateDir(),
+): OfficeAddress {
   assertConversationId(rawConversationId);
-  const registry = registryFor(effectiveStateDir());
+  const registry = registryFor(stateDir);
 
   const owners = () =>
     registry.getState().offices.filter((record) => record.conversationId === rawConversationId);

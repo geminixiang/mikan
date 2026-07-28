@@ -101,7 +101,7 @@ export class ModelCommandHandler implements CommandHandler {
     }
 
     const settingsScope = {
-      conversationId: context.address.conversationId,
+      address: context.address,
       conversationDir: conversationOfficeDir(context.services.workingDir, context.address),
     };
     if (!parsed.provider || !parsed.model) {

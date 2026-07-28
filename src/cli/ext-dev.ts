@@ -101,14 +101,9 @@ export async function runExtDevCommand(argv: string[]): Promise<number> {
   // Declaring the working copy as this conversation's package is what makes
   // the dev loop use the real resolution path rather than a bespoke one.
   process.env.MIKAN_STATE_DIR = stateDir;
+  const devAddress = createOfficeAddress("slack", conversationId);
   updateConversationSettings(
-    {
-      conversationId,
-      conversationDir: conversationOfficeDir(
-        workingDir,
-        createOfficeAddress("slack", conversationId),
-      ),
-    },
+    { address: devAddress, conversationDir: conversationOfficeDir(workingDir, devAddress) },
     { packages: [source] },
   );
 

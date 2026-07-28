@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { createOfficeAddress } from "../src/office-address.js";
+import { createOfficeAddress, officeStateDir } from "../src/office-address.js";
 import {
   applyConversationSettings,
   applyConversationSettingsByRawId,
@@ -30,7 +30,10 @@ afterEach(() => {
 });
 
 function conversationSettingsFile(conversationId: string): string {
-  return join(stateDir, "conversations", conversationId, "settings.json");
+  return join(
+    officeStateDir(stateDir, createOfficeAddress("slack", conversationId)),
+    "settings.json",
+  );
 }
 
 describe("applyConversationSettings", () => {

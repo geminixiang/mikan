@@ -591,7 +591,10 @@ function serveConversationState(
 
   const dir = resolveLegacyOfficeDir(workingDir, conversationId);
   const globalConfig = loadGlobalSettings();
-  const conversationConfig = resolveConversationSettings({ conversationId, conversationDir: dir });
+  const conversationConfig = resolveConversationSettings({
+    address: resolveOwnedOfficeAddress(conversationId),
+    conversationDir: dir,
+  });
   const conversationWorkspace = legacyResolveWorkspaceProjection(workingDir, conversationId);
   const globalWorkspaceSettings = globalConfig.sandbox?.workspace;
   const autoReply = loadConversationAutoReplyConfig(dir);
@@ -1297,7 +1300,7 @@ async function servePackagesList(
   if (!workingDir) return;
   try {
     const inventory = await inspectConversationPackages({
-      conversationId: scope.conversationId,
+      address: resolveOwnedOfficeAddress(scope.conversationId),
       stateDir: effectiveStateDir(),
       conversationDir: resolveLegacyOfficeDir(workingDir, scope.conversationId),
     });
@@ -1338,7 +1341,7 @@ function servePackageMutation(
   if (!workingDir) return;
 
   const context = {
-    conversationId: scope.conversationId,
+    address: resolveOwnedOfficeAddress(scope.conversationId),
     stateDir: effectiveStateDir(),
     conversationDir: resolveLegacyOfficeDir(workingDir, scope.conversationId),
     workingDir,

@@ -11,7 +11,7 @@
  * Activation stays where it was: the next harness instance (`/pi-new`) picks
  * up what is on disk. Only the failure reporting moves earlier.
  */
-import { applyConversationSettingsByRawId, applyGlobalSettings } from "../settings-mutation.js";
+import { applyConversationSettings, applyGlobalSettings } from "../settings-mutation.js";
 import { formatSource, parseSource, sourceIdentity } from "./source.js";
 import { materializeSource } from "./materialize.js";
 import { declaredSources } from "./inspect.js";
@@ -32,7 +32,7 @@ export function addPackage(
   const source = formatSource(parseSource(rawSource));
   const materialized = materializeSource(source, {
     scope,
-    conversationId: context.conversationId,
+    address: context.address,
     stateDir: context.stateDir,
     mode: "fetch",
   });
@@ -73,7 +73,7 @@ export function refreshPackage(
   }
   const materialized = materializeSource(rawSource, {
     scope,
-    conversationId: context.conversationId,
+    address: context.address,
     stateDir: context.stateDir,
     mode: "refresh",
   });
@@ -113,11 +113,8 @@ function writePackages(
     applyGlobalSettings(context.runtime, { packages });
     return;
   }
-  const result = applyConversationSettingsByRawId(
-    context.runtime,
-    context.workingDir,
-    context.conversationId,
-    { packages },
-  );
+  const result = applyConversationSettings(context.runtime, context.workingDir, context.address, {
+    packages,
+  });
   if (!result.ok) throw new Error("Conversation is busy; try again when the current run ends");
 }

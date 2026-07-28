@@ -13,6 +13,7 @@ import {
 } from "../src/harness/index.js";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Usage } from "@earendil-works/pi-ai";
+import { createOfficeAddress, officeKey } from "../src/office-address.js";
 
 let dir: string;
 
@@ -30,6 +31,7 @@ const testModel = {
 } as Model<Api>;
 
 const context = {
+  address: createOfficeAddress("slack", "C123"),
   conversationId: "C123",
   workspaceDir: "/work",
   model: testModel,
@@ -45,20 +47,25 @@ afterEach(() => {
 });
 
 describe("defaultExtensionDirs", () => {
-  test("returns host-only global then per-conversation code dirs under the state dir", () => {
-    expect(defaultExtensionDirs("C123", "/state")).toEqual([
+  test("returns host-only global then per-office code dirs under the state dir", () => {
+    const address = createOfficeAddress("slack", "C123");
+    expect(defaultExtensionDirs(address, "/state")).toEqual([
       join("/state", "global", "extensions"),
-      join("/state", "conversations", "C123", "extensions"),
+      join("/state", "conversations", officeKey(address), "extensions"),
     ]);
   });
 
-  test("uses the conversation id verbatim (no lowercasing)", () => {
-    const [, convDir] = defaultExtensionDirs("C0AbC123", "/state");
-    expect(convDir).toBe(join("/state", "conversations", "C0AbC123", "extensions"));
+  test("separates platforms sharing a raw conversation id", () => {
+    const [, discordDir] = defaultExtensionDirs(createOfficeAddress("discord", "900100"), "/state");
+    const [, telegramDir] = defaultExtensionDirs(
+      createOfficeAddress("telegram", "900100"),
+      "/state",
+    );
+    expect(discordDir).not.toBe(telegramDir);
   });
 
   test("defaults the state dir to ~/.mikan", () => {
-    const [globalDir] = defaultExtensionDirs("C123");
+    const [globalDir] = defaultExtensionDirs(createOfficeAddress("slack", "C123"));
     expect(globalDir.endsWith(join(".mikan", "global", "extensions"))).toBe(true);
   });
 });
@@ -340,7 +347,16 @@ describe("loadExtensions v2 api", () => {
     expect(errors).toHaveLength(0);
     const { dataDir, sharedDataDir } = probe.read() as { dataDir: string; sharedDataDir: string };
     // Per-conversation data lives under the conversation; shared under global.
-    expect(dataDir).toBe(join(dir, "state", "conversations", "C123", "extension-data", "probe"));
+    expect(dataDir).toBe(
+      join(
+        dir,
+        "state",
+        "conversations",
+        officeKey(createOfficeAddress("slack", "C123")),
+        "extension-data",
+        "probe",
+      ),
+    );
     expect(sharedDataDir).toBe(join(dir, "state", "global", "extension-data", "probe"));
     expect(existsSync(dataDir)).toBe(true);
     expect(existsSync(sharedDataDir)).toBe(true);
