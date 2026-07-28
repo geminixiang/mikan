@@ -12,7 +12,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { createOfficeAddress, officeDir, officeKey } from "../src/office-address.js";
 import { legacyConversationCredentialKey } from "../src/sandbox/identity.js";
-import { migrateLegacyOffices, formatUnmigratedOfficesError } from "../src/office-migration.js";
+import {
+  buildContainerBindTranslator,
+  formatUnmigratedOfficesError,
+  migrateLegacyOffices,
+} from "../src/office-migration.js";
 import { OfficeRegistry } from "../src/office-registry.js";
 
 const temporaryDirectories: string[] = [];
@@ -431,5 +435,34 @@ describe("migrateLegacyOffices", () => {
 
     expect(summary.migrated).toEqual([]);
     expect(existsSync(canonical)).toBe(true);
+  });
+});
+
+describe("buildContainerBindTranslator", () => {
+  const office = { platform: "slack", conversationId: "C123", recordedAt: "t" } as const;
+  const translate = buildContainerBindTranslator({
+    offices: [office],
+    workspaceRoot: "/w",
+    stateDir: "/s",
+  });
+  const key = officeKey(createOfficeAddress("slack", "C123"));
+
+  test("rewrites workspace, state-tree, and vault sources plus the guest segment", () => {
+    expect(translate("/w/C123:/workspace/C123")).toBe(`/w/${key}:/workspace/${key}`);
+    expect(translate("/s/conversations/C123/extensions:/mikan/packages/p/skills:ro")).toBe(
+      `/s/conversations/${key}/extensions:/mikan/packages/p/skills:ro`,
+    );
+    const legacyVault = legacyConversationCredentialKey("C123");
+    expect(translate(`/s/vaults/${legacyVault}/.ssh:/root/.ssh`)).toBe(
+      `/s/vaults/${key}/.ssh:/root/.ssh`,
+    );
+  });
+
+  test("leaves unrelated binds untouched and never partial-matches ids", () => {
+    expect(translate("/w/MEMORY.md:/workspace/MEMORY.md")).toBe(
+      "/w/MEMORY.md:/workspace/MEMORY.md",
+    );
+    expect(translate("/w:/workspace")).toBe("/w:/workspace");
+    expect(translate("/w/C1234:/workspace/C1234")).toBe("/w/C1234:/workspace/C1234");
   });
 });

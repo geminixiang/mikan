@@ -150,6 +150,11 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
     vars: [
       { name: "STATE_DIR", deploy: false, doc: "State dir override (same as --state-dir)" },
       {
+        name: "SKIP_CONTAINER_PRESERVATION",
+        deploy: false,
+        doc: "Set to 1 to skip preserving container contents through the office layout migration",
+      },
+      {
         name: "HTTP_IDLE_TIMEOUT",
         deploy: false,
         doc: "Idle timeout in ms for outbound HTTP streams",

@@ -49,14 +49,39 @@ import type {
   SandboxLimitStatus,
 } from "./types.js";
 
+/**
+ * Rewrites one docker bind spec (`src:dst[:ro]`) from the legacy raw-id
+ * layout to the office-key layout. Returns the spec unchanged when nothing in
+ * it needs translation; a container whose binds are all unchanged is already
+ * on the current layout.
+ */
+export type ContainerBindTranslator = (bindSpec: string) => string;
+
+/** Parse `src:dst[:ro]` back into a ContainerMount for signature computation. */
+function bindSpecToMount(bindSpec: string): ContainerMount {
+  const readOnly = bindSpec.endsWith(":ro");
+  const spec = readOnly ? bindSpec.slice(0, -3) : bindSpec;
+  const separator = spec.indexOf(":");
+  return {
+    source: spec.slice(0, separator),
+    target: spec.slice(separator + 1),
+    ...(readOnly ? { readOnly: true as const } : {}),
+  };
+}
+
 export class DockerContainerManager {
   private state = new Map<string, ContainerState>();
   private inflight = new Map<string, Promise<string>>();
+  /** Active layout migration; unset means no translation ever applies. */
+  private bindTranslator?: ContainerBindTranslator;
+  private layoutMigrations = new Map<string, Promise<void>>();
   private static readonly MANAGED_LABEL = "mikan.managed=true";
   private static readonly IMAGE_MODE_LABEL = "mikan.sandbox=image";
   private static readonly VAULT_ID_LABEL_KEY = "mikan.vault-id";
   private static readonly CONVERSATION_ID_LABEL_KEY = "mikan.conversation-id";
   private static readonly MOUNT_SIGNATURE_LABEL_KEY = "mikan.mount-signature";
+  private static readonly MIGRATE_IMAGE_PREFIX = "mikan-migrate";
+  private static readonly MIGRATE_BINDS_LABEL_KEY = "mikan.migrate-binds";
 
   private readonly limits?: ResourceLimits;
   private readonly boostLimits?: ResourceLimits;
@@ -100,6 +125,10 @@ export class DockerContainerManager {
     const containerName =
       options.containerName ?? DockerContainerManager.containerName(containerKey);
     const mounts = options.mounts ?? [];
+    // A container still on the pre-office layout must move its writable layer
+    // to the new mounts before the drift check below would recreate it from
+    // the base image and discard everything installed inside.
+    await this.migrateContainerLayout(containerName);
     const status = await this.inspectStatus(containerName);
 
     try {
@@ -109,6 +138,7 @@ export class DockerContainerManager {
       ) {
         log.logInfo(`Container ${containerName} configuration changed; recreating container`);
         await this.execFileImpl("docker", ["rm", "-f", containerName]);
+        await this.removeMigrateSnapshot(containerName);
         await this.runContainer(containerKey, containerName, mounts, options);
         log.logInfo(`Container ${containerName} recreated`);
       } else if (status === "running") {
@@ -203,6 +233,8 @@ export class DockerContainerManager {
       );
     }
 
+    await this.removeMigrateSnapshot(containerName);
+
     this.state.delete(containerKey);
     this.boostedKeys.delete(containerKey);
     this.overrideLimits.delete(containerKey);
@@ -239,6 +271,242 @@ export class DockerContainerManager {
         );
       }),
     );
+  }
+
+  /**
+   * Arm the office-layout container migration. Containers whose binds still
+   * reference legacy raw-id paths are moved to the office-key layout without
+   * losing their writable layer: commit → remove → create with translated
+   * binds, preserving everything installed inside. Idempotent per container
+   * and resumable — the pre-removal binds ride on the snapshot image label,
+   * so a crash between commit and create resumes from the snapshot.
+   */
+  armContainerLayoutMigration(translator: ContainerBindTranslator): void {
+    this.bindTranslator = translator;
+  }
+
+  /**
+   * Sweep every managed container through the layout migration, serially and
+   * with a small gap, so the one-time cost never lands on the boot path or on
+   * a message. Safe to fire-and-forget; each unit is idempotent.
+   */
+  async sweepContainerLayoutMigration(delayMs = 2000): Promise<void> {
+    if (!this.bindTranslator) return;
+    let names: string[];
+    try {
+      // Include snapshot names: a crash between commit and create leaves a
+      // snapshot with no container, which must resume before the GC below
+      // could mistake it for an orphan.
+      const containers = await this.listContainerNamesByLabel();
+      const snapshots = await this.listMigrateSnapshotContainerNames();
+      names = Array.from(new Set([...containers, ...snapshots]));
+    } catch (err) {
+      log.logWarning("Container layout sweep could not list containers", String(err));
+      return;
+    }
+    for (const containerName of names) {
+      try {
+        await this.migrateContainerLayout(containerName);
+      } catch (err) {
+        log.logWarning(
+          `Container layout migration failed for ${containerName}; leaving it in place`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    // Snapshot images whose container has since been recreated from the base
+    // image are no longer referenced; reclaim them.
+    await this.removeDanglingMigrateImages();
+  }
+
+  /** Move one container to the office-key layout; no-op when already there. */
+  private migrateContainerLayout(containerName: string): Promise<void> {
+    const translator = this.bindTranslator;
+    if (!translator) return Promise.resolve();
+    const existing = this.layoutMigrations.get(containerName);
+    if (existing) return existing;
+    const pending = this.migrateContainerLayoutInner(containerName, translator).finally(() => {
+      this.layoutMigrations.delete(containerName);
+    });
+    this.layoutMigrations.set(containerName, pending);
+    return pending;
+  }
+
+  private async migrateContainerLayoutInner(
+    containerName: string,
+    translator: ContainerBindTranslator,
+  ): Promise<void> {
+    const snapshotImage = `${DockerContainerManager.MIGRATE_IMAGE_PREFIX}:${containerName}`;
+
+    let originalBinds: string[];
+    const status = await this.inspectStatus(containerName);
+    if (status === "missing") {
+      // Resume path: a previous run committed and removed the container but
+      // died before creating the replacement. The snapshot carries the
+      // pre-removal binds on its label.
+      const labeled = await this.readMigrateImageBinds(snapshotImage);
+      if (labeled === undefined) return;
+      originalBinds = labeled;
+    } else {
+      originalBinds = await this.inspectBindMounts(containerName);
+      const translated = originalBinds.map(translator);
+      if (this.sameBinds(translated.toSorted(), originalBinds.slice().toSorted())) {
+        return; // already on the office layout
+      }
+      log.logInfo(`Migrating container ${containerName} to the office layout`);
+      await this.execFileImpl("docker", [
+        "commit",
+        "-c",
+        `LABEL ${DockerContainerManager.MIGRATE_BINDS_LABEL_KEY}=${JSON.stringify(JSON.stringify(originalBinds))}`,
+        containerName,
+        snapshotImage,
+      ]);
+      await this.execFileImpl("docker", ["rm", "-f", containerName]);
+    }
+
+    const translated = originalBinds.map(translator);
+    const containerKey = this.containerKeyFromContainerName(containerName) ?? containerName;
+    const networkName = await this.ensureNetwork(containerKey);
+    const conversationId = await this.readImageLabel(
+      snapshotImage,
+      DockerContainerManager.CONVERSATION_ID_LABEL_KEY,
+    );
+    const labels = [
+      "--label",
+      DockerContainerManager.MANAGED_LABEL,
+      "--label",
+      DockerContainerManager.IMAGE_MODE_LABEL,
+      "--label",
+      `${DockerContainerManager.VAULT_ID_LABEL_KEY}=${containerKey}`,
+    ];
+    if (conversationId) {
+      labels.push(
+        "--label",
+        `${DockerContainerManager.CONVERSATION_ID_LABEL_KEY}=${conversationId}`,
+      );
+    }
+    labels.push(
+      "--label",
+      `${DockerContainerManager.MOUNT_SIGNATURE_LABEL_KEY}=${this.mountSignature(
+        translated.map(bindSpecToMount),
+      )}`,
+    );
+    // `create`, not `run`: idle containers stay stopped exactly as they were,
+    // and the normal provision path starts them on the next message.
+    await this.execFileImpl("docker", [
+      "create",
+      "--name",
+      containerName,
+      "--network",
+      networkName,
+      "--cap-drop",
+      "ALL",
+      "--security-opt",
+      "no-new-privileges",
+      "--pids-limit",
+      "1024",
+      ...labels,
+      ...this.resourceLimitArgs(this.effectiveLimits(containerKey)),
+      ...translated.flatMap((bind) => ["-v", bind]),
+      snapshotImage,
+      "sleep",
+      "infinity",
+    ]);
+    log.logInfo(`Container ${containerName} migrated to the office layout`);
+  }
+
+  /** Binds recorded on a snapshot image, or undefined when no snapshot exists. */
+  private async readMigrateImageBinds(snapshotImage: string): Promise<string[] | undefined> {
+    const raw = await this.readImageLabel(
+      snapshotImage,
+      DockerContainerManager.MIGRATE_BINDS_LABEL_KEY,
+    );
+    if (raw === undefined) return undefined;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed) || parsed.some((bind) => typeof bind !== "string")) {
+      throw new Error(`Snapshot image ${snapshotImage} carries malformed migrate binds`);
+    }
+    return parsed;
+  }
+
+  private async readImageLabel(image: string, key: string): Promise<string | undefined> {
+    try {
+      const { stdout } = await this.execFileImpl("docker", [
+        "inspect",
+        "-f",
+        `{{index .Config.Labels "${key}"}}`,
+        image,
+      ]);
+      return this.normalizeDockerValue(stdout.trim());
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Delete a container's layout snapshot after an intentional removal, so a
+   * missing container plus a surviving snapshot can only mean a crash in the
+   * middle of the layout migration (the resume discriminator).
+   */
+  private async removeMigrateSnapshot(containerName: string): Promise<void> {
+    try {
+      await this.execFileImpl("docker", [
+        "rmi",
+        `${DockerContainerManager.MIGRATE_IMAGE_PREFIX}:${containerName}`,
+      ]);
+    } catch {
+      // No snapshot for this container — the common case.
+    }
+  }
+
+  private async listMigrateSnapshotContainerNames(): Promise<string[]> {
+    try {
+      const { stdout } = await this.execFileImpl("docker", [
+        "images",
+        DockerContainerManager.MIGRATE_IMAGE_PREFIX,
+        "--format",
+        "{{.Tag}}",
+      ]);
+      return this.parseNameLines(stdout);
+    } catch {
+      return [];
+    }
+  }
+
+  private async removeDanglingMigrateImages(): Promise<void> {
+    let stdout: string;
+    try {
+      ({ stdout } = await this.execFileImpl("docker", [
+        "images",
+        `${DockerContainerManager.MIGRATE_IMAGE_PREFIX}`,
+        "--format",
+        "{{.Repository}}:{{.Tag}}",
+      ]));
+    } catch {
+      return;
+    }
+    for (const image of this.parseNameLines(stdout)) {
+      const containerName = image.slice(DockerContainerManager.MIGRATE_IMAGE_PREFIX.length + 1);
+      const status = await this.inspectStatus(containerName);
+      if (status !== "missing") {
+        // Still referenced (until the container's next natural recreation
+        // from the base image); keep the snapshot.
+        const { stdout: imageRef } = await this.execFileImpl("docker", [
+          "inspect",
+          "-f",
+          "{{.Config.Image}}",
+          containerName,
+        ]);
+        if (imageRef.trim() === image) continue;
+      }
+      try {
+        await this.execFileImpl("docker", ["rmi", image]);
+        log.logInfo(`Removed layout-migration snapshot image ${image}`);
+      } catch (err) {
+        log.logWarning(`Could not remove snapshot image ${image}`, String(err));
+      }
+    }
   }
 
   async reconcile(): Promise<void> {
