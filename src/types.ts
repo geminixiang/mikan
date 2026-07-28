@@ -40,9 +40,21 @@ export interface OfficeMigrationRecord {
   readonly updatedAt: string;
 }
 
+/**
+ * Directory entry for one conversation office. The workspace dir name stops
+ * carrying the raw platform id once the ADR 0005 layout migration lands, so
+ * the registry is the durable raw-id ↔ office mapping used for enumeration.
+ */
+export interface OfficeRecord {
+  readonly platform: PlatformName;
+  readonly conversationId: string;
+  readonly recordedAt: string;
+}
+
 export interface OfficeRegistryState {
   readonly version: 1;
   readonly enabledPlatforms: readonly PlatformName[];
+  readonly offices: readonly OfficeRecord[];
   readonly migrations: readonly OfficeMigrationRecord[];
 }
 
