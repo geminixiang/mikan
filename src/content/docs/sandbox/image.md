@@ -25,7 +25,7 @@ Features:
 - mikan creates an isolated vault and container for each conversation
 - each container gets its own Docker bridge network, separating direct container-to-container networking; outbound network access remains enabled
 - managed containers are created with `--cap-drop=ALL`, `--security-opt=no-new-privileges`, and `--pids-limit=1024`
-- inside the container, only `/workspace/MEMORY.md`, `/workspace/skills`, `/workspace/events`, and the current conversation directory are visible
+- inside the container, the default isolated policy exposes only the current conversation directory; Admin can explicitly choose a trusted shared-support or full-workspace layout
 - vault env is injected at execution time
 - vault file credentials are automatically bind-mounted into the container according to the target path
 - idle containers are checked every 10 minutes and stopped after at least 10 minutes of inactivity; depending on scan timing, stopping occurs roughly 10–20 minutes after last tracked use

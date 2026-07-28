@@ -13,6 +13,7 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `events.ts`: Watches `events/` JSON files and fires immediate, one-shot, and periodic bot events.
 - `execution-resolver.ts`: Resolves the concrete executor and credential injection for an actor, conversation, vault, and sandbox.
 - `index.ts`: Exposes the package public API through barrel exports.
+- `office-address.ts` / `office-registry.ts`: Canonical conversation-office identity and host-only legacy migration journal; consumers are not switched yet.
 - `log.ts`: Centralizes CLI log formatting for messages, tools, responses, usage, startup, and backfill.
 - `main.ts`: CLI entrypoint that executes the boot plan from `cli/boot.ts` and starts config, sandbox, vault, runtime, portal, events, and platform bots.
 - `settings-mutation.ts`: The one writer seam for settings mutations that affect live conversations; chat commands and the Admin portal write through it so cached runners and disk never disagree.

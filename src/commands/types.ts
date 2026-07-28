@@ -110,6 +110,7 @@ export interface CommandContext {
   bot: MessagingBot;
   responder: ConversationContext["responder"];
   platform: PlatformName;
+  address: import("../adapter.js").OfficeAddress;
   platformUserId: string;
   platformUserName?: string;
   conversationId: string;
@@ -144,7 +145,7 @@ export interface ParsedModelCommand {
 }
 
 export interface ParsedSandboxCommand {
-  action?: "boost" | "private" | "full";
+  action?: "boost";
 }
 
 export type ParsedLoginCommand =

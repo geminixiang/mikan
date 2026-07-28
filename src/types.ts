@@ -18,6 +18,41 @@ export type ConversationKind = "direct" | "shared";
 
 export type PlatformName = "slack" | "discord" | "telegram" | "github";
 
+/** Canonical platform-plus-raw identifier for one conversation office. */
+export interface OfficeAddress {
+  readonly platform: PlatformName;
+  readonly conversationId: string;
+}
+
+/** Stable, filesystem-safe identity derived from an OfficeAddress. */
+export type OfficeKey = string & { readonly __brand: "OfficeKey" };
+
+export type OfficeMigrationStatus = "needs-owner" | "prepared" | "moving" | "committed" | "failed";
+
+export interface OfficeMigrationRecord {
+  readonly rawConversationId: string;
+  readonly sourceDir: string;
+  readonly workspaceRoot: string;
+  readonly ownerPlatform?: PlatformName;
+  readonly targetDir?: string;
+  readonly status: OfficeMigrationStatus;
+  readonly error?: string;
+  readonly updatedAt: string;
+}
+
+export interface OfficeRegistryState {
+  readonly version: 1;
+  readonly enabledPlatforms: readonly PlatformName[];
+  readonly migrations: readonly OfficeMigrationRecord[];
+}
+
+export interface OfficeMigrationPreparation {
+  readonly rawConversationId: string;
+  readonly sourceDir: string;
+  readonly workspaceRoot: string;
+  readonly ownerPlatform?: PlatformName;
+}
+
 /**
  * Who can drive conversations on a platform — gates ambient credential policy.
  *
@@ -31,6 +66,10 @@ export type PlatformTrustModel = "membership" | "open-trigger";
 
 export interface ConversationMessage {
   id: string;
+  /** Canonical identity of the conversation office. */
+  address: OfficeAddress;
+  /** @deprecated Use address.conversationId except at platform I/O seams. */
+  conversationId?: string;
   sessionKey: string;
   conversationKind: ConversationKind;
   userId: string;
@@ -147,7 +186,9 @@ export interface AgentEventEnvelope {
  */
 export interface ConversationEvent {
   type: string;
-  /** Platform-specific raw conversation/channel/chat identifier */
+  /** Canonical identity created by the platform adapter at intake. */
+  address: OfficeAddress;
+  /** @deprecated Raw platform identifier; valid only at adapter I/O seams. */
   conversationId: string;
   /** Optional alternate conversation identity used for vault routing. */
   vaultConversationId?: string;
@@ -253,28 +294,37 @@ export interface PlatformBlockKit {
 
 /** Normalized platform data and reply hook for one event. */
 export interface ConversationContext {
+  /** Canonical identity for the office handling this turn. */
+  address: OfficeAddress;
   message: ConversationMessage;
   responder: ConversationResponder;
   platform: MessagingInfo;
 }
 
 export interface RunningSession {
+  /** The office this run belongs to; two platforms may share a raw id. */
+  address: OfficeAddress;
   sessionKey: string;
   startedAt: number;
   lastActivityAt?: number;
   currentTool?: string;
 }
 
+/**
+ * Runtime state is addressed by an office plus that office's platform session
+ * reference. The session key alone is a platform value and is not unique
+ * across platforms, so every session-scoped call carries its `OfficeAddress`.
+ */
 export interface MessagingEventHandler {
-  isRunning(sessionKey: string): boolean;
+  isRunning(address: OfficeAddress, sessionKey: string): boolean;
   getRunningSessions(): RunningSession[];
   handleEvent(
     event: ConversationEvent,
     bot: MessagingBot,
     context: ConversationContext,
   ): Promise<void>;
-  handleStop(sessionKey: string, conversationId: string, bot: MessagingBot): Promise<void>;
-  forceStop(sessionKey: string): void;
+  handleStop(address: OfficeAddress, sessionKey: string, bot: MessagingBot): Promise<void>;
+  forceStop(address: OfficeAddress, sessionKey: string): void;
   handleNewCommand(
     sessionKey: string,
     conversationId: string,
@@ -291,7 +341,7 @@ export interface MessagingEventHandler {
    * fall through to the model, so the adapter drops unconsumed ones.
    */
   handleExtensionAction(params: {
-    conversationId: string;
+    address: OfficeAddress;
     sessionKey: string;
     conversationKind: ConversationKind;
     slug: string;
@@ -334,11 +384,22 @@ export interface PiAgentWrapper {
 
 // ── config ────────────────────────────────────────────────────────────────────
 
+export type WorkspaceDoorPolicy = "isolated" | "trusted";
+export type WorkspaceLayout = "conversation" | "shared-support" | "full";
+
+interface WorkspaceSettings {
+  doorPolicy?: WorkspaceDoorPolicy;
+  layout?: WorkspaceLayout;
+}
+
 export interface SandboxSettings {
   cpus?: string;
   memory?: string;
   boost?: { cpus?: string; memory?: string };
+  /** Legacy image-specific workspace setting; new installations use workspace. */
   image?: { workspaceMount?: "private" | "full" };
+  /** Backend-neutral office data policy and layout. */
+  workspace?: WorkspaceSettings;
   defaultSharedVault?: string;
 }
 

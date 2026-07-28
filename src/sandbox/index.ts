@@ -52,6 +52,28 @@ export function getSandboxCredentialCapabilities(
   return adapter.credentials;
 }
 
+export function getSandboxWorkspaceCapabilities(
+  type: SandboxConfig["type"],
+): SandboxAdapter["workspace"] {
+  const adapter = sandboxAdapterByType.get(type);
+  if (!adapter) throw new SandboxError(`Error: Unsupported sandbox type '${type}'`);
+  return adapter.workspace;
+}
+
+export function assertSandboxSupportsWorkspacePolicy(
+  sandboxConfig: SandboxConfig,
+  doorPolicy: "isolated" | "trusted",
+): void {
+  if (
+    doorPolicy === "isolated" &&
+    !getSandboxWorkspaceCapabilities(sandboxConfig.type).managedProjection
+  ) {
+    throw new SandboxError(
+      `Sandbox '${sandboxConfig.type}' cannot provide an isolated conversation office; use image:* or gondolin:default, or explicitly choose trusted workspace policy`,
+    );
+  }
+}
+
 export function parseSandboxArg(value: string): SandboxConfig {
   for (const adapter of sandboxAdapters) {
     const config = adapter.parse(value);

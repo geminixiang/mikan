@@ -48,6 +48,7 @@
     "test": "vitest --run",
     "test:coverage": "vitest --run --coverage",
     "test:coverage:check": "vitest --run --coverage",
+    "test:office:docker": "node scripts/verify-office-docker.mjs",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",

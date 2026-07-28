@@ -6,6 +6,7 @@ import { DockerContainerManager, type ContainerMount } from "./provisioner.js";
 import {
   createExecutor,
   getSandboxCredentialCapabilities,
+  getSandboxWorkspaceCapabilities,
   type Executor,
   type SandboxConfig,
 } from "./sandbox/index.js";
@@ -58,13 +59,27 @@ export class ActorExecutionResolver {
       this.vaultManager.resolve(credentialKey) ??
       (legacyCredentialKey ? this.vaultManager.resolve(legacyCredentialKey) : undefined);
     const capabilities = getSandboxCredentialCapabilities(this.baseConfig.type);
+    const workspaceCapabilities = getSandboxWorkspaceCapabilities(this.baseConfig.type);
+    const workspaceProjection = resolveWorkspaceProjection(
+      this.workspaceDir,
+      context.conversationId,
+    );
     const injection = resolveVaultInjection({
       vault,
       capabilities,
       sandboxType: this.baseConfig.type,
       conversationId: context.conversationId,
     });
-    const mounts = this.resolveMounts(context.conversationId, injection.mounts);
+    const mounts = this.resolveMounts(
+      context.conversationId,
+      injection.mounts,
+      workspaceProjection,
+    );
+    if (workspaceProjection.doorPolicy === "isolated" && !workspaceCapabilities.managedProjection) {
+      throw new Error(
+        `Sandbox '${this.baseConfig.type}' cannot provide an isolated conversation office; use image:* or gondolin:default, or explicitly choose trusted workspace policy`,
+      );
+    }
     return {
       credentialKey,
       resourceKey,
@@ -162,8 +177,12 @@ export class ActorExecutionResolver {
     };
   }
 
-  private resolveMounts(conversationId: string, vaultMounts: ContainerMount[]): ContainerMount[] {
-    const workspaceMounts = resolveWorkspaceProjection(this.workspaceDir, conversationId).mounts;
+  private resolveMounts(
+    conversationId: string,
+    vaultMounts: ContainerMount[],
+    projection: ReturnType<typeof resolveWorkspaceProjection>,
+  ): ContainerMount[] {
+    const workspaceMounts = projection.mounts;
     // Package skills mount outside /workspace, so they cannot collide with the
     // workspace projection; they are still checked against vault mounts below,
     // which are administrator-chosen targets and could be aimed anywhere.

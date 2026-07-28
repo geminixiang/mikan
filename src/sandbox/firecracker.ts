@@ -260,6 +260,7 @@ function buildRemoteScript(command: string, env?: Record<string, string>): strin
 export const firecrackerSandboxAdapter: SandboxAdapter<FirecrackerSandboxConfig> = {
   type: "firecracker",
   credentials: { env: true, fileMounts: false },
+  workspace: { managedProjection: false },
   parse: parseFirecrackerSandboxArg,
   validate: validateFirecrackerSandbox,
   createExecutor: (config, env) =>

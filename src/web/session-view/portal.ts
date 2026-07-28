@@ -1,11 +1,13 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { basename } from "path";
 import MarkdownIt from "markdown-it";
-import type {
-  ConversationContext,
-  ConversationEvent,
+import {
+  createConversationEvent,
+  createConversationMessage,
+  type ConversationContext,
   ConversationResponder,
 } from "../../adapter.js";
+import { createOfficeAddress } from "../../office-address.js";
 import { readRawBody } from "../../utils/http-body.js";
 import { escapeHtml } from "../../utils/html.js";
 import * as log from "../../log.js";
@@ -158,7 +160,11 @@ export async function handleSessionViewRequest(
   try {
     const model = loadSessionViewModel(targetSessionFile);
     const displayedSessionKey = resolveDisplayedSessionKey(entry, targetSessionFile);
-    const isRunning = interactive?.handler.isRunning(displayedSessionKey) ?? false;
+    const isRunning =
+      interactive?.handler.isRunning(
+        createOfficeAddress(entry.platform, entry.conversationId),
+        displayedSessionKey,
+      ) ?? false;
     res.writeHead(200, {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
@@ -543,7 +549,13 @@ async function handleSessionStreamRequest(
     Connection: "keep-alive",
   });
   res.write(
-    `data: ${JSON.stringify({ type: "status", running: interactive.handler.isRunning(activeSessionKey) })}\n\n`,
+    `data: ${JSON.stringify({
+      type: "status",
+      running: interactive.handler.isRunning(
+        createOfficeAddress(entry.platform, entry.conversationId),
+        activeSessionKey,
+      ),
+    })}\n\n`,
   );
 
   const unsubscribe = sessionViewStreamHub.subscribe(streamKey, (event) => {
@@ -649,7 +661,8 @@ async function handleSessionMessageRequest(
   const responder = createSessionViewResponseContext((event) => {
     sessionViewStreamHub.publish(streamKey, event);
   });
-  const event: ConversationEvent = {
+  const event = createConversationEvent({
+    platform: entry.platform,
     type: "session_view",
     conversationId: entry.conversationId,
     conversationKind,
@@ -661,18 +674,22 @@ async function handleSessionMessageRequest(
     ...(isThreadSessionKey(activeSessionKey)
       ? { thread_ts: threadSuffixOf(activeSessionKey)! }
       : {}),
-  };
+  });
+  const message = createConversationMessage({
+    platform: entry.platform,
+    conversationId: entry.conversationId,
+    id: ts,
+    sessionKey: activeSessionKey,
+    conversationKind,
+    userId: entry.platformUserId,
+    userName: platformUserName,
+    text,
+    attachments: [],
+    threadTs: event.thread_ts,
+  });
   const context: ConversationContext = {
-    message: {
-      id: ts,
-      sessionKey: activeSessionKey,
-      conversationKind,
-      userId: entry.platformUserId,
-      userName: platformUserName,
-      text,
-      attachments: [],
-      threadTs: event.thread_ts,
-    },
+    address: event.address,
+    message,
     responder,
     platform: { ...platformInfo, diagnostics: { showUsageSummary: false } },
   };

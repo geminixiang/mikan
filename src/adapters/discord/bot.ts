@@ -16,18 +16,20 @@ import {
 import { readFileSync } from "fs";
 import { basename, join } from "path";
 
-import type {
-  MessagingBot,
+import {
+  createConversationEvent,
+  createConversationMessage,
+  type MessagingBot,
   ConversationContext,
   ConversationEvent,
   MessagingEventHandler,
-  ConversationMessage,
   ConversationResponder,
   ChatToolResult,
-  MessagingInfo,
+  type MessagingInfo,
 } from "../../adapter.js";
 import type { DiscordEvent } from "./types.js";
 import * as log from "../../log.js";
+import { createOfficeAddress } from "../../office-address.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
 import { formatNothingRunning } from "../../platform-messages.js";
 import {
@@ -359,14 +361,11 @@ export class DiscordMessagingBot implements MessagingBot {
   }
 
   private resolveStopTarget(channelId: string, sessionKey: string): string | null {
-    const directTarget = resolveStopTarget({
-      handler: this.handler,
-      conversationId: channelId,
-      sessionKey,
-    });
+    const address = createOfficeAddress("discord", channelId);
+    const directTarget = resolveStopTarget({ handler: this.handler, address, sessionKey });
     if (directTarget) return directTarget;
     if (sessionKey !== channelId) return null;
-    return resolveOnlyScopedStopTarget(this.handler, channelId);
+    return resolveOnlyScopedStopTarget(this.handler, address);
   }
 
   private loadCachedGuildData(): void {
@@ -430,7 +429,9 @@ export class DiscordMessagingBot implements MessagingBot {
     const platform = this.getMessagingInfo();
     const shouldUseEphemeral = !isDM;
 
-    const message: ConversationMessage = {
+    const message = createConversationMessage({
+      platform: "discord",
+      conversationId,
       id: interaction.id,
       sessionKey,
       conversationKind: isDM ? "direct" : "shared",
@@ -438,7 +439,7 @@ export class DiscordMessagingBot implements MessagingBot {
       userName,
       text: commandText,
       attachments: [],
-    };
+    });
 
     const respondPrivately = async (text: string, replace = false): Promise<void> => {
       if (interaction.replied || interaction.deferred) {
@@ -480,7 +481,7 @@ export class DiscordMessagingBot implements MessagingBot {
       deleteResponse: async () => {},
     };
 
-    return { message, responder, platform };
+    return { address: message.address, message, responder, platform };
   }
 
   private setupEventHandlers(): void {
@@ -534,7 +535,8 @@ export class DiscordMessagingBot implements MessagingBot {
       );
       try {
         if (interaction.commandName === "new") {
-          const event: ConversationEvent = {
+          const event = createConversationEvent({
+            platform: "discord",
             type: "dm",
             conversationId,
             conversationKind: isDM ? "direct" : "shared",
@@ -544,7 +546,7 @@ export class DiscordMessagingBot implements MessagingBot {
             user: interaction.user.id,
             text: commandText,
             attachments: [],
-          };
+          });
           await this.handler.handleEvent(event, this, context);
           return;
         }
@@ -552,7 +554,11 @@ export class DiscordMessagingBot implements MessagingBot {
         if (interaction.commandName === "stop") {
           const stopTarget = this.resolveStopTarget(conversationId, sessionKey);
           if (stopTarget) {
-            await this.handler.handleStop(stopTarget, conversationId, this);
+            await this.handler.handleStop(
+              createOfficeAddress("discord", conversationId),
+              stopTarget,
+              this,
+            );
             await context.responder.respond("Stopped the current conversation.");
           } else {
             await context.responder.respond(formatNothingRunning("discord"));
@@ -560,7 +566,8 @@ export class DiscordMessagingBot implements MessagingBot {
           return;
         }
 
-        const event: ConversationEvent = {
+        const event = createConversationEvent({
+          platform: "discord",
           type: "dm",
           conversationId,
           conversationKind: isDM ? "direct" : "shared",
@@ -570,7 +577,7 @@ export class DiscordMessagingBot implements MessagingBot {
           user: interaction.user.id,
           text: commandText,
           attachments: [],
-        };
+        });
 
         await this.handler.handleEvent(event, this, context);
       } catch (err) {
@@ -634,7 +641,8 @@ export class DiscordMessagingBot implements MessagingBot {
 
       const cleanedText = this.stripMessagingBotMention(msg.content);
 
-      const eventBase: DiscordEvent = {
+      const eventBase = createConversationEvent({
+        platform: "discord",
         type: isDM ? "dm" : "mention",
         conversationId,
         conversationKind,
@@ -644,7 +652,7 @@ export class DiscordMessagingBot implements MessagingBot {
         user: userId,
         userName,
         text: cleanedText,
-      };
+      }) as DiscordEvent;
 
       await processMessageIntake({
         eventBase,

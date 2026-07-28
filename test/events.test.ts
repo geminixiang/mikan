@@ -250,19 +250,22 @@ describe("EventsWatcher platform routing", () => {
 
     expect(enqueueSlack).not.toHaveBeenCalled();
     expect(enqueueDiscord).toHaveBeenCalledTimes(1);
-    expect(enqueueDiscord).toHaveBeenCalledWith({
-      type: "mention",
-      conversationId: "CH-42",
-      conversationKind: "shared",
-      user: "U123",
-      text: [
-        "Handle the following event/update in a concise, context-appropriate way.",
-        "If it reads like a reminder or follow-up, deliver it directly without greeting or generic offers to help.",
-        "",
-        "Event: Deploy in 10 minutes",
-      ].join("\n"),
-      ts: "event:deploy-reminder",
-    });
+    expect(enqueueDiscord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        address: { platform: "discord", conversationId: "CH-42" },
+        type: "mention",
+        conversationId: "CH-42",
+        conversationKind: "shared",
+        user: "U123",
+        text: [
+          "Handle the following event/update in a concise, context-appropriate way.",
+          "If it reads like a reminder or follow-up, deliver it directly without greeting or generic offers to help.",
+          "",
+          "Event: Deploy in 10 minutes",
+        ].join("\n"),
+        ts: "event:deploy-reminder",
+      }),
+    );
   });
 });
 

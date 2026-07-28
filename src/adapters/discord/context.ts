@@ -1,4 +1,9 @@
-import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../../adapter.js";
+import {
+  createConversationMessage,
+  type ConversationMessage,
+  type ConversationResponder,
+  type MessagingInfo,
+} from "../../adapter.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
 import { createProgressiveRenderer, formatMarkdownToolResult } from "../progressive-renderer.js";
 import type { DiscordMessagingBot, DiscordEvent } from "./bot.js";
@@ -16,6 +21,7 @@ export function createDiscordAdapters(
   event: DiscordEvent,
   bot: DiscordMessagingBot,
 ): {
+  address: import("../../adapter.js").OfficeAddress;
   message: ConversationMessage;
   responder: ConversationResponder;
   platform: MessagingInfo;
@@ -25,7 +31,10 @@ export function createDiscordAdapters(
   const threadTargetId = isDiscordMessageReference(event.thread_ts) ? event.thread_ts : undefined;
   const replyTargetId = isDiscordMessageReference(event.ts) ? event.ts : undefined;
 
-  const message: ConversationMessage = {
+  const message = createConversationMessage({
+    platform: "discord",
+    conversationId,
+    address: event.address,
     id: event.ts,
     sessionKey:
       event.sessionKey ??
@@ -42,7 +51,7 @@ export function createDiscordAdapters(
     text: event.text,
     attachments: event.attachments,
     threadTs: event.thread_ts,
-  };
+  });
 
   // The bot's getMessagingInfo() is the single authority for platform info.
   const platform: MessagingInfo = bot.getMessagingInfo();
@@ -95,5 +104,5 @@ export function createDiscordAdapters(
     uploadFile: (filePath, title) => bot.uploadFile(channelId, filePath, title),
   });
 
-  return { message, responder, platform };
+  return { address: message.address, message, responder, platform };
 }

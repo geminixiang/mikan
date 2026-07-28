@@ -3,6 +3,7 @@ import type {
   ConversationContext,
   ConversationEvent,
   ConversationKind,
+  OfficeAddress,
   PlatformName,
   RunningSession,
 } from "../adapter.js";
@@ -112,18 +113,18 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     this.commandHandlers = options.commandHandlers ?? defaultCommandHandlers(this.resolvedModels);
   }
 
-  isRunning(sessionKey: string): boolean {
-    const state = this.sessions.get(sessionKey);
-    return !!state?.running;
+  isRunning(address: OfficeAddress, sessionKey: string): boolean {
+    return this.sessions.isRunning(address, sessionKey);
   }
 
   getRunningSessions(): RunningSession[] {
     const sessions: RunningSession[] = [];
-    for (const [sessionKey, state] of this.sessions.runningStates()) {
+    for (const state of this.sessions.runningStates()) {
       if (state.startedAt) {
         const currentStep = state.runner.getCurrentStep();
         sessions.push({
-          sessionKey,
+          address: state.address,
+          sessionKey: state.sessionKey,
           startedAt: state.startedAt,
           lastActivityAt: state.lastActivityAt,
           currentTool: currentStep?.label || currentStep?.toolName,
@@ -133,21 +134,21 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     return sessions;
   }
 
-  async handleStop(sessionKey: string, conversationId: string, bot: MessagingBot): Promise<void> {
-    assertSessionKeyBelongsToConversation(sessionKey, conversationId);
-    const state = this.sessions.get(sessionKey);
+  async handleStop(address: OfficeAddress, sessionKey: string, bot: MessagingBot): Promise<void> {
+    assertSessionKeyBelongsToConversation(sessionKey, address.conversationId);
+    const state = this.sessions.get(address, sessionKey);
     if (state?.running) {
       state.stopRequested = true;
       state.runner.abort();
-      const ts = await bot.postMessage(conversationId, formatStopping(bot));
+      const ts = await bot.postMessage(address.conversationId, formatStopping(bot));
       state.stopMessageTs = ts;
     } else {
-      await bot.postMessage(conversationId, formatNothingRunning(bot));
+      await bot.postMessage(address.conversationId, formatNothingRunning(bot));
     }
   }
 
-  forceStop(sessionKey: string): void {
-    const state = this.sessions.get(sessionKey);
+  forceStop(address: OfficeAddress, sessionKey: string): void {
+    const state = this.sessions.get(address, sessionKey);
     if (state?.running) {
       log.logInfo(`[Force Stop] Force stopping session: ${sessionKey}`);
       state.stopRequested = true;
@@ -163,8 +164,17 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     responder: ConversationContext["responder"],
     platform: ConversationContext["platform"],
   ): Promise<void> {
-    assertSessionKeyBelongsToConversation(sessionKey, conversationId);
-    const activeState = this.sessions.get(sessionKey);
+    // The message's address is the authority; the raw id is still passed for
+    // filesystem layout, so a disagreement must fail loudly, not pick one.
+    const address = message.address;
+    if (conversationId !== address.conversationId) {
+      throw new Error(
+        `Conversation id ${JSON.stringify(conversationId)} does not match office ` +
+          JSON.stringify(address.conversationId),
+      );
+    }
+    assertSessionKeyBelongsToConversation(sessionKey, address.conversationId);
+    const activeState = this.sessions.get(address, sessionKey);
     if (
       activeState?.running ||
       (activeState?.runSettlement && this.sessionDreamSettlements.has(activeState.runSettlement))
@@ -180,6 +190,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     }
 
     const state = await this.getOrCreateState({
+      address,
       conversationId,
       sessionKey,
       conversationKind: message.conversationKind,
@@ -215,7 +226,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
         await responder.setWorking(false);
         working = false;
-        await this.resetSession(sessionKey, conversationId, bot);
+        await this.resetSession(state, bot);
       } finally {
         if (working) await responder.setWorking(false);
       }
@@ -223,7 +234,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     try {
       await dreamSettlement;
     } finally {
-      this.finishSessionDream(sessionKey, state, dreamSettlement);
+      this.finishSessionDream(state, dreamSettlement);
     }
   }
 
@@ -246,11 +257,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     return settlement;
   }
 
-  private finishSessionDream(
-    sessionKey: string,
-    state: ConversationState,
-    settlement: Promise<void>,
-  ): void {
+  private finishSessionDream(state: ConversationState, settlement: Promise<void>): void {
     this.sessionDreamSettlements.delete(settlement);
     this.inFlightRuns.delete(settlement);
     if (state.runSettlement !== settlement) return;
@@ -259,7 +266,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     state.running = false;
     state.startedAt = 0;
     state.lastAccessedAt = Date.now();
-    this.sessions.onSettlement(sessionKey);
+    this.sessions.onSettlement(state.address);
     this.sessions.evictIdle();
   }
 
@@ -287,22 +294,24 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   }
 
   private async rotateSharedSessionAfterDream(
-    conversationId: string,
+    address: OfficeAddress,
     sessionKey: string,
     message: ConversationContext["message"],
     platform: ConversationContext["platform"],
   ): Promise<void> {
+    const conversationId = address.conversationId;
     if (message.conversationKind !== "shared" || sessionKey !== conversationId) return;
 
     const conversationDir = join(this.options.workingDir, conversationId);
     const currentSession = resolveChannelSessionFile(conversationDir);
     if (!currentSession || !shouldRotateTopLevelSession(currentSession, new Date())) return;
 
-    await this.sessions.runConversationMaintenance(conversationId, async () => {
+    await this.sessions.runConversationMaintenance(address, async () => {
       const session = resolveChannelSessionFile(conversationDir);
       if (!session || !shouldRotateTopLevelSession(session, new Date())) return;
 
       const state = await this.getOrCreateState({
+        address,
         conversationId,
         sessionKey,
         conversationKind: message.conversationKind,
@@ -324,7 +333,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
             conversationId,
           );
           this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
-          this.sessions.discard(sessionKey);
+          this.sessions.discard(address, sessionKey);
           log.logInfo(
             `[${conversationId}] Session Dream completed; rotated session: ${sessionKey}`,
           );
@@ -334,16 +343,14 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       try {
         await dreamSettlement;
       } finally {
-        this.finishSessionDream(sessionKey, state, dreamSettlement);
+        this.finishSessionDream(state, dreamSettlement);
       }
     });
   }
 
-  private async resetSession(
-    sessionKey: string,
-    conversationId: string,
-    bot: MessagingBot,
-  ): Promise<void> {
+  private async resetSession(state: ConversationState, bot: MessagingBot): Promise<void> {
+    const { address, sessionKey } = state;
+    const conversationId = address.conversationId;
     const conversationDir = join(this.options.workingDir, conversationId);
     const runtimeCwd = runtimeCwdForSandbox(
       this.options.sandbox,
@@ -352,7 +359,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     );
     this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
 
-    this.sessions.discard(sessionKey);
+    this.sessions.discard(address, sessionKey);
 
     log.logInfo(`[${conversationId}] Session reset: ${sessionKey}`);
     await bot.postMessage(conversationId, "Conversation reset. Send a new message to start fresh.");
@@ -364,7 +371,9 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     context: ConversationContext,
   ): Promise<void> {
     const sessionKey = deriveSessionKey(event);
-    await this.sessions.enqueue(sessionKey, () => this.runSession({ event, bot, context }));
+    await this.sessions.enqueue(event.address, sessionKey, () =>
+      this.runSession({ event, bot, context }),
+    );
   }
 
   /**
@@ -374,18 +383,20 @@ class ConversationRuntimeImpl implements ConversationRuntime {
    * the session queue so rapid interactions (votes) never interleave.
    */
   async handleExtensionAction(params: {
-    conversationId: string;
+    address: OfficeAddress;
     sessionKey: string;
     conversationKind: ConversationKind;
     slug: string;
     action: ExtensionBlockAction;
   }): Promise<boolean> {
     if (this.isShuttingDown) return false;
-    const { conversationId, sessionKey, conversationKind, slug, action } = params;
+    const { address, sessionKey, conversationKind, slug, action } = params;
+    const conversationId = address.conversationId;
     let consumed = false;
-    await this.sessions.enqueue(sessionKey, async () => {
+    await this.sessions.enqueue(address, sessionKey, async () => {
       try {
         const state = await this.getOrCreateState({
+          address,
           conversationId,
           sessionKey,
           currentMessageId: action.messageTs ?? sessionKey,
@@ -418,6 +429,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       bot,
       responder: context.responder,
       platform: context.platform.name as PlatformName,
+      address: event.address,
       platformUserId: event.user,
       platformUserName: context.message.userName,
       conversationId,
@@ -429,26 +441,27 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     });
     if (handledCommand) return;
 
-    const activeSettlement = this.sessions.get(sessionKey)?.runSettlement;
+    const address = event.address;
+    const activeSettlement = this.sessions.get(address, sessionKey)?.runSettlement;
     if (activeSettlement) await activeSettlement;
 
     if (sessionKey === conversationId) {
       await this.rotateSharedSessionAfterDream(
-        conversationId,
+        address,
         sessionKey,
         context.message,
         context.platform,
       );
     }
 
-    const releaseConversationWork = await this.sessions.acquireConversationWork(conversationId);
+    const releaseConversationWork = await this.sessions.acquireConversationWork(address);
     try {
       const conversationDir = join(this.options.workingDir, conversationId);
       const waitedForParent = await waitForThreadSessionBootstrap({
         parentSessionKey: conversationId,
         sessionKey,
         hasThreadSession: () => hasMaterializedChatSession({ conversationDir, sessionKey }),
-        isParentRunning: () => this.sessions.get(conversationId)?.running === true,
+        isParentRunning: () => this.sessions.get(address, conversationId)?.running === true,
       });
       if (waitedForParent) {
         log.logInfo(
@@ -459,6 +472,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       let state: ConversationState;
       try {
         state = await this.getOrCreateState({
+          address,
           conversationId,
           sessionKey,
           currentMessageId: event.ts,
@@ -543,7 +557,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       } finally {
         this.inFlightRuns.delete(runPromise);
         if (state.runSettlement === runPromise) state.runSettlement = undefined;
-        this.sessions.onSettlement(sessionKey);
+        this.sessions.onSettlement(address);
         this.sessions.evictIdle();
       }
     } finally {
@@ -653,42 +667,56 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
   switchConversationModel(conversationId: string, _provider: string, _model: string): boolean {
     this.bumpConversationRunnerGeneration(conversationId);
-    return this.clearConversationStates(
-      conversationId,
-      `[${conversationId}] Model switched; cleared cached session runners`,
-    );
+    return this.clearConversationsById(conversationId, "Model switched");
   }
 
   refreshConversationEnvironment(conversationId: string): boolean {
     this.bumpConversationRunnerGeneration(conversationId);
-    return this.clearConversationStates(
-      conversationId,
-      `[${conversationId}] Environment refreshed; cleared cached session runners`,
-    );
+    return this.clearConversationsById(conversationId, "Environment refreshed");
   }
 
   refreshAllConversations(): { busy: string[] } {
     this.globalRunnerGeneration++;
-    const busy: string[] = [];
-    for (const conversationId of this.sessions.conversationIds()) {
-      const cleared = this.clearConversationStates(
-        conversationId,
-        `[${conversationId}] Global settings changed; cleared cached session runners`,
-      );
-      if (!cleared) {
-        this.sessions.deferConversationClear(conversationId);
-        busy.push(conversationId);
+    // Deduplicated raw ids: offices on different platforms may share one, and
+    // callers report the busy list in raw-id terms (ADR 0005).
+    const busy = new Set<string>();
+    for (const address of this.sessions.offices()) {
+      if (!this.clearOffice(address, "Global settings changed")) {
+        this.sessions.deferConversationClear(address);
+        busy.add(address.conversationId);
       }
     }
-    return { busy };
+    return { busy: Array.from(busy) };
   }
 
-  private clearConversationStates(conversationId: string, message: string): boolean {
-    const cleared = this.sessions.clearConversation(conversationId);
-    if (cleared) log.logInfo(message);
+  /**
+   * Settings and Admin scope still name an office by its raw id (ADR 0005), so
+   * every office behind that id is cleared. Returns false when any of them is
+   * busy, matching the clear-or-refuse contract these callers rely on.
+   */
+  private clearConversationsById(conversationId: string, reason: string): boolean {
+    const offices = this.sessions.officesForConversationId(conversationId);
+    let cleared = true;
+    for (const address of offices) {
+      if (!this.clearOffice(address, reason)) cleared = false;
+    }
     return cleared;
   }
 
+  private clearOffice(address: OfficeAddress, reason: string): boolean {
+    const cleared = this.sessions.clearConversation(address);
+    if (cleared) {
+      log.logInfo(`[${address.conversationId}] ${reason}; cleared cached session runners`);
+    }
+    return cleared;
+  }
+
+  /**
+   * Runner generations stay keyed by raw conversation id: they are bumped from
+   * the same raw-id settings/Admin surfaces that read them, and two platforms
+   * sharing a raw id only cost each other a redundant runner rebuild, never a
+   * wrong one. They migrate with Admin scope (ADR 0005).
+   */
   private bumpConversationRunnerGeneration(conversationId: string): void {
     this.conversationRunnerGenerations.set(
       conversationId,
@@ -738,8 +766,8 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private async getOrCreateState(
     options: SessionStateOptions & { currentMessageId?: string },
   ): Promise<ConversationState> {
-    const { conversationId, sessionKey, currentMessageId } = options;
-    const existing = this.sessions.get(sessionKey);
+    const { address, conversationId, sessionKey, currentMessageId } = options;
+    const existing = this.sessions.get(address, sessionKey);
     if (existing?.running) return existing;
 
     const conversationDir = join(this.options.workingDir, conversationId);
@@ -763,9 +791,11 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
     // A stale state (rotated session file) is being replaced: release the old
     // runner's extension resources before the new one takes the slot.
-    if (existing) this.sessions.discard(sessionKey);
+    if (existing) this.sessions.discard(address, sessionKey);
 
     const state: ConversationState = {
+      address,
+      sessionKey,
       running: false,
       runner: await this.createCurrentRunner(options, conversationDir, sessionScope),
       stopRequested: false,
@@ -773,7 +803,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       sessionFile: sessionScope.contextFile,
       startedAt: 0,
     };
-    this.sessions.set(sessionKey, state);
+    this.sessions.set(state);
     return state;
   }
 

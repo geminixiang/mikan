@@ -4,13 +4,18 @@ import type {
   ConversationContext,
   ConversationEvent,
   MessagingEventHandler,
+  OfficeAddress,
 } from "../src/adapter.js";
 import { matchMagicWord, processMessageIntake } from "../src/adapters/intake.js";
 import type { MagicWordIntakeOptions, MessageIntakeOptions } from "../src/adapters/types.js";
+import { createOfficeAddress } from "../src/office-address.js";
+
+const address = createOfficeAddress("slack", "C1");
 
 function makeEvent(overrides: Partial<ConversationEvent> = {}): ConversationEvent {
   return {
     type: "message",
+    address,
     conversationId: "C1",
     conversationKind: "shared",
     ts: "M1",
@@ -23,14 +28,15 @@ function makeEvent(overrides: Partial<ConversationEvent> = {}): ConversationEven
 function makeHandler(runningKeys: string[] = []): MessagingEventHandler {
   const running = new Set(runningKeys);
   return {
-    isRunning: vi.fn((key: string) => running.has(key)),
+    isRunning: vi.fn((_address: OfficeAddress, key: string) => running.has(key)),
     getRunningSessions: vi
       .fn()
-      .mockReturnValue([...running].map((sessionKey) => ({ sessionKey, startedAt: 1 }))),
+      .mockReturnValue([...running].map((sessionKey) => ({ address, sessionKey, startedAt: 1 }))),
     handleEvent: vi.fn().mockResolvedValue(undefined),
     handleStop: vi.fn().mockResolvedValue(undefined),
     forceStop: vi.fn(),
     handleNewCommand: vi.fn().mockResolvedValue(undefined),
+    handleExtensionAction: vi.fn().mockResolvedValue(false),
   };
 }
 
@@ -123,7 +129,7 @@ describe("processMessageIntake magic word", () => {
     const outcome = await processMessageIntake(options);
 
     expect(outcome).toBe("magic-word");
-    expect(handler.handleStop).toHaveBeenCalledWith("C1:T1", "C1", options.bot);
+    expect(handler.handleStop).toHaveBeenCalledWith(address, "C1:T1", options.bot);
     expect(log).toHaveBeenCalledWith({ text: "stop", attachments: [] });
     expect(enqueue).not.toHaveBeenCalled();
     expect(handler.handleEvent).not.toHaveBeenCalled();
@@ -140,7 +146,7 @@ describe("processMessageIntake magic word", () => {
     });
 
     expect(await processMessageIntake(options)).toBe("magic-word");
-    expect(handler.handleStop).toHaveBeenCalledWith("C1", "C1", options.bot);
+    expect(handler.handleStop).toHaveBeenCalledWith(address, "C1", options.bot);
   });
 
   test("matches the dedicated magicWord.text when the event text is decorated", async () => {
@@ -164,7 +170,7 @@ describe("processMessageIntake magic word", () => {
 
     await processMessageIntake(options);
 
-    expect(handler.handleStop).toHaveBeenCalledWith("C1", "C1", options.bot);
+    expect(handler.handleStop).toHaveBeenCalledWith(address, "C1", options.bot);
   });
 
   test("replies 'Nothing running' only when the message addressed the bot", async () => {
@@ -205,13 +211,13 @@ describe("processMessageIntake magic word", () => {
     test("top-level: a conversation-session stop widens to the only running scoped session", async () => {
       const { handler, run } = scoped("top-level", "C1", ["C1:T1"]);
       await run();
-      expect(handler.handleStop).toHaveBeenCalledWith("C1:T1", "C1", expect.anything());
+      expect(handler.handleStop).toHaveBeenCalledWith(address, "C1:T1", expect.anything());
     });
 
     test("top-level: an undefined session key also widens", async () => {
       const { handler, run } = scoped("top-level", undefined, ["C1:T1"]);
       await run();
-      expect(handler.handleStop).toHaveBeenCalledWith("C1:T1", "C1", expect.anything());
+      expect(handler.handleStop).toHaveBeenCalledWith(address, "C1:T1", expect.anything());
     });
 
     test("top-level: a thread-session stop does not widen", async () => {
@@ -229,7 +235,7 @@ describe("processMessageIntake magic word", () => {
     test("always: a thread-session stop widens to the only running scoped session", async () => {
       const { handler, run } = scoped("always", "C1:T2", ["C1:T1"]);
       await run();
-      expect(handler.handleStop).toHaveBeenCalledWith("C1:T1", "C1", expect.anything());
+      expect(handler.handleStop).toHaveBeenCalledWith(address, "C1:T1", expect.anything());
     });
 
     test("never: only exact session or conversation matches stop", async () => {
@@ -241,7 +247,7 @@ describe("processMessageIntake magic word", () => {
     test("a running direct target always wins over widening", async () => {
       const { handler, run } = scoped("always", "C1:T1", ["C1", "C1:T1"]);
       await run();
-      expect(handler.handleStop).toHaveBeenCalledWith("C1:T1", "C1", expect.anything());
+      expect(handler.handleStop).toHaveBeenCalledWith(address, "C1:T1", expect.anything());
     });
   });
 });

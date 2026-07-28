@@ -1,5 +1,4 @@
-import { readConversationWorkspaceMountMode } from "../execution-resolver.js";
-import { applyConversationSettings } from "../settings-mutation.js";
+import { resolveWorkspaceProjection } from "../workspace-projection/index.js";
 import { runtimeResourceKey } from "../sandbox/identity.js";
 import { slashForms } from "./manifest.js";
 import { matchCommand } from "./parse.js";
@@ -15,7 +14,7 @@ export function parseSandboxCommand(text: string): ParsedSandboxCommand | null {
   if (!matched) return null;
 
   const action = matched.args.length === 1 ? matched.args[0].toLowerCase() : undefined;
-  if (action === "boost" || action === "private" || action === "full") {
+  if (action === "boost") {
     return { action };
   }
   return {};
@@ -44,31 +43,6 @@ export class SandboxCommandHandler implements CommandHandler {
       userId: context.platformUserId,
       conversationId: context.conversationId,
     });
-
-    if (parsed.action === "private" || parsed.action === "full") {
-      applyConversationSettings(
-        context.services.runtime,
-        context.services.workingDir,
-        context.conversationId,
-        {
-          sandbox: { image: { workspaceMount: parsed.action } },
-        },
-      );
-      await replyDiagnosticWithContext(
-        context.responder,
-        formatCommandSummary("Sandbox Workspace", [
-          parsed.action === "full"
-            ? "已將此 conversation 的 sandbox 設為 full workspace mode。"
-            : "已將此 conversation 的 sandbox 設為 private workspace mode。",
-          `Workspace mount: ${parsed.action}`,
-          parsed.action === "full"
-            ? "之後這個 runtime 會把整個 host workspace 掛到 /workspace。"
-            : "之後這個 runtime 只會掛載 private workspace 檔案與當前 conversation 目錄。",
-        ]),
-        { style: "muted" },
-      );
-      return true;
-    }
 
     if (parsed.action === "boost") {
       const boostLimits = context.services.resourceController.getBoostLimits();
@@ -100,7 +74,7 @@ export class SandboxCommandHandler implements CommandHandler {
     const status = context.services.resourceController.getLimitStatus(containerKey);
     const defaultLimits = context.services.resourceController.getDefaultLimits();
     const boostLimits = context.services.resourceController.getBoostLimits();
-    const workspaceMount = readConversationWorkspaceMountMode(
+    const workspace = resolveWorkspaceProjection(
       context.services.workingDir,
       context.conversationId,
     );
@@ -111,7 +85,8 @@ export class SandboxCommandHandler implements CommandHandler {
         [
           `Current: ${formatLimits(status.limits)}`,
           `Status: ${status.boosted ? "boosted" : "default"}`,
-          `Workspace mount: ${workspaceMount}`,
+          `Workspace policy: ${workspace.doorPolicy}`,
+          `Workspace layout: ${workspace.layout}`,
           "",
           `Default: ${formatLimits(defaultLimits)}`,
           boostLimits ? `Boost: ${formatLimits({ ...defaultLimits, ...boostLimits })}` : undefined,

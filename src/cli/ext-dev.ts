@@ -25,9 +25,10 @@ import { existsSync, mkdirSync, statSync } from "node:fs";
 import { basename, resolve as resolvePath } from "node:path";
 import { join } from "node:path";
 import {
+  createConversationEvent,
+  createConversationMessage,
   createConversationRuntime,
   type ConversationContext,
-  type ConversationEvent,
   type ConversationResponder,
   type MessagingBot,
   type MessagingInfo,
@@ -157,7 +158,8 @@ function runDevLoop(options: { conversationId: string; workingDir: string }): Pr
   let counter = 0;
   const handleLine = async (line: string): Promise<void> => {
     const ts = `${++counter}`;
-    const event: ConversationEvent = {
+    const event = createConversationEvent({
+      platform: "slack",
       type: "message",
       conversationId,
       conversationKind: "direct",
@@ -165,16 +167,20 @@ function runDevLoop(options: { conversationId: string; workingDir: string }): Pr
       user: "dev",
       text: line,
       sessionKey: conversationId,
-    };
+    });
+    const message = createConversationMessage({
+      platform: "slack",
+      conversationId,
+      id: ts,
+      sessionKey: conversationId,
+      conversationKind: "direct",
+      userId: "dev",
+      userName: "Developer",
+      text: line,
+    });
     const context: ConversationContext = {
-      message: {
-        id: ts,
-        sessionKey: conversationId,
-        conversationKind: "direct",
-        userId: "dev",
-        userName: "Developer",
-        text: line,
-      },
+      address: event.address,
+      message,
       responder,
       platform,
     };

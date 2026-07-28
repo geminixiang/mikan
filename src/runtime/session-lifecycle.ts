@@ -1,5 +1,6 @@
+import type { OfficeAddress } from "../adapter.js";
 import * as log from "../log.js";
-import { conversationIdOf } from "../sessions/session-key.js";
+import { officeKey } from "../office-address.js";
 import type { ConversationRuntimeState, SessionLifecycleOptions } from "./types.js";
 
 const DEFAULT_MAX_SESSIONS = 500;
@@ -11,6 +12,20 @@ interface ConversationBarrier {
   maintenanceTail: Promise<void>;
   activeWaiters: Array<() => void>;
   workWaiters: Array<() => void>;
+}
+
+/**
+ * Runtime state is addressed by office, not by session key alone.
+ *
+ * A session key is a platform value: a Discord channel and a Telegram chat can
+ * legitimately produce the same string, and every platform shares this one
+ * lifecycle. The internal map key therefore prefixes the office key, which
+ * carries the platform plus a digest of the raw conversation id. Callers only
+ * ever pass `(address, sessionKey)`; the composite never leaves this module,
+ * so nothing downstream can parse it or invent one.
+ */
+function runtimeSessionId(address: OfficeAddress, sessionKey: string): string {
+  return `${officeKey(address)}|${sessionKey}`;
 }
 
 export class SessionLifecycle {
@@ -28,27 +43,33 @@ export class SessionLifecycle {
     this.now = options.now ?? Date.now;
   }
 
-  get(sessionKey: string): ConversationRuntimeState | undefined {
-    return this.states.get(sessionKey);
+  get(address: OfficeAddress, sessionKey: string): ConversationRuntimeState | undefined {
+    return this.states.get(runtimeSessionId(address, sessionKey));
   }
 
-  set(sessionKey: string, state: ConversationRuntimeState): void {
-    this.states.set(sessionKey, state);
+  /** The state carries its own identity, so it cannot be filed under another. */
+  set(state: ConversationRuntimeState): void {
+    this.states.set(runtimeSessionId(state.address, state.sessionKey), state);
   }
 
-  async enqueue(sessionKey: string, run: () => Promise<void>): Promise<void> {
-    const previous = this.queues.get(sessionKey) ?? Promise.resolve();
+  async enqueue(
+    address: OfficeAddress,
+    sessionKey: string,
+    run: () => Promise<void>,
+  ): Promise<void> {
+    const id = runtimeSessionId(address, sessionKey);
+    const previous = this.queues.get(id) ?? Promise.resolve();
     const next = previous.catch(() => {}).then(run);
-    this.queues.set(sessionKey, next);
+    this.queues.set(id, next);
     try {
       await next;
     } finally {
-      if (this.queues.get(sessionKey) === next) this.queues.delete(sessionKey);
+      if (this.queues.get(id) === next) this.queues.delete(id);
     }
   }
 
-  async acquireConversationWork(conversationId: string): Promise<() => void> {
-    const barrier = this.getConversationBarrier(conversationId);
+  async acquireConversationWork(address: OfficeAddress): Promise<() => void> {
+    const barrier = this.getConversationBarrier(address);
     while (barrier.pendingMaintenance > 0) {
       await new Promise<void>((resolve) => barrier.workWaiters.push(resolve));
     }
@@ -67,10 +88,10 @@ export class SessionLifecycle {
   }
 
   async runConversationMaintenance<T>(
-    conversationId: string,
+    address: OfficeAddress,
     maintenance: () => Promise<T>,
   ): Promise<T> {
-    const barrier = this.getConversationBarrier(conversationId);
+    const barrier = this.getConversationBarrier(address);
     barrier.pendingMaintenance++;
 
     const previousMaintenance = barrier.maintenanceTail;
@@ -95,8 +116,9 @@ export class SessionLifecycle {
     }
   }
 
-  private getConversationBarrier(conversationId: string): ConversationBarrier {
-    const existing = this.conversationBarriers.get(conversationId);
+  private getConversationBarrier(address: OfficeAddress): ConversationBarrier {
+    const key = officeKey(address);
+    const existing = this.conversationBarriers.get(key);
     if (existing) return existing;
 
     const barrier: ConversationBarrier = {
@@ -106,48 +128,60 @@ export class SessionLifecycle {
       activeWaiters: [],
       workWaiters: [],
     };
-    this.conversationBarriers.set(conversationId, barrier);
+    this.conversationBarriers.set(key, barrier);
     return barrier;
   }
 
-  isRunning(sessionKey: string): boolean {
-    return this.states.get(sessionKey)?.running === true;
+  isRunning(address: OfficeAddress, sessionKey: string): boolean {
+    return this.get(address, sessionKey)?.running === true;
   }
 
-  runningStates(): Array<[string, ConversationRuntimeState]> {
-    return Array.from(this.states.entries()).filter(([, state]) => state.running);
+  runningStates(): ConversationRuntimeState[] {
+    return Array.from(this.states.values()).filter((state) => state.running);
   }
 
-  conversationIds(): string[] {
-    return Array.from(
-      new Set(Array.from(this.states.keys(), (sessionKey) => conversationIdOf(sessionKey))),
-    );
+  /** Every office holding runtime state, deduplicated by office key. */
+  offices(): OfficeAddress[] {
+    const offices = new Map<string, OfficeAddress>();
+    for (const state of this.states.values()) offices.set(officeKey(state.address), state.address);
+    return Array.from(offices.values());
   }
 
-  clearConversation(conversationId: string): boolean {
-    if (this.hasActiveRun(conversationId)) return false;
-    this.pendingConversationClears.delete(conversationId);
-    this.discardConversation(conversationId);
+  /**
+   * Resolve the offices behind a raw conversation id. Settings, the filesystem,
+   * and Admin scope still address offices by raw id (ADR 0005), so this is the
+   * bridge until they carry an `OfficeAddress`. Two platforms sharing a raw id
+   * yield both offices, matching the raw-id scope those callers expect today.
+   */
+  officesForConversationId(conversationId: string): OfficeAddress[] {
+    return this.offices().filter((address) => address.conversationId === conversationId);
+  }
+
+  clearConversation(address: OfficeAddress): boolean {
+    if (this.hasActiveRun(address)) return false;
+    this.pendingConversationClears.delete(officeKey(address));
+    this.discardConversation(address);
     return true;
   }
 
-  deferConversationClear(conversationId: string): void {
-    this.pendingConversationClears.add(conversationId);
+  deferConversationClear(address: OfficeAddress): void {
+    this.pendingConversationClears.add(officeKey(address));
   }
 
-  onSettlement(sessionKey: string): void {
-    const conversationId = conversationIdOf(sessionKey);
-    if (!this.pendingConversationClears.has(conversationId)) return;
-    if (this.hasActiveRun(conversationId)) return;
+  onSettlement(address: OfficeAddress): void {
+    const key = officeKey(address);
+    if (!this.pendingConversationClears.has(key)) return;
+    if (this.hasActiveRun(address)) return;
 
-    this.pendingConversationClears.delete(conversationId);
-    this.discardConversation(conversationId);
+    this.pendingConversationClears.delete(key);
+    this.discardConversation(address);
   }
 
-  private hasActiveRun(conversationId: string): boolean {
-    for (const [sessionKey, state] of this.states) {
+  private hasActiveRun(address: OfficeAddress): boolean {
+    const key = officeKey(address);
+    for (const state of this.states.values()) {
       if (
-        conversationIdOf(sessionKey) === conversationId &&
+        officeKey(state.address) === key &&
         (state.running || state.runSettlement !== undefined)
       ) {
         return true;
@@ -156,16 +190,18 @@ export class SessionLifecycle {
     return false;
   }
 
-  private discardConversation(conversationId: string): void {
-    for (const sessionKey of Array.from(this.states.keys())) {
-      if (conversationIdOf(sessionKey) === conversationId) this.discard(sessionKey);
+  private discardConversation(address: OfficeAddress): void {
+    const key = officeKey(address);
+    for (const state of Array.from(this.states.values())) {
+      if (officeKey(state.address) === key) this.discard(state.address, state.sessionKey);
     }
   }
 
-  discard(sessionKey: string): void {
-    const state = this.states.get(sessionKey);
+  discard(address: OfficeAddress, sessionKey: string): void {
+    const id = runtimeSessionId(address, sessionKey);
+    const state = this.states.get(id);
     if (!state) return;
-    this.states.delete(sessionKey);
+    this.states.delete(id);
     state.runner.dispose().catch((err: unknown) => {
       log.logWarning(
         `Runner dispose failed: ${sessionKey}`,
@@ -176,21 +212,21 @@ export class SessionLifecycle {
 
   evictIdle(): void {
     const now = this.now();
-    for (const [key, state] of this.states) {
+    for (const state of Array.from(this.states.values())) {
       if (
         !state.running &&
         state.runSettlement === undefined &&
         now - state.lastAccessedAt > this.idleTimeoutMs
       ) {
-        this.discard(key);
+        this.discard(state.address, state.sessionKey);
       }
     }
     if (this.states.size <= this.maxSessions) return;
 
-    const idle = Array.from(this.states.entries())
-      .filter(([, state]) => !state.running && state.runSettlement === undefined)
-      .toSorted(([, left], [, right]) => left.lastAccessedAt - right.lastAccessedAt);
+    const idle = Array.from(this.states.values())
+      .filter((state) => !state.running && state.runSettlement === undefined)
+      .toSorted((left, right) => left.lastAccessedAt - right.lastAccessedAt);
     const toEvict = this.states.size - this.maxSessions;
-    for (const [key] of idle.slice(0, toEvict)) this.discard(key);
+    for (const state of idle.slice(0, toEvict)) this.discard(state.address, state.sessionKey);
   }
 }

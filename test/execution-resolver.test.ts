@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -41,7 +41,7 @@ describe("readConversationWorkspaceMountMode", () => {
     expect(readConversationWorkspaceMountMode(workspaceDir, "C123")).toBe("private");
   });
 
-  test("falls back to raw conversation settings when merged config cannot load", () => {
+  test("fails closed instead of escalating from raw fallback settings", () => {
     writeFileSync(join(stateDir, "settings.json"), "{ invalid json }", "utf-8");
     const conversationDir = join(workspaceDir, "C123");
     mkdirSync(conversationDir, { recursive: true });
@@ -51,16 +51,20 @@ describe("readConversationWorkspaceMountMode", () => {
       "utf-8",
     );
 
-    expect(readConversationWorkspaceMountMode(workspaceDir, "C123")).toBe("full");
+    expect(() => readConversationWorkspaceMountMode(workspaceDir, "C123")).toThrow(
+      /settings are malformed/,
+    );
   });
 
-  test("returns the global default when conversation fallback settings are malformed", () => {
+  test("fails closed when legacy conversation settings are malformed", () => {
     createGlobalSettingsFile(stateDir);
     const conversationDir = join(workspaceDir, "C123");
     mkdirSync(conversationDir, { recursive: true });
     writeFileSync(join(conversationDir, "settings.json"), "{ invalid json }", "utf-8");
 
-    expect(readConversationWorkspaceMountMode(workspaceDir, "C123")).toBe("private");
+    expect(() => readConversationWorkspaceMountMode(workspaceDir, "C123")).toThrow(
+      /settings are malformed/,
+    );
   });
 
   test("rejects path-bearing conversation ids before reading or creating directories", () => {
@@ -81,7 +85,7 @@ describe("readConversationWorkspaceMountMode", () => {
     }
   });
 
-  test("resolves private Gondolin workspace mounts", async () => {
+  test("resolves isolated Gondolin workspace mounts", async () => {
     createGlobalSettingsFile(stateDir);
     const resolver = new ActorExecutionResolver(
       { type: "gondolin", profile: "default" },
@@ -99,12 +103,7 @@ describe("readConversationWorkspaceMountMode", () => {
 
     expect(executor.getSandboxConfig()).toMatchObject({
       type: "gondolin",
-      mounts: [
-        { source: join(workspaceDir, "MEMORY.md"), target: "/workspace/MEMORY.md" },
-        { source: join(workspaceDir, "skills"), target: "/workspace/skills" },
-        { source: join(workspaceDir, "events"), target: "/workspace/events" },
-        { source: join(workspaceDir, "C123"), target: "/workspace/C123" },
-      ],
+      mounts: [{ source: join(workspaceDir, "C123"), target: "/workspace/C123" }],
     });
     expect(existsSync(join(workspaceDir, "C123"))).toBe(true);
   });
@@ -184,6 +183,20 @@ describe("readConversationWorkspaceMountMode", () => {
 
   test("fails closed when a vault file mount overlaps the Workspace projection", async () => {
     createGlobalSettingsFile(stateDir);
+    const settingsPath = join(stateDir, "settings.json");
+    const settings = JSON.parse(readFileSync(settingsPath, "utf-8")) as {
+      sandbox: Record<string, unknown>;
+    };
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        ...settings,
+        sandbox: {
+          ...settings.sandbox,
+          workspace: { doorPolicy: "trusted", layout: "shared-support" },
+        },
+      }),
+    );
     const source = join(stateDir, "secret");
     writeFileSync(source, "value");
     const vault = {
@@ -235,7 +248,7 @@ describe("readConversationWorkspaceMountMode", () => {
     expect(resolvedKeys).not.toContain("a-b");
   });
 
-  test("resolves exact legacy host credentials without enabling lossy managed fallback", async () => {
+  test("rejects host as an isolated office after preserving legacy credential lookup", async () => {
     createGlobalSettingsFile(stateDir);
     const resolvedKeys: string[] = [];
     const vault = {
@@ -247,7 +260,9 @@ describe("readConversationWorkspaceMountMode", () => {
     } as unknown as FileVaultManager;
     const resolver = new ActorExecutionResolver({ type: "host" }, vault, undefined, workspaceDir);
 
-    await resolver.resolve({ platform: "slack", userId: "U123", conversationId: "C123" });
+    await expect(
+      resolver.resolve({ platform: "slack", userId: "U123", conversationId: "C123" }),
+    ).rejects.toThrow(/cannot provide an isolated conversation office/);
 
     expect(resolvedKeys).toEqual([expect.stringMatching(/^u123-[a-f0-9]{12}$/), "U123"]);
   });
@@ -305,7 +320,7 @@ describe("readConversationWorkspaceMountMode", () => {
     ).rejects.toThrow(/does not support vault file mounts/);
   });
 
-  test("derives per-actor cloudflare sandbox ids", async () => {
+  test("derives cloudflare actor identity before rejecting it as an office", async () => {
     createGlobalSettingsFile(stateDir);
     const resolver = new ActorExecutionResolver(
       { type: "cloudflare", sandboxId: "mikan-remote" },
@@ -315,15 +330,12 @@ describe("readConversationWorkspaceMountMode", () => {
       workspaceDir,
     );
 
-    const executor = await resolver.resolve({
-      platform: "slack",
-      userId: "alice",
-      conversationId: "C123",
-    });
-
-    expect(executor.getSandboxConfig()).toEqual({
-      type: "cloudflare",
-      sandboxId: expect.stringMatching(/^mikan-remote-c123-[a-f0-9]{12}$/),
-    });
+    await expect(
+      resolver.resolve({
+        platform: "slack",
+        userId: "alice",
+        conversationId: "C123",
+      }),
+    ).rejects.toThrow(/cannot provide an isolated conversation office/);
   });
 });

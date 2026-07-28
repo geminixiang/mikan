@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { MutableModels } from "@earendil-works/pi-ai";
+import { createOfficeAddress } from "../src/office-address.js";
 import type {
   MessagingBot,
   ConversationContext,
@@ -21,6 +22,7 @@ import {
   resolveChannelSessionFile,
 } from "../src/sessions/store.js";
 import { createConversationRuntime } from "../src/runtime/conversation-runtime.js";
+import { SessionLifecycle } from "../src/runtime/session-lifecycle.js";
 import type { ConversationRuntimeState } from "../src/runtime/types.js";
 import type { PiAgentWrapper } from "../src/types.js";
 import type { SandboxConfig } from "../src/sandbox/index.js";
@@ -54,7 +56,10 @@ function createFauxModels(): { models: MikanModels; faux: ReturnType<typeof faux
   mkdirSync(stateDir, { recursive: true });
   writeFileSync(
     join(stateDir, "settings.json"),
-    JSON.stringify({ llm: { provider: "faux", model: "faux-1", thinkingLevel: "off" } }),
+    JSON.stringify({
+      llm: { provider: "faux", model: "faux-1", thinkingLevel: "off" },
+      sandbox: { workspace: { doorPolicy: "trusted", layout: "full" } },
+    }),
   );
   process.env.MIKAN_STATE_DIR = stateDir;
 
@@ -90,8 +95,10 @@ function makeResponder(): ConversationResponder {
   };
 }
 
+const testAddress = createOfficeAddress("slack", "C123");
+
 const testPlatform: MessagingInfo = {
-  name: "chat",
+  name: "slack",
   formattingGuide: "",
   channels: [],
   users: [],
@@ -103,6 +110,7 @@ function makeEventAndContext(ts: string): {
   context: ConversationContext;
 } {
   const event: ConversationEvent = {
+    address: testAddress,
     type: "message",
     conversationId: "C123",
     conversationKind: "shared",
@@ -114,7 +122,9 @@ function makeEventAndContext(ts: string): {
   return {
     event,
     context: {
+      address: testAddress,
       message: {
+        address: testAddress,
         id: ts,
         sessionKey: "C123",
         conversationKind: "shared",
@@ -156,6 +166,7 @@ function newCommandArgs(responder = makeResponder()) {
     "C123",
     bot,
     {
+      address: testAddress,
       id: "memory:C123",
       sessionKey: "C123",
       conversationKind: "direct" as const,
@@ -228,7 +239,7 @@ describe("ConversationRuntime handleEvent", () => {
 
     const firstDone = runtime.handleEvent(first.event, bot, first.context);
     await vi.waitFor(() => expect(order).toContain("run1:start"));
-    expect(runtime.isRunning("C123")).toBe(true);
+    expect(runtime.isRunning(testAddress, "C123")).toBe(true);
     expect(runtime.getRunningSessions().map((session) => session.sessionKey)).toEqual(["C123"]);
 
     const secondDone = runtime.handleEvent(second.event, bot, second.context);
@@ -239,7 +250,7 @@ describe("ConversationRuntime handleEvent", () => {
     await Promise.all([firstDone, secondDone]);
 
     expect(order).toEqual(["run1:start", "run1:end", "run2:start"]);
-    expect(runtime.isRunning("C123")).toBe(false);
+    expect(runtime.isRunning(testAddress, "C123")).toBe(false);
     expect(first.context.responder.replaceResponse).toHaveBeenCalledWith(
       expect.stringContaining("first"),
       expect.anything(),
@@ -271,14 +282,8 @@ describe("ConversationRuntime lifecycle", () => {
     const firstDone = runtime.handleEvent(first.event, bot, first.context);
     await vi.waitFor(() => expect(started).toBe(true));
 
-    const sessions = (
-      runtime as unknown as {
-        sessions: {
-          get(sessionKey: string): ConversationRuntimeState | undefined;
-        };
-      }
-    ).sessions;
-    const oldState = sessions.get("C123");
+    const sessions = (runtime as unknown as { sessions: SessionLifecycle }).sessions;
+    const oldState = sessions.get(testAddress, "C123");
     expect(oldState).toBeDefined();
     const oldRunner = oldState!.runner;
     const dispose = vi.spyOn(oldRunner, "dispose");
@@ -290,12 +295,12 @@ describe("ConversationRuntime lifecycle", () => {
     release();
     await firstDone;
     expect(dispose).toHaveBeenCalledOnce();
-    expect(sessions.get("C123")).toBeUndefined();
+    expect(sessions.get(testAddress, "C123")).toBeUndefined();
 
     const second = makeEventAndContext("1000.1");
     await runtime.handleEvent(second.event, bot, second.context);
 
-    const newState = sessions.get("C123");
+    const newState = sessions.get(testAddress, "C123");
     expect(newState).toBeDefined();
     expect(newState!.runner).not.toBe(oldRunner);
   });
@@ -335,6 +340,8 @@ describe("ConversationRuntime lifecycle", () => {
       dispose: vi.fn().mockResolvedValue(undefined),
     } as unknown as PiAgentWrapper;
     const state: ConversationRuntimeState = {
+      address: testAddress,
+      sessionKey: "C123",
       running: true,
       runSettlement,
       runner,
@@ -343,12 +350,8 @@ describe("ConversationRuntime lifecycle", () => {
       sessionFile: originalSession,
       startedAt: Date.now(),
     };
-    const sessions = (
-      runtime as unknown as {
-        sessions: { set(sessionKey: string, state: ConversationRuntimeState): void };
-      }
-    ).sessions;
-    sessions.set("C123", state);
+    const sessions = (runtime as unknown as { sessions: SessionLifecycle }).sessions;
+    sessions.set(state);
 
     const reset = runtime.handleNewCommand(...newCommandArgs());
     await vi.waitFor(() => expect(runner.abort).toHaveBeenCalledOnce());
@@ -389,12 +392,12 @@ describe("ConversationRuntime lifecycle", () => {
     const run = runtime.handleEvent(event, bot, context);
     await vi.waitFor(() => expect(started).toBe(true));
 
-    runtime.forceStop("C123");
-    expect(runtime.isRunning("C123")).toBe(true);
+    runtime.forceStop(testAddress, "C123");
+    expect(runtime.isRunning(testAddress, "C123")).toBe(true);
 
     release();
     await run;
-    expect(runtime.isRunning("C123")).toBe(false);
+    expect(runtime.isRunning(testAddress, "C123")).toBe(false);
   });
 
   test("normal work waits for direct session Dream and its reset boundary", async () => {
@@ -418,6 +421,8 @@ describe("ConversationRuntime lifecycle", () => {
       getCurrentStep: vi.fn(),
     } as unknown as PiAgentWrapper;
     const state: ConversationRuntimeState = {
+      address: testAddress,
+      sessionKey: "C123",
       running: false,
       runner,
       stopRequested: false,
@@ -425,16 +430,12 @@ describe("ConversationRuntime lifecycle", () => {
       sessionFile: originalSession,
       startedAt: 0,
     };
-    const sessions = (
-      runtime as unknown as {
-        sessions: { set(sessionKey: string, state: ConversationRuntimeState): void };
-      }
-    ).sessions;
-    sessions.set("C123", state);
+    const sessions = (runtime as unknown as { sessions: SessionLifecycle }).sessions;
+    sessions.set(state);
 
     const maintenance = runtime.handleNewCommand(...newCommandArgs());
     await vi.waitFor(() => expect(runner.dreamSessionMemory).toHaveBeenCalledOnce());
-    expect(runtime.isRunning("C123")).toBe(true);
+    expect(runtime.isRunning(testAddress, "C123")).toBe(true);
     expect(runtime.getRunningSessions()).toEqual([expect.objectContaining({ sessionKey: "C123" })]);
 
     const { event, context } = makeEventAndContext("2");
@@ -450,7 +451,7 @@ describe("ConversationRuntime lifecycle", () => {
     expect(runner.run).not.toHaveBeenCalled();
     expect(runner.dispose).toHaveBeenCalledOnce();
     expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
-    expect(runtime.isRunning("C123")).toBe(false);
+    expect(runtime.isRunning(testAddress, "C123")).toBe(false);
   });
 
   test("preserves memory before automatic biweekly rotation", async () => {
@@ -570,18 +571,12 @@ describe("ConversationRuntime lifecycle", () => {
       },
     ]);
 
-    const sessions = (
-      runtime as unknown as {
-        sessions: {
-          get(sessionKey: string): ConversationRuntimeState | undefined;
-        };
-      }
-    ).sessions;
+    const sessions = (runtime as unknown as { sessions: SessionLifecycle }).sessions;
     const { event, context } = makeEventAndContext("6");
     const done = runtime.handleEvent(event, bot, context);
     await vi.waitFor(() => expect(dreamStarted).toBe(true));
 
-    const oldState = sessions.get("C123");
+    const oldState = sessions.get(testAddress, "C123");
     expect(oldState).toBeDefined();
     const oldRunner = oldState!.runner;
     const oldDispose = vi.spyOn(oldRunner, "dispose");
@@ -592,7 +587,7 @@ describe("ConversationRuntime lifecycle", () => {
     releaseDream();
     await vi.waitFor(() => expect(oldDispose).toHaveBeenCalledOnce());
     await vi.waitFor(() => expect(runStarted).toBe(true));
-    const newState = sessions.get("C123");
+    const newState = sessions.get(testAddress, "C123");
     expect(newState).toBeDefined();
     expect(newState!.runner).not.toBe(oldRunner);
     const newDispose = vi.spyOn(newState!.runner, "dispose");
@@ -622,6 +617,8 @@ describe("ConversationRuntime lifecycle", () => {
       getCurrentStep: vi.fn(),
     } as unknown as PiAgentWrapper;
     const state: ConversationRuntimeState = {
+      address: testAddress,
+      sessionKey: "C123",
       running: false,
       runner,
       stopRequested: false,
@@ -629,12 +626,8 @@ describe("ConversationRuntime lifecycle", () => {
       sessionFile: originalSession,
       startedAt: 0,
     };
-    const sessions = (
-      runtime as unknown as {
-        sessions: { set(sessionKey: string, state: ConversationRuntimeState): void };
-      }
-    ).sessions;
-    sessions.set("C123", state);
+    const sessions = (runtime as unknown as { sessions: SessionLifecycle }).sessions;
+    sessions.set(state);
 
     const { event, context } = makeEventAndContext("3");
     await runtime.handleEvent(event, bot, context);
@@ -667,6 +660,8 @@ describe("ConversationRuntime lifecycle", () => {
       getCurrentStep: vi.fn(),
     } as unknown as PiAgentWrapper;
     const state: ConversationRuntimeState = {
+      address: testAddress,
+      sessionKey: "C123",
       running: false,
       runner,
       stopRequested: false,
@@ -674,12 +669,8 @@ describe("ConversationRuntime lifecycle", () => {
       sessionFile: originalSession,
       startedAt: 0,
     };
-    const sessions = (
-      runtime as unknown as {
-        sessions: { set(sessionKey: string, state: ConversationRuntimeState): void };
-      }
-    ).sessions;
-    sessions.set("C123", state);
+    const sessions = (runtime as unknown as { sessions: SessionLifecycle }).sessions;
+    sessions.set(state);
 
     const { event, context } = makeEventAndContext("4");
     await runtime.handleEvent(event, bot, context);
@@ -708,6 +699,8 @@ describe("ConversationRuntime lifecycle", () => {
       getCurrentStep: vi.fn(),
     } as unknown as PiAgentWrapper;
     const state: ConversationRuntimeState = {
+      address: testAddress,
+      sessionKey: "C123",
       running: false,
       runner,
       stopRequested: false,
@@ -715,19 +708,15 @@ describe("ConversationRuntime lifecycle", () => {
       sessionFile: originalSession,
       startedAt: 0,
     };
-    const sessions = (
-      runtime as unknown as {
-        sessions: { set(sessionKey: string, state: ConversationRuntimeState): void };
-      }
-    ).sessions;
-    sessions.set("C123", state);
+    const sessions = (runtime as unknown as { sessions: SessionLifecycle }).sessions;
+    sessions.set(state);
 
     const maintenance = runtime.handleNewCommand(...newCommandArgs());
-    await vi.waitFor(() => expect(runtime.isRunning("C123")).toBe(true));
+    await vi.waitFor(() => expect(runtime.isRunning(testAddress, "C123")).toBe(true));
     rejectMaintenance(new Error("maintenance failed"));
     await maintenance;
 
-    expect(runtime.isRunning("C123")).toBe(false);
+    expect(runtime.isRunning(testAddress, "C123")).toBe(false);
     expect(state.runSettlement).toBeUndefined();
     expect(state.startedAt).toBe(0);
     expect(resolveChannelSessionFile(conversationDir)).toBe(originalSession);
@@ -787,6 +776,8 @@ describe("ConversationRuntime lifecycle", () => {
       dispose: vi.fn().mockResolvedValue(undefined),
     } as unknown as PiAgentWrapper;
     const state: ConversationRuntimeState = {
+      address: testAddress,
+      sessionKey: "C123",
       running: false,
       runner,
       stopRequested: false,
@@ -794,12 +785,8 @@ describe("ConversationRuntime lifecycle", () => {
       sessionFile: originalSession,
       startedAt: 0,
     };
-    const sessions = (
-      runtime as unknown as {
-        sessions: { set(sessionKey: string, state: ConversationRuntimeState): void };
-      }
-    ).sessions;
-    sessions.set("C123", state);
+    const sessions = (runtime as unknown as { sessions: SessionLifecycle }).sessions;
+    sessions.set(state);
 
     await runtime.handleNewCommand(...newCommandArgs(responder));
 

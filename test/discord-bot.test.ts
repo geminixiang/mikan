@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { Collection } from "discord.js";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler } from "../src/adapter.js";
+import { createOfficeAddress } from "../src/office-address.js";
 import { DiscordMessagingBot } from "../src/adapters/discord/bot.js";
 
 function makeHandler(): MessagingEventHandler {
@@ -259,7 +260,7 @@ describe("DiscordMessagingBot message routing", () => {
 
   test("queues shared top-level follow-up messages instead of posting already-working", async () => {
     const handler = makeHandler();
-    vi.mocked(handler.isRunning).mockImplementation((sessionKey: string) => sessionKey === "C1");
+    vi.mocked(handler.isRunning).mockImplementation((_address, sessionKey) => sessionKey === "C1");
 
     const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workingDir });
     const messageHandler = installMessageHandler(bot);
@@ -293,7 +294,7 @@ describe("DiscordMessagingBot message routing", () => {
 
   test("stop from a shared-channel reply can stop the running top-level session", async () => {
     const handler = makeHandler();
-    vi.mocked(handler.isRunning).mockImplementation((sessionKey: string) => sessionKey === "C1");
+    vi.mocked(handler.isRunning).mockImplementation((_address, sessionKey) => sessionKey === "C1");
 
     const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workingDir });
     const messageHandler = installMessageHandler(bot);
@@ -307,7 +308,11 @@ describe("DiscordMessagingBot message routing", () => {
       }),
     );
 
-    expect(handler.handleStop).toHaveBeenCalledWith("C1", "C1", bot);
+    expect(handler.handleStop).toHaveBeenCalledWith(
+      createOfficeAddress("discord", "C1"),
+      "C1",
+      bot,
+    );
   });
 
   test("logs threadTs for shared channel replies", async () => {
@@ -474,7 +479,7 @@ describe("DiscordMessagingBot message routing", () => {
   test("/stop slash command targets the thread session and acknowledges", async () => {
     const handler = makeHandler();
     vi.mocked(handler.isRunning).mockImplementation(
-      (sessionKey: string) => sessionKey === "C1:THREAD1",
+      (_address, sessionKey) => sessionKey === "C1:THREAD1",
     );
     const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workingDir });
     const interactionHandler = installInteractionHandler(bot);
@@ -496,7 +501,11 @@ describe("DiscordMessagingBot message routing", () => {
       editReply: vi.fn(),
     });
 
-    expect(handler.handleStop).toHaveBeenCalledWith("C1:THREAD1", "C1", bot);
+    expect(handler.handleStop).toHaveBeenCalledWith(
+      createOfficeAddress("discord", "C1"),
+      "C1:THREAD1",
+      bot,
+    );
     expect(reply).toHaveBeenCalledWith({
       content: "Stopped the current conversation.",
       ephemeral: true,

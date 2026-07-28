@@ -2,7 +2,12 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { MessagingEventHandler } from "../src/adapter.js";
+import type { MessagingEventHandler, OfficeAddress } from "../src/adapter.js";
+import { createOfficeAddress } from "../src/office-address.js";
+import { conversationIdOf } from "../src/sessions/session-key.js";
+
+const officeOf = (sessionKey: string) =>
+  createOfficeAddress("telegram", conversationIdOf(sessionKey));
 import { TelegramMessagingBot } from "../src/adapters/telegram/bot.js";
 
 function makeHandler(): MessagingEventHandler {
@@ -19,10 +24,14 @@ function makeHandler(): MessagingEventHandler {
 function makeHandlerWithRunningKeys(runningKeys: string[]): MessagingEventHandler {
   const running = new Set(runningKeys);
   return {
-    isRunning: vi.fn((key: string) => running.has(key)),
-    getRunningSessions: vi
-      .fn()
-      .mockReturnValue(runningKeys.map((sessionKey) => ({ sessionKey, startedAt: Date.now() }))),
+    isRunning: vi.fn((_address: OfficeAddress, key: string) => running.has(key)),
+    getRunningSessions: vi.fn().mockReturnValue(
+      runningKeys.map((sessionKey) => ({
+        address: officeOf(sessionKey),
+        sessionKey,
+        startedAt: Date.now(),
+      })),
+    ),
     handleEvent: vi.fn(),
     handleStop: vi.fn(),
     forceStop: vi.fn(),
@@ -234,7 +243,7 @@ describe("TelegramMessagingBot stop handling", () => {
       }),
     });
 
-    expect(handler.handleStop).toHaveBeenCalledWith("999:50", "999", bot);
+    expect(handler.handleStop).toHaveBeenCalledWith(officeOf("999"), "999:50", bot);
     expect(processAttachments).not.toHaveBeenCalled();
   });
 });

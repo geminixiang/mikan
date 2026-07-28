@@ -1,4 +1,9 @@
-import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../../adapter.js";
+import {
+  createConversationMessage,
+  type ConversationMessage,
+  ConversationResponder,
+  MessagingInfo,
+} from "../../adapter.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
 import { createProgressiveRenderer, formatMarkdownToolResult } from "../progressive-renderer.js";
 import { formatGithubContinuation, type GithubMessagingBot } from "./bot.js";
@@ -10,6 +15,7 @@ export function createGithubAdapters(
   event: GithubEvent,
   bot: GithubMessagingBot,
 ): {
+  address: import("../../adapter.js").OfficeAddress;
   message: ConversationMessage;
   responder: ConversationResponder;
   platform: MessagingInfo;
@@ -17,7 +23,10 @@ export function createGithubAdapters(
   const conversationId = event.conversationId;
   const ref = parseGithubConversationId(conversationId);
 
-  const message: ConversationMessage = {
+  const message = createConversationMessage({
+    platform: "github",
+    conversationId,
+    address: event.address,
     id: event.ts,
     sessionKey:
       event.sessionKey ??
@@ -34,9 +43,7 @@ export function createGithubAdapters(
     text: event.text,
     attachments: event.attachments,
     threadTs: event.thread_ts,
-  };
-
-  // The bot's getMessagingInfo() is the single authority for platform info;
+  });
   // the conversation-scoped context below is an explicit append, not a fork.
   const baseInfo = bot.getMessagingInfo();
   const platform: MessagingInfo = {
@@ -110,5 +117,5 @@ export function createGithubAdapters(
     react: (emoji) => bot.addReaction(conversationId, event.ts, emoji),
   });
 
-  return { message, responder, platform };
+  return { address: message.address, message, responder, platform };
 }

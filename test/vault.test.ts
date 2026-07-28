@@ -413,23 +413,21 @@ describe("ActorExecutionResolver image mode", () => {
     });
   });
 
-  test("uses platform-namespaced vault ids for new users in cloudflare mode", async () => {
+  test("rejects cloudflare as a persistent conversation office", async () => {
     const mgr = new FileVaultManager(tmpDir);
     const resolver = new ActorExecutionResolver(
       { type: "cloudflare", sandboxId: "mikan-remote" },
       mgr,
     );
 
-    const executor = await resolver.resolve({
-      platform: "slack",
-      userId: "U123",
-      conversationId: "D123",
-    });
+    await expect(
+      resolver.resolve({
+        platform: "slack",
+        userId: "U123",
+        conversationId: "D123",
+      }),
+    ).rejects.toThrow(/cannot provide an isolated conversation office/);
 
-    expect(executor.getSandboxConfig()).toEqual({
-      type: "cloudflare",
-      sandboxId: "mikan-remote-d123-e8bafaeb6008",
-    });
     expect(mgr.resolve(DockerContainerManager.sanitizeSegment("D123"))).toBeUndefined();
   });
 
@@ -464,9 +462,6 @@ describe("ActorExecutionResolver image mode", () => {
       containerName: "mikan-sandbox-d123-e8bafaeb6008",
       conversationId: "D123",
       mounts: [
-        { source: join(tmpDir, "MEMORY.md"), target: "/workspace/MEMORY.md" },
-        { source: join(tmpDir, "skills"), target: "/workspace/skills" },
-        { source: join(tmpDir, "events"), target: "/workspace/events" },
         { source: join(tmpDir, "D123"), target: "/workspace/D123" },
         { source: join(vaultsDir, vaultKey, ".ssh"), target: "/root/.ssh" },
       ],

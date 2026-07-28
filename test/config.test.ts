@@ -59,7 +59,7 @@ describe("loadGlobalSettings", () => {
     expect(config.sandbox?.memory).toBe("1g");
     expect(config.sandbox?.boost?.cpus).toBe("2");
     expect(config.sandbox?.boost?.memory).toBe("4g");
-    expect(config.sandbox?.image?.workspaceMount).toBe("private");
+    expect(config.sandbox?.workspace).toEqual({ doorPolicy: "isolated" });
     expect(config.sandbox?.defaultSharedVault).toBeUndefined();
     expect(JSON.parse(readFileSync(settingsPath, "utf-8")).sandbox.defaultSharedVault).toBe("");
   });
@@ -271,10 +271,10 @@ describe("loadGlobalSettings", () => {
     mkdirSync(conversationDir, { recursive: true });
 
     // First access with no legacy file writes the migration marker.
-    // (Global onboard settings default the mount mode to "private".)
-    expect(resolveConversationSettings(conversationDir).sandbox?.image?.workspaceMount).toBe(
-      "private",
-    );
+    // Global onboarding now defaults to an isolated office.
+    expect(resolveConversationSettings(conversationDir).sandbox?.workspace).toEqual({
+      doorPolicy: "isolated",
+    });
 
     // An agent inside the sandbox plants a legacy settings.json afterwards,
     // trying to flip its own mount mode to full. It must stay ignored.
@@ -282,9 +282,9 @@ describe("loadGlobalSettings", () => {
       join(conversationDir, "settings.json"),
       JSON.stringify({ sandbox: { image: { workspaceMount: "full" } } }),
     );
-    expect(resolveConversationSettings(conversationDir).sandbox?.image?.workspaceMount).toBe(
-      "private",
-    );
+    expect(resolveConversationSettings(conversationDir).sandbox?.workspace).toEqual({
+      doorPolicy: "isolated",
+    });
     // And it is not deleted either: only pre-migration files are moved.
     expect(existsSync(join(conversationDir, "settings.json"))).toBe(true);
   });
@@ -368,7 +368,7 @@ describe("updateGlobalSettings", () => {
         cpus: "0.5",
         memory: "1g",
         boost: { cpus: "2", memory: "4g" },
-        image: { workspaceMount: "private" },
+        workspace: { doorPolicy: "isolated" },
         defaultSharedVault: "",
       },
       slack: { replyMode: "top-level" },
@@ -392,7 +392,7 @@ describe("updateGlobalSettings", () => {
         cpus: "0.5",
         memory: "1g",
         boost: { cpus: "2", memory: "4g" },
-        image: { workspaceMount: "private" },
+        workspace: { doorPolicy: "isolated" },
         defaultSharedVault: "",
       },
       slack: { replyMode: "top-level" },

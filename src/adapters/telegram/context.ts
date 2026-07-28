@@ -1,3 +1,4 @@
+import { createConversationMessage } from "../../adapter.js";
 import type {
   ChatToolResult,
   ConversationMessage,
@@ -41,6 +42,7 @@ export function createTelegramAdapters(
   event: TelegramEvent,
   bot: TelegramMessagingBot,
 ): {
+  address: import("../../adapter.js").OfficeAddress;
   message: ConversationMessage;
   responder: ConversationResponder;
   platform: MessagingInfo;
@@ -49,7 +51,10 @@ export function createTelegramAdapters(
   const chatId = parseInt(conversationId);
   const replyToId = event.thread_ts ? parseInt(event.thread_ts) : null;
 
-  const message: ConversationMessage = {
+  const message = createConversationMessage({
+    platform: "telegram",
+    conversationId,
+    address: event.address,
     id: event.ts,
     sessionKey: deriveSessionKey(event),
     conversationKind: event.conversationKind,
@@ -58,7 +63,7 @@ export function createTelegramAdapters(
     text: event.text,
     attachments: event.attachments,
     threadTs: event.thread_ts,
-  };
+  });
 
   // The bot's getMessagingInfo() is the single authority for platform info.
   const platform: MessagingInfo = bot.getMessagingInfo();
@@ -106,5 +111,5 @@ export function createTelegramAdapters(
     uploadFile: (filePath, title) => bot.uploadFile(conversationId, filePath, title),
   });
 
-  return { message, responder, platform };
+  return { address: message.address, message, responder, platform };
 }
