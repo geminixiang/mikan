@@ -16,7 +16,13 @@
  *   their old runner until it settles, are reported as stale, and are cleared
  *   automatically before their next turn.
  */
-import { updateConversationSettings, updateGlobalSettings } from "./config.js";
+import {
+  setConversationWorkspacePolicy,
+  setGlobalWorkspacePolicy,
+  updateConversationSettings,
+  updateGlobalSettings,
+  type WorkspacePolicyChoice,
+} from "./config.js";
 import { conversationOfficeDir } from "./office-address.js";
 import type {
   AgentConfig,
@@ -64,5 +70,37 @@ export function applyGlobalSettings(
   updateGlobalSettings(patch);
   const staleConversations =
     affectsCachedRunner(patch) && runtime ? runtime.refreshAllConversations().busy : [];
+  return { ok: true, staleConversations };
+}
+
+/**
+ * Door-policy changes follow the same clear-or-refuse contract as model
+ * changes: the system prompt bakes the workspace projection (layout line,
+ * memory and skill guidance), so the cached runner must clear before the
+ * write, and the container is re-provisioned on the next message when its
+ * mount signature no longer matches.
+ */
+export function applyConversationWorkspacePolicy(
+  runtime: RunnerCacheControl | undefined,
+  workingDir: string,
+  address: OfficeAddress,
+  choice: WorkspacePolicyChoice | null,
+): SettingsApplyResult {
+  if (runtime && !runtime.refreshConversationEnvironment(address)) {
+    return { ok: false, reason: "busy" };
+  }
+  setConversationWorkspacePolicy(
+    { address, conversationDir: conversationOfficeDir(workingDir, address) },
+    choice,
+  );
+  return { ok: true, runtimeSwitched: runtime ? true : null };
+}
+
+export function applyGlobalWorkspacePolicy(
+  runtime: GlobalRunnerCacheControl | undefined,
+  choice: WorkspacePolicyChoice | null,
+): { ok: true; staleConversations: OfficeAddress[] } {
+  setGlobalWorkspacePolicy(choice);
+  const staleConversations = runtime ? runtime.refreshAllConversations().busy : [];
   return { ok: true, staleConversations };
 }

@@ -2,8 +2,18 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { createOfficeAddress, officeStateDir } from "../src/office-address.js";
-import { applyConversationSettings, applyGlobalSettings } from "../src/settings-mutation.js";
+import { loadConversationWorkspaceOverride } from "../src/config.js";
+import {
+  createOfficeAddress,
+  conversationOfficeDir,
+  officeStateDir,
+} from "../src/office-address.js";
+import {
+  applyConversationSettings,
+  applyConversationWorkspacePolicy,
+  applyGlobalSettings,
+  applyGlobalWorkspacePolicy,
+} from "../src/settings-mutation.js";
 
 const C1 = createOfficeAddress("slack", "C1");
 
@@ -76,6 +86,75 @@ describe("applyConversationSettings", () => {
     });
     expect(result).toEqual({ ok: true, runtimeSwitched: null });
     expect(existsSync(conversationSettingsFile("C1"))).toBe(true);
+  });
+});
+
+describe("applyConversationWorkspacePolicy", () => {
+  const scope = () => ({ address: C1, conversationDir: conversationOfficeDir(workingDir, C1) });
+
+  test("writes the explicit choice, clears the legacy mount, keeps other leaves", () => {
+    applyConversationSettings(undefined, workingDir, C1, {
+      sandbox: { cpus: "2", image: { workspaceMount: "full" } },
+    });
+    const runtime = {
+      switchConversationModel: vi.fn(),
+      refreshConversationEnvironment: vi.fn().mockReturnValue(true),
+    };
+    const result = applyConversationWorkspacePolicy(runtime, workingDir, C1, {
+      doorPolicy: "trusted",
+      layout: "shared-support",
+    });
+    expect(result).toEqual({ ok: true, runtimeSwitched: true });
+    expect(runtime.refreshConversationEnvironment).toHaveBeenCalledWith(C1);
+    const written = JSON.parse(readFileSync(conversationSettingsFile("C1"), "utf-8"));
+    expect(written.sandbox.workspace).toEqual({ doorPolicy: "trusted", layout: "shared-support" });
+    expect(written.sandbox.image).toBeUndefined();
+    expect(written.sandbox.cpus).toBe("2");
+  });
+
+  test("null clears both the explicit override and the legacy mount", () => {
+    applyConversationSettings(undefined, workingDir, C1, {
+      sandbox: { image: { workspaceMount: "private" } },
+    });
+    const result = applyConversationWorkspacePolicy(undefined, workingDir, C1, null);
+    expect(result).toEqual({ ok: true, runtimeSwitched: null });
+    const written = JSON.parse(readFileSync(conversationSettingsFile("C1"), "utf-8"));
+    expect(written.sandbox).toBeUndefined();
+    expect(loadConversationWorkspaceOverride(scope())).toBeNull();
+  });
+
+  test("busy conversation refuses without writing", () => {
+    const runtime = {
+      switchConversationModel: vi.fn(),
+      refreshConversationEnvironment: vi.fn().mockReturnValue(false),
+    };
+    const result = applyConversationWorkspacePolicy(runtime, workingDir, C1, {
+      doorPolicy: "isolated",
+    });
+    expect(result).toEqual({ ok: false, reason: "busy" });
+    expect(existsSync(conversationSettingsFile("C1"))).toBe(false);
+  });
+
+  test("legacy workspaceMount reads back as a trusted override", () => {
+    applyConversationSettings(undefined, workingDir, C1, {
+      sandbox: { image: { workspaceMount: "full" } },
+    });
+    expect(loadConversationWorkspaceOverride(scope())).toEqual({
+      doorPolicy: "trusted",
+      layout: "full",
+    });
+  });
+});
+
+describe("applyGlobalWorkspacePolicy", () => {
+  test("writes the global default and reports busy conversations", () => {
+    const busyOffice = createOfficeAddress("slack", "C9");
+    const runtime = { refreshAllConversations: vi.fn().mockReturnValue({ busy: [busyOffice] }) };
+    const result = applyGlobalWorkspacePolicy(runtime, { doorPolicy: "trusted", layout: "full" });
+    expect(result).toEqual({ ok: true, staleConversations: [busyOffice] });
+    const written = JSON.parse(readFileSync(join(stateDir, "settings.json"), "utf-8"));
+    expect(written.sandbox.workspace).toEqual({ doorPolicy: "trusted", layout: "full" });
+    expect(written.sandbox.cpus).toBe("0.5");
   });
 });
 

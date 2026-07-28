@@ -563,24 +563,28 @@ function patchSettingsConfig(
   return compactSettingsConfig(patched);
 }
 
+function loadSettingsFileForUpdate(
+  settingsPath: string,
+  defaultSettings: SettingsFileConfig,
+): SettingsFileConfig {
+  if (!existsSync(settingsPath)) return defaultSettings;
+  try {
+    return loadSettingsFile(settingsPath) ?? {};
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    const message = detail.startsWith("Malformed settings file")
+      ? detail.replace("Malformed settings file", "Refusing to overwrite malformed settings file")
+      : detail;
+    throw new Error(message, { cause: err });
+  }
+}
+
 function updateSettingsFile(
   settingsPath: string,
   patch: Partial<AgentConfig>,
   defaultSettings: SettingsFileConfig,
 ): void {
-  let existing = defaultSettings;
-  if (existsSync(settingsPath)) {
-    try {
-      existing = loadSettingsFile(settingsPath) ?? {};
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
-      const message = detail.startsWith("Malformed settings file")
-        ? detail.replace("Malformed settings file", "Refusing to overwrite malformed settings file")
-        : detail;
-      throw new Error(message, { cause: err });
-    }
-  }
-
+  const existing = loadSettingsFileForUpdate(settingsPath, defaultSettings);
   ensureDirExists(dirname(settingsPath));
   atomicWritePrivateFile(
     settingsPath,
@@ -597,4 +601,69 @@ export function updateConversationSettings(
   patch: Partial<AgentConfig>,
 ): void {
   updateSettingsFile(conversationSettingsPath(scope), patch, {});
+}
+
+/** An explicit office door-policy selection; `layout` only exists behind a trusted door. */
+export type WorkspacePolicyChoice =
+  | { doorPolicy: "isolated" }
+  | { doorPolicy: "trusted"; layout: "shared-support" | "full" };
+
+/**
+ * The conversation's own door-policy override (legacy `image.workspaceMount`
+ * included), or null when the office follows the global default.
+ */
+export function loadConversationWorkspaceOverride(
+  scope: ConversationSettingsScope,
+): WorkspacePolicyChoice | null {
+  const file = loadSettingsFile(conversationSettingsPath(scope));
+  const sandbox = file?.sandbox;
+  if (sandbox?.workspace?.doorPolicy === "isolated") return { doorPolicy: "isolated" };
+  if (sandbox?.workspace?.doorPolicy === "trusted") {
+    return {
+      doorPolicy: "trusted",
+      layout: sandbox.workspace.layout === "full" ? "full" : "shared-support",
+    };
+  }
+  if (sandbox?.image?.workspaceMount === "full") return { doorPolicy: "trusted", layout: "full" };
+  if (sandbox?.image?.workspaceMount === "private") {
+    return { doorPolicy: "trusted", layout: "shared-support" };
+  }
+  return null;
+}
+
+export function setConversationWorkspacePolicy(
+  scope: ConversationSettingsScope,
+  choice: WorkspacePolicyChoice | null,
+): void {
+  writeWorkspacePolicy(conversationSettingsPath(scope), choice, {});
+}
+
+export function setGlobalWorkspacePolicy(choice: WorkspacePolicyChoice | null): void {
+  writeWorkspacePolicy(join(getStateDir(), "settings.json"), choice, ONBOARD_SETTINGS);
+}
+
+/**
+ * The generic settings patch merges leaves and cannot remove keys, so the
+ * door-policy writer edits the file shape directly: it always drops the
+ * legacy `image.workspaceMount` (the explicit choice replaces it) and either
+ * sets or removes the `workspace` group.
+ */
+function writeWorkspacePolicy(
+  settingsPath: string,
+  choice: WorkspacePolicyChoice | null,
+  defaultSettings: SettingsFileConfig,
+): void {
+  const existing = loadSettingsFileForUpdate(settingsPath, defaultSettings);
+  const { workspaceMount: _legacy, ...image } = existing.sandbox?.image ?? {};
+  const { workspace: _previous, image: _image, ...sandboxRest } = existing.sandbox ?? {};
+  const sandbox: SandboxSettings = {
+    ...sandboxRest,
+    ...(hasDefinedValue(image) ? { image } : {}),
+    ...(choice ? { workspace: choice } : {}),
+  };
+  ensureDirExists(dirname(settingsPath));
+  atomicWritePrivateFile(
+    settingsPath,
+    JSON.stringify(compactSettingsConfig({ ...existing, sandbox }), null, 2),
+  );
 }

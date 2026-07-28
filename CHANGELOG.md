@@ -9,6 +9,11 @@ any release.
 
 ## [Unreleased]
 
+### Added
+
+- Make the office door policy configurable: the Admin portal gains a per-office selector (global default / isolated / trusted shared-support / trusted full) plus a global-default selector, and the existing `/pi-sandbox` command gains `door <default|isolated|shared|full>` — both write the explicit `sandbox.workspace` settings and retire the legacy `image.workspaceMount` key on save.
+- Door-policy changes follow the same clear-or-refuse contract as model changes (the system prompt bakes the workspace projection), and the sandbox container is rebuilt with the new mounts on the office's next message.
+
 ## [1.0.0-beta.35]
 
 Completes the office storage migration introduced in 1.0.0-beta.34: sandbox containers now survive it with everything installed inside them intact. Upgrading directly from 1.0.0-beta.33 or earlier to this release keeps container contents; deployments that already booted 1.0.0-beta.34 had their containers recreated by that release.

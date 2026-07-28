@@ -1,9 +1,28 @@
+import type { WorkspacePolicyChoice } from "../config.js";
 import { resolveWorkspaceProjection } from "../workspace-projection/index.js";
 import { runtimeResourceKey } from "../sandbox/identity.js";
+import { applyConversationWorkspacePolicy } from "../settings-mutation.js";
 import { slashForms } from "./manifest.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler, ParsedSandboxCommand } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
+
+/** Word → selection; null clears the override, undefined is an unknown word. */
+function doorChoiceFromWord(word: string): WorkspacePolicyChoice | null | undefined {
+  switch (word) {
+    case "default":
+      return null;
+    case "isolated":
+      return { doorPolicy: "isolated" };
+    case "shared":
+    case "shared-support":
+      return { doorPolicy: "trusted", layout: "shared-support" };
+    case "full":
+      return { doorPolicy: "trusted", layout: "full" };
+    default:
+      return undefined;
+  }
+}
 
 export type { ParsedSandboxCommand } from "./types.js";
 
@@ -13,9 +32,15 @@ export function parseSandboxCommand(text: string): ParsedSandboxCommand | null {
   const matched = matchCommand(text, SANDBOX_COMMANDS, { stripMention: true });
   if (!matched) return null;
 
-  const action = matched.args.length === 1 ? matched.args[0].toLowerCase() : undefined;
-  if (action === "boost") {
+  const action = matched.args.length > 0 ? matched.args[0].toLowerCase() : undefined;
+  if (action === "boost" && matched.args.length === 1) {
     return { action };
+  }
+  if (action === "door" && matched.args.length <= 2) {
+    return {
+      action,
+      ...(matched.args.length === 2 ? { doorPolicy: matched.args[1].toLowerCase() } : {}),
+    };
   }
   return {};
 }
@@ -65,6 +90,64 @@ export class SandboxCommandHandler implements CommandHandler {
           "已暫時提升此 conversation 的 sandbox 規格。",
           `Current: ${formatLimits(status.limits)}`,
           "boost 會在此 sandbox runtime 關閉後結束。",
+        ]),
+        { style: "muted" },
+      );
+      return true;
+    }
+
+    if (parsed.action === "door") {
+      const workspace = resolveWorkspaceProjection(context.services.workingDir, context.address);
+      if (parsed.doorPolicy === undefined) {
+        await replyDiagnosticWithContext(
+          context.responder,
+          formatCommandSummary("Sandbox Door", [
+            `Current: ${workspace.doorPolicy} / ${workspace.layout}`,
+            "",
+            "用法：`/pi-sandbox door <default|isolated|shared|full>`",
+            "- `default`：跟隨全域預設",
+            "- `isolated`：只掛載自己辦公室",
+            "- `shared`：辦公室 + 共用 MEMORY.md / skills / events",
+            "- `full`：掛載整個 workspace（全開）",
+          ]),
+          { style: "muted" },
+        );
+        return true;
+      }
+      const choice = doorChoiceFromWord(parsed.doorPolicy);
+      if (choice === undefined) {
+        await replyDiagnosticWithContext(
+          context.responder,
+          formatCommandSummary("Sandbox Door", [
+            `未知的 door policy：\`${parsed.doorPolicy}\``,
+            "可用值：`default`、`isolated`、`shared`、`full`",
+          ]),
+          { style: "muted" },
+        );
+        return true;
+      }
+      const result = applyConversationWorkspacePolicy(
+        context.services.runtime,
+        context.services.workingDir,
+        context.address,
+        choice,
+      );
+      if (!result.ok) {
+        await replyDiagnosticWithContext(
+          context.responder,
+          formatCommandSummary("Sandbox Door", [
+            "目前有工作正在執行，無法切換 door policy。等執行結束後再試一次。",
+          ]),
+          { style: "muted" },
+        );
+        return true;
+      }
+      const updated = resolveWorkspaceProjection(context.services.workingDir, context.address);
+      await replyDiagnosticWithContext(
+        context.responder,
+        formatCommandSummary("Sandbox Door", [
+          `Door policy 已更新。Effective: ${updated.doorPolicy} / ${updated.layout}`,
+          "下一則訊息時會以新的掛載重建 sandbox 容器；先前在容器內安裝的軟體會重置。",
         ]),
         { style: "muted" },
       );

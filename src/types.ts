@@ -650,6 +650,8 @@ export interface EnvGroup {
 
 export interface RunnerCacheControl {
   switchConversationModel(address: OfficeAddress, provider: string, model: string): boolean;
+  /** Clear the office's cached runner for a non-model settings change; false while busy. */
+  refreshConversationEnvironment(address: OfficeAddress): boolean;
 }
 
 export interface GlobalRunnerCacheControl {

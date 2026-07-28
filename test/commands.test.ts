@@ -7,7 +7,11 @@ import { MikanModels } from "../src/harness/index.js";
 import { AdminCommandHandler } from "../src/commands/admin.js";
 import { AutoReplyCommandHandler } from "../src/commands/auto-reply.js";
 import { ExtensionsCommandHandler } from "../src/commands/extensions.js";
-import { conversationSettingsPath, createGlobalSettingsFile } from "../src/config.js";
+import {
+  conversationSettingsPath,
+  createGlobalSettingsFile,
+  loadConversationWorkspaceOverride,
+} from "../src/config.js";
 import { dispatchCommand } from "../src/commands/registry.js";
 import { LoginCommandHandler, parseLoginCommand } from "../src/commands/login.js";
 import { ModelCommandHandler } from "../src/commands/model.js";
@@ -794,6 +798,84 @@ describe("SandboxCommandHandler", () => {
       ),
     ).toEqual({});
     expect(ctx.responder.responses[0]).toContain("Workspace policy: isolated");
+  });
+
+  function doorContext(commandText: string, refreshResult = true) {
+    return buildContext({
+      commandText,
+      conversationId: "C123",
+      services: {
+        workingDir,
+        sandbox: { type: "image", image: "ubuntu:24.04" },
+        runtime: {
+          refreshConversationEnvironment: vi.fn().mockReturnValue(refreshResult),
+          switchConversationModel: vi.fn(),
+        } as any,
+        resourceController: {
+          getLimitStatus: () => ({ limits: undefined, boosted: false }),
+          getDefaultLimits: () => undefined,
+          getBoostLimits: () => undefined,
+        } as any,
+      },
+    });
+  }
+
+  function doorSettingsFile(): string {
+    return conversationSettingsPath({
+      address: createOfficeAddress("slack", "C123"),
+      conversationDir: join(workingDir, "C123"),
+    });
+  }
+
+  function doorOverride() {
+    return loadConversationWorkspaceOverride({
+      address: createOfficeAddress("slack", "C123"),
+      conversationDir: join(workingDir, "C123"),
+    });
+  }
+
+  test("door without an argument shows usage and the current policy", async () => {
+    const ctx = doorContext("/pi-sandbox door");
+    expect(await handler.tryHandle(ctx)).toBe(true);
+    expect(ctx.responder.responses[0]).toContain("Current: isolated / conversation");
+    expect(ctx.responder.responses[0]).toContain("door <default|isolated|shared|full>");
+    expect(doorOverride()).toBeNull();
+  });
+
+  test("door full writes the override, clears the runner, and warns about the rebuild", async () => {
+    const ctx = doorContext("/pi-sandbox door full");
+    expect(await handler.tryHandle(ctx)).toBe(true);
+    const written = JSON.parse(readFileSync(doorSettingsFile(), "utf-8"));
+    expect(written.sandbox.workspace).toEqual({ doorPolicy: "trusted", layout: "full" });
+    expect(ctx.services.runtime?.refreshConversationEnvironment).toHaveBeenCalledWith(
+      createOfficeAddress("slack", "C123"),
+    );
+    expect(ctx.responder.responses[0]).toContain("Effective: trusted / full");
+    expect(ctx.responder.responses[0]).toContain("重建 sandbox 容器");
+  });
+
+  test("door default clears an existing override", async () => {
+    const setCtx = doorContext("/pi-sandbox door shared");
+    expect(await handler.tryHandle(setCtx)).toBe(true);
+    const clearCtx = doorContext("/pi-sandbox door default");
+    expect(await handler.tryHandle(clearCtx)).toBe(true);
+    const written = JSON.parse(readFileSync(doorSettingsFile(), "utf-8"));
+    expect(written.sandbox?.workspace).toBeUndefined();
+    expect(clearCtx.responder.responses[0]).toContain("Effective: isolated / conversation");
+  });
+
+  test("door refuses while the conversation is busy", async () => {
+    const ctx = doorContext("/pi-sandbox door isolated", false);
+    expect(await handler.tryHandle(ctx)).toBe(true);
+    expect(ctx.responder.responses[0]).toContain("工作正在執行");
+    expect(doorOverride()).toBeNull();
+  });
+
+  test("door rejects unknown policies with the accepted values", async () => {
+    const ctx = doorContext("/pi-sandbox door banana");
+    expect(await handler.tryHandle(ctx)).toBe(true);
+    expect(ctx.responder.responses[0]).toContain("未知的 door policy");
+    expect(doorOverride()).toBeNull();
   });
 
   test("boosts a Gondolin conversation", async () => {
