@@ -15,7 +15,7 @@ import { DockerContainerManager } from "../src/provisioner.js";
 import { HostExecutor } from "../src/sandbox/index.js";
 import { credentialAuthorizationKey } from "../src/sandbox/identity.js";
 import { FileVaultManager, parseEnvFile, sharedVaultKey } from "../src/vault/index.js";
-import { createOfficeAddress, officeDirName } from "../src/office-address.js";
+import { createOfficeAddress, officeDirName, officeKey } from "../src/office-address.js";
 
 const D123_OFFICE = officeDirName(createOfficeAddress("slack", "D123"));
 
@@ -315,9 +315,12 @@ describe("ActorExecutionResolver image mode", () => {
       type: "container",
       container: "mikan-sandbox-d123-e8bafaeb6008",
     });
-    expect(readFileSync(join(vaultsDir, "d123-e8bafaeb6008", "env"), "utf-8")).toContain(
-      "ANTHROPIC_API_KEY=sk-test",
-    );
+    expect(
+      readFileSync(
+        join(vaultsDir, officeKey(createOfficeAddress("slack", "D123")), "env"),
+        "utf-8",
+      ),
+    ).toContain("ANTHROPIC_API_KEY=sk-test");
   });
 
   test("github conversations never inherit the default shared vault", async () => {
@@ -352,15 +355,21 @@ describe("ActorExecutionResolver image mode", () => {
 
     // Same resolver, same default — a Slack conversation still inherits it.
     await resolver.resolve({ userId: "U1", address: createOfficeAddress("slack", "D999") });
-    expect(readFileSync(join(vaultsDir, "d999-d4639b84b5c8", "env"), "utf-8")).toContain(
-      "GH_TOKEN=ambient",
-    );
+    expect(
+      readFileSync(
+        join(vaultsDir, officeKey(createOfficeAddress("slack", "D999")), "env"),
+        "utf-8",
+      ),
+    ).toContain("GH_TOKEN=ambient");
   });
 
   test("does not copy the default shared vault over an existing image sandbox vault", async () => {
     const vaultKey = credentialAuthorizationKey(
       { type: "image", image: "ubuntu:24.04" },
-      { userId: "U123", conversationId: "D123" },
+      {
+        userId: "U123",
+        address: createOfficeAddress("slack", "D123"),
+      },
     );
     mkdirSync(join(vaultsDir, "shared", "claw"), { recursive: true });
     mkdirSync(join(vaultsDir, vaultKey), { recursive: true });
@@ -395,7 +404,7 @@ describe("ActorExecutionResolver image mode", () => {
     const baseConfig = { type: "image", image: "ubuntu:24.04" } as const;
     const vaultKey = credentialAuthorizationKey(baseConfig, {
       userId: "U123",
-      conversationId: "D123",
+      address: createOfficeAddress("slack", "D123"),
     });
 
     const resolver = new ActorExecutionResolver(baseConfig, mgr, undefined, tmpDir);
@@ -404,7 +413,7 @@ describe("ActorExecutionResolver image mode", () => {
       address: createOfficeAddress("slack", "D123"),
     });
 
-    expect(vaultKey).toBe("d123-e8bafaeb6008");
+    expect(vaultKey).toBe(officeKey(createOfficeAddress("slack", "D123")));
     expect(executor.getSandboxConfig()).toEqual({
       type: "container",
       container: "mikan-sandbox-d123-e8bafaeb6008",
@@ -431,7 +440,10 @@ describe("ActorExecutionResolver image mode", () => {
   test("provisions per-conversation container with inferred vault mounts", async () => {
     const vaultKey = credentialAuthorizationKey(
       { type: "image", image: "ubuntu:24.04" },
-      { userId: "U123", conversationId: "D123" },
+      {
+        userId: "U123",
+        address: createOfficeAddress("slack", "D123"),
+      },
     );
     const userDir = join(vaultsDir, vaultKey);
     mkdirSync(join(userDir, ".ssh"), { recursive: true });

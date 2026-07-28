@@ -14,7 +14,7 @@ import { ModelCommandHandler } from "../src/commands/model.js";
 import { NewCommandHandler } from "../src/commands/new.js";
 import { SandboxCommandHandler } from "../src/commands/sandbox.js";
 import { SessionViewCommandHandler } from "../src/commands/session-view.js";
-import { createOfficeAddress, officeDirName } from "../src/office-address.js";
+import { createOfficeAddress, officeDirName, officeKey } from "../src/office-address.js";
 import type { CommandContext, CommandHandler, CommandServices } from "../src/commands/types.js";
 import { createManagedSessionFile, getChannelSessionDir } from "../src/sessions/store.js";
 import type { SandboxConfig } from "../src/sandbox/index.js";
@@ -537,9 +537,12 @@ describe("LoginCommandHandler", () => {
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(vaultManager.copySharedVaultTo).toHaveBeenCalledWith("gliaclaw", "c123-588a5f4edc2e");
+    expect(vaultManager.copySharedVaultTo).toHaveBeenCalledWith(
+      "gliaclaw",
+      officeKey(createOfficeAddress("slack", "C123")),
+    );
     expect(ctx.services.runtime?.refreshConversationEnvironment).toHaveBeenCalledWith("C123");
-    expect(remove).toHaveBeenCalledWith("c123-588a5f4edc2e");
+    expect(remove).toHaveBeenCalledWith(officeKey(createOfficeAddress("slack", "C123")));
     expect(ctx.responder.responses[0]).toContain("Copied shared login profile `gliaclaw`");
     expect(ctx.responder.responses[0]).toContain("will be recreated with the copied env");
   });
@@ -612,7 +615,7 @@ describe("LoginCommandHandler", () => {
         platform: "slack",
         platformUserId: "U123",
         conversationId: "D123",
-        vaultId: "c123-588a5f4edc2e",
+        vaultId: officeKey(createOfficeAddress("slack", "C123")),
         providerId: "",
       },
     ]);
@@ -798,6 +801,7 @@ describe("SandboxCommandHandler", () => {
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
+    // Resource keys stay raw-conversation-derived until the resource-naming migration.
     expect(boost).toHaveBeenCalledWith("c123-588a5f4edc2e");
     expect(ctx.responder.responses[0]).toContain("CPU 2 / Memory 4g");
   });

@@ -5,6 +5,7 @@ import { slashForms } from "./manifest.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler, ParsedLoginCommand } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
+import { createOfficeAddress } from "../office-address.js";
 
 const LOGIN_COMMANDS = slashForms("login");
 
@@ -38,9 +39,11 @@ export function parseLoginCommand(text: string): ParsedLoginCommand | null {
 
 function ensureLoginVault(context: CommandContext): string {
   const { services, platformUserId, conversationId, vaultConversationId } = context;
+  // The vault target is a conversation on the same platform; a command may
+  // aim at another conversation's vault via vaultConversationId.
   return credentialAuthorizationKey(services.sandbox, {
     userId: platformUserId,
-    conversationId: vaultConversationId ?? conversationId,
+    address: createOfficeAddress(context.address.platform, vaultConversationId ?? conversationId),
   });
 }
 

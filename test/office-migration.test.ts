@@ -10,7 +10,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { createOfficeAddress, officeDir } from "../src/office-address.js";
+import { createOfficeAddress, officeDir, officeKey } from "../src/office-address.js";
+import { legacyConversationCredentialKey } from "../src/sandbox/identity.js";
 import { migrateLegacyOffices, formatUnmigratedOfficesError } from "../src/office-migration.js";
 import { OfficeRegistry } from "../src/office-registry.js";
 
@@ -49,7 +50,14 @@ describe("migrateLegacyOffices", () => {
       enabledPlatforms: ["slack"],
     });
 
-    expect(summary).toEqual({ migrated: [], recovered: [], unowned: [], failed: [] });
+    expect(summary).toEqual({
+      migrated: [],
+      recovered: [],
+      unowned: [],
+      failed: [],
+      vaultKeysMigrated: [],
+      vaultConflicts: [],
+    });
     expect(new OfficeRegistry(stateDir).getState().enabledPlatforms).toEqual(["slack"]);
   });
 
@@ -92,7 +100,14 @@ describe("migrateLegacyOffices", () => {
       enabledPlatforms: ["slack"],
     });
 
-    expect(summary).toEqual({ migrated: [], recovered: [], unowned: [], failed: [] });
+    expect(summary).toEqual({
+      migrated: [],
+      recovered: [],
+      unowned: [],
+      failed: [],
+      vaultKeysMigrated: [],
+      vaultConflicts: [],
+    });
   });
 
   test("multiple enabled platforms leave unowned dirs in place and report them", () => {
@@ -222,6 +237,64 @@ describe("migrateLegacyOffices", () => {
     expect(() =>
       migrateLegacyOffices({ workspaceRoot, stateDir, enabledPlatforms: ["slack"] }),
     ).toThrow(/must not be a symlink/);
+  });
+
+  test("moves legacy conversation vault keys for registered offices", () => {
+    const { stateDir, workspaceRoot } = makeFixture();
+    makeLegacyOffice(workspaceRoot, "C123");
+    const legacyVault = join(stateDir, "vaults", legacyConversationCredentialKey("C123"));
+    mkdirSync(legacyVault, { recursive: true });
+    writeFileSync(join(legacyVault, "env"), "TOKEN=secret\n");
+
+    const summary = migrateLegacyOffices({
+      workspaceRoot,
+      stateDir,
+      enabledPlatforms: ["slack"],
+    });
+
+    expect(summary.vaultKeysMigrated).toEqual(["C123"]);
+    expect(summary.vaultConflicts).toEqual([]);
+    const target = join(stateDir, "vaults", officeKey(createOfficeAddress("slack", "C123")));
+    expect(readFileSync(join(target, "env"), "utf-8")).toContain("TOKEN=secret");
+    expect(existsSync(legacyVault)).toBe(false);
+  });
+
+  test("reports a vault-key conflict instead of clobbering either side", () => {
+    const { stateDir, workspaceRoot } = makeFixture();
+    makeLegacyOffice(workspaceRoot, "C123");
+    const legacyVault = join(stateDir, "vaults", legacyConversationCredentialKey("C123"));
+    mkdirSync(legacyVault, { recursive: true });
+    const target = join(stateDir, "vaults", officeKey(createOfficeAddress("slack", "C123")));
+    mkdirSync(target, { recursive: true });
+
+    const summary = migrateLegacyOffices({
+      workspaceRoot,
+      stateDir,
+      enabledPlatforms: ["slack"],
+    });
+
+    expect(summary.vaultConflicts).toEqual(["C123"]);
+    expect(existsSync(legacyVault)).toBe(true);
+    expect(formatUnmigratedOfficesError(summary)).toContain("merge them manually");
+  });
+
+  test("leaves shared and unrecognized vault directories alone", () => {
+    const { stateDir, workspaceRoot } = makeFixture();
+    makeLegacyOffice(workspaceRoot, "C123");
+    for (const name of ["shared/claw", "u1-ancient", "d0ar8t4q61e"]) {
+      mkdirSync(join(stateDir, "vaults", name), { recursive: true });
+    }
+
+    const summary = migrateLegacyOffices({
+      workspaceRoot,
+      stateDir,
+      enabledPlatforms: ["slack"],
+    });
+
+    expect(summary.vaultKeysMigrated).toEqual([]);
+    for (const name of ["shared/claw", "u1-ancient", "d0ar8t4q61e"]) {
+      expect(existsSync(join(stateDir, "vaults", name))).toBe(true);
+    }
   });
 
   test("already office-key-shaped directories are left alone", () => {

@@ -148,7 +148,10 @@ describe("readConversationWorkspaceMountMode", () => {
     createGlobalSettingsFile(stateDir);
     const credentialKey = credentialAuthorizationKey(
       { type: "gondolin", profile: "default" },
-      { userId: "U123", conversationId: "C123" },
+      {
+        userId: "U123",
+        address: createOfficeAddress("slack", "C123"),
+      },
     );
     const sshDir = join(stateDir, "vaults", credentialKey, ".ssh");
     mkdirSync(sshDir, { recursive: true });
@@ -311,7 +314,10 @@ describe("readConversationWorkspaceMountMode", () => {
     const vault = new FileVaultManager(stateDir);
     const key = credentialAuthorizationKey(
       { type: "cloudflare", sandboxId: "base" },
-      { userId: "U123", conversationId: "C123" },
+      {
+        userId: "U123",
+        address: createOfficeAddress("slack", "C123"),
+      },
     );
     vault.upsertFile(key, "secret", "value");
     const resolver = new ActorExecutionResolver(

@@ -50,10 +50,13 @@ export class ActorExecutionResolver {
   }
 
   private resolvePlan(context: ActorContext): ExecutionPlan {
-    const ids = { userId: context.userId, conversationId: context.address.conversationId };
-    const credentialKey = credentialAuthorizationKey(this.baseConfig, ids);
-    const legacyCredentialKey = legacyExactCredentialAuthorizationKey(this.baseConfig, ids);
-    const resourceKey = runtimeResourceKey(this.baseConfig, ids);
+    const scope = { userId: context.userId, address: context.address };
+    const credentialKey = credentialAuthorizationKey(this.baseConfig, scope);
+    const legacyCredentialKey = legacyExactCredentialAuthorizationKey(this.baseConfig, scope);
+    const resourceKey = runtimeResourceKey(this.baseConfig, {
+      userId: context.userId,
+      conversationId: context.address.conversationId,
+    });
     this.ensureDefaultSharedVault(credentialKey, legacyCredentialKey, context.trustModel);
 
     const vault =
