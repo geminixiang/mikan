@@ -18,6 +18,41 @@ export type ConversationKind = "direct" | "shared";
 
 export type PlatformName = "slack" | "discord" | "telegram" | "github";
 
+/** Canonical platform-plus-raw identifier for one conversation office. */
+export interface OfficeAddress {
+  readonly platform: PlatformName;
+  readonly conversationId: string;
+}
+
+/** Stable, filesystem-safe identity derived from an OfficeAddress. */
+export type OfficeKey = string & { readonly __brand: "OfficeKey" };
+
+export type OfficeMigrationStatus = "needs-owner" | "prepared" | "moving" | "committed" | "failed";
+
+export interface OfficeMigrationRecord {
+  readonly rawConversationId: string;
+  readonly sourceDir: string;
+  readonly workspaceRoot: string;
+  readonly ownerPlatform?: PlatformName;
+  readonly targetDir?: string;
+  readonly status: OfficeMigrationStatus;
+  readonly error?: string;
+  readonly updatedAt: string;
+}
+
+export interface OfficeRegistryState {
+  readonly version: 1;
+  readonly enabledPlatforms: readonly PlatformName[];
+  readonly migrations: readonly OfficeMigrationRecord[];
+}
+
+export interface OfficeMigrationPreparation {
+  readonly rawConversationId: string;
+  readonly sourceDir: string;
+  readonly workspaceRoot: string;
+  readonly ownerPlatform?: PlatformName;
+}
+
 /**
  * Who can drive conversations on a platform — gates ambient credential policy.
  *
