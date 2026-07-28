@@ -45,7 +45,7 @@ describe("applyConversationSettings", () => {
     });
     expect(result).toEqual({ ok: true, runtimeSwitched: true });
     expect(runtime.switchConversationModel).toHaveBeenCalledWith(
-      "C1",
+      C1,
       "anthropic",
       "claude-sonnet-4-6",
     );
@@ -107,12 +107,13 @@ describe("applyConversationSettingsByRawId", () => {
 
 describe("applyGlobalSettings", () => {
   test("llm change writes, refreshes all, reports busy conversations as stale", () => {
-    const runtime = { refreshAllConversations: vi.fn().mockReturnValue({ busy: ["C9"] }) };
+    const busyOffice = createOfficeAddress("slack", "C9");
+    const runtime = { refreshAllConversations: vi.fn().mockReturnValue({ busy: [busyOffice] }) };
     const result = applyGlobalSettings(runtime, {
       provider: "anthropic",
       model: "claude-sonnet-4-6",
     });
-    expect(result).toEqual({ ok: true, staleConversations: ["C9"] });
+    expect(result).toEqual({ ok: true, staleConversations: [busyOffice] });
     expect(runtime.refreshAllConversations).toHaveBeenCalledOnce();
     const written = JSON.parse(readFileSync(join(stateDir, "settings.json"), "utf-8"));
     expect(written.llm.model).toBe("claude-sonnet-4-6");

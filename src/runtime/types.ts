@@ -103,9 +103,9 @@ export interface ConversationRuntimeOptions extends Omit<
 
 export interface ConversationRuntime extends MessagingEventHandler {
   runSession(options: RunSessionOptions): Promise<void>;
-  switchConversationModel(conversationId: string, provider: string, model: string): boolean;
-  refreshConversationEnvironment(conversationId: string): boolean;
+  switchConversationModel(address: OfficeAddress, provider: string, model: string): boolean;
+  refreshConversationEnvironment(address: OfficeAddress): boolean;
   /** Clear idle runners; defer busy conversation invalidation until settlement. */
-  refreshAllConversations(): { busy: string[] };
+  refreshAllConversations(): { busy: OfficeAddress[] };
   shutdown(timeoutMs?: number): Promise<void>;
 }

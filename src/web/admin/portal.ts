@@ -915,7 +915,12 @@ function serveGlobalModelUpdate(
       model,
       ...(thinkingLevel ? { thinkingLevel } : {}),
     });
-    jsonRes(res, 200, { ok: true, staleConversations: result.staleConversations });
+    jsonRes(res, 200, {
+      ok: true,
+      staleConversations: result.staleConversations.map(
+        (office) => `${office.platform}:${office.conversationId}`,
+      ),
+    });
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
   }
