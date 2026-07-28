@@ -3,6 +3,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { createOfficeAddress, officeDirName } from "../src/office-address.js";
+import { OfficeRegistry } from "../src/office-registry.js";
 import {
   addPackage,
   inspectConversationPackages,
@@ -11,6 +13,7 @@ import {
 } from "../src/packages/index.js";
 
 const CONVERSATION_ID = "C03045VJJAY";
+const CONVERSATION_ADDRESS = createOfficeAddress("slack", CONVERSATION_ID);
 
 let base: string;
 let stateDir: string;
@@ -38,7 +41,7 @@ function context() {
   return {
     conversationId: CONVERSATION_ID,
     stateDir,
-    conversationDir: join(workingDir, CONVERSATION_ID),
+    conversationDir: join(workingDir, officeDirName(CONVERSATION_ADDRESS)),
     workingDir,
   };
 }
@@ -48,7 +51,8 @@ beforeEach(() => {
   stateDir = join(base, "state");
   workingDir = join(base, "workspace");
   mkdirSync(stateDir, { recursive: true });
-  mkdirSync(join(workingDir, CONVERSATION_ID), { recursive: true });
+  new OfficeRegistry(stateDir).recordOffice(CONVERSATION_ADDRESS);
+  mkdirSync(join(workingDir, officeDirName(CONVERSATION_ADDRESS)), { recursive: true });
   process.env.MIKAN_STATE_DIR = stateDir;
   writeFileSync(
     globalSettingsFile(),

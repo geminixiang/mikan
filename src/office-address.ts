@@ -82,25 +82,18 @@ export function officeStateDir(stateDir: string, address: OfficeAddress): string
 /**
  * The directory segment naming an office under a workspace root — the same
  * segment on the host and inside the sandbox runtime, so mounts stay a plain
- * root swap. Still the legacy raw conversation id; the coordinated storage
- * migration (ADR 0005) flips this single function to the office key.
+ * root swap. This is the office key: platform-scoped and collision-resistant,
+ * so two platforms sharing a raw conversation id can never share a directory.
+ * Raw ids reach the filesystem only through the office registry's migration
+ * journal (ADR 0005).
  */
 export function officeDirName(address: OfficeAddress): string {
-  return validateOfficeAddress(address).conversationId;
+  return officeKey(address);
 }
 
-/** The current host working directory for an office (see officeDirName). */
+/** The host working directory for an office (see officeDirName). */
 export function conversationOfficeDir(workspaceRoot: string, address: OfficeAddress): string {
   return join(workspaceRoot, officeDirName(address));
-}
-
-/**
- * Legacy bridge for surfaces that still name an office by raw id alone
- * (Admin scope, settings mutation). Those surfaces migrate with ADR 0005;
- * new code must resolve a full OfficeAddress instead.
- */
-export function legacyConversationDir(workspaceRoot: string, rawConversationId: string): string {
-  return join(workspaceRoot, assertConversationId(rawConversationId));
 }
 
 /** Compare canonical office identities without relying on their readable key. */

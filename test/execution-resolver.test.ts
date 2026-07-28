@@ -9,7 +9,9 @@ import {
   readConversationWorkspaceMountMode,
 } from "../src/execution-resolver.js";
 import { FileVaultManager } from "../src/vault/index.js";
-import { createOfficeAddress } from "../src/office-address.js";
+import { createOfficeAddress, officeDirName } from "../src/office-address.js";
+
+const C123_OFFICE = officeDirName(createOfficeAddress("slack", "C123"));
 
 describe("readConversationWorkspaceMountMode", () => {
   // the Gondolin executor asserts Node >=23.6, but CI also runs the 22.19.0 floor
@@ -46,7 +48,7 @@ describe("readConversationWorkspaceMountMode", () => {
 
   test("fails closed instead of escalating from raw fallback settings", () => {
     writeFileSync(join(stateDir, "settings.json"), "{ invalid json }", "utf-8");
-    const conversationDir = join(workspaceDir, "C123");
+    const conversationDir = join(workspaceDir, C123_OFFICE);
     mkdirSync(conversationDir, { recursive: true });
     writeFileSync(
       join(conversationDir, "settings.json"),
@@ -61,7 +63,7 @@ describe("readConversationWorkspaceMountMode", () => {
 
   test("fails closed when legacy conversation settings are malformed", () => {
     createGlobalSettingsFile(stateDir);
-    const conversationDir = join(workspaceDir, "C123");
+    const conversationDir = join(workspaceDir, C123_OFFICE);
     mkdirSync(conversationDir, { recursive: true });
     writeFileSync(join(conversationDir, "settings.json"), "{ invalid json }", "utf-8");
 
@@ -110,14 +112,14 @@ describe("readConversationWorkspaceMountMode", () => {
 
     expect(executor.getSandboxConfig()).toMatchObject({
       type: "gondolin",
-      mounts: [{ source: join(workspaceDir, "C123"), target: "/workspace/C123" }],
+      mounts: [{ source: join(workspaceDir, C123_OFFICE), target: `/workspace/${C123_OFFICE}` }],
     });
-    expect(existsSync(join(workspaceDir, "C123"))).toBe(true);
+    expect(existsSync(join(workspaceDir, C123_OFFICE))).toBe(true);
   });
 
   test("resolves the full Gondolin workspace mount", async () => {
     createGlobalSettingsFile(stateDir);
-    const conversationDir = join(workspaceDir, "C123");
+    const conversationDir = join(workspaceDir, C123_OFFICE);
     mkdirSync(conversationDir, { recursive: true });
     writeFileSync(
       join(conversationDir, "settings.json"),
@@ -180,10 +182,10 @@ describe("readConversationWorkspaceMountMode", () => {
     const context = { userId: "U123", address: createOfficeAddress("slack", "C123") } as const;
 
     await resolver.resolve(context);
-    rmSync(join(workspaceDir, "C123"), { recursive: true });
+    rmSync(join(workspaceDir, C123_OFFICE), { recursive: true });
     await resolver.resolve(context);
 
-    expect(existsSync(join(workspaceDir, "C123"))).toBe(true);
+    expect(existsSync(join(workspaceDir, C123_OFFICE))).toBe(true);
   });
 
   test("fails closed when a vault file mount overlaps the Workspace projection", async () => {

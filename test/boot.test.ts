@@ -98,6 +98,12 @@ describe("resolveBoot", () => {
     expect(plan.extArgs).toEqual(["install", "--sandbox=not-a-real-spec"]);
   });
 
+  test("office subcommand short-circuits with its own argv", () => {
+    const plan = resolveBoot(["office", "claim", "C123", "slack"]);
+    expect(plan.mode).toBe("office");
+    expect(plan.officeArgs).toEqual(["claim", "C123", "slack"]);
+  });
+
   test("env subcommand selects env mode", () => {
     expect(resolveBoot(["env"]).mode).toBe("env");
   });

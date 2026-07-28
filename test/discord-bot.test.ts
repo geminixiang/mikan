@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Collection } from "discord.js";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler } from "../src/adapter.js";
-import { createOfficeAddress } from "../src/office-address.js";
+import { createOfficeAddress, officeDirName } from "../src/office-address.js";
 import { DiscordMessagingBot } from "../src/adapters/discord/bot.js";
 
 function makeHandler(): MessagingEventHandler {
@@ -92,20 +92,24 @@ describe("DiscordMessagingBot attachments", () => {
 
     expect(downloadAttachment).toHaveBeenNthCalledWith(
       1,
-      join(workingDir, "C123", "attachments"),
+      join(workingDir, officeDirName(createOfficeAddress("discord", "C123")), "attachments"),
       expect.stringMatching(/^\d+_clip\.mov$/),
       "https://example.com/clip.mov",
     );
     expect(downloadAttachment).toHaveBeenNthCalledWith(
       2,
-      join(workingDir, "C123", "attachments"),
+      join(workingDir, officeDirName(createOfficeAddress("discord", "C123")), "attachments"),
       expect.stringMatching(/^\d+_broken\.mov$/),
       "https://example.com/broken.mov",
     );
     expect(result).toEqual([
       {
         name: "clip.mov",
-        localPath: expect.stringMatching(/^C123\/attachments\/\d+_clip\.mov$/),
+        localPath: expect.stringMatching(
+          new RegExp(
+            `^${officeDirName(createOfficeAddress("discord", "C123"))}/attachments/\\d+_clip\\.mov$`,
+          ),
+        ),
       },
     ]);
   });
@@ -327,7 +331,10 @@ describe("DiscordMessagingBot message routing", () => {
       }),
     );
 
-    const lines = readFileSync(join(workingDir, "C1", "log.jsonl"), "utf-8")
+    const lines = readFileSync(
+      join(workingDir, officeDirName(createOfficeAddress("discord", "C1")), "log.jsonl"),
+      "utf-8",
+    )
       .trim()
       .split("\n");
     const entry = JSON.parse(lines[0]);

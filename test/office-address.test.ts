@@ -7,7 +7,6 @@ import {
   conversationOfficeDir,
   createOfficeAddress,
   isOfficeKey,
-  legacyConversationDir,
   officeDir,
   officeDirName,
   officeKey,
@@ -130,24 +129,23 @@ describe("office address", () => {
     expect(isOfficeKey("v1-slack-c123-not-a-key")).toBe(false);
   });
 
-  describe("current office dir seam (pre-migration layout)", () => {
-    // These pin the legacy layout the ADR 0005 storage migration will flip:
-    // when officeDirName switches to the office key, this block is the one
-    // place that changes.
+  describe("office dir seam (office-key layout)", () => {
     const address = createOfficeAddress("slack", "C123");
 
-    test("host dir and runtime segment agree on the office name", () => {
-      expect(officeDirName(address)).toBe("C123");
-      expect(conversationOfficeDir("/data/workspace", address)).toBe("/data/workspace/C123");
+    test("host dir and runtime segment agree on the office key", () => {
+      expect(officeDirName(address)).toBe(officeKey(address));
+      expect(conversationOfficeDir("/data/workspace", address)).toBe(
+        `/data/workspace/${officeKey(address)}`,
+      );
+      expect(conversationOfficeDir("/data/workspace", address)).toBe(
+        officeDir("/data/workspace", address),
+      );
     });
 
-    test("legacy raw-id bridge resolves the same directory", () => {
-      expect(legacyConversationDir("/data/workspace", "C123")).toBe(
-        conversationOfficeDir("/data/workspace", address),
-      );
-      expect(() => legacyConversationDir("/data/workspace", "../escape")).toThrow(
-        /path separators/,
-      );
+    test("platforms sharing a raw id resolve to different directories", () => {
+      const discord = createOfficeAddress("discord", "900100");
+      const telegram = createOfficeAddress("telegram", "900100");
+      expect(conversationOfficeDir("/w", discord)).not.toBe(conversationOfficeDir("/w", telegram));
     });
   });
 });
