@@ -746,9 +746,24 @@ describe("SandboxCommandHandler", () => {
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(existsSync(conversationSettingsPath(join(workingDir, "C123")))).toBe(true);
     expect(
-      JSON.parse(readFileSync(conversationSettingsPath(join(workingDir, "C123")), "utf-8")),
+      existsSync(
+        conversationSettingsPath({
+          conversationId: "C123",
+          conversationDir: join(workingDir, "C123"),
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      JSON.parse(
+        readFileSync(
+          conversationSettingsPath({
+            conversationId: "C123",
+            conversationDir: join(workingDir, "C123"),
+          }),
+          "utf-8",
+        ),
+      ),
     ).toEqual({});
     expect(ctx.responder.responses[0]).toContain("Workspace policy: isolated");
   });

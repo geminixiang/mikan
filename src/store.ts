@@ -10,6 +10,7 @@ import { withRetry } from "./adapters/shared.js";
 
 export type { Attachment, ChannelStoreConfig, LoggedMessage } from "./types.js";
 import type { Attachment, ChannelStoreConfig, LoggedMessage } from "./types.js";
+import { conversationOfficeDir, createOfficeAddress, officeDirName } from "./office-address.js";
 
 class AttachmentDownloadHttpError extends Error {
   constructor(
@@ -25,6 +26,11 @@ function isRetryableAttachmentDownloadError(error: unknown): boolean {
   return error.status === 408 || error.status === 429 || error.status >= 500;
 }
 
+/**
+ * Slack office store: message logs and attachment downloads for one Slack
+ * workspace (the bot token is a Slack credential). Channel ids are therefore
+ * Slack conversation ids; other platforms log through their adapters.
+ */
 export class ChannelStore {
   private workingDir: string;
   private botToken: string;
@@ -45,7 +51,10 @@ export class ChannelStore {
    * Get or create the directory for a channel/DM
    */
   getChannelDir(channelId: string): string {
-    const channelDir = join(this.workingDir, channelId);
+    const channelDir = conversationOfficeDir(
+      this.workingDir,
+      createOfficeAddress("slack", channelId),
+    );
     ensureDirExists(channelDir);
     return channelDir;
   }
@@ -80,7 +89,7 @@ export class ChannelStore {
       }
 
       const filename = this.generateLocalFilename(file.name, timestamp);
-      const localPath = `${channelId}/attachments/${filename}`;
+      const localPath = `${officeDirName(createOfficeAddress("slack", channelId))}/attachments/${filename}`;
       const attachment: Attachment = {
         original: file.name,
         localPath,
@@ -162,7 +171,10 @@ export class ChannelStore {
    * Returns null if no log exists
    */
   getLastTimestamp(channelId: string): string | null {
-    const logPath = join(this.workingDir, channelId, "log.jsonl");
+    const logPath = join(
+      conversationOfficeDir(this.workingDir, createOfficeAddress("slack", channelId)),
+      "log.jsonl",
+    );
     const content = readTextFileIfExists(logPath);
     if (content === undefined) {
       return null;

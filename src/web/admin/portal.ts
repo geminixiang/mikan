@@ -26,13 +26,14 @@ import { renderPortalShell } from "../portal-shell.js";
 import { resolveExistingSessionFile } from "../session-view/service.js";
 import { PRODUCT_NAME } from "../../platform-messages.js";
 import { credentialAuthorizationKey } from "../../sandbox/identity.js";
-import { resolveWorkspaceProjection } from "../../workspace-projection/index.js";
+import { legacyResolveWorkspaceProjection } from "../../workspace-projection/index.js";
 import { sharedVaultKey } from "../../vault/index.js";
 import { modelKey, resolveAdminModelAccessStatuses } from "./provider-models.js";
 import type { AdminToken } from "./store.js";
 
 export type { AdminRuntimeBridge, AdminServices, EventSummary } from "./types.js";
 import type { AdminServices, EventSummary } from "./types.js";
+import { legacyConversationDir } from "../../office-address.js";
 
 // ── Handler ────────────────────────────────────────────────────────────────────
 
@@ -278,7 +279,7 @@ function listConversationDirs(workingDir: string): string[] {
 }
 
 function conversationLastActivity(workingDir: string, conversationId: string): number | null {
-  const dir = join(workingDir, conversationId);
+  const dir = legacyConversationDir(workingDir, conversationId);
   if (!existsSync(dir)) return null;
   let latest = 0;
   const visit = (path: string, depth: number): void => {
@@ -378,7 +379,7 @@ function listConversationSessionUsage(
   conversationId: string,
   label: string,
 ): SessionUsageRow[] {
-  const sessionDir = join(workingDir, conversationId, "sessions");
+  const sessionDir = join(legacyConversationDir(workingDir, conversationId), "sessions");
   try {
     return readdirSync(sessionDir, { withFileTypes: true })
       .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
@@ -496,7 +497,7 @@ function serveConversationUsage(res: ServerResponse, url: URL, services: AdminSe
   cutoff.setDate(today.getDate() - (days - 1));
 
   const flags = { hasOlder: false };
-  const sessionDir = join(workingDir, conversationId, "sessions");
+  const sessionDir = join(legacyConversationDir(workingDir, conversationId), "sessions");
   try {
     for (const entry of readdirSync(sessionDir, { withFileTypes: true })) {
       if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
@@ -591,10 +592,10 @@ function serveConversationState(
     return;
   }
 
-  const dir = join(workingDir, conversationId);
+  const dir = legacyConversationDir(workingDir, conversationId);
   const globalConfig = loadGlobalSettings();
-  const conversationConfig = resolveConversationSettings(dir);
-  const conversationWorkspace = resolveWorkspaceProjection(workingDir, conversationId);
+  const conversationConfig = resolveConversationSettings({ conversationId, conversationDir: dir });
+  const conversationWorkspace = legacyResolveWorkspaceProjection(workingDir, conversationId);
   const globalWorkspaceSettings = globalConfig.sandbox?.workspace;
   const autoReply = loadConversationAutoReplyConfig(dir);
 
@@ -770,7 +771,7 @@ function serveConversationAutoReplyUpdate(
   }
   const workingDir = requireAdminWorkingDir(res, services);
   if (!workingDir) return;
-  const dir = join(workingDir, scope.conversationId);
+  const dir = legacyConversationDir(workingDir, scope.conversationId);
   try {
     const existing = loadConversationAutoReplyConfig(dir);
     saveConversationAutoReplyConfig(dir, {
@@ -808,8 +809,7 @@ function serveConversationSessionLink(
   }
 
   const sessionFile = resolveExistingSessionFile(
-    workingDir,
-    scope.conversationId,
+    legacyConversationDir(workingDir, scope.conversationId),
     scope.conversationId,
   );
   if (!sessionFile) {
@@ -1103,7 +1103,7 @@ function serveWorkspaceTree(
   }
   const workingDir = requireAdminWorkingDir(res, services);
   if (!workingDir) return;
-  const convDir = join(workingDir, scope.conversationId);
+  const convDir = legacyConversationDir(workingDir, scope.conversationId);
   if (!existsSync(convDir)) {
     jsonRes(res, 200, { conversationId: scope.conversationId, tree: null });
     return;
@@ -1213,7 +1213,7 @@ function serveWorkspaceFile(
     jsonRes(res, 403, { error: "Workspace path is not exposed" });
     return;
   }
-  const convDir = join(workingDir, scope.conversationId);
+  const convDir = legacyConversationDir(workingDir, scope.conversationId);
   const safe = safeJoinUnderRoot(convDir, requestedPath);
   if (safe.error) {
     jsonRes(res, 400, { error: safe.error });
@@ -1297,7 +1297,7 @@ async function servePackagesList(
     const inventory = await inspectConversationPackages({
       conversationId: scope.conversationId,
       stateDir: effectiveStateDir(),
-      conversationDir: join(workingDir, scope.conversationId),
+      conversationDir: legacyConversationDir(workingDir, scope.conversationId),
     });
     jsonRes(res, 200, { conversationId: scope.conversationId, ...inventory });
   } catch (err) {
@@ -1338,7 +1338,7 @@ function servePackageMutation(
   const context = {
     conversationId: scope.conversationId,
     stateDir: effectiveStateDir(),
-    conversationDir: join(workingDir, scope.conversationId),
+    conversationDir: legacyConversationDir(workingDir, scope.conversationId),
     workingDir,
     runtime: services.runtime,
   };
@@ -1378,7 +1378,7 @@ function serveSkillsList(
   if (!workingDir) return;
   const global = readSkillsFromDir(join(workingDir, "skills"), "global");
   const conversation = readSkillsFromDir(
-    join(workingDir, scope.conversationId, "skills"),
+    join(legacyConversationDir(workingDir, scope.conversationId), "skills"),
     "conversation",
   );
   jsonRes(res, 200, {
@@ -1420,7 +1420,7 @@ function serveSkillFile(
   const skillsRoot =
     source === "global"
       ? join(workingDir, "skills")
-      : join(workingDir, scope.conversationId, "skills");
+      : join(legacyConversationDir(workingDir, scope.conversationId), "skills");
   const safe = safeJoinUnderRoot(skillsRoot, join(directory, "SKILL.md"));
   if (safe.error) {
     jsonRes(res, 400, { error: safe.error });

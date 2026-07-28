@@ -4,9 +4,12 @@ import { createConversationEvent, createConversationMessage } from "../src/adapt
 import {
   assertConversationId,
   assertOfficeKey,
+  conversationOfficeDir,
   createOfficeAddress,
   isOfficeKey,
+  legacyConversationDir,
   officeDir,
+  officeDirName,
   officeKey,
   officeStateDir,
   sameOffice,
@@ -125,5 +128,26 @@ describe("office address", () => {
       /conversation id must be a string/,
     );
     expect(isOfficeKey("v1-slack-c123-not-a-key")).toBe(false);
+  });
+
+  describe("current office dir seam (pre-migration layout)", () => {
+    // These pin the legacy layout the ADR 0005 storage migration will flip:
+    // when officeDirName switches to the office key, this block is the one
+    // place that changes.
+    const address = createOfficeAddress("slack", "C123");
+
+    test("host dir and runtime segment agree on the office name", () => {
+      expect(officeDirName(address)).toBe("C123");
+      expect(conversationOfficeDir("/data/workspace", address)).toBe("/data/workspace/C123");
+    });
+
+    test("legacy raw-id bridge resolves the same directory", () => {
+      expect(legacyConversationDir("/data/workspace", "C123")).toBe(
+        conversationOfficeDir("/data/workspace", address),
+      );
+      expect(() => legacyConversationDir("/data/workspace", "../escape")).toThrow(
+        /path separators/,
+      );
+    });
   });
 });

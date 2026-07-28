@@ -10,6 +10,7 @@ import { createRunner, isSafePromptSkillTree } from "../src/agent.js";
 import { MikanAgentSession, MikanModels } from "../src/harness/index.js";
 import { createManagedSessionFile, getChannelSessionDir } from "../src/sessions/store.js";
 import type { PlatformToolPackFactory } from "../src/tools/types.js";
+import { createOfficeAddress } from "../src/office-address.js";
 
 /**
  * Drives PiAgentWrapper.run() end to end with a faux provider: the runner is
@@ -66,6 +67,7 @@ async function createTestRunner(
   const runner = await createRunner({
     sandboxConfig: { type: "host" },
     sessionKey: "C1",
+    address: createOfficeAddress("slack", "C1"),
     conversationId: "C1",
     conversationDir,
     workspaceDir,
@@ -98,6 +100,7 @@ function makeResponder(): ConversationResponder & {
 
 function makeMessage(overrides: Partial<ConversationMessage> = {}): ConversationMessage {
   return {
+    address: createOfficeAddress("slack", "C1"),
     id: "1000.1",
     sessionKey: "C1",
     conversationKind: "shared",

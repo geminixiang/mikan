@@ -16,8 +16,8 @@
  *   their old runner until it settles, are reported as stale, and are cleared
  *   automatically before their next turn.
  */
-import { join } from "path";
 import { updateConversationSettings, updateGlobalSettings } from "./config.js";
+import { legacyConversationDir } from "./office-address.js";
 import type {
   AgentConfig,
   GlobalRunnerCacheControl,
@@ -49,7 +49,10 @@ export function applyConversationSettings(
     }
     runtimeSwitched = true;
   }
-  updateConversationSettings(join(workingDir, conversationId), patch);
+  updateConversationSettings(
+    { conversationId, conversationDir: legacyConversationDir(workingDir, conversationId) },
+    patch,
+  );
   return { ok: true, runtimeSwitched };
 }
 

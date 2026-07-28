@@ -54,7 +54,10 @@ export function declaredSources(scope: PackageScope, options: ResolvePackagesOpt
     const settings =
       scope === "global"
         ? loadGlobalSettings()
-        : resolveConversationSettings(options.conversationDir);
+        : resolveConversationSettings({
+            conversationId: options.conversationId,
+            conversationDir: options.conversationDir,
+          });
     return settings.packages ?? [];
   } catch {
     return [];

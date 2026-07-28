@@ -1053,6 +1053,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     expect(
       bot.enqueueEvent({
         type: "mention",
+        address: createOfficeAddress("slack", "C123"),
         conversationId: "C123",
         conversationKind: "shared",
         ts: "event:deploy-reminder",
@@ -1114,6 +1115,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     expect(
       bot.enqueueEvent({
         type: "mention",
+        address: createOfficeAddress("slack", "C123"),
         conversationId: "C123",
         conversationKind: "shared",
         ts: "event:deploy-reminder",
@@ -1171,6 +1173,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     expect(
       bot.enqueueEvent({
         type: "mention",
+        address: createOfficeAddress("slack", "C123"),
         conversationId: "C123",
         conversationKind: "shared",
         ts: "event:deploy-reminder",

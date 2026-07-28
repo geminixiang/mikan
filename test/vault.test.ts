@@ -15,6 +15,7 @@ import { DockerContainerManager } from "../src/provisioner.js";
 import { HostExecutor } from "../src/sandbox/index.js";
 import { credentialAuthorizationKey } from "../src/sandbox/identity.js";
 import { FileVaultManager, parseEnvFile, sharedVaultKey } from "../src/vault/index.js";
+import { createOfficeAddress } from "../src/office-address.js";
 
 function mode(path: string): number {
   return statSync(path).mode & 0o777;
@@ -275,9 +276,8 @@ describe("ActorExecutionResolver image mode", () => {
     );
 
     const executor = await resolver.resolve({
-      platform: "slack",
       userId: "U123",
-      conversationId: "D123",
+      address: createOfficeAddress("slack", "D123"),
     });
 
     expect(executor.getSandboxConfig()).toEqual({
@@ -305,9 +305,8 @@ describe("ActorExecutionResolver image mode", () => {
       tmpDir,
     );
     const executor = await resolver.resolve({
-      platform: "slack",
       userId: "U123",
-      conversationId: "D123",
+      address: createOfficeAddress("slack", "D123"),
     });
 
     expect(executor.getSandboxConfig()).toEqual({
@@ -338,9 +337,8 @@ describe("ActorExecutionResolver image mode", () => {
       tmpDir,
     );
     await resolver.resolve({
-      platform: "github",
       userId: "alice",
-      conversationId: "GH_octo_widgets_5",
+      address: createOfficeAddress("github", "GH_octo_widgets_5"),
       trustModel: "open-trigger",
     });
 
@@ -351,7 +349,7 @@ describe("ActorExecutionResolver image mode", () => {
     ).toBeUndefined();
 
     // Same resolver, same default — a Slack conversation still inherits it.
-    await resolver.resolve({ platform: "slack", userId: "U1", conversationId: "D999" });
+    await resolver.resolve({ userId: "U1", address: createOfficeAddress("slack", "D999") });
     expect(readFileSync(join(vaultsDir, "d999-d4639b84b5c8", "env"), "utf-8")).toContain(
       "GH_TOKEN=ambient",
     );
@@ -381,9 +379,8 @@ describe("ActorExecutionResolver image mode", () => {
       tmpDir,
     );
     await resolver.resolve({
-      platform: "slack",
       userId: "U123",
-      conversationId: "D123",
+      address: createOfficeAddress("slack", "D123"),
     });
 
     expect(parseEnvFile(readFileSync(join(vaultsDir, vaultKey, "env"), "utf-8"))).toEqual({
@@ -401,9 +398,8 @@ describe("ActorExecutionResolver image mode", () => {
 
     const resolver = new ActorExecutionResolver(baseConfig, mgr, undefined, tmpDir);
     const executor = await resolver.resolve({
-      platform: "slack",
       userId: "U123",
-      conversationId: "D123",
+      address: createOfficeAddress("slack", "D123"),
     });
 
     expect(vaultKey).toBe("d123-e8bafaeb6008");
@@ -422,9 +418,8 @@ describe("ActorExecutionResolver image mode", () => {
 
     await expect(
       resolver.resolve({
-        platform: "slack",
         userId: "U123",
-        conversationId: "D123",
+        address: createOfficeAddress("slack", "D123"),
       }),
     ).rejects.toThrow(/cannot provide an isolated conversation office/);
 
@@ -452,9 +447,8 @@ describe("ActorExecutionResolver image mode", () => {
     );
 
     const executor = await resolver.resolve({
-      platform: "slack",
       userId: "U123",
-      conversationId: "D123",
+      address: createOfficeAddress("slack", "D123"),
     });
     await executor.exec("pwd");
 
@@ -492,9 +486,8 @@ describe("ActorExecutionResolver image mode", () => {
     );
 
     const executor = await resolver.resolve({
-      platform: "slack",
       userId: "U123",
-      conversationId: "D123",
+      address: createOfficeAddress("slack", "D123"),
     });
     await executor.exec("pwd");
 

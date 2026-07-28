@@ -29,7 +29,7 @@ import {
 } from "../../adapter.js";
 import type { DiscordEvent } from "./types.js";
 import * as log from "../../log.js";
-import { createOfficeAddress } from "../../office-address.js";
+import { conversationOfficeDir, createOfficeAddress, officeDirName } from "../../office-address.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
 import { formatNothingRunning } from "../../platform-messages.js";
 import {
@@ -283,11 +283,11 @@ export class DiscordMessagingBot implements MessagingBot {
   }
 
   logToFile(channelId: string, entry: object): void {
-    appendChannelLog(this.workingDir, channelId, entry);
+    appendChannelLog(this.workingDir, createOfficeAddress("discord", channelId), entry);
   }
 
   logBotResponse(channelId: string, text: string, ts: string): void {
-    appendBotResponseLog(this.workingDir, channelId, text, ts);
+    appendBotResponseLog(this.workingDir, createOfficeAddress("discord", channelId), text, ts);
   }
 
   /**
@@ -311,8 +311,9 @@ export class DiscordMessagingBot implements MessagingBot {
       const ts = Date.now();
       const sanitizedName = attachment.name.replace(/[^a-zA-Z0-9._-]/g, "_");
       const filename = `${ts}_${sanitizedName}`;
-      const localPath = `${channelId}/attachments/${filename}`;
-      const fullDir = join(this.workingDir, channelId, "attachments");
+      const address = createOfficeAddress("discord", channelId);
+      const localPath = `${officeDirName(address)}/attachments/${filename}`;
+      const fullDir = join(conversationOfficeDir(this.workingDir, address), "attachments");
       const result = {
         name: attachment.name,
         localPath,
