@@ -9,6 +9,21 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.35]
+
+Completes the office storage migration introduced in 1.0.0-beta.34: sandbox containers now survive it with everything installed inside them intact. Upgrading directly from 1.0.0-beta.33 or earlier to this release keeps container contents; deployments that already booted 1.0.0-beta.34 had their containers recreated by that release.
+
+### Added
+
+- Preserve managed sandbox containers through the office layout migration: each container still mounting legacy paths is committed to a snapshot and re-created with translated workspace, state, and vault mounts, keeping its writable layer — software installed inside survives the upgrade.
+- Migrate containers off the boot path: on demand before a conversation's next message and via a background sweep after the platforms start, so boot stays fast and nothing blocks on the one-time cost.
+- Resume interrupted container migrations safely: the pre-removal mounts ride on the snapshot image, a crash at any point resumes without data loss, and snapshots are reclaimed once a container naturally returns to the base image.
+- Add the `MIKAN_SKIP_CONTAINER_PRESERVATION` escape hatch to fall back to plain container removal.
+
+### Tests
+
+- Cover translate, no-op, resume, orphan-resume, snapshot reclamation, and disarmed paths on a stateful docker mock, plus bind-translator unit tests; rehearsed against real docker including the crash-resume path.
+
 ## [1.0.0-beta.34]
 
 **One-way storage migration.** On first boot this release renames every conversation's workspace directory, credential vault, and host state tree to platform-scoped office keys, journaled with crash recovery. Back up the state dir and workspace before upgrading; earlier versions cannot read the migrated layout, so there is no downgrade. Managed sandbox containers for migrated conversations are recreated, which resets software installed inside them once (a preservation path is planned for a follow-up release).
