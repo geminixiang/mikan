@@ -1,4 +1,4 @@
-import type { MessagingBot, PlatformName, RunningSession } from "../../adapter.js";
+import type { MessagingBot, OfficeAddress, PlatformName, RunningSession } from "../../adapter.js";
 import type { LinkTokenStoreLike } from "../../commands/types.js";
 import type { SandboxConfig } from "../../sandbox/index.js";
 import type { EventStore } from "../../tools/types.js";
@@ -9,8 +9,8 @@ import type { InMemoryAdminTokenStore } from "./store.js";
 
 export interface AdminRuntimeBridge {
   getRunningSessions(): RunningSession[];
-  switchConversationModel(conversationId: string, provider: string, model: string): boolean;
-  refreshAllConversations(): { busy: string[] };
+  switchConversationModel(address: OfficeAddress, provider: string, model: string): boolean;
+  refreshAllConversations(): { busy: OfficeAddress[] };
 }
 
 export interface AdminServices {

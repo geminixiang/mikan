@@ -254,7 +254,7 @@ describe("ModelCommandHandler", () => {
       expect(ctx.responder.responses[0]).toContain("Switched: `provider/model:2026-01`");
       expect(ctx.responder.responses[0]).not.toContain("未知的 thinking level");
       expect(ctx.services.runtime?.switchConversationModel).toHaveBeenCalledWith(
-        "C123",
+        createOfficeAddress("slack", "C123"),
         "provider",
         "model:2026-01",
       );
@@ -541,7 +541,9 @@ describe("LoginCommandHandler", () => {
       "gliaclaw",
       officeKey(createOfficeAddress("slack", "C123")),
     );
-    expect(ctx.services.runtime?.refreshConversationEnvironment).toHaveBeenCalledWith("C123");
+    expect(ctx.services.runtime?.refreshConversationEnvironment).toHaveBeenCalledWith(
+      createOfficeAddress("slack", "C123"),
+    );
     expect(remove).toHaveBeenCalledWith(officeKey(createOfficeAddress("slack", "C123")));
     expect(ctx.responder.responses[0]).toContain("Copied shared login profile `gliaclaw`");
     expect(ctx.responder.responses[0]).toContain("will be recreated with the copied env");
@@ -575,7 +577,9 @@ describe("LoginCommandHandler", () => {
 
     expect(await handler.tryHandle(ctx)).toBe(true);
     expect(remove).not.toHaveBeenCalled();
-    expect(ctx.services.runtime?.refreshConversationEnvironment).toHaveBeenCalledWith("C123");
+    expect(ctx.services.runtime?.refreshConversationEnvironment).toHaveBeenCalledWith(
+      createOfficeAddress("slack", "C123"),
+    );
     expect(ctx.responder.responses[0]).toContain("currently running");
   });
 

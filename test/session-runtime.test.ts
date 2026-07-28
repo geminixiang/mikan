@@ -295,8 +295,8 @@ describe("ConversationRuntime lifecycle", () => {
     const oldRunner = oldState!.runner;
     const dispose = vi.spyOn(oldRunner, "dispose");
 
-    expect(runtime.refreshAllConversations()).toEqual({ busy: ["C123"] });
-    expect(runtime.refreshAllConversations()).toEqual({ busy: ["C123"] });
+    expect(runtime.refreshAllConversations()).toEqual({ busy: [testAddress] });
+    expect(runtime.refreshAllConversations()).toEqual({ busy: [testAddress] });
     expect(dispose).not.toHaveBeenCalled();
 
     release();
@@ -588,7 +588,7 @@ describe("ConversationRuntime lifecycle", () => {
     const oldRunner = oldState!.runner;
     const oldDispose = vi.spyOn(oldRunner, "dispose");
 
-    expect(runtime.refreshAllConversations()).toEqual({ busy: ["C123"] });
+    expect(runtime.refreshAllConversations()).toEqual({ busy: [testAddress] });
     expect(oldDispose).not.toHaveBeenCalled();
 
     releaseDream();

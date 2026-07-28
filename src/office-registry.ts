@@ -777,11 +777,6 @@ export function listRegisteredOffices(): readonly OfficeRecord[] {
   return registry.getOffices();
 }
 
-/** Office working directory for a raw-id-scoped caller (see resolveOwnedOfficeAddress). */
-export function resolveLegacyOfficeDir(workspaceRoot: string, rawConversationId: string): string {
-  return conversationOfficeDir(workspaceRoot, resolveOwnedOfficeAddress(rawConversationId));
-}
-
 /** mkdir-if-missing with the same fail-closed type guard as projection roots. */
 function ensureRegularOfficeDirectory(dir: string): void {
   let stats;

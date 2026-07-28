@@ -2,7 +2,7 @@ import { dirname, join } from "node:path";
 import { lstatSync, mkdirSync, writeFileSync } from "node:fs";
 import { ensureDirExists } from "../utils/file-guards.js";
 import { resolveConversationSettings } from "../config.js";
-import { ensureOfficeDir, resolveOwnedOfficeAddress } from "../office-registry.js";
+import { ensureOfficeDir } from "../office-registry.js";
 import * as log from "../log.js";
 import { conversationOfficeDir, officeDirName, validateOfficeAddress } from "../office-address.js";
 import type {
@@ -95,20 +95,6 @@ export function readWorkspaceProjectionMode(
   address: OfficeAddress,
 ): ImageWorkspaceMountMode {
   return resolveWorkspaceProjection(hostWorkspaceRoot, address).mode;
-}
-
-/**
- * Legacy bridge for surfaces that name an office by raw id alone (Admin
- * scope): the office registry resolves the owning platform.
- */
-export function legacyResolveWorkspaceProjection(
-  hostWorkspaceRoot: string | undefined,
-  rawConversationId: string,
-): WorkspaceProjection {
-  return resolveWorkspaceProjection(
-    hostWorkspaceRoot,
-    resolveOwnedOfficeAddress(rawConversationId),
-  );
 }
 
 function resolveEffectiveWorkspace(

@@ -18,7 +18,6 @@
  */
 import { updateConversationSettings, updateGlobalSettings } from "./config.js";
 import { conversationOfficeDir } from "./office-address.js";
-import { resolveOwnedOfficeAddress } from "./office-registry.js";
 import type {
   AgentConfig,
   GlobalRunnerCacheControl,
@@ -42,12 +41,11 @@ export function applyConversationSettings(
   address: OfficeAddress,
   patch: Partial<AgentConfig>,
 ): SettingsApplyResult {
-  const conversationId = address.conversationId;
   let runtimeSwitched: boolean | null = null;
   if (affectsCachedRunner(patch) && runtime) {
     // Clear-or-refuse before writing. The clear and the write happen in the
     // same synchronous tick, so no runner can be created in between.
-    if (!runtime.switchConversationModel(conversationId, patch.provider ?? "", patch.model ?? "")) {
+    if (!runtime.switchConversationModel(address, patch.provider ?? "", patch.model ?? "")) {
       return { ok: false, reason: "busy" };
     }
     runtimeSwitched = true;
@@ -59,30 +57,10 @@ export function applyConversationSettings(
   return { ok: true, runtimeSwitched };
 }
 
-/**
- * Raw-id adapter for Admin surfaces that predate OfficeAddress: the office
- * registry supplies the owning platform. Migrates away with ADR 0005's Admin
- * commit; chat commands must use applyConversationSettings with their
- * address.
- */
-export function applyConversationSettingsByRawId(
-  runtime: RunnerCacheControl | undefined,
-  workingDir: string,
-  conversationId: string,
-  patch: Partial<AgentConfig>,
-): SettingsApplyResult {
-  return applyConversationSettings(
-    runtime,
-    workingDir,
-    resolveOwnedOfficeAddress(conversationId),
-    patch,
-  );
-}
-
 export function applyGlobalSettings(
   runtime: GlobalRunnerCacheControl | undefined,
   patch: Partial<AgentConfig>,
-): { ok: true; staleConversations: string[] } {
+): { ok: true; staleConversations: OfficeAddress[] } {
   updateGlobalSettings(patch);
   const staleConversations =
     affectsCachedRunner(patch) && runtime ? runtime.refreshAllConversations().busy : [];

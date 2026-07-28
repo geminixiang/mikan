@@ -649,11 +649,11 @@ export interface EnvGroup {
 }
 
 export interface RunnerCacheControl {
-  switchConversationModel(conversationId: string, provider: string, model: string): boolean;
+  switchConversationModel(address: OfficeAddress, provider: string, model: string): boolean;
 }
 
 export interface GlobalRunnerCacheControl {
-  refreshAllConversations(): { busy: string[] };
+  refreshAllConversations(): { busy: OfficeAddress[] };
 }
 
 export type SettingsApplyResult =

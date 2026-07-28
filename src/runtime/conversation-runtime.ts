@@ -7,7 +7,7 @@ import type {
   PlatformName,
   RunningSession,
 } from "../adapter.js";
-import { conversationOfficeDir, officeDirName } from "../office-address.js";
+import { conversationOfficeDir, officeDirName, officeKey } from "../office-address.js";
 import { createRunner } from "../agent.js";
 import type { PiAgentWrapper } from "../agent.js";
 import { MikanModels } from "../harness/index.js";
@@ -661,42 +661,26 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     );
   }
 
-  switchConversationModel(conversationId: string, _provider: string, _model: string): boolean {
-    this.bumpConversationRunnerGeneration(conversationId);
-    return this.clearConversationsById(conversationId, "Model switched");
+  switchConversationModel(address: OfficeAddress, _provider: string, _model: string): boolean {
+    this.bumpConversationRunnerGeneration(address);
+    return this.clearOffice(address, "Model switched");
   }
 
-  refreshConversationEnvironment(conversationId: string): boolean {
-    this.bumpConversationRunnerGeneration(conversationId);
-    return this.clearConversationsById(conversationId, "Environment refreshed");
+  refreshConversationEnvironment(address: OfficeAddress): boolean {
+    this.bumpConversationRunnerGeneration(address);
+    return this.clearOffice(address, "Environment refreshed");
   }
 
-  refreshAllConversations(): { busy: string[] } {
+  refreshAllConversations(): { busy: OfficeAddress[] } {
     this.globalRunnerGeneration++;
-    // Deduplicated raw ids: offices on different platforms may share one, and
-    // callers report the busy list in raw-id terms (ADR 0005).
-    const busy = new Set<string>();
+    const busy: OfficeAddress[] = [];
     for (const address of this.sessions.offices()) {
       if (!this.clearOffice(address, "Global settings changed")) {
         this.sessions.deferConversationClear(address);
-        busy.add(address.conversationId);
+        busy.push(address);
       }
     }
-    return { busy: Array.from(busy) };
-  }
-
-  /**
-   * Settings and Admin scope still name an office by its raw id (ADR 0005), so
-   * every office behind that id is cleared. Returns false when any of them is
-   * busy, matching the clear-or-refuse contract these callers rely on.
-   */
-  private clearConversationsById(conversationId: string, reason: string): boolean {
-    const offices = this.sessions.officesForConversationId(conversationId);
-    let cleared = true;
-    for (const address of offices) {
-      if (!this.clearOffice(address, reason)) cleared = false;
-    }
-    return cleared;
+    return { busy };
   }
 
   private clearOffice(address: OfficeAddress, reason: string): boolean {
@@ -707,21 +691,16 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     return cleared;
   }
 
-  /**
-   * Runner generations stay keyed by raw conversation id: they are bumped from
-   * the same raw-id settings/Admin surfaces that read them, and two platforms
-   * sharing a raw id only cost each other a redundant runner rebuild, never a
-   * wrong one. They migrate with Admin scope (ADR 0005).
-   */
-  private bumpConversationRunnerGeneration(conversationId: string): void {
+  private bumpConversationRunnerGeneration(address: OfficeAddress): void {
+    const key = officeKey(address);
     this.conversationRunnerGenerations.set(
-      conversationId,
-      (this.conversationRunnerGenerations.get(conversationId) ?? 0) + 1,
+      key,
+      (this.conversationRunnerGenerations.get(key) ?? 0) + 1,
     );
   }
 
-  private runnerGeneration(conversationId: string): string {
-    return `${this.globalRunnerGeneration}:${this.conversationRunnerGenerations.get(conversationId) ?? 0}`;
+  private runnerGeneration(address: OfficeAddress): string {
+    return `${this.globalRunnerGeneration}:${this.conversationRunnerGenerations.get(officeKey(address)) ?? 0}`;
   }
 
   private async createCurrentRunner(
@@ -730,7 +709,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     sessionScope: Awaited<ReturnType<ChatHistorySync["resolveSessionScope"]>>,
   ): Promise<PiAgentWrapper> {
     while (true) {
-      const generation = this.runnerGeneration(options.conversationId);
+      const generation = this.runnerGeneration(options.address);
       const runner = await createRunner({
         sandboxConfig: this.options.sandbox,
         sessionKey: options.sessionKey,
@@ -755,7 +734,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         platformToolPackFactories: this.options.platformToolPackFactories,
         models: this.resolvedModels,
       });
-      if (generation === this.runnerGeneration(options.conversationId)) return runner;
+      if (generation === this.runnerGeneration(options.address)) return runner;
       await runner.dispose();
     }
   }
