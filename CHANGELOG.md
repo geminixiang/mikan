@@ -9,6 +9,8 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.36]
+
 ### Added
 
 - Make the office door policy configurable: the Admin portal gains a per-office selector (global default / isolated / trusted shared-support / trusted full) plus a global-default selector, and the existing `/pi-sandbox` command gains `door <default|isolated|shared|full>` — both write the explicit `sandbox.workspace` settings and retire the legacy `image.workspaceMount` key on save.
