@@ -89,10 +89,7 @@ export function conversationPackageSkillMounts(
  * dedups, and reports the directories to load from.
  */
 export function resolveConversationPackages(options: ResolvePackagesOptions): ResolvedPackages {
-  const declarations = [
-    ...readScope("global", undefined, options),
-    ...readScope("conversation", options.conversationId, options),
-  ];
+  const declarations = [...readScope("global", options), ...readScope("conversation", options)];
 
   const errors: PackageError[] = [];
   const byIdentity = new Map<string, MaterializedPackage>();
@@ -132,17 +129,13 @@ interface Declaration {
   scope: PackageScope;
 }
 
-function readScope(
-  scope: PackageScope,
-  conversationId: string | undefined,
-  options: ResolvePackagesOptions,
-): Declaration[] {
+function readScope(scope: PackageScope, options: ResolvePackagesOptions): Declaration[] {
   try {
     const sources =
       scope === "global"
         ? loadGlobalSettings().packages
         : resolveConversationSettings({
-            conversationId: options.conversationId,
+            address: options.address,
             conversationDir: options.conversationDir,
           }).packages;
     return (sources ?? []).map((source) => ({ source, scope }));
@@ -150,7 +143,6 @@ function readScope(
     // Unreadable settings must not take the conversation down; the other
     // scope, and the convention directories, still load.
     log.logWarning(`Could not read ${scope} package list`, messageOf(err));
-    void conversationId;
     return [];
   }
 }
@@ -163,7 +155,7 @@ function materialize(
   try {
     return materializeSource(declaration.source, {
       scope: declaration.scope,
-      conversationId: options.conversationId,
+      address: options.address,
       stateDir: options.stateDir,
       mode: options.fetchMissing ? "fetch" : "offline",
     });
@@ -183,10 +175,7 @@ function materialize(
 function scopeConventionDirs(options: ResolvePackagesOptions): string[] {
   return [
     join(packageScopeDir("global", undefined, options.stateDir), EXTENSIONS_SUBDIR),
-    join(
-      packageScopeDir("conversation", options.conversationId, options.stateDir),
-      EXTENSIONS_SUBDIR,
-    ),
+    join(packageScopeDir("conversation", options.address, options.stateDir), EXTENSIONS_SUBDIR),
   ];
 }
 

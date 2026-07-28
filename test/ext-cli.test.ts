@@ -3,6 +3,8 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { runExtCommand } from "../src/cli/ext.js";
+import { createOfficeAddress, officeKey } from "../src/office-address.js";
+import { OfficeRegistry } from "../src/office-registry.js";
 
 let stateDir: string;
 let srcDir: string;
@@ -37,6 +39,13 @@ function captureOut(): { log: string[]; err: string[]; restore: () => void } {
 }
 
 describe("mikan ext CLI", () => {
+  // The CLI resolves raw conversation ids through the office registry.
+  beforeEach(() => {
+    const registry = new OfficeRegistry(stateDir);
+    registry.recordOffice(createOfficeAddress("slack", "D0AKS5AHX89"));
+    registry.recordOffice(createOfficeAddress("slack", "C1"));
+  });
+
   test("install places code under the conversation scope and reports data path", async () => {
     const source = writeExtension("agent-pm");
     const out = captureOut();
@@ -53,7 +62,14 @@ describe("mikan ext CLI", () => {
     expect(code).toBe(0);
     expect(
       existsSync(
-        join(stateDir, "conversations", "D0AKS5AHX89", "extensions", "agent-pm", "index.mjs"),
+        join(
+          stateDir,
+          "conversations",
+          officeKey(createOfficeAddress("slack", "D0AKS5AHX89")),
+          "extensions",
+          "agent-pm",
+          "index.mjs",
+        ),
       ),
     ).toBe(true);
     expect(out.log.join("\n")).toMatch(/slug: agent-pm/);
@@ -101,9 +117,21 @@ describe("mikan ext CLI", () => {
   test("remove deletes code and leaves data", async () => {
     const source = writeExtension("agent-pm");
     await runExtCommand(["install", source, "--conversation", "C1", "--state-dir", stateDir]);
-    const codeDir = join(stateDir, "conversations", "C1", "extensions", "agent-pm");
+    const codeDir = join(
+      stateDir,
+      "conversations",
+      officeKey(createOfficeAddress("slack", "C1")),
+      "extensions",
+      "agent-pm",
+    );
     // Simulate data written on first use.
-    const dataDir = join(stateDir, "conversations", "C1", "extension-data", "agent-pm");
+    const dataDir = join(
+      stateDir,
+      "conversations",
+      officeKey(createOfficeAddress("slack", "C1")),
+      "extension-data",
+      "agent-pm",
+    );
     mkdirSync(dataDir, { recursive: true });
     writeFileSync(join(dataDir, "db"), "x");
 

@@ -202,11 +202,17 @@ export function createEventTool(eventStore: EventStore): {
 
       if (action === "list") {
         const events = await eventStore.list();
-        const conversationId = eventContext.conversationId;
+        const { conversationId, platform } = eventContext;
         const scopedEvents =
           params.scope === "all"
             ? events
-            : events.filter((event) => event.payload?.conversationId === conversationId);
+            : events.filter(
+                (event) =>
+                  event.payload?.conversationId === conversationId &&
+                  // Same raw id on another platform is another office. Files
+                  // written before payloads carried a platform stay visible.
+                  (event.payload.platform === undefined || event.payload.platform === platform),
+              );
         return {
           content: [
             {

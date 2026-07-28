@@ -551,6 +551,9 @@ export interface LoadExtensionsOptions {
    */
   roots?: string[];
   context: {
+    /** Office identity; host-only state keys derive from it. */
+    address: import("../../types.js").OfficeAddress;
+    /** Raw platform id — what extension code sees and platform APIs accept. */
     conversationId: string;
     workspaceDir: string;
     model: Model<Api>;

@@ -33,6 +33,8 @@ import { loadSkillsFromDir } from "../skills.js";
 import type { MikanSkill } from "../types.js";
 import { namespaceActionIds } from "./blockkit.js";
 import { ExtensionRegistry } from "./registry.js";
+import { officeStateDir } from "../../office-address.js";
+import type { OfficeAddress } from "../../types.js";
 import type {
   ExtensionCommand,
   ExtensionDisposer,
@@ -82,12 +84,12 @@ async function importExtensionModule(entrypoint: string): Promise<unknown> {
  * `LAYOUT.md`. Conversation ids are used verbatim (see LAYOUT.md § Casing).
  */
 export function defaultExtensionDirs(
-  conversationId: string,
+  address: OfficeAddress,
   stateDir: string = join(homedir(), ".mikan"),
 ): string[] {
   return [
     join(stateDir, "global", "extensions"),
-    join(stateDir, "conversations", conversationId, "extensions"),
+    join(officeStateDir(stateDir, address), "extensions"),
   ];
 }
 
@@ -375,6 +377,7 @@ function buildExtensionApi(params: {
   const { name, slug, registry, context, services } = params;
   const stateDir = services.stateDir ?? join(homedir(), ".mikan");
   const conversationId = context.conversationId;
+  const conversationStateDir = officeStateDir(stateDir, context.address);
 
   const requireScheduleStore = () => {
     if (!services.scheduleStore) {
@@ -394,7 +397,7 @@ function buildExtensionApi(params: {
       get dataDir(): string {
         // This conversation's own data, co-located with the conversation's
         // other host-only assets; removed when the conversation is deleted.
-        const dir = join(stateDir, "conversations", conversationId, "extension-data", slug);
+        const dir = join(conversationStateDir, "extension-data", slug);
         mkdirSync(dir, { recursive: true });
         return dir;
       },

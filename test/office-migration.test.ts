@@ -57,6 +57,8 @@ describe("migrateLegacyOffices", () => {
       failed: [],
       vaultKeysMigrated: [],
       vaultConflicts: [],
+      stateDirsMigrated: [],
+      stateDirConflicts: [],
     });
     expect(new OfficeRegistry(stateDir).getState().enabledPlatforms).toEqual(["slack"]);
   });
@@ -107,6 +109,8 @@ describe("migrateLegacyOffices", () => {
       failed: [],
       vaultKeysMigrated: [],
       vaultConflicts: [],
+      stateDirsMigrated: [],
+      stateDirConflicts: [],
     });
   });
 
@@ -295,6 +299,44 @@ describe("migrateLegacyOffices", () => {
     for (const name of ["shared/claw", "u1-ancient", "d0ar8t4q61e"]) {
       expect(existsSync(join(stateDir, "vaults", name))).toBe(true);
     }
+  });
+
+  test("moves the host state tree (settings, extensions, data) in one rename", () => {
+    const { stateDir, workspaceRoot } = makeFixture();
+    makeLegacyOffice(workspaceRoot, "C123");
+    const legacyState = join(stateDir, "conversations", "C123");
+    mkdirSync(join(legacyState, "extension-data", "probe"), { recursive: true });
+    writeFileSync(join(legacyState, "settings.json"), "{}\n");
+
+    const summary = migrateLegacyOffices({
+      workspaceRoot,
+      stateDir,
+      enabledPlatforms: ["slack"],
+    });
+
+    expect(summary.stateDirsMigrated).toEqual(["C123"]);
+    const target = join(stateDir, "conversations", officeKey(createOfficeAddress("slack", "C123")));
+    expect(existsSync(join(target, "settings.json"))).toBe(true);
+    expect(existsSync(join(target, "extension-data", "probe"))).toBe(true);
+    expect(existsSync(legacyState)).toBe(false);
+  });
+
+  test("reports a state-dir conflict instead of clobbering either side", () => {
+    const { stateDir, workspaceRoot } = makeFixture();
+    makeLegacyOffice(workspaceRoot, "C123");
+    mkdirSync(join(stateDir, "conversations", "C123"), { recursive: true });
+    mkdirSync(join(stateDir, "conversations", officeKey(createOfficeAddress("slack", "C123"))), {
+      recursive: true,
+    });
+
+    const summary = migrateLegacyOffices({
+      workspaceRoot,
+      stateDir,
+      enabledPlatforms: ["slack"],
+    });
+
+    expect(summary.stateDirConflicts).toEqual(["C123"]);
+    expect(formatUnmigratedOfficesError(summary)).toContain("<state-dir>/conversations");
   });
 
   test("already office-key-shaped directories are left alone", () => {

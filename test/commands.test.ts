@@ -653,7 +653,12 @@ describe("ExtensionsCommandHandler", () => {
   });
 
   test("warns about an index file at the scope root instead of listing it wrongly", async () => {
-    const convDir = join(stateDir, "conversations", "C123", "extensions");
+    const convDir = join(
+      stateDir,
+      "conversations",
+      officeKey(createOfficeAddress("slack", "C123")),
+      "extensions",
+    );
     mkdirSync(convDir, { recursive: true });
     // Mis-install: extension contents copied into the scope dir itself.
     writeFileSync(join(convDir, "index.mjs"), "export default function activate() {}\n");
@@ -679,7 +684,12 @@ describe("ExtensionsCommandHandler", () => {
       "---\nname: triage\ndescription: d\n---\nbody\n",
     );
     // conversation-scoped: bare file form
-    const convDir = join(stateDir, "conversations", "C123", "extensions");
+    const convDir = join(
+      stateDir,
+      "conversations",
+      officeKey(createOfficeAddress("slack", "C123")),
+      "extensions",
+    );
     mkdirSync(convDir, { recursive: true });
     writeFileSync(join(convDir, "audit.mjs"), "export default function activate() {}\n");
     // side-effect canary: activation must NOT run during listing
@@ -763,7 +773,7 @@ describe("SandboxCommandHandler", () => {
     expect(
       existsSync(
         conversationSettingsPath({
-          conversationId: "C123",
+          address: createOfficeAddress("slack", "C123"),
           conversationDir: join(workingDir, "C123"),
         }),
       ),
@@ -772,7 +782,7 @@ describe("SandboxCommandHandler", () => {
       JSON.parse(
         readFileSync(
           conversationSettingsPath({
-            conversationId: "C123",
+            address: createOfficeAddress("slack", "C123"),
             conversationDir: join(workingDir, "C123"),
           }),
           "utf-8",

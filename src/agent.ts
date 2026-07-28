@@ -314,7 +314,7 @@ function isRegularFile(path: string): boolean {
 }
 
 function loadMikanSkills(
-  conversationId: string,
+  address: OfficeAddress,
   conversationDir: string,
   workspacePath: string,
   projection: WorkspaceProjection,
@@ -345,7 +345,7 @@ function loadMikanSkills(
   // skill ships alongside its SKILL.md, which inlining could never carry.
   const mounted = workspacePath !== hostWorkspacePath;
   for (const { slug, dir } of resolveConversationPackages({
-    conversationId,
+    address,
     stateDir: effectiveStateDir(),
     conversationDir,
   }).skillDirs) {
@@ -1349,6 +1349,7 @@ function buildExtensionHostServices(params: {
 }
 
 async function createConfiguredAgentSession(params: {
+  address: OfficeAddress;
   conversationId: string;
   conversationDir: string;
   workspaceDir: string;
@@ -1365,6 +1366,7 @@ async function createConfiguredAgentSession(params: {
   platformBlockKit?: PlatformBlockKit;
 }): Promise<ConfiguredAgentSession> {
   const {
+    address,
     conversationId,
     conversationDir,
     workspaceDir,
@@ -1400,7 +1402,7 @@ async function createConfiguredAgentSession(params: {
   // they always agree on which profiles are launchable.
   let runnableSubagentProfiles = loadedProfiles.profiles;
   const resolvedPackages = resolveConversationPackages({
-    conversationId,
+    address,
     stateDir: effectiveStateDir(),
     conversationDir,
   });
@@ -1410,7 +1412,7 @@ async function createConfiguredAgentSession(params: {
   const extensionsResult = await loadExtensions({
     dirs: resolvedPackages.extensionDirs,
     roots: resolvedPackages.extensionRoots,
-    context: { conversationId, workspaceDir, model, thinkingLevel },
+    context: { address, conversationId, workspaceDir, model, thinkingLevel },
     services: buildExtensionHostServices({
       workspaceDir,
       vaultManager,
@@ -1567,7 +1569,7 @@ async function prepareRunContext(params: {
   const projection = resolveWorkspaceProjection(join(conversationDir, ".."), message.address);
   const memory = await getMemory(projection);
   const skills = mergeExtensionSkills(
-    loadMikanSkills(conversationId, conversationDir, pathContext.runtimeWorkspaceRoot, projection),
+    loadMikanSkills(message.address, conversationDir, pathContext.runtimeWorkspaceRoot, projection),
     params.extensionSkills ?? [],
   );
   const triggerAttribution = resolveTriggerAttribution(message);
@@ -2091,7 +2093,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     platformBlockKit,
     platformToolPackFactories,
   } = options;
-  const agentConfig = resolveConversationSettings({ conversationId, conversationDir });
+  const agentConfig = resolveConversationSettings({ address: options.address, conversationDir });
 
   const workspaceBase = join(conversationDir, "..");
   const projection = resolveWorkspaceProjection(workspaceBase, options.address);
@@ -2134,7 +2136,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   // Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
   const memory = await getMemory(projection);
   const skills = loadMikanSkills(
-    conversationId,
+    options.address,
     conversationDir,
     pathContext.runtimeWorkspaceRoot,
     projection,
@@ -2173,6 +2175,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   const chatSessionManager = new ChatHistorySync();
   const { session, extensionSkills, extensionRegistry, disposeExtensions } =
     await createConfiguredAgentSession({
+      address: options.address,
       conversationId,
       conversationDir,
       workspaceDir,

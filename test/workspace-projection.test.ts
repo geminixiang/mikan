@@ -89,7 +89,7 @@ describe("workspace office projection", () => {
 
   test("maps legacy full conversation override above canonical global defaults", () => {
     const settingsPath = conversationSettingsPath({
-      conversationId,
+      address,
       conversationDir: join(workspaceDir, officeSegment),
     });
     writeFileSync(settingsPath, JSON.stringify({ sandbox: { image: { workspaceMount: "full" } } }));
@@ -106,7 +106,7 @@ describe("workspace office projection", () => {
       sandbox: { workspace: { doorPolicy: "trusted", layout: "full" } },
     });
     updateConversationSettings(
-      { conversationId, conversationDir: join(workspaceDir, officeSegment) },
+      { address, conversationDir: join(workspaceDir, officeSegment) },
       {
         sandbox: { workspace: { doorPolicy: "isolated" } },
       },

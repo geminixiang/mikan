@@ -15,7 +15,9 @@ Workspace office directories use the office-key layout: `officeDirName` names th
 
 Conversation-scoped credential vaults are keyed by office key — the same string that names the office in the workspace and the registry — so platforms sharing a raw conversation ID can never resolve each other's credentials. The boot migration renames legacy raw-ID vault directories using the registry inventory and fails closed on conflicts. Host-mode vaults stay user-keyed (the host has no execution isolation to scope to) and container mode stays container-keyed.
 
-Settings, package, and event ownership keep raw-ID keys under the state dir, and sandbox resource keys (container names, gondolin instances, cloudflare scopes) stay raw-conversation-derived until the resource-naming migration — a collision there costs a container recreate, never credential access. Admin scope is still raw-ID keyed; its surfaces resolve offices through the registry (`resolveOwnedOfficeAddress`), which refuses ambiguous IDs shared by several platforms until Admin carries full addresses.
+Per-conversation host state (`<state-dir>/conversations/<officeKey>` — settings.json, extensions, extension-data, git checkouts) is office-keyed: the settings scope and the extension/package APIs carry the `OfficeAddress`, and the boot migration moves each office's whole legacy tree in one rename, failing closed on conflicts. The event tool's conversation scope matches platform as well as raw ID (platform-less legacy files stay visible); the events directory itself remains the workspace-wide scheduling bus by design.
+
+Sandbox resource keys (container names, gondolin instances, cloudflare scopes) stay raw-conversation-derived until the resource-naming migration — a collision there costs a container recreate, never credential access. Admin scope is still raw-ID keyed; its surfaces resolve offices through the registry (`resolveOwnedOfficeAddress`), which refuses ambiguous IDs shared by several platforms until Admin carries full addresses.
 
 Platform adapters continue to use raw IDs at their external I/O boundaries.
 The registry never infers a platform from an ID prefix: one enabled platform may

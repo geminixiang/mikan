@@ -190,6 +190,36 @@ describe("createEventTool", () => {
     expect(allResult.content[0]?.text).toContain("Visible only globally");
   });
 
+  test("conversation scope excludes another platform's identically named office", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1700000000003);
+    const workspaceDir = makeWorkspace();
+    const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
+    setEventContext({
+      platform: "discord",
+      conversationId: "900100",
+      conversationKind: "shared",
+      userId: "U123",
+    });
+    await tool.execute("call-1", {
+      type: "immediate",
+      text: "Discord office schedule",
+      filenamePrefix: "discord-office",
+    });
+
+    setEventContext({
+      platform: "telegram",
+      conversationId: "900100",
+      conversationKind: "shared",
+      userId: "U123",
+    });
+    const scoped = await tool.execute("call-2", { action: "list" });
+    expect(scoped.content[0]?.text).not.toContain("Discord office schedule");
+
+    // The workspace scheduling bus stays fully visible on request.
+    const all = await tool.execute("call-3", { action: "list", scope: "all" });
+    expect(all.content[0]?.text).toContain("Discord office schedule");
+  });
+
   test("supports list, read, update, and delete", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1700000000003);
     const workspaceDir = makeWorkspace();

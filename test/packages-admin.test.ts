@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { createOfficeAddress, officeDirName } from "../src/office-address.js";
+import { createOfficeAddress, officeDirName, officeKey } from "../src/office-address.js";
 import { OfficeRegistry } from "../src/office-registry.js";
 import {
   addPackage,
@@ -26,7 +26,7 @@ function globalSettingsFile(): string {
 }
 
 function conversationSettingsFile(): string {
-  return join(stateDir, "conversations", CONVERSATION_ID, "settings.json");
+  return join(stateDir, "conversations", officeKey(CONVERSATION_ADDRESS), "settings.json");
 }
 
 function readPackages(path: string): string[] {
@@ -39,7 +39,7 @@ function readPackages(path: string): string[] {
 
 function context() {
   return {
-    conversationId: CONVERSATION_ID,
+    address: CONVERSATION_ADDRESS,
     stateDir,
     conversationDir: join(workingDir, officeDirName(CONVERSATION_ADDRESS)),
     workingDir,

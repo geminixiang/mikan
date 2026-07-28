@@ -21,6 +21,8 @@ import {
 import { resolveStateDir, takeValueFlag } from "./arg-grammar.js";
 import { runExtDevCommand } from "./ext-dev.js";
 import { parseGitSource, resolveGitSource } from "./ext-git.js";
+import { officeStateDir } from "../office-address.js";
+import { resolveOwnedOfficeAddress } from "../office-registry.js";
 
 interface ExtArgs {
   action?: string;
@@ -58,7 +60,10 @@ function scopeExtensionsDir(args: ExtArgs): string {
   if (args.scope === "global") return join(args.stateDir, "global", "extensions");
   if (args.scope === "conversation" && args.conversationId) {
     // defaultExtensionDirs returns [global, conversation]; take the conversation one.
-    return defaultExtensionDirs(args.conversationId, args.stateDir)[1];
+    return defaultExtensionDirs(
+      resolveOwnedOfficeAddress(args.conversationId, args.stateDir),
+      args.stateDir,
+    )[1];
   }
   throw new Error("Specify a scope: --global or --conversation <id>");
 }
@@ -169,7 +174,14 @@ async function installResolved(args: ExtArgs, source: string, destDir: string): 
   const dataDir =
     args.scope === "global"
       ? join(args.stateDir, "global", "extension-data", result.slug)
-      : join(args.stateDir, "conversations", args.conversationId!, "extension-data", result.slug);
+      : join(
+          officeStateDir(
+            args.stateDir,
+            resolveOwnedOfficeAddress(args.conversationId!, args.stateDir),
+          ),
+          "extension-data",
+          result.slug,
+        );
   const verb = replaced ? "Reinstalled" : "Installed";
   console.log(`\n${verb} ${result.name} (slug: ${result.slug}) for ${scopeLabel}.`);
   console.log(`  code: ${dest}`);
@@ -181,7 +193,10 @@ async function installResolved(args: ExtArgs, source: string, destDir: string): 
 function listAction(args: ExtArgs): number {
   // List the requested scope, or both when no conversation is given.
   const dirs = args.conversationId
-    ? defaultExtensionDirs(args.conversationId, args.stateDir)
+    ? defaultExtensionDirs(
+        resolveOwnedOfficeAddress(args.conversationId, args.stateDir),
+        args.stateDir,
+      )
     : [join(args.stateDir, "global", "extensions")];
   const installed = listInstalledExtensions(dirs);
   if (installed.length === 0) {

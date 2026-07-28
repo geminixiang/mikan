@@ -1,7 +1,7 @@
-import { lstatSync, readdirSync, renameSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import * as log from "./log.js";
-import { isOfficeKey } from "./office-address.js";
+import { isOfficeKey, officeStateDir } from "./office-address.js";
 import { OfficeRegistry } from "./office-registry.js";
 import { migrateConversationVaultKeys } from "./vault/index.js";
 import type { OfficeMigrationRecord, PlatformName } from "./types.js";
@@ -25,6 +25,10 @@ export interface OfficeMigrationRunSummary {
   vaultKeysMigrated: string[];
   /** Raw ids whose legacy and office-key vault dirs both exist (manual merge). */
   vaultConflicts: string[];
+  /** Raw ids whose host state dirs (settings, extensions, data) moved. */
+  stateDirsMigrated: string[];
+  /** Raw ids whose legacy and office-key state dirs both exist (manual merge). */
+  stateDirConflicts: string[];
 }
 
 /**
@@ -53,6 +57,8 @@ export function migrateLegacyOffices(options: {
     failed: [],
     vaultKeysMigrated: [],
     vaultConflicts: [],
+    stateDirsMigrated: [],
+    stateDirConflicts: [],
   };
 
   recoverInterruptedMoves(registry, summary);
@@ -69,6 +75,8 @@ export function migrateLegacyOffices(options: {
   for (const rawConversationId of vaults.migrated) {
     log.logInfo(`[office] Migrated vault key to office key: ${rawConversationId}`);
   }
+
+  migrateConversationStateDirs(registry, options.stateDir, summary);
 
   for (const record of registry.getState().migrations) {
     if (record.status === "needs-owner") summary.unowned.push(record.rawConversationId);
@@ -149,6 +157,31 @@ function claimAndMoveLegacyDirs(
   }
 }
 
+/**
+ * Move each registered office's host state tree — settings.json, extensions,
+ * extension-data, git checkouts — from `conversations/<rawId>` to
+ * `conversations/<officeKey>` in one rename. Conflicts are reported for
+ * manual merge, never clobbered.
+ */
+function migrateConversationStateDirs(
+  registry: OfficeRegistry,
+  stateDir: string,
+  summary: OfficeMigrationRunSummary,
+): void {
+  for (const office of registry.getOffices()) {
+    const legacyDir = join(stateDir, "conversations", office.conversationId);
+    if (!existsSync(legacyDir)) continue;
+    const targetDir = officeStateDir(stateDir, office);
+    if (existsSync(targetDir)) {
+      summary.stateDirConflicts.push(office.conversationId);
+      continue;
+    }
+    renameSync(legacyDir, targetDir);
+    summary.stateDirsMigrated.push(office.conversationId);
+    log.logInfo(`[office] Migrated host state dir to office key: ${office.conversationId}`);
+  }
+}
+
 /** A migrated office is an existing office; keep the directory enumerable. */
 function recordMigratedOffice(registry: OfficeRegistry, record: OfficeMigrationRecord): void {
   if (!record.ownerPlatform) return;
@@ -217,6 +250,14 @@ export function formatUnmigratedOfficesError(summary: OfficeMigrationRunSummary)
       "These conversations have credentials under both the legacy and the",
       "office-key vault directory; merge them manually under <state-dir>/vaults:",
       ...summary.vaultConflicts.map((id) => `  - ${id}`),
+    );
+  }
+  if (summary.stateDirConflicts.length > 0) {
+    lines.push(
+      "",
+      "These conversations have host state under both the legacy and the",
+      "office-key directory; merge them manually under <state-dir>/conversations:",
+      ...summary.stateDirConflicts.map((id) => `  - ${id}`),
     );
   }
   return lines.join("\n");

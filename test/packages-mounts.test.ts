@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { createOfficeAddress } from "../src/office-address.js";
 import {
   conversationPackageSkillMounts,
   packageSkillRuntimeDir,
@@ -47,7 +48,7 @@ function makeSkillPackage(): string {
 
 function options() {
   return {
-    conversationId: CONVERSATION_ID,
+    address: createOfficeAddress("slack", CONVERSATION_ID),
     stateDir,
     conversationDir: join(workingDir, CONVERSATION_ID),
   };

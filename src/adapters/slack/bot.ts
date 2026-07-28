@@ -156,10 +156,7 @@ export class SlackMessagingBot implements MessagingBot {
   private resolveReplyMode(
     address: import("../../adapter.js").OfficeAddress,
   ): "top-level" | "thread" {
-    const scope = {
-      conversationId: address.conversationId,
-      conversationDir: this.conversationDir(address.conversationId),
-    };
+    const scope = { address, conversationDir: this.conversationDir(address.conversationId) };
     return resolveConversationSettings(scope).slack?.replyMode ?? "top-level";
   }
 

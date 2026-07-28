@@ -120,10 +120,7 @@ function resolveEffectiveWorkspace(
   if (!hostWorkspaceRoot) return fallback;
 
   try {
-    const settings = resolveConversationSettings({
-      conversationId: address.conversationId,
-      conversationDir,
-    }).sandbox;
+    const settings = resolveConversationSettings({ address, conversationDir }).sandbox;
     if (settings?.workspace) {
       return normalizeWorkspace(settings.workspace.doorPolicy, settings.workspace.layout);
     }

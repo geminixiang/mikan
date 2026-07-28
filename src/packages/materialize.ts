@@ -18,6 +18,8 @@ import { dirname, join } from "node:path";
 import { ensureDirExists, readTextFileIfExists } from "../utils/file-guards.js";
 import * as log from "../log.js";
 import { gitRepoPath, parseSource, sourceIdentity } from "./source.js";
+import { officeStateDir } from "../office-address.js";
+import type { OfficeAddress } from "../types.js";
 import type {
   MaterializeMode,
   MaterializeOptions,
@@ -57,13 +59,12 @@ const MATERIALIZED_REF_FILE = "mikan-ref";
  */
 export function packageScopeDir(
   scope: PackageScope,
-  conversationId: string | undefined,
+  address: OfficeAddress | undefined,
   stateDir: string,
 ): string {
   if (scope === "global") return join(stateDir, "global");
-  if (!conversationId) throw new Error("A conversation-scoped package needs a conversation id");
-  assertSafePathSegment(conversationId);
-  return join(stateDir, "conversations", conversationId);
+  if (!address) throw new Error("A conversation-scoped package needs an office address");
+  return officeStateDir(stateDir, address);
 }
 
 /**
@@ -94,7 +95,7 @@ export function materializeSource(
   options: MaterializeOptions,
 ): MaterializedPackage {
   const parsed = parseSource(source);
-  const scopeDir = packageScopeDir(options.scope, options.conversationId, options.stateDir);
+  const scopeDir = packageScopeDir(options.scope, options.address, options.stateDir);
   const dir =
     parsed.type === "local"
       ? materializeLocal(parsed)
@@ -320,17 +321,4 @@ function gitErrorText(err: unknown): string {
     if (text) return text.split("\n").slice(-3).join(" ");
   }
   return err instanceof Error ? err.message : String(err);
-}
-
-function assertSafePathSegment(value: string): void {
-  if (
-    value.length === 0 ||
-    value === "." ||
-    value === ".." ||
-    value.includes("/") ||
-    value.includes("\\") ||
-    value.includes("\0")
-  ) {
-    throw new Error("Conversation id must be a safe path segment");
-  }
 }
