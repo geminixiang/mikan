@@ -18,6 +18,11 @@ describe("sandbox command parsing", () => {
     });
   });
 
+  test("does not expose workspace door mutations through chat", () => {
+    expect(parseSandboxCommand("/pi-sandbox private")).toEqual({});
+    expect(parseSandboxCommand("/pi-sandbox full")).toEqual({});
+  });
+
   test("ignores other commands", () => {
     expect(parseSandboxCommand("/pi-model anthropic/claude-sonnet-4-6")).toBeNull();
   });

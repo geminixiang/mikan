@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -6,7 +6,7 @@ import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-work
 import type { MutableModels } from "@earendil-works/pi-ai";
 import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../src/adapter.js";
 import { createSlackToolPack } from "../src/adapters/slack/tool-pack.js";
-import { createRunner } from "../src/agent.js";
+import { createRunner, isSafePromptSkillTree } from "../src/agent.js";
 import { MikanAgentSession, MikanModels } from "../src/harness/index.js";
 import { createManagedSessionFile, getChannelSessionDir } from "../src/sessions/store.js";
 import type { PlatformToolPackFactory } from "../src/tools/types.js";
@@ -27,7 +27,10 @@ beforeEach(() => {
   mkdirSync(stateDir, { recursive: true });
   writeFileSync(
     join(stateDir, "settings.json"),
-    JSON.stringify({ llm: { provider: "faux", model: "faux-1", thinkingLevel: "off" } }),
+    JSON.stringify({
+      llm: { provider: "faux", model: "faux-1", thinkingLevel: "off" },
+      sandbox: { workspace: { doorPolicy: "trusted", layout: "full" } },
+    }),
   );
   process.env.MIKAN_STATE_DIR = stateDir;
 });
@@ -115,6 +118,28 @@ const platform: MessagingInfo = {
 };
 
 describe("PiAgentWrapper.run", () => {
+  test("does not follow conversation memory symlinks during host prompt construction", async () => {
+    const outside = join(dir, "outside-secret.txt");
+    writeFileSync(outside, "DO_NOT_LEAK_THIS_SECRET");
+    const memoryPath = join(dir, "workspace", "C1", "MEMORY.md");
+    mkdirSync(join(dir, "workspace", "C1"), { recursive: true });
+    rmSync(memoryPath, { force: true });
+    symlinkSync(outside, memoryPath);
+    const { runner } = await createTestRunner();
+    await runner.dispose();
+
+    expect(readFileSync(outside, "utf-8")).toBe("DO_NOT_LEAK_THIS_SECRET");
+  });
+
+  test("ignores a conversation skill tree containing symlinks", async () => {
+    const outside = join(dir, "outside-skill.md");
+    writeFileSync(outside, "---\nname: escaped\ndescription: secret\n---\nDO_NOT_LOAD");
+    const skillsDir = join(dir, "workspace", "C1", "skills");
+    mkdirSync(skillsDir, { recursive: true });
+    symlinkSync(outside, join(skillsDir, "escaped.md"));
+    expect(isSafePromptSkillTree(skillsDir, join(dir, "workspace", "C1"))).toBe(false);
+  });
+
   test("surfaces subagent batch progress through the platform-neutral responder", async () => {
     const { runner, faux } = await createTestRunner();
     faux.setResponses([

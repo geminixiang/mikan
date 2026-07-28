@@ -334,11 +334,22 @@ export interface PiAgentWrapper {
 
 // ── config ────────────────────────────────────────────────────────────────────
 
+export type WorkspaceDoorPolicy = "isolated" | "trusted";
+export type WorkspaceLayout = "conversation" | "shared-support" | "full";
+
+interface WorkspaceSettings {
+  doorPolicy?: WorkspaceDoorPolicy;
+  layout?: WorkspaceLayout;
+}
+
 export interface SandboxSettings {
   cpus?: string;
   memory?: string;
   boost?: { cpus?: string; memory?: string };
+  /** Legacy image-specific workspace setting; new installations use workspace. */
   image?: { workspaceMount?: "private" | "full" };
+  /** Backend-neutral office data policy and layout. */
+  workspace?: WorkspaceSettings;
   defaultSharedVault?: string;
 }
 

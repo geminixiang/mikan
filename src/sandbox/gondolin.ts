@@ -944,6 +944,7 @@ export class GondolinExecutor implements Executor {
 export const gondolinSandboxAdapter: SandboxAdapter<GondolinSandboxConfig> = {
   type: "gondolin",
   credentials: { env: true, fileMounts: true },
+  workspace: { managedProjection: true },
   parse: parseGondolinSandboxArg,
   validate: validateGondolinSandbox,
   createExecutor: (config, env) => new GondolinExecutor(config, env),

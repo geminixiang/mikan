@@ -1,6 +1,6 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "@sinclair/typebox";
-import { existsSync, readFileSync, renameSync, rmSync } from "fs";
+import { existsSync, lstatSync, readFileSync, renameSync, rmSync } from "fs";
 import { basename, dirname, join, resolve } from "path";
 import { effectiveStateDir } from "./cli/arg-grammar.js";
 import { readEnv } from "./utils/env.js";
@@ -38,8 +38,8 @@ const ONBOARD_SETTINGS: SettingsFileConfig = {
       cpus: "2",
       memory: "4g",
     },
-    image: {
-      workspaceMount: "private",
+    workspace: {
+      doorPolicy: "isolated",
     },
     defaultSharedVault: "",
   },
@@ -93,6 +93,20 @@ const SettingsFileSchema = Type.Object({
         Type.Object({
           workspaceMount: Type.Optional(
             Type.Union([Type.Literal("private"), Type.Literal("full")]),
+          ),
+        }),
+      ),
+      workspace: Type.Optional(
+        Type.Object({
+          doorPolicy: Type.Optional(
+            Type.Union([Type.Literal("isolated"), Type.Literal("trusted")]),
+          ),
+          layout: Type.Optional(
+            Type.Union([
+              Type.Literal("conversation"),
+              Type.Literal("shared-support"),
+              Type.Literal("full"),
+            ]),
           ),
         }),
       ),
@@ -171,11 +185,21 @@ function normalizePackages(packages: string[]): string[] {
  */
 function normalizeSandboxSettings(sandbox: SandboxSettings): SandboxSettings {
   const defaultSharedVault = sandbox.defaultSharedVault?.trim();
+  const legacyWorkspace =
+    sandbox.image?.workspaceMount === "private"
+      ? { doorPolicy: "trusted" as const, layout: "shared-support" as const }
+      : sandbox.image?.workspaceMount === "full"
+        ? { doorPolicy: "trusted" as const, layout: "full" as const }
+        : undefined;
+  const workspace = legacyWorkspace
+    ? { ...legacyWorkspace, ...sandbox.workspace }
+    : sandbox.workspace;
   return {
     ...(sandbox.cpus !== undefined ? { cpus: sandbox.cpus } : {}),
     ...(sandbox.memory !== undefined ? { memory: sandbox.memory } : {}),
     ...(sandbox.boost !== undefined ? { boost: sandbox.boost } : {}),
     ...(sandbox.image !== undefined ? { image: sandbox.image } : {}),
+    ...(workspace !== undefined ? { workspace } : {}),
     ...(defaultSharedVault ? { defaultSharedVault } : {}),
   };
 }
@@ -198,6 +222,9 @@ function mergeSandboxSettings(
     ...override,
     ...(base.boost || override.boost ? { boost: { ...base.boost, ...override.boost } } : {}),
     ...(base.image || override.image ? { image: { ...base.image, ...override.image } } : {}),
+    ...(base.workspace || override.workspace
+      ? { workspace: { ...base.workspace, ...override.workspace } }
+      : {}),
   };
 }
 
@@ -275,19 +302,22 @@ export function loadGlobalSettings(): AgentConfig {
 export function conversationSettingsPath(conversationDir: string): string {
   const conversationId = basename(resolve(conversationDir));
   const hostPath = join(getStateDir(), "conversations", conversationId, "settings.json");
-  if (existsSync(hostPath)) return hostPath;
+  if (existsSync(hostPath)) {
+    assertSettingsFile(hostPath, "Host conversation settings");
+    return hostPath;
+  }
 
   ensureDirExists(dirname(hostPath));
   const legacyPath = join(conversationDir, "settings.json");
   let content = "{}\n";
   let migrated = false;
   if (existsSync(legacyPath)) {
-    try {
-      content = readFileSync(legacyPath, "utf-8");
-      migrated = true;
-    } catch (err) {
-      log.logWarning(`Could not read legacy conversation settings: ${legacyPath}`, String(err));
-    }
+    assertSettingsFile(legacyPath, "Legacy conversation settings");
+    content = readFileSync(legacyPath, "utf-8");
+    // Validate before moving the file. A malformed legacy file must fail
+    // closed and remain available for an operator to repair.
+    loadSettingsFile(legacyPath);
+    migrated = true;
   }
   atomicWritePrivateFile(hostPath, content);
   if (migrated) {
@@ -299,6 +329,18 @@ export function conversationSettingsPath(conversationDir: string): string {
     log.logInfo(`Migrated conversation settings to host-only path: ${hostPath}`);
   }
   return hostPath;
+}
+
+function assertSettingsFile(path: string, label: string): void {
+  let stats;
+  try {
+    stats = lstatSync(path);
+  } catch (err) {
+    throw new Error(`${label} cannot be inspected: ${path}`, { cause: err });
+  }
+  if (stats.isSymbolicLink() || !stats.isFile()) {
+    throw new Error(`${label} must be a regular non-symlink file: ${path}`);
+  }
 }
 
 export function resolveConversationSettings(conversationDir: string): AgentConfig {

@@ -139,9 +139,15 @@ export interface SandboxCredentialCapabilities {
   fileMounts: boolean;
 }
 
+interface SandboxWorkspaceCapabilities {
+  /** Whether mikan can enforce the managed conversation workspace projection. */
+  managedProjection: boolean;
+}
+
 export interface SandboxAdapter<TConfig extends SandboxConfig = SandboxConfig> {
   type: TConfig["type"];
   credentials: SandboxCredentialCapabilities;
+  workspace: SandboxWorkspaceCapabilities;
   parse(value: string): TConfig | undefined;
   validate?(config: TConfig): Promise<void>;
   createExecutor?(

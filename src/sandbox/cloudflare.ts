@@ -175,6 +175,7 @@ export class CloudflareSandboxExecutor implements Executor {
 export const cloudflareSandboxAdapter: SandboxAdapter<CloudflareSandboxConfig> = {
   type: "cloudflare",
   credentials: { env: true, fileMounts: false },
+  workspace: { managedProjection: false },
   parse: parseCloudflareSandboxArg,
   validate: validateCloudflareSandbox,
   createExecutor: (config, env, ensureReady) =>

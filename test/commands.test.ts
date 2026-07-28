@@ -7,7 +7,7 @@ import { MikanModels } from "../src/harness/index.js";
 import { AdminCommandHandler } from "../src/commands/admin.js";
 import { AutoReplyCommandHandler } from "../src/commands/auto-reply.js";
 import { ExtensionsCommandHandler } from "../src/commands/extensions.js";
-import { conversationSettingsPath } from "../src/config.js";
+import { conversationSettingsPath, createGlobalSettingsFile } from "../src/config.js";
 import { dispatchCommand } from "../src/commands/registry.js";
 import { LoginCommandHandler, parseLoginCommand } from "../src/commands/login.js";
 import { ModelCommandHandler } from "../src/commands/model.js";
@@ -700,6 +700,7 @@ describe("SandboxCommandHandler", () => {
     sandboxStateDir = join(workingDir, "state");
     mkdirSync(sandboxStateDir, { recursive: true });
     process.env.MIKAN_STATE_DIR = sandboxStateDir;
+    createGlobalSettingsFile(sandboxStateDir);
   });
 
   afterEach(() => {
@@ -707,7 +708,7 @@ describe("SandboxCommandHandler", () => {
     rmSync(workingDir, { recursive: true, force: true });
   });
 
-  test("reports current workspace mount mode", async () => {
+  test("reports the current office policy", async () => {
     const ctx = buildContext({
       commandText: "/pi-sandbox",
       conversationId: "C123",
@@ -723,12 +724,13 @@ describe("SandboxCommandHandler", () => {
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(ctx.responder.responses[0]).toContain("Workspace mount: private");
+    expect(ctx.responder.responses[0]).toContain("Workspace policy: isolated");
+    expect(ctx.responder.responses[0]).toContain("Workspace layout: conversation");
   });
 
-  test("switches a conversation to full workspace mode", async () => {
+  test.each(["private", "full"])("does not expose %s door mutation through chat", async (mode) => {
     const ctx = buildContext({
-      commandText: "/pi-sandbox full",
+      commandText: `/pi-sandbox ${mode}`,
       conversationId: "C123",
       services: {
         workingDir,
@@ -742,37 +744,11 @@ describe("SandboxCommandHandler", () => {
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
-    const sandboxConfig = JSON.parse(
-      readFileSync(conversationSettingsPath(join(workingDir, "C123")), "utf-8"),
-    ) as { sandbox: { image: { workspaceMount: string } } };
-    expect(sandboxConfig.sandbox.image.workspaceMount).toBe("full");
-    // Never written into the (sandbox-mounted) conversation dir.
-    expect(existsSync(join(workingDir, "C123", "settings.json"))).toBe(false);
-    expect(ctx.responder.responses[0]).toContain("Workspace mount: full");
-  });
-
-  test("switches a conversation back to private workspace mode", async () => {
-    mkdirSync(join(workingDir, "C123"), { recursive: true });
-    const ctx = buildContext({
-      commandText: "/pi-sandbox private",
-      conversationId: "C123",
-      services: {
-        workingDir,
-        sandbox: { type: "image", image: "ubuntu:24.04" },
-        resourceController: {
-          getLimitStatus: () => ({ limits: undefined, boosted: false }),
-          getDefaultLimits: () => undefined,
-          getBoostLimits: () => undefined,
-        } as any,
-      },
-    });
-
-    expect(await handler.tryHandle(ctx)).toBe(true);
-    const sandboxConfig = JSON.parse(
-      readFileSync(conversationSettingsPath(join(workingDir, "C123")), "utf-8"),
-    ) as { sandbox: { image: { workspaceMount: string } } };
-    expect(sandboxConfig.sandbox.image.workspaceMount).toBe("private");
-    expect(ctx.responder.responses[0]).toContain("Workspace mount: private");
+    expect(existsSync(conversationSettingsPath(join(workingDir, "C123")))).toBe(true);
+    expect(
+      JSON.parse(readFileSync(conversationSettingsPath(join(workingDir, "C123")), "utf-8")),
+    ).toEqual({});
+    expect(ctx.responder.responses[0]).toContain("Workspace policy: isolated");
   });
 
   test("boosts a Gondolin conversation", async () => {

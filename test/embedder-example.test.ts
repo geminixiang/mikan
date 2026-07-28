@@ -27,7 +27,10 @@ function createFauxModels(): { models: MikanModels; faux: ReturnType<typeof faux
   mkdirSync(stateDir, { recursive: true });
   writeFileSync(
     join(stateDir, "settings.json"),
-    JSON.stringify({ llm: { provider: "faux", model: "faux-1", thinkingLevel: "off" } }),
+    JSON.stringify({
+      llm: { provider: "faux", model: "faux-1", thinkingLevel: "off" },
+      sandbox: { workspace: { doorPolicy: "trusted", layout: "full" } },
+    }),
   );
   process.env.MIKAN_STATE_DIR = stateDir;
 

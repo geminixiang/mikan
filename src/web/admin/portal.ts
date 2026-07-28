@@ -26,6 +26,7 @@ import { renderPortalShell } from "../portal-shell.js";
 import { resolveExistingSessionFile } from "../session-view/service.js";
 import { PRODUCT_NAME } from "../../platform-messages.js";
 import { credentialAuthorizationKey } from "../../sandbox/identity.js";
+import { resolveWorkspaceProjection } from "../../workspace-projection/index.js";
 import { sharedVaultKey } from "../../vault/index.js";
 import { modelKey, resolveAdminModelAccessStatuses } from "./provider-models.js";
 import type { AdminToken } from "./store.js";
@@ -593,6 +594,8 @@ function serveConversationState(
   const dir = join(workingDir, conversationId);
   const globalConfig = loadGlobalSettings();
   const conversationConfig = resolveConversationSettings(dir);
+  const conversationWorkspace = resolveWorkspaceProjection(workingDir, conversationId);
+  const globalWorkspaceSettings = globalConfig.sandbox?.workspace;
   const autoReply = loadConversationAutoReplyConfig(dir);
 
   jsonRes(res, 200, {
@@ -603,8 +606,10 @@ function serveConversationState(
     globalProvider: globalConfig.provider,
     globalModel: globalConfig.model,
     globalThinkingLevel: globalConfig.thinkingLevel,
-    sandboxImageWorkspaceMount: conversationConfig.sandbox?.image?.workspaceMount ?? null,
-    globalSandboxImageWorkspaceMount: globalConfig.sandbox?.image?.workspaceMount ?? null,
+    workspaceDoorPolicy: conversationWorkspace.doorPolicy,
+    workspaceLayout: conversationWorkspace.layout,
+    globalWorkspaceDoorPolicy: globalWorkspaceSettings?.doorPolicy ?? "isolated",
+    globalWorkspaceLayout: globalWorkspaceSettings?.layout ?? "conversation",
     autoReplyEnabled: autoReply.enabled,
     autoReplyRules: autoReply.rules,
     slack: {
@@ -626,7 +631,8 @@ function serveGlobalSettings(res: ServerResponse): void {
       sandboxMemory: config.sandbox?.memory ?? null,
       sandboxBoostCpus: config.sandbox?.boost?.cpus ?? null,
       sandboxBoostMemory: config.sandbox?.boost?.memory ?? null,
-      sandboxImageWorkspaceMount: config.sandbox?.image?.workspaceMount ?? null,
+      workspaceDoorPolicy: config.sandbox?.workspace?.doorPolicy ?? "isolated",
+      workspaceLayout: config.sandbox?.workspace?.layout ?? "conversation",
       defaultSharedVault: config.sandbox?.defaultSharedVault ?? null,
       slack: {
         replyMode: config.slack?.replyMode ?? "top-level",
@@ -705,30 +711,13 @@ function serveConversationModelUpdate(
 
 function serveConversationSandboxUpdate(
   res: ServerResponse,
-  body: Record<string, unknown>,
-  services: AdminServices,
-  token: AdminToken,
+  _body: Record<string, unknown>,
+  _services: AdminServices,
+  _token: AdminToken,
 ): void {
-  const workspaceMount = body.workspaceMount;
-  if (workspaceMount !== "private" && workspaceMount !== "full") {
-    jsonRes(res, 400, { error: "workspaceMount must be 'private' or 'full'" });
-    return;
-  }
-  const scope = resolveTargetConversation(body, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
-    return;
-  }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
-  try {
-    applyConversationSettings(services.runtime, workingDir, scope.conversationId, {
-      sandbox: { image: { workspaceMount } },
-    });
-    jsonRes(res, 200, { ok: true });
-  } catch (err) {
-    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
-  }
+  jsonRes(res, 403, {
+    error: "Office door policy is host-controlled until administrator authorization is configured",
+  });
 }
 
 function serveConversationSlackUpdate(
@@ -955,9 +944,6 @@ function serveGlobalSandboxUpdate(
   const memory = typeof body.memory === "string" ? body.memory.trim() : "";
   const boostCpus = typeof body.boostCpus === "string" ? body.boostCpus.trim() : "";
   const boostMemory = typeof body.boostMemory === "string" ? body.boostMemory.trim() : "";
-  const workspaceMount = body.workspaceMount;
-  const validMount = workspaceMount === "private" || workspaceMount === "full";
-
   const update: SandboxSettings = {
     ...(cpus ? { cpus } : {}),
     ...(memory ? { memory } : {}),
@@ -969,7 +955,6 @@ function serveGlobalSandboxUpdate(
           },
         }
       : {}),
-    ...(validMount ? { image: { workspaceMount: workspaceMount as "private" | "full" } } : {}),
   };
 
   if (Object.keys(update).length === 0) {
@@ -1948,10 +1933,6 @@ function renderAdminPage(token: AdminToken): string {
       const thinkingOpts = thinking.map((t) =>
         '<option value="' + t + '"' + (data.thinkingLevel === t ? ' selected' : '') + '>' + t + '</option>'
       ).join('');
-      const mounts = ['private','full'];
-      const mountOpts = mounts.map((m) =>
-        '<option value="' + m + '"' + (data.sandboxImageWorkspaceMount === m ? ' selected' : '') + '>' + m + '</option>'
-      ).join('');
       const rulesText = (data.autoReplyRules || []).join('\\n');
       const replyModes = ['top-level','thread'];
       const replyModeOpts = replyModes.map((m) =>
@@ -1960,7 +1941,6 @@ function renderAdminPage(token: AdminToken): string {
       const globalReplyMode = (data.slack && data.slack.globalReplyMode) || 'top-level';
       const globalModel = [data.globalProvider, data.globalModel].filter(Boolean).join('/');
       const globalModelLabel = globalModel + (data.globalThinkingLevel ? ':' + data.globalThinkingLevel : '');
-      const globalMount = data.globalSandboxImageWorkspaceMount || 'private';
       return [
         '<div class="config-grid">',
           '<div class="config-block">',
@@ -1979,10 +1959,8 @@ function renderAdminPage(token: AdminToken): string {
             '<div id="auto-save-result" class="inline-result" style="display:none"></div>',
           '</div>',
           '<div class="config-block">',
-            '<h3 class="card-subtitle">Workspace mount</h3>',
-            '<div class="config-row"><label>Mode</label><select id="m-mount">' + mountOpts + '</select></div>',
-            '<p class="muted-note">Global default: ' + escHtml(globalMount) + '</p>',
-            '<button class="primary-action-btn" onclick="saveMount(this)">Save mount</button>',
+            '<h3 class="card-subtitle">Office data policy</h3>',
+            '<p class="muted-note">Door policy is host-controlled until administrator authorization is configured. Effective: ' + escHtml(data.workspaceDoorPolicy + ' / ' + data.workspaceLayout) + '</p>',
             '<div id="mount-save-result" class="inline-result" style="display:none"></div>',
           '</div>',
           '<div class="config-block">',
@@ -2036,22 +2014,6 @@ function renderAdminPage(token: AdminToken): string {
         result.style.display = 'block'; result.className = 'inline-result err'; result.textContent = err.message;
       } finally {
         btn.disabled = false; btn.textContent = 'Save auto-reply';
-      }
-    }
-
-    async function saveMount(btn) {
-      const workspaceMount = document.getElementById('m-mount').value;
-      const result = document.getElementById('mount-save-result');
-      btn.disabled = true; btn.textContent = 'Saving…'; result.style.display = 'none';
-      try {
-        await apiPost('/admin/api/conversations/sandbox', {
-          conversationId: activeConversationId, workspaceMount,
-        });
-        result.style.display = 'block'; result.className = 'inline-result ok'; result.textContent = 'Saved ✓';
-      } catch (err) {
-        result.style.display = 'block'; result.className = 'inline-result err'; result.textContent = err.message;
-      } finally {
-        btn.disabled = false; btn.textContent = 'Save mount';
       }
     }
 
@@ -2593,10 +2555,6 @@ function renderAdminPage(token: AdminToken): string {
       const thinkingOpts = thinking.map((t) =>
         '<option value="' + t + '"' + (data.thinkingLevel === t ? ' selected' : '') + '>' + t + '</option>'
       ).join('');
-      const mounts = ['private','full'];
-      const mountOpts = mounts.map((m) =>
-        '<option value="' + m + '"' + (data.sandboxImageWorkspaceMount === m ? ' selected' : '') + '>' + m + '</option>'
-      ).join('');
       const replyModes = ['top-level','thread'];
       const replyModeOpts = replyModes.map((m) =>
         '<option value="' + m + '"' + (((data.slack && data.slack.replyMode) || 'top-level') === m ? ' selected' : '') + '>' + m + '</option>'
@@ -2616,7 +2574,7 @@ function renderAdminPage(token: AdminToken): string {
             '<div class="config-row"><label>Memory</label><input id="g-mem" placeholder="1g" value="' + escAttr(data.sandboxMemory || '') + '"></div>',
             '<div class="config-row"><label>Boost CPUs</label><input id="g-bcpus" placeholder="2" value="' + escAttr(data.sandboxBoostCpus || '') + '"></div>',
             '<div class="config-row"><label>Boost Mem</label><input id="g-bmem" placeholder="4g" value="' + escAttr(data.sandboxBoostMemory || '') + '"></div>',
-            '<div class="config-row"><label>Mount</label><select id="g-mount">' + mountOpts + '</select></div>',
+            '<p class="muted-note">Office door policy is configured in host settings. Effective default: ' + escHtml(data.workspaceDoorPolicy + ' / ' + data.workspaceLayout) + '</p>',
             '<button class="primary-action-btn" onclick="saveGlobalSandbox(this)">Save sandbox</button>',
             '<div id="g-sandbox-result" class="inline-result" style="display:none"></div>',
           '</div>',
@@ -2656,11 +2614,10 @@ function renderAdminPage(token: AdminToken): string {
       const memory = document.getElementById('g-mem').value.trim();
       const boostCpus = document.getElementById('g-bcpus').value.trim();
       const boostMemory = document.getElementById('g-bmem').value.trim();
-      const workspaceMount = document.getElementById('g-mount').value;
       const result = document.getElementById('g-sandbox-result');
       btn.disabled = true; btn.textContent = 'Saving…'; result.style.display = 'none';
       try {
-        await apiPost('/admin/api/settings/sandbox', { cpus, memory, boostCpus, boostMemory, workspaceMount });
+        await apiPost('/admin/api/settings/sandbox', { cpus, memory, boostCpus, boostMemory });
         result.style.display = 'block'; result.className = 'inline-result ok'; result.textContent = 'Saved ✓';
       } catch (err) {
         result.style.display = 'block'; result.className = 'inline-result err'; result.textContent = err.message;

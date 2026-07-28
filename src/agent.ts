@@ -32,7 +32,7 @@ import {
   settleSubagentProgress,
 } from "./subagent-progress.js";
 import { createHash } from "crypto";
-import { existsSync } from "fs";
+import { existsSync, lstatSync, readdirSync } from "fs";
 import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { basename, isAbsolute, join, posix, relative, resolve, sep } from "path";
@@ -53,12 +53,15 @@ import type {
   PlatformUploader,
 } from "./types.js";
 import { resolveConversationSettings } from "./config.js";
+import { resolveWorkspaceProjection } from "./workspace-projection/index.js";
+import type { WorkspaceProjection } from "./workspace-projection/types.js";
 import { effectiveStateDir } from "./cli/arg-grammar.js";
 import { packageSkillRuntimeDir, resolveConversationPackages } from "./packages/index.js";
 import { ActorExecutionResolver } from "./execution-resolver.js";
 import * as log from "./log.js";
 import type { DockerContainerManager } from "./provisioner.js";
 import {
+  assertSandboxSupportsWorkspacePolicy,
   createExecutor,
   getUnresolvedSandboxPathContext,
   type Executor,
@@ -266,12 +269,11 @@ export async function buildPromptPayload(
   return { userMessage, imageAttachments };
 }
 
-async function getMemory(conversationDir: string): Promise<string> {
+async function getMemory(projection: WorkspaceProjection): Promise<string> {
   const parts: string[] = [];
 
-  // Read workspace-level memory (shared across all conversations)
-  const workspaceMemoryPath = join(conversationDir, "..", "MEMORY.md");
-  if (existsSync(workspaceMemoryPath)) {
+  const workspaceMemoryPath = projection.promptSources.globalMemoryPath;
+  if (workspaceMemoryPath && isRegularFile(workspaceMemoryPath)) {
     try {
       const content = (await readFile(workspaceMemoryPath, "utf-8")).trim();
       if (content) {
@@ -282,9 +284,8 @@ async function getMemory(conversationDir: string): Promise<string> {
     }
   }
 
-  // Read conversation-specific memory
-  const conversationMemoryPath = join(conversationDir, "MEMORY.md");
-  if (existsSync(conversationMemoryPath)) {
+  const conversationMemoryPath = projection.promptSources.conversationMemoryPath;
+  if (isRegularFile(conversationMemoryPath)) {
     try {
       const content = (await readFile(conversationMemoryPath, "utf-8")).trim();
       if (content) {
@@ -302,7 +303,20 @@ async function getMemory(conversationDir: string): Promise<string> {
   return parts.join("\n\n");
 }
 
-function loadMikanSkills(conversationDir: string, workspacePath: string): MikanSkill[] {
+function isRegularFile(path: string): boolean {
+  try {
+    const stats = lstatSync(path);
+    return stats.isFile() && !stats.isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+function loadMikanSkills(
+  conversationDir: string,
+  workspacePath: string,
+  projection: WorkspaceProjection,
+): MikanSkill[] {
   const skillMap = new Map<string, MikanSkill>();
 
   // conversationDir is the host path (e.g., /Users/.../data/C0A34FL8PMH)
@@ -345,24 +359,61 @@ function loadMikanSkills(conversationDir: string, workspacePath: string): MikanS
     }
   }
 
-  // Load workspace-level skills (global)
-  const workspaceSkillsDir = join(hostWorkspacePath, "skills");
-  for (const skill of loadSkillsFromDir({ dir: workspaceSkillsDir, source: "workspace" }).skills) {
-    // Translate paths to container paths for system prompt
-    skill.filePath = translatePath(skill.filePath);
-    skill.baseDir = translatePath(skill.baseDir);
-    skillMap.set(skill.name, skill);
+  // Load workspace-level skills only when the office projection authorizes it.
+  const workspaceSkillsDir = projection.promptSources.globalSkillsDir;
+  if (workspaceSkillsDir) {
+    for (const skill of loadSkillsFromDir({ dir: workspaceSkillsDir, source: "workspace" })
+      .skills) {
+      skill.filePath = translatePath(skill.filePath);
+      skill.baseDir = translatePath(skill.baseDir);
+      skillMap.set(skill.name, skill);
+    }
   }
 
-  // Load conversation-specific skills (override workspace skills on collision)
-  const conversationSkillsDir = join(conversationDir, "skills");
-  for (const skill of loadSkillsFromDir({ dir: conversationSkillsDir, source: "channel" }).skills) {
-    skill.filePath = translatePath(skill.filePath);
-    skill.baseDir = translatePath(skill.baseDir);
-    skillMap.set(skill.name, skill);
+  // Load conversation-specific skills (override workspace skills on collision).
+  // Host prompt construction must never follow an agent-created symlink out of
+  // the conversation office.
+  const conversationSkillsDir = projection.promptSources.conversationSkillsDir;
+  if (isSafePromptSkillTree(conversationSkillsDir, projection.promptSources.conversationDir)) {
+    for (const skill of loadSkillsFromDir({ dir: conversationSkillsDir, source: "channel" })
+      .skills) {
+      skill.filePath = translatePath(skill.filePath);
+      skill.baseDir = translatePath(skill.baseDir);
+      skillMap.set(skill.name, skill);
+    }
+  } else if (existsSync(conversationSkillsDir)) {
+    log.logWarning("Ignoring unsafe conversation skill tree", conversationSkillsDir);
   }
 
   return Array.from(skillMap.values());
+}
+
+export function isSafePromptSkillTree(dir: string, conversationDir: string): boolean {
+  if (!existsSync(dir)) return true;
+  if (dir !== conversationDir && !dir.startsWith(`${conversationDir}${sep}`)) return false;
+  const stack = [dir];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    let stats;
+    try {
+      stats = lstatSync(current);
+    } catch {
+      return false;
+    }
+    if (stats.isSymbolicLink()) return false;
+    if (!stats.isDirectory()) continue;
+    let entries;
+    try {
+      entries = readdirSync(current, { withFileTypes: true });
+    } catch {
+      return false;
+    }
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) return false;
+      stack.push(join(current, entry.name));
+    }
+  }
+  return true;
 }
 
 function buildRuntimePaths(runtimeWorkspaceRoot: string, conversationId: string) {
@@ -429,6 +480,7 @@ function buildSystemPrompt(
   sandboxConfig: SandboxConfig,
   platform: MessagingInfo,
   skills: MikanSkill[],
+  projection: WorkspaceProjection,
 ): string {
   const { workspaceRoot, conversationPath, scratchPath } = buildRuntimePaths(
     workspacePath,
@@ -456,6 +508,24 @@ function buildSystemPrompt(
   // system prompt stays byte-stable across a conversation's turns and keeps the
   // provider prompt cache warm (a changing system prefix invalidates the cache
   // for the whole request, including the far larger conversation history).
+  const workspaceLayout =
+    projection.layout === "full"
+      ? `${workspaceRoot}/ contains the complete trusted workspace.`
+      : projection.layout === "shared-support"
+        ? `${workspaceRoot}/ contains shared MEMORY.md, skills/, events/, and this conversation's directory.`
+        : `${conversationPath}/ is the only conversation workspace mounted; global memory, skills, and events are not available.`;
+  const skillStorageGuidance =
+    projection.doorPolicy === "trusted"
+      ? `Store shared skills in \`${workspaceRoot}/skills/<name>/\` or conversation-specific skills in \`${conversationPath}/skills/<name>/\`.`
+      : `Store skills in \`${conversationPath}/skills/<name>/\`; this office cannot access workspace-global skills.`;
+  const memoryGuidance =
+    projection.doorPolicy === "trusted"
+      ? `Write important shared knowledge to \`${workspaceRoot}/MEMORY.md\` and conversation-specific knowledge to \`${conversationPath}/MEMORY.md\`.`
+      : `Write durable knowledge only to \`${conversationPath}/MEMORY.md\`; this office cannot access workspace-global memory.`;
+  const systemLogPath =
+    projection.layout === "conversation"
+      ? `${conversationPath}/SYSTEM.md`
+      : `${workspaceRoot}/SYSTEM.md`;
   const slackBlockKitInstructions =
     platform.name === "slack"
       ? `
@@ -492,10 +562,15 @@ ${envDescription}
 - Do not use host-only paths unless you are running in host mode and verified they exist.
 
 ## Workspace Layout
-${workspaceRoot}/
+${workspaceLayout}
+${
+  projection.layout === "conversation"
+    ? `${conversationPath}/           # This conversation`
+    : `${workspaceRoot}/
 ├── MEMORY.md                    # Global memory (all conversations)
 ├── skills/                      # Global CLI tools you create
-└── ${conversationId}/           # This conversation
+└── ${conversationId}/           # This conversation`
+}
     ├── MEMORY.md                # Conversation-specific memory
     ├── log.jsonl                # Human-readable message history (no tool results)
     ├── sessions/                # Structured session history used for context reconstruction
@@ -510,7 +585,7 @@ ${workspaceRoot}/
 You can create reusable CLI tools for recurring tasks (email, APIs, data processing, etc.).
 
 ### Creating Skills
-Store in \`${workspaceRoot}/skills/<name>/\` (global) or \`${conversationPath}/skills/<name>/\` (conversation-specific).
+${skillStorageGuidance}
 Each skill directory needs a \`SKILL.md\` with YAML frontmatter:
 
 \`\`\`markdown
@@ -542,16 +617,14 @@ When events trigger, messages are prefixed like \`[EVENT:filename:type:time]\`. 
 For periodic events where there's nothing to report, respond with exactly \`[SILENT]\`. Debounce external triggers; prefer one summarized event over many.
 
 ## Memory
-Write to MEMORY.md files to persist context across conversations.
-- Global (${workspaceRoot}/MEMORY.md): skills, preferences, project info
-- Conversation (${conversationPath}/MEMORY.md): conversation-specific decisions, ongoing work
-Update when you learn something important or when asked to remember something.
+${memoryGuidance}
+Update it when you learn something important or when asked to remember something.
 
 ### Current Memory
 ${memory}
 
 ## System Configuration Log
-Maintain ${workspaceRoot}/SYSTEM.md to log all environment modifications:
+Maintain ${systemLogPath} to log all environment modifications:
 - Installed packages (apt install, npm install, uv pip install)
 - Environment variables set
 - Config files modified (~/.gitconfig, cron jobs, etc.)
@@ -1489,9 +1562,10 @@ async function prepareRunContext(params: {
 
   reloadSessionMessages(session, conversationId);
 
-  const memory = await getMemory(conversationDir);
+  const projection = resolveWorkspaceProjection(join(conversationDir, ".."), conversationId);
+  const memory = await getMemory(projection);
   const skills = mergeExtensionSkills(
-    loadMikanSkills(conversationDir, pathContext.runtimeWorkspaceRoot),
+    loadMikanSkills(conversationDir, pathContext.runtimeWorkspaceRoot, projection),
     params.extensionSkills ?? [],
   );
   const triggerAttribution = resolveTriggerAttribution(message);
@@ -1504,6 +1578,7 @@ async function prepareRunContext(params: {
     executor.getSandboxConfig(),
     platform,
     skills,
+    projection,
   );
   session.agent.state.systemPrompt = systemPrompt;
   // Cache diagnosis: a byte-stable system prompt is the precondition for
@@ -2017,6 +2092,8 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   const agentConfig = resolveConversationSettings(conversationDir);
 
   const workspaceBase = join(conversationDir, "..");
+  const projection = resolveWorkspaceProjection(workspaceBase, conversationId);
+  assertSandboxSupportsWorkspacePolicy(sandboxConfig, projection.doorPolicy);
   const { executionResolver, executor, getPathContext, resolveExecutorForRun } =
     createRunnerExecutionContext(
       sandboxConfig,
@@ -2053,8 +2130,8 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   );
 
   // Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
-  const memory = await getMemory(conversationDir);
-  const skills = loadMikanSkills(conversationDir, pathContext.runtimeWorkspaceRoot);
+  const memory = await getMemory(projection);
+  const skills = loadMikanSkills(conversationDir, pathContext.runtimeWorkspaceRoot, projection);
   const emptyPlatform: MessagingInfo = {
     name: "chat",
     formattingGuide: "",
@@ -2071,6 +2148,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     sandboxConfig,
     emptyPlatform,
     skills,
+    projection,
   );
 
   // Create session manager and settings manager. Top-level/private sessions

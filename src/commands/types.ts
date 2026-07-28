@@ -144,7 +144,7 @@ export interface ParsedModelCommand {
 }
 
 export interface ParsedSandboxCommand {
-  action?: "boost" | "private" | "full";
+  action?: "boost";
 }
 
 export type ParsedLoginCommand =
