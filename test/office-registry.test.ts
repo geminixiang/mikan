@@ -10,8 +10,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { createOfficeAddress, officeDir } from "../src/office-address.js";
-import { OfficeRegistry } from "../src/office-registry.js";
+import { conversationOfficeDir, createOfficeAddress, officeDir } from "../src/office-address.js";
+import { ensureOfficeDir, OfficeRegistry } from "../src/office-registry.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -276,6 +276,85 @@ describe("OfficeRegistry", () => {
     const moving = registry.markMoving("C123");
     expect(moving.updatedAt).not.toBe(prepared.updatedAt);
     vi.useRealTimers();
+  });
+
+  test("records offices idempotently and separates platforms sharing a raw id", () => {
+    const fixture = makeFixture();
+    const registry = new OfficeRegistry(fixture.stateDir);
+    const discord = createOfficeAddress("discord", "900100");
+    const telegram = createOfficeAddress("telegram", "900100");
+
+    const first = registry.recordOffice(discord);
+    const again = registry.recordOffice(discord);
+    registry.recordOffice(telegram);
+
+    expect(again).toEqual(first);
+    expect(registry.getOffices()).toHaveLength(2);
+    const reloaded = new OfficeRegistry(fixture.stateDir);
+    expect(
+      reloaded
+        .getOffices()
+        .map((record) => record.platform)
+        .toSorted(),
+    ).toEqual(["discord", "telegram"]);
+  });
+
+  test("rejects a registry file with duplicate office records", () => {
+    const fixture = makeFixture();
+    new OfficeRegistry(fixture.stateDir).recordOffice(createOfficeAddress("slack", "C123"));
+    const path = join(fixture.stateDir, "office-registry.json");
+    const state = JSON.parse(readFileSync(path, "utf-8")) as { offices: unknown[] };
+    state.offices.push(state.offices[0]);
+    writeFileSync(path, JSON.stringify(state));
+
+    expect(() => new OfficeRegistry(fixture.stateDir)).toThrow(/Duplicate office record/);
+  });
+
+  test("reads registry files written before office records existed", () => {
+    const fixture = makeFixture();
+    writeFileSync(
+      join(fixture.stateDir, "office-registry.json"),
+      JSON.stringify({ version: 1, enabledPlatforms: ["slack"], migrations: [] }),
+    );
+
+    expect(new OfficeRegistry(fixture.stateDir).getOffices()).toEqual([]);
+  });
+
+  describe("ensureOfficeDir", () => {
+    test("registers the office, creates its directory, and stays idempotent", () => {
+      const fixture = makeFixture();
+      process.env.MIKAN_STATE_DIR = fixture.stateDir;
+      try {
+        const address = createOfficeAddress("slack", "C900");
+        const dir = ensureOfficeDir(fixture.workspaceRoot, address);
+
+        expect(dir).toBe(conversationOfficeDir(fixture.workspaceRoot, address));
+        expect(existsSync(dir)).toBe(true);
+        expect(ensureOfficeDir(fixture.workspaceRoot, address)).toBe(dir);
+        const registry = new OfficeRegistry(fixture.stateDir);
+        expect(registry.getOffices()).toContainEqual(
+          expect.objectContaining({ platform: "slack", conversationId: "C900" }),
+        );
+      } finally {
+        delete process.env.MIKAN_STATE_DIR;
+      }
+    });
+
+    test("fails closed when the office path is a symlink", () => {
+      const fixture = makeFixture();
+      process.env.MIKAN_STATE_DIR = fixture.stateDir;
+      try {
+        const address = createOfficeAddress("slack", "C901");
+        mkdirSync(fixture.workspaceRoot, { recursive: true });
+        symlinkSync(fixture.root, conversationOfficeDir(fixture.workspaceRoot, address));
+
+        expect(() => ensureOfficeDir(fixture.workspaceRoot, address)).toThrow(
+          /regular non-symlink directory/,
+        );
+      } finally {
+        delete process.env.MIKAN_STATE_DIR;
+      }
+    });
   });
 
   test("requires explicit owners to be enabled", () => {

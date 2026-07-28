@@ -12,7 +12,7 @@ import { mkdir, writeFile } from "fs/promises";
 import { dirname, join } from "path";
 import type { MessagingEventHandler, OfficeAddress } from "../adapter.js";
 import { sameOffice } from "../office-address.js";
-import { ensureDirExists } from "../utils/file-guards.js";
+import { ensureOfficeDir } from "../office-registry.js";
 import * as log from "../log.js";
 import { reportUserFacingError } from "../observability/sentry.js";
 export type {
@@ -155,26 +155,25 @@ export function splitText(
 }
 
 /**
- * Append a JSON-serializable entry to `${workingDir}/${channel}/log.jsonl`,
+ * Append a JSON-serializable entry to the office's `log.jsonl`,
  * creating the directory on first use. This is the single write path every
  * adapter uses for human-readable message history.
  */
-export function appendChannelLog(workingDir: string, channel: string, entry: object): void {
-  const dir = join(workingDir, channel);
-  ensureDirExists(dir);
+export function appendChannelLog(workingDir: string, address: OfficeAddress, entry: object): void {
+  const dir = ensureOfficeDir(workingDir, address);
   appendFileSync(join(dir, "log.jsonl"), `${JSON.stringify(entry)}\n`);
 }
 
 /** Convenience for appending the bot's own outbound message. */
 export function appendBotResponseLog(
   workingDir: string,
-  channel: string,
+  address: OfficeAddress,
   text: string,
   ts: string,
   threadTs?: string,
   extraFields: Record<string, unknown> = {},
 ): void {
-  appendChannelLog(workingDir, channel, {
+  appendChannelLog(workingDir, address, {
     date: new Date().toISOString(),
     ts,
     ...(threadTs ? { threadTs } : {}),

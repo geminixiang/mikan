@@ -9,6 +9,9 @@ import {
   readConversationWorkspaceMountMode,
 } from "../src/execution-resolver.js";
 import { FileVaultManager } from "../src/vault/index.js";
+import { createOfficeAddress, officeDirName } from "../src/office-address.js";
+
+const C123_OFFICE = officeDirName(createOfficeAddress("slack", "C123"));
 
 describe("readConversationWorkspaceMountMode", () => {
   // the Gondolin executor asserts Node >=23.6, but CI also runs the 22.19.0 floor
@@ -38,12 +41,14 @@ describe("readConversationWorkspaceMountMode", () => {
   test("uses the global default when conversation settings are missing", () => {
     createGlobalSettingsFile(stateDir);
 
-    expect(readConversationWorkspaceMountMode(workspaceDir, "C123")).toBe("private");
+    expect(
+      readConversationWorkspaceMountMode(workspaceDir, createOfficeAddress("slack", "C123")),
+    ).toBe("private");
   });
 
   test("fails closed instead of escalating from raw fallback settings", () => {
     writeFileSync(join(stateDir, "settings.json"), "{ invalid json }", "utf-8");
-    const conversationDir = join(workspaceDir, "C123");
+    const conversationDir = join(workspaceDir, C123_OFFICE);
     mkdirSync(conversationDir, { recursive: true });
     writeFileSync(
       join(conversationDir, "settings.json"),
@@ -51,20 +56,20 @@ describe("readConversationWorkspaceMountMode", () => {
       "utf-8",
     );
 
-    expect(() => readConversationWorkspaceMountMode(workspaceDir, "C123")).toThrow(
-      /settings are malformed/,
-    );
+    expect(() =>
+      readConversationWorkspaceMountMode(workspaceDir, createOfficeAddress("slack", "C123")),
+    ).toThrow(/settings are malformed/);
   });
 
   test("fails closed when legacy conversation settings are malformed", () => {
     createGlobalSettingsFile(stateDir);
-    const conversationDir = join(workspaceDir, "C123");
+    const conversationDir = join(workspaceDir, C123_OFFICE);
     mkdirSync(conversationDir, { recursive: true });
     writeFileSync(join(conversationDir, "settings.json"), "{ invalid json }", "utf-8");
 
-    expect(() => readConversationWorkspaceMountMode(workspaceDir, "C123")).toThrow(
-      /settings are malformed/,
-    );
+    expect(() =>
+      readConversationWorkspaceMountMode(workspaceDir, createOfficeAddress("slack", "C123")),
+    ).toThrow(/settings are malformed/);
   });
 
   test("rejects path-bearing conversation ids before reading or creating directories", () => {
@@ -79,9 +84,14 @@ describe("readConversationWorkspaceMountMode", () => {
       "nested/id",
       "nested\\id",
     ]) {
-      expect(() => readConversationWorkspaceMountMode(workspaceDir, conversationId)).toThrow(
-        /safe path segment/,
-      );
+      // Identity validation moved to the address factory, ahead of any
+      // directory reads or creation.
+      expect(() =>
+        readConversationWorkspaceMountMode(
+          workspaceDir,
+          createOfficeAddress("slack", conversationId),
+        ),
+      ).toThrow(/Conversation id|Unsupported platform/);
     }
   });
 
@@ -96,21 +106,20 @@ describe("readConversationWorkspaceMountMode", () => {
     );
 
     const executor = await resolver.resolve({
-      platform: "slack",
       userId: "U123",
-      conversationId: "C123",
+      address: createOfficeAddress("slack", "C123"),
     });
 
     expect(executor.getSandboxConfig()).toMatchObject({
       type: "gondolin",
-      mounts: [{ source: join(workspaceDir, "C123"), target: "/workspace/C123" }],
+      mounts: [{ source: join(workspaceDir, C123_OFFICE), target: `/workspace/${C123_OFFICE}` }],
     });
-    expect(existsSync(join(workspaceDir, "C123"))).toBe(true);
+    expect(existsSync(join(workspaceDir, C123_OFFICE))).toBe(true);
   });
 
   test("resolves the full Gondolin workspace mount", async () => {
     createGlobalSettingsFile(stateDir);
-    const conversationDir = join(workspaceDir, "C123");
+    const conversationDir = join(workspaceDir, C123_OFFICE);
     mkdirSync(conversationDir, { recursive: true });
     writeFileSync(
       join(conversationDir, "settings.json"),
@@ -125,9 +134,8 @@ describe("readConversationWorkspaceMountMode", () => {
     );
 
     const executor = await resolver.resolve({
-      platform: "slack",
       userId: "U123",
-      conversationId: "C123",
+      address: createOfficeAddress("slack", "C123"),
     });
 
     expect(executor.getSandboxConfig()).toMatchObject({
@@ -153,9 +161,8 @@ describe("readConversationWorkspaceMountMode", () => {
     );
 
     const executor = await resolver.resolve({
-      platform: "slack",
       userId: "U123",
-      conversationId: "C123",
+      address: createOfficeAddress("slack", "C123"),
     });
 
     expect(executor.getSandboxConfig()).toMatchObject({
@@ -172,13 +179,13 @@ describe("readConversationWorkspaceMountMode", () => {
       workspaceDir,
       workspaceDir,
     );
-    const context = { platform: "slack", userId: "U123", conversationId: "C123" } as const;
+    const context = { userId: "U123", address: createOfficeAddress("slack", "C123") } as const;
 
     await resolver.resolve(context);
-    rmSync(join(workspaceDir, "C123"), { recursive: true });
+    rmSync(join(workspaceDir, C123_OFFICE), { recursive: true });
     await resolver.resolve(context);
 
-    expect(existsSync(join(workspaceDir, "C123"))).toBe(true);
+    expect(existsSync(join(workspaceDir, C123_OFFICE))).toBe(true);
   });
 
   test("fails closed when a vault file mount overlaps the Workspace projection", async () => {
@@ -218,7 +225,7 @@ describe("readConversationWorkspaceMountMode", () => {
     );
 
     await expect(
-      resolver.resolve({ platform: "slack", userId: "U123", conversationId: "C123" }),
+      resolver.resolve({ userId: "U123", address: createOfficeAddress("slack", "C123") }),
     ).rejects.toThrow(/overlaps protected workspace target/);
   });
 
@@ -240,8 +247,8 @@ describe("readConversationWorkspaceMountMode", () => {
       workspaceDir,
     );
 
-    await resolver.resolve({ platform: "slack", userId: "U123", conversationId: "A_B" });
-    await resolver.resolve({ platform: "slack", userId: "U123", conversationId: "A-B" });
+    await resolver.resolve({ userId: "U123", address: createOfficeAddress("slack", "A_B") });
+    await resolver.resolve({ userId: "U123", address: createOfficeAddress("slack", "A-B") });
 
     expect(resolvedKeys).toHaveLength(2);
     expect(resolvedKeys[0]).not.toBe(resolvedKeys[1]);
@@ -261,7 +268,7 @@ describe("readConversationWorkspaceMountMode", () => {
     const resolver = new ActorExecutionResolver({ type: "host" }, vault, undefined, workspaceDir);
 
     await expect(
-      resolver.resolve({ platform: "slack", userId: "U123", conversationId: "C123" }),
+      resolver.resolve({ userId: "U123", address: createOfficeAddress("slack", "C123") }),
     ).rejects.toThrow(/cannot provide an isolated conversation office/);
 
     expect(resolvedKeys).toEqual([expect.stringMatching(/^u123-[a-f0-9]{12}$/), "U123"]);
@@ -295,7 +302,7 @@ describe("readConversationWorkspaceMountMode", () => {
     );
 
     await expect(
-      resolver.resolve({ platform: "slack", userId: "U123", conversationId: "C123" }),
+      resolver.resolve({ userId: "U123", address: createOfficeAddress("slack", "C123") }),
     ).rejects.toThrow(/overlaps vault target/);
   });
 
@@ -316,7 +323,7 @@ describe("readConversationWorkspaceMountMode", () => {
     );
 
     await expect(
-      resolver.resolve({ platform: "slack", userId: "U123", conversationId: "C123" }),
+      resolver.resolve({ userId: "U123", address: createOfficeAddress("slack", "C123") }),
     ).rejects.toThrow(/does not support vault file mounts/);
   });
 
@@ -332,9 +339,8 @@ describe("readConversationWorkspaceMountMode", () => {
 
     await expect(
       resolver.resolve({
-        platform: "slack",
         userId: "alice",
-        conversationId: "C123",
+        address: createOfficeAddress("slack", "C123"),
       }),
     ).rejects.toThrow(/cannot provide an isolated conversation office/);
   });

@@ -1,4 +1,3 @@
-import { join } from "path";
 import { MikanModels } from "./harness/index.js";
 import type { ConversationEvent } from "./adapter.js";
 import { loadAutoReplyJudgeModel, loadConversationAutoReplyConfig } from "./config.js";
@@ -8,6 +7,7 @@ const JUDGE_TIMEOUT_MS = 10_000;
 
 export type { AutoReplyJudge, TriggerIntent, TriggerResult } from "./types.js";
 import type { AutoReplyJudge, TriggerIntent, TriggerResult } from "./types.js";
+import { conversationOfficeDir } from "./office-address.js";
 
 /**
  * Trivially decide non-auto-reply intents synchronously. For "auto-reply-candidate"
@@ -35,7 +35,7 @@ export async function evaluateAutoReplyPolicy(input: {
   const { event, workingDir, judge = judgeAutoReplyWithLlm, timeoutMs = JUDGE_TIMEOUT_MS } = input;
   if (!workingDir) return { trigger: false, reason: "auto-reply-unconfigured" };
 
-  const conversationDir = join(workingDir, event.conversationId);
+  const conversationDir = conversationOfficeDir(workingDir, event.address);
 
   try {
     const config = loadConversationAutoReplyConfig(conversationDir);
@@ -89,7 +89,10 @@ async function judgeAutoReplyWithLlm(input: {
   rules: string[];
   conversationDir: string;
 }): Promise<boolean> {
-  const judgeConfig = loadAutoReplyJudgeModel(input.conversationDir);
+  const judgeConfig = loadAutoReplyJudgeModel({
+    conversationId: input.event.address.conversationId,
+    conversationDir: input.conversationDir,
+  });
   const models = MikanModels.create();
   const model = models.resolve(judgeConfig.provider, judgeConfig.model);
 

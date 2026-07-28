@@ -13,6 +13,30 @@ function createDeferred<T>(): {
 }
 
 describe("DockerContainerManager", () => {
+  test("removeContainersForConversations removes only labeled matches", async () => {
+    const execMock = vi.fn(async (_file: string, args: string[]) => {
+      if (args[0] === "ps") {
+        return { stdout: "mikan-sandbox-a\nmikan-sandbox-b\n" };
+      }
+      if (args[0] === "inspect") {
+        const name = args[args.length - 1];
+        return {
+          stdout:
+            name === "mikan-sandbox-a"
+              ? "true\t2026-01-01T00:00:00Z\tvault-a\tC123\n"
+              : "true\t2026-01-01T00:00:00Z\tvault-b\tD999\n",
+        };
+      }
+      return { stdout: "" };
+    });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
+
+    await manager.removeContainersForConversations(new Set(["C123"]));
+
+    const rmCalls = execMock.mock.calls.filter(([, args]) => args[0] === "rm");
+    expect(rmCalls).toEqual([["docker", ["rm", "-f", "mikan-sandbox-a"]]]);
+  });
+
   test("re-checks a cached container and starts it when it was stopped", async () => {
     const execMock = vi
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()

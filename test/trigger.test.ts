@@ -5,6 +5,9 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { ConversationEvent } from "../src/adapter.js";
 import { saveConversationAutoReplyConfig } from "../src/config.js";
 import { decideTrigger, evaluateAutoReplyPolicy } from "../src/trigger.js";
+import { createOfficeAddress, officeDirName } from "../src/office-address.js";
+
+const C123_OFFICE = officeDirName(createOfficeAddress("slack", "C123"));
 
 describe("decideTrigger", () => {
   test("trivially triggers mention, direct, and thread continuation intents", () => {
@@ -31,6 +34,7 @@ describe("evaluateAutoReplyPolicy", () => {
 
   const event: ConversationEvent = {
     type: "mention",
+    address: createOfficeAddress("slack", "C123"),
     conversationId: "C123",
     conversationKind: "shared",
     ts: "1",
@@ -47,7 +51,7 @@ describe("evaluateAutoReplyPolicy", () => {
   });
 
   test("triggers when enabled and rules match", async () => {
-    saveConversationAutoReplyConfig(join(workingDir, "C123"), {
+    saveConversationAutoReplyConfig(join(workingDir, C123_OFFICE), {
       enabled: true,
       rules: ["Reply when the user asks about deployments."],
     });
@@ -65,7 +69,7 @@ describe("evaluateAutoReplyPolicy", () => {
   });
 
   test("skips when enabled rules do not match", async () => {
-    saveConversationAutoReplyConfig(join(workingDir, "C123"), {
+    saveConversationAutoReplyConfig(join(workingDir, C123_OFFICE), {
       enabled: true,
       rules: ["Reply only for urgent incidents."],
     });
@@ -76,7 +80,7 @@ describe("evaluateAutoReplyPolicy", () => {
   });
 
   test("triggers without judge when enabled but no rules set", async () => {
-    saveConversationAutoReplyConfig(join(workingDir, "C123"), { enabled: true, rules: [] });
+    saveConversationAutoReplyConfig(join(workingDir, C123_OFFICE), { enabled: true, rules: [] });
     await expect(evaluateAutoReplyPolicy({ event, workingDir })).resolves.toEqual({
       trigger: true,
       reason: "auto-reply-enabled",
@@ -84,7 +88,7 @@ describe("evaluateAutoReplyPolicy", () => {
   });
 
   test("does not throw when the judge throws — falls back to no trigger", async () => {
-    saveConversationAutoReplyConfig(join(workingDir, "C123"), {
+    saveConversationAutoReplyConfig(join(workingDir, C123_OFFICE), {
       enabled: true,
       rules: ["some rule"],
     });
@@ -101,7 +105,7 @@ describe("evaluateAutoReplyPolicy", () => {
   });
 
   test("ignores settings.json auto-reply state and uses marker files", async () => {
-    const conversationDir = join(workingDir, "C123");
+    const conversationDir = join(workingDir, C123_OFFICE);
     mkdirSync(conversationDir, { recursive: true });
     writeFileSync(join(conversationDir, "settings.json"), "{ not valid json", "utf-8");
 
@@ -112,7 +116,7 @@ describe("evaluateAutoReplyPolicy", () => {
   });
 
   test("times out a slow judge and returns no trigger", async () => {
-    saveConversationAutoReplyConfig(join(workingDir, "C123"), {
+    saveConversationAutoReplyConfig(join(workingDir, C123_OFFICE), {
       enabled: true,
       rules: ["some rule"],
     });

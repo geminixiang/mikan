@@ -1,5 +1,6 @@
 import { execFile } from "child_process";
 import { join } from "path";
+import { conversationOfficeDir, createOfficeAddress } from "../../office-address.js";
 import { promisify } from "util";
 import type {
   CloneRepoOptions,
@@ -21,7 +22,10 @@ export const GITHUB_PUSH_BRANCH_PATTERN = /^pi\/[A-Za-z0-9._][A-Za-z0-9._/-]*$/;
 
 /** The conversation's clone location (bind-mounted into the sandbox as ./repo). */
 export function conversationRepoDir(workingDir: string, conversationId: string): string {
-  return join(workingDir, conversationId, "repo");
+  return join(
+    conversationOfficeDir(workingDir, createOfficeAddress("github", conversationId)),
+    "repo",
+  );
 }
 
 /**

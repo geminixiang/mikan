@@ -40,9 +40,21 @@ export interface OfficeMigrationRecord {
   readonly updatedAt: string;
 }
 
+/**
+ * Directory entry for one conversation office. The workspace dir name stops
+ * carrying the raw platform id once the ADR 0005 layout migration lands, so
+ * the registry is the durable raw-id ↔ office mapping used for enumeration.
+ */
+export interface OfficeRecord {
+  readonly platform: PlatformName;
+  readonly conversationId: string;
+  readonly recordedAt: string;
+}
+
 export interface OfficeRegistryState {
   readonly version: 1;
   readonly enabledPlatforms: readonly PlatformName[];
+  readonly offices: readonly OfficeRecord[];
   readonly migrations: readonly OfficeMigrationRecord[];
 }
 
@@ -485,9 +497,9 @@ export interface PeriodicEventInfo {
 // ── execution-resolver ────────────────────────────────────────────────────────
 
 export interface ActorContext {
-  platform: string;
+  /** Canonical office identity; vault and package keys use its raw id. */
+  address: OfficeAddress;
   userId: string;
-  conversationId: string;
   /** From MessagingInfo.trustModel; vault policy uses this, not platform name. */
   trustModel?: PlatformTrustModel;
 }
@@ -651,6 +663,9 @@ export type SettingsApplyResult =
 export interface CreateRunnerOptions {
   sandboxConfig: import("./sandbox/types.js").SandboxConfig;
   sessionKey: string;
+  /** Canonical office identity for workspace paths and execution scoping. */
+  address: OfficeAddress;
+  /** Raw platform id; settings/vault/package keys keep it until ADR 0005. */
   conversationId: string;
   conversationDir: string;
   workspaceDir: string;

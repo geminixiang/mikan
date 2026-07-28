@@ -9,6 +9,7 @@ import { dirname, join as pathJoin } from "path";
 import type {
   MessagingBot,
   PlatformBlockKit,
+  PlatformName,
   PlatformNotifier,
   PlatformReactor,
   PlatformUploader,
@@ -59,6 +60,8 @@ import {
 } from "./sandbox/gondolin.js";
 import { FileVaultManager } from "./vault/index.js";
 import { runExtCommand } from "./cli/ext.js";
+import { runOfficeCommand } from "./cli/office.js";
+import { formatUnmigratedOfficesError, migrateLegacyOffices } from "./office-migration.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
 import { ChannelStore } from "./store.js";
 import * as Sentry from "@sentry/node";
@@ -178,6 +181,11 @@ if (plan.mode === "ext") {
   process.exit(code);
 }
 
+// `mikan office …` inspects/claims conversation offices and exits.
+if (plan.mode === "office") {
+  process.exit(runOfficeCommand(plan.officeArgs ?? []));
+}
+
 // Global fetch: proxy support (HTTP_PROXY/HTTPS_PROXY/NO_PROXY) and idle
 // timeouts so a stalled LLM stream errors out instead of hanging a session.
 const httpIdleTimeoutMs = parseHttpIdleTimeoutMs(readEnv("HTTP_IDLE_TIMEOUT"));
@@ -252,6 +260,35 @@ if (!hasSlack && !hasTelegram && !hasDiscord && !hasGithub) {
   process.exit(1);
 }
 
+// Move legacy raw-id conversation directories to the office-key layout before
+// anything touches the workspace. Runs every boot; a completed migration is a
+// no-op. Unowned or failed offices are fatal: after the layout flip a legacy
+// directory is invisible to the runtime, and booting anyway would present
+// those conversations as silently empty.
+const enabledPlatforms: PlatformName[] = [
+  ...(hasSlack ? (["slack"] as const) : []),
+  ...(hasTelegram ? (["telegram"] as const) : []),
+  ...(hasDiscord ? (["discord"] as const) : []),
+  ...(hasGithub ? (["github"] as const) : []),
+];
+const officeMigration = (() => {
+  try {
+    return migrateLegacyOffices({ workspaceRoot: workingDir, stateDir, enabledPlatforms });
+  } catch (error) {
+    handleStartupError(error);
+  }
+})();
+if (officeMigration.unowned.length > 0 || officeMigration.failed.length > 0) {
+  console.error(formatUnmigratedOfficesError(officeMigration));
+  process.exit(1);
+}
+if (officeMigration.migrated.length > 0 || officeMigration.recovered.length > 0) {
+  console.log(
+    `  Office layout migration: ${officeMigration.migrated.length} moved, ` +
+      `${officeMigration.recovered.length} recovered.`,
+  );
+}
+
 try {
   await validateSandbox(sandbox);
 } catch (error) {
@@ -296,6 +333,13 @@ const provisioner =
         boostLimits: sandboxBoostLimits,
       })
     : undefined;
+// Containers provisioned before an office migration mount the renamed legacy
+// paths; recreate them so mounts follow the office-key layout.
+if (provisioner && (officeMigration.migrated.length > 0 || officeMigration.recovered.length > 0)) {
+  await provisioner.removeContainersForConversations(
+    new Set([...officeMigration.migrated, ...officeMigration.recovered]),
+  );
+}
 if (sandbox.type === "gondolin") {
   try {
     configureGondolinRuntime({

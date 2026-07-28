@@ -23,6 +23,8 @@ import { GithubClient, GITHUB_MAX_COMMENT_LENGTH, githubRetry } from "./client.j
 import { createGithubAdapters } from "./context.js";
 import { fetchIsPr, fetchPrHeadBranch, GithubOps } from "./github-ops.js";
 import { cloneRepo, conversationRepoDir } from "./repo.js";
+import { conversationOfficeDir, createOfficeAddress } from "../../office-address.js";
+import { ensureOfficeDir } from "../../office-registry.js";
 import {
   buildGithubConversationId,
   GITHUB_ISSUE_BODY_TS,
@@ -356,11 +358,16 @@ export class GithubMessagingBot implements MessagingBot {
   }
 
   logToFile(conversationId: string, entry: object): void {
-    appendChannelLog(this.config.workingDir, conversationId, entry);
+    appendChannelLog(this.config.workingDir, createOfficeAddress("github", conversationId), entry);
   }
 
   logBotResponse(conversationId: string, text: string, ts: string): void {
-    appendBotResponseLog(this.config.workingDir, conversationId, text, ts);
+    appendBotResponseLog(
+      this.config.workingDir,
+      createOfficeAddress("github", conversationId),
+      text,
+      ts,
+    );
   }
 
   // ==========================================================================
@@ -556,7 +563,15 @@ export class GithubMessagingBot implements MessagingBot {
   }
 
   private isParticipating(conversationId: string): boolean {
-    return existsSync(join(this.config.workingDir, conversationId, "log.jsonl"));
+    return existsSync(
+      join(
+        conversationOfficeDir(
+          this.config.workingDir,
+          createOfficeAddress("github", conversationId),
+        ),
+        "log.jsonl",
+      ),
+    );
   }
 
   /**
@@ -805,6 +820,7 @@ export class GithubMessagingBot implements MessagingBot {
     const dir = conversationRepoDir(this.config.workingDir, conversationId);
     if (existsSync(dir)) return;
     try {
+      ensureOfficeDir(this.config.workingDir, createOfficeAddress("github", conversationId));
       const token = await this.client.createScopedInstallationToken(ref.repo, {
         contents: "read",
       });

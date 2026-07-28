@@ -21,7 +21,7 @@
  * no reinstall step.
  */
 import { createInterface } from "node:readline";
-import { existsSync, mkdirSync, statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { basename, resolve as resolvePath } from "node:path";
 import { join } from "node:path";
 import {
@@ -36,6 +36,8 @@ import {
 import { updateConversationSettings } from "../config.js";
 import { formatSource, parseSource } from "../packages/index.js";
 import { resolveStateDir, takeValueFlag } from "./arg-grammar.js";
+import { conversationOfficeDir, createOfficeAddress } from "../office-address.js";
+import { ensureOfficeDir } from "../office-registry.js";
 
 const USAGE = `Usage:
   mikan ext dev <path|source> [--workspace <dir>] [--state-dir <dir>]
@@ -94,12 +96,21 @@ export async function runExtDevCommand(argv: string[]): Promise<number> {
 
   const conversationId = devConversationId(target);
   const workingDir = resolvePath(workspaceDir ?? join(process.cwd(), ".mikan-ext-dev"));
-  mkdirSync(join(workingDir, conversationId), { recursive: true });
+  ensureOfficeDir(workingDir, createOfficeAddress("slack", conversationId));
 
   // Declaring the working copy as this conversation's package is what makes
   // the dev loop use the real resolution path rather than a bespoke one.
   process.env.MIKAN_STATE_DIR = stateDir;
-  updateConversationSettings(join(workingDir, conversationId), { packages: [source] });
+  updateConversationSettings(
+    {
+      conversationId,
+      conversationDir: conversationOfficeDir(
+        workingDir,
+        createOfficeAddress("slack", conversationId),
+      ),
+    },
+    { packages: [source] },
+  );
 
   console.log(`mikan ext dev — ${source}`);
   console.log(`  conversation: ${conversationId}`);

@@ -8,7 +8,16 @@ const HOME_STATE = join(homedir(), ".mikan");
 
 describe("resolveBoot", () => {
   test("no args: run mode with all defaults", () => {
-    const plan = resolveBoot([]);
+    // The suite-wide temp MIKAN_STATE_DIR (test/setup/state-dir.ts) must not
+    // read as this test's ambient environment.
+    const prev = process.env.MIKAN_STATE_DIR;
+    delete process.env.MIKAN_STATE_DIR;
+    let plan;
+    try {
+      plan = resolveBoot([]);
+    } finally {
+      if (prev !== undefined) process.env.MIKAN_STATE_DIR = prev;
+    }
     expect(plan).toMatchObject({
       mode: "run",
       stateDir: HOME_STATE,
@@ -89,6 +98,12 @@ describe("resolveBoot", () => {
     expect(plan.extArgs).toEqual(["install", "--sandbox=not-a-real-spec"]);
   });
 
+  test("office subcommand short-circuits with its own argv", () => {
+    const plan = resolveBoot(["office", "claim", "C123", "slack"]);
+    expect(plan.mode).toBe("office");
+    expect(plan.officeArgs).toEqual(["claim", "C123", "slack"]);
+  });
+
   test("env subcommand selects env mode", () => {
     expect(resolveBoot(["env"]).mode).toBe("env");
   });
@@ -136,9 +151,15 @@ describe("arg-grammar", () => {
   });
 
   test("state-dir precedence: flag > env > default", () => {
-    expect(resolveStateDir(["--state-dir=/tmp/flag"], "/tmp/env")).toBe(resolve("/tmp/flag"));
-    expect(resolveStateDir([], "/tmp/env")).toBe(resolve("/tmp/env"));
-    expect(resolveStateDir([], undefined)).toBe(defaultStateDir());
+    const prev = process.env.MIKAN_STATE_DIR;
+    delete process.env.MIKAN_STATE_DIR;
+    try {
+      expect(resolveStateDir(["--state-dir=/tmp/flag"], "/tmp/env")).toBe(resolve("/tmp/flag"));
+      expect(resolveStateDir([], "/tmp/env")).toBe(resolve("/tmp/env"));
+      expect(resolveStateDir([], undefined)).toBe(defaultStateDir());
+    } finally {
+      if (prev !== undefined) process.env.MIKAN_STATE_DIR = prev;
+    }
   });
 
   test("last --state-dir flag wins, matching the historical parsers", () => {

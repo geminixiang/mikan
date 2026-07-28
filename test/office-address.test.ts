@@ -4,9 +4,11 @@ import { createConversationEvent, createConversationMessage } from "../src/adapt
 import {
   assertConversationId,
   assertOfficeKey,
+  conversationOfficeDir,
   createOfficeAddress,
   isOfficeKey,
   officeDir,
+  officeDirName,
   officeKey,
   officeStateDir,
   sameOffice,
@@ -125,5 +127,25 @@ describe("office address", () => {
       /conversation id must be a string/,
     );
     expect(isOfficeKey("v1-slack-c123-not-a-key")).toBe(false);
+  });
+
+  describe("office dir seam (office-key layout)", () => {
+    const address = createOfficeAddress("slack", "C123");
+
+    test("host dir and runtime segment agree on the office key", () => {
+      expect(officeDirName(address)).toBe(officeKey(address));
+      expect(conversationOfficeDir("/data/workspace", address)).toBe(
+        `/data/workspace/${officeKey(address)}`,
+      );
+      expect(conversationOfficeDir("/data/workspace", address)).toBe(
+        officeDir("/data/workspace", address),
+      );
+    });
+
+    test("platforms sharing a raw id resolve to different directories", () => {
+      const discord = createOfficeAddress("discord", "900100");
+      const telegram = createOfficeAddress("telegram", "900100");
+      expect(conversationOfficeDir("/w", discord)).not.toBe(conversationOfficeDir("/w", telegram));
+    });
   });
 });

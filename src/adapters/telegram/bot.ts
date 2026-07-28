@@ -24,6 +24,8 @@ import { telegramCommandMenu } from "../../commands/manifest.js";
 import { processMessageIntake } from "../intake.js";
 import { createTelegramAdapters } from "./context.js";
 import { escapeTelegramHtml } from "./html.js";
+import { createOfficeAddress, officeDirName } from "../../office-address.js";
+import { ensureOfficeDir } from "../../office-registry.js";
 
 // grammY surfaces Telegram errors as `GrammyError` with `error_code` mirroring
 // the Bot API. 429 is the rate-limit status; the response also includes
@@ -244,11 +246,11 @@ export class TelegramMessagingBot implements MessagingBot {
   }
 
   logToFile(channel: string, entry: object): void {
-    appendChannelLog(this.workingDir, channel, entry);
+    appendChannelLog(this.workingDir, createOfficeAddress("telegram", channel), entry);
   }
 
   logBotResponse(channel: string, text: string, ts: string): void {
-    appendBotResponseLog(this.workingDir, channel, text, ts);
+    appendBotResponseLog(this.workingDir, createOfficeAddress("telegram", channel), text, ts);
   }
 
   /**
@@ -306,8 +308,9 @@ export class TelegramMessagingBot implements MessagingBot {
       const ts = Date.now();
       const sanitizedName = originalName.replace(/[^a-zA-Z0-9._-]/g, "_");
       const filename = `${ts}_${sanitizedName}`;
-      const localPath = `${chatId}/attachments/${filename}`;
-      const fullDir = join(this.workingDir, chatId, "attachments");
+      const address = createOfficeAddress("telegram", chatId);
+      const localPath = `${officeDirName(address)}/attachments/${filename}`;
+      const fullDir = join(ensureOfficeDir(this.workingDir, address), "attachments");
 
       // Construct download URL
       const downloadUrl = `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`;

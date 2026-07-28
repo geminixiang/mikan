@@ -74,10 +74,7 @@ export class SandboxCommandHandler implements CommandHandler {
     const status = context.services.resourceController.getLimitStatus(containerKey);
     const defaultLimits = context.services.resourceController.getDefaultLimits();
     const boostLimits = context.services.resourceController.getBoostLimits();
-    const workspace = resolveWorkspaceProjection(
-      context.services.workingDir,
-      context.conversationId,
-    );
+    const workspace = resolveWorkspaceProjection(context.services.workingDir, context.address);
     await replyDiagnosticWithContext(
       context.responder,
       formatCommandSummary(

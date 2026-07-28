@@ -1,12 +1,12 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ThinkingLevel as PiAiThinkingLevel } from "@earendil-works/pi-ai";
-import { join } from "path";
 import { resolveConversationSettings } from "../config.js";
 import { applyConversationSettings } from "../settings-mutation.js";
 import { slashForms } from "./manifest.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler, ModelRegistry, ParsedModelCommand } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
+import { conversationOfficeDir } from "../office-address.js";
 
 const PI_AI_THINKING_LEVELS = [
   "minimal",
@@ -100,9 +100,12 @@ export class ModelCommandHandler implements CommandHandler {
       return true;
     }
 
-    const conversationDir = join(context.services.workingDir, context.conversationId);
+    const settingsScope = {
+      conversationId: context.address.conversationId,
+      conversationDir: conversationOfficeDir(context.services.workingDir, context.address),
+    };
     if (!parsed.provider || !parsed.model) {
-      const current = resolveConversationSettings(conversationDir);
+      const current = resolveConversationSettings(settingsScope);
       await replyDiagnosticWithContext(
         context.responder,
         formatCommandSummary("Model", [
@@ -171,7 +174,7 @@ export class ModelCommandHandler implements CommandHandler {
     const result = applyConversationSettings(
       context.services.runtime,
       context.services.workingDir,
-      context.conversationId,
+      context.address,
       {
         provider: parsed.provider,
         model: selectedModelId,

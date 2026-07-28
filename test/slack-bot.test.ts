@@ -3,7 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler } from "../src/adapter.js";
-import { createOfficeAddress } from "../src/office-address.js";
+import { createOfficeAddress, officeDirName } from "../src/office-address.js";
+
+const C123_OFFICE = officeDirName(createOfficeAddress("slack", "C123"));
 import { SlackMessagingBot } from "../src/adapters/slack/bot.js";
 import { defaultCommandHandlers } from "../src/commands/registry.js";
 import { commandManifestEntry } from "../src/commands/manifest.js";
@@ -374,8 +376,8 @@ describe("SlackMessagingBot slash commands", () => {
         text: expect.stringContaining("只能在 group/channel"),
       }),
     );
-    expect(readFileSync(join(workingDir, "C123", "auto-reply"), "utf-8")).toBe("");
-    expect(existsSync(join(workingDir, "C123", "settings.json"))).toBe(false);
+    expect(readFileSync(join(workingDir, C123_OFFICE, "auto-reply"), "utf-8")).toBe("");
+    expect(existsSync(join(workingDir, C123_OFFICE, "settings.json"))).toBe(false);
   });
 
   test("/pi-session in a shared channel returns the link ephemerally", async () => {
@@ -557,8 +559,8 @@ describe("SlackMessagingBot queues follow-up messages", () => {
   });
 
   test("shared channel auto-reply candidates queue when auto-reply is enabled", async () => {
-    mkdirSync(join(workingDir, "C123"), { recursive: true });
-    writeFileSync(join(workingDir, "C123", "auto-reply"), "");
+    mkdirSync(join(workingDir, C123_OFFICE), { recursive: true });
+    writeFileSync(join(workingDir, C123_OFFICE, "auto-reply"), "");
 
     const handler = makeHandler();
     const bot = new SlackMessagingBot(handler, {
@@ -737,8 +739,8 @@ describe("SlackMessagingBot queues follow-up messages", () => {
   });
 
   test("bare shared channel stop does not trigger auto-reply", async () => {
-    mkdirSync(join(workingDir, "C123"), { recursive: true });
-    writeFileSync(join(workingDir, "C123", "auto-reply"), "");
+    mkdirSync(join(workingDir, C123_OFFICE), { recursive: true });
+    writeFileSync(join(workingDir, C123_OFFICE, "auto-reply"), "");
 
     const handler = makeHandler();
     const bot = new SlackMessagingBot(handler, {
@@ -995,7 +997,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
     (bot as any).setupEventHandlers();
 
-    const conversationDir = join(workingDir, "C123");
+    const conversationDir = join(workingDir, C123_OFFICE);
     createManagedSessionFileAtPath(join(conversationDir, "session.jsonl"), conversationDir);
     createManagedSessionFileAtPath(
       getThreadSessionFile(conversationDir, "C123:1000.0001"),
@@ -1053,6 +1055,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     expect(
       bot.enqueueEvent({
         type: "mention",
+        address: createOfficeAddress("slack", "C123"),
         conversationId: "C123",
         conversationKind: "shared",
         ts: "event:deploy-reminder",
@@ -1075,7 +1078,9 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       "2000.0001",
       expect.stringContaining("event done"),
     );
-    expect(existsSync(getThreadSessionFile(join(workingDir, "C123"), "C123:2000.0001"))).toBe(true);
+    expect(existsSync(getThreadSessionFile(join(workingDir, C123_OFFICE), "C123:2000.0001"))).toBe(
+      true,
+    );
   });
 
   test("postInThread wraps text in a markdown block", async () => {
@@ -1114,6 +1119,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     expect(
       bot.enqueueEvent({
         type: "mention",
+        address: createOfficeAddress("slack", "C123"),
         conversationId: "C123",
         conversationKind: "shared",
         ts: "event:deploy-reminder",
@@ -1171,6 +1177,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     expect(
       bot.enqueueEvent({
         type: "mention",
+        address: createOfficeAddress("slack", "C123"),
         conversationId: "C123",
         conversationKind: "shared",
         ts: "event:deploy-reminder",
@@ -1863,7 +1870,10 @@ describe("SlackMessagingBot backfill", () => {
     const count = await (bot as any).backfillChannel("C123");
 
     expect(count).toBe(1);
-    const logContent = readFileSync(join(workingDir, "C123", "log.jsonl"), "utf-8");
+    const logContent = readFileSync(
+      join(workingDir, officeDirName(createOfficeAddress("slack", "C123")), "log.jsonl"),
+      "utf-8",
+    );
     expect(logContent).toContain('"threadTs":"1000.0001"');
   });
 
@@ -1914,7 +1924,10 @@ describe("SlackMessagingBot backfill", () => {
     const count = await (bot as any).backfillChannel("C123");
 
     expect(count).toBe(1);
-    const logContent = readFileSync(join(workingDir, "C123", "log.jsonl"), "utf-8");
+    const logContent = readFileSync(
+      join(workingDir, officeDirName(createOfficeAddress("slack", "C123")), "log.jsonl"),
+      "utf-8",
+    );
     expect(logContent).toContain('"userName":"Sentry"');
     expect(logContent).toContain("[pi-agent] Test Issue");
     expect(logContent).toContain("poll(.../sentry/scripts/views.js)");
@@ -1955,7 +1968,10 @@ describe("SlackMessagingBot backfill", () => {
     const count = await (bot as any).backfillChannel("C123");
 
     expect(count).toBe(1);
-    const logContent = readFileSync(join(workingDir, "C123", "log.jsonl"), "utf-8");
+    const logContent = readFileSync(
+      join(workingDir, officeDirName(createOfficeAddress("slack", "C123")), "log.jsonl"),
+      "utf-8",
+    );
     expect(logContent).toContain('"text":"ask <@U999> about this"');
   });
 });

@@ -2,7 +2,6 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { createOfficeAddress } from "../src/office-address.js";
 import type { MessagingBot, ConversationResponder } from "../src/adapter.js";
 import { MikanModels } from "../src/harness/index.js";
 import { AdminCommandHandler } from "../src/commands/admin.js";
@@ -15,6 +14,7 @@ import { ModelCommandHandler } from "../src/commands/model.js";
 import { NewCommandHandler } from "../src/commands/new.js";
 import { SandboxCommandHandler } from "../src/commands/sandbox.js";
 import { SessionViewCommandHandler } from "../src/commands/session-view.js";
+import { createOfficeAddress, officeDirName } from "../src/office-address.js";
 import type { CommandContext, CommandHandler, CommandServices } from "../src/commands/types.js";
 import { createManagedSessionFile, getChannelSessionDir } from "../src/sessions/store.js";
 import type { SandboxConfig } from "../src/sandbox/index.js";
@@ -334,7 +334,11 @@ describe("AutoReplyCommandHandler", () => {
     expect(enableCtx.responder.responses[0]).toContain("Auto-reply is enabled");
     expect(enableCtx.responder.responses[0]).toContain("Edit rules at:");
 
-    const enabledPath = join(workingDir, "C123", "auto-reply");
+    const enabledPath = join(
+      workingDir,
+      officeDirName(createOfficeAddress("slack", "C123")),
+      "auto-reply",
+    );
     expect(readFileSync(enabledPath, "utf-8")).toBe("");
 
     writeFileSync(enabledPath, "Reply when someone asks about deployments.", "utf-8");
@@ -350,13 +354,20 @@ describe("AutoReplyCommandHandler", () => {
       "Reply when someone asks about deployments.",
     );
     expect(existsSync(enabledPath)).toBe(false);
-    expect(readFileSync(join(workingDir, "C123", "auto-reply.disabled"), "utf-8")).toBe(
-      "Reply when someone asks about deployments.",
-    );
+    expect(
+      readFileSync(
+        join(
+          workingDir,
+          officeDirName(createOfficeAddress("slack", "C123")),
+          "auto-reply.disabled",
+        ),
+        "utf-8",
+      ),
+    ).toBe("Reply when someone asks about deployments.");
   });
 
   test("shows auto-reply file contents in status", async () => {
-    const conversationDir = join(workingDir, "C123");
+    const conversationDir = join(workingDir, officeDirName(createOfficeAddress("slack", "C123")));
     mkdirSync(conversationDir, { recursive: true });
     writeFileSync(
       join(conversationDir, "auto-reply"),
@@ -746,9 +757,24 @@ describe("SandboxCommandHandler", () => {
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(existsSync(conversationSettingsPath(join(workingDir, "C123")))).toBe(true);
     expect(
-      JSON.parse(readFileSync(conversationSettingsPath(join(workingDir, "C123")), "utf-8")),
+      existsSync(
+        conversationSettingsPath({
+          conversationId: "C123",
+          conversationDir: join(workingDir, "C123"),
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      JSON.parse(
+        readFileSync(
+          conversationSettingsPath({
+            conversationId: "C123",
+            conversationDir: join(workingDir, "C123"),
+          }),
+          "utf-8",
+        ),
+      ),
     ).toEqual({});
     expect(ctx.responder.responses[0]).toContain("Workspace policy: isolated");
   });
@@ -802,7 +828,10 @@ describe("SessionViewCommandHandler", () => {
 
   test("uses bot.postPrivate for shared conversations when available", async () => {
     const conversationId = "C123";
-    const conversationDir = join(workingDir, conversationId);
+    const conversationDir = join(
+      workingDir,
+      officeDirName(createOfficeAddress("slack", conversationId)),
+    );
     mkdirSync(conversationDir, { recursive: true });
     createManagedSessionFile(getChannelSessionDir(conversationDir), conversationDir);
 
@@ -855,7 +884,10 @@ describe("SessionViewCommandHandler", () => {
 
   test("creates a token and replies with the portal URL in private conversations", async () => {
     const conversationId = "C123";
-    const conversationDir = join(workingDir, conversationId);
+    const conversationDir = join(
+      workingDir,
+      officeDirName(createOfficeAddress("slack", conversationId)),
+    );
     mkdirSync(conversationDir, { recursive: true });
     const expectedFile = createManagedSessionFile(
       getChannelSessionDir(conversationDir),

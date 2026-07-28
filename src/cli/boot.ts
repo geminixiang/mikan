@@ -17,10 +17,11 @@ import { defaultStateDir, resolveStateDir, takeValueFlag } from "./arg-grammar.j
 export type { BootPlan } from "./types.js";
 
 export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
-  if (args[0] === "ext" || args[0] === "env") {
+  if (args[0] === "ext" || args[0] === "office" || args[0] === "env") {
     return {
       mode: args[0],
       ...(args[0] === "ext" ? { extArgs: args.slice(1) } : {}),
+      ...(args[0] === "office" ? { officeArgs: args.slice(1) } : {}),
       stateDir: defaultStateDir(),
       workingDir: join(defaultStateDir(), "workspace"),
       workingDirExplicit: false,
@@ -88,6 +89,8 @@ Usage:
       Start the daemon. The working directory defaults to <state-dir>/workspace.
   mikan ext <install|validate|list|remove> …
       Manage extensions (run \`mikan ext\` for details).
+  mikan office <list|claim> …
+      Inspect conversation offices and claim legacy directories for a platform.
   mikan env
       Show the full environment-variable inventory and what is currently set.
 

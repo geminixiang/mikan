@@ -11,7 +11,7 @@
  * Activation stays where it was: the next harness instance (`/pi-new`) picks
  * up what is on disk. Only the failure reporting moves earlier.
  */
-import { applyConversationSettings, applyGlobalSettings } from "../settings-mutation.js";
+import { applyConversationSettingsByRawId, applyGlobalSettings } from "../settings-mutation.js";
 import { formatSource, parseSource, sourceIdentity } from "./source.js";
 import { materializeSource } from "./materialize.js";
 import { declaredSources } from "./inspect.js";
@@ -113,7 +113,7 @@ function writePackages(
     applyGlobalSettings(context.runtime, { packages });
     return;
   }
-  const result = applyConversationSettings(
+  const result = applyConversationSettingsByRawId(
     context.runtime,
     context.workingDir,
     context.conversationId,

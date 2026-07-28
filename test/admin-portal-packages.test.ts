@@ -9,8 +9,11 @@ import { handleAdminRequest } from "../src/web/admin/portal.js";
 import { InMemoryAdminTokenStore } from "../src/web/admin/store.js";
 import { FileVaultManager } from "../src/vault/index.js";
 import type { AdminServices } from "../src/web/admin/types.js";
+import { createOfficeAddress, officeDirName } from "../src/office-address.js";
+import { OfficeRegistry } from "../src/office-registry.js";
 
 const CONVERSATION_ID = "C03045VJJAY";
+const CONVERSATION_ADDRESS = createOfficeAddress("slack", CONVERSATION_ID);
 
 let base: string;
 let stateDir: string;
@@ -66,7 +69,8 @@ beforeEach(async () => {
   stateDir = join(base, "state");
   workingDir = join(base, "workspace");
   mkdirSync(stateDir, { recursive: true });
-  mkdirSync(join(workingDir, CONVERSATION_ID), { recursive: true });
+  new OfficeRegistry(stateDir).recordOffice(CONVERSATION_ADDRESS);
+  mkdirSync(join(workingDir, officeDirName(CONVERSATION_ADDRESS)), { recursive: true });
   process.env.MIKAN_STATE_DIR = stateDir;
   writeFileSync(
     join(stateDir, "settings.json"),

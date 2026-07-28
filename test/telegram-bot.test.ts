@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler, OfficeAddress } from "../src/adapter.js";
-import { createOfficeAddress } from "../src/office-address.js";
+import { createOfficeAddress, officeDirName } from "../src/office-address.js";
 import { conversationIdOf } from "../src/sessions/session-key.js";
 
 const officeOf = (sessionKey: string) =>
@@ -273,7 +273,10 @@ describe("TelegramMessagingBot message logging", () => {
       }),
     });
 
-    const lines = readFileSync(join(workingDir, "999", "log.jsonl"), "utf-8")
+    const lines = readFileSync(
+      join(workingDir, officeDirName(officeOf("999")), "log.jsonl"),
+      "utf-8",
+    )
       .trim()
       .split("\n");
     const entry = JSON.parse(lines[0]);
@@ -293,7 +296,10 @@ describe("TelegramMessagingBot message logging", () => {
       }),
     });
 
-    const lines = readFileSync(join(workingDir, "123", "log.jsonl"), "utf-8")
+    const lines = readFileSync(
+      join(workingDir, officeDirName(officeOf("123")), "log.jsonl"),
+      "utf-8",
+    )
       .trim()
       .split("\n");
     const entry = JSON.parse(lines[0]);
@@ -437,7 +443,11 @@ describe("TelegramMessagingBot attachments", () => {
     );
     expect(attachment).toMatchObject({
       name: "photo.jpg",
-      localPath: expect.stringMatching(/^456\/attachments\/\d+_photo\.jpg$/),
+      localPath: expect.stringMatching(
+        new RegExp(
+          `^${officeDirName(createOfficeAddress("telegram", "456"))}/attachments/\\d+_photo\\.jpg$`,
+        ),
+      ),
     });
 
     const savedFile = join(workingDir, attachment.localPath);

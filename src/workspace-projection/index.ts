@@ -2,8 +2,15 @@ import { dirname, join } from "node:path";
 import { lstatSync, mkdirSync, writeFileSync } from "node:fs";
 import { ensureDirExists } from "../utils/file-guards.js";
 import { resolveConversationSettings } from "../config.js";
+import { ensureOfficeDir, resolveOwnedOfficeAddress } from "../office-registry.js";
 import * as log from "../log.js";
-import type { ImageWorkspaceMountMode, WorkspaceDoorPolicy, WorkspaceLayout } from "../types.js";
+import { conversationOfficeDir, officeDirName, validateOfficeAddress } from "../office-address.js";
+import type {
+  ImageWorkspaceMountMode,
+  OfficeAddress,
+  WorkspaceDoorPolicy,
+  WorkspaceLayout,
+} from "../types.js";
 import type { WorkspaceProjection } from "./types.js";
 
 export type { WorkspaceProjection } from "./types.js";
@@ -15,13 +22,14 @@ export type { WorkspaceProjection } from "./types.js";
  */
 export function resolveWorkspaceProjection(
   hostWorkspaceRoot: string | undefined,
-  conversationId: string,
+  address: OfficeAddress,
 ): WorkspaceProjection {
-  assertConversationPathSegment(conversationId);
+  const normalized = validateOfficeAddress(address);
+  const officeSegment = officeDirName(normalized);
   const conversationDir = hostWorkspaceRoot
-    ? join(hostWorkspaceRoot, conversationId)
-    : join("/workspace", conversationId);
-  const effective = resolveEffectiveWorkspace(hostWorkspaceRoot, conversationId);
+    ? conversationOfficeDir(hostWorkspaceRoot, normalized)
+    : join("/workspace", officeSegment);
+  const effective = resolveEffectiveWorkspace(hostWorkspaceRoot, normalized, conversationDir);
 
   if (!hostWorkspaceRoot) {
     return {
@@ -43,7 +51,7 @@ export function resolveWorkspaceProjection(
   }
 
   assertDirectory(hostWorkspaceRoot, "Host workspace root");
-  ensureDirectoryRoot(conversationDir, "Conversation workspace");
+  ensureOfficeDir(hostWorkspaceRoot, normalized);
   const memoryPath = join(hostWorkspaceRoot, "MEMORY.md");
   const skillsPath = join(hostWorkspaceRoot, "skills");
   const eventsPath = join(hostWorkspaceRoot, "events");
@@ -62,9 +70,9 @@ export function resolveWorkspaceProjection(
             { source: memoryPath, target: "/workspace/MEMORY.md" },
             { source: skillsPath, target: "/workspace/skills" },
             { source: eventsPath, target: "/workspace/events" },
-            { source: conversationDir, target: `/workspace/${conversationId}` },
+            { source: conversationDir, target: `/workspace/${officeSegment}` },
           ]
-        : [{ source: conversationDir, target: `/workspace/${conversationId}` }];
+        : [{ source: conversationDir, target: `/workspace/${officeSegment}` }];
 
   return {
     ...effective,
@@ -84,21 +92,38 @@ export function resolveWorkspaceProjection(
 /** Compatibility reader for old status callers. */
 export function readWorkspaceProjectionMode(
   hostWorkspaceRoot: string | undefined,
-  conversationId: string,
+  address: OfficeAddress,
 ): ImageWorkspaceMountMode {
-  return resolveWorkspaceProjection(hostWorkspaceRoot, conversationId).mode;
+  return resolveWorkspaceProjection(hostWorkspaceRoot, address).mode;
+}
+
+/**
+ * Legacy bridge for surfaces that name an office by raw id alone (Admin
+ * scope): the office registry resolves the owning platform.
+ */
+export function legacyResolveWorkspaceProjection(
+  hostWorkspaceRoot: string | undefined,
+  rawConversationId: string,
+): WorkspaceProjection {
+  return resolveWorkspaceProjection(
+    hostWorkspaceRoot,
+    resolveOwnedOfficeAddress(rawConversationId),
+  );
 }
 
 function resolveEffectiveWorkspace(
   hostWorkspaceRoot: string | undefined,
-  conversationId: string,
+  address: OfficeAddress,
+  conversationDir: string,
 ): Pick<WorkspaceProjection, "doorPolicy" | "layout"> {
   const fallback = { doorPolicy: "isolated" as const, layout: "conversation" as const };
   if (!hostWorkspaceRoot) return fallback;
 
-  const conversationDir = join(hostWorkspaceRoot, conversationId);
   try {
-    const settings = resolveConversationSettings(conversationDir).sandbox;
+    const settings = resolveConversationSettings({
+      conversationId: address.conversationId,
+      conversationDir,
+    }).sandbox;
     if (settings?.workspace) {
       return normalizeWorkspace(settings.workspace.doorPolicy, settings.workspace.layout);
     }
@@ -177,18 +202,5 @@ function exists(path: string): boolean {
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw err;
-  }
-}
-
-function assertConversationPathSegment(conversationId: string): void {
-  if (
-    conversationId.length === 0 ||
-    conversationId === "." ||
-    conversationId === ".." ||
-    conversationId.includes("/") ||
-    conversationId.includes("\\") ||
-    conversationId.includes("\0")
-  ) {
-    throw new Error("Conversation id must be a safe path segment");
   }
 }

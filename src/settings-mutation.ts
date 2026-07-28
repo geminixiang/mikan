@@ -16,11 +16,13 @@
  *   their old runner until it settles, are reported as stale, and are cleared
  *   automatically before their next turn.
  */
-import { join } from "path";
 import { updateConversationSettings, updateGlobalSettings } from "./config.js";
+import { conversationOfficeDir } from "./office-address.js";
+import { resolveOwnedOfficeAddress } from "./office-registry.js";
 import type {
   AgentConfig,
   GlobalRunnerCacheControl,
+  OfficeAddress,
   RunnerCacheControl,
   SettingsApplyResult,
 } from "./types.js";
@@ -37,9 +39,10 @@ function affectsCachedRunner(patch: Partial<AgentConfig>): boolean {
 export function applyConversationSettings(
   runtime: RunnerCacheControl | undefined,
   workingDir: string,
-  conversationId: string,
+  address: OfficeAddress,
   patch: Partial<AgentConfig>,
 ): SettingsApplyResult {
+  const conversationId = address.conversationId;
   let runtimeSwitched: boolean | null = null;
   if (affectsCachedRunner(patch) && runtime) {
     // Clear-or-refuse before writing. The clear and the write happen in the
@@ -49,8 +52,31 @@ export function applyConversationSettings(
     }
     runtimeSwitched = true;
   }
-  updateConversationSettings(join(workingDir, conversationId), patch);
+  updateConversationSettings(
+    { conversationId, conversationDir: conversationOfficeDir(workingDir, address) },
+    patch,
+  );
   return { ok: true, runtimeSwitched };
+}
+
+/**
+ * Raw-id adapter for Admin surfaces that predate OfficeAddress: the office
+ * registry supplies the owning platform. Migrates away with ADR 0005's Admin
+ * commit; chat commands must use applyConversationSettings with their
+ * address.
+ */
+export function applyConversationSettingsByRawId(
+  runtime: RunnerCacheControl | undefined,
+  workingDir: string,
+  conversationId: string,
+  patch: Partial<AgentConfig>,
+): SettingsApplyResult {
+  return applyConversationSettings(
+    runtime,
+    workingDir,
+    resolveOwnedOfficeAddress(conversationId),
+    patch,
+  );
 }
 
 export function applyGlobalSettings(

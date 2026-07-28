@@ -141,7 +141,10 @@ function readScope(
     const sources =
       scope === "global"
         ? loadGlobalSettings().packages
-        : resolveConversationSettings(options.conversationDir).packages;
+        : resolveConversationSettings({
+            conversationId: options.conversationId,
+            conversationDir: options.conversationDir,
+          }).packages;
     return (sources ?? []).map((source) => ({ source, scope }));
   } catch (err) {
     // Unreadable settings must not take the conversation down; the other

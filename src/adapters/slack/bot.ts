@@ -16,7 +16,7 @@ import {
   type ConversationKind,
   type MessagingInfo,
 } from "../../adapter.js";
-import { createOfficeAddress } from "../../office-address.js";
+import { conversationOfficeDir, createOfficeAddress } from "../../office-address.js";
 import { COMMAND_MANIFEST, type SlackSlashRoute } from "../../commands/manifest.js";
 import { resolveConversationSettings } from "../../config.js";
 import { parseExtActionId } from "../../harness/extensions/blockkit.js";
@@ -148,11 +148,24 @@ export class SlackMessagingBot implements MessagingBot {
   private queues = new Map<string, MessagingEventQueue>();
   private eventsWatcher: EventsWatcher | null = null;
 
+  /** Host office dir for a Slack conversation (see officeDirName). */
+  private conversationDir(channelId: string): string {
+    return conversationOfficeDir(this.workingDir, createOfficeAddress("slack", channelId));
+  }
+
+  private resolveReplyMode(
+    address: import("../../adapter.js").OfficeAddress,
+  ): "top-level" | "thread" {
+    const scope = {
+      conversationId: address.conversationId,
+      conversationDir: this.conversationDir(address.conversationId),
+    };
+    return resolveConversationSettings(scope).slack?.replyMode ?? "top-level";
+  }
+
   private createContext(event: SlackEvent): ConversationContext {
     return createSlackAdapters(event, this, {
-      replyMode:
-        resolveConversationSettings(join(this.workingDir, event.conversationId)).slack?.replyMode ??
-        "top-level",
+      replyMode: this.resolveReplyMode(event.address),
     });
   }
 
@@ -446,7 +459,7 @@ export class SlackMessagingBot implements MessagingBot {
   }
 
   logToFile(channel: string, entry: object): void {
-    appendChannelLog(this.workingDir, channel, entry);
+    appendChannelLog(this.workingDir, createOfficeAddress("slack", channel), entry);
   }
 
   logBotResponse(
@@ -456,14 +469,21 @@ export class SlackMessagingBot implements MessagingBot {
     threadTs?: string,
     slackBlocks?: object[],
   ): void {
-    appendBotResponseLog(this.workingDir, channel, text, ts, threadTs, {
-      platform: "slack",
-      ...(slackBlocks ? { slackBlocks } : {}),
-    });
+    appendBotResponseLog(
+      this.workingDir,
+      createOfficeAddress("slack", channel),
+      text,
+      ts,
+      threadTs,
+      {
+        platform: "slack",
+        ...(slackBlocks ? { slackBlocks } : {}),
+      },
+    );
   }
 
   ownsBlockKitMessage(channel: string, ts: string, threadTs?: string): boolean {
-    const content = readTextFileIfExists(join(this.workingDir, channel, "log.jsonl"));
+    const content = readTextFileIfExists(join(this.conversationDir(channel), "log.jsonl"));
     if (content === undefined) return false;
     for (const line of content.trim().split("\n").toReversed()) {
       try {
@@ -548,7 +568,7 @@ export class SlackMessagingBot implements MessagingBot {
       const eventForRun = eventPlan.event;
       if (eventPlan.initialMessageTs && eventForRun.sessionKey) {
         registerThreadSession({
-          conversationDir: join(this.workingDir, conversationId),
+          conversationDir: this.conversationDir(conversationId),
           sessionKey: eventForRun.sessionKey,
         });
       }
@@ -573,9 +593,7 @@ export class SlackMessagingBot implements MessagingBot {
         }) as SlackEvent;
         const context = createSlackAdapters(slackEvent, this, {
           initialMessageTs: eventPlan.initialMessageTs,
-          replyMode:
-            resolveConversationSettings(join(this.workingDir, eventForRun.conversationId)).slack
-              ?.replyMode ?? "top-level",
+          replyMode: this.resolveReplyMode(eventForRun.address),
         });
         return this.handler.handleEvent(eventForRun, this, context);
       });
@@ -606,7 +624,7 @@ export class SlackMessagingBot implements MessagingBot {
 
   private hasKnownThreadSession(conversationId: string, sessionKey: string): boolean {
     return hasMaterializedChatSession({
-      conversationDir: join(this.workingDir, conversationId),
+      conversationDir: this.conversationDir(conversationId),
       sessionKey,
     });
   }
@@ -1573,7 +1591,7 @@ export class SlackMessagingBot implements MessagingBot {
   // ==========================================================================
 
   private async getExistingTimestamps(channelId: string): Promise<Set<string>> {
-    const logPath = join(this.workingDir, channelId, "log.jsonl");
+    const logPath = join(this.conversationDir(channelId), "log.jsonl");
     const timestamps = new Set<string>();
     if (!existsSync(logPath)) return timestamps;
 
@@ -1706,7 +1724,7 @@ export class SlackMessagingBot implements MessagingBot {
     // Only backfill channels that already have a log.jsonl (mikan has interacted with them before)
     const channelsToBackfill: Array<[string, SlackChannel]> = [];
     for (const [channelId, channel] of this.channels) {
-      const logPath = join(this.workingDir, channelId, "log.jsonl");
+      const logPath = join(this.conversationDir(channelId), "log.jsonl");
       if (existsSync(logPath)) {
         channelsToBackfill.push([channelId, channel]);
       }
