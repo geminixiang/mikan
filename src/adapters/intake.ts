@@ -62,7 +62,7 @@ export async function processMessageIntake<TEvent extends ConversationEvent>(
 
   async function rejectedWhileBusy(): Promise<boolean> {
     const sessionKey = options.eventBase.sessionKey ?? options.eventBase.conversationId;
-    if (!options.handler.isRunning(sessionKey)) return false;
+    if (!options.handler.isRunning(options.eventBase.address, sessionKey)) return false;
     await options.bot.postMessage(
       options.eventBase.conversationId,
       formatAlreadyWorking(options.bot, "/stop"),
@@ -101,16 +101,17 @@ async function handleStopMagicWord<TEvent extends ConversationEvent>(
   options: MessageIntakeOptions<TEvent>,
 ): Promise<void> {
   const { handler, bot, eventBase, magicWord } = options;
+  const address = eventBase.address;
   const conversationId = eventBase.conversationId;
   const sessionKey = eventBase.sessionKey;
 
-  let target = resolveStopTarget({ handler, conversationId, sessionKey });
+  let target = resolveStopTarget({ handler, address, sessionKey });
   if (!target && widensToScopedSession(magicWord.scopeFallback, sessionKey, conversationId)) {
-    target = resolveOnlyScopedStopTarget(handler, conversationId);
+    target = resolveOnlyScopedStopTarget(handler, address);
   }
 
   if (target) {
-    await handler.handleStop(target, conversationId, bot);
+    await handler.handleStop(address, target, bot);
   } else if (magicWord.addressed) {
     await bot.postMessage(conversationId, formatNothingRunning(bot));
   }

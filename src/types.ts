@@ -302,22 +302,29 @@ export interface ConversationContext {
 }
 
 export interface RunningSession {
+  /** The office this run belongs to; two platforms may share a raw id. */
+  address: OfficeAddress;
   sessionKey: string;
   startedAt: number;
   lastActivityAt?: number;
   currentTool?: string;
 }
 
+/**
+ * Runtime state is addressed by an office plus that office's platform session
+ * reference. The session key alone is a platform value and is not unique
+ * across platforms, so every session-scoped call carries its `OfficeAddress`.
+ */
 export interface MessagingEventHandler {
-  isRunning(sessionKey: string): boolean;
+  isRunning(address: OfficeAddress, sessionKey: string): boolean;
   getRunningSessions(): RunningSession[];
   handleEvent(
     event: ConversationEvent,
     bot: MessagingBot,
     context: ConversationContext,
   ): Promise<void>;
-  handleStop(sessionKey: string, conversationId: string, bot: MessagingBot): Promise<void>;
-  forceStop(sessionKey: string): void;
+  handleStop(address: OfficeAddress, sessionKey: string, bot: MessagingBot): Promise<void>;
+  forceStop(address: OfficeAddress, sessionKey: string): void;
   handleNewCommand(
     sessionKey: string,
     conversationId: string,
@@ -334,7 +341,7 @@ export interface MessagingEventHandler {
    * fall through to the model, so the adapter drops unconsumed ones.
    */
   handleExtensionAction(params: {
-    conversationId: string;
+    address: OfficeAddress;
     sessionKey: string;
     conversationKind: ConversationKind;
     slug: string;

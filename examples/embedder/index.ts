@@ -6,20 +6,26 @@
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 import {
+  createConversationEvent,
+  createConversationMessage,
   createConversationRuntime,
   type ConversationContext,
-  type ConversationEvent,
   type ConversationResponder,
   type ConversationRuntime,
   type MessagingBot,
   type MessagingInfo,
   type MikanModels,
+  type PlatformName,
 } from "@geminixiang/mikan";
 
 const CONVERSATION_ID = "embedder";
+// An office is identified by its platform plus its raw conversation id, so an
+// embedder adopts one of mikan's supported platforms; here a Slack office is
+// driven over stdin/stdout instead of Socket Mode.
+const PLATFORM: PlatformName = "slack";
 
 const platform: MessagingInfo = {
-  name: "stdio",
+  name: PLATFORM,
   formattingGuide: "Reply in plain text.",
   channels: [{ id: CONVERSATION_ID, name: "stdio" }],
   users: [{ id: "local-user", userName: "local-user", displayName: "Local User" }],
@@ -68,7 +74,8 @@ export function createEmbedder(options: {
   let messageCounter = 0;
   const handleLine = async (line: string): Promise<void> => {
     const ts = `${++messageCounter}`;
-    const event: ConversationEvent = {
+    const event = createConversationEvent({
+      platform: PLATFORM,
       type: "message",
       conversationId: CONVERSATION_ID,
       conversationKind: "direct",
@@ -76,19 +83,18 @@ export function createEmbedder(options: {
       user: "local-user",
       text: line,
       sessionKey: CONVERSATION_ID,
-    };
-    const context: ConversationContext = {
-      message: {
-        id: ts,
-        sessionKey: CONVERSATION_ID,
-        conversationKind: "direct",
-        userId: "local-user",
-        userName: "Local User",
-        text: line,
-      },
-      responder,
-      platform,
-    };
+    });
+    const message = createConversationMessage({
+      platform: PLATFORM,
+      conversationId: CONVERSATION_ID,
+      id: ts,
+      sessionKey: CONVERSATION_ID,
+      conversationKind: "direct",
+      userId: "local-user",
+      userName: "Local User",
+      text: line,
+    });
+    const context: ConversationContext = { address: event.address, message, responder, platform };
     await runtime.handleEvent(event, bot, context);
   };
 

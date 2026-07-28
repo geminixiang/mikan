@@ -29,6 +29,7 @@ import {
 } from "../../adapter.js";
 import type { DiscordEvent } from "./types.js";
 import * as log from "../../log.js";
+import { createOfficeAddress } from "../../office-address.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
 import { formatNothingRunning } from "../../platform-messages.js";
 import {
@@ -360,14 +361,11 @@ export class DiscordMessagingBot implements MessagingBot {
   }
 
   private resolveStopTarget(channelId: string, sessionKey: string): string | null {
-    const directTarget = resolveStopTarget({
-      handler: this.handler,
-      conversationId: channelId,
-      sessionKey,
-    });
+    const address = createOfficeAddress("discord", channelId);
+    const directTarget = resolveStopTarget({ handler: this.handler, address, sessionKey });
     if (directTarget) return directTarget;
     if (sessionKey !== channelId) return null;
-    return resolveOnlyScopedStopTarget(this.handler, channelId);
+    return resolveOnlyScopedStopTarget(this.handler, address);
   }
 
   private loadCachedGuildData(): void {
@@ -556,7 +554,11 @@ export class DiscordMessagingBot implements MessagingBot {
         if (interaction.commandName === "stop") {
           const stopTarget = this.resolveStopTarget(conversationId, sessionKey);
           if (stopTarget) {
-            await this.handler.handleStop(stopTarget, conversationId, this);
+            await this.handler.handleStop(
+              createOfficeAddress("discord", conversationId),
+              stopTarget,
+              this,
+            );
             await context.responder.respond("Stopped the current conversation.");
           } else {
             await context.responder.respond(formatNothingRunning("discord"));

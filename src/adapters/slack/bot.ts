@@ -16,6 +16,7 @@ import {
   type ConversationKind,
   type MessagingInfo,
 } from "../../adapter.js";
+import { createOfficeAddress } from "../../office-address.js";
 import { COMMAND_MANIFEST, type SlackSlashRoute } from "../../commands/manifest.js";
 import { resolveConversationSettings } from "../../config.js";
 import { parseExtActionId } from "../../harness/extensions/blockkit.js";
@@ -597,7 +598,9 @@ export class SlackMessagingBot implements MessagingBot {
 
   private resolveQueueKey(conversationId: string, sessionKey: string): string {
     if (!isSlackThreadSessionKey(sessionKey)) return sessionKey;
-    if (this.handler.isRunning(sessionKey)) return sessionKey;
+    if (this.handler.isRunning(createOfficeAddress("slack", conversationId), sessionKey)) {
+      return sessionKey;
+    }
     return this.hasKnownThreadSession(conversationId, sessionKey) ? sessionKey : conversationId;
   }
 
@@ -1362,7 +1365,7 @@ export class SlackMessagingBot implements MessagingBot {
     log.logInfo(`[Force Stop] User ${userId} requested force stop for ${sessionKey}`);
 
     // Use handler's forceStop method
-    this.handler.forceStop(sessionKey);
+    this.handler.forceStop(createOfficeAddress("slack", channelId), sessionKey);
 
     // Notify in channel
     await this.postMessage(channelId, formatForceStopped("slack", userId ?? "unknown"));
@@ -1402,7 +1405,7 @@ export class SlackMessagingBot implements MessagingBot {
     if (extAction) {
       this.getQueue(this.resolveQueueKey(channelId, sessionKey)).enqueue(async () => {
         const consumed = await this.handler.handleExtensionAction({
-          conversationId: channelId,
+          address: createOfficeAddress("slack", channelId),
           sessionKey,
           conversationKind: channelId.startsWith("D") ? "direct" : "shared",
           slug: extAction.slug,

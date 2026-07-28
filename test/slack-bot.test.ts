@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler } from "../src/adapter.js";
+import { createOfficeAddress } from "../src/office-address.js";
 import { SlackMessagingBot } from "../src/adapters/slack/bot.js";
 import { defaultCommandHandlers } from "../src/commands/registry.js";
 import { commandManifestEntry } from "../src/commands/manifest.js";
@@ -489,7 +490,9 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
   test("shared channel mentions are queued while the session is running", async () => {
     const handler = makeHandler();
-    vi.mocked(handler.isRunning).mockImplementation((sessionKey: string) => sessionKey === "C123");
+    vi.mocked(handler.isRunning).mockImplementation(
+      (_address, sessionKey) => sessionKey === "C123",
+    );
 
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
@@ -676,7 +679,9 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
   test("DM stop is handled immediately and bypasses the intake queue", async () => {
     const handler = makeHandler();
-    vi.mocked(handler.isRunning).mockImplementation((sessionKey: string) => sessionKey === "D123");
+    vi.mocked(handler.isRunning).mockImplementation(
+      (_address, sessionKey) => sessionKey === "D123",
+    );
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
@@ -722,7 +727,11 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     });
 
     expect(ack).toHaveBeenCalled();
-    expect(handler.handleStop).toHaveBeenCalledWith("D123", "D123", bot);
+    expect(handler.handleStop).toHaveBeenCalledWith(
+      createOfficeAddress("slack", "D123"),
+      "D123",
+      bot,
+    );
     expect((bot as any).getQueue("D123").size()).toBe(0);
     expect(handler.handleEvent).not.toHaveBeenCalled();
   });
@@ -1347,7 +1356,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
   test("shared-channel bare thread replies do not trigger while that thread session is running", async () => {
     const handler = makeHandler();
     vi.mocked(handler.isRunning).mockImplementation(
-      (sessionKey: string) => sessionKey === "C123:1000.0001",
+      (_address, sessionKey) => sessionKey === "C123:1000.0001",
     );
 
     const bot = new SlackMessagingBot(handler, {
@@ -1405,7 +1414,9 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
   test("DM follow-up messages are queued while the top-level DM session is running", async () => {
     const handler = makeHandler();
-    vi.mocked(handler.isRunning).mockImplementation((sessionKey: string) => sessionKey === "D123");
+    vi.mocked(handler.isRunning).mockImplementation(
+      (_address, sessionKey) => sessionKey === "D123",
+    );
 
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
@@ -1730,7 +1741,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
   test("DM thread follow-up messages are queued on the thread session key once the thread session exists", async () => {
     const handler = makeHandler();
     vi.mocked(handler.isRunning).mockImplementation(
-      (sessionKey: string) => sessionKey === "D123:2000.0001",
+      (_address, sessionKey) => sessionKey === "D123:2000.0001",
     );
 
     const bot = new SlackMessagingBot(handler, {
@@ -2078,7 +2089,10 @@ describe("SlackMessagingBot force-stop block action", () => {
       ack: vi.fn(),
     });
 
-    expect(handler.forceStop).toHaveBeenCalledWith(sessionKey);
+    expect(handler.forceStop).toHaveBeenCalledWith(
+      createOfficeAddress("slack", "GH_owner_repo_42"),
+      sessionKey,
+    );
   });
 
   test("legacy buttons without a value fall back to action_id decoding", async () => {
@@ -2094,7 +2108,10 @@ describe("SlackMessagingBot force-stop block action", () => {
       ack: vi.fn(),
     });
 
-    expect(handler.forceStop).toHaveBeenCalledWith("C123:1000.0001");
+    expect(handler.forceStop).toHaveBeenCalledWith(
+      createOfficeAddress("slack", "C123"),
+      "C123:1000.0001",
+    );
   });
 
   test("ext-namespaced actions dispatch to the extension handler, never the agent", async () => {
@@ -2112,7 +2129,7 @@ describe("SlackMessagingBot force-stop block action", () => {
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(handler.handleExtensionAction).toHaveBeenCalledWith({
-      conversationId: "C123",
+      address: createOfficeAddress("slack", "C123"),
       sessionKey: "C123",
       conversationKind: "shared",
       slug: "poll",

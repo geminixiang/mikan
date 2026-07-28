@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
+import { createOfficeAddress } from "../src/office-address.js";
 import type { MutableModels } from "@earendil-works/pi-ai";
 import { MikanModels } from "../src/harness/index.js";
 import { createEmbedder } from "../examples/embedder/index.js";
@@ -48,7 +49,9 @@ function createFauxModels(): { models: MikanModels; faux: ReturnType<typeof faux
 describe("examples/embedder", () => {
   test("constructs from the public surface without vault or portal token stores", () => {
     const embedder = createEmbedder({ workingDir, write: () => {} });
-    expect(embedder.runtime.isRunning("embedder")).toBe(false);
+    expect(embedder.runtime.isRunning(createOfficeAddress("slack", "embedder"), "embedder")).toBe(
+      false,
+    );
     expect(embedder.runtime.getRunningSessions()).toEqual([]);
   });
 
@@ -61,7 +64,9 @@ describe("examples/embedder", () => {
     await embedder.handleLine("hi there");
 
     expect(outputs.join("\n")).toContain("embedded hello");
-    expect(embedder.runtime.isRunning("embedder")).toBe(false);
+    expect(embedder.runtime.isRunning(createOfficeAddress("slack", "embedder"), "embedder")).toBe(
+      false,
+    );
   });
 
   test("portal commands reply not-configured instead of crashing", async () => {

@@ -10,7 +10,8 @@
 import { appendFileSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import { dirname, join } from "path";
-import type { MessagingEventHandler } from "../adapter.js";
+import type { MessagingEventHandler, OfficeAddress } from "../adapter.js";
+import { sameOffice } from "../office-address.js";
 import { ensureDirExists } from "../utils/file-guards.js";
 import * as log from "../log.js";
 import { reportUserFacingError } from "../observability/sentry.js";
@@ -194,25 +195,27 @@ export function appendBotResponseLog(
  *   2. The bare conversationId, if running.
  */
 export function resolveStopTarget(input: ResolveStopTargetInput): string | null {
-  const { handler, conversationId, sessionKey } = input;
+  const { handler, address, sessionKey } = input;
 
-  if (sessionKey && handler.isRunning(sessionKey)) return sessionKey;
-  if (handler.isRunning(conversationId)) return conversationId;
+  if (sessionKey && handler.isRunning(address, sessionKey)) return sessionKey;
+  if (handler.isRunning(address, address.conversationId)) return address.conversationId;
   return null;
 }
 
 /**
- * Return the single running scoped session for this conversation, or null when
- * there are zero or multiple matches.
+ * Return the single running scoped session for this office, or null when there
+ * are zero or multiple matches. Another platform's identically named
+ * conversation is a different office and is never a stop target.
  */
 export function resolveOnlyScopedStopTarget(
   handler: MessagingEventHandler,
-  conversationId: string,
+  address: OfficeAddress,
 ): string | null {
   const runningScopes = handler
     .getRunningSessions()
-    .map((s) => s.sessionKey)
-    .filter((k) => k.startsWith(`${conversationId}:`));
+    .filter((session) => sameOffice(session.address, address))
+    .map((session) => session.sessionKey)
+    .filter((key) => key.startsWith(`${address.conversationId}:`));
 
   return runningScopes.length === 1 ? runningScopes[0] : null;
 }

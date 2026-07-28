@@ -5,6 +5,7 @@ import type {
   ConversationEvent,
   MessagingEventHandler,
   ConversationKind,
+  OfficeAddress,
   PlatformBlockKit,
   PlatformNotifier,
   PlatformReactor,
@@ -28,6 +29,10 @@ export interface SessionLifecycleOptions {
 }
 
 export interface ConversationRuntimeState {
+  /** The office that owns this runtime state. */
+  address: OfficeAddress;
+  /** This office's platform session reference (raw session-key grammar). */
+  sessionKey: string;
   running: boolean;
   /** Exact settlement of the current run, including post-run response handling. */
   runSettlement?: Promise<void>;
@@ -49,6 +54,12 @@ export interface RunSessionOptions {
 
 /** Conversation/session identity used to resolve per-session runner state. */
 export interface SessionStateOptions {
+  /** Canonical office identity; the runtime keys all state by this. */
+  address: OfficeAddress;
+  /**
+   * The office's raw platform id. Filesystem layout, settings, and Admin scope
+   * still address offices this way; see ADR 0005.
+   */
   conversationId: string;
   sessionKey: string;
   conversationKind?: ConversationKind;

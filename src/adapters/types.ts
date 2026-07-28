@@ -4,6 +4,7 @@ import type {
   ConversationContext,
   ConversationEvent,
   MessagingEventHandler,
+  OfficeAddress,
   SubagentProgressSnapshot,
 } from "../adapter.js";
 
@@ -46,7 +47,8 @@ export interface RetryOptions {
 
 export interface ResolveStopTargetInput {
   handler: MessagingEventHandler;
-  conversationId: string;
+  /** The office whose runtime state may be stopped. */
+  address: OfficeAddress;
   /** Session key derived from the current message; checked first when present. */
   sessionKey?: string;
 }

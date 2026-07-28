@@ -2,7 +2,9 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { MessagingEventHandler } from "../src/adapter.js";
+import type { MessagingEventHandler, OfficeAddress } from "../src/adapter.js";
+import { createOfficeAddress } from "../src/office-address.js";
+import { conversationIdOf } from "../src/sessions/session-key.js";
 import { GithubMessagingBot } from "../src/adapters/github/bot.js";
 import type { GithubClient } from "../src/adapters/github/client.js";
 import {
@@ -47,10 +49,14 @@ vi.mock("../src/adapters/github/cloudbuild.js", async (importOriginal) => {
 function makeHandler(runningKeys: string[] = []): MessagingEventHandler {
   const running = new Set(runningKeys);
   return {
-    isRunning: vi.fn((key: string) => running.has(key)),
-    getRunningSessions: vi
-      .fn()
-      .mockReturnValue([...running].map((sessionKey) => ({ sessionKey, startedAt: Date.now() }))),
+    isRunning: vi.fn((_address: OfficeAddress, key: string) => running.has(key)),
+    getRunningSessions: vi.fn().mockReturnValue(
+      [...running].map((sessionKey) => ({
+        address: createOfficeAddress("github", conversationIdOf(sessionKey)),
+        sessionKey,
+        startedAt: Date.now(),
+      })),
+    ),
     handleEvent: vi.fn(),
     handleStop: vi.fn(),
     forceStop: vi.fn(),
@@ -418,7 +424,11 @@ describe("GithubMessagingBot", () => {
     await bot.poll();
     await settleQueues();
 
-    expect(stopHandler.handleStop).toHaveBeenCalledWith(CONVERSATION_ID, CONVERSATION_ID, bot);
+    expect(stopHandler.handleStop).toHaveBeenCalledWith(
+      createOfficeAddress("github", CONVERSATION_ID),
+      CONVERSATION_ID,
+      bot,
+    );
     expect(stopHandler.handleEvent).not.toHaveBeenCalled();
   });
 
