@@ -22,6 +22,12 @@ Admin scope is a full office address: the token pins the invoking platform, requ
 Sandbox resource keys (container names, gondolin instances, cloudflare scopes) stay raw-conversation-derived until the resource-naming migration — a collision there costs a container recreate, never credential access.
 
 Platform adapters continue to use raw IDs at their external I/O boundaries.
-The registry never infers a platform from an ID prefix: one enabled platform may
-claim an unowned legacy directory, while multiple enabled platforms require an
-explicit owner.
+Legacy-directory claiming verifies rather than guesses: a directory is
+auto-claimed only when exactly one enabled platform's id format could have
+produced its name (GitHub's mikan-derived `GH_<owner>_<repo>_<n>` slug parses
+back; Telegram allows negative numeric ids; Discord snowflakes are positive
+digits; Slack ids are uppercase alphanumerics with a letter prefix). An id
+matching several enabled formats — bare digits while both Telegram and
+Discord are enabled — or none of them stays `needs-owner` and fails boot
+until `mikan office claim` names an owner. In particular, a single-platform
+deployment can never claim another platform's verifiable format.

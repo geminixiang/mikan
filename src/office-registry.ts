@@ -18,6 +18,7 @@ import {
   conversationOfficeDir,
   validateOfficeAddress,
 } from "./office-address.js";
+import { parseGithubConversationId } from "./adapters/github/ids.js";
 import { effectiveStateDir } from "./cli/arg-grammar.js";
 import { isRecord, readTextFileIfExists } from "./utils/file-guards.js";
 import { atomicWritePrivateFile } from "./utils/fs-atomic.js";
@@ -151,7 +152,7 @@ export class OfficeRegistry {
       }
 
       assertRegularDirectory(sourceDir, "Legacy office source");
-      const ownerPlatform = this.resolveOwner(options.ownerPlatform);
+      const ownerPlatform = this.resolveOwner(options.ownerPlatform, rawConversationId);
       if (!ownerPlatform) {
         const record = makeRecord({
           rawConversationId,
@@ -250,7 +251,10 @@ export class OfficeRegistry {
     });
   }
 
-  private resolveOwner(ownerPlatform: PlatformName | undefined): PlatformName | undefined {
+  private resolveOwner(
+    ownerPlatform: PlatformName | undefined,
+    rawConversationId: string,
+  ): PlatformName | undefined {
     if (ownerPlatform !== undefined) {
       const validPlatform = assertPlatformName(ownerPlatform);
       if (!this.state.enabledPlatforms.includes(validPlatform)) {
@@ -258,7 +262,11 @@ export class OfficeRegistry {
       }
       return validPlatform;
     }
-    return this.state.enabledPlatforms.length === 1 ? this.state.enabledPlatforms[0] : undefined;
+    const candidates = platformsMatchingConversationIdFormat(
+      rawConversationId,
+      this.state.enabledPlatforms,
+    );
+    return candidates.length === 1 ? candidates[0] : undefined;
   }
 
   private requireMigration(rawConversationId: string): OfficeMigrationRecord {
@@ -789,6 +797,43 @@ function ensureRegularOfficeDirectory(dir: string): void {
   }
   if (stats.isSymbolicLink() || !stats.isDirectory()) {
     throw new Error(`Office directory must be a regular non-symlink directory: ${dir}`);
+  }
+}
+
+/**
+ * Enabled platforms whose id format could have produced this raw
+ * conversation id. Auto-claiming uses this as verification, not guessing:
+ * every format below is one mikan itself writes (GitHub ids are mikan-derived
+ * slugs; Slack/Telegram/Discord ids are the platforms' own grammars), and a
+ * directory is only claimed when exactly one enabled platform's format
+ * matches. Bare digits stay ambiguous while both Telegram and Discord are
+ * enabled (negative ids are Telegram-only); anything matching no enabled
+ * format fails closed to needs-owner.
+ */
+function platformsMatchingConversationIdFormat(
+  rawConversationId: string,
+  enabledPlatforms: readonly PlatformName[],
+): PlatformName[] {
+  return enabledPlatforms.filter((platform) => {
+    switch (platform) {
+      case "github":
+        return isGithubConversationId(rawConversationId);
+      case "telegram":
+        return /^-?\d+$/.test(rawConversationId);
+      case "discord":
+        return /^\d+$/.test(rawConversationId);
+      case "slack":
+        return /^[A-Z][A-Z0-9]*$/.test(rawConversationId);
+    }
+  });
+}
+
+function isGithubConversationId(rawConversationId: string): boolean {
+  try {
+    parseGithubConversationId(rawConversationId);
+    return true;
+  } catch {
+    return false;
   }
 }
 

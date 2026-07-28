@@ -339,6 +339,85 @@ describe("migrateLegacyOffices", () => {
     expect(formatUnmigratedOfficesError(summary)).toContain("<state-dir>/conversations");
   });
 
+  test("multi-platform: verifiable formats claim automatically, prod-style", () => {
+    const { stateDir, workspaceRoot } = makeFixture();
+    makeLegacyOffice(workspaceRoot, "C0AB12CD3");
+    makeLegacyOffice(workspaceRoot, "D0EF45GH6");
+    makeLegacyOffice(workspaceRoot, "GH_livingbio_genv-queue_1652");
+
+    const summary = migrateLegacyOffices({
+      workspaceRoot,
+      stateDir,
+      enabledPlatforms: ["slack", "github"],
+    });
+
+    expect(summary.unowned).toEqual([]);
+    expect(summary.migrated.toSorted()).toEqual([
+      "C0AB12CD3",
+      "D0EF45GH6",
+      "GH_livingbio_genv-queue_1652",
+    ]);
+    expect(existsSync(officeDir(workspaceRoot, createOfficeAddress("slack", "C0AB12CD3")))).toBe(
+      true,
+    );
+    expect(
+      existsSync(
+        officeDir(workspaceRoot, createOfficeAddress("github", "GH_livingbio_genv-queue_1652")),
+      ),
+    ).toBe(true);
+  });
+
+  test("a github-format dir is never claimed by a slack-only deployment", () => {
+    const { stateDir, workspaceRoot } = makeFixture();
+    makeLegacyOffice(workspaceRoot, "GH_octo_widgets_5");
+
+    const summary = migrateLegacyOffices({
+      workspaceRoot,
+      stateDir,
+      enabledPlatforms: ["slack"],
+    });
+
+    expect(summary.unowned).toEqual(["GH_octo_widgets_5"]);
+    expect(existsSync(join(workspaceRoot, "GH_octo_widgets_5"))).toBe(true);
+  });
+
+  test("bare digits stay ambiguous under telegram+discord; negative ids are telegram's", () => {
+    const { stateDir, workspaceRoot } = makeFixture();
+    makeLegacyOffice(workspaceRoot, "900100");
+    makeLegacyOffice(workspaceRoot, "-1001234567890");
+
+    const summary = migrateLegacyOffices({
+      workspaceRoot,
+      stateDir,
+      enabledPlatforms: ["discord", "telegram"],
+    });
+
+    expect(summary.unowned).toEqual(["900100"]);
+    expect(summary.migrated).toEqual(["-1001234567890"]);
+    expect(
+      existsSync(officeDir(workspaceRoot, createOfficeAddress("telegram", "-1001234567890"))),
+    ).toBe(true);
+  });
+
+  test("workspace directories without office markers are skipped, not claimed", () => {
+    const { stateDir, workspaceRoot } = makeFixture();
+    makeLegacyOffice(workspaceRoot, "C123");
+    // A repo the agent cloned into a trusted workspace root: no log.jsonl,
+    // no sessions/ — not an office, must stay put and not block boot.
+    mkdirSync(join(workspaceRoot, "pi-mono"), { recursive: true });
+    writeFileSync(join(workspaceRoot, "pi-mono", "README.md"), "repo\n");
+
+    const summary = migrateLegacyOffices({
+      workspaceRoot,
+      stateDir,
+      enabledPlatforms: ["slack"],
+    });
+
+    expect(summary.migrated).toEqual(["C123"]);
+    expect(summary.unowned).toEqual([]);
+    expect(existsSync(join(workspaceRoot, "pi-mono", "README.md"))).toBe(true);
+  });
+
   test("already office-key-shaped directories are left alone", () => {
     const { stateDir, workspaceRoot } = makeFixture();
     const canonical = officeDir(workspaceRoot, createOfficeAddress("slack", "C123"));

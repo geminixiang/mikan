@@ -74,18 +74,37 @@ describe("OfficeRegistry", () => {
     expect(existsSync(record.targetDir!)).toBe(false);
   });
 
-  test("multiple enabled platforms leave an unowned directory ambiguous", () => {
+  test("a uniquely matching id format claims even with several platforms enabled", () => {
     const fixture = makeFixture();
     const registry = new OfficeRegistry(fixture.stateDir);
     registry.enablePlatform("slack");
     registry.enablePlatform("discord");
 
+    // "C123" is Slack's grammar and cannot be a Discord snowflake.
     const record = registry.prepareLegacyMigration(fixture);
+
+    expect(record.status).toBe("prepared");
+    expect(record.ownerPlatform).toBe("slack");
+  });
+
+  test("an id matching several enabled formats stays unowned", () => {
+    const fixture = makeFixture();
+    const digitsDir = join(fixture.workspaceRoot, "900100");
+    mkdirSync(digitsDir, { recursive: true });
+    const registry = new OfficeRegistry(fixture.stateDir);
+    registry.enablePlatform("discord");
+    registry.enablePlatform("telegram");
+
+    const record = registry.prepareLegacyMigration({
+      rawConversationId: "900100",
+      sourceDir: digitsDir,
+      workspaceRoot: fixture.workspaceRoot,
+    });
 
     expect(record.status).toBe("needs-owner");
     expect(record.ownerPlatform).toBeUndefined();
     expect(record.targetDir).toBeUndefined();
-    expect(() => registry.markMoving("C123")).toThrow(/needs an owner/);
+    expect(() => registry.markMoving("900100")).toThrow(/needs an owner/);
   });
 
   test("an explicit owner resolves ambiguity without guessing from the raw id", () => {

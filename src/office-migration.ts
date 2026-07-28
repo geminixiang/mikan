@@ -196,6 +196,13 @@ function recordMigratedOffice(registry: OfficeRegistry, record: OfficeMigrationR
  * infrastructure, not hidden, and not already office-key named. A symlink in
  * office position is refused outright — following it could move data from
  * outside the workspace root.
+ *
+ * A candidate must also look like a conversation office: every office that
+ * ever saw a message has a `log.jsonl`, and every office that ran the agent
+ * has `sessions/`. Trusted workspace roots legitimately accumulate other
+ * directories — repos the agent cloned, build output — which are not offices
+ * and must be neither renamed nor reported as unowned; they stay where they
+ * are (an operator can still claim one explicitly via `mikan office claim`).
  */
 function listLegacyOfficeDirs(workspaceRoot: string): string[] {
   const candidates: string[] = [];
@@ -207,9 +214,19 @@ function listLegacyOfficeDirs(workspaceRoot: string): string[] {
       throw new Error(`Workspace entry must not be a symlink: ${join(workspaceRoot, entry.name)}`);
     }
     if (!entry.isDirectory()) continue;
+    if (!looksLikeConversationOffice(join(workspaceRoot, entry.name))) {
+      log.logInfo(
+        `[office] Skipping non-office workspace directory (no log.jsonl or sessions/): ${entry.name}`,
+      );
+      continue;
+    }
     candidates.push(entry.name);
   }
   return candidates.toSorted();
+}
+
+function looksLikeConversationOffice(dir: string): boolean {
+  return existsSync(join(dir, "log.jsonl")) || existsSync(join(dir, "sessions"));
 }
 
 function pathExists(path: string): boolean {
