@@ -1,7 +1,9 @@
 import { existsSync, lstatSync, readdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import * as log from "./log.js";
-import { isOfficeKey, officeStateDir } from "./office-address.js";
+import { isOfficeKey, officeKey, officeStateDir } from "./office-address.js";
+import { legacyConversationCredentialKey } from "./sandbox/identity.js";
+import type { OfficeRecord } from "./types.js";
 import { OfficeRegistry } from "./office-registry.js";
 import { migrateConversationVaultKeys } from "./vault/index.js";
 import type { OfficeMigrationRecord, PlatformName } from "./types.js";
@@ -278,4 +280,53 @@ export function formatUnmigratedOfficesError(summary: OfficeMigrationRunSummary)
     );
   }
   return lines.join("\n");
+}
+
+/**
+ * Bind-spec translator for the container layout migration: rewrites every
+ * host path the office migration renamed — workspace dirs, per-conversation
+ * state trees, conversation vaults — and the guest workspace segment, using
+ * the registry's office inventory as the raw-id ↔ office mapping. Specs that
+ * reference none of the renamed paths come back unchanged, which is also how
+ * an already-migrated container is recognized.
+ */
+function replacePrefix(path: string, pairs: Array<[string, string]>): string {
+  for (const [oldPrefix, newPrefix] of pairs) {
+    if (path === oldPrefix) return newPrefix;
+    if (path.startsWith(`${oldPrefix}/`)) return newPrefix + path.slice(oldPrefix.length);
+  }
+  return path;
+}
+
+export function buildContainerBindTranslator(options: {
+  offices: readonly OfficeRecord[];
+  workspaceRoot: string;
+  stateDir: string;
+}): (bindSpec: string) => string {
+  const hostPairs: Array<[string, string]> = [];
+  const guestPairs: Array<[string, string]> = [];
+  for (const office of options.offices) {
+    const key = officeKey(office);
+    const rawId = office.conversationId;
+    hostPairs.push([join(options.workspaceRoot, rawId), join(options.workspaceRoot, key)]);
+    hostPairs.push([
+      join(options.stateDir, "conversations", rawId),
+      officeStateDir(options.stateDir, office),
+    ]);
+    hostPairs.push([
+      join(options.stateDir, "vaults", legacyConversationCredentialKey(rawId)),
+      join(options.stateDir, "vaults", key),
+    ]);
+    guestPairs.push([`/workspace/${rawId}`, `/workspace/${key}`]);
+  }
+
+  return (bindSpec: string): string => {
+    const readOnly = bindSpec.endsWith(":ro");
+    const spec = readOnly ? bindSpec.slice(0, -3) : bindSpec;
+    const separator = spec.indexOf(":");
+    if (separator === -1) return bindSpec;
+    const source = replacePrefix(spec.slice(0, separator), hostPairs);
+    const target = replacePrefix(spec.slice(separator + 1), guestPairs);
+    return `${source}:${target}${readOnly ? ":ro" : ""}`;
+  };
 }

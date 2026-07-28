@@ -12,7 +12,172 @@ function createDeferred<T>(): {
   return { promise, resolve };
 }
 
+function routerMock(overrides: {
+  status?: string;
+  binds?: string[];
+  imageBinds?: string[];
+  names?: string[];
+  imageRef?: string;
+  images?: string[];
+}) {
+  const calls: string[][] = [];
+  let created = false;
+  const exec = vi.fn(async (_file: string, args: string[]) => {
+    calls.push(args);
+    if (args[0] === "create") created = true;
+    const fmt = args[0] === "inspect" ? args[2] : "";
+    if (args[0] === "inspect" && fmt.includes("State.Running")) {
+      if (overrides.status === "missing" && !created) throw new Error("No such object");
+      return { stdout: `${overrides.status === "running"}\n` };
+    }
+    if (args[0] === "inspect" && fmt.includes("HostConfig.Binds")) {
+      return { stdout: `${JSON.stringify(overrides.binds ?? [])}\n` };
+    }
+    if (args[0] === "inspect" && fmt.includes("mikan.migrate-binds")) {
+      if (overrides.imageBinds === undefined) throw new Error("No such image");
+      return { stdout: `${JSON.stringify(overrides.imageBinds)}\n` };
+    }
+    if (args[0] === "inspect" && fmt.includes("Config.Image")) {
+      const ref = created
+        ? `mikan-migrate:${args[args.length - 1]}`
+        : (overrides.imageRef ?? "base");
+      return { stdout: `${ref}\n` };
+    }
+    if (args[0] === "inspect" && fmt.includes("NetworkMode")) {
+      return { stdout: "mikan-sandbox-net-c123-k\n" };
+    }
+    if (args[0] === "inspect" && fmt.includes("mount-signature")) {
+      return { stdout: "<no value>\n" };
+    }
+    if (args[0] === "ps") {
+      return { stdout: `${(overrides.names ?? []).join("\n")}\n` };
+    }
+    if (args[0] === "images") {
+      return { stdout: `${(overrides.images ?? []).join("\n")}\n` };
+    }
+    return { stdout: "ok\n" };
+  });
+  return { exec, calls };
+}
+
 describe("DockerContainerManager", () => {
+  describe("container layout migration", () => {
+    const LEGACY_BINDS = [
+      "/w/C123:/workspace/C123",
+      "/state/vaults/c123-oldhash/.ssh:/root/.ssh",
+      "/state/global/skills:/mikan/packages/x/skills:ro",
+    ];
+    const NEW_BINDS = [
+      "/w/v1-slack-c123-k:/workspace/v1-slack-c123-k",
+      "/state/vaults/v1-slack-c123-k/.ssh:/root/.ssh",
+      "/state/global/skills:/mikan/packages/x/skills:ro",
+    ];
+    const translator = (spec: string): string => {
+      const index = LEGACY_BINDS.indexOf(spec);
+      return index === -1 ? spec : NEW_BINDS[index];
+    };
+
+    test("moves a legacy container: commit with binds label, rm, create translated", async () => {
+      const { exec, calls } = routerMock({ status: "stopped", binds: LEGACY_BINDS });
+      const manager = new DockerContainerManager("base", { execFileImpl: exec as any });
+      manager.armContainerLayoutMigration(translator);
+
+      await (manager as any).migrateContainerLayout("mikan-sandbox-c123-k");
+
+      const commit = calls.find((args) => args[0] === "commit");
+      expect(commit?.[2]).toContain("mikan.migrate-binds=");
+      expect(commit?.slice(-2)).toEqual([
+        "mikan-sandbox-c123-k",
+        "mikan-migrate:mikan-sandbox-c123-k",
+      ]);
+      expect(calls).toContainEqual(["rm", "-f", "mikan-sandbox-c123-k"]);
+      const create = calls.find((args) => args[0] === "create");
+      expect(create).toBeDefined();
+      for (const bind of NEW_BINDS) expect(create).toContain(bind);
+      for (const bind of [LEGACY_BINDS[0], LEGACY_BINDS[1]]) expect(create).not.toContain(bind);
+      expect(create).toContain("mikan-migrate:mikan-sandbox-c123-k");
+      expect(create?.some((arg) => arg.startsWith("mikan.mount-signature="))).toBe(true);
+      expect(calls.find((args) => args[0] === "run")).toBeUndefined();
+    });
+
+    test("a container already on the office layout is untouched", async () => {
+      const { exec, calls } = routerMock({ status: "stopped", binds: NEW_BINDS });
+      const manager = new DockerContainerManager("base", { execFileImpl: exec as any });
+      manager.armContainerLayoutMigration(translator);
+
+      await (manager as any).migrateContainerLayout("mikan-sandbox-c123-k");
+
+      expect(calls.filter((args) => args[0] !== "inspect")).toEqual([]);
+    });
+
+    test("resumes from the snapshot when the container vanished mid-migration", async () => {
+      const { exec, calls } = routerMock({ status: "missing", imageBinds: LEGACY_BINDS });
+      const manager = new DockerContainerManager("base", { execFileImpl: exec as any });
+      manager.armContainerLayoutMigration(translator);
+
+      await (manager as any).migrateContainerLayout("mikan-sandbox-c123-k");
+
+      expect(calls.find((args) => args[0] === "commit")).toBeUndefined();
+      const create = calls.find((args) => args[0] === "create");
+      for (const bind of NEW_BINDS) expect(create).toContain(bind);
+    });
+
+    test("a missing container without a snapshot is left alone", async () => {
+      const { exec, calls } = routerMock({ status: "missing" });
+      const manager = new DockerContainerManager("base", { execFileImpl: exec as any });
+      manager.armContainerLayoutMigration(translator);
+
+      await (manager as any).migrateContainerLayout("mikan-sandbox-c123-k");
+
+      expect(calls.filter((args) => args[0] !== "inspect")).toEqual([]);
+    });
+
+    test("unarmed manager performs no layout work", async () => {
+      const { exec, calls } = routerMock({ status: "stopped", binds: LEGACY_BINDS });
+      const manager = new DockerContainerManager("base", { execFileImpl: exec as any });
+
+      await (manager as any).migrateContainerLayout("mikan-sandbox-c123-k");
+
+      expect(calls).toEqual([]);
+    });
+
+    test("sweep resumes a crash-orphaned snapshot instead of reclaiming it", async () => {
+      // No containers exist; one snapshot with recorded binds survives a
+      // crash between commit and create. The sweep must recreate it.
+      const { exec, calls } = routerMock({
+        status: "missing",
+        names: [],
+        images: ["mikan-migrate:mikan-sandbox-c123-k"],
+        imageBinds: LEGACY_BINDS,
+      });
+      const manager = new DockerContainerManager("base", { execFileImpl: exec as any });
+      manager.armContainerLayoutMigration(translator);
+
+      await manager.sweepContainerLayoutMigration(0);
+
+      const create = calls.find((args) => args[0] === "create");
+      expect(create).toBeDefined();
+      for (const bind of NEW_BINDS) expect(create).toContain(bind);
+      expect(calls).not.toContainEqual(["rmi", "mikan-migrate:mikan-sandbox-c123-k"]);
+    });
+
+    test("sweep walks managed containers and reclaims orphaned snapshots", async () => {
+      const { exec, calls } = routerMock({
+        status: "stopped",
+        binds: NEW_BINDS,
+        names: ["mikan-sandbox-c123-k"],
+        images: ["mikan-migrate:mikan-sandbox-gone"],
+        imageBinds: [],
+      });
+      const manager = new DockerContainerManager("base", { execFileImpl: exec as any });
+      manager.armContainerLayoutMigration(translator);
+
+      await manager.sweepContainerLayoutMigration(0);
+
+      expect(calls).toContainEqual(["rmi", "mikan-migrate:mikan-sandbox-gone"]);
+    });
+  });
+
   test("removeContainersForConversations removes only labeled matches", async () => {
     const execMock = vi.fn(async (_file: string, args: string[]) => {
       if (args[0] === "ps") {
@@ -289,6 +454,7 @@ describe("DockerContainerManager", () => {
         stdout: '["/tmp/vaults/alice/.ssh:/root/.ssh"]\n',
       })
       .mockResolvedValueOnce({ stdout: "removed\n" })
+      .mockResolvedValueOnce({ stdout: "untagged\n" }) // migrate-snapshot rmi
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "new-container-id\n" });
     const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
@@ -300,7 +466,8 @@ describe("DockerContainerManager", () => {
     });
 
     expect(execMock).toHaveBeenNthCalledWith(3, "docker", ["rm", "-f", "alice-box"]);
-    expect(execMock).toHaveBeenNthCalledWith(5, "docker", [
+    expect(execMock).toHaveBeenNthCalledWith(4, "docker", ["rmi", "mikan-migrate:alice-box"]);
+    expect(execMock).toHaveBeenNthCalledWith(6, "docker", [
       "run",
       "-d",
       "--name",
@@ -338,6 +505,7 @@ describe("DockerContainerManager", () => {
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "bridge\n" })
       .mockResolvedValueOnce({ stdout: "removed\n" })
+      .mockResolvedValueOnce({ stdout: "untagged\n" }) // migrate-snapshot rmi
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "new-container-id\n" });
     const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
@@ -345,7 +513,7 @@ describe("DockerContainerManager", () => {
     await manager.provision("slack-u123");
 
     expect(execMock).toHaveBeenNthCalledWith(4, "docker", ["rm", "-f", "mikan-sandbox-slack-u123"]);
-    expect(execMock).toHaveBeenNthCalledWith(6, "docker", [
+    expect(execMock).toHaveBeenNthCalledWith(7, "docker", [
       "run",
       "-d",
       "--name",

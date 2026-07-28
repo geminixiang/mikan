@@ -61,7 +61,12 @@ import {
 import { FileVaultManager } from "./vault/index.js";
 import { runExtCommand } from "./cli/ext.js";
 import { runOfficeCommand } from "./cli/office.js";
-import { formatUnmigratedOfficesError, migrateLegacyOffices } from "./office-migration.js";
+import {
+  buildContainerBindTranslator,
+  formatUnmigratedOfficesError,
+  migrateLegacyOffices,
+} from "./office-migration.js";
+import { OfficeRegistry } from "./office-registry.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
 import { ChannelStore } from "./store.js";
 import * as Sentry from "@sentry/node";
@@ -346,12 +351,29 @@ const provisioner =
         boostLimits: sandboxBoostLimits,
       })
     : undefined;
-// Containers provisioned before an office migration mount the renamed legacy
-// paths; recreate them so mounts follow the office-key layout.
-if (provisioner && (officeMigration.migrated.length > 0 || officeMigration.recovered.length > 0)) {
-  await provisioner.removeContainersForConversations(
-    new Set([...officeMigration.migrated, ...officeMigration.recovered]),
-  );
+// Containers provisioned before the office migration mount the renamed
+// legacy paths. Their writable layers (everything installed inside) are
+// preserved: each container is committed and recreated with translated
+// mounts — on demand before its next message, and via a background sweep
+// after the bots start. MIKAN_SKIP_CONTAINER_PRESERVATION=1 falls back to
+// plain removal (containers rebuild from the base image on next use).
+const registryOffices = new OfficeRegistry(stateDir).getOffices();
+if (provisioner && registryOffices.length > 0) {
+  if (readEnv("SKIP_CONTAINER_PRESERVATION") === "1") {
+    if (officeMigration.migrated.length > 0 || officeMigration.recovered.length > 0) {
+      await provisioner.removeContainersForConversations(
+        new Set([...officeMigration.migrated, ...officeMigration.recovered]),
+      );
+    }
+  } else {
+    provisioner.armContainerLayoutMigration(
+      buildContainerBindTranslator({
+        offices: registryOffices,
+        workspaceRoot: workingDir,
+        stateDir,
+      }),
+    );
+  }
 }
 if (sandbox.type === "gondolin") {
   try {
@@ -753,3 +775,14 @@ await Promise.all(
     }),
   ),
 );
+
+// Drain the container layout migration off the hot path; every unit is
+// idempotent, so an interrupted sweep simply resumes on the next boot.
+if (provisioner) {
+  void provisioner.sweepContainerLayoutMigration().catch((err) => {
+    log.logWarning(
+      "Container layout sweep failed",
+      err instanceof Error ? err.message : String(err),
+    );
+  });
+}
