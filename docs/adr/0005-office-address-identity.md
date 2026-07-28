@@ -17,7 +17,9 @@ Conversation-scoped credential vaults are keyed by office key — the same strin
 
 Per-conversation host state (`<state-dir>/conversations/<officeKey>` — settings.json, extensions, extension-data, git checkouts) is office-keyed: the settings scope and the extension/package APIs carry the `OfficeAddress`, and the boot migration moves each office's whole legacy tree in one rename, failing closed on conflicts. The event tool's conversation scope matches platform as well as raw ID (platform-less legacy files stay visible); the events directory itself remains the workspace-wide scheduling bus by design.
 
-Sandbox resource keys (container names, gondolin instances, cloudflare scopes) stay raw-conversation-derived until the resource-naming migration — a collision there costs a container recreate, never credential access. Admin scope is still raw-ID keyed; its surfaces resolve offices through the registry (`resolveOwnedOfficeAddress`), which refuses ambiguous IDs shared by several platforms until Admin carries full addresses.
+Admin scope is a full office address: the token pins the invoking platform, requested conversation IDs default to that platform, and cross-platform targets name theirs explicitly (`platform` query/body parameter, `platform:id` scope keys in the UI). The runner cache-control surface (`switchConversationModel`, `refreshConversationEnvironment`, the busy list) and runner generations are address-typed, and the raw-ID bridge functions are gone; `resolveOwnedOfficeAddress` remains only for CLI operators who name offices by raw ID.
+
+Sandbox resource keys (container names, gondolin instances, cloudflare scopes) stay raw-conversation-derived until the resource-naming migration — a collision there costs a container recreate, never credential access.
 
 Platform adapters continue to use raw IDs at their external I/O boundaries.
 The registry never infers a platform from an ID prefix: one enabled platform may

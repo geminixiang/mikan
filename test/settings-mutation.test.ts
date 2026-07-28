@@ -3,12 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createOfficeAddress, officeStateDir } from "../src/office-address.js";
-import {
-  applyConversationSettings,
-  applyConversationSettingsByRawId,
-  applyGlobalSettings,
-} from "../src/settings-mutation.js";
-import { OfficeRegistry } from "../src/office-registry.js";
+import { applyConversationSettings, applyGlobalSettings } from "../src/settings-mutation.js";
 
 const C1 = createOfficeAddress("slack", "C1");
 
@@ -81,27 +76,6 @@ describe("applyConversationSettings", () => {
     });
     expect(result).toEqual({ ok: true, runtimeSwitched: null });
     expect(existsSync(conversationSettingsFile("C1"))).toBe(true);
-  });
-});
-
-describe("applyConversationSettingsByRawId", () => {
-  test("resolves the office through the registry before writing", () => {
-    new OfficeRegistry(stateDir).recordOffice(C1);
-
-    const result = applyConversationSettingsByRawId(undefined, workingDir, "C1", {
-      slack: { replyMode: "thread" },
-    });
-
-    expect(result).toEqual({ ok: true, runtimeSwitched: null });
-    expect(existsSync(conversationSettingsFile("C1"))).toBe(true);
-  });
-
-  test("fails loudly for an unknown raw id instead of guessing a directory", () => {
-    expect(() =>
-      applyConversationSettingsByRawId(undefined, workingDir, "C-unknown", {
-        slack: { replyMode: "thread" },
-      }),
-    ).toThrow(/No office is registered/);
   });
 });
 

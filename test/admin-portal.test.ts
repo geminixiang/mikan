@@ -3,7 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { HostEventStore } from "../src/tools/event.js";
-import { listAllEvents, readSkillsFromDir } from "../src/web/admin/portal.js";
+import {
+  listAllEvents,
+  readSkillsFromDir,
+  resolveConversationScope,
+} from "../src/web/admin/portal.js";
+import { createOfficeAddress } from "../src/office-address.js";
+import type { AdminToken } from "../src/web/admin/store.js";
 
 const tempDirs: string[] = [];
 
@@ -160,5 +166,35 @@ describe("admin portal skills listing", () => {
   test("returns empty list for a missing skills directory", () => {
     const workspaceDir = makeWorkspace();
     expect(readSkillsFromDir(join(workspaceDir, "skills"), "global")).toEqual([]);
+  });
+});
+
+describe("admin conversation scope", () => {
+  const token = {
+    token: "t",
+    platform: "slack",
+    platformUserId: "U1",
+    conversationId: "C123",
+    expiresAt: Date.now() + 60_000,
+  } as AdminToken;
+
+  test("defaults to the token's office", () => {
+    expect(resolveConversationScope("", "", token).address).toEqual(
+      createOfficeAddress("slack", "C123"),
+    );
+  });
+
+  test("a requested id stays on the token's platform unless one is named", () => {
+    expect(resolveConversationScope("900100", "", token).address).toEqual(
+      createOfficeAddress("slack", "900100"),
+    );
+    expect(resolveConversationScope("900100", "discord", token).address).toEqual(
+      createOfficeAddress("discord", "900100"),
+    );
+  });
+
+  test("rejects invalid ids and platforms without leaking a scope", () => {
+    expect(resolveConversationScope("../escape", "", token).error).toBeTruthy();
+    expect(resolveConversationScope("C1", "matrix", token).error).toBeTruthy();
   });
 });
