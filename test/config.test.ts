@@ -184,7 +184,7 @@ describe("loadGlobalSettings", () => {
       "utf-8",
     );
 
-    expect(() => resolveConversationSettings(conversationDir)).toThrow(
+    expect(() => resolveConversationSettings({ conversationId: "C123", conversationDir })).toThrow(
       /Malformed settings file.*workspaceMount/,
     );
   });
@@ -192,20 +192,30 @@ describe("loadGlobalSettings", () => {
   test("conversation model config overrides global provider and model only", () => {
     updateGlobalSettings({ provider: "anthropic", model: "claude-sonnet-4-6" });
     const conversationDir = join(stateDir, "workspace", "C123");
-    updateConversationSettings(conversationDir, {
-      provider: "openai",
-      model: "gpt-4o",
-      thinkingLevel: "low",
-    });
+    updateConversationSettings(
+      { conversationId: "C123", conversationDir },
+      {
+        provider: "openai",
+        model: "gpt-4o",
+        thinkingLevel: "low",
+      },
+    );
 
-    const config = resolveConversationSettings(conversationDir);
+    const config = resolveConversationSettings({ conversationId: "C123", conversationDir });
     expect(config.provider).toBe("openai");
     expect(config.model).toBe("gpt-4o");
     expect(config.thinkingLevel).toBe("low");
     // Settings are host-authoritative: stored under the state dir, never in
     // the (sandbox-mounted) conversation dir.
     expect(existsSync(join(conversationDir, "settings.json"))).toBe(false);
-    expect(JSON.parse(readFileSync(conversationSettingsPath(conversationDir), "utf-8"))).toEqual({
+    expect(
+      JSON.parse(
+        readFileSync(
+          conversationSettingsPath({ conversationId: "C123", conversationDir }),
+          "utf-8",
+        ),
+      ),
+    ).toEqual({
       llm: { provider: "openai", model: "gpt-4o", thinkingLevel: "low" },
     });
   });
@@ -213,11 +223,21 @@ describe("loadGlobalSettings", () => {
   test("conversation sandbox config overrides global image workspace mount", () => {
     createGlobalSettingsFile(stateDir);
     const conversationDir = join(stateDir, "workspace", "C123");
-    updateConversationSettings(conversationDir, { sandbox: { image: { workspaceMount: "full" } } });
+    updateConversationSettings(
+      { conversationId: "C123", conversationDir },
+      { sandbox: { image: { workspaceMount: "full" } } },
+    );
 
-    const config = resolveConversationSettings(conversationDir);
+    const config = resolveConversationSettings({ conversationId: "C123", conversationDir });
     expect(config.sandbox?.image?.workspaceMount).toBe("full");
-    expect(JSON.parse(readFileSync(conversationSettingsPath(conversationDir), "utf-8"))).toEqual({
+    expect(
+      JSON.parse(
+        readFileSync(
+          conversationSettingsPath({ conversationId: "C123", conversationDir }),
+          "utf-8",
+        ),
+      ),
+    ).toEqual({
       sandbox: { image: { workspaceMount: "full" } },
     });
   });
@@ -226,11 +246,14 @@ describe("loadGlobalSettings", () => {
     createGlobalSettingsFile(stateDir);
     updateGlobalSettings({ sandbox: { cpus: "1", boost: { cpus: "4" } } });
     const conversationDir = join(stateDir, "workspace", "C123");
-    updateConversationSettings(conversationDir, {
-      sandbox: { memory: "2g", boost: { memory: "8g" } },
-    });
+    updateConversationSettings(
+      { conversationId: "C123", conversationDir },
+      {
+        sandbox: { memory: "2g", boost: { memory: "8g" } },
+      },
+    );
 
-    const config = resolveConversationSettings(conversationDir);
+    const config = resolveConversationSettings({ conversationId: "C123", conversationDir });
     // Global sandbox.cpus survives a conversation that only sets sandbox.memory.
     expect(config.sandbox?.cpus).toBe("1");
     expect(config.sandbox?.memory).toBe("2g");
@@ -242,11 +265,21 @@ describe("loadGlobalSettings", () => {
   test("conversation slack config overrides global reply mode", () => {
     updateGlobalSettings({ slack: { replyMode: "top-level" } });
     const conversationDir = join(stateDir, "workspace", "C123");
-    updateConversationSettings(conversationDir, { slack: { replyMode: "thread" } });
+    updateConversationSettings(
+      { conversationId: "C123", conversationDir },
+      { slack: { replyMode: "thread" } },
+    );
 
-    const config = resolveConversationSettings(conversationDir);
+    const config = resolveConversationSettings({ conversationId: "C123", conversationDir });
     expect(config.slack?.replyMode).toBe("thread");
-    expect(JSON.parse(readFileSync(conversationSettingsPath(conversationDir), "utf-8"))).toEqual({
+    expect(
+      JSON.parse(
+        readFileSync(
+          conversationSettingsPath({ conversationId: "C123", conversationDir }),
+          "utf-8",
+        ),
+      ),
+    ).toEqual({
       slack: { replyMode: "thread" },
     });
   });
@@ -258,11 +291,13 @@ describe("loadGlobalSettings", () => {
     const legacyPath = join(conversationDir, "settings.json");
     writeFileSync(legacyPath, JSON.stringify({ sandbox: { image: { workspaceMount: "full" } } }));
 
-    const config = resolveConversationSettings(conversationDir);
+    const config = resolveConversationSettings({ conversationId: "C123", conversationDir });
     expect(config.sandbox?.image?.workspaceMount).toBe("full");
     // Legacy file was moved out of the (sandbox-mounted) conversation dir.
     expect(existsSync(legacyPath)).toBe(false);
-    expect(existsSync(conversationSettingsPath(conversationDir))).toBe(true);
+    expect(existsSync(conversationSettingsPath({ conversationId: "C123", conversationDir }))).toBe(
+      true,
+    );
   });
 
   test("a legacy settings.json appearing after migration is never read (sandbox plant)", () => {
@@ -272,7 +307,9 @@ describe("loadGlobalSettings", () => {
 
     // First access with no legacy file writes the migration marker.
     // Global onboarding now defaults to an isolated office.
-    expect(resolveConversationSettings(conversationDir).sandbox?.workspace).toEqual({
+    expect(
+      resolveConversationSettings({ conversationId: "C123", conversationDir }).sandbox?.workspace,
+    ).toEqual({
       doorPolicy: "isolated",
     });
 
@@ -282,7 +319,9 @@ describe("loadGlobalSettings", () => {
       join(conversationDir, "settings.json"),
       JSON.stringify({ sandbox: { image: { workspaceMount: "full" } } }),
     );
-    expect(resolveConversationSettings(conversationDir).sandbox?.workspace).toEqual({
+    expect(
+      resolveConversationSettings({ conversationId: "C123", conversationDir }).sandbox?.workspace,
+    ).toEqual({
       doorPolicy: "isolated",
     });
     // And it is not deleted either: only pre-migration files are moved.

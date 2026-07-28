@@ -80,7 +80,7 @@ describe("resolveExistingSessionFile", () => {
     const sessionDir = getChannelSessionDir(conversationDir);
     const sessionFile = createManagedSessionFile(sessionDir, conversationDir);
 
-    expect(resolveExistingSessionFile(workspaceDir, "D123", "D123")).toBe(sessionFile);
+    expect(resolveExistingSessionFile(join(workspaceDir, "D123"), "D123")).toBe(sessionFile);
   });
 
   test("resolves a fixed-path thread session when the conversation directory matches", () => {
@@ -89,7 +89,9 @@ describe("resolveExistingSessionFile", () => {
     const sessionFile = getThreadSessionFile(sharedConversationDir, "C123:1000.0001");
     createManagedSessionFileAtPath(sessionFile, sharedConversationDir);
 
-    expect(resolveExistingSessionFile(workspaceDir, "C123", "C123:1000.0001")).toBe(sessionFile);
+    expect(resolveExistingSessionFile(join(workspaceDir, "C123"), "C123:1000.0001")).toBe(
+      sessionFile,
+    );
   });
 });
 

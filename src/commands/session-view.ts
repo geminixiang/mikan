@@ -2,6 +2,7 @@ import { resolveExistingSessionFile } from "../web/session-view/service.js";
 import { parseSessionViewCommand } from "../web/session-view/command.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { formatCommandSummary, replyPrivatelyWithContext } from "./utils.js";
+import { conversationOfficeDir } from "../office-address.js";
 
 export class SessionViewCommandHandler implements CommandHandler {
   async tryHandle(context: CommandContext): Promise<boolean> {
@@ -31,8 +32,7 @@ export class SessionViewCommandHandler implements CommandHandler {
     }
 
     const sessionFile = resolveExistingSessionFile(
-      context.services.workingDir,
-      context.conversationId,
+      conversationOfficeDir(context.services.workingDir, context.address),
       context.sessionKey,
     );
     if (!sessionFile) {

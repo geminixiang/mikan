@@ -1,7 +1,7 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "@sinclair/typebox";
 import { existsSync, lstatSync, readFileSync, renameSync, rmSync } from "fs";
-import { basename, dirname, join, resolve } from "path";
+import { dirname, join, resolve } from "path";
 import { effectiveStateDir } from "./cli/arg-grammar.js";
 import { readEnv } from "./utils/env.js";
 import { ensureDirExists, readJsonSchemaFileIfExists } from "./utils/file-guards.js";
@@ -283,6 +283,32 @@ export function loadGlobalSettings(): AgentConfig {
 }
 
 /**
+ * Explicit identity for conversation-settings access. The state-dir key is the
+ * raw conversation id (its migration is tracked by ADR 0005); the workspace
+ * directory is only the legacy pre-host-migration settings location. Callers
+ * name both — the key is never inferred from the directory basename, which
+ * the storage migration will rename to the office key.
+ */
+export interface ConversationSettingsScope {
+  conversationId: string;
+  conversationDir: string;
+}
+
+function assertSettingsConversationId(conversationId: string): string {
+  if (
+    conversationId.length === 0 ||
+    conversationId === "." ||
+    conversationId === ".." ||
+    conversationId.includes("/") ||
+    conversationId.includes("\\") ||
+    conversationId.includes("\0")
+  ) {
+    throw new Error("Conversation settings id must be a safe path segment");
+  }
+  return conversationId;
+}
+
+/**
  * Host-authoritative location of a conversation's settings file:
  * `<stateDir>/conversations/<conversationId>/settings.json`.
  *
@@ -299,8 +325,8 @@ export function loadGlobalSettings(): AgentConfig {
  * migration marker — a legacy file (re)appearing later, e.g. planted from
  * inside the sandbox, is never read again.
  */
-export function conversationSettingsPath(conversationDir: string): string {
-  const conversationId = basename(resolve(conversationDir));
+export function conversationSettingsPath(scope: ConversationSettingsScope): string {
+  const conversationId = assertSettingsConversationId(scope.conversationId);
   const hostPath = join(getStateDir(), "conversations", conversationId, "settings.json");
   if (existsSync(hostPath)) {
     assertSettingsFile(hostPath, "Host conversation settings");
@@ -308,7 +334,7 @@ export function conversationSettingsPath(conversationDir: string): string {
   }
 
   ensureDirExists(dirname(hostPath));
-  const legacyPath = join(conversationDir, "settings.json");
+  const legacyPath = join(scope.conversationDir, "settings.json");
   let content = "{}\n";
   let migrated = false;
   if (existsSync(legacyPath)) {
@@ -343,10 +369,10 @@ function assertSettingsFile(path: string, label: string): void {
   }
 }
 
-export function resolveConversationSettings(conversationDir: string): AgentConfig {
+export function resolveConversationSettings(scope: ConversationSettingsScope): AgentConfig {
   const globalConfig = loadRawGlobalSettings();
   const conversationConfig = normalizeSettingsConfig(
-    loadSettingsFile(conversationSettingsPath(conversationDir)) ?? {},
+    loadSettingsFile(conversationSettingsPath(scope)) ?? {},
   );
   // The sandbox group merges at the leaf level (see mergeSandboxSettings):
   // a conversation that only sets sandbox.memory keeps the global sandbox.cpus.
@@ -372,11 +398,9 @@ export function resolveConversationSettings(conversationDir: string): AgentConfi
  *
  * @deprecated Auto-reply is kept for compatibility while its future is undecided.
  */
-export function loadAutoReplyJudgeModel(conversationDir?: string): JudgeModelConfig {
+export function loadAutoReplyJudgeModel(scope?: ConversationSettingsScope): JudgeModelConfig {
   const global = requireGlobalSettings();
-  const local = conversationDir
-    ? (loadSettingsFile(conversationSettingsPath(conversationDir)) ?? {})
-    : {};
+  const local = scope ? (loadSettingsFile(conversationSettingsPath(scope)) ?? {}) : {};
   const merged: SettingsFileConfig["llm"] = { ...global.llm, ...local.llm };
   const judge = { ...global.llm?.autoReply, ...local.llm?.autoReply };
   const provider = requireString(judge.provider ?? merged?.provider, "llm.autoReply.provider");
@@ -583,8 +607,8 @@ export function updateGlobalSettings(patch: Partial<AgentConfig>): void {
 }
 
 export function updateConversationSettings(
-  conversationDir: string,
+  scope: ConversationSettingsScope,
   patch: Partial<AgentConfig>,
 ): void {
-  updateSettingsFile(conversationSettingsPath(conversationDir), patch, {});
+  updateSettingsFile(conversationSettingsPath(scope), patch, {});
 }

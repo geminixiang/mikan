@@ -7,6 +7,7 @@ import type {
   PlatformName,
   RunningSession,
 } from "../adapter.js";
+import { conversationOfficeDir, officeDirName } from "../office-address.js";
 import { createRunner } from "../agent.js";
 import type { PiAgentWrapper } from "../agent.js";
 import { MikanModels } from "../harness/index.js";
@@ -35,7 +36,6 @@ import {
 } from "../sessions/session-key.js";
 import { formatNothingRunning, formatStopped, formatStopping } from "../platform-messages.js";
 import * as Sentry from "@sentry/node";
-import { join } from "path";
 import { getUnresolvedSandboxPathContext } from "../sandbox/index.js";
 import { disabledVaultManager } from "../vault/disabled.js";
 import type { ConversationRuntimeState } from "./types.js";
@@ -71,13 +71,13 @@ function portalNotConfiguredTokenStore(portal: string): { create: () => never } 
 function runtimeCwdForSandbox(
   sandbox: ConversationRuntimeOptions["sandbox"],
   hostWorkspaceRoot: string,
-  conversationId: string,
+  address: OfficeAddress,
 ): string {
   const runtimeWorkspaceRoot = getUnresolvedSandboxPathContext(
     sandbox,
     hostWorkspaceRoot,
   ).runtimeWorkspaceRoot;
-  return `${runtimeWorkspaceRoot.replace(/\/+$/, "")}/${conversationId}`;
+  return `${runtimeWorkspaceRoot.replace(/\/+$/, "")}/${officeDirName(address)}`;
 }
 
 export function createConversationRuntime(
@@ -302,7 +302,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     const conversationId = address.conversationId;
     if (message.conversationKind !== "shared" || sessionKey !== conversationId) return;
 
-    const conversationDir = join(this.options.workingDir, conversationId);
+    const conversationDir = conversationOfficeDir(this.options.workingDir, address);
     const currentSession = resolveChannelSessionFile(conversationDir);
     if (!currentSession || !shouldRotateTopLevelSession(currentSession, new Date())) return;
 
@@ -330,7 +330,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
           const runtimeCwd = runtimeCwdForSandbox(
             this.options.sandbox,
             this.options.workingDir,
-            conversationId,
+            address,
           );
           this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
           this.sessions.discard(address, sessionKey);
@@ -351,12 +351,8 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private async resetSession(state: ConversationState, bot: MessagingBot): Promise<void> {
     const { address, sessionKey } = state;
     const conversationId = address.conversationId;
-    const conversationDir = join(this.options.workingDir, conversationId);
-    const runtimeCwd = runtimeCwdForSandbox(
-      this.options.sandbox,
-      this.options.workingDir,
-      conversationId,
-    );
+    const conversationDir = conversationOfficeDir(this.options.workingDir, address);
+    const runtimeCwd = runtimeCwdForSandbox(this.options.sandbox, this.options.workingDir, address);
     this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
 
     this.sessions.discard(address, sessionKey);
@@ -456,7 +452,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
     const releaseConversationWork = await this.sessions.acquireConversationWork(address);
     try {
-      const conversationDir = join(this.options.workingDir, conversationId);
+      const conversationDir = conversationOfficeDir(this.options.workingDir, address);
       const waitedForParent = await waitForThreadSessionBootstrap({
         parentSessionKey: conversationId,
         sessionKey,
@@ -738,6 +734,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       const runner = await createRunner({
         sandboxConfig: this.options.sandbox,
         sessionKey: options.sessionKey,
+        address: options.address,
         conversationId: options.conversationId,
         conversationDir,
         workspaceDir: this.options.workingDir,
@@ -766,16 +763,12 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private async getOrCreateState(
     options: SessionStateOptions & { currentMessageId?: string },
   ): Promise<ConversationState> {
-    const { address, conversationId, sessionKey, currentMessageId } = options;
+    const { address, sessionKey, currentMessageId } = options;
     const existing = this.sessions.get(address, sessionKey);
     if (existing?.running) return existing;
 
-    const conversationDir = join(this.options.workingDir, conversationId);
-    const runtimeCwd = runtimeCwdForSandbox(
-      this.options.sandbox,
-      this.options.workingDir,
-      conversationId,
-    );
+    const conversationDir = conversationOfficeDir(this.options.workingDir, address);
+    const runtimeCwd = runtimeCwdForSandbox(this.options.sandbox, this.options.workingDir, address);
     const sessionScope = await this.chatSessionManager.resolveSessionScope({
       conversationDir,
       sessionKey,

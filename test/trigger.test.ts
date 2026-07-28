@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { ConversationEvent } from "../src/adapter.js";
 import { saveConversationAutoReplyConfig } from "../src/config.js";
 import { decideTrigger, evaluateAutoReplyPolicy } from "../src/trigger.js";
+import { createOfficeAddress } from "../src/office-address.js";
 
 describe("decideTrigger", () => {
   test("trivially triggers mention, direct, and thread continuation intents", () => {
@@ -31,6 +32,7 @@ describe("evaluateAutoReplyPolicy", () => {
 
   const event: ConversationEvent = {
     type: "mention",
+    address: createOfficeAddress("slack", "C123"),
     conversationId: "C123",
     conversationKind: "shared",
     ts: "1",

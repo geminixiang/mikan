@@ -485,9 +485,9 @@ export interface PeriodicEventInfo {
 // ── execution-resolver ────────────────────────────────────────────────────────
 
 export interface ActorContext {
-  platform: string;
+  /** Canonical office identity; vault and package keys use its raw id. */
+  address: OfficeAddress;
   userId: string;
-  conversationId: string;
   /** From MessagingInfo.trustModel; vault policy uses this, not platform name. */
   trustModel?: PlatformTrustModel;
 }
@@ -651,6 +651,9 @@ export type SettingsApplyResult =
 export interface CreateRunnerOptions {
   sandboxConfig: import("./sandbox/types.js").SandboxConfig;
   sessionKey: string;
+  /** Canonical office identity for workspace paths and execution scoping. */
+  address: OfficeAddress;
+  /** Raw platform id; settings/vault/package keys keep it until ADR 0005. */
   conversationId: string;
   conversationDir: string;
   workspaceDir: string;

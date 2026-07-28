@@ -20,11 +20,9 @@ export type { SessionViewItem, SessionViewRelation, SessionViewModel } from "./t
 import type { SessionViewItem, SessionViewRelation, SessionViewModel } from "./types.js";
 
 export function resolveExistingSessionFile(
-  workingDir: string,
-  conversationId: string,
+  conversationDir: string,
   sessionKey: string,
 ): string | null {
-  const conversationDir = join(workingDir, conversationId);
   if (isThreadSessionKey(sessionKey)) {
     return tryResolveThreadSession(getThreadSessionFile(conversationDir, sessionKey));
   }
