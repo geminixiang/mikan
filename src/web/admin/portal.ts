@@ -6,13 +6,20 @@ import type { EventStore } from "../../tools/types.js";
 
 import {
   loadConversationAutoReplyConfig,
+  loadConversationWorkspaceOverride,
   loadGlobalSettings,
   resolveConversationSettings,
   saveConversationAutoReplyConfig,
   type AgentConfig,
   type SandboxSettings,
+  type WorkspacePolicyChoice,
 } from "../../config.js";
-import { applyConversationSettings, applyGlobalSettings } from "../../settings-mutation.js";
+import {
+  applyConversationSettings,
+  applyConversationWorkspacePolicy,
+  applyGlobalSettings,
+  applyGlobalWorkspacePolicy,
+} from "../../settings-mutation.js";
 import { effectiveStateDir } from "../../cli/arg-grammar.js";
 import {
   addPackage,
@@ -206,6 +213,10 @@ async function routeApiRequest(
   }
   if (url.pathname === "/admin/api/settings/model") {
     serveGlobalModelUpdate(res, body, services);
+    return;
+  }
+  if (url.pathname === "/admin/api/settings/workspace") {
+    serveGlobalWorkspaceUpdate(res, body, services);
     return;
   }
   if (url.pathname === "/admin/api/settings/sandbox") {
@@ -627,6 +638,9 @@ function serveConversationState(
     globalThinkingLevel: globalConfig.thinkingLevel,
     workspaceDoorPolicy: conversationWorkspace.doorPolicy,
     workspaceLayout: conversationWorkspace.layout,
+    workspaceOverride: doorPolicyChoiceKey(
+      loadConversationWorkspaceOverride({ address: scope.address, conversationDir: dir }),
+    ),
     globalWorkspaceDoorPolicy: globalWorkspaceSettings?.doorPolicy ?? "isolated",
     globalWorkspaceLayout: globalWorkspaceSettings?.layout ?? "conversation",
     autoReplyEnabled: autoReply.enabled,
@@ -728,15 +742,87 @@ function serveConversationModelUpdate(
   }
 }
 
+/** Wire values for a door-policy selection; "default" clears the office's override. */
+function parseDoorPolicyChoice(
+  value: unknown,
+): { choice: WorkspacePolicyChoice | null } | undefined {
+  switch (value) {
+    case "default":
+      return { choice: null };
+    case "isolated":
+      return { choice: { doorPolicy: "isolated" } };
+    case "trusted-shared-support":
+      return { choice: { doorPolicy: "trusted", layout: "shared-support" } };
+    case "trusted-full":
+      return { choice: { doorPolicy: "trusted", layout: "full" } };
+    default:
+      return undefined;
+  }
+}
+
+function doorPolicyChoiceKey(choice: WorkspacePolicyChoice | null): string {
+  if (!choice) return "default";
+  if (choice.doorPolicy === "isolated") return "isolated";
+  return choice.layout === "full" ? "trusted-full" : "trusted-shared-support";
+}
+
 function serveConversationSandboxUpdate(
   res: ServerResponse,
-  _body: Record<string, unknown>,
-  _services: AdminServices,
-  _token: AdminToken,
+  body: Record<string, unknown>,
+  services: AdminServices,
+  token: AdminToken,
 ): void {
-  jsonRes(res, 403, {
-    error: "Office door policy is host-controlled until administrator authorization is configured",
-  });
+  const parsed = parseDoorPolicyChoice(body.doorPolicy);
+  if (!parsed) {
+    jsonRes(res, 400, {
+      error:
+        "doorPolicy must be 'default', 'isolated', 'trusted-shared-support', or 'trusted-full'",
+    });
+    return;
+  }
+  const scope = resolveTargetConversation(body, token);
+  if (scope.error) {
+    jsonRes(res, 403, { error: scope.error });
+    return;
+  }
+  const workingDir = requireAdminWorkingDir(res, services);
+  if (!workingDir) return;
+  try {
+    const result = applyConversationWorkspacePolicy(
+      services.runtime,
+      workingDir,
+      scope.address,
+      parsed.choice,
+    );
+    if (!result.ok) {
+      jsonRes(res, 409, { error: "Conversation is busy; retry when the current run finishes" });
+      return;
+    }
+    jsonRes(res, 200, { ok: true });
+  } catch (err) {
+    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+function serveGlobalWorkspaceUpdate(
+  res: ServerResponse,
+  body: Record<string, unknown>,
+  services: AdminServices,
+): void {
+  const parsed = parseDoorPolicyChoice(body.doorPolicy);
+  if (!parsed) {
+    jsonRes(res, 400, {
+      error:
+        "doorPolicy must be 'default', 'isolated', 'trusted-shared-support', or 'trusted-full'",
+    });
+    return;
+  }
+  try {
+    const result = applyGlobalWorkspacePolicy(services.runtime, parsed.choice);
+    jsonRes(res, 200, { ok: true, staleConversations: result.staleConversations.length });
+  } catch (err) {
+    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
 }
 
 function serveConversationSlackUpdate(
@@ -1978,6 +2064,15 @@ function renderAdminPage(token: AdminToken): string {
       const globalReplyMode = (data.slack && data.slack.globalReplyMode) || 'top-level';
       const globalModel = [data.globalProvider, data.globalModel].filter(Boolean).join('/');
       const globalModelLabel = globalModel + (data.globalThinkingLevel ? ':' + data.globalThinkingLevel : '');
+      const doorPolicyChoices = [
+        ['default', 'Global default (' + data.globalWorkspaceDoorPolicy + ' / ' + data.globalWorkspaceLayout + ')'],
+        ['isolated', 'isolated — own office only'],
+        ['trusted-shared-support', 'trusted / shared-support — office + shared memory, skills, events'],
+        ['trusted-full', 'trusted / full — entire workspace'],
+      ];
+      const doorPolicyOpts = doorPolicyChoices.map(([value, label]) =>
+        '<option value="' + value + '"' + ((data.workspaceOverride || 'default') === value ? ' selected' : '') + '>' + escHtml(label) + '</option>'
+      ).join('');
       return [
         '<div class="config-grid">',
           '<div class="config-block">',
@@ -1997,7 +2092,10 @@ function renderAdminPage(token: AdminToken): string {
           '</div>',
           '<div class="config-block">',
             '<h3 class="card-subtitle">Office data policy</h3>',
-            '<p class="muted-note">Door policy is host-controlled until administrator authorization is configured. Effective: ' + escHtml(data.workspaceDoorPolicy + ' / ' + data.workspaceLayout) + '</p>',
+            '<div class="config-row"><label>Door policy</label><select id="m-door-policy">' + doorPolicyOpts + '</select></div>',
+            '<p class="muted-note">Effective: ' + escHtml(data.workspaceDoorPolicy + ' / ' + data.workspaceLayout) + '</p>',
+            '<p class="muted-note">Changing the policy rebuilds the office sandbox container on its next message; software installed inside it is reset.</p>',
+            '<button class="primary-action-btn" onclick="saveDoorPolicy(this)">Save door policy</button>',
             '<div id="mount-save-result" class="inline-result" style="display:none"></div>',
           '</div>',
           '<div class="config-block">',
@@ -2067,6 +2165,23 @@ function renderAdminPage(token: AdminToken): string {
         result.style.display = 'block'; result.className = 'inline-result err'; result.textContent = err.message;
       } finally {
         btn.disabled = false; btn.textContent = 'Save Slack';
+      }
+    }
+
+    async function saveDoorPolicy(btn) {
+      const doorPolicy = document.getElementById('m-door-policy').value;
+      const result = document.getElementById('mount-save-result');
+      btn.disabled = true; btn.textContent = 'Saving…'; result.style.display = 'none';
+      try {
+        await apiPost('/admin/api/conversations/sandbox', {
+          ...scopeBody(), doorPolicy,
+        });
+        result.style.display = 'block'; result.className = 'inline-result ok'; result.textContent = 'Saved ✓';
+        loadSettings();
+      } catch (err) {
+        result.style.display = 'block'; result.className = 'inline-result err'; result.textContent = err.message;
+      } finally {
+        btn.disabled = false; btn.textContent = 'Save door policy';
       }
     }
 
@@ -2599,6 +2714,17 @@ function renderAdminPage(token: AdminToken): string {
       const replyModeOpts = replyModes.map((m) =>
         '<option value="' + m + '"' + (((data.slack && data.slack.replyMode) || 'top-level') === m ? ' selected' : '') + '>' + m + '</option>'
       ).join('');
+      const gDoorKey = data.workspaceDoorPolicy === 'isolated'
+        ? 'isolated'
+        : (data.workspaceLayout === 'full' ? 'trusted-full' : 'trusted-shared-support');
+      const gDoorPolicyChoices = [
+        ['isolated', 'isolated — own office only (built-in default)'],
+        ['trusted-shared-support', 'trusted / shared-support — office + shared memory, skills, events'],
+        ['trusted-full', 'trusted / full — entire workspace'],
+      ];
+      const gDoorPolicyOpts = gDoorPolicyChoices.map(([value, label]) =>
+        '<option value="' + value + '"' + (gDoorKey === value ? ' selected' : '') + '>' + escHtml(label) + '</option>'
+      ).join('');
       return [
         '<div class="config-grid">',
           '<div class="config-block">',
@@ -2614,9 +2740,15 @@ function renderAdminPage(token: AdminToken): string {
             '<div class="config-row"><label>Memory</label><input id="g-mem" placeholder="1g" value="' + escAttr(data.sandboxMemory || '') + '"></div>',
             '<div class="config-row"><label>Boost CPUs</label><input id="g-bcpus" placeholder="2" value="' + escAttr(data.sandboxBoostCpus || '') + '"></div>',
             '<div class="config-row"><label>Boost Mem</label><input id="g-bmem" placeholder="4g" value="' + escAttr(data.sandboxBoostMemory || '') + '"></div>',
-            '<p class="muted-note">Office door policy is configured in host settings. Effective default: ' + escHtml(data.workspaceDoorPolicy + ' / ' + data.workspaceLayout) + '</p>',
             '<button class="primary-action-btn" onclick="saveGlobalSandbox(this)">Save sandbox</button>',
             '<div id="g-sandbox-result" class="inline-result" style="display:none"></div>',
+          '</div>',
+          '<div class="config-block">',
+            '<h3 class="card-subtitle">Office door policy</h3>',
+            '<div class="config-row"><label>Default</label><select id="g-door-policy">' + gDoorPolicyOpts + '</select></div>',
+            '<p class="muted-note">Applies to offices without their own policy. Affected offices rebuild their sandbox container on the next message; software installed inside is reset.</p>',
+            '<button class="primary-action-btn" onclick="saveGlobalWorkspace(this)">Save door policy</button>',
+            '<div id="g-workspace-result" class="inline-result" style="display:none"></div>',
           '</div>',
           '<div class="config-block">',
             '<h3 class="card-subtitle">Slack</h3>',
@@ -2663,6 +2795,23 @@ function renderAdminPage(token: AdminToken): string {
         result.style.display = 'block'; result.className = 'inline-result err'; result.textContent = err.message;
       } finally {
         btn.disabled = false; btn.textContent = 'Save sandbox';
+      }
+    }
+
+    async function saveGlobalWorkspace(btn) {
+      const doorPolicy = document.getElementById('g-door-policy').value;
+      const result = document.getElementById('g-workspace-result');
+      btn.disabled = true; btn.textContent = 'Saving…'; result.style.display = 'none';
+      try {
+        const data = await apiPost('/admin/api/settings/workspace', { doorPolicy });
+        result.style.display = 'block'; result.className = 'inline-result ok';
+        result.textContent = data.staleConversations > 0
+          ? 'Saved ✓ (' + data.staleConversations + ' busy conversation(s) refresh after their current run)'
+          : 'Saved ✓';
+      } catch (err) {
+        result.style.display = 'block'; result.className = 'inline-result err'; result.textContent = err.message;
+      } finally {
+        btn.disabled = false; btn.textContent = 'Save door policy';
       }
     }
 

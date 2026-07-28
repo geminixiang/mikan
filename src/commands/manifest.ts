@@ -52,10 +52,11 @@ export const COMMAND_MANIFEST: readonly CommandManifestEntry[] = [
   },
   {
     name: "sandbox",
-    description: "Show or temporarily boost this conversation's sandbox limits",
+    description: "Show sandbox status, boost limits, or set the office door policy",
     arg: {
       name: "action",
-      description: "Use 'boost' to temporarily apply the configured boost limits",
+      description:
+        "Use 'boost' to temporarily apply the configured boost limits, or 'door default|isolated|shared|full' to set this office's data door policy",
       required: false,
     },
     slackCommand: "/pi-sandbox",

@@ -10,6 +10,7 @@ import type { InMemoryAdminTokenStore } from "./store.js";
 export interface AdminRuntimeBridge {
   getRunningSessions(): RunningSession[];
   switchConversationModel(address: OfficeAddress, provider: string, model: string): boolean;
+  refreshConversationEnvironment(address: OfficeAddress): boolean;
   refreshAllConversations(): { busy: OfficeAddress[] };
 }
 
