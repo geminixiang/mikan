@@ -34,7 +34,11 @@ import type { AdminToken } from "./store.js";
 export type { AdminRuntimeBridge, AdminServices, EventSummary } from "./types.js";
 import type { AdminServices, EventSummary } from "./types.js";
 import { conversationOfficeDir } from "../../office-address.js";
-import { listRegisteredOffices, resolveLegacyOfficeDir } from "../../office-registry.js";
+import {
+  listRegisteredOffices,
+  resolveLegacyOfficeDir,
+  resolveOwnedOfficeAddress,
+} from "../../office-registry.js";
 
 // ── Handler ────────────────────────────────────────────────────────────────────
 
@@ -863,7 +867,7 @@ function serveConversationLoginLink(
     try {
       vaultId = credentialAuthorizationKey(services.sandbox, {
         userId: token.platformUserId,
-        conversationId: scope.conversationId,
+        address: resolveOwnedOfficeAddress(scope.conversationId),
       });
     } catch (err) {
       jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });

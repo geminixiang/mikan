@@ -278,7 +278,11 @@ const officeMigration = (() => {
     handleStartupError(error);
   }
 })();
-if (officeMigration.unowned.length > 0 || officeMigration.failed.length > 0) {
+if (
+  officeMigration.unowned.length > 0 ||
+  officeMigration.failed.length > 0 ||
+  officeMigration.vaultConflicts.length > 0
+) {
   console.error(formatUnmigratedOfficesError(officeMigration));
   process.exit(1);
 }
@@ -287,6 +291,9 @@ if (officeMigration.migrated.length > 0 || officeMigration.recovered.length > 0)
     `  Office layout migration: ${officeMigration.migrated.length} moved, ` +
       `${officeMigration.recovered.length} recovered.`,
   );
+}
+if (officeMigration.vaultKeysMigrated.length > 0) {
+  console.log(`  Vault keys migrated to office keys: ${officeMigration.vaultKeysMigrated.length}.`);
 }
 
 try {

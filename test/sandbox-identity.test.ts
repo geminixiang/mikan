@@ -1,11 +1,13 @@
 import { describe, expect, test } from "vitest";
 import {
   credentialAuthorizationKey,
+  legacyConversationCredentialKey,
   legacyExactCredentialAuthorizationKey,
   runtimeResourceKey,
   sanitizeIdentitySegment,
   scopeCloudflareSandboxId,
 } from "../src/sandbox/identity.js";
+import { createOfficeAddress, officeKey } from "../src/office-address.js";
 
 const image = { type: "image", image: "ubuntu" } as const;
 
@@ -20,19 +22,35 @@ describe("sandbox identity", () => {
   });
 
   test("separates credential authorization and resource derivation", () => {
-    const ids = { userId: "U1", conversationId: "C1" };
-    expect(credentialAuthorizationKey(image, ids)).toMatch(/^c1-[a-f0-9]{12}$/);
-    expect(runtimeResourceKey(image, ids)).toMatch(/^c1-[a-f0-9]{12}$/);
-    expect(credentialAuthorizationKey({ type: "host" }, ids)).toMatch(/^u1-[a-f0-9]{12}$/);
+    const scope = { userId: "U1", address: createOfficeAddress("slack", "C1") };
+    // Conversation-scoped credentials key by office: the same string that
+    // names the office in the workspace and the registry.
+    expect(credentialAuthorizationKey(image, scope)).toBe(officeKey(scope.address));
+    expect(runtimeResourceKey(image, { userId: "U1", conversationId: "C1" })).toMatch(
+      /^c1-[a-f0-9]{12}$/,
+    );
+    expect(credentialAuthorizationKey({ type: "host" }, scope)).toMatch(/^u1-[a-f0-9]{12}$/);
+  });
+
+  test("platforms sharing a raw id never share credentials", () => {
+    const discord = { userId: "U1", address: createOfficeAddress("discord", "900100") };
+    const telegram = { userId: "U1", address: createOfficeAddress("telegram", "900100") };
+    expect(credentialAuthorizationKey(image, discord)).not.toBe(
+      credentialAuthorizationKey(image, telegram),
+    );
+  });
+
+  test("legacy conversation vault keys stay derivable for the boot migration", () => {
+    expect(legacyConversationCredentialKey("C1")).toMatch(/^c1-[a-f0-9]{12}$/);
   });
 
   test("only retains exact legacy credential identities", () => {
-    const ids = { userId: "U1", conversationId: "A/B" };
-    expect(legacyExactCredentialAuthorizationKey({ type: "host" }, ids)).toBe("U1");
+    const scope = { userId: "U1", address: createOfficeAddress("slack", "C1") };
+    expect(legacyExactCredentialAuthorizationKey({ type: "host" }, scope)).toBe("U1");
     expect(
-      legacyExactCredentialAuthorizationKey({ type: "container", container: "shared" }, ids),
+      legacyExactCredentialAuthorizationKey({ type: "container", container: "shared" }, scope),
     ).toBe("container-shared");
-    expect(legacyExactCredentialAuthorizationKey(image, ids)).toBeUndefined();
+    expect(legacyExactCredentialAuthorizationKey(image, scope)).toBeUndefined();
   });
 
   test("sanitizes readable identity segments", () => {

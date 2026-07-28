@@ -3,6 +3,7 @@ import { join } from "node:path";
 import * as log from "./log.js";
 import { isOfficeKey } from "./office-address.js";
 import { OfficeRegistry } from "./office-registry.js";
+import { migrateConversationVaultKeys } from "./vault/index.js";
 import type { OfficeMigrationRecord, PlatformName } from "./types.js";
 
 /**
@@ -20,6 +21,10 @@ export interface OfficeMigrationRunSummary {
   unowned: string[];
   /** Raw ids whose records are failed and need operator repair. */
   failed: string[];
+  /** Raw ids whose conversation vault directories moved to office keys. */
+  vaultKeysMigrated: string[];
+  /** Raw ids whose legacy and office-key vault dirs both exist (manual merge). */
+  vaultConflicts: string[];
 }
 
 /**
@@ -46,10 +51,24 @@ export function migrateLegacyOffices(options: {
     recovered: [],
     unowned: [],
     failed: [],
+    vaultKeysMigrated: [],
+    vaultConflicts: [],
   };
 
   recoverInterruptedMoves(registry, summary);
   claimAndMoveLegacyDirs(registry, options.workspaceRoot, summary);
+
+  // Credential vaults are keyed by office too; the registry inventory (which
+  // the directory moves above just extended) drives the same rename.
+  const vaults = migrateConversationVaultKeys({
+    stateDir: options.stateDir,
+    offices: registry.getOffices(),
+  });
+  summary.vaultKeysMigrated = vaults.migrated;
+  summary.vaultConflicts = vaults.conflicts;
+  for (const rawConversationId of vaults.migrated) {
+    log.logInfo(`[office] Migrated vault key to office key: ${rawConversationId}`);
+  }
 
   for (const record of registry.getState().migrations) {
     if (record.status === "needs-owner") summary.unowned.push(record.rawConversationId);
@@ -190,6 +209,14 @@ export function formatUnmigratedOfficesError(summary: OfficeMigrationRunSummary)
       "These migrations previously failed and need manual repair (see",
       "office-registry.json in the state dir for each error):",
       ...summary.failed.map((id) => `  - ${id}`),
+    );
+  }
+  if (summary.vaultConflicts.length > 0) {
+    lines.push(
+      "",
+      "These conversations have credentials under both the legacy and the",
+      "office-key vault directory; merge them manually under <state-dir>/vaults:",
+      ...summary.vaultConflicts.map((id) => `  - ${id}`),
     );
   }
   return lines.join("\n");

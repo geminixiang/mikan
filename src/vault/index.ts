@@ -1,5 +1,16 @@
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "fs";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+} from "fs";
 import { dirname, isAbsolute, join, normalize, sep } from "path";
+import { officeKey } from "../office-address.js";
+import { legacyConversationCredentialKey } from "../sandbox/identity.js";
+import type { OfficeAddress } from "../types.js";
 import { readTextFileIfExists } from "../utils/file-guards.js";
 import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 
@@ -321,4 +332,35 @@ function inferredVaultTargetPath(relativePath: string): string | undefined {
   }
 
   return defaultVaultTargetPath(normalized);
+}
+
+/**
+ * Rename legacy raw-id conversation vault directories to office keys, driven
+ * by the office registry's inventory (the only raw-id ↔ office authority).
+ * Shared, user-keyed, and unrecognized directories are never touched. A
+ * conflict — both the legacy and the office-key directory exist — is reported
+ * for manual merge, never clobbered; callers treat it as fatal for boot so a
+ * conversation cannot silently run with half its credentials.
+ */
+export function migrateConversationVaultKeys(options: {
+  stateDir: string;
+  offices: readonly OfficeAddress[];
+}): { migrated: string[]; conflicts: string[] } {
+  const vaultsDir = join(options.stateDir, "vaults");
+  const migrated: string[] = [];
+  const conflicts: string[] = [];
+  if (!existsSync(vaultsDir)) return { migrated, conflicts };
+
+  for (const office of options.offices) {
+    const legacyDir = join(vaultsDir, legacyConversationCredentialKey(office.conversationId));
+    if (!existsSync(legacyDir)) continue;
+    const targetDir = join(vaultsDir, officeKey(office));
+    if (existsSync(targetDir)) {
+      conflicts.push(office.conversationId);
+      continue;
+    }
+    renameSync(legacyDir, targetDir);
+    migrated.push(office.conversationId);
+  }
+  return { migrated, conflicts };
 }
