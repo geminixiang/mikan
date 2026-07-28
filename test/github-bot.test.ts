@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler, OfficeAddress } from "../src/adapter.js";
-import { createOfficeAddress } from "../src/office-address.js";
+import { createOfficeAddress, officeDirName } from "../src/office-address.js";
 import { conversationIdOf } from "../src/sessions/session-key.js";
 import { GithubMessagingBot } from "../src/adapters/github/bot.js";
 import type { GithubClient } from "../src/adapters/github/client.js";
@@ -164,6 +164,7 @@ function makeFakeClient(): FakeClient {
 }
 
 const CONVERSATION_ID = "GH_octo_widgets_5";
+const CONVERSATION_OFFICE = officeDirName(createOfficeAddress("github", CONVERSATION_ID));
 
 async function settleQueues(): Promise<void> {
   // MessagingEventQueue processes asynchronously; yield a few microtask turns.
@@ -316,7 +317,7 @@ describe("GithubMessagingBot", () => {
     await bot.poll();
     await settleQueues();
 
-    const lines = readFileSync(join(workingDir, CONVERSATION_ID, "log.jsonl"), "utf-8")
+    const lines = readFileSync(join(workingDir, CONVERSATION_OFFICE, "log.jsonl"), "utf-8")
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line));
@@ -336,12 +337,12 @@ describe("GithubMessagingBot", () => {
     await settleQueues();
 
     expect(handler.handleEvent).not.toHaveBeenCalled();
-    expect(existsSync(join(workingDir, CONVERSATION_ID))).toBe(false);
+    expect(existsSync(join(workingDir, CONVERSATION_OFFICE))).toBe(false);
   });
 
   test("unmentioned comment in a participating conversation triggers", async () => {
-    mkdirSync(join(workingDir, CONVERSATION_ID, "repo"), { recursive: true });
-    writeFileSync(join(workingDir, CONVERSATION_ID, "log.jsonl"), "{}\n");
+    mkdirSync(join(workingDir, CONVERSATION_OFFICE, "repo"), { recursive: true });
+    writeFileSync(join(workingDir, CONVERSATION_OFFICE, "log.jsonl"), "{}\n");
     const bot = makeBot();
     await bot.start();
     client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "follow-up question" })]);
@@ -544,7 +545,7 @@ describe("GithubMessagingBot", () => {
 
     expect(client.getCollaboratorPermission).toHaveBeenCalledWith("octo", "widgets", "alice");
     expect(handler.handleEvent).not.toHaveBeenCalled();
-    expect(existsSync(join(workingDir, CONVERSATION_ID))).toBe(false);
+    expect(existsSync(join(workingDir, CONVERSATION_OFFICE))).toBe(false);
   });
 
   test("custom roles fall back to the stronger legacy permission field", async () => {
@@ -600,7 +601,7 @@ describe("GithubMessagingBot", () => {
     });
     expect(cloneRepo).toHaveBeenCalledWith({
       url: "https://github.com/octo/widgets.git",
-      dir: join(workingDir, CONVERSATION_ID, "repo"),
+      dir: join(workingDir, CONVERSATION_OFFICE, "repo"),
       token: "scoped-token",
       botLogin: "mikan[bot]",
       botEmail: "999+mikan[bot]@users.noreply.github.com",
@@ -672,7 +673,7 @@ describe("GithubMessagingBot", () => {
   });
 
   test("an existing clone is not re-cloned on later first-contact paths", async () => {
-    mkdirSync(join(workingDir, CONVERSATION_ID, "repo"), { recursive: true });
+    mkdirSync(join(workingDir, CONVERSATION_OFFICE, "repo"), { recursive: true });
     const bot = makeBot();
     await bot.start();
     client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "@mikan again" })]);
@@ -685,8 +686,8 @@ describe("GithubMessagingBot", () => {
   test("a participating conversation with a missing clone retries on the next trigger", async () => {
     // Simulate a conversation whose first-contact clone failed (log exists,
     // repo dir does not) — e.g. App permissions were granted only later.
-    mkdirSync(join(workingDir, CONVERSATION_ID), { recursive: true });
-    writeFileSync(join(workingDir, CONVERSATION_ID, "log.jsonl"), "{}\n");
+    mkdirSync(join(workingDir, CONVERSATION_OFFICE), { recursive: true });
+    writeFileSync(join(workingDir, CONVERSATION_OFFICE, "log.jsonl"), "{}\n");
     client.getIssue.mockResolvedValue(makeIssue({ pull_request: {} }));
     const bot = makeBot();
     await bot.start();
@@ -700,7 +701,7 @@ describe("GithubMessagingBot", () => {
   });
 
   test("pushAndCreatePr pushes the branch with a write token and opens the PR", async () => {
-    mkdirSync(join(workingDir, CONVERSATION_ID, "repo"), { recursive: true });
+    mkdirSync(join(workingDir, CONVERSATION_OFFICE, "repo"), { recursive: true });
     const bot = makeBot();
     await bot.start();
 
@@ -716,7 +717,7 @@ describe("GithubMessagingBot", () => {
       pull_requests: "write",
     });
     expect(pushBranch).toHaveBeenCalledWith({
-      dir: join(workingDir, CONVERSATION_ID, "repo"),
+      dir: join(workingDir, CONVERSATION_OFFICE, "repo"),
       branch: "pi/fix-5",
       token: "scoped-token",
     });
@@ -731,7 +732,7 @@ describe("GithubMessagingBot", () => {
   });
 
   test("pushAndCreatePr returns the existing open PR when the branch already has one", async () => {
-    mkdirSync(join(workingDir, CONVERSATION_ID, "repo"), { recursive: true });
+    mkdirSync(join(workingDir, CONVERSATION_OFFICE, "repo"), { recursive: true });
     const { GithubApiError } = await import("../src/adapters/github/client.js");
     client.createPullRequest.mockRejectedValue(
       new GithubApiError(422, "POST", "/repos/octo/widgets/pulls", "A pull request already exists"),
@@ -1057,7 +1058,7 @@ describe("GithubMessagingBot", () => {
 
     await expect(bot.ops.syncRepo(CONVERSATION_ID)).rejects.toThrow(/no \.\/repo clone/);
 
-    mkdirSync(join(workingDir, CONVERSATION_ID, "repo"), { recursive: true });
+    mkdirSync(join(workingDir, CONVERSATION_OFFICE, "repo"), { recursive: true });
     client.getIssue.mockResolvedValue(makeIssue({ pull_request: {} }));
 
     const report = await bot.ops.syncRepo(CONVERSATION_ID);
@@ -1066,7 +1067,7 @@ describe("GithubMessagingBot", () => {
       contents: "read",
     });
     expect(syncRepo).toHaveBeenCalledWith({
-      dir: join(workingDir, CONVERSATION_ID, "repo"),
+      dir: join(workingDir, CONVERSATION_OFFICE, "repo"),
       token: "scoped-token",
       branch: undefined,
       prNumber: 5,
@@ -1078,7 +1079,7 @@ describe("GithubMessagingBot", () => {
   });
 
   test("syncRepo falls back to the default branch on plain issues and reports fetch-only", async () => {
-    mkdirSync(join(workingDir, CONVERSATION_ID, "repo"), { recursive: true });
+    mkdirSync(join(workingDir, CONVERSATION_OFFICE, "repo"), { recursive: true });
     client.getIssue.mockResolvedValue(makeIssue());
     vi.mocked(syncRepo).mockResolvedValue({
       target: "main",
@@ -1250,7 +1251,7 @@ describe("GithubMessagingBot", () => {
       bot.ops.pushAndCreatePr(CONVERSATION_ID, { branch: "pi/x", title: "t" }),
     ).rejects.toThrow(/no \.\/repo clone/);
 
-    mkdirSync(join(workingDir, CONVERSATION_ID, "repo"), { recursive: true });
+    mkdirSync(join(workingDir, CONVERSATION_OFFICE, "repo"), { recursive: true });
     await expect(
       bot.ops.pushAndCreatePr(CONVERSATION_ID, { branch: "main", title: "t" }),
     ).rejects.toThrow(/not pushable/);

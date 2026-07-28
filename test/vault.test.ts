@@ -15,7 +15,9 @@ import { DockerContainerManager } from "../src/provisioner.js";
 import { HostExecutor } from "../src/sandbox/index.js";
 import { credentialAuthorizationKey } from "../src/sandbox/identity.js";
 import { FileVaultManager, parseEnvFile, sharedVaultKey } from "../src/vault/index.js";
-import { createOfficeAddress } from "../src/office-address.js";
+import { createOfficeAddress, officeDirName } from "../src/office-address.js";
+
+const D123_OFFICE = officeDirName(createOfficeAddress("slack", "D123"));
 
 function mode(path: string): number {
   return statSync(path).mode & 0o777;
@@ -456,7 +458,7 @@ describe("ActorExecutionResolver image mode", () => {
       containerName: "mikan-sandbox-d123-e8bafaeb6008",
       conversationId: "D123",
       mounts: [
-        { source: join(tmpDir, "D123"), target: "/workspace/D123" },
+        { source: join(tmpDir, D123_OFFICE), target: `/workspace/${D123_OFFICE}` },
         { source: join(vaultsDir, vaultKey, ".ssh"), target: "/root/.ssh" },
       ],
     });
@@ -467,9 +469,9 @@ describe("ActorExecutionResolver image mode", () => {
   });
 
   test("mounts the full workspace when conversation sandbox mode is full", async () => {
-    mkdirSync(join(tmpDir, "D123"), { recursive: true });
+    mkdirSync(join(tmpDir, D123_OFFICE), { recursive: true });
     writeFileSync(
-      join(tmpDir, "D123", "settings.json"),
+      join(tmpDir, D123_OFFICE, "settings.json"),
       JSON.stringify({ sandbox: { image: { workspaceMount: "full" } } }) + "\n",
     );
 

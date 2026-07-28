@@ -174,7 +174,7 @@ export class ModelCommandHandler implements CommandHandler {
     const result = applyConversationSettings(
       context.services.runtime,
       context.services.workingDir,
-      context.conversationId,
+      context.address,
       {
         provider: parsed.provider,
         model: selectedModelId,

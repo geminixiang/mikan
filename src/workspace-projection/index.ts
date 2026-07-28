@@ -2,14 +2,9 @@ import { dirname, join } from "node:path";
 import { lstatSync, mkdirSync, writeFileSync } from "node:fs";
 import { ensureDirExists } from "../utils/file-guards.js";
 import { resolveConversationSettings } from "../config.js";
-import { ensureOfficeDir } from "../office-registry.js";
+import { ensureOfficeDir, resolveOwnedOfficeAddress } from "../office-registry.js";
 import * as log from "../log.js";
-import {
-  conversationOfficeDir,
-  createOfficeAddress,
-  officeDirName,
-  validateOfficeAddress,
-} from "../office-address.js";
+import { conversationOfficeDir, officeDirName, validateOfficeAddress } from "../office-address.js";
 import type {
   ImageWorkspaceMountMode,
   OfficeAddress,
@@ -104,18 +99,15 @@ export function readWorkspaceProjectionMode(
 
 /**
  * Legacy bridge for surfaces that name an office by raw id alone (Admin
- * scope). It assumes today's raw-id directory layout; the ADR 0005 storage
- * migration replaces it with an office-registry lookup.
+ * scope): the office registry resolves the owning platform.
  */
 export function legacyResolveWorkspaceProjection(
   hostWorkspaceRoot: string | undefined,
   rawConversationId: string,
 ): WorkspaceProjection {
-  // The synthetic slack owner only shapes directory naming, which the legacy
-  // layout derives from the raw id for every platform anyway.
   return resolveWorkspaceProjection(
     hostWorkspaceRoot,
-    createOfficeAddress("slack", rawConversationId),
+    resolveOwnedOfficeAddress(rawConversationId),
   );
 }
 

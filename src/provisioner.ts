@@ -219,6 +219,28 @@ export class DockerContainerManager {
     await Promise.all(toStop.map((containerKey) => this.stop(containerKey)));
   }
 
+  /**
+   * Force-remove every managed container belonging to the given conversation
+   * ids. The office layout migration renames the host directories a
+   * container's workspace mount points at, so a surviving container would keep
+   * writing through stale mounts while the runtime works in the new location.
+   */
+  async removeContainersForConversations(conversationIds: ReadonlySet<string>): Promise<void> {
+    if (conversationIds.size === 0) return;
+    const names = await this.listContainerNamesByLabel();
+    await Promise.all(
+      names.map(async (containerName) => {
+        const details = await this.inspectContainerDetails(containerName);
+        if (!details?.conversationId || !conversationIds.has(details.conversationId)) return;
+        await this.forceRemoveContainer(
+          containerName,
+          `Removed container ${containerName} after office migration`,
+          `Failed to remove container ${containerName} after office migration`,
+        );
+      }),
+    );
+  }
+
   async reconcile(): Promise<void> {
     const discovered = new Set<string>();
     const labeledNames = await this.listContainerNamesByLabel();

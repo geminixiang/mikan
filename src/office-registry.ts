@@ -723,6 +723,62 @@ export function ensureOfficeDir(workspaceRoot: string, address: OfficeAddress): 
   return dir;
 }
 
+/**
+ * Resolve the office behind a raw conversation id for surfaces that predate
+ * OfficeAddress (Admin scope, settings mutation). The registry is the only
+ * authority: office records first, then a committed migration's owner, then
+ * the sole enabled platform. Two platforms sharing the raw id make the scope
+ * genuinely ambiguous, and an unknown id has no office to resolve — both
+ * fail loudly rather than guessing a directory.
+ */
+export function resolveOwnedOfficeAddress(rawConversationId: string): OfficeAddress {
+  assertConversationId(rawConversationId);
+  const registry = registryFor(effectiveStateDir());
+
+  const owners = () =>
+    registry.getState().offices.filter((record) => record.conversationId === rawConversationId);
+  let matches = owners();
+  if (matches.length === 0) {
+    // Another process (the daemon, `mikan office claim`) may have written
+    // since this instance loaded; check the file before giving up.
+    registry.reload();
+    matches = owners();
+  }
+  if (matches.length === 1) {
+    return { platform: matches[0].platform, conversationId: rawConversationId };
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `Conversation id ${JSON.stringify(rawConversationId)} names offices on several platforms; ` +
+        "use a platform-scoped surface instead",
+    );
+  }
+
+  const migration = registry.getMigration(rawConversationId);
+  if (migration?.ownerPlatform) {
+    return { platform: migration.ownerPlatform, conversationId: rawConversationId };
+  }
+  const { enabledPlatforms } = registry.getState();
+  if (enabledPlatforms.length === 1) {
+    return { platform: enabledPlatforms[0], conversationId: rawConversationId };
+  }
+  throw new Error(
+    `No office is registered for conversation id ${JSON.stringify(rawConversationId)}`,
+  );
+}
+
+/** Current office inventory, re-read from disk for cross-process freshness. */
+export function listRegisteredOffices(): readonly OfficeRecord[] {
+  const registry = registryFor(effectiveStateDir());
+  registry.reload();
+  return registry.getOffices();
+}
+
+/** Office working directory for a raw-id-scoped caller (see resolveOwnedOfficeAddress). */
+export function resolveLegacyOfficeDir(workspaceRoot: string, rawConversationId: string): string {
+  return conversationOfficeDir(workspaceRoot, resolveOwnedOfficeAddress(rawConversationId));
+}
+
 /** mkdir-if-missing with the same fail-closed type guard as projection roots. */
 function ensureRegularOfficeDirectory(dir: string): void {
   let stats;

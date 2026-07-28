@@ -12,7 +12,7 @@ import {
   type AgentConfig,
   type SandboxSettings,
 } from "../../config.js";
-import { applyConversationSettings, applyGlobalSettings } from "../../settings-mutation.js";
+import { applyConversationSettingsByRawId, applyGlobalSettings } from "../../settings-mutation.js";
 import { effectiveStateDir } from "../../cli/arg-grammar.js";
 import {
   addPackage,
@@ -33,7 +33,8 @@ import type { AdminToken } from "./store.js";
 
 export type { AdminRuntimeBridge, AdminServices, EventSummary } from "./types.js";
 import type { AdminServices, EventSummary } from "./types.js";
-import { legacyConversationDir } from "../../office-address.js";
+import { conversationOfficeDir } from "../../office-address.js";
+import { listRegisteredOffices, resolveLegacyOfficeDir } from "../../office-registry.js";
 
 // ── Handler ────────────────────────────────────────────────────────────────────
 
@@ -254,32 +255,24 @@ function serveMe(res: ServerResponse, token: AdminToken): void {
   });
 }
 
-const SETTINGS_FILES = new Set(["settings.json", "auto-reply", "auto-reply.disabled"]);
-
+/**
+ * Admin scope is still raw-conversation-id keyed. Office directories are
+ * office-key named and not reversible to raw ids, so enumeration reads the
+ * office registry — the durable raw-id ↔ office mapping — instead of
+ * scanning the workspace. Offices whose directory disappeared are filtered
+ * out; ids shared by several platforms stay listed once (their per-office
+ * detail pages come with the Admin address migration, ADR 0005).
+ */
 function listConversationDirs(workingDir: string): string[] {
-  if (!existsSync(workingDir)) return [];
-  const skip = new Set(["vaults", "skills", "events", "agents", "node_modules", ".git"]);
-  return readdirSync(workingDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && !entry.name.startsWith(".") && !skip.has(entry.name))
-    .map((entry) => entry.name)
-    .filter((name) => {
-      const dir = join(workingDir, name);
-      try {
-        const items = readdirSync(dir);
-        // Conversation settings migrated to the state dir, so a sessions/
-        // subdir is the primary marker for existing conversation dirs.
-        return items.some(
-          (item) => item === "sessions" || SETTINGS_FILES.has(item) || item.endsWith(".jsonl"),
-        );
-      } catch {
-        return false;
-      }
-    })
-    .toSorted((a, b) => a.localeCompare(b));
+  const ids = new Set<string>();
+  for (const office of listRegisteredOffices()) {
+    if (existsSync(conversationOfficeDir(workingDir, office))) ids.add(office.conversationId);
+  }
+  return Array.from(ids).toSorted((a, b) => a.localeCompare(b));
 }
 
 function conversationLastActivity(workingDir: string, conversationId: string): number | null {
-  const dir = legacyConversationDir(workingDir, conversationId);
+  const dir = resolveLegacyOfficeDir(workingDir, conversationId);
   if (!existsSync(dir)) return null;
   let latest = 0;
   const visit = (path: string, depth: number): void => {
@@ -379,7 +372,7 @@ function listConversationSessionUsage(
   conversationId: string,
   label: string,
 ): SessionUsageRow[] {
-  const sessionDir = join(legacyConversationDir(workingDir, conversationId), "sessions");
+  const sessionDir = join(resolveLegacyOfficeDir(workingDir, conversationId), "sessions");
   try {
     return readdirSync(sessionDir, { withFileTypes: true })
       .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
@@ -497,7 +490,7 @@ function serveConversationUsage(res: ServerResponse, url: URL, services: AdminSe
   cutoff.setDate(today.getDate() - (days - 1));
 
   const flags = { hasOlder: false };
-  const sessionDir = join(legacyConversationDir(workingDir, conversationId), "sessions");
+  const sessionDir = join(resolveLegacyOfficeDir(workingDir, conversationId), "sessions");
   try {
     for (const entry of readdirSync(sessionDir, { withFileTypes: true })) {
       if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
@@ -592,7 +585,7 @@ function serveConversationState(
     return;
   }
 
-  const dir = legacyConversationDir(workingDir, conversationId);
+  const dir = resolveLegacyOfficeDir(workingDir, conversationId);
   const globalConfig = loadGlobalSettings();
   const conversationConfig = resolveConversationSettings({ conversationId, conversationDir: dir });
   const conversationWorkspace = legacyResolveWorkspaceProjection(workingDir, conversationId);
@@ -693,11 +686,16 @@ function serveConversationModelUpdate(
   if (!workingDir) return;
 
   try {
-    const result = applyConversationSettings(services.runtime, workingDir, scope.conversationId, {
-      provider,
-      model,
-      ...(thinkingLevel ? { thinkingLevel } : {}),
-    });
+    const result = applyConversationSettingsByRawId(
+      services.runtime,
+      workingDir,
+      scope.conversationId,
+      {
+        provider,
+        model,
+        ...(thinkingLevel ? { thinkingLevel } : {}),
+      },
+    );
     if (!result.ok) {
       jsonRes(res, 409, {
         error: "Conversation has a running job; retry after it finishes (or /stop it).",
@@ -740,7 +738,7 @@ function serveConversationSlackUpdate(
   const workingDir = requireAdminWorkingDir(res, services);
   if (!workingDir) return;
   try {
-    applyConversationSettings(services.runtime, workingDir, scope.conversationId, {
+    applyConversationSettingsByRawId(services.runtime, workingDir, scope.conversationId, {
       slack: { replyMode },
     });
     jsonRes(res, 200, { ok: true });
@@ -771,7 +769,7 @@ function serveConversationAutoReplyUpdate(
   }
   const workingDir = requireAdminWorkingDir(res, services);
   if (!workingDir) return;
-  const dir = legacyConversationDir(workingDir, scope.conversationId);
+  const dir = resolveLegacyOfficeDir(workingDir, scope.conversationId);
   try {
     const existing = loadConversationAutoReplyConfig(dir);
     saveConversationAutoReplyConfig(dir, {
@@ -809,7 +807,7 @@ function serveConversationSessionLink(
   }
 
   const sessionFile = resolveExistingSessionFile(
-    legacyConversationDir(workingDir, scope.conversationId),
+    resolveLegacyOfficeDir(workingDir, scope.conversationId),
     scope.conversationId,
   );
   if (!sessionFile) {
@@ -1103,7 +1101,7 @@ function serveWorkspaceTree(
   }
   const workingDir = requireAdminWorkingDir(res, services);
   if (!workingDir) return;
-  const convDir = legacyConversationDir(workingDir, scope.conversationId);
+  const convDir = resolveLegacyOfficeDir(workingDir, scope.conversationId);
   if (!existsSync(convDir)) {
     jsonRes(res, 200, { conversationId: scope.conversationId, tree: null });
     return;
@@ -1213,7 +1211,7 @@ function serveWorkspaceFile(
     jsonRes(res, 403, { error: "Workspace path is not exposed" });
     return;
   }
-  const convDir = legacyConversationDir(workingDir, scope.conversationId);
+  const convDir = resolveLegacyOfficeDir(workingDir, scope.conversationId);
   const safe = safeJoinUnderRoot(convDir, requestedPath);
   if (safe.error) {
     jsonRes(res, 400, { error: safe.error });
@@ -1297,7 +1295,7 @@ async function servePackagesList(
     const inventory = await inspectConversationPackages({
       conversationId: scope.conversationId,
       stateDir: effectiveStateDir(),
-      conversationDir: legacyConversationDir(workingDir, scope.conversationId),
+      conversationDir: resolveLegacyOfficeDir(workingDir, scope.conversationId),
     });
     jsonRes(res, 200, { conversationId: scope.conversationId, ...inventory });
   } catch (err) {
@@ -1338,7 +1336,7 @@ function servePackageMutation(
   const context = {
     conversationId: scope.conversationId,
     stateDir: effectiveStateDir(),
-    conversationDir: legacyConversationDir(workingDir, scope.conversationId),
+    conversationDir: resolveLegacyOfficeDir(workingDir, scope.conversationId),
     workingDir,
     runtime: services.runtime,
   };
@@ -1378,7 +1376,7 @@ function serveSkillsList(
   if (!workingDir) return;
   const global = readSkillsFromDir(join(workingDir, "skills"), "global");
   const conversation = readSkillsFromDir(
-    join(legacyConversationDir(workingDir, scope.conversationId), "skills"),
+    join(resolveLegacyOfficeDir(workingDir, scope.conversationId), "skills"),
     "conversation",
   );
   jsonRes(res, 200, {
@@ -1420,7 +1418,7 @@ function serveSkillFile(
   const skillsRoot =
     source === "global"
       ? join(workingDir, "skills")
-      : join(legacyConversationDir(workingDir, scope.conversationId), "skills");
+      : join(resolveLegacyOfficeDir(workingDir, scope.conversationId), "skills");
   const safe = safeJoinUnderRoot(skillsRoot, join(directory, "SKILL.md"));
   if (safe.error) {
     jsonRes(res, 400, { error: safe.error });

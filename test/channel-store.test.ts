@@ -2,7 +2,10 @@ import { existsSync, mkdirSync, readFileSync, rmSync, rmdirSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { createOfficeAddress, officeDirName } from "../src/office-address.js";
 import { ChannelStore } from "../src/store.js";
+
+const office = (channelId: string) => officeDirName(createOfficeAddress("slack", channelId));
 
 function okResponse(body: string): Response {
   return new Response(Buffer.from(body), { status: 200 });
@@ -35,7 +38,7 @@ describe("ChannelStore", () => {
 
   test("getChannelDir creates and returns the channel directory", () => {
     const channelDir = store.getChannelDir("C123");
-    expect(channelDir).toBe(join(dir, "C123"));
+    expect(channelDir).toBe(join(dir, office("C123")));
     expect(existsSync(channelDir)).toBe(true);
   });
 
@@ -64,7 +67,7 @@ describe("ChannelStore", () => {
         isMessagingBot: false,
       });
       expect(logged).toBe(true);
-      const lines = jsonLines(join(dir, "C1", "log.jsonl"));
+      const lines = jsonLines(join(dir, office("C1"), "log.jsonl"));
       expect(lines).toHaveLength(1);
       expect(lines[0]).toMatchObject({ user: "U1", text: "hello", ts: "1.0" });
     });
@@ -80,7 +83,7 @@ describe("ChannelStore", () => {
       };
       expect(await store.logMessage("C1", message)).toBe(true);
       expect(await store.logMessage("C1", { ...message, text: "twice" })).toBe(false);
-      expect(jsonLines(join(dir, "C1", "log.jsonl"))).toHaveLength(1);
+      expect(jsonLines(join(dir, office("C1"), "log.jsonl"))).toHaveLength(1);
     });
 
     test("suppresses concurrent duplicate logging", async () => {
@@ -97,7 +100,7 @@ describe("ChannelStore", () => {
         store.logMessage("C1", { ...message }),
       ]);
       expect(results.filter((r) => r).length).toBe(1);
-      expect(jsonLines(join(dir, "C1", "log.jsonl"))).toHaveLength(1);
+      expect(jsonLines(join(dir, office("C1"), "log.jsonl"))).toHaveLength(1);
     });
 
     test("same ts in different channels is not a duplicate", async () => {
@@ -122,7 +125,7 @@ describe("ChannelStore", () => {
         attachments: [],
         isMessagingBot: false,
       });
-      const [line] = jsonLines(join(dir, "C1", "log.jsonl"));
+      const [line] = jsonLines(join(dir, office("C1"), "log.jsonl"));
       expect(line.date).toBe("2009-02-13T23:31:30.123Z");
     });
 
@@ -135,7 +138,7 @@ describe("ChannelStore", () => {
         attachments: [],
         isMessagingBot: false,
       });
-      const [line] = jsonLines(join(dir, "C1", "log.jsonl"));
+      const [line] = jsonLines(join(dir, office("C1"), "log.jsonl"));
       expect(line.date).toBe("2023-11-14T22:13:20.000Z");
     });
 
@@ -149,18 +152,18 @@ describe("ChannelStore", () => {
         isMessagingBot: false,
       };
       // Make the append fail by occupying log.jsonl with a directory
-      mkdirSync(join(dir, "C1", "log.jsonl"), { recursive: true });
+      mkdirSync(join(dir, office("C1"), "log.jsonl"), { recursive: true });
       await expect(store.logMessage("C1", message)).rejects.toThrow();
 
-      rmdirSync(join(dir, "C1", "log.jsonl"));
+      rmdirSync(join(dir, office("C1"), "log.jsonl"));
       expect(await store.logMessage("C1", message)).toBe(true);
-      expect(jsonLines(join(dir, "C1", "log.jsonl"))).toHaveLength(1);
+      expect(jsonLines(join(dir, office("C1"), "log.jsonl"))).toHaveLength(1);
     });
   });
 
   test("logBotResponse writes a bot-attributed entry", async () => {
     await store.logBotResponse("C1", "response text", "99.0");
-    const [line] = jsonLines(join(dir, "C1", "log.jsonl"));
+    const [line] = jsonLines(join(dir, office("C1"), "log.jsonl"));
     expect(line).toMatchObject({
       user: "bot",
       text: "response text",
@@ -189,20 +192,20 @@ describe("ChannelStore", () => {
     });
 
     test("returns null for an empty log file", () => {
-      mkdirSync(join(dir, "C1"), { recursive: true });
-      writeFileSync(join(dir, "C1", "log.jsonl"), "");
+      mkdirSync(join(dir, office("C1")), { recursive: true });
+      writeFileSync(join(dir, office("C1"), "log.jsonl"), "");
       expect(store.getLastTimestamp("C1")).toBeNull();
     });
 
     test("returns null when the last line is malformed", () => {
-      mkdirSync(join(dir, "C1"), { recursive: true });
-      writeFileSync(join(dir, "C1", "log.jsonl"), "not json\n");
+      mkdirSync(join(dir, office("C1")), { recursive: true });
+      writeFileSync(join(dir, office("C1"), "log.jsonl"), "not json\n");
       expect(store.getLastTimestamp("C1")).toBeNull();
     });
 
     test("returns null when the last entry has no ts", () => {
-      mkdirSync(join(dir, "C1"), { recursive: true });
-      writeFileSync(join(dir, "C1", "log.jsonl"), `${JSON.stringify({ text: "no ts" })}\n`);
+      mkdirSync(join(dir, office("C1")), { recursive: true });
+      writeFileSync(join(dir, office("C1"), "log.jsonl"), `${JSON.stringify({ text: "no ts" })}\n`);
       expect(store.getLastTimestamp("C1")).toBeNull();
     });
   });
@@ -219,9 +222,9 @@ describe("ChannelStore", () => {
       );
 
       expect(attachments).toEqual([
-        { original: "report.pdf", localPath: "C1/attachments/1500_report.pdf" },
+        { original: "report.pdf", localPath: `${office("C1")}/attachments/1500_report.pdf` },
       ]);
-      expect(readFileSync(join(dir, "C1", "attachments", "1500_report.pdf"), "utf-8")).toBe(
+      expect(readFileSync(join(dir, office("C1"), "attachments", "1500_report.pdf"), "utf-8")).toBe(
         "file body",
       );
       expect(fetchMock).toHaveBeenCalledWith("https://files.example/report", {
@@ -298,7 +301,7 @@ describe("ChannelStore", () => {
 
       expect(attachments).toHaveLength(1);
       expect(fetchMock).toHaveBeenCalledTimes(2);
-      expect(readFileSync(join(dir, "C1", "attachments", "6000_net.txt"), "utf-8")).toBe(
+      expect(readFileSync(join(dir, office("C1"), "attachments", "6000_net.txt"), "utf-8")).toBe(
         "recovered",
       );
     }, 10_000);

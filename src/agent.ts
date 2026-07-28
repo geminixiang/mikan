@@ -2380,7 +2380,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
       try {
         const conversationMemoryPath = posix.join(
           prepared.pathContext.runtimeWorkspaceRoot,
-          conversationId,
+          officeDirName(message.address),
           "MEMORY.md",
         );
         const dreamTools = sessionDreamTools(session.agent.state.tools, conversationMemoryPath);

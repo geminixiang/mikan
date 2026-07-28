@@ -10,7 +10,7 @@ import { createRunner, isSafePromptSkillTree } from "../src/agent.js";
 import { MikanAgentSession, MikanModels } from "../src/harness/index.js";
 import { createManagedSessionFile, getChannelSessionDir } from "../src/sessions/store.js";
 import type { PlatformToolPackFactory } from "../src/tools/types.js";
-import { createOfficeAddress } from "../src/office-address.js";
+import { createOfficeAddress, officeDirName } from "../src/office-address.js";
 
 /**
  * Drives PiAgentWrapper.run() end to end with a faux provider: the runner is
@@ -59,7 +59,7 @@ async function createTestRunner(
 ) {
   const { models, faux } = createFauxModels();
   const workspaceDir = join(dir, "workspace");
-  const conversationDir = join(workspaceDir, "C1");
+  const conversationDir = join(workspaceDir, officeDirName(createOfficeAddress("slack", "C1")));
   mkdirSync(conversationDir, { recursive: true });
   const sessionDir = getChannelSessionDir(conversationDir);
   const contextFile = createManagedSessionFile(sessionDir, conversationDir);
@@ -124,8 +124,15 @@ describe("PiAgentWrapper.run", () => {
   test("does not follow conversation memory symlinks during host prompt construction", async () => {
     const outside = join(dir, "outside-secret.txt");
     writeFileSync(outside, "DO_NOT_LEAK_THIS_SECRET");
-    const memoryPath = join(dir, "workspace", "C1", "MEMORY.md");
-    mkdirSync(join(dir, "workspace", "C1"), { recursive: true });
+    const memoryPath = join(
+      dir,
+      "workspace",
+      officeDirName(createOfficeAddress("slack", "C1")),
+      "MEMORY.md",
+    );
+    mkdirSync(join(dir, "workspace", officeDirName(createOfficeAddress("slack", "C1"))), {
+      recursive: true,
+    });
     rmSync(memoryPath, { force: true });
     symlinkSync(outside, memoryPath);
     const { runner } = await createTestRunner();
@@ -325,7 +332,12 @@ describe("PiAgentWrapper.run", () => {
   test("hidden session Dream sees the old transcript and writes memory", async () => {
     const promptSpy = vi.spyOn(MikanAgentSession.prototype, "prompt");
     const { runner, faux } = await createTestRunner();
-    const memoryPath = join(dir, "workspace", "C1", "MEMORY.md");
+    const memoryPath = join(
+      dir,
+      "workspace",
+      officeDirName(createOfficeAddress("slack", "C1")),
+      "MEMORY.md",
+    );
     const setupResponder = makeResponder();
     let maintenancePrompt = "";
     faux.setResponses([

@@ -345,7 +345,8 @@ describe("OfficeRegistry", () => {
       process.env.MIKAN_STATE_DIR = fixture.stateDir;
       try {
         const address = createOfficeAddress("slack", "C901");
-        symlinkSync(fixture.root, join(fixture.workspaceRoot, "C901"));
+        mkdirSync(fixture.workspaceRoot, { recursive: true });
+        symlinkSync(fixture.root, conversationOfficeDir(fixture.workspaceRoot, address));
 
         expect(() => ensureOfficeDir(fixture.workspaceRoot, address)).toThrow(
           /regular non-symlink directory/,

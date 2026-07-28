@@ -2,7 +2,15 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { applyConversationSettings, applyGlobalSettings } from "../src/settings-mutation.js";
+import { createOfficeAddress } from "../src/office-address.js";
+import {
+  applyConversationSettings,
+  applyConversationSettingsByRawId,
+  applyGlobalSettings,
+} from "../src/settings-mutation.js";
+import { OfficeRegistry } from "../src/office-registry.js";
+
+const C1 = createOfficeAddress("slack", "C1");
 
 let stateDir: string;
 let workingDir: string;
@@ -28,7 +36,7 @@ function conversationSettingsFile(conversationId: string): string {
 describe("applyConversationSettings", () => {
   test("llm change clears cached runners, then writes", () => {
     const runtime = { switchConversationModel: vi.fn().mockReturnValue(true) };
-    const result = applyConversationSettings(runtime, workingDir, "C1", {
+    const result = applyConversationSettings(runtime, workingDir, C1, {
       provider: "anthropic",
       model: "claude-sonnet-4-6",
     });
@@ -44,7 +52,7 @@ describe("applyConversationSettings", () => {
 
   test("busy conversation refuses: no write, disk and cache stay agreed", () => {
     const runtime = { switchConversationModel: vi.fn().mockReturnValue(false) };
-    const result = applyConversationSettings(runtime, workingDir, "C1", {
+    const result = applyConversationSettings(runtime, workingDir, C1, {
       provider: "anthropic",
       model: "claude-sonnet-4-6",
     });
@@ -54,7 +62,7 @@ describe("applyConversationSettings", () => {
 
   test("non-llm patch writes without touching runners", () => {
     const runtime = { switchConversationModel: vi.fn().mockReturnValue(false) };
-    const result = applyConversationSettings(runtime, workingDir, "C1", {
+    const result = applyConversationSettings(runtime, workingDir, C1, {
       sandbox: { image: { workspaceMount: "full" } },
     });
     expect(result).toEqual({ ok: true, runtimeSwitched: null });
@@ -64,12 +72,33 @@ describe("applyConversationSettings", () => {
   });
 
   test("no runtime (portal without bridge): writes, reports null", () => {
-    const result = applyConversationSettings(undefined, workingDir, "C1", {
+    const result = applyConversationSettings(undefined, workingDir, C1, {
       provider: "anthropic",
       model: "claude-haiku-4-5",
     });
     expect(result).toEqual({ ok: true, runtimeSwitched: null });
     expect(existsSync(conversationSettingsFile("C1"))).toBe(true);
+  });
+});
+
+describe("applyConversationSettingsByRawId", () => {
+  test("resolves the office through the registry before writing", () => {
+    new OfficeRegistry(stateDir).recordOffice(C1);
+
+    const result = applyConversationSettingsByRawId(undefined, workingDir, "C1", {
+      slack: { replyMode: "thread" },
+    });
+
+    expect(result).toEqual({ ok: true, runtimeSwitched: null });
+    expect(existsSync(conversationSettingsFile("C1"))).toBe(true);
+  });
+
+  test("fails loudly for an unknown raw id instead of guessing a directory", () => {
+    expect(() =>
+      applyConversationSettingsByRawId(undefined, workingDir, "C-unknown", {
+        slack: { replyMode: "thread" },
+      }),
+    ).toThrow(/No office is registered/);
   });
 });
 
