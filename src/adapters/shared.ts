@@ -9,7 +9,7 @@
 
 import { appendFileSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
-import { dirname } from "path";
+import { dirname, join } from "path";
 import type { MessagingEventHandler, OfficeAddress } from "../adapter.js";
 import { sameOffice, type Office } from "../office/index.js";
 import * as log from "../log.js";
@@ -18,14 +18,18 @@ export type {
   ChatResponseErrorContext,
   ChatResponseErrorOperation,
   ChatResponseErrorReporter,
+  IncomingAttachment,
   ResolveStopTargetInput,
   RetryOptions,
+  SavedAttachments,
 } from "./types.js";
 import type {
   ChatResponseErrorContext,
   ChatResponseErrorReporter,
+  IncomingAttachment,
   RetryOptions,
   ResolveStopTargetInput,
+  SavedAttachments,
 } from "./types.js";
 
 export function createChatResponseErrorReporter(
@@ -161,6 +165,48 @@ export function splitText(
 export function appendChannelLog(office: Office, entry: object): void {
   office.ensure();
   appendFileSync(office.logPath, `${JSON.stringify(entry)}\n`);
+}
+
+/**
+ * Save incoming platform files under the office's attachments directory.
+ *
+ * The one owner of the attachment convention: sanitized
+ * `<timestamp>_<name>` filenames, the `<office key>/attachments/<file>`
+ * workspace-relative localPath the agent reads, and office materialization
+ * before the first write. Download mechanics and failure policy stay with
+ * the adapter — failures come back in `failed` for the caller to throw or
+ * warn about, matching its platform's behavior.
+ */
+export async function saveIncomingAttachments(
+  office: Office,
+  items: readonly IncomingAttachment[],
+): Promise<SavedAttachments> {
+  if (items.length === 0) return { saved: [], failed: [] };
+  // Attachment downloads can be the office's first write; materialize (and
+  // register) it before composing office-relative attachment paths.
+  office.ensure();
+  await mkdir(office.attachmentsDir, { recursive: true });
+
+  // Results keep the caller's item order regardless of download completion
+  // order — platform message logs list attachments as the platform sent them.
+  const results = await Promise.all(
+    items.map(async (item) => {
+      const sanitized = item.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const filename = `${item.timestampMs ?? Date.now()}_${sanitized}`;
+      try {
+        await item.download(join(office.attachmentsDir, filename));
+        return {
+          saved: { original: item.name, localPath: `${office.key}/attachments/${filename}` },
+        };
+      } catch (error) {
+        return { failed: { name: item.name, error } };
+      }
+    }),
+  );
+  return {
+    saved: results.flatMap((result) => (result.saved ? [result.saved] : [])),
+    failed: results.flatMap((result) => (result.failed ? [result.failed] : [])),
+  };
 }
 
 /** Convenience for appending the bot's own outbound message. */

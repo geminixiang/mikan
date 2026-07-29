@@ -69,7 +69,6 @@ import {
   OfficeRegistry,
 } from "./office/index.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
-import { ChannelStore } from "./store.js";
 import * as Sentry from "@sentry/node";
 
 function getVersion(): string {
@@ -657,12 +656,10 @@ if (hasSlack) {
   if (!slackMessagingBotToken || !slackAppToken) {
     throw new Error("Slack startup requires both SLACK_APP_TOKEN and SLACK_BOT_TOKEN");
   }
-  const sharedStore = new ChannelStore({ workspace, botToken: slackMessagingBotToken });
   const slackMessagingBot = new SlackMessagingBotClass(handler, {
     appToken: slackAppToken,
     botToken: slackMessagingBotToken,
     workspace,
-    store: sharedStore,
   });
   botsByPlatform.slack = slackMessagingBot;
   log.logInfo("Platform: Slack");

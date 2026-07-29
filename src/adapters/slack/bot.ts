@@ -2,7 +2,7 @@ import { SocketModeClient } from "@slack/socket-mode";
 import type { KnownBlock } from "@slack/types";
 import { WebAPIRateLimitedError, WebClient } from "@slack/web-api";
 import { existsSync, readFileSync } from "fs";
-import { readFile } from "fs/promises";
+import { readFile, writeFile } from "fs/promises";
 import { basename, join } from "path";
 import {
   createConversationEvent,
@@ -22,7 +22,7 @@ import { resolveConversationSettings } from "../../config.js";
 import { parseExtActionId } from "../../harness/extensions/blockkit.js";
 import type { EventsWatcher } from "../../events.js";
 import * as log from "../../log.js";
-import type { Attachment, ChannelStore } from "../../store.js";
+import type { Attachment } from "../../types.js";
 import type {
   SlackBlockAction,
   SlackBlockActionBody,
@@ -36,6 +36,7 @@ import {
   appendBotResponseLog,
   appendChannelLog,
   MessagingEventQueue,
+  saveIncomingAttachments,
   withRetry,
 } from "../shared.js";
 import { processMessageIntake } from "../intake.js";
@@ -131,12 +132,26 @@ export type { SlackChannel, SlackEvent, SlackUser } from "./types.js";
 // SlackMessagingBot
 // ============================================================================
 
+class AttachmentDownloadHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+function isRetryableAttachmentDownloadError(error: unknown): boolean {
+  if (!(error instanceof AttachmentDownloadHttpError)) return true;
+  return error.status === 408 || error.status === 429 || error.status >= 500;
+}
+
 export class SlackMessagingBot implements MessagingBot {
   private socketClient: SocketModeClient;
   private webClient: WebClient;
   private handler: MessagingEventHandler;
   private workspace: Workspace;
-  private store: ChannelStore;
+  private botToken: string;
   private botUserId: string | null = null;
   private botId: string | null = null;
   private teamId: string | null = null;
@@ -169,11 +184,11 @@ export class SlackMessagingBot implements MessagingBot {
 
   constructor(
     handler: MessagingEventHandler,
-    config: { appToken: string; botToken: string; workspace: Workspace; store: ChannelStore },
+    config: { appToken: string; botToken: string; workspace: Workspace },
   ) {
     this.handler = handler;
     this.workspace = config.workspace;
-    this.store = config.store;
+    this.botToken = config.botToken;
     this.socketClient = new SocketModeClient({
       appToken: config.appToken,
       // Default 5s is too tight: brief event-loop stalls (e.g. backfill, sync fs)
@@ -1517,6 +1532,61 @@ export class SlackMessagingBot implements MessagingBot {
   }
 
   /**
+   * Download Slack message files into the office's attachments directory.
+   * The Slack contract is all-or-error: any failed download throws after the
+   * successful ones are on disk, so callers still log the message text.
+   */
+  private async processAttachments(
+    channelId: string,
+    files: Array<{ name?: string; url_private_download?: string; url_private?: string }>,
+    timestamp: string,
+  ): Promise<Attachment[]> {
+    const items = [];
+    for (const file of files) {
+      const url = file.url_private_download || file.url_private;
+      if (!url) continue;
+      if (!file.name) {
+        throw new Error(`Attachment missing name for URL: ${url}`);
+      }
+      items.push({
+        name: file.name,
+        // Slack timestamps are float seconds; the stored filename uses ms.
+        timestampMs: Math.floor(parseFloat(timestamp) * 1000),
+        download: (destPath: string) => this.downloadSlackFile(url, destPath),
+      });
+    }
+
+    const office = this.workspace.office(createOfficeAddress("slack", channelId));
+    const { saved, failed } = await saveIncomingAttachments(office, items);
+    if (failed.length > 0) {
+      const { name, error } = failed[0];
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to download attachment ${name}: ${errorMsg}`, { cause: error });
+    }
+    return saved;
+  }
+
+  /** Authorized download with retry; Slack file URLs require the bot token. */
+  private async downloadSlackFile(url: string, destPath: string): Promise<void> {
+    await withRetry(
+      async () => {
+        const response = await fetch(url, {
+          headers: { Authorization: `Bearer ${this.botToken}` },
+        });
+        if (!response.ok) {
+          throw new AttachmentDownloadHttpError(
+            `HTTP ${response.status}: ${response.statusText}`,
+            response.status,
+          );
+        }
+        const buffer = await response.arrayBuffer();
+        await writeFile(destPath, Buffer.from(buffer));
+      },
+      { maxAttempts: 3, baseDelayMs: 250, isRateLimited: isRetryableAttachmentDownloadError },
+    );
+  }
+
+  /**
    * Log a user message to log.jsonl after attachments are ready.
    */
   private async logUserMessage(event: SlackEvent): Promise<Attachment[]> {
@@ -1525,7 +1595,7 @@ export class SlackMessagingBot implements MessagingBot {
     let attachmentError: unknown;
     if (event.files) {
       try {
-        attachments = await this.store.processAttachments(event.channel, event.files, event.ts);
+        attachments = await this.processAttachments(event.channel, event.files, event.ts);
       } catch (err) {
         attachmentError = err;
       }
@@ -1562,7 +1632,7 @@ export class SlackMessagingBot implements MessagingBot {
     files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
   }): Promise<Attachment[]> {
     const attachments = event.files
-      ? await this.store.processAttachments(event.channel, event.files, event.ts)
+      ? await this.processAttachments(event.channel, event.files, event.ts)
       : [];
     const botName =
       event.username ?? event.bot_profile?.name ?? event.bot_profile?.real_name ?? event.bot_id;
@@ -1696,7 +1766,7 @@ export class SlackMessagingBot implements MessagingBot {
       const user = this.users.get(msg.user!);
       const text = this.stripOwnMention(msg.text);
       const attachments = msg.files
-        ? await this.store.processAttachments(channelId, msg.files, msg.ts!)
+        ? await this.processAttachments(channelId, msg.files, msg.ts!)
         : [];
 
       this.logToFile(channelId, {

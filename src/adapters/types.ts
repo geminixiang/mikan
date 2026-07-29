@@ -148,6 +148,22 @@ export interface MagicWordIntakeOptions {
   scopeFallback: "top-level" | "always" | "never";
 }
 
+/** One platform file to save into an office's attachments directory. */
+export interface IncomingAttachment {
+  /** Original file name as the platform reports it. */
+  name: string;
+  /** Epoch ms used in the stored filename; defaults to the time of saving. */
+  timestampMs?: number;
+  /** Fetch the file and write it to destPath (the parent directory exists). */
+  download(destPath: string): Promise<void>;
+}
+
+/** Outcome of saving incoming attachments; error policy stays with the adapter. */
+export interface SavedAttachments {
+  saved: import("../types.js").Attachment[];
+  failed: { name: string; error: unknown }[];
+}
+
 export interface MessageIntakeOptions<TEvent extends ConversationEvent> {
   eventBase: TEvent;
   /** The event's Conversation office; absent when auto-reply is unconfigured (embedders). */

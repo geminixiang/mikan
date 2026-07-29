@@ -419,12 +419,13 @@ describe("TelegramMessagingBot attachments", () => {
 
   test("processAttachments waits for downloads and returns completed metadata", async () => {
     const bot = new TelegramMessagingBot(makeHandler(), { token: "TEST_TOKEN", workspace });
-    const processTelegramFile = vi
-      .fn()
-      .mockResolvedValueOnce({ name: "photo_42.jpg", localPath: "123/attachments/1_photo.jpg" })
-      .mockResolvedValueOnce({ name: "report.pdf", localPath: "123/attachments/2_report.pdf" });
-
-    (bot as any).processTelegramFile = processTelegramFile;
+    const getFile = vi.fn(async (fileId: string) => ({ file_path: `files/${fileId}` }));
+    (bot as any).client = { api: { getFile } };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer,
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
 
     const attachments = await bot.processAttachments("123", {
       message_id: 42,
@@ -432,15 +433,27 @@ describe("TelegramMessagingBot attachments", () => {
       document: { file_id: "doc-1", file_name: "report.pdf" },
     });
 
-    expect(processTelegramFile).toHaveBeenNthCalledWith(1, "123", "large-photo", "photo_42.jpg");
-    expect(processTelegramFile).toHaveBeenNthCalledWith(2, "123", "doc-1", "report.pdf");
+    // The largest photo is chosen; the smaller size is never fetched.
+    expect(getFile).toHaveBeenCalledWith("large-photo");
+    expect(getFile).toHaveBeenCalledWith("doc-1");
+    expect(getFile).not.toHaveBeenCalledWith("small-photo");
+    const key = officeKey(createOfficeAddress("telegram", "123"));
     expect(attachments).toEqual([
-      { name: "photo_42.jpg", localPath: "123/attachments/1_photo.jpg" },
-      { name: "report.pdf", localPath: "123/attachments/2_report.pdf" },
+      {
+        name: "photo_42.jpg",
+        localPath: expect.stringMatching(new RegExp(`^${key}/attachments/\\d+_photo_42\\.jpg$`)),
+      },
+      {
+        name: "report.pdf",
+        localPath: expect.stringMatching(new RegExp(`^${key}/attachments/\\d+_report\\.pdf$`)),
+      },
     ]);
+    for (const attachment of attachments) {
+      expect(existsSync(join(workingDir, attachment.localPath))).toBe(true);
+    }
   });
 
-  test("processTelegramFile downloads via bot token and writes the attachment", async () => {
+  test("attachment downloads go via the bot token and write the file", async () => {
     const bot = new TelegramMessagingBot(makeHandler(), { token: "TEST_TOKEN", workspace });
     const getFile = vi.fn().mockResolvedValue({ file_path: "photos/file_123.jpg" });
     (bot as any).client = { api: { getFile } };
@@ -451,7 +464,10 @@ describe("TelegramMessagingBot attachments", () => {
     });
     globalThis.fetch = fetchMock as typeof fetch;
 
-    const attachment = await (bot as any).processTelegramFile("456", "file-id", "photo.jpg");
+    const [attachment] = await bot.processAttachments("456", {
+      message_id: 7,
+      document: { file_id: "file-id", file_name: "photo.jpg" },
+    });
 
     expect(getFile).toHaveBeenCalledWith("file-id");
     expect(fetchMock).toHaveBeenCalledWith(

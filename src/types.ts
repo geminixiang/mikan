@@ -597,23 +597,6 @@ export interface Attachment {
   localPath: string;
 }
 
-export interface LoggedMessage {
-  date: string;
-  ts: string;
-  user: string;
-  userName?: string;
-  displayName?: string;
-  text: string;
-  attachments: Attachment[];
-  isMessagingBot: boolean;
-  threadTs?: string;
-}
-
-export interface ChannelStoreConfig {
-  workspace: import("./office/types.js").Workspace;
-  botToken: string;
-}
-
 // ── trigger ───────────────────────────────────────────────────────────────────
 
 export type TriggerIntent = "mention" | "direct" | "thread-continuation" | "auto-reply-candidate";

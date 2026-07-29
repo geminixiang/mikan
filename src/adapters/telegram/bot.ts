@@ -1,5 +1,5 @@
 import { readFileSync } from "fs";
-import { basename, join } from "path";
+import { basename } from "path";
 import { Bot as GrammyMessagingBot, InputFile } from "grammy";
 import type { Message } from "grammy/types";
 import {
@@ -19,6 +19,8 @@ import {
   MessagingEventQueue,
   downloadUrlToFile,
   withRetry,
+  saveIncomingAttachments,
+  type IncomingAttachment,
 } from "../shared.js";
 import { telegramCommandMenu } from "../../commands/manifest.js";
 import { processMessageIntake } from "../intake.js";
@@ -261,71 +263,41 @@ export class TelegramMessagingBot implements MessagingBot {
     chatId: string,
     message: Message,
   ): Promise<{ name: string; localPath: string }[]> {
-    const downloads: Array<Promise<{ name: string; localPath: string } | null>> = [];
+    const items: IncomingAttachment[] = [];
 
-    // Handle photos (take the largest size for best quality)
+    // Photos: take the largest size for best quality.
     if (message.photo && message.photo.length > 0) {
-      const photos = message.photo;
-      const photo = photos[photos.length - 1]; // Largest photo
-      const fileId = photo.file_id;
-
-      downloads.push(this.processTelegramFile(chatId, fileId, `photo_${message.message_id}.jpg`));
+      const photo = message.photo[message.photo.length - 1];
+      items.push(this.telegramFileItem(photo.file_id, `photo_${message.message_id}.jpg`));
     }
-
-    // Handle documents
     if (message.document) {
       const doc = message.document;
-      const fileId = doc.file_id;
-      const fileName = doc.file_name ?? `document_${message.message_id}`;
-
-      downloads.push(this.processTelegramFile(chatId, fileId, fileName));
+      items.push(
+        this.telegramFileItem(doc.file_id, doc.file_name ?? `document_${message.message_id}`),
+      );
     }
 
-    const attachments = await Promise.all(downloads);
-    return attachments.filter(
-      (attachment): attachment is { name: string; localPath: string } => attachment !== null,
-    );
+    const office = this.workspace.office(createOfficeAddress("telegram", chatId));
+    const { saved, failed } = await saveIncomingAttachments(office, items);
+    for (const failure of failed) {
+      log.logWarning(`Failed to process Telegram file`, `${failure.name}: ${failure.error}`);
+    }
+    return saved.map((item) => ({ name: item.original, localPath: item.localPath }));
   }
 
-  /**
-   * Download a file from Telegram and return attachment metadata
-   */
-  private async processTelegramFile(
-    chatId: string,
-    fileId: string,
-    originalName: string,
-  ): Promise<{ name: string; localPath: string } | null> {
-    try {
-      // Get file info from Telegram
-      const file = await this.client.api.getFile(fileId);
-      if (!file.file_path) {
-        log.logWarning("Telegram file has no path", fileId);
-        return null;
-      }
-
-      // Generate local filename
-      const ts = Date.now();
-      const sanitizedName = originalName.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const filename = `${ts}_${sanitizedName}`;
-      const office = this.workspace.office(createOfficeAddress("telegram", chatId));
-      const localPath = `${office.key}/attachments/${filename}`;
-      office.ensure();
-      const fullDir = office.attachmentsDir;
-
-      // Construct download URL
-      const downloadUrl = `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`;
-
-      // Download the file
-      await downloadUrlToFile(downloadUrl, join(fullDir, filename));
-
-      return {
-        name: originalName,
-        localPath: localPath,
-      };
-    } catch (err) {
-      log.logWarning(`Failed to process Telegram file`, `${originalName}: ${err}`);
-      return null;
-    }
+  /** One Telegram file as a saveIncomingAttachments item; failures skip, never throw. */
+  private telegramFileItem(fileId: string, name: string): IncomingAttachment {
+    return {
+      name,
+      download: async (destPath) => {
+        const file = await this.client.api.getFile(fileId);
+        if (!file.file_path) throw new Error(`Telegram file has no path: ${fileId}`);
+        await downloadUrlToFile(
+          `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`,
+          destPath,
+        );
+      },
+    };
   }
 
   // ==========================================================================
