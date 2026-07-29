@@ -33,7 +33,7 @@ import {
   settleSubagentProgress,
 } from "./subagent-progress.js";
 import { createHash } from "crypto";
-import { existsSync, lstatSync, readdirSync } from "fs";
+import { existsSync, lstatSync } from "fs";
 import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { basename, isAbsolute, join, posix, relative, resolve, sep } from "path";
@@ -318,7 +318,7 @@ function loadMikanSkills(
   conversationDir: string,
   workspacePath: string,
   projection: WorkspaceProjection,
-): MikanSkill[] {
+): { skills: MikanSkill[]; skippedSkillLinks: string[] } {
   const skillMap = new Map<string, MikanSkill>();
 
   // conversationDir is the host path (e.g., /Users/.../data/C0A34FL8PMH)
@@ -374,48 +374,28 @@ function loadMikanSkills(
 
   // Load conversation-specific skills (override workspace skills on collision).
   // Host prompt construction must never follow an agent-created symlink out of
-  // the conversation office.
+  // the conversation office, so this load rejects symlinks per entry — on
+  // exactly the paths it reads. Vendored node_modules and dot directories are
+  // never read and never disqualify anything.
   const conversationSkillsDir = projection.promptSources.conversationSkillsDir;
-  if (isSafePromptSkillTree(conversationSkillsDir, projection.promptSources.conversationDir)) {
-    for (const skill of loadSkillsFromDir({ dir: conversationSkillsDir, source: "channel" })
-      .skills) {
-      skill.filePath = translatePath(skill.filePath);
-      skill.baseDir = translatePath(skill.baseDir);
-      skillMap.set(skill.name, skill);
-    }
-  } else if (existsSync(conversationSkillsDir)) {
-    log.logWarning("Ignoring unsafe conversation skill tree", conversationSkillsDir);
+  const conversationSkills = loadSkillsFromDir({
+    dir: conversationSkillsDir,
+    source: "channel",
+    rejectSymlinks: true,
+  });
+  const skippedSkillLinks: string[] = [];
+  for (const diagnostic of conversationSkills.diagnostics) {
+    if (diagnostic.code !== "symlink") continue;
+    log.logWarning("Skipping conversation skill entry (symlink)", diagnostic.path);
+    skippedSkillLinks.push(translatePath(diagnostic.path));
+  }
+  for (const skill of conversationSkills.skills) {
+    skill.filePath = translatePath(skill.filePath);
+    skill.baseDir = translatePath(skill.baseDir);
+    skillMap.set(skill.name, skill);
   }
 
-  return Array.from(skillMap.values());
-}
-
-export function isSafePromptSkillTree(dir: string, conversationDir: string): boolean {
-  if (!existsSync(dir)) return true;
-  if (dir !== conversationDir && !dir.startsWith(`${conversationDir}${sep}`)) return false;
-  const stack = [dir];
-  while (stack.length > 0) {
-    const current = stack.pop()!;
-    let stats;
-    try {
-      stats = lstatSync(current);
-    } catch {
-      return false;
-    }
-    if (stats.isSymbolicLink()) return false;
-    if (!stats.isDirectory()) continue;
-    let entries;
-    try {
-      entries = readdirSync(current, { withFileTypes: true });
-    } catch {
-      return false;
-    }
-    for (const entry of entries) {
-      if (entry.isSymbolicLink()) return false;
-      stack.push(join(current, entry.name));
-    }
-  }
-  return true;
+  return { skills: Array.from(skillMap.values()), skippedSkillLinks };
 }
 
 function buildRuntimePaths(runtimeWorkspaceRoot: string, address: OfficeAddress) {
@@ -483,6 +463,7 @@ function buildSystemPrompt(
   platform: MessagingInfo,
   skills: MikanSkill[],
   projection: WorkspaceProjection,
+  skippedSkillLinks: string[] = [],
 ): string {
   const { workspaceRoot, conversationPath, scratchPath } = buildRuntimePaths(
     workspacePath,
@@ -605,7 +586,11 @@ Scripts are in: {baseDir}/
 \`name\` and \`description\` are required. Use \`{baseDir}\` as placeholder for the skill's directory path.
 
 ### Available Skills
-${skills.length > 0 ? formatSkillsForPrompt(skills) : "(no skills installed yet)"}
+${skills.length > 0 ? formatSkillsForPrompt(skills) : "(no skills installed yet)"}${
+    skippedSkillLinks.length > 0
+      ? `\n\nNote: these skill entries were skipped because they are symlinks, which the host never follows when reading this conversation's skills: ${skippedSkillLinks.join(", ")}. Replace each with a real file or directory (for example \`cp -rL\`) to load it.`
+      : ""
+  }
 
 ## Events
 Use the \`event\` tool to schedule immediate, one-shot, or periodic follow-ups. It writes to the host-side mikan control plane and fills routing fields for the current conversation automatically.
@@ -1568,10 +1553,13 @@ async function prepareRunContext(params: {
 
   const projection = resolveWorkspaceProjection(join(conversationDir, ".."), message.address);
   const memory = await getMemory(projection);
-  const skills = mergeExtensionSkills(
-    loadMikanSkills(message.address, conversationDir, pathContext.runtimeWorkspaceRoot, projection),
-    params.extensionSkills ?? [],
+  const conversationSkillLoad = loadMikanSkills(
+    message.address,
+    conversationDir,
+    pathContext.runtimeWorkspaceRoot,
+    projection,
   );
+  const skills = mergeExtensionSkills(conversationSkillLoad.skills, params.extensionSkills ?? []);
   const triggerAttribution = resolveTriggerAttribution(message);
   const systemPrompt = buildSystemPrompt(
     pathContext.runtimeWorkspaceRoot,
@@ -1583,6 +1571,7 @@ async function prepareRunContext(params: {
     platform,
     skills,
     projection,
+    conversationSkillLoad.skippedSkillLinks,
   );
   session.agent.state.systemPrompt = systemPrompt;
   // Cache diagnosis: a byte-stable system prompt is the precondition for
@@ -2135,7 +2124,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
 
   // Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
   const memory = await getMemory(projection);
-  const skills = loadMikanSkills(
+  const { skills, skippedSkillLinks } = loadMikanSkills(
     options.address,
     conversationDir,
     pathContext.runtimeWorkspaceRoot,
@@ -2158,6 +2147,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     emptyPlatform,
     skills,
     projection,
+    skippedSkillLinks,
   );
 
   // Create session manager and settings manager. Top-level/private sessions

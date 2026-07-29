@@ -263,6 +263,8 @@ export interface SkillDiagnostic {
   type: "warning";
   message: string;
   path: string;
+  /** Set when the entry was skipped because it is a symlink on a rejecting load. */
+  code?: "symlink";
 }
 
 export interface LoadSkillsResult {

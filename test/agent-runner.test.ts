@@ -6,7 +6,8 @@ import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-work
 import type { MutableModels } from "@earendil-works/pi-ai";
 import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../src/adapter.js";
 import { createSlackToolPack } from "../src/adapters/slack/tool-pack.js";
-import { createRunner, isSafePromptSkillTree } from "../src/agent.js";
+import { createRunner } from "../src/agent.js";
+import { loadSkillsFromDir } from "../src/harness/skills.js";
 import { MikanAgentSession, MikanModels } from "../src/harness/index.js";
 import { createManagedSessionFile, getChannelSessionDir } from "../src/sessions/store.js";
 import type { PlatformToolPackFactory } from "../src/tools/types.js";
@@ -141,13 +142,19 @@ describe("PiAgentWrapper.run", () => {
     expect(readFileSync(outside, "utf-8")).toBe("DO_NOT_LEAK_THIS_SECRET");
   });
 
-  test("ignores a conversation skill tree containing symlinks", async () => {
+  test("skips symlinked conversation skill entries without loading them", async () => {
     const outside = join(dir, "outside-skill.md");
     writeFileSync(outside, "---\nname: escaped\ndescription: secret\n---\nDO_NOT_LOAD");
     const skillsDir = join(dir, "workspace", "C1", "skills");
     mkdirSync(skillsDir, { recursive: true });
     symlinkSync(outside, join(skillsDir, "escaped.md"));
-    expect(isSafePromptSkillTree(skillsDir, join(dir, "workspace", "C1"))).toBe(false);
+
+    const result = loadSkillsFromDir({ dir: skillsDir, source: "channel", rejectSymlinks: true });
+
+    expect(result.skills).toEqual([]);
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({ code: "symlink", path: join(skillsDir, "escaped.md") }),
+    ]);
   });
 
   test("surfaces subagent batch progress through the platform-neutral responder", async () => {

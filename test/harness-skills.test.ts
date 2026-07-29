@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -73,6 +73,100 @@ describe("loadSkillsFromDir", () => {
   test("missing directory yields no skills", () => {
     const { skills } = loadSkillsFromDir({ dir: join(dir, "nope"), source: "workspace" });
     expect(skills).toHaveLength(0);
+  });
+});
+
+function writeSkill(base: string, name: string): string {
+  const skillDir = join(base, name);
+  mkdirSync(skillDir, { recursive: true });
+  writeFileSync(join(skillDir, "SKILL.md"), `---\ndescription: ${name}\n---\nBody\n`);
+  return skillDir;
+}
+
+describe("loadSkillsFromDir with rejectSymlinks", () => {
+  test("npm .bin symlinks inside vendored node_modules never disqualify a skill", () => {
+    // The production regression: a skill vendoring node_modules carries npm's
+    // .bin symlinks, but the loader never reads node_modules — the skill and
+    // its siblings must load.
+    const skillDir = writeSkill(dir, "playwright-check");
+    const binDir = join(skillDir, "node_modules", ".bin");
+    mkdirSync(join(skillDir, "node_modules", "playwright"), { recursive: true });
+    mkdirSync(binDir, { recursive: true });
+    writeFileSync(join(skillDir, "node_modules", "playwright", "cli.js"), "#!/usr/bin/env node\n");
+    symlinkSync(join("..", "playwright", "cli.js"), join(binDir, "playwright"));
+    writeSkill(dir, "sibling");
+
+    const { skills, diagnostics } = loadSkillsFromDir({
+      dir,
+      source: "channel",
+      rejectSymlinks: true,
+    });
+
+    expect(skills.map((skill) => skill.name).toSorted()).toEqual(["playwright-check", "sibling"]);
+    expect(diagnostics).toHaveLength(0);
+  });
+
+  test("a symlinked skill directory is skipped per entry, siblings still load", () => {
+    const real = writeSkill(dir, "real-skill");
+    const elsewhere = writeSkill(join(dir, ".agents"), "linked-skill");
+    symlinkSync(elsewhere, join(dir, "linked-skill"));
+
+    const { skills, diagnostics } = loadSkillsFromDir({
+      dir,
+      source: "channel",
+      rejectSymlinks: true,
+    });
+
+    expect(skills.map((skill) => skill.name)).toEqual(["real-skill"]);
+    expect(skills[0].baseDir).toBe(real);
+    expect(diagnostics).toEqual([
+      expect.objectContaining({ code: "symlink", path: join(dir, "linked-skill") }),
+    ]);
+  });
+
+  test("a symlinked SKILL.md inside a real directory is skipped", () => {
+    const skillDir = join(dir, "offsite");
+    mkdirSync(skillDir, { recursive: true });
+    const target = join(dir, ".agents", "offsite-def.md");
+    mkdirSync(join(dir, ".agents"), { recursive: true });
+    writeFileSync(target, "---\ndescription: offsite\n---\nBody\n");
+    symlinkSync(target, join(skillDir, "SKILL.md"));
+
+    const { skills, diagnostics } = loadSkillsFromDir({
+      dir,
+      source: "channel",
+      rejectSymlinks: true,
+    });
+
+    expect(skills).toHaveLength(0);
+    expect(diagnostics).toEqual([
+      expect.objectContaining({ code: "symlink", path: join(skillDir, "SKILL.md") }),
+    ]);
+  });
+
+  test("a skills root that is itself a symlink loads nothing", () => {
+    const actual = writeSkill(join(dir, "elsewhere"), "hidden");
+    const linkRoot = join(dir, "skills");
+    symlinkSync(join(dir, "elsewhere"), linkRoot);
+
+    const { skills, diagnostics } = loadSkillsFromDir({
+      dir: linkRoot,
+      source: "channel",
+      rejectSymlinks: true,
+    });
+
+    expect(skills).toHaveLength(0);
+    expect(diagnostics).toEqual([expect.objectContaining({ code: "symlink", path: linkRoot })]);
+    expect(actual).toContain("hidden");
+  });
+
+  test("without the option, symlinked entries still load (trusted sources)", () => {
+    const elsewhere = writeSkill(join(dir, ".agents"), "linked-skill");
+    symlinkSync(elsewhere, join(dir, "linked-skill"));
+
+    const { skills } = loadSkillsFromDir({ dir, source: "package:x" });
+
+    expect(skills.map((skill) => skill.name)).toEqual(["linked-skill"]);
   });
 });
 

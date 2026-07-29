@@ -7,7 +7,7 @@
  * system prompt documents: a directory with a `SKILL.md` is a skill root
  * (no further recursion), other directories are traversed.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from "fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "fs";
 import { basename, dirname, join } from "path";
 import type { LoadSkillsResult, MikanSkill, SkillDiagnostic } from "./types.js";
 
@@ -117,14 +117,57 @@ function loadSkillFromFile(
  * - Direct `.md` children of the top-level directory load as skills.
  * - Dot-directories and `node_modules` are skipped.
  */
-export function loadSkillsFromDir(options: { dir: string; source: string }): LoadSkillsResult {
-  return loadSkillsFromDirInternal(options.dir, options.source, true);
+export function loadSkillsFromDir(options: {
+  dir: string;
+  source: string;
+  /**
+   * Refuse to follow symlinks on any path this load would read, skipping the
+   * offending entry with a `code: "symlink"` diagnostic instead of loading
+   * it. For untrusted trees (conversation offices) the host must never
+   * follow an agent-created link; entries the loader never reads — dot
+   * directories, vendored node_modules — cannot disqualify anything.
+   */
+  rejectSymlinks?: boolean;
+}): LoadSkillsResult {
+  const rejectSymlinks = options.rejectSymlinks === true;
+  if (rejectSymlinks && isSymlink(options.dir)) {
+    return {
+      skills: [],
+      diagnostics: [
+        {
+          type: "warning",
+          code: "symlink",
+          message: "Skills directory is a symlink; skipped",
+          path: options.dir,
+        },
+      ],
+    };
+  }
+  return loadSkillsFromDirInternal(options.dir, options.source, true, rejectSymlinks);
+}
+
+function isSymlink(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+function symlinkDiagnostic(path: string): SkillDiagnostic {
+  return {
+    type: "warning",
+    code: "symlink",
+    message: "Skill entry is a symlink; skipped",
+    path,
+  };
 }
 
 function loadSkillsFromDirInternal(
   dir: string,
   source: string,
   includeRootFiles: boolean,
+  rejectSymlinks: boolean,
 ): LoadSkillsResult {
   const skills: MikanSkill[] = [];
   const diagnostics: SkillDiagnostic[] = [];
@@ -139,6 +182,10 @@ function loadSkillsFromDirInternal(
 
   const skillFile = entries.find((entry) => entry.name === "SKILL.md" && isFileLike(dir, entry));
   if (skillFile) {
+    if (rejectSymlinks && skillFile.isSymbolicLink()) {
+      diagnostics.push(symlinkDiagnostic(join(dir, skillFile.name)));
+      return { skills, diagnostics };
+    }
     const result = loadSkillFromFile(join(dir, skillFile.name), source);
     if (result.skill) skills.push(result.skill);
     diagnostics.push(...result.diagnostics);
@@ -150,13 +197,21 @@ function loadSkillsFromDirInternal(
     const fullPath = join(dir, entry.name);
 
     if (isDirectoryLike(dir, entry)) {
-      const subResult = loadSkillsFromDirInternal(fullPath, source, false);
+      if (rejectSymlinks && entry.isSymbolicLink()) {
+        diagnostics.push(symlinkDiagnostic(fullPath));
+        continue;
+      }
+      const subResult = loadSkillsFromDirInternal(fullPath, source, false, rejectSymlinks);
       skills.push(...subResult.skills);
       diagnostics.push(...subResult.diagnostics);
       continue;
     }
     if (!includeRootFiles || !entry.name.endsWith(".md") || !isFileLike(dir, entry)) continue;
 
+    if (rejectSymlinks && entry.isSymbolicLink()) {
+      diagnostics.push(symlinkDiagnostic(fullPath));
+      continue;
+    }
     const result = loadSkillFromFile(fullPath, source);
     if (result.skill) skills.push(result.skill);
     diagnostics.push(...result.diagnostics);

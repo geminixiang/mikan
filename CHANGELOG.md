@@ -9,6 +9,10 @@ any release.
 
 ## [Unreleased]
 
+### Fixed
+
+- Align the conversation-skill symlink guard with what the host actually reads: symlinked entries are skipped per skill — with the skipped paths named in the host log and surfaced to the agent in its prompt — instead of one symlink anywhere disqualifying the whole tree, and symlinks inside vendored `node_modules` or dot directories (which the loader never reads) no longer disqualify anything. Offices whose skills vanished because a skill vendored npm dependencies (`.bin` symlinks) get them back.
+
 ## [1.0.0-beta.37]
 
 ### Fixed
