@@ -9,6 +9,8 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.37]
+
 ### Fixed
 
 - Stop discarding preserved container contents on mount drift: a drifted managed container is now committed and re-created from its snapshot with the desired mounts — writable layer intact — instead of being rebuilt from the base image. This closes the gap that recreated layout-migrated containers from scratch on their first message after upgrade (stored mount signatures went stale as shared sources changed overnight). `MIKAN_SKIP_CONTAINER_PRESERVATION=1` restores plain recreation.
