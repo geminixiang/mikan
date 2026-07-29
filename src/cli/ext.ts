@@ -74,7 +74,7 @@ const USAGE = `Usage:
       install. Edit, send /pi-new, test again.
   mikan ext install <source> (--global | --conversation <id>) [--state-dir <dir>]
       <source>: a local path, or a git URL / github:owner/repo with optional #subpath
-      e.g. github:geminixiang/mikan#examples/extensions/agent-pm
+      e.g. github:geminixiang/mikan#deploy/examples/extensions/agent-pm
       Reinstalling over an existing extension updates it (data preserved).
   mikan ext validate <path>
   mikan ext list [--conversation <id>] [--state-dir <dir>]

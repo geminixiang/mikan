@@ -4,8 +4,8 @@ The office architecture uses layered tests rather than treating a mount-list uni
 
 ## Test layers
 
-1. `test/workspace-projection.test.ts` verifies canonical/legacy policy resolution, prompt-source authorization, source materialization, wrong types, symlinks, and malformed-settings fail-closed behavior.
-2. `test/execution-resolver.test.ts` verifies image/Gondolin plan consumption, mount collision checks, and rejection of backends that cannot provide a persistent isolated office.
+1. `src/test/workspace-projection.test.ts` verifies canonical/legacy policy resolution, prompt-source authorization, source materialization, wrong types, symlinks, and malformed-settings fail-closed behavior.
+2. `src/test/execution-resolver.test.ts` verifies image/Gondolin plan consumption, mount collision checks, and rejection of backends that cannot provide a persistent isolated office.
 3. Agent runner tests verify host-side prompt loading does not follow conversation memory or skill symlinks.
 4. `npm run test:office:docker` performs an adversarial test against a real Docker daemon and kernel mount namespace.
 

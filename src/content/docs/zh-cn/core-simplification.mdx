@@ -21,18 +21,18 @@ Web portal、特定的聊天 SDK、Docker provisioning、Gondolin runtime 管理
 
 ## 发现
 
-| 优先级 | 发现                                | 证据                                                                                                                                     | 简化方案                                                                             |
-| ------ | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Done   | npm 边界已明确并有回归测试          | `src/index.ts` 明列 root export；`package.json` 声明 root、harness 与 sandbox entry point；`test/public-api.test.ts` 快照 runtime export | 新增 export 视为兼容性决策，必须有意更新 contract test                               |
-| P0     | 平台输入有两种重叠的规范形态        | `ConversationEvent` 和 `ConversationMessage` 重复了 id/session/kind/user/text/attachments/thread 字段，并被一起传递                      | 引入一个 `ConversationInput` 信封；在迁移期间派生兼容视图                            |
-| P0     | `MessagingBot` 有太多变更理由       | 生命周期、输出、上传/reaction、私密诊断、事件队列和元数据都是一个接口                                                                    | 将规范化的平台端口与可选能力拆分；保留一个组合它们的适配器对象                       |
-| P1     | 沙箱可扩展性只是名义上的            | `SandboxAdapter` 已导出，但 `sandbox/index.ts` 中一个封闭数组拥有解析/创建                                                               | 添加注册表或让适配器变为内部；把实验性后端移出默认核心组装                           |
-| P1     | 运行时构造泄露了命令实现细节        | `ConversationRuntimeOptions` 是 `Omit<CommandServices, ...>`，并在内部重建 command service                                               | 定义显式的运行时依赖，然后在命令适配器中构建 `CommandServices`                       |
-| P1     | 命令仍有两份清单                    | manifest 拥有平台注册，而 registry 拥有处理器；添加命令需要两者                                                                          | 一个 `CommandDefinition` 应包含 manifest 元数据和一个处理器工厂/引用                 |
-| P1     | 框架既是公开 SDK 又是内部引擎       | 根 exports 将会话解析、凭证、设置、loader、事件 schema、hook 和 runner 细节一同导出                                                      | 发布 `./extension`、`./runtime` 及可选的 `./harness` subpath，各自有独立的稳定性策略 |
-| P2     | 可选的运行时产品被编译进中央 CLI    | 平台 SDK、portal、六种沙箱模式和 Gondolin runtime 代码在 `main.ts` 中组装                                                                | 让 `main.ts` 成为注册表之上的组装根；惰性/可选的产品模块变得可替换                   |
-| P2     | 多个能力接口使用可选方法            | `MessagingBot` 和 `ConversationResponder` 通过添加 `?` 方法而增长                                                                        | 使用命名的能力对象（`reactions`、`uploads`、`streaming`），使缺失和需求都显式化      |
-| P2     | HTTP 路由契约是手动分发且大多无类型 | `web/server.ts` 和 portal 模块按 method/path 分支；payload 类型是局部的                                                                  | 保持 UI API 内部化，但在 payload 跨模块处集中路由描述符和请求/响应 schema            |
+| 优先级 | 发现                                | 证据                                                                                                                                         | 简化方案                                                                             |
+| ------ | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Done   | npm 边界已明确并有回归测试          | `src/index.ts` 明列 root export；`package.json` 声明 root、harness 与 sandbox entry point；`src/test/public-api.test.ts` 快照 runtime export | 新增 export 视为兼容性决策，必须有意更新 contract test                               |
+| P0     | 平台输入有两种重叠的规范形态        | `ConversationEvent` 和 `ConversationMessage` 重复了 id/session/kind/user/text/attachments/thread 字段，并被一起传递                          | 引入一个 `ConversationInput` 信封；在迁移期间派生兼容视图                            |
+| P0     | `MessagingBot` 有太多变更理由       | 生命周期、输出、上传/reaction、私密诊断、事件队列和元数据都是一个接口                                                                        | 将规范化的平台端口与可选能力拆分；保留一个组合它们的适配器对象                       |
+| P1     | 沙箱可扩展性只是名义上的            | `SandboxAdapter` 已导出，但 `sandbox/index.ts` 中一个封闭数组拥有解析/创建                                                                   | 添加注册表或让适配器变为内部；把实验性后端移出默认核心组装                           |
+| P1     | 运行时构造泄露了命令实现细节        | `ConversationRuntimeOptions` 是 `Omit<CommandServices, ...>`，并在内部重建 command service                                                   | 定义显式的运行时依赖，然后在命令适配器中构建 `CommandServices`                       |
+| P1     | 命令仍有两份清单                    | manifest 拥有平台注册，而 registry 拥有处理器；添加命令需要两者                                                                              | 一个 `CommandDefinition` 应包含 manifest 元数据和一个处理器工厂/引用                 |
+| P1     | 框架既是公开 SDK 又是内部引擎       | 根 exports 将会话解析、凭证、设置、loader、事件 schema、hook 和 runner 细节一同导出                                                          | 发布 `./extension`、`./runtime` 及可选的 `./harness` subpath，各自有独立的稳定性策略 |
+| P2     | 可选的运行时产品被编译进中央 CLI    | 平台 SDK、portal、六种沙箱模式和 Gondolin runtime 代码在 `main.ts` 中组装                                                                    | 让 `main.ts` 成为注册表之上的组装根；惰性/可选的产品模块变得可替换                   |
+| P2     | 多个能力接口使用可选方法            | `MessagingBot` 和 `ConversationResponder` 通过添加 `?` 方法而增长                                                                            | 使用命名的能力对象（`reactions`、`uploads`、`streaming`），使缺失和需求都显式化      |
+| P2     | HTTP 路由契约是手动分发且大多无类型 | `web/server.ts` 和 portal 模块按 method/path 分支；payload 类型是局部的                                                                      | 保持 UI API 内部化，但在 payload 跨模块处集中路由描述符和请求/响应 schema            |
 
 ## 不应被简化掉的部分
 
@@ -126,7 +126,7 @@ interface SandboxRegistry {
 
 1. `package.json` 声明 root 与兼容的 `./harness`、`./sandbox` entry point。
 2. root entry point 使用显式 export 列表，不再 wildcard export harness。
-3. `test/public-api.test.ts` 快照 runtime export 与 emit declaration，意外变更会使 CI 失败。
+3. `src/test/public-api.test.ts` 快照 runtime export 与 emit declaration，意外变更会使 CI 失败。
 
 其余阶段现在可在不意外扩大 package interface 的情况下重构内部。
 

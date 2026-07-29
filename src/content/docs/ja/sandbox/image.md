@@ -16,7 +16,7 @@ mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:tools /path/to/workspace
 image を自分でカスタマイズしたい場合は、ローカルで build することもできます：
 
 ```bash
-docker build -f docker/mikan-sandbox.Dockerfile -t mikan-sandbox:tools .
+docker build -f deploy/docker/mikan-sandbox.Dockerfile -t mikan-sandbox:tools .
 mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 ```
 

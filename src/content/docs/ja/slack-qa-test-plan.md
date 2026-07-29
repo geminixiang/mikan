@@ -79,7 +79,7 @@ npm run test:e2e:slack
 
 ローカル E2E に必要な変数は 4 つだけです：`SLACK_QA_USER_TOKEN`、`SLACK_QA_CHANNEL_ID`、`SLACK_QA_BOT_USER_ID`、`SLACK_BOT_TOKEN`。Event directory は現在の workspace から推定されます。
 
-QA user token は、テスト channel への投稿、channel history/replies の読み取り、S-009 のファイルアップロードが可能である必要があります。DM scenario ではさらに人間ユーザーの身分（`auth.test` に `bot_id` なし）が必要です：mikan は設計上 bot からの DM に応答しないため、bot 身分の token では S-017/S-018 は設定エラーとして即座に fail します。`examples/slack-app-manifest.e2e.json` の E2E manifest にはこれらの必要な user scopes が含まれています。通常の `examples/slack-app-manifest.json` には含まれていません。
+QA user token は、テスト channel への投稿、channel history/replies の読み取り、S-009 のファイルアップロードが可能である必要があります。DM scenario ではさらに人間ユーザーの身分（`auth.test` に `bot_id` なし）が必要です：mikan は設計上 bot からの DM に応答しないため、bot 身分の token では S-017/S-018 は設定エラーとして即座に fail します。`deploy/examples/slack-app-manifest.e2e.json` の E2E manifest にはこれらの必要な user scopes が含まれています。通常の `deploy/examples/slack-app-manifest.json` には含まれていません。
 
 ### GitHub Actions
 

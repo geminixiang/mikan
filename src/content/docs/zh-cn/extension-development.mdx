@@ -124,7 +124,7 @@ mikan 扩展无需修改 mikan 本身，即可添加钩子、智能体工具、�
 
 ```bash
 mikan ext install \
-  github:geminixiang/mikan#examples/extensions/agent-pm \
+  github:geminixiang/mikan#deploy/examples/extensions/agent-pm \
   --conversation <conversationId>
 ```
 
@@ -234,7 +234,7 @@ api.on("tool_result", ({ content }) => ({
 
 ### 自定义工具
 
-使用 `api.registerTool(tool)` 注册 `AgentTool`。使用兼容 TypeBox 的参数模式，并返回标准的文本/图像工具内容。如需类型完备的工具实现，请参阅完整的 [`agent-pm` 示例](https://github.com/geminixiang/mikan/tree/main/examples/extensions/agent-pm)。
+使用 `api.registerTool(tool)` 注册 `AgentTool`。使用兼容 TypeBox 的参数模式，并返回标准的文本/图像工具内容。如需类型完备的工具实现，请参阅完整的 [`agent-pm` 示例](https://github.com/geminixiang/mikan/tree/main/deploy/examples/extensions/agent-pm)。
 
 ### 自定义命令
 
@@ -379,7 +379,7 @@ api.blockkit.onAction("vote", async (event) => {
 });
 ```
 
-发布时每个 `action_id` 都会添加 `ext:<slug>:…` namespace，因此交互只交给该 extension 的 `onAction` handler，不会启动 agent run。处理后应更新消息以移除或禁用按钮。完整示例见 `examples/extensions/poll`。
+发布时每个 `action_id` 都会添加 `ext:<slug>:…` namespace，因此交互只交给该 extension 的 `onAction` handler，不会启动 agent run。处理后应更新消息以移除或禁用按钮。完整示例见 `deploy/examples/extensions/poll`。
 
 ### 捆绑技能
 
@@ -435,4 +435,4 @@ mikan ext remove hello-mikan --conversation <conversationId>
 | 定时任务/通知/回应不可用               | 确认运行中的平台/上下文提供了相应的宿主服务                                      |
 | 扩展标识/数据路径错误                  | slug 来自已安装文件/目录的名称，而非可编辑的元数据                               |
 
-如果需要同时使用工具、SQLite 持久化、定时任务、主动消息或捆绑技能，请从 [`examples/extensions/agent-pm`](https://github.com/geminixiang/mikan/tree/main/examples/extensions/agent-pm) 开始。
+如果需要同时使用工具、SQLite 持久化、定时任务、主动消息或捆绑技能，请从 [`deploy/examples/extensions/agent-pm`](https://github.com/geminixiang/mikan/tree/main/deploy/examples/extensions/agent-pm) 开始。

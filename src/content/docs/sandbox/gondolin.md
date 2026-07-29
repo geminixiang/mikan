@@ -18,7 +18,7 @@ npm run gondolin:image:build
 mikan --sandbox=gondolin:default /path/to/workspace
 ```
 
-The image provides the core development environment from `docker/mikan-sandbox.Dockerfile`: Bash, build tools, Node.js/npm, Python/pip, uv, Git, ripgrep, fd, jq, SSH client, and common shell utilities. Its build configuration lives at `docker/gondolin-mikan-sandbox.json`; Gondolin verifies the generated asset manifest when importing it as `mikan-sandbox:latest`.
+The image provides the core development environment from `deploy/docker/mikan-sandbox.Dockerfile`: Bash, build tools, Node.js/npm, Python/pip, uv, Git, ripgrep, fd, jq, SSH client, and common shell utilities. Its build configuration lives at `deploy/docker/gondolin-mikan-sandbox.json`; Gondolin verifies the generated asset manifest when importing it as `mikan-sandbox:latest`.
 
 Each conversation gets a VM created and owned by the mikan process itself. mikan talks to it over Gondolin's session IPC socket, one connection per command, so aborting or timing out a command kills it inside the guest — Gondolin's in-process `vm.exec()` cannot do that, because aborting it only abandons the call and leaves the guest process running. The default `private` workspace mode mounts only `MEMORY.md`, `skills`, `events`, and the current conversation under `/workspace`; `full` mounts the complete host workspace. Conversation vault environment variables are sent per command over the (user-only) socket. Commands and file tools run inside that VM with `TZ=Asia/Taipei`.
 

@@ -11,7 +11,7 @@ mikan is a multi-platform AI coding agent for Slack, Telegram, Discord, and GitH
 Stack:
 
 - TypeScript, ESM (`"type": "module"`), Node.js `>=22.19.0`
-- Build/type emit: `tsgo` via `@typescript/native-preview`, `tsconfig.build.json`
+- Build/type emit: `tsgo` via `@typescript/native-preview`, `src/tsconfig.build.json` (tool configs live in `.config/`; root `tsconfig.json` stays for editor discovery)
 - Tests: Vitest 4, with separate e2e config
 - Lint/format: `oxlint`, `oxfmt`
 - Platform SDKs: Slack Socket Mode/Web API, Discord.js, grammy for Telegram
@@ -19,7 +19,7 @@ Stack:
 
 ## STRUCTURE
 
-- `src/`: TypeScript source root.
+- `src/`: TypeScript source root (unit/integration tests live in `src/test/`, run by `npm test`).
   - `main.ts`: CLI entrypoint; parses args, loads settings, starts vault/sandbox/runtime/platform bots.
   - `types.ts`: root exported type definitions.
   - `adapter.ts`: platform-neutral bot/message/response interfaces.
@@ -36,12 +36,12 @@ Stack:
   - `web/`: admin, login/OAuth, and session-view portals.
   - `observability/`: Sentry instrumentation.
   - `utils/`: filesystem, env, date, HTML, HTTP-body helpers.
-- `test/`: unit/integration tests run by `npm test`.
+
 - `e2e/`: real-platform e2e tests, currently Slack-focused.
 - `src/content/docs/`: Starlight documentation source (architecture, commands, configuration, deployment, sandbox, sessions, Slack guides).
-- `examples/`: Slack app manifests.
+
 - `scripts/`: maintenance and migration scripts.
-- `deploy/`, `docker/`: deployment assets and sandbox Dockerfile.
+- `deploy/`: deployment assets — `pm2/` process template, `docker/` sandbox image, and `examples/` (Slack app manifests, embedder, extensions, cloudflare bridge).
 - `dist/`: generated build output; do not edit manually.
 
 ## COMMANDS
@@ -88,7 +88,7 @@ Stack:
   - `oxfmt` is the formatter.
   - Husky/lint-staged run lint+format on staged `*.ts`; staged `*.test.ts` also triggers tests.
 - **Tests**:
-  - Add or update Vitest tests in `test/` for behavior changes.
+  - Add or update Vitest tests in `src/test/` for behavior changes.
   - E2E tests hit real Slack/Discord/Telegram APIs; do not run unless configured.
 
 ## WHERE TO LOOK
@@ -97,12 +97,12 @@ Stack:
 - **Architecture**: `README.md`, `src/content/docs/architecture.md`, `src/content/docs/sessions.mdx`, `src/content/docs/sandbox.mdx`.
 - **Commands/user behavior**: `src/content/docs/commands.md`, `src/commands/`.
 - **Platform adapters**: `src/adapters/{slack,discord,telegram}/`.
-- **Slack Block Kit/tools**: `src/adapters/slack/tools/`, `test/slack-block-kit-tool.test.ts`.
-- **Runtime/session logic**: `src/runtime/`, `src/sessions/`, related tests in `test/session-*.test.ts` and `test/*session*.test.ts`.
+- **Slack Block Kit/tools**: `src/adapters/slack/tools/`, `src/test/slack-block-kit-tool.test.ts`.
+- **Runtime/session logic**: `src/runtime/`, `src/sessions/`, related tests in `src/test/session-*.test.ts` and `src/test/*session*.test.ts`.
 - **Sandbox execution**: `src/sandbox/`, `src/execution-resolver.ts`, `src/provisioner.ts`, `src/content/docs/sandbox.mdx`.
-- **Vault/login/OAuth**: `src/vault/`, `src/web/login/`, `test/login.test.ts`, `test/oauth-link-server.test.ts`.
-- **Observability**: `src/observability/`, `src/sentry.ts` compatibility export, `test/sentry.test.ts`.
-- **Config**: `src/config.ts`, `src/content/docs/configuration.md`, `test/config.test.ts`.
+- **Vault/login/OAuth**: `src/vault/`, `src/web/login/`, `src/test/login.test.ts`, `src/test/oauth-link-server.test.ts`.
+- **Observability**: `src/observability/`, `src/sentry.ts` compatibility export, `src/test/sentry.test.ts`.
+- **Config**: `src/config.ts`, `src/content/docs/configuration.md`, `src/test/config.test.ts`.
 - **Docs for contributors**: `CONTRIBUTING.md`, `CONTEXT.md`, `CHANGELOG.md`.
 
 ## NOTES

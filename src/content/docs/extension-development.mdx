@@ -124,7 +124,7 @@ Supported sources include HTTPS Git URLs, SSH Git URLs, and the GitHub shorthand
 
 ```bash
 mikan ext install \
-  github:geminixiang/mikan#examples/extensions/agent-pm \
+  github:geminixiang/mikan#deploy/examples/extensions/agent-pm \
   --conversation <conversationId>
 ```
 
@@ -234,7 +234,7 @@ api.on("tool_result", ({ content }) => ({
 
 ### Custom tools
 
-Register an `AgentTool` with `api.registerTool(tool)`. Use TypeBox-compatible parameter schemas and return standard text/image tool content. See the complete [`agent-pm` example](https://github.com/geminixiang/mikan/tree/main/examples/extensions/agent-pm) for a typed tool implementation.
+Register an `AgentTool` with `api.registerTool(tool)`. Use TypeBox-compatible parameter schemas and return standard text/image tool content. See the complete [`agent-pm` example](https://github.com/geminixiang/mikan/tree/main/deploy/examples/extensions/agent-pm) for a typed tool implementation.
 
 ### Custom commands
 
@@ -380,7 +380,7 @@ api.blockkit.onAction("vote", async (event) => {
 });
 ```
 
-Every `action_id` in posted blocks is namespaced `ext:<slug>:…`, so interactions on this extension's elements dispatch **exclusively** to its `onAction` handlers — no agent run, no model call, millisecond latency. The extension decides whether the model gets involved afterwards (call `api.triggerRun` from a handler, e.g. after an approval button). After handling an interaction, `update` the message to reflect the outcome — buttons stay clickable otherwise. See `examples/extensions/poll` for a complete poll built this way.
+Every `action_id` in posted blocks is namespaced `ext:<slug>:…`, so interactions on this extension's elements dispatch **exclusively** to its `onAction` handlers — no agent run, no model call, millisecond latency. The extension decides whether the model gets involved afterwards (call `api.triggerRun` from a handler, e.g. after an approval button). After handling an interaction, `update` the message to reflect the outcome — buttons stay clickable otherwise. See `deploy/examples/extensions/poll` for a complete poll built this way.
 
 ### Bundled skills
 
@@ -436,4 +436,4 @@ Packages are managed from the admin portal rather than the CLI. **Update** re-fe
 | Schedule/notify/react unavailable      | Confirm the running platform/context provides that host service                                                     |
 | Wrong extension identity/data path     | The slug comes from the installed file/directory name, not editable metadata                                        |
 
-Start from [`examples/extensions/agent-pm`](https://github.com/geminixiang/mikan/tree/main/examples/extensions/agent-pm) when you need tools, SQLite persistence, schedules, proactive messaging, or bundled skills together.
+Start from [`deploy/examples/extensions/agent-pm`](https://github.com/geminixiang/mikan/tree/main/deploy/examples/extensions/agent-pm) when you need tools, SQLite persistence, schedules, proactive messaging, or bundled skills together.
