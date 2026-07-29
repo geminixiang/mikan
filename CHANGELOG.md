@@ -9,9 +9,20 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.39]
+
 ### Fixed
 
+- Slack mentions now actually notify people: the adapter resolves response-source `<@userName>` (and display-name) mentions to Slack's native `<@U…>` id form on every outgoing path, including streamed responses. Previously mentions rendered as literal text and never pinged anyone; scheduled-event texts that hard-require raw user ids as a workaround can go back to plain `<@userName>`. The system prompt now also names the Users table as the one source of mention handles and forbids borrowing handles from other platforms (a GitHub username is not a Slack mention).
+- Discord slash commands register again: the `/sandbox` option description had grown past Discord's 100-character limit, which made Discord reject the whole registration batch at startup. A manifest test now enforces the budget for every command, argument, and Telegram menu description.
 - Fix `generate_image` losing its generated file at the upload step (`sh: … cannot open /workspace/<file>: No such file`): the tool wrote the image host-side into the workspace base and then handed a bare filename to the attach upload path, which reads through the sandbox — where the base is no longer mounted since the office layout migration. The image is now written into the conversation's own office directory (guest-visible) and uploaded directly by host path, with no sandbox round-trip, under every door policy. Image-generation provider errors now also name the model id that was sent.
+- The Slack e2e workflow works again after the door-policy and office-key changes: the runner's settings opt into the trusted door policy explicitly (host mode is refused under the isolated default by design), local-delivery verification reads the office-key log path, and one recall prompt was disambiguated.
+
+### Changed
+
+- The Conversation office is now a first-class module: `src/office/` owns identity, the Workspace/Office layout values, the registry journal, and the boot migration. Option bags across the runtime carry one `office` value instead of parallel address/directory fields, the attachment convention has a single owner on the shared adapter surface, and `ChannelStore` is gone. No behavior or on-disk layout change.
+- Embedders can now construct the runtime from the public surface: `createWorkspace`, `createOfficeAddress`, and `officeKey` (plus the `Office`/`Workspace` types) are exported, and `createConversationRuntime` takes a `workspace` value in place of the `workingDir` string.
+- Repository layout for contributors: run-it assets live under `deploy/` (pm2, docker, examples), the test suite lives at `src/test/`, and tool configs live in `.config/` (root keeps `package.json` and `tsconfig.json`). The build config moved to `src/tsconfig.build.json`.
 
 ## [1.0.0-beta.38]
 
