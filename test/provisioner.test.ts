@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { DockerContainerManager } from "../src/provisioner.js";
 
@@ -19,6 +22,7 @@ function routerMock(overrides: {
   names?: string[];
   imageRef?: string;
   images?: string[];
+  networkMode?: string;
 }) {
   const calls: string[][] = [];
   let created = false;
@@ -44,7 +48,7 @@ function routerMock(overrides: {
       return { stdout: `${ref}\n` };
     }
     if (args[0] === "inspect" && fmt.includes("NetworkMode")) {
-      return { stdout: "mikan-sandbox-net-c123-k\n" };
+      return { stdout: `${overrides.networkMode ?? "mikan-sandbox-net-c123-k"}\n` };
     }
     if (args[0] === "inspect" && fmt.includes("mount-signature")) {
       return { stdout: "<no value>\n" };
@@ -384,29 +388,29 @@ describe("DockerContainerManager", () => {
     expect(runArgs).toContain("/work/C1:/workspace/C1");
   });
 
-  test("flipping an existing mount to read-only is drift, so the container is recreated", async () => {
+  test("flipping an existing mount to read-only is drift, so the container is recreated preserving contents", async () => {
     const mounts = [{ source: "/pkg/skills", target: "/mikan/packages/x/skills", readOnly: true }];
     // A container created before the mount became read-only reports the
     // two-part bind; the expected spec now carries :ro, so they disagree.
-    const writableBind = JSON.stringify(["/pkg/skills:/mikan/packages/x/skills"]);
-    const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
-      .mockImplementation(async (_file, args) => {
-        if (args[0] === "inspect" && args[2] === "{{.State.Status}}")
-          return { stdout: "running\n" };
-        if (args[0] === "inspect" && args[2] === "{{json .HostConfig.Binds}}") {
-          return { stdout: writableBind };
-        }
-        return { stdout: "id\n" };
-      });
-    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
+    const { exec, calls } = routerMock({
+      status: "running",
+      binds: ["/pkg/skills:/mikan/packages/x/skills"],
+    });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: exec as any });
 
     await manager.provision("alice", { mounts, conversationId: "C1" });
 
-    const commands = execMock.mock.calls.map((call) => call[1]);
-    expect(commands.some((args) => args[0] === "rm" && args[1] === "-f")).toBe(true);
-    const runArgs = commands.find((args) => args[0] === "run");
-    expect(runArgs).toContain("/pkg/skills:/mikan/packages/x/skills:ro");
+    const commit = calls.find((args) => args[0] === "commit");
+    expect(commit).toContain(
+      `LABEL mikan.migrate-binds=${JSON.stringify(JSON.stringify(["/pkg/skills:/mikan/packages/x/skills:ro"]))}`,
+    );
+    expect(calls.some((args) => args[0] === "rm" && args[1] === "-f")).toBe(true);
+    const createArgs = calls.find((args) => args[0] === "create");
+    expect(createArgs).toContain("/pkg/skills:/mikan/packages/x/skills:ro");
+    expect(createArgs).toContain("mikan-migrate:mikan-sandbox-alice");
+    expect(calls.some((args) => args[0] === "start")).toBe(true);
+    expect(calls.some((args) => args[0] === "run")).toBe(false);
+    expect(calls.some((args) => args[0] === "rmi")).toBe(false);
   });
 
   test("creates the network when docker reports '<name> not found'", async () => {
@@ -446,18 +450,12 @@ describe("DockerContainerManager", () => {
     ]);
   });
 
-  test("recreates existing containers when vault mounts change", async () => {
-    const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
-      .mockResolvedValueOnce({ stdout: "true\n" })
-      .mockResolvedValueOnce({
-        stdout: '["/tmp/vaults/alice/.ssh:/root/.ssh"]\n',
-      })
-      .mockResolvedValueOnce({ stdout: "removed\n" })
-      .mockResolvedValueOnce({ stdout: "untagged\n" }) // migrate-snapshot rmi
-      .mockResolvedValueOnce({ stdout: "[]\n" })
-      .mockResolvedValueOnce({ stdout: "new-container-id\n" });
-    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
+  test("recreates existing containers preserving contents when vault mounts change", async () => {
+    const { exec, calls } = routerMock({
+      status: "running",
+      binds: ["/tmp/vaults/alice/.ssh:/root/.ssh"],
+    });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: exec as any });
 
     await manager.provision("alice", {
       containerName: "alice-box",
@@ -465,11 +463,16 @@ describe("DockerContainerManager", () => {
       conversationId: "D123",
     });
 
-    expect(execMock).toHaveBeenNthCalledWith(3, "docker", ["rm", "-f", "alice-box"]);
-    expect(execMock).toHaveBeenNthCalledWith(4, "docker", ["rmi", "mikan-migrate:alice-box"]);
-    expect(execMock).toHaveBeenNthCalledWith(6, "docker", [
-      "run",
-      "-d",
+    const commit = calls.find((args) => args[0] === "commit");
+    expect(commit).toContain("alice-box");
+    expect(commit).toContain("mikan-migrate:alice-box");
+    expect(commit).toContain(
+      `LABEL mikan.migrate-binds=${JSON.stringify(JSON.stringify(["/tmp/vaults/alice/.kube:/root/.kube"]))}`,
+    );
+    expect(calls.some((args) => args[0] === "rm" && args[2] === "alice-box")).toBe(true);
+    const createArgs = calls.find((args) => args[0] === "create");
+    expect(createArgs).toEqual([
+      "create",
       "--name",
       "alice-box",
       "--network",
@@ -487,55 +490,122 @@ describe("DockerContainerManager", () => {
       "--label",
       "mikan.vault-id=alice",
       "--label",
-      "mikan.conversation-id=D123",
+      "mikan.conversation-id=ok",
       "--label",
       expect.stringMatching(/^mikan\.mount-signature=[a-f0-9]{64}$/),
       "-v",
       "/tmp/vaults/alice/.kube:/root/.kube",
-      "ubuntu:24.04",
+      "mikan-migrate:alice-box",
       "sleep",
       "infinity",
     ]);
+    expect(calls.some((args) => args[0] === "start" && args[1] === "alice-box")).toBe(true);
+    expect(calls.some((args) => args[0] === "run")).toBe(false);
   });
 
-  test("recreates existing containers when network isolation is missing", async () => {
-    const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
-      .mockResolvedValueOnce({ stdout: "true\n" })
-      .mockResolvedValueOnce({ stdout: "[]\n" })
-      .mockResolvedValueOnce({ stdout: "bridge\n" })
-      .mockResolvedValueOnce({ stdout: "removed\n" })
-      .mockResolvedValueOnce({ stdout: "untagged\n" }) // migrate-snapshot rmi
-      .mockResolvedValueOnce({ stdout: "[]\n" })
-      .mockResolvedValueOnce({ stdout: "new-container-id\n" });
-    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
+  test("MIKAN_SKIP_CONTAINER_PRESERVATION=1 falls back to plain recreation from the base image", async () => {
+    process.env.MIKAN_SKIP_CONTAINER_PRESERVATION = "1";
+    try {
+      const { exec, calls } = routerMock({
+        status: "running",
+        binds: ["/tmp/vaults/alice/.ssh:/root/.ssh"],
+      });
+      const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: exec as any });
+
+      await manager.provision("alice", {
+        containerName: "alice-box",
+        mounts: [{ source: "/tmp/vaults/alice/.kube", target: "/root/.kube" }],
+        conversationId: "D123",
+      });
+
+      expect(calls.some((args) => args[0] === "commit")).toBe(false);
+      expect(calls.some((args) => args[0] === "rm" && args[2] === "alice-box")).toBe(true);
+      expect(calls.some((args) => args[0] === "rmi" && args[1] === "mikan-migrate:alice-box")).toBe(
+        true,
+      );
+      const runArgs = calls.find((args) => args[0] === "run");
+      expect(runArgs).toContain("ubuntu:24.04");
+      expect(runArgs).toContain("/tmp/vaults/alice/.kube:/root/.kube");
+    } finally {
+      delete process.env.MIKAN_SKIP_CONTAINER_PRESERVATION;
+    }
+  });
+
+  test("recreates existing containers preserving contents when network isolation is missing", async () => {
+    const { exec, calls } = routerMock({ status: "running", binds: [], networkMode: "bridge" });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: exec as any });
 
     await manager.provision("slack-u123");
 
-    expect(execMock).toHaveBeenNthCalledWith(4, "docker", ["rm", "-f", "mikan-sandbox-slack-u123"]);
-    expect(execMock).toHaveBeenNthCalledWith(7, "docker", [
-      "run",
-      "-d",
-      "--name",
-      "mikan-sandbox-slack-u123",
-      "--network",
-      "mikan-sandbox-net-slack-u123",
-      "--cap-drop",
-      "ALL",
-      "--security-opt",
-      "no-new-privileges",
-      "--pids-limit",
-      "1024",
-      "--label",
-      "mikan.managed=true",
-      "--label",
-      "mikan.sandbox=image",
-      "--label",
-      "mikan.vault-id=slack-u123",
-      "ubuntu:24.04",
-      "sleep",
-      "infinity",
-    ]);
+    expect(calls.some((args) => args[0] === "commit")).toBe(true);
+    expect(calls.some((args) => args[0] === "rm" && args[2] === "mikan-sandbox-slack-u123")).toBe(
+      true,
+    );
+    const createArgs = calls.find((args) => args[0] === "create");
+    expect(createArgs).toContain("--network");
+    expect(createArgs).toContain("mikan-sandbox-net-slack-u123");
+    expect(createArgs).toContain("mikan-migrate:mikan-sandbox-slack-u123");
+    expect(calls.some((args) => args[0] === "start")).toBe(true);
+  });
+
+  test("directory activity is not drift, but a replaced directory is", async () => {
+    const source = mkdtempSync(join(tmpdir(), "mikan-fingerprint-"));
+    try {
+      const mounts = [{ source, target: "/workspace/office" }];
+      const bind = `${source}:/workspace/office`;
+
+      // Capture the signature a fresh provision stamps on the container.
+      const fresh = routerMock({ status: "missing" });
+      const freshManager = new DockerContainerManager("ubuntu:24.04", {
+        execFileImpl: fresh.exec as any,
+      });
+      await freshManager.provision("alice", { mounts });
+      const runArgs = fresh.calls.find((args) => args[0] === "run");
+      const signature = runArgs
+        ?.find((arg: string) => arg.startsWith("mikan.mount-signature="))
+        ?.slice("mikan.mount-signature=".length);
+      expect(signature).toMatch(/^[a-f0-9]{64}$/);
+
+      // Ordinary activity inside the directory (a child created, mtime moved)
+      // must not read as drift — this was the production incident: event-file
+      // churn recreated every migrated container from the base image.
+      writeFileSync(join(source, "log.jsonl"), "line\n");
+      const withLabel = (sig: string) => {
+        const { exec, calls } = routerMock({
+          status: "running",
+          binds: [bind],
+          networkMode: "mikan-sandbox-net-alice",
+        });
+        const inner = exec.getMockImplementation()!;
+        exec.mockImplementation(async (file: string, args: string[]) => {
+          if (args[0] === "inspect" && args[2]?.includes("mount-signature")) {
+            return { stdout: `${sig}\n` };
+          }
+          return inner(file, args);
+        });
+        return { exec, calls };
+      };
+      const stable = withLabel(signature!);
+      const stableManager = new DockerContainerManager("ubuntu:24.04", {
+        execFileImpl: stable.exec as any,
+      });
+      await stableManager.provision("alice", { mounts });
+      expect(stable.calls.some((args) => args[0] === "commit" || args[0] === "rm")).toBe(false);
+
+      // Replacing the directory itself leaves the container mounting a dead
+      // inode — that is real drift and must recreate (preserving contents).
+      rmSync(source, { recursive: true, force: true });
+      mkdirSync(source);
+      const replaced = withLabel(signature!);
+      const replacedManager = new DockerContainerManager("ubuntu:24.04", {
+        execFileImpl: replaced.exec as any,
+      });
+      await replacedManager.provision("alice", { mounts });
+      expect(replaced.calls.some((args) => args[0] === "commit")).toBe(true);
+      expect(replaced.calls.some((args) => args[0] === "start")).toBe(true);
+    } finally {
+      rmSync(source, { recursive: true, force: true });
+    }
   });
 
   test("stopIdle stops only containers idle longer than threshold", async () => {

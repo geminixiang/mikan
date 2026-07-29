@@ -9,6 +9,12 @@ any release.
 
 ## [Unreleased]
 
+### Fixed
+
+- Stop discarding preserved container contents on mount drift: a drifted managed container is now committed and re-created from its snapshot with the desired mounts — writable layer intact — instead of being rebuilt from the base image. This closes the gap that recreated layout-migrated containers from scratch on their first message after upgrade (stored mount signatures went stale as shared sources changed overnight). `MIKAN_SKIP_CONTAINER_PRESERVATION=1` restores plain recreation.
+- Stop treating ordinary directory activity as mount drift: directory mount sources are now fingerprinted by identity (a replacement directory is drift) instead of size and mtime, so event-file churn and children being created no longer force container rebuilds. File sources keep content fingerprints — atomic replacement leaves a stale inode in the container and must recreate it.
+- Door-policy changes now preserve container contents through the rebuild; the portal and `/pi-sandbox door` copy no longer warn about a reset.
+
 ## [1.0.0-beta.36]
 
 ### Added

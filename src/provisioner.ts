@@ -4,6 +4,7 @@ import { createHash } from "crypto";
 import { readFileSync, statSync } from "fs";
 import { promisify } from "util";
 import * as log from "./log.js";
+import { readEnv } from "./utils/env.js";
 import { reportUserFacingError } from "./observability/sentry.js";
 
 const execFileAsync = promisify(execFile);
@@ -137,9 +138,13 @@ export class DockerContainerManager {
         (await this.hasRuntimeDrift(containerKey, containerName, mounts))
       ) {
         log.logInfo(`Container ${containerName} configuration changed; recreating container`);
-        await this.execFileImpl("docker", ["rm", "-f", containerName]);
-        await this.removeMigrateSnapshot(containerName);
-        await this.runContainer(containerKey, containerName, mounts, options);
+        if (readEnv("SKIP_CONTAINER_PRESERVATION") === "1") {
+          await this.execFileImpl("docker", ["rm", "-f", containerName]);
+          await this.removeMigrateSnapshot(containerName);
+          await this.runContainer(containerKey, containerName, mounts, options);
+        } else {
+          await this.recreateContainerPreservingContents(containerKey, containerName, mounts);
+        }
         log.logInfo(`Container ${containerName} recreated`);
       } else if (status === "running") {
         log.logInfo(`Container ${containerName} already running`);
@@ -365,8 +370,26 @@ export class DockerContainerManager {
       await this.execFileImpl("docker", ["rm", "-f", containerName]);
     }
 
-    const translated = originalBinds.map(translator);
-    const containerKey = this.containerKeyFromContainerName(containerName) ?? containerName;
+    await this.createContainerFromSnapshot(containerName, originalBinds.map(translator));
+    log.logInfo(`Container ${containerName} migrated to the office layout`);
+  }
+
+  /**
+   * Create `containerName` from its layout snapshot with `bindSpecs`,
+   * restoring the managed labels and recomputing the mount signature.
+   * `create`, not `run`: idle containers stay stopped exactly as they were;
+   * callers that need the container running start it themselves.
+   */
+  private async createContainerFromSnapshot(
+    containerName: string,
+    bindSpecs: string[],
+    knownContainerKey?: string,
+  ): Promise<void> {
+    const snapshotImage = `${DockerContainerManager.MIGRATE_IMAGE_PREFIX}:${containerName}`;
+    // The sweep has only the container name and derives the key; the drift
+    // path knows the real key (container names can be caller-supplied).
+    const containerKey =
+      knownContainerKey ?? this.containerKeyFromContainerName(containerName) ?? containerName;
     const networkName = await this.ensureNetwork(containerKey);
     const conversationId = await this.readImageLabel(
       snapshotImage,
@@ -389,11 +412,9 @@ export class DockerContainerManager {
     labels.push(
       "--label",
       `${DockerContainerManager.MOUNT_SIGNATURE_LABEL_KEY}=${this.mountSignature(
-        translated.map(bindSpecToMount),
+        bindSpecs.map(bindSpecToMount),
       )}`,
     );
-    // `create`, not `run`: idle containers stay stopped exactly as they were,
-    // and the normal provision path starts them on the next message.
     await this.execFileImpl("docker", [
       "create",
       "--name",
@@ -408,12 +429,61 @@ export class DockerContainerManager {
       "1024",
       ...labels,
       ...this.resourceLimitArgs(this.effectiveLimits(containerKey)),
-      ...translated.flatMap((bind) => ["-v", bind]),
+      ...bindSpecs.flatMap((bind) => ["-v", bind]),
       snapshotImage,
       "sleep",
       "infinity",
     ]);
-    log.logInfo(`Container ${containerName} migrated to the office layout`);
+  }
+
+  /**
+   * Recreate a drifted container with the desired mounts while keeping its
+   * writable layer: commit — the new binds ride the snapshot label, so a
+   * crash at any point resumes through the layout-migration path — then
+   * remove, create from the snapshot, and start. Committing replaces any
+   * older snapshot tag for this container; the untagged predecessor is
+   * removed once the new container is up.
+   */
+  private async recreateContainerPreservingContents(
+    containerKey: string,
+    containerName: string,
+    mounts: ContainerMount[],
+  ): Promise<void> {
+    const snapshotImage = `${DockerContainerManager.MIGRATE_IMAGE_PREFIX}:${containerName}`;
+    const bindSpecs = mounts.map((mount) => this.toBindSpec(mount));
+    const previousImageId = await this.readImageId(snapshotImage);
+    await this.execFileImpl("docker", [
+      "commit",
+      "-c",
+      `LABEL ${DockerContainerManager.MIGRATE_BINDS_LABEL_KEY}=${JSON.stringify(JSON.stringify(bindSpecs))}`,
+      containerName,
+      snapshotImage,
+    ]);
+    await this.execFileImpl("docker", ["rm", "-f", containerName]);
+    await this.createContainerFromSnapshot(containerName, bindSpecs, containerKey);
+    await this.execFileImpl("docker", ["start", containerName]);
+    const currentImageId = await this.readImageId(snapshotImage);
+    if (previousImageId && previousImageId !== currentImageId) {
+      try {
+        await this.execFileImpl("docker", ["rmi", previousImageId]);
+      } catch (err) {
+        log.logWarning(
+          `Could not remove superseded snapshot image ${previousImageId}`,
+          String(err),
+        );
+      }
+    }
+  }
+
+  /** Resolved image id for a reference, or undefined when it does not exist. */
+  private async readImageId(image: string): Promise<string | undefined> {
+    try {
+      const { stdout } = await this.execFileImpl("docker", ["inspect", "-f", "{{.Id}}", image]);
+      const id = stdout.trim();
+      return id.length > 0 ? id : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   /** Binds recorded on a snapshot image, or undefined when no snapshot exists. */
@@ -743,9 +813,15 @@ export class DockerContainerManager {
     try {
       const stat = statSync(source);
       if (stat.isFile()) {
+        // Files are atomically replaced (rename), which leaves the container
+        // holding a stale inode — content changes must recreate the mount.
         return createHash("sha256").update(readFileSync(source)).digest("hex");
       }
-      return `${stat.isDirectory() ? "dir" : "other"}:${stat.size}:${stat.mtimeMs}`;
+      // Directories: a bind mount follows changes inside the directory live,
+      // so only replacing the directory itself (a new inode) makes the mount
+      // stale. Size/mtime churn from ordinary activity — event files coming
+      // and going, children being created — must not read as drift.
+      return `${stat.isDirectory() ? "dir" : "other"}:${stat.dev}:${stat.ino}`;
     } catch {
       return "missing";
     }
