@@ -15,8 +15,8 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
     containers を作成します。
   </Card>
   <Card title="永続 state" icon="lock">
-    settings、session に依存しない runtime state、vaults、GitHub polling watermarks 用に、host-only
-    の state directory を 1 つ保持します。
+    settings、office registry、vaults、office ごとの state、GitHub polling watermarks
+    用に、host-only の state directory を 1 つ保持します。
   </Card>
 </CardGrid>
 
@@ -122,6 +122,41 @@ pm2 reload ecosystem.config.cjs
   同梱の PM2 設定は SIGTERM 後、SIGKILL まで最大 60 秒待機します。mikan は最初に conversation
   runtime を drain し、events watcher を停止し、Sentry の flush を最大 5 秒待ちます。supervisor
   timeout を超える runs は、それでも終了される場合があります。
+</Aside>
+
+### Office layout migration をまたぐアップグレード
+
+Conversation directory は、生の platform id ではなく office key（`v1-<platform>-…`）で命名されます。
+生 id を使っていたリリースからアップグレードすると、起動時に migration が実行されます。旧来の
+workspace directory、conversation vault、conversation ごとの state tree が office key 配置へ
+rename され、その過程は `<state-dir>/office-registry.json` に journal されるため、中断しても次回
+起動時に再開されます。管理下の `image:*` container は rename をまたいで writable layer を保持します。
+旧 path を mount したままの container は、boot 中ではなく次のメッセージの前に、snapshot・削除の上、
+変換後の mount で再作成されます。
+
+legacy directory の帰属を判定できない場合、boot は続行せず**失敗**します。layout 変更後、そうした
+directory は runtime から見えなくなるため、そのまま起動すると conversation が黙って空であるかのように
+見えてしまうからです。起動時のエラーは未解決の directory を個別に名指しします。
+
+所有権は推測ではなく検証されます。有効なプラットフォームのうち、ちょうど 1 つの id 形式だけが
+その名前を生み得た場合にのみ、directory は自動的に claim されます。有効な 2 つのプラットフォームに
+またがって名前が曖昧な directory — Telegram と Discord の両方が動作している状態での数字のみの名前 —
+には、明示的な所有者が必要です：
+
+```bash
+pm2 stop mikan
+mikan office list --state-dir=/srv/mikan/state --workspace=/srv/mikan/workspace
+mikan office claim 100200300 telegram --state-dir=/srv/mikan/state --workspace=/srv/mikan/workspace
+pm2 start mikan
+```
+
+`claim` は所有者を記録するだけで、実際の移動は daemon が次回起動時に行います。だからこそ、プロセスを
+停止した状態で実行します。vault や state directory の衝突 — 同じ conversation が legacy 名と office
+key 名の両方に存在する場合 — も同様に報告され、`<state-dir>` 配下で手作業により統合する必要があります。
+
+<Aside type="caution" title="先に state directory をバックアップしてください">
+  この migration は workspace と state directory の両方で directory を rename します。新しい
+  バージョンで最初に起動する前に、`<state-dir>`（できれば workspace も）のコピーを取ってください。
 </Aside>
 
 ## Health endpoint

@@ -23,12 +23,20 @@ mikan 會以 `0700` mode 建立不存在的 state directory。既有目錄必須
 
 ## 設定位置
 
-| 範圍 | 路徑                                                       | 用途                   |
-| ---- | ---------------------------------------------------------- | ---------------------- |
-| 全域 | `<state-dir>/settings.json`                                | 每個對話都需要的預設值 |
-| 對話 | `<state-dir>/conversations/<conversationId>/settings.json` | 單一對話的部分覆寫     |
+| 範圍 | 路徑                                                  | 用途                   |
+| ---- | ----------------------------------------------------- | ---------------------- |
+| 全域 | `<state-dir>/settings.json`                           | 每個對話都需要的預設值 |
+| 對話 | `<state-dir>/conversations/<officeKey>/settings.json` | 單一對話的部分覆寫     |
 
-對話設定以 host 上的內容為準。舊版 `<workspace>/<conversationId>/settings.json` 檔案會在首次存取時移轉，之後不再從 sandbox 可見的 workspace 讀取。
+對話設定以 host 上的內容為準。舊版 `<workspace>/<officeKey>/settings.json` 檔案會在首次存取時移轉，之後不再從 sandbox 可見的 workspace 讀取。
+
+### Office key
+
+每個對話都是一個 _office_，由它的平台加上該平台的原始 conversation id 來識別。儲存路徑使用由兩者推導出的 office key——`v1-<platform>-<readable-id>-<hash>`，例如 `v1-slack-c0aaaaaa1-1f4b9c0d2e3a5b7c`——因此就算兩個平台剛好共用同一個 raw conversation id，也絕不可能定址到對方的檔案、設定或憑證。同一個 key 也用來命名該 office 在 workspace 中的目錄、它的 state directory 與它的 vault。
+
+Office key 無法反推回原始平台 id，因此 host 會在 `<state-dir>/office-registry.json` 保留一份 registry，記錄每個 office 的平台與 conversation id。可用 `mikan office list` 讀取。
+
+若從以原始平台 id 儲存對話的版本升級上來，下次啟動時會把那些目錄、vault 與 state tree 遷移到 office key 佈局；見[部署](/zh-tw/deployment/#跨-office-佈局遷移的升級)。
 
 ## 產生的設定
 
@@ -55,8 +63,8 @@ mikan 會以 `0700` mode 建立不存在的 state directory。既有目錄必須
       "cpus": "2",
       "memory": "4g"
     },
-    "image": {
-      "workspaceMount": "private"
+    "workspace": {
+      "doorPolicy": "isolated"
     },
     "defaultSharedVault": ""
   }
@@ -67,23 +75,28 @@ mikan 會以 `0700` mode 建立不存在的 state directory。既有目錄必須
 
 以下是 onboarding 產生的值。解析後的全域設定必須包含 `llm.provider`、`llm.model` 與 `llm.thinkingLevel`；其他欄位可省略。
 
-| 欄位                           | Onboarding 值       | 說明                                                                                           |
-| ------------------------------ | ------------------- | ---------------------------------------------------------------------------------------------- |
-| `llm.provider`                 | `anthropic`         | 主要 AI 供應商                                                                                 |
-| `llm.model`                    | `claude-sonnet-4-6` | 主要模型名稱                                                                                   |
-| `llm.thinkingLevel`            | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`                                    |
-| `llm.autoReply.provider`       | `anthropic`         | 用來評估 auto-reply 規則的選用模型供應商                                                       |
-| `llm.autoReply.model`          | `claude-haiku-4-5`  | 用來評估 auto-reply 規則的選用模型                                                             |
-| `sentry.dsn`                   | 未設定              | Sentry DSN；敏感的 prompt 與 tool 內容會被遮蔽                                                 |
-| `sandbox.cpus`                 | `0.5`               | mikan 管理的 image/Gondolin runtime CPU 限制；Gondolin 會將小數值進位為整數 vCPU               |
-| `sandbox.memory`               | `1g`                | mikan 管理的 image/Gondolin runtime 記憶體限制                                                 |
-| `sandbox.boost.cpus`           | `2`                 | `/pi-sandbox boost` 套用的暫時 CPU 限制                                                        |
-| `sandbox.boost.memory`         | `4g`                | `/pi-sandbox boost` 套用的暫時記憶體限制                                                       |
-| `sandbox.image.workspaceMount` | `private`           | 對 image/Gondolin sandbox，`private` 會公開共用支援檔案與目前對話；`full` 會公開完整 workspace |
-| `sandbox.defaultSharedVault`   | 空白                | 複製到符合資格之 membership-trust image/Cloudflare 對話的共享 vault                            |
-| `slack.replyMode`              | `top-level`         | Slack 回應模式：`top-level` 或 `thread`                                                        |
+| 欄位                           | Onboarding 值       | 說明                                                                                         |
+| ------------------------------ | ------------------- | -------------------------------------------------------------------------------------------- |
+| `llm.provider`                 | `anthropic`         | 主要 AI 供應商                                                                               |
+| `llm.model`                    | `claude-sonnet-4-6` | 主要模型名稱                                                                                 |
+| `llm.thinkingLevel`            | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`                                  |
+| `llm.autoReply.provider`       | `anthropic`         | 用來評估 auto-reply 規則的選用模型供應商                                                     |
+| `llm.autoReply.model`          | `claude-haiku-4-5`  | 用來評估 auto-reply 規則的選用模型                                                           |
+| `sentry.dsn`                   | 未設定              | Sentry DSN；敏感的 prompt 與 tool 內容會被遮蔽                                               |
+| `sandbox.cpus`                 | `0.5`               | mikan 管理的 image/Gondolin runtime CPU 限制；Gondolin 會將小數值進位為整數 vCPU             |
+| `sandbox.memory`               | `1g`                | mikan 管理的 image/Gondolin runtime 記憶體限制                                               |
+| `sandbox.boost.cpus`           | `2`                 | `/pi-sandbox boost` 套用的暫時 CPU 限制                                                      |
+| `sandbox.boost.memory`         | `4g`                | `/pi-sandbox boost` 套用的暫時記憶體限制                                                     |
+| `sandbox.workspace.doorPolicy` | `isolated`          | `isolated` 把每個對話鎖在自己的 office 資料內；`trusted` 則明確允許協作式的 workspace layout |
+| `sandbox.workspace.layout`     | `conversation`      | 生效的 layout：isolated 一律使用 `conversation`；trusted 使用 `shared-support` 或 `full`     |
+| `sandbox.defaultSharedVault`   | 空白                | 複製到符合資格之 membership-trust image/Cloudflare 對話的共享 vault                          |
+| `slack.replyMode`              | `top-level`         | Slack 回應模式：`top-level` 或 `thread`                                                      |
 
-`/pi-model` 會寫入部分對話覆寫。`/pi-sandbox private|full` 會更新對話的 workspace mount 模式。Auto-reply 是否啟用及其規則文字由 `/pi-auto-reply` 與對話的 `auto-reply` marker file 管理，而非 JSON 設定欄位。
+`/pi-model` 會寫入部分對話覆寫；`/pi-sandbox door <default|isolated|shared|full>` 會寫入該對話的 `sandbox.workspace` 覆寫。Admin portal 則同時能設定各 office 與全域的 door policy。Auto-reply 是否啟用及其規則文字由 `/pi-auto-reply` 與對話的 `auto-reply` marker file 管理，而非 JSON 設定欄位。
+
+Door policy 與 layout 是一起解析的。`isolated` 一律代表 `conversation` layout：只掛載該 office 自己的目錄。`trusted` 則代表 `shared-support`——該 office 再加上 workspace 層級的 `MEMORY.md`、`skills/` 與 `events/`——或 `full`，也就是掛載整個 workspace root。door policy 是 `trusted` 但未指定 layout 時，會解析為 `shared-support`。
+
+舊版的 `sandbox.image.workspaceMount` 為了遷移仍然讀得到：`private` 代表 `trusted` + `shared-support`，`full` 代表 `trusted` + `full`。全新安裝會寫入標準的、與後端無關的設定，並預設為 `isolated`。
 
 ## 平台憑證
 
@@ -110,6 +123,10 @@ mikan 會以 `0700` mode 建立不存在的 state directory。既有目錄必須
 | `mikan --version`                                                                                               | 顯示已安裝版本                                                         |
 | `mikan --help`                                                                                                  | 顯示 CLI 用法與平台 token 摘要                                         |
 | `mikan ext ...`                                                                                                 | 管理 harness extensions；執行 `mikan ext` 查看子指令                   |
+| `mikan office list`                                                                                             | 列出已註冊的 office、已啟用的平台，以及待處理的 legacy 遷移            |
+| `mikan office claim <conversationId> <platform>`                                                                | 指定開機時無法歸屬的 legacy raw-id 目錄屬於哪個平台                    |
+
+`mikan office` 接受 `--state-dir <dir>` 與 `--workspace <dir>`；workspace 預設為 `<state-dir>/workspace`。`claim` 只會記錄這個決定——實際搬移由 daemon 在下次啟動時執行，因此請在 daemon 停止的狀態下執行它。
 
 ## 環境變數別名
 

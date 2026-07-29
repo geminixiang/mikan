@@ -37,6 +37,18 @@ This guide gets a working bot replying to you in about 15 minutes. It uses Teleg
 
    This writes `~/.mikan/settings.json` with `anthropic` as the default provider. Review it if you want a different model; see [Configuration](/configuration/) for every field.
 
+   The settings default to an `isolated` door policy, which only the managed Docker sandbox can satisfy — with it, `host` mode refuses to run. This guide runs without Docker, so mark the workspace as trusted by merging this into `~/.mikan/settings.json`:
+
+   ```json
+   {
+     "sandbox": {
+       "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
+     }
+   }
+   ```
+
+   If you start with the managed [image sandbox](/sandbox/image/) instead (`--sandbox=image:…`), skip this edit — it satisfies the isolated policy as-is.
+
 4. Create a Telegram bot. Message [@BotFather](https://t.me/BotFather), send `/newbot`, follow the prompts, and copy the token it returns:
 
    ```bash
@@ -49,7 +61,9 @@ This guide gets a working bot replying to you in about 15 minutes. It uses Teleg
    mikan --sandbox=host
    ```
 
-   The working directory defaults to `~/.mikan/workspace` and is created automatically; pass a path (`mikan --sandbox=host ~/mikan-workspace`) to use a different one. The workspace is where the agent keeps per-conversation files: memory, attachments, session logs, and its working area.
+   The working directory defaults to `~/.mikan/workspace` and is created automatically; pass a path (`mikan --sandbox=host ~/mikan-workspace`) to use a different one.
+
+   Inside that workspace, each conversation gets its own **office**: a directory holding that conversation's memory, attachments, session logs, skills, and working area. Office directories are named by office key (`v1-telegram-…`) rather than by the raw chat id, so `mikan office list` is the way to see which office belongs to which conversation.
 
    If startup fails, run `mikan env`: it prints every variable mikan reads, grouped by platform and feature, with the current status of each. A missing platform token makes mikan exit with a message naming the variables to set; `mikan --help` lists all flags.
 
@@ -61,7 +75,8 @@ This guide gets a working bot replying to you in about 15 minutes. It uses Teleg
   In `host` mode the agent's commands run directly on your machine with your permissions. It is the
   right mode for a first try on a trusted machine. Before letting other people talk to the bot,
   switch to the managed [image sandbox](/sandbox/image/), which gives each conversation an isolated
-  Docker container.
+  Docker container — and remove the trusted door-policy override so the default `isolated` policy
+  applies again.
 </Aside>
 
 ## Where to go next

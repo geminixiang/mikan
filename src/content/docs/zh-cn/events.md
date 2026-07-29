@@ -3,6 +3,12 @@ title: 事件
 description: 通过工作区 events 目录触发代理的事件格式和处理流程。
 ---
 
+## 事件文件位于何处
+
+事件文件位于 `<workspace>/events/`，即工作区根目录下，而不在任何办公室目录内部。调度总线有意保持工作区级：watcher 轮询一个目录，由所有对话共享。它同时也是代理可写的，因此按 `conversationId` 的所有权是一项协作约定，而非授权边界——不要把 secret 放进事件文本。
+
+代理的 `event` 工具默认只列出当前对话的事件：文件的 `conversationId` **和** `platform` 都与运行中的办公室匹配时才算命中。在 payload 尚未携带 `platform` 之前写入的文件，对任何共享该原始 id 的对话都可见。`scope=all` 会列出该目录中的全部内容。
+
 ## 事件类型
 
 ### 立即
@@ -65,12 +71,14 @@ Cron 格式：`minute hour day-of-month month day-of-week`
 
 ## 路由字段
 
-| 字段               | 说明                                                       |
-| ------------------ | ---------------------------------------------------------- |
-| `platform`         | 目标 bot 平台，例如 `slack`                                |
-| `conversationId`   | 要发送到的频道或 DM ID                                     |
-| `conversationKind` | `"shared"`（频道）或 `"direct"`（DM）                      |
-| `userId`           | 请求此事件的平台用户 ID；在按用户模式下用于 vault/凭证路由 |
+每个事件文件都必须包含 `type`、`conversationId` 和 `text`；其余字段是可选的，而各类型专属字段（`at`、`schedule` + `timezone`）在其自身类型下是必需的。`src/harness/event-format.ts` 拥有该 schema——每个读取方和写入方都经过它的解析器和构建器。
+
+| 字段               | 说明                                                                                |
+| ------------------ | ----------------------------------------------------------------------------------- |
+| `platform`         | 目标 bot 平台，例如 `slack`。省略它会让文件在两个平台共用同一原始对话 id 时产生歧义 |
+| `conversationId`   | 要发送到的原始平台频道或 DM ID——不是 office key。`channelId` 作为旧版只读别名被接受 |
+| `conversationKind` | `"shared"`（频道）或 `"direct"`（DM）                                               |
+| `userId`           | 请求此事件的平台用户 ID；在按用户模式下用于 vault/凭证路由                          |
 
 ## 会话绑定
 

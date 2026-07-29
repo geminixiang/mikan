@@ -12,11 +12,16 @@ loads it.
 ## Files
 
 - `source.ts`: The grammar. `parseSource` maps `<locator>[@<ref>][#<subpath>]` to a tagged `ParsedSource`; `sourceIdentity` decides package sameness for deduplication and scope precedence; `gitRepoPath` derives the transport-independent `<host>/<path>` used by the clone layout; `formatSource` renders the canonical string written back into settings.
-- `materialize.ts`: The side effects. `materializeSource` clones or reconciles a git package under the scope's host-only git directory and returns the directory holding its files; its `offline` / `fetch` / `refresh` mode decides how far it may go to get them. `packageScopeDir` resolves the `global` / `conversations/<id>` root; `gitCloneDir` exposes the ref-keyed checkout location.
+- `materialize.ts`: The side effects. `materializeSource` clones or reconciles a git package under the scope's host-only git directory and returns the directory holding its files; its `offline` / `fetch` / `refresh` mode decides how far it may go to get them. `packageScopeDir` resolves the `global` / `conversations/<office key>` root; `gitCloneDir` exposes the ref-keyed checkout location.
 - `resolve.ts`: What a conversation loads. `resolveConversationPackages` combines both scopes, resolves same-package collisions in the conversation's favour, and reports extension directories, extension roots, and skill directories. `conversationPackageSkillMounts` turns the skill directories into read-only sandbox mounts; `packageSkillRuntimeDir` is the single definition of where they appear inside the guest.
 - `inspect.ts`: The administrator's view. `inspectConversationPackages` reports every declared source per scope — including ones that failed to materialize or are shadowed by a narrower scope — with the extensions and skills each contributes.
 - `admin.ts`: The write path behind the portal. `addPackage` / `removePackage` / `refreshPackage` materialize before persisting, so failures land in front of whoever typed the source.
-- `types.ts`: `ParsedSource`, `PackageIdentity`, `MaterializedPackage`, and the scope vocabulary.
+- `types.ts`: `ParsedSource`, `PackageIdentity`, `MaterializedPackage`, the scope vocabulary, and the two option bags: `ResolvePackagesOptions` (`{office, fetchMissing?}`) and `PackageAdminContext` (`ResolvePackagesOptions` plus an optional `runtime` for cache invalidation).
+
+The conversation-facing entry points take an `Office`, not a conversation id
+— identity, the settings file, and the scope directory all derive from it.
+`materializeSource` still takes a scope plus an optional `OfficeAddress`,
+because it may run before an office is materialized.
 
 ## Scopes
 
@@ -41,9 +46,9 @@ layout rather than by configuration:
   what a developer's working copy looks like).
 
 Skills live in `skills/` and are mounted read-only at
-`/mikan/packages/<slug>/skills`, outside `/workspace` so `full` workspace-mount
-mode cannot shadow them. Unlike extension-shipped skills they are not inlined
-into the prompt, so a skill may ship scripts and templates beside its
+`/mikan/packages/<slug>/skills`, outside `/workspace` so the `trusted` + `full`
+door policy cannot shadow them. Unlike extension-shipped skills they are not
+inlined into the prompt, so a skill may ship scripts and templates beside its
 `SKILL.md`.
 
 ## Why only git

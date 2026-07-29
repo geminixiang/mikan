@@ -15,8 +15,8 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
     sandbox image.
   </Card>
   <Card title="Persistent state" icon="lock">
-    Keep one host-only state directory for settings, session-independent runtime state, vaults, and
-    GitHub polling watermarks.
+    Keep one host-only state directory for settings, the office registry, vaults, per-office state,
+    and GitHub polling watermarks.
   </Card>
 </CardGrid>
 
@@ -122,6 +122,42 @@ pm2 reload ecosystem.config.cjs
   The included PM2 configuration waits up to 60 seconds after SIGTERM before SIGKILL. mikan first
   drains the conversation runtime, stops the events watcher, and gives Sentry up to five seconds to
   flush. Runs that exceed the supervisor timeout can still be terminated.
+</Aside>
+
+### Upgrading across the office layout migration
+
+Conversation directories are named by office key (`v1-<platform>-…`) rather than by raw platform id.
+Upgrading from a release that used raw ids runs a migration at startup: legacy workspace
+directories, conversation vaults, and per-conversation state trees are renamed into the office-key
+layout, journaled in `<state-dir>/office-registry.json` so an interrupted run resumes on the next
+start. Managed `image:*` containers keep their writable layers across the rename — a container still
+mounting legacy paths is snapshotted, removed, and re-created with translated mounts before its next
+message, not during boot.
+
+Boot **fails** rather than continuing when a legacy directory cannot be attributed — after the
+layout change such a directory is invisible to the runtime, and starting anyway would present the
+conversation as silently empty. The startup error names each unresolved directory.
+
+Ownership is verified, not guessed: a directory is claimed automatically only when exactly one
+enabled platform's id format could have produced its name. A directory whose name is ambiguous
+across two enabled platforms — bare digits, with both Telegram and Discord running — needs an
+explicit owner:
+
+```bash
+pm2 stop mikan
+mikan office list --state-dir=/srv/mikan/state --workspace=/srv/mikan/workspace
+mikan office claim 100200300 telegram --state-dir=/srv/mikan/state --workspace=/srv/mikan/workspace
+pm2 start mikan
+```
+
+`claim` only records the owner; the daemon performs the move on its next start, which is why it is
+run with the process stopped. Vault or state-directory conflicts — the same conversation present
+under both the legacy and the office-key name — are reported the same way and must be merged by
+hand under `<state-dir>`.
+
+<Aside type="caution" title="Back up the state directory first">
+  The migration renames directories under both the workspace and the state directory. Take a copy of
+  `<state-dir>` (and ideally the workspace) before the first start on the new version.
 </Aside>
 
 ## Health endpoint

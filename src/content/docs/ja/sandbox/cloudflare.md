@@ -1,7 +1,15 @@
 ---
 title: Cloudflare sandbox
-description: 自分でデプロイした Cloudflare Worker bridge を使い、experimental Cloudflare sandbox を実行します。
+description: 自分でデプロイした Cloudflare Worker bridge を使い、構築中の Cloudflare sandbox を実行します。
 ---
+
+:::caution[構築中]
+Cloudflare モードは mikan の sandbox 設定には存在しますが、完成したデプロイ先ではありません。管理された
+workspace projection も、file credential の投影も、lifecycle やリソース管理もありません。workspace
+projection を強制できないため、既定の `isolated` door policy では一切実行されません。先に trusted な
+policy を明示的に設定する必要があります。将来は外部委託の実行面として戻ってくる想定です。実運用には
+[`image:<image>`](/ja/sandbox/image/) を使用してください。
+:::
 
 ```bash
 export CLOUDFLARE_SANDBOX_URL="https://your-bridge.workers.dev"
@@ -13,15 +21,17 @@ mikan --sandbox=cloudflare:mikan-remote /path/to/workspace
 特徴：
 
 - runtime commands は既定で `/workspace` を使用します。`CLOUDFLARE_SANDBOX_CWD` で上書きできます
-- mikan は remote sandbox id を `<base-sandbox-id>-<vault-key>` に派生させます
+- mikan は remote sandbox id を `<base-sandbox-id>-<resource-key>` に派生させるため、各 conversation は bridge 上で自分の sandbox を指します
 - vault env は各 `exec()` 時に bridge 経由で注入されます
-- vault 選択ロジックは `image` と似ており、conversation ID から platform-scoped vault key を生成します
+- 認証情報は office key で索かれます。これは `image:*` が使うのと同じ conversation スコープの vault key です
 
 制限：
 
+- mikan はここでは workspace projection を強制できないため、既定の `isolated` door policy では実行を拒否します。trusted な policy を明示的に選ぶ必要があります
 - リモートの `/workspace` はローカル作業ディレクトリを自動 mirror しません
 - そのため `pwd` は `/workspace` を表示しますが、`ls` は空かもしれません。これは想定どおりで、ローカル repo を読んでいるわけではありません
-- vault file credential は現時点では Cloudflare sandbox へ自動投影されません
+- file credential は無視されるのではなく拒否されます。conversation の vault に `env` 以外のファイルが 1 つでもあると、実行は `Sandbox type "cloudflare" does not support vault file mounts` で失敗します。ここでは認証情報を `env` に留めてください
+- container lifecycle、idle stop、リソース制限、`/pi-sandbox boost` は適用されません
 - bridge Worker と対応する container image を自分でデプロイする必要があります
 
 サンプル bridge をそのまま使用できます：

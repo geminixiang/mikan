@@ -5,13 +5,15 @@ description: Socket Mode events, thread routing, Block Kit, and response lifecyc
 
 ## Main code
 
-| File                                       | Purpose                                                                                                   |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| `src/adapters/slack/bot.ts`                | Slack bot core: Socket Mode events, slash commands, Block Kit actions, file download, message sending.    |
-| `src/adapters/slack/context.ts`            | Creates the Slack `ConversationResponder`; handles mrkdwn, reply modes, working state, and long messages. |
-| `src/adapters/slack/session.ts`            | Slack channel/thread session key rules.                                                                   |
-| `src/adapters/slack/response-lifecycle.ts` | Slack response lifecycle and streaming updates.                                                           |
-| `src/adapters/slack/tools/*`               | Slack-specific tools such as attachment and Block Kit support.                                            |
+| File                                       | Purpose                                                                                                |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `src/adapters/slack/bot.ts`                | Slack bot core: Socket Mode events, slash commands, Block Kit actions, file download, message sending. |
+| `src/adapters/slack/blocks.ts`             | Markdown → native Slack blocks, and `<@userName>` → `<@U…>` mention resolution.                        |
+| `src/adapters/slack/context.ts`            | Creates the Slack `ConversationResponder`; handles reply modes, working state, and long messages.      |
+| `src/adapters/slack/session.ts`            | Slack channel/thread session key rules.                                                                |
+| `src/adapters/slack/response-lifecycle.ts` | Slack response lifecycle and streaming updates.                                                        |
+| `src/adapters/slack/tool-pack.ts`          | The Slack tool pack injected into the runtime.                                                         |
+| `src/adapters/slack/tools/*`               | Slack-specific tools such as attachment and Block Kit support.                                         |
 
 ## Event sources
 
@@ -19,7 +21,7 @@ The Slack adapter mainly handles:
 
 - `app_mention`
 - `message`
-- slash commands: `/pi-login`, `/pi-session`, `/pi-model`, `/pi-auto-reply`, `/pi-new`, etc.
+- slash commands: `/pi-login`, `/pi-session`, `/pi-model`, `/pi-sandbox`, `/pi-new`, `/pi-admin`, `/pi-extensions`, `/pi-auto-reply` — registration and routing both derive from `src/commands/manifest.ts`, though the Slack App manifest itself still has to be updated by hand
 - Block Kit actions
 - assistant thread / status APIs
 
@@ -45,15 +47,19 @@ The Slack adapter also supports:
 
 - top-level or thread reply mode
 - working / assistant status
-- updating existing replies to show streaming progress
+- Slack's native streaming API (`chat.startStream` / `appendStream` / `stopStream`) as well as edit-based progress updates
 - Block Kit rendering for headings, paragraphs, lists, code fences, and tables
 - file uploads
 
 Block Kit output follows Slack limits: prose is split into `markdown` blocks of at most 12,000 characters at paragraph boundaries, table cells are truncated around 2,000 characters, and a message is capped at 50 blocks. Use file output for very large structured results.
 
+## Mentions
+
+The response source is platform-neutral, so the model writes `<@userName>` using the names from the prompt's Users table. The adapter converts those to Slack's native `<@U…>` form on every outgoing path — new messages, edits, and stream deltas alike — because Slack only links and notifies on the raw user id. Lookup covers `userName` and `displayName` case-insensitively, a display name never shadows someone else's `userName`, already-native ids pass through, and an unknown name is left verbatim rather than guessed at. A mention split across two stream deltas stays unresolved in that delta and is resolved by the final canonical render.
+
 ## Attachments
 
-Slack file attachments are downloaded to the conversation attachment directory in the workspace, then passed to the runtime as shared mikan attachment metadata.
+Slack file attachments are downloaded into the conversation office's `attachments/` directory as `<timestamp>_<sanitized-name>`, then passed to the runtime as shared mikan attachment metadata with an office-relative path. This is the same shared helper every adapter uses; the Slack adapter contributes only the download call.
 
 ## Stop behavior
 

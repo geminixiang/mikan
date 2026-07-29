@@ -6,7 +6,7 @@
 
 Project: **mikan** (`@geminixiang/mikan`)
 
-mikan is a multi-platform AI coding agent for Slack, Telegram, Discord, and GitHub. It stores chat logs and session state, runs mikan's own agent harness (`src/harness/`, built on `pi-agent-core` and `pi-ai`), and executes tools in host, Docker, local Gondolin, Firecracker, or Cloudflare sandbox modes.
+mikan is a multi-platform AI coding agent for Slack, Telegram, Discord, and GitHub. It stores chat logs and session state, runs mikan's own agent harness (`src/harness/`, built on `pi-agent-core` and `pi-ai`), and executes tools in host, Docker, local Gondolin, Firecracker, or Cloudflare sandbox modes. Each conversation is a Conversation office: its own workspace directory plus its own sandbox runtime, isolated by default (`CONTEXT.md`, `docs/adr/0003`–`0005`).
 
 Stack:
 
@@ -20,17 +20,22 @@ Stack:
 ## STRUCTURE
 
 - `src/`: TypeScript source root (unit/integration tests live in `src/test/`, run by `npm test`).
-  - `main.ts`: CLI entrypoint; parses args, loads settings, starts vault/sandbox/runtime/platform bots.
+  - `main.ts`: CLI entrypoint; executes the boot plan, loads settings, starts vault/sandbox/runtime/platform bots.
   - `types.ts`: root exported type definitions.
   - `adapter.ts`: platform-neutral bot/message/response interfaces.
   - `agent.ts`: agent runner integration, prompt, tools, memory, sandbox, vault, response flow.
   - `harness/`: mikan's agent harness (session store, model catalog, run loop, skills, extension system) built on `pi-agent-core`/`pi-ai`.
   - `config.ts`: global and per-conversation settings.
+  - `cli/`: argv grammar (`boot.ts`) and the subcommands that run instead of the daemon (`ext`, `office`, `env`, `--download`).
+  - `office/`: the Conversation office module — `OfficeAddress`/office keys, the frozen `Workspace`/`Office` layout values, the office registry journal, and the boot-time legacy migration.
   - `runtime/`: conversation/session orchestration.
   - `sessions/`: chat-history sync and persisted session files.
-  - `adapters/`: Slack, Discord, Telegram adapters plus shared adapter utilities.
+  - `adapters/`: Slack, Discord, Telegram, and GitHub adapters plus shared adapter utilities.
   - `commands/`: chat command parsing and handlers (`login`, `model`, `new`, `session`, `sandbox`, etc.); `manifest.ts` is the single command inventory that adapters derive registration/routing from.
-  - `sandbox/`: host/container/image/firecracker/cloudflare execution backends.
+  - `sandbox/`: host/container/image/gondolin/firecracker/cloudflare execution backends.
+  - `execution-resolver.ts`: resolves the concrete executor, credential key, and mounts for an actor plus office.
+  - `workspace-projection/`: resolves an office's door policy into concrete sandbox mounts and authorized prompt sources.
+  - `packages/`: git/host-directory packages that ship extensions and skills into a deployment.
   - `tools/`: agent tool implementations (`read`, `bash`, `edit`, `write`, `event`, `sandbox`).
   - `vault/`: file-backed credential vault and routing.
   - `web/`: admin, login/OAuth, and session-view portals.
@@ -40,6 +45,8 @@ Stack:
 - `e2e/`: real-platform e2e tests, currently Slack-focused.
 - `src/content/docs/`: Starlight documentation source (architecture, commands, configuration, deployment, sandbox, sessions, Slack guides).
 
+- `docs/`: repository-internal documentation — `adr/` (accepted architecture decisions), `research/`, `testing/`, `reports/`. Product documentation lives in `src/content/docs/`.
+- `.config/`: tool configuration — Vitest (unit + e2e), oxlint, oxfmt, Astro.
 - `scripts/`: maintenance and migration scripts.
 - `deploy/`: deployment assets — `pm2/` process template, `docker/` sandbox image, and `examples/` (Slack app manifests, embedder, extensions, cloudflare bridge).
 - `dist/`: generated build output; do not edit manually.
@@ -86,7 +93,7 @@ Stack:
 - **Lint/format**:
   - `oxlint` enforces correctness/suspicious rules as errors and unused vars as errors.
   - `oxfmt` is the formatter.
-  - Husky/lint-staged run lint+format on staged `*.ts`; staged `*.test.ts` also triggers tests.
+  - The Husky pre-commit hook runs the full gate: `lint`, `fmt:check`, `knip`, `build`, `test`.
 - **Tests**:
   - Add or update Vitest tests in `src/test/` for behavior changes.
   - E2E tests hit real Slack/Discord/Telegram APIs; do not run unless configured.
@@ -95,13 +102,15 @@ Stack:
 
 - **Source map**: `src/README.md` plus per-subdirectory `README.md` files.
 - **Architecture**: `README.md`, `src/content/docs/architecture.md`, `src/content/docs/sessions.mdx`, `src/content/docs/sandbox.mdx`.
-- **Commands/user behavior**: `src/content/docs/commands.md`, `src/commands/`.
-- **Platform adapters**: `src/adapters/{slack,discord,telegram}/`.
-- **Slack Block Kit/tools**: `src/adapters/slack/tools/`, `src/test/slack-block-kit-tool.test.ts`.
+- **Conversation office vocabulary and identity**: `CONTEXT.md`, `docs/adr/0003-isolated-conversation-offices.md`, `docs/adr/0004-persistent-offices-and-ephemeral-factory-floors.md`, `docs/adr/0005-office-address-identity.md`, `src/office/README.md`, tests in `src/test/office-*.test.ts`.
+- **Commands/user behavior**: `src/content/docs/commands.mdx`, `src/commands/`.
+- **Platform adapters**: `src/adapters/{slack,discord,telegram,github}/`.
+- **Slack Block Kit/tools**: `src/adapters/slack/tools/`, `src/test/slack-blockkit-tool.test.ts`.
 - **Runtime/session logic**: `src/runtime/`, `src/sessions/`, related tests in `src/test/session-*.test.ts` and `src/test/*session*.test.ts`.
 - **Sandbox execution**: `src/sandbox/`, `src/execution-resolver.ts`, `src/provisioner.ts`, `src/content/docs/sandbox.mdx`.
+- **Door policy / workspace mounts**: `src/workspace-projection/`, `src/test/workspace-projection.test.ts`.
 - **Vault/login/OAuth**: `src/vault/`, `src/web/login/`, `src/test/login.test.ts`, `src/test/oauth-link-server.test.ts`.
-- **Observability**: `src/observability/`, `src/sentry.ts` compatibility export, `src/test/sentry.test.ts`.
+- **Observability**: `src/observability/` (`sentry.ts`, `instrument.ts`), `src/test/sentry.test.ts`.
 - **Config**: `src/config.ts`, `src/content/docs/configuration.md`, `src/test/config.test.ts`.
 - **Docs for contributors**: `CONTRIBUTING.md`, `CONTEXT.md`, `CHANGELOG.md`.
 
@@ -113,7 +122,9 @@ Stack:
 - `npm run build` emits declarations and JS to `dist/` and makes `dist/main.js` executable.
 - `/login` stores credentials under `--state-dir`; avoid logging secrets and validate state-dir safety.
 - Sandbox modes have different credential/mount behavior. Check `src/content/docs/sandbox.mdx` and `src/sandbox/types.ts` before changing executor logic.
-- Slack/Discord/Telegram adapters map threads/replies to independent session scopes; check `src/content/docs/sessions.mdx` before changing conversation IDs or session keys.
+- Slack/Discord/Telegram adapters map threads/replies to independent session scopes; check `src/content/docs/sessions.mdx` before changing conversation IDs or session keys. GitHub maps one issue or PR to one conversation.
+- Office directories, per-conversation host state, and conversation vault keys are named by office key, never by the raw platform conversation id. Derive paths from an `Office` value (`workspace.office(address)`), and leave the raw-id mapping to the office registry; raw ids belong at platform I/O boundaries.
+- `src/index.ts` is the published package interface (the embedder in `deploy/examples/embedder/` builds against it). Adding an export there widens the npm surface — keep the list explicit and deliberate.
 - Cloudflare AI image input note for related Quro work: send raw base64 strings in `images`, not data URIs, when calling `env.AI.run('openai/gpt-image-2', ...)`.
 
 # Development Rules

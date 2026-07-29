@@ -14,7 +14,7 @@ description: mikan の platform、runtime、harness、session、execution、vaul
 | Wire / persisted | ディスクに保存されるか、プロセス/ネットワーク境界を越えて送られる | 明示的に移行する。reader はサポート対象の古い形式を許容すべき |
 | Internal         | mikan CLI 内部のモジュールを接続する                              | call sites と tests を協調させれば変更してよい                |
 
-`src/index.ts` が harness 全体を re-export しているため、パッケージは現在このポリシーが意図するよりも多くのシンボルを公開しています。下の表を意図された契約として扱ってください。移行については [コア簡素化](/core-simplification/) を参照してください。
+`src/index.ts` は wildcard の re-export ではなく明示的な export リストで、`src/test/public-api.test.ts` がそれを snapshot するため、意図しない追加は CI で失敗します。それでも、通常の bot integration に必要な範囲を超えて harness を公開しています。下の表を意図された契約として扱い、残りの分割については [コア簡素化](/core-simplification/) を参照してください。
 
 ## 境界マップ
 
@@ -27,11 +27,14 @@ flowchart TD
   T --> E["Executor"]
   R --> S["Session and chat stores"]
   R --> V["Vault and execution resolver"]
+  O["Office identity and layout"] --> R
+  O --> S
+  O --> V
   X["Host extensions"] --> H
   W["Web and events"] --> R
 ```
 
-runtime は調整役です。platform は harness の永続化を知ってはならず、harness は platform SDK オブジェクトを知ってはならず、tools は実行がローカル、コンテナ化、リモートのいずれであるかを知ってはなりません。
+runtime は調整役です。platform は harness の永続化を知ってはならず、harness は platform SDK オブジェクトを知ってはならず、tools は実行がローカル、コンテナ化、リモートのいずれであるかを知ってはなりません。office モジュールは、runtime・stores・vault のいずれもが conversation を指し示すのに使う identity と paths を供給します。
 
 ## 1. パッケージインターフェース
 
@@ -39,14 +42,15 @@ npm のエントリポイントは `@geminixiang/mikan` で、`src/index.ts` に
 
 ### サポートされるエントリポイントグループ
 
-| グループ          | 主なシンボル                                                                                          | Consumer                                                |
-| ----------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| Runtime embedding | `createConversationRuntime`、`ConversationRuntime`、`ConversationRuntimeOptions`                      | platform と execution の依存を供給する host             |
-| Platform contract | `MessagingBot`、`ConversationEvent`、`ConversationContext`、`ConversationResponder`、`MessagingInfo`  | platform adapters と embedders                          |
-| Commands          | `CommandHandler`、`CommandContext`、`CommandServices`、`dispatchCommand`                              | 決定的な commands を追加する host                       |
-| Execution         | `Executor`、`SandboxConfig`、`SandboxAdapter`、`createExecutor`、`parseSandboxArg`、`validateSandbox` | runtime backends と host                                |
-| Extensions        | `MikanExtensionApi`、hook/event types、subagent types                                                 | 信頼された extension authors                            |
-| Harness embedding | `MikanAgentSession`、`SessionStore`、`MikanModels`、settings および event-format functions            | 上級の embedders。通常の bot integration ではありません |
+| グループ            | 主なシンボル                                                                                               | Consumer                                                                     |
+| ------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Runtime embedding   | `createConversationRuntime`、`ConversationRuntime`、`ConversationRuntimeOptions`                           | platform と execution の依存を供給する host                                  |
+| Office と workspace | `createWorkspace`、`createOfficeAddress`、`officeKey`、`Workspace`、`Office`、`OfficeAddress`、`OfficeKey` | すべての embedder。`createConversationRuntime` は `Workspace` を必要とします |
+| Platform contract   | `MessagingBot`、`ConversationEvent`、`ConversationContext`、`ConversationResponder`、`MessagingInfo`       | platform adapters と embedders                                               |
+| Commands            | `CommandHandler`、`CommandContext`、`CommandServices`、`dispatchCommand`                                   | 決定的な commands を追加する host                                            |
+| Execution           | `Executor`、`SandboxConfig`、`SandboxAdapter`、`createExecutor`、`parseSandboxArg`、`validateSandbox`      | runtime backends と host                                                     |
+| Extensions          | `MikanExtensionApi`、hook/event types、subagent types                                                      | 信頼された extension authors                                                 |
+| Harness embedding   | `MikanAgentSession`、`SessionStore`、`MikanModels`、settings および event-format functions                 | 上級の embedders。通常の bot integration ではありません                      |
 
 パッケージの `exports` map が宣言するパスだけが public です。それ以外の生成済み `dist/` パスや `src/` ソースパスの import はサポートされません。
 
@@ -58,31 +62,35 @@ npm のエントリポイントは `@geminixiang/mikan` で、`src/index.ts` に
 
 `MessagingEventHandler` に配信される platform 中立なトリガーです。
 
-| フィールド            | 契約                                                                                                 |
-| --------------------- | ---------------------------------------------------------------------------------------------------- |
-| `conversationId`      | 生の platform conversation/channel 識別子。session keys が `:` を予約するため `:` を含んではならない |
-| `conversationKind`    | `direct` または `shared`。session と credential のポリシーに影響する                                 |
-| `ts`                  | トリガーとなった platform message の識別子                                                           |
-| `thread_ts`           | 任意の parent/root platform message 識別子                                                           |
-| `user`                | Platform user 識別子                                                                                 |
-| `text`                | platform mention 除去後のテキスト                                                                    |
-| `attachments`         | すでに host paths にダウンロード済みのファイル                                                       |
-| `sessionKey`          | 任意の platform 選択の override。指定がなければ session policy によって導出される                    |
-| `vaultConversationId` | credential ルーティングにのみ使われる任意の代替 identity                                             |
+| フィールド            | 契約                                                                                                            |
+| --------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `address`             | 正規の `OfficeAddress`（`platform` + 生の `conversationId`）。adapter が intake 時に作成する                    |
+| `conversationId`      | 非推奨の生の platform 識別子。adapter の I/O seam でのみ有効。session keys が `:` を予約するため `:` を含めない |
+| `conversationKind`    | `direct` または `shared`。session と credential のポリシーに影響する                                            |
+| `ts`                  | トリガーとなった platform message の識別子                                                                      |
+| `thread_ts`           | 任意の parent/root platform message 識別子                                                                      |
+| `user`                | Platform user 識別子                                                                                            |
+| `text`                | platform mention 除去後のテキスト                                                                               |
+| `attachments`         | すでに host paths にダウンロード済みのファイル                                                                  |
+| `sessionKey`          | 任意の platform 選択の override。指定がなければ session policy によって導出される                               |
+| `vaultConversationId` | credential ルーティングにのみ使われる任意の代替 identity                                                        |
+
+本番の adapter とすべての synthetic intake は、互換用の `conversationId` を `address` と照合して検証します。新しいコードは `address` を読んでください。
 
 ### `ConversationContext`
 
-同じ実行に対する、より豊かな正規化済み message、response port、platform メタデータを保持します:
+同じ実行に対する、office identity、より豊かな正規化済み message、response port、platform メタデータを保持します:
 
 ```ts
 interface ConversationContext {
+  address: OfficeAddress;
   message: ConversationMessage;
   responder: ConversationResponder;
   platform: MessagingInfo;
 }
 ```
 
-`ConversationMessage` と `ConversationEvent` は現在、message id、session、conversation kind、user、text、attachments、thread identity を重複して持っています。adapters は両方の表現を一貫させ続ける必要があります。これは内部の互換性のための seam であり、新しい integration にとって望ましいモデルではありません。
+`ConversationMessage` と `ConversationEvent` は現在、message id、session、conversation kind、user、text、attachments、thread identity を重複して持っており、いずれも `address` を保持するようになりました。adapters は両方の表現を一貫させ続ける必要があります。これは内部の互換性のための seam であり、新しい integration にとって望ましいモデルではありません。
 
 ### `ConversationResponder`
 
@@ -111,26 +119,28 @@ host に面した platform port です。次を組み合わせます:
 
 ### Input メソッド
 
-| メソッド                             | セマンティクス                                                               |
-| ------------------------------------ | ---------------------------------------------------------------------------- |
-| `handleEvent(event, bot, context)`   | 導出された session key で直列化し、command または agent run を dispatch する |
-| `runSession(options)`                | すでに直列化済みの 1 単位を実行する。制御された host 用途を想定              |
-| `handleStop(...)` / `forceStop(...)` | 協調的/ユーザーに見える stop か、即時の内部 stop か                          |
-| `handleNewCommand(...)`              | abort し、永続化された session state をリセットし、cached runner を破棄する  |
+| メソッド                                                                  | セマンティクス                                                                            |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `handleEvent(event, bot, context)`                                        | office と導出された session key の組で直列化し、command または agent run を dispatch する |
+| `runSession(options)`                                                     | すでに直列化済みの 1 単位を実行する。制御された host 用途を想定                           |
+| `handleStop(address, sessionKey, bot)` / `forceStop(address, sessionKey)` | 協調的/ユーザーに見える stop か、即時の内部 stop か                                       |
+| `handleNewCommand(...)`                                                   | abort し、永続化された session state をリセットし、cached runner を破棄する               |
 
 ### Control と inspection
 
-| メソッド                              | セマンティクス                                                        |
-| ------------------------------------- | --------------------------------------------------------------------- |
-| `isRunning(sessionKey)`               | 現在のプロセス内での実行状態                                          |
-| `getRunningSessions()`                | admin/observability 面向けのスナップショット                          |
-| `switchConversationModel(...)`        | cached runner を更新する。存在したかどうかを返す                      |
-| `refreshConversationEnvironment(...)` | cached runner の環境を再解決する                                      |
-| `shutdown(timeoutMs?)`                | 新しい作業を拒否し、runners を停止し、期限まで in-flight の作業を待つ |
+| メソッド                                  | セマンティクス                                                          |
+| ----------------------------------------- | ----------------------------------------------------------------------- |
+| `isRunning(address, sessionKey)`          | 現在のプロセス内での実行状態                                            |
+| `getRunningSessions()`                    | admin/observability 面向けのスナップショット。各要素は `address` を持つ |
+| `switchConversationModel(address, ...)`   | cached runner を更新する。存在したかどうかを返す                        |
+| `refreshConversationEnvironment(address)` | cached runner の環境を再解決する                                        |
+| `shutdown(timeoutMs?)`                    | 新しい作業を拒否し、runners を停止し、期限まで in-flight の作業を待つ   |
 
-`ConversationRuntimeOptions` は、workspace/configuration フィールド、sandbox/resource サービス、任意の portal token stores、任意の commands、model registry、proactive な platform 操作、platform tool-pack factories を供給します。vault と portal stores が欠けている場合は無効化された実装に degrade します。portal URL を設定しつつその store を設定しない場合、使用時にエラーになります。
+session スコープのエントリポイントはすべて `OfficeAddress` を受け取ります。生の conversation id からの bridge はありません。生 id しか持たない呼び出し側は、まず registry 経由で解決します（`resolveOwnedOfficeAddress`）。これは CLI と admin 面向けの cold path です。
 
-並行性の不変条件: 1 つの session key に対する呼び出しは直列で、異なる session keys は並行して実行され得ます。したがって platform tool pack は runner ごとに作成され、決してグローバルに共有されません。`bindRun` がその run binding を変更するためです。
+`ConversationRuntimeOptions` は、`workspace`（`createWorkspace` が返す `Workspace`）、sandbox/resource サービス、任意の portal token stores、任意の commands、model registry、proactive な platform 操作、platform tool-pack factories を供給します。vault と portal stores が欠けている場合は無効化された実装に degrade します。portal URL を設定しつつその store を設定しない場合、使用時にエラーになります。
+
+並行性の不変条件: 1 つの office と session key の組に対する呼び出しは直列で、異なる session keys は並行して実行され得ます。したがって platform tool pack は runner ごとに作成され、決してグローバルに共有されません。`bindRun` がその run binding を変更するためです。
 
 ## 4. Command インターフェース
 
@@ -157,6 +167,10 @@ version 3 の append-only な session JSONL と tree 再構築を所有します
 ### `MikanModels` と `FileCredentialStore`
 
 `MikanModels` は組み込みおよびカスタムの `pi-ai` models を解決します。`FileCredentialStore` は provider credentials を state directory に永続化します。Vault credentials は別の境界です。tool execution に注入されるものであり、host 側の model client を認証するために使われるものではありません。
+
+### Subagent profiles
+
+subagent は必ず名前付きの profile で起動されます。実行ごとの自由形式の設定はサポートされる面ではありません。`loadSubagentProfiles` がそれらを解決します。`src/harness/subagent-profiles.ts` の組み込み profile が正式な定義であり（`worker`、`software-engineer`、`devops-engineer`、`data-scientist`、`account-manager`、`business-development`、`creative-producer`、`ad-operations-specialist`、`analysis-only`）、`<workspace>/agents/<name>.md` ファイルは同名の組み込みを置き換えるのではなく**パッチ**します。そのため operator は tools と prompt を書き直すことなく `model:` だけを上書きできます。どの組み込みとも名前が一致しないファイルは新しい profile を定義し、自前の `tools` を指定する必要があります。不正なファイルは診断として記録されスキップされ、throw されることはありません。
 
 ### Harness events と budgets
 
@@ -239,22 +253,51 @@ Credential フローは次のとおりです:
 
 Host sandbox 実行は決して vault 注入を受け取りません。Open-trigger platforms は決して ambient shared vault を受け取りません。これらはセキュリティの不変条件であり、便宜的な既定値ではありません。
 
-## 10. Session、chat、identity のインターフェース
+## 10. Office、session、chat、identity のインターフェース
 
-ソース: `src/sessions/*`、`src/store.ts`、`src/sandbox/identity.ts`。
+ソース: `src/office/*`、`src/sessions/*`、`src/adapters/shared.ts`、`src/sandbox/identity.ts`。
 
-意図的な 2 つの記録があります:
+### `Workspace` と `Office`
 
-| 記録                              | 目的                                                             |
-| --------------------------------- | ---------------------------------------------------------------- |
-| `<conversation>/log.jsonl`        | Platform の真実: user/bot の messages と attachments             |
-| `<conversation>/sessions/*.jsonl` | Agent の真実: prompts、model/tool messages、branches、compaction |
+conversation は **office** です。すなわち 1 つの永続作業領域と 1 つのデータ境界です。これを表す値は 2 つあり、どちらも frozen です。
+
+```ts
+const workspace = createWorkspace({ root, stateDir });
+const office = workspace.office(createOfficeAddress("slack", "C0AAAAAA1"));
+```
+
+`Workspace` はプロセスごとに 1 度だけ構築され、workspace 全体の面（`root`、`memoryPath`、`skillsDir`、`eventsDir`、`agentsDir`、`reservedNames`）と office factory を所有します。`Office` は 1 つの conversation の paths — `key`、`dir`、`memoryPath`、`skillsDir`、`sessionsDir`、`attachmentsDir`、`logPath`、host 専用の `stateDir` — を事前計算し、`ensure()` を公開します。
+
+この境界をまたぐ規則:
+
+- **文字列ではなく値を渡す。** consumer は `Office` を受け取ります。root と id から path を組み立てることはせず、directory の basename から identity を推測することもありません。
+- **`ensure()` が唯一の materialization seam。** これは office を registry に記録してから directory を作成します。この順序により、クラッシュ時に directory のない記録が残ることはあり得ますが（無害で、次のメッセージで再作成されます）、registry が列挙できない匿名の directory が生じることは決してありません。冪等であり、メッセージごとの path 解決に使える程度に軽量です。
+- **Office の値は address ごとに memoize される**ため、hot path で `workspace.office(address)` を繰り返し呼んでも、コストは SHA-256 ではなく map の参照です。
+
+### `OfficeAddress` と `OfficeKey`
+
+`OfficeAddress` は `{ platform, conversationId }` — platform とその生の conversation id です。`officeKey(address)` はストレージ上の identity `v1-<platform>-<readable-id>-<16 桁の hex>` を導出します。中央の可読部分は診断用で、identity の構成要素は SHA-256 prefix です。同じ key が host 上、sandbox runtime 内、vault 内の office directory を指すため、生の conversation id が一致する 2 つのプラットフォームが互いの files や認証情報に到達することは決してありません。
+
+Office key は**逆変換できません**。`OfficeRegistry`（`office-registry.json`、host 専用）が生 id ↔ office の恒久的な対応であり、旧来の生 id 配置からの boot 時 migration も journal します。生 id を扱う面はこれを介して解決します: CLI operator 向けの `resolveOwnedOfficeAddress`、admin の列挙向けの `listRegisteredOffices`。sandbox のリソース名（container 名、Gondolin instance、Cloudflare scope）は、リソース名の migration が済むまで生の conversation 由来のままです。そこでの衝突のコストは container の作り直しであって、認証情報へのアクセスではありません。
+
+### 2 つの記録
+
+| 記録                        | 目的                                                             |
+| --------------------------- | ---------------------------------------------------------------- |
+| `<office>/log.jsonl`        | Platform の真実: user/bot の messages と attachments             |
+| `<office>/sessions/*.jsonl` | Agent の真実: prompts、model/tool messages、branches、compaction |
 
 これらを統合しないでください。Chat history は欠けている top-level agent session を再構築できますが、agent sessions には platform に現れなかったデータが含まれます。
 
-Session keys は `conversationId[:suffix]` を使います。この文法を所有するのは `src/sessions/session-key.ts` だけです。呼び出し側は、文字列を直接分割せず、`deriveSessionKey`、`conversationIdOf`、`threadSuffixOf` を使わなければなりません。
+### Session keys
+
+Session keys は `conversationId[:suffix]` を使い、**生の platform 値のまま**です。この文法が office key を目にすることはありません。所有するのは `src/sessions/session-key.ts` だけであり、呼び出し側は文字列を直接分割せず、`deriveSessionKey`、`conversationIdOf`、`threadSuffixOf` を使わなければなりません。runtime state は office と session key の組で指し示され、それこそが、グローバルには一意でない生の key を安全にしているものです。
 
 `ChatHistorySync` は、top-level/thread のスコープを解決し、新しい sessions を bootstrap し、新しい platform log entries を同期し、sessions をリセットし、active な parent run の seal を待つ thread を調整します。
+
+### Attachments
+
+`src/adapters/shared.ts` の `saveIncomingAttachments(office, items)` が attachment の規約を単独で所有します: `office.attachmentsDir` 配下のサニタイズ済み `<timestamp>_<name>` ファイル名と、agent が読む workspace 相対の `<officeKey>/attachments/<file>` path です。最初の書き込みの前に office を materialize し、throw する代わりに item ごとの失敗を返すため、各 adapter は自身の失敗ポリシーを保てます。
 
 ## 11. Event-file インターフェース
 
@@ -275,19 +318,23 @@ type EventFilePayload =
 
 ## 12. 永続化されたファイルシステムのインターフェース
 
-| パス                                               | 所有者                   | 可視性 / 互換性                         |
-| -------------------------------------------------- | ------------------------ | --------------------------------------- |
-| `<state-dir>/settings.json`                        | config                   | Host-only のグローバル設定              |
-| `<state-dir>/conversations/<id>/settings.json`     | config/admin             | Host-only の conversation override      |
-| `<state-dir>/auth.json`                            | harness credential store | Host-only の model-provider credentials |
-| `<state-dir>/models.json`                          | harness model catalog    | Host-only のカスタム providers/models   |
-| `<state-dir>/vaults/**`                            | vault/login              | Host-only の secrets と mount files     |
-| `<state-dir>/{global,conversations}/**/extensions` | extension loader         | 信頼された host code                    |
-| `<workspace>/MEMORY.md`                            | agent/user               | Sandbox から見える永続 memory           |
-| `<workspace>/skills/**/SKILL.md`                   | skills                   | Sandbox から見える prompt instructions  |
-| `<workspace>/events/*.json`                        | event store/watcher      | 共有 scheduling の wire format          |
-| `<workspace>/<id>/log.jsonl`                       | platform store           | Append-only な platform history         |
-| `<workspace>/<id>/sessions/*.jsonl`                | session store            | Versioned append-only な agent history  |
+| パス                                                  | 所有者                   | 可視性 / 互換性                                |
+| ----------------------------------------------------- | ------------------------ | ---------------------------------------------- |
+| `<state-dir>/settings.json`                           | config                   | Host-only のグローバル設定                     |
+| `<state-dir>/office-registry.json`                    | office registry          | Host-only の office 一覧 + migration journal   |
+| `<state-dir>/conversations/<officeKey>/settings.json` | config/admin             | Host-only の conversation override             |
+| `<state-dir>/auth.json`                               | harness credential store | Host-only の model-provider credentials        |
+| `<state-dir>/models.json`                             | harness model catalog    | Host-only のカスタム providers/models          |
+| `<state-dir>/vaults/**`                               | vault/login              | Host-only の secrets と mount files            |
+| `<state-dir>/{global,conversations}/**/extensions`    | extension loader         | 信頼された host code                           |
+| `<workspace>/MEMORY.md`                               | agent/user               | Sandbox から見える永続 memory                  |
+| `<workspace>/skills/**/SKILL.md`                      | skills                   | Sandbox から見える prompt instructions         |
+| `<workspace>/events/*.json`                           | event store/watcher      | 共有 scheduling の wire format                 |
+| `<workspace>/agents/*.md`                             | subagent profiles        | 組み込みに対するインストールごとの model patch |
+| `<workspace>/<officeKey>/log.jsonl`                   | platform adapters        | Append-only な platform history                |
+| `<workspace>/<officeKey>/sessions/*.jsonl`            | session store            | Versioned append-only な agent history         |
+
+`MEMORY.md`、`skills`、`events`、`agents` は workspace root の予約名（`RESERVED_WORKSPACE_NAMES`）であり、それ以外の workspace root エントリはすべて office directory です。`<state-dir>/vaults/` 配下の conversation スコープの vault directory は、conversation スコープの sandbox では office key で命名されます。`host` モードは user、`container` モードは container 名で索きます。
 
 state directory は sandbox から見える workspace 内に置いてはなりません。重要な state files は atomic な private write を使い、append-only logs は append セマンティクスを使います。
 

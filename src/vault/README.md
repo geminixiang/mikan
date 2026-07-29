@@ -4,10 +4,33 @@ File-backed credential vault for env secrets, secret files, shared profiles, and
 
 ## Files
 
-- `index.ts`: Implements `FileVaultManager`, vault key normalisation, env-file parsing, and shared/private vault operations.
-- Credential authorization keys come from `sandbox/identity.ts`; only exact pre-hash host/shared-container keys remain readable. Lossy managed-sandbox keys cannot prove ownership and are not resolved.
+- `index.ts`: Implements `FileVaultManager`, vault key normalisation, env-file parsing, shared/private vault operations, and `migrateConversationVaultKeys` (legacy raw-id vault dirs → office-key dirs; a collision is reported for manual merge, never clobbered).
+- `injection.ts`: `resolveVaultInjection` — turns a resolved vault into the env vars and secret-file mounts a run receives.
 - `disabled.ts`: A no-op `VaultManager` used when an embedder constructs the runtime without a vault; reads report empty/disabled, writes throw.
 - `policy.ts`: Pure policy for ambient `defaultSharedVault` (trust model × sandbox topology).
+- `types.ts`: The `VaultManager` interface plus `ResolvedVault`, `ResolvedVaultMount`, and `VaultInjection`.
+
+## Vault keys
+
+One directory under `<stateDir>/vaults/` per key. Which key a run
+authenticates as is decided by `credentialAuthorizationKey`
+(`sandbox/identity.ts`), never by this module:
+
+| Sandbox type                                                   | Key                                                                                                                             |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| conversation-scoped (image, gondolin, firecracker, cloudflare) | the **office key** — platform-scoped, so two platforms sharing a raw conversation id can never resolve each other's credentials |
+| `host`                                                         | a user-derived key (the host has no execution isolation to scope to)                                                            |
+| `container`                                                    | a key derived from the deployment-chosen container name                                                                         |
+
+Two top-level names are reserved namespaces rather than vault keys:
+`shared/<name>` for named shared login profiles, and `extensions/<slug>` for
+extension secrets — read host-side through the harness `api.secrets` and
+never mounted into a sandbox.
+
+Only exact pre-hash host/shared-container keys remain readable as a legacy
+fallback. Lossy managed-sandbox keys cannot prove ownership and are not
+resolved; legacy raw-id conversation dirs are renamed to office keys by the
+boot migration instead.
 
 ## Identity model (which credentials a conversation gets)
 

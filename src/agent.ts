@@ -404,7 +404,7 @@ function buildRuntimePaths(runtimeWorkspaceRoot: string, office: Office) {
 function buildEnvDescription(sandboxType: SandboxConfig["type"], workspaceRoot: string): string {
   switch (sandboxType) {
     case "image":
-      return `You are running inside a managed per-user container.
+      return `You are running inside a managed per-conversation container.
 - Runtime workspace root: ${workspaceRoot}
 - Bash commands start in: ${workspaceRoot}
 - Install tools with the image's package manager

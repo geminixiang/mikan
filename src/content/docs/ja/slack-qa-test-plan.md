@@ -61,23 +61,38 @@ npm run test:e2e:slack
 
 各 scenario はそれぞれ独立した `*.e2e.ts` ファイルです。必要な env vars（`SLACK_QA_USER_TOKEN`、`SLACK_QA_CHANNEL_ID`、関連する bot user ID）が不足している場合、runtime で skip されます。カバー範囲：
 
-- mikan bot への channel mention。
-- mikan thread reply routing。
+- mikan bot への channel mention と、no-mention false-reply check。
+- mikan thread reply routing と、通常の thread reply が実行を開始しないこと。
 - mikan short task completion。
-- mikan stop command acknowledgement。
-- Idle stop（"Nothing running"）acknowledgement。
-- mikan small text-file upload handling。
-- 複数ファイルアップロード処理。
-- 画像アップロード処理。
-- mention 不要の DM 応答。
-- DM のマルチターン文脈保持。
+- mikan stop command acknowledgement と、idle stop（"Nothing running"）。
+- small text-file、複数ファイル、画像のアップロード処理。
+- mention 不要の DM 応答と、DM のマルチターン文脈保持。
 - Thread session の分離。
 - Busy-queue のキュー済みメッセージ配信。
-- bot-to-bot loop observation。
-- one-shot event delivery。
-- No-mention false-reply check。
+- bot-to-bot loop observation と、bot 由来の mention が実行を開始しないこと。
+- one-shot event delivery と、event anchor の thread が fork session を継続すること。
+- delta のみを追加するネイティブ streaming append。
+- response source のリンクの Block Kit rendering と、`msg_too_long` の継続メッセージが thread 内に留まること。
+- `/new` が一時的な文脈を破棄する一方、永続 memory は残ること。
+- reply 待ちヘルパー自体の self-test。
 
-ローカル E2E に必要な変数は 4 つだけです：`SLACK_QA_USER_TOKEN`、`SLACK_QA_CHANNEL_ID`、`SLACK_QA_BOT_USER_ID`、`SLACK_BOT_TOKEN`。Event directory は現在の workspace から推定されます。
+ローカル E2E に必要な変数は 4 つだけです：`SLACK_QA_USER_TOKEN`、`SLACK_QA_CHANNEL_ID`、`SLACK_QA_BOT_USER_ID`、`SLACK_BOT_TOKEN`。working directory と event directory は、既定でリポジトリ root 配下の `.workspace/mikan-workspace` になります。`SLACK_QA_WORKING_DIR` と `SLACK_QA_EVENTS_DIR` で上書きできます。conversation の履歴を読む scenario は、自分で office key を解決します。daemon が書き込むのは生の channel id 配下ではなく、`<workspace>/v1-slack-<channel>-<digest>/` 配下です。
+
+### テスト用 daemon の door policy
+
+この suite は実際の mikan daemon を動かします。その daemon を `host` sandbox mode で実行すると、既定の
+`isolated` door policy では作業の開始を拒否し、bot からの返信がないまま全 scenario が失敗します。
+テスト用 state dir の `settings.json` で、trusted な policy を明示的に選択してください：
+
+```json
+{
+  "sandbox": {
+    "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
+  }
+}
+```
+
+これは使い捨てのシングルテナント QA runner に限って適切であり、それ以外では適切ではありません。
 
 QA user token は、テスト channel への投稿、channel history/replies の読み取り、S-009 のファイルアップロードが可能である必要があります。DM scenario ではさらに人間ユーザーの身分（`auth.test` に `bot_id` なし）が必要です：mikan は設計上 bot からの DM に応答しないため、bot 身分の token では S-017/S-018 は設定エラーとして即座に fail します。`deploy/examples/slack-app-manifest.e2e.json` の E2E manifest にはこれらの必要な user scopes が含まれています。通常の `deploy/examples/slack-app-manifest.json` には含まれていません。
 
@@ -99,7 +114,9 @@ Workflow `.github/workflows/slack-e2e.yml` は **Actions → Slack E2E → Run w
 
 ## Smoke Test チェックリスト
 
-deploy または config change のたびにこれらのテストを実行します。
+deploy または config change のたびにこれらのテストを実行します。ここで使う `S-0xx` の id は以下の手動
+チェックリストを番号付けするためのもので、自動化された `e2e/slack` scenario 内の `S-0xx` の id とは
+無関係です。両者を対応付けないでください。
 
 | ID    | 動作                                               | 期待結果                                             |
 | ----- | -------------------------------------------------- | ---------------------------------------------------- |

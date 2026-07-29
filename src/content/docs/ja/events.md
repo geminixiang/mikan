@@ -3,6 +3,12 @@ title: イベント
 description: workspace の events ディレクトリを通じて agent を起動するイベント形式と処理フロー。
 ---
 
+## イベントファイルの置き場所
+
+イベントファイルは `<workspace>/events/` にあります。どの office directory の中でもなく、workspace root に置かれます。この scheduling bus は意図的に workspace 全体で共有されます。watcher が polling する 1 つの directory を、すべての conversation が共有します。また agent が書き込み可能でもあるため、`conversationId` による所有権は協調的な規約であって認可の境界ではありません。イベントのテキストに secrets を入れないでください。
+
+agent の `event` tool は、既定では現在の conversation のイベントだけを列挙します。ファイルが一致するのは、その `conversationId` **と** `platform` の両方が実行中の office と一致する場合です。payload が `platform` を持つ以前に書かれたファイルは、生 id を共有するどの conversation からも見えたままになります。`scope=all` は directory 内のすべてを列挙します。
+
 ## イベントタイプ
 
 ### 即時
@@ -65,12 +71,14 @@ Cron 形式: `minute hour day-of-month month day-of-week`
 
 ## ルーティングフィールド
 
-| フィールド         | 説明                                                                                                         |
-| ------------------ | ------------------------------------------------------------------------------------------------------------ |
-| `platform`         | 対象 bot プラットフォーム（例: `slack`）                                                                     |
-| `conversationId`   | 送信先のチャンネルまたは DM ID                                                                               |
-| `conversationKind` | `"shared"`（チャンネル）または `"direct"`（DM）                                                              |
-| `userId`           | このイベントを要求したプラットフォームユーザー ID。per-user モードでは vault/credential routing に使われます |
+`type`、`conversationId`、`text` はすべてのイベントファイルで必須です。その他は任意で、タイプ固有のフィールド（`at`、`schedule` + `timezone`）はそのタイプでのみ必須です。schema を所有するのは `src/harness/event-format.ts` であり、すべての reader と writer はその parser と builder を経由します。
+
+| フィールド         | 説明                                                                                                                                             |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `platform`         | 対象 bot プラットフォーム（例: `slack`）。省略すると、生の conversation id を共有する 2 つのプラットフォームがある場合に曖昧になります           |
+| `conversationId`   | 送信先の生のプラットフォームチャンネルまたは DM ID。office key ではありません。`channelId` は legacy な読み取り専用 alias として受け付けられます |
+| `conversationKind` | `"shared"`（チャンネル）または `"direct"`（DM）                                                                                                  |
+| `userId`           | このイベントを要求したプラットフォームユーザー ID。per-user モードでは vault/credential routing に使われます                                     |
 
 ## Session バインディング
 

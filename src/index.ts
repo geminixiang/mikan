@@ -191,6 +191,7 @@ export type {
   OfficeKey,
   MessagingEventHandler,
   MessagingInfo,
+  PlatformName,
   RunningSession,
 } from "./adapter.js";
 export {

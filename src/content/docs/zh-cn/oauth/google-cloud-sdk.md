@@ -6,7 +6,7 @@ sidebar:
   label: Google Cloud SDK
 ---
 
-> 注意：mikan 会把 Google `authorized_user` JSON 存进 vault，并保存 target path metadata。`image` sandbox 会把这类 vault file 自动投影到 container 内的 target path；现有 `container` / `firecracker` runtime 仍不会自动做 file projection。
+> 注意：mikan 会把 Google `authorized_user` JSON 以 `gcloud-adc.json` 的名称存进 vault，runtime 内的 target 由该文件名推断而来。`image` 和 `gondolin` sandbox 会自动把该文件投影到 runtime 内的该 target。`container`、`firecracker` 和 `cloudflare` 完全无法 mount 文件，遇到这种情况会让该次运行失败，而不是在缺少 credential 的情况下继续，因此请不要在这些模式上使用此流程。
 
 ## 1. 建立 Google OAuth Client
 
@@ -52,7 +52,7 @@ export GOOGLE_CLOUD_SDK_OAUTH_SCOPES="openid https://www.googleapis.com/auth/use
 
 ## 3. 使用 `/pi-login`
 
-如果你希望后续 runtime 自动把 credential file 投影到 `/root/.config/gcloud/application_default_credentials.json`，建议用 `image` sandbox 启动 mikan：
+如果你希望后续 runtime 自动把 credential file 投影到 `/root/.config/gcloud/application_default_credentials.json`，建议用 `image` sandbox（或 `gondolin:default`）启动 mikan：
 
 ```bash
 mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
@@ -80,4 +80,5 @@ mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 
 - mikan 使用 web OAuth callback，因此 Google OAuth client 必须是 `Web application`，不是 desktop app。
 - 如果 Google 没有回传 `refresh_token`，请撤销既有 consent 后重新 `/pi-login`。mikan 会要求 `access_type=offline` 与 `prompt=consent`，但 Google 仍可能因既有授权而省略 refresh token。
-- 若要让 credential file 自动出现在 `/root/.config/gcloud/application_default_credentials.json`，请使用 `image` sandbox。`container` / `firecracker` 目前仍只会保存 file credential metadata，不会自动投影。
+- 若要让 credential file 自动出现在 `/root/.config/gcloud/application_default_credentials.json`，请使用 `image` 或 `gondolin` sandbox。在 `container`、`firecracker` 和 `cloudflare` 上，vault 中存在 file credential 会让该次运行以 `does not support vault file mounts` 失败——请删除它，并在这些模式上改用仅 `env` 的 credentials。
+- 在 `gondolin:default` 中，该文件是以仅所有者可读的权限复制进 guest，而不是 bind-mount；在主机上轮换它会在该对话的下一条命令时重建 runtime，因此 guest 绝不会保留过期副本。

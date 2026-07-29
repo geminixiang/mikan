@@ -22,7 +22,7 @@ mikan 使用 long polling；不需要公開 Telegram webhook。
 Adapter 處理：
 
 - private、group 與 supergroup 訊息
-- `/login`、`/session`、`/new`、`/stop`、`/model` 與 `/sandbox`
+- `/login`、`/session`、`/new`、`/stop`、`/model` 與 `/sandbox`——指令選單是透過 `setMyCommands` 從 `src/commands/manifest.ts` 註冊的，因此絕不會與共用清單脫節
 - replies、photos 與 documents
 
 私人訊息會直接觸發。群組訊息需要 command、mention、reply context 或符合 auto-reply policy。Telegram 必須先將訊息送達 bot；privacy mode 可能讓 auto-reply rule 看不到一般群組流量。
@@ -43,7 +43,7 @@ Telegram 沒有 Slack 形式的 `thread_ts`。mikan 從直接 reply 關係推導
 
 回應使用 Telegram HTML mode。支援的格式包括 `<b>`、`<i>`、`<code>`、`<pre>` 與 `<a href="...">`。若 Telegram 拒絕產生的 markup，mikan 會使用 escaped HTML 重試。Responder 也支援 typing status、message edits、reply targets 與檔案上傳。
 
-收到的 photos 與 documents 會透過 Telegram file API 下載到對話的 `attachments/` 目錄。Voice、audio、video、stickers 與 polls 等其他 media types 不會當成同等的 inbound attachments 處理。
+收到的 photos 與 documents 會透過 Telegram file API，以其他 adapter 共用的同一個 helper，用 `<timestamp>_<sanitized-name>` 下載到該對話 office 的 `attachments/` 目錄。Voice、audio、video、stickers 與 polls 等其他 media types 不會當成同等的 inbound attachments 處理。
 
 ## Stop 行為
 

@@ -126,6 +126,18 @@ gh release create <version> \
 
 If it already exists, use `gh release edit <version> ...` and keep prerelease/stable intent consistent.
 
+### 7. Watch the npm publish
+
+Publishing the GitHub release is what ships the package: `.github/workflows/publish.yml`
+runs on `release: published` and does `npm ci` → `npm run build` → `npm test` →
+`node scripts/check-npm-package.mjs` → `npm publish --provenance --access public`,
+adding `--tag beta` when the version contains a `-`. A red workflow means the
+release exists but nothing reached npm.
+
+```bash
+gh run list --repo geminixiang/mikan --workflow publish.yml --limit 3
+```
+
 ## Report back
 
 Return:
@@ -135,6 +147,7 @@ Return:
 - version-bump commit hash
 - push status
 - release URL
+- npm publish workflow status
 
 ## Guardrails
 

@@ -6,7 +6,7 @@ sidebar:
   label: Google Cloud SDK
 ---
 
-> 注意：mikan は Google の `authorized_user` JSON を vault に保存し、target path のメタデータを保持します。`image` sandbox はこの種の vault ファイルをコンテナ内の target path に自動的にプロジェクション（投影）しますが、現在の `container` / `firecracker` ランタイムはまだ自動ファイルプロジェクションに対応していません。
+> 注意：mikan は Google の `authorized_user` JSON を `gcloud-adc.json` として vault に保存し、ランタイム上の target はそのファイル名から推定されます。`image` と `gondolin` sandbox は、ランタイム内のその target へファイルを自動的にプロジェクション（投影）します。`container`、`firecracker`、`cloudflare` はファイルを mount できないため、認証情報なしで続行するのではなく実行を失敗させます。これらのモードではこのフローを使用しないでください。
 
 ## 1. Google OAuth クライアントの作成
 
@@ -52,7 +52,7 @@ export GOOGLE_CLOUD_SDK_OAUTH_SCOPES="openid https://www.googleapis.com/auth/use
 
 ## 3. `/pi-login` の使用
 
-後続のランタイムで認証情報ファイルを `/root/.config/gcloud/application_default_credentials.json` に自動的にプロジェクションしたい場合は、`image` sandbox を使用して mikan を起動することをお勧めします：
+後続のランタイムで認証情報ファイルを `/root/.config/gcloud/application_default_credentials.json` に自動的にプロジェクションしたい場合は、`image` sandbox（または `gondolin:default`）を使用して mikan を起動することをお勧めします：
 
 ```bash
 mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
@@ -80,4 +80,5 @@ mikan から返信されたリンクを開き、**Google Cloud SDK (gcloud)** �
 
 - mikan は Web OAuth コールバックを使用するため、Google OAuth クライアントはデスクトップ アプリ（desktop app）ではなく、`ウェブ アプリケーション`（Web application）である必要があります。
 - Google から `refresh_token` が返されない場合は、既存の同意（consent）を取り消してから、再度 `/pi-login` を実行してください。mikan は `access_type=offline` と `prompt=consent` を要求しますが、既存の授権があるため、Google がリフレッシュトークンを省略する場合があります。
-- 認証情報ファイルを `/root/.config/gcloud/application_default_credentials.json` に自動的に表示させるには、`image` sandbox を使用してください。`container` / `firecracker` は現在、ファイルの認証情報メタデータを保存するのみで、自動プロジェクションは行いません。
+- 認証情報ファイルを `/root/.config/gcloud/application_default_credentials.json` に自動的に表示させるには、`image` または `gondolin` sandbox を使用してください。`container`、`firecracker`、`cloudflare` では、vault にファイル認証情報があると実行が `does not support vault file mounts` で失敗します。これらのモードではファイル認証情報を削除し、`env` のみの認証情報を使用してください。
+- `gondolin:default` では、ファイルは bind mount ではなく所有者のみ読める権限で guest にコピーされます。host 側でローテーションすると、その conversation の次のコマンドでランタイムが再作成されるため、guest に古いコピーが残ることはありません。

@@ -9,13 +9,14 @@ description: 以證據為本的計畫，在不改變行為的前提下縮減 mik
 
 最小且一致的 mikan 核心是：
 
-1. 一個正規化的對話輸入與一個 response port；
-2. 一個序列化 session 並擁有 runner lifecycle 的 runtime；
-3. 一個負責 model turn 的 harness 介面；
-4. 一個 session store 與一個平台 log store，刻意分開；
-5. 一個供所有工具 I/O 使用的 executor 介面；
-6. 一個憑證解析 seam；
-7. 供選用的 platform、command、tool、extension 與 sandbox 能力使用的 registry。
+1. 一個對話身分，以及一個把它轉成路徑的地方；
+2. 一個正規化的對話輸入與一個 response port；
+3. 一個序列化 session 並擁有 runner lifecycle 的 runtime；
+4. 一個負責 model turn 的 harness 介面；
+5. 一個 session store 與一個平台 log store，刻意分開；
+6. 一個供所有工具 I/O 使用的 executor 介面；
+7. 一個憑證解析 seam；
+8. 供選用的 platform、command、tool、extension 與 sandbox 能力使用的 registry。
 
 Web portal、特定聊天 SDK、Docker 佈建、Gondolin runtime 管理、Firecracker、Cloudflare 與 GitHub 專屬工具，都是圍繞此核心的產品或外掛。
 
@@ -39,6 +40,8 @@ Web portal、特定聊天 SDK、Docker 佈建、Gondolin runtime 管理、Firecr
 有些看似重複的地方其實保護著重要語意：
 
 - 讓 `log.jsonl` 與 agent session JSONL 分開。它們記錄不同的真實，並支援復原。
+- 讓 office key 與原始平台 id 分開。用 raw id 命名目錄或 vault，會讓兩個共用同一個 id 的平台碰到彼此的資料；registry 之所以存在，正是因為這個 key 無法反推。
+- 讓 session key 維持原始值。它們是平台值，而把它們與一個 office 配對，正是讓非全域唯一的 key 得以安全的原因——把它們改寫成以 office 為範圍的字串，只會把這道檢查從 runtime 推給每一個呼叫端。
 - 讓 host path 與 runtime path 分開。合併它們會破壞 container/remote 執行，並可能暴露僅限 host 的資料。
 - 讓 model-provider 憑證與 sandbox vault 憑證分開。
 - 保留 per-session queue。全域序列化會浪費並行；不序列化則會破壞對話順序。
@@ -54,7 +57,7 @@ Web portal、特定聊天 SDK、Docker 佈建、Gondolin runtime 管理、Firecr
 interface ConversationInput {
   platform: MessagingInfo;
   conversation: {
-    id: string;
+    address: OfficeAddress;
     kind: ConversationKind;
     vaultId?: string;
   };
@@ -93,7 +96,7 @@ interface PlatformPort {
 
 ```ts
 interface ConversationRuntimeOptions {
-  workingDir: string;
+  workspace: Workspace;
   sandbox: SandboxConfig;
   createRunner: RunnerFactory;
   commands?: readonly CommandDefinition[];

@@ -102,3 +102,26 @@ mikan
 state directory 默认为 `~/.mikan`，working directory 默认为 `<state-dir>/workspace`；可用 `--state-dir=<dir>` 或路径参数更改。`mikan --help` 列出所有标志，`mikan env` 显示当前已设置的变量。
 
 Bot 会在 DM 中回复，也会在频道中被提及时回复。触发的 Slack 话题工作使用隔离会话，其 key 包含话题时间戳。共享频道话题中普通的未提及回复只会被记录，不会启动运行。
+
+## 9. 选择沙箱
+
+不带 `--sandbox` 时，mikan 会直接在主机上运行工具，而默认的 `isolated` 门禁策略按设计会拒绝这一组合——
+第一条消息就会报告 `host` 无法提供隔离的对话办公室。请在第一次真正对话之前先选定一种：
+
+- **推荐做法。** 使用受管理的沙箱，它为每个对话提供独立容器，无需更改任何设置即可满足 isolated 策略：
+
+  ```bash
+  mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest
+  ```
+
+- **Host 模式**，仅限在你已经信任其访问整个工作区的机器上：在 `~/.mikan/settings.json` 中加入受信任的门禁策略。
+
+  ```json
+  {
+    "sandbox": {
+      "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
+    }
+  }
+  ```
+
+完整对比请参阅 [Sandbox](/zh-cn/sandbox/)。

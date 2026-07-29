@@ -22,7 +22,7 @@ mikan 使用 long polling；不需要公开 Telegram webhook。
 适配器处理：
 
 - 私聊、群组和超级群组消息
-- `/login`、`/session`、`/new`、`/stop`、`/model` 和 `/sandbox`
+- `/login`、`/session`、`/new`、`/stop`、`/model` 和 `/sandbox`——命令菜单通过 `setMyCommands` 从 `src/commands/manifest.ts` 注册，因此绝不会与共享清单产生偏离
 - 回复、照片和文档
 
 私聊消息会直接触发。群组消息需要命令、提及、回复上下文或匹配的自动回复策略。Telegram 必须先将消息投递给 bot；隐私模式可能会阻止自动回复规则看到普通群组流量。
@@ -43,7 +43,7 @@ Telegram 没有 Slack 风格的 `thread_ts`。mikan 根据直接回复关系推�
 
 回复使用 Telegram HTML 模式。支持的格式包括 `<b>`、`<i>`、`<code>`、`<pre>` 和 `<a href="...">`。如果 Telegram 拒绝生成的 markup，mikan 会使用转义后的 HTML 重试。Responder 还支持输入状态、消息编辑、回复目标和文件上传。
 
-入站照片和文档通过 Telegram 文件 API 下载到对话的 `attachments/` 目录。语音、音频、视频、贴纸和 poll 等其他媒体类型不会作为等效入站附件处理。
+入站照片和文档通过 Telegram 文件 API，以 `<timestamp>_<sanitized-name>` 的形式下载到该对话办公室的 `attachments/` 目录，使用的是与其他适配器相同的共享辅助函数。语音、音频、视频、贴纸和 poll 等其他媒体类型不会作为等效入站附件处理。
 
 ## 停止行为
 

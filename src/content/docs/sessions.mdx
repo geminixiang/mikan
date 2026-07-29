@@ -21,28 +21,40 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
 
 ## Platform session model
 
-| Platform | `sessionKey` rule                                                                 | Notes                                                                  |
-| -------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| Slack    | top-level / DM: `conversationId`; thread: `conversationId:threadTs`               | thread sessions are fixed files bootstrapped from recent chat history  |
-| Discord  | DM: `channelId`; shared top-level: `channelId:messageId`; reply/thread: rooted id | replies in shared channels continue the root message session           |
-| Telegram | private: `chatId`; shared top-level: `chatId:messageId`; reply chain: root reply  | no native thread model; shared sessions are inferred from reply chains |
+A session key is `conversationId` on its own, or `conversationId:suffix` for a scoped session. The suffix is whatever the platform uses to identify a thread or reply target.
+
+| Platform | `sessionKey` rule                                                                                                    | Notes                                                                         |
+| -------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Slack    | top-level and DM: `channelId`; thread (including in a DM): `channelId:threadTs`                                      | thread sessions are fixed files bootstrapped from recent chat history         |
+| Discord  | DM and shared top-level: `channelId`; thread: `parentChannelId:threadChannelId`; reply: `channelId:repliedMessageId` | a guild thread is addressed by its parent channel plus the thread's own id    |
+| Telegram | private chat: `chatId`; shared top-level: `chatId:messageId`; shared reply: `chatId:repliedMessageId`                | no native thread model, so the message replied to is the scope                |
+| GitHub   | `GH_<owner>_<repo>_<number>`                                                                                         | one issue or pull request is one flat session; inline review threads included |
+
+## Session keys and offices
+
+Session keys stay raw platform values — the grammar in `src/sessions/session-key.ts` never sees an office key. Runtime state is addressed by the conversation's office plus its session key, so two platforms that share a raw conversation id can never select each other's runners, queues, or stop state. Storage paths follow the office: session files live under `<workspace>/<officeKey>/sessions/`.
 
 ## Session identity safety
 
-A session key always belongs to exactly one conversation. Platform adapters may supply a scoped key, but conversation intake and the runtime reject a key whose conversation prefix differs from the incoming conversation. Conversation identities and scoped suffixes also reject path separators, control characters, and the special `.` / `..` segments before they can influence session storage. Thread session files keep their existing names and persistence behavior; the sessions module additionally rejects symlink session targets and proves derived paths remain inside the conversation's `sessions/` directory.
+A session key always belongs to exactly one conversation. Platform adapters may supply a scoped key, but conversation intake and the runtime reject a key whose conversation prefix differs from the incoming conversation. Conversation identities and scoped suffixes also reject path separators, control characters, and the special `.` / `..` segments before they can influence session storage. Thread session files keep their existing names and persistence behavior; the sessions module additionally rejects symlink session targets and proves derived paths remain inside the office's `sessions/` directory.
 
 ## Files
 
 <FileTree>
 
 - workspace/
-  - **log.jsonl** platform message history
-  - sessions/
-    - **current** points to the active top-level session
-    - **\*.jsonl** structured harness session context, including tool results
-    - **scope-derived files** fixed session files for thread / reply scopes
+  - v1-slack-c0aaaaaa1-…/ one office
+    - **log.jsonl** platform message history
+    - sessions/
+      - **current** points to the active top-level session
+      - **\*.jsonl** structured harness session context, including tool results
+      - **scope-derived files** fixed session files for thread / reply scopes
 
 </FileTree>
+
+## Thread lineage
+
+A scoped session records the top-level session it was created from in its header, as `parentSession` (path) and `parentSessionId` (uuid). The link survives a reset: resetting a scoped session rebuilds its file but keeps the original parent rather than re-binding to whichever top-level session is current now. Sessions written before lineage metadata existed are left alone rather than recreated.
 
 ## Bootstrap, rotation, reset, and Session Dream
 

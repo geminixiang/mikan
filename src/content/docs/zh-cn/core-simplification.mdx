@@ -9,13 +9,14 @@ description: 一份基于证据的方案，在不改变行为的前提下缩减 
 
 最小且连贯的 mikan 核心是：
 
-1. 一个规范化的对话输入和一个响应端口；
-2. 一个串行化会话并拥有 runner 生命周期的运行时；
-3. 一个用于模型轮次的框架接口；
-4. 一个会话 store 和一个平台日志 store，有意保持分离；
-5. 一个用于所有工具 I/O 的 executor 接口；
-6. 一个凭证解析缝隙；
-7. 用于可选平台、命令、工具、扩展和沙箱能力的注册表。
+1. 一个对话身份，以及一个把它转换成路径的地方；
+2. 一个规范化的对话输入和一个响应端口；
+3. 一个串行化会话并拥有 runner 生命周期的运行时；
+4. 一个用于模型轮次的框架接口；
+5. 一个会话 store 和一个平台日志 store，有意保持分离；
+6. 一个用于所有工具 I/O 的 executor 接口；
+7. 一个凭证解析缝隙；
+8. 用于可选平台、命令、工具、扩展和沙箱能力的注册表。
 
 Web portal、特定的聊天 SDK、Docker provisioning、Gondolin runtime 管理、Firecracker、Cloudflare 以及 GitHub 专用工具，都是围绕这个核心的产品或插件。
 
@@ -24,6 +25,7 @@ Web portal、特定的聊天 SDK、Docker provisioning、Gondolin runtime 管理
 | 优先级 | 发现                                | 证据                                                                                                                                         | 简化方案                                                                             |
 | ------ | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | Done   | npm 边界已明确并有回归测试          | `src/index.ts` 明列 root export；`package.json` 声明 root、harness 与 sandbox entry point；`src/test/public-api.test.ts` 快照 runtime export | 新增 export 视为兼容性决策，必须有意更新 contract test                               |
+| Done   | 对话身份与路径派生只有一个所有者    | `src/office/` 拥有 `OfficeAddress`/`OfficeKey`、`Workspace`/`Office` 值、注册表和旧版迁移；消费者接受值而非字符串                            | 把路径运算留在模块内部；新的消费者接收一个 `Office`，而不是一个根目录加一个 id       |
 | P0     | 平台输入有两种重叠的规范形态        | `ConversationEvent` 和 `ConversationMessage` 重复了 id/session/kind/user/text/attachments/thread 字段，并被一起传递                          | 引入一个 `ConversationInput` 信封；在迁移期间派生兼容视图                            |
 | P0     | `MessagingBot` 有太多变更理由       | 生命周期、输出、上传/reaction、私密诊断、事件队列和元数据都是一个接口                                                                        | 将规范化的平台端口与可选能力拆分；保留一个组合它们的适配器对象                       |
 | P1     | 沙箱可扩展性只是名义上的            | `SandboxAdapter` 已导出，但 `sandbox/index.ts` 中一个封闭数组拥有解析/创建                                                                   | 添加注册表或让适配器变为内部；把实验性后端移出默认核心组装                           |
@@ -39,6 +41,8 @@ Web portal、特定的聊天 SDK、Docker provisioning、Gondolin runtime 管理
 某些表面上的重复保护着重要语义：
 
 - 让 `log.jsonl` 与代理会话 JSONL 分离。它们记录不同的真相并支持恢复。
+- 让 office key 与原始平台 id 保持区分。用原始 id 命名目录或 vault，会让两个共用同一 id 的平台触及彼此的数据；注册表的存在正是因为该 key 不可逆。
+- 让会话密钥保持原始形态。它们是平台值，而把它们与一间办公室配对正是非全局唯一的密钥得以安全的原因——把它们改写成办公室范围的字符串，只会把这项检查从运行时挪到每一个调用方。
 - 让主机路径与运行时路径分离。合并它们会破坏容器/远程执行，并可能暴露仅主机数据。
 - 让模型 provider 凭证与沙箱 vault 凭证分离。
 - 保留 per-session 队列。全局串行化会浪费并发；没有串行化会破坏对话顺序。
@@ -54,7 +58,7 @@ Web portal、特定的聊天 SDK、Docker provisioning、Gondolin runtime 管理
 interface ConversationInput {
   platform: MessagingInfo;
   conversation: {
-    id: string;
+    address: OfficeAddress;
     kind: ConversationKind;
     vaultId?: string;
   };
@@ -93,7 +97,7 @@ interface PlatformPort {
 
 ```ts
 interface ConversationRuntimeOptions {
-  workingDir: string;
+  workspace: Workspace;
   sandbox: SandboxConfig;
   createRunner: RunnerFactory;
   commands?: readonly CommandDefinition[];

@@ -252,6 +252,8 @@ api.registerCommand({
 
 Users invoke it as `/pm list`. Matching is case-insensitive; built-in commands (`/pi-*`, `/login`, …) always win over extension commands, and the first registration of a name wins across extensions. Slash text that matches no command still goes to the agent as a normal prompt. A handler error is reported in the conversation and logged; it never crashes mikan.
 
+Dispatch is plain-text: the incoming message text must start with `/pm`. This works on platforms that deliver `/`-prefixed text as an ordinary message — Telegram, Discord, and GitHub comments. The Slack client intercepts slash input and only sends commands registered in the Slack App manifest (which mikan routes to built-in commands), so extension commands cannot be invoked as `/pm` in Slack today.
+
 ### Isolated subagents
 
 `api.subagent.run` starts one fresh subagent and returns its result to the extension without posting to the conversation or adding to conversation history:

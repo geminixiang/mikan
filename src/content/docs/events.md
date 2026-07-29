@@ -3,6 +3,12 @@ title: Events
 description: Event formats and processing flow for triggering the agent through the workspace events directory.
 ---
 
+## Where events live
+
+Event files live in `<workspace>/events/`, at the workspace root rather than inside any office directory. The scheduling bus is deliberately workspace-wide: one directory the watcher polls, shared by every conversation. It is also agent-writable, so ownership by `conversationId` is a cooperative convention, not an authorization boundary — do not put secrets in event text.
+
+The agent's `event` tool lists only the current conversation's events by default: a file matches when its `conversationId` **and** its `platform` match the running office. Files written before payloads carried a `platform` stay visible to whichever conversation shares the raw id. `scope=all` lists everything in the directory.
+
 ## Event types
 
 ### Immediate
@@ -65,12 +71,14 @@ Common schedules:
 
 ## Routing fields
 
-| Field              | Description                                                                                    |
-| ------------------ | ---------------------------------------------------------------------------------------------- |
-| `platform`         | Target bot platform, for example `slack`                                                       |
-| `conversationId`   | Channel or DM ID to send to                                                                    |
-| `conversationKind` | `"shared"` (channel) or `"direct"` (DM)                                                        |
-| `userId`           | Platform user ID that requested this event; used for vault/credential routing in per-user mode |
+`type`, `conversationId`, and `text` are required in every event file; the rest are optional, and per-type fields (`at`, `schedule` + `timezone`) are required for their own type. `src/harness/event-format.ts` owns the schema — every reader and writer goes through its parser and builder.
+
+| Field              | Description                                                                                                                   |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `platform`         | Target bot platform, for example `slack`. Omitting it makes the file ambiguous when two platforms share a raw conversation id |
+| `conversationId`   | Raw platform channel or DM ID to send to — not an office key. `channelId` is accepted as a legacy read-only alias             |
+| `conversationKind` | `"shared"` (channel) or `"direct"` (DM)                                                                                       |
+| `userId`           | Platform user ID that requested this event; used for vault/credential routing in per-user mode                                |
 
 ## Session binding
 

@@ -92,8 +92,10 @@ avoid triggering on every comment in a busy repo.
 
 Like Slack: not every comment triggers a run. Default trigger = the bot is
 **@mentioned** in a comment, or the comment is in a thread the bot already
-participates in. Auto-reply rules (the existing mechanism) can widen this per
-repo/thread later.
+participates in. As shipped this gate is narrower than the design assumed: the
+commenter must also hold write permission or better on the repo, and GitHub
+intake runs with auto-reply evaluation off, so auto-reply rules do not widen the
+trigger here (see README.md § Behavior notes).
 
 ## What this removes from agent-pm
 
@@ -131,8 +133,10 @@ Both can coexist.
   per-repo permissions, an identity of its own (comments come from the app,
   not a human's account), and reactions/comment scopes. Config: App id +
   private key + installation id; the adapter mints short-lived installation
-  tokens and refreshes them. `bot` identity in `MessagingInfo` = the app's
-  bot user (`<app-name>[bot]`).
+  tokens and refreshes them. As shipped, the adapter resolves the App slug at
+  startup and derives the bot identity from it: `@<app-slug>` is what mention
+  triggering matches, and `<app-slug>[bot]` is the login/email preconfigured as
+  the clone's git commit identity (`MessagingInfo` itself carries no bot field).
 - **Review threads: one PR = one flat session.** Inline review comments are
   polled from `/pulls/comments` (same watermark discipline, own id space →
   `rc-<id>` ts) and injected into the PR conversation as messages carrying

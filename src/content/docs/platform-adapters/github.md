@@ -5,15 +5,21 @@ description: GitHub App polling, issue/PR conversations, watermark dedup, and co
 
 One GitHub issue or pull request is one mikan conversation. The adapter polls the GitHub API as a GitHub App installation — no webhook endpoint, preserving mikan's proactive model.
 
+The conversation id is `GH_<owner>_<repo>_<number>` with owner and repo lowercased. It avoids `/` and `:` because ids are used verbatim as one path segment and in docker's `-v source:target` syntax, and it separates on `_` rather than `-` because GitHub owners may contain `-` (which would make the owner/repo boundary ambiguous) but never `_`. Like every platform, the raw id stays at the GitHub API boundary: on disk the conversation lives in an office directory named by office key.
+
 ## Main code
 
 | File                                | Purpose                                                                                                                    |
 | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `src/adapters/github/bot.ts`        | GitHub bot core: poll loop, watermark dedup, mention/participation triggering, tool backends.                              |
+| `src/adapters/github/bot.ts`        | GitHub bot core: poll loop, watermark dedup, mention/participation triggering.                                             |
+| `src/adapters/github/github-ops.ts` | The host-side backends behind every `github_*` tool, standalone from the poll loop.                                        |
+| `src/adapters/github/repo.ts`       | Host-side git: shallow clone, guarded branch push, work-preserving sync.                                                   |
 | `src/adapters/github/client.ts`     | Minimal REST client authenticated as a GitHub App (RS256 JWT → installation tokens).                                       |
 | `src/adapters/github/cloudbuild.ts` | Cloud Build log retrieval for `github_checks` (host-side GCP credentials).                                                 |
+| `src/adapters/github/gcp-auth.ts`   | Minimal GCP ADC token provider (WIF, service-account key, or gcloud user ADC).                                             |
 | `src/adapters/github/context.ts`    | Creates the GitHub `ConversationResponder`; posts the finished response as one comment (no streaming edits).               |
 | `src/adapters/github/ids.ts`        | `GH_<owner>_<repo>_<number>` conversation id encode/parse; `rc-<id>` review-comment ts.                                    |
+| `src/adapters/github/tool-pack.ts`  | Bundles the host-side tools as a platform tool pack injected from main.                                                    |
 | `src/adapters/github/tools/`        | The agent-facing tools: `github_pr`, `github_checks`, `github_review_reply`, `github_sync`, `github_read`, `github_issue`. |
 | `src/adapters/github/types.ts`      | GitHub adapter-specific types and REST payload shapes.                                                                     |
 
@@ -50,7 +56,9 @@ Dedup is a persisted watermark at `<state-dir>/github-sync.json` (atomic write):
 
 ## Triggering
 
-A comment, inline review comment, or new issue body triggers a run only when it @mentions the app slug, or the bot already participates in that issue's conversation. The commenter must also hold **write permission or better** on the repo — on public repos anyone can comment, so mentions from anyone below write are ignored entirely (permission lookups are cached for five minutes and fail closed). Everything else is ignored without creating any state. A mentioned `stop` (or `/stop`) comment stops the running session.
+A comment, inline review comment, or new issue body triggers a run only when it @mentions the app slug, or the bot already participates in that issue's conversation. The commenter must also hold **write permission or better** on the repo — on public repos anyone can comment, so mentions from anyone below write are ignored entirely (permission lookups are cached for five minutes and fail closed). Everything else is ignored without creating any state. A mentioned `stop` (or `/stop`) comment stops the running session; the magic word uses one grammar across all platforms.
+
+Because anyone can open an issue on a public repo, GitHub reports `trustModel: "open-trigger"`. That disables the ambient `sandbox.defaultSharedVault` copy for GitHub conversations: they get no credentials by default, and an admin has to provision a vault for a specific conversation deliberately. See [Vault](/sandbox/vault/).
 
 ## Sessions and replies
 
@@ -58,9 +66,9 @@ The whole issue/PR is one persistent session (`sessionKey === conversationId`) �
 
 ## Repository access and pull requests
 
-The sandbox never holds credentials; git spans the two sides of the conversation-dir bind mount:
+The sandbox never holds credentials; git spans the two sides of the office-dir bind mount:
 
-- On first contact the repo is shallow-cloned into the conversation dir (`./repo` inside the sandbox) with an ephemeral token scoped to that repo and `contents:read`, passed per git invocation and never written to `.git/config`. PR conversations get the PR head checked out under its real branch name (fork PRs and failed lookups fall back to `pr-<n>`), so a PR whose head is a `pi/*` branch can be updated in place: commit on it and `github_pr` pushes back to the same PR.
+- On first contact the repo is shallow-cloned into the conversation office's `repo/` directory — `/workspace/<office-key>/repo` inside the sandbox, which the agent's prompt calls `./repo` — with an ephemeral token scoped to that repo and `contents:read`, passed per git invocation and never written to `.git/config`. PR conversations get the PR head checked out under its real branch name (fork PRs and failed lookups fall back to `pr-<n>`), so a PR whose head is a `pi/*` branch can be updated in place: commit on it and `github_pr` pushes back to the same PR.
 - The agent branches and commits inside the sandbox with plain git (the bot's author identity is preconfigured); pushing from the sandbox fails by design.
 - The `github_pr` tool runs host-side: it mints a `contents:write` + `pull_requests:write` token for that one repo, pushes the agent's `pi/*` branch from the host side of the mount, and opens a pull request (draft supported) as the App; re-invoking it with the same branch pushes new commits to the existing PR. It cannot push the default branch, force-push, or merge — humans review and merge every PR.
 - The `github_checks` tool reads CI check runs for a pushed branch (or the PR head) and can fetch a failing run's log tail: `job_id` for GitHub Actions runs (requires **Checks: Read** and **Actions: Read**), `build_id` for Google Cloud Build runs when the host has GCP credentials (below).
@@ -82,3 +90,4 @@ The credential principal needs `roles/cloudbuild.builds.viewer` on the project a
 - File uploads are not supported by the REST API; `uploadFile` posts a pointer comment instead.
 - A PR review whose summary body alone mentions the bot (with zero inline comments) does not trigger — there is no repo-wide "reviews since" endpoint. Post a normal PR comment instead.
 - The `./repo` clone starts as a snapshot from first contact; the sandbox cannot fetch updates itself — the agent uses `github_sync` for that.
+- A missing clone is re-attempted on every trigger (a no-op once it exists), so a first clone that failed — App permissions granted later, for instance — heals on the next mention.

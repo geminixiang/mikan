@@ -147,7 +147,7 @@ Docker should cover FT-01–05, FT-07–11.
 
 - **Kubernetes Agent Sandbox**: dedicated namespace/cluster, controller, isolation RuntimeClass, registry, and artifact store.
 - **Cloud Run**: project, Artifact Registry, Cloud Run job/service, GCS package/result buckets, dedicated service account, and credential broker.
-- **Cloudflare Sandbox**: future Factory Worker/API, Sandbox binding, package/result storage, and explicit destroy support. The current `/exec` bridge cannot pass this suite.
+- **Cloudflare Sandbox**: future Factory Worker/API, Sandbox binding, package/result storage, and explicit destroy support. The current `/exec` bridge (`deploy/examples/cloudflare-sandbox-bridge/`) cannot pass this suite.
 - **E2B**: API key, fixed template/region, artifact endpoint, and an explicit weak-isolation test for guest-visible credentials.
 
 Provider E2E is never silently skipped in a release pipeline that claims support for that provider.

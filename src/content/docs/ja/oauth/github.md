@@ -72,7 +72,9 @@ GITHUB_OAUTH_ACCESS_TOKEN
 GH_TOKEN
 ```
 
-`container` / `image` / `firecracker` サンドボックスでは、その後のツール実行時にこれらの環境変数が注入されます。
+`host` を除くすべての sandbox モードで、その後のツール実行時にこれらの環境変数が注入されます。
+
+これらはログインした本人の認証情報であり、sandbox に届くことが意図されています。エージェントはその人物として `gh` と `git` を実行します。これは [GitHub アダプター](/ja/platform-adapters/github/) が使う mikan 自身の GitHub App identity とは別物であり、そちらのトークンは host 側に留まり、ランタイムに入ることはありません。
 
 ## スコープ
 

@@ -37,6 +37,18 @@ import { Aside, Steps } from "@astrojs/starlight/components";
 
    これにより、既定 provider を `anthropic` とする `~/.mikan/settings.json` が書き込まれます。別のモデルを使いたい場合は内容を確認してください。全フィールドは[設定](/ja/configuration/)を参照してください。
 
+   設定の既定値は `isolated` door policy です。これを満たせるのは管理型の Docker sandbox だけで、この設定のままでは `host` mode は実行を拒否します。このガイドは Docker なしで進めるため、次の内容を `~/.mikan/settings.json` にマージして workspace を trusted としてマークしてください：
+
+   ```json
+   {
+     "sandbox": {
+       "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
+     }
+   }
+   ```
+
+   代わりに管理型の [image sandbox](/ja/sandbox/image/)（`--sandbox=image:…`）から始める場合は、この編集は不要です。そのままで isolated policy を満たします。
+
 4. Telegram ボットを作成します。[@BotFather](https://t.me/BotFather) にメッセージを送り、`/newbot` を送信してプロンプトに従い、返された token をコピーします：
 
    ```bash
@@ -49,7 +61,9 @@ import { Aside, Steps } from "@astrojs/starlight/components";
    mikan --sandbox=host
    ```
 
-   working directory は既定で `~/.mikan/workspace` になり、自動的に作成されます。別の場所を使うにはパスを渡します（`mikan --sandbox=host ~/mikan-workspace`）。workspace は agent が会話ごとのファイル（メモリー、添付ファイル、セッションログ、作業領域）を保存する場所です。
+   working directory は既定で `~/.mikan/workspace` になり、自動的に作成されます。別の場所を使うにはパスを渡します（`mikan --sandbox=host ~/mikan-workspace`）。
+
+   その workspace の中で、各会話は自分の **office** を持ちます。これは、その会話のメモリー、添付ファイル、セッションログ、skills、作業領域を保持するディレクトリです。office ディレクトリは生のチャット id ではなく office key（`v1-telegram-…`）で命名されるため、どの office がどの会話のものかを確認するには `mikan office list` を使います。
 
    起動に失敗した場合は `mikan env` を実行してください。mikan が読み取るすべての変数を、プラットフォームと機能ごとにグループ化し、それぞれの現在の状態とともに表示します。プラットフォームの token が欠けていると、mikan は設定すべき変数名を示すメッセージを出して終了します。`mikan --help` はすべてのフラグを一覧表示します。
 
@@ -61,7 +75,8 @@ import { Aside, Steps } from "@astrojs/starlight/components";
   `host` mode では、agent
   のコマンドはあなたの権限であなたのマシン上で直接実行されます。信頼できるマシンで
   最初に試すのに適した mode です。他の人がボットと会話できるようにする前に、会話ごとに分離された
-  Docker コンテナを提供する管理型の [image sandbox](/ja/sandbox/image/) に切り替えてください。
+  Docker コンテナを提供する管理型の [image sandbox](/ja/sandbox/image/) に切り替え、trusted な door
+  policy の上書きを削除して既定の `isolated` policy が再び適用されるようにしてください。
 </Aside>
 
 ## 次のステップ

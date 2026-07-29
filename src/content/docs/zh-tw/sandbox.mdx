@@ -7,13 +7,15 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 <CardGrid>
   <Card title="本機開發" icon="setting">
-    `host` 最少設定、不注入 vault env，適合只在可信任機器上開發。
+    `host` 最少設定、不注入 vault env。它無法提供隔離的 conversation office，因此還必須明確指定
+    trusted door policy。
   </Card>
   <Card title="主線隔離" icon="rocket">
     `image:<image>` 由 mikan 管理 lifecycle、workspace mount、vault env 與資源限制。
   </Card>
   <Card title="Gondolin 預覽" icon="moon">
-    `gondolin:default` 會啟動本機 Gondolin/QEMU VM，是規劃中用來接替 mikan 管理的 `image:*` sandbox 的模式。
+    `gondolin:default` 會在 mikan 自己的 process 中啟動本機 Gondolin/QEMU
+    microVM，是規劃中用來接替 mikan 管理的 `image:*` sandbox 的模式。
   </Card>
 </CardGrid>
 
@@ -23,14 +25,47 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 ## 支援模式
 
-| 模式                                                        | 執行位置              | Vault env injection | Vault key 語意               | 備註                                                                               |
-| ----------------------------------------------------------- | --------------------- | ------------------- | ---------------------------- | ---------------------------------------------------------------------------------- |
-| `host`                                                      | 宿主機                | 不注入              | 可存，但執行時不用           | 最適合本機開發；不把 vault env 放進 host process                                   |
-| `container:<name>`                                          | 既有 Docker container | 注入                | `container-<name>`           | one container one vault；多人共用同一 container 就共用該 vault                     |
-| `image:<image>`                                             | mikan 管理的 Docker   | 注入                | generated conversation vault | 目前最推薦的隔離模式；`1 conversation = 1 vault = 1 container`                     |
-| `gondolin:default`                                          | 本機 Gondolin/QEMU VM | 注入                | generated conversation vault | 預覽；支援 private/full workspace mount；需要 Node.js >=23.6 與 QEMU               |
-| `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM        | 注入                | generated conversation vault | Alpha 超早期；VM 需自行啟動，workspace 需在 VM 內掛到 `/workspace`，目前不建議使用 |
-| `cloudflare:<sandbox-id>`                                   | Cloudflare Worker     | 注入                | generated conversation vault | Experimental；需自行部署 `@cloudflare/sandbox` bridge，host workspace 不會自動同步 |
+| 模式                                                        | 執行位置              | Vault env injection | Vault key             | 備註                                                                               |
+| ----------------------------------------------------------- | --------------------- | ------------------- | --------------------- | ---------------------------------------------------------------------------------- |
+| `host`                                                      | 宿主機                | 不注入              | 由平台使用者推導      | 僅供本機開發；必須明確指定 trusted door policy                                     |
+| `container:<name>`                                          | 既有 Docker container | 注入                | 由 container 名稱推導 | one container one vault；多人共用同一 container 就共用該 vault                     |
+| `image:<image>`                                             | mikan 管理的 Docker   | 注入                | office key            | 目前最推薦的隔離模式；`1 conversation = 1 vault = 1 container`                     |
+| `gondolin:default`                                          | 本機 Gondolin/QEMU VM | 注入                | office key            | 預覽；single-host，跑在 mikan 自己的 process 中；需要 Node.js >=23.6 與 QEMU       |
+| `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM        | 注入                | office key            | Alpha 超早期；VM 需自行啟動，workspace 需在 VM 內掛到 `/workspace`，目前不建議使用 |
+| `cloudflare:<sandbox-id>`                                   | Cloudflare Worker     | 注入                | office key            | 施工中；需自行部署 `@cloudflare/sandbox` bridge，host workspace 不會自動同步       |
+
+office key 是帶版本的 `v1-<platform>-<readable-id>-<hash>` 片段，同時也是該對話在 workspace 底下的目錄名稱。詳見 [Conversation offices](#conversation-offices)。
+
+## Conversation offices
+
+每個對話在 workspace root 底下擁有一個目錄——也就是它的 _office_——目錄名稱使用 office key，而不是平台的原始 conversation id。Sandbox mount 會跟著這個目錄走，因此在 runtime 內部，office 位於 `/workspace/<office-key>`。
+
+runtime 能看到 workspace 的哪些部分，由 **door policy** 決定；它是 `sandbox.workspace` 設定，可在 admin portal 全域或依對話設定（`/pi-sandbox door` 聊天指令對單一對話有同樣效果，但僅限 `image:*` 與 `gondolin:*`）：
+
+| Door policy / layout         | 掛進 `/workspace` 的內容                                         |
+| ---------------------------- | ---------------------------------------------------------------- |
+| `isolated`（預設）           | 只有 `<office-key>/`                                             |
+| `trusted` / `shared-support` | `<office-key>/` 再加上共用的 `MEMORY.md`、`skills/` 與 `events/` |
+| `trusted` / `full`           | 整個 workspace root                                              |
+
+只有 `image:*` 與 `gondolin:default` 能落實 isolated projection。其他模式會回報 `managedProjection: false`；由於 `isolated` 是預設值，這些模式在有人替該 office 明確選擇 trusted policy 之前，會拒絕開始執行。欄位語意與 legacy `sandbox.image.workspaceMount` 的轉換方式，請見 [設定](/zh-tw/configuration/)。
+
+<Aside type="caution" title="trusted door 不是額外的 sandbox">
+  Door policy 決定哪些宿主機目錄會被投影進 runtime，它不是執行邊界：不論選了哪種 policy，`host`
+  模式都是直接在宿主機上執行工具，沒有任何檔案系統或 process 隔離；而 `full` layout 會把每一個對話的
+  office 都交給該 runtime。
+</Aside>
+
+### 從 raw-id 佈局升級
+
+在 office 佈局之前建立的 workspace，其目錄是以原始 conversation id 命名。每次開機都會遷移它們——workspace 目錄、conversation vault key、以及各對話的 host state——並為每一次搬移寫下 journal，因此中斷的執行會續做，而不會弄丟某個對話。
+
+有兩種情況會刻意讓開機停下來，而不是用猜的：
+
+- **無主目錄。** 同時啟用多個平台時，mikan 無法判斷某個 raw 目錄屬於哪一個平台。請用 `mikan office claim <conversationId> <platform>`（需先停掉 daemon）指定擁有者，下次啟動就會完成搬移。
+- **衝突**，也就是 legacy 目錄與 office key 目錄都已存在。這種情況會回報出來讓人手動合併，絕不會被覆寫。
+
+受管 container 能在改名後存活：它們的 bind 會被轉譯到執行中 container 的 snapshot 上，因此可寫層會被保留，而不是從 base image 重建。
 
 ## 各模式文件
 
@@ -57,7 +92,7 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 />
 <LinkCard
   title="Cloudflare sandbox"
-  description="透過 Cloudflare Worker bridge 執行工具。"
+  description="透過 Cloudflare Worker bridge 執行工具；施工中。"
   href="cloudflare/"
 />
 
@@ -73,9 +108,11 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 | per-conversation vault env           | ❌       | ❌                 | ✅              | ✅                    | ✅              | ✅             |
 | vault file 自動投影 / bind mount     | ❌       | ❌                 | ✅              | ✅                    | ❌              | ❌             |
 | workspace 自動掛載                   | host     | 需自行掛載         | ✅              | ✅                    | 需自行掛載      | ❌             |
-| private workspace mount mode         | 不適用   | ❌                 | ✅              | ✅                    | ❌              | ❌             |
+| 隔離的 conversation office           | ❌       | ❌                 | ✅              | ✅                    | ❌              | ❌             |
 | idle auto-stop / recreate            | 不適用   | ❌                 | ✅              | ✅                    | ❌              | ❌             |
 | CPU / memory default limits          | ❌       | ❌                 | ✅              | ✅                    | ❌              | ❌             |
 | `/pi-sandbox boost`                  | ❌       | ❌                 | ✅              | ✅                    | ❌              | ❌             |
 | agent `sandbox` tool 設定 limits     | ❌       | ❌                 | ✅              | ✅                    | ❌              | ❌             |
-| 推薦程度                             | 本機開發 | legacy / 相容      | 主線            | 預覽                  | alpha           | experimental   |
+| 推薦程度                             | 本機開發 | legacy / 相容      | 主線            | 預覽                  | alpha           | 施工中         |
+
+上表的兩種 ❌ 都是拒絕執行，而不是默默降級。無法落實 isolated projection 的模式會拋出 `Sandbox '<type>' cannot provide an isolated conversation office`，而不是掛載超出 policy 要求的內容；無法掛載 vault file 的模式會拋出 `Sandbox type "<type>" does not support vault file mounts`，而不是在缺少該憑證的情況下執行。在無法投影檔案的模式上，請只用 `env` 保存 vault 憑證。

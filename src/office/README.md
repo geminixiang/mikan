@@ -8,10 +8,14 @@ its host-side directory layout, its durable record, and the legacy migration.
 
 - `address.ts`: Canonical identity. `OfficeAddress` is `platform` plus the
   platform's raw `conversationId`; raw ids stay at platform I/O boundaries.
-  Storage paths use the versioned `OfficeKey`, derived by SHA-256 from both
-  values (ADR 0005). `officeStateDir(stateDir, address)` remains the one
-  low-level path helper, for stateDir-only surfaces (CLI, extension loader,
-  package materialization) that hold no Office value.
+  Storage paths use the versioned `OfficeKey`
+  (`v1-<platform>-<readable>-<16 hex>`), whose digest is SHA-256 over both
+  values (ADR 0005) — the readable middle is a hint, the digest is the
+  authority. `officeStateDir(stateDir, address)` is the one path helper the
+  barrel still exports, for the stateDir-only surfaces that hold no Office
+  value: the CLI subcommands, the extension loader, and package
+  materialization. `officeDir` is module-internal, because callers outside
+  `src/office/` use `Office.dir`.
 - `layout.ts`: The two layout values. `createWorkspace({root, stateDir})`
   builds the per-process `Workspace` (workspace-global paths, reserved-name
   set, office factory); `workspace.office(address)` returns the memoized,
@@ -39,3 +43,20 @@ Runtime consumers are switched: session state, vaults, per-conversation host
 state, and Admin scope are all office-keyed (ADR 0005). Platform adapters
 keep raw ids at their external I/O boundaries, and sandbox resource names
 stay raw-derived until the resource-naming migration.
+
+The `Office` value is the argument, not a bag of derived strings: option
+objects that used to carry a workspace root plus a conversation id plus a
+state dir now carry one `office` field, and callers read `office.dir`,
+`office.key`, `office.stateDir` from it. The main crossings:
+
+| Consumer               | Entry point                                                                                    |
+| ---------------------- | ---------------------------------------------------------------------------------------------- |
+| conversation settings  | `conversationSettingsPath(office)`, `resolveConversationSettings(office)` (`src/config.ts`)    |
+| workspace projection   | `resolveWorkspaceProjection(office)` (`src/workspace-projection/`)                             |
+| packages               | `ResolvePackagesOptions {office, fetchMissing?}`, `PackageAdminContext {office, runtime?}`     |
+| conversation vault     | vault key = `officeKey(address)` (`src/vault/`)                                                |
+| chat log + attachments | `appendChannelLog(office, …)`, `saveIncomingAttachments(office, …)` (`src/adapters/shared.ts`) |
+
+`officeStateDir(stateDir, address)` covers the surfaces that genuinely hold
+no Office (CLI subcommands, the extension loader's `defaultExtensionDirs`,
+package materialization).

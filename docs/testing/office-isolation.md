@@ -14,7 +14,8 @@ The office architecture uses layered tests rather than treating a mount-list uni
 Requirements:
 
 - reachable Docker daemon;
-- `alpine:3.21`, or set `MIKAN_OFFICE_TEST_IMAGE` to another image containing `sh`;
+- `alpine:3.21` already pulled locally (the script inspects the image, it never
+  pulls), or set `MIKAN_OFFICE_TEST_IMAGE` to another local image containing `sh`;
 - outbound HTTPS for the network assertion.
 
 The script creates two temporary host offices but mounts only office A. It verifies:
@@ -25,7 +26,8 @@ The script creates two temporary host offices but mounts only office A. It verif
 - outbound network remains available;
 - all temporary host data is removed in `finally`.
 
-Run:
+Run from the repo root — the script (`scripts/verify-office-docker.mjs`) creates
+its temporary offices under `.workspace/` in the current directory:
 
 ```bash
 npm run test:office:docker

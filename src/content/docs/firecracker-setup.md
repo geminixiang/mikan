@@ -17,7 +17,7 @@ Warning: mikan's Firecracker support is still very early alpha. This guide is ke
 
 ```bash
 # Download and install Firecracker
-mkdir -p /home/gemini/firecracker
+mkdir -p $HOME/firecracker
 cp release-v1.15.0-x86_64/firecracker-v1.15.0-x86_64 /usr/local/bin/firecracker
 chmod +x /usr/local/bin/firecracker
 
@@ -30,7 +30,7 @@ firecracker --version
 Follow the official Firecracker getting-started guide to download the kernel and rootfs:
 
 ```bash
-cd /home/gemini/firecracker
+cd $HOME/firecracker
 
 # Get CI version from the latest release
 ARCH="x86_64"
@@ -51,7 +51,7 @@ wget "https://s3.amazonaws.com/spec.ccfc.min/${latest_ubuntu_key}" -O ubuntu-24.
 ### 3. Unpack and configure rootfs
 
 ```bash
-cd /home/gemini/firecracker
+cd $HOME/firecracker
 
 # Unpack squashfs
 unsquashfs ubuntu-24.04.squashfs.upstream
@@ -73,7 +73,7 @@ mkfs.ext4 -d squashfs-root -F ubuntu-24.04.ext4
 #### Terminal 1: configure networking and start Firecracker
 
 ```bash
-cd /home/gemini/firecracker
+cd $HOME/firecracker
 
 # Configure tap interface
 sudo ip link del tap0 2>/dev/null || true
@@ -92,7 +92,7 @@ sudo firecracker --api-sock /tmp/firecracker.socket --enable-pci
 #### Terminal 2: configure VM
 
 ```bash
-cd /home/gemini/firecracker
+cd $HOME/firecracker
 API_SOCKET="/tmp/firecracker.socket"
 
 # Configure log file
@@ -141,17 +141,29 @@ ssh -i ./id_rsa root@172.16.0.2 "echo 'Connected!' && uname -a"
 
 ## Use with Mikan
 
+Firecracker VMs are yours, not mikan's, so mikan cannot enforce a per-conversation workspace
+projection in one. It therefore refuses to run under the default `isolated` door policy. Choose a
+trusted policy explicitly before starting — in `<state-dir>/settings.json`:
+
+```json
+{
+  "sandbox": {
+    "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
+  }
+}
+```
+
 After the VM starts:
 
 ```bash
 # Run mikan with Firecracker sandbox
-mikan --sandbox=firecracker:172.16.0.2:/home/gemini/workspace /home/gemini/workspace
+mikan --sandbox=firecracker:172.16.0.2:$HOME/workspace $HOME/workspace
 
 # Use a custom SSH user
-mikan --sandbox=firecracker:172.16.0.2:/home/gemini/workspace:ubuntu /home/gemini/workspace
+mikan --sandbox=firecracker:172.16.0.2:$HOME/workspace:ubuntu $HOME/workspace
 
 # Use a custom SSH port
-mikan --sandbox=firecracker:172.16.0.2:/home/gemini/workspace:root:22 /home/gemini/workspace
+mikan --sandbox=firecracker:172.16.0.2:$HOME/workspace:root:22 $HOME/workspace
 ```
 
 ## Shutdown
@@ -184,7 +196,7 @@ sudo usermod -aG kvm ${USER}
 
 ### VM does not boot
 
-- Check logs: `tail -f /home/gemini/firecracker/firecracker.log`
+- Check logs: `tail -f $HOME/firecracker/firecracker.log`
 - Confirm kernel and rootfs paths are correct
 - Confirm the tap interface is enabled: `ip link show tap0`
 

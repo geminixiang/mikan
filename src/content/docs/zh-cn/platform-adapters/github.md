@@ -5,15 +5,21 @@ description: GitHub 适配器的 GitHub App 轮询、issue/PR 对话、水位线
 
 每个 GitHub issue 或 pull request 都是一个 mikan 对话。适配器以 GitHub App installation 身份轮询 GitHub API，不使用 webhook 端点，以保留 mikan 的主动模型。
 
+对话 id 为 `GH_<owner>_<repo>_<number>`，其中 owner 和 repo 都转为小写。它避开了 `/` 和 `:`，因为 id 会被原样用作一个路径段，也会用在 docker 的 `-v source:target` 语法中；它以 `_` 而非 `-` 分隔，是因为 GitHub owner 可能包含 `-`（那会让 owner/repo 的边界产生歧义），但绝不会包含 `_`。和所有平台一样，原始 id 只停留在 GitHub API 边界上：在磁盘上，该对话位于一个以 office key 命名的办公室目录中。
+
 ## 主要代码
 
 | 文件                                | 用途                                                                                                                |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `src/adapters/github/bot.ts`        | GitHub bot 核心：轮询循环、水位线去重、提及/参与触发、工具后端。                                                    |
+| `src/adapters/github/bot.ts`        | GitHub bot 核心：轮询循环、水位线去重、提及/参与触发。                                                              |
+| `src/adapters/github/github-ops.ts` | 每个 `github_*` 工具背后的主机侧后端，独立于轮询循环。                                                              |
+| `src/adapters/github/repo.ts`       | 主机侧 git：浅克隆、受保护的分支推送、保留工作的同步。                                                              |
 | `src/adapters/github/client.ts`     | 以 GitHub App 身份验证的最小 REST 客户端（RS256 JWT → installation tokens）。                                       |
 | `src/adapters/github/cloudbuild.ts` | 为 `github_checks` 获取 Cloud Build 日志（主机侧 GCP 凭证）。                                                       |
+| `src/adapters/github/gcp-auth.ts`   | 最小的 GCP ADC token provider（WIF、service-account key 或 gcloud user ADC）。                                      |
 | `src/adapters/github/context.ts`    | 创建 GitHub `ConversationResponder`；将完成的回复作为一条评论发布（不进行流式编辑）。                               |
 | `src/adapters/github/ids.ts`        | `GH_<owner>_<repo>_<number>` 对话 ID 编码/解析；`rc-<id>` review 评论 ts。                                          |
+| `src/adapters/github/tool-pack.ts`  | 把主机侧工具打包为由 main 注入的平台工具包。                                                                        |
 | `src/adapters/github/tools/`        | 面向代理的工具：`github_pr`、`github_checks`、`github_review_reply`、`github_sync`、`github_read`、`github_issue`。 |
 | `src/adapters/github/types.ts`      | GitHub 适配器专用类型和 REST payload 结构。                                                                         |
 
@@ -50,7 +56,9 @@ App slug 是用户首次联系时提及的名称。
 
 ## 触发方式
 
-仅当评论、内联 review 评论或新 issue 正文 @提及 app slug，或 bot 已参与该 issue 的对话时，才会触发运行。评论者还必须对仓库具有**写入权限或更高权限**——在公开仓库中任何人都可以评论，因此所有写入权限以下用户的提及都会被完全忽略（权限查询缓存五分钟，失败时默认拒绝）。其他所有内容都会被忽略，不创建任何状态。提及 bot 的 `stop`（或 `/stop`）评论会停止运行中的会话。
+仅当评论、内联 review 评论或新 issue 正文 @提及 app slug，或 bot 已参与该 issue 的对话时，才会触发运行。评论者还必须对仓库具有**写入权限或更高权限**——在公开仓库中任何人都可以评论，因此所有写入权限以下用户的提及都会被完全忽略（权限查询缓存五分钟，失败时默认拒绝）。其他所有内容都会被忽略，不创建任何状态。提及 bot 的 `stop`（或 `/stop`）评论会停止运行中的会话；该魔法词在所有平台上使用同一套语法。
+
+由于任何人都可以在公开仓库上开 issue，GitHub 报告 `trustModel: "open-trigger"`。这会为 GitHub 对话禁用环境 `sandbox.defaultSharedVault` 复制：它们默认不获得任何凭证，管理员必须有意地为某个特定对话配置 vault。参阅 [Vault](/zh-cn/sandbox/vault/)。
 
 ## 会话和回复
 
@@ -58,9 +66,9 @@ App slug 是用户首次联系时提及的名称。
 
 ## 仓库访问和 pull request
 
-沙箱从不持有凭证；git 操作横跨对话目录 bind mount 的两侧：
+沙箱从不持有凭证；git 操作横跨办公室目录 bind mount 的两侧：
 
-- 首次联系时，仓库会被浅克隆到对话目录（沙箱内为 `./repo`），使用仅限该仓库和 `contents:read` 的临时 token。token 按 git 调用传入，绝不会写入 `.git/config`。PR 对话会以 PR head 的真实分支名签出（fork PR 或查询失败时回退为 `pr-<n>`），因此 head 为 `pi/*` 分支的 PR 可以原地更新：直接在该分支上提交并调用 `github_pr`，推送会回到同一个 PR。
+- 首次联系时，仓库会被浅克隆到该对话办公室的 `repo/` 目录——沙箱内为 `/workspace/<office-key>/repo`，代理的提示词中称之为 `./repo`——使用仅限该仓库和 `contents:read` 的临时 token。token 按 git 调用传入，绝不会写入 `.git/config`。PR 对话会以 PR head 的真实分支名签出（fork PR 或查询失败时回退为 `pr-<n>`），因此 head 为 `pi/*` 分支的 PR 可以原地更新：直接在该分支上提交并调用 `github_pr`，推送会回到同一个 PR。
 - 代理在沙箱中使用普通 git 创建分支和提交（bot 的 author identity 已预配置）；按设计，从沙箱 push 会失败。
 - `github_pr` 工具在主机侧运行：它为该仓库生成 `contents:write` + `pull_requests:write` token，从挂载的主机侧推送代理的 `pi/*` 分支，并以 App 身份创建 pull request（支持 draft）；使用相同分支再次调用会将新提交推送到现有 PR。它不能推送默认分支、force-push 或 merge——每个 PR 都由人工 review 和 merge。
 - `github_checks` 工具读取已推送分支（或 PR head）的 CI check run，并可以获取失败 run 的日志末尾：GitHub Actions run 使用 `job_id`（需要 **Checks: Read** 和 **Actions: Read** 权限）；主机具有 GCP 凭证时（见下文），Google Cloud Build run 使用 `build_id`。
@@ -82,3 +90,4 @@ App slug 是用户首次联系时提及的名称。
 - REST API 不支持文件上传；`uploadFile` 会改为发布指针评论。
 - 仅在摘要正文中提及 bot（没有任何内联评论）的 PR review 不会触发——不存在仓库级的 “reviews since” 端点。请改为发布普通 PR 评论。
 - `./repo` 克隆是首次联系时的快照；沙箱自身无法获取更新——代理需使用 `github_sync` 来刷新。
+- 缺失的克隆会在每次触发时重新尝试（一旦存在即为空操作），因此首次克隆失败——例如 App 权限是后来才授予的——会在下一次提及时自愈。

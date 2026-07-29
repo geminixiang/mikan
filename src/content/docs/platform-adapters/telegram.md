@@ -22,7 +22,7 @@ mikan uses long polling; no public Telegram webhook is required.
 The adapter handles:
 
 - private, group, and supergroup messages
-- `/login`, `/session`, `/new`, `/stop`, `/model`, and `/sandbox`
+- `/login`, `/session`, `/new`, `/stop`, `/model`, and `/sandbox` — the command menu is registered from `src/commands/manifest.ts` through `setMyCommands`, so it never drifts from the shared inventory
 - replies, photos, and documents
 
 Private messages trigger directly. Group messages require a command, mention, reply context, or matching auto-reply policy. Telegram must first deliver the message to the bot; privacy mode can prevent an auto-reply rule from seeing ordinary group traffic.
@@ -43,7 +43,7 @@ Nested replies therefore follow the referenced message IDs rather than a platfor
 
 Responses use Telegram HTML mode. Supported formatting includes `<b>`, `<i>`, `<code>`, `<pre>`, and `<a href="...">`. If Telegram rejects generated markup, mikan retries with escaped HTML. The responder also supports typing status, message edits, reply targets, and file uploads.
 
-Inbound photos and documents are downloaded through Telegram's file API into the conversation `attachments/` directory. Other media types such as voice, audio, video, stickers, and polls are not handled as equivalent inbound attachments.
+Inbound photos and documents are downloaded through Telegram's file API into the conversation office's `attachments/` directory as `<timestamp>_<sanitized-name>`, through the same shared helper the other adapters use. Other media types such as voice, audio, video, stickers, and polls are not handled as equivalent inbound attachments.
 
 ## Stop behavior
 

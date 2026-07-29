@@ -102,3 +102,29 @@ mikan
 state directory は既定で `~/.mikan`、working directory は既定で `<state-dir>/workspace` になります。`--state-dir=<dir>` またはパス引数で変更できます。`mikan --help` はすべてのフラグを、`mikan env` は現在設定されている変数を表示します。
 
 Bot は DM で応答し、channel では mention されたときに応答します。起動された Slack thread の作業は、thread timestamp を key に含む隔離された session を使います。共有 channel の thread にある通常の mention なしの reply は記録されますが、実行を開始しません。
+
+## 9. sandbox を選ぶ
+
+`--sandbox` を指定しない場合、mikan は tools を host 上で直接実行しますが、既定の `isolated` door
+policy はその組み合わせを設計上拒否します。最初のメッセージで、`host` は隔離された conversation
+office を提供できないと報告されます。最初の実運用の会話を始める前に、どちらかを選んでください：
+
+- **推奨。** 管理型 sandbox を使います。conversation ごとに専用の container が与えられ、設定を変更
+  せずに isolated policy を満たします：
+
+  ```bash
+  mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest
+  ```
+
+- **Host mode** は、workspace 全体を任せられる、すでに信頼しているマシンでのみ使用してください。
+  `~/.mikan/settings.json` に trusted な door policy を追加します。
+
+  ```json
+  {
+    "sandbox": {
+      "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
+    }
+  }
+  ```
+
+完全な比較は [Sandbox](/ja/sandbox/) を参照してください。

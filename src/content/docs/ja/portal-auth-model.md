@@ -32,12 +32,16 @@ Admin portal は control-plane access です。admin link を持つ人は、短�
 Admin portal でできること：
 
 - 現在のユーザーと conversation identity を確認する。
-- working directory 内の conversations を一覧表示する。
-- conversation model、thinking level、sandbox mount、auto-reply、Slack reply mode を読み取り・更新する。
-- global model、sandbox defaults、Slack defaults を読み取り・更新する。
-- 限定範囲の workspace files、skills、events metadata/files を閲覧する。
+- workspace を走査するのではなく、office registry（生 id ↔ office の恒久的な対応）から conversations を一覧表示する。
+- conversation model、thinking level、workspace の door policy と layout、auto-reply、Slack reply mode を読み取り・更新する。
+- global model、sandbox のリソース既定値、グローバルな door policy、Slack defaults を読み取り・更新する。
+- 限定範囲の workspace files、skills、events metadata/files を閲覧し、どちらのレベルでも skill を作成・編集する。
+- ある scope の package sources を一覧表示・変更する。
+- session と conversation の使用状況を確認する。
 - 選択した conversation の events を削除する。
 - 対象 conversation 用の session view link または login/vault link を生成する。
+
+Door policy はチャットからも `/pi-sandbox door` で設定できますが、agent 自身が設定することは決してできません。conversation settings が host 専用の state dir 配下にあるのは、まさに conversation directory が sandbox に読み書き可能で bind mount されるからです。mount 内の settings ファイルは一度だけ移行され、その後は二度と読まれません。
 
 Admin portal は secret values を直接書き込みません。admin portal から login link を生成した場合でも、実際の secret write は Login / vault portal の one-time token flow を通ります。
 

@@ -32,12 +32,19 @@ The admin portal is control-plane access. Anyone with an admin link can manage m
 The admin portal can:
 
 - view the current user and conversation identity
-- list conversations in the working directory
-- read and update conversation model, thinking level, sandbox mount, auto-reply, and Slack reply mode
-- read and update global model, sandbox defaults, and Slack defaults
-- view limited workspace files, skills, and events metadata/files
+- list conversations from the office registry (the durable raw-id ↔ office mapping), not by scanning the workspace
+- read and update conversation model, thinking level, workspace door policy and layout, auto-reply, and Slack reply mode
+- read and update global model, sandbox resource defaults, global door policy, and Slack defaults
+- view limited workspace files, skills, and events metadata/files, and create or edit skills at either level
+- list and mutate the package sources for a scope
+- view session and conversation usage
 - delete events for the selected conversation
 - generate a session view link or login/vault link for the target conversation
+
+Door policy can also be set from chat with `/pi-sandbox door`, but never by the agent itself:
+conversation settings live under the host-only state dir precisely because conversation directories
+are bind-mounted read-write into the sandbox, and the settings file inside the mount is migrated
+once and then never read again.
 
 The admin portal does not directly write secret values. Even when it generates a login link, the real secret write still goes through the one-time token flow of the Login / vault portal.
 

@@ -22,28 +22,40 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
 
 ## プラットフォームセッションモデル
 
-| プラットフォーム | `sessionKey` ルール                                                               | 備考                                                                                   |
-| ---------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Slack            | top-level / DM: `conversationId`; thread: `conversationId:threadTs`               | thread sessions は直近のチャット履歴から bootstrap される固定ファイルです              |
-| Discord          | DM: `channelId`; shared top-level: `channelId:messageId`; reply/thread: rooted id | shared channels の replies は root message session を継続します                        |
-| Telegram         | private: `chatId`; shared top-level: `chatId:messageId`; reply chain: root reply  | ネイティブ thread model はありません。shared sessions は reply chains から推測されます |
+session key は `conversationId` 単体か、scoped session の場合は `conversationId:suffix` です。suffix は、そのプラットフォームが thread や reply の対象を識別するために使う値です。
+
+| プラットフォーム | `sessionKey` ルール                                                                                                 | 備考                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Slack            | top-level と DM: `channelId`; thread（DM 内も含む）: `channelId:threadTs`                                           | thread sessions は直近のチャット履歴から bootstrap される固定ファイルです                 |
+| Discord          | DM と shared top-level: `channelId`; thread: `parentChannelId:threadChannelId`; reply: `channelId:repliedMessageId` | guild thread は parent channel と thread 自身の id の組で指し示されます                   |
+| Telegram         | private chat: `chatId`; shared top-level: `chatId:messageId`; shared reply: `chatId:repliedMessageId`               | ネイティブ thread model はないため、返信先のメッセージが scope になります                 |
+| GitHub           | `GH_<owner>_<repo>_<number>`                                                                                        | 1 つの issue または pull request が 1 つのフラットな session。inline review thread も含む |
+
+## Session key と office
+
+session key は生のプラットフォーム値のままです。`src/sessions/session-key.ts` の文法が office key を目にすることはありません。runtime state は、その conversation の office と session key の組で指し示されるため、生の conversation id を共有する 2 つのプラットフォームが互いの runner、queue、stop state を選ぶことは決してありません。ストレージの path は office に従い、session ファイルは `<workspace>/<officeKey>/sessions/` 配下に置かれます。
 
 ## セッション識別子の安全性
 
-session key は常にちょうど 1 つの会話に属します。プラットフォームアダプターは scoped key を提供できますが、会話の intake と runtime は、その会話 prefix が受信中の会話と異なる key を拒否します。会話の識別子と scoped suffix は、session storage に影響を与える前に、path separators、制御文字、特殊な `.` / `..` セグメントも拒否します。Thread session files は既存の名前と永続化の挙動を保持します。加えて sessions module は、symlink の session target を拒否し、導出された paths がその会話の `sessions/` ディレクトリ内に留まることを保証します。
+session key は常にちょうど 1 つの会話に属します。プラットフォームアダプターは scoped key を提供できますが、会話の intake と runtime は、その会話 prefix が受信中の会話と異なる key を拒否します。会話の識別子と scoped suffix は、session storage に影響を与える前に、path separators、制御文字、特殊な `.` / `..` セグメントも拒否します。Thread session files は既存の名前と永続化の挙動を保持します。加えて sessions module は、symlink の session target を拒否し、導出された paths がその office の `sessions/` ディレクトリ内に留まることを保証します。
 
 ## ファイル
 
 <FileTree>
 
 - workspace/
-  - **log.jsonl** プラットフォームメッセージ履歴
-  - sessions/
-    - **current** 使用中の top-level session を指します
-    - **\*.jsonl** tool results を含む、構造化 harness session context
-    - **scope-derived files** thread / reply scopes の固定 session files
+  - v1-slack-c0aaaaaa1-…/ 1 つの office
+    - **log.jsonl** プラットフォームメッセージ履歴
+    - sessions/
+      - **current** 使用中の top-level session を指します
+      - **\*.jsonl** tool results を含む、構造化 harness session context
+      - **scope-derived files** thread / reply scopes の固定 session files
 
 </FileTree>
+
+## Thread の系譜
+
+scoped session は、それがどの top-level session から作られたかを header に記録します。`parentSession`（path）と `parentSessionId`（uuid）です。このリンクは reset をまたいでも維持されます。scoped session をリセットするとファイルは作り直されますが、現在の top-level session に結び直すのではなく、元の parent を保持します。系譜のメタデータが存在する前に書かれた session は、作り直されずそのまま残されます。
 
 ## Bootstrap、ローテーション、リセット、Session Dream
 

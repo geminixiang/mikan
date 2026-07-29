@@ -19,28 +19,40 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
 
 ## 平台工作階段模型
 
-| 平台     | `sessionKey` 規則                                                                 | 備註                                                          |
-| -------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Slack    | top-level / DM：`conversationId`；thread：`conversationId:threadTs`               | thread sessions 是由近期聊天歷史 bootstrap 的固定檔案         |
-| Discord  | DM：`channelId`；shared top-level：`channelId:messageId`；reply/thread：rooted id | shared channels 中的 replies 會延續 root message session      |
-| Telegram | private：`chatId`；shared top-level：`chatId:messageId`；reply chain：root reply  | 沒有原生 thread model；shared sessions 會從 reply chains 推斷 |
+Session key 要嘛是單獨的 `conversationId`，要嘛是代表 scoped session 的 `conversationId:suffix`。suffix 就是該平台用來識別 thread 或 reply 對象的值。
+
+| 平台     | `sessionKey` 規則                                                                                                   | 備註                                                                        |
+| -------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Slack    | top-level 與 DM：`channelId`；thread（包含 DM 中的 thread）：`channelId:threadTs`                                   | thread sessions 是由近期聊天歷史 bootstrap 的固定檔案                       |
+| Discord  | DM 與 shared top-level：`channelId`；thread：`parentChannelId:threadChannelId`；reply：`channelId:repliedMessageId` | guild thread 以其 parent channel 加上該 thread 自己的 id 定址               |
+| Telegram | private chat：`chatId`；shared top-level：`chatId:messageId`；shared reply：`chatId:repliedMessageId`               | 沒有原生 thread model，因此被回覆的那則訊息就是 scope                       |
+| GitHub   | `GH_<owner>_<repo>_<number>`                                                                                        | 一個 issue 或 pull request 就是一個扁平 session，包含 inline review threads |
+
+## Session key 與 office
+
+Session key 維持原始平台值——`src/sessions/session-key.ts` 中的文法從不接觸 office key。Runtime 狀態是以該對話的 office 加上它的 session key 來定址，因此兩個共用同一個 raw conversation id 的平台，絕不可能選到對方的 runner、queue 或 stop 狀態。儲存路徑則跟著 office 走：session 檔案位於 `<workspace>/<officeKey>/sessions/`。
 
 ## 工作階段身分安全
 
-session key 一律只屬於單一對話。平台 adapter 可以提供 scoped key，但對話 intake 與 runtime 會拒絕 conversation prefix 與傳入對話不符的 key。Conversation identity 與 scoped suffix 也會在影響 session 儲存之前，拒絕 path separator、control character，以及特殊的 `.` / `..` segment。Thread session files 維持既有的檔名與持久化行為；sessions 模組還會拒絕 symlink session target，並確保衍生路徑仍留在該對話的 `sessions/` 目錄之內。
+session key 一律只屬於單一對話。平台 adapter 可以提供 scoped key，但對話 intake 與 runtime 會拒絕 conversation prefix 與傳入對話不符的 key。Conversation identity 與 scoped suffix 也會在影響 session 儲存之前，拒絕 path separator、control character，以及特殊的 `.` / `..` segment。Thread session files 維持既有的檔名與持久化行為；sessions 模組還會拒絕 symlink session target，並確保衍生路徑仍留在該 office 的 `sessions/` 目錄之內。
 
 ## 檔案
 
 <FileTree>
 
 - workspace/
-  - **log.jsonl** 平台訊息歷史
-  - sessions/
-    - **current** 指向使用中的 top-level session
-    - **\*.jsonl** 結構化 harness session context，包含 tool results
-    - **scope-derived files** thread / reply scopes 的固定 session files
+  - v1-slack-c0aaaaaa1-…/ 一個 office
+    - **log.jsonl** 平台訊息歷史
+    - sessions/
+      - **current** 指向使用中的 top-level session
+      - **\*.jsonl** 結構化 harness session context，包含 tool results
+      - **scope-derived files** thread / reply scopes 的固定 session files
 
 </FileTree>
+
+## Thread 血緣
+
+Scoped session 會在自己的 header 中，以 `parentSession`（路徑）與 `parentSessionId`（uuid）記錄它是從哪個 top-level session 建立出來的。這個連結在 reset 後仍會保留：重設一個 scoped session 會重建它的檔案，但保留原本的 parent，而不是重新綁定到現在當下的 top-level session。在血緣 metadata 出現之前寫下的 session 會被原樣保留，不會被重建。
 
 ## Bootstrap、rotation、重設與 Session Dream
 

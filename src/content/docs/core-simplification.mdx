@@ -9,13 +9,14 @@ This audit uses the boundaries in [Core interface reference](/core-interfaces/).
 
 The smallest coherent mikan core is:
 
-1. one normalized conversation input and one response port;
-2. one runtime that serializes a session and owns runner lifecycle;
-3. one harness interface for a model turn;
-4. one session store and one platform log store, intentionally separate;
-5. one executor interface for all tool I/O;
-6. one credential-resolution seam;
-7. registries for optional platform, command, tool, extension, and sandbox capabilities.
+1. one conversation identity and one place that turns it into paths;
+2. one normalized conversation input and one response port;
+3. one runtime that serializes a session and owns runner lifecycle;
+4. one harness interface for a model turn;
+5. one session store and one platform log store, intentionally separate;
+6. one executor interface for all tool I/O;
+7. one credential-resolution seam;
+8. registries for optional platform, command, tool, extension, and sandbox capabilities.
 
 Web portals, particular chat SDKs, Docker provisioning, Gondolin runtime management, Firecracker, Cloudflare, and GitHub-specific tools are products or plugins around this core.
 
@@ -24,6 +25,7 @@ Web portals, particular chat SDKs, Docker provisioning, Gondolin runtime managem
 | Priority | Finding                                                         | Evidence                                                                                                                                                    | Simplification                                                                                                       |
 | -------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | Done     | The npm boundary is explicit and regression-tested              | `src/index.ts` lists root exports; `package.json` declares root, harness, and sandbox entry points; `src/test/public-api.test.ts` snapshots runtime exports | Treat additions as compatibility decisions and update the contract test deliberately                                 |
+| Done     | Conversation identity and path derivation have one owner        | `src/office/` owns `OfficeAddress`/`OfficeKey`, the `Workspace`/`Office` values, the registry, and the legacy migration; consumers take values, not strings | Keep path math inside the module; a new consumer receives an `Office` rather than a root plus an id                  |
 | P0       | Platform input has two overlapping canonical shapes             | `ConversationEvent` and `ConversationMessage` repeat id/session/kind/user/text/attachments/thread fields and are passed together                            | Introduce one `ConversationInput` envelope; derive compatibility views during migration                              |
 | P0       | `MessagingBot` has too many reasons to change                   | lifecycle, output, upload/reaction, private diagnostics, event queue, and metadata are one interface                                                        | Split normalized platform port from optional capabilities; keep one adapter object that composes them                |
 | P1       | Sandbox extensibility is only nominal                           | `SandboxAdapter` is exported, but a closed array in `sandbox/index.ts` owns parsing/creation                                                                | Add a registry or make adapters internal; move experimental backends out of the default core assembly                |
@@ -39,6 +41,8 @@ Web portals, particular chat SDKs, Docker provisioning, Gondolin runtime managem
 Some apparent duplication protects important semantics:
 
 - Keep `log.jsonl` separate from agent session JSONL. They record different truths and support recovery.
+- Keep office keys distinct from raw platform ids. Naming a directory or a vault by a raw id lets two platforms that share an id reach each other's data; the registry exists precisely because the key is not reversible.
+- Keep session keys raw. They are platform values, and pairing them with an office is what makes a non-globally-unique key safe — rewriting them into office-scoped strings would move the check from the runtime into every caller.
 - Keep host paths separate from runtime paths. Collapsing them breaks container/remote execution and can expose host-only data.
 - Keep model-provider credentials separate from sandbox vault credentials.
 - Keep per-session queues. Global serialization would waste concurrency; no serialization would corrupt conversation order.
@@ -54,7 +58,7 @@ Some apparent duplication protects important semantics:
 interface ConversationInput {
   platform: MessagingInfo;
   conversation: {
-    id: string;
+    address: OfficeAddress;
     kind: ConversationKind;
     vaultId?: string;
   };
@@ -93,7 +97,7 @@ This removes feature detection by arbitrary method name and lets commands/extens
 
 ```ts
 interface ConversationRuntimeOptions {
-  workingDir: string;
+  workspace: Workspace;
   sandbox: SandboxConfig;
   createRunner: RunnerFactory;
   commands?: readonly CommandDefinition[];

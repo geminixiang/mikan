@@ -5,15 +5,21 @@ description: GitHub adapter の GitHub App polling、issue/PR conversations、wa
 
 1 つの GitHub issue または pull request が 1 つの mikan conversation になります。adapter は GitHub App installation として GitHub API を poll します。webhook endpoint は不要で、mikan の proactive model を維持します。
 
+conversation id は `GH_<owner>_<repo>_<number>` で、owner と repo は小文字化されます。id は 1 つの path segment としてそのまま使われ、docker の `-v source:target` 構文にも入るため、`/` と `:` を避けています。また `-` ではなく `_` で区切るのは、GitHub の owner が `-` を含み得る（それでは owner/repo の境界が曖昧になる）一方で `_` は含まないためです。他のすべてのプラットフォームと同じく、生 id は GitHub API の境界に留まります。ディスク上では、この conversation は office key で命名された office directory に存在します。
+
 ## 主要コード
 
 | ファイル                            | 用途                                                                                                                    |
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `src/adapters/github/bot.ts`        | GitHub bot 本体：poll loop、watermark dedup、mention/participation triggering、tool backends。                          |
+| `src/adapters/github/bot.ts`        | GitHub bot 本体：poll loop、watermark dedup、mention/participation triggering。                                         |
+| `src/adapters/github/github-ops.ts` | すべての `github_*` tool を支える host 側 backend。poll loop からは独立。                                               |
+| `src/adapters/github/repo.ts`       | host 側の git：shallow clone、ガード付きの branch push、作業を保持する sync。                                           |
 | `src/adapters/github/client.ts`     | GitHub App として認証する最小 REST client（RS256 JWT → installation tokens）。                                          |
 | `src/adapters/github/cloudbuild.ts` | `github_checks` 用の Cloud Build log 取得（host 側の GCP credentials）。                                                |
+| `src/adapters/github/gcp-auth.ts`   | 最小の GCP ADC token provider（WIF、service-account key、gcloud user ADC）。                                            |
 | `src/adapters/github/context.ts`    | GitHub 版 `ConversationResponder` を作成し、完成した response を 1 つの comment として投稿（streaming edits なし）。    |
 | `src/adapters/github/ids.ts`        | `GH_<owner>_<repo>_<number>` conversation id の encode/parse。`rc-<id>` review-comment ts。                             |
+| `src/adapters/github/tool-pack.ts`  | host 側 tools を、main から注入される platform tool pack としてまとめる。                                               |
 | `src/adapters/github/tools/`        | agent 向けの tools：`github_pr`、`github_checks`、`github_review_reply`、`github_sync`、`github_read`、`github_issue`。 |
 | `src/adapters/github/types.ts`      | GitHub adapter 固有の types と REST payload shapes。                                                                    |
 
@@ -50,7 +56,9 @@ Dedup は `<state-dir>/github-sync.json` に永続化される watermark です�
 
 ## Trigger
 
-comment、inline review comment、または新しい issue body は、App slug を @mention するか、bot がすでにその issue conversation に参加している場合のみ run を起動します。commenter は repo で **write permission 以上**も保持している必要があります。public repos では誰でも comment できるため、write 未満のユーザーによる mentions は完全に無視されます（permission lookups は 5 分間 cache され、失敗時は拒否します）。その他は state を作成せずにすべて無視されます。mention 付きの `stop`（または `/stop`）comment は実行中の session を停止します。
+comment、inline review comment、または新しい issue body は、App slug を @mention するか、bot がすでにその issue conversation に参加している場合のみ run を起動します。commenter は repo で **write permission 以上**も保持している必要があります。public repos では誰でも comment できるため、write 未満のユーザーによる mentions は完全に無視されます（permission lookups は 5 分間 cache され、失敗時は拒否します）。その他は state を作成せずにすべて無視されます。mention 付きの `stop`（または `/stop`）comment は実行中の session を停止します。この magic word の文法はすべてのプラットフォームで共通です。
+
+public repo では誰でも issue を作成できるため、GitHub は `trustModel: "open-trigger"` を報告します。これにより、GitHub conversation では ambient な `sandbox.defaultSharedVault` のコピーが無効になります。既定では認証情報を一切受け取らず、管理者が特定の conversation に対して意図的に vault をプロビジョニングする必要があります。[Vault](/ja/sandbox/vault/) を参照してください。
 
 ## Sessions と返信
 
@@ -58,9 +66,9 @@ issue/PR 全体が 1 つの永続 session（`sessionKey === conversationId`）�
 
 ## Repository access と pull requests
 
-sandbox は credentials を一切保持しません。git は conversation-dir bind mount の両側にまたがって動作します：
+sandbox は credentials を一切保持しません。git は office-dir bind mount の両側にまたがって動作します：
 
-- 初回接触時に repo は conversation dir（sandbox 内では `./repo`）へ shallow-clone されます。その repo と `contents:read` に限定した ephemeral token を git invocation ごとに渡し、`.git/config` には書き込みません。PR conversations では PR head が実際の branch 名で checkout されます（fork PR や lookup 失敗時は `pr-<n>` に fallback）。そのため head が `pi/*` branch の PR はその場で更新できます：その branch に commit して `github_pr` を呼べば同じ PR に push されます。
+- 初回接触時に repo は conversation office の `repo/` directory へ shallow-clone されます。sandbox 内では `/workspace/<office-key>/repo` で、agent の prompt はこれを `./repo` と呼びます。その repo と `contents:read` に限定した ephemeral token を git invocation ごとに渡し、`.git/config` には書き込みません。PR conversations では PR head が実際の branch 名で checkout されます（fork PR や lookup 失敗時は `pr-<n>` に fallback）。そのため head が `pi/*` branch の PR はその場で更新できます：その branch に commit して `github_pr` を呼べば同じ PR に push されます。
 - agent は sandbox 内で通常の git を使って branch と commit を作成します（bot の author identity は事前設定済み）。sandbox からの push は設計上失敗します。
 - `github_pr` tool は host 側で実行されます。その 1 repo 用の `contents:write` + `pull_requests:write` token を発行し、mount の host 側から agent の `pi/*` branch を push して、App として pull request（draft 対応）を開きます。同じ branch で再実行すると、既存 PR に新しい commits を push します。default branch の push、force-push、merge はできません。すべての PR は人が review、merge します。
 - `github_checks` tool は push 済み branch（または PR head）の CI check runs を読み取り、失敗した run の log tail を取得できます。GitHub Actions runs には `job_id` を使用し（**Checks: Read** と **Actions: Read** が必要）、host に GCP credentials がある場合は Google Cloud Build runs に `build_id` を使用します（後述）。
@@ -82,3 +90,4 @@ credential principal には project に対する `roles/cloudbuild.builds.viewer
 - REST API は file uploads に対応していません。`uploadFile` は代わりに pointer comment を投稿します。
 - summary body だけが bot に mention する PR review（inline comments が 0 件）は trigger になりません。repo 全体の "reviews since" endpoint が存在しないためです。代わりに通常の PR comment を投稿してください。
 - `./repo` clone は初回接触時の snapshot として始まります。sandbox 自身は updates を fetch できないため、agent は `github_sync` を使用します。
+- clone が存在しない場合は trigger のたびに再試行されます（存在すれば no-op）。そのため、たとえば App の permissions を後から付与した場合など、初回 clone に失敗していても次の mention で回復します。

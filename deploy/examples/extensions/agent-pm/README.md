@@ -26,9 +26,9 @@ under `mikan.extensions`.
 - **Proactive messaging** (`api.notify`): the `remind` action posts the list
   to the channel without going through a normal agent reply.
 - **Data directory** (`api.paths.dataDir`, default): SQLite under
-  `<stateDir>/conversations/<id>/extension-data/agent-pm/` — host-only, never
-  in the sandbox. One db per conversation (free isolation) — the usual install
-  for single-channel/DM follow-up tracking. For a cross-channel PM view (one
+  `<stateDir>/conversations/<officeKey>/extension-data/agent-pm/` — host-only,
+  never in the sandbox. One db per conversation (free isolation) — the usual
+  install for single-channel/DM follow-up tracking. For a cross-channel PM view (one
   table over all channels), use `api.paths.sharedDataDir` and partition by
   `conversation_id` yourself.
 - **package.json**: `mikan.extensions` declares the entrypoint;
@@ -44,10 +44,10 @@ locations):
 
 ```sh
 # install from GitHub (no local clone) — one conversation (common)
-mikan ext install github:geminixiang/mikan#examples/extensions/agent-pm --conversation <id>
+mikan ext install github:geminixiang/mikan#deploy/examples/extensions/agent-pm --conversation <id>
 
 # or all conversations
-mikan ext install github:geminixiang/mikan#examples/extensions/agent-pm --global
+mikan ext install github:geminixiang/mikan#deploy/examples/extensions/agent-pm --global
 
 # or from a local path
 mikan ext install ./agent-pm --global
@@ -66,6 +66,8 @@ default `~/.mikan`.
 > To develop your own extension, install mikan for types with
 > `npm install --save-dev --ignore-scripts @geminixiang/mikan`, import
 > `MikanExtensionApi`, then implement `activate(api: MikanExtensionApi)`.
+> `mikan ext dev ./my-extension` runs it in a stdin/stdout conversation on the
+> same runtime, with no Slack workspace and no install step.
 
 ## Secrets (unused in this sample, but available)
 

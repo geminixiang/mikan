@@ -9,13 +9,14 @@ description: 挙動を変えずに mikan の public 面と内部結合を減ら�
 
 最小限で一貫した mikan の core は次のとおりです:
 
-1. 1 つの正規化された conversation input と 1 つの response port；
-2. session を直列化し runner lifecycle を所有する 1 つの runtime；
-3. 1 つの model turn のための 1 つの harness インターフェース；
-4. 意図的に分離された 1 つの session store と 1 つの platform log store；
-5. すべての tool I/O のための 1 つの executor インターフェース；
-6. 1 つの credential-resolution の seam；
-7. 任意の platform、command、tool、extension、sandbox の機能のための registries。
+1. 1 つの conversation identity と、それを paths に変換する 1 つの場所；
+2. 1 つの正規化された conversation input と 1 つの response port；
+3. session を直列化し runner lifecycle を所有する 1 つの runtime；
+4. 1 つの model turn のための 1 つの harness インターフェース；
+5. 意図的に分離された 1 つの session store と 1 つの platform log store；
+6. すべての tool I/O のための 1 つの executor インターフェース；
+7. 1 つの credential-resolution の seam；
+8. 任意の platform、command、tool、extension、sandbox の機能のための registries。
 
 Web portals、特定の chat SDKs、Docker provisioning、Gondolin runtime management、Firecracker、Cloudflare、GitHub 固有の tools は、この core を取り巻く製品または plugin です。
 
@@ -24,6 +25,7 @@ Web portals、特定の chat SDKs、Docker provisioning、Gondolin runtime manag
 | 優先度 | 発見事項                                                        | 根拠                                                                                                                                                                    | 簡素化                                                                                                                         |
 | ------ | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | Done   | npm 境界は明示され、回帰テストで固定されている                  | `src/index.ts` は root export を明記し、`package.json` は root・harness・sandbox entry point を宣言し、`src/test/public-api.test.ts` が runtime export を snapshot する | export 追加を互換性判断として扱い、contract test を意図的に更新する                                                            |
+| Done   | conversation identity と path 導出の所有者が 1 つになった       | `src/office/` が `OfficeAddress`/`OfficeKey`、`Workspace`/`Office` の値、registry、legacy migration を所有する。consumer は文字列ではなく値を受け取る                   | path の計算をモジュール内に留める。新しい consumer は root と id ではなく `Office` を受け取る                                  |
 | P0     | Platform input に重複する正規の形が 2 つある                    | `ConversationEvent` と `ConversationMessage` が id/session/kind/user/text/attachments/thread の各フィールドを繰り返し、一緒に渡される                                   | 1 つの `ConversationInput` envelope を導入し、移行の間は互換ビューを導出する                                                   |
 | P0     | `MessagingBot` に変更理由が多すぎる                             | lifecycle、output、upload/reaction、private diagnostics、event queue、metadata が 1 つのインターフェースになっている                                                    | 正規化された platform port を任意の機能から分離し、それらを合成する 1 つの adapter オブジェクトを保つ                          |
 | P1     | Sandbox の拡張性が名目上のものにすぎない                        | `SandboxAdapter` は export されているが、`sandbox/index.ts` の閉じた配列が parsing/creation を所有している                                                              | registry を追加するか adapter を internal にする。実験的な backends を default core assembly の外へ移す                        |
@@ -39,6 +41,8 @@ Web portals、特定の chat SDKs、Docker provisioning、Gondolin runtime manag
 一見の重複の中には、重要なセマンティクスを守るものがあります:
 
 - `log.jsonl` を agent session JSONL から分離して保つ。これらは異なる真実を記録し、リカバリを支える。
+- office key を生の platform id と区別して保つ。directory や vault を生 id で命名すると、id を共有する 2 つのプラットフォームが互いのデータに到達できてしまう。registry が存在するのは、まさに key が逆変換できないからである。
+- session keys は生のままに保つ。これらは platform の値であり、office と組にすることこそが、グローバルには一意でない key を安全にしている。office スコープの文字列に書き換えると、チェックが runtime からすべての呼び出し側へ移ってしまう。
 - host paths を runtime paths から分離して保つ。これらを統合すると container/remote 実行が壊れ、host-only のデータを露出し得る。
 - model-provider credentials を sandbox vault credentials から分離して保つ。
 - per-session queues を保つ。グローバルな直列化は並行性を無駄にし、直列化なしは conversation の順序を破壊する。
@@ -54,7 +58,7 @@ Web portals、特定の chat SDKs、Docker provisioning、Gondolin runtime manag
 interface ConversationInput {
   platform: MessagingInfo;
   conversation: {
-    id: string;
+    address: OfficeAddress;
     kind: ConversationKind;
     vaultId?: string;
   };
@@ -93,7 +97,7 @@ interface PlatformPort {
 
 ```ts
 interface ConversationRuntimeOptions {
-  workingDir: string;
+  workspace: Workspace;
   sandbox: SandboxConfig;
   createRunner: RunnerFactory;
   commands?: readonly CommandDefinition[];

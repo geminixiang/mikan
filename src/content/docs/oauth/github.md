@@ -72,7 +72,9 @@ GITHUB_OAUTH_ACCESS_TOKEN
 GH_TOKEN
 ```
 
-In `container` / `image` / `firecracker` sandboxes, these env vars are injected into later tool runs.
+Every sandbox mode except `host` injects these env vars into later tool runs.
+
+These are the credentials of the person who logged in, and they are meant to reach the sandbox — the agent runs `gh` and `git` as that person. Note that this is separate from mikan's own GitHub App identity used by the [GitHub adapter](/platform-adapters/github/), whose tokens stay host-side and never enter a runtime.
 
 ## Scopes
 

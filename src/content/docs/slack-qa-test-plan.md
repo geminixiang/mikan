@@ -61,23 +61,38 @@ npm run test:e2e:slack
 
 Each scenario has its own `*.e2e.ts` file. When required env vars (`SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, and related bot user IDs) are missing, scenarios are skipped at runtime. Coverage includes:
 
-- channel mention to the mikan bot
-- mikan thread reply routing
+- channel mention to the mikan bot, and the no-mention false-reply check
+- mikan thread reply routing, and plain thread replies not triggering a run
 - mikan short task completion
-- mikan stop command acknowledgement
-- idle stop ("Nothing running") acknowledgement
-- mikan small text-file upload handling
-- multi-file upload handling
-- image upload handling
-- DM reply without mention
-- DM multi-turn context retention
+- mikan stop command acknowledgement, and idle stop ("Nothing running")
+- small text-file, multi-file, and image upload handling
+- DM reply without mention, and DM multi-turn context retention
 - thread session isolation
 - busy-queue follow-up delivery
-- bot-to-bot loop observation
-- one-shot event delivery
-- no-mention false-reply check
+- bot-to-bot loop observation, and bot-originated mentions not triggering
+- one-shot event delivery, and the event anchor's thread continuing the fork session
+- native streaming appends that add only deltas
+- Block Kit rendering of response-source links, and `msg_too_long` continuations staying in the thread
+- `/new` discarding transient context while durable memory survives
+- self-tests for the reply-waiting helpers themselves
 
-Local E2E needs only four variables: `SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, `SLACK_QA_BOT_USER_ID`, and `SLACK_BOT_TOKEN`. The event directory is derived from the current workspace.
+Local E2E needs only four variables: `SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, `SLACK_QA_BOT_USER_ID`, and `SLACK_BOT_TOKEN`. The working and event directories default to `.workspace/mikan-workspace` under the repo root; override them with `SLACK_QA_WORKING_DIR` and `SLACK_QA_EVENTS_DIR`. Scenarios that read a conversation's history resolve its office key themselves — the daemon writes under `<workspace>/v1-slack-<channel>-<digest>/`, not under the raw channel id.
+
+### Door policy for the test daemon
+
+The suite drives a real mikan daemon. If you run that daemon in `host` sandbox mode, it will refuse
+to start work under the default `isolated` door policy, and every scenario fails with no bot reply.
+Opt into a trusted policy explicitly in the test state dir's `settings.json`:
+
+```json
+{
+  "sandbox": {
+    "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
+  }
+}
+```
+
+This is appropriate for a disposable single-tenant QA runner and nowhere else.
 
 The QA user token must be able to post messages, read channel history/replies, and upload files for S-009 in the test channel. For the DM scenarios it must also authenticate as a human user (`auth.test` without `bot_id`): mikan deliberately does not reply to DMs from bots, so a bot-flavored token makes S-017/S-018 fail fast with a misconfiguration error. The E2E manifest in `deploy/examples/slack-app-manifest.e2e.json` includes these required user scopes; the normal `deploy/examples/slack-app-manifest.json` does not.
 
@@ -99,7 +114,9 @@ Required repository secrets or variables:
 
 ## Smoke test checklist
 
-Run these tests after every deploy or config change.
+Run these tests after every deploy or config change. These `S-0xx` ids number the manual checklist
+below and are independent of the `S-0xx` ids inside the automated `e2e/slack` scenarios — do not
+match them up.
 
 | ID    | Action                                         | Expected result                                              |
 | ----- | ---------------------------------------------- | ------------------------------------------------------------ |

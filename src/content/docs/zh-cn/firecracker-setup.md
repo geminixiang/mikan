@@ -17,7 +17,7 @@ description: 设定 Firecracker microVM，供 mikan 的 experimental Firecracker
 
 ```bash
 # 下載並安裝 Firecracker
-mkdir -p /home/gemini/firecracker
+mkdir -p $HOME/firecracker
 cp release-v1.15.0-x86_64/firecracker-v1.15.0-x86_64 /usr/local/bin/firecracker
 chmod +x /usr/local/bin/firecracker
 
@@ -30,7 +30,7 @@ firecracker --version
 依照官方 Firecracker getting-started guide 下载 kernel 与 rootfs：
 
 ```bash
-cd /home/gemini/firecracker
+cd $HOME/firecracker
 
 # 從最新 release 取得 CI version
 ARCH="x86_64"
@@ -51,7 +51,7 @@ wget "https://s3.amazonaws.com/spec.ccfc.min/${latest_ubuntu_key}" -O ubuntu-24.
 ### 3. 解开并设定 rootfs
 
 ```bash
-cd /home/gemini/firecracker
+cd $HOME/firecracker
 
 # 解開 squashfs
 unsquashfs ubuntu-24.04.squashfs.upstream
@@ -73,7 +73,7 @@ mkfs.ext4 -d squashfs-root -F ubuntu-24.04.ext4
 #### Terminal 1：设定网路并启动 Firecracker
 
 ```bash
-cd /home/gemini/firecracker
+cd $HOME/firecracker
 
 # 設定 tap interface
 sudo ip link del tap0 2>/dev/null || true
@@ -92,7 +92,7 @@ sudo firecracker --api-sock /tmp/firecracker.socket --enable-pci
 #### Terminal 2：设定 VM
 
 ```bash
-cd /home/gemini/firecracker
+cd $HOME/firecracker
 API_SOCKET="/tmp/firecracker.socket"
 
 # 設定 log file
@@ -141,17 +141,28 @@ ssh -i ./id_rsa root@172.16.0.2 "echo 'Connected!' && uname -a"
 
 ## 与 Mikan 搭配使用
 
+Firecracker VM 属于你，而不属于 mikan，因此 mikan 无法在其中强制执行按对话的工作区投影。所以它在默认的
+`isolated` 门禁策略下会拒绝运行。请在启动前显式选择受信任策略——在 `<state-dir>/settings.json` 中：
+
+```json
+{
+  "sandbox": {
+    "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
+  }
+}
+```
+
 VM 启动后：
 
 ```bash
 # 使用 Firecracker sandbox 執行 mikan
-mikan --sandbox=firecracker:172.16.0.2:/home/gemini/workspace /home/gemini/workspace
+mikan --sandbox=firecracker:172.16.0.2:$HOME/workspace $HOME/workspace
 
 # 使用自訂 SSH user
-mikan --sandbox=firecracker:172.16.0.2:/home/gemini/workspace:ubuntu /home/gemini/workspace
+mikan --sandbox=firecracker:172.16.0.2:$HOME/workspace:ubuntu $HOME/workspace
 
 # 使用自訂 SSH port
-mikan --sandbox=firecracker:172.16.0.2:/home/gemini/workspace:root:22 /home/gemini/workspace
+mikan --sandbox=firecracker:172.16.0.2:$HOME/workspace:root:22 $HOME/workspace
 ```
 
 ## 关机
@@ -184,7 +195,7 @@ sudo usermod -aG kvm ${USER}
 
 ### VM 无法开机
 
-- 检查 logs：`tail -f /home/gemini/firecracker/firecracker.log`
+- 检查 logs：`tail -f $HOME/firecracker/firecracker.log`
 - 确认 kernel 与 rootfs path 正确
 - 确认 tap interface 已启用：`ip link show tap0`
 

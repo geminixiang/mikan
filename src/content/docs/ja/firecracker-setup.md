@@ -17,7 +17,7 @@ description: mikan の experimental Firecracker sandbox モードで使う Firec
 
 ```bash
 # Firecracker をダウンロードしてインストール
-mkdir -p /home/gemini/firecracker
+mkdir -p $HOME/firecracker
 cp release-v1.15.0-x86_64/firecracker-v1.15.0-x86_64 /usr/local/bin/firecracker
 chmod +x /usr/local/bin/firecracker
 
@@ -30,7 +30,7 @@ firecracker --version
 公式 Firecracker getting-started guide に従って kernel と rootfs をダウンロードします。
 
 ```bash
-cd /home/gemini/firecracker
+cd $HOME/firecracker
 
 # 最新 release から CI version を取得
 ARCH="x86_64"
@@ -51,7 +51,7 @@ wget "https://s3.amazonaws.com/spec.ccfc.min/${latest_ubuntu_key}" -O ubuntu-24.
 ### 3. rootfs を展開して設定
 
 ```bash
-cd /home/gemini/firecracker
+cd $HOME/firecracker
 
 # squashfs を展開
 unsquashfs ubuntu-24.04.squashfs.upstream
@@ -73,7 +73,7 @@ mkfs.ext4 -d squashfs-root -F ubuntu-24.04.ext4
 #### Terminal 1：ネットワークを設定して Firecracker を起動
 
 ```bash
-cd /home/gemini/firecracker
+cd $HOME/firecracker
 
 # tap interface を設定
 sudo ip link del tap0 2>/dev/null || true
@@ -92,7 +92,7 @@ sudo firecracker --api-sock /tmp/firecracker.socket --enable-pci
 #### Terminal 2：VM を設定
 
 ```bash
-cd /home/gemini/firecracker
+cd $HOME/firecracker
 API_SOCKET="/tmp/firecracker.socket"
 
 # log file を設定
@@ -141,17 +141,29 @@ ssh -i ./id_rsa root@172.16.0.2 "echo 'Connected!' && uname -a"
 
 ## Mikan と組み合わせて使う
 
+Firecracker VM は mikan のものではなく、あなたのものです。そのため mikan は VM 内で conversation ごとの
+workspace projection を強制できません。したがって、既定の `isolated` door policy では実行を拒否します。
+起動前に trusted な policy を明示的に選んでください — `<state-dir>/settings.json` で：
+
+```json
+{
+  "sandbox": {
+    "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
+  }
+}
+```
+
 VM 起動後：
 
 ```bash
 # Firecracker sandbox で mikan を実行
-mikan --sandbox=firecracker:172.16.0.2:/home/gemini/workspace /home/gemini/workspace
+mikan --sandbox=firecracker:172.16.0.2:$HOME/workspace $HOME/workspace
 
 # カスタム SSH user を使う
-mikan --sandbox=firecracker:172.16.0.2:/home/gemini/workspace:ubuntu /home/gemini/workspace
+mikan --sandbox=firecracker:172.16.0.2:$HOME/workspace:ubuntu $HOME/workspace
 
 # カスタム SSH port を使う
-mikan --sandbox=firecracker:172.16.0.2:/home/gemini/workspace:root:22 /home/gemini/workspace
+mikan --sandbox=firecracker:172.16.0.2:$HOME/workspace:root:22 $HOME/workspace
 ```
 
 ## シャットダウン
@@ -184,7 +196,7 @@ sudo usermod -aG kvm ${USER}
 
 ### VM が起動しない
 
-- logs を確認：`tail -f /home/gemini/firecracker/firecracker.log`
+- logs を確認：`tail -f $HOME/firecracker/firecracker.log`
 - kernel と rootfs path が正しいことを確認
 - tap interface が有効なことを確認：`ip link show tap0`
 

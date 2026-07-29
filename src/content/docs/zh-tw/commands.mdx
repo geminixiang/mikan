@@ -14,31 +14,48 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
     `session` 會開啟目前的工作階段檢視器；`/new` 會重設目前的 DM 工作階段，同時保留舊檔案供檢查。
   </Card>
   <Card title="管理" icon="setting">
-    `/admin` 會開啟 30 分鐘有效的管理 portal；可在其中檢查模型、sandbox、回覆 policy、skills、events
-    與對話狀態。
+    `/admin` 會開啟 30 分鐘有效的管理 portal；可在其中檢查模型、sandbox 限制、office door
+    policy、回覆 policy、skills、events 與對話狀態。
   </Card>
 </CardGrid>
 
 ## 指令速查
 
-| 指令                                               | 用途與範圍                                                                                             |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `/login` / `/pi-login`                             | 開啟 15 分鐘有效的 login/vault 連結。僅限 DM。                                                         |
-| `session` / `/session` / `/pi-session`             | 開啟目前的工作階段檢視器。僅限 DM。                                                                    |
-| `/new` / `/pi-new`                                 | 重設目前工作階段。僅限 DM。                                                                            |
-| `/model` / `/pi-model [provider/model[:thinking]]` | 顯示或切換目前對話的模型。Thinking levels：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。 |
-| `/auto-reply` / `/pi-auto-reply on\|off\|status`   | 控制目前群組／頻道中的 auto-reply。                                                                    |
-| `stop` / `/stop`                                   | 停止相符的執行中工作。在 Slack 上建議使用文字形式，讓 thread-local routing 保持準確。                  |
-| `/admin` / `/pi-admin`                             | 開啟 30 分鐘有效的管理 portal。                                                                        |
-| `/extensions` / `/pi-extensions`                   | 列出全域與對話 extensions、版本及其提供的 skills。                                                     |
-| `/sandbox` / `/pi-sandbox`                         | 顯示目前受管理 image sandbox 的限制與 workspace mount 模式。                                           |
-| `/pi-sandbox boost`                                | 套用設定的 boost 限制，直到受管理 container 停止。                                                     |
-| `/pi-sandbox private\|full`                        | 保存對話的 image workspace mount 模式。`full` 會公開整個 workspace。                                   |
+| 指令                                                 | 用途與範圍                                                                                             |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `/login` / `/pi-login`                               | 開啟 15 分鐘有效的 login/vault 連結。僅限 DM。                                                         |
+| `session` / `/session` / `/pi-session`               | 開啟目前的工作階段檢視器。僅限 DM。                                                                    |
+| `/new` / `/pi-new`                                   | 重設目前工作階段。僅限 DM。                                                                            |
+| `/model` / `/pi-model [provider/model[:thinking]]`   | 顯示或切換目前對話的模型。Thinking levels：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。 |
+| `/auto-reply` / `/pi-auto-reply on\|off\|status`     | 控制目前群組／頻道中的 auto-reply。                                                                    |
+| `stop` / `/stop`                                     | 停止相符的執行中工作。在 Slack 上建議使用文字形式，讓 thread-local routing 保持準確。                  |
+| `/admin` / `/pi-admin`                               | 開啟 30 分鐘有效的管理 portal。                                                                        |
+| `/extensions` / `/pi-extensions`                     | 列出全域與對話 extensions、版本及其提供的 skills。                                                     |
+| `/sandbox` / `/pi-sandbox`                           | 顯示目前 sandbox 的限制，以及這個 office 的 door policy 與 workspace layout。                          |
+| `/pi-sandbox boost`                                  | 套用設定的 boost 限制，直到受管理的 sandbox runtime 停止。                                             |
+| `/pi-sandbox door`                                   | 回報這個 office 生效中的 door policy 與 layout，並列出可用的值。                                       |
+| `/pi-sandbox door <default\|isolated\|shared\|full>` | 設定這個 office 的 door policy。見下方 [Office door policy](#office-door-policy)。                     |
+
+`/pi-sandbox` 只適用於受管理的 sandbox runtime：在 `host` 或 `container:<name>` 模式下，它會回覆這個指令需要 `image:*` 或 `gondolin:*`。
+
+### Office door policy
+
+`/pi-sandbox door` 會寫入該對話自己的 door-policy 覆寫。同一項設定也可在 admin portal 中依 office 設定，或設為全域預設值。
+
+| 字詞       | 效果                                                                                |
+| ---------- | ----------------------------------------------------------------------------------- |
+| `default`  | 清除覆寫，改為遵循全域的 `sandbox.workspace` 設定。                                 |
+| `isolated` | 只掛載這個 office 自己的目錄。                                                      |
+| `shared`   | Trusted door：該 office 再加上 workspace 層級的 `MEMORY.md`、`skills/`、`events/`。 |
+| `full`     | Trusted door：掛載整個 workspace。                                                  |
+
+變更會在下一則訊息時生效，屆時 sandbox runtime 會以新的 mount 重建；既有的 container 內容會被保留。對話忙碌時切換會被拒絕。底層的 `sandbox.workspace` 欄位請見[設定](/zh-tw/configuration/)。
 
 <Aside type="note" title="平台指令註冊">
   原生 slash commands 也必須向平台註冊。指令清單位於 `src/commands/manifest.ts`：Discord 的
   application commands 與 Telegram 的指令選單會在啟動時由它派生，Slack 的路由也辨識清單中的 `/pi-*`
-  名稱。Slack 的 App manifest（`/pi-login`、`/pi-session`、`/pi-new`、`/pi-model`、
+  名稱。由於 Discord 會拒絕長度超過 100 個字元的 option description，清單中的參數說明會由 command
+  測試檢查長度。Slack 的 App manifest（`/pi-login`、`/pi-session`、`/pi-new`、`/pi-model`、
   `/pi-auto-reply`、`/pi-sandbox`、`/pi-extensions`、`/pi-admin`）仍需在 Slack App 設定中手動更新。
 </Aside>
 

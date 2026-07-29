@@ -14,7 +14,7 @@ description: mikan 的 platform、runtime、harness、session、execution、vaul
 | Wire / persisted | 存於磁碟，或跨行程/網路邊界傳送                  | 明確 migrate；讀取端應容忍受支援的較舊格式 |
 | Internal         | 連接 mikan CLI 內部的各模組                      | 可在協調好呼叫端與測試的情況下變更         |
 
-由於 `src/index.ts` 會 re-export 整個 harness，這個套件目前暴露的符號比此政策所預期的還多。請把下表視為預期中的契約；migration 請參閱[核心簡化](/zh-tw/core-simplification/)。
+`src/index.ts` 是一份明確的匯出清單，而不是 wildcard re-export，而且 `src/test/public-api.test.ts` 會對它做 snapshot，因此不小心加入的匯出會讓 CI 失敗。它暴露的 harness 內容仍然多於一般 bot 整合所需；請把下表視為預期中的契約，其餘的拆分請參閱[核心簡化](/zh-tw/core-simplification/)。
 
 ## 邊界圖
 
@@ -27,6 +27,9 @@ flowchart TD
   T --> E["Executor"]
   R --> S["Session and chat stores"]
   R --> V["Vault and execution resolver"]
+  O["Office identity and layout"] --> R
+  O --> S
+  O --> V
   X["Host extensions"] --> H
   W["Web and events"] --> R
 ```
@@ -39,14 +42,15 @@ npm 進入點是 `@geminixiang/mikan`，由 `src/index.ts` 實作。
 
 ### 受支援的進入點群組
 
-| 群組              | 主要符號                                                                                              | 消費者                                 |
-| ----------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| Runtime embedding | `createConversationRuntime`、`ConversationRuntime`、`ConversationRuntimeOptions`                      | 提供 platform 與 execution 相依的 host |
-| Platform contract | `MessagingBot`、`ConversationEvent`、`ConversationContext`、`ConversationResponder`、`MessagingInfo`  | Platform adapter 與 embedder           |
-| Commands          | `CommandHandler`、`CommandContext`、`CommandServices`、`dispatchCommand`                              | 新增確定性指令的 host                  |
-| Execution         | `Executor`、`SandboxConfig`、`SandboxAdapter`、`createExecutor`、`parseSandboxArg`、`validateSandbox` | Runtime backend 與 host                |
-| Extensions        | `MikanExtensionApi`、hook/event 型別、subagent 型別                                                   | 受信任的擴充功能作者                   |
-| Harness embedding | `MikanAgentSession`、`SessionStore`、`MikanModels`、settings 與 event-format 函式                     | 進階 embedder；不適用於一般 bot 整合   |
+| 群組                 | 主要符號                                                                                                   | 消費者                                                             |
+| -------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Runtime embedding    | `createConversationRuntime`、`ConversationRuntime`、`ConversationRuntimeOptions`                           | 提供 platform 與 execution 相依的 host                             |
+| Office and workspace | `createWorkspace`、`createOfficeAddress`、`officeKey`、`Workspace`、`Office`、`OfficeAddress`、`OfficeKey` | 任何 embedder：`createConversationRuntime` 需要一個 `Workspace` 值 |
+| Platform contract    | `MessagingBot`、`ConversationEvent`、`ConversationContext`、`ConversationResponder`、`MessagingInfo`       | Platform adapter 與 embedder                                       |
+| Commands             | `CommandHandler`、`CommandContext`、`CommandServices`、`dispatchCommand`                                   | 新增確定性指令的 host                                              |
+| Execution            | `Executor`、`SandboxConfig`、`SandboxAdapter`、`createExecutor`、`parseSandboxArg`、`validateSandbox`      | Runtime backend 與 host                                            |
+| Extensions           | `MikanExtensionApi`、hook/event 型別、subagent 型別                                                        | 受信任的擴充功能作者                                               |
+| Harness embedding    | `MikanAgentSession`、`SessionStore`、`MikanModels`、settings 與 event-format 函式                          | 進階 embedder；不適用於一般 bot 整合                               |
 
 只有套件 `exports` map 宣告的路徑是 public。匯入其他 `dist/` 產生路徑或 `src/` 原始碼路徑皆不受支援。
 
@@ -58,31 +62,35 @@ npm 進入點是 `@geminixiang/mikan`，由 `src/index.ts` 實作。
 
 交付給 `MessagingEventHandler` 的平台中立觸發器。
 
-| 欄位                  | 契約                                                                          |
-| --------------------- | ----------------------------------------------------------------------------- |
-| `conversationId`      | 原始平台 conversation/channel 識別碼；不得包含 `:`，因為 session key 保留了它 |
-| `conversationKind`    | `direct` 或 `shared`；影響 session 與憑證政策                                 |
-| `ts`                  | 觸發用的平台訊息識別碼                                                        |
-| `thread_ts`           | 選用的 parent/root 平台訊息識別碼                                             |
-| `user`                | 平台使用者識別碼                                                              |
-| `text`                | 移除平台 mention 後的文字                                                     |
-| `attachments`         | 已下載到 host 路徑的檔案                                                      |
-| `sessionKey`          | 選用的平台指定覆寫；否則由 session policy 推導                                |
-| `vaultConversationId` | 選用的替代身分，僅用於憑證 routing                                            |
+| 欄位                  | 契約                                                                                          |
+| --------------------- | --------------------------------------------------------------------------------------------- |
+| `address`             | 正規的 `OfficeAddress`（`platform` + 原始 `conversationId`），由 adapter 在 intake 時建立     |
+| `conversationId`      | 已棄用的原始平台識別碼，只在 adapter I/O seam 上有效；不得包含 `:`，因為 session key 保留了它 |
+| `conversationKind`    | `direct` 或 `shared`；影響 session 與憑證政策                                                 |
+| `ts`                  | 觸發用的平台訊息識別碼                                                                        |
+| `thread_ts`           | 選用的 parent/root 平台訊息識別碼                                                             |
+| `user`                | 平台使用者識別碼                                                                              |
+| `text`                | 移除平台 mention 後的文字                                                                     |
+| `attachments`         | 已下載到 host 路徑的檔案                                                                      |
+| `sessionKey`          | 選用的平台指定覆寫；否則由 session policy 推導                                                |
+| `vaultConversationId` | 選用的替代身分，僅用於憑證 routing                                                            |
+
+每個正式的 adapter 與合成 intake 都會拿相容用的 `conversationId` 對 `address` 做驗證。新的程式碼應讀取 `address`。
 
 ### `ConversationContext`
 
-為同一次執行攜帶更豐富的正規化訊息、response port 與平台 metadata：
+為同一次執行攜帶 office identity、更豐富的正規化訊息、response port 與平台 metadata：
 
 ```ts
 interface ConversationContext {
+  address: OfficeAddress;
   message: ConversationMessage;
   responder: ConversationResponder;
   platform: MessagingInfo;
 }
 ```
 
-`ConversationMessage` 與 `ConversationEvent` 目前重複了訊息 id、session、conversation kind、user、text、attachments 與 thread identity。Adapter 必須讓兩種表示保持一致。這是一個內部相容 seam，不是新整合值得採用的模型。
+`ConversationMessage` 與 `ConversationEvent` 目前重複了訊息 id、session、conversation kind、user、text、attachments 與 thread identity——而且兩者現在都帶著 `address`。Adapter 必須讓兩種表示保持一致。這是一個內部相容 seam，不是新整合值得採用的模型。
 
 ### `ConversationResponder`
 
@@ -111,26 +119,28 @@ runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診�
 
 ### 輸入方法
 
-| 方法                                 | 語意                                                     |
-| ------------------------------------ | -------------------------------------------------------- |
-| `handleEvent(event, bot, context)`   | 依推導出的 session key 序列化，接著分派指令或 agent 執行 |
-| `runSession(options)`                | 執行一個已序列化的單元；供受控制的 host 使用             |
-| `handleStop(...)` / `forceStop(...)` | 協作式/使用者可見的停止，相對於立即的內部停止            |
-| `handleNewCommand(...)`              | 中止、重設持久化的 session 狀態，並丟棄已快取的 runner   |
+| 方法                                                                      | 語意                                                                 |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `handleEvent(event, bot, context)`                                        | 依 office 加上推導出的 session key 序列化，接著分派指令或 agent 執行 |
+| `runSession(options)`                                                     | 執行一個已序列化的單元；供受控制的 host 使用                         |
+| `handleStop(address, sessionKey, bot)` / `forceStop(address, sessionKey)` | 協作式/使用者可見的停止，相對於立即的內部停止                        |
+| `handleNewCommand(...)`                                                   | 中止、重設持久化的 session 狀態，並丟棄已快取的 runner               |
 
 ### 控制與檢查
 
-| 方法                                  | 語意                                                |
-| ------------------------------------- | --------------------------------------------------- |
-| `isRunning(sessionKey)`               | 目前的 in-process 執行狀態                          |
-| `getRunningSessions()`                | 供 admin/observability 面的快照                     |
-| `switchConversationModel(...)`        | 更新已快取的 runner；回傳先前是否存在               |
-| `refreshConversationEnvironment(...)` | 重新解析已快取的 runner 環境                        |
-| `shutdown(timeoutMs?)`                | 拒絕新工作、停止 runner，並在期限內等待進行中的工作 |
+| 方法                                      | 語意                                                          |
+| ----------------------------------------- | ------------------------------------------------------------- |
+| `isRunning(address, sessionKey)`          | 目前的 in-process 執行狀態                                    |
+| `getRunningSessions()`                    | 供 admin/observability 面的快照；每一筆都帶著自己的 `address` |
+| `switchConversationModel(address, ...)`   | 更新已快取的 runner；回傳先前是否存在                         |
+| `refreshConversationEnvironment(address)` | 重新解析已快取的 runner 環境                                  |
+| `shutdown(timeoutMs?)`                    | 拒絕新工作、停止 runner，並在期限內等待進行中的工作           |
 
-`ConversationRuntimeOptions` 提供 workspace/設定欄位、sandbox/資源服務、選用的 portal token store、選用的指令、model registry、主動式平台操作，以及平台 tool-pack factory。缺少 vault 與 portal store 會退化為停用的實作；設定了 portal URL 卻沒有對應 store，在使用時會是錯誤。
+每個以 session 為範圍的進入點都接受一個 `OfficeAddress`。這裡沒有 raw-conversation-id 的橋接：只有 raw id 的呼叫端必須先透過 registry 解析（`resolveOwnedOfficeAddress`），那是 CLI 與 admin 介面才會走的冷路徑。
 
-並行不變式：同一 session key 的呼叫為序列；不同 session key 可並行執行。因此平台 tool pack 是 per-runner 建立的，絕不全域共享，因為 `bindRun` 會變更其 run binding。
+`ConversationRuntimeOptions` 提供 `workspace`（來自 `createWorkspace` 的 `Workspace` 值）、sandbox/資源服務、選用的 portal token store、選用的指令、model registry、主動式平台操作，以及平台 tool-pack factory。缺少 vault 與 portal store 會退化為停用的實作；設定了 portal URL 卻沒有對應 store，在使用時會是錯誤。
+
+並行不變式：同一個 office 與 session key 的呼叫為序列；不同 session key 可並行執行。因此平台 tool pack 是 per-runner 建立的，絕不全域共享，因為 `bindRun` 會變更其 run binding。
 
 ## 4. Command 介面
 
@@ -157,6 +167,10 @@ runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診�
 ### `MikanModels` 與 `FileCredentialStore`
 
 `MikanModels` 會解析內建與自訂的 `pi-ai` model。`FileCredentialStore` 會把 provider 憑證持久化在 state directory。Vault 憑證屬於不同邊界：它們被注入到工具執行中，並非用來驗證 host 端的 model client。
+
+### Subagent profile
+
+Subagent 一律以具名的 profile 啟動——不支援自由格式的 per-run 設定。`loadSubagentProfiles` 負責解析：`src/harness/subagent-profiles.ts` 中的內建 profile 就是定義本身（`worker`、`software-engineer`、`devops-engineer`、`data-scientist`、`account-manager`、`business-development`、`creative-producer`、`ad-operations-specialist`、`analysis-only`），而 `<workspace>/agents/<name>.md` 檔案是**修補**同名的內建 profile，而不是取代它，因此操作者可以只覆寫 `model:`，不必重寫 tools 與 prompt。名稱與任何內建都不相符的檔案則定義一個新的 profile，並且必須自行提供 `tools`。格式錯誤的檔案會變成一則診斷訊息並被略過，絕不會拋出例外。
 
 ### Harness event 與預算
 
@@ -239,22 +253,51 @@ Adapter 會辨識一個 CLI 值，選擇性地驗證它，並選擇性地建立 
 
 Host sandbox 執行絕不會收到 vault injection。Open-trigger 平台絕不會收到環境式的 shared vault。這些是安全不變式，不是為了方便的預設值。
 
-## 10. Session、chat 與 identity 介面
+## 10. Office、session、chat 與 identity 介面
 
-來源：`src/sessions/*`、`src/store.ts` 與 `src/sandbox/identity.ts`。
+來源：`src/office/*`、`src/sessions/*`、`src/adapters/shared.ts` 與 `src/sandbox/identity.ts`。
 
-有兩份刻意保留的紀錄：
+### `Workspace` 與 `Office`
 
-| 紀錄                              | 用途                                                       |
-| --------------------------------- | ---------------------------------------------------------- |
-| `<conversation>/log.jsonl`        | 平台真實紀錄：user/bot 訊息與 attachment                   |
-| `<conversation>/sessions/*.jsonl` | agent 真實紀錄：prompt、model/tool 訊息、分支與 compaction |
+一個對話就是一個 **office**：一塊持久的工作區域與資料邊界。用兩個值來表達它，而且兩者都是凍結的。
+
+```ts
+const workspace = createWorkspace({ root, stateDir });
+const office = workspace.office(createOfficeAddress("slack", "C0AAAAAA1"));
+```
+
+`Workspace` 每個 process 只建構一次，擁有 workspace 全域的介面（`root`、`memoryPath`、`skillsDir`、`eventsDir`、`agentsDir`、`reservedNames`）以及 office factory。`Office` 則預先算好單一對話的路徑——`key`、`dir`、`memoryPath`、`skillsDir`、`sessionsDir`、`attachmentsDir`、`logPath`，以及僅限 host 的 `stateDir`——並提供 `ensure()`。
+
+跨越這條邊界的規則：
+
+- **傳值，不傳字串。** 消費者接受一個 `Office`；它們不會自己從 root 與 id 拼出路徑，也絕不從目錄名稱推斷身分。
+- **`ensure()` 是唯一的實體化接縫。** 它會先把該 office 記錄進 registry，再建立目錄。這個順序意味著當機可能留下有紀錄卻沒有目錄的情況（無害——下一則訊息就會重建），但絕不會出現 registry 無法列舉的匿名目錄。它是冪等的，成本也低到可以放在每則訊息的路徑上。
+- **Office 值會依 address 記憶化**，因此在熱路徑上重複呼叫 `workspace.office(address)` 的成本是一次 map 查詢，而不是一次 SHA-256。
+
+### `OfficeAddress` 與 `OfficeKey`
+
+`OfficeAddress` 是 `{ platform, conversationId }`——平台加上它的原始 conversation id。`officeKey(address)` 推導出儲存身分 `v1-<platform>-<readable-id>-<16 hex digits>`，其中中間可讀的部分只是為了診斷，SHA-256 前綴才是身分成分。同一個 key 在 host 上、sandbox runtime 內以及 vault 中命名的都是該 office，因此兩個共用同一個 raw conversation id 的平台，絕不可能碰到對方的檔案或憑證。
+
+Office key **無法反推**。`OfficeRegistry`（`office-registry.json`，僅限 host）是持久的 raw id ↔ office 對照，同時也為開機時從 legacy raw-id 佈局而來的遷移寫 journal。面向 raw id 的介面都透過它解析：CLI 操作者用 `resolveOwnedOfficeAddress`，admin 列舉用 `listRegisteredOffices`。Sandbox 的資源名稱（container 名稱、Gondolin 實例、Cloudflare scope）在資源命名遷移完成之前，仍由原始 conversation 推導；那裡發生碰撞的代價是一次 container 重建，絕不會影響憑證存取。
+
+### 兩份紀錄
+
+| 紀錄                        | 用途                                                       |
+| --------------------------- | ---------------------------------------------------------- |
+| `<office>/log.jsonl`        | 平台真實紀錄：user/bot 訊息與 attachment                   |
+| `<office>/sessions/*.jsonl` | agent 真實紀錄：prompt、model/tool 訊息、分支與 compaction |
 
 不要合併它們。聊天歷史可以重建遺失的 top-level agent session，而 agent session 則包含從未出現在平台上的資料。
 
-Session key 使用 `conversationId[:suffix]`；只有 `src/sessions/session-key.ts` 擁有此文法。呼叫端必須使用 `deriveSessionKey`、`conversationIdOf` 與 `threadSuffixOf`，絕不直接切割字串。
+### Session key
+
+Session key 使用 `conversationId[:suffix]`，而且維持**原始平台值**——這套文法從不接觸 office key。只有 `src/sessions/session-key.ts` 擁有它；呼叫端必須使用 `deriveSessionKey`、`conversationIdOf` 與 `threadSuffixOf`，絕不直接切割字串。Runtime 狀態是以 office 加上 session key 定址，這正是讓一個非全域唯一的原始 key 得以安全的原因。
 
 `ChatHistorySync` 會解析 top-level/thread scope、bootstrap 新 session、同步新的平台 log 項目、重設 session，並協調 thread 等待進行中的 parent run 封存。
+
+### Attachment
+
+`src/adapters/shared.ts` 中的 `saveIncomingAttachments(office, items)` 是 attachment 慣例的唯一擁有者：在 `office.attachmentsDir` 底下使用清理過的 `<timestamp>_<name>` 檔名，並回傳 agent 讀取用、相對於 workspace 的 `<officeKey>/attachments/<file>` 路徑。它會在第一次寫入之前實體化該 office，並且是逐項回傳失敗而不是拋出例外，因此每個 adapter 都能保有自己的失敗策略。
 
 ## 11. Event-file 介面
 
@@ -275,19 +318,23 @@ type EventFilePayload =
 
 ## 12. 持久化檔案系統介面
 
-| 路徑                                               | 擁有者                   | 可見性 / 相容性                   |
-| -------------------------------------------------- | ------------------------ | --------------------------------- |
-| `<state-dir>/settings.json`                        | config                   | 僅限 host 的全域設定              |
-| `<state-dir>/conversations/<id>/settings.json`     | config/admin             | 僅限 host 的對話覆寫              |
-| `<state-dir>/auth.json`                            | harness credential store | 僅限 host 的 model-provider 憑證  |
-| `<state-dir>/models.json`                          | harness model catalog    | 僅限 host 的自訂 provider/model   |
-| `<state-dir>/vaults/**`                            | vault/login              | 僅限 host 的 secret 與 mount file |
-| `<state-dir>/{global,conversations}/**/extensions` | extension loader         | 受信任的 host 程式碼              |
-| `<workspace>/MEMORY.md`                            | agent/user               | Sandbox 可見的持久記憶            |
-| `<workspace>/skills/**/SKILL.md`                   | skills                   | Sandbox 可見的 prompt 指示        |
-| `<workspace>/events/*.json`                        | event store/watcher      | 共享的排程 wire format            |
-| `<workspace>/<id>/log.jsonl`                       | platform store           | Append-only 的平台歷史            |
-| `<workspace>/<id>/sessions/*.jsonl`                | session store            | 有版本的 append-only agent 歷史   |
+| 路徑                                                  | 擁有者                   | 可見性 / 相容性                         |
+| ----------------------------------------------------- | ------------------------ | --------------------------------------- |
+| `<state-dir>/settings.json`                           | config                   | 僅限 host 的全域設定                    |
+| `<state-dir>/office-registry.json`                    | office registry          | 僅限 host 的 office 清單 + 遷移 journal |
+| `<state-dir>/conversations/<officeKey>/settings.json` | config/admin             | 僅限 host 的對話覆寫                    |
+| `<state-dir>/auth.json`                               | harness credential store | 僅限 host 的 model-provider 憑證        |
+| `<state-dir>/models.json`                             | harness model catalog    | 僅限 host 的自訂 provider/model         |
+| `<state-dir>/vaults/**`                               | vault/login              | 僅限 host 的 secret 與 mount file       |
+| `<state-dir>/{global,conversations}/**/extensions`    | extension loader         | 受信任的 host 程式碼                    |
+| `<workspace>/MEMORY.md`                               | agent/user               | Sandbox 可見的持久記憶                  |
+| `<workspace>/skills/**/SKILL.md`                      | skills                   | Sandbox 可見的 prompt 指示              |
+| `<workspace>/events/*.json`                           | event store/watcher      | 共享的排程 wire format                  |
+| `<workspace>/agents/*.md`                             | subagent profile         | 疊在內建之上、每個安裝各自的 model 修補 |
+| `<workspace>/<officeKey>/log.jsonl`                   | platform adapter         | Append-only 的平台歷史                  |
+| `<workspace>/<officeKey>/sessions/*.jsonl`            | session store            | 有版本的 append-only agent 歷史         |
+
+`MEMORY.md`、`skills`、`events` 與 `agents` 是 workspace root 的保留名稱（`RESERVED_WORKSPACE_NAMES`）；workspace root 底下其他每一個項目都是 office 目錄。對於以對話為範圍的 sandbox，`<state-dir>/vaults/` 底下以對話為範圍的 vault 目錄會以 office key 命名；`host` 模式以使用者為 key，`container` 模式則以 container 名稱為 key。
 
 state directory 不得位於 sandbox 可見的 workspace 內。重要的狀態檔使用 atomic 私有寫入；append-only log 使用 append 語意。
 

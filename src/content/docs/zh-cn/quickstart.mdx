@@ -37,6 +37,18 @@ import { Aside, Steps } from "@astrojs/starlight/components";
 
    这会写入 `~/.mikan/settings.json`，默认 provider 为 `anthropic`。想换用其他模型可先检查该文件；所有字段请参阅[配置](/zh-cn/configuration/)。
 
+   设置默认使用 `isolated` 门禁策略，而只有受管理的 Docker 沙箱能满足它——在该策略下，`host` 模式会拒绝运行。本指南不使用 Docker，因此请把下面的内容合并进 `~/.mikan/settings.json`，把工作区标记为受信任：
+
+   ```json
+   {
+     "sandbox": {
+       "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
+     }
+   }
+   ```
+
+   如果你改用受管理的 [image 沙箱](/zh-cn/sandbox/image/)启动（`--sandbox=image:…`），可以跳过这处编辑——它本身就满足 isolated 策略。
+
 4. 创建 Telegram 机器人。给 [@BotFather](https://t.me/BotFather) 发消息，发送 `/newbot`，按提示操作并复制它返回的 token：
 
    ```bash
@@ -49,7 +61,9 @@ import { Aside, Steps } from "@astrojs/starlight/components";
    mikan --sandbox=host
    ```
 
-   工作目录默认为 `~/.mikan/workspace` 并会自动创建；传入路径（`mikan --sandbox=host ~/mikan-workspace`）可使用其他目录。工作区是 agent 存放各对话文件的位置：记忆、附件、会话日志和工作区域。
+   工作目录默认为 `~/.mikan/workspace` 并会自动创建；传入路径（`mikan --sandbox=host ~/mikan-workspace`）可使用其他目录。
+
+   在该工作区内，每个对话都有自己的**办公室**：一个目录，存放该对话的记忆、附件、会话日志、技能和工作区域。办公室目录按 office key（`v1-telegram-…`）命名，而不是按原始聊天 id，因此要查看哪间办公室属于哪个对话，请使用 `mikan office list`。
 
    如果启动失败，运行 `mikan env`：它会按平台和功能分组，列出 mikan 读取的所有变量及各自的当前状态。缺少平台令牌时，mikan 会直接退出，并在消息中指出需要设置的变量；`mikan --help` 列出所有标志。
 
@@ -60,7 +74,8 @@ import { Aside, Steps } from "@astrojs/starlight/components";
 <Aside type="caution" title="host 沙箱直接在你的机器上运行">
   在 `host` 模式下，agent 的命令会以你的权限直接在你的机器上运行。它适合在受信任的机器上首次尝试。
   在让其他人与机器人对话之前，请切换到受管理的 [image
-  沙箱](/zh-cn/sandbox/image/)，让每个对话都有独立的 Docker 容器。
+  沙箱](/zh-cn/sandbox/image/)，让每个对话都有独立的 Docker
+  容器——同时移除受信任门禁策略的覆盖值，让默认的 `isolated` 策略重新生效。
 </Aside>
 
 ## 下一步

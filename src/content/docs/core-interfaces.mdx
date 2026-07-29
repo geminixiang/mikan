@@ -14,7 +14,7 @@ This page documents mikan's **architectural interfaces**: the contracts that cro
 | Wire / persisted | Stored on disk or sent across a process/network boundary    | Migrate explicitly; readers should tolerate supported older forms |
 | Internal         | Connects modules inside the mikan CLI                       | May change with coordinated call sites and tests                  |
 
-The package currently exposes more symbols than this policy intends because `src/index.ts` re-exports the entire harness. Treat the table below as the intended contract; see [Core simplification](/core-simplification/) for the migration.
+`src/index.ts` is an explicit export list rather than a wildcard re-export, and `src/test/public-api.test.ts` snapshots it so an accidental addition fails CI. It still exposes more of the harness than an ordinary bot integration needs; treat the table below as the intended contract and see [Core simplification](/core-simplification/) for the remaining split.
 
 ## Boundary map
 
@@ -27,24 +27,28 @@ flowchart TD
   T --> E["Executor"]
   R --> S["Session and chat stores"]
   R --> V["Vault and execution resolver"]
+  O["Office identity and layout"] --> R
+  O --> S
+  O --> V
   X["Host extensions"] --> H
   W["Web and events"] --> R
 ```
 
-The runtime is the coordinator. Platforms must not know harness persistence, the harness must not know platform SDK objects, and tools must not know whether execution is local, containerized, or remote.
+The runtime is the coordinator. Platforms must not know harness persistence, the harness must not know platform SDK objects, and tools must not know whether execution is local, containerized, or remote. The office module supplies the identity and paths that the runtime, the stores, and the vault all address a conversation by.
 
 ## Maintainer ownership and seam register
 
-The following six owner scopes are the long-lived division of responsibility. An owner may change its implementation freely behind its ports, but changing a port requires updating both sides and the contract tests named below. These scopes describe code ownership, not process or privilege isolation.
+The following seven owner scopes are the long-lived division of responsibility. An owner may change its implementation freely behind its ports, but changing a port requires updating both sides and the contract tests named below. These scopes describe code ownership, not process or privilege isolation.
 
-| Owner scope            | Primary modules                                                                           | Owns                                                                                                                                              | Hands off                                                                                                |
-| ---------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| **Platform entry**     | `src/adapters/`, `src/types.ts`                                                           | SDK normalization, intake ordering, platform response transport, and `MessagingInfo` including `trustModel`                                       | Platform-neutral `ConversationEvent`, `ConversationContext`, and capability ports                        |
-| **Runtime/session**    | `src/runtime/`, `src/sessions/`, `src/store.ts`                                           | Session-key grammar, per-session serialization, chat/session synchronization, runner lifecycle, stop/reset, and shutdown                          | Validated events to the runner; workspace and actor inputs to execution resolution                       |
-| **Harness/tools**      | `src/harness/`, `src/tools/`, `src/agent.ts`                                              | Model turns, session-tree persistence, extension hooks, budgets, tool schemas, and host capability calls                                          | `ConversationResponder` output and `Executor` operations; it does not receive platform SDK objects       |
-| **Sandbox/workspace**  | `src/sandbox/`, `src/workspace-projection/`, `src/provisioner.ts`                         | Executor implementations, mount topology, runtime/host path context, resource lifecycle, and file transport                                       | A concrete `Executor` with declared path and credential capabilities                                     |
-| **Vault/web/security** | `src/vault/`, `src/web/`, `src/execution-resolver.ts`, `src/sandbox/identity.ts`          | Credential identity and injection policy, host-only portal/token surfaces, mount collision checks, and security-sensitive authorization decisions | Actor/trust inputs to vault policy; credentials only to the selected executor                            |
-| **Config/CLI/package** | `src/config.ts`, `src/settings-mutation.ts`, `src/cli/`, `src/commands/`, `src/packages/` | Boot/flag grammar, settings persistence, the command manifest, package materialization and scope resolution                                       | Effective settings, deterministic command inventory, extension roots, and read-only package skill mounts |
+| Owner scope            | Primary modules                                                                           | Owns                                                                                                                                               | Hands off                                                                                                |
+| ---------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **Platform entry**     | `src/adapters/`, `src/types.ts`                                                           | SDK normalization, intake ordering, platform response transport, and `MessagingInfo` including `trustModel`                                        | Platform-neutral `ConversationEvent`, `ConversationContext`, and capability ports                        |
+| **Office identity**    | `src/office/`                                                                             | `OfficeAddress`/`OfficeKey` derivation, the `Workspace`/`Office` layout values, office materialization, the registry journal, and legacy migration | Frozen `Office` values with precomputed paths; the durable raw-id ↔ office mapping                       |
+| **Runtime/session**    | `src/runtime/`, `src/sessions/`                                                           | Session-key grammar, per-session serialization, chat/session synchronization, runner lifecycle, stop/reset, and shutdown                           | Validated events to the runner; office and actor inputs to execution resolution                          |
+| **Harness/tools**      | `src/harness/`, `src/tools/`, `src/agent.ts`                                              | Model turns, session-tree persistence, extension hooks, budgets, tool schemas, and host capability calls                                           | `ConversationResponder` output and `Executor` operations; it does not receive platform SDK objects       |
+| **Sandbox/workspace**  | `src/sandbox/`, `src/workspace-projection/`, `src/provisioner.ts`                         | Executor implementations, mount topology, runtime/host path context, resource lifecycle, and file transport                                        | A concrete `Executor` with declared path and credential capabilities                                     |
+| **Vault/web/security** | `src/vault/`, `src/web/`, `src/execution-resolver.ts`, `src/sandbox/identity.ts`          | Credential identity and injection policy, host-only portal/token surfaces, mount collision checks, and security-sensitive authorization decisions  | Actor/trust inputs to vault policy; credentials only to the selected executor                            |
+| **Config/CLI/package** | `src/config.ts`, `src/settings-mutation.ts`, `src/cli/`, `src/commands/`, `src/packages/` | Boot/flag grammar, settings persistence, the command manifest, package materialization and scope resolution                                        | Effective settings, deterministic command inventory, extension roots, and read-only package skill mounts |
 
 A conversation harness instance is context-isolated from other instances, but that is not a filesystem or process sandbox: extensions run in the mikan host process with host privileges, and `sharedDataDir` is explicitly multi-conversation data that its author must partition. Likewise, a sandbox executor changes where tools run and what mounts they receive; `host` mode and a `full` workspace projection are not additional security guarantees. Keep these concerns separate when reviewing a seam.
 
@@ -52,21 +56,22 @@ A conversation harness instance is context-isolated from other instances, but th
 
 The producer/consumer pairs below are the supported bridges. The named producer owns the representation and ordering; the consumer must use the port or canonical parser rather than reconstructing it.
 
-| Seam                      | Producer → consumer                                                                    | Invariants, ordering, and failure behavior                                                                                                                                                                                                                                                                                                                   |
-| ------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Platform intake           | Platform entry → Runtime/session                                                       | Intake order is **magic word → trigger policy → attachments → log → busy policy → queue → dispatch**. `stop` bypasses trigger policy, attachment work, and queueing. Invalid conversation or foreign session identity fails before queueing; attachment failures propagate.                                                                                  |
-| Session identity          | Platform entry / Runtime/session → Runtime/session, harness, and stores                | `src/sessions/session-key.ts` owns `conversationId[:suffix]`. A platform override is accepted only when it belongs to the conversation; otherwise derivation throws. No consumer splits session keys directly.                                                                                                                                               |
-| Command inventory         | Config/CLI/package → Platform entry, Runtime/session, and web/session view             | `COMMAND_MANIFEST` is the single inventory. Built-ins run before extension commands; unmatched slash text remains an agent prompt; `stop` is a magic word, not a handler.                                                                                                                                                                                    |
-| Runtime to harness        | Runtime/session → Harness/tools                                                        | `handleEvent` derives the key and serializes one key while allowing other keys to run concurrently. Thread bootstrap waits for a running parent session to seal. A platform tool pack is created per runner because `bindRun` is mutable.                                                                                                                    |
-| Run output                | Harness/tools → Platform entry                                                         | Optional responder capabilities are feature-detected. For one run, response operations retain call order; adapters may buffer or stream, but must not expose harness persistence or SDK objects to the harness.                                                                                                                                              |
-| Runtime ↔ sandbox path    | Runtime/session → Sandbox/workspace → Harness/tools                                    | Runtime supplies the host workspace and a runtime cwd; the executor supplies `getWorkspacePath`/`getPathContext`. Prompts and tool output use runtime paths, while host-side attachment translation uses the declared context. Paths outside the mapped root are not translated. This is a path contract, not a claim of filesystem isolation.               |
-| Executor file transport   | Sandbox/workspace → Harness/tools                                                      | Tools use `Executor.readFile`/`writeFile`, never shell quoting protocols. Exec-only transports use the shared base64-chunked implementation; writes stage and rename, and transport errors remain errors.                                                                                                                                                    |
-| Trust and vault           | Platform entry → Runtime/session → Vault/web/security → Sandbox/workspace              | `MessagingInfo.trustModel` is passed into actor resolution; vault policy is keyed to that value, not platform-name strings. Omitted trust defaults to `membership`; `open-trigger` never receives an ambient shared-vault copy, and only `image`/`cloudflare` use that ambient path. Explicit vault provisioning remains a separate administrative decision. |
-| Settings and live runners | Config/CLI/package (commands and admin are adapters) → config disk and Runtime/session | `applyConversationSettings` clears the cached runner **before** writing an LLM change and refuses both actions while busy. Global LLM settings write first, then clear idle runners and report busy conversations as stale. Sandbox limits/mount and Slack reply settings are re-read at use time and do not clear runners.                                  |
-| Package resolution        | Config/CLI/package → Harness/tools and Sandbox/workspace                               | Global and conversation package lists are additive; the narrower scope wins for one `sourceIdentity`, and deduplication happens before import. Conversation loads are offline and cannot block on a remote; package code stays host-only, while package skills mount read-only outside `/workspace`.                                                         |
-| Web capability bridge     | Vault/web/security → Runtime/session and commands                                      | Portal stores are optional runtime services. A portal URL without its backing store fails when that portal is used; absent stores otherwise produce disabled/not-configured behavior. Route payloads are bundled-UI contracts, not a general REST API.                                                                                                       |
-| Event scheduling bus      | Harness/tools → Runtime/session via `events/*.json`                                    | Writers use `buildEventPayload`; readers use `parseEventPayload`. The bus is workspace-wide and agent-writable by design. Ownership prefixes are cooperative, never authorization; secrets do not belong in event text.                                                                                                                                      |
-| History persistence       | Platform entry → `log.jsonl`; Runtime/session and Harness/tools → session JSONL        | Platform truth and agent truth remain separate. Session JSONL is a versioned tree, not a flat transcript; malformed session headers throw rather than silently replacing history.                                                                                                                                                                            |
+| Seam                      | Producer → consumer                                                                    | Invariants, ordering, and failure behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Platform intake           | Platform entry → Runtime/session                                                       | Intake order is **magic word → trigger policy → attachments → log → busy policy → queue → dispatch**. `stop` bypasses trigger policy, attachment work, and queueing. Invalid conversation or foreign session identity fails before queueing; attachment failures propagate.                                                                                                                                                                                                                                                                 |
+| Office identity           | Platform entry → Office identity → Runtime/session, stores, vault, and settings        | Adapters produce an `OfficeAddress` at intake and validate the compatibility raw id against it. Consumers take `Office`/`Workspace` values, never a directory basename. `Office.ensure()` records the office in the registry **before** creating the directory, so no office directory exists that the registry cannot enumerate.                                                                                                                                                                                                           |
+| Session identity          | Platform entry / Runtime/session → Runtime/session, harness, and stores                | `src/sessions/session-key.ts` owns `conversationId[:suffix]`, a raw platform value. A platform override is accepted only when it belongs to the conversation; otherwise derivation throws. Runtime state is keyed by office **plus** session key, so a session key can never select another office's state. No consumer splits session keys directly.                                                                                                                                                                                       |
+| Command inventory         | Config/CLI/package → Platform entry, Runtime/session, and web/session view             | `COMMAND_MANIFEST` is the single inventory. Built-ins run before extension commands; unmatched slash text remains an agent prompt; `stop` is a magic word, not a handler.                                                                                                                                                                                                                                                                                                                                                                   |
+| Runtime to harness        | Runtime/session → Harness/tools                                                        | `handleEvent` derives the key and serializes one key while allowing other keys to run concurrently. Thread bootstrap waits for a running parent session to seal. A platform tool pack is created per runner because `bindRun` is mutable.                                                                                                                                                                                                                                                                                                   |
+| Run output                | Harness/tools → Platform entry                                                         | The harness emits **response source**: platform-neutral Markdown/GFM, with user mentions written as `<@userName>`. Converting that into native presentation is wholly the adapter's job — Slack resolves `<@userName>` to `<@U…>` on every outgoing path, and no adapter may steer the model toward platform-native markup. Optional responder capabilities are feature-detected. For one run, response operations retain call order; adapters may buffer or stream, but must not expose harness persistence or SDK objects to the harness. |
+| Runtime ↔ sandbox path    | Runtime/session → Sandbox/workspace → Harness/tools                                    | Runtime supplies the host workspace and a runtime cwd of `<runtime workspace root>/<officeKey>`; the office key names the same segment on both sides, so the path does not change meaning at the boundary. The executor supplies `getWorkspacePath`/`getPathContext`. Prompts and tool output use runtime paths, while host-side attachment translation uses the declared context. Paths outside the mapped root are not translated. This is a path contract, not a claim of filesystem isolation.                                          |
+| Executor file transport   | Sandbox/workspace → Harness/tools                                                      | Tools use `Executor.readFile`/`writeFile`, never shell quoting protocols. Exec-only transports use the shared base64-chunked implementation; writes stage and rename, and transport errors remain errors.                                                                                                                                                                                                                                                                                                                                   |
+| Trust and vault           | Platform entry → Runtime/session → Vault/web/security → Sandbox/workspace              | `MessagingInfo.trustModel` is passed into actor resolution; vault policy is keyed to that value, not platform-name strings. Omitted trust defaults to `membership`; `open-trigger` never receives an ambient shared-vault copy, and only `image`/`cloudflare` use that ambient path. Explicit vault provisioning remains a separate administrative decision.                                                                                                                                                                                |
+| Settings and live runners | Config/CLI/package (commands and admin are adapters) → config disk and Runtime/session | `applyConversationSettings` clears the cached runner **before** writing an LLM change and refuses both actions while busy. `applyConversationWorkspacePolicy` behaves the same way for a door-policy change, since the mount set is baked into the runner's environment. Global LLM and door-policy settings write first, then clear idle runners and report busy conversations as stale. Sandbox resource limits and Slack reply settings are re-read at use time and do not clear runners.                                                |
+| Package resolution        | Config/CLI/package → Harness/tools and Sandbox/workspace                               | Global and conversation package lists are additive; the narrower scope wins for one `sourceIdentity`, and deduplication happens before import. Conversation loads are offline and cannot block on a remote; package code stays host-only, while package skills mount read-only outside `/workspace`.                                                                                                                                                                                                                                        |
+| Web capability bridge     | Vault/web/security → Runtime/session and commands                                      | Portal stores are optional runtime services. A portal URL without its backing store fails when that portal is used; absent stores otherwise produce disabled/not-configured behavior. Route payloads are bundled-UI contracts, not a general REST API.                                                                                                                                                                                                                                                                                      |
+| Event scheduling bus      | Harness/tools → Runtime/session via `events/*.json`                                    | Writers use `buildEventPayload`; readers use `parseEventPayload`. The bus is workspace-wide and agent-writable by design. Ownership prefixes are cooperative, never authorization; secrets do not belong in event text.                                                                                                                                                                                                                                                                                                                     |
+| History persistence       | Platform entry → `log.jsonl`; Runtime/session and Harness/tools → session JSONL        | Platform truth and agent truth remain separate. Session JSONL is a versioned tree, not a flat transcript; malformed session headers throw rather than silently replacing history.                                                                                                                                                                                                                                                                                                                                                           |
 
 These bridges deliberately distinguish context isolation from sandboxing. A new owner must not infer credential authorization from a path, infer platform trust from a platform name, or make a shared event/package directory into an authorization boundary.
 
@@ -76,14 +81,15 @@ The npm entry point is `@geminixiang/mikan`, implemented by `src/index.ts`.
 
 ### Supported entry-point groups
 
-| Group             | Main symbols                                                                                          | Consumer                                                 |
-| ----------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| Runtime embedding | `createConversationRuntime`, `ConversationRuntime`, `ConversationRuntimeOptions`                      | A host that supplies platform and execution dependencies |
-| Platform contract | `MessagingBot`, `ConversationEvent`, `ConversationContext`, `ConversationResponder`, `MessagingInfo`  | Platform adapters and embedders                          |
-| Commands          | `CommandHandler`, `CommandContext`, `CommandServices`, `dispatchCommand`                              | Hosts adding deterministic commands                      |
-| Execution         | `Executor`, `SandboxConfig`, `SandboxAdapter`, `createExecutor`, `parseSandboxArg`, `validateSandbox` | Runtime backends and hosts                               |
-| Extensions        | `MikanExtensionApi`, hook/event types, subagent types                                                 | Trusted extension authors                                |
-| Harness embedding | `MikanAgentSession`, `SessionStore`, `MikanModels`, settings and event-format functions               | Advanced embedders; not ordinary bot integrations        |
+| Group                | Main symbols                                                                                               | Consumer                                                               |
+| -------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Runtime embedding    | `createConversationRuntime`, `ConversationRuntime`, `ConversationRuntimeOptions`                           | A host that supplies platform and execution dependencies               |
+| Office and workspace | `createWorkspace`, `createOfficeAddress`, `officeKey`, `Workspace`, `Office`, `OfficeAddress`, `OfficeKey` | Any embedder: `createConversationRuntime` requires a `Workspace` value |
+| Platform contract    | `MessagingBot`, `ConversationEvent`, `ConversationContext`, `ConversationResponder`, `MessagingInfo`       | Platform adapters and embedders                                        |
+| Commands             | `CommandHandler`, `CommandContext`, `CommandServices`, `dispatchCommand`                                   | Hosts adding deterministic commands                                    |
+| Execution            | `Executor`, `SandboxConfig`, `SandboxAdapter`, `createExecutor`, `parseSandboxArg`, `validateSandbox`      | Runtime backends and hosts                                             |
+| Extensions           | `MikanExtensionApi`, hook/event types, subagent types                                                      | Trusted extension authors                                              |
+| Harness embedding    | `MikanAgentSession`, `SessionStore`, `MikanModels`, settings and event-format functions                    | Advanced embedders; not ordinary bot integrations                      |
 
 Only paths declared by the package `exports` map are public. Importing any other generated `dist/` path or a source path under `src/` is unsupported.
 
@@ -95,31 +101,35 @@ Source: `src/types.ts` (re-exported by `src/adapter.ts`).
 
 The platform-neutral trigger delivered to `MessagingEventHandler`.
 
-| Field                 | Contract                                                                                           |
-| --------------------- | -------------------------------------------------------------------------------------------------- |
-| `conversationId`      | Raw platform conversation/channel identifier; must not contain `:` because session keys reserve it |
-| `conversationKind`    | `direct` or `shared`; affects session and credential policy                                        |
-| `ts`                  | Triggering platform message identifier                                                             |
-| `thread_ts`           | Optional parent/root platform message identifier                                                   |
-| `user`                | Platform user identifier                                                                           |
-| `text`                | Text after platform mention removal                                                                |
-| `attachments`         | Files already downloaded to host paths                                                             |
-| `sessionKey`          | Optional platform-selected override; otherwise derived by session policy                           |
-| `vaultConversationId` | Optional alternate identity used only for credential routing                                       |
+| Field                 | Contract                                                                                                                  |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `address`             | Canonical `OfficeAddress` (`platform` + raw `conversationId`), created by the adapter at intake                           |
+| `conversationId`      | Deprecated raw platform identifier, valid only at adapter I/O seams; must not contain `:` because session keys reserve it |
+| `conversationKind`    | `direct` or `shared`; affects session and credential policy                                                               |
+| `ts`                  | Triggering platform message identifier                                                                                    |
+| `thread_ts`           | Optional parent/root platform message identifier                                                                          |
+| `user`                | Platform user identifier                                                                                                  |
+| `text`                | Text after platform mention removal                                                                                       |
+| `attachments`         | Files already downloaded to host paths                                                                                    |
+| `sessionKey`          | Optional platform-selected override; otherwise derived by session policy                                                  |
+| `vaultConversationId` | Optional alternate identity used only for credential routing                                                              |
+
+Every production adapter and synthetic intake validates the compatibility `conversationId` against `address`. New code reads `address`.
 
 ### `ConversationContext`
 
-Carries the richer normalized message, response port, and platform metadata for the same run:
+Carries the office identity, the richer normalized message, the response port, and platform metadata for the same run:
 
 ```ts
 interface ConversationContext {
+  address: OfficeAddress;
   message: ConversationMessage;
   responder: ConversationResponder;
   platform: MessagingInfo;
 }
 ```
 
-`ConversationMessage` and `ConversationEvent` currently duplicate message id, session, conversation kind, user, text, attachments, and thread identity. Adapters must keep both representations consistent. This is an internal compatibility seam, not a desirable model for new integrations.
+`ConversationMessage` and `ConversationEvent` currently duplicate message id, session, conversation kind, user, text, attachments, and thread identity — and both now carry `address`. Adapters must keep both representations consistent. This is an internal compatibility seam, not a desirable model for new integrations.
 
 ### `ConversationResponder`
 
@@ -148,26 +158,28 @@ Source: `src/runtime/types.ts` and `src/runtime/conversation-runtime.ts`.
 
 ### Input methods
 
-| Method                               | Semantics                                                              |
-| ------------------------------------ | ---------------------------------------------------------------------- |
-| `handleEvent(event, bot, context)`   | Serialize by derived session key, then dispatch a command or agent run |
-| `runSession(options)`                | Execute one already-serialized unit; intended for controlled host use  |
-| `handleStop(...)` / `forceStop(...)` | Cooperative/user-visible stop versus immediate internal stop           |
-| `handleNewCommand(...)`              | Abort, reset persisted session state, and discard the cached runner    |
+| Method                                                                    | Semantics                                                                          |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `handleEvent(event, bot, context)`                                        | Serialize by office plus derived session key, then dispatch a command or agent run |
+| `runSession(options)`                                                     | Execute one already-serialized unit; intended for controlled host use              |
+| `handleStop(address, sessionKey, bot)` / `forceStop(address, sessionKey)` | Cooperative/user-visible stop versus immediate internal stop                       |
+| `handleNewCommand(...)`                                                   | Abort, reset persisted session state, and discard the cached runner                |
 
 ### Control and inspection
 
-| Method                                | Semantics                                                                     |
-| ------------------------------------- | ----------------------------------------------------------------------------- |
-| `isRunning(sessionKey)`               | Current in-process run state                                                  |
-| `getRunningSessions()`                | Snapshot for admin/observability surfaces                                     |
-| `switchConversationModel(...)`        | Update a cached runner; returns whether one existed                           |
-| `refreshConversationEnvironment(...)` | Re-resolve a cached runner environment                                        |
-| `shutdown(timeoutMs?)`                | Reject new work, stop runners, and wait for in-flight work up to the deadline |
+| Method                                    | Semantics                                                                     |
+| ----------------------------------------- | ----------------------------------------------------------------------------- |
+| `isRunning(address, sessionKey)`          | Current in-process run state                                                  |
+| `getRunningSessions()`                    | Snapshot for admin/observability surfaces; each entry carries its `address`   |
+| `switchConversationModel(address, ...)`   | Update a cached runner; returns whether one existed                           |
+| `refreshConversationEnvironment(address)` | Re-resolve a cached runner environment                                        |
+| `shutdown(timeoutMs?)`                    | Reject new work, stop runners, and wait for in-flight work up to the deadline |
 
-`ConversationRuntimeOptions` supplies workspace/configuration fields, sandbox/resource services, optional portal token stores, optional commands, model registry, proactive platform operations, and platform tool-pack factories. Missing vault and portal stores degrade to disabled implementations; setting a portal URL without its store is an error when used.
+Every session-scoped entry point takes an `OfficeAddress`. There is no raw-conversation-id bridge: a caller that only has a raw id resolves it through the registry first (`resolveOwnedOfficeAddress`), which is a cold path for CLI and admin surfaces.
 
-Concurrency invariant: calls for one session key are serial; different session keys may run concurrently. A platform tool pack is therefore created per runner, never shared globally, because `bindRun` mutates its run binding.
+`ConversationRuntimeOptions` supplies a `workspace` (the `Workspace` value from `createWorkspace`), sandbox/resource services, optional portal token stores, optional commands, model registry, proactive platform operations, and platform tool-pack factories. Missing vault and portal stores degrade to disabled implementations; setting a portal URL without its store is an error when used.
+
+Concurrency invariant: calls for one office and session key are serial; different session keys may run concurrently. A platform tool pack is therefore created per runner, never shared globally, because `bindRun` mutates its run binding.
 
 ## 4. Command interface
 
@@ -194,6 +206,10 @@ Owns version 3 append-only session JSONL and tree reconstruction. `SessionHeader
 ### `MikanModels` and `FileCredentialStore`
 
 `MikanModels` resolves built-in and custom `pi-ai` models. `FileCredentialStore` persists provider credentials in the state directory. Vault credentials are a different boundary: they are injected into tool execution, not used to authenticate the host-side model client.
+
+### Subagent profiles
+
+A subagent is always launched with a named profile — free-form per-run configuration is not a supported surface. `loadSubagentProfiles` resolves them: the built-in profiles in `src/harness/subagent-profiles.ts` are the definition of record (`worker`, `software-engineer`, `devops-engineer`, `data-scientist`, `account-manager`, `business-development`, `creative-producer`, `ad-operations-specialist`, `analysis-only`), and a `<workspace>/agents/<name>.md` file **patches** the built-in of the same name rather than replacing it, so an operator can override `model:` without restating tools and prompt. A file whose name matches no built-in defines a new profile and must supply its own `tools`. A malformed file becomes a diagnostic and is skipped, never thrown.
 
 ### Harness events and budgets
 
@@ -276,22 +292,51 @@ Credential flow is:
 
 Host sandbox execution never receives vault injection. Open-trigger platforms never receive an ambient shared vault. These are security invariants, not convenience defaults.
 
-## 10. Session, chat, and identity interfaces
+## 10. Office, session, chat, and identity interfaces
 
-Sources: `src/sessions/*`, `src/store.ts`, and `src/sandbox/identity.ts`.
+Sources: `src/office/*`, `src/sessions/*`, `src/adapters/shared.ts`, and `src/sandbox/identity.ts`.
 
-There are two intentional records:
+### `Workspace` and `Office`
 
-| Record                            | Purpose                                                             |
-| --------------------------------- | ------------------------------------------------------------------- |
-| `<conversation>/log.jsonl`        | Platform truth: user/bot messages and attachments                   |
-| `<conversation>/sessions/*.jsonl` | Agent truth: prompts, model/tool messages, branches, and compaction |
+A conversation is an **office**: one persistent working area and data boundary. Two values express it, and both are frozen.
+
+```ts
+const workspace = createWorkspace({ root, stateDir });
+const office = workspace.office(createOfficeAddress("slack", "C0AAAAAA1"));
+```
+
+`Workspace` is constructed once per process and owns the workspace-global surfaces (`root`, `memoryPath`, `skillsDir`, `eventsDir`, `agentsDir`, `reservedNames`) plus the office factory. `Office` precomputes one conversation's paths — `key`, `dir`, `memoryPath`, `skillsDir`, `sessionsDir`, `attachmentsDir`, `logPath`, and the host-only `stateDir` — and exposes `ensure()`.
+
+Rules that cross this boundary:
+
+- **Values, not strings.** Consumers accept an `Office`; they do not join paths from a root and an id, and they never infer identity from a directory basename.
+- **`ensure()` is the only materialization seam.** It records the office in the registry, then creates the directory. That order means a crash can leave a record without a directory (harmless — recreated on the next message) but never an anonymous directory the registry cannot enumerate. It is idempotent and cheap enough for per-message paths.
+- **Office values are memoized per address**, so repeated `workspace.office(address)` calls on hot paths cost a map lookup rather than a SHA-256.
+
+### `OfficeAddress` and `OfficeKey`
+
+`OfficeAddress` is `{ platform, conversationId }` — the platform plus its raw conversation id. `officeKey(address)` derives the storage identity `v1-<platform>-<readable-id>-<16 hex digits>`, where the readable middle is diagnostic and the SHA-256 prefix is the identity component. The same key names the office directory on the host, inside sandbox runtimes, and in the vault, so two platforms sharing a raw conversation id can never reach each other's files or credentials.
+
+Office keys are **not reversible**. `OfficeRegistry` (`office-registry.json`, host-only) is the durable raw-id ↔ office mapping, and also journals the boot-time migration from the legacy raw-id layout. Raw-id-facing surfaces resolve through it: `resolveOwnedOfficeAddress` for CLI operators, `listRegisteredOffices` for admin enumeration. Sandbox resource names (container names, Gondolin instances, Cloudflare scopes) remain raw-conversation-derived until the resource-naming migration; a collision there costs a container recreate, never credential access.
+
+### The two records
+
+| Record                      | Purpose                                                             |
+| --------------------------- | ------------------------------------------------------------------- |
+| `<office>/log.jsonl`        | Platform truth: user/bot messages and attachments                   |
+| `<office>/sessions/*.jsonl` | Agent truth: prompts, model/tool messages, branches, and compaction |
 
 Do not merge them. Chat history can rebuild a missing top-level agent session, while agent sessions contain data that never appeared on the platform.
 
-Session keys use `conversationId[:suffix]`; only `src/sessions/session-key.ts` owns this grammar. Callers must use `deriveSessionKey`, `conversationIdOf`, and `threadSuffixOf`, never split strings directly.
+### Session keys
+
+Session keys use `conversationId[:suffix]` and stay **raw platform values** — the grammar never sees an office key. Only `src/sessions/session-key.ts` owns it; callers must use `deriveSessionKey`, `conversationIdOf`, and `threadSuffixOf`, never split strings directly. Runtime state is addressed by office plus session key, which is what makes a raw, non-globally-unique key safe.
 
 `ChatHistorySync` resolves top-level/thread scope, bootstraps new sessions, synchronizes new platform log entries, resets sessions, and coordinates a thread waiting for an active parent run to seal.
+
+### Attachments
+
+`saveIncomingAttachments(office, items)` in `src/adapters/shared.ts` is the one owner of the attachment convention: sanitized `<timestamp>_<name>` filenames under `office.attachmentsDir`, and the workspace-relative `<officeKey>/attachments/<file>` path the agent reads. It materializes the office before its first write and returns failures per item rather than throwing, so each adapter keeps its own failure policy.
 
 ## 11. Event-file interface
 
@@ -312,19 +357,23 @@ The bus is shared and agent-writable by design. Ownership prefixes are cooperati
 
 ## 12. Persisted filesystem interface
 
-| Path                                               | Owner                    | Visibility / compatibility           |
-| -------------------------------------------------- | ------------------------ | ------------------------------------ |
-| `<state-dir>/settings.json`                        | config                   | Host-only global settings            |
-| `<state-dir>/conversations/<id>/settings.json`     | config/admin             | Host-only conversation overrides     |
-| `<state-dir>/auth.json`                            | harness credential store | Host-only model-provider credentials |
-| `<state-dir>/models.json`                          | harness model catalog    | Host-only custom providers/models    |
-| `<state-dir>/vaults/**`                            | vault/login              | Host-only secrets and mount files    |
-| `<state-dir>/{global,conversations}/**/extensions` | extension loader         | Trusted host code                    |
-| `<workspace>/MEMORY.md`                            | agent/user               | Sandbox-visible durable memory       |
-| `<workspace>/skills/**/SKILL.md`                   | skills                   | Sandbox-visible prompt instructions  |
-| `<workspace>/events/*.json`                        | event store/watcher      | Shared scheduling wire format        |
-| `<workspace>/<id>/log.jsonl`                       | platform store           | Append-only platform history         |
-| `<workspace>/<id>/sessions/*.jsonl`                | session store            | Versioned append-only agent history  |
+| Path                                                  | Owner                    | Visibility / compatibility                     |
+| ----------------------------------------------------- | ------------------------ | ---------------------------------------------- |
+| `<state-dir>/settings.json`                           | config                   | Host-only global settings                      |
+| `<state-dir>/office-registry.json`                    | office registry          | Host-only office inventory + migration journal |
+| `<state-dir>/conversations/<officeKey>/settings.json` | config/admin             | Host-only conversation overrides               |
+| `<state-dir>/auth.json`                               | harness credential store | Host-only model-provider credentials           |
+| `<state-dir>/models.json`                             | harness model catalog    | Host-only custom providers/models              |
+| `<state-dir>/vaults/**`                               | vault/login              | Host-only secrets and mount files              |
+| `<state-dir>/{global,conversations}/**/extensions`    | extension loader         | Trusted host code                              |
+| `<workspace>/MEMORY.md`                               | agent/user               | Sandbox-visible durable memory                 |
+| `<workspace>/skills/**/SKILL.md`                      | skills                   | Sandbox-visible prompt instructions            |
+| `<workspace>/events/*.json`                           | event store/watcher      | Shared scheduling wire format                  |
+| `<workspace>/agents/*.md`                             | subagent profiles        | Per-install model patches over built-ins       |
+| `<workspace>/<officeKey>/log.jsonl`                   | platform adapters        | Append-only platform history                   |
+| `<workspace>/<officeKey>/sessions/*.jsonl`            | session store            | Versioned append-only agent history            |
+
+`MEMORY.md`, `skills`, `events`, and `agents` are the reserved workspace-root names (`RESERVED_WORKSPACE_NAMES`); every other workspace-root entry is an office directory. Conversation-scoped vault directories under `<state-dir>/vaults/` are named by office key for conversation-scoped sandboxes; `host` mode keys by user and `container` mode by container name.
 
 The state directory must not be inside the sandbox-visible workspace. Important state files use atomic private writes; append-only logs use append semantics.
 
@@ -357,17 +406,18 @@ Admin endpoints cover conversation inventory/state/usage, global and conversatio
 
 These suites protect the cross-owner contracts rather than individual helpers. When a seam changes, run every suite in its row together; if a change crosses rows, run the union. A public, persisted, or wire change also requires the full `npm test` run.
 
-| Contract row                                          | Tests to run together                                                                                                                                                                                                 | What the row protects                                                                                                                                   |
-| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Platform intake, response, and command inventory      | `src/test/adapters-intake.test.ts`, `src/test/slack-context.test.ts`, `src/test/discord-context.test.ts`, `src/test/telegram-context.test.ts`, `src/test/github-context.test.ts`, `src/test/command-manifest.test.ts` | Normalized event/context identity, magic-word and busy ordering, attachment handoff, responder capabilities, and one command inventory across platforms |
-| Session identity and runtime ordering                 | `src/test/session-key.test.ts`, `src/test/session-runtime.test.ts`, `src/test/chat-history-sync.test.ts`, `src/test/session-store.test.ts`, `src/test/harness-session-store.test.ts`                                  | Session ownership/path validation, per-key serialization, parent-thread bootstrap, chat/session separation, and v3 session-tree compatibility           |
-| Harness, tools, and extension capabilities            | `src/test/harness-runner.test.ts`, `src/test/harness-extensions.test.ts`, `src/test/subagent-runner.test.ts`, `src/test/subagent-tool.test.ts`, `src/test/agent-runner.test.ts`                                       | Run lifecycle, persistence, hook/error semantics, bounded delegated runs, and the runner-to-tool seam                                                   |
-| Runtime, workspace projection, and executor transport | `src/test/execution-resolver.test.ts`, `src/test/sandbox-path-context.test.ts`, `src/test/executor-files.test.ts`, `src/test/agent-prompt.test.ts`, `src/test/agent-attachments.test.ts`                              | Host/runtime path mapping, mount composition and collision failures, credential-capability errors, and shell-hostile file round trips                   |
-| Trust, vault, and portal security                     | `src/test/vault-policy.test.ts`, `src/test/vault.test.ts`, `src/test/login.test.ts`, `src/test/oauth-link-server.test.ts`, `src/test/token-store.test.ts`                                                             | `trustModel` policy, identity-key lookup, explicit credential provisioning, login/OAuth token boundaries, and disabled portal behavior                  |
-| Settings and live-runner cache                        | `src/test/settings-mutation.test.ts`, `src/test/config.test.ts`, `src/test/model-command.test.ts`, `src/test/sandbox-command.test.ts`, `src/test/admin-portal.test.ts`                                                | Writer-seam ordering, leaf-level settings merge, busy/stale outcomes, and command/admin agreement with disk and cached runners                          |
-| Packages, extensions, and read-only skill mounts      | `src/test/packages-source.test.ts`, `src/test/packages-resolve.test.ts`, `src/test/packages-mounts.test.ts`, `src/test/packages-admin.test.ts`, `src/test/ext-cli.test.ts`                                            | Source identity, scope precedence, offline loading, materialization-before-persist, host-only extension code, and runtime skill mount paths             |
-| Event-file scheduling wire format                     | `src/test/event-format.test.ts`, `src/test/event-tool.test.ts`, `src/test/events.test.ts`                                                                                                                             | Builder/parser compatibility, legacy reads, queue-full behavior, routing, and deletion/retention ordering                                               |
-| Public package boundary                               | `src/test/public-api.test.ts`, `src/test/embedder-example.test.ts`, `src/test/boot.test.ts`                                                                                                                           | Export-map consumers, embedding construction, and CLI boot/flag grammar                                                                                 |
+| Contract row                                          | Tests to run together                                                                                                                                                                                                 | What the row protects                                                                                                                                                   |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Platform intake, response, and command inventory      | `src/test/adapters-intake.test.ts`, `src/test/slack-context.test.ts`, `src/test/discord-context.test.ts`, `src/test/telegram-context.test.ts`, `src/test/github-context.test.ts`, `src/test/command-manifest.test.ts` | Normalized event/context identity, magic-word and busy ordering, attachment handoff, responder capabilities, and one command inventory across platforms                 |
+| Office identity, layout, and migration                | `src/test/office-address.test.ts`, `src/test/office-layout.test.ts`, `src/test/office-registry.test.ts`, `src/test/office-migration.test.ts`, `src/test/office-cli.test.ts`, `src/test/workspace-projection.test.ts`  | Key derivation and validation, frozen layout values, record-before-mkdir ordering, journaled crash-safe migration, operator claiming, and door-policy mount composition |
+| Session identity and runtime ordering                 | `src/test/session-key.test.ts`, `src/test/session-runtime.test.ts`, `src/test/chat-history-sync.test.ts`, `src/test/session-store.test.ts`, `src/test/harness-session-store.test.ts`                                  | Session ownership/path validation, per-key serialization, parent-thread bootstrap, chat/session separation, and v3 session-tree compatibility                           |
+| Harness, tools, and extension capabilities            | `src/test/harness-runner.test.ts`, `src/test/harness-extensions.test.ts`, `src/test/subagent-runner.test.ts`, `src/test/subagent-tool.test.ts`, `src/test/agent-runner.test.ts`                                       | Run lifecycle, persistence, hook/error semantics, bounded delegated runs, and the runner-to-tool seam                                                                   |
+| Runtime, workspace projection, and executor transport | `src/test/execution-resolver.test.ts`, `src/test/sandbox-path-context.test.ts`, `src/test/executor-files.test.ts`, `src/test/agent-prompt.test.ts`, `src/test/agent-attachments.test.ts`                              | Host/runtime path mapping, mount composition and collision failures, credential-capability errors, and shell-hostile file round trips                                   |
+| Trust, vault, and portal security                     | `src/test/vault-policy.test.ts`, `src/test/vault.test.ts`, `src/test/login.test.ts`, `src/test/oauth-link-server.test.ts`, `src/test/token-store.test.ts`                                                             | `trustModel` policy, identity-key lookup, explicit credential provisioning, login/OAuth token boundaries, and disabled portal behavior                                  |
+| Settings and live-runner cache                        | `src/test/settings-mutation.test.ts`, `src/test/config.test.ts`, `src/test/model-command.test.ts`, `src/test/sandbox-command.test.ts`, `src/test/admin-portal.test.ts`                                                | Writer-seam ordering, leaf-level settings merge, busy/stale outcomes, and command/admin agreement with disk and cached runners                                          |
+| Packages, extensions, and read-only skill mounts      | `src/test/packages-source.test.ts`, `src/test/packages-resolve.test.ts`, `src/test/packages-mounts.test.ts`, `src/test/packages-admin.test.ts`, `src/test/ext-cli.test.ts`                                            | Source identity, scope precedence, offline loading, materialization-before-persist, host-only extension code, and runtime skill mount paths                             |
+| Event-file scheduling wire format                     | `src/test/event-format.test.ts`, `src/test/event-tool.test.ts`, `src/test/events.test.ts`                                                                                                                             | Builder/parser compatibility, legacy reads, queue-full behavior, routing, and deletion/retention ordering                                                               |
+| Public package boundary                               | `src/test/public-api.test.ts`, `src/test/embedder-example.test.ts`, `src/test/boot.test.ts`                                                                                                                           | Export-map consumers, embedding construction, and CLI boot/flag grammar                                                                                                 |
 
 For a focused run, pass the exact files to Vitest, for example:
 

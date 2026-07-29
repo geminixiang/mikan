@@ -3,6 +3,12 @@ title: 事件
 description: 透過 workspace events 目錄觸發 agent 的事件格式與處理流程。
 ---
 
+## 事件檔案放在哪裡
+
+事件檔案位於 `<workspace>/events/`，也就是 workspace root，而不是任何 office 目錄之內。這個排程匯流排刻意是 workspace 全域的：watcher 只輪詢一個目錄，由所有對話共用。它同時也是 agent 可寫的，因此以 `conversationId` 標示歸屬只是一種協作慣例，不是授權邊界——請不要把祕密放進事件文字中。
+
+agent 的 `event` tool 預設只列出目前對話的事件：一個檔案要同時符合 `conversationId` **與** `platform` 才算相符。在 payload 尚未帶有 `platform` 之前寫下的檔案，對任何共用該 raw id 的對話都仍然可見。`scope=all` 則會列出目錄中的所有內容。
+
 ## 事件類型
 
 ### 立即
@@ -65,12 +71,14 @@ Cron 格式：`minute hour day-of-month month day-of-week`
 
 ## 路由欄位
 
-| 欄位               | 說明                                                                    |
-| ------------------ | ----------------------------------------------------------------------- |
-| `platform`         | 目標 bot 平台（例如 `slack`）                                           |
-| `conversationId`   | 要發送到的頻道或 DM ID                                                  |
-| `conversationKind` | `"shared"`（頻道）或 `"direct"`（DM）                                   |
-| `userId`           | 請求此事件的平台使用者 ID；在 per-user 模式中用於 vault/credential 路由 |
+每個事件檔案都必須有 `type`、`conversationId` 與 `text`；其餘為選填，而各類型專屬的欄位（`at`、`schedule` + `timezone`）在該類型中則是必填。schema 由 `src/harness/event-format.ts` 擁有——每個讀取者與寫入者都會經過它的 parser 與 builder。
+
+| 欄位               | 說明                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------------ |
+| `platform`         | 目標 bot 平台（例如 `slack`）。若省略，當兩個平台共用同一個 raw conversation id 時，這個檔案就會有歧義 |
+| `conversationId`   | 要發送到的原始平台頻道或 DM ID——不是 office key。`channelId` 仍被接受為唯讀的 legacy 別名              |
+| `conversationKind` | `"shared"`（頻道）或 `"direct"`（DM）                                                                  |
+| `userId`           | 請求此事件的平台使用者 ID；在 per-user 模式中用於 vault/credential 路由                                |
 
 ## Session 綁定
 

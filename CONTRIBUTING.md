@@ -26,15 +26,18 @@ Set the platform tokens you need before launching — see the [README](README.md
 ```bash
 npm run lint        # oxlint
 npm run fmt:check   # oxfmt (use `npm run fmt` to auto-fix)
-npm test            # unit tests (vitest)
+npm test            # unit + integration tests (vitest)
+npm run knip        # unused dependencies/exports
 npm run build       # clean dist/, then type check + emit
 ```
 
-Husky runs `lint` + `fmt` on staged `*.ts` files via pre-commit; `*.test.ts` changes also trigger the test suite. If hooks block your commit, fix the underlying issue rather than passing `--no-verify`.
+Tests live in `src/test/`; add or update one there for any behavior change. Tool configuration lives in `.config/` (Vitest, oxlint, oxfmt, Astro) and the build config is `src/tsconfig.build.json` — the root `tsconfig.json` exists for editor discovery.
+
+Husky's pre-commit hook runs the full gate — `lint`, `fmt:check`, `knip`, `build`, `test` — so a commit fails the same way CI would. If a hook blocks your commit, fix the underlying issue rather than passing `--no-verify`.
 
 ### End-to-end tests
 
-E2E tests (`npm run test:e2e`, `npm run test:e2e:slack`) hit real Slack/Discord/Telegram APIs. They require a dedicated test workspace and tokens (`SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, `SLACK_QA_BOT_USER_ID` for Slack). Skip them locally unless you have a sandbox set up — CI runs them on tagged branches.
+E2E tests (`npm run test:e2e`, `npm run test:e2e:slack`) hit real Slack/Discord/Telegram APIs. They require a dedicated test workspace and tokens (`SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, `SLACK_QA_BOT_USER_ID` for Slack). Skip them locally unless you have a sandbox set up — in CI the Slack E2E workflow is run on demand (`workflow_dispatch`), not on every push.
 
 See [`src/content/docs/slack-qa-test-plan.md`](src/content/docs/slack-qa-test-plan.md) for the Slack E2E setup.
 
@@ -43,11 +46,11 @@ See [`src/content/docs/slack-qa-test-plan.md`](src/content/docs/slack-qa-test-pl
 1. Open an issue first for non-trivial work so we can agree on the approach.
 2. Fork, branch, and open a PR against `main`. Keep PRs focused on one concern.
 3. Reference the issue in the PR body and describe what you tested.
-4. CI must pass (lint, tests, build) before merge.
+4. CI must pass before merge: lint, format check, build, docs build, knip, package check, and the coverage-gated test run.
 
 ## Commit style
 
-Commits follow [Conventional Commits](https://www.conventionalcommits.org/) loosely: `feat(scope): summary`, `fix(scope): summary`, `refactor(scope): …`, `docs(scope): …`, `chore(scope): …`. Scope is usually a top-level module name (`slack`, `agent`, `vault`, `session`, …). Keep the summary in imperative mood and under ~72 chars.
+Commits follow [Conventional Commits](https://www.conventionalcommits.org/) loosely: `feat(scope): summary`, `fix(scope): summary`, `refactor(scope): …`, `docs(scope): …`, `chore(scope): …`. Scope is usually a top-level module name (`slack`, `agent`, `office`, `vault`, `session`, …). Keep the summary in imperative mood and under ~72 chars.
 
 ## Reporting bugs
 

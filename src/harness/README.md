@@ -45,16 +45,21 @@ streaming).
 
 ### Module responsibilities
 
-| Module                            | Role                                                                                | Replaces (pi-coding-agent)                     |
-| --------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `runner.ts` `MikanAgentSession`   | Turn loop: persistence, auto-compaction, auto-retry, budget breakers, events, hooks | `AgentSession`                                 |
-| `session-store.ts` `SessionStore` | Sync read/write of v3 JSONL session trees                                           | `SessionManager`                               |
-| `models.ts` `MikanModels`         | Model catalog + auth resolution (including models.json custom providers)            | `ModelRegistry`                                |
-| `auth.ts` `FileCredentialStore`   | `~/.mikan/auth.json` credential store (pi-ai `CredentialStore` implementation)      | `AuthStorage`                                  |
-| `skills.ts`                       | SKILL.md discovery and system-prompt formatting                                     | `loadSkillsFromDir` / `formatSkillsForPrompt`  |
-| `http.ts`                         | Global fetch: proxy support (`HTTP_PROXY`, etc.) + idle timeout                     | `http-dispatcher`                              |
-| `settings.ts`                     | Compaction / retry defaults                                                         | `SettingsManager`                              |
-| `extensions/`                     | mikan's extension system                                                            | extension loading from `DefaultResourceLoader` |
+| Module                             | Role                                                                                                    | Replaces (pi-coding-agent)                     |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `runner.ts` `MikanAgentSession`    | Turn loop: persistence, auto-compaction, auto-retry, budget breakers, events, hooks                     | `AgentSession`                                 |
+| `session-store.ts` `SessionStore`  | Sync read/write of v3 JSONL session trees                                                               | `SessionManager`                               |
+| `models.ts` `MikanModels`          | Model catalog + auth resolution (including models.json custom providers)                                | `ModelRegistry`                                |
+| `auth.ts` `FileCredentialStore`    | `~/.mikan/auth.json` credential store (pi-ai `CredentialStore` implementation)                          | `AuthStorage`                                  |
+| `skills.ts`                        | SKILL.md discovery and system-prompt formatting                                                         | `loadSkillsFromDir` / `formatSkillsForPrompt`  |
+| `http.ts`                          | Global fetch: proxy support (`HTTP_PROXY`, etc.) + idle timeout                                         | `http-dispatcher`                              |
+| `settings.ts`                      | Compaction / retry / budget defaults                                                                    | `SettingsManager`                              |
+| `subagent-runner.ts` `runSubagent` | The one bounded subagent run: fresh in-memory session, explicit tool grant, budget, non-recursion guard | —                                              |
+| `subagent-profiles.ts`             | Built-in subagent profiles (code = truth) plus per-install model patches from `<workspace>/agents/*.md` | —                                              |
+| `usage.ts`                         | Subagent token/cost tallies the parent run folds in                                                     | —                                              |
+| `event-format.ts`                  | The event-file payload schema shared by the `event` tool, the watcher, and extension schedules          | —                                              |
+| `types.ts`                         | The module's shared contracts (session entries, settings, subagent request/result)                      | —                                              |
+| `extensions/`                      | mikan's extension system                                                                                | extension loading from `DefaultResourceLoader` |
 
 ### Compatibility
 
@@ -119,13 +124,17 @@ An extension is a module (`.mjs` / `.js` / **`.ts`**) under the **state dir**
 (`extensions/` is host-only and never mounted into the sandbox):
 
 ```
-~/.mikan/global/extensions/audit.mjs            # all conversations (single file)
-~/.mikan/global/extensions/agent-pm/            # all conversations (directory)
-  index.mjs | index.ts                          #   entrypoint
-  package.json                                  #   optional: mikan.extensions + deps + metadata
-  skills/<name>/SKILL.md                        #   optional: bundled skills (inlined)
-~/.mikan/conversations/<id>/extensions/         # one conversation
+~/.mikan/global/extensions/audit.mjs             # all conversations (single file)
+~/.mikan/global/extensions/agent-pm/             # all conversations (directory)
+  index.mjs | index.ts                           #   entrypoint
+  package.json                                   #   optional: mikan.extensions + deps + metadata
+  skills/<name>/SKILL.md                         #   optional: bundled skills (inlined)
+~/.mikan/conversations/<office key>/extensions/  # one conversation
 ```
+
+The conversation segment is the office key, built by
+`officeStateDir(stateDir, address)` — never a raw platform conversation id.
+See `src/office/README.md`.
 
 **Loading uses jiti**, so extensions can be TypeScript and may `npm i`
 third-party packages (with `node_modules`). `package.json` is the metadata
@@ -149,8 +158,8 @@ Entrypoint resolution order: `mikan.extensions` → `index.{mjs,js,ts,mts}`.
 Simple extensions without `package.json` may use `manifest.json`
 (`{name,version,description}`) as a metadata fallback.
 
-`global/` and `conversations/<id>/` are parallel scopes, each with
-`extensions/` (code) and `extension-data/` (data). Full layout and migration:
+`global/` and `conversations/<office key>/` are parallel scopes, each with
+`extensions/` (code) and `extension-data/` (data). Full layout and migrations:
 `src/harness/extensions/LAYOUT.md`.
 
 ### Install with CLI
@@ -184,14 +193,15 @@ accept `--state-dir` (default `~/.mikan`). After install/remove, send
 **Security model:** extension code runs inside the mikan process with the same
 privileges as mikan (platform tokens, vault, host filesystem). Installing
 extensions is an admin action. Therefore extension directories must never live
-under the workspace — image mode bind-mounts workspace/conversation dirs into
-the sandbox, and sandbox-written code loaded on the host would be an escape.
-`global` and `conversations` are reserved top-level scopes; platform
-conversation ids never take those names.
+under the workspace — image mode bind-mounts workspace/office dirs into the
+sandbox, and sandbox-written code loaded on the host would be an escape.
+`global` and `conversations` are reserved top-level scopes in the state dir,
+and office keys are always `v1-…`, so a conversation directory can never
+collide with them.
 
 **Identity (slug):** determined by install path (directory or file name), not
 by manifest — secrets, schedules, and `sharedDataDir` ownership key on slug.
-Per-conversation data (`dataDir`) lives under the conversation dir, named by
+Per-conversation data (`dataDir`) lives under the office state dir, named by
 slug, and is torn down with the conversation.
 
 Export `activate` (default or named):
@@ -209,19 +219,26 @@ export default function activate(api) {
 }
 ```
 
-### Hooks (v1)
+### Hooks
 
-| Hook                 | When                           | Return value                               |
-| -------------------- | ------------------------------ | ------------------------------------------ |
-| `before_agent_start` | Before user prompt is sent     | `{ systemPrompt? }` override for this turn |
-| `tool_call`          | Before tool execution          | `{ block?, reason? }` to block a tool      |
-| `tool_result`        | After tool execution (observe) | —                                          |
-| `message_end`        | After each message completes   | —                                          |
-| `turn_end`           | After the turn ends            | —                                          |
-| `session_compact`    | After compaction is written    | —                                          |
+| Hook                 | When                         | Return value                                    |
+| -------------------- | ---------------------------- | ----------------------------------------------- |
+| `before_agent_start` | Before user prompt is sent   | `{ systemPrompt? }` override for this turn      |
+| `context`            | Before each LLM call         | `{ messages? }` to replace this call's messages |
+| `tool_call`          | Before tool execution        | `{ block?, reason? }` to block a tool           |
+| `tool_result`        | After tool execution         | `{ content?, details?, isError? }` to patch it  |
+| `message_end`        | After each message completes | `{ message? }` (replacement must keep the role) |
+| `turn_end`           | After the turn ends          | —                                               |
+| `session_compact`    | After compaction is written  | —                                               |
+| `agent_error`        | When a run raises            | —                                               |
+| `budget_exceeded`    | When a budget breaker trips  | —                                               |
 
 Semantics: handlers run in registration order; the first non-`undefined` return
 wins for valued hooks; handler errors are logged only and do not abort the turn.
+
+Beyond hooks, an extension may contribute a chat command with
+`api.registerCommand` — built-in commands and earlier registrations of the
+same name always win.
 
 ### Host-backed API: subagents, schedules, notify, paths, secrets, manifest, skills
 
@@ -236,13 +253,15 @@ messaging / scheduling.
 | `api.schedules.upsert/delete/list` | Named schedules (cron `periodic` / `one-shot`) for autonomous runs         | event files (`<workingDir>/events/ext.<slug>.<conv>.<name>.json`), live via EventsWatcher       |
 | `api.notify(text)`                 | Post to this conversation without an agent run                             | `main.ts` `PlatformNotifier` → bot `postMessage`                                                |
 | `api.react(messageTs, emoji)`      | React to a message (ts from events the extension observed)                 | `main.ts` `PlatformReactor` → bot `addReaction`                                                 |
-| `api.paths.dataDir`                | **This conversation's** data dir (default; isolation free; mkdir-on-use)   | `conversations/<id>/extension-data/<slug>/`                                                     |
+| `api.uploadFile(path, …)`          | Upload a host file into this conversation                                  | `main.ts` `PlatformUploader` → bot file upload                                                  |
+| `api.blockkit.post/update`         | Interactive Block Kit messages                                             | `main.ts` `PlatformBlockKit`; `extensions/blockkit.ts` namespaces action ids as `ext:<slug>:`   |
+| `api.paths.dataDir`                | **This conversation's** data dir (default; isolation free; mkdir-on-use)   | `conversations/<office key>/extension-data/<slug>/`                                             |
 | `api.paths.sharedDataDir`          | Cross-conversation data (**explicit** multi-tenant apps; self-partition)   | `global/extension-data/<slug>/`                                                                 |
 | `api.secrets.get/list`             | Read-only secrets                                                          | vault: `<stateDir>/vaults/extensions/<slug>/env`                                                |
 | `manifest.json`                    | name / version / description (display only; slug unaffected)               | loader reads it                                                                                 |
 | `skills/<name>/SKILL.md`           | Bundled skills                                                             | discovered and **inlined** into system prompt (sandbox cannot read host-only paths); local wins |
 
-The same core subagent runner backs both extension `api.subagent.run` and the normal agent's built-in `subagent` tool. Both use a fresh in-memory session, explicit tool grants, bounded execution, and the same non-recursion guard. The runner never rejects — request validation failures resolve to `failed` results, so a bad request in a batch cannot orphan in-flight siblings. The normal tool folds each subagent's tokens and cost into the parent run's tally (`recordExternalUsage`), keeping delegated spend visible to the parent budget; extension-initiated runs report usage in their result, and the calling extension is accountable for it. The normal tool supports one `task`, up to eight independent parallel `tasks[]`, or a bounded in-memory `dag` (8 nodes, 16 edges, depth 4); at most 4 subagents run concurrently in either mode. DAG dependency outputs become structured input for downstream nodes; a failed dependency skips its descendants while independent branches continue.
+The same core subagent runner backs both extension `api.subagent.run` and the normal agent's built-in `subagent` tool. Both use a fresh in-memory session, explicit tool grants, bounded execution, and the same non-recursion guard. The runner never rejects — request validation failures resolve to `failed` results, so a bad request in a batch cannot orphan in-flight siblings. The normal tool folds each subagent's tokens and cost into the parent run's tally (`recordExternalUsage`), keeping delegated spend visible to the parent budget; extension-initiated runs report usage in their result, and the calling extension is accountable for it. The normal tool supports one `task`, up to eight independent parallel `tasks[]`, or a bounded in-memory `dag` (8 nodes, 16 edges, depth 4); at most 4 subagents run concurrently in either mode. On top of that per-run cap, every launch also draws from a process-wide slot pool (`tools/subagent-slots.ts`, 8 slots by default), so N busy conversations cannot hold N × 4 live subagent sessions. DAG dependency outputs become structured input for downstream nodes; a failed dependency skips its descendants while independent branches continue.
 
 The normal tool emits node-level state through `AgentTool.onUpdate`. The parent runner debounces `tool_execution_update` events for 500ms and sends a compact status label through `ConversationResponder.replaceResponse`, so Slack, Discord, and Telegram share the same progress path without exposing subagent reasoning.
 
@@ -283,13 +302,13 @@ Lifecycle discipline:
    (any `.js` placed there is loaded as an extension) and upgrades replace the
    whole directory; state always goes to the data dir.
 
-Full example: `deploy/examples/extensions/agent-pm/` (~200-line follow-up tracker with
-sqlite, daily overdue scan schedule, proactive notify, bundled skill) — the
-target shape for extensions: reuse mikan's harness instead of building a second
+Full examples live in `deploy/examples/extensions/`: `agent-pm/` (a ~200-line
+follow-up tracker with sqlite, a daily overdue-scan schedule, proactive
+notify, and a bundled skill) and `poll/` (an interactive Block Kit example).
+Both show the target shape: reuse mikan's harness instead of building a second
 agent stack.
 
-v3 candidates: `tool_result` patch, custom slash-command contribution points,
-provider registration, install/uninstall lifecycle hooks.
+Still open: provider registration, and install/uninstall lifecycle hooks.
 
 ## Tests
 
@@ -298,3 +317,4 @@ provider registration, install/uninstall lifecycle hooks.
 - `src/test/harness-extensions.test.ts` — loader and hook registry
 - `src/test/harness-skills.test.ts` — SKILL.md discovery and prompt formatting
 - `src/test/harness-auth.test.ts` — auth.json read/write
+- `src/test/harness-http.test.ts` — dispatcher proxy resolution and idle timeout

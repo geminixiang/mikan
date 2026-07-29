@@ -1,6 +1,6 @@
 ---
 title: mikan 架構
-description: 了解 mikan 的平台接入、工作階段、agent、sandbox、vault 與 web portal 如何串接。
+description: 了解 mikan 的平台接入、conversation office、工作階段、agent、sandbox、vault 與 web portal 如何串接。
 ---
 
 ## 1. 系統總覽
@@ -22,13 +22,16 @@ description: 了解 mikan 的平台接入、工作階段、agent、sandbox、vau
 職責：
 
 - 接收 Slack / Telegram / Discord 原生事件，或輪詢 GitHub issues 與 pull requests
-- 轉成統一的 `ConversationEvent`、`ConversationMessage`、`ConversationResponder`
+- 轉成統一的 `ConversationEvent`、`ConversationMessage`、`ConversationResponder`，每一個都帶著該對話的 `OfficeAddress`
 - 依平台規則計算 `sessionKey`
 - 封裝回覆、typing、working、檔案上傳等平台差異
+
+原始平台識別碼只停留在這些對外 I/O 邊界上。再往內的一切，都以 `OfficeAddress` 來定址一個對話。
 
 ### B. 核心協調層
 
 - `src/main.ts`
+- `src/cli/boot.ts`
 - `src/runtime/conversation-runtime.ts`
 - `src/adapters/intake.ts`
 - `src/commands/manifest.ts`
@@ -37,11 +40,11 @@ description: 了解 mikan 的平台接入、工作階段、agent、sandbox、vau
 
 職責：
 
-- 啟動 CLI、讀取 env / args / `settings.json`
+- 把 argv 解析成一份 boot plan（`src/cli/boot.ts`），再執行它：讀取 env / `settings.json`、建立 `Workspace`、執行 office 遷移，並啟動選定的平台 bot
 - 建立 `ConversationRuntime` 作為各平台 bot 的 `MessagingEventHandler`
 - `stop` 魔法詞由 conversation intake（`src/adapters/intake.ts`）在 trigger policy 與排隊之前辨識
 - `/login`、`/session`、`/new` 等控制命令在 `ConversationRuntime.runSession` 內 dispatch；adapter 註冊與路由所依據的命令清單位於 `src/commands/manifest.ts`
-- 管理 `conversationStates` 與 per-session queue，避免同一 session 重複執行
+- 以 office address 加上 session key 作為 per-session 狀態與 queue 的 key，因此同一時間只有一個 session 在執行，其他 session 則可並行進行
 - 決定每個 session scope 對應哪個 `PiAgentWrapper`
 
 ### C. Agent 執行層
@@ -73,7 +76,23 @@ description: 了解 mikan 的平台接入、工作階段、agent、sandbox、vau
 - 透過 `ActorExecutionResolver` 依 user/conversation/vault 決定實際 executor
 - 在 `image` 模式下自動建立與回收 Docker container，並把 `image:<image>` 解析成 concrete `container:<name>` executor
 
-### E. 狀態與持久化層
+### E. Conversation office 層
+
+- `src/office/*`
+- `src/workspace-projection/index.ts`
+
+每個對話都是一個 **office**：它自己的持久工作區域與資料邊界。這個模組擁有該身分與佈局。
+
+職責：
+
+- `createWorkspace({ root, stateDir })` 建立每個 process 的 `Workspace` 值：workspace root、它的全域 `MEMORY.md` / `skills/` / `events/` / `agents/`，以及 office factory
+- `workspace.office(address)` 回傳一個所有路徑都已預先算好的凍結 `Office` 值——`dir`、`memoryPath`、`skillsDir`、`sessionsDir`、`attachmentsDir`、`logPath`，以及僅限 host 的 `stateDir`——再加上 `ensure()`，也就是唯一的實體化接縫
+- 推導出 `OfficeKey`（`v1-<platform>-<readable-id>-<sha256 prefix>`），用來在 host 上、sandbox runtime 內以及 vault 中命名該 office
+- 維護僅限 host 的 office registry（`office-registry.json`），作為 raw id ↔ office 的持久對照，因為 office key 無法反推
+- 執行開機時從 legacy raw-id 佈局而來的遷移，並以 journal 支援當機復原
+- 解析 workspace projection：依該 office 的 door policy，決定哪些 host 路徑會掛進 sandbox runtime
+
+### F. 狀態與持久化層
 
 - `src/sessions/store.ts`
 - `src/sessions/chat-history-sync.ts`
@@ -83,10 +102,10 @@ description: 了解 mikan 的平台接入、工作階段、agent、sandbox、vau
 
 - session 檔案管理： `sessions/current` 與 `*.jsonl`
 - `log.jsonl` 與 structured session 的雙軌歷史保存
-- workspace / conversation 級別 `MEMORY.md`
-- per-conversation vault 憑證與 mount / env 注入
+- workspace 級別與 office 級別的 `MEMORY.md`
+- per-office vault 憑證與 mount / env 注入
 
-### F. 輔助服務層
+### G. 輔助服務層
 
 - `src/web/login/*`
 - `src/web/admin/*`
@@ -113,12 +132,12 @@ sequenceDiagram
   participant R as agent.ts / PiAgentWrapper
   participant T as tools/*
   participant X as sandbox Executor
-  participant W as Workspace / sessions
+  participant W as Office dir / sessions
 
   U->>P: send message / mention / reply
   P->>A: platform event
-  A->>M: ConversationEvent + ConversationMessage + ResponseContext
-  M->>M: queue event + dispatch commands
+  A->>M: ConversationEvent + ConversationMessage + ResponseContext (with OfficeAddress)
+  M->>M: resolve office, queue event, dispatch commands
   M->>S: resolve session scope
   S-->>M: contextFile + sessionDir
   M->>R: getState() / run()
@@ -135,7 +154,7 @@ sequenceDiagram
   P-->>U: user sees response
 ```
 
-## 4. Session 與檔案佈局
+## 4. Office、session 與檔案佈局
 
 `mikan` 會分開 sandbox 可見的工作資料，以及以 host 為準的設定與憑證：
 
@@ -143,13 +162,14 @@ sequenceDiagram
 <workspace>/
 ├── MEMORY.md                  # workspace-level memory
 ├── skills/                    # workspace-level skills
-├── events/                    # scheduled and external events
-└── <conversationId>/
-    ├── MEMORY.md              # conversation-level memory
+├── events/                    # the workspace scheduling bus
+├── agents/                    # per-install subagent profile patches
+└── <officeKey>/               # one conversation office
+    ├── MEMORY.md              # office-level memory
     ├── log.jsonl              # grep-friendly platform message history
     ├── attachments/           # platform attachment downloads
     ├── scratch/               # in-progress working area
-    ├── skills/                # conversation-level skills
+    ├── skills/                # office-level skills
     └── sessions/
         ├── current            # top-level session pointer
         ├── <timestamp>_<id>.jsonl
@@ -157,21 +177,38 @@ sequenceDiagram
 
 <state-dir>/
 ├── settings.json              # required global settings
+├── office-registry.json       # office inventory + migration journal
 ├── conversations/
-│   └── <conversationId>/settings.json  # host-only conversation overrides
+│   └── <officeKey>/settings.json  # host-only conversation overrides
 └── vaults/<vaultId>/          # credentials
 ```
 
-預設 state directory 是 `~/.mikan`。它必須位於 sandbox 可見的 workspace 路徑之外。
+預設 state directory 是 `~/.mikan`。它必須位於 sandbox 可見的 workspace 路徑之外。`MEMORY.md`、`skills`、`events` 與 `agents` 是 workspace root 的保留名稱，永遠不會是 office 目錄。
 
 設計重點：
 
+- `<officeKey>` 是 `v1-<platform>-<readable-id>-<hash>`，由平台與原始 conversation id 經 SHA-256 推導而來。中間那段可讀內容只是為了診斷；digest 才是身分。因此兩個共用同一個 raw conversation id 的平台，會得到不同的目錄、設定與 vault
+- office key 在 host 上與 sandbox runtime 內命名的是同一個目錄，因此一個路徑跨越邊界時不會改變意義
+- office key 無法反推回原始平台 id，所以 `office-registry.json` 會在每個 office 第一次實體化時記下它的 `(platform, conversationId)`。面向 raw id 的介面——Admin portal、`mikan office claim`——都透過它來解析
 - `log.jsonl` 是平台對話紀錄：來源平台上實際發生過什麼
 - `sessions/*.jsonl` 是 LLM 工作上下文/工作紀錄：mikan 拿什麼給 LLM 看，以及 LLM/tool 做了什麼
 - top-level session 用 `current` 指標，但 `current` 不是 channel history；缺失時可從 `log.jsonl` 重建最近 top-level 工作上下文
 - thread / reply session 用固定檔名，讓 scoped session 可被單獨追蹤
+- session key 維持原始平台值；runtime 狀態是以 office 加上 session key 來定址，因此一個 session key 絕不可能選到另一個 office 的 runner 或 queue
 - Slack top-level 訊息共用 channel session；Slack thread replies 使用 `conversationId:threadTs`
 - Slack events 會先建立 top-level anchor message，再用 `conversationId:anchorTs` 執行
+
+### Door policy 與 workspace projection
+
+一個 office 的 sandbox runtime 實際看到什麼，取決於 _workspace projection_，而它是由該 office 的 door policy 解析出來的：
+
+| Door policy | Layout           | 掛進 runtime 的內容                                                  |
+| ----------- | ---------------- | -------------------------------------------------------------------- |
+| `isolated`  | `conversation`   | 只有 `<officeKey>/`                                                  |
+| `trusted`   | `shared-support` | `<officeKey>/` 再加上 workspace 的 `MEMORY.md`、`skills/`、`events/` |
+| `trusted`   | `full`           | 整個 workspace root                                                  |
+
+`isolated` 是預設值，而且一律隱含 `conversation` layout。Door policy 是資料存取邊界，它絕不會改變執行環境或網路隔離。它可從 admin portal 或用 `/pi-sandbox door` 依 office 設定，全域預設值則位於 `sandbox.workspace`——見[設定](/zh-tw/configuration/)。
 
 ## 5. Login / Vault / Sandbox 關係
 
@@ -195,8 +232,9 @@ flowchart TD
 
 - 憑證不直接進 workspace
 - vault 存在 `--state-dir`
-- 執行時才由 conversation vault 路由到對應 sandbox
-- `image` / `gondolin` / `firecracker` / `cloudflare` 模式使用 per-actor/per-conversation vault routing；`container:<name>` 使用 shared container vault；`host` 不注入 vault env
+- 執行時才由該 office 的 vault 路由到對應 sandbox
+- `image` / `gondolin` / `firecracker` / `cloudflare` 模式以 office key 作為 vault 的 key——也就是在 workspace 與 registry 中命名該 office 的同一個字串；`container:<name>` 使用 shared container vault；`host` 以使用者為 key，且不注入 vault env
+- Sandbox 的資源名稱（container 名稱、Gondolin 實例、Cloudflare scope）仍由原始 conversation id 推導。那裡發生碰撞的代價是一次 container 重建，絕不會影響憑證存取
 
 ## 6. Events 與一般對話的差異
 
@@ -215,13 +253,16 @@ flowchart TD
 
 如果用一句話總結，`mikan` 的核心其實是：
 
-> 一個以 `main.ts` 為協調中心、以 `agent.ts` 為執行核心、以 `session/vault/sandbox` 為基礎設施的多平台 AI agent bot。
+> 一個以 `main.ts` 為協調中心、以 `agent.ts` 為執行核心、以 `office/session/vault/sandbox` 為基礎設施的多平台 AI agent bot。
 
-可以把它理解成 6 個核心子系統:
+可以把它理解成 7 個核心子系統:
 
 1. 平台轉接器
 2. Bot runtime 協調
 3. Agent + tools
-4. Session/context 持久化
-5. Vault + sandbox execution routing
-6. Web/event side services
+4. Conversation office：身分、佈局、registry 與 workspace projection
+5. Session/context 持久化
+6. Vault + sandbox execution routing
+7. Web/event side services
+
+Office 就是這些子系統共同認定的單位：一個對話、一個目錄、一個 vault、一個 sandbox runtime、一條資料邊界。見 [ADR 0003](https://github.com/geminixiang/mikan/blob/main/docs/adr/0003-isolated-conversation-offices.md)、[ADR 0004](https://github.com/geminixiang/mikan/blob/main/docs/adr/0004-persistent-offices-and-ephemeral-factory-floors.md) 與 [ADR 0005](https://github.com/geminixiang/mikan/blob/main/docs/adr/0005-office-address-identity.md)。

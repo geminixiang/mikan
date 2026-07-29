@@ -79,9 +79,9 @@ async function importExtensionModule(entrypoint: string): Promise<unknown> {
 /**
  * Canonical host-only extension code directories for a conversation, in load
  * order: `<stateDir>/global/extensions` (all conversations) then
- * `<stateDir>/conversations/<conversationId>/extensions` (that conversation
+ * `<stateDir>/conversations/<office key>/extensions` (that conversation
  * only). `global` and `conversations` are the two sibling scopes; see
- * `LAYOUT.md`. Conversation ids are used verbatim (see LAYOUT.md § Casing).
+ * `LAYOUT.md`.
  */
 export function defaultExtensionDirs(
   address: OfficeAddress,

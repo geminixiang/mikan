@@ -1,6 +1,6 @@
 ---
 title: mikan アーキテクチャ
-description: mikan のプラットフォーム接続、セッション、agent、sandbox、vault、web portal がどう連携するかを説明します。
+description: mikan のプラットフォーム接続、conversation office、セッション、agent、sandbox、vault、web portal がどう連携するかを説明します。
 ---
 
 ## 1. システム概要
@@ -22,13 +22,16 @@ description: mikan のプラットフォーム接続、セッション、agent�
 責務:
 
 - Slack / Telegram / Discord のネイティブイベントを受け取るか、GitHub issues と pull requests を poll する
-- 統一された `ConversationEvent`、`ConversationMessage`、`ConversationResponder` に変換する
+- 統一された `ConversationEvent`、`ConversationMessage`、`ConversationResponder` に変換する。いずれもその conversation の `OfficeAddress` を持つ
 - プラットフォームの規則に従って `sessionKey` を計算する
 - 返信、typing、working、ファイルアップロードなどのプラットフォーム差分を隠蔽する
+
+生のプラットフォーム識別子は、この外部 I/O 境界の内側には入りません。そこから内側では、conversation は常に `OfficeAddress` で指し示されます。
 
 ### B. コア調整レイヤー
 
 - `src/main.ts`
+- `src/cli/boot.ts`
 - `src/runtime/conversation-runtime.ts`
 - `src/adapters/intake.ts`
 - `src/commands/manifest.ts`
@@ -37,11 +40,11 @@ description: mikan のプラットフォーム接続、セッション、agent�
 
 責務:
 
-- CLI を起動し、env / args / `settings.json` を読み込む
+- argv を boot plan に解決し（`src/cli/boot.ts`）、それを実行する: env / `settings.json` の読み込み、`Workspace` の構築、office migration の実行、選択されたプラットフォーム bot の起動
 - 各プラットフォーム bot の `MessagingEventHandler` として `ConversationRuntime` を作成する
 - `stop` マジックワードは conversation intake（`src/adapters/intake.ts`）が trigger policy とキューイングより先に認識する
 - `/login`、`/session`、`/new` などの制御コマンドは `ConversationRuntime.runSession` 内で dispatch する。アダプターが登録・ルーティングに使うコマンド一覧は `src/commands/manifest.ts` にある
-- `conversationStates` と per-session queue を管理し、同じ session の重複実行を防ぐ
+- per-session の state と queue を office address と session key の組で管理する。これにより 1 つの session は 1 度に 1 実行に保たれ、他の session は並行して進められる
 - 各 session scope に対応する `PiAgentWrapper` を決定する
 
 ### C. Agent 実行レイヤー
@@ -73,7 +76,23 @@ description: mikan のプラットフォーム接続、セッション、agent�
 - `ActorExecutionResolver` により user/conversation/vault から実際の executor を決定する
 - `image` モードでは Docker container を自動作成・回収し、`image:<image>` を concrete な `container:<name>` executor に解決する
 
-### E. 状態と永続化レイヤー
+### E. Conversation office レイヤー
+
+- `src/office/*`
+- `src/workspace-projection/index.ts`
+
+すべての conversation は **office** です。つまり、それぞれが専用の永続作業領域とデータ境界を持ちます。このモジュールがその identity と layout を所有します。
+
+責務:
+
+- `createWorkspace({ root, stateDir })` がプロセスごとの `Workspace` を構築する: workspace root、そのグローバルな `MEMORY.md` / `skills/` / `events/` / `agents/`、そして office factory
+- `workspace.office(address)` は、すべての path を事前計算した frozen な `Office` を返す — `dir`、`memoryPath`、`skillsDir`、`sessionsDir`、`attachmentsDir`、`logPath`、host 専用の `stateDir` — さらに唯一の materialization seam である `ensure()` を持つ
+- host 上、sandbox runtime 内、vault のいずれでも office を指す `OfficeKey`（`v1-<platform>-<readable-id>-<sha256 prefix>`）を導出する
+- office key は逆変換できないため、生 id ↔ office の対応を保持する host 専用の office registry（`office-registry.json`）を管理する
+- 旧来の生 id 配置からの boot 時 migration を、クラッシュ復旧付きの journal で実行する
+- workspace projection を解決する: その office の door policy に対して、どの host path が sandbox runtime に mount されるか
+
+### F. 状態と永続化レイヤー
 
 - `src/sessions/store.ts`
 - `src/sessions/chat-history-sync.ts`
@@ -83,10 +102,10 @@ description: mikan のプラットフォーム接続、セッション、agent�
 
 - session ファイルを管理する: `sessions/current` と `*.jsonl`
 - `log.jsonl` と structured session の二系統の履歴を保存する
-- workspace / conversation レベルの `MEMORY.md` を扱う
-- per-conversation vault の認証情報と mount / env 注入を扱う
+- workspace レベルと office レベルの `MEMORY.md` を扱う
+- per-office vault の認証情報と mount / env 注入を扱う
 
-### F. 補助サービスレイヤー
+### G. 補助サービスレイヤー
 
 - `src/web/login/*`
 - `src/web/admin/*`
@@ -113,12 +132,12 @@ sequenceDiagram
   participant R as agent.ts / PiAgentWrapper
   participant T as tools/*
   participant X as sandbox Executor
-  participant W as Workspace / sessions
+  participant W as Office dir / sessions
 
   U->>P: メッセージ / mention / reply を送信
   P->>A: プラットフォームイベント
-  A->>M: ConversationEvent + ConversationMessage + ResponseContext
-  M->>M: queue event + dispatch commands
+  A->>M: ConversationEvent + ConversationMessage + ResponseContext (with OfficeAddress)
+  M->>M: resolve office, queue event, dispatch commands
   M->>S: resolve session scope
   S-->>M: contextFile + sessionDir
   M->>R: getState() / run()
@@ -135,7 +154,7 @@ sequenceDiagram
   P-->>U: ユーザーが返信を見る
 ```
 
-## 4. Session とファイル配置
+## 4. Office、session、ファイル配置
 
 `mikan` は sandbox から見える作業データを、host-authoritative な設定および認証情報から分離します：
 
@@ -143,13 +162,14 @@ sequenceDiagram
 <workspace>/
 ├── MEMORY.md                  # workspace レベルの記憶
 ├── skills/                    # workspace レベルの skills
-├── events/                    # スケジュールと外部イベント
-└── <conversationId>/
-    ├── MEMORY.md              # conversation レベルの記憶
+├── events/                    # workspace のスケジューリングバス
+├── agents/                    # インストールごとの subagent profile patch
+└── <officeKey>/               # 1 つの conversation office
+    ├── MEMORY.md              # office レベルの記憶
     ├── log.jsonl              # grep 可能な人間可読メッセージ履歴
     ├── attachments/           # プラットフォーム添付ファイルのダウンロード
     ├── scratch/               # 実行中の作業領域
-    ├── skills/                # conversation レベルの skills
+    ├── skills/                # office レベルの skills
     └── sessions/
         ├── current            # top-level session pointer
         ├── <timestamp>_<id>.jsonl
@@ -157,21 +177,38 @@ sequenceDiagram
 
 <state-dir>/
 ├── settings.json              # 必須のグローバル設定
+├── office-registry.json       # office 一覧 + migration journal
 ├── conversations/
-│   └── <conversationId>/settings.json  # host-only conversation overrides
+│   └── <officeKey>/settings.json  # host-only conversation overrides
 └── vaults/<vaultId>/          # credentials
 ```
 
-state directory の既定値は `~/.mikan` です。sandbox から見える workspace paths の外に置く必要があります。
+state directory の既定値は `~/.mikan` です。sandbox から見える workspace paths の外に置く必要があります。`MEMORY.md`、`skills`、`events`、`agents` は workspace root の予約名であり、office directory になることはありません。
 
 設計上のポイント:
 
+- `<officeKey>` は `v1-<platform>-<readable-id>-<hash>` で、platform と生の conversation id から SHA-256 で導出されます。中央の可読部分は診断用で、identity は digest です。したがって、生の conversation id が偶然一致する 2 つのプラットフォームは、別々の directory・settings・vault を持ちます
+- office key は host 上でも sandbox runtime 内でも同じ directory を指すため、境界を越えても path の意味が変わりません
+- office key から生のプラットフォーム id へは逆変換できないため、`office-registry.json` が各 office の `(platform, conversationId)` を初回 materialize 時に記録します。生 id を扱う面 — Admin portal や `mikan office claim` — はこれを介して解決します
 - `log.jsonl` はプラットフォーム会話ログです。Slack/Discord/Telegram で実際に何が起きたかを記録します
 - `sessions/*.jsonl` は LLM の作業コンテキスト/作業記録です。mikan が LLM に何を渡し、LLM/tool が何をしたかを記録します
 - top-level session は `current` ポインターを使いますが、`current` は channel history ではありません。欠落時は `log.jsonl` から最近の top-level 作業コンテキストを再構築できます
 - thread / reply session は固定ファイル名を使い、scoped session を個別に追跡できるようにします
+- session key は生のプラットフォーム値のままです。runtime state は office と session key の組で指し示されるため、ある session key が別の office の runner や queue を選ぶことはありません
 - Slack top-level メッセージは channel session を共有します。Slack thread replies は `conversationId:threadTs` を使います
 - Slack events は先に top-level anchor message を作成し、その後 `conversationId:anchorTs` で実行します
+
+### Door policy と workspace projection
+
+office の sandbox runtime が実際に見るものは _workspace projection_ であり、これは office の door policy から解決されます:
+
+| Door policy | Layout           | runtime に mount されるもの                                            |
+| ----------- | ---------------- | ---------------------------------------------------------------------- |
+| `isolated`  | `conversation`   | `<officeKey>/` のみ                                                    |
+| `trusted`   | `shared-support` | `<officeKey>/` に加えて workspace の `MEMORY.md`、`skills/`、`events/` |
+| `trusted`   | `full`           | workspace root 全体                                                    |
+
+既定は `isolated` で、これは常に `conversation` layout を意味します。Door policy はデータアクセスの境界であり、実行やネットワークの隔離を変えることはありません。office ごとに admin portal または `/pi-sandbox door` で設定し、グローバルな既定値は `sandbox.workspace` にあります — [設定](/ja/configuration/) を参照してください。
 
 ## 5. Login / Vault / Sandbox の関係
 
@@ -195,8 +232,9 @@ flowchart TD
 
 - 認証情報は workspace に直接入りません
 - vault は `--state-dir` に保存されます
-- 実行時にだけ conversation vault から対応する sandbox へルーティングされます
-- `image` / `gondolin` / `firecracker` / `cloudflare` モードは per-actor/per-conversation vault routing を使います。`container:<name>` は shared container vault を使い、`host` は vault env を注入しません
+- 実行時にだけ office の vault から対応する sandbox へルーティングされます
+- `image` / `gondolin` / `firecracker` / `cloudflare` モードは office key で vault を索きます — workspace と registry で office を指すのと同じ文字列です。`container:<name>` は shared container vault を使い、`host` は user で索き、vault env を注入しません
+- sandbox のリソース名（container 名、Gondolin instance、Cloudflare scope）は現在も生の conversation id から導出されます。そこでの衝突のコストは container の作り直しであって、認証情報へのアクセスではありません
 
 ## 6. Events と通常会話の違い
 
@@ -215,13 +253,16 @@ flowchart TD
 
 一言でまとめると、`mikan` の中核は次のものです:
 
-> `main.ts` を調整中心、`agent.ts` を実行中核、`session/vault/sandbox` を基盤とするマルチプラットフォーム AI agent bot。
+> `main.ts` を調整中心、`agent.ts` を実行中核、`office/session/vault/sandbox` を基盤とするマルチプラットフォーム AI agent bot。
 
-6 つの中核サブシステムとして捉えられます:
+7 つの中核サブシステムとして捉えられます:
 
 1. プラットフォームアダプター
 2. Bot runtime の調整
 3. Agent + tools
-4. Session/context の永続化
-5. Vault + sandbox execution routing
-6. Web/event side services
+4. Conversation office: identity、layout、registry、workspace projection
+5. Session/context の永続化
+6. Vault + sandbox execution routing
+7. Web/event side services
+
+Office はこれらのサブシステムが合意する単位です: 1 つの conversation、1 つの directory、1 つの vault、1 つの sandbox runtime、1 つのデータ境界。[ADR 0003](https://github.com/geminixiang/mikan/blob/main/docs/adr/0003-isolated-conversation-offices.md)、[ADR 0004](https://github.com/geminixiang/mikan/blob/main/docs/adr/0004-persistent-offices-and-ephemeral-factory-floors.md)、[ADR 0005](https://github.com/geminixiang/mikan/blob/main/docs/adr/0005-office-address-identity.md) を参照してください。

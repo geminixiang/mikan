@@ -4,8 +4,8 @@
  * the grammar that actually drives the daemon is testable without spawning a
  * process; main.ts just executes the plan.
  *
- * Modes, highest priority first: `ext` (own grammar, never flag-parsed here),
- * `help`, `version`, `onboard`, `download`, `run`.
+ * Modes, highest priority first: `ext`, `office`, `env` (own grammars, never
+ * flag-parsed here), `help`, `version`, `onboard`, `download`, `run`.
  */
 import { join, resolve } from "path";
 import { envSummaryLines } from "../env-manifest.js";

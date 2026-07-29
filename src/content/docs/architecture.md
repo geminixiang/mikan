@@ -1,6 +1,6 @@
 ---
 title: mikan architecture
-description: Learn how mikan connects platform adapters, sessions, agent, sandbox, vault, and web portals.
+description: Learn how mikan connects platform adapters, conversation offices, sessions, agent, sandbox, vault, and web portals.
 ---
 
 ## 1. System overview
@@ -22,13 +22,16 @@ For the shared adapter contract, see [Platform adapters](platform-adapters.mdx).
 Responsibilities:
 
 - receive native Slack / Telegram / Discord events or poll GitHub issues and pull requests
-- convert them to unified `ConversationEvent`, `ConversationMessage`, and `ConversationResponder` values
+- convert them to unified `ConversationEvent`, `ConversationMessage`, and `ConversationResponder` values, each carrying the conversation's `OfficeAddress`
 - compute `sessionKey` according to platform rules
 - wrap platform differences such as replies, typing, working state, and file upload
+
+Raw platform identifiers stay at these external I/O boundaries. Everything inward addresses a conversation by its `OfficeAddress`.
 
 ### B. Core orchestration layer
 
 - `src/main.ts`
+- `src/cli/boot.ts`
 - `src/runtime/conversation-runtime.ts`
 - `src/adapters/intake.ts`
 - `src/commands/manifest.ts`
@@ -37,11 +40,11 @@ Responsibilities:
 
 Responsibilities:
 
-- start the CLI and read env / args / `settings.json`
+- resolve argv into a boot plan (`src/cli/boot.ts`), then execute it: read env / `settings.json`, build the `Workspace`, run the office migration, and start the selected platform bots
 - create `ConversationRuntime` as the `MessagingEventHandler` for each platform bot
 - recognize the `stop` magic word in conversation intake (`src/adapters/intake.ts`) before trigger policy and queueing
 - dispatch control commands such as `/login`, `/session`, and `/new` inside `ConversationRuntime.runSession`; the command inventory that adapters register/route from lives in `src/commands/manifest.ts`
-- manage `conversationStates` and per-session queues to avoid duplicate runs in the same session
+- key per-session state and queues by office address plus session key, so one session runs at a time while other sessions proceed concurrently
 - decide which `PiAgentWrapper` corresponds to each session scope
 
 ### C. Agent execution layer
@@ -73,7 +76,23 @@ Responsibilities:
 - use `ActorExecutionResolver` to decide the actual executor by user/conversation/vault
 - in `image` mode, automatically create and recycle Docker containers, resolving `image:<image>` to a concrete `container:<name>` executor
 
-### E. State and persistence layer
+### E. Conversation office layer
+
+- `src/office/*`
+- `src/workspace-projection/index.ts`
+
+Every conversation is an **office**: its own persistent working area and data boundary. This module owns that identity and layout.
+
+Responsibilities:
+
+- `createWorkspace({ root, stateDir })` builds the per-process `Workspace` value: the workspace root, its global `MEMORY.md` / `skills/` / `events/` / `agents/`, and the office factory
+- `workspace.office(address)` returns a frozen `Office` value with every path precomputed — `dir`, `memoryPath`, `skillsDir`, `sessionsDir`, `attachmentsDir`, `logPath`, and the host-only `stateDir` — plus `ensure()`, the single materialization seam
+- derive the `OfficeKey` (`v1-<platform>-<readable-id>-<sha256 prefix>`) that names the office on the host, inside sandbox runtimes, and in the vault
+- keep the host-only office registry (`office-registry.json`) as the durable raw-id ↔ office mapping, because office keys are not reversible
+- run the boot-time migration from the legacy raw-id layout, journaled with crash recovery
+- resolve the workspace projection: which host paths are mounted into the sandbox runtime for the office's door policy
+
+### F. State and persistence layer
 
 - `src/sessions/store.ts`
 - `src/sessions/chat-history-sync.ts`
@@ -83,10 +102,10 @@ Responsibilities:
 
 - session file management: `sessions/current` and `*.jsonl`
 - dual-track history persistence with `log.jsonl` and structured sessions
-- workspace / conversation-level `MEMORY.md`
-- per-conversation vault credentials and mount / env injection
+- workspace-level and office-level `MEMORY.md`
+- per-office vault credentials and mount / env injection
 
-### F. Supporting services layer
+### G. Supporting services layer
 
 - `src/web/login/*`
 - `src/web/admin/*`
@@ -113,12 +132,12 @@ sequenceDiagram
   participant R as agent.ts / PiAgentWrapper
   participant T as tools/*
   participant X as sandbox Executor
-  participant W as Workspace / sessions
+  participant W as Office dir / sessions
 
   U->>P: send message / mention / reply
   P->>A: platform event
-  A->>M: ConversationEvent + ConversationMessage + ResponseContext
-  M->>M: queue event + dispatch commands
+  A->>M: ConversationEvent + ConversationMessage + ResponseContext (with OfficeAddress)
+  M->>M: resolve office, queue event, dispatch commands
   M->>S: resolve session scope
   S-->>M: contextFile + sessionDir
   M->>R: getState() / run()
@@ -135,7 +154,7 @@ sequenceDiagram
   P-->>U: user sees response
 ```
 
-## 4. Sessions and file layout
+## 4. Offices, sessions, and file layout
 
 `mikan` separates sandbox-visible working data from host-authoritative settings and credentials:
 
@@ -143,13 +162,14 @@ sequenceDiagram
 <workspace>/
 ├── MEMORY.md                  # workspace-level memory
 ├── skills/                    # workspace-level skills
-├── events/                    # scheduled and external events
-└── <conversationId>/
-    ├── MEMORY.md              # conversation-level memory
+├── events/                    # the workspace scheduling bus
+├── agents/                    # per-install subagent profile patches
+└── <officeKey>/               # one conversation office
+    ├── MEMORY.md              # office-level memory
     ├── log.jsonl              # grep-friendly platform message history
     ├── attachments/           # platform attachment downloads
     ├── scratch/               # in-progress working area
-    ├── skills/                # conversation-level skills
+    ├── skills/                # office-level skills
     └── sessions/
         ├── current            # top-level session pointer
         ├── <timestamp>_<id>.jsonl
@@ -157,21 +177,38 @@ sequenceDiagram
 
 <state-dir>/
 ├── settings.json              # required global settings
+├── office-registry.json       # office inventory + migration journal
 ├── conversations/
-│   └── <conversationId>/settings.json  # host-only conversation overrides
+│   └── <officeKey>/settings.json  # host-only conversation overrides
 └── vaults/<vaultId>/          # credentials
 ```
 
-The default state directory is `~/.mikan`. It must remain outside sandbox-visible workspace paths.
+The default state directory is `~/.mikan`. It must remain outside sandbox-visible workspace paths. `MEMORY.md`, `skills`, `events`, and `agents` are reserved workspace-root names and are never office directories.
 
 Design points:
 
+- `<officeKey>` is `v1-<platform>-<readable-id>-<hash>`, derived by SHA-256 from the platform and the raw conversation id. The readable middle is diagnostic; the digest is the identity. Two platforms sharing a raw conversation id therefore get different directories, settings, and vaults
+- the office key names the same directory on the host and inside the sandbox runtime, so a path does not change meaning when it crosses the boundary
+- office keys cannot be reversed to a raw platform id, so `office-registry.json` records each office's `(platform, conversationId)` when it is first materialized. Raw-id-facing surfaces — the Admin portal, `mikan office claim` — resolve through it
 - `log.jsonl` is the platform conversation log: what actually happened on the source platform
 - `sessions/*.jsonl` is the LLM working context/log: what mikan gave the LLM and what the LLM/tool did
 - the top-level session uses the `current` pointer, but `current` is not channel history; when missing, recent top-level working context can be rebuilt from `log.jsonl`
 - thread / reply sessions use fixed file names so scoped sessions can be tracked separately
+- session keys stay raw platform values; runtime state is addressed by office plus session key, so a session key can never select another office's runner or queue
 - Slack top-level messages share a channel session; Slack thread replies use `conversationId:threadTs`
 - Slack events first create a top-level anchor message, then run with `conversationId:anchorTs`
+
+### Door policy and the workspace projection
+
+What an office's sandbox runtime actually sees is the _workspace projection_, resolved from the office's door policy:
+
+| Door policy | Layout           | Mounted into the runtime                                            |
+| ----------- | ---------------- | ------------------------------------------------------------------- |
+| `isolated`  | `conversation`   | `<officeKey>/` only                                                 |
+| `trusted`   | `shared-support` | `<officeKey>/` plus workspace `MEMORY.md`, `skills/`, and `events/` |
+| `trusted`   | `full`           | the entire workspace root                                           |
+
+`isolated` is the default and always implies the `conversation` layout. Door policy is a data-access boundary; it never changes execution or network isolation. It is set per office from the admin portal or with `/pi-sandbox door`, and its global default lives in `sandbox.workspace` — see [Configuration](/configuration/).
 
 ## 5. Login / Vault / Sandbox relationship
 
@@ -195,8 +232,9 @@ Key points:
 
 - credentials do not go directly into the workspace
 - vaults live in `--state-dir`
-- at execution time, the conversation vault is routed to the corresponding sandbox
-- `image` / `gondolin` / `firecracker` / `cloudflare` modes use per-actor/per-conversation vault routing; `container:<name>` uses a shared container vault; `host` does not inject vault env
+- at execution time, the office's vault is routed to the corresponding sandbox
+- `image` / `gondolin` / `firecracker` / `cloudflare` modes key the vault by office key — the same string that names the office in the workspace and the registry; `container:<name>` uses a shared container vault; `host` keys by user and does not inject vault env
+- sandbox resource names (container names, Gondolin instances, Cloudflare scopes) are still derived from the raw conversation id. A collision there costs a container recreate, never credential access
 
 ## 6. Differences between events and normal chats
 
@@ -215,13 +253,16 @@ This lets these capabilities share the same mechanism:
 
 In one sentence, the core of `mikan` is:
 
-> A multi-platform AI agent bot coordinated by `main.ts`, executed by `agent.ts`, and supported by `session/vault/sandbox` infrastructure.
+> A multi-platform AI agent bot coordinated by `main.ts`, executed by `agent.ts`, and supported by `office/session/vault/sandbox` infrastructure.
 
-You can think of it as 6 core subsystems:
+You can think of it as 7 core subsystems:
 
 1. Platform adapters
 2. Bot runtime orchestration
 3. Agent + tools
-4. Session/context persistence
-5. Vault + sandbox execution routing
-6. Web/event side services
+4. Conversation offices: identity, layout, registry, and workspace projection
+5. Session/context persistence
+6. Vault + sandbox execution routing
+7. Web/event side services
+
+The office is the unit these subsystems agree on: one conversation, one directory, one vault, one sandbox runtime, one data boundary. See [ADR 0003](https://github.com/geminixiang/mikan/blob/main/docs/adr/0003-isolated-conversation-offices.md), [ADR 0004](https://github.com/geminixiang/mikan/blob/main/docs/adr/0004-persistent-offices-and-ephemeral-factory-floors.md), and [ADR 0005](https://github.com/geminixiang/mikan/blob/main/docs/adr/0005-office-address-identity.md).

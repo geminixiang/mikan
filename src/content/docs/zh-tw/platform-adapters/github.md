@@ -5,15 +5,21 @@ description: GitHub adapter 的 GitHub App polling、issue/PR 對話、watermark
 
 每個 GitHub issue 或 pull request 都是一個 mikan 對話。Adapter 以 GitHub App installation 身分輪詢 GitHub API，不需要 webhook endpoint，保留 mikan 的主動式模型。
 
+Conversation id 是 `GH_<owner>_<repo>_<number>`，其中 owner 與 repo 都轉為小寫。它避開 `/` 與 `:`，因為 id 會原樣當成單一路徑片段使用，也會出現在 docker 的 `-v source:target` 語法中；它以 `_` 而非 `-` 分隔，是因為 GitHub owner 可能含有 `-`（那會讓 owner/repo 的界線變得有歧義），但絕不會含有 `_`。和每個平台一樣，raw id 只停留在 GitHub API 邊界上：在磁碟上，該對話位於一個以 office key 命名的 office 目錄中。
+
 ## 主要程式碼
 
 | 檔案                                | 用途                                                                                                                       |
 | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `src/adapters/github/bot.ts`        | GitHub bot 主體：poll loop、watermark 去重、mention/participation 觸發與 tool backends。                                   |
+| `src/adapters/github/bot.ts`        | GitHub bot 主體：poll loop、watermark 去重、mention/participation 觸發。                                                   |
+| `src/adapters/github/github-ops.ts` | 每個 `github_*` tool 背後的 host 端 backend，獨立於 poll loop。                                                            |
+| `src/adapters/github/repo.ts`       | Host 端 git：shallow clone、有防護的 branch push、保留工作的 sync。                                                        |
 | `src/adapters/github/client.ts`     | 以 GitHub App 驗證的最小 REST client（RS256 JWT → installation tokens）。                                                  |
 | `src/adapters/github/cloudbuild.ts` | 供 `github_checks` 使用的 Cloud Build log 讀取（host 端 GCP 憑證）。                                                       |
+| `src/adapters/github/gcp-auth.ts`   | 最小的 GCP ADC token provider（WIF、service-account key 或 gcloud user ADC）。                                             |
 | `src/adapters/github/context.ts`    | 建立 GitHub `ConversationResponder`；將完成的回應作為單一 comment 發布（不做 streaming edits）。                           |
 | `src/adapters/github/ids.ts`        | `GH_<owner>_<repo>_<number>` conversation id 編碼／解析；`rc-<id>` review-comment ts。                                     |
+| `src/adapters/github/tool-pack.ts`  | 把 host 端的 tools 打包成由 main 注入的 platform tool pack。                                                               |
 | `src/adapters/github/tools/`        | 提供給 agent 的 tools：`github_pr`、`github_checks`、`github_review_reply`、`github_sync`、`github_read`、`github_issue`。 |
 | `src/adapters/github/types.ts`      | GitHub adapter 專用型別與 REST payload shapes。                                                                            |
 
@@ -50,7 +56,9 @@ Poll loop 會使用 ETag conditional requests（304 responses 不計入 rate lim
 
 ## 觸發條件
 
-Comment、inline review comment 或新 issue body 只有在 @mention app slug，或 bot 已參與該 issue 的對話時才會觸發執行。Commenter 也必須具有該 repo 的 **write permission or better**；在 public repos 中任何人都能留言，因此低於 write 的使用者所發 mentions 會完全忽略（permission lookups 快取五分鐘，且失敗時拒絕）。其他內容都會忽略且不建立任何狀態。包含 mention 的 `stop`（或 `/stop`）comment 會停止執行中的 session。
+Comment、inline review comment 或新 issue body 只有在 @mention app slug，或 bot 已參與該 issue 的對話時才會觸發執行。Commenter 也必須具有該 repo 的 **write permission or better**；在 public repos 中任何人都能留言，因此低於 write 的使用者所發 mentions 會完全忽略（permission lookups 快取五分鐘，且失敗時拒絕）。其他內容都會忽略且不建立任何狀態。包含 mention 的 `stop`（或 `/stop`）comment 會停止執行中的 session；這個 magic word 在所有平台上使用同一套文法。
+
+由於任何人都能在 public repo 開 issue，GitHub 會回報 `trustModel: "open-trigger"`。這會關閉 GitHub 對話的環境式 `sandbox.defaultSharedVault` 複製：它們預設不會拿到任何憑證，必須由管理員刻意為特定對話佈建 vault。見 [Vault](/zh-tw/sandbox/vault/)。
 
 ## Sessions 與回覆
 
@@ -58,9 +66,9 @@ Comment、inline review comment 或新 issue body 只有在 @mention app slug，
 
 ## Repository 存取與 pull requests
 
-Sandbox 絕不持有憑證；git 操作跨越 conversation-dir bind mount 的兩端：
+Sandbox 絕不持有憑證；git 操作跨越 office-dir bind mount 的兩端：
 
-- 首次接觸時，repo 會 shallow-clone 到 conversation dir（sandbox 內為 `./repo`），使用限於該 repo 且具有 `contents:read` 的 ephemeral token；token 會隨每次 git invocation 傳入，絕不寫入 `.git/config`。PR 對話會以 PR head 的真實 branch 名稱 checkout（fork PR 或查詢失敗時 fallback 為 `pr-<n>`），因此 head 為 `pi/*` branch 的 PR 可以原地更新：直接在該 branch 上 commit 並呼叫 `github_pr`，push 會回到同一個 PR。
+- 首次接觸時，repo 會 shallow-clone 到該對話 office 的 `repo/` 目錄——在 sandbox 內是 `/workspace/<office-key>/repo`，agent 的 prompt 則稱它為 `./repo`——使用限於該 repo 且具有 `contents:read` 的 ephemeral token；token 會隨每次 git invocation 傳入，絕不寫入 `.git/config`。PR 對話會以 PR head 的真實 branch 名稱 checkout（fork PR 或查詢失敗時 fallback 為 `pr-<n>`），因此 head 為 `pi/*` branch 的 PR 可以原地更新：直接在該 branch 上 commit 並呼叫 `github_pr`，push 會回到同一個 PR。
 - Agent 在 sandbox 內使用一般 git 建立 branch 與 commits（已預先設定 bot author identity）；依設計，從 sandbox push 會失敗。
 - `github_pr` tool 在 host 端執行：它會為該 repo 產生 `contents:write` + `pull_requests:write` token，從 mount 的 host 端 push agent 的 `pi/*` branch，並以 App 身分建立 pull request（支援 draft）；使用相同 branch 再次呼叫會將新 commits push 到既有 PR。它不能 push default branch、force-push 或 merge，所有 PR 都由人員 review 與 merge。
 - `github_checks` tool 會讀取已 push branch（或 PR head）的 CI check runs，並可取得失敗 run 的 log tail：GitHub Actions runs 使用 `job_id`（需要 **Checks: Read** 與 **Actions: Read**）；當 host 具備 GCP 憑證時，Google Cloud Build runs 使用 `build_id`（見下文）。
@@ -82,3 +90,4 @@ Sandbox 絕不持有憑證；git 操作跨越 conversation-dir bind mount 的兩
 - REST API 不支援檔案上傳；`uploadFile` 會改為發布 pointer comment。
 - 若 PR review 只有 summary body mention bot（沒有任何 inline comments），不會觸發——沒有 repo 層級的「reviews since」endpoint。請改發一般 PR comment。
 - `./repo` clone 是首次接觸時的 snapshot；sandbox 無法自行 fetch updates——agent 使用 `github_sync` 更新。
+- 每次觸發都會重試缺少的 clone（存在後就是 no-op），因此第一次失敗的 clone——例如 App 權限是後來才授予的——會在下次 mention 時自行修復。

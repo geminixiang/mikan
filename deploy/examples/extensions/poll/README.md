@@ -22,14 +22,21 @@ and closing never call the model.
 ## Install
 
 ```bash
-mikan ext install examples/extensions/poll --global
+mikan ext install deploy/examples/extensions/poll --global
 # or scope to one conversation:
-mikan ext install examples/extensions/poll --conversation C0123456789
+mikan ext install deploy/examples/extensions/poll --conversation C0123456789
 ```
 
-Restart mikan (extensions load with the conversation's harness instance),
-then in Slack:
+Then send `/pi-new` in each affected conversation — that builds a fresh harness
+instance, which is what loads extensions. No mikan restart is required (each
+load uses a fresh jiti instance with no module cache). In the conversation:
 
 ```
 /poll 晚餐吃什麼 | 拉麵 | 披薩 | 便當
 ```
+
+Slack only: `api.blockkit` needs a platform that provides Block Kit messaging,
+and Slack is the one adapter that does today. On other platforms the calls
+throw rather than degrading, so this example has nothing to fall back to.
+(`mikan ext dev` provides no Block Kit backend either — the dev loop is
+stdin/stdout, so use it for extensions built on tools, hooks, and commands.)

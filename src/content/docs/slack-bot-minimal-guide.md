@@ -102,3 +102,29 @@ mikan
 The state directory defaults to `~/.mikan` and the working directory to `<state-dir>/workspace`; pass `--state-dir=<dir>` or a path argument to change them. `mikan --help` lists all flags, and `mikan env` shows which variables are currently set.
 
 The bot responds in DMs and when mentioned in channels. Triggered Slack thread work uses an isolated session whose key includes the thread timestamp. An ordinary unmentioned reply in a shared-channel thread is logged but does not start a run.
+
+## 9. Choose a sandbox
+
+Without `--sandbox`, mikan runs tools directly on the host, and the default `isolated` door policy
+refuses that combination by design — the first message reports that `host` cannot provide an isolated
+conversation office. Pick one before your first real conversation:
+
+- **Recommended.** Use the managed sandbox, which gives each conversation its own container and
+  satisfies the isolated policy with no settings change:
+
+  ```bash
+  mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest
+  ```
+
+- **Host mode**, only on a machine you already trust with the whole workspace: add a trusted door
+  policy to `~/.mikan/settings.json`.
+
+  ```json
+  {
+    "sandbox": {
+      "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
+    }
+  }
+  ```
+
+See [Sandbox](/sandbox/) for the full comparison.

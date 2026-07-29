@@ -13,7 +13,7 @@ This directory contains chat command parsers, shared command types, and command 
 - `new.ts`: Handles `/new` by resetting the current session in private conversations.
 - `parse.ts`: Provides generic command tokenization and prefix matching.
 - `registry.ts`: Runs command handlers in order and stops after the first successful handler; builds the default handler list.
-- `sandbox.ts`: Handles `/sandbox` status, boost, and resource-limit queries.
+- `sandbox.ts`: Handles `/sandbox` status, boost, resource-limit queries, and `door <default|isolated|shared|full>` — the chat control over the office's workspace door policy, written through `applyConversationWorkspacePolicy` so cached runners and disk stay in step.
 - `session-view.ts`: Handles `/session` by creating a Session View portal link.
 - `text.ts`: `isCommandText` — command-text recognition derived from the manifest; session resume uses it to keep command messages out of replayed history.
 - `types.ts`: Defines command handler/context/services and token store interfaces.

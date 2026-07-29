@@ -72,7 +72,9 @@ GITHUB_OAUTH_ACCESS_TOKEN
 GH_TOKEN
 ```
 
-在 `container` / `image` / `firecracker` sandbox 中，後續工具執行會注入這些 env。
+除了 `host` 之外的每一種 sandbox 模式，都會在後續工具執行時注入這些 env。
+
+這些是登入者本人的憑證，而且它們本來就該進到 sandbox——agent 是以那個人的身分執行 `gh` 與 `git`。請注意這與 [GitHub 接入](/zh-tw/platform-adapters/github/)所使用的 mikan 自身 GitHub App 身分是分開的；後者的 token 只留在 host 端，絕不會進入 runtime。
 
 ## Scopes
 

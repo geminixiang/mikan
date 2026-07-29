@@ -24,13 +24,15 @@ mikan --sandbox=firecracker:192.168.1.100:/home/mikan/workspace:root:22 /home/mi
 - mikan 透過 SSH 進 VM 執行 command
 - VM 內 workspace 預期是 `/workspace`
 - vault env 會透過 SSH stdin 注入，避免 secret 出現在宿主機 command line
-- vault 選擇會將 conversation ID 正規化為小寫，並將連續的非英數字元替換為 `-`；若找不到相符 vault，就不注入 env
+- credentials 以 office key 為 key，也就是 `image:*` 使用的那個以對話為範圍的 vault key；若找不到相符 vault，就不注入 env
 
 啟動驗證要求 host `PATH` 中存在 `fc-agent` 或 `firecracker`，並驗證設定的 host path。VM 狀態驗證是 best-effort，可能只產生 warning。
 
 限制：
 
+- mikan 無法在一個不由它管理的 VM 中落實 workspace projection，因此這個模式會拒絕在預設的 `isolated` door policy 下執行；必須明確選擇 trusted policy
 - SSH 使用 `StrictHostKeyChecking=no`；請保護 VM network，因為首次連線時不會驗證 host identity
 - VM lifecycle 由你管理
 - workspace mount 由你管理
-- vault file credential 會被保存，但目前不會自動投影到 VM 內的 target path
+- file credential 是被拒絕而不是被略過：如果該對話的 vault 中除了 `env` 之外還有任何檔案，執行就會失敗並拋出 `Sandbox type "firecracker" does not support vault file mounts`。在這裡請把憑證放在 `env` 中。
+- 資源限制、idle stop 與 `/pi-sandbox boost` 都不適用

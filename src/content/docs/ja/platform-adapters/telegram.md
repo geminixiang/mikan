@@ -22,7 +22,7 @@ mikan は long polling を使用します。公開 Telegram webhook は不要で
 Adapter は次を処理します：
 
 - private、group、supergroup messages
-- `/login`、`/session`、`/new`、`/stop`、`/model`、`/sandbox`
+- `/login`、`/session`、`/new`、`/stop`、`/model`、`/sandbox` — command menu は `setMyCommands` を通じて `src/commands/manifest.ts` から登録されるため、共通インベントリからずれることはありません
 - replies、photos、documents
 
 Private messages は直接起動します。Group messages には command、mention、reply context、または一致する auto-reply policy が必要です。Telegram が最初に message を bot へ配信する必要があります。privacy mode により、auto-reply rule が通常の group traffic を受信できない場合があります。
@@ -43,7 +43,7 @@ Telegram には Slack 形式の `thread_ts` がありません。mikan は直近
 
 Responses は Telegram HTML mode を使用します。対応する形式には `<b>`、`<i>`、`<code>`、`<pre>`、`<a href="...">` があります。生成された markup を Telegram が拒否した場合、mikan は escaped HTML で再試行します。Responder は typing status、message edits、reply targets、file uploads もサポートします。
 
-受信した photos と documents は Telegram file API を通じて conversation の `attachments/` directory にダウンロードされます。voice、audio、video、stickers、polls などの他の media types は、同等の inbound attachments として処理されません。
+受信した photos と documents は、他の adapter と同じ共通ヘルパーを通じて、Telegram file API 経由で conversation office の `attachments/` directory に `<timestamp>_<sanitized-name>` としてダウンロードされます。voice、audio、video、stickers、polls などの他の media types は、同等の inbound attachments として処理されません。
 
 ## Stop 動作
 

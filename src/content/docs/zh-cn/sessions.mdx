@@ -19,28 +19,40 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
 
 ## 平台会话模型
 
-| 平台     | `sessionKey` 规则                                                  | 说明                                           |
-| -------- | ------------------------------------------------------------------ | ---------------------------------------------- |
-| Slack    | 顶层 / DM：`conversationId`；话题：`conversationId:threadTs`       | 话题会话是根据近期聊天历史记录初始化的固定文件 |
-| Discord  | DM：`channelId`；共享顶层：`channelId:messageId`；回复/话题：根 ID | 共享频道中的回复延续根消息会话                 |
-| Telegram | 私聊：`chatId`；共享顶层：`chatId:messageId`；回复链：根回复       | 没有原生话题模型；共享会话从回复链推导         |
+会话密钥要么是单独的 `conversationId`，要么是限定范围会话的 `conversationId:suffix`。后缀就是平台用来标识话题或回复目标的那个值。
+
+| 平台     | `sessionKey` 规则                                                                                       | 说明                                                          |
+| -------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Slack    | 顶层和 DM：`channelId`；话题（包括 DM 中的）：`channelId:threadTs`                                      | 话题会话是根据近期聊天历史记录初始化的固定文件                |
+| Discord  | DM 和共享顶层：`channelId`；话题：`parentChannelId:threadChannelId`；回复：`channelId:repliedMessageId` | guild 话题以其父频道加上话题自身的 id 来寻址                  |
+| Telegram | 私聊：`chatId`；共享顶层：`chatId:messageId`；共享回复：`chatId:repliedMessageId`                       | 没有原生话题模型，因此被回复的那条消息就是范围                |
+| GitHub   | `GH_<owner>_<repo>_<number>`                                                                            | 一个 issue 或 pull request 是一个扁平会话，含内联 review 话题 |
+
+## 会话密钥与办公室
+
+会话密钥保持为原始平台值——`src/sessions/session-key.ts` 中的语法从不接触 office key。运行时状态按该对话的办公室加其会话密钥寻址，因此两个共用同一原始对话 id 的平台永远无法选中彼此的 runner、队列或 stop 状态。存储路径则跟随办公室：会话文件位于 `<workspace>/<officeKey>/sessions/` 下。
 
 ## 会话身份安全
 
-一个会话密钥始终只属于一个对话。平台适配器可以提供带范围的密钥，但对话接收层和运行时会拒绝其对话前缀与传入对话不符的密钥。对话身份和范围后缀也会在影响会话存储之前拒绝路径分隔符、控制字符以及特殊的 `.` / `..` 段。话题会话文件保留其现有名称和持久化行为；会话模块另外会拒绝符号链接会话目标，并确保派生路径始终位于该对话的 `sessions/` 目录内。
+一个会话密钥始终只属于一个对话。平台适配器可以提供带范围的密钥，但对话接收层和运行时会拒绝其对话前缀与传入对话不符的密钥。对话身份和范围后缀也会在影响会话存储之前拒绝路径分隔符、控制字符以及特殊的 `.` / `..` 段。话题会话文件保留其现有名称和持久化行为；会话模块另外会拒绝符号链接会话目标，并确保派生路径始终位于该办公室的 `sessions/` 目录内。
 
 ## 文件
 
 <FileTree>
 
 - workspace/
-  - **log.jsonl** 平台消息历史记录
-  - sessions/
-    - **current** 指向活动的顶层会话
-    - **\*.jsonl** 结构化框架会话上下文，包括工具结果
-    - **scope-derived files** 话题/回复范围的固定会话文件
+  - v1-slack-c0aaaaaa1-…/ 一间办公室
+    - **log.jsonl** 平台消息历史记录
+    - sessions/
+      - **current** 指向活动的顶层会话
+      - **\*.jsonl** 结构化框架会话上下文，包括工具结果
+      - **scope-derived files** 话题/回复范围的固定会话文件
 
 </FileTree>
+
+## 话题谱系
+
+限定范围的会话会在其 header 中记录它由哪个顶层会话创建而来，字段为 `parentSession`（路径）和 `parentSessionId`（uuid）。该链接在重置后依然存在：重置一个限定范围会话会重建它的文件，但保留原来的父会话，而不是重新绑定到当前的那个顶层会话。在谱系元数据出现之前写入的会话会被原样保留，不会重建。
 
 ## 初始化、轮换、重置与 Session Dream
 

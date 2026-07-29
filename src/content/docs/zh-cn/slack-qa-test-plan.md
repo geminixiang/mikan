@@ -61,23 +61,38 @@ npm run test:e2e:slack
 
 每个 scenario 都是自己的 `*.e2e.ts` 档案；当必要 env vars（`SLACK_QA_USER_TOKEN`、`SLACK_QA_CHANNEL_ID` 与相关 bot user ID）缺少时，会在 runtime 被略过。覆盖范围：
 
-- 对 mikan bot 的 channel mention。
-- mikan thread reply routing。
+- 对 mikan bot 的 channel mention，以及 no-mention false-reply check。
+- mikan thread reply routing，以及普通 thread reply 不触发运行。
 - mikan short task completion。
-- mikan stop command acknowledgement。
-- Idle stop（"Nothing running"）acknowledgement。
-- mikan small text-file upload handling。
-- 多文件上传处理。
-- 图片上传处理。
-- 不需 mention 的 DM 回复。
-- DM 多轮上下文保留。
+- mikan stop command acknowledgement，以及 idle stop（"Nothing running"）。
+- 小型文字档、多文件与图片上传处理。
+- 不需 mention 的 DM 回复，以及 DM 多轮上下文保留。
 - Thread session 隔离。
 - Busy-queue 排队消息送达。
-- bot-to-bot loop observation。
-- one-shot event delivery。
-- No-mention false-reply check。
+- bot-to-bot loop observation，以及 bot 发出的 mention 不触发。
+- one-shot event delivery，以及 event anchor 的 thread 延续该 fork session。
+- 原生 streaming append 只追加 delta。
+- 响应源链接的 Block Kit 渲染，以及 `msg_too_long` 续传留在同一 thread 内。
+- `/new` 丢弃临时上下文，而持久记忆得以保留。
+- 针对 reply-waiting 辅助函数自身的 self-test。
 
-本机 E2E 只需要四个变数：`SLACK_QA_USER_TOKEN`、`SLACK_QA_CHANNEL_ID`、`SLACK_QA_BOT_USER_ID` 与 `SLACK_BOT_TOKEN`。Event directory 会从目前 workspace 推导。
+本机 E2E 只需要四个变数：`SLACK_QA_USER_TOKEN`、`SLACK_QA_CHANNEL_ID`、`SLACK_QA_BOT_USER_ID` 与 `SLACK_BOT_TOKEN`。working directory 与 event directory 默认位于仓库根目录下的 `.workspace/mikan-workspace`；可用 `SLACK_QA_WORKING_DIR` 与 `SLACK_QA_EVENTS_DIR` 覆盖。读取某个对话历史记录的 scenario 会自行解析它的 office key——daemon 写入的是 `<workspace>/v1-slack-<channel>-<digest>/`，而不是原始 channel id。
+
+### 测试 daemon 的门禁策略
+
+这套 suite 驱动的是一个真实的 mikan daemon。如果你以 `host` sandbox 模式运行该 daemon，它会在默认的
+`isolated` 门禁策略下拒绝开始工作，于是每个 scenario 都会因为没有 bot 回复而失败。请在测试 state dir 的
+`settings.json` 中显式选用受信任策略：
+
+```json
+{
+  "sandbox": {
+    "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
+  }
+}
+```
+
+这只适用于一次性的单租户 QA runner，其他场合一律不适用。
 
 QA user token 必须能在测试 channel 发文、读取 channel history/replies，并为 S-009 上传档案。DM scenario 另外要求 token 是人类使用者身分（`auth.test` 不带 `bot_id`）：mikan 依设计不回复来自 bot 的 DM，bot 身分的 token 会让 S-017/S-018 直接以设定错误 fail fast。`deploy/examples/slack-app-manifest.e2e.json` 的 E2E manifest 包含这些必要 user scopes；一般的 `deploy/examples/slack-app-manifest.json` 不包含。
 
@@ -99,7 +114,8 @@ Workflow `.github/workflows/slack-e2e.yml` 会透过 **Actions → Slack E2E →
 
 ## Smoke Test 检查清单
 
-每次 deploy 或 config change 后执行这些测试。
+每次 deploy 或 config change 后执行这些测试。这里的 `S-0xx` 编号用于下方的手动检查清单，与自动化 `e2e/slack`
+scenario 内部的 `S-0xx` 编号相互独立——请不要把两者对应起来。
 
 | ID    | 动作                             | 预期结果                                 |
 | ----- | -------------------------------- | ---------------------------------------- |

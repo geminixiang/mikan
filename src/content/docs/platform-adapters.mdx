@@ -29,13 +29,26 @@ Their goal is to keep `src/runtime/*` and `src/agent.ts` from knowing each platf
 2. Decide whether the message should trigger mikan: DM, mention, thread reply, or auto-reply policy.
 3. Convert it to shared `ConversationEvent` and `ConversationMessage` values.
 4. Compute `sessionKey` so different channels, threads, and replies map to the right session.
-5. Download attachments and write them to `attachments/` in the workspace.
+5. Download attachments into the conversation office's `attachments/` directory.
 6. Create a `ConversationResponder` that wraps replies, updates, typing/working state, and file uploads.
 7. Hand the event to `MessagingEventHandler`, which is `ConversationRuntime`.
 
 </Steps>
 
 Shared types are exported from `src/adapter.ts`; implementation types live in `src/types.ts` and `src/adapters/types.ts`.
+
+## Conversation identity
+
+Adapters keep their platform's raw conversation id at the external I/O boundary — that is what they
+receive from the SDK and what they send back. Storage does not: `platform` plus the raw id form an
+`OfficeAddress`, which the `src/office/` module hashes into the office key naming the conversation's
+directory, its host-side state, and its vault. Adapters do not construct those paths themselves;
+they pass the address and receive an `Office` value. One consequence worth knowing when reading
+disk: a Slack channel `C0123456789` lives at `<workspace>/v1-slack-c0123456789-<digest>/`, not at
+`<workspace>/C0123456789/`.
+
+Slash-command registration and routing derive from `src/commands/manifest.ts` rather than per-adapter
+inventories, so a new command reaches every platform that opts in from one entry.
 
 ## Shared flow
 
@@ -59,12 +72,16 @@ sequenceDiagram
 
 ## Shared utilities
 
-| File                                   | Purpose                                                                                                                       |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `src/adapter.ts`                       | Exports shared interfaces such as `MessagingBot`, `ConversationEvent`, `ConversationMessage`, and `ConversationResponder`.    |
-| `src/adapters/intake.ts`               | Shared message intake flow: trigger, log, attachment, queue, and handler call order.                                          |
-| `src/adapters/shared.ts`               | Shared retry, queue, long message splitting, log, and stop target resolution.                                                 |
-| `src/adapters/progressive-renderer.ts` | Owns progressive response buffering, tool progress, finalization, platform write serialization, and response-error reporting. |
+| File                                   | Purpose                                                                                                                         |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `src/adapter.ts`                       | Exports shared interfaces such as `MessagingBot`, `ConversationEvent`, `ConversationMessage`, and `ConversationResponder`.      |
+| `src/adapters/intake.ts`               | Shared message intake flow: magic word, trigger policy, attachments, log, busy policy, queue, then dispatch.                    |
+| `src/adapters/shared.ts`               | Shared retry, queue, long message splitting, stop target resolution, and the two office write paths (`log.jsonl`, attachments). |
+| `src/adapters/progressive-renderer.ts` | Owns progressive response buffering, tool progress, finalization, platform write serialization, and response-error reporting.   |
+
+`saveIncomingAttachments()` owns the whole attachment convention — a sanitized
+`<timestamp>_<name>` under the office's `attachments/` directory and an office-relative path handed
+to the runtime — so no adapter composes conversation paths itself.
 
 ## Platform differences
 

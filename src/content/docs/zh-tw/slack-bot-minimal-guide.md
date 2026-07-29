@@ -102,3 +102,25 @@ mikan
 state directory 預設為 `~/.mikan`，working directory 預設為 `<state-dir>/workspace`；可用 `--state-dir=<dir>` 或路徑引數改變。`mikan --help` 列出所有旗標，`mikan env` 顯示目前已設定的變數。
 
 Bot 會在 DM 中回應，也會在 channel 中被 mention 時回應。觸發的 Slack thread 工作會使用隔離的 session，其 key 包含 thread timestamp。共享頻道 thread 中未 mention 的一般回覆會被記錄，但不會開始執行。
+
+## 9. 選擇一種 sandbox
+
+不指定 `--sandbox` 時，mikan 會直接在宿主機上執行工具，而預設的 `isolated` door policy 依設計會拒絕這個組合——第一則訊息就會回報 `host` 無法提供隔離的 conversation office。請在第一次真正的對話之前先選好：
+
+- **建議做法。** 使用受管理的 sandbox，它會給每個對話自己的 container，而且不必更動任何設定就能滿足 isolated policy：
+
+  ```bash
+  mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest
+  ```
+
+- **Host 模式**，只適用於你已經信任其掌握整個 workspace 的機器：請在 `~/.mikan/settings.json` 中加入 trusted door policy。
+
+  ```json
+  {
+    "sandbox": {
+      "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
+    }
+  }
+  ```
+
+完整比較請見 [Sandbox](/zh-tw/sandbox/)。

@@ -13,8 +13,8 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
     mikan host process 使用 Docker，從所選的 sandbox image 為每個對話建立工具 container。
   </Card>
   <Card title="持久化狀態" icon="lock">
-    使用一個僅限 host 的 state directory，存放設定、與 session 無關的 runtime 狀態、vaults 及 GitHub
-    polling watermarks。
+    使用一個僅限 host 的 state directory，存放設定、office registry、vaults、各 office 的狀態，以及
+    GitHub polling watermarks。
   </Card>
 </CardGrid>
 
@@ -118,6 +118,28 @@ pm2 reload ecosystem.config.cjs
   隨附的 PM2 設定會在 SIGTERM 後等待最多 60 秒才送出 SIGKILL。mikan 會先排空 conversation
   runtime、停止 events watcher，並給 Sentry 最多五秒完成 flush。超過 supervisor timeout
   的執行仍可能被終止。
+</Aside>
+
+### 跨 office 佈局遷移的升級
+
+對話目錄是以 office key（`v1-<platform>-…`）命名，而不是原始平台 id。從使用 raw id 的版本升級上來時，啟動階段會執行一次遷移：legacy workspace 目錄、conversation vault 與各對話的 state tree 會被改名成 office key 佈局，並記錄在 `<state-dir>/office-registry.json` 的 journal 中，因此中斷的執行會在下次啟動時續做。受管的 `image:*` container 會在改名後保留可寫層——仍掛著 legacy 路徑的 container 會被 snapshot、移除，並在它的下一則訊息之前以轉譯後的 mount 重新建立，而不是在開機時進行。
+
+當某個 legacy 目錄無法歸屬時，開機會**失敗**而不是繼續：在佈局變更之後，這樣的目錄對 runtime 是不可見的，硬要啟動就會讓那個對話看起來莫名其妙變成空的。啟動錯誤訊息會列出每一個無法解析的目錄。
+
+擁有者是驗證出來的，不是猜的：只有當恰好一個已啟用平台的 id 格式可能產生該名稱時，目錄才會被自動認領。如果某個目錄名稱在兩個已啟用平台之間有歧義——例如純數字，而 Telegram 與 Discord 同時在跑——就需要明確指定擁有者：
+
+```bash
+pm2 stop mikan
+mikan office list --state-dir=/srv/mikan/state --workspace=/srv/mikan/workspace
+mikan office claim 100200300 telegram --state-dir=/srv/mikan/state --workspace=/srv/mikan/workspace
+pm2 start mikan
+```
+
+`claim` 只會記錄擁有者；實際搬移由 daemon 在下次啟動時執行，這也是為什麼它要在 process 停止的狀態下執行。Vault 或 state directory 的衝突——同一個對話同時以 legacy 名稱與 office key 名稱存在——會以同樣方式回報，必須在 `<state-dir>` 底下手動合併。
+
+<Aside type="caution" title="請先備份 state directory">
+  這次遷移會同時改名 workspace 與 state directory 底下的目錄。在新版本第一次啟動之前，請先複製一份
+  `<state-dir>`（最好連 workspace 一起）。
 </Aside>
 
 ## Health endpoint

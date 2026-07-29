@@ -27,13 +27,19 @@ import { Aside, Card, CardGrid, LinkCard, Steps } from "@astrojs/starlight/compo
 2. 判斷訊息是否應該觸發 mikan：DM、mention、thread reply、auto-reply policy。
 3. 轉成共同的 `ConversationEvent` 與 `ConversationMessage`。
 4. 計算 `sessionKey`，讓不同 channel、thread、reply 可以對應到正確 session。
-5. 下載附件並寫入 workspace 的 `attachments/`。
+5. 下載附件並寫入該對話 office 的 `attachments/` 目錄。
 6. 建立 `ConversationResponder`，封裝回覆、更新、typing/working 狀態與檔案上傳。
 7. 把事件交給 `MessagingEventHandler`，也就是 `ConversationRuntime`。
 
 </Steps>
 
 共同型別由 `src/adapter.ts` 匯出，實作型別放在 `src/types.ts` 與 `src/adapters/types.ts`。
+
+## 對話身分
+
+Adapter 只在對外 I/O 邊界上保留自家平台的原始 conversation id——那是它們從 SDK 收到、也是送回去的東西。儲存層則不然：`platform` 加上原始 id 構成一個 `OfficeAddress`，`src/office/` 模組會把它雜湊成 office key，用來命名該對話的目錄、它在 host 端的狀態，以及它的 vault。Adapter 不會自行組出那些路徑；它們傳入 address，取回一個 `Office` 值。讀取磁碟時有個值得知道的結果：Slack 頻道 `C0123456789` 位於 `<workspace>/v1-slack-c0123456789-<digest>/`，而不是 `<workspace>/C0123456789/`。
+
+Slash command 的註冊與路由都衍生自 `src/commands/manifest.ts`，而不是各 adapter 自己的清單，因此新增一個指令只要一筆項目，就能送達每個選擇加入的平台。
 
 ## 共同流程
 
@@ -57,12 +63,14 @@ sequenceDiagram
 
 ## 共同工具
 
-| 檔案                                   | 用途                                                                                                      |
-| -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `src/adapter.ts`                       | 對外匯出 `MessagingBot`、`ConversationEvent`、`ConversationMessage`、`ConversationResponder` 等共同介面。 |
-| `src/adapters/intake.ts`               | 共用訊息入口流程：trigger、log、attachment、queue、handler 呼叫順序。                                     |
-| `src/adapters/shared.ts`               | 共用 retry、queue、長訊息切割、log、stop target resolution。                                              |
-| `src/adapters/progressive-renderer.ts` | 統一負責漸進式回應緩衝、工具進度、最終輸出與平台寫入序列化。                                              |
+| 檔案                                   | 用途                                                                                                         |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `src/adapter.ts`                       | 對外匯出 `MessagingBot`、`ConversationEvent`、`ConversationMessage`、`ConversationResponder` 等共同介面。    |
+| `src/adapters/intake.ts`               | 共用訊息入口流程：magic word、trigger policy、attachment、log、busy policy、queue，最後才 dispatch。         |
+| `src/adapters/shared.ts`               | 共用 retry、queue、長訊息切割、stop target resolution，以及兩條 office 寫入路徑（`log.jsonl`、attachment）。 |
+| `src/adapters/progressive-renderer.ts` | 統一負責漸進式回應緩衝、工具進度、最終輸出與平台寫入序列化。                                                 |
+
+`saveIncomingAttachments()` 擁有整套 attachment 慣例——在該 office 的 `attachments/` 目錄底下使用清理過的 `<timestamp>_<name>`，並把相對於 office 的路徑交給 runtime——因此沒有任何 adapter 需要自行組出對話路徑。
 
 ## 平台差異
 

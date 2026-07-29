@@ -41,7 +41,7 @@ import CTA from "@geminixiang/mikan-starlight-theme/components/CTA.astro";
     {
       icon: "rocket",
       title: "Sandbox execution",
-      body: "Run tool commands on the host, in a shared or per-user container, or a Firecracker microVM.",
+      body: "Run tool commands on the host, in a shared container, in a per-conversation container, or a local microVM.",
     },
     {
       icon: "lock",
@@ -51,7 +51,7 @@ import CTA from "@geminixiang/mikan-starlight-theme/components/CTA.astro";
     {
       icon: "document",
       title: "Persistent memory",
-      body: "Workspace- and channel-level MEMORY.md the agent reads and writes as it works.",
+      body: "A workspace-level MEMORY.md plus one per office, which the agent reads and writes as it works.",
     },
     {
       icon: "puzzle",
@@ -64,12 +64,12 @@ import CTA from "@geminixiang/mikan-starlight-theme/components/CTA.astro";
 <ArchBand
   eyebrow="Separation of concerns"
   title="Four layers on one path — kept apart on purpose."
-  tagline="Most agents fuse the transcript, the model loop, and the shell into a single process. mikan keeps them on one path but separate, so each can be inspected, swapped, or locked down on its own."
+  tagline="Every conversation is an office: its own directory, its own sandbox, its own credentials. Inside one, mikan still keeps the transcript, the model loop, and the shell separate, so each can be inspected, swapped, or locked down on its own."
   lanes={[
     {
       name: "Chat record",
       verb: "feeds",
-      body: "The platform-facing history — log.jsonl, attachments, and conversation files.",
+      body: "The platform-facing history — log.jsonl, attachments, and files, inside that office's directory.",
     },
     {
       name: "Agent session",
