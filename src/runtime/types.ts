@@ -57,8 +57,9 @@ export interface SessionStateOptions {
   /** Canonical office identity; the runtime keys all state by this. */
   address: OfficeAddress;
   /**
-   * The office's raw platform id. Filesystem layout, settings, and Admin scope
-   * still address offices this way; see ADR 0005.
+   * The office's raw platform id — the session-key grammar's conversation
+   * value (a bare conversation session key equals it). Never a storage key;
+   * layout and settings are addressed through the Office value.
    */
   conversationId: string;
   sessionKey: string;

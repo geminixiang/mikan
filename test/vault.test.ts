@@ -15,9 +15,9 @@ import { DockerContainerManager } from "../src/provisioner.js";
 import { HostExecutor } from "../src/sandbox/index.js";
 import { credentialAuthorizationKey } from "../src/sandbox/identity.js";
 import { FileVaultManager, parseEnvFile, sharedVaultKey } from "../src/vault/index.js";
-import { createOfficeAddress, officeDirName, officeKey } from "../src/office/index.js";
+import { createOfficeAddress, createWorkspace, officeKey } from "../src/office/index.js";
 
-const D123_OFFICE = officeDirName(createOfficeAddress("slack", "D123"));
+const D123_OFFICE = officeKey(createOfficeAddress("slack", "D123"));
 
 function mode(path: string): number {
   return statSync(path).mode & 0o777;
@@ -248,6 +248,10 @@ describe("ActorExecutionResolver image mode", () => {
   let tmpDir: string;
   let vaultsDir: string;
 
+  // The image-mode fixtures keep workspace root and state dir on the same
+  // directory, so the office dir and its state dir both hang off tmpDir.
+  const workspace = () => createWorkspace({ root: tmpDir, stateDir: tmpDir });
+
   beforeEach(() => {
     tmpDir = join(tmpdir(), `mikan-image-vault-test-${Date.now()}-${Math.random()}`);
     vaultsDir = join(tmpDir, "vaults");
@@ -274,7 +278,7 @@ describe("ActorExecutionResolver image mode", () => {
       { type: "image", image: "ubuntu:24.04" },
       mgr,
       undefined,
-      tmpDir,
+      workspace(),
     );
 
     const executor = await resolver.resolve({
@@ -304,7 +308,7 @@ describe("ActorExecutionResolver image mode", () => {
       { type: "image", image: "ubuntu:24.04" },
       new FileVaultManager(tmpDir),
       undefined,
-      tmpDir,
+      workspace(),
     );
     const executor = await resolver.resolve({
       userId: "U123",
@@ -339,7 +343,7 @@ describe("ActorExecutionResolver image mode", () => {
       { type: "image", image: "ubuntu:24.04" },
       mgr,
       undefined,
-      tmpDir,
+      workspace(),
     );
     await resolver.resolve({
       userId: "alice",
@@ -387,7 +391,7 @@ describe("ActorExecutionResolver image mode", () => {
       { type: "image", image: "ubuntu:24.04" },
       new FileVaultManager(tmpDir),
       undefined,
-      tmpDir,
+      workspace(),
     );
     await resolver.resolve({
       userId: "U123",
@@ -407,7 +411,7 @@ describe("ActorExecutionResolver image mode", () => {
       address: createOfficeAddress("slack", "D123"),
     });
 
-    const resolver = new ActorExecutionResolver(baseConfig, mgr, undefined, tmpDir);
+    const resolver = new ActorExecutionResolver(baseConfig, mgr, undefined, workspace());
     const executor = await resolver.resolve({
       userId: "U123",
       address: createOfficeAddress("slack", "D123"),
@@ -425,6 +429,8 @@ describe("ActorExecutionResolver image mode", () => {
     const resolver = new ActorExecutionResolver(
       { type: "cloudflare", sandboxId: "mikan-remote" },
       mgr,
+      undefined,
+      workspace(),
     );
 
     await expect(
@@ -457,7 +463,7 @@ describe("ActorExecutionResolver image mode", () => {
       { type: "image", image: "ubuntu:24.04" },
       mgr,
       { provision } as any,
-      tmpDir,
+      workspace(),
     );
 
     const executor = await resolver.resolve({
@@ -496,7 +502,7 @@ describe("ActorExecutionResolver image mode", () => {
       { type: "image", image: "ubuntu:24.04" },
       mgr,
       { provision } as any,
-      tmpDir,
+      workspace(),
     );
 
     const executor = await resolver.resolve({

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { createOfficeAddress } from "../src/office/index.js";
+import { createOfficeAddress, createWorkspace, officeKey } from "../src/office/index.js";
 import {
   conversationPackageSkillMounts,
   packageSkillRuntimeDir,
@@ -11,6 +11,7 @@ import {
 } from "../src/packages/index.js";
 
 const CONVERSATION_ID = "C03045VJJAY";
+const CONVERSATION_ADDRESS = createOfficeAddress("slack", CONVERSATION_ID);
 
 let base: string;
 let stateDir: string;
@@ -48,9 +49,7 @@ function makeSkillPackage(): string {
 
 function options() {
   return {
-    address: createOfficeAddress("slack", CONVERSATION_ID),
-    stateDir,
-    conversationDir: join(workingDir, CONVERSATION_ID),
+    office: createWorkspace({ root: workingDir, stateDir }).office(CONVERSATION_ADDRESS),
   };
 }
 
@@ -59,7 +58,7 @@ beforeEach(() => {
   stateDir = join(base, "state");
   workingDir = join(base, "workspace");
   mkdirSync(stateDir, { recursive: true });
-  mkdirSync(join(workingDir, CONVERSATION_ID), { recursive: true });
+  mkdirSync(join(workingDir, officeKey(CONVERSATION_ADDRESS)), { recursive: true });
   process.env.MIKAN_STATE_DIR = stateDir;
   globalPackages([]);
 });

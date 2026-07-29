@@ -1,16 +1,10 @@
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { lstatSync, mkdirSync, writeFileSync } from "node:fs";
 import { ensureDirExists } from "../utils/file-guards.js";
 import { resolveConversationSettings } from "../config.js";
-import { ensureOfficeDir } from "../office/index.js";
+import type { Office } from "../office/index.js";
 import * as log from "../log.js";
-import { conversationOfficeDir, officeDirName, validateOfficeAddress } from "../office/index.js";
-import type {
-  ImageWorkspaceMountMode,
-  OfficeAddress,
-  WorkspaceDoorPolicy,
-  WorkspaceLayout,
-} from "../types.js";
+import type { ImageWorkspaceMountMode, WorkspaceDoorPolicy, WorkspaceLayout } from "../types.js";
 import type { WorkspaceProjection } from "./types.js";
 
 export type { WorkspaceProjection } from "./types.js";
@@ -20,93 +14,50 @@ export type { WorkspaceProjection } from "./types.js";
  * host-side roots and authorizes the prompt sources that describe them.
  * Legacy image settings are deliberately translated here, never at callers.
  */
-export function resolveWorkspaceProjection(
-  hostWorkspaceRoot: string | undefined,
-  address: OfficeAddress,
-): WorkspaceProjection {
-  const normalized = validateOfficeAddress(address);
-  const officeSegment = officeDirName(normalized);
-  const conversationDir = hostWorkspaceRoot
-    ? conversationOfficeDir(hostWorkspaceRoot, normalized)
-    : join("/workspace", officeSegment);
-  const effective = resolveEffectiveWorkspace(hostWorkspaceRoot, normalized, conversationDir);
+export function resolveWorkspaceProjection(office: Office): WorkspaceProjection {
+  const { workspace } = office;
+  const effective = resolveEffectiveWorkspace(office);
 
-  if (!hostWorkspaceRoot) {
-    return {
-      ...effective,
-      mode: effective.layout === "full" ? "full" : "private",
-      mounts: [],
-      promptSources: {
-        conversationDir,
-        conversationMemoryPath: join(conversationDir, "MEMORY.md"),
-        conversationSkillsDir: join(conversationDir, "skills"),
-        ...(effective.layout === "shared-support" || effective.layout === "full"
-          ? {
-              globalMemoryPath: "/workspace/MEMORY.md",
-              globalSkillsDir: "/workspace/skills",
-            }
-          : {}),
-      },
-    };
-  }
-
-  assertDirectory(hostWorkspaceRoot, "Host workspace root");
-  ensureOfficeDir(hostWorkspaceRoot, normalized);
-  const memoryPath = join(hostWorkspaceRoot, "MEMORY.md");
-  const skillsPath = join(hostWorkspaceRoot, "skills");
-  const eventsPath = join(hostWorkspaceRoot, "events");
+  assertDirectory(workspace.root, "Host workspace root");
+  office.ensure();
   const shared = effective.layout === "shared-support";
   if (shared) {
-    ensureRegularFile(memoryPath, "Workspace memory");
-    ensureDirectoryRoot(skillsPath, "Workspace skills");
-    ensureDirectoryRoot(eventsPath, "Workspace events");
+    ensureRegularFile(workspace.memoryPath, "Workspace memory");
+    ensureDirectoryRoot(workspace.skillsDir, "Workspace skills");
+    ensureDirectoryRoot(workspace.eventsDir, "Workspace events");
   }
 
   const mounts =
     effective.layout === "full"
-      ? [{ source: hostWorkspaceRoot, target: "/workspace" }]
+      ? [{ source: workspace.root, target: "/workspace" }]
       : effective.layout === "shared-support"
         ? [
-            { source: memoryPath, target: "/workspace/MEMORY.md" },
-            { source: skillsPath, target: "/workspace/skills" },
-            { source: eventsPath, target: "/workspace/events" },
-            { source: conversationDir, target: `/workspace/${officeSegment}` },
+            { source: workspace.memoryPath, target: "/workspace/MEMORY.md" },
+            { source: workspace.skillsDir, target: "/workspace/skills" },
+            { source: workspace.eventsDir, target: "/workspace/events" },
+            { source: office.dir, target: `/workspace/${office.key}` },
           ]
-        : [{ source: conversationDir, target: `/workspace/${officeSegment}` }];
+        : [{ source: office.dir, target: `/workspace/${office.key}` }];
 
   return {
     ...effective,
-    mode: effective.layout === "full" ? "full" : "private",
     mounts,
     promptSources: {
-      conversationDir,
-      conversationMemoryPath: join(conversationDir, "MEMORY.md"),
-      conversationSkillsDir: join(conversationDir, "skills"),
+      conversationDir: office.dir,
+      conversationMemoryPath: office.memoryPath,
+      conversationSkillsDir: office.skillsDir,
       ...(effective.layout === "shared-support" || effective.layout === "full"
-        ? { globalMemoryPath: memoryPath, globalSkillsDir: skillsPath }
+        ? { globalMemoryPath: workspace.memoryPath, globalSkillsDir: workspace.skillsDir }
         : {}),
     },
   };
 }
 
-/** Compatibility reader for old status callers. */
-export function readWorkspaceProjectionMode(
-  hostWorkspaceRoot: string | undefined,
-  address: OfficeAddress,
-): ImageWorkspaceMountMode {
-  return resolveWorkspaceProjection(hostWorkspaceRoot, address).mode;
-}
-
 function resolveEffectiveWorkspace(
-  hostWorkspaceRoot: string | undefined,
-  address: OfficeAddress,
-  conversationDir: string,
+  office: Office,
 ): Pick<WorkspaceProjection, "doorPolicy" | "layout"> {
-  const fallback = { doorPolicy: "isolated" as const, layout: "conversation" as const };
-  if (!hostWorkspaceRoot) return fallback;
-
   try {
-    const settings = resolveConversationSettings({ address, conversationDir }).sandbox;
+    const settings = resolveConversationSettings(office).sandbox;
     if (settings?.workspace) {
       return normalizeWorkspace(settings.workspace.doorPolicy, settings.workspace.layout);
     }

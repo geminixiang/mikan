@@ -89,30 +89,6 @@ export function officeStateDir(stateDir: string, address: OfficeAddress): string
   return join(stateDir, "conversations", officeKey(address));
 }
 
-/**
- * The directory segment naming an office under a workspace root — the same
- * segment on the host and inside the sandbox runtime, so mounts stay a plain
- * root swap. This is the office key: platform-scoped and collision-resistant,
- * so two platforms sharing a raw conversation id can never share a directory.
- * Raw ids reach the filesystem only through the office registry's migration
- * journal (ADR 0005).
- */
-export function officeDirName(address: OfficeAddress): string {
-  return officeKey(address);
-}
-
-/**
- * The host working directory for an office (see officeDirName).
- *
- * Transitional: callers whose option bags still carry `(workspaceRoot,
- * address)` string pairs (agent runner, execution resolver, projection) keep
- * using this until those bags carry an `Office` value. New code asks the
- * `Office` value for `dir`.
- */
-export function conversationOfficeDir(workspaceRoot: string, address: OfficeAddress): string {
-  return join(workspaceRoot, officeDirName(address));
-}
-
 /** Compare canonical office identities without relying on their readable key. */
 export function sameOffice(left: OfficeAddress, right: OfficeAddress): boolean {
   const leftAddress = validateOfficeAddress(left);

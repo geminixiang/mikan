@@ -134,10 +134,7 @@ function readScope(scope: PackageScope, options: ResolvePackagesOptions): Declar
     const sources =
       scope === "global"
         ? loadGlobalSettings().packages
-        : resolveConversationSettings({
-            address: options.address,
-            conversationDir: options.conversationDir,
-          }).packages;
+        : resolveConversationSettings(options.office).packages;
     return (sources ?? []).map((source) => ({ source, scope }));
   } catch (err) {
     // Unreadable settings must not take the conversation down; the other
@@ -155,8 +152,8 @@ function materialize(
   try {
     return materializeSource(declaration.source, {
       scope: declaration.scope,
-      address: options.address,
-      stateDir: options.stateDir,
+      address: options.office.address,
+      stateDir: options.office.workspace.stateDir,
       mode: options.fetchMissing ? "fetch" : "offline",
     });
   } catch (err) {
@@ -174,8 +171,11 @@ function materialize(
  */
 function scopeConventionDirs(options: ResolvePackagesOptions): string[] {
   return [
-    join(packageScopeDir("global", undefined, options.stateDir), EXTENSIONS_SUBDIR),
-    join(packageScopeDir("conversation", options.address, options.stateDir), EXTENSIONS_SUBDIR),
+    join(
+      packageScopeDir("global", undefined, options.office.workspace.stateDir),
+      EXTENSIONS_SUBDIR,
+    ),
+    join(options.office.stateDir, EXTENSIONS_SUBDIR),
   ];
 }
 

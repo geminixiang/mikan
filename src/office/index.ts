@@ -8,10 +8,8 @@ export {
   assertConversationId,
   assertOfficeKey,
   assertPlatformName,
-  conversationOfficeDir,
   createOfficeAddress,
   isOfficeKey,
-  officeDirName,
   officeKey,
   officeStateDir,
   sameOffice,
@@ -19,7 +17,6 @@ export {
 } from "./address.js";
 export {
   createWorkspace,
-  ensureOfficeDir,
   RESERVED_WORKSPACE_NAMES,
   type Office,
   type Workspace,

@@ -4,20 +4,19 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { credentialAuthorizationKey } from "../src/sandbox/identity.js";
 import { createGlobalSettingsFile } from "../src/config.js";
-import {
-  ActorExecutionResolver,
-  readConversationWorkspaceMountMode,
-} from "../src/execution-resolver.js";
+import { ActorExecutionResolver } from "../src/execution-resolver.js";
 import { FileVaultManager } from "../src/vault/index.js";
-import { createOfficeAddress, officeDirName } from "../src/office/index.js";
+import { createOfficeAddress, createWorkspace, officeKey } from "../src/office/index.js";
 
-const C123_OFFICE = officeDirName(createOfficeAddress("slack", "C123"));
+const C123_OFFICE = officeKey(createOfficeAddress("slack", "C123"));
 
-describe("readConversationWorkspaceMountMode", () => {
+describe("ActorExecutionResolver", () => {
   // the Gondolin executor asserts Node >=23.6, but CI also runs the 22.19.0 floor
   const nodeVersion = Object.getOwnPropertyDescriptor(process.versions, "node");
   let stateDir: string;
   let workspaceDir: string;
+
+  const workspace = () => createWorkspace({ root: workspaceDir, stateDir });
 
   beforeEach(() => {
     // mkdtemp, not Date.now(): two tests entering the same millisecond would
@@ -38,15 +37,7 @@ describe("readConversationWorkspaceMountMode", () => {
     }
   });
 
-  test("uses the global default when conversation settings are missing", () => {
-    createGlobalSettingsFile(stateDir);
-
-    expect(
-      readConversationWorkspaceMountMode(workspaceDir, createOfficeAddress("slack", "C123")),
-    ).toBe("private");
-  });
-
-  test("fails closed instead of escalating from raw fallback settings", () => {
+  test("fails closed instead of escalating from raw fallback settings", async () => {
     writeFileSync(join(stateDir, "settings.json"), "{ invalid json }", "utf-8");
     const conversationDir = join(workspaceDir, C123_OFFICE);
     mkdirSync(conversationDir, { recursive: true });
@@ -55,25 +46,43 @@ describe("readConversationWorkspaceMountMode", () => {
       JSON.stringify({ sandbox: { image: { workspaceMount: "full" } } }),
       "utf-8",
     );
+    const resolver = new ActorExecutionResolver(
+      { type: "gondolin", profile: "default" },
+      new FileVaultManager(stateDir),
+      undefined,
+      workspace(),
+    );
 
-    expect(() =>
-      readConversationWorkspaceMountMode(workspaceDir, createOfficeAddress("slack", "C123")),
-    ).toThrow(/settings are malformed/);
+    await expect(
+      resolver.resolve({ userId: "U123", address: createOfficeAddress("slack", "C123") }),
+    ).rejects.toThrow(/settings are malformed/);
   });
 
-  test("fails closed when legacy conversation settings are malformed", () => {
+  test("fails closed when legacy conversation settings are malformed", async () => {
     createGlobalSettingsFile(stateDir);
     const conversationDir = join(workspaceDir, C123_OFFICE);
     mkdirSync(conversationDir, { recursive: true });
     writeFileSync(join(conversationDir, "settings.json"), "{ invalid json }", "utf-8");
+    const resolver = new ActorExecutionResolver(
+      { type: "gondolin", profile: "default" },
+      new FileVaultManager(stateDir),
+      undefined,
+      workspace(),
+    );
 
-    expect(() =>
-      readConversationWorkspaceMountMode(workspaceDir, createOfficeAddress("slack", "C123")),
-    ).toThrow(/settings are malformed/);
+    await expect(
+      resolver.resolve({ userId: "U123", address: createOfficeAddress("slack", "C123") }),
+    ).rejects.toThrow(/settings are malformed/);
   });
 
   test("rejects path-bearing conversation ids before reading or creating directories", () => {
     createGlobalSettingsFile(stateDir);
+    const resolver = new ActorExecutionResolver(
+      { type: "gondolin", profile: "default" },
+      new FileVaultManager(stateDir),
+      undefined,
+      workspace(),
+    );
 
     for (const conversationId of [
       "",
@@ -85,12 +94,12 @@ describe("readConversationWorkspaceMountMode", () => {
       "nested\\id",
     ]) {
       // Identity validation moved to the address factory, ahead of any
-      // directory reads or creation.
+      // directory reads or creation: the address never reaches `resolve`.
       expect(() =>
-        readConversationWorkspaceMountMode(
-          workspaceDir,
-          createOfficeAddress("slack", conversationId),
-        ),
+        resolver.resolve({
+          userId: "U123",
+          address: createOfficeAddress("slack", conversationId),
+        }),
       ).toThrow(/Conversation id|Unsupported platform/);
     }
   });
@@ -101,8 +110,7 @@ describe("readConversationWorkspaceMountMode", () => {
       { type: "gondolin", profile: "default" },
       new FileVaultManager(stateDir),
       undefined,
-      workspaceDir,
-      workspaceDir,
+      workspace(),
     );
 
     const executor = await resolver.resolve({
@@ -129,8 +137,7 @@ describe("readConversationWorkspaceMountMode", () => {
       { type: "gondolin", profile: "default" },
       new FileVaultManager(stateDir),
       undefined,
-      workspaceDir,
-      workspaceDir,
+      workspace(),
     );
 
     const executor = await resolver.resolve({
@@ -159,8 +166,7 @@ describe("readConversationWorkspaceMountMode", () => {
       { type: "gondolin", profile: "default" },
       new FileVaultManager(stateDir),
       undefined,
-      workspaceDir,
-      workspaceDir,
+      workspace(),
     );
 
     const executor = await resolver.resolve({
@@ -179,8 +185,7 @@ describe("readConversationWorkspaceMountMode", () => {
       { type: "gondolin", profile: "default" },
       new FileVaultManager(stateDir),
       undefined,
-      workspaceDir,
-      workspaceDir,
+      workspace(),
     );
     const context = { userId: "U123", address: createOfficeAddress("slack", "C123") } as const;
 
@@ -223,8 +228,7 @@ describe("readConversationWorkspaceMountMode", () => {
       { type: "gondolin", profile: "default" },
       vault,
       undefined,
-      workspaceDir,
-      workspaceDir,
+      workspace(),
     );
 
     await expect(
@@ -246,8 +250,7 @@ describe("readConversationWorkspaceMountMode", () => {
       { type: "gondolin", profile: "default" },
       vault,
       undefined,
-      workspaceDir,
-      workspaceDir,
+      workspace(),
     );
 
     await resolver.resolve({ userId: "U123", address: createOfficeAddress("slack", "A_B") });
@@ -268,7 +271,7 @@ describe("readConversationWorkspaceMountMode", () => {
         return undefined;
       },
     } as unknown as FileVaultManager;
-    const resolver = new ActorExecutionResolver({ type: "host" }, vault, undefined, workspaceDir);
+    const resolver = new ActorExecutionResolver({ type: "host" }, vault, undefined, workspace());
 
     await expect(
       resolver.resolve({ userId: "U123", address: createOfficeAddress("slack", "C123") }),
@@ -300,8 +303,7 @@ describe("readConversationWorkspaceMountMode", () => {
       { type: "gondolin", profile: "default" },
       vault,
       undefined,
-      workspaceDir,
-      workspaceDir,
+      workspace(),
     );
 
     await expect(
@@ -324,8 +326,7 @@ describe("readConversationWorkspaceMountMode", () => {
       { type: "cloudflare", sandboxId: "base" },
       vault,
       undefined,
-      workspaceDir,
-      workspaceDir,
+      workspace(),
     );
 
     await expect(
@@ -339,8 +340,7 @@ describe("readConversationWorkspaceMountMode", () => {
       { type: "cloudflare", sandboxId: "mikan-remote" },
       new FileVaultManager(stateDir),
       undefined,
-      workspaceDir,
-      workspaceDir,
+      workspace(),
     );
 
     await expect(

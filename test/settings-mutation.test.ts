@@ -45,7 +45,10 @@ function conversationSettingsFile(conversationId: string): string {
 
 describe("applyConversationSettings", () => {
   test("llm change clears cached runners, then writes", () => {
-    const runtime = { switchConversationModel: vi.fn().mockReturnValue(true) };
+    const runtime = {
+      switchConversationModel: vi.fn().mockReturnValue(true),
+      refreshConversationEnvironment: vi.fn(),
+    };
     const result = applyConversationSettings(runtime, office, {
       provider: "anthropic",
       model: "claude-sonnet-4-6",
@@ -61,7 +64,10 @@ describe("applyConversationSettings", () => {
   });
 
   test("busy conversation refuses: no write, disk and cache stay agreed", () => {
-    const runtime = { switchConversationModel: vi.fn().mockReturnValue(false) };
+    const runtime = {
+      switchConversationModel: vi.fn().mockReturnValue(false),
+      refreshConversationEnvironment: vi.fn(),
+    };
     const result = applyConversationSettings(runtime, office, {
       provider: "anthropic",
       model: "claude-sonnet-4-6",
@@ -71,7 +77,10 @@ describe("applyConversationSettings", () => {
   });
 
   test("non-llm patch writes without touching runners", () => {
-    const runtime = { switchConversationModel: vi.fn().mockReturnValue(false) };
+    const runtime = {
+      switchConversationModel: vi.fn().mockReturnValue(false),
+      refreshConversationEnvironment: vi.fn(),
+    };
     const result = applyConversationSettings(runtime, office, {
       sandbox: { image: { workspaceMount: "full" } },
     });
@@ -92,8 +101,6 @@ describe("applyConversationSettings", () => {
 });
 
 describe("applyConversationWorkspacePolicy", () => {
-  const scope = () => ({ address: C1, conversationDir: office.dir });
-
   test("writes the explicit choice, clears the legacy mount, keeps other leaves", () => {
     applyConversationSettings(undefined, office, {
       sandbox: { cpus: "2", image: { workspaceMount: "full" } },
@@ -122,7 +129,7 @@ describe("applyConversationWorkspacePolicy", () => {
     expect(result).toEqual({ ok: true, runtimeSwitched: null });
     const written = JSON.parse(readFileSync(conversationSettingsFile("C1"), "utf-8"));
     expect(written.sandbox).toBeUndefined();
-    expect(loadConversationWorkspaceOverride(scope())).toBeNull();
+    expect(loadConversationWorkspaceOverride(office)).toBeNull();
   });
 
   test("busy conversation refuses without writing", () => {
@@ -141,7 +148,7 @@ describe("applyConversationWorkspacePolicy", () => {
     applyConversationSettings(undefined, office, {
       sandbox: { image: { workspaceMount: "full" } },
     });
-    expect(loadConversationWorkspaceOverride(scope())).toEqual({
+    expect(loadConversationWorkspaceOverride(office)).toEqual({
       doorPolicy: "trusted",
       layout: "full",
     });

@@ -76,10 +76,8 @@ export interface PackageSkillDir {
 }
 
 export interface ResolvePackagesOptions {
-  /** Office whose packages resolve; state-dir keys derive from it. */
-  address: import("../types.js").OfficeAddress;
-  stateDir: string;
-  conversationDir: string;
+  /** Office whose packages resolve; identity and state-dir keys derive from it. */
+  office: import("../office/types.js").Office;
   fetchMissing?: boolean;
 }
 
@@ -109,7 +107,6 @@ export interface PackageInventory {
 }
 
 export interface PackageAdminContext extends ResolvePackagesOptions {
-  office: import("../office/types.js").Office;
   runtime?: import("../types.js").RunnerCacheControl &
     import("../types.js").GlobalRunnerCacheControl;
 }

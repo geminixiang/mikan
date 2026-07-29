@@ -1,6 +1,5 @@
 import { posix } from "node:path";
-import { effectiveStateDir } from "./cli/arg-grammar.js";
-import { conversationOfficeDir } from "./office/index.js";
+import type { Office, Workspace } from "./office/index.js";
 import { conversationPackageSkillMounts } from "./packages/index.js";
 import { loadGlobalSettings } from "./config.js";
 import { DockerContainerManager, type ContainerMount } from "./provisioner.js";
@@ -21,23 +20,17 @@ import {
   runtimeResourceKey,
   scopeCloudflareSandboxId,
 } from "./sandbox/identity.js";
-import {
-  resolveWorkspaceProjection,
-  readWorkspaceProjectionMode,
-} from "./workspace-projection/index.js";
+import { resolveWorkspaceProjection } from "./workspace-projection/index.js";
 
 export type { ActorContext } from "./types.js";
 import type { ActorContext, ExecutionPlan } from "./types.js";
-
-export const readConversationWorkspaceMountMode = readWorkspaceProjectionMode;
 
 export class ActorExecutionResolver {
   constructor(
     private baseConfig: SandboxConfig,
     private vaultManager: VaultManager,
-    private provisioner?: DockerContainerManager,
-    private workspaceDir?: string,
-    private hostWorkspacePath?: string,
+    private provisioner: DockerContainerManager | undefined,
+    private workspace: Workspace,
   ) {}
 
   async resolve(context: ActorContext): Promise<Executor> {
@@ -64,14 +57,15 @@ export class ActorExecutionResolver {
       (legacyCredentialKey ? this.vaultManager.resolve(legacyCredentialKey) : undefined);
     const capabilities = getSandboxCredentialCapabilities(this.baseConfig.type);
     const workspaceCapabilities = getSandboxWorkspaceCapabilities(this.baseConfig.type);
-    const workspaceProjection = resolveWorkspaceProjection(this.workspaceDir, context.address);
+    const office = this.workspace.office(context.address);
+    const workspaceProjection = resolveWorkspaceProjection(office);
     const injection = resolveVaultInjection({
       vault,
       capabilities,
       sandboxType: this.baseConfig.type,
-      conversationId: context.address.conversationId,
+      address: office.address,
     });
-    const mounts = this.resolveMounts(context.address, injection.mounts, workspaceProjection);
+    const mounts = this.resolveMounts(office, injection.mounts, workspaceProjection);
     if (workspaceProjection.doorPolicy === "isolated" && !workspaceCapabilities.managedProjection) {
       throw new Error(
         `Sandbox '${this.baseConfig.type}' cannot provide an isolated conversation office; use image:* or gondolin:default, or explicitly choose trusted workspace policy`,
@@ -119,7 +113,7 @@ export class ActorExecutionResolver {
     if (this.baseConfig.type === "gondolin") {
       return {
         ...this.baseConfig,
-        workspacePath: this.hostWorkspacePath,
+        workspacePath: this.workspace.root,
         mounts,
         instanceId: resourceKey,
         resourceKey,
@@ -175,7 +169,7 @@ export class ActorExecutionResolver {
   }
 
   private resolveMounts(
-    address: ActorContext["address"],
+    office: Office,
     vaultMounts: ContainerMount[],
     projection: ReturnType<typeof resolveWorkspaceProjection>,
   ): ContainerMount[] {
@@ -183,13 +177,7 @@ export class ActorExecutionResolver {
     // Package skills mount outside /workspace, so they cannot collide with the
     // workspace projection; they are still checked against vault mounts below,
     // which are administrator-chosen targets and could be aimed anywhere.
-    const packageMounts = this.workspaceDir
-      ? conversationPackageSkillMounts({
-          address,
-          stateDir: effectiveStateDir(),
-          conversationDir: conversationOfficeDir(this.workspaceDir, address),
-        })
-      : [];
+    const packageMounts = conversationPackageSkillMounts({ office });
     const protectedMounts = [...workspaceMounts, ...packageMounts];
     for (let index = 0; index < vaultMounts.length; index += 1) {
       const vaultMount = vaultMounts[index];

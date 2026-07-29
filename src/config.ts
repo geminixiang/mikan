@@ -17,8 +17,7 @@ export class MissingGlobalSettingsError extends Error {
 
 export type { AgentConfig, AutoReplyConfig, JudgeModelConfig, SandboxSettings } from "./types.js";
 import type { AgentConfig, AutoReplyConfig, JudgeModelConfig, SandboxSettings } from "./types.js";
-import { officeStateDir } from "./office/index.js";
-import type { OfficeAddress } from "./types.js";
+import type { Office } from "./office/index.js";
 
 const ONBOARD_SETTINGS: SettingsFileConfig = {
   llm: {
@@ -285,19 +284,10 @@ export function loadGlobalSettings(): AgentConfig {
 }
 
 /**
- * Explicit identity for conversation-settings access. The state-dir key is
- * the office key derived from the address; the workspace directory is only
- * the legacy pre-host-migration settings location. Callers name both — the
- * key is never inferred from the directory basename.
- */
-export interface ConversationSettingsScope {
-  address: OfficeAddress;
-  conversationDir: string;
-}
-
-/**
  * Host-authoritative location of a conversation's settings file:
- * `<stateDir>/conversations/<conversationId>/settings.json`.
+ * `<office state dir>/settings.json`. The Office value names both the
+ * state-dir key and the legacy pre-host-migration location (its workspace
+ * dir) — the key is never inferred from a directory basename.
  *
  * Conversation settings used to live at `<conversationDir>/settings.json`,
  * but conversation dirs are bind-mounted read-write into sandbox containers
@@ -312,15 +302,15 @@ export interface ConversationSettingsScope {
  * migration marker — a legacy file (re)appearing later, e.g. planted from
  * inside the sandbox, is never read again.
  */
-export function conversationSettingsPath(scope: ConversationSettingsScope): string {
-  const hostPath = join(officeStateDir(getStateDir(), scope.address), "settings.json");
+export function conversationSettingsPath(office: Office): string {
+  const hostPath = join(office.stateDir, "settings.json");
   if (existsSync(hostPath)) {
     assertSettingsFile(hostPath, "Host conversation settings");
     return hostPath;
   }
 
   ensureDirExists(dirname(hostPath));
-  const legacyPath = join(scope.conversationDir, "settings.json");
+  const legacyPath = join(office.dir, "settings.json");
   let content = "{}\n";
   let migrated = false;
   if (existsSync(legacyPath)) {
@@ -355,10 +345,10 @@ function assertSettingsFile(path: string, label: string): void {
   }
 }
 
-export function resolveConversationSettings(scope: ConversationSettingsScope): AgentConfig {
+export function resolveConversationSettings(office: Office): AgentConfig {
   const globalConfig = loadRawGlobalSettings();
   const conversationConfig = normalizeSettingsConfig(
-    loadSettingsFile(conversationSettingsPath(scope)) ?? {},
+    loadSettingsFile(conversationSettingsPath(office)) ?? {},
   );
   // The sandbox group merges at the leaf level (see mergeSandboxSettings):
   // a conversation that only sets sandbox.memory keeps the global sandbox.cpus.
@@ -384,9 +374,9 @@ export function resolveConversationSettings(scope: ConversationSettingsScope): A
  *
  * @deprecated Auto-reply is kept for compatibility while its future is undecided.
  */
-export function loadAutoReplyJudgeModel(scope?: ConversationSettingsScope): JudgeModelConfig {
+export function loadAutoReplyJudgeModel(office?: Office): JudgeModelConfig {
   const global = requireGlobalSettings();
-  const local = scope ? (loadSettingsFile(conversationSettingsPath(scope)) ?? {}) : {};
+  const local = office ? (loadSettingsFile(conversationSettingsPath(office)) ?? {}) : {};
   const merged: SettingsFileConfig["llm"] = { ...global.llm, ...local.llm };
   const judge = { ...global.llm?.autoReply, ...local.llm?.autoReply };
   const provider = requireString(judge.provider ?? merged?.provider, "llm.autoReply.provider");
@@ -596,11 +586,8 @@ export function updateGlobalSettings(patch: Partial<AgentConfig>): void {
   updateSettingsFile(join(getStateDir(), "settings.json"), patch, ONBOARD_SETTINGS);
 }
 
-export function updateConversationSettings(
-  scope: ConversationSettingsScope,
-  patch: Partial<AgentConfig>,
-): void {
-  updateSettingsFile(conversationSettingsPath(scope), patch, {});
+export function updateConversationSettings(office: Office, patch: Partial<AgentConfig>): void {
+  updateSettingsFile(conversationSettingsPath(office), patch, {});
 }
 
 /** An explicit office door-policy selection; `layout` only exists behind a trusted door. */
@@ -612,10 +599,8 @@ export type WorkspacePolicyChoice =
  * The conversation's own door-policy override (legacy `image.workspaceMount`
  * included), or null when the office follows the global default.
  */
-export function loadConversationWorkspaceOverride(
-  scope: ConversationSettingsScope,
-): WorkspacePolicyChoice | null {
-  const file = loadSettingsFile(conversationSettingsPath(scope));
+export function loadConversationWorkspaceOverride(office: Office): WorkspacePolicyChoice | null {
+  const file = loadSettingsFile(conversationSettingsPath(office));
   const sandbox = file?.sandbox;
   if (sandbox?.workspace?.doorPolicy === "isolated") return { doorPolicy: "isolated" };
   if (sandbox?.workspace?.doorPolicy === "trusted") {
@@ -632,10 +617,10 @@ export function loadConversationWorkspaceOverride(
 }
 
 export function setConversationWorkspacePolicy(
-  scope: ConversationSettingsScope,
+  office: Office,
   choice: WorkspacePolicyChoice | null,
 ): void {
-  writeWorkspacePolicy(conversationSettingsPath(scope), choice, {});
+  writeWorkspacePolicy(conversationSettingsPath(office), choice, {});
 }
 
 export function setGlobalWorkspacePolicy(choice: WorkspacePolicyChoice | null): void {

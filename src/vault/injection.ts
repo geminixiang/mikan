@@ -1,6 +1,7 @@
 import { existsSync } from "fs";
 import { reportUserFacingError } from "../observability/sentry.js";
 import type { SandboxConfig, SandboxCredentialCapabilities } from "../sandbox/types.js";
+import type { OfficeAddress } from "../types.js";
 import type { ResolvedVault, ResolvedVaultMount, VaultInjection } from "./types.js";
 
 export type { VaultInjection } from "./types.js";
@@ -9,9 +10,10 @@ export function resolveVaultInjection(options: {
   vault: ResolvedVault | undefined;
   capabilities: SandboxCredentialCapabilities;
   sandboxType: SandboxConfig["type"];
-  conversationId: string;
+  /** Diagnostic identity for error reports only; no injection decision reads it. */
+  address: OfficeAddress;
 }): VaultInjection {
-  const { vault, capabilities, sandboxType, conversationId } = options;
+  const { vault, capabilities, sandboxType, address } = options;
   if (vault && vault.mounts.length > 0 && !capabilities.fileMounts) {
     throw new Error(`Sandbox type "${sandboxType}" does not support vault file mounts`);
   }
@@ -26,7 +28,7 @@ export function resolveVaultInjection(options: {
         severity: "warning",
         context: {
           sandboxType,
-          conversationId,
+          conversationId: address.conversationId,
           target: mount.target,
           hasVault: Boolean(vault),
         },

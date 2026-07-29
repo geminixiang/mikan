@@ -9,8 +9,8 @@ import { handleAdminRequest } from "../src/web/admin/portal.js";
 import { InMemoryAdminTokenStore } from "../src/web/admin/store.js";
 import { FileVaultManager } from "../src/vault/index.js";
 import type { AdminServices } from "../src/web/admin/types.js";
-import { createOfficeAddress, createWorkspace, officeDirName } from "../src/office/index.js";
-import { OfficeRegistry } from "../src/office/index.js";
+import { createOfficeAddress, createWorkspace } from "../src/office/index.js";
+import type { Workspace } from "../src/office/index.js";
 
 const CONVERSATION_ID = "C03045VJJAY";
 const CONVERSATION_ADDRESS = createOfficeAddress("slack", CONVERSATION_ID);
@@ -18,6 +18,7 @@ const CONVERSATION_ADDRESS = createOfficeAddress("slack", CONVERSATION_ID);
 let base: string;
 let stateDir: string;
 let workingDir: string;
+let workspace: Workspace;
 let repo: string;
 let source: string;
 let server: Server;
@@ -69,8 +70,10 @@ beforeEach(async () => {
   stateDir = join(base, "state");
   workingDir = join(base, "workspace");
   mkdirSync(stateDir, { recursive: true });
-  new OfficeRegistry(stateDir).recordOffice(CONVERSATION_ADDRESS);
-  mkdirSync(join(workingDir, officeDirName(CONVERSATION_ADDRESS)), { recursive: true });
+  // ensure() both records the office in the registry the portal resolves
+  // through and materializes its workspace dir.
+  workspace = createWorkspace({ root: workingDir, stateDir });
+  workspace.office(CONVERSATION_ADDRESS).ensure();
   process.env.MIKAN_STATE_DIR = stateDir;
   writeFileSync(
     join(stateDir, "settings.json"),
@@ -101,7 +104,7 @@ beforeEach(async () => {
     vaultManager: new FileVaultManager(stateDir),
     linkTokenStore: { create: () => ({ token: "x", expiresAt: 0 }) } as never,
     adminTokenStore,
-    workspace: createWorkspace({ root: workingDir, stateDir }),
+    workspace,
   });
   server = started.server;
   origin = started.origin;

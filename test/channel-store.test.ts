@@ -2,10 +2,10 @@ import { existsSync, mkdirSync, readFileSync, rmSync, rmdirSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { createOfficeAddress, createWorkspace, officeDirName } from "../src/office/index.js";
+import { createOfficeAddress, createWorkspace, officeKey } from "../src/office/index.js";
 import { ChannelStore } from "../src/store.js";
 
-const office = (channelId: string) => officeDirName(createOfficeAddress("slack", channelId));
+const office = (channelId: string) => officeKey(createOfficeAddress("slack", channelId));
 
 function okResponse(body: string): Response {
   return new Response(Buffer.from(body), { status: 200 });

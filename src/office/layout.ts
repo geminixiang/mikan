@@ -4,7 +4,6 @@ import type { OfficeAddress } from "../types.js";
 import type { Office, Workspace } from "./types.js";
 import { officeKey, validateOfficeAddress } from "./address.js";
 import { OfficeRegistry } from "./registry.js";
-import { effectiveStateDir } from "../cli/arg-grammar.js";
 
 export type { Office, Workspace } from "./types.js";
 
@@ -78,24 +77,6 @@ export function createWorkspace(options: { root: string; stateDir: string }): Wo
     },
   });
   return workspace;
-}
-
-/**
- * Materialize an office working directory from `(workspaceRoot, address)`
- * strings.
- *
- * Transitional: only for callers whose options do not yet carry an `Office`
- * value (the workspace projection). Constructs a registry per call — fine at
- * runner-creation frequency, wrong for per-message paths, which go through
- * `Office.ensure()`. Reads the state dir from the CLI grammar because its
- * callers do not hold one; both facts retire with the option-bag collapse.
- */
-export function ensureOfficeDir(workspaceRoot: string, address: OfficeAddress): string {
-  const normalized = validateOfficeAddress(address);
-  new OfficeRegistry(effectiveStateDir()).recordOffice(normalized);
-  const dir = join(workspaceRoot, officeKey(normalized));
-  ensureRegularOfficeDirectory(dir);
-  return dir;
 }
 
 /** mkdir-if-missing with the same fail-closed type guard as projection roots. */

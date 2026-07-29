@@ -102,10 +102,7 @@ export async function runExtDevCommand(argv: string[]): Promise<number> {
   const workspace = createWorkspace({ root: workingDir, stateDir });
   const devOffice = workspace.office(createOfficeAddress("slack", conversationId));
   devOffice.ensure();
-  updateConversationSettings(
-    { address: devOffice.address, conversationDir: devOffice.dir },
-    { packages: [source] },
-  );
+  updateConversationSettings(devOffice, { packages: [source] });
 
   console.log(`mikan ext dev — ${source}`);
   console.log(`  conversation: ${conversationId}`);

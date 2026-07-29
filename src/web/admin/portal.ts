@@ -617,15 +617,12 @@ function serveConversationState(
   }
   const conversationId = scope.conversationId;
 
-  const dir = workspace.office(scope.address).dir;
+  const office = workspace.office(scope.address);
   const globalConfig = loadGlobalSettings();
-  const conversationConfig = resolveConversationSettings({
-    address: scope.address,
-    conversationDir: dir,
-  });
-  const conversationWorkspace = resolveWorkspaceProjection(workspace.root, scope.address);
+  const conversationConfig = resolveConversationSettings(office);
+  const conversationWorkspace = resolveWorkspaceProjection(office);
   const globalWorkspaceSettings = globalConfig.sandbox?.workspace;
-  const autoReply = loadConversationAutoReplyConfig(dir);
+  const autoReply = loadConversationAutoReplyConfig(office.dir);
 
   jsonRes(res, 200, {
     conversationId,
@@ -637,9 +634,7 @@ function serveConversationState(
     globalThinkingLevel: globalConfig.thinkingLevel,
     workspaceDoorPolicy: conversationWorkspace.doorPolicy,
     workspaceLayout: conversationWorkspace.layout,
-    workspaceOverride: doorPolicyChoiceKey(
-      loadConversationWorkspaceOverride({ address: scope.address, conversationDir: dir }),
-    ),
+    workspaceOverride: doorPolicyChoiceKey(loadConversationWorkspaceOverride(office)),
     globalWorkspaceDoorPolicy: globalWorkspaceSettings?.doorPolicy ?? "isolated",
     globalWorkspaceLayout: globalWorkspaceSettings?.layout ?? "conversation",
     autoReplyEnabled: autoReply.enabled,
@@ -1399,11 +1394,8 @@ async function servePackagesList(
   const workspace = requireAdminWorkspace(res, services);
   if (!workspace) return;
   try {
-    const office = workspace.office(scope.address);
     const inventory = await inspectConversationPackages({
-      address: office.address,
-      stateDir: workspace.stateDir,
-      conversationDir: office.dir,
+      office: workspace.office(scope.address),
     });
     jsonRes(res, 200, { conversationId: scope.conversationId, ...inventory });
   } catch (err) {
@@ -1441,12 +1433,8 @@ function servePackageMutation(
   const workspace = requireAdminWorkspace(res, services);
   if (!workspace) return;
 
-  const office = workspace.office(scope.address);
   const context = {
-    address: office.address,
-    stateDir: workspace.stateDir,
-    conversationDir: office.dir,
-    office,
+    office: workspace.office(scope.address),
     runtime: services.runtime,
   };
 
