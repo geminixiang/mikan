@@ -1,4 +1,5 @@
 import type { MessagingBot, OfficeAddress, PlatformName, RunningSession } from "../../adapter.js";
+import type { Workspace } from "../../office/index.js";
 import type { LinkTokenStoreLike } from "../../commands/types.js";
 import type { SandboxConfig } from "../../sandbox/index.js";
 import type { EventStore } from "../../tools/types.js";
@@ -20,7 +21,7 @@ export interface AdminServices {
   sessionViewTokenStore?: InMemorySessionViewTokenStore;
   adminTokenStore: InMemoryAdminTokenStore;
   portalBaseUrl?: string;
-  workingDir?: string;
+  workspace?: Workspace;
   /** Events read/delete go through the owning store, not raw disk parsing. */
   eventStore?: EventStore;
   sandbox?: SandboxConfig;

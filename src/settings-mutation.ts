@@ -23,7 +23,7 @@ import {
   updateGlobalSettings,
   type WorkspacePolicyChoice,
 } from "./config.js";
-import { conversationOfficeDir } from "./office-address.js";
+import type { Office } from "./office/index.js";
 import type {
   AgentConfig,
   GlobalRunnerCacheControl,
@@ -43,23 +43,19 @@ function affectsCachedRunner(patch: Partial<AgentConfig>): boolean {
 
 export function applyConversationSettings(
   runtime: RunnerCacheControl | undefined,
-  workingDir: string,
-  address: OfficeAddress,
+  office: Office,
   patch: Partial<AgentConfig>,
 ): SettingsApplyResult {
   let runtimeSwitched: boolean | null = null;
   if (affectsCachedRunner(patch) && runtime) {
     // Clear-or-refuse before writing. The clear and the write happen in the
     // same synchronous tick, so no runner can be created in between.
-    if (!runtime.switchConversationModel(address, patch.provider ?? "", patch.model ?? "")) {
+    if (!runtime.switchConversationModel(office.address, patch.provider ?? "", patch.model ?? "")) {
       return { ok: false, reason: "busy" };
     }
     runtimeSwitched = true;
   }
-  updateConversationSettings(
-    { address, conversationDir: conversationOfficeDir(workingDir, address) },
-    patch,
-  );
+  updateConversationSettings({ address: office.address, conversationDir: office.dir }, patch);
   return { ok: true, runtimeSwitched };
 }
 
@@ -82,17 +78,13 @@ export function applyGlobalSettings(
  */
 export function applyConversationWorkspacePolicy(
   runtime: RunnerCacheControl | undefined,
-  workingDir: string,
-  address: OfficeAddress,
+  office: Office,
   choice: WorkspacePolicyChoice | null,
 ): SettingsApplyResult {
-  if (runtime && !runtime.refreshConversationEnvironment(address)) {
+  if (runtime && !runtime.refreshConversationEnvironment(office.address)) {
     return { ok: false, reason: "busy" };
   }
-  setConversationWorkspacePolicy(
-    { address, conversationDir: conversationOfficeDir(workingDir, address) },
-    choice,
-  );
+  setConversationWorkspacePolicy({ address: office.address, conversationDir: office.dir }, choice);
   return { ok: true, runtimeSwitched: runtime ? true : null };
 }
 

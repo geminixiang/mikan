@@ -8,7 +8,6 @@ import { slashForms } from "./manifest.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
-import { conversationOfficeDir } from "../office-address.js";
 
 type AutoReplyAction = { type: "status" } | { type: "on" } | { type: "off" } | { type: "invalid" };
 
@@ -73,7 +72,7 @@ export class AutoReplyCommandHandler implements CommandHandler {
       return true;
     }
 
-    const conversationDir = conversationOfficeDir(context.services.workingDir, context.address);
+    const conversationDir = context.services.workspace.office(context.address).dir;
     const current = loadConversationAutoReplyConfig(conversationDir);
     const next = applyAction(current, action);
     if (action.type === "on" || (action.type === "off" && current.enabled)) {

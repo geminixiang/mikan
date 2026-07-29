@@ -10,14 +10,15 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { createOfficeAddress, officeDir, officeKey } from "../src/office-address.js";
+import { officeDir } from "../src/office/address.js";
+import { createOfficeAddress, officeKey } from "../src/office/index.js";
 import { legacyConversationCredentialKey } from "../src/sandbox/identity.js";
 import {
   buildContainerBindTranslator,
   formatUnmigratedOfficesError,
   migrateLegacyOffices,
-} from "../src/office-migration.js";
-import { OfficeRegistry } from "../src/office-registry.js";
+} from "../src/office/index.js";
+import { OfficeRegistry } from "../src/office/index.js";
 
 const temporaryDirectories: string[] = [];
 

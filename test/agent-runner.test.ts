@@ -11,7 +11,7 @@ import { loadSkillsFromDir } from "../src/harness/skills.js";
 import { MikanAgentSession, MikanModels } from "../src/harness/index.js";
 import { createManagedSessionFile, getChannelSessionDir } from "../src/sessions/store.js";
 import type { PlatformToolPackFactory } from "../src/tools/types.js";
-import { createOfficeAddress, officeDirName } from "../src/office-address.js";
+import { createOfficeAddress, officeDirName } from "../src/office/index.js";
 
 /**
  * Drives PiAgentWrapper.run() end to end with a faux provider: the runner is

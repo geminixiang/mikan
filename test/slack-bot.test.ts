@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler } from "../src/adapter.js";
-import { createOfficeAddress, officeDirName } from "../src/office-address.js";
+import { createOfficeAddress, createWorkspace, officeDirName } from "../src/office/index.js";
+import type { Workspace } from "../src/office/index.js";
 
 const C123_OFFICE = officeDirName(createOfficeAddress("slack", "C123"));
 import { SlackMessagingBot } from "../src/adapters/slack/bot.js";
@@ -28,10 +29,15 @@ function makeHandler(): MessagingEventHandler {
   };
 }
 
-function makeCommandServices(workingDir: string): CommandServices {
+/**
+ * Every describe here points MIKAN_STATE_DIR at the same tmp dir it uses as the
+ * workspace root, so office state dirs and the registry journal land beside the
+ * office dirs the assertions read.
+ */
+function makeCommandServices(workspace: Workspace): CommandServices {
   const sandbox: SandboxConfig = { type: "host" };
   return {
-    workingDir,
+    workspace,
     sandbox,
     vaultManager: {
       hasEntry: () => false,
@@ -58,11 +64,13 @@ function makeCommandServices(workingDir: string): CommandServices {
 
 describe("SlackMessagingBot slash commands", () => {
   let workingDir: string;
+  let workspace: Workspace;
 
   beforeEach(() => {
     workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-bot-"));
     process.env.MIKAN_STATE_DIR = workingDir;
     createGlobalSettingsFile(workingDir);
+    workspace = createWorkspace({ root: workingDir, stateDir: workingDir });
   });
 
   afterEach(() => {
@@ -75,7 +83,7 @@ describe("SlackMessagingBot slash commands", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -131,7 +139,7 @@ describe("SlackMessagingBot slash commands", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -180,7 +188,7 @@ describe("SlackMessagingBot slash commands", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -218,7 +226,7 @@ describe("SlackMessagingBot slash commands", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -270,7 +278,7 @@ describe("SlackMessagingBot slash commands", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -318,12 +326,12 @@ describe("SlackMessagingBot slash commands", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
     const runtime = createConversationRuntime({
-      ...makeCommandServices(workingDir),
+      ...makeCommandServices(workspace),
       commandHandlers: defaultCommandHandlers(),
     });
     (handler.handleEvent as any).mockImplementation(
@@ -389,7 +397,7 @@ describe("SlackMessagingBot slash commands", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -437,7 +445,7 @@ describe("SlackMessagingBot slash commands", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -478,11 +486,13 @@ describe("SlackMessagingBot slash commands", () => {
 
 describe("SlackMessagingBot queues follow-up messages", () => {
   let workingDir: string;
+  let workspace: Workspace;
 
   beforeEach(() => {
     workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-queue-"));
     process.env.MIKAN_STATE_DIR = workingDir;
     createGlobalSettingsFile(workingDir);
+    workspace = createWorkspace({ root: workingDir, stateDir: workingDir });
   });
 
   afterEach(() => {
@@ -499,7 +509,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -566,7 +576,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -631,7 +641,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -687,7 +697,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -746,7 +756,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -800,7 +810,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -856,7 +866,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -913,7 +923,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -968,7 +978,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -1045,7 +1055,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -1087,7 +1097,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const bot = new SlackMessagingBot(makeHandler(), {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
     const postMessage = vi.fn().mockResolvedValue({ ts: "2000.0001" });
@@ -1108,7 +1118,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -1167,7 +1177,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -1251,7 +1261,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -1312,7 +1322,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -1369,7 +1379,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -1428,7 +1438,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -1494,7 +1504,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -1551,7 +1561,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -1615,7 +1625,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -1689,7 +1699,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -1754,7 +1764,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -1824,11 +1834,13 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
 describe("SlackMessagingBot backfill", () => {
   let workingDir: string;
+  let workspace: Workspace;
 
   beforeEach(() => {
     workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-backfill-"));
     process.env.MIKAN_STATE_DIR = workingDir;
     createGlobalSettingsFile(workingDir);
+    workspace = createWorkspace({ root: workingDir, stateDir: workingDir });
   });
 
   afterEach(() => {
@@ -1841,7 +1853,7 @@ describe("SlackMessagingBot backfill", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {
         processAttachments: vi.fn().mockResolvedValue([]),
       } as any,
@@ -1882,7 +1894,7 @@ describe("SlackMessagingBot backfill", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {
         processAttachments: vi.fn().mockResolvedValue([]),
       } as any,
@@ -1940,7 +1952,7 @@ describe("SlackMessagingBot backfill", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {
         processAttachments: vi.fn().mockResolvedValue([]),
       } as any,
@@ -1978,11 +1990,13 @@ describe("SlackMessagingBot backfill", () => {
 
 describe("SlackMessagingBot attachments", () => {
   let workingDir: string;
+  let workspace: Workspace;
 
   beforeEach(() => {
     workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-attachments-"));
     process.env.MIKAN_STATE_DIR = workingDir;
     createGlobalSettingsFile(workingDir);
+    workspace = createWorkspace({ root: workingDir, stateDir: workingDir });
   });
 
   afterEach(() => {
@@ -1995,7 +2009,7 @@ describe("SlackMessagingBot attachments", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
 
@@ -2059,11 +2073,13 @@ describe("SlackMessagingBot attachments", () => {
 
 describe("SlackMessagingBot force-stop block action", () => {
   let workingDir: string;
+  let workspace: Workspace;
 
   beforeEach(() => {
     workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-forcestop-"));
     process.env.MIKAN_STATE_DIR = workingDir;
     createGlobalSettingsFile(workingDir);
+    workspace = createWorkspace({ root: workingDir, stateDir: workingDir });
   });
 
   afterEach(() => {
@@ -2075,7 +2091,7 @@ describe("SlackMessagingBot force-stop block action", () => {
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      workingDir,
+      workspace,
       store: {} as any,
     });
     (bot as any).webClient = {

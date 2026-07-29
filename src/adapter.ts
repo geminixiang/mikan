@@ -1,4 +1,4 @@
-import { createOfficeAddress, sameOffice } from "./office-address.js";
+import { createOfficeAddress, sameOffice } from "./office/index.js";
 import type {
   ConversationEvent,
   ConversationMessage,

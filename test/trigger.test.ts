@@ -5,9 +5,9 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { ConversationEvent } from "../src/adapter.js";
 import { saveConversationAutoReplyConfig } from "../src/config.js";
 import { decideTrigger, evaluateAutoReplyPolicy } from "../src/trigger.js";
-import { createOfficeAddress, officeDirName } from "../src/office-address.js";
+import { createOfficeAddress, createWorkspace, type Office } from "../src/office/index.js";
 
-const C123_OFFICE = officeDirName(createOfficeAddress("slack", "C123"));
+const C123 = createOfficeAddress("slack", "C123");
 
 describe("decideTrigger", () => {
   test("trivially triggers mention, direct, and thread continuation intents", () => {
@@ -21,20 +21,23 @@ describe("decideTrigger", () => {
 });
 
 describe("evaluateAutoReplyPolicy", () => {
-  let workingDir: string;
+  let base: string;
+  let office: Office;
 
   beforeEach(() => {
-    workingDir = join(tmpdir(), `mikan-trigger-test-${Date.now()}`);
+    base = join(tmpdir(), `mikan-trigger-test-${Date.now()}-${Math.random()}`);
+    const workingDir = join(base, "workspace");
     mkdirSync(workingDir, { recursive: true });
+    office = createWorkspace({ root: workingDir, stateDir: join(base, "state") }).office(C123);
   });
 
   afterEach(() => {
-    rmSync(workingDir, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
   });
 
   const event: ConversationEvent = {
     type: "mention",
-    address: createOfficeAddress("slack", "C123"),
+    address: C123,
     conversationId: "C123",
     conversationKind: "shared",
     ts: "1",
@@ -44,14 +47,14 @@ describe("evaluateAutoReplyPolicy", () => {
   };
 
   test("skips by default when no config exists", async () => {
-    await expect(evaluateAutoReplyPolicy({ event, workingDir })).resolves.toEqual({
+    await expect(evaluateAutoReplyPolicy({ event, office })).resolves.toEqual({
       trigger: false,
       reason: "auto-reply-disabled",
     });
   });
 
   test("triggers when enabled and rules match", async () => {
-    saveConversationAutoReplyConfig(join(workingDir, C123_OFFICE), {
+    saveConversationAutoReplyConfig(office.dir, {
       enabled: true,
       rules: ["Reply when the user asks about deployments."],
     });
@@ -59,7 +62,7 @@ describe("evaluateAutoReplyPolicy", () => {
     await expect(
       evaluateAutoReplyPolicy({
         event,
-        workingDir,
+        office,
         judge: async ({ rules }) => {
           expect(rules).toEqual(["Reply when the user asks about deployments."]);
           return true;
@@ -69,26 +72,26 @@ describe("evaluateAutoReplyPolicy", () => {
   });
 
   test("skips when enabled rules do not match", async () => {
-    saveConversationAutoReplyConfig(join(workingDir, C123_OFFICE), {
+    saveConversationAutoReplyConfig(office.dir, {
       enabled: true,
       rules: ["Reply only for urgent incidents."],
     });
 
     await expect(
-      evaluateAutoReplyPolicy({ event, workingDir, judge: async () => false }),
+      evaluateAutoReplyPolicy({ event, office, judge: async () => false }),
     ).resolves.toEqual({ trigger: false, reason: "auto-reply-rule-no-match" });
   });
 
   test("triggers without judge when enabled but no rules set", async () => {
-    saveConversationAutoReplyConfig(join(workingDir, C123_OFFICE), { enabled: true, rules: [] });
-    await expect(evaluateAutoReplyPolicy({ event, workingDir })).resolves.toEqual({
+    saveConversationAutoReplyConfig(office.dir, { enabled: true, rules: [] });
+    await expect(evaluateAutoReplyPolicy({ event, office })).resolves.toEqual({
       trigger: true,
       reason: "auto-reply-enabled",
     });
   });
 
   test("does not throw when the judge throws — falls back to no trigger", async () => {
-    saveConversationAutoReplyConfig(join(workingDir, C123_OFFICE), {
+    saveConversationAutoReplyConfig(office.dir, {
       enabled: true,
       rules: ["some rule"],
     });
@@ -96,7 +99,7 @@ describe("evaluateAutoReplyPolicy", () => {
     await expect(
       evaluateAutoReplyPolicy({
         event,
-        workingDir,
+        office,
         judge: async () => {
           throw new Error("upstream LLM down");
         },
@@ -105,18 +108,18 @@ describe("evaluateAutoReplyPolicy", () => {
   });
 
   test("ignores settings.json auto-reply state and uses marker files", async () => {
-    const conversationDir = join(workingDir, C123_OFFICE);
+    const conversationDir = office.dir;
     mkdirSync(conversationDir, { recursive: true });
     writeFileSync(join(conversationDir, "settings.json"), "{ not valid json", "utf-8");
 
-    await expect(evaluateAutoReplyPolicy({ event, workingDir })).resolves.toEqual({
+    await expect(evaluateAutoReplyPolicy({ event, office })).resolves.toEqual({
       trigger: false,
       reason: "auto-reply-disabled",
     });
   });
 
   test("times out a slow judge and returns no trigger", async () => {
-    saveConversationAutoReplyConfig(join(workingDir, C123_OFFICE), {
+    saveConversationAutoReplyConfig(office.dir, {
       enabled: true,
       rules: ["some rule"],
     });
@@ -124,7 +127,7 @@ describe("evaluateAutoReplyPolicy", () => {
     await expect(
       evaluateAutoReplyPolicy({
         event,
-        workingDir,
+        office,
         timeoutMs: 10,
         judge: () => new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 200)),
       }),

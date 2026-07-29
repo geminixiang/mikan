@@ -15,7 +15,7 @@ import { DockerContainerManager } from "../src/provisioner.js";
 import { HostExecutor } from "../src/sandbox/index.js";
 import { credentialAuthorizationKey } from "../src/sandbox/identity.js";
 import { FileVaultManager, parseEnvFile, sharedVaultKey } from "../src/vault/index.js";
-import { createOfficeAddress, officeDirName, officeKey } from "../src/office-address.js";
+import { createOfficeAddress, officeDirName, officeKey } from "../src/office/index.js";
 
 const D123_OFFICE = officeDirName(createOfficeAddress("slack", "D123"));
 

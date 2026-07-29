@@ -8,7 +8,7 @@ import {
   rmSync,
 } from "fs";
 import { dirname, isAbsolute, join, normalize, sep } from "path";
-import { officeKey } from "../office-address.js";
+import { officeKey } from "../office/index.js";
 import { legacyConversationCredentialKey } from "../sandbox/identity.js";
 import type { OfficeAddress } from "../types.js";
 import { readTextFileIfExists } from "../utils/file-guards.js";

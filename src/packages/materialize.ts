@@ -18,7 +18,7 @@ import { dirname, join } from "node:path";
 import { ensureDirExists, readTextFileIfExists } from "../utils/file-guards.js";
 import * as log from "../log.js";
 import { gitRepoPath, parseSource, sourceIdentity } from "./source.js";
-import { officeStateDir } from "../office-address.js";
+import { officeStateDir } from "../office/index.js";
 import type { OfficeAddress } from "../types.js";
 import type {
   MaterializeMode,

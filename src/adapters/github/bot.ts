@@ -1,5 +1,5 @@
 import { existsSync } from "fs";
-import { dirname, join } from "path";
+import { dirname } from "path";
 import { Type } from "@sinclair/typebox";
 import {
   createConversationEvent,
@@ -23,8 +23,7 @@ import { GithubClient, GITHUB_MAX_COMMENT_LENGTH, githubRetry } from "./client.j
 import { createGithubAdapters } from "./context.js";
 import { fetchIsPr, fetchPrHeadBranch, GithubOps } from "./github-ops.js";
 import { cloneRepo, conversationRepoDir } from "./repo.js";
-import { conversationOfficeDir, createOfficeAddress } from "../../office-address.js";
-import { ensureOfficeDir } from "../../office-registry.js";
+import { createOfficeAddress, type Office } from "../../office/index.js";
 import {
   buildGithubConversationId,
   GITHUB_ISSUE_BODY_TS,
@@ -203,7 +202,7 @@ export class GithubMessagingBot implements MessagingBot {
         installationId: config.installationId,
       });
     this.ops = new GithubOps(this.client, {
-      workingDir: config.workingDir,
+      workspace: config.workspace,
       cloudBuild: config.cloudBuild,
     });
   }
@@ -358,16 +357,11 @@ export class GithubMessagingBot implements MessagingBot {
   }
 
   logToFile(conversationId: string, entry: object): void {
-    appendChannelLog(this.config.workingDir, createOfficeAddress("github", conversationId), entry);
+    appendChannelLog(this.office(conversationId), entry);
   }
 
   logBotResponse(conversationId: string, text: string, ts: string): void {
-    appendBotResponseLog(
-      this.config.workingDir,
-      createOfficeAddress("github", conversationId),
-      text,
-      ts,
-    );
+    appendBotResponseLog(this.office(conversationId), text, ts);
   }
 
   // ==========================================================================
@@ -562,16 +556,13 @@ export class GithubMessagingBot implements MessagingBot {
     return (pattern ? text.replace(pattern, "") : text).trim();
   }
 
+  /** The Conversation office for a GitHub conversation id (one PR/issue). */
+  private office(conversationId: string): Office {
+    return this.config.workspace.office(createOfficeAddress("github", conversationId));
+  }
+
   private isParticipating(conversationId: string): boolean {
-    return existsSync(
-      join(
-        conversationOfficeDir(
-          this.config.workingDir,
-          createOfficeAddress("github", conversationId),
-        ),
-        "log.jsonl",
-      ),
-    );
+    return existsSync(this.office(conversationId).logPath);
   }
 
   /**
@@ -654,7 +645,7 @@ export class GithubMessagingBot implements MessagingBot {
 
     await processMessageIntake({
       eventBase,
-      workingDir: this.config.workingDir,
+      office: this.office(eventBase.conversationId),
       isAutoReplyCandidate: false,
       // Match on the user-typed text, not the review-decorated messageText.
       magicWord: { text: cleanedText, addressed: mentioned, scopeFallback: "never" },
@@ -702,7 +693,7 @@ export class GithubMessagingBot implements MessagingBot {
       // isPr: true (they only exist on PRs) and that knowledge is authoritative.
       if (issue && isPrHint === undefined) isPrHint = Boolean(issue.pull_request);
     }
-    if (!existsSync(conversationRepoDir(this.config.workingDir, conversationId))) {
+    if (!existsSync(conversationRepoDir(this.office(conversationId)))) {
       const isPr = isPrHint ?? (await fetchIsPr(this.client, item.ref));
       await this.ensureRepoClone(item.ref, conversationId, isPr);
     }
@@ -817,10 +808,11 @@ export class GithubMessagingBot implements MessagingBot {
     conversationId: string,
     isPr: boolean,
   ): Promise<void> {
-    const dir = conversationRepoDir(this.config.workingDir, conversationId);
+    const office = this.office(conversationId);
+    const dir = conversationRepoDir(office);
     if (existsSync(dir)) return;
     try {
-      ensureOfficeDir(this.config.workingDir, createOfficeAddress("github", conversationId));
+      office.ensure();
       const token = await this.client.createScopedInstallationToken(ref.repo, {
         contents: "read",
       });

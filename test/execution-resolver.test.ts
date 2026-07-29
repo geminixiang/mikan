@@ -9,7 +9,7 @@ import {
   readConversationWorkspaceMountMode,
 } from "../src/execution-resolver.js";
 import { FileVaultManager } from "../src/vault/index.js";
-import { createOfficeAddress, officeDirName } from "../src/office-address.js";
+import { createOfficeAddress, officeDirName } from "../src/office/index.js";
 
 const C123_OFFICE = officeDirName(createOfficeAddress("slack", "C123"));
 

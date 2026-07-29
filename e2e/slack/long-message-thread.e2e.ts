@@ -2,7 +2,7 @@ import { WebClient } from "@slack/web-api";
 import { describe, expect, it } from "vitest";
 import { SlackMessagingBot } from "../../src/adapters/slack/bot.js";
 import { createSlackAdapters } from "../../src/adapters/slack/context.js";
-import { createOfficeAddress } from "../../src/office-address.js";
+import { createOfficeAddress } from "../../src/office/index.js";
 import { assertBotTokenShape } from "./helpers/env.js";
 import { loadContextOrSkip } from "./helpers/client.js";
 import { fetchThreadMessages, postMessage } from "./helpers/slack.js";

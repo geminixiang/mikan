@@ -5,7 +5,7 @@
 
 export type { CreateRunnerOptions, PiAgentWrapper } from "./types.js";
 import type { CreateRunnerOptions, OfficeAddress, PiAgentWrapper } from "./types.js";
-import { officeDirName } from "./office-address.js";
+import { officeDirName } from "./office/index.js";
 
 import type { AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";

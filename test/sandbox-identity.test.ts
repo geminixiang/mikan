@@ -7,7 +7,7 @@ import {
   sanitizeIdentitySegment,
   scopeCloudflareSandboxId,
 } from "../src/sandbox/identity.js";
-import { createOfficeAddress, officeKey } from "../src/office-address.js";
+import { createOfficeAddress, officeKey } from "../src/office/index.js";
 
 const image = { type: "image", image: "ubuntu" } as const;
 

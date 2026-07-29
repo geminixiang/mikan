@@ -10,8 +10,7 @@ import { withRetry } from "./adapters/shared.js";
 
 export type { Attachment, ChannelStoreConfig, LoggedMessage } from "./types.js";
 import type { Attachment, ChannelStoreConfig, LoggedMessage } from "./types.js";
-import { conversationOfficeDir, createOfficeAddress, officeDirName } from "./office-address.js";
-import { ensureOfficeDir } from "./office-registry.js";
+import { createOfficeAddress, type Office, type Workspace } from "./office/index.js";
 
 class AttachmentDownloadHttpError extends Error {
   constructor(
@@ -33,7 +32,7 @@ function isRetryableAttachmentDownloadError(error: unknown): boolean {
  * Slack conversation ids; other platforms log through their adapters.
  */
 export class ChannelStore {
-  private workingDir: string;
+  private workspace: Workspace;
   private botToken: string;
   // Track recently logged message timestamps to prevent duplicates
   // Key: "channelId:ts", automatically cleaned up after 60 seconds
@@ -41,18 +40,22 @@ export class ChannelStore {
   private loggingMessages = new Set<string>();
 
   constructor(config: ChannelStoreConfig) {
-    this.workingDir = config.workingDir;
+    this.workspace = config.workspace;
     this.botToken = config.botToken;
 
     // Ensure working directory exists
-    ensureDirExists(this.workingDir);
+    ensureDirExists(this.workspace.root);
+  }
+
+  private office(channelId: string): Office {
+    return this.workspace.office(createOfficeAddress("slack", channelId));
   }
 
   /**
    * Get or create the directory for a channel/DM
    */
   getChannelDir(channelId: string): string {
-    return ensureOfficeDir(this.workingDir, createOfficeAddress("slack", channelId));
+    return this.office(channelId).ensure();
   }
 
   /**
@@ -88,7 +91,7 @@ export class ChannelStore {
       }
 
       const filename = this.generateLocalFilename(file.name, timestamp);
-      const localPath = `${officeDirName(createOfficeAddress("slack", channelId))}/attachments/${filename}`;
+      const localPath = `${this.office(channelId).key}/attachments/${filename}`;
       const attachment: Attachment = {
         original: file.name,
         localPath,
@@ -170,10 +173,7 @@ export class ChannelStore {
    * Returns null if no log exists
    */
   getLastTimestamp(channelId: string): string | null {
-    const logPath = join(
-      conversationOfficeDir(this.workingDir, createOfficeAddress("slack", channelId)),
-      "log.jsonl",
-    );
+    const logPath = this.office(channelId).logPath;
     const content = readTextFileIfExists(logPath);
     if (content === undefined) {
       return null;
@@ -208,10 +208,10 @@ export class ChannelStore {
   }
 
   private async downloadAttachment(localPath: string, url: string): Promise<void> {
-    const filePath = join(this.workingDir, localPath);
+    const filePath = join(this.workspace.root, localPath);
 
     // Ensure directory exists
-    const parentDir = join(this.workingDir, dirname(localPath));
+    const parentDir = join(this.workspace.root, dirname(localPath));
     ensureDirExists(parentDir);
 
     const response = await fetch(url, {

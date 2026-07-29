@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { resolveConversationPackages } from "../src/packages/resolve.js";
-import { createOfficeAddress, officeKey } from "../src/office-address.js";
+import { createOfficeAddress, officeKey } from "../src/office/index.js";
 
 const CONVERSATION_ID = "C03045VJJAY";
 

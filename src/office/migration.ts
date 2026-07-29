@@ -1,18 +1,13 @@
 import { existsSync, lstatSync, readdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
-import * as log from "./log.js";
-import { isOfficeKey, officeKey, officeStateDir } from "./office-address.js";
-import { legacyConversationCredentialKey } from "./sandbox/identity.js";
-import type { OfficeRecord } from "./types.js";
-import { OfficeRegistry } from "./office-registry.js";
-import { migrateConversationVaultKeys } from "./vault/index.js";
-import type { OfficeMigrationRecord, PlatformName } from "./types.js";
-
-/**
- * Workspace-root entries that are shared infrastructure, never office dirs.
- * Mirrors the boot-time directory setup in main.ts.
- */
-const RESERVED_WORKSPACE_ENTRIES = new Set(["skills", "events", "agents"]);
+import * as log from "../log.js";
+import { isOfficeKey, officeKey, officeStateDir } from "./address.js";
+import { RESERVED_WORKSPACE_NAMES } from "./layout.js";
+import { legacyConversationCredentialKey } from "../sandbox/identity.js";
+import type { OfficeRecord } from "../types.js";
+import { OfficeRegistry } from "./registry.js";
+import { migrateConversationVaultKeys } from "../vault/index.js";
+import type { OfficeMigrationRecord, PlatformName } from "../types.js";
 
 export interface OfficeMigrationRunSummary {
   /** Raw ids whose directories moved to the office-key layout this run. */
@@ -210,7 +205,7 @@ function listLegacyOfficeDirs(workspaceRoot: string): string[] {
   const candidates: string[] = [];
   for (const entry of readdirSync(workspaceRoot, { withFileTypes: true })) {
     if (entry.name.startsWith(".")) continue;
-    if (RESERVED_WORKSPACE_ENTRIES.has(entry.name)) continue;
+    if (RESERVED_WORKSPACE_NAMES.has(entry.name)) continue;
     if (isOfficeKey(entry.name)) continue;
     if (entry.isSymbolicLink()) {
       throw new Error(`Workspace entry must not be a symlink: ${join(workspaceRoot, entry.name)}`);

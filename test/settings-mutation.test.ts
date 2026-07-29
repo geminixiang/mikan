@@ -5,9 +5,10 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { loadConversationWorkspaceOverride } from "../src/config.js";
 import {
   createOfficeAddress,
-  conversationOfficeDir,
+  createWorkspace,
   officeStateDir,
-} from "../src/office-address.js";
+  type Office,
+} from "../src/office/index.js";
 import {
   applyConversationSettings,
   applyConversationWorkspacePolicy,
@@ -18,15 +19,16 @@ import {
 const C1 = createOfficeAddress("slack", "C1");
 
 let stateDir: string;
-let workingDir: string;
+let office: Office;
 
 beforeEach(() => {
   const base = join(tmpdir(), `mikan-mutation-${Date.now()}-${Math.random()}`);
   stateDir = join(base, "state");
-  workingDir = join(base, "workspace");
+  const workingDir = join(base, "workspace");
   mkdirSync(stateDir, { recursive: true });
   mkdirSync(workingDir, { recursive: true });
   process.env.MIKAN_STATE_DIR = stateDir;
+  office = createWorkspace({ root: workingDir, stateDir }).office(C1);
 });
 
 afterEach(() => {
@@ -44,7 +46,7 @@ function conversationSettingsFile(conversationId: string): string {
 describe("applyConversationSettings", () => {
   test("llm change clears cached runners, then writes", () => {
     const runtime = { switchConversationModel: vi.fn().mockReturnValue(true) };
-    const result = applyConversationSettings(runtime, workingDir, C1, {
+    const result = applyConversationSettings(runtime, office, {
       provider: "anthropic",
       model: "claude-sonnet-4-6",
     });
@@ -60,7 +62,7 @@ describe("applyConversationSettings", () => {
 
   test("busy conversation refuses: no write, disk and cache stay agreed", () => {
     const runtime = { switchConversationModel: vi.fn().mockReturnValue(false) };
-    const result = applyConversationSettings(runtime, workingDir, C1, {
+    const result = applyConversationSettings(runtime, office, {
       provider: "anthropic",
       model: "claude-sonnet-4-6",
     });
@@ -70,7 +72,7 @@ describe("applyConversationSettings", () => {
 
   test("non-llm patch writes without touching runners", () => {
     const runtime = { switchConversationModel: vi.fn().mockReturnValue(false) };
-    const result = applyConversationSettings(runtime, workingDir, C1, {
+    const result = applyConversationSettings(runtime, office, {
       sandbox: { image: { workspaceMount: "full" } },
     });
     expect(result).toEqual({ ok: true, runtimeSwitched: null });
@@ -80,7 +82,7 @@ describe("applyConversationSettings", () => {
   });
 
   test("no runtime (portal without bridge): writes, reports null", () => {
-    const result = applyConversationSettings(undefined, workingDir, C1, {
+    const result = applyConversationSettings(undefined, office, {
       provider: "anthropic",
       model: "claude-haiku-4-5",
     });
@@ -90,17 +92,17 @@ describe("applyConversationSettings", () => {
 });
 
 describe("applyConversationWorkspacePolicy", () => {
-  const scope = () => ({ address: C1, conversationDir: conversationOfficeDir(workingDir, C1) });
+  const scope = () => ({ address: C1, conversationDir: office.dir });
 
   test("writes the explicit choice, clears the legacy mount, keeps other leaves", () => {
-    applyConversationSettings(undefined, workingDir, C1, {
+    applyConversationSettings(undefined, office, {
       sandbox: { cpus: "2", image: { workspaceMount: "full" } },
     });
     const runtime = {
       switchConversationModel: vi.fn(),
       refreshConversationEnvironment: vi.fn().mockReturnValue(true),
     };
-    const result = applyConversationWorkspacePolicy(runtime, workingDir, C1, {
+    const result = applyConversationWorkspacePolicy(runtime, office, {
       doorPolicy: "trusted",
       layout: "shared-support",
     });
@@ -113,10 +115,10 @@ describe("applyConversationWorkspacePolicy", () => {
   });
 
   test("null clears both the explicit override and the legacy mount", () => {
-    applyConversationSettings(undefined, workingDir, C1, {
+    applyConversationSettings(undefined, office, {
       sandbox: { image: { workspaceMount: "private" } },
     });
-    const result = applyConversationWorkspacePolicy(undefined, workingDir, C1, null);
+    const result = applyConversationWorkspacePolicy(undefined, office, null);
     expect(result).toEqual({ ok: true, runtimeSwitched: null });
     const written = JSON.parse(readFileSync(conversationSettingsFile("C1"), "utf-8"));
     expect(written.sandbox).toBeUndefined();
@@ -128,7 +130,7 @@ describe("applyConversationWorkspacePolicy", () => {
       switchConversationModel: vi.fn(),
       refreshConversationEnvironment: vi.fn().mockReturnValue(false),
     };
-    const result = applyConversationWorkspacePolicy(runtime, workingDir, C1, {
+    const result = applyConversationWorkspacePolicy(runtime, office, {
       doorPolicy: "isolated",
     });
     expect(result).toEqual({ ok: false, reason: "busy" });
@@ -136,7 +138,7 @@ describe("applyConversationWorkspacePolicy", () => {
   });
 
   test("legacy workspaceMount reads back as a trusted override", () => {
-    applyConversationSettings(undefined, workingDir, C1, {
+    applyConversationSettings(undefined, office, {
       sandbox: { image: { workspaceMount: "full" } },
     });
     expect(loadConversationWorkspaceOverride(scope())).toEqual({

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { MutableModels } from "@earendil-works/pi-ai";
-import { createOfficeAddress, officeDirName } from "../src/office-address.js";
+import { createOfficeAddress, createWorkspace, officeDirName } from "../src/office/index.js";
 import { createGlobalSettingsFile } from "../src/config.js";
 import type {
   MessagingBot,
@@ -57,7 +57,8 @@ afterEach(() => {
 
 function makeRuntime(models?: MikanModels) {
   const sandbox: SandboxConfig = { type: "host" };
-  return createConversationRuntime({ workingDir, sandbox, models });
+  const workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
+  return createConversationRuntime({ workspace, sandbox, models });
 }
 
 function createFauxModels(): { models: MikanModels; faux: ReturnType<typeof fauxProvider> } {

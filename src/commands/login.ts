@@ -5,7 +5,7 @@ import { slashForms } from "./manifest.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler, ParsedLoginCommand } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
-import { createOfficeAddress } from "../office-address.js";
+import { createOfficeAddress } from "../office/index.js";
 
 const LOGIN_COMMANDS = slashForms("login");
 

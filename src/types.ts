@@ -610,7 +610,7 @@ export interface LoggedMessage {
 }
 
 export interface ChannelStoreConfig {
-  workingDir: string;
+  workspace: import("./office/types.js").Workspace;
   botToken: string;
 }
 

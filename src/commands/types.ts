@@ -1,6 +1,7 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { MessagingBot, ConversationContext, OfficeAddress, PlatformName } from "../adapter.js";
+import type { Workspace } from "../office/index.js";
 import type { DockerContainerManager } from "../provisioner.js";
 import type { SandboxConfig } from "../sandbox/index.js";
 import type { SandboxResourceController } from "../types.js";
@@ -94,7 +95,7 @@ interface CommandRuntimeBridge {
 }
 
 export interface CommandServices {
-  workingDir: string;
+  workspace: Workspace;
   runtime?: CommandRuntimeBridge;
   sandbox: SandboxConfig;
   vaultManager: VaultManager;

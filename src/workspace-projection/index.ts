@@ -2,9 +2,9 @@ import { dirname, join } from "node:path";
 import { lstatSync, mkdirSync, writeFileSync } from "node:fs";
 import { ensureDirExists } from "../utils/file-guards.js";
 import { resolveConversationSettings } from "../config.js";
-import { ensureOfficeDir } from "../office-registry.js";
+import { ensureOfficeDir } from "../office/index.js";
 import * as log from "../log.js";
-import { conversationOfficeDir, officeDirName, validateOfficeAddress } from "../office-address.js";
+import { conversationOfficeDir, officeDirName, validateOfficeAddress } from "../office/index.js";
 import type {
   ImageWorkspaceMountMode,
   OfficeAddress,

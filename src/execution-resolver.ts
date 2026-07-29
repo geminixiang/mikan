@@ -1,6 +1,6 @@
 import { posix } from "node:path";
 import { effectiveStateDir } from "./cli/arg-grammar.js";
-import { conversationOfficeDir } from "./office-address.js";
+import { conversationOfficeDir } from "./office/index.js";
 import { conversationPackageSkillMounts } from "./packages/index.js";
 import { loadGlobalSettings } from "./config.js";
 import { DockerContainerManager, type ContainerMount } from "./provisioner.js";

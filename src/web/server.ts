@@ -27,7 +27,7 @@ interface StartWebServerOptions {
   sessionViewInteractive?: SessionViewInteractiveOptions;
   adminOptions?: {
     adminTokenStore: InMemoryAdminTokenStore;
-    workingDir?: string;
+    workspace?: import("../office/types.js").Workspace;
     runtime?: AdminRuntimeBridge;
     sandbox?: SandboxConfig;
     botsByPlatform?: Partial<Record<PlatformName, MessagingBot>>;
@@ -43,8 +43,8 @@ export function startWebServer(options: StartWebServerOptions): Server {
 
   // Constructed once at server start; the admin portal consumes the owning
   // event store's interface instead of re-parsing event files off disk.
-  const adminEventStore = options.adminOptions?.workingDir
-    ? HostEventStore.fromWorkspaceDir(options.adminOptions.workingDir)
+  const adminEventStore = options.adminOptions?.workspace
+    ? HostEventStore.fromWorkspaceDir(options.adminOptions.workspace.root)
     : undefined;
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -68,7 +68,7 @@ export function startWebServer(options: StartWebServerOptions): Server {
           sessionViewTokenStore: options.sessionViewTokenStore,
           adminTokenStore: adminOptions.adminTokenStore,
           portalBaseUrl: resolveLinkBaseUrl() ?? undefined,
-          workingDir: adminOptions.workingDir,
+          workspace: adminOptions.workspace,
           eventStore: adminEventStore,
           runtime: adminOptions.runtime,
           sandbox: adminOptions.sandbox,

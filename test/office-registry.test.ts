@@ -10,8 +10,9 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { conversationOfficeDir, createOfficeAddress, officeDir } from "../src/office-address.js";
-import { ensureOfficeDir, OfficeRegistry } from "../src/office-registry.js";
+import { officeDir } from "../src/office/address.js";
+import { conversationOfficeDir, createOfficeAddress } from "../src/office/index.js";
+import { ensureOfficeDir, OfficeRegistry } from "../src/office/index.js";
 
 const temporaryDirectories: string[] = [];
 

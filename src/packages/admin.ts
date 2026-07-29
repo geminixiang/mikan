@@ -113,7 +113,7 @@ function writePackages(
     applyGlobalSettings(context.runtime, { packages });
     return;
   }
-  const result = applyConversationSettings(context.runtime, context.workingDir, context.address, {
+  const result = applyConversationSettings(context.runtime, context.office, {
     packages,
   });
   if (!result.ok) throw new Error("Conversation is busy; try again when the current run ends");

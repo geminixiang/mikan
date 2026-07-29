@@ -3,8 +3,8 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { runExtCommand } from "../src/cli/ext.js";
-import { createOfficeAddress, officeKey } from "../src/office-address.js";
-import { OfficeRegistry } from "../src/office-registry.js";
+import { createOfficeAddress, officeKey } from "../src/office/index.js";
+import { OfficeRegistry } from "../src/office/index.js";
 
 let stateDir: string;
 let srcDir: string;

@@ -1,6 +1,6 @@
 import type { OfficeAddress } from "../adapter.js";
 import * as log from "../log.js";
-import { officeKey } from "../office-address.js";
+import { officeKey } from "../office/index.js";
 import type { ConversationRuntimeState, SessionLifecycleOptions } from "./types.js";
 
 const DEFAULT_MAX_SESSIONS = 500;

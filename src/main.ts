@@ -63,10 +63,11 @@ import { runExtCommand } from "./cli/ext.js";
 import { runOfficeCommand } from "./cli/office.js";
 import {
   buildContainerBindTranslator,
+  createWorkspace,
   formatUnmigratedOfficesError,
   migrateLegacyOffices,
-} from "./office-migration.js";
-import { OfficeRegistry } from "./office-registry.js";
+  OfficeRegistry,
+} from "./office/index.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
 import { ChannelStore } from "./store.js";
 import * as Sentry from "@sentry/node";
@@ -313,6 +314,11 @@ try {
   handleStartupError(error);
 }
 
+// The one Workspace value for this process: workspace-global paths plus the
+// per-conversation Office factory. Constructed after the office migration so
+// every office it materializes lands in the office-key layout.
+const workspace = createWorkspace({ root: workingDir, stateDir });
+
 const vaultManager = new FileVaultManager(stateDir);
 if (vaultManager.isEnabled()) {
   console.log(
@@ -393,11 +399,11 @@ const resourceController =
       : undefined;
 
 if (sandbox.type === "image" || sandbox.type === "gondolin") {
-  ensureDirExists(join(workingDir, "skills"));
-  ensureDirExists(join(workingDir, "events"));
-  ensureDirExists(join(workingDir, "agents"));
+  ensureDirExists(workspace.skillsDir);
+  ensureDirExists(workspace.eventsDir);
+  ensureDirExists(workspace.agentsDir);
   try {
-    writeFileSync(join(workingDir, "MEMORY.md"), "", { flag: "wx" });
+    writeFileSync(workspace.memoryPath, "", { flag: "wx" });
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
   }
@@ -579,7 +585,7 @@ function buildPlatformToolPackFactories(): PlatformToolPackFactory[] {
 }
 
 const handler = createConversationRuntime({
-  workingDir,
+  workspace,
   sandbox,
   vaultManager,
   provisioner,
@@ -651,11 +657,11 @@ if (hasSlack) {
   if (!slackMessagingBotToken || !slackAppToken) {
     throw new Error("Slack startup requires both SLACK_APP_TOKEN and SLACK_BOT_TOKEN");
   }
-  const sharedStore = new ChannelStore({ workingDir, botToken: slackMessagingBotToken });
+  const sharedStore = new ChannelStore({ workspace, botToken: slackMessagingBotToken });
   const slackMessagingBot = new SlackMessagingBotClass(handler, {
     appToken: slackAppToken,
     botToken: slackMessagingBotToken,
-    workingDir,
+    workspace,
     store: sharedStore,
   });
   botsByPlatform.slack = slackMessagingBot;
@@ -668,7 +674,7 @@ if (hasTelegram) {
   }
   const telegramMessagingBot = new TelegramMessagingBot(handler, {
     token: telegramToken,
-    workingDir,
+    workspace,
   });
   botsByPlatform.telegram = telegramMessagingBot;
   log.logInfo("Platform: Telegram");
@@ -680,7 +686,7 @@ if (hasDiscord) {
   }
   const discordMessagingBot = new DiscordMessagingBot(handler, {
     token: discordToken,
-    workingDir,
+    workspace,
   });
   botsByPlatform.discord = discordMessagingBot;
   log.logInfo("Platform: Discord");
@@ -711,7 +717,7 @@ if (hasGithub) {
     pollIntervalMs:
       (Number.isFinite(pollIntervalSeconds) && pollIntervalSeconds > 0 ? pollIntervalSeconds : 60) *
       1000,
-    workingDir,
+    workspace,
     syncStatePath: join(stateDir, "github-sync.json"),
     // Host-side GCP creds (e.g. a WIF external_account file) unlock Cloud
     // Build logs in github_checks; without them external CI degrades to
@@ -742,12 +748,12 @@ if (LINK_PORT) {
     },
     sessionViewTokenStore,
     sessionViewInteractive: { handler, botsByPlatform },
-    adminOptions: { adminTokenStore, workingDir, runtime: handler, sandbox, botsByPlatform },
+    adminOptions: { adminTokenStore, workspace, runtime: handler, sandbox, botsByPlatform },
   });
 }
 
 // Start events watcher with explicit platform routing
-const eventsWatcher = new EventsWatcher(join(workingDir, "events"), botsByPlatform);
+const eventsWatcher = new EventsWatcher(workspace.eventsDir, botsByPlatform);
 const slackMessagingBot = botsByPlatform.slack as SlackMessagingBotClass | undefined;
 if (slackMessagingBot) {
   slackMessagingBot.setEventsWatcher(eventsWatcher);

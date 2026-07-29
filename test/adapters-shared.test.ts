@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler, OfficeAddress, RunningSession } from "../src/adapter.js";
 import { resolveOnlyScopedStopTarget, resolveStopTarget } from "../src/adapters/shared.js";
-import { createOfficeAddress, officeKey, sameOffice } from "../src/office-address.js";
+import { createOfficeAddress, officeKey, sameOffice } from "../src/office/index.js";
 
 const slack = createOfficeAddress("slack", "C123");
 

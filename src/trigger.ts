@@ -7,7 +7,6 @@ const JUDGE_TIMEOUT_MS = 10_000;
 
 export type { AutoReplyJudge, TriggerIntent, TriggerResult } from "./types.js";
 import type { AutoReplyJudge, TriggerIntent, TriggerResult } from "./types.js";
-import { conversationOfficeDir } from "./office-address.js";
 
 /**
  * Trivially decide non-auto-reply intents synchronously. For "auto-reply-candidate"
@@ -28,14 +27,14 @@ export function decideTrigger(
  */
 export async function evaluateAutoReplyPolicy(input: {
   event: ConversationEvent;
-  workingDir: string | undefined;
+  office: import("./office/types.js").Office | undefined;
   judge?: AutoReplyJudge;
   timeoutMs?: number;
 }): Promise<TriggerResult> {
-  const { event, workingDir, judge = judgeAutoReplyWithLlm, timeoutMs = JUDGE_TIMEOUT_MS } = input;
-  if (!workingDir) return { trigger: false, reason: "auto-reply-unconfigured" };
+  const { event, office, judge = judgeAutoReplyWithLlm, timeoutMs = JUDGE_TIMEOUT_MS } = input;
+  if (!office) return { trigger: false, reason: "auto-reply-unconfigured" };
 
-  const conversationDir = conversationOfficeDir(workingDir, event.address);
+  const conversationDir = office.dir;
 
   try {
     const config = loadConversationAutoReplyConfig(conversationDir);

@@ -97,12 +97,15 @@ export class SandboxCommandHandler implements CommandHandler {
     }
 
     if (parsed.action === "door") {
-      const workspace = resolveWorkspaceProjection(context.services.workingDir, context.address);
+      const projection = resolveWorkspaceProjection(
+        context.services.workspace.root,
+        context.address,
+      );
       if (parsed.doorPolicy === undefined) {
         await replyDiagnosticWithContext(
           context.responder,
           formatCommandSummary("Sandbox Door", [
-            `Current: ${workspace.doorPolicy} / ${workspace.layout}`,
+            `Current: ${projection.doorPolicy} / ${projection.layout}`,
             "",
             "用法：`/pi-sandbox door <default|isolated|shared|full>`",
             "- `default`：跟隨全域預設",
@@ -128,8 +131,7 @@ export class SandboxCommandHandler implements CommandHandler {
       }
       const result = applyConversationWorkspacePolicy(
         context.services.runtime,
-        context.services.workingDir,
-        context.address,
+        context.services.workspace.office(context.address),
         choice,
       );
       if (!result.ok) {
@@ -142,7 +144,7 @@ export class SandboxCommandHandler implements CommandHandler {
         );
         return true;
       }
-      const updated = resolveWorkspaceProjection(context.services.workingDir, context.address);
+      const updated = resolveWorkspaceProjection(context.services.workspace.root, context.address);
       await replyDiagnosticWithContext(
         context.responder,
         formatCommandSummary("Sandbox Door", [
@@ -157,7 +159,7 @@ export class SandboxCommandHandler implements CommandHandler {
     const status = context.services.resourceController.getLimitStatus(containerKey);
     const defaultLimits = context.services.resourceController.getDefaultLimits();
     const boostLimits = context.services.resourceController.getBoostLimits();
-    const workspace = resolveWorkspaceProjection(context.services.workingDir, context.address);
+    const projection = resolveWorkspaceProjection(context.services.workspace.root, context.address);
     await replyDiagnosticWithContext(
       context.responder,
       formatCommandSummary(
@@ -165,8 +167,8 @@ export class SandboxCommandHandler implements CommandHandler {
         [
           `Current: ${formatLimits(status.limits)}`,
           `Status: ${status.boosted ? "boosted" : "default"}`,
-          `Workspace policy: ${workspace.doorPolicy}`,
-          `Workspace layout: ${workspace.layout}`,
+          `Workspace policy: ${projection.doorPolicy}`,
+          `Workspace layout: ${projection.layout}`,
           "",
           `Default: ${formatLimits(defaultLimits)}`,
           boostLimits ? `Boost: ${formatLimits({ ...defaultLimits, ...boostLimits })}` : undefined,

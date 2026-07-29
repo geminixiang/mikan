@@ -9,8 +9,8 @@ import { handleAdminRequest } from "../src/web/admin/portal.js";
 import { InMemoryAdminTokenStore } from "../src/web/admin/store.js";
 import { FileVaultManager } from "../src/vault/index.js";
 import type { AdminServices } from "../src/web/admin/types.js";
-import { createOfficeAddress, officeDirName } from "../src/office-address.js";
-import { OfficeRegistry } from "../src/office-registry.js";
+import { createOfficeAddress, createWorkspace, officeDirName } from "../src/office/index.js";
+import { OfficeRegistry } from "../src/office/index.js";
 
 const CONVERSATION_ID = "C03045VJJAY";
 const CONVERSATION_ADDRESS = createOfficeAddress("slack", CONVERSATION_ID);
@@ -101,7 +101,7 @@ beforeEach(async () => {
     vaultManager: new FileVaultManager(stateDir),
     linkTokenStore: { create: () => ({ token: "x", expiresAt: 0 }) } as never,
     adminTokenStore,
-    workingDir,
+    workspace: createWorkspace({ root: workingDir, stateDir }),
   });
   server = started.server;
   origin = started.origin;
