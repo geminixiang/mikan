@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { createOfficeAddress } from "../src/office/index.js";
+import { createOfficeAddress, createWorkspace, type Office } from "../src/office/index.js";
 import {
   assertStateDirOutsideWorkspace,
   conversationSettingsPath,
@@ -17,6 +17,13 @@ import {
 
 describe("loadGlobalSettings", () => {
   let stateDir: string;
+
+  /** The C123 Slack office of a workspace rooted under this test's state dir. */
+  function office(): Office {
+    return createWorkspace({ root: join(stateDir, "workspace"), stateDir }).office(
+      createOfficeAddress("slack", "C123"),
+    );
+  }
 
   beforeEach(() => {
     stateDir = join(tmpdir(), `mikan-test-${Date.now()}-${Math.random()}`);
@@ -177,83 +184,50 @@ describe("loadGlobalSettings", () => {
 
   test("throws on conversation settings.json with invalid nested field types", () => {
     createGlobalSettingsFile(stateDir);
-    const conversationDir = join(stateDir, "workspace", "C123");
-    mkdirSync(conversationDir, { recursive: true });
+    const conversation = office();
+    mkdirSync(conversation.dir, { recursive: true });
     writeFileSync(
-      join(conversationDir, "settings.json"),
+      join(conversation.dir, "settings.json"),
       JSON.stringify({ sandbox: { image: { workspaceMount: "everything" } } }),
       "utf-8",
     );
 
-    expect(() =>
-      resolveConversationSettings({
-        address: createOfficeAddress("slack", "C123"),
-        conversationDir,
-      }),
-    ).toThrow(/Malformed settings file.*workspaceMount/);
+    expect(() => resolveConversationSettings(conversation)).toThrow(
+      /Malformed settings file.*workspaceMount/,
+    );
   });
 
   test("conversation model config overrides global provider and model only", () => {
     updateGlobalSettings({ provider: "anthropic", model: "claude-sonnet-4-6" });
-    const conversationDir = join(stateDir, "workspace", "C123");
-    updateConversationSettings(
-      { address: createOfficeAddress("slack", "C123"), conversationDir },
-      {
-        provider: "openai",
-        model: "gpt-4o",
-        thinkingLevel: "low",
-      },
-    );
-
-    const config = resolveConversationSettings({
-      address: createOfficeAddress("slack", "C123"),
-      conversationDir,
+    const conversation = office();
+    updateConversationSettings(conversation, {
+      provider: "openai",
+      model: "gpt-4o",
+      thinkingLevel: "low",
     });
+
+    const config = resolveConversationSettings(conversation);
     expect(config.provider).toBe("openai");
     expect(config.model).toBe("gpt-4o");
     expect(config.thinkingLevel).toBe("low");
     // Settings are host-authoritative: stored under the state dir, never in
     // the (sandbox-mounted) conversation dir.
-    expect(existsSync(join(conversationDir, "settings.json"))).toBe(false);
-    expect(
-      JSON.parse(
-        readFileSync(
-          conversationSettingsPath({
-            address: createOfficeAddress("slack", "C123"),
-            conversationDir,
-          }),
-          "utf-8",
-        ),
-      ),
-    ).toEqual({
+    expect(existsSync(join(conversation.dir, "settings.json"))).toBe(false);
+    expect(JSON.parse(readFileSync(conversationSettingsPath(conversation), "utf-8"))).toEqual({
       llm: { provider: "openai", model: "gpt-4o", thinkingLevel: "low" },
     });
   });
 
   test("conversation sandbox config overrides global image workspace mount", () => {
     createGlobalSettingsFile(stateDir);
-    const conversationDir = join(stateDir, "workspace", "C123");
-    updateConversationSettings(
-      { address: createOfficeAddress("slack", "C123"), conversationDir },
-      { sandbox: { image: { workspaceMount: "full" } } },
-    );
-
-    const config = resolveConversationSettings({
-      address: createOfficeAddress("slack", "C123"),
-      conversationDir,
+    const conversation = office();
+    updateConversationSettings(conversation, {
+      sandbox: { image: { workspaceMount: "full" } },
     });
+
+    const config = resolveConversationSettings(conversation);
     expect(config.sandbox?.image?.workspaceMount).toBe("full");
-    expect(
-      JSON.parse(
-        readFileSync(
-          conversationSettingsPath({
-            address: createOfficeAddress("slack", "C123"),
-            conversationDir,
-          }),
-          "utf-8",
-        ),
-      ),
-    ).toEqual({
+    expect(JSON.parse(readFileSync(conversationSettingsPath(conversation), "utf-8"))).toEqual({
       sandbox: { image: { workspaceMount: "full" } },
     });
   });
@@ -261,18 +235,12 @@ describe("loadGlobalSettings", () => {
   test("sandbox settings merge at the leaf level across global and conversation", () => {
     createGlobalSettingsFile(stateDir);
     updateGlobalSettings({ sandbox: { cpus: "1", boost: { cpus: "4" } } });
-    const conversationDir = join(stateDir, "workspace", "C123");
-    updateConversationSettings(
-      { address: createOfficeAddress("slack", "C123"), conversationDir },
-      {
-        sandbox: { memory: "2g", boost: { memory: "8g" } },
-      },
-    );
-
-    const config = resolveConversationSettings({
-      address: createOfficeAddress("slack", "C123"),
-      conversationDir,
+    const conversation = office();
+    updateConversationSettings(conversation, {
+      sandbox: { memory: "2g", boost: { memory: "8g" } },
     });
+
+    const config = resolveConversationSettings(conversation);
     // Global sandbox.cpus survives a conversation that only sets sandbox.memory.
     expect(config.sandbox?.cpus).toBe("1");
     expect(config.sandbox?.memory).toBe("2g");
@@ -283,88 +251,52 @@ describe("loadGlobalSettings", () => {
 
   test("conversation slack config overrides global reply mode", () => {
     updateGlobalSettings({ slack: { replyMode: "top-level" } });
-    const conversationDir = join(stateDir, "workspace", "C123");
-    updateConversationSettings(
-      { address: createOfficeAddress("slack", "C123"), conversationDir },
-      { slack: { replyMode: "thread" } },
-    );
+    const conversation = office();
+    updateConversationSettings(conversation, { slack: { replyMode: "thread" } });
 
-    const config = resolveConversationSettings({
-      address: createOfficeAddress("slack", "C123"),
-      conversationDir,
-    });
+    const config = resolveConversationSettings(conversation);
     expect(config.slack?.replyMode).toBe("thread");
-    expect(
-      JSON.parse(
-        readFileSync(
-          conversationSettingsPath({
-            address: createOfficeAddress("slack", "C123"),
-            conversationDir,
-          }),
-          "utf-8",
-        ),
-      ),
-    ).toEqual({
+    expect(JSON.parse(readFileSync(conversationSettingsPath(conversation), "utf-8"))).toEqual({
       slack: { replyMode: "thread" },
     });
   });
 
   test("migrates a legacy conversation settings.json into the state dir once", () => {
     createGlobalSettingsFile(stateDir);
-    const conversationDir = join(stateDir, "workspace", "C123");
-    mkdirSync(conversationDir, { recursive: true });
-    const legacyPath = join(conversationDir, "settings.json");
+    const conversation = office();
+    mkdirSync(conversation.dir, { recursive: true });
+    const legacyPath = join(conversation.dir, "settings.json");
     writeFileSync(legacyPath, JSON.stringify({ sandbox: { image: { workspaceMount: "full" } } }));
 
-    const config = resolveConversationSettings({
-      address: createOfficeAddress("slack", "C123"),
-      conversationDir,
-    });
+    const config = resolveConversationSettings(conversation);
     expect(config.sandbox?.image?.workspaceMount).toBe("full");
     // Legacy file was moved out of the (sandbox-mounted) conversation dir.
     expect(existsSync(legacyPath)).toBe(false);
-    expect(
-      existsSync(
-        conversationSettingsPath({
-          address: createOfficeAddress("slack", "C123"),
-          conversationDir,
-        }),
-      ),
-    ).toBe(true);
+    expect(existsSync(conversationSettingsPath(conversation))).toBe(true);
   });
 
   test("a legacy settings.json appearing after migration is never read (sandbox plant)", () => {
     createGlobalSettingsFile(stateDir);
-    const conversationDir = join(stateDir, "workspace", "C123");
-    mkdirSync(conversationDir, { recursive: true });
+    const conversation = office();
+    mkdirSync(conversation.dir, { recursive: true });
 
     // First access with no legacy file writes the migration marker.
     // Global onboarding now defaults to an isolated office.
-    expect(
-      resolveConversationSettings({
-        address: createOfficeAddress("slack", "C123"),
-        conversationDir,
-      }).sandbox?.workspace,
-    ).toEqual({
+    expect(resolveConversationSettings(conversation).sandbox?.workspace).toEqual({
       doorPolicy: "isolated",
     });
 
     // An agent inside the sandbox plants a legacy settings.json afterwards,
     // trying to flip its own mount mode to full. It must stay ignored.
     writeFileSync(
-      join(conversationDir, "settings.json"),
+      join(conversation.dir, "settings.json"),
       JSON.stringify({ sandbox: { image: { workspaceMount: "full" } } }),
     );
-    expect(
-      resolveConversationSettings({
-        address: createOfficeAddress("slack", "C123"),
-        conversationDir,
-      }).sandbox?.workspace,
-    ).toEqual({
+    expect(resolveConversationSettings(conversation).sandbox?.workspace).toEqual({
       doorPolicy: "isolated",
     });
     // And it is not deleted either: only pre-migration files are moved.
-    expect(existsSync(join(conversationDir, "settings.json"))).toBe(true);
+    expect(existsSync(join(conversation.dir, "settings.json"))).toBe(true);
   });
 });
 

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { MutableModels } from "@earendil-works/pi-ai";
-import { createOfficeAddress, createWorkspace, officeDirName } from "../src/office/index.js";
+import { createOfficeAddress, createWorkspace } from "../src/office/index.js";
 import { createGlobalSettingsFile } from "../src/config.js";
 import type {
   MessagingBot,
@@ -40,14 +40,13 @@ beforeEach(() => {
     tmpdir(),
     `mikan-session-runtime-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   );
-  conversationDir = join(workingDir, officeDirName(testAddress));
-  mkdirSync(conversationDir, { recursive: true });
   // Every runtime path reads global settings and the office registry; a
   // test-scoped state dir keeps that off the developer's real ~/.mikan.
   const stateDir = join(workingDir, "state");
   mkdirSync(stateDir, { recursive: true });
   process.env.MIKAN_STATE_DIR = stateDir;
   createGlobalSettingsFile(stateDir);
+  conversationDir = createWorkspace({ root: workingDir, stateDir }).office(testAddress).ensure();
 });
 
 afterEach(() => {

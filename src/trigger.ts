@@ -34,19 +34,14 @@ export async function evaluateAutoReplyPolicy(input: {
   const { event, office, judge = judgeAutoReplyWithLlm, timeoutMs = JUDGE_TIMEOUT_MS } = input;
   if (!office) return { trigger: false, reason: "auto-reply-unconfigured" };
 
-  const conversationDir = office.dir;
-
   try {
-    const config = loadConversationAutoReplyConfig(conversationDir);
+    const config = loadConversationAutoReplyConfig(office.dir);
     if (!config.enabled) return { trigger: false, reason: "auto-reply-disabled" };
     if (config.rules.length === 0) {
       return { trigger: true, reason: "auto-reply-enabled" };
     }
 
-    const shouldReply = await withTimeout(
-      judge({ event, rules: config.rules, conversationDir }),
-      timeoutMs,
-    );
+    const shouldReply = await withTimeout(judge({ event, rules: config.rules, office }), timeoutMs);
     return shouldReply
       ? { trigger: true, reason: "auto-reply-rule-match" }
       : { trigger: false, reason: "auto-reply-rule-no-match" };
@@ -86,12 +81,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 async function judgeAutoReplyWithLlm(input: {
   event: ConversationEvent;
   rules: string[];
-  conversationDir: string;
+  office: import("./office/types.js").Office;
 }): Promise<boolean> {
-  const judgeConfig = loadAutoReplyJudgeModel({
-    address: input.event.address,
-    conversationDir: input.conversationDir,
-  });
+  const judgeConfig = loadAutoReplyJudgeModel(input.office);
   const models = MikanModels.create();
   const model = models.resolve(judgeConfig.provider, judgeConfig.model);
 

@@ -17,15 +17,23 @@ import {
   updateGlobalSettings,
 } from "../src/config.js";
 import { resolveWorkspaceProjection } from "../src/workspace-projection/index.js";
-import { createOfficeAddress, officeDirName } from "../src/office/index.js";
+import {
+  createOfficeAddress,
+  createWorkspace,
+  officeKey,
+  type Office,
+  type Workspace,
+} from "../src/office/index.js";
 
 const conversationId = "C123";
 const address = createOfficeAddress("slack", conversationId);
-const officeSegment = officeDirName(address);
+const officeSegment = officeKey(address);
 
 describe("workspace office projection", () => {
   let stateDir: string;
   let workspaceDir: string;
+  let workspace: Workspace;
+  let office: Office;
 
   beforeEach(() => {
     stateDir = mkdtempSync(join(tmpdir(), "mikan-office-projection-"));
@@ -33,6 +41,8 @@ describe("workspace office projection", () => {
     mkdirSync(workspaceDir, { recursive: true });
     process.env.MIKAN_STATE_DIR = stateDir;
     createGlobalSettingsFile(stateDir);
+    workspace = createWorkspace({ root: workspaceDir, stateDir });
+    office = workspace.office(address);
   });
 
   afterEach(() => {
@@ -41,7 +51,7 @@ describe("workspace office projection", () => {
   });
 
   test("fresh installs expose only the conversation office", () => {
-    const projection = resolveWorkspaceProjection(workspaceDir, address);
+    const projection = resolveWorkspaceProjection(office);
 
     expect(projection).toMatchObject({
       doorPolicy: "isolated",
@@ -70,7 +80,7 @@ describe("workspace office projection", () => {
       }),
     );
 
-    const projection = resolveWorkspaceProjection(workspaceDir, address);
+    const projection = resolveWorkspaceProjection(office);
 
     expect(projection).toMatchObject({
       doorPolicy: "trusted",
@@ -88,13 +98,10 @@ describe("workspace office projection", () => {
   });
 
   test("maps legacy full conversation override above canonical global defaults", () => {
-    const settingsPath = conversationSettingsPath({
-      address,
-      conversationDir: join(workspaceDir, officeSegment),
-    });
+    const settingsPath = conversationSettingsPath(office);
     writeFileSync(settingsPath, JSON.stringify({ sandbox: { image: { workspaceMount: "full" } } }));
 
-    expect(resolveWorkspaceProjection(workspaceDir, address)).toMatchObject({
+    expect(resolveWorkspaceProjection(office)).toMatchObject({
       doorPolicy: "trusted",
       layout: "full",
       mounts: [{ source: workspaceDir, target: "/workspace" }],
@@ -105,14 +112,11 @@ describe("workspace office projection", () => {
     updateGlobalSettings({
       sandbox: { workspace: { doorPolicy: "trusted", layout: "full" } },
     });
-    updateConversationSettings(
-      { address, conversationDir: join(workspaceDir, officeSegment) },
-      {
-        sandbox: { workspace: { doorPolicy: "isolated" } },
-      },
-    );
+    updateConversationSettings(office, {
+      sandbox: { workspace: { doorPolicy: "isolated" } },
+    });
 
-    expect(resolveWorkspaceProjection(workspaceDir, address)).toMatchObject({
+    expect(resolveWorkspaceProjection(office)).toMatchObject({
       doorPolicy: "isolated",
       layout: "conversation",
     });
@@ -123,11 +127,11 @@ describe("workspace office projection", () => {
       sandbox: { workspace: { doorPolicy: "trusted", layout: "shared-support" } },
     });
 
-    resolveWorkspaceProjection(workspaceDir, address);
+    resolveWorkspaceProjection(office);
     rmSync(join(workspaceDir, "MEMORY.md"));
     rmSync(join(workspaceDir, "skills"), { recursive: true });
     rmSync(join(workspaceDir, "events"), { recursive: true });
-    resolveWorkspaceProjection(workspaceDir, address);
+    resolveWorkspaceProjection(office);
 
     expect(lstatSync(join(workspaceDir, "MEMORY.md")).isFile()).toBe(true);
     expect(lstatSync(join(workspaceDir, "skills")).isDirectory()).toBe(true);
@@ -139,9 +143,7 @@ describe("workspace office projection", () => {
     ["conversation file", (root: string) => writeFileSync(join(root, officeSegment), "wrong")],
   ])("rejects a suspicious %s", (_label, arrange) => {
     arrange(workspaceDir);
-    expect(() => resolveWorkspaceProjection(workspaceDir, address)).toThrow(
-      /regular non-symlink directory/,
-    );
+    expect(() => resolveWorkspaceProjection(office)).toThrow(/regular non-symlink directory/);
   });
 
   test("rejects wrong-type trusted support roots", () => {
@@ -150,7 +152,7 @@ describe("workspace office projection", () => {
     });
     mkdirSync(join(workspaceDir, "MEMORY.md"));
 
-    expect(() => resolveWorkspaceProjection(workspaceDir, address)).toThrow(
+    expect(() => resolveWorkspaceProjection(office)).toThrow(
       /workspace memory must be a regular non-symlink file/i,
     );
   });
@@ -158,9 +160,7 @@ describe("workspace office projection", () => {
   test("fails closed on malformed host settings", () => {
     writeFileSync(join(stateDir, "settings.json"), "{ broken");
 
-    expect(() => resolveWorkspaceProjection(workspaceDir, address)).toThrow(
-      /settings are malformed/,
-    );
+    expect(() => resolveWorkspaceProjection(office)).toThrow(/settings are malformed/);
   });
 
   test.each(["", ".", "..", "../events", "nested/id", "nested\\id", "nul\0id"])(
@@ -169,7 +169,7 @@ describe("workspace office projection", () => {
       // The address factory owns identity validation now, so an unsafe id can
       // never reach the projection.
       expect(() =>
-        resolveWorkspaceProjection(workspaceDir, createOfficeAddress("slack", id)),
+        resolveWorkspaceProjection(workspace.office(createOfficeAddress("slack", id))),
       ).toThrow(/Conversation id/);
     },
   );

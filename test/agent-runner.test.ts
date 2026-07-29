@@ -11,7 +11,7 @@ import { loadSkillsFromDir } from "../src/harness/skills.js";
 import { MikanAgentSession, MikanModels } from "../src/harness/index.js";
 import { createManagedSessionFile, getChannelSessionDir } from "../src/sessions/store.js";
 import type { PlatformToolPackFactory } from "../src/tools/types.js";
-import { createOfficeAddress, officeDirName } from "../src/office/index.js";
+import { createOfficeAddress, createWorkspace, type Office } from "../src/office/index.js";
 
 /**
  * Drives PiAgentWrapper.run() end to end with a faux provider: the runner is
@@ -43,6 +43,15 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+const C1_ADDRESS = createOfficeAddress("slack", "C1");
+
+/** The office every test in this file drives, rooted in the per-test tmpdir. */
+function testOffice(): Office {
+  return createWorkspace({ root: join(dir, "workspace"), stateDir: join(dir, "state") }).office(
+    C1_ADDRESS,
+  );
+}
+
 function createFauxModels(): { models: MikanModels; faux: ReturnType<typeof fauxProvider> } {
   const authPath = join(dir, "auth.json");
   writeFileSync(authPath, JSON.stringify({ faux: { type: "api_key", key: "test-key" } }));
@@ -59,19 +68,15 @@ async function createTestRunner(
   platformToolPackFactories: readonly PlatformToolPackFactory[] = [],
 ) {
   const { models, faux } = createFauxModels();
-  const workspaceDir = join(dir, "workspace");
-  const conversationDir = join(workspaceDir, officeDirName(createOfficeAddress("slack", "C1")));
-  mkdirSync(conversationDir, { recursive: true });
+  const office = testOffice();
+  const conversationDir = office.ensure();
   const sessionDir = getChannelSessionDir(conversationDir);
   const contextFile = createManagedSessionFile(sessionDir, conversationDir);
 
   const runner = await createRunner({
     sandboxConfig: { type: "host" },
     sessionKey: "C1",
-    address: createOfficeAddress("slack", "C1"),
-    conversationId: "C1",
-    conversationDir,
-    workspaceDir,
+    office,
     sessionScope: { sessionDir, contextFile, threadRootMessage: null },
     models,
     platformToolPackFactories,
@@ -125,15 +130,9 @@ describe("PiAgentWrapper.run", () => {
   test("does not follow conversation memory symlinks during host prompt construction", async () => {
     const outside = join(dir, "outside-secret.txt");
     writeFileSync(outside, "DO_NOT_LEAK_THIS_SECRET");
-    const memoryPath = join(
-      dir,
-      "workspace",
-      officeDirName(createOfficeAddress("slack", "C1")),
-      "MEMORY.md",
-    );
-    mkdirSync(join(dir, "workspace", officeDirName(createOfficeAddress("slack", "C1"))), {
-      recursive: true,
-    });
+    const office = testOffice();
+    const memoryPath = office.memoryPath;
+    office.ensure();
     rmSync(memoryPath, { force: true });
     symlinkSync(outside, memoryPath);
     const { runner } = await createTestRunner();
@@ -339,12 +338,7 @@ describe("PiAgentWrapper.run", () => {
   test("hidden session Dream sees the old transcript and writes memory", async () => {
     const promptSpy = vi.spyOn(MikanAgentSession.prototype, "prompt");
     const { runner, faux } = await createTestRunner();
-    const memoryPath = join(
-      dir,
-      "workspace",
-      officeDirName(createOfficeAddress("slack", "C1")),
-      "MEMORY.md",
-    );
+    const memoryPath = testOffice().memoryPath;
     const setupResponder = makeResponder();
     let maintenancePrompt = "";
     faux.setResponses([

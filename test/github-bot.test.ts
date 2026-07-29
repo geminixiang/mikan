@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler, OfficeAddress } from "../src/adapter.js";
-import { createOfficeAddress, createWorkspace, officeDirName } from "../src/office/index.js";
+import { createOfficeAddress, createWorkspace, officeKey } from "../src/office/index.js";
 import { conversationIdOf } from "../src/sessions/session-key.js";
 import { GithubMessagingBot } from "../src/adapters/github/bot.js";
 import type { GithubClient } from "../src/adapters/github/client.js";
@@ -164,7 +164,7 @@ function makeFakeClient(): FakeClient {
 }
 
 const CONVERSATION_ID = "GH_octo_widgets_5";
-const CONVERSATION_OFFICE = officeDirName(createOfficeAddress("github", CONVERSATION_ID));
+const CONVERSATION_OFFICE = officeKey(createOfficeAddress("github", CONVERSATION_ID));
 
 async function settleQueues(): Promise<void> {
   // MessagingEventQueue processes asynchronously; yield a few microtask turns.

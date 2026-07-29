@@ -5,7 +5,7 @@
 
 export type { CreateRunnerOptions, PiAgentWrapper } from "./types.js";
 import type { CreateRunnerOptions, OfficeAddress, PiAgentWrapper } from "./types.js";
-import { officeDirName } from "./office/index.js";
+import type { Office, Workspace } from "./office/index.js";
 
 import type { AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
@@ -56,7 +56,6 @@ import type {
 import { resolveConversationSettings } from "./config.js";
 import { resolveWorkspaceProjection } from "./workspace-projection/index.js";
 import type { WorkspaceProjection } from "./workspace-projection/types.js";
-import { effectiveStateDir } from "./cli/arg-grammar.js";
 import { packageSkillRuntimeDir, resolveConversationPackages } from "./packages/index.js";
 import { ActorExecutionResolver } from "./execution-resolver.js";
 import * as log from "./log.js";
@@ -314,17 +313,15 @@ function isRegularFile(path: string): boolean {
 }
 
 function loadMikanSkills(
-  address: OfficeAddress,
-  conversationDir: string,
+  office: Office,
   workspacePath: string,
   projection: WorkspaceProjection,
 ): { skills: MikanSkill[]; skippedSkillLinks: string[] } {
   const skillMap = new Map<string, MikanSkill>();
 
-  // conversationDir is the host path (e.g., /Users/.../data/C0A34FL8PMH)
-  // hostWorkspacePath is the parent directory on host
-  // workspacePath is the container path (e.g., /workspace)
-  const hostWorkspacePath = join(conversationDir, "..");
+  // workspacePath is the runtime-side root (e.g. /workspace); host paths under
+  // the workspace root translate onto it for prompt references.
+  const hostWorkspacePath = office.workspace.root;
 
   // Helper to translate host paths to container paths
   const translatePath = (hostPath: string): string => {
@@ -344,11 +341,7 @@ function loadMikanSkills(
   // so the agent can read the files — including any scripts or templates the
   // skill ships alongside its SKILL.md, which inlining could never carry.
   const mounted = workspacePath !== hostWorkspacePath;
-  for (const { slug, dir } of resolveConversationPackages({
-    address,
-    stateDir: effectiveStateDir(),
-    conversationDir,
-  }).skillDirs) {
+  for (const { slug, dir } of resolveConversationPackages({ office }).skillDirs) {
     const runtimeDir = packageSkillRuntimeDir(slug);
     for (const skill of loadSkillsFromDir({ dir, source: `package:${slug}` }).skills) {
       // In host mode there is no mount, so the host path is already the path
@@ -398,9 +391,9 @@ function loadMikanSkills(
   return { skills: Array.from(skillMap.values()), skippedSkillLinks };
 }
 
-function buildRuntimePaths(runtimeWorkspaceRoot: string, address: OfficeAddress) {
+function buildRuntimePaths(runtimeWorkspaceRoot: string, office: Office) {
   const workspaceRoot = runtimeWorkspaceRoot.replace(/\/+$/, "") || "/";
-  const conversationPath = posix.join(workspaceRoot, officeDirName(address));
+  const conversationPath = posix.join(workspaceRoot, office.key);
   return {
     workspaceRoot,
     conversationPath,
@@ -455,7 +448,7 @@ export function resolveTriggerAttribution(
 
 function buildSystemPrompt(
   workspacePath: string,
-  address: OfficeAddress,
+  office: Office,
   conversationKind: ConversationKind,
   currentUserId: string | undefined,
   memory: string,
@@ -465,10 +458,7 @@ function buildSystemPrompt(
   projection: WorkspaceProjection,
   skippedSkillLinks: string[] = [],
 ): string {
-  const { workspaceRoot, conversationPath, scratchPath } = buildRuntimePaths(
-    workspacePath,
-    address,
-  );
+  const { workspaceRoot, conversationPath, scratchPath } = buildRuntimePaths(workspacePath, office);
   const sandboxType = sandboxConfig.type;
   const isContainerLike = sandboxType === "container" || sandboxType === "image";
   const isFirecracker = sandboxType === "firecracker";
@@ -552,7 +542,7 @@ ${
     : `${workspaceRoot}/
 ├── MEMORY.md                    # Global memory (all conversations)
 ├── skills/                      # Global CLI tools you create
-└── ${officeDirName(address)}/           # This conversation`
+└── ${office.key}/           # This conversation`
 }
     ├── MEMORY.md                # Conversation-specific memory
     ├── log.jsonl                # Human-readable message history (no tool results)
@@ -1226,18 +1216,11 @@ function createRunnerExecutionContext(
   sandboxConfig: SandboxConfig,
   vaultManager: VaultManager | undefined,
   provisioner: DockerContainerManager | undefined,
-  workspaceDir: string,
-  hostWorkspacePath: string,
+  workspace: Workspace,
 ): RunnerExecutionContext {
   const executionResolver =
     vaultManager && sandboxConfig.type !== "host"
-      ? new ActorExecutionResolver(
-          sandboxConfig,
-          vaultManager,
-          provisioner,
-          workspaceDir,
-          hostWorkspacePath,
-        )
+      ? new ActorExecutionResolver(sandboxConfig, vaultManager, provisioner, workspace)
       : undefined;
 
   // activeExecutor is replaced at the start of each run() call when executionResolver
@@ -1273,7 +1256,7 @@ function createRunnerExecutionContext(
   return {
     executionResolver,
     executor,
-    getPathContext: () => executor.getPathContext(hostWorkspacePath),
+    getPathContext: () => executor.getPathContext(workspace.root),
     async resolveExecutorForRun(context): Promise<void> {
       if (!executionResolver) return;
       activeExecutor = await executionResolver.resolve(context);
@@ -1288,7 +1271,7 @@ function createRunnerExecutionContext(
  * notify posts through the platform bots when main.ts provides a notifier.
  */
 function buildExtensionHostServices(params: {
-  workspaceDir: string;
+  workspace: Workspace;
   vaultManager?: VaultManager;
   platformNotifier?: PlatformNotifier;
   platformReactor?: PlatformReactor;
@@ -1297,7 +1280,7 @@ function buildExtensionHostServices(params: {
   runSubagentService?: ExtensionHostServices["runSubagent"];
 }): ExtensionHostServices {
   const {
-    workspaceDir,
+    workspace,
     vaultManager,
     platformNotifier,
     platformReactor,
@@ -1305,9 +1288,9 @@ function buildExtensionHostServices(params: {
     platformBlockKit,
     runSubagentService,
   } = params;
-  const eventStore = HostEventStore.fromWorkspaceDir(workspaceDir);
+  const eventStore = HostEventStore.fromWorkspaceDir(workspace.root);
   return {
-    stateDir: effectiveStateDir(),
+    stateDir: workspace.stateDir,
     scheduleStore: {
       write: async (filename, payload) => {
         await eventStore.write(filename, payload);
@@ -1334,10 +1317,7 @@ function buildExtensionHostServices(params: {
 }
 
 async function createConfiguredAgentSession(params: {
-  address: OfficeAddress;
-  conversationId: string;
-  conversationDir: string;
-  workspaceDir: string;
+  office: Office;
   systemPrompt: string;
   model: Model<Api>;
   thinkingLevel: ThinkingLevel;
@@ -1351,10 +1331,7 @@ async function createConfiguredAgentSession(params: {
   platformBlockKit?: PlatformBlockKit;
 }): Promise<ConfiguredAgentSession> {
   const {
-    address,
-    conversationId,
-    conversationDir,
-    workspaceDir,
+    office,
     systemPrompt,
     model,
     thinkingLevel,
@@ -1367,6 +1344,9 @@ async function createConfiguredAgentSession(params: {
     platformUploader,
     platformBlockKit,
   } = params;
+  const { address } = office;
+  const conversationId = address.conversationId;
+  const workspaceDir = office.workspace.root;
 
   // Host-only dirs under the state dir: extension code runs in the mikan
   // process, so it must never load from workspace paths — those are mounted
@@ -1386,11 +1366,7 @@ async function createConfiguredAgentSession(params: {
   // contributed theirs. Both subagent entry points read this at call time, so
   // they always agree on which profiles are launchable.
   let runnableSubagentProfiles = loadedProfiles.profiles;
-  const resolvedPackages = resolveConversationPackages({
-    address,
-    stateDir: effectiveStateDir(),
-    conversationDir,
-  });
+  const resolvedPackages = resolveConversationPackages({ office });
   for (const error of resolvedPackages.errors) {
     log.logWarning(`Package unavailable: ${error.source}`, error.message);
   }
@@ -1399,7 +1375,7 @@ async function createConfiguredAgentSession(params: {
     roots: resolvedPackages.extensionRoots,
     context: { address, conversationId, workspaceDir, model, thinkingLevel },
     services: buildExtensionHostServices({
-      workspaceDir,
+      workspace: office.workspace,
       vaultManager,
       platformNotifier,
       platformReactor,
@@ -1494,8 +1470,7 @@ async function prepareRunContext(params: {
   message: ConversationMessage;
   responder: ConversationResponder;
   platform: MessagingInfo;
-  conversationId: string;
-  conversationDir: string;
+  office: Office;
   sessionUuid: string;
   runState: RunnerSessionState;
   executor: Executor;
@@ -1521,8 +1496,7 @@ async function prepareRunContext(params: {
     message,
     responder,
     platform,
-    conversationId,
-    conversationDir,
+    office,
     sessionUuid,
     runState,
     executor,
@@ -1537,10 +1511,11 @@ async function prepareRunContext(params: {
     setReactFunction,
     bindPlatformToolPacks,
   } = params;
+  const conversationId = office.address.conversationId;
   let pathContext = params.pathContext;
   const sessionConversation = conversationIdOf(message.sessionKey);
 
-  await mkdir(join(conversationDir, "scratch"), { recursive: true });
+  await mkdir(join(office.dir, "scratch"), { recursive: true });
 
   if (executionResolver) {
     await resolveExecutorForRun({
@@ -1553,11 +1528,10 @@ async function prepareRunContext(params: {
 
   reloadSessionMessages(session, conversationId);
 
-  const projection = resolveWorkspaceProjection(join(conversationDir, ".."), message.address);
+  const projection = resolveWorkspaceProjection(office);
   const memory = await getMemory(projection);
   const conversationSkillLoad = loadMikanSkills(
-    message.address,
-    conversationDir,
+    office,
     pathContext.runtimeWorkspaceRoot,
     projection,
   );
@@ -1565,7 +1539,7 @@ async function prepareRunContext(params: {
   const triggerAttribution = resolveTriggerAttribution(message);
   const systemPrompt = buildSystemPrompt(
     pathContext.runtimeWorkspaceRoot,
-    message.address,
+    office,
     message.conversationKind,
     message.userId,
     memory,
@@ -2076,9 +2050,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   const {
     sandboxConfig,
     sessionKey,
-    conversationId,
-    conversationDir,
-    workspaceDir,
+    office,
     sessionScope,
     vaultManager,
     provisioner,
@@ -2090,20 +2062,16 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     platformBlockKit,
     platformToolPackFactories,
   } = options;
-  const agentConfig = resolveConversationSettings({ address: options.address, conversationDir });
+  const conversationId = office.address.conversationId;
+  const conversationDir = office.dir;
+  const workspaceDir = office.workspace.root;
+  const agentConfig = resolveConversationSettings(office);
 
-  const workspaceBase = join(conversationDir, "..");
-  const projection = resolveWorkspaceProjection(workspaceBase, options.address);
+  const projection = resolveWorkspaceProjection(office);
   assertSandboxSupportsWorkspacePolicy(sandboxConfig, projection.doorPolicy);
   const { executionResolver, executor, getPathContext, resolveExecutorForRun } =
-    createRunnerExecutionContext(
-      sandboxConfig,
-      vaultManager,
-      provisioner,
-      workspaceDir,
-      workspaceBase,
-    );
-  let pathContext = getUnresolvedSandboxPathContext(sandboxConfig, workspaceBase);
+    createRunnerExecutionContext(sandboxConfig, vaultManager, provisioner, office.workspace);
+  let pathContext = getUnresolvedSandboxPathContext(sandboxConfig, workspaceDir);
 
   const modelRegistry = options.models ?? MikanModels.create();
   if (modelRegistry.getError()) {
@@ -2138,8 +2106,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   // Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
   const memory = await getMemory(projection);
   const { skills, skippedSkillLinks } = loadMikanSkills(
-    options.address,
-    conversationDir,
+    office,
     pathContext.runtimeWorkspaceRoot,
     projection,
   );
@@ -2152,7 +2119,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   };
   const systemPrompt = buildSystemPrompt(
     pathContext.runtimeWorkspaceRoot,
-    options.address,
+    office,
     "shared",
     undefined,
     memory,
@@ -2178,10 +2145,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   const chatSessionManager = new ChatHistorySync();
   const { session, extensionSkills, extensionRegistry, disposeExtensions } =
     await createConfiguredAgentSession({
-      address: options.address,
-      conversationId,
-      conversationDir,
-      workspaceDir,
+      office,
       systemPrompt,
       model,
       thinkingLevel: agentConfig.thinkingLevel,
@@ -2218,8 +2182,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
         message,
         responder,
         platform,
-        conversationId,
-        conversationDir,
+        office,
         sessionUuid,
         runState,
         executor,
@@ -2365,8 +2328,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
         message,
         responder,
         platform,
-        conversationId,
-        conversationDir,
+        office,
         sessionUuid,
         runState,
         executor,
@@ -2388,7 +2350,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
       try {
         const conversationMemoryPath = posix.join(
           prepared.pathContext.runtimeWorkspaceRoot,
-          officeDirName(message.address),
+          office.key,
           "MEMORY.md",
         );
         const dreamTools = sessionDreamTools(session.agent.state.tools, conversationMemoryPath);

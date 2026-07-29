@@ -9,8 +9,9 @@ its host-side directory layout, its durable record, and the legacy migration.
 - `address.ts`: Canonical identity. `OfficeAddress` is `platform` plus the
   platform's raw `conversationId`; raw ids stay at platform I/O boundaries.
   Storage paths use the versioned `OfficeKey`, derived by SHA-256 from both
-  values (ADR 0005). Also holds the transitional `(root, address)` path
-  helpers that retire when every option bag carries an `Office` value.
+  values (ADR 0005). `officeStateDir(stateDir, address)` remains the one
+  low-level path helper, for stateDir-only surfaces (CLI, extension loader,
+  package materialization) that hold no Office value.
 - `layout.ts`: The two layout values. `createWorkspace({root, stateDir})`
   builds the per-process `Workspace` (workspace-global paths, reserved-name
   set, office factory); `workspace.office(address)` returns the memoized,

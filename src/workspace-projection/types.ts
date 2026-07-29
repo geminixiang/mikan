@@ -11,8 +11,6 @@ interface WorkspacePromptSources {
 export interface WorkspaceProjection {
   doorPolicy: WorkspaceDoorPolicy;
   layout: WorkspaceLayout;
-  /** Legacy layout name for callers that only display the old setting. */
-  mode: "private" | "full";
   mounts: ContainerMount[];
   promptSources: WorkspacePromptSources;
 }

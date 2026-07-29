@@ -6,10 +6,9 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   createOfficeAddress,
   createWorkspace,
-  officeDirName,
   officeKey,
+  OfficeRegistry,
 } from "../src/office/index.js";
-import { OfficeRegistry } from "../src/office/index.js";
 import {
   addPackage,
   inspectConversationPackages,
@@ -43,13 +42,7 @@ function readPackages(path: string): string[] {
 }
 
 function context() {
-  const office = createWorkspace({ root: workingDir, stateDir }).office(CONVERSATION_ADDRESS);
-  return {
-    address: CONVERSATION_ADDRESS,
-    stateDir,
-    conversationDir: office.dir,
-    office,
-  };
+  return { office: createWorkspace({ root: workingDir, stateDir }).office(CONVERSATION_ADDRESS) };
 }
 
 beforeEach(() => {
@@ -58,7 +51,7 @@ beforeEach(() => {
   workingDir = join(base, "workspace");
   mkdirSync(stateDir, { recursive: true });
   new OfficeRegistry(stateDir).recordOffice(CONVERSATION_ADDRESS);
-  mkdirSync(join(workingDir, officeDirName(CONVERSATION_ADDRESS)), { recursive: true });
+  mkdirSync(join(workingDir, officeKey(CONVERSATION_ADDRESS)), { recursive: true });
   process.env.MIKAN_STATE_DIR = stateDir;
   writeFileSync(
     globalSettingsFile(),

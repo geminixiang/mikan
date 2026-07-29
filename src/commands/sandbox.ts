@@ -98,8 +98,7 @@ export class SandboxCommandHandler implements CommandHandler {
 
     if (parsed.action === "door") {
       const projection = resolveWorkspaceProjection(
-        context.services.workspace.root,
-        context.address,
+        context.services.workspace.office(context.address),
       );
       if (parsed.doorPolicy === undefined) {
         await replyDiagnosticWithContext(
@@ -144,7 +143,9 @@ export class SandboxCommandHandler implements CommandHandler {
         );
         return true;
       }
-      const updated = resolveWorkspaceProjection(context.services.workspace.root, context.address);
+      const updated = resolveWorkspaceProjection(
+        context.services.workspace.office(context.address),
+      );
       await replyDiagnosticWithContext(
         context.responder,
         formatCommandSummary("Sandbox Door", [
@@ -159,7 +160,9 @@ export class SandboxCommandHandler implements CommandHandler {
     const status = context.services.resourceController.getLimitStatus(containerKey);
     const defaultLimits = context.services.resourceController.getDefaultLimits();
     const boostLimits = context.services.resourceController.getBoostLimits();
-    const projection = resolveWorkspaceProjection(context.services.workspace.root, context.address);
+    const projection = resolveWorkspaceProjection(
+      context.services.workspace.office(context.address),
+    );
     await replyDiagnosticWithContext(
       context.responder,
       formatCommandSummary(

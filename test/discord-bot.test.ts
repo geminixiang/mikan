@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Collection } from "discord.js";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler } from "../src/adapter.js";
-import { createOfficeAddress, createWorkspace, officeDirName } from "../src/office/index.js";
+import { createOfficeAddress, createWorkspace, officeKey } from "../src/office/index.js";
 import type { Workspace } from "../src/office/index.js";
 import { DiscordMessagingBot } from "../src/adapters/discord/bot.js";
 
@@ -96,13 +96,13 @@ describe("DiscordMessagingBot attachments", () => {
 
     expect(downloadAttachment).toHaveBeenNthCalledWith(
       1,
-      join(workingDir, officeDirName(createOfficeAddress("discord", "C123")), "attachments"),
+      join(workingDir, officeKey(createOfficeAddress("discord", "C123")), "attachments"),
       expect.stringMatching(/^\d+_clip\.mov$/),
       "https://example.com/clip.mov",
     );
     expect(downloadAttachment).toHaveBeenNthCalledWith(
       2,
-      join(workingDir, officeDirName(createOfficeAddress("discord", "C123")), "attachments"),
+      join(workingDir, officeKey(createOfficeAddress("discord", "C123")), "attachments"),
       expect.stringMatching(/^\d+_broken\.mov$/),
       "https://example.com/broken.mov",
     );
@@ -111,7 +111,7 @@ describe("DiscordMessagingBot attachments", () => {
         name: "clip.mov",
         localPath: expect.stringMatching(
           new RegExp(
-            `^${officeDirName(createOfficeAddress("discord", "C123"))}/attachments/\\d+_clip\\.mov$`,
+            `^${officeKey(createOfficeAddress("discord", "C123"))}/attachments/\\d+_clip\\.mov$`,
           ),
         ),
       },
@@ -339,7 +339,7 @@ describe("DiscordMessagingBot message routing", () => {
     );
 
     const lines = readFileSync(
-      join(workingDir, officeDirName(createOfficeAddress("discord", "C1")), "log.jsonl"),
+      join(workingDir, officeKey(createOfficeAddress("discord", "C1")), "log.jsonl"),
       "utf-8",
     )
       .trim()

@@ -32,8 +32,8 @@ export function addPackage(
   const source = formatSource(parseSource(rawSource));
   const materialized = materializeSource(source, {
     scope,
-    address: context.address,
-    stateDir: context.stateDir,
+    address: context.office.address,
+    stateDir: context.office.workspace.stateDir,
     mode: "fetch",
   });
 
@@ -73,8 +73,8 @@ export function refreshPackage(
   }
   const materialized = materializeSource(rawSource, {
     scope,
-    address: context.address,
-    stateDir: context.stateDir,
+    address: context.office.address,
+    stateDir: context.office.workspace.stateDir,
     mode: "refresh",
   });
   return { source: rawSource, dir: materialized.dir };

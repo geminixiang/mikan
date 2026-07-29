@@ -7,10 +7,9 @@ import { officeDir } from "../src/office/address.js";
 import {
   assertConversationId,
   assertOfficeKey,
-  conversationOfficeDir,
   createOfficeAddress,
+  createWorkspace,
   isOfficeKey,
-  officeDirName,
   officeKey,
   officeStateDir,
   sameOffice,
@@ -135,19 +134,21 @@ describe("office address", () => {
     const address = createOfficeAddress("slack", "C123");
 
     test("host dir and runtime segment agree on the office key", () => {
-      expect(officeDirName(address)).toBe(officeKey(address));
-      expect(conversationOfficeDir("/data/workspace", address)).toBe(
-        `/data/workspace/${officeKey(address)}`,
+      const office = createWorkspace({ root: "/data/workspace", stateDir: "/data/state" }).office(
+        address,
       );
-      expect(conversationOfficeDir("/data/workspace", address)).toBe(
-        officeDir("/data/workspace", address),
-      );
+
+      expect(office.key).toBe(officeKey(address));
+      expect(office.dir).toBe(`/data/workspace/${officeKey(address)}`);
+      expect(office.dir).toBe(officeDir("/data/workspace", address));
+      expect(office.stateDir).toBe(officeStateDir("/data/state", address));
     });
 
     test("platforms sharing a raw id resolve to different directories", () => {
+      const workspace = createWorkspace({ root: "/w", stateDir: "/s" });
       const discord = createOfficeAddress("discord", "900100");
       const telegram = createOfficeAddress("telegram", "900100");
-      expect(conversationOfficeDir("/w", discord)).not.toBe(conversationOfficeDir("/w", telegram));
+      expect(workspace.office(discord).dir).not.toBe(workspace.office(telegram).dir);
     });
   });
 });

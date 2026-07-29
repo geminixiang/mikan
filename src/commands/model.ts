@@ -100,9 +100,8 @@ export class ModelCommandHandler implements CommandHandler {
     }
 
     const office = context.services.workspace.office(context.address);
-    const settingsScope = { address: office.address, conversationDir: office.dir };
     if (!parsed.provider || !parsed.model) {
-      const current = resolveConversationSettings(settingsScope);
+      const current = resolveConversationSettings(office);
       await replyDiagnosticWithContext(
         context.responder,
         formatCommandSummary("Model", [

@@ -52,12 +52,7 @@ export async function inspectConversationPackages(
 export function declaredSources(scope: PackageScope, options: ResolvePackagesOptions): string[] {
   try {
     const settings =
-      scope === "global"
-        ? loadGlobalSettings()
-        : resolveConversationSettings({
-            address: options.address,
-            conversationDir: options.conversationDir,
-          });
+      scope === "global" ? loadGlobalSettings() : resolveConversationSettings(options.office);
     return settings.packages ?? [];
   } catch {
     return [];
@@ -91,8 +86,8 @@ async function describe(
   try {
     dir = materializeSource(source, {
       scope,
-      address: options.address,
-      stateDir: options.stateDir,
+      address: options.office.address,
+      stateDir: options.office.workspace.stateDir,
       mode: "offline",
     }).dir;
   } catch (err) {

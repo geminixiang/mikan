@@ -55,7 +55,7 @@ export function applyConversationSettings(
     }
     runtimeSwitched = true;
   }
-  updateConversationSettings({ address: office.address, conversationDir: office.dir }, patch);
+  updateConversationSettings(office, patch);
   return { ok: true, runtimeSwitched };
 }
 
@@ -84,7 +84,7 @@ export function applyConversationWorkspacePolicy(
   if (runtime && !runtime.refreshConversationEnvironment(office.address)) {
     return { ok: false, reason: "busy" };
   }
-  setConversationWorkspacePolicy({ address: office.address, conversationDir: office.dir }, choice);
+  setConversationWorkspacePolicy(office, choice);
   return { ok: true, runtimeSwitched: runtime ? true : null };
 }
 

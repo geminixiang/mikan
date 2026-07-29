@@ -18,12 +18,7 @@ import { ModelCommandHandler } from "../src/commands/model.js";
 import { NewCommandHandler } from "../src/commands/new.js";
 import { SandboxCommandHandler } from "../src/commands/sandbox.js";
 import { SessionViewCommandHandler } from "../src/commands/session-view.js";
-import {
-  createOfficeAddress,
-  createWorkspace,
-  officeDirName,
-  officeKey,
-} from "../src/office/index.js";
+import { createOfficeAddress, createWorkspace, officeKey } from "../src/office/index.js";
 import type { CommandContext, CommandHandler, CommandServices } from "../src/commands/types.js";
 import { createManagedSessionFile, getChannelSessionDir } from "../src/sessions/store.js";
 import type { SandboxConfig } from "../src/sandbox/index.js";
@@ -359,7 +354,7 @@ describe("AutoReplyCommandHandler", () => {
 
     const enabledPath = join(
       workingDir,
-      officeDirName(createOfficeAddress("slack", "C123")),
+      officeKey(createOfficeAddress("slack", "C123")),
       "auto-reply",
     );
     expect(readFileSync(enabledPath, "utf-8")).toBe("");
@@ -379,18 +374,14 @@ describe("AutoReplyCommandHandler", () => {
     expect(existsSync(enabledPath)).toBe(false);
     expect(
       readFileSync(
-        join(
-          workingDir,
-          officeDirName(createOfficeAddress("slack", "C123")),
-          "auto-reply.disabled",
-        ),
+        join(workingDir, officeKey(createOfficeAddress("slack", "C123")), "auto-reply.disabled"),
         "utf-8",
       ),
     ).toBe("Reply when someone asks about deployments.");
   });
 
   test("shows auto-reply file contents in status", async () => {
-    const conversationDir = join(workingDir, officeDirName(createOfficeAddress("slack", "C123")));
+    const conversationDir = join(workingDir, officeKey(createOfficeAddress("slack", "C123")));
     mkdirSync(conversationDir, { recursive: true });
     writeFileSync(
       join(conversationDir, "auto-reply"),
@@ -797,25 +788,8 @@ describe("SandboxCommandHandler", () => {
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(
-      existsSync(
-        conversationSettingsPath({
-          address: createOfficeAddress("slack", "C123"),
-          conversationDir: join(workingDir, "C123"),
-        }),
-      ),
-    ).toBe(true);
-    expect(
-      JSON.parse(
-        readFileSync(
-          conversationSettingsPath({
-            address: createOfficeAddress("slack", "C123"),
-            conversationDir: join(workingDir, "C123"),
-          }),
-          "utf-8",
-        ),
-      ),
-    ).toEqual({});
+    expect(existsSync(conversationSettingsPath(doorOffice()))).toBe(true);
+    expect(JSON.parse(readFileSync(conversationSettingsPath(doorOffice()), "utf-8"))).toEqual({});
     expect(ctx.responder.responses[0]).toContain("Workspace policy: isolated");
   });
 
@@ -839,18 +813,17 @@ describe("SandboxCommandHandler", () => {
     });
   }
 
+  /** The office the handler mutates — same workspace the contexts are built on. */
+  function doorOffice() {
+    return testWorkspace(workingDir).office(createOfficeAddress("slack", "C123"));
+  }
+
   function doorSettingsFile(): string {
-    return conversationSettingsPath({
-      address: createOfficeAddress("slack", "C123"),
-      conversationDir: join(workingDir, "C123"),
-    });
+    return conversationSettingsPath(doorOffice());
   }
 
   function doorOverride() {
-    return loadConversationWorkspaceOverride({
-      address: createOfficeAddress("slack", "C123"),
-      conversationDir: join(workingDir, "C123"),
-    });
+    return loadConversationWorkspaceOverride(doorOffice());
   }
 
   test("door without an argument shows usage and the current policy", async () => {
@@ -949,7 +922,7 @@ describe("SessionViewCommandHandler", () => {
     const conversationId = "C123";
     const conversationDir = join(
       workingDir,
-      officeDirName(createOfficeAddress("slack", conversationId)),
+      officeKey(createOfficeAddress("slack", conversationId)),
     );
     mkdirSync(conversationDir, { recursive: true });
     createManagedSessionFile(getChannelSessionDir(conversationDir), conversationDir);
@@ -1005,7 +978,7 @@ describe("SessionViewCommandHandler", () => {
     const conversationId = "C123";
     const conversationDir = join(
       workingDir,
-      officeDirName(createOfficeAddress("slack", conversationId)),
+      officeKey(createOfficeAddress("slack", conversationId)),
     );
     mkdirSync(conversationDir, { recursive: true });
     const expectedFile = createManagedSessionFile(

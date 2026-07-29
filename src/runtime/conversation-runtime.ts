@@ -714,10 +714,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       const runner = await createRunner({
         sandboxConfig: this.options.sandbox,
         sessionKey: options.sessionKey,
-        address: options.address,
-        conversationId: options.conversationId,
-        conversationDir,
-        workspaceDir: this.options.workspace.root,
+        office: this.options.workspace.office(options.address),
         sessionScope,
         vaultManager: this.options.vaultManager,
         provisioner: this.options.provisioner,

@@ -3,10 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler } from "../src/adapter.js";
-import { createOfficeAddress, createWorkspace, officeDirName } from "../src/office/index.js";
+import { createOfficeAddress, createWorkspace, officeKey } from "../src/office/index.js";
 import type { Workspace } from "../src/office/index.js";
 
-const C123_OFFICE = officeDirName(createOfficeAddress("slack", "C123"));
+const C123_OFFICE = officeKey(createOfficeAddress("slack", "C123"));
 import { SlackMessagingBot } from "../src/adapters/slack/bot.js";
 import { defaultCommandHandlers } from "../src/commands/registry.js";
 import { commandManifestEntry } from "../src/commands/manifest.js";
@@ -1883,7 +1883,7 @@ describe("SlackMessagingBot backfill", () => {
 
     expect(count).toBe(1);
     const logContent = readFileSync(
-      join(workingDir, officeDirName(createOfficeAddress("slack", "C123")), "log.jsonl"),
+      join(workingDir, officeKey(createOfficeAddress("slack", "C123")), "log.jsonl"),
       "utf-8",
     );
     expect(logContent).toContain('"threadTs":"1000.0001"');
@@ -1937,7 +1937,7 @@ describe("SlackMessagingBot backfill", () => {
 
     expect(count).toBe(1);
     const logContent = readFileSync(
-      join(workingDir, officeDirName(createOfficeAddress("slack", "C123")), "log.jsonl"),
+      join(workingDir, officeKey(createOfficeAddress("slack", "C123")), "log.jsonl"),
       "utf-8",
     );
     expect(logContent).toContain('"userName":"Sentry"');
@@ -1981,7 +1981,7 @@ describe("SlackMessagingBot backfill", () => {
 
     expect(count).toBe(1);
     const logContent = readFileSync(
-      join(workingDir, officeDirName(createOfficeAddress("slack", "C123")), "log.jsonl"),
+      join(workingDir, officeKey(createOfficeAddress("slack", "C123")), "log.jsonl"),
       "utf-8",
     );
     expect(logContent).toContain('"text":"ask <@U999> about this"');

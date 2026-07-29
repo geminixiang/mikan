@@ -626,7 +626,7 @@ export type TriggerResult = { trigger: true; reason: string } | { trigger: false
 export type AutoReplyJudge = (input: {
   event: ConversationEvent;
   rules: string[];
-  conversationDir: string;
+  office: import("./office/types.js").Office;
 }) => Promise<boolean>;
 
 // ── shared implementation contracts ─────────────────────────────────────────
@@ -665,12 +665,8 @@ export type SettingsApplyResult =
 export interface CreateRunnerOptions {
   sandboxConfig: import("./sandbox/types.js").SandboxConfig;
   sessionKey: string;
-  /** Canonical office identity for workspace paths and execution scoping. */
-  address: OfficeAddress;
-  /** Raw platform id; settings/vault/package keys keep it until ADR 0005. */
-  conversationId: string;
-  conversationDir: string;
-  workspaceDir: string;
+  /** The Conversation office this runner serves; identity and layout derive from it. */
+  office: import("./office/types.js").Office;
   sessionScope: import("./sessions/types.js").ResolvedSessionScope;
   vaultManager?: import("./vault/types.js").VaultManager;
   provisioner?: import("./provisioner.js").DockerContainerManager;
