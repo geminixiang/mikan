@@ -818,10 +818,12 @@ export class DockerContainerManager {
         return createHash("sha256").update(readFileSync(source)).digest("hex");
       }
       // Directories: a bind mount follows changes inside the directory live,
-      // so only replacing the directory itself (a new inode) makes the mount
-      // stale. Size/mtime churn from ordinary activity — event files coming
-      // and going, children being created — must not read as drift.
-      return `${stat.isDirectory() ? "dir" : "other"}:${stat.dev}:${stat.ino}`;
+      // so only replacing the directory itself makes the mount stale.
+      // Size/mtime churn from ordinary activity — event files coming and
+      // going, children being created — must not read as drift. Identity is
+      // dev:ino plus birth time, because ext4 recycles inode numbers
+      // immediately and a same-path replacement can reuse the old one.
+      return `${stat.isDirectory() ? "dir" : "other"}:${stat.dev}:${stat.ino}:${stat.birthtimeMs}`;
     } catch {
       return "missing";
     }
