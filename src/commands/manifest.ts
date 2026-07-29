@@ -55,8 +55,10 @@ export const COMMAND_MANIFEST: readonly CommandManifestEntry[] = [
     description: "Show sandbox status, boost limits, or set the office door policy",
     arg: {
       name: "action",
+      // Discord caps option descriptions at 100 characters (registration
+      // fails otherwise); commands.test.ts enforces the budget.
       description:
-        "Use 'boost' to temporarily apply the configured boost limits, or 'door default|isolated|shared|full' to set this office's data door policy",
+        "'boost' applies the configured boost limits; 'door default|isolated|shared|full' sets door policy",
       required: false,
     },
     slackCommand: "/pi-sandbox",

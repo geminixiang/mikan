@@ -13,6 +13,7 @@ import {
   loadConversationWorkspaceOverride,
 } from "../src/config.js";
 import { dispatchCommand } from "../src/commands/registry.js";
+import { COMMAND_MANIFEST } from "../src/commands/manifest.js";
 import { LoginCommandHandler, parseLoginCommand } from "../src/commands/login.js";
 import { ModelCommandHandler } from "../src/commands/model.js";
 import { NewCommandHandler } from "../src/commands/new.js";
@@ -186,6 +187,27 @@ function buildContext(args: BuildContextArgs): CommandContext & {
     services,
   };
 }
+
+describe("COMMAND_MANIFEST platform registration budgets", () => {
+  // Discord rejects the whole registration batch when any command or option
+  // description exceeds 100 characters — a silent-until-restart failure.
+  test("descriptions fit Discord's 100-character limits", () => {
+    for (const entry of COMMAND_MANIFEST) {
+      expect(entry.description.length, `${entry.name} description`).toBeLessThanOrEqual(100);
+      if (entry.arg) {
+        expect(entry.arg.description.length, `${entry.name} arg description`).toBeLessThanOrEqual(
+          100,
+        );
+      }
+      if (entry.telegramMenu?.description) {
+        expect(
+          entry.telegramMenu.description.length,
+          `${entry.name} telegram description`,
+        ).toBeLessThanOrEqual(100);
+      }
+    }
+  });
+});
 
 describe("dispatchCommand", () => {
   test("returns false when no handler accepts the command", async () => {
