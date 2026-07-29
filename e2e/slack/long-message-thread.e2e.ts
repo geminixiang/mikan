@@ -29,7 +29,13 @@ function createRealSlackResponderBot(botClient: WebClient): SlackMessagingBot {
         error.data = { error: "msg_too_long" };
         return Promise.reject(error);
       }
-      return Reflect.apply(SlackMessagingBot.prototype.postInThread, { webClient: botClient }, [
+      // The receiver must inherit the real prototype (postInThread reaches
+      // this.resolveMentions) and carry the fields it reads.
+      const receiver = Object.assign(Object.create(SlackMessagingBot.prototype) as object, {
+        webClient: botClient,
+        users: new Map(),
+      });
+      return Reflect.apply(SlackMessagingBot.prototype.postInThread, receiver, [
         channel,
         threadTs,
         text,
