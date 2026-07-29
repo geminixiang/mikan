@@ -170,7 +170,7 @@ mikan ext remove <slug> (--global | --conversation <id>)    # remove code (keep 
 
 ```sh
 # install from GitHub (use # for a monorepo subdirectory)
-mikan ext install github:geminixiang/mikan#examples/extensions/agent-pm --global
+mikan ext install github:geminixiang/mikan#deploy/examples/extensions/agent-pm --global
 ```
 
 Git sources are shallow-cloned to a temp dir; if `dependencies` exist,
@@ -283,7 +283,7 @@ Lifecycle discipline:
    (any `.js` placed there is loaded as an extension) and upgrades replace the
    whole directory; state always goes to the data dir.
 
-Full example: `examples/extensions/agent-pm/` (~200-line follow-up tracker with
+Full example: `deploy/examples/extensions/agent-pm/` (~200-line follow-up tracker with
 sqlite, daily overdue scan schedule, proactive notify, bundled skill) — the
 target shape for extensions: reuse mikan's harness instead of building a second
 agent stack.
@@ -293,8 +293,8 @@ provider registration, install/uninstall lifecycle hooks.
 
 ## Tests
 
-- `test/harness-session-store.test.ts` — v3 format, tree/branch, compaction expand
-- `test/harness-runner.test.ts` — faux provider e2e: persistence, tools, hook block, auth precheck
-- `test/harness-extensions.test.ts` — loader and hook registry
-- `test/harness-skills.test.ts` — SKILL.md discovery and prompt formatting
-- `test/harness-auth.test.ts` — auth.json read/write
+- `src/test/harness-session-store.test.ts` — v3 format, tree/branch, compaction expand
+- `src/test/harness-runner.test.ts` — faux provider e2e: persistence, tools, hook block, auth precheck
+- `src/test/harness-extensions.test.ts` — loader and hook registry
+- `src/test/harness-skills.test.ts` — SKILL.md discovery and prompt formatting
+- `src/test/harness-auth.test.ts` — auth.json read/write

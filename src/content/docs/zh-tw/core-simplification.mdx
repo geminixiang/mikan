@@ -21,18 +21,18 @@ Web portal、特定聊天 SDK、Docker 佈建、Gondolin runtime 管理、Firecr
 
 ## 發現
 
-| 優先度 | 發現                                 | 證據                                                                                                                                     | 簡化                                                                                      |
-| ------ | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Done   | npm 邊界已明確且有回歸測試           | `src/index.ts` 明列 root export；`package.json` 宣告 root、harness 與 sandbox entry point；`test/public-api.test.ts` 快照 runtime export | 新增 export 視為相容性決策，必須刻意更新 contract test                                    |
-| P0     | 平台輸入有兩種重疊的正規形狀         | `ConversationEvent` 與 `ConversationMessage` 重複了 id/session/kind/user/text/attachments/thread 欄位，並被一起傳遞                      | 引入單一的 `ConversationInput` envelope；在 migration 期間衍生相容視圖                    |
-| P0     | `MessagingBot` 有太多變更理由        | lifecycle、output、upload/reaction、private diagnostics、event queue 與 metadata 都在同一個介面裡                                        | 把正規化的平台 port 與選用能力拆開；保留一個組合它們的 adapter 物件                       |
-| P1     | Sandbox 的可擴充性只是名義上的       | `SandboxAdapter` 已匯出，但 `sandbox/index.ts` 內的封閉陣列擁有 parsing/creation                                                         | 加入 registry，或讓 adapter 內部化；把實驗性 backend 移出預設核心組裝                     |
-| P1     | Runtime 建構洩漏了指令的實作細節     | `ConversationRuntimeOptions` 是 `Omit<CommandServices, ...>`，並在內部重建 command service                                               | 定義明確的 runtime 相依，再於 command adapter 中建構 `CommandServices`                    |
-| P1     | 指令仍有兩份清單                     | manifest 擁有平台註冊，而 registry 擁有 handler；新增一個指令需要同時改兩者                                                              | `CommandDefinition` 應同時包含 manifest metadata 與 handler factory/reference             |
-| P1     | Harness 同時是 public SDK 與內部引擎 | root 把 session parsing、credentials、settings、loader、event schema、hook 與 runner 細節一起匯出                                        | 發布 `./extension`、`./runtime`，以及選擇性的 `./harness` subpath，並各有獨立的穩定度政策 |
-| P2     | 選用的 runtime 產品被編進中央 CLI    | 平台 SDK、portal、六種 sandbox 模式與 Gondolin runtime 程式碼都組裝在 `main.ts` 裡                                                       | 讓 `main.ts` 成為 registry 之上的 composition root；lazy/選用的產品模組變得可替換         |
-| P2     | 多個能力介面使用選用方法             | `MessagingBot` 與 `ConversationResponder` 靠新增 `?` 方法而成長                                                                          | 使用具名的能力物件（`reactions`、`uploads`、`streaming`），讓「缺席」與「需求」都變得明確 |
-| P2     | HTTP 路由契約靠手動分派且大多未定型  | `web/server.ts` 與 portal 模組依 method/path 分支；payload 型別是區域性的                                                                | 保持 UI API 內部化，但在 payload 跨模組之處集中路由描述符與 request/response schema       |
+| 優先度 | 發現                                 | 證據                                                                                                                                         | 簡化                                                                                      |
+| ------ | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Done   | npm 邊界已明確且有回歸測試           | `src/index.ts` 明列 root export；`package.json` 宣告 root、harness 與 sandbox entry point；`src/test/public-api.test.ts` 快照 runtime export | 新增 export 視為相容性決策，必須刻意更新 contract test                                    |
+| P0     | 平台輸入有兩種重疊的正規形狀         | `ConversationEvent` 與 `ConversationMessage` 重複了 id/session/kind/user/text/attachments/thread 欄位，並被一起傳遞                          | 引入單一的 `ConversationInput` envelope；在 migration 期間衍生相容視圖                    |
+| P0     | `MessagingBot` 有太多變更理由        | lifecycle、output、upload/reaction、private diagnostics、event queue 與 metadata 都在同一個介面裡                                            | 把正規化的平台 port 與選用能力拆開；保留一個組合它們的 adapter 物件                       |
+| P1     | Sandbox 的可擴充性只是名義上的       | `SandboxAdapter` 已匯出，但 `sandbox/index.ts` 內的封閉陣列擁有 parsing/creation                                                             | 加入 registry，或讓 adapter 內部化；把實驗性 backend 移出預設核心組裝                     |
+| P1     | Runtime 建構洩漏了指令的實作細節     | `ConversationRuntimeOptions` 是 `Omit<CommandServices, ...>`，並在內部重建 command service                                                   | 定義明確的 runtime 相依，再於 command adapter 中建構 `CommandServices`                    |
+| P1     | 指令仍有兩份清單                     | manifest 擁有平台註冊，而 registry 擁有 handler；新增一個指令需要同時改兩者                                                                  | `CommandDefinition` 應同時包含 manifest metadata 與 handler factory/reference             |
+| P1     | Harness 同時是 public SDK 與內部引擎 | root 把 session parsing、credentials、settings、loader、event schema、hook 與 runner 細節一起匯出                                            | 發布 `./extension`、`./runtime`，以及選擇性的 `./harness` subpath，並各有獨立的穩定度政策 |
+| P2     | 選用的 runtime 產品被編進中央 CLI    | 平台 SDK、portal、六種 sandbox 模式與 Gondolin runtime 程式碼都組裝在 `main.ts` 裡                                                           | 讓 `main.ts` 成為 registry 之上的 composition root；lazy/選用的產品模組變得可替換         |
+| P2     | 多個能力介面使用選用方法             | `MessagingBot` 與 `ConversationResponder` 靠新增 `?` 方法而成長                                                                              | 使用具名的能力物件（`reactions`、`uploads`、`streaming`），讓「缺席」與「需求」都變得明確 |
+| P2     | HTTP 路由契約靠手動分派且大多未定型  | `web/server.ts` 與 portal 模組依 method/path 分支；payload 型別是區域性的                                                                    | 保持 UI API 內部化，但在 payload 跨模組之處集中路由描述符與 request/response schema       |
 
 ## 不應被簡化掉的東西
 
@@ -126,7 +126,7 @@ interface SandboxRegistry {
 
 1. `package.json` 宣告 root 與相容的 `./harness`、`./sandbox` entry point。
 2. root entry point 使用明確 export 清單，不再 wildcard export harness。
-3. `test/public-api.test.ts` snapshot runtime export 與 emit declaration，意外變更會讓 CI 失敗。
+3. `src/test/public-api.test.ts` snapshot runtime export 與 emit declaration，意外變更會讓 CI 失敗。
 
 其餘 phase 現在可在不意外擴大 package interface 的情況下重構內部。
 
