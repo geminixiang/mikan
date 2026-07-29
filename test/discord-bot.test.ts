@@ -80,42 +80,40 @@ describe("DiscordMessagingBot attachments", () => {
 
   test("processAttachments waits for downloads and filters failures", async () => {
     const bot = new DiscordMessagingBot(makeHandler(), { token: "TEST_TOKEN", workspace });
-    const downloadAttachment = vi
-      .fn()
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(new Error("boom"));
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      if (String(url).endsWith("clip.mov")) {
+        return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer };
+      }
+      return { ok: false, status: 404, statusText: "Not Found" };
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    (bot as any).downloadAttachment = downloadAttachment;
+    try {
+      const attachments = new Collection<string, any>([
+        ["a", { name: "clip.mov", url: "https://example.com/clip.mov" }],
+        ["b", { name: "broken.mov", url: "https://example.com/broken.mov" }],
+      ]);
 
-    const attachments = new Collection<string, any>([
-      ["a", { name: "clip.mov", url: "https://example.com/clip.mov" }],
-      ["b", { name: "broken.mov", url: "https://example.com/broken.mov" }],
-    ]);
+      const result = await bot.processAttachments("C123", attachments as any, "M1");
 
-    const result = await bot.processAttachments("C123", attachments as any, "M1");
-
-    expect(downloadAttachment).toHaveBeenNthCalledWith(
-      1,
-      join(workingDir, officeKey(createOfficeAddress("discord", "C123")), "attachments"),
-      expect.stringMatching(/^\d+_clip\.mov$/),
-      "https://example.com/clip.mov",
-    );
-    expect(downloadAttachment).toHaveBeenNthCalledWith(
-      2,
-      join(workingDir, officeKey(createOfficeAddress("discord", "C123")), "attachments"),
-      expect.stringMatching(/^\d+_broken\.mov$/),
-      "https://example.com/broken.mov",
-    );
-    expect(result).toEqual([
-      {
-        name: "clip.mov",
-        localPath: expect.stringMatching(
-          new RegExp(
-            `^${officeKey(createOfficeAddress("discord", "C123"))}/attachments/\\d+_clip\\.mov$`,
+      expect(fetchMock).toHaveBeenCalledWith("https://example.com/clip.mov");
+      expect(fetchMock).toHaveBeenCalledWith("https://example.com/broken.mov");
+      expect(result).toEqual([
+        {
+          name: "clip.mov",
+          localPath: expect.stringMatching(
+            new RegExp(
+              `^${officeKey(createOfficeAddress("discord", "C123"))}/attachments/\\d+_clip\\.mov$`,
+            ),
           ),
-        ),
-      },
-    ]);
+        },
+      ]);
+      // The failed download leaves no file; the saved one is on disk.
+      expect(existsSync(join(workingDir, result[0].localPath))).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 

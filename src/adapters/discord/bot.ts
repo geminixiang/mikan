@@ -14,7 +14,7 @@ import {
   type ThreadChannel,
 } from "discord.js";
 import { readFileSync } from "fs";
-import { basename, join } from "path";
+import { basename } from "path";
 
 import {
   createConversationEvent,
@@ -39,7 +39,9 @@ import {
   downloadUrlToFile,
   resolveOnlyScopedStopTarget,
   resolveStopTarget,
+  saveIncomingAttachments,
   withRetry,
+  type IncomingAttachment,
 } from "../shared.js";
 import { COMMAND_MANIFEST } from "../../commands/manifest.js";
 import { processMessageIntake } from "../intake.js";
@@ -303,54 +305,24 @@ export class DiscordMessagingBot implements MessagingBot {
     attachments: Collection<string, Attachment>,
     _messageId: string,
   ): Promise<{ name: string; localPath: string }[]> {
-    const downloads: Array<Promise<{ name: string; localPath: string } | null>> = [];
-
-    // Discord attachments Collection - iterate over values
+    const items: IncomingAttachment[] = [];
     for (const attachment of attachments.values()) {
       if (!attachment.name) {
         log.logWarning("Discord attachment missing name, skipping", attachment.url);
         continue;
       }
-
-      const ts = Date.now();
-      const sanitizedName = attachment.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const filename = `${ts}_${sanitizedName}`;
-      const office = this.workspace.office(createOfficeAddress("discord", channelId));
-      const localPath = `${office.key}/attachments/${filename}`;
-      office.ensure();
-      const fullDir = office.attachmentsDir;
-      const result = {
+      items.push({
         name: attachment.name,
-        localPath,
-      };
-
-      downloads.push(
-        this.downloadAttachment(fullDir, filename, attachment.url)
-          .then(() => result)
-          .catch((err) => {
-            log.logWarning(`Failed to download Discord attachment`, `${filename}: ${err}`);
-            return null;
-          }),
-      );
-    }
-
-    const results = await Promise.all(downloads);
-    return results.filter(
-      (attachment): attachment is { name: string; localPath: string } => attachment !== null,
-    );
-  }
-
-  /**
-   * Download an attachment from URL to local file
-   */
-  private async downloadAttachment(dir: string, filename: string, url: string): Promise<void> {
-    try {
-      await downloadUrlToFile(url, join(dir, filename));
-    } catch (err) {
-      throw new Error(`Download failed: ${err instanceof Error ? err.message : String(err)}`, {
-        cause: err,
+        download: (destPath) => downloadUrlToFile(attachment.url, destPath),
       });
     }
+
+    const office = this.workspace.office(createOfficeAddress("discord", channelId));
+    const { saved, failed } = await saveIncomingAttachments(office, items);
+    for (const failure of failed) {
+      log.logWarning(`Failed to download Discord attachment`, `${failure.name}: ${failure.error}`);
+    }
+    return saved.map((item) => ({ name: item.original, localPath: item.localPath }));
   }
 
   // ==========================================================================
