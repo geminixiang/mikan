@@ -79,7 +79,7 @@ npm run test:e2e:slack
 
 本機 E2E 只需要四個變數：`SLACK_QA_USER_TOKEN`、`SLACK_QA_CHANNEL_ID`、`SLACK_QA_BOT_USER_ID` 與 `SLACK_BOT_TOKEN`。Event directory 會從目前 workspace 推導。
 
-QA user token 必須能在測試 channel 發文、讀取 channel history/replies，並為 S-009 上傳檔案。DM scenario 另外要求 token 是人類使用者身分（`auth.test` 不帶 `bot_id`）：mikan 依設計不回覆來自 bot 的 DM，bot 身分的 token 會讓 S-017/S-018 直接以設定錯誤 fail fast。`examples/slack-app-manifest.e2e.json` 的 E2E manifest 包含這些必要 user scopes；一般的 `examples/slack-app-manifest.json` 不包含。
+QA user token 必須能在測試 channel 發文、讀取 channel history/replies，並為 S-009 上傳檔案。DM scenario 另外要求 token 是人類使用者身分（`auth.test` 不帶 `bot_id`）：mikan 依設計不回覆來自 bot 的 DM，bot 身分的 token 會讓 S-017/S-018 直接以設定錯誤 fail fast。`deploy/examples/slack-app-manifest.e2e.json` 的 E2E manifest 包含這些必要 user scopes；一般的 `deploy/examples/slack-app-manifest.json` 不包含。
 
 ### GitHub Actions
 

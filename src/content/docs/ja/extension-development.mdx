@@ -122,7 +122,7 @@ mikan 拡張機能を使うと、mikan 自体を変更せずに、フック、�
 
 ```bash
 mikan ext install \
-  github:geminixiang/mikan#examples/extensions/agent-pm \
+  github:geminixiang/mikan#deploy/examples/extensions/agent-pm \
   --conversation <conversationId>
 ```
 
@@ -232,7 +232,7 @@ api.on("tool_result", ({ content }) => ({
 
 ### カスタムツール
 
-`api.registerTool(tool)` で `AgentTool` を登録します。TypeBox 互換のパラメータスキーマを使用し、標準のテキスト／画像ツールコンテンツを返してください。型付けされたツール実装については、完全な [`agent-pm` の例](https://github.com/geminixiang/mikan/tree/main/examples/extensions/agent-pm)を参照してください。
+`api.registerTool(tool)` で `AgentTool` を登録します。TypeBox 互換のパラメータスキーマを使用し、標準のテキスト／画像ツールコンテンツを返してください。型付けされたツール実装については、完全な [`agent-pm` の例](https://github.com/geminixiang/mikan/tree/main/deploy/examples/extensions/agent-pm)を参照してください。
 
 ### カスタムコマンド
 
@@ -377,7 +377,7 @@ api.blockkit.onAction("vote", async (event) => {
 });
 ```
 
-投稿時、各 `action_id` には `ext:<slug>:…` namespace が付きます。そのため操作はこの extension の `onAction` handler だけに渡され、agent run は開始されません。処理後は message を更新して button を削除または無効化してください。完全な例は `examples/extensions/poll` にあります。
+投稿時、各 `action_id` には `ext:<slug>:…` namespace が付きます。そのため操作はこの extension の `onAction` handler だけに渡され、agent run は開始されません。処理後は message を更新して button を削除または無効化してください。完全な例は `deploy/examples/extensions/poll` にあります。
 
 ### 同梱スキル
 
@@ -433,4 +433,4 @@ mikan ext remove hello-mikan --conversation <conversationId>
 | schedule/notify/react が利用できない     | 実行中のプラットフォーム／コンテキストがそのホストサービスを提供していることを確認する                                          |
 | 拡張機能の識別子／データパスが正しくない | slug は編集可能なメタデータではなく、インストールされたファイル／ディレクトリ名から取得される                                   |
 
-ツール、SQLite 永続化、スケジュール、プロアクティブメッセージ、同梱スキルをまとめて必要とする場合は、[`examples/extensions/agent-pm`](https://github.com/geminixiang/mikan/tree/main/examples/extensions/agent-pm) から始めてください。
+ツール、SQLite 永続化、スケジュール、プロアクティブメッセージ、同梱スキルをまとめて必要とする場合は、[`deploy/examples/extensions/agent-pm`](https://github.com/geminixiang/mikan/tree/main/deploy/examples/extensions/agent-pm) から始めてください。

@@ -6,7 +6,7 @@ on:
   push:
     branches: [main]
     paths:
-      - docker/mikan-sandbox.Dockerfile
+      - deploy/docker/mikan-sandbox.Dockerfile
       - package.json
       - .github/workflows/sandbox-image.yml
   workflow_dispatch:
@@ -76,7 +76,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/mikan-sandbox.Dockerfile
+          file: deploy/docker/mikan-sandbox.Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}

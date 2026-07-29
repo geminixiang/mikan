@@ -39,9 +39,9 @@ Stack:
 - `test/`: unit/integration tests run by `npm test`.
 - `e2e/`: real-platform e2e tests, currently Slack-focused.
 - `src/content/docs/`: Starlight documentation source (architecture, commands, configuration, deployment, sandbox, sessions, Slack guides).
-- `examples/`: Slack app manifests.
+
 - `scripts/`: maintenance and migration scripts.
-- `deploy/`, `docker/`: deployment assets and sandbox Dockerfile.
+- `deploy/`: deployment assets — `pm2/` process template, `docker/` sandbox image, and `examples/` (Slack app manifests, embedder, extensions, cloudflare bridge).
 - `dist/`: generated build output; do not edit manually.
 
 ## COMMANDS

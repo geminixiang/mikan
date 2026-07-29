@@ -3,7 +3,7 @@ title: Slack Bot 最小设置指南
 description: 通过 Socket Mode 运行 mikan 所需的最小 Slack app 权限、事件和 manifest 设置。
 ---
 
-你也可以使用 `examples/slack-app-manifest.json` 中的示例 manifest 创建 app。
+你也可以使用 `deploy/examples/slack-app-manifest.json` 中的示例 manifest 创建 app。
 
 ## 1. 创建 Slack app
 

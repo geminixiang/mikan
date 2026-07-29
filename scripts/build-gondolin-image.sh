@@ -8,6 +8,6 @@ case "$(uname -m)" in
 esac
 
 exec gondolin build \
-  --config docker/gondolin-mikan-sandbox.json \
+  --config deploy/docker/gondolin-mikan-sandbox.json \
   --arch "$arch" \
   --tag mikan-sandbox:latest

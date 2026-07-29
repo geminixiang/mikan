@@ -3,7 +3,7 @@ title: Slack Bot 最小セットアップガイド
 description: Socket Mode で mikan を実行するために必要な最小限の Slack app 権限、イベント、manifest 設定。
 ---
 
-`examples/slack-app-manifest.json` のサンプル manifest を使って app を作成することもできます。
+`deploy/examples/slack-app-manifest.json` のサンプル manifest を使って app を作成することもできます。
 
 ## 1. Slack app を作成
 

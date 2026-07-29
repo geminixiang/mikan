@@ -3,7 +3,7 @@ title: Slack Bot minimal setup guide
 description: Minimal Slack app permissions, events, and manifest settings required to run mikan through Socket Mode.
 ---
 
-You can also create the app with the example manifest in `examples/slack-app-manifest.json`.
+You can also create the app with the example manifest in `deploy/examples/slack-app-manifest.json`.
 
 ## 1. Create a Slack app
 

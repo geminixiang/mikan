@@ -6,7 +6,7 @@ import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import { createOfficeAddress } from "../src/office/index.js";
 import type { MutableModels } from "@earendil-works/pi-ai";
 import { MikanModels } from "../src/harness/index.js";
-import { createEmbedder } from "../examples/embedder/index.js";
+import { createEmbedder } from "../deploy/examples/embedder/index.js";
 
 let workingDir: string;
 

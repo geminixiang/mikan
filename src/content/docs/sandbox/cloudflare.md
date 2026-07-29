@@ -26,4 +26,4 @@ Limitations:
 
 You can use the example bridge directly:
 
-- [Cloudflare sandbox bridge example on GitHub](https://github.com/geminixiang/mikan/tree/main/examples/cloudflare-sandbox-bridge)
+- [Cloudflare sandbox bridge example on GitHub](https://github.com/geminixiang/mikan/tree/main/deploy/examples/cloudflare-sandbox-bridge)

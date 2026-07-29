@@ -26,4 +26,4 @@ mikan --sandbox=cloudflare:mikan-remote /path/to/workspace
 
 可以直接使用示例桥接器：
 
-- [GitHub 上的 Cloudflare 沙箱桥接示例](https://github.com/geminixiang/mikan/tree/main/examples/cloudflare-sandbox-bridge)
+- [GitHub 上的 Cloudflare 沙箱桥接示例](https://github.com/geminixiang/mikan/tree/main/deploy/examples/cloudflare-sandbox-bridge)
