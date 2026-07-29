@@ -21,6 +21,41 @@ function convertLegacyMrkdwnLinks(source: string): string {
   return source.replace(LEGACY_MRKDWN_LINK_PATTERN, "[$2]($1)");
 }
 
+// Slack user/bot-user ids: U/W prefix. Already-native mentions pass through.
+const SLACK_USER_ID_PATTERN = /^[UW][A-Z0-9]{2,}$/;
+const MENTION_PATTERN = /<@([^<>\n]+)>/g;
+
+/**
+ * Resolve response-source mentions to Slack's native form.
+ *
+ * The response source is platform-neutral: the model writes `<@userName>`
+ * from the prompt's Users table, and the adapter owns the conversion to
+ * `<@U…>` — Slack only links and notifies on the raw user id. Lookup covers
+ * userName and displayName case-insensitively; native-id mentions pass
+ * through, and unknown names stay verbatim rather than guessing.
+ */
+export function resolveSlackMentions(
+  source: string,
+  users: Iterable<{ id: string; userName: string; displayName: string }>,
+): string {
+  if (!source.includes("<@")) return source;
+  const list = [...users];
+  const byName = new Map<string, string>();
+  for (const user of list) {
+    if (user.userName) byName.set(user.userName.toLowerCase(), user.id);
+  }
+  // Display names never shadow a userName held by someone else.
+  for (const user of list) {
+    const display = user.displayName?.toLowerCase();
+    if (display && !byName.has(display)) byName.set(display, user.id);
+  }
+  return source.replace(MENTION_PATTERN, (mention, name: string) => {
+    if (SLACK_USER_ID_PATTERN.test(name)) return mention;
+    const id = byName.get(name.trim().replace(/^@/, "").toLowerCase());
+    return id ? `<@${id}>` : mention;
+  });
+}
+
 function normalizeMarkdownTables(source: string): string {
   return source
     .split("\n")

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { renderSlackBlocks } from "../adapters/slack/blocks.js";
+import { renderSlackBlocks, resolveSlackMentions } from "../adapters/slack/blocks.js";
 
 interface MarkdownBlockShape {
   type: "markdown";
@@ -215,5 +215,46 @@ _Triggered by @requester_`;
   test("returns no blocks for blank source", () => {
     expect(renderSlackBlocks("").blocks).toEqual([]);
     expect(renderSlackBlocks("   \n  ").blocks).toEqual([]);
+  });
+});
+
+describe("resolveSlackMentions", () => {
+  const users = [
+    { id: "U0AAAAAA1", userName: "alice", displayName: "Alice Example" },
+    { id: "U0BBBBBB2", userName: "bob.lee", displayName: "Bob Lee" },
+  ];
+
+  test("userName mentions resolve to native user ids", () => {
+    expect(resolveSlackMentions("hi <@alice>!", users)).toBe("hi <@U0AAAAAA1>!");
+  });
+
+  test("displayName mentions resolve case-insensitively", () => {
+    expect(resolveSlackMentions("cc <@bob lee>", users)).toBe("cc <@U0BBBBBB2>");
+  });
+
+  test("native id mentions pass through untouched", () => {
+    expect(resolveSlackMentions("ping <@U0AAAAAA1>", users)).toBe("ping <@U0AAAAAA1>");
+  });
+
+  test("unknown handles stay verbatim instead of guessing", () => {
+    // e.g. a GitHub handle from channel memory — neither a userName nor an id.
+    expect(resolveSlackMentions("ask <@alicehub>", users)).toBe("ask <@alicehub>");
+  });
+
+  test("a stray leading @ inside the mention still resolves", () => {
+    expect(resolveSlackMentions("<@@alice>", users)).toBe("<@U0AAAAAA1>");
+  });
+
+  test("multiple mentions resolve independently", () => {
+    expect(resolveSlackMentions("<@alice> and <@bob.lee> and <@nobody>", users)).toBe(
+      "<@U0AAAAAA1> and <@U0BBBBBB2> and <@nobody>",
+    );
+  });
+
+  test("a consumable iterable (Map.values) works", () => {
+    const map = new Map(users.map((user) => [user.id, user]));
+    expect(resolveSlackMentions("<@alice> <@bob lee>", map.values())).toBe(
+      "<@U0AAAAAA1> <@U0BBBBBB2>",
+    );
   });
 });

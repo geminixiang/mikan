@@ -53,7 +53,7 @@ import {
   resolveSlackSessionKey,
 } from "./session.js";
 import { reportUserFacingError } from "../../observability/sentry.js";
-import { renderSlackBlocks } from "./blocks.js";
+import { renderSlackBlocks, resolveSlackMentions } from "./blocks.js";
 
 const SLACK_EVENT_ANCHOR_TEXT = "Working on it...";
 
@@ -255,9 +255,18 @@ export class SlackMessagingBot implements MessagingBot {
     return source.replace(this.ownMentionRegex, "").trim();
   }
 
+  /**
+   * Response-source `<@userName>` mentions become native `<@U…>` here — the
+   * one conversion every outgoing response path funnels through. Slack only
+   * links and notifies on raw user ids.
+   */
+  private resolveMentions(text: string): string {
+    return resolveSlackMentions(text, this.users.values());
+  }
+
   async postMessage(channel: string, text: string): Promise<string> {
     return slackRetry(async () => {
-      const payload = { channel, ...renderSlackBlocks(text) };
+      const payload = { channel, ...renderSlackBlocks(this.resolveMentions(text)) };
       const result = await this.webClient.chat.postMessage(payload);
       return result.ts as string;
     });
@@ -364,7 +373,7 @@ export class SlackMessagingBot implements MessagingBot {
 
   async updateMessage(channel: string, ts: string, text: string): Promise<void> {
     return slackRetry(async () => {
-      const payload = { channel, ts, ...renderSlackBlocks(text) };
+      const payload = { channel, ts, ...renderSlackBlocks(this.resolveMentions(text)) };
       await this.webClient.chat.update(payload);
     });
   }
@@ -378,7 +387,7 @@ export class SlackMessagingBot implements MessagingBot {
     return slackRetry(async () => {
       const result = await this.webClient.apiCall("chat.startStream", {
         channel,
-        markdown_text: text,
+        markdown_text: this.resolveMentions(text),
         ...(threadTs ? { thread_ts: threadTs } : {}),
         ...(this.teamId ? { recipient_team_id: this.teamId } : {}),
         ...(recipientUserId ? { recipient_user_id: recipientUserId } : {}),
@@ -394,7 +403,9 @@ export class SlackMessagingBot implements MessagingBot {
       await this.webClient.apiCall("chat.appendStream", {
         channel,
         ts,
-        markdown_text: text,
+        // A mention split across stream deltas stays unresolved here; the
+        // canonical final render (updateMessage) resolves the full text.
+        markdown_text: this.resolveMentions(text),
       });
     });
   }
@@ -428,7 +439,11 @@ export class SlackMessagingBot implements MessagingBot {
 
   async postInThread(channel: string, threadTs: string, text: string): Promise<string> {
     return slackRetry(async () => {
-      const payload = { channel, thread_ts: threadTs, ...renderSlackBlocks(text) };
+      const payload = {
+        channel,
+        thread_ts: threadTs,
+        ...renderSlackBlocks(this.resolveMentions(text)),
+      };
       const result = await this.webClient.chat.postMessage(payload);
       return result.ts as string;
     });
