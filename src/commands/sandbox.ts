@@ -147,7 +147,7 @@ export class SandboxCommandHandler implements CommandHandler {
         context.responder,
         formatCommandSummary("Sandbox Door", [
           `Door policy 已更新。Effective: ${updated.doorPolicy} / ${updated.layout}`,
-          "下一則訊息時會以新的掛載重建 sandbox 容器；先前在容器內安裝的軟體會重置。",
+          "下一則訊息時會以新的掛載重建 sandbox 容器；容器內容會保留。",
         ]),
         { style: "muted" },
       );
