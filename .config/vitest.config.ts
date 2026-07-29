@@ -2,14 +2,20 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  // The config lives in .config/; the project root stays the repo root so
+  // every relative pattern below keeps its meaning regardless of cwd.
+  root: fileURLToPath(new URL("..", import.meta.url)),
   resolve: {
     alias: {
       // Lets deploy/examples/ (and tests exercising them) import the public npm
       // surface by name while running against the in-repo sources.
-      "@geminixiang/mikan": fileURLToPath(new URL("./src/index.ts", import.meta.url)),
+      "@geminixiang/mikan": fileURLToPath(new URL("../src/index.ts", import.meta.url)),
     },
   },
   test: {
+    // Explicit include: the default glob would also sweep compiled copies in
+    // dist/ or any in-repo git worktree, double-counting the suite.
+    include: ["src/test/**/*.test.ts"],
     // Git fixtures must resolve their repo from cwd, never from an ambient
     // GIT_DIR inherited when the suite runs inside a git hook. State-writing
     // paths must land in a temp state dir, never the developer's ~/.mikan.

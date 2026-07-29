@@ -43,26 +43,26 @@
   },
   "scripts": {
     "clean": "shx rm -rf dist",
-    "build": "npm run clean && tsgo -p tsconfig.build.json && shx chmod +x dist/main.js",
-    "dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
-    "test": "vitest --run",
-    "test:coverage": "vitest --run --coverage",
-    "test:coverage:check": "vitest --run --coverage",
+    "build": "npm run clean && tsgo -p src/tsconfig.build.json && shx chmod +x dist/main.js",
+    "dev": "tsgo -p src/tsconfig.build.json --watch --preserveWatchOutput",
+    "test": "vitest --run --config .config/vitest.config.ts",
+    "test:coverage": "vitest --run --coverage --config .config/vitest.config.ts",
+    "test:coverage:check": "vitest --run --coverage --config .config/vitest.config.ts",
     "test:office:docker": "node scripts/verify-office-docker.mjs",
-    "lint": "oxlint",
-    "lint:fix": "oxlint --fix",
-    "fmt": "oxfmt",
-    "fmt:check": "oxfmt --check",
+    "lint": "oxlint -c .config/oxlintrc.json",
+    "lint:fix": "oxlint -c .config/oxlintrc.json --fix",
+    "fmt": "oxfmt -c .config/oxfmtrc.json",
+    "fmt:check": "oxfmt -c .config/oxfmtrc.json --check",
     "knip": "knip",
     "prepublishOnly": "npm run build",
     "prepare": "husky",
-    "test:e2e": "vitest --run --config vitest.e2e.config.ts",
-    "test:e2e:slack": "vitest --run --config vitest.e2e.config.ts e2e/slack",
-    "test:e2e:slack:coverage": "vitest --run --coverage --coverage.reportsDirectory=.workspace/coverage --config vitest.e2e.config.ts e2e/slack",
+    "test:e2e": "vitest --run --config .config/vitest.e2e.config.ts",
+    "test:e2e:slack": "vitest --run --config .config/vitest.e2e.config.ts e2e/slack",
+    "test:e2e:slack:coverage": "vitest --run --coverage --coverage.reportsDirectory=.workspace/coverage --config .config/vitest.e2e.config.ts e2e/slack",
     "gondolin:image:build": "sh scripts/build-gondolin-image.sh",
-    "docs:dev": "astro dev",
-    "docs:build": "astro build",
-    "docs:preview": "astro preview"
+    "docs:dev": "astro dev --config .config/astro.config.mjs",
+    "docs:build": "astro build --config .config/astro.config.mjs",
+    "docs:preview": "astro preview --config .config/astro.config.mjs"
   },
   "dependencies": {
     "@earendil-works/gondolin": "0.12.0",
@@ -122,5 +122,30 @@
   },
   "engines": {
     "node": ">=22.19.0"
+  },
+  "knip": {
+    "entry": [
+      "src/index.ts",
+      "src/main.ts",
+      "src/cli/download.ts",
+      "src/observability/instrument.ts",
+      "src/harness/index.ts",
+      "src/sandbox/index.ts"
+    ],
+    "ignore": [
+      "scripts/**",
+      "deploy/**"
+    ],
+    "astro": {
+      "config": [
+        ".config/astro.config.mjs"
+      ]
+    },
+    "vitest": {
+      "config": [
+        ".config/vitest.config.ts",
+        ".config/vitest.e2e.config.ts"
+      ]
+    }
   }
 }

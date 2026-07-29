@@ -5,6 +5,8 @@ import { defineConfig } from "astro/config";
 import remarkGfm from "remark-gfm";
 
 export default defineConfig({
+  // The config lives in .config/; the site root is the repo root.
+  root: new URL("..", import.meta.url).pathname,
   site: "https://geminixiang.github.io/",
   devToolbar: { enabled: false },
   vite: {

@@ -11,7 +11,7 @@ mikan is a multi-platform AI coding agent for Slack, Telegram, Discord, and GitH
 Stack:
 
 - TypeScript, ESM (`"type": "module"`), Node.js `>=22.19.0`
-- Build/type emit: `tsgo` via `@typescript/native-preview`, `tsconfig.build.json`
+- Build/type emit: `tsgo` via `@typescript/native-preview`, `src/tsconfig.build.json` (tool configs live in `.config/`; root `tsconfig.json` stays for editor discovery)
 - Tests: Vitest 4, with separate e2e config
 - Lint/format: `oxlint`, `oxfmt`
 - Platform SDKs: Slack Socket Mode/Web API, Discord.js, grammy for Telegram
