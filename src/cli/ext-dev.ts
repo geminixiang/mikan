@@ -36,8 +36,7 @@ import {
 import { updateConversationSettings } from "../config.js";
 import { formatSource, parseSource } from "../packages/index.js";
 import { resolveStateDir, takeValueFlag } from "./arg-grammar.js";
-import { conversationOfficeDir, createOfficeAddress } from "../office-address.js";
-import { ensureOfficeDir } from "../office-registry.js";
+import { createOfficeAddress, createWorkspace } from "../office/index.js";
 
 const USAGE = `Usage:
   mikan ext dev <path|source> [--workspace <dir>] [--state-dir <dir>]
@@ -96,14 +95,15 @@ export async function runExtDevCommand(argv: string[]): Promise<number> {
 
   const conversationId = devConversationId(target);
   const workingDir = resolvePath(workspaceDir ?? join(process.cwd(), ".mikan-ext-dev"));
-  ensureOfficeDir(workingDir, createOfficeAddress("slack", conversationId));
 
   // Declaring the working copy as this conversation's package is what makes
   // the dev loop use the real resolution path rather than a bespoke one.
   process.env.MIKAN_STATE_DIR = stateDir;
-  const devAddress = createOfficeAddress("slack", conversationId);
+  const workspace = createWorkspace({ root: workingDir, stateDir });
+  const devOffice = workspace.office(createOfficeAddress("slack", conversationId));
+  devOffice.ensure();
   updateConversationSettings(
-    { address: devAddress, conversationDir: conversationOfficeDir(workingDir, devAddress) },
+    { address: devOffice.address, conversationDir: devOffice.dir },
     { packages: [source] },
   );
 
@@ -113,15 +113,18 @@ export async function runExtDevCommand(argv: string[]): Promise<number> {
   console.log(`  state dir:    ${stateDir}`);
   console.log("Type a message. /pi-new reloads after an edit. Ctrl-D exits.\n");
 
-  return runDevLoop({ conversationId, workingDir });
+  return runDevLoop({ conversationId, workspace });
 }
 
 function write(text: string): void {
   process.stdout.write(`${text}\n`);
 }
 
-function runDevLoop(options: { conversationId: string; workingDir: string }): Promise<number> {
-  const { conversationId, workingDir } = options;
+function runDevLoop(options: {
+  conversationId: string;
+  workspace: import("../office/types.js").Workspace;
+}): Promise<number> {
+  const { conversationId, workspace } = options;
 
   const platform: MessagingInfo = {
     name: "ext-dev",
@@ -131,7 +134,7 @@ function runDevLoop(options: { conversationId: string; workingDir: string }): Pr
   };
 
   const runtime = createConversationRuntime({
-    workingDir,
+    workspace,
     // The host executor keeps the loop dependency-free: no Docker, no image
     // pull, no VM. An extension's own tools and hooks do not observe the
     // difference, and the ones that shell out see the developer's machine —

@@ -14,7 +14,7 @@ export interface GithubBotConfig {
   /** `owner/repo` entries to watch; empty = all installation repositories. */
   repos: string[];
   pollIntervalMs: number;
-  workingDir: string;
+  workspace: import("../../office/types.js").Workspace;
   /**
    * Where the poll watermark state (baseline + seen ids) is persisted. Lives
    * under the host-only state dir: the workspace dir can be mounted into

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
-import type { OfficeAddress, OfficeKey, PlatformName } from "./types.js";
+import type { OfficeAddress, OfficeKey, PlatformName } from "../types.js";
 
 const OFFICE_KEY_VERSION = "v1";
 const OFFICE_KEY_DOMAIN = "office-address-v1";
@@ -69,12 +69,22 @@ export function officeKey(address: OfficeAddress): OfficeKey {
   return `${OFFICE_KEY_VERSION}-${normalized.platform}-${readable}-${digest}` as OfficeKey;
 }
 
-/** Resolve the persistent workspace directory for an office. */
+/**
+ * Resolve the persistent workspace directory for an office.
+ * Module-internal: registry/migration record target paths with it. Callers
+ * outside `src/office/` use the `Office` value's `dir` field instead.
+ */
 export function officeDir(workspaceRoot: string, address: OfficeAddress): string {
   return join(workspaceRoot, officeKey(address));
 }
 
-/** Resolve the host-only state directory for an office. */
+/**
+ * Resolve the host-only state directory for an office.
+ *
+ * Transitional: settings/packages/extension callers that only hold a
+ * `stateDir` string keep using this until their option bags carry an
+ * `Office` value (which exposes the same path as `stateDir`).
+ */
 export function officeStateDir(stateDir: string, address: OfficeAddress): string {
   return join(stateDir, "conversations", officeKey(address));
 }
@@ -91,7 +101,14 @@ export function officeDirName(address: OfficeAddress): string {
   return officeKey(address);
 }
 
-/** The host working directory for an office (see officeDirName). */
+/**
+ * The host working directory for an office (see officeDirName).
+ *
+ * Transitional: callers whose option bags still carry `(workspaceRoot,
+ * address)` string pairs (agent runner, execution resolver, projection) keep
+ * using this until those bags carry an `Office` value. New code asks the
+ * `Office` value for `dir`.
+ */
 export function conversationOfficeDir(workspaceRoot: string, address: OfficeAddress): string {
   return join(workspaceRoot, officeDirName(address));
 }

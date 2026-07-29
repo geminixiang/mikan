@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler, OfficeAddress } from "../src/adapter.js";
-import { createOfficeAddress, officeDirName } from "../src/office-address.js";
+import { createOfficeAddress, createWorkspace, officeDirName } from "../src/office/index.js";
 import { conversationIdOf } from "../src/sessions/session-key.js";
 import { GithubMessagingBot } from "../src/adapters/github/bot.js";
 import type { GithubClient } from "../src/adapters/github/client.js";
@@ -239,7 +239,7 @@ describe("GithubMessagingBot", () => {
         installationId: "2",
         repos: overrides.repos ?? ["octo/widgets"],
         pollIntervalMs: 60_000,
-        workingDir,
+        workspace: createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") }),
         syncStatePath: join(workingDir, "state", "github-sync.json"),
         cloudBuild: overrides.cloudBuild,
       },

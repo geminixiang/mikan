@@ -3,8 +3,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { createOfficeAddress, officeDirName, officeKey } from "../src/office-address.js";
-import { OfficeRegistry } from "../src/office-registry.js";
+import {
+  createOfficeAddress,
+  createWorkspace,
+  officeDirName,
+  officeKey,
+} from "../src/office/index.js";
+import { OfficeRegistry } from "../src/office/index.js";
 import {
   addPackage,
   inspectConversationPackages,
@@ -38,11 +43,12 @@ function readPackages(path: string): string[] {
 }
 
 function context() {
+  const office = createWorkspace({ root: workingDir, stateDir }).office(CONVERSATION_ADDRESS);
   return {
     address: CONVERSATION_ADDRESS,
     stateDir,
-    conversationDir: join(workingDir, officeDirName(CONVERSATION_ADDRESS)),
-    workingDir,
+    conversationDir: office.dir,
+    office,
   };
 }
 

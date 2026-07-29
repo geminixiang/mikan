@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { Collection } from "discord.js";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler } from "../src/adapter.js";
-import { createOfficeAddress, officeDirName } from "../src/office-address.js";
+import { createOfficeAddress, createWorkspace, officeDirName } from "../src/office/index.js";
+import type { Workspace } from "../src/office/index.js";
 import { DiscordMessagingBot } from "../src/adapters/discord/bot.js";
 
 function makeHandler(): MessagingEventHandler {
@@ -64,10 +65,13 @@ function makeDiscordMessage(overrides: Record<string, any> = {}) {
 
 describe("DiscordMessagingBot attachments", () => {
   let workingDir: string;
+  let workspace: Workspace;
 
   beforeEach(() => {
     workingDir = join(tmpdir(), `mikan-discord-bot-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
+    // Sibling state dir: the office registry journal never touches ~/.mikan.
+    workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
   });
 
   afterEach(() => {
@@ -75,7 +79,7 @@ describe("DiscordMessagingBot attachments", () => {
   });
 
   test("processAttachments waits for downloads and filters failures", async () => {
-    const bot = new DiscordMessagingBot(makeHandler(), { token: "TEST_TOKEN", workingDir });
+    const bot = new DiscordMessagingBot(makeHandler(), { token: "TEST_TOKEN", workspace });
     const downloadAttachment = vi
       .fn()
       .mockResolvedValueOnce(undefined)
@@ -117,10 +121,13 @@ describe("DiscordMessagingBot attachments", () => {
 
 describe("DiscordMessagingBot message routing", () => {
   let workingDir: string;
+  let workspace: Workspace;
 
   beforeEach(() => {
     workingDir = join(tmpdir(), `mikan-discord-route-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
+    // Sibling state dir: the office registry journal never touches ~/.mikan.
+    workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
   });
 
   afterEach(() => {
@@ -129,7 +136,7 @@ describe("DiscordMessagingBot message routing", () => {
 
   test("uses a persistent session key for DMs", async () => {
     const handler = makeHandler();
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workingDir });
+    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
     const messageHandler = installMessageHandler(bot);
 
     await messageHandler(
@@ -151,7 +158,7 @@ describe("DiscordMessagingBot message routing", () => {
 
   test("uses a persistent top-level session key for shared channels", async () => {
     const handler = makeHandler();
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workingDir });
+    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
     const messageHandler = installMessageHandler(bot);
 
     await messageHandler(
@@ -170,7 +177,7 @@ describe("DiscordMessagingBot message routing", () => {
 
   test("uses reply target as the scoped session key in shared channels", async () => {
     const handler = makeHandler();
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workingDir });
+    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
     const messageHandler = installMessageHandler(bot);
 
     await messageHandler(
@@ -190,7 +197,7 @@ describe("DiscordMessagingBot message routing", () => {
 
   test("uses parent channel as conversationId for Discord thread channels", async () => {
     const handler = makeHandler();
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workingDir });
+    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
     const messageHandler = installMessageHandler(bot);
 
     await messageHandler(
@@ -221,7 +228,7 @@ describe("DiscordMessagingBot message routing", () => {
 
   test("shared-channel replies trigger without a mention", async () => {
     const handler = makeHandler();
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workingDir });
+    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
     const messageHandler = installMessageHandler(bot);
 
     await messageHandler(
@@ -247,7 +254,7 @@ describe("DiscordMessagingBot message routing", () => {
 
   test("shared-channel top-level messages still require a mention", async () => {
     const handler = makeHandler();
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workingDir });
+    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
     const messageHandler = installMessageHandler(bot);
 
     await messageHandler(
@@ -266,7 +273,7 @@ describe("DiscordMessagingBot message routing", () => {
     const handler = makeHandler();
     vi.mocked(handler.isRunning).mockImplementation((_address, sessionKey) => sessionKey === "C1");
 
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workingDir });
+    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
     const messageHandler = installMessageHandler(bot);
 
     const queue = (bot as any).getQueue("C1");
@@ -300,7 +307,7 @@ describe("DiscordMessagingBot message routing", () => {
     const handler = makeHandler();
     vi.mocked(handler.isRunning).mockImplementation((_address, sessionKey) => sessionKey === "C1");
 
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workingDir });
+    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
     const messageHandler = installMessageHandler(bot);
 
     await messageHandler(
@@ -320,7 +327,7 @@ describe("DiscordMessagingBot message routing", () => {
   });
 
   test("logs threadTs for shared channel replies", async () => {
-    const bot = new DiscordMessagingBot(makeHandler(), { token: "TEST_TOKEN", workingDir });
+    const bot = new DiscordMessagingBot(makeHandler(), { token: "TEST_TOKEN", workspace });
     const messageHandler = installMessageHandler(bot);
 
     await messageHandler(
@@ -342,7 +349,7 @@ describe("DiscordMessagingBot message routing", () => {
   });
 
   test("platform info defaults to hiding usage summary", () => {
-    const bot = new DiscordMessagingBot(makeHandler(), { token: "TEST_TOKEN", workingDir });
+    const bot = new DiscordMessagingBot(makeHandler(), { token: "TEST_TOKEN", workspace });
 
     expect(bot.getMessagingInfo().diagnostics?.showUsageSummary).toBe(false);
   });
@@ -353,7 +360,7 @@ describe("DiscordMessagingBot message routing", () => {
       await context.responder.respond("session link");
     });
 
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workingDir });
+    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
     const interactionHandler = installInteractionHandler(bot);
 
     const reply = vi.fn().mockResolvedValue(undefined);
@@ -394,7 +401,7 @@ describe("DiscordMessagingBot message routing", () => {
       await context.responder.respond("session link");
     });
 
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workingDir });
+    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
     const interactionHandler = installInteractionHandler(bot);
 
     await interactionHandler({
@@ -424,7 +431,7 @@ describe("DiscordMessagingBot message routing", () => {
 
   test("/new slash command resets the resolved session and acknowledges", async () => {
     const handler = makeHandler();
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workingDir });
+    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
     const interactionHandler = installInteractionHandler(bot);
     const reply = vi.fn().mockResolvedValue(undefined);
 
@@ -456,7 +463,7 @@ describe("DiscordMessagingBot message routing", () => {
 
   test("/new slash command in a guild routes through the command DM gate", async () => {
     const handler = makeHandler();
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workingDir });
+    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
     const interactionHandler = installInteractionHandler(bot);
 
     await interactionHandler({
@@ -488,7 +495,7 @@ describe("DiscordMessagingBot message routing", () => {
     vi.mocked(handler.isRunning).mockImplementation(
       (_address, sessionKey) => sessionKey === "C1:THREAD1",
     );
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workingDir });
+    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
     const interactionHandler = installInteractionHandler(bot);
     const reply = vi.fn().mockResolvedValue(undefined);
 

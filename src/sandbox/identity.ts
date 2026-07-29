@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { officeKey } from "../office-address.js";
+import { officeKey } from "../office/index.js";
 import type { OfficeAddress } from "../types.js";
 import type { SandboxConfig } from "./types.js";
 

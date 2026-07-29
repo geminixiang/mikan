@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { gitCloneDir, materializeSource, packageScopeDir } from "../src/packages/index.js";
-import { createOfficeAddress, officeKey } from "../src/office-address.js";
+import { createOfficeAddress, officeKey } from "../src/office/index.js";
 
 function run(cwd: string, args: string[]): string {
   return execFileSync("git", args, {

@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler, OfficeAddress } from "../src/adapter.js";
-import { createOfficeAddress, officeDirName } from "../src/office-address.js";
+import { createOfficeAddress, createWorkspace, officeDirName } from "../src/office/index.js";
+import type { Workspace } from "../src/office/index.js";
 import { conversationIdOf } from "../src/sessions/session-key.js";
 
 const officeOf = (sessionKey: string) =>
@@ -88,10 +89,13 @@ function installMessageHandler(
 
 describe("TelegramMessagingBot /new routing", () => {
   let workingDir: string;
+  let workspace: Workspace;
 
   beforeEach(() => {
     workingDir = join(tmpdir(), `mikan-telegram-new-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
+    // Sibling state dir: the office registry journal never touches ~/.mikan.
+    workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
   });
 
   afterEach(() => {
@@ -103,7 +107,7 @@ describe("TelegramMessagingBot /new routing", () => {
     ["group", "shared"],
   ])("routes %s /new through the command DM gate", async (chatType, conversationKind) => {
     const handler = makeHandler();
-    const bot = new TelegramMessagingBot(handler, { token: "T", workingDir });
+    const bot = new TelegramMessagingBot(handler, { token: "T", workspace });
     const commandHandler = installCommandHandler(bot, "new");
 
     await commandHandler({
@@ -121,10 +125,13 @@ describe("TelegramMessagingBot /new routing", () => {
 
 describe("TelegramMessagingBot extractMessageContext", () => {
   let workingDir: string;
+  let workspace: Workspace;
 
   beforeEach(() => {
     workingDir = join(tmpdir(), `mikan-telegram-ctx-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
+    // Sibling state dir: the office registry journal never touches ~/.mikan.
+    workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
   });
 
   afterEach(() => {
@@ -132,14 +139,14 @@ describe("TelegramMessagingBot extractMessageContext", () => {
   });
 
   test("returns null for null/undefined message", () => {
-    const bot = new TelegramMessagingBot(makeHandler(), { token: "T", workingDir });
+    const bot = new TelegramMessagingBot(makeHandler(), { token: "T", workspace });
     const extract = (bot as any).extractMessageContext.bind(bot);
     expect(extract(null)).toBeNull();
     expect(extract(undefined)).toBeNull();
   });
 
   test("returns null for messages before startup time", () => {
-    const bot = new TelegramMessagingBot(makeHandler(), { token: "T", workingDir });
+    const bot = new TelegramMessagingBot(makeHandler(), { token: "T", workspace });
     (bot as any).startupTime = Date.now() + 60_000;
     const extract = (bot as any).extractMessageContext.bind(bot);
     const msg = makeMessage({ date: Math.floor(Date.now() / 1000) });
@@ -147,7 +154,7 @@ describe("TelegramMessagingBot extractMessageContext", () => {
   });
 
   test("returns null for bot messages", () => {
-    const bot = new TelegramMessagingBot(makeHandler(), { token: "T", workingDir });
+    const bot = new TelegramMessagingBot(makeHandler(), { token: "T", workspace });
     (bot as any).startupTime = 0;
     const extract = (bot as any).extractMessageContext.bind(bot);
     const msg = makeMessage({ from: { id: 1, is_bot: true, username: "bot" } });
@@ -155,7 +162,7 @@ describe("TelegramMessagingBot extractMessageContext", () => {
   });
 
   test("private chat: sessionKey is just chatId (single session)", () => {
-    const bot = new TelegramMessagingBot(makeHandler(), { token: "T", workingDir });
+    const bot = new TelegramMessagingBot(makeHandler(), { token: "T", workspace });
     (bot as any).startupTime = 0;
     const extract = (bot as any).extractMessageContext.bind(bot);
 
@@ -168,7 +175,7 @@ describe("TelegramMessagingBot extractMessageContext", () => {
   });
 
   test("group chat: sessionKey includes msgId (per-message session)", () => {
-    const bot = new TelegramMessagingBot(makeHandler(), { token: "T", workingDir });
+    const bot = new TelegramMessagingBot(makeHandler(), { token: "T", workspace });
     (bot as any).startupTime = 0;
     const extract = (bot as any).extractMessageContext.bind(bot);
 
@@ -177,7 +184,7 @@ describe("TelegramMessagingBot extractMessageContext", () => {
   });
 
   test("group chat: reply uses threadTs in sessionKey", () => {
-    const bot = new TelegramMessagingBot(makeHandler(), { token: "T", workingDir });
+    const bot = new TelegramMessagingBot(makeHandler(), { token: "T", workspace });
     (bot as any).startupTime = 0;
     const extract = (bot as any).extractMessageContext.bind(bot);
 
@@ -190,7 +197,7 @@ describe("TelegramMessagingBot extractMessageContext", () => {
   });
 
   test("private chat reply still uses chatId as sessionKey", () => {
-    const bot = new TelegramMessagingBot(makeHandler(), { token: "T", workingDir });
+    const bot = new TelegramMessagingBot(makeHandler(), { token: "T", workspace });
     (bot as any).startupTime = 0;
     const extract = (bot as any).extractMessageContext.bind(bot);
 
@@ -203,10 +210,13 @@ describe("TelegramMessagingBot extractMessageContext", () => {
 
 describe("TelegramMessagingBot stop handling", () => {
   let workingDir: string;
+  let workspace: Workspace;
 
   beforeEach(() => {
     workingDir = join(tmpdir(), `mikan-telegram-stop-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
+    // Sibling state dir: the office registry journal never touches ~/.mikan.
+    workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
   });
 
   afterEach(() => {
@@ -215,7 +225,7 @@ describe("TelegramMessagingBot stop handling", () => {
 
   test("bare stop in a group can stop the agent without an @mention", async () => {
     const handler = makeHandlerWithRunningKeys(["999:50"]);
-    const bot = new TelegramMessagingBot(handler, { token: "T", workingDir });
+    const bot = new TelegramMessagingBot(handler, { token: "T", workspace });
     let messageHandler: ((ctx: { message: any }) => Promise<void>) | undefined;
     const processAttachments = vi.fn().mockResolvedValue([]);
 
@@ -250,10 +260,13 @@ describe("TelegramMessagingBot stop handling", () => {
 
 describe("TelegramMessagingBot message logging", () => {
   let workingDir: string;
+  let workspace: Workspace;
 
   beforeEach(() => {
     workingDir = join(tmpdir(), `mikan-telegram-log-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
+    // Sibling state dir: the office registry journal never touches ~/.mikan.
+    workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
   });
 
   afterEach(() => {
@@ -261,7 +274,7 @@ describe("TelegramMessagingBot message logging", () => {
   });
 
   test("logs threadTs for shared chat replies", async () => {
-    const bot = new TelegramMessagingBot(makeHandler(), { token: "T", workingDir });
+    const bot = new TelegramMessagingBot(makeHandler(), { token: "T", workspace });
     const messageHandler = installMessageHandler(bot);
 
     await messageHandler({
@@ -285,7 +298,7 @@ describe("TelegramMessagingBot message logging", () => {
   });
 
   test("does not log threadTs for private chat replies", async () => {
-    const bot = new TelegramMessagingBot(makeHandler(), { token: "T", workingDir });
+    const bot = new TelegramMessagingBot(makeHandler(), { token: "T", workspace });
     const messageHandler = installMessageHandler(bot);
 
     await messageHandler({
@@ -309,10 +322,13 @@ describe("TelegramMessagingBot message logging", () => {
 
 describe("TelegramMessagingBot startup", () => {
   let workingDir: string;
+  let workspace: Workspace;
 
   beforeEach(() => {
     workingDir = join(tmpdir(), `mikan-telegram-start-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
+    // Sibling state dir: the office registry journal never touches ~/.mikan.
+    workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
   });
 
   afterEach(() => {
@@ -320,7 +336,7 @@ describe("TelegramMessagingBot startup", () => {
   });
 
   test("start registers required Telegram slash commands only", async () => {
-    const bot = new TelegramMessagingBot(makeHandler(), { token: "TEST_TOKEN", workingDir });
+    const bot = new TelegramMessagingBot(makeHandler(), { token: "TEST_TOKEN", workspace });
     const getMe = vi.fn().mockResolvedValue({ id: 99, username: "mikan_bot" });
     const setMyCommands = vi.fn().mockResolvedValue(undefined);
     const command = vi.fn();
@@ -349,10 +365,13 @@ describe("TelegramMessagingBot startup", () => {
 
 describe("TelegramMessagingBot HTML fallback", () => {
   let workingDir: string;
+  let workspace: Workspace;
 
   beforeEach(() => {
     workingDir = join(tmpdir(), `mikan-telegram-html-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
+    // Sibling state dir: the office registry journal never touches ~/.mikan.
+    workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
   });
 
   afterEach(() => {
@@ -360,7 +379,7 @@ describe("TelegramMessagingBot HTML fallback", () => {
   });
 
   test("updateMessage retries with escaped HTML when Telegram rejects raw entities", async () => {
-    const bot = new TelegramMessagingBot(makeHandler(), { token: "TEST_TOKEN", workingDir });
+    const bot = new TelegramMessagingBot(makeHandler(), { token: "TEST_TOKEN", workspace });
     const editMessageText = vi
       .fn()
       .mockRejectedValueOnce(
@@ -389,11 +408,14 @@ describe("TelegramMessagingBot HTML fallback", () => {
 
 describe("TelegramMessagingBot attachments", () => {
   let workingDir: string;
+  let workspace: Workspace;
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
     workingDir = join(tmpdir(), `mikan-telegram-bot-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
+    // Sibling state dir: the office registry journal never touches ~/.mikan.
+    workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
   });
 
   afterEach(() => {
@@ -402,7 +424,7 @@ describe("TelegramMessagingBot attachments", () => {
   });
 
   test("processAttachments waits for downloads and returns completed metadata", async () => {
-    const bot = new TelegramMessagingBot(makeHandler(), { token: "TEST_TOKEN", workingDir });
+    const bot = new TelegramMessagingBot(makeHandler(), { token: "TEST_TOKEN", workspace });
     const processTelegramFile = vi
       .fn()
       .mockResolvedValueOnce({ name: "photo_42.jpg", localPath: "123/attachments/1_photo.jpg" })
@@ -425,7 +447,7 @@ describe("TelegramMessagingBot attachments", () => {
   });
 
   test("processTelegramFile downloads via bot token and writes the attachment", async () => {
-    const bot = new TelegramMessagingBot(makeHandler(), { token: "TEST_TOKEN", workingDir });
+    const bot = new TelegramMessagingBot(makeHandler(), { token: "TEST_TOKEN", workspace });
     const getFile = vi.fn().mockResolvedValue({ file_path: "photos/file_123.jpg" });
     (bot as any).client = { api: { getFile } };
 

@@ -16,7 +16,7 @@ import {
   type ConversationKind,
   type MessagingInfo,
 } from "../../adapter.js";
-import { conversationOfficeDir, createOfficeAddress } from "../../office-address.js";
+import { createOfficeAddress, type Workspace } from "../../office/index.js";
 import { COMMAND_MANIFEST, type SlackSlashRoute } from "../../commands/manifest.js";
 import { resolveConversationSettings } from "../../config.js";
 import { parseExtActionId } from "../../harness/extensions/blockkit.js";
@@ -135,7 +135,7 @@ export class SlackMessagingBot implements MessagingBot {
   private socketClient: SocketModeClient;
   private webClient: WebClient;
   private handler: MessagingEventHandler;
-  private workingDir: string;
+  private workspace: Workspace;
   private store: ChannelStore;
   private botUserId: string | null = null;
   private botId: string | null = null;
@@ -148,9 +148,9 @@ export class SlackMessagingBot implements MessagingBot {
   private queues = new Map<string, MessagingEventQueue>();
   private eventsWatcher: EventsWatcher | null = null;
 
-  /** Host office dir for a Slack conversation (see officeDirName). */
+  /** Host office dir for a Slack conversation. */
   private conversationDir(channelId: string): string {
-    return conversationOfficeDir(this.workingDir, createOfficeAddress("slack", channelId));
+    return this.workspace.office(createOfficeAddress("slack", channelId)).dir;
   }
 
   private resolveReplyMode(
@@ -168,10 +168,10 @@ export class SlackMessagingBot implements MessagingBot {
 
   constructor(
     handler: MessagingEventHandler,
-    config: { appToken: string; botToken: string; workingDir: string; store: ChannelStore },
+    config: { appToken: string; botToken: string; workspace: Workspace; store: ChannelStore },
   ) {
     this.handler = handler;
-    this.workingDir = config.workingDir;
+    this.workspace = config.workspace;
     this.store = config.store;
     this.socketClient = new SocketModeClient({
       appToken: config.appToken,
@@ -456,7 +456,7 @@ export class SlackMessagingBot implements MessagingBot {
   }
 
   logToFile(channel: string, entry: object): void {
-    appendChannelLog(this.workingDir, createOfficeAddress("slack", channel), entry);
+    appendChannelLog(this.workspace.office(createOfficeAddress("slack", channel)), entry);
   }
 
   logBotResponse(
@@ -467,8 +467,7 @@ export class SlackMessagingBot implements MessagingBot {
     slackBlocks?: object[],
   ): void {
     appendBotResponseLog(
-      this.workingDir,
-      createOfficeAddress("slack", channel),
+      this.workspace.office(createOfficeAddress("slack", channel)),
       text,
       ts,
       threadTs,
@@ -640,7 +639,7 @@ export class SlackMessagingBot implements MessagingBot {
     };
     processMessageIntake({
       eventBase: options.event as unknown as ConversationEvent,
-      workingDir: this.workingDir,
+      office: this.workspace.office(options.event.address),
       isAutoReplyCandidate: options.isAutoReplyCandidate,
       magicWord: { addressed: options.addressed, scopeFallback: "top-level" },
       busyPolicy: "queue",

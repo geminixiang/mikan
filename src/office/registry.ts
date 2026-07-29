@@ -9,19 +9,17 @@ import type {
   OfficeRecord,
   OfficeRegistryState,
   PlatformName,
-} from "./types.js";
+} from "../types.js";
 import {
   officeDir,
   officeKey,
   assertConversationId,
   assertPlatformName,
-  conversationOfficeDir,
   validateOfficeAddress,
-} from "./office-address.js";
-import { parseGithubConversationId } from "./adapters/github/ids.js";
-import { effectiveStateDir } from "./cli/arg-grammar.js";
-import { isRecord, readTextFileIfExists } from "./utils/file-guards.js";
-import { atomicWritePrivateFile } from "./utils/fs-atomic.js";
+} from "./address.js";
+import { parseGithubConversationId } from "../adapters/github/ids.js";
+import { isRecord, readTextFileIfExists } from "../utils/file-guards.js";
+import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
 
 const REGISTRY_VERSION = 1;
 const REGISTRY_FILENAME = "office-registry.json";
@@ -40,12 +38,12 @@ const REGISTRY_LOCK_STALE_MS = 60_000;
 /**
  * Host-only office directory and migration journal.
  *
- * Office records are the durable raw-id ↔ (platform, office) mapping: once
- * the ADR 0005 layout migration renames workspace dirs to office keys, dir
- * names stop carrying raw platform ids, and enumeration/legacy-scope lookups
+ * Office records are the durable raw-id ↔ (platform, office) mapping: the
+ * ADR 0005 layout migration renamed workspace dirs to office keys, so dir
+ * names carry no raw platform ids and enumeration/legacy-scope lookups
  * resolve through these records. Migration records track claiming legacy
- * raw-id directories; existing runtime consumers keep their current layout
- * until that migration commit lands.
+ * raw-id directories. Office materialization lives in `layout.ts`; this
+ * module owns only the durable record and its crash-safe transitions.
  */
 interface OfficeRegistryOptions {
   writeState?: (path: string, content: string) => void;
@@ -685,76 +683,30 @@ function sleepSync(milliseconds: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
-// ── office materialization ────────────────────────────────────────────────────
+// ── raw-id lookups (cold paths: CLI, Admin enumeration) ──────────────────────
 
 /**
- * Process-wide registries keyed by state dir. Office materialization happens
- * on hot per-message paths (log appends, attachment writes), so each state
- * dir keeps one registry instance plus the set of office keys already
- * recorded; after the first sighting an office costs one Set lookup.
- */
-const registriesByStateDir = new Map<string, OfficeRegistry>();
-const recordedOfficesByStateDir = new Map<string, Set<string>>();
-
-function registryFor(stateDir: string): OfficeRegistry {
-  const key = resolve(stateDir);
-  const existing = registriesByStateDir.get(key);
-  if (existing) return existing;
-  const registry = new OfficeRegistry(key);
-  registriesByStateDir.set(key, registry);
-  return registry;
-}
-
-/**
- * Materialize an office working directory: record the office in the registry,
- * then create the directory. Record-first ordering means a crash can leave a
- * record without a directory (harmless; recreated on the next message) but
- * never an anonymous office directory the registry cannot enumerate.
- *
- * This is the single creation seam for office dirs; read paths keep using
- * `conversationOfficeDir` and simply see missing files for unknown offices.
- */
-export function ensureOfficeDir(workspaceRoot: string, address: OfficeAddress): string {
-  const normalized = validateOfficeAddress(address);
-  const stateKey = resolve(effectiveStateDir());
-  const cached = recordedOfficesByStateDir.get(stateKey) ?? new Set<string>();
-  if (!recordedOfficesByStateDir.has(stateKey)) recordedOfficesByStateDir.set(stateKey, cached);
-
-  const key = officeKey(normalized);
-  if (!cached.has(key)) {
-    registryFor(stateKey).recordOffice(normalized);
-    cached.add(key);
-  }
-
-  const dir = conversationOfficeDir(workspaceRoot, normalized);
-  ensureRegularOfficeDirectory(dir);
-  return dir;
-}
-
-/**
- * Resolve the office behind a raw conversation id for surfaces that predate
- * OfficeAddress (Admin scope, settings mutation). The registry is the only
- * authority: office records first, then a committed migration's owner, then
- * the sole enabled platform. Two platforms sharing the raw id make the scope
+ * Resolve the office behind a raw conversation id for surfaces that name
+ * offices by raw id (CLI operators). The registry is the only authority:
+ * office records first, then a committed migration's owner, then the sole
+ * enabled platform. Two platforms sharing the raw id make the scope
  * genuinely ambiguous, and an unknown id has no office to resolve — both
  * fail loudly rather than guessing a directory.
+ *
+ * Constructs a registry per call, which re-reads the journal from disk; this
+ * is a one-shot CLI/Admin surface, never a per-message path (those go
+ * through the Workspace value's cached registry in `layout.ts`).
  */
 export function resolveOwnedOfficeAddress(
   rawConversationId: string,
-  stateDir: string = effectiveStateDir(),
+  stateDir: string,
 ): OfficeAddress {
   assertConversationId(rawConversationId);
-  const registry = registryFor(stateDir);
+  const registry = new OfficeRegistry(stateDir);
 
-  const owners = () =>
-    registry.getState().offices.filter((record) => record.conversationId === rawConversationId);
-  let matches = owners();
-  if (matches.length === 0) {
-    // Another process (the daemon, `mikan office claim`) may have written
-    // since this instance loaded; check the file before giving up.
-    registry.reload();
-    matches = owners();
-  }
+  const matches = registry
+    .getState()
+    .offices.filter((record) => record.conversationId === rawConversationId);
   if (matches.length === 1) {
     return { platform: matches[0].platform, conversationId: rawConversationId };
   }
@@ -778,26 +730,9 @@ export function resolveOwnedOfficeAddress(
   );
 }
 
-/** Current office inventory, re-read from disk for cross-process freshness. */
-export function listRegisteredOffices(): readonly OfficeRecord[] {
-  const registry = registryFor(effectiveStateDir());
-  registry.reload();
-  return registry.getOffices();
-}
-
-/** mkdir-if-missing with the same fail-closed type guard as projection roots. */
-function ensureRegularOfficeDirectory(dir: string): void {
-  let stats;
-  try {
-    stats = lstatSync(dir);
-  } catch (err) {
-    if (!isErrno(err, "ENOENT")) throw err;
-    mkdirSync(dir, { recursive: true, mode: 0o700 });
-    return;
-  }
-  if (stats.isSymbolicLink() || !stats.isDirectory()) {
-    throw new Error(`Office directory must be a regular non-symlink directory: ${dir}`);
-  }
+/** Current office inventory, read fresh from disk for cross-process freshness. */
+export function listRegisteredOffices(stateDir: string): readonly OfficeRecord[] {
+  return new OfficeRegistry(stateDir).getOffices();
 }
 
 /**

@@ -150,7 +150,8 @@ export interface MagicWordIntakeOptions {
 
 export interface MessageIntakeOptions<TEvent extends ConversationEvent> {
   eventBase: TEvent;
-  workingDir: string | undefined;
+  /** The event's Conversation office; absent when auto-reply is unconfigured (embedders). */
+  office: import("../office/types.js").Office | undefined;
   isAutoReplyCandidate: boolean;
   magicWord: MagicWordIntakeOptions;
   /**

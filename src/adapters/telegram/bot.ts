@@ -24,8 +24,7 @@ import { telegramCommandMenu } from "../../commands/manifest.js";
 import { processMessageIntake } from "../intake.js";
 import { createTelegramAdapters } from "./context.js";
 import { escapeTelegramHtml } from "./html.js";
-import { createOfficeAddress, officeDirName } from "../../office-address.js";
-import { ensureOfficeDir } from "../../office-registry.js";
+import { createOfficeAddress, type Workspace } from "../../office/index.js";
 
 // grammY surfaces Telegram errors as `GrammyError` with `error_code` mirroring
 // the Bot API. 429 is the rate-limit status; the response also includes
@@ -68,16 +67,16 @@ export class TelegramMessagingBot implements MessagingBot {
   private client: GrammyMessagingBot;
   private handler: MessagingEventHandler;
   private botToken: string;
-  private workingDir: string;
+  private workspace: Workspace;
   private botUserId: string | null = null;
   private botUsername: string | null = null;
   private queues = new Map<string, MessagingEventQueue>();
   private startupTime: number = 0;
 
-  constructor(handler: MessagingEventHandler, config: { token: string; workingDir: string }) {
+  constructor(handler: MessagingEventHandler, config: { token: string; workspace: Workspace }) {
     this.handler = handler;
     this.botToken = config.token;
-    this.workingDir = config.workingDir;
+    this.workspace = config.workspace;
     this.client = new GrammyMessagingBot(config.token);
     this.client.catch((err) => {
       log.logWarning("Telegram error", err instanceof Error ? err.message : String(err));
@@ -246,11 +245,11 @@ export class TelegramMessagingBot implements MessagingBot {
   }
 
   logToFile(channel: string, entry: object): void {
-    appendChannelLog(this.workingDir, createOfficeAddress("telegram", channel), entry);
+    appendChannelLog(this.workspace.office(createOfficeAddress("telegram", channel)), entry);
   }
 
   logBotResponse(channel: string, text: string, ts: string): void {
-    appendBotResponseLog(this.workingDir, createOfficeAddress("telegram", channel), text, ts);
+    appendBotResponseLog(this.workspace.office(createOfficeAddress("telegram", channel)), text, ts);
   }
 
   /**
@@ -308,9 +307,10 @@ export class TelegramMessagingBot implements MessagingBot {
       const ts = Date.now();
       const sanitizedName = originalName.replace(/[^a-zA-Z0-9._-]/g, "_");
       const filename = `${ts}_${sanitizedName}`;
-      const address = createOfficeAddress("telegram", chatId);
-      const localPath = `${officeDirName(address)}/attachments/${filename}`;
-      const fullDir = join(ensureOfficeDir(this.workingDir, address), "attachments");
+      const office = this.workspace.office(createOfficeAddress("telegram", chatId));
+      const localPath = `${office.key}/attachments/${filename}`;
+      office.ensure();
+      const fullDir = office.attachmentsDir;
 
       // Construct download URL
       const downloadUrl = `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`;
@@ -483,7 +483,7 @@ export class TelegramMessagingBot implements MessagingBot {
 
       await processMessageIntake({
         eventBase,
-        workingDir: this.workingDir,
+        office: this.workspace.office(eventBase.address),
         isAutoReplyCandidate,
         magicWord: {
           addressed: addressedToMessagingBot || mc.chatType === "private",

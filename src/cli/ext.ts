@@ -21,8 +21,8 @@ import {
 import { resolveStateDir, takeValueFlag } from "./arg-grammar.js";
 import { runExtDevCommand } from "./ext-dev.js";
 import { parseGitSource, resolveGitSource } from "./ext-git.js";
-import { officeStateDir } from "../office-address.js";
-import { resolveOwnedOfficeAddress } from "../office-registry.js";
+import { officeStateDir } from "../office/index.js";
+import { resolveOwnedOfficeAddress } from "../office/index.js";
 
 interface ExtArgs {
   action?: string;

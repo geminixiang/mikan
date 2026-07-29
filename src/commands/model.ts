@@ -6,7 +6,6 @@ import { slashForms } from "./manifest.js";
 import { matchCommand } from "./parse.js";
 import type { CommandContext, CommandHandler, ModelRegistry, ParsedModelCommand } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
-import { conversationOfficeDir } from "../office-address.js";
 
 const PI_AI_THINKING_LEVELS = [
   "minimal",
@@ -100,10 +99,8 @@ export class ModelCommandHandler implements CommandHandler {
       return true;
     }
 
-    const settingsScope = {
-      address: context.address,
-      conversationDir: conversationOfficeDir(context.services.workingDir, context.address),
-    };
+    const office = context.services.workspace.office(context.address);
+    const settingsScope = { address: office.address, conversationDir: office.dir };
     if (!parsed.provider || !parsed.model) {
       const current = resolveConversationSettings(settingsScope);
       await replyDiagnosticWithContext(
@@ -171,16 +168,11 @@ export class ModelCommandHandler implements CommandHandler {
       return true;
     }
 
-    const result = applyConversationSettings(
-      context.services.runtime,
-      context.services.workingDir,
-      context.address,
-      {
-        provider: parsed.provider,
-        model: selectedModelId,
-        ...(selectedThinkingLevel ? { thinkingLevel: selectedThinkingLevel } : {}),
-      },
-    );
+    const result = applyConversationSettings(context.services.runtime, office, {
+      provider: parsed.provider,
+      model: selectedModelId,
+      ...(selectedThinkingLevel ? { thinkingLevel: selectedThinkingLevel } : {}),
+    });
     if (!result.ok) {
       await replyDiagnosticWithContext(
         context.responder,

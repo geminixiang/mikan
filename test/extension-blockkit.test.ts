@@ -7,7 +7,7 @@ import { namespaceActionIds, parseExtActionId } from "../src/harness/extensions/
 import { ExtensionRegistry } from "../src/harness/extensions/registry.js";
 import { loadExtensions } from "../src/harness/extensions/loader.js";
 import type { ExtensionBlockAction } from "../src/harness/extensions/types.js";
-import { createOfficeAddress } from "../src/office-address.js";
+import { createOfficeAddress } from "../src/office/index.js";
 
 let dir: string;
 

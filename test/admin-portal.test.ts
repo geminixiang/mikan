@@ -8,7 +8,7 @@ import {
   readSkillsFromDir,
   resolveConversationScope,
 } from "../src/web/admin/portal.js";
-import { createOfficeAddress } from "../src/office-address.js";
+import { createOfficeAddress } from "../src/office/index.js";
 import type { AdminToken } from "../src/web/admin/store.js";
 
 const tempDirs: string[] = [];

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
-import { createOfficeAddress } from "../src/office-address.js";
+import { createOfficeAddress } from "../src/office/index.js";
 import type { MutableModels } from "@earendil-works/pi-ai";
 import { MikanModels } from "../src/harness/index.js";
 import { createEmbedder } from "../examples/embedder/index.js";

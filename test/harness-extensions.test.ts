@@ -13,7 +13,7 @@ import {
 } from "../src/harness/index.js";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Usage } from "@earendil-works/pi-ai";
-import { createOfficeAddress, officeKey } from "../src/office-address.js";
+import { createOfficeAddress, officeKey } from "../src/office/index.js";
 
 let dir: string;
 

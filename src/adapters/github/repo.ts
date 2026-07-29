@@ -1,6 +1,6 @@
 import { execFile } from "child_process";
 import { join } from "path";
-import { conversationOfficeDir, createOfficeAddress } from "../../office-address.js";
+import type { Office } from "../../office/index.js";
 import { promisify } from "util";
 import type {
   CloneRepoOptions,
@@ -21,11 +21,8 @@ const GIT_TIMEOUT_MS = 120_000;
 export const GITHUB_PUSH_BRANCH_PATTERN = /^pi\/[A-Za-z0-9._][A-Za-z0-9._/-]*$/;
 
 /** The conversation's clone location (bind-mounted into the sandbox as ./repo). */
-export function conversationRepoDir(workingDir: string, conversationId: string): string {
-  return join(
-    conversationOfficeDir(workingDir, createOfficeAddress("github", conversationId)),
-    "repo",
-  );
+export function conversationRepoDir(office: Office): string {
+  return join(office.dir, "repo");
 }
 
 /**

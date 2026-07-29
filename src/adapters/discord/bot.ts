@@ -29,8 +29,7 @@ import {
 } from "../../adapter.js";
 import type { DiscordEvent } from "./types.js";
 import * as log from "../../log.js";
-import { createOfficeAddress, officeDirName } from "../../office-address.js";
-import { ensureOfficeDir } from "../../office-registry.js";
+import { createOfficeAddress, type Workspace } from "../../office/index.js";
 import { resolveChatSessionKey } from "../../sessions/policy.js";
 import { formatNothingRunning } from "../../platform-messages.js";
 import {
@@ -72,17 +71,17 @@ export class DiscordMessagingBot implements MessagingBot {
   private client: Client;
   private handler: MessagingEventHandler;
   private token: string;
-  private workingDir: string;
+  private workspace: Workspace;
   private botUserId: string | null = null;
   private queues = new Map<string, MessagingEventQueue>();
   private startupTime: number = 0;
   private channels = new Map<string, { id: string; name: string }>();
   private users = new Map<string, { id: string; userName: string; displayName: string }>();
 
-  constructor(handler: MessagingEventHandler, config: { token: string; workingDir: string }) {
+  constructor(handler: MessagingEventHandler, config: { token: string; workspace: Workspace }) {
     this.handler = handler;
     this.token = config.token;
-    this.workingDir = config.workingDir;
+    this.workspace = config.workspace;
     this.client = new Client({
       intents: [
         GatewayIntentBits.Guilds,
@@ -284,11 +283,15 @@ export class DiscordMessagingBot implements MessagingBot {
   }
 
   logToFile(channelId: string, entry: object): void {
-    appendChannelLog(this.workingDir, createOfficeAddress("discord", channelId), entry);
+    appendChannelLog(this.workspace.office(createOfficeAddress("discord", channelId)), entry);
   }
 
   logBotResponse(channelId: string, text: string, ts: string): void {
-    appendBotResponseLog(this.workingDir, createOfficeAddress("discord", channelId), text, ts);
+    appendBotResponseLog(
+      this.workspace.office(createOfficeAddress("discord", channelId)),
+      text,
+      ts,
+    );
   }
 
   /**
@@ -312,9 +315,10 @@ export class DiscordMessagingBot implements MessagingBot {
       const ts = Date.now();
       const sanitizedName = attachment.name.replace(/[^a-zA-Z0-9._-]/g, "_");
       const filename = `${ts}_${sanitizedName}`;
-      const address = createOfficeAddress("discord", channelId);
-      const localPath = `${officeDirName(address)}/attachments/${filename}`;
-      const fullDir = join(ensureOfficeDir(this.workingDir, address), "attachments");
+      const office = this.workspace.office(createOfficeAddress("discord", channelId));
+      const localPath = `${office.key}/attachments/${filename}`;
+      office.ensure();
+      const fullDir = office.attachmentsDir;
       const result = {
         name: attachment.name,
         localPath,
@@ -658,7 +662,7 @@ export class DiscordMessagingBot implements MessagingBot {
 
       await processMessageIntake({
         eventBase,
-        workingDir: this.workingDir,
+        office: this.workspace.office(eventBase.address),
         isAutoReplyCandidate,
         magicWord: { addressed: !isAutoReplyCandidate, scopeFallback: "top-level" },
         busyPolicy: "queue",

@@ -10,8 +10,8 @@
  * stopped so the directory is not moving under a live runtime.
  */
 import { join, resolve } from "node:path";
-import { assertPlatformName } from "../office-address.js";
-import { OfficeRegistry } from "../office-registry.js";
+import { assertPlatformName } from "../office/index.js";
+import { OfficeRegistry } from "../office/index.js";
 import { resolveStateDir, takeValueFlag } from "./arg-grammar.js";
 
 const USAGE = `Usage:

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { createOfficeAddress } from "../src/office-address.js";
+import { createOfficeAddress } from "../src/office/index.js";
 import {
   assertStateDirOutsideWorkspace,
   conversationSettingsPath,

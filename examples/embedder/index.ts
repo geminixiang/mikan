@@ -5,10 +5,12 @@
  */
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
+import { join } from "node:path";
 import {
   createConversationEvent,
   createConversationMessage,
   createConversationRuntime,
+  createWorkspace,
   type ConversationContext,
   type ConversationResponder,
   type ConversationRuntime,
@@ -39,12 +41,19 @@ export interface Embedder {
 
 export function createEmbedder(options: {
   workingDir: string;
+  /** Host-only state root; defaults to a `state` dir beside the workspace. */
+  stateDir?: string;
   models?: MikanModels;
   write?: (text: string) => void;
 }): Embedder {
   const write = options.write ?? ((text: string) => process.stdout.write(`${text}\n`));
+  // An embedder owns both roots: the workspace the agent works in, and the
+  // host-only state dir mikan keeps its registry and settings under.
   const runtime = createConversationRuntime({
-    workingDir: options.workingDir,
+    workspace: createWorkspace({
+      root: options.workingDir,
+      stateDir: options.stateDir ?? join(options.workingDir, "state"),
+    }),
     sandbox: { type: "host" },
     models: options.models,
   });

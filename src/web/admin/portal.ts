@@ -20,7 +20,6 @@ import {
   applyGlobalSettings,
   applyGlobalWorkspacePolicy,
 } from "../../settings-mutation.js";
-import { effectiveStateDir } from "../../cli/arg-grammar.js";
 import {
   addPackage,
   inspectConversationPackages,
@@ -41,13 +40,13 @@ import type { AdminToken } from "./store.js";
 export type { AdminRuntimeBridge, AdminServices, EventSummary } from "./types.js";
 import type { AdminServices, EventSummary } from "./types.js";
 import type { OfficeAddress } from "../../adapter.js";
-import { sameOffice } from "../../office-address.js";
 import {
   assertPlatformName,
-  conversationOfficeDir,
   createOfficeAddress,
-} from "../../office-address.js";
-import { listRegisteredOffices } from "../../office-registry.js";
+  listRegisteredOffices,
+  sameOffice,
+  type Workspace,
+} from "../../office/index.js";
 
 // ── Handler ────────────────────────────────────────────────────────────────────
 
@@ -273,12 +272,12 @@ function resolveTargetConversation(
   return resolveConversationScope(requested, platform, token);
 }
 
-function requireAdminWorkingDir(res: ServerResponse, services: AdminServices): string | null {
-  if (!services.workingDir) {
+function requireAdminWorkspace(res: ServerResponse, services: AdminServices): Workspace | null {
+  if (!services.workspace) {
     jsonRes(res, 503, { error: "Working directory not available" });
     return null;
   }
-  return services.workingDir;
+  return services.workspace;
 }
 
 // ── API handlers ───────────────────────────────────────────────────────────────
@@ -299,9 +298,9 @@ function serveMe(res: ServerResponse, token: AdminToken): void {
  * mapping — instead of scanning the workspace. Offices whose directory
  * disappeared are filtered out.
  */
-function listAdminOffices(workingDir: string): OfficeAddress[] {
-  return listRegisteredOffices()
-    .filter((office) => existsSync(conversationOfficeDir(workingDir, office)))
+function listAdminOffices(workspace: Workspace): OfficeAddress[] {
+  return listRegisteredOffices(workspace.stateDir)
+    .filter((office) => existsSync(workspace.office(office).dir))
     .map((office) => createOfficeAddress(office.platform, office.conversationId))
     .toSorted(
       (a, b) =>
@@ -309,8 +308,8 @@ function listAdminOffices(workingDir: string): OfficeAddress[] {
     );
 }
 
-function conversationLastActivity(workingDir: string, office: OfficeAddress): number | null {
-  const dir = conversationOfficeDir(workingDir, office);
+function conversationLastActivity(workspace: Workspace, office: OfficeAddress): number | null {
+  const dir = workspace.office(office).dir;
   if (!existsSync(dir)) return null;
   let latest = 0;
   const visit = (path: string, depth: number): void => {
@@ -347,17 +346,17 @@ function conversationDisplayLabel(services: AdminServices, office: OfficeAddress
 }
 
 function serveConversationsList(res: ServerResponse, services: AdminServices): void {
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
 
   const running = services.runtime?.getRunningSessions() ?? [];
 
-  const conversations = listAdminOffices(workingDir).map((office) => ({
+  const conversations = listAdminOffices(workspace).map((office) => ({
     platform: office.platform,
     conversationId: office.conversationId,
     label: conversationDisplayLabel(services, office),
     running: running.some((session) => sameOffice(session.address, office)),
-    lastActivityAt: conversationLastActivity(workingDir, office),
+    lastActivityAt: conversationLastActivity(workspace, office),
   }));
 
   jsonRes(res, 200, { conversations });
@@ -378,12 +377,12 @@ interface SessionUsageRow {
 }
 
 function serveSessionUsage(res: ServerResponse, services: AdminServices): void {
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
 
-  const rows = listAdminOffices(workingDir)
+  const rows = listAdminOffices(workspace)
     .flatMap((office) =>
-      listConversationSessionUsage(workingDir, office, conversationDisplayLabel(services, office)),
+      listConversationSessionUsage(workspace, office, conversationDisplayLabel(services, office)),
     )
     .toSorted((a, b) => b.total - a.total)
     .slice(0, 20);
@@ -392,11 +391,11 @@ function serveSessionUsage(res: ServerResponse, services: AdminServices): void {
 }
 
 function listConversationSessionUsage(
-  workingDir: string,
+  workspace: Workspace,
   office: OfficeAddress,
   label: string,
 ): SessionUsageRow[] {
-  const sessionDir = join(conversationOfficeDir(workingDir, office), "sessions");
+  const sessionDir = workspace.office(office).sessionsDir;
   try {
     return readdirSync(sessionDir, { withFileTypes: true })
       .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
@@ -490,12 +489,12 @@ function emptyBucket(date: string): UsageBucket {
 
 /** Per-conversation daily token usage over the last N days (N clamped to 1..7). */
 function serveConversationUsage(res: ServerResponse, url: URL, services: AdminServices): void {
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
 
   const conversationId = (url.searchParams.get("conversationId") ?? "").trim();
   const platformParam = (url.searchParams.get("platform") ?? "").trim();
-  const office = listAdminOffices(workingDir).find(
+  const office = listAdminOffices(workspace).find(
     (candidate) =>
       candidate.conversationId === conversationId &&
       (!platformParam || candidate.platform === platformParam),
@@ -522,7 +521,7 @@ function serveConversationUsage(res: ServerResponse, url: URL, services: AdminSe
   cutoff.setDate(today.getDate() - (days - 1));
 
   const flags = { hasOlder: false };
-  const sessionDir = join(conversationOfficeDir(workingDir, office), "sessions");
+  const sessionDir = workspace.office(office).sessionsDir;
   try {
     for (const entry of readdirSync(sessionDir, { withFileTypes: true })) {
       if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
@@ -608,8 +607,8 @@ function serveConversationState(
   services: AdminServices,
   token: AdminToken,
 ): void {
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
 
   const scope = resolveConversationFromQuery(url, token);
   if (scope.error) {
@@ -618,13 +617,13 @@ function serveConversationState(
   }
   const conversationId = scope.conversationId;
 
-  const dir = conversationOfficeDir(workingDir, scope.address);
+  const dir = workspace.office(scope.address).dir;
   const globalConfig = loadGlobalSettings();
   const conversationConfig = resolveConversationSettings({
     address: scope.address,
     conversationDir: dir,
   });
-  const conversationWorkspace = resolveWorkspaceProjection(workingDir, scope.address);
+  const conversationWorkspace = resolveWorkspaceProjection(workspace.root, scope.address);
   const globalWorkspaceSettings = globalConfig.sandbox?.workspace;
   const autoReply = loadConversationAutoReplyConfig(dir);
 
@@ -721,11 +720,11 @@ function serveConversationModelUpdate(
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
 
   try {
-    const result = applyConversationSettings(services.runtime, workingDir, scope.address, {
+    const result = applyConversationSettings(services.runtime, workspace.office(scope.address), {
       provider,
       model,
       ...(thinkingLevel ? { thinkingLevel } : {}),
@@ -785,13 +784,12 @@ function serveConversationSandboxUpdate(
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
   try {
     const result = applyConversationWorkspacePolicy(
       services.runtime,
-      workingDir,
-      scope.address,
+      workspace.office(scope.address),
       parsed.choice,
     );
     if (!result.ok) {
@@ -841,10 +839,10 @@ function serveConversationSlackUpdate(
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
   try {
-    applyConversationSettings(services.runtime, workingDir, scope.address, {
+    applyConversationSettings(services.runtime, workspace.office(scope.address), {
       slack: { replyMode },
     });
     jsonRes(res, 200, { ok: true });
@@ -873,9 +871,9 @@ function serveConversationAutoReplyUpdate(
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
-  const dir = conversationOfficeDir(workingDir, scope.address);
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
+  const dir = workspace.office(scope.address).dir;
   try {
     const existing = loadConversationAutoReplyConfig(dir);
     saveConversationAutoReplyConfig(dir, {
@@ -899,8 +897,8 @@ function serveConversationSessionLink(
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
   if (!services.sessionViewTokenStore) {
     jsonRes(res, 503, { error: "Session view token store not available" });
     return;
@@ -913,7 +911,7 @@ function serveConversationSessionLink(
   }
 
   const sessionFile = resolveExistingSessionFile(
-    conversationOfficeDir(workingDir, scope.address),
+    workspace.office(scope.address).dir,
     scope.conversationId,
   );
   if (!sessionFile) {
@@ -1208,9 +1206,9 @@ function serveWorkspaceTree(
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
-  const convDir = conversationOfficeDir(workingDir, scope.address);
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
+  const convDir = workspace.office(scope.address).dir;
   if (!existsSync(convDir)) {
     jsonRes(res, 200, { conversationId: scope.conversationId, tree: null });
     return;
@@ -1309,8 +1307,8 @@ function serveWorkspaceFile(
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
   const requestedPath = (url.searchParams.get("path") ?? "").trim();
   if (!requestedPath) {
     jsonRes(res, 400, { error: "Missing path" });
@@ -1320,7 +1318,7 @@ function serveWorkspaceFile(
     jsonRes(res, 403, { error: "Workspace path is not exposed" });
     return;
   }
-  const convDir = conversationOfficeDir(workingDir, scope.address);
+  const convDir = workspace.office(scope.address).dir;
   const safe = safeJoinUnderRoot(convDir, requestedPath);
   if (safe.error) {
     jsonRes(res, 400, { error: safe.error });
@@ -1398,13 +1396,14 @@ async function servePackagesList(
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
   try {
+    const office = workspace.office(scope.address);
     const inventory = await inspectConversationPackages({
-      address: scope.address,
-      stateDir: effectiveStateDir(),
-      conversationDir: conversationOfficeDir(workingDir, scope.address),
+      address: office.address,
+      stateDir: workspace.stateDir,
+      conversationDir: office.dir,
     });
     jsonRes(res, 200, { conversationId: scope.conversationId, ...inventory });
   } catch (err) {
@@ -1439,14 +1438,15 @@ function servePackageMutation(
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
 
+  const office = workspace.office(scope.address);
   const context = {
-    address: scope.address,
-    stateDir: effectiveStateDir(),
-    conversationDir: conversationOfficeDir(workingDir, scope.address),
-    workingDir,
+    address: office.address,
+    stateDir: workspace.stateDir,
+    conversationDir: office.dir,
+    office,
     runtime: services.runtime,
   };
 
@@ -1481,13 +1481,10 @@ function serveSkillsList(
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
-  const global = readSkillsFromDir(join(workingDir, "skills"), "global");
-  const conversation = readSkillsFromDir(
-    join(conversationOfficeDir(workingDir, scope.address), "skills"),
-    "conversation",
-  );
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
+  const global = readSkillsFromDir(workspace.skillsDir, "global");
+  const conversation = readSkillsFromDir(workspace.office(scope.address).skillsDir, "conversation");
   jsonRes(res, 200, {
     conversationId: scope.conversationId,
     skills: [...global, ...conversation],
@@ -1505,8 +1502,8 @@ function serveSkillFile(
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
 
   const source = (url.searchParams.get("source") ?? "").trim();
   const directory = (url.searchParams.get("directory") ?? "").trim();
@@ -1525,9 +1522,7 @@ function serveSkillFile(
   }
 
   const skillsRoot =
-    source === "global"
-      ? join(workingDir, "skills")
-      : join(conversationOfficeDir(workingDir, scope.address), "skills");
+    source === "global" ? workspace.skillsDir : workspace.office(scope.address).skillsDir;
   const safe = safeJoinUnderRoot(skillsRoot, join(directory, "SKILL.md"));
   if (safe.error) {
     jsonRes(res, 400, { error: safe.error });
@@ -1600,14 +1595,14 @@ async function serveConversationEventsList(
 }
 
 function serveEventsFile(res: ServerResponse, url: URL, services: AdminServices): void {
-  const workingDir = requireAdminWorkingDir(res, services);
-  if (!workingDir) return;
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
   const name = (url.searchParams.get("name") ?? "").trim();
   if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
     jsonRes(res, 400, { error: "Invalid name" });
     return;
   }
-  const filePath = join(workingDir, "events", name);
+  const filePath = join(workspace.eventsDir, name);
   let stats;
   try {
     stats = statSync(filePath);

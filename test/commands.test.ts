@@ -18,7 +18,12 @@ import { ModelCommandHandler } from "../src/commands/model.js";
 import { NewCommandHandler } from "../src/commands/new.js";
 import { SandboxCommandHandler } from "../src/commands/sandbox.js";
 import { SessionViewCommandHandler } from "../src/commands/session-view.js";
-import { createOfficeAddress, officeDirName, officeKey } from "../src/office-address.js";
+import {
+  createOfficeAddress,
+  createWorkspace,
+  officeDirName,
+  officeKey,
+} from "../src/office/index.js";
 import type { CommandContext, CommandHandler, CommandServices } from "../src/commands/types.js";
 import { createManagedSessionFile, getChannelSessionDir } from "../src/sessions/store.js";
 import type { SandboxConfig } from "../src/sandbox/index.js";
@@ -127,6 +132,14 @@ function fakeSessionViewTokenStore() {
   };
 }
 
+/**
+ * A Workspace over a test root. The office registry journal lives in a sibling
+ * state dir, created on demand, so nothing lands in the developer's ~/.mikan.
+ */
+function testWorkspace(root: string) {
+  return createWorkspace({ root, stateDir: join(root, "state") });
+}
+
 interface BuildContextArgs {
   commandText: string;
   privateConversation?: boolean;
@@ -143,7 +156,7 @@ function buildContext(args: BuildContextArgs): CommandContext & {
   const sandbox: SandboxConfig = { type: "host" };
   const responder = fakeResponseCtx();
   const services: CommandServices = {
-    workingDir: "/tmp/no-such-working-dir",
+    workspace: testWorkspace("/tmp/no-such-working-dir"),
     runtime: {
       forceStop: vi.fn(),
       getRunningSessions: vi.fn().mockReturnValue([]),
@@ -251,7 +264,7 @@ describe("ModelCommandHandler", () => {
       );
       const ctx = buildContext({
         commandText: "/model provider/model:2026-01",
-        services: { workingDir: dir },
+        services: { workspace: testWorkspace(dir) },
       });
 
       expect(await commandHandler.tryHandle(ctx)).toBe(true);
@@ -311,10 +324,16 @@ describe("AutoReplyCommandHandler", () => {
   });
 
   test("declines unrelated commands and bare forms", async () => {
-    const ctx = buildContext({ commandText: "hello", services: { workingDir } });
+    const ctx = buildContext({
+      commandText: "hello",
+      services: { workspace: testWorkspace(workingDir) },
+    });
     expect(await handler.tryHandle(ctx)).toBe(false);
 
-    const bareCtx = buildContext({ commandText: "auto-reply on", services: { workingDir } });
+    const bareCtx = buildContext({
+      commandText: "auto-reply on",
+      services: { workspace: testWorkspace(workingDir) },
+    });
     expect(await handler.tryHandle(bareCtx)).toBe(false);
   });
 
@@ -322,7 +341,7 @@ describe("AutoReplyCommandHandler", () => {
     const ctx = buildContext({
       commandText: "/pi-auto-reply on",
       privateConversation: true,
-      services: { workingDir },
+      services: { workspace: testWorkspace(workingDir) },
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
@@ -332,7 +351,7 @@ describe("AutoReplyCommandHandler", () => {
   test("enables and disables auto-reply using mom-compatible marker files", async () => {
     const enableCtx = buildContext({
       commandText: "/pi-auto-reply on",
-      services: { workingDir },
+      services: { workspace: testWorkspace(workingDir) },
     });
     expect(await handler.tryHandle(enableCtx)).toBe(true);
     expect(enableCtx.responder.responses[0]).toContain("Auto-reply is enabled");
@@ -349,7 +368,7 @@ describe("AutoReplyCommandHandler", () => {
 
     const disableCtx = buildContext({
       commandText: "/pi-auto-reply off",
-      services: { workingDir },
+      services: { workspace: testWorkspace(workingDir) },
     });
     expect(await handler.tryHandle(disableCtx)).toBe(true);
     expect(disableCtx.responder.responses[0]).toContain("Auto-reply is disabled");
@@ -381,7 +400,7 @@ describe("AutoReplyCommandHandler", () => {
 
     const ctx = buildContext({
       commandText: "/pi-auto-reply status",
-      services: { workingDir },
+      services: { workspace: testWorkspace(workingDir) },
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
@@ -393,7 +412,7 @@ describe("AutoReplyCommandHandler", () => {
   test("rejects rule management to match mom-compatible slash command surface", async () => {
     const ctx = buildContext({
       commandText: "/pi-auto-reply rule Reply when someone asks about deployments.",
-      services: { workingDir },
+      services: { workspace: testWorkspace(workingDir) },
     });
     expect(await handler.tryHandle(ctx)).toBe(true);
     expect(ctx.responder.responses[0]).toContain("/pi-auto-reply on|off|status");
@@ -747,7 +766,7 @@ describe("SandboxCommandHandler", () => {
       commandText: "/pi-sandbox",
       conversationId: "C123",
       services: {
-        workingDir,
+        workspace: testWorkspace(workingDir),
         sandbox: { type: "image", image: "ubuntu:24.04" },
         resourceController: {
           getLimitStatus: () => ({ limits: { cpus: "0.5", memory: "1g" }, boosted: false }),
@@ -767,7 +786,7 @@ describe("SandboxCommandHandler", () => {
       commandText: `/pi-sandbox ${mode}`,
       conversationId: "C123",
       services: {
-        workingDir,
+        workspace: testWorkspace(workingDir),
         sandbox: { type: "image", image: "ubuntu:24.04" },
         resourceController: {
           getLimitStatus: () => ({ limits: undefined, boosted: false }),
@@ -805,7 +824,7 @@ describe("SandboxCommandHandler", () => {
       commandText,
       conversationId: "C123",
       services: {
-        workingDir,
+        workspace: testWorkspace(workingDir),
         sandbox: { type: "image", image: "ubuntu:24.04" },
         runtime: {
           refreshConversationEnvironment: vi.fn().mockReturnValue(refreshResult),
@@ -887,7 +906,7 @@ describe("SandboxCommandHandler", () => {
       commandText: "/pi-sandbox boost",
       conversationId: "C123",
       services: {
-        workingDir,
+        workspace: testWorkspace(workingDir),
         sandbox: { type: "gondolin", profile: "default" },
         resourceController: {
           boost,
@@ -942,7 +961,7 @@ describe("SessionViewCommandHandler", () => {
       commandText: "/session",
       privateConversation: false,
       bot,
-      services: { workingDir, sessionViewTokenStore },
+      services: { workspace: testWorkspace(workingDir), sessionViewTokenStore },
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
@@ -961,7 +980,7 @@ describe("SessionViewCommandHandler", () => {
       commandText: "/session",
       privateConversation: false,
       bot,
-      services: { workingDir, sessionViewTokenStore },
+      services: { workspace: testWorkspace(workingDir), sessionViewTokenStore },
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
@@ -974,7 +993,7 @@ describe("SessionViewCommandHandler", () => {
     const ctx = buildContext({
       commandText: "/session",
       privateConversation: true,
-      services: { workingDir, sessionViewTokenStore },
+      services: { workspace: testWorkspace(workingDir), sessionViewTokenStore },
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
@@ -998,7 +1017,7 @@ describe("SessionViewCommandHandler", () => {
     const ctx = buildContext({
       commandText: "/session",
       privateConversation: true,
-      services: { workingDir, sessionViewTokenStore },
+      services: { workspace: testWorkspace(workingDir), sessionViewTokenStore },
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);

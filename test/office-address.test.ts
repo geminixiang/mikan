@@ -1,19 +1,21 @@
 import { createHash } from "node:crypto";
 import { describe, expect, test } from "vitest";
 import { createConversationEvent, createConversationMessage } from "../src/adapter.js";
+// `officeDir` is module-internal (not on the barrel); imported directly so the
+// tests still pin the path the registry and migration record.
+import { officeDir } from "../src/office/address.js";
 import {
   assertConversationId,
   assertOfficeKey,
   conversationOfficeDir,
   createOfficeAddress,
   isOfficeKey,
-  officeDir,
   officeDirName,
   officeKey,
   officeStateDir,
   sameOffice,
   validateOfficeAddress,
-} from "../src/office-address.js";
+} from "../src/office/index.js";
 
 describe("office address", () => {
   test("normalizes events and messages and rejects mismatched supplied addresses", () => {

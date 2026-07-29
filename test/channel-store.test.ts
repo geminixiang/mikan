@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, rmdirSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { createOfficeAddress, officeDirName } from "../src/office-address.js";
+import { createOfficeAddress, createWorkspace, officeDirName } from "../src/office/index.js";
 import { ChannelStore } from "../src/store.js";
 
 const office = (channelId: string) => officeDirName(createOfficeAddress("slack", channelId));
@@ -19,17 +19,24 @@ function jsonLines(path: string): Array<Record<string, unknown>> {
 }
 
 describe("ChannelStore", () => {
+  let base: string;
   let dir: string;
   let store: ChannelStore;
 
   beforeEach(() => {
-    dir = join(tmpdir(), `mikan-store-test-${Date.now()}-${Math.random()}`);
-    store = new ChannelStore({ workingDir: dir, botToken: "xoxb-test-token" });
+    base = join(tmpdir(), `mikan-store-test-${Date.now()}-${Math.random()}`);
+    dir = join(base, "workspace");
+    const stateDir = join(base, "state");
+    mkdirSync(stateDir, { recursive: true });
+    store = new ChannelStore({
+      workspace: createWorkspace({ root: dir, stateDir }),
+      botToken: "xoxb-test-token",
+    });
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    if (existsSync(dir)) rmSync(dir, { recursive: true });
+    if (existsSync(base)) rmSync(base, { recursive: true });
   });
 
   test("constructor creates the working directory", () => {

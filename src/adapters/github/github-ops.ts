@@ -10,6 +10,7 @@ import {
 } from "./cloudbuild.js";
 import { parseGithubConversationId } from "./ids.js";
 import { conversationRepoDir, GITHUB_PUSH_BRANCH_PATTERN, pushBranch, syncRepo } from "./repo.js";
+import { createOfficeAddress } from "../../office/index.js";
 import type {
   GithubBotConfig,
   GithubCheckSummary,
@@ -80,13 +81,15 @@ export class GithubOps implements PlatformGithubOps {
   constructor(
     private readonly client: GithubClient,
     private readonly config: {
-      workingDir: string;
+      workspace: import("../../office/types.js").Workspace;
       cloudBuild?: GithubBotConfig["cloudBuild"];
     },
   ) {}
 
   private repoDir(conversationId: string): string {
-    return conversationRepoDir(this.config.workingDir, conversationId);
+    return conversationRepoDir(
+      this.config.workspace.office(createOfficeAddress("github", conversationId)),
+    );
   }
 
   /**

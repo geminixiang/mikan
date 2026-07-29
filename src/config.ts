@@ -17,7 +17,7 @@ export class MissingGlobalSettingsError extends Error {
 
 export type { AgentConfig, AutoReplyConfig, JudgeModelConfig, SandboxSettings } from "./types.js";
 import type { AgentConfig, AutoReplyConfig, JudgeModelConfig, SandboxSettings } from "./types.js";
-import { officeStateDir } from "./office-address.js";
+import { officeStateDir } from "./office/index.js";
 import type { OfficeAddress } from "./types.js";
 
 const ONBOARD_SETTINGS: SettingsFileConfig = {

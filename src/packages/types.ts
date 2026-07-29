@@ -109,7 +109,7 @@ export interface PackageInventory {
 }
 
 export interface PackageAdminContext extends ResolvePackagesOptions {
-  workingDir: string;
+  office: import("../office/types.js").Office;
   runtime?: import("../types.js").RunnerCacheControl &
     import("../types.js").GlobalRunnerCacheControl;
 }

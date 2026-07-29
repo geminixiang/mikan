@@ -17,7 +17,7 @@ import {
   updateGlobalSettings,
 } from "../src/config.js";
 import { resolveWorkspaceProjection } from "../src/workspace-projection/index.js";
-import { createOfficeAddress, officeDirName } from "../src/office-address.js";
+import { createOfficeAddress, officeDirName } from "../src/office/index.js";
 
 const conversationId = "C123";
 const address = createOfficeAddress("slack", conversationId);

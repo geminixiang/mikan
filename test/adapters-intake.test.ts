@@ -8,7 +8,7 @@ import type {
 } from "../src/adapter.js";
 import { matchMagicWord, processMessageIntake } from "../src/adapters/intake.js";
 import type { MagicWordIntakeOptions, MessageIntakeOptions } from "../src/adapters/types.js";
-import { createOfficeAddress } from "../src/office-address.js";
+import { createOfficeAddress } from "../src/office/index.js";
 
 const address = createOfficeAddress("slack", "C1");
 

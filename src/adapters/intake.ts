@@ -46,7 +46,7 @@ export async function processMessageIntake<TEvent extends ConversationEvent>(
   }
 
   const triggerResult = options.isAutoReplyCandidate
-    ? await evaluateAutoReplyPolicy({ event: options.eventBase, workingDir: options.workingDir })
+    ? await evaluateAutoReplyPolicy({ event: options.eventBase, office: options.office })
     : ({ trigger: true, reason: "addressed" } as const);
 
   if (!triggerResult.trigger) {
