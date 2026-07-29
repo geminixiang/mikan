@@ -85,7 +85,10 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack thread session isolation
       channel: env.channel,
       workingDir: env.workingDir,
       threadTs: rootA,
-      text: () => `<@${botUserId}> 請只回覆我在這個 thread 要你記住的 token，不要加其他文字。`,
+      // Name the token's prefix explicitly: the store message also carried a
+      // QA_DELIVERY_ marker, and a weak judge model can echo that one instead.
+      text: () =>
+        `<@${botUserId}> 請只回覆我在這個 thread 要你記住、以 QA_ISOLATE_ 開頭的 token，不要加其他文字。`,
       timeoutMs: Math.max(env.timeoutMs, 15_000),
       pollMs: env.pollMs,
     });
