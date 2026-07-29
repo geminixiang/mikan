@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { createOfficeAddress, officeKey } from "../../../src/office/index.js";
 import type { KnownBlock } from "@slack/types";
 import type { WebClient } from "@slack/web-api";
 
@@ -99,7 +100,12 @@ async function waitForLocalLogMessage(options: {
   pollMs: number;
 }): Promise<boolean> {
   const deadline = Date.now() + options.timeoutMs;
-  const logPath = join(options.workingDir, options.channel, "log.jsonl");
+  // The daemon writes under the office-key layout, not the raw channel id.
+  const logPath = join(
+    options.workingDir,
+    officeKey(createOfficeAddress("slack", options.channel)),
+    "log.jsonl",
+  );
   while (Date.now() < deadline) {
     try {
       const lines = (await readFile(logPath, "utf-8")).split("\n");
