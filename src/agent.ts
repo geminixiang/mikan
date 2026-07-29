@@ -1512,6 +1512,7 @@ async function prepareRunContext(params: {
   }) => void;
   setSandboxContext: (context: { conversationId: string; userId: string }) => void;
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
+  setImageUploadFunction: (fn: (hostPath: string, title?: string) => Promise<void>) => void;
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
   bindPlatformToolPacks: (ctx: PlatformToolRunContext) => void;
   pathContext: RuntimePathContext;
@@ -1532,6 +1533,7 @@ async function prepareRunContext(params: {
     setEventContext,
     setSandboxContext,
     setUploadFunction,
+    setImageUploadFunction,
     setReactFunction,
     bindPlatformToolPacks,
   } = params;
@@ -1599,6 +1601,12 @@ async function prepareRunContext(params: {
     await withStagedRuntimeFile(executor, runtimePath, (stagedPath) =>
       responder.uploadFile(stagedPath, title),
     );
+  });
+
+  // generate_image writes its file host-side, so it uploads by host path —
+  // no staging through the sandbox, where the file may not be mounted.
+  setImageUploadFunction(async (hostPath: string, title?: string) => {
+    await responder.uploadFile(hostPath, title);
   });
 
   // The react tool is available only when the responder supports reactions
@@ -2107,6 +2115,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   const {
     tools,
     setUploadFunction,
+    setImageUploadFunction,
     setReactFunction,
     bindPlatformToolPacks,
     setEventContext,
@@ -2119,6 +2128,10 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     {
       model,
       getApiKey: () => modelRegistry.getApiKeyForProvider(model.provider),
+      // The conversation's own office dir: mounted into the sandbox, unlike
+      // the workspace base — generated images must land somewhere the agent
+      // (and a future run) can still reach.
+      outputDir: conversationDir,
     },
   );
 
@@ -2218,6 +2231,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
         setEventContext,
         setSandboxContext,
         setUploadFunction,
+        setImageUploadFunction,
         setReactFunction,
         bindPlatformToolPacks,
         pathContext,
@@ -2364,6 +2378,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
         setEventContext,
         setSandboxContext,
         setUploadFunction,
+        setImageUploadFunction,
         setReactFunction,
         bindPlatformToolPacks,
         pathContext,

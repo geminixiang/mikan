@@ -31,10 +31,15 @@ export function createMikanTools(
   imageGeneration?: {
     model: Model<Api>;
     getApiKey: () => Promise<string | undefined>;
+    outputDir: string;
   },
 ): {
   tools: AgentTool<TSchema>[];
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
+  /** Upload for generate_image. Receives the file's HOST path — the tool
+   *  writes host-side, so this must not stage through the sandbox like the
+   *  attach upload does. No-op when image generation is not configured. */
+  setImageUploadFunction: (fn: (hostPath: string, title?: string) => Promise<void>) => void;
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
   bindPlatformToolPacks: (ctx: PlatformToolRunContext) => void;
   setEventContext: (context: {
@@ -46,9 +51,7 @@ export function createMikanTools(
   setSandboxContext: (context: { conversationId: string; userId: string }) => void;
 } {
   const { tool: attachTool, setUploadFunction } = createAttachTool();
-  const imageTool = imageGeneration
-    ? createGenerateImageTool({ ...imageGeneration, workspaceDir })
-    : undefined;
+  const imageTool = imageGeneration ? createGenerateImageTool(imageGeneration) : undefined;
   const { tool: reactTool, setReactFunction } = createReactTool();
   const { tool: eventTool, setEventContext } = createEventTool(
     HostEventStore.fromWorkspaceDir(workspaceDir),
@@ -71,8 +74,8 @@ export function createMikanTools(
       reactTool,
       ...packTools,
     ],
-    setUploadFunction: (fn) => {
-      setUploadFunction(fn);
+    setUploadFunction,
+    setImageUploadFunction: (fn) => {
       imageTool?.setUploadFunction(fn);
     },
     setReactFunction,

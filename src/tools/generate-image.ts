@@ -21,12 +21,18 @@ interface ImageResponse {
 export function createGenerateImageTool(options: {
   model: Model<Api>;
   getApiKey: () => Promise<string | undefined>;
-  workspaceDir: string;
+  /** Host directory the generated image is written into. Must be the
+   *  conversation's own office dir so the agent can also reach the file
+   *  from inside the sandbox; the workspace base is NOT guest-visible. */
+  outputDir: string;
 }): {
   tool: AgentTool<typeof schema>;
-  setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
+  /** The callback receives the HOST path of the generated file. The image is
+   *  written host-side, so upload must not stage it through the sandbox the
+   *  way the attach tool does — the file may not be mounted there. */
+  setUploadFunction: (fn: (hostPath: string, title?: string) => Promise<void>) => void;
 } {
-  let uploadFn: ((filePath: string, title?: string) => Promise<void>) | null = null;
+  let uploadFn: ((hostPath: string, title?: string) => Promise<void>) | null = null;
 
   return {
     tool: {
@@ -64,15 +70,17 @@ export function createGenerateImageTool(options: {
         const body = (await response.json()) as ImageResponse;
         if (!response.ok) {
           throw new Error(
-            body.error?.message ?? `Image generation failed with HTTP ${response.status}`,
+            `Image generation with model "${options.model.id}" failed: ` +
+              (body.error?.message ?? `HTTP ${response.status}`),
           );
         }
         const encoded = body.data?.[0]?.b64_json;
         if (!encoded) throw new Error("Image generation response contained no image");
 
         const fileName = `generated-${randomUUID()}.png`;
-        await writeFile(join(options.workspaceDir, fileName), Buffer.from(encoded, "base64"));
-        await uploadFn(fileName, fileName);
+        const filePath = join(options.outputDir, fileName);
+        await writeFile(filePath, Buffer.from(encoded, "base64"));
+        await uploadFn(filePath, fileName);
 
         return {
           content: [{ type: "text" as const, text: `Generated and attached image: ${fileName}` }],

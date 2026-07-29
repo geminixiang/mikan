@@ -11,10 +11,16 @@ afterEach(async () => {
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
+const model = {
+  id: "gpt-5.6-sol",
+  provider: "agent-model",
+  baseUrl: "http://127.0.0.1:8080/v1",
+} as Model<Api>;
+
 describe("generate_image tool", () => {
-  test("requests an image from the configured model and uploads it", async () => {
-    const workspaceDir = await mkdtemp(join(tmpdir(), "mikan-image-test-"));
-    dirs.push(workspaceDir);
+  test("writes the image into outputDir and uploads it by host path", async () => {
+    const outputDir = await mkdtemp(join(tmpdir(), "mikan-image-test-"));
+    dirs.push(outputDir);
     const image = Buffer.from("png bytes");
     const fetchMock = vi.fn(
       async () =>
@@ -25,15 +31,10 @@ describe("generate_image tool", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     const upload = vi.fn(async () => {});
-    const model = {
-      id: "gpt-5.6-sol",
-      provider: "agent-model",
-      baseUrl: "http://127.0.0.1:8080/v1",
-    } as Model<Api>;
     const { tool, setUploadFunction } = createGenerateImageTool({
       model,
       getApiKey: async () => "test-token",
-      workspaceDir,
+      outputDir,
     });
     setUploadFunction(upload);
 
@@ -60,7 +61,44 @@ describe("generate_image tool", () => {
       quality: "low",
       response_format: "b64_json",
     });
-    const [fileName] = upload.mock.calls[0]!;
-    expect(await readFile(join(workspaceDir, fileName))).toEqual(image);
+    // The upload callback gets the file's HOST path inside outputDir — not a
+    // bare name for the sandbox-staging attach path (that broke when the
+    // workspace base stopped being mounted into the guest).
+    const [hostPath, title] = upload.mock.calls[0]!;
+    expect(hostPath.startsWith(`${outputDir}/generated-`)).toBe(true);
+    expect(hostPath.endsWith(".png")).toBe(true);
+    expect(title).toBe(hostPath.slice(outputDir.length + 1));
+    expect(await readFile(hostPath)).toEqual(image);
+  });
+
+  test("surfaces provider errors with the model id that was requested", async () => {
+    const outputDir = await mkdtemp(join(tmpdir(), "mikan-image-test-"));
+    dirs.push(outputDir);
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ error: { message: "all deployments and fallbacks exhausted" } }),
+          { status: 503, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { tool, setUploadFunction } = createGenerateImageTool({
+      model,
+      getApiKey: async () => "test-token",
+      outputDir,
+    });
+    setUploadFunction(async () => {});
+
+    await expect(
+      tool.execute(
+        "call-1",
+        { prompt: "a waving robot" },
+        undefined,
+        undefined,
+        undefined as never,
+      ),
+    ).rejects.toThrow(
+      'Image generation with model "gpt-5.6-sol" failed: all deployments and fallbacks exhausted',
+    );
   });
 });
