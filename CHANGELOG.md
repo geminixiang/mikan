@@ -9,6 +9,10 @@ any release.
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix `generate_image` losing its generated file at the upload step (`sh: … cannot open /workspace/<file>: No such file`): the tool wrote the image host-side into the workspace base and then handed a bare filename to the attach upload path, which reads through the sandbox — where the base is no longer mounted since the office layout migration. The image is now written into the conversation's own office directory (guest-visible) and uploaded directly by host path, with no sandbox round-trip, under every door policy. Image-generation provider errors now also name the model id that was sent.
+
 ## [1.0.0-beta.38]
 
 ### Fixed
