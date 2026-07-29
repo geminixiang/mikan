@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src/content/docs/assets/mikan.png" alt="mikan — multi-platform AI coding agent" width="100%">
+  <img src="src/content/docs/assets/mikan-office-hero.png" alt="mikan office architecture — conversation-scoped workspaces and sandbox execution" width="100%">
 </p>
 
 # @geminixiang/mikan
