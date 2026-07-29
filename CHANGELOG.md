@@ -9,6 +9,10 @@ any release.
 
 ## [Unreleased]
 
+### Fixed
+
+- Let `generate_image` use a dedicated image model instead of hard-wiring the chat model id into the images request: new `llm.image.{provider,model}` settings (global or per-conversation) select the model sent to `/images/generations`, defaulting to the chat model when unset. Behind an OpenAI-compatible router the chat model id has no image deployment, which surfaced as "all deployments and fallbacks exhausted". The image model id does not have to be a registered chat model — it borrows the provider's endpoint and credentials — and image-generation failures now name the model id that was sent.
+
 ## [1.0.0-beta.38]
 
 ### Fixed

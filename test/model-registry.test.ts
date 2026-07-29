@@ -99,3 +99,43 @@ describe("MikanModels.resolve", () => {
     }
   });
 });
+
+describe("MikanModels.resolveImageModel", () => {
+  const providers = {
+    "agent-model": {
+      api: "openai-completions",
+      apiKey: "dev",
+      baseUrl: "http://localhost:8080/v1",
+      headers: { "x-router": "mikan" },
+      models: [{ id: "claude-opus-4-7", input: ["text", "image"] }],
+    },
+  };
+
+  test("an unregistered image model id borrows the provider's endpoint", () => {
+    const registry = withTempRegistry({ providers });
+
+    const model = registry.resolveImageModel("agent-model", "gpt-image-1");
+
+    expect(model.provider).toBe("agent-model");
+    expect(model.id).toBe("gpt-image-1");
+    expect(model.baseUrl).toBe("http://localhost:8080/v1");
+    expect(model.headers).toMatchObject({ "x-router": "mikan" });
+  });
+
+  test("a registered id resolves to the registered model", () => {
+    const registry = withTempRegistry({ providers });
+
+    const model = registry.resolveImageModel("agent-model", "claude-opus-4-7");
+
+    expect(model.name).toBe("claude-opus-4-7");
+    expect(model.baseUrl).toBe("http://localhost:8080/v1");
+  });
+
+  test("throws for a provider with no registered models", () => {
+    const registry = withTempRegistry({ providers });
+
+    expect(() => registry.resolveImageModel("missing", "gpt-image-1")).toThrow(
+      'Unknown provider "missing" for llm.image',
+    );
+  });
+});

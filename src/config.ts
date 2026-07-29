@@ -15,8 +15,20 @@ export class MissingGlobalSettingsError extends Error {
   }
 }
 
-export type { AgentConfig, AutoReplyConfig, JudgeModelConfig, SandboxSettings } from "./types.js";
-import type { AgentConfig, AutoReplyConfig, JudgeModelConfig, SandboxSettings } from "./types.js";
+export type {
+  AgentConfig,
+  AutoReplyConfig,
+  ImageModelConfig,
+  JudgeModelConfig,
+  SandboxSettings,
+} from "./types.js";
+import type {
+  AgentConfig,
+  AutoReplyConfig,
+  ImageModelConfig,
+  JudgeModelConfig,
+  SandboxSettings,
+} from "./types.js";
 import { officeStateDir } from "./office-address.js";
 import type { OfficeAddress } from "./types.js";
 
@@ -64,6 +76,12 @@ const SettingsFileSchema = Type.Object({
         ]),
       ),
       autoReply: Type.Optional(
+        Type.Object({
+          provider: Type.Optional(Type.String()),
+          model: Type.Optional(Type.String()),
+        }),
+      ),
+      image: Type.Optional(
         Type.Object({
           provider: Type.Optional(Type.String()),
           model: Type.Optional(Type.String()),
@@ -391,6 +409,24 @@ export function loadAutoReplyJudgeModel(scope?: ConversationSettingsScope): Judg
   const judge = { ...global.llm?.autoReply, ...local.llm?.autoReply };
   const provider = requireString(judge.provider ?? merged?.provider, "llm.autoReply.provider");
   const model = requireString(judge.model ?? merged?.model, "llm.autoReply.model");
+  return { provider, model };
+}
+
+/**
+ * Resolve the model used by the generate_image tool. Falls back to the main
+ * llm.{provider,model} when llm.image is not set, so a missing override keeps
+ * current behavior (the chat model id is sent to the images endpoint — which
+ * only works when the provider routes that id to an image deployment). The
+ * model id does not have to be a registered chat model; see
+ * MikanModels.resolveImageModel.
+ */
+export function loadImageModelConfig(scope?: ConversationSettingsScope): ImageModelConfig {
+  const global = requireGlobalSettings();
+  const local = scope ? (loadSettingsFile(conversationSettingsPath(scope)) ?? {}) : {};
+  const merged: SettingsFileConfig["llm"] = { ...global.llm, ...local.llm };
+  const image = { ...global.llm?.image, ...local.llm?.image };
+  const provider = requireString(image.provider ?? merged?.provider, "llm.image.provider");
+  const model = requireString(image.model ?? merged?.model, "llm.image.model");
   return { provider, model };
 }
 

@@ -53,7 +53,7 @@ import type {
   PlatformTrustModel,
   PlatformUploader,
 } from "./types.js";
-import { resolveConversationSettings } from "./config.js";
+import { loadImageModelConfig, resolveConversationSettings } from "./config.js";
 import { resolveWorkspaceProjection } from "./workspace-projection/index.js";
 import type { WorkspaceProjection } from "./workspace-projection/types.js";
 import { effectiveStateDir } from "./cli/arg-grammar.js";
@@ -2102,6 +2102,8 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     log.logWarning("models.json load error", modelRegistry.getError()!);
   }
   const model = modelRegistry.resolve(agentConfig.provider, agentConfig.model);
+  const imageConfig = loadImageModelConfig({ address: options.address, conversationDir });
+  const imageModel = modelRegistry.resolveImageModel(imageConfig.provider, imageConfig.model);
 
   // Create tools (per-runner, with per-runner upload function setter)
   const {
@@ -2117,8 +2119,8 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     { sandbox: sandboxConfig, resourceController: resourceController ?? provisioner },
     platformToolPackFactories ?? [],
     {
-      model,
-      getApiKey: () => modelRegistry.getApiKeyForProvider(model.provider),
+      model: imageModel,
+      getApiKey: () => modelRegistry.getApiKeyForProvider(imageModel.provider),
     },
   );
 

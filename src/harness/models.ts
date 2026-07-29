@@ -273,6 +273,25 @@ export class MikanModels {
     );
   }
 
+  /**
+   * Resolve the model to send to a provider's images endpoint. Unlike
+   * {@link resolve}, the id does not have to be registered: image deployments
+   * (for example behind an OpenAI-compatible router) are usually not chat
+   * models, so an unregistered id borrows the endpoint, headers, and
+   * credentials of the provider's registered models.
+   */
+  resolveImageModel(provider: string, modelId: string): Model<Api> {
+    const registered = this.find(provider, modelId);
+    if (registered) return registered;
+    const template = this.models.getModels(provider)[0];
+    if (!template) {
+      throw new Error(
+        `Unknown provider "${provider}" for llm.image. Configure it in models.json or choose a registered provider.`,
+      );
+    }
+    return { ...template, id: modelId, name: modelId };
+  }
+
   /** Models whose provider auth currently resolves (API key, OAuth, or ambient). */
   async getAvailable(): Promise<Model<Api>[]> {
     const byProvider = new Map<string, Model<Api>[]>();

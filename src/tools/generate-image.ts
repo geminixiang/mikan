@@ -64,7 +64,8 @@ export function createGenerateImageTool(options: {
         const body = (await response.json()) as ImageResponse;
         if (!response.ok) {
           throw new Error(
-            body.error?.message ?? `Image generation failed with HTTP ${response.status}`,
+            `Image generation with model "${options.model.id}" failed: ` +
+              (body.error?.message ?? `HTTP ${response.status}`),
           );
         }
         const encoded = body.data?.[0]?.b64_json;

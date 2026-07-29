@@ -449,6 +449,15 @@ export interface JudgeModelConfig {
   model: string;
 }
 
+/**
+ * Model used by the generate_image tool. Unlike chat models, `model` may name
+ * an image-only deployment that is not registered in the model catalog.
+ */
+export interface ImageModelConfig {
+  provider: string;
+  model: string;
+}
+
 // ── context ───────────────────────────────────────────────────────────────────
 
 /**

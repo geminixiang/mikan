@@ -63,4 +63,40 @@ describe("generate_image tool", () => {
     const [fileName] = upload.mock.calls[0]!;
     expect(await readFile(join(workspaceDir, fileName))).toEqual(image);
   });
+
+  test("surfaces provider errors with the model id that was requested", async () => {
+    const workspaceDir = await mkdtemp(join(tmpdir(), "mikan-image-test-"));
+    dirs.push(workspaceDir);
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ error: { message: "all deployments and fallbacks exhausted" } }),
+          { status: 503, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const model = {
+      id: "gpt-5.6-sol",
+      provider: "agent-model",
+      baseUrl: "http://127.0.0.1:8080/v1",
+    } as Model<Api>;
+    const { tool, setUploadFunction } = createGenerateImageTool({
+      model,
+      getApiKey: async () => "test-token",
+      workspaceDir,
+    });
+    setUploadFunction(async () => {});
+
+    await expect(
+      tool.execute(
+        "call-1",
+        { prompt: "a waving robot" },
+        undefined,
+        undefined,
+        undefined as never,
+      ),
+    ).rejects.toThrow(
+      'Image generation with model "gpt-5.6-sol" failed: all deployments and fallbacks exhausted',
+    );
+  });
 });

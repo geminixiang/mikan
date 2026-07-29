@@ -9,6 +9,7 @@ import {
   createGlobalSettingsFile,
   isPathInside,
   loadGlobalSettings,
+  loadImageModelConfig,
   resolveConversationSettings,
   resolveSentryDsn,
   updateConversationSettings,
@@ -365,6 +366,60 @@ describe("loadGlobalSettings", () => {
     });
     // And it is not deleted either: only pre-migration files are moved.
     expect(existsSync(join(conversationDir, "settings.json"))).toBe(true);
+  });
+});
+
+describe("loadImageModelConfig", () => {
+  let stateDir: string;
+
+  beforeEach(() => {
+    stateDir = join(tmpdir(), `mikan-test-${Date.now()}-${Math.random()}`);
+    mkdirSync(stateDir, { recursive: true });
+    process.env.MIKAN_STATE_DIR = stateDir;
+  });
+
+  afterEach(() => {
+    delete process.env.MIKAN_STATE_DIR;
+    if (existsSync(stateDir)) rmSync(stateDir, { recursive: true });
+  });
+
+  function writeGlobalSettings(llm: Record<string, unknown>): void {
+    writeFileSync(join(stateDir, "settings.json"), JSON.stringify({ llm }));
+  }
+
+  const baseLlm = { provider: "agent-model", model: "gpt-5.6-sol", thinkingLevel: "off" };
+
+  test("falls back to llm.{provider,model} when llm.image is not set", () => {
+    writeGlobalSettings(baseLlm);
+    expect(loadImageModelConfig()).toEqual({ provider: "agent-model", model: "gpt-5.6-sol" });
+  });
+
+  test("llm.image overrides the image model without touching the chat model", () => {
+    writeGlobalSettings({ ...baseLlm, image: { model: "gpt-image-1" } });
+    expect(loadImageModelConfig()).toEqual({ provider: "agent-model", model: "gpt-image-1" });
+    expect(loadGlobalSettings().model).toBe("gpt-5.6-sol");
+  });
+
+  test("conversation llm.image merges leaf-level over the global group", () => {
+    writeGlobalSettings({ ...baseLlm, image: { provider: "openai", model: "gpt-image-1" } });
+    const conversationDir = join(stateDir, "workspace", "C123");
+    mkdirSync(conversationDir, { recursive: true });
+    const scope = { address: createOfficeAddress("slack", "C123"), conversationDir };
+    writeFileSync(
+      conversationSettingsPath(scope),
+      JSON.stringify({ llm: { image: { model: "gpt-image-1-mini" } } }),
+    );
+
+    expect(loadImageModelConfig(scope)).toEqual({
+      provider: "openai",
+      model: "gpt-image-1-mini",
+    });
+  });
+
+  test("updateGlobalSettings preserves llm.image through unrelated patches", () => {
+    writeGlobalSettings({ ...baseLlm, image: { model: "gpt-image-1" } });
+    updateGlobalSettings({ model: "claude-opus-4-7" });
+    expect(loadImageModelConfig()).toEqual({ provider: "agent-model", model: "gpt-image-1" });
   });
 });
 
