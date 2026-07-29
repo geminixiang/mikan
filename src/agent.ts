@@ -527,7 +527,7 @@ Channels: ${channelMappings}
 
 Users: ${userMappings}
 
-When mentioning users, use <@username> format (e.g., <@mario>).
+When mentioning users, write <@userName> using the exact userName from the Users table above (e.g., <@mario>). Never invent handles from other platforms (GitHub, email); the platform adapter converts <@userName> to the platform's native mention form.
 
 ## Environment
 ${envDescription}
