@@ -13,12 +13,14 @@ export default defineConfig({
     // Git fixtures must resolve their repo from cwd, never from an ambient
     // GIT_DIR inherited when the suite runs inside a git hook. State-writing
     // paths must land in a temp state dir, never the developer's ~/.mikan.
-    setupFiles: ["./test/setup/git-env.ts", "./test/setup/state-dir.ts"],
+    setupFiles: ["./src/test/setup/git-env.ts", "./src/test/setup/state-dir.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],
       include: ["src/**/*.ts"],
       exclude: [
+        // The test suite itself is not coverage surface
+        "src/test/**",
         // Starlight docs content, not runtime code
         "src/content/**",
         "src/content.config.ts",
