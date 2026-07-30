@@ -34,7 +34,12 @@ import type {
   SubagentRunResult,
   CompactionEntry,
 } from "../types.js";
-import type { OfficeAddress } from "../../types.js";
+import type {
+  OfficeAddress,
+  PlatformHistoryMessage,
+  PlatformHistoryOptions,
+  PlatformUserInfo,
+} from "../../types.js";
 
 /**
  * Platform provenance of the run a hook event belongs to. Interactive runs
@@ -189,34 +194,70 @@ export type MikanHookName = keyof MikanHookMap;
 // ── v2: schedules ────────────────────────────────────────────────────────────
 
 /**
- * A schedule contributed by an extension. Fires an autonomous agent run in
- * this conversation with `text` as the task prompt (the run does not inherit
- * conversation history — write `text` self-contained).
+ * What a schedule does when it fires — exactly one of:
+ *
+ * - `text`: an autonomous agent run in this conversation with `text` as the
+ *   task prompt (the run does not inherit conversation history — write it
+ *   self-contained).
+ * - `callback`: a deterministic host-side handler registered with
+ *   `api.schedules.onCallback` — no agent run, no model call. `args` is
+ *   stored with the schedule and passed to the handler on every fire.
  */
-export type ExtensionScheduleSpec =
+export type ExtensionScheduleAction =
   | {
+      text: string;
+      /** Target platform; defaults to this conversation's own. */
+      platform?: string;
+      callback?: never;
+      args?: never;
+    }
+  | {
+      /** Name of a callback registered with `api.schedules.onCallback`. */
+      callback: string;
+      /** JSON-serializable payload passed to the callback on each fire. */
+      args?: unknown;
+      text?: never;
+      platform?: never;
+    };
+
+/** A schedule contributed by an extension. */
+export type ExtensionScheduleSpec =
+  | ({
       type: "periodic";
       /** Cron expression (croner syntax). */
       schedule: string;
       /** IANA timezone, e.g. "Asia/Taipei". */
       timezone: string;
-      text: string;
-      /** Target platform; optional when only one platform is running. */
-      platform?: string;
-    }
-  | {
+    } & ExtensionScheduleAction)
+  | ({
       type: "one-shot";
       /** ISO 8601 timestamp with offset. */
       at: string;
-      text: string;
-      platform?: string;
-    };
+    } & ExtensionScheduleAction);
+
+/** The callback-actioned subset of {@link ExtensionScheduleSpec}. */
+export type ExtensionCallbackScheduleSpec = Extract<ExtensionScheduleSpec, { callback: string }>;
+
+/** The agent-run (text) subset of {@link ExtensionScheduleSpec}. */
+export type ExtensionTextScheduleSpec = Exclude<ExtensionScheduleSpec, { callback: string }>;
 
 export interface ExtensionScheduleInfo {
   /** Extension-chosen schedule name. */
   name: string;
   spec: ExtensionScheduleSpec;
 }
+
+/** One fire of a callback-actioned schedule, as seen by the handler. */
+export interface ExtensionScheduleCallbackEvent {
+  /** Name of the schedule that fired. */
+  scheduleName: string;
+  /** The `args` stored on the schedule spec, if any. */
+  args?: unknown;
+}
+
+export type ExtensionScheduleCallbackHandler = (
+  event: ExtensionScheduleCallbackEvent,
+) => void | Promise<void>;
 
 /**
  * Event-file payload the harness hands to the embedder's schedule store —
@@ -320,6 +361,46 @@ export interface ExtensionScheduleStore {
 }
 
 /**
+ * Persistence + arming backend for callback-actioned schedules, injected by
+ * the embedder scoped to one conversation. Unlike {@link ExtensionScheduleStore}
+ * (the agent-writable workspace event bus), this store must be
+ * host-authoritative: a fired callback crosses into trusted host code, so
+ * sandboxed agents must never be able to create or edit its entries. mikan
+ * backs it with files under the host-only state dir.
+ */
+export interface ExtensionCallbackScheduleStore {
+  upsert(slug: string, name: string, spec: ExtensionCallbackScheduleSpec): Promise<void>;
+  delete(slug: string, name: string): Promise<boolean>;
+  list(slug: string): Promise<ExtensionScheduleInfo[]>;
+}
+
+/**
+ * Process-wide engine behind {@link ExtensionCallbackScheduleStore}: persists
+ * callback schedules per conversation, arms them across restarts, and
+ * dispatches fires into the owning conversation's extension registry.
+ */
+export interface ExtensionScheduleEngine {
+  upsert(
+    address: OfficeAddress,
+    slug: string,
+    name: string,
+    spec: ExtensionCallbackScheduleSpec,
+  ): Promise<void>;
+  delete(address: OfficeAddress, slug: string, name: string): Promise<boolean>;
+  list(address: OfficeAddress, slug: string): Promise<ExtensionScheduleInfo[]>;
+}
+
+/** One fire dispatched by the engine to the conversation runtime. */
+export interface ExtensionScheduleCallbackFire {
+  platform: string;
+  conversationId: string;
+  slug: string;
+  scheduleName: string;
+  callback: string;
+  args?: unknown;
+}
+
+/**
  * Host services injected into extensions by the embedder. All fields are
  * optional: the corresponding api surface throws an informative error when
  * the running context does not provide the service.
@@ -330,7 +411,20 @@ export interface ExtensionHostServices {
   /** Schedule persistence; enables `api.schedules`. */
   scheduleStore?: ExtensionScheduleStore;
   /** Post a message to a conversation without an agent run; enables `api.notify`. */
-  postMessage?: (conversationId: string, text: string, platform?: string) => Promise<void>;
+  postMessage?: (
+    conversationId: string,
+    text: string,
+    options?: { platform?: string; threadTs?: string },
+  ) => Promise<void>;
+  /** Resolve a user's DM conversation id; enables `api.openDm`. */
+  openDirectConversation?: (userId: string, platform?: string) => Promise<string>;
+  /** Read recent conversation messages; enables `api.fetchHistory`. */
+  fetchHistory?: (
+    conversationId: string,
+    options?: PlatformHistoryOptions & { platform?: string },
+  ) => Promise<PlatformHistoryMessage[]>;
+  /** List the platform workspace's active users; enables `api.listUsers`. */
+  listUsers?: (platform?: string) => Promise<PlatformUserInfo[]>;
   /** Post an interactive Block Kit message; enables `api.blockkit.post`. */
   postBlocks?: (
     conversationId: string,
@@ -358,6 +452,8 @@ export interface ExtensionHostServices {
     title?: string,
     platform?: string,
   ) => Promise<void>;
+  /** Callback-schedule persistence; enables `api.schedules` callback specs. */
+  callbackScheduleStore?: ExtensionCallbackScheduleStore;
   /** Resolve read-only secrets for an extension slug; enables `api.secrets`. */
   resolveSecrets?: (slug: string) => Record<string, string>;
   /** Run a fresh isolated subagent; enables `api.subagent`. */
@@ -370,15 +466,33 @@ export interface ExtensionHostServices {
 // ── v2: manifest ─────────────────────────────────────────────────────────────
 
 /**
+ * One secret an extension declares in its `package.json` (`mikan.secrets`).
+ * Declarations drive provisioning surfaces (the admin portal, `mikan ext`)
+ * and activation-time validation: a missing `required` secret fails that
+ * extension's activation with a provisioning hint instead of a confusing
+ * runtime error.
+ */
+export interface ExtensionSecretDeclaration {
+  /** Env-style key, e.g. "SLACK_BOT_TOKEN". */
+  key: string;
+  /** One-line hint shown on provisioning surfaces. */
+  description?: string;
+  /** When true, activation fails while the secret is unprovisioned. */
+  required?: boolean;
+}
+
+/**
  * Optional `manifest.json` next to a directory-form extension's entrypoint.
  * `name` is the display name only; the slug (data dir, secrets, schedule
  * ownership) always derives from the install path so identity is
- * admin-controlled and stable across manifest edits.
+ * admin-controlled and stable across manifest edits. `secrets` comes from
+ * `package.json`'s `mikan.secrets` only.
  */
 export interface ExtensionManifest {
   name?: string;
   version?: string;
   description?: string;
+  secrets?: ExtensionSecretDeclaration[];
 }
 
 /** API handed to an extension's `activate` function. */
@@ -440,9 +554,11 @@ export interface MikanExtensionApi {
     list(): string[];
   };
   /**
-   * Named schedules owned by this extension + conversation. Backed by the
-   * embedder's schedule store; in mikan these become event files that fire
-   * autonomous agent runs (hot-reloaded, persisted across restarts).
+   * Named schedules owned by this extension + conversation, persisted across
+   * restarts. `text` specs become event files that fire autonomous agent
+   * runs; `callback` specs fire a handler registered with `onCallback` —
+   * deterministic, no model call. One namespace: upserting a name switches
+   * its kind atomically.
    */
   readonly schedules: {
     /** Create or replace a named schedule. */
@@ -451,16 +567,51 @@ export interface MikanExtensionApi {
     delete(name: string): Promise<boolean>;
     /** Schedules owned by this extension in this conversation. */
     list(): Promise<ExtensionScheduleInfo[]>;
+    /**
+     * Register the handler for callback-actioned schedules naming
+     * `callbackName`. Register during `activate` so the handler exists
+     * whenever a schedule fires (including right after a restart). Invalid
+     * names throw; a duplicate registration keeps the first.
+     */
+    onCallback(callbackName: string, handler: ExtensionScheduleCallbackHandler): void;
   };
   /** Fresh isolated subagent runs. */
   readonly subagent: SubagentApi;
   /**
    * Post text into a conversation without triggering an agent run. Defaults
    * to this conversation; pass `conversationId` to post elsewhere (pairs
-   * with `sharedDataDir` for cross-conversation applications). Available
-   * when the embedder provides platform messaging.
+   * with `sharedDataDir` for cross-conversation applications). The platform
+   * defaults to this conversation's own; pass `platform` only when targeting
+   * a conversation on a different one. `threadTs` posts into a platform
+   * thread where the adapter supports it. Available when the embedder
+   * provides platform messaging.
    */
-  notify(text: string, options?: { conversationId?: string }): Promise<void>;
+  notify(
+    text: string,
+    options?: { conversationId?: string; platform?: string; threadTs?: string },
+  ): Promise<void>;
+  /**
+   * Resolve the direct-message conversation with a platform user, returning
+   * a conversation id usable with `notify`/`uploadFile`. Available when the
+   * embedder provides DM resolution and the platform supports it.
+   */
+  openDm(userId: string): Promise<string>;
+  /**
+   * Read recent messages from a conversation, oldest first, without an agent
+   * run. Defaults to this conversation; adapters may cap `limit` and return
+   * a single page — page forward by passing the last returned `ts` as
+   * `oldest`. Available when the embedder provides history reads.
+   */
+  fetchHistory(options?: {
+    conversationId?: string;
+    oldest?: string;
+    limit?: number;
+  }): Promise<PlatformHistoryMessage[]>;
+  /**
+   * List the platform workspace's active users without an agent run.
+   * Available when the embedder provides user listings.
+   */
+  listUsers(): Promise<PlatformUserInfo[]>;
   /**
    * Interactive platform surfaces (Slack Block Kit). `post` namespaces every
    * `action_id` in the blocks with this extension's slug; interactions on
@@ -534,6 +685,8 @@ export interface InstalledExtensionInfo {
   description?: string;
   /** Names of skills shipped in the extension's skills/ directory. */
   skillNames: string[];
+  /** Secrets declared in package.json `mikan.secrets`. */
+  secrets: ExtensionSecretDeclaration[];
 }
 
 export interface LoadExtensionsOptions {
@@ -590,6 +743,8 @@ export interface ExtensionValidation {
   entrypoint?: string;
   /** Skill names shipped alongside the extension. */
   skillNames: string[];
+  /** Secrets declared in package.json `mikan.secrets`. */
+  secrets: ExtensionSecretDeclaration[];
   errors: string[];
   warnings: string[];
 }

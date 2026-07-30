@@ -16,6 +16,9 @@ import {
   type ConversationKind,
   type MessagingInfo,
   type OfficeAddress,
+  type PlatformHistoryMessage,
+  type PlatformHistoryOptions,
+  type PlatformUserInfo,
 } from "../../adapter.js";
 import { createOfficeAddress, type Workspace } from "../../office/index.js";
 import { COMMAND_MANIFEST, type SlackSlashRoute } from "../../commands/manifest.js";
@@ -359,7 +362,7 @@ export class SlackMessagingBot implements MessagingBot {
     await this.postEphemeralBlocks(conversationId, userId, text, [buildMrkdwnContextBlock(text)]);
   }
 
-  async openDirectMessage(userId: string): Promise<string> {
+  async openDirectConversation(userId: string): Promise<string> {
     return slackRetry(async () => {
       const result = await this.webClient.conversations.open({ users: userId });
       const channelId = result.channel?.id;
@@ -368,6 +371,59 @@ export class SlackMessagingBot implements MessagingBot {
       }
       return channelId;
     });
+  }
+
+  /**
+   * Fetch recent top-level messages from a channel, oldest first. One
+   * `conversations.history` page (thread replies are not expanded); callers
+   * page forward by passing the last returned `ts` as `oldest`.
+   */
+  async fetchHistory(
+    channel: string,
+    options?: PlatformHistoryOptions,
+  ): Promise<PlatformHistoryMessage[]> {
+    const limit = Math.min(Math.max(options?.limit ?? 200, 1), 999);
+    return slackRetry(async () => {
+      const result = await this.webClient.conversations.history({
+        channel,
+        ...(options?.oldest ? { oldest: options.oldest, inclusive: false } : {}),
+        limit,
+      });
+      const messages = (result.messages ?? []) as Array<{
+        ts?: string;
+        thread_ts?: string;
+        user?: string;
+        bot_id?: string;
+        subtype?: string;
+        text?: string;
+      }>;
+      return messages
+        .filter((msg): msg is typeof msg & { ts: string } => !!msg.ts)
+        .map((msg) => {
+          const user = msg.user ? this.users.get(msg.user) : undefined;
+          const message: PlatformHistoryMessage = {
+            ts: msg.ts,
+            text: msg.text ?? "",
+            isBot: !!msg.bot_id || msg.subtype === "bot_message" || user?.isBot === true,
+          };
+          if (msg.thread_ts && msg.thread_ts !== msg.ts) message.threadTs = msg.thread_ts;
+          if (msg.user) message.userId = msg.user;
+          if (user) message.userName = user.userName;
+          return message;
+        })
+        .toReversed();
+    });
+  }
+
+  /** Refresh and list the workspace's active users (`users.list`). */
+  async listUsers(): Promise<PlatformUserInfo[]> {
+    await slackRetry(() => this.fetchUsers());
+    return this.getAllUsers().map((user) => ({
+      id: user.id,
+      userName: user.userName,
+      displayName: user.displayName,
+      isBot: user.isBot === true,
+    }));
   }
 
   async updateMessage(channel: string, ts: string, text: string): Promise<void> {

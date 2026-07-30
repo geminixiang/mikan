@@ -30,15 +30,15 @@ trust classes:
 
 ### Host-only — under the state dir (`~/.mikan`), never mounted
 
-| Path                                                           | Contents                                                                                                              |
-| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `settings.json`                                                | global settings                                                                                                       |
-| `conversations/<office key>/settings.json`                     | conversation settings (model, door policy, …)                                                                         |
-| `auth.json`, `models.json`                                     | provider credentials and model catalog                                                                                |
-| `global/extensions/`, `conversations/<office key>/extensions/` | extension **code** (runs in the host process)                                                                         |
-| `global/`, `conversations/<office key>/`                       | extension code (`extensions/`), data (`extension-data/`), and packages (`git/`) per scope; see harness LAYOUT.md      |
-| `vaults/…`                                                     | credentials; the conversation vault key is the office key, and `vaults/extensions/<slug>/env` holds extension secrets |
-| `office-registry.json`                                         | the durable office journal (raw id ↔ office key; office keys are not reversible)                                      |
+| Path                                                           | Contents                                                                                                                                                      |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `settings.json`                                                | global settings                                                                                                                                               |
+| `conversations/<office key>/settings.json`                     | conversation settings (model, door policy, …)                                                                                                                 |
+| `auth.json`, `models.json`                                     | provider credentials and model catalog                                                                                                                        |
+| `global/extensions/`, `conversations/<office key>/extensions/` | extension **code** (runs in the host process)                                                                                                                 |
+| `global/`, `conversations/<office key>/`                       | extension code (`extensions/`), data (`extension-data/`), callback schedules (`extension-schedules/`), and packages (`git/`) per scope; see harness LAYOUT.md |
+| `vaults/…`                                                     | credentials; the conversation vault key is the office key, and `vaults/extensions/<slug>/env` holds extension secrets                                         |
+| `office-registry.json`                                         | the durable office journal (raw id ↔ office key; office keys are not reversible)                                                                              |
 
 Rules enforced in code:
 
@@ -98,9 +98,13 @@ Consequences to keep in mind:
 - **Session files are agent-writable.** A corrupted session header makes
   `SessionStore.open` throw instead of silently starting a fresh session
   (which would erase history on the next append); `/new` recovers.
-- **Extension schedules are agent-visible and agent-tamperable**: they are
-  event files in the shared events dir. Ownership prefixes are cooperative,
-  not a security boundary — never put secrets in schedule text.
+- **Extension `text` schedules are agent-visible and agent-tamperable**: they
+  are event files in the shared events dir. Ownership prefixes are
+  cooperative, not a security boundary — never put secrets in schedule text.
+  Extension **callback** schedules are the deliberate opposite: a fire runs
+  trusted host-side code, so they persist under the host-only state dir
+  (`conversations/<office key>/extension-schedules/`) where the sandbox
+  cannot reach them.
 - **The events dir is a workspace-level scheduling bus — by design.** It is
   global and agent-writable, so any conversation's agent (or extension, or
   admin) can schedule runs in _any_ conversation. This is deliberate: one

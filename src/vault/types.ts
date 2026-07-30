@@ -32,6 +32,8 @@ export interface VaultManager {
   isEnabled(): boolean;
   /** Merge environment variables into vaults/<key>/env and persist them to disk. */
   upsertEnv(key: string, env: Record<string, string>): void;
+  /** Remove one variable from vaults/<key>/env. Returns true when it existed. */
+  deleteEnvKey(key: string, envKey: string): boolean;
   /** Write a private file into vaults/<key>/ and ensure it is mounted into the sandbox. */
   upsertFile(key: string, relativePath: string, content: string, targetPath?: string): void;
   /** List named shared login profiles under vaults/shared/. */

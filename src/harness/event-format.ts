@@ -59,7 +59,8 @@ function daysInMonth(year: number, month: number): number {
   return month === 4 || month === 6 || month === 9 || month === 11 ? 30 : 31;
 }
 
-function isValidIsoTimestampWithOffset(value: string): boolean {
+/** True for a complete ISO 8601 timestamp that carries an explicit UTC offset. */
+export function isValidIsoTimestampWithOffset(value: string): boolean {
   const match = ISO_TIMESTAMP_WITH_OFFSET.exec(value);
   if (!match) return false;
 

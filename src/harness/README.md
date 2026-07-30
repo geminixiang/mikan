@@ -149,10 +149,23 @@ display names may be free-form). Example:
   "version": "0.2.0",
   "description": "Follow-up tracker",
   "type": "module",
-  "mikan": { "extensions": ["./index.ts"], "displayName": "Agent PM" },
+  "mikan": {
+    "extensions": ["./index.ts"],
+    "displayName": "Agent PM",
+    "secrets": [
+      { "key": "SLACK_BOT_TOKEN", "description": "standup reads", "required": true },
+      { "key": "OPENAI_API_KEY" }
+    ]
+  },
   "dependencies": { "ms": "2.1.3" }
 }
 ```
+
+`mikan.secrets` declares the secrets the extension reads via `api.secrets`.
+Declarations drive the admin portal's provisioning panel and `mikan ext
+list`/`validate` output; a `required` secret that is unprovisioned fails that
+extension's activation with a provisioning hint (only in contexts that resolve
+secrets at all — `mikan ext dev` still activates).
 
 Entrypoint resolution order: `mikan.extensions` → `index.{mjs,js,ts,mts}`.
 Simple extensions without `package.json` may use `manifest.json`
@@ -172,7 +185,13 @@ mikan ext install <source> --global                         # all conversations
 mikan ext install <source> --conversation <id>              # one conversation
 mikan ext list [--conversation <id>]                        # list installed
 mikan ext remove <slug> (--global | --conversation <id>)    # remove code (keep data)
+mikan ext remove <slug> … --purge [--workspace <dir>]       # also sweep schedules/secrets/data
 ```
+
+Plain `remove` deletes only the code and reports what stays behind (schedule
+files, secrets vault, data dirs). `--purge` sweeps them — an explicit flag
+because the same slug may still be active through another scope or a PACKAGES
+declaration; add `--workspace` so events-bus files are swept too.
 
 `<source>` may be a **local path** or **git URL** (`https://…`, `git@…`, or
 `github:owner/repo`), optionally with `#subpath` into a monorepo:
@@ -247,30 +266,39 @@ the embedder (mikan wires them in the agent runner). Missing services throw
 descriptive errors. That keeps the harness embeddable — other hosts can supply
 messaging / scheduling.
 
-| api                                | Purpose                                                                    | mikan backend                                                                                   |
-| ---------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `api.subagent.run`                 | Fresh isolated subagent run; optional tools, budget, and structured output | in-process `MikanAgentSession` with `SessionStore.inMemory()`                                   |
-| `api.schedules.upsert/delete/list` | Named schedules (cron `periodic` / `one-shot`) for autonomous runs         | event files (`<workingDir>/events/ext.<slug>.<conv>.<name>.json`), live via EventsWatcher       |
-| `api.notify(text)`                 | Post to this conversation without an agent run                             | `main.ts` `PlatformNotifier` → bot `postMessage`                                                |
-| `api.react(messageTs, emoji)`      | React to a message (ts from events the extension observed)                 | `main.ts` `PlatformReactor` → bot `addReaction`                                                 |
-| `api.uploadFile(path, …)`          | Upload a host file into this conversation                                  | `main.ts` `PlatformUploader` → bot file upload                                                  |
-| `api.blockkit.post/update`         | Interactive Block Kit messages                                             | `main.ts` `PlatformBlockKit`; `extensions/registry.ts` namespaces action ids as `ext:<slug>:`   |
-| `api.paths.dataDir`                | **This conversation's** data dir (default; isolation free; mkdir-on-use)   | `conversations/<office key>/extension-data/<slug>/`                                             |
-| `api.paths.sharedDataDir`          | Cross-conversation data (**explicit** multi-tenant apps; self-partition)   | `global/extension-data/<slug>/`                                                                 |
-| `api.secrets.get/list`             | Read-only secrets                                                          | vault: `<stateDir>/vaults/extensions/<slug>/env`                                                |
-| `manifest.json`                    | name / version / description (display only; slug unaffected)               | loader reads it                                                                                 |
-| `skills/<name>/SKILL.md`           | Bundled skills                                                             | discovered and **inlined** into system prompt (sandbox cannot read host-only paths); local wins |
+| api                                | Purpose                                                                                                                                         | mikan backend                                                                                                                                                                                                                   |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api.subagent.run`                 | Fresh isolated subagent run; optional tools, budget, and structured output                                                                      | in-process `MikanAgentSession` with `SessionStore.inMemory()`                                                                                                                                                                   |
+| `api.schedules.upsert/delete/list` | Named schedules (cron `periodic` / `one-shot`); `text` fires an agent run, `callback` fires a registered handler — deterministic, no model call | `text`: event files (`<workingDir>/events/ext.<slug>.<conv>.<name>.json`) via EventsWatcher; `callback`: host-only files (`conversations/<office key>/extension-schedules/<slug>.<name>.json`) via `ExtensionCallbackScheduler` |
+| `api.schedules.onCallback`         | Register the handler a `callback` schedule fires                                                                                                | `extensions/registry.ts` dispatch through the conversation runtime (harness materialized on fire)                                                                                                                               |
+| `api.notify(text, opts?)`          | Post to a conversation without an agent run; `threadTs` targets a thread                                                                        | `main.ts` `PlatformNotifier` → bot `postMessage` / `postInThread`                                                                                                                                                               |
+| `api.openDm(userId)`               | Resolve a user's DM conversation id (pairs with `notify`)                                                                                       | `main.ts` `PlatformDmOpener` → bot `openDirectConversation` (Slack `conversations.open`)                                                                                                                                        |
+| `api.fetchHistory(opts?)`          | Read recent conversation messages, oldest first (single page)                                                                                   | `main.ts` `PlatformHistoryFetcher` → bot `fetchHistory` (Slack `conversations.history`)                                                                                                                                         |
+| `api.listUsers()`                  | List the platform workspace's active users                                                                                                      | `main.ts` `PlatformUserLister` → bot `listUsers` (Slack `users.list`, refreshed)                                                                                                                                                |
+| `api.react(messageTs, emoji)`      | React to a message (ts from events the extension observed)                                                                                      | `main.ts` `PlatformReactor` → bot `addReaction`                                                                                                                                                                                 |
+| `api.uploadFile(path, …)`          | Upload a host file into this conversation                                                                                                       | `main.ts` `PlatformUploader` → bot file upload                                                                                                                                                                                  |
+| `api.blockkit.post/update`         | Interactive Block Kit messages                                                                                                                  | `main.ts` `PlatformBlockKit`; `extensions/registry.ts` namespaces action ids as `ext:<slug>:`                                                                                                                                   |
+| `api.paths.dataDir`                | **This conversation's** data dir (default; isolation free; mkdir-on-use)                                                                        | `conversations/<office key>/extension-data/<slug>/`                                                                                                                                                                             |
+| `api.paths.sharedDataDir`          | Cross-conversation data (**explicit** multi-tenant apps; self-partition)                                                                        | `global/extension-data/<slug>/`                                                                                                                                                                                                 |
+| `api.secrets.get/list`             | Read-only secrets; declare them in `mikan.secrets`                                                                                              | vault: `<stateDir>/vaults/extensions/<slug>/env`; provisioned via the admin portal                                                                                                                                              |
+| `manifest.json`                    | name / version / description (display only; slug unaffected)                                                                                    | loader reads it                                                                                                                                                                                                                 |
+| `skills/<name>/SKILL.md`           | Bundled skills                                                                                                                                  | discovered and **inlined** into system prompt (sandbox cannot read host-only paths); local wins                                                                                                                                 |
 
 The same core subagent runner backs both extension `api.subagent.run` and the normal agent's built-in `subagent` tool. Both use a fresh in-memory session, explicit tool grants, bounded execution, and the same non-recursion guard. The runner never rejects — request validation failures resolve to `failed` results, so a bad request in a batch cannot orphan in-flight siblings. The normal tool folds each subagent's tokens and cost into the parent run's tally (`recordExternalUsage`), keeping delegated spend visible to the parent budget; extension-initiated runs report usage in their result, and the calling extension is accountable for it. The normal tool supports one `task`, up to eight independent parallel `tasks[]`, or a bounded in-memory `dag` (8 nodes, 16 edges, depth 4); at most 4 subagents run concurrently in either mode. On top of that per-run cap, every launch also draws from a process-wide slot pool (`tools/subagent-slots.ts`, 8 slots by default), so N busy conversations cannot hold N × 4 live subagent sessions. DAG dependency outputs become structured input for downstream nodes; a failed dependency skips its descendants while independent branches continue.
 
 The normal tool emits node-level state through `AgentTool.onUpdate`. The parent runner debounces `tool_execution_update` events for 500ms and sends a compact status label through `ConversationResponder.replaceResponse`, so Slack, Discord, and Telegram share the same progress path without exposing subagent reasoning.
 
 Schedule `text` is a self-contained autonomous task (no conversation history).
-With multiple platforms, `notify` / schedules need an explicit `platform`; a
-single platform is inferred. Schedule files live under the events dir (sandbox
-mounted, agent-writable) — slug prefixes are a **cooperative** convention, not a
-security boundary. Do not put secrets in schedule text. Host/sandbox path map:
-`src/sandbox/README.md`.
+`notify` / `react` / `uploadFile` / schedules default to the conversation's
+own platform; pass `platform` only when a cross-conversation `notify` targets
+another one. Text-schedule files live under the events dir (sandbox mounted,
+agent-writable) — slug prefixes are a **cooperative** convention, not a
+security boundary; do not put secrets in schedule text. Callback schedules are
+different on purpose: a fire crosses into trusted host code, so they persist
+under the **host-only** state dir where sandboxed agents cannot forge them.
+Register handlers with `onCallback` during `activate` (fires materialize the
+harness, including right after a restart); `args` must be JSON-serializable.
+Host/sandbox path map: `src/sandbox/README.md`.
 
 ### Extension development mindset
 

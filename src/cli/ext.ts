@@ -11,7 +11,7 @@
  * existing extension updates it (data is preserved). Extensions install into the
  * host-only state dir (never the workspace); see src/harness/extensions/LAYOUT.md.
  */
-import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import {
   defaultExtensionDirs,
@@ -31,6 +31,10 @@ interface ExtArgs {
   stateDir: string;
   scope: "global" | "conversation" | undefined;
   conversationId?: string;
+  /** Workspace root; lets `remove --purge` sweep the events bus. */
+  workspaceDir?: string;
+  /** With `remove`: also sweep schedules, secrets, and data for the slug. */
+  purge: boolean;
 }
 
 function parseExtArgs(argv: string[]): ExtArgs {
@@ -38,6 +42,8 @@ function parseExtArgs(argv: string[]): ExtArgs {
   const stateDir = resolveStateDir(argv);
   let scope: ExtArgs["scope"];
   let conversationId: string | undefined;
+  let workspaceDir: string | undefined;
+  let purge = false;
   const positional: string[] = [];
 
   for (let i = 0; i < argv.length; i++) {
@@ -45,16 +51,28 @@ function parseExtArgs(argv: string[]): ExtArgs {
     if (arg === undefined) continue;
     let taken;
     if (arg === "--global") scope = "global";
+    else if (arg === "--purge") purge = true;
     else if ((taken = takeValueFlag(argv, i, "--conversation"))) {
       scope = "conversation";
       conversationId = taken.value || undefined;
+      i = taken.lastIndex;
+    } else if ((taken = takeValueFlag(argv, i, "--workspace"))) {
+      workspaceDir = taken.value ? resolve(taken.value) : undefined;
       i = taken.lastIndex;
     } else if ((taken = takeValueFlag(argv, i, "--state-dir"))) {
       i = taken.lastIndex; // value already folded in by resolveStateDir
     } else positional.push(arg);
   }
 
-  return { action: positional[0] ?? "", target: positional[1], stateDir, scope, conversationId };
+  return {
+    action: positional[0] ?? "",
+    target: positional[1],
+    stateDir,
+    scope,
+    conversationId,
+    workspaceDir,
+    purge,
+  };
 }
 
 /** Directory that extension CODE for the chosen scope lives in. */
@@ -84,7 +102,9 @@ const USAGE = `Usage:
       Reinstalling over an existing extension updates it (data preserved).
   mikan ext validate <path>
   mikan ext list [--conversation <id>] [--state-dir <dir>]
-  mikan ext remove <slug> (--global | --conversation <id>) [--state-dir <dir>]`;
+  mikan ext remove <slug> (--global | --conversation <id>) [--purge] [--workspace <dir>] [--state-dir <dir>]
+      Removes the extension's code. --purge also sweeps its schedules, secrets
+      vault, and data dirs; add --workspace to sweep its event files too.`;
 
 export async function runExtCommand(argv: string[]): Promise<number> {
   const args = parseExtArgs(argv);
@@ -214,8 +234,72 @@ function listAction(args: ExtArgs): number {
     console.log(`${info.name}${version}  [${scope}]  slug=${info.slug}`);
     if (info.description) console.log(`  ${info.description}`);
     if (info.skillNames.length > 0) console.log(`  skills: ${info.skillNames.join(", ")}`);
+    if (info.secrets.length > 0) {
+      const keys = info.secrets.map((s) => `${s.key}${s.required ? " (required)" : ""}`);
+      console.log(`  secrets: ${keys.join(", ")}`);
+    }
   }
   return 0;
+}
+
+/**
+ * Everything a slug leaves behind outside its code dir: callback-schedule
+ * files, the secrets vault, data dirs, and (when the workspace is known)
+ * `ext.<slug>.*` / `extrun.<slug>.*` files on the events bus.
+ */
+interface ExtensionResidue {
+  callbackScheduleFiles: string[];
+  vaultDir?: string;
+  dataDirs: string[];
+  eventFiles: string[];
+}
+
+/** Files in `dir` (non-recursive) whose names satisfy `matches`; [] when absent. */
+function matchingFiles(dir: string, matches: (filename: string) => boolean): string[] {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter(matches)
+    .map((filename) => join(dir, filename));
+}
+
+function findExtensionResidue(
+  slug: string,
+  stateDir: string,
+  workspaceDir?: string,
+): ExtensionResidue {
+  const callbackScheduleFiles: string[] = [];
+  const dataDirs: string[] = [];
+  const conversationsDir = join(stateDir, "conversations");
+  const officeDirs = existsSync(conversationsDir) ? readdirSync(conversationsDir) : [];
+  for (const officeDir of officeDirs) {
+    callbackScheduleFiles.push(
+      ...matchingFiles(
+        join(conversationsDir, officeDir, "extension-schedules"),
+        (filename) => filename.startsWith(`${slug}.`) && filename.endsWith(".json"),
+      ),
+    );
+    const dataDir = join(conversationsDir, officeDir, "extension-data", slug);
+    if (existsSync(dataDir)) dataDirs.push(dataDir);
+  }
+  const globalDataDir = join(stateDir, "global", "extension-data", slug);
+  if (existsSync(globalDataDir)) dataDirs.push(globalDataDir);
+
+  const eventFiles = workspaceDir
+    ? matchingFiles(
+        join(workspaceDir, "events"),
+        (filename) =>
+          (filename.startsWith(`ext.${slug}.`) || filename.startsWith(`extrun.${slug}.`)) &&
+          filename.endsWith(".json"),
+      )
+    : [];
+
+  const vaultDir = join(stateDir, "vaults", "extensions", slug);
+  return {
+    callbackScheduleFiles,
+    ...(existsSync(vaultDir) ? { vaultDir } : {}),
+    dataDirs,
+    eventFiles,
+  };
 }
 
 function removeAction(args: ExtArgs): number {
@@ -241,7 +325,44 @@ function removeAction(args: ExtArgs): number {
   const parent = resolve(match.path, "..");
   const removeTarget = parent === resolve(destDir) ? match.path : parent;
   rmSync(removeTarget, { recursive: true, force: true });
-  console.log(`Removed ${match.name} (slug: ${match.slug}). Data left in place.`);
+  console.log(`Removed ${match.name} (slug: ${match.slug}).`);
+
+  // Never sweep implicitly: the same slug may still be active through another
+  // scope or a PACKAGES declaration this command cannot see. --purge is the
+  // admin's statement that nothing else owns it.
+  const residue = findExtensionResidue(match.slug, args.stateDir, args.workspaceDir);
+  if (args.purge) {
+    for (const file of [...residue.callbackScheduleFiles, ...residue.eventFiles]) {
+      rmSync(file, { force: true });
+    }
+    for (const dataDir of residue.dataDirs) rmSync(dataDir, { recursive: true, force: true });
+    if (residue.vaultDir) rmSync(residue.vaultDir, { recursive: true, force: true });
+    console.log(
+      `Purged: ${residue.callbackScheduleFiles.length} schedule file(s), ` +
+        `${residue.eventFiles.length} event file(s), ${residue.dataDirs.length} data dir(s)` +
+        `${residue.vaultDir ? ", secrets vault" : ""}.`,
+    );
+    if (!args.workspaceDir) {
+      console.log(
+        "Note: events-bus files were not swept — pass --workspace <dir> to include them.",
+      );
+    }
+    if (residue.callbackScheduleFiles.length > 0) {
+      console.log("A running daemon keeps deleted schedules armed until restart.");
+    }
+  } else {
+    const leftovers = [
+      residue.callbackScheduleFiles.length > 0
+        ? `${residue.callbackScheduleFiles.length} schedule file(s)`
+        : undefined,
+      residue.vaultDir ? "secrets vault" : undefined,
+      residue.dataDirs.length > 0 ? `${residue.dataDirs.length} data dir(s)` : undefined,
+      residue.eventFiles.length > 0 ? `${residue.eventFiles.length} event file(s)` : undefined,
+    ].filter(Boolean);
+    if (leftovers.length > 0) {
+      console.log(`Left in place: ${leftovers.join(", ")}. Re-run with --purge to sweep.`);
+    }
+  }
   console.log("Run /pi-new in the conversation to apply.");
   return 0;
 }
@@ -253,12 +374,17 @@ function printValidation(result: {
   version?: string;
   entrypoint?: string;
   skillNames: string[];
+  secrets: Array<{ key: string; required?: boolean }>;
   errors: string[];
   warnings: string[];
 }): void {
   console.log(`${result.name}${result.version ? `@${result.version}` : ""} (slug: ${result.slug})`);
   if (result.entrypoint) console.log(`  entrypoint: ${result.entrypoint}`);
   if (result.skillNames.length > 0) console.log(`  skills: ${result.skillNames.join(", ")}`);
+  if (result.secrets.length > 0) {
+    const keys = result.secrets.map((s) => `${s.key}${s.required ? " (required)" : ""}`);
+    console.log(`  secrets: ${keys.join(", ")}`);
+  }
   for (const warning of result.warnings) console.log(`  warning: ${warning}`);
   for (const error of result.errors) console.error(`  error: ${error}`);
   console.log(result.ok ? "  ✓ valid" : "  ✗ invalid");

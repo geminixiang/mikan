@@ -14,6 +14,8 @@ import {
   type ExtensionBlockAction,
   type ExtensionHostServices,
   type ExtensionRegistry,
+  type ExtensionScheduleCallbackEvent,
+  type ExtensionScheduleEngine,
   formatSkillsForPrompt,
   loadExtensions,
   loadSkillsFromDir,
@@ -48,10 +50,13 @@ import type {
 import type {
   AgentEventPayload,
   PlatformBlockKit,
+  PlatformDmOpener,
+  PlatformHistoryFetcher,
   PlatformNotifier,
   PlatformReactor,
   PlatformTrustModel,
   PlatformUploader,
+  PlatformUserLister,
 } from "./types.js";
 import { resolveConversationSettings } from "./config.js";
 import { resolveWorkspaceProjection } from "./workspace-projection/index.js";
@@ -1272,20 +1277,30 @@ function createRunnerExecutionContext(
  */
 function buildExtensionHostServices(params: {
   workspace: Workspace;
+  address: OfficeAddress;
   vaultManager?: VaultManager;
   platformNotifier?: PlatformNotifier;
   platformReactor?: PlatformReactor;
   platformUploader?: PlatformUploader;
   platformBlockKit?: PlatformBlockKit;
+  platformDmOpener?: PlatformDmOpener;
+  platformHistoryFetcher?: PlatformHistoryFetcher;
+  platformUserLister?: PlatformUserLister;
+  extensionScheduleEngine?: ExtensionScheduleEngine;
   runSubagentService?: ExtensionHostServices["runSubagent"];
 }): ExtensionHostServices {
   const {
     workspace,
+    address,
     vaultManager,
     platformNotifier,
     platformReactor,
     platformUploader,
     platformBlockKit,
+    platformDmOpener,
+    platformHistoryFetcher,
+    platformUserLister,
+    extensionScheduleEngine,
     runSubagentService,
   } = params;
   const eventStore = HostEventStore.fromWorkspaceDir(workspace.root);
@@ -1304,6 +1319,18 @@ function buildExtensionHostServices(params: {
     ...(platformNotifier ? { postMessage: platformNotifier } : {}),
     ...(platformReactor ? { addReaction: platformReactor } : {}),
     ...(platformUploader ? { uploadFile: platformUploader } : {}),
+    ...(platformDmOpener ? { openDirectConversation: platformDmOpener } : {}),
+    ...(platformHistoryFetcher ? { fetchHistory: platformHistoryFetcher } : {}),
+    ...(platformUserLister ? { listUsers: platformUserLister } : {}),
+    ...(extensionScheduleEngine
+      ? {
+          callbackScheduleStore: {
+            upsert: (slug, name, spec) => extensionScheduleEngine.upsert(address, slug, name, spec),
+            delete: (slug, name) => extensionScheduleEngine.delete(address, slug, name),
+            list: (slug) => extensionScheduleEngine.list(address, slug),
+          },
+        }
+      : {}),
     ...(platformBlockKit
       ? { postBlocks: platformBlockKit.postBlocks, updateBlocks: platformBlockKit.updateBlocks }
       : {}),
@@ -1329,6 +1356,10 @@ async function createConfiguredAgentSession(params: {
   platformReactor?: PlatformReactor;
   platformUploader?: PlatformUploader;
   platformBlockKit?: PlatformBlockKit;
+  platformDmOpener?: PlatformDmOpener;
+  platformHistoryFetcher?: PlatformHistoryFetcher;
+  platformUserLister?: PlatformUserLister;
+  extensionScheduleEngine?: ExtensionScheduleEngine;
 }): Promise<ConfiguredAgentSession> {
   const {
     office,
@@ -1343,6 +1374,10 @@ async function createConfiguredAgentSession(params: {
     platformReactor,
     platformUploader,
     platformBlockKit,
+    platformDmOpener,
+    platformHistoryFetcher,
+    platformUserLister,
+    extensionScheduleEngine,
   } = params;
   const { address } = office;
   const conversationId = address.conversationId;
@@ -1376,11 +1411,16 @@ async function createConfiguredAgentSession(params: {
     context: { address, conversationId, workspaceDir, model, thinkingLevel },
     services: buildExtensionHostServices({
       workspace: office.workspace,
+      address,
       vaultManager,
       platformNotifier,
       platformReactor,
       platformUploader,
       platformBlockKit,
+      platformDmOpener,
+      platformHistoryFetcher,
+      platformUserLister,
+      extensionScheduleEngine,
       runSubagentService: (request, extensionTools) => {
         const activeParent = session?.isActiveRun ? session : undefined;
         return runSubagent({
@@ -2060,6 +2100,10 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     platformReactor,
     platformUploader,
     platformBlockKit,
+    platformDmOpener,
+    platformHistoryFetcher,
+    platformUserLister,
+    extensionScheduleEngine,
     platformToolPackFactories,
   } = options;
   const conversationId = office.address.conversationId;
@@ -2157,6 +2201,10 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
       platformReactor,
       platformUploader,
       platformBlockKit,
+      platformDmOpener,
+      platformHistoryFetcher,
+      platformUserLister,
+      extensionScheduleEngine,
     });
 
   // Mutable per-run state - event handler references this
@@ -2413,6 +2461,14 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
 
     async tryExtensionAction(slug: string, action: ExtensionBlockAction): Promise<boolean> {
       return extensionRegistry.dispatchAction(slug, action);
+    },
+
+    async tryExtensionScheduleCallback(
+      slug: string,
+      callback: string,
+      event: ExtensionScheduleCallbackEvent,
+    ): Promise<boolean> {
+      return extensionRegistry.dispatchScheduleCallback(slug, callback, event);
     },
 
     async dispose(): Promise<void> {

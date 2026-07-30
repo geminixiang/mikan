@@ -9,10 +9,13 @@ import { dirname, join as pathJoin } from "node:path";
 import type {
   MessagingBot,
   PlatformBlockKit,
+  PlatformDmOpener,
+  PlatformHistoryFetcher,
   PlatformName,
   PlatformNotifier,
   PlatformReactor,
   PlatformUploader,
+  PlatformUserLister,
 } from "./adapter.js";
 import { DiscordMessagingBot } from "./adapters/discord/bot.js";
 import { GithubMessagingBot } from "./adapters/github/bot.js";
@@ -26,6 +29,7 @@ import type { PlatformSlackOps } from "./adapters/slack/types.js";
 import type { PlatformToolPackFactory } from "./tools/types.js";
 import { downloadChannel } from "./cli/download.js";
 import { EventsWatcher } from "./events.js";
+import { ExtensionCallbackScheduler } from "./extension-schedules.js";
 import * as log from "./log.js";
 import { startWebServer } from "./web/server.js";
 import { InMemoryAdminTokenStore } from "./web/admin/store.js";
@@ -460,10 +464,45 @@ function resolvePlatformBot(op: string, platform: string | undefined): [string, 
 }
 
 /** Extension `api.notify` backend: post into a conversation without a run. */
-const platformNotifier: PlatformNotifier = async (conversationId, text, platform) => {
-  const [key, bot] = resolvePlatformBot("notify", platform);
-  await bot.postMessage(conversationId, text);
+const platformNotifier: PlatformNotifier = async (conversationId, text, options) => {
+  const [key, bot] = resolvePlatformBot("notify", options?.platform);
+  if (options?.threadTs) {
+    if (!bot.postInThread) {
+      throw new Error(`notify: platform '${key}' does not support threaded posts`);
+    }
+    await bot.postInThread(conversationId, options.threadTs, text);
+  } else {
+    await bot.postMessage(conversationId, text);
+  }
   log.logInfo(`[notify] posted to ${key}/${conversationId} (${text.length} chars)`);
+};
+
+/** Extension `api.openDm` backend: resolve a user's DM conversation id. */
+const platformDmOpener: PlatformDmOpener = async (userId, platform) => {
+  const [key, bot] = resolvePlatformBot("openDm", platform);
+  if (!bot.openDirectConversation) {
+    throw new Error(`openDm: platform '${key}' does not support opening direct messages`);
+  }
+  return bot.openDirectConversation(userId);
+};
+
+/** Extension `api.fetchHistory` backend: read recent conversation messages. */
+const platformHistoryFetcher: PlatformHistoryFetcher = async (conversationId, options) => {
+  const [key, bot] = resolvePlatformBot("fetchHistory", options?.platform);
+  if (!bot.fetchHistory) {
+    throw new Error(`fetchHistory: platform '${key}' does not support history reads`);
+  }
+  const { platform: _platform, ...historyOptions } = options ?? {};
+  return bot.fetchHistory(conversationId, historyOptions);
+};
+
+/** Extension `api.listUsers` backend: list the workspace's active users. */
+const platformUserLister: PlatformUserLister = async (platform) => {
+  const [key, bot] = resolvePlatformBot("listUsers", platform);
+  if (!bot.listUsers) {
+    throw new Error(`listUsers: platform '${key}' does not support user listings`);
+  }
+  return bot.listUsers();
 };
 
 /** Extension `api.react` backend: add a reaction to a message. */
@@ -583,6 +622,14 @@ function buildPlatformToolPackFactories(): PlatformToolPackFactory[] {
   return factories;
 }
 
+// Host-authoritative engine for extension callback schedules. Dispatch routes
+// through the runtime so fires run against the conversation's activated
+// extensions; created before the runtime, wired after (mutual reference).
+const extensionScheduleEngine = new ExtensionCallbackScheduler({
+  stateDir,
+  dispatch: (fire) => handler.handleExtensionScheduleCallback(fire),
+});
+
 const handler = createConversationRuntime({
   workspace,
   sandbox,
@@ -597,6 +644,10 @@ const handler = createConversationRuntime({
   platformReactor,
   platformUploader,
   platformBlockKit,
+  platformDmOpener,
+  platformHistoryFetcher,
+  platformUserLister,
+  extensionScheduleEngine,
   platformToolPackFactories: buildPlatformToolPackFactories(),
 });
 
@@ -756,11 +807,13 @@ if (slackMessagingBot) {
   slackMessagingBot.setEventsWatcher(eventsWatcher);
 }
 eventsWatcher.start();
+extensionScheduleEngine.start();
 
 // Handle shutdown
 async function shutdown(): Promise<void> {
   await handler.shutdown();
   eventsWatcher.stop();
+  extensionScheduleEngine.stop();
   await stopAllGondolinRuntimes();
   await Sentry.close(5000);
   process.exit(0);

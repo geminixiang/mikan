@@ -139,6 +139,17 @@ describe("FileVaultManager", () => {
     expect(mode(join(vaultsDir, "U123", "env")) & 0o077).toBe(0);
   });
 
+  test("deleteEnvKey removes one variable and reports absence", () => {
+    const mgr = new FileVaultManager(tmpDir);
+    mgr.upsertEnv("extensions/agent-pm", { SLACK_BOT_TOKEN: "xoxb-1", OPENAI_API_KEY: "sk-1" });
+
+    expect(mgr.deleteEnvKey("extensions/agent-pm", "SLACK_BOT_TOKEN")).toBe(true);
+    expect(mgr.resolve("extensions/agent-pm")?.env).toEqual({ OPENAI_API_KEY: "sk-1" });
+    expect(mgr.deleteEnvKey("extensions/agent-pm", "SLACK_BOT_TOKEN")).toBe(false);
+    expect(mgr.deleteEnvKey("extensions/never-installed", "TOKEN")).toBe(false);
+    expect(() => mgr.deleteEnvKey("../outside", "TOKEN")).toThrow("vault: invalid vault key");
+  });
+
   test("upsertEnv tightens permissions on an existing env file", () => {
     const userDir = join(vaultsDir, "U123");
     mkdirSync(userDir, { recursive: true });

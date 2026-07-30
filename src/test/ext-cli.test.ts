@@ -151,6 +151,94 @@ describe("mikan ext CLI", () => {
     expect(existsSync(join(dataDir, "db"))).toBe(true);
   });
 
+  test("remove --purge sweeps schedules, secrets, data, and event files for the slug", async () => {
+    const source = writeExtension("agent-pm");
+    await runExtCommand(["install", source, "--conversation", "C1", "--state-dir", stateDir]);
+    const officeDir = join(
+      stateDir,
+      "conversations",
+      officeKey(createOfficeAddress("slack", "C1")),
+    );
+
+    const schedulesDir = join(officeDir, "extension-schedules");
+    mkdirSync(schedulesDir, { recursive: true });
+    writeFileSync(join(schedulesDir, "agent-pm.boards.json"), "{}");
+    writeFileSync(join(schedulesDir, "other.job.json"), "{}");
+
+    const dataDir = join(officeDir, "extension-data", "agent-pm");
+    mkdirSync(dataDir, { recursive: true });
+    writeFileSync(join(dataDir, "db"), "x");
+    const globalDataDir = join(stateDir, "global", "extension-data", "agent-pm");
+    mkdirSync(globalDataDir, { recursive: true });
+
+    const vaultDir = join(stateDir, "vaults", "extensions", "agent-pm");
+    mkdirSync(vaultDir, { recursive: true });
+    writeFileSync(join(vaultDir, "env"), "TOKEN=x\n");
+
+    const workspaceDir = join(srcDir, "workspace");
+    const eventsDir = join(workspaceDir, "events");
+    mkdirSync(eventsDir, { recursive: true });
+    writeFileSync(join(eventsDir, "ext.agent-pm.c1.sweep.json"), "{}");
+    writeFileSync(join(eventsDir, "extrun.agent-pm.c1.1.json"), "{}");
+    writeFileSync(join(eventsDir, "ext.other.c1.job.json"), "{}");
+
+    const out = captureOut();
+    const code = await runExtCommand([
+      "remove",
+      "agent-pm",
+      "--conversation",
+      "C1",
+      "--purge",
+      "--workspace",
+      workspaceDir,
+      "--state-dir",
+      stateDir,
+    ]);
+    out.restore();
+
+    expect(code).toBe(0);
+    expect(existsSync(join(schedulesDir, "agent-pm.boards.json"))).toBe(false);
+    expect(existsSync(join(schedulesDir, "other.job.json"))).toBe(true);
+    expect(existsSync(dataDir)).toBe(false);
+    expect(existsSync(globalDataDir)).toBe(false);
+    expect(existsSync(vaultDir)).toBe(false);
+    expect(existsSync(join(eventsDir, "ext.agent-pm.c1.sweep.json"))).toBe(false);
+    expect(existsSync(join(eventsDir, "extrun.agent-pm.c1.1.json"))).toBe(false);
+    expect(existsSync(join(eventsDir, "ext.other.c1.job.json"))).toBe(true);
+  });
+
+  test("plain remove reports leftovers instead of sweeping", async () => {
+    const source = writeExtension("agent-pm");
+    await runExtCommand(["install", source, "--conversation", "C1", "--state-dir", stateDir]);
+    const officeDir = join(
+      stateDir,
+      "conversations",
+      officeKey(createOfficeAddress("slack", "C1")),
+    );
+    const schedulesDir = join(officeDir, "extension-schedules");
+    mkdirSync(schedulesDir, { recursive: true });
+    writeFileSync(join(schedulesDir, "agent-pm.boards.json"), "{}");
+    const vaultDir = join(stateDir, "vaults", "extensions", "agent-pm");
+    mkdirSync(vaultDir, { recursive: true });
+
+    const out = captureOut();
+    const code = await runExtCommand([
+      "remove",
+      "agent-pm",
+      "--conversation",
+      "C1",
+      "--state-dir",
+      stateDir,
+    ]);
+    out.restore();
+
+    expect(code).toBe(0);
+    expect(existsSync(join(schedulesDir, "agent-pm.boards.json"))).toBe(true);
+    expect(existsSync(vaultDir)).toBe(true);
+    expect(out.log.join("\n")).toMatch(/Left in place: 1 schedule file\(s\), secrets vault/);
+    expect(out.log.join("\n")).toMatch(/--purge/);
+  });
+
   test("unknown action prints usage and fails", async () => {
     const out = captureOut();
     const code = await runExtCommand(["frobnicate"]);

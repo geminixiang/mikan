@@ -169,6 +169,23 @@ export class FileVaultManager implements VaultManager {
     atomicWritePrivateFile(envPath, content);
   }
 
+  deleteEnvKey(key: string, envKey: string): boolean {
+    if (!isSafeVaultKey(key)) throw new Error(`vault: invalid vault key: ${key}`);
+    const envPath = join(this.vaultsDir, key, "env");
+    const existingContent = readTextFileIfExists(envPath);
+    if (existingContent === undefined) return false;
+    const existing = parseEnvFile(existingContent);
+    if (!(envKey in existing)) return false;
+    delete existing[envKey];
+    const content =
+      Object.entries(existing)
+        .toSorted(([left], [right]) => left.localeCompare(right))
+        .map(([name, value]) => `${name}=${value}`)
+        .join("\n") + "\n";
+    atomicWritePrivateFile(envPath, content);
+    return true;
+  }
+
   upsertFile(key: string, relativePath: string, content: string, targetPath?: string): void {
     if (!isSafeVaultKey(key)) throw new Error(`vault: invalid vault key: ${key}`);
     const normalizedPath = normalizeVaultRelativePath(relativePath);

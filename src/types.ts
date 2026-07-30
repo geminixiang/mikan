@@ -6,7 +6,12 @@ import type {
   OneShotEventPayload,
   PeriodicEventPayload,
 } from "./harness/event-format.js";
-import type { ExtensionBlockAction } from "./harness/extensions/types.js";
+import type {
+  ExtensionBlockAction,
+  ExtensionScheduleCallbackEvent,
+  ExtensionScheduleCallbackFire,
+  ExtensionScheduleEngine,
+} from "./harness/extensions/types.js";
 import type { SubagentRunStatus } from "./harness/types.js";
 import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import type { MikanModels } from "./harness/models.js";
@@ -248,6 +253,26 @@ export interface MessagingBot {
    * implementations (Slack/Discord/Telegram) already match this shape.
    */
   uploadFile?(channel: string, filePath: string, title?: string): Promise<void>;
+  /**
+   * Post into a platform thread. Optional so adapters adopt it incrementally;
+   * callers must handle its absence.
+   */
+  postInThread?(channel: string, threadTs: string, text: string): Promise<string>;
+  /**
+   * Open (or resolve) the direct-message conversation with a user, returning
+   * its conversation id — usable with `postMessage`. Optional capability.
+   */
+  openDirectConversation?(userId: string): Promise<string>;
+  /**
+   * Fetch recent messages from a conversation, oldest first. Optional
+   * capability; adapters may cap `limit` below what the caller asks for.
+   */
+  fetchHistory?(
+    channel: string,
+    options?: PlatformHistoryOptions,
+  ): Promise<PlatformHistoryMessage[]>;
+  /** List the platform workspace's active users. Optional capability. */
+  listUsers?(): Promise<PlatformUserInfo[]>;
   enqueueEvent(event: ConversationEvent): boolean;
   getMessagingInfo(): MessagingInfo;
   postPrivate?(conversationId: string, userId: string, text: string): Promise<void>;
@@ -259,16 +284,66 @@ export interface MessagingBot {
   ): Promise<void>;
 }
 
+/** Filters for a platform conversation-history fetch. */
+export interface PlatformHistoryOptions {
+  /** Only messages strictly newer than this platform message id/timestamp. */
+  oldest?: string;
+  /** Maximum number of messages to return (adapters may cap this lower). */
+  limit?: number;
+}
+
+/** One platform message returned by a history fetch. */
+export interface PlatformHistoryMessage {
+  ts: string;
+  threadTs?: string;
+  userId?: string;
+  userName?: string;
+  text: string;
+  isBot: boolean;
+}
+
+/** One platform user returned by a workspace user listing. */
+export interface PlatformUserInfo {
+  id: string;
+  userName: string;
+  displayName: string;
+  isBot: boolean;
+}
+
 /**
  * Post a plain message to a conversation without triggering an agent run.
  * Backs extension `api.notify`; implemented in main.ts over the platform bots.
- * `platform` is required only when more than one platform is running.
+ * `platform` is required only when more than one platform is running;
+ * `threadTs` targets a platform thread on adapters that support it.
  */
 export type PlatformNotifier = (
   conversationId: string,
   text: string,
-  platform?: string,
+  options?: { platform?: string; threadTs?: string },
 ) => Promise<void>;
+
+/**
+ * Open the direct-message conversation with a platform user, returning its
+ * conversation id. Backs extension `api.openDm`; implemented in main.ts over
+ * the platform bots.
+ */
+export type PlatformDmOpener = (userId: string, platform?: string) => Promise<string>;
+
+/**
+ * Fetch recent messages from a conversation without triggering an agent run.
+ * Backs extension `api.fetchHistory`; implemented in main.ts over the
+ * platform bots.
+ */
+export type PlatformHistoryFetcher = (
+  conversationId: string,
+  options?: PlatformHistoryOptions & { platform?: string },
+) => Promise<PlatformHistoryMessage[]>;
+
+/**
+ * List a platform workspace's active users. Backs extension `api.listUsers`;
+ * implemented in main.ts over the platform bots.
+ */
+export type PlatformUserLister = (platform?: string) => Promise<PlatformUserInfo[]>;
 
 /**
  * Add an emoji reaction to a message without triggering an agent run. Backs
@@ -367,6 +442,13 @@ export interface MessagingEventHandler {
     slug: string;
     action: ExtensionBlockAction;
   }): Promise<boolean>;
+  /**
+   * Dispatch a fired extension callback schedule to its registered
+   * `onCallback` handler — deterministic, no agent run, no model call.
+   * Returns true when a handler consumed the fire; false when nothing is
+   * registered (e.g. the extension was removed but its schedule remains).
+   */
+  handleExtensionScheduleCallback(fire: ExtensionScheduleCallbackFire): Promise<boolean>;
 }
 
 // ── agent ─────────────────────────────────────────────────────────────────────
@@ -398,6 +480,12 @@ export interface PiAgentWrapper {
    * handler. Returns true when a handler consumed it (no agent run follows).
    */
   tryExtensionAction(slug: string, action: ExtensionBlockAction): Promise<boolean>;
+  /** Run an extension's registered schedule callback; false when unregistered. */
+  tryExtensionScheduleCallback(
+    slug: string,
+    callback: string,
+    event: ExtensionScheduleCallbackEvent,
+  ): Promise<boolean>;
   /** Run extension disposers. Call once when this wrapper is discarded. */
   dispose(): Promise<void>;
 }
@@ -670,6 +758,11 @@ export interface CreateRunnerOptions {
   platformReactor?: PlatformReactor;
   platformUploader?: PlatformUploader;
   platformBlockKit?: PlatformBlockKit;
+  platformDmOpener?: PlatformDmOpener;
+  platformHistoryFetcher?: PlatformHistoryFetcher;
+  platformUserLister?: PlatformUserLister;
+  /** Host-authoritative callback-schedule engine (`api.schedules` callbacks). */
+  extensionScheduleEngine?: ExtensionScheduleEngine;
   platformToolPackFactories?: readonly PlatformToolPackFactory[];
   models?: MikanModels;
 }

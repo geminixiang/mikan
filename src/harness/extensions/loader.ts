@@ -43,6 +43,8 @@ import type {
   ExtensionSchedulePayload,
   ExtensionScheduleInfo,
   ExtensionScheduleSpec,
+  ExtensionSecretDeclaration,
+  ExtensionTextScheduleSpec,
   ExtensionValidation,
   InstalledExtensionInfo,
   LoadExtensionsOptions,
@@ -111,6 +113,7 @@ export function listInstalledExtensions(dirs: string[]): InstalledExtensionInfo[
         version: manifest.version,
         description: manifest.description,
         skillNames: loadExtensionSkills(rootDir, slug).map((skill) => skill.name),
+        secrets: manifest.secrets ?? [],
       });
     }
   }
@@ -195,7 +198,21 @@ interface ExtensionPackageJson {
   name?: string;
   version?: string;
   description?: string;
-  mikan?: { extensions?: string[]; displayName?: string };
+  mikan?: { extensions?: string[]; displayName?: string; secrets?: ExtensionSecretDeclaration[] };
+}
+
+const SECRET_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** Shape one `mikan.secrets` entry defensively; undefined when unusable. */
+function readSecretDeclaration(entry: unknown): ExtensionSecretDeclaration | undefined {
+  if (!entry || typeof entry !== "object") return undefined;
+  const record = entry as Record<string, unknown>;
+  if (typeof record.key !== "string" || !SECRET_KEY_PATTERN.test(record.key)) return undefined;
+  return {
+    key: record.key,
+    ...(typeof record.description === "string" ? { description: record.description } : {}),
+    ...(typeof record.required === "boolean" ? { required: record.required } : {}),
+  };
 }
 
 /** Read and shape a directory's package.json; undefined when absent/malformed. */
@@ -206,7 +223,9 @@ function readPackageJson(dir: string): ExtensionPackageJson | undefined {
     const parsed = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as unknown;
     if (!parsed || typeof parsed !== "object") return undefined;
     const record = parsed as Record<string, unknown>;
-    const mikanRaw = record.mikan as { extensions?: unknown; displayName?: unknown } | undefined;
+    const mikanRaw = record.mikan as
+      | { extensions?: unknown; displayName?: unknown; secrets?: unknown[] }
+      | undefined;
     return {
       name: typeof record.name === "string" ? record.name : undefined,
       version: typeof record.version === "string" ? record.version : undefined,
@@ -216,6 +235,9 @@ function readPackageJson(dir: string): ExtensionPackageJson | undefined {
           ? mikanRaw.extensions.filter((entry): entry is string => typeof entry === "string")
           : undefined,
         displayName: typeof mikanRaw?.displayName === "string" ? mikanRaw.displayName : undefined,
+        secrets: Array.isArray(mikanRaw?.secrets)
+          ? mikanRaw.secrets.flatMap((entry) => readSecretDeclaration(entry) ?? [])
+          : undefined,
       },
     };
   } catch (err) {
@@ -278,11 +300,19 @@ function readManifest(rootDir: string): ExtensionManifest {
   if (EXTENSION_FILE_PATTERN.test(basename(rootDir))) return {};
 
   const pkg = readPackageJson(rootDir);
-  if (pkg && (pkg.mikan?.displayName ?? pkg.name ?? pkg.version ?? pkg.description)) {
+  if (
+    pkg &&
+    (pkg.mikan?.displayName ??
+      pkg.name ??
+      pkg.version ??
+      pkg.description ??
+      pkg.mikan?.secrets?.length)
+  ) {
     return {
       name: pkg.mikan?.displayName ?? pkg.name,
       version: pkg.version,
       description: pkg.description,
+      ...(pkg.mikan?.secrets?.length ? { secrets: pkg.mikan.secrets } : {}),
     };
   }
 
@@ -328,8 +358,9 @@ function schedulePrefix(slug: string, conversationId: string): string {
 }
 
 function payloadFromSpec(
-  spec: ExtensionScheduleSpec,
+  spec: ExtensionTextScheduleSpec,
   conversationId: string,
+  defaultPlatform: string,
 ): ExtensionSchedulePayload {
   // Per-type validation (schedule/timezone for periodic, at for one-shot)
   // is owned by the event-format builder.
@@ -337,7 +368,7 @@ function payloadFromSpec(
     type: spec.type,
     conversationId,
     text: spec.text,
-    ...(spec.platform ? { platform: spec.platform } : {}),
+    platform: spec.platform ?? defaultPlatform,
     ...(spec.type === "periodic"
       ? { schedule: spec.schedule, timezone: spec.timezone }
       : { at: spec.at }),
@@ -377,6 +408,10 @@ function buildExtensionApi(params: {
   const stateDir = services.stateDir ?? join(homedir(), ".mikan");
   const conversationId = context.conversationId;
   const conversationStateDir = officeStateDir(stateDir, context.address);
+  // Default platform for proactive messaging and schedules: the platform this
+  // conversation lives on. Extensions only name a platform explicitly when
+  // targeting a conversation on a different one.
+  const ownPlatform = context.address.platform;
 
   const requireScheduleStore = () => {
     if (!services.scheduleStore) {
@@ -384,6 +419,18 @@ function buildExtensionApi(params: {
     }
     return services.scheduleStore;
   };
+
+  const requireCallbackScheduleStore = () => {
+    if (!services.callbackScheduleStore) {
+      throw new Error(
+        "api.schedules callback specs are unavailable: this context provides no callback-schedule store",
+      );
+    }
+    return services.callbackScheduleStore;
+  };
+
+  const scheduleFilename = (scheduleName: string) =>
+    `${schedulePrefix(slug, conversationId)}${scheduleNameSegment(scheduleName)}${SCHEDULE_FILE_SUFFIX}`;
 
   return {
     on: (hook, handler) => registry.register(name, hook, handler),
@@ -413,29 +460,51 @@ function buildExtensionApi(params: {
     },
     schedules: {
       upsert: async (scheduleName, spec) => {
+        const nameSegment = scheduleNameSegment(scheduleName);
+        // One name namespace across both action kinds: an upsert switches the
+        // schedule's kind by also dropping its counterpart in the other store.
+        if (spec.callback !== undefined) {
+          await requireCallbackScheduleStore().upsert(slug, nameSegment, spec);
+          await services.scheduleStore?.delete(scheduleFilename(scheduleName));
+          return;
+        }
         const store = requireScheduleStore();
-        const filename = `${schedulePrefix(slug, conversationId)}${scheduleNameSegment(scheduleName)}${SCHEDULE_FILE_SUFFIX}`;
-        await store.write(filename, payloadFromSpec(spec, conversationId));
+        await store.write(
+          scheduleFilename(scheduleName),
+          payloadFromSpec(spec, conversationId, ownPlatform),
+        );
+        await services.callbackScheduleStore?.delete(slug, nameSegment);
       },
       delete: async (scheduleName) => {
-        const store = requireScheduleStore();
-        const filename = `${schedulePrefix(slug, conversationId)}${scheduleNameSegment(scheduleName)}${SCHEDULE_FILE_SUFFIX}`;
-        return store.delete(filename);
+        if (!services.scheduleStore && !services.callbackScheduleStore) requireScheduleStore();
+        const deletedCallback =
+          (await services.callbackScheduleStore?.delete(slug, scheduleNameSegment(scheduleName))) ??
+          false;
+        const deletedText =
+          (await services.scheduleStore?.delete(scheduleFilename(scheduleName))) ?? false;
+        return deletedCallback || deletedText;
       },
       list: async () => {
-        const store = requireScheduleStore();
-        const prefix = schedulePrefix(slug, conversationId);
+        if (!services.scheduleStore && !services.callbackScheduleStore) requireScheduleStore();
         const infos: ExtensionScheduleInfo[] = [];
-        for (const entry of await store.list()) {
-          if (!entry.filename.startsWith(prefix)) continue;
-          if (!entry.filename.endsWith(SCHEDULE_FILE_SUFFIX)) continue;
-          infos.push({
-            name: entry.filename.slice(prefix.length, -SCHEDULE_FILE_SUFFIX.length),
-            spec: specFromPayload(entry.payload),
-          });
+        if (services.scheduleStore) {
+          const prefix = schedulePrefix(slug, conversationId);
+          for (const entry of await services.scheduleStore.list()) {
+            if (!entry.filename.startsWith(prefix)) continue;
+            if (!entry.filename.endsWith(SCHEDULE_FILE_SUFFIX)) continue;
+            infos.push({
+              name: entry.filename.slice(prefix.length, -SCHEDULE_FILE_SUFFIX.length),
+              spec: specFromPayload(entry.payload),
+            });
+          }
+        }
+        if (services.callbackScheduleStore) {
+          infos.push(...(await services.callbackScheduleStore.list(slug)));
         }
         return infos;
       },
+      onCallback: (callbackName, handler) =>
+        registry.registerScheduleCallback(slug, callbackName, handler),
     },
     subagent: {
       run: async (request) => {
@@ -445,11 +514,43 @@ function buildExtensionApi(params: {
         return services.runSubagent(request, registry.getContributedTools());
       },
     },
-    notify: async (text: string, options?: { conversationId?: string }) => {
+    notify: async (
+      text: string,
+      options?: { conversationId?: string; platform?: string; threadTs?: string },
+    ) => {
       if (!services.postMessage) {
         throw new Error("api.notify is unavailable: this context provides no platform messaging");
       }
-      await services.postMessage(options?.conversationId ?? conversationId, text);
+      await services.postMessage(options?.conversationId ?? conversationId, text, {
+        platform: options?.platform ?? ownPlatform,
+        ...(options?.threadTs ? { threadTs: options.threadTs } : {}),
+      });
+    },
+    openDm: async (userId: string) => {
+      if (!services.openDirectConversation) {
+        throw new Error("api.openDm is unavailable: this context provides no DM resolution");
+      }
+      return services.openDirectConversation(userId, ownPlatform);
+    },
+    fetchHistory: async (options?: {
+      conversationId?: string;
+      oldest?: string;
+      limit?: number;
+    }) => {
+      if (!services.fetchHistory) {
+        throw new Error("api.fetchHistory is unavailable: this context provides no history reads");
+      }
+      const { conversationId: target, ...historyOptions } = options ?? {};
+      return services.fetchHistory(target ?? conversationId, {
+        ...historyOptions,
+        platform: ownPlatform,
+      });
+    },
+    listUsers: async () => {
+      if (!services.listUsers) {
+        throw new Error("api.listUsers is unavailable: this context provides no user listings");
+      }
+      return services.listUsers(ownPlatform);
     },
     blockkit: {
       post: async (message) => {
@@ -458,11 +559,15 @@ function buildExtensionApi(params: {
             "api.blockkit is unavailable: this context provides no Block Kit messaging",
           );
         }
-        return services.postBlocks(conversationId, {
-          text: message.text,
-          blocks: namespaceActionIds(message.blocks, slug),
-          threadTs: message.threadTs,
-        });
+        return services.postBlocks(
+          conversationId,
+          {
+            text: message.text,
+            blocks: namespaceActionIds(message.blocks, slug),
+            threadTs: message.threadTs,
+          },
+          ownPlatform,
+        );
       },
       update: async (messageTs, message) => {
         if (!services.updateBlocks) {
@@ -470,10 +575,15 @@ function buildExtensionApi(params: {
             "api.blockkit is unavailable: this context provides no Block Kit messaging",
           );
         }
-        await services.updateBlocks(conversationId, messageTs, {
-          text: message.text,
-          blocks: namespaceActionIds(message.blocks, slug),
-        });
+        await services.updateBlocks(
+          conversationId,
+          messageTs,
+          {
+            text: message.text,
+            blocks: namespaceActionIds(message.blocks, slug),
+          },
+          ownPlatform,
+        );
       },
       onAction: (actionId, handler) => registry.registerAction(slug, actionId, handler),
     },
@@ -481,13 +591,13 @@ function buildExtensionApi(params: {
       if (!services.addReaction) {
         throw new Error("api.react is unavailable: this context provides no reaction support");
       }
-      await services.addReaction(conversationId, messageTs, emoji);
+      await services.addReaction(conversationId, messageTs, emoji, ownPlatform);
     },
     uploadFile: async (filePath: string, title?: string) => {
       if (!services.uploadFile) {
         throw new Error("api.uploadFile is unavailable: this context provides no file uploads");
       }
-      await services.uploadFile(conversationId, filePath, title);
+      await services.uploadFile(conversationId, filePath, title, ownPlatform);
     },
     triggerRun: async (text: string) => {
       const store = requireScheduleStore();
@@ -495,7 +605,12 @@ function buildExtensionApi(params: {
       // api.schedules.list(), whose ownership filter is the "ext." prefix.
       // The embedder's watcher fires and deletes the file immediately.
       const filename = `extrun.${slug}.${scheduleNameSegment(conversationId)}.${Date.now()}-${runCounter++}${SCHEDULE_FILE_SUFFIX}`;
-      await store.write(filename, { type: "immediate", conversationId, text });
+      await store.write(filename, {
+        type: "immediate",
+        platform: ownPlatform,
+        conversationId,
+        text,
+      });
     },
   };
 }
@@ -538,6 +653,27 @@ export async function loadExtensions(
 
   for (const { entrypoint, rootDir, slug } of collectExtensions(options)) {
     try {
+      const manifest = readManifest(rootDir);
+      // Enforce declared-required secrets before importing: a clear
+      // provisioning hint beats whatever error the extension would throw at
+      // first `api.secrets.get` miss. Only enforceable when this context
+      // resolves secrets at all (`mikan ext dev` and secret-less embedders
+      // still activate; `api.secrets.get` returns undefined there).
+      if (services.resolveSecrets) {
+        const provisioned = services.resolveSecrets(slug);
+        const missing = (manifest.secrets ?? [])
+          .filter((secret) => secret.required && !(secret.key in provisioned))
+          .map((secret) => secret.key);
+        if (missing.length > 0) {
+          errors.push({
+            path: entrypoint,
+            error:
+              `missing required secrets: ${missing.join(", ")} — provision them in the admin ` +
+              `portal or in <stateDir>/vaults/extensions/${slug}/env`,
+          });
+          continue;
+        }
+      }
       const moduleExports: unknown = await importExtensionModule(entrypoint);
       const extension = resolveActivate(moduleExports);
       if (!extension) {
@@ -547,7 +683,6 @@ export async function loadExtensions(
         });
         continue;
       }
-      const manifest = readManifest(rootDir);
       const name = manifest.name ?? extension.name ?? slug;
       const api = buildExtensionApi({
         name,
@@ -695,6 +830,7 @@ export async function validateExtension(sourcePath: string): Promise<ExtensionVa
     description: manifest.description,
     entrypoint,
     skillNames,
+    secrets: manifest.secrets ?? [],
     errors,
     warnings,
   };

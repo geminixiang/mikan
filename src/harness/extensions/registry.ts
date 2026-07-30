@@ -16,6 +16,8 @@ import type {
   ExtensionCommand,
   ExtensionCommandContext,
   ExtensionDisposer,
+  ExtensionScheduleCallbackEvent,
+  ExtensionScheduleCallbackHandler,
   MessageEndHookEvent,
   MessageEndHookResult,
   MikanHookMap,
@@ -57,6 +59,8 @@ export class ExtensionRegistry {
   private commands = new Map<string, { owner: string; command: ExtensionCommand }>();
   /** Block action handlers keyed `<slug>\n<actionId>` (slug scopes, so no cross-extension dups). */
   private actions = new Map<string, { owner: string; handler: ExtensionBlockActionHandler }>();
+  /** Schedule callback handlers keyed `<slug>\n<callbackName>`, mirroring actions. */
+  private scheduleCallbacks = new Map<string, { handler: ExtensionScheduleCallbackHandler }>();
   private disposers: Array<{ owner: string; disposer: ExtensionDisposer }> = [];
 
   register<T extends MikanHookName>(owner: string, hook: T, handler: MikanHookMap[T]): void {
@@ -108,6 +112,53 @@ export class ExtensionRegistry {
       return;
     }
     this.actions.set(key, { owner: slug, handler });
+  }
+
+  /**
+   * Register a schedule callback handler under an extension slug. Invalid
+   * names throw (an activation error for that extension); a duplicate
+   * registration is logged and ignored (first wins), mirroring commands.
+   */
+  registerScheduleCallback(
+    slug: string,
+    callbackName: string,
+    handler: ExtensionScheduleCallbackHandler,
+  ): void {
+    if (!COMMAND_NAME_PATTERN.test(callbackName)) {
+      throw new Error(`Invalid schedule callback name: ${JSON.stringify(callbackName)}`);
+    }
+    const key = `${slug}\n${callbackName}`;
+    if (this.scheduleCallbacks.has(key)) {
+      log.logWarning(
+        `Extension schedule callback "${callbackName}" already registered by ${slug}`,
+        "ignoring duplicate registration",
+      );
+      return;
+    }
+    this.scheduleCallbacks.set(key, { handler });
+  }
+
+  /**
+   * Run the handler for a fired callback schedule. Returns true when a
+   * matching handler exists — including when it threw (the fire was
+   * consumed; the error is logged).
+   */
+  async dispatchScheduleCallback(
+    slug: string,
+    callbackName: string,
+    event: ExtensionScheduleCallbackEvent,
+  ): Promise<boolean> {
+    const entry = this.scheduleCallbacks.get(`${slug}\n${callbackName}`);
+    if (!entry) return false;
+    try {
+      await entry.handler(event);
+    } catch (err) {
+      log.logWarning(
+        `Extension schedule callback "${callbackName}" failed (${slug}, schedule "${event.scheduleName}")`,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+    return true;
   }
 
   /**

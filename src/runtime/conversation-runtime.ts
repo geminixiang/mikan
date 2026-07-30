@@ -7,11 +7,11 @@ import type {
   PlatformName,
   RunningSession,
 } from "../adapter.js";
-import { officeKey, type Workspace } from "../office/index.js";
+import { createOfficeAddress, officeKey, type Workspace } from "../office/index.js";
 import { createRunner } from "../agent.js";
 import type { PiAgentWrapper } from "../agent.js";
 import { MikanModels } from "../harness/index.js";
-import type { ExtensionBlockAction } from "../harness/index.js";
+import type { ExtensionBlockAction, ExtensionScheduleCallbackFire } from "../harness/index.js";
 import { defaultCommandHandlers, dispatchCommand } from "../commands/registry.js";
 import type { CommandHandler, CommandServices } from "../commands/types.js";
 import { isPrivateConversation } from "../commands/utils.js";
@@ -33,6 +33,7 @@ import { resolveChannelSessionFile } from "../sessions/store.js";
 import {
   assertSessionKeyBelongsToConversation,
   deriveSessionKey,
+  inferConversationKind,
 } from "../sessions/session-key.js";
 import { formatNothingRunning, formatStopped, formatStopping } from "../platform-messages.js";
 import * as Sentry from "@sentry/node";
@@ -411,6 +412,45 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     return consumed;
   }
 
+  /**
+   * Dispatch a fired extension callback schedule: materialize the
+   * conversation's harness instance (activating its extensions) and run the
+   * matching `onCallback` handler — deterministic, no agent run, no model
+   * call. Serialized on the session queue so fires never interleave with
+   * block actions or runs in the same conversation.
+   */
+  async handleExtensionScheduleCallback(fire: ExtensionScheduleCallbackFire): Promise<boolean> {
+    if (this.isShuttingDown) return false;
+    const address = createOfficeAddress(fire.platform as PlatformName, fire.conversationId);
+    const conversationId = fire.conversationId;
+    // Schedules belong to the conversation, not a thread: use the top-level
+    // session scope, like the schedules that fire agent runs.
+    const sessionKey = conversationId;
+    let consumed = false;
+    await this.sessions.enqueue(address, sessionKey, async () => {
+      try {
+        const state = await this.getOrCreateState({
+          address,
+          conversationId,
+          sessionKey,
+          currentMessageId: `extsched:${fire.slug}.${fire.scheduleName}`,
+          conversationKind: inferConversationKind(fire.platform, conversationId),
+        });
+        consumed = await state.runner.tryExtensionScheduleCallback(fire.slug, fire.callback, {
+          scheduleName: fire.scheduleName,
+          ...(fire.args !== undefined ? { args: fire.args } : {}),
+        });
+        if (consumed) state.lastAccessedAt = Date.now();
+      } catch (err) {
+        log.logWarning(
+          `[${conversationId}] Extension schedule dispatch failed (${fire.slug}.${fire.scheduleName} → ${fire.callback})`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    });
+    return consumed;
+  }
+
   async runSession({ event, bot, context }: RunSessionOptions): Promise<void> {
     const conversationId = event.conversationId;
     if (this.isShuttingDown) {
@@ -729,6 +769,10 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         platformReactor: this.options.platformReactor,
         platformUploader: this.options.platformUploader,
         platformBlockKit: this.options.platformBlockKit,
+        platformDmOpener: this.options.platformDmOpener,
+        platformHistoryFetcher: this.options.platformHistoryFetcher,
+        platformUserLister: this.options.platformUserLister,
+        extensionScheduleEngine: this.options.extensionScheduleEngine,
         platformToolPackFactories: this.options.platformToolPackFactories,
         models: this.resolvedModels,
       });

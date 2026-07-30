@@ -6,8 +6,11 @@ import {
   defaultExtensionDirs,
   extensionSlug,
   ExtensionRegistry,
+  listInstalledExtensions,
   loadExtensions,
   validateExtension,
+  type ExtensionCallbackScheduleSpec,
+  type ExtensionCallbackScheduleStore,
   type ExtensionSchedulePayload,
   type ExtensionScheduleStore,
 } from "../harness/index.js";
@@ -289,6 +292,21 @@ function createFakeScheduleStore() {
   return { files, store };
 }
 
+function createFakeCallbackScheduleStore() {
+  const entries = new Map<string, ExtensionCallbackScheduleSpec>();
+  const store: ExtensionCallbackScheduleStore = {
+    upsert: async (slug, name, spec) => {
+      entries.set(`${slug}\n${name}`, spec);
+    },
+    delete: async (slug, name) => entries.delete(`${slug}\n${name}`),
+    list: async (slug) =>
+      [...entries.entries()]
+        .filter(([key]) => key.startsWith(`${slug}\n`))
+        .map(([key, spec]) => ({ name: key.split("\n")[1]!, spec })),
+  };
+  return { entries, store };
+}
+
 describe("loadExtensions v2 api", () => {
   /**
    * Write a directory-form probe extension whose activate body can report
@@ -419,6 +437,7 @@ describe("loadExtensions v2 api", () => {
 
     expect(files.get("ext.probe.c123.daily-sweep.json")).toEqual({
       type: "periodic",
+      platform: "slack",
       conversationId: "C123",
       text: "review overdue follow-ups",
       schedule: "0 9 * * *",
@@ -426,6 +445,211 @@ describe("loadExtensions v2 api", () => {
     });
     expect(probe.read()).toEqual({ names: ["daily-sweep", "kickoff"], deleted: true });
     expect(files.has("ext.probe.c123.kickoff.json")).toBe(false);
+  });
+
+  test("mikan.secrets declarations surface in discovery and validation", async () => {
+    const { extDir } = writeProbeExtension("export default function activate() {}");
+    writeFileSync(
+      join(extDir, "package.json"),
+      JSON.stringify({
+        name: "probe",
+        version: "1.0.0",
+        mikan: {
+          secrets: [
+            { key: "SLACK_BOT_TOKEN", description: "standup reads", required: true },
+            { key: "OPENAI_API_KEY" },
+            { key: "not a key!" },
+            "garbage",
+          ],
+        },
+      }),
+    );
+
+    const expected = [
+      { key: "SLACK_BOT_TOKEN", description: "standup reads", required: true },
+      { key: "OPENAI_API_KEY" },
+    ];
+    const [installed] = listInstalledExtensions([dir]);
+    expect(installed?.secrets).toEqual(expected);
+    const validation = await validateExtension(extDir);
+    expect(validation.secrets).toEqual(expected);
+  });
+
+  test("a missing required secret fails activation with a provisioning hint", async () => {
+    const { extDir, out } = writeProbeExtension(
+      "export default function activate() { report({ activated: true }); }",
+    );
+    writeFileSync(
+      join(extDir, "package.json"),
+      JSON.stringify({
+        name: "probe",
+        mikan: {
+          secrets: [
+            { key: "SLACK_BOT_TOKEN", required: true },
+            { key: "OPENAI_API_KEY", required: false },
+          ],
+        },
+      }),
+    );
+
+    const denied = await loadExtensions({
+      dirs: [dir],
+      context,
+      services: { resolveSecrets: () => ({}) },
+    });
+    expect(denied.extensions).toHaveLength(0);
+    expect(denied.errors).toHaveLength(1);
+    expect(denied.errors[0]?.error).toContain("SLACK_BOT_TOKEN");
+    expect(denied.errors[0]?.error).toContain("vaults/extensions/probe/env");
+    expect(denied.errors[0]?.error).not.toContain("OPENAI_API_KEY");
+    expect(existsSync(out)).toBe(false);
+
+    const granted = await loadExtensions({
+      dirs: [dir],
+      context,
+      services: { resolveSecrets: () => ({ SLACK_BOT_TOKEN: "xoxb-1" }) },
+    });
+    expect(granted.errors).toHaveLength(0);
+    expect(granted.extensions).toHaveLength(1);
+  });
+
+  test("required secrets are not enforced when the context resolves no secrets", async () => {
+    const { extDir } = writeProbeExtension("export default function activate() {}");
+    writeFileSync(
+      join(extDir, "package.json"),
+      JSON.stringify({ name: "probe", mikan: { secrets: [{ key: "TOKEN", required: true }] } }),
+    );
+
+    const { extensions, errors } = await loadExtensions({ dirs: [dir], context });
+    expect(errors).toHaveLength(0);
+    expect(extensions).toHaveLength(1);
+  });
+
+  test("callback schedules route to the callback store and share one name namespace", async () => {
+    const { files, store } = createFakeScheduleStore();
+    const { entries, store: callbackStore } = createFakeCallbackScheduleStore();
+    const probe = writeProbeExtension(
+      `export default async function activate(api) {
+        await api.schedules.upsert("sweep", {
+          type: "periodic",
+          schedule: "30 9 * * *",
+          timezone: "Asia/Taipei",
+          callback: "process-boards",
+          args: { boardId: 7 },
+        });
+        const afterCallback = await api.schedules.list();
+        // Re-upserting the same name as a text schedule switches its kind.
+        await api.schedules.upsert("sweep", {
+          type: "periodic",
+          schedule: "0 10 * * *",
+          timezone: "Asia/Taipei",
+          text: "sweep as agent run",
+        });
+        const afterText = await api.schedules.list();
+        const deleted = await api.schedules.delete("sweep");
+        const afterDelete = await api.schedules.list();
+        report({
+          afterCallback,
+          afterTextNames: afterText.map((info) => info.name),
+          deleted,
+          afterDeleteCount: afterDelete.length,
+        });
+      }`,
+    );
+
+    const { errors } = await loadExtensions({
+      dirs: [dir],
+      context,
+      services: { scheduleStore: store, callbackScheduleStore: callbackStore },
+    });
+    expect(errors).toHaveLength(0);
+
+    const result = probe.read() as {
+      afterCallback: Array<{ name: string; spec: object }>;
+      afterTextNames: string[];
+      deleted: boolean;
+      afterDeleteCount: number;
+    };
+    expect(result.afterCallback).toEqual([
+      {
+        name: "sweep",
+        spec: {
+          type: "periodic",
+          schedule: "30 9 * * *",
+          timezone: "Asia/Taipei",
+          callback: "process-boards",
+          args: { boardId: 7 },
+        },
+      },
+    ]);
+    // After the text upsert the callback entry is gone and the event file exists.
+    expect(result.afterTextNames).toEqual(["sweep"]);
+    expect(result.deleted).toBe(true);
+    expect(result.afterDeleteCount).toBe(0);
+    expect(entries.size).toBe(0);
+    expect(files.size).toBe(0);
+  });
+
+  test("schedule callbacks register per slug and dispatch through the registry", async () => {
+    const { store: callbackStore } = createFakeCallbackScheduleStore();
+    const probe = writeProbeExtension(
+      `export default function activate(api) {
+        api.schedules.onCallback("process-boards", (event) => {
+          report({ scheduleName: event.scheduleName, args: event.args });
+        });
+      }`,
+    );
+
+    const { registry, errors } = await loadExtensions({
+      dirs: [dir],
+      context,
+      services: { callbackScheduleStore: callbackStore },
+    });
+    expect(errors).toHaveLength(0);
+
+    const consumed = await registry.dispatchScheduleCallback("probe", "process-boards", {
+      scheduleName: "sweep",
+      args: { boardId: 7 },
+    });
+    expect(consumed).toBe(true);
+    expect(probe.read()).toEqual({ scheduleName: "sweep", args: { boardId: 7 } });
+
+    const unknown = await registry.dispatchScheduleCallback("probe", "missing", {
+      scheduleName: "sweep",
+    });
+    expect(unknown).toBe(false);
+  });
+
+  test("invalid schedule callback names fail that extension's activation", async () => {
+    writeProbeExtension(
+      `export default function activate(api) {
+        api.schedules.onCallback("bad name!", () => {});
+      }`,
+    );
+
+    const { errors } = await loadExtensions({ dirs: [dir], context });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.error).toContain("Invalid schedule callback name");
+  });
+
+  test("callback specs surface an informative error without a callback store", async () => {
+    const probe = writeProbeExtension(
+      `export default async function activate(api) {
+        try {
+          await api.schedules.upsert("sweep", {
+            type: "one-shot",
+            at: "2099-01-01T00:00:00Z",
+            callback: "cb",
+          });
+        } catch (err) {
+          report({ error: String(err) });
+        }
+      }`,
+    );
+
+    const { errors } = await loadExtensions({ dirs: [dir], context });
+    expect(errors).toHaveLength(0);
+    expect((probe.read() as { error: string }).error).toMatch(/callback-schedule store/);
   });
 
   test("api.notify posts to the extension's conversation", async () => {
@@ -519,6 +743,130 @@ describe("loadExtensions v2 api", () => {
       { conversationId: "C123", text: "here" },
       { conversationId: "C999", text: "there" },
     ]);
+  });
+
+  test("api.notify defaults the platform to the conversation's own and forwards threadTs", async () => {
+    const posts: Array<{
+      conversationId: string;
+      text: string;
+      platform?: string;
+      threadTs?: string;
+    }> = [];
+    writeProbeExtension(
+      `export default async function activate(api) {
+        await api.notify("top level");
+        await api.notify("threaded", { threadTs: "1700000000.1" });
+        await api.notify("elsewhere", { conversationId: "T42", platform: "telegram" });
+      }`,
+    );
+
+    const { errors } = await loadExtensions({
+      dirs: [dir],
+      context,
+      services: {
+        postMessage: async (conversationId, text, options) => {
+          posts.push({ conversationId, text, platform: options?.platform, ...options });
+        },
+      },
+    });
+    expect(errors).toHaveLength(0);
+    expect(posts).toEqual([
+      { conversationId: "C123", text: "top level", platform: "slack" },
+      { conversationId: "C123", text: "threaded", platform: "slack", threadTs: "1700000000.1" },
+      { conversationId: "T42", text: "elsewhere", platform: "telegram" },
+    ]);
+  });
+
+  test("api.openDm resolves a DM conversation id on the extension's platform", async () => {
+    const opened: Array<{ userId: string; platform?: string }> = [];
+    const probe = writeProbeExtension(
+      `export default async function activate(api) {
+        const dm = await api.openDm("U777");
+        report({ dm });
+      }`,
+    );
+
+    const { errors } = await loadExtensions({
+      dirs: [dir],
+      context,
+      services: {
+        openDirectConversation: async (userId, platform) => {
+          opened.push({ userId, platform });
+          return "D555";
+        },
+      },
+    });
+    expect(errors).toHaveLength(0);
+    expect(opened).toEqual([{ userId: "U777", platform: "slack" }]);
+    expect(probe.read()).toEqual({ dm: "D555" });
+  });
+
+  test("api.fetchHistory reads this conversation by default and targets others explicitly", async () => {
+    const fetches: Array<{ conversationId: string; options?: object }> = [];
+    const probe = writeProbeExtension(
+      `export default async function activate(api) {
+        const own = await api.fetchHistory({ oldest: "1699.0", limit: 50 });
+        const other = await api.fetchHistory({ conversationId: "C999" });
+        report({ own: own.length, other: other.length });
+      }`,
+    );
+
+    const { errors } = await loadExtensions({
+      dirs: [dir],
+      context,
+      services: {
+        fetchHistory: async (conversationId, options) => {
+          fetches.push({ conversationId, options });
+          return [{ ts: "1700.1", text: "hi", isBot: false }];
+        },
+      },
+    });
+    expect(errors).toHaveLength(0);
+    expect(fetches).toEqual([
+      { conversationId: "C123", options: { oldest: "1699.0", limit: 50, platform: "slack" } },
+      { conversationId: "C999", options: { platform: "slack" } },
+    ]);
+    expect(probe.read()).toEqual({ own: 1, other: 1 });
+  });
+
+  test("api.listUsers lists the extension platform's users", async () => {
+    const probe = writeProbeExtension(
+      `export default async function activate(api) {
+        const users = await api.listUsers();
+        report({ ids: users.map((user) => user.id) });
+      }`,
+    );
+
+    const { errors } = await loadExtensions({
+      dirs: [dir],
+      context,
+      services: {
+        listUsers: async (platform) => [
+          { id: `${platform}-U1`, userName: "ada", displayName: "Ada", isBot: false },
+        ],
+      },
+    });
+    expect(errors).toHaveLength(0);
+    expect(probe.read()).toEqual({ ids: ["slack-U1"] });
+  });
+
+  test("service-less contexts surface informative errors for openDm, fetchHistory, listUsers", async () => {
+    const probe = writeProbeExtension(
+      `export default async function activate(api) {
+        const caught = [];
+        try { await api.openDm("U1"); } catch (err) { caught.push(String(err)); }
+        try { await api.fetchHistory(); } catch (err) { caught.push(String(err)); }
+        try { await api.listUsers(); } catch (err) { caught.push(String(err)); }
+        report({ caught });
+      }`,
+    );
+
+    const { errors } = await loadExtensions({ dirs: [dir], context });
+    expect(errors).toHaveLength(0);
+    const { caught } = probe.read() as { caught: string[] };
+    expect(caught[0]).toMatch(/DM resolution/);
+    expect(caught[1]).toMatch(/history reads/);
+    expect(caught[2]).toMatch(/user listings/);
   });
 
   test("api.uploadFile sends a host file into the extension's conversation", async () => {
@@ -625,6 +973,7 @@ describe("loadExtensions v2 api", () => {
     expect(runFiles).toHaveLength(1);
     expect(files.get(runFiles[0])).toEqual({
       type: "immediate",
+      platform: "slack",
       conversationId: "C123",
       text: "check the deploy now",
     });

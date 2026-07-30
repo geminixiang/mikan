@@ -135,16 +135,20 @@ describe("api.blockkit", () => {
       globalThis as unknown as { blockkitTestPost: () => Promise<{ ts: string }> }
     ).blockkitTestPost();
     expect(ts).toBe("100.1");
-    expect(postBlocks).toHaveBeenCalledWith("C123", {
-      text: "Q",
-      blocks: [
-        {
-          type: "actions",
-          elements: [{ type: "button", action_id: `ext:${slug}:vote`, value: "1" }],
-        },
-      ],
-      threadTs: undefined,
-    });
+    expect(postBlocks).toHaveBeenCalledWith(
+      "C123",
+      {
+        text: "Q",
+        blocks: [
+          {
+            type: "actions",
+            elements: [{ type: "button", action_id: `ext:${slug}:vote`, value: "1" }],
+          },
+        ],
+        threadTs: undefined,
+      },
+      "slack",
+    );
 
     const action: ExtensionBlockAction = {
       actionId: "vote",

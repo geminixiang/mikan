@@ -17,6 +17,9 @@ export const disabledVaultManager: VaultManager = {
   upsertEnv: () => {
     throw new Error("Vault not configured");
   },
+  deleteEnvKey: () => {
+    throw new Error("Vault not configured");
+  },
   upsertFile: () => {
     throw new Error("Vault not configured");
   },

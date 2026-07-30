@@ -33,6 +33,7 @@ conversation arm; nothing composes that path by hand.
 │       ├── settings.json              # conversation settings
 │       ├── extensions/<slug>/         # extension code installed for THIS conversation
 │       ├── extension-data/<slug>/     # that extension's data for THIS conversation
+│       ├── extension-schedules/       # callback schedules (<slug>.<name>.json, host-authoritative)
 │       └── git/<host>/<owner>/<repo>/ # packages declared for THIS conversation
 │
 ├── global/                            # the "all conversations" scope (sibling of one office)
@@ -75,13 +76,18 @@ the key's digest is one-way, so you cannot derive the id back from the path.
 
 ## API mapping
 
-| API / concept                     | Path                                                |
-| --------------------------------- | --------------------------------------------------- |
-| extension code (global install)   | `global/extensions/<slug>/`                         |
-| extension code (per conversation) | `conversations/<office key>/extensions/<slug>/`     |
-| `api.paths.dataDir`               | `conversations/<office key>/extension-data/<slug>/` |
-| `api.paths.sharedDataDir`         | `global/extension-data/<slug>/`                     |
-| conversation settings             | `conversations/<office key>/settings.json`          |
+| API / concept                     | Path                                                                |
+| --------------------------------- | ------------------------------------------------------------------- |
+| extension code (global install)   | `global/extensions/<slug>/`                                         |
+| extension code (per conversation) | `conversations/<office key>/extensions/<slug>/`                     |
+| `api.paths.dataDir`               | `conversations/<office key>/extension-data/<slug>/`                 |
+| `api.paths.sharedDataDir`         | `global/extension-data/<slug>/`                                     |
+| `api.schedules` (callback specs)  | `conversations/<office key>/extension-schedules/<slug>.<name>.json` |
+| conversation settings             | `conversations/<office key>/settings.json`                          |
+
+Callback-schedule files are host-authoritative on purpose: a fire runs a
+trusted host-side handler, so they must never live anywhere a sandboxed agent
+can write (the workspace events bus carries only agent-run `text` schedules).
 
 `api.paths.dataDir` remains the safe, per-conversation default;
 `sharedDataDir` remains the explicit cross-conversation opt-in. Only the
