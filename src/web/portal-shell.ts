@@ -23,13 +23,6 @@ export function requestBaseUrl(req: IncomingMessage): string {
 }
 
 /**
- * Read and size-limit an HTTP request body.
- *
- * Responds with 413 and destroys the request if the body exceeds `maxBytes`.
- * Resolves with the raw body string on success, or `null` if the size limit
- * was exceeded (the response has already been sent in that case).
- */
-/**
  * Read, size-limit, and JSON-parse a request body. Resolves null after
  * replying 413 (size limit, via readRawBody) or 400 (invalid JSON) — the
  * caller only proceeds on a parsed object.
@@ -51,6 +44,13 @@ export async function readJsonBody(
   }
 }
 
+/**
+ * Read and size-limit an HTTP request body.
+ *
+ * Responds with 413 and destroys the request if the body exceeds `maxBytes`.
+ * Resolves with the raw body string on success, or `null` if the size limit
+ * was exceeded (the response has already been sent in that case).
+ */
 export function readRawBody(
   req: IncomingMessage,
   res: ServerResponse,

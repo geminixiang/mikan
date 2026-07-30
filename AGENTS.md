@@ -91,7 +91,8 @@ Stack:
   - Use `dirname(path)` for parent directory creation. Avoid path tricks like `join(path, "..")`.
   - Keep `fs.watch`, streams, binary attachment writes, and sandbox/temp-file handling close to their call sites unless repeated behavior proves a helper is needed.
 - **Lint/format**:
-  - `oxlint` enforces correctness/suspicious rules as errors and unused vars as errors.
+  - `oxlint` enforces correctness/suspicious rules as errors, plus: no unused vars, no import cycles, max block depth 4, no `any` in production src (tests exempt), `import type` for type-only imports, and `node:` protocol on builtin imports.
+  - TypeScript runs with `strict` plus `verbatimModuleSyntax`, `noImplicitOverride/Returns`, and `noFallthroughCasesInSwitch`.
   - `oxfmt` is the formatter.
   - The Husky pre-commit hook runs the full gate: `lint`, `fmt:check`, `knip`, `build`, `test`.
 - **Tests**:

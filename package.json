@@ -111,15 +111,6 @@
       "undici": "6.27.0"
     }
   },
-  "lint-staged": {
-    "*.ts": [
-      "npm run lint",
-      "npm run fmt"
-    ],
-    "*.test.ts": [
-      "npm run test"
-    ]
-  },
   "engines": {
     "node": ">=22.19.0"
   },

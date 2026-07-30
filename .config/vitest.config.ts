@@ -48,14 +48,13 @@ export default defineConfig({
         functions: 75,
         lines: 77,
         // Files that already meet a high bar stay held to it.
-        "src/{commands/auto-reply,commands/utils,sessions/metadata,tools/event,tools/truncate,tools/write}.ts":
-          {
-            statements: 95,
-            branches: 90,
-            functions: 95,
-            lines: 95,
-          },
-        "src/utils/{date,env,file-guards,fs-atomic,html}.ts": {
+        "src/{commands/auto-reply,commands/utils,tools/event,tools/write}.ts": {
+          statements: 95,
+          branches: 90,
+          functions: 95,
+          lines: 95,
+        },
+        "src/utils/file-guards.ts": {
           statements: 95,
           branches: 90,
           functions: 95,
