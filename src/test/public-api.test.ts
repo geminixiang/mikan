@@ -38,7 +38,7 @@ const EXPECTED_RUNTIME_EXPORTS = [
   "extractSessionSuffix",
   "extractSessionUuid",
   "formatSkillsForPrompt",
-  "getChannelSessionDir",
+  "officeSessionsDir",
   "getSandboxAdapters",
   "getThreadSessionFile",
   "hasMaterializedChatSession",

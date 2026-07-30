@@ -1,4 +1,5 @@
 import type { SessionEntry } from "../harness/index.js";
+import { officeSessionsDir } from "../office/index.js";
 import { SessionStore } from "../harness/index.js";
 import type { ConversationLogMessage } from "../types.js";
 import { isRecord } from "../utils/file-guards.js";
@@ -12,7 +13,6 @@ import {
   createManagedSessionFile,
   createManagedSessionFileAtPath,
   extractSessionSuffix,
-  getChannelSessionDir,
   getThreadSessionFile,
   openManagedSession,
   resolveChannelSessionFile,
@@ -125,7 +125,7 @@ export class ChatHistorySync {
     options: ResolveChatSessionScopeOptions,
   ): Promise<ResolvedSessionScope> {
     const cwd = options.cwd ?? options.conversationDir;
-    const sessionDir = getChannelSessionDir(options.conversationDir);
+    const sessionDir = officeSessionsDir(options.conversationDir);
 
     if (!isThreadSessionKey(options.sessionKey)) {
       const contextFile = this.resolveTopLevelSessionFile({
@@ -192,7 +192,7 @@ export class ChatHistorySync {
             ) ?? undefined;
           return createManagedSessionFileAtPath(threadFile, cwd, parent);
         })()
-      : createManagedSessionFile(getChannelSessionDir(options.conversationDir), cwd);
+      : createManagedSessionFile(officeSessionsDir(options.conversationDir), cwd);
     const records = readConversationLog(options.conversationDir);
     const lastMessageId = latestSyncMessageId(records, {
       sessionKey: isThreadSessionKey(options.sessionKey) ? options.sessionKey : null,

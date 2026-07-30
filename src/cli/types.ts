@@ -14,10 +14,3 @@ export interface BootPlan {
   sandbox: SandboxConfig;
   downloadChannel?: string;
 }
-
-export interface ResolvedGitSource {
-  /** Local directory holding the extension (clone root or a subpath within). */
-  dir: string;
-  /** Remove the temporary clone. */
-  cleanup: () => void;
-}

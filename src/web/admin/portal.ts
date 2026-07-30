@@ -26,7 +26,7 @@ import {
   refreshPackage,
   removePackage,
 } from "../../packages/index.js";
-import { escapeHtml, readRawBody, renderPortalShell } from "../portal-shell.js";
+import { escapeHtml, readJsonBody, renderPortalShell } from "../portal-shell.js";
 import { resolveExistingSessionFile } from "../session-view/service.js";
 import { PRODUCT_NAME } from "../../platform-messages.js";
 import { credentialAuthorizationKey } from "../../sandbox/identity.js";
@@ -167,7 +167,7 @@ async function routeApiRequest(
     return;
   }
 
-  const body = await readJsonBody(req, res);
+  const body = await readJsonBody(req, res, 32 * 1024);
   if (!body) return;
 
   const rawToken = typeof body.token === "string" ? body.token : "";
@@ -1661,21 +1661,6 @@ function jsonRes(res: ServerResponse, status: number, body: unknown): void {
     "Cache-Control": "no-store",
   });
   res.end(JSON.stringify(body));
-}
-
-async function readJsonBody(
-  req: IncomingMessage,
-  res: ServerResponse,
-): Promise<Record<string, unknown> | null> {
-  const data = await readRawBody(req, res, 32 * 1024);
-  if (data === null) return null;
-
-  try {
-    return JSON.parse(data) as Record<string, unknown>;
-  } catch {
-    jsonRes(res, 400, { error: "Invalid JSON" });
-    return null;
-  }
 }
 
 const esc = escapeHtml;

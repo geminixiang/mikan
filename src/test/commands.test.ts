@@ -21,7 +21,8 @@ import { SandboxCommandHandler } from "../commands/sandbox.js";
 import { SessionViewCommandHandler } from "../commands/session-view.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
 import type { CommandContext, CommandHandler, CommandServices } from "../commands/types.js";
-import { createManagedSessionFile, getChannelSessionDir } from "../sessions/store.js";
+import { officeSessionsDir } from "../office/index.js";
+import { createManagedSessionFile } from "../sessions/store.js";
 import type { SandboxConfig } from "../sandbox/index.js";
 import type { VaultManager } from "../vault/index.js";
 
@@ -947,7 +948,7 @@ describe("SessionViewCommandHandler", () => {
       officeKey(createOfficeAddress("slack", conversationId)),
     );
     mkdirSync(conversationDir, { recursive: true });
-    createManagedSessionFile(getChannelSessionDir(conversationDir), conversationDir);
+    createManagedSessionFile(officeSessionsDir(conversationDir), conversationDir);
 
     const postPrivate = vi.fn(async () => {});
     const bot = fakeMessagingBot({ postPrivate });
@@ -1004,7 +1005,7 @@ describe("SessionViewCommandHandler", () => {
     );
     mkdirSync(conversationDir, { recursive: true });
     const expectedFile = createManagedSessionFile(
-      getChannelSessionDir(conversationDir),
+      officeSessionsDir(conversationDir),
       conversationDir,
     );
 

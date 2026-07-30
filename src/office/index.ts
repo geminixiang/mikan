@@ -17,6 +17,7 @@ export {
 } from "./address.js";
 export {
   createWorkspace,
+  officeSessionsDir,
   RESERVED_WORKSPACE_NAMES,
   type Office,
   type Workspace,

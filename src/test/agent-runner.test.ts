@@ -9,7 +9,8 @@ import { createSlackToolPack } from "../adapters/slack/tool-pack.js";
 import { createRunner } from "../agent.js";
 import { loadSkillsFromDir } from "../harness/skills.js";
 import { MikanAgentSession, MikanModels } from "../harness/index.js";
-import { createManagedSessionFile, getChannelSessionDir } from "../sessions/store.js";
+import { officeSessionsDir } from "../office/index.js";
+import { createManagedSessionFile } from "../sessions/store.js";
 import type { PlatformToolPackFactory } from "../tools/types.js";
 import { createOfficeAddress, createWorkspace, type Office } from "../office/index.js";
 
@@ -70,7 +71,7 @@ async function createTestRunner(
   const { models, faux } = createFauxModels();
   const office = testOffice();
   const conversationDir = office.ensure();
-  const sessionDir = getChannelSessionDir(conversationDir);
+  const sessionDir = officeSessionsDir(conversationDir);
   const contextFile = createManagedSessionFile(sessionDir, conversationDir);
 
   const runner = await createRunner({

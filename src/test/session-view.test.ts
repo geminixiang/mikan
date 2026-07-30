@@ -1,3 +1,4 @@
+import { officeSessionsDir } from "../office/index.js";
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -6,7 +7,6 @@ import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import {
   createManagedSessionFile,
   createManagedSessionFileAtPath,
-  getChannelSessionDir,
   getThreadSessionFile,
   openManagedSession,
 } from "../sessions/store.js";
@@ -76,7 +76,7 @@ describe("session view command grammar", () => {
 
 describe("resolveExistingSessionFile", () => {
   test("resolves the current channel session", () => {
-    const sessionDir = getChannelSessionDir(conversationDir);
+    const sessionDir = officeSessionsDir(conversationDir);
     const sessionFile = createManagedSessionFile(sessionDir, conversationDir);
 
     expect(resolveExistingSessionFile(join(workspaceDir, "D123"), "D123")).toBe(sessionFile);
@@ -96,7 +96,7 @@ describe("resolveExistingSessionFile", () => {
 
 describe("loadSessionViewModel", () => {
   test("maps session entries into a readable timeline", () => {
-    const sessionDir = getChannelSessionDir(conversationDir);
+    const sessionDir = officeSessionsDir(conversationDir);
     const sessionFile = createManagedSessionFile(sessionDir, conversationDir);
     const sessionManager = openManagedSession(sessionFile, conversationDir);
 
@@ -124,7 +124,7 @@ describe("loadSessionViewModel", () => {
   });
 
   test("preserves assistant content block order and bash execution status details", () => {
-    const sessionDir = getChannelSessionDir(conversationDir);
+    const sessionDir = officeSessionsDir(conversationDir);
     const sessionFile = createManagedSessionFile(sessionDir, conversationDir);
     const sessionManager = openManagedSession(sessionFile, conversationDir);
 
@@ -168,7 +168,7 @@ describe("loadSessionViewModel", () => {
   });
 
   test("keeps channel and thread sessions on separate pages while linking them", () => {
-    const sessionDir = getChannelSessionDir(conversationDir);
+    const sessionDir = officeSessionsDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
     const channelSession = openManagedSession(channelFile, conversationDir);
     channelSession.appendMessage({
@@ -200,7 +200,7 @@ describe("loadSessionViewModel", () => {
   });
 
   test("anchors fixed thread links to the root instead of earlier bootstrap context", () => {
-    const sessionDir = getChannelSessionDir(conversationDir);
+    const sessionDir = officeSessionsDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
     const channelSession = openManagedSession(channelFile, conversationDir);
     channelSession.appendMessage({ ...makeUserMessage("prior context"), timestamp: 1 });
@@ -225,7 +225,7 @@ describe("loadSessionViewModel", () => {
   });
 
   test("anchors non-timestamp thread files by matching the root message", () => {
-    const sessionDir = getChannelSessionDir(conversationDir);
+    const sessionDir = officeSessionsDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
     const channelSession = openManagedSession(channelFile, conversationDir);
     channelSession.appendMessage(

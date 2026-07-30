@@ -1,5 +1,4 @@
-import type { ConversationKind } from "../../adapter.js";
-import { resolveChatSessionKey } from "../../sessions/session-key.js";
+import { inferConversationKind, resolveChatSessionKey } from "../../sessions/session-key.js";
 import {
   conversationIdOf,
   makeThreadSessionKey,
@@ -32,10 +31,9 @@ export function isSlackThreadSessionKey(sessionKey: string): boolean {
 }
 
 export function resolveSlackSessionKey(channelId: string, threadTs?: string): string {
-  const conversationKind: ConversationKind = channelId.startsWith("D") ? "direct" : "shared";
   const sessionKey = resolveChatSessionKey({
     conversationId: channelId,
-    conversationKind,
+    conversationKind: inferConversationKind("slack", channelId),
     messageId: channelId,
     threadTs,
     persistentTopLevel: true,

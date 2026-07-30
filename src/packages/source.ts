@@ -33,6 +33,21 @@ const PROTOCOL_PREFIXES = ["https://", "http://", "ssh://", "git://", "file://"]
 const SCP_LIKE = /^[^@/\s]+@[^:/\s]+:/;
 
 /**
+ * Whether a source string spells a git source (vs a local path) — the one
+ * home of the prefix rule. Classification only; `parseSource` still owns
+ * validation and error messages.
+ */
+export function isGitSourceString(source: string): boolean {
+  const locator = source.trim();
+  return (
+    locator.startsWith("github:") ||
+    locator.startsWith("git:") ||
+    isProtocolUrl(locator) ||
+    SCP_LIKE.test(locator)
+  );
+}
+
+/**
  * Parse a source string. Throws with a user-facing message rather than
  * returning undefined: every caller (portal, settings load, CLI) needs to tell
  * the human what was wrong with what they typed.

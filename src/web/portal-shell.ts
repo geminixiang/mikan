@@ -29,6 +29,28 @@ export function requestBaseUrl(req: IncomingMessage): string {
  * Resolves with the raw body string on success, or `null` if the size limit
  * was exceeded (the response has already been sent in that case).
  */
+/**
+ * Read, size-limit, and JSON-parse a request body. Resolves null after
+ * replying 413 (size limit, via readRawBody) or 400 (invalid JSON) — the
+ * caller only proceeds on a parsed object.
+ */
+export async function readJsonBody(
+  req: IncomingMessage,
+  res: ServerResponse,
+  maxBytes: number,
+): Promise<Record<string, unknown> | null> {
+  const data = await readRawBody(req, res, maxBytes);
+  if (data === null) return null;
+
+  try {
+    return JSON.parse(data) as Record<string, unknown>;
+  } catch {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Invalid JSON" }));
+    return null;
+  }
+}
+
 export function readRawBody(
   req: IncomingMessage,
   res: ServerResponse,

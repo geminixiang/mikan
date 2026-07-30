@@ -159,7 +159,6 @@ export {
   createNewSessionFile,
   extractSessionSuffix,
   extractSessionUuid,
-  getChannelSessionDir,
   getThreadSessionFile,
   openManagedSession,
   resolveChannelSessionFile,
@@ -176,7 +175,12 @@ export {
   type RunSessionOptions,
 } from "./runtime/conversation-runtime.js";
 export { createConversationEvent, createConversationMessage } from "./adapter.js";
-export { createOfficeAddress, createWorkspace, officeKey } from "./office/index.js";
+export {
+  createOfficeAddress,
+  createWorkspace,
+  officeKey,
+  officeSessionsDir,
+} from "./office/index.js";
 export type { Office, Workspace } from "./office/index.js";
 export type {
   ChatAdapter,

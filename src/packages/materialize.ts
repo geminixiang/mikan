@@ -13,8 +13,8 @@
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { cpSync, existsSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { ensureDirExists, readTextFileIfExists } from "../utils/file-guards.js";
 import * as log from "../log.js";
 import { gitRepoPath, parseSource, sourceIdentity } from "./source.js";
@@ -257,6 +257,13 @@ function resolveSubpath(cloneDir: string, parsed: Extract<ParsedSource, { type: 
   const dir = join(cloneDir, parsed.subpath);
   if (!existsSync(dir)) {
     throw new Error(`Subpath not found in repository: ${parsed.subpath}`);
+  }
+  // A symlink inside the repository must not select files outside the clone:
+  // the returned directory is imported (extensions) or mounted, so follow
+  // links before deciding the subpath stayed inside.
+  const relation = relative(realpathSync(cloneDir), realpathSync(dir));
+  if (isAbsolute(relation) || relation === ".." || relation.startsWith(`..${sep}`)) {
+    throw new Error(`Subpath escapes repository: ${parsed.subpath}`);
   }
   return dir;
 }

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { MutableModels } from "@earendil-works/pi-ai";
-import { createOfficeAddress, createWorkspace } from "../office/index.js";
+import { createOfficeAddress, createWorkspace, officeSessionsDir } from "../office/index.js";
 import { createGlobalSettingsFile } from "../config.js";
 import type {
   MessagingBot,
@@ -17,7 +17,6 @@ import { MikanModels } from "../harness/index.js";
 import { ChatHistorySync, registerThreadSession } from "../sessions/chat-history-sync.js";
 import {
   createManagedSessionFile,
-  getChannelSessionDir,
   getThreadSessionFile,
   openManagedSession,
   resolveChannelSessionFile,
@@ -317,7 +316,7 @@ describe("ConversationRuntime lifecycle", () => {
     faux.setResponses([fauxAssistantMessage("memory preserved")]);
     const runtime = makeRuntime(models);
     const originalSession = createManagedSessionFile(
-      getChannelSessionDir(conversationDir),
+      officeSessionsDir(conversationDir),
       conversationDir,
     );
     const { event, context } = makeEventAndContext("1000.25");
@@ -337,7 +336,7 @@ describe("ConversationRuntime lifecycle", () => {
 
   test("new waits for the active run settlement before resetting and disposing", async () => {
     const runtime = makeRuntime();
-    const sessionDir = getChannelSessionDir(conversationDir);
+    const sessionDir = officeSessionsDir(conversationDir);
     const originalSession = createManagedSessionFile(sessionDir, conversationDir);
     let settle!: () => void;
     const runSettlement = new Promise<void>((resolve) => (settle = resolve));
@@ -412,7 +411,7 @@ describe("ConversationRuntime lifecycle", () => {
     faux.setResponses([fauxAssistantMessage("after reset")]);
     const runtime = makeRuntime(models);
     const originalSession = createManagedSessionFile(
-      getChannelSessionDir(conversationDir),
+      officeSessionsDir(conversationDir),
       conversationDir,
     );
     let releaseMaintenance!: () => void;
@@ -480,7 +479,7 @@ describe("ConversationRuntime lifecycle", () => {
     ]);
     const runtime = makeRuntime(models);
     const originalSession = createManagedSessionFile(
-      getChannelSessionDir(conversationDir),
+      officeSessionsDir(conversationDir),
       conversationDir,
     );
     openManagedSession(originalSession, conversationDir).appendMessage({
@@ -507,7 +506,7 @@ describe("ConversationRuntime lifecycle", () => {
     const { models, faux } = createFauxModels();
     const runtime = makeRuntime(models);
     const originalSession = createManagedSessionFile(
-      getChannelSessionDir(conversationDir),
+      officeSessionsDir(conversationDir),
       conversationDir,
     );
     rewriteSessionTimestamp(originalSession, "2026-01-05T12:00:00.000Z");
@@ -554,7 +553,7 @@ describe("ConversationRuntime lifecycle", () => {
     const { models, faux } = createFauxModels();
     const runtime = makeRuntime(models);
     const originalSession = createManagedSessionFile(
-      getChannelSessionDir(conversationDir),
+      officeSessionsDir(conversationDir),
       conversationDir,
     );
     rewriteSessionTimestamp(originalSession, "2026-01-05T12:00:00.000Z");
@@ -607,7 +606,7 @@ describe("ConversationRuntime lifecycle", () => {
   test("keeps the old shared session when automatic session Dream fails", async () => {
     const runtime = makeRuntime();
     const originalSession = createManagedSessionFile(
-      getChannelSessionDir(conversationDir),
+      officeSessionsDir(conversationDir),
       conversationDir,
     );
     rewriteSessionTimestamp(originalSession, "2026-01-05T12:00:00.000Z");
@@ -650,7 +649,7 @@ describe("ConversationRuntime lifecycle", () => {
     // write, so anything short of a clean stop has to block the rotation.
     const runtime = makeRuntime();
     const originalSession = createManagedSessionFile(
-      getChannelSessionDir(conversationDir),
+      officeSessionsDir(conversationDir),
       conversationDir,
     );
     rewriteSessionTimestamp(originalSession, "2026-01-05T12:00:00.000Z");
@@ -689,7 +688,7 @@ describe("ConversationRuntime lifecycle", () => {
   test("maintenance failure clears active state and keeps the runner reusable", async () => {
     const runtime = makeRuntime();
     const originalSession = createManagedSessionFile(
-      getChannelSessionDir(conversationDir),
+      officeSessionsDir(conversationDir),
       conversationDir,
     );
     let rejectMaintenance!: (reason: Error) => void;
@@ -751,7 +750,7 @@ describe("ConversationRuntime lifecycle", () => {
     ]);
     const runtime = makeRuntime(models);
     const originalSession = createManagedSessionFile(
-      getChannelSessionDir(conversationDir),
+      officeSessionsDir(conversationDir),
       conversationDir,
     );
     openManagedSession(originalSession, conversationDir).appendMessage({
@@ -771,7 +770,7 @@ describe("ConversationRuntime lifecycle", () => {
   test("memory failure leaves the current session intact", async () => {
     const runtime = makeRuntime();
     const originalSession = createManagedSessionFile(
-      getChannelSessionDir(conversationDir),
+      officeSessionsDir(conversationDir),
       conversationDir,
     );
     const responder = makeResponder();
@@ -839,7 +838,7 @@ describe("ConversationRuntime lifecycle", () => {
     faux.setResponses([fauxAssistantMessage("memory preserved")]);
     const runtime = makeRuntime(models);
     const originalSession = createManagedSessionFile(
-      getChannelSessionDir(conversationDir),
+      officeSessionsDir(conversationDir),
       conversationDir,
     );
 
@@ -855,7 +854,7 @@ describe("ConversationRuntime lifecycle", () => {
 
 describe("ChatHistorySync session scope", () => {
   test("uses a pre-registered empty thread session for event anchors", async () => {
-    const sessionDir = getChannelSessionDir(conversationDir);
+    const sessionDir = officeSessionsDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
     const channelSession = openManagedSession(channelFile, conversationDir);
     channelSession.appendMessage({

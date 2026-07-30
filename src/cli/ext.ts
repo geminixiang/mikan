@@ -20,7 +20,8 @@ import {
 } from "../harness/index.js";
 import { resolveStateDir, takeValueFlag } from "./arg-grammar.js";
 import { runExtDevCommand } from "./ext-dev.js";
-import { parseGitSource, resolveGitSource } from "./ext-git.js";
+import { materializeSource } from "../packages/materialize.js";
+import { isGitSourceString } from "../packages/source.js";
 import { officeStateDir } from "../office/index.js";
 import { resolveOwnedOfficeAddress } from "../office/index.js";
 
@@ -73,14 +74,12 @@ const USAGE = `Usage:
       Run an extension in a local stdin/stdout conversation — no Slack, no
       install. Edit, send /pi-new, test again.
   mikan ext install <source> (--global | --conversation <id>) [--state-dir <dir>]
-      <source>: a local path, or a git URL / github:owner/repo with optional #subpath
+      <source>: a local path, or a git URL / github:owner/repo with optional @ref and #subpath
       e.g. github:geminixiang/mikan#deploy/examples/extensions/agent-pm
       Reinstalling over an existing extension updates it (data preserved).
   mikan ext validate <path>
   mikan ext list [--conversation <id>] [--state-dir <dir>]
   mikan ext remove <slug> (--global | --conversation <id>) [--state-dir <dir>]`;
-
-function noop(): void {}
 
 export async function runExtCommand(argv: string[]): Promise<number> {
   const args = parseExtArgs(argv);
@@ -126,29 +125,30 @@ async function installAction(args: ExtArgs): Promise<number> {
     return 1;
   }
 
-  // Resolve the source: a git URL (optionally with #subpath) is cloned to a
-  // temp dir; a local path is used directly.
-  const gitSpec = parseGitSource(args.target);
+  // Resolve the source: a git source materializes through the packages layer
+  // (cached clone under the scope's git/ dir, @ref supported); a local path is
+  // used directly. `refresh` re-fetches so reinstall always picks up updates.
   let source: string;
-  let cleanup = noop;
-  if (gitSpec) {
+  if (isGitSourceString(args.target)) {
     try {
-      const resolved = resolveGitSource(gitSpec);
-      source = resolved.dir;
-      cleanup = resolved.cleanup;
+      source = materializeSource(args.target, {
+        scope: args.scope!,
+        address:
+          args.scope === "conversation"
+            ? resolveOwnedOfficeAddress(args.conversationId!, args.stateDir)
+            : undefined,
+        stateDir: args.stateDir,
+        mode: "refresh",
+      }).dir;
     } catch (err) {
-      console.error(`Failed to fetch ${gitSpec.url}: ${err instanceof Error ? err.message : err}`);
+      console.error(`Failed to fetch ${args.target}: ${err instanceof Error ? err.message : err}`);
       return 1;
     }
   } else {
     source = resolve(args.target);
   }
 
-  try {
-    return await installResolved(args, source, destDir);
-  } finally {
-    cleanup();
-  }
+  return await installResolved(args, source, destDir);
 }
 
 async function installResolved(args: ExtArgs, source: string, destDir: string): Promise<number> {

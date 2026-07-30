@@ -8,6 +8,7 @@ import {
   parseJsonValue,
   readTextFileIfExists,
 } from "../utils/file-guards.js";
+import { officeSessionsDir } from "../office/index.js";
 import { assertSessionSuffix, threadSuffixOf } from "./session-key.js";
 export type { ResolvedSessionScope, ThreadRootMessage } from "./types.js";
 export type { MikanSessionHeader } from "./types.js";
@@ -20,15 +21,6 @@ export function isPlatformHistorySession(sessionFile: string): boolean {
   } catch {
     return false;
   }
-}
-
-/**
- * Returns the shared session directory for a conversation.
- * Channel sessions use a current pointer within this directory.
- * Thread sessions are stored as fixed files within the same directory.
- */
-export function getChannelSessionDir(channelDir: string): string {
-  return join(channelDir, "sessions");
 }
 
 /**
@@ -172,7 +164,7 @@ function writeSessionHeader(
  * Returns the fixed session file path for a Slack thread.
  */
 export function getThreadSessionFile(channelDir: string, sessionKey: string): string {
-  const sessionDir = getChannelSessionDir(channelDir);
+  const sessionDir = officeSessionsDir(channelDir);
   return resolveChildPath(sessionDir, `${extractSessionSuffix(sessionKey)}.jsonl`);
 }
 
@@ -263,7 +255,7 @@ export function tryResolveThreadSession(sessionFile: string): string | null {
  * Returns null if no channel session exists.
  */
 export function resolveChannelSessionFile(channelDir: string): string | null {
-  return tryResolveCurrentSession(getChannelSessionDir(channelDir));
+  return tryResolveCurrentSession(officeSessionsDir(channelDir));
 }
 
 // Matches timestamped main session filenames; thread sessions use bare threadTs.
@@ -297,7 +289,7 @@ function findMainSessionActiveAtTime(
   channelDir: string,
   targetMs: number,
 ): ParentSessionRef | null {
-  const sessionDir = getChannelSessionDir(channelDir);
+  const sessionDir = officeSessionsDir(channelDir);
   if (!existsSync(sessionDir)) return null;
 
   let best: ParentSessionRef | null = null;

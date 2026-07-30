@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "crypto";
 import type { IncomingMessage, ServerResponse } from "http";
-import { escapeHtml, readRawBody, renderPortalShell, requestBaseUrl } from "../portal-shell.js";
+import { escapeHtml, readJsonBody, renderPortalShell, requestBaseUrl } from "../portal-shell.js";
 import { resolveLinkBaseUrl } from "../../config.js";
 import type { InMemoryLinkTokenStore } from "./store.js";
 import {
@@ -295,16 +295,30 @@ export function createLoginRequestHandler(
 
     if (req.method === "POST" && url.pathname === "/api/link/complete") {
       if (!enforceCsrf(req, res)) return true;
-      void readJsonBody(req, res, async (body) => {
-        await handleLinkComplete(body, linkTokenStore, vaultManager, notify, res);
+      void readJsonBody(req, res, 16 * 1024).then((body) => {
+        if (body === null) return;
+        return handleLinkComplete(
+          body as Partial<LinkCompleteBody>,
+          linkTokenStore,
+          vaultManager,
+          notify,
+          res,
+        );
       });
       return true;
     }
 
     if (req.method === "POST" && url.pathname === "/api/oauth/start") {
       if (!enforceCsrf(req, res)) return true;
-      void readJsonBody(req, res, async (body) => {
-        await handleOAuthStart(body, req, linkTokenStore, oauthStates, res);
+      void readJsonBody(req, res, 16 * 1024).then((body) => {
+        if (body === null) return;
+        return handleOAuthStart(
+          body as Partial<OAuthStartBody>,
+          req,
+          linkTokenStore,
+          oauthStates,
+          res,
+        );
       });
       return true;
     }
@@ -396,16 +410,6 @@ function requestOrigin(req: IncomingMessage): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-async function readJsonBody(
-  req: IncomingMessage,
-  res: ServerResponse,
-  onBody: (body: string) => Promise<void>,
-): Promise<void> {
-  const body = await readRawBody(req, res, 16 * 1024);
-  if (body === null) return;
-  await onBody(body);
 }
 
 // ── HTML helpers ───────────────────────────────────────────────────────────────
@@ -1167,21 +1171,12 @@ function renderSentryCliConfig(updates: Record<string, string>): string | undefi
 // ── API-key completion ────────────────────────────────────────────────────────
 
 async function handleLinkComplete(
-  body: string,
+  data: Partial<LinkCompleteBody>,
   linkTokenStore: InMemoryLinkTokenStore,
   vaultManager: VaultManager,
   notify: NotifyFn,
   res: ServerResponse,
 ): Promise<void> {
-  let data: Partial<LinkCompleteBody>;
-  try {
-    data = JSON.parse(body) as Partial<LinkCompleteBody>;
-  } catch {
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Invalid JSON" }));
-    return;
-  }
-
   if (!data.token) {
     res.writeHead(400, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Missing required field: token" }));
@@ -1283,21 +1278,12 @@ async function handleLinkComplete(
 // ── OAuth flow ────────────────────────────────────────────────────────────────
 
 async function handleOAuthStart(
-  body: string,
+  data: Partial<OAuthStartBody>,
   req: IncomingMessage,
   linkTokenStore: InMemoryLinkTokenStore,
   oauthStates: Map<string, PendingOAuthState>,
   res: ServerResponse,
 ): Promise<void> {
-  let data: Partial<OAuthStartBody>;
-  try {
-    data = JSON.parse(body) as Partial<OAuthStartBody>;
-  } catch {
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Invalid JSON" }));
-    return;
-  }
-
   if (!data.token || !data.serviceId) {
     res.writeHead(400, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Missing required fields: token/serviceId" }));

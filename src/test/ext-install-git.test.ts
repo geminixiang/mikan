@@ -4,38 +4,26 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { runExtCommand } from "../cli/ext.js";
-import { parseGitSource, resolveGitSource } from "../cli/ext-git.js";
+import { materializeSource } from "../packages/materialize.js";
+import { isGitSourceString, parseSource } from "../packages/source.js";
 
-describe("parseGitSource", () => {
-  test("https URL with #subpath", () => {
-    expect(parseGitSource("https://github.com/owner/repo.git#dir/ext")).toEqual({
-      url: "https://github.com/owner/repo.git",
-      subpath: "dir/ext",
-    });
-  });
-
-  test("github: shorthand expands to an https clone URL", () => {
-    expect(parseGitSource("github:owner/repo#ext")).toEqual({
-      url: "https://github.com/owner/repo.git",
-      subpath: "ext",
-    });
-  });
-
-  test("git@ SSH URL without subpath", () => {
-    expect(parseGitSource("git@github.com:owner/repo.git")).toEqual({
-      url: "git@github.com:owner/repo.git",
-    });
+describe("isGitSourceString", () => {
+  test("recognizes git source spellings", () => {
+    expect(isGitSourceString("https://github.com/owner/repo.git#dir/ext")).toBe(true);
+    expect(isGitSourceString("github:owner/repo#ext")).toBe(true);
+    expect(isGitSourceString("git@github.com:owner/repo.git")).toBe(true);
+    expect(isGitSourceString("file:///somewhere/repo")).toBe(true);
   });
 
   test("local paths are not git sources", () => {
-    expect(parseGitSource("./agent-pm")).toBeUndefined();
-    expect(parseGitSource("/abs/agent-pm")).toBeUndefined();
+    expect(isGitSourceString("./agent-pm")).toBe(false);
+    expect(isGitSourceString("/abs/agent-pm")).toBe(false);
   });
 
-  test("rejects unsafe #subpath values", () => {
+  test("parseSource rejects unsafe #subpath values", () => {
     for (const subpath of ["../../outside", "/outside", String.raw`..\outside`]) {
-      expect(() => parseGitSource(`https://github.com/owner/repo.git#${subpath}`)).toThrow(
-        /relative path without '\.\.'/,
+      expect(() => parseSource(`https://github.com/owner/repo.git#${subpath}`)).toThrow(
+        /must be a relative path/,
       );
     }
   });
@@ -87,15 +75,7 @@ describe("mikan ext install from git", () => {
     expect(existsSync(join(stateDir, "global", "extensions", "agent-pm", "index.mjs"))).toBe(true);
   });
 
-  test("resolveGitSource rejects unsafe subpaths", () => {
-    for (const subpath of ["../../outside", "/outside", String.raw`..\outside`]) {
-      expect(() => resolveGitSource({ url: `file://${repo}`, subpath })).toThrow(
-        /relative path without '\.\.'/,
-      );
-    }
-  });
-
-  test("resolveGitSource rejects subpaths through symlinks leaving the clone", () => {
+  test("materializeSource rejects subpaths through symlinks leaving the clone", () => {
     const outside = mkdtempSync(join(tmpdir(), "mikan-ext-git-outside-"));
     try {
       symlinkSync(outside, join(repo, "examples", "outside-link"), "dir");
@@ -107,7 +87,11 @@ describe("mikan ext install from git", () => {
       );
 
       expect(() =>
-        resolveGitSource({ url: `file://${repo}`, subpath: "examples/outside-link" }),
+        materializeSource(`file://${repo}#examples/outside-link`, {
+          scope: "global",
+          stateDir,
+          mode: "fetch",
+        }),
       ).toThrow(/Subpath escapes repository/);
     } finally {
       rmSync(outside, { recursive: true, force: true });

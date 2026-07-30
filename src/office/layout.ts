@@ -23,6 +23,16 @@ export const RESERVED_WORKSPACE_NAMES: ReadonlySet<string> = Object.freeze(
  * that office materialization uses on hot paths, so there is no process-wide
  * registry state.
  */
+/**
+ * An office's session files live in `<office dir>/sessions` — the one home of
+ * that rule. String-based for surfaces that hold a conversation dir rather
+ * than an `Office` value (mirrors `officeStateDir`); `Office.sessionsDir` is
+ * derived from it. Pointer/thread-file semantics live in `sessions/store`.
+ */
+export function officeSessionsDir(officeDir: string): string {
+  return join(officeDir, "sessions");
+}
+
 export function createWorkspace(options: { root: string; stateDir: string }): Workspace {
   // Paths are joined as given (no resolve) so values match what callers
   // passing the same root/stateDir strings computed before this module.
@@ -54,7 +64,7 @@ export function createWorkspace(options: { root: string; stateDir: string }): Wo
         dir,
         memoryPath: join(dir, "MEMORY.md"),
         skillsDir: join(dir, "skills"),
-        sessionsDir: join(dir, "sessions"),
+        sessionsDir: officeSessionsDir(dir),
         attachmentsDir: join(dir, "attachments"),
         logPath: join(dir, "log.jsonl"),
         stateDir: join(stateDir, "conversations", key),
