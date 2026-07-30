@@ -25,6 +25,10 @@ jobs:
       - name: Run Slack E2E
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # The CI model rides a custom "openrouter-ci" provider (see the
+          # models.json below); custom providers resolve their key from
+          # <NAME>_API_KEY, so re-export the same secret under that name.
+          OPENROUTER_CI_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           SLACK_APP_TOKEN: ${{ secrets.SLACK_APP_TOKEN }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_QA_USER_TOKEN: ${{ secrets.SLACK_QA_USER_TOKEN }}
@@ -41,11 +45,36 @@ jobs:
           mkdir -p "$WORKING_DIR"
 
           node dist/main.js --onboard --state-dir "$STATE_DIR"
-          # E2E runs on OpenRouter; onboard defaults to Anthropic, so point
-          # both the main model and the auto-reply judge at the CI model.
-          # (deepseek/deepseek-v4-flash was retired from this lane: it echoes
-          # stale tokens from polluted context — replays a previous turn's
-          # reply verbatim instead of following the new instruction.)
+          # E2E runs on OpenRouter with qwen3.7-flash. Lane history:
+          # deepseek-v4-flash echoed stale tokens from polluted context;
+          # gpt-oss-120b's OpenRouter routing intermittently returned empty
+          # or corrupted content (mandatory-reasoning endpoints + per-provider
+          # harmony parsing). qwen3.7-flash is not in pi-ai's built-in
+          # openrouter catalog yet — and a same-named custom provider is
+          # shadowed by the built-in — so it rides a custom "openrouter-ci"
+          # provider pointed at the same base URL.
+          mkdir -p "$HOME/.mikan"
+          cat > "$HOME/.mikan/models.json" <<'MODELS'
+          {
+            "providers": {
+              "openrouter-ci": {
+                "name": "OpenRouter (CI)",
+                "api": "openai-completions",
+                "baseUrl": "https://openrouter.ai/api/v1",
+                "models": [
+                  {
+                    "id": "qwen/qwen3.7-flash",
+                    "name": "Qwen: Qwen3.7 Flash",
+                    "reasoning": false,
+                    "contextWindow": 262144,
+                    "maxTokens": 32768,
+                    "cost": { "input": 0.1, "output": 0.4, "cacheRead": 0, "cacheWrite": 0 }
+                  }
+                ]
+              }
+            }
+          }
+          MODELS
           # The runner is a disposable single-tenant workspace on the host
           # sandbox, so opt into the trusted door policy explicitly — the
           # isolated default refuses host mode by design.
@@ -53,14 +82,8 @@ jobs:
             const fs = require("fs");
             const p = process.argv[1];
             const s = JSON.parse(fs.readFileSync(p, "utf8"));
-            // gpt-oss endpoints on OpenRouter reject reasoning-disabled
-            // requests ("Reasoning is mandatory for this endpoint"), and
-            // thinkingLevel "off" makes pi-ai send reasoning effort "none" —
-            // so this lane must run with a real thinking level. (The
-            // auto-reply judge is unaffected: it hardcodes reasoning
-            // "minimal" in its completeSimple call.)
-            const model = { provider: "openrouter", model: "openai/gpt-oss-120b" };
-            s.llm = { ...s.llm, ...model, thinkingLevel: "low", autoReply: { ...model } };
+            const model = { provider: "openrouter-ci", model: "qwen/qwen3.7-flash" };
+            s.llm = { ...s.llm, ...model, autoReply: { ...model } };
             s.sandbox = {
               ...s.sandbox,
               workspace: { doorPolicy: "trusted", layout: "shared-support" },
