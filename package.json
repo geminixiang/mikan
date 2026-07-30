@@ -53,7 +53,7 @@
     "lint:fix": "oxlint -c .config/oxlintrc.json --fix",
     "fmt": "oxfmt -c .config/oxfmtrc.json",
     "fmt:check": "oxfmt -c .config/oxfmtrc.json --check",
-    "knip": "knip",
+    "knip": "knip && knip --production --dependencies",
     "prepublishOnly": "npm run build",
     "prepare": "husky",
     "test:e2e": "vitest --run --config .config/vitest.e2e.config.ts",
@@ -116,12 +116,12 @@
   },
   "knip": {
     "entry": [
-      "src/index.ts",
-      "src/main.ts",
-      "src/cli/download.ts",
-      "src/observability/instrument.ts",
-      "src/harness/index.ts",
-      "src/sandbox/index.ts"
+      "src/index.ts!",
+      "src/main.ts!",
+      "src/cli/download.ts!",
+      "src/observability/instrument.ts!",
+      "src/harness/index.ts!",
+      "src/sandbox/index.ts!"
     ],
     "ignore": [
       "scripts/**",
