@@ -53,8 +53,14 @@ jobs:
             const fs = require("fs");
             const p = process.argv[1];
             const s = JSON.parse(fs.readFileSync(p, "utf8"));
+            // gpt-oss endpoints on OpenRouter reject reasoning-disabled
+            // requests ("Reasoning is mandatory for this endpoint"), and
+            // thinkingLevel "off" makes pi-ai send reasoning effort "none" —
+            // so this lane must run with a real thinking level. (The
+            // auto-reply judge is unaffected: it hardcodes reasoning
+            // "minimal" in its completeSimple call.)
             const model = { provider: "openrouter", model: "openai/gpt-oss-120b" };
-            s.llm = { ...s.llm, ...model, autoReply: { ...model } };
+            s.llm = { ...s.llm, ...model, thinkingLevel: "low", autoReply: { ...model } };
             s.sandbox = {
               ...s.sandbox,
               workspace: { doorPolicy: "trusted", layout: "shared-support" },
