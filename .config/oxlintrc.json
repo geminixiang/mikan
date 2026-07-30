@@ -8,6 +8,11 @@
   "rules": {
     "eslint/no-unused-vars": "error",
     "eslint/max-depth": "error",
+    "eslint/max-lines-per-function": [
+      "error",
+      { "max": 100, "skipBlankLines": true, "skipComments": true }
+    ],
+    "eslint/max-params": ["error", { "max": 5 }],
     "unicorn/prefer-node-protocol": "error",
     "import/no-cycle": "error",
     "typescript/no-explicit-any": "error",
@@ -17,10 +22,37 @@
   },
   "overrides": [
     {
-      "files": ["**/src/test/**", "**/e2e/**"],
+      "files": ["**/src/test/**", "**/e2e/**", "**/deploy/examples/**"],
       "rules": {
         "typescript/no-explicit-any": "off",
-        "typescript/consistent-type-imports": "off"
+        "typescript/consistent-type-imports": "off",
+        "eslint/max-lines-per-function": "off",
+        "eslint/max-params": "off"
+      }
+    },
+    {
+      "files": [
+        "**/src/agent.ts",
+        "**/src/adapters/discord/bot.ts",
+        "**/src/adapters/progressive-renderer.ts",
+        "**/src/adapters/slack/bot.ts",
+        "**/src/adapters/slack/response-lifecycle.ts",
+        "**/src/adapters/telegram/bot.ts",
+        "**/src/adapters/types.ts",
+        "**/src/commands/sandbox.ts",
+        "**/src/harness/extensions/loader.ts",
+        "**/src/harness/subagent-runner.ts",
+        "**/src/runtime/conversation-runtime.ts",
+        "**/src/sandbox/gondolin.ts",
+        "**/src/web/admin/portal.ts",
+        "**/src/web/login/portal.ts",
+        "**/src/web/session-view/portal.ts",
+        "**/src/web/session-view/service.ts",
+        "**/src/web/session-view/store.ts"
+      ],
+      "rules": {
+        "eslint/max-lines-per-function": "off",
+        "eslint/max-params": "off"
       }
     }
   ]
