@@ -12,8 +12,7 @@ import {
 } from "./sandbox/index.js";
 import { reportUserFacingError } from "./observability/sentry.js";
 import { normalizeSharedVaultName, type VaultManager } from "./vault/index.js";
-import { resolveVaultInjection } from "./vault/injection.js";
-import { allowsAmbientDefaultSharedVault } from "./vault/policy.js";
+import { allowsAmbientDefaultSharedVault, resolveVaultInjection } from "./vault/index.js";
 import {
   credentialAuthorizationKey,
   legacyExactCredentialAuthorizationKey,

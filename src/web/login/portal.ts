@@ -1,10 +1,7 @@
 import { createHash, randomBytes } from "crypto";
 import type { IncomingMessage, ServerResponse } from "http";
-import { escapeHtml } from "../../utils/html.js";
-import { readRawBody } from "../../utils/http-body.js";
-import { renderPortalShell } from "../portal-shell.js";
+import { escapeHtml, readRawBody, renderPortalShell, requestBaseUrl } from "../portal-shell.js";
 import { resolveLinkBaseUrl } from "../../config.js";
-import { requestBaseUrl } from "../request.js";
 import type { InMemoryLinkTokenStore } from "./store.js";
 import {
   getOAuthServices,

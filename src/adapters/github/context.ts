@@ -4,7 +4,7 @@ import {
   ConversationResponder,
   MessagingInfo,
 } from "../../adapter.js";
-import { resolveChatSessionKey } from "../../sessions/policy.js";
+import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import { createProgressiveRenderer, formatMarkdownToolResult } from "../progressive-renderer.js";
 import { formatGithubContinuation, type GithubMessagingBot } from "./bot.js";
 import { GITHUB_MAX_COMMENT_LENGTH } from "./client.js";

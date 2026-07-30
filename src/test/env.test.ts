@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach } from "vitest";
-import { readEnv, setEnvAliases } from "../utils/env.js";
+import { readEnv, setEnvAliases } from "../env-manifest.js";
 
 describe("readEnv", () => {
   beforeEach(() => {

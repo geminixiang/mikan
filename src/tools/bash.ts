@@ -8,7 +8,7 @@ import {
   formatSize,
   type TruncationResult,
   truncateTail,
-} from "./truncate.js";
+} from "@earendil-works/pi-agent-core";
 
 /**
  * Spill path for oversized bash output, inside the runtime workspace so the

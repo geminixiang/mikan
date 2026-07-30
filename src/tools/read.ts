@@ -9,7 +9,7 @@ import {
   formatSize,
   type TruncationResult,
   truncateHead,
-} from "./truncate.js";
+} from "@earendil-works/pi-agent-core";
 
 /**
  * Map of file extensions to MIME types for common image formats

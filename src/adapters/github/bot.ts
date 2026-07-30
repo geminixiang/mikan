@@ -10,8 +10,8 @@ import {
 } from "../../adapter.js";
 import * as log from "../../log.js";
 import { ensureDirExists, readJsonSchemaFileIfExists } from "../../utils/file-guards.js";
-import { atomicWritePrivateFile } from "../../utils/fs-atomic.js";
-import { resolveChatSessionKey } from "../../sessions/policy.js";
+import { atomicWritePrivateFile } from "../../utils/file-guards.js";
+import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import {
   appendBotResponseLog,
   appendChannelLog,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { formatLocalTimestamp } from "../utils/date.js";
+import { formatLocalTimestamp } from "../sessions/history-line.js";
 
 describe("formatLocalTimestamp", () => {
   test("formats a valid date", () => {

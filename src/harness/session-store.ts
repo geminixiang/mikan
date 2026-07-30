@@ -17,7 +17,7 @@ import { dirname, resolve } from "path";
 import { buildSessionContext as buildContextFromEntries } from "@earendil-works/pi-agent-core";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
-import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
+import { atomicWritePrivateFile } from "../utils/file-guards.js";
 import {
   CURRENT_SESSION_VERSION,
   type SessionContext,

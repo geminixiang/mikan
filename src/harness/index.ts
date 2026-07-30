@@ -45,7 +45,7 @@ export type {
   PeriodicEventPayload,
 } from "./types.js";
 export { ExtensionRegistry, parseCommandInput } from "./extensions/registry.js";
-export { EXT_ACTION_PREFIX, namespaceActionIds, parseExtActionId } from "./extensions/blockkit.js";
+export { EXT_ACTION_PREFIX, namespaceActionIds, parseExtActionId } from "./extensions/registry.js";
 export {
   defaultExtensionDirs,
   extensionSlug,

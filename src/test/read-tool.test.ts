@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { HostExecutor } from "../sandbox/host.js";
 import { createReadTool } from "../tools/read.js";
-import { DEFAULT_MAX_LINES } from "../tools/truncate.js";
+import { DEFAULT_MAX_LINES } from "@earendil-works/pi-agent-core";
 
 function textOf(result: { content: Array<{ type: string; text?: string }> }): string {
   const first = result.content[0];

@@ -1,5 +1,5 @@
 import { slashForms } from "./manifest.js";
-import { matchCommand } from "./parse.js";
+import { matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { formatCommandSummary, replyPrivatelyWithContext } from "./utils.js";
 

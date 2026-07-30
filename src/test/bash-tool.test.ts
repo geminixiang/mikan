@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { HostExecutor } from "../sandbox/host.js";
 import type { Executor } from "../sandbox/index.js";
 import { createBashTool } from "../tools/bash.js";
-import { DEFAULT_MAX_LINES } from "../tools/truncate.js";
+import { DEFAULT_MAX_LINES } from "@earendil-works/pi-agent-core";
 
 function textOf(result: { content: Array<{ type: string; text?: string }> }): string {
   const first = result.content[0];
@@ -106,8 +106,8 @@ describe("createBashTool", () => {
     const result = await tool.execute("1", { label: "lines", command: "yes x | head -n 3000" });
     expect(result.details?.truncation?.truncatedBy).toBe("lines");
     expect(result.details?.fullOutputPath).toBeUndefined();
-    // The trailing newline counts as a final empty line, hence 3001
-    expect(textOf(result)).toMatch(/Showing lines 1002-3001 of 3001\./);
+    // pi-agent-core's line counting ignores the trailing newline (wc -l semantics)
+    expect(textOf(result)).toMatch(/Showing lines 1001-3000 of 3000\./);
     expect(existsSync(join(dir, ".mikan"))).toBe(false);
   });
 

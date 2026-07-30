@@ -9,7 +9,7 @@
  */
 import { homedir } from "os";
 import { join, resolve } from "path";
-import { readEnv } from "../utils/env.js";
+import { readEnv } from "../env-manifest.js";
 
 export function defaultStateDir(): string {
   return join(homedir(), ".mikan");

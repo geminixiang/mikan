@@ -3,7 +3,7 @@ import { resolveWorkspaceProjection } from "../workspace-projection/index.js";
 import { runtimeResourceKey } from "../sandbox/identity.js";
 import { applyConversationWorkspacePolicy } from "../settings-mutation.js";
 import { slashForms } from "./manifest.js";
-import { matchCommand } from "./parse.js";
+import { matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler, ParsedSandboxCommand } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 

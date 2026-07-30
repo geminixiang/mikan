@@ -254,7 +254,7 @@ messaging / scheduling.
 | `api.notify(text)`                 | Post to this conversation without an agent run                             | `main.ts` `PlatformNotifier` → bot `postMessage`                                                |
 | `api.react(messageTs, emoji)`      | React to a message (ts from events the extension observed)                 | `main.ts` `PlatformReactor` → bot `addReaction`                                                 |
 | `api.uploadFile(path, …)`          | Upload a host file into this conversation                                  | `main.ts` `PlatformUploader` → bot file upload                                                  |
-| `api.blockkit.post/update`         | Interactive Block Kit messages                                             | `main.ts` `PlatformBlockKit`; `extensions/blockkit.ts` namespaces action ids as `ext:<slug>:`   |
+| `api.blockkit.post/update`         | Interactive Block Kit messages                                             | `main.ts` `PlatformBlockKit`; `extensions/registry.ts` namespaces action ids as `ext:<slug>:`   |
 | `api.paths.dataDir`                | **This conversation's** data dir (default; isolation free; mkdir-on-use)   | `conversations/<office key>/extension-data/<slug>/`                                             |
 | `api.paths.sharedDataDir`          | Cross-conversation data (**explicit** multi-tenant apps; self-partition)   | `global/extension-data/<slug>/`                                                                 |
 | `api.secrets.get/list`             | Read-only secrets                                                          | vault: `<stateDir>/vaults/extensions/<slug>/env`                                                |

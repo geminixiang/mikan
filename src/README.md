@@ -5,11 +5,11 @@ This directory is the TypeScript source root for mikan; the entries below descri
 ## Files
 
 - `adapter.ts`: Defines platform-neutral chat messages, bots, response contexts, events, and running-session interfaces.
-- `agent-events.ts`: Broadcasts agent event envelopes over server-sent events to connected session-view clients.
+- `agent-events.ts`: Broadcasts agent event envelopes over server-sent events to connected session-view clients, and serves the `/api/agent-events/stream` endpoint.
 - `agent.ts`: Agent runner — prompt, paths, run lifecycle, and `createRunner` (single module).
 - `config.ts`: Loads, normalizes, and saves global and conversation settings for models, sandbox, auto-reply, and portal URLs. Conversation-scoped functions take an `Office` and read/write the host-only office state dir; a legacy `<office dir>/settings.json` is migrated once and never read again.
 - `content.config.ts`: Declares the Starlight `docs` content collection for the documentation site.
-- `env-manifest.ts`: Declares the daemon's environment-variable interface as data; startup validation, `mikan env`, `--help`, and the pm2 deploy-template check derive from it.
+- `env-manifest.ts`: Declares the daemon's environment-variable interface as data; startup validation, `mikan env`, `--help`, and the pm2 deploy-template check derive from it. Also owns the read/write convention itself: `readEnv` (accepts `MIKAN_`-prefixed aliases) and `setEnvAliases`.
 - `events.ts`: Watches `events/` JSON files and fires immediate, one-shot, and periodic bot events.
 - `execution-resolver.ts`: Resolves the concrete executor and credential injection for an actor, office, vault, and sandbox.
 - `index.ts`: Exposes the package public API through barrel exports — commands, harness, sessions, runtime, sandbox, and the office values (`createWorkspace`, `createOfficeAddress`, `officeKey`, `Office`/`Workspace` types).

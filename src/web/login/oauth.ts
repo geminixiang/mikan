@@ -1,4 +1,4 @@
-import { readEnv } from "../../utils/env.js";
+import { readEnv } from "../../env-manifest.js";
 import { isRecord, parseJsonValue } from "../../utils/file-guards.js";
 import * as log from "../../log.js";
 

@@ -3,7 +3,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { namespaceActionIds, parseExtActionId } from "../harness/extensions/blockkit.js";
+import { namespaceActionIds, parseExtActionId } from "../harness/extensions/registry.js";
 import { ExtensionRegistry } from "../harness/extensions/registry.js";
 import { loadExtensions } from "../harness/extensions/loader.js";
 import type { ExtensionBlockAction } from "../harness/extensions/types.js";

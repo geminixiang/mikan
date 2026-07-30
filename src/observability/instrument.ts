@@ -1,7 +1,7 @@
 import * as Sentry from "@sentry/node";
 import { resolveStateDir } from "../cli/arg-grammar.js";
 import { resolveSentryDsn } from "../config.js";
-import { setEnvAliases } from "../utils/env.js";
+import { setEnvAliases } from "../env-manifest.js";
 import { createSentryInitOptions } from "./sentry.js";
 
 // Populate the STATE_DIR compat channel before Sentry reads settings.json.

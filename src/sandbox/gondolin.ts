@@ -14,8 +14,13 @@ import * as log from "../log.js";
 import type { ResourceLimits, SandboxLimitStatus, SandboxResourceController } from "../types.js";
 import { withRuntimeBootstrap } from "./container.js";
 import { SandboxError } from "./errors.js";
-import { createMountedRuntimePathContext } from "./path-context.js";
-import { execReadFile, execReadFileBase64, execWriteFile, shellEscape } from "./utils.js";
+import {
+  createMountedRuntimePathContext,
+  execReadFile,
+  execReadFileBase64,
+  execWriteFile,
+  shellEscape,
+} from "./utils.js";
 import type {
   ExecOptions,
   ExecResult,

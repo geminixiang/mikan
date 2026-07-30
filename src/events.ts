@@ -16,7 +16,7 @@ import { parseEventPayload } from "./harness/event-format.js";
 import { ensureDirExists } from "./utils/file-guards.js";
 import * as log from "./log.js";
 import { reportUserFacingError } from "./observability/sentry.js";
-import { inferConversationKind } from "./sessions/policy.js";
+import { inferConversationKind } from "./sessions/session-key.js";
 
 export type {
   ImmediateEvent,

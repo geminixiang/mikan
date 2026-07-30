@@ -26,9 +26,7 @@ import {
   refreshPackage,
   removePackage,
 } from "../../packages/index.js";
-import { escapeHtml } from "../../utils/html.js";
-import { readRawBody } from "../../utils/http-body.js";
-import { renderPortalShell } from "../portal-shell.js";
+import { escapeHtml, readRawBody, renderPortalShell } from "../portal-shell.js";
 import { resolveExistingSessionFile } from "../session-view/service.js";
 import { PRODUCT_NAME } from "../../platform-messages.js";
 import { credentialAuthorizationKey } from "../../sandbox/identity.js";

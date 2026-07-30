@@ -1,7 +1,7 @@
 import { type IncomingMessage, type ServerResponse } from "node:http";
 import { EventEmitter } from "node:events";
 import { describe, expect, test } from "vitest";
-import { readRawBody } from "../utils/http-body.js";
+import { readRawBody } from "../web/portal-shell.js";
 
 function makeReq(chunks: string[]): IncomingMessage {
   const emitter = new EventEmitter() as IncomingMessage;

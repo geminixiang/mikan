@@ -13,9 +13,8 @@ This directory defines sandbox abstractions, concrete sandbox executors, and sha
 - `identity.ts`: Separately derives collision-safe credential authorization keys and runtime resource keys.
 - `image.ts`: Parses and validates `image:<image>` sandbox configs, which must later resolve to a concrete container executor.
 - `index.ts`: Registers sandbox adapters and exposes parse, validate, and executor factory helpers, plus the per-adapter capability queries — `getSandboxCredentialCapabilities`, `getSandboxWorkspaceCapabilities`, and `assertSandboxSupportsWorkspacePolicy` (a backend without managed projection cannot honor an `isolated` door). `configureGondolinRuntime` is the one bootstrap seam an embedder calls before creating gondolin executors.
-- `path-context.ts`: Builds mounted runtime path contexts and translates runtime paths back to host paths.
 - `types.ts`: Defines all sandbox configs, executors, exec results, runtime path contexts, and adapter types.
-- `utils.ts`: Provides simple child-process execution, process-tree killing, shell escaping, and the shared base64-chunked file transport (`execReadFile`/`execWriteFile`) used by every exec-only executor.
+- `utils.ts`: Provides simple child-process execution, process-tree killing, shell escaping, the shared base64-chunked file transport (`execReadFile`/`execWriteFile`) used by every exec-only executor, and `createMountedRuntimePathContext` (runtime→host path translation for mounted workspaces).
 
 ## Host / sandbox path boundary (image mode)
 
@@ -116,7 +115,7 @@ Consequences to keep in mind:
 ### Paths in prompts and tool output
 
 The model only ever sees **runtime** paths (`/workspace/…`); the host only
-ever touches **host** paths. `path-context.ts` translates between them
+ever touches **host** paths. `createMountedRuntimePathContext` (`utils.ts`) translates between them
 (skill locations, upload paths). Extension-shipped skills are the exception:
 their files live under the host-only state dir, so their bodies are inlined
 into the system prompt instead of referenced by path.

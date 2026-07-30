@@ -2,7 +2,7 @@ import * as log from "../log.js";
 import { credentialAuthorizationKey } from "../sandbox/identity.js";
 import { sharedVaultKey } from "../vault/index.js";
 import { slashForms } from "./manifest.js";
-import { matchCommand } from "./parse.js";
+import { matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler, ParsedLoginCommand } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 import { createOfficeAddress } from "../office/index.js";

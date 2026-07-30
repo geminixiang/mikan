@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { escapeHtml } from "../utils/html.js";
+import { escapeHtml } from "../web/portal-shell.js";
 
 describe("escapeHtml", () => {
   test("escapes ampersand", () => {

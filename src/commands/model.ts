@@ -3,7 +3,7 @@ import type { ThinkingLevel as PiAiThinkingLevel } from "@earendil-works/pi-ai";
 import { resolveConversationSettings } from "../config.js";
 import { applyConversationSettings } from "../settings-mutation.js";
 import { slashForms } from "./manifest.js";
-import { matchCommand } from "./parse.js";
+import { matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler, ModelRegistry, ParsedModelCommand } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 

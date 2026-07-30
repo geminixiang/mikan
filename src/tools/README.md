@@ -17,6 +17,5 @@ Platform-specific tools live with their adapter (`adapters/slack/tools/`,
 - `sandbox.ts`: Defines the `sandbox` tool for inspecting or changing managed sandbox resource limits.
 - `subagent.ts`: Defines the `subagent` tool, which runs one fresh in-memory subagent, a bounded parallel `tasks[]` batch, or a small dependency DAG with explicit tools and budgets; node state streams through `AgentTool.onUpdate`.
 - `subagent-slots.ts`: `SubagentSlotPool` — the process-wide fan-out ceiling (`DEFAULT_GLOBAL_SUBAGENT_SLOTS`). Per-run caps alone would let N busy conversations hold N × cap live subagent sessions, so every launch also draws from this shared pool.
-- `truncate.ts`: Provides line/byte truncation and size-formatting helpers.
 - `types.ts`: The tool-side contracts — `PlatformToolPack` / `PlatformToolPackFactory` / `PlatformToolRunContext`, the event store interface, and the truncation option/result shapes.
 - `write.ts`: Defines the `write` tool, which writes file content (parent directories included) through `executor.writeFile`.

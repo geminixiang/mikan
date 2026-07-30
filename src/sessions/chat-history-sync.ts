@@ -2,10 +2,10 @@ import type { SessionEntry } from "../harness/index.js";
 import { SessionStore } from "../harness/index.js";
 import type { ConversationLogMessage } from "../types.js";
 import { isRecord } from "../utils/file-guards.js";
-import { isCommandText } from "../commands/text.js";
+import { isCommandText } from "../commands/manifest.js";
 import { readConversationLog } from "./conversation-log.js";
 import { formatHistoryLine, stripHistoryLinePrefix } from "./history-line.js";
-import { isPlatformHistorySession } from "./metadata.js";
+import { isPlatformHistorySession } from "./store.js";
 import { shouldRotateTopLevelSession } from "./rotation.js";
 import { isThreadSessionKey } from "./session-key.js";
 import {

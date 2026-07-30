@@ -240,7 +240,7 @@ adapter は 1 つの CLI 値を認識し、任意でそれを検証し、任意�
 
 ## 9. Vault と execution-resolution のインターフェース
 
-ソース: `src/vault/types.ts`。ポリシーは `src/vault/policy.ts`。
+ソース: `src/vault/types.ts`。ポリシーは `src/vault/index.ts`。
 
 `VaultManager` は、正規の actor key によって credential env と mount files を解決し、private/shared vaults を列挙・変更し、storage が有効かどうかを報告します。Secrets は host-only の state directory 配下に存在します。
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { formatSize, truncateHead, truncateTail } from "../tools/truncate.js";
+import { formatSize, truncateHead, truncateTail } from "@earendil-works/pi-agent-core";
 
 describe("formatSize", () => {
   test("formats bytes", () => {

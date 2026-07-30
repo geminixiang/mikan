@@ -5,7 +5,7 @@ import { Type } from "@sinclair/typebox";
 import type { ConversationKind } from "../adapter.js";
 import { buildEventPayload, EventTypeSchema, parseEventPayload } from "../harness/event-format.js";
 import * as log from "../log.js";
-import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
+import { atomicWritePrivateFile } from "../utils/file-guards.js";
 
 const eventSchema = Type.Object({
   action: Type.Optional(

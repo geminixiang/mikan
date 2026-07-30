@@ -1,3 +1,7 @@
+import type { ConversationKind } from "../adapter.js";
+export type { ResolveSessionKeyOptions } from "./types.js";
+import type { ResolveSessionKeyOptions } from "./types.js";
+
 /**
  * The session-key grammar. A session key is the conversation-scoped runtime
  * identity used to serialize and resume work (see CONTEXT.md):
@@ -109,4 +113,39 @@ export function conversationIdOf(sessionKey: string): string {
 export function threadSuffixOf(sessionKey: string): string | null {
   const separator = sessionKey.indexOf(":");
   return separator === -1 ? null : sessionKey.slice(separator + 1);
+}
+
+export function resolveChatSessionKey(options: ResolveSessionKeyOptions): string {
+  const {
+    conversationId,
+    conversationKind,
+    messageId,
+    persistentTopLevel,
+    scopeDirectThreads,
+    threadTs,
+  } = options;
+  if (conversationKind === "direct" && (!threadTs || !scopeDirectThreads)) {
+    return assertConversationId(conversationId);
+  }
+  if (!threadTs && persistentTopLevel) {
+    return assertConversationId(conversationId);
+  }
+  return makeThreadSessionKey(conversationId, threadTs || messageId);
+}
+
+export function inferConversationKind(platform: string, conversationId: string): ConversationKind {
+  if (platform === "slack") {
+    return conversationId.startsWith("D") ? "direct" : "shared";
+  }
+
+  if (platform === "telegram") {
+    return conversationId.startsWith("-") ? "shared" : "direct";
+  }
+
+  if (platform === "discord") {
+    return conversationId.startsWith("DM") ? "direct" : "shared";
+  }
+
+  // github: issues/PRs are always shared within the repo; there are no DMs.
+  return "shared";
 }

@@ -7,7 +7,7 @@ import type {
   SandboxAdapter,
 } from "./types.js";
 import { execReadFile, execReadFileBase64, execWriteFile } from "./utils.js";
-import { readEnv } from "../utils/env.js";
+import { readEnv } from "../env-manifest.js";
 import { SandboxError } from "./errors.js";
 
 const DEFAULT_CLOUDFLARE_CWD = "/workspace";

@@ -2,11 +2,25 @@ import { randomUUID } from "crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from "fs";
 import { basename, dirname, join, relative, resolve, sep } from "path";
 import { SessionStore } from "../harness/index.js";
-import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-guards.js";
-import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
-import { isPlatformHistorySession } from "./metadata.js";
+import {
+  atomicWritePrivateFile,
+  isRecord,
+  parseJsonValue,
+  readTextFileIfExists,
+} from "../utils/file-guards.js";
 import { assertSessionSuffix, threadSuffixOf } from "./session-key.js";
 export type { ResolvedSessionScope, ThreadRootMessage } from "./types.js";
+export type { MikanSessionHeader } from "./types.js";
+import type { MikanSessionHeader } from "./types.js";
+
+export function isPlatformHistorySession(sessionFile: string): boolean {
+  try {
+    const header = SessionStore.open(sessionFile).getHeader() as MikanSessionHeader | null;
+    return header?.source?.kind === "platform-history";
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Returns the shared session directory for a conversation.

@@ -3,7 +3,7 @@ import { basename, dirname, join } from "node:path";
 import { defaultExtensionDirs, listInstalledExtensions } from "../harness/index.js";
 import { effectiveStateDir } from "../cli/arg-grammar.js";
 import { slashForms } from "./manifest.js";
-import { matchCommand } from "./parse.js";
+import { matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { replyDiagnosticWithContext } from "./utils.js";
 

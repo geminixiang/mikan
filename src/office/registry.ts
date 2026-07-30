@@ -19,7 +19,7 @@ import {
 } from "./address.js";
 import { parseGithubConversationId } from "../adapters/github/ids.js";
 import { isRecord, readTextFileIfExists } from "../utils/file-guards.js";
-import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
+import { atomicWritePrivateFile } from "../utils/file-guards.js";
 
 const REGISTRY_VERSION = 1;
 const REGISTRY_FILENAME = "office-registry.json";

@@ -11,7 +11,7 @@ import {
   openManagedSession,
 } from "../sessions/store.js";
 import { parseUserBody } from "../web/session-view/portal.js";
-import { parseSessionViewCommand } from "../web/session-view/command.js";
+import { commandForms, matchCommand } from "../commands/manifest.js";
 import { loadSessionViewModel, resolveExistingSessionFile } from "../web/session-view/service.js";
 
 let workspaceDir: string;
@@ -60,15 +60,17 @@ function makeAssistantMessage(text: string): AssistantMessage {
   };
 }
 
-describe("parseSessionViewCommand", () => {
+describe("session view command grammar", () => {
+  const SESSION_VIEW_COMMANDS = commandForms("session");
+
   test("recognizes supported commands", () => {
-    expect(parseSessionViewCommand("session")).toEqual({ command: "session" });
-    expect(parseSessionViewCommand("/session")).toEqual({ command: "/session" });
-    expect(parseSessionViewCommand("/pi-session now")).toEqual({ command: "/pi-session" });
+    expect(matchCommand("session", SESSION_VIEW_COMMANDS)?.command).toBe("session");
+    expect(matchCommand("/session", SESSION_VIEW_COMMANDS)?.command).toBe("/session");
+    expect(matchCommand("/pi-session now", SESSION_VIEW_COMMANDS)?.command).toBe("/pi-session");
   });
 
   test("ignores unrelated text", () => {
-    expect(parseSessionViewCommand("hello there")).toBeNull();
+    expect(matchCommand("hello there", SESSION_VIEW_COMMANDS)).toBeNull();
   });
 });
 

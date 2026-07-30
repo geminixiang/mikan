@@ -1,6 +1,6 @@
 import { createConversationMessage } from "../adapter.js";
 import { slashForms } from "./manifest.js";
-import { matchCommand } from "./parse.js";
+import { matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 

@@ -1,5 +1,5 @@
 import type { ConversationKind } from "../../adapter.js";
-import { resolveChatSessionKey } from "../../sessions/policy.js";
+import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import {
   conversationIdOf,
   makeThreadSessionKey,

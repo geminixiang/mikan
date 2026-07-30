@@ -9,8 +9,7 @@ import type {
   RuntimePathContext,
   SandboxAdapter,
 } from "./types.js";
-import { killProcessTree } from "./utils.js";
-import { createMountedRuntimePathContext } from "./path-context.js";
+import { createMountedRuntimePathContext, killProcessTree } from "./utils.js";
 
 function parseHostSandboxArg(value: string): HostSandboxConfig | undefined {
   if (value === "host") {

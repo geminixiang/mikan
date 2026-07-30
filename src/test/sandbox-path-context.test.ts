@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { createMountedRuntimePathContext } from "../sandbox/path-context.js";
+import { createMountedRuntimePathContext } from "../sandbox/utils.js";
 
 describe("createMountedRuntimePathContext", () => {
   const pathContext = createMountedRuntimePathContext("/host/workspace", "/workspace");

@@ -12,7 +12,7 @@ import {
   resolveChannelSessionFile,
   tryResolveThreadSession,
 } from "../../sessions/store.js";
-import { isPlatformHistorySession } from "../../sessions/metadata.js";
+import { isPlatformHistorySession } from "../../sessions/store.js";
 import { isThreadSessionKey } from "../../sessions/session-key.js";
 import * as log from "../../log.js";
 

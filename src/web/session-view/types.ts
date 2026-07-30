@@ -5,11 +5,6 @@ import type { TokenRecord } from "../types.js";
 
 // ── command ──────────────────────────────────────────────────────────────────
 
-export interface ParsedSessionViewCommand {
-  /** The matched spelling, one of `commandForms("session")`. */
-  command: string;
-}
-
 // ── portal ───────────────────────────────────────────────────────────────────
 
 export interface SessionViewInteractiveOptions {

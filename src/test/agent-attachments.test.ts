@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { buildPromptPayload, translateAttachPathToHost } from "../agent.js";
 import type { ConversationMessage } from "../adapter.js";
-import { createMountedRuntimePathContext } from "../sandbox/path-context.js";
+import { createMountedRuntimePathContext } from "../sandbox/utils.js";
 
 let workspaceDir: string;
 

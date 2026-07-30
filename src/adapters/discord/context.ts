@@ -4,7 +4,7 @@ import {
   type ConversationResponder,
   type MessagingInfo,
 } from "../../adapter.js";
-import { resolveChatSessionKey } from "../../sessions/policy.js";
+import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import { createProgressiveRenderer, formatMarkdownToolResult } from "../progressive-renderer.js";
 import type { DiscordMessagingBot, DiscordEvent } from "./bot.js";
 

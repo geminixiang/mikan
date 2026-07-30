@@ -31,8 +31,7 @@ import * as log from "../../log.js";
 import { buildEventPayload } from "../event-format.js";
 import { loadSkillsFromDir } from "../skills.js";
 import type { MikanSkill } from "../types.js";
-import { namespaceActionIds } from "./blockkit.js";
-import { ExtensionRegistry } from "./registry.js";
+import { ExtensionRegistry, namespaceActionIds } from "./registry.js";
 import { officeStateDir } from "../../office/index.js";
 import type { OfficeAddress } from "../../types.js";
 import type {

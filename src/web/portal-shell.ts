@@ -1,5 +1,62 @@
-import { escapeHtml } from "../utils/html.js";
+import type { IncomingMessage, ServerResponse } from "http";
+import { resolveLinkBaseUrl } from "../config.js";
 import { PRODUCT_NAME } from "../platform-messages.js";
+
+export function escapeHtml(value: string): string {
+  return value.replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
+  );
+}
+
+export function requestBaseUrl(req: IncomingMessage): string {
+  const configured = resolveLinkBaseUrl();
+  if (configured) return configured;
+
+  const protoRaw = (req.headers["x-forwarded-proto"] as string | undefined)?.split(",")[0]?.trim();
+  const proto = protoRaw || "http";
+  const host =
+    (req.headers["x-forwarded-host"] as string | undefined)?.split(",")[0]?.trim() ||
+    req.headers.host ||
+    "localhost";
+  return `${proto}://${host}`;
+}
+
+/**
+ * Read and size-limit an HTTP request body.
+ *
+ * Responds with 413 and destroys the request if the body exceeds `maxBytes`.
+ * Resolves with the raw body string on success, or `null` if the size limit
+ * was exceeded (the response has already been sent in that case).
+ */
+export function readRawBody(
+  req: IncomingMessage,
+  res: ServerResponse,
+  maxBytes: number,
+): Promise<string | null> {
+  return new Promise<string | null>((resolve) => {
+    let data = "";
+    let tooLarge = false;
+
+    req.on("data", (chunk: Buffer) => {
+      if (tooLarge) return;
+      data += chunk.toString();
+      if (data.length > maxBytes) {
+        tooLarge = true;
+        res.writeHead(413);
+        res.end();
+        req.destroy();
+        resolve(null);
+      }
+    });
+    req.on("end", () => {
+      if (!tooLarge) resolve(data);
+    });
+    req.on("error", () => {
+      if (!tooLarge) resolve(data);
+    });
+  });
+}
 
 // ── Shared portal shell ────────────────────────────────────────────────────────
 //

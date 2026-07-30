@@ -4,7 +4,7 @@ import { createHash } from "crypto";
 import { readFileSync, statSync } from "fs";
 import { promisify } from "util";
 import * as log from "./log.js";
-import { readEnv } from "./utils/env.js";
+import { readEnv } from "./env-manifest.js";
 import { reportUserFacingError } from "./observability/sentry.js";
 
 const execFileAsync = promisify(execFile);

@@ -14,7 +14,7 @@ import { mkdirSync } from "fs";
 import { homedir } from "os";
 import { dirname, join } from "path";
 import type { Credential, CredentialInfo, CredentialStore } from "@earendil-works/pi-ai";
-import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
+import { atomicWritePrivateFile } from "../utils/file-guards.js";
 import * as log from "../log.js";
 
 /** Default location of mikan's credential file. */

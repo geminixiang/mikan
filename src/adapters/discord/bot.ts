@@ -30,7 +30,7 @@ import {
 import type { DiscordEvent } from "./types.js";
 import * as log from "../../log.js";
 import { createOfficeAddress, type Workspace } from "../../office/index.js";
-import { resolveChatSessionKey } from "../../sessions/policy.js";
+import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import { formatNothingRunning } from "../../platform-messages.js";
 import {
   appendBotResponseLog,

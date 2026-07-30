@@ -1,11 +1,15 @@
 import { resolveExistingSessionFile } from "../web/session-view/service.js";
-import { parseSessionViewCommand } from "../web/session-view/command.js";
+import { commandForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { formatCommandSummary, replyPrivatelyWithContext } from "./utils.js";
 
+// `session` is the only bare command (manifest `bare: true`), so its grammar
+// includes the slash-less spelling alongside the derived slash forms.
+const SESSION_VIEW_COMMANDS = commandForms("session");
+
 export class SessionViewCommandHandler implements CommandHandler {
   async tryHandle(context: CommandContext): Promise<boolean> {
-    if (!parseSessionViewCommand(context.commandText)) return false;
+    if (!matchCommand(context.commandText, SESSION_VIEW_COMMANDS)) return false;
 
     if (!context.privateConversation && !context.bot.postPrivate) {
       await replyPrivatelyWithContext(

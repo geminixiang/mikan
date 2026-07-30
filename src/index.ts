@@ -30,7 +30,7 @@ export {
   EXT_ACTION_PREFIX,
   namespaceActionIds,
   parseExtActionId,
-} from "./harness/extensions/blockkit.js";
+} from "./harness/extensions/registry.js";
 export {
   defaultExtensionDirs,
   extensionSlug,
@@ -149,10 +149,10 @@ export type {
   SyncChatSessionOptions,
   ThreadBootstrapWaitOptions,
 } from "./sessions/chat-history-sync.js";
-export { isPlatformHistorySession } from "./sessions/metadata.js";
-export type { MikanSessionHeader } from "./sessions/metadata.js";
-export { inferConversationKind, resolveChatSessionKey } from "./sessions/policy.js";
-export type { ResolveSessionKeyOptions } from "./sessions/policy.js";
+export { isPlatformHistorySession } from "./sessions/store.js";
+export type { MikanSessionHeader } from "./sessions/store.js";
+export { inferConversationKind, resolveChatSessionKey } from "./sessions/session-key.js";
+export type { ResolveSessionKeyOptions } from "./sessions/session-key.js";
 export {
   createManagedSessionFile,
   createManagedSessionFileAtPath,

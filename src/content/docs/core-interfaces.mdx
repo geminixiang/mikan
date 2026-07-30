@@ -279,7 +279,7 @@ Although the type is exported, adapter registration is currently a closed list i
 
 ## 9. Vault and execution-resolution interface
 
-Source: `src/vault/types.ts`; policy is in `src/vault/policy.ts`.
+Source: `src/vault/types.ts`; the injection and ambient-copy policy live in `src/vault/index.ts`.
 
 `VaultManager` resolves credential env and mount files by canonical actor key, lists and mutates private/shared vaults, and reports whether storage is enabled. Secrets live under the host-only state directory.
 

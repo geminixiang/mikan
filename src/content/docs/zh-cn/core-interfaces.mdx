@@ -279,7 +279,7 @@ Hook 错误会被记录并跳过。`before_agent_start` 和 `tool_result` 的重
 
 ## 9. Vault 与执行解析接口
 
-来源：`src/vault/types.ts`；策略在 `src/vault/policy.ts` 中。
+来源：`src/vault/types.ts`；策略在 `src/vault/index.ts` 中。
 
 `VaultManager` 按规范的 actor key 解析凭证 env 和 mount 文件，列出并修改私有/共享 vault，并报告存储是否启用。Secret 存放在仅主机的 state directory 下。
 

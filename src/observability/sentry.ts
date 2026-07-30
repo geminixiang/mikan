@@ -1,6 +1,6 @@
 import type { Breadcrumb, ErrorEvent, Event, EventHint, Scope } from "@sentry/node";
 import * as Sentry from "@sentry/node";
-import { readEnv } from "../utils/env.js";
+import { readEnv } from "../env-manifest.js";
 
 const REDACTED = "[REDACTED]";
 const REDACTED_PATH = "[REDACTED_PATH]";

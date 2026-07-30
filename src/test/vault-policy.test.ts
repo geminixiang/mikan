@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { allowsAmbientDefaultSharedVault } from "../vault/policy.js";
+import { allowsAmbientDefaultSharedVault } from "../vault/index.js";
 
 describe("allowsAmbientDefaultSharedVault", () => {
   test("membership + image allows ambient copy", () => {

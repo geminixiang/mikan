@@ -7,9 +7,9 @@ import { HostEventStore } from "../tools/event.js";
 import type { VaultManager } from "../vault/index.js";
 import { handleAdminRequest, type AdminRuntimeBridge } from "./admin/portal.js";
 import type { InMemoryAdminTokenStore } from "./admin/store.js";
-import { handleAgentEventsRequest } from "./agent-events/portal.js";
+import { handleAgentEventsRequest } from "../agent-events.js";
 import { createLoginRequestHandler } from "./login/portal.js";
-import { requestBaseUrl } from "./request.js";
+import { requestBaseUrl } from "./portal-shell.js";
 import type { InMemoryLinkTokenStore } from "./login/store.js";
 import type { NotifyFn } from "./login/types.js";
 import {

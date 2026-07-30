@@ -46,7 +46,7 @@ import {
   parseHttpIdleTimeoutMs,
 } from "./harness/index.js";
 import { existsSync, readFileSync } from "fs";
-import { readEnv, setEnvAliases } from "./utils/env.js";
+import { readEnv, setEnvAliases } from "./env-manifest.js";
 import { ensureDirExists, isRecord, readJsonFileIfExists } from "./utils/file-guards.js";
 import { SandboxError, validateSandbox } from "./sandbox/index.js";
 import { helpText, resolveBoot, type BootPlan } from "./cli/boot.js";

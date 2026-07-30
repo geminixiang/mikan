@@ -19,7 +19,7 @@ import {
 import { createOfficeAddress, type Workspace } from "../../office/index.js";
 import { COMMAND_MANIFEST, type SlackSlashRoute } from "../../commands/manifest.js";
 import { resolveConversationSettings } from "../../config.js";
-import { parseExtActionId } from "../../harness/extensions/blockkit.js";
+import { parseExtActionId } from "../../harness/extensions/registry.js";
 import type { EventsWatcher } from "../../events.js";
 import * as log from "../../log.js";
 import type { Attachment } from "../../types.js";

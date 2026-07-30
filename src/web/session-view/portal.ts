@@ -8,12 +8,10 @@ import {
   ConversationResponder,
 } from "../../adapter.js";
 import { createOfficeAddress } from "../../office/index.js";
-import { readRawBody } from "../../utils/http-body.js";
-import { escapeHtml } from "../../utils/html.js";
 import * as log from "../../log.js";
-import { renderPortalShell } from "../portal-shell.js";
+import { escapeHtml, readRawBody, renderPortalShell } from "../portal-shell.js";
 import { reportUserFacingError } from "../../observability/sentry.js";
-import { inferConversationKind } from "../../sessions/policy.js";
+import { inferConversationKind } from "../../sessions/session-key.js";
 import { isThreadSessionKey, threadSuffixOf } from "../../sessions/session-key.js";
 import {
   loadSessionViewModel,

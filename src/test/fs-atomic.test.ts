@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
+import { atomicWritePrivateFile } from "../utils/file-guards.js";
 
 describe("atomicWritePrivateFile", () => {
   let dir: string;

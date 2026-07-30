@@ -11,8 +11,10 @@ import { dirname, isAbsolute, join, normalize, sep } from "path";
 import { officeKey } from "../office/index.js";
 import { legacyConversationCredentialKey } from "../sandbox/identity.js";
 import type { OfficeAddress } from "../types.js";
-import { readTextFileIfExists } from "../utils/file-guards.js";
-import { atomicWritePrivateFile } from "../utils/fs-atomic.js";
+import { atomicWritePrivateFile, readTextFileIfExists } from "../utils/file-guards.js";
+import { reportUserFacingError } from "../observability/sentry.js";
+import type { SandboxConfig, SandboxCredentialCapabilities } from "../sandbox/types.js";
+import type { PlatformTrustModel } from "../types.js";
 
 const PRIVATE_DIR_MODE = 0o700;
 const SHARED_VAULT_DIR = "shared";
@@ -363,4 +365,66 @@ export function migrateConversationVaultKeys(options: {
     migrated.push(office.conversationId);
   }
   return { migrated, conflicts };
+}
+
+/**
+ * Decide whether a new conversation vault may inherit `sandbox.defaultSharedVault`.
+ *
+ * Ambient copy is a membership-trust convenience: only appropriate when the
+ * people who can drive the agent are already gated by platform membership
+ * (Slack/Discord/Telegram). Open-trigger surfaces (GitHub issue/PR comments)
+ * must not inherit ambient credentials — host-side platform identity or an
+ * explicitly provisioned vault only.
+ *
+ * Topology: only isolated sandboxes (`image` / `cloudflare`) auto-provision
+ * per-conversation vaults that receive the copy. `host` / `container` /
+ * `firecracker` do not use this ambient path.
+ */
+export function allowsAmbientDefaultSharedVault(options: {
+  trustModel?: PlatformTrustModel;
+  sandboxType: SandboxConfig["type"];
+}): boolean {
+  const trustModel = options.trustModel ?? "membership";
+  if (trustModel === "open-trigger") return false;
+  return options.sandboxType === "image" || options.sandboxType === "cloudflare";
+}
+
+export type { VaultInjection } from "./types.js";
+import type { VaultInjection } from "./types.js";
+
+export function resolveVaultInjection(options: {
+  vault: ResolvedVault | undefined;
+  capabilities: SandboxCredentialCapabilities;
+  sandboxType: SandboxConfig["type"];
+  /** Diagnostic identity for error reports only; no injection decision reads it. */
+  address: OfficeAddress;
+}): VaultInjection {
+  const { vault, capabilities, sandboxType, address } = options;
+  if (vault && vault.mounts.length > 0 && !capabilities.fileMounts) {
+    throw new Error(`Sandbox type "${sandboxType}" does not support vault file mounts`);
+  }
+
+  const mounts: ResolvedVaultMount[] = [];
+  for (const mount of vault?.mounts ?? []) {
+    if (!existsSync(mount.source)) {
+      reportUserFacingError(new Error("Vault mount source is missing"), {
+        domain: "sandbox",
+        surface: "vault_injection",
+        operation: "resolve_mounts",
+        severity: "warning",
+        context: {
+          sandboxType,
+          conversationId: address.conversationId,
+          target: mount.target,
+          hasVault: Boolean(vault),
+        },
+      });
+      continue;
+    }
+    mounts.push({ source: mount.source, target: mount.target });
+  }
+
+  const env =
+    capabilities.env && vault && Object.keys(vault.env).length > 0 ? vault.env : undefined;
+  return { ...(env ? { env } : {}), mounts };
 }
