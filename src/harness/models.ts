@@ -137,6 +137,35 @@ function envVarNameFor(providerName: string): string {
   return `${providerName.replace(/[^a-zA-Z0-9]+/g, "_").toUpperCase()}_API_KEY`;
 }
 
+/**
+ * Register models.json providers on top of the built-ins: a provider with its
+ * own model list replaces wholesale; a bare baseUrl/compat entry overrides a
+ * matching built-in in place. Returns a user-facing load error, if any —
+ * built-in models stay available either way.
+ */
+function applyModelsJson(
+  models: ReturnType<typeof builtinModels>,
+  modelsJsonPath: string,
+): string | undefined {
+  if (!existsSync(modelsJsonPath)) return undefined;
+  try {
+    const config = parseModelsJson(modelsJsonPath);
+    for (const [providerName, providerConfig] of Object.entries(config?.providers ?? {})) {
+      if (providerConfig.models && providerConfig.models.length > 0) {
+        models.setProvider(buildCustomProvider(providerName, providerConfig));
+      } else if (providerConfig.baseUrl || providerConfig.compat) {
+        const builtin = models.getProvider(providerName);
+        if (builtin) {
+          models.setProvider(overrideBuiltinProvider(builtin, providerConfig));
+        }
+      }
+    }
+    return undefined;
+  } catch (err) {
+    return `Failed to load ${modelsJsonPath}: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
 function buildCustomProvider(providerName: string, config: CustomProviderConfig): Provider {
   const api = config.api!;
   const displayName = config.name ?? providerName;
@@ -224,25 +253,7 @@ export class MikanModels {
     const authPath = options.authPath ?? defaultAuthPath();
     const modelsJsonPath = options.modelsJsonPath ?? defaultModelsJsonPath();
     const models = builtinModels({ credentials: new FileCredentialStore(authPath) });
-
-    let loadError: string | undefined;
-    if (existsSync(modelsJsonPath)) {
-      try {
-        const config = parseModelsJson(modelsJsonPath);
-        for (const [providerName, providerConfig] of Object.entries(config?.providers ?? {})) {
-          if (providerConfig.models && providerConfig.models.length > 0) {
-            models.setProvider(buildCustomProvider(providerName, providerConfig));
-          } else if (providerConfig.baseUrl || providerConfig.compat) {
-            const builtin = models.getProvider(providerName);
-            if (builtin) {
-              models.setProvider(overrideBuiltinProvider(builtin, providerConfig));
-            }
-          }
-        }
-      } catch (err) {
-        loadError = `Failed to load ${modelsJsonPath}: ${err instanceof Error ? err.message : String(err)}`;
-      }
-    }
+    const loadError = applyModelsJson(models, modelsJsonPath);
     return new MikanModels(models, loadError);
   }
 
