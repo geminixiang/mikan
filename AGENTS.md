@@ -154,13 +154,25 @@ Stack:
 - Make surgical changes only; avoid unrelated cleanup.
 - Preserve existing behavior unless the user explicitly asks to change it.
 - Do not remove intentional-looking functionality without asking first.
-- Reuse existing helpers and project patterns before adding new abstractions.
+- Reuse existing helpers and project patterns before adding new abstractions. For general-purpose helpers, check `@earendil-works/pi-agent-core` / `pi-ai` exports first — do not reimplement what the harness's own dependencies already ship (mikan's `truncate.ts` was an aging copy of pi's).
 - Avoid thin wrappers — functions that only delegate without adding logic, error handling, or meaningful abstraction. Inline them unless they have multiple call sites or encapsulate a non-trivial concern.
 - Delete indirection rather than polish it. If behavior is unchanged, always prefer the simpler structure.
 - Avoid `any` unless there is no practical typed alternative.
 - Check dependency type definitions in `node_modules` instead of guessing external APIs.
 - Use top-level imports; avoid inline/dynamic imports for normal code and type references.
 - Tool parameter schemas exposed to model providers must be object-rooted (`Type.Object` / top-level `type: "object"`). Do not use a top-level `Type.Union`, `anyOf`, or `oneOf`; OpenAI function tools reject schemas whose root is not explicitly an object. Represent alternate invocation modes as optional object properties, then enforce exclusivity and required-mode rules in runtime validation.
+
+## File-Split Scale
+
+A file split is a classification, and classification needs a scale — over-splitting is an error, not a style preference. Code written as piles of one-off-script files resists composition into larger architecture. A file earns its existence in exactly one of three ways:
+
+- **Slot**: it fills an existing convention axis (one file per tool, adapter, command handler, sandbox backend). The classification already exists; the file fills a slot without creating a new concept.
+- **Authority**: it is the single home of one rule (the session-key `:` grammar, the command manifest, the env manifest). Deleting it would make N callers each grow a diverging copy of the rule.
+- **Weight**: it holds knowledge a reader must absorb together. Function count and line count are not scales — two functions spanning 1000 lines can be a deep module; a 13-line single-use wrapper file is not.
+
+Non-reasons to split: "for testability" (test through the interface, not the file boundary); "conceptually different" (things that always change together live together); "might grow later" (split when it grows — splitting later is cheap, merging back is expensive because imports have already spread).
+
+The same scale read backwards finds merge candidates: two files implementing one authority (duplicate rules drifting apart) should collapse into one home.
 
 ## Verification
 
