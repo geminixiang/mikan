@@ -17,6 +17,7 @@ import {
   type SessionViewInteractiveOptions,
 } from "./session-view/portal.js";
 import type { InMemorySessionViewTokenStore } from "./session-view/store.js";
+import type { Workspace } from "../office/types.js";
 
 interface StartWebServerOptions {
   port: number;
@@ -27,7 +28,7 @@ interface StartWebServerOptions {
   sessionViewInteractive?: SessionViewInteractiveOptions;
   adminOptions?: {
     adminTokenStore: InMemoryAdminTokenStore;
-    workspace?: import("../office/types.js").Workspace;
+    workspace?: Workspace;
     runtime?: AdminRuntimeBridge;
     sandbox?: SandboxConfig;
     botsByPlatform?: Partial<Record<PlatformName, MessagingBot>>;

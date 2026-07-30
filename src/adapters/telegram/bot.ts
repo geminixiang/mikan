@@ -2,14 +2,13 @@ import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { Bot as GrammyMessagingBot, InputFile } from "grammy";
 import type { Message } from "grammy/types";
-import {
-  createConversationEvent,
-  type MessagingBot,
+import type {
   ConversationEvent,
   MessagingEventHandler,
   ConversationKind,
   MessagingInfo,
 } from "../../adapter.js";
+import { createConversationEvent, type MessagingBot } from "../../adapter.js";
 import type { TelegramEvent } from "./types.js";
 import * as log from "../../log.js";
 import { resolveChatSessionKey } from "../../sessions/session-key.js";

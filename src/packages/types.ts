@@ -3,6 +3,9 @@
  * in global or conversation settings, and the string typed into the admin
  * portal. Parsing it is {@link parseSource}'s job.
  */
+import type { Office } from "../office/types.js";
+import type { GlobalRunnerCacheControl, OfficeAddress, RunnerCacheControl } from "../types.js";
+
 export type PackageSourceString = string;
 
 /** Scope a package belongs to. `global` spans every conversation. */
@@ -77,7 +80,7 @@ export interface PackageSkillDir {
 
 export interface ResolvePackagesOptions {
   /** Office whose packages resolve; identity and state-dir keys derive from it. */
-  office: import("../office/types.js").Office;
+  office: Office;
   fetchMissing?: boolean;
 }
 
@@ -85,7 +88,7 @@ export type MaterializeMode = "offline" | "fetch" | "refresh";
 
 export interface MaterializeOptions {
   scope: PackageScope;
-  address?: import("../types.js").OfficeAddress;
+  address?: OfficeAddress;
   stateDir: string;
   mode?: MaterializeMode;
 }
@@ -107,8 +110,7 @@ export interface PackageInventory {
 }
 
 export interface PackageAdminContext extends ResolvePackagesOptions {
-  runtime?: import("../types.js").RunnerCacheControl &
-    import("../types.js").GlobalRunnerCacheControl;
+  runtime?: RunnerCacheControl & GlobalRunnerCacheControl;
 }
 
 export interface PackageWriteResult {

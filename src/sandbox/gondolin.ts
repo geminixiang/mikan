@@ -21,6 +21,7 @@ import {
   execWriteFile,
   shellEscape,
 } from "./utils.js";
+import type * as GondolinNamespace from "@earendil-works/gondolin";
 import type {
   ExecOptions,
   ExecResult,
@@ -49,7 +50,7 @@ export type { GondolinBootstrapOptions, SessionClient, SessionClientCallbacks } 
  * sync back first. A `kill -9` of mikan itself skips both and leaks a runner.
  */
 
-type GondolinModule = typeof import("@earendil-works/gondolin");
+type GondolinModule = typeof GondolinNamespace;
 type GondolinVm = InstanceType<GondolinModule["VM"]>;
 
 const MINIMUM_NODE_VERSION = [23, 6, 0] as const;

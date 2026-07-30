@@ -11,7 +11,7 @@ import {
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createConversationEvent } from "./adapter.js";
-import type { MessagingBot, ConversationKind } from "./adapter.js";
+import type { ConversationKind, MessagingBot, PlatformName } from "./adapter.js";
 import { parseEventPayload } from "./harness/event-format.js";
 import { ensureDirExists } from "./utils/file-guards.js";
 import * as log from "./log.js";
@@ -403,7 +403,7 @@ export class EventsWatcher {
 
     const eventId = filename.replace(/\.json$/i, "");
     const botEvent = createConversationEvent({
-      platform: event.platform as import("./adapter.js").PlatformName,
+      platform: event.platform as PlatformName,
       type: "mention",
       conversationId: event.conversationId,
       conversationKind: event.conversationKind,

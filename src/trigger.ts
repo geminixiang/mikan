@@ -7,6 +7,7 @@ const JUDGE_TIMEOUT_MS = 10_000;
 
 export type { AutoReplyJudge, TriggerIntent, TriggerResult } from "./types.js";
 import type { AutoReplyJudge, TriggerIntent, TriggerResult } from "./types.js";
+import type { Office } from "./office/types.js";
 
 /**
  * Trivially decide non-auto-reply intents synchronously. For "auto-reply-candidate"
@@ -27,7 +28,7 @@ export function decideTrigger(
  */
 export async function evaluateAutoReplyPolicy(input: {
   event: ConversationEvent;
-  office: import("./office/types.js").Office | undefined;
+  office: Office | undefined;
   judge?: AutoReplyJudge;
   timeoutMs?: number;
 }): Promise<TriggerResult> {
@@ -81,7 +82,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 async function judgeAutoReplyWithLlm(input: {
   event: ConversationEvent;
   rules: string[];
-  office: import("./office/types.js").Office;
+  office: Office;
 }): Promise<boolean> {
   const judgeConfig = loadAutoReplyJudgeModel(input.office);
   const models = MikanModels.create();

@@ -17,6 +17,7 @@ import { isThreadSessionKey } from "../../sessions/session-key.js";
 import * as log from "../../log.js";
 
 export type { SessionViewItem, SessionViewRelation, SessionViewModel } from "./types.js";
+import type { SessionHeader } from "../../harness/types.js";
 import type { SessionViewItem, SessionViewRelation, SessionViewModel } from "./types.js";
 
 export function resolveExistingSessionFile(
@@ -178,7 +179,7 @@ function buildSessionRelation(
 
 function resolveParentRelation(
   sessionFile: string,
-  header: import("../../harness/types.js").SessionHeader,
+  header: SessionHeader,
 ): SessionViewRelation | undefined {
   if (header.parentSession) {
     const parentPath = resolve(header.parentSession);

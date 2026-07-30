@@ -1,21 +1,18 @@
-import {
-  createConversationMessage,
-  type ConversationMessage,
-  ConversationResponder,
-  MessagingInfo,
-} from "../../adapter.js";
+import type { ConversationResponder, MessagingInfo } from "../../adapter.js";
+import { createConversationMessage, type ConversationMessage } from "../../adapter.js";
 import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import { createProgressiveRenderer, formatMarkdownToolResult } from "../progressive-renderer.js";
 import { formatGithubContinuation, type GithubMessagingBot } from "./bot.js";
 import { GITHUB_MAX_COMMENT_LENGTH } from "./client.js";
 import { parseGithubConversationId } from "./ids.js";
 import type { GithubEvent } from "./types.js";
+import type { OfficeAddress } from "../../adapter.js";
 
 export function createGithubAdapters(
   event: GithubEvent,
   bot: GithubMessagingBot,
 ): {
-  address: import("../../adapter.js").OfficeAddress;
+  address: OfficeAddress;
   message: ConversationMessage;
   responder: ConversationResponder;
   platform: MessagingInfo;

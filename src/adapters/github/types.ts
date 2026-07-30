@@ -1,5 +1,6 @@
 import type { ConversationEvent } from "../../adapter.js";
 import type { GcpTokenProvider } from "./gcp-auth.js";
+import type { Workspace } from "../../office/types.js";
 
 export interface GithubEvent extends ConversationEvent {
   type: "message" | "issue";
@@ -14,7 +15,7 @@ export interface GithubBotConfig {
   /** `owner/repo` entries to watch; empty = all installation repositories. */
   repos: string[];
   pollIntervalMs: number;
-  workspace: import("../../office/types.js").Workspace;
+  workspace: Workspace;
   /**
    * Where the poll watermark state (baseline + seen ids) is persisted. Lives
    * under the host-only state dir: the workspace dir can be mounted into

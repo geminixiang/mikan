@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import * as log from "../../log.js";
-import { GithubApiError, GithubClient, GITHUB_MAX_COMMENT_LENGTH, githubRetry } from "./client.js";
+import type { GithubClient } from "./client.js";
+import { GithubApiError, GITHUB_MAX_COMMENT_LENGTH, githubRetry } from "./client.js";
 import {
   CLOUD_BUILD_APP_SLUG,
   CloudBuildLogUnavailableError,
@@ -11,6 +12,7 @@ import {
 import { parseGithubConversationId } from "./ids.js";
 import { conversationRepoDir, GITHUB_PUSH_BRANCH_PATTERN, pushBranch, syncRepo } from "./repo.js";
 import { createOfficeAddress } from "../../office/index.js";
+import type { Workspace } from "../../office/index.js";
 import type {
   GithubBotConfig,
   GithubCheckSummary,
@@ -81,7 +83,7 @@ export class GithubOps implements PlatformGithubOps {
   constructor(
     private readonly client: GithubClient,
     private readonly config: {
-      workspace: import("../../office/types.js").Workspace;
+      workspace: Workspace;
       cloudBuild?: GithubBotConfig["cloudBuild"];
     },
   ) {}

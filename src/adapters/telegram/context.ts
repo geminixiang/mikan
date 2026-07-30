@@ -12,6 +12,7 @@ import { createProgressiveRenderer } from "../progressive-renderer.js";
 import { formatToolArgs } from "../shared.js";
 import { sanitizeTelegramHtml } from "./html.js";
 import type { TelegramMessagingBot, TelegramEvent } from "./bot.js";
+import type { OfficeAddress } from "../../adapter.js";
 
 // Telegram message length limit is 4096 chars; 3800 leaves headroom for HTML escapes.
 const MAX_LENGTH = 3800;
@@ -42,7 +43,7 @@ export function createTelegramAdapters(
   event: TelegramEvent,
   bot: TelegramMessagingBot,
 ): {
-  address: import("../../adapter.js").OfficeAddress;
+  address: OfficeAddress;
   message: ConversationMessage;
   responder: ConversationResponder;
   platform: MessagingInfo;

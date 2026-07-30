@@ -7,6 +7,7 @@ import {
 import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import { createProgressiveRenderer, formatMarkdownToolResult } from "../progressive-renderer.js";
 import type { DiscordMessagingBot, DiscordEvent } from "./bot.js";
+import type { OfficeAddress } from "../../adapter.js";
 
 // Discord hard limit is 2000 chars; 1900 leaves headroom for working indicator.
 const MAX_LENGTH = 1900;
@@ -21,7 +22,7 @@ export function createDiscordAdapters(
   event: DiscordEvent,
   bot: DiscordMessagingBot,
 ): {
-  address: import("../../adapter.js").OfficeAddress;
+  address: OfficeAddress;
   message: ConversationMessage;
   responder: ConversationResponder;
   platform: MessagingInfo;

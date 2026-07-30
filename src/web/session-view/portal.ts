@@ -1,11 +1,11 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename } from "node:path";
 import MarkdownIt from "markdown-it";
+import type { ConversationResponder } from "../../adapter.js";
 import {
   createConversationEvent,
   createConversationMessage,
   type ConversationContext,
-  ConversationResponder,
 } from "../../adapter.js";
 import { createOfficeAddress } from "../../office/index.js";
 import * as log from "../../log.js";

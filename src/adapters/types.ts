@@ -7,6 +7,8 @@ import type {
   OfficeAddress,
   SubagentProgressSnapshot,
 } from "../adapter.js";
+import type { Office } from "../office/types.js";
+import type { Attachment } from "../types.js";
 
 export type ChatResponseErrorOperation =
   | "respond"
@@ -160,14 +162,14 @@ export interface IncomingAttachment {
 
 /** Outcome of saving incoming attachments; error policy stays with the adapter. */
 export interface SavedAttachments {
-  saved: import("../types.js").Attachment[];
+  saved: Attachment[];
   failed: { name: string; error: unknown }[];
 }
 
 export interface MessageIntakeOptions<TEvent extends ConversationEvent> {
   eventBase: TEvent;
   /** The event's Conversation office; absent when auto-reply is unconfigured (embedders). */
-  office: import("../office/types.js").Office | undefined;
+  office: Office | undefined;
   isAutoReplyCandidate: boolean;
   magicWord: MagicWordIntakeOptions;
   /**

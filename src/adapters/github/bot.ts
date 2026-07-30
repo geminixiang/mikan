@@ -1,13 +1,8 @@
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import { Type } from "@sinclair/typebox";
-import {
-  createConversationEvent,
-  type ConversationEvent,
-  MessagingBot,
-  MessagingEventHandler,
-  MessagingInfo,
-} from "../../adapter.js";
+import type { MessagingBot, MessagingEventHandler, MessagingInfo } from "../../adapter.js";
+import { createConversationEvent, type ConversationEvent } from "../../adapter.js";
 import * as log from "../../log.js";
 import { ensureDirExists, readJsonSchemaFileIfExists } from "../../utils/file-guards.js";
 import { atomicWritePrivateFile } from "../../utils/file-guards.js";

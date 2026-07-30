@@ -111,7 +111,7 @@ export interface CommandContext {
   bot: MessagingBot;
   responder: ConversationContext["responder"];
   platform: PlatformName;
-  address: import("../adapter.js").OfficeAddress;
+  address: OfficeAddress;
   platformUserId: string;
   platformUserName?: string;
   conversationId: string;

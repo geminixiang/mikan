@@ -11,6 +11,7 @@
     "unicorn/prefer-node-protocol": "error",
     "import/no-cycle": "error",
     "typescript/no-explicit-any": "error",
+    "typescript/consistent-type-imports": "error",
     "unicorn/require-post-message-target-origin": "off",
     "eslint/no-await-in-loop": "off"
   },
@@ -18,7 +19,8 @@
     {
       "files": ["**/src/test/**", "**/e2e/**"],
       "rules": {
-        "typescript/no-explicit-any": "off"
+        "typescript/no-explicit-any": "off",
+        "typescript/consistent-type-imports": "off"
       }
     }
   ]

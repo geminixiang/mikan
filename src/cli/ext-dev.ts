@@ -37,6 +37,7 @@ import { updateConversationSettings } from "../config.js";
 import { formatSource, parseSource } from "../packages/index.js";
 import { resolveStateDir, takeValueFlag } from "./arg-grammar.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
+import type { Workspace } from "../office/types.js";
 
 const USAGE = `Usage:
   mikan ext dev <path|source> [--workspace <dir>] [--state-dir <dir>]
@@ -117,10 +118,7 @@ function write(text: string): void {
   process.stdout.write(`${text}\n`);
 }
 
-function runDevLoop(options: {
-  conversationId: string;
-  workspace: import("../office/types.js").Workspace;
-}): Promise<number> {
+function runDevLoop(options: { conversationId: string; workspace: Workspace }): Promise<number> {
   const { conversationId, workspace } = options;
 
   const platform: MessagingInfo = {

@@ -16,15 +16,17 @@ import {
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 
-import {
-  createConversationEvent,
-  createConversationMessage,
-  type MessagingBot,
+import type {
   ConversationContext,
   ConversationEvent,
   MessagingEventHandler,
   ConversationResponder,
   ChatToolResult,
+} from "../../adapter.js";
+import {
+  createConversationEvent,
+  createConversationMessage,
+  type MessagingBot,
   type MessagingInfo,
 } from "../../adapter.js";
 import type { DiscordEvent } from "./types.js";

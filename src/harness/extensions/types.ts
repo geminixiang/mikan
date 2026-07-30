@@ -34,6 +34,7 @@ import type {
   SubagentRunResult,
   CompactionEntry,
 } from "../types.js";
+import type { OfficeAddress } from "../../types.js";
 
 /**
  * Platform provenance of the run a hook event belongs to. Interactive runs
@@ -552,7 +553,7 @@ export interface LoadExtensionsOptions {
   roots?: string[];
   context: {
     /** Office identity; host-only state keys derive from it. */
-    address: import("../../types.js").OfficeAddress;
+    address: OfficeAddress;
     /** Raw platform id — what extension code sees and platform APIs accept. */
     conversationId: string;
     workspaceDir: string;

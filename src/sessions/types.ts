@@ -1,4 +1,5 @@
 import type { ConversationKind } from "../adapter.js";
+import type { SessionStore } from "../harness/index.js";
 import type { ConversationLogMessage } from "../types.js";
 
 // ── session metadata ─────────────────────────────────────────────────────────
@@ -79,7 +80,7 @@ export interface ResolveChatSessionScopeOptions {
 export interface SyncChatSessionOptions {
   conversationDir: string;
   sessionKey: string;
-  sessionManager: import("../harness/index.js").SessionStore;
+  sessionManager: SessionStore;
   /** The triggering platform message ID. Sync is capped before this turn to avoid future queued turns. */
   currentMessageId?: string;
 }

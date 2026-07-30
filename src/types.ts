@@ -8,6 +8,14 @@ import type {
 } from "./harness/event-format.js";
 import type { ExtensionBlockAction } from "./harness/extensions/types.js";
 import type { SubagentRunStatus } from "./harness/types.js";
+import type { SessionViewTokenStoreLike } from "./commands/types.js";
+import type { MikanModels } from "./harness/models.js";
+import type { Office } from "./office/types.js";
+import type { DockerContainerManager } from "./provisioner.js";
+import type { SandboxConfig } from "./sandbox/types.js";
+import type { ResolvedSessionScope } from "./sessions/types.js";
+import type { PlatformToolPackFactory } from "./tools/types.js";
+import type { VaultManager } from "./vault/types.js";
 
 const execFileAsync = promisify(execFile);
 type ExecFileAsync = typeof execFileAsync;
@@ -585,7 +593,7 @@ export interface DockerContainerManagerOptions {
 export interface ExecutionPlan {
   credentialKey: string;
   resourceKey: string;
-  sandboxConfig: import("./sandbox/types.js").SandboxConfig;
+  sandboxConfig: SandboxConfig;
   env?: Record<string, string>;
   mounts: ContainerMount[];
 }
@@ -609,7 +617,7 @@ export type TriggerResult = { trigger: true; reason: string } | { trigger: false
 export type AutoReplyJudge = (input: {
   event: ConversationEvent;
   rules: string[];
-  office: import("./office/types.js").Office;
+  office: Office;
 }) => Promise<boolean>;
 
 // ── shared implementation contracts ─────────────────────────────────────────
@@ -646,22 +654,22 @@ export type SettingsApplyResult =
   | { ok: false; reason: "busy" };
 
 export interface CreateRunnerOptions {
-  sandboxConfig: import("./sandbox/types.js").SandboxConfig;
+  sandboxConfig: SandboxConfig;
   sessionKey: string;
   /** The Conversation office this runner serves; identity and layout derive from it. */
-  office: import("./office/types.js").Office;
-  sessionScope: import("./sessions/types.js").ResolvedSessionScope;
-  vaultManager?: import("./vault/types.js").VaultManager;
-  provisioner?: import("./provisioner.js").DockerContainerManager;
+  office: Office;
+  sessionScope: ResolvedSessionScope;
+  vaultManager?: VaultManager;
+  provisioner?: DockerContainerManager;
   resourceController?: SandboxResourceController;
   sessionView?: {
-    tokenStore: import("./commands/types.js").SessionViewTokenStoreLike;
+    tokenStore: SessionViewTokenStoreLike;
     portalBaseUrl?: string;
   };
   platformNotifier?: PlatformNotifier;
   platformReactor?: PlatformReactor;
   platformUploader?: PlatformUploader;
   platformBlockKit?: PlatformBlockKit;
-  platformToolPackFactories?: readonly import("./tools/types.js").PlatformToolPackFactory[];
-  models?: import("./harness/models.js").MikanModels;
+  platformToolPackFactories?: readonly PlatformToolPackFactory[];
+  models?: MikanModels;
 }

@@ -9,13 +9,14 @@ import { createSlackResponseContext } from "./response-lifecycle.js";
 import { planSlackAdapterSession } from "./session.js";
 export type { SlackAdapterOptions } from "./types.js";
 import type { SlackAdapterOptions } from "./types.js";
+import type { OfficeAddress } from "../../adapter.js";
 
 export function createSlackAdapters(
   event: SlackEvent,
   slack: SlackMessagingBot,
   adapterOptions: SlackAdapterOptions = {},
 ): {
-  address: import("../../adapter.js").OfficeAddress;
+  address: OfficeAddress;
   message: ConversationMessage;
   responder: ConversationResponder;
   platform: MessagingInfo;

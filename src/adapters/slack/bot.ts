@@ -15,6 +15,7 @@ import {
   type ChatToolResult,
   type ConversationKind,
   type MessagingInfo,
+  type OfficeAddress,
 } from "../../adapter.js";
 import { createOfficeAddress, type Workspace } from "../../office/index.js";
 import { COMMAND_MANIFEST, type SlackSlashRoute } from "../../commands/manifest.js";
@@ -168,9 +169,7 @@ export class SlackMessagingBot implements MessagingBot {
     return this.workspace.office(createOfficeAddress("slack", channelId)).dir;
   }
 
-  private resolveReplyMode(
-    address: import("../../adapter.js").OfficeAddress,
-  ): "top-level" | "thread" {
+  private resolveReplyMode(address: OfficeAddress): "top-level" | "thread" {
     return (
       resolveConversationSettings(this.workspace.office(address)).slack?.replyMode ?? "top-level"
     );
