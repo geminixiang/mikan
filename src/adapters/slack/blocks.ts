@@ -111,8 +111,9 @@ function parseTable(tokens: Token[], index: number): { table: ParsedTable; next:
   let inHead = false;
   let i = index + 1;
 
-  for (; i < tokens.length && tokens[i].type !== "table_close"; i++) {
+  for (; i < tokens.length; i++) {
     const token = tokens[i];
+    if (token === undefined || token.type === "table_close") break;
     if (token.type === "thead_open") inHead = true;
     else if (token.type === "thead_close") inHead = false;
     else if (token.type === "tr_open") currentRow = [];

@@ -265,8 +265,8 @@ export class TelegramMessagingBot implements MessagingBot {
     const items: IncomingAttachment[] = [];
 
     // Photos: take the largest size for best quality.
-    if (message.photo && message.photo.length > 0) {
-      const photo = message.photo[message.photo.length - 1];
+    const photo = message.photo?.[message.photo.length - 1];
+    if (photo) {
       items.push(this.telegramFileItem(photo.file_id, `photo_${message.message_id}.jpg`));
     }
     if (message.document) {

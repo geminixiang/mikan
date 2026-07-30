@@ -62,13 +62,15 @@ export async function runExtDevCommand(argv: string[]): Promise<number> {
   let workspaceDir: string | undefined;
   const positional: string[] = [];
   for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === undefined) continue;
     let taken;
     if ((taken = takeValueFlag(argv, i, "--workspace"))) {
       workspaceDir = taken.value;
       i = taken.lastIndex;
     } else if ((taken = takeValueFlag(argv, i, "--state-dir"))) {
       i = taken.lastIndex; // already folded in by resolveStateDir
-    } else positional.push(argv[i]);
+    } else positional.push(arg);
   }
 
   const target = positional[0];

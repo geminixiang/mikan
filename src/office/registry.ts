@@ -707,8 +707,9 @@ export function resolveOwnedOfficeAddress(
   const matches = registry
     .getState()
     .offices.filter((record) => record.conversationId === rawConversationId);
-  if (matches.length === 1) {
-    return { platform: matches[0].platform, conversationId: rawConversationId };
+  const single = matches.length === 1 ? matches[0] : undefined;
+  if (single !== undefined) {
+    return { platform: single.platform, conversationId: rawConversationId };
   }
   if (matches.length > 1) {
     throw new Error(
@@ -722,8 +723,9 @@ export function resolveOwnedOfficeAddress(
     return { platform: migration.ownerPlatform, conversationId: rawConversationId };
   }
   const { enabledPlatforms } = registry.getState();
-  if (enabledPlatforms.length === 1) {
-    return { platform: enabledPlatforms[0], conversationId: rawConversationId };
+  const onlyPlatform = enabledPlatforms.length === 1 ? enabledPlatforms[0] : undefined;
+  if (onlyPlatform !== undefined) {
+    return { platform: onlyPlatform, conversationId: rawConversationId };
   }
   throw new Error(
     `No office is registered for conversation id ${JSON.stringify(rawConversationId)}`,

@@ -302,7 +302,7 @@ export class GithubClient {
       "GET",
       `/repos/${owner}/${repo}/pulls?state=open&head=${encodeURIComponent(`${owner}:${branch}`)}&per_page=1`,
     );
-    return prs && prs.length > 0 ? prs[0] : null;
+    return prs?.[0] ?? null;
   }
 
   /** CI check runs for a ref (branch, tag, or sha). Needs Checks: Read. */

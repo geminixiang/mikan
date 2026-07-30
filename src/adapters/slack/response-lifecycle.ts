@@ -64,11 +64,10 @@ function formatSlackToolResult(result: ChatToolResult): string {
 function closeOpenFences(text: string): string {
   let openMarker: string | null = null;
   for (const line of text.split("\n")) {
-    const match = line.match(/^\s*(`{3,}|~{3,})/);
-    if (!match) continue;
-    if (openMarker === null) openMarker = match[1];
-    else if (match[1][0] === openMarker[0] && match[1].length >= openMarker.length)
-      openMarker = null;
+    const marker = line.match(/^\s*(`{3,}|~{3,})/)?.[1];
+    if (marker === undefined) continue;
+    if (openMarker === null) openMarker = marker;
+    else if (marker[0] === openMarker[0] && marker.length >= openMarker.length) openMarker = null;
   }
   return openMarker ? `${text}\n${openMarker}` : text;
 }

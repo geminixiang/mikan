@@ -2,8 +2,8 @@ function htmlTableToText(tableHtml: string): string {
   const rows: string[][] = [];
   for (const rowMatch of tableHtml.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
     const cells: string[] = [];
-    for (const cellMatch of rowMatch[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)) {
-      cells.push(cellMatch[1].replace(/<[^>]+>/g, "").trim());
+    for (const cellMatch of (rowMatch[1] ?? "").matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)) {
+      cells.push((cellMatch[1] ?? "").replace(/<[^>]+>/g, "").trim());
     }
     if (cells.length > 0) rows.push(cells);
   }
@@ -14,14 +14,14 @@ function htmlTableToText(tableHtml: string): string {
   const colWidths: number[] = Array(numCols).fill(0);
   for (const row of rows) {
     for (let i = 0; i < row.length; i++) {
-      colWidths[i] = Math.max(colWidths[i], (row[i] ?? "").length);
+      colWidths[i] = Math.max(colWidths[i] ?? 0, (row[i] ?? "").length);
     }
   }
 
   const sep = "+" + colWidths.map((w) => "-".repeat(w + 2)).join("+") + "+";
   const lines: string[] = [sep];
   for (let i = 0; i < rows.length; i++) {
-    const cells = colWidths.map((w, j) => ` ${(rows[i][j] ?? "").padEnd(w)} `);
+    const cells = colWidths.map((w, j) => ` ${(rows[i]?.[j] ?? "").padEnd(w)} `);
     lines.push("|" + cells.join("|") + "|");
     if (i === 0) lines.push(sep);
   }
@@ -67,6 +67,7 @@ function sanitizeTelegramTag(tag: string): string {
   if (!match) return escapeTelegramHtml(tag);
 
   const [, closing, rawName, rawAttrs] = match;
+  if (rawName === undefined) return escapeTelegramHtml(tag);
   const name = rawName.toLowerCase();
   const aliasedName = SIMPLE_TAG_ALIASES[name];
 
@@ -76,9 +77,10 @@ function sanitizeTelegramTag(tag: string): string {
 
   if (name === "a") {
     if (closing) return "</a>";
-    const hrefMatch = rawAttrs.match(/\bhref\s*=\s*(["'])(.*?)\1/i);
-    if (!hrefMatch) return escapeTelegramHtml(tag);
-    return `<a href="${escapeTelegramAttribute(hrefMatch[2])}">`;
+    const hrefMatch = (rawAttrs ?? "").match(/\bhref\s*=\s*(["'])(.*?)\1/i);
+    const href = hrefMatch?.[2];
+    if (href === undefined) return escapeTelegramHtml(tag);
+    return `<a href="${escapeTelegramAttribute(href)}">`;
   }
 
   return escapeTelegramHtml(tag);

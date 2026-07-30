@@ -61,7 +61,7 @@ const POLL_OVERLAP_MS = 5 * 60 * 1000;
 const MAX_SEEN_IDS = 5000;
 
 /** Effective role → rank, for the trigger-permission gate. */
-const PERMISSION_RANK: Record<string, number> = {
+const PERMISSION_RANK = {
   none: 0,
   read: 1,
   triage: 2,
@@ -76,6 +76,11 @@ const PERMISSION_RANK: Record<string, number> = {
  * ask an agent to change code are exactly the people with push access.
  */
 const REQUIRED_TRIGGER_RANK = PERMISSION_RANK.write;
+
+/** Rank for an arbitrary API-reported permission name; unknown names rank 0. */
+function rankOfPermission(name: string): number {
+  return PERMISSION_RANK[name as keyof typeof PERMISSION_RANK] ?? 0;
+}
 
 /** Permission lookups are cached this long per repo+user. */
 const PERMISSION_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -269,7 +274,7 @@ export class GithubMessagingBot implements MessagingBot {
   async postMessage(channel: string, text: string): Promise<string> {
     const ref = parseGithubConversationId(channel);
     const parts = splitText(text, GITHUB_MAX_COMMENT_LENGTH, formatGithubContinuation);
-    const firstId = await this.postComment(ref, parts[0]);
+    const firstId = await this.postComment(ref, parts[0] ?? text);
     for (const part of parts.slice(1)) {
       await this.postComment(ref, part);
     }
@@ -578,10 +583,7 @@ export class GithubMessagingBot implements MessagingBot {
       );
       // Custom role_name values are unrankable; the legacy permission field
       // still carries their closest standard mapping, so take the stronger.
-      rank = Math.max(
-        PERMISSION_RANK[role.role_name ?? ""] ?? 0,
-        PERMISSION_RANK[role.permission] ?? 0,
-      );
+      rank = Math.max(rankOfPermission(role.role_name ?? ""), rankOfPermission(role.permission));
     } catch (err) {
       log.logWarning(
         `GitHub: permission lookup failed for ${user} on ${ref.owner}/${ref.repo}; denying trigger`,

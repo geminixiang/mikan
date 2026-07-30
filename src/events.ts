@@ -302,8 +302,9 @@ export class EventsWatcher {
       return platform;
     }
 
-    if (availablePlatforms.length === 1) {
-      return availablePlatforms[0];
+    const only = availablePlatforms.length === 1 ? availablePlatforms[0] : undefined;
+    if (only !== undefined) {
+      return only;
     }
 
     throw new Error(

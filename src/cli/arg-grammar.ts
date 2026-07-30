@@ -26,6 +26,7 @@ export function takeValueFlag(
   name: string,
 ): { value: string; lastIndex: number } | undefined {
   const arg = args[i];
+  if (arg === undefined) return undefined;
   if (arg === name) return { value: args[i + 1] ?? "", lastIndex: i + 1 };
   if (arg.startsWith(name + "=")) return { value: arg.slice(name.length + 1), lastIndex: i };
   return undefined;

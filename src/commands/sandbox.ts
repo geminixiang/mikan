@@ -32,14 +32,14 @@ export function parseSandboxCommand(text: string): ParsedSandboxCommand | null {
   const matched = matchCommand(text, SANDBOX_COMMANDS, { stripMention: true });
   if (!matched) return null;
 
-  const action = matched.args.length > 0 ? matched.args[0].toLowerCase() : undefined;
+  const action = matched.args[0]?.toLowerCase();
   if (action === "boost" && matched.args.length === 1) {
     return { action };
   }
   if (action === "door" && matched.args.length <= 2) {
     return {
       action,
-      ...(matched.args.length === 2 ? { doorPolicy: matched.args[1].toLowerCase() } : {}),
+      ...(matched.args.length === 2 ? { doorPolicy: matched.args[1]?.toLowerCase() } : {}),
     };
   }
   return {};

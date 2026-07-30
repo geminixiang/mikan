@@ -305,7 +305,7 @@ export class ChatHistorySync {
 
 function findLogRecordById(records: LogRecord[], messageId: string): LogRecord | undefined {
   for (let i = records.length - 1; i >= 0; i--) {
-    if (records[i].message.ts === messageId) return records[i];
+    if (records[i]?.message.ts === messageId) return records[i];
   }
   return undefined;
 }
@@ -538,7 +538,7 @@ function appendLogRecordsToSession(sessionManager: SessionStore, records: LogRec
 function getLatestChatSyncResetAt(entries: SessionEntry[]): number | undefined {
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
-    if (entry.type !== "custom" || entry.customType !== CHAT_SYNC_CUSTOM_TYPE) continue;
+    if (entry?.type !== "custom" || entry.customType !== CHAT_SYNC_CUSTOM_TYPE) continue;
     if (!isRecord(entry.data) || typeof entry.data.resetAt !== "string") continue;
     const resetAt = new Date(entry.data.resetAt).getTime();
     if (Number.isFinite(resetAt)) return resetAt;
@@ -555,7 +555,7 @@ function isAfterReset(record: LogRecord, resetAt: number): boolean {
 function getLatestChatSyncMessageId(entries: SessionEntry[]): string | undefined {
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
-    if (entry.type !== "custom" || entry.customType !== CHAT_SYNC_CUSTOM_TYPE) continue;
+    if (entry?.type !== "custom" || entry.customType !== CHAT_SYNC_CUSTOM_TYPE) continue;
     if (!isRecord(entry.data)) return undefined;
     return typeof entry.data.lastMessageId === "string" ? entry.data.lastMessageId : undefined;
   }

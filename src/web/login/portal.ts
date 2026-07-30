@@ -799,7 +799,7 @@ function renderServiceLogo(kind: string): string {
     sentry: { className: "sentry", text: "S" },
     manual: { className: "manual", text: ">_" },
   };
-  const logo = textLogos[kind] ?? textLogos.manual;
+  const logo = textLogos[kind] ?? textLogos.manual ?? { className: "manual", text: ">_" };
   return `<span class="service-logo ${logo.className}" aria-hidden="true"><span class="service-logo-text">${logo.text}</span></span>`;
 }
 

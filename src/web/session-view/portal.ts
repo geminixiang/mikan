@@ -32,8 +32,8 @@ type LinkOpenRule = NonNullable<typeof defaultLinkOpen>;
 markdown.renderer.rules.link_open = (...args: Parameters<LinkOpenRule>) => {
   const [tokens, idx, options, env, self] = args;
   const token = tokens[idx];
-  token.attrSet("target", "_blank");
-  token.attrSet("rel", "noreferrer noopener");
+  token?.attrSet("target", "_blank");
+  token?.attrSet("rel", "noreferrer noopener");
   return defaultLinkOpen
     ? defaultLinkOpen(tokens, idx, options, env, self)
     : self.renderToken(tokens, idx, options);
@@ -346,11 +346,11 @@ export function parseUserBody(raw: string): {
       .filter(Boolean)
       .join(" ");
     return {
-      timestamp: m[1],
-      username: m[2],
+      timestamp: m[1] ?? null,
+      username: m[2] ?? null,
       threadTs: m[3] ?? null,
       header,
-      content: m[4],
+      content: m[4] ?? "",
     };
   }
   // [username] [in-thread:ts]: content
@@ -359,10 +359,10 @@ export function parseUserBody(raw: string): {
     const header = [`[${m[1]}]`, m[2] ? `[in-thread:${m[2]}]` : ""].filter(Boolean).join(" ");
     return {
       timestamp: null,
-      username: m[1],
+      username: m[1] ?? null,
       threadTs: m[2] ?? null,
       header,
-      content: m[3],
+      content: m[3] ?? "",
     };
   }
   return { timestamp: null, username: null, threadTs: null, header: null, content: raw };

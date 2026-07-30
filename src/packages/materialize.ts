@@ -76,7 +76,7 @@ export function packageScopeDir(
  */
 export function gitCloneDir(url: string, scopeDir: string, ref?: string): string {
   const repoPath = gitRepoPath(url).split("/");
-  const repoName = repoPath[repoPath.length - 1];
+  const repoName = repoPath[repoPath.length - 1] ?? "repo";
   const parent = repoPath.slice(0, -1);
   const checkoutName =
     ref === undefined || ref === "HEAD"

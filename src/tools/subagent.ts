@@ -342,7 +342,9 @@ async function forEachConcurrent<T>(
     Array.from({ length: Math.min(limit, items.length) }, async () => {
       while (cursor < items.length) {
         const index = cursor++;
-        await worker(items[index], index);
+        const item = items[index];
+        if (item === undefined) continue;
+        await worker(item, index);
       }
     }),
   );
@@ -528,7 +530,11 @@ export function createSubagentTool(
           };
         }
         case "single": {
-          const { id: _id, ...result } = ordered[0];
+          const single = ordered[0];
+          if (single === undefined) {
+            throw new Error("Subagent plan produced no outcome");
+          }
+          const { id: _id, ...result } = single;
           return {
             content: [{ type: "text", text: formatOutcome(result) }],
             details: result,

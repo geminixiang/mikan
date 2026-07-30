@@ -38,6 +38,7 @@ export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
+    if (arg === undefined) continue;
     let taken;
     if (arg === "--help" || arg === "-h") {
       help = true;

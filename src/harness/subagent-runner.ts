@@ -258,14 +258,14 @@ function normalizedParentContext(
   let users = 0;
   while (first > 0 && users < recentTurns) {
     first -= 1;
-    if (conversation[first].role === "user") users += 1;
+    if (conversation[first]?.role === "user") users += 1;
   }
   const recent = conversation.slice(first);
   const recentStart = recent[0] ? messages.indexOf(recent[0]) : messages.length;
   let summary: AgentMessage | undefined;
   for (let index = recentStart - 1; index >= 0; index--) {
     const message = messages[index];
-    if (message.role === "compactionSummary" || message.role === "branchSummary") {
+    if (message?.role === "compactionSummary" || message?.role === "branchSummary") {
       summary = message;
       break;
     }
@@ -351,7 +351,7 @@ function baseRunResult(
 function finalAssistant(messages: AgentMessage[]): AssistantMessage | undefined {
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index];
-    if (message.role === "assistant") return message;
+    if (message?.role === "assistant") return message;
   }
   return undefined;
 }

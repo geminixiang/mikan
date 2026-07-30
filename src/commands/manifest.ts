@@ -141,9 +141,10 @@ export function matchCommand<Command extends string>(
   options?: { stripMention?: boolean },
 ): { command: Command; args: string[] } | null {
   const tokens = text.trim().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return null;
+  const first = tokens[0];
+  if (first === undefined) return null;
 
-  const command = normalizeCommandToken(tokens[0], options);
+  const command = normalizeCommandToken(first, options);
   return aliases.includes(command as Command)
     ? { command: command as Command, args: tokens.slice(1) }
     : null;

@@ -30,7 +30,7 @@ export function parseFrontmatter(content: string): Frontmatter {
   if (!match) return { values: {}, body: content };
 
   const values: Record<string, string> = {};
-  for (const line of match[1].split(/\r?\n/)) {
+  for (const line of (match[1] ?? "").split(/\r?\n/)) {
     const separator = line.indexOf(":");
     if (separator === -1) continue;
     const key = line.slice(0, separator).trim();

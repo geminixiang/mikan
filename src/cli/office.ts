@@ -25,6 +25,7 @@ export function runOfficeCommand(argv: string[]): number {
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+    if (arg === undefined) continue;
     let taken;
     if ((taken = takeValueFlag(argv, i, "--workspace"))) {
       workspaceArg = taken.value;

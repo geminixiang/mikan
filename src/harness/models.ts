@@ -217,7 +217,7 @@ function buildCustomProvider(providerName: string, config: CustomProviderConfig)
       },
     },
     models,
-    api: CUSTOM_API_STREAMS[api](),
+    api: CUSTOM_API_STREAMS[api]!(),
   });
 }
 
@@ -296,7 +296,9 @@ export class MikanModels {
     const available: Model<Api>[] = [];
     for (const group of byProvider.values()) {
       try {
-        const auth = await this.models.getAuth(group[0]);
+        const first = group[0];
+        if (first === undefined) continue;
+        const auth = await this.models.getAuth(first);
         if (auth) available.push(...group);
       } catch {
         // Auth resolution failure (e.g. expired OAuth) — treat as unavailable.

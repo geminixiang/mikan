@@ -181,7 +181,8 @@ function loadValidatedSessionFile(filePath: string): LoadedSessionFile {
       discardedCrashTail = true;
     }
   }
-  if (!isSessionHeader(entries[0]))
+  const header = entries[0];
+  if (header === undefined || !isSessionHeader(header))
     throw corrupted(filePath, "first non-empty line is not a valid header");
   validateSessionTree(filePath, entries);
   return { entries, discardedCrashTail };
@@ -221,7 +222,8 @@ export class SessionStore {
     rewriteBeforeAppend = false,
   ) {
     this.sessionFile = sessionFile === null ? null : resolve(sessionFile);
-    this.header = fileEntries.length > 0 && isSessionHeader(fileEntries[0]) ? fileEntries[0] : null;
+    const firstEntry = fileEntries[0];
+    this.header = firstEntry !== undefined && isSessionHeader(firstEntry) ? firstEntry : null;
     this.headerOnDisk = this.header !== null;
     this.rewriteBeforeAppend = rewriteBeforeAppend;
     this.sessionId = this.header?.id ?? randomUUID();
@@ -317,7 +319,7 @@ export class SessionStore {
   getSessionName(): string | undefined {
     for (let i = this.entries.length - 1; i >= 0; i--) {
       const entry = this.entries[i];
-      if (entry.type === "session_info") return entry.name?.trim() || undefined;
+      if (entry?.type === "session_info") return entry.name?.trim() || undefined;
     }
     return undefined;
   }

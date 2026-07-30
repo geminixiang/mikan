@@ -1,0 +1,10 @@
+{
+  // Tests assert against shapes they construct themselves; unchecked-index
+  // noise buys no safety here (mirrors the oxlint no-explicit-any exemption).
+  // Production code keeps the flag via the root tsconfig.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noUncheckedIndexedAccess": false
+  },
+  "include": ["**/*.ts"]
+}

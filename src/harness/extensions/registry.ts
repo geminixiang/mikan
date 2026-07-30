@@ -32,8 +32,9 @@ const COMMAND_NAME_PATTERN = /^[a-z0-9_-]+$/i;
  */
 export function parseCommandInput(text: string): { name: string; args: string } | undefined {
   const match = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(text.trim());
-  if (!match || !COMMAND_NAME_PATTERN.test(match[1])) return undefined;
-  return { name: match[1], args: match[2]?.trim() ?? "" };
+  const name = match?.[1];
+  if (name === undefined || !COMMAND_NAME_PATTERN.test(name)) return undefined;
+  return { name, args: match?.[2]?.trim() ?? "" };
 }
 
 type HookHandlers = {

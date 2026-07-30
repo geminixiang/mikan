@@ -1572,8 +1572,9 @@ export class SlackMessagingBot implements MessagingBot {
 
     const office = this.workspace.office(createOfficeAddress("slack", channelId));
     const { saved, failed } = await saveIncomingAttachments(office, items);
-    if (failed.length > 0) {
-      const { name, error } = failed[0];
+    const firstFailure = failed[0];
+    if (firstFailure) {
+      const { name, error } = firstFailure;
       const errorMsg = error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to download attachment ${name}: ${errorMsg}`, { cause: error });
     }
@@ -1680,7 +1681,7 @@ export class SlackMessagingBot implements MessagingBot {
     const lines = content.trim().split("\n").filter(Boolean);
     for (let i = 0; i < lines.length; i++) {
       try {
-        const entry = JSON.parse(lines[i]);
+        const entry = JSON.parse(lines[i] ?? "");
         if (entry.ts) timestamps.add(entry.ts);
       } catch (err) {
         log.logWarning(
@@ -1824,7 +1825,7 @@ export class SlackMessagingBot implements MessagingBot {
       }
 
       // Add delay between channels to avoid hitting Slack rate limits
-      if (channelId !== channelsToBackfill[channelsToBackfill.length - 1][0]) {
+      if (channelId !== channelsToBackfill[channelsToBackfill.length - 1]?.[0]) {
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
     }

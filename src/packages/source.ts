@@ -168,8 +168,8 @@ export function gitRepoPath(url: string): string {
   // Drop any credentials in the authority (`user:pass@host`, `git@host`).
   const scpMatch = /^([^@/\s]+@)?([^:/\s]+)[:/](.+)$/.exec(remainder);
   if (!scpMatch) return sanitizeRepoPath(stripGitSuffix(remainder));
-  const host = scpMatch[2].toLowerCase();
-  const path = stripGitSuffix(scpMatch[3].replace(/^\/+/, ""));
+  const host = (scpMatch[2] ?? "").toLowerCase();
+  const path = stripGitSuffix((scpMatch[3] ?? "").replace(/^\/+/, ""));
   return sanitizeRepoPath(`${host}/${path}`);
 }
 

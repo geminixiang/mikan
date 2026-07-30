@@ -1086,8 +1086,8 @@ const WORKSPACE_TOP_DIRS = new Set(["scratch"]);
 function isWorkspacePathAllowed(rel: string): boolean {
   if (rel === "") return true;
   const segments = rel.split("/").filter(Boolean);
-  if (segments.length === 0) return true;
   const first = segments[0];
+  if (first === undefined) return true;
   if (segments.length === 1) {
     return WORKSPACE_TOP_DIRS.has(first) || WORKSPACE_TOP_FILES.has(first);
   }
@@ -1230,7 +1230,7 @@ function looksTextual(buf: Buffer): boolean {
   const limit = Math.min(buf.length, BINARY_PROBE_BYTES);
   for (let i = 0; i < limit; i++) {
     const byte = buf[i];
-    if (byte === 0) return false;
+    if (byte === undefined || byte === 0) return false;
     if (byte < 9) return false;
     if (byte === 11 || byte === 12) return false;
     if (byte > 13 && byte < 32) return false;

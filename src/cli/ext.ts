@@ -42,6 +42,7 @@ function parseExtArgs(argv: string[]): ExtArgs {
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+    if (arg === undefined) continue;
     let taken;
     if (arg === "--global") scope = "global";
     else if ((taken = takeValueFlag(argv, i, "--conversation"))) {
@@ -53,7 +54,7 @@ function parseExtArgs(argv: string[]): ExtArgs {
     } else positional.push(arg);
   }
 
-  return { action: positional[0], target: positional[1], stateDir, scope, conversationId };
+  return { action: positional[0] ?? "", target: positional[1], stateDir, scope, conversationId };
 }
 
 /** Directory that extension CODE for the chosen scope lives in. */
@@ -61,10 +62,14 @@ function scopeExtensionsDir(args: ExtArgs): string {
   if (args.scope === "global") return join(args.stateDir, "global", "extensions");
   if (args.scope === "conversation" && args.conversationId) {
     // defaultExtensionDirs returns [global, conversation]; take the conversation one.
-    return defaultExtensionDirs(
+    const conversationDir = defaultExtensionDirs(
       resolveOwnedOfficeAddress(args.conversationId, args.stateDir),
       args.stateDir,
     )[1];
+    if (conversationDir === undefined) {
+      throw new Error("defaultExtensionDirs returned no conversation directory");
+    }
+    return conversationDir;
   }
   throw new Error("Specify a scope: --global or --conversation <id>");
 }

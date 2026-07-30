@@ -530,7 +530,7 @@ export class MikanAgentSession {
     const messages = this.agent.state.messages;
     for (let i = messages.length - 1; i >= 0; i--) {
       const message = messages[i];
-      if (message.role === "assistant") return message;
+      if (message?.role === "assistant") return message;
     }
     return undefined;
   }
@@ -767,7 +767,7 @@ export class MikanAgentSession {
 
   private dropTrailingErrorMessage(): void {
     const messages = this.agent.state.messages;
-    if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
+    if (messages[messages.length - 1]?.role === "assistant") {
       this.agent.state.messages = messages.slice(0, -1);
     }
   }

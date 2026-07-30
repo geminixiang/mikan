@@ -180,6 +180,7 @@ export class ActorExecutionResolver {
     const protectedMounts = [...workspaceMounts, ...packageMounts];
     for (let index = 0; index < vaultMounts.length; index += 1) {
       const vaultMount = vaultMounts[index];
+      if (vaultMount === undefined) continue;
       const workspaceCollision = protectedMounts.find((protectedMount) =>
         targetsOverlap(protectedMount.target, vaultMount.target),
       );

@@ -19,9 +19,11 @@ export function readConversationLog(conversationDir: string): LogRecord[] {
   const lines = raw.trim().split("\n").filter(Boolean);
   const records: LogRecord[] = [];
   for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line === undefined) continue;
     try {
       const message = parseJsonValue(
-        lines[i],
+        line,
         (value): value is ConversationLogMessage => isRecord(value),
         (detail) => (detail === "unexpected JSON shape" ? "expected a JSON object" : detail),
       );

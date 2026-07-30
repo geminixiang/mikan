@@ -32,10 +32,14 @@ export function parseGithubConversationId(conversationId: string): GithubConvers
   if (!match) {
     throw new Error(`Not a GitHub conversation id: ${conversationId}`);
   }
+  const [, owner, repo, number] = match;
+  if (owner === undefined || repo === undefined || number === undefined) {
+    throw new Error(`Not a GitHub conversation id: ${conversationId}`);
+  }
   return {
-    owner: match[1].toLowerCase(),
-    repo: match[2].toLowerCase(),
-    number: Number(match[3]),
+    owner: owner.toLowerCase(),
+    repo: repo.toLowerCase(),
+    number: Number(number),
   };
 }
 

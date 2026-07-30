@@ -34,6 +34,9 @@ export function parseModelCommand(text: string): ParsedModelCommand | null {
   }
 
   const spec = matched.args[0];
+  if (spec === undefined) {
+    return { error: "invalid_spec" };
+  }
   const slash = spec.indexOf("/");
   if (slash <= 0 || slash === spec.length - 1) {
     return { error: "invalid_spec" };

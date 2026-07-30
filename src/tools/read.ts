@@ -54,7 +54,7 @@ const readSchema = Type.Object({
 function trimToCharBoundary(buffer: Buffer): Buffer {
   for (let back = 1; back <= Math.min(4, buffer.length); back++) {
     const byte = buffer[buffer.length - back];
-    if ((byte & 0xc0) === 0x80) continue; // continuation byte; keep walking back
+    if (byte === undefined || (byte & 0xc0) === 0x80) continue; // continuation byte; keep walking back
     const needed = byte < 0x80 ? 1 : byte < 0xe0 ? 2 : byte < 0xf0 ? 3 : 4;
     return back === needed ? buffer : buffer.subarray(0, buffer.length - back);
   }
@@ -140,7 +140,7 @@ export function createReadTool(executor: Executor): AgentTool<typeof readSchema>
         // Serve the line in byte-addressed slices rather than pointing at
         // another tool: the caller may not hold one (Session Dream grants only
         // read/edit/write), and a dead end there costs a whole run.
-        const lineBuffer = Buffer.from(selectedContent.split("\n")[0], "utf-8");
+        const lineBuffer = Buffer.from(selectedContent.split("\n")[0] ?? "", "utf-8");
         const start = Math.max(0, Math.min(byteOffset ?? 0, lineBuffer.length));
         const slice = trimToCharBoundary(lineBuffer.subarray(start, start + DEFAULT_MAX_BYTES));
         const end = start + slice.length;

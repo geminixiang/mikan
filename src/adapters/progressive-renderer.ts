@@ -91,7 +91,7 @@ export function createProgressiveRenderer(platform: ProgressiveRendererPlatform)
   }
 
   async function postSplit(text: string): Promise<void> {
-    const [head, ...tail] = split(text);
+    const [head = text, ...tail] = split(text);
     await postOrUpdate(head);
     for (const part of tail) {
       if (platform.typing?.stopOnSend) stopTyping();

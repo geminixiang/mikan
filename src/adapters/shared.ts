@@ -260,7 +260,7 @@ export function resolveOnlyScopedStopTarget(
     .map((session) => session.sessionKey)
     .filter((key) => key.startsWith(`${address.conversationId}:`));
 
-  return runningScopes.length === 1 ? runningScopes[0] : null;
+  return runningScopes.length === 1 ? (runningScopes[0] ?? null) : null;
 }
 
 /**

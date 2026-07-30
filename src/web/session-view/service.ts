@@ -322,11 +322,16 @@ function findSharedContentAnchorEntryId(
   let bestLength = 0;
   for (let parentStart = 0; parentStart < parentMessages.length; parentStart++) {
     let length = 0;
-    while (
-      parentStart + length < parentMessages.length &&
-      length < childMessages.length &&
-      comparableSessionMessagesMatch(parentMessages[parentStart + length], childMessages[length])
-    ) {
+    while (parentStart + length < parentMessages.length && length < childMessages.length) {
+      const parentMessage = parentMessages[parentStart + length];
+      const childMessage = childMessages[length];
+      if (
+        parentMessage === undefined ||
+        childMessage === undefined ||
+        !comparableSessionMessagesMatch(parentMessage, childMessage)
+      ) {
+        break;
+      }
       length += 1;
     }
     if (length > bestLength) {

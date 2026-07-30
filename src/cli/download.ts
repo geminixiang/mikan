@@ -73,6 +73,7 @@ export async function downloadChannel(channelId: string, botToken: string): Prom
 
   for (let i = 0; i < threadsToFetch.length; i++) {
     const parent = threadsToFetch[i];
+    if (parent === undefined) continue;
     console.error(`  Thread ${i + 1}/${threadsToFetch.length} (${parent.reply_count} replies)...`);
 
     const replies: Message[] = [];
