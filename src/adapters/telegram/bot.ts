@@ -1,5 +1,5 @@
-import { readFileSync } from "fs";
-import { basename } from "path";
+import { readFileSync } from "node:fs";
+import { basename } from "node:path";
 import { Bot as GrammyMessagingBot, InputFile } from "grammy";
 import type { Message } from "grammy/types";
 import {

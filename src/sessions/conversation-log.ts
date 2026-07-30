@@ -1,4 +1,4 @@
-import { join } from "path";
+import { join } from "node:path";
 import * as log from "../log.js";
 import type { ConversationLogMessage } from "../types.js";
 import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-guards.js";

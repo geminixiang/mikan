@@ -2,10 +2,10 @@
 
 import "./observability/instrument.js";
 
-import { join } from "path";
-import { mkdirSync, statSync, writeFileSync } from "fs";
-import { fileURLToPath } from "url";
-import { dirname, join as pathJoin } from "path";
+import { join } from "node:path";
+import { mkdirSync, statSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join as pathJoin } from "node:path";
 import type {
   MessagingBot,
   PlatformBlockKit,
@@ -45,7 +45,7 @@ import {
   defaultModelsJsonPath,
   parseHttpIdleTimeoutMs,
 } from "./harness/index.js";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync } from "node:fs";
 import { readEnv, setEnvAliases } from "./env-manifest.js";
 import { ensureDirExists, isRecord, readJsonFileIfExists } from "./utils/file-guards.js";
 import { SandboxError, validateSandbox } from "./sandbox/index.js";

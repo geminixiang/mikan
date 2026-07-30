@@ -1,5 +1,5 @@
-import { mkdir, writeFile } from "fs/promises";
-import { join } from "path";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadContextOrSkip } from "./helpers/client.js";
 import {

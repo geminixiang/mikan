@@ -1,6 +1,6 @@
-import { spawn } from "child_process";
-import { mkdir, readFile, rename, writeFile } from "fs/promises";
-import { dirname } from "path";
+import { spawn } from "node:child_process";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import type {
   ExecOptions,
   ExecResult,

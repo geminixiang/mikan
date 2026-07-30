@@ -7,7 +7,7 @@
  * Modes, highest priority first: `ext`, `office`, `env` (own grammars, never
  * flag-parsed here), `help`, `version`, `onboard`, `download`, `run`.
  */
-import { join, resolve } from "path";
+import { join, resolve } from "node:path";
 import { envSummaryLines } from "../env-manifest.js";
 import { parseSandboxArg } from "../sandbox/index.js";
 import type { SandboxConfig } from "../sandbox/types.js";

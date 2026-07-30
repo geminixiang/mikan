@@ -8,6 +8,7 @@
   "rules": {
     "eslint/no-unused-vars": "error",
     "eslint/max-depth": "error",
+    "unicorn/prefer-node-protocol": "error",
     "import/no-cycle": "error",
     "typescript/no-explicit-any": "error",
     "unicorn/require-post-message-target-origin": "off",

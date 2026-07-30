@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeEach, afterEach } from "vitest";
-import { appendFileSync, mkdirSync, rmSync, existsSync } from "fs";
-import { join } from "path";
+import { appendFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
+import { join } from "node:path";
 
 // ============================================================================
 // Verify grep CAN search log.jsonl for historical records
@@ -77,7 +77,7 @@ describe("ISSUE VERIFICATION: Grep can search historical records", () => {
   });
 
   test("grep can find messages from specific user", async () => {
-    const { execSync } = await import("child_process");
+    const { execSync } = await import("node:child_process");
 
     const result = execSync(`grep '"userName":"alice"' ${join(testDir, "log.jsonl")}`, {
       encoding: "utf-8",
@@ -90,7 +90,7 @@ describe("ISSUE VERIFICATION: Grep can search historical records", () => {
   });
 
   test("grep can find messages containing specific keyword", async () => {
-    const { execSync } = await import("child_process");
+    const { execSync } = await import("node:child_process");
 
     const result = execSync(`grep -i "bug" ${join(testDir, "log.jsonl")}`, { encoding: "utf-8" });
 
@@ -99,7 +99,7 @@ describe("ISSUE VERIFICATION: Grep can search historical records", () => {
   });
 
   test("grep can find messages from specific date range", async () => {
-    const { execSync } = await import("child_process");
+    const { execSync } = await import("node:child_process");
 
     // Find messages from January 2025
     const result = execSync(`grep '"date":"2025-01' ${join(testDir, "log.jsonl")}`, {
@@ -111,7 +111,7 @@ describe("ISSUE VERIFICATION: Grep can search historical records", () => {
   });
 
   test("log.jsonl is valid JSON Lines format", async () => {
-    const { readFileSync } = await import("fs");
+    const { readFileSync } = await import("node:fs");
 
     const content = readFileSync(join(testDir, "log.jsonl"), "utf-8");
     const lines = content.trim().split("\n");
@@ -132,7 +132,7 @@ describe("ISSUE VERIFICATION: Grep can search historical records", () => {
   });
 
   test("older messages remain grep-searchable in log.jsonl", async () => {
-    const { execSync } = await import("child_process");
+    const { execSync } = await import("node:child_process");
 
     // All 5 messages exist
     const allResult = execSync(`wc -l ${join(testDir, "log.jsonl")}`, { encoding: "utf-8" });

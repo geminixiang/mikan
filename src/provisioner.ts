@@ -1,8 +1,8 @@
-import { execFile } from "child_process";
+import { execFile } from "node:child_process";
 import { sanitizeIdentitySegment } from "./sandbox/identity.js";
-import { createHash } from "crypto";
-import { readFileSync, statSync } from "fs";
-import { promisify } from "util";
+import { createHash } from "node:crypto";
+import { readFileSync, statSync } from "node:fs";
+import { promisify } from "node:util";
 import * as log from "./log.js";
 import { readEnv } from "./env-manifest.js";
 import { reportUserFacingError } from "./observability/sentry.js";

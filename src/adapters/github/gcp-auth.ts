@@ -1,5 +1,5 @@
-import { readFileSync } from "fs";
-import { createSign } from "crypto";
+import { readFileSync } from "node:fs";
+import { createSign } from "node:crypto";
 export type { GcpTokenProviderOptions } from "./types.js";
 import type { GcpTokenProviderOptions } from "./types.js";
 

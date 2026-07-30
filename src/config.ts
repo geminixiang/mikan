@@ -1,7 +1,7 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "@sinclair/typebox";
-import { existsSync, lstatSync, readFileSync, renameSync, rmSync } from "fs";
-import { dirname, join, resolve } from "path";
+import { existsSync, lstatSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { effectiveStateDir } from "./cli/arg-grammar.js";
 import { readEnv } from "./env-manifest.js";
 import { ensureDirExists, readJsonSchemaFileIfExists } from "./utils/file-guards.js";

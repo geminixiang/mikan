@@ -9,9 +9,9 @@ import {
   renameSync,
   unlinkSync,
   writeSync,
-} from "fs";
-import { randomBytes } from "crypto";
-import { basename, dirname, join } from "path";
+} from "node:fs";
+import { randomBytes } from "node:crypto";
+import { basename, dirname, join } from "node:path";
 
 export function ensureDirExists(dir: string): void {
   mkdirSync(dir, { recursive: true });

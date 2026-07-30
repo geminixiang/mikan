@@ -1,6 +1,6 @@
-import { randomUUID } from "crypto";
-import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from "fs";
-import { basename, dirname, join, relative, resolve, sep } from "path";
+import { randomUUID } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { SessionStore } from "../harness/index.js";
 import {
   atomicWritePrivateFile,

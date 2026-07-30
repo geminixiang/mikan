@@ -1,6 +1,6 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "fs";
-import type { IncomingMessage, ServerResponse } from "http";
-import { basename, join, resolve as pathResolve, sep as pathSep } from "path";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { basename, join, resolve as pathResolve, sep as pathSep } from "node:path";
 import { MikanModels, parseFrontmatter, SessionStore } from "../../harness/index.js";
 import type { EventStore } from "../../tools/types.js";
 

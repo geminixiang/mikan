@@ -1,4 +1,4 @@
-import { createSign } from "crypto";
+import { createSign } from "node:crypto";
 import { withRetry } from "../shared.js";
 import type {
   GithubCheckRun,

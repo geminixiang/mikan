@@ -22,9 +22,9 @@
  * Modules are imported with a fresh jiti instance (no cache) so edited
  * extensions are picked up when a new harness instance is created.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "fs";
-import { homedir } from "os";
-import { basename, join } from "path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, join } from "node:path";
 import { createJiti } from "jiti";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import * as log from "../../log.js";

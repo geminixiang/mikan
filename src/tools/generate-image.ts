@@ -1,9 +1,9 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { Type } from "@sinclair/typebox";
-import { writeFile } from "fs/promises";
-import { join } from "path";
-import { randomUUID } from "crypto";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 
 const schema = Type.Object({
   prompt: Type.String({ description: "Description of the image to generate" }),

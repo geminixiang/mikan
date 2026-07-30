@@ -7,9 +7,9 @@
  * markup wrappers — so it lives here once.
  */
 
-import { appendFileSync } from "fs";
-import { mkdir, writeFile } from "fs/promises";
-import { dirname, join } from "path";
+import { appendFileSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import type { MessagingEventHandler, OfficeAddress } from "../adapter.js";
 import { sameOffice, type Office } from "../office/index.js";
 import * as log from "../log.js";

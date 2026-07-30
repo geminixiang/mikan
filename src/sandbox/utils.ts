@@ -1,4 +1,4 @@
-import { spawn } from "child_process";
+import { spawn } from "node:child_process";
 import { isAbsolute, relative, resolve as resolvePath, sep } from "node:path";
 import type { RuntimePathContext } from "./types.js";
 

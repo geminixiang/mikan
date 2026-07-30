@@ -11,9 +11,9 @@
  * resolution, chat-history sync, session view, admin portal) reads and
  * writes sessions inside synchronous flows.
  */
-import { randomUUID } from "crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "fs";
-import { dirname, resolve } from "path";
+import { randomUUID } from "node:crypto";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { buildSessionContext as buildContextFromEntries } from "@earendil-works/pi-agent-core";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";

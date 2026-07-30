@@ -9,10 +9,10 @@
  * provider within the process. mikan runs as a single process, so no
  * cross-process file lock is taken.
  */
-import { existsSync, readFileSync } from "fs";
-import { mkdirSync } from "fs";
-import { homedir } from "os";
-import { dirname, join } from "path";
+import { existsSync, readFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import type { Credential, CredentialInfo, CredentialStore } from "@earendil-works/pi-ai";
 import { atomicWritePrivateFile } from "../utils/file-guards.js";
 import * as log from "../log.js";

@@ -1,4 +1,4 @@
-import type { IncomingMessage, ServerResponse } from "http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { resolveLinkBaseUrl } from "../config.js";
 import { PRODUCT_NAME } from "../platform-messages.js";
 

@@ -1,5 +1,5 @@
-import { createHash, randomBytes } from "crypto";
-import type { IncomingMessage, ServerResponse } from "http";
+import { createHash, randomBytes } from "node:crypto";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { escapeHtml, readJsonBody, renderPortalShell, requestBaseUrl } from "../portal-shell.js";
 import { resolveLinkBaseUrl } from "../../config.js";
 import type { InMemoryLinkTokenStore } from "./store.js";

@@ -7,8 +7,8 @@
  * system prompt documents: a directory with a `SKILL.md` is a skill root
  * (no further recursion), other directories are traversed.
  */
-import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "fs";
-import { basename, dirname, join } from "path";
+import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import type { LoadSkillsResult, MikanSkill, SkillDiagnostic } from "./types.js";
 
 export type { LoadSkillsResult, MikanSkill, SkillDiagnostic } from "./types.js";

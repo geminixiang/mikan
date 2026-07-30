@@ -6,8 +6,8 @@ import {
   readdirSync,
   renameSync,
   rmSync,
-} from "fs";
-import { dirname, isAbsolute, join, normalize, sep } from "path";
+} from "node:fs";
+import { dirname, isAbsolute, join, normalize, sep } from "node:path";
 import { officeKey } from "../office/index.js";
 import { legacyConversationCredentialKey } from "../sandbox/identity.js";
 import type { OfficeAddress } from "../types.js";

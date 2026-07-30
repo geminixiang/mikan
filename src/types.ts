@@ -1,6 +1,6 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { execFile } from "child_process";
-import { promisify } from "util";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type {
   ImmediateEventPayload,
   OneShotEventPayload,

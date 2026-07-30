@@ -1,4 +1,4 @@
-import { join } from "path";
+import { join } from "node:path";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_POLL_MS = 2_000;

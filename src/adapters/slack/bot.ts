@@ -1,9 +1,9 @@
 import { SocketModeClient } from "@slack/socket-mode";
 import type { KnownBlock } from "@slack/types";
 import { WebAPIRateLimitedError, WebClient } from "@slack/web-api";
-import { existsSync, readFileSync } from "fs";
-import { readFile, writeFile } from "fs/promises";
-import { basename, join } from "path";
+import { existsSync, readFileSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
+import { basename, join } from "node:path";
 import {
   createConversationEvent,
   createConversationMessage,

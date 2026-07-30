@@ -1,5 +1,5 @@
-import { basename, dirname, join, resolve } from "path";
-import { existsSync, readdirSync } from "fs";
+import { basename, dirname, join, resolve } from "node:path";
+import { existsSync, readdirSync } from "node:fs";
 import {
   SessionStore,
   type BranchSummaryEntry as SessionBranchSummaryEntry,

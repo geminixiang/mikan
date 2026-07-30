@@ -1,6 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
-import { basename, extname } from "path";
+import { basename, extname } from "node:path";
 
 const attachSchema = Type.Object({
   label: Type.String({ description: "Brief description of what you're sharing (shown to user)" }),

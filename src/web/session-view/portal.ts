@@ -1,5 +1,5 @@
-import type { IncomingMessage, ServerResponse } from "http";
-import { basename } from "path";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { basename } from "node:path";
 import MarkdownIt from "markdown-it";
 import {
   createConversationEvent,

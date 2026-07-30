@@ -1,6 +1,6 @@
-import { mkdtemp, readFile, rm } from "fs/promises";
-import { tmpdir } from "os";
-import { join } from "path";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { createGenerateImageTool } from "../tools/generate-image.js";

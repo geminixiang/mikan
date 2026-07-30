@@ -17,8 +17,8 @@
  * A malformed file is reported as a diagnostic and skipped, never thrown:
  * these are hand-edited, and one typo must not take the whole workspace down.
  */
-import { existsSync, readFileSync, readdirSync } from "fs";
-import { basename, join } from "path";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { basename, join } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type {
   LoadSubagentProfilesResult,

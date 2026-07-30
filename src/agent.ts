@@ -32,11 +32,11 @@ import {
   renderSubagentDashboard,
   settleSubagentProgress,
 } from "./subagent-progress.js";
-import { createHash } from "crypto";
-import { existsSync, lstatSync } from "fs";
-import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "fs/promises";
-import { tmpdir } from "os";
-import { basename, isAbsolute, join, posix, relative, resolve, sep } from "path";
+import { createHash } from "node:crypto";
+import { existsSync, lstatSync } from "node:fs";
+import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import type {
   ConversationKind,
   ConversationMessage,

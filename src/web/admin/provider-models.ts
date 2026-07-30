@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+import { createHash } from "node:crypto";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { MikanModels } from "../../harness/index.js";
 

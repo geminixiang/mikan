@@ -1,4 +1,4 @@
-import type { IncomingMessage, ServerResponse } from "http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { readEnv } from "./env-manifest.js";
 import type { AgentEventEnvelope } from "./types.js";
 

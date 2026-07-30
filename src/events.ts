@@ -7,9 +7,9 @@ import {
   statSync,
   unlinkSync,
   watch,
-} from "fs";
-import { readFile } from "fs/promises";
-import { join } from "path";
+} from "node:fs";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { createConversationEvent } from "./adapter.js";
 import type { MessagingBot, ConversationKind } from "./adapter.js";
 import { parseEventPayload } from "./harness/event-format.js";

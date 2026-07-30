@@ -7,8 +7,8 @@
  * state dir, and an early `--state-dir` probe for import-time consumers
  * (Sentry instrumentation) that must not load the boot path.
  */
-import { homedir } from "os";
-import { join, resolve } from "path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { readEnv } from "../env-manifest.js";
 
 export function defaultStateDir(): string {

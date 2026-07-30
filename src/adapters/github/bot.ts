@@ -1,5 +1,5 @@
-import { existsSync } from "fs";
-import { dirname } from "path";
+import { existsSync } from "node:fs";
+import { dirname } from "node:path";
 import { Type } from "@sinclair/typebox";
 import {
   createConversationEvent,

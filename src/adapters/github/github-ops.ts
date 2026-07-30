@@ -1,4 +1,4 @@
-import { existsSync } from "fs";
+import { existsSync } from "node:fs";
 import * as log from "../../log.js";
 import { GithubApiError, GithubClient, GITHUB_MAX_COMMENT_LENGTH, githubRetry } from "./client.js";
 import {

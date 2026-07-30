@@ -1,4 +1,4 @@
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "http";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { MessagingBot, PlatformName } from "../adapter.js";
 import { resolveLinkBaseUrl } from "../config.js";
 import * as log from "../log.js";
