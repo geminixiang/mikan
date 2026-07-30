@@ -1889,6 +1889,73 @@ describe("SlackMessagingBot backfill", () => {
     expect(logContent).toContain('"threadTs":"1000.0001"');
   });
 
+  test("fetchHistory reads top-level messages oldest-first", async () => {
+    const bot = new SlackMessagingBot(makeHandler(), {
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      workspace,
+      store: { processAttachments: vi.fn().mockResolvedValue([]) } as any,
+    });
+    (bot as any).users = new Map([
+      ["U123", { id: "U123", userName: "alice", displayName: "Alice", isBot: false }],
+    ]);
+    const history = vi.fn().mockResolvedValue({
+      // Slack returns newest-first here.
+      messages: [
+        { user: "U123", text: "second", ts: "1000.0002" },
+        { user: "U123", text: "first", ts: "1000.0001" },
+      ],
+    });
+    const replies = vi.fn();
+    (bot as any).webClient = { conversations: { history, replies } };
+
+    const result = await bot.fetchHistory("C123", { oldest: "999.0", limit: 50 });
+
+    expect(replies).not.toHaveBeenCalled();
+    expect(history).toHaveBeenCalledWith({
+      channel: "C123",
+      oldest: "999.0",
+      inclusive: false,
+      limit: 50,
+    });
+    expect(result.map((message) => message.text)).toEqual(["first", "second"]);
+    expect(result[0]).toMatchObject({ ts: "1000.0001", userId: "U123", userName: "alice" });
+  });
+
+  test("fetchHistory with threadTs reads the thread's replies and drops the parent", async () => {
+    const bot = new SlackMessagingBot(makeHandler(), {
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      workspace,
+      store: { processAttachments: vi.fn().mockResolvedValue([]) } as any,
+    });
+    (bot as any).users = new Map([
+      ["U123", { id: "U123", userName: "alice", displayName: "Alice", isBot: false }],
+    ]);
+    const history = vi.fn();
+    // conversations.replies leads with the parent and is already oldest-first.
+    const replies = vi.fn().mockResolvedValue({
+      messages: [
+        { bot_id: "B_MIKAN", text: "follow-up request", ts: "1000.0001" },
+        { user: "U123", text: "done, shipped it", ts: "1000.0002", thread_ts: "1000.0001" },
+        { user: "U123", text: "and closed the issue", ts: "1000.0003", thread_ts: "1000.0001" },
+      ],
+    });
+    (bot as any).webClient = { conversations: { history, replies } };
+
+    const result = await bot.fetchHistory("C123", { threadTs: "1000.0001" });
+
+    expect(history).not.toHaveBeenCalled();
+    expect(replies).toHaveBeenCalledWith({ channel: "C123", ts: "1000.0001", limit: 200 });
+    // The parent is the bot's own message; re-ingesting it every poll is the
+    // bug this filter exists to prevent.
+    expect(result.map((message) => message.text)).toEqual([
+      "done, shipped it",
+      "and closed the issue",
+    ]);
+    expect(result[0]).toMatchObject({ threadTs: "1000.0001", isBot: false });
+  });
+
   test("backfill logs external app bot messages", async () => {
     const handler = makeHandler();
     const bot = new SlackMessagingBot(handler, {

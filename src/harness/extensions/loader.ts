@@ -521,7 +521,7 @@ function buildExtensionApi(params: {
       if (!services.postMessage) {
         throw new Error("api.notify is unavailable: this context provides no platform messaging");
       }
-      await services.postMessage(options?.conversationId ?? conversationId, text, {
+      return services.postMessage(options?.conversationId ?? conversationId, text, {
         platform: options?.platform ?? ownPlatform,
         ...(options?.threadTs ? { threadTs: options.threadTs } : {}),
       });
@@ -536,6 +536,7 @@ function buildExtensionApi(params: {
       conversationId?: string;
       oldest?: string;
       limit?: number;
+      threadTs?: string;
     }) => {
       if (!services.fetchHistory) {
         throw new Error("api.fetchHistory is unavailable: this context provides no history reads");

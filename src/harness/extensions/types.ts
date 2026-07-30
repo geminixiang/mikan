@@ -410,12 +410,15 @@ export interface ExtensionHostServices {
   stateDir?: string;
   /** Schedule persistence; enables `api.schedules`. */
   scheduleStore?: ExtensionScheduleStore;
-  /** Post a message to a conversation without an agent run; enables `api.notify`. */
+  /**
+   * Post a message to a conversation without an agent run, resolving to the
+   * posted message's platform id; enables `api.notify`.
+   */
   postMessage?: (
     conversationId: string,
     text: string,
     options?: { platform?: string; threadTs?: string },
-  ) => Promise<void>;
+  ) => Promise<string>;
   /** Resolve a user's DM conversation id; enables `api.openDm`. */
   openDirectConversation?: (userId: string, platform?: string) => Promise<string>;
   /** Read recent conversation messages; enables `api.fetchHistory`. */
@@ -585,11 +588,15 @@ export interface MikanExtensionApi {
    * a conversation on a different one. `threadTs` posts into a platform
    * thread where the adapter supports it. Available when the embedder
    * provides platform messaging.
+   *
+   * Resolves to the posted message's platform id — pass it back as
+   * `fetchHistory({ threadTs })` to read replies to what you just posted, or
+   * to `react` to annotate it.
    */
   notify(
     text: string,
     options?: { conversationId?: string; platform?: string; threadTs?: string },
-  ): Promise<void>;
+  ): Promise<string>;
   /**
    * Resolve the direct-message conversation with a platform user, returning
    * a conversation id usable with `notify`/`uploadFile`. Available when the
@@ -600,12 +607,15 @@ export interface MikanExtensionApi {
    * Read recent messages from a conversation, oldest first, without an agent
    * run. Defaults to this conversation; adapters may cap `limit` and return
    * a single page — page forward by passing the last returned `ts` as
-   * `oldest`. Available when the embedder provides history reads.
+   * `oldest`. Pass `threadTs` to read the replies inside one thread instead
+   * of the conversation's top-level messages (the parent is not returned).
+   * Available when the embedder provides history reads.
    */
   fetchHistory(options?: {
     conversationId?: string;
     oldest?: string;
     limit?: number;
+    threadTs?: string;
   }): Promise<PlatformHistoryMessage[]>;
   /**
    * List the platform workspace's active users without an agent run.

@@ -466,15 +466,17 @@ function resolvePlatformBot(op: string, platform: string | undefined): [string, 
 /** Extension `api.notify` backend: post into a conversation without a run. */
 const platformNotifier: PlatformNotifier = async (conversationId, text, options) => {
   const [key, bot] = resolvePlatformBot("notify", options?.platform);
+  let messageTs: string;
   if (options?.threadTs) {
     if (!bot.postInThread) {
       throw new Error(`notify: platform '${key}' does not support threaded posts`);
     }
-    await bot.postInThread(conversationId, options.threadTs, text);
+    messageTs = await bot.postInThread(conversationId, options.threadTs, text);
   } else {
-    await bot.postMessage(conversationId, text);
+    messageTs = await bot.postMessage(conversationId, text);
   }
   log.logInfo(`[notify] posted to ${key}/${conversationId} (${text.length} chars)`);
+  return messageTs;
 };
 
 /** Extension `api.openDm` backend: resolve a user's DM conversation id. */

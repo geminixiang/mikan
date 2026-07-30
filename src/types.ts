@@ -290,6 +290,12 @@ export interface PlatformHistoryOptions {
   oldest?: string;
   /** Maximum number of messages to return (adapters may cap this lower). */
   limit?: number;
+  /**
+   * Read the replies inside this thread instead of the conversation's
+   * top-level messages. The thread parent itself is not returned — the result
+   * is the replies to it. Adapters without threads ignore this.
+   */
+  threadTs?: string;
 }
 
 /** One platform message returned by a history fetch. */
@@ -311,16 +317,17 @@ export interface PlatformUserInfo {
 }
 
 /**
- * Post a plain message to a conversation without triggering an agent run.
- * Backs extension `api.notify`; implemented in main.ts over the platform bots.
- * `platform` is required only when more than one platform is running;
- * `threadTs` targets a platform thread on adapters that support it.
+ * Post a plain message to a conversation without triggering an agent run,
+ * resolving to the platform message id of what was posted. Backs extension
+ * `api.notify`; implemented in main.ts over the platform bots. `platform` is
+ * required only when more than one platform is running; `threadTs` targets a
+ * platform thread on adapters that support it.
  */
 export type PlatformNotifier = (
   conversationId: string,
   text: string,
   options?: { platform?: string; threadTs?: string },
-) => Promise<void>;
+) => Promise<string>;
 
 /**
  * Open the direct-message conversation with a platform user, returning its

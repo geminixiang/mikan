@@ -652,10 +652,13 @@ describe("loadExtensions v2 api", () => {
     expect((probe.read() as { error: string }).error).toMatch(/callback-schedule store/);
   });
 
-  test("api.notify posts to the extension's conversation", async () => {
+  test("api.notify posts to the extension's conversation and returns the message id", async () => {
     const posts: Array<{ conversationId: string; text: string }> = [];
-    writeProbeExtension(
-      'export default async function activate(api) { await api.notify("hello there"); }',
+    const probe = writeProbeExtension(
+      `export default async function activate(api) {
+        const ts = await api.notify("hello there");
+        report({ ts });
+      }`,
     );
 
     const { errors } = await loadExtensions({
@@ -664,11 +667,15 @@ describe("loadExtensions v2 api", () => {
       services: {
         postMessage: async (conversationId, text) => {
           posts.push({ conversationId, text });
+          return "1700000000.9";
         },
       },
     });
     expect(errors).toHaveLength(0);
     expect(posts).toEqual([{ conversationId: "C123", text: "hello there" }]);
+    // The id is what makes a posted message addressable afterwards: it is the
+    // thread anchor for fetchHistory({ threadTs }) and the target for react.
+    expect(probe.read()).toEqual({ ts: "1700000000.9" });
   });
 
   test("api.react adds a reaction to a message in the extension's conversation", async () => {
@@ -735,6 +742,7 @@ describe("loadExtensions v2 api", () => {
       services: {
         postMessage: async (conversationId, text) => {
           posts.push({ conversationId, text });
+          return "1700000000.1";
         },
       },
     });
@@ -766,6 +774,7 @@ describe("loadExtensions v2 api", () => {
       services: {
         postMessage: async (conversationId, text, options) => {
           posts.push({ conversationId, text, platform: options?.platform, ...options });
+          return "1700000000.1";
         },
       },
     });
@@ -801,13 +810,15 @@ describe("loadExtensions v2 api", () => {
     expect(probe.read()).toEqual({ dm: "D555" });
   });
 
-  test("api.fetchHistory reads this conversation by default and targets others explicitly", async () => {
+  test("api.fetchHistory reads this conversation by default, other conversations and threads explicitly", async () => {
     const fetches: Array<{ conversationId: string; options?: object }> = [];
     const probe = writeProbeExtension(
       `export default async function activate(api) {
         const own = await api.fetchHistory({ oldest: "1699.0", limit: 50 });
         const other = await api.fetchHistory({ conversationId: "C999" });
-        report({ own: own.length, other: other.length });
+        // The reply loop reads the thread under a message it posted earlier.
+        const replies = await api.fetchHistory({ threadTs: "1700000000.5" });
+        report({ own: own.length, other: other.length, replies: replies.length });
       }`,
     );
 
@@ -825,8 +836,9 @@ describe("loadExtensions v2 api", () => {
     expect(fetches).toEqual([
       { conversationId: "C123", options: { oldest: "1699.0", limit: 50, platform: "slack" } },
       { conversationId: "C999", options: { platform: "slack" } },
+      { conversationId: "C123", options: { threadTs: "1700000000.5", platform: "slack" } },
     ]);
-    expect(probe.read()).toEqual({ own: 1, other: 1 });
+    expect(probe.read()).toEqual({ own: 1, other: 1, replies: 1 });
   });
 
   test("api.listUsers lists the extension platform's users", async () => {

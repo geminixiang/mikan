@@ -99,6 +99,10 @@ describe("ExtensionCallbackScheduler", () => {
     expect(existsSync(schedulesDir())).toBe(false);
   });
 
+  // Real timers: croner owns the scheduling, so faking time here would test
+  // the fake. The waits are generous because vitest's 5s default leaves no
+  // margin for a 1s-period cron under a loaded parallel run — waitFor returns
+  // the moment the condition holds, so a passing run is still ~1s.
   test("a periodic schedule fires with the stored payload", async () => {
     const { scheduler, fires } = createScheduler();
     await scheduler.upsert(address, "agent-pm", "tick", {
@@ -110,7 +114,7 @@ describe("ExtensionCallbackScheduler", () => {
       args: ["a", 1],
     });
 
-    await vi.waitFor(() => expect(fires.length).toBeGreaterThan(0), { timeout: 2500 });
+    await vi.waitFor(() => expect(fires.length).toBeGreaterThan(0), { timeout: 20_000 });
     expect(fires[0]).toEqual({
       platform: "slack",
       conversationId: "C123",
@@ -119,20 +123,22 @@ describe("ExtensionCallbackScheduler", () => {
       callback: "on-tick",
       args: ["a", 1],
     });
-  });
+  }, 30_000);
 
   test("a fired one-shot deletes its file and never fires again", async () => {
     const { scheduler, fires } = createScheduler();
     await scheduler.upsert(address, "agent-pm", "once", {
+      // Far enough out that a slow start cannot let the deadline pass before
+      // the schedule is armed — that race drops it as stale and never fires.
       type: "one-shot",
-      at: new Date(Date.now() + 1000).toISOString(),
+      at: new Date(Date.now() + 2000).toISOString(),
       callback: "kickoff",
     });
     expect(readdirSync(schedulesDir())).toEqual(["agent-pm.once.json"]);
 
-    await vi.waitFor(() => expect(fires).toHaveLength(1), { timeout: 3000 });
+    await vi.waitFor(() => expect(fires).toHaveLength(1), { timeout: 20_000 });
     expect(readdirSync(schedulesDir())).toEqual([]);
-  });
+  }, 30_000);
 
   test("start() re-arms persisted schedules and skips malformed files", async () => {
     const { scheduler: writer } = createScheduler();
@@ -147,11 +153,11 @@ describe("ExtensionCallbackScheduler", () => {
 
     const { scheduler: rebooted, fires } = createScheduler();
     rebooted.start();
-    await vi.waitFor(() => expect(fires.length).toBeGreaterThan(0), { timeout: 2500 });
+    await vi.waitFor(() => expect(fires.length).toBeGreaterThan(0), { timeout: 20_000 });
     expect(fires[0]?.scheduleName).toBe("tick");
     // The malformed file is skipped but never deleted.
     expect(existsSync(join(schedulesDir(), "agent-pm.broken.json"))).toBe(true);
-  });
+  }, 30_000);
 
   test("start() drops one-shots that expired while the process was down", async () => {
     mkdirSync(schedulesDir(), { recursive: true });

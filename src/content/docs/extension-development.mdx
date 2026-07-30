@@ -401,9 +401,13 @@ const messages = await api.fetchHistory({ conversationId: "C0TEAM", limit: 200 }
 for (const message of messages) {
   // { ts, threadTs?, userId?, userName?, text, isBot }
 }
+
+// Post something, then read what people replied to it — no webhook needed.
+const ts = await api.notify("Status update please 🙏");
+const replies = await api.fetchHistory({ threadTs: ts });
 ```
 
-`api.fetchHistory` reads recent top-level messages (oldest first, one page — pass the last `ts` as `oldest` to page forward) and `api.listUsers` lists the workspace's active users, both without an agent run. Slack backs them with `conversations.history` and `users.list`; platforms without the capability throw a descriptive error.
+`api.fetchHistory` reads recent top-level messages (oldest first, one page — pass the last `ts` as `oldest` to page forward) and `api.listUsers` lists the workspace's active users, both without an agent run. Passing `threadTs` reads that thread's replies instead, excluding the parent message, which is how a polling extension follows up on its own posts. Slack backs them with `conversations.history` / `conversations.replies` and `users.list`; platforms without the capability throw a descriptive error.
 
 ### Interactive messages (Block Kit)
 

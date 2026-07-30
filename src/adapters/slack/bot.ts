@@ -374,21 +374,31 @@ export class SlackMessagingBot implements MessagingBot {
   }
 
   /**
-   * Fetch recent top-level messages from a channel, oldest first. One
-   * `conversations.history` page (thread replies are not expanded); callers
-   * page forward by passing the last returned `ts` as `oldest`.
+   * Fetch recent messages from a channel, oldest first. Without `threadTs`
+   * this is one `conversations.history` page of top-level messages (thread
+   * replies are not expanded); with it, one `conversations.replies` page of
+   * that thread's replies, excluding the parent. Callers page forward by
+   * passing the last returned `ts` as `oldest`.
    */
   async fetchHistory(
     channel: string,
     options?: PlatformHistoryOptions,
   ): Promise<PlatformHistoryMessage[]> {
     const limit = Math.min(Math.max(options?.limit ?? 200, 1), 999);
+    const threadTs = options?.threadTs;
     return slackRetry(async () => {
-      const result = await this.webClient.conversations.history({
-        channel,
-        ...(options?.oldest ? { oldest: options.oldest, inclusive: false } : {}),
-        limit,
-      });
+      const result = threadTs
+        ? await this.webClient.conversations.replies({
+            channel,
+            ts: threadTs,
+            ...(options?.oldest ? { oldest: options.oldest, inclusive: false } : {}),
+            limit,
+          })
+        : await this.webClient.conversations.history({
+            channel,
+            ...(options?.oldest ? { oldest: options.oldest, inclusive: false } : {}),
+            limit,
+          });
       const messages = (result.messages ?? []) as Array<{
         ts?: string;
         thread_ts?: string;
@@ -397,8 +407,12 @@ export class SlackMessagingBot implements MessagingBot {
         subtype?: string;
         text?: string;
       }>;
-      return messages
+      const mapped = messages
         .filter((msg): msg is typeof msg & { ts: string } => !!msg.ts)
+        // conversations.replies leads with the thread parent; the caller asked
+        // for the replies to it, and including it would re-ingest the bot's
+        // own message on every poll.
+        .filter((msg) => msg.ts !== threadTs)
         .map((msg) => {
           const user = msg.user ? this.users.get(msg.user) : undefined;
           const message: PlatformHistoryMessage = {
@@ -410,8 +424,10 @@ export class SlackMessagingBot implements MessagingBot {
           if (msg.user) message.userId = msg.user;
           if (user) message.userName = user.userName;
           return message;
-        })
-        .toReversed();
+        });
+      // history returns newest-first, replies oldest-first; the contract is
+      // oldest-first either way.
+      return threadTs ? mapped : mapped.toReversed();
     });
   }
 
