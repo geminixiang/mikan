@@ -46,9 +46,11 @@ import {
 import { processMessageIntake } from "../intake.js";
 import {
   AssistantThreadRegistry,
-  handleAssistantThreadContextChanged,
+  handleAgentContextChanged,
+  handleAgentDmOpened,
   handleAssistantThreadStarted,
   titleAssistantThread,
+  type AgentContext,
   type AssistantSurfaceOps,
   type AssistantThreadPayload,
   type SuggestedPrompt,
@@ -522,13 +524,15 @@ export class SlackMessagingBot implements MessagingBot {
   /** Offer starting points in a new assistant thread. */
   async setAssistantSuggestedPrompts(
     channel: string,
-    threadTs: string,
+    threadTs: string | undefined,
     prompts: SuggestedPrompt[],
   ): Promise<void> {
     return slackRetry(async () => {
+      // Omitting thread_ts pins the prompts to the DM itself, which is what
+      // the agent surface wants: there is no thread yet when it opens.
       await this.webClient.assistant.threads.setSuggestedPrompts({
         channel_id: channel,
-        thread_ts: threadTs,
+        ...(threadTs ? { thread_ts: threadTs } : {}),
         prompts,
       });
     });
@@ -571,8 +575,13 @@ export class SlackMessagingBot implements MessagingBot {
     );
   }
 
-  /** The person navigated to another channel while the pane is open. */
-  private handleAssistantThreadContextChanged({
+  /**
+   * The person navigated to another channel while the pane is open. Slack
+   * sends this as `assistant_thread_context_changed` under `assistant_view`
+   * and `app_context_changed` under `agent_view`; the payload differs enough
+   * to normalize here rather than in the handler.
+   */
+  private handleAgentContextChangedEvent({
     event,
     ack,
   }: {
@@ -580,9 +589,23 @@ export class SlackMessagingBot implements MessagingBot {
     ack: () => void;
   }): void {
     ack();
-    const payload = event as { assistant_thread?: AssistantThreadPayload };
-    if (!payload.assistant_thread) return;
-    handleAssistantThreadContextChanged(this.assistantThreads, payload.assistant_thread);
+    const payload = event as {
+      assistant_thread?: AssistantThreadPayload;
+      channel_id?: string;
+      channel?: string;
+      context?: AgentContext;
+    };
+    if (payload.assistant_thread) {
+      handleAgentContextChanged(this.assistantThreads, payload.assistant_thread);
+      return;
+    }
+    const channelId = payload.channel_id ?? payload.channel;
+    if (channelId) {
+      handleAgentContextChanged(this.assistantThreads, {
+        channel_id: channelId,
+        context: payload.context,
+      });
+    }
   }
 
   async postInThread(channel: string, threadTs: string, text: string): Promise<string> {
@@ -1266,7 +1289,11 @@ export class SlackMessagingBot implements MessagingBot {
       this.handleAssistantThreadStarted(payload),
     );
     this.socketClient.on("assistant_thread_context_changed", (payload) =>
-      this.handleAssistantThreadContextChanged(payload),
+      this.handleAgentContextChangedEvent(payload),
+    );
+    // agent_view's spelling of the same signal.
+    this.socketClient.on("app_context_changed", (payload) =>
+      this.handleAgentContextChangedEvent(payload),
     );
     this.socketClient.on("block_actions", (payload) => void this.handleBlockAction(payload));
     this.socketClient.on(
@@ -1535,8 +1562,19 @@ export class SlackMessagingBot implements MessagingBot {
   }
 
   private handleAppHomeOpened({ event, ack }: { event: unknown; ack: () => void }): void {
-    const e = event as { user: string; tab: string };
+    const e = event as { user: string; tab: string; channel?: string; context?: AgentContext };
     ack();
+
+    // Under agent_view this is how Slack says "the person opened the app's
+    // DM" — the signal assistant_thread_started used to carry. It fires on
+    // every open, not once per conversation, so this path refreshes the
+    // pinned prompts and deliberately does not greet.
+    if (e.tab === "messages") {
+      if (e.channel) {
+        void handleAgentDmOpened(this.assistantOps(), this.assistantThreads, e.channel, e.context);
+      }
+      return;
+    }
     if (e.tab !== "home") return;
 
     this.webClient.views

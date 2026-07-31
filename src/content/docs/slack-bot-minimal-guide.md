@@ -18,10 +18,14 @@ Socket Mode, message events — is identical, and the same mikan process serves
 either. Start from the classic one if you are not sure; adding the agent
 surface later is an edit to the same app.
 
-> The manifest key was `assistant_view` (with `assistant_description`) before
-> Slack renamed it to `agent_view` / `agent_description`. The event and API
-> names did not change. If you are editing an app created before the rename,
-> export its manifest from Slack to see which spelling your app has.
+> `agent_view` and `assistant_view` are two surfaces, not two spellings of
+> one. The events and the `assistant.threads.*` methods kept their names, but
+> **which events mean "someone opened a conversation" changed**: `agent_view`
+> uses `app_home_opened` (with `tab: "messages"`) and `app_context_changed`,
+> while `assistant_view` uses `assistant_thread_started` and
+> `assistant_thread_context_changed`. mikan handles both, so either manifest
+> works. New apps can only choose `agent_view`; `assistant_view` still works
+> but Slack has said it will eventually be deprecated.
 
 ## 1. Create a Slack app
 
@@ -93,13 +97,15 @@ Subscribe to these bot events:
 - `message.groups`
 - `message.im`
 
-Plus these two for the agent surface — Slack sends them when someone opens a
-conversation in the agent pane and as they navigate. mikan answers the first
-with a greeting and suggested prompts; without them the pane opens empty and
-waits, which looks broken rather than quiet:
+Plus, for the agent surface, the events that say someone opened the pane and
+where they are looking. Subscribe the pair that matches your manifest key —
+subscribing all four is harmless and covers either:
 
-- `assistant_thread_started`
-- `assistant_thread_context_changed`
+- `agent_view`: `app_context_changed` (and `app_home_opened`, already above)
+- `assistant_view`: `assistant_thread_started`, `assistant_thread_context_changed`
+
+Without them the pane has no suggested prompts and its conversations stay
+untitled in the sidebar.
 
 ## 6. Enable interactivity
 

@@ -1,7 +1,8 @@
 import { describe, expect, test } from "vitest";
 import {
   AssistantThreadRegistry,
-  handleAssistantThreadContextChanged,
+  handleAgentContextChanged,
+  handleAgentDmOpened,
   handleAssistantThreadStarted,
   summarizeTitle,
   titleAssistantThread,
@@ -17,7 +18,7 @@ import {
 
 function createOps(overrides: Partial<AssistantSurfaceOps> = {}) {
   const posts: Array<{ channel: string; threadTs: string; text: string }> = [];
-  const prompts: Array<{ threadTs: string; titles: string[] }> = [];
+  const prompts: Array<{ threadTs: string | undefined; titles: string[] }> = [];
   const titles: Array<{ threadTs: string; title: string }> = [];
   const ops: AssistantSurfaceOps = {
     postInThread: async (channel, threadTs, text) => {
@@ -51,7 +52,7 @@ describe("assistant thread lifecycle", () => {
     expect(posts).toHaveLength(1);
     expect(posts[0]).toMatchObject({ channel: "D1", threadTs: "100.1" });
     expect(prompts[0]?.titles.length).toBeGreaterThan(0);
-    expect(registry.isAssistantThread("D1", "100.1")).toBe(true);
+    expect(registry.isAgentSurface("D1", "100.1")).toBe(true);
   });
 
   test("names the channel the person is looking at", async () => {
@@ -92,7 +93,7 @@ describe("assistant thread lifecycle", () => {
     const registry = new AssistantThreadRegistry();
     registry.remember("D1", "100.1", { channel_id: "C1" });
 
-    handleAssistantThreadContextChanged(registry, {
+    handleAgentContextChanged(registry, {
       channel_id: "D1",
       thread_ts: "100.1",
       context: { channel_id: "C2" },
@@ -106,7 +107,43 @@ describe("assistant thread lifecycle", () => {
     const registry = new AssistantThreadRegistry();
     await handleAssistantThreadStarted(ops, registry, { channel_id: "D1" });
     expect(posts).toHaveLength(0);
-    expect(registry.isAssistantThread("D1", "100.1")).toBe(false);
+    expect(registry.isAgentSurface("D1", "100.1")).toBe(false);
+  });
+});
+
+describe("agent_view: the app DM", () => {
+  test("opening the DM pins prompts and does not greet", async () => {
+    const { ops, posts, prompts } = createOps();
+    const registry = new AssistantThreadRegistry();
+
+    await handleAgentDmOpened(ops, registry, "D1", { channel_id: "C9" });
+
+    // app_home_opened fires on EVERY open, so greeting here would nag. Only
+    // the prompts refresh, which is idempotent.
+    expect(posts).toHaveLength(0);
+    expect(prompts).toHaveLength(1);
+    // No thread_ts: the prompts pin to the DM, because under agent_view there
+    // is no thread yet when it opens.
+    expect(prompts[0]?.threadTs).toBeUndefined();
+    expect(registry.channelContext("D1")?.channel_id).toBe("C9");
+  });
+
+  test("a DM known as the agent surface makes its threads titleable", async () => {
+    const { ops, titles } = createOps();
+    const registry = new AssistantThreadRegistry();
+    await handleAgentDmOpened(ops, registry, "D1");
+
+    // Slack opens threads itself under agent_view and never announces them,
+    // so titles have to work off the channel rather than a registered thread.
+    await titleAssistantThread(ops, registry, "D1", "100.1", "看一下昨天的部署");
+    expect(titles).toEqual([{ threadTs: "100.1", title: "看一下昨天的部署" }]);
+  });
+
+  test("app_context_changed without a thread updates the channel", () => {
+    const registry = new AssistantThreadRegistry();
+    handleAgentContextChanged(registry, { channel_id: "D1", context: { channel_id: "C5" } });
+    expect(registry.channelContext("D1")?.channel_id).toBe("C5");
+    expect(registry.isAgentSurface("D1", "any.thread")).toBe(true);
   });
 });
 
