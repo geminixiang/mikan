@@ -44,6 +44,15 @@ import {
   withRetry,
 } from "../shared.js";
 import { processMessageIntake } from "../intake.js";
+import {
+  AssistantThreadRegistry,
+  handleAssistantThreadContextChanged,
+  handleAssistantThreadStarted,
+  titleAssistantThread,
+  type AssistantSurfaceOps,
+  type AssistantThreadPayload,
+  type SuggestedPrompt,
+} from "./assistant.js";
 import { createSlackAdapters } from "./context.js";
 import {
   hasMaterializedChatSession,
@@ -164,6 +173,8 @@ export class SlackMessagingBot implements MessagingBot {
 
   private users = new Map<string, SlackUser>();
   private channels = new Map<string, SlackChannel>();
+  /** Which threads belong to the assistant pane, and their last known context. */
+  private assistantThreads = new AssistantThreadRegistry();
   private queues = new Map<string, MessagingEventQueue>();
   private eventsWatcher: EventsWatcher | null = null;
 
@@ -506,6 +517,72 @@ export class SlackMessagingBot implements MessagingBot {
         status,
       });
     });
+  }
+
+  /** Offer starting points in a new assistant thread. */
+  async setAssistantSuggestedPrompts(
+    channel: string,
+    threadTs: string,
+    prompts: SuggestedPrompt[],
+  ): Promise<void> {
+    return slackRetry(async () => {
+      await this.webClient.assistant.threads.setSuggestedPrompts({
+        channel_id: channel,
+        thread_ts: threadTs,
+        prompts,
+      });
+    });
+  }
+
+  /** Name an assistant thread, which is what the sidebar conversation list shows. */
+  async setAssistantTitle(channel: string, threadTs: string, title: string): Promise<void> {
+    return slackRetry(async () => {
+      await this.webClient.assistant.threads.setTitle({
+        channel_id: channel,
+        thread_ts: threadTs,
+        title,
+      });
+    });
+  }
+
+  /** The assistant surface's view of this bot, handed to the lifecycle handlers. */
+  private assistantOps(): AssistantSurfaceOps {
+    return {
+      postInThread: (channel, threadTs, text) => this.postInThread(channel, threadTs, text),
+      setSuggestedPrompts: (channel, threadTs, prompts) =>
+        this.setAssistantSuggestedPrompts(channel, threadTs, prompts),
+      setTitle: (channel, threadTs, title) => this.setAssistantTitle(channel, threadTs, title),
+      channelName: (channelId) => this.channels.get(channelId)?.name,
+    };
+  }
+
+  /**
+   * A new conversation opened in the assistant pane. Slack waits for the app
+   * to speak first here; staying silent is what makes the pane look broken.
+   */
+  private handleAssistantThreadStarted({ event, ack }: { event: unknown; ack: () => void }): void {
+    ack();
+    const payload = event as { assistant_thread?: AssistantThreadPayload };
+    if (!payload.assistant_thread) return;
+    void handleAssistantThreadStarted(
+      this.assistantOps(),
+      this.assistantThreads,
+      payload.assistant_thread,
+    );
+  }
+
+  /** The person navigated to another channel while the pane is open. */
+  private handleAssistantThreadContextChanged({
+    event,
+    ack,
+  }: {
+    event: unknown;
+    ack: () => void;
+  }): void {
+    ack();
+    const payload = event as { assistant_thread?: AssistantThreadPayload };
+    if (!payload.assistant_thread) return;
+    handleAssistantThreadContextChanged(this.assistantThreads, payload.assistant_thread);
   }
 
   async postInThread(channel: string, threadTs: string, text: string): Promise<string> {
@@ -1182,6 +1259,15 @@ export class SlackMessagingBot implements MessagingBot {
     this.socketClient.on("message", (payload) => this.handleMessageEvent(payload));
     this.socketClient.on("slash_commands", (payload) => void this.handleSlashCommand(payload));
     this.socketClient.on("app_home_opened", (payload) => this.handleAppHomeOpened(payload));
+    // The assistant surface's lifecycle. Both events were already subscribed
+    // in the app manifest and then dropped on the floor, which is why the pane
+    // opened empty and the sidebar filled with untitled conversations.
+    this.socketClient.on("assistant_thread_started", (payload) =>
+      this.handleAssistantThreadStarted(payload),
+    );
+    this.socketClient.on("assistant_thread_context_changed", (payload) =>
+      this.handleAssistantThreadContextChanged(payload),
+    );
     this.socketClient.on("block_actions", (payload) => void this.handleBlockAction(payload));
     this.socketClient.on(
       "interactive",
@@ -1330,6 +1416,19 @@ export class SlackMessagingBot implements MessagingBot {
 
     const isThreadReply = !!e.thread_ts;
     const sessionKey = isDM ? resolveSlackSessionKey(e.channel, e.thread_ts) : undefined;
+
+    // Name the conversation from the first thing the person said. Guarded on
+    // the assistant registry, so classic DM threads are untouched, and it
+    // claims the title once per thread.
+    if (isDM && e.thread_ts && e.text) {
+      void titleAssistantThread(
+        this.assistantOps(),
+        this.assistantThreads,
+        e.channel,
+        e.thread_ts,
+        this.stripOwnMention(e.text),
+      );
+    }
 
     const slackEvent = createConversationEvent({
       platform: "slack",
