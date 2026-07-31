@@ -59,6 +59,14 @@ interface ProgressiveStreamTransport {
   start(text: string): Promise<string>;
   append(messageId: string, delta: string): Promise<void>;
   stop(messageId: string): Promise<void>;
+  /**
+   * Withhold an append until this many characters have accumulated. A
+   * streaming transport is usually rate-limited per call rather than per byte,
+   * so forwarding every token spends the budget on latency nobody perceives.
+   * The final render flushes whatever is left before stopping, so buffering
+   * can never drop text. Omit for no buffering.
+   */
+  minDeltaChars?: number;
 }
 
 export interface ProgressiveRendererPlatform {

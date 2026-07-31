@@ -15,6 +15,7 @@ function makeRenderer(
   overrides: {
     post?: (text: string) => Promise<string>;
     update?: (id: string, text: string) => Promise<void>;
+    minDeltaChars?: number;
   } = {},
 ) {
   const calls: Call[] = [];
@@ -53,6 +54,9 @@ function makeRenderer(
     stream:
       kind === "native"
         ? {
+            ...(overrides.minDeltaChars !== undefined
+              ? { minDeltaChars: overrides.minDeltaChars }
+              : {}),
             start: async (text) => {
               const id = `stream-${nextId++}`;
               calls.push({ operation: "start", id, text });
@@ -184,4 +188,61 @@ test("splits buffered output before sending continuation messages", async () => 
   expect(calls[0].operation).toBe("post");
   expect(calls[0].text?.length).toBeLessThanOrEqual(20);
   expect(calls[1].operation).toBe("extra");
+});
+
+// The upstream flush already batches at 80 characters, but it also flushes on
+// a timer, so a slow generation still produces a steady drip of appends. The
+// transport threshold is what keeps that drip off a rate-limited API.
+const chunk = (letter: string) => letter.repeat(100);
+
+describe("native streaming: delta buffering", () => {
+  test("withholds small deltas and flushes the remainder before stopping", async () => {
+    const { responder, calls } = makeRenderer("native", undefined, { minDeltaChars: 300 });
+
+    await responder.appendResponseDelta?.(chunk("a"));
+    await responder.appendResponseDelta?.(chunk("b"));
+    await responder.appendResponseDelta?.(chunk("c"));
+    await responder.appendResponseDelta?.(chunk("d"));
+    await responder.finishResponse?.();
+
+    const started = calls.find((call) => call.operation === "start")?.text ?? "";
+    const appends = calls.filter((call) => call.operation === "append").map((call) => call.text);
+
+    // b and c are each under the threshold and wait; d pushes the pending
+    // delta over it, so three chunks travel as one call instead of three.
+    expect(appends).toHaveLength(1);
+    expect(appends[0]).toBe(chunk("b") + chunk("c") + chunk("d"));
+
+    // Buffering must never drop text.
+    expect(started + appends.join("")).toBe(chunk("a") + chunk("b") + chunk("c") + chunk("d"));
+    expect(calls.filter((call) => call.operation === "stop")).toHaveLength(1);
+  });
+
+  test("a delta still pending at the end is flushed, not lost", async () => {
+    const { responder, calls } = makeRenderer("native", undefined, { minDeltaChars: 10_000 });
+
+    await responder.appendResponseDelta?.(chunk("a"));
+    await responder.appendResponseDelta?.(chunk("b"));
+    await responder.finishResponse?.();
+
+    // Nothing ever reached the threshold, so the only append is the final
+    // flush — and it carries everything the stream had not sent yet.
+    const started = calls.find((call) => call.operation === "start")?.text ?? "";
+    const appends = calls.filter((call) => call.operation === "append").map((call) => call.text);
+    expect(started + appends.join("")).toBe(chunk("a") + chunk("b"));
+    expect(calls.filter((call) => call.operation === "stop")).toHaveLength(1);
+  });
+
+  test("without a threshold every flush is forwarded", async () => {
+    const { responder, calls } = makeRenderer("native");
+
+    await responder.appendResponseDelta?.(chunk("a"));
+    await responder.appendResponseDelta?.(chunk("b"));
+    await responder.appendResponseDelta?.(chunk("c"));
+
+    expect(calls.filter((call) => call.operation === "append").map((call) => call.text)).toEqual([
+      chunk("b"),
+      chunk("c"),
+    ]);
+  });
 });

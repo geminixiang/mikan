@@ -170,7 +170,10 @@ export function createProgressiveRenderer(platform: ProgressiveRendererPlatform)
     try {
       if (state.responseId !== null) {
         const delta = prepared.slice(state.streamedSource.length);
-        if (delta) {
+        // Below the threshold the delta stays pending: `state.streamedSource`
+        // does not advance, so the next tick recomputes it from the same base
+        // and `renderFinal` flushes the remainder before stopping.
+        if (delta && delta.length >= (stream.minDeltaChars ?? 0)) {
           await stream.append(state.responseId, delta);
           state.streamedSource = prepared;
         }

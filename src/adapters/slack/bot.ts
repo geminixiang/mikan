@@ -69,6 +69,7 @@ import {
 } from "./session.js";
 import { reportUserFacingError } from "../../observability/sentry.js";
 import { renderSlackBlocks, resolveSlackMentions } from "./blocks.js";
+import { StreamStartLimiter } from "./stream-limits.js";
 
 const SLACK_EVENT_ANCHOR_TEXT = "Working on it...";
 
@@ -177,6 +178,13 @@ export class SlackMessagingBot implements MessagingBot {
   private channels = new Map<string, SlackChannel>();
   /** Which threads belong to the assistant pane, and their last known context. */
   private assistantThreads = new AssistantThreadRegistry();
+  /**
+   * Native response streams opened recently. Per bot rather than per module:
+   * the rate tier applies per workspace, and this bot is the connection to
+   * one — which also means a test constructing a bot gets a fresh budget
+   * instead of inheriting whatever ran before it.
+   */
+  private streamStarts = new StreamStartLimiter();
   private queues = new Map<string, MessagingEventQueue>();
   private eventsWatcher: EventsWatcher | null = null;
 
@@ -460,6 +468,15 @@ export class SlackMessagingBot implements MessagingBot {
       const payload = { channel, ts, ...renderSlackBlocks(this.resolveMentions(text)) };
       await this.webClient.chat.update(payload);
     });
+  }
+
+  /**
+   * Claim one native stream, or decline. Declining is not an error: the caller
+   * falls back to edit-based updates, which is a working answer rather than a
+   * degraded one, and costs no request against the tighter start tier.
+   */
+  tryReserveStreamStart(): boolean {
+    return this.streamStarts.tryReserve();
   }
 
   async startMessageStream(

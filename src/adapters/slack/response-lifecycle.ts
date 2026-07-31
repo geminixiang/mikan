@@ -7,6 +7,13 @@ import { renderSlackBlocks } from "./blocks.js";
 import type { SlackAdapterSessionPlan } from "./types.js";
 
 const MAX_MAIN_LENGTH = 35000;
+/**
+ * Slack's own SDK buffers streamed output at this size before sending, for
+ * exactly the reason we do: appends are rate-limited per call, so forwarding
+ * every token spends the budget on latency nobody can perceive.
+ */
+const STREAM_MIN_DELTA_CHARS = 256;
+
 const MAX_THREAD_LENGTH = 20000;
 const FALLBACK_MAIN_LENGTH = 3000;
 const WORKING_INDICATOR = " ...";
@@ -133,7 +140,11 @@ export function createSlackResponseContext({
     return ids;
   };
 
-  const streamKind = replyInThread && rootTs ? "native" : "buffered";
+  // Reserve before choosing, not after failing: exceeding the start tier
+  // costs a wasted request and a visibly worse first response, and the
+  // buffered path is a working answer rather than a degraded one.
+  const streamKind =
+    replyInThread && rootTs && slack.tryReserveStreamStart() ? "native" : "buffered";
   const { responder } = createProgressiveRenderer({
     label: "Slack",
     maxLength: MAX_MAIN_LENGTH,
@@ -157,6 +168,7 @@ export function createSlackResponseContext({
             start: (text) => slack.startMessageStream(channelId, text, rootTs, event.user),
             append: (id, delta) => slack.appendMessageStream(channelId, id, delta),
             stop: (id) => slack.stopMessageStream(channelId, id),
+            minDeltaChars: STREAM_MIN_DELTA_CHARS,
           }
         : undefined,
     needsCanonicalRender,

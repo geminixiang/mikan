@@ -16,6 +16,9 @@ function makeSlackMessagingBot(overrides: Partial<SlackMessagingBot> = {}): Slac
     postInThread: vi.fn().mockResolvedValue("T002"),
     updateMessage: vi.fn().mockResolvedValue(undefined),
     startMessageStream: vi.fn().mockRejectedValue(new Error("streaming unsupported in mock")),
+    // The real bot declines once the start tier is spent; a fake that always
+    // grants keeps these cases about rendering rather than about budget.
+    tryReserveStreamStart: vi.fn().mockReturnValue(true),
     appendMessageStream: vi.fn().mockResolvedValue(undefined),
     stopMessageStream: vi.fn().mockResolvedValue(undefined),
     deleteMessage: vi.fn().mockResolvedValue(undefined),
