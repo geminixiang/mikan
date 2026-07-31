@@ -330,11 +330,13 @@ Lifecycle discipline:
    (any `.js` placed there is loaded as an extension) and upgrades replace the
    whole directory; state always goes to the data dir.
 
-Full examples live in `deploy/examples/extensions/`: `agent-pm/` (a ~200-line
-follow-up tracker with sqlite, a daily overdue-scan schedule, proactive
-notify, and a bundled skill) and `poll/` (an interactive Block Kit example).
+Full examples live in `deploy/examples/extensions/`: `poll/` (an interactive
+Block Kit example — read this one first) and `agent-pm/` (an Event → Workflow
+→ Task pipeline: callback schedules, sqlite storage, deterministic dispatch,
+deduplicated delivery, a typed tool, a chat command, and a bundled skill).
 Both show the target shape: reuse mikan's harness instead of building a second
-agent stack.
+agent stack. `agent-pm` is covered by `src/test/example-agent-pm.test.ts` and
+by S-023/S-024 in the Slack e2e, so it keeps working as this API moves.
 
 Still open: provider registration, and install/uninstall lifecycle hooks.
 

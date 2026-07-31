@@ -1,15 +1,23 @@
 {
   "name": "agent-pm",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
-  "description": "Follow-up tracker: sqlite-backed items, daily overdue sweep, proactive reminders",
+  "description": "Event → Workflow → Task pipeline: schedules, storage, deterministic dispatch, proactive delivery",
   "type": "module",
   "devDependencies": {
     "@geminixiang/mikan": "*"
   },
   "mikan": {
     "extensions": [
-      "./index.ts"
+      "./src/index.ts"
+    ],
+    "displayName": "Agent PM",
+    "secrets": [
+      {
+        "key": "GITHUB_TOKEN",
+        "description": "Repository API token, read by the github ingest source",
+        "required": false
+      }
     ]
   }
 }

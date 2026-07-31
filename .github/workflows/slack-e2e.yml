@@ -90,6 +90,35 @@ jobs:
             };
             fs.writeFileSync(p, JSON.stringify(s, null, 2));
           ' "$STATE_DIR/settings.json"
+          # The agent-pm example is exercised by S-023/S-024. Installed
+          # globally so it activates in the QA conversation, and configured to
+          # own its schedules there — but with every cron parked on an hour
+          # this job will not see, so it never posts on its own while the other
+          # tests are asserting on the channel. The tests drive it explicitly
+          # through /pm instead.
+          node dist/main.js ext install deploy/examples/extensions/agent-pm \
+            --global --state-dir "$STATE_DIR"
+          HEARTBEAT_HOUR="$(TZ=Asia/Taipei date +%-H)"
+          PARKED_HOUR="$(( (HEARTBEAT_HOUR + 6) % 24 ))"
+          AGENT_PM_DIR="$STATE_DIR/global/extension-data/agent-pm"
+          mkdir -p "$AGENT_PM_DIR"
+          cat > "$AGENT_PM_DIR/config.json" <<CONFIG
+          {
+            "controlConversationId": "$SLACK_QA_CHANNEL_ID",
+            "deliveryMode": "test",
+            "testConversationId": "$SLACK_QA_CHANNEL_ID",
+            "githubOrg": "",
+            "calendarId": "",
+            "disabledSources": [],
+            "heartbeatHour": $HEARTBEAT_HOUR,
+            "scheduleOverrides": {
+              "ingest-events": "0 $PARKED_HOUR * * *",
+              "run-workflows": "0 $PARKED_HOUR * * *",
+              "sweep-tasks": "0 $PARKED_HOUR * * *"
+            }
+          }
+          CONFIG
+
           node dist/main.js --state-dir "$STATE_DIR" "$WORKING_DIR" >"$LOG_FILE" 2>&1 &
           MIKAN_PID=$!
 

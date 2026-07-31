@@ -1,106 +1,131 @@
 # agent-pm — mikan extension example
 
-A follow-up tracker implemented as a single TypeScript `index.ts` with zero
-**runtime** dependencies. Storage uses the Node built-in `node:sqlite`; the
-example requires the same Node.js `>=22.19.0` baseline as mikan.
+An event-driven team-operations pipeline: **Event → Workflow → Task → Feedback**.
 
-It demonstrates the extension features needed by a realistic stateful tool:
-custom tools, hooks, per-conversation data, schedules, proactive messages,
-metadata, and bundled skills. It is not an exhaustive example of every hook or
-`api.react`.
+Everything that happens — a chat message, a repository change, a calendar
+entry, a clock tick — lands as one immutable `Event`. Registered `Workflow`
+rows (a trigger, a prompt, and a declared tool list) match events and run; when
+something needs a person, they produce a `Task`. The person works it and says
+whether the agent was right, and that judgement is `Feedback` that shapes the
+next run of the same workflow. Human replies come back in as Events, so the
+loop closes without a separate tracking stage.
 
-Types come from the mikan package (dev dependency) via
-`import type { MikanExtensionApi } from "@geminixiang/mikan"` for completions;
-loaded by jiti with no build step. Entrypoint is declared in `package.json`
-under `mikan.extensions`.
+Zero **runtime** dependencies: storage is the Node built-in `node:sqlite`, on
+the same Node `>=22.19.0` baseline as mikan. Types come from the mikan package
+(a dev dependency) via `import type { MikanExtensionApi }`; jiti loads the
+TypeScript directly, so there is no build step.
 
-## What it does
+This is the large example. For the minimal shape of an extension — one
+interactive message and one handler — read [`../poll`](../poll) first.
 
-- **`followup` tool** (`registerTool`): the model can `add` / `list` / `done` /
-  `cancel` / `note` / `remind` to manage this conversation's tracked items.
-- **Per-turn injection** (`before_agent_start` hook): open items are appended to
-  the system prompt so each turn starts aware of follow-ups and overdue work.
-- **Daily overdue scan** (`api.schedules`): on activate, registers a cron
-  schedule that becomes a mikan event file — every day at 09:00 an autonomous
-  agent run fires even if no one messages, to chase overdue items.
-- **Proactive messaging** (`api.notify`): the `remind` action posts the list
-  to the channel without going through a normal agent reply.
-- **Data directory** (`api.paths.dataDir`, default): SQLite under
-  `<stateDir>/conversations/<officeKey>/extension-data/agent-pm/` — host-only,
-  never in the sandbox. One db per conversation (free isolation) — the usual
-  install for single-channel/DM follow-up tracking. For a cross-channel PM view (one
-  table over all channels), use `api.paths.sharedDataDir` and partition by
-  `conversation_id` yourself.
-- **package.json**: `mikan.extensions` declares the entrypoint;
-  name/version/description use standard npm fields (single metadata source).
-- **skills/**: ships `follow-up-triage` SKILL.md, body inlined into the
-  system prompt (sandbox cannot read host-only paths, so extension skills are
-  always inline).
+## What it demonstrates
+
+| Extension surface                                                                | Where                               |
+| -------------------------------------------------------------------------------- | ----------------------------------- |
+| **Callback schedules** — host-side code on a cron, no agent run, no model call   | `src/index.ts`, the pipeline stages |
+| `api.notify` **returning the message id** — the thread anchor a reply loop needs | `src/delivery.ts`                   |
+| `registerTool` with a typed JSON-Schema tool                                     | `pm_task` in `src/index.ts`         |
+| `registerCommand` — deterministic `/pm`, dispatched with no model call           | `src/index.ts`                      |
+| `api.subagent.run` with an output schema, for the one routing decision           | `src/pipeline/run.ts`               |
+| `api.paths.sharedDataDir` — a deliberately cross-conversation application        | `src/index.ts`                      |
+| `mikan.secrets` declaration                                                      | `package.json`                      |
+| Bundled skills, inlined into the prompt                                          | `skills/task-triage/`               |
+
+## Layout
+
+```
+src/
+  index.ts            activate: schedules, the pm_task tool, the /pm command
+  config.ts           config.json — delivery mode, schedule overrides
+  context.ts          what every stage is handed
+  db.ts               schema (8 pipeline tables + identity) and row types
+  store.ts            the one place rows are written
+  urn.ts              subject URNs
+  clock.ts            the one clock
+  delivery.ts         the single outbound log
+  pipeline/           ingest → run → sweep, one file per stage
+  workflows/          seeds.ts (the rows) and handlers.ts (the code)
+```
+
+## Four ideas worth stealing
+
+**Deliveries are one table with a unique key.** Every outbound message goes
+through `deliver()`, so "don't send this twice" is a database constraint
+instead of a check each call site re-implements. Re-running a stage posts
+nothing rather than notifying everyone again.
+
+**`deliveryMode` defaults to `test`.** Every message is divertible to one
+conversation, labelled with where it would have gone. An extension that
+notifies people is one config mistake away from notifying all of them twice —
+while you tune a workflow, or while this runs beside whatever it replaces.
+
+**Schedules are owned by exactly one conversation.** `activate` runs once per
+conversation, so without the `controlConversationId` check every conversation
+the extension is installed in registers its own copy of the daily jobs.
+
+**An unmatched event is recorded, not dropped.** A routing gap and a quiet day
+look identical unless you write down that nothing matched.
 
 ## Install
 
-Use `mikan ext` (validates, installs to the correct path, prints slug and data
-locations):
-
 ```sh
-# install from GitHub (no local clone) — one conversation (common)
-mikan ext install github:geminixiang/mikan#deploy/examples/extensions/agent-pm --conversation <id>
-
-# or all conversations
+# from GitHub, no local clone
 mikan ext install github:geminixiang/mikan#deploy/examples/extensions/agent-pm --global
 
 # or from a local path
-mikan ext install ./agent-pm --global
+mikan ext install ./agent-pm --conversation <id>
 ```
 
-After installation, send `/pi-new` in each affected conversation. Installation
-copies the source into the host-only state directory, so editing the original
-checkout does not update the installed copy. Re-run the same `mikan ext install`
-command to replace code while preserving extension data, then send `/pi-new`.
-No mikan process restart is required because each new harness instance loads
-extensions through jiti without a module cache.
+Send `/pi-new` in the conversation to activate. Installation copies the source
+into the host-only state directory, so editing the original checkout does not
+update the installed copy — re-run the same command to replace code while
+preserving data. No process restart is needed: each new harness instance loads
+extensions through jiti with no module cache.
 
-Use the same `--state-dir` as the running mikan instance when it is not the
-default `~/.mikan`.
+Then configure it:
+
+```jsonc
+// <stateDir>/global/extension-data/agent-pm/config.json
+{
+  "controlConversationId": "C0EXAMPLE1", // owns the schedules; also the delivery target
+  "deliveryMode": "test", // "live" once you have compared the output
+  "testConversationId": "C0EXAMPLE2",
+  "heartbeatHour": 9, // Asia/Taipei
+  "scheduleOverrides": {}, // e.g. {"run-workflows": "*/2 * * * *"}
+}
+```
+
+Until `controlConversationId` is set nothing fires on a timer — the tool and
+the command still work, and `/pm status` says so.
 
 > To develop your own extension, install mikan for types with
 > `npm install --save-dev --ignore-scripts @geminixiang/mikan`, import
 > `MikanExtensionApi`, then implement `activate(api: MikanExtensionApi)`.
-> `mikan ext dev ./my-extension` runs it in a stdin/stdout conversation on the
-> same runtime, with no Slack workspace and no install step.
+> `mikan ext dev ./my-extension` runs it in a stdin/stdout conversation.
 
-## Secrets (unused in this sample, but available)
+## Commands
 
-If an extension needs third-party tokens (for example Linear or GitHub), an
-administrator writes `KEY=value` lines to
-`<stateDir>/vaults/extensions/agent-pm/env`. Extension code reads them through
-`api.secrets.get("LINEAR_TOKEN")`; it cannot update them through this API.
-Secrets are keyed by the installed slug (`agent-pm`), not the display name.
+- `/pm status` — delivery mode, schedule ownership, queue depth, failure counts
+- `/pm ingest | run | sweep | all` — run a stage now, without waiting for cron
 
-## Example flow
+Extension commands are dispatched deterministically, with no model call. Slack
+intercepts `/`-prefixed input in its own client and only delivers commands
+registered in the Slack app manifest, so `/pm` is reachable from Telegram,
+Discord, and GitHub comments — and from the Slack Web API, which is how the
+end-to-end test drives it.
 
-```
-user: remember, vendor quote needs a reply by Friday
-agent:  (followup add "reply to vendor quote" due=2026-07-10) noted, tracking it.
+## Tests
 
--- next day 09:00, nobody messages --
+- `src/test/example-agent-pm.test.ts` — the pipeline end to end against a stub
+  api: idempotent ingest, unmatched events recorded, delivery dedup, test-mode
+  routing, run attribution.
+- `e2e/slack/agent-pm.e2e.ts` (S-023, S-024) — the mikan↔extension seam against
+  a real workspace: a contributed command arriving without a model call, and
+  `api.notify` actually posting.
 
-mikan:  (schedule fires autonomous run → followup list → finds overdue)
-        ⚠️ "reply to vendor quote" is overdue (due 2026-07-10); please update status.
-```
+## Not implemented here
 
-## Extension API coverage
-
-| Need                            | Status                                    |
-| ------------------------------- | ----------------------------------------- |
-| Custom tool                     | ✅ `registerTool`                         |
-| Per-turn context injection      | ✅ `before_agent_start`                   |
-| Conversation scope              | ✅ `api.context.conversationId`           |
-| Timed proactive reminder (idle) | ✅ `api.schedules` (cron / one-shot)      |
-| Post to platform proactively    | ✅ `api.notify`                           |
-| Private data directory          | ✅ `api.paths.dataDir`                    |
-| Secrets                         | Available through `api.secrets`; not used |
-| Identity / version              | ✅ `package.json` (name/version)          |
-| Bundled skills                  | ✅ `skills/` (`SKILL.md`, auto-inlined)   |
-| Reactions                       | Available through `api.react`; not used   |
-| Other lifecycle/tool hooks      | Available; not demonstrated               |
+The ingest sources (chat, repository, calendar) and `improve_workflows` are
+left out: they need credentials and an organization's own identity data, which
+would make this a deployment rather than a reference. `pipeline_heartbeat` is
+the one shipped workflow, and it exercises every seam the others would use.
