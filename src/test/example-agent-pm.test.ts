@@ -137,6 +137,20 @@ describe("agent-pm example extension", () => {
     expect(harness.commands.has("pm")).toBe(true);
   });
 
+  test("an api without callback schedules fails with an actionable message", async () => {
+    const harness = createHarness(dataDir);
+    // What an older mikan looks like: schedules exist, onCallback does not.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stub api
+    delete (harness.api.schedules as any).onCallback;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stub api
+    await expect(activate(harness.api as any)).rejects.toThrow(/1\.0\.0-beta\.40/);
+    // The symptom this replaces is a bare TypeError, which surfaces to the
+    // user as "the bot only has a skill" — nothing like "mikan is too old".
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stub api
+    await expect(activate(harness.api as any)).rejects.toThrow(/\/pi-new/);
+  });
+
   test("schedules stay unregistered until a conversation is named as owner", async () => {
     writeFileSync(join(dataDir, "config.json"), JSON.stringify({ deliveryMode: "test" }));
     const harness = createHarness(dataDir);

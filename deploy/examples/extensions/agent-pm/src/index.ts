@@ -55,6 +55,17 @@ const SCHEDULES = [
 ] as const;
 
 export default async function activate(api: MikanExtensionApi): Promise<void> {
+  // Fail with a sentence someone can act on. Without this the first call to a
+  // missing api member throws a bare TypeError, which reaches the user as
+  // "the bot says it only has a skill" — a symptom that looks nothing like
+  // "your mikan is too old".
+  if (typeof api.schedules?.onCallback !== "function") {
+    throw new Error(
+      "agent-pm needs callback schedules (mikan >= 1.0.0-beta.40). " +
+        "Upgrade mikan, restart it, then run /pi-new in this conversation.",
+    );
+  }
+
   const dataDir = api.paths.sharedDataDir;
   const db = openDb(dataDir);
   const config = loadConfig(dataDir);

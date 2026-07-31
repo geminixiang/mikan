@@ -2341,7 +2341,11 @@ function renderAdminPage(token: AdminToken): string {
           ? '<span class="pkg-badge pkg-badge-err">' + escHtml(p.error) + '</span>'
           : p.shadowed
             ? '<span class="pkg-badge pkg-badge-warn">被此對話的同名套件覆蓋，不會載入</span>'
-            : '<span class="pkg-badge pkg-badge-ok">ready</span>';
+            // "downloaded", not "ready": this status means the checkout is on
+            // disk and was inspected, which is not the same as activated. The
+            // extension loads on the conversation's next harness instance.
+            : '<span class="pkg-badge pkg-badge-ok">已下載</span>'
+              + '<span class="pkg-badge pkg-badge-warn">需 /pi-new 才會載入</span>';
         return '<div class="pkg-row">' +
           '<div class="pkg-row-main">' +
             '<code class="pkg-source">' + escHtml(p.source) + '</code>' + status +

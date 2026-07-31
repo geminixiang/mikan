@@ -750,6 +750,40 @@ describe("ExtensionsCommandHandler", () => {
     // discovery-only: the canary's activate must not have executed
     expect(existsSync(join(stateDir, "activated"))).toBe(false);
   });
+
+  test("lists packages declared in settings, not only copied extensions", async () => {
+    // A portal-installed extension is a git checkout under <scope>/git/, not a
+    // copy under <scope>/extensions/. Reporting only the latter made a
+    // portal install look like it had never happened.
+    // Package resolution reads both scopes, so the global file has to exist —
+    // as it always does in a booted deployment.
+    createGlobalSettingsFile(stateDir);
+    const officeDir = join(
+      stateDir,
+      "conversations",
+      officeKey(createOfficeAddress("slack", "C123")),
+    );
+    mkdirSync(officeDir, { recursive: true });
+    writeFileSync(
+      join(officeDir, "settings.json"),
+      JSON.stringify({ packages: ["https://github.com/example/widgets.git#extensions/thing"] }),
+    );
+
+    // The office reads settings from its workspace's state dir, so bind the
+    // workspace to the same one the settings were written into.
+    const ctx = buildContext({
+      commandText: "/pi-extensions",
+      conversationId: "C123",
+      services: { workspace: createWorkspace({ root: join(stateDir, "work"), stateDir }) },
+    });
+    expect(await handler.tryHandle(ctx)).toBe(true);
+    const text = ctx.responder.responses[0];
+    expect(text).toContain("https://github.com/example/widgets.git#extensions/thing");
+    expect(text).toContain("package, this conversation");
+    // Resolution is offline, so an un-fetched checkout is reported as a
+    // problem rather than quietly fetched from a chat command.
+    expect(text).toContain("⚠️");
+  });
 });
 
 describe("SandboxCommandHandler", () => {

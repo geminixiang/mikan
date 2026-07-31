@@ -10,6 +10,10 @@ whether the agent was right, and that judgement is `Feedback` that shapes the
 next run of the same workflow. Human replies come back in as Events, so the
 loop closes without a separate tracking stage.
 
+**Requires mikan >= 1.0.0-beta.40**, which is where callback schedules landed.
+On an older mikan `activate` fails with a message saying so, rather than
+throwing a bare `TypeError` on the first missing api member.
+
 Zero **runtime** dependencies: storage is the Node built-in `node:sqlite`, on
 the same Node `>=22.19.0` baseline as mikan. Types come from the mikan package
 (a dev dependency) via `import type { MikanExtensionApi }`; jiti loads the
