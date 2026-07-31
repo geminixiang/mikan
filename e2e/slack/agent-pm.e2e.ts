@@ -55,7 +55,12 @@ describe.skipIf(!ctx)("agent-pm example extension", () => {
     // Delivery must be diverted. A live-mode pipeline in the QA channel
     // would mean the guard that keeps this off real team channels is not
     // working, which is the one failure worth catching loudly.
-    expect(text, "pipeline is not in test delivery mode").toContain("delivery: `test`");
+    //
+    // Matched loosely on purpose: mikan renders markdown into native Block Kit,
+    // so what history returns is the plain-text fallback with the source
+    // markup already consumed — asserting on backticks tests the renderer, not
+    // the pipeline.
+    expect(text, "pipeline is not in test delivery mode").toMatch(/delivery:\s*`?test`?/);
     expect(text, "no conversation owns the schedules").toContain("schedules owned by:");
   });
 
