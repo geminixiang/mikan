@@ -90,7 +90,7 @@ Then configure it:
   "controlConversationId": "C0EXAMPLE1", // owns the schedules; also the delivery target
   "deliveryMode": "test", // "live" once you have compared the output
   "testConversationId": "C0EXAMPLE2",
-  "heartbeatHour": 9, // Asia/Taipei
+  "heartbeatHour": null, // null = first tick of the day; or pin an Asia/Taipei hour
   "scheduleOverrides": {}, // e.g. {"run-workflows": "*/2 * * * *"}
 }
 ```

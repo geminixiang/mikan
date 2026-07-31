@@ -98,8 +98,7 @@ jobs:
           # through /pm instead.
           node dist/main.js ext install deploy/examples/extensions/agent-pm \
             --global --state-dir "$STATE_DIR"
-          HEARTBEAT_HOUR="$(TZ=Asia/Taipei date +%-H)"
-          PARKED_HOUR="$(( (HEARTBEAT_HOUR + 6) % 24 ))"
+          PARKED_HOUR="$(( ($(TZ=Asia/Taipei date +%-H) + 6) % 24 ))"
           AGENT_PM_DIR="$STATE_DIR/global/extension-data/agent-pm"
           mkdir -p "$AGENT_PM_DIR"
           cat > "$AGENT_PM_DIR/config.json" <<CONFIG
@@ -110,7 +109,7 @@ jobs:
             "githubOrg": "",
             "calendarId": "",
             "disabledSources": [],
-            "heartbeatHour": $HEARTBEAT_HOUR,
+            "heartbeatHour": null,
             "scheduleOverrides": {
               "ingest-events": "0 $PARKED_HOUR * * *",
               "run-workflows": "0 $PARKED_HOUR * * *",

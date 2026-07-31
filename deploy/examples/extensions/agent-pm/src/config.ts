@@ -33,11 +33,20 @@ export interface AgentPmConfig {
   /** Ingestion pauses per source, for turning one feed off without a deploy. */
   disabledSources: string[];
   /**
-   * Taipei hour the daily heartbeat fires at. Read when the workflow row is
-   * first seeded — the hour lives in `Workflow.trigger` after that, because
-   * the design keeps "when" in the workflow data rather than in code.
+   * Taipei hour the daily heartbeat fires at, or `null` for the first tick of
+   * the day, whichever hour that turns out to be.
+   *
+   * `null` is the default because a heartbeat pinned to 09:00 tells you
+   * nothing if the pipeline happened to be down at 09:00 — you get silence,
+   * which is the same thing a healthy-but-quiet system produces. First tick of
+   * the day delivers as soon as the pipeline is alive, which is the question a
+   * heartbeat is actually asked. Pin an hour when you want it to land at a
+   * predictable time for people rather than for monitoring.
+   *
+   * Read when the workflow row is first seeded — after that the schedule lives
+   * in `Workflow.trigger`, because the design keeps "when" in workflow data.
    */
-  heartbeatHour: number;
+  heartbeatHour: number | null;
   /**
    * Cron overrides per schedule name, e.g. `{"run-workflows": "* * * * *"}`.
    * The defaults suit production; a deployment that wants tighter latency (or
@@ -54,7 +63,7 @@ const DEFAULTS: AgentPmConfig = {
   githubOrg: "",
   calendarId: "",
   disabledSources: [],
-  heartbeatHour: 9,
+  heartbeatHour: null,
   scheduleOverrides: {},
 };
 

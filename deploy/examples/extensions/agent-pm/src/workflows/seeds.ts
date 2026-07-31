@@ -27,7 +27,7 @@ interface WorkflowSeed {
   priority?: number;
 }
 
-function seedsFor(heartbeatHour: number): WorkflowSeed[] {
+function seedsFor(heartbeatHour: number | null): WorkflowSeed[] {
   return [
     {
       key: "pipeline_heartbeat",
@@ -36,15 +36,20 @@ function seedsFor(heartbeatHour: number): WorkflowSeed[] {
       // A sweep triggered by the clock: the handler queries the database, so
       // the tick only has to say when it is.
       //
+      // With no hour pinned this matches every tick, and the delivery's
+      // per-day dedupe key is what makes it daily — so it lands on the first
+      // tick after the pipeline is alive rather than only if the pipeline
+      // happened to be alive at one particular hour.
+      //
       // Deliberately not gated on `isSendDay`. A heartbeat's whole value is
       // that silence means something is broken, so it has to fire on weekends
       // and holidays too — otherwise a pipeline that died on Friday evening
       // looks healthy until Monday. The holiday gate belongs on digests and
       // reminders, which are addressed to people who are not at work.
-      trigger: {
-        kind: ["clock.tick"],
-        payload_equals: { hour: heartbeatHour },
-      },
+      trigger:
+        heartbeatHour === null
+          ? { kind: ["clock.tick"] }
+          : { kind: ["clock.tick"], payload_equals: { hour: heartbeatHour } },
       scope: "sweep",
       creates: "delivery",
       priority: 10,
@@ -53,7 +58,7 @@ function seedsFor(heartbeatHour: number): WorkflowSeed[] {
 }
 
 /** Insert any seed whose key is absent. Existing rows are never modified. */
-export function seedWorkflows(db: DatabaseSync, heartbeatHour: number): number {
+export function seedWorkflows(db: DatabaseSync, heartbeatHour: number | null): number {
   const SEEDS = seedsFor(heartbeatHour);
   const now = nowIso();
   let inserted = 0;

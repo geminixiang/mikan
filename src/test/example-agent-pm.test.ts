@@ -218,6 +218,35 @@ describe("agent-pm example extension", () => {
     db.close();
   });
 
+  test("with no hour pinned, the heartbeat lands on the first tick of the day", async () => {
+    // The default, and what a deployment gets unless it asks otherwise: the
+    // heartbeat answers "is the pipeline alive", so it delivers as soon as it
+    // is, rather than only if it happened to be alive at one chosen hour.
+    writeFileSync(
+      join(dataDir, "config.json"),
+      JSON.stringify({
+        controlConversationId: "C_CONTROL",
+        deliveryMode: "test",
+        testConversationId: "C_QA",
+      }),
+    );
+    const harness = createHarness(dataDir);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stub api
+    await activate(harness.api as any);
+
+    await harness.callbacks.get("ingest-events")!({ scheduleName: "ingest-events" });
+    await harness.callbacks.get("run-workflows")!({ scheduleName: "run-workflows" });
+    expect(harness.posts).toHaveLength(1);
+    expect(harness.posts[0]!.text).toContain("events pending");
+
+    // Still daily: the per-day delivery key is what makes it so, not the hour.
+    const db = new DatabaseSync(join(dataDir, "agent-pm.db"));
+    synthesizeHeartbeatTick(db, "later-same-day");
+    db.close();
+    await harness.callbacks.get("run-workflows")!({ scheduleName: "run-workflows" });
+    expect(harness.posts).toHaveLength(1);
+  });
+
   test("a second matching tick the same day delivers nothing", async () => {
     const harness = createHarness(dataDir);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stub api
