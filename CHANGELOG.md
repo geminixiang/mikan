@@ -9,6 +9,27 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.40]
+
+### Added
+
+- Add deterministic extension callback schedules that run host-side without an agent run, model call, or token spend; schedules persist across restarts and use host-authoritative storage.
+- Add extension APIs for reading conversation or thread history, listing active platform users, opening direct-message conversations, and posting threaded notifications.
+- Add declarative extension secrets with activation-time validation, CLI visibility, admin portal provisioning, and purge support.
+- Add a production-ready agent project manager example built as an Event → Workflow → Task pipeline with SQLite persistence, scheduled heartbeats, threaded polling, delivery tracking, and Slack end-to-end coverage.
+
+### Changed
+
+- Make proactive extension messaging default to the conversation's platform, removing ambiguity in multi-platform deployments.
+- Make `api.notify` return the posted message ID and allow `api.fetchHistory` to read replies beneath that message, enabling poll-only follow-up workflows without webhooks.
+- Make `mikan ext remove --purge` sweep an extension's schedules, secrets, data directories, and optional workspace event files while reporting leftovers for non-purge removals.
+- Enable stricter TypeScript and lint enforcement for indexed access, type-only imports, Node.js import protocols, dependency cycles, explicit `any`, nesting depth, function size, and parameter count.
+- Consolidate duplicated authorities and thin wrappers into their owning modules, and refresh repository documentation for the office architecture.
+
+### Tests
+
+- Add coverage for callback schedule persistence and dispatch, extension secrets, platform reads, threaded notifications, purge behavior, and the agent project manager pipeline.
+
 ## [1.0.0-beta.39]
 
 ### Fixed
