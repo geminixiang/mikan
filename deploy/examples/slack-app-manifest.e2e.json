@@ -14,8 +14,8 @@
       "display_name": "mikan",
       "always_online": true
     },
-    "assistant_view": {
-      "assistant_description": "mikan Slack assistant",
+    "agent_view": {
+      "agent_description": "mikan Slack assistant",
       "suggested_prompts": [
         {
           "title": "Ask mikan",

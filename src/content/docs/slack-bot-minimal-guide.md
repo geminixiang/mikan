@@ -3,7 +3,25 @@ title: Slack Bot minimal setup guide
 description: Minimal Slack app permissions, events, and manifest settings required to run mikan through Socket Mode.
 ---
 
-You can also create the app with the example manifest in `deploy/examples/slack-app-manifest.json`.
+You can also create the app from an example manifest. There are two, because
+Slack offers two surfaces and mikan serves both:
+
+| Manifest                                    | Surface        | Use when                                                                                                                          |
+| ------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `deploy/examples/slack-app-manifest.json`   | Classic app    | People talk to mikan by @mentioning it in channels and by DM.                                                                     |
+| `deploy/examples/slack-agent-manifest.json` | Agent (AI app) | You also want mikan in the **Agents & AI apps** sidebar, with its own pane, greeting, suggested prompts, and a conversation list. |
+
+The agent manifest is the classic one plus three things: the `agent_view`
+feature, the `assistant:write` scope, and the `assistant_thread_started` /
+`assistant_thread_context_changed` events. Everything else — slash commands,
+Socket Mode, message events — is identical, and the same mikan process serves
+either. Start from the classic one if you are not sure; adding the agent
+surface later is an edit to the same app.
+
+> The manifest key was `assistant_view` (with `assistant_description`) before
+> Slack renamed it to `agent_view` / `agent_description`. The event and API
+> names did not change. If you are editing an app created before the rename,
+> export its manifest from Slack to see which spelling your app has.
 
 ## 1. Create a Slack app
 
@@ -26,7 +44,8 @@ The token starts with `xapp-`.
 Go to **OAuth & Permissions → Scopes → Bot Token Scopes** and add:
 
 - `app_mentions:read`
-- `assistant:write`
+- `assistant:write` (agent surface only — the `assistant.threads.*` methods
+  that set the pane's status, suggested prompts, and conversation title)
 - `channels:history`
 - `channels:read`
 - `chat:write`
@@ -51,7 +70,16 @@ The token starts with `xoxb-`.
 2. Enable **Home Tab**.
 3. Enable **Agent or Assistant** under **Agents & AI Apps**.
 
-This enables Slack's assistant UI. mikan writes assistant working status through `assistant:write`; the subscribed assistant context events are reserved for Slack compatibility and are not separate agent triggers.
+This is what puts mikan in the **Agents & AI apps** sidebar with its own pane.
+Skip it for a classic app.
+
+In the pane, mikan greets the person when they open a conversation, offers
+suggested prompts shaped by the channel they are viewing, shows a working
+status while it thinks, and names each conversation from its first message so
+the sidebar list is navigable. Each conversation there is a thread, and mikan
+gives every thread its own session — the sidebar is a list of separate
+conversations, not one transcript, and continuity across them comes from
+memory rather than from a shared session.
 
 ## 5. Subscribe to bot events
 
@@ -61,11 +89,17 @@ Subscribe to these bot events:
 
 - `app_home_opened`
 - `app_mention`
-- `assistant_thread_context_changed`
-- `assistant_thread_started`
 - `message.channels`
 - `message.groups`
 - `message.im`
+
+Plus these two for the agent surface — Slack sends them when someone opens a
+conversation in the agent pane and as they navigate. mikan answers the first
+with a greeting and suggested prompts; without them the pane opens empty and
+waits, which looks broken rather than quiet:
+
+- `assistant_thread_started`
+- `assistant_thread_context_changed`
 
 ## 6. Enable interactivity
 

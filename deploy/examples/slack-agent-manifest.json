@@ -14,6 +14,10 @@
       "display_name": "mikan",
       "always_online": true
     },
+    "agent_view": {
+      "agent_description": "mikan Slack assistant",
+      "suggested_prompts": []
+    },
     "slash_commands": [
       {
         "command": "/pi-login",
@@ -63,6 +67,7 @@
       "bot": [
         "reactions:write",
         "app_mentions:read",
+        "assistant:write",
         "channels:history",
         "channels:read",
         "chat:write",
@@ -84,6 +89,8 @@
       "bot_events": [
         "app_home_opened",
         "app_mention",
+        "assistant_thread_context_changed",
+        "assistant_thread_started",
         "message.channels",
         "message.groups",
         "message.im"
