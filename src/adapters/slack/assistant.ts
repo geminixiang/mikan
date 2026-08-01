@@ -200,6 +200,13 @@ export async function handleAgentDmOpened(
   if (!channelId) return;
   registry.rememberChannel(channelId, context);
   const channel = context?.channel_id ? ops.channelName(context.channel_id) : undefined;
+  // The agent surface is otherwise silent, and its failure mode — no prompts,
+  // untitled conversations — looks identical from the outside to Slack simply
+  // not sending the event. This line is the difference between the two, and
+  // is the first thing to look for when the pane seems inert.
+  log.logInfo(
+    `[${channelId}] Slack agent DM opened${channel ? ` (viewing #${channel})` : ""}; refreshing suggested prompts`,
+  );
   await swallow("setSuggestedPrompts", () =>
     ops.setSuggestedPrompts(channelId, undefined, promptsFor(channel)),
   );
