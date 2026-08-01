@@ -6,6 +6,7 @@ import {
 } from "../../adapter.js";
 import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import { createProgressiveRenderer, formatMarkdownToolResult } from "../progressive-renderer.js";
+import { formatDiscordMarkdown } from "./format.js";
 import type { DiscordMessagingBot, DiscordEvent } from "./bot.js";
 import type { OfficeAddress } from "../../adapter.js";
 
@@ -76,6 +77,10 @@ export function createDiscordAdapters(
       intervalMs: 8000,
       stopOnSend: true,
     },
+    // The last step before sending: the model writes standard markdown, and
+    // the parts Discord cannot render are converted here rather than by
+    // constraining what the model may write.
+    prepareSource: (text) => formatDiscordMarkdown(text),
     formatToolResult: formatMarkdownToolResult,
     responseErrorContext: (responseId) => ({
       platform: "discord",

@@ -1,6 +1,11 @@
 import MarkdownIt from "markdown-it";
 import type Token from "markdown-it/lib/token.mjs";
 import type { KnownBlock } from "@slack/types";
+import {
+  extractMarkdownTables,
+  inlinePlainText,
+  normalizeMarkdownTables,
+} from "../markdown-tables.js";
 
 // Parser is used only to locate tables and derive plain-text fallback.
 // Prose is never re-serialized from tokens: it is sliced verbatim from the
@@ -56,29 +61,6 @@ export function resolveSlackMentions(
   });
 }
 
-function normalizeMarkdownTables(source: string): string {
-  return source
-    .split("\n")
-    .map((line) => {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) return line;
-      if (!/^[|+\-:\s]+$/.test(trimmed) || !trimmed.includes("+")) return line;
-      return line.replaceAll("+", "|");
-    })
-    .join("\n");
-}
-
-function inlinePlainText(tokens: Token[] | null | undefined): string {
-  if (!tokens) return "";
-  let text = "";
-  for (const token of tokens) {
-    if (token.type === "text" || token.type === "code_inline") text += token.content;
-    else if (token.type === "softbreak" || token.type === "hardbreak") text += "\n";
-    else if (token.children) text += inlinePlainText(token.children);
-  }
-  return text;
-}
-
 function buildTableBlock(headers: string[], rows: string[][]): KnownBlock {
   const hasIndex = headers[0] === "#";
   const tableHeaders = hasIndex ? headers : ["#", ...headers];
@@ -92,53 +74,6 @@ function buildTableBlock(headers: string[], rows: string[][]): KnownBlock {
     ),
     column_settings: tableHeaders.map(() => ({ is_wrapped: true })),
   } as KnownBlock;
-}
-
-interface ParsedTable {
-  block: KnownBlock;
-  fallback: string;
-  startLine: number;
-  endLine: number;
-}
-
-function parseTable(tokens: Token[], index: number): { table: ParsedTable; next: number } | null {
-  const open = tokens[index];
-  if (open?.type !== "table_open" || !open.map) return null;
-
-  const headers: string[] = [];
-  const rows: string[][] = [];
-  let currentRow: string[] | null = null;
-  let inHead = false;
-  let i = index + 1;
-
-  for (; i < tokens.length; i++) {
-    const token = tokens[i];
-    if (token === undefined || token.type === "table_close") break;
-    if (token.type === "thead_open") inHead = true;
-    else if (token.type === "thead_close") inHead = false;
-    else if (token.type === "tr_open") currentRow = [];
-    else if (token.type === "tr_close" && currentRow) {
-      if (inHead) headers.push(...currentRow);
-      else rows.push(currentRow);
-      currentRow = null;
-    } else if (token.type === "inline" && currentRow) {
-      currentRow.push(inlinePlainText(token.children) || token.content);
-    }
-  }
-
-  if (!headers.length || !rows.length) return null;
-
-  const fallback = [headers.join(" | "), ...rows.map((row) => row.join(" | "))].join("\n");
-  const endLine = tokens[i]?.map?.[1] ?? open.map[1];
-  return {
-    table: {
-      block: buildTableBlock(headers, rows),
-      fallback,
-      startLine: open.map[0],
-      endLine,
-    },
-    next: i,
-  };
 }
 
 /** Split prose into chunks under the markdown block limit, preferring
@@ -181,17 +116,9 @@ function plainTextFallback(tokens: Token[]): string {
 
 export function renderSlackBlocks(source: string): { text: string; blocks: KnownBlock[] } {
   const normalized = normalizeMarkdownTables(convertLegacyMrkdwnLinks(source));
-  const tokens = markdown.parse(normalized, {});
   const lines = normalized.split("\n");
 
-  const tables: ParsedTable[] = [];
-  for (let i = 0; i < tokens.length; i++) {
-    const parsed = parseTable(tokens, i);
-    if (parsed) {
-      tables.push(parsed.table);
-      i = parsed.next;
-    }
-  }
+  const tables = extractMarkdownTables(normalized);
 
   const blocks: KnownBlock[] = [];
   const fallback: string[] = [];
@@ -201,8 +128,10 @@ export function renderSlackBlocks(source: string): { text: string; blocks: Known
     pushMarkdown(blocks, prose);
     if (prose.trim()) fallback.push(plainTextFallback(markdown.parse(prose, {})));
     if (blocks.length < MAX_BLOCKS) {
-      blocks.push(table.block);
-      fallback.push(table.fallback);
+      blocks.push(buildTableBlock(table.headers, table.rows));
+      fallback.push(
+        [table.headers.join(" | "), ...table.rows.map((row) => row.join(" | "))].join("\n"),
+      );
     }
     cursor = table.endLine;
   }
