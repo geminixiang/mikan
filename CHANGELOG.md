@@ -9,6 +9,32 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.41]
+
+### Added
+
+- Add Slack App and Agent manifests plus support for `assistant_view` and `agent_view` lifecycle events, including thread-aware assistant context and optional socket-event tracing.
+- Add Discord Components V2 responses with native sections, separators, containers, and markdown-table rendering suited to Discord's width model.
+- Add rich Telegram responses through platform-native formatting.
+- Show the current activity of running subagents in progress dashboards.
+- Add an end-user Agent Project Manager guide in English, Japanese, Simplified Chinese, and Traditional Chinese.
+
+### Changed
+
+- Pace progressive redraws by elapsed time instead of response volume, and edit overflow messages rather than repeatedly posting replacements.
+- Split Slack streamed text at the 12,000-character API limit, decline unsupported native streams before starting them, and hand off a truncated final tail exactly once.
+- Report package-installed extensions in `/extensions` and return a clear compatibility error when an extension requires a newer mikan version.
+
+### Fixed
+
+- Preserve final-source preparation during progressive replacement and cut truncated Slack messages at line boundaries.
+- Distinguish Slack length-limit failures from other send errors instead of treating every failure as oversized content.
+- Prevent desktop automation helpers from sending into a Slack thread's main composer.
+
+### Tests
+
+- Add coverage for Slack assistant lifecycle and stream limits, Discord Components V2 and table formatting, progressive overflow editing, rich Telegram context, subagent activity reporting, and extension compatibility reporting.
+
 ## [1.0.0-beta.40]
 
 ### Added
