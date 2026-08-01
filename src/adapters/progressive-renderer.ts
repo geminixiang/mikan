@@ -336,7 +336,7 @@ export function createProgressiveRenderer(platform: ProgressiveRendererPlatform)
                 state.source = await renderFinal(state.source);
                 if (state.responseId !== null)
                   platform.logBotResponse?.(state.source, state.responseId);
-                platform.onFinish?.(state.source, state.responseId);
+                await platform.onFinish?.(state.source, state.responseId);
               },
               () => ({ finalTextLength: finalText?.length }),
             );

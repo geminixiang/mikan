@@ -102,7 +102,10 @@ export function createSlackResponseContext({
   const { rootTs, isThreaded } = sessionPlan;
   const replyInThread = Boolean(rootTs && (isThreaded || replyMode === "thread"));
   let assistantStatusFailureWarned = false;
-  /** How much of an over-long response the thread continuation already holds. */
+  /** The tail of an over-long response, awaiting delivery to a thread. */
+  let pendingContinuation = "";
+  let continuationAnchor: string | null = null;
+  /** How much of that tail the thread already holds. */
   let continuationSent = "";
 
   const onAssistantStatusError = (label: string, err: unknown): void => {
@@ -140,6 +143,32 @@ export function createSlackResponseContext({
       }
     }
     return ids;
+  };
+
+  /**
+   * Deliver the tail of an over-long response to its thread.
+   *
+   * Called only at points where the response is final, and idempotent, so the
+   * replace path and the end of the run can both call it without the thread
+   * seeing anything twice. Sending the whole remainder in one message is also
+   * what keeps it faithful: Slack trims message text, so every extra split is
+   * a chance to drop the whitespace it lands on.
+   */
+  const flushContinuation = async (): Promise<void> => {
+    if (!pendingContinuation || pendingContinuation === continuationSent) return;
+    const isExtension = pendingContinuation.startsWith(continuationSent);
+    const unsent = isExtension
+      ? pendingContinuation.slice(continuationSent.length)
+      : pendingContinuation;
+    if (!unsent.trim()) return;
+    await postThreadDiagnostic(
+      isExtension && continuationSent
+        ? unsent
+        : `_(continued from truncated message)_\n\n${unsent}`,
+      {},
+      continuationAnchor,
+    );
+    continuationSent = pendingContinuation;
   };
 
   // Reserve before choosing, not after failing: exceeding the start tier
@@ -218,7 +247,7 @@ export function createSlackResponseContext({
           .catch((err) => onAssistantStatusError("clear-on-idle", err));
       }
     },
-    onFinish: (text, responseId) => {
+    onFinish: async (text, responseId) => {
       if (responseId && text.trim()) {
         slack.logBotResponse(channelId, text, responseId, replyInThread ? rootTs : undefined);
       }
@@ -227,6 +256,9 @@ export function createSlackResponseContext({
           .setAssistantStatus(channelId, rootTs, "")
           .catch((err) => onAssistantStatusError("clear-on-idle", err));
       }
+      // The run is over, so a truncated response has to hand over its tail now
+      // or lose it — the notice on the main message already promised it.
+      await flushContinuation();
     },
     isTooLongError: isSlackMsgTooLong,
     handleTooLong: async (text, operation, options, responseId, write, getResponseId) => {
@@ -245,28 +277,18 @@ export function createSlackResponseContext({
       // post-stream canonical render instead — silent data loss behind a
       // message that claimed the rest was elsewhere.
       //
-      // Incremental renders call this repeatedly as the text grows, so send
-      // only what the thread has not seen yet. Text normally grows by
-      // appending; when it does not, the prefix check fails and we start the
-      // thread over from the new truncation point rather than splicing two
-      // unrelated bodies together.
-      const continuation = text.slice(fallback.prefixLength).trimStart();
-      if (continuation && continuation !== continuationSent) {
-        const isExtension = continuation.startsWith(continuationSent);
-        const unsent = isExtension ? continuation.slice(continuationSent.length) : continuation;
-        if (unsent.trim()) {
-          await postThreadDiagnostic(
-            isExtension && continuationSent
-              ? unsent
-              : `_(continued from truncated message)_\n\n${unsent}`,
-            {},
-            replyInThread
-              ? (rootTs ?? getResponseId() ?? responseId)
-              : (getResponseId() ?? responseId),
-          );
-          continuationSent = continuation;
-        }
-      }
+      // Incremental renders reach this repeatedly as the text grows, so the
+      // tail is only recorded here and delivered once the response is final.
+      // Posting each increment as it arrived produced a thread of dozens of
+      // fragments, and every fragment boundary that landed on a space lost it,
+      // since Slack trims message text.
+      pendingContinuation = text.slice(fallback.prefixLength).trimStart();
+      continuationAnchor = replyInThread
+        ? (rootTs ?? getResponseId() ?? responseId)
+        : (getResponseId() ?? responseId);
+      // A replace is already the final word on this response; anything else
+      // waits for the run to finish.
+      if (operation === "replace") await flushContinuation();
       return fallback;
     },
     uploadFile: (filePath, title) =>

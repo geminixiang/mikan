@@ -581,12 +581,12 @@ describe("text accumulation", () => {
   });
 
   /**
-   * The truncation notice promises the rest is in a thread, and `respond` is
-   * the path a run takes when it ends on the post-stream canonical render.
-   * Delivering the continuation only for `replaceResponse` meant that promise
-   * was routinely printed over a tail that was silently dropped.
+   * The truncation notice promises the rest is in a thread, and a run that
+   * ends on the post-stream canonical render reaches the fallback as a plain
+   * render rather than a replace. Delivering only for `replaceResponse` meant
+   * that promise was routinely printed over a tail that was then dropped.
    */
-  test("respond delivers the truncated tail to a thread, not just the promise", async () => {
+  test("a finished response delivers its truncated tail, not just the promise", async () => {
     const tooLongError = new Error("An API error occurred: msg_too_long") as Error & {
       data?: { error: string };
     };
@@ -598,6 +598,7 @@ describe("text accumulation", () => {
     const { responder } = createSlackAdapters(event, bot);
 
     await responder.respond(`${"x".repeat(6000)}END`);
+    await responder.finishResponse?.();
 
     expect(bot.postInThread).toHaveBeenCalledWith(
       "C001",
@@ -631,7 +632,7 @@ describe("text accumulation", () => {
     expect(bot.postInThread).not.toHaveBeenCalled();
   });
 
-  test("a growing response extends the thread continuation instead of repeating it", async () => {
+  test("a growing response yields one continuation, not a fragment per redraw", async () => {
     const tooLongError = new Error("An API error occurred: msg_too_long") as Error & {
       data?: { error: string };
     };
@@ -652,15 +653,15 @@ describe("text accumulation", () => {
 
     await responder.respond(`${"x".repeat(6000)}ALPHA`);
     await responder.respond(`${"y".repeat(6000)}BETA`);
+    await responder.finishResponse?.();
 
-    const joined = vi
-      .mocked(bot.postInThread)
-      .mock.calls.map((call) => String(call[2]))
-      .join("");
-    // The tail arrives exactly once: a re-render must not re-post what the
-    // thread already holds, and must not swallow what it does not.
-    expect(joined.split("ALPHA").length - 1).toBe(1);
-    expect(joined).toContain("BETA");
+    // One message, carrying everything: posting per redraw filled the thread
+    // with fragments, and each fragment boundary that fell on whitespace lost
+    // it, because Slack trims message text.
+    const posts = vi.mocked(bot.postInThread).mock.calls.map((call) => String(call[2]));
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toContain("ALPHA");
+    expect(posts[0]).toContain("BETA");
   });
 });
 

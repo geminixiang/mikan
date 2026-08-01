@@ -88,7 +88,8 @@ export interface ProgressiveRendererPlatform {
   prepareSource?: (text: string, working: boolean) => string;
   onWorkingChanged?: (working: boolean, responseId: string | null) => Promise<void>;
   setTyping?: (isTyping: boolean, responseId: string | null) => Promise<void>;
-  onFinish?: (text: string, responseId: string | null) => void;
+  /** Terminal hook. Awaited, so it may finish sending before the run ends. */
+  onFinish?: (text: string, responseId: string | null) => void | Promise<void>;
   /** Whether `respond` calls are complete messages that should be logged immediately. */
   logIntermediateResponses?: boolean;
   /** Whether the platform accepts incremental response deltas. */
