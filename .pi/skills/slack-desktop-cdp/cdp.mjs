@@ -131,21 +131,31 @@ async function sendMessage(session, text) {
   }
 
   const focused = await session.evaluate(`(() => {
-    const el = document.querySelector(".ql-editor[contenteditable=true]")
-      ?? document.querySelector("[contenteditable=true]");
-    if (!el) return "no composer";
-    el.focus();
+    const editors = [...document.querySelectorAll(".ql-editor[contenteditable=true]")]
+      .filter((el) => el.offsetParent !== null);
+    if (!editors.length) return "no composer";
+    // An open thread pane brings its own composer, and it is often the only
+    // visible one. Typing there sends into the thread rather than the channel,
+    // which conversations.history does not return — so the message looks lost
+    // and the reply looks missing.
+    const channel = editors.find((el) => !el.closest("[data-qa=reply_container]"));
+    if (!channel) return "thread-only";
+    channel.focus();
     return "focused";
   })()`);
-  if (focused !== "focused") throw new Error(focused);
+  if (focused === "no composer") throw new Error("no composer");
+  if (focused === "thread-only") {
+    throw new Error(
+      "refusing to send: the only visible composer belongs to a thread — close the thread " +
+        "pane first, or the message goes into the thread instead of the channel",
+    );
+  }
 
   // Start from an empty composer: an attempt that failed to send leaves its
   // text behind, and inserting on top of it silently doubles the message.
   // One Backspace per character — Quill ignores a synthetic Cmd+A, so there
   // is no select-all to lean on.
-  const existing = await session.evaluate(
-    `(document.querySelector(".ql-editor[contenteditable=true]")?.textContent ?? "").length`,
-  );
+  const existing = await session.evaluate(`(document.activeElement?.textContent ?? "").length`);
   for (let index = 0; index < existing; index++) {
     for (const type of ["keyDown", "keyUp"]) {
       await session.send("Input.dispatchKeyEvent", {
@@ -190,9 +200,7 @@ async function sendMessage(session, text) {
       });
     }
     await sleep(600);
-    return session.evaluate(
-      `(document.querySelector(".ql-editor[contenteditable=true]")?.textContent ?? "").trim()`,
-    );
+    return session.evaluate(`(document.activeElement?.textContent ?? "").trim()`);
   };
 
   let leftover = await pressEnter();
@@ -243,9 +251,7 @@ try {
     await session.evaluate(
       `document.querySelector(".ql-editor[contenteditable=true]")?.focus(), "ok"`,
     );
-    const existing = await session.evaluate(
-      `(document.querySelector(".ql-editor[contenteditable=true]")?.textContent ?? "").length`,
-    );
+    const existing = await session.evaluate(`(document.activeElement?.textContent ?? "").length`);
     for (let index = 0; index < existing; index++) {
       for (const type of ["keyDown", "keyUp"]) {
         await session.send("Input.dispatchKeyEvent", {

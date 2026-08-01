@@ -129,7 +129,21 @@ ordinary message, and mikan trims before parsing on both command paths
 Typing `/pm` also fuzzy-matches unrelated entries — the menu offered
 `/pi-model` — so what the menu shows is no evidence the command exists.
 
-### 9. `conversations.history` does not contain thread replies
+### 9. The visible composer may belong to a thread
+
+Opening a thread replaces the channel composer with the thread's reply box, and
+it can be the _only_ visible one. Typing there sends into the thread — which
+`conversations.history` does not return — so the message looks unsent and the
+reply looks missing. Several sends went into a thread this way before it was
+noticed.
+
+`send` now refuses when the only visible composer is inside
+`[data-qa=reply_container]`. Recovering the channel composer is the awkward
+part: navigating to another conversation and back does not do it, and a full
+reload can leave the client with no composer at all for a while. Ask the user
+to close the thread view rather than fighting it.
+
+### 10. `conversations.history` does not contain thread replies
 
 Two mikan replies that look missing are simply threaded:
 
@@ -141,7 +155,7 @@ Both had me conclude "no reply" from a clean `conversations.history` read.
 Fetch `conversations.replies` on the triggering message before believing a
 command produced nothing.
 
-### 10. An inert agent pane is usually an unsubscribed event
+### 11. An inert agent pane is usually an unsubscribed event
 
 Missing suggested prompts are not evidence that mikan failed to call
 `assistant.threads.setSuggestedPrompts` — Slack only shows prompts on an empty
@@ -157,7 +171,7 @@ events** for `app_home_opened` (and `app_context_changed` under `agent_view`).
 That is what a live check found: a healthy conversation, messages arriving,
 extensions loaded — and the event simply never sent.
 
-### 11. Rule out the model before diagnosing anything else
+### 12. Rule out the model before diagnosing anything else
 
 A conversation whose configured model does not resolve looks like a dead
 socket: messages start no run, extensions fail to activate, and their scheduled
