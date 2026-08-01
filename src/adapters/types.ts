@@ -123,6 +123,13 @@ export interface ProgressiveRendererPlatform {
   uploadFile?: (filePath: string, title?: string) => Promise<void>;
   uploadFallbackNote?: (name: string) => string;
   react?: (emoji: string) => Promise<void>;
+  /**
+   * Whether a send failure is a length rejection, as opposed to a rate limit
+   * or an outage. Without this the fallback swallows every error, so a
+   * transient 429 gets reported to the reader as "message too long" and the
+   * response is truncated for no reason.
+   */
+  isTooLongError?: (err: unknown) => boolean;
   /** Handle a Slack-style length rejection and return the canonical fallback text. */
   handleTooLong?: (
     text: string,

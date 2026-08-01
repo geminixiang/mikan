@@ -228,6 +228,7 @@ export function createSlackResponseContext({
           .catch((err) => onAssistantStatusError("clear-on-idle", err));
       }
     },
+    isTooLongError: isSlackMsgTooLong,
     handleTooLong: async (text, operation, options, responseId, write, getResponseId) => {
       let overflowLink: string | undefined;
       const resolveOverflowLink = (): string | undefined => {

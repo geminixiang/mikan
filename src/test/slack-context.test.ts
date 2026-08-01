@@ -601,6 +601,31 @@ describe("text accumulation", () => {
     );
   });
 
+  /**
+   * A 429 is transient and the SDK already retries it. Routing it into the
+   * length fallback instead published a response cut to a few thousand
+   * characters, blamed the length in the notice, and re-sent — which kept the
+   * rate limit alive rather than waiting it out.
+   */
+  test("a rate limit is not mistaken for a length rejection", async () => {
+    const rateLimited = new Error("A rate limit was exceeded") as Error & {
+      data?: { error: string };
+    };
+    rateLimited.data = { error: "ratelimited" };
+    const bot = makeSlackMessagingBot({
+      postMessage: vi.fn().mockRejectedValue(rateLimited),
+    });
+    const event = makeEvent({ thread_ts: undefined });
+    const { responder } = createSlackAdapters(event, bot);
+
+    await responder.respond(`${"x".repeat(6000)}END`);
+
+    // One attempt, then the error propagates — no truncated re-send, and no
+    // thread continuation for a message that was never too long.
+    expect(bot.postMessage).toHaveBeenCalledTimes(1);
+    expect(bot.postInThread).not.toHaveBeenCalled();
+  });
+
   test("a growing response extends the thread continuation instead of repeating it", async () => {
     const tooLongError = new Error("An API error occurred: msg_too_long") as Error & {
       data?: { error: string };

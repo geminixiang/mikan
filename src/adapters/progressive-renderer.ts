@@ -132,6 +132,11 @@ export function createProgressiveRenderer(platform: ProgressiveRendererPlatform)
       return canonicalText;
     } catch (err) {
       if (!platform.handleTooLong) throw err;
+      // Only a length rejection may take the truncating path. Treating every
+      // failure as "too long" turned a transient rate limit into a response
+      // cut to a few thousand characters under a notice blaming its length,
+      // and the retry it triggered kept the limit alive.
+      if (platform.isTooLongError && !platform.isTooLongError(err)) throw err;
       const fallback = await platform.handleTooLong(
         canonicalText,
         operation,
