@@ -42,12 +42,19 @@ What a fresh install actually does, end to end:
 /pm status
 ```
 
-:::caution[The slash is not optional, and leaving it off fails quietly]
-Typing `pm status` without it does not run the command. It reaches the agent
-instead, which sees a plausible request, guesses, and answers something like
-"no outstanding tasks" — a reply that looks right, costs a model call, and told
-you nothing about the pipeline. The command's output always begins with
-`agent-pm — <date>`; if you did not get that, the command did not run.
+:::caution[On Slack, drop the slash: `pm status`]
+Slack's client keeps every `/`-prefixed line for commands declared in the Slack
+app itself, so `/pm` never leaves your machine — and an extension has no way to
+declare one there. Slack therefore accepts the bare name, and that is how the
+commands on this page are typed there.
+
+Everywhere else — Telegram, Discord, GitHub comments — the slash is required and
+leaving it off fails quietly: the text reaches the agent, which sees a plausible
+request, guesses, and answers something like "no outstanding tasks". A reply that
+looks right, costs a model call, and told you nothing about the pipeline.
+
+Either way the command's output begins with `agent-pm — <date>`. If you did not
+get that line, you were talking to the agent.
 :::
 
 ```
@@ -92,7 +99,7 @@ Which one you reach for depends on what you are doing:
 | What you want                                    | How                                         |
 | ------------------------------------------------ | ------------------------------------------- |
 | Work a task — see it, close it, say how it went  | **Talk to the agent.** There is no command. |
-| Operate the pipeline — check it, make it run now | `/pm …`, answered without a model call      |
+| Operate the pipeline — check it, make it run now | `/pm …` (`pm …` on Slack), no model call    |
 
 That split is deliberate. Operating the pipeline is mechanical, so it is a
 command: exact, instant, and free. Working a task is a judgement, so it goes
@@ -165,13 +172,7 @@ overdue. `/pm ingest`, `/pm run`, and `/pm sweep` do one stage each.
 This is how you check that something is wired up without waiting an hour for
 the next tick.
 
-:::note[On Slack, prefix the command with a space]
-Slack's own client intercepts anything starting with `/` and only sends
-commands registered in the Slack app itself, so `/pm` never leaves your
-machine. Typing ` /pm status` with a leading space sends it as an ordinary
-message, and agent-pm still reads it as a command. Telegram, Discord and GitHub
-comments have no such interception.
-:::
+On Slack, all of these are typed without the leading slash: `pm all`, `pm run`.
 
 ## When nothing seems to happen
 

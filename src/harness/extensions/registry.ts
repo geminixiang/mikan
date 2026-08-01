@@ -31,9 +31,25 @@ const COMMAND_NAME_PATTERN = /^[a-z0-9_-]+$/i;
 /**
  * Parse `/name args…` slash-command text. Returns undefined when the text is
  * not a slash command with a valid name (`COMMAND_NAME_PATTERN`).
+ *
+ * `bareName` accepts the same text without the slash, for platforms where the
+ * slash form cannot reach us at all — Slack's client keeps `/`-prefixed input
+ * for commands declared in the app itself, and an extension cannot declare one
+ * there without an app configuration token that expires every twelve hours.
+ *
+ * A bare word that is not a registered command still returns a name here;
+ * `dispatchCommand` finds nothing and the text carries on to the agent
+ * untouched. What this cannot avoid is a message that opens with a command's
+ * name and means something else — that reaches the command and is answered
+ * with its usage line. Loud, instant and free, against the alternative of the
+ * agent guessing at it and charging for a plausible wrong answer.
  */
-export function parseCommandInput(text: string): { name: string; args: string } | undefined {
-  const match = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(text.trim());
+export function parseCommandInput(
+  text: string,
+  options: { bareName?: boolean } = {},
+): { name: string; args: string } | undefined {
+  const pattern = options.bareName ? /^\/?(\S+)(?:\s+([\s\S]*))?$/ : /^\/(\S+)(?:\s+([\s\S]*))?$/;
+  const match = pattern.exec(text.trim());
   const name = match?.[1];
   if (name === undefined || !COMMAND_NAME_PATTERN.test(name)) return undefined;
   return { name, args: match?.[2]?.trim() ?? "" };

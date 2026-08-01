@@ -186,6 +186,17 @@ export interface MessagingInfo {
    * explicitly so vault policy does not key off platform name strings.
    */
   trustModel?: PlatformTrustModel;
+  /**
+   * Whether the leading slash is optional for extension-contributed commands.
+   *
+   * Slack's client keeps every `/`-prefixed line for commands declared in the
+   * Slack app itself, so an extension's `/pm` never leaves the user's machine —
+   * and an extension cannot declare one there, because `apps.manifest.update`
+   * needs an app configuration token that expires twice a day and is bound to
+   * one person in one workspace. Set on platforms where the slash form cannot
+   * arrive at all; left unset, the slash stays required.
+   */
+  bareExtensionCommands?: boolean;
   diagnostics?: {
     showUsageSummary?: boolean;
   };
@@ -489,6 +500,7 @@ export interface PiAgentWrapper {
   tryExtensionCommand(
     message: ConversationMessage,
     responder: ConversationResponder,
+    options?: { bareName?: boolean },
   ): Promise<boolean>;
   /**
    * Dispatch an extension-owned interactive block action to its onAction

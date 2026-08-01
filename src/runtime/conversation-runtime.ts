@@ -519,11 +519,17 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
         // Extension-contributed commands: deterministic dispatch, no agent run.
         // Built-in commands already had their chance above, so extensions can
-        // never shadow them; unmatched slash text falls through to the agent.
-        if (event.text.trim().startsWith("/")) {
+        // never shadow them; unmatched text falls through to the agent.
+        //
+        // Where the platform eats the slash before we ever see it, the leading
+        // name alone is enough — otherwise those commands would be unreachable
+        // rather than merely awkward.
+        const bareName = context.platform.bareExtensionCommands === true;
+        if (bareName || event.text.trim().startsWith("/")) {
           const handled = await state.runner.tryExtensionCommand(
             context.message,
             context.responder,
+            { bareName },
           );
           if (handled) {
             state.lastAccessedAt = Date.now();

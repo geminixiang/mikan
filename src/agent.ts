@@ -2447,8 +2447,9 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     async tryExtensionCommand(
       message: ConversationMessage,
       responder: ConversationResponder,
+      parseOptions: { bareName?: boolean } = {},
     ): Promise<boolean> {
-      const parsed = parseCommandInput(message.text);
+      const parsed = parseCommandInput(message.text, parseOptions);
       if (!parsed) return false;
       return extensionRegistry.dispatchCommand(parsed.name, {
         args: parsed.args,

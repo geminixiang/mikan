@@ -166,6 +166,36 @@ const bot = {
   getMessagingInfo: vi.fn().mockReturnValue(testPlatform),
 } as unknown as MessagingBot;
 
+/**
+ * Seed a live shared-session state whose runner is entirely stubbed, so a test
+ * can assert on the dispatch gate without standing up a model.
+ */
+function seedRunnerState(
+  runtime: ConversationRuntime,
+  tryExtensionCommand: ReturnType<typeof vi.fn>,
+): void {
+  const runner = {
+    dreamSessionMemory: vi.fn().mockResolvedValue({ stopReason: "stop" }),
+    run: vi.fn().mockResolvedValue({ stopReason: "stop" }),
+    syncChatHistory: vi.fn(),
+    tryExtensionCommand,
+    abort: vi.fn(),
+    dispose: vi.fn().mockResolvedValue(undefined),
+    getCurrentStep: vi.fn(),
+  } as unknown as PiAgentWrapper;
+  const sessions = (runtime as unknown as { sessions: SessionLifecycle }).sessions;
+  sessions.set({
+    address: testAddress,
+    sessionKey: "C123",
+    running: false,
+    runner,
+    stopRequested: false,
+    lastAccessedAt: Date.now(),
+    sessionFile: createManagedSessionFile(officeSessionsDir(conversationDir), conversationDir),
+    startedAt: 0,
+  });
+}
+
 function newCommandArgs(responder = makeResponder()) {
   return [
     "C123",
@@ -265,6 +295,55 @@ describe("ConversationRuntime handleEvent", () => {
       expect.stringContaining("second"),
       expect.anything(),
     );
+  });
+
+  test("a platform that eats the slash dispatches extension commands bare", async () => {
+    const runtime = makeRuntime();
+    const tryExtensionCommand = vi.fn().mockResolvedValue(true);
+    seedRunnerState(runtime, tryExtensionCommand);
+
+    const { event, context } = makeEventAndContext("1100.1");
+    event.text = "pm status";
+    context.message.text = event.text;
+    context.platform = { ...testPlatform, bareExtensionCommands: true };
+
+    await runtime.handleEvent(event, bot, context);
+
+    expect(tryExtensionCommand).toHaveBeenCalledWith(context.message, context.responder, {
+      bareName: true,
+    });
+  });
+
+  test("without the capability, unslashed text never reaches extension dispatch", async () => {
+    const runtime = makeRuntime();
+    const tryExtensionCommand = vi.fn().mockResolvedValue(false);
+    seedRunnerState(runtime, tryExtensionCommand);
+
+    const { event, context } = makeEventAndContext("1100.2");
+    event.text = "pm status";
+    context.message.text = event.text;
+    context.platform = { ...testPlatform, bareExtensionCommands: undefined };
+
+    await runtime.handleEvent(event, bot, context);
+
+    expect(tryExtensionCommand).not.toHaveBeenCalled();
+  });
+
+  test("a slash command still dispatches with bare matching off", async () => {
+    const runtime = makeRuntime();
+    const tryExtensionCommand = vi.fn().mockResolvedValue(true);
+    seedRunnerState(runtime, tryExtensionCommand);
+
+    const { event, context } = makeEventAndContext("1100.3");
+    event.text = "/pm status";
+    context.message.text = event.text;
+    context.platform = { ...testPlatform, bareExtensionCommands: undefined };
+
+    await runtime.handleEvent(event, bot, context);
+
+    expect(tryExtensionCommand).toHaveBeenCalledWith(context.message, context.responder, {
+      bareName: false,
+    });
   });
 });
 

@@ -8,6 +8,7 @@ import {
   ExtensionRegistry,
   listInstalledExtensions,
   loadExtensions,
+  parseCommandInput,
   validateExtension,
   type ExtensionCallbackScheduleSpec,
   type ExtensionCallbackScheduleStore,
@@ -1100,6 +1101,58 @@ describe("loadExtensions v2 api", () => {
     });
     expect(skills[0].content).toContain("Always triage");
     expect(extensions[0]?.skills).toHaveLength(1);
+  });
+});
+
+describe("parseCommandInput", () => {
+  test("splits a slash command into name and args", () => {
+    expect(parseCommandInput("/pm status")).toEqual({ name: "pm", args: "status" });
+    expect(parseCommandInput("  /pm  list open  ")).toEqual({ name: "pm", args: "list open" });
+    expect(parseCommandInput("/pm")).toEqual({ name: "pm", args: "" });
+    expect(parseCommandInput("/pm\nrun\nsweep")).toEqual({ name: "pm", args: "run\nsweep" });
+  });
+
+  test("without bareName, unslashed text is not a command", () => {
+    expect(parseCommandInput("pm status")).toBeUndefined();
+    expect(parseCommandInput("what is still open?")).toBeUndefined();
+    expect(parseCommandInput("hello")).toBeUndefined();
+  });
+
+  test("bareName accepts the name with or without the slash", () => {
+    expect(parseCommandInput("pm status", { bareName: true })).toEqual({
+      name: "pm",
+      args: "status",
+    });
+    expect(parseCommandInput("/pm status", { bareName: true })).toEqual({
+      name: "pm",
+      args: "status",
+    });
+  });
+
+  test("a first word that cannot be a command name is rejected in both modes", () => {
+    for (const text of ["把 task 12 關掉", "* bullet", "…", "", "  "]) {
+      expect(parseCommandInput(text)).toBeUndefined();
+      expect(parseCommandInput(text, { bareName: true })).toBeUndefined();
+    }
+  });
+
+  test("bareName still yields a name for unregistered words — dispatch decides", async () => {
+    // The parse is deliberately loose: any name-shaped first word parses, and
+    // the registry declining it is what sends the text on to the agent. This
+    // is the whole of the false-positive story for bare matching.
+    expect(parseCommandInput("what is still open?", { bareName: true })).toEqual({
+      name: "what",
+      args: "is still open?",
+    });
+
+    const registry = new ExtensionRegistry();
+    registry.registerCommand("probe", { name: "pm", handler: async () => {} });
+    const handled = await registry.dispatchCommand("what", {
+      args: "is still open?",
+      conversationId: "C1",
+      respond: async () => {},
+    });
+    expect(handled).toBe(false);
   });
 });
 

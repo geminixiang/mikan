@@ -126,6 +126,11 @@ Send `" /pm status"` with a leading space instead. Slack treats it as an
 ordinary message, and mikan trims before parsing on both command paths
 (`parseCommandInput` and `matchCommand`), so the command still runs.
 
+For extension commands the leading space is no longer needed: Slack sets
+`bareExtensionCommands`, so `pm status` dispatches on its own. Built-in
+commands still need the space, since `matchCommand` requires the slash for
+everything but `session`.
+
 Typing `/pm` also fuzzy-matches unrelated entries — the menu offered
 `/pi-model` — so what the menu shows is no evidence the command exists.
 
