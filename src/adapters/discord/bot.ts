@@ -23,6 +23,7 @@ import type {
   ConversationResponder,
   ChatToolResult,
 } from "../../adapter.js";
+import { discordTextPayload } from "./components.js";
 import {
   createConversationEvent,
   createConversationMessage,
@@ -151,7 +152,7 @@ export class DiscordMessagingBot implements MessagingBot {
   async postMessage(channel: string, text: string): Promise<string> {
     return discordRetry(async () => {
       const ch = await this.fetchTextChannel(channel);
-      const msg = await ch.send(text);
+      const msg = await ch.send(discordTextPayload(text));
       return msg.id;
     });
   }
@@ -192,7 +193,7 @@ export class DiscordMessagingBot implements MessagingBot {
       name: "discord",
       trustModel: "membership",
       formattingGuide:
-        "## Discord Formatting (Markdown)\nBold: **text**, Italic: *text*, Code: `code`, Block: ```language\ncode```\nLinks: [text](url), Spoiler: ||text||\nKeep messages under 2000 characters. Use code blocks for code.",
+        "## Discord Formatting (Markdown)\nBold: **text**, Italic: *text*, Code: `code`, Block: ```language\ncode```\nLinks: [text](url), Spoiler: ||text||, Headings: # ## ###\nWrite ordinary Markdown, including tables — the adapter converts anything Discord cannot render. Use code blocks for code.",
       channels: this.getAllChannels(),
       users: this.getAllUsers(),
       diagnostics: {
@@ -209,7 +210,7 @@ export class DiscordMessagingBot implements MessagingBot {
     return discordRetry(async () => {
       const ch = await this.fetchTextChannel(channelId);
       const msg = await ch.messages.fetch(messageId);
-      await msg.edit(text);
+      await msg.edit(discordTextPayload(text));
     });
   }
 
@@ -217,7 +218,7 @@ export class DiscordMessagingBot implements MessagingBot {
     return discordRetry(async () => {
       const ch = await this.fetchTextChannel(channelId);
       const replyTarget = await ch.messages.fetch(replyToId);
-      const sent = await replyTarget.reply(text);
+      const sent = await replyTarget.reply(discordTextPayload(text));
       return sent.id;
     });
   }
@@ -228,7 +229,7 @@ export class DiscordMessagingBot implements MessagingBot {
       const thread = await this.client.channels.fetch(threadOrMessageId);
       if (thread && (thread.isThread() || thread.isTextBased())) {
         return discordRetry(async () => {
-          const msg = await (thread as ThreadChannel).send(text);
+          const msg = await (thread as ThreadChannel).send(discordTextPayload(text));
           return msg.id;
         });
       }
@@ -269,7 +270,7 @@ export class DiscordMessagingBot implements MessagingBot {
   async sendDirectMessage(userId: string, text: string): Promise<string> {
     return discordRetry(async () => {
       const user = await this.client.users.fetch(userId);
-      const msg = await user.send(text);
+      const msg = await user.send(discordTextPayload(text));
       return msg.id;
     });
   }

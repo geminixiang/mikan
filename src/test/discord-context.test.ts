@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import { DiscordMessagingBot } from "../adapters/discord/bot.js";
 import type { DiscordEvent } from "../adapters/discord/bot.js";
 import { createDiscordAdapters } from "../adapters/discord/context.js";
+import { DISCORD_V2_TEXT_LIMIT } from "../adapters/discord/components.js";
 
 // ============================================================================
 // Minimal DiscordMessagingBot mock
@@ -389,15 +390,26 @@ describe("replaceResponse()", () => {
 // ============================================================================
 
 describe("text splitting", () => {
-  test("long text is split at 1900 chars", async () => {
+  /**
+   * Components V2 allows 4000 characters across a message's text against 2000
+   * for classic content, which is the reason for using it — an answer that
+   * used to arrive as a string of "(continued N)" posts now fits in half as
+   * many. It is still a ceiling, not its removal.
+   */
+  test("text past the Components V2 ceiling is split", async () => {
     const bot = makeDiscordMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
-    await responder.respond("x".repeat(2100));
+    await responder.respond("x".repeat(DISCORD_V2_TEXT_LIMIT + 200));
     const posted = vi.mocked(bot.postReply).mock.calls[0][2] as string;
-    expect(posted.length).toBeLessThanOrEqual(1900);
+    expect(posted.length).toBeLessThanOrEqual(DISCORD_V2_TEXT_LIMIT);
     expect(posted).toContain("continued");
     expect(bot.postReply).toHaveBeenCalledTimes(2);
+  });
+
+  test("what classic content would have split now fits one message", () => {
+    // The old ceiling was 1900; anything above it cost a second post.
+    expect(DISCORD_V2_TEXT_LIMIT - 100).toBeGreaterThan(1900);
   });
 
   test("text exactly at 1900 chars is not split when not working", async () => {
@@ -412,13 +424,13 @@ describe("text splitting", () => {
     expect(bot.postReply).toHaveBeenCalledTimes(1);
   });
 
-  test("text at 1901 chars is split", async () => {
+  test("text just past the ceiling is split", async () => {
     const bot = makeDiscordMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
-    await responder.respond("x".repeat(1901));
+    await responder.respond("x".repeat(DISCORD_V2_TEXT_LIMIT - 99));
     const posted = vi.mocked(bot.postReply).mock.calls[0][2] as string;
-    expect(posted.length).toBeLessThanOrEqual(1900);
+    expect(posted.length).toBeLessThanOrEqual(DISCORD_V2_TEXT_LIMIT);
     expect(posted).toContain("continued");
     expect(bot.postReply).toHaveBeenCalledTimes(2);
   });

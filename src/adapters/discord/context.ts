@@ -6,12 +6,15 @@ import {
 } from "../../adapter.js";
 import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import { createProgressiveRenderer, formatMarkdownToolResult } from "../progressive-renderer.js";
+import { DISCORD_V2_TEXT_LIMIT } from "./components.js";
 import { formatDiscordMarkdown } from "./format.js";
 import type { DiscordMessagingBot, DiscordEvent } from "./bot.js";
 import type { OfficeAddress } from "../../adapter.js";
 
-// Discord hard limit is 2000 chars; 1900 leaves headroom for working indicator.
-const MAX_LENGTH = 1900;
+// Components V2 allows 4000 characters across a message's text, against 2000
+// for classic content — the reason for using it at all. The margin leaves room
+// for the working indicator and for the continuation marker on a split.
+const MAX_LENGTH = DISCORD_V2_TEXT_LIMIT - 100;
 
 const formatDiscordContinuation = (partNum: number): string => `*(continued ${partNum})*`;
 
