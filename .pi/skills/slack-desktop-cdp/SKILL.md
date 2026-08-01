@@ -141,14 +141,32 @@ Both had me conclude "no reply" from a clean `conversations.history` read.
 Fetch `conversations.replies` on the triggering message before believing a
 command produced nothing.
 
-### 10. Suggested prompts may simply not render
+### 10. An inert agent pane is usually an unsubscribed event
 
-A DOM search finding no prompt elements does not prove mikan failed to call
-`assistant.threads.setSuggestedPrompts`. Slack shows prompts on an empty
-conversation; in a DM with history there may be nothing to see either way. This
-question stayed unresolved because it was approached only through the DOM —
-without mikan's stdout there was no second source. Do not report it as a
-verdict in either direction.
+Missing suggested prompts are not evidence that mikan failed to call
+`assistant.threads.setSuggestedPrompts` — Slack only shows prompts on an empty
+conversation, so a DM with history looks identical either way. Chasing this
+through the DOM alone settles nothing.
+
+The distinguishing signal is the `Slack agent DM opened` line. Opening the
+app's DM should produce it; if messages in that same DM start runs normally and
+this line never appears, Slack is not delivering `app_home_opened` at all, and
+no amount of mikan-side work will help. Check **Event Subscriptions → bot
+events** for `app_home_opened` (and `app_context_changed` under `agent_view`).
+
+That is what a live check found: a healthy conversation, messages arriving,
+extensions loaded — and the event simply never sent.
+
+### 11. Rule out the model before diagnosing anything else
+
+A conversation whose configured model does not resolve looks like a dead
+socket: messages start no run, extensions fail to activate, and their scheduled
+callbacks never register. One `Unknown model` line in the log explains all
+three, and an agent-surface test run in that state means nothing.
+
+It can also hide: a process that resolved the model at boot keeps working after
+the setting is edited, so the breakage appears only at the next restart, long
+after the change that caused it.
 
 ## Worked example: the long-response test
 
