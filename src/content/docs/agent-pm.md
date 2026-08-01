@@ -34,6 +34,49 @@ and it is deliberate — an extension that notifies people is one configuration
 mistake away from notifying all of them, twice. Seeing labelled messages in a
 test channel means it is working, not broken.
 
+## Your first few minutes
+
+What a fresh install actually does, end to end:
+
+```
+/pm status
+```
+
+```
+agent-pm — 2026-08-01 (Asia/Taipei)
+delivery: test → C0EXAMPLE2
+schedules owned by: this conversation
+events: 5 total · 0 pending · 0 unmatched
+tasks: 0 open · workflows: 1 enabled
+deliveries sent: 1 · failed runs: 0
+```
+
+Then make it run rather than waiting for the next tick:
+
+```
+/pm all
+```
+
+```
+ingest: 1 new event(s), 0 source failure(s)
+run: 1 processed, 1 dispatched, 0 unmatched, 0 failed
+sweep: 0 overdue, 0 nudge-due
+```
+
+That is the whole loop: each Taipei hour produces one `clock.tick` event, the
+heartbeat workflow claims it, and a message goes out — once per day, because
+deliveries are deduplicated. In test mode you will see that message in the test
+conversation, labelled with where it would have gone.
+
+:::caution[A fresh install never produces a task]
+`tasks: 0 open` is not a sign that something is wrong, and it will not change on
+its own. The one workflow that ships enabled creates a **delivery**, not a task,
+so there is nothing for the task tool to list until someone adds a workflow with
+`creates: "task"`. That is a change to the extension's seeds, not something you
+can do from chat — the section below describes what happens once such a workflow
+exists.
+:::
+
 ## Two surfaces, and they do not overlap
 
 Which one you reach for depends on what you are doing:

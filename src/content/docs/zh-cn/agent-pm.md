@@ -29,6 +29,46 @@ Task 会以普通消息的形式出现在拥有这条 pipeline 的对话里。�
 哪里。那是默认值，而且是刻意的 —— 一个会通知人的 extension，距离「通知所有人、而且
 通知两次」只差一个配置失误。在测试频道看到带标注的消息代表它正常运作，不是坏了。
 
+## 最初的几分钟
+
+全新安装实际上会发生什么，从头到尾：
+
+```
+/pm status
+```
+
+```
+agent-pm — 2026-08-01 (Asia/Taipei)
+delivery: test → C0EXAMPLE2
+schedules owned by: this conversation
+events: 5 total · 0 pending · 0 unmatched
+tasks: 0 open · workflows: 1 enabled
+deliveries sent: 1 · failed runs: 0
+```
+
+然后叫它现在就跑，不用等下一次触发：
+
+```
+/pm all
+```
+
+```
+ingest: 1 new event(s), 0 source failure(s)
+run: 1 processed, 1 dispatched, 0 unmatched, 0 failed
+sweep: 0 overdue, 0 nudge-due
+```
+
+整个循环就是这样：每个台北整点产生一条 `clock.tick` event，心跳 workflow 认领它，然后
+发出一条消息 —— 一天一次，因为投递会去重。在 test 模式下，你会在测试对话看到那条消息，
+并标注它原本要发去哪里。
+
+:::caution[全新安装不会产生任何 task]
+`tasks: 0 open` 不代表哪里坏了，而且它不会自己改变。默认启用的那个 workflow 产生的是
+**delivery 而不是 task**，所以在有人新增一个 `creates: "task"` 的 workflow 之前，task
+工具没有东西可以列。那是改 extension 的 seeds，不是你能从对话里做的事 —— 下面几节描述的
+是「当这种 workflow 存在之后」会怎么运作。
+:::
+
 ## 两个界面，而且不重叠
 
 要用哪一个，取决于你在做什么：

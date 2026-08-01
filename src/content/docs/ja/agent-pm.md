@@ -31,6 +31,46 @@ pipeline が **test モード**で動いている場合、すべてのメッセ�
 設定ミス 1 つで全員に、しかも二重に通知するところまで来ています。テスト用チャンネルで
 注記付きメッセージが見えるのは、壊れているのではなく動いている証拠です。
 
+## 最初の数分
+
+新規インストールで実際に起きることを、最初から最後まで:
+
+```
+/pm status
+```
+
+```
+agent-pm — 2026-08-01 (Asia/Taipei)
+delivery: test → C0EXAMPLE2
+schedules owned by: this conversation
+events: 5 total · 0 pending · 0 unmatched
+tasks: 0 open · workflows: 1 enabled
+deliveries sent: 1 · failed runs: 0
+```
+
+次の tick を待たずに動かします:
+
+```
+/pm all
+```
+
+```
+ingest: 1 new event(s), 0 source failure(s)
+run: 1 processed, 1 dispatched, 0 unmatched, 0 failed
+sweep: 0 overdue, 0 nudge-due
+```
+
+ループはこれで全部です。Asia/Taipei の毎正時に `clock.tick` が 1 件生まれ、heartbeat
+workflow がそれを引き取り、メッセージが送られます —— 配信は重複排除されるので 1 日 1 回
+です。test モードなら、そのメッセージは本来の宛先を注記した形でテスト用の会話に届きます。
+
+:::caution[新規インストールでは task は生まれません]
+`tasks: 0 open` は異常ではなく、放っておいても変わりません。既定で有効な workflow が作る
+のは **task ではなく delivery** です。`creates: "task"` の workflow を誰かが足すまで、task
+tool に並ぶものはありません。それは extension の seeds を変える作業で、チャットからできる
+ことではありません —— 以降の節は「そういう workflow がある場合」の話です。
+:::
+
 ## 2 つの窓口、重なりはありません
 
 どちらを使うかは、やろうとしていることで決まります:
