@@ -70,15 +70,23 @@ the current URL. Never remove that check. Also expect to read things you should
 not: if you land in someone's private conversation, do not quote or retain it,
 and say so.
 
-### 4. `element.click()` is not always a function
+### 4. Two kinds of click, and the difference matters
 
-Slack renders many controls as `<svg>` inside a `[role=button]` wrapper, and
-`SVGElement` has no `.click()`. Walk up to the nearest node that does — the
-driver's `click` command already handles this. Selecting by `data-qa` often
-lands on the icon, not the control.
+`click <selector>` calls the element's own `.click()`. Slack renders many
+controls as `<svg>` inside a `[role=button]` wrapper and `SVGElement` has no
+`.click()`, so the driver walks up to the nearest node that does; selecting by
+`data-qa` often lands on the icon rather than the control.
 
-Never click by screen coordinates. An earlier attempt did, and hit Chrome
-because the user changed the frontmost app; the method was wrong, not unlucky.
+That is enough for navigation, but **Block Kit interactive elements ignore it**
+— a vote button clicked this way registered nothing, not even a dropped-action
+warning on the mikan side, because the event never left the client. Use
+`clickat <exact text>`, which dispatches real mouse events through the Input
+domain. That is what made the poll extension's buttons respond.
+
+Neither of these is clicking at _screen_ coordinates. An early attempt did
+that and hit Chrome, because the user changed the frontmost app mid-action;
+both commands here work in the page's own coordinate space through the
+debugger, so nothing depends on window position or focus.
 
 ### 5. The composer is Quill — use the Input domain
 

@@ -210,6 +210,33 @@ try {
     value = await sendMessage(session, argument);
   } else if (command === "eval") {
     value = await session.evaluate(argument);
+  } else if (command === "clickat") {
+    // Real mouse events at the element's own viewport coordinates. Slack
+    // ignores `element.click()` on interactive Block Kit controls the same way
+    // it ignores a synthetic Enter on a slash command.
+    //
+    // Not to be confused with clicking at *screen* coordinates: this goes into
+    // the page's coordinate space through the debugger, so nothing depends on
+    // window position or which application is frontmost.
+    const box = await session.evaluate(`(() => {
+      const match = [...document.querySelectorAll("button,[role=button],a")]
+        .find((el) => (el.textContent || "").trim() === ${JSON.stringify(argument)});
+      if (!match) return null;
+      const rect = match.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    })()`);
+    if (!box) throw new Error(`no element with exact text: ${argument}`);
+    for (const type of ["mousePressed", "mouseReleased"]) {
+      await session.send("Input.dispatchMouseEvent", {
+        type,
+        x: box.x,
+        y: box.y,
+        button: "left",
+        clickCount: 1,
+      });
+    }
+    await sleep(800);
+    value = `clicked "${argument}" at ${Math.round(box.x)},${Math.round(box.y)}`;
   } else if (command === "type") {
     // Compose without sending, for inspecting what Slack does in response to
     // the text itself — autocomplete menus, command validation, and so on.
