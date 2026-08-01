@@ -353,11 +353,19 @@ export function createProgressiveRenderer(platform: ProgressiveRendererPlatform)
           state.resetDelta = true;
           if (state.streamActive) await stopNativeStream();
           if (state.working && !state.source.trim()) return;
+          // Prepare here too, not only on the delta path. This render is the
+          // last word on the response, so skipping it let the canonical
+          // replace overwrite prepared text with the raw source — a Discord
+          // table converted during streaming reverted to literal pipes the
+          // moment the run finished.
+          const prepared = platform.prepareSource?.(state.source, state.working) ?? state.source;
           state.source = await renderRaw(
-            provisional(state.source, state.working),
+            provisional(prepared, state.working),
             "replace",
             options,
-            state.source,
+            // The prepared text is what was sent, so it is also what the
+            // renderer must remember it sent.
+            prepared,
           );
         },
         () => ({

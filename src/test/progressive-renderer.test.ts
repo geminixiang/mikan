@@ -17,6 +17,7 @@ function makeRenderer(
     update?: (id: string, text: string) => Promise<void>;
     minDeltaChars?: number;
     flushIntervalMs?: number;
+    prepareSource?: (text: string, working: boolean) => string;
   } = {},
 ) {
   const calls: Call[] = [];
@@ -36,6 +37,7 @@ function makeRenderer(
     // rather than the wall-clock pacing that limits redraws in production.
     // The pacing itself is covered by its own suite.
     flushIntervalMs: overrides.flushIntervalMs ?? 0,
+    ...(overrides.prepareSource ? { prepareSource: overrides.prepareSource } : {}),
     initialResponseId,
     formatContinuation: (partNum) => `(continued ${partNum})`,
     errorPrefix: "Error: ",
@@ -307,5 +309,40 @@ describe("redraw pacing", () => {
 
     expect(calls.filter((call) => call.operation === "update")).toHaveLength(1);
     vi.useRealTimers();
+  });
+});
+
+/**
+ * `prepareSource` is where a platform converts what it cannot render — Discord
+ * turns markdown tables into aligned code fences there. Applying it only on the
+ * delta path meant the canonical replace overwrote prepared text with the raw
+ * source: a table converted during streaming reverted to literal pipes the
+ * moment the run finished, visible as an "(edited)" marker on the message.
+ */
+describe("source preparation", () => {
+  test("the final replace renders prepared text, not the raw source", async () => {
+    const { responder, calls } = makeRenderer("buffered", undefined, {
+      prepareSource: (text) => text.replace("RAW", "PREPARED"),
+    });
+
+    await responder.replaceResponse("this is RAW");
+
+    const sent = calls.map((call) => call.text).join("");
+    expect(sent).toContain("PREPARED");
+    expect(sent).not.toContain("RAW");
+  });
+
+  test("a replace after a delta does not undo the delta's preparation", async () => {
+    const { responder, calls } = makeRenderer("buffered", undefined, {
+      prepareSource: (text) => text.replace("RAW", "PREPARED"),
+    });
+
+    await responder.appendResponseDelta?.("this is RAW");
+    await responder.replaceResponse("this is RAW");
+
+    // The last thing on screen is what the reader keeps.
+    const last = calls.at(-1)?.text ?? "";
+    expect(last).toContain("PREPARED");
+    expect(last).not.toContain("RAW");
   });
 });
