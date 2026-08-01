@@ -222,6 +222,12 @@ export function handleAgentContextChanged(
   payload: { channel_id?: string; thread_ts?: string; context?: AgentContext },
 ): void {
   if (!payload.channel_id) return;
+  // Logged for the same reason as the open event: these two are the whole
+  // agent surface, and whether either is subscribed is otherwise invisible
+  // from inside mikan.
+  log.logInfo(
+    `[${payload.channel_id}] Slack agent context changed${payload.context?.channel_id ? ` (viewing ${payload.context.channel_id})` : ""}`,
+  );
   if (payload.thread_ts) {
     registry.remember(payload.channel_id, payload.thread_ts, payload.context);
     return;
