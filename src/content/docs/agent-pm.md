@@ -42,6 +42,14 @@ What a fresh install actually does, end to end:
 /pm status
 ```
 
+:::caution[The slash is not optional, and leaving it off fails quietly]
+Typing `pm status` without it does not run the command. It reaches the agent
+instead, which sees a plausible request, guesses, and answers something like
+"no outstanding tasks" — a reply that looks right, costs a model call, and told
+you nothing about the pipeline. The command's output always begins with
+`agent-pm — <date>`; if you did not get that, the command did not run.
+:::
+
 ```
 agent-pm — 2026-08-01 (Asia/Taipei)
 delivery: test → C0EXAMPLE2

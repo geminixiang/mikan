@@ -37,6 +37,13 @@ Task 会以普通消息的形式出现在拥有这条 pipeline 的对话里。�
 /pm status
 ```
 
+:::caution[斜杠不能省，而且省掉之后会安静地失败]
+打成 `pm status` 不会执行命令。它会进到 agent，而 agent 看到一个看似合理的请求就会猜，
+回你类似「无未完成任务」的答案 —— 看起来像对的，花掉一次模型调用，却完全没告诉你
+pipeline 的状况。命令的输出一定以 `agent-pm — <日期>` 开头；没看到那行，就代表命令
+没有执行。
+:::
+
 ```
 agent-pm — 2026-08-01 (Asia/Taipei)
 delivery: test → C0EXAMPLE2
