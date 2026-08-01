@@ -102,6 +102,8 @@ export function createSlackResponseContext({
   const { rootTs, isThreaded } = sessionPlan;
   const replyInThread = Boolean(rootTs && (isThreaded || replyMode === "thread"));
   let assistantStatusFailureWarned = false;
+  /** How much of an over-long response the thread continuation already holds. */
+  let continuationSent = "";
 
   const onAssistantStatusError = (label: string, err: unknown): void => {
     if (assistantStatusFailureWarned) return;
@@ -234,21 +236,34 @@ export function createSlackResponseContext({
         }
         return overflowLink;
       };
-      const fallback = await postSlackTextWithFallback(
-        write,
-        text,
-        operation === "replace" ? resolveOverflowLink() : undefined,
-      );
-      if (operation === "replace") {
-        const continuation = text.slice(fallback.prefixLength).trimStart();
-        if (continuation) {
+      const fallback = await postSlackTextWithFallback(write, text, resolveOverflowLink());
+
+      // The truncation notice promises a thread continuation unconditionally,
+      // so every path that prints it has to deliver one. Gating delivery on
+      // the final "replace" dropped the tail whenever a run ended on the
+      // post-stream canonical render instead — silent data loss behind a
+      // message that claimed the rest was elsewhere.
+      //
+      // Incremental renders call this repeatedly as the text grows, so send
+      // only what the thread has not seen yet. Text normally grows by
+      // appending; when it does not, the prefix check fails and we start the
+      // thread over from the new truncation point rather than splicing two
+      // unrelated bodies together.
+      const continuation = text.slice(fallback.prefixLength).trimStart();
+      if (continuation && continuation !== continuationSent) {
+        const isExtension = continuation.startsWith(continuationSent);
+        const unsent = isExtension ? continuation.slice(continuationSent.length) : continuation;
+        if (unsent.trim()) {
           await postThreadDiagnostic(
-            `_(continued from truncated message)_\n\n${continuation}`,
+            isExtension && continuationSent
+              ? unsent
+              : `_(continued from truncated message)_\n\n${unsent}`,
             {},
             replyInThread
               ? (rootTs ?? getResponseId() ?? responseId)
               : (getResponseId() ?? responseId),
           );
+          continuationSent = continuation;
         }
       }
       return fallback;

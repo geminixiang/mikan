@@ -574,6 +574,64 @@ describe("text accumulation", () => {
     expect(fallbackText).toContain("message too long for Slack");
     expect(fallbackText).not.toContain("END");
   });
+
+  /**
+   * The truncation notice promises the rest is in a thread, and `respond` is
+   * the path a run takes when it ends on the post-stream canonical render.
+   * Delivering the continuation only for `replaceResponse` meant that promise
+   * was routinely printed over a tail that was silently dropped.
+   */
+  test("respond delivers the truncated tail to a thread, not just the promise", async () => {
+    const tooLongError = new Error("An API error occurred: msg_too_long") as Error & {
+      data?: { error: string };
+    };
+    tooLongError.data = { error: "msg_too_long" };
+    const bot = makeSlackMessagingBot({
+      postMessage: vi.fn().mockRejectedValueOnce(tooLongError).mockResolvedValueOnce("BOT_MSG"),
+    });
+    const event = makeEvent({ thread_ts: undefined });
+    const { responder } = createSlackAdapters(event, bot);
+
+    await responder.respond(`${"x".repeat(6000)}END`);
+
+    expect(bot.postInThread).toHaveBeenCalledWith(
+      "C001",
+      "BOT_MSG",
+      expect.stringContaining("END"),
+    );
+  });
+
+  test("a growing response extends the thread continuation instead of repeating it", async () => {
+    const tooLongError = new Error("An API error occurred: msg_too_long") as Error & {
+      data?: { error: string };
+    };
+    tooLongError.data = { error: "msg_too_long" };
+    // Slack refuses anything long, so each render takes the fallback path —
+    // the shape an incremental render has while the text keeps growing.
+    const bot = makeSlackMessagingBot({
+      postMessage: vi.fn(async (_channel: string, text: string) => {
+        if (text.length > 3200) throw tooLongError;
+        return "BOT_MSG";
+      }),
+      updateMessage: vi.fn(async (_channel: string, _ts: string, text: string) => {
+        if (text.length > 3200) throw tooLongError;
+      }),
+    });
+    const event = makeEvent({ thread_ts: undefined });
+    const { responder } = createSlackAdapters(event, bot);
+
+    await responder.respond(`${"x".repeat(6000)}ALPHA`);
+    await responder.respond(`${"y".repeat(6000)}BETA`);
+
+    const joined = vi
+      .mocked(bot.postInThread)
+      .mock.calls.map((call) => String(call[2]))
+      .join("");
+    // The tail arrives exactly once: a re-render must not re-post what the
+    // thread already holds, and must not swallow what it does not.
+    expect(joined.split("ALPHA").length - 1).toBe(1);
+    expect(joined).toContain("BETA");
+  });
 });
 
 // ============================================================================
