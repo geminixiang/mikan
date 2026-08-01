@@ -18,6 +18,16 @@ Socket Mode, message events — is identical, and the same mikan process serves
 either. Start from the classic one if you are not sure; adding the agent
 surface later is an edit to the same app.
 
+> **The agent surface needs a paid Slack plan.** Slack's own wording is that
+> these features "require a paid plan, despite being visible in the app
+> settings on any plan" — so on a free workspace every toggle turns on, the
+> events save, the app reinstalls, and then nothing is ever delivered. There is
+> no error to find; a listener that never fires is the only symptom. If you are
+> only developing, the Slack Developer Program provisions a fully-featured
+> sandbox for free, which is the cheaper answer than upgrading a real
+> workspace. The classic app surface — mentions, DMs, slash commands, Block Kit
+> — is unaffected and works on any plan.
+
 > `agent_view` and `assistant_view` are two surfaces, not two spellings of
 > one. The events and the `assistant.threads.*` methods kept their names, but
 > **which events mean "someone opened a conversation" changed**: `agent_view`
