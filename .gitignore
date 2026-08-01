@@ -22,6 +22,7 @@ vaults/*/
 .pi/remote-pi/
 .pi/subagent-schedules/
 .pi/subagents.json
+.pi/generated-images/
 
 # Anchored: the deployment template at deploy/pm2/ecosystem.config.cjs is
 # tracked, and an unanchored pattern matches it at every depth.
