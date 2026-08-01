@@ -129,8 +129,14 @@ type SubagentParams = Static<typeof subagentSchema>;
 type SubagentTask = NonNullable<SubagentParams["tasks"]>[number];
 type DagNode = NonNullable<SubagentParams["dag"]>["nodes"][number];
 type SharedParams = Pick<SubagentParams, "parentContext" | "outputSchema" | "budget">;
+/**
+ * `hooks` carries host-side callbacks rather than widening the request: the
+ * request is the public shape an extension or the model asks for, and a
+ * progress sink belongs to whoever is displaying the run.
+ */
 type RunSubagent = <TOutputSchema extends TSchema | undefined = undefined>(
   request: SubagentRunRequest<TOutputSchema>,
+  hooks?: { onActivity?: (activity: string) => void },
 ) => Promise<SubagentRunResult<SubagentRunOutput<TOutputSchema>>>;
 
 type PlanMode = "single" | "parallel" | "dag";
@@ -157,7 +163,11 @@ type PlanOutcome =
 /** The metrics half of a progress node — derived, not restated. */
 type SubagentProgressMetrics = Omit<SubagentProgressNode, "id" | "label" | "status" | "profile">;
 
+/** Shortest gap between activity-driven redraws of the dashboard. */
+const ACTIVITY_EMIT_INTERVAL_MS = 2000;
+
 class SubagentProgressTracker {
+  private lastActivityEmit = 0;
   private readonly states = new Map<string, SubagentProgressStatus>();
   private readonly metrics = new Map<string, SubagentProgressMetrics>();
 
@@ -172,6 +182,24 @@ class SubagentProgressTracker {
   update(id: string, status: SubagentProgressStatus, metrics?: SubagentProgressMetrics): void {
     this.states.set(id, status);
     if (metrics) this.metrics.set(id, metrics);
+    this.emit();
+  }
+
+  /**
+   * Record what a node is doing, rate-limited.
+   *
+   * Status changes are rare and each one matters, so `update` emits every
+   * time. Activity is the opposite — it can change several times a second
+   * while text streams — and every emission redraws the whole response, on a
+   * path that is deliberately not batched. Left unbounded this would spend the
+   * platform's edit budget on a character counter.
+   */
+  activity(id: string, activity: string): void {
+    const previous = this.metrics.get(id) ?? {};
+    this.metrics.set(id, { ...previous, activity });
+    const now = Date.now();
+    if (now - this.lastActivityEmit < ACTIVITY_EMIT_INTERVAL_MS) return;
+    this.lastActivityEmit = now;
     this.emit();
   }
 
@@ -408,7 +436,9 @@ async function runWaves(
       }
       let result: SubagentRunResult<unknown>;
       progress.update(item.id, "running");
-      result = await runSubagent(planRequest(item, shared, outcomes, signal));
+      result = await runSubagent(planRequest(item, shared, outcomes, signal), {
+        onActivity: (activity: string) => progress.activity(item.id, activity),
+      });
       outcomes.set(item.id, { id: item.id, ...result });
       progress.update(item.id, result.status, {
         turns: result.turns,

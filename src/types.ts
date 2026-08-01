@@ -132,6 +132,14 @@ export interface SubagentProgressNode {
   tokens?: number;
   costUsd?: number;
   durationMs?: number;
+  /**
+   * What the node is doing right now, for running nodes only.
+   *
+   * Without it a node reports nothing between "started" and "finished", so a
+   * step that legitimately takes minutes is indistinguishable from a hang —
+   * and when it does finish, there is no record of how it got there.
+   */
+  activity?: string;
   reason?: string;
   cleanupPending?: boolean;
 }

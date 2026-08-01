@@ -18,6 +18,7 @@ import type {
 export const MAX_SUBAGENT_LABEL_CHARS = 100;
 const MAX_PROFILE_CHARS = 64;
 const MAX_REASON_CHARS = 240;
+const MAX_ACTIVITY_CHARS = 80;
 
 const SUBAGENT_STATUS_MARKER = {
   pending: "○",
@@ -62,6 +63,9 @@ export function boundSubagentProgressNode(node: SubagentProgressNode): SubagentP
     ...node,
     label: clampSubagentLabel(node.label),
     ...(node.profile !== undefined ? { profile: node.profile.slice(0, MAX_PROFILE_CHARS) } : {}),
+    ...(node.activity !== undefined
+      ? { activity: node.activity.slice(0, MAX_ACTIVITY_CHARS) }
+      : {}),
     ...(node.reason !== undefined ? { reason: node.reason.slice(0, MAX_REASON_CHARS) } : {}),
   };
 }
@@ -96,6 +100,7 @@ function parseNode(value: unknown): SubagentProgressNode | undefined {
     ...(typeof item.tokens === "number" ? { tokens: item.tokens } : {}),
     ...(typeof item.costUsd === "number" ? { costUsd: item.costUsd } : {}),
     ...(typeof item.durationMs === "number" ? { durationMs: item.durationMs } : {}),
+    ...(typeof item.activity === "string" ? { activity: item.activity } : {}),
     ...(typeof item.reason === "string" ? { reason: item.reason } : {}),
     ...(item.cleanupPending === true ? { cleanupPending: true } : {}),
   });
@@ -239,9 +244,13 @@ function detailText(node: SubagentProgressNode): string {
     node.durationMs !== undefined ? `${(node.durationMs / 1000).toFixed(1)}s` : undefined,
   ].filter(Boolean);
   const reason = node.cleanupPending ? "Cleanup pending; usage is provisional" : node.reason;
+  // Activity is shown only while running, and that is exactly when there is
+  // nothing else: a node reports its metrics on the way out, so without this
+  // the whole of a long step reads "Running · profile" and never changes.
+  const activity = node.status === "running" ? node.activity : undefined;
   // Profile leads the line: when a node reports no tool calls, the profile is
   // what says whether that was the plan or a bad pick.
-  return [SUBAGENT_STATUS_LABEL[node.status], node.profile, ...metrics, reason]
+  return [SUBAGENT_STATUS_LABEL[node.status], node.profile, activity, ...metrics, reason]
     .filter(Boolean)
     .join(" · ");
 }

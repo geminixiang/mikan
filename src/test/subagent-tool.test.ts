@@ -124,7 +124,11 @@ describe("subagent tool", () => {
 
     await tool.execute("profile", { task: "Read README", profile: "explorer" });
 
-    expect(runSubagent).toHaveBeenCalledWith(expect.objectContaining({ profile: "explorer" }));
+    expect(runSubagent).toHaveBeenCalledWith(
+      expect.objectContaining({ profile: "explorer" }),
+      // Second argument: the host-side progress sink, kept out of the request.
+      expect.objectContaining({ onActivity: expect.any(Function) }),
+    );
   });
 
   test("a top-level profile covers every task and DAG node", async () => {
@@ -585,6 +589,48 @@ describe("subagent tool", () => {
     expect((result.content[0] as { type: "text"; text: string }).text).toContain("[6] job 6");
   });
 
+  /**
+   * Every emission redraws the whole response, on a path that is deliberately
+   * not batched — and activity can change several times a second while text
+   * streams. Unbounded, this would spend the platform's edit budget on a
+   * character counter and re-create the rate limiting it exists to report.
+   */
+  test("a burst of activity does not redraw the dashboard per report", async () => {
+    const updates: unknown[] = [];
+    const runSubagent: RunSubagent = (async (
+      _request: unknown,
+      hooks?: { onActivity?: (activity: string) => void },
+    ) => {
+      for (let index = 0; index < 50; index++) hooks?.onActivity?.(`writing · ${index} chars`);
+      return {
+        runId: "subagent-1",
+        status: "completed",
+        model: { provider: "faux", id: "faux" },
+        startedAt: 0,
+        durationMs: 1,
+        turns: 1,
+        toolCalls: 0,
+        tokens: 0,
+        costUsd: 0,
+        output: "done",
+        text: "done",
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- narrowed fake
+    }) as any;
+    const tool = makeTool(runSubagent);
+
+    await tool.execute(
+      "call-1",
+      { profile: "explorer", task: "Write a lot" },
+      undefined,
+      (update) => updates.push(update),
+    );
+
+    // Status transitions still emit every time; what must not scale with the
+    // burst is the activity reporting.
+    expect(updates.length).toBeLessThan(10);
+  });
+
   test("returns a completed subagent result to the main agent", async () => {
     const runSubagent = vi.fn(completedRun("focused answer"));
     const tool = makeTool(runSubagent);
@@ -601,6 +647,7 @@ describe("subagent tool", () => {
         profile: "explorer",
         budget: { maxTurns: 2 },
       }),
+      expect.objectContaining({ onActivity: expect.any(Function) }),
     );
     // The tool grant is the profile's to make, so nothing reaches the runner.
     expect(runSubagent.mock.calls[0][0]).not.toHaveProperty("tools");

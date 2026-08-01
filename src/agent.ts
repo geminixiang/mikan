@@ -1460,9 +1460,10 @@ async function createConfiguredAgentSession(params: {
   }
 
   const subagentTool = createSubagentTool(
-    (request) =>
+    (request, hooks) =>
       runSubagent({
         request,
+        ...(hooks?.onActivity ? { onActivity: hooks.onActivity } : {}),
         defaultModel: model,
         thinkingLevel,
         models,

@@ -625,6 +625,55 @@ describe("runSubagent", () => {
     });
   });
 
+  /**
+   * The session's event stream always existed and nothing consumed it, so a
+   * subagent was silent for its entire run — a step that legitimately took
+   * four minutes was indistinguishable from a hang, and was reported as one.
+   */
+  test("reports what the run is doing as it happens", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("echo", { text: "ping" })),
+      fauxAssistantMessage("done"),
+    ]);
+    const activity: string[] = [];
+
+    await runSubagent({
+      request: { task: "Use echo", tools: ["echo"] },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [echoTool],
+      onActivity: (line) => activity.push(line),
+    });
+
+    // The tool call is the part a reader can follow; naming it is the whole
+    // point of the sink.
+    expect(activity).toContain("echo");
+    expect(activity.length).toBeGreaterThan(1);
+  });
+
+  test("a failing activity sink does not fail the run", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([fauxAssistantMessage("done")]);
+
+    const result = await runSubagent({
+      request: { task: "Answer" },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [],
+      onActivity: () => {
+        throw new Error("sink exploded");
+      },
+    });
+
+    // Progress display is a nicety; the answer is not.
+    expect(result).toMatchObject({ status: "completed", output: "done" });
+  });
+
   test("grants only explicitly requested tools", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([

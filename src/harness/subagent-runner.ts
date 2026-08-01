@@ -147,7 +147,77 @@ interface RunSubagentOptions<TOutputSchema extends TSchema | undefined = undefin
   parentMessages?: AgentMessage[];
   /** Usage attribution sink snapshotted when this invocation begins. */
   onUsage?: SubagentUsageSink;
+  /**
+   * Called as the run's visible activity changes, so a caller can show what
+   * this subagent is doing rather than only that it started. Best-effort: a
+   * throwing sink is logged and the run continues.
+   */
+  onActivity?: (activity: string) => void;
 }
+
+/**
+ * Translate a subagent session's event stream into short activity lines.
+ *
+ * The stream was always there — nothing subscribed to it, so every subagent
+ * was silent for its whole run and a slow step looked identical to a hung one.
+ *
+ * Text is reported as a growing character count rather than its content: it
+ * proves liveness during a long single-turn generation, which is the case with
+ * nothing else to show, without putting a half-written answer on screen.
+ */
+function reportSubagentActivity(
+  session: MikanAgentSession,
+  onActivity: (activity: string) => void,
+): void {
+  let characters = 0;
+  let reportedAt = 0;
+  const report = (activity: string): void => {
+    try {
+      onActivity(activity);
+    } catch (err) {
+      log.logWarning("Subagent onActivity listener failed", String(err));
+    }
+  };
+
+  session.subscribe(async (event: { type: string; [key: string]: unknown }) => {
+    if (event.type === "tool_execution_start") {
+      const args = (event.args ?? {}) as { label?: string };
+      const name = String(event.toolName ?? "tool");
+      report(args.label ? `${name}: ${args.label}` : name);
+      return;
+    }
+    if (event.type === "tool_execution_end") {
+      report("thinking");
+      return;
+    }
+    if (event.type === "message_start") {
+      characters = 0;
+      reportedAt = 0;
+      report("thinking");
+      return;
+    }
+    if (event.type === "message_update") {
+      const delta = (event as { assistantMessageEvent?: { type?: string; delta?: string } })
+        .assistantMessageEvent;
+      if (delta?.type !== "text_delta" || !delta.delta) return;
+      characters += delta.delta.length;
+      // Coarse steps: deltas arrive per token, and one report each would churn
+      // the dashboard for no added information.
+      if (characters - reportedAt < ACTIVITY_CHARS_STEP) return;
+      reportedAt = characters;
+      report(`writing · ${characters} chars`);
+      return;
+    }
+    if (event.type === "auto_retry_start") {
+      // The most valuable line here: a retry is the usual reason a run goes
+      // quiet for minutes, and it was completely invisible.
+      report("retrying after an error");
+    }
+  });
+}
+
+/** How much new text earns a fresh activity line during a long generation. */
+const ACTIVITY_CHARS_STEP = 250;
 
 function resolveBudget(budget: RunSubagentOptions["request"]["budget"]) {
   const resolved = { ...DEFAULT_SUBAGENT_BUDGET, ...budget };
@@ -583,6 +653,7 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
       settings: { compaction: { enabled: false } },
     });
     sessionRef = session;
+    if (options.onActivity) reportSubagentActivity(session, options.onActivity);
 
     request.signal?.addEventListener("abort", onAbort, { once: true });
     if (request.signal?.aborted) abort("cancelled");
