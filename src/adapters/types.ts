@@ -72,6 +72,13 @@ interface ProgressiveStreamTransport {
 export interface ProgressiveRendererPlatform {
   label: string;
   maxLength: number;
+  /**
+   * Shortest gap between redraws of a streaming response, measured from the
+   * end of the previous one. Platforms meter edits per channel at different
+   * rates; the default suits the tightest of them. Zero redraws on every
+   * delta, which only a platform with no such limit can afford.
+   */
+  flushIntervalMs?: number;
   initialResponseId?: string | null;
   formatContinuation: (partNum: number) => string;
   errorPrefix: string;

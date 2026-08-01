@@ -491,13 +491,18 @@ describe("uploadFile()", () => {
 
 describe("streaming lifecycle", () => {
   test("delta streaming posts then updates the same message", async () => {
+    // Redraws are paced by wall clock, and the renderer captures `Date.now`
+    // when it is built — so the fake clock has to be in place first.
+    vi.useFakeTimers();
     const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
 
     await responder.appendResponseDelta?.("hello");
+    vi.advanceTimersByTime(2000);
     await responder.appendResponseDelta?.(" world".repeat(20));
     await responder.finishResponse?.("hello final");
+    vi.useRealTimers();
 
     expect(bot.postMessageRaw).toHaveBeenCalledWith(123456, expect.stringContaining("hello"));
     expect(bot.updateMessage).toHaveBeenCalledWith(

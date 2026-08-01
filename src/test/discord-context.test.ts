@@ -513,13 +513,18 @@ describe("uploadFile()", () => {
 
 describe("streaming lifecycle", () => {
   test("delta streaming posts then updates the same message", async () => {
+    // Redraws are paced by wall clock, and the renderer captures `Date.now`
+    // when it is built — so the fake clock has to be in place first.
+    vi.useFakeTimers();
     const bot = makeDiscordMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
 
     await responder.appendResponseDelta?.("hello");
+    vi.advanceTimersByTime(2000);
     await responder.appendResponseDelta?.(" world".repeat(20));
     await responder.finishResponse?.("hello final");
+    vi.useRealTimers();
 
     expect(bot.postReply).toHaveBeenCalledWith("CH001", "MSG001", expect.stringContaining("hello"));
     expect(bot.updateMessageRaw).toHaveBeenCalledWith(

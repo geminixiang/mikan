@@ -175,6 +175,9 @@ describe("respond() — non-threaded", () => {
   });
 
   test("default top-level reply mode uses chat.update streaming", async () => {
+    // Redraws are paced by wall clock, so a second one needs the interval to
+    // have passed — appending more text is not enough on its own.
+    vi.useFakeTimers();
     const bot = makeSlackMessagingBot({
       postMessage: vi.fn().mockResolvedValue("MSG1"),
       startMessageStream: vi.fn().mockResolvedValue("STREAM1"),
@@ -183,8 +186,10 @@ describe("respond() — non-threaded", () => {
     const { responder } = createSlackAdapters(event, bot);
 
     await responder.appendResponseDelta?.("first");
+    vi.advanceTimersByTime(2000);
     await responder.appendResponseDelta?.(" second".repeat(20));
     await responder.finishResponse?.("final");
+    vi.useRealTimers();
 
     expect(bot.startMessageStream).not.toHaveBeenCalled();
     expect(bot.postMessage).toHaveBeenCalledWith("C001", expect.stringContaining("first"));
@@ -844,6 +849,9 @@ describe("thread_ts boundary values", () => {
 
 describe("streaming lifecycle", () => {
   test("thread reply mode native stream failure falls back to incremental chat.update", async () => {
+    // Installed before the responder exists: the renderer captures `Date.now`
+    // when it is built, so a later swap would leave it on the real clock.
+    vi.useFakeTimers();
     const bot = makeSlackMessagingBot({
       startMessageStream: vi.fn().mockRejectedValue(new Error("missing required field: thread_ts")),
       postMessage: vi.fn().mockResolvedValue("T001"),
@@ -853,8 +861,10 @@ describe("streaming lifecycle", () => {
     const { responder } = createSlackAdapters(event, bot, { replyMode: "thread" });
 
     await responder.appendResponseDelta?.("hello");
+    vi.advanceTimersByTime(2000);
     await responder.appendResponseDelta?.(" world".repeat(20));
     await responder.finishResponse?.("hello final");
+    vi.useRealTimers();
 
     expect(bot.postInThread).toHaveBeenCalledWith(
       "C001",

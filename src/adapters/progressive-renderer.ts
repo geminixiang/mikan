@@ -38,8 +38,19 @@ interface RendererState {
   extraIds: Array<string | number>;
 }
 
-const DEFAULT_FLUSH_INTERVAL_MS = 750;
-const DEFAULT_FLUSH_CHARS = 80;
+/**
+ * Floor on how often a streaming response redraws.
+ *
+ * Every platform meters edits per channel — Slack's is the tightest at roughly
+ * fifty a minute — and a redraw sends the whole message, so the cost is the
+ * number of calls, not their size. One second keeps a long answer inside that
+ * budget while still reading as live.
+ *
+ * This is a floor, not a target: the interval is measured from when the last
+ * redraw *finished*, so a platform that slows down under load slows the redraw
+ * rate with it instead of queueing work it cannot deliver.
+ */
+const DEFAULT_FLUSH_INTERVAL_MS = 1000;
 
 export function createProgressiveRenderer(platform: ProgressiveRendererPlatform): {
   responder: ConversationResponder;
@@ -64,6 +75,7 @@ export function createProgressiveRenderer(platform: ProgressiveRendererPlatform)
     : (err: unknown, operation: ChatResponseErrorOperation, extra?: Record<string, unknown>) =>
         platform.reportError?.(err, operation, extra ?? {}, state.responseId);
   const now = Date.now;
+  const flushIntervalMs = platform.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS;
 
   function stopTyping(): void {
     if (state.typingInterval !== null) {
@@ -270,14 +282,15 @@ export function createProgressiveRenderer(platform: ProgressiveRendererPlatform)
         state.source += sanitized;
         state.pendingChars += sanitized.length;
         const elapsed = now() - state.lastFlushAt;
-        if (
-          state.lastFlushAt === 0 ||
-          state.pendingChars >= DEFAULT_FLUSH_CHARS ||
-          elapsed >= DEFAULT_FLUSH_INTERVAL_MS
-        ) {
+        // A character threshold must not bypass the interval. When it did, a
+        // fast stream redrew every eighty characters — well over a hundred
+        // edits for a long answer — and the platform started refusing them.
+        if (state.lastFlushAt === 0 || (elapsed >= flushIntervalMs && state.pendingChars > 0)) {
           state.pendingChars = 0;
-          state.lastFlushAt = now();
           state.source = await renderDelta(state.source);
+          // Stamp on completion: a slow or retrying send pushes the next
+          // redraw out by however long it took, so pressure never compounds.
+          state.lastFlushAt = now();
         }
       },
       () => ({ textLength: delta.length, accumulatedLength: state.source.length }),
