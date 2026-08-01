@@ -124,6 +124,7 @@
       "src/sandbox/index.ts!"
     ],
     "ignore": [
+      ".pi/**",
       "scripts/**",
       "deploy/**"
     ],
