@@ -22,6 +22,11 @@ TypeScript directly, so there is no build step.
 This is the large example. For the minimal shape of an extension — one
 interactive message and one handler — read [`../poll`](../poll) first.
 
+This README is for whoever reads the source. **People who use agent-pm through
+chat want [the docs page](https://geminixiang.github.io/mikan/agent-pm/)
+instead** — what arrives, how to work a task, and why the outcome you pick
+changes what it does next.
+
 ## What it demonstrates
 
 | Extension surface                                                                | Where                               |
