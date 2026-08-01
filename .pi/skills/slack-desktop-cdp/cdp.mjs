@@ -139,24 +139,65 @@ async function sendMessage(session, text) {
   })()`);
   if (focused !== "focused") throw new Error(focused);
 
-  await session.send("Input.insertText", { text });
-  await sleep(300);
-
-  for (const type of ["keyDown", "keyUp"]) {
-    await session.send("Input.dispatchKeyEvent", {
-      type,
-      windowsVirtualKeyCode: 13,
-      nativeVirtualKeyCode: 13,
-      key: "Enter",
-      code: "Enter",
-      text: type === "keyDown" ? "\r" : undefined,
-    });
-  }
-  await sleep(500);
-
-  const leftover = await session.evaluate(
-    `(document.querySelector(".ql-editor[contenteditable=true]")?.textContent ?? "").trim()`,
+  // Start from an empty composer: an attempt that failed to send leaves its
+  // text behind, and inserting on top of it silently doubles the message.
+  // One Backspace per character — Quill ignores a synthetic Cmd+A, so there
+  // is no select-all to lean on.
+  const existing = await session.evaluate(
+    `(document.querySelector(".ql-editor[contenteditable=true]")?.textContent ?? "").length`,
   );
+  for (let index = 0; index < existing; index++) {
+    for (const type of ["keyDown", "keyUp"]) {
+      await session.send("Input.dispatchKeyEvent", {
+        type,
+        key: "Backspace",
+        code: "Backspace",
+        windowsVirtualKeyCode: 8,
+        nativeVirtualKeyCode: 8,
+      });
+    }
+  }
+  await sleep(200);
+
+  await session.send("Input.insertText", { text });
+  await sleep(400);
+
+  // Text starting with "/" opens Slack's command autocomplete, which swallows
+  // the Enter that would otherwise send. Escape dismisses the menu without
+  // touching the composed text.
+  if (text.startsWith("/")) {
+    for (const type of ["keyDown", "keyUp"]) {
+      await session.send("Input.dispatchKeyEvent", {
+        type,
+        key: "Escape",
+        code: "Escape",
+        windowsVirtualKeyCode: 27,
+        nativeVirtualKeyCode: 27,
+      });
+    }
+    await sleep(250);
+  }
+
+  const pressEnter = async () => {
+    for (const type of ["keyDown", "keyUp"]) {
+      await session.send("Input.dispatchKeyEvent", {
+        type,
+        windowsVirtualKeyCode: 13,
+        nativeVirtualKeyCode: 13,
+        key: "Enter",
+        code: "Enter",
+        text: type === "keyDown" ? "\r" : undefined,
+      });
+    }
+    await sleep(600);
+    return session.evaluate(
+      `(document.querySelector(".ql-editor[contenteditable=true]")?.textContent ?? "").trim()`,
+    );
+  };
+
+  let leftover = await pressEnter();
+  if (leftover !== "") leftover = await pressEnter();
+
   return leftover === "" ? "sent" : `composer still holds: ${leftover.slice(0, 80)}`;
 }
 
@@ -169,6 +210,64 @@ try {
     value = await sendMessage(session, argument);
   } else if (command === "eval") {
     value = await session.evaluate(argument);
+  } else if (command === "type") {
+    // Compose without sending, for inspecting what Slack does in response to
+    // the text itself — autocomplete menus, command validation, and so on.
+    await session.evaluate(
+      `document.querySelector(".ql-editor[contenteditable=true]")?.focus(), "ok"`,
+    );
+    const existing = await session.evaluate(
+      `(document.querySelector(".ql-editor[contenteditable=true]")?.textContent ?? "").length`,
+    );
+    for (let index = 0; index < existing; index++) {
+      for (const type of ["keyDown", "keyUp"]) {
+        await session.send("Input.dispatchKeyEvent", {
+          type,
+          key: "Backspace",
+          code: "Backspace",
+          windowsVirtualKeyCode: 8,
+          nativeVirtualKeyCode: 8,
+        });
+      }
+    }
+    await session.send("Input.insertText", { text: argument });
+    await sleep(700);
+    value = await session.evaluate(`(() => {
+      const composer = document.querySelector(".ql-editor[contenteditable=true]");
+      const visible = [...document.querySelectorAll("[role=listbox],[role=option],[class*=suggestion],[class*=autocomplete]")]
+        .filter((el) => el.offsetParent !== null)
+        .slice(0, 5)
+        .map((el) => (el.textContent || "").trim().slice(0, 120));
+      return { composer: composer?.textContent ?? "", menu: visible };
+    })()`);
+  } else if (command === "press") {
+    const keys = {
+      Enter: [13, "\r"],
+      Escape: [27, undefined],
+      Backspace: [8, undefined],
+      Tab: [9, undefined],
+    };
+    const [code, printable] = keys[argument] ?? [];
+    if (!code) throw new Error(`unknown key: ${argument}`);
+    await session.evaluate(
+      `document.querySelector(".ql-editor[contenteditable=true]")?.focus(), "ok"`,
+    );
+    for (const type of ["keyDown", "keyUp"]) {
+      await session.send("Input.dispatchKeyEvent", {
+        type,
+        key: argument,
+        code: argument,
+        windowsVirtualKeyCode: code,
+        nativeVirtualKeyCode: code,
+        ...(type === "keyDown" && printable ? { text: printable } : {}),
+      });
+    }
+    await sleep(600);
+    value = `pressed ${argument}; composer now: ${JSON.stringify(
+      await session.evaluate(
+        `(document.querySelector(".ql-editor[contenteditable=true]")?.textContent ?? "")`,
+      ),
+    )}`;
   } else if (command === "click") {
     value = await session.evaluate(CLICK(argument));
   } else if (command === "text") {

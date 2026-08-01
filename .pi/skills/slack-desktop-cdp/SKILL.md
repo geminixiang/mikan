@@ -107,7 +107,33 @@ list:
 node cdp.mjs eval '[...new Set([...document.querySelectorAll("[data-qa]")].map(el => el.getAttribute("data-qa")))]'
 ```
 
-### 8. Suggested prompts may simply not render
+### 8. Slash commands cannot be sent, but a leading space gets around it
+
+Slack's composer refuses a synthetic Enter on anything starting with `/` —
+registered command or not, menu open or dismissed. Plain text sends fine
+through the same key events, so this is Slack validating the command path
+rather than the driver failing.
+
+Send `" /pm status"` with a leading space instead. Slack treats it as an
+ordinary message, and mikan trims before parsing on both command paths
+(`parseCommandInput` and `matchCommand`), so the command still runs.
+
+Typing `/pm` also fuzzy-matches unrelated entries — the menu offered
+`/pi-model` — so what the menu shows is no evidence the command exists.
+
+### 9. `conversations.history` does not contain thread replies
+
+Two mikan replies that look missing are simply threaded:
+
+- **Diagnostic output** (`replyDiagnosticWithContext`, `style: "muted"`) — how
+  `/pi-extensions` and friends answer.
+- **The continuation** of a message too long for one Slack message.
+
+Both had me conclude "no reply" from a clean `conversations.history` read.
+Fetch `conversations.replies` on the triggering message before believing a
+command produced nothing.
+
+### 10. Suggested prompts may simply not render
 
 A DOM search finding no prompt elements does not prove mikan failed to call
 `assistant.threads.setSuggestedPrompts`. Slack shows prompts on an empty
