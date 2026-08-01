@@ -84,7 +84,9 @@ const firstColumnWidth = (line: string): number =>
 describe("monospace alignment", () => {
   /**
    * Padding by code-point count misaligns a Chinese table badly enough that
-   * the result reads worse than the raw pipes — which would defeat the point.
+   * the result reads worse than the raw pipes. These assertions are about the
+   * text mikan produces; Discord's own CJK fallback font is not exactly twice
+   * the Latin advance, so the rendered columns end up close rather than exact.
    */
   test("counts CJK as two cells", () => {
     expect(displayWidth("項目")).toBe(4);

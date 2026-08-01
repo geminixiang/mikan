@@ -101,11 +101,17 @@ export function extractMarkdownTables(source: string): MarkdownTable[] {
 }
 
 /**
- * Display width in monospace cells.
+ * Display width in monospace cells, by the East Asian Width convention.
  *
- * CJK and full-width punctuation occupy two cells, and padding by code-point
- * count misaligns a Chinese table so badly that the result reads worse than
- * the raw pipes it replaced — which is the whole reason for aligning it.
+ * Padding by code-point count misaligns a Chinese table so badly that the
+ * result reads worse than the raw pipes it replaced, so this is a large
+ * improvement — but it is an approximation, not a guarantee. Verified against
+ * Discord's rendering: its code-block CJK fallback font is *not* exactly twice
+ * the Latin advance, so a column mixing `USB-C Hub` with `無線藍牙耳機` still
+ * ends up a little ragged. No amount of space padding fixes that, because the
+ * ratio is not an integer; the only exact answers are giving up columns for
+ * CJK tables entirely, and that trade was considered and declined — close
+ * alignment reads better than no table.
  */
 export function displayWidth(text: string): number {
   let width = 0;
