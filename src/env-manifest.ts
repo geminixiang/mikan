@@ -39,6 +39,10 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
         doc: "Socket-mode app token (xapp-…)",
       },
       { name: "SLACK_BOT_TOKEN", required: true, secret: true, doc: "Bot token (xoxb-…)" },
+      {
+        name: "SLACK_TRACE_EVENTS",
+        doc: "Log the type of every socket-mode event received (diagnostics)",
+      },
     ],
   },
   {

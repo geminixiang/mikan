@@ -1,6 +1,7 @@
 import { SocketModeClient } from "@slack/socket-mode";
 import type { KnownBlock } from "@slack/types";
 import { WebAPIRateLimitedError, WebClient } from "@slack/web-api";
+import { readEnv } from "../../env-manifest.js";
 import { existsSync, readFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -1335,6 +1336,19 @@ export class SlackMessagingBot implements MessagingBot {
     this.socketClient.on("unable_to_socket_mode_start", (err: unknown) => {
       log.logWarning("Slack socket unable_to_start", err ? String(err) : "");
     });
+
+    // Which events Slack actually delivers is otherwise unknowable from here:
+    // a listener that never fires looks the same whether the subscription is
+    // missing, the app needs reinstalling, or the surface never emits it at
+    // all. Off by default — this is one line per event on a busy workspace.
+    if (readEnv("SLACK_TRACE_EVENTS")) {
+      this.socketClient.on("slack_event", ({ type, body }: { type?: string; body?: unknown }) => {
+        const inner = (body as { event?: { type?: string; tab?: string } } | undefined)?.event;
+        log.logInfo(
+          `Slack socket event: ${type ?? "?"}${inner?.type ? ` → ${inner.type}` : ""}${inner?.tab ? ` (tab: ${inner.tab})` : ""}`,
+        );
+      });
+    }
 
     this.socketClient.on("app_mention", (payload) => this.handleAppMention(payload));
     this.socketClient.on("message", (payload) => this.handleMessageEvent(payload));
