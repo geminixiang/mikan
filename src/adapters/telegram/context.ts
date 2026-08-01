@@ -104,7 +104,9 @@ export function createTelegramAdapters(
       return String(id);
     },
     update: (id, text) => bot.updateMessage(conversationId, id, text),
-    postExtra: async (text) => void (await bot.postMessageRaw(chatId, text)),
+    // Returns the id so the renderer can edit this overflow message on the
+    // next redraw instead of posting another copy of the tail.
+    postExtra: async (text) => bot.postMessageRaw(chatId, text),
     delete: async (id) => {
       await bot.deleteMessageRaw(chatId, Number(id));
     },

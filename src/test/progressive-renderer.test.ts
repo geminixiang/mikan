@@ -346,3 +346,64 @@ describe("source preparation", () => {
     expect(last).not.toContain("RAW");
   });
 });
+
+/**
+ * A streaming response redraws roughly once a second. Re-posting the overflow
+ * each time meant a single long answer arrived as one correct message followed
+ * by several partial duplicates of itself — seen live as six extra messages
+ * growing 101, 327, 500, 751, 751, 751 characters.
+ */
+describe("overflow messages", () => {
+  test("a redraw edits the overflow instead of posting more", async () => {
+    const { responder, calls } = makeRenderer("buffered");
+    await responder.setWorking(false);
+
+    // maxLength is 20 here, so this response needs overflow messages.
+    await responder.replaceResponse("z".repeat(50));
+    const afterFirst = calls.filter((call) => call.operation === "extra").length;
+    expect(afterFirst).toBeGreaterThan(0);
+
+    calls.length = 0;
+    await responder.replaceResponse("y".repeat(50));
+
+    // The second render reuses every overflow message the first one created.
+    expect(calls.filter((call) => call.operation === "extra")).toHaveLength(0);
+    const edits = calls.filter(
+      (call) => call.operation === "update" && call.id?.startsWith("extra"),
+    );
+    expect(edits).toHaveLength(afterFirst);
+  });
+
+  test("overflow count does not grow with the number of redraws", async () => {
+    const { responder, calls } = makeRenderer("buffered");
+    await responder.setWorking(false);
+
+    await responder.replaceResponse("z".repeat(50));
+    const created = calls.filter((call) => call.operation === "extra").length;
+    for (let round = 0; round < 5; round++) {
+      await responder.replaceResponse("z".repeat(50));
+    }
+
+    // Five more redraws of the same shape must leave nothing new behind.
+    expect(calls.filter((call) => call.operation === "extra")).toHaveLength(created);
+  });
+
+  test("each overflow message keeps its own position", async () => {
+    // Positional reuse is what stops text a reader has scrolled past from
+    // jumping to a different message on the next redraw.
+    const { responder, calls } = makeRenderer("buffered");
+    await responder.setWorking(false);
+    await responder.replaceResponse("z".repeat(50));
+    const firstIds = calls
+      .filter((call) => call.operation === "extra")
+      .map((_, index) => `extra-${index + 2}`);
+
+    calls.length = 0;
+    await responder.replaceResponse("z".repeat(50));
+    const editedIds = calls
+      .filter((call) => call.operation === "update" && call.id?.startsWith("extra"))
+      .map((call) => call.id);
+
+    expect(editedIds).toEqual(firstIds);
+  });
+});

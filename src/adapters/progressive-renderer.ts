@@ -36,6 +36,11 @@ interface RendererState {
   typingInterval: ReturnType<typeof setInterval> | null;
   typingFailureWarned: boolean;
   extraIds: Array<string | number>;
+  /**
+   * Messages holding the overflow of a response too long for one message,
+   * in order. Reused across redraws — see `postSplit`.
+   */
+  continuationIds: Array<string | number>;
 }
 
 /**
@@ -68,6 +73,7 @@ export function createProgressiveRenderer(platform: ProgressiveRendererPlatform)
     typingInterval: null,
     typingFailureWarned: false,
     extraIds: [],
+    continuationIds: [],
   };
   const sanitize = platform.sanitize ?? ((text: string) => text);
   const reportResponseError = platform.responseErrorContext
@@ -102,12 +108,33 @@ export function createProgressiveRenderer(platform: ProgressiveRendererPlatform)
     state.responseId = await platform.post(text);
   }
 
+  /**
+   * Render `text` as a head message plus however many overflow messages it
+   * needs.
+   *
+   * The overflow is *edited* on later redraws, not re-posted. A streaming
+   * response redraws roughly once a second, and re-posting meant every redraw
+   * past the length limit dropped another copy of the tail into the channel —
+   * a single long answer arrived as one correct message followed by six
+   * partial duplicates of itself.
+   *
+   * Reuse is positional: overflow N always lives in the same message, so the
+   * text a reader has already scrolled past does not move. A platform whose
+   * `postExtra` reports no id cannot be edited, and falls back to the old
+   * behaviour rather than losing the content.
+   */
   async function postSplit(text: string): Promise<void> {
     const [head = text, ...tail] = split(text);
     await postOrUpdate(head);
-    for (const part of tail) {
+    for (const [index, part] of tail.entries()) {
+      const existing = state.continuationIds[index];
+      if (existing !== undefined) {
+        await platform.update(String(existing), part);
+        continue;
+      }
       if (platform.typing?.stopOnSend) stopTyping();
-      await platform.postExtra(part, state.responseId);
+      const id = await platform.postExtra(part, state.responseId);
+      if (id !== undefined && id !== null) state.continuationIds[index] = id;
     }
   }
 
@@ -484,7 +511,7 @@ export function createProgressiveRenderer(platform: ProgressiveRendererPlatform)
         async () => {
           stopTyping();
           if (state.streamActive) await stopNativeStream().catch(() => undefined);
-          for (const id of state.extraIds) {
+          for (const id of [...state.extraIds, ...state.continuationIds]) {
             try {
               await platform.deleteExtra?.(id);
             } catch {
@@ -492,6 +519,7 @@ export function createProgressiveRenderer(platform: ProgressiveRendererPlatform)
             }
           }
           state.extraIds = [];
+          state.continuationIds = [];
           if (state.responseId !== null) {
             try {
               await platform.delete?.(state.responseId);

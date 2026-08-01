@@ -100,11 +100,13 @@ export function createDiscordAdapters(
       return postFirst(text);
     },
     update: (id, text) => bot.updateMessageRaw(channelId, id, text),
+    // Returns the id so the renderer can edit this overflow message on the
+    // next redraw instead of posting another copy of the tail.
     postExtra: async (text, responseId) => {
-      if (threadTargetId) return void (await bot.postInThread(channelId, threadTargetId, text));
-      if (replyTargetId) return void (await bot.postReply(channelId, replyTargetId, text));
-      if (responseId !== null) return void (await bot.postReply(channelId, responseId, text));
-      return void (await bot.postMessage(channelId, text));
+      if (threadTargetId) return bot.postInThread(channelId, threadTargetId, text);
+      if (replyTargetId) return bot.postReply(channelId, replyTargetId, text);
+      if (responseId !== null) return bot.postReply(channelId, responseId, text);
+      return bot.postMessage(channelId, text);
     },
     delete: async (id) => {
       await bot.deleteMessageRaw(channelId, id);
