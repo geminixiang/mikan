@@ -1,5 +1,4 @@
 import { describe, expect, test, vi } from "vitest";
-import type { SubagentProgressSnapshot } from "../adapter.js";
 import { TelegramMessagingBot } from "../adapters/telegram/bot.js";
 import type { TelegramEvent } from "../adapters/telegram/bot.js";
 import { createTelegramAdapters } from "../adapters/telegram/context.js";
@@ -45,27 +44,12 @@ function makeEvent(overrides: Partial<TelegramEvent> = {}): TelegramEvent {
 // ============================================================================
 
 describe("replaceSubagentProgress()", () => {
-  test("renders a compact HTML dashboard in the response message", async () => {
+  test("uses the harness dashboard rather than a Telegram-specific one", () => {
+    // The override existed only because this adapter's pipeline was HTML.
+    // On markdown it is the same dashboard Slack and Discord render.
     const bot = makeTelegramMessagingBot();
     const { responder } = createTelegramAdapters(makeEvent(), bot);
-    const progress: SubagentProgressSnapshot = {
-      mode: "dag",
-      nodes: [
-        { id: "explore", label: "Explore <auth>", status: "completed" },
-        { id: "implement", label: "Implement fix", status: "running" },
-      ],
-    };
-
-    await responder.replaceSubagentProgress?.(progress);
-
-    expect(bot.postMessageRaw).toHaveBeenCalledWith(
-      123456,
-      expect.stringContaining("<b>Subagents · 1/2 · DAG</b>"),
-    );
-    expect(bot.postMessageRaw).toHaveBeenCalledWith(
-      123456,
-      expect.stringContaining("Explore &lt;auth&gt;\n└ Completed"),
-    );
+    expect(responder.replaceSubagentProgress).toBeUndefined();
   });
 });
 
@@ -155,14 +139,17 @@ describe("respond() — non-threaded", () => {
     expect(bot.logBotResponse).toHaveBeenCalledWith("123456", "canonical final", "2001");
   });
 
-  test("escapes unsupported HTML-like tokens but keeps Telegram tags", async () => {
+  test("passes the model's text through untouched", async () => {
+    // Nothing is escaped or rewritten any more: Telegram parses the markdown,
+    // so angle brackets are just characters rather than markup to defend
+    // against.
     const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
-    await responder.respond("Usage: gws +read --id <ID> with <b>bold</b>");
+    await responder.respond("Usage: gws +read --id <ID> with **bold**");
     expect(bot.postMessageRaw).toHaveBeenCalledWith(
       123456,
-      "Usage: gws +read --id &lt;ID&gt; with <b>bold</b>",
+      "Usage: gws +read --id <ID> with **bold**",
     );
   });
 });
@@ -349,22 +336,22 @@ describe("replaceResponse()", () => {
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.setWorking(false);
-    await responder.replaceResponse("x".repeat(4000));
+    await responder.replaceResponse("x".repeat(31000));
     const posted = vi.mocked(bot.postMessageRaw).mock.calls[0][1] as string;
-    expect(posted.length).toBeLessThanOrEqual(3800);
+    expect(posted.length).toBeLessThanOrEqual(30000);
     expect(posted).toContain("continued");
     expect(bot.postMessageRaw).toHaveBeenCalledTimes(2);
   });
 
-  test("replaceResponse converts HTML tables into Telegram-safe pre blocks", async () => {
+  test("a markdown table is sent as written, for Telegram to render", async () => {
+    // Verified against the live API: Telegram parses a GFM table into a native
+    // table block, so converting it here would only take that away.
     const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
-    await responder.replaceResponse("<table><tr><th>Name</th></tr><tr><td>Alice</td></tr></table>");
-    expect(bot.postMessageRaw).toHaveBeenCalledWith(123456, expect.stringContaining("<pre>"));
-    const posted = vi.mocked(bot.postMessageRaw).mock.calls[0][1] as string;
-    expect(posted).toContain("| Name  |");
-    expect(posted).toContain("| Alice |");
+    const table = "| Name |\n| --- |\n| Alice |";
+    await responder.replaceResponse(table);
+    expect(bot.postMessageRaw).toHaveBeenCalledWith(123456, table);
   });
 });
 
@@ -373,36 +360,36 @@ describe("replaceResponse()", () => {
 // ============================================================================
 
 describe("text splitting", () => {
-  test("long text is split at 3800 chars", async () => {
+  test("text past the message ceiling is split", async () => {
     const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
-    await responder.respond("x".repeat(4000));
+    await responder.respond("x".repeat(31000));
     const posted = vi.mocked(bot.postMessageRaw).mock.calls[0][1] as string;
-    expect(posted.length).toBeLessThanOrEqual(3800);
+    expect(posted.length).toBeLessThanOrEqual(30000);
     expect(posted).toContain("continued");
     expect(bot.postMessageRaw).toHaveBeenCalledTimes(2);
   });
 
-  test("text exactly at 3800 chars is not split when not working", async () => {
+  test("text at the ceiling is not split when not working", async () => {
     const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.setWorking(false);
-    await responder.respond("x".repeat(3800));
+    await responder.respond("x".repeat(30000));
     const posted = vi.mocked(bot.postMessageRaw).mock.calls[0][1] as string;
-    expect(posted.length).toBe(3800);
+    expect(posted.length).toBe(30000);
     expect(posted).not.toContain("continued");
     expect(bot.postMessageRaw).toHaveBeenCalledTimes(1);
   });
 
-  test("text at 3801 chars is split", async () => {
+  test("text one character past the ceiling is split", async () => {
     const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
-    await responder.respond("x".repeat(3801));
+    await responder.respond("x".repeat(30001));
     const posted = vi.mocked(bot.postMessageRaw).mock.calls[0][1] as string;
-    expect(posted.length).toBeLessThanOrEqual(3800);
+    expect(posted.length).toBeLessThanOrEqual(30000);
     expect(posted).toContain("continued");
     expect(bot.postMessageRaw).toHaveBeenCalledTimes(2);
   });
@@ -446,9 +433,11 @@ describe("platform info", () => {
     expect(platform.name).toBe("telegram");
   });
 
-  test("formattingGuide mentions HTML tags", () => {
+  test("formattingGuide asks for ordinary Markdown", () => {
     const { platform } = createTelegramAdapters(makeEvent(), makeTelegramMessagingBot());
-    expect(platform.formattingGuide).toContain("<b>");
+    // The guide used to forbid Markdown and ask for hand-drawn ASCII tables.
+    expect(platform.formattingGuide).toContain("Markdown");
+    expect(platform.formattingGuide).not.toContain("<b>");
   });
 
   test("does not show usage summary diagnostics", () => {

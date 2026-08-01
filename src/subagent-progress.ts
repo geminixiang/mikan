@@ -9,9 +9,9 @@ import type {
  * transport (tool update `details`) between the subagent tool and the harness,
  * so producer construction, consumer parsing, display bounds, the
  * status→presentation tables, settling, merging, and the response-source
- * rendering all live here — one module owns the shape end to end. Adapters
- * whose pipeline is not response-source Markdown (Telegram HTML) convert via
- * the exported header/row text primitives instead of restating content.
+ * rendering all live here — one module owns the shape end to end. Every
+ * adapter now takes the same Markdown dashboard, so nothing is exported for
+ * a caller to re-render from parts.
  */
 
 /** Longest label the dashboard renders; longer ones are clamped, never rejected. */
@@ -219,7 +219,7 @@ function summaryText(snapshot: SubagentProgressSnapshot): string {
 }
 
 /** The dashboard's one-line summary header, unformatted. */
-export function subagentDashboardHeader(snapshot: SubagentProgressSnapshot): string {
+function dashboardHeader(snapshot: SubagentProgressSnapshot): string {
   const base = `Subagents · ${settledCount(snapshot)}/${snapshot.nodes.length} · ${modeLabel(snapshot)}`;
   const summary = summaryText(snapshot);
   return summary ? `${base} · ${summary}` : base;
@@ -255,14 +255,9 @@ function detailText(node: SubagentProgressNode): string {
     .join(" · ");
 }
 
-/** A node's marker+label row and detail row, unformatted. */
-export function subagentDashboardNodeLines(node: SubagentProgressNode): string[] {
-  return [`${SUBAGENT_STATUS_MARKER[node.status]} ${node.label}`, `└ ${detailText(node)}`];
-}
-
 /** The dashboard as response source Markdown; adapters own any conversion. */
 export function renderSubagentDashboard(snapshot: SubagentProgressSnapshot): string {
-  const header = `**${subagentDashboardHeader(snapshot)}**`;
+  const header = `**${dashboardHeader(snapshot)}**`;
   const rows = snapshot.nodes.flatMap((node) => [
     `${SUBAGENT_STATUS_MARKER[node.status]} ${escapeMarkdown(node.label)}`,
     `└ ${detailText(node)}`,

@@ -4,33 +4,19 @@ import type {
   ConversationMessage,
   ConversationResponder,
   MessagingInfo,
-  SubagentProgressSnapshot,
 } from "../../adapter.js";
 import { deriveSessionKey } from "../../sessions/session-key.js";
-import { subagentDashboardHeader, subagentDashboardNodeLines } from "../../subagent-progress.js";
 import { createProgressiveRenderer } from "../progressive-renderer.js";
 import { formatToolArgs } from "../shared.js";
-import { sanitizeTelegramHtml } from "./html.js";
 import type { TelegramMessagingBot, TelegramEvent } from "./bot.js";
 import type { OfficeAddress } from "../../adapter.js";
 
-// Telegram message length limit is 4096 chars; 3800 leaves headroom for HTML escapes.
-const MAX_LENGTH = 3800;
+// A rich message allows far more than the 4096 a plain message did; this stays
+// well inside it, and the headroom is now for the continuation marker alone
+// rather than for HTML escapes that no longer happen.
+const MAX_LENGTH = 30000;
 
 const formatTelegramContinuation = (partNum: number): string => `(continued ${partNum})`;
-
-/**
- * Telegram's pipeline is HTML, not response source Markdown, so its dashboard
- * conversion lives here with the rest of that debt; content comes from the
- * snapshot module's text primitives. Labels need no escaping — the responder's
- * sanitize pass owns that.
- */
-function formatSubagentProgressTelegram(snapshot: SubagentProgressSnapshot): string {
-  return [
-    `<b>${subagentDashboardHeader(snapshot)}</b>`,
-    ...snapshot.nodes.flatMap(subagentDashboardNodeLines),
-  ].join("\n");
-}
 
 function formatToolResult(result: ChatToolResult): string {
   const argsFormatted = formatToolArgs(result.args);
@@ -74,8 +60,6 @@ export function createTelegramAdapters(
     maxLength: MAX_LENGTH,
     formatContinuation: formatTelegramContinuation,
     errorPrefix: "Error: ",
-    sanitize: sanitizeTelegramHtml,
-    formatSubagentProgress: formatSubagentProgressTelegram,
     supportsDeltas: true,
     typing: {
       // Send immediately and repeat every 4s (Telegram clears indicator after ~5s)

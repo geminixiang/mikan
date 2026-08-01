@@ -24,7 +24,6 @@ import {
 import { telegramCommandMenu } from "../../commands/manifest.js";
 import { processMessageIntake } from "../intake.js";
 import { createTelegramAdapters } from "./context.js";
-import { escapeTelegramHtml } from "./html.js";
 import { createOfficeAddress, type Workspace } from "../../office/index.js";
 
 // grammY surfaces Telegram errors as `GrammyError` with `error_code` mirroring
@@ -60,8 +59,20 @@ interface MessageContext {
 // TelegramMessagingBot
 // ============================================================================
 
-function isTelegramHtmlParseError(message: string): boolean {
-  return message.includes("can't parse entities");
+/**
+ * A response as a Telegram rich message.
+ *
+ * Telegram parses the markdown into native blocks itself — a GFM table becomes
+ * a real table, `##` a heading, a fence a code block. That is why this adapter
+ * has no converter of its own: unlike Slack and Discord, nothing here has to be
+ * translated before sending.
+ *
+ * It replaces the HTML pipeline, and with it the escape-and-retry dance that
+ * existed only because a model writing HTML by hand regularly produced markup
+ * Telegram rejected.
+ */
+function richMessage(markdown: string): { markdown: string } {
+  return { markdown };
 }
 
 export class TelegramMessagingBot implements MessagingBot {
@@ -128,25 +139,13 @@ export class TelegramMessagingBot implements MessagingBot {
   async updateMessage(channel: string, ts: string, text: string): Promise<void> {
     return telegramRetry(async () => {
       try {
-        await this.client.api.editMessageText(parseInt(channel), parseInt(ts), text, {
-          parse_mode: "HTML",
-        });
+        await this.client.api.editMessageText(parseInt(channel), parseInt(ts), richMessage(text));
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes("message is not modified")) {
-          return;
-        }
-        if (!isTelegramHtmlParseError(msg)) {
-          throw err;
-        }
-        await this.client.api.editMessageText(
-          parseInt(channel),
-          parseInt(ts),
-          escapeTelegramHtml(text),
-          {
-            parse_mode: "HTML",
-          },
-        );
+        // Editing to identical content is something streaming asks for
+        // constantly; it is a no-op, not a failure.
+        if (msg.includes("message is not modified")) return;
+        throw err;
       }
     });
   }
@@ -173,7 +172,7 @@ export class TelegramMessagingBot implements MessagingBot {
       name: "telegram",
       trustModel: "membership",
       formattingGuide:
-        '## Telegram Formatting (HTML mode)\nBold: <b>text</b>, Italic: <i>text</i>, Code: <code>code</code>, Pre: <pre>code</pre>\nLinks: <a href="url">text</a>\nDo NOT use Markdown asterisks or backtick syntax.\nDo NOT use <table> tags — they are unsupported. Use <pre> with ASCII art for tables instead.',
+        "## Telegram Formatting (Markdown)\nWrite ordinary Markdown — headings, lists, tables, code fences, quotes and links all render natively. Nothing needs converting by hand.",
       channels: [],
       users: [],
     };
@@ -185,19 +184,8 @@ export class TelegramMessagingBot implements MessagingBot {
 
   async postMessageRaw(chatId: number, text: string): Promise<number> {
     return telegramRetry(async () => {
-      try {
-        const result = await this.client.api.sendMessage(chatId, text, { parse_mode: "HTML" });
-        return result.message_id;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!isTelegramHtmlParseError(msg)) {
-          throw err;
-        }
-        const result = await this.client.api.sendMessage(chatId, escapeTelegramHtml(text), {
-          parse_mode: "HTML",
-        });
-        return result.message_id;
-      }
+      const result = await this.client.api.sendRichMessage(chatId, richMessage(text));
+      return result.message_id;
     });
   }
 
@@ -209,23 +197,10 @@ export class TelegramMessagingBot implements MessagingBot {
 
   async postReply(chatId: number, replyToMessageId: number, text: string): Promise<number> {
     return telegramRetry(async () => {
-      try {
-        const result = await this.client.api.sendMessage(chatId, text, {
-          parse_mode: "HTML",
-          reply_parameters: { message_id: replyToMessageId },
-        });
-        return result.message_id;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!isTelegramHtmlParseError(msg)) {
-          throw err;
-        }
-        const result = await this.client.api.sendMessage(chatId, escapeTelegramHtml(text), {
-          parse_mode: "HTML",
-          reply_parameters: { message_id: replyToMessageId },
-        });
-        return result.message_id;
-      }
+      const result = await this.client.api.sendRichMessage(chatId, richMessage(text), {
+        reply_parameters: { message_id: replyToMessageId },
+      });
+      return result.message_id;
     });
   }
 

@@ -357,49 +357,6 @@ describe("TelegramMessagingBot startup", () => {
   });
 });
 
-describe("TelegramMessagingBot HTML fallback", () => {
-  let workingDir: string;
-  let workspace: Workspace;
-
-  beforeEach(() => {
-    workingDir = join(tmpdir(), `mikan-telegram-html-${Date.now()}`);
-    mkdirSync(workingDir, { recursive: true });
-    // Sibling state dir: the office registry journal never touches ~/.mikan.
-    workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
-  });
-
-  afterEach(() => {
-    if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
-  });
-
-  test("updateMessage retries with escaped HTML when Telegram rejects raw entities", async () => {
-    const bot = new TelegramMessagingBot(makeHandler(), { token: "TEST_TOKEN", workspace });
-    const editMessageText = vi
-      .fn()
-      .mockRejectedValueOnce(
-        new Error(
-          "Call to 'editMessageText' failed! (400: Bad Request: can't parse entities: Unsupported start tag \"id\")",
-        ),
-      )
-      .mockResolvedValueOnce(undefined);
-
-    (bot as any).client = { api: { editMessageText } };
-
-    await bot.updateMessage("123", "456", "Usage: gws +read --id <ID>");
-
-    expect(editMessageText).toHaveBeenNthCalledWith(1, 123, 456, "Usage: gws +read --id <ID>", {
-      parse_mode: "HTML",
-    });
-    expect(editMessageText).toHaveBeenNthCalledWith(
-      2,
-      123,
-      456,
-      "Usage: gws +read --id &lt;ID&gt;",
-      { parse_mode: "HTML" },
-    );
-  });
-});
-
 describe("TelegramMessagingBot attachments", () => {
   let workingDir: string;
   let workspace: Workspace;
