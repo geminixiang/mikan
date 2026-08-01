@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { StreamStartLimiter } from "../adapters/slack/stream-limits.js";
+import { chunkStreamText } from "../adapters/slack/bot.js";
 
 /**
  * `chat.startStream` sits in a much tighter tier than `chat.postMessage`, and
@@ -50,5 +51,31 @@ describe("StreamStartLimiter", () => {
     expect(limiter.tryReserve()).toBe(false);
     now = 1001;
     expect(limiter.tryReserve()).toBe(true);
+  });
+});
+
+describe("chunkStreamText", () => {
+  test("leaves text within the limit untouched", () => {
+    expect(chunkStreamText("short", 10)).toEqual(["short"]);
+    expect(chunkStreamText("exactlyten", 10)).toEqual(["exactlyten"]);
+  });
+
+  test("splits oversized text into pieces that each fit one call", () => {
+    const chunks = chunkStreamText("abcdefghijklmno", 10);
+    expect(chunks).toEqual(["abcdefghij", "klmno"]);
+    expect(chunks.every((chunk) => chunk.length <= 10)).toBe(true);
+  });
+
+  test("reassembles to exactly the original", () => {
+    // Splitting mid-word or mid-fence is harmless because a stream
+    // concatenates — but only if nothing is dropped or duplicated.
+    const text = Array.from({ length: 5000 }, (_, index) => `line ${index}\n`).join("");
+    const chunks = chunkStreamText(text, 12_000);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.join("")).toBe(text);
+  });
+
+  test("handles an empty string without emitting nothing", () => {
+    expect(chunkStreamText("", 10)).toEqual([""]);
   });
 });

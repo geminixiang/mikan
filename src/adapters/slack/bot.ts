@@ -73,6 +73,23 @@ import { StreamStartLimiter } from "./stream-limits.js";
 
 const SLACK_EVENT_ANCHOR_TEXT = "Working on it...";
 
+/**
+ * Slack's per-call limit on `markdown_text`: "Limit this field to 12,000
+ * characters." mikan allows far more in a message, so streamed text is split
+ * to fit rather than truncated.
+ */
+const MAX_STREAM_TEXT_CHARS = 12_000;
+
+/** Slices `text` into pieces that each fit one streaming call. */
+export function chunkStreamText(text: string, limit = MAX_STREAM_TEXT_CHARS): string[] {
+  if (text.length <= limit) return [text];
+  const chunks: string[] = [];
+  for (let index = 0; index < text.length; index += limit) {
+    chunks.push(text.slice(index, index + limit));
+  }
+  return chunks;
+}
+
 // web-api v8 throws WebAPIRateLimitedError; the duck-typed shapes cover
 // platform `data.error === "rate_limited"` / 429 responses and older callers.
 function slackIsRateLimited(err: Error): boolean {
@@ -479,27 +496,51 @@ export class SlackMessagingBot implements MessagingBot {
     return this.streamStarts.tryReserve();
   }
 
+  /**
+   * Open a stream, carrying text of any length.
+   *
+   * Slack caps `markdown_text` at 12,000 characters per call, and a long first
+   * render exceeds that easily — mikan allows 35,000 in a message. Rather than
+   * truncating (losing the answer) or failing (falling back to edit mode for
+   * the whole response), the opening call takes the first slice and the rest
+   * follows as appends before this resolves. The caller sees one operation
+   * that sent everything, so the renderer's idea of what has been streamed
+   * stays true.
+   *
+   * Splitting mid-word or mid-fence is harmless here: a stream concatenates,
+   * so Slack renders the reassembled text, not the pieces.
+   */
   async startMessageStream(
     channel: string,
     text: string,
     threadTs?: string,
     recipientUserId?: string,
   ): Promise<string> {
-    return slackRetry(async () => {
+    const [head, ...tail] = chunkStreamText(text);
+    const ts = await slackRetry(async () => {
       const result = await this.webClient.apiCall("chat.startStream", {
         channel,
-        markdown_text: this.resolveMentions(text),
+        markdown_text: this.resolveMentions(head ?? ""),
         ...(threadTs ? { thread_ts: threadTs } : {}),
         ...(this.teamId ? { recipient_team_id: this.teamId } : {}),
         ...(recipientUserId ? { recipient_user_id: recipientUserId } : {}),
       });
-      const ts = (result as { ts?: string }).ts;
-      if (!ts) throw new Error("Slack chat.startStream did not return ts");
-      return ts;
+      const streamTs = (result as { ts?: string }).ts;
+      if (!streamTs) throw new Error("Slack chat.startStream did not return ts");
+      return streamTs;
     });
+    for (const part of tail) await this.appendStreamChunk(channel, ts, part);
+    return ts;
   }
 
+  /** Append a delta of any length, split to the per-call cap. */
   async appendMessageStream(channel: string, ts: string, text: string): Promise<void> {
+    for (const part of chunkStreamText(text)) {
+      await this.appendStreamChunk(channel, ts, part);
+    }
+  }
+
+  private async appendStreamChunk(channel: string, ts: string, text: string): Promise<void> {
     return slackRetry(async () => {
       await this.webClient.apiCall("chat.appendStream", {
         channel,
