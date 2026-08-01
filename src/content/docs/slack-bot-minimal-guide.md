@@ -27,6 +27,15 @@ surface later is an edit to the same app.
 > sandbox for free, which is the cheaper answer than upgrading a real
 > workspace. The classic app surface — mentions, DMs, slash commands, Block Kit
 > — is unaffected and works on any plan.
+>
+> Which is to say: mikan's side of the agent surface is written, tested, and
+> waiting — the greeting, the suggested prompts, the per-thread sessions, the
+> conversation titles — and it has never once run against a real paid
+> workspace, because the author's is free. It has been verified the only way a
+> free plan allows: by proving Slack sends nothing at all. If you are on a paid
+> plan and want mikan as your team's agent, open an issue. Getting that surface
+> exercised against a workspace that actually delivers the events would be a
+> good day, and the support will be enthusiastic.
 
 > `agent_view` and `assistant_view` are two surfaces, not two spellings of
 > one. The events and the `assistant.threads.*` methods kept their names, but
