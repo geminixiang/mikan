@@ -21,6 +21,7 @@
  *   node cdp.mjs text    '<css selector>'
  *   node cdp.mjs type    '<message text>'     # compose without sending
  *   node cdp.mjs press   '<Enter|Escape|Backspace|Tab>'
+ *   node cdp.mjs shot    '<output.png>'      # what the screen actually shows
  *   node cdp.mjs send    '<message text>'     # requires CDP_EXPECT_CONVERSATION
  *
  * Environment:
@@ -257,6 +258,13 @@ try {
     }
     await sleep(800);
     value = `clicked "${argument}" at ${Math.round(box.x)},${Math.round(box.y)}`;
+  } else if (command === "shot") {
+    // A screenshot is the only artefact that answers "how does this look",
+    // which is the entire reason to reach past the REST API.
+    const { data } = await session.send("Page.captureScreenshot", { format: "png" });
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(argument, Buffer.from(data, "base64"));
+    value = `wrote ${argument}`;
   } else if (command === "eval") {
     value = await session.evaluate(argument);
   } else if (command === "click") {
@@ -268,7 +276,7 @@ try {
       return els.map((el) => (el.textContent || "").trim()).filter(Boolean).slice(0, 40).join("\\n");
     })()`);
   } else {
-    console.error("usage: node cdp.mjs <eval|click|clickat|text|type|press|send> <argument>");
+    console.error("usage: node cdp.mjs <eval|click|clickat|text|type|press|send|shot> <argument>");
     process.exit(1);
   }
   console.log(typeof value === "string" ? value : JSON.stringify(value, null, 2));

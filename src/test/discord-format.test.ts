@@ -81,6 +81,55 @@ describe("formatDiscordMarkdown", () => {
 const firstColumnWidth = (line: string): number =>
   displayWidth(line.slice(0, line.lastIndexOf("  ") + 2));
 
+describe("constructs Discord cannot render", () => {
+  test("a horizontal rule becomes a drawn line", () => {
+    // Discord has no rule syntax, so `---` arrives as its own literal dashes.
+    const out = formatDiscordMarkdown("above\n\n---\n\nbelow");
+    expect(out).not.toMatch(/^-{3,}$/m);
+    expect(out).toContain("─");
+    expect(out).toContain("above");
+    expect(out).toContain("below");
+  });
+
+  test.each([["***"], ["___"]])("%s is a rule too", (marker) => {
+    expect(formatDiscordMarkdown(`a\n\n${marker}\n\nb`)).toContain("─");
+  });
+
+  test("an image becomes a bare URL, which Discord embeds", () => {
+    // `![alt](url)` renders as a stray "!" plus a link and the image never
+    // appears; a bare URL auto-embeds.
+    const out = formatDiscordMarkdown("![範例圖片](https://example.com/a.png)");
+    expect(out).not.toContain("![");
+    expect(out).toContain("https://example.com/a.png");
+    // Alt text is kept rather than dropped — it is the only description when
+    // the embed fails.
+    expect(out).toContain("範例圖片");
+  });
+
+  test("an image with no alt text emits only the URL", () => {
+    expect(formatDiscordMarkdown("![](https://example.com/a.png)")).toBe(
+      "https://example.com/a.png",
+    );
+  });
+
+  test("a link that is not an image is left alone", () => {
+    const source = "see [the docs](https://example.com)";
+    expect(formatDiscordMarkdown(source)).toBe(source);
+  });
+
+  test("code samples keep whatever they contain", () => {
+    // A rule or an image inside a fence is content, not markup.
+    const source = ["```md", "---", "![x](y.png)", "```"].join("\n");
+    expect(formatDiscordMarkdown(source)).toBe(source);
+  });
+
+  test("a pipe inside code is not mistaken for a table", () => {
+    // Verified live: `const a = b | c;` survived a round trip intact.
+    const source = ["```js", "const a = b | c;", "```"].join("\n");
+    expect(formatDiscordMarkdown(source)).toBe(source);
+  });
+});
+
 describe("monospace alignment", () => {
   /**
    * Padding by code-point count misaligns a Chinese table badly enough that
