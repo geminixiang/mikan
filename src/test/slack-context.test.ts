@@ -613,6 +613,38 @@ describe("text accumulation", () => {
    * characters, blamed the length in the notice, and re-sent — which kept the
    * rate limit alive rather than waiting it out.
    */
+  /**
+   * The notice sits between the two halves, so a cut through the middle of a
+   * line leaves it unreadable in both places — the reassembled text showed
+   * "101| " where the model had written "101 | ".
+   */
+  test("truncation falls on a line break so no line is split across the notice", async () => {
+    const tooLongError = new Error("An API error occurred: msg_too_long") as Error & {
+      data?: { error: string };
+    };
+    tooLongError.data = { error: "msg_too_long" };
+    const bot = makeSlackMessagingBot({
+      postMessage: vi.fn().mockRejectedValueOnce(tooLongError).mockResolvedValueOnce("BOT_MSG"),
+    });
+    const event = makeEvent({ thread_ts: undefined });
+    const { responder } = createSlackAdapters(event, bot);
+
+    // Comfortably past the 3,000-character fallback budget, so the cut has to
+    // fall somewhere in the middle of the list.
+    const lines = Array.from({ length: 600 }, (_, i) => `${String(i + 1).padStart(3, "0")} | body`);
+    await responder.respond(lines.join("\n"));
+    await responder.finishResponse?.();
+
+    const main = vi.mocked(bot.postMessage).mock.calls[1]?.[1] as string;
+    const continuation = String(vi.mocked(bot.postInThread).mock.calls[0]?.[2] ?? "");
+    const body = main.replace(/\n\n_\(message too long.*$/s, "");
+
+    // Every line is whole on one side or the other, none straddling the seam.
+    expect(body.endsWith(" | body")).toBe(true);
+    const lastInMain = Number(body.trimEnd().slice(-"000 | body".length).slice(0, 3));
+    expect(continuation).toContain(`${String(lastInMain + 1).padStart(3, "0")} | body`);
+  });
+
   test("a rate limit is not mistaken for a length rejection", async () => {
     const rateLimited = new Error("A rate limit was exceeded") as Error & {
       data?: { error: string };

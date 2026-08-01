@@ -27,15 +27,31 @@ function isSlackMsgTooLong(err: unknown): boolean {
   return data?.error === "msg_too_long" || message.includes("msg_too_long");
 }
 
+/**
+ * Where to cut a response that has to be truncated.
+ *
+ * Back off to the last line break rather than slicing at the exact budget: a
+ * hard cut lands mid-word, and since the notice is inserted between the two
+ * halves, the line cannot be read whole in either place. Only back off within
+ * reach of the limit — a response with no line break in its final quarter has
+ * nothing better to offer, and losing a quarter of it would be worse.
+ */
+function truncationCut(text: string, limit: number): number {
+  if (text.length <= limit) return text.length;
+  const lastBreak = text.lastIndexOf("\n", limit);
+  return lastBreak > limit * 0.75 ? lastBreak : limit;
+}
+
 function fallbackLongSlackText(
   text: string,
   overflowLink?: string,
   prefixLength = FALLBACK_MAIN_LENGTH,
-): string {
+): { text: string; cut: number } {
   const suffix = overflowLink
     ? `\n\n_(message too long for Slack; continued in thread; session view: <${overflowLink}|open>)_`
     : "\n\n_(message too long for Slack; continued in thread)_";
-  return `${text.slice(0, prefixLength)}${suffix}`;
+  const cut = truncationCut(text, prefixLength);
+  return { text: `${text.slice(0, cut)}${suffix}`, cut };
 }
 
 async function postSlackTextWithFallback(
@@ -45,10 +61,12 @@ async function postSlackTextWithFallback(
 ): Promise<{ text: string; prefixLength: number }> {
   let prefixLength = FALLBACK_MAIN_LENGTH;
   for (;;) {
-    const fallbackText = fallbackLongSlackText(text, overflowLink, prefixLength);
+    const fallback = fallbackLongSlackText(text, overflowLink, prefixLength);
     try {
-      await post(fallbackText);
-      return { text: fallbackText, prefixLength };
+      await post(fallback.text);
+      // The continuation resumes from where the text was actually cut, which
+      // is not the nominal budget once it backs off to a line break.
+      return { text: fallback.text, prefixLength: fallback.cut };
     } catch (err) {
       if (!isSlackMsgTooLong(err)) throw err;
       if (prefixLength === 0) throw err;
