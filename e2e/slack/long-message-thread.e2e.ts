@@ -20,6 +20,7 @@ function createRealSlackResponderBot(botClient: WebClient): SlackMessagingBot {
       channels: [],
       users: [],
     }),
+    tryReserveStreamStart: () => false,
     postInThread: (channel: string, threadTs: string, text: string) => {
       if (rejectNextPost) {
         rejectNextPost = false;

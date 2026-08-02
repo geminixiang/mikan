@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { loadContextOrSkip } from "./helpers/client.js";
 import {
   nowSeconds,
-  postMessage,
+  postLocallyDeliveredMessage,
   summarizeMessage,
   waitForRecentBotReply,
 } from "./helpers/slack.js";
@@ -35,7 +35,14 @@ describe.skipIf(!ctx)("agent-pm example extension", () => {
     const botUserId = env.mikanBotUserId;
     if (!botUserId) return;
     const startedAt = nowSeconds();
-    const rootTs = await postMessage(client, env.channel, `<@${botUserId}> /pm status`);
+    const { ts: rootTs } = await postLocallyDeliveredMessage({
+      client,
+      channel: env.channel,
+      workingDir: env.workingDir,
+      text: () => `<@${botUserId}> /pm status`,
+      timeoutMs: env.timeoutMs,
+      pollMs: env.pollMs,
+    });
 
     const reply = await waitForRecentBotReply({
       client,
@@ -70,7 +77,14 @@ describe.skipIf(!ctx)("agent-pm example extension", () => {
       const botUserId = env.mikanBotUserId;
       if (!botUserId) return;
       const startedAt = nowSeconds();
-      const rootTs = await postMessage(client, env.channel, `<@${botUserId}> /pm all`);
+      const { ts: rootTs } = await postLocallyDeliveredMessage({
+        client,
+        channel: env.channel,
+        workingDir: env.workingDir,
+        text: () => `<@${botUserId}> /pm all`,
+        timeoutMs: env.timeoutMs,
+        pollMs: env.pollMs,
+      });
 
       // Dispatched deterministically: no agent run, no model call, so this
       // returns as fast as the stages themselves.
