@@ -9,6 +9,22 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.42]
+
+### Changed
+
+- Dispatch Slack extension commands when users type the command name without a leading slash, so documented Agent Project Manager commands work in ordinary messages.
+- Update `@earendil-works/pi-agent-core` and `@earendil-works/pi-ai` to 0.83.0.
+- Clarify Agent Project Manager onboarding, initial behavior, and the distinction between commands and natural-language tasks across all translated guides.
+
+### Fixed
+
+- Stabilize Slack end-to-end coverage for extension command dispatch, Agent Project Manager, and long-message threads.
+
+### Tests
+
+- Add regression coverage for slashless extension command routing and conversation runtime dispatch.
+
 ## [1.0.0-beta.41]
 
 ### Added
