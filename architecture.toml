@@ -1,0 +1,523 @@
+schema_version = "1.0"
+system = "mikan"
+docs = "ARCHITECTURE.md"
+
+# Canonical global architecture index.
+# Detailed semantics live in ARCHITECTURE.md and module-local README files.
+# IDs are stable references and must not be reused for a different concept.
+
+[[modules]]
+id = "composition-root"
+name = "Process composition root"
+kind = "entrypoint"
+docs = "ARCHITECTURE.md#boot-and-process-lifecycle"
+sources = ["src/main.ts", "src/cli/boot.ts"]
+
+[[modules]]
+id = "platform-adapters"
+name = "Platform adapters"
+kind = "adapter"
+docs = "src/adapters/README.md"
+sources = ["src/adapters/"]
+
+[[modules]]
+id = "conversation-intake"
+name = "Conversation intake"
+kind = "orchestrator"
+docs = "src/adapters/README.md#files"
+sources = ["src/adapters/intake.ts"]
+
+[[modules]]
+id = "conversation-runtime"
+name = "Conversation runtime"
+kind = "orchestrator"
+docs = "src/runtime/README.md"
+sources = ["src/runtime/"]
+
+[[modules]]
+id = "agent-runner"
+name = "Agent runner"
+kind = "orchestrator"
+docs = "ARCHITECTURE.md#agent-execution"
+sources = ["src/agent.ts"]
+
+[[modules]]
+id = "harness"
+name = "Agent harness"
+kind = "core"
+docs = "src/harness/README.md"
+sources = ["src/harness/"]
+
+[[modules]]
+id = "extensions"
+name = "Extension host"
+kind = "extension-host"
+docs = "src/harness/README.md#extensions"
+sources = ["src/harness/extensions/", "src/extension-schedules.ts"]
+
+[[modules]]
+id = "office"
+name = "Conversation office"
+kind = "authority"
+docs = "src/office/README.md"
+sources = ["src/office/"]
+
+[[modules]]
+id = "configuration"
+name = "Configuration and live settings"
+kind = "authority"
+docs = "ARCHITECTURE.md#configuration-authority"
+sources = ["src/config.ts", "src/settings-mutation.ts"]
+
+[[modules]]
+id = "workspace-projection"
+name = "Workspace projection"
+kind = "policy"
+docs = "src/workspace-projection/README.md"
+sources = ["src/workspace-projection/"]
+
+[[modules]]
+id = "execution-resolver"
+name = "Execution resolver"
+kind = "policy"
+docs = "ARCHITECTURE.md#execution-resolution"
+sources = ["src/execution-resolver.ts"]
+
+[[modules]]
+id = "sandbox"
+name = "Sandbox execution"
+kind = "infrastructure"
+docs = "src/sandbox/README.md"
+sources = ["src/sandbox/", "src/provisioner.ts"]
+
+[[modules]]
+id = "sessions"
+name = "Conversation sessions"
+kind = "authority"
+docs = "src/sessions/README.md"
+sources = ["src/sessions/"]
+
+[[modules]]
+id = "vault"
+name = "Credential vault"
+kind = "authority"
+docs = "src/vault/README.md"
+sources = ["src/vault/"]
+
+[[modules]]
+id = "commands"
+name = "Built-in commands"
+kind = "registry"
+docs = "src/commands/README.md"
+sources = ["src/commands/"]
+
+[[modules]]
+id = "packages"
+name = "Extension and skill packages"
+kind = "authority"
+docs = "src/packages/README.md"
+sources = ["src/packages/"]
+
+[[modules]]
+id = "side-services"
+name = "Web and scheduled-event services"
+kind = "infrastructure"
+docs = "src/web/README.md"
+sources = ["src/web/", "src/events.ts", "src/extension-schedules.ts"]
+
+# A seam is a stable relationship callers depend on. Interface names refer to
+# source-level contracts or authority entry points; details stay in docs/code.
+
+[[seams]]
+id = "platform-messaging"
+owner = "platform-adapters"
+consumers = [
+  "composition-root",
+  "conversation-intake",
+  "conversation-runtime",
+  "agent-runner",
+  "side-services",
+]
+interface = "MessagingBot, ConversationEvent, ConversationResponder"
+docs = "src/adapters/README.md"
+
+[[seams]]
+id = "intake"
+owner = "conversation-intake"
+consumers = ["platform-adapters"]
+interface = "processMessageIntake"
+docs = "src/adapters/README.md#files"
+
+[[seams]]
+id = "runtime"
+owner = "conversation-runtime"
+consumers = [
+  "composition-root",
+  "conversation-intake",
+  "side-services",
+  "configuration",
+  "packages",
+]
+interface = "ConversationRuntime"
+docs = "src/runtime/README.md"
+
+[[seams]]
+id = "runner"
+owner = "agent-runner"
+consumers = ["conversation-runtime"]
+interface = "PiAgentWrapper"
+docs = "ARCHITECTURE.md#agent-execution"
+
+[[seams]]
+id = "harness-session"
+owner = "harness"
+consumers = ["agent-runner", "extensions"]
+interface = "MikanAgentSession"
+docs = "src/harness/README.md"
+
+[[seams]]
+id = "extension-host"
+owner = "extensions"
+consumers = ["harness", "agent-runner", "conversation-runtime", "side-services", "packages"]
+interface = "MikanExtensionApi, ExtensionRegistry"
+docs = "src/harness/README.md#extensions"
+
+[[seams]]
+id = "office-resolution"
+owner = "office"
+consumers = [
+  "platform-adapters",
+  "conversation-runtime",
+  "sessions",
+  "vault",
+  "configuration",
+  "workspace-projection",
+  "packages",
+  "side-services",
+]
+interface = "Workspace.office, Office"
+docs = "src/office/README.md"
+
+[[seams]]
+id = "settings"
+owner = "configuration"
+consumers = [
+  "composition-root",
+  "conversation-runtime",
+  "commands",
+  "workspace-projection",
+  "execution-resolver",
+  "packages",
+  "side-services",
+]
+interface = "resolve settings, apply settings mutations"
+docs = "ARCHITECTURE.md#configuration-authority"
+
+[[seams]]
+id = "projection"
+owner = "workspace-projection"
+consumers = ["agent-runner", "execution-resolver"]
+interface = "resolveWorkspaceProjection"
+docs = "src/workspace-projection/README.md"
+
+[[seams]]
+id = "execution-resolution"
+owner = "execution-resolver"
+consumers = ["agent-runner"]
+interface = "ActorExecutionResolver.resolve"
+docs = "ARCHITECTURE.md#execution-resolution"
+
+[[seams]]
+id = "executor"
+owner = "sandbox"
+consumers = ["execution-resolver", "agent-runner"]
+interface = "Executor, SandboxAdapter"
+docs = "src/sandbox/README.md"
+
+[[seams]]
+id = "session-store"
+owner = "sessions"
+consumers = ["conversation-runtime", "agent-runner", "harness"]
+interface = "session-key policy, managed session store"
+docs = "src/sessions/README.md"
+
+[[seams]]
+id = "vault-resolution"
+owner = "vault"
+consumers = ["execution-resolver", "side-services"]
+interface = "VaultManager"
+docs = "src/vault/README.md"
+
+[[seams]]
+id = "command-inventory"
+owner = "commands"
+consumers = ["platform-adapters", "conversation-runtime"]
+interface = "COMMAND_MANIFEST"
+docs = "src/commands/README.md"
+
+[[seams]]
+id = "package-resolution"
+owner = "packages"
+consumers = ["agent-runner", "extensions", "execution-resolver", "configuration", "side-services"]
+interface = "resolveConversationPackages"
+docs = "src/packages/README.md"
+
+# Resources record global ownership and security classification. Paths are
+# conceptual locations; detailed layouts belong to the owning module docs.
+
+[[resources]]
+id = "workspace-root"
+authority = "office"
+scope = "deployment"
+classification = "shared-workspace-data"
+docs = "ARCHITECTURE.md#storage-and-authority-map"
+
+[[resources]]
+id = "office-directory"
+authority = "office"
+scope = "conversation"
+classification = "conversation-data"
+docs = "src/office/README.md"
+
+[[resources]]
+id = "state-dir"
+authority = "configuration"
+scope = "deployment"
+classification = "host-private"
+docs = "ARCHITECTURE.md#storage-and-authority-map"
+
+[[resources]]
+id = "office-registry"
+authority = "office"
+scope = "deployment"
+classification = "host-authoritative"
+docs = "src/office/README.md"
+
+[[resources]]
+id = "settings"
+authority = "configuration"
+scope = "deployment-and-conversation"
+classification = "host-authoritative"
+docs = "ARCHITECTURE.md#configuration-authority"
+
+[[resources]]
+id = "session-files"
+authority = "sessions"
+scope = "session"
+classification = "conversation-data"
+docs = "src/sessions/README.md"
+
+[[resources]]
+id = "platform-log"
+authority = "platform-adapters"
+scope = "conversation"
+classification = "conversation-data"
+docs = "src/adapters/README.md"
+
+[[resources]]
+id = "workspace-projection"
+authority = "workspace-projection"
+scope = "conversation-runtime"
+classification = "authorized-view"
+docs = "src/workspace-projection/README.md"
+
+[[resources]]
+id = "vault-store"
+authority = "vault"
+scope = "credential-key"
+classification = "credential"
+docs = "src/vault/README.md"
+
+[[resources]]
+id = "runner-state"
+authority = "conversation-runtime"
+scope = "office-and-session"
+classification = "ephemeral"
+docs = "src/runtime/README.md"
+
+[[resources]]
+id = "package-store"
+authority = "packages"
+scope = "deployment-and-conversation"
+classification = "trusted-host-code"
+docs = "src/packages/README.md"
+
+[[resources]]
+id = "events-bus"
+authority = "side-services"
+scope = "workspace"
+classification = "agent-writable-scheduling"
+docs = "ARCHITECTURE.md#scheduled-execution"
+
+[[resources]]
+id = "extension-callback-schedules"
+authority = "extensions"
+scope = "conversation-extension"
+classification = "host-private"
+docs = "ARCHITECTURE.md#scheduled-execution"
+
+# Flow paths are topology, not function-level traces. Branches, ordering,
+# failures, and security semantics live at the linked Markdown anchor.
+
+[[flows]]
+id = "boot"
+path = [
+  "composition-root",
+  "office",
+  "configuration",
+  "conversation-runtime",
+  "platform-adapters",
+  "side-services",
+]
+docs = "ARCHITECTURE.md#boot-and-process-lifecycle"
+
+[[flows]]
+id = "conversation-run"
+path = [
+  "platform-adapters",
+  "conversation-intake",
+  "conversation-runtime",
+  "agent-runner",
+  "harness",
+  "platform-adapters",
+]
+docs = "ARCHITECTURE.md#conversation-run"
+
+[[flows]]
+id = "execution-resolution"
+path = ["agent-runner", "workspace-projection", "execution-resolver", "vault", "sandbox"]
+docs = "ARCHITECTURE.md#execution-resolution"
+
+[[flows]]
+id = "scheduled-text-event"
+path = [
+  "side-services",
+  "platform-adapters",
+  "conversation-runtime",
+  "agent-runner",
+  "platform-adapters",
+]
+docs = "ARCHITECTURE.md#scheduled-execution"
+
+[[flows]]
+id = "extension-callback"
+path = ["side-services", "conversation-runtime", "extensions"]
+docs = "ARCHITECTURE.md#scheduled-execution"
+
+# Cross-module invariants are named here for global discovery. Their complete
+# statement, rationale, evidence, and exceptions live in ARCHITECTURE.md.
+
+[[invariants]]
+id = "identity-office-address"
+owners = ["office"]
+applies_to = ["platform-adapters", "conversation-runtime", "sessions", "vault"]
+docs = "ARCHITECTURE.md#inv-identity-office-address"
+adr = "docs/adr/0005-office-address-identity.md"
+
+[[invariants]]
+id = "identity-office-key"
+owners = ["office"]
+applies_to = ["configuration", "sessions", "vault", "packages"]
+docs = "ARCHITECTURE.md#inv-identity-office-key"
+adr = "docs/adr/0005-office-address-identity.md"
+
+[[invariants]]
+id = "office-record-before-directory"
+owners = ["office"]
+applies_to = ["office-registry", "office-directory"]
+docs = "ARCHITECTURE.md#inv-office-record-before-directory"
+
+[[invariants]]
+id = "runtime-composite-identity"
+owners = ["conversation-runtime", "sessions"]
+applies_to = ["runner-state", "session-files"]
+docs = "ARCHITECTURE.md#inv-runtime-composite-identity"
+
+[[invariants]]
+id = "intake-order"
+owners = ["conversation-intake"]
+applies_to = ["platform-adapters", "conversation-runtime"]
+docs = "ARCHITECTURE.md#inv-intake-order"
+
+[[invariants]]
+id = "session-serialization"
+owners = ["conversation-runtime"]
+applies_to = ["runner-state"]
+docs = "ARCHITECTURE.md#inv-session-serialization"
+
+[[invariants]]
+id = "run-settlement"
+owners = ["conversation-runtime", "agent-runner"]
+applies_to = ["runner-state", "platform-adapters"]
+docs = "ARCHITECTURE.md#inv-run-settlement"
+
+[[invariants]]
+id = "projection-coherence"
+owners = ["workspace-projection"]
+applies_to = ["office-directory", "workspace-projection", "agent-runner", "sandbox"]
+docs = "ARCHITECTURE.md#inv-projection-coherence"
+
+[[invariants]]
+id = "state-dir-host-only"
+owners = ["configuration"]
+applies_to = ["state-dir", "workspace-projection", "vault-store", "package-store"]
+docs = "ARCHITECTURE.md#inv-state-dir-host-only"
+
+[[invariants]]
+id = "execution-policy-enforcement"
+owners = ["execution-resolver", "sandbox"]
+applies_to = ["workspace-projection"]
+docs = "ARCHITECTURE.md#inv-execution-policy-enforcement"
+
+[[invariants]]
+id = "credential-least-authority"
+owners = ["execution-resolver", "vault"]
+applies_to = ["vault-store", "sandbox"]
+docs = "ARCHITECTURE.md#inv-credential-least-authority"
+
+[[invariants]]
+id = "settings-runner-coherence"
+owners = ["configuration", "conversation-runtime"]
+applies_to = ["settings", "runner-state"]
+docs = "ARCHITECTURE.md#inv-settings-runner-coherence"
+
+[[invariants]]
+id = "extension-code-trust"
+owners = ["extensions", "packages"]
+applies_to = ["package-store", "state-dir"]
+docs = "ARCHITECTURE.md#inv-extension-code-trust"
+
+[[invariants]]
+id = "schedule-authority-separation"
+owners = ["extensions", "side-services"]
+applies_to = ["events-bus", "extension-callback-schedules"]
+docs = "ARCHITECTURE.md#inv-schedule-authority-separation"
+
+[[invariants]]
+id = "session-format-compatibility"
+owners = ["sessions", "harness"]
+applies_to = ["session-files"]
+docs = "ARCHITECTURE.md#inv-session-format-compatibility"
+
+# Deviations make current implementation limits visible without changing the
+# accepted target model in prose or ADRs.
+
+[[deviations]]
+id = "cloudflare-factory-floor"
+status = "open"
+affects = ["sandbox", "execution-resolver"]
+docs = "ARCHITECTURE.md#dev-cloudflare-factory-floor"
+adr = "docs/adr/0002-sandbox-runtime-vs-task-executor.md"
+
+[[deviations]]
+id = "firecracker-workspace-projection"
+status = "open"
+affects = ["sandbox", "workspace-projection"]
+docs = "ARCHITECTURE.md#dev-firecracker-workspace-projection"
+
+[[deviations]]
+id = "runtime-resource-identity"
+status = "open"
+affects = ["sandbox", "office"]
+docs = "ARCHITECTURE.md#dev-runtime-resource-identity"
+adr = "docs/adr/0005-office-address-identity.md"
