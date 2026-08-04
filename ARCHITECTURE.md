@@ -2,24 +2,25 @@
 
 This document explains mikan's system-level architecture: the concepts that span modules, the main execution paths, the security and persistence model, and the invariants that must survive implementation changes.
 
-The machine-readable global index is [`architecture.toml`](architecture.toml). Detailed module behavior lives beside its implementation in `src/*/README.md`. Accepted trade-offs live in `docs/adr/`.
+The machine-readable global index is [`architecture.toml`](architecture.toml). Its normative schema and maintenance workflow live in [`.pi/skills/mikan-architecture/`](.pi/skills/mikan-architecture/SKILL.md). Detailed module behavior lives beside its implementation in `src/*/README.md`. Accepted trade-offs live in `docs/adr/`.
 
 ## Documentation model
 
 The architecture has four documentation levels, each with one responsibility:
 
-| Authority           | Answers                                                                                              |
-| ------------------- | ---------------------------------------------------------------------------------------------------- |
-| `architecture.toml` | What modules, seams, resources, flows, invariants, and deviations exist, and how are they connected? |
-| `ARCHITECTURE.md`   | How does the system work across modules, and which properties must remain true?                      |
-| `src/*/README.md`   | How does one module's interface, lifecycle, failure handling, and implementation work?               |
-| `docs/adr/*.md`     | Why was a consequential, difficult-to-reverse design chosen?                                         |
+| Authority                 | Answers                                                                                              |
+| ------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `architecture.toml`       | What modules, seams, resources, flows, invariants, and deviations exist, and how are they connected? |
+| Architecture skill/schema | What makes the TOML index conformant, and how is it maintained?                                      |
+| `ARCHITECTURE.md`         | How does the system work across modules, and which properties must remain true?                      |
+| `src/*/README.md`         | How does one module's interface, lifecycle, failure handling, and implementation work?               |
+| `docs/adr/*.md`           | Why was a consequential, difficult-to-reverse design chosen?                                         |
 
 Source and tests are the final evidence that the documented architecture is implemented. `CONTEXT.md` remains the domain glossary; it does not duplicate implementation or architecture specifications.
 
 ### Global-index convention
 
-`architecture.toml` is intentionally shallow:
+`architecture.toml` is intentionally shallow. The exact fields, enums, typed references, ID grammar, and versioning rules are defined by [the project architecture skill's schema](.pi/skills/mikan-architecture/references/SCHEMA.md):
 
 - IDs are stable references and must not be reassigned to another concept.
 - Module and resource records identify ownership, not every source file.

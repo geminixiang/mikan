@@ -3,6 +3,7 @@ system = "mikan"
 docs = "ARCHITECTURE.md"
 
 # Canonical global architecture index.
+# Schema: .pi/skills/mikan-architecture/references/SCHEMA.md
 # Detailed semantics live in ARCHITECTURE.md and module-local README files.
 # IDs are stable references and must not be reused for a different concept.
 
@@ -52,7 +53,7 @@ sources = ["src/harness/"]
 id = "extensions"
 name = "Extension host"
 kind = "extension-host"
-docs = "src/harness/README.md#extensions"
+docs = "src/harness/README.md#extension-system"
 sources = ["src/harness/extensions/", "src/extension-schedules.ts"]
 
 [[modules]]
@@ -180,7 +181,7 @@ id = "extension-host"
 owner = "extensions"
 consumers = ["harness", "agent-runner", "conversation-runtime", "side-services", "packages"]
 interface = "MikanExtensionApi, ExtensionRegistry"
-docs = "src/harness/README.md#extensions"
+docs = "src/harness/README.md#extension-system"
 
 [[seams]]
 id = "office-resolution"
