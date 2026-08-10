@@ -61,7 +61,7 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
     key: "github",
     title: "GitHub",
     kind: "platform",
-    doc: "Issue/PR conversations via a GitHub App (polling, no webhook)",
+    doc: "Issue/PR conversations via a GitHub App (polling; optional webhook poke)",
     vars: [
       { name: "GITHUB_APP_ID", required: true, doc: "GitHub App id" },
       { name: "GITHUB_INSTALLATION_ID", required: true, doc: "App installation id" },
@@ -80,6 +80,11 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
         doc: "Comma-separated owner/repo allowlist (default: all installed)",
       },
       { name: "GITHUB_POLL_INTERVAL", doc: "Poll interval in seconds (default 60)" },
+      {
+        name: "GITHUB_WEBHOOK_SECRET",
+        secret: true,
+        doc: "Webhook secret; when set, deliveries to /github/webhook trigger an immediate poll (needs LINK_PORT)",
+      },
     ],
     anyOf: ["GITHUB_APP_PRIVATE_KEY", "GITHUB_APP_PRIVATE_KEY_PATH"],
   },

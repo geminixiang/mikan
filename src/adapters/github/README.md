@@ -1,8 +1,9 @@
 # src/adapters/github
 
 GitHub adapter: one issue or PR = one conversation. Polls the GitHub API as a
-GitHub App installation (no webhooks, matching mikan's proactive model — see
-`DESIGN.md` for the full rationale and decisions).
+GitHub App installation; an optional webhook only pokes the poll loop for
+latency — payloads never enter the intake pipeline (see `DESIGN.md` for the
+full rationale and decisions).
 
 ## Files
 
@@ -34,6 +35,9 @@ GitHub App installation (no webhooks, matching mikan's proactive model — see
   `checks.ts` (`github_checks`), `review-reply.ts` (`github_review_reply`),
   `sync.ts` (`github_sync`), `read.ts` (`github_read`), `issue.ts`
   (`github_issue`).
+- `webhook.ts`: optional webhook receiver mounted on the link server —
+  verifies `X-Hub-Signature-256` and pokes `requestPoll()`; deliveries are
+  never parsed into events.
 - `types.ts`: adapter config, REST payloads, and host tool contracts
   (`GithubPrRequest`, `PlatformGithubOps`, …) — not re-exported from root
   `adapter.ts` / `types.ts`.
@@ -46,6 +50,12 @@ GitHub App installation (no webhooks, matching mikan's proactive model — see
 - `GITHUB_REPOS` — optional comma-separated `owner/repo` list; defaults to
   every repository the installation can access.
 - `GITHUB_POLL_INTERVAL` — optional poll interval in seconds (default 60).
+- `GITHUB_WEBHOOK_SECRET` — optional; when set (and the link server is
+  running, `LINK_PORT`), signed GitHub App webhook deliveries to
+  `/github/webhook` trigger an immediate poll, cutting mention latency from
+  the poll interval to seconds. Configure the App webhook with the same
+  secret and subscribe to Issues, Issue comment, and Pull request review
+  comment events. Polling continues regardless as the delivery backstop.
 - `GOOGLE_APPLICATION_CREDENTIALS` — optional path to a GCP ADC JSON (a
   Workload Identity Federation `external_account` file, a service-account
   key, or gcloud user ADC). When set, `github_checks` can fetch Cloud Build

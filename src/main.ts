@@ -104,6 +104,7 @@ const GITHUB_APP_PRIVATE_KEY_PATH = readEnv("GITHUB_APP_PRIVATE_KEY_PATH");
 const GITHUB_INSTALLATION_ID = readEnv("GITHUB_INSTALLATION_ID");
 const GITHUB_REPOS = readEnv("GITHUB_REPOS");
 const GITHUB_POLL_INTERVAL = readEnv("GITHUB_POLL_INTERVAL");
+const GITHUB_WEBHOOK_SECRET = readEnv("GITHUB_WEBHOOK_SECRET");
 const GOOGLE_APPLICATION_CREDENTIALS = readEnv("GOOGLE_APPLICATION_CREDENTIALS");
 const GOOGLE_CLOUD_PROJECT = readEnv("GOOGLE_CLOUD_PROJECT");
 // Externally-visible base URL of the link/OAuth server; the env read and
@@ -787,6 +788,15 @@ if (hasGithub) {
   );
 }
 
+const githubBotForWebhook = botsByPlatform.github as GithubMessagingBot | undefined;
+if (GITHUB_WEBHOOK_SECRET && (!githubBotForWebhook || !LINK_PORT)) {
+  log.logWarning(
+    "GITHUB_WEBHOOK_SECRET is set but " +
+      (githubBotForWebhook ? "LINK_PORT is not" : "the GitHub platform is not enabled") +
+      " — the webhook endpoint will not be served",
+  );
+}
+
 if (LINK_PORT) {
   startWebServer({
     port: LINK_PORT,
@@ -799,6 +809,13 @@ if (LINK_PORT) {
     sessionViewTokenStore,
     sessionViewInteractive: { handler, botsByPlatform },
     adminOptions: { adminTokenStore, workspace, runtime: handler, sandbox, botsByPlatform },
+    githubWebhook:
+      GITHUB_WEBHOOK_SECRET && githubBotForWebhook
+        ? {
+            secret: GITHUB_WEBHOOK_SECRET,
+            onPoke: () => githubBotForWebhook.requestPoll(),
+          }
+        : undefined,
   });
 }
 

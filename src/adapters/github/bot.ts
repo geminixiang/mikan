@@ -60,6 +60,9 @@ const POLL_OVERLAP_MS = 5 * 60 * 1000;
 
 const MAX_SEEN_IDS = 5000;
 
+/** Webhook pokes within this window collapse into one poll tick. */
+const REQUEST_POLL_DEBOUNCE_MS = 1500;
+
 /** Effective role → rank, for the trigger-permission gate. */
 const PERMISSION_RANK = {
   none: 0,
@@ -190,6 +193,8 @@ export class GithubMessagingBot implements MessagingBot {
   private repoState = new Map<string, RepoWatermark>();
   private permissionCache = new Map<string, { rank: number; expiresAt: number }>();
   private pollInFlight = false;
+  private pollPending = false;
+  private requestPollTimer: NodeJS.Timeout | null = null;
 
   constructor(handler: MessagingEventHandler, config: GithubBotConfig, client?: GithubClient) {
     this.handler = handler;
@@ -377,9 +382,30 @@ export class GithubMessagingBot implements MessagingBot {
     return queue;
   }
 
+  /**
+   * Webhook poke: run a poll soon. Debounced so a burst of deliveries costs
+   * one tick; a poke landing mid-poll marks it pending and the tick re-runs,
+   * because the in-flight pass may already be past the poked repo's feeds.
+   */
+  requestPoll(debounceMs = REQUEST_POLL_DEBOUNCE_MS): void {
+    if (this.pollInFlight) {
+      this.pollPending = true;
+      return;
+    }
+    if (this.requestPollTimer) return;
+    this.requestPollTimer = setTimeout(() => {
+      this.requestPollTimer = null;
+      void this.poll();
+    }, debounceMs);
+    this.requestPollTimer.unref();
+  }
+
   /** One poll tick over every watched repo. Public for tests. */
   async poll(): Promise<void> {
-    if (this.pollInFlight) return;
+    if (this.pollInFlight) {
+      this.pollPending = true;
+      return;
+    }
     this.pollInFlight = true;
     try {
       let changed = false;
@@ -398,6 +424,10 @@ export class GithubMessagingBot implements MessagingBot {
       }
     } finally {
       this.pollInFlight = false;
+      if (this.pollPending) {
+        this.pollPending = false;
+        this.requestPoll();
+      }
     }
   }
 

@@ -18,6 +18,10 @@ import {
 } from "./session-view/portal.js";
 import type { InMemorySessionViewTokenStore } from "./session-view/store.js";
 import type { Workspace } from "../office/types.js";
+import {
+  handleGithubWebhookRequest,
+  type GithubWebhookOptions,
+} from "../adapters/github/webhook.js";
 
 interface StartWebServerOptions {
   port: number;
@@ -33,6 +37,7 @@ interface StartWebServerOptions {
     sandbox?: SandboxConfig;
     botsByPlatform?: Partial<Record<PlatformName, MessagingBot>>;
   };
+  githubWebhook?: GithubWebhookOptions;
 }
 
 export function startWebServer(options: StartWebServerOptions): Server {
@@ -55,6 +60,13 @@ export function startWebServer(options: StartWebServerOptions): Server {
       if (req.method === "GET" && url.pathname === "/health") {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      if (
+        options.githubWebhook &&
+        (await handleGithubWebhookRequest(req, res, url, options.githubWebhook))
+      ) {
         return;
       }
 

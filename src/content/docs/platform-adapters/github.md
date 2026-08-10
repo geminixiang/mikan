@@ -3,7 +3,7 @@ title: GitHub adapter
 description: GitHub App polling, issue/PR conversations, watermark dedup, and comment-based responses for the GitHub adapter.
 ---
 
-One GitHub issue or pull request is one mikan conversation. The adapter polls the GitHub API as a GitHub App installation — no webhook endpoint, preserving mikan's proactive model.
+One GitHub issue or pull request is one mikan conversation. The adapter polls the GitHub API as a GitHub App installation, preserving mikan's proactive model; an optional webhook only pokes the poll loop to run sooner.
 
 The conversation id is `GH_<owner>_<repo>_<number>` with owner and repo lowercased. It avoids `/` and `:` because ids are used verbatim as one path segment and in docker's `-v source:target` syntax, and it separates on `_` rather than `-` because GitHub owners may contain `-` (which would make the owner/repo boundary ambiguous) but never `_`. Like every platform, the raw id stays at the GitHub API boundary: on disk the conversation lives in an office directory named by office key.
 
@@ -34,15 +34,16 @@ The App slug is the name users mention to trigger first contact.
 
 ## Configuration
 
-| Env var                                                  | Purpose                                                                                   |
-| -------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `GITHUB_APP_ID`                                          | GitHub App id (required).                                                                 |
-| `GITHUB_INSTALLATION_ID`                                 | Installation id to act as (required).                                                     |
-| `GITHUB_APP_PRIVATE_KEY` / `GITHUB_APP_PRIVATE_KEY_PATH` | App private key PEM, inline (with `\n` escapes) or as a file.                             |
-| `GITHUB_REPOS`                                           | Optional comma-separated `owner/repo` list; defaults to all installation repositories.    |
-| `GITHUB_POLL_INTERVAL`                                   | Optional poll interval in seconds (default 60).                                           |
-| `GOOGLE_APPLICATION_CREDENTIALS`                         | Optional path to a GCP ADC JSON; enables Cloud Build logs in `github_checks` (see below). |
-| `GOOGLE_CLOUD_PROJECT`                                   | Optional fallback GCP project when a Cloud Build check does not name one.                 |
+| Env var                                                  | Purpose                                                                                         |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `GITHUB_APP_ID`                                          | GitHub App id (required).                                                                       |
+| `GITHUB_INSTALLATION_ID`                                 | Installation id to act as (required).                                                           |
+| `GITHUB_APP_PRIVATE_KEY` / `GITHUB_APP_PRIVATE_KEY_PATH` | App private key PEM, inline (with `\n` escapes) or as a file.                                   |
+| `GITHUB_REPOS`                                           | Optional comma-separated `owner/repo` list; defaults to all installation repositories.          |
+| `GITHUB_POLL_INTERVAL`                                   | Optional poll interval in seconds (default 60).                                                 |
+| `GITHUB_WEBHOOK_SECRET`                                  | Optional webhook secret; deliveries to `/github/webhook` trigger an immediate poll (see below). |
+| `GOOGLE_APPLICATION_CREDENTIALS`                         | Optional path to a GCP ADC JSON; enables Cloud Build logs in `github_checks` (see below).       |
+| `GOOGLE_CLOUD_PROJECT`                                   | Optional fallback GCP project when a Cloud Build check does not name one.                       |
 
 ## Event source
 
@@ -53,6 +54,10 @@ Dedup is a persisted watermark at `<state-dir>/github-sync.json` (atomic write):
 - The first run records a baseline and emits nothing — history never triggers.
 - Already-handled comment/issue ids never re-trigger, and edits do not re-trigger.
 - Comments posted while mikan was down replay after restart.
+
+### Optional webhook (lower latency)
+
+Without a webhook, a mention waits up to one poll interval. To respond in seconds instead, enable the App webhook: set the webhook URL to `<link-server base URL>/github/webhook`, choose a secret, subscribe to **Issues**, **Issue comment**, and **Pull request review comment** events, and set the same secret as `GITHUB_WEBHOOK_SECRET` (requires the link server, `LINK_PORT`). A verified delivery only asks the poll loop to run immediately — payloads are never parsed into events, so ordering, dedup, and permission checks are unchanged, and polling remains the backstop for missed deliveries.
 
 ## Triggering
 

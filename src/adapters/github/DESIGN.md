@@ -12,13 +12,21 @@ between participants, with reactions, that the bot can read and reply into.
 So mikan's existing conversation → session → agent machinery applies with no
 new concepts — only a new `MessagingBot` implementation and an event source.
 
-## Why this shape (and not webhooks)
+## Why this shape (polling as the source of truth, webhook as a poke)
 
 mikan is a **proactive** runtime: adapters connect out (Slack socket mode)
 and push events in; the agent is triggered by messages and schedules, not by
 inbound HTTP. A GitHub adapter therefore **polls** the GitHub API (like
-socket mode connects out) rather than exposing a webhook endpoint. Same
-adapter contract, no new inbound-HTTP surface, no break in the model.
+socket mode connects out); the poll's watermark/dedup discipline is the only
+thing that decides what triggers.
+
+An **optional webhook** (`GITHUB_WEBHOOK_SECRET` + the link server's
+`/github/webhook` route) exists purely as a latency optimization: a verified
+delivery for `issues` / `issue_comment` / `pull_request_review_comment` asks
+the bot to poll soon (`requestPoll()`, debounced). Payloads are never parsed
+into the intake pipeline — GitHub deliveries are unordered, unguaranteed, and
+may repeat, which is exactly what the watermark already solves — and polling
+stays on as the missed-delivery backstop.
 
 ## Identity mapping
 
