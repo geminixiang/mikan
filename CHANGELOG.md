@@ -9,6 +9,25 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.43]
+
+### Added
+
+- Add an optional authenticated GitHub webhook endpoint that wakes polling immediately for lower-latency issue and pull-request handling.
+- Add a machine-readable architecture index and generated system architecture documentation for repository-wide module boundaries and flows.
+
+### Changed
+
+- Run manual and automatic Session Dreams in the background while preserving session rotation and conversation maintenance boundaries.
+
+### Fixed
+
+- Wait for final Slack thread responses in isolation coverage instead of accepting provisional native-stream text.
+
+### Tests
+
+- Add regression coverage for GitHub webhook authentication and dispatch, background Session Dream lifecycle behavior, and final Slack stream settlement.
+
 ## [1.0.0-beta.42]
 
 ### Changed
