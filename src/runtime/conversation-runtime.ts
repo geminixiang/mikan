@@ -299,59 +299,71 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     }
   }
 
-  private async rotateSharedSessionAfterDream(
-    address: OfficeAddress,
+  private scheduleSharedSessionRotation(
+    { event, bot, context }: RunSessionOptions,
     sessionKey: string,
-    message: ConversationContext["message"],
-    platform: ConversationContext["platform"],
-  ): Promise<void> {
-    const conversationId = address.conversationId;
-    if (message.conversationKind !== "shared" || sessionKey !== conversationId) return;
+  ): boolean {
+    const { address, conversationId } = event;
+    const { message, platform } = context;
+    if (message.conversationKind !== "shared" || sessionKey !== conversationId) return false;
 
     const conversationDir = this.options.workspace.office(address).dir;
     const currentSession = resolveChannelSessionFile(conversationDir);
-    if (!currentSession || !shouldRotateTopLevelSession(currentSession, new Date())) return;
+    if (!currentSession || !shouldRotateTopLevelSession(currentSession, new Date())) return false;
 
-    await this.sessions.runConversationMaintenance(address, async () => {
-      const session = resolveChannelSessionFile(conversationDir);
-      if (!session || !shouldRotateTopLevelSession(session, new Date())) return;
+    void this.sessions
+      .runConversationMaintenance(address, async () => {
+        const session = resolveChannelSessionFile(conversationDir);
+        if (!session || !shouldRotateTopLevelSession(session, new Date())) {
+          await this.runSession({ event, bot, context }, true);
+          return;
+        }
 
-      const state = await this.getOrCreateState({
-        address,
-        conversationId,
-        sessionKey,
-        conversationKind: message.conversationKind,
-        currentMessageId: message.id,
+        const state = await this.getOrCreateState({
+          address,
+          conversationId,
+          sessionKey,
+          conversationKind: message.conversationKind,
+          currentMessageId: message.id,
+        });
+        const dreamSettlement = this.startSessionDream(
+          state,
+          async () => {
+            const result = await this.dreamSessionMemory(state, message, platform);
+            if (!result.success) {
+              const detail = result.errorMessage ? `: ${result.errorMessage}` : "";
+              log.logWarning(`[${conversationId}] Automatic Session Dream failed${detail}`);
+              return;
+            }
+
+            const runtimeCwd = runtimeCwdForSandbox(
+              this.options.sandbox,
+              this.options.workspace,
+              address,
+            );
+            this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
+            this.sessions.discard(address, sessionKey);
+            log.logInfo(
+              `[${conversationId}] Session Dream completed; rotated session: ${sessionKey}`,
+            );
+          },
+          false,
+        );
+        try {
+          await dreamSettlement;
+        } finally {
+          this.finishSessionDream(state, dreamSettlement);
+        }
+        await this.runSession({ event, bot, context }, true);
+      })
+      .catch((err) => {
+        reportUserFacingError(err, {
+          domain: "mikan",
+          surface: "session_dream",
+          operation: "rotate_shared_session_in_background",
+        });
       });
-      const dreamSettlement = this.startSessionDream(
-        state,
-        async () => {
-          const result = await this.dreamSessionMemory(state, message, platform);
-          if (!result.success) {
-            const detail = result.errorMessage ? `: ${result.errorMessage}` : "";
-            log.logWarning(`[${conversationId}] Automatic Session Dream failed${detail}`);
-            return;
-          }
-
-          const runtimeCwd = runtimeCwdForSandbox(
-            this.options.sandbox,
-            this.options.workspace,
-            address,
-          );
-          this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
-          this.sessions.discard(address, sessionKey);
-          log.logInfo(
-            `[${conversationId}] Session Dream completed; rotated session: ${sessionKey}`,
-          );
-        },
-        false,
-      );
-      try {
-        await dreamSettlement;
-      } finally {
-        this.finishSessionDream(state, dreamSettlement);
-      }
-    });
+    return true;
   }
 
   private async resetSession(state: ConversationState, bot: MessagingBot): Promise<void> {
@@ -455,7 +467,10 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     return consumed;
   }
 
-  async runSession({ event, bot, context }: RunSessionOptions): Promise<void> {
+  async runSession(
+    { event, bot, context }: RunSessionOptions,
+    skipRotation = false,
+  ): Promise<void> {
     const conversationId = event.conversationId;
     if (this.isShuttingDown) {
       log.logInfo(
@@ -465,37 +480,40 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     }
 
     const sessionKey = deriveSessionKey(event);
-    const privateConversation = isPrivateConversation(event);
-    const handledCommand = await dispatchCommand(this.commandHandlers, {
-      bot,
-      responder: context.responder,
-      platform: context.platform.name as PlatformName,
-      address: event.address,
-      platformUserId: event.user,
-      platformUserName: context.message.userName,
-      conversationId,
-      vaultConversationId: event.vaultConversationId,
-      sessionKey,
-      commandText: event.text,
-      privateConversation,
-      services: this.commandServices,
-    });
-    if (handledCommand) return;
+    if (!skipRotation) {
+      const privateConversation = isPrivateConversation(event);
+      const handledCommand = await dispatchCommand(this.commandHandlers, {
+        bot,
+        responder: context.responder,
+        platform: context.platform.name as PlatformName,
+        address: event.address,
+        platformUserId: event.user,
+        platformUserName: context.message.userName,
+        conversationId,
+        vaultConversationId: event.vaultConversationId,
+        sessionKey,
+        commandText: event.text,
+        privateConversation,
+        services: this.commandServices,
+      });
+      if (handledCommand) return;
+    }
 
     const address = event.address;
     const activeSettlement = this.sessions.get(address, sessionKey)?.runSettlement;
     if (activeSettlement) await activeSettlement;
 
-    if (sessionKey === conversationId) {
-      await this.rotateSharedSessionAfterDream(
-        address,
-        sessionKey,
-        context.message,
-        context.platform,
-      );
+    if (
+      !skipRotation &&
+      sessionKey === conversationId &&
+      this.scheduleSharedSessionRotation({ event, bot, context }, sessionKey)
+    ) {
+      return;
     }
 
-    const releaseConversationWork = await this.sessions.acquireConversationWork(address);
+    const releaseConversationWork = skipRotation
+      ? () => {}
+      : await this.sessions.acquireConversationWork(address);
     try {
       const conversationDir = this.options.workspace.office(address).dir;
       const waitedForParent = await waitForThreadSessionBootstrap({

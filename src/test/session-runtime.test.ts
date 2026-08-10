@@ -577,15 +577,15 @@ describe("ConversationRuntime lifecycle", () => {
     const { event, context } = makeEventAndContext("3");
     await runtime.handleEvent(event, bot, context);
 
+    await vi.waitFor(() => expect(readFileSync(memoryPath, "utf-8")).toBe("shared decision"));
     expect(context.responder.respondDiagnostic).not.toHaveBeenCalled();
-    expect(readFileSync(memoryPath, "utf-8")).toBe("shared decision");
     expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
     expect(readFileSync(resolveChannelSessionFile(conversationDir), "utf-8")).not.toContain(
       "old shared decision",
     );
   });
 
-  test("automatic shared rotation blocks thread startup until Dream and rotation finish", async () => {
+  test("automatic shared rotation runs Dream in the background", async () => {
     const { models, faux } = createFauxModels();
     const runtime = makeRuntime(models);
     const originalSession = createManagedSessionFile(
@@ -617,6 +617,7 @@ describe("ConversationRuntime lifecycle", () => {
     const topLevel = makeEventAndContext("5");
     const topLevelDone = runtime.handleEvent(topLevel.event, bot, topLevel.context);
     await vi.waitFor(() => expect(dreamStarted).toBe(true));
+    await topLevelDone;
 
     const thread = makeThreadEventAndContext("2000.2");
     const threadDone = runtime.handleEvent(thread.event, bot, thread.context);
@@ -626,7 +627,7 @@ describe("ConversationRuntime lifecycle", () => {
     expect(resolveChannelSessionFile(conversationDir)).toBe(originalSession);
 
     releaseDream();
-    await Promise.all([topLevelDone, threadDone]);
+    await threadDone;
 
     expect(runStarts).toContain("thread");
     expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
@@ -721,9 +722,9 @@ describe("ConversationRuntime lifecycle", () => {
     const { event, context } = makeEventAndContext("3");
     await runtime.handleEvent(event, bot, context);
 
+    await vi.waitFor(() => expect(runner.run).toHaveBeenCalledOnce());
     expect(runner.dreamSessionMemory).toHaveBeenCalledOnce();
     expect(resolveChannelSessionFile(conversationDir)).toBe(originalSession);
-    expect(runner.run).toHaveBeenCalledOnce();
   });
 
   test("keeps the old shared session when session Dream runs out of budget", async () => {
@@ -764,6 +765,7 @@ describe("ConversationRuntime lifecycle", () => {
     const { event, context } = makeEventAndContext("4");
     await runtime.handleEvent(event, bot, context);
 
+    await vi.waitFor(() => expect(runner.run).toHaveBeenCalledOnce());
     expect(runner.dreamSessionMemory).toHaveBeenCalledOnce();
     expect(resolveChannelSessionFile(conversationDir)).toBe(originalSession);
   });
