@@ -233,11 +233,15 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         if (working) await responder.setWorking(false);
       }
     });
-    try {
-      await dreamSettlement;
-    } finally {
-      this.finishSessionDream(state, dreamSettlement);
-    }
+    void dreamSettlement
+      .catch((err) => {
+        reportUserFacingError(err, {
+          domain: "mikan",
+          surface: "session_dream",
+          operation: "run_new_command_in_background",
+        });
+      })
+      .finally(() => this.finishSessionDream(state, dreamSettlement));
   }
 
   private startSessionDream(

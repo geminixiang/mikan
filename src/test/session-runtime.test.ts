@@ -406,11 +406,13 @@ describe("ConversationRuntime lifecycle", () => {
 
     await runtime.handleEvent(event, bot, context);
 
+    await vi.waitFor(() => {
+      expect(bot.postMessage).toHaveBeenCalledWith(
+        "C123",
+        "Conversation reset. Send a new message to start fresh.",
+      );
+    });
     expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
-    expect(bot.postMessage).toHaveBeenCalledWith(
-      "C123",
-      "Conversation reset. Send a new message to start fresh.",
-    );
   });
 
   test("new waits for the active run settlement before resetting and disposing", async () => {
@@ -452,7 +454,9 @@ describe("ConversationRuntime lifecycle", () => {
     settle();
     await reset;
 
-    expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
+    await vi.waitFor(() => {
+      expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
+    });
     expect(runner.dispose).toHaveBeenCalledOnce();
     expect(bot.postMessage).toHaveBeenCalledWith(
       "C123",
@@ -520,6 +524,7 @@ describe("ConversationRuntime lifecycle", () => {
 
     const maintenance = runtime.handleNewCommand(...newCommandArgs());
     await vi.waitFor(() => expect(runner.dreamSessionMemory).toHaveBeenCalledOnce());
+    await maintenance;
     expect(runtime.isRunning(testAddress, "C123")).toBe(true);
     expect(runtime.getRunningSessions()).toEqual([expect.objectContaining({ sessionKey: "C123" })]);
 
@@ -530,7 +535,6 @@ describe("ConversationRuntime lifecycle", () => {
     expect(runner.dispose).not.toHaveBeenCalled();
 
     releaseMaintenance();
-    await maintenance;
     await normalWork;
 
     expect(runner.run).not.toHaveBeenCalled();
@@ -800,8 +804,8 @@ describe("ConversationRuntime lifecycle", () => {
     await vi.waitFor(() => expect(runtime.isRunning(testAddress, "C123")).toBe(true));
     rejectMaintenance(new Error("maintenance failed"));
     await maintenance;
+    await vi.waitFor(() => expect(runtime.isRunning(testAddress, "C123")).toBe(false));
 
-    expect(runtime.isRunning(testAddress, "C123")).toBe(false);
     expect(state.runSettlement).toBeUndefined();
     expect(state.startedAt).toBe(0);
     expect(resolveChannelSessionFile(conversationDir)).toBe(originalSession);
@@ -840,7 +844,7 @@ describe("ConversationRuntime lifecycle", () => {
 
     await runtime.handleNewCommand(...newCommandArgs());
 
-    expect(readFileSync(memoryPath, "utf-8")).toBe("durable decision");
+    await vi.waitFor(() => expect(readFileSync(memoryPath, "utf-8")).toBe("durable decision"));
     const freshSession = resolveChannelSessionFile(conversationDir);
     expect(freshSession).not.toBe(originalSession);
     expect(readFileSync(freshSession, "utf-8")).not.toContain("old durable decision");
@@ -875,6 +879,7 @@ describe("ConversationRuntime lifecycle", () => {
 
     await runtime.handleNewCommand(...newCommandArgs(responder));
 
+    await vi.waitFor(() => expect(runtime.isRunning(testAddress, "C123")).toBe(false));
     expect(resolveChannelSessionFile(conversationDir)).toBe(originalSession);
     expect(responder.respondDiagnostic).toHaveBeenCalledWith(
       expect.stringContaining("was not reset"),
@@ -923,11 +928,13 @@ describe("ConversationRuntime lifecycle", () => {
 
     await runtime.handleNewCommand(...newCommandArgs());
 
+    await vi.waitFor(() => {
+      expect(bot.postMessage).toHaveBeenCalledWith(
+        "C123",
+        "Conversation reset. Send a new message to start fresh.",
+      );
+    });
     expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
-    expect(bot.postMessage).toHaveBeenCalledWith(
-      "C123",
-      "Conversation reset. Send a new message to start fresh.",
-    );
   });
 });
 
