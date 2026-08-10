@@ -101,7 +101,10 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack thread session isolation
       excludeTs: new Set([rootA, tellATs, String(tellAReply!.ts), askATs]),
       timeoutMs: Math.max(env.timeoutMs, 45_000),
       pollMs: env.pollMs,
-      textIncludes: tokenA,
+      // Native streaming briefly exposes provisional text through Slack's API.
+      // Wait for the exact final answer rather than accepting a reasoning
+      // snapshot that happens to mention token A before chat.stopStream.
+      textMatches: new RegExp(`^\\s*${tokenA}\\s*$`),
     });
     expect(askAReply, `no thread A reply containing ${tokenA}`).not.toBeNull();
     expect(
