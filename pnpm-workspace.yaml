@@ -1,0 +1,15 @@
+packages:
+  - "packages/*"
+  - "apps/web"
+
+# Build scripts that must run (pnpm 10 ignores dependency build scripts by
+# default). '@pnpm/exe' is pnpm's own standalone binary. ssh2/cpu-features are
+# native modules in the daemon's dependency chain; esbuild powers Vite;
+# @google/genai and protobufjs run their own install scripts.
+onlyBuiltDependencies:
+  - "@google/genai"
+  - "@pnpm/exe"
+  - cpu-features
+  - esbuild
+  - protobufjs
+  - ssh2

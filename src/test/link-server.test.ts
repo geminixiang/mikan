@@ -29,7 +29,7 @@ function startTestWebServer(
   sessionViewTokenStore?: Parameters<typeof startWebServer>[0]["sessionViewTokenStore"],
   sessionViewInteractive?: Parameters<typeof startWebServer>[0]["sessionViewInteractive"],
   adminOptions?: Parameters<typeof startWebServer>[0]["adminOptions"],
-): Server {
+): Promise<Server> {
   return startWebServer({
     port,
     linkTokenStore,
@@ -38,6 +38,9 @@ function startTestWebServer(
     sessionViewTokenStore,
     sessionViewInteractive,
     adminOptions,
+  }).then((server) => {
+    if (server === undefined) throw new Error("web server failed to start");
+    return server;
   });
 }
 
@@ -99,7 +102,7 @@ describe("link server", () => {
 
     const tokenStore = new InMemoryLinkTokenStore();
     const token = tokenStore.create("telegram", "U123", "123", "vault-u123", "");
-    const server = startTestWebServer(0, tokenStore, vaultManager, async () => {});
+    const server = await startTestWebServer(0, tokenStore, vaultManager, async () => {});
     servers.push(server);
     await waitForListening(server);
 
@@ -129,7 +132,7 @@ describe("link server", () => {
       platformUserId: "U-admin",
       conversationId: "123",
     });
-    const server = startTestWebServer(
+    const server = await startTestWebServer(
       0,
       tokenStore,
       vaultManager,
@@ -155,6 +158,36 @@ describe("link server", () => {
     expect(body.models.some((model) => model.provider === "anthropic")).toBe(true);
   });
 
+  test("/api/link/info reports validity and existing vault secrets as JSON", async () => {
+    const stateDir = join(tmpdir(), `mikan-link-server-${Date.now()}-${Math.random()}`);
+    dirs.push(stateDir);
+
+    const vaultManager = new FileVaultManager(stateDir);
+    vaultManager.upsertEnv("vault-u123", { OPENAI_API_KEY: "sk-secret-value" });
+    const tokenStore = new InMemoryLinkTokenStore();
+    const token = tokenStore.create("telegram", "U123", "123", "vault-u123", "");
+    const server = await startTestWebServer(0, tokenStore, vaultManager, async () => {});
+    servers.push(server);
+    await waitForListening(server);
+
+    const response = await originalFetch(`${baseUrl(server)}/api/link/info?token=${token.token}`);
+    const body = (await response.json()) as {
+      valid: boolean;
+      expiresAt: number;
+      oauthServices: Array<{ id: string; label: string }>;
+      existingSecrets: { envKeys: string[]; mountTargets: string[] };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.valid).toBe(true);
+    expect(body.expiresAt).toBeGreaterThan(Date.now());
+    expect(body.oauthServices.length).toBeGreaterThan(0);
+    expect(body.existingSecrets.envKeys).toContain("OPENAI_API_KEY");
+
+    const invalid = await originalFetch(`${baseUrl(server)}/api/link/info?token=bogus`);
+    expect(((await invalid.json()) as { valid: boolean }).valid).toBe(false);
+  });
+
   test("/api/oauth/start returns an OAuth redirect URL for GitHub", async () => {
     const stateDir = join(tmpdir(), `mikan-link-server-${Date.now()}-${Math.random()}`);
     dirs.push(stateDir);
@@ -166,7 +199,7 @@ describe("link server", () => {
 
     const tokenStore = new InMemoryLinkTokenStore();
     const token = tokenStore.create("telegram", "U234", "234", "vault-u234", "");
-    const server = startTestWebServer(0, tokenStore, vaultManager, async () => {});
+    const server = await startTestWebServer(0, tokenStore, vaultManager, async () => {});
     servers.push(server);
     await waitForListening(server);
 
@@ -204,7 +237,7 @@ describe("link server", () => {
     const tokenStore = new InMemoryLinkTokenStore();
     const token = tokenStore.create("telegram", "U345", "345", "vault-u345", "");
     const notify = vi.fn().mockResolvedValue(undefined);
-    const server = startTestWebServer(0, tokenStore, vaultManager, notify);
+    const server = await startTestWebServer(0, tokenStore, vaultManager, notify);
     servers.push(server);
     await waitForListening(server);
 
@@ -264,7 +297,7 @@ describe("link server", () => {
 
     const tokenStore = new InMemoryLinkTokenStore();
     const token = tokenStore.create("telegram", "U777", "777", "vault-u777", "");
-    const server = startTestWebServer(0, tokenStore, vaultManager, async () => {});
+    const server = await startTestWebServer(0, tokenStore, vaultManager, async () => {});
     servers.push(server);
     await waitForListening(server);
 
@@ -297,7 +330,7 @@ describe("link server", () => {
     const tokenStore = new InMemoryLinkTokenStore();
     const token = tokenStore.create("telegram", "U889", "889", "vault-u889", "");
     const notify = vi.fn().mockResolvedValue(undefined);
-    const server = startTestWebServer(0, tokenStore, vaultManager, notify);
+    const server = await startTestWebServer(0, tokenStore, vaultManager, notify);
     servers.push(server);
     await waitForListening(server);
 
@@ -349,7 +382,7 @@ describe("link server", () => {
     const tokenStore = new InMemoryLinkTokenStore();
     const token = tokenStore.create("telegram", "U888", "888", "vault-u888", "");
     const notify = vi.fn().mockResolvedValue(undefined);
-    const server = startTestWebServer(0, tokenStore, vaultManager, notify);
+    const server = await startTestWebServer(0, tokenStore, vaultManager, notify);
     servers.push(server);
     await waitForListening(server);
 
@@ -395,7 +428,7 @@ describe("link server", () => {
 
     const tokenStore = new InMemoryLinkTokenStore();
     const token = tokenStore.create("telegram", "U999", "999", "vault-u999", "");
-    const server = startTestWebServer(0, tokenStore, vaultManager, async () => {});
+    const server = await startTestWebServer(0, tokenStore, vaultManager, async () => {});
     servers.push(server);
     await waitForListening(server);
 

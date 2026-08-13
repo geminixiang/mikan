@@ -1,0 +1,209 @@
+/* Admin SPA styles. */
+
+.admin-split {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.conv-list {
+  padding: 18px 16px;
+}
+
+.conv-ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.conv-row {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text);
+  font: inherit;
+  transition:
+    background 120ms,
+    border-color 120ms;
+}
+
+.conv-row:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.conv-row.active {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: var(--border);
+}
+
+.conv-label {
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.conv-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+
+.conv-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 8px 14px;
+  margin-bottom: 18px;
+  font-size: 0.88rem;
+}
+
+.kv dt {
+  color: var(--subtle);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding-top: 2px;
+}
+
+.kv-hint {
+  display: block;
+  color: var(--subtle);
+  font-size: 0.74rem;
+  margin-top: 2px;
+}
+
+.model-picker {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.model-picker select {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.84rem;
+  color: var(--text);
+}
+
+.save-note {
+  color: var(--ok-text);
+  font-size: 0.82rem;
+}
+
+.tab-row {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.7);
+  width: fit-content;
+}
+
+.tab-btn {
+  border: none;
+  background: transparent;
+  padding: 8px 16px;
+  border-radius: 10px;
+  font:
+    500 0.84rem/1 "DM Sans",
+    sans-serif;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background 120ms,
+    color 120ms;
+}
+
+.tab-btn:hover {
+  color: var(--text);
+}
+
+.tab-btn.active {
+  background: var(--text);
+  color: #fff;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.data-table th {
+  text-align: left;
+  color: var(--subtle);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.data-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  vertical-align: top;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--muted);
+}
+
+.badge.running {
+  background: var(--ok-bg);
+  color: var(--ok-text);
+  border: 1px solid var(--ok-border);
+}
+
+.badge.ok {
+  background: var(--ok-bg);
+  color: var(--ok-text);
+}
+
+.badge.warn {
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.mono {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.8em;
+}
+
+.settings-card .kv {
+  margin-bottom: 22px;
+}
+
+@media (max-width: 720px) {
+  .admin-split {
+    grid-template-columns: 1fr;
+  }
+}
