@@ -1,0 +1,33 @@
+{
+  "name": "@geminixiang/mikan-sandbox-host",
+  "version": "0.1.0",
+  "private": true,
+  "description": "mikan host sandbox backend as a plugin: HostExecutor + the hostSandboxAdapter implementing @geminixiang/mikan-sandbox-contract",
+  "license": "MIT",
+  "files": [
+    "lib"
+  ],
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsgo -p tsconfig.build.json",
+    "test": "vitest --run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@geminixiang/mikan-sandbox-contract": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.1",
+    "@typescript/native-preview": "^7.0.0-dev.20260624.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
+  }
+}

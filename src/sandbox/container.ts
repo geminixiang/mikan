@@ -16,9 +16,9 @@ import {
   execSimple,
   execWriteFile,
   shellEscape,
-  createMountedRuntimePathContext,
 } from "./utils.js";
-import { HostExecutor } from "./host.js";
+import { createMountedRuntimePathContext } from "@geminixiang/mikan-sandbox-contract";
+import { HostExecutor } from "@geminixiang/mikan-sandbox-host";
 
 const PRIVATE_DIR_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;

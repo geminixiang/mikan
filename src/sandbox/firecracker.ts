@@ -8,13 +8,13 @@ import type {
   SandboxAdapter,
 } from "./types.js";
 import { SandboxError } from "./errors.js";
-import { HostExecutor } from "./host.js";
+import { HostExecutor } from "@geminixiang/mikan-sandbox-host";
+import { killProcessTree } from "@geminixiang/mikan-sandbox-contract";
 import {
   execReadFile,
   execReadFileBase64,
   execWriteFile,
   execSimple,
-  killProcessTree,
   shellEscape,
 } from "./utils.js";
 

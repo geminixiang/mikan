@@ -25,6 +25,8 @@ const embedDir = join(distDir, ".internal");
 /** Workspace package name -> its package dir (lib/ compiled by tsgo). */
 const PACKAGES = new Map([
   ["@geminixiang/mikan-daemon-web-bridge", "daemon-web-bridge"],
+  ["@geminixiang/mikan-sandbox-contract", "sandbox-contract"],
+  ["@geminixiang/mikan-sandbox-host", "sandbox-host"],
   ["@geminixiang/mikan-web-host", "web-host"],
   ["@geminixiang/mikan-web-bundle", "web-bundle"],
 ]);

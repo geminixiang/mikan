@@ -85,6 +85,8 @@
     "@astrojs/mdx": "^7.0.0",
     "@astrojs/starlight": "^0.41.0",
     "@geminixiang/mikan-daemon-web-bridge": "workspace:^",
+    "@geminixiang/mikan-sandbox-contract": "workspace:^",
+    "@geminixiang/mikan-sandbox-host": "workspace:^",
     "@geminixiang/mikan-starlight-theme": "github:geminixiang/mikan-starlight-theme",
     "@geminixiang/mikan-web-bundle": "workspace:^",
     "@geminixiang/mikan-web-host": "workspace:^",

@@ -110,13 +110,14 @@ export class ActorExecutionResolver {
 
   private resolveSandboxConfig(resourceKey: string, mounts: ContainerMount[]): SandboxConfig {
     const adapter = getSandboxAdapter(this.baseConfig.type);
-    return (
-      adapter.resolveRuntimeConfig?.(this.baseConfig, {
-        resourceKey,
-        workspaceRoot: this.workspace.root,
-        mounts,
-      }) ?? this.baseConfig
-    );
+    const resolved = adapter.resolveRuntimeConfig?.(this.baseConfig, {
+      resourceKey,
+      workspaceRoot: this.workspace.root,
+      mounts,
+    });
+    // The contract lets a backend resolve into another backend's config
+    // (image → container); built-in results are always union members.
+    return (resolved ?? this.baseConfig) as SandboxConfig;
   }
 
   private buildEnsureReadyCallback(

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { HostExecutor } from "../sandbox/host.js";
+import { HostExecutor } from "@geminixiang/mikan-sandbox-host";
 import { execReadFile, execWriteFile } from "../sandbox/utils.js";
 import { createEditTool } from "../tools/edit.js";
 
