@@ -1,4 +1,4 @@
-import type { Breadcrumb, ErrorEvent, Event, EventHint, Scope } from "@sentry/node";
+import type { Breadcrumb, ErrorEvent, Event, EventHint, NodeOptions, Scope } from "@sentry/node";
 import * as Sentry from "@sentry/node";
 import { readEnv } from "../env-manifest.js";
 
@@ -62,7 +62,6 @@ export type {
   SentryAttributionAttributes,
   SentryRunScopeContext,
   SentrySpanPayload,
-  SentryTransactionPayload,
 } from "./types.js";
 import type {
   ReportUserFacingErrorOptions,
@@ -79,7 +78,7 @@ type TraceAttributionEntry = {
 
 const traceAttribution = new Map<string, TraceAttributionEntry>();
 
-export function createSentryInitOptions(dsn?: string) {
+export function createSentryInitOptions(dsn?: string): NodeOptions {
   return {
     dsn,
     environment: readEnv("SENTRY_ENVIRONMENT") ?? "production",

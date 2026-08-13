@@ -11,16 +11,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.10.0
+
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build
-        run: npm run build
+        run: pnpm run build
 
       - name: Run Slack E2E
         env:
@@ -155,4 +159,4 @@ jobs:
             exit 1
           fi
 
-          npm run test:e2e:slack
+          pnpm run test:e2e:slack
