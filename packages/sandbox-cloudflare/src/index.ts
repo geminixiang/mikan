@@ -1,19 +1,30 @@
+/**
+ * @geminixiang/mikan-sandbox-cloudflare — the mikan Cloudflare sandbox bridge
+ * backend as a plugin: CloudflareSandboxExecutor talks HTTP to the bridge, and
+ * cloudflareSandboxAdapter implements the sandbox contract.
+ */
+
 import type {
-  CloudflareSandboxConfig,
   ExecOptions,
   ExecResult,
   Executor,
   RuntimePathContext,
   SandboxAdapter,
-} from "./types.js";
+} from "@geminixiang/mikan-sandbox-contract";
 import {
   SandboxError,
   execReadFile,
   execReadFileBase64,
   execWriteFile,
+  readEnv,
+  scopeCloudflareSandboxId,
 } from "@geminixiang/mikan-sandbox-contract";
-import { readEnv } from "../env-manifest.js";
-import { scopeCloudflareSandboxId } from "./identity.js";
+
+/** The cloudflare backend's own config. */
+export interface CloudflareSandboxConfig {
+  type: "cloudflare";
+  sandboxId: string;
+}
 
 const DEFAULT_CLOUDFLARE_CWD = "/workspace";
 

@@ -1,12 +1,17 @@
+/**
+ * @geminixiang/mikan-sandbox-firecracker — the mikan Firecracker VM sandbox
+ * backend as a plugin: FirecrackerExecutor runs commands over SSH into a
+ * microVM, and firecrackerSandboxAdapter implements the sandbox contract.
+ */
+
 import { spawn } from "node:child_process";
 import type {
   ExecOptions,
   ExecResult,
   Executor,
-  FirecrackerSandboxConfig,
   RuntimePathContext,
   SandboxAdapter,
-} from "./types.js";
+} from "@geminixiang/mikan-sandbox-contract";
 import {
   SandboxError,
   execReadFile,
@@ -17,6 +22,15 @@ import {
   shellEscape,
 } from "@geminixiang/mikan-sandbox-contract";
 import { HostExecutor } from "@geminixiang/mikan-sandbox-host";
+
+/** The firecracker backend's own config. */
+export interface FirecrackerSandboxConfig {
+  type: "firecracker";
+  vmId: string;
+  hostPath: string;
+  sshUser?: string;
+  sshPort?: number;
+}
 
 function parseFirecrackerSandboxArg(value: string): FirecrackerSandboxConfig | undefined {
   if (!value.startsWith("firecracker:")) {

@@ -1,16 +1,21 @@
-import { FirecrackerExecutor, firecrackerSandboxAdapter } from "./firecracker.js";
-import { CloudflareSandboxExecutor, cloudflareSandboxAdapter } from "./cloudflare.js";
 import { GondolinExecutor, gondolinSandboxAdapter } from "./gondolin.js";
 import { SandboxError, createMountedRuntimePathContext } from "@geminixiang/mikan-sandbox-contract";
 import { HostExecutor, hostSandboxAdapter } from "@geminixiang/mikan-sandbox-host";
 import { ContainerExecutor, containerSandboxAdapter } from "@geminixiang/mikan-sandbox-container";
 import { imageSandboxAdapter } from "@geminixiang/mikan-sandbox-image";
+import {
+  CloudflareSandboxExecutor,
+  cloudflareSandboxAdapter,
+} from "@geminixiang/mikan-sandbox-cloudflare";
+import {
+  FirecrackerExecutor,
+  firecrackerSandboxAdapter,
+} from "@geminixiang/mikan-sandbox-firecracker";
 export { configureGondolinRuntime } from "./gondolin.js";
 export type { GondolinBootstrapOptions } from "./types.js";
 import type { Executor, RuntimePathContext, SandboxAdapter, SandboxConfig } from "./types.js";
 
 export type {
-  CloudflareSandboxConfig,
   ExecOptions,
   ExecResult,
   Executor,
@@ -25,6 +30,7 @@ export type {
   SandboxResolutionContext,
   SandboxVaultCapabilities,
 } from "./types.js";
+export type { CloudflareSandboxConfig } from "@geminixiang/mikan-sandbox-cloudflare";
 export {
   CloudflareSandboxExecutor,
   ContainerExecutor,

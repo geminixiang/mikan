@@ -407,6 +407,20 @@ export function managedContainerName(containerKey: string): string {
   return `mikan-sandbox-${containerKey}`;
 }
 
+/** Scope a cloudflare sandbox id to a resource key. */
+export function scopeCloudflareSandboxId(baseId: string, resourceKey: string): string {
+  return `${baseId}-${resourceKey}`;
+}
+
+/** Read an env var, falling back to the MIKAN_-prefixed alias. */
+export function readEnv(name: string): string | undefined {
+  const raw = process.env[name]?.trim();
+  if (raw) return raw;
+
+  const prefixed = process.env[`MIKAN_${name}`]?.trim();
+  return prefixed || undefined;
+}
+
 /** Sandbox-domain error with optional CLI hint lines (shared by all backends). */
 export class SandboxError extends Error {
   readonly details: string[];

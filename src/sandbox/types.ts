@@ -5,6 +5,8 @@ import type {
 import type { HostSandboxConfig } from "@geminixiang/mikan-sandbox-host";
 import type { ContainerSandboxConfig } from "@geminixiang/mikan-sandbox-container";
 import type { ImageSandboxConfig } from "@geminixiang/mikan-sandbox-image";
+import type { FirecrackerSandboxConfig } from "@geminixiang/mikan-sandbox-firecracker";
+import type { CloudflareSandboxConfig } from "@geminixiang/mikan-sandbox-cloudflare";
 
 export type SandboxConfig =
   | HostSandboxConfig
@@ -47,19 +49,6 @@ export interface SessionClientCallbacks {
 export interface SessionClient {
   send(message: object): void;
   close(): void;
-}
-
-export interface FirecrackerSandboxConfig {
-  type: "firecracker";
-  vmId: string;
-  hostPath: string;
-  sshUser?: string;
-  sshPort?: number;
-}
-
-export interface CloudflareSandboxConfig {
-  type: "cloudflare";
-  sandboxId: string;
 }
 
 // The sandbox contract (Executor, RuntimePathContext, capabilities, adapter
