@@ -6,9 +6,13 @@ import type {
   RuntimePathContext,
   SandboxAdapter,
 } from "./types.js";
-import { execReadFile, execReadFileBase64, execWriteFile } from "./utils.js";
+import {
+  SandboxError,
+  execReadFile,
+  execReadFileBase64,
+  execWriteFile,
+} from "@geminixiang/mikan-sandbox-contract";
 import { readEnv } from "../env-manifest.js";
-import { SandboxError } from "./errors.js";
 import { scopeCloudflareSandboxId } from "./identity.js";
 
 const DEFAULT_CLOUDFLARE_CWD = "/workspace";

@@ -1,11 +1,10 @@
-import { ContainerExecutor, containerSandboxAdapter } from "./container.js";
 import { FirecrackerExecutor, firecrackerSandboxAdapter } from "./firecracker.js";
 import { CloudflareSandboxExecutor, cloudflareSandboxAdapter } from "./cloudflare.js";
-import { imageSandboxAdapter } from "./image.js";
 import { GondolinExecutor, gondolinSandboxAdapter } from "./gondolin.js";
-import { SandboxError } from "./errors.js";
-import { createMountedRuntimePathContext } from "@geminixiang/mikan-sandbox-contract";
+import { SandboxError, createMountedRuntimePathContext } from "@geminixiang/mikan-sandbox-contract";
 import { HostExecutor, hostSandboxAdapter } from "@geminixiang/mikan-sandbox-host";
+import { ContainerExecutor, containerSandboxAdapter } from "@geminixiang/mikan-sandbox-container";
+import { imageSandboxAdapter } from "@geminixiang/mikan-sandbox-image";
 export { configureGondolinRuntime } from "./gondolin.js";
 export type { GondolinBootstrapOptions } from "./types.js";
 import type { Executor, RuntimePathContext, SandboxAdapter, SandboxConfig } from "./types.js";
@@ -33,7 +32,7 @@ export {
   HostExecutor,
   GondolinExecutor,
 };
-export { SandboxError } from "./errors.js";
+export { SandboxError } from "@geminixiang/mikan-sandbox-contract";
 
 const builtInSandboxAdapters: readonly SandboxAdapter[] = [
   hostSandboxAdapter,

@@ -5,7 +5,12 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { HostExecutor } from "@geminixiang/mikan-sandbox-host";
 import { killProcessTree } from "@geminixiang/mikan-sandbox-contract";
-import { execReadFile, execSimple, execWriteFile, shellEscape } from "../sandbox/utils.js";
+import {
+  execReadFile,
+  execSimple,
+  execWriteFile,
+  shellEscape,
+} from "@geminixiang/mikan-sandbox-contract";
 
 describe("shellEscape", () => {
   test("wraps plain strings in single quotes", () => {

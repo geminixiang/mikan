@@ -7,16 +7,16 @@ import type {
   RuntimePathContext,
   SandboxAdapter,
 } from "./types.js";
-import { SandboxError } from "./errors.js";
-import { HostExecutor } from "@geminixiang/mikan-sandbox-host";
-import { killProcessTree } from "@geminixiang/mikan-sandbox-contract";
 import {
+  SandboxError,
   execReadFile,
   execReadFileBase64,
   execWriteFile,
   execSimple,
+  killProcessTree,
   shellEscape,
-} from "./utils.js";
+} from "@geminixiang/mikan-sandbox-contract";
+import { HostExecutor } from "@geminixiang/mikan-sandbox-host";
 
 function parseFirecrackerSandboxArg(value: string): FirecrackerSandboxConfig | undefined {
   if (!value.startsWith("firecracker:")) {

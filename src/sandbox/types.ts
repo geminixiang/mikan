@@ -3,6 +3,8 @@ import type {
   SandboxAdapter as ContractSandboxAdapter,
 } from "@geminixiang/mikan-sandbox-contract";
 import type { HostSandboxConfig } from "@geminixiang/mikan-sandbox-host";
+import type { ContainerSandboxConfig } from "@geminixiang/mikan-sandbox-container";
+import type { ImageSandboxConfig } from "@geminixiang/mikan-sandbox-image";
 
 export type SandboxConfig =
   | HostSandboxConfig
@@ -11,16 +13,6 @@ export type SandboxConfig =
   | GondolinSandboxConfig
   | FirecrackerSandboxConfig
   | CloudflareSandboxConfig;
-
-export interface ContainerSandboxConfig {
-  type: "container";
-  container: string;
-}
-
-export interface ImageSandboxConfig {
-  type: "image";
-  image: string;
-}
 
 export interface GondolinSandboxConfig {
   type: "gondolin";

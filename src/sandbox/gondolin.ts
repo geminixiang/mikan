@@ -12,10 +12,15 @@ import {
 import { dirname, join } from "node:path";
 import * as log from "../log.js";
 import type { ResourceLimits, SandboxLimitStatus, SandboxResourceController } from "../types.js";
-import { withRuntimeBootstrap } from "./container.js";
-import { SandboxError } from "./errors.js";
-import { createMountedRuntimePathContext } from "@geminixiang/mikan-sandbox-contract";
-import { execReadFile, execReadFileBase64, execWriteFile, shellEscape } from "./utils.js";
+import { withRuntimeBootstrap } from "@geminixiang/mikan-sandbox-container";
+import {
+  SandboxError,
+  createMountedRuntimePathContext,
+  execReadFile,
+  execReadFileBase64,
+  execWriteFile,
+  shellEscape,
+} from "@geminixiang/mikan-sandbox-contract";
 import type * as GondolinNamespace from "@earendil-works/gondolin";
 import type {
   ExecOptions,

@@ -1,24 +1,35 @@
+/**
+ * @geminixiang/mikan-sandbox-container — the mikan shared-container sandbox
+ * backend as a plugin: `ContainerExecutor` runs commands in a pre-existing
+ * Docker container, and `containerSandboxAdapter` implements the sandbox
+ * contract. Composes the host backend's `HostExecutor` for the docker exec
+ * transport.
+ */
+
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type {
-  ContainerSandboxConfig,
-  ExecOptions,
-  ExecResult,
-  Executor,
-  RuntimePathContext,
-  SandboxAdapter,
-} from "./types.js";
-import { SandboxError } from "./errors.js";
 import {
+  SandboxError,
+  createMountedRuntimePathContext,
   execReadFile,
   execReadFileBase64,
   execSimple,
   execWriteFile,
   shellEscape,
-} from "./utils.js";
-import { createMountedRuntimePathContext } from "@geminixiang/mikan-sandbox-contract";
+  type ExecOptions,
+  type ExecResult,
+  type Executor,
+  type RuntimePathContext,
+  type SandboxAdapter,
+} from "@geminixiang/mikan-sandbox-contract";
 import { HostExecutor } from "@geminixiang/mikan-sandbox-host";
+
+/** The shared-container backend's own config. */
+export interface ContainerSandboxConfig {
+  type: "container";
+  container: string;
+}
 
 const PRIVATE_DIR_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
@@ -77,6 +88,10 @@ function buildContainerExecCommand(
   return `docker exec ${envPart}-w /workspace ${container} sh -c ${shellEscape(command)}`;
 }
 
+/**
+ * Wrap a command with git credential bootstrap when GitHub tokens are present
+ * (shared with the gondolin backend, which executes through the same channel).
+ */
 export function withRuntimeBootstrap(command: string, env?: Record<string, string>): string {
   if (!hasGitHubToken(env)) {
     return command;

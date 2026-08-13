@@ -1,8 +1,24 @@
-import type { ImageSandboxConfig, SandboxAdapter } from "./types.js";
-import { SandboxError } from "./errors.js";
-import { execSimple } from "./utils.js";
-import { DockerContainerManager } from "../provisioner.js";
-import { reportUserFacingError } from "../observability/sentry.js";
+/**
+ * @geminixiang/mikan-sandbox-image — the mikan image sandbox backend as a
+ * plugin: `image:<image>` configs auto-provision a per-conversation container
+ * from the base image. The adapter declares the provisioner image and the
+ * image → container resolution; the core provisions via the injected
+ * `SandboxProvisioner` (the daemon's DockerContainerManager) and supplies the
+ * resulting container executor.
+ */
+
+import {
+  SandboxError,
+  execSimple,
+  managedContainerName,
+  type SandboxAdapter,
+} from "@geminixiang/mikan-sandbox-contract";
+
+/** The image backend's own config. */
+export interface ImageSandboxConfig {
+  type: "image";
+  image: string;
+}
 
 function parseImageSandboxArg(value: string): ImageSandboxConfig | undefined {
   if (!value.startsWith("image:")) {
@@ -35,39 +51,17 @@ export const imageSandboxAdapter: SandboxAdapter<ImageSandboxConfig> = {
   provisionerImage: (config) => config.image,
   resolveRuntimeConfig: (config, { resourceKey }) => ({
     type: "container",
-    container: DockerContainerManager.containerName(resourceKey),
+    container: managedContainerName(resourceKey),
   }),
-  createEnsureReady: (
-    config,
-    { provisioner, resourceKey, credentialKey, mounts, conversationId, hasVault },
-  ) => {
+  createEnsureReady: (config, { provisioner, resourceKey, mounts, conversationId }) => {
     if (!provisioner) return undefined;
-    const expected = DockerContainerManager.containerName(resourceKey);
+    const expected = managedContainerName(resourceKey);
     return async () => {
-      let actual: string | undefined;
-      try {
-        actual = await provisioner.provision(resourceKey, {
-          containerName: expected,
-          mounts,
-          conversationId,
-        });
-      } catch (err) {
-        reportUserFacingError(err, {
-          domain: "sandbox",
-          surface: "sandbox_provision",
-          operation: "ensure_image_container_ready",
-          severity: "error",
-          context: {
-            sandboxType: "image",
-            conversationId,
-            credentialKey,
-            resourceKey,
-            expectedContainer: expected,
-            hasVault,
-          },
-        });
-        throw err;
-      }
+      const actual = await provisioner.provision(resourceKey, {
+        containerName: expected,
+        mounts,
+        conversationId,
+      });
       if (actual && actual !== expected) {
         throw new Error(
           `Provisioner returned container "${actual}" for resource key "${resourceKey}", expected "${expected}"`,

@@ -11,6 +11,7 @@ import {
   type Executor,
   type SandboxConfig,
 } from "./sandbox/index.js";
+import { reportUserFacingError } from "./observability/sentry.js";
 import { normalizeSharedVaultName, type VaultManager } from "./vault/index.js";
 import { allowsAmbientDefaultSharedVault, resolveVaultInjection } from "./vault/index.js";
 import {
@@ -125,7 +126,7 @@ export class ActorExecutionResolver {
     conversationId: string,
   ): (() => Promise<void>) | undefined {
     const adapter = getSandboxAdapter(this.baseConfig.type);
-    return adapter.createEnsureReady?.(this.baseConfig, {
+    const ensureReady = adapter.createEnsureReady?.(this.baseConfig, {
       provisioner: this.provisioner,
       resourceKey: plan.resourceKey,
       credentialKey: plan.credentialKey,
@@ -133,6 +134,32 @@ export class ActorExecutionResolver {
       conversationId,
       hasVault: Boolean(plan.env || plan.mounts.length > 0),
     });
+    if (!ensureReady) return undefined;
+    // The provisioning hook lives in the plugin; the observability report is
+    // core's — plugins never see mikan's sentry conventions.
+    const sandboxType = this.baseConfig.type;
+    return async () => {
+      try {
+        await ensureReady();
+      } catch (err) {
+        reportUserFacingError(err, {
+          domain: "sandbox",
+          surface: "sandbox_provision",
+          operation: "ensure_image_container_ready",
+          severity: "error",
+          context: {
+            sandboxType,
+            conversationId,
+            credentialKey: plan.credentialKey,
+            resourceKey: plan.resourceKey,
+            expectedContainer:
+              plan.sandboxConfig.type === "container" ? plan.sandboxConfig.container : "",
+            hasVault: Boolean(plan.env || plan.mounts.length > 0),
+          },
+        });
+        throw err;
+      }
+    };
   }
 
   private resolveMounts(
