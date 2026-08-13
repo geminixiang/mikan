@@ -261,8 +261,10 @@ export const firecrackerSandboxAdapter: SandboxAdapter<FirecrackerSandboxConfig>
   type: "firecracker",
   credentials: { env: true, fileMounts: false },
   workspace: { managedProjection: false },
+  vault: { routingLabel: "conversation", ambientSharedVault: false },
   parse: parseFirecrackerSandboxArg,
   validate: validateFirecrackerSandbox,
   createExecutor: (config, env) =>
     new FirecrackerExecutor(config.vmId, config.hostPath, config.sshUser, config.sshPort, env),
+  describe: (config) => `firecracker:${config.vmId}`,
 };

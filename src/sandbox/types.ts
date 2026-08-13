@@ -1,4 +1,9 @@
-import type { ResourceLimits } from "../types.js";
+import type {
+  ContainerMount,
+  ProvisionOptions,
+  ResourceLimits,
+  SandboxResourceController,
+} from "../types.js";
 
 export type SandboxConfig =
   | HostSandboxConfig
@@ -144,10 +149,66 @@ interface SandboxWorkspaceCapabilities {
   managedProjection: boolean;
 }
 
-export interface SandboxAdapter<TConfig extends SandboxConfig = SandboxConfig> {
+/**
+ * Adapter-declared vault semantics. The core never decides these per sandbox
+ * type; the backend declares how credentials route, so a plugin backend can
+ * opt in without touching core logic.
+ */
+export interface SandboxVaultCapabilities {
+  /** Startup log label for how credentials route through this backend. */
+  routingLabel: "container" | "conversation" | "host";
+  /**
+   * Whether this backend auto-provisions per-conversation vaults that receive
+   * the ambient default-shared-vault copy (isolated backends only).
+   */
+  ambientSharedVault: boolean;
+}
+
+/** The container provisioner view backends may need (image mode). */
+export interface SandboxProvisioner {
+  provision(containerKey: string, options?: ProvisionOptions): Promise<string>;
+}
+
+/** Inputs for turning a base sandbox config into the concrete runtime config. */
+export interface SandboxResolutionContext {
+  resourceKey: string;
+  workspaceRoot: string;
+  mounts: ContainerMount[];
+}
+
+/** Inputs for building the "ensure ready before first exec" callback. */
+export interface SandboxReadyContext {
+  provisioner?: SandboxProvisioner;
+  resourceKey: string;
+  credentialKey: string;
+  mounts: ContainerMount[];
+  conversationId: string;
+  hasVault: boolean;
+}
+
+/** Inputs for building a backend's resource controller at boot. */
+export interface SandboxControllerContext {
+  provisioner?: SandboxProvisioner & SandboxResourceController;
+}
+
+/** Inputs for backend boot hooks. */
+export interface SandboxBootContext {
+  limits?: ResourceLimits;
+  boostLimits?: ResourceLimits;
+  idleTimeoutMs?: number;
+}
+
+/**
+ * One sandbox backend. The `type` field is open: built-in backends use the
+ * `SandboxConfig` union members, plugin backends declare their own `type`
+ * string and config shape. The core treats configs opaquely behind the
+ * adapter — it never switches on a concrete type.
+ */
+export interface SandboxAdapter<TConfig extends { type: string } = SandboxConfig> {
   type: TConfig["type"];
   credentials: SandboxCredentialCapabilities;
   workspace: SandboxWorkspaceCapabilities;
+  vault: SandboxVaultCapabilities;
   parse(value: string): TConfig | undefined;
   validate?(config: TConfig): Promise<void>;
   createExecutor?(
@@ -155,4 +216,31 @@ export interface SandboxAdapter<TConfig extends SandboxConfig = SandboxConfig> {
     env?: Record<string, string>,
     ensureReady?: () => Promise<void>,
   ): Executor;
+  /**
+   * Base image for the mikan-managed per-conversation provisioner, when this
+   * backend provisions containers (image mode). Declared per config so the
+   * configured image name drives the provisioner.
+   */
+  provisionerImage?(config: TConfig): string | undefined;
+  /**
+   * Turn the base config into the concrete runtime config for this actor
+   * (cloudflare sandbox scoping, gondolin mounts/instance, image → container).
+   * Absent: the base config is used as-is.
+   */
+  resolveRuntimeConfig?(config: TConfig, ctx: SandboxResolutionContext): SandboxConfig;
+  /**
+   * Build the "ensure ready" callback run before the first exec, or undefined
+   * when the backend needs no provisioning (image → provision container).
+   */
+  createEnsureReady?(config: TConfig, ctx: SandboxReadyContext): (() => Promise<void>) | undefined;
+  /** Provide the backend's resource controller (image → provisioner, gondolin → gondolin resources). */
+  createResourceController?(ctx: SandboxControllerContext): SandboxResourceController | undefined;
+  /** One-time boot preparation (gondolin runtime configuration). */
+  prepareBoot?(ctx: SandboxBootContext): void | Promise<void>;
+  /** Boot-time idle management (gondolin runtime reconciliation + idle stop). */
+  startIdleManagement?(ctx: SandboxBootContext): void | Promise<void>;
+  /** Process-shutdown hook (gondolin runtime stop). */
+  shutdown?(): void | Promise<void>;
+  /** Startup log description of the configured sandbox. */
+  describe?(config: TConfig): string;
 }

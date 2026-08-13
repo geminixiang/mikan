@@ -1,6 +1,8 @@
 import type { ImageSandboxConfig, SandboxAdapter } from "./types.js";
 import { SandboxError } from "./errors.js";
 import { execSimple } from "./utils.js";
+import { DockerContainerManager } from "../provisioner.js";
+import { reportUserFacingError } from "../observability/sentry.js";
 
 function parseImageSandboxArg(value: string): ImageSandboxConfig | undefined {
   if (!value.startsWith("image:")) {
@@ -27,6 +29,52 @@ export const imageSandboxAdapter: SandboxAdapter<ImageSandboxConfig> = {
   type: "image",
   credentials: { env: true, fileMounts: true },
   workspace: { managedProjection: true },
+  vault: { routingLabel: "conversation", ambientSharedVault: true },
   parse: parseImageSandboxArg,
   validate: validateImageSandbox,
+  provisionerImage: (config) => config.image,
+  resolveRuntimeConfig: (config, { resourceKey }) => ({
+    type: "container",
+    container: DockerContainerManager.containerName(resourceKey),
+  }),
+  createEnsureReady: (
+    config,
+    { provisioner, resourceKey, credentialKey, mounts, conversationId, hasVault },
+  ) => {
+    if (!provisioner) return undefined;
+    const expected = DockerContainerManager.containerName(resourceKey);
+    return async () => {
+      let actual: string | undefined;
+      try {
+        actual = await provisioner.provision(resourceKey, {
+          containerName: expected,
+          mounts,
+          conversationId,
+        });
+      } catch (err) {
+        reportUserFacingError(err, {
+          domain: "sandbox",
+          surface: "sandbox_provision",
+          operation: "ensure_image_container_ready",
+          severity: "error",
+          context: {
+            sandboxType: "image",
+            conversationId,
+            credentialKey,
+            resourceKey,
+            expectedContainer: expected,
+            hasVault,
+          },
+        });
+        throw err;
+      }
+      if (actual && actual !== expected) {
+        throw new Error(
+          `Provisioner returned container "${actual}" for resource key "${resourceKey}", expected "${expected}"`,
+        );
+      }
+    };
+  },
+  createResourceController: ({ provisioner }) => provisioner,
+  describe: (config) => `image:${config.image}`,
 };

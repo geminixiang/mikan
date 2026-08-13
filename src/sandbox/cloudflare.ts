@@ -9,6 +9,7 @@ import type {
 import { execReadFile, execReadFileBase64, execWriteFile } from "./utils.js";
 import { readEnv } from "../env-manifest.js";
 import { SandboxError } from "./errors.js";
+import { scopeCloudflareSandboxId } from "./identity.js";
 
 const DEFAULT_CLOUDFLARE_CWD = "/workspace";
 
@@ -176,10 +177,16 @@ export const cloudflareSandboxAdapter: SandboxAdapter<CloudflareSandboxConfig> =
   type: "cloudflare",
   credentials: { env: true, fileMounts: false },
   workspace: { managedProjection: false },
+  vault: { routingLabel: "conversation", ambientSharedVault: true },
   parse: parseCloudflareSandboxArg,
   validate: validateCloudflareSandbox,
   createExecutor: (config, env, ensureReady) =>
     new CloudflareSandboxExecutor(config.sandboxId, env, ensureReady),
+  resolveRuntimeConfig: (config, { resourceKey }) => ({
+    type: "cloudflare",
+    sandboxId: scopeCloudflareSandboxId(config.sandboxId, resourceKey),
+  }),
+  describe: (config) => `cloudflare:${config.sandboxId}`,
 };
 
 function resolveCloudflareSandboxUrl(): URL {

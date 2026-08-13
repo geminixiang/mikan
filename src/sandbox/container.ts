@@ -150,10 +150,12 @@ export const containerSandboxAdapter: SandboxAdapter<ContainerSandboxConfig> = {
   type: "container",
   credentials: { env: true, fileMounts: false },
   workspace: { managedProjection: false },
+  vault: { routingLabel: "container", ambientSharedVault: false },
   parse: parseContainerSandboxArg,
   validate: validateContainerSandbox,
   createExecutor: (config, env, ensureReady) =>
     new ContainerExecutor(config.container, env, ensureReady),
+  describe: (config) => `container:${config.container}`,
 };
 
 async function ensureContainerRunning(container: string): Promise<void> {

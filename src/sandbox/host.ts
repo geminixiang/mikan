@@ -124,6 +124,8 @@ export const hostSandboxAdapter: SandboxAdapter<HostSandboxConfig> = {
   type: "host",
   credentials: { env: false, fileMounts: false },
   workspace: { managedProjection: false },
+  vault: { routingLabel: "host", ambientSharedVault: false },
   parse: parseHostSandboxArg,
   createExecutor: () => new HostExecutor(),
+  describe: () => "host",
 };

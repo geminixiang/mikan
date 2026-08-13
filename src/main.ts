@@ -52,16 +52,9 @@ import {
 import { existsSync, readFileSync } from "node:fs";
 import { readEnv, setEnvAliases } from "./env-manifest.js";
 import { ensureDirExists, isRecord, readJsonFileIfExists } from "./utils/file-guards.js";
-import { SandboxError, validateSandbox } from "./sandbox/index.js";
+import { getSandboxAdapter, SandboxError, validateSandbox } from "./sandbox/index.js";
 import { helpText, resolveBoot, type BootPlan } from "./cli/boot.js";
 import { envReport, noPlatformsMessage, platformIsActive } from "./env-manifest.js";
-import {
-  configureGondolinRuntime,
-  gondolinResources,
-  reconcileGondolinRuntimes,
-  stopAllGondolinRuntimes,
-  stopIdleGondolinVms,
-} from "./sandbox/gondolin.js";
 import { FileVaultManager } from "./vault/index.js";
 import { runExtCommand } from "./cli/ext.js";
 import { runOfficeCommand } from "./cli/office.js";
@@ -331,14 +324,12 @@ try {
 const workspace = createWorkspace({ root: workingDir, stateDir });
 
 const vaultManager = new FileVaultManager(stateDir);
+const sandboxAdapter = getSandboxAdapter(sandbox.type);
 if (vaultManager.isEnabled()) {
   console.log(
-    sandbox.type === "container"
+    sandboxAdapter.vault.routingLabel === "container"
       ? "  Vault system enabled. Container vault active."
-      : sandbox.type === "image" ||
-          sandbox.type === "gondolin" ||
-          sandbox.type === "firecracker" ||
-          sandbox.type === "cloudflare"
+      : sandboxAdapter.vault.routingLabel === "conversation"
         ? "  Vault system enabled. Conversation-scoped credential routing active."
         : "  Vault system enabled. Host mode will not inject vault env.",
   );
@@ -361,13 +352,13 @@ const sandboxBoostLimits =
     ? { cpus: sandboxSettings?.boost?.cpus, memory: sandboxSettings?.boost?.memory }
     : undefined;
 
-const provisioner =
-  sandbox.type === "image"
-    ? new DockerContainerManager(sandbox.image, {
-        limits: sandboxLimits,
-        boostLimits: sandboxBoostLimits,
-      })
-    : undefined;
+const provisionerImage = sandboxAdapter.provisionerImage?.(sandbox);
+const provisioner = provisionerImage
+  ? new DockerContainerManager(provisionerImage, {
+      limits: sandboxLimits,
+      boostLimits: sandboxBoostLimits,
+    })
+  : undefined;
 // Containers provisioned before the office migration mount the renamed
 // legacy paths. Their writable layers (everything installed inside) are
 // preserved: each container is committed and recreated with translated
@@ -392,24 +383,14 @@ if (provisioner && registryOffices.length > 0) {
     );
   }
 }
-if (sandbox.type === "gondolin") {
-  try {
-    configureGondolinRuntime({
-      limits: sandboxLimits,
-      boostLimits: sandboxBoostLimits,
-    });
-  } catch (error) {
-    handleStartupError(error);
-  }
+try {
+  await sandboxAdapter.prepareBoot?.({ limits: sandboxLimits, boostLimits: sandboxBoostLimits });
+} catch (error) {
+  handleStartupError(error);
 }
-const resourceController =
-  sandbox.type === "image"
-    ? provisioner
-    : sandbox.type === "gondolin"
-      ? gondolinResources
-      : undefined;
+const resourceController = sandboxAdapter.createResourceController?.({ provisioner });
 
-if (sandbox.type === "image" || sandbox.type === "gondolin") {
+if (sandboxAdapter.workspace.managedProjection) {
   ensureDirExists(workspace.skillsDir);
   ensureDirExists(workspace.eventsDir);
   ensureDirExists(workspace.agentsDir);
@@ -444,13 +425,11 @@ if (provisioner) {
   ).unref();
 }
 
-if (sandbox.type === "gondolin") {
-  await reconcileGondolinRuntimes();
-  setInterval(
-    () => void stopIdleGondolinVms(MANAGED_SANDBOX_IDLE_TIMEOUT_MS),
-    MANAGED_SANDBOX_IDLE_TIMEOUT_MS,
-  ).unref();
-}
+await sandboxAdapter.startIdleManagement?.({
+  limits: sandboxLimits,
+  boostLimits: sandboxBoostLimits,
+  idleTimeoutMs: MANAGED_SANDBOX_IDLE_TIMEOUT_MS,
+});
 const botsByPlatform: Record<string, MessagingBot> = {};
 
 /**
@@ -661,18 +640,7 @@ const handler = createConversationRuntime({
   platformToolPackFactories: buildPlatformToolPackFactories(),
 });
 
-const sandboxDesc =
-  sandbox.type === "host"
-    ? "host"
-    : sandbox.type === "container"
-      ? `container:${sandbox.container}`
-      : sandbox.type === "image"
-        ? `image:${sandbox.image}`
-        : sandbox.type === "gondolin"
-          ? `gondolin:${sandbox.profile}`
-          : sandbox.type === "firecracker"
-            ? `firecracker:${sandbox.vmId}`
-            : `cloudflare:${sandbox.sandboxId}`;
+const sandboxDesc = sandboxAdapter.describe?.(sandbox) ?? sandbox.type;
 log.logStartup(workingDir, sandboxDesc);
 logHarnessStartupSummary();
 
@@ -841,7 +809,7 @@ async function shutdown(): Promise<void> {
   await handler.shutdown();
   eventsWatcher.stop();
   extensionScheduleEngine.stop();
-  await stopAllGondolinRuntimes();
+  await sandboxAdapter.shutdown?.();
   await Sentry.close(5000);
   process.exit(0);
 }
