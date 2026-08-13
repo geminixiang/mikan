@@ -22,7 +22,13 @@
   },
   "overrides": [
     {
-      "files": ["**/src/test/**", "**/e2e/**", "**/deploy/examples/**"],
+      "files": [
+        "**/src/test/**",
+        "**/e2e/**",
+        "**/deploy/examples/**",
+        "**/packages/*/tests/**",
+        "**/apps/web/tests/**"
+      ],
       "rules": {
         "typescript/no-explicit-any": "off",
         "typescript/consistent-type-imports": "off",

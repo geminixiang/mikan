@@ -113,6 +113,13 @@ const LINK_BASE_URL = resolveLinkBaseUrl();
 const LINK_PORT_RAW = readEnv("LINK_PORT");
 const LINK_PORT = LINK_PORT_RAW ? parseInt(LINK_PORT_RAW, 10) : LINK_BASE_URL ? 8181 : undefined;
 
+// Built web app (apps/web/dist/index.html) served by the link server's
+// fallback seat; MIKAN_WEB_DIST overrides the default location. server.ts
+// checks existence, so an unbuilt dist is a no-op (404 fallback as before).
+const WEB_DIST_INDEX =
+  readEnv("MIKAN_WEB_DIST") ??
+  pathJoin(dirname(fileURLToPath(import.meta.url)), "..", "apps", "web", "dist", "index.html");
+
 const WORLD_WRITABLE_MODE = 0o002;
 
 function ensureSecureStateDir(path: string): void {
@@ -809,6 +816,7 @@ if (LINK_PORT) {
     sessionViewTokenStore,
     sessionViewInteractive: { handler, botsByPlatform },
     adminOptions: { adminTokenStore, workspace, runtime: handler, sandbox, botsByPlatform },
+    webDistIndex: WEB_DIST_INDEX,
     githubWebhook:
       GITHUB_WEBHOOK_SECRET && githubBotForWebhook
         ? {

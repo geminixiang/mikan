@@ -18,11 +18,16 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "tsgo -p tsconfig.build.json"
+    "build": "tsgo -p tsconfig.build.json",
+    "test": "vitest --run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@geminixiang/mikan-web-host": "workspace:^"
   },
   "devDependencies": {
     "@types/node": "^26.0.1",
     "@typescript/native-preview": "^7.0.0-dev.20260624.1",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
   }
 }

@@ -252,6 +252,37 @@ export function createLoginRequestHandler(
   const oauthStates = new Map<string, PendingOAuthState>();
 
   return (req, res, url) => {
+    if (req.method === "GET" && url.pathname === "/api/link/info") {
+      const rawToken = url.searchParams.get("token") ?? "";
+      const linkToken = linkTokenStore.peek(rawToken);
+      if (!linkToken) {
+        res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ valid: false }));
+        return true;
+      }
+      const oauthServiceHint = linkToken.providerId
+        ? resolveOAuthService(linkToken.providerId)
+        : undefined;
+      res.writeHead(200, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "no-store",
+      });
+      res.end(
+        JSON.stringify({
+          valid: true,
+          expiresAt: linkToken.expiresAt,
+          vaultId: linkToken.vaultId,
+          providerIdHint: oauthServiceHint?.id ?? null,
+          oauthServices: getOAuthServices().map((service) => ({
+            id: service.id,
+            label: service.label,
+          })),
+          existingSecrets: describeVaultSecrets(vaultManager, linkToken.vaultId),
+        }),
+      );
+      return true;
+    }
+
     if (req.method === "GET" && url.pathname === "/link") {
       const rawToken = url.searchParams.get("token") ?? "";
       const linkToken = linkTokenStore.peek(rawToken);
