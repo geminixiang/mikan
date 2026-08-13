@@ -43,7 +43,7 @@
   },
   "scripts": {
     "clean": "shx rm -rf dist",
-    "build": "npm run clean && tsgo -p src/tsconfig.build.json && shx chmod +x dist/main.js",
+    "build": "pnpm -r --filter './packages/*' build && npm run clean && tsgo -p src/tsconfig.build.json && shx chmod +x dist/main.js",
     "dev": "tsgo -p src/tsconfig.build.json --watch --preserveWatchOutput",
     "test": "vitest --run --config .config/vitest.config.ts",
     "test:coverage": "vitest --run --coverage --config .config/vitest.config.ts",
@@ -114,6 +114,7 @@
   "engines": {
     "node": ">=22.19.0"
   },
+  "packageManager": "pnpm@10.10.0",
   "knip": {
     "entry": [
       "src/index.ts!",
