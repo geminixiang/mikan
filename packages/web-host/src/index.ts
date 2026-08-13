@@ -1,7 +1,15 @@
-/**
- * @geminixiang/mikan-web-host — Web host seam for mikan. Skeleton package:
- * the route registry lands in a follow-up change.
- */
-
-/** Placeholder identity so the package compiles; replaced by the registry. */
-export const PACKAGE_NAME = "@geminixiang/mikan-web-host";
+export type {
+  WebRoute,
+  WebRouteKind,
+  WebUpgradeRoute,
+  WebFallbackHandler,
+  WebServerListenOptions,
+} from "./webserver.js";
+export { WebServer } from "./webserver.js";
+export { serveStatic, registerStaticFallback, type StaticFallbackOptions } from "./static.js";
+export {
+  injectBootManifest,
+  graphRev,
+  type WebBootEntry,
+  type WebBootGraph,
+} from "./boot-manifest.js";

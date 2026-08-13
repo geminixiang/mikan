@@ -60,9 +60,18 @@ importers:
       '@astrojs/starlight':
         specifier: ^0.41.0
         version: 0.41.7(@astrojs/markdown-remark@7.2.2)(astro@7.2.1(@astrojs/markdown-remark@7.2.2)(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(@types/node@26.2.0)(jiti@2.7.0)(yaml@2.9.0))(typescript@6.0.3)
+      '@geminixiang/mikan-daemon-web-bridge':
+        specifier: workspace:^
+        version: link:packages/daemon-web-bridge
       '@geminixiang/mikan-starlight-theme':
         specifier: github:geminixiang/mikan-starlight-theme
         version: https://codeload.github.com/geminixiang/mikan-starlight-theme/tar.gz/20e5cf10b31ea37869bc94ecd3d4f88296a41d88(@astrojs/starlight@0.41.7(@astrojs/markdown-remark@7.2.2)(astro@7.2.1(@astrojs/markdown-remark@7.2.2)(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(@types/node@26.2.0)(jiti@2.7.0)(yaml@2.9.0))(typescript@6.0.3))
+      '@geminixiang/mikan-web-bundle':
+        specifier: workspace:^
+        version: link:packages/web-bundle
+      '@geminixiang/mikan-web-host':
+        specifier: workspace:^
+        version: link:packages/web-host
       '@slack/types':
         specifier: ^3.0.0
         version: 3.0.0
@@ -119,6 +128,10 @@ importers:
         version: 6.0.3
 
   packages/web-bundle:
+    dependencies:
+      '@geminixiang/mikan-web-host':
+        specifier: workspace:^
+        version: link:../web-host
     devDependencies:
       '@types/node':
         specifier: ^26.0.1
@@ -129,6 +142,9 @@ importers:
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@26.2.0)(@vitest/coverage-v8@4.1.10)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
 
   packages/web-host:
     devDependencies:
