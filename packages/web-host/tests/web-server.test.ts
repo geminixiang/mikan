@@ -106,13 +106,13 @@ describe("WebServer", () => {
   it("applies index taps in registration order", () => {
     const fresh = new WebServer();
     fresh.tapIndex((html) =>
-      html.replace("</head>", "<script>window.__DSH_BOOT__={}</script></head>"),
+      html.replace("</head>", "<script>window.__MIKAN_BOOT__={}</script></head>"),
     );
     fresh.tapIndex((html) => html.replace("<title>", "<title>mikan "));
     const out = fresh.applyIndexTaps(
       "<!DOCTYPE html><html><head><title>x</title></head><body></body></html>",
     );
-    expect(out).toContain("window.__DSH_BOOT__");
+    expect(out).toContain("window.__MIKAN_BOOT__");
     expect(out).toContain("<title>mikan x</title>");
   });
 

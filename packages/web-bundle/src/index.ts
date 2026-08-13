@@ -1,6 +1,6 @@
 /**
  * @geminixiang/mikan-web-bundle — web composition: declares which app entry
- * ships in the bundle and builds the `window.__DSH_BOOT__` graph the host
+ * ships in the bundle and builds the `window.__MIKAN_BOOT__` graph the host
  * injects. Phase 1 is a single app bundle (DSH's per-plugin split can grow
  * here without changing the wire shape).
  */

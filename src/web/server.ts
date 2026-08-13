@@ -46,7 +46,7 @@ interface StartWebServerOptions {
   /**
    * Absolute path of the built web app's index.html (e.g. apps/web/dist).
    * When set and the file exists, the static-dist fallback seat is claimed and
-   * `window.__DSH_BOOT__` is injected into every index response. Omit to keep
+   * `window.__MIKAN_BOOT__` is injected into every index response. Omit to keep
    * the previous 404-on-unmatched behavior.
    */
   webDistIndex?: string;

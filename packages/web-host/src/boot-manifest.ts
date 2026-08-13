@@ -1,6 +1,6 @@
 /**
  * Boot manifest (DSH client/modules pattern, simplified): the host injects a
- * JSON graph as `window.__DSH_BOOT__` into every served index.html, first in
+ * JSON graph as `window.__MIKAN_BOOT__` into every served index.html, first in
  * <head> so the shell bundle reads it. For mikan's single-bundle phase the
  * graph carries the app's own entry + a content rev as a cache anchor; the
  * shape stays compatible with DSH's WebBootGraph so a per-plugin bundle split
@@ -19,7 +19,7 @@ export interface WebBootEntry {
   immediately?: boolean;
 }
 
-/** The composed client entry graph the host injects as `window.__DSH_BOOT__`. */
+/** The composed client entry graph the host injects as `window.__MIKAN_BOOT__`. */
 export interface WebBootGraph {
   /** Consistency anchor over the whole graph. */
   rev: string;
@@ -28,7 +28,7 @@ export interface WebBootGraph {
 }
 
 /**
- * Inject the boot entry graph into index.html: `window.__DSH_BOOT__` as the
+ * Inject the boot entry graph into index.html: `window.__MIKAN_BOOT__` as the
  * first script in <head> (before the shell bundle reads it). `<` is escaped in
  * the JSON so entry-controlled strings cannot break out of the script element.
  * @param html - the index.html source.
@@ -37,7 +37,7 @@ export interface WebBootGraph {
  */
 export function injectBootManifest(html: string, graph: WebBootGraph): string {
   const json = JSON.stringify(graph).replaceAll("<", "\\u003c");
-  const script = `<script>window.__DSH_BOOT__ = ${json}</script>`;
+  const script = `<script>window.__MIKAN_BOOT__ = ${json}</script>`;
   const head = html.indexOf("<head>");
   if (head !== -1) return `${html.slice(0, head + 6)}${script}${html.slice(head + 6)}`;
   // Headless fixture pages may lack <head>; prepending keeps the read-before-shell ordering.

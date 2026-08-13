@@ -2,7 +2,7 @@
   "name": "@geminixiang/mikan-web-bundle",
   "version": "0.1.0",
   "private": true,
-  "description": "mikan web composition: declares which ui-* features ship in the app bundle and builds the __DSH_BOOT__ graph the host injects",
+  "description": "mikan web composition: declares which ui-* features ship in the app bundle and builds the __MIKAN_BOOT__ graph the host injects",
   "license": "MIT",
   "files": [
     "lib"

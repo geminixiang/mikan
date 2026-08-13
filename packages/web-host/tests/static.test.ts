@@ -90,13 +90,13 @@ describe("serveStatic / registerStaticFallback", () => {
 
   it("applies index taps to every index response", async () => {
     webServer.tapIndex((html) =>
-      html.replace("</head>", "<script>window.__DSH_BOOT__={}</script></head>"),
+      html.replace("</head>", "<script>window.__MIKAN_BOOT__={}</script></head>"),
     );
     registerStaticFallback({ webServer, distIndex: join(distRoot, "index.html") });
     const res = await fetch(`${base}/`);
-    expect(await res.text()).toContain("window.__DSH_BOOT__");
+    expect(await res.text()).toContain("window.__MIKAN_BOOT__");
     const miss = await fetch(`${base}/any/path`);
-    expect(await miss.text()).toContain("window.__DSH_BOOT__");
+    expect(await miss.text()).toContain("window.__MIKAN_BOOT__");
   });
 
   it("serveStatic writes 403 for traversal without touching the fs", async () => {
@@ -136,7 +136,7 @@ describe("boot manifest", () => {
   it("injects the graph as the first script in <head>", () => {
     const html = "<!DOCTYPE html><html><head><title>x</title></head><body></body></html>";
     const out = injectBootManifest(html, graph);
-    expect(out.indexOf("window.__DSH_BOOT__")).toBeLessThan(out.indexOf("<title>"));
+    expect(out.indexOf("window.__MIKAN_BOOT__")).toBeLessThan(out.indexOf("<title>"));
     expect(out).toContain('"id":"app"');
   });
 
@@ -153,7 +153,7 @@ describe("boot manifest", () => {
 
   it("prepends when there is no <head>", () => {
     const out = injectBootManifest("<body></body>", graph);
-    expect(out.startsWith("<script>window.__DSH_BOOT__")).toBe(true);
+    expect(out.startsWith("<script>window.__MIKAN_BOOT__")).toBe(true);
   });
 
   it("graphRev is stable and content-sensitive", () => {
