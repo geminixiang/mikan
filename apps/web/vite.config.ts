@@ -30,6 +30,17 @@ export default defineConfig({
       },
     ],
   },
+  server: {
+    proxy: {
+      // Dev: forward API/portal/stream routes to the daemon (8181).
+      // The daemon must be running separately with MIKAN_LINK_URL.
+      "/api": { target: "http://127.0.0.1:8181", changeOrigin: true },
+      "/session": { target: "http://127.0.0.1:8181", changeOrigin: true },
+      "/admin": { target: "http://127.0.0.1:8181", changeOrigin: true },
+      "/link": { target: "http://127.0.0.1:8181", changeOrigin: true },
+      "/oauth": { target: "http://127.0.0.1:8181", changeOrigin: true },
+    },
+  },
   build: {
     sourcemap: true,
   },
