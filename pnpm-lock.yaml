@@ -63,6 +63,24 @@ importers:
       '@geminixiang/mikan-daemon-web-bridge':
         specifier: workspace:^
         version: link:packages/daemon-web-bridge
+      '@geminixiang/mikan-sandbox-cloudflare':
+        specifier: workspace:^
+        version: link:packages/sandbox-cloudflare
+      '@geminixiang/mikan-sandbox-container':
+        specifier: workspace:^
+        version: link:packages/sandbox-container
+      '@geminixiang/mikan-sandbox-contract':
+        specifier: workspace:^
+        version: link:packages/sandbox-contract
+      '@geminixiang/mikan-sandbox-firecracker':
+        specifier: workspace:^
+        version: link:packages/sandbox-firecracker
+      '@geminixiang/mikan-sandbox-host':
+        specifier: workspace:^
+        version: link:packages/sandbox-host
+      '@geminixiang/mikan-sandbox-image':
+        specifier: workspace:^
+        version: link:packages/sandbox-image
       '@geminixiang/mikan-starlight-theme':
         specifier: github:geminixiang/mikan-starlight-theme
         version: https://codeload.github.com/geminixiang/mikan-starlight-theme/tar.gz/20e5cf10b31ea37869bc94ecd3d4f88296a41d88(@astrojs/starlight@0.41.7(@astrojs/markdown-remark@7.2.2)(astro@7.2.1(@astrojs/markdown-remark@7.2.2)(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(@types/node@26.2.0)(jiti@2.7.0)(yaml@2.9.0))(typescript@6.0.3))
@@ -126,6 +144,119 @@ importers:
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
+
+  packages/sandbox-cloudflare:
+    dependencies:
+      '@geminixiang/mikan-sandbox-contract':
+        specifier: workspace:^
+        version: link:../sandbox-contract
+    devDependencies:
+      '@types/node':
+        specifier: ^26.0.1
+        version: 26.2.0
+      '@typescript/native-preview':
+        specifier: ^7.0.0-dev.20260624.1
+        version: 7.0.0-dev.20260707.2
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@26.2.0)(@vitest/coverage-v8@4.1.10)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
+
+  packages/sandbox-container:
+    dependencies:
+      '@geminixiang/mikan-sandbox-contract':
+        specifier: workspace:^
+        version: link:../sandbox-contract
+      '@geminixiang/mikan-sandbox-host':
+        specifier: workspace:^
+        version: link:../sandbox-host
+    devDependencies:
+      '@types/node':
+        specifier: ^26.0.1
+        version: 26.2.0
+      '@typescript/native-preview':
+        specifier: ^7.0.0-dev.20260624.1
+        version: 7.0.0-dev.20260707.2
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@26.2.0)(@vitest/coverage-v8@4.1.10)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
+
+  packages/sandbox-contract:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.0.1
+        version: 26.2.0
+      '@typescript/native-preview':
+        specifier: ^7.0.0-dev.20260624.1
+        version: 7.0.0-dev.20260707.2
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
+  packages/sandbox-firecracker:
+    dependencies:
+      '@geminixiang/mikan-sandbox-contract':
+        specifier: workspace:^
+        version: link:../sandbox-contract
+      '@geminixiang/mikan-sandbox-host':
+        specifier: workspace:^
+        version: link:../sandbox-host
+    devDependencies:
+      '@types/node':
+        specifier: ^26.0.1
+        version: 26.2.0
+      '@typescript/native-preview':
+        specifier: ^7.0.0-dev.20260624.1
+        version: 7.0.0-dev.20260707.2
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@26.2.0)(@vitest/coverage-v8@4.1.10)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
+
+  packages/sandbox-host:
+    dependencies:
+      '@geminixiang/mikan-sandbox-contract':
+        specifier: workspace:^
+        version: link:../sandbox-contract
+    devDependencies:
+      '@types/node':
+        specifier: ^26.0.1
+        version: 26.2.0
+      '@typescript/native-preview':
+        specifier: ^7.0.0-dev.20260624.1
+        version: 7.0.0-dev.20260707.2
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@26.2.0)(@vitest/coverage-v8@4.1.10)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
+
+  packages/sandbox-image:
+    dependencies:
+      '@geminixiang/mikan-sandbox-contract':
+        specifier: workspace:^
+        version: link:../sandbox-contract
+    devDependencies:
+      '@types/node':
+        specifier: ^26.0.1
+        version: 26.2.0
+      '@typescript/native-preview':
+        specifier: ^7.0.0-dev.20260624.1
+        version: 7.0.0-dev.20260707.2
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@26.2.0)(@vitest/coverage-v8@4.1.10)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
 
   packages/web-bundle:
     dependencies:

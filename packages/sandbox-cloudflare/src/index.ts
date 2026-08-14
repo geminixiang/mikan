@@ -1,14 +1,30 @@
+/**
+ * @geminixiang/mikan-sandbox-cloudflare — the mikan Cloudflare sandbox bridge
+ * backend as a plugin: CloudflareSandboxExecutor talks HTTP to the bridge, and
+ * cloudflareSandboxAdapter implements the sandbox contract.
+ */
+
 import type {
-  CloudflareSandboxConfig,
   ExecOptions,
   ExecResult,
   Executor,
   RuntimePathContext,
   SandboxAdapter,
-} from "./types.js";
-import { execReadFile, execReadFileBase64, execWriteFile } from "./utils.js";
-import { readEnv } from "../env-manifest.js";
-import { SandboxError } from "./errors.js";
+} from "@geminixiang/mikan-sandbox-contract";
+import {
+  SandboxError,
+  execReadFile,
+  execReadFileBase64,
+  execWriteFile,
+  readEnv,
+  scopeCloudflareSandboxId,
+} from "@geminixiang/mikan-sandbox-contract";
+
+/** The cloudflare backend's own config. */
+export interface CloudflareSandboxConfig {
+  type: "cloudflare";
+  sandboxId: string;
+}
 
 const DEFAULT_CLOUDFLARE_CWD = "/workspace";
 
@@ -176,10 +192,16 @@ export const cloudflareSandboxAdapter: SandboxAdapter<CloudflareSandboxConfig> =
   type: "cloudflare",
   credentials: { env: true, fileMounts: false },
   workspace: { managedProjection: false },
+  vault: { routingLabel: "conversation", ambientSharedVault: true },
   parse: parseCloudflareSandboxArg,
   validate: validateCloudflareSandbox,
   createExecutor: (config, env, ensureReady) =>
     new CloudflareSandboxExecutor(config.sandboxId, env, ensureReady),
+  resolveRuntimeConfig: (config, { resourceKey }) => ({
+    type: "cloudflare",
+    sandboxId: scopeCloudflareSandboxId(config.sandboxId, resourceKey),
+  }),
+  describe: (config) => `cloudflare:${config.sandboxId}`,
 };
 
 function resolveCloudflareSandboxUrl(): URL {

@@ -12,15 +12,15 @@ import {
 import { dirname, join } from "node:path";
 import * as log from "../log.js";
 import type { ResourceLimits, SandboxLimitStatus, SandboxResourceController } from "../types.js";
-import { withRuntimeBootstrap } from "./container.js";
-import { SandboxError } from "./errors.js";
+import { withRuntimeBootstrap } from "@geminixiang/mikan-sandbox-container";
 import {
+  SandboxError,
   createMountedRuntimePathContext,
   execReadFile,
   execReadFileBase64,
   execWriteFile,
   shellEscape,
-} from "./utils.js";
+} from "@geminixiang/mikan-sandbox-contract";
 import type * as GondolinNamespace from "@earendil-works/gondolin";
 import type {
   ExecOptions,
@@ -34,7 +34,7 @@ import type {
   SessionClientCallbacks,
 } from "./types.js";
 
-export type { GondolinBootstrapOptions, SessionClient, SessionClientCallbacks } from "./types.js";
+export type { SessionClient, SessionClientCallbacks } from "./types.js";
 
 /**
  * Single-host Gondolin sandbox: one microVM per conversation, created and
@@ -857,7 +857,7 @@ export async function stopIdleGondolinVms(maxIdleMs: number, now = Date.now()): 
  * Drop Gondolin's registry entries for sessions that no longer answer — socket
  * files and metadata left behind by a mikan that died without cleanup.
  */
-export async function reconcileGondolinRuntimes(): Promise<void> {
+async function reconcileGondolinRuntimes(): Promise<void> {
   try {
     const { gcSessions } = (await import("@earendil-works/gondolin")) as GondolinModule;
     const collected = await gcSessions();
@@ -951,7 +951,30 @@ export const gondolinSandboxAdapter: SandboxAdapter<GondolinSandboxConfig> = {
   type: "gondolin",
   credentials: { env: true, fileMounts: true },
   workspace: { managedProjection: true },
+  vault: { routingLabel: "conversation", ambientSharedVault: false },
   parse: parseGondolinSandboxArg,
   validate: validateGondolinSandbox,
   createExecutor: (config, env) => new GondolinExecutor(config, env),
+  resolveRuntimeConfig: (config, { workspaceRoot, mounts, resourceKey }) => ({
+    ...config,
+    workspacePath: workspaceRoot,
+    mounts,
+    instanceId: resourceKey,
+    resourceKey,
+  }),
+  createResourceController: () => gondolinResources,
+  prepareBoot: ({ limits, boostLimits }) =>
+    configureGondolinRuntime({
+      limits,
+      boostLimits,
+    }),
+  startIdleManagement: async ({ idleTimeoutMs }) => {
+    await reconcileGondolinRuntimes();
+    const idleMs = idleTimeoutMs ?? DEFAULT_GONDOLIN_IDLE_TIMEOUT_MS;
+    setInterval(() => void stopIdleGondolinVms(idleMs), idleMs).unref();
+  },
+  shutdown: () => stopAllGondolinRuntimes(),
+  describe: (config) => `gondolin:${config.profile}`,
 };
+
+const DEFAULT_GONDOLIN_IDLE_TIMEOUT_MS = 10 * 60 * 1000;

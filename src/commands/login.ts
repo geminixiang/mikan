@@ -1,5 +1,6 @@
 import * as log from "../log.js";
 import { credentialAuthorizationKey } from "../sandbox/identity.js";
+import { getSandboxAdapter } from "../sandbox/index.js";
 import { sharedVaultKey } from "../vault/index.js";
 import { slashForms } from "./manifest.js";
 import { matchCommand } from "./manifest.js";
@@ -169,7 +170,7 @@ export class LoginCommandHandler implements CommandHandler {
     );
     const vaultLabel = isSharedSetup
       ? `shared login profile (${parsed.name})`
-      : context.services.sandbox.type === "container"
+      : getSandboxAdapter(context.services.sandbox.type).vault.routingLabel === "container"
         ? `container vault (${vaultId})`
         : "your vault";
     await replyVault(context, [

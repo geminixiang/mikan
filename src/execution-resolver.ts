@@ -2,9 +2,10 @@ import { posix } from "node:path";
 import type { Office, Workspace } from "./office/index.js";
 import { conversationPackageSkillMounts } from "./packages/index.js";
 import { loadGlobalSettings } from "./config.js";
-import { DockerContainerManager, type ContainerMount } from "./provisioner.js";
+import type { DockerContainerManager, ContainerMount } from "./provisioner.js";
 import {
   createExecutor,
+  getSandboxAdapter,
   getSandboxCredentialCapabilities,
   getSandboxWorkspaceCapabilities,
   type Executor,
@@ -17,7 +18,6 @@ import {
   credentialAuthorizationKey,
   legacyExactCredentialAuthorizationKey,
   runtimeResourceKey,
-  scopeCloudflareSandboxId,
 } from "./sandbox/identity.js";
 import { resolveWorkspaceProjection } from "./workspace-projection/index.js";
 
@@ -84,7 +84,14 @@ export class ActorExecutionResolver {
     legacyCredentialKey: string | undefined,
     trustModel: ActorContext["trustModel"],
   ): void {
-    if (!allowsAmbientDefaultSharedVault({ trustModel, sandboxType: this.baseConfig.type })) return;
+    if (
+      !allowsAmbientDefaultSharedVault({
+        trustModel,
+        ambientSharedVault: getSandboxAdapter(this.baseConfig.type).vault.ambientSharedVault,
+      })
+    ) {
+      return;
+    }
     if (
       this.vaultManager.hasEntry(credentialKey) ||
       (legacyCredentialKey && this.vaultManager.hasEntry(legacyCredentialKey))
@@ -103,45 +110,37 @@ export class ActorExecutionResolver {
   }
 
   private resolveSandboxConfig(resourceKey: string, mounts: ContainerMount[]): SandboxConfig {
-    if (this.baseConfig.type === "cloudflare") {
-      return {
-        type: "cloudflare",
-        sandboxId: scopeCloudflareSandboxId(this.baseConfig.sandboxId, resourceKey),
-      };
-    }
-    if (this.baseConfig.type === "gondolin") {
-      return {
-        ...this.baseConfig,
-        workspacePath: this.workspace.root,
-        mounts,
-        instanceId: resourceKey,
-        resourceKey,
-      };
-    }
-    if (this.baseConfig.type !== "image") return this.baseConfig;
-    return {
-      type: "container",
-      container: DockerContainerManager.containerName(resourceKey),
-    };
+    const adapter = getSandboxAdapter(this.baseConfig.type);
+    const resolved = adapter.resolveRuntimeConfig?.(this.baseConfig, {
+      resourceKey,
+      workspaceRoot: this.workspace.root,
+      mounts,
+    });
+    // The contract lets a backend resolve into another backend's config
+    // (image → container); built-in results are always union members.
+    return (resolved ?? this.baseConfig) as SandboxConfig;
   }
 
   private buildEnsureReadyCallback(
     plan: ExecutionPlan,
     conversationId: string,
   ): (() => Promise<void>) | undefined {
-    if (this.baseConfig.type !== "image" || plan.sandboxConfig.type !== "container") {
-      return undefined;
-    }
-
+    const adapter = getSandboxAdapter(this.baseConfig.type);
+    const ensureReady = adapter.createEnsureReady?.(this.baseConfig, {
+      provisioner: this.provisioner,
+      resourceKey: plan.resourceKey,
+      credentialKey: plan.credentialKey,
+      mounts: plan.mounts,
+      conversationId,
+      hasVault: Boolean(plan.env || plan.mounts.length > 0),
+    });
+    if (!ensureReady) return undefined;
+    // The provisioning hook lives in the plugin; the observability report is
+    // core's — plugins never see mikan's sentry conventions.
+    const sandboxType = this.baseConfig.type;
     return async () => {
-      const expected = plan.sandboxConfig.type === "container" ? plan.sandboxConfig.container : "";
-      let actual: string | undefined;
       try {
-        actual = await this.provisioner?.provision(plan.resourceKey, {
-          containerName: expected,
-          mounts: plan.mounts,
-          conversationId,
-        });
+        await ensureReady();
       } catch (err) {
         reportUserFacingError(err, {
           domain: "sandbox",
@@ -149,20 +148,16 @@ export class ActorExecutionResolver {
           operation: "ensure_image_container_ready",
           severity: "error",
           context: {
-            sandboxType: "image",
+            sandboxType,
             conversationId,
             credentialKey: plan.credentialKey,
             resourceKey: plan.resourceKey,
-            expectedContainer: expected,
+            expectedContainer:
+              plan.sandboxConfig.type === "container" ? plan.sandboxConfig.container : "",
             hasVault: Boolean(plan.env || plan.mounts.length > 0),
           },
         });
         throw err;
-      }
-      if (actual && actual !== expected) {
-        throw new Error(
-          `Provisioner returned container "${actual}" for resource key "${plan.resourceKey}", expected "${expected}"`,
-        );
       }
     };
   }

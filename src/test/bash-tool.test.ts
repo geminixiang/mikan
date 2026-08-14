@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { HostExecutor } from "../sandbox/host.js";
+import { HostExecutor } from "@geminixiang/mikan-sandbox-host";
 import type { Executor } from "../sandbox/index.js";
 import { createBashTool } from "../tools/bash.js";
 import { DEFAULT_MAX_LINES } from "@earendil-works/pi-agent-core";

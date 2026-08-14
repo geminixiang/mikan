@@ -25,6 +25,12 @@ const embedDir = join(distDir, ".internal");
 /** Workspace package name -> its package dir (lib/ compiled by tsgo). */
 const PACKAGES = new Map([
   ["@geminixiang/mikan-daemon-web-bridge", "daemon-web-bridge"],
+  ["@geminixiang/mikan-sandbox-cloudflare", "sandbox-cloudflare"],
+  ["@geminixiang/mikan-sandbox-container", "sandbox-container"],
+  ["@geminixiang/mikan-sandbox-contract", "sandbox-contract"],
+  ["@geminixiang/mikan-sandbox-firecracker", "sandbox-firecracker"],
+  ["@geminixiang/mikan-sandbox-host", "sandbox-host"],
+  ["@geminixiang/mikan-sandbox-image", "sandbox-image"],
   ["@geminixiang/mikan-web-host", "web-host"],
   ["@geminixiang/mikan-web-bundle", "web-bundle"],
 ]);
@@ -48,7 +54,9 @@ function rewriteSpecifiers(file) {
   for (const [spec, packageDir] of PACKAGES) {
     const target = join(embedDir, packageDir, "index.js");
     let rel = relative(dirname(file), target);
-    if (!rel.startsWith(".")) rel = `./${rel}`;
+    // A leading "." without "/" (e.g. ".internal/...") is not a valid ESM
+    // relative specifier — normalize to "./".
+    if (!rel.startsWith("./") && !rel.startsWith("../")) rel = `./${rel}`;
     const patched = text.replaceAll(`"${spec}"`, `"${rel}"`);
     if (patched !== text) {
       text = patched;

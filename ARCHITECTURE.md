@@ -84,14 +84,14 @@ The Open network is not an authority boundary. A Sandbox runtime may reach the n
 
 The complete machine-readable inventory is in `architecture.toml`. The main groups are:
 
-| Group                   | Modules                                               | Detailed documentation                                                                                                                                                         |
-| ----------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Platform edge           | Platform adapters, Conversation intake                | [`src/adapters/README.md`](src/adapters/README.md)                                                                                                                             |
-| Orchestration           | Composition root, Conversation runtime, Agent runner  | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`, `src/agent.ts`                                                                                                |
-| Agent core              | Harness, Extensions                                   | [`src/harness/README.md`](src/harness/README.md)                                                                                                                               |
-| Identity and data       | Office, Sessions, Configuration, Workspace projection | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/workspace-projection/README.md`](src/workspace-projection/README.md) |
-| Execution and authority | Execution resolver, Sandbox, Vault, Packages          | [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md), [`src/packages/README.md`](src/packages/README.md)                             |
-| Control surfaces        | Commands, Web and scheduled-event services            | [`src/commands/README.md`](src/commands/README.md), [`src/web/README.md`](src/web/README.md)                                                                                   |
+| Group                   | Modules                                                                   | Detailed documentation                                                                                                                                                         |
+| ----------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Platform edge           | Platform adapters, Conversation intake                                    | [`src/adapters/README.md`](src/adapters/README.md)                                                                                                                             |
+| Orchestration           | Composition root, Conversation runtime, Agent runner                      | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`, `src/agent.ts`                                                                                                |
+| Agent core              | Harness, Extensions                                                       | [`src/harness/README.md`](src/harness/README.md)                                                                                                                               |
+| Identity and data       | Office, Sessions, Configuration, Workspace projection                     | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/workspace-projection/README.md`](src/workspace-projection/README.md) |
+| Execution and authority | Execution resolver, Sandbox registry and backend plugins, Vault, Packages | [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md), [`src/packages/README.md`](src/packages/README.md)                             |
+| Control surfaces        | Commands, Web and scheduled-event services                                | [`src/commands/README.md`](src/commands/README.md), [`src/web/README.md`](src/web/README.md)                                                                                   |
 
 ## Main flows
 
@@ -147,6 +147,8 @@ Execution authority is resolved for every agent environment rather than inferred
 4. Vault resolution returns only the credential environment and files authorized for that actor and execution mode.
 5. Sandbox capability checks reject policies the selected backend cannot enforce.
 6. The concrete executor receives the final non-overlapping mount and credential set.
+
+The sandbox seam is split between the daemon registry and backend packages. `packages/sandbox-contract/` is the single contract authority; each backend declares parsing, capabilities, resolution, provisioning, boot lifecycle, and executor construction through its adapter. The composition root statically registers the built-ins today. Registry identity is open over `{ type: string }`, while the exported `SandboxConfig` union remains the compatibility inventory of built-in configurations. Core resolution must dispatch through the registered adapter rather than switch on a backend name.
 
 Prompt authorization and filesystem authorization originate from the same projection result. This prevents host-side memory or skills from bypassing an isolated filesystem view.
 

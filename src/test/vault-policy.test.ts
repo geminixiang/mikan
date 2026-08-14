@@ -2,36 +2,28 @@ import { describe, expect, test } from "vitest";
 import { allowsAmbientDefaultSharedVault } from "../vault/index.js";
 
 describe("allowsAmbientDefaultSharedVault", () => {
-  test("membership + image allows ambient copy", () => {
+  test("membership + ambient-capable sandbox allows ambient copy", () => {
     expect(
-      allowsAmbientDefaultSharedVault({ trustModel: "membership", sandboxType: "image" }),
+      allowsAmbientDefaultSharedVault({ trustModel: "membership", ambientSharedVault: true }),
     ).toBe(true);
   });
 
-  test("membership + cloudflare allows ambient copy", () => {
+  test("membership + non-ambient sandbox never allows ambient copy", () => {
     expect(
-      allowsAmbientDefaultSharedVault({ trustModel: "membership", sandboxType: "cloudflare" }),
-    ).toBe(true);
+      allowsAmbientDefaultSharedVault({ trustModel: "membership", ambientSharedVault: false }),
+    ).toBe(false);
   });
 
   test("defaults omitted trustModel to membership", () => {
-    expect(allowsAmbientDefaultSharedVault({ sandboxType: "image" })).toBe(true);
+    expect(allowsAmbientDefaultSharedVault({ ambientSharedVault: true })).toBe(true);
   });
 
   test("open-trigger never allows ambient copy", () => {
     expect(
-      allowsAmbientDefaultSharedVault({ trustModel: "open-trigger", sandboxType: "image" }),
+      allowsAmbientDefaultSharedVault({ trustModel: "open-trigger", ambientSharedVault: true }),
     ).toBe(false);
     expect(
-      allowsAmbientDefaultSharedVault({ trustModel: "open-trigger", sandboxType: "cloudflare" }),
+      allowsAmbientDefaultSharedVault({ trustModel: "open-trigger", ambientSharedVault: false }),
     ).toBe(false);
-  });
-
-  test("host / container / firecracker never use ambient copy path", () => {
-    for (const sandboxType of ["host", "container", "firecracker"] as const) {
-      expect(allowsAmbientDefaultSharedVault({ trustModel: "membership", sandboxType })).toBe(
-        false,
-      );
-    }
   });
 });

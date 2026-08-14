@@ -10,14 +10,9 @@
  * (HTTPS_PROXY/HTTP_PROXY/NO_PROXY).
  */
 import type { EnvGroup } from "./types.js";
+import { readEnv } from "@geminixiang/mikan-sandbox-contract";
 
-export function readEnv(name: string): string | undefined {
-  const raw = process.env[name]?.trim();
-  if (raw) return raw;
-
-  const prefixed = process.env[`MIKAN_${name}`]?.trim();
-  return prefixed || undefined;
-}
+export { readEnv } from "@geminixiang/mikan-sandbox-contract";
 
 export function setEnvAliases(name: string, value: string): void {
   process.env[name] = value;
