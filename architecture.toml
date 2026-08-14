@@ -89,7 +89,16 @@ id = "sandbox"
 name = "Sandbox execution"
 kind = "infrastructure"
 docs = "src/sandbox/README.md"
-sources = ["src/sandbox/", "src/provisioner.ts"]
+sources = [
+  "src/sandbox/",
+  "src/provisioner.ts",
+  "packages/sandbox-contract/",
+  "packages/sandbox-host/",
+  "packages/sandbox-container/",
+  "packages/sandbox-image/",
+  "packages/sandbox-firecracker/",
+  "packages/sandbox-cloudflare/",
+]
 
 [[modules]]
 id = "sessions"

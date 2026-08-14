@@ -1,6 +1,7 @@
 import type {
   ResourceLimits,
   SandboxAdapter as ContractSandboxAdapter,
+  SandboxConfigBase,
 } from "@geminixiang/mikan-sandbox-contract";
 import type { HostSandboxConfig } from "@geminixiang/mikan-sandbox-host";
 import type { ContainerSandboxConfig } from "@geminixiang/mikan-sandbox-container";
@@ -74,5 +75,5 @@ import type { Executor as ContractExecutor } from "@geminixiang/mikan-sandbox-co
 /** Executor whose `getSandboxConfig` returns the daemon's built-in union by default. */
 export type Executor<TConfig extends { type: string } = SandboxConfig> = ContractExecutor<TConfig>;
 
-export type SandboxAdapter<TConfig extends { type: string } = SandboxConfig> =
+export type SandboxAdapter<TConfig extends SandboxConfigBase = SandboxConfigBase> =
   ContractSandboxAdapter<TConfig>;

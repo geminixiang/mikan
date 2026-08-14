@@ -14,6 +14,7 @@ import {
 export { configureGondolinRuntime } from "./gondolin.js";
 export type { GondolinBootstrapOptions } from "./types.js";
 import type { Executor, RuntimePathContext, SandboxAdapter, SandboxConfig } from "./types.js";
+import type { SandboxConfigBase } from "@geminixiang/mikan-sandbox-contract";
 
 export type {
   ExecOptions,
@@ -60,7 +61,9 @@ export function getSandboxAdapters(): readonly SandboxAdapter[] {
  * Register an additional sandbox backend (plugin). Duplicate type names
  * throw — the type is the composition-level identity.
  */
-export function registerSandboxAdapter(adapter: SandboxAdapter): void {
+export function registerSandboxAdapter<TConfig extends SandboxConfigBase>(
+  adapter: SandboxAdapter<TConfig>,
+): void {
   if (sandboxAdapterByType.has(adapter.type)) {
     throw new SandboxError(`Sandbox adapter '${adapter.type}' is already registered`);
   }
@@ -104,7 +107,9 @@ export function parseSandboxArg(value: string): SandboxConfig {
   for (const adapter of sandboxAdapterByType.values()) {
     const config = adapter.parse(value);
     if (config) {
-      return config;
+      // Public CLI compatibility keeps the built-in union; registered plugin
+      // configs are opaque at runtime and validated by their own adapter.
+      return config as SandboxConfig;
     }
   }
 
@@ -135,7 +140,7 @@ export function createExecutor(
   if (!adapter.createExecutor) {
     throw new SandboxError("Error: image sandbox must resolve to a concrete container executor");
   }
-  return adapter.createExecutor(config, env, ensureReady);
+  return adapter.createExecutor(config, env, ensureReady) as Executor;
 }
 
 /**
