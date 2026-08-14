@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # mikan is a thin core on pi-agent-core with a plugin periphery
