@@ -1,0 +1,16 @@
+{
+  "name": "@geminixiang/mikan-ui-vault",
+  "version": "0.1.0",
+  "private": true,
+  "description": "mikan vault/login SPA feature: link completion, API-key storage, and OAuth login",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }
+}

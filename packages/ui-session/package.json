@@ -1,0 +1,21 @@
+{
+  "name": "@geminixiang/mikan-ui-session",
+  "version": "0.1.0",
+  "private": true,
+  "description": "mikan session-view SPA feature: session timeline, SSE live stream, and composer",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@geminixiang/mikan-daemon-web-bridge": "workspace:^",
+    "@geminixiang/mikan-web-client": "workspace:^",
+    "marked": "^15.0.0"
+  },
+  "peerDependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }
+}

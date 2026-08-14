@@ -45,6 +45,8 @@
     "clean": "shx rm -rf dist",
     "build": "pnpm -r --filter './packages/*' build && npm run clean && tsgo -p src/tsconfig.build.json && node scripts/embed-web-deps.mjs && shx chmod +x dist/main.js",
     "dev": "tsgo -p src/tsconfig.build.json --watch --preserveWatchOutput",
+    "build:web": "pnpm -r build",
+    "dev:web": "pnpm --filter @geminixiang/mikan-web-frontend dev",
     "test": "vitest --run --config .config/vitest.config.ts && pnpm -r --if-present --filter './packages/sandbox-*' test",
     "test:coverage": "vitest --run --coverage --config .config/vitest.config.ts",
     "test:coverage:check": "vitest --run --coverage --config .config/vitest.config.ts",

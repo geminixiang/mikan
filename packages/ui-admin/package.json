@@ -1,0 +1,16 @@
+{
+  "name": "@geminixiang/mikan-ui-admin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "mikan admin SPA feature: conversations, models, settings, workspace tree, skills, packages, events, usage",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }
+}
