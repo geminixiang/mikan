@@ -1,0 +1,323 @@
+/* Shared shell styles for the mikan web SPA (adapted from portal-shell.ts). */
+
+:root {
+  --bg: #f0ece3;
+  --surface: #ffffff;
+  --border: rgba(0, 0, 0, 0.08);
+  --text: #18181b;
+  --muted: #71717a;
+  --subtle: #a1a1aa;
+  --accent: #d97706;
+
+  --ok-bg: #f0fdf4;
+  --ok-text: #15803d;
+  --ok-border: rgba(21, 128, 61, 0.16);
+  --err-bg: #fef2f2;
+  --err-text: #b91c1c;
+  --err-border: rgba(185, 28, 28, 0.14);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  padding: 28px 24px 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background-color: var(--bg);
+  background-image: radial-gradient(
+    ellipse 80% 40% at 50% -10%,
+    rgba(255, 255, 255, 0.65) 0%,
+    transparent 70%
+  );
+  color: var(--text);
+  font-family: "DM Sans", "Segoe UI", system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.shell {
+  width: 100%;
+  max-width: 960px;
+  margin-left: 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* ── Topbar ─────────────────────────────────────────────────────────── */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+}
+
+.topbar-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.topbar-wordmark {
+  font-family: "Lora", Georgia, serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.topbar-sep {
+  color: var(--subtle);
+  font-size: 0.9rem;
+}
+
+.topbar-title {
+  font-size: 0.86rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.topbar-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.topbar-user {
+  font-size: 0.8rem;
+  color: var(--muted);
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.04);
+  white-space: nowrap;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* ── Floating icon nav ──────────────────────────────────────────────── */
+
+.floating-view-nav {
+  position: fixed;
+  left: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow:
+    0 10px 32px rgba(0, 0, 0, 0.1),
+    0 2px 6px rgba(0, 0, 0, 0.04);
+  backdrop-filter: blur(14px);
+}
+
+.view-nav-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    background 160ms,
+    color 160ms,
+    transform 160ms;
+}
+
+.view-nav-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text);
+}
+
+.view-nav-btn:active {
+  transform: scale(0.94);
+}
+
+.view-nav-btn.active {
+  background: var(--text);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  cursor: default;
+}
+
+.view-nav-btn svg {
+  display: block;
+}
+
+.view-nav-btn::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 12px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-4px);
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: var(--text);
+  color: #fff;
+  font:
+    500 0.76rem/1 "DM Sans",
+    sans-serif;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 140ms,
+    transform 140ms;
+}
+
+.view-nav-btn:hover::after {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+/* ── Page head + cards ─────────────────────────────────────────────── */
+
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 2px 4px;
+}
+
+.page-title {
+  font-family: "Lora", Georgia, serif;
+  font-size: clamp(1.35rem, 2.4vw, 1.6rem);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.page-desc {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-top: 4px;
+}
+
+.eyebrow {
+  color: var(--subtle);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.card {
+  padding: 24px 28px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 4px 16px rgba(0, 0, 0, 0.06);
+}
+
+.card-title {
+  font-family: "Lora", Georgia, serif;
+  font-size: clamp(1.1rem, 2vw, 1.3rem);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  margin-bottom: 10px;
+}
+
+.placeholder-card {
+  text-align: center;
+  padding: 48px 28px;
+}
+
+code {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.82em;
+  padding: 0.14em 0.36em;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text);
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.err-msg {
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: var(--err-bg);
+  color: var(--err-text);
+  border: 1px solid var(--err-border);
+  font-size: 0.88rem;
+}
+
+.loading-msg {
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding: 8px 0;
+}
+
+@media (max-width: 900px) {
+  .shell {
+    margin-left: 0;
+  }
+  .floating-view-nav {
+    left: 50%;
+    right: auto;
+    top: auto;
+    bottom: 18px;
+    transform: translateX(-50%);
+    flex-direction: row;
+  }
+  .view-nav-btn::after {
+    left: 50%;
+    top: auto;
+    bottom: calc(100% + 10px);
+    transform: translateX(-50%) translateY(4px);
+  }
+}
+
+@media (max-width: 640px) {
+  body {
+    padding: 16px 12px 96px;
+  }
+  .card {
+    padding: 18px;
+    border-radius: 16px;
+  }
+}

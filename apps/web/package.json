@@ -1,0 +1,25 @@
+{
+  "name": "@geminixiang/mikan-web-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "mikan web application entry: Vite build over the mikan-web-client shell; dist/ is served by the web-host seam",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "watch": "vite build --watch"
+  },
+  "dependencies": {
+    "@geminixiang/mikan-web-client": "workspace:^",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "~18.3.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "typescript": "^6.0.3",
+    "vite": "^6.0.0"
+  }
+}
