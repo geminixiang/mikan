@@ -41,6 +41,7 @@ import * as log from "../log.js";
 import type { ExtensionRegistry } from "./extensions/registry.js";
 import type { RunOrigin } from "./extensions/types.js";
 import type { MikanModels } from "./models.js";
+import { findFirstKeptEntryId, toPiEntries } from "./pi-session.js";
 import { resolveHarnessSettings } from "./settings.js";
 import type { SessionStore } from "./session-store.js";
 import type {
@@ -594,8 +595,8 @@ export class MikanAgentSession {
   private async runCompaction(reason: CompactionReason, willRetry: boolean): Promise<boolean> {
     let started = false;
     try {
-      const pathEntries = this.sessionStore.getBranch();
-      const preparation = getOrThrow(prepareCompaction(pathEntries, this.settings.compaction));
+      const piEntries = toPiEntries(this.sessionStore.getBranch());
+      const preparation = getOrThrow(prepareCompaction(piEntries, this.settings.compaction));
       if (!preparation) return false;
 
       await this.emit({ type: "compaction_start", reason });
@@ -617,10 +618,10 @@ export class MikanAgentSession {
         await this.emit({ type: "compaction_end", reason, aborted: true });
         return false;
       }
-      // pi 0.82 reserves an absent firstKeptEntryId for keep-nothing
-      // compactions; mikan's session format requires a kept entry on the
+      // pi 0.84 returns the retained tail inline instead of a kept-entry
+      // pointer; mikan's v3 session format requires a kept entry on the
       // branch, and the compaction path used here always produces one.
-      const firstKeptEntryId = result.firstKeptEntryId;
+      const firstKeptEntryId = findFirstKeptEntryId(piEntries, preparation.retainedTail);
       if (firstKeptEntryId === undefined) {
         throw new Error("compaction returned no first kept entry");
       }

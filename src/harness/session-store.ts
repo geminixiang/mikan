@@ -3,9 +3,10 @@
  *
  * Sessions are append-only trees stored as JSONL files: a `session` header
  * line followed by entries that carry `id`/`parentId` links. The format is
- * the v3 layout mikan has always written, and entry shapes are structurally
- * identical to pi-agent-core's `SessionTreeEntry`, so pi-agent-core's
- * context-building and compaction helpers operate on these entries directly.
+ * the v3 layout mikan has always written (pi-agent-core's entry shapes up
+ * to 0.83). pi 0.84 moved to a v4 entry model, so `pi-session.ts` converts
+ * a v3 branch at the boundary before pi's context-building and compaction
+ * helpers run.
  *
  * The store is synchronous by design: every mikan call site (session scope
  * resolution, chat-history sync, session view, admin portal) reads and
@@ -16,6 +17,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { buildSessionContext as buildContextFromEntries } from "@earendil-works/pi-agent-core";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { toPiEntries } from "./pi-session.js";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { atomicWritePrivateFile } from "../utils/file-guards.js";
 import {
@@ -345,7 +347,7 @@ export class SessionStore {
    * branch, resolving compaction and branch summaries along the path.
    */
   buildSessionContext(): SessionContext {
-    return buildContextFromEntries(this.getBranch());
+    return buildContextFromEntries(toPiEntries(this.getBranch()));
   }
 
   /** Append a chat message as a child of the current leaf. Returns the entry id. */
