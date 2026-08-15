@@ -321,3 +321,59 @@ a:focus-visible {
     border-radius: 16px;
   }
 }
+
+/* ── Login page ──────────────────────────────────────────────────── */
+
+.login-page {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 80vh;
+}
+
+.login-card {
+  background: var(--surface-color, #fff);
+  border-radius: 12px;
+  padding: 2rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  max-width: 360px;
+  width: 100%;
+  text-align: center;
+}
+
+.login-card h1 {
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--text-color, #333);
+}
+
+.login-card p {
+  margin-bottom: 1.5rem;
+  color: var(--muted-text, #666);
+}
+
+.login-btn {
+  width: 100%;
+  padding: 0.75rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: #333;
+  color: #fff;
+  text-decoration: none;
+  box-sizing: border-box;
+}
+
+.login-btn:hover {
+  background: #555;
+}
+
+.login-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
