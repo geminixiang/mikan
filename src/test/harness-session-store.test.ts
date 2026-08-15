@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -21,7 +21,7 @@ function readLines(file: string): Array<Record<string, unknown>> {
     .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
-const validHeader = {
+const legacyV3Header = {
   type: "session",
   version: 3,
   id: "session-1",
@@ -29,29 +29,10 @@ const validHeader = {
   cwd: "/work",
 };
 
-function makeEntry(
-  id: string,
-  parentId: string | null,
-  extra: Record<string, unknown> = {},
-): Record<string, unknown> {
-  return {
-    type: "custom",
-    id,
-    parentId,
-    timestamp: "2026-01-01T00:00:01.000Z",
-    customType: "test",
-    ...extra,
-  };
-}
-
-function writeJsonl(file: string, records: Record<string, unknown>[]): void {
-  writeFileSync(file, `${records.map((record) => JSON.stringify(record)).join("\n")}\n`);
-}
-
 describe("SessionStore", () => {
-  test("inMemory keeps entries without creating a session file", () => {
+  test("inMemory keeps entries without creating a session file", async () => {
     const store = SessionStore.inMemory("/work");
-    store.appendMessage({
+    await store.appendMessage({
       role: "user",
       content: [{ type: "text", text: "ephemeral" }],
       timestamp: 1,
@@ -59,77 +40,110 @@ describe("SessionStore", () => {
 
     expect(store.getSessionFile()).toBeUndefined();
     expect(store.isPersisted()).toBe(false);
-    expect(store.getEntries()).toHaveLength(1);
-    expect(store.buildSessionContext().messages).toHaveLength(1);
+    expect(await store.getEntries()).toHaveLength(1);
+    expect((await store.buildSessionContext()).messages).toHaveLength(1);
   });
 
-  test("create writes a v3 header and appends persist as JSONL lines", () => {
+  test("create writes a v4 header and appends persist as JSONL lines", async () => {
     const file = join(dir, "session.jsonl");
-    const store = SessionStore.create(file, "/work");
-    store.appendMessage({ role: "user", content: [{ type: "text", text: "hi" }], timestamp: 1 });
+    const store = await SessionStore.create(file, "/work");
+    await store.appendMessage({
+      role: "user",
+      content: [{ type: "text", text: "hi" }],
+      timestamp: 1,
+    });
 
     const lines = readLines(file);
-    expect(lines[0]).toMatchObject({ type: "session", version: 3, cwd: "/work" });
-    expect(lines[1]).toMatchObject({ type: "message", parentId: null });
-    expect(typeof lines[1].id).toBe("string");
-    expect((lines[1].id as string).length).toBe(8);
+    expect(lines[0]).toMatchObject({ kind: "header", version: 4, cwd: "/work" });
+    expect(typeof lines[0]?.createdAt).toBe("number");
+    expect(lines[1]).toMatchObject({ kind: "entry", type: "message", parentId: null });
+    expect(typeof lines[1]?.id).toBe("string");
   });
 
-  test("entries form a parent chain and getBranch returns root-first order", () => {
+  test("entries form a parent chain and getBranch returns root-first order", async () => {
     const file = join(dir, "session.jsonl");
-    const store = SessionStore.create(file, "/work");
-    const first = store.appendMessage({
+    const store = await SessionStore.create(file, "/work");
+    const first = await store.appendMessage({
       role: "user",
       content: [{ type: "text", text: "one" }],
       timestamp: 1,
     });
-    const second = store.appendCustomEntry("mikan.test", { n: 2 });
+    const second = await store.appendCustomEntry("mikan.test", { n: 2 });
 
-    const branch = store.getBranch();
+    const branch = await store.getBranch();
     expect(branch.map((entry) => entry.id)).toEqual([first, second]);
-    expect(branch[1].parentId).toBe(first);
-    expect(store.getLeafId()).toBe(second);
+    expect(branch[1]?.parentId).toBe(first);
+    expect(await store.getLeafId()).toBe(second);
   });
 
-  test("reopens files written by earlier mikan versions (v3 format)", () => {
+  test("open of a legacy v3 file throws and points at the migration script", async () => {
     const file = join(dir, "session.jsonl");
-    const header = {
-      type: "session",
-      version: 3,
-      id: "abc-123",
-      timestamp: "2026-01-01T00:00:00.000Z",
-      cwd: "/legacy",
-      source: { kind: "platform-history" },
-    };
-    const entry = {
-      type: "message",
-      id: "aaaa1111",
-      parentId: null,
-      timestamp: "2026-01-01T00:00:01.000Z",
-      message: { role: "user", content: [{ type: "text", text: "hello" }], timestamp: 1 },
-    };
-    writeFileSync(file, `${JSON.stringify(header)}\n${JSON.stringify(entry)}\n`);
+    writeFileSync(file, `${JSON.stringify(legacyV3Header)}\n`);
+    const original = readFileSync(file, "utf-8");
 
-    const store = SessionStore.open(file);
+    await expect(SessionStore.open(file)).rejects.toThrow(/legacy v3/);
+    await expect(SessionStore.open(file)).rejects.toThrow(/mikan sessions migrate/);
+    // The file is left untouched for the migration script.
+    expect(readFileSync(file, "utf-8")).toBe(original);
+  });
+
+  test("reopen preserves session id, header metadata, entries, and cwd", async () => {
+    const file = join(dir, "session.jsonl");
+    SessionStore.writeHeaderFile(file, "/legacy", { id: "abc-123" });
+    const seeded = await SessionStore.open(file);
+    await seeded.appendMessage({
+      role: "user",
+      content: [{ type: "text", text: "hello" }],
+      timestamp: 1,
+    });
+
+    const store = await SessionStore.open(file);
     expect(store.getSessionId()).toBe("abc-123");
-    expect(store.getHeader()?.source).toEqual({ kind: "platform-history" });
-    expect(store.getEntries()).toHaveLength(1);
-    expect(store.getLeafId()).toBe("aaaa1111");
+    expect(store.getHeader()).toMatchObject({ type: "session", id: "abc-123", cwd: "/legacy" });
+    expect(await store.getEntries()).toHaveLength(1);
+    expect(await store.getLeafId()).toBe((await store.getEntries())[0]?.id);
     expect(store.getCwd()).toBe("/legacy");
   });
 
-  test("buildSessionContext resolves compaction summaries", () => {
-    const file = join(dir, "session.jsonl");
-    const store = SessionStore.create(file, "/work");
-    store.appendMessage({ role: "user", content: [{ type: "text", text: "old" }], timestamp: 1 });
-    const kept = store.appendMessage({
-      role: "user",
-      content: [{ type: "text", text: "recent" }],
-      timestamp: 2,
-    });
-    store.appendCompaction("summary of old", kept, 1000);
+  test("readHeader returns a v3-flavored view, null for absent files, and throws for v3", () => {
+    expect(SessionStore.readHeader(join(dir, "missing.jsonl"))).toBeNull();
 
-    const context = store.buildSessionContext();
+    const empty = join(dir, "empty.jsonl");
+    writeFileSync(empty, "\n  \n");
+    expect(SessionStore.readHeader(empty)).toBeNull();
+
+    const v4 = join(dir, "v4.jsonl");
+    SessionStore.writeHeaderFile(v4, "/work", { id: "id-1" });
+    expect(SessionStore.readHeader(v4)).toMatchObject({
+      type: "session",
+      version: 4,
+      id: "id-1",
+      cwd: "/work",
+    });
+    expect(typeof SessionStore.readHeader(v4)?.timestamp).toBe("string");
+
+    const v3 = join(dir, "v3.jsonl");
+    writeFileSync(v3, `${JSON.stringify(legacyV3Header)}\n`);
+    expect(() => SessionStore.readHeader(v3)).toThrow(/legacy v3/);
+  });
+
+  test("buildSessionContext resolves compaction summaries", async () => {
+    const file = join(dir, "session.jsonl");
+    const store = await SessionStore.create(file, "/work");
+    await store.appendMessage({
+      role: "user",
+      content: [{ type: "text", text: "old" }],
+      timestamp: 1,
+    });
+    const kept = {
+      role: "user" as const,
+      content: [{ type: "text" as const, text: "recent" }],
+      timestamp: 2,
+    };
+    await store.appendMessage(kept);
+    await store.appendCompaction("summary of old", [kept], 1000);
+
+    const context = await store.buildSessionContext();
     const rendered = context.messages
       .map((message) => {
         if ("summary" in message && typeof message.summary === "string") return message.summary;
@@ -144,159 +158,60 @@ describe("SessionStore", () => {
     expect(rendered).not.toMatch(/(^|\|)old($|\|)/);
   });
 
-  test("recovers a malformed final crash tail without changing the file until append", () => {
-    const file = join(dir, "session.jsonl");
-    writeJsonl(file, [validHeader, makeEntry("root", null)]);
-    writeFileSync(file, `${readFileSync(file, "utf-8")}{"type":"message"`);
-    const original = readFileSync(file, "utf-8");
-
-    const store = SessionStore.open(file);
-    expect(store.getEntries().map(({ id }) => id)).toEqual(["root"]);
-    expect(readFileSync(file, "utf-8")).toBe(original);
-
-    store.appendCustomEntry("after-crash");
-    const lines = readLines(file);
-    expect(lines.map(({ id }) => id).filter(Boolean)).toEqual([
-      "session-1",
-      "root",
-      store.getLeafId(),
-    ]);
-    expect(readFileSync(file, "utf-8")).not.toContain('{"type":"message"');
-  });
-
-  test("rejects malformed JSON before the final non-empty line and preserves the file", () => {
-    const file = join(dir, "session.jsonl");
-    const original = `${JSON.stringify(validHeader)}\n{"type":"custom"\n${JSON.stringify(makeEntry("root", null))}\n`;
-    writeFileSync(file, original);
-
-    expect(() => SessionStore.open(file)).toThrow(/line 2 is not valid JSON/i);
-    expect(readFileSync(file, "utf-8")).toBe(original);
-  });
-
-  test("rejects duplicate entry ids", () => {
-    const file = join(dir, "session.jsonl");
-    writeJsonl(file, [validHeader, makeEntry("same", null), makeEntry("same", null)]);
-    expect(() => SessionStore.open(file)).toThrow(/duplicate entry id same/i);
-  });
-
-  test("rejects missing parent references", () => {
-    const file = join(dir, "session.jsonl");
-    writeJsonl(file, [validHeader, makeEntry("child", "missing")]);
-    expect(() => SessionStore.open(file)).toThrow(/references missing parent missing/i);
-  });
-
-  test("rejects self-parent and multi-entry parent cycles without hanging", () => {
-    const selfFile = join(dir, "self.jsonl");
-    writeJsonl(selfFile, [validHeader, makeEntry("self", "self")]);
-    expect(() => SessionStore.open(selfFile)).toThrow(/own parent/i);
-
-    const cycleFile = join(dir, "cycle.jsonl");
-    writeJsonl(cycleFile, [validHeader, makeEntry("a", "b"), makeEntry("b", "a")]);
-    expect(() => SessionStore.open(cycleFile)).toThrow(/parent cycle/i);
-  });
-
-  test("accepts leaf targets and parents declared earlier, but rejects missing leaf targets", () => {
-    const validFile = join(dir, "valid-leaf.jsonl");
-    writeJsonl(validFile, [
-      validHeader,
-      makeEntry("root", null),
-      makeEntry("leaf-record", "root", { type: "leaf", targetId: "root" }),
-    ]);
-    expect(SessionStore.open(validFile).getLeafId()).toBe("root");
-
-    const invalidFile = join(dir, "invalid-leaf.jsonl");
-    writeJsonl(invalidFile, [
-      validHeader,
-      makeEntry("leaf-record", null, { type: "leaf", targetId: "missing" }),
-    ]);
-    expect(() => SessionStore.open(invalidFile)).toThrow(
-      /leaf leaf-record references missing target/i,
-    );
-  });
-
-  test("rejects compaction references missing from or outside the compaction branch", () => {
-    const missingFile = join(dir, "missing-compaction.jsonl");
-    writeJsonl(missingFile, [
-      validHeader,
-      makeEntry("root", null),
-      makeEntry("compact", "root", {
-        type: "compaction",
-        summary: "summary",
-        firstKeptEntryId: "missing",
-        tokensBefore: 10,
-      }),
-    ]);
-    expect(() => SessionStore.open(missingFile)).toThrow(/references missing first kept entry/i);
-
-    const otherBranchFile = join(dir, "branch-compaction.jsonl");
-    writeJsonl(otherBranchFile, [
-      validHeader,
-      makeEntry("root", null),
-      makeEntry("kept", "root"),
-      makeEntry("other", "root"),
-      makeEntry("compact", "other", {
-        type: "compaction",
-        summary: "summary",
-        firstKeptEntryId: "kept",
-        tokensBefore: 10,
-      }),
-    ]);
-    expect(() => SessionStore.open(otherBranchFile)).toThrow(/is not on its branch/i);
-  });
-
-  test("rejected open cannot append and leaves corrupted bytes unchanged", () => {
-    const file = join(dir, "session.jsonl");
-    writeJsonl(file, [validHeader, makeEntry("child", "missing")]);
-    const original = readFileSync(file, "utf-8");
-    let store: SessionStore | undefined;
-
-    expect(() => {
-      store = SessionStore.open(file);
-    }).toThrow(/corrupted/i);
-    expect(store).toBeUndefined();
-    expect(readFileSync(file, "utf-8")).toBe(original);
-  });
-
-  test("open throws on a file with content but no valid header, instead of silently overwriting", () => {
+  test("open throws on a file with content but no valid header, instead of silently overwriting", async () => {
     // A file whose header line is corrupted but whose message lines survive
     // must not be opened as a fresh session: the first append would rewrite
-    // the file and erase the existing history. Surface the corruption instead.
-    const file = join(dir, "session.jsonl");
-    writeFileSync(file, 'not json\n{"type":"message","content":"kept"}\n');
-    expect(() => SessionStore.open(file, "/work")).toThrow(/corrupted/i);
+    // the file and erase the existing history. Surface the problem instead.
+    const notJson = join(dir, "not-json.jsonl");
+    writeFileSync(notJson, 'not json\n{"kind":"entry","content":"kept"}\n');
+    await expect(SessionStore.open(notJson, "/work")).rejects.toThrow(/not valid JSON/i);
     // The original content is left untouched on disk.
-    expect(readFileSync(file, "utf-8")).toContain("kept");
+    expect(readFileSync(notJson, "utf-8")).toContain("kept");
+
+    const wrongShape = join(dir, "wrong-shape.jsonl");
+    writeFileSync(wrongShape, '{"hello":"world"}\n');
+    await expect(SessionStore.open(wrongShape, "/work")).rejects.toThrow(/unrecognized header/i);
   });
 
-  test("open treats a whitespace-only file as empty and materializes on append", () => {
+  test("open treats a whitespace-only file as empty and materializes on append", async () => {
     const file = join(dir, "blank.jsonl");
     writeFileSync(file, "\n  \n");
-    const store = SessionStore.open(file, "/work");
-    expect(store.getHeader()).toBeNull();
-    store.appendMessage({ role: "user", content: [{ type: "text", text: "hi" }], timestamp: 1 });
-    expect(readLines(file)[0]).toMatchObject({ type: "session", version: 3 });
+    const store = await SessionStore.open(file, "/work");
+    // Nothing is written until the first append.
+    expect(readFileSync(file, "utf-8").trim()).toBe("");
+    await store.appendMessage({
+      role: "user",
+      content: [{ type: "text", text: "hi" }],
+      timestamp: 1,
+    });
+    expect(readLines(file)[0]).toMatchObject({ kind: "header", version: 4 });
   });
 
-  test("appending to a missing (headerless) file materializes the header", () => {
+  test("appending to a missing (headerless) file materializes the header", async () => {
     const file = join(dir, "fresh.jsonl");
-    const store = SessionStore.open(file, "/work");
+    const store = await SessionStore.open(file, "/work");
     const sessionId = store.getSessionId();
-    store.appendMessage({ role: "user", content: [{ type: "text", text: "hi" }], timestamp: 1 });
+    expect(existsSync(file)).toBe(false);
+    await store.appendMessage({
+      role: "user",
+      content: [{ type: "text", text: "hi" }],
+      timestamp: 1,
+    });
 
     const lines = readLines(file);
-    expect(lines[0]).toMatchObject({ type: "session", version: 3, id: sessionId, cwd: "/work" });
+    expect(lines[0]).toMatchObject({ kind: "header", version: 4, id: sessionId, cwd: "/work" });
     expect(lines).toHaveLength(2);
   });
 
-  test("session name comes from the latest session_info entry", () => {
+  test("session name comes from the latest set name", async () => {
     const file = join(dir, "session.jsonl");
-    const store = SessionStore.create(file, "/work");
-    expect(store.getSessionName()).toBeUndefined();
-    store.appendSessionInfo("first name");
-    store.appendSessionInfo("second name");
-    expect(store.getSessionName()).toBe("second name");
+    const store = await SessionStore.create(file, "/work");
+    expect(await store.getSessionName()).toBeUndefined();
+    await store.setSessionName("first name");
+    await store.setSessionName("second name");
+    expect(await store.getSessionName()).toBe("second name");
 
-    const reopened = SessionStore.open(file);
-    expect(reopened.getSessionName()).toBe("second name");
+    const reopened = await SessionStore.open(file);
+    expect(await reopened.getSessionName()).toBe("second name");
   });
 });

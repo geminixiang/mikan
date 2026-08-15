@@ -22,11 +22,13 @@ function readSessionTimestamp(sessionFile: string): Date | null {
   try {
     const header = parseJsonValue(
       firstLine,
-      (value): value is { timestamp?: unknown } => isRecord(value),
+      (value): value is { timestamp?: unknown; createdAt?: unknown } => isRecord(value),
       (detail) => (detail === "unexpected JSON shape" ? "expected a JSON object" : detail),
     );
-    if (typeof header.timestamp !== "string") return null;
-    const date = new Date(header.timestamp);
+    // v4 headers carry a numeric createdAt; legacy v3 headers a string timestamp.
+    const value = typeof header.createdAt === "number" ? header.createdAt : header.timestamp;
+    if (typeof value !== "number" && typeof value !== "string") return null;
+    const date = new Date(value);
     return Number.isFinite(date.getTime()) ? date : null;
   } catch {
     return null;

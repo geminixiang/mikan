@@ -13,7 +13,7 @@ export {
 } from "./http.js";
 export { MikanModels, defaultModelsJsonPath } from "./models.js";
 export type { CreateMikanModelsOptions } from "./types.js";
-export { SessionStore, loadSessionFileEntries, parseSessionFileEntries } from "./session-store.js";
+export { SessionStore } from "./session-store.js";
 export { MikanAgentSession } from "./runner.js";
 export type {
   CompactionReason,
@@ -120,11 +120,8 @@ export {
   type BranchSummaryEntry,
   type CompactionEntry,
   type CustomEntry,
-  type CustomMessageEntry,
   type SessionContext,
   type SessionEntry,
-  type SessionFileEntry,
   type SessionHeader,
-  type SessionInfoEntry,
   type SessionMessageEntry,
 } from "./types.js";

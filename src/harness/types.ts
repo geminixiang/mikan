@@ -1,128 +1,38 @@
 /**
  * Core types for the mikan agent harness.
  *
- * The harness is built directly on pi-agent-core and pi-ai. Session entries
- * keep the v3 shapes mikan has always written (pi-agent-core's entry family
- * up to 0.83), so existing conversation history keeps working unchanged;
- * `pi-session.ts` converts them at the pi 0.84 call boundary.
+ * The harness is built directly on pi-agent-core and pi-ai. Sessions use
+ * pi's v4 entry model and JSONL format; mikan adds only the header
+ * conventions carried in the v4 header `metadata`. Legacy v3 files are
+ * handled exclusively by the migration module (`sessions/migrate-v3.ts`).
  */
 import type {
   AgentEvent,
-  AgentMessage,
   AgentTool,
+  BranchSummaryEntry,
+  CompactionEntry,
+  CustomEntry,
+  Entry,
+  MessageEntry,
   SessionContext,
   ThinkingLevel,
   CompactionSettings,
 } from "@earendil-works/pi-agent-core";
-import type { Api, ImageContent, Model, TextContent, Usage } from "@earendil-works/pi-ai";
+import type { Api, Model, Usage } from "@earendil-works/pi-ai";
 import type { ExtensionRegistry } from "./extensions/registry.js";
 import type { MikanModels } from "./models.js";
 import type { SessionStore } from "./session-store.js";
 import type { Static, TSchema } from "@sinclair/typebox";
 
-export type { SessionContext };
+export type { BranchSummaryEntry, CompactionEntry, CustomEntry, SessionContext };
 
-/**
- * v3 session entry shapes. These were pi-agent-core's `SessionTreeEntry`
- * family until 0.83; pi 0.84 moved to a v4 entry model (numeric timestamps,
- * `seq`, compaction via inline `retainedTail`), so mikan now owns the v3
- * shapes it has always written. `pi-session.ts` converts a v3 branch into
- * v4 entries at the pi call boundary (context build, compaction).
- */
-interface SessionEntryBase {
-  type: string;
-  id: string;
-  parentId: string | null;
-  timestamp: string;
-}
+/** Message entry as stored in mikan session files (pi v4). */
+export type SessionMessageEntry = MessageEntry;
 
-/** Message entry as stored in mikan session files. */
-export interface SessionMessageEntry extends SessionEntryBase {
-  type: "message";
-  message: AgentMessage;
-}
+/** Union of entry types mikan reads and writes. Alias of pi's v4 entry. */
+export type SessionEntry = Entry;
 
-interface ThinkingLevelChangeEntry extends SessionEntryBase {
-  type: "thinking_level_change";
-  thinkingLevel: string;
-}
-
-interface ModelChangeEntry extends SessionEntryBase {
-  type: "model_change";
-  provider: string;
-  modelId: string;
-}
-
-interface ActiveToolsChangeEntry extends SessionEntryBase {
-  type: "active_tools_change";
-  activeToolNames: string[];
-}
-
-export interface CompactionEntry<T = unknown> extends SessionEntryBase {
-  type: "compaction";
-  summary: string;
-  firstKeptEntryId?: string;
-  tokensBefore: number;
-  retainedTail?: AgentMessage[];
-  details?: T;
-  usage?: Usage;
-  fromHook?: boolean;
-}
-
-export interface BranchSummaryEntry<T = unknown> extends SessionEntryBase {
-  type: "branch_summary";
-  fromId: string;
-  summary: string;
-  details?: T;
-  usage?: Usage;
-  fromHook?: boolean;
-}
-
-export interface CustomEntry<T = unknown> extends SessionEntryBase {
-  type: "custom";
-  customType: string;
-  data?: T;
-}
-
-export interface CustomMessageEntry<T = unknown> extends SessionEntryBase {
-  type: "custom_message";
-  customType: string;
-  content: string | (TextContent | ImageContent)[];
-  details?: T;
-  display: boolean;
-}
-
-interface LabelEntry extends SessionEntryBase {
-  type: "label";
-  targetId: string;
-  label: string | undefined;
-}
-
-export interface SessionInfoEntry extends SessionEntryBase {
-  type: "session_info";
-  name?: string;
-}
-
-interface LeafEntry extends SessionEntryBase {
-  type: "leaf";
-  targetId: string | null;
-}
-
-/** Union of entry types mikan reads and writes. */
-export type SessionEntry =
-  | SessionMessageEntry
-  | ThinkingLevelChangeEntry
-  | ModelChangeEntry
-  | ActiveToolsChangeEntry
-  | CompactionEntry
-  | BranchSummaryEntry
-  | CustomEntry
-  | CustomMessageEntry
-  | LabelEntry
-  | SessionInfoEntry
-  | LeafEntry;
-
-export const CURRENT_SESSION_VERSION = 3;
+export const CURRENT_SESSION_VERSION = 4;
 
 export interface SubagentModelSpec {
   provider: string;
@@ -250,9 +160,10 @@ export type SubagentRunResult<TOutput = string> =
   | SubagentRunIncompleteResult;
 
 /**
- * First line of every session file. `cwd` records where the session was
- * started; extra fields (for example mikan's `source` marker) are preserved
- * verbatim on read and rewrite.
+ * v3-flavored header view synthesized from the v4 file header for callers
+ * that read session lineage. `metadata` carries mikan header extras (for
+ * example `parentSessionPath` and the legacy `source` marker preserved by
+ * the v3 migration).
  */
 export interface SessionHeader {
   type: "session";
@@ -264,9 +175,6 @@ export interface SessionHeader {
   parentSessionId?: string;
   [extra: string]: unknown;
 }
-
-/** Raw file line: the header or one session entry. */
-export type SessionFileEntry = SessionHeader | SessionEntry;
 
 export interface CreateMikanModelsOptions {
   authPath?: string;
@@ -391,7 +299,8 @@ export type CompactionReason = "threshold" | "overflow" | "manual";
 
 interface CompactionResultSummary {
   summary: string;
-  firstKeptEntryId: string;
+  /** Number of recent messages retained inline on the compaction entry. */
+  retainedMessages: number;
   tokensBefore: number;
 }
 

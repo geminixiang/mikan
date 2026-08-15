@@ -4,6 +4,17 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { isPlatformHistorySession } from "../sessions/store.js";
 
+function v4Header(metadata?: Record<string, unknown>): string {
+  return `${JSON.stringify({
+    kind: "header",
+    version: 4,
+    id: "abc",
+    createdAt: 1704067200000,
+    cwd: "/tmp",
+    ...(metadata ? { metadata } : {}),
+  })}\n`;
+}
+
 describe("isPlatformHistorySession", () => {
   let dir: string;
 
@@ -22,35 +33,31 @@ describe("isPlatformHistorySession", () => {
 
   test("returns false for non-platform-history session", () => {
     const sessionFile = join(dir, "session.jsonl");
-    writeFileSync(
-      sessionFile,
-      JSON.stringify({
-        type: "session",
-        version: 3,
-        id: "abc",
-        timestamp: "2024-01-01",
-        cwd: "/tmp",
-      }) + "\n",
-      "utf-8",
-    );
+    writeFileSync(sessionFile, v4Header(), "utf-8");
     expect(isPlatformHistorySession(sessionFile)).toBe(false);
   });
 
   test("returns true for platform-history session", () => {
     const sessionFile = join(dir, "session.jsonl");
+    writeFileSync(sessionFile, v4Header({ source: { kind: "platform-history" } }), "utf-8");
+    expect(isPlatformHistorySession(sessionFile)).toBe(true);
+  });
+
+  test("returns false for a legacy v3 session file", () => {
+    const sessionFile = join(dir, "session.jsonl");
     writeFileSync(
       sessionFile,
-      JSON.stringify({
+      `${JSON.stringify({
         type: "session",
         version: 3,
         id: "abc",
         timestamp: "2024-01-01",
         cwd: "/tmp",
         source: { kind: "platform-history" },
-      }) + "\n",
+      })}\n`,
       "utf-8",
     );
-    expect(isPlatformHistorySession(sessionFile)).toBe(true);
+    expect(isPlatformHistorySession(sessionFile)).toBe(false);
   });
 
   test("returns false for malformed session file", () => {
@@ -59,19 +66,9 @@ describe("isPlatformHistorySession", () => {
     expect(isPlatformHistorySession(sessionFile)).toBe(false);
   });
 
-  test("returns false when SessionManager.open throws", () => {
+  test("returns false when the file cannot be read", () => {
     const sessionFile = join(dir, "session.jsonl");
-    writeFileSync(
-      sessionFile,
-      JSON.stringify({
-        type: "session",
-        version: 3,
-        id: "abc",
-        timestamp: "2024-01-01",
-        cwd: "/tmp",
-      }) + "\n",
-      "utf-8",
-    );
+    writeFileSync(sessionFile, v4Header(), "utf-8");
     chmodSync(sessionFile, 0o000);
     try {
       expect(isPlatformHistorySession(sessionFile)).toBe(false);

@@ -11,6 +11,7 @@ export interface MikanSessionHeader {
   timestamp?: string;
   cwd?: string;
   parentSession?: string;
+  /** Legacy platform-history marker; preserved in v4 header metadata. */
   source?: {
     kind?: string;
     file?: string;

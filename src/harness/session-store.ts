@@ -1,285 +1,239 @@
 /**
- * mikan-owned session storage.
+ * mikan-owned session storage facade over pi-agent-core's v4 sessions.
  *
- * Sessions are append-only trees stored as JSONL files: a `session` header
- * line followed by entries that carry `id`/`parentId` links. The format is
- * the v3 layout mikan has always written (pi-agent-core's entry shapes up
- * to 0.83). pi 0.84 moved to a v4 entry model, so `pi-session.ts` converts
- * a v3 branch at the boundary before pi's context-building and compaction
- * helpers run.
+ * Sessions are pi v4 JSONL files: a `{"kind":"header","version":4,...}` line
+ * followed by mutation lines (entries, lane pointers, facts, lane records).
+ * pi's `Session`/`JsonlSessionStorage` own the format, tree validation, and
+ * torn-tail repair; this facade owns mikan's concerns only: session files
+ * live at mikan-chosen paths (session-key layout), mikan header extras ride
+ * in the v4 header `metadata`, and a missing file behaves as an empty
+ * session whose header materializes on the first append.
  *
- * The store is synchronous by design: every mikan call site (session scope
- * resolution, chat-history sync, session view, admin portal) reads and
- * writes sessions inside synchronous flows.
+ * v3 files (the pre-0.84 layout) are not readable at runtime: `open` throws
+ * an actionable error pointing at the `mikan sessions migrate` script.
  */
 import { randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { buildSessionContext as buildContextFromEntries } from "@earendil-works/pi-agent-core";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { toPiEntries } from "./pi-session.js";
+import {
+  buildSessionContext as buildContextFromEntries,
+  createCustomMessage,
+  InMemorySessionStorage,
+  JsonlSessionRepo,
+  Session,
+} from "@earendil-works/pi-agent-core";
+import type {
+  AgentMessage,
+  Entry,
+  JsonlSessionMetadata,
+  JsonlV4Header,
+} from "@earendil-works/pi-agent-core";
+import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { atomicWritePrivateFile } from "../utils/file-guards.js";
-import {
-  CURRENT_SESSION_VERSION,
-  type SessionContext,
-  type SessionEntry,
-  type SessionFileEntry,
-  type SessionHeader,
-} from "./types.js";
+import { CURRENT_SESSION_VERSION, type SessionContext, type SessionHeader } from "./types.js";
 
-/** Distributive omit so each entry variant keeps its own fields. */
-type PendingSessionEntry = SessionEntry extends infer TEntry
-  ? TEntry extends SessionEntry
-    ? Omit<TEntry, "id" | "parentId" | "timestamp">
-    : never
-  : never;
+let sharedRepo: JsonlSessionRepo | undefined;
 
-/** Generate a unique short entry id (8 hex chars, collision-checked). */
-function generateEntryId(byId: Map<string, SessionEntry>): string {
-  for (let i = 0; i < 100; i++) {
-    const id = randomUUID().slice(0, 8);
-    if (!byId.has(id)) return id;
-  }
-  return randomUUID();
+/**
+ * Drop undefined-valued properties before durable persistence. pi's agent
+ * loop builds messages with explicit `details: undefined` / `usage: undefined`
+ * (e.g. tool results from tools that return only `content`), which pi's own
+ * v4 durable-payload validator rejects; persistence is a value boundary, so
+ * a JSON round-trip matches the validator's semantics exactly.
+ */
+function toDurable<T>(value: T): T {
+  return value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T);
 }
 
-/** Parse JSONL content tolerantly for compatibility with existing read-only callers. */
-export function parseSessionFileEntries(content: string): SessionFileEntry[] {
-  const entries: SessionFileEntry[] = [];
-  for (const line of content.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      const parsed: unknown = JSON.parse(trimmed);
-      if (
-        parsed &&
-        typeof parsed === "object" &&
-        typeof (parsed as { type?: unknown }).type === "string"
-      ) {
-        entries.push(parsed as SessionFileEntry);
-      }
-    } catch {
-      // This compatibility parser is intentionally tolerant. SessionStore.open is not.
-    }
-  }
-  return entries;
+function repo(): JsonlSessionRepo {
+  // The repo is only used to open sessions at explicit paths; its
+  // sessionsRoot layout is never consulted, so one shared instance is fine.
+  sharedRepo ??= new JsonlSessionRepo({
+    fs: new NodeExecutionEnv({ cwd: process.cwd() }),
+    sessionsRoot: process.cwd(),
+  });
+  return sharedRepo;
 }
 
-function isSessionHeader(entry: SessionFileEntry): entry is SessionHeader {
-  return entry.type === "session" && typeof (entry as SessionHeader).id === "string";
-}
+class SessionFormatError extends Error {}
 
-type LoadedSessionFile = {
-  entries: SessionFileEntry[];
-  discardedCrashTail: boolean;
-};
-
-function corrupted(filePath: string, detail: string): Error {
-  return new Error(
-    `Session file is corrupted (${detail}): ${filePath}. Refusing to open for writing.`,
-  );
-}
-
-function parseSessionLine(line: string, filePath: string, lineNumber: number): SessionFileEntry {
+/** Parse the first line of a session file into a v4 header, or explain why not. */
+function parseV4Header(filePath: string, content: string): JsonlV4Header {
+  const firstLine = content
+    .slice(0, content.indexOf("\n") === -1 ? undefined : content.indexOf("\n"))
+    .trim();
+  if (!firstLine) throw new SessionFormatError(`Session file has a blank header line: ${filePath}`);
   let parsed: unknown;
   try {
-    parsed = JSON.parse(line);
+    parsed = JSON.parse(firstLine);
   } catch {
-    throw corrupted(filePath, `line ${lineNumber} is not valid JSON`);
+    throw new SessionFormatError(`Session file header is not valid JSON: ${filePath}`);
   }
-  if (
-    !parsed ||
-    typeof parsed !== "object" ||
-    typeof (parsed as { type?: unknown }).type !== "string"
-  ) {
-    throw corrupted(filePath, `line ${lineNumber} is not a session object`);
+  const record = parsed as { kind?: unknown; type?: unknown; version?: unknown; id?: unknown };
+  if (record.type === "session") {
+    throw new SessionFormatError(
+      `Session file uses the legacy v3 format: ${filePath}. Run \`mikan sessions migrate\` before starting this mikan version.`,
+    );
   }
-  return parsed as SessionFileEntry;
+  if (record.kind !== "header" || record.version !== 4 || typeof record.id !== "string") {
+    throw new SessionFormatError(`Session file has an unrecognized header: ${filePath}`);
+  }
+  return parsed as JsonlV4Header;
 }
 
-function validateSessionTree(filePath: string, fileEntries: SessionFileEntry[]): void {
-  const records = fileEntries.slice(1);
-  const allIds = new Set<string>();
-  const treeEntries = new Map<string, SessionEntry>();
-
-  for (const [index, record] of records.entries()) {
-    const lineNumber = index + 2;
-    if (isSessionHeader(record)) throw corrupted(filePath, `line ${lineNumber} repeats the header`);
-    const entry = record as SessionEntry;
-    if (typeof entry.id !== "string" || !entry.id) {
-      throw corrupted(filePath, `line ${lineNumber} has no entry id`);
-    }
-    if (allIds.has(entry.id)) throw corrupted(filePath, `duplicate entry id ${entry.id}`);
-    allIds.add(entry.id);
-    if (entry.type !== "leaf") treeEntries.set(entry.id, entry);
-  }
-
-  for (const [index, record] of records.entries()) {
-    const lineNumber = index + 2;
-    const entry = record as SessionEntry;
-    if (entry.parentId !== null && typeof entry.parentId !== "string") {
-      throw corrupted(filePath, `line ${lineNumber} has an invalid parentId`);
-    }
-    if (entry.parentId === entry.id)
-      throw corrupted(filePath, `entry ${entry.id} is its own parent`);
-    if (entry.parentId !== null && !treeEntries.has(entry.parentId)) {
-      throw corrupted(filePath, `entry ${entry.id} references missing parent ${entry.parentId}`);
-    }
-    if (entry.type === "leaf") {
-      if (entry.targetId !== null && typeof entry.targetId !== "string") {
-        throw corrupted(filePath, `leaf ${entry.id} has an invalid target`);
-      }
-      if (entry.targetId !== null && !treeEntries.has(entry.targetId)) {
-        throw corrupted(filePath, `leaf ${entry.id} references missing target ${entry.targetId}`);
-      }
-    }
-  }
-
-  for (const entry of treeEntries.values()) {
-    const seen = new Set<string>();
-    let current: SessionEntry | undefined = entry;
-    while (current) {
-      if (seen.has(current.id))
-        throw corrupted(filePath, `parent cycle includes entry ${current.id}`);
-      seen.add(current.id);
-      current = current.parentId === null ? undefined : treeEntries.get(current.parentId);
-    }
-  }
-
-  for (const entry of treeEntries.values()) {
-    if (entry.type !== "compaction") continue;
-    if (typeof entry.firstKeptEntryId !== "string" || !treeEntries.has(entry.firstKeptEntryId)) {
-      throw corrupted(filePath, `compaction ${entry.id} references missing first kept entry`);
-    }
-    let ancestorId = entry.parentId;
-    while (ancestorId !== null && ancestorId !== entry.firstKeptEntryId) {
-      ancestorId = treeEntries.get(ancestorId)?.parentId ?? null;
-    }
-    if (ancestorId === null) {
-      throw corrupted(
-        filePath,
-        `compaction ${entry.id} first kept entry ${entry.firstKeptEntryId} is not on its branch`,
-      );
-    }
-  }
+function metadataFromHeader(header: JsonlV4Header, path: string): JsonlSessionMetadata {
+  return {
+    id: header.id,
+    createdAt: header.createdAt,
+    cwd: header.cwd,
+    path,
+    modifiedAt: 0,
+    sourceFormat: 4,
+    ...(header.parentSessionId !== undefined ? { parentSessionId: header.parentSessionId } : {}),
+    ...(header.legacyParentSessionPath !== undefined
+      ? { legacyParentSessionPath: header.legacyParentSessionPath }
+      : {}),
+    ...(header.metadata !== undefined ? { metadata: header.metadata } : {}),
+  };
 }
 
-function loadValidatedSessionFile(filePath: string): LoadedSessionFile {
-  if (!existsSync(filePath)) return { entries: [], discardedCrashTail: false };
-  const nonEmptyLines = readFileSync(filePath, "utf-8")
-    .split("\n")
-    .map((line, index) => ({ text: line.trim(), number: index + 1 }))
-    .filter(({ text }) => text.length > 0);
-  if (nonEmptyLines.length === 0) return { entries: [], discardedCrashTail: false };
-
-  const entries: SessionFileEntry[] = [];
-  let discardedCrashTail = false;
-  for (const [index, line] of nonEmptyLines.entries()) {
-    try {
-      entries.push(parseSessionLine(line.text, filePath, line.number));
-    } catch (error) {
-      if (index !== nonEmptyLines.length - 1 || index === 0) throw error;
-      discardedCrashTail = true;
-    }
-  }
-  const header = entries[0];
-  if (header === undefined || !isSessionHeader(header))
-    throw corrupted(filePath, "first non-empty line is not a valid header");
-  validateSessionTree(filePath, entries);
-  return { entries, discardedCrashTail };
+export interface SessionCreateInfo {
+  id?: string;
+  parentSession?: string;
+  parentSessionId?: string;
 }
+
+function buildHeader(cwd: string, options?: SessionCreateInfo): JsonlV4Header {
+  return {
+    kind: "header",
+    version: 4,
+    id: options?.id ?? randomUUID(),
+    createdAt: Date.now(),
+    cwd,
+    ...(options?.parentSessionId !== undefined ? { parentSessionId: options.parentSessionId } : {}),
+    // The v3 parent *path* has no dedicated v4 slot when the id is known;
+    // preserve it in metadata so lineage debugging keeps working.
+    ...(options?.parentSession !== undefined
+      ? { metadata: { parentSessionPath: options.parentSession } }
+      : {}),
+  };
+}
+
+function headerView(header: JsonlV4Header): SessionHeader {
+  const metadata = header.metadata as Record<string, unknown> | undefined;
+  return {
+    type: "session",
+    version: CURRENT_SESSION_VERSION,
+    id: header.id,
+    timestamp: new Date(header.createdAt).toISOString(),
+    cwd: header.cwd,
+    ...(header.parentSessionId !== undefined ? { parentSessionId: header.parentSessionId } : {}),
+    ...(typeof metadata?.parentSessionPath === "string"
+      ? { parentSession: metadata.parentSessionPath }
+      : {}),
+    ...(header.legacyParentSessionPath !== undefined && metadata?.parentSessionPath === undefined
+      ? { parentSession: header.legacyParentSessionPath }
+      : {}),
+    ...(metadata !== undefined ? { metadata } : {}),
+  };
+}
+
+type StoreState =
+  | { kind: "live"; session: Session; header: JsonlV4Header }
+  | { kind: "pending"; header: JsonlV4Header };
 
 /**
- * Load and validate a session file. Missing and whitespace-only files return
- * no entries. A malformed final non-empty line is ignored as a crash tail;
- * all other malformed JSON and invalid tree relationships throw.
- */
-export function loadSessionFileEntries(filePath: string): SessionFileEntry[] {
-  return loadValidatedSessionFile(filePath).entries;
-}
-
-/**
- * Append-oriented session store over one v3 JSONL file.
+ * Async session store over one pi v4 JSONL file at a mikan-chosen path.
  *
- * Reading is tolerant (missing files and malformed lines yield an empty
- * session); appends persist immediately. A session opened from a file
- * without a valid header gets its header materialized on the first append.
+ * A missing or empty file opens as an empty session; the header (and file)
+ * materialize on the first append. Files with content must carry a valid
+ * v4 header — v3 files throw with a pointer at the migration script.
  */
 export class SessionStore {
   private readonly sessionFile: string | null;
   private readonly cwd: string;
-  private readonly sessionId: string;
-  private header: SessionHeader | null;
-  private headerOnDisk: boolean;
-  private rewriteBeforeAppend: boolean;
-  private entries: SessionEntry[] = [];
-  private byId = new Map<string, SessionEntry>();
-  private leafId: string | null = null;
+  private state: StoreState;
 
-  private constructor(
-    sessionFile: string | null,
-    cwd: string,
-    fileEntries: SessionFileEntry[],
-    rewriteBeforeAppend = false,
-  ) {
+  private constructor(sessionFile: string | null, cwd: string, state: StoreState) {
     this.sessionFile = sessionFile === null ? null : resolve(sessionFile);
-    const firstEntry = fileEntries[0];
-    this.header = firstEntry !== undefined && isSessionHeader(firstEntry) ? firstEntry : null;
-    this.headerOnDisk = this.header !== null;
-    this.rewriteBeforeAppend = rewriteBeforeAppend;
-    this.sessionId = this.header?.id ?? randomUUID();
     this.cwd = cwd;
-    for (const entry of fileEntries) {
-      if (isSessionHeader(entry)) continue;
-      if (entry.type === "leaf") {
-        // Written by pi-agent-core JSONL sessions; mikan tracks the leaf implicitly.
-        this.leafId = entry.targetId;
-        continue;
-      }
-      this.entries.push(entry);
-      this.byId.set(entry.id, entry);
-      this.leafId = entry.id;
+    this.state = state;
+  }
+
+  /**
+   * Open a session file. Missing and empty files start an empty session
+   * whose header is written on the first append.
+   * @param cwdOverride Working directory override; defaults to the header cwd.
+   */
+  static async open(path: string, cwdOverride?: string): Promise<SessionStore> {
+    const content = existsSync(path) ? readFileSync(path, "utf-8") : "";
+    if (content.trim().length === 0) {
+      const cwd = cwdOverride ?? process.cwd();
+      return new SessionStore(path, cwd, { kind: "pending", header: buildHeader(cwd) });
+    }
+    const header = parseV4Header(path, content);
+    const session = await repo().open(metadataFromHeader(header, resolve(path)));
+    return new SessionStore(resolve(path), cwdOverride ?? header.cwd, {
+      kind: "live",
+      session: session,
+      header,
+    });
+  }
+
+  /** Create a new session file with a fresh header, replacing any existing file. */
+  static async create(
+    path: string,
+    cwd: string,
+    options?: SessionCreateInfo,
+  ): Promise<SessionStore> {
+    const header = buildHeader(cwd, options);
+    mkdirSync(dirname(path), { recursive: true });
+    atomicWritePrivateFile(path, `${JSON.stringify(header)}\n`);
+    const session = await repo().open(metadataFromHeader(header, resolve(path)));
+    return new SessionStore(resolve(path), cwd, {
+      kind: "live",
+      session: session,
+      header,
+    });
+  }
+
+  /**
+   * Synchronously read a session file's header without opening the session.
+   * Returns null for missing, empty, or unreadable files; throws only for
+   * v3 files so callers surface the migration requirement.
+   */
+  static readHeader(path: string): SessionHeader | null {
+    let content: string;
+    try {
+      content = readFileSync(path, "utf-8");
+    } catch {
+      return null;
+    }
+    if (content.trim().length === 0) return null;
+    try {
+      return headerView(parseV4Header(path, content));
+    } catch (error) {
+      if (error instanceof SessionFormatError && /legacy v3/.test(error.message)) throw error;
+      return null;
     }
   }
 
   /**
-   * Open a session file. A missing or empty file starts an empty session
-   * whose header is written on the first append. A file that has content but
-   * no leading session header is treated as corrupted and throws, rather than
-   * being silently overwritten on the next append (which would erase the
-   * existing history). Callers on read paths already wrap this in try/catch.
-   * @param cwdOverride Working directory override; defaults to the header cwd.
+   * Synchronously write a fresh header-only session file, replacing any
+   * existing file. The session is opened later via {@link SessionStore.open}.
    */
-  static open(path: string, cwdOverride?: string): SessionStore {
-    const loaded = loadValidatedSessionFile(path);
-    const header = loaded.entries.find(isSessionHeader);
-    const cwd = cwdOverride ?? header?.cwd ?? process.cwd();
-    return new SessionStore(path, cwd, loaded.entries, loaded.discardedCrashTail);
-  }
-
-  /** Create a new session file with a fresh header, replacing any existing file. */
-  static create(
-    path: string,
-    cwd: string,
-    options?: { id?: string; parentSession?: string; parentSessionId?: string },
-  ): SessionStore {
-    const header: SessionHeader = {
-      type: "session",
-      version: CURRENT_SESSION_VERSION,
-      id: options?.id ?? randomUUID(),
-      timestamp: new Date().toISOString(),
-      cwd,
-      ...(options?.parentSession ? { parentSession: options.parentSession } : {}),
-      ...(options?.parentSessionId ? { parentSessionId: options.parentSessionId } : {}),
-    };
-    atomicWritePrivateFile(path, `${JSON.stringify(header)}\n`);
-    return new SessionStore(path, cwd, [header]);
+  static writeHeaderFile(path: string, cwd: string, options?: SessionCreateInfo): void {
+    mkdirSync(dirname(path), { recursive: true });
+    atomicWritePrivateFile(path, `${JSON.stringify(buildHeader(cwd, options))}\n`);
   }
 
   /** Create an ephemeral session that never writes a session file. */
   static inMemory(cwd = process.cwd()): SessionStore {
-    return new SessionStore(null, cwd, []);
+    const header = buildHeader(cwd);
+    const storage = new InMemorySessionStorage({ id: header.id, createdAt: header.createdAt });
+    const session = new Session(storage);
+    return new SessionStore(null, cwd, { kind: "live", session, header });
   }
 
   getSessionFile(): string | undefined {
@@ -294,136 +248,120 @@ export class SessionStore {
     return this.cwd;
   }
 
-  /** Session header as read from disk, or null when the file had none. */
+  /** v3-flavored view of the session header for callers that read lineage. */
   getHeader(): SessionHeader | null {
-    return this.header;
+    return headerView(this.state.header);
   }
 
   /** Stable session id: the header id, or a generated id for fresh sessions. */
   getSessionId(): string {
-    return this.sessionId;
+    return this.state.header.id;
   }
 
-  getLeafId(): string | null {
-    return this.leafId;
+  async getLeafId(): Promise<string | null> {
+    if (this.state.kind === "pending") return null;
+    return this.state.session.getLeafId();
   }
 
-  getEntry(id: string): SessionEntry | undefined {
-    return this.byId.get(id);
+  async getEntry(id: string): Promise<Entry | undefined> {
+    if (this.state.kind === "pending") return undefined;
+    return this.state.session.getEntry(id);
   }
 
-  /** All session entries (header excluded). Returns a shallow copy. */
-  getEntries(): SessionEntry[] {
-    return [...this.entries];
+  /** All session entries in append order. */
+  async getEntries(): Promise<Entry[]> {
+    if (this.state.kind === "pending") return [];
+    return this.state.session.findEntries({ order: "oldestFirst" });
   }
 
   /** Latest user-assigned session name, if any. */
-  getSessionName(): string | undefined {
-    for (let i = this.entries.length - 1; i >= 0; i--) {
-      const entry = this.entries[i];
-      if (entry?.type === "session_info") return entry.name?.trim() || undefined;
-    }
-    return undefined;
+  async getSessionName(): Promise<string | undefined> {
+    if (this.state.kind === "pending") return undefined;
+    return this.state.session.getName();
   }
 
   /**
    * Walk from an entry to the root, returning entries in path order
    * (root first). Defaults to the current leaf.
    */
-  getBranch(fromId?: string): SessionEntry[] {
-    const path: SessionEntry[] = [];
-    let currentId = fromId ?? this.leafId;
-    while (currentId) {
-      const entry = this.byId.get(currentId);
-      if (!entry) break;
-      path.push(entry);
-      currentId = entry.parentId;
-    }
-    return path.toReversed();
+  async getBranch(fromId?: string): Promise<Entry[]> {
+    if (this.state.kind === "pending") return [];
+    return this.state.session.findEntriesOnBranch({
+      order: "oldestFirst",
+      ...(fromId !== undefined ? { start: fromId } : {}),
+    });
   }
 
   /**
    * Build the LLM context (messages, thinking level, model) from the current
    * branch, resolving compaction and branch summaries along the path.
    */
-  buildSessionContext(): SessionContext {
-    return buildContextFromEntries(toPiEntries(this.getBranch()));
+  async buildSessionContext(): Promise<SessionContext> {
+    return buildContextFromEntries(await this.getBranch());
   }
 
   /** Append a chat message as a child of the current leaf. Returns the entry id. */
-  appendMessage(message: AgentMessage): string {
-    return this.appendEntry({ type: "message", message });
+  async appendMessage(message: AgentMessage): Promise<string> {
+    return (await this.live()).appendMessage(toDurable(message));
   }
 
   /** Append an extension/application data entry (never sent to the LLM). */
-  appendCustomEntry(customType: string, data?: unknown): string {
-    return this.appendEntry({ type: "custom", customType, data });
+  async appendCustomEntry(customType: string, data?: unknown): Promise<string> {
+    return (await this.live()).appendCustomEntry(customType, toDurable(data));
   }
 
-  /** Append a custom message entry that participates in LLM context. */
-  appendCustomMessageEntry(
+  /** Append a custom message that participates in LLM context. */
+  async appendCustomMessageEntry(
     customType: string,
     content: string | (TextContent | ImageContent)[],
     display: boolean,
     details?: unknown,
-  ): string {
-    return this.appendEntry({ type: "custom_message", customType, content, display, details });
+  ): Promise<string> {
+    return (await this.live()).appendMessage(
+      toDurable(createCustomMessage(customType, content, display, details, Date.now())),
+    );
   }
 
   /** Record a user-visible session name. */
-  appendSessionInfo(name: string): string {
-    return this.appendEntry({ type: "session_info", name });
+  async setSessionName(name: string): Promise<void> {
+    await (await this.live()).setName(name.trim() || undefined);
   }
 
   /** Persist a compaction summary produced for this session. */
-  appendCompaction(
+  async appendCompaction(
     summary: string,
-    firstKeptEntryId: string,
+    retainedTail: AgentMessage[],
     tokensBefore: number,
     details?: unknown,
-    fromHook?: boolean,
-  ): string {
-    return this.appendEntry({
-      type: "compaction",
-      summary,
-      firstKeptEntryId,
-      tokensBefore,
-      ...(details !== undefined ? { details } : {}),
-      ...(fromHook !== undefined ? { fromHook } : {}),
-    });
-  }
-
-  private appendEntry(partial: PendingSessionEntry): string {
-    const entry = {
-      ...partial,
-      id: generateEntryId(this.byId),
-      parentId: this.leafId,
-      timestamp: new Date().toISOString(),
-    } as SessionEntry;
-    this.entries.push(entry);
-    this.byId.set(entry.id, entry);
-    this.leafId = entry.id;
-    this.persist(entry);
+  ): Promise<string> {
+    const session = await this.live();
+    const entry = await session.appendEntry(
+      {
+        type: "compaction",
+        id: session.idGenerator.next(),
+        summary,
+        retainedTail: toDurable(retainedTail),
+        tokensBefore,
+        ...(details !== undefined ? { details: toDurable(details) } : {}),
+      },
+      "main",
+    );
     return entry.id;
   }
 
-  private persist(entry: SessionEntry): void {
-    if (this.sessionFile === null) return;
-    if (!this.headerOnDisk || this.rewriteBeforeAppend) {
-      this.header ??= {
-        type: "session",
-        version: CURRENT_SESSION_VERSION,
-        id: this.sessionId,
-        timestamp: new Date().toISOString(),
-        cwd: this.cwd,
-      };
-      const lines = [this.header, ...this.entries].map((line) => JSON.stringify(line));
-      mkdirSync(dirname(this.sessionFile), { recursive: true });
-      atomicWritePrivateFile(this.sessionFile, `${lines.join("\n")}\n`);
-      this.headerOnDisk = true;
-      this.rewriteBeforeAppend = false;
-      return;
+  /** Materialize the session file (when persisted) and return the live session. */
+  private async live(): Promise<Session> {
+    if (this.state.kind === "live") return this.state.session;
+    const header = this.state.header;
+    if (this.sessionFile === null) {
+      const storage = new InMemorySessionStorage({ id: header.id, createdAt: header.createdAt });
+      this.state = { kind: "live", session: new Session(storage), header };
+      return this.state.session;
     }
-    appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
+    mkdirSync(dirname(this.sessionFile), { recursive: true });
+    atomicWritePrivateFile(this.sessionFile, `${JSON.stringify(header)}\n`);
+    const session = await repo().open(metadataFromHeader(header, this.sessionFile));
+    this.state = { kind: "live", session, header };
+    return session;
   }
 }

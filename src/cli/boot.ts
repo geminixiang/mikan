@@ -4,7 +4,7 @@
  * the grammar that actually drives the daemon is testable without spawning a
  * process; main.ts just executes the plan.
  *
- * Modes, highest priority first: `ext`, `office`, `env` (own grammars, never
+ * Modes, highest priority first: `ext`, `office`, `sessions`, `env` (own grammars, never
  * flag-parsed here), `help`, `version`, `onboard`, `download`, `run`.
  */
 import { join, resolve } from "node:path";
@@ -17,11 +17,12 @@ import { defaultStateDir, resolveStateDir, takeValueFlag } from "./arg-grammar.j
 export type { BootPlan } from "./types.js";
 
 export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
-  if (args[0] === "ext" || args[0] === "office" || args[0] === "env") {
+  if (args[0] === "ext" || args[0] === "office" || args[0] === "sessions" || args[0] === "env") {
     return {
       mode: args[0],
       ...(args[0] === "ext" ? { extArgs: args.slice(1) } : {}),
       ...(args[0] === "office" ? { officeArgs: args.slice(1) } : {}),
+      ...(args[0] === "sessions" ? { sessionsArgs: args.slice(1) } : {}),
       stateDir: defaultStateDir(),
       workingDir: join(defaultStateDir(), "workspace"),
       workingDirExplicit: false,
@@ -92,6 +93,8 @@ Usage:
       Manage extensions (run \`mikan ext\` for details).
   mikan office <list|claim> …
       Inspect conversation offices and claim legacy directories for a platform.
+  mikan sessions migrate …
+      Migrate legacy v3 session files to the v4 format (run with the daemon stopped).
   mikan env
       Show the full environment-variable inventory and what is currently set.
 

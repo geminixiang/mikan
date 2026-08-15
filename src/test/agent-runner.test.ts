@@ -419,6 +419,7 @@ describe("PiAgentWrapper.run", () => {
         createSlackToolPack({
           postBlocks,
           updateBlocks: vi.fn(async () => {}),
+          ownsBlockKitMessage: () => false,
         }),
     ]);
     faux.setResponses([

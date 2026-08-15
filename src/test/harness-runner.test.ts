@@ -44,7 +44,7 @@ const echoTool: AgentTool = {
   name: "echo",
   description: "Echo the input",
   parameters: { type: "object", properties: { text: { type: "string" } } },
-  execute: async (_toolCallId, args) => ({
+  execute: async (_toolCallId: string, args: unknown) => ({
     content: [{ type: "text", text: `echo: ${(args as { text?: string }).text ?? ""}` }],
     details: { source: "echo" },
     usage: {
@@ -64,7 +64,7 @@ describe("MikanAgentSession", () => {
     faux.setResponses([fauxAssistantMessage("hello from faux")]);
 
     const sessionFile = join(dir, "session.jsonl");
-    const sessionStore = SessionStore.create(sessionFile, dir);
+    const sessionStore = await SessionStore.create(sessionFile, dir);
     const session = new MikanAgentSession({
       systemPrompt: "You are a test bot.",
       model,
@@ -107,7 +107,7 @@ describe("MikanAgentSession", () => {
       fauxAssistantMessage("done"),
     ]);
 
-    const sessionStore = SessionStore.create(join(dir, "session.jsonl"), dir);
+    const sessionStore = await SessionStore.create(join(dir, "session.jsonl"), dir);
     const session = new MikanAgentSession({
       systemPrompt: "test",
       model,
@@ -119,8 +119,7 @@ describe("MikanAgentSession", () => {
 
     await session.prompt("run the tool");
 
-    const roles = sessionStore
-      .getEntries()
+    const roles = (await sessionStore.getEntries())
       .filter((entry) => entry.type === "message")
       .map((entry) => (entry as { message: { role: string } }).message.role);
     expect(roles).toEqual(["user", "assistant", "toolResult", "assistant"]);
@@ -139,7 +138,7 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [echoTool],
       models,
-      sessionStore: SessionStore.create(join(dir, "usage.jsonl"), dir),
+      sessionStore: await SessionStore.create(join(dir, "usage.jsonl"), dir),
     });
     session.agent.sessionId = "usage-breakdown";
 
@@ -167,7 +166,7 @@ describe("MikanAgentSession", () => {
       toolName === "echo" ? { block: true, reason: "blocked by test" } : undefined,
     );
 
-    const sessionStore = SessionStore.create(join(dir, "session.jsonl"), dir);
+    const sessionStore = await SessionStore.create(join(dir, "session.jsonl"), dir);
     const session = new MikanAgentSession({
       systemPrompt: "test",
       model,
@@ -183,20 +182,18 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [echoTool],
       models,
-      sessionStore: SessionStore.create(join(dir, "hooked.jsonl"), dir),
+      sessionStore: await SessionStore.create(join(dir, "hooked.jsonl"), dir),
       extensions,
     });
     void session;
 
     await hooked.prompt("run the tool");
 
-    const toolResults = hooked.sessionStore
-      .getEntries()
-      .filter(
-        (entry) =>
-          entry.type === "message" &&
-          (entry as { message: { role: string } }).message.role === "toolResult",
-      );
+    const toolResults = (await hooked.sessionStore.getEntries()).filter(
+      (entry) =>
+        entry.type === "message" &&
+        (entry as { message: { role: string } }).message.role === "toolResult",
+    );
     expect(JSON.stringify(toolResults)).toContain("blocked by test");
   });
 
@@ -210,7 +207,7 @@ describe("MikanAgentSession", () => {
       reason: "user not allowed",
     }));
 
-    const sessionStore = SessionStore.create(join(dir, "session.jsonl"), dir);
+    const sessionStore = await SessionStore.create(join(dir, "session.jsonl"), dir);
     const session = new MikanAgentSession({
       systemPrompt: "test",
       model,
@@ -225,7 +222,9 @@ describe("MikanAgentSession", () => {
     expect(outcome).toEqual({ blocked: true, reason: "user not allowed" });
     // The model was never called and the blocked turn left no trace.
     expect(session.messages).toHaveLength(0);
-    expect(sessionStore.getEntries().filter((entry) => entry.type === "message")).toHaveLength(0);
+    expect(
+      (await sessionStore.getEntries()).filter((entry) => entry.type === "message"),
+    ).toHaveLength(0);
   });
 
   test("before_agent_start can rewrite the user prompt and sees the run origin", async () => {
@@ -239,7 +238,7 @@ describe("MikanAgentSession", () => {
       return { prompt: `${prompt} [enriched]` };
     });
 
-    const sessionStore = SessionStore.create(join(dir, "session.jsonl"), dir);
+    const sessionStore = await SessionStore.create(join(dir, "session.jsonl"), dir);
     const session = new MikanAgentSession({
       systemPrompt: "test",
       model,
@@ -273,7 +272,7 @@ describe("MikanAgentSession", () => {
     // The rewritten prompt is what entered the transcript and the store.
     const userMessage = session.messages.find((message) => message.role === "user");
     expect(JSON.stringify(userMessage)).toContain("original ask [enriched]");
-    expect(JSON.stringify(sessionStore.getEntries())).toContain("original ask [enriched]");
+    expect(JSON.stringify(await sessionStore.getEntries())).toContain("original ask [enriched]");
   });
 
   test("system prompt rewrites use and restore each prompt's dynamic base", async () => {
@@ -281,11 +280,11 @@ describe("MikanAgentSession", () => {
     const systemPrompts: string[] = [];
     faux.setResponses([
       (context) => {
-        systemPrompts.push(context.systemPrompt);
+        systemPrompts.push(context.systemPrompt ?? "");
         return fauxAssistantMessage("first");
       },
       (context) => {
-        systemPrompts.push(context.systemPrompt);
+        systemPrompts.push(context.systemPrompt ?? "");
         return fauxAssistantMessage("second");
       },
     ]);
@@ -300,7 +299,7 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [],
       models,
-      sessionStore: SessionStore.create(join(dir, "session.jsonl"), dir),
+      sessionStore: await SessionStore.create(join(dir, "session.jsonl"), dir),
       extensions,
     });
 
@@ -320,11 +319,11 @@ describe("MikanAgentSession", () => {
     const systemPrompts: string[] = [];
     faux.setResponses([
       (context) => {
-        systemPrompts.push(context.systemPrompt);
+        systemPrompts.push(context.systemPrompt ?? "");
         return fauxAssistantMessage("event response");
       },
       (context) => {
-        systemPrompts.push(context.systemPrompt);
+        systemPrompts.push(context.systemPrompt ?? "");
         return fauxAssistantMessage("interactive response");
       },
     ]);
@@ -339,7 +338,7 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [],
       models,
-      sessionStore: SessionStore.create(join(dir, "session.jsonl"), dir),
+      sessionStore: await SessionStore.create(join(dir, "session.jsonl"), dir),
       extensions,
     });
 
@@ -367,7 +366,7 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [],
       models,
-      sessionStore: SessionStore.create(join(dir, "session.jsonl"), dir),
+      sessionStore: await SessionStore.create(join(dir, "session.jsonl"), dir),
       extensions,
     });
 
@@ -399,7 +398,7 @@ describe("MikanAgentSession", () => {
       }),
     }));
 
-    const sessionStore = SessionStore.create(join(dir, "session.jsonl"), dir);
+    const sessionStore = await SessionStore.create(join(dir, "session.jsonl"), dir);
     const session = new MikanAgentSession({
       systemPrompt: "test",
       model,
@@ -426,7 +425,7 @@ describe("MikanAgentSession", () => {
     expect(convertedContexts[1]).not.toContain("[call-only] [call-only]");
     expect(JSON.stringify(session.messages)).toContain("canonical ask");
     expect(JSON.stringify(session.messages)).not.toContain("[call-only]");
-    expect(JSON.stringify(sessionStore.getEntries())).not.toContain("[call-only]");
+    expect(JSON.stringify(await sessionStore.getEntries())).not.toContain("[call-only]");
   });
 
   test("message_end rewrites reach listeners, persistence, and in-memory state exactly once", async () => {
@@ -448,7 +447,7 @@ describe("MikanAgentSession", () => {
       };
     });
 
-    const sessionStore = SessionStore.create(join(dir, "session.jsonl"), dir);
+    const sessionStore = await SessionStore.create(join(dir, "session.jsonl"), dir);
     const session = new MikanAgentSession({
       systemPrompt: "test",
       model,
@@ -460,17 +459,15 @@ describe("MikanAgentSession", () => {
     });
     const listenerMessages: string[] = [];
     const persistedCountsAtListener: number[] = [];
-    session.subscribe((event) => {
+    session.subscribe(async (event) => {
       if (event.type === "message_end" && event.message.role === "assistant") {
         listenerMessages.push(JSON.stringify(event.message));
         persistedCountsAtListener.push(
-          sessionStore
-            .getEntries()
-            .filter(
-              (entry) =>
-                entry.type === "message" &&
-                (entry as { message: { role: string } }).message.role === "assistant",
-            ).length,
+          (await sessionStore.getEntries()).filter(
+            (entry) =>
+              entry.type === "message" &&
+              (entry as { message: { role: string } }).message.role === "assistant",
+          ).length,
         );
       }
     });
@@ -482,13 +479,11 @@ describe("MikanAgentSession", () => {
     const assistantMessages = session.messages.filter((message) => message.role === "assistant");
     expect(assistantMessages).toHaveLength(1);
     expect(JSON.stringify(assistantMessages[0])).toContain("rewritten answer");
-    const persistedAssistants = sessionStore
-      .getEntries()
-      .filter(
-        (entry) =>
-          entry.type === "message" &&
-          (entry as { message: { role: string } }).message.role === "assistant",
-      );
+    const persistedAssistants = (await sessionStore.getEntries()).filter(
+      (entry) =>
+        entry.type === "message" &&
+        (entry as { message: { role: string } }).message.role === "assistant",
+    );
     expect(persistedAssistants).toHaveLength(1);
     expect(JSON.stringify(persistedAssistants[0])).toContain("rewritten answer");
     expect(JSON.stringify(persistedAssistants[0])).not.toContain("original answer");
@@ -502,7 +497,7 @@ describe("MikanAgentSession", () => {
     const executedArguments: unknown[] = [];
     const recordingEchoTool: AgentTool = {
       ...echoTool,
-      execute: async (_toolCallId, args) => {
+      execute: async (_toolCallId: string, args: unknown) => {
         executedArguments.push(args);
         return { content: [{ type: "text", text: "recorded" }], details: {} };
       },
@@ -534,7 +529,7 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [recordingEchoTool],
       models,
-      sessionStore: SessionStore.create(join(dir, "identity.jsonl"), dir),
+      sessionStore: await SessionStore.create(join(dir, "identity.jsonl"), dir),
       extensions,
     });
     let messageEndMessage: unknown;
@@ -549,6 +544,7 @@ describe("MikanAgentSession", () => {
       }
       if (
         event.type === "turn_end" &&
+        event.message.role === "assistant" &&
         event.message.content.some((part) => part.type === "toolCall")
       ) {
         turnEndMessage = event.message;
@@ -590,7 +586,7 @@ describe("MikanAgentSession", () => {
       };
     });
 
-    const sessionStore = SessionStore.create(join(dir, "session.jsonl"), dir);
+    const sessionStore = await SessionStore.create(join(dir, "session.jsonl"), dir);
     const session = new MikanAgentSession({
       systemPrompt: "test",
       model,
@@ -607,13 +603,11 @@ describe("MikanAgentSession", () => {
     expect(observedDetails).toEqual([{ source: "echo" }]);
     expect(observedUsage).toEqual([expect.objectContaining({ input: 1, output: 2 })]);
     const persisted = JSON.stringify(
-      sessionStore
-        .getEntries()
-        .filter(
-          (entry) =>
-            entry.type === "message" &&
-            (entry as { message: { role: string } }).message.role === "toolResult",
-        ),
+      (await sessionStore.getEntries()).filter(
+        (entry) =>
+          entry.type === "message" &&
+          (entry as { message: { role: string } }).message.role === "toolResult",
+      ),
     );
     expect(persisted).toContain("echo: token=***");
     expect(persisted).toContain('"redacted":true');
@@ -638,7 +632,7 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [],
       models,
-      sessionStore: SessionStore.create(join(dir, "session.jsonl"), dir),
+      sessionStore: await SessionStore.create(join(dir, "session.jsonl"), dir),
       extensions,
     });
 
@@ -666,15 +660,15 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [echoTool],
       models,
-      sessionStore: SessionStore.create(join(dir, "session.jsonl"), dir),
+      sessionStore: await SessionStore.create(join(dir, "session.jsonl"), dir),
       extensions,
     });
 
     await session.prompt("run the tool", { budget: { maxLlmCalls: 1 } });
 
     expect(tripped).toHaveLength(1);
-    expect(tripped[0].llmCalls).toBe(1);
-    expect(tripped[0].reason).toContain("LLM calls");
+    expect(tripped[0]?.llmCalls).toBe(1);
+    expect(tripped[0]?.reason).toContain("LLM calls");
   });
 
   test("budget circuit breaker aborts a run that exceeds the LLM-call cap", async () => {
@@ -685,7 +679,7 @@ describe("MikanAgentSession", () => {
       fauxAssistantMessage("done"),
     ]);
 
-    const sessionStore = SessionStore.create(join(dir, "session.jsonl"), dir);
+    const sessionStore = await SessionStore.create(join(dir, "session.jsonl"), dir);
     const session = new MikanAgentSession({
       systemPrompt: "test",
       model,
@@ -711,7 +705,7 @@ describe("MikanAgentSession", () => {
 
     // The cap trips after the first LLM call and aborts the run, so the second
     // turn produces no output — the "done" response never materializes.
-    expect(JSON.stringify(sessionStore.getEntries())).not.toContain("done");
+    expect(JSON.stringify(await sessionStore.getEntries())).not.toContain("done");
   });
 
   test("foldExternalUsage folds delegated spend and enforces the budget at the fold", async () => {
@@ -753,7 +747,7 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [delegateTool],
       models,
-      sessionStore: SessionStore.create(join(dir, "session.jsonl"), dir),
+      sessionStore: await SessionStore.create(join(dir, "session.jsonl"), dir),
     });
 
     const events: HarnessEvent[] = [];
@@ -826,7 +820,7 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [captureTool, holdTool],
       models,
-      sessionStore: SessionStore.create(join(dir, "usage-owner.jsonl"), dir),
+      sessionStore: await SessionStore.create(join(dir, "usage-owner.jsonl"), dir),
     });
 
     await session.prompt("capture usage ownership");
@@ -859,7 +853,7 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [],
       models,
-      sessionStore: SessionStore.create(join(dir, "compaction-usage.jsonl"), dir),
+      sessionStore: await SessionStore.create(join(dir, "compaction-usage.jsonl"), dir),
       settings: { compaction: { reserveTokens: 5, keepRecentTokens: 1 } },
     });
 
@@ -880,7 +874,7 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [],
       models,
-      sessionStore: SessionStore.create(join(dir, "compaction-budget.jsonl"), dir),
+      sessionStore: await SessionStore.create(join(dir, "compaction-budget.jsonl"), dir),
       settings: { compaction: { reserveTokens: 5, keepRecentTokens: 1 } },
     });
 
@@ -908,7 +902,7 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [],
       models,
-      sessionStore: SessionStore.create(join(dir, "overflow-budget.jsonl"), dir),
+      sessionStore: await SessionStore.create(join(dir, "overflow-budget.jsonl"), dir),
       settings: { compaction: { reserveTokens: 50, keepRecentTokens: 1 } },
     });
 
@@ -934,7 +928,7 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [],
       models,
-      sessionStore: SessionStore.create(join(dir, "compaction-call-cap.jsonl"), dir),
+      sessionStore: await SessionStore.create(join(dir, "compaction-call-cap.jsonl"), dir),
       settings: { compaction: { reserveTokens: 5, keepRecentTokens: 1 } },
     });
 
@@ -955,7 +949,7 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [],
       models,
-      sessionStore: SessionStore.create(join(dir, "session.jsonl"), dir),
+      sessionStore: await SessionStore.create(join(dir, "session.jsonl"), dir),
     });
 
     await session.prompt("answer directly", { budget: { maxLlmCalls: 1 } });
@@ -990,7 +984,7 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [],
       models,
-      sessionStore: SessionStore.create(join(dir, "session.jsonl"), dir),
+      sessionStore: await SessionStore.create(join(dir, "session.jsonl"), dir),
     });
 
     await expect(session.prompt("hi")).rejects.toThrow(/No credentials for provider/);

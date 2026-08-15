@@ -35,11 +35,11 @@ function writeLog(entries: object[]): void {
   );
 }
 
-function readContextText(sessionFile: string): string {
-  const session = SessionStore.open(sessionFile, conversationDir);
-  return session
-    .buildSessionContext()
-    .messages.map((message) =>
+async function readContextText(sessionFile: string): Promise<string> {
+  const session = await SessionStore.open(sessionFile, conversationDir);
+  const context = await session.buildSessionContext();
+  return context.messages
+    .map((message) =>
       typeof message.content === "string"
         ? message.content
         : message.content.map((part) => (part.type === "text" ? part.text : "")).join("\n"),
@@ -54,7 +54,15 @@ function countJsonlEntries(
   return readFileSync(sessionFile, "utf-8")
     .split("\n")
     .filter(Boolean)
-    .map((line) => JSON.parse(line) as { type?: string; customType?: string })
+    .map((line) => {
+      // v4 lines: header, entry wrappers, lane pointers, facts. Normalize to
+      // the entry-shaped view the predicates were written against; the header
+      // keeps its v3 spelling ("session") so header-count intents read the same.
+      const parsed = JSON.parse(line) as { kind?: string; type?: string; customType?: string };
+      if (parsed.kind === "entry") return parsed;
+      if (parsed.kind === "header") return { type: "session" };
+      return {};
+    })
     .filter(predicate).length;
 }
 
@@ -72,7 +80,7 @@ describe("ChatHistorySync", () => {
     const manager = new ChatHistorySync({
       now: () => new Date("2026-05-01T00:00:10.000Z"),
     });
-    const freshFile = manager.resetSession({ conversationDir, sessionKey: "C123" });
+    const freshFile = await manager.resetSession({ conversationDir, sessionKey: "C123" });
 
     appendFileSync(
       join(conversationDir, "log.jsonl"),
@@ -99,7 +107,7 @@ describe("ChatHistorySync", () => {
       sessionKey: "C123",
       currentMessageId: "1000.0003",
     });
-    let text = readContextText(freshFile);
+    let text = await readContextText(freshFile);
     expect(text).not.toContain("already logged old message");
     expect(text).not.toContain("late pre-reset message");
 
@@ -118,7 +126,7 @@ describe("ChatHistorySync", () => {
       sessionKey: "C123",
       currentMessageId: "1000.0004",
     });
-    text = readContextText(freshFile);
+    text = await readContextText(freshFile);
     expect(text).toContain("new message");
     expect(text).not.toContain("late pre-reset message");
   });
@@ -128,7 +136,7 @@ describe("ChatHistorySync", () => {
     const manager = new ChatHistorySync({
       now: () => new Date("2026-05-01T00:00:10.000Z"),
     });
-    const freshFile = manager.resetSession({ conversationDir, sessionKey: "C123" });
+    const freshFile = await manager.resetSession({ conversationDir, sessionKey: "C123" });
 
     appendFileSync(
       join(conversationDir, "log.jsonl"),
@@ -161,7 +169,7 @@ describe("ChatHistorySync", () => {
       sessionKey: "C123",
       currentMessageId: "new-platform-id",
     });
-    const text = readContextText(freshFile);
+    const text = await readContextText(freshFile);
     expect(text).not.toContain("undated stale message");
     expect(text).not.toContain("malformed stale message");
   });
@@ -214,7 +222,7 @@ describe("ChatHistorySync", () => {
       currentMessageId: "1000.0004",
     });
 
-    const text = readContextText(scope.contextFile);
+    const text = await readContextText(scope.contextFile);
     expect(text).toContain("recent question");
     expect(text).toContain("recent answer");
     expect(text).not.toContain("too old");
@@ -258,7 +266,7 @@ describe("ChatHistorySync", () => {
       currentMessageId: "1000.0002",
     });
 
-    const text = readContextText(scope.contextFile);
+    const text = await readContextText(scope.contextFile);
     expect(text).toContain("completed history");
     expect(text).not.toContain("current message");
     expect(text).not.toContain("queued future message");
@@ -319,14 +327,14 @@ describe("ChatHistorySync", () => {
       },
     ]);
 
-    manager.syncSessionManager({
+    await manager.syncSessionManager({
       conversationDir,
       sessionKey: "C123",
-      sessionManager: openManagedSession(scope.contextFile, conversationDir),
+      sessionManager: await openManagedSession(scope.contextFile, conversationDir),
       currentMessageId: "1000.0003",
     });
 
-    const text = readContextText(scope.contextFile);
+    const text = await readContextText(scope.contextFile);
     expect(text).toContain("first answer");
     expect(text).not.toContain("current turn");
     expect(text).not.toContain("queued future turn");
@@ -377,7 +385,7 @@ describe("ChatHistorySync", () => {
       cwd: conversationDir,
     });
 
-    const text = readContextText(scope.contextFile);
+    const text = await readContextText(scope.contextFile);
     expect(text).toContain("question");
     expect(text).toContain("One two three");
     expect(countJsonlEntries(scope.contextFile, (entry) => entry.type === "message")).toBe(2);
@@ -435,7 +443,7 @@ describe("ChatHistorySync", () => {
 
     expect(scope.contextFile).toBe(getThreadSessionFile(conversationDir, "C123:2000.0001"));
     expect(scope.threadRootMessage?.text).toBe("thread root");
-    const text = readContextText(scope.contextFile);
+    const text = await readContextText(scope.contextFile);
     expect(text).toContain("top-level context");
     expect(text).toContain("thread root");
     expect(text).toContain("thread bot reply");
@@ -514,7 +522,7 @@ describe("ChatHistorySync", () => {
       currentMessageId: "1000.0007",
     });
 
-    const text = readContextText(scope.contextFile);
+    const text = await readContextText(scope.contextFile);
     expect(text).toContain("thread0");
     expect(text).toContain("thread1");
     expect(text).toContain("thread2");
@@ -603,13 +611,13 @@ describe("ChatHistorySync", () => {
       cwd: conversationDir,
       currentMessageId: "1000.0003",
     });
-    const session = openManagedSession(firstScope.contextFile, conversationDir);
-    session.appendMessage({
+    const session = await openManagedSession(firstScope.contextFile, conversationDir);
+    await session.appendMessage({
       role: "user",
       content: [{ type: "text", text: "[2026-05-01 00:00:02+00:00] [alice]: next one is?" }],
       timestamp: 1,
     });
-    session.appendMessage({
+    await session.appendMessage({
       role: "assistant",
       content: [{ type: "text", text: "k2" }],
       api: "platform-history",
@@ -635,7 +643,7 @@ describe("ChatHistorySync", () => {
       currentMessageId: "1000.0008",
     });
 
-    const text = readContextText(secondScope.contextFile);
+    const text = await readContextText(secondScope.contextFile);
     expect(text).toContain("k0");
     expect(text).toContain("k1");
     expect(text).toContain("k2");
@@ -712,7 +720,7 @@ describe("ChatHistorySync", () => {
     });
 
     expect(secondScope.contextFile).toBe(firstScope.contextFile);
-    const text = readContextText(secondScope.contextFile);
+    const text = await readContextText(secondScope.contextFile);
     expect(text).toContain("seed");
     expect(text).not.toContain("sync0");
     expect(text).toContain("sync1");
@@ -772,7 +780,7 @@ describe("ChatHistorySync", () => {
     });
 
     expect(secondScope.contextFile).toBe(firstScope.contextFile);
-    const text = readContextText(secondScope.contextFile);
+    const text = await readContextText(secondScope.contextFile);
     expect(text).toContain("seed");
     expect(text).toContain("rebuilt history");
     expect(text).toContain("after rebuild");
@@ -819,13 +827,13 @@ describe("ChatHistorySync", () => {
       currentMessageId: "1000.0003",
     });
 
-    const session = openManagedSession(scope.contextFile, conversationDir);
-    session.appendMessage({
+    const session = await openManagedSession(scope.contextFile, conversationDir);
+    await session.appendMessage({
       role: "user",
       content: [{ type: "text", text: "[alice]: current message" }],
       timestamp: 1,
     });
-    session.appendMessage({
+    await session.appendMessage({
       role: "assistant",
       content: [{ type: "text", text: "u2" }],
       api: "platform-history",
@@ -893,9 +901,9 @@ describe("ChatHistorySync", () => {
       cwd: conversationDir,
       currentMessageId: "2000.0002",
     });
-    const session = openManagedSession(scope.contextFile, conversationDir);
+    const session = await openManagedSession(scope.contextFile, conversationDir);
 
-    const report = manager.syncSessionManager({
+    const report = await manager.syncSessionManager({
       conversationDir,
       sessionKey: "C123:2000.0001",
       sessionManager: session,

@@ -41,7 +41,6 @@ import * as log from "../log.js";
 import type { ExtensionRegistry } from "./extensions/registry.js";
 import type { RunOrigin } from "./extensions/types.js";
 import type { MikanModels } from "./models.js";
-import { findFirstKeptEntryId, toPiEntries } from "./pi-session.js";
 import { resolveHarnessSettings } from "./settings.js";
 import type { SessionStore } from "./session-store.js";
 import type {
@@ -241,8 +240,8 @@ export class MikanAgentSession {
   }
 
   /** Replace the agent transcript from the persisted session tree. */
-  reloadFromSession(): number {
-    const context = this.sessionStore.buildSessionContext();
+  async reloadFromSession(): Promise<number> {
+    const context = await this.sessionStore.buildSessionContext();
     if (context.messages.length > 0) {
       this.agent.state.messages = context.messages;
     }
@@ -434,10 +433,10 @@ export class MikanAgentSession {
     }
 
     if (message.role === "user" || message.role === "assistant" || message.role === "toolResult") {
-      this.sessionStore.appendMessage(message);
+      await this.sessionStore.appendMessage(message);
     } else if (message.role === "custom") {
       const custom = message as CustomMessage;
-      this.sessionStore.appendCustomMessageEntry(
+      await this.sessionStore.appendCustomMessageEntry(
         custom.customType,
         custom.content,
         custom.display,
@@ -595,8 +594,8 @@ export class MikanAgentSession {
   private async runCompaction(reason: CompactionReason, willRetry: boolean): Promise<boolean> {
     let started = false;
     try {
-      const piEntries = toPiEntries(this.sessionStore.getBranch());
-      const preparation = getOrThrow(prepareCompaction(piEntries, this.settings.compaction));
+      const pathEntries = await this.sessionStore.getBranch();
+      const preparation = getOrThrow(prepareCompaction(pathEntries, this.settings.compaction));
       if (!preparation) return false;
 
       await this.emit({ type: "compaction_start", reason });
@@ -618,25 +617,17 @@ export class MikanAgentSession {
         await this.emit({ type: "compaction_end", reason, aborted: true });
         return false;
       }
-      // pi 0.84 returns the retained tail inline instead of a kept-entry
-      // pointer; mikan's v3 session format requires a kept entry on the
-      // branch, and the compaction path used here always produces one.
-      const firstKeptEntryId = findFirstKeptEntryId(piEntries, preparation.retainedTail);
-      if (firstKeptEntryId === undefined) {
-        throw new Error("compaction returned no first kept entry");
-      }
-
-      const entryId = this.sessionStore.appendCompaction(
+      const entryId = await this.sessionStore.appendCompaction(
         result.summary,
-        firstKeptEntryId,
+        result.retainedTail,
         result.tokensBefore,
         result.details,
       );
-      const context = this.sessionStore.buildSessionContext();
+      const context = await this.sessionStore.buildSessionContext();
       this.agent.state.messages = context.messages;
 
       if (this.extensions?.hasHandlers("session_compact")) {
-        const entry = this.sessionStore.getEntry(entryId);
+        const entry = await this.sessionStore.getEntry(entryId);
         if (entry?.type === "compaction") {
           await this.extensions.emit("session_compact", {
             entry: entry as CompactionEntry,
@@ -650,7 +641,7 @@ export class MikanAgentSession {
         reason,
         result: {
           summary: result.summary,
-          firstKeptEntryId,
+          retainedMessages: result.retainedTail.length,
           tokensBefore: result.tokensBefore,
         },
         aborted: false,
