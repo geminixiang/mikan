@@ -35,6 +35,7 @@ import { startWebServer } from "./web/server.js";
 import { InMemoryAdminTokenStore } from "./web/admin/store.js";
 import { InMemoryLinkTokenStore } from "./web/login/store.js";
 import { InMemoryBindingTokenStore } from "./web/login/binding.js";
+import { InMemoryWebSessionStore } from "./web/login/session-store.js";
 import { InMemorySessionViewTokenStore } from "./web/session-view/store.js";
 import { DockerContainerManager } from "./provisioner.js";
 import {
@@ -406,6 +407,7 @@ const linkTokenStore = new InMemoryLinkTokenStore();
 const sessionViewTokenStore = new InMemorySessionViewTokenStore();
 const adminTokenStore = new InMemoryAdminTokenStore();
 const bindingTokenStore = new InMemoryBindingTokenStore();
+const webSessionStore = new InMemoryWebSessionStore();
 setInterval(() => linkTokenStore.purge(), 5 * 60 * 1000).unref();
 setInterval(() => sessionViewTokenStore.purge(), 5 * 60 * 1000).unref();
 setInterval(() => adminTokenStore.purge(), 5 * 60 * 1000).unref();
@@ -789,6 +791,7 @@ if (LINK_PORT) {
     sessionViewInteractive: { handler, botsByPlatform },
     adminOptions: { adminTokenStore, workspace, runtime: handler, sandbox, botsByPlatform },
     bindingTokenStore,
+    webSessionStore,
     webDistIndex: WEB_DIST_INDEX,
     githubWebhook:
       GITHUB_WEBHOOK_SECRET && githubBotForWebhook

@@ -4,6 +4,7 @@ import { escapeHtml, readJsonBody, renderPortalShell, requestBaseUrl } from "../
 import { resolveLinkBaseUrl } from "../../config.js";
 import type { InMemoryLinkTokenStore } from "./store.js";
 import type { InMemoryBindingTokenStore } from "./binding.js";
+import type { InMemoryWebSessionStore } from "./session-store.js";
 import {
   getOAuthServices,
   resolveOAuthService,
@@ -31,7 +32,7 @@ interface LinkCompleteBody {
 interface OAuthStartBody {
   token: string;
   serviceId: string;
-  mode?: "binding";
+  mode?: "binding" | "login";
 }
 
 interface PendingOAuthState {
@@ -39,8 +40,8 @@ interface PendingOAuthState {
   serviceId: string;
   codeVerifier: string;
   expiresAt: number;
-  /** 'binding' when this OAuth flow is for web binding, not vault. */
-  mode?: "binding";
+  /** 'binding' when this OAuth flow is for web binding; 'login' for web login. */
+  mode?: "binding" | "login";
 }
 
 interface SecretPresetField {
@@ -253,10 +254,41 @@ export function createLoginRequestHandler(
   vaultManager: VaultManager,
   notify: NotifyFn,
   bindingTokenStore?: InMemoryBindingTokenStore,
+  webSessionStore?: InMemoryWebSessionStore,
 ): (req: IncomingMessage, res: ServerResponse, url: URL) => boolean {
   const oauthStates = new Map<string, PendingOAuthState>();
 
   return (req, res, url) => {
+    // ── GET /api/me — current web session ──────────────────────────────
+    if (req.method === "GET" && url.pathname === "/api/me") {
+      const cookie = parseCookie(req.headers.cookie);
+      const sessionId = cookie?.mikan_session;
+      if (!sessionId || !webSessionStore) {
+        res.writeHead(401, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ authenticated: false }));
+        return true;
+      }
+      const session = webSessionStore.getSession(sessionId);
+      if (!session) {
+        res.writeHead(401, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ authenticated: false }));
+        return true;
+      }
+      res.writeHead(200, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "no-store",
+      });
+      res.end(
+        JSON.stringify({
+          authenticated: true,
+          oauthIdentity: session.oauthIdentity,
+          platforms: session.platforms,
+          expiresAt: session.expiresAt,
+        }),
+      );
+      return true;
+    }
+
     if (req.method === "GET" && url.pathname === "/api/link/info") {
       const rawToken = url.searchParams.get("token") ?? "";
       const linkToken = linkTokenStore.peek(rawToken);
@@ -369,6 +401,7 @@ export function createLoginRequestHandler(
         notify,
         oauthStates,
         bindingTokenStore,
+        webSessionStore,
         res,
       ).catch((err: Error) => {
         log.logWarning("OAuth callback failed", err.message);
@@ -1330,8 +1363,10 @@ async function handleOAuthStart(
   }
 
   const isBinding = data.mode === "binding";
+  const isLogin = data.mode === "login";
 
   // For binding mode, the token is a binding code, not a link token
+  // For login mode, the token field is unused (user is signing in via OAuth)
   if (isBinding) {
     if (!bindingTokenStore) {
       res.writeHead(400, { "Content-Type": "application/json" });
@@ -1344,7 +1379,7 @@ async function handleOAuthStart(
       res.end(JSON.stringify({ error: "Invalid or expired binding code" }));
       return;
     }
-  } else {
+  } else if (!isLogin) {
     const linkToken = linkTokenStore.peek(data.token);
     if (!linkToken) {
       res.writeHead(400, { "Content-Type": "application/json" });
@@ -1417,6 +1452,7 @@ async function handleOAuthCallback(
   notify: NotifyFn,
   oauthStates: Map<string, PendingOAuthState>,
   bindingTokenStore: InMemoryBindingTokenStore | undefined,
+  webSessionStore: InMemoryWebSessionStore | undefined,
   res: ServerResponse,
 ): Promise<void> {
   const state = url.searchParams.get("state") ?? "";
@@ -1532,6 +1568,34 @@ async function handleOAuthCallback(
         `Web binding complete! Your chat account is now linked to ${oauthIdentity}.`,
       ),
     );
+    return;
+  }
+
+  // ── Login flow: issue a session cookie ──────────────────────────────
+  if (pending.mode === "login") {
+    const oauthIdentity = await resolveOAuthIdentity(service.id, accessToken);
+    if (!oauthIdentity) {
+      res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(renderErrorPage("Could not resolve your OAuth identity. Please try again."));
+      return;
+    }
+    if (!webSessionStore) {
+      res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(renderErrorPage("Web sessions are not configured on this server."));
+      return;
+    }
+    // Look up bound platforms from the binding store
+    const boundBinding = bindingTokenStore?.resolveByOAuthIdentity(oauthIdentity);
+    const platforms = boundBinding
+      ? [{ platform: boundBinding.platform, platformUserId: boundBinding.platformUserId }]
+      : [];
+    const { sessionId } = webSessionStore.create(oauthIdentity, platforms);
+    // Set httpOnly session cookie
+    res.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Set-Cookie": `mikan_session=${sessionId}; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax`,
+    });
+    res.end(renderSuccessPage(`Signed in as ${oauthIdentity}. You can close this window.`));
     return;
   }
 
@@ -1738,4 +1802,18 @@ async function resolveOAuthIdentity(
   } catch {
     return undefined;
   }
+}
+
+/** Parse a Cookie header into a simple key-value map. */
+function parseCookie(header: string | undefined): Record<string, string> {
+  const cookies: Record<string, string> = {};
+  if (!header) return cookies;
+  for (const pair of header.split(";")) {
+    const eq = pair.indexOf("=");
+    if (eq === -1) continue;
+    const key = pair.slice(0, eq).trim();
+    const value = pair.slice(eq + 1).trim();
+    if (key) cookies[key] = value;
+  }
+  return cookies;
 }

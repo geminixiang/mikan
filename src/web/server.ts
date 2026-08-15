@@ -13,6 +13,7 @@ import { createBindingHandler } from "./login/binding-handler.js";
 import { requestBaseUrl } from "./portal-shell.js";
 import type { InMemoryLinkTokenStore } from "./login/store.js";
 import type { InMemoryBindingTokenStore } from "./login/binding.js";
+import type { InMemoryWebSessionStore } from "./login/session-store.js";
 import type { NotifyFn } from "./login/types.js";
 import {
   handleSessionViewRequest,
@@ -38,6 +39,7 @@ interface StartWebServerOptions {
   sessionViewTokenStore?: InMemorySessionViewTokenStore;
   sessionViewInteractive?: SessionViewInteractiveOptions;
   bindingTokenStore?: InMemoryBindingTokenStore;
+  webSessionStore?: InMemoryWebSessionStore;
   adminOptions?: {
     adminTokenStore: InMemoryAdminTokenStore;
     workspace?: Workspace;
@@ -211,6 +213,7 @@ export async function startWebServer(options: StartWebServerOptions): Promise<Se
     options.vaultManager,
     options.notify,
     options.bindingTokenStore,
+    options.webSessionStore,
   );
 
   // Constructed once at server start; the admin portal consumes the owning
