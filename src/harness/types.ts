@@ -160,8 +160,8 @@ export type SubagentRunResult<TOutput = string> =
   | SubagentRunIncompleteResult;
 
 /**
- * v3-flavored header view synthesized from the v4 file header for callers
- * that read session lineage. `metadata` carries mikan header extras (for
+ * Compatibility header view synthesized from the v4 file header for callers
+ * that read mikan session lineage. `metadata` carries mikan header extras (for
  * example `parentSessionPath` and the legacy `source` marker preserved by
  * the v3 migration).
  */

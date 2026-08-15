@@ -41,7 +41,6 @@ export async function loadSessionViewModel(sessionFile: string): Promise<Session
   const resolvedFile = resolve(sessionFile);
   const sm = await SessionStore.open(resolvedFile);
   const header = sm.getHeader();
-  if (!header) throw new Error(`No valid session found: ${sessionFile}`);
 
   const entries = await sm.getEntries();
   const updatedAt = entryIsoTime(entries.at(-1)) ?? header.timestamp;
@@ -107,9 +106,8 @@ export async function resolveRequestedSessionFile(
   const candidate = join(dirname(resolvedBase), fileName);
   if (!existsSync(candidate)) return null;
 
-  let sm: SessionStore;
   try {
-    sm = await SessionStore.open(candidate);
+    await SessionStore.open(candidate);
   } catch (err) {
     throw new Error(
       `Session file is corrupted: ${candidate}: ${
@@ -117,9 +115,6 @@ export async function resolveRequestedSessionFile(
       }`,
       { cause: err },
     );
-  }
-  if (!sm.getHeader()) {
-    throw new Error(`Session file is missing a valid header: ${candidate}`);
   }
   return candidate;
 }
@@ -150,12 +145,6 @@ async function buildSessionRelation(
     return null;
   }
   const header = sm.getHeader();
-  if (!header) {
-    log.logWarning(
-      `Skipping session file with missing header while building ${kind} relation: ${sessionFile}`,
-    );
-    return null;
-  }
   if (
     kind === "thread" &&
     !isChildThreadSession(

@@ -12,8 +12,7 @@
  * v3 files (the pre-0.84 layout) are not readable at runtime: `open` throws
  * an actionable error pointing at the `mikan sessions migrate` script.
  */
-import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import {
   buildSessionContext as buildContextFromEntries,
@@ -21,6 +20,7 @@ import {
   InMemorySessionStorage,
   JsonlSessionRepo,
   Session,
+  uuidv7,
 } from "@earendil-works/pi-agent-core";
 import type {
   AgentMessage,
@@ -58,11 +58,39 @@ function repo(): JsonlSessionRepo {
 
 class SessionFormatError extends Error {}
 
+const HEADER_CHUNK_SIZE = 4096;
+const MAX_HEADER_BYTES = 1024 * 1024;
+
+/** Read only the first JSONL line rather than loading the complete session. */
+function readHeaderLine(filePath: string): string {
+  const fd = openSync(filePath, "r");
+  const chunks: Buffer[] = [];
+  let total = 0;
+  try {
+    while (total < MAX_HEADER_BYTES) {
+      const chunk = Buffer.allocUnsafe(Math.min(HEADER_CHUNK_SIZE, MAX_HEADER_BYTES - total));
+      const bytesRead = readSync(fd, chunk, 0, chunk.length, null);
+      if (bytesRead === 0) break;
+      const data = chunk.subarray(0, bytesRead);
+      const newline = data.indexOf(0x0a);
+      chunks.push(newline < 0 ? data : data.subarray(0, newline));
+      total += newline < 0 ? bytesRead : newline;
+      if (newline >= 0) break;
+    }
+  } finally {
+    closeSync(fd);
+  }
+  if (total >= MAX_HEADER_BYTES) {
+    throw new SessionFormatError(
+      `Session file header exceeds ${MAX_HEADER_BYTES} bytes: ${filePath}`,
+    );
+  }
+  return Buffer.concat(chunks).toString("utf-8");
+}
+
 /** Parse the first line of a session file into a v4 header, or explain why not. */
-function parseV4Header(filePath: string, content: string): JsonlV4Header {
-  const firstLine = content
-    .slice(0, content.indexOf("\n") === -1 ? undefined : content.indexOf("\n"))
-    .trim();
+function parseV4Header(filePath: string, firstLine: string): JsonlV4Header {
+  firstLine = firstLine.trim();
   if (!firstLine) throw new SessionFormatError(`Session file has a blank header line: ${filePath}`);
   let parsed: unknown;
   try {
@@ -70,7 +98,12 @@ function parseV4Header(filePath: string, content: string): JsonlV4Header {
   } catch {
     throw new SessionFormatError(`Session file header is not valid JSON: ${filePath}`);
   }
-  const record = parsed as { kind?: unknown; type?: unknown; version?: unknown; id?: unknown };
+  const record = parsed as {
+    kind?: unknown;
+    type?: unknown;
+    version?: unknown;
+    id?: unknown;
+  };
   if (record.type === "session") {
     throw new SessionFormatError(
       `Session file uses the legacy v3 format: ${filePath}. Run \`mikan sessions migrate\` before starting this mikan version.`,
@@ -108,7 +141,7 @@ function buildHeader(cwd: string, options?: SessionCreateInfo): JsonlV4Header {
   return {
     kind: "header",
     version: 4,
-    id: options?.id ?? randomUUID(),
+    id: options?.id ?? uuidv7(),
     createdAt: Date.now(),
     cwd,
     ...(options?.parentSessionId !== undefined ? { parentSessionId: options.parentSessionId } : {}),
@@ -167,12 +200,22 @@ export class SessionStore {
    * @param cwdOverride Working directory override; defaults to the header cwd.
    */
   static async open(path: string, cwdOverride?: string): Promise<SessionStore> {
-    const content = existsSync(path) ? readFileSync(path, "utf-8") : "";
-    if (content.trim().length === 0) {
+    if (!existsSync(path)) {
       const cwd = cwdOverride ?? process.cwd();
-      return new SessionStore(path, cwd, { kind: "pending", header: buildHeader(cwd) });
+      return new SessionStore(path, cwd, {
+        kind: "pending",
+        header: buildHeader(cwd),
+      });
     }
-    const header = parseV4Header(path, content);
+    const firstLine = readHeaderLine(path);
+    if (firstLine.trim().length === 0) {
+      const cwd = cwdOverride ?? process.cwd();
+      return new SessionStore(path, cwd, {
+        kind: "pending",
+        header: buildHeader(cwd),
+      });
+    }
+    const header = parseV4Header(path, firstLine);
     const session = await repo().open(metadataFromHeader(header, resolve(path)));
     return new SessionStore(resolve(path), cwdOverride ?? header.cwd, {
       kind: "live",
@@ -204,15 +247,15 @@ export class SessionStore {
    * v3 files so callers surface the migration requirement.
    */
   static readHeader(path: string): SessionHeader | null {
-    let content: string;
+    let firstLine: string;
     try {
-      content = readFileSync(path, "utf-8");
+      firstLine = readHeaderLine(path);
     } catch {
       return null;
     }
-    if (content.trim().length === 0) return null;
+    if (firstLine.trim().length === 0) return null;
     try {
-      return headerView(parseV4Header(path, content));
+      return headerView(parseV4Header(path, firstLine));
     } catch (error) {
       if (error instanceof SessionFormatError && /legacy v3/.test(error.message)) throw error;
       return null;
@@ -231,7 +274,10 @@ export class SessionStore {
   /** Create an ephemeral session that never writes a session file. */
   static inMemory(cwd = process.cwd()): SessionStore {
     const header = buildHeader(cwd);
-    const storage = new InMemorySessionStorage({ id: header.id, createdAt: header.createdAt });
+    const storage = new InMemorySessionStorage({
+      id: header.id,
+      createdAt: header.createdAt,
+    });
     const session = new Session(storage);
     return new SessionStore(null, cwd, { kind: "live", session, header });
   }
@@ -248,8 +294,8 @@ export class SessionStore {
     return this.cwd;
   }
 
-  /** v3-flavored view of the session header for callers that read lineage. */
-  getHeader(): SessionHeader | null {
+  /** Compatibility header view for callers that read mikan session lineage. */
+  getHeader(): SessionHeader {
     return headerView(this.state.header);
   }
 
@@ -353,14 +399,11 @@ export class SessionStore {
   private async live(): Promise<Session> {
     if (this.state.kind === "live") return this.state.session;
     const header = this.state.header;
-    if (this.sessionFile === null) {
-      const storage = new InMemorySessionStorage({ id: header.id, createdAt: header.createdAt });
-      this.state = { kind: "live", session: new Session(storage), header };
-      return this.state.session;
-    }
-    mkdirSync(dirname(this.sessionFile), { recursive: true });
-    atomicWritePrivateFile(this.sessionFile, `${JSON.stringify(header)}\n`);
-    const session = await repo().open(metadataFromHeader(header, this.sessionFile));
+    const sessionFile = this.sessionFile;
+    if (sessionFile === null) throw new Error("Pending session must have a session file");
+    mkdirSync(dirname(sessionFile), { recursive: true });
+    atomicWritePrivateFile(sessionFile, `${JSON.stringify(header)}\n`);
+    const session = await repo().open(metadataFromHeader(header, sessionFile));
     this.state = { kind: "live", session, header };
     return session;
   }
