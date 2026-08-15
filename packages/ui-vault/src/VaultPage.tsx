@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiGet, apiPost, queryParam } from "@geminixiang/mikan-web-client";
+import { apiGet, apiPost, useQueryParam } from "@geminixiang/mikan-web-client";
 import "./vault.css";
 
 interface LinkInfo {
@@ -218,7 +218,7 @@ function CredentialForm({
 }
 
 export function VaultPage() {
-  const token = queryParam("token") ?? "";
+  const token = useQueryParam("token") ?? "";
   const [info, setInfo] = useState<LinkInfo | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 

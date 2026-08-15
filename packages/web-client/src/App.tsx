@@ -94,12 +94,12 @@ function useManifest(): WebBootGraph {
   return manifest;
 }
 
-/** Gate that redirects to /login when not authenticated. Skips check when ?token= is present (shared links). */
+/** Gate that accepts either a browser session or a scoped session-view token. */
 function AuthGate({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const hasToken =
-    typeof window !== "undefined" && new URL(window.location.href).searchParams.has("token");
+  const hasToken = new URLSearchParams(location.search).has("token");
 
   useEffect(() => {
     if (hasToken) {
@@ -129,21 +129,71 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function CapabilityGate({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  return new URLSearchParams(location.search).has("token") ? (
+    <>{children}</>
+  ) : (
+    <Navigate to="/session" replace />
+  );
+}
+
 interface OfficeEntry {
   platform: string;
   conversationId: string;
   officeKey: string;
-  dir: string;
+  sessionUrl: string | null;
 }
 
 interface OfficesResponse {
   offices: OfficeEntry[];
 }
 
+function ConversationsSidebar({ offices, loading }: { offices: OfficeEntry[]; loading: boolean }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const activeToken = new URLSearchParams(location.search).get("token");
+  return (
+    <aside className="conversations-sidebar">
+      <div className="sidebar-header">
+        <h2>Conversations</h2>
+      </div>
+      <div className="sidebar-list">
+        {loading ? (
+          <div className="sidebar-loading">Loading...</div>
+        ) : offices.length === 0 ? (
+          <div className="sidebar-empty">No conversations yet.</div>
+        ) : (
+          offices.map((office) => {
+            const officeToken = office.sessionUrl
+              ? new URL(office.sessionUrl, window.location.origin).searchParams.get("token")
+              : null;
+            const isActive = officeToken !== null && officeToken === activeToken;
+            const label = `${office.platform}/${office.conversationId}`;
+            return (
+              <button
+                key={office.officeKey}
+                className={`sidebar-item${isActive ? " active" : ""}`}
+                disabled={office.sessionUrl === null}
+                onClick={() => office.sessionUrl && navigate(office.sessionUrl)}
+                title={office.sessionUrl ? `Open ${label}` : `${label} has no session yet`}
+              >
+                <span className="sidebar-item-label">{label}</span>
+                <span className="sidebar-item-platform">
+                  {office.sessionUrl ? office.platform : `${office.platform} · no session`}
+                </span>
+              </button>
+            );
+          })
+        )}
+      </div>
+    </aside>
+  );
+}
+
 function AppFrame() {
   const manifest = useManifest();
   const location = useLocation();
-  const navigate = useNavigate();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [offices, setOffices] = useState<OfficeEntry[]>([]);
   const [officesLoading, setOfficesLoading] = useState(true);
@@ -156,69 +206,59 @@ function AppFrame() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/offices")
-      .then((r) => r.json())
+    if (!me?.authenticated || !location.pathname.startsWith("/session")) {
+      setOffices([]);
+      setOfficesLoading(false);
+      return;
+    }
+    setOfficesLoading(true);
+    fetch("/api/offices", { credentials: "same-origin" })
+      .then((r) => {
+        if (!r.ok) throw new Error(`Failed to load conversations (${r.status})`);
+        return r.json();
+      })
       .then((data: OfficesResponse) => {
         setOffices(data.offices);
         setOfficesLoading(false);
       })
-      .catch(() => setOfficesLoading(false));
-  }, []);
+      .catch(() => {
+        setOffices([]);
+        setOfficesLoading(false);
+      });
+  }, [location.pathname, me?.authenticated]);
 
   const activeView = NAV.find((n) => location.pathname.startsWith(n.path))?.view;
   const pageTitle = activeView === "admin" ? "Admin" : activeView === "vault" ? "Vault" : "Session";
-  const showSidebar = activeView === "session" || activeView === undefined;
+  const showSidebar = activeView === "session" && me?.authenticated === true;
+  const visibleNav = NAV.filter(
+    (item) => item.view === activeView || (item.view === "session" && me?.authenticated === true),
+  );
+  const showNav = visibleNav.length > 1;
   return (
     <>
-      <nav className="floating-view-nav" aria-label="Primary views">
-        {NAV.map((n) => {
-          const isActive = n.view === activeView;
-          const attrs = {
-            "data-tooltip": n.label,
-            "aria-label": n.label,
-            className: `view-nav-btn${isActive ? " active" : ""}`,
-          };
-          return isActive ? (
-            <span key={n.view} aria-current="page" {...attrs}>
-              {n.svg}
-            </span>
-          ) : (
-            <Link key={n.view} to={n.path} {...attrs}>
-              {n.svg}
-            </Link>
-          );
-        })}
-      </nav>
-      {showSidebar && (
-        <aside className="conversations-sidebar">
-          <div className="sidebar-header">
-            <h2>Conversations</h2>
-          </div>
-          <div className="sidebar-list">
-            {officesLoading ? (
-              <div className="sidebar-loading">Loading...</div>
-            ) : offices.length === 0 ? (
-              <div className="sidebar-empty">No conversations yet.</div>
+      {showNav && (
+        <nav className="floating-view-nav" aria-label="Primary views">
+          {visibleNav.map((n) => {
+            const isActive = n.view === activeView;
+            const attrs = {
+              "data-tooltip": n.label,
+              "aria-label": n.label,
+              className: `view-nav-btn${isActive ? " active" : ""}`,
+            };
+            return isActive ? (
+              <span key={n.view} aria-current="page" {...attrs}>
+                {n.svg}
+              </span>
             ) : (
-              offices.map((office) => {
-                const isActive = location.pathname === `/session/${office.officeKey}`;
-                const label = `${office.platform}/${office.conversationId}`;
-                return (
-                  <button
-                    key={office.officeKey}
-                    className={`sidebar-item${isActive ? " active" : ""}`}
-                    onClick={() => navigate(`/session/${office.officeKey}`)}
-                  >
-                    <span className="sidebar-item-label">{label}</span>
-                    <span className="sidebar-item-platform">{office.platform}</span>
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </aside>
+              <Link key={n.view} to={n.path} {...attrs}>
+                {n.svg}
+              </Link>
+            );
+          })}
+        </nav>
       )}
-      <main className={`shell${showSidebar ? " with-sidebar" : ""}`}>
+      {showSidebar && <ConversationsSidebar offices={offices} loading={officesLoading} />}
+      <main className={`shell${showNav ? " with-nav" : ""}${showSidebar ? " with-sidebar" : ""}`}>
         <header className="topbar">
           <div className="topbar-brand">
             <span className="topbar-wordmark">mikan</span>
@@ -294,11 +334,11 @@ async function doLogout() {
 
 export function App({ manifest }: { manifest: WebBootGraph }) {
   const router = createBrowserRouter([
+    { path: "/login", element: <LoginPage /> },
     {
       element: <AppFrame />,
       children: [
         { path: "/", element: <Navigate to="/session" replace /> },
-        { path: "/login", element: <LoginPage /> },
         {
           path: "/session",
           element: (
@@ -310,17 +350,17 @@ export function App({ manifest }: { manifest: WebBootGraph }) {
         {
           path: "/admin",
           element: (
-            <AuthGate>
+            <CapabilityGate>
               <AdminPage />
-            </AuthGate>
+            </CapabilityGate>
           ),
         },
         {
           path: "/link",
           element: (
-            <AuthGate>
+            <CapabilityGate>
               <VaultPage />
-            </AuthGate>
+            </CapabilityGate>
           ),
         },
         { path: "*", element: <Navigate to="/session" replace /> },

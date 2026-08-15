@@ -229,6 +229,12 @@ The default `isolated` Door policy produces a conversation-only projection. Trus
 
 Vault selection is independent from runtime resource naming. Open-trigger conversations do not inherit an ambient shared default vault. Credential mounts may not shadow workspace or package targets. Host execution does not inject conversation vault environment by default.
 
+### Portal capability scope
+
+A web dashboard session proves an OAuth identity only after that identity has been bound from a private platform conversation. The session records the exact bound office identity; conversation discovery filters through that scope and never returns host paths. Opening a discovered conversation mints the existing session-view capability rather than teaching the React client a second session access model.
+
+A web dashboard session does not replace the shorter-lived Admin or vault capabilities. Admin changes and credential writes continue to require their dedicated tokens, while standalone session-view links remain independently shareable bearer capabilities.
+
 ### Trusted host code
 
 Extensions run with mikan process authority. They load only from host-controlled directories, including explicitly approved package roots, never from agent-writable workspace directories. Package installation may execute dependency lifecycle scripts and therefore is an administrator trust decision, not a sandbox boundary.
@@ -326,6 +332,14 @@ Evidence: `src/execution-resolver.ts`, `src/sandbox/index.ts`.
 **`credential-least-authority`** — Credential access derives from actor, office, trigger trust, and sandbox capabilities. Open-trigger conversations receive no ambient shared vault, and credential mounts cannot shadow workspace or package mounts.
 
 Evidence: `src/execution-resolver.ts`, `src/sandbox/identity.ts`, `src/vault/`.
+
+### INV portal capability scope
+
+<a id="inv-portal-capability-scope"></a>
+
+**`portal-capability-scope`** — OAuth login must resolve to an existing private-chat binding before issuing a web session. That session may enumerate and mint session-view capabilities only for its exact bound offices; it must not disclose host paths or grant Admin or vault authority.
+
+Evidence: `src/web/login/portal.ts`, `src/web/login/session-store.ts`, `src/web/server.ts`.
 
 ### INV settings runner coherence
 

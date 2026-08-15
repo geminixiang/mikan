@@ -38,5 +38,17 @@ export interface LinkToken extends TokenRecord {
   conversationId: string;
 }
 
+export interface WebSessionBinding {
+  platform: PlatformName;
+  platformUserId: string;
+  conversationId: string;
+}
+
+/** A web session (24h TTL, httpOnly cookie). */
+export interface WebSession extends TokenRecord {
+  oauthIdentity: string;
+  bindings: WebSessionBinding[];
+}
+
 /** Called after a binding is written, to notify the user in chat */
 export type NotifyFn = (platform: string, conversationId: string, message: string) => Promise<void>;

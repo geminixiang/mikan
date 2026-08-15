@@ -24,6 +24,11 @@ export class InMemoryTokenStore<T extends TokenRecord> {
     return entry;
   }
 
+  /** Revoke a token without consuming its value. */
+  revoke(rawToken: string): void {
+    this.tokens.delete(rawToken);
+  }
+
   /** One-shot consume. Returns undefined if missing or expired. */
   consume(rawToken: string): T | undefined {
     const entry = this.tokens.get(rawToken);

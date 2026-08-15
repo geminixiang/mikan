@@ -366,6 +366,13 @@ scope = "conversation-extension"
 classification = "host-private"
 docs = "ARCHITECTURE.md#scheduled-execution"
 
+[[resources]]
+id = "web-session"
+authority = "side-services"
+scope = "oauth-identity"
+classification = "ephemeral-capability"
+docs = "src/web/README.md#web-dashboard-session"
+
 # Flow paths are topology, not function-level traces. Branches, ordering,
 # failures, and security semantics live at the linked Markdown anchor.
 
@@ -484,6 +491,12 @@ id = "credential-least-authority"
 owners = ["execution-resolver", "vault"]
 applies_to = ["vault-store", "sandbox"]
 docs = "ARCHITECTURE.md#inv-credential-least-authority"
+
+[[invariants]]
+id = "portal-capability-scope"
+owners = ["side-services"]
+applies_to = ["side-services", "web-session", "office-registry", "session-files", "vault-store"]
+docs = "ARCHITECTURE.md#inv-portal-capability-scope"
 
 [[invariants]]
 id = "settings-runner-coherence"

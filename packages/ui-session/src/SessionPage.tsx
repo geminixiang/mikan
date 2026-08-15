@@ -5,7 +5,7 @@ import type {
   SessionViewItem,
   SessionViewRelation,
 } from "@geminixiang/mikan-daemon-web-bridge";
-import { apiGet, apiPost, queryParam } from "@geminixiang/mikan-web-client";
+import { apiGet, apiPost, useQueryParam } from "@geminixiang/mikan-web-client";
 import "./session.css";
 
 marked.setOptions({ gfm: true, breaks: true });
@@ -298,10 +298,15 @@ export function SessionPage() {
   const [composerStatus, setComposerStatus] = useState<string | null>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
 
-  const token = queryParam("token") ?? "";
-  const session = queryParam("session") ?? "";
+  const token = useQueryParam("token") ?? "";
+  const session = useQueryParam("session") ?? "";
 
   const load = useCallback(async () => {
+    if (!token) {
+      setData(null);
+      setError(null);
+      return;
+    }
     try {
       const params = new URLSearchParams({ token });
       if (session) params.set("session", session);
@@ -345,6 +350,16 @@ export function SessionPage() {
       })
       .finally(() => setSending(false));
   };
+
+  if (!token) {
+    return (
+      <div className="card placeholder-card">
+        <p className="eyebrow">Session</p>
+        <h2 className="card-title">Select a conversation</h2>
+        <p className="page-desc">Choose a conversation from the sidebar to open its session.</p>
+      </div>
+    );
+  }
 
   if (error) {
     return (

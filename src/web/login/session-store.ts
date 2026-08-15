@@ -1,12 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { TokenRecord } from "../types.js";
-
-/** A web session (24h TTL, httpOnly cookie). */
-export interface WebSession extends TokenRecord {
-  oauthIdentity: string;
-  /** Bound platform identities, populated from the binding store on creation. */
-  platforms: Array<{ platform: string; platformUserId: string }>;
-}
+export type { WebSession, WebSessionBinding } from "./types.js";
+import type { WebSession, WebSessionBinding } from "./types.js";
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -15,14 +9,14 @@ export class InMemoryWebSessionStore {
 
   create(
     oauthIdentity: string,
-    platforms: WebSession["platforms"],
+    bindings: WebSessionBinding[],
   ): { sessionId: string; session: WebSession } {
     const sessionId = randomUUID();
     const session: WebSession = {
       token: sessionId,
       expiresAt: Date.now() + SESSION_TTL_MS,
       oauthIdentity,
-      platforms,
+      bindings,
     };
     this.sessions.set(sessionId, session);
     return { sessionId, session };
@@ -39,9 +33,20 @@ export class InMemoryWebSessionStore {
     return session;
   }
 
+  /** Look up a session from the browser's Cookie header. */
+  getSessionFromCookie(cookieHeader: string | undefined): WebSession | undefined {
+    const sessionId = cookieValue(cookieHeader, "mikan_session");
+    return sessionId ? this.getSession(sessionId) : undefined;
+  }
+
   /** Remove a session (logout). */
   revoke(sessionId: string): void {
     this.sessions.delete(sessionId);
+  }
+
+  revokeFromCookie(cookieHeader: string | undefined): void {
+    const sessionId = cookieValue(cookieHeader, "mikan_session");
+    if (sessionId) this.revoke(sessionId);
   }
 
   /** Remove expired sessions. */
@@ -51,4 +56,14 @@ export class InMemoryWebSessionStore {
       if (now > session.expiresAt) this.sessions.delete(id);
     }
   }
+}
+
+function cookieValue(header: string | undefined, name: string): string | undefined {
+  if (!header) return undefined;
+  for (const pair of header.split(";")) {
+    const separator = pair.indexOf("=");
+    if (separator === -1 || pair.slice(0, separator).trim() !== name) continue;
+    return pair.slice(separator + 1).trim();
+  }
+  return undefined;
 }

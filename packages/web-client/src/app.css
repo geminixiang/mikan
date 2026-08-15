@@ -54,7 +54,6 @@ body {
 .shell {
   width: 100%;
   max-width: 960px;
-  margin-left: 72px;
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -197,6 +196,15 @@ body {
   background: rgba(0, 0, 0, 0.04);
 }
 
+.sidebar-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.sidebar-item:disabled:hover {
+  background: transparent;
+}
+
 .sidebar-item.active {
   background: rgba(0, 0, 0, 0.08);
 }
@@ -216,7 +224,11 @@ body {
   margin-top: 2px;
 }
 
-/* Adjust main content when sidebar is shown */
+/* Adjust main content for the optional navigation and conversation list. */
+.shell.with-nav {
+  margin-left: 72px;
+}
+
 .shell.with-sidebar {
   margin-left: 260px;
 }

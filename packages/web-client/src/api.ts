@@ -1,3 +1,5 @@
+import { useLocation } from "react-router-dom";
+
 /**
  * Thin fetch helpers for the mikan web API. Tokens travel in the URL
  * (deep-link `?token=…`), matching the existing portal token model.
@@ -17,9 +19,9 @@ export class ApiError extends Error {
   }
 }
 
-/** Read one query parameter from the current URL. */
-export function queryParam(name: string): string | null {
-  return new URLSearchParams(window.location.search).get(name);
+/** Read one query parameter and update when client-side navigation changes it. */
+export function useQueryParam(name: string): string | null {
+  return new URLSearchParams(useLocation().search).get(name);
 }
 
 /** GET a JSON endpoint. Throws ApiError on non-2xx. */

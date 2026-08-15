@@ -261,14 +261,7 @@ export function createLoginRequestHandler(
   return (req, res, url) => {
     // ── GET /api/me — current web session ──────────────────────────────
     if (req.method === "GET" && url.pathname === "/api/me") {
-      const cookie = parseCookie(req.headers.cookie);
-      const sessionId = cookie?.mikan_session;
-      if (!sessionId || !webSessionStore) {
-        res.writeHead(401, { "Content-Type": "application/json; charset=utf-8" });
-        res.end(JSON.stringify({ authenticated: false }));
-        return true;
-      }
-      const session = webSessionStore.getSession(sessionId);
+      const session = webSessionStore?.getSessionFromCookie(req.headers.cookie);
       if (!session) {
         res.writeHead(401, { "Content-Type": "application/json; charset=utf-8" });
         res.end(JSON.stringify({ authenticated: false }));
@@ -282,7 +275,7 @@ export function createLoginRequestHandler(
         JSON.stringify({
           authenticated: true,
           oauthIdentity: session.oauthIdentity,
-          platforms: session.platforms,
+          platforms: session.bindings,
           expiresAt: session.expiresAt,
         }),
       );
@@ -291,11 +284,7 @@ export function createLoginRequestHandler(
 
     // ── POST /api/logout — clear web session ───────────────────────────
     if (req.method === "POST" && url.pathname === "/api/logout") {
-      const cookie = parseCookie(req.headers.cookie);
-      const sessionId = cookie?.mikan_session;
-      if (sessionId && webSessionStore) {
-        webSessionStore.revoke(sessionId);
-      }
+      webSessionStore?.revokeFromCookie(req.headers.cookie);
       res.writeHead(200, {
         "Content-Type": "application/json",
         "Set-Cookie": "mikan_session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax",
@@ -1431,7 +1420,7 @@ async function handleOAuthStart(
     serviceId: service.id,
     codeVerifier,
     expiresAt: Date.now() + OAUTH_STATE_TTL_MS,
-    ...(isBinding ? { mode: "binding" as const } : {}),
+    ...(isBinding ? { mode: "binding" as const } : isLogin ? { mode: "login" as const } : {}),
   });
 
   for (const [k, v] of oauthStates) {
@@ -1513,15 +1502,17 @@ async function handleOAuthCallback(
     return;
   }
 
-  // Atomic consume: pairs with the callback being one-shot.
-  const linkToken = linkTokenStore.consume(pending.linkToken);
+  // Atomic consume: pairs with the callback being one-shot. Login and binding
+  // flows do not carry a vault link token.
+  const linkToken =
+    pending.mode === undefined ? linkTokenStore.consume(pending.linkToken) : undefined;
   // For binding mode, the linkToken field holds the binding code instead
   const bindingToken =
     pending.mode === "binding" && bindingTokenStore
       ? bindingTokenStore.consumeByCode(pending.linkToken)
       : undefined;
 
-  if (pending.mode !== "binding" && !linkToken) {
+  if (pending.mode === undefined && !linkToken) {
     res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
     res.end(renderErrorPage("Login link is invalid or expired. Please run /login again."));
     return;
@@ -1599,12 +1590,23 @@ async function handleOAuthCallback(
       res.end(renderErrorPage("Web sessions are not configured on this server."));
       return;
     }
-    // Look up bound platforms from the binding store
     const boundBinding = bindingTokenStore?.resolveByOAuthIdentity(oauthIdentity);
-    const platforms = boundBinding
-      ? [{ platform: boundBinding.platform, platformUserId: boundBinding.platformUserId }]
-      : [];
-    const { sessionId } = webSessionStore.create(oauthIdentity, platforms);
+    if (!boundBinding) {
+      res.writeHead(403, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(
+        renderErrorPage(
+          "This OAuth account is not linked to mikan. Run /login web in a private chat first.",
+        ),
+      );
+      return;
+    }
+    const { sessionId } = webSessionStore.create(oauthIdentity, [
+      {
+        platform: boundBinding.platform,
+        platformUserId: boundBinding.platformUserId,
+        conversationId: boundBinding.conversationId,
+      },
+    ]);
     // Set httpOnly session cookie and redirect back to the SPA root
     const redirectUrl = requestBaseUrl(req).replace(/\/+$/, "");
     res.writeHead(302, {
@@ -1818,18 +1820,4 @@ async function resolveOAuthIdentity(
   } catch {
     return undefined;
   }
-}
-
-/** Parse a Cookie header into a simple key-value map. */
-function parseCookie(header: string | undefined): Record<string, string> {
-  const cookies: Record<string, string> = {};
-  if (!header) return cookies;
-  for (const pair of header.split(";")) {
-    const eq = pair.indexOf("=");
-    if (eq === -1) continue;
-    const key = pair.slice(0, eq).trim();
-    const value = pair.slice(eq + 1).trim();
-    if (key) cookies[key] = value;
-  }
-  return cookies;
 }

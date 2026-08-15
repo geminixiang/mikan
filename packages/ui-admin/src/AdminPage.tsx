@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiGet, apiPost, queryParam } from "@geminixiang/mikan-web-client";
+import { apiGet, apiPost, useQueryParam } from "@geminixiang/mikan-web-client";
 import "./admin.css";
 
 // ── Wire types (mirror of the daemon's /admin/api/* responses) ──────────────
@@ -573,7 +573,7 @@ function SettingsTab({ token }: { token: string }) {
 // ── Page ────────────────────────────────────────────────────────────────────
 
 export function AdminPage() {
-  const token = queryParam("token") ?? "";
+  const token = useQueryParam("token") ?? "";
   const [tab, setTab] = useState<Tab>("conversations");
   const [me, setMe] = useState<Me | null>(null);
 

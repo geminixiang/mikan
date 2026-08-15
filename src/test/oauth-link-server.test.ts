@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { startWebServer } from "../web/server.js";
+import { InMemoryBindingTokenStore } from "../web/login/binding.js";
 import { InMemoryLinkTokenStore } from "../web/login/store.js";
+import { InMemoryWebSessionStore } from "../web/login/session-store.js";
 import { FileVaultManager } from "../vault/index.js";
 
 const originalFetch = globalThis.fetch;
@@ -59,6 +61,10 @@ async function createFlow(
   notify: typeof Promise.resolve extends (...args: any[]) => any
     ? () => Promise<void>
     : never = async () => {},
+  serverOptions?: Pick<
+    Parameters<typeof startWebServer>[0],
+    "bindingTokenStore" | "webSessionStore"
+  >,
 ): Promise<{
   server: Server;
   url: string;
@@ -75,6 +81,7 @@ async function createFlow(
     linkTokenStore: tokenStore,
     vaultManager,
     notify,
+    ...serverOptions,
   });
   if (started === undefined) throw new Error("web server failed to start");
   const server = started;
@@ -172,6 +179,92 @@ describe("OAuth link server flows", () => {
 
     expect(response.status).toBe(400);
     expect(body.error).toContain("GitHub is not configured");
+  });
+
+  test("web login OAuth creates a browser session", async () => {
+    const stateDir = createStateDir(dirs);
+    configureGitHubOAuth();
+    const webSessionStore = new InMemoryWebSessionStore();
+    const bindingTokenStore = new InMemoryBindingTokenStore();
+    bindingTokenStore.bind("github/test-user", "slack", "U115", "D115");
+    const { url } = await createFlow(servers, stateDir, "U115", async () => {}, {
+      bindingTokenStore,
+      webSessionStore,
+    });
+
+    const startResponse = await originalFetch(`${url}/api/oauth/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: url },
+      body: JSON.stringify({ token: "login", serviceId: "github", mode: "login" }),
+    });
+    const startBody = (await startResponse.json()) as { redirectUrl: string };
+    const state = new URL(startBody.redirectUrl).searchParams.get("state");
+    expect(startResponse.status).toBe(200);
+    expect(state).toBeTruthy();
+
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: { get: () => "application/json" },
+        text: async () => JSON.stringify({ access_token: "gho_web_login" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ login: "test-user" }),
+      }) as typeof fetch;
+
+    const callbackResponse = await originalFetch(
+      `${url}/oauth/callback?state=${state}&code=login-code`,
+      { redirect: "manual" },
+    );
+    expect(callbackResponse.status).toBe(302);
+    expect(callbackResponse.headers.get("location")).toBe(`${url}/`);
+    const cookie = callbackResponse.headers.get("set-cookie")?.split(";", 1)[0];
+    expect(cookie).toMatch(/^mikan_session=/);
+
+    const meResponse = await originalFetch(`${url}/api/me`, {
+      headers: { Cookie: cookie ?? "" },
+    });
+    await expect(meResponse.json()).resolves.toMatchObject({
+      authenticated: true,
+      oauthIdentity: "github/test-user",
+    });
+  });
+
+  test("web login rejects OAuth identities without a chat binding", async () => {
+    const stateDir = createStateDir(dirs);
+    configureGitHubOAuth();
+    const { url } = await createFlow(servers, stateDir, "U116", async () => {}, {
+      webSessionStore: new InMemoryWebSessionStore(),
+    });
+
+    const startResponse = await originalFetch(`${url}/api/oauth/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: url },
+      body: JSON.stringify({ token: "login", serviceId: "github", mode: "login" }),
+    });
+    const startBody = (await startResponse.json()) as { redirectUrl: string };
+    const state = new URL(startBody.redirectUrl).searchParams.get("state");
+
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: { get: () => "application/json" },
+        text: async () => JSON.stringify({ access_token: "gho_unbound_login" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ login: "unbound-user" }),
+      }) as typeof fetch;
+
+    const callbackResponse = await originalFetch(
+      `${url}/oauth/callback?state=${state}&code=login-code`,
+      { redirect: "manual" },
+    );
+    expect(callbackResponse.status).toBe(403);
+    expect(await callbackResponse.text()).toContain("Run /login web in a private chat first");
   });
 
   test("renders provider authorization errors returned to the callback", async () => {

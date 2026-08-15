@@ -20,6 +20,7 @@ import {
   type SessionViewInteractiveOptions,
 } from "./session-view/portal.js";
 import { handleSessionViewApiRequest } from "./session-view/api.js";
+import { resolveExistingSessionFile } from "./session-view/service.js";
 import type { InMemorySessionViewTokenStore } from "./session-view/store.js";
 import type { Workspace } from "../office/types.js";
 import {
@@ -180,6 +181,8 @@ function registerLoginRoutes(
     "/api/link/info",
     "/api/link/complete",
     "/api/oauth/start",
+    "/api/me",
+    "/api/logout",
     "/oauth/callback",
   ]) {
     webServer.register({
@@ -194,6 +197,96 @@ function registerLoginRoutes(
       },
     });
   }
+}
+
+function registerOfficeRoutes(webServer: WebServer, options: StartWebServerOptions): void {
+  const workspace = options.adminOptions?.workspace;
+  if (!workspace) return;
+  const sessionUrls = new Map<string, { sessionFile: string; token: string; expiresAt: number }>();
+
+  webServer.register({
+    kind: "exact",
+    path: "/api/offices",
+    handler: (req, res) => {
+      if (req.method !== "GET") return false;
+      const webSession = options.webSessionStore?.getSessionFromCookie(req.headers.cookie);
+      if (!webSession) {
+        res.writeHead(401, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ error: "Authentication required" }));
+        return true;
+      }
+      const sessionViewTokenStore = options.sessionViewTokenStore;
+      if (!sessionViewTokenStore) {
+        res.writeHead(503, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ error: "Session view is not configured" }));
+        return true;
+      }
+      const now = Date.now();
+      for (const [key, cached] of sessionUrls) {
+        if (now <= cached.expiresAt) continue;
+        sessionViewTokenStore.revoke(cached.token);
+        sessionUrls.delete(key);
+      }
+
+      const bindings = new Map(
+        webSession.bindings.map((binding) => [
+          officeKey(createOfficeAddress(binding.platform, binding.conversationId)),
+          binding,
+        ]),
+      );
+      const offices = listRegisteredOffices(workspace.stateDir)
+        .flatMap((entry) => {
+          const address = createOfficeAddress(entry.platform, entry.conversationId);
+          const key = officeKey(address);
+          const binding = bindings.get(key);
+          const office = workspace.office(address);
+          if (!binding || !existsSync(office.dir)) return [];
+          const sessionFile = resolveExistingSessionFile(office.dir, entry.conversationId);
+          const cacheKey = `${webSession.token}:${key}`;
+          let cached = sessionUrls.get(cacheKey);
+          if (
+            cached &&
+            (cached.sessionFile !== sessionFile || !sessionViewTokenStore.peek(cached.token))
+          ) {
+            sessionViewTokenStore.revoke(cached.token);
+            sessionUrls.delete(cacheKey);
+            cached = undefined;
+          }
+          let viewToken = cached?.token;
+          if (sessionFile && !viewToken) {
+            const created = sessionViewTokenStore.create(
+              binding.platform,
+              binding.platformUserId,
+              entry.conversationId,
+              entry.conversationId,
+              sessionFile,
+            );
+            viewToken = created.token;
+            sessionUrls.set(cacheKey, {
+              sessionFile,
+              token: created.token,
+              expiresAt: Math.min(webSession.expiresAt, created.expiresAt),
+            });
+          }
+          const sessionUrl = viewToken ? `/session?token=${encodeURIComponent(viewToken)}` : null;
+          return [
+            {
+              platform: entry.platform,
+              conversationId: entry.conversationId,
+              officeKey: key,
+              sessionUrl,
+            },
+          ];
+        })
+        .toSorted((a, b) => a.officeKey.localeCompare(b.officeKey));
+      res.writeHead(200, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "no-store",
+      });
+      res.end(JSON.stringify({ offices }));
+      return true;
+    },
+  });
 }
 
 /** Claim the fallback seat over the built dist and inject the boot manifest. */
@@ -234,37 +327,7 @@ export async function startWebServer(options: StartWebServerOptions): Promise<Se
   registerAdminRoutes(webServer, options, adminEventStore, distActive);
   registerSessionRoutes(webServer, options, distActive);
   registerLoginRoutes(webServer, loginHandler, distActive);
-
-  // ── GET /api/offices — conversation listing for the SPA ──────────────
-  if (options.adminOptions?.workspace) {
-    const workspace = options.adminOptions.workspace;
-    webServer.register({
-      kind: "exact",
-      path: "/api/offices",
-      handler: (req, res) => {
-        if (req.method !== "GET") return false;
-        const offices = listRegisteredOffices(workspace.stateDir)
-          .filter((entry) =>
-            existsSync(
-              workspace.office(createOfficeAddress(entry.platform, entry.conversationId)).dir,
-            ),
-          )
-          .map((entry) => {
-            const address = createOfficeAddress(entry.platform, entry.conversationId);
-            return {
-              platform: entry.platform,
-              conversationId: entry.conversationId,
-              officeKey: officeKey(address),
-              dir: workspace.office(address).dir,
-            };
-          })
-          .toSorted((a, b) => a.officeKey.localeCompare(b.officeKey));
-        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-        res.end(JSON.stringify({ offices }));
-        return true;
-      },
-    });
-  }
+  registerOfficeRoutes(webServer, options);
 
   if (options.bindingTokenStore) {
     const bindingHandler = createBindingHandler(options.bindingTokenStore);
