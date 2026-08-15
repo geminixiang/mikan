@@ -30,6 +30,8 @@ import {
 import { existsSync } from "node:fs";
 import { WebServer, registerStaticFallback, injectBootManifest } from "@geminixiang/mikan-web-host";
 import { composeWebBootGraph, contentRev, entryUrlOfIndex } from "@geminixiang/mikan-web-bundle";
+import { listRegisteredOffices } from "../office/index.js";
+import { createOfficeAddress, officeKey } from "../office/address.js";
 
 interface StartWebServerOptions {
   port: number;
@@ -232,6 +234,38 @@ export async function startWebServer(options: StartWebServerOptions): Promise<Se
   registerAdminRoutes(webServer, options, adminEventStore, distActive);
   registerSessionRoutes(webServer, options, distActive);
   registerLoginRoutes(webServer, loginHandler, distActive);
+
+  // ── GET /api/offices — conversation listing for the SPA ──────────────
+  if (options.adminOptions?.workspace) {
+    const workspace = options.adminOptions.workspace;
+    webServer.register({
+      kind: "exact",
+      path: "/api/offices",
+      handler: (req, res) => {
+        if (req.method !== "GET") return false;
+        const offices = listRegisteredOffices(workspace.stateDir)
+          .filter((entry) =>
+            existsSync(
+              workspace.office(createOfficeAddress(entry.platform, entry.conversationId)).dir,
+            ),
+          )
+          .map((entry) => {
+            const address = createOfficeAddress(entry.platform, entry.conversationId);
+            return {
+              platform: entry.platform,
+              conversationId: entry.conversationId,
+              officeKey: officeKey(address),
+              dir: workspace.office(address).dir,
+            };
+          })
+          .toSorted((a, b) => a.officeKey.localeCompare(b.officeKey));
+        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+        res.end(JSON.stringify({ offices }));
+        return true;
+      },
+    });
+  }
+
   if (options.bindingTokenStore) {
     const bindingHandler = createBindingHandler(options.bindingTokenStore);
     for (const path of ["/binding", "/api/binding/info"]) {

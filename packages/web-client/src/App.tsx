@@ -5,6 +5,7 @@ import {
   Outlet,
   RouterProvider,
   useLocation,
+  useNavigate,
 } from "react-router-dom";
 import { createContext, useContext, useEffect, useState } from "react";
 import type { WebBootGraph } from "./manifest.js";
@@ -128,10 +129,24 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+interface OfficeEntry {
+  platform: string;
+  conversationId: string;
+  officeKey: string;
+  dir: string;
+}
+
+interface OfficesResponse {
+  offices: OfficeEntry[];
+}
+
 function AppFrame() {
   const manifest = useManifest();
   const location = useLocation();
+  const navigate = useNavigate();
   const [me, setMe] = useState<MeResponse | null>(null);
+  const [offices, setOffices] = useState<OfficeEntry[]>([]);
+  const [officesLoading, setOfficesLoading] = useState(true);
 
   useEffect(() => {
     fetch("/api/me", { credentials: "same-origin" })
@@ -140,8 +155,19 @@ function AppFrame() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    fetch("/api/offices")
+      .then((r) => r.json())
+      .then((data: OfficesResponse) => {
+        setOffices(data.offices);
+        setOfficesLoading(false);
+      })
+      .catch(() => setOfficesLoading(false));
+  }, []);
+
   const activeView = NAV.find((n) => location.pathname.startsWith(n.path))?.view;
   const pageTitle = activeView === "admin" ? "Admin" : activeView === "vault" ? "Vault" : "Session";
+  const showSidebar = activeView === "session" || activeView === undefined;
   return (
     <>
       <nav className="floating-view-nav" aria-label="Primary views">
@@ -163,7 +189,36 @@ function AppFrame() {
           );
         })}
       </nav>
-      <main className="shell">
+      {showSidebar && (
+        <aside className="conversations-sidebar">
+          <div className="sidebar-header">
+            <h2>Conversations</h2>
+          </div>
+          <div className="sidebar-list">
+            {officesLoading ? (
+              <div className="sidebar-loading">Loading...</div>
+            ) : offices.length === 0 ? (
+              <div className="sidebar-empty">No conversations yet.</div>
+            ) : (
+              offices.map((office) => {
+                const isActive = location.pathname === `/session/${office.officeKey}`;
+                const label = `${office.platform}/${office.conversationId}`;
+                return (
+                  <button
+                    key={office.officeKey}
+                    className={`sidebar-item${isActive ? " active" : ""}`}
+                    onClick={() => navigate(`/session/${office.officeKey}`)}
+                  >
+                    <span className="sidebar-item-label">{label}</span>
+                    <span className="sidebar-item-platform">{office.platform}</span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </aside>
+      )}
+      <main className={`shell${showSidebar ? " with-sidebar" : ""}`}>
         <header className="topbar">
           <div className="topbar-brand">
             <span className="topbar-wordmark">mikan</span>

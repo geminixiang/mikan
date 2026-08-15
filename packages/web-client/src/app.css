@@ -135,6 +135,92 @@ body {
   color: var(--text-color, #333);
 }
 
+/* ── Conversations sidebar ──────────────────────────────────────────── */
+
+.conversations-sidebar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 260px;
+  background: var(--surface-color, #fff);
+  border-right: 1px solid var(--border-color, #eee);
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+  overflow: hidden;
+}
+
+.conversations-sidebar .sidebar-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--border-color, #eee);
+}
+
+.conversations-sidebar .sidebar-header h2 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-color, #333);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sidebar-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.sidebar-loading,
+.sidebar-empty {
+  padding: 16px;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted-text, #999);
+}
+
+.sidebar-item {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  margin-bottom: 2px;
+  transition: background 0.15s;
+}
+
+.sidebar-item:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.sidebar-item.active {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.sidebar-item-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-color, #333);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-item-platform {
+  font-size: 0.75rem;
+  color: var(--muted-text, #999);
+  margin-top: 2px;
+}
+
+/* Adjust main content when sidebar is shown */
+.shell.with-sidebar {
+  margin-left: 260px;
+}
+
 /* ── Floating icon nav ──────────────────────────────────────────────── */
 
 .floating-view-nav {
