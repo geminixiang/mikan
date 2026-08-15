@@ -86,6 +86,7 @@ function rewriteSessionTimestamp(sessionFile: string, timestamp: string): void {
   const lines = readFileSync(sessionFile, "utf-8").split("\n");
   const header = JSON.parse(lines[0]) as Record<string, unknown>;
   header.timestamp = timestamp;
+  header.createdAt = new Date(timestamp).getTime();
   lines[0] = JSON.stringify(header);
   writeFileSync(sessionFile, lines.join("\n"));
 }
@@ -565,7 +566,9 @@ describe("ConversationRuntime lifecycle", () => {
       officeSessionsDir(conversationDir),
       conversationDir,
     );
-    openManagedSession(originalSession, conversationDir).appendMessage({
+    await (
+      await openManagedSession(originalSession, conversationDir)
+    ).appendMessage({
       role: "user",
       content: [{ type: "text", text: "old shared decision" }],
       timestamp: 1,
@@ -838,7 +841,9 @@ describe("ConversationRuntime lifecycle", () => {
       officeSessionsDir(conversationDir),
       conversationDir,
     );
-    openManagedSession(originalSession, conversationDir).appendMessage({
+    await (
+      await openManagedSession(originalSession, conversationDir)
+    ).appendMessage({
       role: "user",
       content: [{ type: "text", text: "old durable decision" }],
       timestamp: 1,
@@ -904,7 +909,7 @@ describe("ConversationRuntime lifecycle", () => {
       ].join("\n") + "\n",
     );
     const sync = new ChatHistorySync();
-    sync.resetSession({ conversationDir, sessionKey: "C123" });
+    await sync.resetSession({ conversationDir, sessionKey: "C123" });
 
     const freshFile = resolveChannelSessionFile(conversationDir);
     await sync.resolveSessionScope({ conversationDir, sessionKey: "C123" });
@@ -944,8 +949,8 @@ describe("ChatHistorySync session scope", () => {
   test("uses a pre-registered empty thread session for event anchors", async () => {
     const sessionDir = officeSessionsDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
-    const channelSession = openManagedSession(channelFile, conversationDir);
-    channelSession.appendMessage({
+    const channelSession = await openManagedSession(channelFile, conversationDir);
+    await channelSession.appendMessage({
       role: "user",
       content: [{ type: "text", text: "channel history should not leak" }],
       timestamp: 1,

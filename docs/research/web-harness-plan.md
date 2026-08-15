@@ -49,7 +49,13 @@ dsh's client/server split is the proven minimal protocol shape:
 
 ## Phases
 
-### Phase 1 — adopt pi 0.84's v4 session model
+### Phase 1 — adopt pi 0.84's v4 session model — SHIPPED 2026-08-15
+
+Done: `SessionStore` is now an async facade over pi `Session`/JSONL v4 at
+mikan-chosen paths; the runtime shim was deleted; `mikan sessions migrate`
+converts v3 files (verified per-file, `.v3.bak` backups). Deploy order for
+prod: stop daemon → `mikan sessions migrate` → start new version. The
+steer/queue adoption below remains open.
 
 pi 0.84 rewrote sessions: v4 JSONL, string ids, `seq` watermarks, lane
 records (operations, queue, usage), compaction with inline `retainedTail`,

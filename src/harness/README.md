@@ -30,7 +30,7 @@ streaming).
 │    · extension hook dispatch                               │
 │                                                            │
 │  SessionStore (session-store.ts)   MikanModels (models.ts) │
-│    · v3 JSONL, append-only tree      · pi-ai Models set    │
+│    · pi v4 JSONL sessions            · pi-ai Models set    │
 │    · buildSessionContext             · models.json customs │
 │                                      · auth.json creds     │
 │  Skills (skills.ts)                FileCredentialStore     │
@@ -48,7 +48,7 @@ streaming).
 | Module                             | Role                                                                                                    | Replaces (pi-coding-agent)                     |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
 | `runner.ts` `MikanAgentSession`    | Turn loop: persistence, auto-compaction, auto-retry, budget breakers, events, hooks                     | `AgentSession`                                 |
-| `session-store.ts` `SessionStore`  | Sync read/write of v3 JSONL session trees                                                               | `SessionManager`                               |
+| `session-store.ts` `SessionStore`  | Async facade over pi v4 JSONL sessions at mikan-chosen paths                                            | `SessionManager`                               |
 | `models.ts` `MikanModels`          | Model catalog + auth resolution (including models.json custom providers)                                | `ModelRegistry`                                |
 | `auth.ts` `FileCredentialStore`    | `~/.mikan/auth.json` credential store (pi-ai `CredentialStore` implementation)                          | `AuthStorage`                                  |
 | `skills.ts`                        | SKILL.md discovery and system-prompt formatting                                                         | `loadSkillsFromDir` / `formatSkillsForPrompt`  |
@@ -63,11 +63,14 @@ streaming).
 
 ### Compatibility
 
-- **Session file format is unchanged.** `SessionStore` reads and writes the
-  existing v3 JSONL (`session` header line + entries with `id`/`parentId`).
-  Entry shape matches pi-agent-core `SessionTreeEntry`, so
-  `buildSessionContext` and the compaction pipeline run on these entries
-  directly. Sessions written by older mikan builds reopen cleanly.
+- **Session files use pi's v4 JSONL format** (`{"kind":"header","version":4}`
+  header + mutation lines). `SessionStore` wraps pi's `Session`/JSONL storage
+  but keeps files at mikan-chosen paths (the session-key layout); mikan
+  header extras ride in the v4 header `metadata`. Legacy v3 files written by
+  pre-0.84 mikan builds are NOT readable at runtime — run
+  `mikan sessions migrate` (with the daemon stopped) to convert them; the
+  migrator verifies each file against the v3 context semantics and keeps a
+  `.v3.bak` backup.
 - **auth.json format is unchanged; path is `~/.mikan/auth.json`.** pi-ai
   `Credential` is the current auth.json shape; file contents can be reused, but
   paths under `~/.pi` are no longer read.
@@ -342,7 +345,8 @@ Still open: provider registration, and install/uninstall lifecycle hooks.
 
 ## Tests
 
-- `src/test/harness-session-store.test.ts` — v3 format, tree/branch, compaction expand
+- `src/test/harness-session-store.test.ts` — v4 facade: open/create/append, branch, context
+- `src/test/migrate-v3.test.ts` — v3→v4 migration: ids/lineage/compaction/name preservation
 - `src/test/harness-runner.test.ts` — faux provider e2e: persistence, tools, hook block, auth precheck
 - `src/test/harness-extensions.test.ts` — loader and hook registry
 - `src/test/harness-skills.test.ts` — SKILL.md discovery and prompt formatting

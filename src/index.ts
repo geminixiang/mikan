@@ -10,11 +10,8 @@ export {
   parseHttpIdleTimeoutMs,
 } from "./harness/http.js";
 export { MikanModels, defaultModelsJsonPath } from "./harness/models.js";
-export {
-  SessionStore,
-  loadSessionFileEntries,
-  parseSessionFileEntries,
-} from "./harness/session-store.js";
+export { SessionStore } from "./harness/session-store.js";
+export { findV3SessionFiles, isV3SessionFile, migrateSessionFile } from "./sessions/migrate-v3.js";
 export { MikanAgentSession } from "./harness/runner.js";
 export { formatSkillsForPrompt, loadSkillsFromDir, parseFrontmatter } from "./harness/skills.js";
 export { loadSubagentProfiles } from "./harness/subagent-profiles.js";
@@ -113,12 +110,9 @@ export type {
   BranchSummaryEntry,
   CompactionEntry,
   CustomEntry,
-  CustomMessageEntry,
   SessionContext,
   SessionEntry,
-  SessionFileEntry,
   SessionHeader,
-  SessionInfoEntry,
   SessionMessageEntry,
   SubagentModelSpec,
   SubagentParentContext,

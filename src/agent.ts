@@ -1488,7 +1488,7 @@ async function createConfiguredAgentSession(params: {
   });
 
   const activeSession = session;
-  const reloaded = activeSession.reloadFromSession();
+  const reloaded = await activeSession.reloadFromSession();
   if (reloaded > 0) {
     log.logInfo(`[${conversationId}] Reloaded ${reloaded} messages from session context`);
   }
@@ -1500,8 +1500,11 @@ async function createConfiguredAgentSession(params: {
   };
 }
 
-function reloadSessionMessages(session: MikanAgentSession, conversationId: string): void {
-  const reloaded = session.reloadFromSession();
+async function reloadSessionMessages(
+  session: MikanAgentSession,
+  conversationId: string,
+): Promise<void> {
+  const reloaded = await session.reloadFromSession();
   if (reloaded > 0) {
     log.logInfo(`[${conversationId}] Reloaded ${reloaded} messages from context`);
   }
@@ -1567,7 +1570,7 @@ async function prepareRunContext(params: {
     pathContext = getPathContext();
   }
 
-  reloadSessionMessages(session, conversationId);
+  await reloadSessionMessages(session, conversationId);
 
   const projection = resolveWorkspaceProjection(office);
   const memory = await getMemory(projection);
@@ -2180,10 +2183,14 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   // Platform-specific scope behavior is resolved before runner creation.
   const isThread = isThreadSessionKey(sessionKey);
   const { contextFile, threadRootMessage } = sessionScope;
-  const sessionManager = openManagedSession(contextFile, pathContext.runtimeWorkspaceRoot);
+  const sessionManager = await openManagedSession(contextFile, pathContext.runtimeWorkspaceRoot);
   const threadSessionName = buildThreadSessionName(threadRootMessage);
-  if (isThread && threadSessionName && sessionManager.getSessionName() !== threadSessionName) {
-    sessionManager.appendSessionInfo(threadSessionName);
+  if (
+    isThread &&
+    threadSessionName &&
+    (await sessionManager.getSessionName()) !== threadSessionName
+  ) {
+    await sessionManager.setSessionName(threadSessionName);
   }
 
   const sessionUuid = extractSessionUuid(contextFile);

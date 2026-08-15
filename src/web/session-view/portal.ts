@@ -124,7 +124,7 @@ export async function handleSessionViewRequest(
   const requestedSession = url.searchParams.get("session");
   let targetSessionFile: string | null;
   try {
-    targetSessionFile = resolveRequestedSessionFile(entry.sessionFile, requestedSession);
+    targetSessionFile = await resolveRequestedSessionFile(entry.sessionFile, requestedSession);
   } catch (error) {
     log.logWarning(
       `[${entry.conversationId}] Corrupted session file referenced for ${entry.sessionFile}`,
@@ -156,7 +156,7 @@ export async function handleSessionViewRequest(
   }
 
   try {
-    const model = loadSessionViewModel(targetSessionFile);
+    const model = await loadSessionViewModel(targetSessionFile);
     const displayedSessionKey = resolveDisplayedSessionKey(entry, targetSessionFile);
     const isRunning =
       interactive?.handler.isRunning(
@@ -515,7 +515,7 @@ async function handleSessionStreamRequest(
   const requestedSession = url.searchParams.get("session");
   let targetSessionFile: string | null;
   try {
-    targetSessionFile = resolveRequestedSessionFile(entry.sessionFile, requestedSession);
+    targetSessionFile = await resolveRequestedSessionFile(entry.sessionFile, requestedSession);
   } catch (error) {
     reportUserFacingError(error, {
       domain: "session_view",
@@ -613,7 +613,7 @@ async function handleSessionMessageRequest(
 
   let targetSessionFile: string | null;
   try {
-    targetSessionFile = resolveRequestedSessionFile(entry.sessionFile, requestedSession);
+    targetSessionFile = await resolveRequestedSessionFile(entry.sessionFile, requestedSession);
   } catch (error) {
     reportUserFacingError(error, {
       domain: "session_view",
@@ -700,12 +700,12 @@ async function handleSessionMessageRequest(
 
   void interactive.handler
     .handleEvent(event, bot, context)
-    .then(() => {
+    .then(async () => {
       if (!targetSessionFile) {
         sessionViewStreamHub.publish(streamKey, { type: "status", running: false });
         return;
       }
-      const model = loadSessionViewModel(targetSessionFile);
+      const model = await loadSessionViewModel(targetSessionFile);
       sessionViewStreamHub.publish(streamKey, {
         type: "refresh",
         timelineHtml: renderTimelineItems(model.items, token),

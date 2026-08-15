@@ -341,7 +341,11 @@ class ConversationRuntimeImpl implements ConversationRuntime {
               this.options.workspace,
               address,
             );
-            this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
+            await this.chatSessionManager.resetSession({
+              conversationDir,
+              sessionKey,
+              cwd: runtimeCwd,
+            });
             this.sessions.discard(address, sessionKey);
             log.logInfo(
               `[${conversationId}] Session Dream completed; rotated session: ${sessionKey}`,
@@ -371,7 +375,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     const conversationId = address.conversationId;
     const conversationDir = this.options.workspace.office(address).dir;
     const runtimeCwd = runtimeCwdForSandbox(this.options.sandbox, this.options.workspace, address);
-    this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
+    await this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
 
     this.sessions.discard(address, sessionKey);
 

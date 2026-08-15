@@ -65,6 +65,7 @@ import {
 import { FileVaultManager } from "./vault/index.js";
 import { runExtCommand } from "./cli/ext.js";
 import { runOfficeCommand } from "./cli/office.js";
+import { runSessionsCommand } from "./cli/sessions.js";
 import {
   buildContainerBindTranslator,
   createWorkspace,
@@ -194,6 +195,11 @@ if (plan.mode === "ext") {
 // `mikan office …` inspects/claims conversation offices and exits.
 if (plan.mode === "office") {
   process.exit(runOfficeCommand(plan.officeArgs ?? []));
+}
+
+// `mikan sessions …` migrates/maintains session files and exits.
+if (plan.mode === "sessions") {
+  process.exit(await runSessionsCommand(plan.sessionsArgs ?? []));
 }
 
 // Global fetch: proxy support (HTTP_PROXY/HTTPS_PROXY/NO_PROXY) and idle

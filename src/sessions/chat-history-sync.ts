@@ -128,7 +128,7 @@ export class ChatHistorySync {
     const sessionDir = officeSessionsDir(options.conversationDir);
 
     if (!isThreadSessionKey(options.sessionKey)) {
-      const contextFile = this.resolveTopLevelSessionFile({
+      const contextFile = await this.resolveTopLevelSessionFile({
         conversationDir: options.conversationDir,
         sessionDir,
         cwd,
@@ -147,7 +147,7 @@ export class ChatHistorySync {
     });
   }
 
-  syncSessionManager(options: SyncChatSessionOptions): ChatSyncReport {
+  async syncSessionManager(options: SyncChatSessionOptions): Promise<ChatSyncReport> {
     const records = readConversationLog(options.conversationDir);
     return syncSessionManagerFromLog(
       options.sessionManager,
@@ -159,7 +159,7 @@ export class ChatHistorySync {
     );
   }
 
-  resetSession(options: ResetChatSessionOptions): string {
+  async resetSession(options: ResetChatSessionOptions): Promise<string> {
     const cwd = options.cwd ?? options.conversationDir;
     const sessionFile = isThreadSessionKey(options.sessionKey)
       ? (() => {
@@ -167,7 +167,7 @@ export class ChatHistorySync {
           // Preserve lineage: keep the original parent rather than re-binding to current.
           let parent: ParentSessionRef | undefined;
           try {
-            const existingHeader = SessionStore.open(threadFile).getHeader();
+            const existingHeader = SessionStore.readHeader(threadFile);
             if (existingHeader?.parentSession) {
               const parentPath = existingHeader.parentSession;
               // Prefer stored UUID; for legacy sessions without it, read the parent file.
@@ -175,7 +175,7 @@ export class ChatHistorySync {
                 existingHeader.parentSessionId ??
                 (() => {
                   try {
-                    return SessionStore.open(parentPath).getHeader()?.id;
+                    return SessionStore.readHeader(parentPath)?.id;
                   } catch {
                     return undefined;
                   }
@@ -197,7 +197,8 @@ export class ChatHistorySync {
     const lastMessageId = latestSyncMessageId(records, {
       sessionKey: isThreadSessionKey(options.sessionKey) ? options.sessionKey : null,
     });
-    openManagedSession(sessionFile, cwd).appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
+    const sessionManager = await openManagedSession(sessionFile, cwd);
+    await sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
       source: "log.jsonl",
       messageCount: 0,
       resetAt: this.now().toISOString(),
@@ -206,18 +207,18 @@ export class ChatHistorySync {
     return sessionFile;
   }
 
-  private resolveTopLevelSessionFile(options: {
+  private async resolveTopLevelSessionFile(options: {
     conversationDir: string;
     sessionDir: string;
     cwd: string;
     currentMessageId?: string;
     rotateTopLevelSession: boolean;
-  }): string {
+  }): Promise<string> {
     const records = readConversationLog(options.conversationDir);
     const existing = tryResolveCurrentSession(options.sessionDir);
     if (existing && !isPlatformHistorySession(existing)) {
       if (!options.rotateTopLevelSession || !shouldRotateTopLevelSession(existing, this.now())) {
-        syncSessionFromLog(
+        await syncSessionFromLog(
           existing,
           options.cwd,
           selectExistingSessionSyncMessages(records, {
@@ -237,7 +238,7 @@ export class ChatHistorySync {
       now: this.now(),
       excludeMessageId: options.currentMessageId,
     });
-    bootstrapSessionFromLog(
+    await bootstrapSessionFromLog(
       sessionFile,
       options.cwd,
       bootstrapRecords,
@@ -253,20 +254,20 @@ export class ChatHistorySync {
     return { recentDays: this.recentDays, maxMessages: this.maxTopLevelMessages, now: this.now() };
   }
 
-  private resolveThreadSessionScope(options: {
+  private async resolveThreadSessionScope(options: {
     conversationDir: string;
     sessionDir: string;
     sessionKey: string;
     cwd: string;
     currentMessageId?: string;
-  }): ResolvedSessionScope {
+  }): Promise<ResolvedSessionScope> {
     const threadFile = getThreadSessionFile(options.conversationDir, options.sessionKey);
     const threadId = extractSessionSuffix(options.sessionKey);
     const records = readConversationLog(options.conversationDir);
     const threadRootMessage = buildThreadRootSeed(findLogRecordById(records, threadId)?.message);
     const existing = tryResolveThreadSession(threadFile);
     if (existing) {
-      syncSessionFromLog(
+      await syncSessionFromLog(
         existing,
         options.cwd,
         selectExistingSessionSyncMessages(records, {
@@ -289,7 +290,7 @@ export class ChatHistorySync {
       now: this.now(),
       excludeMessageId: options.currentMessageId,
     });
-    bootstrapSessionFromLog(
+    await bootstrapSessionFromLog(
       threadFile,
       options.cwd,
       bootstrapRecords,
@@ -452,17 +453,17 @@ function sortTime(record: LogRecord): number {
   return record.index;
 }
 
-function bootstrapSessionFromLog(
+async function bootstrapSessionFromLog(
   sessionFile: string,
   cwd: string,
   records: LogRecord[],
   lastMessageId = records.at(-1)?.message.ts,
-): void {
+): Promise<void> {
   if (records.length === 0 && !lastMessageId) return;
 
-  const sessionManager = openManagedSession(sessionFile, cwd);
-  appendLogRecordsToSession(sessionManager, records);
-  sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
+  const sessionManager = await openManagedSession(sessionFile, cwd);
+  await appendLogRecordsToSession(sessionManager, records);
+  await sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
     source: "log.jsonl",
     messageCount: records.length,
     lastMessageId,
@@ -475,24 +476,28 @@ interface HistoryWindow {
   now: Date;
 }
 
-function syncSessionFromLog(
+async function syncSessionFromLog(
   sessionFile: string,
   cwd: string,
   records: LogRecord[],
   historyWindow: HistoryWindow,
-): ChatSyncReport {
+): Promise<ChatSyncReport> {
   if (records.length === 0) return { appended: 0 };
-  return syncSessionManagerFromLog(openManagedSession(sessionFile, cwd), records, historyWindow);
+  return syncSessionManagerFromLog(
+    await openManagedSession(sessionFile, cwd),
+    records,
+    historyWindow,
+  );
 }
 
-function syncSessionManagerFromLog(
+async function syncSessionManagerFromLog(
   sessionManager: SessionStore,
   records: LogRecord[],
   historyWindow: HistoryWindow,
-): ChatSyncReport {
+): Promise<ChatSyncReport> {
   if (records.length === 0) return { appended: 0 };
 
-  const existingEntries = sessionManager.getEntries();
+  const existingEntries = await sessionManager.getEntries();
   const resetAt = getLatestChatSyncResetAt(existingEntries);
   const eligibleRecords = resetAt
     ? records.filter((record) => isAfterReset(record, resetAt))
@@ -516,8 +521,8 @@ function syncSessionManagerFromLog(
   if (newRecords.length === 0) return { appended: 0 };
 
   const lastMessageId = syncCandidates.at(-1)?.message.ts;
-  appendLogRecordsToSession(sessionManager, newRecords);
-  sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
+  await appendLogRecordsToSession(sessionManager, newRecords);
+  await sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
     source: "log.jsonl",
     messageCount: newRecords.length,
     lastMessageId,
@@ -528,10 +533,13 @@ function syncSessionManagerFromLog(
   };
 }
 
-function appendLogRecordsToSession(sessionManager: SessionStore, records: LogRecord[]): void {
+async function appendLogRecordsToSession(
+  sessionManager: SessionStore,
+  records: LogRecord[],
+): Promise<void> {
   for (const record of records) {
     const message = buildHistorySessionMessage(record.message);
-    if (message) sessionManager.appendMessage(message);
+    if (message) await sessionManager.appendMessage(message);
   }
 }
 
