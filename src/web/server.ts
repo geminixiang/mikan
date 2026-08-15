@@ -210,6 +210,7 @@ export async function startWebServer(options: StartWebServerOptions): Promise<Se
     options.linkTokenStore,
     options.vaultManager,
     options.notify,
+    options.bindingTokenStore,
   );
 
   // Constructed once at server start; the admin portal consumes the owning

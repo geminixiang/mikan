@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { escapeHtml, readJsonBody, renderPortalShell, requestBaseUrl } from "../portal-shell.js";
 import { resolveLinkBaseUrl } from "../../config.js";
 import type { InMemoryLinkTokenStore } from "./store.js";
+import type { InMemoryBindingTokenStore } from "./binding.js";
 import {
   getOAuthServices,
   resolveOAuthService,
@@ -30,6 +31,7 @@ interface LinkCompleteBody {
 interface OAuthStartBody {
   token: string;
   serviceId: string;
+  mode?: "binding";
 }
 
 interface PendingOAuthState {
@@ -37,6 +39,8 @@ interface PendingOAuthState {
   serviceId: string;
   codeVerifier: string;
   expiresAt: number;
+  /** 'binding' when this OAuth flow is for web binding, not vault. */
+  mode?: "binding";
 }
 
 interface SecretPresetField {
@@ -248,6 +252,7 @@ export function createLoginRequestHandler(
   linkTokenStore: InMemoryLinkTokenStore,
   vaultManager: VaultManager,
   notify: NotifyFn,
+  bindingTokenStore?: InMemoryBindingTokenStore,
 ): (req: IncomingMessage, res: ServerResponse, url: URL) => boolean {
   const oauthStates = new Map<string, PendingOAuthState>();
 
@@ -347,6 +352,7 @@ export function createLoginRequestHandler(
           body as Partial<OAuthStartBody>,
           req,
           linkTokenStore,
+          bindingTokenStore,
           oauthStates,
           res,
         );
@@ -362,6 +368,7 @@ export function createLoginRequestHandler(
         vaultManager,
         notify,
         oauthStates,
+        bindingTokenStore,
         res,
       ).catch((err: Error) => {
         log.logWarning("OAuth callback failed", err.message);
@@ -1312,6 +1319,7 @@ async function handleOAuthStart(
   data: Partial<OAuthStartBody>,
   req: IncomingMessage,
   linkTokenStore: InMemoryLinkTokenStore,
+  bindingTokenStore: InMemoryBindingTokenStore | undefined,
   oauthStates: Map<string, PendingOAuthState>,
   res: ServerResponse,
 ): Promise<void> {
@@ -1321,11 +1329,28 @@ async function handleOAuthStart(
     return;
   }
 
-  const linkToken = linkTokenStore.peek(data.token);
-  if (!linkToken) {
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Invalid or expired token" }));
-    return;
+  const isBinding = data.mode === "binding";
+
+  // For binding mode, the token is a binding code, not a link token
+  if (isBinding) {
+    if (!bindingTokenStore) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Web binding is not configured" }));
+      return;
+    }
+    const bindingToken = bindingTokenStore.peek(data.token);
+    if (!bindingToken) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Invalid or expired binding code" }));
+      return;
+    }
+  } else {
+    const linkToken = linkTokenStore.peek(data.token);
+    if (!linkToken) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Invalid or expired token" }));
+      return;
+    }
   }
 
   const service = resolveOAuthService(data.serviceId);
@@ -1356,6 +1381,7 @@ async function handleOAuthStart(
     serviceId: service.id,
     codeVerifier,
     expiresAt: Date.now() + OAUTH_STATE_TTL_MS,
+    ...(isBinding ? { mode: "binding" as const } : {}),
   });
 
   for (const [k, v] of oauthStates) {
@@ -1390,6 +1416,7 @@ async function handleOAuthCallback(
   vaultManager: VaultManager,
   notify: NotifyFn,
   oauthStates: Map<string, PendingOAuthState>,
+  bindingTokenStore: InMemoryBindingTokenStore | undefined,
   res: ServerResponse,
 ): Promise<void> {
   const state = url.searchParams.get("state") ?? "";
@@ -1435,13 +1462,23 @@ async function handleOAuthCallback(
     return;
   }
 
-  // Atomic consume: pairs with the callback being one-shot. Two concurrent
-  // callbacks for the same state would previously both pass `peek` and both
-  // run `exchangeOAuthCode` across the await; only one reaches `consume`.
+  // Atomic consume: pairs with the callback being one-shot.
   const linkToken = linkTokenStore.consume(pending.linkToken);
-  if (!linkToken) {
+  // For binding mode, the linkToken field holds the binding code instead
+  const bindingToken =
+    pending.mode === "binding" && bindingTokenStore
+      ? bindingTokenStore.consumeByCode(pending.linkToken)
+      : undefined;
+
+  if (pending.mode !== "binding" && !linkToken) {
     res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
     res.end(renderErrorPage("Login link is invalid or expired. Please run /login again."));
+    return;
+  }
+
+  if (pending.mode === "binding" && !bindingToken) {
+    res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(renderErrorPage("Binding code is invalid or expired. Please run /login web again."));
     return;
   }
 
@@ -1463,6 +1500,43 @@ async function handleOAuthCallback(
     res.end(renderErrorPage("OAuth token exchange did not return an access_token."));
     return;
   }
+
+  // ── Binding flow: resolve OAuth identity and store the binding ────────
+  if (pending.mode === "binding" && bindingToken) {
+    const oauthIdentity = await resolveOAuthIdentity(service.id, accessToken);
+    if (!oauthIdentity) {
+      res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(renderErrorPage("Could not resolve your OAuth identity. Please try again."));
+      return;
+    }
+    bindingTokenStore!.bind(
+      oauthIdentity,
+      bindingToken.platform,
+      bindingToken.platformUserId,
+      bindingToken.conversationId,
+    );
+    log.logInfo(
+      `Web binding: ${oauthIdentity} ↔ ${bindingToken.platform}/${bindingToken.platformUserId}`,
+    );
+    notify(
+      bindingToken.platform,
+      bindingToken.conversationId,
+      `✅ Web binding complete! You can now access your conversations from the web interface.\n` +
+        `OAuth identity: ${oauthIdentity}`,
+    ).catch((err: Error) => {
+      log.logWarning("Failed to notify user after web binding", err.message);
+    });
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(
+      renderSuccessPage(
+        `Web binding complete! Your chat account is now linked to ${oauthIdentity}.`,
+      ),
+    );
+    return;
+  }
+
+  // Vault flow: linkToken was validated above for non-binding mode
+  const vaultLinkToken = linkToken!;
 
   const updates: Record<string, string> = {};
   for (const key of service.accessTokenEnvKeys ?? []) {
@@ -1498,12 +1572,12 @@ async function handleOAuthCallback(
   const storedTargets: string[] = [];
   try {
     if (Object.keys(updates).length > 0) {
-      vaultManager.upsertEnv(linkToken.vaultId, updates);
+      vaultManager.upsertEnv(vaultLinkToken.vaultId, updates);
       storedTargets.push(...Object.keys(updates).toSorted());
     }
     if (fileOutput?.type === "authorized_user" && refreshToken) {
       vaultManager.upsertFile(
-        linkToken.vaultId,
+        vaultLinkToken.vaultId,
         fileOutput.relativePath,
         renderAuthorizedUserCredential(clientId, clientSecret, refreshToken),
         fileOutput.targetPath,
@@ -1512,7 +1586,7 @@ async function handleOAuthCallback(
     }
   } catch (persistError) {
     log.logWarning(
-      `Failed to persist OAuth credentials for ${linkToken.platform}/${linkToken.platformUserId}`,
+      `Failed to persist OAuth credentials for ${vaultLinkToken.platform}/${vaultLinkToken.platformUserId}`,
       persistError instanceof Error ? persistError.message : String(persistError),
     );
     reportUserFacingError(persistError, {
@@ -1520,10 +1594,10 @@ async function handleOAuthCallback(
       surface: "oauth",
       operation: "vault_persist",
       severity: "error",
-      platform: linkToken.platform,
+      platform: vaultLinkToken.platform,
       context: {
-        conversationId: linkToken.conversationId,
-        vaultId: linkToken.vaultId,
+        conversationId: vaultLinkToken.conversationId,
+        vaultId: vaultLinkToken.vaultId,
         serviceId: service.id,
         credentialMode: "oauth",
         storedTargetCount: storedTargets.length,
@@ -1539,13 +1613,13 @@ async function handleOAuthCallback(
   }
 
   log.logInfo(
-    `Stored [${storedTargets.join(", ")}] for ${linkToken.platform}/${linkToken.platformUserId} in vault:${linkToken.vaultId}`,
+    `Stored [${storedTargets.join(", ")}] for ${vaultLinkToken.platform}/${vaultLinkToken.platformUserId} in vault:${vaultLinkToken.vaultId}`,
   );
 
   notify(
-    linkToken.platform,
-    linkToken.conversationId,
-    `${service.label} OAuth stored (${storedTargets.join(", ")}) in vault \`${linkToken.vaultId}\`.`,
+    vaultLinkToken.platform,
+    vaultLinkToken.conversationId,
+    `${service.label} OAuth stored (${storedTargets.join(", ")}) in vault \`${vaultLinkToken.vaultId}\`.`,
   ).catch((err: Error) => {
     log.logWarning("Failed to notify user after OAuth login", err.message);
     reportUserFacingError(err, {
@@ -1553,10 +1627,10 @@ async function handleOAuthCallback(
       surface: "oauth",
       operation: "notify_user",
       severity: "warning",
-      platform: linkToken.platform,
+      platform: vaultLinkToken.platform,
       context: {
-        conversationId: linkToken.conversationId,
-        vaultId: linkToken.vaultId,
+        conversationId: vaultLinkToken.conversationId,
+        vaultId: vaultLinkToken.vaultId,
         serviceId: service.id,
         credentialMode: "oauth",
         storedTargetCount: storedTargets.length,
@@ -1629,4 +1703,39 @@ function renderAuthorizedUserCredential(
       2,
     ) + "\n"
   );
+}
+
+/**
+ * Resolve the OAuth user identity from the access token.
+ * Returns a string like "github/octocat" or "google/foo@gmail.com".
+ */
+async function resolveOAuthIdentity(
+  serviceId: string,
+  accessToken: string,
+): Promise<string | undefined> {
+  try {
+    const userUrl =
+      serviceId === "github"
+        ? "https://api.github.com/user"
+        : serviceId === "google"
+          ? "https://www.googleapis.com/oauth2/v2/userinfo"
+          : undefined;
+    if (!userUrl) return undefined;
+    const response = await fetch(userUrl, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+    });
+    if (!response.ok) return undefined;
+    const data = (await response.json()) as Record<string, unknown>;
+    if (serviceId === "github") {
+      const login = data.login;
+      return typeof login === "string" ? `github/${login}` : undefined;
+    }
+    if (serviceId === "google") {
+      const email = data.email;
+      return typeof email === "string" ? `google/${email}` : undefined;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
 }
