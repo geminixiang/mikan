@@ -34,6 +34,7 @@ import * as log from "./log.js";
 import { startWebServer } from "./web/server.js";
 import { InMemoryAdminTokenStore } from "./web/admin/store.js";
 import { InMemoryLinkTokenStore } from "./web/login/store.js";
+import { InMemoryBindingTokenStore } from "./web/login/binding.js";
 import { InMemorySessionViewTokenStore } from "./web/session-view/store.js";
 import { DockerContainerManager } from "./provisioner.js";
 import {
@@ -404,9 +405,11 @@ if (sandboxAdapter.workspace.managedProjection) {
 const linkTokenStore = new InMemoryLinkTokenStore();
 const sessionViewTokenStore = new InMemorySessionViewTokenStore();
 const adminTokenStore = new InMemoryAdminTokenStore();
+const bindingTokenStore = new InMemoryBindingTokenStore();
 setInterval(() => linkTokenStore.purge(), 5 * 60 * 1000).unref();
 setInterval(() => sessionViewTokenStore.purge(), 5 * 60 * 1000).unref();
 setInterval(() => adminTokenStore.purge(), 5 * 60 * 1000).unref();
+setInterval(() => bindingTokenStore.purge(), 5 * 60 * 1000).unref();
 
 function portalBaseUrl(): string | undefined {
   if (LINK_BASE_URL) return LINK_BASE_URL;
@@ -628,6 +631,7 @@ const handler = createConversationRuntime({
   linkTokenStore,
   sessionViewTokenStore,
   adminTokenStore,
+  bindingTokenStore,
   portalBaseUrl: portalBaseUrl(),
   platformNotifier,
   platformReactor,
@@ -784,6 +788,7 @@ if (LINK_PORT) {
     sessionViewTokenStore,
     sessionViewInteractive: { handler, botsByPlatform },
     adminOptions: { adminTokenStore, workspace, runtime: handler, sandbox, botsByPlatform },
+    bindingTokenStore,
     webDistIndex: WEB_DIST_INDEX,
     githubWebhook:
       GITHUB_WEBHOOK_SECRET && githubBotForWebhook

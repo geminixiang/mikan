@@ -110,6 +110,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       sessionViewTokenStore:
         options.sessionViewTokenStore ?? portalNotConfiguredTokenStore("Session viewer"),
       adminTokenStore: options.adminTokenStore ?? portalNotConfiguredTokenStore("Admin"),
+      bindingTokenStore: options.bindingTokenStore,
       runtime: this,
     };
     this.commandHandlers = options.commandHandlers ?? defaultCommandHandlers(this.resolvedModels);

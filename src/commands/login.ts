@@ -34,6 +34,10 @@ export function parseLoginCommand(text: string): ParsedLoginCommand | null {
   }
 
   // Backward-compatible provider arguments open the generic login page.
+  if (subcommand.toLowerCase() === "web" && !operation && extra.length === 0) {
+    return { action: "web" };
+  }
+
   if (!operation && extra.length === 0) return { action: "setup" };
   return null;
 }
@@ -75,6 +79,29 @@ async function refreshCopiedVaultRuntime(
 
   await context.services.provisioner.remove(vaultId);
   return "The sandbox container was removed and will be recreated with the copied env and file mounts on the next message.";
+}
+
+async function handleWebBinding(context: CommandContext): Promise<boolean> {
+  if (!context.services.bindingTokenStore) {
+    await replyVault(context, ["Web binding is not configured on this server."]);
+    return true;
+  }
+  const { code } = context.services.bindingTokenStore.create(
+    context.platform,
+    context.platformUserId,
+    context.conversationId,
+  );
+  await replyVault(context, [
+    "**Web Binding**",
+    "",
+    `Your binding code is: **${code}**`,
+    "",
+    "Open the following link in your browser within 5 minutes:",
+    `${context.services.portalBaseUrl}/binding?code=${code}`,
+    "",
+    "After binding, you can access your sessions from the web without a link token.",
+  ]);
+  return true;
 }
 
 export class LoginCommandHandler implements CommandHandler {
@@ -138,6 +165,10 @@ export class LoginCommandHandler implements CommandHandler {
         "Set `MIKAN_LINK_URL` or `MIKAN_LINK_PORT` on the server.",
       ]);
       return true;
+    }
+
+    if (parsed.action === "web") {
+      return handleWebBinding(context);
     }
 
     const isSharedSetup = parsed.action === "shared_create" || parsed.action === "shared_update";

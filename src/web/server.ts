@@ -9,8 +9,10 @@ import { handleAdminRequest, type AdminRuntimeBridge } from "./admin/portal.js";
 import type { InMemoryAdminTokenStore } from "./admin/store.js";
 import { handleAgentEventsRequest } from "../agent-events.js";
 import { createLoginRequestHandler } from "./login/portal.js";
+import { createBindingHandler } from "./login/binding-handler.js";
 import { requestBaseUrl } from "./portal-shell.js";
 import type { InMemoryLinkTokenStore } from "./login/store.js";
+import type { InMemoryBindingTokenStore } from "./login/binding.js";
 import type { NotifyFn } from "./login/types.js";
 import {
   handleSessionViewRequest,
@@ -35,6 +37,7 @@ interface StartWebServerOptions {
   notify: NotifyFn;
   sessionViewTokenStore?: InMemorySessionViewTokenStore;
   sessionViewInteractive?: SessionViewInteractiveOptions;
+  bindingTokenStore?: InMemoryBindingTokenStore;
   adminOptions?: {
     adminTokenStore: InMemoryAdminTokenStore;
     workspace?: Workspace;
@@ -225,6 +228,16 @@ export async function startWebServer(options: StartWebServerOptions): Promise<Se
   registerAdminRoutes(webServer, options, adminEventStore, distActive);
   registerSessionRoutes(webServer, options, distActive);
   registerLoginRoutes(webServer, loginHandler, distActive);
+  if (options.bindingTokenStore) {
+    const bindingHandler = createBindingHandler(options.bindingTokenStore);
+    for (const path of ["/binding", "/api/binding/info"]) {
+      webServer.register({
+        kind: "exact",
+        path,
+        handler: (req, res) => bindingHandler(req, res, requestUrl(req)),
+      });
+    }
+  }
   if (distActive) registerWebAppDist(webServer, webDistIndex);
 
   const bindHost = bindHostOf();
