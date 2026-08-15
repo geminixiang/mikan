@@ -2,44 +2,125 @@
  * Core types for the mikan agent harness.
  *
  * The harness is built directly on pi-agent-core and pi-ai. Session entries
- * are structurally identical to pi-agent-core's `SessionTreeEntry`, and the
- * on-disk JSONL format stays compatible with the v3 session files mikan has
- * always written, so existing conversation history keeps working unchanged.
+ * keep the v3 shapes mikan has always written (pi-agent-core's entry family
+ * up to 0.83), so existing conversation history keeps working unchanged;
+ * `pi-session.ts` converts them at the pi 0.84 call boundary.
  */
 import type {
   AgentEvent,
+  AgentMessage,
   AgentTool,
-  BranchSummaryEntry,
-  CompactionEntry,
-  CustomEntry,
-  CustomMessageEntry,
-  MessageEntry,
   SessionContext,
-  SessionInfoEntry,
-  SessionTreeEntry,
   ThinkingLevel,
   CompactionSettings,
 } from "@earendil-works/pi-agent-core";
-import type { Api, Model, Usage } from "@earendil-works/pi-ai";
+import type { Api, ImageContent, Model, TextContent, Usage } from "@earendil-works/pi-ai";
 import type { ExtensionRegistry } from "./extensions/registry.js";
 import type { MikanModels } from "./models.js";
 import type { SessionStore } from "./session-store.js";
 import type { Static, TSchema } from "@sinclair/typebox";
 
-export type {
-  BranchSummaryEntry,
-  CompactionEntry,
-  CustomEntry,
-  CustomMessageEntry,
-  SessionContext,
-  SessionInfoEntry,
-};
+export type { SessionContext };
+
+/**
+ * v3 session entry shapes. These were pi-agent-core's `SessionTreeEntry`
+ * family until 0.83; pi 0.84 moved to a v4 entry model (numeric timestamps,
+ * `seq`, compaction via inline `retainedTail`), so mikan now owns the v3
+ * shapes it has always written. `pi-session.ts` converts a v3 branch into
+ * v4 entries at the pi call boundary (context build, compaction).
+ */
+interface SessionEntryBase {
+  type: string;
+  id: string;
+  parentId: string | null;
+  timestamp: string;
+}
 
 /** Message entry as stored in mikan session files. */
-export type SessionMessageEntry = MessageEntry;
+export interface SessionMessageEntry extends SessionEntryBase {
+  type: "message";
+  message: AgentMessage;
+}
 
-/** Union of entry types mikan reads and writes. Alias of pi-agent-core's tree entry. */
-export type SessionEntry = SessionTreeEntry;
+interface ThinkingLevelChangeEntry extends SessionEntryBase {
+  type: "thinking_level_change";
+  thinkingLevel: string;
+}
+
+interface ModelChangeEntry extends SessionEntryBase {
+  type: "model_change";
+  provider: string;
+  modelId: string;
+}
+
+interface ActiveToolsChangeEntry extends SessionEntryBase {
+  type: "active_tools_change";
+  activeToolNames: string[];
+}
+
+export interface CompactionEntry<T = unknown> extends SessionEntryBase {
+  type: "compaction";
+  summary: string;
+  firstKeptEntryId?: string;
+  tokensBefore: number;
+  retainedTail?: AgentMessage[];
+  details?: T;
+  usage?: Usage;
+  fromHook?: boolean;
+}
+
+export interface BranchSummaryEntry<T = unknown> extends SessionEntryBase {
+  type: "branch_summary";
+  fromId: string;
+  summary: string;
+  details?: T;
+  usage?: Usage;
+  fromHook?: boolean;
+}
+
+export interface CustomEntry<T = unknown> extends SessionEntryBase {
+  type: "custom";
+  customType: string;
+  data?: T;
+}
+
+export interface CustomMessageEntry<T = unknown> extends SessionEntryBase {
+  type: "custom_message";
+  customType: string;
+  content: string | (TextContent | ImageContent)[];
+  details?: T;
+  display: boolean;
+}
+
+interface LabelEntry extends SessionEntryBase {
+  type: "label";
+  targetId: string;
+  label: string | undefined;
+}
+
+export interface SessionInfoEntry extends SessionEntryBase {
+  type: "session_info";
+  name?: string;
+}
+
+interface LeafEntry extends SessionEntryBase {
+  type: "leaf";
+  targetId: string | null;
+}
+
+/** Union of entry types mikan reads and writes. */
+export type SessionEntry =
+  | SessionMessageEntry
+  | ThinkingLevelChangeEntry
+  | ModelChangeEntry
+  | ActiveToolsChangeEntry
+  | CompactionEntry
+  | BranchSummaryEntry
+  | CustomEntry
+  | CustomMessageEntry
+  | LabelEntry
+  | SessionInfoEntry
+  | LeafEntry;
 
 export const CURRENT_SESSION_VERSION = 3;
 
