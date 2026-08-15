@@ -289,6 +289,21 @@ export function createLoginRequestHandler(
       return true;
     }
 
+    // ── POST /api/logout — clear web session ───────────────────────────
+    if (req.method === "POST" && url.pathname === "/api/logout") {
+      const cookie = parseCookie(req.headers.cookie);
+      const sessionId = cookie?.mikan_session;
+      if (sessionId && webSessionStore) {
+        webSessionStore.revoke(sessionId);
+      }
+      res.writeHead(200, {
+        "Content-Type": "application/json",
+        "Set-Cookie": "mikan_session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax",
+      });
+      res.end(JSON.stringify({ ok: true }));
+      return true;
+    }
+
     if (req.method === "GET" && url.pathname === "/api/link/info") {
       const rawToken = url.searchParams.get("token") ?? "";
       const linkToken = linkTokenStore.peek(rawToken);
@@ -1590,12 +1605,13 @@ async function handleOAuthCallback(
       ? [{ platform: boundBinding.platform, platformUserId: boundBinding.platformUserId }]
       : [];
     const { sessionId } = webSessionStore.create(oauthIdentity, platforms);
-    // Set httpOnly session cookie
-    res.writeHead(200, {
-      "Content-Type": "text/html; charset=utf-8",
+    // Set httpOnly session cookie and redirect back to the SPA root
+    const redirectUrl = requestBaseUrl(req).replace(/\/+$/, "");
+    res.writeHead(302, {
+      Location: `${redirectUrl}/`,
       "Set-Cookie": `mikan_session=${sessionId}; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax`,
     });
-    res.end(renderSuccessPage(`Signed in as ${oauthIdentity}. You can close this window.`));
+    res.end();
     return;
   }
 

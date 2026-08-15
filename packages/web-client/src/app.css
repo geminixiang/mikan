@@ -119,6 +119,22 @@ body {
   font-family: "JetBrains Mono", ui-monospace, monospace;
 }
 
+.topbar-logout {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted, #999);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.topbar-logout:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text-color, #333);
+}
+
 /* ── Floating icon nav ──────────────────────────────────────────────── */
 
 .floating-view-nav {

@@ -93,12 +93,19 @@ function useManifest(): WebBootGraph {
   return manifest;
 }
 
-/** Gate that redirects to /login when not authenticated. */
+/** Gate that redirects to /login when not authenticated. Skips check when ?token= is present (shared links). */
 function AuthGate({ children }: { children: React.ReactNode }) {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const hasToken =
+    typeof window !== "undefined" && new URL(window.location.href).searchParams.has("token");
 
   useEffect(() => {
+    if (hasToken) {
+      setMe({ authenticated: true });
+      setLoading(false);
+      return;
+    }
     fetch("/api/me", { credentials: "same-origin" })
       .then((r) => r.json())
       .then((data: MeResponse) => {
@@ -109,7 +116,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
         setMe({ authenticated: false });
         setLoading(false);
       });
-  }, []);
+  }, [hasToken]);
 
   if (loading)
     return (
@@ -164,7 +171,14 @@ function AppFrame() {
             <span className="topbar-title">{pageTitle}</span>
           </div>
           <div className="topbar-meta">
-            {me?.oauthIdentity && <span className="topbar-user">{me.oauthIdentity}</span>}
+            {me?.oauthIdentity && (
+              <>
+                <span className="topbar-user">{me.oauthIdentity}</span>
+                <button className="topbar-logout" onClick={doLogout} title="Sign out">
+                  Sign out
+                </button>
+              </>
+            )}
             <span className="topbar-rev" title={`boot rev ${manifest.rev}`}>
               rev {manifest.rev.slice(0, 8)}
             </span>
@@ -216,6 +230,11 @@ async function doLogin() {
     if (status) status.innerHTML = '<p style="color:#c00">Network error. Please try again.</p>';
     if (btn) btn.disabled = false;
   }
+}
+
+async function doLogout() {
+  await fetch("/api/logout", { method: "POST", credentials: "same-origin" });
+  window.location.href = "/login";
 }
 
 export function App({ manifest }: { manifest: WebBootGraph }) {
