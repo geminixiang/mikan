@@ -440,7 +440,6 @@ async function readSessionUsage(
   try {
     const manager = await SessionStore.open(sessionFile);
     const header = manager.getHeader();
-    if (!header) return [];
 
     const entries = await manager.getEntries();
     const usage = entries.reduce(
@@ -598,7 +597,6 @@ async function accumulateSessionUsageByDay(
 ): Promise<void> {
   try {
     const manager = await SessionStore.open(sessionFile);
-    if (!manager.getHeader()) return;
 
     for (const entry of await manager.getEntries()) {
       if (entry.type !== "message" || entry.message.role !== "assistant") continue;
