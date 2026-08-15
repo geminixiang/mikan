@@ -1,4 +1,11 @@
-export { AppWebEntry } from "./boot.js";
 export { App } from "./App.js";
-export { parseBootManifest, type WebBootEntry, type WebBootGraph } from "./manifest.js";
-export { ApiError, apiGet, apiPost, useQueryParam } from "./api.js";
+export { AppWebEntry } from "./boot.js";
+export { HarnessClient } from "./client.js";
+export { beginGitHubLogin, HarnessApiError, HttpHarnessHostPort } from "./transport.js";
+export type {
+  HarnessClientActions,
+  HarnessClientSnapshot,
+  HarnessClientStatus,
+  HarnessConnectionStatus,
+  HarnessHostPort,
+} from "./types.js";

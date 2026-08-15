@@ -32,7 +32,8 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 - **Conversation offices** — one office directory and one sandbox runtime per conversation, isolated by default; the door policy is configurable per conversation
 - **Sandbox execution** — host, shared container, per-conversation managed container, local Gondolin microVM (preview), Firecracker (alpha), or Cloudflare bridge (experimental)
 - **Credential vaults** — `/login` stores credentials under `--state-dir` and injects env into sandbox runs
-- **Web session viewer** — read-only web view of the current session via `session` / `/session`
+- **Harness Web Client** — GitHub-authenticated Web Conversations with history, streaming, cancel, and model controls
+- **Web session viewer** — scoped capability view of a chat-platform session via `session` / `/session`
 - **Persistent memory** — workspace-level and per-office `MEMORY.md`
 - **Skills** — drop CLI tools into `skills/`
 - **Events** — schedule one-shot or recurring tasks via JSON files

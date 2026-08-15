@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { InMemoryBindingTokenStore } from "./binding.js";
+import type { WebBindingStore } from "./binding.js";
 
 /**
  * Handler for the web-binding and login flow.
@@ -10,7 +10,7 @@ import type { InMemoryBindingTokenStore } from "./binding.js";
  *   GET  /login            — web login page (Sign in with GitHub)
  */
 
-export function createBindingHandler(bindingTokenStore: InMemoryBindingTokenStore) {
+export function createBindingHandler(bindingTokenStore: WebBindingStore) {
   return (req: IncomingMessage, res: ServerResponse, url: URL): boolean => {
     if (req.method === "GET" && url.pathname === "/binding") {
       const code = url.searchParams.get("code") ?? "";

@@ -1,25 +1,21 @@
-/**
- * AppWebEntry — the SPA boot kernel (DSH AppWebEntry pattern, simplified):
- * read `window.__MIKAN_BOOT__`, parse the manifest, and mount the app shell.
- * Everything else lives in App.tsx; this class only finds the DOM node and
- * hands the manifest to the shell.
- */
-import { createRoot, type Root } from "react-dom/client";
 import { StrictMode } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { App } from "./App.js";
-import { parseBootManifest } from "./manifest.js";
+import { HarnessClient } from "./client.js";
+import { HttpHarnessHostPort } from "./transport.js";
 
+/** Fixed first-party application entry; Vite owns code arrival and caching. */
 export class AppWebEntry {
   private root: Root | undefined;
+  private readonly client = new HarnessClient(new HttpHarnessHostPort());
 
-  constructor(private readonly el: HTMLElement) {}
+  constructor(private readonly element: HTMLElement) {}
 
   run(): void {
-    const manifest = parseBootManifest(window["__MIKAN_BOOT__"]);
-    this.root = createRoot(this.el);
+    this.root = createRoot(this.element);
     this.root.render(
       <StrictMode>
-        <App manifest={manifest} />
+        <App client={this.client} />
       </StrictMode>,
     );
   }

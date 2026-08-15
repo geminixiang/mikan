@@ -54,3 +54,14 @@ const HISTORY_LINE_PREFIX =
 export function stripHistoryLinePrefix(text: string): string {
   return text.replace(HISTORY_LINE_PREFIX, "").trim();
 }
+
+/**
+ * Extract the visible user text from a stored prompt that may carry turn
+ * instructions before its canonical history line.
+ */
+export function extractHistoryLineText(text: string): string {
+  const timestampedLine = text.search(
+    /\[[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}\]\s+\[[^\]]+\](?:\s+\[in-thread:[^\]]+\])?:\s*/,
+  );
+  return stripHistoryLinePrefix(timestampedLine === -1 ? text : text.slice(timestampedLine));
+}

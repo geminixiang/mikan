@@ -1,15 +1,9 @@
 export type {
+  WebFallbackHandler,
   WebRoute,
   WebRouteKind,
-  WebUpgradeRoute,
-  WebFallbackHandler,
   WebServerListenOptions,
+  WebUpgradeRoute,
 } from "./webserver.js";
 export { WebServer } from "./webserver.js";
-export { serveStatic, registerStaticFallback, type StaticFallbackOptions } from "./static.js";
-export {
-  injectBootManifest,
-  graphRev,
-  type WebBootEntry,
-  type WebBootGraph,
-} from "./boot-manifest.js";
+export { registerStaticFallback, serveStatic, type StaticFallbackOptions } from "./static.js";

@@ -12,6 +12,10 @@ surface nor engine depth. The middle glue multiplies every change, and
 client work outshines the engine, so the ceiling — harness agent quality —
 does not move.
 
+> Web-client composition and the removal of `web-bundle` are superseded by
+> [ADR 0007](0007-full-harness-web-client.md). The thin-core/plugin criterion
+> and sandbox decision in this ADR remain accepted.
+
 The direction: mikan owns a **thin backend on pi** — session, vault,
 workspace, and the agent-loop semantics pi does not cover — and delegates
 the periphery (platform adapters, sandbox backends, tools, web UI) to
@@ -50,7 +54,7 @@ installation from git). The contract formalizes these into one pattern:
   (provisioner, vault, identity, event store); the core injects them at
   registration, never via direct imports into `src/`.
 - **Static first, dynamic later**: phase 1 composes workspace packages
-  statically (like `web-bundle` does today); phase 2 extends the existing
+  statically through workspace packages; phase 2 extends the existing
   `mikan ext` runtime loader to plugin kinds.
 
 A contract is only frozen after at least two independent implementations
@@ -95,8 +99,8 @@ and the `src/sandbox` registry already exist; the obstacles are the closed
   a `CONTRIBUTING` for plugin authors, shipped with the contract package.
 - The middle glue shrinks as modules find a single home; core ownership
   narrows to session/vault/workspace/agent-loop, where mikan's ceiling is.
-- The web SPA port is paused; the `web-host` registry pattern stays and is
-  the reference for plugin composition.
+- Web product composition is governed by ADR 0007; `web-host` remains a
+  generic route/fallback seam rather than a frontend plugin loader.
 
 ## Open questions
 

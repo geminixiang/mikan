@@ -2,7 +2,7 @@
   "name": "@geminixiang/mikan-web-frontend",
   "version": "0.1.0",
   "private": true,
-  "description": "mikan web application entry: Vite build over the mikan-web-client shell; dist/ is served by the web-host seam",
+  "description": "Vite entry for the full mikan Harness Web Client",
   "license": "MIT",
   "type": "module",
   "scripts": {

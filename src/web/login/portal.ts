@@ -1,9 +1,14 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { escapeHtml, readJsonBody, renderPortalShell, requestBaseUrl } from "../portal-shell.js";
-import { resolveLinkBaseUrl } from "../../config.js";
+import {
+  enforceJsonCsrf,
+  escapeHtml,
+  readJsonBody,
+  renderPortalShell,
+  requestBaseUrl,
+} from "../portal-shell.js";
 import type { InMemoryLinkTokenStore } from "./store.js";
-import type { InMemoryBindingTokenStore } from "./binding.js";
+import type { WebBindingStore } from "./binding.js";
 import type { InMemoryWebSessionStore } from "./session-store.js";
 import {
   getOAuthServices,
@@ -19,7 +24,7 @@ import { defaultVaultTargetPath, type VaultManager } from "../../vault/index.js"
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export type { NotifyFn } from "./types.js";
-import type { NotifyFn } from "./types.js";
+import type { NotifyFn, OAuthPrincipal } from "./types.js";
 
 interface LinkCompleteBody {
   token: string;
@@ -253,7 +258,7 @@ export function createLoginRequestHandler(
   linkTokenStore: InMemoryLinkTokenStore,
   vaultManager: VaultManager,
   notify: NotifyFn,
-  bindingTokenStore?: InMemoryBindingTokenStore,
+  bindingTokenStore?: WebBindingStore,
   webSessionStore?: InMemoryWebSessionStore,
 ): (req: IncomingMessage, res: ServerResponse, url: URL) => boolean {
   const oauthStates = new Map<string, PendingOAuthState>();
@@ -275,7 +280,7 @@ export function createLoginRequestHandler(
         JSON.stringify({
           authenticated: true,
           oauthIdentity: session.oauthIdentity,
-          platforms: session.bindings,
+          displayName: session.oauthDisplayName,
           expiresAt: session.expiresAt,
         }),
       );
@@ -284,10 +289,11 @@ export function createLoginRequestHandler(
 
     // ── POST /api/logout — clear web session ───────────────────────────
     if (req.method === "POST" && url.pathname === "/api/logout") {
+      if (!enforceJsonCsrf(req, res)) return true;
       webSessionStore?.revokeFromCookie(req.headers.cookie);
       res.writeHead(200, {
         "Content-Type": "application/json",
-        "Set-Cookie": "mikan_session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax",
+        "Set-Cookie": webSessionCookie(req, "", 0),
       });
       res.end(JSON.stringify({ ok: true }));
       return true;
@@ -366,7 +372,7 @@ export function createLoginRequestHandler(
     }
 
     if (req.method === "POST" && url.pathname === "/api/link/complete") {
-      if (!enforceCsrf(req, res)) return true;
+      if (!enforceJsonCsrf(req, res)) return true;
       void readJsonBody(req, res, 16 * 1024).then((body) => {
         if (body === null) return;
         return handleLinkComplete(
@@ -381,7 +387,7 @@ export function createLoginRequestHandler(
     }
 
     if (req.method === "POST" && url.pathname === "/api/oauth/start") {
-      if (!enforceCsrf(req, res)) return true;
+      if (!enforceJsonCsrf(req, res)) return true;
       void readJsonBody(req, res, 16 * 1024).then((body) => {
         if (body === null) return;
         return handleOAuthStart(
@@ -426,65 +432,9 @@ export function createLoginRequestHandler(
   };
 }
 
-/**
- * Block cross-site POSTs to the credential endpoints. Two defenses:
- *   1. Require Content-Type: application/json, which forces a CORS preflight
- *      for any cross-origin fetch and rules out `<form enctype="text/plain">`
- *      tricks that could otherwise smuggle a JSON body.
- *   2. When MIKAN_LINK_URL is configured, require that the Origin (or Referer,
- *      as a fallback for browsers that strip Origin) matches that base URL.
- *      This stops an attacker-controlled page — even one that somehow stole a
- *      victim's link token — from completing the flow.
- */
-function enforceCsrf(req: IncomingMessage, res: ServerResponse): boolean {
-  const contentType = (req.headers["content-type"] as string | undefined)
-    ?.split(";")[0]
-    ?.trim()
-    .toLowerCase();
-  if (contentType !== "application/json") {
-    res.writeHead(415, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Content-Type must be application/json" }));
-    return false;
-  }
-
-  const configured = resolveLinkBaseUrl();
-  if (!configured) {
-    // No trusted origin to compare against in local/dev mode; the loopback
-    // bind already prevents cross-host access.
-    return true;
-  }
-
-  let configuredOrigin: string;
-  try {
-    configuredOrigin = new URL(configured).origin;
-  } catch {
-    // Misconfigured MIKAN_LINK_URL — fail closed.
-    res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Server misconfiguration" }));
-    return false;
-  }
-
-  if (requestOrigin(req) !== configuredOrigin) {
-    res.writeHead(403, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Cross-origin request rejected" }));
-    return false;
-  }
-
-  return true;
-}
-
-/** Best-effort origin of the request, derived from Origin or Referer. */
-function requestOrigin(req: IncomingMessage): string | undefined {
-  const origin = (req.headers.origin as string | undefined)?.trim();
-  if (origin && origin !== "null") return origin;
-
-  const referer = (req.headers.referer as string | undefined)?.trim();
-  if (!referer) return undefined;
-  try {
-    return new URL(referer).origin;
-  } catch {
-    return undefined;
-  }
+function webSessionCookie(req: IncomingMessage, value: string, maxAge: number): string {
+  const secure = new URL(requestBaseUrl(req)).protocol === "https:" ? "; Secure" : "";
+  return `mikan_session=${value}; HttpOnly; Path=/; Max-Age=${maxAge}; SameSite=Lax${secure}`;
 }
 
 // ── HTML helpers ───────────────────────────────────────────────────────────────
@@ -1356,7 +1306,7 @@ async function handleOAuthStart(
   data: Partial<OAuthStartBody>,
   req: IncomingMessage,
   linkTokenStore: InMemoryLinkTokenStore,
-  bindingTokenStore: InMemoryBindingTokenStore | undefined,
+  bindingTokenStore: WebBindingStore | undefined,
   oauthStates: Map<string, PendingOAuthState>,
   res: ServerResponse,
 ): Promise<void> {
@@ -1455,7 +1405,7 @@ async function handleOAuthCallback(
   vaultManager: VaultManager,
   notify: NotifyFn,
   oauthStates: Map<string, PendingOAuthState>,
-  bindingTokenStore: InMemoryBindingTokenStore | undefined,
+  bindingTokenStore: WebBindingStore | undefined,
   webSessionStore: InMemoryWebSessionStore | undefined,
   res: ServerResponse,
 ): Promise<void> {
@@ -1545,33 +1495,33 @@ async function handleOAuthCallback(
 
   // ── Binding flow: resolve OAuth identity and store the binding ────────
   if (pending.mode === "binding" && bindingToken) {
-    const oauthIdentity = await resolveOAuthIdentity(service.id, accessToken);
-    if (!oauthIdentity) {
+    const principal = await resolveOAuthIdentity(service.id, accessToken);
+    if (!principal) {
       res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
       res.end(renderErrorPage("Could not resolve your OAuth identity. Please try again."));
       return;
     }
     bindingTokenStore!.bind(
-      oauthIdentity,
+      principal,
       bindingToken.platform,
       bindingToken.platformUserId,
       bindingToken.conversationId,
     );
     log.logInfo(
-      `Web binding: ${oauthIdentity} ↔ ${bindingToken.platform}/${bindingToken.platformUserId}`,
+      `Web binding: ${principal.id} ↔ ${bindingToken.platform}/${bindingToken.platformUserId}`,
     );
     notify(
       bindingToken.platform,
       bindingToken.conversationId,
       `✅ Web binding complete! You can now access your conversations from the web interface.\n` +
-        `OAuth identity: ${oauthIdentity}`,
+        `OAuth identity: ${principal.displayName}`,
     ).catch((err: Error) => {
       log.logWarning("Failed to notify user after web binding", err.message);
     });
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end(
       renderSuccessPage(
-        `Web binding complete! Your chat account is now linked to ${oauthIdentity}.`,
+        `Web binding complete! Your chat account is now linked to ${principal.displayName}.`,
       ),
     );
     return;
@@ -1579,8 +1529,8 @@ async function handleOAuthCallback(
 
   // ── Login flow: issue a session cookie ──────────────────────────────
   if (pending.mode === "login") {
-    const oauthIdentity = await resolveOAuthIdentity(service.id, accessToken);
-    if (!oauthIdentity) {
+    const principal = await resolveOAuthIdentity(service.id, accessToken);
+    if (!principal) {
       res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
       res.end(renderErrorPage("Could not resolve your OAuth identity. Please try again."));
       return;
@@ -1590,7 +1540,7 @@ async function handleOAuthCallback(
       res.end(renderErrorPage("Web sessions are not configured on this server."));
       return;
     }
-    const boundBinding = bindingTokenStore?.resolveByOAuthIdentity(oauthIdentity);
+    const boundBinding = bindingTokenStore?.resolveByOAuthIdentity(principal.id);
     if (!boundBinding) {
       res.writeHead(403, { "Content-Type": "text/html; charset=utf-8" });
       res.end(
@@ -1600,18 +1550,12 @@ async function handleOAuthCallback(
       );
       return;
     }
-    const { sessionId } = webSessionStore.create(oauthIdentity, [
-      {
-        platform: boundBinding.platform,
-        platformUserId: boundBinding.platformUserId,
-        conversationId: boundBinding.conversationId,
-      },
-    ]);
+    const { sessionId } = webSessionStore.create(principal.id, principal.displayName);
     // Set httpOnly session cookie and redirect back to the SPA root
     const redirectUrl = requestBaseUrl(req).replace(/\/+$/, "");
     res.writeHead(302, {
       Location: `${redirectUrl}/`,
-      "Set-Cookie": `mikan_session=${sessionId}; HttpOnly; Path=/; Max-Age=86400; SameSite=Lax`,
+      "Set-Cookie": webSessionCookie(req, sessionId, 86_400),
     });
     res.end();
     return;
@@ -1787,14 +1731,11 @@ function renderAuthorizedUserCredential(
   );
 }
 
-/**
- * Resolve the OAuth user identity from the access token.
- * Returns a string like "github/octocat" or "google/foo@gmail.com".
- */
+/** Resolve one immutable OAuth subject plus a human-readable account name. */
 async function resolveOAuthIdentity(
   serviceId: string,
   accessToken: string,
-): Promise<string | undefined> {
+): Promise<OAuthPrincipal | undefined> {
   try {
     const userUrl =
       serviceId === "github"
@@ -1809,12 +1750,20 @@ async function resolveOAuthIdentity(
     if (!response.ok) return undefined;
     const data = (await response.json()) as Record<string, unknown>;
     if (serviceId === "github") {
+      const id = data.id;
       const login = data.login;
-      return typeof login === "string" ? `github/${login}` : undefined;
+      if (typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0) return undefined;
+      if (typeof login !== "string" || login.length === 0) return undefined;
+      return { id: `github:${id}`, displayName: login };
     }
     if (serviceId === "google") {
+      const id = data.id;
       const email = data.email;
-      return typeof email === "string" ? `google/${email}` : undefined;
+      if (typeof id !== "string" || id.length === 0) return undefined;
+      return {
+        id: `google:${id}`,
+        displayName: typeof email === "string" && email.length > 0 ? email : id,
+      };
     }
     return undefined;
   } catch {

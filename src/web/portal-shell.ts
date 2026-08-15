@@ -22,6 +22,50 @@ export function requestBaseUrl(req: IncomingMessage): string {
   return `${proto}://${host}`;
 }
 
+/** Require JSON and reject browser writes from an untrusted configured origin. */
+export function enforceJsonCsrf(req: IncomingMessage, res: ServerResponse): boolean {
+  const contentType = (req.headers["content-type"] as string | undefined)
+    ?.split(";")[0]
+    ?.trim()
+    .toLowerCase();
+  if (contentType !== "application/json") {
+    res.writeHead(415, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Content-Type must be application/json" }));
+    return false;
+  }
+
+  const configured = resolveLinkBaseUrl();
+  if (!configured) return true;
+
+  let configuredOrigin: string;
+  try {
+    configuredOrigin = new URL(configured).origin;
+  } catch {
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Server misconfiguration" }));
+    return false;
+  }
+
+  if (requestOrigin(req) !== configuredOrigin) {
+    res.writeHead(403, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Cross-origin request rejected" }));
+    return false;
+  }
+  return true;
+}
+
+function requestOrigin(req: IncomingMessage): string | undefined {
+  const origin = (req.headers.origin as string | undefined)?.trim();
+  if (origin && origin !== "null") return origin;
+  const referer = (req.headers.referer as string | undefined)?.trim();
+  if (!referer) return undefined;
+  try {
+    return new URL(referer).origin;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Read, size-limit, and JSON-parse a request body. Resolves null after
  * replying 413 (size limit, via readRawBody) or 400 (invalid JSON) — the

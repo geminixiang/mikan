@@ -2,7 +2,7 @@
   "name": "@geminixiang/mikan-web-host",
   "version": "0.1.0",
   "private": true,
-  "description": "Web host seam for mikan: HTTP route registry, upgrade routes, fallback seat, and index transform taps (DSH webServer pattern, node:http only)",
+  "description": "Generic HTTP route registry and single static fallback seat for mikan",
   "license": "MIT",
   "files": [
     "lib"

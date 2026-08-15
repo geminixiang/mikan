@@ -95,6 +95,14 @@ describe("office address", () => {
     );
   });
 
+  test("accepts Web Conversation offices", () => {
+    const key = officeKey(
+      createOfficeAddress("web", "w1-0123456789abcdef01234567-0123456789abcdef0123456789abcdef"),
+    );
+    expect(key).toMatch(/^v1-web-/);
+    expect(assertOfficeKey(key)).toBe(key);
+  });
+
   test.each([
     "",
     ".",

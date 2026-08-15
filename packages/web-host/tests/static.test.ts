@@ -4,7 +4,6 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebServer, registerStaticFallback, serveStatic } from "../src/index.js";
-import { injectBootManifest, graphRev, type WebBootGraph } from "../src/boot-manifest.js";
 import type { ServerResponse } from "node:http";
 
 describe("serveStatic / registerStaticFallback", () => {
@@ -88,17 +87,6 @@ describe("serveStatic / registerStaticFallback", () => {
     expect(res.status).toBe(405);
   });
 
-  it("applies index taps to every index response", async () => {
-    webServer.tapIndex((html) =>
-      html.replace("</head>", "<script>window.__MIKAN_BOOT__={}</script></head>"),
-    );
-    registerStaticFallback({ webServer, distIndex: join(distRoot, "index.html") });
-    const res = await fetch(`${base}/`);
-    expect(await res.text()).toContain("window.__MIKAN_BOOT__");
-    const miss = await fetch(`${base}/any/path`);
-    expect(await miss.text()).toContain("window.__MIKAN_BOOT__");
-  });
-
   it("serveStatic writes 403 for traversal without touching the fs", async () => {
     const calls: string[] = [];
     const res = {
@@ -115,52 +103,8 @@ describe("serveStatic / registerStaticFallback", () => {
       },
       destroy() {},
     } as unknown as ServerResponse;
-    await serveStatic(
-      "/../etc/passwd",
-      res,
-      distRoot,
-      join(distRoot, "index.html"),
-      async () => "index",
-    );
+    await serveStatic("/../etc/passwd", res, distRoot, join(distRoot, "index.html"));
     expect(res.statusCode).toBe(403);
     expect(calls).toEqual(["end"]);
-  });
-});
-
-describe("boot manifest", () => {
-  const graph: WebBootGraph = {
-    rev: "abc",
-    entries: [{ id: "app", url: "/assets/index-123.js", rev: "rev1", immediately: true }],
-  };
-
-  it("injects the graph as the first script in <head>", () => {
-    const html = "<!DOCTYPE html><html><head><title>x</title></head><body></body></html>";
-    const out = injectBootManifest(html, graph);
-    expect(out.indexOf("window.__MIKAN_BOOT__")).toBeLessThan(out.indexOf("<title>"));
-    expect(out).toContain('"id":"app"');
-  });
-
-  it("escapes < in the JSON to prevent script breakout", () => {
-    const evil: WebBootGraph = {
-      rev: "r",
-      entries: [{ id: "</script><script>alert(1)</script>", url: "/u", rev: "v" }],
-    };
-    const out = injectBootManifest("<html><head></head></html>", evil);
-    expect(out).not.toContain("</script><script>alert(1)");
-    // Only `<` is escaped (sufficient: it closes no tag without a `>`).
-    expect(out).toContain("\\u003c/script>");
-  });
-
-  it("prepends when there is no <head>", () => {
-    const out = injectBootManifest("<body></body>", graph);
-    expect(out.startsWith("<script>window.__MIKAN_BOOT__")).toBe(true);
-  });
-
-  it("graphRev is stable and content-sensitive", () => {
-    const a = graphRev({ rev: "1", entries: [{ id: "x", url: "/u", rev: "v" }] });
-    const b = graphRev({ rev: "1", entries: [{ id: "x", url: "/u", rev: "v" }] });
-    const c = graphRev({ rev: "1", entries: [{ id: "x", url: "/u", rev: "DIFFERENT" }] });
-    expect(a).toBe(b);
-    expect(a).not.toBe(c);
   });
 });

@@ -2,14 +2,10 @@
  * Embed the compiled web seam packages into the daemon's dist/ so the
  * published npm artifact stays self-contained.
  *
- * The daemon (src/) imports @geminixiang/mikan-web-host and
- * @geminixiang/mikan-web-bundle at runtime. Those packages are private
- * workspace packages, so a fresh `npm install -g <tarball>` cannot resolve
- * them from the registry. This step copies their tsgo output (lib/) into
- * dist/.internal/<name> and rewrites the import specifiers in the emitted
- * dist files to relative paths — the npm-published daemon then needs nothing
- * outside its own dist/. (The workspace packages remain the single source of
- * truth; this only embeds their build output, like a tiny inlining step.)
+ * The daemon imports private workspace packages at runtime and serves the
+ * Vite app. A published npm install cannot resolve those workspaces, so this
+ * step embeds their compiled output, rewrites emitted specifiers, and copies
+ * the built app into dist/web.
  *
  * Run after `tsgo -p src/tsconfig.build.json` in the root build.
  */
@@ -24,7 +20,7 @@ const embedDir = join(distDir, ".internal");
 
 /** Workspace package name -> its package dir (lib/ compiled by tsgo). */
 const PACKAGES = new Map([
-  ["@geminixiang/mikan-daemon-web-bridge", "daemon-web-bridge"],
+  ["@geminixiang/mikan-harness-web-contract", "harness-web-contract"],
   ["@geminixiang/mikan-sandbox-cloudflare", "sandbox-cloudflare"],
   ["@geminixiang/mikan-sandbox-container", "sandbox-container"],
   ["@geminixiang/mikan-sandbox-contract", "sandbox-contract"],
@@ -32,12 +28,13 @@ const PACKAGES = new Map([
   ["@geminixiang/mikan-sandbox-host", "sandbox-host"],
   ["@geminixiang/mikan-sandbox-image", "sandbox-image"],
   ["@geminixiang/mikan-web-host", "web-host"],
-  ["@geminixiang/mikan-web-bundle", "web-bundle"],
 ]);
 
-// 1. Copy each package's tsgo output into dist/.internal/<dir>.
+// 1. Copy the app and each package's tsgo output into dist/.internal/.
 rmSync(embedDir, { recursive: true, force: true });
 mkdirSync(embedDir, { recursive: true });
+const webDistDir = join(embedDir, "web-app");
+cpSync(join(rootDir, "apps", "web", "dist"), webDistDir, { recursive: true });
 for (const packageDir of PACKAGES.values()) {
   cpSync(join(rootDir, "packages", packageDir, "lib"), join(embedDir, packageDir), {
     recursive: true,
@@ -75,4 +72,4 @@ function walk(dir) {
 }
 
 walk(distDir);
-console.log(`Embedded ${PACKAGES.size} web seam packages into ${embedDir}`);
+console.log(`Embedded the Web Harness Client and ${PACKAGES.size} seam packages into dist`);

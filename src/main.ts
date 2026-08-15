@@ -32,9 +32,10 @@ import { EventsWatcher } from "./events.js";
 import { ExtensionCallbackScheduler } from "./extension-schedules.js";
 import * as log from "./log.js";
 import { startWebServer } from "./web/server.js";
+import { MikanHarnessHost } from "./web/harness/host.js";
 import { InMemoryAdminTokenStore } from "./web/admin/store.js";
 import { InMemoryLinkTokenStore } from "./web/login/store.js";
-import { InMemoryBindingTokenStore } from "./web/login/binding.js";
+import { WebBindingStore } from "./web/login/binding.js";
 import { InMemoryWebSessionStore } from "./web/login/session-store.js";
 import { InMemorySessionViewTokenStore } from "./web/session-view/store.js";
 import { DockerContainerManager } from "./provisioner.js";
@@ -49,6 +50,7 @@ import {
   configureHttpDispatcher,
   defaultAuthPath,
   defaultModelsJsonPath,
+  MikanModels,
   parseHttpIdleTimeoutMs,
 } from "./harness/index.js";
 import { existsSync, readFileSync } from "node:fs";
@@ -108,12 +110,11 @@ const LINK_BASE_URL = resolveLinkBaseUrl();
 const LINK_PORT_RAW = readEnv("LINK_PORT");
 const LINK_PORT = LINK_PORT_RAW ? parseInt(LINK_PORT_RAW, 10) : LINK_BASE_URL ? 8181 : undefined;
 
-// Built web app (apps/web/dist/index.html) served by the link server's
-// fallback seat; MIKAN_WEB_DIST overrides the default location. server.ts
-// checks existence, so an unbuilt dist is a no-op (404 fallback as before).
+// The build embeds the Vite app under dist/.internal. MIKAN_WEB_DIST remains
+// available for development and custom deployments.
 const WEB_DIST_INDEX =
   readEnv("MIKAN_WEB_DIST") ??
-  pathJoin(dirname(fileURLToPath(import.meta.url)), "..", "apps", "web", "dist", "index.html");
+  pathJoin(dirname(fileURLToPath(import.meta.url)), ".internal", "web-app", "index.html");
 
 const WORLD_WRITABLE_MODE = 0o002;
 
@@ -406,7 +407,7 @@ if (sandboxAdapter.workspace.managedProjection) {
 const linkTokenStore = new InMemoryLinkTokenStore();
 const sessionViewTokenStore = new InMemorySessionViewTokenStore();
 const adminTokenStore = new InMemoryAdminTokenStore();
-const bindingTokenStore = new InMemoryBindingTokenStore();
+const bindingTokenStore = new WebBindingStore(stateDir);
 const webSessionStore = new InMemoryWebSessionStore();
 setInterval(() => linkTokenStore.purge(), 5 * 60 * 1000).unref();
 setInterval(() => sessionViewTokenStore.purge(), 5 * 60 * 1000).unref();
@@ -624,6 +625,7 @@ const extensionScheduleEngine = new ExtensionCallbackScheduler({
   dispatch: (fire) => handler.handleExtensionScheduleCallback(fire),
 });
 
+const models = MikanModels.create();
 const handler = createConversationRuntime({
   workspace,
   sandbox,
@@ -644,7 +646,11 @@ const handler = createConversationRuntime({
   platformUserLister,
   extensionScheduleEngine,
   platformToolPackFactories: buildPlatformToolPackFactories(),
+  models,
 });
+const harnessHost = LINK_PORT
+  ? new MikanHarnessHost({ workspace, runtime: handler, models, stateDir })
+  : undefined;
 
 const sandboxDesc = sandboxAdapter.describe?.(sandbox) ?? sandbox.type;
 log.logStartup(workingDir, sandboxDesc);
@@ -792,6 +798,7 @@ if (LINK_PORT) {
     adminOptions: { adminTokenStore, workspace, runtime: handler, sandbox, botsByPlatform },
     bindingTokenStore,
     webSessionStore,
+    harnessHost,
     webDistIndex: WEB_DIST_INDEX,
     githubWebhook:
       GITHUB_WEBHOOK_SECRET && githubBotForWebhook

@@ -1,8 +1,7 @@
 /**
  * SPA dist server over the WebServer fallback seat (DSH frontend-static
- * pattern): serves a built frontend directory with traversal protection,
- * SPA routing (any miss → index.html with 200), and index-tap injection on
- * every index response.
+ * pattern): serves a built frontend directory with traversal protection and
+ * SPA routing (any miss → index.html with 200).
  */
 
 import { readFile } from "node:fs/promises";
@@ -26,14 +25,12 @@ const MIME: Record<string, string> = {
  * @param res - the node:http response to write.
  * @param distRoot - absolute dist root directory.
  * @param distIndex - absolute path of index.html inside distRoot.
- * @param renderIndex - produces the index.html body (index-tap injection).
  */
 export async function serveStatic(
   pathname: string,
   res: ServerResponse,
   distRoot: string,
   distIndex: string,
-  renderIndex: () => Promise<string>,
 ): Promise<void> {
   const target = resolve(normalize(join(distRoot, pathname)));
   // Traversal rejection: the target must be distRoot itself (`/`) or stay
@@ -44,7 +41,7 @@ export async function serveStatic(
     return;
   }
   const serveIndex = async (): Promise<void> => {
-    const body = await renderIndex();
+    const body = await readFile(distIndex);
     res.writeHead(200, { "content-type": MIME[".html"] });
     res.end(body);
   };
@@ -76,8 +73,6 @@ export interface StaticFallbackOptions {
 export function registerStaticFallback(options: StaticFallbackOptions): () => void {
   const { webServer, distIndex } = options;
   const distRoot = dirname(distIndex);
-  const renderIndex = async (): Promise<string> =>
-    webServer.applyIndexTaps(await readFile(distIndex, "utf8"));
   return webServer.registerFallback(async (req, res) => {
     // Non-GET/HEAD without a matching named route is 405 (fallback-only
     // semantics: named routes own their method handling).
@@ -87,6 +82,6 @@ export function registerStaticFallback(options: StaticFallbackOptions): () => vo
       return;
     }
     const rawPath = new URL(req.url ?? "/", "http://localhost").pathname;
-    await serveStatic(decodeURIComponent(rawPath), res, distRoot, distIndex, renderIndex);
+    await serveStatic(decodeURIComponent(rawPath), res, distRoot, distIndex);
   });
 }

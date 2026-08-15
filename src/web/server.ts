@@ -1,38 +1,35 @@
+import { existsSync } from "node:fs";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
+import { WebServer, registerStaticFallback } from "@geminixiang/mikan-web-host";
 import type { MessagingBot, PlatformName } from "../adapter.js";
+import {
+  GITHUB_WEBHOOK_PATH,
+  handleGithubWebhookRequest,
+  type GithubWebhookOptions,
+} from "../adapters/github/webhook.js";
+import { handleAgentEventsRequest } from "../agent-events.js";
 import { resolveLinkBaseUrl } from "../config.js";
 import * as log from "../log.js";
+import type { Workspace } from "../office/types.js";
 import type { SandboxConfig } from "../sandbox/index.js";
 import { HostEventStore } from "../tools/event.js";
 import type { VaultManager } from "../vault/index.js";
 import { handleAdminRequest, type AdminRuntimeBridge } from "./admin/portal.js";
 import type { InMemoryAdminTokenStore } from "./admin/store.js";
-import { handleAgentEventsRequest } from "../agent-events.js";
-import { createLoginRequestHandler } from "./login/portal.js";
+import { createHarnessRequestHandler } from "./harness/http.js";
+import type { HarnessHost } from "./harness/types.js";
 import { createBindingHandler } from "./login/binding-handler.js";
-import { requestBaseUrl } from "./portal-shell.js";
-import type { InMemoryLinkTokenStore } from "./login/store.js";
-import type { InMemoryBindingTokenStore } from "./login/binding.js";
+import type { WebBindingStore } from "./login/binding.js";
+import { createLoginRequestHandler } from "./login/portal.js";
 import type { InMemoryWebSessionStore } from "./login/session-store.js";
+import type { InMemoryLinkTokenStore } from "./login/store.js";
 import type { NotifyFn } from "./login/types.js";
+import { requestBaseUrl } from "./portal-shell.js";
 import {
   handleSessionViewRequest,
   type SessionViewInteractiveOptions,
 } from "./session-view/portal.js";
-import { handleSessionViewApiRequest } from "./session-view/api.js";
-import { resolveExistingSessionFile } from "./session-view/service.js";
 import type { InMemorySessionViewTokenStore } from "./session-view/store.js";
-import type { Workspace } from "../office/types.js";
-import {
-  handleGithubWebhookRequest,
-  GITHUB_WEBHOOK_PATH,
-  type GithubWebhookOptions,
-} from "../adapters/github/webhook.js";
-import { existsSync } from "node:fs";
-import { WebServer, registerStaticFallback, injectBootManifest } from "@geminixiang/mikan-web-host";
-import { composeWebBootGraph, contentRev, entryUrlOfIndex } from "@geminixiang/mikan-web-bundle";
-import { listRegisteredOffices } from "../office/index.js";
-import { createOfficeAddress, officeKey } from "../office/address.js";
 
 interface StartWebServerOptions {
   port: number;
@@ -41,8 +38,9 @@ interface StartWebServerOptions {
   notify: NotifyFn;
   sessionViewTokenStore?: InMemorySessionViewTokenStore;
   sessionViewInteractive?: SessionViewInteractiveOptions;
-  bindingTokenStore?: InMemoryBindingTokenStore;
+  bindingTokenStore?: WebBindingStore;
   webSessionStore?: InMemoryWebSessionStore;
+  harnessHost?: HarnessHost;
   adminOptions?: {
     adminTokenStore: InMemoryAdminTokenStore;
     workspace?: Workspace;
@@ -51,28 +49,17 @@ interface StartWebServerOptions {
     botsByPlatform?: Partial<Record<PlatformName, MessagingBot>>;
   };
   githubWebhook?: GithubWebhookOptions;
-  /**
-   * Absolute path of the built web app's index.html (e.g. apps/web/dist).
-   * When set and the file exists, the static-dist fallback seat is claimed and
-   * `window.__MIKAN_BOOT__` is injected into every index response. Omit to keep
-   * the previous 404-on-unmatched behavior.
-   */
+  /** Absolute path of the built Web Harness Client index.html. */
   webDistIndex?: string;
 }
 
-/** Build the request URL exactly as the previous monolithic dispatch did. */
 function requestUrl(req: IncomingMessage): URL {
   return new URL(req.url ?? "/", requestBaseUrl(req));
 }
 
-/** Bind host: 0.0.0.0 when a link base URL is configured, else loopback. */
 function bindHostOf(): string | undefined {
   return resolveLinkBaseUrl() ? undefined : "127.0.0.1";
 }
-
-// ── Route registration helpers (DSH webServer pattern) ──────────────────────
-// Each handler keeps the boolean "handled? / not mine" contract, so a decline
-// falls through to the next candidate exactly as the old if-chain.
 
 function registerCoreRoutes(webServer: WebServer, options: StartWebServerOptions): void {
   webServer.register({
@@ -86,8 +73,8 @@ function registerCoreRoutes(webServer: WebServer, options: StartWebServerOptions
     },
   });
 
-  const githubWebhook = options.githubWebhook;
-  if (githubWebhook) {
+  if (options.githubWebhook) {
+    const githubWebhook = options.githubWebhook;
     webServer.register({
       kind: "exact",
       path: GITHUB_WEBHOOK_PATH,
@@ -100,73 +87,71 @@ function registerCoreRoutes(webServer: WebServer, options: StartWebServerOptions
     path: "/api/agent-events/stream",
     handler: (req, res) => handleAgentEventsRequest(req, res, requestUrl(req)),
   });
+}
 
+function registerHarnessRoutes(webServer: WebServer, options: StartWebServerOptions): void {
+  if (!options.harnessHost || !options.webSessionStore) return;
+  const handler = createHarnessRequestHandler(options.harnessHost, options.webSessionStore);
   webServer.register({
-    kind: "exact",
-    path: "/api/session/view",
-    handler: (req, res) =>
-      handleSessionViewApiRequest(
-        req,
-        res,
-        requestUrl(req),
-        options.sessionViewTokenStore,
-        options.sessionViewInteractive,
-      ),
+    kind: "prefix",
+    path: "/api/harness",
+    handler: (req, res) => handler(req, res, requestUrl(req)),
   });
 }
 
 function registerAdminRoutes(
   webServer: WebServer,
   options: StartWebServerOptions,
-  adminEventStore: ReturnType<typeof HostEventStore.fromWorkspaceDir> | undefined,
-  distActive: boolean,
+  eventStore: ReturnType<typeof HostEventStore.fromWorkspaceDir> | undefined,
 ): void {
   const adminOptions = options.adminOptions;
-  if (!adminOptions?.adminTokenStore) return;
+  if (!adminOptions?.adminTokenStore) {
+    webServer.register({
+      kind: "prefix",
+      path: "/admin",
+      handler: (_req, res) => {
+        writeNotFound(res);
+        return true;
+      },
+    });
+    return;
+  }
   webServer.register({
     kind: "prefix",
     path: "/admin",
-    handler: (req, res) => {
-      const url = requestUrl(req);
-      // When the SPA is served, the admin page route belongs to the SPA
-      // (same URL); all /admin/api/* routes below stay with the daemon.
-      if (distActive && req.method === "GET" && url.pathname === "/admin") return false;
-      return handleAdminRequest(req, res, url, {
+    handler: async (req, res) => {
+      const handled = await handleAdminRequest(req, res, requestUrl(req), {
         vaultManager: options.vaultManager,
         linkTokenStore: options.linkTokenStore,
         sessionViewTokenStore: options.sessionViewTokenStore,
         adminTokenStore: adminOptions.adminTokenStore,
         portalBaseUrl: resolveLinkBaseUrl() ?? undefined,
         workspace: adminOptions.workspace,
-        eventStore: adminEventStore,
+        eventStore,
         runtime: adminOptions.runtime,
         sandbox: adminOptions.sandbox,
         botsByPlatform: adminOptions.botsByPlatform,
       });
+      if (handled === false) writeNotFound(res);
+      return true;
     },
   });
 }
 
-function registerSessionRoutes(
-  webServer: WebServer,
-  options: StartWebServerOptions,
-  distActive: boolean,
-): void {
+function registerSessionRoutes(webServer: WebServer, options: StartWebServerOptions): void {
   webServer.register({
     kind: "prefix",
     path: "/session",
-    handler: (req, res) => {
-      const url = requestUrl(req);
-      // The session *page* is the SPA's when the dist is served; the stream
-      // and message routes below stay with the daemon (the SPA uses them).
-      if (distActive && req.method === "GET" && url.pathname === "/session") return false;
-      return handleSessionViewRequest(
+    handler: async (req, res) => {
+      const handled = await handleSessionViewRequest(
         req,
         res,
-        url,
+        requestUrl(req),
         options.sessionViewTokenStore,
         options.sessionViewInteractive,
       );
+      if (handled === false) writeNotFound(res);
+      return true;
     },
   });
 }
@@ -174,7 +159,6 @@ function registerSessionRoutes(
 function registerLoginRoutes(
   webServer: WebServer,
   loginHandler: (req: IncomingMessage, res: ServerResponse, url: URL) => boolean,
-  distActive: boolean,
 ): void {
   for (const path of [
     "/link",
@@ -189,120 +173,64 @@ function registerLoginRoutes(
       kind: "exact",
       path,
       handler: (req, res) => {
-        const url = requestUrl(req);
-        // The vault/link *page* is the SPA's when the dist is served; the
-        // completion and OAuth API routes stay with the daemon.
-        if (distActive && path === "/link" && req.method === "GET") return false;
-        return loginHandler(req, res, url);
+        const handled = loginHandler(req, res, requestUrl(req));
+        if (handled === false) writeNotFound(res);
+        return true;
       },
     });
   }
-}
-
-function registerOfficeRoutes(webServer: WebServer, options: StartWebServerOptions): void {
-  const workspace = options.adminOptions?.workspace;
-  if (!workspace) return;
-  const sessionUrls = new Map<string, { sessionFile: string; token: string; expiresAt: number }>();
-
+  // Unknown descendants of the credential portal are never SPA routes.
   webServer.register({
-    kind: "exact",
-    path: "/api/offices",
-    handler: (req, res) => {
-      if (req.method !== "GET") return false;
-      const webSession = options.webSessionStore?.getSessionFromCookie(req.headers.cookie);
-      if (!webSession) {
-        res.writeHead(401, { "Content-Type": "application/json; charset=utf-8" });
-        res.end(JSON.stringify({ error: "Authentication required" }));
-        return true;
-      }
-      const sessionViewTokenStore = options.sessionViewTokenStore;
-      if (!sessionViewTokenStore) {
-        res.writeHead(503, { "Content-Type": "application/json; charset=utf-8" });
-        res.end(JSON.stringify({ error: "Session view is not configured" }));
-        return true;
-      }
-      const now = Date.now();
-      for (const [key, cached] of sessionUrls) {
-        if (now <= cached.expiresAt) continue;
-        sessionViewTokenStore.revoke(cached.token);
-        sessionUrls.delete(key);
-      }
-
-      const bindings = new Map(
-        webSession.bindings.map((binding) => [
-          officeKey(createOfficeAddress(binding.platform, binding.conversationId)),
-          binding,
-        ]),
-      );
-      const offices = listRegisteredOffices(workspace.stateDir)
-        .flatMap((entry) => {
-          const address = createOfficeAddress(entry.platform, entry.conversationId);
-          const key = officeKey(address);
-          const binding = bindings.get(key);
-          const office = workspace.office(address);
-          if (!binding || !existsSync(office.dir)) return [];
-          const sessionFile = resolveExistingSessionFile(office.dir, entry.conversationId);
-          const cacheKey = `${webSession.token}:${key}`;
-          let cached = sessionUrls.get(cacheKey);
-          if (
-            cached &&
-            (cached.sessionFile !== sessionFile || !sessionViewTokenStore.peek(cached.token))
-          ) {
-            sessionViewTokenStore.revoke(cached.token);
-            sessionUrls.delete(cacheKey);
-            cached = undefined;
-          }
-          let viewToken = cached?.token;
-          if (sessionFile && !viewToken) {
-            const created = sessionViewTokenStore.create(
-              binding.platform,
-              binding.platformUserId,
-              entry.conversationId,
-              entry.conversationId,
-              sessionFile,
-            );
-            viewToken = created.token;
-            sessionUrls.set(cacheKey, {
-              sessionFile,
-              token: created.token,
-              expiresAt: Math.min(webSession.expiresAt, created.expiresAt),
-            });
-          }
-          const sessionUrl = viewToken ? `/session?token=${encodeURIComponent(viewToken)}` : null;
-          return [
-            {
-              platform: entry.platform,
-              conversationId: entry.conversationId,
-              officeKey: key,
-              sessionUrl,
-            },
-          ];
-        })
-        .toSorted((a, b) => a.officeKey.localeCompare(b.officeKey));
-      res.writeHead(200, {
-        "Content-Type": "application/json; charset=utf-8",
-        "Cache-Control": "no-store",
-      });
-      res.end(JSON.stringify({ offices }));
+    kind: "prefix",
+    path: "/link",
+    handler: (_req, res) => {
+      writeNotFound(res);
       return true;
     },
   });
 }
 
-/** Claim the fallback seat over the built dist and inject the boot manifest. */
+function registerBindingRoutes(webServer: WebServer, store: WebBindingStore | undefined): void {
+  if (!store) return;
+  const handler = createBindingHandler(store);
+  for (const path of ["/binding", "/api/binding/info"]) {
+    webServer.register({
+      kind: "exact",
+      path,
+      handler: (req, res) => {
+        const handled = handler(req, res, requestUrl(req));
+        if (handled === false) writeNotFound(res);
+        return true;
+      },
+    });
+  }
+}
+
+function registerApiGuard(webServer: WebServer): void {
+  webServer.register({
+    kind: "prefix",
+    path: "/api",
+    handler: (_req, res) => {
+      res.writeHead(404, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ error: "API endpoint not found" }));
+      return true;
+    },
+  });
+}
+
 function registerWebAppDist(webServer: WebServer, distIndex: string): void {
   registerStaticFallback({ webServer, distIndex });
-  webServer.tapIndex((html) => {
-    const entryUrl = entryUrlOfIndex(html) ?? "/";
-    const graph = composeWebBootGraph({ entryUrl, entryRev: contentRev(html) });
-    return injectBootManifest(html, graph);
-  });
-  log.logInfo(`Web app dist serving from ${distIndex}`);
+  log.logInfo(`Web Harness Client serving from ${distIndex}`);
+}
+
+function writeNotFound(res: ServerResponse): void {
+  if (res.headersSent) return;
+  res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+  res.end("Not found");
 }
 
 export async function startWebServer(options: StartWebServerOptions): Promise<Server | undefined> {
   const webServer = new WebServer();
-
   const loginHandler = createLoginRequestHandler(
     options.linkTokenStore,
     options.vaultManager,
@@ -310,36 +238,20 @@ export async function startWebServer(options: StartWebServerOptions): Promise<Se
     options.bindingTokenStore,
     options.webSessionStore,
   );
-
-  // Constructed once at server start; the admin portal consumes the owning
-  // event store's interface instead of re-parsing event files off disk.
   const adminEventStore = options.adminOptions?.workspace
     ? HostEventStore.fromWorkspaceDir(options.adminOptions.workspace.root)
     : undefined;
 
-  // When a built web app dist is present, the SPA takes over the portal page
-  // URLs (/session, /admin, /link) through the fallback seat; API routes and
-  // the stream/message endpoints stay with the daemon.
-  const webDistIndex = options.webDistIndex;
-  const distActive = webDistIndex !== undefined && existsSync(webDistIndex);
-
   registerCoreRoutes(webServer, options);
-  registerAdminRoutes(webServer, options, adminEventStore, distActive);
-  registerSessionRoutes(webServer, options, distActive);
-  registerLoginRoutes(webServer, loginHandler, distActive);
-  registerOfficeRoutes(webServer, options);
+  registerHarnessRoutes(webServer, options);
+  registerAdminRoutes(webServer, options, adminEventStore);
+  registerSessionRoutes(webServer, options);
+  registerLoginRoutes(webServer, loginHandler);
+  registerBindingRoutes(webServer, options.bindingTokenStore);
+  registerApiGuard(webServer);
 
-  if (options.bindingTokenStore) {
-    const bindingHandler = createBindingHandler(options.bindingTokenStore);
-    for (const path of ["/binding", "/api/binding/info"]) {
-      webServer.register({
-        kind: "exact",
-        path,
-        handler: (req, res) => bindingHandler(req, res, requestUrl(req)),
-      });
-    }
-  }
-  if (distActive) registerWebAppDist(webServer, webDistIndex);
+  const webDistIndex = options.webDistIndex;
+  if (webDistIndex && existsSync(webDistIndex)) registerWebAppDist(webServer, webDistIndex);
 
   const bindHost = bindHostOf();
   let server: Server;
@@ -347,18 +259,19 @@ export async function startWebServer(options: StartWebServerOptions): Promise<Se
     server = await webServer.listen({
       port: options.port,
       host: bindHost,
-      onRequestError: (req, err) => {
+      onRequestError: (req, error) => {
         log.logWarning(
           "Web server request error",
-          err instanceof Error ? err.message : String(err),
+          error instanceof Error ? error.message : String(error),
         );
         void req;
       },
     });
-  } catch (err) {
-    // Listen failure (e.g. port already in use) is logged, not fatal — the
-    // daemon keeps running with the web surface down, as before.
-    log.logWarning("Web server failed to start", err instanceof Error ? err.message : String(err));
+  } catch (error) {
+    log.logWarning(
+      "Web server failed to start",
+      error instanceof Error ? error.message : String(error),
+    );
     return undefined;
   }
 
@@ -370,10 +283,6 @@ export async function startWebServer(options: StartWebServerOptions): Promise<Se
         "MIKAN_LINK_URL=https://your-host.example.com for production.",
     );
   }
-
-  server.on("error", (err) => {
-    log.logWarning("Web server error", err.message);
-  });
-
+  server.on("error", (error) => log.logWarning("Web server error", error.message));
   return server;
 }

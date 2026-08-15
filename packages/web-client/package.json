@@ -2,7 +2,7 @@
   "name": "@geminixiang/mikan-web-client",
   "version": "0.1.0",
   "private": true,
-  "description": "mikan web SPA shell: reads the __MIKAN_BOOT__ boot manifest, wires the router, and mounts the ui-* feature pages (DSH dsh-client-web pattern, React only)",
+  "description": "Full interactive browser client for the mikan Harness Host",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -10,9 +10,7 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "@geminixiang/mikan-ui-admin": "workspace:^",
-    "@geminixiang/mikan-ui-session": "workspace:^",
-    "@geminixiang/mikan-ui-vault": "workspace:^",
+    "@geminixiang/mikan-harness-web-contract": "workspace:^",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.30.0"

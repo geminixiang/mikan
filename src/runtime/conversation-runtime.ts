@@ -481,7 +481,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     }
 
     const sessionKey = deriveSessionKey(event);
-    if (!skipRotation) {
+    if (!skipRotation && event.commandMode !== "prompt") {
       const privateConversation = isPrivateConversation(event);
       const handledCommand = await dispatchCommand(this.commandHandlers, {
         bot,
@@ -548,7 +548,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         // name alone is enough — otherwise those commands would be unreachable
         // rather than merely awkward.
         const bareName = context.platform.bareExtensionCommands === true;
-        if (bareName || event.text.trim().startsWith("/")) {
+        if (event.commandMode !== "prompt" && (bareName || event.text.trim().startsWith("/"))) {
           const handled = await state.runner.tryExtensionCommand(
             context.message,
             context.responder,

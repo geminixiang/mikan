@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-export type { WebSession, WebSessionBinding } from "./types.js";
-import type { WebSession, WebSessionBinding } from "./types.js";
+export type { WebSession } from "./types.js";
+import type { WebSession } from "./types.js";
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -9,14 +9,14 @@ export class InMemoryWebSessionStore {
 
   create(
     oauthIdentity: string,
-    bindings: WebSessionBinding[],
+    oauthDisplayName: string,
   ): { sessionId: string; session: WebSession } {
     const sessionId = randomUUID();
     const session: WebSession = {
       token: sessionId,
       expiresAt: Date.now() + SESSION_TTL_MS,
       oauthIdentity,
-      bindings,
+      oauthDisplayName,
     };
     this.sessions.set(sessionId, session);
     return { sessionId, session };

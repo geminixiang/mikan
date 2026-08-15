@@ -1,22 +1,21 @@
+import { dirname, join } from "node:path";
 import type { PlatformName } from "../../adapter.js";
+import {
+  ensureDirExists,
+  readJsonFileIfExists,
+  atomicWritePrivateFile,
+} from "../../utils/file-guards.js";
 import { InMemoryTokenStore } from "../token-store.js";
-import type { TokenRecord } from "../types.js";
+export type { BindingToken, CompletedBinding } from "./types.js";
+import type { BindingToken, CompletedBinding, OAuthPrincipal } from "./types.js";
 
-/** A 5-minute binding code that proves the user is in a platform conversation. */
-export interface BindingToken extends TokenRecord {
-  platform: PlatformName;
-  platformUserId: string;
-  conversationId: string;
+interface CompletedBindingFile {
+  version: 1;
+  bindings: CompletedBinding[];
 }
 
-/** A completed binding: OAuth identity → platform identity. */
-export interface CompletedBinding {
-  oauthIdentity: string;
-  platform: PlatformName;
-  platformUserId: string;
-  conversationId: string;
-  createdAt: number;
-}
+const BINDING_TTL_MS = 5 * 60 * 1000;
+const COMPLETED_BINDINGS_FILENAME = "web-bindings.json";
 
 /** 6-character alphanumeric binding code (no I,O,0,1 to avoid confusion). */
 function generateBindingCode(): string {
@@ -28,10 +27,21 @@ function generateBindingCode(): string {
   return code;
 }
 
-const BINDING_TTL_MS = 5 * 60 * 1000;
+/**
+ * Pending proof codes stay in memory; completed OAuth admission bindings are
+ * persisted when a State dir is supplied so daemon restarts do not require a
+ * new chat-side `/login web` ceremony.
+ */
+export class WebBindingStore extends InMemoryTokenStore<BindingToken> {
+  private readonly completedByOAuth = new Map<string, CompletedBinding>();
+  private readonly completedByPlatform = new Map<string, CompletedBinding>();
+  private readonly completedPath: string | undefined;
 
-export class InMemoryBindingTokenStore extends InMemoryTokenStore<BindingToken> {
-  private readonly completed = new Map<string, CompletedBinding>();
+  constructor(stateDir?: string) {
+    super();
+    this.completedPath = stateDir ? join(stateDir, COMPLETED_BINDINGS_FILENAME) : undefined;
+    this.loadCompleted();
+  }
 
   create(
     platform: PlatformName,
@@ -47,15 +57,10 @@ export class InMemoryBindingTokenStore extends InMemoryTokenStore<BindingToken> 
     return { code, token };
   }
 
-  /** Look up a binding code without consuming it (for the binding page). */
   override peek(code: string): BindingToken | undefined {
     return this.tokens.get(code);
   }
 
-  /**
-   * Look up a binding by its 6-character code. The code is consumed
-   * atomically on success. Returns undefined for invalid/expired codes.
-   */
   consumeByCode(code: string): BindingToken | undefined {
     const record = this.tokens.get(code);
     if (!record) return undefined;
@@ -67,29 +72,95 @@ export class InMemoryBindingTokenStore extends InMemoryTokenStore<BindingToken> 
     return record;
   }
 
-  /**
-   * Record a completed binding: OAuth identity → platform identity.
-   */
   bind(
-    oauthIdentity: string,
+    principal: OAuthPrincipal,
     platform: PlatformName,
     platformUserId: string,
     conversationId: string,
   ): CompletedBinding {
     const binding: CompletedBinding = {
-      oauthIdentity,
+      oauthIdentity: principal.id,
+      oauthDisplayName: principal.displayName,
       platform,
       platformUserId,
       conversationId,
       createdAt: Date.now(),
     };
-    this.completed.set(`oauth:${oauthIdentity}`, binding);
-    this.completed.set(`platform:${platform}:${platformUserId}`, binding);
+    this.removeCompleted(this.completedByOAuth.get(principal.id));
+    this.removeCompleted(this.completedByPlatform.get(platformIdentity(platform, platformUserId)));
+    this.completedByOAuth.set(principal.id, binding);
+    this.completedByPlatform.set(platformIdentity(platform, platformUserId), binding);
+    this.persistCompleted();
     return binding;
   }
 
-  /** Look up the platform identity for an OAuth identity. */
   resolveByOAuthIdentity(oauthIdentity: string): CompletedBinding | undefined {
-    return this.completed.get(`oauth:${oauthIdentity}`);
+    return this.completedByOAuth.get(oauthIdentity);
   }
+
+  private removeCompleted(binding: CompletedBinding | undefined): void {
+    if (!binding) return;
+    this.completedByOAuth.delete(binding.oauthIdentity);
+    this.completedByPlatform.delete(platformIdentity(binding.platform, binding.platformUserId));
+  }
+
+  private loadCompleted(): void {
+    const path = this.completedPath;
+    if (!path) return;
+    const file = readJsonFileIfExists(
+      path,
+      isCompletedBindingFile,
+      (detail) => `Invalid completed web binding store ${path}: ${detail}`,
+    );
+    for (const binding of file?.bindings ?? []) {
+      this.completedByOAuth.set(binding.oauthIdentity, binding);
+      this.completedByPlatform.set(
+        platformIdentity(binding.platform, binding.platformUserId),
+        binding,
+      );
+    }
+  }
+
+  private persistCompleted(): void {
+    const path = this.completedPath;
+    if (!path) return;
+    ensureDirExists(dirname(path));
+    const file: CompletedBindingFile = {
+      version: 1,
+      bindings: [...this.completedByOAuth.values()].toSorted(
+        (left, right) => left.createdAt - right.createdAt,
+      ),
+    };
+    atomicWritePrivateFile(path, `${JSON.stringify(file, null, 2)}\n`);
+  }
+}
+
+function platformIdentity(platform: PlatformName, platformUserId: string): string {
+  return `${platform}:${platformUserId}`;
+}
+
+function isCompletedBindingFile(value: unknown): value is CompletedBindingFile {
+  if (!isRecord(value) || value.version !== 1 || !Array.isArray(value.bindings)) return false;
+  return value.bindings.every(isCompletedBinding);
+}
+
+function isCompletedBinding(value: unknown): value is CompletedBinding {
+  return (
+    isRecord(value) &&
+    typeof value.oauthIdentity === "string" &&
+    typeof value.oauthDisplayName === "string" &&
+    isPlatformName(value.platform) &&
+    typeof value.platformUserId === "string" &&
+    typeof value.conversationId === "string" &&
+    typeof value.createdAt === "number" &&
+    Number.isFinite(value.createdAt)
+  );
+}
+
+function isPlatformName(value: unknown): value is PlatformName {
+  return ["slack", "discord", "telegram", "github", "web"].includes(String(value));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

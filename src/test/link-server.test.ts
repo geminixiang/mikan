@@ -1,15 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { InMemoryAdminTokenStore } from "../web/admin/store.js";
-import { createOfficeAddress, createWorkspace } from "../office/index.js";
-import { createManagedSessionFile } from "../sessions/store.js";
 import { startWebServer } from "../web/server.js";
 import { InMemoryLinkTokenStore } from "../web/login/store.js";
 import { InMemoryWebSessionStore } from "../web/login/session-store.js";
-import { InMemorySessionViewTokenStore } from "../web/session-view/store.js";
 import { FileVaultManager } from "../vault/index.js";
 
 async function waitForListening(server: Server): Promise<void> {
@@ -200,7 +197,7 @@ describe("link server", () => {
     const webDistIndex = join(stateDir, "index.html");
     writeFileSync(webDistIndex, "<!doctype html><html><body>SPA fallback</body></html>");
     const webSessionStore = new InMemoryWebSessionStore();
-    const { sessionId } = webSessionStore.create("github:test-user", []);
+    const { sessionId } = webSessionStore.create("github:101", "test-user");
     const started = await startWebServer({
       port: 0,
       linkTokenStore: new InMemoryLinkTokenStore(),
@@ -208,6 +205,7 @@ describe("link server", () => {
       notify: async () => {},
       webSessionStore,
       webDistIndex,
+      adminOptions: { adminTokenStore: new InMemoryAdminTokenStore() },
     });
     if (started === undefined) throw new Error("web server failed to start");
     servers.push(started);
@@ -221,12 +219,33 @@ describe("link server", () => {
     expect(meResponse.headers.get("content-type")).toContain("application/json");
     await expect(meResponse.json()).resolves.toMatchObject({
       authenticated: true,
-      oauthIdentity: "github:test-user",
+      oauthIdentity: "github:101",
+      displayName: "test-user",
     });
+
+    const appResponse = await originalFetch(`${baseUrl(started)}/conversations/example`);
+    expect(appResponse.status).toBe(200);
+    expect(await appResponse.text()).toContain("SPA fallback");
+    for (const path of ["/session?token=bad", "/admin?token=bad", "/link?token=bad"]) {
+      const response = await originalFetch(`${baseUrl(started)}${path}`);
+      expect(response.status).not.toBe(200);
+      expect(await response.text()).not.toContain("SPA fallback");
+    }
+    const reservedChild = await originalFetch(`${baseUrl(started)}/session/unknown`);
+    expect(reservedChild.status).toBe(404);
+    expect(await reservedChild.text()).not.toContain("SPA fallback");
+    expect((await originalFetch(`${baseUrl(started)}/api/offices`)).status).toBe(404);
+
+    const rejectedLogout = await originalFetch(`${baseUrl(started)}/api/logout`, {
+      method: "POST",
+      headers: { Cookie: cookie },
+    });
+    expect(rejectedLogout.status).toBe(415);
 
     const logoutResponse = await originalFetch(`${baseUrl(started)}/api/logout`, {
       method: "POST",
-      headers: { Cookie: cookie },
+      headers: { Cookie: cookie, "Content-Type": "application/json" },
+      body: "{}",
     });
     expect(logoutResponse.status).toBe(200);
     await expect(logoutResponse.json()).resolves.toEqual({ ok: true });
@@ -236,85 +255,6 @@ describe("link server", () => {
     });
     expect(loggedOutResponse.status).toBe(401);
     await expect(loggedOutResponse.json()).resolves.toEqual({ authenticated: false });
-  });
-
-  test("/api/offices returns only session-bound conversations without host paths", async () => {
-    const root = join(tmpdir(), `mikan-link-server-${Date.now()}-${Math.random()}`);
-    dirs.push(root);
-    const workspace = createWorkspace({
-      root: join(root, "workspace"),
-      stateDir: join(root, "state"),
-    });
-    const allowedOffice = workspace.office(createOfficeAddress("slack", "D123"));
-    const otherOffice = workspace.office(createOfficeAddress("discord", "C456"));
-    allowedOffice.ensure();
-    otherOffice.ensure();
-    const firstSessionFile = createManagedSessionFile(allowedOffice.sessionsDir, allowedOffice.dir);
-    createManagedSessionFile(otherOffice.sessionsDir, otherOffice.dir);
-
-    const webSessionStore = new InMemoryWebSessionStore();
-    const { sessionId } = webSessionStore.create("github/test-user", [
-      { platform: "slack", platformUserId: "U123", conversationId: "D123" },
-    ]);
-    const started = await startWebServer({
-      port: 0,
-      linkTokenStore: new InMemoryLinkTokenStore(),
-      vaultManager: new FileVaultManager(join(root, "state")),
-      notify: async () => {},
-      sessionViewTokenStore: new InMemorySessionViewTokenStore(),
-      webSessionStore,
-      adminOptions: {
-        adminTokenStore: new InMemoryAdminTokenStore(),
-        workspace,
-      },
-    });
-    if (started === undefined) throw new Error("web server failed to start");
-    servers.push(started);
-    await waitForListening(started);
-
-    const anonymousResponse = await originalFetch(`${baseUrl(started)}/api/offices`);
-    expect(anonymousResponse.status).toBe(401);
-
-    const response = await originalFetch(`${baseUrl(started)}/api/offices`, {
-      headers: { Cookie: `mikan_session=${sessionId}` },
-    });
-    const body = (await response.json()) as {
-      offices: Array<
-        Record<string, unknown> & { conversationId: string; sessionUrl: string | null }
-      >;
-    };
-    expect(response.status).toBe(200);
-    expect(body.offices).toHaveLength(1);
-    expect(body.offices[0]).toMatchObject({ platform: "slack", conversationId: "D123" });
-    expect(body.offices[0]).not.toHaveProperty("dir");
-    expect(body.offices[0]?.sessionUrl).toMatch(/^\/session\?token=/);
-
-    const repeatedResponse = await originalFetch(`${baseUrl(started)}/api/offices`, {
-      headers: { Cookie: `mikan_session=${sessionId}` },
-    });
-    const repeatedBody = (await repeatedResponse.json()) as typeof body;
-    const firstSessionUrl = body.offices[0]?.sessionUrl ?? "";
-    expect(repeatedBody.offices[0]?.sessionUrl).toBe(firstSessionUrl);
-
-    createManagedSessionFile(allowedOffice.sessionsDir, allowedOffice.dir);
-    const rotatedResponse = await originalFetch(`${baseUrl(started)}/api/offices`, {
-      headers: { Cookie: `mikan_session=${sessionId}` },
-    });
-    const rotatedBody = (await rotatedResponse.json()) as typeof body;
-    const rotatedSessionUrl = rotatedBody.offices[0]?.sessionUrl ?? "";
-    expect(rotatedSessionUrl).not.toBe(firstSessionUrl);
-    expect((await originalFetch(new URL(firstSessionUrl, baseUrl(started)))).status).toBe(400);
-
-    writeFileSync(join(allowedOffice.sessionsDir, "current"), basename(firstSessionFile));
-    const restoredResponse = await originalFetch(`${baseUrl(started)}/api/offices`, {
-      headers: { Cookie: `mikan_session=${sessionId}` },
-    });
-    const restoredBody = (await restoredResponse.json()) as typeof body;
-    const restoredSessionUrl = restoredBody.offices[0]?.sessionUrl ?? "";
-    expect(restoredSessionUrl).not.toBe(firstSessionUrl);
-    expect(restoredSessionUrl).not.toBe(rotatedSessionUrl);
-    expect((await originalFetch(new URL(rotatedSessionUrl, baseUrl(started)))).status).toBe(400);
-    expect((await originalFetch(new URL(restoredSessionUrl, baseUrl(started)))).status).toBe(200);
   });
 
   test("/api/oauth/start returns an OAuth redirect URL for GitHub", async () => {

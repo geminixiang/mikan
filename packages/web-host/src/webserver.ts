@@ -1,7 +1,7 @@
 /**
  * @geminixiang/mikan-web-host — Web host seam for mikan: a node:http server
- * plus route registries (exact / prefix / upgrade), a single fallback seat,
- * and index transform taps. Modeled on DSH's @deepseek-ai/dsh-host-webserver,
+ * plus route registries (exact / prefix / upgrade) and a single fallback seat.
+ * Modeled on DSH's @deepseek-ai/dsh-host-webserver,
  * minus the Cordis service layer: this package knows no harness concepts and
  * serves no files; the composing daemon (src/web/server.ts) registers routes
  * and the frontend-static equivalent claims the fallback seat.
@@ -66,7 +66,6 @@ export class WebServer {
   private readonly prefixes = new Map<string, WebRoute>();
   private readonly upgrades = new Map<string, WebUpgradeRoute>();
   private readonly upgradedSockets = new Set<Duplex>();
-  private readonly indexTaps: Array<(html: string) => string> = [];
   private fallback: WebFallbackHandler | undefined;
   private server: HttpServer | undefined;
   private listenedPort: number | undefined;
@@ -121,30 +120,6 @@ export class WebServer {
     return () => {
       this.fallback = undefined;
     };
-  }
-
-  /**
-   * Register an index.html transform, applied to every index response
-   * ({@link applyIndexTaps}) in registration order.
-   * @returns the disposer removing the transform.
-   */
-  tapIndex(transform: (html: string) => string): () => void {
-    this.indexTaps.push(transform);
-    return () => {
-      const at = this.indexTaps.indexOf(transform);
-      if (at !== -1) this.indexTaps.splice(at, 1);
-    };
-  }
-
-  /**
-   * Run an index.html body through the registered taps in registration order.
-   * @param html - the raw index.html body.
-   * @returns the transformed body.
-   */
-  applyIndexTaps(html: string): string {
-    let out = html;
-    for (const transform of this.indexTaps) out = transform(out);
-    return out;
   }
 
   /**

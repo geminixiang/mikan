@@ -7,9 +7,9 @@
     "types": ["vite/client"],
     "paths": {
       "@geminixiang/mikan-web-client": ["../../packages/web-client/src/index.ts"],
-      "@geminixiang/mikan-ui-session": ["../../packages/ui-session/src/index.ts"],
-      "@geminixiang/mikan-ui-admin": ["../../packages/ui-admin/src/index.ts"],
-      "@geminixiang/mikan-ui-vault": ["../../packages/ui-vault/src/index.ts"]
+      "@geminixiang/mikan-harness-web-contract": [
+        "../../packages/harness-web-contract/src/index.ts"
+      ]
     }
   },
   "include": ["src", "vite.config.ts"]

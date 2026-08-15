@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { startWebServer } from "../web/server.js";
-import { InMemoryBindingTokenStore } from "../web/login/binding.js";
+import { WebBindingStore } from "../web/login/binding.js";
 import { InMemoryLinkTokenStore } from "../web/login/store.js";
 import { InMemoryWebSessionStore } from "../web/login/session-store.js";
 import { FileVaultManager } from "../vault/index.js";
@@ -185,8 +185,8 @@ describe("OAuth link server flows", () => {
     const stateDir = createStateDir(dirs);
     configureGitHubOAuth();
     const webSessionStore = new InMemoryWebSessionStore();
-    const bindingTokenStore = new InMemoryBindingTokenStore();
-    bindingTokenStore.bind("github/test-user", "slack", "U115", "D115");
+    const bindingTokenStore = new WebBindingStore();
+    bindingTokenStore.bind({ id: "github:115", displayName: "test-user" }, "slack", "U115", "D115");
     const { url } = await createFlow(servers, stateDir, "U115", async () => {}, {
       bindingTokenStore,
       webSessionStore,
@@ -211,7 +211,7 @@ describe("OAuth link server flows", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ login: "test-user" }),
+        json: async () => ({ id: 115, login: "test-user" }),
       }) as typeof fetch;
 
     const callbackResponse = await originalFetch(
@@ -228,7 +228,8 @@ describe("OAuth link server flows", () => {
     });
     await expect(meResponse.json()).resolves.toMatchObject({
       authenticated: true,
-      oauthIdentity: "github/test-user",
+      oauthIdentity: "github:115",
+      displayName: "test-user",
     });
   });
 
@@ -256,7 +257,7 @@ describe("OAuth link server flows", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ login: "unbound-user" }),
+        json: async () => ({ id: 116, login: "unbound-user" }),
       }) as typeof fetch;
 
     const callbackResponse = await originalFetch(

@@ -91,7 +91,8 @@ The complete machine-readable inventory is in `architecture.toml`. The main grou
 | Agent core              | Harness, Extensions                                                       | [`src/harness/README.md`](src/harness/README.md)                                                                                                                               |
 | Identity and data       | Office, Sessions, Configuration, Workspace projection                     | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/workspace-projection/README.md`](src/workspace-projection/README.md) |
 | Execution and authority | Execution resolver, Sandbox registry and backend plugins, Vault, Packages | [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md), [`src/packages/README.md`](src/packages/README.md)                             |
-| Control surfaces        | Commands, Web and scheduled-event services                                | [`src/commands/README.md`](src/commands/README.md), [`src/web/README.md`](src/web/README.md)                                                                                   |
+| Web product             | Harness Web Host, Harness Web Client                                      | [`src/web/harness/README.md`](src/web/harness/README.md), [`packages/web-client/README.md`](packages/web-client/README.md)                                                     |
+| Control surfaces        | Commands, capability portals, scheduled-event services                    | [`src/commands/README.md`](src/commands/README.md), [`src/web/README.md`](src/web/README.md)                                                                                   |
 
 ## Main flows
 
@@ -106,8 +107,8 @@ Daemon boot proceeds conceptually as follows:
 3. Construct the Workspace and Office registry.
 4. Complete crash-resumable legacy office migration before accepting events.
 5. Configure sandbox, vault, package, portal, and platform facilities.
-6. Construct the Conversation runtime with capability factories.
-7. Start platform bots, web services, the event watcher, and callback scheduler.
+6. Construct the shared Conversation runtime and Harness Web Host.
+7. Start platform bots, web transport, the event watcher, and callback scheduler.
 8. On shutdown, reject new runs and wait for existing run settlement up to the configured timeout.
 
 A migration ambiguity, path conflict, malformed authoritative setting, or unsupported security policy fails startup rather than widening access.
@@ -128,6 +129,21 @@ Every platform feeds the same intake and runtime model:
 10. Runtime settlement completes usage, working state, lifecycle barriers, and eviction eligibility.
 
 The `stop` magic word is exceptional: it runs before trigger policy and queueing. It is not an ordinary bare command.
+
+### Web Harness run
+
+The website is a complete client of the daemon, not a shell around capability portals:
+
+1. GitHub OAuth resolves an admitted immutable principal and issues an httpOnly browser session.
+2. Bootstrap captures an event cursor, enumerates only that principal's `web` Conversation offices, and optionally projects one current Harness session.
+3. The browser sends an object-rooted command carrying daemon-issued office, session, and—when cancelling—run identities.
+4. The Harness Web Host validates ownership and stale identities, then creates a synthetic Web messaging context.
+5. That context re-enters `ConversationRuntime`; queueing, runner creation, SessionStore persistence, settings, sandbox policy, tools, and extensions follow the same path as platform conversations. Slash-prefixed browser text remains literal agent input and cannot dispatch chat-only capability commands.
+6. The Web responder translates live output into principal-scoped ordered events. Durable user/assistant messages are still written by the Harness.
+7. The browser folds contiguous events into its projection and replaces live text with a fresh durable transcript after settlement.
+8. Reconnect replays from epoch/sequence; an expired or foreign cursor forces bootstrap rather than inventing missing state.
+
+New Conversation creates a first-class `platform = "web"` Conversation office. It never aliases a Slack, Discord, Telegram, or GitHub office, and the browser cookie is never exchanged for a Session View token.
 
 ### Agent execution
 
@@ -186,6 +202,8 @@ Text events and callbacks must not collapse into one generic scheduler: they dif
 <state-dir>/                              host-private authority
 ├── settings.json
 ├── office-registry.json
+├── web-bindings.json                      durable OAuth admission ledger
+├── web-harness.key                        Web office ownership HMAC key
 ├── vaults/
 ├── extensions/
 ├── packages/
@@ -231,9 +249,9 @@ Vault selection is independent from runtime resource naming. Open-trigger conver
 
 ### Portal capability scope
 
-A web dashboard session proves an OAuth identity only after that identity has been bound from a private platform conversation. The session records the exact bound office identity; conversation discovery filters through that scope and never returns host paths. Opening a discovered conversation mints the existing session-view capability rather than teaching the React client a second session access model.
+The `/session`, `/admin`, and `/link` surfaces are independent bearer-capability portals. Their server handlers reserve those prefixes before the SPA fallback, and their tokens never enter the Harness Web Client.
 
-A web dashboard session does not replace the shorter-lived Admin or vault capabilities. Admin changes and credential writes continue to require their dedicated tokens, while standalone session-view links remain independently shareable bearer capabilities.
+A browser session is issued only after an immutable OAuth principal has a completed private-chat admission binding. It authorizes only Web Conversation offices whose keyed owner digest matches that principal; the chat office used for admission is not exposed or inherited. The cookie grants no Admin, vault, or Session View authority, and no host path crosses the browser contract.
 
 ### Trusted host code
 
@@ -251,7 +269,7 @@ These IDs correspond to `[[invariants]]` records in `architecture.toml`.
 
 **`identity-office-address`** — `OfficeAddress = platform + conversationId` is canonical conversation identity inside mikan. Raw IDs remain at platform I/O, registry mapping, and session-key seams; they are not general storage identity.
 
-Evidence: `src/office/address.ts`, `src/office/types.ts`, ADR 0005.
+Evidence: `src/office/address.ts`, `src/office/types.ts`, `src/web/harness/conversation-id.ts`, ADR 0005.
 
 ### INV identity office key
 
@@ -275,7 +293,7 @@ Evidence: `src/office/layout.ts`, `src/office/registry.ts`, `src/office/migratio
 
 **`runtime-composite-identity`** — Runtime state is identified by `(OfficeAddress, sessionKey)`. A session key follows `conversationId[:suffix]`, is unique only inside its office, and reserves `:` from conversation IDs.
 
-Evidence: `src/runtime/session-lifecycle.ts`, `src/sessions/session-key.ts`.
+Evidence: `src/runtime/session-lifecycle.ts`, `src/sessions/session-key.ts`, `src/web/harness/host.ts`.
 
 ### INV intake order
 
@@ -299,7 +317,7 @@ Evidence: `src/runtime/session-lifecycle.ts`, `src/runtime/conversation-runtime.
 
 **`run-settlement`** — A run remains active through response delivery, usage, diagnostics, working-state cleanup, and post-run settlement. Active or unsettled runners cannot be evicted or invalidated.
 
-Evidence: `src/runtime/conversation-runtime.ts`, `src/agent.ts`.
+Evidence: `src/runtime/conversation-runtime.ts`, `src/agent.ts`, `src/web/harness/host.ts`.
 
 ### INV projection coherence
 
@@ -337,9 +355,25 @@ Evidence: `src/execution-resolver.ts`, `src/sandbox/identity.ts`, `src/vault/`.
 
 <a id="inv-portal-capability-scope"></a>
 
-**`portal-capability-scope`** — OAuth login must resolve to an existing private-chat binding before issuing a web session. That session may enumerate and mint session-view capabilities only for its exact bound offices; it must not disclose host paths or grant Admin or vault authority.
+**`portal-capability-scope`** — OAuth login must resolve to an existing private-chat admission binding before issuing a browser session. That session authorizes only principal-owned Web Conversations and must never mint, accept, or inherit Session View, Admin, or vault capabilities. Portal prefixes never fall through to the website SPA.
 
-Evidence: `src/web/login/portal.ts`, `src/web/login/session-store.ts`, `src/web/server.ts`.
+Evidence: `src/web/login/portal.ts`, `src/web/harness/http.ts`, `src/web/server.ts`, ADR 0007.
+
+### INV web conversation ownership
+
+<a id="inv-web-conversation-ownership"></a>
+
+**`web-conversation-ownership`** — A Web office belongs to exactly one immutable OAuth principal through the keyed Web conversation-id grammar. Authorization verifies that grammar against the private deployment key and Office registry. The browser-visible OfficeKey prefix contains only a random nonce, not the stable owner digest. Missing ownership key plus existing Web offices fails startup closed; ownership keys, owner digests, and host paths never enter browser DTOs.
+
+Evidence: `src/web/harness/conversation-id.ts`, `src/office/registry.ts`, ADR 0007.
+
+### INV web run ordering
+
+<a id="inv-web-run-ordering"></a>
+
+**`web-run-ordering`** — Browser mutations carry the selected OfficeKey and full durable Session UUID; cancellation additionally carries the current host-issued run id. Live events are contiguous within one principal epoch and sequence. Duplicate events are ignored, gaps resnapshot, and persisted SessionStore state replaces ephemeral streamed text after settlement.
+
+Evidence: `src/web/harness/host.ts`, `src/web/harness/journal.ts`, `packages/web-client/src/client.ts`, ADR 0007.
 
 ### INV settings runner coherence
 
