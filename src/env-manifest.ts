@@ -169,6 +169,25 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
     ],
   },
   {
+    key: "connector",
+    title: "Open Connector gateway",
+    kind: "feature",
+    doc: "Self-hosted Open Connector for host-side OAuth provider actions",
+    vars: [
+      { name: "CONNECTOR_GATEWAY_URL", doc: "Base URL of the self-hosted Open Connector service" },
+      {
+        name: "CONNECTOR_RUNTIME_TOKEN",
+        secret: true,
+        doc: "Runtime token that may execute only the reviewed action allowlist",
+      },
+      {
+        name: "CONNECTOR_ADMIN_TOKEN",
+        secret: true,
+        doc: "Admin token for OAuth onboarding and connection management",
+      },
+    ],
+  },
+  {
     key: "observability",
     title: "Observability",
     kind: "feature",

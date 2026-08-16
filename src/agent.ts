@@ -1637,6 +1637,7 @@ async function prepareRunContext(params: {
   bindPlatformToolPacks({
     conversationId,
     platformName: platform.name,
+    userId: message.userId,
     threadTs: message.threadTs,
   });
 

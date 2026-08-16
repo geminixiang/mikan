@@ -8,6 +8,8 @@ import type { VaultManager } from "../vault/index.js";
 import { handleAdminRequest, type AdminRuntimeBridge } from "./admin/portal.js";
 import type { InMemoryAdminTokenStore } from "./admin/store.js";
 import { handleAgentEventsRequest } from "../agent-events.js";
+import type { ConnectorGateway } from "../connector/gateway.js";
+import { createConnectorRequestHandler } from "./login/connector-portal.js";
 import { createLoginRequestHandler } from "./login/portal.js";
 import { requestBaseUrl } from "./portal-shell.js";
 import type { InMemoryLinkTokenStore } from "./login/store.js";
@@ -40,6 +42,7 @@ interface StartWebServerOptions {
   };
   githubWebhook?: GithubWebhookOptions;
   webAuth?: WebAuthRequestOptions;
+  connector?: ConnectorGateway;
 }
 
 export function startWebServer(options: StartWebServerOptions): Server {
@@ -47,7 +50,11 @@ export function startWebServer(options: StartWebServerOptions): Server {
     options.linkTokenStore,
     options.vaultManager,
     options.notify,
+    { connectorEnabled: Boolean(options.connector) },
   );
+  const connectorHandler = options.connector
+    ? createConnectorRequestHandler(options.connector, options.linkTokenStore, options.notify)
+    : undefined;
 
   // Constructed once at server start; the admin portal consumes the owning
   // event store's interface instead of re-parsing event files off disk.
@@ -108,6 +115,8 @@ export function startWebServer(options: StartWebServerOptions): Server {
       ) {
         return;
       }
+
+      if (connectorHandler?.(req, res, url)) return;
 
       if (loginHandler(req, res, url)) return;
 
