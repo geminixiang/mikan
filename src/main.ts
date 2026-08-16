@@ -31,6 +31,8 @@ import { downloadChannel } from "./cli/download.js";
 import { EventsWatcher } from "./events.js";
 import { ExtensionCallbackScheduler } from "./extension-schedules.js";
 import * as log from "./log.js";
+import { hasWebOAuthProvider, resolveWebOAuthProviders } from "./web/auth/portal.js";
+import { WebAuthRegistry } from "./web/auth/registry.js";
 import { startWebServer } from "./web/server.js";
 import { InMemoryAdminTokenStore } from "./web/admin/store.js";
 import { InMemoryLinkTokenStore } from "./web/login/store.js";
@@ -803,7 +805,22 @@ if (GITHUB_WEBHOOK_SECRET && (!githubBotForWebhook || !LINK_PORT)) {
   );
 }
 
+const webOAuthProviders = resolveWebOAuthProviders();
+const webAuthEnabled = hasWebOAuthProvider(webOAuthProviders);
+if (webAuthEnabled && !LINK_PORT) {
+  log.logWarning("Web OAuth is configured but LINK_PORT is not — Web account sign-in is disabled");
+}
+
 if (LINK_PORT) {
+  const webAuth = webAuthEnabled
+    ? {
+        registry: new WebAuthRegistry(stateDir),
+        publicBaseUrl: LINK_BASE_URL,
+        providers: webOAuthProviders,
+      }
+    : undefined;
+  if (webAuth) new OfficeRegistry(stateDir).enablePlatform("web");
+
   startWebServer({
     port: LINK_PORT,
     linkTokenStore,
@@ -815,6 +832,7 @@ if (LINK_PORT) {
     sessionViewTokenStore,
     sessionViewInteractive: { handler, botsByPlatform },
     adminOptions: { adminTokenStore, workspace, runtime: handler, sandbox, botsByPlatform },
+    webAuth,
     githubWebhook:
       GITHUB_WEBHOOK_SECRET && githubBotForWebhook
         ? {

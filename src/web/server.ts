@@ -12,6 +12,7 @@ import { createLoginRequestHandler } from "./login/portal.js";
 import { requestBaseUrl } from "./portal-shell.js";
 import type { InMemoryLinkTokenStore } from "./login/store.js";
 import type { NotifyFn } from "./login/types.js";
+import { handleWebAuthRequest, type WebAuthRequestOptions } from "./auth/portal.js";
 import {
   handleSessionViewRequest,
   type SessionViewInteractiveOptions,
@@ -38,6 +39,7 @@ interface StartWebServerOptions {
     botsByPlatform?: Partial<Record<PlatformName, MessagingBot>>;
   };
   githubWebhook?: GithubWebhookOptions;
+  webAuth?: WebAuthRequestOptions;
 }
 
 export function startWebServer(options: StartWebServerOptions): Server {
@@ -71,6 +73,10 @@ export function startWebServer(options: StartWebServerOptions): Server {
       }
 
       if (handleAgentEventsRequest(req, res, url)) return;
+
+      if (options.webAuth && (await handleWebAuthRequest(req, res, url, options.webAuth))) {
+        return;
+      }
 
       const adminOptions = options.adminOptions;
       if (

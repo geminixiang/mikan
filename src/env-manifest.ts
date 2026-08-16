@@ -108,6 +108,24 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
       { name: "LINK_PORT", doc: "Listen port (default 8181 when LINK_URL is set)" },
       { name: "GITHUB_OAUTH_CLIENT_ID", doc: "GitHub OAuth app for /login linking" },
       { name: "GITHUB_OAUTH_CLIENT_SECRET", secret: true, doc: "GitHub OAuth app secret" },
+      {
+        name: "WEB_GITHUB_OAUTH_CLIENT_ID",
+        doc: "GitHub OAuth app for Web account sign-in",
+      },
+      {
+        name: "WEB_GITHUB_OAUTH_CLIENT_SECRET",
+        secret: true,
+        doc: "GitHub OAuth secret for Web account sign-in",
+      },
+      {
+        name: "WEB_GOOGLE_OAUTH_CLIENT_ID",
+        doc: "Google OAuth client for Web account sign-in",
+      },
+      {
+        name: "WEB_GOOGLE_OAUTH_CLIENT_SECRET",
+        secret: true,
+        doc: "Google OAuth secret for Web account sign-in",
+      },
       { name: "GOOGLE_WORKSPACE_CLI_CLIENT_ID", doc: "Google Workspace OAuth client for /login" },
       {
         name: "GOOGLE_WORKSPACE_CLI_CLIENT_SECRET",

@@ -79,6 +79,10 @@ describe("inferConversationKind", () => {
     expect(inferConversationKind("telegram", "123")).toBe("direct");
   });
 
+  test("infers Web workspaces as direct conversations", () => {
+    expect(inferConversationKind("web", "wsp_example")).toBe("direct");
+  });
+
   test("infers Discord direct conversations from synthetic DM IDs", () => {
     expect(inferConversationKind("discord", "DM123")).toBe("direct");
     expect(inferConversationKind("discord", "123")).toBe("shared");

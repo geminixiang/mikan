@@ -29,7 +29,7 @@ type ExecFileAsync = typeof execFileAsync;
 
 export type ConversationKind = "direct" | "shared";
 
-export type PlatformName = "slack" | "discord" | "telegram" | "github";
+export type PlatformName = "slack" | "discord" | "telegram" | "github" | "web";
 
 /** Canonical platform-plus-raw identifier for one conversation office. */
 export interface OfficeAddress {
