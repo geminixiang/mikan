@@ -13,6 +13,7 @@ import { requestBaseUrl } from "./portal-shell.js";
 import type { InMemoryLinkTokenStore } from "./login/store.js";
 import type { NotifyFn } from "./login/types.js";
 import { handleWebAuthRequest, type WebAuthRequestOptions } from "./auth/portal.js";
+import { handleWebHarnessRequest, type WebHarnessRequestOptions } from "./harness/portal.js";
 import {
   handleSessionViewRequest,
   type SessionViewInteractiveOptions,
@@ -40,6 +41,7 @@ interface StartWebServerOptions {
   };
   githubWebhook?: GithubWebhookOptions;
   webAuth?: WebAuthRequestOptions;
+  webHarness?: WebHarnessRequestOptions;
 }
 
 export function startWebServer(options: StartWebServerOptions): Server {
@@ -73,6 +75,13 @@ export function startWebServer(options: StartWebServerOptions): Server {
       }
 
       if (handleAgentEventsRequest(req, res, url)) return;
+
+      if (
+        options.webHarness &&
+        (await handleWebHarnessRequest(req, res, url, options.webHarness))
+      ) {
+        return;
+      }
 
       if (options.webAuth && (await handleWebAuthRequest(req, res, url, options.webAuth))) {
         return;

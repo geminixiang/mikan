@@ -33,6 +33,7 @@ import { ExtensionCallbackScheduler } from "./extension-schedules.js";
 import * as log from "./log.js";
 import { hasWebOAuthProvider, resolveWebOAuthProviders } from "./web/auth/portal.js";
 import { WebAuthRegistry } from "./web/auth/registry.js";
+import { WebHarnessService } from "./web/harness/service.js";
 import { startWebServer } from "./web/server.js";
 import { InMemoryAdminTokenStore } from "./web/admin/store.js";
 import { InMemoryLinkTokenStore } from "./web/login/store.js";
@@ -819,6 +820,9 @@ if (LINK_PORT) {
         providers: webOAuthProviders,
       }
     : undefined;
+  const webHarness = webAuth
+    ? { auth: webAuth, service: new WebHarnessService(webAuth.registry, workspace) }
+    : undefined;
   if (webAuth) new OfficeRegistry(stateDir).enablePlatform("web");
 
   startWebServer({
@@ -833,6 +837,7 @@ if (LINK_PORT) {
     sessionViewInteractive: { handler, botsByPlatform },
     adminOptions: { adminTokenStore, workspace, runtime: handler, sandbox, botsByPlatform },
     webAuth,
+    webHarness,
     githubWebhook:
       GITHUB_WEBHOOK_SECRET && githubBotForWebhook
         ? {

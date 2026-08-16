@@ -9,16 +9,61 @@ import {
 } from "../oauth-flow.js";
 import { escapeHtml } from "../portal-shell.js";
 import { normalizeReturnPath, type WebAuthRegistry } from "./registry.js";
-import type {
-  WebAccount,
-  WebIdentityClaims,
-  WebIdentityProvider,
-  WebLoginSession,
-} from "./types.js";
+import type { WebAccount, WebIdentityClaims, WebIdentityProvider } from "./types.js";
 
 const SESSION_COOKIE = "mikan_web_session";
 const CSRF_COOKIE = "mikan_web_csrf";
 const MAX_PROVIDER_RESPONSE_BYTES = 256 * 1024;
+
+export interface AuthenticatedWebRequest {
+  readonly account: WebAccount;
+  readonly token: string;
+  readonly csrfToken: string;
+  readonly expiresAt: number;
+}
+
+export function authenticateWebRequest(
+  req: IncomingMessage,
+  registry: WebAuthRegistry,
+  csrfHeader = false,
+): AuthenticatedWebRequest | null {
+  const cookies = readCookies(req);
+  const token = cookies[SESSION_COOKIE];
+  const csrfToken = cookies[CSRF_COOKIE];
+  const suppliedCsrf = csrfHeader ? singleHeader(req.headers["x-mikan-csrf"]) : csrfToken;
+  if (!token || !csrfToken || !suppliedCsrf || (csrfHeader && suppliedCsrf !== csrfToken)) {
+    return null;
+  }
+  const session = registry.resolveLoginSession(token, suppliedCsrf);
+  return session
+    ? { account: session.account, token, csrfToken, expiresAt: session.expiresAt }
+    : null;
+}
+
+export function enforceWebMutationRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  publicBaseUrl?: string,
+): boolean {
+  if (singleHeader(req.headers["content-type"])?.toLowerCase() !== "application/json") {
+    sendJson(res, 415, { error: "Content-Type must be application/json" });
+    return false;
+  }
+  const baseUrl = resolveCallbackBaseUrl(req, publicBaseUrl);
+  if (!baseUrl || requestOrigin(req) !== new URL(baseUrl).origin) {
+    sendJson(res, 403, { error: "Cross-origin request rejected" });
+    return false;
+  }
+  return true;
+}
+
+export function sendWebJson(res: ServerResponse, status: number, value: unknown): void {
+  sendJson(res, status, value);
+}
+
+export function clearWebSessionCookies(res: ServerResponse): void {
+  clearSessionCookies(res);
+}
 
 export interface WebOAuthProviderConfig {
   readonly provider: WebIdentityProvider;
@@ -194,17 +239,14 @@ async function completeOAuth(
 }
 
 function handleMe(req: IncomingMessage, res: ServerResponse, registry: WebAuthRegistry): void {
-  const cookies = readCookies(req);
-  const token = cookies[SESSION_COOKIE];
-  const csrfToken = cookies[CSRF_COOKIE];
-  const session = token && csrfToken ? registry.resolveLoginSession(token, csrfToken) : null;
+  const session = authenticateWebRequest(req, registry);
   if (!session) {
     clearSessionCookies(res);
     return sendJson(res, 401, { error: "Authentication required" });
   }
   sendJson(res, 200, {
     account: publicAccount(session),
-    csrfToken,
+    csrfToken: session.csrfToken,
     expiresAt: session.expiresAt,
   });
 }
@@ -214,40 +256,16 @@ function handleLogout(
   res: ServerResponse,
   options: WebAuthRequestOptions,
 ): void {
-  if (!enforceMutationRequest(req, res, options)) return;
-  const cookies = readCookies(req);
-  const token = cookies[SESSION_COOKIE];
-  const csrfToken = cookies[CSRF_COOKIE];
-  const headerToken = singleHeader(req.headers["x-mikan-csrf"]);
-  const session =
-    token && csrfToken && headerToken === csrfToken
-      ? options.registry.resolveLoginSession(token, headerToken)
-      : null;
+  if (!enforceWebMutationRequest(req, res, options.publicBaseUrl)) return;
+  const session = authenticateWebRequest(req, options.registry, true);
   if (!session) {
     clearSessionCookies(res);
     return sendJson(res, 401, { error: "Authentication required" });
   }
-  options.registry.revokeLoginSession(token!);
+  options.registry.revokeLoginSession(session.token);
   clearSessionCookies(res);
   res.writeHead(204);
   res.end();
-}
-
-function enforceMutationRequest(
-  req: IncomingMessage,
-  res: ServerResponse,
-  options: WebAuthRequestOptions,
-): boolean {
-  if (singleHeader(req.headers["content-type"])?.toLowerCase() !== "application/json") {
-    sendJson(res, 415, { error: "Content-Type must be application/json" });
-    return false;
-  }
-  const baseUrl = resolveCallbackBaseUrl(req, options.publicBaseUrl);
-  if (!baseUrl || requestOrigin(req) !== new URL(baseUrl).origin) {
-    sendJson(res, 403, { error: "Cross-origin request rejected" });
-    return false;
-  }
-  return true;
 }
 
 async function fetchGitHubClaims(
@@ -451,7 +469,7 @@ function clearSessionCookies(res: ServerResponse): void {
   ]);
 }
 
-function publicAccount(session: WebLoginSession): WebAccount {
+function publicAccount(session: AuthenticatedWebRequest): WebAccount {
   return session.account;
 }
 
