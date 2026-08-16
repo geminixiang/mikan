@@ -77,8 +77,55 @@ function loadEnvFile(file) {
   return env;
 }
 
+// Optional sibling service: a self-hosted Open Connector deployment (see
+// src/content/docs/connector.md). Supervised by pm2 alongside mikan — same
+// boot autostart, independent restart/upgrade lifecycle, so reloading mikan
+// never interrupts OAuth flows or token refresh. The app is included only
+// when its checkout exists, so plain mikan deployments are unaffected:
+//
+//   git clone https://github.com/oomol-lab/open-connector ~/.mikan/open-connector
+//   (cd ~/.mikan/open-connector && npm install)
+//   curl -o ~/.mikan/connector.env https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/connector.env.example
+//   chmod 600 ~/.mikan/connector.env   # then fill in keys/tokens
+//   pm2 start ecosystem.config.cjs
+//
+// Upgrade the connector (independently of mikan):
+//   (cd ~/.mikan/open-connector && git pull && npm install) && pm2 restart open-connector
+//
+// Override the checkout location with OPEN_CONNECTOR_DIR in mikan.env.
+const connectorDir =
+  loadEnvFile(path.join(os.homedir(), ".mikan", "mikan.env")).OPEN_CONNECTOR_DIR ||
+  path.join(os.homedir(), ".mikan", "open-connector");
+
+const connectorApp = fs.existsSync(connectorDir)
+  ? [
+      {
+        name: "open-connector",
+        script: "npm",
+        args: "start",
+        cwd: connectorDir,
+
+        // OOMOL_CONNECT_* secrets live in their own 0600 env file, separate
+        // from mikan.env: different service, different trust domain. HOST
+        // defaults to loopback — only mikan (and a reverse proxy for the
+        // OAuth callback) should reach this service.
+        env: {
+          HOST: "127.0.0.1",
+          ...loadEnvFile(path.join(os.homedir(), ".mikan", "connector.env")),
+        },
+
+        autorestart: true,
+        max_restarts: 10,
+        restart_delay: 2000,
+        time: true,
+        merge_logs: true,
+      },
+    ]
+  : [];
+
 module.exports = {
   apps: [
+    ...connectorApp,
     {
       name: "mikan",
       script: "mikan",

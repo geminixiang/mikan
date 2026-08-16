@@ -24,15 +24,49 @@ Without the runtime token the feature is disabled; without the admin token
 existing connections keep working but onboarding/disconnect fails. The
 onboarding page is served by the web portal, so `LINK_PORT` must be set.
 
+### Running the connector under pm2
+
+The recommended single-host shape is a **sibling pm2 app**, not a mikan child
+process: both services autostart on boot, but reloading/upgrading mikan never
+interrupts the connector's OAuth flows, token refresh, or SQLite writes — and
+the connector (a young project) can be upgraded on its own cadence.
+
+`deploy/pm2/ecosystem.config.cjs` already includes the app; it activates
+whenever the checkout directory exists:
+
+```bash
+git clone https://github.com/oomol-lab/open-connector ~/.mikan/open-connector
+(cd ~/.mikan/open-connector && npm install)     # requires Node 22+
+curl -o ~/.mikan/connector.env https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/connector.env.example
+chmod 600 ~/.mikan/connector.env                # fill in keys/tokens
+pm2 start ecosystem.config.cjs && pm2 save
+```
+
+The connector's own settings live in `~/.mikan/connector.env`
+(`OOMOL_CONNECT_*`); mikan's side stays in `~/.mikan/mikan.env`
+(`CONNECTOR_GATEWAY_URL=http://127.0.0.1:3000` plus the same two tokens).
+Upgrade independently of mikan:
+
+```bash
+(cd ~/.mikan/open-connector && git pull && npm install) && pm2 restart open-connector
+```
+
+The pm2 app pins `HOST=127.0.0.1`. One path must still be publicly reachable:
+users' browsers land on `<OOMOL_CONNECT_ORIGIN>/oauth/callback` at the end of
+each provider authorization, so expose exactly that path through your reverse
+proxy / TLS termination and register it as the callback URL in your Google and
+GitHub OAuth apps. The admin API, console, and `/v1` stay private.
+
 ### Hardening the connector deployment
 
 Mikan treats the connector as trusted infrastructure; deploy it accordingly:
 
 - set `OOMOL_CONNECT_ENCRYPTION_KEY` — without it the connector stores
   credentials in **plaintext** SQLite;
-- set `OOMOL_CONNECT_ADMIN_TOKEN` and create a scoped runtime token whose
-  action grants mirror mikan's allowlist (see below); don't reuse the admin
-  token as the runtime token;
+- set `OOMOL_CONNECT_ADMIN_TOKEN` and a separate runtime token; additionally
+  pin the deployment-level action allowlist to mikan's curated set
+  (`OOMOL_CONNECT_ALLOWED_ACTIONS`, pre-filled in `connector.env.example`) so
+  even a leaked runtime token cannot execute anything else;
 - disable the raw proxy (`OOMOL_CONNECT_BLOCKED_PROXIES=*`) — mikan never
   calls it;
 - bind the service to a private interface reachable only by the mikan host;
