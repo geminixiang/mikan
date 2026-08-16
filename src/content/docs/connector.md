@@ -26,13 +26,11 @@ onboarding page is served by the web portal, so `LINK_PORT` must be set.
 
 ### Running the connector under pm2
 
-The recommended single-host shape is a **sibling pm2 app**, not a mikan child
-process: both services autostart on boot, but reloading/upgrading mikan never
-interrupts the connector's OAuth flows, token refresh, or SQLite writes — and
-the connector (a young project) can be upgraded on its own cadence.
-
-`deploy/pm2/ecosystem.config.cjs` already includes the app; it activates
-whenever the checkout directory exists:
+The pm2 deployment runs the connector **by default** as a sibling app of
+mikan (declared in `deploy/pm2/ecosystem.config.cjs`): both autostart on
+boot, but reloading/upgrading mikan never interrupts the connector's OAuth
+flows, token refresh, or SQLite writes — and the connector (a young project)
+can be upgraded on its own cadence. One-time setup:
 
 ```bash
 git clone https://github.com/oomol-lab/open-connector ~/.mikan/open-connector

@@ -19,10 +19,16 @@
 //   curl -o ~/.mikan/mikan.env https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/mikan.env.example
 //   chmod 600 ~/.mikan/mikan.env   # then fill in your tokens
 //
-//   # 3. (image sandbox) pull the sandbox image
+//   # 3. Open Connector (OAuth action gateway — see the app entry below)
+//   git clone https://github.com/oomol-lab/open-connector ~/.mikan/open-connector
+//   (cd ~/.mikan/open-connector && npm install)
+//   curl -o ~/.mikan/connector.env https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/connector.env.example
+//   chmod 600 ~/.mikan/connector.env
+//
+//   # 4. (image sandbox) pull the sandbox image
 //   docker pull ghcr.io/geminixiang/mikan-sandbox:latest
 //
-//   # 4. Grab this file, edit `args`, then start
+//   # 5. Grab this file, edit `args`, then start
 //   curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
 //   pm2 start ecosystem.config.cjs
 //   pm2 save
@@ -77,55 +83,42 @@ function loadEnvFile(file) {
   return env;
 }
 
-// Optional sibling service: a self-hosted Open Connector deployment (see
-// src/content/docs/connector.md). Supervised by pm2 alongside mikan — same
-// boot autostart, independent restart/upgrade lifecycle, so reloading mikan
-// never interrupts OAuth flows or token refresh. The app is included only
-// when its checkout exists, so plain mikan deployments are unaffected:
-//
-//   git clone https://github.com/oomol-lab/open-connector ~/.mikan/open-connector
-//   (cd ~/.mikan/open-connector && npm install)
-//   curl -o ~/.mikan/connector.env https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/connector.env.example
-//   chmod 600 ~/.mikan/connector.env   # then fill in keys/tokens
-//   pm2 start ecosystem.config.cjs
-//
-// Upgrade the connector (independently of mikan):
-//   (cd ~/.mikan/open-connector && git pull && npm install) && pm2 restart open-connector
-//
-// Override the checkout location with OPEN_CONNECTOR_DIR in mikan.env.
-const connectorDir =
-  loadEnvFile(path.join(os.homedir(), ".mikan", "mikan.env")).OPEN_CONNECTOR_DIR ||
-  path.join(os.homedir(), ".mikan", "open-connector");
-
-const connectorApp = fs.existsSync(connectorDir)
-  ? [
-      {
-        name: "open-connector",
-        script: "npm",
-        args: "start",
-        cwd: connectorDir,
-
-        // OOMOL_CONNECT_* secrets live in their own 0600 env file, separate
-        // from mikan.env: different service, different trust domain. HOST
-        // defaults to loopback — only mikan (and a reverse proxy for the
-        // OAuth callback) should reach this service.
-        env: {
-          HOST: "127.0.0.1",
-          ...loadEnvFile(path.join(os.homedir(), ".mikan", "connector.env")),
-        },
-
-        autorestart: true,
-        max_restarts: 10,
-        restart_delay: 2000,
-        time: true,
-        merge_logs: true,
-      },
-    ]
-  : [];
-
 module.exports = {
   apps: [
-    ...connectorApp,
+    // Open Connector: mikan's host-side OAuth action gateway (see
+    // src/content/docs/connector.md). A sibling app, not a mikan child
+    // process — same boot autostart, independent restart/upgrade lifecycle,
+    // so reloading mikan never interrupts OAuth flows or token refresh.
+    // One-time setup (part of the standard deployment):
+    //
+    //   git clone https://github.com/oomol-lab/open-connector ~/.mikan/open-connector
+    //   (cd ~/.mikan/open-connector && npm install)
+    //   curl -o ~/.mikan/connector.env https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/connector.env.example
+    //   chmod 600 ~/.mikan/connector.env   # then fill in keys/tokens
+    //
+    // Upgrade (independently of mikan):
+    //   (cd ~/.mikan/open-connector && git pull && npm install) && pm2 restart open-connector
+    {
+      name: "open-connector",
+      script: "npm",
+      args: "start",
+      cwd: path.join(os.homedir(), ".mikan", "open-connector"),
+
+      // OOMOL_CONNECT_* secrets live in their own 0600 env file, separate
+      // from mikan.env: different service, different trust domain. HOST
+      // defaults to loopback — only mikan (and a reverse proxy for the
+      // OAuth callback) should reach this service.
+      env: {
+        HOST: "127.0.0.1",
+        ...loadEnvFile(path.join(os.homedir(), ".mikan", "connector.env")),
+      },
+
+      autorestart: true,
+      max_restarts: 10,
+      restart_delay: 2000,
+      time: true,
+      merge_logs: true,
+    },
     {
       name: "mikan",
       script: "mikan",
