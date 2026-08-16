@@ -57,39 +57,40 @@ GitHub OAuth apps. The admin API, console, and `/v1` stay private.
 
 ### Local development
 
-No pm2, no reverse proxy. Run the connector with Docker (or `npm start` in a
-clone, Node 22+) and point a dev-state mikan at it:
+Same pm2 app, same setup as production — the connector is a per-machine
+service, so a dev box runs the one instance and every mikan on that box
+(dev-state or otherwise) points at it. Do the one-time setup above, then:
 
 ```bash
-docker run --rm -p 127.0.0.1:3000:3000 -v connector-dev-data:/app/data \
-  -e OOMOL_CONNECT_ENCRYPTION_KEY=$(openssl rand -hex 32) \
-  -e OOMOL_CONNECT_ADMIN_TOKEN=dev-admin \
-  -e OOMOL_CONNECT_RUNTIME_TOKEN=dev-runtime \
-  -e OOMOL_CONNECT_BLOCKED_PROXIES='*' \
-  ghcr.io/oomol-lab/open-connector:latest
+pm2 start ecosystem.config.cjs --only open-connector
 ```
+
+and run a dev-state mikan against it:
 
 ```bash
 CONNECTOR_GATEWAY_URL=http://127.0.0.1:3000 \
-CONNECTOR_ADMIN_TOKEN=dev-admin \
-CONNECTOR_RUNTIME_TOKEN=dev-runtime \
+CONNECTOR_ADMIN_TOKEN=... CONNECTOR_RUNTIME_TOKEN=... \
 LINK_PORT=8787 \
 ./dist/main.js --state-dir="$HOME/.mikan-dev" --sandbox=host ./workspace
 ```
 
-OAuth works without any public URL: the default
-`OOMOL_CONNECT_ORIGIN` is `http://localhost:3000`, your browser is on the
-same machine, and Google/GitHub both accept localhost redirect URIs on dev
-OAuth apps — register `http://localhost:3000/oauth/callback` there and enter
-the client id/secret in the connector console (`http://localhost:3000`, sign
-in with the admin token). Use dev OAuth apps and a throwaway account, not
-your production client ids.
+(the two tokens are the values from `~/.mikan/connector.env`).
+
+OAuth needs no public URL on a dev box: the default `OOMOL_CONNECT_ORIGIN`
+is `http://localhost:3000`, your browser is on the same machine, and
+Google/GitHub both accept localhost redirect URIs on dev OAuth apps —
+register `http://localhost:3000/oauth/callback` there and enter the client
+id/secret in the connector console (`http://localhost:3000`, sign in with
+the admin token). Use dev OAuth apps and a throwaway account, not your
+production client ids.
 
 Everything else is the normal dev loop: `/login` in a private conversation →
 "Connected services" → connect → the `connector_gws` / `connector_github`
-tools go live for that conversation. The connector's state is the named
-Docker volume; delete it to reset. Automated tests never need any of this —
-they fake the connector at the fetch seam (`src/test/connector-*.test.ts`).
+tools go live for that conversation. Dev-state and production mikan share
+the instance safely — connections are keyed by principal, and a dev state
+dir has its own principals. Reset by deleting the connection in the console
+(or the whole data dir). Automated tests never need a running connector —
+they fake it at the fetch seam (`src/test/connector-*.test.ts`).
 
 ### Hardening the connector deployment
 
