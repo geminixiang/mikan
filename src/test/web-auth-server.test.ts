@@ -228,12 +228,49 @@ describe("Web account authentication", () => {
     const mismatch = await originalFetch(`${url}/auth/google/callback?state=${state}&code=ok`, {
       redirect: "manual",
     });
-    expect(mismatch.status).toBe(400);
+    expect(mismatch.status).toBe(302);
+    expect(mismatch.headers.get("location")).toBe("/?authError=invalid_state");
 
     const first = await finishOAuth(url, "github", authorization);
     const replay = await finishOAuth(url, "github", authorization);
     expect(first.status).toBe(302);
-    expect(replay.status).toBe(400);
+    expect(replay.status).toBe(302);
+    expect(replay.headers.get("location")).toBe("/?authError=invalid_state");
+  });
+
+  test("redirects callback failures to stable local SPA error codes", async () => {
+    const { url } = await createServer();
+
+    const invalid = await originalFetch(`${url}/auth/github/callback?state=missing&code=ok`, {
+      redirect: "manual",
+    });
+    expect(invalid.status).toBe(302);
+    expect(invalid.headers.get("location")).toBe("/?authError=invalid_state");
+
+    const deniedAuthorization = await beginOAuth(url, "github", "/w/private");
+    const denied = await originalFetch(
+      `${url}/auth/github/callback?state=${deniedAuthorization.searchParams.get("state")}&error=access_denied&error_description=${encodeURIComponent("provider detail")}`,
+      { redirect: "manual" },
+    );
+    expect(denied.headers.get("location")).toBe("/?authError=denied");
+    expect(denied.headers.get("location")).not.toContain("provider");
+    expect(denied.headers.get("location")).not.toContain("private");
+
+    const missingCodeAuthorization = await beginOAuth(url, "google");
+    const missingCode = await originalFetch(
+      `${url}/auth/google/callback?state=${missingCodeAuthorization.searchParams.get("state")}`,
+      { redirect: "manual" },
+    );
+    expect(missingCode.headers.get("location")).toBe("/?authError=missing_code");
+
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error("provider secret detail");
+    }) as typeof fetch;
+    const failedAuthorization = await beginOAuth(url, "github");
+    const failed = await finishOAuth(url, "github", failedAuthorization);
+    expect(failed.status).toBe(302);
+    expect(failed.headers.get("location")).toBe("/?authError=provider_failed");
+    expect(failed.headers.get("location")).not.toContain("secret");
   });
 
   test("rejects unsafe return paths and cross-origin logout", async () => {

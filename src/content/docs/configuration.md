@@ -126,6 +126,10 @@ GitHub account sign-in requests `read:user user:email`; Google requests `openid 
 
 Each account receives a default `Personal` workspace. Every Web workspace becomes an independent `web` office, so it does not automatically share sessions, memory, files, sandbox state, or vault state with Slack, Telegram, Discord, or GitHub-adapter conversations.
 
+The formal React application is served at `/` with owned workspace routes under `/w/<opaque-workspace-id>`. It uses account/workspace projections only, keeps its CSRF token in memory, and receives transient run, queue, tool, and subagent state through a workspace-scoped stream. Pi session history remains the durable transcript. The older `/pi-session`, `/pi-login`, and `/admin` pages retain their separate capability-token boundaries for messaging-adapter support and are not Web account screens.
+
+For source development, run the backend on port `8181` and start `npm run dev:web`; Vite proxies `/api` and `/auth` to the backend. `npm run build` emits the browser bundle to `dist/web-app` alongside the compiled Node server.
+
 | Command or option                                                                                               | Purpose                                                                                   |
 | --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | `mikan --onboard [--state-dir=<dir>]`                                                                           | Create the required global settings file                                                  |

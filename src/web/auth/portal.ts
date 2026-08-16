@@ -7,7 +7,6 @@ import {
   exchangeOAuthCode,
   readBoundedResponseText,
 } from "../oauth-flow.js";
-import { escapeHtml } from "../portal-shell.js";
 import { normalizeReturnPath, type WebAuthRegistry } from "./registry.js";
 import type { WebAccount, WebIdentityClaims, WebIdentityProvider } from "./types.js";
 
@@ -197,45 +196,48 @@ async function completeOAuth(
 ): Promise<void> {
   const state = url.searchParams.get("state") ?? "";
   const transaction = options.registry.consumeOAuthTransaction(state, provider);
-  if (!transaction) return sendOAuthError(res, 400, "OAuth state is invalid or expired.");
+  if (!transaction) return redirectOAuthError(res, "invalid_state");
 
   const providerError = url.searchParams.get("error");
-  if (providerError) return sendOAuthError(res, 400, "OAuth authorization was denied.");
+  if (providerError) return redirectOAuthError(res, "denied");
   const code = url.searchParams.get("code") ?? "";
-  if (!code) return sendOAuthError(res, 400, "OAuth authorization code is missing.");
+  if (!code) return redirectOAuthError(res, "missing_code");
 
   const config = options.providers[provider];
   const baseUrl = resolveCallbackBaseUrl(req, options.publicBaseUrl);
-  if (!config || !baseUrl) return sendOAuthError(res, 503, "OAuth sign-in is not configured.");
+  if (!config || !baseUrl) return redirectOAuthError(res, "unavailable");
 
-  const tokenResponse = await exchangeOAuthCode(config, {
-    code,
-    redirectUri: `${baseUrl}/auth/${provider}/callback`,
-    codeVerifier: transaction.codeVerifier,
-  });
-  const accessToken = tokenResponse.access_token?.trim();
-  if (!accessToken)
-    return sendOAuthError(res, 400, "OAuth provider did not return an access token.");
+  try {
+    const tokenResponse = await exchangeOAuthCode(config, {
+      code,
+      redirectUri: `${baseUrl}/auth/${provider}/callback`,
+      codeVerifier: transaction.codeVerifier,
+    });
+    const accessToken = tokenResponse.access_token?.trim();
+    if (!accessToken) return redirectOAuthError(res, "provider_failed");
 
-  const claims =
-    provider === "github"
-      ? await fetchGitHubClaims(config, accessToken)
-      : await fetchGoogleClaims(config, accessToken);
-  const { account } = options.registry.completeOAuthIdentity(claims);
+    const claims =
+      provider === "github"
+        ? await fetchGitHubClaims(config, accessToken)
+        : await fetchGoogleClaims(config, accessToken);
+    const { account } = options.registry.completeOAuthIdentity(claims);
 
-  const previousToken = readCookies(req)[SESSION_COOKIE];
-  if (previousToken) options.registry.revokeLoginSession(previousToken);
-  const session = options.registry.createLoginSession(account.id);
-  const secure = baseUrl.startsWith("https://");
-  res.writeHead(302, {
-    Location: transaction.returnPath,
-    "Cache-Control": "no-store",
-    "Set-Cookie": [
-      serializeCookie(SESSION_COOKIE, session.token, session.expiresAt, secure, true),
-      serializeCookie(CSRF_COOKIE, session.csrfToken, session.expiresAt, secure, false),
-    ],
-  });
-  res.end();
+    const previousToken = readCookies(req)[SESSION_COOKIE];
+    if (previousToken) options.registry.revokeLoginSession(previousToken);
+    const session = options.registry.createLoginSession(account.id);
+    const secure = baseUrl.startsWith("https://");
+    res.writeHead(302, {
+      Location: transaction.returnPath,
+      "Cache-Control": "no-store",
+      "Set-Cookie": [
+        serializeCookie(SESSION_COOKIE, session.token, session.expiresAt, secure, true),
+        serializeCookie(CSRF_COOKIE, session.csrfToken, session.expiresAt, secure, false),
+      ],
+    });
+    res.end();
+  } catch {
+    redirectOAuthError(res, "provider_failed");
+  }
 }
 
 function handleMe(req: IncomingMessage, res: ServerResponse, registry: WebAuthRegistry): void {
@@ -494,10 +496,13 @@ function sendJson(res: ServerResponse, status: number, value: unknown): void {
   res.end(JSON.stringify(value));
 }
 
-function sendOAuthError(res: ServerResponse, status: number, message: string): void {
-  res.writeHead(status, {
-    "Content-Type": "text/html; charset=utf-8",
+function redirectOAuthError(
+  res: ServerResponse,
+  code: "denied" | "invalid_state" | "missing_code" | "provider_failed" | "unavailable",
+): void {
+  res.writeHead(302, {
+    Location: `/?authError=${code}`,
     "Cache-Control": "no-store",
   });
-  res.end(`<!doctype html><title>Sign-in failed</title><p>${escapeHtml(message)}</p>`);
+  res.end();
 }

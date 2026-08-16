@@ -865,6 +865,7 @@ if (LINK_PORT) {
     },
     webAuth,
     webHarness,
+    webApp: webAuth ? {} : undefined,
     githubWebhook:
       GITHUB_WEBHOOK_SECRET && githubBotForWebhook
         ? {

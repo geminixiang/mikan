@@ -22,7 +22,12 @@
   },
   "overrides": [
     {
-      "files": ["**/src/test/**", "**/e2e/**", "**/deploy/examples/**"],
+      "files": [
+        "**/src/test/**",
+        "**/e2e/**",
+        "**/deploy/examples/**",
+        "**/web-app/src/**/*.test.*"
+      ],
       "rules": {
         "typescript/no-explicit-any": "off",
         "typescript/consistent-type-imports": "off",
@@ -48,7 +53,8 @@
         "**/src/web/login/portal.ts",
         "**/src/web/session-view/portal.ts",
         "**/src/web/session-view/service.ts",
-        "**/src/web/session-view/store.ts"
+        "**/src/web/session-view/store.ts",
+        "**/web-app/src/App.tsx"
       ],
       "rules": {
         "eslint/max-lines-per-function": "off",

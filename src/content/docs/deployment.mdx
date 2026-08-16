@@ -186,6 +186,8 @@ https://mikan.example.com/auth/google/callback
 
 Account OAuth apps are separate from the broader `/pi-login` credential-onboarding apps. Provider tokens are discarded after profile lookup; browser login does not put provider credentials in a vault. The account/workspace registry is restart-safe at `<state-dir>/web/registry.json`, so include it in state-directory backups.
 
+The published npm package includes the formal React product in `dist/web-app`. When Web account OAuth is configured, mikan serves it at `/` and uses client-side `/w/<opaque-workspace-id>` routes. Hashed assets are immutable; application HTML is not cached. API, auth, `/admin`, `/pi-session`, and `/pi-login` routes keep precedence over the SPA fallback. Put the same HTTPS origin in front of the UI, API, auth callbacks, and workspace event stream—no separate cross-origin frontend is required.
+
 ## Health endpoint
 
 The portal server exists only when `LINK_PORT` is set, or when `LINK_URL` causes the default port `8181` to be used:

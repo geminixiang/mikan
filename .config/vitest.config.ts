@@ -15,7 +15,7 @@ export default defineConfig({
   test: {
     // Explicit include: the default glob would also sweep compiled copies in
     // dist/ or any in-repo git worktree, double-counting the suite.
-    include: ["src/test/**/*.test.ts"],
+    include: ["src/test/**/*.test.ts", "web-app/src/**/*.test.{ts,tsx}"],
     // Git fixtures must resolve their repo from cwd, never from an ambient
     // GIT_DIR inherited when the suite runs inside a git hook. State-writing
     // paths must land in a temp state dir, never the developer's ~/.mikan.
@@ -27,6 +27,7 @@ export default defineConfig({
       exclude: [
         // The test suite itself is not coverage surface
         "src/test/**",
+        "web-app/**",
         // Starlight docs content, not runtime code
         "src/content/**",
         "src/content.config.ts",
