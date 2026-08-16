@@ -15,6 +15,7 @@ export type {
   ConversationMessage,
   ConversationResponder,
   ChatToolResult,
+  ChatToolStart,
   ConversationKind,
   MessagingInfo,
   OfficeAddress,

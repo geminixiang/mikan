@@ -306,6 +306,12 @@ interface CompactionResultSummary {
 
 export type HarnessEvent =
   | AgentEvent
+  | {
+      /** A pi steering/follow-up message entered the active transcript. */
+      type: "queued_message_start";
+      queueId: string;
+      mode: "followUp" | "steer";
+    }
   | { type: "compaction_start"; reason: CompactionReason }
   | {
       type: "compaction_end";

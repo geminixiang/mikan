@@ -97,12 +97,18 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+interface QueuedMessage {
+  readonly queueId?: string;
+  readonly mode: "followUp" | "steer";
+}
+
 export class MikanAgentSession {
   readonly agent: Agent;
   readonly sessionStore: SessionStore;
   private readonly models: MikanModels;
   private readonly settings: HarnessSettings;
   private readonly extensions: ExtensionRegistry | undefined;
+  private readonly queuedMessages = new WeakMap<AgentMessage, QueuedMessage>();
   private listeners = new Set<HarnessEventListener>();
   private retryAttempt = 0;
   private overflowRecoveryAttempted = false;
@@ -137,7 +143,10 @@ export class MikanAgentSession {
       convertToLlm,
       transformContext: async (messages) => {
         if (!this.extensions?.hasHandlers("context")) return messages;
-        return this.extensions.emitContext({ messages, origin: this.runOrigin });
+        return this.extensions.emitContext({
+          messages,
+          origin: this.runOrigin,
+        });
       },
       streamFn: (model, context, streamOptions) =>
         this.models.models.streamSimple(model, context, streamOptions),
@@ -381,6 +390,15 @@ export class MikanAgentSession {
     return undefined;
   }
 
+  /** Queue a message through pi's active-run steering/follow-up primitives. */
+  queueMessage(message: AgentMessage, mode: "followUp" | "steer", queueId?: string): boolean {
+    if (!this.agent.state.isStreaming) return false;
+    this.queuedMessages.set(message, { queueId, mode });
+    if (mode === "steer") this.agent.steer(message);
+    else this.agent.followUp(message);
+    return true;
+  }
+
   /** Abort the active run, pending retry backoff, and in-flight compaction. */
   abort(): void {
     this.retryAbortController?.abort();
@@ -411,6 +429,19 @@ export class MikanAgentSession {
   }
 
   private async handleAgentEvent(event: AgentEvent): Promise<void> {
+    if (event.type === "message_start") {
+      const queued = this.queuedMessages.get(event.message);
+      if (queued) {
+        this.queuedMessages.delete(event.message);
+        if (queued.queueId) {
+          await this.emit({
+            type: "queued_message_start",
+            queueId: queued.queueId,
+            mode: queued.mode,
+          });
+        }
+      }
+    }
     if (event.type === "tool_execution_start") {
       this.tally.toolCalls += 1;
       this.tally.toolCallCounts[event.toolName] =
@@ -423,7 +454,10 @@ export class MikanAgentSession {
 
     let message = event.message;
     if (this.extensions?.hasHandlers("message_end")) {
-      const result = await this.extensions.emitMessageEnd({ message, origin: this.runOrigin });
+      const result = await this.extensions.emitMessageEnd({
+        message,
+        origin: this.runOrigin,
+      });
       if (result?.message) {
         for (const key of Object.keys(message)) {
           delete (message as unknown as Record<string, unknown>)[key];
@@ -452,7 +486,11 @@ export class MikanAgentSession {
       if (message.stopReason !== "error") {
         this.overflowRecoveryAttempted = false;
         if (this.retryAttempt > 0) {
-          await this.emit({ type: "auto_retry_end", success: true, attempt: this.retryAttempt });
+          await this.emit({
+            type: "auto_retry_end",
+            success: true,
+            attempt: this.retryAttempt,
+          });
           this.retryAttempt = 0;
         }
       }

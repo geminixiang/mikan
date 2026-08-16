@@ -7,7 +7,7 @@ export type { CreateRunnerOptions, PiAgentWrapper } from "./types.js";
 import type { CreateRunnerOptions, OfficeAddress, PiAgentWrapper } from "./types.js";
 import type { Office, Workspace } from "./office/index.js";
 
-import type { AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
 import {
   DEFAULT_EVENT_BUDGET,
@@ -362,8 +362,10 @@ function loadMikanSkills(
   // Load workspace-level skills only when the office projection authorizes it.
   const workspaceSkillsDir = projection.promptSources.globalSkillsDir;
   if (workspaceSkillsDir) {
-    for (const skill of loadSkillsFromDir({ dir: workspaceSkillsDir, source: "workspace" })
-      .skills) {
+    for (const skill of loadSkillsFromDir({
+      dir: workspaceSkillsDir,
+      source: "workspace",
+    }).skills) {
       skill.filePath = translatePath(skill.filePath);
       skill.baseDir = translatePath(skill.baseDir);
       skillMap.set(skill.name, skill);
@@ -729,7 +731,13 @@ interface RunnerSessionState {
     output: number;
     cacheRead: number;
     cacheWrite: number;
-    cost: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
+    cost: {
+      input: number;
+      output: number;
+      cacheRead: number;
+      cacheWrite: number;
+      total: number;
+    };
   };
   llmCallCount: number;
   stopReason: string;
@@ -826,7 +834,9 @@ function createRunQueue(
             const errMsg = err instanceof Error ? err.message : String(err);
             log.logWarning(`API error (${errorContext})`, errMsg);
             try {
-              await responder.respondDiagnostic(`Error: ${errMsg}`, { style: "error" });
+              await responder.respondDiagnostic(`Error: ${errMsg}`, {
+                style: "error",
+              });
             } catch {
               // Ignore
             }
@@ -1332,7 +1342,10 @@ function buildExtensionHostServices(params: {
         }
       : {}),
     ...(platformBlockKit
-      ? { postBlocks: platformBlockKit.postBlocks, updateBlocks: platformBlockKit.updateBlocks }
+      ? {
+          postBlocks: platformBlockKit.postBlocks,
+          updateBlocks: platformBlockKit.updateBlocks,
+        }
       : {}),
     ...(runSubagentService ? { runSubagent: runSubagentService } : {}),
     ...(vaultManager
@@ -1763,7 +1776,10 @@ function attachSessionEventHandlers(params: {
     if (!runState.responder || !runState.logCtx || !runState.queue) return;
 
     const { responder, logCtx, queue, pendingTools } = runState;
-    const baseAttrs = { channel_id: logCtx.conversationId, session_id: logCtx.sessionId };
+    const baseAttrs = {
+      channel_id: logCtx.conversationId,
+      session_id: logCtx.sessionId,
+    };
     const agentEventSessionId = logCtx.sessionId ?? logCtx.conversationId;
 
     if (event.type === "tool_execution_start") {
@@ -1792,6 +1808,18 @@ function attachSessionEventHandlers(params: {
       if (event.toolName === "subagent") {
         runState.subagentToolCalls.add(event.toolCallId);
       } else {
+        if (responder.respondToolStart) {
+          queue.enqueue(
+            () =>
+              responder.respondToolStart!({
+                toolCallId: event.toolCallId,
+                toolName: event.toolName,
+                label: extractToolLabel(event.toolName, event.args),
+                args: event.args as Record<string, unknown>,
+              }),
+            "tool started",
+          );
+        }
         queue.enqueue(
           () => replaceResponseWithToolProgress(responder, runState),
           "tool progress update",
@@ -1818,6 +1846,7 @@ function attachSessionEventHandlers(params: {
     }
 
     if (event.type === "tool_execution_end") {
+      const wasSubagent = runState.subagentToolCalls.has(event.toolCallId);
       const resultStr = extractToolResultText(event.result);
       const pending = pendingTools.get(event.toolCallId);
       sendAgentEvent({
@@ -1840,6 +1869,25 @@ function attachSessionEventHandlers(params: {
       runState.subagentProgress.delete(event.toolCallId);
       pendingTools.delete(event.toolCallId);
       const durationMs = pending ? Date.now() - pending.startTime : 0;
+      if (!wasSubagent && responder.respondToolStart) {
+        queue.enqueue(
+          () =>
+            responder.respondToolResult({
+              toolCallId: event.toolCallId,
+              toolName: event.toolName,
+              ...(pending
+                ? {
+                    label: extractToolLabel(event.toolName, pending.args),
+                    args: pending.args as Record<string, unknown>,
+                  }
+                : {}),
+              result: resultStr,
+              isError: event.isError,
+              durationMs,
+            }),
+          "tool finished",
+        );
+      }
 
       Sentry.metrics.count("agent.tool.calls", 1, {
         attributes: metricAttributes({
@@ -1943,7 +1991,9 @@ function attachSessionEventHandlers(params: {
             stop_reason: assistantMsg.stopReason,
             error: Boolean(assistantMsg.errorMessage),
           });
-          Sentry.metrics.count("agent.llm.calls", 1, { attributes: llmAttributes });
+          Sentry.metrics.count("agent.llm.calls", 1, {
+            attributes: llmAttributes,
+          });
           Sentry.metrics.distribution("agent.llm.tokens_in", assistantMsg.usage.input, {
             attributes: llmAttributes,
           });
@@ -2139,7 +2189,10 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   } = createMikanTools(
     executor,
     workspaceDir,
-    { sandbox: sandboxConfig, resourceController: resourceController ?? provisioner },
+    {
+      sandbox: sandboxConfig,
+      resourceController: resourceController ?? provisioner,
+    },
     platformToolPackFactories ?? [],
     {
       model,
@@ -2372,7 +2425,10 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
       runState.logCtx = null;
       runState.queue = null;
 
-      return { stopReason: runState.stopReason, errorMessage: runState.errorMessage };
+      return {
+        stopReason: runState.stopReason,
+        errorMessage: runState.errorMessage,
+      };
     },
 
     async dreamSessionMemory(
@@ -2449,6 +2505,19 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
 
     abort(): void {
       session.abort();
+    },
+
+    queueMessage(message, mode, queueId): boolean {
+      const userMessage: AgentMessage = {
+        role: "user",
+        content: [{ type: "text", text: formatTimestampedUserMessage(message) }],
+        timestamp: Date.now(),
+      };
+      return session.queueMessage(userMessage, mode, queueId);
+    },
+
+    subscribe(listener) {
+      return session.subscribe(listener);
     },
 
     async tryExtensionCommand(
