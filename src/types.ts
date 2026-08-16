@@ -12,7 +12,7 @@ import type {
   ExtensionScheduleCallbackFire,
   ExtensionScheduleEngine,
 } from "./harness/extensions/types.js";
-import type { SubagentRunStatus } from "./harness/types.js";
+import type { HarnessEventListener, SubagentRunStatus } from "./harness/types.js";
 import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import type { MikanModels } from "./harness/models.js";
 import type { Office } from "./office/types.js";
@@ -104,7 +104,15 @@ export interface ConversationMessage {
   threadTs?: string;
 }
 
+export interface ChatToolStart {
+  toolCallId: string;
+  toolName: string;
+  label?: string;
+  args?: Record<string, unknown>;
+}
+
 export interface ChatToolResult {
+  toolCallId?: string;
   toolName: string;
   label?: string;
   args?: Record<string, unknown>;
@@ -162,6 +170,7 @@ export interface ConversationResponder {
    */
   replaceSubagentProgress?(progress: SubagentProgressSnapshot, finalText?: string): Promise<void>;
   respondDiagnostic(text: string, options?: { style?: "muted" | "error" }): Promise<void>;
+  respondToolStart?(tool: ChatToolStart): Promise<void>;
   respondToolResult(result: ChatToolResult): Promise<void>;
   setTyping(isTyping: boolean): Promise<void>;
   setWorking(working: boolean): Promise<void>;
@@ -492,6 +501,10 @@ export interface PiAgentWrapper {
     platform: MessagingInfo,
   ): Promise<{ stopReason: string; errorMessage?: string }>;
   abort(): void;
+  /** Queue a follow-up or steering message into pi's active agent loop. */
+  queueMessage(message: ConversationMessage, mode: "followUp" | "steer", queueId?: string): boolean;
+  /** Observe this runner's pi lifecycle events; returns an unsubscribe function. */
+  subscribe(listener: HarnessEventListener): () => void;
   getCurrentStep(): { toolName?: string; label?: string } | undefined;
   /**
    * Dispatch a leading-slash message to an extension-registered command.

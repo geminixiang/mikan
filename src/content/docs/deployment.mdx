@@ -160,6 +160,34 @@ hand under `<state-dir>`.
   `<state-dir>` (and ideally the workspace) before the first start on the new version.
 </Aside>
 
+## Web account OAuth
+
+The formal Web adapter requires the portal HTTP server plus at least one complete, dedicated account-sign-in OAuth client:
+
+```bash
+LINK_URL=https://mikan.example.com
+LINK_PORT=8181
+
+WEB_GITHUB_OAUTH_CLIENT_ID=...
+WEB_GITHUB_OAUTH_CLIENT_SECRET=...
+
+WEB_GOOGLE_OAUTH_CLIENT_ID=...
+WEB_GOOGLE_OAUTH_CLIENT_SECRET=...
+```
+
+Register these exact callbacks with the providers:
+
+```text
+https://mikan.example.com/auth/github/callback
+https://mikan.example.com/auth/google/callback
+```
+
+`LINK_URL` is the canonical public origin. Use HTTPS in production: account callback URLs are derived from this configured value, not arbitrary `Host` or forwarded headers, and browser-session cookies are marked `Secure`. Only explicit loopback development may omit `LINK_URL`, derive the origin from a loopback request, and use a non-`Secure` cookie.
+
+Account OAuth apps are separate from the broader `/pi-login` credential-onboarding apps. Provider tokens are discarded after profile lookup; browser login does not put provider credentials in a vault. The account/workspace registry is restart-safe at `<state-dir>/web/registry.json`, so include it in state-directory backups.
+
+The published npm package includes the formal React product in `dist/web-app`. When Web account OAuth is configured, mikan serves it at `/` and uses client-side `/w/<opaque-workspace-id>` routes. Hashed assets are immutable; application HTML is not cached. API, auth, `/admin`, `/pi-session`, and `/pi-login` routes keep precedence over the SPA fallback. Put the same HTTPS origin in front of the UI, API, auth callbacks, and workspace event stream—no separate cross-origin frontend is required.
+
 ## Health endpoint
 
 The portal server exists only when `LINK_PORT` is set, or when `LINK_URL` causes the default port `8181` to be used:

@@ -1,4 +1,7 @@
-# Open Connector gateway
+---
+title: Connector
+description: Host-side Open Connector gateway — read-only Google Workspace and personal GitHub tools whose OAuth tokens never enter the sandbox.
+---
 
 An optional, host-side OAuth action gateway. When configured, agents get
 read-only tools for Google Workspace (Gmail, Calendar, Sheets) and a personal

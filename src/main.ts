@@ -23,6 +23,7 @@ import { createGithubToolPack } from "./adapters/github/tool-pack.js";
 import type { PlatformGithubOps } from "./adapters/github/types.js";
 import { GcpTokenProvider } from "./adapters/github/gcp-auth.js";
 import { TelegramMessagingBot } from "./adapters/telegram/bot.js";
+import { WebMessagingBot } from "./adapters/web/bot.js";
 import { SlackMessagingBot as SlackMessagingBotClass } from "./adapters/slack/bot.js";
 import { createSlackToolPack } from "./adapters/slack/tool-pack.js";
 import type { PlatformSlackOps } from "./adapters/slack/types.js";
@@ -33,6 +34,8 @@ import { ExtensionCallbackScheduler } from "./extension-schedules.js";
 import * as log from "./log.js";
 import { hasWebOAuthProvider, resolveWebOAuthProviders } from "./web/auth/portal.js";
 import { WebAuthRegistry } from "./web/auth/registry.js";
+import { WebEventHub } from "./web/harness/hub.js";
+import { WebHarnessService } from "./web/harness/service.js";
 import { startWebServer } from "./web/server.js";
 import { InMemoryAdminTokenStore } from "./web/admin/store.js";
 import { InMemoryLinkTokenStore } from "./web/login/store.js";
@@ -301,7 +304,11 @@ const enabledPlatforms: PlatformName[] = [
 ];
 const officeMigration = (() => {
   try {
-    return migrateLegacyOffices({ workspaceRoot: workingDir, stateDir, enabledPlatforms });
+    return migrateLegacyOffices({
+      workspaceRoot: workingDir,
+      stateDir,
+      enabledPlatforms,
+    });
   } catch (error) {
     handleStartupError(error);
   }
@@ -369,7 +376,10 @@ const sandboxLimits =
     : undefined;
 const sandboxBoostLimits =
   sandboxSettings?.boost?.cpus || sandboxSettings?.boost?.memory
-    ? { cpus: sandboxSettings?.boost?.cpus, memory: sandboxSettings?.boost?.memory }
+    ? {
+        cpus: sandboxSettings?.boost?.cpus,
+        memory: sandboxSettings?.boost?.memory,
+      }
     : undefined;
 
 const provisioner =
@@ -879,7 +889,22 @@ if (LINK_PORT) {
         providers: webOAuthProviders,
       }
     : undefined;
-  if (webAuth) new OfficeRegistry(stateDir).enablePlatform("web");
+  let webHarness;
+  if (webAuth) {
+    const hub = new WebEventHub();
+    const bot = new WebMessagingBot(workspace, hub);
+    botsByPlatform.web = bot;
+    webHarness = {
+      auth: webAuth,
+      service: new WebHarnessService(webAuth.registry, workspace, {
+        runtime: handler,
+        bot,
+        hub,
+      }),
+    };
+    new OfficeRegistry(stateDir).enablePlatform("web");
+    log.logInfo("Platform: Web");
+  }
 
   startWebServer({
     port: LINK_PORT,
@@ -891,9 +916,17 @@ if (LINK_PORT) {
     },
     sessionViewTokenStore,
     sessionViewInteractive: { handler, botsByPlatform },
-    adminOptions: { adminTokenStore, workspace, runtime: handler, sandbox, botsByPlatform },
+    adminOptions: {
+      adminTokenStore,
+      workspace,
+      runtime: handler,
+      sandbox,
+      botsByPlatform,
+    },
     webAuth,
     connector: connectorGateway,
+    webHarness,
+    webApp: webAuth ? {} : undefined,
     githubWebhook:
       GITHUB_WEBHOOK_SECRET && githubBotForWebhook
         ? {

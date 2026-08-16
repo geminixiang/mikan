@@ -15,6 +15,8 @@ import { requestBaseUrl } from "./portal-shell.js";
 import type { InMemoryLinkTokenStore } from "./login/store.js";
 import type { NotifyFn } from "./login/types.js";
 import { handleWebAuthRequest, type WebAuthRequestOptions } from "./auth/portal.js";
+import { handleWebAppRequest, type WebAppRequestOptions } from "./app/portal.js";
+import { handleWebHarnessRequest, type WebHarnessRequestOptions } from "./harness/portal.js";
 import {
   handleSessionViewRequest,
   type SessionViewInteractiveOptions,
@@ -43,6 +45,8 @@ interface StartWebServerOptions {
   githubWebhook?: GithubWebhookOptions;
   webAuth?: WebAuthRequestOptions;
   connector?: ConnectorGateway;
+  webHarness?: WebHarnessRequestOptions;
+  webApp?: WebAppRequestOptions;
 }
 
 export function startWebServer(options: StartWebServerOptions): Server {
@@ -80,6 +84,13 @@ export function startWebServer(options: StartWebServerOptions): Server {
       }
 
       if (handleAgentEventsRequest(req, res, url)) return;
+
+      if (
+        options.webHarness &&
+        (await handleWebHarnessRequest(req, res, url, options.webHarness))
+      ) {
+        return;
+      }
 
       if (options.webAuth && (await handleWebAuthRequest(req, res, url, options.webAuth))) {
         return;
@@ -119,6 +130,8 @@ export function startWebServer(options: StartWebServerOptions): Server {
       if (connectorHandler?.(req, res, url)) return;
 
       if (loginHandler(req, res, url)) return;
+
+      if (options.webApp && handleWebAppRequest(req, res, url, options.webApp)) return;
 
       res.writeHead(404);
       res.end();

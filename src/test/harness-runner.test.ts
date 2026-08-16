@@ -100,6 +100,51 @@ describe("MikanAgentSession", () => {
     expect(events).toContain("agent_end");
   });
 
+  test("correlates queued follow-up messages when pi consumes them", async () => {
+    const { models, faux, model } = createFauxSetup();
+    let releaseFirst!: () => void;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const firstResponse = async () => {
+      markStarted();
+      await new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      return fauxAssistantMessage("first");
+    };
+    faux.setResponses([firstResponse, fauxAssistantMessage("second")]);
+
+    const session = new MikanAgentSession({
+      systemPrompt: "test",
+      model,
+      thinkingLevel: "off",
+      tools: [],
+      models,
+      sessionStore: await SessionStore.create(join(dir, "queued.jsonl"), dir),
+    });
+    const events: HarnessEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    const run = session.prompt("start");
+    await started;
+    const message = {
+      role: "user" as const,
+      content: [{ type: "text" as const, text: "queued" }],
+      timestamp: Date.now(),
+    };
+    expect(session.queueMessage(message, "followUp", "request-queued")).toBe(true);
+    releaseFirst();
+    await run;
+
+    expect(events).toContainEqual({
+      type: "queued_message_start",
+      queueId: "request-queued",
+      mode: "followUp",
+    });
+  });
+
   test("executes tool calls and persists tool results", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([

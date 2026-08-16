@@ -53,6 +53,7 @@ import type {
   RunSessionOptions,
   ConversationRuntime,
   ConversationRuntimeOptions,
+  RuntimeQueueMode,
   SessionStateOptions,
 } from "./types.js";
 
@@ -61,7 +62,9 @@ import type {
  * Command handlers guard on `portalBaseUrl` before minting tokens, so this
  * only fires when a portal URL is configured without its backing store.
  */
-function portalNotConfiguredTokenStore(portal: string): { create: () => never } {
+function portalNotConfiguredTokenStore(portal: string): {
+  create: () => never;
+} {
   return {
     create: () => {
       throw new Error(`${portal} portal not configured`);
@@ -156,6 +159,27 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       state.stopRequested = true;
       state.runner.abort();
     }
+  }
+
+  queueMessage(
+    address: OfficeAddress,
+    sessionKey: string,
+    message: ConversationContext["message"],
+    mode: RuntimeQueueMode,
+    queueId?: string,
+  ): boolean {
+    assertSessionKeyBelongsToConversation(sessionKey, address.conversationId);
+    const state = this.sessions.get(address, sessionKey);
+    return state?.running === true && state.runner.queueMessage(message, mode, queueId);
+  }
+
+  subscribe(
+    address: OfficeAddress,
+    sessionKey: string,
+    listener: Parameters<PiAgentWrapper["subscribe"]>[0],
+  ): (() => void) | null {
+    assertSessionKeyBelongsToConversation(sessionKey, address.conversationId);
+    return this.sessions.get(address, sessionKey)?.runner.subscribe(listener) ?? null;
   }
 
   async handleNewCommand(
@@ -295,7 +319,10 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       }
       return { success: true };
     } catch (err) {
-      return { success: false, errorMessage: err instanceof Error ? err.message : String(err) };
+      return {
+        success: false,
+        errorMessage: err instanceof Error ? err.message : String(err),
+      };
     }
   }
 
@@ -375,7 +402,11 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     const conversationId = address.conversationId;
     const conversationDir = this.options.workspace.office(address).dir;
     const runtimeCwd = runtimeCwdForSandbox(this.options.sandbox, this.options.workspace, address);
-    await this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
+    await this.chatSessionManager.resetSession({
+      conversationDir,
+      sessionKey,
+      cwd: runtimeCwd,
+    });
 
     this.sessions.discard(address, sessionKey);
 
@@ -691,7 +722,9 @@ class ConversationRuntimeImpl implements ConversationRuntime {
               unit: "millisecond",
               attributes: completionAttrs,
             });
-            Sentry.metrics.count("agent.run.completed", 1, { attributes: completionAttrs });
+            Sentry.metrics.count("agent.run.completed", 1, {
+              attributes: completionAttrs,
+            });
             addLifecycleBreadcrumb("agent.run.completed", {
               channel_id: conversationId,
               platform: platform.name,

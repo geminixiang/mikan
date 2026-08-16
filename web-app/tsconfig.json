@@ -1,0 +1,21 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "inlineSources": false,
+    "types": ["vite/client"]
+  },
+  "include": [
+    "src",
+    "../src/web/auth/types.ts",
+    "../src/web/harness/protocol.ts",
+    "../src/web/session-view/types.ts"
+  ]
+}

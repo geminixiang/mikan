@@ -1,130 +1,123 @@
 # Web harness plan
 
-Status: proposal (2026-08-15). Companion to the pi 0.84 upgrade shim
-(`src/harness/pi-session.ts`).
+Status: Phase 2 backend shipped (2026-08-16). The formal React product surface is next.
 
 ## Goal
 
-A web frontend for mikan: a user logs in and gets a dedicated workspace to
-work in, on the same runtime the IM adapters use. IM surfaces (Slack,
-Telegram, Discord, GitHub) cap out at message-shaped interaction; the web
-surface should show live streaming, tool calls, session history, and
-eventually files/subagents.
+A first-class Web adapter for mikan: a user signs in with Google or GitHub and owns one or more dedicated Web workspaces on the same runtime that IM adapters use. IM surfaces (Slack, Telegram, Discord, GitHub) remain message-shaped support surfaces; `/pi-session`, `/pi-login`, and the Admin portal remain short-lived capability interfaces for those conversations. They are not the foundation of the formal Web product.
+
+Each browser workspace has an opaque id and maps to an independent office:
+
+```ts
+createOfficeAddress("web", workspace.id);
+```
+
+The Web account id, provider, email, and mutable workspace name are not encoded into the office identity. A Web office does not automatically share or merge sessions, memory, files, skills, vaults, or sandbox state with an IM office. Future account/IM linking must be explicit authorization and must not silently merge offices.
 
 ## What already exists (reuse, don't rebuild)
 
-- **Adapter seam**: `createConversationRuntime` + `MessagingBot` /
-  `ConversationResponder` stubs — proven by `deploy/examples/embedder`
-  (~120 lines of stdin/stdout adapter over the npm surface). A web adapter
-  is this pattern plus HTTP.
-- **Per-user isolation for free**: one web user (or user × project) → one
-  `OfficeAddress` → an office with its own sessions, vault, MEMORY.md,
-  skills, attachments, and sandbox container. Exactly the "dedicated
-  workspace per login" requirement.
-- **Web infra already in-tree** (`src/web/`): `startWebServer`, the
-  session-view UI with SSE live stream and `POST /session/message` (a
-  working web→agent round trip), `/api/agent-events/stream` SSE of
-  `AgentEventEnvelope`, admin portal, portal token store.
-- **History**: per-office `log.jsonl` + `ChatHistorySync` + the
-  session-view service. Channel conversation history is already loadable
-  into a web UI model — the web surface can browse IM conversations too,
-  not just its own.
+- **Shared runtime**: `ConversationRuntime`, `MessagingBot`, and `ConversationResponder` are the adapter seam. `WebMessagingBot` enters the same harness and pi loop as every IM adapter.
+- **Office isolation**: one Web workspace → one `OfficeAddress` → one office with sessions, vault, memory, skills, attachments, and sandbox state.
+- **Native pi v4 durability**: `SessionStore` is an async facade over pi `Session`/JSONL v4. `mikan sessions migrate` converts legacy v3 files with verified `.v3.bak` backups.
+- **Host-side presentation**: `src/web/session-view/service.ts` projects durable sessions without exposing JSONL paths or filenames.
+- **Web HTTP server**: account auth, workspace APIs, the scoped SSE downlink, and the older capability portals are dispatched independently by `src/web/server.ts`.
 
 ## Lessons taken from deepseek-harness (dsh)
 
-dsh's client/server split is the proven minimal protocol shape:
+The implemented protocol keeps dsh's useful client/server shape without copying its browser plugin model:
 
-1. **HTTP up, WebSocket/SSE down.** Commands are unary POSTs; events flow
-   on a downlink-only stream. No bidirectional socket state machine.
-2. **Whole-snapshot pushes for transient state** (queue, running jobs,
-   subagent progress) — reconnect and multi-tab convergence become trivial,
-   and matter more for mikan (Slack + web open on the same conversation).
-3. **Append-only session log as truth; host-side render intents.** Durable
-   events are replayed verbatim; presentation models (tool cards, diffs)
-   are computed server-side and never persisted.
-4. **dsh has no auth by design** (loopback trust fence only). Nothing to
-   copy there — auth is mikan's own gap to fill.
-5. Don't copy dsh's in-browser plugin runtime; a plain SPA over the wire
-   protocol suffices since mikan extensions are host-side.
+1. **HTTP up, SSE down.** Commands are unary requests; events flow through a workspace-scoped downlink.
+2. **Whole snapshots for transient state.** Run, queue, subagent, and reconnect tool state are replaced as whole values where appropriate.
+3. **Durable session log as truth.** Pi v4 history is durable; deltas and transient UI state are not a second log.
+4. **Host-side render intents.** The server emits typed source data; the client owns presentation.
+5. **Auth is mikan-owned.** dsh's loopback trust model is not reused for an Internet-facing product.
 
-## Phases
+## Delivered phases
 
-### Phase 1 — adopt pi 0.84's v4 session model — SHIPPED 2026-08-15
+### Phase 1 — pi 0.84 and v4 sessions — SHIPPED 2026-08-15
 
-Done: `SessionStore` is now an async facade over pi `Session`/JSONL v4 at
-mikan-chosen paths; the runtime shim was deleted; `mikan sessions migrate`
-converts v3 files (verified per-file, `.v3.bak` backups). Deploy order for
-prod: stop daemon → `mikan sessions migrate` → start new version. The
-steer/queue adoption below remains open.
+`SessionStore` now wraps pi's native v4 JSONL sessions at mikan-chosen paths. The v3 runtime shim was deleted. Production migration order is:
 
-pi 0.84 rewrote sessions: v4 JSONL, string ids, `seq` watermarks, lane
-records (operations, queue, usage), compaction with inline `retainedTail`,
-plus a session **search** module. That is almost exactly the append-only
-log + seq-watermark wire model the dsh design calls for — so v4 adoption
-and the web harness are one design problem. Doing the web surface on v3
-and migrating later would mean paying for the migration twice.
+```text
+stop daemon → mikan sessions migrate → start new version
+```
 
-- Replace `SessionStore` (v3) with pi's v4 `Session`/JSONL repo behind the
-  existing store interface; write a one-time v3→v4 file migrator (the
-  current `pi-session.ts` converter is the semantic spec for it).
-- Delete the shim once mikan writes v4 natively.
-- Adopt pi's lane/queue model to replace the "Agent is already processing"
-  rejection with real steer/follow-up queueing — needed for a responsive
-  web composer anyway.
+The migrator verifies each result and retains a `.v3.bak` backup.
 
-### Phase 2 — web adapter + wire protocol
+### Phase 2A — durable Web accounts and OAuth — SHIPPED 2026-08-16
 
-- Add `"web"` to `PlatformName` (`src/types.ts`, `assertPlatformName`),
-  `trustModel: "membership"`.
-- Web `ConversationResponder` that feeds a per-conversation event stream
-  instead of message edits (skip the progressive renderer; raw deltas).
-- Protocol (dsh-shaped): `POST /api/<method>` for commands
-  (`session.prompt/cancel/list/history`, `workspace.*`); one downlink
-  stream per client with frames = durable session events passthrough +
-  whole-snapshot control frames (queue, jobs, subagent progress) +
-  answerable frames (questions/approvals echoing an rpcId).
-- Filter the existing agent-events broadcast per session/user (today it is
-  one global SSE with one token).
+The host-only authority lives at `<state-dir>/web/registry.json`. It stores versioned account, provider identity, owned-workspace, login-session, and OAuth-transaction records with private atomic replacement and reload-under-lock mutation.
 
-### Phase 3 — auth and accounts
+- GitHub identity is the immutable numeric `id`; Google identity is the non-empty OIDC `sub`.
+- Email, login, display name, and avatar are profile claims only.
+- Equal email addresses across providers never auto-link accounts.
+- Provider access and refresh tokens are discarded after profile lookup and never enter the registry, vault, cookie, log, or pi session.
+- Browser cookies carry opaque secrets; durable login and CSRF records contain hashes only.
+- OAuth state is hashed, provider/PKCE/return-path bound, expiring, and atomically one-shot.
+- Production callback URLs use the configured canonical `LINK_URL`. Header-derived origins and non-`Secure` cookies are allowed only for explicit loopback development.
 
-The genuinely new layer; nothing in-tree or in dsh provides it.
+Browser identity authorizes owned Web workspaces. It does **not** authorize vault writes: `/pi-login` keeps its separate one-time capability boundary.
 
-- HTTP session identity (start simple: OAuth via GitHub/Google, or
-  single-tenant token login).
-- Identity → conversationId mapping (`web_<userId>_<workspaceSlug>` →
-  OfficeAddress); vault scoping falls out since the vault key is the
-  office key.
-- `ConversationEvent.user`/`userName` attribution already handles
-  multi-user prompts.
-- Authorization: which offices a login may see (own web offices always;
-  IM offices gated on platform identity linking).
+### Phase 2B — workspace runtime and wire protocol — SHIPPED 2026-08-16
 
-### Phase 4 — richer surface
+Authenticated APIs expose only opaque workspace and session ids:
 
-- Channel-history browser across IM conversations (reuse
-  `ChatHistorySync` + conversation-log coalescing).
-- pi 0.84 session search over all offices.
-- Subagent progress panes (snapshot seam from `src/subagent-progress.ts`).
-- Sandbox targets: `image:*`/`gondolin:*` only, per the consolidation
-  direction.
+```text
+GET   /api/web/workspaces
+POST  /api/web/workspaces
+PATCH /api/web/workspaces/:workspaceId
+GET   /api/web/workspaces/:workspaceId/sessions
+GET   /api/web/workspaces/:workspaceId/history
+POST  /api/web/workspaces/:workspaceId/prompt
+POST  /api/web/workspaces/:workspaceId/cancel
+GET   /api/web/workspaces/:workspaceId/stream
+```
 
-## pi adoption backlog (from the 0.84 survey, independent of the web work)
+Every route resolves cookie → account → owned workspace before deriving an office or session path. Unknown and foreign workspaces have the same not-found response. Browser clients never submit account ids, office keys, filenames, JSONL paths, vault ids, or host/sandbox paths.
 
-Ranked; each is "use pi instead of custom code" or an unused feature:
+Prompt requests contain bounded `text`, an opaque `clientRequestId`, and a mode:
 
-1. Replace the hand-rolled retry loop in `src/harness/runner.ts`
-   (`RETRYABLE_ERROR_PATTERN` + backoff) with pi-ai's
-   `isRetryableAssistantError`/`retryAssistantCall`/`RetryPolicy`.
-2. Pass `sessionId` + `cacheRetention` through to streams — direct lever on
-   prompt-cache hit rates already under observation.
-3. `thinkingBudgets` wiring next to the existing thinking-level plumbing.
-4. Steer/follow-up queues for mid-run user messages (also Phase 1).
-5. Session search for portal/session-view.
-6. Typebox skew: import `Type`/`TSchema` via pi re-exports instead of a
-   separate `@sinclair/typebox` major.
-7. Evaluate (not assume): pi's `loadSkills`, generic `ExecutionEnv` file
-   tools over mikan's sandbox `Executor`, prompt templates, telemetry
-   spans. AgentHarness itself: evaluate only — `MikanAgentSession` is a
-   deliberate, extension-hooked equivalent and the lane rewrite is days
-   old.
+- `prompt` starts only while the workspace is idle.
+- `followUp` enters pi's follow-up queue for the active run.
+- `steer` enters pi's steering queue for the active run.
+
+Admission returns `202` with the server `requestId` and placement. Retries are deduplicated by `(workspace, clientRequestId)` for a bounded ten-minute/256-entry window; an equal retry returns the original result, while reuse with different text or mode conflicts. Queue snapshots are server truth. Queue removal is correlated to the exact pi `AgentMessage` object and an opaque lifecycle id, not model-visible marker text.
+
+The SSE stream is scoped to one authorized workspace. Reconnect subscribes before reading durable history, buffers live frames during bootstrap, then emits:
+
+```text
+stream.ready (process generation UUID)
+workspace.snapshot
+session.snapshot (durable pi history)
+run.snapshot
+queue.snapshot
+subagents.snapshot
+running tool snapshots
+buffered live frames
+live frames
+```
+
+The generation UUID tells a client to discard transient state retained across a daemon restart. Live frames include response deltas/finals, authoritative pi tool ids, diagnostics, and errors. The existing global `/api/agent-events/stream` is not used by authenticated Web clients.
+
+Scheduled/proactive Web delivery is intentionally unsupported for now because it has no authenticated-account dispatch context. Text-only `followUp` and `steer` messages reuse the active run's prepared environment rather than rerunning first-turn preparation hooks.
+
+## Next phase — formal React application
+
+Build a new React product surface rather than expanding the legacy portals:
+
+1. Google/GitHub login, callback, and error states.
+2. Workspace list, create, and rename.
+3. Durable conversation/session history.
+4. Assistant streaming and basic tool activity.
+5. Composer modes, queue state, cancel, and logout.
+
+Cross-IM history, explicit identity linking, rich file browsing, search, and advanced subagent panes remain later work.
+
+## pi adoption backlog (independent of the Web product)
+
+1. Replace the hand-rolled retry loop in `src/harness/runner.ts` with pi-ai retry primitives where semantics match.
+2. Pass `sessionId` and `cacheRetention` through direct provider streams.
+3. Wire `thinkingBudgets` next to thinking-level configuration.
+4. Add pi session search to formal Web and capability views.
+5. Import TypeBox through pi re-exports to remove version skew.
+6. Continue evaluating—not assuming—pi skills, execution environments, prompt templates, and telemetry. `MikanAgentSession` remains deliberate extension-hooked infrastructure.
