@@ -55,6 +55,42 @@ each provider authorization, so expose exactly that path through your reverse
 proxy / TLS termination and register it as the callback URL in your Google and
 GitHub OAuth apps. The admin API, console, and `/v1` stay private.
 
+### Local development
+
+No pm2, no reverse proxy. Run the connector with Docker (or `npm start` in a
+clone, Node 22+) and point a dev-state mikan at it:
+
+```bash
+docker run --rm -p 127.0.0.1:3000:3000 -v connector-dev-data:/app/data \
+  -e OOMOL_CONNECT_ENCRYPTION_KEY=$(openssl rand -hex 32) \
+  -e OOMOL_CONNECT_ADMIN_TOKEN=dev-admin \
+  -e OOMOL_CONNECT_RUNTIME_TOKEN=dev-runtime \
+  -e OOMOL_CONNECT_BLOCKED_PROXIES='*' \
+  ghcr.io/oomol-lab/open-connector:latest
+```
+
+```bash
+CONNECTOR_GATEWAY_URL=http://127.0.0.1:3000 \
+CONNECTOR_ADMIN_TOKEN=dev-admin \
+CONNECTOR_RUNTIME_TOKEN=dev-runtime \
+LINK_PORT=8787 \
+./dist/main.js --state-dir="$HOME/.mikan-dev" --sandbox=host ./workspace
+```
+
+OAuth works without any public URL: the default
+`OOMOL_CONNECT_ORIGIN` is `http://localhost:3000`, your browser is on the
+same machine, and Google/GitHub both accept localhost redirect URIs on dev
+OAuth apps — register `http://localhost:3000/oauth/callback` there and enter
+the client id/secret in the connector console (`http://localhost:3000`, sign
+in with the admin token). Use dev OAuth apps and a throwaway account, not
+your production client ids.
+
+Everything else is the normal dev loop: `/login` in a private conversation →
+"Connected services" → connect → the `connector_gws` / `connector_github`
+tools go live for that conversation. The connector's state is the named
+Docker volume; delete it to reset. Automated tests never need any of this —
+they fake the connector at the fetch seam (`src/test/connector-*.test.ts`).
+
 ### Hardening the connector deployment
 
 Mikan treats the connector as trusted infrastructure; deploy it accordingly:

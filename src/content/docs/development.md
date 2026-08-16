@@ -74,6 +74,8 @@ Use a separate state directory so development does not overwrite a production in
 
 At least one complete platform credential set is still required for normal bot mode.
 
+To develop against the Open Connector gateway (`connector_gws` / `connector_github` tools), see the [local development section of the connector guide](/connector/) — one Docker command plus three `CONNECTOR_*` env vars on the line above.
+
 Conversation directories in that workspace are named by office key, not by raw platform id. `./dist/main.js office list --state-dir="$HOME/.mikan-dev"` prints the registry — which platform and raw conversation id each office belongs to — plus any migration still pending.
 
 ## End-to-end tests
