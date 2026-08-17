@@ -11,6 +11,8 @@ import type { EventFilePayload } from "../harness/event-format.js";
 export interface PlatformToolRunContext {
   conversationId: string;
   platformName: string;
+  /** Platform user id of the person whose turn triggered this run. */
+  userId: string;
   threadTs?: string;
 }
 

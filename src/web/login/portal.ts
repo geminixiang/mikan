@@ -249,6 +249,10 @@ export function createLoginRequestHandler(
   linkTokenStore: InMemoryLinkTokenStore,
   vaultManager: VaultManager,
   notify: NotifyFn,
+  options?: {
+    /** Show the connector-services entry point on the /link page. */
+    connectorEnabled?: boolean;
+  },
 ): (req: IncomingMessage, res: ServerResponse, url: URL) => boolean {
   const oauthStates = new Map<string, PendingOAuthState>();
 
@@ -289,6 +293,7 @@ export function createLoginRequestHandler(
           oauthServices,
           oauthServiceHint?.id,
           existingSecrets,
+          options?.connectorEnabled === true,
         ),
       );
       return true;
@@ -362,7 +367,7 @@ export function createLoginRequestHandler(
  *      This stops an attacker-controlled page — even one that somehow stole a
  *      victim's link token — from completing the flow.
  */
-function enforceCsrf(req: IncomingMessage, res: ServerResponse): boolean {
+export function enforceCsrf(req: IncomingMessage, res: ServerResponse): boolean {
   const contentType = (req.headers["content-type"] as string | undefined)
     ?.split(";")[0]
     ?.trim()
@@ -896,6 +901,7 @@ function renderCredentialPage(
   oauthServices: OAuthService[],
   oauthServiceIdHint: string | undefined,
   existingSecrets: ExistingSecretsSummary,
+  connectorEnabled: boolean,
 ): string {
   const oauthOptions = oauthServices
     .map((service) => {
@@ -912,6 +918,11 @@ function renderCredentialPage(
   <h1 class="page-title">${esc(title)}</h1>
   <p>Your personal sandbox is already provisioned automatically.</p>
   <p>${esc(helpText)}</p>
+  ${
+    connectorEnabled
+      ? `<p><a href="/connector?token=${encodeURIComponent(token)}">Connected services (Google Workspace, GitHub) — authorize without placing credentials in the sandbox →</a></p>`
+      : ""
+  }
   ${renderSecretsSummary(existingSecrets)}
   <div class="mode">
     <label><input type="radio" name="mode" value="api_key" ${defaultMode === "api_key" ? "checked" : ""}> Secrets / API tokens</label>
