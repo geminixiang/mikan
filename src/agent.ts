@@ -2270,8 +2270,8 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   attachSessionEventHandlers({ session, runState, model, agentConfig });
 
   return {
-    syncChatHistory(currentMessageId?: string): void {
-      chatSessionManager.syncSessionManager({
+    async syncChatHistory(currentMessageId?: string): Promise<void> {
+      await chatSessionManager.syncSessionManager({
         conversationDir,
         sessionKey,
         sessionManager,

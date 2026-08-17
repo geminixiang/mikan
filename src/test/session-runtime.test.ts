@@ -176,7 +176,7 @@ const bot = {
 function seedRunnerState(
   runtime: ConversationRuntime,
   tryExtensionCommand: ReturnType<typeof vi.fn>,
-): void {
+): PiAgentWrapper {
   const runner = {
     dreamSessionMemory: vi.fn().mockResolvedValue({ stopReason: "stop" }),
     run: vi.fn().mockResolvedValue({ stopReason: "stop" }),
@@ -197,6 +197,7 @@ function seedRunnerState(
     sessionFile: createManagedSessionFile(officeSessionsDir(conversationDir), conversationDir),
     startedAt: 0,
   });
+  return runner;
 }
 
 function newCommandArgs(responder = makeResponder()) {
@@ -254,6 +255,41 @@ describe("ConversationRuntime handleEvent", () => {
     );
   });
 
+  test("waits for chat history persistence before extension dispatch and agent run", async () => {
+    const runtime = makeRuntime();
+    const tryExtensionCommand = vi.fn().mockResolvedValue(false);
+    const runner = seedRunnerState(runtime, tryExtensionCommand);
+    let releaseSync!: () => void;
+    const syncGate = new Promise<void>((resolve) => {
+      releaseSync = resolve;
+    });
+    vi.mocked(runner.syncChatHistory).mockReturnValue(syncGate);
+    const order: string[] = [];
+    vi.mocked(runner.syncChatHistory).mockImplementation(async () => {
+      order.push("sync:start");
+      await syncGate;
+      order.push("sync:end");
+    });
+    vi.mocked(runner.tryExtensionCommand).mockImplementation(async () => {
+      order.push("extension");
+      return false;
+    });
+    vi.mocked(runner.run).mockImplementation(async () => {
+      order.push("run");
+      return { stopReason: "stop" };
+    });
+    const { event, context } = makeEventAndContext("1000.05");
+
+    const done = runtime.handleEvent(event, bot, context);
+    await vi.waitFor(() => expect(order).toEqual(["sync:start"]));
+    expect(runner.tryExtensionCommand).not.toHaveBeenCalled();
+    expect(runner.run).not.toHaveBeenCalled();
+
+    releaseSync();
+    await done;
+    expect(order).toEqual(["sync:start", "sync:end", "run"]);
+  });
+
   test("two events on one session key run serially, not concurrently", async () => {
     const { models, faux } = createFauxModels();
     const runtime = makeRuntime(models);
@@ -301,6 +337,48 @@ describe("ConversationRuntime handleEvent", () => {
     );
   });
 
+  test("reuses the cached session writer across incremental history sync", async () => {
+    const { models, faux } = createFauxModels();
+    faux.setResponses([fauxAssistantMessage("first reply"), fauxAssistantMessage("second reply")]);
+    const runtime = makeRuntime(models);
+    const logPath = join(conversationDir, "log.jsonl");
+    writeFileSync(
+      logPath,
+      `${JSON.stringify({ date: new Date().toISOString(), ts: "1", user: "U2", text: "before first turn" })}\n`,
+    );
+
+    const first = makeEventAndContext("2");
+    await runtime.handleEvent(first.event, bot, first.context);
+    const sessionFile = resolveChannelSessionFile(conversationDir)!;
+
+    writeFileSync(
+      logPath,
+      [
+        JSON.stringify({
+          date: new Date().toISOString(),
+          ts: "3",
+          user: "U2",
+          text: "between turns",
+        }),
+        JSON.stringify({
+          date: new Date().toISOString(),
+          ts: "4",
+          user: "U1",
+          text: "message 4",
+        }),
+      ].join("\n") + "\n",
+      { flag: "a" },
+    );
+    const second = makeEventAndContext("4");
+    await runtime.handleEvent(second.event, bot, second.context);
+
+    const reopened = await SessionStore.open(sessionFile);
+    const entries = await reopened.getEntries();
+    const serialized = JSON.stringify(entries);
+    expect(serialized.match(/between turns/g)).toHaveLength(1);
+    expect(serialized).toContain("second reply");
+  });
+
   test("historical UUID continuation uses the exact file and preserves current", async () => {
     const { models, faux } = createFauxModels();
     faux.setResponses([fauxAssistantMessage("historical reply")]);
@@ -321,6 +399,42 @@ describe("ConversationRuntime handleEvent", () => {
     expect(sessions.get(testAddress, "C123")?.sessionFile).toBe(historical);
     expect(resolveChannelSessionFile(conversationDir)).toBe(current);
     expect(readFileSync(historical, "utf-8")).toContain("historical reply");
+  });
+
+  test("switches the sole writer between current and historical sessions", async () => {
+    const { models, faux } = createFauxModels();
+    faux.setResponses([
+      fauxAssistantMessage("current first"),
+      fauxAssistantMessage("historical only"),
+      fauxAssistantMessage("current second"),
+    ]);
+    const runtime = makeRuntime(models);
+    const sessionDir = officeSessionsDir(conversationDir);
+    const historical = createManagedSessionFile(sessionDir, conversationDir);
+    const historicalId = SessionStore.readHeader(historical)!.id;
+    await (
+      await SessionStore.open(historical)
+    ).appendMessage({ role: "user", content: "historical context", timestamp: Date.now() });
+    const current = createManagedSessionFile(sessionDir, conversationDir);
+
+    const firstCurrent = makeEventAndContext("1000.31");
+    await runtime.handleEvent(firstCurrent.event, bot, firstCurrent.context);
+    const historicalTurn = makeEventAndContext("1000.32");
+    historicalTurn.event.sessionId = historicalId;
+    await runtime.handleEvent(historicalTurn.event, bot, historicalTurn.context);
+    const secondCurrent = makeEventAndContext("1000.33");
+    await runtime.handleEvent(secondCurrent.event, bot, secondCurrent.context);
+
+    expect(resolveChannelSessionFile(conversationDir)).toBe(current);
+    const historicalText = readFileSync(historical, "utf-8");
+    const currentText = readFileSync(current, "utf-8");
+    expect(historicalText).toContain("historical only");
+    expect(historicalText).not.toContain("current second");
+    expect(currentText).toContain("current first");
+    expect(currentText).toContain("current second");
+    expect(currentText).not.toContain("historical only");
+    await expect(SessionStore.open(historical)).resolves.toBeDefined();
+    await expect(SessionStore.open(current)).resolves.toBeDefined();
   });
 
   test("historical UUID continuation skips current-session commands, sync, and rotation", async () => {
@@ -711,8 +825,10 @@ describe("ConversationRuntime lifecycle", () => {
     await runtime.handleEvent(event, bot, context);
 
     await vi.waitFor(() => expect(readFileSync(memoryPath, "utf-8")).toBe("shared decision"));
+    await vi.waitFor(() =>
+      expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession),
+    );
     expect(context.responder.respondDiagnostic).not.toHaveBeenCalled();
-    expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
     expect(readFileSync(resolveChannelSessionFile(conversationDir), "utf-8")).not.toContain(
       "old shared decision",
     );

@@ -29,7 +29,11 @@ import {
   waitForThreadSessionBootstrap,
 } from "../sessions/chat-history-sync.js";
 import { shouldRotateTopLevelSession } from "../sessions/rotation.js";
-import { resolveChannelSessionFile, resolveDurableSessionTarget } from "../sessions/store.js";
+import {
+  resolveChannelSessionFile,
+  resolveDurableSessionTarget,
+  resolveRuntimeSession,
+} from "../sessions/store.js";
 import {
   assertSessionKeyBelongsToConversation,
   deriveSessionKey,
@@ -597,7 +601,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
           currentMessageId: event.ts,
           conversationKind: event.conversationKind,
         });
-        if (!durableTarget) state.runner.syncChatHistory(event.ts);
+        if (!durableTarget) await state.runner.syncChatHistory(event.ts);
 
         // Extension-contributed commands: deterministic dispatch, no agent run.
         // Built-in commands already had their chance above, so extensions can
@@ -886,16 +890,20 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     if (durableSessionId && (!selected || selected.sessionKey !== sessionKey)) {
       throw new Error(`Durable session ${JSON.stringify(durableSessionId)} is unavailable`);
     }
-    if (existing?.running) {
-      if (selected && existing.sessionFile !== selected.file) {
-        throw new Error(
-          `Session key ${JSON.stringify(sessionKey)} is busy on another durable session`,
-        );
-      }
+    const conversationDir = this.options.workspace.office(address).dir;
+    const expectedFile =
+      selected?.file ?? resolveRuntimeSession(conversationDir, address, sessionKey)?.file;
+    if (existing && expectedFile === existing.sessionFile) {
+      existing.lastAccessedAt = Date.now();
       return existing;
     }
+    if (existing?.running) {
+      throw new Error(
+        `Session key ${JSON.stringify(sessionKey)} is busy on another durable session`,
+      );
+    }
+    if (existing) this.sessions.discard(address, sessionKey);
 
-    const conversationDir = this.options.workspace.office(address).dir;
     const runtimeCwd = runtimeCwdForSandbox(this.options.sandbox, this.options.workspace, address);
     const sessionScope = selected
       ? {
@@ -910,15 +918,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
           currentMessageId,
           rotateTopLevelSession: false,
         });
-
-    if (existing && existing.sessionFile === sessionScope.contextFile) {
-      existing.lastAccessedAt = Date.now();
-      return existing;
-    }
-
-    // A stale state (rotated session file) is being replaced: release the old
-    // runner's extension resources before the new one takes the slot.
-    if (existing) this.sessions.discard(address, sessionKey);
 
     const state: ConversationState = {
       address,
