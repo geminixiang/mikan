@@ -76,8 +76,11 @@ Vault 裡的內容並不是同一類的祕密：
 - **Vault 目錄本身絕不會被整包掛載。** 只有已解析 vault 所宣告的個別 credential 檔案會被投影，一個檔案一個 mount，而且只針對解析出該 key 的那個對話。
 - **Daemon token 絕不會進到 guest。** 平台 bot token（`SLACK_BOT_TOKEN`、GitHub App private key 等）由 mikan host process 讀取，不屬於任何 vault injection。
 - **Extension secret 絕不會進到 guest。** `vaults/extensions/<slug>/env` 是透過 extension API 在 host 端讀取的；它不是使用者 vault，不會被掛載或注入。
+- **OAuth refresh token 絕不會進到 guest。** 以 `_REFRESH_TOKEN` 結尾的 env key（例如 `/login` OAuth 流程存下的 `GITHUB_OAUTH_REFRESH_TOKEN`）會在注入時被過濾掉：沒有 guest 工具會直接使用它們，而 refresh grant 還需要只存在於 daemon 的 OAuth client secret。它們留在 vault 供 host 端使用。自訂 OAuth service 的 refresh key 也請用這個字尾命名，即可獲得相同保護。
 
 這是資料邊界，不是執行邊界。對話自己的憑證能做的任何事，它的 agent 都能做——請據此決定你存進去的憑證要有多大權限。
+
+把長效個人 token 注入 guest 刻意被定位為*escape hatch*，而不是預設姿態：只要工作流程不需要 guest 憑證就能完成，優先使用 host 端工具（GitHub adapter 的 `github_*` pack、[connector gateway](/connector/)），只在 CLI 真的必須於 sandbox 內認證時才投影 token。這條界線背後的業界調查見 [`docs/research/sandbox-git-credential-patterns.md`](https://github.com/geminixiang/mikan/blob/main/docs/research/sandbox-git-credential-patterns.md)。
 
 ## Sandbox 行為
 

@@ -409,6 +409,16 @@ export function allowsAmbientDefaultSharedVault(options: {
 export type { VaultInjection } from "./types.js";
 import type { VaultInjection } from "./types.js";
 
+/**
+ * Vault env keys with this suffix never reach a guest. OAuth refresh tokens
+ * are durable account credentials no guest tool can use directly (the refresh
+ * grant additionally needs the OAuth client secret, which is daemon-only) —
+ * the login portal stores them for host-side use, so projecting them would
+ * only widen the blast radius of a guest compromise. Survey of how agent
+ * platforms draw this line: docs/research/sandbox-git-credential-patterns.md.
+ */
+const HOST_ONLY_ENV_KEY_SUFFIX = "_REFRESH_TOKEN";
+
 export function resolveVaultInjection(options: {
   vault: ResolvedVault | undefined;
   capabilities: SandboxCredentialCapabilities;
@@ -441,7 +451,9 @@ export function resolveVaultInjection(options: {
     mounts.push({ source: mount.source, target: mount.target });
   }
 
-  const env =
-    capabilities.env && vault && Object.keys(vault.env).length > 0 ? vault.env : undefined;
+  const guestEnv = Object.fromEntries(
+    Object.entries(vault?.env ?? {}).filter(([key]) => !key.endsWith(HOST_ONLY_ENV_KEY_SUFFIX)),
+  );
+  const env = capabilities.env && Object.keys(guestEnv).length > 0 ? guestEnv : undefined;
   return { ...(env ? { env } : {}), mounts };
 }

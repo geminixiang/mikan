@@ -14,7 +14,12 @@ import { ActorExecutionResolver } from "../execution-resolver.js";
 import { DockerContainerManager } from "../provisioner.js";
 import { HostExecutor } from "../sandbox/index.js";
 import { credentialAuthorizationKey } from "../sandbox/identity.js";
-import { FileVaultManager, parseEnvFile, sharedVaultKey } from "../vault/index.js";
+import {
+  FileVaultManager,
+  parseEnvFile,
+  resolveVaultInjection,
+  sharedVaultKey,
+} from "../vault/index.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
 
 const D123_OFFICE = officeKey(createOfficeAddress("slack", "D123"));
@@ -34,6 +39,41 @@ describe("parseEnvFile", () => {
 
   test("strips matching single and double quotes", () => {
     expect(parseEnvFile("A=\"hello world\"\nB='ok'")).toEqual({ A: "hello world", B: "ok" });
+  });
+});
+
+function vaultWithEnv(env: Record<string, string>) {
+  return { userId: "U123", displayName: "U123", dir: "/nonexistent", mounts: [], env };
+}
+
+describe("resolveVaultInjection", () => {
+  const address = createOfficeAddress("slack", "D123");
+
+  test("keeps refresh-token env keys host-only", () => {
+    const injection = resolveVaultInjection({
+      vault: vaultWithEnv({
+        GH_TOKEN: "gho_x",
+        GITHUB_OAUTH_ACCESS_TOKEN: "gho_x",
+        GITHUB_OAUTH_REFRESH_TOKEN: "ghr_x",
+        MY_SERVICE_REFRESH_TOKEN: "r_x",
+      }),
+      capabilities: { env: true, fileMounts: true },
+      sandboxType: "image",
+      address,
+    });
+
+    expect(injection.env).toEqual({ GH_TOKEN: "gho_x", GITHUB_OAUTH_ACCESS_TOKEN: "gho_x" });
+  });
+
+  test("omits env entirely when only host-only keys remain", () => {
+    const injection = resolveVaultInjection({
+      vault: vaultWithEnv({ GITHUB_OAUTH_REFRESH_TOKEN: "ghr_x" }),
+      capabilities: { env: true, fileMounts: true },
+      sandboxType: "image",
+      address,
+    });
+
+    expect(injection.env).toBeUndefined();
   });
 });
 
