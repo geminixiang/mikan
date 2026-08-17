@@ -109,7 +109,9 @@ Mikan treats the connector as trusted infrastructure; deploy it accordingly:
   calls it;
 - bind the service to a private interface reachable only by the mikan host;
 - register your own Google / GitHub OAuth apps in the connector, with the
-  connector's `/oauth/callback` as the redirect URL;
+  connector's `/oauth/callback` as the redirect URL — and list those services
+  in `OOMOL_CONNECT_ALLOWED_CUSTOM_OAUTH`, or the connector refuses the
+  client configuration;
 - back up `connect.sqlite` together with the encryption key.
 
 ## What the agent gets
