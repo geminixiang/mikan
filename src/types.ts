@@ -480,7 +480,7 @@ export interface MessagingEventHandler {
 // ── agent ─────────────────────────────────────────────────────────────────────
 
 export interface PiAgentWrapper {
-  syncChatHistory(currentMessageId?: string): void;
+  syncChatHistory(currentMessageId?: string): Promise<void>;
   run(
     message: ConversationMessage,
     responder: ConversationResponder,

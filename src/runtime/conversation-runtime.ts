@@ -29,7 +29,11 @@ import {
   waitForThreadSessionBootstrap,
 } from "../sessions/chat-history-sync.js";
 import { shouldRotateTopLevelSession } from "../sessions/rotation.js";
-import { resolveChannelSessionFile } from "../sessions/store.js";
+import {
+  getThreadSessionFile,
+  resolveChannelSessionFile,
+  tryResolveThreadSession,
+} from "../sessions/store.js";
 import {
   assertSessionKeyBelongsToConversation,
   deriveSessionKey,
@@ -541,7 +545,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
           currentMessageId: event.ts,
           conversationKind: event.conversationKind,
         });
-        state.runner.syncChatHistory(event.ts);
+        await state.runner.syncChatHistory(event.ts);
 
         // Extension-contributed commands: deterministic dispatch, no agent run.
         // Built-in commands already had their chance above, so extensions can
@@ -818,9 +822,20 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   ): Promise<ConversationState> {
     const { address, sessionKey, currentMessageId } = options;
     const existing = this.sessions.get(address, sessionKey);
-    if (existing?.running) return existing;
-
+    // A cached runner is the sole writable pi v4 session handle for its file:
+    // reuse it before scope resolution can open the same path a second time.
     const conversationDir = this.options.workspace.office(address).dir;
+    const expectedFile =
+      sessionKey === address.conversationId
+        ? resolveChannelSessionFile(conversationDir)
+        : tryResolveThreadSession(getThreadSessionFile(conversationDir, sessionKey));
+    if (existing && expectedFile === existing.sessionFile) {
+      existing.lastAccessedAt = Date.now();
+      return existing;
+    }
+    if (existing?.running) return existing;
+    if (existing) this.sessions.discard(address, sessionKey);
+
     const runtimeCwd = runtimeCwdForSandbox(this.options.sandbox, this.options.workspace, address);
     const sessionScope = await this.chatSessionManager.resolveSessionScope({
       conversationDir,
@@ -829,15 +844,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       currentMessageId,
       rotateTopLevelSession: false,
     });
-
-    if (existing && existing.sessionFile === sessionScope.contextFile) {
-      existing.lastAccessedAt = Date.now();
-      return existing;
-    }
-
-    // A stale state (rotated session file) is being replaced: release the old
-    // runner's extension resources before the new one takes the slot.
-    if (existing) this.sessions.discard(address, sessionKey);
 
     const state: ConversationState = {
       address,

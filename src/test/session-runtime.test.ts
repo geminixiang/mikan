@@ -13,7 +13,7 @@ import type {
   ConversationResponder,
   MessagingInfo,
 } from "../adapter.js";
-import { MikanModels } from "../harness/index.js";
+import { MikanModels, SessionStore } from "../harness/index.js";
 import { ChatHistorySync, registerThreadSession } from "../sessions/chat-history-sync.js";
 import {
   createManagedSessionFile,
@@ -174,7 +174,7 @@ const bot = {
 function seedRunnerState(
   runtime: ConversationRuntime,
   tryExtensionCommand: ReturnType<typeof vi.fn>,
-): void {
+): PiAgentWrapper {
   const runner = {
     dreamSessionMemory: vi.fn().mockResolvedValue({ stopReason: "stop" }),
     run: vi.fn().mockResolvedValue({ stopReason: "stop" }),
@@ -195,6 +195,7 @@ function seedRunnerState(
     sessionFile: createManagedSessionFile(officeSessionsDir(conversationDir), conversationDir),
     startedAt: 0,
   });
+  return runner;
 }
 
 function newCommandArgs(responder = makeResponder()) {
@@ -251,6 +252,41 @@ describe("ConversationRuntime handleEvent", () => {
     );
   });
 
+  test("waits for chat history persistence before extension dispatch and agent run", async () => {
+    const runtime = makeRuntime();
+    const tryExtensionCommand = vi.fn().mockResolvedValue(false);
+    const runner = seedRunnerState(runtime, tryExtensionCommand);
+    let releaseSync!: () => void;
+    const syncGate = new Promise<void>((resolve) => {
+      releaseSync = resolve;
+    });
+    vi.mocked(runner.syncChatHistory).mockReturnValue(syncGate);
+    const order: string[] = [];
+    vi.mocked(runner.syncChatHistory).mockImplementation(async () => {
+      order.push("sync:start");
+      await syncGate;
+      order.push("sync:end");
+    });
+    vi.mocked(runner.tryExtensionCommand).mockImplementation(async () => {
+      order.push("extension");
+      return false;
+    });
+    vi.mocked(runner.run).mockImplementation(async () => {
+      order.push("run");
+      return { stopReason: "stop" };
+    });
+    const { event, context } = makeEventAndContext("1000.05");
+
+    const done = runtime.handleEvent(event, bot, context);
+    await vi.waitFor(() => expect(order).toEqual(["sync:start"]));
+    expect(runner.tryExtensionCommand).not.toHaveBeenCalled();
+    expect(runner.run).not.toHaveBeenCalled();
+
+    releaseSync();
+    await done;
+    expect(order).toEqual(["sync:start", "sync:end", "run"]);
+  });
+
   test("two events on one session key run serially, not concurrently", async () => {
     const { models, faux } = createFauxModels();
     const runtime = makeRuntime(models);
@@ -296,6 +332,48 @@ describe("ConversationRuntime handleEvent", () => {
       expect.stringContaining("second"),
       expect.anything(),
     );
+  });
+
+  test("reuses the cached session writer across incremental history sync", async () => {
+    const { models, faux } = createFauxModels();
+    faux.setResponses([fauxAssistantMessage("first reply"), fauxAssistantMessage("second reply")]);
+    const runtime = makeRuntime(models);
+    const logPath = join(conversationDir, "log.jsonl");
+    writeFileSync(
+      logPath,
+      `${JSON.stringify({ date: new Date().toISOString(), ts: "1", user: "U2", text: "before first turn" })}\n`,
+    );
+
+    const first = makeEventAndContext("2");
+    await runtime.handleEvent(first.event, bot, first.context);
+    const sessionFile = resolveChannelSessionFile(conversationDir)!;
+
+    writeFileSync(
+      logPath,
+      [
+        JSON.stringify({
+          date: new Date().toISOString(),
+          ts: "3",
+          user: "U2",
+          text: "between turns",
+        }),
+        JSON.stringify({
+          date: new Date().toISOString(),
+          ts: "4",
+          user: "U1",
+          text: "message 4",
+        }),
+      ].join("\n") + "\n",
+      { flag: "a" },
+    );
+    const second = makeEventAndContext("4");
+    await runtime.handleEvent(second.event, bot, second.context);
+
+    const reopened = await SessionStore.open(sessionFile);
+    const entries = await reopened.getEntries();
+    const serialized = JSON.stringify(entries);
+    expect(serialized.match(/between turns/g)).toHaveLength(1);
+    expect(serialized).toContain("second reply");
   });
 
   test("a platform that eats the slash dispatches extension commands bare", async () => {
@@ -581,8 +659,10 @@ describe("ConversationRuntime lifecycle", () => {
     await runtime.handleEvent(event, bot, context);
 
     await vi.waitFor(() => expect(readFileSync(memoryPath, "utf-8")).toBe("shared decision"));
+    await vi.waitFor(() =>
+      expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession),
+    );
     expect(context.responder.respondDiagnostic).not.toHaveBeenCalled();
-    expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
     expect(readFileSync(resolveChannelSessionFile(conversationDir), "utf-8")).not.toContain(
       "old shared decision",
     );
