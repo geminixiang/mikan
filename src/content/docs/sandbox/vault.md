@@ -76,11 +76,8 @@ Vault material is not one undifferentiated class of secret:
 - **The vault directory itself is never bulk-mounted.** Only the individual credential files that a resolved vault declares are projected, one mount per file, and only for the conversation whose key resolved.
 - **Daemon tokens never reach the guest.** Platform bot tokens (`SLACK_BOT_TOKEN`, the GitHub App private key, and friends) are read by the mikan host process and are not part of any vault injection.
 - **Extension secrets never reach the guest.** `vaults/extensions/<slug>/env` is read host-side through the extension API; it is not a user vault and is not mounted or injected.
-- **OAuth refresh tokens never reach the guest.** Env keys ending in `_REFRESH_TOKEN` (e.g. `GITHUB_OAUTH_REFRESH_TOKEN`, stored by the `/login` OAuth flow) are filtered out of injection: no guest tool consumes them directly, and the refresh grant needs the daemon-only OAuth client secret anyway. They stay in the vault for host-side use. Name custom OAuth services' refresh keys with that suffix to get the same protection.
 
 This is a data boundary, not an execution boundary. Anything the conversation's own credentials can do, its agent can do — scope the credentials you store accordingly.
-
-Injecting a long-lived personal token is deliberately the _escape hatch_, not the default posture: prefer host-side tools (the GitHub adapter's `github_*` pack, the [connector gateway](/connector/)) whenever a workflow can run without a guest credential, and project tokens only where a CLI genuinely must authenticate inside the sandbox. The industry survey behind this line-drawing lives in [`docs/research/sandbox-git-credential-patterns.md`](https://github.com/geminixiang/mikan/blob/main/docs/research/sandbox-git-credential-patterns.md).
 
 ## Sandbox behavior
 

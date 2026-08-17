@@ -76,11 +76,8 @@ Vault の内容は、一様な 1 種類の secret ではありません：
 - **vault directory 自体がまとめて mount されることはありません。** 解決された vault が宣言する個々の credential file だけが、1 ファイルにつき 1 mount で、しかもその key が解決した conversation に対してのみ投影されます。
 - **Daemon の token は guest に届きません。** プラットフォームの bot token（`SLACK_BOT_TOKEN`、GitHub App の private key など）は mikan の host プロセスが読み取るもので、vault 注入の対象ではありません。
 - **Extension secrets は guest に届きません。** `vaults/extensions/<slug>/env` は extension API を通じて host 側で読み取られます。user vault ではなく、mount も注入もされません。
-- **OAuth refresh token は guest に届きません。** `_REFRESH_TOKEN` で終わる env key（例：`/login` の OAuth フローが保存する `GITHUB_OAUTH_REFRESH_TOKEN`）は注入時にフィルタされます。guest のツールが直接使うことはなく、refresh grant には daemon のみが持つ OAuth client secret も必要だからです。これらは host 側で使うために vault に残ります。カスタム OAuth サービスの refresh key もこのサフィックスで命名すれば同じ保護を受けられます。
 
 これはデータの境界であって、実行の境界ではありません。その conversation 自身の認証情報でできることは、その agent にもできます。保存する認証情報の範囲は、それを踏まえて絞ってください。
-
-長寿命の個人 token を guest に注入するのは、意図的に*escape hatch*（非常口）と位置づけられており、既定の姿勢ではありません。guest の認証情報なしで完了できるワークフローには host 側ツール（GitHub adapter の `github_*` pack、[connector gateway](/connector/)）を優先し、CLI が本当に sandbox 内で認証しなければならない場合にのみ token を投影してください。この線引きの背景となった業界調査は [`docs/research/sandbox-git-credential-patterns.md`](https://github.com/geminixiang/mikan/blob/main/docs/research/sandbox-git-credential-patterns.md) にあります。
 
 ## Sandbox の挙動
 

@@ -153,12 +153,6 @@ Migration is re-authorization, not credential import:
    them wherever `gws`/`gh` must still run inside the sandbox. Nothing is
    removed automatically.
 
-Guest credential projection is the escape hatch, not the destination: vault
-env keys ending in `_REFRESH_TOKEN` are already host-only, and the survey in
-[`docs/research/sandbox-git-credential-patterns.md`](https://github.com/geminixiang/mikan/blob/main/docs/research/sandbox-git-credential-patterns.md)
-records why the long-term direction is host-side tools and boundary
-injection rather than longer-lived guest tokens.
-
 To disconnect, use the `/connector` page (removes both the mikan mapping and
 the connector-side credential), or delete the connection in the connector
 console plus the entry in `<stateDir>/connector/connections.json`.
