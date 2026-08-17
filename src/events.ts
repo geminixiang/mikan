@@ -406,6 +406,7 @@ export class EventsWatcher {
     const botEvent = createConversationEvent({
       platform: event.platform as PlatformName,
       type: "mention",
+      origin: { kind: "scheduled-event", eventId },
       conversationId: event.conversationId,
       conversationKind: event.conversationKind,
       user: event.userId ?? "EVENT",

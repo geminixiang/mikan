@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from "node:fs";
-import { basename, join, relative, resolve, sep } from "node:path";
+import { basename, extname, join, relative, resolve, sep } from "node:path";
 import { SessionStore } from "../harness/index.js";
 import {
   atomicWritePrivateFile,
@@ -9,10 +9,16 @@ import {
   readTextFileIfExists,
 } from "../utils/file-guards.js";
 import { officeSessionsDir } from "../office/index.js";
-import { assertSessionSuffix, threadSuffixOf } from "./session-key.js";
-export type { ResolvedSessionScope, ThreadRootMessage } from "./types.js";
+import { assertSessionSuffix, makeThreadSessionKey, threadSuffixOf } from "./session-key.js";
+export type {
+  DurableSessionRef,
+  DurableSessionTarget,
+  ResolvedSessionScope,
+  ThreadRootMessage,
+} from "./types.js";
 export type { MikanSessionHeader } from "./types.js";
-import type { MikanSessionHeader } from "./types.js";
+import type { DurableSessionRef, DurableSessionTarget, MikanSessionHeader } from "./types.js";
+import type { OfficeAddress } from "../adapter.js";
 
 export function isPlatformHistorySession(sessionFile: string): boolean {
   try {
@@ -253,6 +259,71 @@ export function tryResolveThreadSession(sessionFile: string): string | null {
 export function resolveChannelSessionFile(channelDir: string): string | null {
   return tryResolveCurrentSession(officeSessionsDir(channelDir));
 }
+
+/** Resolve a platform runtime key to a valid durable session reference. */
+export function resolveRuntimeSession(
+  channelDir: string,
+  address: OfficeAddress,
+  sessionKey: string,
+): DurableSessionRef | null {
+  const sessionDir = officeSessionsDir(channelDir);
+  const file =
+    sessionKey === address.conversationId
+      ? tryResolveCurrentSession(sessionDir)
+      : tryResolveThreadSession(getThreadSessionFile(channelDir, sessionKey));
+  if (!file) return null;
+  return (
+    listDurableSessions(sessionDir, address).find((candidate) => candidate.file === file) ?? null
+  );
+}
+
+/** List every valid durable session in an office. Invalid files are not session identities. */
+export function listDurableSessions(
+  sessionDir: string,
+  address: OfficeAddress,
+): DurableSessionRef[] {
+  if (!existsSync(sessionDir)) return [];
+  const current = getCurrentSessionPath(sessionDir);
+  const refs: DurableSessionRef[] = [];
+  for (const name of readdirSync(sessionDir)) {
+    if (extname(name) !== ".jsonl") continue;
+    const file = join(sessionDir, name);
+    if (!isRegularSessionFile(file)) continue;
+    const header = readSessionHeaderSummary(file);
+    if (!header) continue;
+    const sessionKey = runtimeSessionKeyForFile(address.conversationId, name);
+    if (!sessionKey) continue;
+    refs.push({ id: header.id, file, sessionKey, current: current === file });
+  }
+  return refs;
+}
+
+/** Resolve an exact durable UUID to its runtime-compatible target. */
+export function resolveDurableSessionTarget(
+  sessionDir: string,
+  address: OfficeAddress,
+  sessionId: string,
+): DurableSessionTarget | null {
+  const requestedId = sessionId.trim();
+  if (!UUID_PATTERN.test(requestedId)) return null;
+  const ref = listDurableSessions(sessionDir, address).find(
+    (candidate) => candidate.id === requestedId,
+  );
+  return ref ? { ...ref, address } : null;
+}
+
+function runtimeSessionKeyForFile(conversationId: string, fileName: string): string | null {
+  if (MAIN_SESSION_FILENAME.test(fileName)) return conversationId;
+  const suffix = fileName.slice(0, -".jsonl".length);
+  try {
+    assertSessionSuffix(suffix);
+    return makeThreadSessionKey(conversationId, suffix);
+  } catch {
+    return null;
+  }
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // Matches timestamped main session filenames; thread sessions use bare threadTs.
 const MAIN_SESSION_FILENAME = /^\d{4}-\d{2}-\d{2}T.+_[0-9a-f]{8}\.jsonl$/i;

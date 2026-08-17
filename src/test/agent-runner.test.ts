@@ -109,6 +109,7 @@ function makeMessage(overrides: Partial<ConversationMessage> = {}): Conversation
   return {
     address: createOfficeAddress("slack", "C1"),
     id: "1000.1",
+    origin: { kind: "interactive" },
     sessionKey: "C1",
     conversationKind: "shared",
     userId: "U1",

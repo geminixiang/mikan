@@ -82,15 +82,13 @@ describe("resolveExistingSessionFile", () => {
     expect(resolveExistingSessionFile(join(workspaceDir, "D123"), "D123")).toBe(sessionFile);
   });
 
-  test("resolves a fixed-path thread session when the conversation directory matches", () => {
+  test("does not interpret a thread session key as a durable navigation target", () => {
     const sharedConversationDir = join(workspaceDir, "C123");
     mkdirSync(sharedConversationDir, { recursive: true });
     const sessionFile = getThreadSessionFile(sharedConversationDir, "C123:1000.0001");
     createManagedSessionFileAtPath(sessionFile, sharedConversationDir);
 
-    expect(resolveExistingSessionFile(join(workspaceDir, "C123"), "C123:1000.0001")).toBe(
-      sessionFile,
-    );
+    expect(resolveExistingSessionFile(sharedConversationDir, "C123:1000.0001")).toBeNull();
   });
 });
 

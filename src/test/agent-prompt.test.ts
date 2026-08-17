@@ -9,32 +9,31 @@ import {
 import { getUnresolvedSandboxPathContext } from "../sandbox/index.js";
 
 describe("trigger attribution", () => {
-  test("uses event filename from event prompt marker", () => {
+  test("uses explicit scheduled-event origin", () => {
     expect(
       resolveTriggerAttribution({
-        id: "123.456",
-        text: "[EVENT:daily-summary.json:periodic:2026-05-19T00:00:00Z] summarize",
-      }),
-    ).toBe("[event: daily-summary.json]");
-  });
-
-  test("uses synthetic event id when prompt has no event marker", () => {
-    expect(
-      resolveTriggerAttribution({
-        id: "event:daily-summary",
-        text: "Handle the following recurring task.",
+        origin: { kind: "scheduled-event", eventId: "daily-summary" },
       }),
     ).toBe("[event: daily-summary]");
   });
 
+  test("does not treat an interactive event-like message id or prompt as scheduled", () => {
+    expect(
+      resolveTriggerAttribution({
+        origin: { kind: "interactive" },
+        userName: "david",
+      }),
+    ).toBe("@david");
+  });
+
   test("uses user name for normal user-triggered messages", () => {
-    expect(resolveTriggerAttribution({ id: "123.456", text: "hello", userName: "david" })).toBe(
+    expect(resolveTriggerAttribution({ origin: { kind: "interactive" }, userName: "david" })).toBe(
       "@david",
     );
   });
 
   test("omits attribution when no trigger identity is available", () => {
-    expect(resolveTriggerAttribution({ id: "123.456", text: "hello" })).toBeUndefined();
+    expect(resolveTriggerAttribution({ origin: { kind: "interactive" } })).toBeUndefined();
   });
 });
 

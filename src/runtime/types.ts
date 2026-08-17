@@ -70,6 +70,8 @@ export interface SessionStateOptions {
    */
   conversationId: string;
   sessionKey: string;
+  /** Exact durable session selected by history navigation; omitted for normal current/key resolution. */
+  durableSessionId?: string;
   conversationKind?: ConversationKind;
 }
 

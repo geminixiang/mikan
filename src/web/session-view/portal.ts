@@ -1,5 +1,4 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { basename } from "node:path";
 import MarkdownIt from "markdown-it";
 import type { ConversationResponder } from "../../adapter.js";
 import {
@@ -7,18 +6,16 @@ import {
   createConversationMessage,
   type ConversationContext,
 } from "../../adapter.js";
-import { createOfficeAddress } from "../../office/index.js";
 import * as log from "../../log.js";
 import { escapeHtml, readRawBody, renderPortalShell } from "../portal-shell.js";
 import { reportUserFacingError } from "../../observability/sentry.js";
-import { inferConversationKind } from "../../sessions/session-key.js";
-import { isThreadSessionKey, threadSuffixOf } from "../../sessions/session-key.js";
 import {
-  loadSessionViewModel,
-  resolveRequestedSessionFile,
-  type SessionViewItem,
-  type SessionViewRelation,
-} from "./service.js";
+  inferConversationKind,
+  isThreadSessionKey,
+  threadSuffixOf,
+} from "../../sessions/session-key.js";
+import { resolveDurableSessionTarget } from "../../sessions/store.js";
+import { loadSessionViewModel, type SessionViewItem, type SessionViewRelation } from "./service.js";
 import type { InMemorySessionViewTokenStore } from "./store.js";
 
 const markdown = new MarkdownIt({
@@ -104,7 +101,7 @@ export async function handleSessionViewRequest(
   }
 
   const token = url.searchParams.get("token")?.trim();
-  if (!token || !sessionViewTokenStore) {
+  if (!token || !sessionViewTokenStore || !interactive) {
     res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
     res.end(
       renderStatusPage("Session unavailable", "This session link is invalid or has expired."),
@@ -121,48 +118,22 @@ export async function handleSessionViewRequest(
     return true;
   }
 
-  const requestedSession = url.searchParams.get("session");
-  let targetSessionFile: string | null;
-  try {
-    targetSessionFile = await resolveRequestedSessionFile(entry.sessionFile, requestedSession);
-  } catch (error) {
-    log.logWarning(
-      `[${entry.conversationId}] Corrupted session file referenced for ${entry.sessionFile}`,
-      error instanceof Error ? error.message : String(error),
-    );
-    reportUserFacingError(error, {
-      domain: "session_view",
-      surface: "session_view",
-      operation: "resolve_requested_session",
-      severity: "error",
-      platform: entry.platform,
-      context: {
-        conversationId: entry.conversationId,
-        sessionKey: entry.sessionKey,
-        sessionFile: basename(entry.sessionFile),
-        requestedSession,
-      },
-    });
-    res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(
-      renderStatusPage("Session unavailable", "The selected session file appears to be corrupted."),
-    );
-    return true;
-  }
-  if (!targetSessionFile) {
+  const address = entry.address;
+  const requestedSessionId = url.searchParams.get("session")?.trim() || entry.sessionId;
+  const target = resolveDurableSessionTarget(
+    interactive.workspace.office(address).sessionsDir,
+    address,
+    requestedSessionId,
+  );
+  if (!target) {
     res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
     res.end(renderStatusPage("Session unavailable", "The selected session link is invalid."));
     return true;
   }
 
   try {
-    const model = await loadSessionViewModel(targetSessionFile);
-    const displayedSessionKey = resolveDisplayedSessionKey(entry, targetSessionFile);
-    const isRunning =
-      interactive?.handler.isRunning(
-        createOfficeAddress(entry.platform, entry.conversationId),
-        displayedSessionKey,
-      ) ?? false;
+    const model = await loadSessionViewModel(target.file);
+    const isRunning = interactive.handler.isRunning(address, target.sessionKey);
     res.writeHead(200, {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
@@ -173,13 +144,13 @@ export async function handleSessionViewRequest(
         entry.token,
         entry.expiresAt,
         isRunning,
-        displayedSessionKey,
-        entry.conversationId,
+        target.sessionKey,
+        entry.address.conversationId,
       ),
     );
   } catch (error) {
     log.logWarning(
-      `[${entry.conversationId}] Failed to render session ${entry.sessionFile}`,
+      `[${entry.address.conversationId}] Failed to render session ${target.id}`,
       error instanceof Error ? error.message : String(error),
     );
     reportUserFacingError(error, {
@@ -187,11 +158,11 @@ export async function handleSessionViewRequest(
       surface: "session_view",
       operation: "render_session",
       severity: "error",
-      platform: entry.platform,
+      platform: entry.address.platform,
       context: {
-        conversationId: entry.conversationId,
-        sessionKey: entry.sessionKey,
-        sessionFile: basename(targetSessionFile),
+        conversationId: entry.address.conversationId,
+        sessionKey: target.sessionKey,
+        sessionId: target.id,
       },
     });
     res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
@@ -201,26 +172,11 @@ export async function handleSessionViewRequest(
   return true;
 }
 
-function resolveDisplayedSessionKey(
-  entry: { platform: string; conversationId: string; sessionKey: string },
-  sessionFile: string,
-): string {
-  if (entry.platform === "slack") {
-    const fileName = basename(sessionFile, ".jsonl");
-    if (/^\d+\.\d+$/.test(fileName)) {
-      return `${entry.conversationId}:${fileName}`;
-    }
-    return entry.conversationId;
-  }
-  return entry.sessionKey;
-}
-
 function sessionStreamKey(entry: {
-  platform: string;
-  conversationId: string;
-  sessionKey: string;
+  address: { platform: string; conversationId: string };
+  sessionId: string;
 }): string {
-  return `${entry.platform}:${entry.conversationId}:${entry.sessionKey}`;
+  return `${entry.address.platform}:${entry.address.conversationId}:${entry.sessionId}`;
 }
 
 function renderTimelineItems(items: SessionViewItem[], token: string): string {
@@ -291,8 +247,7 @@ function renderSessionPage(
     <section class="composer-card">
       <form class="composer-form" data-session-composer>
         <input type="hidden" name="token" value="${esc(token)}">
-        <input type="hidden" name="session" value="${esc(model.fileName)}">
-        <input type="hidden" name="sessionKey" value="${esc(displayedSessionKey)}">
+        <input type="hidden" name="session" value="${esc(model.sessionId)}">
         <textarea name="text" rows="1" placeholder="Ask mikan in this session… (replies stay in Session View)" required></textarea>
         <div class="composer-actions">
           <span class="composer-status" data-composer-status></span>
@@ -305,7 +260,7 @@ function renderSessionPage(
 }
 
 function renderRelationCard(relation: SessionViewRelation, token: string): string {
-  const href = `/session?token=${encodeURIComponent(token)}&session=${encodeURIComponent(relation.fileName)}`;
+  const href = `/session?token=${encodeURIComponent(token)}&session=${encodeURIComponent(relation.sessionId)}`;
   const summary = relation.summary ? `<p class="related-summary">${esc(relation.summary)}</p>` : "";
   return `<a class="related-link" href="${href}">
     <span class="related-copy">
@@ -321,7 +276,7 @@ function renderThreadLinks(relations: SessionViewRelation[] | undefined, token: 
   if (!relations || relations.length === 0) return "";
   return `<div class="thread-links">${relations
     .map((relation) => {
-      const href = `/session?token=${encodeURIComponent(token)}&session=${encodeURIComponent(relation.fileName)}`;
+      const href = `/session?token=${encodeURIComponent(token)}&session=${encodeURIComponent(relation.sessionId)}`;
       return `<a class="thread-link" href="${href}" title="Open ${esc(relation.title)}">
         <span class="thread-dot" aria-hidden="true"></span>
         <span class="thread-text">Thread</span>
@@ -512,35 +467,19 @@ async function handleSessionStreamRequest(
     return;
   }
 
-  const requestedSession = url.searchParams.get("session");
-  let targetSessionFile: string | null;
-  try {
-    targetSessionFile = await resolveRequestedSessionFile(entry.sessionFile, requestedSession);
-  } catch (error) {
-    reportUserFacingError(error, {
-      domain: "session_view",
-      surface: "session_view",
-      operation: "session_stream",
-      severity: "error",
-      platform: entry.platform,
-      context: {
-        conversationId: entry.conversationId,
-        sessionKey: entry.sessionKey,
-        sessionFile: basename(entry.sessionFile),
-        requestedSession,
-      },
-    });
-    res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end("Session stream unavailable");
-    return;
-  }
-  if (!targetSessionFile) {
+  const address = entry.address;
+  const requestedSessionId = url.searchParams.get("session")?.trim() || entry.sessionId;
+  const target = resolveDurableSessionTarget(
+    interactive.workspace.office(address).sessionsDir,
+    address,
+    requestedSessionId,
+  );
+  if (!target) {
     res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end("Invalid session file");
+    res.end("Invalid session");
     return;
   }
-  const activeSessionKey = resolveDisplayedSessionKey(entry, targetSessionFile);
-  const streamKey = sessionStreamKey({ ...entry, sessionKey: activeSessionKey });
+  const streamKey = sessionStreamKey({ ...entry, sessionId: target.id });
   res.writeHead(200, {
     "Content-Type": "text/event-stream; charset=utf-8",
     "Cache-Control": "no-store",
@@ -549,10 +488,7 @@ async function handleSessionStreamRequest(
   res.write(
     `data: ${JSON.stringify({
       type: "status",
-      running: interactive.handler.isRunning(
-        createOfficeAddress(entry.platform, entry.conversationId),
-        activeSessionKey,
-      ),
+      running: interactive.handler.isRunning(address, target.sessionKey),
     })}\n\n`,
   );
 
@@ -583,13 +519,12 @@ async function handleSessionMessageRequest(
   const rawBody = await readRawBody(req, res, 1024 * 1024);
   if (rawBody === null) return;
 
-  let body: { token?: string; text?: string; session?: string; sessionKey?: string };
+  let body: { token?: string; text?: string; session?: string };
   try {
     body = JSON.parse(rawBody) as {
       token?: string;
       text?: string;
       session?: string;
-      sessionKey?: string;
     };
   } catch {
     json(res, 400, { ok: false, error: "Invalid request body." });
@@ -598,8 +533,6 @@ async function handleSessionMessageRequest(
 
   const token = body.token?.trim() ?? "";
   const text = body.text?.trim() ?? "";
-  const requestedSession = body.session?.trim() || null;
-  const requestedSessionKey = body.sessionKey?.trim() || "";
   if (!token || !text) {
     json(res, 400, { ok: false, error: "Missing token or text." });
     return;
@@ -611,44 +544,30 @@ async function handleSessionMessageRequest(
     return;
   }
 
-  let targetSessionFile: string | null;
-  try {
-    targetSessionFile = await resolveRequestedSessionFile(entry.sessionFile, requestedSession);
-  } catch (error) {
-    reportUserFacingError(error, {
-      domain: "session_view",
-      surface: "session_view",
-      operation: "session_message",
-      severity: "error",
-      platform: entry.platform,
-      context: {
-        conversationId: entry.conversationId,
-        sessionKey: entry.sessionKey,
-        sessionFile: basename(entry.sessionFile),
-        requestedSession,
-      },
-    });
-    json(res, 500, { ok: false, error: "Session file could not be loaded." });
+  const requestedSessionId = body.session?.trim() || entry.sessionId;
+  const address = entry.address;
+  const target = resolveDurableSessionTarget(
+    interactive.workspace.office(address).sessionsDir,
+    address,
+    requestedSessionId,
+  );
+  if (!target) {
+    json(res, 400, { ok: false, error: "Invalid session." });
     return;
   }
-  if (!targetSessionFile) {
-    json(res, 400, { ok: false, error: "Invalid session file." });
-    return;
-  }
-  const activeSessionKey = resolveDisplayedSessionKey(entry, targetSessionFile);
-  if (requestedSessionKey && requestedSessionKey !== activeSessionKey) {
-    json(res, 400, { ok: false, error: "Session target mismatch." });
-    return;
-  }
+  const activeSessionKey = target.sessionKey;
 
-  const bot = interactive.botsByPlatform[entry.platform];
+  const bot = interactive.botsByPlatform[entry.address.platform];
   if (!bot) {
-    json(res, 503, { ok: false, error: `No bot configured for ${entry.platform}.` });
+    json(res, 503, { ok: false, error: `No bot configured for ${entry.address.platform}.` });
     return;
   }
 
-  const streamKey = sessionStreamKey({ ...entry, sessionKey: activeSessionKey });
-  const conversationKind = inferConversationKind(entry.platform, entry.conversationId);
+  const streamKey = sessionStreamKey({ ...entry, sessionId: target.id });
+  const conversationKind = inferConversationKind(
+    entry.address.platform,
+    entry.address.conversationId,
+  );
   const ts = (Date.now() / 1000).toFixed(6);
   const platformInfo = bot.getMessagingInfo();
   const platformUserName =
@@ -660,22 +579,23 @@ async function handleSessionMessageRequest(
     sessionViewStreamHub.publish(streamKey, event);
   });
   const event = createConversationEvent({
-    platform: entry.platform,
+    platform: entry.address.platform,
     type: "session_view",
-    conversationId: entry.conversationId,
+    conversationId: entry.address.conversationId,
     conversationKind,
     ts,
     user: entry.platformUserId,
     text,
     attachments: [],
+    sessionId: target.id,
     sessionKey: activeSessionKey,
     ...(isThreadSessionKey(activeSessionKey)
       ? { thread_ts: threadSuffixOf(activeSessionKey)! }
       : {}),
   });
   const message = createConversationMessage({
-    platform: entry.platform,
-    conversationId: entry.conversationId,
+    platform: entry.address.platform,
+    conversationId: entry.address.conversationId,
     id: ts,
     sessionKey: activeSessionKey,
     conversationKind,
@@ -701,11 +621,7 @@ async function handleSessionMessageRequest(
   void interactive.handler
     .handleEvent(event, bot, context)
     .then(async () => {
-      if (!targetSessionFile) {
-        sessionViewStreamHub.publish(streamKey, { type: "status", running: false });
-        return;
-      }
-      const model = await loadSessionViewModel(targetSessionFile);
+      const model = await loadSessionViewModel(target.file);
       sessionViewStreamHub.publish(streamKey, {
         type: "refresh",
         timelineHtml: renderTimelineItems(model.items, token),
@@ -716,7 +632,7 @@ async function handleSessionMessageRequest(
     })
     .catch((error) => {
       log.logWarning(
-        `[${entry.conversationId}] Session view message failed`,
+        `[${entry.address.conversationId}] Session view message failed`,
         error instanceof Error ? error.message : String(error),
       );
       reportUserFacingError(error, {
@@ -724,9 +640,9 @@ async function handleSessionMessageRequest(
         surface: "session_view",
         operation: "interactive_message",
         severity: "error",
-        platform: entry.platform,
+        platform: entry.address.platform,
         context: {
-          conversationId: entry.conversationId,
+          conversationId: entry.address.conversationId,
           sessionKey: activeSessionKey,
           messageId: ts,
           textLength: text.length,
@@ -960,7 +876,7 @@ const sessionViewScript = `
         const response = await fetch('/session/message', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: form.token.value, session: form.session.value, sessionKey: form.sessionKey.value, text }),
+          body: JSON.stringify({ token: form.token.value, session: form.session.value, text }),
         });
         const payload = await response.json();
         if (!response.ok || !payload.ok) throw new Error(payload.error || 'Request failed');

@@ -7,13 +7,8 @@ import {
   type SessionEntry,
   type SessionMessageEntry,
 } from "../../harness/index.js";
-import {
-  getThreadSessionFile,
-  resolveChannelSessionFile,
-  tryResolveThreadSession,
-} from "../../sessions/store.js";
+import { resolveChannelSessionFile } from "../../sessions/store.js";
 import { isPlatformHistorySession } from "../../sessions/store.js";
-import { isThreadSessionKey } from "../../sessions/session-key.js";
 import * as log from "../../log.js";
 
 export type { SessionViewItem, SessionViewRelation, SessionViewModel } from "./types.js";
@@ -31,10 +26,7 @@ export function resolveExistingSessionFile(
   conversationDir: string,
   sessionKey: string,
 ): string | null {
-  if (isThreadSessionKey(sessionKey)) {
-    return tryResolveThreadSession(getThreadSessionFile(conversationDir, sessionKey));
-  }
-  return resolveChannelSessionFile(conversationDir);
+  return sessionKey ? resolveChannelSessionFile(conversationDir) : null;
 }
 
 export async function loadSessionViewModel(sessionFile: string): Promise<SessionViewModel> {
@@ -88,35 +80,6 @@ export async function loadSessionViewModel(sessionFile: string): Promise<Session
     parent: parent ?? undefined,
     threads,
   };
-}
-
-export async function resolveRequestedSessionFile(
-  baseSessionFile: string,
-  requestedFileName?: string | null,
-): Promise<string | null> {
-  const resolvedBase = resolve(baseSessionFile);
-  if (!requestedFileName) return resolvedBase;
-
-  const trimmed = requestedFileName.trim();
-  if (!trimmed) return resolvedBase;
-
-  const fileName = basename(trimmed);
-  if (fileName !== trimmed || !fileName.endsWith(".jsonl")) return null;
-
-  const candidate = join(dirname(resolvedBase), fileName);
-  if (!existsSync(candidate)) return null;
-
-  try {
-    await SessionStore.open(candidate);
-  } catch (err) {
-    throw new Error(
-      `Session file is corrupted: ${candidate}: ${
-        err instanceof Error ? err.message : String(err)
-      }`,
-      { cause: err },
-    );
-  }
-  return candidate;
 }
 
 function listRelatedSessionFiles(sessionFile: string): string[] {

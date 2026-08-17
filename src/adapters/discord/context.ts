@@ -18,10 +18,6 @@ const MAX_LENGTH = DISCORD_V2_TEXT_LIMIT - 100;
 
 const formatDiscordContinuation = (partNum: number): string => `*(continued ${partNum})*`;
 
-function isDiscordMessageReference(id: string | undefined): id is string {
-  return typeof id === "string" && id !== "" && !id.startsWith("event:");
-}
-
 export function createDiscordAdapters(
   event: DiscordEvent,
   bot: DiscordMessagingBot,
@@ -33,14 +29,15 @@ export function createDiscordAdapters(
 } {
   const conversationId = event.conversationId;
   const channelId = conversationId;
-  const threadTargetId = isDiscordMessageReference(event.thread_ts) ? event.thread_ts : undefined;
-  const replyTargetId = isDiscordMessageReference(event.ts) ? event.ts : undefined;
+  const threadTargetId = event.origin.kind === "interactive" ? event.thread_ts : undefined;
+  const replyTargetId = event.origin.kind === "interactive" ? event.ts : undefined;
 
   const message = createConversationMessage({
     platform: "discord",
     conversationId,
     address: event.address,
     id: event.ts,
+    origin: event.origin,
     sessionKey:
       event.sessionKey ??
       resolveChatSessionKey({

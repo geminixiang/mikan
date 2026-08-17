@@ -156,7 +156,7 @@ mikan intentionally has two different scheduling authorities.
 
 #### Text events
 
-The workspace `events/` directory is an agent-writable, workspace-wide scheduling bus. A due file is converted into a normal conversation event, submitted through the target platform bot, and enters the regular runtime path. It therefore shares session context, queueing, credentials, tools, stop behavior, and platform settlement with normal chat.
+The workspace `events/` directory is an agent-writable, workspace-wide scheduling bus. A due file is converted into a normal conversation event with an explicit `scheduled-event` origin and stable event id, submitted through the target platform bot, and enters the regular runtime path. The origin—not a synthetic platform message-id pattern—controls autonomous budget, attribution, platform reply/reaction safety, and extension `RunOrigin`. It otherwise shares session context, queueing, credentials, tools, stop behavior, and platform settlement with normal chat.
 
 An isolated office does not mount shared events and therefore cannot self-schedule. Trusted layouts may expose the bus. Cross-conversation scheduling is intentional and is not a file-isolation guarantee.
 
@@ -203,7 +203,14 @@ The State dir is never part of a Workspace projection. Package skill contents ma
 
 `src/config.ts` owns settings format, defaults, normalization, validation, and legacy migration. `src/settings-mutation.ts` is the one write seam for settings that affect live conversations.
 
-Settings baked into a cached runner—such as model selection or prompt-affecting workspace policy—require cache coordination:
+Settings baked into a cached runner—such as model selection or prompt-affecting workspace policy—require cache coordination. The mutation seam exhaustively classifies every writable top-level `AgentConfig` key by effect lifecycle, so adding a key without deciding when it takes effect fails compilation; runtime validation also refuses unknown keys before writing. Current lifecycle classes preserve these semantics:
+
+- Model provider, model, and thinking level affect the cached runner.
+- Sandbox and Slack settings are read at their use sites.
+- Package changes affect the next harness instance.
+- Sentry DSN changes affect the next process.
+
+Cache-coordinated writes retain their scope-specific ordering:
 
 - A conversation mutation clears the affected idle runner before writing, or refuses the write while that conversation is busy.
 - A global mutation writes the new default and clears idle conversations; busy conversations are marked stale and refresh before their next turn.
@@ -353,7 +360,7 @@ Evidence: `src/events.ts`, `src/extension-schedules.ts`, `src/runtime/conversati
 
 <a id="inv-session-format-compatibility"></a>
 
-**`session-format-compatibility`** — Harness sessions use a versioned append-only JSONL tree. New session files become durable before the current pointer changes. Corrupt materialized headers fail instead of silently replacing history, and thread lineage remains stable across top-level rotation.
+**`session-format-compatibility`** — Harness sessions use a versioned append-only JSONL tree. New session files become durable before the current pointer changes. Corrupt materialized headers fail instead of silently replacing history, and thread lineage remains stable across top-level rotation. The Sessions module is the single authority for enumerating valid durable UUIDs and mapping one to its runtime-compatible target. Session View capabilities authorize one canonical Conversation office, may navigate its complete history by UUID, and resume the exact viewed durable session without changing the office's `current` pointer; invalid, foreign, corrupt, or unresolvable targets fail closed.
 
 Evidence: `src/harness/session-store.ts`, `src/sessions/store.ts`, `src/sessions/rotation.ts`.
 

@@ -31,6 +31,7 @@ export function createSlackAdapters(
     conversationId: event.conversationId,
     address: event.address,
     id: event.ts,
+    origin: event.origin,
     sessionKey: sessionPlan.sessionKey,
     conversationKind: event.conversationKind,
     userId: event.user,

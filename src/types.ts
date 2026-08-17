@@ -89,8 +89,14 @@ export interface OfficeMigrationPreparation {
  */
 export type PlatformTrustModel = "membership" | "open-trigger";
 
+export type ConversationRunOrigin =
+  | { kind: "interactive" }
+  | { kind: "scheduled-event"; eventId: string };
+
 export interface ConversationMessage {
   id: string;
+  /** Explicit source semantics; never infer run policy from the message ID. */
+  origin: ConversationRunOrigin;
   /** Canonical identity of the conversation office. */
   address: OfficeAddress;
   /** @deprecated Use address.conversationId except at platform I/O seams. */
@@ -239,6 +245,8 @@ export interface AgentEventEnvelope {
  */
 export interface ConversationEvent {
   type: string;
+  /** Explicit source semantics; never infer run policy from the platform timestamp. */
+  origin: ConversationRunOrigin;
   /** Canonical identity created by the platform adapter at intake. */
   address: OfficeAddress;
   /** @deprecated Raw platform identifier; valid only at adapter I/O seams. */
@@ -257,6 +265,8 @@ export interface ConversationEvent {
   text: string;
   /** Downloaded attachments */
   attachments?: { name: string; localPath: string }[];
+  /** Durable session UUID selected by an office-history surface. */
+  sessionId?: string;
   /** Platform-computed session key; overrides default conversationId:thread_ts computation */
   sessionKey?: string;
 }

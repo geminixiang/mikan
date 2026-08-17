@@ -915,7 +915,7 @@ if (LINK_PORT) {
       if (bot) await bot.postMessage(conversationId, message);
     },
     sessionViewTokenStore,
-    sessionViewInteractive: { handler, botsByPlatform },
+    sessionViewInteractive: { handler, workspace, botsByPlatform },
     adminOptions: {
       adminTokenStore,
       workspace,

@@ -13,6 +13,7 @@ import {
   getThreadSessionFile,
   openManagedSession,
   resolveChannelSessionFile,
+  resolveDurableSessionTarget,
   resolveManagedSessionFile,
   resolveSessionFile,
   tryResolveCurrentSession,
@@ -594,6 +595,49 @@ describe("persistence across restart", () => {
 
     expect(tryResolveThreadSession(threadFile)).toBe(threadFile);
     expect(readFileSync(threadFile, "utf-8")).toContain("thread specific");
+  });
+});
+
+describe("durable session targeting", () => {
+  test("resolves exact main and thread UUIDs without changing current", async () => {
+    const sessionDir = officeSessionsDir(channelDir);
+    const historical = createManagedSessionFile(sessionDir, channelDir);
+    const historicalId = SessionStore.readHeader(historical)!.id;
+    const current = createManagedSessionFile(sessionDir, channelDir);
+    const thread = getThreadSessionFile(channelDir, "C123:1000.0001");
+    createManagedSessionFileAtPath(thread, channelDir);
+    const threadId = SessionStore.readHeader(thread)!.id;
+    const address = { platform: "slack", conversationId: "C123" } as const;
+
+    expect(resolveDurableSessionTarget(sessionDir, address, historicalId)).toMatchObject({
+      id: historicalId,
+      file: historical,
+      sessionKey: "C123",
+      current: false,
+    });
+    expect(resolveDurableSessionTarget(sessionDir, address, threadId)).toMatchObject({
+      id: threadId,
+      file: thread,
+      sessionKey: "C123:1000.0001",
+    });
+    expect(tryResolveCurrentSession(sessionDir)).toBe(current);
+  });
+
+  test("fails closed for malformed, missing, corrupt, and unresolvable targets", () => {
+    const sessionDir = officeSessionsDir(channelDir);
+    mkdirSync(sessionDir, { recursive: true });
+    const corrupt = join(sessionDir, "1000.0001.jsonl");
+    writeFileSync(corrupt, "not-json\n");
+    const invalidName = join(sessionDir, "..jsonl");
+    createManagedSessionFileAtPath(invalidName, channelDir);
+    const invalidNameId = SessionStore.readHeader(invalidName)!.id;
+    const address = { platform: "slack", conversationId: "C123" } as const;
+
+    expect(resolveDurableSessionTarget(sessionDir, address, "not-a-uuid")).toBeNull();
+    expect(
+      resolveDurableSessionTarget(sessionDir, address, "00000000-0000-4000-8000-000000000000"),
+    ).toBeNull();
+    expect(resolveDurableSessionTarget(sessionDir, address, invalidNameId)).toBeNull();
   });
 });
 

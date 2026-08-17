@@ -1,13 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
 import { createConversationEvent } from "../../adapter.js";
 import type { WebMessagingBot } from "../../adapters/web/bot.js";
 import type { HarnessEvent } from "../../harness/index.js";
-import { SessionStore } from "../../harness/index.js";
 import type { Office, Workspace } from "../../office/index.js";
 import { createOfficeAddress } from "../../office/index.js";
 import type { ConversationRuntime } from "../../runtime/conversation-runtime.js";
+import { listDurableSessions, resolveDurableSessionTarget } from "../../sessions/store.js";
 import type { WebAuthRegistry } from "../auth/registry.js";
 import type { WebAccount, WebWorkspaceRecord } from "../auth/types.js";
 import { loadSessionViewModel } from "../session-view/service.js";
@@ -215,18 +213,21 @@ export class WebHarnessService {
     const owned = this.getOwnedWorkspace(account, workspaceId);
     if (!owned) return null;
     const office = this.office(owned);
-    if (!existsSync(office.sessionsDir)) return [];
-
-    const currentFileName = readCurrentFileName(office);
-    const summaries: WebSessionSummary[] = [];
-    for (const fileName of readdirSync(office.sessionsDir)) {
-      if (!fileName.endsWith(".jsonl")) continue;
-      const sessionFile = join(office.sessionsDir, fileName);
-      if (!isRegularFile(sessionFile)) continue;
-      const summary = await readSessionSummary(sessionFile, fileName === currentFileName);
-      if (summary) summaries.push(summary);
-    }
-    return summaries.toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    return Promise.all(
+      listDurableSessions(office.sessionsDir, office.address).map(async (session) => {
+        const view = await loadSessionViewModel(session.file);
+        return {
+          id: session.id,
+          title: view.title,
+          createdAt: view.createdAt,
+          updatedAt: view.updatedAt,
+          entryCount: view.entryCount,
+          current: session.current,
+        };
+      }),
+    ).then((sessions) =>
+      sessions.toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
+    );
   }
 
   async loadHistory(
@@ -237,9 +238,11 @@ export class WebHarnessService {
     const owned = this.getOwnedWorkspace(account, workspaceId);
     if (!owned) return null;
     const office = this.office(owned);
-    const sessionFile = findSessionByOpaqueId(office, sessionId);
-    if (!sessionFile) return null;
-    const view = await loadSessionViewModel(sessionFile);
+    const target = sessionId
+      ? resolveDurableSessionTarget(office.sessionsDir, office.address, sessionId)
+      : listDurableSessions(office.sessionsDir, office.address).find((session) => session.current);
+    if (!target) return null;
+    const view = await loadSessionViewModel(target.file);
     return {
       sessionId: view.sessionId,
       title: view.title,
@@ -419,65 +422,6 @@ function publicWorkspace(record: WebWorkspaceRecord): WebWorkspace {
   };
 }
 
-async function readSessionSummary(
-  sessionFile: string,
-  current: boolean,
-): Promise<WebSessionSummary | null> {
-  try {
-    const store = await SessionStore.open(sessionFile);
-    const header = store.getHeader();
-    const entries = await store.getEntries();
-    const lastTimestamp = entries.at(-1)?.timestamp;
-    return {
-      id: header.id,
-      title: (await store.getSessionName()) || `Session ${header.id.slice(0, 8)}`,
-      createdAt: header.timestamp,
-      updatedAt:
-        typeof lastTimestamp === "number" && Number.isFinite(lastTimestamp)
-          ? new Date(lastTimestamp).toISOString()
-          : header.timestamp,
-      entryCount: entries.length,
-      current,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function findSessionByOpaqueId(office: Office, sessionId?: string): string | null {
-  if (!existsSync(office.sessionsDir)) return null;
-  const requestedId = sessionId?.trim();
-  if (!requestedId) {
-    const currentFileName = readCurrentFileName(office);
-    if (!currentFileName) return null;
-    const current = join(office.sessionsDir, currentFileName);
-    return isRegularFile(current) ? current : null;
-  }
-
-  for (const fileName of readdirSync(office.sessionsDir)) {
-    if (!fileName.endsWith(".jsonl")) continue;
-    const candidate = join(office.sessionsDir, fileName);
-    if (!isRegularFile(candidate)) continue;
-    try {
-      if (SessionStore.readHeader(candidate)?.id === requestedId) return candidate;
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-
-function readCurrentFileName(office: Office): string | null {
-  try {
-    const fileName = readFileSync(join(office.sessionsDir, "current"), "utf8").trim();
-    return fileName && fileName === fileName.split(/[\\/]/).at(-1) && fileName.endsWith(".jsonl")
-      ? fileName
-      : null;
-  } catch {
-    return null;
-  }
-}
-
 function publicRelation(relation: {
   kind: "parent" | "thread";
   sessionId: string;
@@ -496,13 +440,4 @@ function publicRelation(relation: {
     ...(relation.summary !== undefined ? { summary: relation.summary } : {}),
     ...(relation.anchorEntryId !== undefined ? { anchorEntryId: relation.anchorEntryId } : {}),
   };
-}
-
-function isRegularFile(path: string): boolean {
-  try {
-    const stat = lstatSync(path);
-    return stat.isFile() && !stat.isSymbolicLink();
-  } catch {
-    return false;
-  }
 }

@@ -116,7 +116,7 @@ export function createSlackResponseContext({
 }): ConversationResponder {
   const channelId = event.channel;
   const conversationId = event.conversationId;
-  const eventFilename = event.ts.match(/^event:([^:]+(?:\.json)?)/)?.[1];
+  const eventId = event.origin.kind === "scheduled-event" ? event.origin.eventId : undefined;
   const { rootTs, isThreaded } = sessionPlan;
   const replyInThread = Boolean(rootTs && (isThreaded || replyMode === "thread"));
   let assistantStatusFailureWarned = false;
@@ -252,7 +252,7 @@ export function createSlackResponseContext({
     deleteExtra: (id) => slack.deleteMessage(channelId, String(id)),
     setTyping: async (isTyping, responseId) => {
       if (isTyping && !responseId && rootTs) {
-        const statusText = eventFilename ? `Starting event: ${eventFilename}` : "Thinking";
+        const statusText = eventId ? `Starting event: ${eventId}` : "Thinking";
         await slack
           .setAssistantStatus(channelId, rootTs, statusText)
           .catch((err) => onAssistantStatusError("typing", err));
@@ -312,7 +312,7 @@ export function createSlackResponseContext({
     uploadFile: (filePath, title) =>
       slack.uploadFile(channelId, filePath, title, replyInThread ? rootTs : undefined),
     react: async (emoji) => {
-      if (!eventFilename) await slack.addReaction(channelId, event.ts, emoji);
+      if (!eventId) await slack.addReaction(channelId, event.ts, emoji);
     },
   });
 

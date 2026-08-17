@@ -843,6 +843,7 @@ export class SlackMessagingBot implements MessagingBot {
           conversationKind: eventForRun.conversationKind,
           channel: conversationId,
           ts: eventForRun.ts,
+          origin: eventForRun.origin,
           thread_ts: eventForRun.thread_ts,
           user: eventForRun.user,
           text: eventForRun.text,

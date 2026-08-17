@@ -24,7 +24,7 @@ import {
   type MikanSkill,
   parseCommandInput,
   type RunOrigin,
-  type SessionStore,
+  SessionStore,
 } from "./harness/index.js";
 import { runSubagent } from "./harness/subagent-runner.js";
 import { loadSubagentProfiles } from "./harness/subagent-profiles.js";
@@ -44,7 +44,6 @@ import type {
   ConversationMessage,
   ConversationResponder,
   MessagingInfo,
-  PlatformName,
   SubagentProgressSnapshot,
 } from "./adapter.js";
 import type {
@@ -443,12 +442,9 @@ function buildEnvDescription(sandboxType: SandboxConfig["type"], workspaceRoot: 
 }
 
 export function resolveTriggerAttribution(
-  message: Pick<ConversationMessage, "id" | "text" | "userName">,
+  message: Pick<ConversationMessage, "origin" | "userName">,
 ): string | undefined {
-  const eventTextMatch = message.text.match(/^\[EVENT:([^:]+):/);
-  if (eventTextMatch) return `[event: ${eventTextMatch[1]}]`;
-  const eventIdMatch = message.id.match(/^event:([^:]+)/);
-  if (eventIdMatch) return `[event: ${eventIdMatch[1]}]`;
+  if (message.origin.kind === "scheduled-event") return `[event: ${message.origin.eventId}]`;
   if (message.userName) return `@${message.userName}`;
   return undefined;
 }
@@ -1677,7 +1673,7 @@ async function prepareRunContext(params: {
     (runtimePath) => executor.readFileBase64(runtimePath),
   );
   const turnInstructions = buildTurnInstructions(
-    message.id.startsWith("event:"),
+    message.origin.kind === "scheduled-event",
     triggerAttribution,
     platform.name,
   );
@@ -2337,7 +2333,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
 
       // Autonomous (event/trigger) runs get an explicit resource ceiling since
       // no human is watching the loop; interactive turns stay human-gated.
-      const isEventRun = message.id.startsWith("event:");
+      const isEventRun = message.origin.kind === "scheduled-event";
       // Event runs have no triggering platform message, so identity fields
       // stay unset and extensions must null-check them.
       const origin: RunOrigin = isEventRun
@@ -2383,14 +2379,14 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
         sessionViewTokenStore && sessionViewPortalBaseUrl
           ? () => {
               if (!sessionViewLink) {
-                const token = sessionViewTokenStore.create(
-                  platform.name as PlatformName,
-                  message.userId,
-                  conversationId,
-                  message.sessionKey,
-                  contextFile,
-                  message.userName,
-                );
+                const sessionId = SessionStore.readHeader(contextFile)?.id;
+                if (!sessionId) throw new Error("Cannot create a link for an invalid session");
+                const token = sessionViewTokenStore.create({
+                  address: office.address,
+                  platformUserId: message.userId,
+                  sessionId,
+                  ...(message.userName ? { platformUserName: message.userName } : {}),
+                });
                 sessionViewLink = `${sessionViewPortalBaseUrl}/session?token=${token.token}`;
               }
               return sessionViewLink;

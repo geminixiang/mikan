@@ -34,6 +34,7 @@ function makeDiscordMessagingBot(
 function makeEvent(overrides: Partial<DiscordEvent> = {}): DiscordEvent {
   return {
     type: "mention",
+    origin: { kind: "interactive" },
     conversationId: "CH001",
     conversationKind: "shared",
     ts: "MSG001",
@@ -143,11 +144,12 @@ describe("respond() — non-threaded (replies to trigger message)", () => {
   test("synthetic event without a Discord message id posts to the channel", async () => {
     const bot = makeDiscordMessagingBot({ postMessage: vi.fn().mockResolvedValue("BOT_MSG") });
     const event = makeEvent({
+      origin: { kind: "scheduled-event", eventId: "one-shot-1777454334068" },
       ts: "event:one-shot-1777454334068.json",
       thread_ts: undefined,
       text: "run",
     });
-    const { responder } = createDiscordAdapters(event, bot, /* isEvent= */ true);
+    const { responder } = createDiscordAdapters(event, bot);
     await responder.respond("hello");
     expect(bot.postMessage).toHaveBeenCalledWith("CH001", expect.stringContaining("hello"));
     expect(bot.postReply).not.toHaveBeenCalled();
@@ -243,11 +245,12 @@ describe("respondDiagnostic()", () => {
   test("synthetic event: diagnostics after main response reply to bot message", async () => {
     const bot = makeDiscordMessagingBot({ postMessage: vi.fn().mockResolvedValue("BOT_MSG") });
     const event = makeEvent({
+      origin: { kind: "scheduled-event", eventId: "one-shot-1777454334068" },
       ts: "event:one-shot-1777454334068.json",
       thread_ts: undefined,
       text: "run",
     });
-    const { responder } = createDiscordAdapters(event, bot, /* isEvent= */ true);
+    const { responder } = createDiscordAdapters(event, bot);
     await responder.respond("main");
     vi.clearAllMocks();
     await responder.respondDiagnostic("detail");
@@ -258,11 +261,12 @@ describe("respondDiagnostic()", () => {
   test("synthetic event: diagnostics before main response post to the channel", async () => {
     const bot = makeDiscordMessagingBot({ postMessage: vi.fn().mockResolvedValue("DIAG_MSG") });
     const event = makeEvent({
+      origin: { kind: "scheduled-event", eventId: "one-shot-1777454334068" },
       ts: "event:one-shot-1777454334068.json",
       thread_ts: undefined,
       text: "run",
     });
-    const { responder } = createDiscordAdapters(event, bot, /* isEvent= */ true);
+    const { responder } = createDiscordAdapters(event, bot);
     await responder.respondDiagnostic("detail");
     expect(bot.postMessage).toHaveBeenCalledWith("CH001", "detail");
     expect(bot.postReply).not.toHaveBeenCalled();
@@ -333,7 +337,7 @@ describe("setTyping()", () => {
   test("event: sends typing indicator", async () => {
     const bot = makeDiscordMessagingBot();
     const event = makeEvent({ text: "run deploy" });
-    const { responder } = createDiscordAdapters(event, bot, /* isEvent= */ true);
+    const { responder } = createDiscordAdapters(event, bot);
     await responder.setTyping(true);
     expect(bot.sendTyping).toHaveBeenCalledWith("CH001");
     // Does NOT post initial message

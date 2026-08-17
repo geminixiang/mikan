@@ -1,4 +1,4 @@
-import type { ConversationKind } from "../adapter.js";
+import type { ConversationKind, OfficeAddress } from "../adapter.js";
 import type { SessionStore } from "../harness/index.js";
 import type { ConversationLogMessage } from "../types.js";
 
@@ -50,6 +50,18 @@ export interface ResolvedSessionScope {
 export interface LogRecord {
   message: ConversationLogMessage;
   index: number;
+}
+
+export interface DurableSessionRef {
+  id: string;
+  file: string;
+  /** Runtime serialization key compatible with this durable session. */
+  sessionKey: string;
+  current: boolean;
+}
+
+export interface DurableSessionTarget extends DurableSessionRef {
+  address: OfficeAddress;
 }
 
 // ── chat history sync ────────────────────────────────────────────────────────

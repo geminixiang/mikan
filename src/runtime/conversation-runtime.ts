@@ -29,7 +29,7 @@ import {
   waitForThreadSessionBootstrap,
 } from "../sessions/chat-history-sync.js";
 import { shouldRotateTopLevelSession } from "../sessions/rotation.js";
-import { resolveChannelSessionFile } from "../sessions/store.js";
+import { resolveChannelSessionFile, resolveDurableSessionTarget } from "../sessions/store.js";
 import {
   assertSessionKeyBelongsToConversation,
   deriveSessionKey,
@@ -419,7 +419,20 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     bot: MessagingBot,
     context: ConversationContext,
   ): Promise<void> {
-    const sessionKey = deriveSessionKey(event);
+    let sessionKey: string;
+    if (event.sessionId) {
+      const target = resolveDurableSessionTarget(
+        this.options.workspace.office(event.address).sessionsDir,
+        event.address,
+        event.sessionId,
+      );
+      if (!target) {
+        throw new Error(`Durable session ${JSON.stringify(event.sessionId)} is unavailable`);
+      }
+      sessionKey = target.sessionKey;
+    } else {
+      sessionKey = deriveSessionKey(event);
+    }
     await this.sessions.enqueue(event.address, sessionKey, () =>
       this.runSession({ event, bot, context }),
     );
@@ -514,8 +527,18 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       return;
     }
 
-    const sessionKey = deriveSessionKey(event);
-    if (!skipRotation) {
+    const durableTarget = event.sessionId
+      ? resolveDurableSessionTarget(
+          this.options.workspace.office(event.address).sessionsDir,
+          event.address,
+          event.sessionId,
+        )
+      : null;
+    if (event.sessionId && !durableTarget) {
+      throw new Error(`Durable session ${JSON.stringify(event.sessionId)} is unavailable`);
+    }
+    const sessionKey = durableTarget?.sessionKey ?? deriveSessionKey(event);
+    if (!skipRotation && !durableTarget) {
       const privateConversation = isPrivateConversation(event);
       const handledCommand = await dispatchCommand(this.commandHandlers, {
         bot,
@@ -540,6 +563,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
     if (
       !skipRotation &&
+      !durableTarget &&
       sessionKey === conversationId &&
       this.scheduleSharedSessionRotation({ event, bot, context }, sessionKey)
     ) {
@@ -569,10 +593,11 @@ class ConversationRuntimeImpl implements ConversationRuntime {
           address,
           conversationId,
           sessionKey,
+          durableSessionId: durableTarget?.id,
           currentMessageId: event.ts,
           conversationKind: event.conversationKind,
         });
-        state.runner.syncChatHistory(event.ts);
+        if (!durableTarget) state.runner.syncChatHistory(event.ts);
 
         // Extension-contributed commands: deterministic dispatch, no agent run.
         // Built-in commands already had their chance above, so extensions can
@@ -849,19 +874,42 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private async getOrCreateState(
     options: SessionStateOptions & { currentMessageId?: string },
   ): Promise<ConversationState> {
-    const { address, sessionKey, currentMessageId } = options;
+    const { address, sessionKey, currentMessageId, durableSessionId } = options;
     const existing = this.sessions.get(address, sessionKey);
-    if (existing?.running) return existing;
+    const selected = durableSessionId
+      ? resolveDurableSessionTarget(
+          this.options.workspace.office(address).sessionsDir,
+          address,
+          durableSessionId,
+        )
+      : null;
+    if (durableSessionId && (!selected || selected.sessionKey !== sessionKey)) {
+      throw new Error(`Durable session ${JSON.stringify(durableSessionId)} is unavailable`);
+    }
+    if (existing?.running) {
+      if (selected && existing.sessionFile !== selected.file) {
+        throw new Error(
+          `Session key ${JSON.stringify(sessionKey)} is busy on another durable session`,
+        );
+      }
+      return existing;
+    }
 
     const conversationDir = this.options.workspace.office(address).dir;
     const runtimeCwd = runtimeCwdForSandbox(this.options.sandbox, this.options.workspace, address);
-    const sessionScope = await this.chatSessionManager.resolveSessionScope({
-      conversationDir,
-      sessionKey,
-      cwd: runtimeCwd,
-      currentMessageId,
-      rotateTopLevelSession: false,
-    });
+    const sessionScope = selected
+      ? {
+          sessionDir: this.options.workspace.office(address).sessionsDir,
+          contextFile: selected.file,
+          threadRootMessage: null,
+        }
+      : await this.chatSessionManager.resolveSessionScope({
+          conversationDir,
+          sessionKey,
+          cwd: runtimeCwd,
+          currentMessageId,
+          rotateTopLevelSession: false,
+        });
 
     if (existing && existing.sessionFile === sessionScope.contextFile) {
       existing.lastAccessedAt = Date.now();

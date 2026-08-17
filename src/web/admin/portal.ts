@@ -943,14 +943,17 @@ function serveConversationSessionLink(
   }
 
   try {
-    const { token: viewToken } = services.sessionViewTokenStore.create(
-      token.platform,
-      token.platformUserId,
-      scope.conversationId,
-      scope.conversationId,
-      sessionFile,
-      token.platformUserName,
-    );
+    const sessionId = SessionStore.readHeader(sessionFile)?.id;
+    if (!sessionId) {
+      jsonRes(res, 404, { error: "No valid session found for this conversation" });
+      return;
+    }
+    const { token: viewToken } = services.sessionViewTokenStore.create({
+      address: scope.address,
+      platformUserId: token.platformUserId,
+      sessionId,
+      ...(token.platformUserName ? { platformUserName: token.platformUserName } : {}),
+    });
     const url = `${services.portalBaseUrl}/session?token=${encodeURIComponent(viewToken)}`;
     jsonRes(res, 200, { ok: true, url });
   } catch (err) {

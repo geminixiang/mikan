@@ -39,6 +39,7 @@ function makeEvent(overrides: Partial<SlackEvent> = {}): SlackEvent {
   const channel = overrideChannel ?? "C001";
   return {
     type: "mention",
+    origin: { kind: "interactive" },
     channel,
     conversationId: overrideConversationId ?? channel,
     conversationKind: channel.startsWith("D") ? "direct" : "shared",
@@ -165,9 +166,12 @@ describe("respond() — non-threaded", () => {
     );
   });
 
-  test("event-file-shaped ts without a Slack ts posts a normal channel message first", async () => {
+  test("scheduled event without a Slack ts posts a normal channel message first", async () => {
     const bot = makeSlackMessagingBot({ postMessage: vi.fn().mockResolvedValue("BOT_MSG") });
-    const event = makeEvent({ ts: "event:reminder.json" });
+    const event = makeEvent({
+      origin: { kind: "scheduled-event", eventId: "reminder" },
+      ts: "event:reminder.json",
+    });
     const { responder } = createSlackAdapters(event, bot);
     await responder.respond("hello");
     expect(bot.postMessage).toHaveBeenCalledWith("C001", expect.stringContaining("hello"));
@@ -358,22 +362,28 @@ describe("respondDiagnostic()", () => {
     );
   });
 
-  test("event-file-shaped ts diagnostics anchor to the bot message after respond", async () => {
+  test("scheduled event diagnostics anchor to the bot message after respond", async () => {
     const postInThread = vi.fn().mockResolvedValue("THREAD_MSG");
     const bot = makeSlackMessagingBot({
       postMessage: vi.fn().mockResolvedValue("BOT_MSG"),
       postInThread,
     });
-    const event = makeEvent({ ts: "event:reminder.json" });
+    const event = makeEvent({
+      origin: { kind: "scheduled-event", eventId: "reminder" },
+      ts: "event:reminder.json",
+    });
     const { responder } = createSlackAdapters(event, bot);
     await responder.respond("main");
     await responder.respondDiagnostic("detail");
     expect(postInThread).toHaveBeenCalledWith("C001", "BOT_MSG", expect.stringContaining("detail"));
   });
 
-  test("event-file-shaped ts diagnostics before a main response are dropped instead of using invalid thread_ts", async () => {
+  test("scheduled event diagnostics before a main response are dropped instead of using invalid thread_ts", async () => {
     const bot = makeSlackMessagingBot();
-    const event = makeEvent({ ts: "event:reminder.json" });
+    const event = makeEvent({
+      origin: { kind: "scheduled-event", eventId: "reminder" },
+      ts: "event:reminder.json",
+    });
     const { responder } = createSlackAdapters(event, bot);
     await responder.respondDiagnostic("detail");
     expect(bot.postInThread).not.toHaveBeenCalled();
@@ -396,9 +406,12 @@ describe("setTyping()", () => {
     expect(bot.postInThread).not.toHaveBeenCalled();
   });
 
-  test("event-file-shaped ts does not call assistant status with invalid ts", async () => {
+  test("scheduled event does not call assistant status with invalid ts", async () => {
     const bot = makeSlackMessagingBot({ setAssistantStatus: vi.fn().mockResolvedValue(undefined) });
-    const event = makeEvent({ ts: "event:reminder.json" });
+    const event = makeEvent({
+      origin: { kind: "scheduled-event", eventId: "reminder" },
+      ts: "event:reminder.json",
+    });
     const { responder } = createSlackAdapters(event, bot);
     await responder.setTyping(true);
     expect(bot.setAssistantStatus).not.toHaveBeenCalled();
