@@ -2547,7 +2547,11 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     },
 
     async dispose(): Promise<void> {
-      await disposeExtensions();
+      try {
+        await disposeExtensions();
+      } finally {
+        await sessionManager.close();
+      }
     },
 
     getCurrentStep(): { toolName?: string; label?: string } | undefined {

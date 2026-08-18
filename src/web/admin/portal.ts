@@ -438,7 +438,7 @@ async function readSessionUsage(
   label: string,
 ): Promise<SessionUsageRow[]> {
   try {
-    const manager = await SessionStore.open(sessionFile);
+    const manager = await SessionStore.inspect(sessionFile);
     const header = manager.getHeader();
 
     const entries = await manager.getEntries();
@@ -596,7 +596,7 @@ async function accumulateSessionUsageByDay(
   flags: { hasOlder: boolean },
 ): Promise<void> {
   try {
-    const manager = await SessionStore.open(sessionFile);
+    const manager = await SessionStore.inspect(sessionFile);
 
     for (const entry of await manager.getEntries()) {
       if (entry.type !== "message" || entry.message.role !== "assistant") continue;

@@ -31,7 +31,7 @@ export function resolveExistingSessionFile(
 
 export async function loadSessionViewModel(sessionFile: string): Promise<SessionViewModel> {
   const resolvedFile = resolve(sessionFile);
-  const sm = await SessionStore.open(resolvedFile);
+  const sm = await SessionStore.inspect(resolvedFile);
   const header = sm.getHeader();
 
   const entries = await sm.getEntries();
@@ -42,7 +42,13 @@ export async function loadSessionViewModel(sessionFile: string): Promise<Session
   const threadCandidates: SessionViewRelation[] = [];
   for (const candidate of listRelatedSessionFiles(resolvedFile)) {
     if (candidate === resolvedFile) continue;
-    const relation = await buildSessionRelation(candidate, "thread", resolvedFile, header.id);
+    const relation = await buildSessionRelation(
+      candidate,
+      "thread",
+      resolvedFile,
+      header.id,
+      entries,
+    );
     if (relation) threadCandidates.push(relation);
   }
   const threads = threadCandidates.toSorted((a, b) =>
@@ -96,10 +102,11 @@ async function buildSessionRelation(
   kind: "parent" | "thread",
   expectedParent?: string,
   expectedParentId?: string,
+  expectedParentEntries?: SessionEntry[],
 ): Promise<SessionViewRelation | null> {
-  let sm: SessionStore;
+  let sm: Awaited<ReturnType<typeof SessionStore.inspect>>;
   try {
-    sm = await SessionStore.open(sessionFile);
+    sm = await SessionStore.inspect(sessionFile);
   } catch (err) {
     log.logWarning(
       `Skipping corrupted session file while building ${kind} relation: ${sessionFile}`,
@@ -127,7 +134,8 @@ async function buildSessionRelation(
   const anchorEntryId =
     kind === "thread" && expectedParent
       ? findThreadAnchorEntryId(
-          await (await SessionStore.open(expectedParent)).getEntries(),
+          expectedParentEntries ??
+            (await (await SessionStore.inspect(expectedParent)).getEntries()),
           entries,
           threadId,
         )

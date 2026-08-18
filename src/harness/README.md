@@ -66,7 +66,13 @@ streaming).
 - **Session files use pi's v4 JSONL format** (`{"kind":"header","version":4}`
   header + mutation lines). `SessionStore` wraps pi's `Session`/JSONL storage
   but keeps files at mikan-chosen paths (the session-key layout); mikan
-  header extras ride in the v4 header `metadata`. Legacy v3 files written by
+  header extras ride in the v4 header `metadata`. Persisted stores acquire one
+  canonical same-process writer lease before open/create, serialize mutations,
+  and release it only after `close()` drains pending work. Portals, Admin, and
+  migration use `SessionStore.inspect()`, whose interface exposes immutable
+  queries only and can coexist with the writer. Missing or blank pending files
+  materialize only while their opening absence/fingerprint still matches, so
+  external changes are never overwritten. Legacy v3 files written by
   pre-0.84 mikan builds are NOT readable at runtime — run
   `mikan sessions migrate` (with the daemon stopped) to convert them; the
   migrator verifies each file against the v3 context semantics and keeps a

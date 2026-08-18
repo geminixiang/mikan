@@ -346,6 +346,7 @@ describe("fixed thread sessions", () => {
 
     await threadSM.appendMessage(makeUserMessage("thread msg"));
     await threadSM.appendMessage(makeAssistantMessage("thread reply"));
+    await threadSM.close();
 
     const existing = tryResolveThreadSession(threadFile);
     expect(existing).toBe(threadFile);

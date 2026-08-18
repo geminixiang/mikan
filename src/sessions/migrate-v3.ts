@@ -397,7 +397,7 @@ export interface MigrateResult {
 }
 
 async function verifyMigratedFile(v4Path: string, source: V3SessionFile): Promise<void> {
-  const store = await SessionStore.open(v4Path);
+  const store = await SessionStore.inspect(v4Path);
   const migratedContext = await store.buildSessionContext();
   const branch = v3Branch(source.entries, v3LeafId(source.entries));
   const referenceContext = buildSessionContext(referenceContextEntries(branch));

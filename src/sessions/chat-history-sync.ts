@@ -198,12 +198,16 @@ export class ChatHistorySync {
       sessionKey: isThreadSessionKey(options.sessionKey) ? options.sessionKey : null,
     });
     const sessionManager = await openManagedSession(sessionFile, cwd);
-    await sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
-      source: "log.jsonl",
-      messageCount: 0,
-      resetAt: this.now().toISOString(),
-      ...(lastMessageId ? { lastMessageId } : {}),
-    });
+    try {
+      await sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
+        source: "log.jsonl",
+        messageCount: 0,
+        resetAt: this.now().toISOString(),
+        ...(lastMessageId ? { lastMessageId } : {}),
+      });
+    } finally {
+      await sessionManager.close();
+    }
     return sessionFile;
   }
 
@@ -462,12 +466,16 @@ async function bootstrapSessionFromLog(
   if (records.length === 0 && !lastMessageId) return;
 
   const sessionManager = await openManagedSession(sessionFile, cwd);
-  await appendLogRecordsToSession(sessionManager, records);
-  await sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
-    source: "log.jsonl",
-    messageCount: records.length,
-    lastMessageId,
-  });
+  try {
+    await appendLogRecordsToSession(sessionManager, records);
+    await sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
+      source: "log.jsonl",
+      messageCount: records.length,
+      lastMessageId,
+    });
+  } finally {
+    await sessionManager.close();
+  }
 }
 
 interface HistoryWindow {
@@ -483,11 +491,12 @@ async function syncSessionFromLog(
   historyWindow: HistoryWindow,
 ): Promise<ChatSyncReport> {
   if (records.length === 0) return { appended: 0 };
-  return syncSessionManagerFromLog(
-    await openManagedSession(sessionFile, cwd),
-    records,
-    historyWindow,
-  );
+  const sessionManager = await openManagedSession(sessionFile, cwd);
+  try {
+    return await syncSessionManagerFromLog(sessionManager, records, historyWindow);
+  } finally {
+    await sessionManager.close();
+  }
 }
 
 async function syncSessionManagerFromLog(
