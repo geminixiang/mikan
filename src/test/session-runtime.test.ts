@@ -82,6 +82,19 @@ function createFauxModels(): { models: MikanModels; faux: ReturnType<typeof faux
   return { models, faux };
 }
 
+async function appendSessionMessage(
+  sessionFile: string,
+  cwd: string,
+  message: Parameters<SessionStore["appendMessage"]>[0],
+): Promise<void> {
+  const store = await SessionStore.open(sessionFile, cwd);
+  try {
+    await store.appendMessage(message);
+  } finally {
+    await store.close();
+  }
+}
+
 function rewriteSessionTimestamp(sessionFile: string, timestamp: string): void {
   const lines = readFileSync(sessionFile, "utf-8").split("\n");
   const header = JSON.parse(lines[0]) as Record<string, unknown>;
@@ -218,6 +231,47 @@ function newCommandArgs(responder = makeResponder()) {
 }
 
 describe("ConversationRuntime handleEvent", () => {
+  test("single-flights concurrent runner creation for one runtime key", async () => {
+    const { models } = createFauxModels();
+    writeFileSync(
+      join(conversationDir, "log.jsonl"),
+      `${JSON.stringify({ date: new Date().toISOString(), ts: "1", user: "U2", text: "seed" })}\n`,
+    );
+    const runtime = makeRuntime(models);
+    const internal = runtime as unknown as {
+      getOrCreateState(options: {
+        address: typeof testAddress;
+        conversationId: string;
+        sessionKey: string;
+        conversationKind: "shared";
+      }): Promise<ConversationRuntimeState>;
+      createCurrentRunner: (...args: unknown[]) => Promise<PiAgentWrapper>;
+    };
+    const originalCreate = internal.createCurrentRunner.bind(internal);
+    let releaseCreate!: () => void;
+    const gate = new Promise<void>((resolve) => (releaseCreate = resolve));
+    const create = vi.spyOn(internal, "createCurrentRunner").mockImplementation(async (...args) => {
+      await gate;
+      return originalCreate(...args);
+    });
+    const options = {
+      address: testAddress,
+      conversationId: "C123",
+      sessionKey: "C123",
+      conversationKind: "shared" as const,
+    };
+
+    const first = internal.getOrCreateState(options);
+    const second = internal.getOrCreateState(options);
+    await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
+    releaseCreate();
+    const [left, right] = await Promise.all([first, second]);
+
+    expect(left).toBe(right);
+    expect(create).toHaveBeenCalledOnce();
+    await runtime.shutdown();
+  });
+
   test("uses runtime models for the default /model command handler", async () => {
     const stateDir = join(workingDir, "state");
     mkdirSync(stateDir, { recursive: true });
@@ -369,7 +423,7 @@ describe("ConversationRuntime handleEvent", () => {
     const second = makeEventAndContext("4");
     await runtime.handleEvent(second.event, bot, second.context);
 
-    const reopened = await SessionStore.open(sessionFile);
+    const reopened = await SessionStore.inspect(sessionFile);
     const entries = await reopened.getEntries();
     const serialized = JSON.stringify(entries);
     expect(serialized.match(/between turns/g)).toHaveLength(1);
@@ -644,9 +698,7 @@ describe("ConversationRuntime lifecycle", () => {
       officeSessionsDir(conversationDir),
       conversationDir,
     );
-    await (
-      await openManagedSession(originalSession, conversationDir)
-    ).appendMessage({
+    await appendSessionMessage(originalSession, conversationDir, {
       role: "user",
       content: [{ type: "text", text: "old shared decision" }],
       timestamp: 1,
@@ -921,9 +973,7 @@ describe("ConversationRuntime lifecycle", () => {
       officeSessionsDir(conversationDir),
       conversationDir,
     );
-    await (
-      await openManagedSession(originalSession, conversationDir)
-    ).appendMessage({
+    await appendSessionMessage(originalSession, conversationDir, {
       role: "user",
       content: [{ type: "text", text: "old durable decision" }],
       timestamp: 1,
@@ -1035,6 +1085,7 @@ describe("ChatHistorySync session scope", () => {
       content: [{ type: "text", text: "channel history should not leak" }],
       timestamp: 1,
     });
+    await channelSession.close();
     registerThreadSession({
       conversationDir,
       sessionKey: "C123:2000.0001",

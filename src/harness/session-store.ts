@@ -12,8 +12,23 @@
  * v3 files (the pre-0.84 layout) are not readable at runtime: `open` throws
  * an actionable error pointing at the `mikan sessions migrate` script.
  */
-import { closeSync, existsSync, mkdirSync, openSync, readSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import {
+  closeSync,
+  existsSync,
+  fstatSync,
+  ftruncateSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  readSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
 import {
   buildSessionContext as buildContextFromEntries,
   createCustomMessage,
@@ -31,7 +46,54 @@ import type {
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { atomicWritePrivateFile } from "../utils/file-guards.js";
-import { CURRENT_SESSION_VERSION, type SessionContext, type SessionHeader } from "./types.js";
+import {
+  CURRENT_SESSION_VERSION,
+  type SessionContext,
+  type SessionCreateInfo,
+  type SessionHeader,
+  type SessionInspection,
+} from "./types.js";
+
+const activeWriterKeys = new Set<string>();
+
+function canonicalSessionPath(path: string): string {
+  const absolute = resolve(path);
+  if (existsSync(absolute)) return realpathSync(absolute);
+  const parent = dirname(absolute);
+  mkdirSync(parent, { recursive: true });
+  return join(realpathSync(parent), basename(absolute));
+}
+
+function sessionWriterKey(path: string): string {
+  if (!existsSync(path)) return `path:${path}`;
+  const stat = statSync(path);
+  return `inode:${stat.dev}:${stat.ino}`;
+}
+
+function acquireWriter(path: string): { path: string; key: string } {
+  const canonical = canonicalSessionPath(path);
+  const key = sessionWriterKey(canonical);
+  if (activeWriterKeys.has(key)) {
+    throw new Error(`Session file already has an active writer: ${canonical}`);
+  }
+  activeWriterKeys.add(key);
+  return { path: canonical, key };
+}
+
+function releaseWriter(key: string): void {
+  activeWriterKeys.delete(key);
+}
+
+function promotePendingWriter(pathKey: string, path: string): string {
+  const inodeKey = sessionWriterKey(path);
+  if (inodeKey === pathKey) return pathKey;
+  if (activeWriterKeys.has(inodeKey)) {
+    throw new Error(`Session file already has an active writer: ${path}`);
+  }
+  activeWriterKeys.add(inodeKey);
+  activeWriterKeys.delete(pathKey);
+  return inodeKey;
+}
 
 let sharedRepo: JsonlSessionRepo | undefined;
 
@@ -131,10 +193,47 @@ function metadataFromHeader(header: JsonlV4Header, path: string): JsonlSessionMe
   };
 }
 
-export interface SessionCreateInfo {
-  id?: string;
-  parentSession?: string;
-  parentSessionId?: string;
+function fileFingerprint(path: string): string {
+  const bytes = readFileSync(path);
+  const fd = openSync(path, "r");
+  try {
+    const stat = fstatSync(fd);
+    return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${bytes.toString("base64")}`;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function materializePendingFile(
+  path: string,
+  header: JsonlV4Header,
+  expectedFingerprint: string | null,
+): void {
+  const content = `${JSON.stringify(header)}\n`;
+  if (expectedFingerprint === null) {
+    const fd = openSync(path, "wx", 0o600);
+    try {
+      writeFileSync(fd, content);
+    } finally {
+      closeSync(fd);
+    }
+    return;
+  }
+
+  const fd = openSync(path, "r+");
+  try {
+    const stat = fstatSync(fd);
+    const bytes = Buffer.alloc(stat.size);
+    readSync(fd, bytes, 0, bytes.length, 0);
+    const actual = `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${bytes.toString("base64")}`;
+    if (actual !== expectedFingerprint) {
+      throw new Error(`Session file changed before pending session materialization: ${path}`);
+    }
+    ftruncateSync(fd, 0);
+    writeFileSync(fd, content);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 function buildHeader(cwd: string, options?: SessionCreateInfo): JsonlV4Header {
@@ -174,7 +273,37 @@ function headerView(header: JsonlV4Header): SessionHeader {
 
 type StoreState =
   | { kind: "live"; session: Session; header: JsonlV4Header }
-  | { kind: "pending"; header: JsonlV4Header };
+  | { kind: "pending"; header: JsonlV4Header; fingerprint: string | null };
+
+class ReadOnlySessionInspection implements SessionInspection {
+  constructor(
+    private readonly header: JsonlV4Header,
+    private readonly session: Session,
+  ) {}
+
+  getHeader(): SessionHeader {
+    return headerView(this.header);
+  }
+
+  async getEntries(): Promise<Entry[]> {
+    return this.session.findEntries({ order: "oldestFirst" });
+  }
+
+  async getSessionName(): Promise<string | undefined> {
+    return this.session.getName();
+  }
+
+  async getBranch(fromId?: string): Promise<Entry[]> {
+    return this.session.findEntriesOnBranch({
+      order: "oldestFirst",
+      ...(fromId !== undefined ? { start: fromId } : {}),
+    });
+  }
+
+  async buildSessionContext(): Promise<SessionContext> {
+    return buildContextFromEntries(await this.getBranch());
+  }
+}
 
 /**
  * Async session store over one pi v4 JSONL file at a mikan-chosen path.
@@ -183,15 +312,25 @@ type StoreState =
  * materialize on the first append. Files with content must carry a valid
  * v4 header — v3 files throw with a pointer at the migration script.
  */
-export class SessionStore {
+export class SessionStore implements SessionInspection {
   private readonly sessionFile: string | null;
   private readonly cwd: string;
+  private writerKey: string | null;
   private state: StoreState;
+  private mutationTail: Promise<void> = Promise.resolve();
+  private closePromise: Promise<void> | undefined;
+  private closed = false;
 
-  private constructor(sessionFile: string | null, cwd: string, state: StoreState) {
-    this.sessionFile = sessionFile === null ? null : resolve(sessionFile);
+  private constructor(
+    sessionFile: string | null,
+    cwd: string,
+    state: StoreState,
+    writerKey: string | null,
+  ) {
+    this.sessionFile = sessionFile;
     this.cwd = cwd;
     this.state = state;
+    this.writerKey = writerKey;
   }
 
   /**
@@ -200,45 +339,81 @@ export class SessionStore {
    * @param cwdOverride Working directory override; defaults to the header cwd.
    */
   static async open(path: string, cwdOverride?: string): Promise<SessionStore> {
-    if (!existsSync(path)) {
-      const cwd = cwdOverride ?? process.cwd();
-      return new SessionStore(path, cwd, {
-        kind: "pending",
-        header: buildHeader(cwd),
-      });
+    const writer = acquireWriter(path);
+    const writerPath = writer.path;
+    try {
+      if (!existsSync(writerPath)) {
+        const cwd = cwdOverride ?? process.cwd();
+        return new SessionStore(
+          writerPath,
+          cwd,
+          { kind: "pending", header: buildHeader(cwd), fingerprint: null },
+          writer.key,
+        );
+      }
+      const firstLine = readHeaderLine(writerPath);
+      if (firstLine.trim().length === 0) {
+        const cwd = cwdOverride ?? process.cwd();
+        return new SessionStore(
+          writerPath,
+          cwd,
+          {
+            kind: "pending",
+            header: buildHeader(cwd),
+            fingerprint: fileFingerprint(writerPath),
+          },
+          writer.key,
+        );
+      }
+      const header = parseV4Header(writerPath, firstLine);
+      const session = await repo().open(metadataFromHeader(header, writerPath));
+      return new SessionStore(
+        writerPath,
+        cwdOverride ?? header.cwd,
+        { kind: "live", session, header },
+        writer.key,
+      );
+    } catch (error) {
+      releaseWriter(writer.key);
+      throw error;
     }
-    const firstLine = readHeaderLine(path);
-    if (firstLine.trim().length === 0) {
-      const cwd = cwdOverride ?? process.cwd();
-      return new SessionStore(path, cwd, {
-        kind: "pending",
-        header: buildHeader(cwd),
-      });
-    }
-    const header = parseV4Header(path, firstLine);
-    const session = await repo().open(metadataFromHeader(header, resolve(path)));
-    return new SessionStore(resolve(path), cwdOverride ?? header.cwd, {
-      kind: "live",
-      session: session,
-      header,
-    });
   }
 
-  /** Create a new session file with a fresh header, replacing any existing file. */
+  /** Open an immutable inspection handle that does not acquire a writer lease. */
+  static async inspect(path: string): Promise<SessionInspection> {
+    const resolvedPath = canonicalSessionPath(path);
+    const snapshotDir = mkdtempSync(join(tmpdir(), "mikan-session-inspect-"));
+    const snapshotPath = join(snapshotDir, basename(resolvedPath));
+    try {
+      writeFileSync(snapshotPath, readFileSync(resolvedPath), { mode: 0o600, flag: "wx" });
+      const firstLine = readHeaderLine(snapshotPath);
+      const header = parseV4Header(resolvedPath, firstLine);
+      const session = await repo().open(metadataFromHeader(header, snapshotPath));
+      return new ReadOnlySessionInspection(header, session);
+    } finally {
+      rmSync(snapshotDir, { recursive: true, force: true });
+    }
+  }
+
+  /** Create a new session file exclusively; existing content is never replaced. */
   static async create(
     path: string,
     cwd: string,
     options?: SessionCreateInfo,
   ): Promise<SessionStore> {
-    const header = buildHeader(cwd, options);
-    mkdirSync(dirname(path), { recursive: true });
-    atomicWritePrivateFile(path, `${JSON.stringify(header)}\n`);
-    const session = await repo().open(metadataFromHeader(header, resolve(path)));
-    return new SessionStore(resolve(path), cwd, {
-      kind: "live",
-      session: session,
-      header,
-    });
+    const writer = acquireWriter(path);
+    const writerPath = writer.path;
+    let leaseKey = writer.key;
+    try {
+      const header = buildHeader(cwd, options);
+      writeFileSync(writerPath, `${JSON.stringify(header)}\n`, { mode: 0o600, flag: "wx" });
+      leaseKey = promotePendingWriter(leaseKey, writerPath);
+      const session = await repo().open(metadataFromHeader(header, writerPath));
+      return new SessionStore(writerPath, cwd, { kind: "live", session, header }, leaseKey);
+    } catch (error) {
+      releaseWriter(leaseKey);
+      throw error;
+    }
   }
 
   /**
@@ -279,49 +454,58 @@ export class SessionStore {
       createdAt: header.createdAt,
     });
     const session = new Session(storage);
-    return new SessionStore(null, cwd, { kind: "live", session, header });
+    return new SessionStore(null, cwd, { kind: "live", session, header }, null);
   }
 
   getSessionFile(): string | undefined {
+    this.assertOpen();
     return this.sessionFile ?? undefined;
   }
 
   isPersisted(): boolean {
+    this.assertOpen();
     return this.sessionFile !== null;
   }
 
   getCwd(): string {
+    this.assertOpen();
     return this.cwd;
   }
 
   /** Compatibility header view for callers that read mikan session lineage. */
   getHeader(): SessionHeader {
+    this.assertOpen();
     return headerView(this.state.header);
   }
 
   /** Stable session id: the header id, or a generated id for fresh sessions. */
   getSessionId(): string {
+    this.assertOpen();
     return this.state.header.id;
   }
 
   async getLeafId(): Promise<string | null> {
+    this.assertOpen();
     if (this.state.kind === "pending") return null;
     return this.state.session.getLeafId();
   }
 
   async getEntry(id: string): Promise<Entry | undefined> {
+    this.assertOpen();
     if (this.state.kind === "pending") return undefined;
     return this.state.session.getEntry(id);
   }
 
   /** All session entries in append order. */
   async getEntries(): Promise<Entry[]> {
+    this.assertOpen();
     if (this.state.kind === "pending") return [];
     return this.state.session.findEntries({ order: "oldestFirst" });
   }
 
   /** Latest user-assigned session name, if any. */
   async getSessionName(): Promise<string | undefined> {
+    this.assertOpen();
     if (this.state.kind === "pending") return undefined;
     return this.state.session.getName();
   }
@@ -331,6 +515,7 @@ export class SessionStore {
    * (root first). Defaults to the current leaf.
    */
   async getBranch(fromId?: string): Promise<Entry[]> {
+    this.assertOpen();
     if (this.state.kind === "pending") return [];
     return this.state.session.findEntriesOnBranch({
       order: "oldestFirst",
@@ -343,17 +528,20 @@ export class SessionStore {
    * branch, resolving compaction and branch summaries along the path.
    */
   async buildSessionContext(): Promise<SessionContext> {
+    this.assertOpen();
     return buildContextFromEntries(await this.getBranch());
   }
 
   /** Append a chat message as a child of the current leaf. Returns the entry id. */
   async appendMessage(message: AgentMessage): Promise<string> {
-    return (await this.live()).appendMessage(toDurable(message));
+    return this.mutate(async () => (await this.live()).appendMessage(toDurable(message)));
   }
 
   /** Append an extension/application data entry (never sent to the LLM). */
   async appendCustomEntry(customType: string, data?: unknown): Promise<string> {
-    return (await this.live()).appendCustomEntry(customType, toDurable(data));
+    return this.mutate(async () =>
+      (await this.live()).appendCustomEntry(customType, toDurable(data)),
+    );
   }
 
   /** Append a custom message that participates in LLM context. */
@@ -363,14 +551,16 @@ export class SessionStore {
     display: boolean,
     details?: unknown,
   ): Promise<string> {
-    return (await this.live()).appendMessage(
-      toDurable(createCustomMessage(customType, content, display, details, Date.now())),
+    return this.mutate(async () =>
+      (await this.live()).appendMessage(
+        toDurable(createCustomMessage(customType, content, display, details, Date.now())),
+      ),
     );
   }
 
   /** Record a user-visible session name. */
   async setSessionName(name: string): Promise<void> {
-    await (await this.live()).setName(name.trim() || undefined);
+    await this.mutate(async () => (await this.live()).setName(name.trim() || undefined));
   }
 
   /** Persist a compaction summary produced for this session. */
@@ -380,29 +570,56 @@ export class SessionStore {
     tokensBefore: number,
     details?: unknown,
   ): Promise<string> {
-    const session = await this.live();
-    const entry = await session.appendEntry(
-      {
-        type: "compaction",
-        id: session.idGenerator.next(),
-        summary,
-        retainedTail: toDurable(retainedTail),
-        tokensBefore,
-        ...(details !== undefined ? { details: toDurable(details) } : {}),
-      },
-      "main",
+    return this.mutate(async () => {
+      const session = await this.live();
+      const entry = await session.appendEntry(
+        {
+          type: "compaction",
+          id: session.idGenerator.next(),
+          summary,
+          retainedTail: toDurable(retainedTail),
+          tokensBefore,
+          ...(details !== undefined ? { details: toDurable(details) } : {}),
+        },
+        "main",
+      );
+      return entry.id;
+    });
+  }
+
+  async close(): Promise<void> {
+    if (this.closePromise) return this.closePromise;
+    this.closed = true;
+    this.closePromise = this.mutationTail.finally(() => {
+      if (this.writerKey !== null) releaseWriter(this.writerKey);
+    });
+    return this.closePromise;
+  }
+
+  private assertOpen(): void {
+    if (this.closed) throw new Error("SessionStore is closed");
+  }
+
+  private mutate<T>(operation: () => Promise<T>): Promise<T> {
+    this.assertOpen();
+    const result = this.mutationTail.then(operation);
+    this.mutationTail = result.then(
+      () => undefined,
+      () => undefined,
     );
-    return entry.id;
+    return result;
   }
 
   /** Materialize the session file (when persisted) and return the live session. */
   private async live(): Promise<Session> {
     if (this.state.kind === "live") return this.state.session;
-    const header = this.state.header;
+    const pending = this.state;
+    const header = pending.header;
     const sessionFile = this.sessionFile;
     if (sessionFile === null) throw new Error("Pending session must have a session file");
-    mkdirSync(dirname(sessionFile), { recursive: true });
-    atomicWritePrivateFile(sessionFile, `${JSON.stringify(header)}\n`);
+    materializePendingFile(sessionFile, header, pending.fingerprint);
+    if (this.writerKey === null) throw new Error("Pending session must have a writer lease");
+    this.writerKey = promotePendingWriter(this.writerKey, sessionFile);
     const session = await repo().open(metadataFromHeader(header, sessionFile));
     this.state = { kind: "live", session, header };
     return session;

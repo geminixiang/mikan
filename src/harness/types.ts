@@ -34,6 +34,21 @@ export type SessionEntry = Entry;
 
 export const CURRENT_SESSION_VERSION = 4;
 
+export interface SessionCreateInfo {
+  id?: string;
+  parentSession?: string;
+  parentSessionId?: string;
+}
+
+/** Immutable session queries available to portals, admin, and migration code. */
+export interface SessionInspection {
+  getHeader(): SessionHeader;
+  getEntries(): Promise<Entry[]>;
+  getSessionName(): Promise<string | undefined>;
+  getBranch(fromId?: string): Promise<Entry[]>;
+  buildSessionContext(): Promise<SessionContext>;
+}
+
 export interface SubagentModelSpec {
   provider: string;
   id: string;

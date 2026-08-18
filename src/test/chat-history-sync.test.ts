@@ -36,7 +36,7 @@ function writeLog(entries: object[]): void {
 }
 
 async function readContextText(sessionFile: string): Promise<string> {
-  const session = await SessionStore.open(sessionFile, conversationDir);
+  const session = await SessionStore.inspect(sessionFile);
   const context = await session.buildSessionContext();
   return context.messages
     .map((message) =>
@@ -327,12 +327,14 @@ describe("ChatHistorySync", () => {
       },
     ]);
 
+    const session = await openManagedSession(scope.contextFile, conversationDir);
     await manager.syncSessionManager({
       conversationDir,
       sessionKey: "C123",
-      sessionManager: await openManagedSession(scope.contextFile, conversationDir),
+      sessionManager: session,
       currentMessageId: "1000.0003",
     });
+    await session.close();
 
     const text = await readContextText(scope.contextFile);
     expect(text).toContain("first answer");
@@ -634,6 +636,7 @@ describe("ChatHistorySync", () => {
       stopReason: "stop",
       timestamp: 2,
     });
+    await session.close();
     writeLog(logEntries);
 
     const secondScope = await manager.resolveSessionScope({

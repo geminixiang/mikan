@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -96,6 +96,7 @@ describe("SessionStore", () => {
       content: [{ type: "text", text: "hello" }],
       timestamp: 1,
     });
+    await seeded.close();
 
     const store = await SessionStore.open(file);
     expect(store.getSessionId()).toBe("abc-123");
@@ -203,6 +204,98 @@ describe("SessionStore", () => {
     expect(lines).toHaveLength(2);
   });
 
+  test("empty pending materialization truncates the original file", async () => {
+    const file = join(dir, "empty-with-padding.jsonl");
+    writeFileSync(file, `${" ".repeat(8192)}\n`);
+    const store = await SessionStore.open(file, "/work");
+    await store.appendMessage({ role: "user", content: "clean", timestamp: 1 });
+    await store.close();
+
+    expect(readFileSync(file, "utf8")).not.toContain(" ".repeat(128));
+    expect(readLines(file)).toHaveLength(2);
+  });
+
+  test("read-only inspection never repairs or changes its source file", async () => {
+    const file = join(dir, "torn-inspection.jsonl");
+    const writer = await SessionStore.create(file, "/work");
+    await writer.appendMessage({ role: "user", content: "kept", timestamp: 1 });
+    await writer.close();
+    writeFileSync(file, '{"kind":"entry"', { flag: "a" });
+    const before = readFileSync(file);
+
+    await SessionStore.inspect(file).catch(() => undefined);
+
+    expect(readFileSync(file)).toEqual(before);
+  });
+
+  test("enforces one writer while allowing read-only inspection", async () => {
+    const file = join(dir, "owned.jsonl");
+    const writer = await SessionStore.create(file, "/work");
+    await expect(SessionStore.open(file)).rejects.toThrow(/active writer/i);
+
+    const inspection = await SessionStore.inspect(file);
+    expect(inspection.getHeader().id).toBe(writer.getSessionId());
+    await writer.close();
+    await expect(SessionStore.open(file)).resolves.toBeDefined();
+  });
+
+  test("hard-link aliases share one writer lease", async () => {
+    const file = join(dir, "owned.jsonl");
+    const alias = join(dir, "owned-alias.jsonl");
+    const writer = await SessionStore.create(file, "/work");
+    linkSync(file, alias);
+
+    await expect(SessionStore.open(alias)).rejects.toThrow(/active writer/i);
+    await writer.close();
+    const reopened = await SessionStore.open(alias);
+    await reopened.close();
+  });
+
+  test("pending writer promotes its lease to the materialized inode", async () => {
+    const file = join(dir, "pending-owned.jsonl");
+    const alias = join(dir, "pending-owned-alias.jsonl");
+    const writer = await SessionStore.open(file, "/work");
+    await writer.appendMessage({ role: "user", content: "materialized", timestamp: 1 });
+    linkSync(file, alias);
+
+    await expect(SessionStore.open(alias)).rejects.toThrow(/active writer/i);
+    await writer.close();
+  });
+
+  test("pending materialization refuses external changes", async () => {
+    const file = join(dir, "pending.jsonl");
+    const store = await SessionStore.open(file, "/work");
+    writeFileSync(file, "external\n");
+
+    await expect(
+      store.appendMessage({ role: "user", content: "hi", timestamp: 1 }),
+    ).rejects.toThrow();
+    expect(readFileSync(file, "utf-8")).toBe("external\n");
+    await store.close();
+  });
+
+  test("close is idempotent and closed methods fail", async () => {
+    const file = join(dir, "close.jsonl");
+    const store = await SessionStore.create(file, "/work");
+    await Promise.all([store.close(), store.close()]);
+    expect(() => store.getSessionId()).toThrow(/closed/i);
+    await expect(
+      store.appendMessage({ role: "user", content: "late", timestamp: 1 }),
+    ).rejects.toThrow(/closed/i);
+    const reopened = await SessionStore.open(file);
+    await reopened.close();
+  });
+
+  test("close drains mutations that callers did not await", async () => {
+    const file = join(dir, "drain.jsonl");
+    const store = await SessionStore.create(file, "/work");
+    void store.appendMessage({ role: "user", content: "drained", timestamp: 1 });
+    await store.close();
+
+    const inspection = await SessionStore.inspect(file);
+    expect(await inspection.getEntries()).toHaveLength(1);
+  });
+
   test("session name comes from the latest set name", async () => {
     const file = join(dir, "session.jsonl");
     const store = await SessionStore.create(file, "/work");
@@ -210,8 +303,10 @@ describe("SessionStore", () => {
     await store.setSessionName("first name");
     await store.setSessionName("second name");
     expect(await store.getSessionName()).toBe("second name");
+    await store.close();
 
     const reopened = await SessionStore.open(file);
     expect(await reopened.getSessionName()).toBe("second name");
+    await reopened.close();
   });
 });

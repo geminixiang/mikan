@@ -30,6 +30,7 @@ function runtimeSessionId(address: OfficeAddress, sessionKey: string): string {
 
 export class SessionLifecycle {
   private readonly states = new Map<string, ConversationRuntimeState>();
+  private readonly closing = new Map<string, Promise<void>>();
   private readonly queues = new Map<string, Promise<void>>();
   private readonly conversationBarriers = new Map<string, ConversationBarrier>();
   private readonly pendingConversationClears = new Set<string>();
@@ -197,17 +198,56 @@ export class SessionLifecycle {
     }
   }
 
+  async discardAndWait(address: OfficeAddress, sessionKey: string): Promise<void> {
+    const id = runtimeSessionId(address, sessionKey);
+    const state = this.states.get(id);
+    if (!state) {
+      await this.closing.get(id);
+      return;
+    }
+    this.states.delete(id);
+    const close = state.runner.dispose();
+    this.trackClosing(id, close);
+    await close;
+  }
+
+  async waitForClose(address: OfficeAddress, sessionKey: string): Promise<void> {
+    await this.closing.get(runtimeSessionId(address, sessionKey));
+  }
+
+  async closeAll(): Promise<void> {
+    const states = Array.from(this.states.values());
+    this.states.clear();
+    const closes = states.map((state) => {
+      const id = runtimeSessionId(state.address, state.sessionKey);
+      const close = state.runner.dispose();
+      this.trackClosing(id, close);
+      return close;
+    });
+    await Promise.all([...this.closing.values(), ...closes]);
+  }
+
   discard(address: OfficeAddress, sessionKey: string): void {
     const id = runtimeSessionId(address, sessionKey);
     const state = this.states.get(id);
     if (!state) return;
     this.states.delete(id);
-    state.runner.dispose().catch((err: unknown) => {
+    const close = state.runner.dispose();
+    this.trackClosing(id, close);
+    close.catch((err: unknown) => {
       log.logWarning(
         `Runner dispose failed: ${sessionKey}`,
         err instanceof Error ? err.message : String(err),
       );
     });
+  }
+
+  private trackClosing(id: string, close: Promise<void>): void {
+    this.closing.set(id, close);
+    const clear = () => {
+      if (this.closing.get(id) === close) this.closing.delete(id);
+    };
+    void close.then(clear, clear);
   }
 
   evictIdle(): void {

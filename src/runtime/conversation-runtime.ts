@@ -102,6 +102,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private readonly resolvedModels: MikanModels;
   private globalRunnerGeneration = 0;
   private readonly conversationRunnerGenerations = new Map<string, number>();
+  private readonly stateTransitions = new Map<string, Promise<void>>();
   private isShuttingDown = false;
 
   constructor(private readonly options: ConversationRuntimeOptions) {
@@ -350,7 +351,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
               sessionKey,
               cwd: runtimeCwd,
             });
-            this.sessions.discard(address, sessionKey);
+            await this.sessions.discardAndWait(address, sessionKey);
             log.logInfo(
               `[${conversationId}] Session Dream completed; rotated session: ${sessionKey}`,
             );
@@ -381,7 +382,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     const runtimeCwd = runtimeCwdForSandbox(this.options.sandbox, this.options.workspace, address);
     await this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
 
-    this.sessions.discard(address, sessionKey);
+    await this.sessions.discardAndWait(address, sessionKey);
 
     log.logInfo(`[${conversationId}] Session reset: ${sessionKey}`);
     await bot.postMessage(conversationId, "Conversation reset. Send a new message to start fresh.");
@@ -820,7 +821,26 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private async getOrCreateState(
     options: SessionStateOptions & { currentMessageId?: string },
   ): Promise<ConversationState> {
+    const id = `${officeKey(options.address)}|${options.sessionKey}`;
+    const previous = this.stateTransitions.get(id) ?? Promise.resolve();
+    let resolveTransition!: () => void;
+    const transition = new Promise<void>((resolve) => (resolveTransition = resolve));
+    const tail = previous.then(() => transition);
+    this.stateTransitions.set(id, tail);
+    await previous;
+    try {
+      return await this.getOrCreateStateExclusive(options);
+    } finally {
+      resolveTransition();
+      if (this.stateTransitions.get(id) === tail) this.stateTransitions.delete(id);
+    }
+  }
+
+  private async getOrCreateStateExclusive(
+    options: SessionStateOptions & { currentMessageId?: string },
+  ): Promise<ConversationState> {
     const { address, sessionKey, currentMessageId } = options;
+    await this.sessions.waitForClose(address, sessionKey);
     const existing = this.sessions.get(address, sessionKey);
     // A cached runner is the sole writable pi v4 session handle for its file:
     // reuse it before scope resolution can open the same path a second time.
@@ -834,7 +854,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       return existing;
     }
     if (existing?.running) return existing;
-    if (existing) this.sessions.discard(address, sessionKey);
+    if (existing) await this.sessions.discardAndWait(address, sessionKey);
 
     const runtimeCwd = runtimeCwdForSandbox(this.options.sandbox, this.options.workspace, address);
     const sessionScope = await this.chatSessionManager.resolveSessionScope({
@@ -870,14 +890,21 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     }
 
     if (this.inFlightRuns.size > 0) {
-      log.logWarning(`Forcing exit with ${this.inFlightRuns.size} runs still in progress`);
-      reportUserFacingError(new Error("Shutdown forced with in-flight agent runs"), {
-        domain: "mikan",
-        surface: "shutdown",
-        operation: "force_exit_with_inflight_runs",
-        severity: "warning",
-        context: { inFlightRuns: this.inFlightRuns.size, timeoutMs },
-      });
+      log.logWarning(
+        `Aborting ${this.inFlightRuns.size} runs after shutdown timeout`,
+        `${timeoutMs}ms`,
+      );
+      for (const state of this.sessions.runningStates()) state.runner.abort();
+      const closeDeadline = Date.now() + 5_000;
+      while (this.inFlightRuns.size > 0 && Date.now() < closeDeadline) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      if (this.inFlightRuns.size > 0) {
+        throw new Error(
+          `Shutdown could not settle ${this.inFlightRuns.size} aborted runs within 5000ms`,
+        );
+      }
     }
+    await this.sessions.closeAll();
   }
 }
