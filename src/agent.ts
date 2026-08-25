@@ -1920,8 +1920,9 @@ function attachSessionEventHandlers(params: {
 
         if (assistantMsg.stopReason) {
           runState.stopReason = assistantMsg.stopReason;
-        }
-        if (assistantMsg.errorMessage) {
+          // The settling message is the authority for both fields: a retry
+          // that recovered must clear the earlier attempt's error, or the
+          // run would report success and a stale errorMessage together.
           runState.errorMessage = assistantMsg.errorMessage;
         }
 
@@ -2257,122 +2258,127 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
       });
       pathContext = prepared.pathContext;
 
-      if (runState.logCtx) {
-        log.logAgentRunStart(runState.logCtx, model.provider, model.id, model.name);
-      }
-
-      updateActiveSpanAttribution({
-        provider: model.provider,
-        model: agentConfig.model,
-        channel_id: prepared.sessionConversation,
-        session_id: sessionUuid,
-      });
-      addLifecycleBreadcrumb("agent.prompt.sent", {
-        provider: model.provider,
-        model: agentConfig.model,
-        channel_id: prepared.sessionConversation,
-        session_id: sessionUuid,
-        attachment_count: message.attachments?.length ?? 0,
-        image_attachment_count: prepared.imageAttachments.length,
-      });
-      sendAgentEvent({
-        sessionId: sessionUuid,
-        actorName: formatAgentActorName(message.userName, prepared.sessionConversation),
-        event: { kind: "sessionStart" },
-      });
-
-      // Autonomous (event/trigger) runs get an explicit resource ceiling since
-      // no human is watching the loop; interactive turns stay human-gated.
-      const isEventRun = message.id.startsWith("event:");
-      // Event runs have no triggering platform message, so identity fields
-      // stay unset and extensions must null-check them.
-      const origin: RunOrigin = isEventRun
-        ? { kind: "event", platform: platform.name }
-        : {
-            kind: "interactive",
-            platform: platform.name,
-            messageTs: message.id,
-            userId: message.userId,
-            userName: message.userName,
-            threadTs: message.threadTs,
-            attachments: message.attachments,
-          };
-      const outcome = await session.prompt(prepared.userMessage, {
-        origin,
-        ...(prepared.imageAttachments.length > 0 ? { images: prepared.imageAttachments } : {}),
-        ...(isEventRun ? { budget: DEFAULT_EVENT_BUDGET } : {}),
-      });
-
-      if (outcome?.blocked) {
-        const text = outcome.reason
-          ? `_Turn blocked by an extension: ${outcome.reason}_`
-          : "_Turn blocked by an extension._";
-        sendAgentEvent({
-          sessionId: sessionUuid,
-          actorName: formatAgentActorName(message.userName, prepared.sessionConversation),
-          event: { kind: "diagnostic", text },
-        });
-        await responder.respondDiagnostic(text, { style: "muted" });
+      try {
+        return await runPreparedTurn();
+      } finally {
+        // Ownership must return to the pool on every exit — a throw anywhere
+        // in the turn (dreamSessionMemory already does this) would otherwise
+        // leave the runner permanently "busy" with a stale responder.
         runState.responder = null;
         runState.logCtx = null;
         runState.queue = null;
-        return { stopReason: "blocked" };
       }
 
-      // Wait for queued messages
-      await prepared.runQueue.wait();
+      async function runPreparedTurn(): Promise<{ stopReason: string; errorMessage?: string }> {
+        if (runState.logCtx) {
+          log.logAgentRunStart(runState.logCtx, model.provider, model.id, model.name);
+        }
 
-      const sessionViewTokenStore = sessionView?.tokenStore;
-      const sessionViewPortalBaseUrl = sessionView?.portalBaseUrl;
-      let sessionViewLink: string | undefined;
-      const createSessionViewLink =
-        sessionViewTokenStore && sessionViewPortalBaseUrl
-          ? () => {
-              if (!sessionViewLink) {
-                const token = sessionViewTokenStore.create(
-                  platform.name as PlatformName,
-                  message.userId,
-                  conversationId,
-                  message.sessionKey,
-                  contextFile,
-                  message.userName,
-                );
-                sessionViewLink = `${sessionViewPortalBaseUrl}/session?token=${token.token}`;
+        updateActiveSpanAttribution({
+          provider: model.provider,
+          model: agentConfig.model,
+          channel_id: prepared.sessionConversation,
+          session_id: sessionUuid,
+        });
+        addLifecycleBreadcrumb("agent.prompt.sent", {
+          provider: model.provider,
+          model: agentConfig.model,
+          channel_id: prepared.sessionConversation,
+          session_id: sessionUuid,
+          attachment_count: message.attachments?.length ?? 0,
+          image_attachment_count: prepared.imageAttachments.length,
+        });
+        sendAgentEvent({
+          sessionId: sessionUuid,
+          actorName: formatAgentActorName(message.userName, prepared.sessionConversation),
+          event: { kind: "sessionStart" },
+        });
+
+        // Autonomous (event/trigger) runs get an explicit resource ceiling since
+        // no human is watching the loop; interactive turns stay human-gated.
+        const isEventRun = message.id.startsWith("event:");
+        // Event runs have no triggering platform message, so identity fields
+        // stay unset and extensions must null-check them.
+        const origin: RunOrigin = isEventRun
+          ? { kind: "event", platform: platform.name }
+          : {
+              kind: "interactive",
+              platform: platform.name,
+              messageTs: message.id,
+              userId: message.userId,
+              userName: message.userName,
+              threadTs: message.threadTs,
+              attachments: message.attachments,
+            };
+        const outcome = await session.prompt(prepared.userMessage, {
+          origin,
+          ...(prepared.imageAttachments.length > 0 ? { images: prepared.imageAttachments } : {}),
+          ...(isEventRun ? { budget: DEFAULT_EVENT_BUDGET } : {}),
+        });
+
+        if (outcome?.blocked) {
+          const text = outcome.reason
+            ? `_Turn blocked by an extension: ${outcome.reason}_`
+            : "_Turn blocked by an extension._";
+          sendAgentEvent({
+            sessionId: sessionUuid,
+            actorName: formatAgentActorName(message.userName, prepared.sessionConversation),
+            event: { kind: "diagnostic", text },
+          });
+          await responder.respondDiagnostic(text, { style: "muted" });
+          return { stopReason: "blocked" };
+        }
+
+        // Wait for queued messages
+        await prepared.runQueue.wait();
+
+        const sessionViewTokenStore = sessionView?.tokenStore;
+        const sessionViewPortalBaseUrl = sessionView?.portalBaseUrl;
+        let sessionViewLink: string | undefined;
+        const createSessionViewLink =
+          sessionViewTokenStore && sessionViewPortalBaseUrl
+            ? () => {
+                if (!sessionViewLink) {
+                  const token = sessionViewTokenStore.create(
+                    platform.name as PlatformName,
+                    message.userId,
+                    conversationId,
+                    message.sessionKey,
+                    contextFile,
+                    message.userName,
+                  );
+                  sessionViewLink = `${sessionViewPortalBaseUrl}/session?token=${token.token}`;
+                }
+                return sessionViewLink;
               }
-              return sessionViewLink;
-            }
-          : undefined;
+            : undefined;
 
-      await finalizeRunResponse(responder, session, runState, {
-        triggerAttribution: prepared.triggerAttribution,
-        triggerSessionLink: isEventTriggerAttribution(prepared.triggerAttribution)
-          ? createSessionViewLink?.()
-          : undefined,
-        createOverflowLink: createSessionViewLink,
-        platform: platform.name,
-        model,
-        sessionConversation: prepared.sessionConversation,
-        sessionUuid,
-      });
+        await finalizeRunResponse(responder, session, runState, {
+          triggerAttribution: prepared.triggerAttribution,
+          triggerSessionLink: isEventTriggerAttribution(prepared.triggerAttribution)
+            ? createSessionViewLink?.()
+            : undefined,
+          createOverflowLink: createSessionViewLink,
+          platform: platform.name,
+          model,
+          sessionConversation: prepared.sessionConversation,
+          sessionUuid,
+        });
 
-      await reportUsageSummary({
-        session,
-        runState,
-        responder,
-        platform,
-        model,
-        agentConfig,
-        sessionConversation: prepared.sessionConversation,
-        sessionUuid,
-        waitForQueue: () => prepared.runQueue.wait(),
-      });
+        await reportUsageSummary({
+          session,
+          runState,
+          responder,
+          platform,
+          model,
+          agentConfig,
+          sessionConversation: prepared.sessionConversation,
+          sessionUuid,
+          waitForQueue: () => prepared.runQueue.wait(),
+        });
 
-      // Clear run state
-      runState.responder = null;
-      runState.logCtx = null;
-      runState.queue = null;
-
-      return { stopReason: runState.stopReason, errorMessage: runState.errorMessage };
+        return { stopReason: runState.stopReason, errorMessage: runState.errorMessage };
+      }
     },
 
     async dreamSessionMemory(
