@@ -239,6 +239,20 @@ describe("SessionStore", () => {
     await expect(SessionStore.open(file)).resolves.toBeDefined();
   });
 
+  test("a leaked claim for a deleted file does not block an unrelated new file", async () => {
+    // Simulates inode reuse: a store is never closed (leaked claim), its file
+    // is deleted, and a new session file later receives the same dev:ino.
+    // The stale claim must not deny the new writer.
+    const leaked = join(dir, "leaked.jsonl");
+    await SessionStore.create(leaked, "/work");
+    rmSync(leaked);
+
+    // Recreate at the same path: on filesystems that reuse inodes this can
+    // collide with the leaked claim's dev:ino identity.
+    const fresh = await SessionStore.create(leaked, "/work");
+    await fresh.close();
+  });
+
   test("hard-link aliases share one writer lease", async () => {
     const file = join(dir, "owned.jsonl");
     const alias = join(dir, "owned-alias.jsonl");

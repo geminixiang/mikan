@@ -54,7 +54,8 @@ import {
   type SessionInspection,
 } from "./types.js";
 
-const activeWriterKeys = new Set<string>();
+/** Live writer claims: lease key → canonical path it was claimed for. */
+const activeWriterKeys = new Map<string, string>();
 
 function canonicalSessionPath(path: string): string {
   const absolute = resolve(path);
@@ -70,13 +71,31 @@ function sessionWriterKey(path: string): string {
   return `inode:${stat.dev}:${stat.ino}`;
 }
 
+/**
+ * A claim is stale when the file it was taken for no longer resolves to the
+ * claimed identity — deleted or replaced since. Filesystems reuse inodes, so
+ * without this check a leaked claim for a deleted file would block an
+ * unrelated new file that happens to receive the same dev:ino.
+ */
+function isStaleClaim(key: string, claimedPath: string): boolean {
+  // Pending (`path:`) claims guard a file that legitimately does not exist
+  // yet, so absence proves nothing; they are never stale.
+  if (!key.startsWith("inode:")) return false;
+  return sessionWriterKey(claimedPath) !== key;
+}
+
+function claimWriter(key: string, path: string): void {
+  const claimedPath = activeWriterKeys.get(key);
+  if (claimedPath !== undefined && !isStaleClaim(key, claimedPath)) {
+    throw new Error(`Session file already has an active writer: ${path}`);
+  }
+  activeWriterKeys.set(key, path);
+}
+
 function acquireWriter(path: string): { path: string; key: string } {
   const canonical = canonicalSessionPath(path);
   const key = sessionWriterKey(canonical);
-  if (activeWriterKeys.has(key)) {
-    throw new Error(`Session file already has an active writer: ${canonical}`);
-  }
-  activeWriterKeys.add(key);
+  claimWriter(key, canonical);
   return { path: canonical, key };
 }
 
@@ -87,10 +106,7 @@ function releaseWriter(key: string): void {
 function promotePendingWriter(pathKey: string, path: string): string {
   const inodeKey = sessionWriterKey(path);
   if (inodeKey === pathKey) return pathKey;
-  if (activeWriterKeys.has(inodeKey)) {
-    throw new Error(`Session file already has an active writer: ${path}`);
-  }
-  activeWriterKeys.add(inodeKey);
+  claimWriter(inodeKey, path);
   activeWriterKeys.delete(pathKey);
   return inodeKey;
 }
