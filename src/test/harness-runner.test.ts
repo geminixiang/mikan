@@ -227,6 +227,36 @@ describe("MikanAgentSession", () => {
     ).toHaveLength(0);
   });
 
+  test("a blocked turn runs the hook before auth validation", async () => {
+    // The hook contract says a blocked turn calls no model and persists
+    // nothing — so a missing provider credential must not prevent the
+    // extension from blocking (auth is only checked when the turn proceeds).
+    const { models, model } = createFauxSetup();
+    const failingModels = {
+      models: models.models,
+      getAuth: async () => undefined,
+    } as unknown as MikanModels;
+
+    const extensions = new ExtensionRegistry();
+    extensions.register("policy", "before_agent_start", () => ({
+      block: true,
+      reason: "blocked without credentials",
+    }));
+
+    const session = new MikanAgentSession({
+      systemPrompt: "test",
+      model,
+      thinkingLevel: "off",
+      tools: [],
+      models: failingModels,
+      sessionStore: await SessionStore.create(join(dir, "blocked-auth.jsonl"), dir),
+      extensions,
+    });
+
+    const outcome = await session.prompt("do something");
+    expect(outcome).toEqual({ blocked: true, reason: "blocked without credentials" });
+  });
+
   test("before_agent_start can rewrite the user prompt and sees the run origin", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([fauxAssistantMessage("ok")]);

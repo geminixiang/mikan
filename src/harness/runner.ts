@@ -291,9 +291,6 @@ export class MikanAgentSession {
       tools?: AgentTool[];
     },
   ): Promise<PromptBlockedOutcome | undefined> {
-    const model = this.agent.state.model;
-    await this.ensureAuthConfigured(model);
-
     this.retryAttempt = 0;
     this.overflowRecoveryAttempted = false;
     this.runBudget = { ...this.settings.budget, ...options?.budget };
@@ -307,13 +304,9 @@ export class MikanAgentSession {
     };
     this.runOrigin = options?.origin;
 
-    // A previous turn may have ended over the threshold (for example after an
-    // abort); compact before adding new context on top.
-    const lastAssistant = this.findLastAssistantMessage();
-    if (lastAssistant && lastAssistant.stopReason !== "error") {
-      await this.checkThresholdCompaction(lastAssistant);
-    }
-
+    // The hook contract promises a blocked turn calls no model and persists
+    // nothing, so it must run before the auth check and before any pre-turn
+    // compaction — both of which touch the provider or the session file.
     let promptText = text;
     let systemPrompt = runSystemPrompt;
     if (this.extensions?.hasHandlers("before_agent_start")) {
@@ -345,6 +338,15 @@ export class MikanAgentSession {
         systemPrompt = result.systemPrompt;
         this.agent.state.systemPrompt = systemPrompt;
       }
+    }
+
+    await this.ensureAuthConfigured(this.agent.state.model);
+
+    // A previous turn may have ended over the threshold (for example after an
+    // abort); compact before adding new context on top.
+    const lastAssistant = this.findLastAssistantMessage();
+    if (lastAssistant && lastAssistant.stopReason !== "error") {
+      await this.checkThresholdCompaction(lastAssistant);
     }
 
     const userMessage: AgentMessage = {
