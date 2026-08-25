@@ -755,7 +755,11 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
               maxLlmCalls: budget.maxTurns,
               maxTokens: budget.maxTokens,
               maxCostUsd: budget.maxCostUsd,
-              maxDurationMs: budget.maxDurationMs,
+              // maxDurationMs deliberately not passed down: the hard-deadline
+              // timer above owns wall-clock enforcement (it can also abort a
+              // stalled provider call, which a per-message budget check
+              // cannot). Passing it to both made the terminal status a race
+              // between "timeout" and "budget_exceeded".
             },
           }),
         )

@@ -173,11 +173,13 @@ describe("runSubagent", () => {
       });
 
       expect(result.status).toBe("completed");
+      // maxDurationMs is enforced solely by the runner's hard-deadline
+      // timer; it is not forwarded into the session budget (dual authority
+      // made the terminal status racy between timeout/budget_exceeded).
       expect(promptSpy.mock.calls[0]?.[1]?.budget).toEqual({
         maxLlmCalls: 2,
         maxTokens: 20_000,
         maxCostUsd: 2,
-        maxDurationMs: 2_000,
       });
     } finally {
       promptSpy.mockRestore();
