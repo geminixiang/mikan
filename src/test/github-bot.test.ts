@@ -433,6 +433,29 @@ describe("GithubMessagingBot", () => {
     expect(stopHandler.handleEvent).not.toHaveBeenCalled();
   });
 
+  test("first-contact 'stop' does not create participation state", async () => {
+    // A "@bot stop" on an issue the bot never joined must not materialize
+    // log.jsonl — its existence is the participation authority, and creating
+    // it would make every later unmentioned comment trigger the agent.
+    const bot = makeBot();
+    await bot.start();
+    client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "@mikan stop" })]);
+
+    await bot.poll();
+    await settleQueues();
+
+    expect(handler.handleEvent).not.toHaveBeenCalled();
+    expect(existsSync(join(workingDir, CONVERSATION_OFFICE, "log.jsonl"))).toBe(false);
+
+    // And a later unmentioned comment still does not trigger.
+    client.listIssueCommentsSince.mockResolvedValue([
+      makeComment({ id: 991, body: "unrelated follow-up" }),
+    ]);
+    await bot.poll();
+    await settleQueues();
+    expect(handler.handleEvent).not.toHaveBeenCalled();
+  });
+
   test("start records the baseline watermark on disk", async () => {
     const bot = makeBot();
     await bot.start();

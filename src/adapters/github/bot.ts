@@ -13,7 +13,7 @@ import {
   MessagingEventQueue,
   splitText,
 } from "../shared.js";
-import { processMessageIntake } from "../intake.js";
+import { matchMagicWord, processMessageIntake } from "../intake.js";
 import { GithubClient, GITHUB_MAX_COMMENT_LENGTH, githubRetry } from "./client.js";
 import { createGithubAdapters } from "./context.js";
 import { fetchIsPr, fetchPrHeadBranch, GithubOps } from "./github-ops.js";
@@ -685,7 +685,14 @@ export class GithubMessagingBot implements MessagingBot {
         text: messageText,
         isMessagingBot: false,
       },
-      log: (entry) => this.logToFile(conversationId, entry),
+      // log.jsonl existence is the participation authority for this adapter:
+      // a first-contact magic word ("@bot stop" on an untouched issue) must
+      // not materialize the log, or every later comment from any writer
+      // would be treated as addressed to a conversation the bot never joined.
+      log: (entry) => {
+        if (!participating && matchMagicWord(cleanedText) === "stop") return;
+        this.logToFile(conversationId, entry);
+      },
       // GitHub has no attachments; the prep hook is used to lay down the
       // issue context and repo clone only for messages that will dispatch,
       // and before the comment itself is logged.
