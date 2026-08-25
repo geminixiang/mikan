@@ -1,7 +1,5 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-06-09
-
 ## OVERVIEW
 
 Project: **mikan** (`@geminixiang/mikan`)
@@ -73,14 +71,13 @@ Stack:
 - **Language**: strict TypeScript targeting ES2023 with Node16 module resolution. Use ESM imports/exports and `.js` import specifiers for local TS modules.
 - **Types**:
   - All exported `interface`, `type`, and `enum` definitions belong in the nearest `types.ts` (`src/types.ts` for root-level exports; module-local `types.ts` for submodules).
-  - Implementation files import exported types from `./types.ts` or `../types.ts`; private non-exported types may stay local.
-  - Avoid `any`; inspect dependency types in `node_modules` instead of guessing external APIs.
+  - Implementation files import exported types from `./types.ts` or `../types.ts` and re-export them for downstream consumers; they do not define exported types inline. Private non-exported types may stay local.
+  - Never duplicate a type definition — if a type is needed in multiple files within the same module, it lives in `types.ts`.
 - **Style**:
   - Existing code uses 2-space indentation, double quotes, semicolons, named functions for non-trivial logic, and top-level imports.
   - Prefer small, surgical functions; project guidance asks to keep functions under ~50 lines where practical.
-  - Prefer LBYL validation when reliable; use EAFP only for TOCTOU-prone or clearer error handling.
   - Handle errors explicitly. Do not silently swallow failures.
-  - Avoid thin wrappers and unnecessary indirection; reuse existing helpers before adding abstractions.
+  - LBYL/EAFP, thin wrappers, and helper reuse: see Coding Rules below.
 - **File I/O**:
   - Use Node `fs` / `fs/promises` directly for ordinary reads, writes, directory scans, streams, and watchers; do not add a generic FileIO wrapper just to hide `fs`.
   - Reuse `src/utils/file-guards.ts` for common optional text/JSON reads and schema-validated JSON parsing instead of hand-rolling `try readFile + JSON.parse` in multiple places.
@@ -117,8 +114,6 @@ Stack:
 
 ## NOTES
 
-- Preserve behavior unless explicitly asked to change it; do not remove intentional-looking functionality without asking.
-- Read files in full before broad edits or audits. Search snippets are not enough for wide-ranging changes.
 - `dist/` is generated from `src/`; edit `src/` and run build instead of modifying `dist/` directly.
 - `npm run build` emits declarations and JS to `dist/` and makes `dist/main.js` executable.
 - `/login` stores credentials under `--state-dir`; avoid logging secrets and validate state-dir safety.
@@ -126,7 +121,6 @@ Stack:
 - Slack/Discord/Telegram adapters map threads/replies to independent session scopes; check `src/content/docs/sessions.mdx` before changing conversation IDs or session keys. GitHub maps one issue or PR to one conversation.
 - Office directories, per-conversation host state, and conversation vault keys are named by office key, never by the raw platform conversation id. Derive paths from an `Office` value (`workspace.office(address)`), and leave the raw-id mapping to the office registry; raw ids belong at platform I/O boundaries.
 - `src/index.ts` is the published package interface (the embedder in `deploy/examples/embedder/` builds against it). Adding an export there widens the npm surface — keep the list explicit and deliberate.
-- Cloudflare AI image input note for related Quro work: send raw base64 strings in `images`, not data URIs, when calling `env.AI.run('openai/gpt-image-2', ...)`.
 
 # Development Rules
 
@@ -138,14 +132,6 @@ Stack:
 - Match the user's language when practical.
 - When the user asks a question, answer it first before making edits or running implementation commands.
 - When responding to user feedback or analysis, explicitly say whether you agree or disagree before saying what changed.
-
-## Type Organization
-
-- All exported `interface`, `type`, and `enum` definitions live in `types.ts`.
-- Root-level exported types live in `src/types.ts`. Each sub-module (`adapters/`, `sessions/`, `runtime/`, etc.) has its own `types.ts`.
-- Implementation files import types from `./types.ts` (or `../types.ts`) and re-export them for downstream consumers; they do not define exported types inline.
-- Private (non-exported) types may stay in the file that uses them.
-- Never duplicate a type definition — if a type is needed in multiple files within the same module, it lives in `types.ts`.
 
 ## Coding Rules
 
