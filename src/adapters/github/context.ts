@@ -25,6 +25,7 @@ export function createGithubAdapters(
     conversationId,
     address: event.address,
     id: event.ts,
+    origin: event.origin,
     sessionKey:
       event.sessionKey ??
       resolveChatSessionKey({

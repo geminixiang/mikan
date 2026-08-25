@@ -1,4 +1,4 @@
-import { resolveExistingSessionFile } from "../web/session-view/service.js";
+import { resolveRuntimeSession } from "../sessions/store.js";
 import { commandForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { formatCommandSummary, replyPrivatelyWithContext } from "./utils.js";
@@ -34,11 +34,12 @@ export class SessionViewCommandHandler implements CommandHandler {
       return true;
     }
 
-    const sessionFile = resolveExistingSessionFile(
+    const session = resolveRuntimeSession(
       context.services.workspace.office(context.address).dir,
+      context.address,
       context.sessionKey,
     );
-    if (!sessionFile) {
+    if (!session) {
       await replyPrivatelyWithContext(
         context,
         formatCommandSummary("Session", [
@@ -55,14 +56,12 @@ export class SessionViewCommandHandler implements CommandHandler {
       .users.find((user) => user.id === context.platformUserId);
     const platformUserName = platformUser?.userName || platformUser?.displayName;
 
-    const token = context.services.sessionViewTokenStore.create(
-      context.platform,
-      context.platformUserId,
-      context.conversationId,
-      context.sessionKey,
-      sessionFile,
-      platformUserName,
-    );
+    const token = context.services.sessionViewTokenStore.create({
+      address: context.address,
+      platformUserId: context.platformUserId,
+      sessionId: session.id,
+      ...(platformUserName ? { platformUserName } : {}),
+    });
 
     await replyPrivatelyWithContext(
       context,

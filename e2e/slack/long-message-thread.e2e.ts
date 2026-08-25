@@ -64,6 +64,7 @@ describe.skipIf(!ctx || !ctx.env.streamingBotToken)("Slack long-message continua
       const { responder } = createSlackAdapters(
         {
           type: "mention",
+          origin: { kind: "interactive" },
           address: createOfficeAddress("slack", env.channel),
           conversationId: env.channel,
           conversationKind: "shared",

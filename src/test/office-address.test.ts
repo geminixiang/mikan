@@ -72,6 +72,10 @@ describe("office address", () => {
     expect(officeKey(createOfficeAddress("slack", "C123"))).not.toBe(
       officeKey(createOfficeAddress("discord", "C123")),
     );
+    expect(officeKey(createOfficeAddress("web", "C123"))).not.toBe(
+      officeKey(createOfficeAddress("slack", "C123")),
+    );
+    expect(isOfficeKey(officeKey(createOfficeAddress("web", "wsp_example")))).toBe(true);
     expect(
       sameOffice(createOfficeAddress("slack", "C123"), createOfficeAddress("slack", "C123")),
     ).toBe(true);

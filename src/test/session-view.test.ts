@@ -82,27 +82,25 @@ describe("resolveExistingSessionFile", () => {
     expect(resolveExistingSessionFile(join(workspaceDir, "D123"), "D123")).toBe(sessionFile);
   });
 
-  test("resolves a fixed-path thread session when the conversation directory matches", () => {
+  test("does not interpret a thread session key as a durable navigation target", () => {
     const sharedConversationDir = join(workspaceDir, "C123");
     mkdirSync(sharedConversationDir, { recursive: true });
     const sessionFile = getThreadSessionFile(sharedConversationDir, "C123:1000.0001");
     createManagedSessionFileAtPath(sessionFile, sharedConversationDir);
 
-    expect(resolveExistingSessionFile(join(workspaceDir, "C123"), "C123:1000.0001")).toBe(
-      sessionFile,
-    );
+    expect(resolveExistingSessionFile(sharedConversationDir, "C123:1000.0001")).toBeNull();
   });
 });
 
 describe("loadSessionViewModel", () => {
-  test("maps session entries into a readable timeline", () => {
+  test("maps session entries into a readable timeline", async () => {
     const sessionDir = officeSessionsDir(conversationDir);
     const sessionFile = createManagedSessionFile(sessionDir, conversationDir);
-    const sessionManager = openManagedSession(sessionFile, conversationDir);
+    const sessionManager = await openManagedSession(sessionFile, conversationDir);
 
-    sessionManager.appendMessage(makeUserMessage("請幫我看一下測試結果"));
-    sessionManager.appendMessage(makeAssistantMessage("好的，我正在查看。"));
-    sessionManager.appendMessage({
+    await sessionManager.appendMessage(makeUserMessage("請幫我看一下測試結果"));
+    await sessionManager.appendMessage(makeAssistantMessage("好的，我正在查看。"));
+    await sessionManager.appendMessage({
       role: "bashExecution",
       command: "npm test",
       output: "1 passed",
@@ -112,7 +110,7 @@ describe("loadSessionViewModel", () => {
       timestamp: nextTimestamp++,
     } as any);
 
-    const model = loadSessionViewModel(sessionFile);
+    const model = await loadSessionViewModel(sessionFile);
 
     expect(model.title).toContain("Session");
     expect(model.items.map((item) => item.title)).toEqual(["User", "Assistant", "Bash execution"]);
@@ -123,12 +121,12 @@ describe("loadSessionViewModel", () => {
     expect(model.threads).toEqual([]);
   });
 
-  test("preserves assistant content block order and bash execution status details", () => {
+  test("preserves assistant content block order and bash execution status details", async () => {
     const sessionDir = officeSessionsDir(conversationDir);
     const sessionFile = createManagedSessionFile(sessionDir, conversationDir);
-    const sessionManager = openManagedSession(sessionFile, conversationDir);
+    const sessionManager = await openManagedSession(sessionFile, conversationDir);
 
-    sessionManager.appendMessage({
+    await sessionManager.appendMessage({
       role: "assistant",
       content: [
         { type: "text", text: "before" },
@@ -149,7 +147,7 @@ describe("loadSessionViewModel", () => {
       stopReason: "stop",
       timestamp: nextTimestamp++,
     } as any);
-    sessionManager.appendMessage({
+    await sessionManager.appendMessage({
       role: "bashExecution",
       command: "npm test",
       output: "1 failed",
@@ -159,7 +157,7 @@ describe("loadSessionViewModel", () => {
       timestamp: nextTimestamp++,
     } as any);
 
-    const model = loadSessionViewModel(sessionFile);
+    const model = await loadSessionViewModel(sessionFile);
 
     expect(model.items[0]?.body).toBe('before\n\n[toolCall] search\n{\n  "q": "raw"\n}\n\nafter');
     expect(model.items[1]?.body).toContain("[exitCode] 1");
@@ -167,56 +165,56 @@ describe("loadSessionViewModel", () => {
     expect(model.items[1]?.body).toContain("[truncated] true");
   });
 
-  test("keeps channel and thread sessions on separate pages while linking them", () => {
+  test("keeps channel and thread sessions on separate pages while linking them", async () => {
     const sessionDir = officeSessionsDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
-    const channelSession = openManagedSession(channelFile, conversationDir);
-    channelSession.appendMessage({
+    const channelSession = await openManagedSession(channelFile, conversationDir);
+    await channelSession.appendMessage({
       ...makeUserMessage("channel root"),
       timestamp: Number("1000.0001") * 1000,
     });
-    channelSession.appendMessage(makeAssistantMessage("channel reply"));
+    await channelSession.appendMessage(makeAssistantMessage("channel reply"));
 
     const threadFile = getThreadSessionFile(conversationDir, "D123:1000.0001");
     createManagedSessionFileAtPath(threadFile, conversationDir);
-    const threadSession = openManagedSession(threadFile, conversationDir);
-    threadSession.appendMessage({
+    const threadSession = await openManagedSession(threadFile, conversationDir);
+    await threadSession.appendMessage({
       ...makeUserMessage("channel root"),
       timestamp: Number("1000.0001") * 1000,
     });
-    threadSession.appendMessage(makeUserMessage("thread only"));
-    threadSession.appendMessage(makeAssistantMessage("thread reply"));
+    await threadSession.appendMessage(makeUserMessage("thread only"));
+    await threadSession.appendMessage(makeAssistantMessage("thread reply"));
 
-    const channelModel = loadSessionViewModel(channelFile);
+    const channelModel = await loadSessionViewModel(channelFile);
     expect(channelModel.items.some((item) => item.body?.includes("thread only"))).toBe(false);
     expect(channelModel.threads).toHaveLength(1);
     expect(channelModel.threads[0]?.fileName).toBe(basename(threadFile));
     const rootItem = channelModel.items.find((item) => item.body?.includes("channel root"));
     expect(rootItem?.threads?.[0]?.fileName).toBe(basename(threadFile));
 
-    const threadModel = loadSessionViewModel(threadFile);
+    const threadModel = await loadSessionViewModel(threadFile);
     expect(threadModel.parent?.fileName).toBe(basename(channelFile));
     expect(threadModel.items.some((item) => item.body?.includes("thread only"))).toBe(true);
   });
 
-  test("anchors fixed thread links to the root instead of earlier bootstrap context", () => {
+  test("anchors fixed thread links to the root instead of earlier bootstrap context", async () => {
     const sessionDir = officeSessionsDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
-    const channelSession = openManagedSession(channelFile, conversationDir);
-    channelSession.appendMessage({ ...makeUserMessage("prior context"), timestamp: 1 });
-    channelSession.appendMessage(makeAssistantMessage("prior reply"));
-    channelSession.appendMessage({ ...makeUserMessage("thread root"), timestamp: 2 });
-    channelSession.appendMessage(makeAssistantMessage("channel reply after root"));
+    const channelSession = await openManagedSession(channelFile, conversationDir);
+    await channelSession.appendMessage({ ...makeUserMessage("prior context"), timestamp: 1 });
+    await channelSession.appendMessage(makeAssistantMessage("prior reply"));
+    await channelSession.appendMessage({ ...makeUserMessage("thread root"), timestamp: 2 });
+    await channelSession.appendMessage(makeAssistantMessage("channel reply after root"));
 
     const threadFile = getThreadSessionFile(conversationDir, "D123:1000.0001");
     createManagedSessionFileAtPath(threadFile, conversationDir);
-    const threadSession = openManagedSession(threadFile, conversationDir);
-    threadSession.appendMessage({ ...makeUserMessage("prior context"), timestamp: 1 });
-    threadSession.appendMessage(makeAssistantMessage("prior reply"));
-    threadSession.appendMessage({ ...makeUserMessage("thread root"), timestamp: 2 });
-    threadSession.appendMessage(makeAssistantMessage("thread reply"));
+    const threadSession = await openManagedSession(threadFile, conversationDir);
+    await threadSession.appendMessage({ ...makeUserMessage("prior context"), timestamp: 1 });
+    await threadSession.appendMessage(makeAssistantMessage("prior reply"));
+    await threadSession.appendMessage({ ...makeUserMessage("thread root"), timestamp: 2 });
+    await threadSession.appendMessage(makeAssistantMessage("thread reply"));
 
-    const channelModel = loadSessionViewModel(channelFile);
+    const channelModel = await loadSessionViewModel(channelFile);
     const contextItem = channelModel.items.find((item) => item.body?.includes("prior context"));
     const rootItem = channelModel.items.find((item) => item.body?.includes("thread root"));
 
@@ -224,24 +222,24 @@ describe("loadSessionViewModel", () => {
     expect(rootItem?.threads?.[0]?.fileName).toBe(basename(threadFile));
   });
 
-  test("anchors non-timestamp thread files by matching the root message", () => {
+  test("anchors non-timestamp thread files by matching the root message", async () => {
     const sessionDir = officeSessionsDir(conversationDir);
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
-    const channelSession = openManagedSession(channelFile, conversationDir);
-    channelSession.appendMessage(
+    const channelSession = await openManagedSession(channelFile, conversationDir);
+    await channelSession.appendMessage(
       makeUserMessage(
         "[2026-04-28 18:18:59+08:00] [alice]: first\n\n<slack_attachments>\n/tmp/a.txt\n</slack_attachments>",
       ),
     );
-    channelSession.appendMessage(makeAssistantMessage("first reply"));
+    await channelSession.appendMessage(makeAssistantMessage("first reply"));
 
     const threadFile = getThreadSessionFile(conversationDir, "D123:M1");
     createManagedSessionFileAtPath(threadFile, conversationDir);
-    const threadSession = openManagedSession(threadFile, conversationDir);
-    threadSession.appendMessage(makeUserMessage("[alice]: first"));
-    threadSession.appendMessage(makeAssistantMessage("thread reply"));
+    const threadSession = await openManagedSession(threadFile, conversationDir);
+    await threadSession.appendMessage(makeUserMessage("[alice]: first"));
+    await threadSession.appendMessage(makeAssistantMessage("thread reply"));
 
-    const channelModel = loadSessionViewModel(channelFile);
+    const channelModel = await loadSessionViewModel(channelFile);
     const userAnchor = channelModel.items.find((item) => item.body?.includes("first"));
 
     expect(channelModel.threads).toHaveLength(1);

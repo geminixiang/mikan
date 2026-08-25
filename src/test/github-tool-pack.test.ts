@@ -33,7 +33,7 @@ describe("createGithubToolPack", () => {
     const pr = pack.tools.find((t) => t.name === "github_pr")!;
     const reviewReply = pack.tools.find((t) => t.name === "github_review_reply")!;
 
-    pack.bindRun({ conversationId: "GH_o_r_1", platformName: "slack" });
+    pack.bindRun({ conversationId: "GH_o_r_1", platformName: "slack", userId: "U1" });
     await expect(pr.execute("id", { branch: "pi/x", title: "t" })).rejects.toThrow(
       /only available in GitHub/,
     );
@@ -41,11 +41,11 @@ describe("createGithubToolPack", () => {
       /only available in GitHub/,
     );
 
-    pack.bindRun({ conversationId: "GH_o_r_1", platformName: "github" });
+    pack.bindRun({ conversationId: "GH_o_r_1", platformName: "github", userId: "U1" });
     await reviewReply.execute("id", { comment_id: 8001, body: "done" });
     expect(ops.replyToReviewThread).toHaveBeenCalledWith("GH_o_r_1", 8001, "done");
 
-    pack.bindRun({ conversationId: "GH_o_r_1", platformName: "github" });
+    pack.bindRun({ conversationId: "GH_o_r_1", platformName: "github", userId: "U1" });
     const result = await pr.execute("id", { branch: "pi/x", title: "t" });
     expect(ops.pushAndCreatePr).toHaveBeenCalledWith("GH_o_r_1", {
       branch: "pi/x",
@@ -63,8 +63,8 @@ describe("createGithubToolPack", () => {
     const prA = packA.tools.find((t) => t.name === "github_pr")!;
     const prB = packB.tools.find((t) => t.name === "github_pr")!;
 
-    packA.bindRun({ conversationId: "GH_o_r_1", platformName: "github" });
-    packB.bindRun({ conversationId: "GH_o_r_2", platformName: "github" });
+    packA.bindRun({ conversationId: "GH_o_r_1", platformName: "github", userId: "U1" });
+    packB.bindRun({ conversationId: "GH_o_r_2", platformName: "github", userId: "U1" });
 
     await prA.execute("id", { branch: "pi/a", title: "a" });
     expect(ops.pushAndCreatePr).toHaveBeenLastCalledWith("GH_o_r_1", {
@@ -73,7 +73,7 @@ describe("createGithubToolPack", () => {
     });
 
     // B rebinding to a non-github platform must not disable A's tools either.
-    packB.bindRun({ conversationId: "D123", platformName: "slack" });
+    packB.bindRun({ conversationId: "D123", platformName: "slack", userId: "U1" });
     await prA.execute("id", { branch: "pi/a2", title: "a2" });
     expect(ops.pushAndCreatePr).toHaveBeenLastCalledWith("GH_o_r_1", {
       branch: "pi/a2",

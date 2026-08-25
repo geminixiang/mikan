@@ -97,12 +97,18 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+interface QueuedMessage {
+  readonly queueId?: string;
+  readonly mode: "followUp" | "steer";
+}
+
 export class MikanAgentSession {
   readonly agent: Agent;
   readonly sessionStore: SessionStore;
   private readonly models: MikanModels;
   private readonly settings: HarnessSettings;
   private readonly extensions: ExtensionRegistry | undefined;
+  private readonly queuedMessages = new WeakMap<AgentMessage, QueuedMessage>();
   private listeners = new Set<HarnessEventListener>();
   private retryAttempt = 0;
   private overflowRecoveryAttempted = false;
@@ -137,7 +143,10 @@ export class MikanAgentSession {
       convertToLlm,
       transformContext: async (messages) => {
         if (!this.extensions?.hasHandlers("context")) return messages;
-        return this.extensions.emitContext({ messages, origin: this.runOrigin });
+        return this.extensions.emitContext({
+          messages,
+          origin: this.runOrigin,
+        });
       },
       streamFn: (model, context, streamOptions) =>
         this.models.models.streamSimple(model, context, streamOptions),
@@ -240,8 +249,8 @@ export class MikanAgentSession {
   }
 
   /** Replace the agent transcript from the persisted session tree. */
-  reloadFromSession(): number {
-    const context = this.sessionStore.buildSessionContext();
+  async reloadFromSession(): Promise<number> {
+    const context = await this.sessionStore.buildSessionContext();
     if (context.messages.length > 0) {
       this.agent.state.messages = context.messages;
     }
@@ -381,6 +390,15 @@ export class MikanAgentSession {
     return undefined;
   }
 
+  /** Queue a message through pi's active-run steering/follow-up primitives. */
+  queueMessage(message: AgentMessage, mode: "followUp" | "steer", queueId?: string): boolean {
+    if (!this.agent.state.isStreaming) return false;
+    this.queuedMessages.set(message, { queueId, mode });
+    if (mode === "steer") this.agent.steer(message);
+    else this.agent.followUp(message);
+    return true;
+  }
+
   /** Abort the active run, pending retry backoff, and in-flight compaction. */
   abort(): void {
     this.retryAbortController?.abort();
@@ -411,6 +429,19 @@ export class MikanAgentSession {
   }
 
   private async handleAgentEvent(event: AgentEvent): Promise<void> {
+    if (event.type === "message_start") {
+      const queued = this.queuedMessages.get(event.message);
+      if (queued) {
+        this.queuedMessages.delete(event.message);
+        if (queued.queueId) {
+          await this.emit({
+            type: "queued_message_start",
+            queueId: queued.queueId,
+            mode: queued.mode,
+          });
+        }
+      }
+    }
     if (event.type === "tool_execution_start") {
       this.tally.toolCalls += 1;
       this.tally.toolCallCounts[event.toolName] =
@@ -423,7 +454,10 @@ export class MikanAgentSession {
 
     let message = event.message;
     if (this.extensions?.hasHandlers("message_end")) {
-      const result = await this.extensions.emitMessageEnd({ message, origin: this.runOrigin });
+      const result = await this.extensions.emitMessageEnd({
+        message,
+        origin: this.runOrigin,
+      });
       if (result?.message) {
         for (const key of Object.keys(message)) {
           delete (message as unknown as Record<string, unknown>)[key];
@@ -433,10 +467,10 @@ export class MikanAgentSession {
     }
 
     if (message.role === "user" || message.role === "assistant" || message.role === "toolResult") {
-      this.sessionStore.appendMessage(message);
+      await this.sessionStore.appendMessage(message);
     } else if (message.role === "custom") {
       const custom = message as CustomMessage;
-      this.sessionStore.appendCustomMessageEntry(
+      await this.sessionStore.appendCustomMessageEntry(
         custom.customType,
         custom.content,
         custom.display,
@@ -452,7 +486,11 @@ export class MikanAgentSession {
       if (message.stopReason !== "error") {
         this.overflowRecoveryAttempted = false;
         if (this.retryAttempt > 0) {
-          await this.emit({ type: "auto_retry_end", success: true, attempt: this.retryAttempt });
+          await this.emit({
+            type: "auto_retry_end",
+            success: true,
+            attempt: this.retryAttempt,
+          });
           this.retryAttempt = 0;
         }
       }
@@ -594,7 +632,7 @@ export class MikanAgentSession {
   private async runCompaction(reason: CompactionReason, willRetry: boolean): Promise<boolean> {
     let started = false;
     try {
-      const pathEntries = this.sessionStore.getBranch();
+      const pathEntries = await this.sessionStore.getBranch();
       const preparation = getOrThrow(prepareCompaction(pathEntries, this.settings.compaction));
       if (!preparation) return false;
 
@@ -617,25 +655,17 @@ export class MikanAgentSession {
         await this.emit({ type: "compaction_end", reason, aborted: true });
         return false;
       }
-      // pi 0.82 reserves an absent firstKeptEntryId for keep-nothing
-      // compactions; mikan's session format requires a kept entry on the
-      // branch, and the compaction path used here always produces one.
-      const firstKeptEntryId = result.firstKeptEntryId;
-      if (firstKeptEntryId === undefined) {
-        throw new Error("compaction returned no first kept entry");
-      }
-
-      const entryId = this.sessionStore.appendCompaction(
+      const entryId = await this.sessionStore.appendCompaction(
         result.summary,
-        firstKeptEntryId,
+        result.retainedTail,
         result.tokensBefore,
         result.details,
       );
-      const context = this.sessionStore.buildSessionContext();
+      const context = await this.sessionStore.buildSessionContext();
       this.agent.state.messages = context.messages;
 
       if (this.extensions?.hasHandlers("session_compact")) {
-        const entry = this.sessionStore.getEntry(entryId);
+        const entry = await this.sessionStore.getEntry(entryId);
         if (entry?.type === "compaction") {
           await this.extensions.emit("session_compact", {
             entry: entry as CompactionEntry,
@@ -649,7 +679,7 @@ export class MikanAgentSession {
         reason,
         result: {
           summary: result.summary,
-          firstKeptEntryId,
+          retainedMessages: result.retainedTail.length,
           tokensBefore: result.tokensBefore,
         },
         aborted: false,

@@ -13,4 +13,4 @@ Web portals served by the link server.
 
 - `admin/`: Admin portal, model access-status resolution, and admin token storage.
 - `login/`: Login/OAuth portal and link token storage.
-- `session-view/`: Session View command, portal, session model loader, and token storage.
+- `session-view/`: Session View command, portal, session model loader, and token storage. A short-lived token authorizes read/navigation across the complete history of one canonical `OfficeAddress`; session UUIDs select the initial or viewed durable session but do not widen that office scope. Interactive continuation submits the viewed UUID, and the Sessions authority resolves its exact file and runtime key without changing the office's `current` pointer.

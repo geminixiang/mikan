@@ -62,14 +62,12 @@ export interface LinkTokenStoreLike {
 }
 
 export interface SessionViewTokenStoreLike {
-  create(
-    platform: PlatformName,
-    platformUserId: string,
-    conversationId: string,
-    sessionKey: string,
-    sessionFile: string,
-    platformUserName?: string,
-  ): { token: string };
+  create(args: {
+    address: OfficeAddress;
+    platformUserId: string;
+    sessionId: string;
+    platformUserName?: string;
+  }): { token: string };
 }
 
 export interface AdminTokenStoreLike {

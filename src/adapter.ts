@@ -15,7 +15,9 @@ export type {
   ConversationMessage,
   ConversationResponder,
   ChatToolResult,
+  ChatToolStart,
   ConversationKind,
+  ConversationRunOrigin,
   MessagingInfo,
   OfficeAddress,
   OfficeKey,
@@ -52,16 +54,30 @@ function resolveConversationAddress(input: ConversationIdentityInput): OfficeAdd
 
 /** Normalize platform intake into one authoritative conversation identity. */
 export function createConversationEvent<
-  T extends Omit<ConversationEvent, "address" | "conversationId">,
->(input: T & ConversationIdentityInput): T & ConversationEvent {
+  T extends Omit<ConversationEvent, "address" | "conversationId" | "origin">,
+>(
+  input: T & ConversationIdentityInput & { origin?: ConversationEvent["origin"] },
+): T & ConversationEvent {
   const address = resolveConversationAddress(input);
-  return { ...input, address, conversationId: address.conversationId };
+  return {
+    ...input,
+    address,
+    conversationId: address.conversationId,
+    origin: input.origin ?? { kind: "interactive" },
+  };
 }
 
 /** Normalize a platform response context into one authoritative identity. */
 export function createConversationMessage<
-  T extends Omit<ConversationMessage, "address" | "conversationId">,
->(input: T & ConversationIdentityInput): T & ConversationMessage {
+  T extends Omit<ConversationMessage, "address" | "conversationId" | "origin">,
+>(
+  input: T & ConversationIdentityInput & { origin?: ConversationMessage["origin"] },
+): T & ConversationMessage {
   const address = resolveConversationAddress(input);
-  return { ...input, address, conversationId: address.conversationId };
+  return {
+    ...input,
+    address,
+    conversationId: address.conversationId,
+    origin: input.origin ?? { kind: "interactive" },
+  };
 }

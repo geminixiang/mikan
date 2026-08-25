@@ -114,11 +114,11 @@ async function routeApiRequest(
       return;
     }
     if (url.pathname === "/admin/api/session-usage") {
-      serveSessionUsage(res, services);
+      await serveSessionUsage(res, services);
       return;
     }
     if (url.pathname === "/admin/api/conversation-usage") {
-      serveConversationUsage(res, url, services);
+      await serveConversationUsage(res, url, services);
       return;
     }
     if (url.pathname === "/admin/api/conversation-state") {
@@ -389,48 +389,59 @@ interface SessionUsageRow {
   cost: number;
 }
 
-function serveSessionUsage(res: ServerResponse, services: AdminServices): void {
+async function serveSessionUsage(res: ServerResponse, services: AdminServices): Promise<void> {
   const workspace = requireAdminWorkspace(res, services);
   if (!workspace) return;
 
-  const rows = listAdminOffices(workspace)
-    .flatMap((office) =>
-      listConversationSessionUsage(workspace, office, conversationDisplayLabel(services, office)),
-    )
+  const usageLists: SessionUsageRow[][] = [];
+  for (const office of listAdminOffices(workspace)) {
+    usageLists.push(
+      await listConversationSessionUsage(
+        workspace,
+        office,
+        conversationDisplayLabel(services, office),
+      ),
+    );
+  }
+  const rows = usageLists
+    .flat()
     .toSorted((a, b) => b.total - a.total)
     .slice(0, 20);
 
   jsonRes(res, 200, { sessions: rows });
 }
 
-function listConversationSessionUsage(
+async function listConversationSessionUsage(
   workspace: Workspace,
   office: OfficeAddress,
   label: string,
-): SessionUsageRow[] {
+): Promise<SessionUsageRow[]> {
   const sessionDir = workspace.office(office).sessionsDir;
+  let files: string[];
   try {
-    return readdirSync(sessionDir, { withFileTypes: true })
+    files = readdirSync(sessionDir, { withFileTypes: true })
       .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
-      .flatMap((entry) =>
-        readSessionUsage(join(sessionDir, entry.name), office.conversationId, label),
-      );
+      .map((entry) => entry.name);
   } catch {
     return [];
   }
+  const rows: SessionUsageRow[] = [];
+  for (const name of files) {
+    rows.push(...(await readSessionUsage(join(sessionDir, name), office.conversationId, label)));
+  }
+  return rows;
 }
 
-function readSessionUsage(
+async function readSessionUsage(
   sessionFile: string,
   conversationId: string,
   label: string,
-): SessionUsageRow[] {
+): Promise<SessionUsageRow[]> {
   try {
-    const manager = SessionStore.open(sessionFile);
+    const manager = await SessionStore.inspect(sessionFile);
     const header = manager.getHeader();
-    if (!header) return [];
 
-    const entries = manager.getEntries();
+    const entries = await manager.getEntries();
     const usage = entries.reduce(
       (sum, entry) => {
         if (entry.type !== "message" || entry.message.role !== "assistant") return sum;
@@ -455,7 +466,8 @@ function readSessionUsage(
         label,
         fileName: basename(sessionFile),
         sessionId: header.id,
-        updatedAt: entries.at(-1)?.timestamp ?? header.timestamp,
+        updatedAt:
+          entries.length > 0 ? new Date(entries.at(-1)!.timestamp).toISOString() : header.timestamp,
         ...usage,
         total,
       },
@@ -501,7 +513,11 @@ function emptyBucket(date: string): UsageBucket {
 }
 
 /** Per-conversation daily token usage over the last N days (N clamped to 1..7). */
-function serveConversationUsage(res: ServerResponse, url: URL, services: AdminServices): void {
+async function serveConversationUsage(
+  res: ServerResponse,
+  url: URL,
+  services: AdminServices,
+): Promise<void> {
   const workspace = requireAdminWorkspace(res, services);
   if (!workspace) return;
 
@@ -538,7 +554,7 @@ function serveConversationUsage(res: ServerResponse, url: URL, services: AdminSe
   try {
     for (const entry of readdirSync(sessionDir, { withFileTypes: true })) {
       if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
-      accumulateSessionUsageByDay(join(sessionDir, entry.name), cutoff, buckets, flags);
+      await accumulateSessionUsageByDay(join(sessionDir, entry.name), cutoff, buckets, flags);
     }
   } catch {
     // No sessions directory yet — return empty buckets.
@@ -573,17 +589,16 @@ function serveConversationUsage(res: ServerResponse, url: URL, services: AdminSe
   });
 }
 
-function accumulateSessionUsageByDay(
+async function accumulateSessionUsageByDay(
   sessionFile: string,
   cutoff: Date,
   buckets: Map<string, UsageBucket>,
   flags: { hasOlder: boolean },
-): void {
+): Promise<void> {
   try {
-    const manager = SessionStore.open(sessionFile);
-    if (!manager.getHeader()) return;
+    const manager = await SessionStore.inspect(sessionFile);
 
-    for (const entry of manager.getEntries()) {
+    for (const entry of await manager.getEntries()) {
       if (entry.type !== "message" || entry.message.role !== "assistant") continue;
       const usage = (entry.message as unknown as AssistantUsageMessage).usage;
       if (!usage || !entry.timestamp) continue;
@@ -928,14 +943,17 @@ function serveConversationSessionLink(
   }
 
   try {
-    const { token: viewToken } = services.sessionViewTokenStore.create(
-      token.platform,
-      token.platformUserId,
-      scope.conversationId,
-      scope.conversationId,
-      sessionFile,
-      token.platformUserName,
-    );
+    const sessionId = SessionStore.readHeader(sessionFile)?.id;
+    if (!sessionId) {
+      jsonRes(res, 404, { error: "No valid session found for this conversation" });
+      return;
+    }
+    const { token: viewToken } = services.sessionViewTokenStore.create({
+      address: scope.address,
+      platformUserId: token.platformUserId,
+      sessionId,
+      ...(token.platformUserName ? { platformUserName: token.platformUserName } : {}),
+    });
     const url = `${services.portalBaseUrl}/session?token=${encodeURIComponent(viewToken)}`;
     jsonRes(res, 200, { ok: true, url });
   } catch (err) {

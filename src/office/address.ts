@@ -6,7 +6,7 @@ const OFFICE_KEY_VERSION = "v1";
 const OFFICE_KEY_DOMAIN = "office-address-v1";
 const OFFICE_KEY_DIGEST_LENGTH = 16;
 const READABLE_ID_LENGTH = 32;
-const PLATFORM_NAMES = new Set<PlatformName>(["slack", "discord", "telegram", "github"]);
+const PLATFORM_NAMES = new Set<PlatformName>(["slack", "discord", "telegram", "github", "web"]);
 
 /** Construct the canonical identity used by future office consumers. */
 export function createOfficeAddress(platform: PlatformName, conversationId: string): OfficeAddress {
@@ -101,7 +101,7 @@ export function sameOffice(left: OfficeAddress, right: OfficeAddress): boolean {
 
 /** Validate a persisted or externally supplied office key. */
 export function assertOfficeKey(value: string): OfficeKey {
-  const pattern = /^v1-(slack|discord|telegram|github)-[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{16}$/;
+  const pattern = /^v1-(slack|discord|telegram|github|web)-[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{16}$/;
   if (!pattern.test(value)) throw new Error(`Invalid office key: ${JSON.stringify(value)}`);
   return value as OfficeKey;
 }
@@ -121,7 +121,9 @@ function readableConversationId(conversationId: string): string {
 }
 
 function patternMatchesOfficeKey(value: string): boolean {
-  return /^v1-(slack|discord|telegram|github)-[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{16}$/.test(value);
+  return /^v1-(slack|discord|telegram|github|web)-[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{16}$/.test(
+    value,
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

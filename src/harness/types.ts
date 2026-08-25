@@ -1,10 +1,10 @@
 /**
  * Core types for the mikan agent harness.
  *
- * The harness is built directly on pi-agent-core and pi-ai. Session entries
- * are structurally identical to pi-agent-core's `SessionTreeEntry`, and the
- * on-disk JSONL format stays compatible with the v3 session files mikan has
- * always written, so existing conversation history keeps working unchanged.
+ * The harness is built directly on pi-agent-core and pi-ai. Sessions use
+ * pi's v4 entry model and JSONL format; mikan adds only the header
+ * conventions carried in the v4 header `metadata`. Legacy v3 files are
+ * handled exclusively by the migration module (`sessions/migrate-v3.ts`).
  */
 import type {
   AgentEvent,
@@ -12,11 +12,9 @@ import type {
   BranchSummaryEntry,
   CompactionEntry,
   CustomEntry,
-  CustomMessageEntry,
+  Entry,
   MessageEntry,
   SessionContext,
-  SessionInfoEntry,
-  SessionTreeEntry,
   ThinkingLevel,
   CompactionSettings,
 } from "@earendil-works/pi-agent-core";
@@ -26,22 +24,30 @@ import type { MikanModels } from "./models.js";
 import type { SessionStore } from "./session-store.js";
 import type { Static, TSchema } from "@sinclair/typebox";
 
-export type {
-  BranchSummaryEntry,
-  CompactionEntry,
-  CustomEntry,
-  CustomMessageEntry,
-  SessionContext,
-  SessionInfoEntry,
-};
+export type { BranchSummaryEntry, CompactionEntry, CustomEntry, SessionContext };
 
-/** Message entry as stored in mikan session files. */
+/** Message entry as stored in mikan session files (pi v4). */
 export type SessionMessageEntry = MessageEntry;
 
-/** Union of entry types mikan reads and writes. Alias of pi-agent-core's tree entry. */
-export type SessionEntry = SessionTreeEntry;
+/** Union of entry types mikan reads and writes. Alias of pi's v4 entry. */
+export type SessionEntry = Entry;
 
-export const CURRENT_SESSION_VERSION = 3;
+export const CURRENT_SESSION_VERSION = 4;
+
+export interface SessionCreateInfo {
+  id?: string;
+  parentSession?: string;
+  parentSessionId?: string;
+}
+
+/** Immutable session queries available to portals, admin, and migration code. */
+export interface SessionInspection {
+  getHeader(): SessionHeader;
+  getEntries(): Promise<Entry[]>;
+  getSessionName(): Promise<string | undefined>;
+  getBranch(fromId?: string): Promise<Entry[]>;
+  buildSessionContext(): Promise<SessionContext>;
+}
 
 export interface SubagentModelSpec {
   provider: string;
@@ -169,9 +175,10 @@ export type SubagentRunResult<TOutput = string> =
   | SubagentRunIncompleteResult;
 
 /**
- * First line of every session file. `cwd` records where the session was
- * started; extra fields (for example mikan's `source` marker) are preserved
- * verbatim on read and rewrite.
+ * Compatibility header view synthesized from the v4 file header for callers
+ * that read mikan session lineage. `metadata` carries mikan header extras (for
+ * example `parentSessionPath` and the legacy `source` marker preserved by
+ * the v3 migration).
  */
 export interface SessionHeader {
   type: "session";
@@ -183,9 +190,6 @@ export interface SessionHeader {
   parentSessionId?: string;
   [extra: string]: unknown;
 }
-
-/** Raw file line: the header or one session entry. */
-export type SessionFileEntry = SessionHeader | SessionEntry;
 
 export interface CreateMikanModelsOptions {
   authPath?: string;
@@ -310,12 +314,19 @@ export type CompactionReason = "threshold" | "overflow" | "manual";
 
 interface CompactionResultSummary {
   summary: string;
-  firstKeptEntryId: string;
+  /** Number of recent messages retained inline on the compaction entry. */
+  retainedMessages: number;
   tokensBefore: number;
 }
 
 export type HarnessEvent =
   | AgentEvent
+  | {
+      /** A pi steering/follow-up message entered the active transcript. */
+      type: "queued_message_start";
+      queueId: string;
+      mode: "followUp" | "steer";
+    }
   | { type: "compaction_start"; reason: CompactionReason }
   | {
       type: "compaction_end";

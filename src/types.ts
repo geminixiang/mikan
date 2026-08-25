@@ -12,7 +12,7 @@ import type {
   ExtensionScheduleCallbackFire,
   ExtensionScheduleEngine,
 } from "./harness/extensions/types.js";
-import type { SubagentRunStatus } from "./harness/types.js";
+import type { HarnessEventListener, SubagentRunStatus } from "./harness/types.js";
 import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import type { MikanModels } from "./harness/models.js";
 import type { Office } from "./office/types.js";
@@ -29,7 +29,7 @@ type ExecFileAsync = typeof execFileAsync;
 
 export type ConversationKind = "direct" | "shared";
 
-export type PlatformName = "slack" | "discord" | "telegram" | "github";
+export type PlatformName = "slack" | "discord" | "telegram" | "github" | "web";
 
 /** Canonical platform-plus-raw identifier for one conversation office. */
 export interface OfficeAddress {
@@ -89,8 +89,14 @@ export interface OfficeMigrationPreparation {
  */
 export type PlatformTrustModel = "membership" | "open-trigger";
 
+export type ConversationRunOrigin =
+  | { kind: "interactive" }
+  | { kind: "scheduled-event"; eventId: string };
+
 export interface ConversationMessage {
   id: string;
+  /** Explicit source semantics; never infer run policy from the message ID. */
+  origin: ConversationRunOrigin;
   /** Canonical identity of the conversation office. */
   address: OfficeAddress;
   /** @deprecated Use address.conversationId except at platform I/O seams. */
@@ -104,7 +110,15 @@ export interface ConversationMessage {
   threadTs?: string;
 }
 
+export interface ChatToolStart {
+  toolCallId: string;
+  toolName: string;
+  label?: string;
+  args?: Record<string, unknown>;
+}
+
 export interface ChatToolResult {
+  toolCallId?: string;
   toolName: string;
   label?: string;
   args?: Record<string, unknown>;
@@ -162,6 +176,7 @@ export interface ConversationResponder {
    */
   replaceSubagentProgress?(progress: SubagentProgressSnapshot, finalText?: string): Promise<void>;
   respondDiagnostic(text: string, options?: { style?: "muted" | "error" }): Promise<void>;
+  respondToolStart?(tool: ChatToolStart): Promise<void>;
   respondToolResult(result: ChatToolResult): Promise<void>;
   setTyping(isTyping: boolean): Promise<void>;
   setWorking(working: boolean): Promise<void>;
@@ -230,6 +245,8 @@ export interface AgentEventEnvelope {
  */
 export interface ConversationEvent {
   type: string;
+  /** Explicit source semantics; never infer run policy from the platform timestamp. */
+  origin: ConversationRunOrigin;
   /** Canonical identity created by the platform adapter at intake. */
   address: OfficeAddress;
   /** @deprecated Raw platform identifier; valid only at adapter I/O seams. */
@@ -248,6 +265,8 @@ export interface ConversationEvent {
   text: string;
   /** Downloaded attachments */
   attachments?: { name: string; localPath: string }[];
+  /** Durable session UUID selected by an office-history surface. */
+  sessionId?: string;
   /** Platform-computed session key; overrides default conversationId:thread_ts computation */
   sessionKey?: string;
 }
@@ -480,7 +499,7 @@ export interface MessagingEventHandler {
 // ── agent ─────────────────────────────────────────────────────────────────────
 
 export interface PiAgentWrapper {
-  syncChatHistory(currentMessageId?: string): void;
+  syncChatHistory(currentMessageId?: string): Promise<void>;
   run(
     message: ConversationMessage,
     responder: ConversationResponder,
@@ -492,6 +511,10 @@ export interface PiAgentWrapper {
     platform: MessagingInfo,
   ): Promise<{ stopReason: string; errorMessage?: string }>;
   abort(): void;
+  /** Queue a follow-up or steering message into pi's active agent loop. */
+  queueMessage(message: ConversationMessage, mode: "followUp" | "steer", queueId?: string): boolean;
+  /** Observe this runner's pi lifecycle events; returns an unsubscribe function. */
+  subscribe(listener: HarnessEventListener): () => void;
   getCurrentStep(): { toolName?: string; label?: string } | undefined;
   /**
    * Dispatch a leading-slash message to an extension-registered command.

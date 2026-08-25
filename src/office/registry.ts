@@ -1,5 +1,4 @@
-import { randomBytes } from "node:crypto";
-import { lstatSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import type {
   OfficeAddress,
@@ -18,6 +17,7 @@ import {
   validateOfficeAddress,
 } from "./address.js";
 import { parseGithubConversationId } from "../adapters/github/ids.js";
+import { acquireFileLease } from "../utils/file-lease.js";
 import { isRecord, readTextFileIfExists } from "../utils/file-guards.js";
 import { atomicWritePrivateFile } from "../utils/file-guards.js";
 
@@ -311,7 +311,12 @@ export class OfficeRegistry {
    * across its filesystem operation instead of splitting the transition.
    */
   private withExclusiveLease<T>(operation: () => T): T {
-    const release = acquireRegistryLease(this.lockPath, this.lockTimeoutMs);
+    const release = acquireFileLease(this.lockPath, {
+      timeoutMs: this.lockTimeoutMs,
+      retryMs: REGISTRY_LOCK_RETRY_MS,
+      staleMs: REGISTRY_LOCK_STALE_MS,
+      label: "office registry",
+    });
     try {
       this.state = this.readState();
       return operation();
@@ -615,74 +620,6 @@ function pathExists(path: string): boolean {
   }
 }
 
-function acquireRegistryLease(lockPath: string, timeoutMs: number): () => void {
-  const deadline = Date.now() + timeoutMs;
-  const token = `${process.pid}:${randomBytes(8).toString("hex")}`;
-
-  for (;;) {
-    try {
-      mkdirSync(lockPath, { mode: 0o700 });
-      try {
-        writeFileSync(join(lockPath, "owner"), `${token}\n`, { mode: 0o600 });
-      } catch (error) {
-        rmSync(lockPath, { recursive: true, force: true });
-        throw error;
-      }
-      return () => releaseRegistryLease(lockPath, token);
-    } catch (error) {
-      if (!isErrno(error, "EEXIST")) throw error;
-      if (registryLockIsStale(lockPath)) {
-        rmSync(lockPath, { recursive: true, force: true });
-        continue;
-      }
-      if (Date.now() >= deadline) {
-        throw new Error(`Timed out acquiring office registry lock: ${lockPath}`, { cause: error });
-      }
-      sleepSync(REGISTRY_LOCK_RETRY_MS);
-    }
-  }
-}
-
-function releaseRegistryLease(lockPath: string, token: string): void {
-  try {
-    if (readFileSync(join(lockPath, "owner"), "utf8").trim() === token) {
-      rmSync(lockPath, { recursive: true, force: true });
-    }
-  } catch (error) {
-    if (!isErrno(error, "ENOENT")) throw error;
-  }
-}
-
-function registryLockIsStale(lockPath: string): boolean {
-  let ownerKnown = false;
-  let ownerAlive = false;
-  try {
-    const owner = readFileSync(join(lockPath, "owner"), "utf8").trim();
-    const pid = Number(owner.split(":", 1)[0]);
-    if (Number.isInteger(pid) && pid > 0) {
-      ownerKnown = true;
-      try {
-        process.kill(pid, 0);
-        ownerAlive = true;
-      } catch (error) {
-        if (isErrno(error, "EPERM")) ownerAlive = true;
-      }
-    }
-  } catch {
-    // The owner file may not have been written before its process died.
-  }
-  try {
-    const oldEnough = Date.now() - statSync(lockPath).mtimeMs >= REGISTRY_LOCK_STALE_MS;
-    return ownerKnown ? !ownerAlive : oldEnough;
-  } catch {
-    return false;
-  }
-}
-
-function sleepSync(milliseconds: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
-}
-
 // ── raw-id lookups (cold paths: CLI, Admin enumeration) ──────────────────────
 
 /**
@@ -759,6 +696,8 @@ function platformsMatchingConversationIdFormat(
         return /^-?\d+$/.test(rawConversationId);
       case "discord":
         return /^\d+$/.test(rawConversationId);
+      case "web":
+        return rawConversationId.startsWith("wsp_");
       case "slack":
         return /^[A-Z][A-Z0-9]*$/.test(rawConversationId);
     }

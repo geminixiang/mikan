@@ -23,6 +23,7 @@ import { createGithubToolPack } from "./adapters/github/tool-pack.js";
 import type { PlatformGithubOps } from "./adapters/github/types.js";
 import { GcpTokenProvider } from "./adapters/github/gcp-auth.js";
 import { TelegramMessagingBot } from "./adapters/telegram/bot.js";
+import { WebMessagingBot } from "./adapters/web/bot.js";
 import { SlackMessagingBot as SlackMessagingBotClass } from "./adapters/slack/bot.js";
 import { createSlackToolPack } from "./adapters/slack/tool-pack.js";
 import type { PlatformSlackOps } from "./adapters/slack/types.js";
@@ -31,6 +32,10 @@ import { downloadChannel } from "./cli/download.js";
 import { EventsWatcher } from "./events.js";
 import { ExtensionCallbackScheduler } from "./extension-schedules.js";
 import * as log from "./log.js";
+import { hasWebOAuthProvider, resolveWebOAuthProviders } from "./web/auth/portal.js";
+import { WebAuthRegistry } from "./web/auth/registry.js";
+import { WebEventHub } from "./web/harness/hub.js";
+import { WebHarnessService } from "./web/harness/service.js";
 import { startWebServer } from "./web/server.js";
 import { InMemoryAdminTokenStore } from "./web/admin/store.js";
 import { InMemoryLinkTokenStore } from "./web/login/store.js";
@@ -63,10 +68,18 @@ import {
   stopIdleGondolinVms,
 } from "./sandbox/gondolin.js";
 import { FileVaultManager } from "./vault/index.js";
+import { OpenConnectorClient } from "./connector/client.js";
+import { ConnectorGateway } from "./connector/gateway.js";
+import { ConnectorConnectionStore } from "./connector/store.js";
+import { createConnectorToolPack } from "./connector/tool-pack.js";
+import { credentialAuthorizationKey } from "./sandbox/identity.js";
 import { runExtCommand } from "./cli/ext.js";
 import { runOfficeCommand } from "./cli/office.js";
+import { runSessionsCommand } from "./cli/sessions.js";
 import {
+  assertPlatformName,
   buildContainerBindTranslator,
+  createOfficeAddress,
   createWorkspace,
   formatUnmigratedOfficesError,
   migrateLegacyOffices,
@@ -107,6 +120,9 @@ const GITHUB_POLL_INTERVAL = readEnv("GITHUB_POLL_INTERVAL");
 const GITHUB_WEBHOOK_SECRET = readEnv("GITHUB_WEBHOOK_SECRET");
 const GOOGLE_APPLICATION_CREDENTIALS = readEnv("GOOGLE_APPLICATION_CREDENTIALS");
 const GOOGLE_CLOUD_PROJECT = readEnv("GOOGLE_CLOUD_PROJECT");
+const CONNECTOR_GATEWAY_URL = readEnv("CONNECTOR_GATEWAY_URL");
+const CONNECTOR_RUNTIME_TOKEN = readEnv("CONNECTOR_RUNTIME_TOKEN");
+const CONNECTOR_ADMIN_TOKEN = readEnv("CONNECTOR_ADMIN_TOKEN");
 // Externally-visible base URL of the link/OAuth server; the env read and
 // trailing-slash normalization live in config.resolveLinkBaseUrl.
 const LINK_BASE_URL = resolveLinkBaseUrl();
@@ -196,6 +212,11 @@ if (plan.mode === "office") {
   process.exit(runOfficeCommand(plan.officeArgs ?? []));
 }
 
+// `mikan sessions …` migrates/maintains session files and exits.
+if (plan.mode === "sessions") {
+  process.exit(await runSessionsCommand(plan.sessionsArgs ?? []));
+}
+
 // Global fetch: proxy support (HTTP_PROXY/HTTPS_PROXY/NO_PROXY) and idle
 // timeouts so a stalled LLM stream errors out instead of hanging a session.
 const httpIdleTimeoutMs = parseHttpIdleTimeoutMs(readEnv("HTTP_IDLE_TIMEOUT"));
@@ -283,7 +304,11 @@ const enabledPlatforms: PlatformName[] = [
 ];
 const officeMigration = (() => {
   try {
-    return migrateLegacyOffices({ workspaceRoot: workingDir, stateDir, enabledPlatforms });
+    return migrateLegacyOffices({
+      workspaceRoot: workingDir,
+      stateDir,
+      enabledPlatforms,
+    });
   } catch (error) {
     handleStartupError(error);
   }
@@ -351,7 +376,10 @@ const sandboxLimits =
     : undefined;
 const sandboxBoostLimits =
   sandboxSettings?.boost?.cpus || sandboxSettings?.boost?.memory
-    ? { cpus: sandboxSettings?.boost?.cpus, memory: sandboxSettings?.boost?.memory }
+    ? {
+        cpus: sandboxSettings?.boost?.cpus,
+        memory: sandboxSettings?.boost?.memory,
+      }
     : undefined;
 
 const provisioner =
@@ -401,6 +429,31 @@ const resourceController =
     : sandbox.type === "gondolin"
       ? gondolinResources
       : undefined;
+
+// Optional Open Connector gateway: host-side OAuth provider actions. The
+// gateway tokens stay in this process; conversations get curated read-only
+// tools plus a portal onboarding page, never the tokens themselves.
+if (CONNECTOR_GATEWAY_URL && !CONNECTOR_RUNTIME_TOKEN) {
+  log.logWarning(
+    "CONNECTOR_GATEWAY_URL is set but CONNECTOR_RUNTIME_TOKEN is not — connector tools are disabled",
+  );
+}
+const connectorGateway =
+  CONNECTOR_GATEWAY_URL && CONNECTOR_RUNTIME_TOKEN
+    ? new ConnectorGateway({
+        client: new OpenConnectorClient({
+          baseUrl: CONNECTOR_GATEWAY_URL,
+          runtimeToken: CONNECTOR_RUNTIME_TOKEN,
+          adminToken: CONNECTOR_ADMIN_TOKEN,
+        }),
+        store: new ConnectorConnectionStore(stateDir),
+      })
+    : undefined;
+if (connectorGateway && !CONNECTOR_ADMIN_TOKEN) {
+  log.logWarning(
+    "CONNECTOR_ADMIN_TOKEN is not set — connector onboarding/disconnect will fail; existing connections keep working",
+  );
+}
 
 if (sandbox.type === "image" || sandbox.type === "gondolin") {
   ensureDirExists(workspace.skillsDir);
@@ -578,6 +631,26 @@ const platformBlockKit: PlatformBlockKit = {
  */
 function buildPlatformToolPackFactories(): PlatformToolPackFactory[] {
   const factories: PlatformToolPackFactory[] = [];
+  if (connectorGateway) {
+    const gateway = connectorGateway;
+    factories.push(() =>
+      createConnectorToolPack({
+        execute: (ctx, action, input, signal) =>
+          gateway.execute(
+            credentialAuthorizationKey(sandbox, {
+              userId: ctx.userId,
+              address: createOfficeAddress(
+                assertPlatformName(ctx.platformName),
+                ctx.conversationId,
+              ),
+            }),
+            action,
+            input,
+            signal,
+          ),
+      }),
+    );
+  }
   if (hasSlack) {
     const platformSlackOps: PlatformSlackOps = {
       postBlocks: async (conversationId, { text, blocks, threadTs }) => {
@@ -797,7 +870,42 @@ if (GITHUB_WEBHOOK_SECRET && (!githubBotForWebhook || !LINK_PORT)) {
   );
 }
 
+const webOAuthProviders = resolveWebOAuthProviders();
+const webAuthEnabled = hasWebOAuthProvider(webOAuthProviders);
+if (webAuthEnabled && !LINK_PORT) {
+  log.logWarning("Web OAuth is configured but LINK_PORT is not — Web account sign-in is disabled");
+}
+if (connectorGateway && !LINK_PORT) {
+  log.logWarning(
+    "Connector gateway is configured but LINK_PORT is not — the connector onboarding page will not be served",
+  );
+}
+
 if (LINK_PORT) {
+  const webAuth = webAuthEnabled
+    ? {
+        registry: new WebAuthRegistry(stateDir),
+        publicBaseUrl: LINK_BASE_URL,
+        providers: webOAuthProviders,
+      }
+    : undefined;
+  let webHarness;
+  if (webAuth) {
+    const hub = new WebEventHub();
+    const bot = new WebMessagingBot(workspace, hub);
+    botsByPlatform.web = bot;
+    webHarness = {
+      auth: webAuth,
+      service: new WebHarnessService(webAuth.registry, workspace, {
+        runtime: handler,
+        bot,
+        hub,
+      }),
+    };
+    new OfficeRegistry(stateDir).enablePlatform("web");
+    log.logInfo("Platform: Web");
+  }
+
   startWebServer({
     port: LINK_PORT,
     linkTokenStore,
@@ -807,8 +915,18 @@ if (LINK_PORT) {
       if (bot) await bot.postMessage(conversationId, message);
     },
     sessionViewTokenStore,
-    sessionViewInteractive: { handler, botsByPlatform },
-    adminOptions: { adminTokenStore, workspace, runtime: handler, sandbox, botsByPlatform },
+    sessionViewInteractive: { handler, workspace, botsByPlatform },
+    adminOptions: {
+      adminTokenStore,
+      workspace,
+      runtime: handler,
+      sandbox,
+      botsByPlatform,
+    },
+    webAuth,
+    connector: connectorGateway,
+    webHarness,
+    webApp: webAuth ? {} : undefined,
     githubWebhook:
       GITHUB_WEBHOOK_SECRET && githubBotForWebhook
         ? {

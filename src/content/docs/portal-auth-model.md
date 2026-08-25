@@ -5,6 +5,8 @@ description: Short-lived capability token permission model used by the mikan adm
 
 The design goal is to let users conveniently open management, login, and session-view pages while avoiding mixing "read data", "change settings", and "write secrets" into one permission.
 
+The formal Web adapter has a separate identity model: Google/GitHub sign-in creates an opaque, cookie-authenticated browser session that authorizes only workspaces owned by that Web account. It is not one of the capability links described below, and it does not grant vault-write authority. `/pi-login` keeps its short-lived one-time capability boundary even for a signed-in Web user.
+
 ## Three portal links
 
 | Interface            | How users get it                                                         | What it can do                                                                                                            | Token lifetime | One-time token? |
@@ -104,6 +106,16 @@ The session view token is anchored to the base session file. When navigating wit
 | `/session/stream`    | `GET`  | query `token`     | `sessionViewTokenStore.peek()`           | Open SSE stream; requires interactive wiring.            |
 | `/session/message`   | `POST` | JSON body `token` | `sessionViewTokenStore.peek()`           | Send session message; requires interactive wiring.       |
 
+## Web account sessions
+
+Web account sessions are durable browser identity, not bearer links to an existing IM conversation. They use the `mikan_web_session` HttpOnly cookie and a session-bound CSRF value for mutations. The durable registry stores only hashes of session, CSRF, and OAuth-state secrets.
+
+An authenticated account can list and mutate only its owned Web workspaces. Each workspace maps to an independent `OfficeAddress("web", workspaceId)`; provider identities and equal email addresses do not automatically link accounts or IM offices. Unknown and foreign workspace ids return the same not-found response.
+
+Web account routes include `/auth/{github,google}`, their callbacks, `/api/web/me`, `/api/web/logout`, and `/api/web/workspaces/*`. Mutation routes require exact JSON content type, same-origin validation, and the CSRF header. The workspace SSE route is ownership-scoped and does not expose the global agent-events stream.
+
+Provider tokens are used only for the profile lookup and then discarded. They are never saved to the Web registry or vault. To add an LLM or tool credential, the user must still open a separately authorized Login / vault portal.
+
 ## Why not use one token type
 
 The three token types have different risks:
@@ -122,6 +134,8 @@ Even if a full dashboard is added later, these boundaries should remain:
 
 | Feature              | Main code                                                         |
 | -------------------- | ----------------------------------------------------------------- |
+| Web account auth     | `src/web/auth/portal.ts`, `src/web/auth/registry.ts`              |
+| Web workspace API    | `src/web/harness/portal.ts`, `src/web/harness/service.ts`         |
 | Portal HTTP server   | `startWebServer()` in `src/web/server.ts`                         |
 | Admin portal         | `src/web/admin/portal.ts`, `src/web/admin/store.ts`               |
 | Login / vault portal | `src/web/login/portal.ts`, `src/web/login/store.ts`               |
@@ -129,17 +143,10 @@ Even if a full dashboard is added later, these boundaries should remain:
 | Shared token store   | `src/web/token-store.ts`                                          |
 | Shared portal shell  | `src/web/portal-shell.ts`                                         |
 
-`startWebServer()` dispatch order:
-
-1. `GET /health`
-2. Agent event HTTP routes
-3. Admin routes
-4. Session view routes
-5. Login / vault routes
-6. `404`
+`startWebServer()` dispatches health and webhook/event routes first, then the authenticated Web workspace and account routes, followed by the legacy Admin, session-view, and Login / vault capability portals.
 
 The server starts only when `LINK_PORT` / `MIKAN_LINK_PORT` can be parsed as a port. If `LINK_URL` / `MIKAN_LINK_URL` is set but no port is configured, mikan uses the default port `8181`.
 
-Token stores are currently in-memory and `src/main.ts` cleans expired tokens every five minutes. A process restart invalidates all unexpired web tokens.
+Capability token stores are currently in-memory and `src/main.ts` cleans expired tokens every five minutes, so a process restart invalidates their unexpired tokens. Web account sessions are different: their hash-only records and owned-workspace metadata are restart-safe in `<state-dir>/web/registry.json`.
 
 These URLs are bearer capabilities. Query-string tokens can leak through browser history, screenshots, copied URLs, or proxy logs; share them only with the intended user and never publish them in chat channels or issue trackers.

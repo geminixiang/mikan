@@ -1,6 +1,5 @@
-import type { MessagingEventHandler } from "../../adapter.js";
-import type { MessagingBot } from "../../adapter.js";
-import type { PlatformName } from "../../adapter.js";
+import type { MessagingBot, MessagingEventHandler, OfficeAddress } from "../../adapter.js";
+import type { Workspace } from "../../office/index.js";
 import type { TokenRecord } from "../types.js";
 
 // ── command ──────────────────────────────────────────────────────────────────
@@ -9,6 +8,7 @@ import type { TokenRecord } from "../types.js";
 
 export interface SessionViewInteractiveOptions {
   handler: MessagingEventHandler;
+  workspace: Workspace;
   botsByPlatform: Partial<Record<string, MessagingBot>>;
 }
 
@@ -50,10 +50,9 @@ export interface SessionViewModel {
 // ── store ────────────────────────────────────────────────────────────────────
 
 export interface SessionViewToken extends TokenRecord {
-  platform: PlatformName;
+  address: OfficeAddress;
   platformUserId: string;
   platformUserName?: string;
-  conversationId: string;
-  sessionKey: string;
-  sessionFile: string;
+  /** Initial navigation target; token authority covers all sessions in this canonical office. */
+  sessionId: string;
 }

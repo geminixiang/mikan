@@ -134,6 +134,8 @@ export function resolveChatSessionKey(options: ResolveSessionKeyOptions): string
 }
 
 export function inferConversationKind(platform: string, conversationId: string): ConversationKind {
+  if (platform === "web") return "direct";
+
   if (platform === "slack") {
     return conversationId.startsWith("D") ? "direct" : "shared";
   }

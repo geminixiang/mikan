@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from "node:fs";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, extname, join, relative, resolve, sep } from "node:path";
 import { SessionStore } from "../harness/index.js";
 import {
   atomicWritePrivateFile,
@@ -9,15 +9,22 @@ import {
   readTextFileIfExists,
 } from "../utils/file-guards.js";
 import { officeSessionsDir } from "../office/index.js";
-import { assertSessionSuffix, threadSuffixOf } from "./session-key.js";
-export type { ResolvedSessionScope, ThreadRootMessage } from "./types.js";
+import { assertSessionSuffix, makeThreadSessionKey, threadSuffixOf } from "./session-key.js";
+export type {
+  DurableSessionRef,
+  DurableSessionTarget,
+  ResolvedSessionScope,
+  ThreadRootMessage,
+} from "./types.js";
 export type { MikanSessionHeader } from "./types.js";
-import type { MikanSessionHeader } from "./types.js";
+import type { DurableSessionRef, DurableSessionTarget, MikanSessionHeader } from "./types.js";
+import type { OfficeAddress } from "../adapter.js";
 
 export function isPlatformHistorySession(sessionFile: string): boolean {
   try {
-    const header = SessionStore.open(sessionFile).getHeader() as MikanSessionHeader | null;
-    return header?.source?.kind === "platform-history";
+    const header = SessionStore.readHeader(sessionFile);
+    const source = (header?.metadata as MikanSessionHeader | undefined)?.source;
+    return source?.kind === "platform-history";
   } catch {
     return false;
   }
@@ -109,7 +116,7 @@ export function createManagedSessionFile(sessionDir: string, cwd: string): strin
  * Open a session file with an explicit cwd, even if the file does not exist yet.
  * This avoids SessionStore.open() falling back to process.cwd() for fresh sessions.
  */
-export function openManagedSession(sessionFile: string, cwd: string): SessionStore {
+export function openManagedSession(sessionFile: string, cwd: string): Promise<SessionStore> {
   if (shouldRecreatePreinitializedSession(sessionFile)) {
     rmSync(sessionFile, { force: true });
   }
@@ -151,10 +158,9 @@ function writeSessionHeader(
   sessionId = randomUUID(),
   parent?: ParentSessionRef,
 ): void {
-  mkdirSync(dirname(sessionFile), { recursive: true });
   // The header format (and its version) is owned by the harness store; this
   // layer only decides the path and the id.
-  SessionStore.create(sessionFile, cwd, {
+  SessionStore.writeHeaderFile(sessionFile, cwd, {
     id: sessionId,
     ...(parent ? { parentSession: parent.path, parentSessionId: parent.id } : {}),
   });
@@ -177,20 +183,11 @@ function isRegularSessionFile(sessionFile: string): boolean {
 }
 
 function hasSessionHeader(sessionFile: string): boolean {
-  try {
-    const raw = readTextFileIfExists(sessionFile);
-    if (raw === undefined) return false;
-    const lines = raw.split("\n");
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      const entry = parseSessionEntry(trimmed);
-      return entry.type === "session";
-    }
-  } catch {
-    return false;
-  }
-  return false;
+  // readHeader returns null for missing/garbage files and throws ONLY for
+  // legacy v3 files. Let that throw propagate: treating an unmigrated v3
+  // session as "no session" would flip the current pointer to a fresh file
+  // and silently orphan the conversation history.
+  return SessionStore.readHeader(sessionFile) !== null;
 }
 
 function shouldRecreatePreinitializedSession(sessionFile: string): boolean {
@@ -203,20 +200,25 @@ function shouldRecreatePreinitializedSession(sessionFile: string): boolean {
       .filter(Boolean)
       .map(parseSessionEntry);
 
-    if (entries.length !== 1 || entries[0]?.type !== "session") return false;
+    if (entries.length !== 1) return false;
+    const only = entries[0] as {
+      kind?: unknown;
+      parentSessionId?: unknown;
+      metadata?: { parentSessionPath?: unknown };
+    };
+    if (only.kind !== "header") return false;
     // Sessions with lineage metadata are fully initialized — preserve them.
-    const h = entries[0] as { parentSession?: unknown; parentSessionId?: unknown };
-    if (h.parentSession || h.parentSessionId) return false;
+    if (only.parentSessionId || only.metadata?.parentSessionPath) return false;
     return true;
   } catch {
     return false;
   }
 }
 
-function parseSessionEntry(line: string): { type?: string } {
+function parseSessionEntry(line: string): { type?: string; kind?: string } {
   return parseJsonValue(
     line,
-    (value): value is { type?: string } => isRecord(value),
+    (value): value is { type?: string; kind?: string } => isRecord(value),
     (detail) => (detail === "unexpected JSON shape" ? "expected a JSON object" : detail),
   );
 }
@@ -257,6 +259,71 @@ export function tryResolveThreadSession(sessionFile: string): string | null {
 export function resolveChannelSessionFile(channelDir: string): string | null {
   return tryResolveCurrentSession(officeSessionsDir(channelDir));
 }
+
+/** Resolve a platform runtime key to a valid durable session reference. */
+export function resolveRuntimeSession(
+  channelDir: string,
+  address: OfficeAddress,
+  sessionKey: string,
+): DurableSessionRef | null {
+  const sessionDir = officeSessionsDir(channelDir);
+  const file =
+    sessionKey === address.conversationId
+      ? tryResolveCurrentSession(sessionDir)
+      : tryResolveThreadSession(getThreadSessionFile(channelDir, sessionKey));
+  if (!file) return null;
+  return (
+    listDurableSessions(sessionDir, address).find((candidate) => candidate.file === file) ?? null
+  );
+}
+
+/** List every valid durable session in an office. Invalid files are not session identities. */
+export function listDurableSessions(
+  sessionDir: string,
+  address: OfficeAddress,
+): DurableSessionRef[] {
+  if (!existsSync(sessionDir)) return [];
+  const current = getCurrentSessionPath(sessionDir);
+  const refs: DurableSessionRef[] = [];
+  for (const name of readdirSync(sessionDir)) {
+    if (extname(name) !== ".jsonl") continue;
+    const file = join(sessionDir, name);
+    if (!isRegularSessionFile(file)) continue;
+    const header = readSessionHeaderSummary(file);
+    if (!header) continue;
+    const sessionKey = runtimeSessionKeyForFile(address.conversationId, name);
+    if (!sessionKey) continue;
+    refs.push({ id: header.id, file, sessionKey, current: current === file });
+  }
+  return refs;
+}
+
+/** Resolve an exact durable UUID to its runtime-compatible target. */
+export function resolveDurableSessionTarget(
+  sessionDir: string,
+  address: OfficeAddress,
+  sessionId: string,
+): DurableSessionTarget | null {
+  const requestedId = sessionId.trim();
+  if (!UUID_PATTERN.test(requestedId)) return null;
+  const ref = listDurableSessions(sessionDir, address).find(
+    (candidate) => candidate.id === requestedId,
+  );
+  return ref ? { ...ref, address } : null;
+}
+
+function runtimeSessionKeyForFile(conversationId: string, fileName: string): string | null {
+  if (MAIN_SESSION_FILENAME.test(fileName)) return conversationId;
+  const suffix = fileName.slice(0, -".jsonl".length);
+  try {
+    assertSessionSuffix(suffix);
+    return makeThreadSessionKey(conversationId, suffix);
+  } catch {
+    return null;
+  }
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // Matches timestamped main session filenames; thread sessions use bare threadTs.
 const MAIN_SESSION_FILENAME = /^\d{4}-\d{2}-\d{2}T.+_[0-9a-f]{8}\.jsonl$/i;
@@ -310,15 +377,10 @@ function findMainSessionActiveAtTime(
 
 function readSessionHeaderSummary(filePath: string): { id: string; timestampMs: number } | null {
   try {
-    const raw = readTextFileIfExists(filePath);
-    if (!raw) return null;
-    const firstLine = raw.slice(0, raw.indexOf("\n")).trim();
-    if (!firstLine) return null;
-    const entry = parseSessionEntry(firstLine);
-    const { id, timestamp } = entry as { id?: unknown; timestamp?: unknown };
-    if (typeof id !== "string" || typeof timestamp !== "string") return null;
-    const timestampMs = new Date(timestamp).getTime();
-    return Number.isFinite(timestampMs) ? { id, timestampMs } : null;
+    const header = SessionStore.readHeader(filePath);
+    if (!header) return null;
+    const timestampMs = new Date(header.timestamp).getTime();
+    return Number.isFinite(timestampMs) ? { id: header.id, timestampMs } : null;
   } catch {
     return null;
   }

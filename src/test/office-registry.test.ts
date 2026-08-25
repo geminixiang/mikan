@@ -43,6 +43,19 @@ afterEach(() => {
 });
 
 describe("OfficeRegistry", () => {
+  test("accepts Web as an enabled platform", () => {
+    const fixture = makeFixture();
+    const registry = new OfficeRegistry(fixture.stateDir);
+
+    registry.enablePlatform("web");
+    registry.recordOffice(createOfficeAddress("web", "wsp_example"));
+
+    expect(new OfficeRegistry(fixture.stateDir).getState()).toMatchObject({
+      enabledPlatforms: ["web"],
+      offices: [{ platform: "web", conversationId: "wsp_example" }],
+    });
+  });
+
   test("does not reclaim an old lock while its owner process is alive", () => {
     const fixture = makeFixture();
     const lockDir = join(fixture.stateDir, ".office-registry.lock");

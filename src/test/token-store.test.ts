@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { createOfficeAddress } from "../office/index.js";
 import { InMemoryAdminTokenStore } from "../web/admin/store.js";
 import { InMemoryLinkTokenStore } from "../web/login/store.js";
 import { InMemorySessionViewTokenStore } from "../web/session-view/store.js";
@@ -148,16 +149,35 @@ describe("InMemoryLinkTokenStore", () => {
 describe("InMemorySessionViewTokenStore", () => {
   afterEach(() => vi.useRealTimers());
 
-  test("create stores token and peek returns it", () => {
+  test("create stores canonical office scope and initial durable session UUID", () => {
     const store = new InMemorySessionViewTokenStore();
-    const t = store.create("slack", "U1", "D1", "D1", "/path/session.jsonl");
-    expect(store.peek(t.token)).toMatchObject({ sessionFile: "/path/session.jsonl" });
+    const t = store.create({
+      address: createOfficeAddress("slack", "D1"),
+      platformUserId: "U1",
+      sessionId: "123e4567-e89b-42d3-a456-426614174000",
+    });
+
+    expect(store.peek(t.token)).toMatchObject({
+      address: createOfficeAddress("slack", "D1"),
+      platformUserId: "U1",
+      sessionId: "123e4567-e89b-42d3-a456-426614174000",
+    });
+    expect(store.peek(t.token)).not.toHaveProperty("sessionFile");
+    expect(store.peek(t.token)).not.toHaveProperty("sessionKey");
   });
 
   test("multiple tokens coexist (no dedup on create)", () => {
     const store = new InMemorySessionViewTokenStore();
-    const a = store.create("slack", "U1", "D1", "D1", "/a.jsonl");
-    const b = store.create("slack", "U1", "D1", "D1", "/b.jsonl");
+    const a = store.create({
+      address: createOfficeAddress("slack", "D1"),
+      platformUserId: "U1",
+      sessionId: "123e4567-e89b-42d3-a456-426614174000",
+    });
+    const b = store.create({
+      address: createOfficeAddress("slack", "D1"),
+      platformUserId: "U1",
+      sessionId: "123e4567-e89b-42d3-a456-426614174001",
+    });
 
     // SessionViewTokenStore intentionally does NOT dedup on create
     expect(store.peek(a.token)).toBeDefined();
@@ -168,7 +188,11 @@ describe("InMemorySessionViewTokenStore", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
     const store = new InMemorySessionViewTokenStore();
-    const t = store.create("slack", "U1", "D1", "D1", "/session.jsonl");
+    const t = store.create({
+      address: createOfficeAddress("slack", "D1"),
+      platformUserId: "U1",
+      sessionId: "123e4567-e89b-42d3-a456-426614174000",
+    });
 
     vi.setSystemTime(new Date("2026-01-02T01:00:00Z")); // TTL is 24 h
     expect(store.peek(t.token)).toBeUndefined();

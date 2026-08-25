@@ -8,10 +8,15 @@ import type { VaultManager } from "../vault/index.js";
 import { handleAdminRequest, type AdminRuntimeBridge } from "./admin/portal.js";
 import type { InMemoryAdminTokenStore } from "./admin/store.js";
 import { handleAgentEventsRequest } from "../agent-events.js";
+import type { ConnectorGateway } from "../connector/gateway.js";
+import { createConnectorRequestHandler } from "./login/connector-portal.js";
 import { createLoginRequestHandler } from "./login/portal.js";
 import { requestBaseUrl } from "./portal-shell.js";
 import type { InMemoryLinkTokenStore } from "./login/store.js";
 import type { NotifyFn } from "./login/types.js";
+import { handleWebAuthRequest, type WebAuthRequestOptions } from "./auth/portal.js";
+import { handleWebAppRequest, type WebAppRequestOptions } from "./app/portal.js";
+import { handleWebHarnessRequest, type WebHarnessRequestOptions } from "./harness/portal.js";
 import {
   handleSessionViewRequest,
   type SessionViewInteractiveOptions,
@@ -38,6 +43,10 @@ interface StartWebServerOptions {
     botsByPlatform?: Partial<Record<PlatformName, MessagingBot>>;
   };
   githubWebhook?: GithubWebhookOptions;
+  webAuth?: WebAuthRequestOptions;
+  connector?: ConnectorGateway;
+  webHarness?: WebHarnessRequestOptions;
+  webApp?: WebAppRequestOptions;
 }
 
 export function startWebServer(options: StartWebServerOptions): Server {
@@ -45,7 +54,11 @@ export function startWebServer(options: StartWebServerOptions): Server {
     options.linkTokenStore,
     options.vaultManager,
     options.notify,
+    { connectorEnabled: Boolean(options.connector) },
   );
+  const connectorHandler = options.connector
+    ? createConnectorRequestHandler(options.connector, options.linkTokenStore, options.notify)
+    : undefined;
 
   // Constructed once at server start; the admin portal consumes the owning
   // event store's interface instead of re-parsing event files off disk.
@@ -71,6 +84,17 @@ export function startWebServer(options: StartWebServerOptions): Server {
       }
 
       if (handleAgentEventsRequest(req, res, url)) return;
+
+      if (
+        options.webHarness &&
+        (await handleWebHarnessRequest(req, res, url, options.webHarness))
+      ) {
+        return;
+      }
+
+      if (options.webAuth && (await handleWebAuthRequest(req, res, url, options.webAuth))) {
+        return;
+      }
 
       const adminOptions = options.adminOptions;
       if (
@@ -103,7 +127,11 @@ export function startWebServer(options: StartWebServerOptions): Server {
         return;
       }
 
+      if (connectorHandler?.(req, res, url)) return;
+
       if (loginHandler(req, res, url)) return;
+
+      if (options.webApp && handleWebAppRequest(req, res, url, options.webApp)) return;
 
       res.writeHead(404);
       res.end();

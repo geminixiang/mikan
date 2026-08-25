@@ -113,17 +113,23 @@ function fakeLinkTokenStore() {
 }
 
 function fakeSessionViewTokenStore() {
-  const created: { sessionFile: string }[] = [];
+  const created: {
+    platform: "slack" | "discord" | "telegram";
+    platformUserId: string;
+    conversationId: string;
+    sessionId: string;
+    platformUserName?: string;
+  }[] = [];
   return {
     created,
-    create(
-      _platform: "slack" | "discord" | "telegram",
-      _userId: string,
-      _conversationId: string,
-      _sessionKey: string,
-      sessionFile: string,
-    ) {
-      created.push({ sessionFile });
+    create(args: {
+      platform: "slack" | "discord" | "telegram";
+      platformUserId: string;
+      conversationId: string;
+      sessionId: string;
+      platformUserName?: string;
+    }) {
+      created.push(args);
       return { token: "tok-sv" };
     },
   };
@@ -1038,10 +1044,12 @@ describe("SessionViewCommandHandler", () => {
       officeKey(createOfficeAddress("slack", conversationId)),
     );
     mkdirSync(conversationDir, { recursive: true });
-    const expectedFile = createManagedSessionFile(
+    const sessionFile = createManagedSessionFile(
       officeSessionsDir(conversationDir),
       conversationDir,
     );
+    const expectedSessionId = JSON.parse(readFileSync(sessionFile, "utf8").split("\n")[0]!)
+      .id as string;
 
     const sessionViewTokenStore = fakeSessionViewTokenStore();
     const ctx = buildContext({
@@ -1051,7 +1059,13 @@ describe("SessionViewCommandHandler", () => {
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(sessionViewTokenStore.created).toEqual([{ sessionFile: expectedFile }]);
+    expect(sessionViewTokenStore.created).toEqual([
+      {
+        address: createOfficeAddress("slack", "C123"),
+        platformUserId: "U123",
+        sessionId: expectedSessionId,
+      },
+    ]);
     expect(ctx.responder.responses[0]).toContain("https://portal.example/session?token=tok-sv");
   });
 });

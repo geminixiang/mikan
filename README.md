@@ -7,7 +7,7 @@
 [![npm version](https://img.shields.io/npm/v/@geminixiang/mikan.svg)](https://www.npmjs.com/package/@geminixiang/mikan)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A multi-platform AI coding agent for Slack, Telegram, Discord, and GitHub.
+A multi-platform AI coding agent for the Web, Slack, Telegram, Discord, and GitHub.
 
 > [!WARNING]
 > **Pre-1.0 status** — the overall framework stabilizes at 1.0.0. Until then, releases may change settings and on-disk data formats without migrations: upgrading between pre-1.0 versions can require resetting or manually adjusting existing state and workspace data.
@@ -27,7 +27,8 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 
 ## Features
 
-- **Multi-platform** — Slack, Telegram, Discord, and GitHub adapters
+- **Formal Web app** — authenticated React product at `/` with independent workspaces, durable session history, live runs, follow-up, steering, and cancellation
+- **Multi-platform** — Web, Slack, Telegram, Discord, and GitHub adapters
 - **Concurrent conversations** — Slack threads, Discord replies/threads, and Telegram reply chains run as independent sessions
 - **Conversation offices** — one office directory and one sandbox runtime per conversation, isolated by default; the door policy is configurable per conversation
 - **Sandbox execution** — host, shared container, per-conversation managed container, local Gondolin microVM (preview), Firecracker (alpha), or Cloudflare bridge (experimental)
@@ -109,6 +110,7 @@ The working directory is optional: it defaults to `<state-dir>/workspace` (so `~
 
 ## Platforms
 
+- **Web** — configure a dedicated Google or GitHub account OAuth client to serve the formal React product at `/`. Each owned workspace is an independent office. `/pi-session`, `/pi-login`, and `/admin` remain capability-based support surfaces for messaging adapters.
 - **Slack** — create a Socket Mode app using [src/content/docs/slack-bot-minimal-guide.md](src/content/docs/slack-bot-minimal-guide.md). The bot responds when `@mentioned` in channels and to all DMs.
 - **Telegram** — create a bot via [@BotFather](https://t.me/BotFather). The bot responds to private messages, `@mention`, and reply chains in groups.
 - **Discord** — create an application in the [Discord Developer Portal](https://discord.com/developers/applications), enable **Message Content Intent**, and invite it with message/file permissions.
@@ -215,12 +217,15 @@ mikan --download C0123456789
 ## Development
 
 ```bash
-npm run dev
+npm run dev       # watch the Node server build
+npm run dev:web   # Vite Web UI with /api and /auth proxied to localhost:8181
 npm test
 npm run lint
 npm run fmt:check
-npm run build
+npm run build     # emits the server and dist/web-app
 ```
+
+Run the Node watcher/server and `npm run dev:web` in separate terminals for local Web UI work. The production package serves the built React application from `dist/web-app` only when Web account OAuth is configured.
 
 See [src/content/docs/development.md](src/content/docs/development.md) for E2E tests.
 

@@ -9,8 +9,9 @@
  *   change clears the conversation's cached runners BEFORE writing — and
  *   refuses (no write, no clear) while the conversation has a running job.
  *   Disk and cache never disagree.
- * - Other keys (sandbox mount, slack replyMode, limits) are re-read at use
- *   time and write without touching runners.
+ * - Every writable top-level key is exhaustively classified below. Sandbox and
+ *   Slack settings are re-read at use time, packages apply to the next harness
+ *   instance, and Sentry DSN changes apply to the next process.
  * - Global changes always write (the Admin default surface), then clear every
  *   idle conversation's cached runners; conversations that were busy keep
  *   their old runner until it settles, are reported as stale, and are cleared
@@ -34,11 +35,36 @@ import type {
 
 export type { GlobalRunnerCacheControl, RunnerCacheControl, SettingsApplyResult } from "./types.js";
 
+type SettingsMutationLifecycle = "runner-cache" | "next-use" | "next-harness" | "next-process";
+
+/**
+ * Every writable AgentConfig key must declare when its new value takes effect.
+ * `satisfies` intentionally makes an AgentConfig addition a compile error until
+ * its lifecycle is classified here.
+ */
+const SETTINGS_MUTATION_LIFECYCLE = {
+  provider: "runner-cache",
+  model: "runner-cache",
+  thinkingLevel: "runner-cache",
+  sentryDsn: "next-process",
+  sandbox: "next-use",
+  slack: "next-use",
+  packages: "next-harness",
+} as const satisfies Record<keyof AgentConfig, SettingsMutationLifecycle>;
+
+function mutationLifecycles(patch: Partial<AgentConfig>): SettingsMutationLifecycle[] {
+  return Object.entries(patch).flatMap(([key, value]) => {
+    if (value === undefined) return [];
+    if (!Object.hasOwn(SETTINGS_MUTATION_LIFECYCLE, key)) {
+      throw new Error(`Unsupported settings mutation key: ${key}`);
+    }
+    return [SETTINGS_MUTATION_LIFECYCLE[key as keyof AgentConfig]];
+  });
+}
+
 /** True when a patch touches keys a cached session runner bakes in. */
 function affectsCachedRunner(patch: Partial<AgentConfig>): boolean {
-  return (
-    patch.provider !== undefined || patch.model !== undefined || patch.thinkingLevel !== undefined
-  );
+  return mutationLifecycles(patch).includes("runner-cache");
 }
 
 export function applyConversationSettings(
@@ -63,9 +89,10 @@ export function applyGlobalSettings(
   runtime: GlobalRunnerCacheControl | undefined,
   patch: Partial<AgentConfig>,
 ): { ok: true; staleConversations: OfficeAddress[] } {
+  const refreshRunners = affectsCachedRunner(patch);
   updateGlobalSettings(patch);
   const staleConversations =
-    affectsCachedRunner(patch) && runtime ? runtime.refreshAllConversations().busy : [];
+    refreshRunners && runtime ? runtime.refreshAllConversations().busy : [];
   return { ok: true, staleConversations };
 }
 

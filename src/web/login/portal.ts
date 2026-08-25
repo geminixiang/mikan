@@ -1,5 +1,6 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { buildOAuthAuthorizationUrl, exchangeOAuthCode } from "../oauth-flow.js";
 import { escapeHtml, readJsonBody, renderPortalShell, requestBaseUrl } from "../portal-shell.js";
 import { resolveLinkBaseUrl } from "../../config.js";
 import type { InMemoryLinkTokenStore } from "./store.js";
@@ -248,6 +249,10 @@ export function createLoginRequestHandler(
   linkTokenStore: InMemoryLinkTokenStore,
   vaultManager: VaultManager,
   notify: NotifyFn,
+  options?: {
+    /** Show the connector-services entry point on the /link page. */
+    connectorEnabled?: boolean;
+  },
 ): (req: IncomingMessage, res: ServerResponse, url: URL) => boolean {
   const oauthStates = new Map<string, PendingOAuthState>();
 
@@ -288,6 +293,7 @@ export function createLoginRequestHandler(
           oauthServices,
           oauthServiceHint?.id,
           existingSecrets,
+          options?.connectorEnabled === true,
         ),
       );
       return true;
@@ -361,7 +367,7 @@ export function createLoginRequestHandler(
  *      This stops an attacker-controlled page — even one that somehow stole a
  *      victim's link token — from completing the flow.
  */
-function enforceCsrf(req: IncomingMessage, res: ServerResponse): boolean {
+export function enforceCsrf(req: IncomingMessage, res: ServerResponse): boolean {
   const contentType = (req.headers["content-type"] as string | undefined)
     ?.split(";")[0]
     ?.trim()
@@ -895,6 +901,7 @@ function renderCredentialPage(
   oauthServices: OAuthService[],
   oauthServiceIdHint: string | undefined,
   existingSecrets: ExistingSecretsSummary,
+  connectorEnabled: boolean,
 ): string {
   const oauthOptions = oauthServices
     .map((service) => {
@@ -911,6 +918,11 @@ function renderCredentialPage(
   <h1 class="page-title">${esc(title)}</h1>
   <p>Your personal sandbox is already provisioned automatically.</p>
   <p>${esc(helpText)}</p>
+  ${
+    connectorEnabled
+      ? `<p><a href="/connector?token=${encodeURIComponent(token)}">Connected services (Google Workspace, GitHub) — authorize without placing credentials in the sandbox →</a></p>`
+      : ""
+  }
   ${renderSecretsSummary(existingSecrets)}
   <div class="mode">
     <label><input type="radio" name="mode" value="api_key" ${defaultMode === "api_key" ? "checked" : ""}> Secrets / API tokens</label>
@@ -1332,21 +1344,17 @@ async function handleOAuthStart(
   }
 
   const redirectUri = `${requestBaseUrl(req)}/oauth/callback`;
-  const authorizeUrl = new URL(service.authorizationUrl);
-  authorizeUrl.searchParams.set("response_type", "code");
-  authorizeUrl.searchParams.set("client_id", clientId);
-  authorizeUrl.searchParams.set("redirect_uri", redirectUri);
-  authorizeUrl.searchParams.set("state", state);
-  if (service.scopes.length > 0) {
-    authorizeUrl.searchParams.set("scope", service.scopes.join(" "));
-  }
-  for (const [key, value] of Object.entries(service.authorizationParams ?? {})) {
-    authorizeUrl.searchParams.set(key, value);
-  }
-
-  const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
-  authorizeUrl.searchParams.set("code_challenge", codeChallenge);
-  authorizeUrl.searchParams.set("code_challenge_method", "S256");
+  const authorizeUrl = buildOAuthAuthorizationUrl(
+    {
+      clientId,
+      clientSecret,
+      authorizationUrl: service.authorizationUrl,
+      tokenUrl: service.tokenUrl,
+      scopes: service.scopes,
+      authorizationParams: service.authorizationParams,
+    },
+    { state, redirectUri, codeVerifier },
+  );
 
   res.writeHead(200, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ ok: true, redirectUrl: authorizeUrl.toString() }));
@@ -1416,12 +1424,19 @@ async function handleOAuthCallback(
 
   const redirectUri = `${requestBaseUrl(req)}/oauth/callback`;
   const tokenResp = await exchangeOAuthCode(
-    service,
-    code,
-    clientId,
-    clientSecret,
-    redirectUri,
-    pending.codeVerifier,
+    {
+      clientId,
+      clientSecret,
+      authorizationUrl: service.authorizationUrl,
+      tokenUrl: service.tokenUrl,
+      scopes: service.scopes,
+      authorizationParams: service.authorizationParams,
+    },
+    {
+      code,
+      redirectUri,
+      codeVerifier: pending.codeVerifier,
+    },
   );
 
   const accessToken = tokenResp.access_token?.trim();
@@ -1535,50 +1550,6 @@ async function handleOAuthCallback(
 
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
   res.end(renderSuccessPage(`${service.label} OAuth connected successfully.`));
-}
-
-async function exchangeOAuthCode(
-  service: OAuthService,
-  code: string,
-  clientId: string,
-  clientSecret: string,
-  redirectUri: string,
-  codeVerifier: string,
-): Promise<Record<string, string>> {
-  const params = new URLSearchParams();
-  params.set("grant_type", "authorization_code");
-  params.set("code", code);
-  params.set("client_id", clientId);
-  params.set("client_secret", clientSecret);
-  params.set("redirect_uri", redirectUri);
-  params.set("code_verifier", codeVerifier);
-
-  const response = await fetch(service.tokenUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
-    },
-    body: params.toString(),
-  });
-
-  const text = await response.text();
-  const contentType = response.headers.get("content-type") ?? "";
-  let parsed: Record<string, string> = {};
-
-  if (contentType.includes("application/json")) {
-    parsed = JSON.parse(text) as Record<string, string>;
-  } else {
-    const form = new URLSearchParams(text);
-    parsed = Object.fromEntries(form.entries());
-  }
-
-  if (!response.ok) {
-    const message = parsed.error_description ?? parsed.error ?? `${response.status}`;
-    throw new Error(`OAuth token exchange failed for ${service.id}: ${message}`);
-  }
-
-  return parsed;
 }
 
 function renderAuthorizedUserCredential(

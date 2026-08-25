@@ -43,6 +43,7 @@ export function createTelegramAdapters(
     conversationId,
     address: event.address,
     id: event.ts,
+    origin: event.origin,
     sessionKey: deriveSessionKey(event),
     conversationKind: event.conversationKind,
     userId: event.user,

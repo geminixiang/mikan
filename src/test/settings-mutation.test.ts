@@ -1,3 +1,4 @@
+import type { AgentConfig } from "../types.js";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -97,6 +98,24 @@ describe("applyConversationSettings", () => {
     });
     expect(result).toEqual({ ok: true, runtimeSwitched: null });
     expect(existsSync(conversationSettingsFile("C1"))).toBe(true);
+  });
+
+  test("rejects an unclassified mutation key before writing", () => {
+    const unsupportedPatch = { futureSetting: true } as Partial<AgentConfig>;
+
+    expect(() => applyConversationSettings(undefined, office, unsupportedPatch)).toThrow(
+      "Unsupported settings mutation key: futureSetting",
+    );
+    expect(existsSync(conversationSettingsFile("C1"))).toBe(false);
+  });
+
+  test("rejects an unclassified global mutation key before writing", () => {
+    const unsupportedPatch = { futureSetting: true } as Partial<AgentConfig>;
+
+    expect(() => applyGlobalSettings(undefined, unsupportedPatch)).toThrow(
+      "Unsupported settings mutation key: futureSetting",
+    );
+    expect(existsSync(join(stateDir, "settings.json"))).toBe(false);
   });
 });
 

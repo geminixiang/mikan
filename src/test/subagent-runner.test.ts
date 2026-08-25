@@ -54,10 +54,12 @@ function createFauxSetup(): {
 
 const echoTool: AgentTool = {
   name: "echo",
+  label: "echo",
   description: "Echo the input",
   parameters: Type.Object({ text: Type.String() }),
   execute: async (_toolCallId, args) => ({
     content: [{ type: "text", text: `echo: ${(args as { text: string }).text}` }],
+    details: {},
   }),
 };
 
@@ -202,7 +204,7 @@ describe("runSubagent", () => {
         }),
       THINKER_MENU,
     );
-    const sessionStore = SessionStore.create(join(dir, "parent.jsonl"), dir);
+    const sessionStore = await SessionStore.create(join(dir, "parent.jsonl"), dir);
     const parent = new MikanAgentSession({
       systemPrompt: "Delegate focused work when useful.",
       model,
@@ -214,7 +216,7 @@ describe("runSubagent", () => {
 
     await parent.prompt("Use a subagent");
 
-    const persisted = JSON.stringify(sessionStore.getEntries());
+    const persisted = JSON.stringify(await sessionStore.getEntries());
     expect(persisted).toContain("delegated result");
     expect(persisted).toContain("parent complete");
   });
@@ -228,11 +230,12 @@ describe("runSubagent", () => {
     });
     const stuckTool: AgentTool = {
       name: "stuck",
+      label: "stuck",
       description: "Wait until released",
       parameters: Type.Object({}),
       execute: async () => {
         await toolGate;
-        return { content: [{ type: "text", text: "released" }] };
+        return { content: [{ type: "text", text: "released" }], details: {} };
       },
     };
     const slots = new SubagentSlotPool(1);
@@ -246,7 +249,9 @@ describe("runSubagent", () => {
       workspaceDir: dir,
       availableTools: [stuckTool],
       slots,
-      onUsage: (usage) => usageCalls.push(usage),
+      onUsage: (usage) => {
+        usageCalls.push(usage);
+      },
     });
 
     expect(Date.now() - startedAt).toBeLessThan(20 + SUBAGENT_ABORT_GRACE_MS + 300);
@@ -268,11 +273,12 @@ describe("runSubagent", () => {
     });
     const stuckTool: AgentTool = {
       name: "stuck",
+      label: "stuck",
       description: "Wait until released",
       parameters: Type.Object({}),
       execute: async () => {
         await toolGate;
-        return { content: [{ type: "text", text: "released" }] };
+        return { content: [{ type: "text", text: "released" }], details: {} };
       },
     };
     const slots = new SubagentSlotPool(1);
@@ -286,7 +292,9 @@ describe("runSubagent", () => {
       workspaceDir: dir,
       availableTools: [stuckTool],
       slots,
-      onUsage: (usage) => usageCalls.push(usage),
+      onUsage: (usage) => {
+        usageCalls.push(usage);
+      },
     });
     await new Promise((resolve) => setTimeout(resolve, 10));
     controller.abort();
@@ -310,11 +318,12 @@ describe("runSubagent", () => {
     });
     const stuckTool: AgentTool = {
       name: "stuck",
+      label: "stuck",
       description: "Reject after the caller has timed out",
       parameters: Type.Object({}),
       execute: async () => {
         await toolGate;
-        return { content: [{ type: "text", text: "unreachable" }] };
+        return { content: [{ type: "text", text: "unreachable" }], details: {} };
       },
     };
     const slots = new SubagentSlotPool(1);
@@ -330,7 +339,9 @@ describe("runSubagent", () => {
         workspaceDir: dir,
         availableTools: [stuckTool],
         slots,
-        onUsage: (usage) => usageCalls.push(usage),
+        onUsage: (usage) => {
+          usageCalls.push(usage);
+        },
       });
       expect(result).toMatchObject({ status: "timeout", cleanupPending: true });
       rejectTool!(new Error("late tool failure"));
@@ -951,6 +962,7 @@ describe("runSubagent", () => {
     let nestedError = "";
     const nestedTool: AgentTool = {
       name: "nested",
+      label: "nested",
       description: "Attempt a nested subagent run",
       parameters: Type.Object({}),
       execute: async () => {
@@ -963,7 +975,7 @@ describe("runSubagent", () => {
           availableTools: [],
         });
         if (nested.status === "failed") nestedError = nested.error ?? "";
-        return { content: [{ type: "text", text: nestedError }] };
+        return { content: [{ type: "text", text: nestedError }], details: {} };
       },
     };
 

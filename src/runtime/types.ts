@@ -21,7 +21,11 @@ import type {
   LinkTokenStoreLike,
   SessionViewTokenStoreLike,
 } from "../commands/types.js";
-import type { ExtensionScheduleEngine, MikanModels } from "../harness/index.js";
+import type {
+  ExtensionScheduleEngine,
+  HarnessEventListener,
+  MikanModels,
+} from "../harness/index.js";
 import type { PlatformToolPackFactory } from "../tools/types.js";
 import type { VaultManager } from "../vault/index.js";
 
@@ -66,6 +70,8 @@ export interface SessionStateOptions {
    */
   conversationId: string;
   sessionKey: string;
+  /** Exact durable session selected by history navigation; omitted for normal current/key resolution. */
+  durableSessionId?: string;
   conversationKind?: ConversationKind;
 }
 
@@ -113,8 +119,22 @@ export interface ConversationRuntimeOptions extends Omit<
   platformToolPackFactories?: readonly PlatformToolPackFactory[];
 }
 
+export type RuntimeQueueMode = "followUp" | "steer";
+
 export interface ConversationRuntime extends MessagingEventHandler {
   runSession(options: RunSessionOptions): Promise<void>;
+  queueMessage(
+    address: OfficeAddress,
+    sessionKey: string,
+    message: ConversationContext["message"],
+    mode: RuntimeQueueMode,
+    queueId?: string,
+  ): boolean;
+  subscribe(
+    address: OfficeAddress,
+    sessionKey: string,
+    listener: HarnessEventListener,
+  ): (() => void) | null;
   switchConversationModel(address: OfficeAddress, provider: string, model: string): boolean;
   refreshConversationEnvironment(address: OfficeAddress): boolean;
   /** Clear idle runners; defer busy conversation invalidation until settlement. */

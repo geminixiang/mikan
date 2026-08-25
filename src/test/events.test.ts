@@ -430,6 +430,10 @@ describe("EventsWatcher scheduling", () => {
     });
 
     expect(enqueueEvent).toHaveBeenCalledTimes(1);
+    expect(enqueueEvent.mock.calls[0]?.[0]).toMatchObject({
+      ts: "event:fresh",
+      origin: { kind: "scheduled-event", eventId: "fresh" },
+    });
     // Immediate events are deleted after a successful enqueue.
     expect(existsSync(filePath)).toBe(false);
   });

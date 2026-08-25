@@ -29,7 +29,11 @@ import {
   waitForThreadSessionBootstrap,
 } from "../sessions/chat-history-sync.js";
 import { shouldRotateTopLevelSession } from "../sessions/rotation.js";
-import { resolveChannelSessionFile } from "../sessions/store.js";
+import {
+  resolveChannelSessionFile,
+  resolveDurableSessionTarget,
+  resolveRuntimeSession,
+} from "../sessions/store.js";
 import {
   assertSessionKeyBelongsToConversation,
   deriveSessionKey,
@@ -53,6 +57,7 @@ import type {
   RunSessionOptions,
   ConversationRuntime,
   ConversationRuntimeOptions,
+  RuntimeQueueMode,
   SessionStateOptions,
 } from "./types.js";
 
@@ -61,7 +66,9 @@ import type {
  * Command handlers guard on `portalBaseUrl` before minting tokens, so this
  * only fires when a portal URL is configured without its backing store.
  */
-function portalNotConfiguredTokenStore(portal: string): { create: () => never } {
+function portalNotConfiguredTokenStore(portal: string): {
+  create: () => never;
+} {
   return {
     create: () => {
       throw new Error(`${portal} portal not configured`);
@@ -98,6 +105,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private readonly resolvedModels: MikanModels;
   private globalRunnerGeneration = 0;
   private readonly conversationRunnerGenerations = new Map<string, number>();
+  private readonly stateTransitions = new Map<string, Promise<void>>();
   private isShuttingDown = false;
 
   constructor(private readonly options: ConversationRuntimeOptions) {
@@ -156,6 +164,27 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       state.stopRequested = true;
       state.runner.abort();
     }
+  }
+
+  queueMessage(
+    address: OfficeAddress,
+    sessionKey: string,
+    message: ConversationContext["message"],
+    mode: RuntimeQueueMode,
+    queueId?: string,
+  ): boolean {
+    assertSessionKeyBelongsToConversation(sessionKey, address.conversationId);
+    const state = this.sessions.get(address, sessionKey);
+    return state?.running === true && state.runner.queueMessage(message, mode, queueId);
+  }
+
+  subscribe(
+    address: OfficeAddress,
+    sessionKey: string,
+    listener: Parameters<PiAgentWrapper["subscribe"]>[0],
+  ): (() => void) | null {
+    assertSessionKeyBelongsToConversation(sessionKey, address.conversationId);
+    return this.sessions.get(address, sessionKey)?.runner.subscribe(listener) ?? null;
   }
 
   async handleNewCommand(
@@ -295,7 +324,10 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       }
       return { success: true };
     } catch (err) {
-      return { success: false, errorMessage: err instanceof Error ? err.message : String(err) };
+      return {
+        success: false,
+        errorMessage: err instanceof Error ? err.message : String(err),
+      };
     }
   }
 
@@ -341,8 +373,12 @@ class ConversationRuntimeImpl implements ConversationRuntime {
               this.options.workspace,
               address,
             );
-            this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
-            this.sessions.discard(address, sessionKey);
+            await this.chatSessionManager.resetSession({
+              conversationDir,
+              sessionKey,
+              cwd: runtimeCwd,
+            });
+            await this.sessions.discardAndWait(address, sessionKey);
             log.logInfo(
               `[${conversationId}] Session Dream completed; rotated session: ${sessionKey}`,
             );
@@ -371,9 +407,13 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     const conversationId = address.conversationId;
     const conversationDir = this.options.workspace.office(address).dir;
     const runtimeCwd = runtimeCwdForSandbox(this.options.sandbox, this.options.workspace, address);
-    this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
+    await this.chatSessionManager.resetSession({
+      conversationDir,
+      sessionKey,
+      cwd: runtimeCwd,
+    });
 
-    this.sessions.discard(address, sessionKey);
+    await this.sessions.discardAndWait(address, sessionKey);
 
     log.logInfo(`[${conversationId}] Session reset: ${sessionKey}`);
     await bot.postMessage(conversationId, "Conversation reset. Send a new message to start fresh.");
@@ -384,7 +424,20 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     bot: MessagingBot,
     context: ConversationContext,
   ): Promise<void> {
-    const sessionKey = deriveSessionKey(event);
+    let sessionKey: string;
+    if (event.sessionId) {
+      const target = resolveDurableSessionTarget(
+        this.options.workspace.office(event.address).sessionsDir,
+        event.address,
+        event.sessionId,
+      );
+      if (!target) {
+        throw new Error(`Durable session ${JSON.stringify(event.sessionId)} is unavailable`);
+      }
+      sessionKey = target.sessionKey;
+    } else {
+      sessionKey = deriveSessionKey(event);
+    }
     await this.sessions.enqueue(event.address, sessionKey, () =>
       this.runSession({ event, bot, context }),
     );
@@ -479,8 +532,18 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       return;
     }
 
-    const sessionKey = deriveSessionKey(event);
-    if (!skipRotation) {
+    const durableTarget = event.sessionId
+      ? resolveDurableSessionTarget(
+          this.options.workspace.office(event.address).sessionsDir,
+          event.address,
+          event.sessionId,
+        )
+      : null;
+    if (event.sessionId && !durableTarget) {
+      throw new Error(`Durable session ${JSON.stringify(event.sessionId)} is unavailable`);
+    }
+    const sessionKey = durableTarget?.sessionKey ?? deriveSessionKey(event);
+    if (!skipRotation && !durableTarget) {
       const privateConversation = isPrivateConversation(event);
       const handledCommand = await dispatchCommand(this.commandHandlers, {
         bot,
@@ -505,6 +568,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
     if (
       !skipRotation &&
+      !durableTarget &&
       sessionKey === conversationId &&
       this.scheduleSharedSessionRotation({ event, bot, context }, sessionKey)
     ) {
@@ -534,10 +598,11 @@ class ConversationRuntimeImpl implements ConversationRuntime {
           address,
           conversationId,
           sessionKey,
+          durableSessionId: durableTarget?.id,
           currentMessageId: event.ts,
           conversationKind: event.conversationKind,
         });
-        state.runner.syncChatHistory(event.ts);
+        if (!durableTarget) await state.runner.syncChatHistory(event.ts);
 
         // Extension-contributed commands: deterministic dispatch, no agent run.
         // Built-in commands already had their chance above, so extensions can
@@ -687,7 +752,9 @@ class ConversationRuntimeImpl implements ConversationRuntime {
               unit: "millisecond",
               attributes: completionAttrs,
             });
-            Sentry.metrics.count("agent.run.completed", 1, { attributes: completionAttrs });
+            Sentry.metrics.count("agent.run.completed", 1, {
+              attributes: completionAttrs,
+            });
             addLifecycleBreadcrumb("agent.run.completed", {
               channel_id: conversationId,
               platform: platform.name,
@@ -812,28 +879,65 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private async getOrCreateState(
     options: SessionStateOptions & { currentMessageId?: string },
   ): Promise<ConversationState> {
-    const { address, sessionKey, currentMessageId } = options;
+    const id = `${officeKey(options.address)}|${options.sessionKey}`;
+    const previous = this.stateTransitions.get(id) ?? Promise.resolve();
+    let resolveTransition!: () => void;
+    const transition = new Promise<void>((resolve) => (resolveTransition = resolve));
+    const tail = previous.then(() => transition);
+    this.stateTransitions.set(id, tail);
+    await previous;
+    try {
+      return await this.getOrCreateStateExclusive(options);
+    } finally {
+      resolveTransition();
+      if (this.stateTransitions.get(id) === tail) this.stateTransitions.delete(id);
+    }
+  }
+
+  private async getOrCreateStateExclusive(
+    options: SessionStateOptions & { currentMessageId?: string },
+  ): Promise<ConversationState> {
+    const { address, sessionKey, currentMessageId, durableSessionId } = options;
+    await this.sessions.waitForClose(address, sessionKey);
     const existing = this.sessions.get(address, sessionKey);
-    if (existing?.running) return existing;
-
+    const selected = durableSessionId
+      ? resolveDurableSessionTarget(
+          this.options.workspace.office(address).sessionsDir,
+          address,
+          durableSessionId,
+        )
+      : null;
+    if (durableSessionId && (!selected || selected.sessionKey !== sessionKey)) {
+      throw new Error(`Durable session ${JSON.stringify(durableSessionId)} is unavailable`);
+    }
     const conversationDir = this.options.workspace.office(address).dir;
-    const runtimeCwd = runtimeCwdForSandbox(this.options.sandbox, this.options.workspace, address);
-    const sessionScope = await this.chatSessionManager.resolveSessionScope({
-      conversationDir,
-      sessionKey,
-      cwd: runtimeCwd,
-      currentMessageId,
-      rotateTopLevelSession: false,
-    });
-
-    if (existing && existing.sessionFile === sessionScope.contextFile) {
+    const expectedFile =
+      selected?.file ?? resolveRuntimeSession(conversationDir, address, sessionKey)?.file;
+    if (existing && expectedFile === existing.sessionFile) {
       existing.lastAccessedAt = Date.now();
       return existing;
     }
+    if (existing?.running) {
+      throw new Error(
+        `Session key ${JSON.stringify(sessionKey)} is busy on another durable session`,
+      );
+    }
+    if (existing) await this.sessions.discardAndWait(address, sessionKey);
 
-    // A stale state (rotated session file) is being replaced: release the old
-    // runner's extension resources before the new one takes the slot.
-    if (existing) this.sessions.discard(address, sessionKey);
+    const runtimeCwd = runtimeCwdForSandbox(this.options.sandbox, this.options.workspace, address);
+    const sessionScope = selected
+      ? {
+          sessionDir: this.options.workspace.office(address).sessionsDir,
+          contextFile: selected.file,
+          threadRootMessage: null,
+        }
+      : await this.chatSessionManager.resolveSessionScope({
+          conversationDir,
+          sessionKey,
+          cwd: runtimeCwd,
+          currentMessageId,
+          rotateTopLevelSession: false,
+        });
 
     const state: ConversationState = {
       address,
@@ -860,14 +964,21 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     }
 
     if (this.inFlightRuns.size > 0) {
-      log.logWarning(`Forcing exit with ${this.inFlightRuns.size} runs still in progress`);
-      reportUserFacingError(new Error("Shutdown forced with in-flight agent runs"), {
-        domain: "mikan",
-        surface: "shutdown",
-        operation: "force_exit_with_inflight_runs",
-        severity: "warning",
-        context: { inFlightRuns: this.inFlightRuns.size, timeoutMs },
-      });
+      log.logWarning(
+        `Aborting ${this.inFlightRuns.size} runs after shutdown timeout`,
+        `${timeoutMs}ms`,
+      );
+      for (const state of this.sessions.runningStates()) state.runner.abort();
+      const closeDeadline = Date.now() + 5_000;
+      while (this.inFlightRuns.size > 0 && Date.now() < closeDeadline) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      if (this.inFlightRuns.size > 0) {
+        throw new Error(
+          `Shutdown could not settle ${this.inFlightRuns.size} aborted runs within 5000ms`,
+        );
+      }
     }
+    await this.sessions.closeAll();
   }
 }

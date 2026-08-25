@@ -7,45 +7,53 @@ import {
   type SessionEntry,
   type SessionMessageEntry,
 } from "../../harness/index.js";
-import {
-  getThreadSessionFile,
-  resolveChannelSessionFile,
-  tryResolveThreadSession,
-} from "../../sessions/store.js";
+import { resolveChannelSessionFile } from "../../sessions/store.js";
 import { isPlatformHistorySession } from "../../sessions/store.js";
-import { isThreadSessionKey } from "../../sessions/session-key.js";
 import * as log from "../../log.js";
 
 export type { SessionViewItem, SessionViewRelation, SessionViewModel } from "./types.js";
 import type { SessionHeader } from "../../harness/types.js";
 import type { SessionViewItem, SessionViewRelation, SessionViewModel } from "./types.js";
 
+function entryIsoTime(entry: SessionEntry | undefined): string | undefined {
+  if (!entry || typeof entry.timestamp !== "number" || !Number.isFinite(entry.timestamp)) {
+    return undefined;
+  }
+  return new Date(entry.timestamp).toISOString();
+}
+
 export function resolveExistingSessionFile(
   conversationDir: string,
   sessionKey: string,
 ): string | null {
-  if (isThreadSessionKey(sessionKey)) {
-    return tryResolveThreadSession(getThreadSessionFile(conversationDir, sessionKey));
-  }
-  return resolveChannelSessionFile(conversationDir);
+  return sessionKey ? resolveChannelSessionFile(conversationDir) : null;
 }
 
-export function loadSessionViewModel(sessionFile: string): SessionViewModel {
+export async function loadSessionViewModel(sessionFile: string): Promise<SessionViewModel> {
   const resolvedFile = resolve(sessionFile);
-  const sm = SessionStore.open(resolvedFile);
+  const sm = await SessionStore.inspect(resolvedFile);
   const header = sm.getHeader();
-  if (!header) throw new Error(`No valid session found: ${sessionFile}`);
 
-  const entries = sm.getEntries();
-  const updatedAt = entries.at(-1)?.timestamp ?? header.timestamp;
-  const title = sm.getSessionName() || `Session ${header.id.slice(0, 8)}`;
+  const entries = await sm.getEntries();
+  const updatedAt = entryIsoTime(entries.at(-1)) ?? header.timestamp;
+  const title = (await sm.getSessionName()) || `Session ${header.id.slice(0, 8)}`;
 
-  const parent = resolveParentRelation(resolvedFile, header);
-  const threads = listRelatedSessionFiles(resolvedFile)
-    .filter((candidate) => candidate !== resolvedFile)
-    .map((candidate) => buildSessionRelation(candidate, "thread", resolvedFile, header.id))
-    .filter((relation): relation is SessionViewRelation => relation !== null)
-    .toSorted((a, b) => (a.updatedAt < b.updatedAt ? -1 : a.updatedAt > b.updatedAt ? 1 : 0));
+  const parent = await resolveParentRelation(resolvedFile, header);
+  const threadCandidates: SessionViewRelation[] = [];
+  for (const candidate of listRelatedSessionFiles(resolvedFile)) {
+    if (candidate === resolvedFile) continue;
+    const relation = await buildSessionRelation(
+      candidate,
+      "thread",
+      resolvedFile,
+      header.id,
+      entries,
+    );
+    if (relation) threadCandidates.push(relation);
+  }
+  const threads = threadCandidates.toSorted((a, b) =>
+    a.updatedAt < b.updatedAt ? -1 : a.updatedAt > b.updatedAt ? 1 : 0,
+  );
 
   const threadsByEntryId = new Map<string, SessionViewRelation[]>();
   for (const thread of threads) {
@@ -80,39 +88,6 @@ export function loadSessionViewModel(sessionFile: string): SessionViewModel {
   };
 }
 
-export function resolveRequestedSessionFile(
-  baseSessionFile: string,
-  requestedFileName?: string | null,
-): string | null {
-  const resolvedBase = resolve(baseSessionFile);
-  if (!requestedFileName) return resolvedBase;
-
-  const trimmed = requestedFileName.trim();
-  if (!trimmed) return resolvedBase;
-
-  const fileName = basename(trimmed);
-  if (fileName !== trimmed || !fileName.endsWith(".jsonl")) return null;
-
-  const candidate = join(dirname(resolvedBase), fileName);
-  if (!existsSync(candidate)) return null;
-
-  let sm: SessionStore;
-  try {
-    sm = SessionStore.open(candidate);
-  } catch (err) {
-    throw new Error(
-      `Session file is corrupted: ${candidate}: ${
-        err instanceof Error ? err.message : String(err)
-      }`,
-      { cause: err },
-    );
-  }
-  if (!sm.getHeader()) {
-    throw new Error(`Session file is missing a valid header: ${candidate}`);
-  }
-  return candidate;
-}
-
 function listRelatedSessionFiles(sessionFile: string): string[] {
   const dir = dirname(sessionFile);
   if (!existsSync(dir)) return [];
@@ -122,15 +97,16 @@ function listRelatedSessionFiles(sessionFile: string): string[] {
     .map((fileName) => join(dir, fileName));
 }
 
-function buildSessionRelation(
+async function buildSessionRelation(
   sessionFile: string,
   kind: "parent" | "thread",
   expectedParent?: string,
   expectedParentId?: string,
-): SessionViewRelation | null {
-  let sm: SessionStore;
+  expectedParentEntries?: SessionEntry[],
+): Promise<SessionViewRelation | null> {
+  let sm: Awaited<ReturnType<typeof SessionStore.inspect>>;
   try {
-    sm = SessionStore.open(sessionFile);
+    sm = await SessionStore.inspect(sessionFile);
   } catch (err) {
     log.logWarning(
       `Skipping corrupted session file while building ${kind} relation: ${sessionFile}`,
@@ -139,12 +115,6 @@ function buildSessionRelation(
     return null;
   }
   const header = sm.getHeader();
-  if (!header) {
-    log.logWarning(
-      `Skipping session file with missing header while building ${kind} relation: ${sessionFile}`,
-    );
-    return null;
-  }
   if (
     kind === "thread" &&
     !isChildThreadSession(
@@ -158,18 +128,23 @@ function buildSessionRelation(
     return null;
   }
 
-  const entries = sm.getEntries();
-  const updatedAt = entries.at(-1)?.timestamp ?? header.timestamp;
+  const entries = await sm.getEntries();
+  const updatedAt = entryIsoTime(entries.at(-1)) ?? header.timestamp;
   const threadId = kind === "thread" ? getFixedThreadSessionId(sessionFile) : null;
   const anchorEntryId =
     kind === "thread" && expectedParent
-      ? findThreadAnchorEntryId(SessionStore.open(expectedParent).getEntries(), entries, threadId)
+      ? findThreadAnchorEntryId(
+          expectedParentEntries ??
+            (await (await SessionStore.inspect(expectedParent)).getEntries()),
+          entries,
+          threadId,
+        )
       : undefined;
   return {
     kind,
     fileName: basename(sessionFile),
     sessionId: header.id,
-    title: sm.getSessionName() || `Session ${header.id.slice(0, 8)}`,
+    title: (await sm.getSessionName()) || `Session ${header.id.slice(0, 8)}`,
     updatedAt,
     entryCount: entries.length,
     summary: extractSessionSummary(entries),
@@ -177,19 +152,19 @@ function buildSessionRelation(
   };
 }
 
-function resolveParentRelation(
+async function resolveParentRelation(
   sessionFile: string,
   header: SessionHeader,
-): SessionViewRelation | undefined {
+): Promise<SessionViewRelation | undefined> {
   if (header.parentSession) {
     const parentPath = resolve(header.parentSession);
     if (existsSync(parentPath)) {
-      return buildSessionRelation(parentPath, "parent") ?? undefined;
+      return (await buildSessionRelation(parentPath, "parent")) ?? undefined;
     }
     // Path is stale — try UUID fallback before heuristic.
     if (header.parentSessionId) {
       const found = findSessionFileById(dirname(sessionFile), header.parentSessionId);
-      if (found) return buildSessionRelation(found, "parent") ?? undefined;
+      if (found) return (await buildSessionRelation(found, "parent")) ?? undefined;
     }
   }
   return buildInferredThreadParentRelation(sessionFile);
@@ -201,8 +176,7 @@ function findSessionFileById(sessionDir: string, targetId: string): string | nul
     if (!name.endsWith(".jsonl")) continue;
     try {
       const filePath = join(sessionDir, name);
-      const sm = SessionStore.open(filePath);
-      if (sm.getHeader()?.id === targetId) return filePath;
+      if (SessionStore.readHeader(filePath)?.id === targetId) return filePath;
     } catch {
       continue;
     }
@@ -210,13 +184,15 @@ function findSessionFileById(sessionDir: string, targetId: string): string | nul
   return null;
 }
 
-function buildInferredThreadParentRelation(sessionFile: string): SessionViewRelation | undefined {
+async function buildInferredThreadParentRelation(
+  sessionFile: string,
+): Promise<SessionViewRelation | undefined> {
   if (!getFixedThreadSessionId(sessionFile)) return undefined;
 
   const parentSession = resolveChannelSessionFile(dirname(dirname(sessionFile)));
   if (!parentSession || parentSession === sessionFile) return undefined;
 
-  return buildSessionRelation(parentSession, "parent") ?? undefined;
+  return (await buildSessionRelation(parentSession, "parent")) ?? undefined;
 }
 
 function isChildThreadSession(
@@ -457,7 +433,7 @@ function mapEntryToItem(entry: SessionEntry): SessionViewItem | null {
         kind: "system",
         title: "Model changed",
         body: `${entry.provider} / ${entry.modelId}`,
-        meta: entry.timestamp,
+        meta: entryIsoTime(entry) ?? "",
         tone: "muted",
       };
     case "thinking_level_change":
@@ -465,47 +441,21 @@ function mapEntryToItem(entry: SessionEntry): SessionViewItem | null {
         kind: "system",
         title: "Thinking level changed",
         body: entry.thinkingLevel,
-        meta: entry.timestamp,
+        meta: entryIsoTime(entry) ?? "",
         tone: "muted",
       };
     case "compaction":
       return mapCompactionEntry(entry);
     case "branch_summary":
       return mapSessionSummaryEntry(entry);
-    case "custom_message":
-      return {
-        kind: "system",
-        title: `Custom message · ${entry.customType}`,
-        body: contentToText(entry.content),
-        meta: entry.timestamp,
-        tone: "muted",
-      };
     case "custom":
       return {
         kind: "system",
         title: `Custom data · ${entry.customType}`,
         body: entry.data === undefined ? "(no data)" : JSON.stringify(entry.data, null, 2),
-        meta: entry.timestamp,
+        meta: entryIsoTime(entry) ?? "",
         tone: "muted",
       };
-    case "label":
-      return {
-        kind: "system",
-        title: "Label updated",
-        body: entry.label || "(cleared)",
-        meta: entry.timestamp,
-        tone: "muted",
-      };
-    case "session_info":
-      return entry.name
-        ? {
-            kind: "system",
-            title: "Session renamed",
-            body: entry.name,
-            meta: entry.timestamp,
-            tone: "muted",
-          }
-        : null;
     default:
       return null;
   }
@@ -536,7 +486,7 @@ function mapMessageEntry(entry: SessionMessageEntry): SessionViewItem {
         kind: "user",
         title: "User",
         body: contentToText(message.content),
-        meta: entry.timestamp,
+        meta: entryIsoTime(entry) ?? "",
         entryId: entry.id,
       };
     case "assistant": {
@@ -548,7 +498,9 @@ function mapMessageEntry(entry: SessionMessageEntry): SessionViewItem {
         title: "Assistant",
         body: assistantBody,
         meta:
-          metaParts.length > 0 ? `${entry.timestamp} · ${metaParts.join(" · ")}` : entry.timestamp,
+          metaParts.length > 0
+            ? `${entryIsoTime(entry) ?? ""} · ${metaParts.join(" · ")}`
+            : (entryIsoTime(entry) ?? ""),
         entryId: entry.id,
       };
     }
@@ -557,7 +509,7 @@ function mapMessageEntry(entry: SessionMessageEntry): SessionViewItem {
         kind: "tool",
         title: `Tool result · ${String(message.toolName ?? "unknown")}`,
         body: contentToText(message.content),
-        meta: entry.timestamp,
+        meta: entryIsoTime(entry) ?? "",
         tone: message.isError ? "err" : "ok",
         entryId: entry.id,
       };
@@ -574,7 +526,7 @@ function mapMessageEntry(entry: SessionMessageEntry): SessionViewItem {
         kind: "tool",
         title: "Bash execution",
         body: body || "(no output)",
-        meta: entry.timestamp,
+        meta: entryIsoTime(entry) ?? "",
         entryId: entry.id,
       };
     }
@@ -583,7 +535,7 @@ function mapMessageEntry(entry: SessionMessageEntry): SessionViewItem {
         kind: "system",
         title: `Custom message · ${String(message.customType ?? "custom")}`,
         body: contentToText(message.content),
-        meta: entry.timestamp,
+        meta: entryIsoTime(entry) ?? "",
         tone: "muted",
         entryId: entry.id,
       };
@@ -592,7 +544,7 @@ function mapMessageEntry(entry: SessionMessageEntry): SessionViewItem {
         kind: "system",
         title: "Session summary",
         body: String(message.summary ?? ""),
-        meta: entry.timestamp,
+        meta: entryIsoTime(entry) ?? "",
         tone: "muted",
         entryId: entry.id,
       };
@@ -601,7 +553,7 @@ function mapMessageEntry(entry: SessionMessageEntry): SessionViewItem {
         kind: "system",
         title: "Compaction summary",
         body: String(message.summary ?? ""),
-        meta: entry.timestamp,
+        meta: entryIsoTime(entry) ?? "",
         tone: "muted",
         entryId: entry.id,
       };
@@ -610,7 +562,7 @@ function mapMessageEntry(entry: SessionMessageEntry): SessionViewItem {
         kind: "system",
         title: `Message · ${String(message.role ?? "unknown")}`,
         body: contentToText(message.content),
-        meta: entry.timestamp,
+        meta: entryIsoTime(entry) ?? "",
         tone: "muted",
         entryId: entry.id,
       };
@@ -622,7 +574,7 @@ function mapCompactionEntry(entry: CompactionEntry): SessionViewItem {
     kind: "system",
     title: "Context compacted",
     body: entry.summary,
-    meta: `${entry.timestamp} · ${entry.tokensBefore} tokens before compaction`,
+    meta: `${entryIsoTime(entry) ?? ""} · ${entry.tokensBefore} tokens before compaction`,
     tone: "muted",
   };
 }
@@ -632,7 +584,7 @@ function mapSessionSummaryEntry(entry: SessionBranchSummaryEntry): SessionViewIt
     kind: "system",
     title: "Session summary",
     body: entry.summary,
-    meta: entry.timestamp,
+    meta: entryIsoTime(entry) ?? "",
     tone: "muted",
   };
 }
