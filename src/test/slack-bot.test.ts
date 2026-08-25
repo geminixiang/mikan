@@ -475,6 +475,12 @@ describe("SlackMessagingBot slash commands", () => {
       thread_ts: "1000.0001",
       text: "/pi-session",
     });
+    // The command context must carry the same thread-resolved session as the
+    // event: /pi-session resolves its session file from the context, and a
+    // top-level key here would open the wrong session.
+    expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[2]?.message).toMatchObject({
+      sessionKey: "C123:1000.0001",
+    });
     expect(postEphemeral).toHaveBeenCalledWith({
       channel: "C123",
       user: "U123",

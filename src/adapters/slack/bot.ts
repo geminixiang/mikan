@@ -1095,13 +1095,16 @@ export class SlackMessagingBot implements MessagingBot {
     userName: string | undefined,
     text: string,
     ts: string,
-    options: { ephemeralChannelId?: string; threadTs?: string } = {},
+    options: { ephemeralChannelId?: string; threadTs?: string; sessionKey?: string } = {},
   ): ConversationContext {
     const message = createConversationMessage({
       platform: "slack",
       conversationId,
       id: ts,
-      sessionKey: conversationId,
+      // One session identity per dispatch: the caller's thread-resolved key.
+      // Defaulting to the top-level conversation here while the event carried
+      // a thread key made the same run answer to two different sessions.
+      sessionKey: options.sessionKey ?? conversationId,
       conversationKind: options.ephemeralChannelId ? "shared" : "direct",
       userId,
       userName,
@@ -1227,7 +1230,9 @@ export class SlackMessagingBot implements MessagingBot {
       userName,
       commandText,
       eventTs,
-      isDirectMessage ? { threadTs } : { ephemeralChannelId: conversationId, threadTs },
+      isDirectMessage
+        ? { threadTs, sessionKey }
+        : { ephemeralChannelId: conversationId, threadTs, sessionKey },
     );
 
     return { event, context };
