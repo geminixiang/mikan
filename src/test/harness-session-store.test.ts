@@ -1,4 +1,12 @@
-import { existsSync, linkSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -240,16 +248,19 @@ describe("SessionStore", () => {
   });
 
   test("a leaked claim for a deleted file does not block an unrelated new file", async () => {
-    // Simulates inode reuse: a store is never closed (leaked claim), its file
-    // is deleted, and a new session file later receives the same dev:ino.
-    // The stale claim must not deny the new writer.
-    const leaked = join(dir, "leaked.jsonl");
-    await SessionStore.create(leaked, "/work");
-    rmSync(leaked);
+    // Simulates the CI failure mode: a store is never closed (leaked claim),
+    // its file is deleted, and a session file at a *different* path later
+    // receives the same dev:ino (Linux filesystems reuse inodes eagerly).
+    // The stale claim must not deny the new writer. Inode collision cannot be
+    // forced portably, so this exercises the detection path: once the claimed
+    // path is gone, the claim no longer resolves to its inode identity and
+    // must be treated as stale regardless of who now holds that inode.
+    const leakedDir = join(dir, "leaked-office");
+    mkdirSync(leakedDir, { recursive: true });
+    await SessionStore.create(join(leakedDir, "session.jsonl"), "/work");
+    rmSync(leakedDir, { recursive: true, force: true });
 
-    // Recreate at the same path: on filesystems that reuse inodes this can
-    // collide with the leaked claim's dev:ino identity.
-    const fresh = await SessionStore.create(leaked, "/work");
+    const fresh = await SessionStore.create(join(dir, "fresh.jsonl"), "/work");
     await fresh.close();
   });
 

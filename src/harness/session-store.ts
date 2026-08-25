@@ -68,7 +68,10 @@ function canonicalSessionPath(path: string): string {
 function sessionWriterKey(path: string): string {
   if (!existsSync(path)) return `path:${path}`;
   const stat = statSync(path);
-  return `inode:${stat.dev}:${stat.ino}`;
+  // birthtime disambiguates a deleted-and-recreated file that received the
+  // same reused inode (same path or not). Filesystems without birthtime
+  // report 0 and fall back to dev:ino alone.
+  return `inode:${stat.dev}:${stat.ino}:${stat.birthtimeMs}`;
 }
 
 /**
