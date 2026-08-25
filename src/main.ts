@@ -32,8 +32,11 @@ import { EventsWatcher } from "./events.js";
 import { ExtensionCallbackScheduler } from "./extension-schedules.js";
 import * as log from "./log.js";
 import { startWebServer } from "./web/server.js";
+import { MikanHarnessHost } from "./web/harness/host.js";
 import { InMemoryAdminTokenStore } from "./web/admin/store.js";
 import { InMemoryLinkTokenStore } from "./web/login/store.js";
+import { WebBindingStore } from "./web/login/binding.js";
+import { InMemoryWebSessionStore } from "./web/login/session-store.js";
 import { InMemorySessionViewTokenStore } from "./web/session-view/store.js";
 import { DockerContainerManager } from "./provisioner.js";
 import {
@@ -47,21 +50,15 @@ import {
   configureHttpDispatcher,
   defaultAuthPath,
   defaultModelsJsonPath,
+  MikanModels,
   parseHttpIdleTimeoutMs,
 } from "./harness/index.js";
 import { existsSync, readFileSync } from "node:fs";
 import { readEnv, setEnvAliases } from "./env-manifest.js";
 import { ensureDirExists, isRecord, readJsonFileIfExists } from "./utils/file-guards.js";
-import { SandboxError, validateSandbox } from "./sandbox/index.js";
+import { getSandboxAdapter, SandboxError, validateSandbox } from "./sandbox/index.js";
 import { helpText, resolveBoot, type BootPlan } from "./cli/boot.js";
 import { envReport, noPlatformsMessage, platformIsActive } from "./env-manifest.js";
-import {
-  configureGondolinRuntime,
-  gondolinResources,
-  reconcileGondolinRuntimes,
-  stopAllGondolinRuntimes,
-  stopIdleGondolinVms,
-} from "./sandbox/gondolin.js";
 import { FileVaultManager } from "./vault/index.js";
 import { runExtCommand } from "./cli/ext.js";
 import { runOfficeCommand } from "./cli/office.js";
@@ -112,6 +109,12 @@ const GOOGLE_CLOUD_PROJECT = readEnv("GOOGLE_CLOUD_PROJECT");
 const LINK_BASE_URL = resolveLinkBaseUrl();
 const LINK_PORT_RAW = readEnv("LINK_PORT");
 const LINK_PORT = LINK_PORT_RAW ? parseInt(LINK_PORT_RAW, 10) : LINK_BASE_URL ? 8181 : undefined;
+
+// The build embeds the Vite app under dist/.internal. MIKAN_WEB_DIST remains
+// available for development and custom deployments.
+const WEB_DIST_INDEX =
+  readEnv("MIKAN_WEB_DIST") ??
+  pathJoin(dirname(fileURLToPath(import.meta.url)), ".internal", "web-app", "index.html");
 
 const WORLD_WRITABLE_MODE = 0o002;
 
@@ -324,14 +327,12 @@ try {
 const workspace = createWorkspace({ root: workingDir, stateDir });
 
 const vaultManager = new FileVaultManager(stateDir);
+const sandboxAdapter = getSandboxAdapter(sandbox.type);
 if (vaultManager.isEnabled()) {
   console.log(
-    sandbox.type === "container"
+    sandboxAdapter.vault.routingLabel === "container"
       ? "  Vault system enabled. Container vault active."
-      : sandbox.type === "image" ||
-          sandbox.type === "gondolin" ||
-          sandbox.type === "firecracker" ||
-          sandbox.type === "cloudflare"
+      : sandboxAdapter.vault.routingLabel === "conversation"
         ? "  Vault system enabled. Conversation-scoped credential routing active."
         : "  Vault system enabled. Host mode will not inject vault env.",
   );
@@ -354,13 +355,13 @@ const sandboxBoostLimits =
     ? { cpus: sandboxSettings?.boost?.cpus, memory: sandboxSettings?.boost?.memory }
     : undefined;
 
-const provisioner =
-  sandbox.type === "image"
-    ? new DockerContainerManager(sandbox.image, {
-        limits: sandboxLimits,
-        boostLimits: sandboxBoostLimits,
-      })
-    : undefined;
+const provisionerImage = sandboxAdapter.provisionerImage?.(sandbox);
+const provisioner = provisionerImage
+  ? new DockerContainerManager(provisionerImage, {
+      limits: sandboxLimits,
+      boostLimits: sandboxBoostLimits,
+    })
+  : undefined;
 // Containers provisioned before the office migration mount the renamed
 // legacy paths. Their writable layers (everything installed inside) are
 // preserved: each container is committed and recreated with translated
@@ -385,24 +386,14 @@ if (provisioner && registryOffices.length > 0) {
     );
   }
 }
-if (sandbox.type === "gondolin") {
-  try {
-    configureGondolinRuntime({
-      limits: sandboxLimits,
-      boostLimits: sandboxBoostLimits,
-    });
-  } catch (error) {
-    handleStartupError(error);
-  }
+try {
+  await sandboxAdapter.prepareBoot?.({ limits: sandboxLimits, boostLimits: sandboxBoostLimits });
+} catch (error) {
+  handleStartupError(error);
 }
-const resourceController =
-  sandbox.type === "image"
-    ? provisioner
-    : sandbox.type === "gondolin"
-      ? gondolinResources
-      : undefined;
+const resourceController = sandboxAdapter.createResourceController?.({ provisioner });
 
-if (sandbox.type === "image" || sandbox.type === "gondolin") {
+if (sandboxAdapter.workspace.managedProjection) {
   ensureDirExists(workspace.skillsDir);
   ensureDirExists(workspace.eventsDir);
   ensureDirExists(workspace.agentsDir);
@@ -416,9 +407,12 @@ if (sandbox.type === "image" || sandbox.type === "gondolin") {
 const linkTokenStore = new InMemoryLinkTokenStore();
 const sessionViewTokenStore = new InMemorySessionViewTokenStore();
 const adminTokenStore = new InMemoryAdminTokenStore();
+const bindingTokenStore = new WebBindingStore(stateDir);
+const webSessionStore = new InMemoryWebSessionStore();
 setInterval(() => linkTokenStore.purge(), 5 * 60 * 1000).unref();
 setInterval(() => sessionViewTokenStore.purge(), 5 * 60 * 1000).unref();
 setInterval(() => adminTokenStore.purge(), 5 * 60 * 1000).unref();
+setInterval(() => bindingTokenStore.purge(), 5 * 60 * 1000).unref();
 
 function portalBaseUrl(): string | undefined {
   if (LINK_BASE_URL) return LINK_BASE_URL;
@@ -437,13 +431,11 @@ if (provisioner) {
   ).unref();
 }
 
-if (sandbox.type === "gondolin") {
-  await reconcileGondolinRuntimes();
-  setInterval(
-    () => void stopIdleGondolinVms(MANAGED_SANDBOX_IDLE_TIMEOUT_MS),
-    MANAGED_SANDBOX_IDLE_TIMEOUT_MS,
-  ).unref();
-}
+await sandboxAdapter.startIdleManagement?.({
+  limits: sandboxLimits,
+  boostLimits: sandboxBoostLimits,
+  idleTimeoutMs: MANAGED_SANDBOX_IDLE_TIMEOUT_MS,
+});
 const botsByPlatform: Record<string, MessagingBot> = {};
 
 /**
@@ -633,6 +625,7 @@ const extensionScheduleEngine = new ExtensionCallbackScheduler({
   dispatch: (fire) => handler.handleExtensionScheduleCallback(fire),
 });
 
+const models = MikanModels.create();
 const handler = createConversationRuntime({
   workspace,
   sandbox,
@@ -642,6 +635,7 @@ const handler = createConversationRuntime({
   linkTokenStore,
   sessionViewTokenStore,
   adminTokenStore,
+  bindingTokenStore,
   portalBaseUrl: portalBaseUrl(),
   platformNotifier,
   platformReactor,
@@ -652,20 +646,13 @@ const handler = createConversationRuntime({
   platformUserLister,
   extensionScheduleEngine,
   platformToolPackFactories: buildPlatformToolPackFactories(),
+  models,
 });
+const harnessHost = LINK_PORT
+  ? new MikanHarnessHost({ workspace, runtime: handler, models, stateDir })
+  : undefined;
 
-const sandboxDesc =
-  sandbox.type === "host"
-    ? "host"
-    : sandbox.type === "container"
-      ? `container:${sandbox.container}`
-      : sandbox.type === "image"
-        ? `image:${sandbox.image}`
-        : sandbox.type === "gondolin"
-          ? `gondolin:${sandbox.profile}`
-          : sandbox.type === "firecracker"
-            ? `firecracker:${sandbox.vmId}`
-            : `cloudflare:${sandbox.sandboxId}`;
+const sandboxDesc = sandboxAdapter.describe?.(sandbox) ?? sandbox.type;
 log.logStartup(workingDir, sandboxDesc);
 logHarnessStartupSummary();
 
@@ -809,6 +796,10 @@ if (LINK_PORT) {
     sessionViewTokenStore,
     sessionViewInteractive: { handler, botsByPlatform },
     adminOptions: { adminTokenStore, workspace, runtime: handler, sandbox, botsByPlatform },
+    bindingTokenStore,
+    webSessionStore,
+    harnessHost,
+    webDistIndex: WEB_DIST_INDEX,
     githubWebhook:
       GITHUB_WEBHOOK_SECRET && githubBotForWebhook
         ? {
@@ -833,7 +824,7 @@ async function shutdown(): Promise<void> {
   await handler.shutdown();
   eventsWatcher.stop();
   extensionScheduleEngine.stop();
-  await stopAllGondolinRuntimes();
+  await sandboxAdapter.shutdown?.();
   await Sentry.close(5000);
   process.exit(0);
 }

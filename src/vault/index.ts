@@ -393,17 +393,18 @@ export function migrateConversationVaultKeys(options: {
  * must not inherit ambient credentials — host-side platform identity or an
  * explicitly provisioned vault only.
  *
- * Topology: only isolated sandboxes (`image` / `cloudflare`) auto-provision
- * per-conversation vaults that receive the copy. `host` / `container` /
- * `firecracker` do not use this ambient path.
+ * Topology: each backend declares whether it auto-provisions per-conversation
+ * vaults that receive the copy (`vault.ambientSharedVault`); the built-in
+ * isolated backends (`image` / `cloudflare`) opt in, the rest do not.
  */
 export function allowsAmbientDefaultSharedVault(options: {
   trustModel?: PlatformTrustModel;
-  sandboxType: SandboxConfig["type"];
+  /** Declared by the sandbox backend (SandboxAdapter.vault.ambientSharedVault). */
+  ambientSharedVault: boolean;
 }): boolean {
   const trustModel = options.trustModel ?? "membership";
   if (trustModel === "open-trigger") return false;
-  return options.sandboxType === "image" || options.sandboxType === "cloudflare";
+  return options.ambientSharedVault;
 }
 
 export type { VaultInjection } from "./types.js";

@@ -81,6 +81,14 @@ export interface AdminTokenStoreLike {
   }): { token: string };
 }
 
+export interface BindingTokenStoreLike {
+  create(
+    platform: PlatformName,
+    platformUserId: string,
+    conversationId: string,
+  ): { code: string; token: { token: string } };
+}
+
 interface CommandRuntimeBridge {
   handleNewCommand(
     sessionKey: string,
@@ -104,6 +112,7 @@ export interface CommandServices {
   linkTokenStore: LinkTokenStoreLike;
   sessionViewTokenStore: SessionViewTokenStoreLike;
   adminTokenStore: AdminTokenStoreLike;
+  bindingTokenStore?: BindingTokenStoreLike;
   portalBaseUrl?: string;
 }
 
@@ -155,4 +164,5 @@ export type ParsedLoginCommand =
   | { action: "setup" }
   | { action: "shared_create" | "shared_update" | "shared_delete"; name: string }
   | { action: "shared_list" }
-  | { action: "copy_shared"; name: string };
+  | { action: "copy_shared"; name: string }
+  | { action: "web" };

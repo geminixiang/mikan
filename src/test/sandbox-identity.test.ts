@@ -5,8 +5,8 @@ import {
   legacyExactCredentialAuthorizationKey,
   runtimeResourceKey,
   sanitizeIdentitySegment,
-  scopeCloudflareSandboxId,
 } from "../sandbox/identity.js";
+import { scopeCloudflareSandboxId } from "@geminixiang/mikan-sandbox-contract";
 import { createOfficeAddress, officeKey } from "../office/index.js";
 
 const image = { type: "image", image: "ubuntu" } as const;

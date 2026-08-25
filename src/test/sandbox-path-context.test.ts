@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { createMountedRuntimePathContext } from "../sandbox/utils.js";
+import { createMountedRuntimePathContext } from "@geminixiang/mikan-sandbox-contract";
 
 describe("createMountedRuntimePathContext", () => {
   const pathContext = createMountedRuntimePathContext("/host/workspace", "/workspace");

@@ -1,8 +1,15 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { escapeHtml, readJsonBody, renderPortalShell, requestBaseUrl } from "../portal-shell.js";
-import { resolveLinkBaseUrl } from "../../config.js";
+import {
+  enforceJsonCsrf,
+  escapeHtml,
+  readJsonBody,
+  renderPortalShell,
+  requestBaseUrl,
+} from "../portal-shell.js";
 import type { InMemoryLinkTokenStore } from "./store.js";
+import type { WebBindingStore } from "./binding.js";
+import type { InMemoryWebSessionStore } from "./session-store.js";
 import {
   getOAuthServices,
   resolveOAuthService,
@@ -17,7 +24,7 @@ import { defaultVaultTargetPath, type VaultManager } from "../../vault/index.js"
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export type { NotifyFn } from "./types.js";
-import type { NotifyFn } from "./types.js";
+import type { NotifyFn, OAuthPrincipal } from "./types.js";
 
 interface LinkCompleteBody {
   token: string;
@@ -30,6 +37,7 @@ interface LinkCompleteBody {
 interface OAuthStartBody {
   token: string;
   serviceId: string;
+  mode?: "binding" | "login";
 }
 
 interface PendingOAuthState {
@@ -37,6 +45,8 @@ interface PendingOAuthState {
   serviceId: string;
   codeVerifier: string;
   expiresAt: number;
+  /** 'binding' when this OAuth flow is for web binding; 'login' for web login. */
+  mode?: "binding" | "login";
 }
 
 interface SecretPresetField {
@@ -248,10 +258,78 @@ export function createLoginRequestHandler(
   linkTokenStore: InMemoryLinkTokenStore,
   vaultManager: VaultManager,
   notify: NotifyFn,
+  bindingTokenStore?: WebBindingStore,
+  webSessionStore?: InMemoryWebSessionStore,
 ): (req: IncomingMessage, res: ServerResponse, url: URL) => boolean {
   const oauthStates = new Map<string, PendingOAuthState>();
 
   return (req, res, url) => {
+    // ── GET /api/me — current web session ──────────────────────────────
+    if (req.method === "GET" && url.pathname === "/api/me") {
+      const session = webSessionStore?.getSessionFromCookie(req.headers.cookie);
+      if (!session) {
+        res.writeHead(401, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ authenticated: false }));
+        return true;
+      }
+      res.writeHead(200, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "no-store",
+      });
+      res.end(
+        JSON.stringify({
+          authenticated: true,
+          oauthIdentity: session.oauthIdentity,
+          displayName: session.oauthDisplayName,
+          expiresAt: session.expiresAt,
+        }),
+      );
+      return true;
+    }
+
+    // ── POST /api/logout — clear web session ───────────────────────────
+    if (req.method === "POST" && url.pathname === "/api/logout") {
+      if (!enforceJsonCsrf(req, res)) return true;
+      webSessionStore?.revokeFromCookie(req.headers.cookie);
+      res.writeHead(200, {
+        "Content-Type": "application/json",
+        "Set-Cookie": webSessionCookie(req, "", 0),
+      });
+      res.end(JSON.stringify({ ok: true }));
+      return true;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/link/info") {
+      const rawToken = url.searchParams.get("token") ?? "";
+      const linkToken = linkTokenStore.peek(rawToken);
+      if (!linkToken) {
+        res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ valid: false }));
+        return true;
+      }
+      const oauthServiceHint = linkToken.providerId
+        ? resolveOAuthService(linkToken.providerId)
+        : undefined;
+      res.writeHead(200, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "no-store",
+      });
+      res.end(
+        JSON.stringify({
+          valid: true,
+          expiresAt: linkToken.expiresAt,
+          vaultId: linkToken.vaultId,
+          providerIdHint: oauthServiceHint?.id ?? null,
+          oauthServices: getOAuthServices().map((service) => ({
+            id: service.id,
+            label: service.label,
+          })),
+          existingSecrets: describeVaultSecrets(vaultManager, linkToken.vaultId),
+        }),
+      );
+      return true;
+    }
+
     if (req.method === "GET" && url.pathname === "/link") {
       const rawToken = url.searchParams.get("token") ?? "";
       const linkToken = linkTokenStore.peek(rawToken);
@@ -294,7 +372,7 @@ export function createLoginRequestHandler(
     }
 
     if (req.method === "POST" && url.pathname === "/api/link/complete") {
-      if (!enforceCsrf(req, res)) return true;
+      if (!enforceJsonCsrf(req, res)) return true;
       void readJsonBody(req, res, 16 * 1024).then((body) => {
         if (body === null) return;
         return handleLinkComplete(
@@ -309,13 +387,14 @@ export function createLoginRequestHandler(
     }
 
     if (req.method === "POST" && url.pathname === "/api/oauth/start") {
-      if (!enforceCsrf(req, res)) return true;
+      if (!enforceJsonCsrf(req, res)) return true;
       void readJsonBody(req, res, 16 * 1024).then((body) => {
         if (body === null) return;
         return handleOAuthStart(
           body as Partial<OAuthStartBody>,
           req,
           linkTokenStore,
+          bindingTokenStore,
           oauthStates,
           res,
         );
@@ -331,6 +410,8 @@ export function createLoginRequestHandler(
         vaultManager,
         notify,
         oauthStates,
+        bindingTokenStore,
+        webSessionStore,
         res,
       ).catch((err: Error) => {
         log.logWarning("OAuth callback failed", err.message);
@@ -351,65 +432,9 @@ export function createLoginRequestHandler(
   };
 }
 
-/**
- * Block cross-site POSTs to the credential endpoints. Two defenses:
- *   1. Require Content-Type: application/json, which forces a CORS preflight
- *      for any cross-origin fetch and rules out `<form enctype="text/plain">`
- *      tricks that could otherwise smuggle a JSON body.
- *   2. When MIKAN_LINK_URL is configured, require that the Origin (or Referer,
- *      as a fallback for browsers that strip Origin) matches that base URL.
- *      This stops an attacker-controlled page — even one that somehow stole a
- *      victim's link token — from completing the flow.
- */
-function enforceCsrf(req: IncomingMessage, res: ServerResponse): boolean {
-  const contentType = (req.headers["content-type"] as string | undefined)
-    ?.split(";")[0]
-    ?.trim()
-    .toLowerCase();
-  if (contentType !== "application/json") {
-    res.writeHead(415, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Content-Type must be application/json" }));
-    return false;
-  }
-
-  const configured = resolveLinkBaseUrl();
-  if (!configured) {
-    // No trusted origin to compare against in local/dev mode; the loopback
-    // bind already prevents cross-host access.
-    return true;
-  }
-
-  let configuredOrigin: string;
-  try {
-    configuredOrigin = new URL(configured).origin;
-  } catch {
-    // Misconfigured MIKAN_LINK_URL — fail closed.
-    res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Server misconfiguration" }));
-    return false;
-  }
-
-  if (requestOrigin(req) !== configuredOrigin) {
-    res.writeHead(403, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Cross-origin request rejected" }));
-    return false;
-  }
-
-  return true;
-}
-
-/** Best-effort origin of the request, derived from Origin or Referer. */
-function requestOrigin(req: IncomingMessage): string | undefined {
-  const origin = (req.headers.origin as string | undefined)?.trim();
-  if (origin && origin !== "null") return origin;
-
-  const referer = (req.headers.referer as string | undefined)?.trim();
-  if (!referer) return undefined;
-  try {
-    return new URL(referer).origin;
-  } catch {
-    return undefined;
-  }
+function webSessionCookie(req: IncomingMessage, value: string, maxAge: number): string {
+  const secure = new URL(requestBaseUrl(req)).protocol === "https:" ? "; Secure" : "";
+  return `mikan_session=${value}; HttpOnly; Path=/; Max-Age=${maxAge}; SameSite=Lax${secure}`;
 }
 
 // ── HTML helpers ───────────────────────────────────────────────────────────────
@@ -1281,6 +1306,7 @@ async function handleOAuthStart(
   data: Partial<OAuthStartBody>,
   req: IncomingMessage,
   linkTokenStore: InMemoryLinkTokenStore,
+  bindingTokenStore: WebBindingStore | undefined,
   oauthStates: Map<string, PendingOAuthState>,
   res: ServerResponse,
 ): Promise<void> {
@@ -1290,11 +1316,30 @@ async function handleOAuthStart(
     return;
   }
 
-  const linkToken = linkTokenStore.peek(data.token);
-  if (!linkToken) {
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Invalid or expired token" }));
-    return;
+  const isBinding = data.mode === "binding";
+  const isLogin = data.mode === "login";
+
+  // For binding mode, the token is a binding code, not a link token
+  // For login mode, the token field is unused (user is signing in via OAuth)
+  if (isBinding) {
+    if (!bindingTokenStore) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Web binding is not configured" }));
+      return;
+    }
+    const bindingToken = bindingTokenStore.peek(data.token);
+    if (!bindingToken) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Invalid or expired binding code" }));
+      return;
+    }
+  } else if (!isLogin) {
+    const linkToken = linkTokenStore.peek(data.token);
+    if (!linkToken) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Invalid or expired token" }));
+      return;
+    }
   }
 
   const service = resolveOAuthService(data.serviceId);
@@ -1325,6 +1370,7 @@ async function handleOAuthStart(
     serviceId: service.id,
     codeVerifier,
     expiresAt: Date.now() + OAUTH_STATE_TTL_MS,
+    ...(isBinding ? { mode: "binding" as const } : isLogin ? { mode: "login" as const } : {}),
   });
 
   for (const [k, v] of oauthStates) {
@@ -1359,6 +1405,8 @@ async function handleOAuthCallback(
   vaultManager: VaultManager,
   notify: NotifyFn,
   oauthStates: Map<string, PendingOAuthState>,
+  bindingTokenStore: WebBindingStore | undefined,
+  webSessionStore: InMemoryWebSessionStore | undefined,
   res: ServerResponse,
 ): Promise<void> {
   const state = url.searchParams.get("state") ?? "";
@@ -1404,13 +1452,25 @@ async function handleOAuthCallback(
     return;
   }
 
-  // Atomic consume: pairs with the callback being one-shot. Two concurrent
-  // callbacks for the same state would previously both pass `peek` and both
-  // run `exchangeOAuthCode` across the await; only one reaches `consume`.
-  const linkToken = linkTokenStore.consume(pending.linkToken);
-  if (!linkToken) {
+  // Atomic consume: pairs with the callback being one-shot. Login and binding
+  // flows do not carry a vault link token.
+  const linkToken =
+    pending.mode === undefined ? linkTokenStore.consume(pending.linkToken) : undefined;
+  // For binding mode, the linkToken field holds the binding code instead
+  const bindingToken =
+    pending.mode === "binding" && bindingTokenStore
+      ? bindingTokenStore.consumeByCode(pending.linkToken)
+      : undefined;
+
+  if (pending.mode === undefined && !linkToken) {
     res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
     res.end(renderErrorPage("Login link is invalid or expired. Please run /login again."));
+    return;
+  }
+
+  if (pending.mode === "binding" && !bindingToken) {
+    res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(renderErrorPage("Binding code is invalid or expired. Please run /login web again."));
     return;
   }
 
@@ -1432,6 +1492,77 @@ async function handleOAuthCallback(
     res.end(renderErrorPage("OAuth token exchange did not return an access_token."));
     return;
   }
+
+  // ── Binding flow: resolve OAuth identity and store the binding ────────
+  if (pending.mode === "binding" && bindingToken) {
+    const principal = await resolveOAuthIdentity(service.id, accessToken);
+    if (!principal) {
+      res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(renderErrorPage("Could not resolve your OAuth identity. Please try again."));
+      return;
+    }
+    bindingTokenStore!.bind(
+      principal,
+      bindingToken.platform,
+      bindingToken.platformUserId,
+      bindingToken.conversationId,
+    );
+    log.logInfo(
+      `Web binding: ${principal.id} ↔ ${bindingToken.platform}/${bindingToken.platformUserId}`,
+    );
+    notify(
+      bindingToken.platform,
+      bindingToken.conversationId,
+      `✅ Web binding complete! You can now access your conversations from the web interface.\n` +
+        `OAuth identity: ${principal.displayName}`,
+    ).catch((err: Error) => {
+      log.logWarning("Failed to notify user after web binding", err.message);
+    });
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(
+      renderSuccessPage(
+        `Web binding complete! Your chat account is now linked to ${principal.displayName}.`,
+      ),
+    );
+    return;
+  }
+
+  // ── Login flow: issue a session cookie ──────────────────────────────
+  if (pending.mode === "login") {
+    const principal = await resolveOAuthIdentity(service.id, accessToken);
+    if (!principal) {
+      res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(renderErrorPage("Could not resolve your OAuth identity. Please try again."));
+      return;
+    }
+    if (!webSessionStore) {
+      res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(renderErrorPage("Web sessions are not configured on this server."));
+      return;
+    }
+    const boundBinding = bindingTokenStore?.resolveByOAuthIdentity(principal.id);
+    if (!boundBinding) {
+      res.writeHead(403, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(
+        renderErrorPage(
+          "This OAuth account is not linked to mikan. Run /login web in a private chat first.",
+        ),
+      );
+      return;
+    }
+    const { sessionId } = webSessionStore.create(principal.id, principal.displayName);
+    // Set httpOnly session cookie and redirect back to the SPA root
+    const redirectUrl = requestBaseUrl(req).replace(/\/+$/, "");
+    res.writeHead(302, {
+      Location: `${redirectUrl}/`,
+      "Set-Cookie": webSessionCookie(req, sessionId, 86_400),
+    });
+    res.end();
+    return;
+  }
+
+  // Vault flow: linkToken was validated above for non-binding mode
+  const vaultLinkToken = linkToken!;
 
   const updates: Record<string, string> = {};
   for (const key of service.accessTokenEnvKeys ?? []) {
@@ -1467,12 +1598,12 @@ async function handleOAuthCallback(
   const storedTargets: string[] = [];
   try {
     if (Object.keys(updates).length > 0) {
-      vaultManager.upsertEnv(linkToken.vaultId, updates);
+      vaultManager.upsertEnv(vaultLinkToken.vaultId, updates);
       storedTargets.push(...Object.keys(updates).toSorted());
     }
     if (fileOutput?.type === "authorized_user" && refreshToken) {
       vaultManager.upsertFile(
-        linkToken.vaultId,
+        vaultLinkToken.vaultId,
         fileOutput.relativePath,
         renderAuthorizedUserCredential(clientId, clientSecret, refreshToken),
         fileOutput.targetPath,
@@ -1481,7 +1612,7 @@ async function handleOAuthCallback(
     }
   } catch (persistError) {
     log.logWarning(
-      `Failed to persist OAuth credentials for ${linkToken.platform}/${linkToken.platformUserId}`,
+      `Failed to persist OAuth credentials for ${vaultLinkToken.platform}/${vaultLinkToken.platformUserId}`,
       persistError instanceof Error ? persistError.message : String(persistError),
     );
     reportUserFacingError(persistError, {
@@ -1489,10 +1620,10 @@ async function handleOAuthCallback(
       surface: "oauth",
       operation: "vault_persist",
       severity: "error",
-      platform: linkToken.platform,
+      platform: vaultLinkToken.platform,
       context: {
-        conversationId: linkToken.conversationId,
-        vaultId: linkToken.vaultId,
+        conversationId: vaultLinkToken.conversationId,
+        vaultId: vaultLinkToken.vaultId,
         serviceId: service.id,
         credentialMode: "oauth",
         storedTargetCount: storedTargets.length,
@@ -1508,13 +1639,13 @@ async function handleOAuthCallback(
   }
 
   log.logInfo(
-    `Stored [${storedTargets.join(", ")}] for ${linkToken.platform}/${linkToken.platformUserId} in vault:${linkToken.vaultId}`,
+    `Stored [${storedTargets.join(", ")}] for ${vaultLinkToken.platform}/${vaultLinkToken.platformUserId} in vault:${vaultLinkToken.vaultId}`,
   );
 
   notify(
-    linkToken.platform,
-    linkToken.conversationId,
-    `${service.label} OAuth stored (${storedTargets.join(", ")}) in vault \`${linkToken.vaultId}\`.`,
+    vaultLinkToken.platform,
+    vaultLinkToken.conversationId,
+    `${service.label} OAuth stored (${storedTargets.join(", ")}) in vault \`${vaultLinkToken.vaultId}\`.`,
   ).catch((err: Error) => {
     log.logWarning("Failed to notify user after OAuth login", err.message);
     reportUserFacingError(err, {
@@ -1522,10 +1653,10 @@ async function handleOAuthCallback(
       surface: "oauth",
       operation: "notify_user",
       severity: "warning",
-      platform: linkToken.platform,
+      platform: vaultLinkToken.platform,
       context: {
-        conversationId: linkToken.conversationId,
-        vaultId: linkToken.vaultId,
+        conversationId: vaultLinkToken.conversationId,
+        vaultId: vaultLinkToken.vaultId,
         serviceId: service.id,
         credentialMode: "oauth",
         storedTargetCount: storedTargets.length,
@@ -1598,4 +1729,44 @@ function renderAuthorizedUserCredential(
       2,
     ) + "\n"
   );
+}
+
+/** Resolve one immutable OAuth subject plus a human-readable account name. */
+async function resolveOAuthIdentity(
+  serviceId: string,
+  accessToken: string,
+): Promise<OAuthPrincipal | undefined> {
+  try {
+    const userUrl =
+      serviceId === "github"
+        ? "https://api.github.com/user"
+        : serviceId === "google"
+          ? "https://www.googleapis.com/oauth2/v2/userinfo"
+          : undefined;
+    if (!userUrl) return undefined;
+    const response = await fetch(userUrl, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+    });
+    if (!response.ok) return undefined;
+    const data = (await response.json()) as Record<string, unknown>;
+    if (serviceId === "github") {
+      const id = data.id;
+      const login = data.login;
+      if (typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0) return undefined;
+      if (typeof login !== "string" || login.length === 0) return undefined;
+      return { id: `github:${id}`, displayName: login };
+    }
+    if (serviceId === "google") {
+      const id = data.id;
+      const email = data.email;
+      if (typeof id !== "string" || id.length === 0) return undefined;
+      return {
+        id: `google:${id}`,
+        displayName: typeof email === "string" && email.length > 0 ? email : id,
+      };
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
 }

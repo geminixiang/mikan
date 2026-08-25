@@ -3,14 +3,14 @@ import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { HostExecutor } from "../sandbox/host.js";
+import { HostExecutor } from "@geminixiang/mikan-sandbox-host";
+import { killProcessTree } from "@geminixiang/mikan-sandbox-contract";
 import {
   execReadFile,
   execSimple,
   execWriteFile,
-  killProcessTree,
   shellEscape,
-} from "../sandbox/utils.js";
+} from "@geminixiang/mikan-sandbox-contract";
 
 describe("shellEscape", () => {
   test("wraps plain strings in single quotes", () => {

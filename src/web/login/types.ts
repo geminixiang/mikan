@@ -38,5 +38,33 @@ export interface LinkToken extends TokenRecord {
   conversationId: string;
 }
 
+/** A web session (24h TTL, httpOnly cookie). */
+export interface OAuthPrincipal {
+  id: string;
+  displayName: string;
+}
+
+/** A pending five-minute code proving membership in one chat conversation. */
+export interface BindingToken extends TokenRecord {
+  platform: PlatformName;
+  platformUserId: string;
+  conversationId: string;
+}
+
+/** A durable admission binding from an OAuth principal to one chat identity. */
+export interface CompletedBinding {
+  oauthIdentity: string;
+  oauthDisplayName: string;
+  platform: PlatformName;
+  platformUserId: string;
+  conversationId: string;
+  createdAt: number;
+}
+
+export interface WebSession extends TokenRecord {
+  oauthIdentity: string;
+  oauthDisplayName: string;
+}
+
 /** Called after a binding is written, to notify the user in chat */
 export type NotifyFn = (platform: string, conversationId: string, message: string) => Promise<void>;

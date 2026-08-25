@@ -7,7 +7,11 @@ import {
   GondolinExecutor,
   SandboxError,
   createExecutor,
+  getSandboxAdapter,
+  getSandboxAdapters,
   parseSandboxArg,
+  registerSandboxAdapter,
+  type SandboxAdapter,
 } from "../sandbox/index.js";
 
 describe("parseSandboxArg", () => {
@@ -266,5 +270,76 @@ describe("CloudflareSandboxExecutor", () => {
       runtimeWorkspaceRoot: "/remote/workspace",
     });
     expect(executor.getPathContext("/host/workspace").runtimeToHostPath).toBeUndefined();
+  });
+});
+
+describe("registerSandboxAdapter", () => {
+  interface TestBoxConfig {
+    type: "testbox-a";
+    name: string;
+  }
+
+  const testBoxAdapter: SandboxAdapter<TestBoxConfig> = {
+    type: "testbox-a",
+    credentials: { env: false, fileMounts: false },
+    workspace: { managedProjection: false },
+    vault: { routingLabel: "host", ambientSharedVault: false },
+    parse: (value) =>
+      value.startsWith("testbox-a:") ? { type: "testbox-a", name: value.slice(10) } : undefined,
+    createExecutor: () => new HostExecutor(),
+    describe: (config) => `testbox-a:${config.name}`,
+  };
+
+  test("registers a plugin adapter into the CLI grammar and registry", () => {
+    registerSandboxAdapter(testBoxAdapter);
+    expect(parseSandboxArg("testbox-a:alice")).toEqual({ type: "testbox-a", name: "alice" });
+    expect(getSandboxAdapter("testbox-a")).toBe(testBoxAdapter);
+    expect(getSandboxAdapters().map((adapter) => adapter.type)).toContain("testbox-a");
+    expect(createExecutor({ type: "testbox-a", name: "alice" })).toBeInstanceOf(HostExecutor);
+    expect(testBoxAdapter.describe?.({ type: "testbox-a", name: "alice" })).toBe("testbox-a:alice");
+  });
+
+  test("rejects a duplicate type name", () => {
+    interface TestBoxBConfig {
+      type: "testbox-b";
+      name: string;
+    }
+    const duplicateAdapter: SandboxAdapter<TestBoxBConfig> = {
+      type: "testbox-b",
+      credentials: { env: false, fileMounts: false },
+      workspace: { managedProjection: false },
+      vault: { routingLabel: "host", ambientSharedVault: false },
+      parse: (value) =>
+        value.startsWith("testbox-b:") ? { type: "testbox-b", name: value.slice(10) } : undefined,
+      createExecutor: () => new HostExecutor(),
+    };
+    registerSandboxAdapter(duplicateAdapter);
+    expect(() => registerSandboxAdapter(duplicateAdapter)).toThrow(SandboxError);
+  });
+});
+
+describe("built-in adapter vault capabilities", () => {
+  const builtInTypes = [
+    "host",
+    "container",
+    "image",
+    "gondolin",
+    "firecracker",
+    "cloudflare",
+  ] as const;
+
+  test("ambient default-shared-vault opts in only for image and cloudflare", () => {
+    for (const type of builtInTypes) {
+      const expectAmbient = type === "image" || type === "cloudflare";
+      expect(getSandboxAdapter(type).vault.ambientSharedVault, `type ${type}`).toBe(expectAmbient);
+    }
+  });
+
+  test("credential routing labels match the startup semantics", () => {
+    for (const type of builtInTypes) {
+      const expectedLabel =
+        type === "host" ? "host" : type === "container" ? "container" : "conversation";
+      expect(getSandboxAdapter(type).vault.routingLabel, `type ${type}`).toBe(expectedLabel);
+    }
   });
 });

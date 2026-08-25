@@ -1,142 +1,86 @@
 ---
-title: Portal 認証と capability モデル
-description: mikan admin、login、session portal が使う短期 capability token の権限モデル。
+title: Portal の認証と capability モデル
+description: Harness Web Client と独立した portal の認証・権限境界。
 ---
 
-この設計の目的は、ユーザーが管理、ログイン、session 閲覧ページを手軽に開けるようにしつつ、「データを見る」「設定を変更する」「secret を書き込む」を同じ権限に混ぜないことです。
+Mikan は、認証済みの完全な Web サイトと、互いに独立した 3 つの bearer-capability portal を提供します。同じ HTTP server を利用しますが、権限、ナビゲーション、frontend state は共有しません。
 
-## 3 種類の portal link
+## 4 種類の Web 権限
 
-| 画面                 | ユーザーの取得方法                                                   | できること                                                                                                      | Token 有効期間 | Token は一回限りか |
-| -------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------- | ------------------ |
-| Admin portal         | `/admin` / `/pi-admin`                                               | conversations、モデル、sandbox、auto-reply、workspace previews、events を管理。session/login links も生成可能。 | 30 分          | いいえ             |
-| Login / vault portal | `/login` / `/pi-login`、または admin portal から生成                 | API keys を保存、または組み込み OAuth flow を完了し、credentials を vault に書き込む。                          | 15 分          | 書き込み時ははい   |
-| Session view         | `session` / `/session` / `/pi-session`、または admin portal から生成 | session timeline を閲覧。interactive mode が利用できる場合は、Web からその session へメッセージ送信も可能。     | 24 時間        | いいえ             |
+| Surface             | アクセスの取得方法                                                           | 許可される操作                                                                                                                                                  | 有効期間／永続性                                                                                            |
+| ------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Harness Web Client  | private chat で一度 `/login web` を実行し、`/login` から GitHub でサインイン | その GitHub principal が所有する `platform=web` Conversation office の作成・操作、transcript の閲覧、prompt、正確な run の cancel、model／thinking level の選択 | Cookie：24 時間、memory-only。完了済み admission binding：State dir の private `web-bindings.json` に永続化 |
+| Admin portal        | `/admin` または `/pi-admin`                                                  | settings、models、sandbox policy、events、link 生成を含む deployment／conversation 管理                                                                         | 30 分の memory-only bearer token                                                                            |
+| Login／vault portal | `/login`、`/pi-login`、または Admin が生成した link                          | API key または OAuth credential を 1 つの scoped vault に書き込む                                                                                               | 15 分の memory-only bearer token。credential の保存成功時に消費                                             |
+| Session View portal | `session`、`/session`、または Admin が生成した link                          | 1 つの scoped Harness session と関連 session を表示。interactive wiring がある場合は、同じ session に message を送信                                            | 24 時間の memory-only bearer token                                                                          |
 
-簡単に言うと：
+## Harness Web Client
 
-```text
-/admin   → 設定変更、workspace 閲覧、他の link 生成
-/link    → vault secrets または OAuth credentials の書き込み
-/session → session 閲覧；任意で session へメッセージ返信
-```
+Web サイトが所有する route は `/`、`/login`、`/conversations/:officeKey` です。Portal の外枠ではなく、daemon の完全な client です。
 
-この 3 つのページは同じ portal 外観を共有しますが、同じ authorization token は共有しません。
+### Admission とログイン
 
-## 権限境界
+1. private platform conversation で `/login web` を実行し、5 分間有効な proof code を取得します。
+2. `/binding` で GitHub OAuth を完了し、不変の numeric principal を `github:<id>` として保存します。変更可能な GitHub login は表示名にのみ使用します。
+3. 完了済み admission binding は `web-bindings.json` に永続化し、未完了の proof code は memory-only です。
+4. 以後の GitHub login は admitted principal にのみ許可され、httpOnly、`SameSite=Lax` の `mikan_session` cookie を発行します。HTTPS response では `Secure` も付与します。
 
-### Admin portal
+Admission に使った Slack、Discord、Telegram、GitHub office は Web サイトの authorization ではなく、Harness API から返されることもありません。既存の private conversation から OAuth principal が招待されたことだけを証明します。
 
-Admin portal は control-plane access です。admin link を持つ人は、短時間だけ mikan の設定と conversation 状態を管理できます。
+### Web Conversation の所有権
 
-Admin portal でできること：
+Web サイト上の各 conversation は、第一級の `platform=web` Conversation office です。Raw id は random nonce と keyed owner digest から構成されます。Daemon は private `web-harness.key` と Office registry を使い、現在の principal が所有する office だけを列挙します。2 つ目の conversation inventory は作りません。Browser に返す OfficeKey の readable segment は random prefix のみで、stable owner digest や host path は含みません。
 
-- 現在のユーザーと conversation identity を確認する。
-- workspace を走査するのではなく、office registry（生 id ↔ office の恒久的な対応）から conversations を一覧表示する。
-- conversation model、thinking level、workspace の door policy と layout、auto-reply、Slack reply mode を読み取り・更新する。
-- global model、sandbox のリソース既定値、グローバルな door policy、Slack defaults を読み取り・更新する。
-- 限定範囲の workspace files、skills、events metadata/files を閲覧し、どちらのレベルでも skill を作成・編集する。
-- ある scope の package sources を一覧表示・変更する。
-- session と conversation の使用状況を確認する。
-- 選択した conversation の events を削除する。
-- 対象 conversation 用の session view link または login/vault link を生成する。
+Browser mutation は daemon が発行した office key と完全な永続 Session UUID を毎回送ります。Cancel はさらに現在の run id を送るため、stale tab が置き換え後の session に書き込んだり、後続 run を停止したりできません。
 
-Door policy はチャットからも `/pi-sandbox door` で設定できますが、agent 自身が設定することは決してできません。conversation settings が host 専用の state dir 配下にあるのは、まさに conversation directory が sandbox に読み書き可能で bind mount されるからです。mount 内の settings ファイルは一度だけ移行され、その後は二度と読まれません。
+### Browser protocol
 
-Admin portal は secret values を直接書き込みません。admin portal から login link を生成した場合でも、実際の secret write は Login / vault portal の one-time token flow を通ります。
+| Route                    | Method      | 認証                                           | 目的                                                                                  |
+| ------------------------ | ----------- | ---------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `/api/me`                | `GET`       | `mikan_session`                                | 現在の OAuth principal と expiry を返す                                               |
+| `/api/logout`            | `POST` JSON | `mikan_session` + JSON／same-origin CSRF check | browser session を revoke し cookie を削除                                            |
+| `/api/harness/bootstrap` | `GET`       | `mikan_session`                                | owned Conversation summary、選択中 transcript、models、run state、event cursor を返す |
+| `/api/harness/command`   | `POST` JSON | `mikan_session` + JSON／same-origin CSRF check | Conversation 作成、prompt、正確な run の cancel、model／thinking level 変更           |
+| `/api/harness/events`    | `GET` SSE   | `mikan_session`                                | epoch／sequence から principal-scoped ordered event を resume                         |
 
-### Login / vault portal
+Browser は連続する event だけを一時的な live state に fold します。Sequence gap、期限切れ replay cursor、daemon restart が起きた場合は bootstrap をやり直します。Run settlement 後は streamed text を SessionStore の永続 transcript で置き換えます。
 
-Login / vault portal は、credentials を書き込めるため最もリスクの高い action capability です。
+旧 `/api/offices` と cookie → Session View token bridge は削除済みです。不明な `/api/*` は SPA document ではなく JSON `404` を返します。
 
-Login / vault portal でできること：
+## Capability portals
 
-- 指定 vault の credential または OAuth onboarding form を表示する。
-- 環境変数をその vault に書き込む。
-- preset または OAuth flow に従い、対応ツールが必要とする設定ファイルなどの credential files を書き込む。
-- 対応 OAuth flow を完了し、access token、refresh token、credential file を保存する。
-- 書き込み成功後、送信元 conversation に通知する。
+Portal URL 自体が bearer capability です。Query token は browser history、スクリーンショット、URL のコピー、proxy log から漏れる可能性があります。意図した受信者以外には共有しないでください。
 
-Login token の重要な動作：
+`/session`、`/admin`、`/link` prefix は static fallback より前に必ず登録され、Harness Web Client を表示しません。Website cookie を portal token として使うことも、portal token で Harness API を認証することもできません。
 
-- `/link` ページを開いても token は消費されない。
-- OAuth を開始しても token は消費されない。
-- credential POST または OAuth callback 完了時に token が消費される。
-- 同じ platform user が新しい login token を作成すると、古い login token は無効になる。
+| Route family                                      | Token check                                  | Mutation の挙動                                                                                                  |
+| ------------------------------------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `/admin`、`/admin/api/*`                          | `InMemoryAdminTokenStore.peek()`             | expiry まで再利用可能。Admin API は settings の変更や link の生成が可能                                          |
+| `/link`、`/api/link/*`、vault-mode `/oauth/*`     | `InMemoryLinkTokenStore.peek()`／`consume()` | Credential JSON write は CSRF check が必須。保存成功時に token を消費                                            |
+| `/session`、`/session/stream`、`/session/message` | `InMemorySessionViewTokenStore.peek()`       | View／SSE は再利用可能。Runtime／bot wiring がある場合だけ message を送信でき、token の session scope を超えない |
+| `/binding`、`/api/binding/info`                   | 5 分間の pending binding code                | OAuth admission のみを完了し、office capability は付与しない                                                     |
 
-追加保護：
+## 権限を分離する理由
 
-- Credential POST routes は `Content-Type: application/json` を要求する。
-- `LINK_URL` / `MIKAN_LINK_URL` が設定されている場合、credential POST routes は same-origin の `Origin` または `Referer` を確認する。
-- OAuth state は login token から独立し、TTL は 10 分で、PKCE verifier を使う。
-- Secret values はブラウザーへ再 render されない。既存 vault summaries は secret names と mount targets だけを表示する。
+- Browser cookie は principal-owned Web Conversation 用の再利用可能な identity であり、operator 権限や secret-write 権限ではありません。
+- Admin は deployment の挙動を変更できるため、明示的で短時間の capability のままにします。
+- Login／vault link は secret を書き込めるため、成功時に one-time consume します。
+- Session View link は独立して共有でき、message submission が有効でも 1 つの session に限定されます。
 
-### Session view
+これらを統合すると、コピーされた session link が credential／Admin grant になったり、通常の Web login が ambient operator authority を継承したりします。
 
-Session view は session content access です。主な用途は structured session timeline の閲覧です。
+## 実装箇所
 
-Session view でできること：
+| 責任                                  | Code                                                        |
+| ------------------------------------- | ----------------------------------------------------------- |
+| Harness host、ownership、runs、replay | `src/web/harness/`                                          |
+| Daemon／browser wire contract         | `packages/harness-web-contract/`                            |
+| React-free browser runtime と UI      | `packages/web-client/`、`apps/web/`                         |
+| Route ordering と static fallback     | `src/web/server.ts`、`packages/web-host/`                   |
+| OAuth admission と browser sessions   | `src/web/login/portal.ts`、`binding.ts`、`session-store.ts` |
+| Admin capability portal               | `src/web/admin/`                                            |
+| Login／vault capability portal        | `src/web/login/`                                            |
+| Session View capability portal        | `src/web/session-view/`                                     |
+| 共通の短時間 token base               | `src/web/token-store.ts`                                    |
 
-- session timeline を render する。
-- parent/thread session relationships をたどる。
-- SSE 経由で live status と timeline updates を購読する。
-- interactive wiring が利用できる場合、Web から選択中の session へメッセージを送る。
-
-Session view は純粋な read-only ではありません。`/session/message` route が存在し、interactive wiring が利用できる場合、session view token は `session_view` event を送信して bot handler を呼び出せます。
-
-Session view token は base session file に固定されます。`/session?session=<file.jsonl>` で移動する場合、同じディレクトリ内の session files にだけ切り替えられます。
-
-## Route と token の対応
-
-| Route                | Method | Token ソース      | 検証方法                                 | 備考                                                  |
-| -------------------- | ------ | ----------------- | ---------------------------------------- | ----------------------------------------------------- |
-| `/admin`             | `GET`  | query `token`     | `adminTokenStore.peek()`                 | Admin portal を render。                              |
-| `/admin/api/*`       | `GET`  | query `token`     | `adminTokenStore.peek()`                 | 未認可なら 403。                                      |
-| `/admin/api/*`       | `POST` | JSON body `token` | `adminTokenStore.peek()`                 | 未認可なら 403。                                      |
-| `/link`              | `GET`  | query `token`     | `linkTokenStore.peek()`                  | login/vault page を render；token は消費しない。      |
-| `/api/link/complete` | `POST` | JSON body `token` | `linkTokenStore.consume()`               | credentials を書き込み；token を消費。                |
-| `/api/oauth/start`   | `POST` | JSON body `token` | `linkTokenStore.peek()` + OAuth state    | OAuth redirect を作成；login token はまだ消費しない。 |
-| `/oauth/callback`    | `GET`  | query `state`     | OAuth state + `linkTokenStore.consume()` | OAuth 完了；OAuth state と login token を消費。       |
-| `/session`           | `GET`  | query `token`     | `sessionViewTokenStore.peek()`           | session page を render。                              |
-| `/session/stream`    | `GET`  | query `token`     | `sessionViewTokenStore.peek()`           | SSE stream を開く；interactive wiring が必要。        |
-| `/session/message`   | `POST` | JSON body `token` | `sessionViewTokenStore.peek()`           | session message を送信；interactive wiring が必要。   |
-
-## なぜ同じ token を使わないのか
-
-この 3 種類の token はリスクが異なります。
-
-- Admin token：再利用可能な短期管理権限。
-- Login token：secrets を書き込めるため寿命がより短く、書き込み時に消費される。
-- Session view token：session の共有と見返しを簡単にするため有効期間は長めだが、権限は session view の範囲に限定される。
-
-将来 full dashboard を追加しても、これらの境界は維持すべきです。
-
-- Dashboard identity は閲覧と設定操作を認可できる。
-- Secret writes には、短命の一回限り capability、または同等の二次確認を要求し続けるべき。
-- Standalone session links は、session viewing 用の capability links として引き続き使える。
-
-## 実装場所
-
-| 機能                 | 主要コード                                                        |
-| -------------------- | ----------------------------------------------------------------- |
-| Portal HTTP server   | `src/web/server.ts` の `startWebServer()`                         |
-| Admin portal         | `src/web/admin/portal.ts`、`src/web/admin/store.ts`               |
-| Login / vault portal | `src/web/login/portal.ts`、`src/web/login/store.ts`               |
-| Session view         | `src/web/session-view/portal.ts`、`src/web/session-view/store.ts` |
-| 共通 token store     | `src/web/token-store.ts`                                          |
-| 共通 portal shell    | `src/web/portal-shell.ts`                                         |
-
-`startWebServer()` の dispatch 順序：
-
-1. `GET /health`
-2. Agent event HTTP routes
-3. Admin routes
-4. Session view routes
-5. Login / vault routes
-6. `404`
-
-Server は `LINK_PORT` / `MIKAN_LINK_PORT` を port として解析できる場合だけ起動します。`LINK_URL` / `MIKAN_LINK_URL` が設定され、port が設定されていない場合、mikan は既定 port `8181` を使います。
-
-Token stores は現在すべて in-memory で、`src/main.ts` により 5 分ごとに期限切れ token が削除されます。Process を再起動すると、まだ期限切れでない web tokens もすべて無効になります。
-
-これらの URLs は bearer capabilities です。query-string tokens は browser history、screenshots、コピーされた URLs、proxy logs から漏洩する可能性があります。意図したユーザーとのみ共有し、chat channels や issue trackers には絶対に公開しないでください。
+`startWebServer()` は health／webhook、Harness API、capability portal、binding route、unknown-API guard の順に登録し、最後に唯一の Vite static fallback を登録します。`LINK_PORT`／`MIKAN_LINK_PORT` が設定されると起動し、公開 link URL だけが設定されている場合は既定の `8181` を使用します。

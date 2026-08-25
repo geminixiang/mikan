@@ -39,5 +39,5 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `tools/`: Agent tools such as read, bash, edit, write, event, react, generate_image, subagent, and sandbox.
 - `utils/`: Low-level utilities — environment variable reading, atomic file writes, safe JSON/text helpers, HTTP body reading, and HTML escaping.
 - `vault/`: File-backed credential vault implementation, vault-key routing, and credential injection.
-- `web/`: Web portals — admin, login/OAuth, session view, and the agent-event stream.
+- `web/`: Harness Web Host plus isolated Admin, login/OAuth, and Session View capability portals.
 - `workspace-projection/`: Resolves an office's door policy into the concrete sandbox mount list and the authorized prompt sources.

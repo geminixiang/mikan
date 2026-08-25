@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { formatHistoryLine, stripHistoryLinePrefix } from "../sessions/history-line.js";
+import {
+  extractHistoryLineText,
+  formatHistoryLine,
+  stripHistoryLinePrefix,
+} from "../sessions/history-line.js";
 
 describe("history-line grammar", () => {
   test("round-trip: strip(format(text)) returns the original text", () => {
@@ -40,5 +44,17 @@ describe("history-line grammar", () => {
 
   test("plain text without a prefix passes through", () => {
     expect(stripHistoryLinePrefix("no prefix here")).toBe("no prefix here");
+  });
+
+  test("extracts user text after per-turn instructions", () => {
+    const stored = [
+      "## Attribution\nAlways add a footer.",
+      formatHistoryLine({
+        date: new Date("2026-01-02T03:04:05.000Z"),
+        userName: "web-user",
+        text: "Say hello",
+      }),
+    ].join("\n\n");
+    expect(extractHistoryLineText(stored)).toBe("Say hello");
   });
 });

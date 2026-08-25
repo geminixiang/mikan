@@ -1,24 +1,37 @@
-import { ContainerExecutor, containerSandboxAdapter } from "./container.js";
-import { FirecrackerExecutor, firecrackerSandboxAdapter } from "./firecracker.js";
-import { CloudflareSandboxExecutor, cloudflareSandboxAdapter } from "./cloudflare.js";
-import { HostExecutor, hostSandboxAdapter } from "./host.js";
-import { imageSandboxAdapter } from "./image.js";
 import { GondolinExecutor, gondolinSandboxAdapter } from "./gondolin.js";
-import { SandboxError } from "./errors.js";
-import { createMountedRuntimePathContext } from "./utils.js";
+import { SandboxError, createMountedRuntimePathContext } from "@geminixiang/mikan-sandbox-contract";
+import { HostExecutor, hostSandboxAdapter } from "@geminixiang/mikan-sandbox-host";
+import { ContainerExecutor, containerSandboxAdapter } from "@geminixiang/mikan-sandbox-container";
+import { imageSandboxAdapter } from "@geminixiang/mikan-sandbox-image";
+import {
+  CloudflareSandboxExecutor,
+  cloudflareSandboxAdapter,
+} from "@geminixiang/mikan-sandbox-cloudflare";
+import {
+  FirecrackerExecutor,
+  firecrackerSandboxAdapter,
+} from "@geminixiang/mikan-sandbox-firecracker";
 export { configureGondolinRuntime } from "./gondolin.js";
 export type { GondolinBootstrapOptions } from "./types.js";
 import type { Executor, RuntimePathContext, SandboxAdapter, SandboxConfig } from "./types.js";
+import type { SandboxConfigBase } from "@geminixiang/mikan-sandbox-contract";
 
 export type {
-  CloudflareSandboxConfig,
   ExecOptions,
   ExecResult,
   Executor,
   RuntimePathContext,
   SandboxAdapter,
+  SandboxBootContext,
   SandboxConfig,
+  SandboxControllerContext,
+  SandboxCredentialCapabilities,
+  SandboxProvisioner,
+  SandboxReadyContext,
+  SandboxResolutionContext,
+  SandboxVaultCapabilities,
 } from "./types.js";
+export type { CloudflareSandboxConfig } from "@geminixiang/mikan-sandbox-cloudflare";
 export {
   CloudflareSandboxExecutor,
   ContainerExecutor,
@@ -26,38 +39,54 @@ export {
   HostExecutor,
   GondolinExecutor,
 };
-export { SandboxError } from "./errors.js";
+export { SandboxError } from "@geminixiang/mikan-sandbox-contract";
 
-const sandboxAdapters = [
+const builtInSandboxAdapters: readonly SandboxAdapter[] = [
   hostSandboxAdapter,
   containerSandboxAdapter,
   imageSandboxAdapter,
   gondolinSandboxAdapter,
   firecrackerSandboxAdapter,
   cloudflareSandboxAdapter,
-] as const;
-const sandboxAdapterByType = new Map(
-  sandboxAdapters.map((adapter) => [adapter.type, adapter]),
-) as Map<SandboxConfig["type"], SandboxAdapter>;
+];
+const sandboxAdapterByType = new Map<string, SandboxAdapter>(
+  builtInSandboxAdapters.map((adapter) => [adapter.type, adapter] as const),
+);
 
-export function getSandboxAdapters(): readonly [...typeof sandboxAdapters] {
-  return sandboxAdapters;
+export function getSandboxAdapters(): readonly SandboxAdapter[] {
+  return [...sandboxAdapterByType.values()];
+}
+
+/**
+ * Register an additional sandbox backend (plugin). Duplicate type names
+ * throw — the type is the composition-level identity.
+ */
+export function registerSandboxAdapter<TConfig extends SandboxConfigBase>(
+  adapter: SandboxAdapter<TConfig>,
+): void {
+  if (sandboxAdapterByType.has(adapter.type)) {
+    throw new SandboxError(`Sandbox adapter '${adapter.type}' is already registered`);
+  }
+  sandboxAdapterByType.set(adapter.type, adapter);
+}
+
+/** The adapter for a sandbox type; throws for unknown types. */
+export function getSandboxAdapter(type: string): SandboxAdapter {
+  const adapter = sandboxAdapterByType.get(type);
+  if (!adapter) throw new SandboxError(`Error: Unsupported sandbox type '${type}'`);
+  return adapter;
 }
 
 export function getSandboxCredentialCapabilities(
   type: SandboxConfig["type"],
 ): SandboxAdapter["credentials"] {
-  const adapter = sandboxAdapterByType.get(type);
-  if (!adapter) throw new SandboxError(`Error: Unsupported sandbox type '${type}'`);
-  return adapter.credentials;
+  return getSandboxAdapter(type).credentials;
 }
 
 export function getSandboxWorkspaceCapabilities(
   type: SandboxConfig["type"],
 ): SandboxAdapter["workspace"] {
-  const adapter = sandboxAdapterByType.get(type);
-  if (!adapter) throw new SandboxError(`Error: Unsupported sandbox type '${type}'`);
-  return adapter.workspace;
+  return getSandboxAdapter(type).workspace;
 }
 
 export function assertSandboxSupportsWorkspacePolicy(
@@ -75,10 +104,12 @@ export function assertSandboxSupportsWorkspacePolicy(
 }
 
 export function parseSandboxArg(value: string): SandboxConfig {
-  for (const adapter of sandboxAdapters) {
+  for (const adapter of sandboxAdapterByType.values()) {
     const config = adapter.parse(value);
     if (config) {
-      return config;
+      // Public CLI compatibility keeps the built-in union; registered plugin
+      // configs are opaque at runtime and validated by their own adapter.
+      return config as SandboxConfig;
     }
   }
 
@@ -94,12 +125,7 @@ export function parseSandboxArg(value: string): SandboxConfig {
 }
 
 export async function validateSandbox(config: SandboxConfig): Promise<void> {
-  const adapter = sandboxAdapterByType.get(config.type);
-  if (!adapter) {
-    throw new SandboxError(`Error: Unsupported sandbox type '${config.type}'`);
-  }
-
-  await adapter.validate?.(config);
+  await getSandboxAdapter(config.type).validate?.(config);
 }
 
 /**
@@ -110,14 +136,11 @@ export function createExecutor(
   env?: Record<string, string>,
   ensureReady?: () => Promise<void>,
 ): Executor {
-  const adapter = sandboxAdapterByType.get(config.type);
-  if (!adapter) {
-    throw new SandboxError(`Error: Unsupported sandbox type '${config.type}'`);
-  }
+  const adapter = getSandboxAdapter(config.type);
   if (!adapter.createExecutor) {
     throw new SandboxError("Error: image sandbox must resolve to a concrete container executor");
   }
-  return adapter.createExecutor(config, env, ensureReady);
+  return adapter.createExecutor(config, env, ensureReady) as Executor;
 }
 
 /**

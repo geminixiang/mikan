@@ -1,15 +1,28 @@
+/**
+ * @geminixiang/mikan-sandbox-host — the mikan host sandbox backend as a
+ * plugin: `HostExecutor` runs commands directly on the host process, and
+ * `hostSandboxAdapter` implements the sandbox contract. The daemon core
+ * registers this adapter at boot; nothing in the core knows the host backend
+ * exists beyond the registration.
+ */
+
 import { spawn } from "node:child_process";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type {
-  ExecOptions,
-  ExecResult,
-  Executor,
-  HostSandboxConfig,
-  RuntimePathContext,
-  SandboxAdapter,
-} from "./types.js";
-import { createMountedRuntimePathContext, killProcessTree } from "./utils.js";
+import {
+  createMountedRuntimePathContext,
+  killProcessTree,
+  type ExecOptions,
+  type ExecResult,
+  type Executor,
+  type RuntimePathContext,
+  type SandboxAdapter,
+} from "@geminixiang/mikan-sandbox-contract";
+
+/** The host backend's own config: the bare `host` type with no runtime fields. */
+export interface HostSandboxConfig {
+  type: "host";
+}
 
 function parseHostSandboxArg(value: string): HostSandboxConfig | undefined {
   if (value === "host") {
@@ -124,6 +137,8 @@ export const hostSandboxAdapter: SandboxAdapter<HostSandboxConfig> = {
   type: "host",
   credentials: { env: false, fileMounts: false },
   workspace: { managedProjection: false },
+  vault: { routingLabel: "host", ambientSharedVault: false },
   parse: parseHostSandboxArg,
   createExecutor: () => new HostExecutor(),
+  describe: () => "host",
 };

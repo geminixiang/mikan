@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { sanitizeIdentitySegment } from "./sandbox/identity.js";
+import { managedContainerName } from "@geminixiang/mikan-sandbox-contract";
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { promisify } from "node:util";
@@ -103,10 +104,6 @@ export class DockerContainerManager {
     return sanitizeIdentitySegment(value);
   }
 
-  static containerName(containerKey: string): string {
-    return `mikan-sandbox-${containerKey}`;
-  }
-
   static networkName(containerKey: string): string {
     return `mikan-sandbox-net-${containerKey}`;
   }
@@ -123,8 +120,7 @@ export class DockerContainerManager {
   }
 
   private async provisionInner(containerKey: string, options: ProvisionOptions): Promise<string> {
-    const containerName =
-      options.containerName ?? DockerContainerManager.containerName(containerKey);
+    const containerName = options.containerName ?? managedContainerName(containerKey);
     const mounts = options.mounts ?? [];
     // A container still on the pre-office layout must move its writable layer
     // to the new mounts before the drift check below would recreate it from
@@ -628,10 +624,7 @@ export class DockerContainerManager {
   }
 
   private getContainerName(containerKey: string): string {
-    return (
-      this.state.get(containerKey)?.containerName ??
-      DockerContainerManager.containerName(containerKey)
-    );
+    return this.state.get(containerKey)?.containerName ?? managedContainerName(containerKey);
   }
 
   private mountArgs(mounts: ContainerMount[]): string[] {
@@ -928,7 +921,7 @@ export class DockerContainerManager {
         "ps",
         "-a",
         "--filter",
-        `name=${DockerContainerManager.containerName("")}`,
+        `name=${managedContainerName("")}`,
         "--format",
         "{{.Names}}",
       ]);
@@ -991,7 +984,7 @@ export class DockerContainerManager {
   }
 
   private containerKeyFromContainerName(containerName: string): string | undefined {
-    const prefix = DockerContainerManager.containerName("");
+    const prefix = managedContainerName("");
     if (!containerName.startsWith(prefix)) return undefined;
     const containerKey = containerName.slice(prefix.length);
     return containerKey.length > 0 ? containerKey : undefined;

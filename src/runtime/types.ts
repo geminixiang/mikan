@@ -16,6 +16,7 @@ import type {
 } from "../adapter.js";
 import type {
   AdminTokenStoreLike,
+  BindingTokenStoreLike,
   CommandHandler,
   CommandServices,
   LinkTokenStoreLike,
@@ -71,7 +72,12 @@ export interface SessionStateOptions {
 
 export interface ConversationRuntimeOptions extends Omit<
   CommandServices,
-  "runtime" | "vaultManager" | "linkTokenStore" | "sessionViewTokenStore" | "adminTokenStore"
+  | "runtime"
+  | "vaultManager"
+  | "linkTokenStore"
+  | "sessionViewTokenStore"
+  | "adminTokenStore"
+  | "bindingTokenStore"
 > {
   /**
    * Credential vault for sandboxed conversations. Optional for embedders;
@@ -84,6 +90,8 @@ export interface ConversationRuntimeOptions extends Omit<
   sessionViewTokenStore?: SessionViewTokenStoreLike;
   /** Admin-portal token store; omit when no web portal is hosted. */
   adminTokenStore?: AdminTokenStoreLike;
+  /** Web-binding token store; omit when web binding is not used. */
+  bindingTokenStore?: BindingTokenStoreLike;
   /** Override the default command handlers (e.g., to add /help, /status). */
   commandHandlers?: readonly CommandHandler[];
   /** Model registry override; defaults to the process-wide models.json load. */

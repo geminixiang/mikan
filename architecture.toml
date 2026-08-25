@@ -89,7 +89,16 @@ id = "sandbox"
 name = "Sandbox execution"
 kind = "infrastructure"
 docs = "src/sandbox/README.md"
-sources = ["src/sandbox/", "src/provisioner.ts"]
+sources = [
+  "src/sandbox/",
+  "src/provisioner.ts",
+  "packages/sandbox-contract/",
+  "packages/sandbox-host/",
+  "packages/sandbox-container/",
+  "packages/sandbox-image/",
+  "packages/sandbox-firecracker/",
+  "packages/sandbox-cloudflare/",
+]
 
 [[modules]]
 id = "sessions"
@@ -121,10 +130,31 @@ sources = ["src/packages/"]
 
 [[modules]]
 id = "side-services"
-name = "Web and scheduled-event services"
+name = "Capability portals and scheduled-event services"
 kind = "infrastructure"
-docs = "src/web/README.md"
-sources = ["src/web/", "src/events.ts", "src/extension-schedules.ts"]
+docs = "src/web/README.md#capability-portals"
+sources = [
+  "src/web/admin/",
+  "src/web/login/",
+  "src/web/session-view/",
+  "src/web/server.ts",
+  "src/events.ts",
+  "src/extension-schedules.ts",
+]
+
+[[modules]]
+id = "harness-web-host"
+name = "Harness Web Host"
+kind = "orchestrator"
+docs = "src/web/harness/README.md"
+sources = ["src/web/harness/", "packages/harness-web-contract/"]
+
+[[modules]]
+id = "harness-web-client"
+name = "Harness Web Client"
+kind = "adapter"
+docs = "packages/web-client/README.md"
+sources = ["packages/web-client/", "apps/web/"]
 
 # A seam is a stable relationship callers depend on. Interface names refer to
 # source-level contracts or authority entry points; details stay in docs/code.
@@ -138,6 +168,7 @@ consumers = [
   "conversation-runtime",
   "agent-runner",
   "side-services",
+  "harness-web-host",
 ]
 interface = "MessagingBot, ConversationEvent, ConversationResponder"
 docs = "src/adapters/README.md"
@@ -158,9 +189,17 @@ consumers = [
   "side-services",
   "configuration",
   "packages",
+  "harness-web-host",
 ]
 interface = "ConversationRuntime"
 docs = "src/runtime/README.md"
+
+[[seams]]
+id = "harness-web-port"
+owner = "harness-web-host"
+consumers = ["harness-web-client"]
+interface = "bootstrap, HarnessCommand, ordered HarnessEventEnvelope"
+docs = "src/web/harness/README.md#hostclient-seam"
 
 [[seams]]
 id = "runner"
@@ -195,6 +234,7 @@ consumers = [
   "workspace-projection",
   "packages",
   "side-services",
+  "harness-web-host",
 ]
 interface = "Workspace.office, Office"
 docs = "src/office/README.md"
@@ -210,6 +250,7 @@ consumers = [
   "execution-resolver",
   "packages",
   "side-services",
+  "harness-web-host",
 ]
 interface = "resolve settings, apply settings mutations"
 docs = "ARCHITECTURE.md#configuration-authority"
@@ -238,7 +279,7 @@ docs = "src/sandbox/README.md"
 [[seams]]
 id = "session-store"
 owner = "sessions"
-consumers = ["conversation-runtime", "agent-runner", "harness"]
+consumers = ["conversation-runtime", "agent-runner", "harness", "harness-web-host"]
 interface = "session-key policy, managed session store"
 docs = "src/sessions/README.md"
 
@@ -357,6 +398,34 @@ scope = "conversation-extension"
 classification = "host-private"
 docs = "ARCHITECTURE.md#scheduled-execution"
 
+[[resources]]
+id = "web-session"
+authority = "side-services"
+scope = "oauth-principal"
+classification = "authenticated-browser-session"
+docs = "src/web/README.md#web-harness-authentication"
+
+[[resources]]
+id = "web-admission-bindings"
+authority = "side-services"
+scope = "oauth-principal"
+classification = "host-private-admission"
+docs = "src/web/README.md#web-harness-authentication"
+
+[[resources]]
+id = "web-conversation-key"
+authority = "harness-web-host"
+scope = "deployment"
+classification = "host-private-ownership-key"
+docs = "src/web/harness/README.md#conversation-ownership"
+
+[[resources]]
+id = "web-event-journal"
+authority = "harness-web-host"
+scope = "oauth-principal"
+classification = "ephemeral-ordered-events"
+docs = "src/web/harness/README.md#event-order-and-resume"
+
 # Flow paths are topology, not function-level traces. Branches, ordering,
 # failures, and security semantics live at the linked Markdown anchor.
 
@@ -405,20 +474,40 @@ id = "extension-callback"
 path = ["side-services", "conversation-runtime", "extensions"]
 docs = "ARCHITECTURE.md#scheduled-execution"
 
+[[flows]]
+id = "web-conversation-run"
+path = [
+  "harness-web-client",
+  "harness-web-host",
+  "conversation-runtime",
+  "agent-runner",
+  "harness",
+  "harness-web-host",
+  "harness-web-client",
+]
+docs = "ARCHITECTURE.md#web-harness-run"
+
 # Cross-module invariants are named here for global discovery. Their complete
 # statement, rationale, evidence, and exceptions live in ARCHITECTURE.md.
 
 [[invariants]]
 id = "identity-office-address"
 owners = ["office"]
-applies_to = ["platform-adapters", "conversation-runtime", "sessions", "vault"]
+applies_to = ["platform-adapters", "conversation-runtime", "sessions", "vault", "harness-web-host"]
 docs = "ARCHITECTURE.md#inv-identity-office-address"
 adr = "docs/adr/0005-office-address-identity.md"
 
 [[invariants]]
 id = "identity-office-key"
 owners = ["office"]
-applies_to = ["configuration", "sessions", "vault", "packages"]
+applies_to = [
+  "configuration",
+  "sessions",
+  "vault",
+  "packages",
+  "harness-web-host",
+  "harness-web-client",
+]
 docs = "ARCHITECTURE.md#inv-identity-office-key"
 adr = "docs/adr/0005-office-address-identity.md"
 
@@ -431,7 +520,7 @@ docs = "ARCHITECTURE.md#inv-office-record-before-directory"
 [[invariants]]
 id = "runtime-composite-identity"
 owners = ["conversation-runtime", "sessions"]
-applies_to = ["runner-state", "session-files"]
+applies_to = ["runner-state", "session-files", "harness-web-host"]
 docs = "ARCHITECTURE.md#inv-runtime-composite-identity"
 
 [[invariants]]
@@ -449,7 +538,7 @@ docs = "ARCHITECTURE.md#inv-session-serialization"
 [[invariants]]
 id = "run-settlement"
 owners = ["conversation-runtime", "agent-runner"]
-applies_to = ["runner-state", "platform-adapters"]
+applies_to = ["runner-state", "platform-adapters", "harness-web-host"]
 docs = "ARCHITECTURE.md#inv-run-settlement"
 
 [[invariants]]
@@ -475,6 +564,31 @@ id = "credential-least-authority"
 owners = ["execution-resolver", "vault"]
 applies_to = ["vault-store", "sandbox"]
 docs = "ARCHITECTURE.md#inv-credential-least-authority"
+
+[[invariants]]
+id = "portal-capability-scope"
+owners = ["side-services", "harness-web-host"]
+applies_to = [
+  "side-services",
+  "harness-web-host",
+  "harness-web-client",
+  "web-session",
+  "web-admission-bindings",
+  "vault-store",
+]
+docs = "ARCHITECTURE.md#inv-portal-capability-scope"
+
+[[invariants]]
+id = "web-conversation-ownership"
+owners = ["harness-web-host"]
+applies_to = ["web-conversation-key", "office-registry", "office-directory", "web-session"]
+docs = "ARCHITECTURE.md#inv-web-conversation-ownership"
+
+[[invariants]]
+id = "web-run-ordering"
+owners = ["harness-web-host", "harness-web-client"]
+applies_to = ["harness-web-port", "web-event-journal", "runner-state", "session-files"]
+docs = "ARCHITECTURE.md#inv-web-run-ordering"
 
 [[invariants]]
 id = "settings-runner-coherence"

@@ -761,6 +761,9 @@ function platformsMatchingConversationIdFormat(
         return /^\d+$/.test(rawConversationId);
       case "slack":
         return /^[A-Z][A-Z0-9]*$/.test(rawConversationId);
+      case "web":
+        // Web offices have no legacy raw-id directories to auto-claim.
+        return false;
     }
   });
 }

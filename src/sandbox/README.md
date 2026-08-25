@@ -1,20 +1,22 @@
 # src/sandbox
 
-This directory defines sandbox abstractions, concrete sandbox executors, and shared sandbox utilities.
+This directory owns the daemon-side sandbox registry, execution identity, and the
+Gondolin backend that has not yet moved out of core. The shared plugin contract
+and the other concrete backends live in workspace packages.
 
-## Files
+## Files and packages
 
-- `cloudflare.ts`: Implements the Cloudflare Sandbox bridge executor, argument parsing, health checks, and remote `/exec` calls.
-- `container.ts`: Implements the Docker container executor, `docker exec` command construction, secure env files, and runtime bootstrap.
-- `errors.ts`: Defines `SandboxError`, which can render user-facing CLI diagnostics.
-- `firecracker.ts`: Implements the Firecracker VM executor by running commands over SSH inside the VM.
-- `gondolin.ts`: Implements the single-host Gondolin microVM executor: per-conversation in-process VMs, file-mount projection and write-back, exec over the session IPC socket, desired-runtime fingerprinting and drift recreation, resource limits, idle lifecycle, and crash recovery.
-- `host.ts`: Implements the host executor by running commands directly through the local shell.
-- `identity.ts`: Separately derives collision-safe credential authorization keys and runtime resource keys.
-- `image.ts`: Parses and validates `image:<image>` sandbox configs, which must later resolve to a concrete container executor.
-- `index.ts`: Registers sandbox adapters and exposes parse, validate, and executor factory helpers, plus the per-adapter capability queries — `getSandboxCredentialCapabilities`, `getSandboxWorkspaceCapabilities`, and `assertSandboxSupportsWorkspacePolicy` (a backend without managed projection cannot honor an `isolated` door). `configureGondolinRuntime` is the one bootstrap seam an embedder calls before creating gondolin executors.
-- `types.ts`: Defines all sandbox configs, executors, exec results, runtime path contexts, and adapter types.
-- `utils.ts`: Provides simple child-process execution, process-tree killing, shell escaping, the shared base64-chunked file transport (`execReadFile`/`execWriteFile`) used by every exec-only executor, and `createMountedRuntimePathContext` (runtime→host path translation for mounted workspaces).
+- `index.ts`: Composes the built-in adapters, owns the open adapter registry, and exposes parse, validation, executor-factory, and capability queries. A plugin config remains opaque behind its registered adapter; the exported `SandboxConfig` union continues to describe only built-ins for compatibility.
+- `types.ts`: Defines the closed built-in config union and Gondolin-local types, while re-exporting the open contract types.
+- `identity.ts`: Derives collision-safe credential authorization keys and runtime resource keys.
+- `gondolin.ts`: Implements the single-host Gondolin microVM backend: runtime projection and write-back, session IPC execution, drift recreation, resource limits, idle lifecycle, and crash recovery.
+- `packages/sandbox-contract/`: Owns `SandboxAdapter`, `Executor`, capabilities, lifecycle contexts, `SandboxError`, and shared path/process/file-transport helpers.
+- `packages/sandbox-host/`: Host executor and adapter.
+- `packages/sandbox-container/`: Shared Docker-container executor and adapter.
+- `packages/sandbox-image/`: Managed per-conversation image provisioning adapter.
+- `packages/sandbox-firecracker/`: Firecracker SSH executor and adapter.
+- `packages/sandbox-cloudflare/`: Cloudflare bridge executor and adapter.
+- `src/provisioner.ts`: Core-owned Docker provisioner injected into adapters that request it.
 
 ## Host / sandbox path boundary (image mode)
 
@@ -119,7 +121,7 @@ Consequences to keep in mind:
 ### Paths in prompts and tool output
 
 The model only ever sees **runtime** paths (`/workspace/…`); the host only
-ever touches **host** paths. `createMountedRuntimePathContext` (`utils.ts`) translates between them
+ever touches **host** paths. `createMountedRuntimePathContext` (`packages/sandbox-contract/`) translates between them
 (skill locations, upload paths). Extension-shipped skills are the exception:
 their files live under the host-only state dir, so their bodies are inlined
 into the system prompt instead of referenced by path.
@@ -128,7 +130,7 @@ into the system prompt instead of referenced by path.
 
 `Executor.readFile`/`writeFile` own file content transport: the host
 executor uses the filesystem directly; every exec-only executor (docker,
-ssh, HTTP) shares the base64-chunked implementation in `utils.ts`, so file
+ssh, HTTP) shares the base64-chunked implementation in `packages/sandbox-contract/`, so file
 contents never pass through shell argv, survive every quoting layer, stay
 under per-argument ARG_MAX, and are staged + renamed so an aborted write
 never truncates the target. Tools (write/edit, bash output spill) must use

@@ -29,7 +29,7 @@ type ExecFileAsync = typeof execFileAsync;
 
 export type ConversationKind = "direct" | "shared";
 
-export type PlatformName = "slack" | "discord" | "telegram" | "github";
+export type PlatformName = "slack" | "discord" | "telegram" | "github" | "web";
 
 /** Canonical platform-plus-raw identifier for one conversation office. */
 export interface OfficeAddress {
@@ -234,6 +234,11 @@ export interface ConversationEvent {
   address: OfficeAddress;
   /** @deprecated Raw platform identifier; valid only at adapter I/O seams. */
   conversationId: string;
+  /**
+   * Whether leading slash text is a chat command or literal agent input.
+   * Platform intake defaults to dispatch; full Harness clients set prompt.
+   */
+  commandMode?: "dispatch" | "prompt";
   /** Optional alternate conversation identity used for vault routing. */
   vaultConversationId?: string;
   /** Cross-platform conversation shape: direct message vs shared space */
