@@ -222,11 +222,17 @@ export class DockerContainerManager {
     const containerName = this.getContainerName(containerKey);
     const networkName = DockerContainerManager.networkName(containerKey);
 
-    await this.forceRemoveContainer(
+    const removed = await this.forceRemoveContainer(
       containerName,
       `Container ${containerName} removed`,
       `Failed to remove container ${containerName}`,
     );
+    if (!removed) {
+      // The container may still be running with its old mounts. Keeping the
+      // ownership state (and throwing) is the honest outcome: callers such
+      // as credential refresh must not report a teardown that did not happen.
+      throw new Error(`Failed to remove container ${containerName}`);
+    }
 
     try {
       await this.execFileImpl("docker", ["network", "rm", networkName]);
@@ -619,7 +625,7 @@ export class DockerContainerManager {
             containerName,
             `Removed container ${containerName} keyed by pre-office resource identity`,
             `Failed to remove legacy-keyed container ${containerName}`,
-          ),
+          ).then(() => undefined),
         );
         continue;
       }
@@ -1011,16 +1017,21 @@ export class DockerContainerManager {
     return containerKey.length > 0 ? containerKey : undefined;
   }
 
+  /** @returns true when the container is gone (removed or already missing). */
   private async forceRemoveContainer(
     containerName: string,
     successLog: string,
     failureLog: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
       await this.execFileImpl("docker", ["rm", "-f", containerName]);
       log.logInfo(successLog);
+      return true;
     } catch (err) {
-      log.logWarning(failureLog, err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      if (/no such container/i.test(message)) return true;
+      log.logWarning(failureLog, message);
+      return false;
     }
   }
 
