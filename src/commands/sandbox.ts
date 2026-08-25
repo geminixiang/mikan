@@ -66,7 +66,7 @@ export class SandboxCommandHandler implements CommandHandler {
 
     const containerKey = runtimeResourceKey(context.services.sandbox, {
       userId: context.platformUserId,
-      conversationId: context.conversationId,
+      address: context.address,
     });
 
     if (parsed.action === "boost") {

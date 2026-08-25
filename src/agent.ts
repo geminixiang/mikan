@@ -1529,7 +1529,7 @@ async function prepareRunContext(params: {
     conversationKind: ConversationKind;
     userId: string;
   }) => void;
-  setSandboxContext: (context: { conversationId: string; userId: string }) => void;
+  setSandboxContext: (context: { address: OfficeAddress; userId: string }) => void;
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
   setImageUploadFunction: (fn: (hostPath: string, title?: string) => Promise<void>) => void;
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
@@ -1612,7 +1612,7 @@ async function prepareRunContext(params: {
     conversationKind: message.conversationKind,
     userId: message.userId,
   });
-  setSandboxContext({ conversationId, userId: message.userId });
+  setSandboxContext({ address: message.address, userId: message.userId });
 
   setUploadFunction(async (filePath: string, title?: string) => {
     const runtimePath = normalizeAttachRuntimePath(filePath, pathContext.runtimeWorkspaceRoot);

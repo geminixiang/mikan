@@ -1,7 +1,7 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import type { SandboxConfig } from "../sandbox/index.js";
-import type { ResourceLimits, SandboxResourceController } from "../types.js";
+import type { OfficeAddress, ResourceLimits, SandboxResourceController } from "../types.js";
 import { runtimeResourceKey } from "../sandbox/identity.js";
 
 const sandboxSchema = Type.Object({
@@ -28,7 +28,7 @@ type SandboxToolParams = {
 
 interface SandboxToolContext {
   userId: string;
-  conversationId: string;
+  address: OfficeAddress;
 }
 
 interface SandboxToolController {
@@ -65,7 +65,7 @@ export function createSandboxTool(controller: SandboxToolController): {
 
       const containerKey = runtimeResourceKey(controller.sandbox, {
         userId: sandboxContext.userId,
-        conversationId: sandboxContext.conversationId,
+        address: sandboxContext.address,
       });
 
       if (params.action === "set") {

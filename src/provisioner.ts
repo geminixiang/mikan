@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { sanitizeIdentitySegment } from "./sandbox/identity.js";
+import { legacyConversationResourceKey, sanitizeIdentitySegment } from "./sandbox/identity.js";
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { promisify } from "node:util";
@@ -607,6 +607,20 @@ export class DockerContainerManager {
       const containerKey = this.containerKeyFromContainerName(containerName);
       if (!containerKey) {
         log.logWarning(`Skipping unmanaged-style container without container key`, containerName);
+        continue;
+      }
+
+      // Containers keyed under the pre-office raw-conversation resource key
+      // are unreachable now that resource identity is the office key: no
+      // provision will ever address them again, so reap rather than adopt.
+      if (containerKey === legacyConversationResourceKey(details.conversationId)) {
+        legacyRemovals.push(
+          this.forceRemoveContainer(
+            containerName,
+            `Removed container ${containerName} keyed by pre-office resource identity`,
+            `Failed to remove legacy-keyed container ${containerName}`,
+          ),
+        );
         continue;
       }
 

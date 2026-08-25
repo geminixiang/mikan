@@ -4,7 +4,7 @@ import type { TSchema } from "@sinclair/typebox";
 import type { ConversationKind } from "../adapter.js";
 import { createAttachTool } from "../adapters/slack/tools/attach.js";
 import type { Executor, SandboxConfig } from "../sandbox/index.js";
-import type { SandboxResourceController } from "../types.js";
+import type { OfficeAddress, SandboxResourceController } from "../types.js";
 import { createBashTool } from "./bash.js";
 import { createEditTool } from "./edit.js";
 import { createEventTool, HostEventStore } from "./event.js";
@@ -48,7 +48,7 @@ export function createMikanTools(
     conversationKind: ConversationKind;
     userId: string;
   }) => void;
-  setSandboxContext: (context: { conversationId: string; userId: string }) => void;
+  setSandboxContext: (context: { address: OfficeAddress; userId: string }) => void;
 } {
   const { tool: attachTool, setUploadFunction } = createAttachTool();
   const imageTool = imageGeneration ? createGenerateImageTool(imageGeneration) : undefined;

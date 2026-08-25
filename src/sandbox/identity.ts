@@ -55,18 +55,28 @@ export function legacyConversationCredentialKey(rawConversationId: string): stri
 
 /**
  * Sandbox resource identity (container name, gondolin instance, cloudflare
- * sandbox scope). Still raw-conversation-keyed: renaming it churns every
- * provisioned container on upgrade, so it migrates with the resource-naming
- * commit tracked by ADR 0005 — a cross-platform id collision here costs a
- * container recreate (mount signatures differ), never credential access.
+ * sandbox scope). Conversation-scoped backends key by office key (ADR 0005):
+ * platform-aware, so two platforms sharing a raw conversation id can never
+ * share a container, its writable layer, or a gondolin/cloudflare slot.
+ * Containers named under the previous raw-conversation keys are reaped by
+ * the provisioner's boot reconcile.
  */
 export function runtimeResourceKey(
   baseConfig: SandboxConfig,
-  ids: { userId: string; conversationId: string },
+  ids: { userId: string; address: OfficeAddress },
 ): string {
   if (baseConfig.type === "container") return identityKey("container", baseConfig.container);
   if (baseConfig.type === "host") return identityKey("user", ids.userId);
-  return identityKey("conversation", ids.conversationId);
+  return officeKey(ids.address);
+}
+
+/**
+ * The raw-id resource key conversation-scoped sandboxes used before the
+ * office-key migration; the provisioner's boot reconcile uses it to
+ * recognize and reap stale containers.
+ */
+export function legacyConversationResourceKey(rawConversationId: string): string {
+  return identityKey("conversation", rawConversationId);
 }
 
 export function sanitizeIdentitySegment(value: string): string {

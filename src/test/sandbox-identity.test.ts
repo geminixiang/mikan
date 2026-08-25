@@ -13,21 +13,40 @@ const image = { type: "image", image: "ubuntu" } as const;
 
 describe("sandbox identity", () => {
   test("keeps readable segments while adding collision-safe identity", () => {
-    const first = runtimeResourceKey(image, { userId: "U1", conversationId: "A/B" });
-    const second = runtimeResourceKey(image, { userId: "U1", conversationId: "A-B" });
+    const first = runtimeResourceKey(image, {
+      userId: "U1",
+      address: createOfficeAddress("slack", "A.B"),
+    });
+    const second = runtimeResourceKey(image, {
+      userId: "U1",
+      address: createOfficeAddress("slack", "A-B"),
+    });
 
-    expect(first).toMatch(/^a-b-[a-f0-9]{12}$/);
-    expect(second).toMatch(/^a-b-[a-f0-9]{12}$/);
+    expect(first).toMatch(/^v1-slack-a-b-[a-f0-9]{16}$/);
+    expect(second).toMatch(/^v1-slack-a-b-[a-f0-9]{16}$/);
     expect(first).not.toBe(second);
   });
 
-  test("separates credential authorization and resource derivation", () => {
+  test("platforms sharing a raw id never share a runtime resource", () => {
+    const discord = runtimeResourceKey(image, {
+      userId: "U1",
+      address: createOfficeAddress("discord", "900100"),
+    });
+    const telegram = runtimeResourceKey(image, {
+      userId: "U1",
+      address: createOfficeAddress("telegram", "900100"),
+    });
+    expect(discord).not.toBe(telegram);
+  });
+
+  test("credential authorization and resource derivation share the office key", () => {
     const scope = { userId: "U1", address: createOfficeAddress("slack", "C1") };
-    // Conversation-scoped credentials key by office: the same string that
-    // names the office in the workspace and the registry.
+    // Conversation-scoped credentials and runtime resources both key by
+    // office: the same string that names the office in the workspace and
+    // the registry.
     expect(credentialAuthorizationKey(image, scope)).toBe(officeKey(scope.address));
-    expect(runtimeResourceKey(image, { userId: "U1", conversationId: "C1" })).toMatch(
-      /^c1-[a-f0-9]{12}$/,
+    expect(runtimeResourceKey(image, { userId: "U1", address: scope.address })).toBe(
+      officeKey(scope.address),
     );
     expect(credentialAuthorizationKey({ type: "host" }, scope)).toMatch(/^u1-[a-f0-9]{12}$/);
   });

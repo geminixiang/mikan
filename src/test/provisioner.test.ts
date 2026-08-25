@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { DockerContainerManager } from "../provisioner.js";
+import { legacyConversationResourceKey } from "../sandbox/identity.js";
 
 function createDeferred<T>(): {
   promise: Promise<T>;
@@ -665,6 +666,29 @@ describe("DockerContainerManager", () => {
 
     expect(execMock).toHaveBeenNthCalledWith(4, "docker", ["rm", "-f", "mikan-sandbox-slack-u123"]);
     const stateField = (manager as any).state as Map<string, { status: string; lastUsed: number }>;
+    expect(stateField.size).toBe(0);
+  });
+
+  test("reconcile reaps containers keyed by the pre-office raw-conversation identity", async () => {
+    // legacyConversationResourceKey("D123") — the key conversation-scoped
+    // sandboxes used before resource identity moved to the office key.
+    const legacyKey = legacyConversationResourceKey("D123");
+    const execMock = vi
+      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .mockResolvedValueOnce({ stdout: `mikan-sandbox-${legacyKey}\n` })
+      .mockResolvedValueOnce({ stdout: "" })
+      .mockResolvedValueOnce({ stdout: "true\t2026-04-22T00:00:00.000000000Z\tslack-u123\tD123\n" })
+      .mockResolvedValueOnce({ stdout: "removed\n" });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
+
+    await manager.reconcile();
+
+    expect(execMock).toHaveBeenNthCalledWith(4, "docker", [
+      "rm",
+      "-f",
+      `mikan-sandbox-${legacyKey}`,
+    ]);
+    const stateField = (manager as any).state as Map<string, { status: string }>;
     expect(stateField.size).toBe(0);
   });
 

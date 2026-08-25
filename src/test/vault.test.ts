@@ -299,7 +299,7 @@ describe("ActorExecutionResolver image mode", () => {
 
     expect(executor.getSandboxConfig()).toEqual({
       type: "container",
-      container: "mikan-sandbox-d123-e8bafaeb6008",
+      container: `mikan-sandbox-${D123_OFFICE}`,
     });
     expect(mgr.resolve(DockerContainerManager.sanitizeSegment("D123"))).toBeUndefined();
   });
@@ -328,7 +328,7 @@ describe("ActorExecutionResolver image mode", () => {
 
     expect(executor.getSandboxConfig()).toEqual({
       type: "container",
-      container: "mikan-sandbox-d123-e8bafaeb6008",
+      container: `mikan-sandbox-${D123_OFFICE}`,
     });
     expect(
       readFileSync(
@@ -431,7 +431,7 @@ describe("ActorExecutionResolver image mode", () => {
     expect(vaultKey).toBe(officeKey(createOfficeAddress("slack", "D123")));
     expect(executor.getSandboxConfig()).toEqual({
       type: "container",
-      container: "mikan-sandbox-d123-e8bafaeb6008",
+      container: `mikan-sandbox-${D123_OFFICE}`,
     });
   });
 
@@ -466,7 +466,7 @@ describe("ActorExecutionResolver image mode", () => {
     mkdirSync(join(userDir, ".ssh"), { recursive: true });
 
     const mgr = new FileVaultManager(tmpDir);
-    const provision = vi.fn().mockResolvedValue("mikan-sandbox-d123-e8bafaeb6008");
+    const provision = vi.fn().mockResolvedValue(`mikan-sandbox-${D123_OFFICE}`);
     const exec = vi
       .spyOn(HostExecutor.prototype, "exec")
       .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
@@ -483,8 +483,8 @@ describe("ActorExecutionResolver image mode", () => {
     });
     await executor.exec("pwd");
 
-    expect(provision).toHaveBeenCalledWith("d123-e8bafaeb6008", {
-      containerName: "mikan-sandbox-d123-e8bafaeb6008",
+    expect(provision).toHaveBeenCalledWith(D123_OFFICE, {
+      containerName: `mikan-sandbox-${D123_OFFICE}`,
       conversationId: "D123",
       mounts: [
         { source: join(tmpDir, D123_OFFICE), target: `/workspace/${D123_OFFICE}` },
@@ -492,7 +492,7 @@ describe("ActorExecutionResolver image mode", () => {
       ],
     });
     expect(exec).toHaveBeenCalledWith(
-      "docker exec -w /workspace mikan-sandbox-d123-e8bafaeb6008 sh -c 'pwd'",
+      `docker exec -w /workspace mikan-sandbox-${D123_OFFICE} sh -c 'pwd'`,
       undefined,
     );
   });
@@ -505,7 +505,7 @@ describe("ActorExecutionResolver image mode", () => {
     );
 
     const mgr = new FileVaultManager(tmpDir);
-    const provision = vi.fn().mockResolvedValue("mikan-sandbox-d123-e8bafaeb6008");
+    const provision = vi.fn().mockResolvedValue(`mikan-sandbox-${D123_OFFICE}`);
     const exec = vi
       .spyOn(HostExecutor.prototype, "exec")
       .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
@@ -522,13 +522,13 @@ describe("ActorExecutionResolver image mode", () => {
     });
     await executor.exec("pwd");
 
-    expect(provision).toHaveBeenCalledWith("d123-e8bafaeb6008", {
-      containerName: "mikan-sandbox-d123-e8bafaeb6008",
+    expect(provision).toHaveBeenCalledWith(D123_OFFICE, {
+      containerName: `mikan-sandbox-${D123_OFFICE}`,
       conversationId: "D123",
       mounts: [{ source: tmpDir, target: "/workspace" }],
     });
     expect(exec).toHaveBeenCalledWith(
-      "docker exec -w /workspace mikan-sandbox-d123-e8bafaeb6008 sh -c 'pwd'",
+      `docker exec -w /workspace mikan-sandbox-${D123_OFFICE} sh -c 'pwd'`,
       undefined,
     );
   });

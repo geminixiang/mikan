@@ -47,7 +47,7 @@ export class ActorExecutionResolver {
     const legacyCredentialKey = legacyExactCredentialAuthorizationKey(this.baseConfig, scope);
     const resourceKey = runtimeResourceKey(this.baseConfig, {
       userId: context.userId,
-      conversationId: context.address.conversationId,
+      address: context.address,
     });
     this.ensureDefaultSharedVault(credentialKey, legacyCredentialKey, context.trustModel);
 

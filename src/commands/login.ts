@@ -1,5 +1,5 @@
 import * as log from "../log.js";
-import { credentialAuthorizationKey } from "../sandbox/identity.js";
+import { credentialAuthorizationKey, runtimeResourceKey } from "../sandbox/identity.js";
 import { sharedVaultKey } from "../vault/index.js";
 import { slashForms } from "./manifest.js";
 import { matchCommand } from "./manifest.js";
@@ -53,10 +53,7 @@ async function replyVault(context: CommandContext, lines: string[]): Promise<voi
   });
 }
 
-async function refreshCopiedVaultRuntime(
-  context: CommandContext,
-  vaultId: string,
-): Promise<string | undefined> {
+async function refreshCopiedVaultRuntime(context: CommandContext): Promise<string | undefined> {
   if (context.services.sandbox.type !== "image") return undefined;
 
   const targetAddress = createOfficeAddress(
@@ -72,7 +69,15 @@ async function refreshCopiedVaultRuntime(
     return "The cached session was refreshed. The sandbox will pick up copied credentials on the next provision.";
   }
 
-  await context.services.provisioner.remove(vaultId);
+  // The provisioner names containers by runtime resource key, not by the
+  // credential key the vault copy used — the two identities differ in image
+  // mode (office key vs raw-conversation key). Removing by the wrong key
+  // would silently leave the real container running with stale mounts.
+  const resourceKey = runtimeResourceKey(context.services.sandbox, {
+    userId: context.platformUserId,
+    address: targetAddress,
+  });
+  await context.services.provisioner.remove(resourceKey);
   return "The sandbox container was removed and will be recreated with the copied env and file mounts on the next message.";
 }
 
@@ -118,7 +123,7 @@ export class LoginCommandHandler implements CommandHandler {
       try {
         const vaultId = ensureLoginVault(context);
         const result = context.services.vaultManager.copySharedVaultTo(parsed.name, vaultId);
-        const refreshNote = await refreshCopiedVaultRuntime(context, vaultId);
+        const refreshNote = await refreshCopiedVaultRuntime(context);
         await replyVault(context, [
           `Copied shared login profile \`${parsed.name}\` into this conversation.`,
           "Shared values overwrite matching conversation values; conversation-only values are kept.",

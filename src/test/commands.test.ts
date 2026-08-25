@@ -20,6 +20,7 @@ import { NewCommandHandler } from "../commands/new.js";
 import { SandboxCommandHandler } from "../commands/sandbox.js";
 import { SessionViewCommandHandler } from "../commands/session-view.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
+import { runtimeResourceKey } from "../sandbox/identity.js";
 import type { CommandContext, CommandHandler, CommandServices } from "../commands/types.js";
 import { officeSessionsDir } from "../office/index.js";
 import { createManagedSessionFile } from "../sessions/store.js";
@@ -581,7 +582,14 @@ describe("LoginCommandHandler", () => {
     expect(ctx.services.runtime?.refreshConversationEnvironment).toHaveBeenCalledWith(
       createOfficeAddress("slack", "C123"),
     );
-    expect(remove).toHaveBeenCalledWith(officeKey(createOfficeAddress("slack", "C123")));
+    // The provisioner is keyed by runtime resource identity, not the
+    // credential key the vault copy used (they differ in image mode).
+    expect(remove).toHaveBeenCalledWith(
+      runtimeResourceKey(
+        { type: "image", image: "ubuntu:24.04" },
+        { userId: "U123", address: createOfficeAddress("slack", "C123") },
+      ),
+    );
     expect(ctx.responder.responses[0]).toContain("Copied shared login profile `gliaclaw`");
     expect(ctx.responder.responses[0]).toContain("will be recreated with the copied env");
   });
@@ -947,7 +955,7 @@ describe("SandboxCommandHandler", () => {
 
     expect(await handler.tryHandle(ctx)).toBe(true);
     // Resource keys stay raw-conversation-derived until the resource-naming migration.
-    expect(boost).toHaveBeenCalledWith("c123-588a5f4edc2e");
+    expect(boost).toHaveBeenCalledWith(officeKey(createOfficeAddress("slack", "C123")));
     expect(ctx.responder.responses[0]).toContain("CPU 2 / Memory 4g");
   });
 });

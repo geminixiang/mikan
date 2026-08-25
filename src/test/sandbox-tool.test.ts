@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import { createOfficeAddress, officeKey } from "../office/index.js";
 import { createSandboxTool } from "../tools/sandbox.js";
 
 describe("createSandboxTool", () => {
@@ -23,14 +24,17 @@ describe("createSandboxTool", () => {
       },
     });
 
-    setSandboxContext({ conversationId: "C123", userId: "U123" });
+    setSandboxContext({ address: createOfficeAddress("slack", "C123"), userId: "U123" });
     const result = await tool.execute("tool-call", {
       action: "set",
       cpus: "2",
       memory: "4g",
     });
 
-    expect(setLimits).toHaveBeenCalledWith("c123-588a5f4edc2e", { cpus: "2", memory: "4g" });
+    expect(setLimits).toHaveBeenCalledWith(officeKey(createOfficeAddress("slack", "C123")), {
+      cpus: "2",
+      memory: "4g",
+    });
     expect(result.content[0]).toMatchObject({
       type: "text",
       text: expect.stringContaining("CPU 2 / Memory 4g"),
@@ -50,10 +54,10 @@ describe("createSandboxTool", () => {
       },
     });
 
-    setSandboxContext({ conversationId: "C123", userId: "U123" });
+    setSandboxContext({ address: createOfficeAddress("slack", "C123"), userId: "U123" });
     const result = await tool.execute("tool-call", { action: "status" });
 
-    expect(getLimitStatus).toHaveBeenCalledWith("c123-588a5f4edc2e");
+    expect(getLimitStatus).toHaveBeenCalledWith(officeKey(createOfficeAddress("slack", "C123")));
     expect(result.content[0]).toMatchObject({
       type: "text",
       text: expect.stringContaining("CPU 0.5 / Memory 1g"),
@@ -73,10 +77,13 @@ describe("createSandboxTool", () => {
       },
     });
 
-    setSandboxContext({ conversationId: "C123", userId: "U123" });
+    setSandboxContext({ address: createOfficeAddress("slack", "C123"), userId: "U123" });
     await tool.execute("tool-call", { action: "set", cpus: "2", memory: "4g" });
 
-    expect(setLimits).toHaveBeenCalledWith("c123-588a5f4edc2e", { cpus: "2", memory: "4g" });
+    expect(setLimits).toHaveBeenCalledWith(officeKey(createOfficeAddress("slack", "C123")), {
+      cpus: "2",
+      memory: "4g",
+    });
   });
 
   test("rejects set without limits", async () => {
@@ -88,7 +95,7 @@ describe("createSandboxTool", () => {
       },
     });
 
-    setSandboxContext({ conversationId: "C123", userId: "U123" });
+    setSandboxContext({ address: createOfficeAddress("slack", "C123"), userId: "U123" });
     await expect(tool.execute("tool-call", { action: "set" })).rejects.toThrow(
       "action=set requires cpus and/or memory",
     );
