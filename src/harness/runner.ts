@@ -30,6 +30,7 @@ import {
 } from "@earendil-works/pi-agent-core";
 import {
   isContextOverflow,
+  isRetryableAssistantError,
   type Api,
   type AssistantMessage,
   type ImageContent,
@@ -73,11 +74,6 @@ interface RunTally {
   toolCallCounts: Record<string, number>;
   startedAt: number;
 }
-
-// Transient provider failures worth retrying: overload/rate-limit responses,
-// 5xx statuses, and network/stream interruptions.
-const RETRYABLE_ERROR_PATTERN =
-  /overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|connection.?lost|websocket.?closed|websocket.?error|other side closed|fetch failed|upstream.?connect|reset before headers|socket hang up|ended without|stream ended before message_stop|http2 request did not get a response|timed? out|timeout|terminated|retry delay/i;
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -549,7 +545,7 @@ export class MikanAgentSession {
       if (isContextOverflow(lastAssistant, contextWindow)) {
         return this.handleOverflow();
       }
-      if (this.isRetryableError(lastAssistant)) {
+      if (isRetryableAssistantError(lastAssistant)) {
         return this.prepareRetry(lastAssistant);
       }
       return false;
@@ -703,11 +699,6 @@ export class MikanAgentSession {
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
-  }
-
-  private isRetryableError(message: AssistantMessage): boolean {
-    if (message.stopReason !== "error" || !message.errorMessage) return false;
-    return RETRYABLE_ERROR_PATTERN.test(message.errorMessage);
   }
 
   private async prepareRetry(message: AssistantMessage): Promise<boolean> {
