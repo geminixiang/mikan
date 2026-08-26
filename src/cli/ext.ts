@@ -11,7 +11,7 @@
  * existing extension updates it (data is preserved). Extensions install into the
  * host-only state dir (never the workspace); see src/harness/extensions/LAYOUT.md.
  */
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import {
   defaultExtensionDirs,
@@ -93,6 +93,10 @@ function scopeExtensionsDir(args: ExtArgs): string {
 }
 
 const USAGE = `Usage:
+  mikan ext init <name>
+      Scaffold a new extension in ./<name>: one command, one callback
+      schedule, one small state file — the golden path. Try it immediately
+      with \`mikan ext dev <name>\`.
   mikan ext dev <path> [--workspace <dir>] [--state-dir <dir>]
       Run an extension in a local stdin/stdout conversation — no Slack, no
       install. Edit, send /pi-new, test again.
@@ -110,6 +114,8 @@ export async function runExtCommand(argv: string[]): Promise<number> {
   const args = parseExtArgs(argv);
 
   switch (args.action) {
+    case "init":
+      return initAction(args);
     case "dev":
       // Parsed by the dev command itself: it takes different flags.
       return runExtDevCommand(argv.slice(1));
@@ -125,6 +131,102 @@ export async function runExtCommand(argv: string[]): Promise<number> {
       console.error(USAGE);
       return 1;
   }
+}
+
+/** Scaffold the golden-path extension (command + callback schedule + state). */
+function initAction(args: ExtArgs): number {
+  const name = args.target;
+  if (!name || !/^[a-z0-9][a-z0-9_-]*$/.test(name)) {
+    console.error("ext init: name a directory to create — lowercase letters, digits, - and _");
+    return 1;
+  }
+  const dir = resolve(name);
+  if (existsSync(dir)) {
+    console.error(`ext init: ${dir} already exists`);
+    return 1;
+  }
+  mkdirSync(dir, { recursive: true });
+  for (const [file, content] of scaffoldFiles(name)) {
+    writeFileSync(join(dir, file), content);
+  }
+  console.log(`Created ${name}/ (package.json, index.ts).`);
+  console.log(`Try it now:  mikan ext dev ${name}`);
+  console.log(`Then type /${name} in the local conversation.`);
+  return 0;
+}
+
+function scaffoldFiles(name: string): Array<[string, string]> {
+  const packageJson = {
+    name,
+    version: "0.1.0",
+    private: true,
+    type: "module",
+    mikan: {
+      extensions: ["./index.ts"],
+      requires: ["schedules.callback", "messaging.notify"],
+    },
+  };
+  const indexTs = `/**
+ * ${name} — scaffolded by \`mikan ext init\`.
+ *
+ * activate(api) runs once PER CONVERSATION. State under api.paths.dataDir
+ * and the schedule below are this conversation's own — nothing is shared
+ * across conversations unless you opt into api.paths.sharedDataDir.
+ * package.json's mikan.requires declares the host capabilities this
+ * extension needs; activation fails with a clear error where they are
+ * missing. See deploy/examples/extensions/scheduled-counter in the mikan
+ * repo for the fully commented version of this exact shape.
+ */
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+// Type-only: stripped at load time, so no install is needed to run this.
+import type { MikanExtensionApi } from "@geminixiang/mikan";
+
+interface State {
+  count: number;
+}
+
+function readState(file: string): State {
+  try {
+    return JSON.parse(readFileSync(file, "utf-8")) as State;
+  } catch {
+    return { count: 0 };
+  }
+}
+
+export default async function activate(api: MikanExtensionApi): Promise<void> {
+  const stateFile = join(api.paths.dataDir, "state.json");
+
+  api.registerCommand({
+    name: "${name}",
+    description: "Bump this conversation's counter",
+    handler: async ({ args, respond }) => {
+      const state = readState(stateFile);
+      state.count += 1;
+      writeFileSync(stateFile, JSON.stringify(state));
+      await respond(\`Counter: \${state.count}\`);
+    },
+  });
+
+  api.schedules.onCallback("daily-report", async () => {
+    const state = readState(stateFile);
+    await api.notify(\`\u{1F4C8} Daily report: \${state.count}\`);
+  });
+
+  await api.schedules.upsert("daily-report", {
+    type: "periodic",
+    schedule: "0 9 * * *",
+    timezone: "Asia/Taipei",
+    callback: "daily-report",
+  });
+
+  api.log("${name} ready");
+}
+`;
+  return [
+    ["package.json", JSON.stringify(packageJson, null, 2) + "\n"],
+    ["index.ts", indexTs],
+  ];
 }
 
 async function validateAction(args: ExtArgs): Promise<number> {
@@ -375,6 +477,7 @@ function printValidation(result: {
   entrypoint?: string;
   skillNames: string[];
   secrets: Array<{ key: string; required?: boolean }>;
+  requires: string[];
   errors: string[];
   warnings: string[];
 }): void {
@@ -385,6 +488,7 @@ function printValidation(result: {
     const keys = result.secrets.map((s) => `${s.key}${s.required ? " (required)" : ""}`);
     console.log(`  secrets: ${keys.join(", ")}`);
   }
+  if (result.requires.length > 0) console.log(`  requires: ${result.requires.join(", ")}`);
   for (const warning of result.warnings) console.log(`  warning: ${warning}`);
   for (const error of result.errors) console.error(`  error: ${error}`);
   console.log(result.ok ? "  ✓ valid" : "  ✗ invalid");

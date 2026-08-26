@@ -1,0 +1,19 @@
+{
+  "name": "scheduled-counter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Golden-path mikan extension: one command, one callback schedule, one small state file",
+  "type": "module",
+  "devDependencies": {
+    "@geminixiang/mikan": "*"
+  },
+  "mikan": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "requires": [
+      "schedules.callback",
+      "messaging.notify"
+    ]
+  }
+}

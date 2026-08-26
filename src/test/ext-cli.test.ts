@@ -246,4 +246,46 @@ describe("mikan ext CLI", () => {
     expect(code).toBe(1);
     expect(out.err.join("\n")).toMatch(/Usage:/);
   });
+
+  test("init scaffolds a validatable golden-path extension", async () => {
+    const target = join(srcDir, "my-counter");
+    const cwd = process.cwd();
+    process.chdir(srcDir);
+    const out = captureOut();
+    let code;
+    try {
+      code = await runExtCommand(["init", "my-counter"]);
+    } finally {
+      out.restore();
+      process.chdir(cwd);
+    }
+    expect(code).toBe(0);
+    expect(existsSync(join(target, "package.json"))).toBe(true);
+    expect(existsSync(join(target, "index.ts"))).toBe(true);
+
+    const validateOut = captureOut();
+    const validateCode = await runExtCommand(["validate", target]);
+    validateOut.restore();
+    expect(validateCode).toBe(0);
+    expect(validateOut.log.join("\n")).toContain("requires: schedules.callback, messaging.notify");
+  });
+
+  test("init refuses an existing directory and a bad name", async () => {
+    const existing = join(srcDir, "taken");
+    mkdirSync(existing);
+    const cwd = process.cwd();
+    process.chdir(srcDir);
+    const out = captureOut();
+    let takenCode;
+    let badCode;
+    try {
+      takenCode = await runExtCommand(["init", "taken"]);
+      badCode = await runExtCommand(["init", "Bad Name!"]);
+    } finally {
+      out.restore();
+      process.chdir(cwd);
+    }
+    expect(takenCode).toBe(1);
+    expect(badCode).toBe(1);
+  });
 });

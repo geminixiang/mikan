@@ -92,6 +92,8 @@ export type {
   ExtensionSchedulePayload,
   ExtensionScheduleSpec,
   ExtensionScheduleStore,
+  ExtensionCapabilities,
+  ExtensionCapability,
   ExtensionSecretDeclaration,
   ExtensionTextScheduleSpec,
   LoadedExtension,
