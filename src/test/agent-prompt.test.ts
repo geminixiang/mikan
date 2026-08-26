@@ -5,7 +5,7 @@ import {
   resolveTriggerAttribution,
   translateAttachPathToHost,
   translateRuntimePathToHost,
-} from "../agent.js";
+} from "../agent/index.js";
 import { getUnresolvedSandboxPathContext } from "../sandbox/index.js";
 
 describe("trigger attribution", () => {

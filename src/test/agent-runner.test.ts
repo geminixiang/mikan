@@ -6,7 +6,7 @@ import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-work
 import type { MutableModels } from "@earendil-works/pi-ai";
 import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../adapter.js";
 import { createSlackToolPack } from "../adapters/slack/tool-pack.js";
-import { createRunner } from "../agent.js";
+import { createRunner } from "../agent/index.js";
 import { loadSkillsFromDir } from "../harness/skills.js";
 import { MikanAgentSession, MikanModels } from "../harness/index.js";
 import { officeSessionsDir } from "../office/index.js";

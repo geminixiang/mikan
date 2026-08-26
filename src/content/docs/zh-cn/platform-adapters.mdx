@@ -5,7 +5,7 @@ description: Slack、Discord 与 Telegram adapter 如何把平台事件转为 mi
 
 import { Aside, Card, CardGrid, LinkCard, Steps } from "@astrojs/starlight/components";
 
-它的目标是让 `src/runtime/*` 和 `src/agent.ts` 不需要知道每个平台的 SDK、thread 规则、消息更新 API 或文件下载方式。
+它的目标是让 `src/runtime/*` 和 `src/agent/` 不需要知道每个平台的 SDK、thread 规则、消息更新 API 或文件下载方式。
 
 <CardGrid>
   <Card title="事件标准化" icon="setting">
@@ -113,4 +113,4 @@ sequenceDiagram
 - `ConversationContext`：一次事件附帶的 `message`、`responder`、`platform` metadata。
 - `ConversationResponder`：agent 回复时使用的通道。
 
-如果新增平台，优先实现这些抽象，不要把平台 SDK 细节带进 `src/runtime/*` 或 `src/agent.ts`。
+如果新增平台，优先实现这些抽象，不要把平台 SDK 细节带进 `src/runtime/*` 或 `src/agent/`。

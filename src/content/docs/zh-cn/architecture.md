@@ -49,7 +49,7 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 
 ### C. 代理执行层
 
-- `src/agent.ts`
+- `src/agent/`
 - `src/harness/*`
 - `src/tools/*`
 
@@ -129,7 +129,7 @@ sequenceDiagram
   participant A as Adapter
   participant M as ConversationRuntime / Orchestrator
   participant S as sessions/store.ts
-  participant R as agent.ts / PiAgentWrapper
+  participant R as agent/runner.ts / PiAgentWrapper
   participant T as tools/*
   participant X as sandbox Executor
   participant W as Office dir / sessions
@@ -253,7 +253,7 @@ flowchart TD
 
 一句话概括，`mikan` 的核心是：
 
-> 一个由 `main.ts` 协调、由 `agent.ts` 执行，并由 `office/session/vault/sandbox` 基础设施支持的多平台 AI 代理 bot。
+> 一个由 `main.ts` 协调、由 `agent/runner.ts` 执行，并由 `office/session/vault/sandbox` 基础设施支持的多平台 AI 代理 bot。
 
 可以将其视为 7 个核心子系统：
 

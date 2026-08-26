@@ -32,7 +32,7 @@
     },
     {
       "files": [
-        "**/src/agent.ts",
+        "**/src/agent/*.ts",
         "**/src/adapters/discord/bot.ts",
         "**/src/adapters/progressive-renderer.ts",
         "**/src/adapters/slack/bot.ts",

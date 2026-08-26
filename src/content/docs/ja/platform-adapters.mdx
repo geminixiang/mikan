@@ -5,7 +5,7 @@ description: Slack、Discord、Telegram adapter がプラットフォームイ�
 
 import { Aside, Card, CardGrid, LinkCard, Steps } from "@astrojs/starlight/components";
 
-目的は、`src/runtime/*` と `src/agent.ts` が各プラットフォームの SDK、thread ルール、メッセージ更新 API、ファイルダウンロード方式を知らなくてよい状態にすることです。
+目的は、`src/runtime/*` と `src/agent/` が各プラットフォームの SDK、thread ルール、メッセージ更新 API、ファイルダウンロード方式を知らなくてよい状態にすることです。
 
 <CardGrid>
   <Card title="イベント正規化" icon="setting">
@@ -121,4 +121,4 @@ sequenceDiagram
 - `ConversationContext`：1 回のイベントに付随する `message`、`responder`、`platform` metadata。
 - `ConversationResponder`：agent が返信するときに使うチャネル。
 
-新しいプラットフォームを追加する場合は、まずこれらの抽象を実装し、プラットフォーム SDK の詳細を `src/runtime/*` や `src/agent.ts` に持ち込まないでください。
+新しいプラットフォームを追加する場合は、まずこれらの抽象を実装し、プラットフォーム SDK の詳細を `src/runtime/*` や `src/agent/` に持ち込まないでください。

@@ -87,7 +87,7 @@ The complete machine-readable inventory is in `architecture.toml`. The main grou
 | Group                   | Modules                                               | Detailed documentation                                                                                                                                                         |
 | ----------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Platform edge           | Platform adapters, Conversation intake                | [`src/adapters/README.md`](src/adapters/README.md)                                                                                                                             |
-| Orchestration           | Composition root, Conversation runtime, Agent runner  | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`, `src/agent.ts`                                                                                                |
+| Orchestration           | Composition root, Conversation runtime, Agent runner  | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`, `src/agent/`                                                                                                  |
 | Agent core              | Harness, Extensions                                   | [`src/harness/README.md`](src/harness/README.md)                                                                                                                               |
 | Identity and data       | Office, Sessions, Configuration, Workspace projection | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/workspace-projection/README.md`](src/workspace-projection/README.md) |
 | Execution and authority | Execution resolver, Sandbox, Vault, Packages          | [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md), [`src/packages/README.md`](src/packages/README.md)                             |
@@ -131,11 +131,11 @@ The `stop` magic word is exceptional: it runs before trigger policy and queueing
 
 ### Agent execution
 
-`src/agent.ts` is the run-level orchestration module. It deliberately does not own conversation queueing or the underlying model loop.
+`src/agent/` is the run-level orchestration module. It deliberately does not own conversation queueing or the underlying model loop. `runner.ts` is its composition root; prompt policy, resource catalog, execution binding, and response presentation live behind the neighboring authority modules.
 
-A runner is conversation-scoped. Mutable platform tool packs are instantiated per runner and bound per serialized run, so platform state cannot leak across conversations. The runner constructs a byte-stable system prompt; changing turn facts are added to user-turn instructions to preserve provider cache behavior.
+A runner is conversation-scoped. Mutable platform tool packs are instantiated per runner and bound per serialized run, so platform state cannot leak across conversations. The prompt authority constructs a byte-stable system prompt; changing turn facts are added to user-turn instructions to preserve provider cache behavior.
 
-The runner also owns response delivery. The Conversation runtime invokes and settles it, but response streaming, replacement, diagnostics, usage display, and file upload are implemented through the runner's `ConversationResponder` interaction.
+The presenter owns response delivery. The Conversation runtime invokes and settles the runner, but response streaming, replacement, diagnostics, usage display, and file upload are implemented through the runner's `ConversationResponder` interaction.
 
 ### Execution resolution
 
@@ -291,7 +291,7 @@ Evidence: `src/runtime/session-lifecycle.ts`, `src/runtime/conversation-runtime.
 
 **`run-settlement`** — A run remains active through response delivery, usage, diagnostics, working-state cleanup, and post-run settlement. Active or unsettled runners cannot be evicted or invalidated.
 
-Evidence: `src/runtime/conversation-runtime.ts`, `src/agent.ts`.
+Evidence: `src/runtime/conversation-runtime.ts`, `src/agent/`.
 
 ### INV projection coherence
 

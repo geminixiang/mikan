@@ -8,8 +8,8 @@ import type {
   RunningSession,
 } from "../adapter.js";
 import { createOfficeAddress, officeKey, type Workspace } from "../office/index.js";
-import { createRunner } from "../agent.js";
-import type { PiAgentWrapper } from "../agent.js";
+import { createRunner } from "../agent/index.js";
+import type { PiAgentWrapper } from "../agent/index.js";
 import { MikanModels } from "../harness/index.js";
 import type { ExtensionBlockAction, ExtensionScheduleCallbackFire } from "../harness/index.js";
 import { defaultCommandHandlers, dispatchCommand } from "../commands/registry.js";

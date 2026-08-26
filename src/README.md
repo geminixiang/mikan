@@ -6,7 +6,7 @@ This directory is the TypeScript source root for mikan; the entries below descri
 
 - `adapter.ts`: Defines platform-neutral chat messages, bots, response contexts, events, and running-session interfaces.
 - `agent-events.ts`: Broadcasts agent event envelopes over server-sent events to connected session-view clients, and serves the `/api/agent-events/stream` endpoint.
-- `agent.ts`: Agent runner — prompt, paths, run lifecycle, and `createRunner` (single module).
+- `agent/`: Agent runner — prompt authority, resource catalog, execution binding, run presentation, and the `createRunner` composition root.
 - `config.ts`: Loads, normalizes, and saves global and conversation settings for models, sandbox, auto-reply, and portal URLs. Conversation-scoped functions take an `Office` and read/write the host-only office state dir; a legacy `<office dir>/settings.json` is migrated once and never read again.
 - `content.config.ts`: Declares the Starlight `docs` content collection for the documentation site.
 - `env-manifest.ts`: Declares the daemon's environment-variable interface as data; startup validation, `mikan env`, `--help`, and the pm2 deploy-template check derive from it. Also owns the read/write convention itself: `readEnv` (accepts `MIKAN_`-prefixed aliases) and `setEnvAliases`.

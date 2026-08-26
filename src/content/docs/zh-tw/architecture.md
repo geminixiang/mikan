@@ -49,7 +49,7 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 
 ### C. Agent 執行層
 
-- `src/agent.ts`
+- `src/agent/`
 - `src/harness/*`
 - `src/tools/*`
 
@@ -129,7 +129,7 @@ sequenceDiagram
   participant A as Adapter
   participant M as ConversationRuntime / Orchestrator
   participant S as sessions/store.ts
-  participant R as agent.ts / PiAgentWrapper
+  participant R as agent/runner.ts / PiAgentWrapper
   participant T as tools/*
   participant X as sandbox Executor
   participant W as Office dir / sessions

@@ -49,7 +49,7 @@ description: mikan のプラットフォーム接続、conversation office、セ
 
 ### C. Agent 実行レイヤー
 
-- `src/agent.ts`
+- `src/agent/`
 - `src/harness/*`
 - `src/tools/*`
 
@@ -129,7 +129,7 @@ sequenceDiagram
   participant A as Adapter
   participant M as ConversationRuntime / Orchestrator
   participant S as sessions/store.ts
-  participant R as agent.ts / PiAgentWrapper
+  participant R as agent/runner.ts / PiAgentWrapper
   participant T as tools/*
   participant X as sandbox Executor
   participant W as Office dir / sessions
@@ -253,7 +253,7 @@ flowchart TD
 
 一言でまとめると、`mikan` の中核は次のものです:
 
-> `main.ts` を調整中心、`agent.ts` を実行中核、`office/session/vault/sandbox` を基盤とするマルチプラットフォーム AI agent bot。
+> `main.ts` を調整中心、`agent/runner.ts` を実行中核、`office/session/vault/sandbox` を基盤とするマルチプラットフォーム AI agent bot。
 
 7 つの中核サブシステムとして捉えられます:
 

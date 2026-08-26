@@ -1,4 +1,4 @@
-import type { PiAgentWrapper } from "../agent.js";
+import type { PiAgentWrapper } from "../agent/index.js";
 import type {
   MessagingBot,
   ConversationContext,

@@ -5,7 +5,7 @@ description: How Slack, Discord, Telegram, and GitHub adapters convert platform 
 
 import { Aside, Card, CardGrid, LinkCard, Steps } from "@astrojs/starlight/components";
 
-Their goal is to keep `src/runtime/*` and `src/agent.ts` from knowing each platform's SDK, thread rules, message update API, or file download behavior.
+Their goal is to keep `src/runtime/*` and `src/agent/` from knowing each platform's SDK, thread rules, message update API, or file download behavior.
 
 <CardGrid>
   <Card title="Event normalization" icon="setting">
@@ -120,4 +120,4 @@ The core runtime depends only on these shared abstractions:
 - `ConversationContext`: `message`, `responder`, and `platform` metadata attached to an event.
 - `ConversationResponder`: the channel used by the agent to reply.
 
-When adding a platform, implement these abstractions first. Do not bring platform SDK details into `src/runtime/*` or `src/agent.ts`.
+When adding a platform, implement these abstractions first. Do not bring platform SDK details into `src/runtime/*` or `src/agent/`.

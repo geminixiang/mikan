@@ -40,7 +40,7 @@ id = "agent-runner"
 name = "Agent runner"
 kind = "orchestrator"
 docs = "ARCHITECTURE.md#agent-execution"
-sources = ["src/agent.ts"]
+sources = ["src/agent/"]
 
 [[modules]]
 id = "harness"
