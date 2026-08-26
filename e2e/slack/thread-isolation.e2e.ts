@@ -103,10 +103,12 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack thread session isolation
       pollMs: env.pollMs,
       // Native streaming briefly exposes provisional text through Slack's API.
       // Wait for the final answer rather than accepting a reasoning snapshot
-      // that happens to mention token A before chat.stopStream: the final
-      // message is the bare token plus the attribution suffix mikan always
-      // appends to channel replies (_Triggered by @user_).
-      textMatches: new RegExp(`^\\s*${tokenA}\\s*(?:_Triggered by[^]*)?$`),
+      // that merely mentions token A before chat.stopStream: the final message
+      // starts with the bare token, followed by the attribution mikan always
+      // appends (streaming may strip the italic underscores) and possibly the
+      // thinking block Slack exports after it. A reasoning snapshot starts
+      // with prose, so anchoring the token at the start rejects it.
+      textMatches: new RegExp(`^\\s*${tokenA}\\s*(?:_?Triggered by|$)`),
     });
     expect(askAReply, `no thread A reply containing ${tokenA}`).not.toBeNull();
     expect(
