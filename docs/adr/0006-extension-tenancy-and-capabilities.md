@@ -13,6 +13,39 @@ instead of being re-litigated. Full analysis:
 `docs/research/design-review-2026-08/extension-tenancy-review.md` and
 `extension-devx-review.md`.
 
+## Why extensions exist: the pressure-release valve
+
+The agent's behavior is deliberately confined: bash/edit/write run inside
+the sandbox, and what the model can reach is what the office grants it.
+That confinement creates pressure — users have legitimate needs the agent's
+tools don't cover — and when there is no sanctioned outlet, users drill
+through the wall. The motivating real case: a user who wanted the agent to
+post Slack replies put a raw Slack API key into the conversation vault so
+bash could curl the Slack API. That "works", and it is exactly the failure
+mode this system exists to prevent:
+
+- the credential enters the sandbox, inside the model's reach — one prompt
+  injection away from exfiltration or misuse;
+- the model composes the API calls, so what gets posted is
+  model-generated, unaudited, and outside mikan's platform semantics
+  (threading, attribution, history sync all bypassed);
+- the deployment's security posture now depends on a workaround no one
+  reviewed.
+
+Extensions are the official pressure-release valve. An extension holds what
+the model must never touch (credentials, platform APIs) in host code, and
+exposes only a semantic surface (`api.notify`, `api.blockkit`, a custom
+tool). The model can request the effect; it can never hold the means. The
+capability inventory doubles as the catalog of sanctioned outlets: when a
+need isn't covered, that is a signal to add a capability — not a license to
+put a key where the model can reach it. The review heuristic is one
+question: _does this change let the model hold a raw credential or an
+unmediated external surface?_ If yes, the answer is an extension.
+
+This is also why extension code runs on the host and not in the sandbox:
+moving it inside would put the very things it exists to guard back into the
+model's reach, defeating its purpose.
+
 ## Actors
 
 | Actor                       | Grants                                                | Trust                                                                    |
