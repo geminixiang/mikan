@@ -24,7 +24,7 @@ import {
   type SubagentUsage,
 } from "../harness/index.js";
 import { createSubagentTool } from "../tools/subagent.js";
-import { SubagentSlotPool } from "../tools/subagent-slots.js";
+import { SubagentSlotPool } from "../harness/subagent-slots.js";
 
 let dir: string;
 

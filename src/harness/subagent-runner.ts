@@ -17,8 +17,8 @@ import type {
   SubagentUsage,
   SubagentUsageSink,
 } from "./types.js";
-import { copySubagentUsage, createEmptySubagentUsage } from "./usage.js";
-import { unboundedSlotPool, type SubagentSlotPool } from "../tools/subagent-slots.js";
+import { copyUsage, createEmptyUsage } from "./usage.js";
+import { unboundedSlotPool, type SubagentSlotPool } from "./subagent-slots.js";
 
 const subagentRunDepth = new AsyncLocalStorage<number>();
 const DEFAULT_SYSTEM_PROMPT =
@@ -404,7 +404,7 @@ function baseRunResult(
   startedAt: number,
   stats?: SubagentRunStats,
 ) {
-  const usage = stats?.usage ?? createEmptySubagentUsage();
+  const usage = stats?.usage ?? createEmptyUsage();
   return {
     runId,
     model,
@@ -464,7 +464,7 @@ async function reportSubagentUsage(
   usage: SubagentUsage,
 ): Promise<void> {
   try {
-    await onUsage?.(copySubagentUsage(usage));
+    await onUsage?.(copyUsage(usage));
   } catch (err) {
     log.logWarning("Subagent onUsage listener failed", String(err));
   }

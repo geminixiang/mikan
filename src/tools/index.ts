@@ -16,7 +16,6 @@ import type { PlatformToolPackFactory, PlatformToolRunContext } from "./types.js
 import { createWriteTool } from "./write.js";
 
 export { createSubagentTool } from "./subagent.js";
-export { DEFAULT_GLOBAL_SUBAGENT_SLOTS, SubagentSlotPool } from "./subagent-slots.js";
 
 export function createMikanTools(
   executor: Executor,

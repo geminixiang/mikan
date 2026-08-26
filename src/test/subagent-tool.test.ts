@@ -7,7 +7,7 @@ import type {
   SubagentUsage,
 } from "../harness/types.js";
 import { createSubagentTool } from "../tools/subagent.js";
-import { SubagentSlotPool } from "../tools/subagent-slots.js";
+import { SubagentSlotPool } from "../harness/subagent-slots.js";
 
 type RunSubagent = <TOutputSchema extends TSchema | undefined = undefined>(
   request: SubagentRunRequest<TOutputSchema>,

@@ -64,7 +64,7 @@ export type {
   MikanAgentSessionOptions,
   PromptBlockedOutcome,
 } from "./types.js";
-import { addSubagentUsage, copySubagentUsage, createEmptySubagentUsage } from "./usage.js";
+import { addUsage, copyUsage, createEmptyUsage } from "./usage.js";
 
 /** Running resource tally for the current `prompt()` call, matched against the budget. */
 interface RunTally {
@@ -106,7 +106,7 @@ export class MikanAgentSession {
   private compactionAbortController: AbortController | undefined;
   private runActive = false;
   private tally: RunTally = {
-    usage: createEmptySubagentUsage(),
+    usage: createEmptyUsage(),
     llmCalls: 0,
     toolCalls: 0,
     toolCallCounts: {},
@@ -196,7 +196,7 @@ export class MikanAgentSession {
     budgetExceededReason?: string;
   }> {
     return {
-      usage: copySubagentUsage(this.tally.usage),
+      usage: copyUsage(this.tally.usage),
       tokens: this.tally.usage.totalTokens,
       costUsd: this.tally.usage.cost.total,
       llmCalls: this.tally.llmCalls,
@@ -219,7 +219,7 @@ export class MikanAgentSession {
   captureExternalUsageSink(): SubagentUsageSink {
     const tally = this.tally;
     return async (usage) => {
-      addSubagentUsage(tally.usage, usage);
+      addUsage(tally.usage, usage);
       if (this.tally !== tally || this.budgetExceededReason || !this.runActive) return;
       const reason = this.resourceOverBudgetReason();
       if (reason) await this.exceedBudget(reason);
@@ -296,7 +296,7 @@ export class MikanAgentSession {
     this.runBudget = { ...this.settings.budget, ...options?.budget };
     this.budgetExceededReason = undefined;
     this.tally = {
-      usage: createEmptySubagentUsage(),
+      usage: createEmptyUsage(),
       llmCalls: 0,
       toolCalls: 0,
       toolCallCounts: {},
@@ -462,7 +462,7 @@ export class MikanAgentSession {
     this.tally.llmCalls += 1;
     const usage = message.usage;
     if (!usage) return;
-    addSubagentUsage(this.tally.usage, usage);
+    addUsage(this.tally.usage, usage);
   }
 
   /** Compare the tally against the run budget; abort the run when a cap is exceeded. */

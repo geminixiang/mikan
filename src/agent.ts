@@ -89,12 +89,8 @@ import {
   type ThreadRootMessage,
 } from "./sessions/store.js";
 import { HostEventStore } from "./tools/event.js";
-import {
-  createMikanTools,
-  createSubagentTool,
-  DEFAULT_GLOBAL_SUBAGENT_SLOTS,
-  SubagentSlotPool,
-} from "./tools/index.js";
+import { createMikanTools, createSubagentTool } from "./tools/index.js";
+import { DEFAULT_GLOBAL_SUBAGENT_SLOTS, SubagentSlotPool } from "./harness/subagent-slots.js";
 
 // One process-wide fan-out account: per-conversation queues serialize runs,
 // but each run can fan out up to the per-run cap — without this shared

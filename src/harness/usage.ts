@@ -1,7 +1,13 @@
 import type { Usage } from "@earendil-works/pi-ai";
-import type { SubagentUsage } from "./types.js";
 
-export function createEmptySubagentUsage(): SubagentUsage {
+/**
+ * Harness-wide usage accounting: parent-session assistant turns, compaction
+ * completions, and subagent folds all accumulate through these helpers.
+ * `SubagentUsage` (public surface) is an alias of pi-ai's `Usage`; the
+ * aggregation rules here are not subagent-specific.
+ */
+
+export function createEmptyUsage(): Usage {
   return {
     input: 0,
     output: 0,
@@ -12,7 +18,7 @@ export function createEmptySubagentUsage(): SubagentUsage {
   };
 }
 
-export function addSubagentUsage(total: SubagentUsage, usage: Usage): void {
+export function addUsage(total: Usage, usage: Usage): void {
   total.input += usage.input;
   total.output += usage.output;
   total.cacheRead += usage.cacheRead;
@@ -32,6 +38,6 @@ export function addSubagentUsage(total: SubagentUsage, usage: Usage): void {
   }
 }
 
-export function copySubagentUsage(usage: SubagentUsage): SubagentUsage {
+export function copyUsage(usage: Usage): Usage {
   return { ...usage, cost: { ...usage.cost } };
 }
