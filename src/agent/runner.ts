@@ -24,6 +24,7 @@ import { resolveConversationSettings } from "../config.js";
 import { resolveWorkspaceProjection } from "../workspace-projection/index.js";
 import type { ActorExecutionResolver } from "../execution-resolver.js";
 import * as log from "../log.js";
+import { loadMcpTools } from "../mcp/loader.js";
 import {
   assertSandboxSupportsWorkspacePolicy,
   getUnresolvedSandboxPathContext,
@@ -368,13 +369,29 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
 
   const sessionUuid = extractSessionUuid(contextFile);
   const chatSessionManager = new ChatHistorySync();
+
+  // MCP tools run host-side: credentials live in server config (settings) and
+  // the server process, never in the sandbox or the model's context. Loaded
+  // per-runner so a settings change is picked up on the next runner build.
+  const mcpResult = await loadMcpTools(agentConfig.mcpServers ?? {});
+  for (const mcpError of mcpResult.errors) {
+    log.logWarning(
+      `[${conversationId}] MCP server unavailable: ${mcpError.server}`,
+      mcpError.error,
+    );
+  }
+  if (mcpResult.tools.length > 0) {
+    log.logInfo(`[${conversationId}] Loaded ${mcpResult.tools.length} MCP tool(s)`);
+  }
+  const toolsWithMcp = [...tools, ...mcpResult.tools];
+
   const { session, extensionSkills, extensionRegistry, disposeExtensions } =
     await createConfiguredAgentSession({
       office,
       systemPrompt,
       model,
       thinkingLevel: agentConfig.thinkingLevel,
-      tools,
+      tools: toolsWithMcp,
       sessionStore: sessionManager,
       models: modelRegistry,
       vaultManager,
@@ -662,7 +679,11 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
       try {
         await disposeExtensions();
       } finally {
-        await sessionManager.close();
+        try {
+          await mcpResult.dispose();
+        } finally {
+          await sessionManager.close();
+        }
       }
     },
 

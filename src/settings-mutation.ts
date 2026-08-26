@@ -37,7 +37,12 @@ export type { GlobalRunnerCacheControl, RunnerCacheControl, SettingsApplyResult 
 /** True when a patch touches keys a cached session runner bakes in. */
 function affectsCachedRunner(patch: Partial<AgentConfig>): boolean {
   return (
-    patch.provider !== undefined || patch.model !== undefined || patch.thinkingLevel !== undefined
+    patch.provider !== undefined ||
+    patch.model !== undefined ||
+    patch.thinkingLevel !== undefined ||
+    // MCP tools are connected when the runner is built, so a server change
+    // only takes effect on a fresh runner.
+    patch.mcpServers !== undefined
   );
 }
 

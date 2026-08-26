@@ -17,6 +17,7 @@ export class MissingGlobalSettingsError extends Error {
 
 export type { AgentConfig, AutoReplyConfig, JudgeModelConfig, SandboxSettings } from "./types.js";
 import type { AgentConfig, AutoReplyConfig, JudgeModelConfig, SandboxSettings } from "./types.js";
+import type { McpServerConfig } from "./mcp/types.js";
 import type { Office } from "./office/index.js";
 
 const ONBOARD_SETTINGS: SettingsFileConfig = {
@@ -122,6 +123,24 @@ const SettingsFileSchema = Type.Object({
   ),
   /** Package sources for this scope; see `src/packages`. */
   packages: Type.Optional(Type.Array(Type.String())),
+  /**
+   * MCP servers, keyed by name. Merged per key across scopes: a conversation
+   * entry overrides (or, with `disabled: true`, turns off) the same-name
+   * global entry; other global entries stay available.
+   */
+  mcpServers: Type.Optional(
+    Type.Record(
+      Type.String(),
+      Type.Object({
+        command: Type.Optional(Type.String()),
+        args: Type.Optional(Type.Array(Type.String())),
+        env: Type.Optional(Type.Record(Type.String(), Type.String())),
+        url: Type.Optional(Type.String()),
+        headers: Type.Optional(Type.Record(Type.String(), Type.String())),
+        disabled: Type.Optional(Type.Boolean()),
+      }),
+    ),
+  ),
 });
 
 type SettingsFileConfig = Static<typeof SettingsFileSchema>;
@@ -163,6 +182,7 @@ function normalizeSettingsConfig(config: SettingsFileConfig): Partial<AgentConfi
     ...(config.sandbox !== undefined ? { sandbox: normalizeSandboxSettings(config.sandbox) } : {}),
     ...(config.slack !== undefined ? { slack: config.slack } : {}),
     ...(config.packages !== undefined ? { packages: normalizePackages(config.packages) } : {}),
+    ...(config.mcpServers !== undefined ? { mcpServers: config.mcpServers } : {}),
   };
 }
 
@@ -263,6 +283,7 @@ function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
   const sandbox = fromFile.sandbox;
   const slack = fromFile.slack;
   const packages = fromFile.packages;
+  const mcpServers = fromFile.mcpServers;
 
   return {
     provider,
@@ -272,6 +293,7 @@ function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
     sandbox,
     slack,
     packages,
+    mcpServers,
   };
 }
 
@@ -350,6 +372,9 @@ export function resolveConversationSettings(office: Office): AgentConfig {
   const conversationConfig = normalizeSettingsConfig(
     loadSettingsFile(conversationSettingsPath(office)) ?? {},
   );
+  // MCP servers merge per key: a conversation redefines or disables individual
+  // servers without losing the rest of the global set.
+  const mcpServers = { ...globalConfig.mcpServers, ...conversationConfig.mcpServers };
   // The sandbox group merges at the leaf level (see mergeSandboxSettings):
   // a conversation that only sets sandbox.memory keeps the global sandbox.cpus.
   const sandbox = mergeSandboxSettings(globalConfig.sandbox, conversationConfig.sandbox);
@@ -364,6 +389,7 @@ export function resolveConversationSettings(office: Office): AgentConfig {
     // Report only this conversation's entries; resolveConversationPackages
     // combines the scopes.
     packages: conversationConfig.packages,
+    ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
   });
 }
 
@@ -519,6 +545,8 @@ function compactSettingsConfig(config: SettingsFileConfig): SettingsFileConfig {
     // An empty list is meaningful (the admin removed the last package) and
     // must survive the round trip, so this checks for the key, not for values.
     ...(config.packages !== undefined ? { packages: config.packages } : {}),
+    // Same key-presence rule: an empty map means "all servers removed".
+    ...(config.mcpServers !== undefined ? { mcpServers: config.mcpServers } : {}),
   };
 }
 
@@ -549,6 +577,9 @@ function patchSettingsConfig(
     // The package list is replaced wholesale, not merged: the portal edits it
     // as a list, and a merge would make removal impossible.
     ...(config.packages !== undefined ? { packages: normalizePackages(config.packages) } : {}),
+    // Same wholesale rule for MCP servers: the portal edits the full map, and
+    // a merge would make removing a server impossible.
+    ...(config.mcpServers !== undefined ? { mcpServers: config.mcpServers } : {}),
   };
   return compactSettingsConfig(patched);
 }
@@ -588,6 +619,21 @@ export function updateGlobalSettings(patch: Partial<AgentConfig>): void {
 
 export function updateConversationSettings(office: Office, patch: Partial<AgentConfig>): void {
   updateSettingsFile(conversationSettingsPath(office), patch, {});
+}
+
+/**
+ * The two scope-level MCP server maps, unmerged: the portal edits each scope's
+ * own file, so it needs the raw per-scope values, not the effective merge
+ * (`resolveConversationSettings` owns that).
+ */
+export function loadScopeMcpServers(office: Office): {
+  global: Record<string, McpServerConfig>;
+  conversation: Record<string, McpServerConfig>;
+} {
+  return {
+    global: loadRawGlobalSettings().mcpServers ?? {},
+    conversation: loadSettingsFile(conversationSettingsPath(office))?.mcpServers ?? {},
+  };
 }
 
 /** An explicit office door-policy selection; `layout` only exists behind a trusted door. */

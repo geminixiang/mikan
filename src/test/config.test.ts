@@ -249,6 +249,31 @@ describe("loadGlobalSettings", () => {
     expect(config.sandbox?.boost?.memory).toBe("8g");
   });
 
+  test("mcp servers merge per key: conversation overrides or disables one, keeps the rest", () => {
+    createGlobalSettingsFile(stateDir);
+    updateGlobalSettings({
+      mcpServers: {
+        github: { command: "npx", args: ["-y", "server-github"], env: { TOKEN: "t" } },
+        docs: { url: "https://docs.example/mcp" },
+      },
+    });
+    const conversation = office();
+    updateConversationSettings(conversation, {
+      mcpServers: {
+        github: { command: "npx", args: ["-y", "server-github"], disabled: true },
+        local: { command: "./bin/local-mcp" },
+      },
+    });
+
+    const config = resolveConversationSettings(conversation);
+    // Conversation entry replaces the same-name global entry wholesale…
+    expect(config.mcpServers?.github?.disabled).toBe(true);
+    expect(config.mcpServers?.github?.env).toBeUndefined();
+    // …other global servers survive, and conversation-only ones are added.
+    expect(config.mcpServers?.docs?.url).toBe("https://docs.example/mcp");
+    expect(config.mcpServers?.local?.command).toBe("./bin/local-mcp");
+  });
+
   test("conversation slack config overrides global reply mode", () => {
     updateGlobalSettings({ slack: { replyMode: "top-level" } });
     const conversation = office();

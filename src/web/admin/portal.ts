@@ -16,12 +16,14 @@ import {
   loadConversationAutoReplyConfig,
   loadConversationWorkspaceOverride,
   loadGlobalSettings,
+  loadScopeMcpServers,
   resolveConversationSettings,
   saveConversationAutoReplyConfig,
   type AgentConfig,
   type SandboxSettings,
   type WorkspacePolicyChoice,
 } from "../../config.js";
+import type { McpServerConfig } from "../../mcp/types.js";
 import {
   applyConversationSettings,
   applyConversationWorkspacePolicy,
@@ -158,6 +160,10 @@ async function routeApiRequest(
       serveExtensionSecretsList(res, url, services, token);
       return;
     }
+    if (url.pathname === "/admin/api/mcp-servers") {
+      serveMcpServersList(res, url, services, token);
+      return;
+    }
     if (url.pathname === "/admin/api/events") {
       await serveEventsList(res, services);
       return;
@@ -214,6 +220,10 @@ async function routeApiRequest(
   }
   if (url.pathname === "/admin/api/conversations/events/delete") {
     await serveConversationEventDelete(res, body, services, token);
+    return;
+  }
+  if (url.pathname === "/admin/api/mcp-servers/mutate") {
+    serveMcpServerMutation(res, body, services, token);
     return;
   }
   if (url.pathname === "/admin/api/packages/mutate") {
@@ -1572,6 +1582,164 @@ function servePackageMutation(
   }
 }
 
+/**
+ * List MCP servers for both scopes, with env/header VALUES redacted to key
+ * names: they carry API keys, and this response renders in a browser. The
+ * panel edits full entries but only ever needs to show which keys exist.
+ */
+function serveMcpServersList(
+  res: ServerResponse,
+  url: URL,
+  services: AdminServices,
+  token: AdminToken,
+): void {
+  const scope = resolveConversationFromQuery(url, token);
+  if (scope.error) {
+    jsonRes(res, 403, { error: scope.error });
+    return;
+  }
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
+  const servers = loadScopeMcpServers(workspace.office(scope.address));
+  jsonRes(res, 200, {
+    conversationId: scope.conversationId,
+    global: redactMcpServers(servers.global),
+    conversation: redactMcpServers(servers.conversation),
+  });
+}
+
+function redactMcpServers(map: Record<string, McpServerConfig>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(map).map(([name, config]) => [
+      name,
+      {
+        ...(config.command !== undefined ? { command: config.command } : {}),
+        ...(config.args !== undefined ? { args: config.args } : {}),
+        ...(config.url !== undefined ? { url: config.url } : {}),
+        ...(config.disabled !== undefined ? { disabled: config.disabled } : {}),
+        envKeys: Object.keys(config.env ?? {}),
+        headerKeys: Object.keys(config.headers ?? {}),
+      },
+    ]),
+  );
+}
+
+const MCP_SERVER_NAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
+
+function mcpStringMap(value: unknown): Record<string, string> | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (typeof v === "string" && k.trim()) out[k.trim()] = v;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function parseMcpServerEntry(raw: unknown): { config?: McpServerConfig; error?: string } {
+  if (typeof raw !== "object" || raw === null) return { error: "server entry must be an object" };
+  const entry = raw as Record<string, unknown>;
+  const command = typeof entry.command === "string" ? entry.command.trim() : "";
+  const serverUrl = typeof entry.url === "string" ? entry.url.trim() : "";
+  if (!command && !serverUrl) return { error: "set either command (stdio) or url (HTTP)" };
+  if (command && serverUrl) return { error: "set only one of command / url" };
+  if (serverUrl && !URL.canParse(serverUrl)) {
+    return { error: "url is not a valid URL" };
+  }
+  const args = Array.isArray(entry.args)
+    ? entry.args.filter((a): a is string => typeof a === "string")
+    : undefined;
+  const env = mcpStringMap(entry.env);
+  const headers = mcpStringMap(entry.headers);
+  return {
+    config: {
+      ...(command ? { command, ...(args && args.length > 0 ? { args } : {}) } : {}),
+      ...(serverUrl ? { url: serverUrl } : {}),
+      ...(env ? { env } : {}),
+      ...(headers ? { headers } : {}),
+      ...(entry.disabled === true ? { disabled: true } : {}),
+    },
+  };
+}
+
+/**
+ * Set / remove / toggle one MCP server in one scope. Reads the scope's raw
+ * map, applies the change, and writes the full map back (wholesale, like
+ * packages — merge would make removal impossible). Runner caches refresh via
+ * applyGlobalSettings/applyConversationSettings.
+ */
+function serveMcpServerMutation(
+  res: ServerResponse,
+  body: Record<string, unknown>,
+  services: AdminServices,
+  token: AdminToken,
+): void {
+  const action = body.action;
+  if (action !== "set" && action !== "remove" && action !== "toggle") {
+    jsonRes(res, 400, { error: "action must be 'set', 'remove', or 'toggle'" });
+    return;
+  }
+  const mutationScope = body.scope === "global" ? "global" : "conversation";
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  if (!MCP_SERVER_NAME_PATTERN.test(name)) {
+    jsonRes(res, 400, {
+      error: "invalid server name (letters, digits, '_' or '-', starting with a letter)",
+    });
+    return;
+  }
+  const scope = resolveTargetConversation(body, token);
+  if (scope.error) {
+    jsonRes(res, 403, { error: scope.error });
+    return;
+  }
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
+  const office = workspace.office(scope.address);
+  const maps = loadScopeMcpServers(office);
+  const current = mutationScope === "global" ? maps.global : maps.conversation;
+
+  const next: Record<string, McpServerConfig> = { ...current };
+  if (action === "set") {
+    const parsed = parseMcpServerEntry(body.server);
+    if (!parsed.config) {
+      jsonRes(res, 400, { error: parsed.error ?? "invalid server entry" });
+      return;
+    }
+    // Env/headers omitted in the payload keep their existing values, so the
+    // panel can edit command/args without re-entering credentials.
+    const existing = current[name];
+    next[name] = {
+      ...parsed.config,
+      ...(parsed.config.env === undefined && existing?.env ? { env: existing.env } : {}),
+      ...(parsed.config.headers === undefined && existing?.headers
+        ? { headers: existing.headers }
+        : {}),
+    };
+  } else if (action === "remove") {
+    if (!(name in next)) {
+      jsonRes(res, 404, { error: "Not declared here." });
+      return;
+    }
+    delete next[name];
+  } else {
+    if (!(name in next)) {
+      jsonRes(res, 404, { error: "Not declared here." });
+      return;
+    }
+    const entry = next[name]!;
+    next[name] = entry.disabled ? { ...entry, disabled: undefined } : { ...entry, disabled: true };
+  }
+
+  const result =
+    mutationScope === "global"
+      ? applyGlobalSettings(services.runtime, { mcpServers: next })
+      : applyConversationSettings(services.runtime, office, { mcpServers: next });
+  if (!result.ok) {
+    jsonRes(res, 409, { error: "Conversation is busy; try again shortly." });
+    return;
+  }
+  jsonRes(res, 200, { ok: true });
+}
+
 function serveSkillsList(
   res: ServerResponse,
   url: URL,
@@ -1853,6 +2021,18 @@ function renderAdminPage(token: AdminToken): string {
         <div id="pkg-conv-content"><div class="loading-msg">Loading…</div></div>
       </section>
 
+      <section class="card sect" id="sect-mcp" data-section="mcp">
+        <header class="sect-head">
+          <div>
+            <p class="eyebrow">MCP Servers</p>
+            <h2 class="card-title">此對話的 MCP servers</h2>
+          </div>
+          <button class="refresh-btn" onclick="loadMcpServers()">↻</button>
+        </header>
+        <div id="mcp-conv-msg" class="pkg-msg" style="display:none"></div>
+        <div id="mcp-conv-content"><div class="loading-msg">Loading…</div></div>
+      </section>
+
       <section class="card sect" id="sect-vault" data-section="vault">
         <header class="sect-head">
           <div>
@@ -1947,6 +2127,18 @@ function renderAdminPage(token: AdminToken): string {
         </div>
         <div id="pkg-global-msg" class="pkg-msg" style="display:none"></div>
         <div id="pkg-global-content"><div class="loading-msg">Loading…</div></div>
+      </section>
+
+      <section class="card sect">
+        <header class="sect-head">
+          <div>
+            <p class="eyebrow">Global MCP Servers</p>
+            <h2 class="card-title">所有對話都可用的 MCP servers</h2>
+          </div>
+          <button class="refresh-btn" onclick="loadMcpServers()">↻</button>
+        </header>
+        <div id="mcp-global-msg" class="pkg-msg" style="display:none"></div>
+        <div id="mcp-global-content"><div class="loading-msg">Loading…</div></div>
       </section>
 
       <section class="card sect">
@@ -2130,6 +2322,7 @@ function renderAdminPage(token: AdminToken): string {
       loadWorkspace();
       loadSkills();
       loadPackages();
+      loadMcpServers();
       loadConversationEvents();
       openLogin(true);
       openSessionView(true);
@@ -2439,6 +2632,109 @@ function renderAdminPage(token: AdminToken): string {
       void mutatePackage(btn.dataset.pkgScope, btn.dataset.pkgAction, btn.dataset.pkgSource);
     });
 
+    // ── MCP servers ───────────────────────────────────────────────────────────────────────
+
+    function mcpMessage(scope, text, kind) {
+      const el = document.getElementById(scope === 'global' ? 'mcp-global-msg' : 'mcp-conv-msg');
+      if (!el) return;
+      el.style.display = 'block';
+      el.className = 'pkg-msg pkg-msg-' + kind;
+      el.textContent = text;
+    }
+
+    function renderMcpServer(scope, name, server) {
+      const transport = server.command
+        ? 'stdio: ' + server.command + (server.args && server.args.length ? ' ' + server.args.join(' ') : '')
+        : 'http: ' + (server.url || '');
+      const keys = [];
+      if (server.envKeys && server.envKeys.length) keys.push('env: ' + server.envKeys.join(', '));
+      if (server.headerKeys && server.headerKeys.length) keys.push('headers: ' + server.headerKeys.join(', '));
+      return '<div class="pkg-row">' +
+        '<div class="pkg-row-main"><span class="pkg-source">' + escHtml(name) + '</span>' +
+        (server.disabled ? '<span class="pkg-badge pkg-badge-warn">disabled</span>' : '<span class="pkg-badge pkg-badge-ok">enabled</span>') +
+        '</div>' +
+        '<div class="skill-desc">' + escHtml(transport) + (keys.length ? ' · ' + escHtml(keys.join(' · ')) : '') + '</div>' +
+        '<div class="pkg-actions">' +
+          '<button class="pkg-btn" data-mcp-action="toggle" data-mcp-scope="' + scope + '" data-mcp-name="' + escAttr(name) + '">' + (server.disabled ? 'Enable' : 'Disable') + '</button>' +
+          '<button class="pkg-btn pkg-btn-danger" data-mcp-action="remove" data-mcp-scope="' + scope + '" data-mcp-name="' + escAttr(name) + '">Remove</button>' +
+        '</div>' +
+      '</div>';
+    }
+
+    function renderMcpScope(el, scope, servers) {
+      const rows = Object.entries(servers).map(([name, server]) => renderMcpServer(scope, name, server)).join('');
+      el.innerHTML =
+        '<div class="pkg-list">' + (rows || '<div class="pkg-provides-empty">No MCP servers</div>') + '</div>' +
+        '<div class="pkg-add" style="margin-top:10px">' +
+          '<input id="mcp-' + scope + '-name" class="pkg-input pkg-input-ref" type="text" spellcheck="false" placeholder="name" />' +
+          '<input id="mcp-' + scope + '-target" class="pkg-input" type="text" spellcheck="false" placeholder="npx -y @modelcontextprotocol/server-github 或 https://host/mcp" />' +
+          '<input id="mcp-' + scope + '-env" class="pkg-input" type="text" spellcheck="false" placeholder="KEY=value KEY2=value2（可留空；HTTP 則為 header）" />' +
+          '<button class="primary-action-btn" data-mcp-action="add" data-mcp-scope="' + scope + '">Add</button>' +
+        '</div>';
+    }
+
+    async function loadMcpServers() {
+      const convEl = document.getElementById('mcp-conv-content');
+      const globalEl = document.getElementById('mcp-global-content');
+      if (convEl) convEl.innerHTML = '<div class="loading-msg">Loading…</div>';
+      if (globalEl) globalEl.innerHTML = '<div class="loading-msg">Loading…</div>';
+      try {
+        const data = await apiGet('/admin/api/mcp-servers?' + scopeQuery());
+        if (convEl) renderMcpScope(convEl, 'conversation', data.conversation);
+        if (globalEl) renderMcpScope(globalEl, 'global', data.global);
+      } catch (err) {
+        if (convEl) convEl.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
+        if (globalEl) globalEl.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
+      }
+    }
+
+    async function mutateMcpServer(scope, action, name, server) {
+      mcpMessage(scope, '儲存中…', 'busy');
+      try {
+        await apiPost('/admin/api/mcp-servers/mutate', {
+          action: action,
+          scope: scope,
+          name: name,
+          ...(server ? { server: server } : {}),
+          ...scopeBody(),
+        });
+        mcpMessage(scope, '完成。新設定在下一次回應生效。', 'ok');
+        await loadMcpServers();
+      } catch (err) {
+        mcpMessage(scope, err.message, 'err');
+      }
+    }
+
+    function addMcpServer(scope) {
+      const name = document.getElementById('mcp-' + scope + '-name').value.trim();
+      const target = document.getElementById('mcp-' + scope + '-target').value.trim();
+      const envRaw = document.getElementById('mcp-' + scope + '-env').value.trim();
+      if (!name || !target) { mcpMessage(scope, '請填入 name 與 command/URL', 'err'); return; }
+      const server = {};
+      const pairs = {};
+      for (const token of envRaw ? envRaw.split(/\\s+/) : []) {
+        const eq = token.indexOf('=');
+        if (eq > 0) pairs[token.slice(0, eq)] = token.slice(eq + 1);
+      }
+      if (/^https?:[/][/]/.test(target)) {
+        server.url = target;
+        if (Object.keys(pairs).length) server.headers = pairs;
+      } else {
+        const parts = target.split(/\\s+/);
+        server.command = parts[0];
+        if (parts.length > 1) server.args = parts.slice(1);
+        if (Object.keys(pairs).length) server.env = pairs;
+      }
+      void mutateMcpServer(scope, 'set', name, server);
+    }
+
+    document.addEventListener('click', (event) => {
+      const btn = event.target.closest('[data-mcp-action]');
+      if (!btn) return;
+      if (btn.dataset.mcpAction === 'add') { addMcpServer(btn.dataset.mcpScope); return; }
+      void mutateMcpServer(btn.dataset.mcpScope, btn.dataset.mcpAction, btn.dataset.mcpName);
+    });
+
     // ── Extension secrets ───────────────────────────────────────────────────────
 
     function extSecretsMessage(text, kind) {
@@ -2692,6 +2988,7 @@ function renderAdminPage(token: AdminToken): string {
       loadGlobalSkills();
       loadEvents();
       loadExtensionSecrets();
+      loadMcpServers();
     }
 
     async function loadAllConversations() {
@@ -3048,6 +3345,7 @@ function renderAdminPage(token: AdminToken): string {
       loadWorkspace();
       loadSkills();
       loadPackages();
+      loadMcpServers();
       loadConversationEvents();
     });
   `;

@@ -15,6 +15,7 @@ import type {
 import type { SubagentRunStatus } from "./harness/types.js";
 import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import type { MikanModels } from "./harness/models.js";
+import type { McpServerConfig } from "./mcp/types.js";
 import type { Office } from "./office/types.js";
 import type { DockerContainerManager } from "./provisioner.js";
 import type { SandboxConfig } from "./sandbox/types.js";
@@ -557,6 +558,12 @@ export interface AgentConfig {
    * `resolveConversationPackages`'s job.
    */
   packages?: string[];
+  /**
+   * MCP servers available to this scope, keyed by server name. Global and
+   * conversation entries merge per key (conversation wins); an entry with
+   * `disabled: true` turns off the inherited server. See `src/mcp`.
+   */
+  mcpServers?: Record<string, McpServerConfig>;
 }
 
 /**

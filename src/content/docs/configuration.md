@@ -98,6 +98,30 @@ Door policy and layout resolve together. `isolated` always means the `conversati
 
 Legacy `sandbox.image.workspaceMount` remains readable for migration: `private` means `trusted` + `shared-support`, while `full` means `trusted` + `full`. Fresh installs write the canonical backend-neutral settings and default to `isolated`.
 
+## MCP servers
+
+`mcpServers` connects [Model Context Protocol](https://modelcontextprotocol.io) servers and exposes their tools to the agent as `mcp__<server>__<tool>`. Servers run on the host: credentials placed in `env` (stdio) or `headers` (HTTP) stay in the server process and are never visible to the model or the sandbox.
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_..." }
+    },
+    "internal-docs": {
+      "url": "https://mcp.example.com/mcp",
+      "headers": { "Authorization": "Bearer ..." }
+    }
+  }
+}
+```
+
+Each entry uses exactly one transport: `command` (+ optional `args`, `env`) spawns a stdio server; `url` (+ optional `headers`) connects over streamable HTTP. `disabled: true` turns an entry off without deleting it.
+
+Global and per-conversation `mcpServers` merge per server name: a conversation entry overrides (or disables) the same-name global entry and other global entries stay available. The admin portal has panels for both scopes; changes take effect on the next response. An unreachable server logs a warning and the rest still load.
+
 ## Platform credentials
 
 At least one complete platform credential set is required for normal bot mode:
