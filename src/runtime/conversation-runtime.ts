@@ -201,6 +201,9 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       sessionKey,
       conversationKind: message.conversationKind,
     });
+    // Scope resolution only materializes; the Session Dream below reads the
+    // session, so bring it up to date with the log first.
+    await state.runner.syncChatHistory(message.id);
     if (
       state.running ||
       (state.runSettlement && this.sessionDreamSettlements.has(state.runSettlement))
@@ -330,6 +333,9 @@ class ConversationRuntimeImpl implements ConversationRuntime {
           conversationKind: message.conversationKind,
           currentMessageId: message.id,
         });
+        // The rotation Dream summarizes the session; sync the log into it
+        // first (scope resolution only materializes).
+        await state.runner.syncChatHistory(message.id);
         const dreamSettlement = this.startSessionDream(
           state,
           async () => {

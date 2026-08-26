@@ -215,20 +215,13 @@ export class ChatHistorySync {
     cwd: string;
     currentMessageId?: string;
   }): Promise<string> {
-    const records = readConversationLog(options.conversationDir);
+    // Materialization only: an existing session is returned as-is. The
+    // runtime performs the one incremental log sync per event through the
+    // runner, after the writer is created — syncing here too made every
+    // cache-miss event run the pipeline twice.
     const existing = tryResolveCurrentSession(options.sessionDir);
-    if (existing && !isPlatformHistorySession(existing)) {
-      await syncSessionFromLog(
-        existing,
-        options.cwd,
-        selectExistingSessionSyncMessages(records, {
-          sessionKey: null,
-          excludeMessageId: options.currentMessageId,
-        }),
-        this.historyWindow(),
-      );
-      return existing;
-    }
+    if (existing && !isPlatformHistorySession(existing)) return existing;
+    const records = readConversationLog(options.conversationDir);
 
     const sessionFile = createManagedSessionFile(options.sessionDir, options.cwd);
     const bootstrapRecords = selectRecentTopLevelMessages(records, {
@@ -266,15 +259,7 @@ export class ChatHistorySync {
     const threadRootMessage = buildThreadRootSeed(findLogRecordById(records, threadId)?.message);
     const existing = tryResolveThreadSession(threadFile);
     if (existing) {
-      await syncSessionFromLog(
-        existing,
-        options.cwd,
-        selectExistingSessionSyncMessages(records, {
-          sessionKey: options.sessionKey,
-          excludeMessageId: options.currentMessageId,
-        }),
-        this.historyWindow(),
-      );
+      // Materialization only; the runtime owns the per-event incremental sync.
       return { sessionDir: options.sessionDir, contextFile: existing, threadRootMessage };
     }
 
@@ -477,21 +462,6 @@ interface HistoryWindow {
   recentDays: number;
   maxMessages: number;
   now: Date;
-}
-
-async function syncSessionFromLog(
-  sessionFile: string,
-  cwd: string,
-  records: LogRecord[],
-  historyWindow: HistoryWindow,
-): Promise<ChatSyncReport> {
-  if (records.length === 0) return { appended: 0 };
-  const sessionManager = await openManagedSession(sessionFile, cwd);
-  try {
-    return await syncSessionManagerFromLog(sessionManager, records, historyWindow);
-  } finally {
-    await sessionManager.close();
-  }
 }
 
 async function syncSessionManagerFromLog(

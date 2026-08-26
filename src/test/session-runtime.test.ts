@@ -558,6 +558,7 @@ describe("ConversationRuntime lifecycle", () => {
       abort: vi.fn(),
       dreamSessionMemory: vi.fn().mockResolvedValue({ stopReason: "stop" }),
       dispose: vi.fn().mockResolvedValue(undefined),
+      syncChatHistory: vi.fn(),
     } as unknown as PiAgentWrapper;
     const state: ConversationRuntimeState = {
       address: testAddress,
@@ -640,6 +641,7 @@ describe("ConversationRuntime lifecycle", () => {
       run: vi.fn().mockResolvedValue({ stopReason: "stop" }),
       abort: vi.fn(),
       dispose: vi.fn().mockResolvedValue(undefined),
+      syncChatHistory: vi.fn(),
       getCurrentStep: vi.fn(),
     } as unknown as PiAgentWrapper;
     const state: ConversationRuntimeState = {
@@ -1000,6 +1002,7 @@ describe("ConversationRuntime lifecycle", () => {
         errorMessage: "provider unavailable",
       }),
       dispose: vi.fn().mockResolvedValue(undefined),
+      syncChatHistory: vi.fn(),
     } as unknown as PiAgentWrapper;
     const state: ConversationRuntimeState = {
       address: testAddress,
@@ -1041,8 +1044,23 @@ describe("ConversationRuntime lifecycle", () => {
     const sync = new ChatHistorySync();
     await sync.resetSession({ conversationDir, sessionKey: "C123" });
 
+    // Scope resolution only materializes; run the runtime's incremental
+    // sync explicitly, as ConversationRuntime does per event.
+    const syncOnce = async (file: string) => {
+      const session = await openManagedSession(file, conversationDir);
+      try {
+        await sync.syncSessionManager({
+          conversationDir,
+          sessionKey: "C123",
+          sessionManager: session,
+        });
+      } finally {
+        await session.close();
+      }
+    };
+
     const freshFile = resolveChannelSessionFile(conversationDir);
-    await sync.resolveSessionScope({ conversationDir, sessionKey: "C123" });
+    await syncOnce(freshFile);
     expect(readFileSync(freshFile, "utf-8")).not.toContain('"text":"old"');
 
     writeFileSync(
@@ -1050,7 +1068,7 @@ describe("ConversationRuntime lifecycle", () => {
       JSON.stringify({ date: new Date().toISOString(), ts: "3", user: "U1", text: "new" }) + "\n",
       { flag: "a" },
     );
-    await sync.resolveSessionScope({ conversationDir, sessionKey: "C123" });
+    await syncOnce(freshFile);
     expect(readFileSync(freshFile, "utf-8")).toContain("new");
   });
 
