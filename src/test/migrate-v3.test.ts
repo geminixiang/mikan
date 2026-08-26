@@ -154,6 +154,28 @@ describe("migrateSessionFile", () => {
     expect(migratedHeader?.metadata?.source).toEqual({ kind: "platform-history", recentDays: 14 });
   });
 
+  test("collapses crash-duplicated lines the way the v3 reader did", async () => {
+    // Seen in production: a retried append duplicated the header+entry pair.
+    // The v3 runtime read entries into a Map (last write wins per id), so
+    // duplicates were invisible; v4 rejects duplicate mutation ids, so the
+    // migration must collapse them.
+    const file = join(dir, "session.jsonl");
+    writeJsonl(file, [
+      header,
+      v3Message("a1", null, "hello"),
+      header,
+      v3Message("a1", null, "hello"),
+      v3Message("b2", "a1", "world", "assistant"),
+    ]);
+
+    const result = await migrateSessionFile(file);
+    expect(result.status).toBe("migrated");
+
+    const store = await SessionStore.inspect(file);
+    const context = await store.buildSessionContext();
+    expect(context.messages.map(textOf)).toEqual(["hello", "world"]);
+  });
+
   test("is idempotent: a migrated file reports already-v4", async () => {
     const file = join(dir, "idempotent.jsonl");
     writeJsonl(file, [header, v3Message("a", null, "A")]);

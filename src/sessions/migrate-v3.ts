@@ -121,12 +121,20 @@ function readV3SessionFile(filePath: string): V3SessionFile {
   if (!header || header.type !== "session" || typeof header.id !== "string") {
     throw new Error(`Not a v3 session file: ${filePath}`);
   }
-  const entries = records
-    .slice(1)
-    .filter(
-      (record): record is Record<string, unknown> & { id: string } =>
-        typeof record.type === "string" && typeof record.id === "string",
-    ) as unknown as V3Entry[];
+  // Crash-era v3 files can contain duplicated lines (a retried append wrote
+  // the header+entry pair twice). The v3 runtime read entries into a Map, so
+  // duplicates were silently collapsed; v4 rejects duplicate mutation ids.
+  // Reproduce the v3 semantics: keep one entry per id, drop stray repeated
+  // session headers.
+  const seen = new Set<string>();
+  const entries: V3Entry[] = [];
+  for (const record of records.slice(1)) {
+    if (typeof record.type !== "string" || typeof record.id !== "string") continue;
+    if (record.type === "session") continue;
+    if (seen.has(record.id)) continue;
+    seen.add(record.id);
+    entries.push(record as unknown as V3Entry);
+  }
   return { header: header as unknown as V3SessionHeader, entries };
 }
 
