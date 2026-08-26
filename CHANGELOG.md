@@ -9,6 +9,32 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.44]
+
+### Added
+
+- Connect MCP (Model Context Protocol) servers via `mcpServers` settings and expose their tools to the agent as `mcp__<server>__<tool>`; stdio and streamable-HTTP transports, per-server failures isolated, credentials held host-side in server config out of the model's reach.
+- Manage MCP servers from the admin portal: per-conversation and global panels with add, enable/disable, and remove; credential values are redacted to key names in the UI.
+- Migrate sessions to pi's v4 format with a `mikan sessions migrate` CLI; pi upgraded to 0.84.3.
+- Extensions can declare required host capabilities in `package.json` (`mikan.requires`); activation checks them before importing the module and `mikan ext validate` reports them.
+
+### Changed
+
+- Split the agent module into five authority modules (catalog, prompt, runner, subagent-runner, types); the runtime now owns session rotation decisions and per-event chat-history sync.
+- Derive all platform command registration and routing from the single command manifest.
+- Adopt pi-ai's retryable-error classifier instead of a local copy.
+- Conversation runtimes are keyed by office key, fixing cross-conversation runner reuse after ID changes.
+
+### Fixed
+
+- Session files enforce single-writer ownership, surviving inode reuse and stale writer claims.
+- Failed extension activations roll back cleanly; duplicate tool names are rejected.
+- Slack slash commands in threads carry the thread session key instead of falling back to the top-level session.
+- GitHub first-contact stop no longer creates participation state.
+- Subagent deadlines are enforced by a single wall-clock timer; `before_agent_start` hooks run before auth and pre-turn compaction.
+- Sandbox container removal failures no longer clear ownership, preventing orphaned containers.
+- Run outcomes settle from the final message and run state is released on throw.
+
 ## [1.0.0-beta.43]
 
 ### Added
