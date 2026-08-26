@@ -286,25 +286,17 @@ export class MikanModels {
 
   /** Models whose provider auth currently resolves (API key, OAuth, or ambient). */
   async getAvailable(): Promise<Model<Api>[]> {
-    const byProvider = new Map<string, Model<Api>[]>();
-    for (const model of this.models.getModels()) {
-      const group = byProvider.get(model.provider) ?? [];
-      group.push(model);
-      byProvider.set(model.provider, group);
-    }
-
-    const available: Model<Api>[] = [];
-    for (const group of byProvider.values()) {
-      try {
-        const first = group[0];
-        if (first === undefined) continue;
-        const auth = await this.models.getAuth(first);
-        if (auth) available.push(...group);
-      } catch {
-        // Auth resolution failure (e.g. expired OAuth) — treat as unavailable.
-      }
-    }
-    return available;
+    const available = await Promise.all(
+      this.models.getProviders().map(async (provider) => {
+        try {
+          return await this.models.getAvailable(provider.id);
+        } catch {
+          // One provider's auth failure must not hide models from other providers.
+          return [];
+        }
+      }),
+    );
+    return available.flat();
   }
 
   /** Resolve request auth for a model. Undefined when unconfigured. */

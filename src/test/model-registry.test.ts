@@ -1,8 +1,9 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { MutableModels } from "@earendil-works/pi-ai";
 import { MikanModels } from "../harness/index.js";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 function withTempRegistry(config: unknown): MikanModels {
   const dir = mkdtempSync(join(tmpdir(), "mikan-model-registry-"));
@@ -97,5 +98,38 @@ describe("MikanModels.resolve", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("MikanModels.getAvailable", () => {
+  test("delegates provider filtering and isolates one provider failure", async () => {
+    const registry = withTempRegistry({
+      providers: {
+        available: {
+          api: "openai-completions",
+          apiKey: "available-key",
+          models: [{ id: "available-model", name: "Available", input: ["text"] }],
+        },
+        broken: {
+          api: "openai-completions",
+          apiKey: "broken-key",
+          models: [{ id: "broken-model", name: "Broken", input: ["text"] }],
+        },
+      },
+    });
+    const models = (registry as unknown as { models: MutableModels }).models;
+    const availableModel = registry.resolve("available", "available-model");
+    const getAvailable = vi.spyOn(models, "getAvailable").mockImplementation((providerId) => {
+      if (providerId === "broken") return Promise.reject(new Error("auth check failed"));
+      if (providerId === "available") return Promise.resolve([availableModel]);
+      return Promise.resolve([]);
+    });
+
+    const available = await registry.getAvailable();
+
+    expect(available).toContain(availableModel);
+    expect(available.some((model) => model.provider === "broken")).toBe(false);
+    expect(getAvailable).toHaveBeenCalledWith("available");
+    expect(getAvailable).toHaveBeenCalledWith("broken");
   });
 });

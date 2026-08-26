@@ -11,7 +11,6 @@ export type {
   ConversationContext,
   ConversationEvent,
   MessagingEventHandler,
-  ChatAdapter,
   ConversationMessage,
   ConversationResponder,
   ChatToolResult,

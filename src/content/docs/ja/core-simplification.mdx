@@ -148,7 +148,7 @@ default の CLI は安定した backends を登録します。Gondolin、Firecra
 1. `MessagingBot` から message、reaction、upload、private-message の各 port を抽出する。
 2. 既存の bots を、その SDK コードを変えずに適応させる。
 3. bot 全体ではなく、狭い capabilities を commands、extensions、events、admin に渡す。
-4. 独立した呼び出し側が残っていなければ `ChatAdapter` を廃止する。
+4. 未使用になった浅い `ChatAdapter` インターフェースを廃止する。（完了）
 
 ### Phase 4 — runtime 構築と commands を簡素化する
 

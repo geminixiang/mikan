@@ -109,7 +109,7 @@ runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診�
 
 `MessagingInfo.trustModel` 具安全敏感性。當 sandbox 拓撲為隔離時，`membership` 允許環境式的 shared-vault 政策。像公開 GitHub 活動這類開放觸發面必須回傳 `open-trigger`。
 
-`ChatAdapter` 是一個較小的、僅含 lifecycle 的介面（`start`、`stop`、`getMessagingInfo`），但 CLI 使用 `MessagingBot`。除非有呼叫端明確要求 `ChatAdapter`，否則不要兩者都實作。
+`MessagingBot` 是唯一面向 host 的 adapter 介面；lifecycle 與 messaging capability 不再拆成另一個淺介面。
 
 ## 3. Runtime orchestration 介面
 

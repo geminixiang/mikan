@@ -148,7 +148,7 @@ The host-facing platform port. It combines:
 
 `MessagingInfo.trustModel` is security-sensitive. `membership` permits the ambient shared-vault policy when the sandbox topology is isolated. An open trigger surface such as public GitHub activity must return `open-trigger`.
 
-`ChatAdapter` is a smaller lifecycle-only interface (`start`, `stop`, `getMessagingInfo`) but the CLI uses `MessagingBot`. Do not implement both unless a caller explicitly requires `ChatAdapter`.
+`MessagingBot` is the single host-facing adapter interface; lifecycle and messaging capabilities are not split across a second shallow interface.
 
 ## 3. Runtime orchestration interface
 

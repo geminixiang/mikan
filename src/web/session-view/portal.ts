@@ -24,7 +24,7 @@ import {
   type SessionViewItem,
   type SessionViewRelation,
 } from "./service.js";
-import type { InMemorySessionViewTokenStore } from "./store.js";
+import type { InMemorySessionViewTokenStore, SessionViewToken } from "./store.js";
 
 const markdown = new MarkdownIt({
   html: false,
@@ -108,61 +108,21 @@ export async function handleSessionViewRequest(
     return false;
   }
 
-  const token = url.searchParams.get("token")?.trim();
-  if (!token || !sessionViewTokenStore) {
-    res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(
-      renderStatusPage("Session unavailable", "This session link is invalid or has expired."),
-    );
+  const target = await resolveSessionRequestTarget(
+    sessionViewTokenStore,
+    url.searchParams.get("token"),
+    url.searchParams.get("session"),
+  );
+  if (!target.ok) {
+    res.writeHead(target.status, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(renderStatusPage("Session unavailable", target.message));
     return true;
   }
-
-  const entry = sessionViewTokenStore.peek(token);
-  if (!entry) {
-    res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(
-      renderStatusPage("Session unavailable", "This session link is invalid or has expired."),
-    );
-    return true;
-  }
-
-  const requestedSession = url.searchParams.get("session");
-  let targetSessionFile: string | null;
-  try {
-    targetSessionFile = await resolveRequestedSessionFile(entry.sessionFile, requestedSession);
-  } catch (error) {
-    log.logWarning(
-      `[${entry.conversationId}] Corrupted session file referenced for ${entry.sessionFile}`,
-      error instanceof Error ? error.message : String(error),
-    );
-    reportUserFacingError(error, {
-      domain: "session_view",
-      surface: "session_view",
-      operation: "resolve_requested_session",
-      severity: "error",
-      platform: entry.platform,
-      context: {
-        conversationId: entry.conversationId,
-        sessionKey: entry.sessionKey,
-        sessionFile: basename(entry.sessionFile),
-        requestedSession,
-      },
-    });
-    res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(
-      renderStatusPage("Session unavailable", "The selected session file appears to be corrupted."),
-    );
-    return true;
-  }
-  if (!targetSessionFile) {
-    res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(renderStatusPage("Session unavailable", "The selected session link is invalid."));
-    return true;
-  }
+  const { activeSessionKey, entry, targetSessionFile } = target;
 
   try {
     const model = await loadSessionViewModel(targetSessionFile);
-    const displayedSessionKey = resolveDisplayedSessionKey(entry, targetSessionFile);
+    const displayedSessionKey = activeSessionKey;
     const isRunning =
       interactive?.handler.isRunning(
         createOfficeAddress(entry.platform, entry.conversationId),
@@ -204,6 +164,73 @@ export async function handleSessionViewRequest(
   }
 
   return true;
+}
+
+type SessionRequestTarget =
+  | {
+      ok: true;
+      entry: SessionViewToken;
+      targetSessionFile: string;
+      activeSessionKey: string;
+    }
+  | {
+      ok: false;
+      status: 400 | 500 | 503;
+      message: string;
+    };
+
+/**
+ * Token/session selection is shared by HTML, SSE, and message transports.
+ * Invalid or expired client capabilities are 400; missing server wiring is
+ * 503; a selected corrupt session is a server-side storage failure and is 500.
+ */
+async function resolveSessionRequestTarget(
+  sessionViewTokenStore: InMemorySessionViewTokenStore | undefined,
+  rawToken: string | null | undefined,
+  requestedSession: string | null | undefined,
+): Promise<SessionRequestTarget> {
+  if (!sessionViewTokenStore) {
+    return { ok: false, status: 503, message: "Session view is not configured." };
+  }
+  const token = rawToken?.trim() ?? "";
+  const entry = token ? sessionViewTokenStore.peek(token) : undefined;
+  if (!entry) {
+    return { ok: false, status: 400, message: "This session link is invalid or has expired." };
+  }
+
+  let targetSessionFile: string | null;
+  try {
+    targetSessionFile = await resolveRequestedSessionFile(entry.sessionFile, requestedSession);
+  } catch (error) {
+    log.logWarning(
+      `[${entry.conversationId}] Corrupted session file referenced for ${entry.sessionFile}`,
+      error instanceof Error ? error.message : String(error),
+    );
+    reportUserFacingError(error, {
+      domain: "session_view",
+      surface: "session_view",
+      operation: "resolve_requested_session",
+      severity: "error",
+      platform: entry.platform,
+      context: {
+        conversationId: entry.conversationId,
+        sessionKey: entry.sessionKey,
+        sessionFile: basename(entry.sessionFile),
+        requestedSession,
+      },
+    });
+    return { ok: false, status: 500, message: "The selected session file is corrupted." };
+  }
+  if (!targetSessionFile) {
+    return { ok: false, status: 400, message: "The selected session is invalid." };
+  }
+
+  return {
+    ok: true,
+    entry,
+    targetSessionFile,
+    activeSessionKey: resolveDisplayedSessionKey(entry, targetSessionFile),
+  };
 }
 
 function resolveDisplayedSessionKey(
@@ -503,48 +530,23 @@ async function handleSessionStreamRequest(
   sessionViewTokenStore?: InMemorySessionViewTokenStore,
   interactive?: SessionViewInteractiveOptions,
 ): Promise<void> {
-  const token = url.searchParams.get("token")?.trim() ?? "";
-  if (!token || !sessionViewTokenStore || !interactive) {
-    res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end("Session stream unavailable");
+  if (!interactive) {
+    res.writeHead(503, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Session stream is not configured.");
     return;
   }
 
-  const entry = sessionViewTokenStore.peek(token);
-  if (!entry) {
-    res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end("Invalid session token");
+  const target = await resolveSessionRequestTarget(
+    sessionViewTokenStore,
+    url.searchParams.get("token"),
+    url.searchParams.get("session"),
+  );
+  if (!target.ok) {
+    res.writeHead(target.status, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end(target.message);
     return;
   }
-
-  const requestedSession = url.searchParams.get("session");
-  let targetSessionFile: string | null;
-  try {
-    targetSessionFile = await resolveRequestedSessionFile(entry.sessionFile, requestedSession);
-  } catch (error) {
-    reportUserFacingError(error, {
-      domain: "session_view",
-      surface: "session_view",
-      operation: "session_stream",
-      severity: "error",
-      platform: entry.platform,
-      context: {
-        conversationId: entry.conversationId,
-        sessionKey: entry.sessionKey,
-        sessionFile: basename(entry.sessionFile),
-        requestedSession,
-      },
-    });
-    res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end("Session stream unavailable");
-    return;
-  }
-  if (!targetSessionFile) {
-    res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end("Invalid session file");
-    return;
-  }
-  const activeSessionKey = resolveDisplayedSessionKey(entry, targetSessionFile);
+  const { activeSessionKey, entry } = target;
   const streamKey = sessionStreamKey({ ...entry, sessionKey: activeSessionKey });
   res.writeHead(200, {
     "Content-Type": "text/event-stream; charset=utf-8",
@@ -580,7 +582,7 @@ async function handleSessionMessageRequest(
   sessionViewTokenStore?: InMemorySessionViewTokenStore,
   interactive?: SessionViewInteractiveOptions,
 ): Promise<void> {
-  if (!sessionViewTokenStore || !interactive) {
+  if (!interactive) {
     json(res, 503, { ok: false, error: "Session chat is not configured." });
     return;
   }
@@ -597,37 +599,12 @@ async function handleSessionMessageRequest(
     return;
   }
 
-  const entry = sessionViewTokenStore.peek(token);
-  if (!entry) {
-    json(res, 400, { ok: false, error: "This session link is invalid or has expired." });
+  const target = await resolveSessionRequestTarget(sessionViewTokenStore, token, requestedSession);
+  if (!target.ok) {
+    json(res, target.status, { ok: false, error: target.message });
     return;
   }
-
-  let targetSessionFile: string | null;
-  try {
-    targetSessionFile = await resolveRequestedSessionFile(entry.sessionFile, requestedSession);
-  } catch (error) {
-    reportUserFacingError(error, {
-      domain: "session_view",
-      surface: "session_view",
-      operation: "session_message",
-      severity: "error",
-      platform: entry.platform,
-      context: {
-        conversationId: entry.conversationId,
-        sessionKey: entry.sessionKey,
-        sessionFile: basename(entry.sessionFile),
-        requestedSession,
-      },
-    });
-    json(res, 500, { ok: false, error: "Session file could not be loaded." });
-    return;
-  }
-  if (!targetSessionFile) {
-    json(res, 400, { ok: false, error: "Invalid session file." });
-    return;
-  }
-  const activeSessionKey = resolveDisplayedSessionKey(entry, targetSessionFile);
+  const { activeSessionKey, entry, targetSessionFile } = target;
   if (requestedSessionKey && requestedSessionKey !== activeSessionKey) {
     json(res, 400, { ok: false, error: "Session target mismatch." });
     return;
@@ -693,10 +670,6 @@ async function handleSessionMessageRequest(
   void interactive.handler
     .handleEvent(event, bot, context)
     .then(async () => {
-      if (!targetSessionFile) {
-        sessionViewStreamHub.publish(streamKey, { type: "status", running: false });
-        return;
-      }
       const model = await loadSessionViewModel(targetSessionFile);
       sessionViewStreamHub.publish(streamKey, {
         type: "refresh",

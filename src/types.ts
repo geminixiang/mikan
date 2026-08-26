@@ -203,12 +203,6 @@ export interface MessagingInfo {
   };
 }
 
-export interface ChatAdapter {
-  start(): Promise<void>;
-  stop(): Promise<void>;
-  getMessagingInfo(): MessagingInfo;
-}
-
 export type AgentEventPayload =
   | { kind: "sessionStart" }
   | { kind: "responseDelta"; delta: string }

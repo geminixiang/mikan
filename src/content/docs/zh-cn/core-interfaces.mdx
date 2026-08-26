@@ -148,7 +148,7 @@ interface ConversationContext {
 
 `MessagingInfo.trustModel` 是安全敏感的。当沙箱拓扑是隔离的时，`membership` 允许环境共享 vault 策略。诸如公开 GitHub 活动这类开放触发面必须返回 `open-trigger`。
 
-`ChatAdapter` 是一个更小的、仅含生命周期的接口（`start`、`stop`、`getMessagingInfo`），但 CLI 使用 `MessagingBot`。除非调用方明确要求 `ChatAdapter`，否则不要同时实现两者。
+`MessagingBot` 是唯一面向 host 的 adapter 接口；生命周期与 messaging capability 不再拆分到另一个浅接口。
 
 ## 3. 运行时编排接口
 

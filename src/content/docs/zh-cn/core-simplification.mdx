@@ -148,7 +148,7 @@ interface SandboxRegistry {
 1. 从 `MessagingBot` 提取 message、reaction、upload 和 private-message 端口。
 2. 在不更改 SDK 代码的情况下适配现有 bot。
 3. 将窄能力传给命令、扩展、事件和 admin，而非整个 bot。
-4. 如果不再有独立调用方，则淘汰 `ChatAdapter`。
+4. 淘汰已无调用方的浅层 `ChatAdapter` 接口。（已完成）
 
 ### 阶段 4 — 简化运行时构造与命令
 

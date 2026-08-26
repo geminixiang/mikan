@@ -2154,6 +2154,30 @@ function renderAdminPage(token: AdminToken): string {
     async function copyToClipboard(text) {
       try { await navigator.clipboard.writeText(text); } catch { prompt('Copy this link:', text); }
     }
+    document.addEventListener('click', (event) => {
+      const target = event.target instanceof Element
+        ? event.target.closest('[data-admin-action]')
+        : null;
+      if (!target) return;
+      switch (target.dataset.adminAction) {
+        case 'preview-file':
+          void previewFile(target.dataset.filePath || '');
+          break;
+        case 'copy-link':
+          void copyToClipboard(target.dataset.copyText || '');
+          break;
+        case 'delete-event':
+          void deleteEvent(target.dataset.eventName || '', target);
+          break;
+        case 'select-conversation':
+          setActiveConversation(target.dataset.conversationId || '');
+          switchTab('conversation');
+          break;
+        case 'toggle-timeline-filter':
+          toggleTimelineFilter(target.dataset.filterKey || '');
+          break;
+      }
+    });
     async function apiGet(path) {
       const url = path + (path.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(adminToken);
       const r = await fetch(url);
@@ -2438,14 +2462,14 @@ function renderAdminPage(token: AdminToken): string {
 
     function renderTreeChildren(node) {
       if (node.type === 'file') {
-        return '<li><button class="tree-file" onclick="previewFile(\\'' + escAttr(node.path) + '\\')">' + escHtml(node.name) + '</button></li>';
+        return '<li><button class="tree-file" data-admin-action="preview-file" data-file-path="' + escAttr(node.path) + '">' + escHtml(node.name) + '</button></li>';
       }
       if (!node.children || node.children.length === 0) {
         return '<li><span class="tree-dir empty">' + escHtml(node.name || '.') + '/</span></li>';
       }
       const inner = node.children.map((c) =>
         c.type === 'file'
-          ? '<li><button class="tree-file" onclick="previewFile(\\'' + escAttr(c.path) + '\\')">' + escHtml(c.name) + '</button></li>'
+          ? '<li><button class="tree-file" data-admin-action="preview-file" data-file-path="' + escAttr(c.path) + '">' + escHtml(c.name) + '</button></li>'
           : '<li><details open><summary class="tree-dir">' + escHtml(c.name) + '/</summary><ul>' + renderTreeChildren(c) + '</ul></details></li>'
       ).join('');
       return inner;
@@ -2822,7 +2846,7 @@ function renderAdminPage(token: AdminToken): string {
         result.innerHTML =
           '<span class="link-vault">vault: <code>' + escHtml(data.vaultId) + '</code></span>' +
           '<a href="' + escAttr(data.url) + '" target="_blank" rel="noopener">' + escHtml(data.url) + '</a>' +
-          '<button class="copy-link-btn" onclick="copyToClipboard(' + JSON.stringify(data.url) + ')">Copy</button>';
+          '<button class="copy-link-btn" data-admin-action="copy-link" data-copy-text="' + escAttr(data.url) + '">Copy</button>';
         frame.src = data.url; frame.style.display = 'block';
       } catch (err) {
         result.className = 'link-result err'; result.textContent = err.message;
@@ -2842,7 +2866,7 @@ function renderAdminPage(token: AdminToken): string {
         result.className = 'link-result ok';
         result.innerHTML =
           '<a href="' + escAttr(data.url) + '" target="_blank" rel="noopener">' + escHtml(data.url) + '</a>' +
-          '<button class="copy-link-btn" onclick="copyToClipboard(' + JSON.stringify(data.url) + ')">Copy</button>';
+          '<button class="copy-link-btn" data-admin-action="copy-link" data-copy-text="' + escAttr(data.url) + '">Copy</button>';
         frame.src = data.url; frame.style.display = 'block';
       } catch (err) {
         result.className = 'link-result err'; result.textContent = err.message;
@@ -2891,7 +2915,7 @@ function renderAdminPage(token: AdminToken): string {
         .filter(Boolean).map(escHtml).join(' · ');
       const preview = e.text ? '<div class="event-text">' + escHtml(e.text.length > 240 ? e.text.slice(0, 237) + '…' : e.text) + '</div>' : '';
       const deleteBtn = allowDelete
-        ? '<button class="event-delete-btn" onclick="deleteEvent(\\'' + escAttr(e.name) + '\\', this)">Delete</button>'
+        ? '<button class="event-delete-btn" data-admin-action="delete-event" data-event-name="' + escAttr(e.name) + '">Delete</button>'
         : '';
       return '<div class="event-row">' +
         '<div class="event-row-top">' +
@@ -2943,7 +2967,7 @@ function renderAdminPage(token: AdminToken): string {
         }
         container.innerHTML = '<div class="conv-list">' + data.conversations.map((c) => {
           const last = c.lastActivityAt ? new Date(c.lastActivityAt).toLocaleString() : '—';
-          return '<button class="conv-row-btn" onclick="setActiveConversation(\\'' + escAttr(c.conversationId) + '\\'); switchTab(\\'conversation\\');">' +
+          return '<button class="conv-row-btn" data-admin-action="select-conversation" data-conversation-id="' + escAttr(c.conversationId) + '">' +
             '<span class="conv-id">' + escHtml(c.label || c.conversationId) + '</span>' +
             (c.running ? '<span class="status-pill running">running</span>' : '') +
             '<span class="conv-last">' + escHtml(last) + '</span>' +
@@ -3083,7 +3107,7 @@ function renderAdminPage(token: AdminToken): string {
       const legend = '<div class="tl-legend">' + TL_SERIES.map((s) => {
         const cls = 'tl-legend-item' +
           (active && active.key === s.key ? ' active' : (active ? ' dim' : ''));
-        return '<span class="' + cls + '" onclick="toggleTimelineFilter(\\'' + s.key + '\\')">' +
+        return '<span class="' + cls + '" data-admin-action="toggle-timeline-filter" data-filter-key="' + escAttr(s.key) + '">' +
           '<i class="sw ' + s.sw + '"></i>' + s.label + '</span>';
       }).join('') + '</div>';
 

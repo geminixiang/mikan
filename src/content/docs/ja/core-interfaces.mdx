@@ -109,7 +109,7 @@ host に面した platform port です。次を組み合わせます:
 
 `MessagingInfo.trustModel` はセキュリティに関わります。`membership` は、sandbox topology が isolated である場合に ambient shared-vault policy を許可します。public な GitHub activity のようなオープンなトリガー面は `open-trigger` を返さなければなりません。
 
-`ChatAdapter` はより小さな lifecycle 専用インターフェース（`start`、`stop`、`getMessagingInfo`）ですが、CLI は `MessagingBot` を使います。呼び出し側が明示的に `ChatAdapter` を要求しない限り、両方を実装しないでください。
+`MessagingBot` が host に面した唯一の adapter インターフェースです。lifecycle と messaging capabilities を別の浅いインターフェースには分割しません。
 
 ## 3. Runtime オーケストレーションのインターフェース
 

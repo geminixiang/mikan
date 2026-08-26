@@ -148,7 +148,7 @@ This should remove consistency bugs around `ts` versus `message.id`, `thread_ts`
 1. Extract message, reaction, upload, and private-message ports from `MessagingBot`.
 2. Adapt existing bots without changing their SDK code.
 3. Pass narrow capabilities to commands, extensions, events, and admin instead of the whole bot.
-4. Retire `ChatAdapter` if no independent caller remains.
+4. Retire the now-unused `ChatAdapter` shallow interface. (Completed.)
 
 ### Phase 4 — simplify runtime construction and commands
 

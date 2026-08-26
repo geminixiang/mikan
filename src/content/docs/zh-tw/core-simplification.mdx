@@ -147,7 +147,7 @@ interface SandboxRegistry {
 1. 從 `MessagingBot` 抽出 message、reaction、upload 與 private-message port。
 2. 在不改動 SDK 程式碼的情況下調整既有 bot。
 3. 把窄化的能力傳給 command、extension、event 與 admin，而非整個 bot。
-4. 若不再有獨立呼叫端，退役 `ChatAdapter`。
+4. 退役已無使用者的淺層 `ChatAdapter` 介面。（已完成）
 
 ### Phase 4 — 簡化 runtime 建構與指令
 

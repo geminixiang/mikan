@@ -177,7 +177,6 @@ export {
 } from "./office/index.js";
 export type { Office, Workspace } from "./office/index.js";
 export type {
-  ChatAdapter,
   ChatToolResult,
   ConversationContext,
   ConversationEvent,
