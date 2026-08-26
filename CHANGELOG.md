@@ -9,6 +9,12 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.45]
+
+### Fixed
+
+- Session migration now collapses crash-duplicated v3 lines (a retried append writing the same header and entry twice) the way the v3 reader did, instead of failing v4 verification on the duplicate id. Found rehearsing the migration against 5,446 production session files; after the fix all migrate and reopen cleanly.
+
 ## [1.0.0-beta.44]
 
 ### Added
