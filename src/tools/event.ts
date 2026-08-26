@@ -1,9 +1,14 @@
 import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import type { ConversationKind } from "../adapter.js";
-import { buildEventPayload, EventTypeSchema, parseEventPayload } from "../harness/event-format.js";
+import {
+  buildEventPayload,
+  EventTypeSchema,
+  parseEventPayload,
+  validateEventFilename,
+} from "../harness/event-format.js";
 import * as log from "../log.js";
 import { atomicWritePrivateFile } from "../utils/file-guards.js";
 
@@ -350,19 +355,6 @@ function requireFilename(params: EventToolParams): string {
     throw new Error("`filename` is required for read, update, and delete actions");
   }
   return validateEventFilename(params.filename);
-}
-
-function validateEventFilename(filename: string): string {
-  const trimmed = filename.trim();
-  if (
-    !trimmed ||
-    trimmed !== basename(trimmed) ||
-    trimmed.includes("..") ||
-    !trimmed.endsWith(".json")
-  ) {
-    throw new Error("Invalid event filename");
-  }
-  return trimmed;
 }
 
 function sanitizeFileSegment(value: string): string {

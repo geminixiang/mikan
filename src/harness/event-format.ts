@@ -60,6 +60,26 @@ function daysInMonth(year: number, month: number): number {
 }
 
 /** True for a complete ISO 8601 timestamp that carries an explicit UTC offset. */
+/**
+ * Validate an untrusted event filename: a bare `*.json` basename with no
+ * path traversal. Every surface that touches the events bus by filename
+ * (the event tool's store, the admin portal's file endpoints) validates
+ * through this single rule.
+ */
+export function validateEventFilename(filename: string): string {
+  const trimmed = filename.trim();
+  if (
+    !trimmed ||
+    trimmed.includes("/") ||
+    trimmed.includes("\\") ||
+    trimmed.includes("..") ||
+    !trimmed.endsWith(".json")
+  ) {
+    throw new Error("Invalid event filename");
+  }
+  return trimmed;
+}
+
 export function isValidIsoTimestampWithOffset(value: string): boolean {
   const match = ISO_TIMESTAMP_WITH_OFFSET.exec(value);
   if (!match) return false;

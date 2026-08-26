@@ -1,6 +1,9 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import * as log from "../../log.js";
+import type { GithubWebhookOptions } from "./types.js";
+
+export type { GithubWebhookOptions } from "./types.js";
 
 /**
  * GitHub webhook receiver — a poke, not an event source. Deliveries are
@@ -18,12 +21,6 @@ const POKE_EVENTS = new Set(["issues", "issue_comment", "pull_request_review_com
 
 /** GitHub payloads are small; anything larger than this is not GitHub. */
 const MAX_BODY_BYTES = 1024 * 1024;
-
-export interface GithubWebhookOptions {
-  secret: string;
-  /** Called after signature verification for relevant events. */
-  onPoke: () => void;
-}
 
 function readBody(req: IncomingMessage, maxBytes: number): Promise<Buffer | null> {
   return new Promise((resolve, reject) => {

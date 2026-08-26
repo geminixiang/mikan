@@ -391,3 +391,9 @@ export interface PlatformGithubOps {
   /** Label/assignee/state management on this repo's issues; returns a report. */
   manageIssue(conversationId: string, request: GithubIssueRequest): Promise<string>;
 }
+
+export interface GithubWebhookOptions {
+  secret: string;
+  /** Called after signature verification for relevant events. */
+  onPoke: () => void;
+}

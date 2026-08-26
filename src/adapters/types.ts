@@ -210,3 +210,11 @@ export interface MessageIntakeOptions<TEvent extends ConversationEvent> {
   createContext: (event: TEvent) => ConversationContext;
   deferAttachmentsUntilRun?: boolean;
 }
+
+export interface MarkdownTable {
+  headers: string[];
+  rows: string[][];
+  /** Source line span, so a caller can slice the prose around it. */
+  startLine: number;
+  endLine: number;
+}

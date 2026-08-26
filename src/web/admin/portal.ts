@@ -7,6 +7,7 @@ import {
   MikanModels,
   parseFrontmatter,
   SessionStore,
+  validateEventFilename,
   type InstalledExtensionInfo,
 } from "../../harness/index.js";
 import type { EventStore } from "../../tools/types.js";
@@ -1698,8 +1699,10 @@ async function serveConversationEventsList(
 function serveEventsFile(res: ServerResponse, url: URL, services: AdminServices): void {
   const workspace = requireAdminWorkspace(res, services);
   if (!workspace) return;
-  const name = (url.searchParams.get("name") ?? "").trim();
-  if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
+  let name: string;
+  try {
+    name = validateEventFilename(url.searchParams.get("name") ?? "");
+  } catch {
     jsonRes(res, 400, { error: "Invalid name" });
     return;
   }
@@ -1741,8 +1744,10 @@ async function serveConversationEventDelete(
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const name = typeof body.name === "string" ? body.name.trim() : "";
-  if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
+  let name: string;
+  try {
+    name = validateEventFilename(typeof body.name === "string" ? body.name : "");
+  } catch {
     jsonRes(res, 400, { error: "Invalid name" });
     return;
   }

@@ -34,7 +34,12 @@ export {
   type CompactionSettings,
 } from "./settings.js";
 export type { BudgetSettings, HarnessSettings, RetrySettings } from "./types.js";
-export { buildEventPayload, EventTypeSchema, parseEventPayload } from "./event-format.js";
+export {
+  buildEventPayload,
+  EventTypeSchema,
+  parseEventPayload,
+  validateEventFilename,
+} from "./event-format.js";
 export type {
   EventConversationKind,
   EventFilePayload,

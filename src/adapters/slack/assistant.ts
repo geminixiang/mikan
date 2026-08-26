@@ -33,45 +33,21 @@
  * call before they have typed anything.
  */
 import * as log from "../../log.js";
+import type {
+  AgentContext,
+  AssistantSurfaceOps,
+  AssistantThreadPayload,
+  SuggestedPrompt,
+} from "./types.js";
+
+export type {
+  AgentContext,
+  AssistantSurfaceOps,
+  AssistantThreadPayload,
+  SuggestedPrompt,
+} from "./types.js";
 
 /** The `assistant_thread` payload on the `assistant_view` lifecycle events. */
-export interface AssistantThreadPayload {
-  user_id?: string;
-  channel_id?: string;
-  thread_ts?: string;
-  context?: AgentContext;
-}
-
-/**
- * Which channel the person is viewing beside the pane. Slack spells this
- * `context` on `app_home_opened` and `app_context_changed`, and `app_context`
- * on `message.im` — the asymmetry is Slack's, normalized here.
- */
-export interface AgentContext {
-  channel_id?: string;
-  team_id?: string;
-  enterprise_id?: string | null;
-}
-
-export interface SuggestedPrompt {
-  title: string;
-  message: string;
-}
-
-/** What the adapter needs from the bot to serve this surface. */
-export interface AssistantSurfaceOps {
-  postInThread(channel: string, threadTs: string, text: string): Promise<string>;
-  /** `threadTs` omitted pins the prompts to the DM instead of one thread. */
-  setSuggestedPrompts(
-    channel: string,
-    threadTs: string | undefined,
-    prompts: SuggestedPrompt[],
-  ): Promise<void>;
-  setTitle(channel: string, threadTs: string, title: string): Promise<void>;
-  /** Human-readable channel name for context, when the bot knows it. */
-  channelName(channelId: string): string | undefined;
-}
-
 const GREETING = "有什麼我可以幫忙的？";
 const GREETING_WITH_CHANNEL = (channel: string) =>
   `有什麼我可以幫忙的？我看得到你正在 #${channel}。`;

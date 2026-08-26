@@ -1,4 +1,7 @@
 import { ComponentType, MessageFlags } from "discord.js";
+import type { DiscordTextPayload } from "./types.js";
+
+export type { DiscordTextPayload } from "./types.js";
 
 /**
  * Discord message payloads, built once for every path that sends text.
@@ -17,11 +20,6 @@ import { ComponentType, MessageFlags } from "discord.js";
 
 /** Sum of all text in one Components V2 message. */
 export const DISCORD_V2_TEXT_LIMIT = 4000;
-
-export interface DiscordTextPayload {
-  flags: number;
-  components: Array<{ type: number; content: string }>;
-}
 
 /**
  * A text message as Components V2.

@@ -1,5 +1,8 @@
 import MarkdownIt from "markdown-it";
 import type Token from "markdown-it/lib/token.mjs";
+import type { MarkdownTable } from "./types.js";
+
+export type { MarkdownTable } from "./types.js";
 
 /**
  * Locating GFM tables in a response, as plain data.
@@ -16,14 +19,6 @@ import type Token from "markdown-it/lib/token.mjs";
  */
 
 const markdown = new MarkdownIt({ html: false });
-
-export interface MarkdownTable {
-  headers: string[];
-  rows: string[][];
-  /** Source line span, so a caller can slice the prose around it. */
-  startLine: number;
-  endLine: number;
-}
 
 /**
  * Models sometimes draw the separator row in ASCII-art style (`+---+---+`),
