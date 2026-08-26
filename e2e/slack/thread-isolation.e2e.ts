@@ -102,9 +102,11 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack thread session isolation
       timeoutMs: Math.max(env.timeoutMs, 45_000),
       pollMs: env.pollMs,
       // Native streaming briefly exposes provisional text through Slack's API.
-      // Wait for the exact final answer rather than accepting a reasoning
-      // snapshot that happens to mention token A before chat.stopStream.
-      textMatches: new RegExp(`^\\s*${tokenA}\\s*$`),
+      // Wait for the final answer rather than accepting a reasoning snapshot
+      // that happens to mention token A before chat.stopStream: the final
+      // message is the bare token plus the attribution suffix mikan always
+      // appends to channel replies (_Triggered by @user_).
+      textMatches: new RegExp(`^\\s*${tokenA}\\s*(?:_Triggered by[^]*)?$`),
     });
     expect(askAReply, `no thread A reply containing ${tokenA}`).not.toBeNull();
     expect(
