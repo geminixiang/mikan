@@ -387,7 +387,22 @@ function encodeV4File(file: V3SessionFile): string {
     push({ kind: "entry", ...converted });
   }
 
-  const leafId = v3LeafId(file.entries);
+  // The v3 leaf may point at a fact-only entry (session_info/label) that
+  // does not survive as a v4 entry; re-aim the lane at its nearest surviving
+  // ancestor, mirroring resolveV4Parent.
+  let leafId = v3LeafId(file.entries);
+  const byId = new Map(file.entries.map((entry) => [entry.id, entry]));
+  while (leafId !== null) {
+    const target = byId.get(leafId);
+    if (!target) {
+      leafId = null;
+      break;
+    }
+    if (target.type !== "session_info" && target.type !== "label" && target.type !== "leaf") {
+      break;
+    }
+    leafId = target.parentId;
+  }
   push({ kind: "lane", seq: ++seq, lane: "main", leafId });
   if (name !== undefined) push({ kind: "fact", seq: ++seq, fact: "name", name });
   for (const { targetId, label } of labels) {

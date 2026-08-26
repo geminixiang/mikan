@@ -176,6 +176,32 @@ describe("migrateSessionFile", () => {
     expect(context.messages.map(textOf)).toEqual(["hello", "world"]);
   });
 
+  test("a trailing fact-only entry re-aims the lane at its surviving ancestor", async () => {
+    // Seen in production: session_info was the newest entry, so the v3 leaf
+    // pointed at it — but facts do not survive as v4 entries, and the lane
+    // must not reference a missing target.
+    const file = join(dir, "session.jsonl");
+    writeJsonl(file, [
+      header,
+      v3Message("a1", null, "hello"),
+      {
+        type: "session_info",
+        id: "f1",
+        parentId: "a1",
+        timestamp: "2026-01-01T00:00:02.000Z",
+        name: "titled",
+      },
+    ]);
+
+    const result = await migrateSessionFile(file);
+    expect(result.status).toBe("migrated");
+
+    const store = await SessionStore.inspect(file);
+    const context = await store.buildSessionContext();
+    expect(context.messages.map(textOf)).toEqual(["hello"]);
+    expect(await store.getSessionName()).toBe("titled");
+  });
+
   test("is idempotent: a migrated file reports already-v4", async () => {
     const file = join(dir, "idempotent.jsonl");
     writeJsonl(file, [header, v3Message("a", null, "A")]);
