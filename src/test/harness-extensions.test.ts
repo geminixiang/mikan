@@ -122,6 +122,60 @@ describe("loadExtensions", () => {
     expect(registry.getContributedTools().map((tool) => tool.name)).toEqual(["custom_tool"]);
   });
 
+  test("a failed activation leaves no partial registrations behind", async () => {
+    // activate() registers a hook, a tool, a command, and a disposer, then
+    // throws. The shared registry must not keep any of it — and the disposer
+    // must run so resources acquired before the throw are released.
+    const extDir = join(dir, "half-dead");
+    mkdirSync(extDir, { recursive: true });
+    writeFileSync(
+      join(extDir, "index.mjs"),
+      `export const name = "half-dead";
+      export function activate(api) {
+        globalThis.halfDeadDisposed = false;
+        api.on("tool_call", () => ({ block: true }));
+        api.registerTool({ name: "half_tool", description: "d", parameters: { type: "object", properties: {} }, execute: async () => ({ content: [] }) });
+        api.registerCommand({ name: "halfcmd", description: "d", handler: async () => {} });
+        api.onDispose(() => { globalThis.halfDeadDisposed = true; });
+        throw new Error("activation exploded");
+      }
+      `,
+    );
+
+    const { registry, extensions, errors } = await loadExtensions({ dirs: [dir], context });
+    expect(extensions).toHaveLength(0);
+    expect(errors[0]?.error).toContain("activation exploded");
+    expect(registry.hasHandlers("tool_call")).toBe(false);
+    expect(registry.getContributedTools()).toHaveLength(0);
+    expect(registry.getCommands()).toHaveLength(0);
+    expect((globalThis as Record<string, unknown>).halfDeadDisposed).toBe(true);
+    delete (globalThis as Record<string, unknown>).halfDeadDisposed;
+  });
+
+  test("a duplicate tool name is rejected, first registration wins", async () => {
+    for (const [slug, toolName] of [
+      ["first-owner", "shared_tool"],
+      ["second-owner", "shared_tool"],
+    ] as const) {
+      const extDir = join(dir, slug);
+      mkdirSync(extDir, { recursive: true });
+      writeFileSync(
+        join(extDir, "index.mjs"),
+        `export const name = ${JSON.stringify(slug)};
+        export function activate(api) {
+          api.registerTool({ name: ${JSON.stringify(toolName)}, description: ${JSON.stringify(slug)}, parameters: { type: "object", properties: {} }, execute: async () => ({ content: [] }) });
+        }
+        `,
+      );
+    }
+
+    const { registry, extensions } = await loadExtensions({ dirs: [dir], context });
+    expect(extensions).toHaveLength(2);
+    const tools = registry.getContributedTools();
+    expect(tools).toHaveLength(1);
+    expect(tools[0]?.description).toBe("first-owner");
+  });
+
   test("collects module errors without failing the load", async () => {
     writeFileSync(join(dir, "broken.mjs"), "throw new Error('boom');\n");
     writeFileSync(join(dir, "no-activate.mjs"), "export const nothing = 1;\n");

@@ -71,7 +71,7 @@ export class ExtensionRegistry {
     agent_error: [],
     budget_exceeded: [],
   };
-  private tools: AgentTool[] = [];
+  private tools: Array<{ owner: string; tool: AgentTool }> = [];
   private commands = new Map<string, { owner: string; command: ExtensionCommand }>();
   /** Block action handlers keyed `<slug>\n<actionId>` (slug scopes, so no cross-extension dups). */
   private actions = new Map<string, { owner: string; handler: ExtensionBlockActionHandler }>();
@@ -83,8 +83,21 @@ export class ExtensionRegistry {
     this.handlers[hook].push({ owner, handler });
   }
 
-  registerTool(tool: AgentTool): void {
-    this.tools.push(tool);
+  /**
+   * Register a contributed tool. A duplicate tool name is logged and ignored
+   * (first wins), so an extension can never silently shadow another
+   * extension's tool — or have the winner decided by array order downstream.
+   */
+  registerTool(owner: string, tool: AgentTool): void {
+    const existing = this.tools.find((entry) => entry.tool.name === tool.name);
+    if (existing) {
+      log.logWarning(
+        `Extension tool "${tool.name}" already registered by ${existing.owner}`,
+        `ignoring registration from ${owner}`,
+      );
+      return;
+    }
+    this.tools.push({ owner, tool });
   }
 
   /**
@@ -110,6 +123,42 @@ export class ExtensionRegistry {
 
   registerDisposer(owner: string, disposer: ExtensionDisposer): void {
     this.disposers.push({ owner, disposer });
+  }
+
+  /**
+   * Undo every registration a failed activation made, and run its already-
+   * registered disposers so external resources it acquired are released.
+   * All extensions share this registry; without rollback a throw mid-
+   * activate left the extension half-live — absent from the loaded list yet
+   * still receiving hooks.
+   */
+  async rollbackOwner(owner: string, slug: string): Promise<void> {
+    for (const hook of Object.keys(this.handlers) as MikanHookName[]) {
+      const entries = this.handlers[hook] as Array<{ owner: string }>;
+      (this.handlers[hook] as unknown) = entries.filter((entry) => entry.owner !== owner);
+    }
+    this.tools = this.tools.filter((entry) => entry.owner !== owner);
+    for (const [key, entry] of this.commands) {
+      if (entry.owner === owner) this.commands.delete(key);
+    }
+    for (const key of this.actions.keys()) {
+      if (key.startsWith(`${slug}\n`)) this.actions.delete(key);
+    }
+    for (const key of this.scheduleCallbacks.keys()) {
+      if (key.startsWith(`${slug}\n`)) this.scheduleCallbacks.delete(key);
+    }
+    const own = this.disposers.filter((entry) => entry.owner === owner);
+    this.disposers = this.disposers.filter((entry) => entry.owner !== owner);
+    for (const { disposer } of own.toReversed()) {
+      try {
+        await disposer();
+      } catch (err) {
+        log.logWarning(
+          `Extension disposer failed during activation rollback (${owner})`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    }
   }
 
   /**
@@ -197,7 +246,7 @@ export class ExtensionRegistry {
   }
 
   getContributedTools(): AgentTool[] {
-    return [...this.tools];
+    return this.tools.map((entry) => entry.tool);
   }
 
   /** Registered commands, for inventory surfaces. */

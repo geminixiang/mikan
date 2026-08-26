@@ -434,7 +434,7 @@ function buildExtensionApi(params: {
 
   return {
     on: (hook, handler) => registry.register(name, hook, handler),
-    registerTool: (tool: AgentTool) => registry.registerTool(tool),
+    registerTool: (tool: AgentTool) => registry.registerTool(name, tool),
     registerCommand: (command: ExtensionCommand) => registry.registerCommand(name, command),
     onDispose: (disposer: ExtensionDisposer) => registry.registerDisposer(name, disposer),
     log: (message: string) => log.logInfo(`[extension:${name}] ${message}`),
@@ -692,7 +692,16 @@ export async function loadExtensions(
         context: options.context,
         services,
       });
-      const disposer = await extension.activate(api);
+      let disposer;
+      try {
+        disposer = await extension.activate(api);
+      } catch (err) {
+        // A throw mid-activate leaves whatever the extension already
+        // registered in the shared registry; roll its registrations back and
+        // release its resources so a failed extension is fully absent.
+        await registry.rollbackOwner(name, slug);
+        throw err;
+      }
       if (typeof disposer === "function") registry.registerDisposer(name, disposer);
       const extensionSkills = loadExtensionSkills(rootDir, slug);
       skills.push(...extensionSkills);
