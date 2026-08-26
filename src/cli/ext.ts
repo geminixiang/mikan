@@ -163,7 +163,7 @@ function scaffoldFiles(name: string): Array<[string, string]> {
     type: "module",
     mikan: {
       extensions: ["./index.ts"],
-      requires: ["schedules.callback", "messaging"],
+      requires: ["schedules.callback", "messaging.notify"],
     },
   };
   const indexTs = `/**

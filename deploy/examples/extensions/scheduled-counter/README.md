@@ -43,7 +43,7 @@ the single most important fact about writing mikan extensions:
   (several conversations' handlers may write it).
 
 `mikan.requires` in package.json declares the capabilities this extension
-needs (`schedules.callback`, `messaging`). Contexts that cannot provide
+needs (`schedules.callback`, `messaging.notify`). Contexts that cannot provide
 them fail activation with one clear error naming the gap. For optional
 features, probe `api.capabilities.has("blockkit")` instead and degrade
 gracefully.

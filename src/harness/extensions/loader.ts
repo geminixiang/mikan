@@ -216,15 +216,17 @@ interface ExtensionPackageJson {
  */
 const CAPABILITY_PROBES: Record<ExtensionCapability, (services: ExtensionHostServices) => boolean> =
   {
-    schedules: (s) => s.scheduleStore !== undefined,
+    // Names follow the api surface an author sees (api.notify, api.react…),
+    // not host service field names — authors declare what they call.
+    "schedules.text": (s) => s.scheduleStore !== undefined,
     "schedules.callback": (s) => s.callbackScheduleStore !== undefined,
-    messaging: (s) => s.postMessage !== undefined,
-    "messaging.dm": (s) => s.openDirectConversation !== undefined,
+    "messaging.notify": (s) => s.postMessage !== undefined,
+    "messaging.open-dm": (s) => s.openDirectConversation !== undefined,
     "messaging.history": (s) => s.fetchHistory !== undefined,
     "messaging.users": (s) => s.listUsers !== undefined,
-    "messaging.reactions": (s) => s.addReaction !== undefined,
-    "messaging.uploads": (s) => s.uploadFile !== undefined,
     blockkit: (s) => s.postBlocks !== undefined && s.updateBlocks !== undefined,
+    reactions: (s) => s.addReaction !== undefined,
+    uploads: (s) => s.uploadFile !== undefined,
     secrets: (s) => s.resolveSecrets !== undefined,
     subagent: (s) => s.runSubagent !== undefined,
   };

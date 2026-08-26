@@ -267,7 +267,7 @@ describe("mikan ext CLI", () => {
     const validateCode = await runExtCommand(["validate", target]);
     validateOut.restore();
     expect(validateCode).toBe(0);
-    expect(validateOut.log.join("\n")).toContain("requires: schedules.callback, messaging");
+    expect(validateOut.log.join("\n")).toContain("requires: schedules.callback, messaging.notify");
   });
 
   test("init refuses an existing directory and a bad name", async () => {

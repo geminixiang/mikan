@@ -2,12 +2,13 @@
 
 ## Capability granularity
 
-Eleven names mirroring `ExtensionHostServices` fields, with dotted grouping
-(`messaging.*`, `schedules.*`) but no wildcard semantics — `messaging` is
-`postMessage` alone, not a bundle. Rationale: the services interface is
-already the honest inventory of what a context can provide; inventing a
-coarser vocabulary on top would add a second mapping to maintain. `blockkit`
-is the one composite (post + update) because the two are useless apart.
+Eleven names following the api surface an author sees (`messaging.notify`
+for `api.notify`, `reactions` for `api.react`, `schedules.text`/`.callback`
+for the two schedule kinds), no wildcard semantics. Originally A mirrored
+`ExtensionHostServices` field semantics; the comparison round showed B/C's
+author-facing naming is the right axis — authors declare what they call,
+not what the host wires — and A adopted it. `blockkit` is the one composite
+(post + update) because the two are useless apart.
 
 ## Single authority
 

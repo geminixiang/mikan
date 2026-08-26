@@ -513,15 +513,15 @@ export interface ExtensionManifest {
  * the gap — not a runtime throw at the first `api.*` call (ADR 0006).
  */
 export type ExtensionCapability =
-  | "schedules"
+  | "schedules.text"
   | "schedules.callback"
-  | "messaging"
-  | "messaging.dm"
+  | "messaging.notify"
+  | "messaging.open-dm"
   | "messaging.history"
   | "messaging.users"
-  | "messaging.reactions"
-  | "messaging.uploads"
   | "blockkit"
+  | "reactions"
+  | "uploads"
   | "secrets"
   | "subagent";
 

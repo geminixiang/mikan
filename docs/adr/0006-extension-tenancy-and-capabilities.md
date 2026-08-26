@@ -64,7 +64,7 @@ instead of being re-litigated. Full analysis:
 The first shippable slice, implemented alongside this ADR:
 
 - `package.json` `mikan.requires` lists the host capabilities an extension
-  needs (e.g. `schedules.callback`, `messaging`, `secrets`). The loader
+  needs (e.g. `schedules.callback`, `messaging.notify`, `secrets`). The loader
   checks declarations against the injected `ExtensionHostServices` _before
   importing_ the module; a miss is one clear activation error naming the
   extension and the missing capabilities, instead of a runtime throw at the

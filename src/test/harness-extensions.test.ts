@@ -342,7 +342,7 @@ describe("validateExtension", () => {
       join(extDir, "package.json"),
       JSON.stringify({
         name: "needy",
-        mikan: { requires: ["messaging", "schedules.telepathy"] },
+        mikan: { requires: ["messaging.notify", "schedules.telepathy"] },
       }),
     );
 
@@ -350,7 +350,7 @@ describe("validateExtension", () => {
     // Unknown names warn at validate time (the capability may exist in a
     // newer mikan); activation is where they hard-fail.
     expect(result.ok).toBe(true);
-    expect(result.requires).toEqual(["messaging", "schedules.telepathy"]);
+    expect(result.requires).toEqual(["messaging.notify", "schedules.telepathy"]);
     expect(result.warnings.join(" ")).toContain("schedules.telepathy");
   });
 });
@@ -606,7 +606,10 @@ describe("loadExtensions v2 api", () => {
     );
     writeFileSync(
       join(extDir, "package.json"),
-      JSON.stringify({ name: "probe", mikan: { requires: ["schedules.callback", "messaging"] } }),
+      JSON.stringify({
+        name: "probe",
+        mikan: { requires: ["schedules.callback", "messaging.notify"] },
+      }),
     );
 
     // No services: neither capability is provided.
@@ -614,7 +617,7 @@ describe("loadExtensions v2 api", () => {
     expect(denied.extensions).toHaveLength(0);
     expect(denied.errors).toHaveLength(1);
     expect(denied.errors[0]?.error).toContain("schedules.callback");
-    expect(denied.errors[0]?.error).toContain("messaging");
+    expect(denied.errors[0]?.error).toContain("messaging.notify");
     // The module was never imported — top-level code did not run.
     expect(existsSync(out)).toBe(false);
 
@@ -651,7 +654,7 @@ describe("loadExtensions v2 api", () => {
     const probe = writeProbeExtension(
       `export default function activate(api) {
         report({
-          messaging: api.capabilities.has("messaging"),
+          messaging: api.capabilities.has("messaging.notify"),
           blockkit: api.capabilities.has("blockkit"),
           list: api.capabilities.list(),
         });
@@ -663,7 +666,7 @@ describe("loadExtensions v2 api", () => {
       context,
       services: { postMessage: async () => "ts" },
     });
-    expect(probe.read()).toEqual({ messaging: true, blockkit: false, list: ["messaging"] });
+    expect(probe.read()).toEqual({ messaging: true, blockkit: false, list: ["messaging.notify"] });
   });
 
   test("callback schedules route to the callback store and share one name namespace", async () => {
