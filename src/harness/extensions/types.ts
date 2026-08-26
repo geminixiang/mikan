@@ -496,10 +496,51 @@ export interface ExtensionManifest {
   version?: string;
   description?: string;
   secrets?: ExtensionSecretDeclaration[];
+  /**
+   * Capability names declared in package.json `mikan.requires`, as written.
+   * Unknown names survive here so validation can flag them; the loader
+   * classifies against the capability inventory at activation time.
+   */
+  requires?: string[];
+}
+
+/**
+ * Host capabilities an extension can declare in `mikan.requires` and probe
+ * through `api.capabilities`. Each name maps to the {@link ExtensionHostServices}
+ * field(s) that back the corresponding api surface; the loader checks declared
+ * requirements against the injected services BEFORE importing the module, so a
+ * missing capability is one clear activation error naming the extension and
+ * the gap — not a runtime throw at the first `api.*` call (ADR 0006).
+ */
+export type ExtensionCapability =
+  | "schedules"
+  | "schedules.callback"
+  | "messaging"
+  | "messaging.dm"
+  | "messaging.history"
+  | "messaging.users"
+  | "messaging.reactions"
+  | "messaging.uploads"
+  | "blockkit"
+  | "secrets"
+  | "subagent";
+
+/** Runtime capability introspection handed to extensions as `api.capabilities`. */
+export interface ExtensionCapabilities {
+  /** Whether this context provides the capability. */
+  has(name: ExtensionCapability): boolean;
+  /** Capabilities this context provides, in inventory order. */
+  list(): ExtensionCapability[];
 }
 
 /** API handed to an extension's `activate` function. */
 export interface MikanExtensionApi {
+  /**
+   * Capabilities this context provides. Prefer declaring hard requirements
+   * in `mikan.requires` (checked before activation); use this for graceful
+   * degradation — e.g. skip Block Kit output when `has("blockkit")` is false.
+   */
+  readonly capabilities: ExtensionCapabilities;
   /** Register a hook handler. */
   on<T extends MikanHookName>(hook: T, handler: MikanHookMap[T]): void;
   /** Contribute an additional agent tool. */
@@ -755,6 +796,8 @@ export interface ExtensionValidation {
   skillNames: string[];
   /** Secrets declared in package.json `mikan.secrets`. */
   secrets: ExtensionSecretDeclaration[];
+  /** Capability names declared in package.json `mikan.requires`, as written. */
+  requires: string[];
   errors: string[];
   warnings: string[];
 }

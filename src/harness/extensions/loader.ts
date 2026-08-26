@@ -35,6 +35,7 @@ import { ExtensionRegistry, namespaceActionIds } from "./registry.js";
 import { officeStateDir } from "../../office/index.js";
 import type { OfficeAddress } from "../../types.js";
 import type {
+  ExtensionCapability,
   ExtensionCommand,
   ExtensionDisposer,
   ExtensionHostServices,
@@ -198,7 +199,50 @@ interface ExtensionPackageJson {
   name?: string;
   version?: string;
   description?: string;
-  mikan?: { extensions?: string[]; displayName?: string; secrets?: ExtensionSecretDeclaration[] };
+  mikan?: {
+    extensions?: string[];
+    displayName?: string;
+    secrets?: ExtensionSecretDeclaration[];
+    requires?: string[];
+  };
+}
+
+/**
+ * The capability inventory: every capability name maps to a probe over the
+ * injected {@link ExtensionHostServices}. This is the single home of the
+ * capability→service rule (ADR 0006) — the pre-activation requirement check,
+ * `api.capabilities`, and `mikan ext validate`'s unknown-name warning all
+ * derive from this table.
+ */
+const CAPABILITY_PROBES: Record<ExtensionCapability, (services: ExtensionHostServices) => boolean> =
+  {
+    schedules: (s) => s.scheduleStore !== undefined,
+    "schedules.callback": (s) => s.callbackScheduleStore !== undefined,
+    messaging: (s) => s.postMessage !== undefined,
+    "messaging.dm": (s) => s.openDirectConversation !== undefined,
+    "messaging.history": (s) => s.fetchHistory !== undefined,
+    "messaging.users": (s) => s.listUsers !== undefined,
+    "messaging.reactions": (s) => s.addReaction !== undefined,
+    "messaging.uploads": (s) => s.uploadFile !== undefined,
+    blockkit: (s) => s.postBlocks !== undefined && s.updateBlocks !== undefined,
+    secrets: (s) => s.resolveSecrets !== undefined,
+    subagent: (s) => s.runSubagent !== undefined,
+  };
+
+function isExtensionCapability(name: string): name is ExtensionCapability {
+  return name in CAPABILITY_PROBES;
+}
+
+function providedCapabilities(services: ExtensionHostServices): ExtensionCapability[] {
+  return (Object.keys(CAPABILITY_PROBES) as ExtensionCapability[]).filter((name) =>
+    CAPABILITY_PROBES[name](services),
+  );
+}
+
+/** Shape `mikan.requires` defensively; unknown names survive so validate can flag them. */
+function readRequiresDeclaration(entries: unknown): string[] {
+  if (!Array.isArray(entries)) return [];
+  return entries.filter((entry): entry is string => typeof entry === "string");
 }
 
 const SECRET_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -224,7 +268,7 @@ function readPackageJson(dir: string): ExtensionPackageJson | undefined {
     if (!parsed || typeof parsed !== "object") return undefined;
     const record = parsed as Record<string, unknown>;
     const mikanRaw = record.mikan as
-      | { extensions?: unknown; displayName?: unknown; secrets?: unknown[] }
+      | { extensions?: unknown; displayName?: unknown; secrets?: unknown[]; requires?: unknown }
       | undefined;
     return {
       name: typeof record.name === "string" ? record.name : undefined,
@@ -237,6 +281,9 @@ function readPackageJson(dir: string): ExtensionPackageJson | undefined {
         displayName: typeof mikanRaw?.displayName === "string" ? mikanRaw.displayName : undefined,
         secrets: Array.isArray(mikanRaw?.secrets)
           ? mikanRaw.secrets.flatMap((entry) => readSecretDeclaration(entry) ?? [])
+          : undefined,
+        requires: Array.isArray(mikanRaw?.requires)
+          ? readRequiresDeclaration(mikanRaw.requires)
           : undefined,
       },
     };
@@ -306,13 +353,15 @@ function readManifest(rootDir: string): ExtensionManifest {
       pkg.name ??
       pkg.version ??
       pkg.description ??
-      pkg.mikan?.secrets?.length)
+      pkg.mikan?.secrets?.length ??
+      pkg.mikan?.requires?.length)
   ) {
     return {
       name: pkg.mikan?.displayName ?? pkg.name,
       version: pkg.version,
       description: pkg.description,
       ...(pkg.mikan?.secrets?.length ? { secrets: pkg.mikan.secrets } : {}),
+      ...(pkg.mikan?.requires?.length ? { requires: pkg.mikan.requires } : {}),
     };
   }
 
@@ -432,7 +481,12 @@ function buildExtensionApi(params: {
   const scheduleFilename = (scheduleName: string) =>
     `${schedulePrefix(slug, conversationId)}${scheduleNameSegment(scheduleName)}${SCHEDULE_FILE_SUFFIX}`;
 
+  const provided = new Set(providedCapabilities(services));
   return {
+    capabilities: {
+      has: (capability) => provided.has(capability),
+      list: () => [...provided],
+    },
     on: (hook, handler) => registry.register(name, hook, handler),
     registerTool: (tool: AgentTool) => registry.registerTool(name, tool),
     registerCommand: (command: ExtensionCommand) => registry.registerCommand(name, command),
@@ -675,6 +729,24 @@ export async function loadExtensions(
           continue;
         }
       }
+      // Declared capability requirements are checked before importing, like
+      // required secrets: one activation error naming the gap beats whatever
+      // the extension would throw at its first api call (ADR 0006).
+      const declaredRequires = manifest.requires ?? [];
+      if (declaredRequires.length > 0) {
+        const unknown = declaredRequires.filter((entry) => !isExtensionCapability(entry));
+        const unmet = declaredRequires.filter(
+          (entry) => isExtensionCapability(entry) && !CAPABILITY_PROBES[entry](services),
+        );
+        if (unknown.length > 0 || unmet.length > 0) {
+          const parts = [
+            unmet.length > 0 ? `this context does not provide: ${unmet.join(", ")}` : undefined,
+            unknown.length > 0 ? `unknown capability name(s): ${unknown.join(", ")}` : undefined,
+          ].filter(Boolean);
+          errors.push({ path: entrypoint, error: `requires ${parts.join("; ")}` });
+          continue;
+        }
+      }
       const moduleExports: unknown = await importExtensionModule(entrypoint);
       const extension = resolveActivate(moduleExports);
       if (!extension) {
@@ -821,6 +893,16 @@ export async function validateExtension(sourcePath: string): Promise<ExtensionVa
   const manifest = readManifest(rootDir);
   const skillNames = loadExtensionSkills(rootDir, slug).map((skill) => skill.name);
 
+  const unknownRequires = (manifest.requires ?? []).filter(
+    (entry) => !isExtensionCapability(entry),
+  );
+  if (unknownRequires.length > 0) {
+    warnings.push(
+      `Unknown capability name(s) in mikan.requires: ${unknownRequires.join(", ")} — ` +
+        "activation will fail; check the spelling or the minimum mikan version.",
+    );
+  }
+
   if (entrypoint) {
     try {
       const moduleExports: unknown = await importExtensionModule(entrypoint);
@@ -841,6 +923,7 @@ export async function validateExtension(sourcePath: string): Promise<ExtensionVa
     entrypoint,
     skillNames,
     secrets: manifest.secrets ?? [],
+    requires: manifest.requires ?? [],
     errors,
     warnings,
   };

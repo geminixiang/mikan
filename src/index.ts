@@ -89,6 +89,8 @@ export type {
   ExtensionSchedulePayload,
   ExtensionScheduleSpec,
   ExtensionScheduleStore,
+  ExtensionCapabilities,
+  ExtensionCapability,
   LoadedExtension,
   MessageEndHookEvent,
   MessageEndHookResult,

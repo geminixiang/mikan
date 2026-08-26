@@ -333,6 +333,26 @@ describe("validateExtension", () => {
     expect(result.ok).toBe(false);
     expect(result.errors.join(" ")).toMatch(/No entrypoint/);
   });
+
+  test("reports declared requires and warns on unknown capability names", async () => {
+    const extDir = join(dir, "needy");
+    mkdirSync(extDir, { recursive: true });
+    writeFileSync(join(extDir, "index.mjs"), "export default function activate() {}");
+    writeFileSync(
+      join(extDir, "package.json"),
+      JSON.stringify({
+        name: "needy",
+        mikan: { requires: ["messaging", "schedules.telepathy"] },
+      }),
+    );
+
+    const result = await validateExtension(extDir);
+    // Unknown names warn at validate time (the capability may exist in a
+    // newer mikan); activation is where they hard-fail.
+    expect(result.ok).toBe(true);
+    expect(result.requires).toEqual(["messaging", "schedules.telepathy"]);
+    expect(result.warnings.join(" ")).toContain("schedules.telepathy");
+  });
 });
 
 function createFakeScheduleStore() {
@@ -578,6 +598,72 @@ describe("loadExtensions v2 api", () => {
     const { extensions, errors } = await loadExtensions({ dirs: [dir], context });
     expect(errors).toHaveLength(0);
     expect(extensions).toHaveLength(1);
+  });
+
+  test("an unmet mikan.requires capability fails activation before import", async () => {
+    const { extDir, out } = writeProbeExtension(
+      "export default function activate() { report({ activated: true }); }",
+    );
+    writeFileSync(
+      join(extDir, "package.json"),
+      JSON.stringify({ name: "probe", mikan: { requires: ["schedules.callback", "messaging"] } }),
+    );
+
+    // No services: neither capability is provided.
+    const denied = await loadExtensions({ dirs: [dir], context });
+    expect(denied.extensions).toHaveLength(0);
+    expect(denied.errors).toHaveLength(1);
+    expect(denied.errors[0]?.error).toContain("schedules.callback");
+    expect(denied.errors[0]?.error).toContain("messaging");
+    // The module was never imported — top-level code did not run.
+    expect(existsSync(out)).toBe(false);
+
+    const granted = await loadExtensions({
+      dirs: [dir],
+      context,
+      services: {
+        callbackScheduleStore: createFakeCallbackScheduleStore().store,
+        postMessage: async () => "ts",
+      },
+    });
+    expect(granted.errors).toHaveLength(0);
+    expect(granted.extensions).toHaveLength(1);
+  });
+
+  test("an unknown mikan.requires name fails activation and is named", async () => {
+    const { extDir, out } = writeProbeExtension(
+      "export default function activate() { report({ activated: true }); }",
+    );
+    writeFileSync(
+      join(extDir, "package.json"),
+      JSON.stringify({ name: "probe", mikan: { requires: ["schedules.telepathy"] } }),
+    );
+
+    const { extensions, errors } = await loadExtensions({ dirs: [dir], context });
+    expect(extensions).toHaveLength(0);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.error).toContain("unknown capability");
+    expect(errors[0]?.error).toContain("schedules.telepathy");
+    expect(existsSync(out)).toBe(false);
+  });
+
+  test("api.capabilities reflects the injected services", async () => {
+    const probe = writeProbeExtension(
+      `export default function activate(api) {
+        report({
+          messaging: api.capabilities.has("messaging"),
+          blockkit: api.capabilities.has("blockkit"),
+          list: api.capabilities.list(),
+        });
+      }`,
+    );
+
+    await loadExtensions({
+      dirs: [dir],
+      context,
+      services: { postMessage: async () => "ts" },
+    });
+    expect(probe.read()).toEqual({ messaging: true, blockkit: false, list: ["messaging"] });
   });
 
   test("callback schedules route to the callback store and share one name namespace", async () => {
