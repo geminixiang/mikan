@@ -1240,9 +1240,9 @@ export class SlackMessagingBot implements MessagingBot {
 
   /**
    * Generic slash-command route: synthesize the command text per the
-   * manifest's SlackSlashRoute data and dispatch to the handler. `/pi-new`
-   * stays bespoke (routeSlashNewCommand) because it replies in 中文 and calls
-   * handleNewCommand directly.
+   * manifest's SlackSlashRoute data and dispatch to the handler. Every
+   * routed command — including `/pi-new` — reaches its CommandHandler
+   * through runtime dispatch; the adapter holds no per-command behavior.
    */
   private async routeSlashCommand(
     route: SlackSlashRoute,
@@ -1267,69 +1267,6 @@ export class SlackMessagingBot implements MessagingBot {
         : {}),
     });
     await this.handler.handleEvent(event, this, context);
-  }
-
-  private async routeSlashNewCommand(payload: {
-    command: string;
-    channel_id: string;
-    user_id: string;
-    user_name?: string;
-  }): Promise<void> {
-    const conversationId = payload.channel_id;
-    if (!conversationId.startsWith("D")) {
-      await this.postEphemeral(
-        conversationId,
-        payload.user_id,
-        `為了避免誤清除共享上下文，${payload.command} 目前只能在與 ${PRODUCT_NAME} 的私訊中使用。`,
-      );
-      return;
-    }
-
-    const createdAt = new Date();
-    const eventTs = (createdAt.getTime() / 1000).toFixed(6);
-    const userName = payload.user_name ?? this.getUser(payload.user_id)?.userName;
-
-    this.logToFile(conversationId, {
-      date: createdAt.toISOString(),
-      ts: eventTs,
-      user: payload.user_id,
-      userName,
-      text: payload.command,
-      attachments: [],
-      isMessagingBot: false,
-    });
-
-    const commandMessagingBot: MessagingBot = {
-      start: async () => {},
-      postMessage: async (_channel: string, text: string) => this.postMessage(conversationId, text),
-      updateMessage: async (channel: string, ts: string, text: string) =>
-        this.updateMessage(channel, ts, text),
-      enqueueEvent: (event: ConversationEvent) => this.enqueueEvent(event),
-      getMessagingInfo: () => this.getMessagingInfo(),
-    };
-    const event: SlackEvent = {
-      ...createConversationEvent({
-        platform: "slack",
-        conversationId,
-        type: "dm" as const,
-        conversationKind: "direct",
-        ts: eventTs,
-        user: payload.user_id,
-        text: payload.command,
-        attachments: [],
-        sessionKey: conversationId,
-      }),
-      channel: conversationId,
-    };
-    const context = createSlackAdapters(event, this);
-    await this.handler.handleNewCommand(
-      conversationId,
-      conversationId,
-      commandMessagingBot,
-      context.message,
-      context.responder,
-      context.platform,
-    );
   }
 
   private setupEventHandlers(): void {
@@ -1616,25 +1553,15 @@ export class SlackMessagingBot implements MessagingBot {
     const entry = COMMAND_MANIFEST.find((candidate) => candidate.slackCommand === command);
     if (!entry) return;
 
-    let handlerPromise: Promise<void> | null = null;
-    if (entry.name === "new") {
-      handlerPromise = this.routeSlashNewCommand({ command, channel_id, user_id, user_name });
-    } else if (entry.slackRoute) {
-      handlerPromise = this.routeSlashCommand(entry.slackRoute, {
-        command,
-        text,
-        channel_id,
-        user_id,
-        user_name,
-        thread_ts,
-      });
-    }
-
-    if (!handlerPromise) {
-      return;
-    }
-
-    handlerPromise.catch((err) => {
+    if (!entry.slackRoute) return;
+    this.routeSlashCommand(entry.slackRoute, {
+      command,
+      text,
+      channel_id,
+      user_id,
+      user_name,
+      thread_ts,
+    }).catch((err) => {
       log.logWarning("Slack slash command error", err instanceof Error ? err.message : String(err));
     });
   }

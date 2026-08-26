@@ -6,6 +6,7 @@ import {
   telegramCommandMenu,
 } from "../commands/manifest.js";
 import { isCommandText } from "../commands/manifest.js";
+import { defaultCommandHandlers } from "../commands/registry.js";
 
 describe("command manifest", () => {
   test("isCommandText accepts every manifest name in slash and pi- form", () => {
@@ -63,5 +64,15 @@ describe("command manifest", () => {
         expect(entry.slackCommand).toBe(`/pi-${entry.name}`);
       }
     }
+  });
+});
+
+describe("manifest-to-handler completeness", () => {
+  test("every non-magic-word manifest entry constructs a handler", () => {
+    // A manifest entry without a handler used to register on every platform
+    // and then dispatch into silence; defaultCommandHandlers now throws at
+    // construction for that case, so simply constructing is the assertion.
+    const handlers = defaultCommandHandlers();
+    expect(handlers).toHaveLength(COMMAND_MANIFEST.filter((entry) => !entry.magicWord).length);
   });
 });

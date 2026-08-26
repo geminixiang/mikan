@@ -49,6 +49,12 @@ export interface CommandManifestEntry {
   discord?: boolean;
   /** Listed in Telegram's command menu; `description` overrides the shared one. */
   telegramMenu?: { description?: string };
+  /**
+   * Registered as a native grammY command handler, bypassing conversation
+   * intake (no trigger/busy policy). Other menu commands reach the runtime
+   * through the catch-all message path.
+   */
+  telegramCommand?: boolean;
 }
 
 export interface LinkTokenStoreLike {

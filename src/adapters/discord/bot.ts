@@ -515,24 +515,9 @@ export class DiscordMessagingBot implements MessagingBot {
         conversationId,
       );
       try {
-        if (interaction.commandName === "new") {
-          const event = createConversationEvent({
-            platform: "discord",
-            type: "dm",
-            conversationId,
-            conversationKind: isDM ? "direct" : "shared",
-            ts: interaction.id,
-            thread_ts: threadTs,
-            sessionKey,
-            user: interaction.user.id,
-            text: commandText,
-            attachments: [],
-          });
-          await this.handler.handleEvent(event, this, context);
-          return;
-        }
-
-        if (interaction.commandName === "stop") {
+        // Magic words are conversation-intake controls, not command handlers;
+        // the manifest's metadata routes them (today only `stop`).
+        if (manifestEntry.magicWord) {
           const stopTarget = this.resolveStopTarget(conversationId, sessionKey);
           if (stopTarget) {
             await this.handler.handleStop(

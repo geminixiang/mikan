@@ -65,6 +65,7 @@ export const COMMAND_MANIFEST: readonly CommandManifestEntry[] = [
     slackRoute: { includeText: true },
     discord: true,
     telegramMenu: { description: "Show or boost sandbox limits" },
+    telegramCommand: true,
   },
   {
     name: "stop",
@@ -77,8 +78,10 @@ export const COMMAND_MANIFEST: readonly CommandManifestEntry[] = [
     name: "new",
     description: "Reset conversation history and start fresh",
     slackCommand: "/pi-new",
+    slackRoute: {},
     discord: true,
     telegramMenu: {},
+    telegramCommand: true,
   },
   {
     name: "admin",

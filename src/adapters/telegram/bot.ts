@@ -21,7 +21,7 @@ import {
   saveIncomingAttachments,
   type IncomingAttachment,
 } from "../shared.js";
-import { telegramCommandMenu } from "../../commands/manifest.js";
+import { COMMAND_MANIFEST, telegramCommandMenu } from "../../commands/manifest.js";
 import { processMessageIntake } from "../intake.js";
 import { createTelegramAdapters } from "./context.js";
 import { createOfficeAddress, type Workspace } from "../../office/index.js";
@@ -338,71 +338,43 @@ export class TelegramMessagingBot implements MessagingBot {
 
   private setupEventHandlers(): void {
     // --- Slash commands (registered before catch-all so grammY intercepts them) ---
-    // `/stop` is deliberately NOT registered here: it is a magic word owned by
-    // conversation intake, so the catch-all below must receive it.
-
-    this.client.command("new", async (ctx) => {
-      const mc = ctx.message ? this.extractMessageContext(ctx.message) : null;
-      if (!mc) return;
-      const commandText = this.cleanText(mc.text);
-      const event = createConversationEvent({
-        platform: "telegram",
-        type: "command",
-        conversationId: mc.chatId,
-        conversationKind: mc.conversationKind,
-        ts: mc.msgId,
-        thread_ts: mc.threadTs,
-        sessionKey: mc.sessionKey,
-        user: mc.userId,
-        userName: mc.userName,
-        text: commandText,
-        attachments: [],
-      }) as TelegramEvent;
-      this.logToFile(mc.chatId, {
-        date: new Date(mc.msg.date * 1000).toISOString(),
-        ts: mc.msgId,
-        ...(mc.conversationKind === "shared" && mc.threadTs ? { threadTs: mc.threadTs } : {}),
-        user: mc.userId,
-        userName: mc.userName,
-        text: commandText,
-        attachments: [],
-        isMessagingBot: false,
+    // The manifest's telegramCommand flag is the inventory; magic words (e.g.
+    // `stop`) are deliberately never native handlers — they belong to
+    // conversation intake, so the catch-all below must receive them.
+    for (const entry of COMMAND_MANIFEST) {
+      if (!entry.telegramCommand || entry.magicWord) continue;
+      this.client.command(entry.name, async (ctx) => {
+        const mc = ctx.message ? this.extractMessageContext(ctx.message) : null;
+        if (!mc) return;
+        // Handler grammars accept the user's spelling directly (manifest
+        // slash forms), so it is logged and dispatched as-is.
+        const commandText = this.cleanText(mc.text);
+        const event = createConversationEvent({
+          platform: "telegram",
+          type: "command",
+          conversationId: mc.chatId,
+          conversationKind: mc.conversationKind,
+          ts: mc.msgId,
+          thread_ts: mc.threadTs,
+          sessionKey: mc.sessionKey,
+          user: mc.userId,
+          userName: mc.userName,
+          text: commandText,
+          attachments: [],
+        }) as TelegramEvent;
+        this.logToFile(mc.chatId, {
+          date: new Date(mc.msg.date * 1000).toISOString(),
+          ts: mc.msgId,
+          ...(mc.conversationKind === "shared" && mc.threadTs ? { threadTs: mc.threadTs } : {}),
+          user: mc.userId,
+          userName: mc.userName,
+          text: commandText,
+          attachments: [],
+          isMessagingBot: false,
+        });
+        await this.handler.handleEvent(event, this, createTelegramAdapters(event, this));
       });
-      await this.handler.handleEvent(event, this, createTelegramAdapters(event, this));
-    });
-
-    this.client.command("sandbox", async (ctx) => {
-      const mc = ctx.message ? this.extractMessageContext(ctx.message) : null;
-      if (!mc) return;
-      // The sandbox handler's grammar accepts /sandbox directly (manifest
-      // slash forms), so the user's spelling is logged and dispatched as-is.
-      const cleanedText = this.cleanText(mc.text);
-      const event = createConversationEvent({
-        platform: "telegram",
-        type: "command",
-        conversationId: mc.chatId,
-        conversationKind: mc.conversationKind,
-        ts: mc.msgId,
-        thread_ts: mc.threadTs,
-        sessionKey: mc.sessionKey,
-        user: mc.userId,
-        userName: mc.userName,
-        text: cleanedText,
-        attachments: [],
-      }) as TelegramEvent;
-      this.logToFile(mc.chatId, {
-        date: new Date(mc.msg.date * 1000).toISOString(),
-        ts: mc.msgId,
-        ...(mc.conversationKind === "shared" && mc.threadTs ? { threadTs: mc.threadTs } : {}),
-        user: mc.userId,
-        userName: mc.userName,
-        text: cleanedText,
-        attachments: [],
-        isMessagingBot: false,
-      });
-      const context = createTelegramAdapters(event, this);
-      await this.handler.handleEvent(event, this, context);
-    });
+    }
 
     // --- Catch-all for regular (non-command) messages ---
 
