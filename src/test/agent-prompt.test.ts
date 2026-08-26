@@ -4,7 +4,6 @@ import {
   buildTurnInstructions,
   resolveTriggerAttribution,
   translateAttachPathToHost,
-  translateRuntimePathToHost,
 } from "../agent/index.js";
 import { getUnresolvedSandboxPathContext } from "../sandbox/index.js";
 
@@ -97,38 +96,6 @@ describe("turn instructions", () => {
 });
 
 describe("runtime path context", () => {
-  test("container runtime paths translate back to host paths", () => {
-    const pathContext = getUnresolvedSandboxPathContext(
-      { type: "container", container: "mikan-sandbox" },
-      "/host/workspace",
-    );
-
-    expect(pathContext).toMatchObject({
-      hostWorkspaceRoot: "/host/workspace",
-      runtimeWorkspaceRoot: "/workspace",
-    });
-    expect(pathContext.runtimeToHostPath).toBeTypeOf("function");
-    expect(translateRuntimePathToHost("/workspace/C123/report.txt", pathContext)).toBe(
-      "/host/workspace/C123/report.txt",
-    );
-  });
-
-  test("image sandbox has an initial runtime path before resolving to a container", () => {
-    const pathContext = getUnresolvedSandboxPathContext(
-      { type: "image", image: "ubuntu:24.04" },
-      "/host/workspace",
-    );
-
-    expect(pathContext).toMatchObject({
-      hostWorkspaceRoot: "/host/workspace",
-      runtimeWorkspaceRoot: "/workspace",
-    });
-    expect(pathContext.runtimeToHostPath).toBeTypeOf("function");
-    expect(translateRuntimePathToHost("/workspace/C123/report.txt", pathContext)).toBe(
-      "/host/workspace/C123/report.txt",
-    );
-  });
-
   test("relative attach paths resolve from the runtime workspace", () => {
     const pathContext = getUnresolvedSandboxPathContext(
       { type: "image", image: "ubuntu:24.04" },
@@ -184,20 +151,12 @@ describe("runtime path context", () => {
     );
   });
 
-  test("cloudflare keeps runtime paths remote and event control plane on host", () => {
+  test("cloudflare rejects host uploads explicitly", () => {
     const pathContext = getUnresolvedSandboxPathContext(
       { type: "cloudflare", sandboxId: "slack-u123" },
       "/host/workspace",
     );
 
-    expect(pathContext).toMatchObject({
-      hostWorkspaceRoot: "/host/workspace",
-      runtimeWorkspaceRoot: "/workspace",
-    });
-    expect(pathContext.runtimeToHostPath).toBeUndefined();
-    expect(translateRuntimePathToHost("/workspace/C123/report.txt", pathContext)).toBe(
-      "/workspace/C123/report.txt",
-    );
     expect(() => translateAttachPathToHost("report.txt", pathContext)).toThrow(
       "attachments are unavailable",
     );

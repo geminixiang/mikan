@@ -109,13 +109,6 @@ export interface ProgressiveRendererPlatform {
   responseErrorContext?: (
     responseId: string | null,
   ) => Omit<ChatResponseErrorContext, "operation" | "extra">;
-  /** @deprecated Provide `responseErrorContext`; the renderer now owns reporting. */
-  reportError?: (
-    err: unknown,
-    operation: ChatResponseErrorOperation,
-    extra: Record<string, unknown>,
-    responseId: string | null,
-  ) => void;
   notifySendFailure?: (errorMessage: string) => Promise<void>;
   post: (text: string) => Promise<string>;
   update: (id: string, text: string) => Promise<void>;

@@ -4,7 +4,6 @@ import type {
   ConversationContext,
   ConversationEvent,
   MessagingEventHandler,
-  ConversationKind,
   OfficeAddress,
   PlatformBlockKit,
   PlatformDmOpener,
@@ -59,14 +58,7 @@ export interface RunSessionOptions {
 export interface SessionStateOptions {
   /** Canonical office identity; the runtime keys all state by this. */
   address: OfficeAddress;
-  /**
-   * The office's raw platform id — the session-key grammar's conversation
-   * value (a bare conversation session key equals it). Never a storage key;
-   * layout and settings are addressed through the Office value.
-   */
-  conversationId: string;
   sessionKey: string;
-  conversationKind?: ConversationKind;
 }
 
 export interface ConversationRuntimeOptions extends Omit<

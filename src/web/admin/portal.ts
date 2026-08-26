@@ -36,7 +36,12 @@ import {
   refreshPackage,
   removePackage,
 } from "../../packages/index.js";
-import { escapeHtml, readJsonBody, renderPortalShell } from "../portal-shell.js";
+import {
+  escapeHtml,
+  jsonResponse as jsonRes,
+  readJsonBody,
+  renderPortalShell,
+} from "../portal-shell.js";
 import { resolveExistingSessionFile } from "../session-view/service.js";
 import { PRODUCT_NAME } from "../../platform-messages.js";
 import { credentialAuthorizationKey } from "../../sandbox/identity.js";
@@ -108,10 +113,6 @@ async function routeApiRequest(
       jsonRes(res, 403, { error: "Unauthorized" });
       return;
     }
-    if (url.pathname === "/admin/api/me") {
-      serveMe(res, token);
-      return;
-    }
     if (url.pathname === "/admin/api/conversations") {
       serveConversationsList(res, services);
       return;
@@ -166,10 +167,6 @@ async function routeApiRequest(
     }
     if (url.pathname === "/admin/api/events") {
       await serveEventsList(res, services);
-      return;
-    }
-    if (url.pathname === "/admin/api/events/file") {
-      serveEventsFile(res, url, services);
       return;
     }
     if (url.pathname === "/admin/api/conversations/events") {
@@ -305,16 +302,6 @@ function requireAdminWorkspace(res: ServerResponse, services: AdminServices): Wo
 }
 
 // ── API handlers ───────────────────────────────────────────────────────────────
-
-function serveMe(res: ServerResponse, token: AdminToken): void {
-  jsonRes(res, 200, {
-    platform: token.platform,
-    platformUserId: token.platformUserId,
-    platformUserName: token.platformUserName ?? null,
-    conversationId: token.conversationId,
-    expiresAt: token.expiresAt,
-  });
-}
 
 /**
  * Office directories are office-key named and not reversible to raw ids, so
@@ -1804,8 +1791,6 @@ function serveSkillFile(
 
 // ── Events ─────────────────────────────────────────────────────────────────────
 
-const EVENTS_FILE_MAX_BYTES = 64 * 1024;
-
 /**
  * List events through the owning store, whose payloads are validated by the
  * event-format module (files that fail validation stay visible with a null
@@ -1864,42 +1849,6 @@ async function serveConversationEventsList(
   jsonRes(res, 200, { conversationId: scope.conversationId, events });
 }
 
-function serveEventsFile(res: ServerResponse, url: URL, services: AdminServices): void {
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
-  let name: string;
-  try {
-    name = validateEventFilename(url.searchParams.get("name") ?? "");
-  } catch {
-    jsonRes(res, 400, { error: "Invalid name" });
-    return;
-  }
-  const filePath = join(workspace.eventsDir, name);
-  let stats;
-  try {
-    stats = statSync(filePath);
-  } catch {
-    jsonRes(res, 404, { error: "Not found" });
-    return;
-  }
-  if (!stats.isFile()) {
-    jsonRes(res, 400, { error: "Not a file" });
-    return;
-  }
-  if (stats.size > EVENTS_FILE_MAX_BYTES) {
-    jsonRes(res, 413, { error: "File too large" });
-    return;
-  }
-  let raw: string;
-  try {
-    raw = readFileSync(filePath, "utf-8");
-  } catch (err) {
-    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
-    return;
-  }
-  jsonRes(res, 200, { name, content: raw });
-}
-
 /** Delete a single event file scoped to the caller's conversation. */
 async function serveConversationEventDelete(
   res: ServerResponse,
@@ -1942,14 +1891,6 @@ async function serveConversationEventDelete(
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
-
-function jsonRes(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store",
-  });
-  res.end(JSON.stringify(body));
-}
 
 const esc = escapeHtml;
 

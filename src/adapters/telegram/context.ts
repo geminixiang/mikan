@@ -1,15 +1,9 @@
 import { createConversationMessage } from "../../adapter.js";
-import type {
-  ChatToolResult,
-  ConversationMessage,
-  ConversationResponder,
-  MessagingInfo,
-} from "../../adapter.js";
+import type { ChatToolResult, ConversationContext } from "../../adapter.js";
 import { deriveSessionKey } from "../../sessions/session-key.js";
 import { createProgressiveRenderer } from "../progressive-renderer.js";
 import { formatToolArgs } from "../shared.js";
 import type { TelegramMessagingBot, TelegramEvent } from "./bot.js";
-import type { OfficeAddress } from "../../adapter.js";
 
 // A rich message allows far more than the 4096 a plain message did; this stays
 // well inside it, and the headroom is now for the continuation marker alone
@@ -28,12 +22,7 @@ function formatToolResult(result: ChatToolResult): string {
 export function createTelegramAdapters(
   event: TelegramEvent,
   bot: TelegramMessagingBot,
-): {
-  address: OfficeAddress;
-  message: ConversationMessage;
-  responder: ConversationResponder;
-  platform: MessagingInfo;
-} {
+): ConversationContext {
   const conversationId = event.conversationId;
   const chatId = parseInt(conversationId);
   const replyToId = event.thread_ts ? parseInt(event.thread_ts) : null;
@@ -53,7 +42,7 @@ export function createTelegramAdapters(
   });
 
   // The bot's getMessagingInfo() is the single authority for platform info.
-  const platform: MessagingInfo = bot.getMessagingInfo();
+  const platform = bot.getMessagingInfo();
 
   const { responder } = createProgressiveRenderer({
     label: "Telegram",

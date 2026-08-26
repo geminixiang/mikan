@@ -245,13 +245,11 @@ export class SessionLifecycle {
   async closeAll(): Promise<void> {
     const states = Array.from(this.states.values());
     this.states.clear();
-    const closes = states.map((state) => {
+    for (const state of states) {
       const id = runtimeSessionId(state.address, state.sessionKey);
-      const close = state.runner.dispose();
-      this.trackClosing(id, close);
-      return close;
-    });
-    await Promise.all([...this.closing.values(), ...closes]);
+      this.trackClosing(id, state.runner.dispose());
+    }
+    await Promise.all(this.closing.values());
   }
 
   discard(address: OfficeAddress, sessionKey: string): void {

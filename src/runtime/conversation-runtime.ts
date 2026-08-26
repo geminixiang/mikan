@@ -37,7 +37,6 @@ import {
 import {
   assertSessionKeyBelongsToConversation,
   deriveSessionKey,
-  inferConversationKind,
 } from "../sessions/session-key.js";
 import { formatNothingRunning, formatStopped, formatStopping } from "../platform-messages.js";
 import * as Sentry from "@sentry/node";
@@ -195,12 +194,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       await activeSettlement;
     }
 
-    const state = await this.getOrCreateState({
-      address,
-      conversationId,
-      sessionKey,
-      conversationKind: message.conversationKind,
-    });
+    const state = await this.getOrCreateState({ address, sessionKey });
     // Scope resolution only materializes; the Session Dream below reads the
     // session, so bring it up to date with the log first.
     await state.runner.syncChatHistory(message.id);
@@ -328,9 +322,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
         const state = await this.getOrCreateState({
           address,
-          conversationId,
           sessionKey,
-          conversationKind: message.conversationKind,
           currentMessageId: message.id,
         });
         // The rotation Dream summarizes the session; sync the log into it
@@ -418,17 +410,15 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     action: ExtensionBlockAction;
   }): Promise<boolean> {
     if (this.isShuttingDown) return false;
-    const { address, sessionKey, conversationKind, slug, action } = params;
+    const { address, sessionKey, slug, action } = params;
     const conversationId = address.conversationId;
     let consumed = false;
     await this.sessions.enqueue(address, sessionKey, async () => {
       try {
         const state = await this.getOrCreateState({
           address,
-          conversationId,
           sessionKey,
           currentMessageId: action.messageTs ?? sessionKey,
-          conversationKind,
         });
         consumed = await state.runner.tryExtensionAction(slug, action);
         if (consumed) state.lastAccessedAt = Date.now();
@@ -461,10 +451,8 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       try {
         const state = await this.getOrCreateState({
           address,
-          conversationId,
           sessionKey,
           currentMessageId: `extsched:${fire.slug}.${fire.scheduleName}`,
-          conversationKind: inferConversationKind(fire.platform, conversationId),
         });
         consumed = await state.runner.tryExtensionScheduleCallback(fire.slug, fire.callback, {
           scheduleName: fire.scheduleName,
@@ -546,10 +534,8 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       try {
         state = await this.getOrCreateState({
           address,
-          conversationId,
           sessionKey,
           currentMessageId: event.ts,
-          conversationKind: event.conversationKind,
         });
         await state.runner.syncChatHistory(event.ts);
 
@@ -788,7 +774,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
   private async createCurrentRunner(
     options: SessionStateOptions,
-    conversationDir: string,
     sessionScope: Awaited<ReturnType<ChatHistorySync["resolveSessionScope"]>>,
   ): Promise<PiAgentWrapper> {
     while (true) {
@@ -863,7 +848,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       address,
       sessionKey,
       running: false,
-      runner: await this.createCurrentRunner(options, conversationDir, sessionScope),
+      runner: await this.createCurrentRunner(options, sessionScope),
       stopRequested: false,
       lastAccessedAt: Date.now(),
       sessionFile: sessionScope.contextFile,

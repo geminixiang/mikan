@@ -36,12 +36,24 @@ export async function readJsonBody(
   if (data === null) return null;
 
   try {
-    return JSON.parse(data) as Record<string, unknown>;
+    const parsed: unknown = JSON.parse(data);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("JSON body must be an object");
+    }
+    return parsed as Record<string, unknown>;
   } catch {
     res.writeHead(400, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Invalid JSON" }));
     return null;
   }
+}
+
+export function jsonResponse(res: ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+  });
+  res.end(JSON.stringify(body));
 }
 
 /**

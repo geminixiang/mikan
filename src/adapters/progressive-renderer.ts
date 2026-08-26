@@ -78,8 +78,7 @@ export function createProgressiveRenderer(platform: ProgressiveRendererPlatform)
   const sanitize = platform.sanitize ?? ((text: string) => text);
   const reportResponseError = platform.responseErrorContext
     ? createChatResponseErrorReporter(() => platform.responseErrorContext!(state.responseId))
-    : (err: unknown, operation: ChatResponseErrorOperation, extra?: Record<string, unknown>) =>
-        platform.reportError?.(err, operation, extra ?? {}, state.responseId);
+    : undefined;
   const now = Date.now;
   const flushIntervalMs = platform.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS;
 
@@ -279,7 +278,7 @@ export function createProgressiveRenderer(platform: ProgressiveRendererPlatform)
     const handled = operationPromise.catch(async (err) => {
       const message = err instanceof Error ? err.message : String(err);
       log.logWarning(`${platform.label} ${label} error`, message);
-      reportResponseError(err, operation, extra());
+      reportResponseError?.(err, operation, extra());
       if (platform.notifySendFailure) {
         try {
           await platform.notifySendFailure(message);

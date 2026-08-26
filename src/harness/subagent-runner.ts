@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
+import { contentText, type Api, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
 import { Kind, Type, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import * as log from "../log.js";
@@ -427,11 +427,7 @@ function finalAssistant(messages: AgentMessage[]): AssistantMessage | undefined 
 }
 
 function assistantText(message: AssistantMessage | undefined): string {
-  if (!message) return "";
-  return message.content
-    .filter((part) => part.type === "text")
-    .map((part) => part.text)
-    .join("");
+  return message ? contentText(message.content, "") : "";
 }
 
 /**

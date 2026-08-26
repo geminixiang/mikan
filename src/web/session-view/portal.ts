@@ -9,7 +9,12 @@ import {
 } from "../../adapter.js";
 import { createOfficeAddress } from "../../office/index.js";
 import * as log from "../../log.js";
-import { escapeHtml, readRawBody, renderPortalShell } from "../portal-shell.js";
+import {
+  escapeHtml,
+  jsonResponse as json,
+  readJsonBody,
+  renderPortalShell,
+} from "../portal-shell.js";
 import { reportUserFacingError } from "../../observability/sentry.js";
 import { inferConversationKind } from "../../sessions/session-key.js";
 import { isThreadSessionKey, threadSuffixOf } from "../../sessions/session-key.js";
@@ -580,26 +585,13 @@ async function handleSessionMessageRequest(
     return;
   }
 
-  const rawBody = await readRawBody(req, res, 1024 * 1024);
-  if (rawBody === null) return;
+  const body = await readJsonBody(req, res, 1024 * 1024);
+  if (!body) return;
 
-  let body: { token?: string; text?: string; session?: string; sessionKey?: string };
-  try {
-    body = JSON.parse(rawBody) as {
-      token?: string;
-      text?: string;
-      session?: string;
-      sessionKey?: string;
-    };
-  } catch {
-    json(res, 400, { ok: false, error: "Invalid request body." });
-    return;
-  }
-
-  const token = body.token?.trim() ?? "";
-  const text = body.text?.trim() ?? "";
-  const requestedSession = body.session?.trim() || null;
-  const requestedSessionKey = body.sessionKey?.trim() || "";
+  const token = typeof body.token === "string" ? body.token.trim() : "";
+  const text = typeof body.text === "string" ? body.text.trim() : "";
+  const requestedSession = typeof body.session === "string" ? body.session.trim() || null : null;
+  const requestedSessionKey = typeof body.sessionKey === "string" ? body.sessionKey.trim() : "";
   if (!token || !text) {
     json(res, 400, { ok: false, error: "Missing token or text." });
     return;
@@ -776,14 +768,6 @@ function createSessionViewResponseContext(
       publish({ type: "assistant_remove" });
     },
   };
-}
-
-function json(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store",
-  });
-  res.end(JSON.stringify(body));
 }
 
 function renderStatusPage(title: string, message: string): string {

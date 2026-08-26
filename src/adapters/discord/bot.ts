@@ -306,7 +306,6 @@ export class DiscordMessagingBot implements MessagingBot {
   async processAttachments(
     channelId: string,
     attachments: Collection<string, Attachment>,
-    _messageId: string,
   ): Promise<{ name: string; localPath: string }[]> {
     const items: IncomingAttachment[] = [];
     for (const attachment of attachments.values()) {
@@ -636,7 +635,7 @@ export class DiscordMessagingBot implements MessagingBot {
           isMessagingBot: false,
         },
         log: (entry) => this.logToFile(conversationId, entry),
-        processAttachments: () => this.processAttachments(conversationId, msg.attachments, msgId),
+        processAttachments: () => this.processAttachments(conversationId, msg.attachments),
         queueKey: sessionKey,
         enqueue: (queueKey, work) => this.getQueue(queueKey).enqueue(work),
         handler: this.handler,

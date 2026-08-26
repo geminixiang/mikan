@@ -2,7 +2,7 @@
  * Agent runner: prompt construction, path translation, run lifecycle, and createRunner.
  * Split by authority; this barrel preserves the former public surface.
  */
-export { translateRuntimePathToHost, translateAttachPathToHost } from "./execution.js";
+export { translateAttachPathToHost } from "./execution.js";
 export {
   buildPromptPayload,
   resolveTriggerAttribution,

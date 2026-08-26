@@ -16,13 +16,6 @@ import {
 import type { VaultManager } from "../vault/index.js";
 import type { RunnerExecutionContext } from "./types.js";
 
-export function translateRuntimePathToHost(
-  runtimePath: string,
-  pathContext: RuntimePathContext,
-): string {
-  return pathContext.runtimeToHostPath?.(runtimePath) ?? runtimePath;
-}
-
 function isWithinPathRoot(path: string, root: string): boolean {
   const pathRelative = relative(root, path);
   return (

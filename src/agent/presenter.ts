@@ -1,4 +1,4 @@
-import { type Api, type Model } from "@earendil-works/pi-ai";
+import { contentText, type Api, type Model } from "@earendil-works/pi-ai";
 import type { MikanAgentSession } from "../harness/index.js";
 import {
   mergeSubagentProgress,
@@ -121,12 +121,7 @@ export function createRunQueue(
 
 function getFinalAssistantText(session: MikanAgentSession): string {
   const lastAssistant = session.messages.findLast((message) => message.role === "assistant");
-  return (
-    lastAssistant?.content
-      .filter((content): content is { type: "text"; text: string } => content.type === "text")
-      .map((content) => content.text)
-      .join("\n") || ""
-  );
+  return contentText(lastAssistant?.content ?? []);
 }
 
 export function isEventTriggerAttribution(triggerAttribution: string | undefined): boolean {
@@ -809,11 +804,3 @@ export function attachSessionEventHandlers(params: {
     }
   });
 }
-
-/**
- * Create a new PiAgentWrapper for a channel.
- * Sets up the session and subscribes to events once.
- *
- * Runner caching is handled by the caller (channelStates in main.ts).
- * This is a stateless factory function.
- */

@@ -1,15 +1,9 @@
-import {
-  createConversationMessage,
-  type ConversationMessage,
-  type ConversationResponder,
-  type MessagingInfo,
-} from "../../adapter.js";
+import { createConversationMessage, type ConversationContext } from "../../adapter.js";
 import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import { createProgressiveRenderer, formatMarkdownToolResult } from "../progressive-renderer.js";
 import { DISCORD_V2_TEXT_LIMIT } from "./components.js";
 import { formatDiscordMarkdown } from "./format.js";
 import type { DiscordMessagingBot, DiscordEvent } from "./bot.js";
-import type { OfficeAddress } from "../../adapter.js";
 
 // Components V2 allows 4000 characters across a message's text, against 2000
 // for classic content — the reason for using it at all. The margin leaves room
@@ -25,12 +19,7 @@ function isDiscordMessageReference(id: string | undefined): id is string {
 export function createDiscordAdapters(
   event: DiscordEvent,
   bot: DiscordMessagingBot,
-): {
-  address: OfficeAddress;
-  message: ConversationMessage;
-  responder: ConversationResponder;
-  platform: MessagingInfo;
-} {
+): ConversationContext {
   const conversationId = event.conversationId;
   const channelId = conversationId;
   const threadTargetId = isDiscordMessageReference(event.thread_ts) ? event.thread_ts : undefined;
@@ -59,7 +48,7 @@ export function createDiscordAdapters(
   });
 
   // The bot's getMessagingInfo() is the single authority for platform info.
-  const platform: MessagingInfo = bot.getMessagingInfo();
+  const platform = bot.getMessagingInfo();
 
   function postFirst(text: string): Promise<string> {
     if (threadTargetId) return bot.postInThread(channelId, threadTargetId, text);
