@@ -129,22 +129,67 @@ summary and the fix order.
   E5 — ADR-0005 is the rule; these predate or bypass it.
 - **X3** Exported-type placement sweep: G9 + AGENTS.md nearest-types rule.
 
-## Fix plan (merged with harness pass; ordered)
+## Status ledger (updated 2026-08-26, after the fix waves)
 
-Wave 1 — correctness (user-visible or isolation-relevant):
+### Fixed — commits on main, each with a regression test
 
-1. F1 `/login copy` key confusion
-2. F2 runtime resource key from raw conversation id (+ migration note)
-3. G1 Slack thread slash-command session split
-4. D1 stale errorMessage + D2 missing finally
-5. A2 before_agent_start contract (hook before compaction/auth)
-6. B2 dual duration authority (timeout vs budget_exceeded)
-7. G2 GitHub participation scope
-8. F12 provisioner remove correctness
+| Finding                         | Commit    | Fix                                                                                                |
+| ------------------------------- | --------- | -------------------------------------------------------------------------------------------------- |
+| F1 `/login copy` key confusion  | `97554ef` | remove by resource key                                                                             |
+| F2 raw-id runtime resource key  | `97554ef` | office-key identity + boot reap of legacy containers (BREAKING: one-time image container recreate) |
+| G1 Slack thread session split   | `4150518` | one session identity per slash dispatch                                                            |
+| G2 GitHub first-contact stop    | `07dd0a4` | magic-word stop no longer materializes participation                                               |
+| D1 stale errorMessage           | `e6cad3d` | settling message is the authority                                                                  |
+| D2 run() missing finally        | `e6cad3d` | try/finally releases runState ownership                                                            |
+| A2 before_agent_start contract  | `f300759` | hook before auth + pre-turn compaction                                                             |
+| B2 dual duration authority      | `f300759` | deadline timer owns wall-clock alone                                                               |
+| F12 remove() swallowed failure  | `a37fa81` | failed removal keeps state and throws                                                              |
+| G4/G5/G6 manifest restated      | `ec63d2e` | registry/routing derived from manifest; bespoke `new` routes deleted (−127 lines)                  |
+| A1 activation rollback          | `f8028d6` | failed activate rolls back and runs its disposers                                                  |
+| A3 tool-name conflicts          | `f8028d6` | owner-tracked, first-wins with logged owner                                                        |
+| E1 identity grammar ×2          | `e887e6a` | single-flight moved into SessionLifecycle                                                          |
+| B1 slot-pool placement          | `fbcd77f` | moved to harness (reverse dependency gone)                                                         |
+| S4 usage misnamed               | `fbcd77f` | createEmptyUsage/addUsage/copyUsage                                                                |
+| H1 event-filename validation ×2 | `b282e22` | one validator in event-format.ts                                                                   |
+| G9/X3 exported-type placement   | `b282e22` | four types moved to nearest types.ts                                                               |
+| D3 agent.ts five authorities    | `0e13b02` | src/agent/ split along crystallized seams                                                          |
+| E2 rotation workflow ×2         | `e2b87fd` | weak scope-resolution rotation path deleted (−45 lines)                                            |
+| E3 double sync per first event  | `2af4db9` | scope resolution materializes; runtime owns the one per-event sync                                 |
 
-Wave 2 — authority consolidation (mechanical, low risk): 9. G6 manifest↔registry completeness test 10. G4/G5 literal-name routing → manifest route metadata 11. E1 stateTransitions → SessionLifecycle.transition 12. A3 tool-name conflicts; A1 activation rollback 13. B1 slot-pool move; S4 usage rename; G8 attach move 14. H1 event-filename authority; G9/X3 type sweep
+Also fixed along the way (not originally mapped): retryable-error
+classifier → pi-ai (`02fb8b3`); writer-claim inode-reuse CI failure
+(`02e394d`, `bdaea27`).
 
-Wave 3 — structural (when touching the area anyway): 15. D3 agent.ts authority split (stage by authority) 16. E2 rotation single home 17. A4/A5/A6 extensions splits 18. F5/F11 vault env contract 19. E8 Office through seams; H2/H3/H4
+### Remaining — deliberately wait-for-demand
 
-Open questions before their wave: F-Q1, F-Q2, S5 (totalTokens), E3
-(double-ingest repro), G-QA (telegram @bot suffix).
+Principle (see AGENTS.md File-Split Scale): architecture first, files
+later. A rule gets a home when its area is next touched; a file split
+happens only when a seam has crystallized inside the existing file and
+extension is actually blocked. No standalone refactor commits.
+
+| Finding                                    | Do it when…                                                                                      |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| A4/A5/A6 extensions loader/registry splits | next real change to the extension host API or routing grammar — that demand chooses the cut line |
+| F5/F11 vault env contract per backend      | next time any sandbox backend's credential injection changes; define the one env contract then   |
+| F10 shared process-execution primitive     | next host/firecracker exec bug or feature                                                        |
+| E8 Office through session seams            | the pi-dev AgentHarness migration reshuffles the session layer anyway — fold in then             |
+| D4 PiAgentWrapper mixes extension routing  | next change to the runtime↔runner seam                                                           |
+| H2 door-policy vocabulary ×2               | next change to config.ts or workspace-projection                                                 |
+| H3 config → cli/arg-grammar inversion      | next change to state-dir resolution                                                              |
+| H4 createMikanTools six bind setters       | next context-dependent tool addition                                                             |
+| G8 attach tool under slack/tools           | next platform-neutral use of attach                                                              |
+| B3 profile registry passed twice           | next subagent-profile feature                                                                    |
+| B5/B6 models interface tightening          | next auth/provider change                                                                        |
+| S5 totalTokens semantics                   | verify against provider data before touching addUsage                                            |
+
+### Open questions (unresolved, low urgency)
+
+F-Q1 cloudflare abort semantics; F-Q2 firecracker hostPath guarantee;
+G-QA telegram @bot suffix handling.
+
+### The big one, parked upstream
+
+runner.ts → pi AgentHarness (with the session-layer reshuffle it
+implies, incl. E8) waits for pi's dev-branch harness to ship a working
+implementation — 0.84.3's AgentHarness is API scaffold only
+(every method throws HarnessNotImplemented).
