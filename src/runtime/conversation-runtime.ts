@@ -851,7 +851,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       sessionKey,
       cwd: runtimeCwd,
       currentMessageId,
-      rotateTopLevelSession: false,
     });
 
     const state: ConversationState = {

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import { SessionStore } from "../harness/index.js";
 import { ChatHistorySync } from "../sessions/chat-history-sync.js";
+import { shouldRotateTopLevelSession } from "../sessions/rotation.js";
 import {
   createManagedSessionFile,
   createManagedSessionFileAtPath,
@@ -386,58 +387,22 @@ describe("fixed thread sessions", () => {
 });
 
 describe("top-level session rotation", () => {
-  test("rotates shared top-level sessions on biweekly Sunday bucket changes", async () => {
+  // The biweekly clock rule lives in rotation.ts; the rotation *workflow*
+  // (Session Dream → reset → re-run) is the runtime's alone. Scope
+  // resolution never rotates — it reuses whatever session is current.
+  test("clock rule: rotates across biweekly Sunday buckets, not within one", () => {
     const sessionDir = officeSessionsDir(channelDir);
-    const oldFile = createManagedSessionFile(sessionDir, channelDir);
-    rewriteSessionTimestamp(oldFile, "2026-01-05T12:00:00.000Z");
-    const oldSession = await openManagedSession(oldFile, channelDir);
-    await oldSession.appendMessage(makeUserMessage("stale active context"));
+    const staleFile = createManagedSessionFile(sessionDir, channelDir);
+    rewriteSessionTimestamp(staleFile, "2026-01-05T12:00:00.000Z");
+    expect(shouldRotateTopLevelSession(staleFile, new Date("2026-03-01T12:00:00.000Z"))).toBe(true);
 
-    appendLogMessage({
-      ts: "1771027200.000000",
-      date: "2026-02-14T00:00:00.000Z",
-      text: "outside two week bootstrap",
-    });
-    appendLogMessage({
-      ts: "1771545600.000000",
-      date: "2026-02-20T00:00:00.000Z",
-      text: "recent bootstrap context",
-    });
-
-    const manager = new ChatHistorySync({ now: () => new Date("2026-03-01T12:00:00.000Z") });
-    const scope = await manager.resolveSessionScope({
-      conversationDir: channelDir,
-      sessionKey: "C123",
-      cwd: channelDir,
-      rotateTopLevelSession: true,
-    });
-
-    expect(scope.contextFile).not.toBe(oldFile);
-    expect(tryResolveCurrentSession(sessionDir)).toBe(scope.contextFile);
-    const content = readFileSync(scope.contextFile, "utf-8");
-    expect(content).toContain("recent bootstrap context");
-    expect(content).not.toContain("outside two week bootstrap");
-    expect(content).not.toContain("stale active context");
+    rewriteSessionTimestamp(staleFile, "2026-02-23T12:00:00.000Z");
+    expect(shouldRotateTopLevelSession(staleFile, new Date("2026-02-28T12:00:00.000Z"))).toBe(
+      false,
+    );
   });
 
-  test("does not rotate top-level sessions inside the same biweekly bucket", async () => {
-    const sessionDir = officeSessionsDir(channelDir);
-    const currentFile = createManagedSessionFile(sessionDir, channelDir);
-    rewriteSessionTimestamp(currentFile, "2026-02-23T12:00:00.000Z");
-
-    const manager = new ChatHistorySync({ now: () => new Date("2026-02-28T12:00:00.000Z") });
-    const scope = await manager.resolveSessionScope({
-      conversationDir: channelDir,
-      sessionKey: "C123",
-      cwd: channelDir,
-      rotateTopLevelSession: true,
-    });
-
-    expect(scope.contextFile).toBe(currentFile);
-    expect(tryResolveCurrentSession(sessionDir)).toBe(currentFile);
-  });
-
-  test("does not rotate stale top-level sessions when rotation policy is disabled", async () => {
+  test("scope resolution reuses a stale top-level session; rotation is the runtime's call", async () => {
     const sessionDir = officeSessionsDir(channelDir);
     const currentFile = createManagedSessionFile(sessionDir, channelDir);
     rewriteSessionTimestamp(currentFile, "2026-01-05T12:00:00.000Z");
@@ -447,14 +412,13 @@ describe("top-level session rotation", () => {
       conversationDir: channelDir,
       sessionKey: "C123",
       cwd: channelDir,
-      rotateTopLevelSession: false,
     });
 
     expect(scope.contextFile).toBe(currentFile);
     expect(tryResolveCurrentSession(sessionDir)).toBe(currentFile);
   });
 
-  test("does not rotate thread sessions", async () => {
+  test("scope resolution reuses stale thread sessions", async () => {
     const sessionDir = officeSessionsDir(channelDir);
     const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
     await seedManagedSession(threadFile, sessionDir, channelDir, "thread context");
@@ -465,7 +429,6 @@ describe("top-level session rotation", () => {
       conversationDir: channelDir,
       sessionKey: "C123:1000.0001",
       cwd: channelDir,
-      rotateTopLevelSession: true,
     });
 
     expect(scope.contextFile).toBe(threadFile);
@@ -509,7 +472,10 @@ describe("top-level session rotation", () => {
     expect(content).not.toContain("old top-level context");
   });
 
-  test("keeps old log messages out after rotation sync", async () => {
+  test("keeps old log messages out after a runtime rotation reset", async () => {
+    // The runtime rotates by calling resetSession (after Session Dream);
+    // the fresh session's chat_sync watermark must fence out log messages
+    // that predate the reset.
     const sessionDir = officeSessionsDir(channelDir);
     const oldFile = createManagedSessionFile(sessionDir, channelDir);
     rewriteSessionTimestamp(oldFile, "2026-01-05T12:00:00.000Z");
@@ -520,21 +486,18 @@ describe("top-level session rotation", () => {
     });
 
     const manager = new ChatHistorySync({ now: () => new Date("2026-03-01T12:00:00.000Z") });
-    const rotated = await manager.resolveSessionScope({
+    const rotatedFile = await manager.resetSession({
       conversationDir: channelDir,
       sessionKey: "C123",
       cwd: channelDir,
-      rotateTopLevelSession: true,
     });
-    rewriteSessionTimestamp(rotated.contextFile, "2026-03-01T12:00:00.000Z");
     const reused = await manager.resolveSessionScope({
       conversationDir: channelDir,
       sessionKey: "C123",
       cwd: channelDir,
-      rotateTopLevelSession: true,
     });
 
-    expect(reused.contextFile).toBe(rotated.contextFile);
+    expect(reused.contextFile).toBe(rotatedFile);
     expect(readFileSync(reused.contextFile, "utf-8")).not.toContain("old log only");
     expect(
       parseSessionEntries(reused.contextFile).some(

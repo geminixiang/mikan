@@ -74,8 +74,6 @@ export interface ResolveChatSessionScopeOptions {
   cwd?: string;
   /** The triggering platform message ID. History is capped before this turn to avoid future queued turns. */
   currentMessageId?: string;
-  /** Rotate top-level shared sessions on biweekly Sunday boundaries. */
-  rotateTopLevelSession?: boolean;
 }
 
 export interface SyncChatSessionOptions {

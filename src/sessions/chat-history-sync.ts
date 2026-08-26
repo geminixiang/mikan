@@ -7,7 +7,6 @@ import { isCommandText } from "../commands/manifest.js";
 import { readConversationLog } from "./conversation-log.js";
 import { formatHistoryLine, stripHistoryLinePrefix } from "./history-line.js";
 import { isPlatformHistorySession } from "./store.js";
-import { shouldRotateTopLevelSession } from "./rotation.js";
 import { isThreadSessionKey } from "./session-key.js";
 import {
   createManagedSessionFile,
@@ -133,7 +132,6 @@ export class ChatHistorySync {
         sessionDir,
         cwd,
         currentMessageId: options.currentMessageId,
-        rotateTopLevelSession: options.rotateTopLevelSession === true,
       });
       return { sessionDir, contextFile, threadRootMessage: null };
     }
@@ -216,23 +214,20 @@ export class ChatHistorySync {
     sessionDir: string;
     cwd: string;
     currentMessageId?: string;
-    rotateTopLevelSession: boolean;
   }): Promise<string> {
     const records = readConversationLog(options.conversationDir);
     const existing = tryResolveCurrentSession(options.sessionDir);
     if (existing && !isPlatformHistorySession(existing)) {
-      if (!options.rotateTopLevelSession || !shouldRotateTopLevelSession(existing, this.now())) {
-        await syncSessionFromLog(
-          existing,
-          options.cwd,
-          selectExistingSessionSyncMessages(records, {
-            sessionKey: null,
-            excludeMessageId: options.currentMessageId,
-          }),
-          this.historyWindow(),
-        );
-        return existing;
-      }
+      await syncSessionFromLog(
+        existing,
+        options.cwd,
+        selectExistingSessionSyncMessages(records, {
+          sessionKey: null,
+          excludeMessageId: options.currentMessageId,
+        }),
+        this.historyWindow(),
+      );
+      return existing;
     }
 
     const sessionFile = createManagedSessionFile(options.sessionDir, options.cwd);
