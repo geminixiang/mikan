@@ -102,7 +102,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private readonly resolvedModels: MikanModels;
   private globalRunnerGeneration = 0;
   private readonly conversationRunnerGenerations = new Map<string, number>();
-  private readonly stateTransitions = new Map<string, Promise<void>>();
   private isShuttingDown = false;
 
   constructor(private readonly options: ConversationRuntimeOptions) {
@@ -821,19 +820,9 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private async getOrCreateState(
     options: SessionStateOptions & { currentMessageId?: string },
   ): Promise<ConversationState> {
-    const id = `${officeKey(options.address)}|${options.sessionKey}`;
-    const previous = this.stateTransitions.get(id) ?? Promise.resolve();
-    let resolveTransition!: () => void;
-    const transition = new Promise<void>((resolve) => (resolveTransition = resolve));
-    const tail = previous.then(() => transition);
-    this.stateTransitions.set(id, tail);
-    await previous;
-    try {
-      return await this.getOrCreateStateExclusive(options);
-    } finally {
-      resolveTransition();
-      if (this.stateTransitions.get(id) === tail) this.stateTransitions.delete(id);
-    }
+    return this.sessions.transition(options.address, options.sessionKey, () =>
+      this.getOrCreateStateExclusive(options),
+    );
   }
 
   private async getOrCreateStateExclusive(

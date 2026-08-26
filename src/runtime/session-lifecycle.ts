@@ -31,6 +31,7 @@ function runtimeSessionId(address: OfficeAddress, sessionKey: string): string {
 export class SessionLifecycle {
   private readonly states = new Map<string, ConversationRuntimeState>();
   private readonly closing = new Map<string, Promise<void>>();
+  private readonly transitions = new Map<string, Promise<void>>();
   private readonly queues = new Map<string, Promise<void>>();
   private readonly conversationBarriers = new Map<string, ConversationBarrier>();
   private readonly pendingConversationClears = new Set<string>();
@@ -195,6 +196,32 @@ export class SessionLifecycle {
     const key = officeKey(address);
     for (const state of Array.from(this.states.values())) {
       if (officeKey(state.address) === key) this.discard(state.address, state.sessionKey);
+    }
+  }
+
+  /**
+   * Serialize `work` with every other transition for the same runtime
+   * session. Runner creation, replacement, and writer handover must be
+   * single-flight per key; owning that here keeps the composite identity
+   * grammar (and the queue that guards it) in one module.
+   */
+  async transition<T>(
+    address: OfficeAddress,
+    sessionKey: string,
+    work: () => Promise<T>,
+  ): Promise<T> {
+    const id = runtimeSessionId(address, sessionKey);
+    const previous = this.transitions.get(id) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => (release = resolve));
+    const tail = previous.then(() => current);
+    this.transitions.set(id, tail);
+    await previous;
+    try {
+      return await work();
+    } finally {
+      release();
+      if (this.transitions.get(id) === tail) this.transitions.delete(id);
     }
   }
 
