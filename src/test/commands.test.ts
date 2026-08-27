@@ -277,7 +277,6 @@ describe("ModelCommandHandler", () => {
     try {
       const commandHandler = new ModelCommandHandler(
         MikanModels.create({
-          authPath: join(dir, "auth.json"),
           modelsJsonPath: modelsPath,
         }),
       );

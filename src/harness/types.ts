@@ -192,7 +192,6 @@ export interface SessionHeader {
 }
 
 export interface CreateMikanModelsOptions {
-  authPath?: string;
   modelsJsonPath?: string;
 }
 

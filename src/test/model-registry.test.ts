@@ -9,7 +9,6 @@ function withTempRegistry(config: unknown): MikanModels {
   const dir = mkdtempSync(join(tmpdir(), "mikan-model-registry-"));
   writeFileSync(join(dir, "models.json"), JSON.stringify(config));
   return MikanModels.create({
-    authPath: join(dir, "auth.json"),
     modelsJsonPath: join(dir, "models.json"),
   });
 }
@@ -90,7 +89,6 @@ describe("MikanModels.resolve", () => {
     const dir = mkdtempSync(join(tmpdir(), "mikan-empty-model-registry-"));
     try {
       const registry = MikanModels.create({
-        authPath: join(dir, "auth.json"),
         modelsJsonPath: join(dir, "models.json"),
       });
 

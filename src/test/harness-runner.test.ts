@@ -28,11 +28,7 @@ function createFauxSetup(): {
   faux: ReturnType<typeof fauxProvider>;
   model: Model<Api>;
 } {
-  // Auth path with a stored key so preflight auth checks pass for the faux provider.
-  const authPath = join(dir, "auth.json");
-  writeFileSync(authPath, JSON.stringify({ faux: { type: "api_key", key: "test-key" } }));
   const models = MikanModels.create({
-    authPath,
     modelsJsonPath: join(dir, "models.json"),
   });
   const faux = fauxProvider();
@@ -1004,7 +1000,7 @@ describe("MikanAgentSession", () => {
         },
       }),
     );
-    const models = MikanModels.create({ authPath: join(dir, "auth.json"), modelsJsonPath });
+    const models = MikanModels.create({ modelsJsonPath });
     const model = models.find("keyless-provider", "m1");
     expect(model).toBeDefined();
 

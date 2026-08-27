@@ -164,9 +164,9 @@ runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診�
 
 擁有 version 3 的 append-only session JSONL 與 tree reconstruction。`SessionHeader.version` 目前為 `3`（`CURRENT_SESSION_VERSION`）。Session 項目可能分支；消費者必須使用 store/context helper，不得假設該檔案是扁平的聊天逐字稿。
 
-### `MikanModels` 與 `FileCredentialStore`
+### `MikanModels`
 
-`MikanModels` 會解析內建與自訂的 `pi-ai` model。`FileCredentialStore` 會把 provider 憑證持久化在 state directory。Vault 憑證屬於不同邊界：它們被注入到工具執行中，並非用來驗證 host 端的 model client。
+`MikanModels` 會解析內建與自訂的 `pi-ai` model；provider 憑證來自環境變數。Vault 憑證屬於不同邊界：它們被注入到工具執行中，並非用來驗證 host 端的 model client。
 
 ### Subagent profile
 
@@ -318,21 +318,20 @@ type EventFilePayload =
 
 ## 12. 持久化檔案系統介面
 
-| 路徑                                                  | 擁有者                   | 可見性 / 相容性                         |
-| ----------------------------------------------------- | ------------------------ | --------------------------------------- |
-| `<state-dir>/settings.json`                           | config                   | 僅限 host 的全域設定                    |
-| `<state-dir>/office-registry.json`                    | office registry          | 僅限 host 的 office 清單 + 遷移 journal |
-| `<state-dir>/conversations/<officeKey>/settings.json` | config/admin             | 僅限 host 的對話覆寫                    |
-| `<state-dir>/auth.json`                               | harness credential store | 僅限 host 的 model-provider 憑證        |
-| `<state-dir>/models.json`                             | harness model catalog    | 僅限 host 的自訂 provider/model         |
-| `<state-dir>/vaults/**`                               | vault/login              | 僅限 host 的 secret 與 mount file       |
-| `<state-dir>/{global,conversations}/**/extensions`    | extension loader         | 受信任的 host 程式碼                    |
-| `<workspace>/MEMORY.md`                               | agent/user               | Sandbox 可見的持久記憶                  |
-| `<workspace>/skills/**/SKILL.md`                      | skills                   | Sandbox 可見的 prompt 指示              |
-| `<workspace>/events/*.json`                           | event store/watcher      | 共享的排程 wire format                  |
-| `<workspace>/agents/*.md`                             | subagent profile         | 疊在內建之上、每個安裝各自的 model 修補 |
-| `<workspace>/<officeKey>/log.jsonl`                   | platform adapter         | Append-only 的平台歷史                  |
-| `<workspace>/<officeKey>/sessions/*.jsonl`            | session store            | 有版本的 append-only agent 歷史         |
+| 路徑                                                  | 擁有者                | 可見性 / 相容性                         |
+| ----------------------------------------------------- | --------------------- | --------------------------------------- |
+| `<state-dir>/settings.json`                           | config                | 僅限 host 的全域設定                    |
+| `<state-dir>/office-registry.json`                    | office registry       | 僅限 host 的 office 清單 + 遷移 journal |
+| `<state-dir>/conversations/<officeKey>/settings.json` | config/admin          | 僅限 host 的對話覆寫                    |
+| `<state-dir>/models.json`                             | harness model catalog | 僅限 host 的自訂 provider/model         |
+| `<state-dir>/vaults/**`                               | vault/login           | 僅限 host 的 secret 與 mount file       |
+| `<state-dir>/{global,conversations}/**/extensions`    | extension loader      | 受信任的 host 程式碼                    |
+| `<workspace>/MEMORY.md`                               | agent/user            | Sandbox 可見的持久記憶                  |
+| `<workspace>/skills/**/SKILL.md`                      | skills                | Sandbox 可見的 prompt 指示              |
+| `<workspace>/events/*.json`                           | event store/watcher   | 共享的排程 wire format                  |
+| `<workspace>/agents/*.md`                             | subagent profile      | 疊在內建之上、每個安裝各自的 model 修補 |
+| `<workspace>/<officeKey>/log.jsonl`                   | platform adapter      | Append-only 的平台歷史                  |
+| `<workspace>/<officeKey>/sessions/*.jsonl`            | session store         | 有版本的 append-only agent 歷史         |
 
 `MEMORY.md`、`skills`、`events` 與 `agents` 是 workspace root 的保留名稱（`RESERVED_WORKSPACE_NAMES`）；workspace root 底下其他每一個項目都是 office 目錄。對於以對話為範圍的 sandbox，`<state-dir>/vaults/` 底下以對話為範圍的 vault 目錄會以 office key 命名；`host` 模式以使用者為 key，`container` 模式則以 container 名稱為 key。
 

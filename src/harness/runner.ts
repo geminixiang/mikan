@@ -390,7 +390,7 @@ export class MikanAgentSession {
     const auth = await this.models.getAuth(model);
     if (!auth) {
       throw new Error(
-        `No credentials for provider "${model.provider}". Set the provider API key environment variable or add it to auth.json.`,
+        `No credentials for provider "${model.provider}". Set the provider API key environment variable.`,
       );
     }
   }

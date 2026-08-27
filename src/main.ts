@@ -44,7 +44,6 @@ import {
 } from "./config.js";
 import {
   configureHttpDispatcher,
-  defaultAuthPath,
   defaultModelsJsonPath,
   parseHttpIdleTimeoutMs,
 } from "./harness/index.js";
@@ -675,18 +674,6 @@ function logHarnessStartupSummary(): void {
   log.logInfo(
     `HTTP dispatcher: idle timeout ${httpIdleTimeoutMs}ms${proxy ? `, proxy ${proxy}` : ", no proxy"}`,
   );
-
-  const authPath = defaultAuthPath();
-  if (existsSync(authPath)) {
-    try {
-      const providers = Object.keys(JSON.parse(readFileSync(authPath, "utf-8")) as object);
-      log.logInfo(`Harness auth: ${authPath} (providers: ${providers.join(", ") || "none"})`);
-    } catch {
-      log.logWarning(`Harness auth: ${authPath} exists but is not valid JSON`);
-    }
-  } else {
-    log.logInfo(`Harness auth: ${authPath} missing — provider keys come from env vars only`);
-  }
 
   const modelsPath = defaultModelsJsonPath();
   log.logInfo(

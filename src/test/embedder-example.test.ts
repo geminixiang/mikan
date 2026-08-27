@@ -35,10 +35,7 @@ function createFauxModels(): { models: MikanModels; faux: ReturnType<typeof faux
   );
   process.env.MIKAN_STATE_DIR = stateDir;
 
-  const authPath = join(stateDir, "auth.json");
-  writeFileSync(authPath, JSON.stringify({ faux: { type: "api_key", key: "test-key" } }));
   const models = MikanModels.create({
-    authPath,
     modelsJsonPath: join(stateDir, "models.json"),
   });
   const faux = fauxProvider();

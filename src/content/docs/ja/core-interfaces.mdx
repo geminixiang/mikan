@@ -164,9 +164,9 @@ model turn loop、message 永続化、retries、compaction、budget circuit brea
 
 version 3 の append-only な session JSONL と tree 再構築を所有します。`SessionHeader.version` は現在 `3`（`CURRENT_SESSION_VERSION`）です。Session entries は分岐し得るため、consumers はファイルをフラットなチャットトランスクリプトと仮定せず、store/context helpers を使わなければなりません。
 
-### `MikanModels` と `FileCredentialStore`
+### `MikanModels`
 
-`MikanModels` は組み込みおよびカスタムの `pi-ai` models を解決します。`FileCredentialStore` は provider credentials を state directory に永続化します。Vault credentials は別の境界です。tool execution に注入されるものであり、host 側の model client を認証するために使われるものではありません。
+`MikanModels` は組み込みおよびカスタムの `pi-ai` models を解決します。provider credentials は環境変数から解決されます。Vault credentials は別の境界です。tool execution に注入されるものであり、host 側の model client を認証するために使われるものではありません。
 
 ### Subagent profiles
 
@@ -318,21 +318,20 @@ type EventFilePayload =
 
 ## 12. 永続化されたファイルシステムのインターフェース
 
-| パス                                                  | 所有者                   | 可視性 / 互換性                                |
-| ----------------------------------------------------- | ------------------------ | ---------------------------------------------- |
-| `<state-dir>/settings.json`                           | config                   | Host-only のグローバル設定                     |
-| `<state-dir>/office-registry.json`                    | office registry          | Host-only の office 一覧 + migration journal   |
-| `<state-dir>/conversations/<officeKey>/settings.json` | config/admin             | Host-only の conversation override             |
-| `<state-dir>/auth.json`                               | harness credential store | Host-only の model-provider credentials        |
-| `<state-dir>/models.json`                             | harness model catalog    | Host-only のカスタム providers/models          |
-| `<state-dir>/vaults/**`                               | vault/login              | Host-only の secrets と mount files            |
-| `<state-dir>/{global,conversations}/**/extensions`    | extension loader         | 信頼された host code                           |
-| `<workspace>/MEMORY.md`                               | agent/user               | Sandbox から見える永続 memory                  |
-| `<workspace>/skills/**/SKILL.md`                      | skills                   | Sandbox から見える prompt instructions         |
-| `<workspace>/events/*.json`                           | event store/watcher      | 共有 scheduling の wire format                 |
-| `<workspace>/agents/*.md`                             | subagent profiles        | 組み込みに対するインストールごとの model patch |
-| `<workspace>/<officeKey>/log.jsonl`                   | platform adapters        | Append-only な platform history                |
-| `<workspace>/<officeKey>/sessions/*.jsonl`            | session store            | Versioned append-only な agent history         |
+| パス                                                  | 所有者                | 可視性 / 互換性                                |
+| ----------------------------------------------------- | --------------------- | ---------------------------------------------- |
+| `<state-dir>/settings.json`                           | config                | Host-only のグローバル設定                     |
+| `<state-dir>/office-registry.json`                    | office registry       | Host-only の office 一覧 + migration journal   |
+| `<state-dir>/conversations/<officeKey>/settings.json` | config/admin          | Host-only の conversation override             |
+| `<state-dir>/models.json`                             | harness model catalog | Host-only のカスタム providers/models          |
+| `<state-dir>/vaults/**`                               | vault/login           | Host-only の secrets と mount files            |
+| `<state-dir>/{global,conversations}/**/extensions`    | extension loader      | 信頼された host code                           |
+| `<workspace>/MEMORY.md`                               | agent/user            | Sandbox から見える永続 memory                  |
+| `<workspace>/skills/**/SKILL.md`                      | skills                | Sandbox から見える prompt instructions         |
+| `<workspace>/events/*.json`                           | event store/watcher   | 共有 scheduling の wire format                 |
+| `<workspace>/agents/*.md`                             | subagent profiles     | 組み込みに対するインストールごとの model patch |
+| `<workspace>/<officeKey>/log.jsonl`                   | platform adapters     | Append-only な platform history                |
+| `<workspace>/<officeKey>/sessions/*.jsonl`            | session store         | Versioned append-only な agent history         |
 
 `MEMORY.md`、`skills`、`events`、`agents` は workspace root の予約名（`RESERVED_WORKSPACE_NAMES`）であり、それ以外の workspace root エントリはすべて office directory です。`<state-dir>/vaults/` 配下の conversation スコープの vault directory は、conversation スコープの sandbox では office key で命名されます。`host` モードは user、`container` モードは container 名で索きます。
 

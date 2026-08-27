@@ -32,9 +32,9 @@ streaming).
 │  SessionStore (session-store.ts)   MikanModels (models.ts) │
 │    · pi v4 JSONL sessions            · pi-ai Models set    │
 │    · buildSessionContext             · models.json customs │
-│                                      · auth.json creds     │
-│  Skills (skills.ts)                FileCredentialStore     │
-│  Extensions (extensions/)          Settings (settings.ts)  │
+│                                      · env-var creds       │
+│  Skills (skills.ts)                Settings (settings.ts)  │
+│  Extensions (extensions/)                                  │
 └──────────────────────────┬─────────────────────────────────┘
                            │
 ┌──────────────────────────▼─────────────────────────────────┐
@@ -50,7 +50,6 @@ streaming).
 | `runner.ts` `MikanAgentSession`    | Turn loop: persistence, auto-compaction, auto-retry, budget breakers, events, hooks                     | `AgentSession`                                 |
 | `session-store.ts` `SessionStore`  | Async facade over pi v4 JSONL sessions at mikan-chosen paths                                            | `SessionManager`                               |
 | `models.ts` `MikanModels`          | Model catalog + auth resolution (including models.json custom providers)                                | `ModelRegistry`                                |
-| `auth.ts` `FileCredentialStore`    | `~/.mikan/auth.json` credential store (pi-ai `CredentialStore` implementation)                          | `AuthStorage`                                  |
 | `skills.ts`                        | SKILL.md discovery and system-prompt formatting                                                         | `loadSkillsFromDir` / `formatSkillsForPrompt`  |
 | `http.ts`                          | Global fetch: proxy support (`HTTP_PROXY`, etc.) + idle timeout                                         | `http-dispatcher`                              |
 | `settings.ts`                      | Compaction / retry / budget defaults                                                                    | `SettingsManager`                              |
@@ -77,9 +76,8 @@ streaming).
   `mikan sessions migrate` (with the daemon stopped) to convert them; the
   migrator verifies each file against the v3 context semantics and keeps a
   `.v3.bak` backup.
-- **auth.json format is unchanged; path is `~/.mikan/auth.json`.** pi-ai
-  `Credential` is the current auth.json shape; file contents can be reused, but
-  paths under `~/.pi` are no longer read.
+- **Provider credentials come from environment variables only.** There is no
+  auth.json store and no OAuth login flow; paths under `~/.pi` are not read.
 - **models.json subset.** `MikanModels` reads `~/.mikan/models.json`: providers
   with a `models` array become custom providers (`api` supports
   anthropic-messages / openai-completions / openai-responses /
@@ -118,8 +116,8 @@ byte-stable and cache-warm.
 
 ### Behavioral differences from pi-coding-agent
 
-- Settings and credentials live under `~/.mikan/` (`auth.json`, `models.json`);
-  nothing is read from `~/.pi/`.
+- Settings and the model catalog live under `~/.mikan/` (`models.json`);
+  provider keys come from env vars. Nothing is read from `~/.pi/`.
 - pi extensions (`.pi/extensions`) are not loaded; mikan's extension system
   replaces them (below).
 - Prompt templates / `/skill:` expansion are outside the harness (mikan
@@ -356,5 +354,4 @@ Still open: provider registration, and install/uninstall lifecycle hooks.
 - `src/test/harness-runner.test.ts` — faux provider e2e: persistence, tools, hook block, auth precheck
 - `src/test/harness-extensions.test.ts` — loader and hook registry
 - `src/test/harness-skills.test.ts` — SKILL.md discovery and prompt formatting
-- `src/test/harness-auth.test.ts` — auth.json read/write
 - `src/test/harness-http.test.ts` — dispatcher proxy resolution and idle timeout

@@ -203,9 +203,9 @@ Owns the model turn loop, message persistence, retries, compaction, budget circu
 
 Owns version 3 append-only session JSONL and tree reconstruction. `SessionHeader.version` is currently `3` (`CURRENT_SESSION_VERSION`). Session entries may branch; consumers must use store/context helpers rather than assuming the file is a flat chat transcript.
 
-### `MikanModels` and `FileCredentialStore`
+### `MikanModels`
 
-`MikanModels` resolves built-in and custom `pi-ai` models. `FileCredentialStore` persists provider credentials in the state directory. Vault credentials are a different boundary: they are injected into tool execution, not used to authenticate the host-side model client.
+`MikanModels` resolves built-in and custom `pi-ai` models; provider credentials come from environment variables. Vault credentials are a different boundary: they are injected into tool execution, not used to authenticate the host-side model client.
 
 ### Subagent profiles
 
@@ -357,21 +357,20 @@ The bus is shared and agent-writable by design. Ownership prefixes are cooperati
 
 ## 12. Persisted filesystem interface
 
-| Path                                                  | Owner                    | Visibility / compatibility                     |
-| ----------------------------------------------------- | ------------------------ | ---------------------------------------------- |
-| `<state-dir>/settings.json`                           | config                   | Host-only global settings                      |
-| `<state-dir>/office-registry.json`                    | office registry          | Host-only office inventory + migration journal |
-| `<state-dir>/conversations/<officeKey>/settings.json` | config/admin             | Host-only conversation overrides               |
-| `<state-dir>/auth.json`                               | harness credential store | Host-only model-provider credentials           |
-| `<state-dir>/models.json`                             | harness model catalog    | Host-only custom providers/models              |
-| `<state-dir>/vaults/**`                               | vault/login              | Host-only secrets and mount files              |
-| `<state-dir>/{global,conversations}/**/extensions`    | extension loader         | Trusted host code                              |
-| `<workspace>/MEMORY.md`                               | agent/user               | Sandbox-visible durable memory                 |
-| `<workspace>/skills/**/SKILL.md`                      | skills                   | Sandbox-visible prompt instructions            |
-| `<workspace>/events/*.json`                           | event store/watcher      | Shared scheduling wire format                  |
-| `<workspace>/agents/*.md`                             | subagent profiles        | Per-install model patches over built-ins       |
-| `<workspace>/<officeKey>/log.jsonl`                   | platform adapters        | Append-only platform history                   |
-| `<workspace>/<officeKey>/sessions/*.jsonl`            | session store            | Versioned append-only agent history            |
+| Path                                                  | Owner                 | Visibility / compatibility                     |
+| ----------------------------------------------------- | --------------------- | ---------------------------------------------- |
+| `<state-dir>/settings.json`                           | config                | Host-only global settings                      |
+| `<state-dir>/office-registry.json`                    | office registry       | Host-only office inventory + migration journal |
+| `<state-dir>/conversations/<officeKey>/settings.json` | config/admin          | Host-only conversation overrides               |
+| `<state-dir>/models.json`                             | harness model catalog | Host-only custom providers/models              |
+| `<state-dir>/vaults/**`                               | vault/login           | Host-only secrets and mount files              |
+| `<state-dir>/{global,conversations}/**/extensions`    | extension loader      | Trusted host code                              |
+| `<workspace>/MEMORY.md`                               | agent/user            | Sandbox-visible durable memory                 |
+| `<workspace>/skills/**/SKILL.md`                      | skills                | Sandbox-visible prompt instructions            |
+| `<workspace>/events/*.json`                           | event store/watcher   | Shared scheduling wire format                  |
+| `<workspace>/agents/*.md`                             | subagent profiles     | Per-install model patches over built-ins       |
+| `<workspace>/<officeKey>/log.jsonl`                   | platform adapters     | Append-only platform history                   |
+| `<workspace>/<officeKey>/sessions/*.jsonl`            | session store         | Versioned append-only agent history            |
 
 `MEMORY.md`, `skills`, `events`, and `agents` are the reserved workspace-root names (`RESERVED_WORKSPACE_NAMES`); every other workspace-root entry is an office directory. Conversation-scoped vault directories under `<state-dir>/vaults/` are named by office key for conversation-scoped sandboxes; `host` mode keys by user and `container` mode by container name.
 

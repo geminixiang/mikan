@@ -476,7 +476,7 @@ export function isPathInside(child: string, parent: string): boolean {
 }
 
 /**
- * The state dir (extensions code, extension data, vaults, auth.json) must
+ * The state dir (extensions code, extension data, vaults) must
  * never live inside the working dir: conversation opt-in "full" mode mounts
  * the entire working dir read-write into sandbox containers, and a mounted
  * state dir would let sandboxed code plant extension modules that the host

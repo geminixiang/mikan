@@ -3,7 +3,6 @@ export type { CommandContext, CommandHandler, CommandServices } from "./commands
 
 // Public harness interface. Keep this list explicit: adding an internal harness
 // helper must not silently expand the npm package interface.
-export { FileCredentialStore, defaultAuthPath } from "./harness/auth.js";
 export {
   DEFAULT_HTTP_IDLE_TIMEOUT_MS,
   configureHttpDispatcher,

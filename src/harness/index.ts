@@ -5,7 +5,6 @@
  * (agent loop, compaction, context building) and pi-ai (providers, models,
  * auth). See `src/harness/README.md` for the architecture.
  */
-export { FileCredentialStore, defaultAuthPath } from "./auth.js";
 export {
   DEFAULT_HTTP_IDLE_TIMEOUT_MS,
   configureHttpDispatcher,

@@ -2,7 +2,7 @@
  * Model catalog for the mikan harness.
  *
  * Wraps pi-ai's `Models` collection: all built-in providers are registered
- * with credentials resolved through mikan's auth.json, and custom providers
+ * with credentials resolved from provider env vars, and custom providers
  * or overrides can be added via a `models.json` file
  * (`~/.mikan/models.json` by default).
  *
@@ -14,7 +14,7 @@
  *     "my-provider": {
  *       "api": "openai-completions",     // required when models are listed
  *       "baseUrl": "http://host/v1",
- *       "apiKey": "literal-key",          // optional; auth.json / MY_PROVIDER_API_KEY otherwise
+ *       "apiKey": "literal-key",          // optional; MY_PROVIDER_API_KEY env var otherwise
  *       "headers": { },
  *       "compat": { },
  *       "models": [{ "id": "m", "name": "M", "input": ["text"], "reasoning": false }]
@@ -44,7 +44,6 @@ import { googleGenerativeAIApi } from "@earendil-works/pi-ai/api/google-generati
 import { mistralConversationsApi } from "@earendil-works/pi-ai/api/mistral-conversations.lazy";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
-import { defaultAuthPath, FileCredentialStore } from "./auth.js";
 import type { CreateMikanModelsOptions } from "./types.js";
 
 export type { CreateMikanModelsOptions } from "./types.js";
@@ -206,12 +205,7 @@ function buildCustomProvider(providerName: string, config: CustomProviderConfig)
             config.apiKey ??
             (await ctx.env(envVar));
           if (!key) return undefined;
-          const source =
-            credential?.type === "api_key" && credential.key
-              ? "auth.json"
-              : config.apiKey
-                ? "models.json"
-                : envVar;
+          const source = config.apiKey ? "models.json" : envVar;
           return { auth: { apiKey: key }, source };
         },
       },
@@ -250,9 +244,8 @@ export class MikanModels {
   }
 
   static create(options: CreateMikanModelsOptions = {}): MikanModels {
-    const authPath = options.authPath ?? defaultAuthPath();
     const modelsJsonPath = options.modelsJsonPath ?? defaultModelsJsonPath();
-    const models = builtinModels({ credentials: new FileCredentialStore(authPath) });
+    const models = builtinModels();
     const loadError = applyModelsJson(models, modelsJsonPath);
     return new MikanModels(models, loadError);
   }

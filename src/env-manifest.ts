@@ -88,7 +88,6 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
     key: "llm",
     title: "LLM providers",
     kind: "feature",
-    doc: "Provider keys can also live in <state-dir>/auth.json",
     vars: [
       { name: "ANTHROPIC_API_KEY", secret: true, doc: "Anthropic API key" },
       { name: "OPENAI_API_KEY", secret: true, doc: "OpenAI API key" },

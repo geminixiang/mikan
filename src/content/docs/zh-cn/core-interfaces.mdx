@@ -203,9 +203,9 @@ interface ConversationContext {
 
 拥有版本 3 的仅追加会话 JSONL 和树重建。`SessionHeader.version` 当前为 `3`（`CURRENT_SESSION_VERSION`）。会话条目可能分支；使用方必须使用 store/context 辅助函数，而不能假定文件是一份扁平的聊天记录。
 
-### `MikanModels` 与 `FileCredentialStore`
+### `MikanModels`
 
-`MikanModels` 解析内置和自定义的 `pi-ai` 模型。`FileCredentialStore` 在 state directory 中持久化 provider 凭证。Vault 凭证是不同的边界：它们被注入到工具执行中，而非用于对主机侧模型客户端进行认证。
+`MikanModels` 解析内置和自定义的 `pi-ai` 模型；provider 凭证来自环境变量。Vault 凭证是不同的边界：它们被注入到工具执行中，而非用于对主机侧模型客户端进行认证。
 
 ### Subagent profile
 
@@ -357,21 +357,20 @@ type EventFilePayload =
 
 ## 12. 持久化文件系统接口
 
-| 路径                                                  | 所有者                   | 可见性 / 兼容性                   |
-| ----------------------------------------------------- | ------------------------ | --------------------------------- |
-| `<state-dir>/settings.json`                           | config                   | 仅主机的全局设置                  |
-| `<state-dir>/office-registry.json`                    | office registry          | 仅主机的办公室清单 + 迁移日志     |
-| `<state-dir>/conversations/<officeKey>/settings.json` | config/admin             | 仅主机的对话覆盖                  |
-| `<state-dir>/auth.json`                               | harness credential store | 仅主机的模型 provider 凭证        |
-| `<state-dir>/models.json`                             | harness model catalog    | 仅主机的自定义 provider/模型      |
-| `<state-dir>/vaults/**`                               | vault/login              | 仅主机的 secret 与 mount 文件     |
-| `<state-dir>/{global,conversations}/**/extensions`    | extension loader         | 受信任的主机代码                  |
-| `<workspace>/MEMORY.md`                               | agent/user               | 沙箱可见的持久记忆                |
-| `<workspace>/skills/**/SKILL.md`                      | skills                   | 沙箱可见的提示词指令              |
-| `<workspace>/events/*.json`                           | event store/watcher      | 共享的调度 wire 格式              |
-| `<workspace>/agents/*.md`                             | subagent profiles        | 覆盖内置 profile 的按安装模型补丁 |
-| `<workspace>/<officeKey>/log.jsonl`                   | platform adapters        | 仅追加的平台历史记录              |
-| `<workspace>/<officeKey>/sessions/*.jsonl`            | session store            | 带版本的仅追加代理历史记录        |
+| 路径                                                  | 所有者                | 可见性 / 兼容性                   |
+| ----------------------------------------------------- | --------------------- | --------------------------------- |
+| `<state-dir>/settings.json`                           | config                | 仅主机的全局设置                  |
+| `<state-dir>/office-registry.json`                    | office registry       | 仅主机的办公室清单 + 迁移日志     |
+| `<state-dir>/conversations/<officeKey>/settings.json` | config/admin          | 仅主机的对话覆盖                  |
+| `<state-dir>/models.json`                             | harness model catalog | 仅主机的自定义 provider/模型      |
+| `<state-dir>/vaults/**`                               | vault/login           | 仅主机的 secret 与 mount 文件     |
+| `<state-dir>/{global,conversations}/**/extensions`    | extension loader      | 受信任的主机代码                  |
+| `<workspace>/MEMORY.md`                               | agent/user            | 沙箱可见的持久记忆                |
+| `<workspace>/skills/**/SKILL.md`                      | skills                | 沙箱可见的提示词指令              |
+| `<workspace>/events/*.json`                           | event store/watcher   | 共享的调度 wire 格式              |
+| `<workspace>/agents/*.md`                             | subagent profiles     | 覆盖内置 profile 的按安装模型补丁 |
+| `<workspace>/<officeKey>/log.jsonl`                   | platform adapters     | 仅追加的平台历史记录              |
+| `<workspace>/<officeKey>/sessions/*.jsonl`            | session store         | 带版本的仅追加代理历史记录        |
 
 `MEMORY.md`、`skills`、`events` 和 `agents` 是工作区根目录的保留名称（`RESERVED_WORKSPACE_NAMES`）；工作区根目录下的其他每一项都是办公室目录。对于对话范围的沙箱，`<state-dir>/vaults/` 下的对话范围 vault 目录按 office key 命名；`host` 模式按用户标识，`container` 模式按容器名标识。
 

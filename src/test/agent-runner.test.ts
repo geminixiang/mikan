@@ -54,10 +54,7 @@ function testOffice(): Office {
 }
 
 function createFauxModels(): { models: MikanModels; faux: ReturnType<typeof fauxProvider> } {
-  const authPath = join(dir, "auth.json");
-  writeFileSync(authPath, JSON.stringify({ faux: { type: "api_key", key: "test-key" } }));
   const models = MikanModels.create({
-    authPath,
     modelsJsonPath: join(dir, "models.json"),
   });
   const faux = fauxProvider();

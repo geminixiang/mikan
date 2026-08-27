@@ -24,8 +24,8 @@ embedder adopts one of mikan's supported platforms; this example drives a
 ## Run it
 
 Requires a configured mikan state dir: `~/.mikan` with `settings.json` (required)
-and `auth.json` (`models.json` is optional). `MIKAN_STATE_DIR` (or `STATE_DIR`)
-moves where `settings.json` is read from; `auth.json` and `models.json` stay
+(`models.json` is optional). `MIKAN_STATE_DIR` (or `STATE_DIR`)
+moves where `settings.json` is read from; `models.json` stays
 under `~/.mikan` unless you construct your own `MikanModels` with explicit paths
 and pass it as the `models` option — which is what the test does.
 

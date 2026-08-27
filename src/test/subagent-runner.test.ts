@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
@@ -41,10 +41,7 @@ function createFauxSetup(): {
   faux: ReturnType<typeof fauxProvider>;
   model: Model<Api>;
 } {
-  const authPath = join(dir, "auth.json");
-  writeFileSync(authPath, JSON.stringify({ faux: { type: "api_key", key: "test-key" } }));
   const models = MikanModels.create({
-    authPath,
     modelsJsonPath: join(dir, "models.json"),
   });
   const faux = fauxProvider();
