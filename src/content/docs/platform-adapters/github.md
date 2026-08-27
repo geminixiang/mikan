@@ -15,8 +15,6 @@ The conversation id is `GH_<owner>_<repo>_<number>` with owner and repo lowercas
 | `src/adapters/github/github-ops.ts` | The host-side backends behind every `github_*` tool, standalone from the poll loop.                                        |
 | `src/adapters/github/repo.ts`       | Host-side git: shallow clone, guarded branch push, work-preserving sync.                                                   |
 | `src/adapters/github/client.ts`     | Minimal REST client authenticated as a GitHub App (RS256 JWT → installation tokens).                                       |
-| `src/adapters/github/cloudbuild.ts` | Cloud Build log retrieval for `github_checks` (host-side GCP credentials).                                                 |
-| `src/adapters/github/gcp-auth.ts`   | Minimal GCP ADC token provider (WIF, service-account key, or gcloud user ADC).                                             |
 | `src/adapters/github/context.ts`    | Creates the GitHub `ConversationResponder`; posts the finished response as one comment (no streaming edits).               |
 | `src/adapters/github/ids.ts`        | `GH_<owner>_<repo>_<number>` conversation id encode/parse; `rc-<id>` review-comment ts.                                    |
 | `src/adapters/github/tool-pack.ts`  | Bundles the host-side tools as a platform tool pack injected from main.                                                    |
@@ -42,8 +40,6 @@ The App slug is the name users mention to trigger first contact.
 | `GITHUB_REPOS`                                           | Optional comma-separated `owner/repo` list; defaults to all installation repositories.          |
 | `GITHUB_POLL_INTERVAL`                                   | Optional poll interval in seconds (default 60).                                                 |
 | `GITHUB_WEBHOOK_SECRET`                                  | Optional webhook secret; deliveries to `/github/webhook` trigger an immediate poll (see below). |
-| `GOOGLE_APPLICATION_CREDENTIALS`                         | Optional path to a GCP ADC JSON; enables Cloud Build logs in `github_checks` (see below).       |
-| `GOOGLE_CLOUD_PROJECT`                                   | Optional fallback GCP project when a Cloud Build check does not name one.                       |
 
 ## Event source
 
@@ -76,19 +72,13 @@ The sandbox never holds credentials; git spans the two sides of the office-dir b
 - On first contact the repo is shallow-cloned into the conversation office's `repo/` directory — `/workspace/<office-key>/repo` inside the sandbox, which the agent's prompt calls `./repo` — with an ephemeral token scoped to that repo and `contents:read`, passed per git invocation and never written to `.git/config`. PR conversations get the PR head checked out under its real branch name (fork PRs and failed lookups fall back to `pr-<n>`), so a PR whose head is a `pi/*` branch can be updated in place: commit on it and `github_pr` pushes back to the same PR.
 - The agent branches and commits inside the sandbox with plain git (the bot's author identity is preconfigured); pushing from the sandbox fails by design.
 - The `github_pr` tool runs host-side: it mints a `contents:write` + `pull_requests:write` token for that one repo, pushes the agent's `pi/*` branch from the host side of the mount, and opens a pull request (draft supported) as the App; re-invoking it with the same branch pushes new commits to the existing PR. It cannot push the default branch, force-push, or merge — humans review and merge every PR.
-- The `github_checks` tool reads CI check runs for a pushed branch (or the PR head) and can fetch a failing run's log tail: `job_id` for GitHub Actions runs (requires **Checks: Read** and **Actions: Read**), `build_id` for Google Cloud Build runs when the host has GCP credentials (below).
+- The `github_checks` tool reads CI check runs for a pushed branch (or the PR head) and can fetch a GitHub Actions job's log tail by `job_id` (requires **Checks: Read** and **Actions: Read**). External CI checks retain their summary and URL, but their logs are not available through GitHub.
 - The `github_sync` tool refreshes the `./repo` snapshot from origin — the latest PR head, the base branch, or a named branch — with an ephemeral read token. It only moves the checkout when that cannot lose the agent's work (clean tree, no agent commits; force-pushed PR heads still sync); otherwise it fetches to `FETCH_HEAD` and reports so the agent can merge or rebase inside the sandbox.
 - The `github_review_reply` tool posts a reply inside one inline review thread, taking the numeric id from an `rc-<id>` message.
 - The `github_read` tool reads metadata the clone cannot show: PR state and diff stats, changed files, submitted reviews with open thread ids, issue metadata, recent comments, and a filtered issue/PR listing. It is scoped to the conversation's repo by construction.
 - The `github_issue` tool manages labels, assignees, and close/reopen on any issue in the conversation's repo (triage). Lock, delete, and transfer are not in its action set.
 
 These tools use the App permissions listed in the setup section. They cannot bypass branch/default-branch guards enforced by mikan.
-
-## Cloud Build logs (optional)
-
-When CI runs on Google Cloud Build, its check runs appear as external CI on GitHub and their logs are not fetchable through the GitHub API. Set `GOOGLE_APPLICATION_CREDENTIALS` on the **host** to a GCP Application Default Credentials JSON — a Workload Identity Federation `external_account` file (file or url credential source), a service-account key, or gcloud user ADC — and `github_checks` summaries will advertise `[build <uuid>]` handles whose logs it can fetch (builds.get → the `log-<uuid>.txt` object in the build's logs bucket, tail-truncated).
-
-The credential principal needs `roles/cloudbuild.builds.viewer` on the project and `roles/storage.objectViewer` on the logs bucket. Builds configured with `CLOUD_LOGGING_ONLY` write no GCS log object; the tool then returns the console URL instead. Credentials never enter the sandbox; without them, Cloud Build checks degrade to the previous guidance text.
 
 ## Limitations
 

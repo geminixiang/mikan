@@ -15,8 +15,6 @@ description: GitHub 适配器的 GitHub App 轮询、issue/PR 对话、水位线
 | `src/adapters/github/github-ops.ts` | 每个 `github_*` 工具背后的主机侧后端，独立于轮询循环。                                                              |
 | `src/adapters/github/repo.ts`       | 主机侧 git：浅克隆、受保护的分支推送、保留工作的同步。                                                              |
 | `src/adapters/github/client.ts`     | 以 GitHub App 身份验证的最小 REST 客户端（RS256 JWT → installation tokens）。                                       |
-| `src/adapters/github/cloudbuild.ts` | 为 `github_checks` 获取 Cloud Build 日志（主机侧 GCP 凭证）。                                                       |
-| `src/adapters/github/gcp-auth.ts`   | 最小的 GCP ADC token provider（WIF、service-account key 或 gcloud user ADC）。                                      |
 | `src/adapters/github/context.ts`    | 创建 GitHub `ConversationResponder`；将完成的回复作为一条评论发布（不进行流式编辑）。                               |
 | `src/adapters/github/ids.ts`        | `GH_<owner>_<repo>_<number>` 对话 ID 编码/解析；`rc-<id>` review 评论 ts。                                          |
 | `src/adapters/github/tool-pack.ts`  | 把主机侧工具打包为由 main 注入的平台工具包。                                                                        |
@@ -34,15 +32,13 @@ App slug 是用户首次联系时提及的名称。
 
 ## 配置
 
-| 环境变量                                                 | 用途                                                                           |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `GITHUB_APP_ID`                                          | GitHub App id（必需）。                                                        |
-| `GITHUB_INSTALLATION_ID`                                 | 要以其身份操作的 installation id（必需）。                                     |
-| `GITHUB_APP_PRIVATE_KEY` / `GITHUB_APP_PRIVATE_KEY_PATH` | App private key PEM，可内联（使用 `\n` 转义）或作为文件提供。                  |
-| `GITHUB_REPOS`                                           | 可选的逗号分隔 `owner/repo` 列表；默认为 installation 的所有仓库。             |
-| `GITHUB_POLL_INTERVAL`                                   | 可选的轮询间隔（秒，默认 60）。                                                |
-| `GOOGLE_APPLICATION_CREDENTIALS`                         | 可选的 GCP ADC JSON 路径；为 `github_checks` 启用 Cloud Build 日志（见下文）。 |
-| `GOOGLE_CLOUD_PROJECT`                                   | 可选的兜底 GCP 项目，用于 Cloud Build check 未指明项目的情况。                 |
+| 环境变量                                                 | 用途                                                               |
+| -------------------------------------------------------- | ------------------------------------------------------------------ |
+| `GITHUB_APP_ID`                                          | GitHub App id（必需）。                                            |
+| `GITHUB_INSTALLATION_ID`                                 | 要以其身份操作的 installation id（必需）。                         |
+| `GITHUB_APP_PRIVATE_KEY` / `GITHUB_APP_PRIVATE_KEY_PATH` | App private key PEM，可内联（使用 `\n` 转义）或作为文件提供。      |
+| `GITHUB_REPOS`                                           | 可选的逗号分隔 `owner/repo` 列表；默认为 installation 的所有仓库。 |
+| `GITHUB_POLL_INTERVAL`                                   | 可选的轮询间隔（秒，默认 60）。                                    |
 
 ## 事件来源
 
@@ -71,19 +67,13 @@ App slug 是用户首次联系时提及的名称。
 - 首次联系时，仓库会被浅克隆到该对话办公室的 `repo/` 目录——沙箱内为 `/workspace/<office-key>/repo`，代理的提示词中称之为 `./repo`——使用仅限该仓库和 `contents:read` 的临时 token。token 按 git 调用传入，绝不会写入 `.git/config`。PR 对话会以 PR head 的真实分支名签出（fork PR 或查询失败时回退为 `pr-<n>`），因此 head 为 `pi/*` 分支的 PR 可以原地更新：直接在该分支上提交并调用 `github_pr`，推送会回到同一个 PR。
 - 代理在沙箱中使用普通 git 创建分支和提交（bot 的 author identity 已预配置）；按设计，从沙箱 push 会失败。
 - `github_pr` 工具在主机侧运行：它为该仓库生成 `contents:write` + `pull_requests:write` token，从挂载的主机侧推送代理的 `pi/*` 分支，并以 App 身份创建 pull request（支持 draft）；使用相同分支再次调用会将新提交推送到现有 PR。它不能推送默认分支、force-push 或 merge——每个 PR 都由人工 review 和 merge。
-- `github_checks` 工具读取已推送分支（或 PR head）的 CI check run，并可以获取失败 run 的日志末尾：GitHub Actions run 使用 `job_id`（需要 **Checks: Read** 和 **Actions: Read** 权限）；主机具有 GCP 凭证时（见下文），Google Cloud Build run 使用 `build_id`。
+- `github_checks` 工具读取已推送分支（或 PR head）的 CI check run，并可通过 `job_id` 获取 GitHub Actions job 的日志末尾（需要 **Checks: Read** 和 **Actions: Read** 权限）。外部 CI check 会保留摘要和 URL，但其日志无法通过 GitHub 获取。
 - `github_sync` 工具从 origin 刷新 `./repo` 快照——最新的 PR head、base 分支或指定分支——使用临时只读 token。仅当不会丢失代理的工作时（工作树干净、没有代理提交；被 force-push 的 PR head 仍会同步），它才会移动检出；否则它只 fetch 到 `FETCH_HEAD` 并报告结果，由代理在沙箱内自行 merge 或 rebase。
 - `github_review_reply` 工具在一个内联 review 话题内发布回复，数字 id 取自 `rc-<id>` 消息。
 - `github_read` 工具读取克隆无法展示的元数据：PR 状态和 diff 统计、变更文件、已提交的 review 及未解决话题 id、issue 元数据、最近评论，以及经过滤的 issue/PR 列表。它在构造上就限定于对话所属的仓库。
 - `github_issue` 工具管理对话所属仓库中任意 issue 的 label、assignee 和 close/reopen（triage）。lock、delete 和 transfer 不在其操作集内。
 
 这些工具使用设置部分列出的 App 权限，无法绕过 mikan 强制实施的分支/默认分支保护。
-
-## Cloud Build 日志（可选）
-
-当 CI 运行在 Google Cloud Build 上时，其 check run 在 GitHub 上显示为外部 CI，日志无法通过 GitHub API 获取。在**主机**上将 `GOOGLE_APPLICATION_CREDENTIALS` 设置为一个 GCP Application Default Credentials JSON——可以是 Workload Identity Federation 的 `external_account` 文件（file 或 url 凭证源）、service-account key，或 gcloud 用户 ADC——之后 `github_checks` 的摘要会显示 `[build <uuid>]` 句柄，并可获取对应日志（builds.get → 构建日志 bucket 中的 `log-<uuid>.txt` 对象，截取末尾）。
-
-凭证主体需要项目上的 `roles/cloudbuild.builds.viewer` 和日志 bucket 上的 `roles/storage.objectViewer`。配置为 `CLOUD_LOGGING_ONLY` 的构建不会写入 GCS 日志对象；此时工具会改为返回控制台 URL。凭证绝不会进入沙箱；没有凭证时，Cloud Build check 会降级为之前的指引文本。
 
 ## 限制
 

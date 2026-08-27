@@ -13,8 +13,6 @@ import {
   parseGithubConversationId,
 } from "../adapters/github/ids.js";
 import { cloneRepo, pushBranch, syncRepo } from "../adapters/github/repo.js";
-import { fetchCloudBuildLog } from "../adapters/github/cloudbuild.js";
-import type { GcpTokenProvider } from "../adapters/github/gcp-auth.js";
 import type {
   GithubIssue,
   GithubIssueComment,
@@ -35,14 +33,6 @@ vi.mock("../adapters/github/repo.js", async (importOriginal) => {
       currentBranch: "pr-5",
       localCommits: 0,
     }),
-  };
-});
-
-vi.mock("../adapters/github/cloudbuild.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../adapters/github/cloudbuild.js")>();
-  return {
-    ...actual,
-    fetchCloudBuildLog: vi.fn().mockResolvedValue("cloud build log"),
   };
 });
 
@@ -228,7 +218,6 @@ describe("GithubMessagingBot", () => {
     overrides: {
       handler?: MessagingEventHandler;
       repos?: string[];
-      cloudBuild?: { tokenProvider: GcpTokenProvider; projectFallback?: string };
     } = {},
   ) {
     return new GithubMessagingBot(
@@ -241,7 +230,6 @@ describe("GithubMessagingBot", () => {
         pollIntervalMs: 60_000,
         workspace: createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") }),
         syncStatePath: join(workingDir, "state", "github-sync.json"),
-        cloudBuild: overrides.cloudBuild,
       },
       client as unknown as GithubClient,
     );
@@ -807,103 +795,12 @@ describe("GithubMessagingBot", () => {
         url: "https://ci/1",
         appSlug: "github-actions",
         outputSummary: "all green",
-        externalId: null,
-        buildLogAvailable: false,
       },
     ]);
     expect(client.listCheckRuns).toHaveBeenLastCalledWith("octo", "widgets", "pi/fix-5");
 
     await bot.ops.getChecks(CONVERSATION_ID);
     expect(client.listCheckRuns).toHaveBeenLastCalledWith("octo", "widgets", "abc123");
-  });
-
-  test("getChecks marks Cloud Build runs fetchable only with GCP creds and a project", async () => {
-    const BUILD_ID = "12345678-1234-1234-1234-123456789abc";
-    const cloudBuildRun = {
-      id: 60,
-      name: "cloudbuild",
-      status: "completed",
-      conclusion: "failure",
-      html_url: "https://cb/60",
-      app: { slug: "google-cloud-build" },
-      output: null,
-      external_id: BUILD_ID,
-      details_url: `https://console.cloud.google.com/cloud-build/builds/${BUILD_ID}?project=123`,
-    };
-    client.listCheckRuns = vi.fn().mockResolvedValue([cloudBuildRun]);
-    const tokenProvider = { getAccessToken: vi.fn() } as unknown as GcpTokenProvider;
-
-    // Without GCP creds the run is external CI as before.
-    const plainBot = makeBot();
-    await plainBot.start();
-    const [plainRun] = await plainBot.ops.getChecks(CONVERSATION_ID, "pi/x");
-    expect(plainRun.externalId).toBe(BUILD_ID);
-    expect(plainRun.buildLogAvailable).toBe(false);
-
-    // With creds and a project in details_url the log is advertised.
-    const bot = makeBot({ cloudBuild: { tokenProvider } });
-    await bot.start();
-    const [run] = await bot.ops.getChecks(CONVERSATION_ID, "pi/x");
-    expect(run.buildLogAvailable).toBe(true);
-
-    // No project anywhere → not advertised (fallback would fix it).
-    client.listCheckRuns = vi
-      .fn()
-      .mockResolvedValue([{ ...cloudBuildRun, details_url: "https://console/no-project" }]);
-    const [noProject] = await bot.ops.getChecks(CONVERSATION_ID, "pi/x");
-    expect(noProject.buildLogAvailable).toBe(false);
-
-    const fallbackBot = makeBot({
-      cloudBuild: { tokenProvider, projectFallback: "fallback-project" },
-    });
-    await fallbackBot.start();
-    const [viaFallback] = await fallbackBot.ops.getChecks(CONVERSATION_ID, "pi/x");
-    expect(viaFallback.buildLogAvailable).toBe(true);
-  });
-
-  test("getBuildLog serves only builds seen in a summary and truncates the tail", async () => {
-    const BUILD_ID = "12345678-1234-1234-1234-123456789abc";
-    client.listCheckRuns = vi.fn().mockResolvedValue([
-      {
-        id: 60,
-        name: "cloudbuild",
-        status: "completed",
-        conclusion: "failure",
-        html_url: null,
-        app: { slug: "google-cloud-build" },
-        output: null,
-        external_id: BUILD_ID,
-        details_url: `https://console/builds/${BUILD_ID}?project=123`,
-      },
-    ]);
-    const tokenProvider = { getAccessToken: vi.fn() } as unknown as GcpTokenProvider;
-    const bot = makeBot({ cloudBuild: { tokenProvider } });
-    await bot.start();
-
-    // Not seen yet → guidance to run the summary first.
-    await expect(bot.ops.getBuildLog(CONVERSATION_ID, BUILD_ID)).rejects.toThrow(
-      /run github_checks first/,
-    );
-
-    await bot.ops.getChecks(CONVERSATION_ID, "pi/x");
-    vi.mocked(fetchCloudBuildLog).mockResolvedValue(`${"x".repeat(30000)}TAIL`);
-
-    const logText = await bot.ops.getBuildLog(CONVERSATION_ID, BUILD_ID);
-    expect(fetchCloudBuildLog).toHaveBeenCalledWith({
-      tokenProvider,
-      project: "123",
-      buildId: BUILD_ID,
-    });
-    expect(logText).toContain("truncated to the last 20000 chars");
-    expect(logText.endsWith("TAIL")).toBe(true);
-  });
-
-  test("getBuildLog without GCP creds explains the feature is not configured", async () => {
-    const bot = makeBot();
-    await bot.start();
-    await expect(
-      bot.ops.getBuildLog(CONVERSATION_ID, "12345678-1234-1234-1234-123456789abc"),
-    ).rejects.toThrow(/not configured on this host/);
   });
 
   test("getJobLog truncates to the tail of huge logs", async () => {

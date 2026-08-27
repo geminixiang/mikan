@@ -15,8 +15,6 @@ conversation id は `GH_<owner>_<repo>_<number>` で、owner と repo は小文�
 | `src/adapters/github/github-ops.ts` | すべての `github_*` tool を支える host 側 backend。poll loop からは独立。                                               |
 | `src/adapters/github/repo.ts`       | host 側の git：shallow clone、ガード付きの branch push、作業を保持する sync。                                           |
 | `src/adapters/github/client.ts`     | GitHub App として認証する最小 REST client（RS256 JWT → installation tokens）。                                          |
-| `src/adapters/github/cloudbuild.ts` | `github_checks` 用の Cloud Build log 取得（host 側の GCP credentials）。                                                |
-| `src/adapters/github/gcp-auth.ts`   | 最小の GCP ADC token provider（WIF、service-account key、gcloud user ADC）。                                            |
 | `src/adapters/github/context.ts`    | GitHub 版 `ConversationResponder` を作成し、完成した response を 1 つの comment として投稿（streaming edits なし）。    |
 | `src/adapters/github/ids.ts`        | `GH_<owner>_<repo>_<number>` conversation id の encode/parse。`rc-<id>` review-comment ts。                             |
 | `src/adapters/github/tool-pack.ts`  | host 側 tools を、main から注入される platform tool pack としてまとめる。                                               |
@@ -34,15 +32,13 @@ App slug は、ユーザーが最初の接触を起動するために mention �
 
 ## 設定
 
-| 環境変数                                                 | 用途                                                                                        |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `GITHUB_APP_ID`                                          | GitHub App id（必須）。                                                                     |
-| `GITHUB_INSTALLATION_ID`                                 | 動作主体となる installation id（必須）。                                                    |
-| `GITHUB_APP_PRIVATE_KEY` / `GITHUB_APP_PRIVATE_KEY_PATH` | App private key PEM。inline（`\n` escapes 付き）または file。                               |
-| `GITHUB_REPOS`                                           | 任意の comma-separated `owner/repo` list。既定値は installation のすべての repositories。   |
-| `GITHUB_POLL_INTERVAL`                                   | 任意の poll interval（秒、既定値 60）。                                                     |
-| `GOOGLE_APPLICATION_CREDENTIALS`                         | 任意の GCP ADC JSON への path。`github_checks` の Cloud Build logs を有効化します（後述）。 |
-| `GOOGLE_CLOUD_PROJECT`                                   | Cloud Build check が project を指定しない場合の任意の fallback GCP project。                |
+| 環境変数                                                 | 用途                                                                                      |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `GITHUB_APP_ID`                                          | GitHub App id（必須）。                                                                   |
+| `GITHUB_INSTALLATION_ID`                                 | 動作主体となる installation id（必須）。                                                  |
+| `GITHUB_APP_PRIVATE_KEY` / `GITHUB_APP_PRIVATE_KEY_PATH` | App private key PEM。inline（`\n` escapes 付き）または file。                             |
+| `GITHUB_REPOS`                                           | 任意の comma-separated `owner/repo` list。既定値は installation のすべての repositories。 |
+| `GITHUB_POLL_INTERVAL`                                   | 任意の poll interval（秒、既定値 60）。                                                   |
 
 ## イベントソース
 
@@ -71,19 +67,13 @@ sandbox は credentials を一切保持しません。git は office-dir bind mo
 - 初回接触時に repo は conversation office の `repo/` directory へ shallow-clone されます。sandbox 内では `/workspace/<office-key>/repo` で、agent の prompt はこれを `./repo` と呼びます。その repo と `contents:read` に限定した ephemeral token を git invocation ごとに渡し、`.git/config` には書き込みません。PR conversations では PR head が実際の branch 名で checkout されます（fork PR や lookup 失敗時は `pr-<n>` に fallback）。そのため head が `pi/*` branch の PR はその場で更新できます：その branch に commit して `github_pr` を呼べば同じ PR に push されます。
 - agent は sandbox 内で通常の git を使って branch と commit を作成します（bot の author identity は事前設定済み）。sandbox からの push は設計上失敗します。
 - `github_pr` tool は host 側で実行されます。その 1 repo 用の `contents:write` + `pull_requests:write` token を発行し、mount の host 側から agent の `pi/*` branch を push して、App として pull request（draft 対応）を開きます。同じ branch で再実行すると、既存 PR に新しい commits を push します。default branch の push、force-push、merge はできません。すべての PR は人が review、merge します。
-- `github_checks` tool は push 済み branch（または PR head）の CI check runs を読み取り、失敗した run の log tail を取得できます。GitHub Actions runs には `job_id` を使用し（**Checks: Read** と **Actions: Read** が必要）、host に GCP credentials がある場合は Google Cloud Build runs に `build_id` を使用します（後述）。
+- `github_checks` tool は push 済み branch（または PR head）の CI check runs を読み取り、GitHub Actions job の log tail を `job_id` で取得できます（**Checks: Read** と **Actions: Read** が必要）。external CI checks は summary と URL を保持しますが、logs は GitHub 経由では取得できません。
 - `github_sync` tool は `./repo` snapshot を origin から更新します。最新の PR head、base branch、または指定した branch です。ephemeral read token を使用し、agent の作業を失う可能性がない場合のみ checkout を動かします（clean tree かつ agent commits なし。force-push された PR heads は sync されます）。それ以外の場合は `FETCH_HEAD` に fetch して報告し、agent が sandbox 内で merge または rebase できるようにします。
 - `github_review_reply` tool は 1 つの inline review thread 内に返信を投稿します。numeric id は `rc-<id>` message から取得します。
 - `github_read` tool は clone では見えない metadata を読み取ります。PR state と diff stats、changed files、open thread ids 付きの submitted reviews、issue metadata、直近の comments、filter 付きの issue/PR listing です。構造上、conversation の repo に限定されます。
 - `github_issue` tool は conversation の repo 内の任意の issue に対して labels、assignees、close/reopen を管理します（triage 用）。Lock、delete、transfer は action set に含まれません。
 
 これらの tools は setup section に記載した App permissions を使用します。mikan が強制する branch/default-branch guards を回避することはできません。
-
-## Cloud Build logs（任意）
-
-CI が Google Cloud Build で動作する場合、その check runs は GitHub 上で external CI として表示され、logs を GitHub API 経由で取得できません。**host** 側で `GOOGLE_APPLICATION_CREDENTIALS` に GCP Application Default Credentials JSON を設定すると — Workload Identity Federation の `external_account` file（file または url credential source）、service-account key、gcloud user ADC のいずれか — `github_checks` の summaries が `[build <uuid>]` handles を提示し、その logs を取得できるようになります（builds.get → build の logs bucket 内の `log-<uuid>.txt` object、tail-truncated）。
-
-credential principal には project に対する `roles/cloudbuild.builds.viewer` と、logs bucket に対する `roles/storage.objectViewer` が必要です。`CLOUD_LOGGING_ONLY` で構成された builds は GCS log object を書き込まないため、tool は代わりに console URL を返します。credentials が sandbox に入ることはありません。credentials がない場合、Cloud Build checks は従来の guidance text に degrade します。
 
 ## 制限
 

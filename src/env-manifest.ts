@@ -123,19 +123,6 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
     ],
   },
   {
-    key: "cloudbuild",
-    title: "Cloud Build logs",
-    kind: "feature",
-    doc: "Host-side GCP credentials unlock Cloud Build logs in github_checks",
-    vars: [
-      {
-        name: "GOOGLE_APPLICATION_CREDENTIALS",
-        doc: "Path to a GCP credentials file (e.g. WIF external_account)",
-      },
-      { name: "GOOGLE_CLOUD_PROJECT", doc: "Fallback GCP project id" },
-    ],
-  },
-  {
     key: "cloudflare",
     title: "Cloudflare sandbox",
     kind: "feature",

@@ -1,5 +1,4 @@
 import type { ConversationEvent } from "../../adapter.js";
-import type { GcpTokenProvider } from "./gcp-auth.js";
 import type { Workspace } from "../../office/types.js";
 
 export interface GithubEvent extends ConversationEvent {
@@ -23,29 +22,6 @@ export interface GithubBotConfig {
    * re-trigger runs.
    */
   syncStatePath: string;
-  /**
-   * Present when the host has GCP credentials (GOOGLE_APPLICATION_CREDENTIALS):
-   * lets github_checks fetch Cloud Build logs. Credentials never enter the
-   * sandbox; absent, external-CI checks degrade to guidance text.
-   */
-  cloudBuild?: {
-    tokenProvider: GcpTokenProvider;
-    /** Project used when a check's details_url does not name one. */
-    projectFallback?: string;
-  };
-}
-
-export interface GcpTokenProviderOptions {
-  /** Path to the ADC JSON (usually $GOOGLE_APPLICATION_CREDENTIALS). */
-  credentialsPath: string;
-  fetchImpl?: typeof fetch;
-}
-
-export interface CloudBuildLogOptions {
-  tokenProvider: GcpTokenProvider;
-  project: string;
-  buildId: string;
-  fetchImpl?: typeof fetch;
 }
 
 /** Persisted per-repo poll watermark (DESIGN.md § Event source). */
@@ -191,10 +167,6 @@ export interface GithubCheckRun {
   app?: { slug?: string } | null;
   /** Whatever the reporting app posted about the run. */
   output?: { title?: string | null; summary?: string | null } | null;
-  /** The reporting app's own id for the run; Cloud Build puts the build UUID here. */
-  external_id?: string | null;
-  /** The reporting app's own results page; Cloud Build encodes the GCP project here. */
-  details_url?: string | null;
 }
 
 /** Permission subset requestable on a scoped installation token. */
@@ -307,16 +279,11 @@ export interface GithubCheckSummary {
   appSlug: string | null;
   /** The reporting app's own summary of the run, when it posted one. */
   outputSummary: string | null;
-  /** The reporting app's run id (Cloud Build: the build UUID). */
-  externalId: string | null;
-  /** True when this run's log is fetchable via build_id (Cloud Build + GCP creds). */
-  buildLogAvailable?: boolean;
 }
 
 export interface GithubChecksFns {
   getChecks: (branch?: string) => Promise<GithubCheckSummary[]>;
   getJobLog: (jobId: number) => Promise<string>;
-  getBuildLog: (buildId: string) => Promise<string>;
 }
 
 /** Arguments for the host-side `github_read` tool. */
@@ -376,8 +343,6 @@ export interface PlatformGithubOps {
   getChecks(conversationId: string, branch?: string): Promise<GithubCheckSummary[]>;
   /** Log text of one CI job (an Actions check-run id), tail-truncated. */
   getJobLog(conversationId: string, jobId: number): Promise<string>;
-  /** Log text of one Cloud Build run (a [build …] uuid), tail-truncated. */
-  getBuildLog(conversationId: string, buildId: string): Promise<string>;
   /** Reply inside one inline review thread of the conversation's PR. */
   replyToReviewThread(
     conversationId: string,

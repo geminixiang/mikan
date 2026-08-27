@@ -15,8 +15,6 @@ Conversation id 是 `GH_<owner>_<repo>_<number>`，其中 owner 與 repo 都轉�
 | `src/adapters/github/github-ops.ts` | 每個 `github_*` tool 背後的 host 端 backend，獨立於 poll loop。                                                            |
 | `src/adapters/github/repo.ts`       | Host 端 git：shallow clone、有防護的 branch push、保留工作的 sync。                                                        |
 | `src/adapters/github/client.ts`     | 以 GitHub App 驗證的最小 REST client（RS256 JWT → installation tokens）。                                                  |
-| `src/adapters/github/cloudbuild.ts` | 供 `github_checks` 使用的 Cloud Build log 讀取（host 端 GCP 憑證）。                                                       |
-| `src/adapters/github/gcp-auth.ts`   | 最小的 GCP ADC token provider（WIF、service-account key 或 gcloud user ADC）。                                             |
 | `src/adapters/github/context.ts`    | 建立 GitHub `ConversationResponder`；將完成的回應作為單一 comment 發布（不做 streaming edits）。                           |
 | `src/adapters/github/ids.ts`        | `GH_<owner>_<repo>_<number>` conversation id 編碼／解析；`rc-<id>` review-comment ts。                                     |
 | `src/adapters/github/tool-pack.ts`  | 把 host 端的 tools 打包成由 main 注入的 platform tool pack。                                                               |
@@ -34,15 +32,13 @@ App slug 是使用者首次觸發時 mention 的名稱。
 
 ## 設定
 
-| Env var                                                  | 用途                                                                           |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `GITHUB_APP_ID`                                          | GitHub App id（必要）。                                                        |
-| `GITHUB_INSTALLATION_ID`                                 | 要以其身分操作的 installation id（必要）。                                     |
-| `GITHUB_APP_PRIVATE_KEY` / `GITHUB_APP_PRIVATE_KEY_PATH` | App private key PEM，可 inline（使用 `\n` escapes）或以檔案提供。              |
-| `GITHUB_REPOS`                                           | 選用、以逗號分隔的 `owner/repo` 清單；預設為所有 installation repositories。   |
-| `GITHUB_POLL_INTERVAL`                                   | 選用的 poll interval，單位為秒（預設 60）。                                    |
-| `GOOGLE_APPLICATION_CREDENTIALS`                         | 選用的 GCP ADC JSON 路徑；為 `github_checks` 啟用 Cloud Build logs（見下文）。 |
-| `GOOGLE_CLOUD_PROJECT`                                   | 選用的 fallback GCP project，當 Cloud Build check 未指明 project 時使用。      |
+| Env var                                                  | 用途                                                                         |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `GITHUB_APP_ID`                                          | GitHub App id（必要）。                                                      |
+| `GITHUB_INSTALLATION_ID`                                 | 要以其身分操作的 installation id（必要）。                                   |
+| `GITHUB_APP_PRIVATE_KEY` / `GITHUB_APP_PRIVATE_KEY_PATH` | App private key PEM，可 inline（使用 `\n` escapes）或以檔案提供。            |
+| `GITHUB_REPOS`                                           | 選用、以逗號分隔的 `owner/repo` 清單；預設為所有 installation repositories。 |
+| `GITHUB_POLL_INTERVAL`                                   | 選用的 poll interval，單位為秒（預設 60）。                                  |
 
 ## 事件來源
 
@@ -71,19 +67,13 @@ Sandbox 絕不持有憑證；git 操作跨越 office-dir bind mount 的兩端：
 - 首次接觸時，repo 會 shallow-clone 到該對話 office 的 `repo/` 目錄——在 sandbox 內是 `/workspace/<office-key>/repo`，agent 的 prompt 則稱它為 `./repo`——使用限於該 repo 且具有 `contents:read` 的 ephemeral token；token 會隨每次 git invocation 傳入，絕不寫入 `.git/config`。PR 對話會以 PR head 的真實 branch 名稱 checkout（fork PR 或查詢失敗時 fallback 為 `pr-<n>`），因此 head 為 `pi/*` branch 的 PR 可以原地更新：直接在該 branch 上 commit 並呼叫 `github_pr`，push 會回到同一個 PR。
 - Agent 在 sandbox 內使用一般 git 建立 branch 與 commits（已預先設定 bot author identity）；依設計，從 sandbox push 會失敗。
 - `github_pr` tool 在 host 端執行：它會為該 repo 產生 `contents:write` + `pull_requests:write` token，從 mount 的 host 端 push agent 的 `pi/*` branch，並以 App 身分建立 pull request（支援 draft）；使用相同 branch 再次呼叫會將新 commits push 到既有 PR。它不能 push default branch、force-push 或 merge，所有 PR 都由人員 review 與 merge。
-- `github_checks` tool 會讀取已 push branch（或 PR head）的 CI check runs，並可取得失敗 run 的 log tail：GitHub Actions runs 使用 `job_id`（需要 **Checks: Read** 與 **Actions: Read**）；當 host 具備 GCP 憑證時，Google Cloud Build runs 使用 `build_id`（見下文）。
+- `github_checks` tool 會讀取已 push branch（或 PR head）的 CI check runs，並可透過 `job_id` 取得 GitHub Actions job 的 log tail（需要 **Checks: Read** 與 **Actions: Read**）。External CI checks 會保留摘要與 URL，但 logs 無法透過 GitHub 取得。
 - `github_sync` tool 使用 ephemeral read token，將 `./repo` snapshot 從 origin 更新為最新 PR head、base branch 或指定 branch。只有在不會遺失 agent 工作成果時（working tree 乾淨、沒有 agent commits；force-push 過的 PR heads 仍可同步）才會移動 checkout；否則只 fetch 到 `FETCH_HEAD` 並回報，讓 agent 在 sandbox 內自行 merge 或 rebase。
 - `github_review_reply` tool 會在單一 inline review thread 內發布回覆，數字 id 取自 `rc-<id>` 訊息。
 - `github_read` tool 讀取 clone 無法呈現的 metadata：PR 狀態與 diff 統計、變更檔案、已提交的 reviews 及 open thread ids、issue metadata、近期 comments，以及可篩選的 issue/PR 清單。其設計上僅限於該對話所屬的 repo。
 - `github_issue` tool 管理該對話 repo 內任一 issue 的 labels、assignees 與 close/reopen（triage）。Lock、delete 與 transfer 不在其 action set 中。
 
 這些工具使用設定章節列出的 App permissions。它們無法繞過 mikan 強制執行的 branch/default-branch guards。
-
-## Cloud Build logs（選用）
-
-當 CI 在 Google Cloud Build 上執行時，其 check runs 在 GitHub 上顯示為 external CI，其 logs 無法透過 GitHub API 取得。在 **host** 上將 `GOOGLE_APPLICATION_CREDENTIALS` 設為 GCP Application Default Credentials JSON 的路徑——可以是 Workload Identity Federation 的 `external_account` 檔案（file 或 url credential source）、service-account key，或 gcloud user ADC——之後 `github_checks` 的摘要就會列出可取得 logs 的 `[build <uuid>]` handles（builds.get → build 的 logs bucket 中的 `log-<uuid>.txt` 物件，取 tail 截斷）。
-
-該憑證的 principal 需要在 project 上具有 `roles/cloudbuild.builds.viewer`，並在 logs bucket 上具有 `roles/storage.objectViewer`。設定為 `CLOUD_LOGGING_ONLY` 的 builds 不會寫入 GCS log 物件；此時 tool 會改為回傳 console URL。憑證絕不會進入 sandbox；沒有憑證時，Cloud Build checks 會退化為先前的指引文字。
 
 ## 限制
 

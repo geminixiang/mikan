@@ -2,19 +2,11 @@ import { existsSync } from "node:fs";
 import * as log from "../../log.js";
 import type { GithubClient } from "./client.js";
 import { GithubApiError, GITHUB_MAX_COMMENT_LENGTH, githubRetry } from "./client.js";
-import {
-  CLOUD_BUILD_APP_SLUG,
-  CloudBuildLogUnavailableError,
-  fetchCloudBuildLog,
-  isCloudBuildId,
-  projectFromDetailsUrl,
-} from "./cloudbuild.js";
 import { parseGithubConversationId } from "./ids.js";
 import { conversationRepoDir, GITHUB_PUSH_BRANCH_PATTERN, pushBranch, syncRepo } from "./repo.js";
 import { createOfficeAddress } from "../../office/index.js";
 import type { Workspace } from "../../office/index.js";
 import type {
-  GithubBotConfig,
   GithubCheckSummary,
   GithubConversationRef,
   GithubIssueRequest,
@@ -25,7 +17,7 @@ import type {
   PlatformGithubOps,
 } from "./types.js";
 
-/** Both CI log modes tail-truncate to this many characters. */
+/** CI job logs are tail-truncated to this many characters. */
 const MAX_LOG_CHARS = 20000;
 
 function truncateLogTail(logText: string): string {
@@ -72,20 +64,14 @@ export async function fetchPrHeadBranch(
 /**
  * Host-side backend of the github_* tool pack (`PlatformGithubOps`),
  * standalone from the messaging bot: it needs the API client, the
- * conversation working dir, and optional Cloud Build access — not the poll
+ * conversation working dir — not the poll
  * loop, queues, or trigger gate. Tokens are minted per call, scoped to the
  * conversation's repo, and never enter the sandbox.
  */
 export class GithubOps implements PlatformGithubOps {
-  /** Cloud Build ids seen in getChecks summaries → their GCP project. */
-  private buildRef = new Map<string, { project: string }>();
-
   constructor(
     private readonly client: GithubClient,
-    private readonly config: {
-      workspace: Workspace;
-      cloudBuild?: GithubBotConfig["cloudBuild"];
-    },
+    private readonly config: { workspace: Workspace },
   ) {}
 
   private repoDir(conversationId: string): string {
@@ -177,87 +163,15 @@ export class GithubOps implements PlatformGithubOps {
       target = pr.head.sha;
     }
     const runs = await githubRetry(() => this.client.listCheckRuns(ref.owner, ref.repo, target));
-    return runs.map((run) => {
-      const externalId = run.external_id?.trim() || null;
-      let buildLogAvailable = false;
-      // Cloud Build runs carry their build UUID in external_id and the GCP
-      // project in details_url. Remember project-by-build so getBuildLog only
-      // serves builds the agent actually saw on this repo's checks.
-      if (
-        this.config.cloudBuild &&
-        run.app?.slug === CLOUD_BUILD_APP_SLUG &&
-        externalId &&
-        isCloudBuildId(externalId)
-      ) {
-        const project =
-          projectFromDetailsUrl(run.details_url) ?? this.config.cloudBuild.projectFallback;
-        if (project) {
-          this.rememberBuild(externalId, project);
-          buildLogAvailable = true;
-        }
-      }
-      return {
-        id: run.id,
-        name: run.name,
-        status: run.status,
-        conclusion: run.conclusion,
-        url: run.html_url,
-        appSlug: run.app?.slug ?? null,
-        outputSummary: run.output?.summary?.trim() ? run.output.summary.slice(0, 500) : null,
-        externalId,
-        buildLogAvailable,
-      };
-    });
-  }
-
-  private rememberBuild(buildId: string, project: string): void {
-    // Insertion-ordered Map as a small LRU: re-insert on touch, prune oldest.
-    this.buildRef.delete(buildId);
-    this.buildRef.set(buildId, { project });
-    if (this.buildRef.size > 200) {
-      const oldest = this.buildRef.keys().next().value;
-      if (oldest !== undefined) this.buildRef.delete(oldest);
-    }
-  }
-
-  /**
-   * Backs the Cloud Build log mode of `github_checks`. GCP credentials stay
-   * host-side (ADC via GOOGLE_APPLICATION_CREDENTIALS — e.g. a Workload
-   * Identity Federation external_account file); the build must have appeared
-   * in a github_checks summary first, which is also where its project is
-   * learned. Unreadable logs degrade to the console url, never a dead end.
-   */
-  async getBuildLog(conversationId: string, buildId: string): Promise<string> {
-    if (!this.config.cloudBuild) {
-      throw new Error(
-        "Cloud Build log access is not configured on this host (no GCP credentials).",
-      );
-    }
-    const known = this.buildRef.get(buildId);
-    if (!known) {
-      throw new Error(
-        `Unknown build id ${buildId}: run github_checks first and take a [build …] id from ` +
-          `the summary.`,
-      );
-    }
-    let logText: string;
-    try {
-      logText = await fetchCloudBuildLog({
-        tokenProvider: this.config.cloudBuild.tokenProvider,
-        project: known.project,
-        buildId,
-      });
-    } catch (err) {
-      if (err instanceof CloudBuildLogUnavailableError) {
-        throw new Error(
-          `${err.message}${err.consoleUrl ? ` Console: ${err.consoleUrl}` : ""} Use the check's ` +
-            `summary/url from github_checks, or reproduce the failure locally in ./repo.`,
-          { cause: err },
-        );
-      }
-      throw err;
-    }
-    return truncateLogTail(logText);
+    return runs.map((run) => ({
+      id: run.id,
+      name: run.name,
+      status: run.status,
+      conclusion: run.conclusion,
+      url: run.html_url,
+      appSlug: run.app?.slug ?? null,
+      outputSummary: run.output?.summary?.trim() ? run.output.summary.slice(0, 500) : null,
+    }));
   }
 
   /**
@@ -479,9 +393,8 @@ export class GithubOps implements PlatformGithubOps {
   /**
    * Backs the log mode of `github_checks`: the tail of one CI job's log so
    * the agent can diagnose a failing check without sandbox credentials. Only
-   * GitHub Actions checks have logs on GitHub — external CI apps (e.g. Cloud
-   * Build) keep theirs on their own service, so a 404 here is translated
-   * into guidance instead of a dead end.
+   * GitHub Actions checks have logs on GitHub; external CI apps keep theirs
+   * on their own service, so a 404 here becomes guidance instead of a dead end.
    */
   async getJobLog(conversationId: string, jobId: number): Promise<string> {
     if (!Number.isInteger(jobId) || jobId <= 0) {
@@ -497,7 +410,7 @@ export class GithubOps implements PlatformGithubOps {
       if (err instanceof GithubApiError && err.status === 404) {
         throw new Error(
           `No GitHub Actions log for job ${jobId}. Logs are only available for checks reported ` +
-            `by github-actions; external CI (e.g. Cloud Build) keeps logs on its own service — ` +
+            `by github-actions; external CI keeps logs on its own service — ` +
             `use that check's summary/url from github_checks, or reproduce the failure locally ` +
             `in ./repo instead. Do not retry with other ids.`,
           { cause: err },

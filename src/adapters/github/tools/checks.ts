@@ -19,13 +19,6 @@ const githubChecksSchema = Type.Object({
         "CI job's log (tail) instead of the summary, for diagnosing a failing check.",
     }),
   ),
-  build_id: Type.Optional(
-    Type.String({
-      description:
-        "A [build …] uuid from the summary output (Cloud Build checks) — returns that " +
-        "build's log (tail) instead of the summary. Mutually exclusive with job_id.",
-    }),
-  ),
 });
 
 /** Conclusions that mean "this check did not pass and needs attention". */
@@ -41,15 +34,10 @@ function formatCheckLine(run: GithubCheckSummary): string {
         : run.conclusion === "success"
           ? "✓"
           : "−";
-  // GitHub Actions logs fetch via job_id; Cloud Build logs via build_id when
-  // the host has GCP credentials. Other external CI keeps logs on its own
-  // service, so advertising an id there would only invite doomed fetches.
   const handle =
     run.appSlug === "github-actions"
       ? `[job ${run.id}]`
-      : run.buildLogAvailable && run.externalId
-        ? `[build ${run.externalId}]`
-        : `[external CI: ${run.appSlug ?? "unknown"} — logs not on GitHub]`;
+      : `[external CI: ${run.appSlug ?? "unknown"} — logs not on GitHub]`;
   const line = `${marker} ${run.name}: ${state} ${handle}${run.url ? ` (${run.url})` : ""}`;
   const failed = run.conclusion !== null && FAILING_CONCLUSIONS.has(run.conclusion);
   return failed && run.outputSummary
@@ -72,27 +60,15 @@ export function createGithubChecksTool(): {
     description:
       "Read CI status (check runs) for a branch you pushed with github_pr, or for this " +
       "conversation's pull request when branch is omitted. Pass job_id (a [job …] id, " +
-      "GitHub Actions) or build_id (a [build …] uuid, Cloud Build) from the summary to " +
-      "fetch that run's log. Other external CI checks keep logs on their own service: use " +
+      "GitHub Actions) from the summary to fetch that run's log. External CI checks keep " +
+      "logs on their own service: use " +
       "their summary/url, or reproduce the failure locally in ./repo. Only available in " +
       "GitHub conversations.",
     parameters: githubChecksSchema,
     unavailable: "github_checks is only available in GitHub conversations.",
     run: async (checksFns, args) => {
-      if (args.job_id !== undefined && args.build_id !== undefined) {
-        throw new Error("Pass either job_id or build_id, not both.");
-      }
-
       if (args.job_id !== undefined) {
         const logText = await checksFns.getJobLog(args.job_id);
-        return {
-          content: [{ type: "text" as const, text: logText || "(empty log)" }],
-          details: undefined,
-        };
-      }
-
-      if (args.build_id !== undefined) {
-        const logText = await checksFns.getBuildLog(args.build_id);
         return {
           content: [{ type: "text" as const, text: logText || "(empty log)" }],
           details: undefined,

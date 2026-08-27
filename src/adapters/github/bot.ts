@@ -206,10 +206,7 @@ export class GithubMessagingBot implements MessagingBot {
         privateKey: config.privateKey,
         installationId: config.installationId,
       });
-    this.ops = new GithubOps(this.client, {
-      workspace: config.workspace,
-      cloudBuild: config.cloudBuild,
-    });
+    this.ops = new GithubOps(this.client, { workspace: config.workspace });
   }
 
   // ==========================================================================

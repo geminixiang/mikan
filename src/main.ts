@@ -21,7 +21,6 @@ import { DiscordMessagingBot } from "./adapters/discord/bot.js";
 import { GithubMessagingBot } from "./adapters/github/bot.js";
 import { createGithubToolPack } from "./adapters/github/tool-pack.js";
 import type { PlatformGithubOps } from "./adapters/github/types.js";
-import { GcpTokenProvider } from "./adapters/github/gcp-auth.js";
 import { TelegramMessagingBot } from "./adapters/telegram/bot.js";
 import { SlackMessagingBot as SlackMessagingBotClass } from "./adapters/slack/bot.js";
 import { createSlackToolPack } from "./adapters/slack/tool-pack.js";
@@ -106,8 +105,6 @@ const GITHUB_INSTALLATION_ID = readEnv("GITHUB_INSTALLATION_ID");
 const GITHUB_REPOS = readEnv("GITHUB_REPOS");
 const GITHUB_POLL_INTERVAL = readEnv("GITHUB_POLL_INTERVAL");
 const GITHUB_WEBHOOK_SECRET = readEnv("GITHUB_WEBHOOK_SECRET");
-const GOOGLE_APPLICATION_CREDENTIALS = readEnv("GOOGLE_APPLICATION_CREDENTIALS");
-const GOOGLE_CLOUD_PROJECT = readEnv("GOOGLE_CLOUD_PROJECT");
 // Externally-visible base URL of the link/OAuth server; the env read and
 // trailing-slash normalization live in config.resolveLinkBaseUrl.
 const LINK_BASE_URL = resolveLinkBaseUrl();
@@ -612,8 +609,6 @@ function buildPlatformToolPackFactories(): PlatformToolPackFactory[] {
       requireGithubBot("github_checks").ops.getChecks(conversationId, branch),
     getJobLog: (conversationId, jobId) =>
       requireGithubBot("github_checks").ops.getJobLog(conversationId, jobId),
-    getBuildLog: (conversationId, buildId) =>
-      requireGithubBot("github_checks").ops.getBuildLog(conversationId, buildId),
     replyToReviewThread: (conversationId, commentId, body) =>
       requireGithubBot("github_review_reply").ops.replyToReviewThread(
         conversationId,
@@ -776,22 +771,9 @@ if (hasGithub) {
       1000,
     workspace,
     syncStatePath: join(stateDir, "github-sync.json"),
-    // Host-side GCP creds (e.g. a WIF external_account file) unlock Cloud
-    // Build logs in github_checks; without them external CI degrades to
-    // guidance text. Credentials never enter the sandbox.
-    cloudBuild: GOOGLE_APPLICATION_CREDENTIALS
-      ? {
-          tokenProvider: new GcpTokenProvider({
-            credentialsPath: GOOGLE_APPLICATION_CREDENTIALS,
-          }),
-          projectFallback: GOOGLE_CLOUD_PROJECT,
-        }
-      : undefined,
   });
   botsByPlatform.github = githubMessagingBot;
-  log.logInfo(
-    `Platform: GitHub${GOOGLE_APPLICATION_CREDENTIALS ? " (Cloud Build logs enabled)" : ""}`,
-  );
+  log.logInfo("Platform: GitHub");
 }
 
 const githubBotForWebhook = botsByPlatform.github as GithubMessagingBot | undefined;

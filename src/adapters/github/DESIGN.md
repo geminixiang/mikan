@@ -154,8 +154,8 @@ Both can coexist.
   alone mentions the bot (zero inline comments) does not trigger — there is
   no repo-wide "reviews since" endpoint and per-PR fan-out is not worth it.
 - **Tool pack, one tool per file under `tools/`**: `github_pr`,
-  `github_checks` (Actions job logs + Cloud Build logs via host-side GCP ADC
-  when configured), `github_review_reply`, `github_sync` (work-preserving
+  `github_checks` (check summaries + Actions job logs), `github_review_reply`,
+  `github_sync` (work-preserving
   clone refresh), `github_read` (metadata the clone lacks), `github_issue`
   (labels/assignees/state; closed action set). All host-side, wired per run
   through `PlatformGithubOps`, enabled only for github conversations.

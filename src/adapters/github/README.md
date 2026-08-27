@@ -13,14 +13,9 @@ full rationale and decisions).
 - `github-ops.ts`: `GithubOps` — the host-side backends for all github\_\*
   tools (`PlatformGithubOps`), standalone from the poll loop: built from the
   API client, the workspace (each conversation's clone resolves through its
-  office), and optional Cloud Build access.
+  office).
 - `client.ts`: minimal GitHub REST client authenticated as a GitHub App
   (RS256 app JWT → cached installation tokens).
-- `cloudbuild.ts`: Cloud Build log retrieval for `github_checks` (builds.get →
-  GCS log object) using host-side GCP ADC from `gcp-auth.ts`.
-- `gcp-auth.ts`: minimal GCP ADC token provider (WIF `external_account` STS
-  exchange, service-account key, gcloud user ADC) — no google-auth-library
-  dependency; lives here because Cloud Build logs are its only consumer.
 - `context.ts`: per-event `ConversationMessage` / `ConversationResponder`;
   no streaming — the finished response is posted as one comment (per-delta
   edits would churn the API and mark every reply "edited").
@@ -56,14 +51,6 @@ full rationale and decisions).
   the poll interval to seconds. Configure the App webhook with the same
   secret and subscribe to Issues, Issue comment, and Pull request review
   comment events. Polling continues regardless as the delivery backstop.
-- `GOOGLE_APPLICATION_CREDENTIALS` — optional path to a GCP ADC JSON (a
-  Workload Identity Federation `external_account` file, a service-account
-  key, or gcloud user ADC). When set, `github_checks` can fetch Cloud Build
-  logs; credentials stay host-side, the sandbox never sees them. The ADC
-  principal needs `roles/cloudbuild.builds.viewer` on the project and
-  `roles/storage.objectViewer` on the logs bucket.
-- `GOOGLE_CLOUD_PROJECT` — optional fallback project when a Cloud Build
-  check's `details_url` does not name one.
 
 ## Behavior notes
 
@@ -112,9 +99,8 @@ conversation-dir bind mount:
   and merging are impossible by construction — humans review and merge.
 - The `github_checks` tool (read-only, host-side) reports CI check runs for a
   pushed branch — or the PR head in PR conversations — and fetches one run's
-  log tail: `job_id` for GitHub Actions, `build_id` for Cloud Build when the
-  host has GCP credentials (see Configuration). Other external CI degrades to
-  guidance text.
+  log tail by `job_id` for GitHub Actions. External CI degrades to guidance
+  text because its logs are not available through GitHub.
 - The `github_sync` tool refreshes the `./repo` snapshot from origin (PR head,
   base branch, or a named branch) with an ephemeral `contents:read` token. It
   only moves the checkout when that provably cannot lose agent work (clean

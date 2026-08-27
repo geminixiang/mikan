@@ -49,7 +49,6 @@ export function createGithubToolPack(ops: PlatformGithubOps): PlatformToolPack {
       setGithubChecksFunction({
         getChecks: (branch) => ops.getChecks(conversationId, branch),
         getJobLog: (jobId) => ops.getJobLog(conversationId, jobId),
-        getBuildLog: (buildId) => ops.getBuildLog(conversationId, buildId),
       });
       setGithubReviewReplyFunction((commentId, body) =>
         ops.replyToReviewThread(conversationId, commentId, body),
