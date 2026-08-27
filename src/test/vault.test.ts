@@ -35,6 +35,17 @@ describe("parseEnvFile", () => {
   test("strips matching single and double quotes", () => {
     expect(parseEnvFile("A=\"hello world\"\nB='ok'")).toEqual({ A: "hello world", B: "ok" });
   });
+
+  test("skips lines without '=' or without a key, keeps mismatched quotes", () => {
+    expect(parseEnvFile("NOEQUALS\n=value\nA='mismatched\"\nB=b")).toEqual({
+      A: "'mismatched\"",
+      B: "b",
+    });
+  });
+
+  test("handles CRLF line endings", () => {
+    expect(parseEnvFile("A=1\r\nB=2\r\n")).toEqual({ A: "1", B: "2" });
+  });
 });
 
 describe("FileVaultManager", () => {
@@ -241,6 +252,28 @@ describe("FileVaultManager", () => {
         target: "/root/gws-client.json",
       },
     ]);
+  });
+
+  test("upsertFile rejects traversal and absolute relative paths", () => {
+    const mgr = new FileVaultManager(tmpDir);
+    const outsidePath = join(tmpDir, "escape.json");
+
+    for (const relativePath of ["../escape.json", "..", ".", "/etc/passwd", "   "]) {
+      expect(() => mgr.upsertFile("U123", relativePath, "secret")).toThrow(
+        "vault: invalid relative secret file path",
+      );
+    }
+    expect(existsSync(outsidePath)).toBe(false);
+    expect(existsSync(join(vaultsDir, "U123"))).toBe(false);
+  });
+
+  test("upsertFile rejects a non-absolute mount target path", () => {
+    const mgr = new FileVaultManager(tmpDir);
+
+    expect(() => mgr.upsertFile("U123", "creds.json", "{}", "relative/target")).toThrow(
+      "vault: invalid relative secret file path",
+    );
+    expect(existsSync(join(vaultsDir, "U123", "creds.json"))).toBe(false);
   });
 
   test("upsertFile atomically replaces existing mounted credential files", () => {

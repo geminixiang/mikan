@@ -2,7 +2,6 @@ import { describe, expect, test, vi } from "vitest";
 import {
   formatCommandSummary,
   isPrivateConversation,
-  replyDiagnosticWithContext,
   replyPrivatelyWithContext,
 } from "../commands/utils.js";
 
@@ -57,22 +56,6 @@ describe("isPrivateConversation", () => {
 
   test("returns false for public message type", () => {
     expect(isPrivateConversation({ type: "message" } as any)).toBe(false);
-  });
-});
-
-describe("replyDiagnosticWithContext", () => {
-  test("clears typing/working and responds diagnostic", async () => {
-    const responder = {
-      setTyping: vi.fn(),
-      setWorking: vi.fn(),
-      respondDiagnostic: vi.fn(),
-    };
-
-    await replyDiagnosticWithContext(responder as any, "hello", { style: "muted" });
-
-    expect(responder.setTyping).toHaveBeenCalledWith(false);
-    expect(responder.setWorking).toHaveBeenCalledWith(false);
-    expect(responder.respondDiagnostic).toHaveBeenCalledWith("hello", { style: "muted" });
   });
 });
 

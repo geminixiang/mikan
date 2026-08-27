@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -271,36 +271,6 @@ describe("createEventTool", () => {
     expect(existsSync(join(workspaceDir, "events", "deploy-1700000000003.json"))).toBe(false);
   });
 
-  test("writes immediate event payload without thread state even when scheduled from a thread", async () => {
-    vi.spyOn(Date, "now").mockReturnValue(1700000000001);
-    const workspaceDir = makeWorkspace();
-    const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
-    setEventContext({
-      platform: "slack",
-      conversationId: "C123",
-      conversationKind: "shared",
-      userId: "U123",
-    });
-
-    await tool.execute("call-1", {
-      label: "deploy",
-      type: "immediate",
-      text: "Check deployment status",
-    });
-
-    const eventsDir = join(workspaceDir, "events");
-    const files = readdirSync(eventsDir);
-    expect(files).toEqual(["immediate-1700000000001.json"]);
-    expect(JSON.parse(readFileSync(join(eventsDir, files[0]), "utf-8"))).toEqual({
-      type: "immediate",
-      platform: "slack",
-      conversationId: "C123",
-      conversationKind: "shared",
-      userId: "U123",
-      text: "Check deployment status",
-    });
-  });
-
   test("requires event context before execution", async () => {
     const workspaceDir = makeWorkspace();
     const { tool } = createWorkspaceEventTool(workspaceDir);
@@ -345,8 +315,7 @@ describe("createEventTool", () => {
     });
   });
 
-  test("periodic event strips thread state when in a thread", async () => {
-    vi.spyOn(Date, "now").mockReturnValue(1700000000300);
+  test("rejects traversal and non-json filenames for read, update, and delete", async () => {
     const workspaceDir = makeWorkspace();
     const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
     setEventContext({
@@ -356,26 +325,66 @@ describe("createEventTool", () => {
       userId: "U123",
     });
 
-    await tool.execute("call-1", {
-      label: "inbox",
-      type: "periodic",
-      text: "Check inbox",
-      schedule: "0 9 * * 1-5",
-      timezone: "Asia/Taipei",
-    });
+    await expect(
+      tool.execute("call-1", { action: "read", filename: "../outside.json" }),
+    ).rejects.toThrow("Invalid event filename");
+    await expect(
+      tool.execute("call-2", { action: "delete", filename: "sub/dir.json" }),
+    ).rejects.toThrow("Invalid event filename");
+    await expect(
+      tool.execute("call-3", {
+        action: "update",
+        filename: "note.txt",
+        type: "immediate",
+        text: "x",
+      }),
+    ).rejects.toThrow("Invalid event filename");
+    await expect(tool.execute("call-4", { action: "read" })).rejects.toThrow(
+      "`filename` is required",
+    );
+  });
 
-    const eventsDir = join(workspaceDir, "events");
-    const files = readdirSync(eventsDir);
-    expect(JSON.parse(readFileSync(join(eventsDir, files[0]), "utf-8"))).toEqual({
-      type: "periodic",
+  test("update refuses to create a new event file", async () => {
+    const workspaceDir = makeWorkspace();
+    const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
+    setEventContext({
       platform: "slack",
       conversationId: "C123",
       conversationKind: "shared",
       userId: "U123",
-      text: "Check inbox",
-      schedule: "0 9 * * 1-5",
-      timezone: "Asia/Taipei",
     });
+
+    await expect(
+      tool.execute("call-1", {
+        action: "update",
+        filename: "missing-1.json",
+        type: "immediate",
+        text: "Check deployment status",
+      }),
+    ).rejects.toThrow();
+    expect(existsSync(join(workspaceDir, "events", "missing-1.json"))).toBe(false);
+  });
+
+  test("list keeps unparseable event files visible with a null payload under scope=all", async () => {
+    const workspaceDir = makeWorkspace();
+    mkdirSync(join(workspaceDir, "events"), { recursive: true });
+    writeFileSync(join(workspaceDir, "events", "corrupt-1.json"), "{not json");
+    const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
+    setEventContext({
+      platform: "slack",
+      conversationId: "C123",
+      conversationKind: "shared",
+      userId: "U123",
+    });
+
+    // Without a payload the file cannot be attributed to a conversation, so
+    // the default scope hides it; scope=all must surface it for cleanup.
+    const scoped = await tool.execute("call-1", { action: "list" });
+    expect(scoped.content[0]?.text).not.toContain("corrupt-1.json");
+
+    const all = await tool.execute("call-2", { action: "list", scope: "all" });
+    expect(all.content[0]?.text).toContain("corrupt-1.json");
+    expect(all.content[0]?.text).toContain('"payload": null');
   });
 
   test("one-shot events require at", async () => {

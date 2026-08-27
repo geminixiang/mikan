@@ -339,6 +339,47 @@ describe("OfficeRegistry", () => {
     expect(new OfficeRegistry(fixture.stateDir).getOffices()).toEqual([]);
   });
 
+  test("rejects a truncated (torn) registry file instead of starting empty", () => {
+    const fixture = makeFixture();
+    new OfficeRegistry(fixture.stateDir).recordOffice(createOfficeAddress("slack", "C123"));
+    const path = join(fixture.stateDir, "office-registry.json");
+    const raw = readFileSync(path, "utf-8");
+    writeFileSync(path, raw.slice(0, raw.length / 2));
+
+    expect(() => new OfficeRegistry(fixture.stateDir)).toThrow(/Invalid office registry JSON/);
+  });
+
+  test("rejects unknown registry versions and malformed shapes", () => {
+    const fixture = makeFixture();
+    const path = join(fixture.stateDir, "office-registry.json");
+
+    writeFileSync(path, JSON.stringify({ version: 2, enabledPlatforms: [], migrations: [] }));
+    expect(() => new OfficeRegistry(fixture.stateDir)).toThrow(/Invalid office registry version/);
+
+    writeFileSync(path, JSON.stringify({ version: 1, enabledPlatforms: "slack" }));
+    expect(() => new OfficeRegistry(fixture.stateDir)).toThrow(/Invalid office registry shape/);
+
+    writeFileSync(
+      path,
+      JSON.stringify({ version: 1, enabledPlatforms: ["matrix"], migrations: [] }),
+    );
+    expect(() => new OfficeRegistry(fixture.stateDir)).toThrow(/Unsupported platform/);
+  });
+
+  test("reload picks up changes another process wrote to the journal", () => {
+    const fixture = makeFixture();
+    const reader = new OfficeRegistry(fixture.stateDir);
+    const writer = new OfficeRegistry(fixture.stateDir);
+
+    writer.recordOffice(createOfficeAddress("slack", "C123"));
+    expect(reader.getOffices()).toEqual([]);
+
+    reader.reload();
+    expect(reader.getOffices()).toContainEqual(
+      expect.objectContaining({ platform: "slack", conversationId: "C123" }),
+    );
+  });
+
   describe("office.ensure()", () => {
     test("registers the office, creates its directory, and stays idempotent", () => {
       const fixture = makeFixture();

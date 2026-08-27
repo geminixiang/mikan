@@ -86,6 +86,52 @@ describe("createSandboxTool", () => {
     });
   });
 
+  test("rejects unsupported sandbox types even with a resource controller", async () => {
+    const { tool, setSandboxContext } = createSandboxTool({
+      sandbox: { type: "host" },
+      resourceController: {
+        getLimitStatus: vi.fn(),
+        setLimits: vi.fn(),
+      },
+    });
+
+    setSandboxContext({ address: createOfficeAddress("slack", "C123"), userId: "U123" });
+    await expect(tool.execute("tool-call", { action: "status" })).rejects.toThrow(
+      /only supports image:\* and gondolin:\*/,
+    );
+  });
+
+  test("requires sandbox context before execution", async () => {
+    const { tool } = createSandboxTool({
+      sandbox: { type: "image", image: "ubuntu:24.04" },
+      resourceController: {
+        getLimitStatus: vi.fn(),
+        setLimits: vi.fn(),
+      },
+    });
+
+    await expect(tool.execute("tool-call", { action: "status" })).rejects.toThrow(
+      "Sandbox context not configured",
+    );
+  });
+
+  test("rejects limit values containing shell metacharacters", async () => {
+    const setLimits = vi.fn();
+    const { tool, setSandboxContext } = createSandboxTool({
+      sandbox: { type: "image", image: "ubuntu:24.04" },
+      resourceController: {
+        getLimitStatus: vi.fn(),
+        setLimits,
+      },
+    });
+
+    setSandboxContext({ address: createOfficeAddress("slack", "C123"), userId: "U123" });
+    await expect(
+      tool.execute("tool-call", { action: "set", memory: "1g; rm -rf /" }),
+    ).rejects.toThrow(/must not contain whitespace or shell metacharacters/);
+    expect(setLimits).not.toHaveBeenCalled();
+  });
+
   test("rejects set without limits", async () => {
     const { tool, setSandboxContext } = createSandboxTool({
       sandbox: { type: "image", image: "ubuntu:24.04" },

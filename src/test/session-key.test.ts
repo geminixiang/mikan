@@ -78,6 +78,19 @@ describe("session-key grammar", () => {
         /does not belong/,
       );
     });
+
+    test("rejects scoped keys with empty or path-dangerous suffixes", () => {
+      expect(() => assertSessionKeyBelongsToConversation("C1:", "C1")).toThrow(
+        /non-empty identity segment/,
+      );
+      expect(() => assertSessionKeyBelongsToConversation("C1:../other", "C1")).toThrow(
+        /path separators/,
+      );
+    });
+
+    test("a bare key from another conversation is rejected too", () => {
+      expect(() => assertSessionKeyBelongsToConversation("C2", "C1")).toThrow(/does not belong/);
+    });
   });
 
   describe("deriveSessionKey", () => {

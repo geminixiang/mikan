@@ -56,6 +56,28 @@ describe("resolveChatSessionKey", () => {
     ).toBe("C1");
   });
 
+  test("an empty-string threadTs is treated as absent", () => {
+    // Platforms sometimes send "" instead of omitting the field; it must not
+    // produce an empty (invalid) thread suffix.
+    expect(
+      resolveChatSessionKey({
+        conversationId: "DM1",
+        conversationKind: "direct",
+        messageId: "M2",
+        threadTs: "",
+        scopeDirectThreads: true,
+      }),
+    ).toBe("DM1");
+    expect(
+      resolveChatSessionKey({
+        conversationId: "C1",
+        conversationKind: "shared",
+        messageId: "M2",
+        threadTs: "",
+      }),
+    ).toBe("C1:M2");
+  });
+
   test("shared thread replies use thread-scoped sessions", () => {
     expect(
       resolveChatSessionKey({
@@ -82,5 +104,9 @@ describe("inferConversationKind", () => {
   test("infers Discord direct conversations from synthetic DM IDs", () => {
     expect(inferConversationKind("discord", "DM123")).toBe("direct");
     expect(inferConversationKind("discord", "123")).toBe("shared");
+  });
+
+  test("GitHub conversations are always shared", () => {
+    expect(inferConversationKind("github", "GH_owner_repo_42")).toBe("shared");
   });
 });

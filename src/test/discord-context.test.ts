@@ -407,11 +407,6 @@ describe("text splitting", () => {
     expect(bot.postReply).toHaveBeenCalledTimes(2);
   });
 
-  test("what classic content would have split now fits one message", () => {
-    // The old ceiling was 1900; anything above it cost a second post.
-    expect(DISCORD_V2_TEXT_LIMIT - 100).toBeGreaterThan(1900);
-  });
-
   test("text exactly at 1900 chars is not split when not working", async () => {
     const bot = makeDiscordMessagingBot();
     const event = makeEvent({ thread_ts: undefined });

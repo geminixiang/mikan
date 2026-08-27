@@ -219,6 +219,35 @@ describe("migrateSessionFile", () => {
     expect(readFileSync(file, "utf-8")).toBe(before);
     expect(isV3SessionFile(file)).toBe(true);
   });
+
+  test("tolerates a torn final line (crash tail) and migrates the intact prefix", async () => {
+    const file = join(dir, "torn.jsonl");
+    writeJsonl(file, [header, v3Message("a", null, "kept")]);
+    writeFileSync(file, readFileSync(file, "utf-8") + '{"type":"message","id":"tor', "utf-8");
+
+    const result = await migrateSessionFile(file);
+    expect(result.status).toBe("migrated");
+
+    const store = await SessionStore.inspect(file);
+    const context = await store.buildSessionContext();
+    expect(context.messages.map(textOf)).toEqual(["kept"]);
+  });
+
+  test("invalid JSON before the tail fails loudly and leaves the file untouched", async () => {
+    const file = join(dir, "corrupt.jsonl");
+    const lines = [
+      JSON.stringify(header),
+      "{ not json at all",
+      JSON.stringify(v3Message("a", null, "A")),
+    ];
+    writeFileSync(file, `${lines.join("\n")}\n`, "utf-8");
+    const before = readFileSync(file, "utf-8");
+
+    await expect(migrateSessionFile(file)).rejects.toThrow(/Invalid JSON on line 2/);
+    expect(readFileSync(file, "utf-8")).toBe(before);
+    expect(existsSync(`${file}.v3.bak`)).toBe(false);
+    expect(existsSync(`${file}.v4.tmp`)).toBe(false);
+  });
 });
 
 describe("unmigrated v3 sessions fail loudly", () => {

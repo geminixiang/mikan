@@ -2,10 +2,11 @@ import { describe, expect, test } from "vitest";
 import {
   COMMAND_MANIFEST,
   commandForms,
+  matchCommand,
   slashForms,
   telegramCommandMenu,
 } from "../commands/manifest.js";
-import { isCommandText } from "../commands/manifest.js";
+import { commandManifestEntry, isCommandText } from "../commands/manifest.js";
 import { defaultCommandHandlers } from "../commands/registry.js";
 
 describe("command manifest", () => {
@@ -64,6 +65,42 @@ describe("command manifest", () => {
         expect(entry.slackCommand).toBe(`/pi-${entry.name}`);
       }
     }
+  });
+
+  test("unknown command names fail loudly instead of returning nothing", () => {
+    expect(() => commandManifestEntry("frobnicate")).toThrow(/Unknown command in manifest/);
+    expect(() => slashForms("frobnicate")).toThrow(/Unknown command in manifest/);
+    expect(() => commandForms("frobnicate")).toThrow(/Unknown command in manifest/);
+  });
+});
+
+describe("matchCommand", () => {
+  const aliases = ["/model", "/pi-model"] as const;
+
+  test("tokenizes args across arbitrary whitespace", () => {
+    expect(matchCommand("  /model   openai/gpt-5\tnow ", aliases)).toEqual({
+      command: "/model",
+      args: ["openai/gpt-5", "now"],
+    });
+  });
+
+  test("matches case-insensitively and returns the normalized command", () => {
+    expect(matchCommand("/MODEL arg", aliases)).toEqual({ command: "/model", args: ["arg"] });
+  });
+
+  test("empty and non-command texts return null", () => {
+    expect(matchCommand("", aliases)).toBeNull();
+    expect(matchCommand("   ", aliases)).toBeNull();
+    expect(matchCommand("hello /model", aliases)).toBeNull();
+    expect(matchCommand("/models", aliases)).toBeNull();
+  });
+
+  test("strips a bot mention only when asked to", () => {
+    expect(matchCommand("/model@mikan_bot arg", aliases, { stripMention: true })).toEqual({
+      command: "/model",
+      args: ["arg"],
+    });
+    expect(matchCommand("/model@mikan_bot arg", aliases)).toBeNull();
   });
 });
 

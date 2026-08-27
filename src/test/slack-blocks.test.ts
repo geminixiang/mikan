@@ -236,6 +236,16 @@ describe("resolveSlackMentions", () => {
     expect(resolveSlackMentions("ping <@U0AAAAAA1>", users)).toBe("ping <@U0AAAAAA1>");
   });
 
+  test("a display name never shadows another user's userName", () => {
+    // Someone can set their display name to a teammate's handle; the handle's
+    // owner must still be the one who gets pinged.
+    const conflicted = [
+      { id: "U0AAAAAA1", userName: "alice", displayName: "Alice Example" },
+      { id: "U0CCCCCC3", userName: "impostor", displayName: "alice" },
+    ];
+    expect(resolveSlackMentions("hey <@alice>", conflicted)).toBe("hey <@U0AAAAAA1>");
+  });
+
   test("unknown handles stay verbatim instead of guessing", () => {
     // e.g. a GitHub handle from channel memory — neither a userName nor an id.
     expect(resolveSlackMentions("ask <@alicehub>", users)).toBe("ask <@alicehub>");

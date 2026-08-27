@@ -38,6 +38,11 @@ describe("history-line grammar", () => {
     expect(stripHistoryLinePrefix(line)).toBe("[carol]: hi");
   });
 
+  test("an invalid Date degrades to a timestampless line instead of writing garbage", () => {
+    const line = formatHistoryLine({ date: new Date(Number.NaN), userName: "dave", text: "hi" });
+    expect(line).toBe("[dave]: hi");
+  });
+
   test("plain text without a prefix passes through", () => {
     expect(stripHistoryLinePrefix("no prefix here")).toBe("no prefix here");
   });

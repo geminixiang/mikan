@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
@@ -17,6 +17,10 @@ const fs = await import("node:fs");
 const { atomicWritePrivateFile } = await import("../utils/file-guards.js");
 
 describe("atomicWritePrivateFile error handling", () => {
+  beforeEach(() => {
+    vi.mocked(fs.unlinkSync).mockReset();
+  });
+
   test("throws and cleans up temp file when writeSync fails", () => {
     vi.mocked(fs.openSync).mockReturnValue(42);
     vi.mocked(fs.writeSync).mockImplementation(() => {
@@ -25,6 +29,12 @@ describe("atomicWritePrivateFile error handling", () => {
 
     expect(() => atomicWritePrivateFile("/tmp/target.txt", "hello")).toThrow("disk full");
     expect(fs.writeSync).toHaveBeenCalled();
+    // The temp sibling (never the target) is removed and the fd is closed.
+    expect(fs.unlinkSync).toHaveBeenCalledWith(
+      expect.stringMatching(/\/tmp\/\.target\.txt\..+\.tmp$/),
+    );
+    expect(fs.unlinkSync).not.toHaveBeenCalledWith("/tmp/target.txt");
+    expect(fs.closeSync).toHaveBeenCalledWith(42);
   });
 
   test("throws and cleans up temp file when renameSync fails", () => {
@@ -36,5 +46,9 @@ describe("atomicWritePrivateFile error handling", () => {
 
     expect(() => atomicWritePrivateFile("/tmp/target.txt", "hello")).toThrow("cross device");
     expect(fs.renameSync).toHaveBeenCalled();
+    expect(fs.unlinkSync).toHaveBeenCalledWith(
+      expect.stringMatching(/\/tmp\/\.target\.txt\..+\.tmp$/),
+    );
+    expect(fs.unlinkSync).not.toHaveBeenCalledWith("/tmp/target.txt");
   });
 });

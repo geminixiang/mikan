@@ -10,7 +10,9 @@ import type { GithubClient } from "../adapters/github/client.js";
 import {
   buildGithubConversationId,
   GITHUB_ISSUE_BODY_TS,
+  githubReviewCommentTs,
   parseGithubConversationId,
+  parseReviewCommentTs,
 } from "../adapters/github/ids.js";
 import { cloneRepo, pushBranch, syncRepo } from "../adapters/github/repo.js";
 import type {
@@ -192,6 +194,17 @@ describe("GitHub conversation ids", () => {
     for (const bad of ["C03045VJJAY", "GH_octo_widgets", "GH_octo_widgets_x", "GH__widgets_1"]) {
       expect(() => parseGithubConversationId(bad)).toThrow(/Not a GitHub conversation id/);
     }
+  });
+
+  test("review-comment ts round-trips and other ts kinds parse to null", () => {
+    // The rc- prefix is what keeps a review-comment id from being routed to
+    // an issue-comment endpoint — the two id families overlap numerically.
+    expect(githubReviewCommentTs(8001)).toBe("rc-8001");
+    expect(parseReviewCommentTs("rc-8001")).toBe(8001);
+    expect(parseReviewCommentTs("8001")).toBeNull();
+    expect(parseReviewCommentTs(GITHUB_ISSUE_BODY_TS)).toBeNull();
+    expect(parseReviewCommentTs("rc-")).toBeNull();
+    expect(parseReviewCommentTs("rc-8001x")).toBeNull();
   });
 });
 
