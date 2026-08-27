@@ -39,10 +39,6 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
         doc: "Socket-mode app token (xapp-…)",
       },
       { name: "SLACK_BOT_TOKEN", required: true, secret: true, doc: "Bot token (xoxb-…)" },
-      {
-        name: "SLACK_TRACE_EVENTS",
-        doc: "Log the type of every socket-mode event received (diagnostics)",
-      },
     ],
   },
   {
@@ -130,11 +126,6 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
     vars: [
       { name: "CLOUDFLARE_SANDBOX_URL", doc: "Bridge worker URL" },
       { name: "CLOUDFLARE_SANDBOX_TOKEN", secret: true, doc: "Bridge worker auth token" },
-      {
-        name: "CLOUDFLARE_SANDBOX_CWD",
-        deploy: false,
-        doc: "Exec cwd inside the sandbox (default /workspace)",
-      },
     ],
   },
   {
@@ -157,11 +148,6 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
     kind: "feature",
     vars: [
       { name: "STATE_DIR", deploy: false, doc: "State dir override (same as --state-dir)" },
-      {
-        name: "SKIP_CONTAINER_PRESERVATION",
-        deploy: false,
-        doc: "Set to 1 to skip preserving container contents through the office layout migration",
-      },
       {
         name: "HTTP_IDLE_TIMEOUT",
         deploy: false,

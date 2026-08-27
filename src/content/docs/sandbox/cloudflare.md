@@ -21,7 +21,7 @@ mikan --sandbox=cloudflare:mikan-remote /path/to/workspace
 
 Features:
 
-- runtime commands use `/workspace` by default; override it with `CLOUDFLARE_SANDBOX_CWD`
+- runtime commands use `/workspace`
 - mikan derives the remote sandbox id as `<base-sandbox-id>-<resource-key>`, so each conversation
   addresses its own sandbox on the bridge
 - vault env is injected through the bridge on every `exec()`

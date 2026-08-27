@@ -504,34 +504,6 @@ describe("DockerContainerManager", () => {
     expect(calls.some((args) => args[0] === "run")).toBe(false);
   });
 
-  test("MIKAN_SKIP_CONTAINER_PRESERVATION=1 falls back to plain recreation from the base image", async () => {
-    process.env.MIKAN_SKIP_CONTAINER_PRESERVATION = "1";
-    try {
-      const { exec, calls } = routerMock({
-        status: "running",
-        binds: ["/tmp/vaults/alice/.ssh:/root/.ssh"],
-      });
-      const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: exec as any });
-
-      await manager.provision("alice", {
-        containerName: "alice-box",
-        mounts: [{ source: "/tmp/vaults/alice/.kube", target: "/root/.kube" }],
-        conversationId: "D123",
-      });
-
-      expect(calls.some((args) => args[0] === "commit")).toBe(false);
-      expect(calls.some((args) => args[0] === "rm" && args[2] === "alice-box")).toBe(true);
-      expect(calls.some((args) => args[0] === "rmi" && args[1] === "mikan-migrate:alice-box")).toBe(
-        true,
-      );
-      const runArgs = calls.find((args) => args[0] === "run");
-      expect(runArgs).toContain("ubuntu:24.04");
-      expect(runArgs).toContain("/tmp/vaults/alice/.kube:/root/.kube");
-    } finally {
-      delete process.env.MIKAN_SKIP_CONTAINER_PRESERVATION;
-    }
-  });
-
   test("recreates existing containers preserving contents when network isolation is missing", async () => {
     const { exec, calls } = routerMock({ status: "running", binds: [], networkMode: "bridge" });
     const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: exec as any });

@@ -4,7 +4,6 @@ import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { promisify } from "node:util";
 import * as log from "./log.js";
-import { readEnv } from "./env-manifest.js";
 import { reportUserFacingError } from "./observability/sentry.js";
 
 const execFileAsync = promisify(execFile);
@@ -138,13 +137,7 @@ export class DockerContainerManager {
         (await this.hasRuntimeDrift(containerKey, containerName, mounts))
       ) {
         log.logInfo(`Container ${containerName} configuration changed; recreating container`);
-        if (readEnv("SKIP_CONTAINER_PRESERVATION") === "1") {
-          await this.execFileImpl("docker", ["rm", "-f", containerName]);
-          await this.removeMigrateSnapshot(containerName);
-          await this.runContainer(containerKey, containerName, mounts, options);
-        } else {
-          await this.recreateContainerPreservingContents(containerKey, containerName, mounts);
-        }
+        await this.recreateContainerPreservingContents(containerKey, containerName, mounts);
         log.logInfo(`Container ${containerName} recreated`);
       } else if (status === "running") {
         log.logInfo(`Container ${containerName} already running`);

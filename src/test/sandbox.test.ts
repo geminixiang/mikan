@@ -255,16 +255,4 @@ describe("CloudflareSandboxExecutor", () => {
       env: { API_TOKEN: "secret" },
     });
   });
-
-  test("reports the configured Cloudflare runtime cwd as workspace path", () => {
-    process.env.MIKAN_CLOUDFLARE_SANDBOX_CWD = "/remote/workspace";
-    const executor = new CloudflareSandboxExecutor("slack-u123");
-
-    expect(executor.getWorkspacePath("/host/workspace")).toBe("/remote/workspace");
-    expect(executor.getPathContext("/host/workspace")).toMatchObject({
-      hostWorkspaceRoot: "/host/workspace",
-      runtimeWorkspaceRoot: "/remote/workspace",
-    });
-    expect(executor.getPathContext("/host/workspace").runtimeToHostPath).toBeUndefined();
-  });
 });

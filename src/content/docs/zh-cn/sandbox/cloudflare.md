@@ -19,7 +19,7 @@ mikan --sandbox=cloudflare:mikan-remote /path/to/workspace
 
 特性：
 
-- 运行时命令默认使用 `/workspace`；可通过 `CLOUDFLARE_SANDBOX_CWD` 覆盖
+- 运行时命令使用 `/workspace`
 - mikan 将远程沙箱 ID 生成为 `<base-sandbox-id>-<resource-key>`，因此每个对话在桥接器上寻址自己的沙箱
 - vault 环境变量在每次 `exec()` 时通过桥接器注入
 - 凭证按 office key 标识，与 `image:*` 使用的对话范围 vault key 相同

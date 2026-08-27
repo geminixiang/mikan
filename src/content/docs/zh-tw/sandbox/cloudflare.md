@@ -16,7 +16,7 @@ mikan --sandbox=cloudflare:mikan-remote /path/to/workspace
 
 特性：
 
-- runtime commands 預設使用 `/workspace`；可用 `CLOUDFLARE_SANDBOX_CWD` 覆寫
+- runtime commands 使用 `/workspace`
 - mikan 會把 remote sandbox id 衍生為 `<base-sandbox-id>-<resource-key>`，因此每個對話在 bridge 上都對應到自己的 sandbox
 - vault env 會在每次 `exec()` 時透過 bridge 注入
 - credentials 以 office key 為 key，也就是 `image:*` 使用的那個以對話為範圍的 vault key

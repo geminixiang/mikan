@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { escapeHtml, readJsonBody, renderPortalShell, requestBaseUrl } from "../portal-shell.js";
 import { resolveLinkBaseUrl } from "../../config.js";
+import { readEnv } from "../../env-manifest.js";
 import type { PlatformName } from "../../adapter.js";
 import { InMemoryTokenStore } from "../token-store.js";
 import type { LinkToken } from "./types.js";
@@ -1330,8 +1331,8 @@ async function handleOAuthStart(
     return;
   }
 
-  const clientId = process.env[service.clientIdEnvKey];
-  const clientSecret = process.env[service.clientSecretEnvKey];
+  const clientId = readEnv(service.clientIdEnvKey);
+  const clientSecret = readEnv(service.clientSecretEnvKey);
   if (!clientId || !clientSecret) {
     res.writeHead(400, { "Content-Type": "application/json" });
     res.end(
@@ -1422,8 +1423,8 @@ async function handleOAuthCallback(
     return;
   }
 
-  const clientId = process.env[service.clientIdEnvKey];
-  const clientSecret = process.env[service.clientSecretEnvKey];
+  const clientId = readEnv(service.clientIdEnvKey);
+  const clientSecret = readEnv(service.clientSecretEnvKey);
   if (!clientId || !clientSecret) {
     res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
     res.end(renderErrorPage("OAuth service is not configured on server."));

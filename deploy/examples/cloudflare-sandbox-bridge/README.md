@@ -50,9 +50,8 @@ export CLOUDFLARE_SANDBOX_TOKEN="<same-secret>"
 mikan --sandbox=cloudflare:mikan-remote /path/to/workspace
 ```
 
-`MIKAN_`-prefixed spellings of both variables work too. `CLOUDFLARE_SANDBOX_CWD`
-overrides the exec working directory (default `/workspace`). `mikan env` lists
-all three. `BRIDGE_TOKEN` is optional on the worker side: leave it unset and the
+`MIKAN_`-prefixed spellings of both variables work too; `mikan env` lists
+them. `BRIDGE_TOKEN` is optional on the worker side: leave it unset and the
 bridge accepts unauthenticated requests.
 
 Note: the remote sandbox working directory is `/workspace`, and that directory

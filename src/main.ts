@@ -368,25 +368,16 @@ const provisioner =
 // legacy paths. Their writable layers (everything installed inside) are
 // preserved: each container is committed and recreated with translated
 // mounts — on demand before its next message, and via a background sweep
-// after the bots start. MIKAN_SKIP_CONTAINER_PRESERVATION=1 falls back to
-// plain removal (containers rebuild from the base image on next use).
+// after the bots start.
 const registryOffices = new OfficeRegistry(stateDir).getOffices();
 if (provisioner && registryOffices.length > 0) {
-  if (readEnv("SKIP_CONTAINER_PRESERVATION") === "1") {
-    if (officeMigration.migrated.length > 0 || officeMigration.recovered.length > 0) {
-      await provisioner.removeContainersForConversations(
-        new Set([...officeMigration.migrated, ...officeMigration.recovered]),
-      );
-    }
-  } else {
-    provisioner.armContainerLayoutMigration(
-      buildContainerBindTranslator({
-        offices: registryOffices,
-        workspaceRoot: workingDir,
-        stateDir,
-      }),
-    );
-  }
+  provisioner.armContainerLayoutMigration(
+    buildContainerBindTranslator({
+      offices: registryOffices,
+      workspaceRoot: workingDir,
+      stateDir,
+    }),
+  );
 }
 if (sandbox.type === "gondolin") {
   try {

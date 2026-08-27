@@ -73,7 +73,7 @@ export class CloudflareSandboxExecutor implements Executor {
     private readonly env?: Record<string, string>,
     _ensureReady?: () => Promise<void>,
   ) {
-    this.cwd = readEnv("CLOUDFLARE_SANDBOX_CWD") || DEFAULT_CLOUDFLARE_CWD;
+    this.cwd = DEFAULT_CLOUDFLARE_CWD;
   }
 
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {

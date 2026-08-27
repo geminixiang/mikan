@@ -20,7 +20,7 @@ mikan --sandbox=cloudflare:mikan-remote /path/to/workspace
 
 特徴：
 
-- runtime commands は既定で `/workspace` を使用します。`CLOUDFLARE_SANDBOX_CWD` で上書きできます
+- runtime commands は `/workspace` を使用します
 - mikan は remote sandbox id を `<base-sandbox-id>-<resource-key>` に派生させるため、各 conversation は bridge 上で自分の sandbox を指します
 - vault env は各 `exec()` 時に bridge 経由で注入されます
 - 認証情報は office key で索かれます。これは `image:*` が使うのと同じ conversation スコープの vault key です

@@ -35,6 +35,7 @@ import {
   validateExtension,
 } from "../harness/index.js";
 import { resolveStateDir, takeValueFlag } from "./arg-grammar.js";
+import { setEnvAliases } from "../env-manifest.js";
 import { isGitSourceString, materializeSource } from "../packages/index.js";
 import { officeStateDir } from "../office/index.js";
 import { resolveOwnedOfficeAddress } from "../office/index.js";
@@ -490,7 +491,7 @@ async function runExtDevCommand(argv: string[]): Promise<number> {
 
   // Declaring the working copy as this conversation's package is what makes
   // the dev loop use the real resolution path rather than a bespoke one.
-  process.env.MIKAN_STATE_DIR = stateDir;
+  setEnvAliases("STATE_DIR", stateDir);
   const workspace = createWorkspace({ root: workingDir, stateDir });
   const devOffice = workspace.office(createOfficeAddress("slack", conversationId));
   devOffice.ensure();

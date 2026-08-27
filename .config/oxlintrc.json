@@ -1,5 +1,6 @@
 {
   "$schema": "../node_modules/oxlint/configuration_schema.json",
+  "plugins": ["node", "typescript", "unicorn", "oxc"],
   "categories": {
     "correctness": "error",
     "suspicious": "error",
@@ -10,24 +11,57 @@
     "eslint/max-depth": "error",
     "eslint/max-lines-per-function": [
       "error",
-      { "max": 100, "skipBlankLines": true, "skipComments": true }
+      {
+        "max": 100,
+        "skipBlankLines": true,
+        "skipComments": true
+      }
     ],
-    "eslint/max-params": ["error", { "max": 5 }],
+    "eslint/max-params": [
+      "error",
+      {
+        "max": 5
+      }
+    ],
     "unicorn/prefer-node-protocol": "error",
-    "import/no-cycle": "error",
+    "import/no-cycle": [
+      "error",
+      {
+        "ignoreTypes": true
+      }
+    ],
     "typescript/no-explicit-any": "error",
     "typescript/consistent-type-imports": "error",
     "unicorn/require-post-message-target-origin": "off",
-    "eslint/no-await-in-loop": "off"
+    "eslint/no-await-in-loop": "off",
+    "node/no-process-env": "error"
   },
   "overrides": [
     {
-      "files": ["**/src/test/**", "**/e2e/**", "**/deploy/examples/**"],
+      "files": [
+        "**/src/test/**",
+        "**/e2e/**",
+        "**/deploy/examples/**",
+        "**/scripts/**",
+        "**/.pi/**"
+      ],
       "rules": {
         "typescript/no-explicit-any": "off",
         "typescript/consistent-type-imports": "off",
         "eslint/max-lines-per-function": "off",
-        "eslint/max-params": "off"
+        "eslint/max-params": "off",
+        "node/no-process-env": "off"
+      }
+    },
+    {
+      "files": [
+        "**/src/env-manifest.ts",
+        "**/src/main.ts",
+        "**/src/packages/index.ts",
+        "**/src/adapters/github/repo.ts"
+      ],
+      "rules": {
+        "node/no-process-env": "off"
       }
     },
     {
@@ -46,9 +80,7 @@
         "**/src/sandbox/gondolin.ts",
         "**/src/web/admin/portal.ts",
         "**/src/web/login/portal.ts",
-        "**/src/web/session-view/portal.ts",
-        "**/src/web/session-view/service.ts",
-        "**/src/web/session-view/store.ts"
+        "**/src/web/session-view/portal.ts"
       ],
       "rules": {
         "eslint/max-lines-per-function": "off",
