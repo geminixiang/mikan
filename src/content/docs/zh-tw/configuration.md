@@ -8,14 +8,14 @@ description: 設定啟動流程、全域與對話設定、平台憑證、sandbox
 mikan 在正常啟動前需要全域設定檔。請先建立並檢查一次，再以 workspace 啟動 mikan：
 
 ```bash
-mikan --onboard
+mikan onboard
 mikan --sandbox=host /path/to/workspace
 ```
 
 預設 state directory 是 `~/.mikan`。若選擇其他位置，onboarding 與正常啟動時須使用相同的 `--state-dir`：
 
 ```bash
-mikan --onboard --state-dir=/secure/mikan-state
+mikan onboard --state-dir=/secure/mikan-state
 mikan --state-dir=/secure/mikan-state /path/to/workspace
 ```
 
@@ -40,7 +40,7 @@ Office key 無法反推回原始平台 id，因此 host 會在 `<state-dir>/offi
 
 ## 產生的設定
 
-`mikan --onboard` 會建立：
+`mikan onboard` 會建立：
 
 ```json
 {
@@ -115,7 +115,7 @@ Door policy 與 layout 是一起解析的。`isolated` 一律代表 `conversatio
 
 | 指令或選項                                                                                                      | 用途                                                                   |
 | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `mikan --onboard [--state-dir=<dir>]`                                                                           | 建立必要的全域設定檔                                                   |
+| `mikan onboard [--state-dir=<dir>]`                                                                             | 建立必要的全域設定檔                                                   |
 | `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]`                                              | 啟動已設定的平台 bot；working directory 預設為 `<state-dir>/workspace` |
 | `--sandbox=host \| container:<name> \| image:<image> \| gondolin:default \| firecracker:... \| cloudflare:<id>` | 選擇工具執行模式；預設為 `host`                                        |
 | `mikan env`                                                                                                     | 顯示完整的環境變數清單，以及目前已設定的項目                           |

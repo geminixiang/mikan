@@ -45,7 +45,7 @@ export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
       help = true;
     } else if (arg === "--version" || arg === "-v" || arg === "-V") {
       version = true;
-    } else if (arg === "--onboard") {
+    } else if (arg === "--onboard" || (arg === "onboard" && i === 0)) {
       onboard = true;
     } else if ((taken = takeValueFlag(args, i, "--sandbox"))) {
       sandbox = parseSandboxArg(taken.value);
@@ -97,6 +97,9 @@ Usage:
       Migrate legacy v3 session files to the v4 format (run with the daemon stopped).
   mikan env
       Show the full environment-variable inventory and what is currently set.
+  mikan onboard
+      Interactive first-run setup: chat adapter, LLM provider, sandbox.
+      Writes settings.json, ~/.mikan/mikan.env, and models.json as needed.
 
 Options:
   --state-dir <dir>      State directory (settings.json, vaults, extensions).
@@ -109,7 +112,6 @@ Options:
                            firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]
                            cloudflare:<sandbox-id>
                          Default: host
-  --onboard              Create <state-dir>/settings.json from a template, then exit.
   --download <channel>   Dump a Slack channel's history (Slack only), then exit.
   --version, -v          Print the version.
   --help, -h             Show this help.

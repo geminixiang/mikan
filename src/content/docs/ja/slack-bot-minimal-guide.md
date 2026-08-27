@@ -90,7 +90,7 @@ Slash commands は任意です。対応する状況ではテキスト指令も�
 
 ## 8. mikan を実行
 
-mikan は最初に一度、グローバル settings ファイルと LLM provider key のセットアップが必要です——`mikan --onboard` と `export ANTHROPIC_API_KEY=...`。[クイックスタート](/ja/quickstart/)を参照してください。その後：
+mikan は最初に一度、グローバル settings ファイルと LLM provider key のセットアップが必要です——`mikan onboard` と `export ANTHROPIC_API_KEY=...`。[クイックスタート](/ja/quickstart/)を参照してください。その後：
 
 ```bash
 export SLACK_APP_TOKEN=xapp-...

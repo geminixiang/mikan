@@ -41,7 +41,7 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
    ```bash
    mkdir -p /srv/mikan/workspace
-   mikan --onboard --state-dir=/srv/mikan/state
+   mikan onboard --state-dir=/srv/mikan/state
    ```
 
    检查 `/srv/mikan/state/settings.json`。该目录必须归 PM2 进程用户所有，且不能全局可写；

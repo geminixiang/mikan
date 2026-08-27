@@ -37,7 +37,6 @@ import { InMemorySessionViewTokenStore } from "./web/session-view/portal.js";
 import { DockerContainerManager } from "./provisioner.js";
 import {
   assertStateDirOutsideWorkspace,
-  createGlobalSettingsFile,
   loadGlobalSettings,
   MissingGlobalSettingsError,
   resolveLinkBaseUrl,
@@ -52,6 +51,7 @@ import { readEnv, setEnvAliases } from "./env-manifest.js";
 import { ensureDirExists, isRecord, readJsonFileIfExists } from "./utils/file-guards.js";
 import { SandboxError, validateSandbox } from "./sandbox/index.js";
 import { helpText, resolveBoot, type BootPlan } from "./cli/boot.js";
+import { runOnboardCommand } from "./cli/onboard.js";
 import { envReport, noPlatformsMessage, platformIsActive } from "./env-manifest.js";
 import {
   configureGondolinRuntime,
@@ -218,18 +218,13 @@ if (plan.mode === "version") {
   process.exit(0);
 }
 
-// Handle --onboard mode
+// Handle onboard mode
 if (plan.mode === "onboard") {
   const stateDir = plan.stateDir;
   setEnvAliases("STATE_DIR", stateDir);
   ensureSecureStateDir(stateDir);
   try {
-    const settingsPath = createGlobalSettingsFile(stateDir);
-    console.log(`Created global settings at ${settingsPath}`);
-    console.log(
-      `Review the file, then start mikan (workspace defaults to ${join(stateDir, "workspace")}).`,
-    );
-    process.exit(0);
+    process.exit(await runOnboardCommand(stateDir));
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));
     process.exit(1);

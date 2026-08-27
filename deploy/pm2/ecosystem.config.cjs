@@ -2,7 +2,7 @@
 //
 // Configuration lives elsewhere, on purpose:
 //   - behavior (model, sandbox limits, reply modes): <state-dir>/settings.json
-//     (create with `mikan --onboard`, edit via the Admin portal or the file)
+//     (create with `mikan onboard`, edit via the Admin portal or the file)
 //   - secrets and platform tokens: ~/.mikan/mikan.env (0600, outside any
 //     repo tree) — this file loads it below. Start from the annotated
 //     example: deploy/pm2/mikan.env.example. Run `mikan env` to see the
@@ -15,9 +15,10 @@
 //   npm i -g @geminixiang/mikan pm2
 //
 //   # 2. One-time setup: settings + secrets
-//   mikan --onboard
-//   curl -o ~/.mikan/mikan.env https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/mikan.env.example
-//   chmod 600 ~/.mikan/mikan.env   # then fill in your tokens
+//   mikan onboard        # interactive: adapter + LLM + sandbox → settings.json,
+//                        # ~/.mikan/mikan.env (0600), models.json as needed.
+//   # For the full variable inventory start from the annotated example:
+//   #   curl -o ~/.mikan/mikan.env .../deploy/pm2/mikan.env.example
 //
 //   # 3. (image sandbox) pull the sandbox image
 //   docker pull ghcr.io/geminixiang/mikan-sandbox:latest

@@ -76,6 +76,13 @@ describe("resolveBoot", () => {
     expect(resolveBoot(["--download=C1"]).mode).toBe("download");
   });
 
+  test("`onboard` subcommand selects onboard mode, but only in first position", () => {
+    expect(resolveBoot(["onboard"]).mode).toBe("onboard");
+    expect(resolveBoot(["onboard", "--state-dir", "/tmp/x"]).stateDir).toBe("/tmp/x");
+    // Elsewhere it is a working-directory positional, unchanged.
+    expect(resolveBoot(["/some/dir", "onboard"]).mode).toBe("run");
+  });
+
   test.each([["--version"], ["-v"], ["-V"]])("%s selects version mode", (flag) => {
     expect(resolveBoot([flag]).mode).toBe("version");
   });
@@ -115,7 +122,9 @@ describe("helpText", () => {
     for (const flag of [
       "--state-dir",
       "--sandbox",
-      "--onboard",
+      // --onboard stays accepted for compatibility; help now documents the
+      // `mikan onboard` subcommand form instead.
+      "mikan onboard",
       "--download",
       "--version",
       "--help",

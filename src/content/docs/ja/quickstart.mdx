@@ -21,19 +21,15 @@ import { Aside, Steps } from "@astrojs/starlight/components";
    npm i -g @geminixiang/mikan
    ```
 
-2. LLM API key を設定します。mikan は各 provider の key を `<PROVIDER>_API_KEY` 環境変数から解決するため、既定の `anthropic` provider では次のようにします：
+2. 対話式セットアップを実行します：
 
    ```bash
-   export ANTHROPIC_API_KEY="sk-ant-..."
+   mikan onboard
    ```
 
-3. グローバル設定ファイルを作成します：
+   3 つの質問——チャットプラットフォーム（とその token）、LLM provider（とその API key）、sandbox モード——から `~/.mikan/settings.json` と `~/.mikan/mikan.env`（0600）が生成されます。カスタム OpenAI 互換エンドポイント（vLLM、proxy）を選ぶと `~/.mikan/models.json` も書き出されます。非対話の stdin では設定テンプレートのみ書き出します。全フィールドは[設定](/ja/configuration/)を参照してください。
 
-   ```bash
-   mikan --onboard
-   ```
-
-   これにより、既定 provider を `anthropic` とする `~/.mikan/settings.json` が書き込まれます。別のモデルを使いたい場合は内容を確認してください。全フィールドは[設定](/ja/configuration/)を参照してください。
+   key は環境変数（`<PROVIDER>_API_KEY`、例：`ANTHROPIC_API_KEY`）で直接渡すこともできます。env ファイルはその永続的な置き場所で、pm2 テンプレートが読み込みます。
 
    設定の既定値は `isolated` door policy です。これを満たせるのは管理型の Docker sandbox だけで、この設定のままでは `host` mode は実行を拒否します。このガイドは Docker なしで進めるため、次の内容を `~/.mikan/settings.json` にマージして workspace を trusted としてマークしてください：
 
@@ -47,13 +43,13 @@ import { Aside, Steps } from "@astrojs/starlight/components";
 
    代わりに管理型の [image sandbox](/ja/sandbox/image/)（`--sandbox=image:…`）から始める場合は、この編集は不要です。そのままで isolated policy を満たします。
 
-4. Telegram ボットを作成します。[@BotFather](https://t.me/BotFather) にメッセージを送り、`/newbot` を送信してプロンプトに従い、返された token をコピーします：
+3. Telegram ボットを作成します。[@BotFather](https://t.me/BotFather) にメッセージを送り、`/newbot` を送信してプロンプトに従い、返された token をコピーします：
 
    ```bash
    export TELEGRAM_BOT_TOKEN="123456:ABC-..."
    ```
 
-5. mikan を起動します：
+4. mikan を起動します：
 
    ```bash
    mikan --sandbox=host
@@ -65,7 +61,7 @@ import { Aside, Steps } from "@astrojs/starlight/components";
 
    起動に失敗した場合は `mikan env` を実行してください。mikan が読み取るすべての変数を、プラットフォームと機能ごとにグループ化し、それぞれの現在の状態とともに表示します。プラットフォームの token が欠けていると、mikan は設定すべき変数名を示すメッセージを出して終了します。`mikan --help` はすべてのフラグを一覧表示します。
 
-6. Telegram でボットとのプライベートチャットを開き、メッセージを送信します。プライベートメッセージは agent を直接トリガーするため、数秒以内に返信が届くはずです。
+5. Telegram でボットとのプライベートチャットを開き、メッセージを送信します。プライベートメッセージは agent を直接トリガーするため、数秒以内に返信が届くはずです。
 
 </Steps>
 

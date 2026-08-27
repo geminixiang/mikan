@@ -8,14 +8,14 @@ description: Configure startup, global and conversation settings, platform crede
 mikan requires a global settings file before normal startup. Create it once, review it, then start mikan with a workspace:
 
 ```bash
-mikan --onboard
+mikan onboard
 mikan --sandbox=host /path/to/workspace
 ```
 
 The default state directory is `~/.mikan`. Use the same `--state-dir` for onboarding and normal startup when you choose another location:
 
 ```bash
-mikan --onboard --state-dir=/secure/mikan-state
+mikan onboard --state-dir=/secure/mikan-state
 mikan --state-dir=/secure/mikan-state /path/to/workspace
 ```
 
@@ -40,7 +40,7 @@ Upgrading from a release that stored conversations under raw platform ids migrat
 
 ## Generated settings
 
-`mikan --onboard` creates:
+`mikan onboard` creates:
 
 ```json
 {
@@ -139,7 +139,7 @@ See [Platform adapters](/platform-adapters/) for platform-specific setup and per
 
 | Command or option                                                                                               | Purpose                                                                                   |
 | --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `mikan --onboard [--state-dir=<dir>]`                                                                           | Create the required global settings file                                                  |
+| `mikan onboard [--state-dir=<dir>]`                                                                             | Create the required global settings file                                                  |
 | `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]`                                              | Start configured platform bots; the working directory defaults to `<state-dir>/workspace` |
 | `--sandbox=host \| container:<name> \| image:<image> \| gondolin:default \| firecracker:... \| cloudflare:<id>` | Select tool execution mode; default is `host`                                             |
 | `mikan env`                                                                                                     | Show the full environment-variable inventory and what is currently set                    |

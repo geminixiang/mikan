@@ -8,14 +8,14 @@ description: 起動、グローバルおよび会話設定、プラットフォ�
 通常起動する前に、mikan にはグローバル設定ファイルが必要です。一度作成して内容を確認し、workspace を指定して mikan を起動します：
 
 ```bash
-mikan --onboard
+mikan onboard
 mikan --sandbox=host /path/to/workspace
 ```
 
 state directory の既定値は `~/.mikan` です。別の場所を選ぶ場合、onboarding と通常起動で同じ `--state-dir` を使用してください：
 
 ```bash
-mikan --onboard --state-dir=/secure/mikan-state
+mikan onboard --state-dir=/secure/mikan-state
 mikan --state-dir=/secure/mikan-state /path/to/workspace
 ```
 
@@ -40,7 +40,7 @@ conversation を生のプラットフォーム id 配下に保存していたリ
 
 ## 生成される設定
 
-`mikan --onboard` は次を作成します：
+`mikan onboard` は次を作成します：
 
 ```json
 {
@@ -115,7 +115,7 @@ Door policy と layout は一緒に解決されます。`isolated` は常に `co
 
 | コマンドまたはオプション                                                                                        | 用途                                                                                  |
 | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `mikan --onboard [--state-dir=<dir>]`                                                                           | 必須のグローバル設定ファイルを作成                                                    |
+| `mikan onboard [--state-dir=<dir>]`                                                                             | 必須のグローバル設定ファイルを作成                                                    |
 | `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]`                                              | 設定済みの platform bots を起動。working directory の既定値は `<state-dir>/workspace` |
 | `--sandbox=host \| container:<name> \| image:<image> \| gondolin:default \| firecracker:... \| cloudflare:<id>` | tool execution mode を選択。既定値は `host`                                           |
 | `mikan env`                                                                                                     | 環境変数の完全なインベントリと、現在設定されている内容を表示                          |

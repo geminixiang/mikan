@@ -1,5 +1,13 @@
 import type { SandboxConfig } from "../sandbox/types.js";
 
+/** Prompt/print seam for the onboard wizard, so tests can script answers. */
+export interface OnboardIo {
+  ask(query: string): Promise<string>;
+  askSecret(query: string): Promise<string>;
+  print(line: string): void;
+  close(): void;
+}
+
 export interface BootPlan {
   mode: "ext" | "office" | "sessions" | "env" | "help" | "version" | "onboard" | "download" | "run";
   /** argv after `ext`, handed to runExtCommand. Only set for mode "ext". */

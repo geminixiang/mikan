@@ -746,6 +746,14 @@ interface EnvVarSpec {
   doc: string;
 }
 
+/** The onboarding wizard's LLM answer, applied to the settings template. */
+export interface OnboardLlmChoice {
+  provider: string;
+  model: string;
+  /** Auto-reply judge model; defaults to the main model. */
+  autoReplyModel?: string;
+}
+
 export interface EnvGroup {
   key: string;
   title: string;

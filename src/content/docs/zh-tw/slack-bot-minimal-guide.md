@@ -90,7 +90,7 @@ Slash commands 是可選的，因為文字指令在支援的情境中也可使�
 
 ## 8. 執行 mikan
 
-mikan 需要先完成一次全域 settings 檔與 LLM provider key 的設定——`mikan --onboard` 加上 `export ANTHROPIC_API_KEY=...`；請參閱[快速開始](/zh-tw/quickstart/)——然後：
+mikan 需要先完成一次全域 settings 檔與 LLM provider key 的設定——`mikan onboard` 加上 `export ANTHROPIC_API_KEY=...`；請參閱[快速開始](/zh-tw/quickstart/)——然後：
 
 ```bash
 export SLACK_APP_TOKEN=xapp-...

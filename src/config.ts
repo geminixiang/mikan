@@ -18,6 +18,7 @@ export class MissingGlobalSettingsError extends Error {
 export type { AgentConfig, AutoReplyConfig, JudgeModelConfig, SandboxSettings } from "./types.js";
 import type { AgentConfig, AutoReplyConfig, JudgeModelConfig, SandboxSettings } from "./types.js";
 import type { McpServerConfig } from "./mcp/types.js";
+import type { OnboardLlmChoice } from "./types.js";
 import type { Office } from "./office/index.js";
 
 const ONBOARD_SETTINGS: SettingsFileConfig = {
@@ -510,13 +511,26 @@ export function resolveSentryDsn(): string | undefined {
   return sentryDsnFrom(fromFile.sentryDsn);
 }
 
-export function createGlobalSettingsFile(stateDir: string): string {
+export function createGlobalSettingsFile(stateDir: string, llm?: OnboardLlmChoice): string {
   const settingsPath = join(stateDir, "settings.json");
   if (existsSync(settingsPath)) {
     throw new Error(`Global settings already exists at ${settingsPath}`);
   }
   ensureDirExists(stateDir);
-  atomicWritePrivateFile(settingsPath, JSON.stringify(ONBOARD_SETTINGS, null, 2));
+  const settings: SettingsFileConfig = llm
+    ? {
+        ...ONBOARD_SETTINGS,
+        llm: {
+          ...ONBOARD_SETTINGS.llm,
+          provider: llm.provider,
+          model: llm.model,
+          // The wizard configured exactly one provider; pointing the
+          // auto-reply judge anywhere else would break on first use.
+          autoReply: { provider: llm.provider, model: llm.autoReplyModel ?? llm.model },
+        },
+      }
+    : ONBOARD_SETTINGS;
+  atomicWritePrivateFile(settingsPath, JSON.stringify(settings, null, 2));
   return settingsPath;
 }
 

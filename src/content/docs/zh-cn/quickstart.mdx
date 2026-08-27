@@ -21,19 +21,15 @@ import { Aside, Steps } from "@astrojs/starlight/components";
    npm i -g @geminixiang/mikan
    ```
 
-2. 提供 LLM API key。mikan 从 `<PROVIDER>_API_KEY` 环境变量解析各 provider 的 key，因此默认的 `anthropic` provider 使用：
+2. 运行交互式设置：
 
    ```bash
-   export ANTHROPIC_API_KEY="sk-ant-..."
+   mikan onboard
    ```
 
-3. 创建全局设置文件：
+   三个问题——聊天平台（及其 token）、LLM provider（及其 API key）、沙箱模式——会生成 `~/.mikan/settings.json` 与 `~/.mikan/mikan.env`（0600）。选择自定义 OpenAI 兼容端点（vLLM、proxy）时还会写出 `~/.mikan/models.json`。非交互式 stdin 只写出设置模板。所有字段请参阅[配置](/zh-cn/configuration/)。
 
-   ```bash
-   mikan --onboard
-   ```
-
-   这会写入 `~/.mikan/settings.json`，默认 provider 为 `anthropic`。想换用其他模型可先检查该文件；所有字段请参阅[配置](/zh-cn/configuration/)。
+   Key 也可以直接用环境变量提供（`<PROVIDER>_API_KEY`，例如 `ANTHROPIC_API_KEY`）；env 文件只是它们的持久化位置，pm2 模板会加载它。
 
    设置默认使用 `isolated` 门禁策略，而只有受管理的 Docker 沙箱能满足它——在该策略下，`host` 模式会拒绝运行。本指南不使用 Docker，因此请把下面的内容合并进 `~/.mikan/settings.json`，把工作区标记为受信任：
 
@@ -47,13 +43,13 @@ import { Aside, Steps } from "@astrojs/starlight/components";
 
    如果你改用受管理的 [image 沙箱](/zh-cn/sandbox/image/)启动（`--sandbox=image:…`），可以跳过这处编辑——它本身就满足 isolated 策略。
 
-4. 创建 Telegram 机器人。给 [@BotFather](https://t.me/BotFather) 发消息，发送 `/newbot`，按提示操作并复制它返回的 token：
+3. 创建 Telegram 机器人。给 [@BotFather](https://t.me/BotFather) 发消息，发送 `/newbot`，按提示操作并复制它返回的 token：
 
    ```bash
    export TELEGRAM_BOT_TOKEN="123456:ABC-..."
    ```
 
-5. 启动 mikan：
+4. 启动 mikan：
 
    ```bash
    mikan --sandbox=host
@@ -65,7 +61,7 @@ import { Aside, Steps } from "@astrojs/starlight/components";
 
    如果启动失败，运行 `mikan env`：它会按平台和功能分组，列出 mikan 读取的所有变量及各自的当前状态。缺少平台令牌时，mikan 会直接退出，并在消息中指出需要设置的变量；`mikan --help` 列出所有标志。
 
-6. 在 Telegram 打开与机器人的私聊并发送一条消息。私聊会直接触发 agent，几秒内应该就能收到回复。
+5. 在 Telegram 打开与机器人的私聊并发送一条消息。私聊会直接触发 agent，几秒内应该就能收到回复。
 
 </Steps>
 

@@ -149,7 +149,7 @@ Slash commands are optional because text commands also work in supported context
 
 ## 8. Run mikan
 
-mikan needs its global settings file and an LLM provider key once — `mikan --onboard` and `export ANTHROPIC_API_KEY=...`; see [Quickstart](/quickstart/) — then:
+mikan needs its global settings file and an LLM provider key once — `mikan onboard` and `export ANTHROPIC_API_KEY=...`; see [Quickstart](/quickstart/) — then:
 
 ```bash
 export SLACK_APP_TOKEN=xapp-...
