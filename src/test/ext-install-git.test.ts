@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { runExtCommand } from "../cli/ext.js";
-import { materializeSource } from "../packages/materialize.js";
-import { isGitSourceString, parseSource } from "../packages/source.js";
+import { materializeSource } from "../packages/index.js";
+import { isGitSourceString, parseSource } from "../packages/index.js";
 
 describe("isGitSourceString", () => {
   test("recognizes git source spellings", () => {

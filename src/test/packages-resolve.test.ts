@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { resolveConversationPackages } from "../packages/resolve.js";
+import { resolveConversationPackages } from "../packages/index.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
 
 const CONVERSATION_ID = "C03045VJJAY";
