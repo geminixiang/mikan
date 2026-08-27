@@ -28,7 +28,7 @@ import {
   hasMaterializedChatSession,
   waitForThreadSessionBootstrap,
 } from "../sessions/chat-history-sync.js";
-import { shouldRotateTopLevelSession } from "../sessions/rotation.js";
+import { shouldRotateTopLevelSession } from "../sessions/store.js";
 import {
   getThreadSessionFile,
   resolveChannelSessionFile,
@@ -41,7 +41,7 @@ import {
 import { formatNothingRunning, formatStopped, formatStopping } from "../platform-messages.js";
 import * as Sentry from "@sentry/node";
 import { getUnresolvedSandboxPathContext } from "../sandbox/index.js";
-import { disabledVaultManager } from "../vault/disabled.js";
+import { disabledVaultManager } from "../vault/index.js";
 import type { ConversationRuntimeState } from "./types.js";
 import { SessionLifecycle } from "./session-lifecycle.js";
 

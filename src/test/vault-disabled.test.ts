@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { disabledVaultManager } from "../vault/disabled.js";
+import { disabledVaultManager } from "../vault/index.js";
 
 describe("disabledVaultManager", () => {
   test("reports the vault as disabled and empty", () => {

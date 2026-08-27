@@ -26,7 +26,7 @@ import type { SessionLifecycle } from "../runtime/session-lifecycle.js";
 import type { ConversationRuntimeState } from "../runtime/types.js";
 import type { PiAgentWrapper } from "../types.js";
 import type { SandboxConfig } from "../sandbox/index.js";
-import { shouldRotateTopLevelSession } from "../sessions/rotation.js";
+import { shouldRotateTopLevelSession } from "../sessions/store.js";
 
 const testAddress = createOfficeAddress("slack", "C123");
 

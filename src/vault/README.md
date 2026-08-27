@@ -4,8 +4,7 @@ File-backed credential vault for env secrets, secret files, shared profiles, and
 
 ## Files
 
-- `index.ts`: Implements `FileVaultManager`, vault key normalisation, env-file parsing, shared/private vault operations, and `migrateConversationVaultKeys` (legacy raw-id vault dirs → office-key dirs; a collision is reported for manual merge, never clobbered). Also owns what a run receives: `resolveVaultInjection` (env + file mounts, failing closed when a backend cannot mount vault files) and `allowsAmbientDefaultSharedVault` (trust model × sandbox topology).
-- `disabled.ts`: A no-op `VaultManager` used when an embedder constructs the runtime without a vault; reads report empty/disabled, writes throw.
+- `index.ts`: Implements `FileVaultManager`, vault key normalisation, env-file parsing, shared/private vault operations, and `migrateConversationVaultKeys` (legacy raw-id vault dirs → office-key dirs; a collision is reported for manual merge, never clobbered). Also owns what a run receives: `resolveVaultInjection` (env + file mounts, failing closed when a backend cannot mount vault files), `allowsAmbientDefaultSharedVault` (trust model × sandbox topology), and `disabledVaultManager` — the no-op manager used when an embedder constructs the runtime without a vault (reads report empty/disabled, writes throw).
 - `types.ts`: The `VaultManager` interface plus `ResolvedVault`, `ResolvedVaultMount`, and `VaultInjection`.
 
 ## Vault keys

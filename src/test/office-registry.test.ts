@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { officeDir } from "../office/address.js";
+import { officeDir } from "../office/index.js";
 import { createOfficeAddress, createWorkspace, OfficeRegistry } from "../office/index.js";
 
 const temporaryDirectories: string[] = [];

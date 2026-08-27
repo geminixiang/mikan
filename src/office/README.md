@@ -6,36 +6,37 @@ its host-side directory layout, its durable record, and the legacy migration.
 
 ## Files
 
-- `address.ts`: Canonical identity. `OfficeAddress` is `platform` plus the
-  platform's raw `conversationId`; raw ids stay at platform I/O boundaries.
-  Storage paths use the versioned `OfficeKey`
-  (`v1-<platform>-<readable>-<16 hex>`), whose digest is SHA-256 over both
-  values (ADR 0005) — the readable middle is a hint, the digest is the
-  authority. `officeStateDir(stateDir, address)` is the one path helper the
-  barrel still exports, for the stateDir-only surfaces that hold no Office
-  value: the CLI subcommands, the extension loader, and package
-  materialization. `officeDir` is module-internal, because callers outside
-  `src/office/` use `Office.dir`.
-- `layout.ts`: The two layout values. `createWorkspace({root, stateDir})`
-  builds the per-process `Workspace` (workspace-global paths, reserved-name
-  set, office factory); `workspace.office(address)` returns the memoized,
-  frozen `Office` (key, dir, subpaths, host state dir, `ensure()`).
-  `Office.ensure()` is the single materialization seam: it records the
-  office in the registry before creating the directory, so the registry
-  stays the durable raw-id ↔ office mapping (office keys are not
-  reversible). The registry instance and recorded-office cache live on the
-  Workspace value — there is no process-wide registry state.
-- `registry.ts`: `OfficeRegistry`, the host-only journal
-  (`office-registry.json` in the state dir): enabled platforms, office
-  records, and crash-safe legacy-migration transitions under a domain lease.
-  Plus the cold-path raw-id lookups (`resolveOwnedOfficeAddress` for CLI
-  operators, `listRegisteredOffices` for Admin enumeration).
-- `migration.ts`: The every-boot legacy migration: raw-id workspace dirs,
-  conversation vault keys, and per-conversation host state trees move to the
-  office-key layout, journaled prepare → moving → committed with crash
-  recovery. Unowned dirs fail boot until `mikan office claim` names an
-  owner. Also the container bind translator that lets managed containers
-  survive the rename with writable layers intact.
+- `index.ts`: The whole module in one file, in four sections.
+  - **Identity**: `OfficeAddress` is `platform` plus the platform's raw
+    `conversationId`; raw ids stay at platform I/O boundaries. Storage paths
+    use the versioned `OfficeKey` (`v1-<platform>-<readable>-<16 hex>`),
+    whose digest is SHA-256 over both values (ADR 0005) — the readable
+    middle is a hint, the digest is the authority.
+    `officeStateDir(stateDir, address)` is the one path helper exported for
+    stateDir-only surfaces that hold no Office value: the CLI subcommands,
+    the extension loader, and package materialization. `officeDir` is
+    module-internal, because callers outside `src/office/` use `Office.dir`.
+  - **Layout**: `createWorkspace({root, stateDir})` builds the per-process
+    `Workspace` (workspace-global paths, reserved-name set, office factory);
+    `workspace.office(address)` returns the memoized, frozen `Office` (key,
+    dir, subpaths, host state dir, `ensure()`). `Office.ensure()` is the
+    single materialization seam: it records the office in the registry
+    before creating the directory, so the registry stays the durable
+    raw-id ↔ office mapping (office keys are not reversible). The registry
+    instance and recorded-office cache live on the Workspace value — there
+    is no process-wide registry state.
+  - **Registry**: `OfficeRegistry`, the host-only journal
+    (`office-registry.json` in the state dir): enabled platforms, office
+    records, and crash-safe legacy-migration transitions under a domain
+    lease. Plus the cold-path raw-id lookups (`resolveOwnedOfficeAddress`
+    for CLI operators, `listRegisteredOffices` for Admin enumeration).
+  - **Migration**: The every-boot legacy migration: raw-id workspace dirs,
+    conversation vault keys, and per-conversation host state trees move to
+    the office-key layout, journaled prepare → moving → committed with
+    crash recovery. Unowned dirs fail boot until `mikan office claim` names
+    an owner. Also the container bind translator that lets managed
+    containers survive the rename with writable layers intact.
+- `types.ts`: The exported `Workspace`/`Office` interfaces.
 
 ## Consumers
 

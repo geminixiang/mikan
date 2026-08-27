@@ -243,7 +243,7 @@ These IDs correspond to `[[invariants]]` records in `architecture.toml`.
 
 **`identity-office-address`** — `OfficeAddress = platform + conversationId` is canonical conversation identity inside mikan. Raw IDs remain at platform I/O, registry mapping, and session-key seams; they are not general storage identity.
 
-Evidence: `src/office/address.ts`, `src/office/types.ts`, ADR 0005.
+Evidence: `src/office/index.ts`, `src/office/types.ts`, ADR 0005.
 
 ### INV identity office key
 
@@ -251,7 +251,7 @@ Evidence: `src/office/address.ts`, `src/office/types.ts`, ADR 0005.
 
 **`identity-office-key`** — Conversation-scoped workspace, State-dir, package, session, and credential paths use the versioned collision-resistant `OfficeKey`. Its readable segment is only a hint; the digest is authoritative.
 
-Evidence: `src/office/address.ts`, ADR 0005.
+Evidence: `src/office/index.ts`, ADR 0005.
 
 ### INV office record before directory
 
@@ -259,7 +259,7 @@ Evidence: `src/office/address.ts`, ADR 0005.
 
 **`office-record-before-directory`** — Office materialization records the durable address-to-key mapping before creating the office directory. Migration is journaled, idempotent, crash-resumable, and conflict-failing.
 
-Evidence: `src/office/layout.ts`, `src/office/registry.ts`, `src/office/migration.ts`.
+Evidence: `src/office/index.ts`.
 
 ### INV runtime composite identity
 
@@ -307,7 +307,7 @@ Evidence: `src/workspace-projection/index.ts`.
 
 **`state-dir-host-only`** — The State dir is host-private, outside the Workspace root, and never projected into a Sandbox. Important state writes are private and atomic where readers must not observe partial content.
 
-Evidence: `src/config.ts`, `src/utils/file-guards.ts`, `src/office/registry.ts`, `src/vault/index.ts`.
+Evidence: `src/config.ts`, `src/utils/file-guards.ts`, `src/office/index.ts`, `src/vault/index.ts`.
 
 ### INV execution policy enforcement
 
@@ -355,7 +355,7 @@ Evidence: `src/events.ts`, `src/extension-schedules.ts`, `src/runtime/conversati
 
 **`session-format-compatibility`** — Harness sessions use a versioned append-only JSONL tree. New session files become durable before the current pointer changes. Corrupt materialized headers fail instead of silently replacing history, and thread lineage remains stable across top-level rotation.
 
-Evidence: `src/harness/session-store.ts`, `src/sessions/store.ts`, `src/sessions/rotation.ts`.
+Evidence: `src/harness/session-store.ts`, `src/sessions/store.ts`.
 
 ## Known deviations
 

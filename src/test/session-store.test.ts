@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import { SessionStore } from "../harness/index.js";
 import { ChatHistorySync } from "../sessions/chat-history-sync.js";
-import { shouldRotateTopLevelSession } from "../sessions/rotation.js";
+import { shouldRotateTopLevelSession } from "../sessions/store.js";
 import {
   createManagedSessionFile,
   createManagedSessionFileAtPath,
