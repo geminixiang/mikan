@@ -3,9 +3,9 @@ import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { InMemoryAdminTokenStore } from "../web/admin/store.js";
+import { InMemoryAdminTokenStore } from "../web/admin/portal.js";
 import { startWebServer } from "../web/server.js";
-import { InMemoryLinkTokenStore } from "../web/login/store.js";
+import { InMemoryLinkTokenStore } from "../web/login/portal.js";
 import { FileVaultManager } from "../vault/index.js";
 
 async function waitForListening(server: Server): Promise<void> {

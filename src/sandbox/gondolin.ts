@@ -13,8 +13,8 @@ import { dirname, join } from "node:path";
 import * as log from "../log.js";
 import type { ResourceLimits, SandboxLimitStatus, SandboxResourceController } from "../types.js";
 import { withRuntimeBootstrap } from "./container.js";
-import { SandboxError } from "./errors.js";
 import {
+  SandboxError,
   createMountedRuntimePathContext,
   execReadFile,
   execReadFileBase64,

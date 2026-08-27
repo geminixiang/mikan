@@ -120,14 +120,14 @@ Even if a full dashboard is added later, these boundaries should remain:
 
 ## Implementation locations
 
-| Feature              | Main code                                                         |
-| -------------------- | ----------------------------------------------------------------- |
-| Portal HTTP server   | `startWebServer()` in `src/web/server.ts`                         |
-| Admin portal         | `src/web/admin/portal.ts`, `src/web/admin/store.ts`               |
-| Login / vault portal | `src/web/login/portal.ts`, `src/web/login/store.ts`               |
-| Session view         | `src/web/session-view/portal.ts`, `src/web/session-view/store.ts` |
-| Shared token store   | `src/web/token-store.ts`                                          |
-| Shared portal shell  | `src/web/portal-shell.ts`                                         |
+| Feature              | Main code                                 |
+| -------------------- | ----------------------------------------- |
+| Portal HTTP server   | `startWebServer()` in `src/web/server.ts` |
+| Admin portal         | `src/web/admin/portal.ts`                 |
+| Login / vault portal | `src/web/login/portal.ts`                 |
+| Session view         | `src/web/session-view/portal.ts`          |
+| Shared token store   | `src/web/token-store.ts`                  |
+| Shared portal shell  | `src/web/portal-shell.ts`                 |
 
 `startWebServer()` dispatch order:
 

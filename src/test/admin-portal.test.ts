@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { HostEventStore } from "../tools/event.js";
 import { listAllEvents, readSkillsFromDir, resolveConversationScope } from "../web/admin/portal.js";
 import { createOfficeAddress } from "../office/index.js";
-import type { AdminToken } from "../web/admin/store.js";
+import type { AdminToken } from "../web/admin/portal.js";
 
 const tempDirs: string[] = [];
 

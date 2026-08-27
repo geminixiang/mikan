@@ -117,14 +117,14 @@ description: mikan 管理、登录和会话 portal 使用的短期 capability to
 
 ## 实现位置
 
-| 功能                | 主要代码                                                          |
-| ------------------- | ----------------------------------------------------------------- |
-| Portal HTTP 服务器  | `src/web/server.ts` 中的 `startWebServer()`                       |
-| 管理 portal         | `src/web/admin/portal.ts`、`src/web/admin/store.ts`               |
-| 登录 / vault portal | `src/web/login/portal.ts`、`src/web/login/store.ts`               |
-| 会话视图            | `src/web/session-view/portal.ts`、`src/web/session-view/store.ts` |
-| 共享 token store    | `src/web/token-store.ts`                                          |
-| 共享 portal shell   | `src/web/portal-shell.ts`                                         |
+| 功能                | 主要代码                                    |
+| ------------------- | ------------------------------------------- |
+| Portal HTTP 服务器  | `src/web/server.ts` 中的 `startWebServer()` |
+| 管理 portal         | `src/web/admin/portal.ts`                   |
+| 登录 / vault portal | `src/web/login/portal.ts`                   |
+| 会话视图            | `src/web/session-view/portal.ts`            |
+| 共享 token store    | `src/web/token-store.ts`                    |
+| 共享 portal shell   | `src/web/portal-shell.ts`                   |
 
 `startWebServer()` 的分发顺序：
 

@@ -4,9 +4,9 @@ import type { LinkTokenStoreLike } from "../../commands/types.js";
 import type { SandboxConfig } from "../../sandbox/index.js";
 import type { EventStore } from "../../tools/types.js";
 import type { VaultManager } from "../../vault/index.js";
-import type { InMemorySessionViewTokenStore } from "../session-view/store.js";
+import type { InMemorySessionViewTokenStore } from "../session-view/portal.js";
 import type { TokenRecord } from "../types.js";
-import type { InMemoryAdminTokenStore } from "./store.js";
+import type { InMemoryAdminTokenStore } from "./portal.js";
 
 export interface AdminRuntimeBridge {
   getRunningSessions(): RunningSession[];

@@ -9,14 +9,14 @@ import type {
   RuntimePathContext,
   SandboxAdapter,
 } from "./types.js";
-import { SandboxError } from "./errors.js";
 import {
+  SandboxError,
+  createMountedRuntimePathContext,
   execReadFile,
   execReadFileBase64,
   execSimple,
   execWriteFile,
   shellEscape,
-  createMountedRuntimePathContext,
 } from "./utils.js";
 import { HostExecutor } from "./host.js";
 

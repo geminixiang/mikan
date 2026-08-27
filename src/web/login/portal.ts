@@ -2,7 +2,10 @@ import { createHash, randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { escapeHtml, readJsonBody, renderPortalShell, requestBaseUrl } from "../portal-shell.js";
 import { resolveLinkBaseUrl } from "../../config.js";
-import type { InMemoryLinkTokenStore } from "./store.js";
+import type { PlatformName } from "../../adapter.js";
+import { InMemoryTokenStore } from "../token-store.js";
+import type { LinkToken } from "./types.js";
+export type { LinkToken } from "./types.js";
 import {
   getOAuthServices,
   resolveOAuthService,
@@ -17,6 +20,29 @@ import { defaultVaultTargetPath, type VaultManager } from "../../vault/index.js"
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export type { NotifyFn } from "./types.js";
+
+const TTL_MS = 15 * 60 * 1000;
+
+export class InMemoryLinkTokenStore extends InMemoryTokenStore<LinkToken> {
+  create(
+    platform: PlatformName,
+    platformUserId: string,
+    conversationId: string,
+    vaultId: string,
+    providerId: string,
+  ): LinkToken {
+    this.deleteWhere(
+      (token) => token.platform === platform && token.platformUserId === platformUserId,
+    );
+    return this.createRecord(TTL_MS, {
+      platform,
+      platformUserId,
+      vaultId,
+      providerId,
+      conversationId,
+    });
+  }
+}
 import type { NotifyFn } from "./types.js";
 
 interface LinkCompleteBody {

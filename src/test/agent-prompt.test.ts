@@ -3,8 +3,8 @@ import {
   appendTriggerAttribution,
   buildTurnInstructions,
   resolveTriggerAttribution,
-  translateAttachPathToHost,
-} from "../agent/index.js";
+} from "../agent/prompt.js";
+import { translateAttachPathToHost } from "../agent/execution.js";
 import { getUnresolvedSandboxPathContext } from "../sandbox/index.js";
 
 describe("trigger attribution", () => {

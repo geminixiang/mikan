@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { InMemoryAdminTokenStore } from "../web/admin/store.js";
-import { InMemoryLinkTokenStore } from "../web/login/store.js";
-import { InMemorySessionViewTokenStore } from "../web/session-view/store.js";
+import { InMemoryAdminTokenStore } from "../web/admin/portal.js";
+import { InMemoryLinkTokenStore } from "../web/login/portal.js";
+import { InMemorySessionViewTokenStore } from "../web/session-view/portal.js";
 
 function makeStore() {
   const store = new InMemoryAdminTokenStore();

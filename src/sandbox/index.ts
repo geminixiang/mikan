@@ -2,13 +2,17 @@ import { ContainerExecutor, containerSandboxAdapter } from "./container.js";
 import { FirecrackerExecutor, firecrackerSandboxAdapter } from "./firecracker.js";
 import { CloudflareSandboxExecutor, cloudflareSandboxAdapter } from "./cloudflare.js";
 import { HostExecutor, hostSandboxAdapter } from "./host.js";
-import { imageSandboxAdapter } from "./image.js";
 import { GondolinExecutor, gondolinSandboxAdapter } from "./gondolin.js";
-import { SandboxError } from "./errors.js";
-import { createMountedRuntimePathContext } from "./utils.js";
+import { createMountedRuntimePathContext, execSimple, SandboxError } from "./utils.js";
 export { configureGondolinRuntime } from "./gondolin.js";
 export type { GondolinBootstrapOptions } from "./types.js";
-import type { Executor, RuntimePathContext, SandboxAdapter, SandboxConfig } from "./types.js";
+import type {
+  Executor,
+  ImageSandboxConfig,
+  RuntimePathContext,
+  SandboxAdapter,
+  SandboxConfig,
+} from "./types.js";
 
 export type {
   CloudflareSandboxConfig,
@@ -26,7 +30,36 @@ export {
   HostExecutor,
   GondolinExecutor,
 };
-export { SandboxError } from "./errors.js";
+export { SandboxError } from "./utils.js";
+
+function parseImageSandboxArg(value: string): ImageSandboxConfig | undefined {
+  if (!value.startsWith("image:")) {
+    return undefined;
+  }
+
+  const image = value.slice("image:".length);
+  if (!image) {
+    throw new SandboxError("Error: image sandbox requires image name (e.g., image:ubuntu:24.04)");
+  }
+  return { type: "image", image };
+}
+
+async function validateImageSandbox(config: ImageSandboxConfig): Promise<void> {
+  try {
+    await execSimple("docker", ["--version"]);
+  } catch {
+    throw new SandboxError("Error: Docker is not installed or not in PATH");
+  }
+  console.log(`  Image auto-provisioning enabled. Image: ${config.image}`);
+}
+
+const imageSandboxAdapter: SandboxAdapter<ImageSandboxConfig> = {
+  type: "image",
+  credentials: { env: true, fileMounts: true },
+  workspace: { managedProjection: true },
+  parse: parseImageSandboxArg,
+  validate: validateImageSandbox,
+};
 
 const sandboxAdapters = [
   hostSandboxAdapter,

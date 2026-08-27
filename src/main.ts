@@ -31,9 +31,9 @@ import { EventsWatcher } from "./events.js";
 import { ExtensionCallbackScheduler } from "./extension-schedules.js";
 import * as log from "./log.js";
 import { startWebServer } from "./web/server.js";
-import { InMemoryAdminTokenStore } from "./web/admin/store.js";
-import { InMemoryLinkTokenStore } from "./web/login/store.js";
-import { InMemorySessionViewTokenStore } from "./web/session-view/store.js";
+import { InMemoryAdminTokenStore } from "./web/admin/portal.js";
+import { InMemoryLinkTokenStore } from "./web/login/portal.js";
+import { InMemorySessionViewTokenStore } from "./web/session-view/portal.js";
 import { DockerContainerManager } from "./provisioner.js";
 import {
   assertStateDirOutsideWorkspace,

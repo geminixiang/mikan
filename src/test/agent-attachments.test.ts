@@ -2,7 +2,8 @@ import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { buildPromptPayload, translateAttachPathToHost } from "../agent/index.js";
+import { buildPromptPayload } from "../agent/prompt.js";
+import { translateAttachPathToHost } from "../agent/execution.js";
 import type { ConversationMessage } from "../adapter.js";
 import { createMountedRuntimePathContext } from "../sandbox/utils.js";
 

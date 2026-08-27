@@ -11,6 +11,31 @@ import {
   type InstalledExtensionInfo,
 } from "../../harness/index.js";
 import type { EventStore } from "../../tools/types.js";
+import type { PlatformName } from "../../adapter.js";
+import { InMemoryTokenStore } from "../token-store.js";
+import type { AdminToken } from "./types.js";
+export type { AdminToken } from "./types.js";
+
+const ADMIN_TOKEN_TTL_MS = 30 * 60 * 1000;
+
+export class InMemoryAdminTokenStore extends InMemoryTokenStore<AdminToken> {
+  create(args: {
+    platform: PlatformName;
+    platformUserId: string;
+    conversationId: string;
+    platformUserName?: string;
+  }): AdminToken {
+    this.deleteWhere(
+      (token) => token.platform === args.platform && token.platformUserId === args.platformUserId,
+    );
+    return this.createRecord(ADMIN_TOKEN_TTL_MS, {
+      platform: args.platform,
+      platformUserId: args.platformUserId,
+      ...(args.platformUserName ? { platformUserName: args.platformUserName } : {}),
+      conversationId: args.conversationId,
+    });
+  }
+}
 
 import {
   loadConversationAutoReplyConfig,
@@ -42,13 +67,12 @@ import {
   readJsonBody,
   renderPortalShell,
 } from "../portal-shell.js";
-import { resolveExistingSessionFile } from "../session-view/service.js";
+import { resolveExistingSessionFile } from "../session-view/portal.js";
 import { PRODUCT_NAME } from "../../platform-messages.js";
 import { credentialAuthorizationKey } from "../../sandbox/identity.js";
 import { resolveWorkspaceProjection } from "../../workspace-projection/index.js";
 import { sharedVaultKey } from "../../vault/index.js";
 import { modelKey, resolveAdminModelAccessStatuses } from "./provider-models.js";
-import type { AdminToken } from "./store.js";
 
 export type { AdminRuntimeBridge, AdminServices, EventSummary } from "./types.js";
 import type { AdminServices, EventSummary } from "./types.js";

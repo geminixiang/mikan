@@ -6,7 +6,7 @@ import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { handleAdminRequest } from "../web/admin/portal.js";
-import { InMemoryAdminTokenStore } from "../web/admin/store.js";
+import { InMemoryAdminTokenStore } from "../web/admin/portal.js";
 import { FileVaultManager } from "../vault/index.js";
 import type { AdminServices } from "../web/admin/types.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
