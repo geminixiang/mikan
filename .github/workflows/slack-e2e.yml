@@ -6,7 +6,9 @@ on:
 jobs:
   slack-e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # glm-5.3-flash reasons before most replies; the full suite runs well
+    # past the 10 minutes the previous non-reasoning lane model needed.
+    timeout-minutes: 25
 
     steps:
       - uses: actions/checkout@v4
