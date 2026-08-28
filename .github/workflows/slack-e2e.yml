@@ -74,6 +74,7 @@ jobs:
                     "id": "z-ai/glm-5.3-flash",
                     "name": "Z.AI: GLM 5.3 Flash",
                     "reasoning": true,
+                    "thinkingLevelMap": { "off": null },
                     "contextWindow": 1310720,
                     "maxTokens": 131072,
                     "cost": { "input": 0.075, "output": 0.25, "cacheRead": 0, "cacheWrite": 0 }
@@ -91,7 +92,11 @@ jobs:
             const p = process.argv[1];
             const s = JSON.parse(fs.readFileSync(p, "utf8"));
             const model = { provider: "openrouter-ci", model: "z-ai/glm-5.3-flash" };
-            s.llm = { ...s.llm, ...model, autoReply: { ...model } };
+            // glm-5.3-flash is a hybrid reasoning model behind OpenRouter's
+            // normalized reasoning param: effort "none" (the "off" mapping)
+            // returns empty responses, so run the lane at low effort and map
+            // "off" to null (omit the param) as the fallback.
+            s.llm = { ...s.llm, ...model, thinkingLevel: "low", autoReply: { ...model } };
             s.sandbox = {
               ...s.sandbox,
               workspace: { doorPolicy: "trusted", layout: "shared-support" },
