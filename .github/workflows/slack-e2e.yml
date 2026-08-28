@@ -92,10 +92,10 @@ jobs:
             const p = process.argv[1];
             const s = JSON.parse(fs.readFileSync(p, "utf8"));
             const model = { provider: "openrouter-ci", model: "z-ai/glm-5.3-flash" };
-            // glm-5.3-flash is a hybrid reasoning model behind OpenRouter's
-            // normalized reasoning param: effort "none" (the "off" mapping)
+            // glm-5.3-flash is a hybrid reasoning model behind the OpenRouter
+            // normalized reasoning param: effort none (the off mapping)
             // returns empty responses, so run the lane at low effort and map
-            // "off" to null (omit the param) as the fallback.
+            // off to null (omit the param) as the fallback.
             s.llm = { ...s.llm, ...model, thinkingLevel: "low", autoReply: { ...model } };
             s.sandbox = {
               ...s.sandbox,
