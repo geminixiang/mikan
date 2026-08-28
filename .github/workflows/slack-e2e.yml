@@ -45,12 +45,14 @@ jobs:
           mkdir -p "$WORKING_DIR"
 
           node dist/main.js --onboard --state-dir "$STATE_DIR"
-          # E2E runs on OpenRouter with qwen3.7-flash. Lane history:
+          # E2E runs on OpenRouter with glm-5.3-flash. Lane history:
           # deepseek-v4-flash echoed stale tokens from polluted context;
           # gpt-oss-120b's OpenRouter routing intermittently returned empty
           # or corrupted content (mandatory-reasoning endpoints + per-provider
-          # harmony parsing). qwen3.7-flash is not in pi-ai's built-in
-          # openrouter catalog yet — and a same-named custom provider is
+          # harmony parsing); qwen3.7-flash intermittently omitted required
+          # tool parameters (the `label` field), and the retries pushed slow
+          # scenarios past their timeouts. The model is not in pi-ai's
+          # built-in openrouter catalog — and a same-named custom provider is
           # shadowed by the built-in — so it rides a custom "openrouter-ci"
           # provider pointed at the same base URL.
           mkdir -p "$HOME/.mikan"
@@ -63,12 +65,12 @@ jobs:
                 "baseUrl": "https://openrouter.ai/api/v1",
                 "models": [
                   {
-                    "id": "qwen/qwen3.7-flash",
-                    "name": "Qwen: Qwen3.7 Flash",
+                    "id": "z-ai/glm-5.3-flash",
+                    "name": "Z.AI: GLM 5.3 Flash",
                     "reasoning": false,
-                    "contextWindow": 262144,
-                    "maxTokens": 32768,
-                    "cost": { "input": 0.1, "output": 0.4, "cacheRead": 0, "cacheWrite": 0 }
+                    "contextWindow": 1310720,
+                    "maxTokens": 131072,
+                    "cost": { "input": 0.075, "output": 0.25, "cacheRead": 0, "cacheWrite": 0 }
                   }
                 ]
               }
@@ -82,7 +84,7 @@ jobs:
             const fs = require("fs");
             const p = process.argv[1];
             const s = JSON.parse(fs.readFileSync(p, "utf8"));
-            const model = { provider: "openrouter-ci", model: "qwen/qwen3.7-flash" };
+            const model = { provider: "openrouter-ci", model: "z-ai/glm-5.3-flash" };
             s.llm = { ...s.llm, ...model, autoReply: { ...model } };
             s.sandbox = {
               ...s.sandbox,
