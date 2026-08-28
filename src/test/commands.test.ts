@@ -950,7 +950,7 @@ describe("SandboxCommandHandler", () => {
     expect(doorOverride()).toBeNull();
   });
 
-  test("boosts a Gondolin conversation", async () => {
+  test("boosts an image-mode conversation", async () => {
     const boost = vi.fn().mockResolvedValue({
       limits: { cpus: "2", memory: "4g" },
       boosted: true,
@@ -960,7 +960,7 @@ describe("SandboxCommandHandler", () => {
       conversationId: "C123",
       services: {
         workspace: testWorkspace(workingDir),
-        sandbox: { type: "gondolin", profile: "default" },
+        sandbox: { type: "image", image: "ubuntu:24.04" },
         resourceController: {
           boost,
           getBoostLimits: () => ({ cpus: "2", memory: "4g" }),

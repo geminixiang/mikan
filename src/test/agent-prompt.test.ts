@@ -175,17 +175,6 @@ describe("runtime path context", () => {
       "attachments are unavailable",
     );
   });
-
-  test("firecracker rejects host uploads explicitly", () => {
-    const pathContext = getUnresolvedSandboxPathContext(
-      { type: "firecracker", vmId: "vm-1", hostPath: "/host/workspace" },
-      "/host/workspace",
-    );
-
-    expect(() => translateAttachPathToHost("report.txt", pathContext)).toThrow(
-      "attachments are unavailable",
-    );
-  });
 });
 
 describe("system prompt memory guidance", () => {

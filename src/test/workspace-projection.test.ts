@@ -16,7 +16,11 @@ import {
   updateConversationSettings,
   updateGlobalSettings,
 } from "../config.js";
-import { resolveWorkspaceProjection } from "../workspace-projection/index.js";
+import {
+  readPlatformChannelKind,
+  recordPlatformChannelKind,
+  resolveWorkspaceProjection,
+} from "../workspace-projection/index.js";
 import {
   createOfficeAddress,
   createWorkspace,
@@ -105,6 +109,77 @@ describe("workspace office projection", () => {
       doorPolicy: "trusted",
       layout: "full",
       mounts: [{ source: workspaceDir, target: "/workspace" }],
+    });
+  });
+
+  test("a recorded Slack public channel shares workspace memory read-write", () => {
+    recordPlatformChannelKind(office, "public_channel");
+
+    const projection = resolveWorkspaceProjection(office);
+
+    expect(projection).toMatchObject({
+      doorPolicy: "trusted",
+      layout: "shared-support",
+      visibility: "public",
+    });
+    const memoryMount = projection.mounts.find((m) => m.target === "/workspace/MEMORY.md");
+    expect(memoryMount?.readOnly).toBeUndefined();
+  });
+
+  test("a recorded Slack private channel reads shared memory without writing it", () => {
+    recordPlatformChannelKind(office, "private_channel");
+
+    const projection = resolveWorkspaceProjection(office);
+
+    expect(projection).toMatchObject({
+      doorPolicy: "trusted",
+      layout: "shared-support",
+      visibility: "private",
+    });
+    const memoryMount = projection.mounts.find((m) => m.target === "/workspace/MEMORY.md");
+    expect(memoryMount?.readOnly).toBe(true);
+    expect(projection.promptSources.globalMemoryReadOnly).toBe(true);
+  });
+
+  test.each(["im", "external"] as const)("a recorded %s conversation stays isolated", (kind) => {
+    recordPlatformChannelKind(office, kind);
+
+    expect(resolveWorkspaceProjection(office)).toMatchObject({
+      doorPolicy: "isolated",
+      layout: "conversation",
+    });
+  });
+
+  test("an explicit admin setting wins over the platform-derived posture", () => {
+    recordPlatformChannelKind(office, "public_channel");
+    updateConversationSettings(office, {
+      sandbox: { workspace: { doorPolicy: "isolated" } },
+    });
+
+    expect(resolveWorkspaceProjection(office)).toMatchObject({
+      doorPolicy: "isolated",
+      layout: "conversation",
+    });
+  });
+
+  test("a channel kind snapshot updates in place and survives rereads", () => {
+    recordPlatformChannelKind(office, "public_channel");
+    expect(readPlatformChannelKind(office)).toBe("public_channel");
+
+    recordPlatformChannelKind(office, "private_channel");
+    expect(readPlatformChannelKind(office)).toBe("private_channel");
+
+    expect(resolveWorkspaceProjection(office).visibility).toBe("private");
+  });
+
+  test("an unreadable or corrupt channel kind file falls back to isolated", () => {
+    recordPlatformChannelKind(office, "public_channel");
+    writeFileSync(join(office.stateDir, "channel-kind"), "banana\n");
+
+    expect(readPlatformChannelKind(office)).toBeUndefined();
+    expect(resolveWorkspaceProjection(office)).toMatchObject({
+      doorPolicy: "isolated",
+      layout: "conversation",
     });
   });
 

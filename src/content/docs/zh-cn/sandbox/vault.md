@@ -50,8 +50,6 @@ mikan --state-dir=/secure/mikan-state --sandbox=container:mikan-tools /path/to/w
 
 mikan 根据文件名/路径推断挂载目标——`gws.json` → `/root/.config/gws/credentials.json`，`gcloud-adc.json` → `/root/.config/gcloud/application_default_credentials.json`，`.ssh/` → `/root/.ssh`，`.kube/` → `/root/.kube`，`.config/gh/` → `/root/.config/gh`——其余一律默认为 `/root/<relative-path>`。每次解析 vault 时都会从文件名重新派生目标；它不会作为 metadata 存储，因此重命名凭证文件会改变它的落点。内置的 OAuth 流程会选用本身就能推断到正确位置的名称，并把对应的环境变量（例如 `GOOGLE_APPLICATION_CREDENTIALS`）指向它。
 
-在 image 模式下，这些是 bind mount，可以从沙箱内写入，因此工具可能会更新它们——请备份不应被修改的凭证。在 `gondolin:default` 中，这些文件是以仅所有者可读的权限复制进 guest 且不会写回，因此 guest 侧的编辑会在 runtime 重建时被丢弃。
-
 示例：
 
 ```text
@@ -81,14 +79,12 @@ Vault 中的材料并不是同一类无差别的 secret：
 
 ## 沙箱行为
 
-| 沙箱模式           | Vault 环境变量注入 | 文件凭证             | Vault key             |
-| ------------------ | ------------------ | -------------------- | --------------------- |
-| `host`             | 不注入             | 拒绝                 | 由平台用户派生        |
-| `container:<name>` | 注入               | 拒绝                 | 由 container 名称派生 |
-| `image:<image>`    | 注入               | 投影（bind mount）   | office key            |
-| `gondolin:default` | 注入               | 投影（复制进 guest） | office key            |
-| `firecracker:*`    | 注入               | 拒绝                 | office key            |
-| `cloudflare:*`     | 注入               | 拒绝                 | office key            |
+| 沙箱模式           | Vault 环境变量注入 | 文件凭证           | Vault key             |
+| ------------------ | ------------------ | ------------------ | --------------------- |
+| `host`             | 不注入             | 拒绝               | 由平台用户派生        |
+| `container:<name>` | 注入               | 拒绝               | 由 container 名称派生 |
+| `image:<image>`    | 注入               | 投影（bind mount） | office key            |
+| `cloudflare:*`     | 注入               | 拒绝               | office key            |
 
 **拒绝意味着运行会失败，而不是该文件被悄悄忽略。** vault 目录中只要存有 `env` 以外的任何文件，就会解析出一个文件 mount，而无法 mount 文件的模式会抛出 `Sandbox type "<type>" does not support vault file mounts`，而不是带着不完整的凭证集合运行。因此在这些模式上，请只用 `env` 保存凭证——早先 `image` 部署遗留在 vault 中的一个多余 `gws.json`，就会让该对话无法运行。
 

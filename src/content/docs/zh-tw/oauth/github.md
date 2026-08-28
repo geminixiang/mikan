@@ -52,7 +52,7 @@ mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 或：
 
 ```bash
-mikan --sandbox=firecracker:192.168.1.100:/path/to/workspace /path/to/workspace
+
 ```
 
 ## 4. 使用 `/login`

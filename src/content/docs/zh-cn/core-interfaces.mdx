@@ -254,8 +254,6 @@ Hook 错误会被记录并跳过。`before_agent_start` 和 `tool_result` 的重
 
 ### `SandboxConfig`
 
-该可辨识联合当前支持 `host`、`container`、`image`、`gondolin`、`firecracker` 和 `cloudflare`。解析语法和成熟度记录在 [Sandbox](/zh-cn/sandbox/) 下。
-
 ### `Executor`
 
 这是稳定的执行边界，也是最重要的沙箱契约：
@@ -316,8 +314,6 @@ const office = workspace.office(createOfficeAddress("slack", "C0AAAAAA1"));
 ### `OfficeAddress` 与 `OfficeKey`
 
 `OfficeAddress` 是 `{ platform, conversationId }`——平台加上它的原始对话 id。`officeKey(address)` 派生出存储身份 `v1-<platform>-<readable-id>-<16 位十六进制>`，其中可读的中间部分仅供诊断，SHA-256 前缀才是身份成分。同一个 key 在主机上、沙箱运行时内部以及 vault 中命名该办公室目录，因此两个共用同一原始对话 id 的平台永远无法触及彼此的文件或凭证。
-
-office key **不可逆**。`OfficeRegistry`（`office-registry.json`，仅主机）是持久的原始 id ↔ 办公室映射，同时也为启动时从旧版原始 id 布局的迁移记录日志。面向原始 id 的界面通过它解析：CLI 运维人员用 `resolveOwnedOfficeAddress`，管理端枚举用 `listRegisteredOffices`。沙箱资源名称（容器名、Gondolin 实例、Cloudflare 作用域）在资源命名迁移完成前仍由原始对话 id 派生；那里发生冲突的代价是重建一次容器，绝不会导致凭证访问。
 
 ### 两条记录
 
@@ -389,10 +385,6 @@ state directory 不得位于沙箱可见的工作区内部。重要的状态文�
 | Agent events   | `GET /api/agent-events/stream`                                                         | 由部署控制的事件流             |
 
 Admin 端点涵盖对话清单/状态/用量、全局与对话设置、模型、工作区文件、skill、事件、平台配置以及 login/session 链接。路由 payload 是内部 UI 契约，可能与捆绑的前端一同演进。
-
-## 14. Gondolin 进程边界
-
-`gondolin:default` 由 mikan 进程为每个 conversation 创建并管理一台本地 VM。每个 command 使用独立的 Gondolin session IPC connection，因此 abort/timeout 会关闭 guest command。runtime 仅存活于进程生命周期；正常 shutdown 会同步 projection 并关闭 VM，restart 后 cold start。不存在网络 worker protocol 或远程 placement contract。
 
 ## 契约检查清单
 

@@ -215,8 +215,6 @@ Core tools は、runner が供給する executor と host services を使いま�
 
 ### `SandboxConfig`
 
-この discriminated union は現在、`host`、`container`、`image`、`gondolin`、`firecracker`、`cloudflare` をサポートします。パース構文と成熟度は [Sandbox](/sandbox/) の下に記載されています。
-
 ### `Executor`
 
 これは安定した実行境界であり、最も重要な sandbox 契約です:
@@ -277,8 +275,6 @@ const office = workspace.office(createOfficeAddress("slack", "C0AAAAAA1"));
 ### `OfficeAddress` と `OfficeKey`
 
 `OfficeAddress` は `{ platform, conversationId }` — platform とその生の conversation id です。`officeKey(address)` はストレージ上の identity `v1-<platform>-<readable-id>-<16 桁の hex>` を導出します。中央の可読部分は診断用で、identity の構成要素は SHA-256 prefix です。同じ key が host 上、sandbox runtime 内、vault 内の office directory を指すため、生の conversation id が一致する 2 つのプラットフォームが互いの files や認証情報に到達することは決してありません。
-
-Office key は**逆変換できません**。`OfficeRegistry`（`office-registry.json`、host 専用）が生 id ↔ office の恒久的な対応であり、旧来の生 id 配置からの boot 時 migration も journal します。生 id を扱う面はこれを介して解決します: CLI operator 向けの `resolveOwnedOfficeAddress`、admin の列挙向けの `listRegisteredOffices`。sandbox のリソース名（container 名、Gondolin instance、Cloudflare scope）は、リソース名の migration が済むまで生の conversation 由来のままです。そこでの衝突のコストは container の作り直しであって、認証情報へのアクセスではありません。
 
 ### 2 つの記録
 
@@ -350,10 +346,6 @@ state directory は sandbox から見える workspace 内に置いてはなり�
 | Agent events   | `GET /api/agent-events/stream`                                                         | デプロイ制御の event stream      |
 
 Admin endpoints は、conversation のインベントリ/状態/使用状況、グローバルおよび conversation の settings、models、workspace files、skills、events、platform 設定、login/session links をカバーします。ルートの payload は内部の UI 契約であり、同梱 frontend とともに進化し得ます。
-
-## 14. Gondolin プロセス境界
-
-`gondolin:default` は mikan process が conversation ごとにローカル VM を作成・所有します。command ごとに独立した Gondolin session IPC connection を使うため、abort/timeout は guest command を終了します。runtime は process lifecycle のみ存続し、通常の shutdown は projection を同期して VM を閉じ、restart 後は cold start します。network worker protocol や remote placement contract はありません。
 
 ## 契約チェックリスト
 

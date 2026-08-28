@@ -50,8 +50,6 @@ mikan --state-dir=/secure/mikan-state --sandbox=container:mikan-tools /path/to/w
 
 mikan はファイル名/パスから mount target を自動推論します — `gws.json` → `/root/.config/gws/credentials.json`、`gcloud-adc.json` → `/root/.config/gcloud/application_default_credentials.json`、`.ssh/` → `/root/.ssh`、`.kube/` → `/root/.kube`、`.config/gh/` → `/root/.config/gh` — それ以外は既定で `/root/<relative-path>` になります。target は vault を解決するたびにファイル名から導出され、メタデータとして保存されるわけではありません。したがって credential file の名前を変えると、配置先も変わります。組み込みの OAuth flow は、正しい場所に推論される名前を選び、それに合わせて対応する環境変数（例：`GOOGLE_APPLICATION_CREDENTIALS`）を設定します。
 
-image mode ではこれらは bind mount であり sandbox 内から書き込み可能なため、tools が更新する場合があります。変更が問題になる credentials は backup を保管してください。`gondolin:default` では、ファイルは所有者のみ読める権限で guest にコピーされ、書き戻されません。そのため guest 側の編集は runtime の再作成時に破棄されます。
-
 例：
 
 ```text
@@ -86,8 +84,6 @@ Vault の内容は、一様な 1 種類の secret ではありません：
 | `host`             | 注入しない          | 拒否                   | プラットフォームの user から導出 |
 | `container:<name>` | 注入する            | 拒否                   | container 名から導出             |
 | `image:<image>`    | 注入する            | 投影する（bind mount） | office key                       |
-| `gondolin:default` | 注入する            | 投影する（コピー）     | office key                       |
-| `firecracker:*`    | 注入する            | 拒否                   | office key                       |
 | `cloudflare:*`     | 注入する            | 拒否                   | office key                       |
 
 **拒否とは、ファイルが黙って無視されるのではなく、実行が失敗するという意味です。** directory に `env`

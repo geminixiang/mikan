@@ -1,6 +1,6 @@
-import { dirname } from "node:path";
-import { lstatSync, mkdirSync, writeFileSync } from "node:fs";
-import { ensureDirExists } from "../utils/file-guards.js";
+import { dirname, join } from "node:path";
+import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { atomicWritePrivateFile, ensureDirExists } from "../utils/file-guards.js";
 import { resolveConversationSettings } from "../config.js";
 import type { Office } from "../office/index.js";
 import * as log from "../log.js";
@@ -10,9 +10,46 @@ import type {
   WorkspaceLayout,
   WorkspaceVisibility,
 } from "../types.js";
-import type { WorkspaceProjection } from "./types.js";
+import type { PlatformChannelKind, WorkspaceProjection } from "./types.js";
 
-export type { WorkspaceProjection } from "./types.js";
+export type { PlatformChannelKind, WorkspaceProjection } from "./types.js";
+
+const CHANNEL_KIND_FILE = "channel-kind";
+const CHANNEL_KINDS: readonly PlatformChannelKind[] = [
+  "public_channel",
+  "private_channel",
+  "im",
+  "external",
+];
+
+/**
+ * Record the platform's own channel kind for this conversation, as observed
+ * by the adapter at message intake. Stored under the host-only office state
+ * dir (never the sandbox-mounted workspace), so sandboxed code cannot
+ * promote its own conversation into the shared pool. Written only on change;
+ * the value is a snapshot as of the last message, which is exactly the
+ * freshness the projection needs — a conversation that never speaks again
+ * never needs a fresher value.
+ */
+export function recordPlatformChannelKind(office: Office, kind: PlatformChannelKind): void {
+  if (readPlatformChannelKind(office) === kind) return;
+  ensureDirExists(office.stateDir);
+  atomicWritePrivateFile(join(office.stateDir, CHANNEL_KIND_FILE), kind + "\n");
+}
+
+/** The recorded platform channel kind, or undefined when never observed. */
+export function readPlatformChannelKind(office: Office): PlatformChannelKind | undefined {
+  let raw: string;
+  try {
+    raw = readFileSync(join(office.stateDir, CHANNEL_KIND_FILE), "utf-8");
+  } catch {
+    return undefined;
+  }
+  const value = raw.trim();
+  return (CHANNEL_KINDS as readonly string[]).includes(value)
+    ? (value as PlatformChannelKind)
+    : undefined;
+}
 
 /**
  * The single policy seam for a managed office. It both materializes the
@@ -40,12 +77,12 @@ export function resolveWorkspaceProjection(office: Office): WorkspaceProjection 
   // "conversation" never sees workspace memory at all.
   //
   // The `readOnly` mount flag below is a kernel-enforced boundary only for
-  // sandbox backends that actually bind-mount (container/image, gondolin).
-  // Host, Cloudflare, and Firecracker executors do not consume
-  // WorkspaceProjection.mounts at all (see execution-resolver.ts
-  // resolveSandboxConfig) and have no equivalent enforcement point; for
-  // those backends this setting is honored only as prompt guidance to the
-  // agent (agent/prompt.ts memoryGuidance), not as a hard boundary.
+  // sandbox backends that actually bind-mount (container/image). Host and
+  // Cloudflare executors do not consume WorkspaceProjection.mounts at all
+  // (see execution-resolver.ts resolveSandboxConfig) and have no equivalent
+  // enforcement point; for those backends this setting is honored only as
+  // prompt guidance to the agent (agent/prompt.ts memoryGuidance), not as a
+  // hard boundary.
   const globalMemoryReadOnly = shared && effective.visibility === "private";
   const mounts =
     effective.layout === "full"
@@ -93,7 +130,10 @@ function resolveEffectiveWorkspace(
         settings.workspace.visibility,
       );
     }
-    return legacyWorkspace(settings?.image?.workspaceMount);
+    if (settings?.image?.workspaceMount) {
+      return legacyWorkspace(settings.image.workspaceMount);
+    }
+    return platformDerivedWorkspace(office);
   } catch (err) {
     // Settings are host-authoritative. A malformed file must not fall back to
     // an unvalidated value from a mounted legacy location.
@@ -102,6 +142,28 @@ function resolveEffectiveWorkspace(
       err instanceof Error ? err.message : String(err),
     );
     throw new Error("Cannot resolve workspace projection: settings are malformed", { cause: err });
+  }
+}
+
+/**
+ * No explicit workspace setting anywhere: follow the platform's own channel
+ * vocabulary (modeled on Claude Tag). A public channel's knowledge is shared
+ * workspace-wide read-write; a private channel reads the shared pool but
+ * writes only its own conversation memory; DMs, externally shared channels,
+ * and conversations whose kind was never observed stay fully isolated —
+ * platform-public is a necessary condition for sharing, never assumed.
+ * An admin's explicit setting (conversation or global) always wins over this.
+ */
+function platformDerivedWorkspace(
+  office: Office,
+): Pick<WorkspaceProjection, "doorPolicy" | "layout" | "visibility"> {
+  switch (readPlatformChannelKind(office)) {
+    case "public_channel":
+      return { doorPolicy: "trusted", layout: "shared-support", visibility: "public" };
+    case "private_channel":
+      return { doorPolicy: "trusted", layout: "shared-support", visibility: "private" };
+    default:
+      return { doorPolicy: "isolated", layout: "conversation", visibility: "public" };
   }
 }
 

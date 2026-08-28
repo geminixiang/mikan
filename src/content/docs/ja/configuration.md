@@ -83,8 +83,6 @@ conversation を生のプラットフォーム id 配下に保存していたリ
 | `llm.autoReply.provider`       | `anthropic`         | auto-reply rules の評価に使う任意の model provider                                                                         |
 | `llm.autoReply.model`          | `claude-haiku-4-5`  | auto-reply rules の評価に使う任意の model                                                                                  |
 | `sentry.dsn`                   | 未設定              | Sentry DSN。機密性の高い prompt と tool の内容はマスクされます                                                             |
-| `sandbox.cpus`                 | `0.5`               | mikan 管理の image/Gondolin runtimes の CPU 制限。Gondolin は小数値を整数 vCPU に切り上げます                              |
-| `sandbox.memory`               | `1g`                | mikan 管理の image/Gondolin runtimes のメモリ制限                                                                          |
 | `sandbox.boost.cpus`           | `2`                 | `/pi-sandbox boost` が適用する一時的な CPU 制限                                                                            |
 | `sandbox.boost.memory`         | `4g`                | `/pi-sandbox boost` が適用する一時的なメモリ制限                                                                           |
 | `sandbox.workspace.doorPolicy` | `isolated`          | `isolated` は各 conversation を自分の office data に限定します。`trusted` は協働型の workspace layout を明示的に許可します |
@@ -113,18 +111,17 @@ Door policy と layout は一緒に解決されます。`isolated` は常に `co
 
 ## CLI リファレンス
 
-| コマンドまたはオプション                                                                                        | 用途                                                                                  |
-| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `mikan onboard [--state-dir=<dir>]`                                                                             | 必須のグローバル設定ファイルを作成                                                    |
-| `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]`                                              | 設定済みの platform bots を起動。working directory の既定値は `<state-dir>/workspace` |
-| `--sandbox=host \| container:<name> \| image:<image> \| gondolin:default \| firecracker:... \| cloudflare:<id>` | tool execution mode を選択。既定値は `host`                                           |
-| `mikan env`                                                                                                     | 環境変数の完全なインベントリと、現在設定されている内容を表示                          |
-| `mikan --download <channel-id>`                                                                                 | Slack channel history をダウンロード。`SLACK_BOT_TOKEN` が必要                        |
-| `mikan --version`                                                                                               | インストール済み version を表示                                                       |
-| `mikan --help`                                                                                                  | CLI の使い方と platform-token のサマリーを表示                                        |
-| `mikan ext ...`                                                                                                 | harness extensions を管理。subcommands は `mikan ext` で確認                          |
-| `mikan office list`                                                                                             | 登録済み office、有効なプラットフォーム、保留中の legacy migration を一覧表示         |
-| `mikan office claim <conversationId> <platform>`                                                                | boot が帰属を判定できなかった legacy な生 id directory の所有プラットフォームを指定   |
+| コマンドまたはオプション                                           | 用途                                                                                  |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| `mikan onboard [--state-dir=<dir>]`                                | 必須のグローバル設定ファイルを作成                                                    |
+| `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]` | 設定済みの platform bots を起動。working directory の既定値は `<state-dir>/workspace` |
+| `mikan env`                                                        | 環境変数の完全なインベントリと、現在設定されている内容を表示                          |
+| `mikan --download <channel-id>`                                    | Slack channel history をダウンロード。`SLACK_BOT_TOKEN` が必要                        |
+| `mikan --version`                                                  | インストール済み version を表示                                                       |
+| `mikan --help`                                                     | CLI の使い方と platform-token のサマリーを表示                                        |
+| `mikan ext ...`                                                    | harness extensions を管理。subcommands は `mikan ext` で確認                          |
+| `mikan office list`                                                | 登録済み office、有効なプラットフォーム、保留中の legacy migration を一覧表示         |
+| `mikan office claim <conversationId> <platform>`                   | boot が帰属を判定できなかった legacy な生 id directory の所有プラットフォームを指定   |
 
 `mikan office` は `--state-dir <dir>` と `--workspace <dir>` を受け付けます。workspace の既定値は `<state-dir>/workspace` です。`claim` は判断を記録するだけで、実際の移動は daemon が次回起動時に行うため、daemon を停止した状態で実行してください。
 

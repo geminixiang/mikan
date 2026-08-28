@@ -27,8 +27,8 @@ describe("allowsAmbientDefaultSharedVault", () => {
     ).toBe(false);
   });
 
-  test("host / container / firecracker never use ambient copy path", () => {
-    for (const sandboxType of ["host", "container", "firecracker"] as const) {
+  test("host / container never use ambient copy path", () => {
+    for (const sandboxType of ["host", "container"] as const) {
       expect(allowsAmbientDefaultSharedVault({ trustModel: "membership", sandboxType })).toBe(
         false,
       );

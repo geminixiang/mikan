@@ -33,7 +33,7 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `office/`: The Conversation office module — canonical identity (`OfficeAddress`/office keys), the Workspace/Office layout values, the durable office registry journal, and the boot-time legacy migration.
 - `packages/`: Git-sourced packages that ship extensions and skills — source grammar, materialization, per-conversation resolution, and the admin write path.
 - `runtime/`: Conversation and session runtime orchestration.
-- `sandbox/`: Host/container/image/gondolin/firecracker/cloudflare sandbox abstractions and executors.
+- `sandbox/`: Host/container/image/cloudflare sandbox abstractions and executors.
 - `sessions/`: Chat-history synchronization, session file management, and session policy.
 - `test/`: The whole test suite (unit, integration, and e2e specs) for every module above.
 - `tools/`: Agent tools such as read, bash, edit, write, event, react, generate_image, subagent, and sandbox.

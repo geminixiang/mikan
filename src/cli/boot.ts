@@ -108,8 +108,6 @@ Options:
                            host
                            container:<existing-container-name>
                            image:<image[:tag]>
-                           gondolin:default
-                           firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]
                            cloudflare:<sandbox-id>
                          Default: host
   --download <channel>   Dump a Slack channel's history (Slack only), then exit.

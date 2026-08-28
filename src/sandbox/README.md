@@ -6,11 +6,9 @@ This directory defines sandbox abstractions, concrete sandbox executors, and sha
 
 - `cloudflare.ts`: Implements the Cloudflare Sandbox bridge executor, argument parsing, health checks, and remote `/exec` calls.
 - `container.ts`: Implements the Docker container executor, `docker exec` command construction, secure env files, and runtime bootstrap.
-- `firecracker.ts`: Implements the Firecracker VM executor by running commands over SSH inside the VM.
-- `gondolin.ts`: Implements the single-host Gondolin microVM executor: per-conversation in-process VMs, file-mount projection and write-back, exec over the session IPC socket, desired-runtime fingerprinting and drift recreation, resource limits, idle lifecycle, and crash recovery.
 - `host.ts`: Implements the host executor by running commands directly through the local shell.
 - `identity.ts`: Separately derives collision-safe credential authorization keys and runtime resource keys.
-- `index.ts`: Registers sandbox adapters (including the `image:<image>` config adapter) and exposes parse, validate, and executor factory helpers, plus the per-adapter capability queries — `getSandboxCredentialCapabilities`, `getSandboxWorkspaceCapabilities`, and `assertSandboxSupportsWorkspacePolicy` (a backend without managed projection cannot honor an `isolated` door). `configureGondolinRuntime` is the one bootstrap seam an embedder calls before creating gondolin executors.
+- `index.ts`: Registers sandbox adapters (including the `image:<image>` config adapter) and exposes parse, validate, and executor factory helpers, plus the per-adapter capability queries — `getSandboxCredentialCapabilities`, `getSandboxWorkspaceCapabilities`, and `assertSandboxSupportsWorkspacePolicy` (a backend without managed projection cannot honor an `isolated` door).
 - `types.ts`: Defines all sandbox configs, executors, exec results, runtime path contexts, and adapter types.
 - `utils.ts`: Provides `SandboxError` (user-facing CLI diagnostics), simple child-process execution, process-tree killing, shell escaping, the shared base64-chunked file transport (`execReadFile`/`execWriteFile`) used by every exec-only executor, and `createMountedRuntimePathContext` (runtime→host path translation for mounted workspaces).
 
@@ -86,7 +84,7 @@ host-only state dir. Package skills are the one thing the agent can see but
 not write. The host owns those files — the directory is a git checkout that
 an update replaces wholesale — so an agent edit would be silently discarded
 on the next refresh; `ContainerMount.readOnly` makes the filesystem refuse it
-instead (docker `:ro`, gondolin `ReadonlyProvider`). They mount **outside**
+instead (docker `:ro`). They mount **outside**
 `/workspace` because under `trusted` + `full` `/workspace` is the whole
 working directory and a `/workspace/packages` target would shadow a real
 `packages/` directory. See `src/packages/README.md`.

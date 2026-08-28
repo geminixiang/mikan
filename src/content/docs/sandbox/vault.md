@@ -50,7 +50,7 @@ Each vault is a directory under `vaults/` and may contain:
 
 mikan infers mount targets from file names/paths — `gws.json` → `/root/.config/gws/credentials.json`, `gcloud-adc.json` → `/root/.config/gcloud/application_default_credentials.json`, `.ssh/` → `/root/.ssh`, `.kube/` → `/root/.kube`, `.config/gh/` → `/root/.config/gh` — and anything else defaults to `/root/<relative-path>`. The target is derived from the file name every time the vault is resolved; it is not stored as metadata, so renaming a credential file changes where it lands. The built-in OAuth flows pick names that already infer to the right place and set the matching env var (for example `GOOGLE_APPLICATION_CREDENTIALS`) to it.
 
-In image mode these are bind mounts and are writable from inside the sandbox, so tools may update them — keep backups for credentials whose mutation would matter. In `gondolin:default` the files are copied into the guest with owner-only permissions and are not written back, so a guest-side edit is discarded when the runtime is recreated.
+In image mode these are bind mounts and are writable from inside the sandbox, so tools may update them — keep backups for credentials whose mutation would matter.
 
 Example:
 
@@ -86,8 +86,6 @@ This is a data boundary, not an execution boundary. Anything the conversation's 
 | `host`             | not injected        | refused                 | derived from the platform user  |
 | `container:<name>` | injected            | refused                 | derived from the container name |
 | `image:<image>`    | injected            | projected (bind mounts) | the office key                  |
-| `gondolin:default` | injected            | projected (copied in)   | the office key                  |
-| `firecracker:*`    | injected            | refused                 | the office key                  |
 | `cloudflare:*`     | injected            | refused                 | the office key                  |
 
 **Refused means the run fails, not that the file is quietly ignored.** A vault whose directory holds

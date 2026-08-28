@@ -1,6 +1,6 @@
 ---
 title: Sandbox
-description: Compare mikan's supported host, container, image, microVM, Firecracker, and Cloudflare sandbox modes.
+description: Compare mikan's supported host, container, image, and Cloudflare sandbox modes.
 ---
 
 import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
@@ -13,10 +13,6 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
   <Card title="Mainline isolation" icon="rocket">
     `image:<image>` lets mikan manage lifecycle, workspace mounts, vault env, and resource limits.
   </Card>
-  <Card title="Gondolin preview" icon="moon">
-    `gondolin:default` runs a local Gondolin/QEMU microVM in mikan's own process and is the planned
-    successor to managed `image:*` sandboxes.
-  </Card>
 </CardGrid>
 
 <Aside type="caution" title="Mode names">
@@ -25,14 +21,12 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 ## Supported modes
 
-| Mode                                                        | Execution location        | Vault env injection | Vault key                       | Notes                                                                                            |
-| ----------------------------------------------------------- | ------------------------- | ------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `host`                                                      | host machine              | not injected        | derived from the platform user  | Local development only; needs an explicit trusted door policy                                    |
-| `container:<name>`                                          | existing Docker container | injected            | derived from the container name | one container one vault; multiple people sharing one container also share its vault              |
-| `image:<image>`                                             | Docker managed by mikan   | injected            | the office key                  | Current recommended isolation mode; `1 conversation = 1 vault = 1 container`                     |
-| `gondolin:default`                                          | local Gondolin/QEMU VM    | injected            | the office key                  | Preview; single-host, in mikan's own process; requires Node.js >=23.6 and QEMU                   |
-| `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM            | injected            | the office key                  | Very early alpha; you must start the VM and mount workspace at `/workspace`; not recommended yet |
-| `cloudflare:<sandbox-id>`                                   | Cloudflare Worker         | injected            | the office key                  | Under construction; requires your own `@cloudflare/sandbox` bridge; host workspace is not synced |
+| Mode                      | Execution location        | Vault env injection | Vault key                       | Notes                                                                                            |
+| ------------------------- | ------------------------- | ------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `host`                    | host machine              | not injected        | derived from the platform user  | Local development only; needs an explicit trusted door policy                                    |
+| `container:<name>`        | existing Docker container | injected            | derived from the container name | one container one vault; multiple people sharing one container also share its vault              |
+| `image:<image>`           | Docker managed by mikan   | injected            | the office key                  | Current recommended isolation mode; `1 conversation = 1 vault = 1 container`                     |
+| `cloudflare:<sandbox-id>` | Cloudflare Worker         | injected            | the office key                  | Under construction; requires your own `@cloudflare/sandbox` bridge; host workspace is not synced |
 
 The office key is the versioned `v1-<platform>-<readable-id>-<hash>` segment that also names the
 conversation's directory under the workspace. See [Conversation offices](#conversation-offices).
@@ -45,7 +39,7 @@ a runtime the office is at `/workspace/<office-key>`.
 
 Which parts of the workspace a runtime sees is the **door policy**, a `sandbox.workspace` setting
 the admin portal can set globally or per conversation (the `/pi-sandbox door` chat command does the
-same for one conversation, but only under `image:*` and `gondolin:*`):
+same for one conversation, but only under `image:*`):
 
 | Door policy / layout         | Mounted under `/workspace`                                            |
 | ---------------------------- | --------------------------------------------------------------------- |
@@ -53,7 +47,7 @@ same for one conversation, but only under `image:*` and `gondolin:*`):
 | `trusted` / `shared-support` | `<office-key>/` plus the shared `MEMORY.md`, `skills/`, and `events/` |
 | `trusted` / `full`           | the entire workspace root                                             |
 
-Only `image:*` and `gondolin:default` can enforce the isolated projection. The other modes report
+Only `image:*` can enforce the isolated projection. The other modes report
 `managedProjection: false`, and because `isolated` is the default, they refuse to start a run until
 someone explicitly chooses a trusted policy for that office. Field semantics and the legacy
 `sandbox.image.workspaceMount` translation are documented in [Configuration](/configuration/).
@@ -99,16 +93,6 @@ container, so the writable layer is preserved rather than rebuilt from the base 
   href="image/"
 />
 <LinkCard
-  title="Gondolin sandbox"
-  description="Try the local Gondolin/QEMU preview intended to replace image sandboxes."
-  href="gondolin/"
-/>
-<LinkCard
-  title="Firecracker sandbox"
-  description="Connect to a Firecracker VM that you start yourself."
-  href="firecracker/"
-/>
-<LinkCard
   title="Cloudflare sandbox"
   description="Run tools through a Cloudflare Worker bridge; under construction."
   href="cloudflare/"
@@ -118,20 +102,20 @@ container, so the writable layer is preserved rather than rebuilt from the base 
 
 `image:<image>` <Badge text="recommended" variant="success" /> is the primary developed and recommended sandbox mode today; the other modes are kept for local development, compatibility, or experiments, and some capabilities will not be filled in.
 
-| Capability                                   | `host`         | `container:<name>`     | `image:<image>` | `gondolin:default` | `firecracker:*` | `cloudflare:*`     |
-| -------------------------------------------- | -------------- | ---------------------- | --------------- | ------------------ | --------------- | ------------------ |
-| command execution                            | ✅             | ✅                     | ✅              | ✅                 | ✅              | ✅                 |
-| mikan-managed runtime lifecycle              | not applicable | ❌                     | ✅              | ✅ process-owned   | ❌              | ❌                 |
-| per-conversation container / runtime         | ❌             | ❌                     | ✅              | ✅                 | self-managed    | bridge-derived id  |
-| per-conversation vault env                   | ❌             | ❌                     | ✅              | ✅                 | ✅              | ✅                 |
-| automatic vault file projection / bind mount | ❌             | ❌                     | ✅              | ✅                 | ❌              | ❌                 |
-| automatic workspace mount                    | host           | self-managed           | ✅              | ✅                 | self-managed    | ❌                 |
-| isolated conversation office                 | ❌             | ❌                     | ✅              | ✅                 | ❌              | ❌                 |
-| idle auto-stop / recreate                    | not applicable | ❌                     | ✅              | ✅                 | ❌              | ❌                 |
-| default CPU / memory limits                  | ❌             | ❌                     | ✅              | ✅                 | ❌              | ❌                 |
-| `/pi-sandbox boost`                          | ❌             | ❌                     | ✅              | ✅                 | ❌              | ❌                 |
-| agent `sandbox` tool sets limits             | ❌             | ❌                     | ✅              | ✅                 | ❌              | ❌                 |
-| recommendation level                         | local dev      | legacy / compatibility | mainline        | preview            | alpha           | under construction |
+| Capability                                   | `host`         | `container:<name>`     | `image:<image>` | `cloudflare:*`     |
+| -------------------------------------------- | -------------- | ---------------------- | --------------- | ------------------ |
+| command execution                            | ✅             | ✅                     | ✅              | ✅                 |
+| mikan-managed runtime lifecycle              | not applicable | ❌                     | ✅              | ❌                 |
+| per-conversation container / runtime         | ❌             | ❌                     | ✅              | bridge-derived id  |
+| per-conversation vault env                   | ❌             | ❌                     | ✅              | ✅                 |
+| automatic vault file projection / bind mount | ❌             | ❌                     | ✅              | ❌                 |
+| automatic workspace mount                    | host           | self-managed           | ✅              | ❌                 |
+| isolated conversation office                 | ❌             | ❌                     | ✅              | ❌                 |
+| idle auto-stop / recreate                    | not applicable | ❌                     | ✅              | ❌                 |
+| default CPU / memory limits                  | ❌             | ❌                     | ✅              | ❌                 |
+| `/pi-sandbox boost`                          | ❌             | ❌                     | ✅              | ❌                 |
+| agent `sandbox` tool sets limits             | ❌             | ❌                     | ✅              | ❌                 |
+| recommendation level                         | local dev      | legacy / compatibility | mainline        | under construction |
 
 Both ❌ rows above are refusals rather than silent downgrades. A mode that cannot enforce the
 isolated projection raises `Sandbox '<type>' cannot provide an isolated conversation office` instead

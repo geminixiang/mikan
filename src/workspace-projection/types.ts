@@ -5,6 +5,16 @@ import type {
   WorkspaceVisibility,
 } from "../types.js";
 
+/**
+ * The conversation's platform-native channel kind, using the platform's own
+ * vocabulary (Slack conversation types), not a mikan-invented one. Recorded
+ * at message intake and used to derive the workspace projection when no
+ * explicit workspace setting exists: public channels share workspace memory
+ * read-write, private channels read it without writing back, DMs and
+ * externally shared channels stay isolated.
+ */
+export type PlatformChannelKind = "public_channel" | "private_channel" | "im" | "external";
+
 interface WorkspacePromptSources {
   conversationDir: string;
   conversationMemoryPath: string;

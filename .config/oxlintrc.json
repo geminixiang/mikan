@@ -77,7 +77,6 @@
         "**/src/harness/extensions/loader.ts",
         "**/src/harness/subagent-runner.ts",
         "**/src/runtime/conversation-runtime.ts",
-        "**/src/sandbox/gondolin.ts",
         "**/src/web/admin/portal.ts",
         "**/src/web/login/portal.ts",
         "**/src/web/session-view/portal.ts"

@@ -18,8 +18,6 @@ description: 以證據為本的計畫，在不改變行為的前提下縮減 mik
 7. 一個憑證解析 seam；
 8. 供選用的 platform、command、tool、extension 與 sandbox 能力使用的 registry。
 
-Web portal、特定聊天 SDK、Docker 佈建、Gondolin runtime 管理、Firecracker、Cloudflare 與 GitHub 專屬工具，都是圍繞此核心的產品或外掛。
-
 ## 發現
 
 | 優先度 | 發現                                 | 證據                                                                                                                                         | 簡化                                                                                      |
@@ -31,7 +29,6 @@ Web portal、特定聊天 SDK、Docker 佈建、Gondolin runtime 管理、Firecr
 | P1     | Runtime 建構洩漏了指令的實作細節     | `ConversationRuntimeOptions` 是 `Omit<CommandServices, ...>`，並在內部重建 command service                                                   | 定義明確的 runtime 相依，再於 command adapter 中建構 `CommandServices`                    |
 | P1     | 指令仍有兩份清單                     | manifest 擁有平台註冊，而 registry 擁有 handler；新增一個指令需要同時改兩者                                                                  | `CommandDefinition` 應同時包含 manifest metadata 與 handler factory/reference             |
 | P1     | Harness 同時是 public SDK 與內部引擎 | root 把 session parsing、credentials、settings、loader、event schema、hook 與 runner 細節一起匯出                                            | 發布 `./extension`、`./runtime`，以及選擇性的 `./harness` subpath，並各有獨立的穩定度政策 |
-| P2     | 選用的 runtime 產品被編進中央 CLI    | 平台 SDK、portal、六種 sandbox 模式與 Gondolin runtime 程式碼都組裝在 `main.ts` 裡                                                           | 讓 `main.ts` 成為 registry 之上的 composition root；lazy/選用的產品模組變得可替換         |
 | P2     | 多個能力介面使用選用方法             | `MessagingBot` 與 `ConversationResponder` 靠新增 `?` 方法而成長                                                                              | 使用具名的能力物件（`reactions`、`uploads`、`streaming`），讓「缺席」與「需求」都變得明確 |
 | P2     | HTTP 路由契約靠手動分派且大多未定型  | `web/server.ts` 與 portal 模組依 method/path 分支；payload 型別是區域性的                                                                    | 保持 UI API 內部化，但在 payload 跨模組之處集中路由描述符與 request/response schema       |
 
@@ -121,8 +118,6 @@ interface SandboxRegistry {
 }
 ```
 
-預設 CLI 註冊穩定的 backend。Gondolin、Firecracker 與 Cloudflare 可由選用的產品模組註冊，而不需更動 tool 或 runtime 程式碼。
-
 ## Migration 順序
 
 ### Phase 1 — 強制執行套件邊界（已完成）
@@ -160,7 +155,6 @@ interface SandboxRegistry {
 
 1. 引入 `SandboxRegistry`，同時保留既有預設函式作為 wrapper。
 2. 把 host/container/image 註冊為預設 distribution。
-3. 從選用的組合模組註冊 Gondolin、Firecracker 與 Cloudflare。
 
 ### Phase 6 — 縮小 composition root
 

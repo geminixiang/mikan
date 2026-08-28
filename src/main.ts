@@ -53,13 +53,6 @@ import { SandboxError, validateSandbox } from "./sandbox/index.js";
 import { helpText, resolveBoot, type BootPlan } from "./cli/boot.js";
 import { runOnboardCommand } from "./cli/onboard.js";
 import { envReport, noPlatformsMessage, platformIsActive } from "./env-manifest.js";
-import {
-  configureGondolinRuntime,
-  gondolinResources,
-  reconcileGondolinRuntimes,
-  stopAllGondolinRuntimes,
-  stopIdleGondolinVms,
-} from "./sandbox/gondolin.js";
 import { FileVaultManager } from "./vault/index.js";
 import { runExtCommand } from "./cli/ext.js";
 import { runOfficeCommand } from "./cli/office.js";
@@ -325,10 +318,7 @@ if (vaultManager.isEnabled()) {
   console.log(
     sandbox.type === "container"
       ? "  Vault system enabled. Container vault active."
-      : sandbox.type === "image" ||
-          sandbox.type === "gondolin" ||
-          sandbox.type === "firecracker" ||
-          sandbox.type === "cloudflare"
+      : sandbox.type === "image" || sandbox.type === "cloudflare"
         ? "  Vault system enabled. Conversation-scoped credential routing active."
         : "  Vault system enabled. Host mode will not inject vault env.",
   );
@@ -373,24 +363,9 @@ if (provisioner && registryOffices.length > 0) {
     }),
   );
 }
-if (sandbox.type === "gondolin") {
-  try {
-    configureGondolinRuntime({
-      limits: sandboxLimits,
-      boostLimits: sandboxBoostLimits,
-    });
-  } catch (error) {
-    handleStartupError(error);
-  }
-}
-const resourceController =
-  sandbox.type === "image"
-    ? provisioner
-    : sandbox.type === "gondolin"
-      ? gondolinResources
-      : undefined;
+const resourceController = sandbox.type === "image" ? provisioner : undefined;
 
-if (sandbox.type === "image" || sandbox.type === "gondolin") {
+if (sandbox.type === "image") {
   ensureDirExists(workspace.skillsDir);
   ensureDirExists(workspace.eventsDir);
   ensureDirExists(workspace.agentsDir);
@@ -425,13 +400,6 @@ if (provisioner) {
   ).unref();
 }
 
-if (sandbox.type === "gondolin") {
-  await reconcileGondolinRuntimes();
-  setInterval(
-    () => void stopIdleGondolinVms(MANAGED_SANDBOX_IDLE_TIMEOUT_MS),
-    MANAGED_SANDBOX_IDLE_TIMEOUT_MS,
-  ).unref();
-}
 const botsByPlatform: Record<string, MessagingBot> = {};
 
 /**
@@ -647,11 +615,7 @@ const sandboxDesc =
       ? `container:${sandbox.container}`
       : sandbox.type === "image"
         ? `image:${sandbox.image}`
-        : sandbox.type === "gondolin"
-          ? `gondolin:${sandbox.profile}`
-          : sandbox.type === "firecracker"
-            ? `firecracker:${sandbox.vmId}`
-            : `cloudflare:${sandbox.sandboxId}`;
+        : `cloudflare:${sandbox.sandboxId}`;
 log.logStartup(workingDir, sandboxDesc);
 logHarnessStartupSummary();
 
@@ -794,7 +758,6 @@ async function shutdown(): Promise<void> {
   await handler.shutdown();
   eventsWatcher.stop();
   extensionScheduleEngine.stop();
-  await stopAllGondolinRuntimes();
   await Sentry.close(5000);
   process.exit(0);
 }

@@ -38,6 +38,6 @@ export { createConversationEvent, createConversationMessage } from "./adapter.js
 export { createOfficeAddress, createWorkspace, officeKey, officeSessionsDir, } from "./office/index.js";
 export type { Office, Workspace } from "./office/index.js";
 export type { ChatToolResult, ConversationContext, ConversationEvent, ConversationKind, ConversationMessage, ConversationResponder, MessagingBot, OfficeAddress, OfficeKey, MessagingEventHandler, MessagingInfo, PlatformName, RunningSession, } from "./adapter.js";
-export { SandboxError, configureGondolinRuntime, createExecutor, getSandboxAdapters, parseSandboxArg, validateSandbox, type GondolinBootstrapOptions, } from "./sandbox/index.js";
+export { SandboxError, createExecutor, getSandboxAdapters, parseSandboxArg, validateSandbox, } from "./sandbox/index.js";
 export type { CloudflareSandboxConfig, ExecOptions, ExecResult, Executor, SandboxAdapter, SandboxConfig, } from "./sandbox/index.js";"
 `;

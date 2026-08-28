@@ -34,7 +34,7 @@ export function translateAttachPathToHost(
 ): string {
   if (!pathContext.runtimeToHostPath) {
     throw new Error(
-      "Cannot attach files: this sandbox has no host-backed runtime path mapping; attachments are unavailable for remote sandboxes such as Cloudflare or Firecracker",
+      "Cannot attach files: this sandbox has no host-backed runtime path mapping; attachments are unavailable for remote sandboxes such as Cloudflare",
     );
   }
   if (hasParentTraversal(filePath)) {

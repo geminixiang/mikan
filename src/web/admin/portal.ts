@@ -710,9 +710,9 @@ function serveGlobalSettings(res: ServerResponse): void {
       sandboxMemory: config.sandbox?.memory ?? null,
       sandboxBoostCpus: config.sandbox?.boost?.cpus ?? null,
       sandboxBoostMemory: config.sandbox?.boost?.memory ?? null,
-      workspaceDoorPolicy: config.sandbox?.workspace?.doorPolicy ?? "isolated",
-      workspaceLayout: config.sandbox?.workspace?.layout ?? "conversation",
-      workspaceVisibility: config.sandbox?.workspace?.visibility ?? "public",
+      workspaceDoorPolicy: config.sandbox?.workspace?.doorPolicy ?? null,
+      workspaceLayout: config.sandbox?.workspace?.layout ?? null,
+      workspaceVisibility: config.sandbox?.workspace?.visibility ?? null,
       defaultSharedVault: config.sandbox?.defaultSharedVault ?? null,
       slack: {
         replyMode: config.slack?.replyMode ?? "top-level",
@@ -2361,7 +2361,7 @@ function renderAdminPage(token: AdminToken): string {
       const globalModel = [data.globalProvider, data.globalModel].filter(Boolean).join('/');
       const globalModelLabel = globalModel + (data.globalThinkingLevel ? ':' + data.globalThinkingLevel : '');
       const doorPolicyChoices = [
-        ['default', 'Global default (' + data.globalWorkspaceDoorPolicy + ' / ' + data.globalWorkspaceLayout + ' / ' + (data.globalWorkspaceVisibility || 'public') + ')'],
+        ['default', 'Automatic — follows the platform channel (public shares, private reads only, DMs isolated)'],
         ['isolated', 'isolated — own office only'],
         ['trusted-shared-support', 'trusted / shared-support (public) — office + shared memory, skills, events — read-write'],
         ['trusted-shared-support-private', 'trusted / shared-support (private) — same, but shared MEMORY.md is read-only'],
@@ -3208,13 +3208,16 @@ function renderAdminPage(token: AdminToken): string {
       const replyModeOpts = replyModes.map((m) =>
         '<option value="' + m + '"' + (((data.slack && data.slack.replyMode) || 'top-level') === m ? ' selected' : '') + '>' + m + '</option>'
       ).join('');
-      const gDoorKey = data.workspaceDoorPolicy === 'isolated'
-        ? 'isolated'
-        : (data.workspaceLayout === 'full'
-          ? 'trusted-full'
-          : ((data.workspaceVisibility || 'public') === 'private' ? 'trusted-shared-support-private' : 'trusted-shared-support'));
+      const gDoorKey = !data.workspaceDoorPolicy
+        ? 'default'
+        : (data.workspaceDoorPolicy === 'isolated'
+          ? 'isolated'
+          : (data.workspaceLayout === 'full'
+            ? 'trusted-full'
+            : ((data.workspaceVisibility || 'public') === 'private' ? 'trusted-shared-support-private' : 'trusted-shared-support')));
       const gDoorPolicyChoices = [
-        ['isolated', 'isolated — own office only (built-in default)'],
+        ['default', 'Automatic — follows each platform channel (public shares, private reads only, DMs isolated)'],
+        ['isolated', 'isolated — own office only'],
         ['trusted-shared-support', 'trusted / shared-support (public) — office + shared memory, skills, events — read-write'],
         ['trusted-shared-support-private', 'trusted / shared-support (private) — same, but shared MEMORY.md is read-only'],
         ['trusted-full', 'trusted / full — entire workspace'],

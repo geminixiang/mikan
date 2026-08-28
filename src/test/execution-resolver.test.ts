@@ -11,8 +11,6 @@ import { createOfficeAddress, createWorkspace, officeKey } from "../office/index
 const C123_OFFICE = officeKey(createOfficeAddress("slack", "C123"));
 
 describe("ActorExecutionResolver", () => {
-  // the Gondolin executor asserts Node >=23.6, but CI also runs the 22.19.0 floor
-  const nodeVersion = Object.getOwnPropertyDescriptor(process.versions, "node");
   let stateDir: string;
   let workspaceDir: string;
 
@@ -26,12 +24,10 @@ describe("ActorExecutionResolver", () => {
     workspaceDir = join(stateDir, "workspace");
     mkdirSync(workspaceDir, { recursive: true });
     process.env.MIKAN_STATE_DIR = stateDir;
-    Object.defineProperty(process.versions, "node", { value: "24.0.0", configurable: true });
   });
 
   afterEach(() => {
     delete process.env.MIKAN_STATE_DIR;
-    if (nodeVersion) Object.defineProperty(process.versions, "node", nodeVersion);
     if (existsSync(stateDir)) {
       rmSync(stateDir, { recursive: true, force: true });
     }
@@ -47,7 +43,7 @@ describe("ActorExecutionResolver", () => {
       "utf-8",
     );
     const resolver = new ActorExecutionResolver(
-      { type: "gondolin", profile: "default" },
+      { type: "image", image: "ubuntu:24.04" },
       new FileVaultManager(stateDir),
       undefined,
       workspace(),
@@ -64,7 +60,7 @@ describe("ActorExecutionResolver", () => {
     mkdirSync(conversationDir, { recursive: true });
     writeFileSync(join(conversationDir, "settings.json"), "{ invalid json }", "utf-8");
     const resolver = new ActorExecutionResolver(
-      { type: "gondolin", profile: "default" },
+      { type: "image", image: "ubuntu:24.04" },
       new FileVaultManager(stateDir),
       undefined,
       workspace(),
@@ -78,7 +74,7 @@ describe("ActorExecutionResolver", () => {
   test("rejects path-bearing conversation ids before reading or creating directories", () => {
     createGlobalSettingsFile(stateDir);
     const resolver = new ActorExecutionResolver(
-      { type: "gondolin", profile: "default" },
+      { type: "image", image: "ubuntu:24.04" },
       new FileVaultManager(stateDir),
       undefined,
       workspace(),
@@ -104,10 +100,10 @@ describe("ActorExecutionResolver", () => {
     }
   });
 
-  test("resolves isolated Gondolin workspace mounts", async () => {
+  test("materializes the isolated conversation office directory on resolve", async () => {
     createGlobalSettingsFile(stateDir);
     const resolver = new ActorExecutionResolver(
-      { type: "gondolin", profile: "default" },
+      { type: "image", image: "ubuntu:24.04" },
       new FileVaultManager(stateDir),
       undefined,
       workspace(),
@@ -118,71 +114,16 @@ describe("ActorExecutionResolver", () => {
       address: createOfficeAddress("slack", "C123"),
     });
 
-    expect(executor.getSandboxConfig()).toMatchObject({
-      type: "gondolin",
-      mounts: [{ source: join(workspaceDir, C123_OFFICE), target: `/workspace/${C123_OFFICE}` }],
-    });
+    // Image mode resolves to the office's dedicated container; the mount
+    // layout itself is covered by workspace-projection.test.ts.
+    expect(executor.getSandboxConfig().type).toBe("container");
     expect(existsSync(join(workspaceDir, C123_OFFICE))).toBe(true);
-  });
-
-  test("resolves the full Gondolin workspace mount", async () => {
-    createGlobalSettingsFile(stateDir);
-    const conversationDir = join(workspaceDir, C123_OFFICE);
-    mkdirSync(conversationDir, { recursive: true });
-    writeFileSync(
-      join(conversationDir, "settings.json"),
-      JSON.stringify({ sandbox: { image: { workspaceMount: "full" } } }),
-    );
-    const resolver = new ActorExecutionResolver(
-      { type: "gondolin", profile: "default" },
-      new FileVaultManager(stateDir),
-      undefined,
-      workspace(),
-    );
-
-    const executor = await resolver.resolve({
-      userId: "U123",
-      address: createOfficeAddress("slack", "C123"),
-    });
-
-    expect(executor.getSandboxConfig()).toMatchObject({
-      type: "gondolin",
-      mounts: [{ source: workspaceDir, target: "/workspace" }],
-    });
-  });
-
-  test("adds Gondolin vault files to the workspace mounts", async () => {
-    createGlobalSettingsFile(stateDir);
-    const credentialKey = credentialAuthorizationKey(
-      { type: "gondolin", profile: "default" },
-      {
-        userId: "U123",
-        address: createOfficeAddress("slack", "C123"),
-      },
-    );
-    const sshDir = join(stateDir, "vaults", credentialKey, ".ssh");
-    mkdirSync(sshDir, { recursive: true });
-    const resolver = new ActorExecutionResolver(
-      { type: "gondolin", profile: "default" },
-      new FileVaultManager(stateDir),
-      undefined,
-      workspace(),
-    );
-
-    const executor = await resolver.resolve({
-      userId: "U123",
-      address: createOfficeAddress("slack", "C123"),
-    });
-
-    expect(executor.getSandboxConfig()).toMatchObject({
-      mounts: expect.arrayContaining([{ source: sshDir, target: "/root/.ssh" }]),
-    });
   });
 
   test("recreates a deleted private conversation directory on the next projection", async () => {
     createGlobalSettingsFile(stateDir);
     const resolver = new ActorExecutionResolver(
-      { type: "gondolin", profile: "default" },
+      { type: "image", image: "ubuntu:24.04" },
       new FileVaultManager(stateDir),
       undefined,
       workspace(),
@@ -225,7 +166,7 @@ describe("ActorExecutionResolver", () => {
       }),
     } as unknown as FileVaultManager;
     const resolver = new ActorExecutionResolver(
-      { type: "gondolin", profile: "default" },
+      { type: "image", image: "ubuntu:24.04" },
       vault,
       undefined,
       workspace(),
@@ -247,7 +188,7 @@ describe("ActorExecutionResolver", () => {
       },
     } as unknown as FileVaultManager;
     const resolver = new ActorExecutionResolver(
-      { type: "gondolin", profile: "default" },
+      { type: "image", image: "ubuntu:24.04" },
       vault,
       undefined,
       workspace(),
@@ -300,7 +241,7 @@ describe("ActorExecutionResolver", () => {
       }),
     } as unknown as FileVaultManager;
     const resolver = new ActorExecutionResolver(
-      { type: "gondolin", profile: "default" },
+      { type: "image", image: "ubuntu:24.04" },
       vault,
       undefined,
       workspace(),

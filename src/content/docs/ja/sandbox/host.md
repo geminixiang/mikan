@@ -21,7 +21,7 @@ tools は host user が見えるものをそのまま見ます。そのため mi
 `isolated`（これが既定です）の場合、次のように実行を拒否します：
 
 ```text
-Sandbox 'host' cannot provide an isolated conversation office; use image:* or gondolin:default,
+Sandbox 'host' cannot provide an isolated conversation office; use image:*,
 or explicitly choose trusted workspace policy
 ```
 
@@ -37,7 +37,7 @@ host mode を使うには、trusted な policy を明示的に選びます。グ
 ```
 
 conversation ごとに設定するなら admin portal からです。`/pi-sandbox` チャットコマンドは host mode
-では利用できません。管理型の `image:*` と `gondolin:*` sandbox 専用です。
+では利用できません。管理型の `image:*` sandbox 専用です。
 
 適している用途：
 

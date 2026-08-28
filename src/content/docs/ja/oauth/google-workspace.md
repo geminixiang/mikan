@@ -6,8 +6,6 @@ sidebar:
   label: Google Workspace CLI
 ---
 
-> 注意：mikan は Google の authorized_user JSON を `gws.json` として vault に保存し、ランタイム上のターゲットはそのファイル名から推定されます。`image` と `gondolin` サンドボックスは、ランタイム内のそのターゲットへファイルを自動的に投影（プロジェクション）します。`container`、`firecracker`、`cloudflare` はファイルを mount できないため、認証情報なしで続行するのではなく実行を失敗させます。これらのモードではこのフローを使用しないでください。
-
 ## 1. Google OAuth クライアントの作成
 
 Google Cloud Console に移動します：
@@ -52,8 +50,6 @@ export GOOGLE_WORKSPACE_CLI_OAUTH_SCOPES="https://www.googleapis.com/auth/drive 
 
 ## 3. `/login` の使用
 
-以降のランタイムでこの認証情報（credential）ファイルを `/root/.config/gws/credentials.json` に自動的に投影したい場合は、`image` サンドボックス（または `gondolin:default`）を使用して mikan を起動することをお勧めします：
-
 ```bash
 mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 ```
@@ -87,4 +83,3 @@ mikan から返されたリンクを開き、Google Workspace CLI OAuth を選�
 
 - mikan は Web OAuth コールバックを使用するため、Google OAuth クライアントはデスクトップアプリではなく、`Web application` である必要があります。
 - Google から `refresh_token` が返されない場合は、既存の同意（consent）を取り消してから再度 `/login` を行ってください。mikan は `access_type=offline` および `prompt=consent` を要求しますが、既存の承認があるために Google がリフレッシュトークンを省略することがあります。
-- `gws.json` を `/root/.config/gws/credentials.json` に自動的に表示させるには、`image` または `gondolin` サンドボックスを使用してください。`container`、`firecracker`、`cloudflare` では、vault にファイル認証情報があると実行が `does not support vault file mounts` で失敗します。これらのモードではファイル認証情報を削除し、`env` のみの認証情報を使用してください。

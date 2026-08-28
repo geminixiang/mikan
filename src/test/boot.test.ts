@@ -132,7 +132,6 @@ describe("helpText", () => {
       expect(help).toContain(flag);
     }
     expect(help).not.toContain("--worker-token");
-    expect(help).not.toContain("gondolin:remote");
   });
 });
 

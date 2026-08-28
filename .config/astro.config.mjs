@@ -171,15 +171,6 @@ export default defineConfig({
                       link: "/sandbox/image/",
                     },
                     {
-                      label: "Firecracker",
-                      translations: {
-                        "zh-TW": "Firecracker",
-                        "zh-CN": "Firecracker",
-                        ja: "Firecracker",
-                      },
-                      link: "/sandbox/firecracker/",
-                    },
-                    {
                       label: "Cloudflare",
                       translations: {
                         "zh-TW": "Cloudflare",
@@ -244,15 +235,6 @@ export default defineConfig({
                 ja: "Slack QA テスト計画",
               },
               link: "/slack-qa-test-plan/",
-            },
-            {
-              label: "Firecracker Setup",
-              translations: {
-                "zh-TW": "Firecracker 設定",
-                "zh-CN": "Firecracker 设置",
-                ja: "Firecracker セットアップ",
-              },
-              link: "/firecracker-setup/",
             },
             {
               label: "Portal Auth Model",

@@ -45,6 +45,10 @@ import {
 } from "../shared.js";
 import { processMessageIntake } from "../intake.js";
 import {
+  recordPlatformChannelKind,
+  type PlatformChannelKind,
+} from "../../workspace-projection/index.js";
+import {
   AssistantThreadRegistry,
   handleAgentContextChanged,
   handleAgentDmOpened,
@@ -886,6 +890,25 @@ export class SlackMessagingBot implements MessagingBot {
     });
   }
 
+  /**
+   * Slack's own conversation vocabulary for this channel, from the metadata
+   * fetchChannels() already loads. Externally shared channels report
+   * "external" regardless of privacy — platform-public within one workspace
+   * is the sharing condition, and a channel visible to another organization
+   * does not satisfy it. Unknown channels return undefined (never recorded,
+   * so the projection keeps its isolated default).
+   */
+  private channelKindFor(channelId: string): PlatformChannelKind | undefined {
+    if (channelId.startsWith("D")) return "im";
+    const channel = this.channels.get(channelId);
+    if (!channel) return undefined;
+    if (channel.name.startsWith("DM:")) return "im";
+    if (channel.isExternallyShared) return "external";
+    if (channel.isPrivate === true) return "private_channel";
+    if (channel.isPrivate === false) return "public_channel";
+    return undefined;
+  }
+
   private processSlackMessageIntake(options: {
     event: SlackEvent;
     attachmentsPromise: Promise<Attachment[]>;
@@ -893,6 +916,16 @@ export class SlackMessagingBot implements MessagingBot {
     isAutoReplyCandidate: boolean;
     addressed: boolean;
   }): void {
+    const kind = this.channelKindFor(options.event.conversationId);
+    if (kind) {
+      try {
+        recordPlatformChannelKind(this.workspace.office(options.event.address), kind);
+      } catch (err) {
+        // A failed snapshot must not block the message; the projection just
+        // keeps its previous (or isolated default) posture.
+        log.logWarning("Failed to record Slack channel kind", String(err));
+      }
+    }
     const absorbAttachmentFailure = () => {
       void options.attachmentsPromise.catch((err) => {
         log.logWarning("Failed to log Slack message", String(err));
@@ -2078,12 +2111,24 @@ export class SlackMessagingBot implements MessagingBot {
         cursor,
       });
       const channels = result.channels as
-        | Array<{ id?: string; name?: string; is_member?: boolean }>
+        | Array<{
+            id?: string;
+            name?: string;
+            is_member?: boolean;
+            is_private?: boolean;
+            is_shared?: boolean;
+            is_ext_shared?: boolean;
+          }>
         | undefined;
       if (channels) {
         for (const c of channels) {
           if (c.id && c.name && c.is_member) {
-            this.channels.set(c.id, { id: c.id, name: c.name });
+            this.channels.set(c.id, {
+              id: c.id,
+              name: c.name,
+              ...(typeof c.is_private === "boolean" ? { isPrivate: c.is_private } : {}),
+              ...(c.is_shared || c.is_ext_shared ? { isExternallyShared: true } : {}),
+            });
           }
         }
       }

@@ -1,11 +1,7 @@
 import { ContainerExecutor, containerSandboxAdapter } from "./container.js";
-import { FirecrackerExecutor, firecrackerSandboxAdapter } from "./firecracker.js";
 import { CloudflareSandboxExecutor, cloudflareSandboxAdapter } from "./cloudflare.js";
 import { HostExecutor, hostSandboxAdapter } from "./host.js";
-import { GondolinExecutor, gondolinSandboxAdapter } from "./gondolin.js";
 import { createMountedRuntimePathContext, execSimple, SandboxError } from "./utils.js";
-export { configureGondolinRuntime } from "./gondolin.js";
-export type { GondolinBootstrapOptions } from "./types.js";
 import type {
   Executor,
   ImageSandboxConfig,
@@ -23,13 +19,7 @@ export type {
   SandboxAdapter,
   SandboxConfig,
 } from "./types.js";
-export {
-  CloudflareSandboxExecutor,
-  ContainerExecutor,
-  FirecrackerExecutor,
-  HostExecutor,
-  GondolinExecutor,
-};
+export { CloudflareSandboxExecutor, ContainerExecutor, HostExecutor };
 export { SandboxError } from "./utils.js";
 
 function parseImageSandboxArg(value: string): ImageSandboxConfig | undefined {
@@ -65,8 +55,6 @@ const sandboxAdapters = [
   hostSandboxAdapter,
   containerSandboxAdapter,
   imageSandboxAdapter,
-  gondolinSandboxAdapter,
-  firecrackerSandboxAdapter,
   cloudflareSandboxAdapter,
 ] as const;
 const sandboxAdapterByType = new Map(
@@ -102,7 +90,7 @@ export function assertSandboxSupportsWorkspacePolicy(
     !getSandboxWorkspaceCapabilities(sandboxConfig.type).managedProjection
   ) {
     throw new SandboxError(
-      `Sandbox '${sandboxConfig.type}' cannot provide an isolated conversation office; use image:* or gondolin:default, or explicitly choose trusted workspace policy`,
+      `Sandbox '${sandboxConfig.type}' cannot provide an isolated conversation office; use image:*, or explicitly choose trusted workspace policy`,
     );
   }
 }
@@ -122,7 +110,7 @@ export function parseSandboxArg(value: string): SandboxConfig {
   }
 
   throw new SandboxError(
-    `Error: Invalid sandbox type '${value}'. Use 'host', 'container:<container-name>', 'image:<image-name>', 'gondolin:default', 'firecracker:<vm-id>:<host-path>', or 'cloudflare:<sandbox-id>'`,
+    `Error: Invalid sandbox type '${value}'. Use 'host', 'container:<container-name>', 'image:<image-name>', or 'cloudflare:<sandbox-id>'`,
   );
 }
 
@@ -136,7 +124,8 @@ export async function validateSandbox(config: SandboxConfig): Promise<void> {
 }
 
 /**
- * Create an executor that runs commands on host, in Docker, in a microVM, in a Firecracker VM, or through a Cloudflare sandbox bridge.
+ * Create an executor that runs commands on host, in Docker, or through a
+ * Cloudflare sandbox bridge.
  */
 export function createExecutor(
   config: SandboxConfig,

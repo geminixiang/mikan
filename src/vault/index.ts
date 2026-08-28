@@ -394,8 +394,8 @@ export function migrateConversationVaultKeys(options: {
  * explicitly provisioned vault only.
  *
  * Topology: only isolated sandboxes (`image` / `cloudflare`) auto-provision
- * per-conversation vaults that receive the copy. `host` / `container` /
- * `firecracker` do not use this ambient path.
+ * per-conversation vaults that receive the copy. `host` / `container` do
+ * not use this ambient path.
  */
 export function allowsAmbientDefaultSharedVault(options: {
   trustModel?: PlatformTrustModel;

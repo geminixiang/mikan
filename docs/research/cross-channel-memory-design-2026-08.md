@@ -183,8 +183,9 @@ visibility: "public" | "private" | "isolated"
    `visibility === "private"` 時，`workspace/MEMORY.md` 的 `ContainerMount` 才帶
    `readOnly: true`。`full` layout 仍然是一個讀寫 bind，沒有分離的 memory 檔可管；
    `skills/`、`events/` 不受影響，仍然讀寫。既有的 `readOnly` 機制（`ContainerMount`）
-   本來就存在，且 gondolin/container/image 後端已經會尊重它（`ReadonlyProvider`／
-   Docker `:ro` 線回），**本設計並未發明新的強制機制，只是使用現有的**。
+   本來就存在，且 container/image 後端已經會尊重它（Docker `:ro` 線回），
+   **本設計並未發明新的強制機制，只是使用現有的**。（更新：gondolin/firecracker
+   後端已於 2026-08-28 整個移除，不再需要維護它們的掛載語意。）
 3. **`agent/prompt.ts`**：`memoryGuidance` 新增 visibility-aware 分支——private
    時明確告訴 agent「寫入共用 MEMORY.md 會被拒絕，請寫進自己的 conversation
    MEMORY.md」；Memory 節新增「策展筆記、不是流水帳」+「查詢/訂正/遺忘是正常要求」的
@@ -207,8 +208,8 @@ visibility: "public" | "private" | "isolated"
 
 ### 未解決的已知缺口（意圖保留，非實作疏失）
 
-- **Host 模式下沒有具體強制力**：`readOnly` 只對會 bind mount 的後端（container/image、
-  gondolin）有核心強制力（內核拒寫）。Host、Cloudflare、Firecracker 執行後端不
+- **Host 模式下沒有具體強制力**：`readOnly` 只對會 bind mount 的後端（container/image）
+  有核心強制力（內核拒寫）。Host、Cloudflare 執行後端不
   讀取 `WorkspaceProjection.mounts`（見 `execution-resolver.ts` 的
   `resolveSandboxConfig`），對這些後端而言，private visibility 只是 prompt 層的
   提醒，**不是硬邊界**。已在 `workspace-projection/index.ts` 的註解註明這個
@@ -241,7 +242,7 @@ visibility: "public" | "private" | "isolated"
   public/private 屬性可以直接借用；Discord、Telegram、GitHub 的對應關係需要
   分別定義，預設值該是什麼（保守預設可能是全部 `isolated`，需要 admin 顯式升級）。
 - Workspace memory 唯讀掛載的具體實作機制（bind mount 唯讀 vs chmod）要對照
-  mikan 現有 sandbox 各執行後端（host/container/gondolin/firecracker/cloudflare）
+  mikan 現有 sandbox 各執行後端（host/container/cloudflare）
   分別驗證可行性，不是所有後端都用同一種掛載方式。
 
 ## 附錄：資料來源

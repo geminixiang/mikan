@@ -1,6 +1,5 @@
 ---
 title: Sandbox
-description: 比较 mikan 支持的 host、container、image、microVM、Firecracker 与 Cloudflare sandbox 模式。
 ---
 
 import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
@@ -12,10 +11,6 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
   <Card title="主线隔离" icon="rocket">
     `image:<image>` 由 mikan 管理 lifecycle、workspace mount、vault env 与资源限制。
   </Card>
-  <Card title="Gondolin 预览" icon="moon">
-    `gondolin:default` 在 mikan 自身进程内运行本地 Gondolin/QEMU microVM，是托管 `image:*` sandbox
-    的计划继任者。
-  </Card>
 </CardGrid>
 
 <Aside type="caution" title="模式名称">
@@ -24,14 +19,12 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 ## 支持模式
 
-| 模式                                                        | 执行位置              | Vault env injection | Vault key             | 备注                                                                               |
-| ----------------------------------------------------------- | --------------------- | ------------------- | --------------------- | ---------------------------------------------------------------------------------- |
-| `host`                                                      | 宿主机                | 不注入              | 由平台用户派生        | 仅限本地开发；需要显式的受信任门禁策略                                             |
-| `container:<name>`                                          | 现有 Docker container | 注入                | 由 container 名称派生 | one container one vault；多人共享同一 container 就共享该 vault                     |
-| `image:<image>`                                             | mikan 管理的 Docker   | 注入                | office key            | 当前最推荐的隔离模式；`1 conversation = 1 vault = 1 container`                     |
-| `gondolin:default`                                          | 本地 Gondolin/QEMU VM | 注入                | office key            | 预览；单主机，运行在 mikan 自身进程内；需要 Node.js >=23.6 与 QEMU                 |
-| `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM        | 注入                | office key            | Alpha 超早期；VM 需自行启动，workspace 需在 VM 内挂到 `/workspace`，当前不建议使用 |
-| `cloudflare:<sandbox-id>`                                   | Cloudflare Worker     | 注入                | office key            | 建设中；需自行部署 `@cloudflare/sandbox` bridge，host workspace 不会自动同步       |
+| 模式                      | 执行位置              | Vault env injection | Vault key             | 备注                                                                         |
+| ------------------------- | --------------------- | ------------------- | --------------------- | ---------------------------------------------------------------------------- |
+| `host`                    | 宿主机                | 不注入              | 由平台用户派生        | 仅限本地开发；需要显式的受信任门禁策略                                       |
+| `container:<name>`        | 现有 Docker container | 注入                | 由 container 名称派生 | one container one vault；多人共享同一 container 就共享该 vault               |
+| `image:<image>`           | mikan 管理的 Docker   | 注入                | office key            | 当前最推荐的隔离模式；`1 conversation = 1 vault = 1 container`               |
+| `cloudflare:<sandbox-id>` | Cloudflare Worker     | 注入                | office key            | 建设中；需自行部署 `@cloudflare/sandbox` bridge，host workspace 不会自动同步 |
 
 office key 就是带版本的 `v1-<platform>-<readable-id>-<hash>` 路径段，它同时也命名该对话在 workspace 下的目录。参阅[对话办公室](#对话办公室)。
 
@@ -39,15 +32,13 @@ office key 就是带版本的 `v1-<platform>-<readable-id>-<hash>` 路径段，�
 
 每个对话在 workspace 根目录下拥有一个目录——它的**办公室**——按 office key 命名，而不是按平台的原始对话 id。Sandbox mount 跟随该目录，因此在 runtime 内部，办公室位于 `/workspace/<office-key>`。
 
-runtime 能看到 workspace 的哪些部分，由**门禁策略**决定，它是一项 `sandbox.workspace` 设置，可以在 admin portal 中按全局或按对话设置（`/pi-sandbox door` 聊天命令对单个对话做同样的事，但仅在 `image:*` 和 `gondolin:*` 下可用）：
-
 | 门禁策略 / 布局              | 挂载到 `/workspace` 下的内容                                   |
 | ---------------------------- | -------------------------------------------------------------- |
 | `isolated`（默认）           | 仅 `<office-key>/`                                             |
 | `trusted` / `shared-support` | `<office-key>/` 外加共享的 `MEMORY.md`、`skills/` 和 `events/` |
 | `trusted` / `full`           | 整个 workspace 根目录                                          |
 
-只有 `image:*` 和 `gondolin:default` 能强制执行隔离投影。其他模式报告 `managedProjection: false`，而由于 `isolated` 是默认值，它们会拒绝启动运行，直到有人为该办公室显式选择受信任策略。字段语义以及旧版 `sandbox.image.workspaceMount` 的转换记录在[配置](/zh-cn/configuration/)中。
+只有 `image:*` 能强制执行隔离投影。其他模式报告 `managedProjection: false`，而由于 `isolated` 是默认值，它们会拒绝启动运行，直到有人为该办公室显式选择受信任策略。字段语义以及旧版 `sandbox.image.workspaceMount` 的转换记录在[配置](/zh-cn/configuration/)中。
 
 <Aside type="caution" title="受信任门禁不是额外的 sandbox">
   门禁策略决定哪些主机目录被投影进 runtime。它不是执行边界：无论选择哪种策略，`host`
@@ -79,16 +70,8 @@ runtime 能看到 workspace 的哪些部分，由**门禁策略**决定，它是
   description="由 mikan 管理 per-conversation container 与资源限制。"
   href="image/"
 />
-<LinkCard
-  title="Gondolin sandbox"
-  description="试用旨在取代 image sandbox 的本地 Gondolin/QEMU 预览。"
-  href="gondolin/"
-/>
-<LinkCard
-  title="Firecracker sandbox"
-  description="连到自行启动的 Firecracker VM。"
-  href="firecracker/"
-/>
+<LinkCard />
+<LinkCard />
 <LinkCard
   title="Cloudflare sandbox"
   description="通过 Cloudflare Worker bridge 执行工具；建设中。"
@@ -99,19 +82,18 @@ runtime 能看到 workspace 的哪些部分，由**门禁策略**决定，它是
 
 `image:<image>` <Badge text="推荐" variant="success" /> 是当前主要开发与推荐的 sandbox 模式；其他模式保留为本地开发、兼容、或实验用途，部分能力不会补齐。
 
-| 能力                                 | `host`   | `container:<name>` | `image:<image>` | `gondolin:default` | `firecracker:*` | `cloudflare:*` |
 | ------------------------------------ | -------- | ------------------ | --------------- | ------------------ | --------------- | -------------- |
-| command 执行                         | ✅       | ✅                 | ✅              | ✅                 | ✅              | ✅             |
-| mikan 管理 runtime lifecycle         | 不适用   | ❌                 | ✅              | ✅ mikan 进程托管  | ❌              | ❌             |
-| per-conversation container / runtime | ❌       | ❌                 | ✅              | ✅                 | 需自行管理      | bridge 衍生 id |
-| per-conversation vault env           | ❌       | ❌                 | ✅              | ✅                 | ✅              | ✅             |
-| vault file 自动投影 / bind mount     | ❌       | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| workspace 自动挂载                   | host     | 需自行挂载         | ✅              | ✅                 | 需自行挂载      | ❌             |
-| 隔离的对话办公室                     | ❌       | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| idle auto-stop / recreate            | 不适用   | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| CPU / memory default limits          | ❌       | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| `/pi-sandbox boost`                  | ❌       | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| agent `sandbox` tool 设置 limits     | ❌       | ❌                 | ✅              | ✅                 | ❌              | ❌             |
-| 推荐程度                             | 本地开发 | legacy / 兼容      | 主线            | preview            | alpha           | 建设中         |
+| command 执行 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| mikan 管理 runtime lifecycle | 不适用 | ❌ | ✅ | ✅ mikan 进程托管 | ❌ | ❌ |
+| per-conversation container / runtime | ❌ | ❌ | ✅ | ✅ | 需自行管理 | bridge 衍生 id |
+| per-conversation vault env | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
+| vault file 自动投影 / bind mount | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| workspace 自动挂载 | host | 需自行挂载 | ✅ | ✅ | 需自行挂载 | ❌ |
+| 隔离的对话办公室 | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| idle auto-stop / recreate | 不适用 | ❌ | ✅ | ✅ | ❌ | ❌ |
+| CPU / memory default limits | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| `/pi-sandbox boost` | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| agent `sandbox` tool 设置 limits | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| 推荐程度 | 本地开发 | legacy / 兼容 | 主线 | preview | alpha | 建设中 |
 
 上表中的两类 ❌ 都是拒绝，而非静默降级。无法强制执行隔离投影的模式会抛出 `Sandbox '<type>' cannot provide an isolated conversation office`，而不是挂载超出策略要求的内容；无法 mount vault file 的模式会抛出 `Sandbox type "<type>" does not support vault file mounts`，而不是在缺少凭证的情况下运行。在无法投影文件的模式上，请只用 `env` 保存 vault 凭证。

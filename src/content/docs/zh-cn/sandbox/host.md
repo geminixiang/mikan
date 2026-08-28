@@ -20,7 +20,7 @@ mikan --sandbox=host /path/to/workspace
 因此当办公室的门禁策略为 `isolated`（也就是默认值）时，mikan 会拒绝运行，并给出：
 
 ```text
-Sandbox 'host' cannot provide an isolated conversation office; use image:* or gondolin:default,
+Sandbox 'host' cannot provide an isolated conversation office; use image:*,
 or explicitly choose trusted workspace policy
 ```
 
@@ -35,7 +35,6 @@ or explicitly choose trusted workspace policy
 ```
 
 也可以在 admin portal 中按对话设置。`/pi-sandbox` 聊天命令在 host 模式下不可用——它只服务于受管理的
-`image:*` 和 `gondolin:*` 沙箱。
 
 适合：
 

@@ -215,8 +215,6 @@ Hook 錯誤會被記錄並略過。`before_agent_start` 與 `tool_result` 的改
 
 ### `SandboxConfig`
 
-這個 discriminated union 目前支援 `host`、`container`、`image`、`gondolin`、`firecracker` 與 `cloudflare`。解析語法與成熟度記錄在 [Sandbox](/zh-tw/sandbox/)。
-
 ### `Executor`
 
 這是穩定的執行邊界，也是最重要的 sandbox 契約：
@@ -277,8 +275,6 @@ const office = workspace.office(createOfficeAddress("slack", "C0AAAAAA1"));
 ### `OfficeAddress` 與 `OfficeKey`
 
 `OfficeAddress` 是 `{ platform, conversationId }`——平台加上它的原始 conversation id。`officeKey(address)` 推導出儲存身分 `v1-<platform>-<readable-id>-<16 hex digits>`，其中中間可讀的部分只是為了診斷，SHA-256 前綴才是身分成分。同一個 key 在 host 上、sandbox runtime 內以及 vault 中命名的都是該 office，因此兩個共用同一個 raw conversation id 的平台，絕不可能碰到對方的檔案或憑證。
-
-Office key **無法反推**。`OfficeRegistry`（`office-registry.json`，僅限 host）是持久的 raw id ↔ office 對照，同時也為開機時從 legacy raw-id 佈局而來的遷移寫 journal。面向 raw id 的介面都透過它解析：CLI 操作者用 `resolveOwnedOfficeAddress`，admin 列舉用 `listRegisteredOffices`。Sandbox 的資源名稱（container 名稱、Gondolin 實例、Cloudflare scope）在資源命名遷移完成之前，仍由原始 conversation 推導；那裡發生碰撞的代價是一次 container 重建，絕不會影響憑證存取。
 
 ### 兩份紀錄
 
@@ -350,10 +346,6 @@ state directory 不得位於 sandbox 可見的 workspace 內。重要的狀態�
 | Agent events   | `GET /api/agent-events/stream`                                                         | 由部署控管的 event stream        |
 
 Admin endpoint 涵蓋 conversation 清單/狀態/使用量、全域與對話設定、model、workspace 檔案、skill、event、平台設定，以及 login/session link。路由 payload 是內部 UI 契約，可能與隨附前端一起演進。
-
-## 14. Gondolin 行程邊界
-
-`gondolin:default` 由 mikan process 為每個 conversation 建立並管理一台本機 VM。每個 command 使用獨立的 Gondolin session IPC connection，因此 abort/timeout 會關閉 guest command。runtime 僅存活於 process lifecycle；正常 shutdown 會同步 projection 並關閉 VM，restart 後 cold start。不存在 network worker protocol 或遠端 placement contract。
 
 ## 契約檢查清單
 

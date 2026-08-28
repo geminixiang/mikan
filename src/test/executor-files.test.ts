@@ -10,7 +10,7 @@ import { createEditTool } from "../tools/edit.js";
  * Contract test for the Executor file transport: the same matrix runs against
  * the host executor's native fs implementation and against the shared
  * exec-backed implementation (base64 over a real `sh`), which is what the
- * container/firecracker/cloudflare executors delegate to. Content that would
+ * container/cloudflare executors delegate to. Content that would
  * corrupt under shell parsing is the point of the matrix.
  */
 

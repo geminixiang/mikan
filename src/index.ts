@@ -192,12 +192,10 @@ export type {
 } from "./adapter.js";
 export {
   SandboxError,
-  configureGondolinRuntime,
   createExecutor,
   getSandboxAdapters,
   parseSandboxArg,
   validateSandbox,
-  type GondolinBootstrapOptions,
 } from "./sandbox/index.js";
 export type {
   CloudflareSandboxConfig,

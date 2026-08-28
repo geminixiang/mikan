@@ -6,7 +6,7 @@
 
 Project: **mikan** (`@geminixiang/mikan`)
 
-mikan is a multi-platform AI coding agent for Slack, Telegram, Discord, and GitHub. It stores chat logs and session state, runs mikan's own agent harness (`src/harness/`, built on `pi-agent-core` and `pi-ai`), and executes tools in host, Docker, local Gondolin, Firecracker, or Cloudflare sandbox modes. Each conversation is a Conversation office: its own workspace directory plus its own sandbox runtime, isolated by default (`CONTEXT.md`, `docs/adr/0003`–`0005`).
+mikan is a multi-platform AI coding agent for Slack, Telegram, Discord, and GitHub. It stores chat logs and session state, runs mikan's own agent harness (`src/harness/`, built on `pi-agent-core` and `pi-ai`), and executes tools in host, Docker, or Cloudflare sandbox modes. Each conversation is a Conversation office: its own workspace directory plus its own sandbox runtime, isolated by default (`CONTEXT.md`, `docs/adr/0003`–`0005`).
 
 Stack:
 
@@ -32,7 +32,7 @@ Stack:
   - `sessions/`: chat-history sync and persisted session files.
   - `adapters/`: Slack, Discord, Telegram, and GitHub adapters plus shared adapter utilities.
   - `commands/`: chat command parsing and handlers (`login`, `model`, `new`, `session`, `sandbox`, etc.); `manifest.ts` is the single command inventory that adapters derive registration/routing from.
-  - `sandbox/`: host/container/image/gondolin/firecracker/cloudflare execution backends.
+  - `sandbox/`: host/container/image/cloudflare execution backends.
   - `execution-resolver.ts`: resolves the concrete executor, credential key, and mounts for an actor plus office.
   - `workspace-projection/`: resolves an office's door policy into concrete sandbox mounts and authorized prompt sources.
   - `packages/`: git/host-directory packages that ship extensions and skills into a deployment.

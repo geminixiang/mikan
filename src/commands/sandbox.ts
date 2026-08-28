@@ -58,15 +58,10 @@ export class SandboxCommandHandler implements CommandHandler {
     const parsed = parseSandboxCommand(context.commandText);
     if (!parsed) return false;
 
-    if (
-      (context.services.sandbox.type !== "image" && context.services.sandbox.type !== "gondolin") ||
-      !context.services.resourceController
-    ) {
+    if (context.services.sandbox.type !== "image" || !context.services.resourceController) {
       await replyDiagnosticWithContext(
         context.responder,
-        formatCommandSummary("Sandbox", [
-          "`/pi-sandbox` 目前只支援 `image:*` 與 `gondolin:*` managed sandbox。",
-        ]),
+        formatCommandSummary("Sandbox", ["`/pi-sandbox` 目前只支援 `image:*` managed sandbox。"]),
         { style: "muted" },
       );
       return true;
@@ -114,12 +109,13 @@ export class SandboxCommandHandler implements CommandHandler {
           formatCommandSummary("Sandbox Door", [
             `Current: ${projection.doorPolicy} / ${projection.layout} / ${projection.visibility}`,
             "",
-            "用法：`/pi-sandbox door <default|isolated|shared|shared-private|full>`",
-            "- `default`：跟隨全域預設",
-            "- `isolated`：只掛載自己辦公室",
-            "- `shared`：辦公室 + 共用 MEMORY.md / skills / events（可讀寫）",
-            "- `shared-private`：同 shared，但共用 MEMORY.md 只讀不可寫（避免資訊外流）",
-            "- `full`：掛載整個 workspace（全開）",
+            "預設不需要設定：共享範圍直接跟隨平台頻道屬性（public 頻道共享、private 頻道只讀、DM 隔離）。",
+            "以下為 admin 覆寫選項：`/pi-sandbox door <default|isolated|shared|shared-private|full>`",
+            "- `default`：清除覆寫，回到自動判定",
+            "- `isolated`：強制只掛載自己辦公室",
+            "- `shared`：強制共用 MEMORY.md / skills / events（可讀寫）",
+            "- `shared-private`：同 shared，但共用 MEMORY.md 只讀不可寫",
+            "- `full`：強制掛載整個 workspace（全開）",
           ]),
           { style: "muted" },
         );

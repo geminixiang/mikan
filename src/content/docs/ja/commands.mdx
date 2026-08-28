@@ -37,8 +37,6 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 | `/pi-sandbox door`                                   | office の実効 door policy と layout を、指定可能な値とあわせて表示します。                                                       |
 | `/pi-sandbox door <default\|isolated\|shared\|full>` | この office の door policy を設定します。下の [Office door policy](#office-door-policy) を参照してください。                     |
 
-`/pi-sandbox` は managed sandbox runtime にのみ適用されます。`host` または `container:<name>` モードでは、このコマンドには `image:*` または `gondolin:*` が必要である旨を返します。
-
 ### Office door policy
 
 `/pi-sandbox door` は conversation 自身の door policy override を書き込みます。同じ設定は admin portal からも、office 単位でもグローバル既定値としても指定できます。

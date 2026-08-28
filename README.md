@@ -118,18 +118,16 @@ Slack threads, Discord replies/threads, and Telegram reply chains are mapped to 
 
 ## Sandbox
 
-| Mode                         | Description                                                                   |
-| ---------------------------- | ----------------------------------------------------------------------------- |
-| `host` (default)             | Run on host; no vault env injection                                           |
-| `container:<name>`           | Run in an existing shared container; everyone sharing it shares its one vault |
-| `image:<image>`              | Auto-provision one Docker container and one vault per conversation office     |
-| `gondolin:default`           | Local Gondolin/QEMU microVM (preview; single-host, in mikan's own process)    |
-| `firecracker:<vm-id>:<path>` | Firecracker microVM (alpha; not recommended)                                  |
-| `cloudflare:<sandbox-id>`    | Cloudflare Worker bridge (experimental; no auto workspace sync)               |
+| Mode                      | Description                                                                   |
+| ------------------------- | ----------------------------------------------------------------------------- |
+| `host` (default)          | Run on host; no vault env injection                                           |
+| `container:<name>`        | Run in an existing shared container; everyone sharing it shares its one vault |
+| `image:<image>`           | Auto-provision one Docker container and one vault per conversation office     |
+| `cloudflare:<sandbox-id>` | Cloudflare Worker bridge (experimental; no auto workspace sync)               |
 
 Each office's data view is set by its **door policy**: `isolated` (the fresh-install default — only this conversation's directory is projected into the sandbox) or `trusted` with a `shared-support` or `full` layout. Change it per conversation from the admin portal or with `/pi-sandbox door <default|isolated|shared|full>`. Door policy governs data access only; execution isolation is unaffected.
 
-Only `image:*` and `gondolin:default` can project an isolated office, so `host` and `container:*` runs need an explicit trusted door policy — otherwise the run fails with `Sandbox '<type>' cannot provide an isolated conversation office`.
+Only `image:*` can project an isolated office, so `host` and `container:*` runs need an explicit trusted door policy — otherwise the run fails with `Sandbox '<type>' cannot provide an isolated conversation office`.
 
 For routing, mounts, vault behavior, managed container details, and Gondolin/Firecracker/Cloudflare notes, see [src/content/docs/sandbox.mdx](src/content/docs/sandbox.mdx).
 

@@ -29,6 +29,10 @@ export interface SlackUser {
 export interface SlackChannel {
   id: string;
   name: string;
+  /** Slack's own channel privacy flag; absent for DM entries and unknown channels. */
+  isPrivate?: boolean;
+  /** Slack Connect / externally shared channel — visible outside this workspace. */
+  isExternallyShared?: boolean;
 }
 
 export interface SlackAdapterOptions {

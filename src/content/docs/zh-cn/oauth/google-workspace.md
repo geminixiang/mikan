@@ -6,8 +6,6 @@ sidebar:
   label: Google Workspace CLI
 ---
 
-> 注意：mikan 会把 Google authorized_user JSON 以 `gws.json` 的名称存进 vault，runtime 内的 target 由该文件名推断而来。`image` 和 `gondolin` sandbox 会自动把该文件投影到 runtime 内的该 target。`container`、`firecracker` 和 `cloudflare` 完全无法 mount 文件，遇到这种情况会让该次运行失败，而不是在缺少 credential 的情况下继续，因此请不要在这些模式上使用此流程。
-
 ## 1. 建立 Google OAuth Client
 
 到 Google Cloud Console：
@@ -52,8 +50,6 @@ export GOOGLE_WORKSPACE_CLI_OAUTH_SCOPES="https://www.googleapis.com/auth/drive 
 
 ## 3. 使用 `/login`
 
-如果你希望后续 runtime 自动把这份 credential file 投影到 `/root/.config/gws/credentials.json`，建议用 `image` sandbox（或 `gondolin:default`）启动 mikan：
-
 ```bash
 mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 ```
@@ -87,4 +83,3 @@ mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
 
 - mikan 使用 web OAuth callback，因此 Google OAuth client 必须是 `Web application`，不是 desktop app。
 - 如果 Google 没有回传 `refresh_token`，请撤销既有 consent 后重新 `/login`。mikan 会要求 `access_type=offline` 与 `prompt=consent`，但 Google 仍可能因既有授权而省略 refresh token。
-- 若要让 `gws.json` 自动出现在 `/root/.config/gws/credentials.json`，请使用 `image` 或 `gondolin` sandbox。在 `container`、`firecracker` 和 `cloudflare` 上，vault 中存在 file credential 会让该次运行以 `does not support vault file mounts` 失败——请删除它，并在这些模式上改用仅 `env` 的 credentials。

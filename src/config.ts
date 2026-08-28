@@ -47,9 +47,11 @@ const ONBOARD_SETTINGS: SettingsFileConfig = {
       cpus: "2",
       memory: "4g",
     },
-    workspace: {
-      doorPolicy: "isolated",
-    },
+    // No pinned workspace door policy: with nothing set, the projection
+    // follows the platform's own channel vocabulary (public channels share
+    // workspace memory, private channels read it without writing, DMs stay
+    // isolated — see workspace-projection platformDerivedWorkspace).
+    // Deployments that predate this keep their explicit isolated setting.
     defaultSharedVault: "",
   },
 };
@@ -154,22 +156,6 @@ const SettingsFileSchema = Type.Object({
 type SettingsFileConfig = Static<typeof SettingsFileSchema>;
 
 function loadSettingsFile(settingsPath: string): SettingsFileConfig | undefined {
-  if (existsSync(settingsPath)) {
-    try {
-      const raw = JSON.parse(readFileSync(settingsPath, "utf-8")) as {
-        sandbox?: { gondolin?: { remote?: unknown } };
-      };
-      if (raw?.sandbox?.gondolin?.remote !== undefined) {
-        throw new Error(
-          "sandbox.gondolin.remote is no longer supported; use gondolin:default and remove the remote setting",
-        );
-      }
-    } catch (error) {
-      if (error instanceof Error && error.message.startsWith("sandbox.gondolin.remote")) {
-        throw error;
-      }
-    }
-  }
   return readJsonSchemaFileIfExists(settingsPath, SettingsFileSchema, (detail) =>
     detail === "unexpected JSON shape"
       ? `Malformed settings file at ${settingsPath}: expected a JSON object at the top level`

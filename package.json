@@ -59,13 +59,11 @@
     "test:e2e": "vitest --run --config .config/vitest.e2e.config.ts",
     "test:e2e:slack": "vitest --run --config .config/vitest.e2e.config.ts e2e/slack",
     "test:e2e:slack:coverage": "vitest --run --coverage --coverage.reportsDirectory=.workspace/coverage --config .config/vitest.e2e.config.ts e2e/slack",
-    "gondolin:image:build": "sh scripts/build-gondolin-image.sh",
     "docs:dev": "astro dev --config .config/astro.config.mjs",
     "docs:build": "astro build --config .config/astro.config.mjs",
     "docs:preview": "astro preview --config .config/astro.config.mjs"
   },
   "dependencies": {
-    "@earendil-works/gondolin": "0.12.0",
     "@earendil-works/pi-agent-core": "^0.84.3",
     "@earendil-works/pi-ai": "^0.84.3",
     "@modelcontextprotocol/sdk": "^1.30.0",

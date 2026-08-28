@@ -19,7 +19,7 @@ mikan --sandbox=host /path/to/workspace
 `host` 無法落實以對話為範圍的 workspace projection：沒有東西可以掛進去，工具看得到的就是 host 使用者看得到的一切。因此當該 office 的 door policy 是 `isolated`（也就是預設值）時，mikan 會拒絕執行並回報：
 
 ```text
-Sandbox 'host' cannot provide an isolated conversation office; use image:* or gondolin:default,
+Sandbox 'host' cannot provide an isolated conversation office; use image:*,
 or explicitly choose trusted workspace policy
 ```
 
@@ -33,7 +33,7 @@ or explicitly choose trusted workspace policy
 }
 ```
 
-也可以從 admin portal 依對話設定。`/pi-sandbox` 聊天指令在 host 模式下無法使用——它只服務受管的 `image:*` 與 `gondolin:*` sandbox。
+也可以從 admin portal 依對話設定。`/pi-sandbox` 聊天指令在 host 模式下無法使用——它只服務受管的 `image:*` sandbox。
 
 適合：
 

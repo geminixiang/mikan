@@ -50,8 +50,6 @@ mikan --state-dir=/secure/mikan-state --sandbox=container:mikan-tools /path/to/w
 
 mikan 會從檔名／路徑推斷 mount targets——`gws.json` → `/root/.config/gws/credentials.json`、`gcloud-adc.json` → `/root/.config/gcloud/application_default_credentials.json`、`.ssh/` → `/root/.ssh`、`.kube/` → `/root/.kube`、`.config/gh/` → `/root/.config/gh`——其他則一律預設為 `/root/<relative-path>`。target 是在每次解析 vault 時從檔名推導的，並不會存成 metadata，因此把 credential 檔案改名就會改變它落腳的位置。內建的 OAuth flow 會挑選能推斷到正確位置的檔名，並把對應的 env var（例如 `GOOGLE_APPLICATION_CREDENTIALS`）設成該路徑。
 
-Image 模式下，這些是 bind mount，可從 sandbox 內寫入，因此工具可能更新它們——若憑證遭修改會造成影響，請保留備份。在 `gondolin:default` 中，這些檔案會以僅擁有者可存取的權限複製進 guest，而且不會寫回，因此 guest 端的修改會在 runtime 重建時被捨棄。
-
 範例：
 
 ```text
@@ -81,14 +79,12 @@ Vault 裡的內容並不是同一類的祕密：
 
 ## Sandbox 行為
 
-| Sandbox mode       | Vault env injection | File credentials     | Vault key             |
-| ------------------ | ------------------- | -------------------- | --------------------- |
-| `host`             | 不注入              | 拒絕                 | 由平台使用者推導      |
-| `container:<name>` | 注入                | 拒絕                 | 由 container 名稱推導 |
-| `image:<image>`    | 注入                | 投影（bind mount）   | office key            |
-| `gondolin:default` | 注入                | 投影（複製進 guest） | office key            |
-| `firecracker:*`    | 注入                | 拒絕                 | office key            |
-| `cloudflare:*`     | 注入                | 拒絕                 | office key            |
+| Sandbox mode       | Vault env injection | File credentials   | Vault key             |
+| ------------------ | ------------------- | ------------------ | --------------------- |
+| `host`             | 不注入              | 拒絕               | 由平台使用者推導      |
+| `container:<name>` | 注入                | 拒絕               | 由 container 名稱推導 |
+| `image:<image>`    | 注入                | 投影（bind mount） | office key            |
+| `cloudflare:*`     | 注入                | 拒絕               | office key            |
 
 **「拒絕」的意思是執行會失敗，而不是靜靜地忽略那個檔案。** 只要 vault 目錄中存在 `env` 以外的任何檔案，就會解析出 file mount；無法掛載檔案的模式會拋出 `Sandbox type "<type>" does not support vault file mounts`，而不是在憑證不完整的情況下執行。因此在這些模式上，請只把憑證放在 `env` 裡——一個從先前 `image` 部署留在 vault 中的 `gws.json`，就足以讓該對話無法執行。
 

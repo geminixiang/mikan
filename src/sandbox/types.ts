@@ -1,11 +1,7 @@
-import type { ResourceLimits } from "../types.js";
-
 export type SandboxConfig =
   | HostSandboxConfig
   | ContainerSandboxConfig
   | ImageSandboxConfig
-  | GondolinSandboxConfig
-  | FirecrackerSandboxConfig
   | CloudflareSandboxConfig;
 
 export interface HostSandboxConfig {
@@ -20,49 +16,6 @@ export interface ContainerSandboxConfig {
 export interface ImageSandboxConfig {
   type: "image";
   image: string;
-}
-
-export interface GondolinSandboxConfig {
-  type: "gondolin";
-  profile: "default";
-  /** Local-only runtime details supplied after actor/workspace resolution. */
-  image?: string;
-  workspacePath?: string;
-  mounts?: Array<{ source: string; target: string; readOnly?: boolean }>;
-  instanceId?: string;
-  resourceKey?: string;
-}
-
-export interface GondolinBootstrapOptions {
-  /** Default per-runtime resource limits. */
-  limits?: ResourceLimits;
-  /** Boosted limits applied while a runtime holds a boost. */
-  boostLimits?: ResourceLimits;
-}
-
-export interface SessionClientCallbacks {
-  onJson: (message: {
-    type: string;
-    id?: number;
-    exit_code?: number | null;
-    code?: string;
-    message?: string;
-  }) => void;
-  onBinary: (frame: Buffer) => void;
-  onClose: (error?: Error) => void;
-}
-
-export interface SessionClient {
-  send(message: object): void;
-  close(): void;
-}
-
-export interface FirecrackerSandboxConfig {
-  type: "firecracker";
-  vmId: string;
-  hostPath: string;
-  sshUser?: string;
-  sshPort?: number;
 }
 
 export interface CloudflareSandboxConfig {
@@ -99,7 +52,7 @@ export interface Executor {
   /**
    * Get the workspace path prefix for this executor.
    * Host: returns the actual path.
-   * Container/Firecracker: returns /workspace.
+   * Container: returns /workspace.
    */
   getWorkspacePath(hostPath: string): string;
 

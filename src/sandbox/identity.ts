@@ -17,8 +17,8 @@ export interface CredentialScope {
 }
 
 /**
- * Vault key for a run. Conversation-scoped sandboxes (image, gondolin,
- * firecracker, cloudflare) key credentials by office key: platform-scoped and
+ * Vault key for a run. Conversation-scoped sandboxes (image, cloudflare)
+ * key credentials by office key: platform-scoped and
  * collision-resistant, so two platforms sharing a raw conversation id can
  * never resolve each other's credentials — and one identity string names the
  * office across the workspace, the registry, and the vault.
@@ -54,12 +54,12 @@ export function legacyConversationCredentialKey(rawConversationId: string): stri
 }
 
 /**
- * Sandbox resource identity (container name, gondolin instance, cloudflare
- * sandbox scope). Conversation-scoped backends key by office key (ADR 0005):
- * platform-aware, so two platforms sharing a raw conversation id can never
- * share a container, its writable layer, or a gondolin/cloudflare slot.
- * Containers named under the previous raw-conversation keys are reaped by
- * the provisioner's boot reconcile.
+ * Sandbox resource identity (container name, cloudflare sandbox scope).
+ * Conversation-scoped backends key by office key (ADR 0005): platform-aware,
+ * so two platforms sharing a raw conversation id can never share a
+ * container, its writable layer, or a cloudflare slot. Containers named
+ * under the previous raw-conversation keys are reaped by the provisioner's
+ * boot reconcile.
  */
 export function runtimeResourceKey(
   baseConfig: SandboxConfig,

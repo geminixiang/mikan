@@ -21,7 +21,7 @@ and the tools see whatever the host user can see. mikan therefore refuses to run
 door policy is `isolated` — which is the default — with:
 
 ```text
-Sandbox 'host' cannot provide an isolated conversation office; use image:* or gondolin:default,
+Sandbox 'host' cannot provide an isolated conversation office; use image:*,
 or explicitly choose trusted workspace policy
 ```
 
@@ -36,7 +36,7 @@ To use host mode, choose a trusted policy explicitly, either globally in `<state
 ```
 
 or per conversation from the admin portal. The `/pi-sandbox` chat command is not available in host
-mode — it only serves the managed `image:*` and `gondolin:*` sandboxes.
+mode — it only serves the managed `image:*` sandboxes.
 
 Suitable for:
 

@@ -101,12 +101,6 @@ function buildEnvDescription(sandboxType: SandboxConfig["type"], workspaceRoot: 
 - Bash commands start in: ${workspaceRoot}
 - Install tools with the container's package manager
 - Your changes persist across sessions`;
-    case "firecracker":
-      return `You are running inside a Firecracker microVM.
-- Runtime workspace root: ${workspaceRoot}
-- Use cd or absolute paths; project files are under ${workspaceRoot}
-- Install tools with: apt-get install <package> (Debian-based)
-- Your changes persist across sessions`;
     case "cloudflare":
       return `You are running through a Cloudflare Sandbox bridge.
 - Runtime workspace root: ${workspaceRoot}
@@ -147,7 +141,6 @@ export function buildSystemPrompt(
   const { workspaceRoot, conversationPath, scratchPath } = buildRuntimePaths(workspacePath, office);
   const sandboxType = sandboxConfig.type;
   const isContainerLike = sandboxType === "container" || sandboxType === "image";
-  const isFirecracker = sandboxType === "firecracker";
 
   // Format channel mappings
   const channelMappings =
@@ -312,7 +305,7 @@ Update this file whenever you modify the environment. On fresh container, read i
 Format: \`{"date":"...","ts":"...","user":"...","userName":"...","text":"...","isMessagingBot":false}\`
 The log contains user messages and your final responses (not tool calls/results).
 Use \`log.jsonl\` for quick grep-style history. Use \`${conversationPath}/sessions/\` when you need structured turns, tool outputs, or thread/session lineage.
-${isContainerLike || isFirecracker ? "Install jq: apt-get install jq" : ""}
+${isContainerLike ? "Install jq: apt-get install jq" : ""}
 \`\`\`bash
 # Recent messages
 tail -30 log.jsonl | jq -c '{date: .date[0:19], user: (.userName // .user), text}'

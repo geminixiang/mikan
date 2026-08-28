@@ -67,13 +67,13 @@ export class ActorExecutionResolver {
     const mounts = this.resolveMounts(office, injection.mounts, workspaceProjection);
     if (workspaceProjection.doorPolicy === "isolated" && !workspaceCapabilities.managedProjection) {
       throw new Error(
-        `Sandbox '${this.baseConfig.type}' cannot provide an isolated conversation office; use image:* or gondolin:default, or explicitly choose trusted workspace policy`,
+        `Sandbox '${this.baseConfig.type}' cannot provide an isolated conversation office; use image:*, or explicitly choose trusted workspace policy`,
       );
     }
     return {
       credentialKey,
       resourceKey,
-      sandboxConfig: this.resolveSandboxConfig(resourceKey, mounts),
+      sandboxConfig: this.resolveSandboxConfig(resourceKey),
       env: injection.env,
       mounts,
     };
@@ -102,20 +102,11 @@ export class ActorExecutionResolver {
     this.vaultManager.copySharedVaultTo(profile, credentialKey);
   }
 
-  private resolveSandboxConfig(resourceKey: string, mounts: ContainerMount[]): SandboxConfig {
+  private resolveSandboxConfig(resourceKey: string): SandboxConfig {
     if (this.baseConfig.type === "cloudflare") {
       return {
         type: "cloudflare",
         sandboxId: scopeCloudflareSandboxId(this.baseConfig.sandboxId, resourceKey),
-      };
-    }
-    if (this.baseConfig.type === "gondolin") {
-      return {
-        ...this.baseConfig,
-        workspacePath: this.workspace.root,
-        mounts,
-        instanceId: resourceKey,
-        resourceKey,
       };
     }
     if (this.baseConfig.type !== "image") return this.baseConfig;

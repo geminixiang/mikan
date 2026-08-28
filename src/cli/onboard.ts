@@ -163,7 +163,7 @@ async function askSandbox(io: OnboardIo): Promise<string | undefined> {
     [
       "host — run directly on this machine (default)",
       "image — per-conversation Docker containers (needs Docker)",
-      "other — configure later via --sandbox (gondolin/firecracker/cloudflare)",
+      "other — configure later via --sandbox (cloudflare)",
     ],
     "Sandbox",
   );

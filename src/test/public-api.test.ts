@@ -17,7 +17,6 @@ const EXPECTED_RUNTIME_EXPORTS = [
   "SandboxError",
   "SessionStore",
   "buildEventPayload",
-  "configureGondolinRuntime",
   "configureHttpDispatcher",
   "createConversationEvent",
   "createConversationMessage",

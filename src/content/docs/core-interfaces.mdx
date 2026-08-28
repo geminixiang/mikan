@@ -254,7 +254,7 @@ Sources: `src/sandbox/types.ts` and `src/sandbox/index.ts`.
 
 ### `SandboxConfig`
 
-The discriminated union currently supports `host`, `container`, `image`, `gondolin`, `firecracker`, and `cloudflare`. Parsing syntax and maturity are documented under [Sandbox](/sandbox/).
+The discriminated union currently supports `host`, `container`, `image`, and `cloudflare`. Parsing syntax and maturity are documented under [Sandbox](/sandbox/).
 
 ### `Executor`
 
@@ -391,8 +391,6 @@ Source: `src/web/server.ts` and portal modules. These routes support mikan's bun
 Admin endpoints cover conversation inventory/state/usage, global and conversation settings, models, workspace files, skills, events, platform configuration, and login/session links. Route payloads are internal UI contracts and may evolve together with the bundled frontend.
 
 ## 14. Gondolin process boundary
-
-`gondolin:default` creates and owns one local VM per conversation in the mikan process. Commands use a per-command Gondolin session IPC connection so abort/timeout closes the guest command rather than merely abandoning a host promise. Runtimes are intentionally process-lifetime state: orderly shutdown syncs projected files back and closes the VMs; restart begins cold. There is no network worker protocol or remote placement contract.
 
 ### Path, cache, and package safety
 

@@ -1,6 +1,5 @@
 ---
 title: Sandbox
-description: mikan が対応する host、container、image、microVM、Firecracker、Cloudflare sandbox モードを比較します。
 ---
 
 import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
@@ -13,10 +12,6 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
   <Card title="主流の隔離" icon="rocket">
     `image:<image>` は mikan が lifecycle、workspace mount、vault env、リソース制限を管理します。
   </Card>
-  <Card title="Gondolin プレビュー" icon="moon">
-    `gondolin:default` は mikan 自身のプロセス内でローカルの Gondolin/QEMU microVM を実行し、managed な
-    `image:*` sandbox の後継として計画されています。
-  </Card>
 </CardGrid>
 
 <Aside type="caution" title="モード名">
@@ -25,14 +20,12 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 ## 対応モード
 
-| モード                                                      | 実行場所                    | Vault env injection | Vault key                        | 備考                                                                                                                       |
-| ----------------------------------------------------------- | --------------------------- | ------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `host`                                                      | ホストマシン                | 注入しない          | プラットフォームの user から導出 | ローカル開発専用。明示的な trusted door policy が必要                                                                      |
-| `container:<name>`                                          | 既存 Docker container       | 注入                | container 名から導出             | one container one vault。複数人が同じ container を共有すると、その vault も共有します                                      |
-| `image:<image>`                                             | mikan 管理の Docker         | 注入                | office key                       | 現在もっとも推奨される隔離モード。`1 conversation = 1 vault = 1 container`                                                 |
-| `gondolin:default`                                          | ローカルの Gondolin/QEMU VM | 注入                | office key                       | プレビュー。single-host で、mikan 自身のプロセス内で動作。Node.js >=23.6 と QEMU が必要                                    |
-| `firecracker:<vm-id>:<host-path>[:<ssh-user>[:<ssh-port>]]` | Firecracker VM              | 注入                | office key                       | Alpha のかなり初期段階。VM は自分で起動し、workspace は VM 内の `/workspace` に mount する必要があります。現時点では非推奨 |
-| `cloudflare:<sandbox-id>`                                   | Cloudflare Worker           | 注入                | office key                       | 構築中。`@cloudflare/sandbox` bridge を自分でデプロイする必要があり、host workspace は同期されません                       |
+| モード                    | 実行場所              | Vault env injection | Vault key                        | 備考                                                                                                 |
+| ------------------------- | --------------------- | ------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `host`                    | ホストマシン          | 注入しない          | プラットフォームの user から導出 | ローカル開発専用。明示的な trusted door policy が必要                                                |
+| `container:<name>`        | 既存 Docker container | 注入                | container 名から導出             | one container one vault。複数人が同じ container を共有すると、その vault も共有します                |
+| `image:<image>`           | mikan 管理の Docker   | 注入                | office key                       | 現在もっとも推奨される隔離モード。`1 conversation = 1 vault = 1 container`                           |
+| `cloudflare:<sandbox-id>` | Cloudflare Worker     | 注入                | office key                       | 構築中。`@cloudflare/sandbox` bridge を自分でデプロイする必要があり、host workspace は同期されません |
 
 office key は、workspace 配下でその conversation の directory も命名する、バージョン付きの
 `v1-<platform>-<readable-id>-<hash>` セグメントです。[Conversation office](#conversation-office) を
@@ -46,7 +39,7 @@ mount はこの directory に従うため、runtime の中では office は `/wo
 
 runtime が workspace のどの部分を見るかは **door policy** で決まります。これは `sandbox.workspace`
 設定で、admin portal からグローバルにも conversation ごとにも設定できます（`/pi-sandbox door` チャット
-コマンドは 1 つの conversation について同じことをしますが、`image:*` と `gondolin:*` でのみ有効です）：
+コマンドは 1 つの conversation について同じことをしますが、`image:*` でのみ有効です）：
 
 | Door policy / layout         | `/workspace` 配下に mount されるもの                             |
 | ---------------------------- | ---------------------------------------------------------------- |
@@ -54,7 +47,6 @@ runtime が workspace のどの部分を見るかは **door policy** で決ま�
 | `trusted` / `shared-support` | `<office-key>/` に加えて共有の `MEMORY.md`、`skills/`、`events/` |
 | `trusted` / `full`           | workspace root 全体                                              |
 
-isolated な projection を強制できるのは `image:*` と `gondolin:default` だけです。他のモードは
 `managedProjection: false` を報告し、`isolated` が既定であるため、その office について誰かが明示的に
 trusted な policy を選ぶまで実行を開始しません。フィールドの意味と旧来の
 `sandbox.image.workspaceMount` の変換は [設定](/ja/configuration/) に記載しています。
@@ -100,16 +92,8 @@ conversation ごとの host state — そして各移動が journal されるた
   description="mikan が per-conversation container とリソース制限を管理します。"
   href="image/"
 />
-<LinkCard
-  title="Gondolin sandbox"
-  description="image sandbox の後継となる、ローカルの Gondolin/QEMU プレビューを試します。"
-  href="gondolin/"
-/>
-<LinkCard
-  title="Firecracker sandbox"
-  description="自分で起動した Firecracker VM に接続します。"
-  href="firecracker/"
-/>
+<LinkCard />
+<LinkCard />
 <LinkCard
   title="Cloudflare sandbox"
   description="Cloudflare Worker bridge 経由でツールを実行します。構築中です。"
@@ -120,20 +104,19 @@ conversation ごとの host state — そして各移動が journal されるた
 
 `image:<image>` <Badge text="推奨" variant="success" /> は現在の主要開発および推奨 sandbox モードです。他のモードはローカル開発、互換、または実験用途として残されており、一部機能は補完されません。
 
-| 機能                                 | `host`       | `container:<name>`  | `image:<image>` | `gondolin:default`    | `firecracker:*`     | `cloudflare:*` |
 | ------------------------------------ | ------------ | ------------------- | --------------- | --------------------- | ------------------- | -------------- |
-| command 実行                         | ✅           | ✅                  | ✅              | ✅                    | ✅                  | ✅             |
-| mikan 管理の runtime lifecycle       | 対象外       | ❌                  | ✅              | ✅ mikan process 所有 | ❌                  | ❌             |
-| per-conversation container / runtime | ❌           | ❌                  | ✅              | ✅                    | 自分で管理          | bridge 派生 id |
-| per-conversation vault env           | ❌           | ❌                  | ✅              | ✅                    | ✅                  | ✅             |
-| vault file 自動投影 / bind mount     | ❌           | ❌                  | ✅              | ✅                    | ❌                  | ❌             |
-| workspace 自動マウント               | host         | 自分で mount が必要 | ✅              | ✅                    | 自分で mount が必要 | ❌             |
-| 隔離された conversation office       | ❌           | ❌                  | ✅              | ✅                    | ❌                  | ❌             |
-| idle auto-stop / recreate            | 対象外       | ❌                  | ✅              | ✅                    | ❌                  | ❌             |
-| CPU / memory default limits          | ❌           | ❌                  | ✅              | ✅                    | ❌                  | ❌             |
-| `/pi-sandbox boost`                  | ❌           | ❌                  | ✅              | ✅                    | ❌                  | ❌             |
-| agent `sandbox` tool 設定 limits     | ❌           | ❌                  | ✅              | ✅                    | ❌                  | ❌             |
-| 推奨度                               | ローカル開発 | legacy / 互換       | 主流            | preview               | alpha               | 構築中         |
+| command 実行 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| mikan 管理の runtime lifecycle | 対象外 | ❌ | ✅ | ✅ mikan process 所有 | ❌ | ❌ |
+| per-conversation container / runtime | ❌ | ❌ | ✅ | ✅ | 自分で管理 | bridge 派生 id |
+| per-conversation vault env | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
+| vault file 自動投影 / bind mount | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| workspace 自動マウント | host | 自分で mount が必要 | ✅ | ✅ | 自分で mount が必要 | ❌ |
+| 隔離された conversation office | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| idle auto-stop / recreate | 対象外 | ❌ | ✅ | ✅ | ❌ | ❌ |
+| CPU / memory default limits | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| `/pi-sandbox boost` | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| agent `sandbox` tool 設定 limits | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| 推奨度 | ローカル開発 | legacy / 互換 | 主流 | preview | alpha | 構築中 |
 
 上の 2 つの ❌ の行は、黙って機能を落とすのではなく拒否します。isolated な projection を強制できない
 モードは、policy が求めた以上を mount する代わりに

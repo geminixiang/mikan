@@ -83,8 +83,6 @@ Office key 無法反推回原始平台 id，因此 host 會在 `<state-dir>/offi
 | `llm.autoReply.provider`       | `anthropic`         | 用來評估 auto-reply 規則的選用模型供應商                                                     |
 | `llm.autoReply.model`          | `claude-haiku-4-5`  | 用來評估 auto-reply 規則的選用模型                                                           |
 | `sentry.dsn`                   | 未設定              | Sentry DSN；敏感的 prompt 與 tool 內容會被遮蔽                                               |
-| `sandbox.cpus`                 | `0.5`               | mikan 管理的 image/Gondolin runtime CPU 限制；Gondolin 會將小數值進位為整數 vCPU             |
-| `sandbox.memory`               | `1g`                | mikan 管理的 image/Gondolin runtime 記憶體限制                                               |
 | `sandbox.boost.cpus`           | `2`                 | `/pi-sandbox boost` 套用的暫時 CPU 限制                                                      |
 | `sandbox.boost.memory`         | `4g`                | `/pi-sandbox boost` 套用的暫時記憶體限制                                                     |
 | `sandbox.workspace.doorPolicy` | `isolated`          | `isolated` 把每個對話鎖在自己的 office 資料內；`trusted` 則明確允許協作式的 workspace layout |
@@ -113,18 +111,17 @@ Door policy 與 layout 是一起解析的。`isolated` 一律代表 `conversatio
 
 ## CLI 參考
 
-| 指令或選項                                                                                                      | 用途                                                                   |
-| --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `mikan onboard [--state-dir=<dir>]`                                                                             | 建立必要的全域設定檔                                                   |
-| `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]`                                              | 啟動已設定的平台 bot；working directory 預設為 `<state-dir>/workspace` |
-| `--sandbox=host \| container:<name> \| image:<image> \| gondolin:default \| firecracker:... \| cloudflare:<id>` | 選擇工具執行模式；預設為 `host`                                        |
-| `mikan env`                                                                                                     | 顯示完整的環境變數清單，以及目前已設定的項目                           |
-| `mikan --download <channel-id>`                                                                                 | 下載 Slack 頻道歷史；需要 `SLACK_BOT_TOKEN`                            |
-| `mikan --version`                                                                                               | 顯示已安裝版本                                                         |
-| `mikan --help`                                                                                                  | 顯示 CLI 用法與平台 token 摘要                                         |
-| `mikan ext ...`                                                                                                 | 管理 harness extensions；執行 `mikan ext` 查看子指令                   |
-| `mikan office list`                                                                                             | 列出已註冊的 office、已啟用的平台，以及待處理的 legacy 遷移            |
-| `mikan office claim <conversationId> <platform>`                                                                | 指定開機時無法歸屬的 legacy raw-id 目錄屬於哪個平台                    |
+| 指令或選項                                                         | 用途                                                                   |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| `mikan onboard [--state-dir=<dir>]`                                | 建立必要的全域設定檔                                                   |
+| `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]` | 啟動已設定的平台 bot；working directory 預設為 `<state-dir>/workspace` |
+| `mikan env`                                                        | 顯示完整的環境變數清單，以及目前已設定的項目                           |
+| `mikan --download <channel-id>`                                    | 下載 Slack 頻道歷史；需要 `SLACK_BOT_TOKEN`                            |
+| `mikan --version`                                                  | 顯示已安裝版本                                                         |
+| `mikan --help`                                                     | 顯示 CLI 用法與平台 token 摘要                                         |
+| `mikan ext ...`                                                    | 管理 harness extensions；執行 `mikan ext` 查看子指令                   |
+| `mikan office list`                                                | 列出已註冊的 office、已啟用的平台，以及待處理的 legacy 遷移            |
+| `mikan office claim <conversationId> <platform>`                   | 指定開機時無法歸屬的 legacy raw-id 目錄屬於哪個平台                    |
 
 `mikan office` 接受 `--state-dir <dir>` 與 `--workspace <dir>`；workspace 預設為 `<state-dir>/workspace`。`claim` 只會記錄這個決定——實際搬移由 daemon 在下次啟動時執行，因此請在 daemon 停止的狀態下執行它。
 

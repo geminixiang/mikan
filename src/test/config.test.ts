@@ -42,20 +42,6 @@ describe("loadGlobalSettings", () => {
     expect(() => loadGlobalSettings()).toThrow(/Missing global settings file/);
   });
 
-  test("rejects removed Gondolin remote settings with an actionable migration", () => {
-    writeFileSync(
-      join(stateDir, "settings.json"),
-      JSON.stringify({
-        llm: { provider: "anthropic", model: "claude-sonnet-4-6", thinkingLevel: "off" },
-        sandbox: { gondolin: { remote: { url: "https://worker.internal:8433" } } },
-      }),
-    );
-
-    expect(() => loadGlobalSettings()).toThrow(
-      "sandbox.gondolin.remote is no longer supported; use gondolin:default and remove the remote setting",
-    );
-  });
-
   test("creates onboard settings", () => {
     const settingsPath = createGlobalSettingsFile(stateDir);
     expect(settingsPath).toBe(join(stateDir, "settings.json"));
@@ -67,7 +53,9 @@ describe("loadGlobalSettings", () => {
     expect(config.sandbox?.memory).toBe("1g");
     expect(config.sandbox?.boost?.cpus).toBe("2");
     expect(config.sandbox?.boost?.memory).toBe("4g");
-    expect(config.sandbox?.workspace).toEqual({ doorPolicy: "isolated" });
+    // No pinned workspace policy: the projection follows the platform's own
+    // channel vocabulary until an admin sets an explicit door policy.
+    expect(config.sandbox?.workspace).toBeUndefined();
     expect(config.sandbox?.defaultSharedVault).toBeUndefined();
     expect(JSON.parse(readFileSync(settingsPath, "utf-8")).sandbox.defaultSharedVault).toBe("");
   });
@@ -306,10 +294,9 @@ describe("loadGlobalSettings", () => {
     mkdirSync(conversation.dir, { recursive: true });
 
     // First access with no legacy file writes the migration marker.
-    // Global onboarding now defaults to an isolated office.
-    expect(resolveConversationSettings(conversation).sandbox?.workspace).toEqual({
-      doorPolicy: "isolated",
-    });
+    // Onboard settings pin no workspace policy.
+    expect(resolveConversationSettings(conversation).sandbox?.workspace).toBeUndefined();
+    expect(resolveConversationSettings(conversation).sandbox?.image).toBeUndefined();
 
     // An agent inside the sandbox plants a legacy settings.json afterwards,
     // trying to flip its own mount mode to full. It must stay ignored.
@@ -317,9 +304,8 @@ describe("loadGlobalSettings", () => {
       join(conversation.dir, "settings.json"),
       JSON.stringify({ sandbox: { image: { workspaceMount: "full" } } }),
     );
-    expect(resolveConversationSettings(conversation).sandbox?.workspace).toEqual({
-      doorPolicy: "isolated",
-    });
+    expect(resolveConversationSettings(conversation).sandbox?.workspace).toBeUndefined();
+    expect(resolveConversationSettings(conversation).sandbox?.image).toBeUndefined();
     // And it is not deleted either: only pre-migration files are moved.
     expect(existsSync(join(conversation.dir, "settings.json"))).toBe(true);
   });
@@ -403,7 +389,6 @@ describe("updateGlobalSettings", () => {
         cpus: "0.5",
         memory: "1g",
         boost: { cpus: "2", memory: "4g" },
-        workspace: { doorPolicy: "isolated" },
         defaultSharedVault: "",
       },
       slack: { replyMode: "top-level" },
@@ -427,7 +412,6 @@ describe("updateGlobalSettings", () => {
         cpus: "0.5",
         memory: "1g",
         boost: { cpus: "2", memory: "4g" },
-        workspace: { doorPolicy: "isolated" },
         defaultSharedVault: "",
       },
       slack: { replyMode: "top-level" },

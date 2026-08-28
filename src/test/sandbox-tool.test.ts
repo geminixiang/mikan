@@ -64,13 +64,13 @@ describe("createSandboxTool", () => {
     });
   });
 
-  test("sets limits for the current Gondolin conversation", async () => {
+  test("sets limits for the current image-mode conversation", async () => {
     const setLimits = vi.fn().mockResolvedValue({
       limits: { cpus: "2", memory: "4g" },
       boosted: false,
     });
     const { tool, setSandboxContext } = createSandboxTool({
-      sandbox: { type: "gondolin", profile: "default" },
+      sandbox: { type: "image", image: "ubuntu:24.04" },
       resourceController: {
         getLimitStatus: vi.fn(),
         setLimits,
@@ -97,7 +97,7 @@ describe("createSandboxTool", () => {
 
     setSandboxContext({ address: createOfficeAddress("slack", "C123"), userId: "U123" });
     await expect(tool.execute("tool-call", { action: "status" })).rejects.toThrow(
-      /only supports image:\* and gondolin:\*/,
+      /only supports image:\*/,
     );
   });
 

@@ -72,7 +72,7 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 - 提供统一的 `Executor` 抽象
 - 将沙箱运行时分为两类：
   - 共享：`host` / `container:<name>`，共享同一主机或命名容器
-  - 隔离：`image:<image>` / `gondolin:default` / `firecracker:*` / `cloudflare:*`，按参与者/对话/vault 路由到隔离执行环境
+  - 隔离：`image:<image>` / `cloudflare:*`，按参与者/对话/vault 路由到隔离执行环境
 - 使用 `ActorExecutionResolver` 按用户/对话/vault 确定实际 executor
 - 在 `image` 模式下自动创建和回收 Docker 容器，将 `image:<image>` 解析为具体的 `container:<name>` executor
 
@@ -225,7 +225,7 @@ flowchart TD
   WebServer --> VaultManager["vault/index.ts\nwrite env/file into vault"]
   VaultManager --> VaultDir["state-dir/vaults/<vaultId>/"]
   VaultManager --> Resolver["execution-resolver.ts"]
-  Resolver --> Sandbox["host / container / image / gondolin / firecracker / cloudflare"]
+  Resolver --> Sandbox["host / container / image / cloudflare"]
 ```
 
 要点：
@@ -233,8 +233,7 @@ flowchart TD
 - 凭证不会直接进入工作区
 - vault 位于 `--state-dir`
 - 执行时，办公室的 vault 会路由到相应沙箱
-- `image` / `gondolin` / `firecracker` / `cloudflare` 模式按 office key 标识 vault——也就是在工作区和注册表中命名该办公室的同一个字符串；`container:<name>` 使用共享容器 vault；`host` 按用户标识，且不注入 vault 环境变量
-- 沙箱资源名称（容器名、Gondolin 实例、Cloudflare 作用域）仍由原始对话 id 派生。那里发生冲突的代价是重建一次容器，绝不会导致凭证访问
+- `image` / `cloudflare` 模式按 office key 标识 vault——也就是在工作区和注册表中命名该办公室的同一个字符串；`container:<name>` 使用共享容器 vault；`host` 按用户标识，且不注入 vault 环境变量
 
 ## 6. 事件与普通聊天的区别
 
