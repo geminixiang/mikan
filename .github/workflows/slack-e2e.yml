@@ -35,6 +35,10 @@ jobs:
           SLACK_QA_CHANNEL_ID: ${{ secrets.SLACK_QA_CHANNEL_ID || vars.SLACK_QA_CHANNEL_ID }}
           SLACK_QA_BOT_USER_ID: ${{ secrets.SLACK_QA_BOT_USER_ID || vars.SLACK_QA_BOT_USER_ID }}
           SLACK_QA_WORKING_DIR: ${{ github.workspace }}/.workspace/mikan-workspace
+          # glm-5.3-flash is a hybrid-reasoning model and can spend 30-40s
+          # thinking before its first tool call on the slower scenarios; the
+          # 30s default wait flakes on exactly those tests.
+          SLACK_QA_TIMEOUT_MS: "60000"
         run: |
           set -euo pipefail
 
