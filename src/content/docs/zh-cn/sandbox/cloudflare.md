@@ -5,8 +5,8 @@ description: 通过自行部署的 Cloudflare Worker 桥接器运行建设中的
 
 :::caution[建设中]
 Cloudflare 模式存在于 mikan 的沙箱配置中，但它并不是一个完成的部署目标：它没有受管理的工作区投影，
-没有文件凭证投影，也没有生命周期或资源管理。由于它无法强制执行工作区投影，在默认的 `isolated`
-门禁策略下它根本不会运行——必须先显式设置受信任策略。预计它日后会以外包执行界面的形式回归。
+没有文件凭证投影，也没有生命周期或资源管理。由于它无法强制执行 isolated 投影或只读共享记忆，
+必须先显式设置受信任的读写策略。预计它日后会以外包执行界面的形式回归。
 任何正式用途请使用 [`image:<image>`](/zh-cn/sandbox/image/)。
 :::
 
@@ -26,7 +26,7 @@ mikan --sandbox=cloudflare:mikan-remote /path/to/workspace
 
 限制：
 
-- mikan 在这里无法强制执行工作区投影，因此该模式在默认的 `isolated` 门禁策略下会拒绝运行；必须显式选择受信任策略
+- mikan 在这里无法强制执行 isolated 工作区投影或只读共享记忆；必须显式选择受信任的读写策略
 - 远程 `/workspace` 不会自动镜像本地工作目录
 - 因此 `pwd` 会显示 `/workspace`，但 `ls` 可能为空；这是预期行为，不表示它正在读取本地仓库
 - 文件凭证会被拒绝，而不是被跳过：如果该对话的 vault 中除 `env` 外还存有任何文件，运行会以 `Sandbox type "cloudflare" does not support vault file mounts` 失败。在这里请把凭证保存在 `env` 中。

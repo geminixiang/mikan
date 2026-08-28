@@ -511,12 +511,6 @@ docs = "ARCHITECTURE.md#dev-cloudflare-factory-floor"
 adr = "docs/adr/0002-sandbox-runtime-vs-task-executor.md"
 
 [[deviations]]
-id = "firecracker-workspace-projection"
-status = "open"
-affects = ["sandbox", "workspace-projection"]
-docs = "ARCHITECTURE.md#dev-firecracker-workspace-projection"
-
-[[deviations]]
 id = "runtime-resource-identity"
 status = "open"
 affects = ["sandbox", "office"]

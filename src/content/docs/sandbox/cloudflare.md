@@ -6,9 +6,9 @@ description: Run the under-construction Cloudflare sandbox through a self-deploy
 :::caution[Under construction]
 The Cloudflare mode is present in mikan's sandbox configuration but is not a finished deployment
 target: it has no managed workspace projection, no file-credential projection, and no lifecycle or
-resource management. Because it cannot enforce a workspace projection, it does not run at all under
-the default `isolated` door policy — a trusted policy must be set explicitly first. It is expected
-to return later as an outsourced execution surface. Use [`image:<image>`](/sandbox/image/) for
+resource management. Because it cannot enforce isolated projections or read-only shared memory, it
+requires an explicit trusted read-write policy. It is expected to return later as an outsourced
+execution surface. Use [`image:<image>`](/sandbox/image/) for
 anything real.
 :::
 
@@ -29,8 +29,8 @@ Features:
 
 Limitations:
 
-- mikan cannot enforce a workspace projection here, so the mode refuses to run under the default
-  `isolated` door policy; a trusted policy has to be chosen explicitly
+- mikan cannot enforce isolated workspace projection or read-only shared memory here, so an explicit
+  trusted read-write policy has to be chosen
 - remote `/workspace` does not automatically mirror the local working directory
 - therefore `pwd` shows `/workspace`, but `ls` may be empty; this is expected and does not mean it is
   reading your local repo

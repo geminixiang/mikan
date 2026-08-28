@@ -4,6 +4,7 @@ import {
   ContainerExecutor,
   HostExecutor,
   SandboxError,
+  assertSandboxSupportsWorkspacePolicy,
   createExecutor,
   parseSandboxArg,
 } from "../sandbox/index.js";
@@ -55,6 +56,28 @@ describe("parseSandboxArg", () => {
     expect(() => parseSandboxArg("docker:mikan-sandbox")).toThrow(
       "Use 'container:<container-name>' for the shared-container mode",
     );
+  });
+});
+
+describe("assertSandboxSupportsWorkspacePolicy", () => {
+  test.each([
+    { type: "host" } as const,
+    { type: "container", container: "mikan-sandbox" } as const,
+    { type: "cloudflare", sandboxId: "mikan-remote" } as const,
+  ])("rejects read-only shared memory on $type", (sandboxConfig) => {
+    expect(() => assertSandboxSupportsWorkspacePolicy(sandboxConfig, "trusted", true)).toThrow(
+      /cannot enforce read-only shared workspace memory/,
+    );
+  });
+
+  test("allows read-only shared memory in image mode", () => {
+    expect(() =>
+      assertSandboxSupportsWorkspacePolicy(
+        { type: "image", image: "ubuntu:24.04" },
+        "trusted",
+        true,
+      ),
+    ).not.toThrow();
   });
 });
 

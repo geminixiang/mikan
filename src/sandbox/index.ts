@@ -84,13 +84,22 @@ export function getSandboxWorkspaceCapabilities(
 export function assertSandboxSupportsWorkspacePolicy(
   sandboxConfig: SandboxConfig,
   doorPolicy: "isolated" | "trusted",
+  // Required on purpose: this is a fail-closed security check, and a default
+  // of false would let a future caller silently skip the read-only shared
+  // memory gate. A missing argument must be a compile error, not a pass.
+  globalMemoryReadOnly: boolean,
 ): void {
-  if (
-    doorPolicy === "isolated" &&
-    !getSandboxWorkspaceCapabilities(sandboxConfig.type).managedProjection
-  ) {
+  const capabilities = getSandboxWorkspaceCapabilities(sandboxConfig.type);
+  if (capabilities.managedProjection) return;
+
+  if (doorPolicy === "isolated") {
     throw new SandboxError(
       `Sandbox '${sandboxConfig.type}' cannot provide an isolated conversation office; use image:*, or explicitly choose trusted workspace policy`,
+    );
+  }
+  if (globalMemoryReadOnly) {
+    throw new SandboxError(
+      `Sandbox '${sandboxConfig.type}' cannot enforce read-only shared workspace memory; use image:*, or explicitly choose isolated or trusted read-write workspace policy`,
     );
   }
 }

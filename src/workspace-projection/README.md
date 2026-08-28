@@ -9,17 +9,24 @@ A projection is a door policy (`isolated` / `trusted`) paired with a layout
 mounts at `/workspace/<office key>`, so the guest path is identical across
 policies.
 
-- `isolated` (fresh-install default) → layout `conversation`: mounts only the office directory and authorizes only that office's memory/skills.
-- `trusted` + `shared-support`: preserves the former `private` behavior by also mounting shared `MEMORY.md`, `skills/`, and `events/`.
+- `isolated` → layout `conversation`: mounts only the office directory and authorizes only that office's memory/skills.
+- `trusted` + `shared-support` + public visibility: mounts shared `MEMORY.md`, `skills/`, and `events/` read-write.
+- `trusted` + `shared-support` + private visibility: mounts shared `MEMORY.md` read-only while the other support paths remain read-write.
 - `trusted` + `full`: mounts the whole workspace root at `/workspace`.
 
 `isolated` forces layout `conversation`; a layout is only honored under
 `trusted`. Legacy `sandbox.image.workspaceMount` values remain readable:
 `private` maps to trusted/shared-support and `full` maps to trusted/full.
-New configuration is backend-neutral under `sandbox.workspace`.
+New configuration is backend-neutral under `sandbox.workspace`. Without an
+explicit global or conversation setting, recorded Slack public channels derive
+trusted/public shared support, private channels derive trusted/private shared
+support, and DMs, external channels, or unknown kinds fail closed to isolated.
 
-Chat operators change it with `/pi-sandbox door <default|isolated|shared|full>`
+Chat operators change it with
+`/pi-sandbox door <default|isolated|shared|shared-private|full>`
 (`src/commands/sandbox.ts`), which writes through the settings-mutation seam.
+Only a backend with managed projection (`image:*`) may accept isolated or
+private/read-only projections; other backends are rejected before a run starts.
 
 ## Files
 

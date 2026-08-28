@@ -13,11 +13,11 @@ One directory under `<stateDir>/vaults/` per key. Which key a run
 authenticates as is decided by `credentialAuthorizationKey`
 (`sandbox/identity.ts`), never by this module:
 
-| Sandbox type                                                   | Key                                                                                                                             |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| conversation-scoped (image, gondolin, firecracker, cloudflare) | the **office key** — platform-scoped, so two platforms sharing a raw conversation id can never resolve each other's credentials |
-| `host`                                                         | a user-derived key (the host has no execution isolation to scope to)                                                            |
-| `container`                                                    | a key derived from the deployment-chosen container name                                                                         |
+| Sandbox type                              | Key                                                                                                                             |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| conversation-scoped (`image`, Cloudflare) | the **office key** — platform-scoped, so two platforms sharing a raw conversation id can never resolve each other's credentials |
+| `host`                                    | a user-derived key (the host has no execution isolation to scope to)                                                            |
+| `container`                               | a key derived from the deployment-chosen container name                                                                         |
 
 Two top-level names are reserved namespaces rather than vault keys:
 `shared/<name>` for named shared login profiles, and `extensions/<slug>` for

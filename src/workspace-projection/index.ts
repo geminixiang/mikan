@@ -39,10 +39,16 @@ export function recordPlatformChannelKind(office: Office, kind: PlatformChannelK
 
 /** The recorded platform channel kind, or undefined when never observed. */
 export function readPlatformChannelKind(office: Office): PlatformChannelKind | undefined {
+  const path = join(office.stateDir, CHANNEL_KIND_FILE);
   let raw: string;
   try {
-    raw = readFileSync(join(office.stateDir, CHANNEL_KIND_FILE), "utf-8");
-  } catch {
+    raw = readFileSync(path, "utf-8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    log.logWarning(
+      "Could not read platform channel kind; falling back to isolated workspace",
+      `${path}: ${err instanceof Error ? err.message : String(err)}`,
+    );
     return undefined;
   }
   const value = raw.trim();
@@ -77,12 +83,8 @@ export function resolveWorkspaceProjection(office: Office): WorkspaceProjection 
   // "conversation" never sees workspace memory at all.
   //
   // The `readOnly` mount flag below is a kernel-enforced boundary only for
-  // sandbox backends that actually bind-mount (container/image). Host and
-  // Cloudflare executors do not consume WorkspaceProjection.mounts at all
-  // (see execution-resolver.ts resolveSandboxConfig) and have no equivalent
-  // enforcement point; for those backends this setting is honored only as
-  // prompt guidance to the agent (agent/prompt.ts memoryGuidance), not as a
-  // hard boundary.
+  // backends with managed Workspace projection. Runner and actor execution
+  // resolution reject every other backend before the agent can start.
   const globalMemoryReadOnly = shared && effective.visibility === "private";
   const mounts =
     effective.layout === "full"

@@ -22,20 +22,20 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 
 ## Command quick reference
 
-| Command                                              | Purpose and scope                                                                                                          |
-| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `/login` / `/pi-login`                               | Open a 15-minute login/vault link. DM only.                                                                                |
-| `session` / `/session` / `/pi-session`               | Open the current session viewer. DM only.                                                                                  |
-| `/new` / `/pi-new`                                   | Reset the current session. DM only.                                                                                        |
-| `/model` / `/pi-model [provider/model[:thinking]]`   | Show or switch the current conversation model. Thinking levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. |
-| `/auto-reply` / `/pi-auto-reply on\|off\|status`     | Control auto-reply in the current group/channel.                                                                           |
-| `stop` / `/stop`                                     | Stop the matching active run. On Slack, prefer text form so thread-local routing stays accurate.                           |
-| `/admin` / `/pi-admin`                               | Open the 30-minute admin portal.                                                                                           |
-| `/extensions` / `/pi-extensions`                     | List global and conversation extensions, versions, and contributed skills.                                                 |
-| `/sandbox` / `/pi-sandbox`                           | Show the current sandbox limits plus this office's door policy and workspace layout.                                       |
-| `/pi-sandbox boost`                                  | Apply configured boost limits until the managed sandbox runtime stops.                                                     |
-| `/pi-sandbox door`                                   | Report the office's effective door policy and layout, with the available values.                                           |
-| `/pi-sandbox door <default\|isolated\|shared\|full>` | Set this office's door policy. See [Office door policy](#office-door-policy) below.                                        |
+| Command                                                              | Purpose and scope                                                                                                          |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `/login` / `/pi-login`                                               | Open a 15-minute login/vault link. DM only.                                                                                |
+| `session` / `/session` / `/pi-session`                               | Open the current session viewer. DM only.                                                                                  |
+| `/new` / `/pi-new`                                                   | Reset the current session. DM only.                                                                                        |
+| `/model` / `/pi-model [provider/model[:thinking]]`                   | Show or switch the current conversation model. Thinking levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. |
+| `/auto-reply` / `/pi-auto-reply on\|off\|status`                     | Control auto-reply in the current group/channel.                                                                           |
+| `stop` / `/stop`                                                     | Stop the matching active run. On Slack, prefer text form so thread-local routing stays accurate.                           |
+| `/admin` / `/pi-admin`                                               | Open the 30-minute admin portal.                                                                                           |
+| `/extensions` / `/pi-extensions`                                     | List global and conversation extensions, versions, and contributed skills.                                                 |
+| `/sandbox` / `/pi-sandbox`                                           | Show the current sandbox limits plus this office's door policy and workspace layout.                                       |
+| `/pi-sandbox boost`                                                  | Apply configured boost limits until the managed sandbox runtime stops.                                                     |
+| `/pi-sandbox door`                                                   | Report the office's effective door policy and layout, with the available values.                                           |
+| `/pi-sandbox door <default\|isolated\|shared\|shared-private\|full>` | Set this office's door policy. See [Office door policy](#office-door-policy) below.                                        |
 
 `/pi-sandbox` applies to managed sandbox runtimes only: in `host` or `container:<name>` mode it replies that the command needs `image:*`.
 
@@ -43,12 +43,13 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 
 `/pi-sandbox door` writes the conversation's own door-policy override. The same setting is available per office, and as a global default, in the admin portal.
 
-| Word       | Effect                                                                               |
-| ---------- | ------------------------------------------------------------------------------------ |
-| `default`  | Clear the override and follow the global `sandbox.workspace` setting.                |
-| `isolated` | Mount only this office's own directory.                                              |
-| `shared`   | Trusted door: the office plus the workspace-level `MEMORY.md`, `skills/`, `events/`. |
-| `full`     | Trusted door: mount the entire workspace.                                            |
+| Word             | Effect                                                                                                           |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `default`        | Clear the override; follow global `sandbox.workspace`, or platform visibility when the global setting is absent. |
+| `isolated`       | Mount only this office's own directory.                                                                          |
+| `shared`         | Trusted door: the office plus read-write workspace-level `MEMORY.md`, `skills/`, and `events/`.                  |
+| `shared-private` | Trusted door: the same shared-support layout, but workspace-level `MEMORY.md` is read-only.                      |
+| `full`           | Trusted door: mount the entire workspace.                                                                        |
 
 The change takes effect on the next message, when the sandbox runtime is rebuilt with the new mounts; existing container contents are preserved. A switch is refused while the conversation is busy. See [Configuration](/configuration/) for the underlying `sandbox.workspace` fields.
 

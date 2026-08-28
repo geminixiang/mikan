@@ -25,7 +25,7 @@ Features:
 - mikan creates an isolated vault and container for each conversation
 - each container gets its own Docker bridge network, separating direct container-to-container networking; outbound network access remains enabled
 - managed containers are created with `--cap-drop=ALL`, `--security-opt=no-new-privileges`, and `--pids-limit=1024`
-- inside the container, the default isolated policy exposes only the conversation's own office directory; Admin can explicitly choose a trusted shared-support or full-workspace layout
+- inside the container, workspace mounts follow explicit settings or recorded Slack channel visibility; public channels share workspace memory read-write, private channels receive it read-only, and DMs/external/unknown conversations stay isolated
 - vault env is injected at execution time
 - vault file credentials are automatically bind-mounted into the container, at a target inferred from each file's name (see [Vault](/sandbox/vault/))
 - idle containers are checked every 10 minutes and stopped after at least 10 minutes of inactivity; depending on scan timing, stopping occurs roughly 10–20 minutes after last tracked use
@@ -34,10 +34,11 @@ Features:
 
 The conversation's office directory is bind-mounted read-write at `/workspace/<office-key>`, where
 the office key is the `v1-<platform>-<readable-id>-<hash>` segment that also names the directory on
-the host. Under the default `isolated` door policy that is the only workspace mount; a trusted
-`shared-support` layout adds the workspace-global `MEMORY.md`, `skills/`, and `events/`, and
-`trusted` / `full` mounts the whole workspace root at `/workspace`. Skills shipped by a package
-mount read-only outside `/workspace`, at `/mikan/packages/<slug>/skills`.
+the host. An `isolated` projection makes that the only workspace mount; trusted `shared-support`
+adds the workspace-global `MEMORY.md`, `skills/`, and `events/`. Private visibility marks the global
+memory bind read-only, while public visibility leaves it read-write. `trusted` / `full` mounts the
+whole workspace root at `/workspace`. Skills shipped by a package mount read-only outside
+`/workspace`, at `/mikan/packages/<slug>/skills`.
 
 Changing the door policy does not reset the container. When the desired mounts no longer match the
 running container, mikan snapshots it, recreates it with the translated mounts, and starts it again,
@@ -61,7 +62,7 @@ Suitable for:
 
 - multiple users sharing one mikan instance
 - per-conversation env/file credential isolation
-- better safety than a shared container without going all the way to Firecracker
+- managed filesystem projection and stronger isolation than a shared container
 
 ## Container resource limits
 
@@ -91,5 +92,5 @@ In `settings.json`, you can configure CPU and memory limits for each managed con
 - running containers receive new limits immediately through `docker update` on the next provision, without recreation
 - `/pi-sandbox` shows the current conversation's effective limits plus its door policy and layout
 - `/pi-sandbox boost` temporarily upgrades the current conversation to the `sandbox.boost` spec; boost state follows the container and ends when the container stops
-- `/pi-sandbox door <default|isolated|shared|full>` switches this office's door policy; the container is recreated with the new mounts on the next message and keeps its contents
+- `/pi-sandbox door <default|isolated|shared|shared-private|full>` switches this office's door policy; the container is recreated with the new mounts on the next message and keeps its contents
 - the agent can use the built-in `sandbox` tool to inspect or temporarily set the current conversation's CPU / memory limit; these overrides are also cleared when the container stops

@@ -32,11 +32,11 @@ vault is not a per-conversation credential boundary.
 
 ## Door policy
 
-`container:*` cannot enforce a conversation-scoped workspace projection — `docker exec` cannot add
-mounts to a container mikan did not create — so it refuses to run under the default `isolated` door
-policy. Choose a trusted policy explicitly in the global `settings.json` or the admin portal (the
-`/pi-sandbox` chat command only serves managed sandboxes), and mount the workspace yourself when you
-create the container.
+`container:*` cannot enforce a conversation-scoped workspace projection or read-only shared memory —
+`docker exec` cannot add mounts to a container mikan did not create. It therefore refuses effective
+isolated projections and platform-derived private/read-only projections. Choose a trusted read-write
+policy explicitly in the global `settings.json` or the admin portal (the `/pi-sandbox` chat command
+only serves managed sandboxes), and mount the workspace yourself when you create the container.
 
 ## Limitations
 

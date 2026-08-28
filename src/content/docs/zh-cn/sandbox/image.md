@@ -25,7 +25,7 @@ mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
 - mikan 为每个对话创建隔离的 vault 和容器
 - 每个容器都有自己的 Docker bridge 网络，以隔离容器间的直接网络连接；出站网络访问仍保持启用
 - 管理的容器使用 `--cap-drop=ALL`、`--security-opt=no-new-privileges` 和 `--pids-limit=1024` 创建
-- 在容器内部，默认的 isolated 策略只暴露该对话自己的办公室目录；管理员可以显式选择受信任的 shared-support 或 full-workspace 布局
+- 容器内的工作区挂载跟随显式设置或已记录的 Slack 频道可见性：公开频道读写共享记忆，私密频道只读共享记忆，DM、外部和未知对话保持 isolated
 - vault 环境变量在执行时注入
 - vault 文件凭证会自动 bind mount 到容器中，目标由每个文件的名称推断（参阅 [Vault](/zh-cn/sandbox/vault/)）
 - 每 10 分钟检查一次空闲容器，并在至少 10 分钟无活动后停止；根据扫描时间，停止大约发生在最后一次跟踪使用后的 10–20 分钟
@@ -33,9 +33,10 @@ mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
 ## 挂载与对话办公室
 
 该对话的办公室目录以可读写方式 bind mount 到 `/workspace/<office-key>`，其中 office key 就是在主机上
-同样命名该目录的 `v1-<platform>-<readable-id>-<hash>` 路径段。在默认的 `isolated` 门禁策略下，这是唯一的
-workspace mount；受信任的 `shared-support` 布局会额外加上工作区级的 `MEMORY.md`、`skills/` 和 `events/`，
-而 `trusted` / `full` 则把整个工作区根目录挂载到 `/workspace`。由 package 提供的 skill 以只读方式挂载在
+同样命名该目录的 `v1-<platform>-<readable-id>-<hash>` 路径段。isolated 投影只挂载该目录；受信任的
+`shared-support` 布局会额外加上工作区级的 `MEMORY.md`、`skills/` 和 `events/`。private visibility 会把
+全局记忆 bind 标记为只读，public visibility 则维持读写；`trusted` / `full` 会把整个工作区根目录挂载到
+`/workspace`。由 package 提供的 skill 以只读方式挂载在
 `/workspace` 之外，位于 `/mikan/packages/<slug>/skills`。
 
 更改门禁策略不会重置容器。当期望的 mount 与运行中的容器不再匹配时，mikan 会对它做快照，用转换后的 mount
@@ -85,5 +86,5 @@ resource key 仍由原始对话 id 派生（一个经过清洗的前缀加上一
 - 运行中的容器会在下次 provision 时通过 `docker update` 立即获得新限制，无需重新创建
 - `/pi-sandbox` 显示当前对话的有效限制，以及它的门禁策略和布局
 - `/pi-sandbox boost` 临时将当前对话升级到 `sandbox.boost` 规格；boost 状态跟随容器，并在容器停止时结束
-- `/pi-sandbox door <default|isolated|shared|full>` 切换本办公室的门禁策略；容器会在下一条消息时以新的 mount 重新创建，并保留其内容
+- `/pi-sandbox door <default|isolated|shared|shared-private|full>` 切换本办公室的门禁策略；容器会在下一条消息时以新的 mount 重新创建，并保留其内容
 - 代理可以使用内置 `sandbox` 工具检查或临时设置当前对话的 CPU/内存限制；这些覆盖也会在容器停止时清除

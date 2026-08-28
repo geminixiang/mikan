@@ -7,8 +7,9 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 <CardGrid>
   <Card title="Local development" icon="setting">
-    `host` has the least setup and does not inject vault env. It cannot provide an isolated
-    conversation office, so it also needs an explicit trusted door policy.
+    `host` has the least setup and does not inject vault env. It cannot enforce an isolated
+    office or read-only shared memory, so it needs an explicit trusted read-write policy when
+    the platform-derived projection requests either boundary.
   </Card>
   <Card title="Mainline isolation" icon="rocket">
     `image:<image>` lets mikan manage lifecycle, workspace mounts, vault env, and resource limits.
@@ -23,7 +24,7 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 | Mode                      | Execution location        | Vault env injection | Vault key                       | Notes                                                                                            |
 | ------------------------- | ------------------------- | ------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `host`                    | host machine              | not injected        | derived from the platform user  | Local development only; needs an explicit trusted door policy                                    |
+| `host`                    | host machine              | not injected        | derived from the platform user  | Local development only; requires a trusted read-write projection                                 |
 | `container:<name>`        | existing Docker container | injected            | derived from the container name | one container one vault; multiple people sharing one container also share its vault              |
 | `image:<image>`           | Docker managed by mikan   | injected            | the office key                  | Current recommended isolation mode; `1 conversation = 1 vault = 1 container`                     |
 | `cloudflare:<sandbox-id>` | Cloudflare Worker         | injected            | the office key                  | Under construction; requires your own `@cloudflare/sandbox` bridge; host workspace is not synced |
@@ -41,16 +42,20 @@ Which parts of the workspace a runtime sees is the **door policy**, a `sandbox.w
 the admin portal can set globally or per conversation (the `/pi-sandbox door` chat command does the
 same for one conversation, but only under `image:*`):
 
-| Door policy / layout         | Mounted under `/workspace`                                            |
-| ---------------------------- | --------------------------------------------------------------------- |
-| `isolated` (default)         | only `<office-key>/`                                                  |
-| `trusted` / `shared-support` | `<office-key>/` plus the shared `MEMORY.md`, `skills/`, and `events/` |
-| `trusted` / `full`           | the entire workspace root                                             |
+| Door policy / layout / visibility        | Mounted under `/workspace`                                                        |
+| ---------------------------------------- | --------------------------------------------------------------------------------- |
+| `isolated` / `conversation`              | only `<office-key>/`                                                              |
+| `trusted` / `shared-support` / `public`  | `<office-key>/` plus shared `MEMORY.md`, `skills/`, and `events/`, all read-write |
+| `trusted` / `shared-support` / `private` | the same support paths, but shared `MEMORY.md` is read-only                       |
+| `trusted` / `full`                       | the entire workspace root                                                         |
 
-Only `image:*` can enforce the isolated projection. The other modes report
-`managedProjection: false`, and because `isolated` is the default, they refuse to start a run until
-someone explicitly chooses a trusted policy for that office. Field semantics and the legacy
-`sandbox.image.workspaceMount` translation are documented in [Configuration](/configuration/).
+Without an explicit workspace setting, recorded Slack public channels derive trusted/public shared
+support, private channels derive trusted/private shared support, and DMs, external channels,
+unknown kinds, and platforms without recorded visibility derive isolated. Only `image:*` can enforce
+isolated projections or read-only shared memory. The other modes report `managedProjection: false`
+and refuse those runs until an admin chooses `image:*` or an explicit trusted read-write policy.
+Field semantics and the legacy `sandbox.image.workspaceMount` translation are documented in
+[Configuration](/configuration/).
 
 <Aside type="caution" title="A trusted door is not an extra sandbox">
   Door policy decides which host directories are projected into the runtime. It is not an execution
@@ -111,14 +116,16 @@ container, so the writable layer is preserved rather than rebuilt from the base 
 | automatic vault file projection / bind mount | ❌             | ❌                     | ✅              | ❌                 |
 | automatic workspace mount                    | host           | self-managed           | ✅              | ❌                 |
 | isolated conversation office                 | ❌             | ❌                     | ✅              | ❌                 |
+| read-only shared workspace memory            | ❌             | ❌                     | ✅              | ❌                 |
 | idle auto-stop / recreate                    | not applicable | ❌                     | ✅              | ❌                 |
 | default CPU / memory limits                  | ❌             | ❌                     | ✅              | ❌                 |
 | `/pi-sandbox boost`                          | ❌             | ❌                     | ✅              | ❌                 |
 | agent `sandbox` tool sets limits             | ❌             | ❌                     | ✅              | ❌                 |
 | recommendation level                         | local dev      | legacy / compatibility | mainline        | under construction |
 
-Both ❌ rows above are refusals rather than silent downgrades. A mode that cannot enforce the
-isolated projection raises `Sandbox '<type>' cannot provide an isolated conversation office` instead
-of mounting more than the policy asked for, and a mode that cannot mount vault files raises
-`Sandbox type "<type>" does not support vault file mounts` instead of running without the
-credential. On the modes that cannot project files, keep vault credentials in `env` only.
+These ❌ rows are refusals rather than silent downgrades. A mode that cannot enforce an isolated
+projection raises `Sandbox '<type>' cannot provide an isolated conversation office`; one that cannot
+enforce private visibility raises `Sandbox '<type>' cannot enforce read-only shared workspace memory`.
+A mode that cannot mount vault files raises `Sandbox type "<type>" does not support vault file mounts`
+instead of running without the credential. On modes that cannot project files, keep vault credentials
+in `env` only.

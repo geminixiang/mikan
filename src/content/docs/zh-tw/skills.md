@@ -16,7 +16,7 @@ mikan 會先載入 workspace-level skills，再載入 conversation-level skills�
 :::
 
 :::caution[Workspace-level skills 需要 trusted door]
-在預設的 `isolated` door policy 下，一個對話只看得到自己的 office，因此 workspace-level skills 既不會被掛載，也不會提供給 agent——prompt 會要求它把 skills 放在自己的 office 裡。Workspace-level skills 需要 trusted 的 `shared-support` 或 `full` layout。見 [Sandbox](/zh-tw/sandbox/)。
+在 `isolated` door policy 下，一個對話只看得到自己的 office，因此 workspace-level skills 既不會被掛載，也不會提供給 agent——prompt 會要求它把 skills 放在自己的 office 裡。DM、外部頻道與未知平台可見性會推導出此 policy，除非 admin 明確覆寫。Workspace-level skills 需要 trusted 的 `shared-support` 或 `full` layout。見 [Sandbox](/zh-tw/sandbox/)。
 :::
 
 ## 目錄結構

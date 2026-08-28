@@ -31,7 +31,7 @@ import { Aside, Steps } from "@astrojs/starlight/components";
 
    key は環境変数（`<PROVIDER>_API_KEY`、例：`ANTHROPIC_API_KEY`）で直接渡すこともできます。env ファイルはその永続的な置き場所で、pm2 テンプレートが読み込みます。
 
-   設定の既定値は `isolated` door policy です。これを満たせるのは管理型の Docker sandbox だけで、この設定のままでは `host` mode は実行を拒否します。このガイドは Docker なしで進めるため、次の内容を `~/.mikan/settings.json` にマージして workspace を trusted としてマークしてください：
+   Onboarding は workspace policy を固定せず、platform visibility に従わせます。Telegram の private chat は fail closed で `isolated` になり、これを強制できるのは管理型 Docker sandbox だけです。このガイドは `host` を使うため、次の内容を `~/.mikan/settings.json` にマージして workspace を trusted としてマークしてください：
 
    ```json
    {
@@ -41,7 +41,7 @@ import { Aside, Steps } from "@astrojs/starlight/components";
    }
    ```
 
-   代わりに管理型の [image sandbox](/ja/sandbox/image/)（`--sandbox=image:…`）から始める場合は、この編集は不要です。そのままで isolated policy を満たします。
+   代わりに管理型の [image sandbox](/ja/sandbox/image/)（`--sandbox=image:…`）から始める場合は、この編集は不要です。platform-derived isolated projection をそのまま強制できます。
 
 3. Telegram ボットを作成します。[@BotFather](https://t.me/BotFather) にメッセージを送り、`/newbot` を送信してプロンプトに従い、返された token をコピーします：
 
@@ -70,7 +70,7 @@ import { Aside, Steps } from "@astrojs/starlight/components";
   のコマンドはあなたの権限であなたのマシン上で直接実行されます。信頼できるマシンで
   最初に試すのに適した mode です。他の人がボットと会話できるようにする前に、会話ごとに分離された
   Docker コンテナを提供する管理型の [image sandbox](/ja/sandbox/image/) に切り替え、trusted な door
-  policy の上書きを削除して既定の `isolated` policy が再び適用されるようにしてください。
+  policy の上書きを削除して platform-derived workspace policy が再び適用されるようにしてください。
 </Aside>
 
 ## 次のステップ

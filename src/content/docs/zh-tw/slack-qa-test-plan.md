@@ -80,7 +80,7 @@ npm run test:e2e:slack
 
 ### 測試用 daemon 的 door policy
 
-這套 suite 會驅動一個真實的 mikan daemon。如果你以 `host` sandbox 模式執行該 daemon，它會拒絕在預設的 `isolated` door policy 下開始工作，於是每個 scenario 都會因為 bot 沒有回覆而失敗。請在測試用 state dir 的 `settings.json` 中明確選用 trusted policy：
+這套 suite 會驅動一個真實的 mikan daemon。沒有 workspace 覆寫時，Slack 公開頻道會推導出 trusted 讀寫 projection，但 DM scenario 維持 isolated，私密頻道則要求唯讀共享記憶。`host` 無法強制這兩種邊界，因此 host-mode QA daemon 必須在測試用 state dir 的 `settings.json` 中明確選用 trusted 讀寫 policy：
 
 ```json
 {

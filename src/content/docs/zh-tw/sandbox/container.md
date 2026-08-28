@@ -33,7 +33,7 @@ Vault key 由 container 名稱推導而來——一段可讀的前綴，加上�
 
 ## Door policy
 
-`container:*` 無法落實以對話為範圍的 workspace projection——`docker exec` 無法替一個不是 mikan 建立的 container 新增 mount——因此它會拒絕在預設的 `isolated` door policy 下執行。請在全域 `settings.json` 或 admin portal 中明確選擇 trusted policy（`/pi-sandbox` 聊天指令只服務受管的 sandbox），並在建立 container 時自行掛載 workspace。
+`container:*` 無法落實以對話為範圍的 workspace projection 或唯讀共享記憶——`docker exec` 無法替一個不是 mikan 建立的 container 新增 mount——因此它會拒絕生效的 isolated projection 與平台推導的 private/唯讀 projection。請在全域 `settings.json` 或 admin portal 中明確選擇 trusted 讀寫 policy（`/pi-sandbox` 聊天指令只服務受管的 sandbox），並在建立 container 時自行掛載 workspace。
 
 ## 限制
 

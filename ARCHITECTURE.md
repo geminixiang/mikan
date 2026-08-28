@@ -145,7 +145,7 @@ Execution authority is resolved for every agent environment rather than inferred
 2. Package resolution supplies trusted extension roots and read-only skill mounts.
 3. The execution resolver combines actor identity, office, sandbox configuration, workspace projection, package targets, and vault routing.
 4. Vault resolution returns only the credential environment and files authorized for that actor and execution mode.
-5. Sandbox capability checks reject policies the selected backend cannot enforce.
+5. Sandbox capability checks reject policies the selected backend cannot enforce, including isolated projections and read-only shared memory.
 6. The concrete executor receives the final non-overlapping mount and credential set.
 
 Prompt authorization and filesystem authorization originate from the same projection result. This prevents host-side memory or skills from bypassing an isolated filesystem view.
@@ -221,7 +221,7 @@ Not every supported execution mode provides this property: host execution and ex
 
 ### Data isolation
 
-The default `isolated` Door policy produces a conversation-only projection. Trusted policy may opt into shared support files or the full workspace. The policy resolver returns mounts and prompt sources together and rejects malformed authoritative settings.
+An `isolated` Door policy produces a conversation-only projection. Without an explicit override, observed Slack public channels derive trusted read-write shared support, private channels derive trusted shared support with read-only global memory, and DMs, external channels, or unknown kinds fail closed to isolated. The policy resolver returns mounts and prompt sources together and rejects malformed authoritative settings.
 
 ### Credential authority
 
@@ -313,7 +313,7 @@ Evidence: `src/config.ts`, `src/utils/file-guards.ts`, `src/office/index.ts`, `s
 
 <a id="inv-execution-policy-enforcement"></a>
 
-**`execution-policy-enforcement`** — A Door policy is accepted only when the selected sandbox backend can enforce its projection. Unsupported isolation fails closed rather than degrading to a wider view.
+**`execution-policy-enforcement`** — A Door policy is accepted only when the selected sandbox backend can enforce its projection. Unsupported isolation or read-only shared memory fails closed rather than degrading to a wider or writable view.
 
 Evidence: `src/execution-resolver.ts`, `src/sandbox/index.ts`.
 
@@ -366,12 +366,6 @@ These are explicit current-state limitations, not implicit changes to the accept
 <a id="dev-cloudflare-factory-floor"></a>
 
 **`cloudflare-factory-floor` — Open.** Cloudflare is currently exposed as a conversation `SandboxConfig`, while ADR 0002 and ADR 0004 classify remote task sandboxes as ephemeral Factory floors rather than persistent office runtimes. Keep the adapter transitional until task-executor orchestration owns it.
-
-### DEV Firecracker Workspace projection
-
-<a id="dev-firecracker-workspace-projection"></a>
-
-**`firecracker-workspace-projection` — Open.** Firecracker executes inside a VM but does not implement managed Workspace projection. It therefore cannot satisfy the default isolated-office contract and must be rejected for policies it cannot enforce.
 
 ### DEV runtime resource identity
 

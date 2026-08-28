@@ -35,9 +35,9 @@ vault key 由 container 名称派生——一个可读前缀加上该名称的�
 
 ## 门禁策略
 
-`container:*` 无法强制执行对话范围的工作区投影——`docker exec` 无法为一个并非由 mikan 创建的 container
-添加 mount——因此它在默认的 `isolated` 门禁策略下会拒绝运行。请在全局 `settings.json` 或 admin portal
-中显式选择受信任策略（`/pi-sandbox` 聊天命令只服务于受管理的沙箱），并在创建 container 时自行挂载工作区。
+`container:*` 无法强制执行对话范围的工作区投影或只读共享记忆——`docker exec` 无法为一个并非由 mikan 创建的 container
+添加 mount——因此它会拒绝生效的 isolated 投影和平台推导出的 private/只读投影。请在全局 `settings.json` 或 admin portal
+中显式选择受信任的读写策略（`/pi-sandbox` 聊天命令只服务于受管理的沙箱），并在创建 container 时自行挂载工作区。
 
 ## 限制
 

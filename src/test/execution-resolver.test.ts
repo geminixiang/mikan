@@ -7,6 +7,7 @@ import { createGlobalSettingsFile } from "../config.js";
 import { ActorExecutionResolver } from "../execution-resolver.js";
 import { FileVaultManager } from "../vault/index.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
+import { recordPlatformChannelKind } from "../workspace-projection/index.js";
 
 const C123_OFFICE = officeKey(createOfficeAddress("slack", "C123"));
 
@@ -200,6 +201,45 @@ describe("ActorExecutionResolver", () => {
     expect(resolvedKeys).toHaveLength(2);
     expect(resolvedKeys[0]).not.toBe(resolvedKeys[1]);
     expect(resolvedKeys).not.toContain("a-b");
+  });
+
+  test.each([
+    ["host", { type: "host" }],
+    ["container", { type: "container", container: "mikan-sandbox" }],
+    ["cloudflare", { type: "cloudflare", sandboxId: "mikan-remote" }],
+  ] as const)(
+    "rejects %s for a platform-derived private channel",
+    async (_label, sandboxConfig) => {
+      createGlobalSettingsFile(stateDir);
+      const currentWorkspace = workspace();
+      const address = createOfficeAddress("slack", "C123");
+      recordPlatformChannelKind(currentWorkspace.office(address), "private_channel");
+      const resolver = new ActorExecutionResolver(
+        sandboxConfig,
+        new FileVaultManager(stateDir),
+        undefined,
+        currentWorkspace,
+      );
+
+      await expect(resolver.resolve({ userId: "U123", address })).rejects.toThrow(
+        /cannot enforce read-only shared workspace memory/,
+      );
+    },
+  );
+
+  test("allows image mode for a platform-derived private channel", async () => {
+    createGlobalSettingsFile(stateDir);
+    const currentWorkspace = workspace();
+    const address = createOfficeAddress("slack", "C123");
+    recordPlatformChannelKind(currentWorkspace.office(address), "private_channel");
+    const resolver = new ActorExecutionResolver(
+      { type: "image", image: "ubuntu:24.04" },
+      new FileVaultManager(stateDir),
+      undefined,
+      currentWorkspace,
+    );
+
+    await expect(resolver.resolve({ userId: "U123", address })).resolves.toBeDefined();
   });
 
   test("rejects host as an isolated office after preserving legacy credential lookup", async () => {

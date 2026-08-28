@@ -164,19 +164,21 @@ The bot responds in DMs and when mentioned in channels. Triggered Slack thread w
 
 ## 9. Choose a sandbox
 
-Without `--sandbox`, mikan runs tools directly on the host, and the default `isolated` door policy
-refuses that combination by design — the first message reports that `host` cannot provide an isolated
-conversation office. Pick one before your first real conversation:
+Without `--sandbox`, mikan runs tools directly on the host. Workspace policy follows Slack channel
+visibility when no override exists: public channels use shared memory read-write, private channels
+request read-only shared memory, and DMs stay isolated. Host mode cannot enforce the latter two and
+refuses those runs. Pick one before your first real conversation:
 
 - **Recommended.** Use the managed sandbox, which gives each conversation its own container and
-  satisfies the isolated policy with no settings change:
+  enforces public, private/read-only, and isolated projections with no settings change:
 
   ```bash
   mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest
   ```
 
-- **Host mode**, only on a machine you already trust with the whole workspace: add a trusted door
-  policy to `~/.mikan/settings.json`.
+- **Host mode**, only on a machine you already trust with the whole workspace: add a trusted
+  read-write door policy to `~/.mikan/settings.json`. This override deliberately removes the
+  platform-derived private/DM data boundary.
 
   ```json
   {

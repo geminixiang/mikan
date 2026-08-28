@@ -63,9 +63,6 @@ conversation を生のプラットフォーム id 配下に保存していたリ
       "cpus": "2",
       "memory": "4g"
     },
-    "workspace": {
-      "doorPolicy": "isolated"
-    },
     "defaultSharedVault": ""
   }
 }
@@ -75,26 +72,29 @@ conversation を生のプラットフォーム id 配下に保存していたリ
 
 以下の値は onboarding によって生成されます。解決後のグローバル設定では `llm.provider`、`llm.model`、`llm.thinkingLevel` が必須で、その他のフィールドは省略できます。
 
-| フィールド                     | Onboarding の値     | 説明                                                                                                                       |
-| ------------------------------ | ------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `llm.provider`                 | `anthropic`         | メイン AI provider                                                                                                         |
-| `llm.model`                    | `claude-sonnet-4-6` | メイン model 名                                                                                                            |
-| `llm.thinkingLevel`            | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max` のいずれか                                                       |
-| `llm.autoReply.provider`       | `anthropic`         | auto-reply rules の評価に使う任意の model provider                                                                         |
-| `llm.autoReply.model`          | `claude-haiku-4-5`  | auto-reply rules の評価に使う任意の model                                                                                  |
-| `sentry.dsn`                   | 未設定              | Sentry DSN。機密性の高い prompt と tool の内容はマスクされます                                                             |
-| `sandbox.boost.cpus`           | `2`                 | `/pi-sandbox boost` が適用する一時的な CPU 制限                                                                            |
-| `sandbox.boost.memory`         | `4g`                | `/pi-sandbox boost` が適用する一時的なメモリ制限                                                                           |
-| `sandbox.workspace.doorPolicy` | `isolated`          | `isolated` は各 conversation を自分の office data に限定します。`trusted` は協働型の workspace layout を明示的に許可します |
-| `sandbox.workspace.layout`     | `conversation`      | 実効 layout：isolated は常に `conversation`、trusted は `shared-support` または `full`                                     |
-| `sandbox.defaultSharedVault`   | 空                  | 対象となる membership-trust image/Cloudflare conversations にコピーされる共有 vault                                        |
-| `slack.replyMode`              | `top-level`         | Slack 応答モード：`top-level` または `thread`                                                                              |
+| フィールド                     | Onboarding の値     | 説明                                                                                                          |
+| ------------------------------ | ------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `llm.provider`                 | `anthropic`         | メイン AI provider                                                                                            |
+| `llm.model`                    | `claude-sonnet-4-6` | メイン model 名                                                                                               |
+| `llm.thinkingLevel`            | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max` のいずれか                                          |
+| `llm.autoReply.provider`       | `anthropic`         | auto-reply rules の評価に使う任意の model provider                                                            |
+| `llm.autoReply.model`          | `claude-haiku-4-5`  | auto-reply rules の評価に使う任意の model                                                                     |
+| `sentry.dsn`                   | 未設定              | Sentry DSN。機密性の高い prompt と tool の内容はマスクされます                                                |
+| `sandbox.boost.cpus`           | `2`                 | `/pi-sandbox boost` が適用する一時的な CPU 制限                                                               |
+| `sandbox.boost.memory`         | `4g`                | `/pi-sandbox boost` が適用する一時的なメモリ制限                                                              |
+| `sandbox.workspace.doorPolicy` | 未設定              | 明示的な上書き。`isolated` は office を自身の data に限定し、`trusted` は協働型 workspace layout を許可します |
+| `sandbox.workspace.layout`     | 未設定              | trusted layout の明示的な上書き：`shared-support` または `full`                                               |
+| `sandbox.workspace.visibility` | 未設定              | `shared-support` で `public` は global memory を読み書き可能にし、`private` は読み取り専用にします            |
+| `sandbox.defaultSharedVault`   | 空                  | 対象となる membership-trust image/Cloudflare conversations にコピーされる共有 vault                           |
+| `slack.replyMode`              | `top-level`         | Slack 応答モード：`top-level` または `thread`                                                                 |
 
-`/pi-model` は conversation の部分的な上書きを書き込み、`/pi-sandbox door <default|isolated|shared|full>` は conversation の `sandbox.workspace` 上書きを書き込みます。admin portal は office ごとの door policy とグローバルな door policy の両方を設定します。Auto-reply の有効化と rule text は JSON settings fields ではなく、`/pi-auto-reply` と conversation の `auto-reply` marker file で管理されます。
+`/pi-model` は conversation の部分的な上書きを書き込み、`/pi-sandbox door <default|isolated|shared|shared-private|full>` は conversation の `sandbox.workspace` 上書きを書き込みます。admin portal は office ごとの door policy とグローバルな door policy の両方を設定します。Auto-reply の有効化と rule text は JSON settings fields ではなく、`/pi-auto-reply` と conversation の `auto-reply` marker file で管理されます。
 
-Door policy と layout は一緒に解決されます。`isolated` は常に `conversation` layout を意味し、office 自身の directory だけが mount されます。`trusted` は `shared-support` — office に加えて workspace レベルの `MEMORY.md`、`skills/`、`events/` — か、workspace root 全体を mount する `full` のどちらかです。layout 未指定の `trusted` は `shared-support` に解決されます。
+Onboarding は `sandbox.workspace` を書き込みません。global または conversation の明示的な上書きがない場合、mikan は記録された platform channel visibility に従います。現在、Slack public channel は `trusted` + `shared-support` + `public` に解決され、workspace-global `MEMORY.md` を読み書きします。Slack private channel は `trusted` + `shared-support` + `private` に解決され、global memory は読み取り専用です。Slack DM、externally shared channel、unknown channel kind、および channel visibility を記録しない platform は `isolated` に解決されます。そのため、新しい Slack public channel は追加の door-policy command なしで shared workspace memory に情報を追加します。
 
-旧来の `sandbox.image.workspaceMount` は移行のために引き続き読み取られます：`private` は `trusted` + `shared-support`、`full` は `trusted` + `full` を意味します。新規インストールは backend 非依存の正式な settings を書き込み、既定は `isolated` です。
+Door policy と layout は一緒に解決されます。`isolated` は常に `conversation` layout を意味し、office 自身の directory だけが mount されます。`trusted` は `shared-support` — office に加えて workspace レベルの `MEMORY.md`、`skills/`、`events/` — か、workspace root 全体を mount する `full` のどちらかです。layout 未指定の `trusted` は `shared-support` に解決されます。isolated projection と read-only shared memory を強制できるのは `image:*` だけです。`host`、`container:*`、`cloudflare:*` はこれらの projection を fail closed で拒否するため、`image:*` または明示的な trusted read-write policy が必要です。
+
+旧来の `sandbox.image.workspaceMount` は移行のために引き続き読み取られます。legacy の `workspaceMount: "private"` は旧動作を維持するため、`trusted` + `shared-support` の **public/read-write** visibility を意味します。shared memory を読み取り専用にする新しい `sandbox.workspace.visibility: "private"` とは別物です。legacy の `workspaceMount: "full"` は `trusted` + `full` を意味します。
 
 ## プラットフォーム認証情報
 

@@ -18,9 +18,10 @@ mikan loads workspace-level skills first, then conversation-level skills. If bot
 :::
 
 :::caution[Workspace-level skills need a trusted door]
-Under the default `isolated` door policy a conversation sees only its own office, so
-workspace-level skills are neither mounted nor offered to the agent — the prompt tells it to keep
-skills in its own office instead. Workspace-level skills require a trusted `shared-support` or
+Under an `isolated` door policy a conversation sees only its own office, so workspace-level skills
+are neither mounted nor offered to the agent — the prompt tells it to keep skills in its own office
+instead. DMs, external channels, and unknown platform visibility derive this policy unless an admin
+overrides it. Workspace-level skills require a trusted `shared-support` or
 `full` layout. See [Sandbox](/sandbox/).
 :::
 

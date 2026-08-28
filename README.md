@@ -22,15 +22,15 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 - **Chat / conversation data** is the platform-facing record: `log.jsonl`, attachments, and conversation files.
 - **Session orchestration** turns platform events into agent runs, handles top-level/thread scopes, and persists structured context under `sessions/*.jsonl`.
 - **mikan agent harness** (`src/harness/`, built on pi-agent-core and pi-ai) runs the model loop, session persistence, compaction, and calls mikan tools.
-- **Sandbox runtime** is where tool commands execute: host, Docker container/image, local Gondolin microVM, Firecracker, or Cloudflare bridge.
+- **Sandbox runtime** is where tool commands execute: host, Docker container/image, or the experimental Cloudflare bridge.
 - **Vault** provides runtime credentials as env vars and mounted secret files.
 
 ## Features
 
 - **Multi-platform** — Slack, Telegram, Discord, and GitHub adapters
 - **Concurrent conversations** — Slack threads, Discord replies/threads, and Telegram reply chains run as independent sessions
-- **Conversation offices** — one office directory and one sandbox runtime per conversation, isolated by default; the door policy is configurable per conversation
-- **Sandbox execution** — host, shared container, per-conversation managed container, local Gondolin microVM (preview), Firecracker (alpha), or Cloudflare bridge (experimental)
+- **Conversation offices** — one office directory and one sandbox runtime per conversation, with platform-derived workspace sharing and explicit door-policy overrides
+- **Sandbox execution** — host, shared container, per-conversation managed container, or Cloudflare bridge (experimental)
 - **Credential vaults** — `/login` stores credentials under `--state-dir` and injects env into sandbox runs
 - **Web session viewer** — read-only web view of the current session via `session` / `/session`
 - **Persistent memory** — workspace-level and per-office `MEMORY.md`
@@ -125,11 +125,11 @@ Slack threads, Discord replies/threads, and Telegram reply chains are mapped to 
 | `image:<image>`           | Auto-provision one Docker container and one vault per conversation office     |
 | `cloudflare:<sandbox-id>` | Cloudflare Worker bridge (experimental; no auto workspace sync)               |
 
-Each office's data view is set by its **door policy**: `isolated` (the fresh-install default — only this conversation's directory is projected into the sandbox) or `trusted` with a `shared-support` or `full` layout. Change it per conversation from the admin portal or with `/pi-sandbox door <default|isolated|shared|full>`. Door policy governs data access only; execution isolation is unaffected.
+Each office's data view is set by its **door policy**. Without an explicit workspace setting, Slack follows the channel kind: public channels use trusted shared support and can update workspace `MEMORY.md`; private channels can read that shared memory but receive it read-only; DMs, external channels, unknown channel kinds, and other platforms stay isolated. The admin portal or `/pi-sandbox door <default|isolated|shared|shared-private|full>` can override that result. Door policy governs data access only; execution isolation is unaffected.
 
-Only `image:*` can project an isolated office, so `host` and `container:*` runs need an explicit trusted door policy — otherwise the run fails with `Sandbox '<type>' cannot provide an isolated conversation office`.
+Only `image:*` can enforce isolated projections and read-only shared memory. `host`, `container:*`, and `cloudflare:*` therefore fail closed for isolated or private-channel projections; an admin must either use `image:*` or explicitly select a trusted read-write layout.
 
-For routing, mounts, vault behavior, managed container details, and Gondolin/Firecracker/Cloudflare notes, see [src/content/docs/sandbox.mdx](src/content/docs/sandbox.mdx).
+For routing, mounts, vault behavior, managed container details, and Cloudflare notes, see [src/content/docs/sandbox.mdx](src/content/docs/sandbox.mdx).
 
 ## Chat commands
 
@@ -156,11 +156,6 @@ mikan reads global settings from `<state-dir>/settings.json`; host-only per-conv
     "provider": "anthropic",
     "model": "claude-sonnet-4-6",
     "thinkingLevel": "off"
-  },
-  "sandbox": {
-    "workspace": {
-      "doorPolicy": "isolated"
-    }
   }
 }
 ```

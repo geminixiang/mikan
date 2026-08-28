@@ -317,7 +317,7 @@ Rules that cross this boundary:
 
 `OfficeAddress` is `{ platform, conversationId }` — the platform plus its raw conversation id. `officeKey(address)` derives the storage identity `v1-<platform>-<readable-id>-<16 hex digits>`, where the readable middle is diagnostic and the SHA-256 prefix is the identity component. The same key names the office directory on the host, inside sandbox runtimes, and in the vault, so two platforms sharing a raw conversation id can never reach each other's files or credentials.
 
-Office keys are **not reversible**. `OfficeRegistry` (`office-registry.json`, host-only) is the durable raw-id ↔ office mapping, and also journals the boot-time migration from the legacy raw-id layout. Raw-id-facing surfaces resolve through it: `resolveOwnedOfficeAddress` for CLI operators, `listRegisteredOffices` for admin enumeration. Sandbox resource names (container names, Gondolin instances, Cloudflare scopes) remain raw-conversation-derived until the resource-naming migration; a collision there costs a container recreate, never credential access.
+Office keys are **not reversible**. `OfficeRegistry` (`office-registry.json`, host-only) is the durable raw-id ↔ office mapping, and also journals the boot-time migration from the legacy raw-id layout. Raw-id-facing surfaces resolve through it: `resolveOwnedOfficeAddress` for CLI operators, `listRegisteredOffices` for admin enumeration. Sandbox resource names (container names and Cloudflare scopes) remain raw-conversation-derived until the resource-naming migration; a collision there costs a runtime recreate, never credential access.
 
 ### The two records
 
@@ -390,7 +390,7 @@ Source: `src/web/server.ts` and portal modules. These routes support mikan's bun
 
 Admin endpoints cover conversation inventory/state/usage, global and conversation settings, models, workspace files, skills, events, platform configuration, and login/session links. Route payloads are internal UI contracts and may evolve together with the bundled frontend.
 
-## 14. Gondolin process boundary
+## 14. Host/runtime safety boundaries
 
 ### Path, cache, and package safety
 

@@ -105,19 +105,21 @@ Bot は DM で応答し、channel では mention されたときに応答しま�
 
 ## 9. sandbox を選ぶ
 
-`--sandbox` を指定しない場合、mikan は tools を host 上で直接実行しますが、既定の `isolated` door
-policy はその組み合わせを設計上拒否します。最初のメッセージで、`host` は隔離された conversation
-office を提供できないと報告されます。最初の実運用の会話を始める前に、どちらかを選んでください：
+`--sandbox` を指定しない場合、mikan は tools を host 上で直接実行します。上書きがなければ workspace
+policy は Slack channel visibility に従い、public channel は shared memory を読み書きし、private
+channel は read-only shared memory を要求し、DM は isolated のままです。Host mode は後者 2 つを
+強制できないため、その run を拒否します。最初の実運用の会話を始める前に、どちらかを選んでください：
 
 - **推奨。** 管理型 sandbox を使います。conversation ごとに専用の container が与えられ、設定を変更
-  せずに isolated policy を満たします：
+  せずに public・private/read-only・isolated projection を強制できます：
 
   ```bash
   mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest
   ```
 
 - **Host mode** は、workspace 全体を任せられる、すでに信頼しているマシンでのみ使用してください。
-  `~/.mikan/settings.json` に trusted な door policy を追加します。
+  `~/.mikan/settings.json` に trusted read-write door policy を追加します。この上書きは platform-derived
+  private/DM data boundary を意図的に取り除きます。
 
   ```json
   {

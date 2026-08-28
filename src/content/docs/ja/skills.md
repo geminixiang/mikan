@@ -18,9 +18,9 @@ mikan は workspace-level skills を先に読み込み、その後 conversation-
 :::
 
 :::caution[Workspace-level skills には trusted な door が必要です]
-既定の `isolated` door policy では、conversation は自分の office しか見えないため、workspace-level
+`isolated` door policy では、conversation は自分の office しか見えないため、workspace-level
 skills は mount されず、agent にも提示されません。prompt は代わりに自分の office 内に skills を
-置くよう指示します。workspace-level skills には trusted な `shared-support` または `full` layout が
+置くよう指示します。DM・external channel・unknown platform visibility は、admin の明示的な上書きがなければこの policy を導出します。workspace-level skills には trusted な `shared-support` または `full` layout が
 必要です。[Sandbox](/ja/sandbox/) を参照してください。
 :::
 

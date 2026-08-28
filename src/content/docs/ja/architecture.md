@@ -70,9 +70,9 @@ description: mikan のプラットフォーム接続、conversation office、セ
 責務:
 
 - `Executor` を統一的に抽象化する
-- sandbox runtime は 2 種類に分かれる:
-  - shared: `host` / `container:<name>`。同じ host または指定 container を共有する
-  - isolated: `image:<image>` / `cloudflare:*`。actor/conversation/vault に応じて隔離された実行環境へルーティングする
+- sandbox runtime を workspace capability で分ける:
+  - unmanaged projection: `host` / `container:<name>` / `cloudflare:*`
+  - managed projection: `image:<image>`。isolated office と read-only shared memory を強制できる
 - `ActorExecutionResolver` により user/conversation/vault から実際の executor を決定する
 - `image` モードでは Docker container を自動作成・回収し、`image:<image>` を concrete な `container:<name>` executor に解決する
 
@@ -208,7 +208,7 @@ office の sandbox runtime が実際に見るものは _workspace projection_ �
 | `trusted`   | `shared-support` | `<officeKey>/` に加えて workspace の `MEMORY.md`、`skills/`、`events/` |
 | `trusted`   | `full`           | workspace root 全体                                                    |
 
-既定は `isolated` で、これは常に `conversation` layout を意味します。Door policy はデータアクセスの境界であり、実行やネットワークの隔離を変えることはありません。office ごとに admin portal または `/pi-sandbox door` で設定し、グローバルな既定値は `sandbox.workspace` にあります — [設定](/ja/configuration/) を参照してください。
+`isolated` は常に `conversation` layout を意味します。明示的な上書きがない場合、記録された Slack public channel は trusted read-write shared support、private channel は read-only global memory を持つ trusted shared support、DM・external・unknown kind は isolated に解決されます。Door policy はデータアクセスの境界であり、実行やネットワークの隔離を変えることはありません。admin portal または `/pi-sandbox door` で明示的に上書きできます — [設定](/ja/configuration/) を参照してください。
 
 ## 5. Login / Vault / Sandbox の関係
 

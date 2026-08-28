@@ -16,16 +16,20 @@ Features:
 
 ## Door policy requirement
 
-`host` cannot enforce a conversation-scoped workspace projection: there is nothing to mount into,
-and the tools see whatever the host user can see. mikan therefore refuses to run when the office's
-door policy is `isolated` — which is the default — with:
+`host` cannot enforce a conversation-scoped workspace projection or read-only shared memory: there
+is nothing to mount into, and the tools see whatever the host user can see. mikan therefore refuses
+to run when the effective projection is isolated or has private/read-only shared memory. Platform
+derivation makes this relevant for DMs, external/unknown conversations, and Slack private channels.
+An isolated projection fails with:
 
 ```text
 Sandbox 'host' cannot provide an isolated conversation office; use image:*,
 or explicitly choose trusted workspace policy
 ```
 
-To use host mode, choose a trusted policy explicitly, either globally in `<state-dir>/settings.json`:
+A private/read-only projection similarly fails with `cannot enforce read-only shared workspace
+memory`. To use host mode for those conversations, choose a trusted read-write policy explicitly,
+either globally in `<state-dir>/settings.json`:
 
 ```json
 {

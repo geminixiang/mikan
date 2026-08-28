@@ -9,7 +9,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import * as log from "../log.js";
 import {
   conversationSettingsPath,
   createGlobalSettingsFile,
@@ -50,6 +51,7 @@ describe("workspace office projection", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     delete process.env.MIKAN_STATE_DIR;
     rmSync(stateDir, { recursive: true, force: true });
   });
@@ -181,6 +183,23 @@ describe("workspace office projection", () => {
       doorPolicy: "isolated",
       layout: "conversation",
     });
+  });
+
+  test("warns and falls back to isolated when channel kind metadata cannot be read", () => {
+    recordPlatformChannelKind(office, "public_channel");
+    const channelKindPath = join(office.stateDir, "channel-kind");
+    rmSync(channelKindPath);
+    mkdirSync(channelKindPath);
+    const warning = vi.spyOn(log, "logWarning").mockImplementation(() => {});
+
+    expect(resolveWorkspaceProjection(office)).toMatchObject({
+      doorPolicy: "isolated",
+      layout: "conversation",
+    });
+    expect(warning).toHaveBeenCalledWith(
+      "Could not read platform channel kind; falling back to isolated workspace",
+      expect.stringContaining(channelKindPath),
+    );
   });
 
   test("defaults shared-support to public visibility with a read-write shared MEMORY.md mount", () => {

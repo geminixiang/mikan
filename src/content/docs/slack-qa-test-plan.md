@@ -80,9 +80,10 @@ Local E2E needs only four variables: `SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID
 
 ### Door policy for the test daemon
 
-The suite drives a real mikan daemon. If you run that daemon in `host` sandbox mode, it will refuse
-to start work under the default `isolated` door policy, and every scenario fails with no bot reply.
-Opt into a trusted policy explicitly in the test state dir's `settings.json`:
+The suite drives a real mikan daemon. With no workspace override, public Slack channels derive a
+trusted read-write projection, but DM scenarios stay isolated and private channels request read-only
+shared memory. `host` cannot enforce either boundary, so a host-mode QA daemon needs an explicit
+trusted read-write policy in the test state dir's `settings.json`:
 
 ```json
 {

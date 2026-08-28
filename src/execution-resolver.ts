@@ -4,9 +4,9 @@ import { conversationPackageSkillMounts } from "./packages/index.js";
 import { loadGlobalSettings } from "./config.js";
 import { DockerContainerManager, type ContainerMount } from "./provisioner.js";
 import {
+  assertSandboxSupportsWorkspacePolicy,
   createExecutor,
   getSandboxCredentialCapabilities,
-  getSandboxWorkspaceCapabilities,
   type Executor,
   type SandboxConfig,
 } from "./sandbox/index.js";
@@ -55,7 +55,6 @@ export class ActorExecutionResolver {
       this.vaultManager.resolve(credentialKey) ??
       (legacyCredentialKey ? this.vaultManager.resolve(legacyCredentialKey) : undefined);
     const capabilities = getSandboxCredentialCapabilities(this.baseConfig.type);
-    const workspaceCapabilities = getSandboxWorkspaceCapabilities(this.baseConfig.type);
     const office = this.workspace.office(context.address);
     const workspaceProjection = resolveWorkspaceProjection(office);
     const injection = resolveVaultInjection({
@@ -65,11 +64,11 @@ export class ActorExecutionResolver {
       address: office.address,
     });
     const mounts = this.resolveMounts(office, injection.mounts, workspaceProjection);
-    if (workspaceProjection.doorPolicy === "isolated" && !workspaceCapabilities.managedProjection) {
-      throw new Error(
-        `Sandbox '${this.baseConfig.type}' cannot provide an isolated conversation office; use image:*, or explicitly choose trusted workspace policy`,
-      );
-    }
+    assertSandboxSupportsWorkspacePolicy(
+      this.baseConfig,
+      workspaceProjection.doorPolicy,
+      workspaceProjection.promptSources.globalMemoryReadOnly === true,
+    );
     return {
       credentialKey,
       resourceKey,

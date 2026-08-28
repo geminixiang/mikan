@@ -31,7 +31,7 @@ import { Aside, Steps } from "@astrojs/starlight/components";
 
    Key 也可以直接用環境變數提供（`<PROVIDER>_API_KEY`，例如 `ANTHROPIC_API_KEY`）；env 檔只是它們的持久化位置，pm2 模板會載入它。
 
-   設定預設使用 `isolated` door policy，而只有受管理的 Docker sandbox 能滿足它——在該設定下，`host` 模式會拒絕執行。本指南不使用 Docker，因此請把下列內容合併進 `~/.mikan/settings.json`，把 workspace 標示為 trusted：
+   Onboarding 不會固定 workspace policy，而是讓平台可見性決定。Telegram 私訊會 fail closed 到 `isolated`，只有受管理的 Docker sandbox 能強制執行；本指南使用 `host`，因此請把下列內容合併進 `~/.mikan/settings.json`，把 workspace 標示為 trusted：
 
    ```json
    {
@@ -41,7 +41,7 @@ import { Aside, Steps } from "@astrojs/starlight/components";
    }
    ```
 
-   如果你一開始就改用受管理的 [image sandbox](/zh-tw/sandbox/image/)（`--sandbox=image:…`），則可略過這項修改——它本身就滿足 isolated policy。
+   如果你一開始就改用受管理的 [image sandbox](/zh-tw/sandbox/image/)（`--sandbox=image:…`），則可略過這項修改——它能直接強制執行平台推導出的 isolated projection。
 
 3. 建立 Telegram 機器人。傳訊息給 [@BotFather](https://t.me/BotFather)，送出 `/newbot`，依提示操作並複製它回傳的 token：
 
@@ -69,7 +69,7 @@ import { Aside, Steps } from "@astrojs/starlight/components";
   在 `host` 模式下，agent 的指令會以你的權限直接在你的機器上執行。它適合在受信任的機器上初次嘗試。
   讓其他人與機器人對話前，請改用受管理的 [image
   sandbox](/zh-tw/sandbox/image/)，讓每個對話都有獨立的 Docker 容器——同時移除 trusted door-policy
-  覆寫，讓預設的 `isolated` policy 重新生效。
+  覆寫，讓平台推導的 workspace policy 重新生效。
 </Aside>
 
 ## 下一步

@@ -17,10 +17,12 @@ backend. It cannot provide a persistent isolated office: the adapter declares
 policy the runtime refuses it with
 
 > Sandbox 'cloudflare' cannot provide an isolated conversation office; use
-> image:\* or gondolin:default, or explicitly choose trusted workspace policy
+> image:\*, or explicitly choose trusted workspace policy
 
 The `cloudflare:` spec still parses and executes, but only with an explicit
-`sandbox.workspace.doorPolicy: "trusted"` in `settings.json`. Nothing here is
+trusted read-write workspace policy (`shared-support` with public visibility,
+or `full`) in `settings.json`. It also refuses platform-derived private-channel
+projections because the bridge cannot enforce read-only shared memory. Nothing here is
 the factory-floor contract described in
 [docs/testing/factory-floor-conformance.md](../../../docs/testing/factory-floor-conformance.md) —
 this bridge is `/exec` only and cannot pass that suite.

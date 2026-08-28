@@ -290,7 +290,11 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   const agentConfig = resolveConversationSettings(office);
 
   const projection = resolveWorkspaceProjection(office);
-  assertSandboxSupportsWorkspacePolicy(sandboxConfig, projection.doorPolicy);
+  assertSandboxSupportsWorkspacePolicy(
+    sandboxConfig,
+    projection.doorPolicy,
+    projection.promptSources.globalMemoryReadOnly === true,
+  );
   const { executionResolver, executor, getPathContext, resolveExecutorForRun } =
     createRunnerExecutionContext(sandboxConfig, vaultManager, provisioner, office.workspace);
   let pathContext = getUnresolvedSandboxPathContext(sandboxConfig, workspaceDir);

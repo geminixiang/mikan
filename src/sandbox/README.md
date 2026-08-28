@@ -8,7 +8,7 @@ This directory defines sandbox abstractions, concrete sandbox executors, and sha
 - `container.ts`: Implements the Docker container executor, `docker exec` command construction, secure env files, and runtime bootstrap.
 - `host.ts`: Implements the host executor by running commands directly through the local shell.
 - `identity.ts`: Separately derives collision-safe credential authorization keys and runtime resource keys.
-- `index.ts`: Registers sandbox adapters (including the `image:<image>` config adapter) and exposes parse, validate, and executor factory helpers, plus the per-adapter capability queries — `getSandboxCredentialCapabilities`, `getSandboxWorkspaceCapabilities`, and `assertSandboxSupportsWorkspacePolicy` (a backend without managed projection cannot honor an `isolated` door).
+- `index.ts`: Registers sandbox adapters (including the `image:<image>` config adapter) and exposes parse, validate, and executor factory helpers, plus the per-adapter capability queries — `getSandboxCredentialCapabilities`, `getSandboxWorkspaceCapabilities`, and `assertSandboxSupportsWorkspacePolicy` (a backend without managed projection cannot honor an `isolated` door or read-only shared memory).
 - `types.ts`: Defines all sandbox configs, executors, exec results, runtime path contexts, and adapter types.
 - `utils.ts`: Provides `SandboxError` (user-facing CLI diagnostics), simple child-process execution, process-tree killing, shell escaping, the shared base64-chunked file transport (`execReadFile`/`execWriteFile`) used by every exec-only executor, and `createMountedRuntimePathContext` (runtime→host path translation for mounted workspaces).
 
@@ -51,22 +51,28 @@ Rules enforced in code:
 - Multi-instance hosts should give each instance its own `--state-dir`;
   conversation settings, auth, and vaults are keyed per state dir.
 
-### Mounted read-write into the container — agent-writable by design
+### Workspace mounts
 
 The mount set is chosen by the office's door policy, resolved in one place
 (`resolveWorkspaceProjection`, `src/workspace-projection/README.md`):
 
-| Mount                                       | Purpose                                       | Present in                      |
-| ------------------------------------------- | --------------------------------------------- | ------------------------------- |
-| `<office key>/` → `/workspace/<office key>` | sessions, attachments, scratch, office skills | every policy                    |
-| `MEMORY.md` → `/workspace/MEMORY.md`        | agent-maintained workspace memory             | `trusted` + `shared-support`    |
-| `skills/` → `/workspace/skills`             | agent-creatable workspace skills              | `trusted` + `shared-support`    |
-| `events/` → `/workspace/events`             | event files (agent self-scheduling)           | `trusted` + `shared-support`    |
-| vault mounts                                | per-user credential injection                 | every policy (when provisioned) |
+| Mount                                       | Purpose                                                             | Present in                      |
+| ------------------------------------------- | ------------------------------------------------------------------- | ------------------------------- |
+| `<office key>/` → `/workspace/<office key>` | sessions, attachments, scratch, office skills                       | every policy                    |
+| `MEMORY.md` → `/workspace/MEMORY.md`        | agent-maintained workspace memory; read-only for private visibility | `trusted` + `shared-support`    |
+| `skills/` → `/workspace/skills`             | agent-creatable workspace skills                                    | `trusted` + `shared-support`    |
+| `events/` → `/workspace/events`             | event files (agent self-scheduling)                                 | `trusted` + `shared-support`    |
+| vault mounts                                | per-user credential injection                                       | every policy (when provisioned) |
 
-`isolated` (the fresh-install default) mounts the office directory alone.
-`trusted` + `full` (admin, or `/pi-sandbox door full`) mounts the entire
-working directory at `/workspace` instead of the list above.
+Without an explicit override, recorded Slack public channels derive trusted
+read-write shared support, private channels derive trusted shared support with
+read-only global memory, and DMs, external channels, or unknown kinds derive
+`isolated`. `trusted` + `full` (admin, or `/pi-sandbox door full`) mounts the
+entire working directory at `/workspace` instead of the list above.
+
+Only the managed `image:*` backend consumes and enforces these mount flags.
+Host, existing-container, and Cloudflare modes fail closed when a projection
+requires isolation or read-only shared memory.
 
 Changing the policy changes the container's desired mounts, which reads as
 drift: the provisioner recreates the container with the new binds while

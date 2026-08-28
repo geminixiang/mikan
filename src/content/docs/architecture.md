@@ -70,9 +70,9 @@ Responsibilities:
 Responsibilities:
 
 - provide a unified `Executor` abstraction
-- split sandbox runtimes into two categories:
-  - shared: `host` / `container:<name>`, where the same host or named container is shared
-  - isolated: `image:<image>` / `cloudflare:*`, routed by actor/conversation/vault to isolated execution environments
+- split sandbox runtimes by workspace capability:
+  - unmanaged projection: `host` / `container:<name>` / `cloudflare:*`
+  - managed projection: `image:<image>`, which can enforce isolated offices and read-only shared memory
 - use `ActorExecutionResolver` to decide the actual executor by user/conversation/vault
 - in `image` mode, automatically create and recycle Docker containers, resolving `image:<image>` to a concrete `container:<name>` executor
 
@@ -208,7 +208,7 @@ What an office's sandbox runtime actually sees is the _workspace projection_, re
 | `trusted`   | `shared-support` | `<officeKey>/` plus workspace `MEMORY.md`, `skills/`, and `events/` |
 | `trusted`   | `full`           | the entire workspace root                                           |
 
-`isolated` is the default and always implies the `conversation` layout. Door policy is a data-access boundary; it never changes execution or network isolation. It is set per office from the admin portal or with `/pi-sandbox door`, and its global default lives in `sandbox.workspace` — see [Configuration](/configuration/).
+`isolated` always implies the `conversation` layout. Without an explicit override, recorded Slack public channels derive trusted read-write shared support, private channels derive trusted shared support with read-only global memory, and DMs, external channels, or unknown kinds derive isolated. Door policy is a data-access boundary; it never changes execution or network isolation. Admin and `/pi-sandbox door` may set explicit overrides — see [Configuration](/configuration/).
 
 ## 5. Login / Vault / Sandbox relationship
 
@@ -234,7 +234,7 @@ Key points:
 - vaults live in `--state-dir`
 - at execution time, the office's vault is routed to the corresponding sandbox
 - `image` / `cloudflare` modes key the vault by office key — the same string that names the office in the workspace and the registry; `container:<name>` uses a shared container vault; `host` keys by user and does not inject vault env
-- sandbox resource names (container names, Gondolin instances, Cloudflare scopes) are still derived from the raw conversation id. A collision there costs a container recreate, never credential access
+- sandbox resource names (container names and Cloudflare scopes) are still derived from the raw conversation id. A collision there costs a runtime recreate, never credential access
 
 ## 6. Differences between events and normal chats
 

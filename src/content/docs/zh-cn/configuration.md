@@ -63,9 +63,6 @@ office key 无法反推回原始平台 id，因此主机会在 `<state-dir>/offi
       "cpus": "2",
       "memory": "4g"
     },
-    "workspace": {
-      "doorPolicy": "isolated"
-    },
     "defaultSharedVault": ""
   }
 }
@@ -75,26 +72,29 @@ office key 无法反推回原始平台 id，因此主机会在 `<state-dir>/offi
 
 以下值由初始化生成。解析后的全局配置中必须包含 `llm.provider`、`llm.model` 和 `llm.thinkingLevel`；其他字段可以省略。
 
-| 字段                           | 初始化值            | 说明                                                                                |
-| ------------------------------ | ------------------- | ----------------------------------------------------------------------------------- |
-| `llm.provider`                 | `anthropic`         | 主 AI 提供商                                                                        |
-| `llm.model`                    | `claude-sonnet-4-6` | 主模型名称                                                                          |
-| `llm.thinkingLevel`            | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`                         |
-| `llm.autoReply.provider`       | `anthropic`         | 用于评估自动回复规则的可选模型提供商                                                |
-| `llm.autoReply.model`          | `claude-haiku-4-5`  | 用于评估自动回复规则的可选模型                                                      |
-| `sentry.dsn`                   | 未设置              | Sentry DSN；敏感提示词和工具内容会被编辑隐藏                                        |
-| `sandbox.boost.cpus`           | `2`                 | `/pi-sandbox boost` 应用的临时 CPU 限制                                             |
-| `sandbox.boost.memory`         | `4g`                | `/pi-sandbox boost` 应用的临时内存限制                                              |
-| `sandbox.workspace.doorPolicy` | `isolated`          | `isolated` 将每个对话锁定在它自己的办公室数据内；`trusted` 显式允许协作式工作区布局 |
-| `sandbox.workspace.layout`     | `conversation`      | 生效布局：isolated 始终使用 `conversation`；trusted 使用 `shared-support` 或 `full` |
-| `sandbox.defaultSharedVault`   | 空                  | 复制到符合条件、基于成员身份信任的 image/Cloudflare 对话中的共享 vault              |
-| `slack.replyMode`              | `top-level`         | Slack 回复模式：`top-level` 或 `thread`                                             |
+| 字段                           | 初始化值            | 说明                                                                          |
+| ------------------------------ | ------------------- | ----------------------------------------------------------------------------- |
+| `llm.provider`                 | `anthropic`         | 主 AI 提供商                                                                  |
+| `llm.model`                    | `claude-sonnet-4-6` | 主模型名称                                                                    |
+| `llm.thinkingLevel`            | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`                   |
+| `llm.autoReply.provider`       | `anthropic`         | 用于评估自动回复规则的可选模型提供商                                          |
+| `llm.autoReply.model`          | `claude-haiku-4-5`  | 用于评估自动回复规则的可选模型                                                |
+| `sentry.dsn`                   | 未设置              | Sentry DSN；敏感提示词和工具内容会被编辑隐藏                                  |
+| `sandbox.boost.cpus`           | `2`                 | `/pi-sandbox boost` 应用的临时 CPU 限制                                       |
+| `sandbox.boost.memory`         | `4g`                | `/pi-sandbox boost` 应用的临时内存限制                                        |
+| `sandbox.workspace.doorPolicy` | 未设置              | 显式覆盖：`isolated` 将办公室锁定在自身数据内；`trusted` 允许协作式工作区布局 |
+| `sandbox.workspace.layout`     | 未设置              | 显式 trusted 布局覆盖：`shared-support` 或 `full`                             |
+| `sandbox.workspace.visibility` | 未设置              | 在 `shared-support` 下，`public` 允许读写全局记忆，`private` 设为只读         |
+| `sandbox.defaultSharedVault`   | 空                  | 复制到符合条件、基于成员身份信任的 image/Cloudflare 对话中的共享 vault        |
+| `slack.replyMode`              | `top-level`         | Slack 回复模式：`top-level` 或 `thread`                                       |
 
-`/pi-model` 写入部分对话覆盖，`/pi-sandbox door <default|isolated|shared|full>` 写入该对话的 `sandbox.workspace` 覆盖值；管理 portal 既可以设置按办公室的门禁策略，也可以设置全局门禁策略。自动回复的启用状态和规则文本由 `/pi-auto-reply` 及对话的 `auto-reply` 标记文件管理，不由 JSON 设置字段管理。
+`/pi-model` 写入部分对话覆盖，`/pi-sandbox door <default|isolated|shared|shared-private|full>` 写入该对话的 `sandbox.workspace` 覆盖值；管理 portal 既可以设置按办公室的门禁策略，也可以设置全局门禁策略。自动回复的启用状态和规则文本由 `/pi-auto-reply` 及对话的 `auto-reply` 标记文件管理，不由 JSON 设置字段管理。
 
-门禁策略和布局一起解析。`isolated` 始终意味着 `conversation` 布局：只挂载办公室自己的目录。`trusted` 则意味着 `shared-support`——办公室外加工作区级的 `MEMORY.md`、`skills/` 和 `events/`——或 `full`，即挂载整个工作区根目录。门禁策略为 `trusted` 而未指定布局时，解析为 `shared-support`。
+Onboarding 不会写入 `sandbox.workspace`。没有显式的全局或对话覆盖时，mikan 会跟随已记录的平台频道可见性。目前 Slack 公开频道解析为 `trusted` + `shared-support` + `public`，因此可以读写工作区全局 `MEMORY.md`；Slack 私密频道解析为 `trusted` + `shared-support` + `private`，全局记忆以只读方式挂载。Slack DM、外部共享频道、未知频道类型，以及未记录频道可见性的其他平台均解析为 `isolated`。这意味着新部署中的 Slack 公开频道无需额外门禁命令，就会向共享工作区记忆写入内容。
 
-旧版 `sandbox.image.workspaceMount` 仍可读取以便迁移：`private` 表示 `trusted` + `shared-support`，`full` 表示 `trusted` + `full`。全新安装写入规范的、与后端无关的设置，并默认为 `isolated`。
+门禁策略和布局一起解析。`isolated` 始终意味着 `conversation` 布局：只挂载办公室自己的目录。`trusted` 则意味着 `shared-support`——办公室外加工作区级的 `MEMORY.md`、`skills/` 和 `events/`——或 `full`，即挂载整个工作区根目录。门禁策略为 `trusted` 而未指定布局时，解析为 `shared-support`。只有 `image:*` 能强制执行 isolated 投影或只读共享记忆；`host`、`container:*` 和 `cloudflare:*` 会对这些投影采取 fail-closed，因此必须改用 `image:*`，或显式选择 trusted 读写策略。
+
+旧版 `sandbox.image.workspaceMount` 仍可读取以便迁移：旧的 `workspaceMount: "private"` 为维持原行为，表示 `trusted` + `shared-support` 且可见性为 **public/read-write**；它与新的 `sandbox.workspace.visibility: "private"` 不同，后者会将共享记忆设为只读。旧的 `workspaceMount: "full"` 表示 `trusted` + `full`。
 
 ## 平台凭证
 

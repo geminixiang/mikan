@@ -4,7 +4,7 @@ description: 使用自行部署的 Cloudflare Worker bridge 執行施工中的 C
 ---
 
 :::caution[施工中]
-Cloudflare 模式雖然存在於 mikan 的 sandbox 設定中，但它並不是一個完成的部署目標：它沒有受管的 workspace projection、沒有 file-credential projection，也沒有 lifecycle 或資源管理。由於它無法落實 workspace projection，在預設的 `isolated` door policy 下根本不會執行——必須先明確設定 trusted policy。預期它日後會以「外包執行介面」的形式回歸。任何實際用途請改用 [`image:<image>`](/zh-tw/sandbox/image/)。
+Cloudflare 模式雖然存在於 mikan 的 sandbox 設定中，但它並不是一個完成的部署目標：它沒有受管的 workspace projection、沒有 file-credential projection，也沒有 lifecycle 或資源管理。由於它無法落實 isolated projection 或唯讀共享記憶，必須先明確設定 trusted 讀寫 policy。預期它日後會以「外包執行介面」的形式回歸。任何實際用途請改用 [`image:<image>`](/zh-tw/sandbox/image/)。
 :::
 
 ```bash
@@ -23,7 +23,7 @@ mikan --sandbox=cloudflare:mikan-remote /path/to/workspace
 
 限制：
 
-- mikan 在這裡無法落實 workspace projection，因此這個模式會拒絕在預設的 `isolated` door policy 下執行；必須明確選擇 trusted policy
+- mikan 在這裡無法落實 isolated workspace projection 或唯讀共享記憶；必須明確選擇 trusted 讀寫 policy
 - 遠端 `/workspace` 不會自動 mirror 本機工作目錄
 - 因此 `pwd` 會顯示 `/workspace`，但 `ls` 可能是空的；這是預期行為，不代表它正在讀你的本機 repo
 - file credential 是被拒絕而不是被略過：如果該對話的 vault 中除了 `env` 之外還有任何檔案，執行就會失敗並拋出 `Sandbox type "cloudflare" does not support vault file mounts`。在這裡請把憑證放在 `env` 中。

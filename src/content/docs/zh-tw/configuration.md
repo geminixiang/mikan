@@ -63,9 +63,6 @@ Office key 無法反推回原始平台 id，因此 host 會在 `<state-dir>/offi
       "cpus": "2",
       "memory": "4g"
     },
-    "workspace": {
-      "doorPolicy": "isolated"
-    },
     "defaultSharedVault": ""
   }
 }
@@ -75,26 +72,29 @@ Office key 無法反推回原始平台 id，因此 host 會在 `<state-dir>/offi
 
 以下是 onboarding 產生的值。解析後的全域設定必須包含 `llm.provider`、`llm.model` 與 `llm.thinkingLevel`；其他欄位可省略。
 
-| 欄位                           | Onboarding 值       | 說明                                                                                         |
-| ------------------------------ | ------------------- | -------------------------------------------------------------------------------------------- |
-| `llm.provider`                 | `anthropic`         | 主要 AI 供應商                                                                               |
-| `llm.model`                    | `claude-sonnet-4-6` | 主要模型名稱                                                                                 |
-| `llm.thinkingLevel`            | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`                                  |
-| `llm.autoReply.provider`       | `anthropic`         | 用來評估 auto-reply 規則的選用模型供應商                                                     |
-| `llm.autoReply.model`          | `claude-haiku-4-5`  | 用來評估 auto-reply 規則的選用模型                                                           |
-| `sentry.dsn`                   | 未設定              | Sentry DSN；敏感的 prompt 與 tool 內容會被遮蔽                                               |
-| `sandbox.boost.cpus`           | `2`                 | `/pi-sandbox boost` 套用的暫時 CPU 限制                                                      |
-| `sandbox.boost.memory`         | `4g`                | `/pi-sandbox boost` 套用的暫時記憶體限制                                                     |
-| `sandbox.workspace.doorPolicy` | `isolated`          | `isolated` 把每個對話鎖在自己的 office 資料內；`trusted` 則明確允許協作式的 workspace layout |
-| `sandbox.workspace.layout`     | `conversation`      | 生效的 layout：isolated 一律使用 `conversation`；trusted 使用 `shared-support` 或 `full`     |
-| `sandbox.defaultSharedVault`   | 空白                | 複製到符合資格之 membership-trust image/Cloudflare 對話的共享 vault                          |
-| `slack.replyMode`              | `top-level`         | Slack 回應模式：`top-level` 或 `thread`                                                      |
+| 欄位                           | Onboarding 值       | 說明                                                                                 |
+| ------------------------------ | ------------------- | ------------------------------------------------------------------------------------ |
+| `llm.provider`                 | `anthropic`         | 主要 AI 供應商                                                                       |
+| `llm.model`                    | `claude-sonnet-4-6` | 主要模型名稱                                                                         |
+| `llm.thinkingLevel`            | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`                          |
+| `llm.autoReply.provider`       | `anthropic`         | 用來評估 auto-reply 規則的選用模型供應商                                             |
+| `llm.autoReply.model`          | `claude-haiku-4-5`  | 用來評估 auto-reply 規則的選用模型                                                   |
+| `sentry.dsn`                   | 未設定              | Sentry DSN；敏感的 prompt 與 tool 內容會被遮蔽                                       |
+| `sandbox.boost.cpus`           | `2`                 | `/pi-sandbox boost` 套用的暫時 CPU 限制                                              |
+| `sandbox.boost.memory`         | `4g`                | `/pi-sandbox boost` 套用的暫時記憶體限制                                             |
+| `sandbox.workspace.doorPolicy` | 未設定              | 明確覆寫：`isolated` 把 office 鎖在自身資料內；`trusted` 允許協作式 workspace layout |
+| `sandbox.workspace.layout`     | 未設定              | 明確的 trusted layout 覆寫：`shared-support` 或 `full`                               |
+| `sandbox.workspace.visibility` | 未設定              | 在 `shared-support` 下，`public` 允許讀寫全域記憶，`private` 則設為唯讀              |
+| `sandbox.defaultSharedVault`   | 空白                | 複製到符合資格之 membership-trust image/Cloudflare 對話的共享 vault                  |
+| `slack.replyMode`              | `top-level`         | Slack 回應模式：`top-level` 或 `thread`                                              |
 
-`/pi-model` 會寫入部分對話覆寫；`/pi-sandbox door <default|isolated|shared|full>` 會寫入該對話的 `sandbox.workspace` 覆寫。Admin portal 則同時能設定各 office 與全域的 door policy。Auto-reply 是否啟用及其規則文字由 `/pi-auto-reply` 與對話的 `auto-reply` marker file 管理，而非 JSON 設定欄位。
+`/pi-model` 會寫入部分對話覆寫；`/pi-sandbox door <default|isolated|shared|shared-private|full>` 會寫入該對話的 `sandbox.workspace` 覆寫。Admin portal 則同時能設定各 office 與全域的 door policy。Auto-reply 是否啟用及其規則文字由 `/pi-auto-reply` 與對話的 `auto-reply` marker file 管理，而非 JSON 設定欄位。
 
-Door policy 與 layout 是一起解析的。`isolated` 一律代表 `conversation` layout：只掛載該 office 自己的目錄。`trusted` 則代表 `shared-support`——該 office 再加上 workspace 層級的 `MEMORY.md`、`skills/` 與 `events/`——或 `full`，也就是掛載整個 workspace root。door policy 是 `trusted` 但未指定 layout 時，會解析為 `shared-support`。
+Onboarding 不會寫入 `sandbox.workspace`。若沒有明確的全域或對話覆寫，mikan 會跟隨已記錄的平台頻道可見性。目前 Slack 公開頻道會解析為 `trusted` + `shared-support` + `public`，因此可讀寫 workspace 全域 `MEMORY.md`；Slack 私密頻道會解析為 `trusted` + `shared-support` + `private`，全域記憶以唯讀方式掛載。Slack DM、外部共享頻道、未知頻道類型，以及未記錄頻道可見性的其他平台都會解析為 `isolated`。這表示新部署的 Slack 公開頻道不需要額外 door-policy 指令，就會把內容寫入共享 workspace 記憶。
 
-舊版的 `sandbox.image.workspaceMount` 為了遷移仍然讀得到：`private` 代表 `trusted` + `shared-support`，`full` 代表 `trusted` + `full`。全新安裝會寫入標準的、與後端無關的設定，並預設為 `isolated`。
+Door policy 與 layout 是一起解析的。`isolated` 一律代表 `conversation` layout：只掛載該 office 自己的目錄。`trusted` 則代表 `shared-support`——該 office 再加上 workspace 層級的 `MEMORY.md`、`skills/` 與 `events/`——或 `full`，也就是掛載整個 workspace root。door policy 是 `trusted` 但未指定 layout 時，會解析為 `shared-support`。只有 `image:*` 能強制 isolated projection 或唯讀共享記憶；`host`、`container:*` 與 `cloudflare:*` 對這些 projection 會 fail closed，因此必須改用 `image:*`，或明確選擇 trusted 讀寫 policy。
+
+舊版的 `sandbox.image.workspaceMount` 為了遷移仍然讀得到：舊的 `workspaceMount: "private"` 為維持原行為，代表 `trusted` + `shared-support` 且 visibility 為 **public/read-write**；它不同於新的 `sandbox.workspace.visibility: "private"`，後者會把共享記憶設為唯讀。舊的 `workspaceMount: "full"` 代表 `trusted` + `full`。
 
 ## 平台憑證
 

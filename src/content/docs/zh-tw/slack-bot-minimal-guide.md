@@ -105,15 +105,15 @@ Bot 會在 DM 中回應，也會在 channel 中被 mention 時回應。觸發的
 
 ## 9. 選擇一種 sandbox
 
-不指定 `--sandbox` 時，mikan 會直接在宿主機上執行工具，而預設的 `isolated` door policy 依設計會拒絕這個組合——第一則訊息就會回報 `host` 無法提供隔離的 conversation office。請在第一次真正的對話之前先選好：
+不指定 `--sandbox` 時，mikan 會直接在宿主機上執行工具。沒有覆寫時，workspace policy 會跟隨 Slack 頻道可見性：公開頻道讀寫共享記憶，私密頻道要求唯讀共享記憶，DM 維持 isolated。Host 模式無法強制後兩種邊界，因此會拒絕這些執行。請在第一次真正的對話之前先選好：
 
-- **建議做法。** 使用受管理的 sandbox，它會給每個對話自己的 container，而且不必更動任何設定就能滿足 isolated policy：
+- **建議做法。** 使用受管理的 sandbox，它會給每個對話自己的 container，而且不必更動設定就能強制 public、private/唯讀與 isolated projection：
 
   ```bash
   mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest
   ```
 
-- **Host 模式**，只適用於你已經信任其掌握整個 workspace 的機器：請在 `~/.mikan/settings.json` 中加入 trusted door policy。
+- **Host 模式**，只適用於你已經信任其掌握整個 workspace 的機器：請在 `~/.mikan/settings.json` 中加入 trusted 讀寫 door policy。這個覆寫會明確移除平台推導的 private/DM 資料邊界。
 
   ```json
   {

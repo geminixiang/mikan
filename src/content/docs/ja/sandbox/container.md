@@ -37,9 +37,8 @@ vault は conversation ごとの認証情報の境界ではありません。
 
 ## Door policy
 
-`container:*` は conversation スコープの workspace projection を強制できません。`docker exec` は
-mikan が作成していない container に mount を追加できないためです。そのため、既定の `isolated`
-door policy では実行を拒否します。グローバルな `settings.json` または admin portal で trusted な policy
+`container:*` は conversation スコープの workspace projection や read-only shared memory を強制できません。`docker exec` は
+mikan が作成していない container に mount を追加できないためです。そのため、effective isolated projection と platform-derived private/read-only projection を拒否します。グローバルな `settings.json` または admin portal で trusted read-write policy
 を明示的に選び（`/pi-sandbox` チャットコマンドは管理型 sandbox 専用です）、container を作成する際に
 workspace は自分で mount してください。
 
