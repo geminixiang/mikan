@@ -893,8 +893,10 @@ describe("SandboxCommandHandler", () => {
   test("door without an argument shows usage and the current policy", async () => {
     const ctx = doorContext("/pi-sandbox door");
     expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(ctx.responder.responses[0]).toContain("Current: isolated / conversation");
-    expect(ctx.responder.responses[0]).toContain("door <default|isolated|shared|full>");
+    expect(ctx.responder.responses[0]).toContain("Current: isolated / conversation / public");
+    expect(ctx.responder.responses[0]).toContain(
+      "door <default|isolated|shared|shared-private|full>",
+    );
     expect(doorOverride()).toBeNull();
   });
 
@@ -906,8 +908,20 @@ describe("SandboxCommandHandler", () => {
     expect(ctx.services.runtime?.refreshConversationEnvironment).toHaveBeenCalledWith(
       createOfficeAddress("slack", "C123"),
     );
-    expect(ctx.responder.responses[0]).toContain("Effective: trusted / full");
+    expect(ctx.responder.responses[0]).toContain("Effective: trusted / full / public");
     expect(ctx.responder.responses[0]).toContain("重建 sandbox 容器");
+  });
+
+  test("door shared-private writes a read-only shared workspace memory override", async () => {
+    const ctx = doorContext("/pi-sandbox door shared-private");
+    expect(await handler.tryHandle(ctx)).toBe(true);
+    const written = JSON.parse(readFileSync(doorSettingsFile(), "utf-8"));
+    expect(written.sandbox.workspace).toEqual({
+      doorPolicy: "trusted",
+      layout: "shared-support",
+      visibility: "private",
+    });
+    expect(ctx.responder.responses[0]).toContain("Effective: trusted / shared-support / private");
   });
 
   test("door default clears an existing override", async () => {
@@ -917,7 +931,9 @@ describe("SandboxCommandHandler", () => {
     expect(await handler.tryHandle(clearCtx)).toBe(true);
     const written = JSON.parse(readFileSync(doorSettingsFile(), "utf-8"));
     expect(written.sandbox?.workspace).toBeUndefined();
-    expect(clearCtx.responder.responses[0]).toContain("Effective: isolated / conversation");
+    expect(clearCtx.responder.responses[0]).toContain(
+      "Effective: isolated / conversation / public",
+    );
   });
 
   test("door refuses while the conversation is busy", async () => {

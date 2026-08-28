@@ -4,7 +4,12 @@ import { ensureDirExists } from "../utils/file-guards.js";
 import { resolveConversationSettings } from "../config.js";
 import type { Office } from "../office/index.js";
 import * as log from "../log.js";
-import type { ImageWorkspaceMountMode, WorkspaceDoorPolicy, WorkspaceLayout } from "../types.js";
+import type {
+  ImageWorkspaceMountMode,
+  WorkspaceDoorPolicy,
+  WorkspaceLayout,
+  WorkspaceVisibility,
+} from "../types.js";
 import type { WorkspaceProjection } from "./types.js";
 
 export type { WorkspaceProjection } from "./types.js";
@@ -27,12 +32,31 @@ export function resolveWorkspaceProjection(office: Office): WorkspaceProjection 
     ensureDirectoryRoot(workspace.eventsDir, "Workspace events");
   }
 
+  // Private visibility only changes anything for shared-support: the shared
+  // MEMORY.md is the one file that leaks information between offices when
+  // writable, so a private office reads it but cannot write it (modeled on
+  // Claude Tag's private-channel memory). "full" mounts the whole workspace
+  // as one read-write bind with no separate memory file to gate, and
+  // "conversation" never sees workspace memory at all.
+  //
+  // The `readOnly` mount flag below is a kernel-enforced boundary only for
+  // sandbox backends that actually bind-mount (container/image, gondolin).
+  // Host, Cloudflare, and Firecracker executors do not consume
+  // WorkspaceProjection.mounts at all (see execution-resolver.ts
+  // resolveSandboxConfig) and have no equivalent enforcement point; for
+  // those backends this setting is honored only as prompt guidance to the
+  // agent (agent/prompt.ts memoryGuidance), not as a hard boundary.
+  const globalMemoryReadOnly = shared && effective.visibility === "private";
   const mounts =
     effective.layout === "full"
       ? [{ source: workspace.root, target: "/workspace" }]
       : effective.layout === "shared-support"
         ? [
-            { source: workspace.memoryPath, target: "/workspace/MEMORY.md" },
+            {
+              source: workspace.memoryPath,
+              target: "/workspace/MEMORY.md",
+              ...(globalMemoryReadOnly ? { readOnly: true as const } : {}),
+            },
             { source: workspace.skillsDir, target: "/workspace/skills" },
             { source: workspace.eventsDir, target: "/workspace/events" },
             { source: office.dir, target: `/workspace/${office.key}` },
@@ -47,7 +71,11 @@ export function resolveWorkspaceProjection(office: Office): WorkspaceProjection 
       conversationMemoryPath: office.memoryPath,
       conversationSkillsDir: office.skillsDir,
       ...(effective.layout === "shared-support" || effective.layout === "full"
-        ? { globalMemoryPath: workspace.memoryPath, globalSkillsDir: workspace.skillsDir }
+        ? {
+            globalMemoryPath: workspace.memoryPath,
+            globalSkillsDir: workspace.skillsDir,
+            ...(globalMemoryReadOnly ? { globalMemoryReadOnly: true } : {}),
+          }
         : {}),
     },
   };
@@ -55,11 +83,15 @@ export function resolveWorkspaceProjection(office: Office): WorkspaceProjection 
 
 function resolveEffectiveWorkspace(
   office: Office,
-): Pick<WorkspaceProjection, "doorPolicy" | "layout"> {
+): Pick<WorkspaceProjection, "doorPolicy" | "layout" | "visibility"> {
   try {
     const settings = resolveConversationSettings(office).sandbox;
     if (settings?.workspace) {
-      return normalizeWorkspace(settings.workspace.doorPolicy, settings.workspace.layout);
+      return normalizeWorkspace(
+        settings.workspace.doorPolicy,
+        settings.workspace.layout,
+        settings.workspace.visibility,
+      );
     }
     return legacyWorkspace(settings?.image?.workspaceMount);
   } catch (err) {
@@ -76,20 +108,29 @@ function resolveEffectiveWorkspace(
 function normalizeWorkspace(
   doorPolicy: WorkspaceDoorPolicy | undefined,
   layout: WorkspaceLayout | undefined,
-): Pick<WorkspaceProjection, "doorPolicy" | "layout"> {
+  visibility: WorkspaceVisibility | undefined,
+): Pick<WorkspaceProjection, "doorPolicy" | "layout" | "visibility"> {
   const policy = doorPolicy ?? "isolated";
-  if (policy === "isolated") return { doorPolicy: policy, layout: "conversation" };
-  return { doorPolicy: policy, layout: layout === "full" ? "full" : "shared-support" };
+  if (policy === "isolated") {
+    return { doorPolicy: policy, layout: "conversation", visibility: "public" };
+  }
+  return {
+    doorPolicy: policy,
+    layout: layout === "full" ? "full" : "shared-support",
+    // Missing visibility defaults to "public": every office that predates this
+    // setting keeps today's read-write shared MEMORY.md behavior unchanged.
+    visibility: visibility ?? "public",
+  };
 }
 
 function legacyWorkspace(
   mode: ImageWorkspaceMountMode | undefined,
-): Pick<WorkspaceProjection, "doorPolicy" | "layout"> {
+): Pick<WorkspaceProjection, "doorPolicy" | "layout" | "visibility"> {
   return mode === "full"
-    ? { doorPolicy: "trusted", layout: "full" }
+    ? { doorPolicy: "trusted", layout: "full", visibility: "public" }
     : mode === "private"
-      ? { doorPolicy: "trusted", layout: "shared-support" }
-      : { doorPolicy: "isolated", layout: "conversation" };
+      ? { doorPolicy: "trusted", layout: "shared-support", visibility: "public" }
+      : { doorPolicy: "isolated", layout: "conversation", visibility: "public" };
 }
 
 function ensureDirectoryRoot(path: string, label: string): void {

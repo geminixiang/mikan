@@ -1,7 +1,7 @@
 # Cross-Channel Memory Design — 跨頻道學習
 
 **日期**: 2026-08-28
-**狀態**: 設計草案，尚未實作
+**狀態**: 已實作（core mechanism + prompt guidance + chat/admin 控制面，見本文件尾部「實作紀錄」）
 **背景**: 對標 Anthropic Claude Tag 的「Learns over time」能力（跟隨頻道累積脈絡，
 且經授權可跨頻道自動學習，但不從私有頻道回報）。mikan 目前只有單頻道記憶
 （`MEMORY.md`），這份文件記錄怎麼把 Claude Tag 已驗證的記憶模型對齊進 mikan。
@@ -141,6 +141,7 @@ visibility: "public" | "private" | "isolated"
   admin 必須手動去 workspace 全域 `MEMORY.md` 裡刪除對應段落。
 
 這條規則刻意選擇跟 Claude Tag 一致（不做自動追溯清理），理由：
+
 1. 自動追溯清理需要追蹤「這條記憶是哪個 conversation 寫的」，`MEMORY.md` 目前是
    無結構純文字，做這件事需要引入結構化的來源標記，複雜度顯著上升。
 2. 已經被其他 conversation 讀取、可能已經影響過往決策的資訊，事後自動撤回本身
@@ -166,6 +167,71 @@ visibility: "public" | "private" | "isolated"
    （`private`）或讀寫（`public`），不再是單一寫死的讀寫掛載。
 3. `agent/prompt.ts` 的系統提示補上「記憶是策展筆記，不是流水帳」+「查詢/訂正/
    遺忘是被期待的正常操作」的指引，不需要新的資料結構或工具。
+
+## 實作紀錄（2026-08-28）
+
+本設計的三項小結已實作並通過測試：
+
+1. **`WorkspaceVisibility`**（`src/types.ts`）新型別 `"public" | "private"`，加入
+   `WorkspaceSettings.visibility`（選擇欄位，未設定預設 `"public"`）。**這裡沒有新增
+   `"isolated"` 第三檔**，因為現有 `WorkspaceDoorPolicy`（`isolated`/`trusted`）已經擔了
+   這個角色：`isolated` 就是完全不參與共享的那一檔，`visibility` 只在
+   `doorPolicy: "trusted"` 下才有意義（既存型別 `WorkspacePolicyChoice` 本來就把
+   `layout` 鎖在 `trusted` 分支底下，`visibility` 當然一併）。
+2. **`resolveWorkspaceProjection`**（`src/workspace-projection/index.ts`）新增
+   `globalMemoryReadOnly` 計算：只有 `layout === "shared-support"` 且
+   `visibility === "private"` 時，`workspace/MEMORY.md` 的 `ContainerMount` 才帶
+   `readOnly: true`。`full` layout 仍然是一個讀寫 bind，沒有分離的 memory 檔可管；
+   `skills/`、`events/` 不受影響，仍然讀寫。既有的 `readOnly` 機制（`ContainerMount`）
+   本來就存在，且 gondolin/container/image 後端已經會尊重它（`ReadonlyProvider`／
+   Docker `:ro` 線回），**本設計並未發明新的強制機制，只是使用現有的**。
+3. **`agent/prompt.ts`**：`memoryGuidance` 新增 visibility-aware 分支——private
+   時明確告訴 agent「寫入共用 MEMORY.md 會被拒絕，請寫進自己的 conversation
+   MEMORY.md」；Memory 節新增「策展筆記、不是流水帳」+「查詢/訂正/遺忘是正常要求」的
+   提醒。
+
+既有初設計的伏筆裡還有兩點已在實作這輪一併展開，不需要再等後續。
+
+### 控制面：`/pi-sandbox door`（聊天指令）+ admin portal
+
+- `/pi-sandbox door <default|isolated|shared|shared-private|full>`：新增
+  `shared-private` 選項（並且 `shared`/`shared-support` 明確別名為 `shared-public`），
+  狀態顯示行並列出 `doorPolicy / layout / visibility` 三個值。
+- Admin portal（`src/web/admin/portal.ts`）：新增 `trusted-shared-support-private` 選項
+  （對應 conversation 的 `/admin/api/conversations/sandbox` 和 global 的
+  `/admin/api/settings/workspace`），並在 UI 上用人讀描述提醒共用 MEMORY.md 只讀。
+- **這裡選擇直接擴充現有的 door-policy 選擇面，不新建獨立的 visibility 控制面**，因為
+  visibility 只對 `shared-support` 有意義，跟 door policy 本質就是一體的選擇，分開
+  成兩個控制面只會讓使用者面對不存在的組合（例如 `layout: "full"` +
+  `visibility: "private"`）。
+
+### 未解決的已知缺口（意圖保留，非實作疏失）
+
+- **Host 模式下沒有具體強制力**：`readOnly` 只對會 bind mount 的後端（container/image、
+  gondolin）有核心強制力（內核拒寫）。Host、Cloudflare、Firecracker 執行後端不
+  讀取 `WorkspaceProjection.mounts`（見 `execution-resolver.ts` 的
+  `resolveSandboxConfig`），對這些後端而言，private visibility 只是 prompt 層的
+  提醒，**不是硬邊界**。已在 `workspace-projection/index.ts` 的註解註明這個
+  限制，但未提供 host 模式下的執行層強制（例如 chmod 444）——這項不在本次實作
+  範圍內，若需要封閉 host 模式的完整安全邊界，需另外設計。
+- **不同平台的 public/private 自動判別**：本次實作仍然是手動選擇（透過指令/admin
+  選選項），並未自動將 Slack public channel 對應成 `visibility: "public"`、private
+  channel 對應成 `"private"`。這項自動推導未在本次實作範圍內。
+- **策展介面僅止於 prompt 指引**：查詢/訂正/遺忘目前依賴 agent 自己讀寫 `MEMORY.md`
+  檔案完成，未新建專用的工具或結構化資料。
+
+### 測試覆蓋
+
+- `src/test/workspace-projection.test.ts`：新增 4 個測試涵蓋 public 預設行為、
+  private 唯讀掛載、`full` layout 下 visibility 無效、conversation override 覆蓋
+  global 預設。
+- `src/test/sandbox-command.test.ts`：新增 `shared-private` 參數解析測試。
+- `src/test/commands.test.ts`：更新既有 door 相關測試以反映新增的 visibility 顯示，
+  新增 `shared-private` 寫入測試。
+- `src/test/agent-prompt.test.ts`：新增 3 個測試涵蓋 public/private 的
+  `memoryGuidance` 分支與策展提醒文字。
+- 全套 `npm test`：120 test files、1777 tests 全數通過。`npm run build`、
+  `npm run lint`、`npm run fmt:check`、`npm run knip` 全數乾淨。
 
 ## 未決問題
 

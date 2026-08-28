@@ -7,7 +7,12 @@ import { matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler, ParsedSandboxCommand } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
 
-/** Word → selection; null clears the override, undefined is an unknown word. */
+/**
+ * Word → selection; null clears the override, undefined is an unknown word.
+ * `shared`/`shared-support` default to public visibility (today's read-write
+ * behavior, unchanged); `shared-private` reads workspace memory but cannot
+ * write it, so information can flow in without leaking back out.
+ */
 function doorChoiceFromWord(word: string): WorkspacePolicyChoice | null | undefined {
   switch (word) {
     case "default":
@@ -16,7 +21,10 @@ function doorChoiceFromWord(word: string): WorkspacePolicyChoice | null | undefi
       return { doorPolicy: "isolated" };
     case "shared":
     case "shared-support":
-      return { doorPolicy: "trusted", layout: "shared-support" };
+    case "shared-public":
+      return { doorPolicy: "trusted", layout: "shared-support", visibility: "public" };
+    case "shared-private":
+      return { doorPolicy: "trusted", layout: "shared-support", visibility: "private" };
     case "full":
       return { doorPolicy: "trusted", layout: "full" };
     default:
@@ -104,12 +112,13 @@ export class SandboxCommandHandler implements CommandHandler {
         await replyDiagnosticWithContext(
           context.responder,
           formatCommandSummary("Sandbox Door", [
-            `Current: ${projection.doorPolicy} / ${projection.layout}`,
+            `Current: ${projection.doorPolicy} / ${projection.layout} / ${projection.visibility}`,
             "",
-            "用法：`/pi-sandbox door <default|isolated|shared|full>`",
+            "用法：`/pi-sandbox door <default|isolated|shared|shared-private|full>`",
             "- `default`：跟隨全域預設",
             "- `isolated`：只掛載自己辦公室",
-            "- `shared`：辦公室 + 共用 MEMORY.md / skills / events",
+            "- `shared`：辦公室 + 共用 MEMORY.md / skills / events（可讀寫）",
+            "- `shared-private`：同 shared，但共用 MEMORY.md 只讀不可寫（避免資訊外流）",
             "- `full`：掛載整個 workspace（全開）",
           ]),
           { style: "muted" },
@@ -122,7 +131,7 @@ export class SandboxCommandHandler implements CommandHandler {
           context.responder,
           formatCommandSummary("Sandbox Door", [
             `未知的 door policy：\`${parsed.doorPolicy}\``,
-            "可用值：`default`、`isolated`、`shared`、`full`",
+            "可用值：`default`、`isolated`、`shared`、`shared-private`、`full`",
           ]),
           { style: "muted" },
         );
@@ -149,7 +158,7 @@ export class SandboxCommandHandler implements CommandHandler {
       await replyDiagnosticWithContext(
         context.responder,
         formatCommandSummary("Sandbox Door", [
-          `Door policy 已更新。Effective: ${updated.doorPolicy} / ${updated.layout}`,
+          `Door policy 已更新。Effective: ${updated.doorPolicy} / ${updated.layout} / ${updated.visibility}`,
           "下一則訊息時會以新的掛載重建 sandbox 容器；容器內容會保留。",
         ]),
         { style: "muted" },
@@ -172,6 +181,7 @@ export class SandboxCommandHandler implements CommandHandler {
           `Status: ${status.boosted ? "boosted" : "default"}`,
           `Workspace policy: ${projection.doorPolicy}`,
           `Workspace layout: ${projection.layout}`,
+          `Workspace visibility: ${projection.visibility}`,
           "",
           `Default: ${formatLimits(defaultLimits)}`,
           boostLimits ? `Boost: ${formatLimits({ ...defaultLimits, ...boostLimits })}` : undefined,

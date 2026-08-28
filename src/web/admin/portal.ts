@@ -684,9 +684,11 @@ function serveConversationState(
     globalThinkingLevel: globalConfig.thinkingLevel,
     workspaceDoorPolicy: conversationWorkspace.doorPolicy,
     workspaceLayout: conversationWorkspace.layout,
+    workspaceVisibility: conversationWorkspace.visibility,
     workspaceOverride: doorPolicyChoiceKey(loadConversationWorkspaceOverride(office)),
     globalWorkspaceDoorPolicy: globalWorkspaceSettings?.doorPolicy ?? "isolated",
     globalWorkspaceLayout: globalWorkspaceSettings?.layout ?? "conversation",
+    globalWorkspaceVisibility: globalWorkspaceSettings?.visibility ?? "public",
     autoReplyEnabled: autoReply.enabled,
     autoReplyRules: autoReply.rules,
     slack: {
@@ -710,6 +712,7 @@ function serveGlobalSettings(res: ServerResponse): void {
       sandboxBoostMemory: config.sandbox?.boost?.memory ?? null,
       workspaceDoorPolicy: config.sandbox?.workspace?.doorPolicy ?? "isolated",
       workspaceLayout: config.sandbox?.workspace?.layout ?? "conversation",
+      workspaceVisibility: config.sandbox?.workspace?.visibility ?? "public",
       defaultSharedVault: config.sandbox?.defaultSharedVault ?? null,
       slack: {
         replyMode: config.slack?.replyMode ?? "top-level",
@@ -786,7 +789,13 @@ function serveConversationModelUpdate(
   }
 }
 
-/** Wire values for a door-policy selection; "default" clears the office's override. */
+/**
+ * Wire values for a door-policy selection; "default" clears the office's
+ * override. `trusted-shared-support` keeps the historical read-write shared
+ * MEMORY.md; `trusted-shared-support-private` is the same layout with the
+ * shared MEMORY.md mounted read-only (modeled on Claude Tag's private-
+ * channel memory: read the shared pool, never write into it).
+ */
 function parseDoorPolicyChoice(
   value: unknown,
 ): { choice: WorkspacePolicyChoice | null } | undefined {
@@ -796,7 +805,11 @@ function parseDoorPolicyChoice(
     case "isolated":
       return { choice: { doorPolicy: "isolated" } };
     case "trusted-shared-support":
-      return { choice: { doorPolicy: "trusted", layout: "shared-support" } };
+      return { choice: { doorPolicy: "trusted", layout: "shared-support", visibility: "public" } };
+    case "trusted-shared-support-private":
+      return {
+        choice: { doorPolicy: "trusted", layout: "shared-support", visibility: "private" },
+      };
     case "trusted-full":
       return { choice: { doorPolicy: "trusted", layout: "full" } };
     default:
@@ -807,7 +820,10 @@ function parseDoorPolicyChoice(
 function doorPolicyChoiceKey(choice: WorkspacePolicyChoice | null): string {
   if (!choice) return "default";
   if (choice.doorPolicy === "isolated") return "isolated";
-  return choice.layout === "full" ? "trusted-full" : "trusted-shared-support";
+  if (choice.layout === "full") return "trusted-full";
+  return choice.visibility === "private"
+    ? "trusted-shared-support-private"
+    : "trusted-shared-support";
 }
 
 function serveConversationSandboxUpdate(
@@ -820,7 +836,7 @@ function serveConversationSandboxUpdate(
   if (!parsed) {
     jsonRes(res, 400, {
       error:
-        "doorPolicy must be 'default', 'isolated', 'trusted-shared-support', or 'trusted-full'",
+        "doorPolicy must be 'default', 'isolated', 'trusted-shared-support', 'trusted-shared-support-private', or 'trusted-full'",
     });
     return;
   }
@@ -856,7 +872,7 @@ function serveGlobalWorkspaceUpdate(
   if (!parsed) {
     jsonRes(res, 400, {
       error:
-        "doorPolicy must be 'default', 'isolated', 'trusted-shared-support', or 'trusted-full'",
+        "doorPolicy must be 'default', 'isolated', 'trusted-shared-support', 'trusted-shared-support-private', or 'trusted-full'",
     });
     return;
   }
@@ -2345,9 +2361,10 @@ function renderAdminPage(token: AdminToken): string {
       const globalModel = [data.globalProvider, data.globalModel].filter(Boolean).join('/');
       const globalModelLabel = globalModel + (data.globalThinkingLevel ? ':' + data.globalThinkingLevel : '');
       const doorPolicyChoices = [
-        ['default', 'Global default (' + data.globalWorkspaceDoorPolicy + ' / ' + data.globalWorkspaceLayout + ')'],
+        ['default', 'Global default (' + data.globalWorkspaceDoorPolicy + ' / ' + data.globalWorkspaceLayout + ' / ' + (data.globalWorkspaceVisibility || 'public') + ')'],
         ['isolated', 'isolated — own office only'],
-        ['trusted-shared-support', 'trusted / shared-support — office + shared memory, skills, events'],
+        ['trusted-shared-support', 'trusted / shared-support (public) — office + shared memory, skills, events — read-write'],
+        ['trusted-shared-support-private', 'trusted / shared-support (private) — same, but shared MEMORY.md is read-only'],
         ['trusted-full', 'trusted / full — entire workspace'],
       ];
       const doorPolicyOpts = doorPolicyChoices.map(([value, label]) =>
@@ -2373,7 +2390,7 @@ function renderAdminPage(token: AdminToken): string {
           '<div class="config-block">',
             '<h3 class="card-subtitle">Office data policy</h3>',
             '<div class="config-row"><label>Door policy</label><select id="m-door-policy">' + doorPolicyOpts + '</select></div>',
-            '<p class="muted-note">Effective: ' + escHtml(data.workspaceDoorPolicy + ' / ' + data.workspaceLayout) + '</p>',
+            '<p class="muted-note">Effective: ' + escHtml(data.workspaceDoorPolicy + ' / ' + data.workspaceLayout + ' / ' + (data.workspaceVisibility || 'public')) + '</p>',
             '<p class="muted-note">Changing the policy rebuilds the office sandbox container with the new mounts on its next message; the container contents are preserved.</p>',
             '<button class="primary-action-btn" onclick="saveDoorPolicy(this)">Save door policy</button>',
             '<div id="mount-save-result" class="inline-result" style="display:none"></div>',
@@ -3193,10 +3210,13 @@ function renderAdminPage(token: AdminToken): string {
       ).join('');
       const gDoorKey = data.workspaceDoorPolicy === 'isolated'
         ? 'isolated'
-        : (data.workspaceLayout === 'full' ? 'trusted-full' : 'trusted-shared-support');
+        : (data.workspaceLayout === 'full'
+          ? 'trusted-full'
+          : ((data.workspaceVisibility || 'public') === 'private' ? 'trusted-shared-support-private' : 'trusted-shared-support'));
       const gDoorPolicyChoices = [
         ['isolated', 'isolated — own office only (built-in default)'],
-        ['trusted-shared-support', 'trusted / shared-support — office + shared memory, skills, events'],
+        ['trusted-shared-support', 'trusted / shared-support (public) — office + shared memory, skills, events — read-write'],
+        ['trusted-shared-support-private', 'trusted / shared-support (private) — same, but shared MEMORY.md is read-only'],
         ['trusted-full', 'trusted / full — entire workspace'],
       ];
       const gDoorPolicyOpts = gDoorPolicyChoices.map(([value, label]) =>

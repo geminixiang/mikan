@@ -23,6 +23,13 @@ describe("sandbox command parsing", () => {
     expect(parseSandboxCommand("/pi-sandbox full")).toEqual({});
   });
 
+  test("parses the shared-private door argument", () => {
+    expect(parseSandboxCommand("/pi-sandbox door shared-private")).toEqual({
+      action: "door",
+      doorPolicy: "shared-private",
+    });
+  });
+
   test("ignores other commands", () => {
     expect(parseSandboxCommand("/pi-model anthropic/claude-sonnet-4-6")).toBeNull();
   });

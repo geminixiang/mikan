@@ -177,9 +177,12 @@ export function buildSystemPrompt(
     projection.doorPolicy === "trusted"
       ? `Store shared skills in \`${workspaceRoot}/skills/<name>/\` or conversation-specific skills in \`${conversationPath}/skills/<name>/\`.`
       : `Store skills in \`${conversationPath}/skills/<name>/\`; this office cannot access workspace-global skills.`;
+  const globalMemoryReadOnly = projection.promptSources.globalMemoryReadOnly === true;
   const memoryGuidance =
     projection.doorPolicy === "trusted"
-      ? `Write important shared knowledge to \`${workspaceRoot}/MEMORY.md\` and conversation-specific knowledge to \`${conversationPath}/MEMORY.md\`.`
+      ? globalMemoryReadOnly
+        ? `\`${workspaceRoot}/MEMORY.md\` is shared workspace memory mounted read-only for this office (private visibility): you can read what other offices have learned, but writes to it are rejected. Write everything you learn here to \`${conversationPath}/MEMORY.md\` instead; it never leaves this conversation.`
+        : `Write important shared knowledge to \`${workspaceRoot}/MEMORY.md\` and conversation-specific knowledge to \`${conversationPath}/MEMORY.md\`.`
       : `Write durable knowledge only to \`${conversationPath}/MEMORY.md\`; this office cannot access workspace-global memory.`;
   const systemLogPath =
     projection.layout === "conversation"
@@ -282,6 +285,16 @@ For periodic events where there's nothing to report, respond with exactly \`[SIL
 ## Memory
 ${memoryGuidance}
 Update it when you learn something important or when asked to remember something.
+
+Memory is a curated note, not a transcript. Before writing an entry, ask whether it is a
+stable fact (a decision, a convention, an owner, a recurring constraint) or a one-off event
+that belongs in \`log.jsonl\` instead; only write the former. Keep entries short — a long
+running log of events crowds out the facts that matter.
+
+Querying, correcting, and forgetting memory are normal, expected requests, not edge cases:
+- If asked what you remember, read the memory file(s) above and list the entries plainly.
+- If asked to correct or forget something, edit the relevant MEMORY.md to remove or update
+  that entry, then confirm what changed.
 
 ### Current Memory
 ${memory}

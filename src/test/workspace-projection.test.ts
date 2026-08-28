@@ -108,6 +108,68 @@ describe("workspace office projection", () => {
     });
   });
 
+  test("defaults shared-support to public visibility with a read-write shared MEMORY.md mount", () => {
+    updateGlobalSettings({
+      sandbox: { workspace: { doorPolicy: "trusted", layout: "shared-support" } },
+    });
+
+    const projection = resolveWorkspaceProjection(office);
+
+    expect(projection.visibility).toBe("public");
+    const memoryMount = projection.mounts.find((mount) => mount.target === "/workspace/MEMORY.md");
+    expect(memoryMount?.readOnly).toBeUndefined();
+    expect(projection.promptSources.globalMemoryReadOnly).toBeUndefined();
+  });
+
+  test("private visibility mounts shared MEMORY.md read-only and marks prompt sources", () => {
+    updateGlobalSettings({
+      sandbox: {
+        workspace: { doorPolicy: "trusted", layout: "shared-support", visibility: "private" },
+      },
+    });
+
+    const projection = resolveWorkspaceProjection(office);
+
+    expect(projection.visibility).toBe("private");
+    const memoryMount = projection.mounts.find((mount) => mount.target === "/workspace/MEMORY.md");
+    expect(memoryMount?.readOnly).toBe(true);
+    // Everything else in shared-support stays read-write; only the shared
+    // memory file is gated.
+    const skillsMount = projection.mounts.find((mount) => mount.target === "/workspace/skills");
+    expect(skillsMount?.readOnly).toBeUndefined();
+    expect(projection.promptSources.globalMemoryReadOnly).toBe(true);
+  });
+
+  test("private visibility is meaningless for full layout: still one read-write bind", () => {
+    updateGlobalSettings({
+      sandbox: {
+        workspace: { doorPolicy: "trusted", layout: "full" },
+      },
+    });
+
+    const projection = resolveWorkspaceProjection(office);
+
+    expect(projection.mounts).toEqual([{ source: workspaceDir, target: "/workspace" }]);
+    expect(projection.promptSources.globalMemoryReadOnly).toBeUndefined();
+  });
+
+  test("a conversation-scoped private override wins over a public global default", () => {
+    updateGlobalSettings({
+      sandbox: { workspace: { doorPolicy: "trusted", layout: "shared-support" } },
+    });
+    updateConversationSettings(office, {
+      sandbox: {
+        workspace: { doorPolicy: "trusted", layout: "shared-support", visibility: "private" },
+      },
+    });
+
+    const projection = resolveWorkspaceProjection(office);
+
+    expect(projection.visibility).toBe("private");
+    const memoryMount = projection.mounts.find((mount) => mount.target === "/workspace/MEMORY.md");
+    expect(memoryMount?.readOnly).toBe(true);
+  });
+
   test("canonical conversation policy overrides a trusted global office", () => {
     updateGlobalSettings({
       sandbox: { workspace: { doorPolicy: "trusted", layout: "full" } },

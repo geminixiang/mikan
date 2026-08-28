@@ -516,10 +516,21 @@ export interface PiAgentWrapper {
 
 export type WorkspaceDoorPolicy = "isolated" | "trusted";
 export type WorkspaceLayout = "conversation" | "shared-support" | "full";
+/**
+ * Read/write posture for the workspace-global MEMORY.md a `shared-support`
+ * office mounts, modeled on Claude Tag's public/private channel memory:
+ * `public` offices read and write it (today's default, unchanged behavior);
+ * `private` offices read it but cannot write it, so information can flow in
+ * from the shared pool but never leak out through a single trusted-but-
+ * private office. Meaningless for `full` layout, which mounts the whole
+ * workspace read-write as one bind and has no separate memory file to gate.
+ */
+export type WorkspaceVisibility = "public" | "private";
 
 interface WorkspaceSettings {
   doorPolicy?: WorkspaceDoorPolicy;
   layout?: WorkspaceLayout;
+  visibility?: WorkspaceVisibility;
 }
 
 export interface SandboxSettings {

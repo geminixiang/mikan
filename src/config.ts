@@ -16,7 +16,13 @@ export class MissingGlobalSettingsError extends Error {
 }
 
 export type { AgentConfig, AutoReplyConfig, JudgeModelConfig, SandboxSettings } from "./types.js";
-import type { AgentConfig, AutoReplyConfig, JudgeModelConfig, SandboxSettings } from "./types.js";
+import type {
+  AgentConfig,
+  AutoReplyConfig,
+  JudgeModelConfig,
+  SandboxSettings,
+  WorkspaceVisibility,
+} from "./types.js";
 import type { McpServerConfig } from "./mcp/types.js";
 import type { OnboardLlmChoice } from "./types.js";
 import type { Office } from "./office/index.js";
@@ -111,6 +117,7 @@ const SettingsFileSchema = Type.Object({
               Type.Literal("full"),
             ]),
           ),
+          visibility: Type.Optional(Type.Union([Type.Literal("public"), Type.Literal("private")])),
         }),
       ),
       defaultSharedVault: Type.Optional(Type.String()),
@@ -650,23 +657,35 @@ export function loadScopeMcpServers(office: Office): {
   };
 }
 
-/** An explicit office door-policy selection; `layout` only exists behind a trusted door. */
+/**
+ * An explicit office door-policy selection; `layout` only exists behind a
+ * trusted door. `visibility` only applies to `shared-support` (it gates
+ * read/write access to the workspace-global MEMORY.md that layout mounts);
+ * `full` mounts the whole workspace as one read-write bind and has no
+ * separate memory file to gate, so it carries no visibility choice.
+ */
 export type WorkspacePolicyChoice =
   | { doorPolicy: "isolated" }
-  | { doorPolicy: "trusted"; layout: "shared-support" | "full" };
+  | { doorPolicy: "trusted"; layout: "full" }
+  | { doorPolicy: "trusted"; layout: "shared-support"; visibility?: WorkspaceVisibility };
 
 /**
  * The conversation's own door-policy override (legacy `image.workspaceMount`
- * included), or null when the office follows the global default.
+ * included), or null when the office follows the global default. Missing
+ * `visibility` on a shared-support choice defaults to "public" downstream
+ * (see resolveEffectiveWorkspace), preserving today's read-write behavior for
+ * every office that predates this setting.
  */
 export function loadConversationWorkspaceOverride(office: Office): WorkspacePolicyChoice | null {
   const file = loadSettingsFile(conversationSettingsPath(office));
   const sandbox = file?.sandbox;
   if (sandbox?.workspace?.doorPolicy === "isolated") return { doorPolicy: "isolated" };
   if (sandbox?.workspace?.doorPolicy === "trusted") {
+    if (sandbox.workspace.layout === "full") return { doorPolicy: "trusted", layout: "full" };
     return {
       doorPolicy: "trusted",
-      layout: sandbox.workspace.layout === "full" ? "full" : "shared-support",
+      layout: "shared-support",
+      ...(sandbox.workspace.visibility ? { visibility: sandbox.workspace.visibility } : {}),
     };
   }
   if (sandbox?.image?.workspaceMount === "full") return { doorPolicy: "trusted", layout: "full" };

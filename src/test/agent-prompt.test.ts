@@ -1,11 +1,25 @@
-import { describe, expect, test } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   appendTriggerAttribution,
+  buildSystemPrompt,
   buildTurnInstructions,
   resolveTriggerAttribution,
 } from "../agent/prompt.js";
 import { translateAttachPathToHost } from "../agent/execution.js";
 import { getUnresolvedSandboxPathContext } from "../sandbox/index.js";
+import { createOfficeAddress, createWorkspace } from "../office/index.js";
+import { resolveWorkspaceProjection } from "../workspace-projection/index.js";
+import { createGlobalSettingsFile } from "../config.js";
+
+const PLATFORM = {
+  name: "slack",
+  formattingGuide: "",
+  channels: [],
+  users: [],
+};
 
 describe("trigger attribution", () => {
   test("uses event filename from event prompt marker", () => {
@@ -171,5 +185,111 @@ describe("runtime path context", () => {
     expect(() => translateAttachPathToHost("report.txt", pathContext)).toThrow(
       "attachments are unavailable",
     );
+  });
+});
+
+describe("system prompt memory guidance", () => {
+  let stateDir: string;
+  let workspaceDir: string;
+
+  beforeEach(() => {
+    stateDir = mkdtempSync(join(tmpdir(), "mikan-prompt-memory-"));
+    workspaceDir = join(stateDir, "workspace");
+    mkdirSync(workspaceDir, { recursive: true });
+    process.env.MIKAN_STATE_DIR = stateDir;
+    createGlobalSettingsFile(stateDir);
+  });
+
+  afterEach(() => {
+    delete process.env.MIKAN_STATE_DIR;
+    rmSync(stateDir, { recursive: true, force: true });
+  });
+
+  function projectionFor(
+    visibility: "public" | "private",
+  ): ReturnType<typeof resolveWorkspaceProjection> {
+    const workspace = createWorkspace({ root: workspaceDir, stateDir });
+    const office = workspace.office(createOfficeAddress("slack", "C123"));
+    // office.ensure()/resolveWorkspaceProjection materialize the shared roots;
+    // build the projection object directly instead of round-tripping through
+    // settings.json, since this test only cares about how buildSystemPrompt
+    // renders a given projection shape.
+    const base = resolveWorkspaceProjection(office);
+    return {
+      ...base,
+      doorPolicy: "trusted",
+      layout: "shared-support",
+      visibility,
+      promptSources: {
+        ...base.promptSources,
+        globalMemoryPath: join(workspaceDir, "MEMORY.md"),
+        globalSkillsDir: join(workspaceDir, "skills"),
+        ...(visibility === "private" ? { globalMemoryReadOnly: true } : {}),
+      },
+    };
+  }
+
+  test("public visibility tells the agent it can write shared memory", () => {
+    const projection = projectionFor("public");
+    const office = createWorkspace({ root: workspaceDir, stateDir }).office(
+      createOfficeAddress("slack", "C123"),
+    );
+    const prompt = buildSystemPrompt(
+      workspaceDir,
+      office,
+      "shared",
+      "U1",
+      "(no memory)",
+      { type: "container", container: "c1" },
+      PLATFORM,
+      [],
+      projection,
+    );
+
+    expect(prompt).toContain("Write important shared knowledge to");
+    expect(prompt).not.toContain("mounted read-only");
+  });
+
+  test("private visibility tells the agent shared memory is read-only", () => {
+    const projection = projectionFor("private");
+    const office = createWorkspace({ root: workspaceDir, stateDir }).office(
+      createOfficeAddress("slack", "C123"),
+    );
+    const prompt = buildSystemPrompt(
+      workspaceDir,
+      office,
+      "shared",
+      "U1",
+      "(no memory)",
+      { type: "container", container: "c1" },
+      PLATFORM,
+      [],
+      projection,
+    );
+
+    expect(prompt).toContain("mounted read-only for this office (private visibility)");
+    expect(prompt).toContain("writes to it are rejected");
+    expect(prompt).toContain("it never leaves this conversation");
+  });
+
+  test("always instructs the agent that memory is curated and queryable/correctable", () => {
+    const projection = projectionFor("public");
+    const office = createWorkspace({ root: workspaceDir, stateDir }).office(
+      createOfficeAddress("slack", "C123"),
+    );
+    const prompt = buildSystemPrompt(
+      workspaceDir,
+      office,
+      "shared",
+      "U1",
+      "(no memory)",
+      { type: "container", container: "c1" },
+      PLATFORM,
+      [],
+      projection,
+    );
+
+    expect(prompt).toContain("curated note, not a transcript");
+    expect(prompt).toContain("normal, expected requests");
   });
 });
